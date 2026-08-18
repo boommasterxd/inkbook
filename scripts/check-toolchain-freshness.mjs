@@ -18,9 +18,15 @@ console.log("Toolchain freshness validation passed.");
 
 async function verifyNode() {
   const releases = await fetchJson("https://nodejs.org/dist/index.json");
-  const activeLts = releases.find((release) => release.lts !== false);
-  if (!activeLts || activeLts.version.slice(1) !== policy.node.version) {
-    fail(`Node active LTS changed from ${policy.node.version}`);
+  const selectedMajor = semver.major(policy.node.version);
+  const latestSelectedMajor = releases.find(
+    (release) => semver.major(release.version.slice(1)) === selectedMajor,
+  );
+  if (
+    !latestSelectedMajor ||
+    latestSelectedMajor.version.slice(1) !== policy.node.version
+  ) {
+    fail(`Node ${selectedMajor} stable changed from ${policy.node.version}`);
   }
 }
 

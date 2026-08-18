@@ -8,7 +8,7 @@ The repository is currently private and in Phase 0 feasibility work. The product
 
 Requirements:
 
-- Node.js 24 active LTS, within the range declared in `package.json`;
+- Node.js 26 current, scheduled to enter LTS on 2026-10-28, within the range declared in `package.json`;
 - npm 12 within the declared range;
 - a dedicated non-production Obsidian test Vault.
 

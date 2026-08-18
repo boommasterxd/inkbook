@@ -8,32 +8,32 @@ Inkbook requires current maintained tooling without turning mutable network stat
 
 ## Decision
 
-Inkbook uses npm as its only package manager, Node.js active LTS for development and CI, TypeScript, esbuild, ESLint, Prettier, Vitest with V8 coverage, fast-check, Playwright, dependency-cruiser, jscpd, knip, npm audit, and project-owned validation scripts.
+Inkbook uses npm as its only package manager, Node.js 26 during its Current phase and subsequent LTS phases for development and CI, TypeScript, esbuild, ESLint, Prettier, Vitest with V8 coverage, fast-check, Playwright, dependency-cruiser, jscpd, knip, npm audit, and project-owned validation scripts.
 
 `package.json` uses maintained semantic ranges. The npm-generated lockfile records the exact reviewed graph and `npm ci` reproduces it. Direct GitHub Actions use full immutable commit SHAs because workflow execution is supply-chain-sensitive, while Dependabot continually proposes newer reviewed stable action releases. The runtime plugin never downloads code or dependencies.
 
 The bootstrap resolution on 2026-08-18 selected:
 
-| Component                                       | Resolution                  |
-| ----------------------------------------------- | --------------------------- |
-| Node.js                                         | 24.19.0 active LTS, Krypton |
-| npm                                             | 12.0.2                      |
-| Obsidian API package                            | 1.13.1                      |
-| Current release host used by the initial matrix | 1.13.7                      |
-| esbuild                                         | 0.28.2                      |
-| ESLint                                          | 10.8.1                      |
-| typescript-eslint                               | 8.67.0                      |
-| TypeScript                                      | 6.0.3                       |
-| Prettier                                        | 3.9.6                       |
-| Vitest and V8 coverage                          | 4.1.10                      |
-| fast-check                                      | 4.9.0                       |
-| Playwright                                      | 1.62.1                      |
-| dependency-cruiser                              | 18.2.0                      |
-| jscpd                                           | 5.0.16                      |
-| knip                                            | 6.32.2                      |
-| gitleaks                                        | 8.30.1                      |
+| Component                                       | Resolution                                      |
+| ----------------------------------------------- | ----------------------------------------------- |
+| Node.js                                         | 26.7.0 Current, scheduled for LTS on 2026-10-28 |
+| npm                                             | 12.0.2                                          |
+| Obsidian API package                            | 1.13.1                                          |
+| Current release host used by the initial matrix | 1.13.7                                          |
+| esbuild                                         | 0.28.2                                          |
+| ESLint                                          | 10.8.1                                          |
+| typescript-eslint                               | 8.67.0                                          |
+| TypeScript                                      | 6.0.3                                           |
+| Prettier                                        | 3.9.6                                           |
+| Vitest and V8 coverage                          | 4.1.11                                          |
+| fast-check                                      | 4.9.0                                           |
+| Playwright                                      | 1.62.1                                          |
+| dependency-cruiser                              | 18.2.0                                          |
+| jscpd                                           | 5.0.16                                          |
+| knip                                            | 6.32.2                                          |
+| gitleaks                                        | 8.30.1                                          |
 
-TypeScript 7.0.2 was the newest standalone stable TypeScript release at bootstrap, but typescript-eslint 8.67.0 supports TypeScript only below 6.1.0. TypeScript 6.0.3 is therefore the newest stable mutually compatible release, not a permanent preference. The freshness gate MUST move to TypeScript 7 or later as soon as the current linter release supports it. `@types/node` remains on the newest Node 24 line because Node 24 is the selected active-LTS runtime.
+TypeScript 7.0.2 was the newest standalone stable TypeScript release at bootstrap, but typescript-eslint 8.67.0 supports TypeScript only below 6.1.0. TypeScript 6.0.3 is therefore the newest stable mutually compatible release, not a permanent preference. The freshness gate MUST move to TypeScript 7 or later as soon as the current linter release supports it. `@types/node` remains on the newest Node 26 line because Node 26 is the selected build and CI runtime.
 
 `skipLibCheck` is enabled only because the published Obsidian 1.13.1 declaration bundle contains host classes that declare `HistoryHandler` without declaring its required `onHistoryBack()` member. Project sources and tests remain fully strict and receive no skip or path exclusion. This narrow upstream boundary MUST be retested and removed when a corrected Obsidian declaration release is selected.
 
@@ -41,7 +41,7 @@ The production build targets ES2022, produces CommonJS `main.js`, treats Obsidia
 
 ## Update Policy
 
-Dependabot checks npm and GitHub Actions weekly. Minor and patch updates may auto-merge only through all required checks. Major updates remain isolated for review. Before every phase exit and release freeze, `npm run freshness:check` resolves official stable channels again. An older version is accepted only while a documented current compatibility constraint makes the newer version unusable; such a constraint blocks silent drift and is removed at the first compatible update.
+Dependabot checks npm and GitHub Actions weekly. Minor and patch updates may auto-merge only through all required checks. Major updates remain isolated for review. Before every phase exit and release freeze, `npm run freshness:check` resolves official stable channels again. For Node.js it verifies the newest stable patch on the selected Node 26 line throughout the Current-to-LTS transition. An older version is accepted only while a documented current compatibility constraint makes the newer version unusable; such a constraint blocks silent drift and is removed at the first compatible update.
 
 ## Consequences
 

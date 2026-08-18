@@ -1,6 +1,6 @@
 {
   "generatorVersion": "1.0.0",
-  "specificationSha256": "23bd944542c6978e6b044d00215f0f177ccb0d2411bc2d4d21942e89d13a29c1",
+  "specificationSha256": "741c2250adad743c0be38acc8a5a8d0dbb499fc8dcff70dbd47700ac5f495ad5",
   "requirements": [
     {
       "id": "REQ-5991e5ecaa923e0f8de5",
@@ -12,13 +12,13 @@
       "canonicalTextSha256": "ed8f188612fb6ca9c714caf39fcb60d01166b06e1e182b52a3e6960d72a751bd"
     },
     {
-      "id": "REQ-d766702e91e51ef09a04",
+      "id": "REQ-2e9e9ad4ee90aca5143f",
       "path": "docs/decisions/0002-toolchain-and-build.md",
       "headingPath": "ADR 0002: Rolling-Current Toolchain and Build / Decision",
       "kind": "paragraph",
       "occurrence": 1,
-      "fullSha256": "d766702e91e51ef09a04b346e78d172e2324b2e19eaee242226a3319c10e0d3b",
-      "canonicalTextSha256": "c507cc3c08afa41e721461a97e41aa27bdff426cc747392a803d9791d5c626df"
+      "fullSha256": "2e9e9ad4ee90aca5143f7c8e128817f14debc448027add6987d28c78d56b5ac4",
+      "canonicalTextSha256": "73e9bc56b1fa8e1bdc490c153463bc48eaee2a832e8c088d90933f993266f752"
     },
     {
       "id": "REQ-243a1e05c8f28afa1665",

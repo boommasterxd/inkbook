@@ -2,8 +2,9 @@
   "schemaVersion": 1,
   "frozenAtUtc": "2026-08-18T00:00:00.000Z",
   "node": {
-    "version": "24.19.0",
-    "ltsName": "Krypton"
+    "version": "26.7.0",
+    "releaseStatus": "current",
+    "scheduledLtsDate": "2026-10-28"
   },
   "npm": "12.0.2",
   "gitleaks": {
@@ -11,7 +12,7 @@
     "linuxX64Sha256": "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
   },
   "compatibilityConstraints": {
-    "@types/node": "24",
+    "@types/node": "26",
     "typescript": "<6.1.0"
   },
   "actions": {
