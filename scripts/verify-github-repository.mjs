@@ -3,14 +3,25 @@ import { fail } from "./lib-files.mjs";
 
 const REPOSITORY = "boommasterxd/inkbook";
 const repository = await ghApi(`repos/${REPOSITORY}`);
+const actionPermissions = await ghApi(
+  `repos/${REPOSITORY}/actions/permissions`,
+);
 const workflowPermissions = await ghApi(
   `repos/${REPOSITORY}/actions/permissions/workflow`,
+);
+const selectedActions = await ghApi(
+  `repos/${REPOSITORY}/actions/permissions/selected-actions`,
+);
+const forkPermissions = await ghApi(
+  `repos/${REPOSITORY}/actions/permissions/fork-pr-workflows-private-repos`,
 );
 const labels = await ghApi(`repos/${REPOSITORY}/labels?per_page=100`);
 const rulesets = await ghApi(`repos/${REPOSITORY}/rulesets`);
 
 verifyRepository(repository);
+verifyActionPermissions(actionPermissions, selectedActions);
 verifyWorkflowPermissions(workflowPermissions);
+verifyForkPermissions(forkPermissions);
 verifyLabels(labels);
 await verifyRulesets(rulesets);
 await ghApi(`repos/${REPOSITORY}/vulnerability-alerts`);
@@ -42,6 +53,40 @@ function verifyWorkflowPermissions(value) {
     fail("Workflow token is not read-only by default");
   if (value.can_approve_pull_request_reviews !== true)
     fail("Actions cannot approve pull requests");
+}
+
+function verifyActionPermissions(value, selected) {
+  if (value.enabled !== true || value.allowed_actions !== "selected") {
+    fail("GitHub Actions access is not restricted to reviewed selections");
+  }
+  if (
+    selected.github_owned_allowed !== true ||
+    selected.verified_allowed !== false
+  ) {
+    fail("Selected Actions ownership policy differs");
+  }
+  const expected = [
+    "amannn/action-semantic-pull-request@*",
+    "dependabot/fetch-metadata@*",
+  ];
+  if (
+    selected.patterns_allowed.slice().sort().join("|") !== expected.join("|")
+  ) {
+    fail("Selected third-party Actions patterns differ");
+  }
+}
+
+function verifyForkPermissions(value) {
+  const expected = {
+    require_approval_for_fork_pr_workflows: true,
+    run_workflows_from_fork_pull_requests: true,
+    send_secrets_and_variables: false,
+    send_write_tokens_to_workflows: false,
+  };
+  for (const [key, expectedValue] of Object.entries(expected)) {
+    if (value[key] !== expectedValue)
+      fail(`Fork workflow permission drift: ${key}`);
+  }
 }
 
 function verifyLabels(values) {

@@ -33,6 +33,33 @@ async function configureRepository() {
       default_workflow_permissions: "read",
     },
   });
+  await ghApi(`repos/${REPOSITORY}/actions/permissions`, {
+    method: "PUT",
+    body: { allowed_actions: "selected", enabled: true },
+  });
+  await ghApi(`repos/${REPOSITORY}/actions/permissions/selected-actions`, {
+    method: "PUT",
+    body: {
+      github_owned_allowed: true,
+      patterns_allowed: [
+        "dependabot/fetch-metadata@*",
+        "amannn/action-semantic-pull-request@*",
+      ],
+      verified_allowed: false,
+    },
+  });
+  await ghApi(
+    `repos/${REPOSITORY}/actions/permissions/fork-pr-workflows-private-repos`,
+    {
+      method: "PUT",
+      body: {
+        require_approval_for_fork_pr_workflows: true,
+        run_workflows_from_fork_pull_requests: true,
+        send_secrets_and_variables: false,
+        send_write_tokens_to_workflows: false,
+      },
+    },
+  );
 }
 
 async function configureLabels() {
