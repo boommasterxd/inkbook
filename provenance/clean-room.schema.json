@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/boommasterxd/inkbook/provenance/clean-room.schema.json",
+  "title": "CleanRoomProvenanceRecordV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "artifactPath",
+    "artifactSha256",
+    "artifactKind",
+    "origin",
+    "purpose",
+    "sourceReferences",
+    "dependencyName",
+    "dependencyVersion",
+    "dependencyLicense",
+    "authorAttestation",
+    "supersedesRecordSha256",
+    "reviewedBy",
+    "reviewedAtUtc"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "artifactPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    },
+    "artifactSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "artifactKind": {
+      "enum": [
+        "code",
+        "test",
+        "fixture",
+        "algorithm",
+        "icon",
+        "asset",
+        "configuration",
+        "documentation"
+      ]
+    },
+    "origin": {
+      "enum": [
+        "specification",
+        "public-api",
+        "independent-design",
+        "dependency"
+      ]
+    },
+    "purpose": { "type": "string", "minLength": 1 },
+    "sourceReferences": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "dependencyName": { "type": ["string", "null"] },
+    "dependencyVersion": { "type": ["string", "null"] },
+    "dependencyLicense": { "type": ["string", "null"] },
+    "authorAttestation": { "type": "string", "minLength": 1 },
+    "supersedesRecordSha256": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "reviewedBy": { "type": "string", "minLength": 1 },
+    "reviewedAtUtc": { "type": "string", "format": "date-time" }
+  }
+}

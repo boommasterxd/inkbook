@@ -1,0 +1,4 @@
+title = "Inkbook gitleaks configuration"
+
+[extend]
+useDefault = true

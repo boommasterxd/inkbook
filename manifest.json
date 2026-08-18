@@ -1,0 +1,10 @@
+{
+  "id": "inkbook",
+  "name": "Inkbook",
+  "version": "0.1.0",
+  "minAppVersion": "1.8.7",
+  "description": "Adds fast handwritten and geometric SVG annotations to native Markdown notes.",
+  "author": "Yannick Schäfer",
+  "authorUrl": "https://github.com/boommasterxd",
+  "isDesktopOnly": false
+}

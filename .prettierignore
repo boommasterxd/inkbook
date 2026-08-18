@@ -1,0 +1,8 @@
+coverage/
+main.js
+node_modules/
+package-lock.json
+playwright-report/
+provenance/clean-room.jsonl
+test-results/
+test/traceability/requirements.json

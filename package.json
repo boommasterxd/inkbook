@@ -1,0 +1,81 @@
+{
+  "name": "inkbook",
+  "version": "0.1.0",
+  "description": "High-performance retained SVG annotations for native Obsidian Markdown views.",
+  "private": true,
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs --watch",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint --max-warnings=0 .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:browser": "playwright test",
+    "duplicate:check": "jscpd",
+    "dead-code:check": "knip",
+    "architecture:check": "depcruise --config dependency-cruiser.config.cjs src test scripts",
+    "dependency:check": "npm audit --audit-level=high",
+    "docs:check": "node scripts/validate-docs.mjs",
+    "traceability:generate": "node scripts/generate-traceability.mjs",
+    "traceability:check": "node scripts/generate-traceability.mjs --check",
+    "provenance:update": "node scripts/update-provenance.mjs",
+    "provenance:check": "node scripts/validate-provenance.mjs",
+    "manifest:check": "node scripts/validate-manifest.mjs",
+    "test-manifests:check": "node scripts/validate-test-manifests.mjs",
+    "mobile:check": "node scripts/validate-mobile-bundle.mjs",
+    "package:check": "node scripts/validate-package.mjs",
+    "freshness:check": "node scripts/check-toolchain-freshness.mjs",
+    "repository:provision": "node scripts/provision-github-repository.mjs",
+    "repository:check": "node scripts/verify-github-repository.mjs",
+    "ci": "npm run format:check && npm run lint && npm run typecheck && npm run test:coverage && npm run duplicate:check && npm run dead-code:check && npm run architecture:check && npm run dependency:check && npm run docs:check && npm run traceability:check && npm run provenance:check && npm run test-manifests:check && npm run build && npm run manifest:check && npm run mobile:check && npm run package:check",
+    "phase-exit": "npm run ci && npm run freshness:check && node scripts/validate-test-manifests.mjs --require-ready"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/boommasterxd/inkbook.git"
+  },
+  "bugs": {
+    "url": "https://github.com/boommasterxd/inkbook/issues"
+  },
+  "author": "Yannick Schäfer",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "engines": {
+    "node": ">=24.19.0 <25",
+    "npm": ">=12.0.2 <13"
+  },
+  "packageManager": "npm@12.0.2",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^24.13.3",
+    "@types/semver": "^7.8.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "canonicalize": "^4.0.0",
+    "dependency-cruiser": "^18.2.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.8.1",
+    "eslint-plugin-sonarjs": "^4.2.0",
+    "fast-check": "^4.9.0",
+    "globals": "^17.11.0",
+    "jscpd": "^5.0.16",
+    "knip": "^6.32.2",
+    "obsidian": "^1.13.1",
+    "prettier": "^3.9.6",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "semver": "^7.8.5",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.67.0",
+    "unified": "^11.0.5",
+    "vitest": "^4.1.10"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}

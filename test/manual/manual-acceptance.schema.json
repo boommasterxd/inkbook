@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/boommasterxd/inkbook/test/manual/manual-acceptance.schema.json",
+  "title": "ManualAcceptanceRecordV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "procedureVersion",
+    "requirementIds",
+    "artifactSha256",
+    "compatibilityCellId",
+    "operator",
+    "timestampUtc",
+    "steps",
+    "result",
+    "evidencePaths"
+  ],
+  "properties": {
+    "id": { "type": "string", "pattern": "^MANUAL-[A-Z0-9-]+$" },
+    "procedureVersion": { "type": "integer", "minimum": 1 },
+    "requirementIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^REQ-[0-9a-f]{20}$" }
+    },
+    "artifactSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "compatibilityCellId": { "type": "string", "minLength": 1 },
+    "operator": { "type": "string", "minLength": 1 },
+    "timestampUtc": { "type": "string", "format": "date-time" },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "result": { "enum": ["passed", "failed", "blocked"] },
+    "evidencePaths": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}

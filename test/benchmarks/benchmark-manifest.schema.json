@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/boommasterxd/inkbook/test/benchmarks/benchmark-manifest.schema.json",
+  "title": "InkbookBenchmarkManifestV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "fixtureDigests",
+    "deviceCells",
+    "measurements"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "status": { "enum": ["placeholder", "frozen"] },
+    "fixtureDigests": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "deviceCells": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "measurements": { "type": "array", "items": { "type": "object" } }
+  }
+}

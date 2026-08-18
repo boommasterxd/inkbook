@@ -1,0 +1,62 @@
+name: Update gitleaks
+
+on:
+  schedule:
+    - cron: "17 7 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    name: Update gitleaks version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Resolve current stable gitleaks release
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$(curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            https://api.github.com/repos/gitleaks/gitleaks/releases/latest | jq --raw-output .tag_name)"
+          version="${tag#v}"
+          checksums="gitleaks_${version}_checksums.txt"
+          curl --fail --location --proto '=https' --tlsv1.2 --output "$checksums" \
+            "https://github.com/gitleaks/gitleaks/releases/download/${tag}/${checksums}"
+          archive="gitleaks_${version}_linux_x64.tar.gz"
+          sha="$(awk -v name="$archive" '$2 == name { print $1 }' "$checksums")"
+          test "${#sha}" -eq 64
+          printf 'version=%s\nlinux_x64_sha256=%s\n' "$version" "$sha" > .gitleaks-version
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Open update pull request
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- .gitleaks-version; then
+            exit 0
+          fi
+          branch="chore/update-gitleaks-${VERSION}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --create "$branch"
+          git add .gitleaks-version
+          git commit -m "chore(deps): update gitleaks to ${VERSION}"
+          git push --set-upstream origin "$branch"
+          gh pr create \
+            --title "chore(deps): update gitleaks to ${VERSION}" \
+            --body "Updates the verified gitleaks release used by the required secret scan." \
+            --label dependencies \
+            --base main \
+            --head "$branch"

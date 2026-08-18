@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Inkbook Obsidian Toolbar Mockup</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <svg class="icon-sprite" aria-hidden="true">
+      <symbol id="i-undo" viewBox="0 0 24 24">
+        <path d="M9 7 4 12l5 5M5 12h8a6 6 0 0 1 6 6" />
+      </symbol>
+      <symbol id="i-redo" viewBox="0 0 24 24">
+        <path d="m15 7 5 5-5 5m4-5h-8a6 6 0 0 0-6 6" />
+      </symbol>
+      <symbol id="i-cursor" viewBox="0 0 24 24">
+        <path d="m6 3 12 9-7 1 4 7-3 1-4-7-4 4Z" />
+      </symbol>
+      <symbol id="i-lasso" viewBox="0 0 24 24">
+        <path
+          d="M12 4c5 0 9 3 9 7s-4 7-9 7-9-3-9-7 4-7 9-7Zm0 14c-2 0-4 1-4 2s1 2 3 2"
+        />
+      </symbol>
+      <symbol id="i-pen" viewBox="0 0 24 24">
+        <path d="m14 5 5 5M4 20l3-7L16 4l4 4-9 9Z" />
+      </symbol>
+      <symbol id="i-highlighter" viewBox="0 0 24 24">
+        <path d="m8 4 12 12-5 5L3 9Zm-2 13-3 3h8" />
+      </symbol>
+      <symbol id="i-eraser" viewBox="0 0 24 24">
+        <path d="m7 18-4-4L13 4l7 7-7 7Zm0 0h13" />
+      </symbol>
+      <symbol id="i-square" viewBox="0 0 24 24">
+        <rect x="4" y="4" width="16" height="16" rx="2" />
+      </symbol>
+      <symbol id="i-arrow" viewBox="0 0 24 24">
+        <path d="M5 19 19 5m-7 0h7v7" />
+      </symbol>
+      <symbol id="i-more" viewBox="0 0 24 24">
+        <circle cx="5" cy="12" r="1" />
+        <circle cx="12" cy="12" r="1" />
+        <circle cx="19" cy="12" r="1" />
+      </symbol>
+      <symbol id="i-grid" viewBox="0 0 24 24">
+        <path d="M4 4h16v16H4Zm0 5h16M4 15h16M9 4v16m6-16v16" />
+      </symbol>
+      <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14" /></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24">
+        <path d="M12 5v14M5 12h14" />
+      </symbol>
+      <symbol id="i-settings" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="3" />
+        <path
+          d="M19 12a7 7 0 0 0-.1-1l2-1-2-4-2 1a7 7 0 0 0-2-1l-.3-2h-5l-.3 2a7 7 0 0 0-2 1l-2-1-2 4 2 1a7 7 0 0 0 0 2l-2 1 2 4 2-1a7 7 0 0 0 2 1l.3 2h5l.3-2a7 7 0 0 0 2-1l2 1 2-4-2-1a7 7 0 0 0 .1-1Z"
+        />
+      </symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24">
+        <path d="m8 10 4 4 4-4" />
+      </symbol>
+      <symbol id="i-external" viewBox="0 0 24 24">
+        <path d="M14 5h5v5m0-5-9 9M19 13v6H5V5h6" />
+      </symbol>
+    </svg>
+
+    <header class="preview-bar" aria-label="Mockup preview controls">
+      <div>
+        <strong>Inkbook toolbar mockup</strong>
+        <span>Preview controls, not production UI</span>
+      </div>
+      <div class="preview-actions">
+        <button
+          class="preview-toggle"
+          id="theme-toggle"
+          type="button"
+          aria-pressed="false"
+        >
+          Dark theme
+        </button>
+        <button
+          class="preview-toggle"
+          id="viewport-toggle"
+          type="button"
+          aria-pressed="false"
+        >
+          Phone width
+        </button>
+        <button
+          class="preview-toggle"
+          id="presentation-toggle"
+          type="button"
+          aria-pressed="false"
+        >
+          Dock toolbar
+        </button>
+      </div>
+    </header>
+
+    <main class="app-shell" id="app-shell">
+      <aside class="obsidian-rail" aria-label="Obsidian navigation preview">
+        <span class="vault-mark">O</span>
+        <button type="button" aria-label="Files">F</button>
+        <button type="button" aria-label="Bookmarks">B</button>
+        <button type="button" aria-label="Obsidian settings">S</button>
+      </aside>
+
+      <section class="workspace" aria-label="Obsidian note preview">
+        <header class="note-tabbar">
+          <div class="note-tab">
+            <span class="status-dot"></span>Lecture 04: Vector Spaces
+          </div>
+          <div class="tab-actions" aria-hidden="true">•••</div>
+        </header>
+
+        <div class="note-pane">
+          <div class="annotation-shell floating" id="annotation-shell">
+            <div class="toolbar-scroll">
+              <div
+                class="annotation-toolbar"
+                role="toolbar"
+                aria-label="Inkbook annotation tools"
+              >
+                <div class="tool-group" aria-label="History">
+                  <button
+                    class="icon-button"
+                    type="button"
+                    data-action="undo"
+                    aria-label="Undo annotation"
+                    disabled
+                  >
+                    <svg><use href="#i-undo" /></svg>
+                  </button>
+                  <button
+                    class="icon-button"
+                    type="button"
+                    data-action="redo"
+                    aria-label="Redo annotation"
+                  >
+                    <svg><use href="#i-redo" /></svg>
+                  </button>
+                </div>
+                <div class="separator"></div>
+                <div class="tool-group" aria-label="Selection tools">
+                  <button
+                    class="tool-button is-active"
+                    type="button"
+                    data-tool="cursor"
+                    aria-label="Cursor and native text"
+                    aria-pressed="true"
+                  >
+                    <svg><use href="#i-cursor" /></svg><span>Cursor</span>
+                  </button>
+                  <button
+                    class="tool-button"
+                    type="button"
+                    data-tool="lasso"
+                    aria-label="Lasso annotations"
+                    aria-pressed="false"
+                  >
+                    <svg><use href="#i-lasso" /></svg><span>Lasso</span>
+                  </button>
+                </div>
+                <div class="separator"></div>
+                <div class="tool-group" aria-label="Drawing tools">
+                  <button
+                    class="tool-button"
+                    type="button"
+                    data-tool="pen"
+                    aria-label="Pen"
+                    aria-pressed="false"
+                  >
+                    <svg><use href="#i-pen" /></svg><span>Pen</span>
+                  </button>
+                  <button
+                    class="tool-button"
+                    type="button"
+                    data-tool="highlighter"
+                    aria-label="Highlighter"
+                    aria-pressed="false"
+                  >
+                    <svg><use href="#i-highlighter" /></svg
+                    ><span>Highlighter</span>
+                  </button>
+                  <button
+                    class="tool-button"
+                    type="button"
+                    data-tool="eraser"
+                    aria-label="Eraser"
+                    aria-pressed="false"
+                  >
+                    <svg><use href="#i-eraser" /></svg><span>Eraser</span>
+                  </button>
+                </div>
+                <div class="separator"></div>
+                <div class="tool-group" aria-label="Construction tools">
+                  <button
+                    class="tool-button"
+                    type="button"
+                    data-tool="rectangle"
+                    aria-label="Rectangle"
+                    aria-pressed="false"
+                  >
+                    <svg><use href="#i-square" /></svg><span>Rectangle</span>
+                  </button>
+                  <button
+                    class="tool-button"
+                    type="button"
+                    data-tool="arrow"
+                    aria-label="Arrow"
+                    aria-pressed="false"
+                  >
+                    <svg><use href="#i-arrow" /></svg><span>Arrow</span>
+                  </button>
+                  <div class="menu-wrap">
+                    <button
+                      class="tool-button"
+                      id="more-tools-button"
+                      type="button"
+                      aria-label="More annotation tools"
+                      aria-haspopup="menu"
+                      aria-controls="more-tools-menu"
+                      aria-expanded="false"
+                    >
+                      <svg><use href="#i-more" /></svg><span>More Tools</span>
+                    </button>
+                    <div
+                      class="tool-menu"
+                      id="more-tools-menu"
+                      role="menu"
+                      hidden
+                    >
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        data-tool="line-highlighter"
+                        aria-checked="false"
+                        tabindex="0"
+                      >
+                        Line highlighter
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        data-tool="ellipse"
+                        aria-checked="false"
+                        tabindex="-1"
+                      >
+                        Ellipse
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        data-tool="triangle"
+                        aria-checked="false"
+                        tabindex="-1"
+                      >
+                        Triangle
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        data-tool="diamond"
+                        aria-checked="false"
+                        tabindex="-1"
+                      >
+                        Diamond
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        data-tool="octagon"
+                        aria-checked="false"
+                        tabindex="-1"
+                      >
+                        Octagon
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        data-tool="line"
+                        aria-checked="false"
+                        tabindex="-1"
+                      >
+                        Line
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        data-tool="connector"
+                        aria-checked="false"
+                        tabindex="-1"
+                      >
+                        Connector
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        data-tool="coordinate-system"
+                        aria-checked="false"
+                        tabindex="-1"
+                      >
+                        Coordinate system
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        data-tool="table"
+                        aria-checked="false"
+                        tabindex="-1"
+                      >
+                        Table
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div class="separator"></div>
+                <button
+                  class="tool-button"
+                  type="button"
+                  data-tool="background"
+                  aria-label="Note background"
+                  aria-pressed="false"
+                >
+                  <svg><use href="#i-grid" /></svg><span>Background</span>
+                </button>
+                <div class="zoom-group" aria-label="Whole-note zoom">
+                  <button
+                    class="icon-button"
+                    id="zoom-out"
+                    type="button"
+                    aria-label="Zoom out"
+                  >
+                    <svg><use href="#i-minus" /></svg>
+                  </button>
+                  <button
+                    class="zoom-value"
+                    id="zoom-reset"
+                    type="button"
+                    aria-label="Reset zoom to 100 percent"
+                  >
+                    100%
+                  </button>
+                  <button
+                    class="icon-button"
+                    id="zoom-in"
+                    type="button"
+                    aria-label="Zoom in"
+                  >
+                    <svg><use href="#i-plus" /></svg>
+                  </button>
+                </div>
+                <button
+                  class="icon-button"
+                  id="settings-button"
+                  type="button"
+                  aria-label="Open Inkbook settings"
+                >
+                  <svg><use href="#i-settings" /></svg>
+                </button>
+              </div>
+            </div>
+            <div
+              class="stylebar"
+              id="stylebar"
+              role="toolbar"
+              aria-label="Tool style options"
+              hidden
+            ></div>
+          </div>
+
+          <div class="note-scroll" id="note-scroll">
+            <div class="note-zoom" id="note-zoom">
+              <article
+                class="markdown-note background-ruled"
+                id="markdown-note"
+              >
+                <div
+                  class="markdown-content"
+                  aria-label="Native Obsidian Markdown content preview"
+                >
+                  <div class="properties-card">
+                    <span class="property-key">inkbook-annotations</span>
+                    <span class="property-value">true</span>
+                  </div>
+                  <h1>Vector spaces</h1>
+                  <p>
+                    A vector space combines vectors with two operations: vector
+                    addition and scalar multiplication.
+                  </p>
+                  <h2>Linear independence</h2>
+                  <p>
+                    A set of vectors is linearly independent when only the
+                    trivial linear combination equals zero.
+                  </p>
+                  <blockquote>
+                    Geometric intuition: no vector in the set can be assembled
+                    from the others.
+                  </blockquote>
+                  <h2>Basis and dimension</h2>
+                  <p>
+                    A basis is a linearly independent spanning set. Every vector
+                    has a unique coordinate representation in that basis.
+                  </p>
+                  <pre><code>span(v₁, v₂) = { a·v₁ + b·v₂ | a,b ∈ ℝ }</code></pre>
+                  <p>
+                    The annotation layer follows these paragraphs when the
+                    Markdown is edited or reflowed.
+                  </p>
+                </div>
+
+                <svg
+                  class="ink-overlay"
+                  id="ink-overlay"
+                  viewBox="0 0 820 760"
+                  role="group"
+                  aria-label="Inkbook annotation overlay"
+                >
+                  <defs>
+                    <marker
+                      id="arrowhead"
+                      markerWidth="10"
+                      markerHeight="10"
+                      refX="8"
+                      refY="3"
+                      orient="auto"
+                    >
+                      <path d="M0,0 L0,6 L9,3 z" />
+                    </marker>
+                  </defs>
+                  <path
+                    class="ink-hit"
+                    data-hit="highlight-1"
+                    d="M86 191 C190 187 285 194 412 190"
+                  />
+                  <path
+                    class="ink-hit"
+                    data-hit="stroke-1"
+                    d="M458 131 C489 103 526 99 548 123 C566 143 544 164 517 157 C493 151 488 124 508 114"
+                  />
+                  <path
+                    class="ink-hit"
+                    data-hit="arrow-1"
+                    d="M560 261 Q616 230 670 265"
+                  />
+                  <path
+                    class="ink-hit"
+                    data-hit="stroke-2"
+                    d="M104 436 C136 409 158 458 190 428 S242 449 270 417"
+                  />
+                  <path
+                    class="ink-hit"
+                    data-hit="axes-1"
+                    d="M104 584H273M188 630V508M119 612 248 530"
+                  />
+                  <path
+                    class="ink-element ink-highlighter"
+                    data-element="highlight-1"
+                    d="M86 191 C190 187 285 194 412 190"
+                  />
+                  <path
+                    class="ink-element ink-stroke"
+                    data-element="stroke-1"
+                    d="M458 131 C489 103 526 99 548 123 C566 143 544 164 517 157 C493 151 488 124 508 114"
+                  />
+                  <path
+                    class="ink-element ink-arrow"
+                    data-element="arrow-1"
+                    d="M560 261 Q616 230 670 265"
+                    marker-end="url(#arrowhead)"
+                  />
+                  <rect
+                    class="ink-element ink-shape"
+                    data-element="shape-1"
+                    x="485"
+                    y="310"
+                    width="172"
+                    height="88"
+                    rx="14"
+                  />
+                  <path
+                    class="ink-element ink-stroke ink-note"
+                    data-element="stroke-2"
+                    d="M104 436 C136 409 158 458 190 428 S242 449 270 417"
+                  />
+                  <g class="ink-element axes" data-element="axes-1">
+                    <path d="M104 584H273M188 630V508" />
+                    <path d="m267 578 8 6-8 6M182 514l6-8 6 8" />
+                    <path
+                      d="M119 612 248 530"
+                      class="axis-vector"
+                      marker-end="url(#arrowhead)"
+                    />
+                  </g>
+                  <g
+                    class="ink-element ink-table"
+                    id="table-preview"
+                    data-element="table-1"
+                  >
+                    <rect x="492" y="486" width="220" height="128" />
+                    <path class="table-dividers" d="" />
+                  </g>
+                  <g class="selection-chrome" id="selection-chrome" hidden>
+                    <rect
+                      class="selection-box"
+                      x="0"
+                      y="0"
+                      width="0"
+                      height="0"
+                      rx="8"
+                    />
+                    <circle class="selection-handle" data-handle="nw" r="6" />
+                    <circle class="selection-handle" data-handle="se" r="6" />
+                    <circle class="anchor-handle" r="7" />
+                    <path class="anchor-line" d="" />
+                  </g>
+                </svg>
+              </article>
+            </div>
+          </div>
+
+          <div
+            class="status-toast"
+            id="status-toast"
+            role="status"
+            aria-live="polite"
+            hidden
+          ></div>
+        </div>
+      </section>
+    </main>
+    <script src="mockup-stylebar.js"></script>
+    <script src="mockup.js"></script>
+  </body>
+</html>

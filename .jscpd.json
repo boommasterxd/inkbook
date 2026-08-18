@@ -1,0 +1,12 @@
+{
+  "absolute": true,
+  "format": ["javascript", "typescript"],
+  "ignore": ["**/node_modules/**", "**/coverage/**", "main.js"],
+  "minLines": 5,
+  "minTokens": 50,
+  "mode": "strict",
+  "output": "coverage/jscpd",
+  "path": ["src", "test", "scripts", "docs/specification/mockup"],
+  "reporters": ["console", "json"],
+  "threshold": 5
+}

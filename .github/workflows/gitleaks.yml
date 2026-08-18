@@ -1,0 +1,35 @@
+name: gitleaks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: gitleaks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download, verify, and run gitleaks
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .gitleaks-version
+          archive="gitleaks_${version}_linux_x64.tar.gz"
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${version}/${archive}"
+          curl --fail --location --proto '=https' --tlsv1.2 --output "$archive" "$url"
+          echo "${linux_x64_sha256}  ${archive}" | sha256sum --check --strict
+          tar --extract --gzip --file "$archive" gitleaks
+          ./gitleaks dir . --config .gitleaks.toml --exit-code 1 --no-banner --redact

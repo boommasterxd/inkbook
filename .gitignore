@@ -1,0 +1,9 @@
+node_modules/
+coverage/
+playwright-report/
+test-results/
+/main.js
+/styles.css
+*.log
+.DS_Store
+test/vault/.obsidian/workspace*.json

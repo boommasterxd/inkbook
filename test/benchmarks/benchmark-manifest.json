@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "status": "placeholder",
+  "fixtureDigests": {},
+  "deviceCells": [
+    "framework-desktop-release",
+    "galaxy-book-release",
+    "galaxy-tab-s6-release",
+    "galaxy-s25-ultra-release",
+    "ios-release"
+  ],
+  "measurements": []
+}
