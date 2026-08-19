@@ -1,7 +1,19 @@
 import { Plugin } from "obsidian";
 
-export default class InkbookPlugin extends Plugin {
-  public override async onload(): Promise<void> {}
+import { PhaseZeroRuntime } from "./adapters/obsidian/phase-zero-runtime";
 
-  public override onunload(): void {}
+export default class InkbookPlugin extends Plugin {
+  #runtime: PhaseZeroRuntime | undefined;
+
+  public override onload(): Promise<void> {
+    const runtime = new PhaseZeroRuntime(this);
+    this.#runtime = runtime;
+    runtime.register();
+    return Promise.resolve();
+  }
+
+  public override onunload(): void {
+    this.#runtime?.dispose();
+    this.#runtime = undefined;
+  }
 }

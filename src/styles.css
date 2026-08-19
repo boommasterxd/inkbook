@@ -1,0 +1,47 @@
+.inkbook-phase-zero-gesture-surface,
+.inkbook-phase-zero-gesture-surface .view-content,
+.inkbook-phase-zero-gesture-surface .cm-scroller,
+.inkbook-phase-zero-gesture-surface .markdown-source-view,
+.inkbook-phase-zero-gesture-surface .markdown-preview-view,
+.inkbook-phase-zero-gesture-surface .markdown-reading-view {
+  touch-action: pan-x pan-y;
+}
+
+.inkbook-phase-zero-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.inkbook-phase-zero-overlay > svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  transform-origin: 0 0;
+}
+
+.inkbook-phase-zero-marker {
+  fill: var(--interactive-accent);
+  stroke: var(--background-primary);
+  stroke-width: 3;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.inkbook-phase-zero-marker.is-visible {
+  opacity: 0.9;
+  pointer-events: all;
+}
+
+.inkbook-phase-zero-marker.is-selected {
+  stroke: var(--text-normal);
+  stroke-width: 5;
+}
+
+.inkbook-phase-zero-marker:focus-visible {
+  outline: 2px solid var(--text-accent);
+  outline-offset: 3px;
+}

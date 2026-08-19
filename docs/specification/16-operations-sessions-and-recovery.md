@@ -125,8 +125,13 @@ export interface ReplaceObjectOrderPatchV1 {
 
 export interface ReplaceGroupsPatchV1 {
   readonly kind: "replace-groups";
-  readonly prior: readonly GroupRecordV1[];
-  readonly replacement: readonly GroupRecordV1[];
+  readonly changes: readonly GroupReplacementV1[];
+}
+
+export interface GroupReplacementV1 {
+  readonly groupId: GroupId;
+  readonly prior: GroupRecordV1 | null;
+  readonly replacement: GroupRecordV1 | null;
 }
 
 export interface ReplaceNoteAppearancePatchV1 {
@@ -147,7 +152,7 @@ export type BatchMemberV1 = Exclude<AnnotationPatchV1, AtomicBatchPatchV1>;
 
 For `create-elements`, `movedElementIds` equals the absent created IDs and inserts them between validated adjacent anchors without a removal step. For `delete-elements`, it equals present deleted IDs whose current placement matches `priorPlacement` and removes them without reinsertion. Only `replace-object-order` removes the named present IDs and inserts them between the named adjacent predecessor and successor in the remaining order. Both anchors may be null only when the applicable remaining order is empty. The moved IDs retain their listed relative order. This permits work proportional to moved members plus indexed order updates without serializing a complete 10,000-element order for a one-element move.
 
-Create, delete, Group, and attachment operations are dependency-closed. Deleting a target includes every required Line or Arrow endpoint detachment and Group change in the same batch. A direct operation that would leave an unresolved ID, invalid Group, invalid port, or incomplete object order is rejected.
+Create, delete, Group, and attachment operations are dependency-closed. Deleting a target includes every required Line or Arrow endpoint detachment and Group change in the same batch. `replace-groups.changes` is non-empty, contains each `groupId` once in ascending Unicode code-point order, and carries only created, deleted, or value-changed records; an unchanged pair is invalid. Validation applies the sparse changes to the persistent Group store and checks only affected ancestor, descendant, membership, and contiguous-order indices plus their dependency closure. It MUST NOT copy or traverse the complete Group table for one local edit. A direct operation that would leave an unresolved ID, invalid Group, invalid port, or incomplete object order is rejected.
 
 ## 3. Revision Rules and Command Results
 
@@ -243,7 +248,7 @@ export interface NoteSessionSnapshotV1 {
   readonly historyLease: HistoryLeaseV1;
   readonly persistence: PersistenceStateV1;
   readonly source: SourceStateV1;
-  readonly scene: SceneStateV1;
+  readonly scene: RuntimeSceneStateV1;
 }
 ```
 
@@ -253,7 +258,7 @@ An `unannotated` session has no sidecar base, an empty runtime scene at revision
 
 When the lease is `unowned`, the first otherwise valid annotation mutation from a supported editable pane acquires a new monotonic history epoch. Merely focusing, selecting, scrolling, typing Markdown, or opening a toolbar does not acquire it. The owner retains the lease while its view and actionable annotation effects exist. Disposal changes the lease to `closing`, settles or blocks pending intents, recovery-protects the current scene, closes the epoch, and only then returns it to `unowned` so a later pane can acquire the next epoch. Old effects are permanently stale.
 
-The session queue is serialized and non-reentrant. It never awaits an event whose handler requires the retained queue turn. Listener notifications, worker results, view publications, source transactions, and retries enter later turns and are revision-coalesced where their contract permits replacement.
+The session queue is serialized and non-reentrant. Its private turn union is closed over user commands, host-history deliveries, lifecycle, source, recovery, persistence, worker, and view-publication turns. It enforces the per-session and plugin-wide entry and byte limits in `RESOURCE_BUDGET_V1`. Each session permanently reserves one lifecycle slot and one host-history slot of 64 KiB each; ordinary work cannot consume them, and a larger emergency turn fails closed before retaining its payload. Each admitted asynchronous operation precharges one completion slot and its worst-case retained payload until terminal settlement. Admission rejects or backpressures before retaining an over-limit payload. Only the latest revision-superseded view, worker, save, or checkpoint turn may replace an older turn of the same identity; user commands, history transitions, recovery acknowledgements, and lifecycle turns are never dropped. It never awaits an event whose handler requires the retained queue turn. Listener notifications, worker results, view publications, source transactions, and retries enter later turns.
 
 ## 5. Host-History Effect Lifecycle
 
@@ -485,4 +490,4 @@ export interface RecoveryStore {
 
 Each mutating method is one atomic transaction and uses compare-and-swap over its expected prior state. V1 selects a transactional IndexedDB adapter. The database schema is versioned independently from sidecars. `localStorage`, `saveLocalStorage()`, plugin data JSON, and the Vault are not conforming recovery backends. Phase 0 MUST prove the host capability and transaction behavior on every supported desktop and Android environment; Phase 1 turns that probe into the fully tested production adapter. Failure keeps annotation mutation read-only.
 
-The store enforces the 32 MiB global and 8 MiB per-note budgets before accepting a write. A single operation that cannot fit is rejected before history or scene publication. `acknowledgeSidecar()` compares `expectedPriorBase`, requires `sidecarRevision === acknowledgedReplacementBase.revision`, validates the acknowledged replacement path and raw digest, deletes exactly the listed covered attempts and checkpoints, and rebases every retained direct-successor attempt and checkpoint from that prior base to `acknowledgedReplacementBase` in the same atomic transaction. A gap, fork, conflicting base, non-successor record, missing covered ID, or acknowledgement mismatch aborts cleanup and enters recovery conflict. It never removes an actionable host envelope or history entry. Recovery records contain no Markdown text.
+The store enforces the 32 MiB global and 8 MiB per-note budgets, 16,384 records globally, 4,096 records per note, and at most 512 retained direct successors of one base before accepting a write. A single operation that cannot fit is rejected before history or scene publication. Records are indexed by note identity, base path, base revision, base digest, and `SessionOrder`; a note operation MUST NOT scan another note. `acknowledgeSidecar()` compares `expectedPriorBase`, requires `sidecarRevision === acknowledgedReplacementBase.revision`, validates the acknowledged replacement path and raw digest, deletes exactly the listed covered attempts and checkpoints, and rebases only the indexed retained direct successors from that prior base to `acknowledgedReplacementBase` in the same atomic transaction. A gap, fork, conflicting base, non-successor record, missing covered ID, acknowledgement mismatch, or successor-limit overflow aborts cleanup and enters recovery conflict. It never removes an actionable host envelope or history entry. Recovery records contain no Markdown text.

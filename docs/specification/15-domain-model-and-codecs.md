@@ -268,11 +268,31 @@ export interface GroupRecordV1 {
   readonly selectionRotationRadians: number;
 }
 
-export interface SceneStateV1 {
+export interface SerializedSceneStateV1 {
   readonly revision: SceneRevision;
   readonly elements: readonly SceneElementV1[];
   readonly objectOrder: readonly ElementId[];
   readonly groups: readonly GroupRecordV1[];
+  readonly noteAppearance: NoteAppearanceV1;
+}
+
+export interface PersistentMapViewV1<K, V> {
+  readonly size: number;
+  get(key: K): V | undefined;
+  has(key: K): boolean;
+  entriesByCanonicalKey(): Iterable<readonly [K, V]>;
+}
+
+export interface PersistentSequenceViewV1<T> {
+  readonly length: number;
+  get(index: number): T | undefined;
+}
+
+export interface RuntimeSceneStateV1 {
+  readonly revision: SceneRevision;
+  readonly elementsById: PersistentMapViewV1<ElementId, SceneElementV1>;
+  readonly objectOrder: PersistentSequenceViewV1<ElementId>;
+  readonly groupsById: PersistentMapViewV1<GroupId, GroupRecordV1>;
   readonly noteAppearance: NoteAppearanceV1;
 }
 
@@ -283,11 +303,11 @@ export interface NoteAppearanceV1 {
 }
 ```
 
-`elements` contains each `ElementId` exactly once. `objectOrder` is a complete duplicate-free back-to-front permutation of those IDs. Groups contain at least two ordered direct children, references resolve, one child has at most one direct parent, and nesting is at most 32. Groups have no independent style, binding, element geometry, or object-order slot. `selectionRotationRadians` is only the canonical orientation authority for reconstructing that persisted Group's aggregate selection frame; creating a Group initializes it to zero, and a committed Group rotation updates it by the same absolute rotation used to materialize every descendant transform. Reconstruction inverse-rotates descendant selection geometry by the stored angle around any common finite origin, computes its local union bounds, and rotates that rectangle forward; the result is origin-independent and does not rotate descendants twice. Recursively flattening one Group's `childIds` in stored order MUST equal exactly the contiguous `objectOrder` subsequence occupied by that Group. Sidecar validation, clipboard validation, and every Group replacement enforce this same invariant.
+`SerializedSceneStateV1` is the canonical sidecar and clipboard codec boundary. Its `elements` contains each `ElementId` exactly once in the exact order of `objectOrder`; no other element-array order is valid. Its `groups` are ordered by ascending Unicode code-point order of `groupId`. The codec obtains Groups only from `groupsById.entriesByCanonicalKey()`, whose implementation yields that same order without materializing an unordered map traversal. `objectOrder` is a complete duplicate-free back-to-front permutation of the element IDs. Groups contain at least two ordered direct children, references resolve, one child has at most one direct parent, and nesting is at most 32. Groups have no independent style, binding, element geometry, or object-order slot. `selectionRotationRadians` is only the canonical orientation authority for reconstructing that persisted Group's aggregate selection frame; creating a Group initializes it to zero, and a committed Group rotation updates it by the same absolute rotation used to materialize every descendant transform. Reconstruction inverse-rotates descendant selection geometry by the stored angle around any common finite origin, computes its local union bounds, and rotates that rectangle forward; the result is origin-independent and does not rotate descendants twice. Recursively flattening one Group's `childIds` in stored order MUST equal exactly the contiguous `objectOrder` subsequence occupied by that Group. Sidecar validation, clipboard validation, and every Group replacement enforce this same invariant.
 
 Creating a Group preserves descendant relative order and compacts its leaf descendants into one contiguous block at the earliest selected leaf position. Nested selected roots are reduced to their highest selected ancestor before compaction. Ungrouping preserves the current leaf order. A Group z-order command moves its complete contiguous leaf block while preserving internal order. Any operation that would interleave another element inside a Group block is invalid. This makes Group selection and z-order deterministic without a second ordering authority.
 
-`noteAppearance` belongs to the same canonical revision and reversible operation stream as elements, Groups, and object order. Runtime maps, reverse attachment indices, spatial indices, and selectable-order indices are derived from these arrays and are not serialized.
+`RuntimeSceneStateV1` is the public immutable session snapshot. Its stores are persistent path-copy collections, not JavaScript `Map` or flat-array copies hidden behind casts. Replacing `a` records costs `O(a log N)` path work and allocations, preserves all unchanged branches, and never materializes a complete array on publication or rendering paths. Codec code may stream a runtime snapshot in canonical order into `SerializedSceneStateV1` or directly into canonical JSON only at the bounded persistence or clipboard boundary. Publications carry affected IDs and bounds so renderers and indices never diff complete stores. `noteAppearance` belongs to the same canonical revision and reversible operation stream as elements, Groups, and object order. Reverse attachment indices, spatial indices, and selectable-order indices remain derived and are not serialized.
 
 ## 7. Clipboard Transfer V1
 

@@ -18,6 +18,8 @@ styles.css
 
 `styles.css` is required because Inkbook supplies toolbar, stylebar, overlay, and selection styles. Source code is TypeScript, while `main.js` is a production bundle. Public Community distribution additionally requires a root `README.md`, a compatible `LICENSE`, and repository metadata required by the current submission rules. Sample-plugin scaffolding, development-only code, source maps containing local paths, and test fixtures MUST NOT enter the release package.
 
+The production package is subject to the raw, compressed, embedded-worker, cold parse and evaluation, CSS, pre-`onload`, and peak-heap budgets in `ARTIFACT_BUDGET_V1` from [Quality and Performance](09-quality-and-performance.md). Measurement begins immediately before the host loads the plugin module and stylesheet, not at entry to `Plugin.onload()`. Top-level module evaluation may define constants and the plugin class only; it MUST NOT allocate a scene, instantiate a worker, enumerate the Vault, attach a view, or decode the embedded worker payload.
+
 `manifest.json` MUST contain:
 
 - `id: "inkbook"`, matching the installed plugin folder;
@@ -46,7 +48,7 @@ Production code MUST NOT use global `app`, `window.app`, or a process-global mut
 
 Inkbook augments only Obsidian's native Markdown Live Preview, Source, and Reading View surfaces. It MUST NOT register an `ItemView`, custom view type, annotation leaf, Bases view, or replacement Markdown editor. It MUST NOT call `registerView()` or change a leaf with `setViewState()` to display annotation content. Bases files and non-Markdown leaves receive no toolbar, overlay, sidecar discovery, or YAML marker.
 
-One view adapter is keyed by the concrete workspace leaf and host Markdown view instance. Leaf detach, host-view replacement, file change, mode change, or plugin unload disposes that adapter. Linked panes share a canonical note session only when they resolve the same Markdown file identity; they never share selection, viewport, zoom, DOM, focus, or transient gesture state.
+One view adapter is keyed by the concrete workspace leaf and host Markdown view instance. Leaf detach, host-view replacement, file change, mode change, or plugin unload disposes that adapter completely before any replacement adapter binds. Linked panes share a canonical note session only when they resolve the same Markdown file identity; they never share selection, viewport, zoom, DOM, focus, or transient gesture state.
 
 Obsidian may defer a leaf's view. Passive discovery MUST check `WorkspaceLeaf.isDeferred` and skip a deferred leaf without calling `loadIfDeferred()` or `revealLeaf()`. Production code MUST NOT import or use `instanceof` against a non-public `DeferredView` class. An explicit user command that requires the view MAY await `workspace.revealLeaf()`, recheck the resulting view and file identity, then act. Direct `loadIfDeferred()` is allowed only behind a compatibility adapter when the documented user action cannot be implemented otherwise, and its use and latency MUST be measured.
 
@@ -116,7 +118,7 @@ All note and sidecar access uses Obsidian `Vault`, `FileManager`, `TFile`, and t
 
 Current-file and locator lookup use a known `TFile` or `getFileByPath()`. The YAML locator is validated as untrusted evidence and never authorizes a sidecar whose embedded Markdown identity does not match the concrete note. A Markdown digest mismatch is freshness evidence and enters bounded external reattachment or conflict handling rather than locator rejection. An explicit orphan-sidecar review or confirmed location migration uses `vault.getFiles()`, filters the exact `.inkbook.json` suffix, applies a candidate limit while scanning, and yields in bounded slices. It MUST NOT use `getMarkdownFiles()` for sidecars or perform a startup-wide scan. Hidden-folder sidecars are unsupported in V1.
 
-An existing sidecar save first obtains its bounded comparison base with `cachedRead()` or the exact raw value retained from the last acknowledged load. Encoding occurs asynchronously. The final compare-and-replace uses `Vault.process()` and performs only a byte-for-byte base comparison plus return of the prepared encoding inside its synchronous callback. It does not await, hash, parse, validate, or call another Vault method in that callback.
+An existing sidecar save first obtains its bounded comparison base with `cachedRead()` or the exact raw value retained from the last acknowledged load. Encoding occurs asynchronously. The final compare-and-replace uses `Vault.process()` and performs only a byte-for-byte base comparison plus return of the prepared encoding inside its synchronous callback. It does not await, hash, parse, validate, or call another Vault method in that callback. The exact comparison follows the calibrated writable-size and worst-case main-thread benchmark in [Sidecar Persistence](07-sidecar-persistence.md); a platform that fails it opens larger valid files read-only rather than weakening conflict detection.
 
 Trash behavior uses the host trash contract through `FileManager.trashFile()` or its version-compatible equivalent. Inkbook never calls permanent `Vault.delete()` as a fallback. Rename, create, delete, and modify listeners are owned registrations and tolerate rename, sync, and save races as specified in [Sidecar Persistence](07-sidecar-persistence.md).
 

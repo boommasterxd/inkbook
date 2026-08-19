@@ -30,6 +30,21 @@ export interface SourceCheckpointOperationV1 {
 }
 ```
 
+`SOURCE_COORDINATION_LIMITS_V1` applies before allocating a complete replacement snapshot, span array, canonical JSON value, UTF-8 copy, or digest buffer:
+
+| Resource                                               |                                        Limit |
+| ------------------------------------------------------ | -------------------------------------------: |
+| Exact Markdown snapshot                                | 16 MiB UTF-8 and 8,388,608 UTF-16 code units |
+| One classified source block                            |                  1,048,576 UTF-16 code units |
+| Classified source blocks                               |                                       65,536 |
+| Changed spans in one canonical map                     |                                       65,536 |
+| RFC 8785 encoded offset map                            |                                        4 MiB |
+| Retained source snapshots and maps in one session      |                                       48 MiB |
+| Mapping nodes traversed by one history materialization |                                           32 |
+| Mapping-compaction scratch                             |                                        8 MiB |
+
+The source coordinator counts transaction ranges and source blocks incrementally and reserves their worst-case resident and scratch bytes through `RESOURCE_BUDGET_V1` before construction. Exceeding a limit blocks Inkbook annotation mutation and sidecar publication for that source generation with a truthful status; native Obsidian Markdown editing remains available. SHA-256 consumes the existing immutable Markdown string through bounded streaming UTF-8 chunks of at most 256 KiB and MUST NOT construct a second complete Markdown or canonical-map string. A worker uses a host-proven incremental platform API when the selected baseline exposes one; otherwise it uses one reviewed, maintained incremental implementation whose exact version, license, security review, and production-bundle cost are recorded. Inkbook MUST NOT author its own cryptographic algorithm. Map composition is worker-first when `WORKER_ADMISSION_V1` applies and otherwise uses the documented main-thread slices.
+
 All offsets and lengths are non-negative safe integers. Each span satisfies `oldFromUtf16 <= oldToUtf16` and `newFromUtf16 <= newToUtf16`. Spans are strictly ordered and non-overlapping in both coordinate systems. The unchanged gap before the first span, between adjacent spans, and after the last span has the same UTF-16 length in both coordinate systems. Empty insertions and deletions are represented by equal endpoints on the applicable side. An equal-length replacement remains a span because its source evidence changed. Adjacent changed spans are merged, so the stored sequence is the unique minimal representation. The empty sequence is the identity map and requires equal prior and replacement lengths.
 
 Unlisted intervals map by the cumulative length delta. A boundary inside a changed span maps to the replacement start or end according to the association rules in [Anchors and Layout](05-anchors-and-layout.md). Composition applies maps in admitted host order, retains the union of changed evidence, merges adjacent output spans, and produces the same canonical sequence regardless of batching. The canonical map digest is SHA-256 over RFC 8785 canonical UTF-8 JSON for `{ priorUtf16Length, replacementUtf16Length, spans }` without a trailing LF. The map contains positions and lengths only, never inserted Markdown.
@@ -37,6 +52,8 @@ Unlisted intervals map by the cumulative length delta. A boundary inside a chang
 The `MarkdownSourceCoordinator` admits a candidate by compare-and-swap over current generation and digest. A view submits prior digest, replacement digest, canonical offset-map digest, view identity, and host transaction sequence. If prior digest equals current digest, it is one new transition and receives the next generation. If replacement digest already equals current digest and prior digest plus map digest match the retained admitted transition, it is a duplicate delivery: only that view token advances. It does not remap anchors, append recovery, enqueue save, or advance generation. Every other mismatch enters bounded external-change reattachment.
 
 The coordinator retains only the active transition and last acknowledged transition needed for duplicate recognition. YAML marker transactions use the same admission path and are tagged as owned metadata changes, but their actual source offsets still advance the source generation exactly once.
+
+Actionable history may retain generation references into a persistent composed-map graph. That graph uses structural sharing, keeps lookup depth at or below the limit above, and compacts adjacent maps in a worker without rewriting every history entry. Compaction publishes one immutable replacement root only after current-generation validation and stays inside both the scratch limit and the plugin-wide ledger. Nodes become reclaimable when no canonical scene, actionable host effect, recovery attempt, or retained checkpoint references them.
 
 Recovery validates stored checkpoints as one strictly contiguous chain rooted at the validated sidecar's source generation and Markdown digest. For each next record, prior generation, prior digest, prior UTF-16 length, and sidecar base must match the preceding acknowledged state exactly, and replacement generation must equal prior generation plus one. It merges checkpoints and host-recorded attempts by `SessionOrder`: an attempt replays at its unique matching source node, and its introduced or replaced bindings map through every later validated checkpoint in order. The final selected checkpoint node must match current Markdown digest and UTF-16 length; if current Markdown equals the root, no checkpoint applies. Any gap, fork, duplicate with unequal bytes, ambiguous node, length mismatch, unrelated digest, invalid map, or unsafe patch rebase publishes nothing and enters bounded external-change reattachment or explicit review.
 

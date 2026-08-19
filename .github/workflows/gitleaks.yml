@@ -32,4 +32,4 @@ jobs:
           curl --fail --location --proto '=https' --tlsv1.2 --output "$archive" "$url"
           echo "${linux_x64_sha256}  ${archive}" | sha256sum --check --strict
           tar --extract --gzip --file "$archive" gitleaks
-          ./gitleaks dir . --config .gitleaks.toml --exit-code 1 --no-banner --redact
+          ./gitleaks git . --config .gitleaks.toml --exit-code 1 --no-banner --redact

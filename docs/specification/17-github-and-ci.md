@@ -20,12 +20,12 @@ Every authored third-party `uses:` reference MUST use a full 40-character commit
 
 ## 3. Workflows
 
-- `ci.yml` installs the lockfile with `npm ci` and runs `npm run ci` on pull requests, `main`, and manual dispatch.
+- `ci.yml` installs the lockfile with `npm ci`, runs `npm run ci`, and fails deterministic raw, compressed, CSS, and embedded-worker byte checks from `ARTIFACT_BUDGET_V1` on pull requests, `main`, and manual dispatch.
 - `commit-style-check.yml` validates pull-request titles as English Conventional Commits.
 - `dependabot-auto-merge.yml` requests squash auto-merge only for Dependabot minor and patch updates.
 - `gitleaks.yml` scans the complete reachable history with the reviewed gitleaks binary and checksum.
 - `update-gitleaks.yml` checks monthly for a newer verified gitleaks release and opens a pull request.
-- `release.yml` validates the tag and manifest version, runs `npm run ci`, builds the plugin, creates checksums, and creates a draft GitHub release.
+- `release.yml` validates the tag and manifest version, runs `npm run ci`, builds the plugin, creates checksums, validates the release-evidence manifest against the exact artifact digest, and creates a draft GitHub release only when every required automated and manual evidence cell is current.
 
 No workflow publishes a release automatically. Publishing the reviewed draft remains an explicit owner action.
 
@@ -42,6 +42,12 @@ One release contains:
 
 The manifest version, `package.json` version, `versions.json` entry, and `v*` tag MUST remain consistent. Generated build files are not committed.
 
-## 5. GitHub Security Settings
+## 5. Performance Evidence
+
+Each phase and release performance run emits one schema-validated evidence record containing the stable row IDs, commit, production `main.js` SHA-256, complete package checksum set, `PerformanceProfileV1` version, fixture generator and digest, Obsidian and operating-system versions, hardware or Android device identity, refresh rate, sample and warmup counts, measured percentiles and maxima, heap and resource-ledger high-water marks, pass or fail state, and manual reviewer when required. A record is immutable after its run. Missing fields, an artifact or profile mismatch, a threshold selected after measurement, or evidence from another commit fails validation.
+
+CI validates schemas, deterministic artifact bytes, fixture digests, and automated results. Real-device execution may remain an explicit manual Phase-Exit or Release step, but its signed-off record must be present and bound to the same production digest before `release.yml` creates a draft. The workflow never fabricates, updates, or marks a real-device result passing. Evidence files are retained with the applicable test result or release record rather than as empty governance placeholders.
+
+## 6. GitHub Security Settings
 
 Dependabot alerts and automated security updates remain enabled. Secret scanning and push protection MUST be enabled when GitHub makes them available for the repository. The inability to enable a plan-dependent feature is recorded as a platform limitation and MUST NOT be misrepresented as active protection.

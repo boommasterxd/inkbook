@@ -32,7 +32,7 @@ export const INPUT_GESTURE_PROFILE_V1 = {
 export type InputGestureProfileV1 = typeof INPUT_GESTURE_PROFILE_V1;
 ```
 
-`InputGestureProfileV1` is fixed product behavior, not a user setting. Pinch intent is recognized when the absolute change between the initial and current two-pointer distance reaches 8 screen CSS pixels. A plugin-target long press is recognized after 500 ms only while movement remains below 8 screen CSS pixels, no third pointer appears, and native text selection or an operating-system accessibility gesture has not claimed the sequence. Reaching the movement threshold, pointer cancellation, view disposal, or ownership by the host cancels the timer. Long press is available only on a frozen plugin-owned target and never suppresses a native long press on Markdown or empty note content.
+`InputGestureProfileV1` is fixed product behavior, not a user setting. Pinch intent is recognized when the absolute change between the initial and current two-pointer distance reaches 8 screen CSS pixels. A plugin-target long press is recognized after 500 ms only while movement remains below 8 screen CSS pixels, no third pointer appears, and native text selection or an operating-system accessibility gesture has not claimed the sequence. Reaching the movement threshold, `pointerup`, `pointercancel`, `lostpointercapture`, a third pointer, successful long-press dispatch, ownership transfer to the host, view disposal, or plugin unload cancels the timer idempotently. Long press is available only on a frozen plugin-owned target and never suppresses a native long press on Markdown or empty note content.
 
 ### 1.2 Secondary-Button Routing
 
