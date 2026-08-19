@@ -54,7 +54,11 @@ async function validatedContext(): Promise<{
     schema: "ArtifactMeasurementV1",
     ...profile.artifact,
   };
-  validateProfile(profile, { artifact, budget, expectedCommit: commit });
+  validateProfile(profile, {
+    artifact,
+    budget,
+    expectedCommit: profile.commit,
+  });
   return { budget, artifact };
 }
 
@@ -151,7 +155,11 @@ describe("PerformanceProfileV1 validation", () => {
     const { budget, artifact } = await validatedContext();
     expect(validateProfileDocument(profile, profileSchema)).toBe(profile);
     expect(
-      validateProfile(profile, { artifact, budget, expectedCommit: commit }),
+      validateProfile(profile, {
+        artifact,
+        budget,
+        expectedCommit: profile.commit,
+      }),
     ).toBe(profile);
     expect(
       profile.rows
@@ -168,7 +176,11 @@ describe("PerformanceProfileV1 validation", () => {
     const stale = clone(profile);
     stale.artifact.mainJsSha256 = "0".repeat(SHA256_LENGTH);
     expect(() =>
-      validateProfile(stale, { artifact, budget, expectedCommit: commit }),
+      validateProfile(stale, {
+        artifact,
+        budget,
+        expectedCommit: profile.commit,
+      }),
     ).toThrow(/artifact binding/);
 
     const mutatedFixture = clone(profile);
@@ -179,7 +191,7 @@ describe("PerformanceProfileV1 validation", () => {
       validateProfile(mutatedFixture, {
         artifact,
         budget,
-        expectedCommit: commit,
+        expectedCommit: profile.commit,
       }),
     ).toThrow(/Fixture/);
   });
@@ -220,11 +232,13 @@ describe("PerformanceProfileV1 validation", () => {
       }),
     ).toThrow(/Schema validation/);
 
-    const draftEvidence = buildEvidence(profile, artifact);
+    const draftProfile = clone(profile);
+    draftProfile.status = "draft";
+    const draftEvidence = buildEvidence(draftProfile, artifact);
     expect(() =>
       validateEvidence(draftEvidence, {
-        profile,
-        artifact: profile.artifact,
+        profile: draftProfile,
+        artifact: draftProfile.artifact,
         expectedCommit: commit,
         expectedTag: "v0.1.0",
       }),

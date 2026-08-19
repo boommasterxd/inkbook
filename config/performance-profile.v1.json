@@ -4,8 +4,8 @@
   "version": 1,
   "profileId": "phase-0-baseline-v1",
   "phase": "P0",
-  "status": "draft",
-  "commit": "91f658dc715ea09050d9ad39a38d620d788e9bf7",
+  "status": "final",
+  "commit": "8b44e9fd00babff0e5e7fc98e9be3e75b45dcfa7",
   "artifactBudget": "ARTIFACT_BUDGET_V1",
   "artifact": {
     "mainJsSha256": "228a6f8d9531832915e7740f0c4c86f16c6085efc4fda990a6f1bee5da6cf2c4",
@@ -45,7 +45,7 @@
       "host": "Obsidian Mobile 1.13.7",
       "os": "Android 12",
       "device": "Samsung Galaxy Tab S6",
-      "refreshRateHz": null,
+      "refreshRateHz": 60,
       "budgetClass": "desktopTablet"
     }
   ],
