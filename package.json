@@ -18,7 +18,11 @@
     "dead-code:check": "knip --config config/knip.json",
     "architecture:check": "depcruise --config config/dependency-cruiser.cjs src test scripts",
     "dependency:check": "npm audit --audit-level=high",
-    "ci": "npm run format:check && npm run lint && npm run typecheck && npm run test:coverage && npm run duplicate:check && npm run dead-code:check && npm run architecture:check && npm run dependency:check && npm run build"
+    "artifact:check": "node scripts/performance/artifact-budget.mjs",
+    "performance:profile:check": "node scripts/performance/performance-check.mjs profile",
+    "performance:runtime:measure": "node scripts/performance/obsidian-runtime-measurement.mjs",
+    "performance:evidence:check": "node scripts/performance/performance-check.mjs evidence",
+    "ci": "npm run format:check && npm run lint && npm run typecheck && npm run test:coverage && npm run duplicate:check && npm run dead-code:check && npm run architecture:check && npm run dependency:check && npm run build && npm run artifact:check && npm run performance:profile:check"
   },
   "repository": {
     "type": "git",

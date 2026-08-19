@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inkbook.local/schemas/artifact-budget-v1.json",
+  "title": "Inkbook artifact budget",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema", "version", "limits", "runtime"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema": { "const": "ARTIFACT_BUDGET_V1" },
+    "version": { "const": 1 },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mainRawBytes",
+        "mainGzipBytes",
+        "embeddedWorkerRawBytes",
+        "stylesRawBytes",
+        "stylesGzipBytes"
+      ],
+      "properties": {
+        "mainRawBytes": { "type": "integer", "minimum": 1 },
+        "mainGzipBytes": { "type": "integer", "minimum": 1 },
+        "embeddedWorkerRawBytes": { "type": "integer", "minimum": 1 },
+        "stylesRawBytes": { "type": "integer", "minimum": 1 },
+        "stylesGzipBytes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "moduleCssTopLevelEvaluationP95Ms",
+        "preOnloadSettledP95Ms",
+        "peakAdditionalHeapMiB"
+      ],
+      "properties": {
+        "moduleCssTopLevelEvaluationP95Ms": { "$ref": "#/$defs/twoCells" },
+        "preOnloadSettledP95Ms": { "$ref": "#/$defs/twoCells" },
+        "peakAdditionalHeapMiB": { "$ref": "#/$defs/twoCells" }
+      }
+    }
+  },
+  "$defs": {
+    "twoCells": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["desktopTablet", "androidPhone"],
+      "properties": {
+        "desktopTablet": { "type": "number", "exclusiveMinimum": 0 },
+        "androidPhone": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    }
+  }
+}

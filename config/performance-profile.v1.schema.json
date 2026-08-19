@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inkbook.local/schemas/performance-profile-v1.json",
+  "title": "Inkbook PerformanceProfileV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema",
+    "version",
+    "profileId",
+    "phase",
+    "status",
+    "commit",
+    "artifactBudget",
+    "artifact",
+    "fixtures",
+    "cells",
+    "procedure",
+    "rows"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schema": { "const": "PerformanceProfileV1" },
+    "version": { "const": 1 },
+    "profileId": { "type": "string", "minLength": 1 },
+    "phase": { "const": "P0" },
+    "status": { "enum": ["draft", "final"] },
+    "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "artifactBudget": { "const": "ARTIFACT_BUDGET_V1" },
+    "artifact": { "$ref": "#/$defs/artifact" },
+    "fixtures": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/fixture" }
+    },
+    "cells": {
+      "type": "array",
+      "minItems": 2,
+      "items": { "$ref": "#/$defs/cell" }
+    },
+    "procedure": { "$ref": "#/$defs/procedure" },
+    "rows": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/row" }
+    }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mainJsSha256",
+        "mainJsBytes",
+        "mainJsGzipBytes",
+        "embeddedWorkerSha256",
+        "embeddedWorkerBytes",
+        "stylesCssSha256",
+        "stylesCssBytes",
+        "stylesCssGzipBytes",
+        "packageChecksums"
+      ],
+      "properties": {
+        "mainJsSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "mainJsBytes": { "type": "integer", "minimum": 1 },
+        "mainJsGzipBytes": { "type": "integer", "minimum": 1 },
+        "embeddedWorkerSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "embeddedWorkerBytes": { "type": "integer", "minimum": 1 },
+        "stylesCssSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "stylesCssBytes": { "type": "integer", "minimum": 1 },
+        "stylesCssGzipBytes": { "type": "integer", "minimum": 1 },
+        "packageChecksums": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "generator", "digest"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "generator": { "type": "string", "minLength": 1 },
+        "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "platform",
+        "host",
+        "os",
+        "device",
+        "refreshRateHz",
+        "budgetClass"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "platform": { "type": "string", "minLength": 1 },
+        "host": { "type": "string", "minLength": 1 },
+        "os": { "type": "string", "minLength": 1 },
+        "device": { "type": "string", "minLength": 1 },
+        "refreshRateHz": {
+          "anyOf": [
+            { "type": "number", "exclusiveMinimum": 0 },
+            { "type": "null" }
+          ]
+        },
+        "budgetClass": { "enum": ["desktopTablet", "androidPhone"] }
+      }
+    },
+    "procedure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "warmups", "samples", "percentile", "steps"],
+      "properties": {
+        "version": { "type": "string", "minLength": 1 },
+        "warmups": { "type": "integer", "minimum": 5 },
+        "samples": { "type": "integer", "minimum": 100 },
+        "percentile": { "const": "nearest-rank" },
+        "steps": {
+          "type": "array",
+          "minItems": 3,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "metric",
+        "kind",
+        "unit",
+        "warmups",
+        "samples",
+        "thresholds"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^P0-[A-Z0-9-]+$" },
+        "metric": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["assertion", "deterministic", "runtime"] },
+        "unit": { "type": "string", "minLength": 1 },
+        "warmups": { "type": "integer", "minimum": 0 },
+        "samples": { "type": "integer", "minimum": 1 },
+        "thresholds": { "type": "object", "minProperties": 2 }
+      }
+    }
+  }
+}

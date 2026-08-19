@@ -12,6 +12,11 @@ Every deliverable and exit item has a stable phase ID and a Markdown checkbox. A
 - A phase is complete only when every `P<n>-D*` deliverable and every `P<n>-E*` exit item in that phase is checked.
 - A failed or no-longer-reproducible result resets the affected checkbox to `[ ]`.
 - Phase 0 requires the explicit manual desktop and Android review below after the automated probes pass. That review supplements rather than replaces automated evidence.
+- Before any phase implementation begins, the working plan MUST enumerate the complete ordered set of that phase's `P<n>-D*` and `P<n>-E*` IDs as individual plan items. Checked IDs remain visible as revalidation items, unchecked IDs remain implementation or evidence items, and manual evidence remains explicitly pending until the named user action occurs. Ranges, combined plan items, or phrases such as "all remaining items" do not satisfy this requirement.
+- The final report for a phase task MUST account for every ID from that complete set individually as `passed`, `still open`, `regressed`, or `blocked`, with the exact evidence or blocker. Missing an ID makes the phase report incomplete even when no code for that ID changed.
+- Each phase ID MUST occur in exactly one standalone bullet under `Exact implementation references` and exactly one standalone checkbox under either `Deliverables` or `Exit evidence`. Reference ranges and multi-ID bullets are forbidden.
+- A normative specification or accepted-ADR change that creates or changes implementation work MUST update this roadmap before implementation begins. Every such requirement MUST map to at least one explicit deliverable ID and at least one explicit exit-evidence ID, each with direct links to every owning normative section. If no existing items cover it completely, append new stable IDs and checkboxes. A change without both assignments is incomplete and MUST NOT be implemented or merged. Existing IDs are never renumbered, reused, or silently removed.
+- Phase IDs and phase names are planning metadata only. No source, test, configuration, script, fixture, artifact, or documentation file or directory name MAY contain a phase ID, phase number, or phase name. Existing Phase 0 paths are temporary debt owned by `P1-D7`; no new phase-named path may be introduced. Production modules, exported or runtime identifiers, command IDs, UI copy, CSS classes, storage keys, schemas, status messages, and release artifacts MUST use stable product or domain terminology from their introduction. Temporary probes, milestone flags, synthetic payloads, debug registrations, and migration scaffolds MUST have an explicit removal phase or be compile-time excluded from production. Roadmaps, decisions, evidence, and test descriptions MAY mention phase IDs in their content when necessary for traceability.
 
 ## Phase 0: Bootstrap and Host Feasibility
 
@@ -29,7 +34,8 @@ Every deliverable and exit item has a stable phase ID and a Markdown checkbox. A
 
 ### Exact implementation references
 
-- `P0-D1` and `P0-D2`: [Host Contract Sections 1 to 3](14-obsidian-host-contract.md#1-compatibility-baseline), [Quality Sections 1 to 3](09-quality-and-performance.md#1-code-quality-requirements), and [Toolchain Decision](../decisions/0002-toolchain-and-build.md#decision).
+- `P0-D1`: [Host Contract Sections 1 to 3](14-obsidian-host-contract.md#1-compatibility-baseline), [Quality Sections 1 to 3](09-quality-and-performance.md#1-code-quality-requirements), and [Toolchain Decision](../decisions/0002-toolchain-and-build.md#decision).
+- `P0-D2`: [Host Contract Sections 1 to 3](14-obsidian-host-contract.md#1-compatibility-baseline), [Quality Sections 1 to 3](09-quality-and-performance.md#1-code-quality-requirements), and [Toolchain Decision](../decisions/0002-toolchain-and-build.md#decision).
 - `P0-D3`: [GitHub and CI Sections 1 to 4 and 6](17-github-and-ci.md#1-repository) and [Testing Section 8.8](10-testing-and-acceptance.md#88-android-and-release).
 - `P0-D4`: [Testing Sections 1 and 7](10-testing-and-acceptance.md#1-test-layers) and [Quality Section 2.1](09-quality-and-performance.md#21-per-commit-ci).
 - `P0-D5`: [Architecture Sections 4 to 7](04-architecture.md#4-plugin-lifecycle), [Host Contract Sections 3 to 6](14-obsidian-host-contract.md#3-startup-ownership-and-disposal), and [Testing Sections 8.2, 8.3, and 8.5](10-testing-and-acceptance.md#82-startup-and-lifecycle).
@@ -37,8 +43,14 @@ Every deliverable and exit item has a stable phase ID and a Markdown checkbox. A
 - `P0-D7`: [Architecture Sections 6 and 9](04-architecture.md#6-editor-integration), [Operations Sections 1 and 4 to 6](16-operations-sessions-and-recovery.md#1-operation-identity-and-common-contract), and [Testing Sections 2.3, 3, and 8.4](10-testing-and-acceptance.md#23-unified-undo-and-redo).
 - `P0-D8`: [Architecture Section 3.7](04-architecture.md#37-worker-scheduler), [SVG Section 9](06-svg-rendering.md#9-worker-and-ui-framework-boundaries), [Host Contract Section 10](14-obsidian-host-contract.md#10-android-and-worker-compatibility), and [Testing Sections 6, 8.2, and 8.8](10-testing-and-acceptance.md#6-performance-acceptance).
 - `P0-D9`: [Sidecar Section 9](07-sidecar-persistence.md#9-recovery), [Operations Section 6](16-operations-sessions-and-recovery.md#6-recovery-records-and-store), [Host Contract Section 10](14-obsidian-host-contract.md#10-android-and-worker-compatibility), and [Testing Sections 3 and 8.8](10-testing-and-acceptance.md#3-persistence-and-fault-tests).
-- `P0-D10` and `P0-E7`: [Quality Sections 4 to 6](09-quality-and-performance.md#4-performance-workload), [Testing Sections 6 and 8.1](10-testing-and-acceptance.md#6-performance-acceptance), [Host Contract Sections 2 and 3](14-obsidian-host-contract.md#2-package-and-manifest), and [GitHub and CI Section 5](17-github-and-ci.md#5-performance-evidence).
-- `P0-E1` to `P0-E6`: [Quality Sections 2 and 3](09-quality-and-performance.md#2-required-quality-lanes), [Testing Sections 2.3, 3, and 8.1 to 8.8](10-testing-and-acceptance.md#23-unified-undo-and-redo), [Host Contract Sections 2, 10, and 11](14-obsidian-host-contract.md#2-package-and-manifest), and [GitHub and CI Sections 1, 3, and 4](17-github-and-ci.md#1-repository).
+- `P0-D10`: [Quality Sections 4 to 6](09-quality-and-performance.md#4-performance-workload), [Testing Sections 6 and 8.1](10-testing-and-acceptance.md#6-performance-acceptance), [Host Contract Sections 2 and 3](14-obsidian-host-contract.md#2-package-and-manifest), and [GitHub and CI Section 5](17-github-and-ci.md#5-performance-evidence).
+- `P0-E1`: [Quality Sections 2 and 3](09-quality-and-performance.md#2-required-quality-lanes), [Testing Sections 8.1 and 8.8](10-testing-and-acceptance.md#81-package-and-compatibility), [Host Contract Sections 2 and 11](14-obsidian-host-contract.md#2-package-and-manifest), and [GitHub and CI Sections 1, 3, and 4](17-github-and-ci.md#1-repository).
+- `P0-E2`: [Testing Sections 2.3, 3, and 8.4](10-testing-and-acceptance.md#23-unified-undo-and-redo), [Operations Sections 5 and 6](16-operations-sessions-and-recovery.md#5-host-history-effect-lifecycle), and [Host-History Decision](../decisions/0003-host-history-and-recovery-feasibility.md#decision).
+- `P0-E3`: [Testing Sections 8.2, 8.3, and 8.5](10-testing-and-acceptance.md#82-startup-and-lifecycle) and [Host Contract Sections 3 to 6](14-obsidian-host-contract.md#3-startup-ownership-and-disposal).
+- `P0-E4`: [Testing Sections 3, 8.2, and 8.8](10-testing-and-acceptance.md#3-persistence-and-fault-tests), [Host Contract Section 10](14-obsidian-host-contract.md#10-android-and-worker-compatibility), and [Operations Section 6](16-operations-sessions-and-recovery.md#6-recovery-records-and-store).
+- `P0-E5`: [Host-History Decision](../decisions/0003-host-history-and-recovery-feasibility.md#decision), [Testing Section 2.3](10-testing-and-acceptance.md#23-unified-undo-and-redo), and [Operations Sections 5 and 6](16-operations-sessions-and-recovery.md#5-host-history-effect-lifecycle).
+- `P0-E6`: [Testing Sections 2.3, 2.4, 2.10, and 8.2 to 8.8](10-testing-and-acceptance.md#23-unified-undo-and-redo), [Host Contract Sections 3 to 6 and 10](14-obsidian-host-contract.md#3-startup-ownership-and-disposal), and [Quality Section 2.2](09-quality-and-performance.md#22-phase-exit-validation).
+- `P0-E7`: [Quality Sections 4 to 6](09-quality-and-performance.md#4-performance-workload), [Testing Sections 6 and 8.1](10-testing-and-acceptance.md#6-performance-acceptance), [Host Contract Sections 2 and 3](14-obsidian-host-contract.md#2-package-and-manifest), and [GitHub and CI Section 5](17-github-and-ci.md#5-performance-evidence).
 
 ### Deliverables
 
@@ -47,11 +59,11 @@ Every deliverable and exit item has a stable phase ID and a Markdown checkbox. A
 - [x] **P0-D3:** Maintain the private GitHub repository, Dependabot, least-privilege base workflows, required checks, branch and tag rulesets, gitleaks updater, and draft-release foundation from [GitHub and CI](17-github-and-ci.md). The performance-evidence validator and artifact-budget release gate belong to P0-D10.
 - [x] **P0-D4:** Keep deterministic host fakes and smoke tests under `test/`; create additional test directories only with the real suites that use them.
 - [x] **P0-D5:** Build production-shaped attachment probes for Live Preview, Source, Reading View, split panes, deferred leaves, non-Markdown leaves, Bases, desktop pop-outs, layout readiness, lifecycle ownership, and unload.
-- [ ] **P0-D6:** Build the actual two-pointer zoom recognizer, secondary-button routing, plugin-element touch selection, native context-menu preservation, CodeMirror virtualization, native text selection, IME, and software-keyboard probes. Automated zoom, touch long-press context-menu, `Shift+F10`, stationary outside-tap deselection, and recovery-independent transient input-probe remediation passes; real-device re-verification remains pending.
+- [x] **P0-D6:** Build the actual two-pointer zoom recognizer, secondary-button routing, plugin-element touch selection, native context-menu preservation, CodeMirror virtualization, native text selection, IME, and software-keyboard probes. The second-contact reservation and current-sample direct-touch path pass deterministic coverage and were confirmed against the exact current production package on the named desktop touchscreen and Android device.
 - [x] **P0-D7:** Build one isolated invertible annotation-effect bridge in existing host history using bounded `HostEffectEnvelopeV1` handles to stable revision-free history entries, monotonic per-editor and per-epoch host transaction sequences with retained high-water marks, fresh revision-bound dispatches for Forward, Undo, and Redo, one owner-pane lease, epoch handoff, and no second history extension or keymap. Probe unload and re-enable while a host effect remains reachable: the plugin MUST either restore the complete actionable history state before accepting that effect or prove the effect unreachable and fail closed.
 - [x] **P0-D8:** Build a static worker payload inside `main.js` with launch, transfer, cancellation, crash, URL revocation, unavailable-worker fallback, and disposal probes.
 - [x] **P0-D9:** Build the transactional IndexedDB recovery probe with schema creation, atomic prepare and host-recorded transition, abort, quota, restart, corruption, cleanup, and disposal.
-- [ ] **P0-D10:** Freeze the Phase 0 `PerformanceProfileV1`, implement `RESOURCE_BUDGET_V1` accounting and `ARTIFACT_BUDGET_V1` checks, and bind every result to the exact production-bundle digest before the first Phase 0 performance measurement.
+- [ ] **P0-D10:** Freeze the Phase 0 `PerformanceProfileV1`, implement `RESOURCE_BUDGET_V1` accounting and `ARTIFACT_BUDGET_V1` checks, and bind every result to the exact production-bundle digest before the first Phase 0 performance measurement. Plugin-wide resource accounting and deterministic artifact gates pass; the profile remains an explicitly non-evidentiary draft until exact cell metadata is recorded before runtime measurement.
 
 ### Exit evidence
 
@@ -60,8 +72,10 @@ Every deliverable and exit item has a stable phase ID and a Markdown checkbox. A
 - [x] **P0-E3:** Each concrete Obsidian editor owns exactly one bounded ViewPlugin value; Reading View children and the one view overlay dispose without duplication.
 - [x] **P0-E4:** Worker and IndexedDB contracts pass on every supported environment. The unavailable-worker fallback is safe but does not substitute for a required worker-capable release environment.
 - [x] **P0-E5:** A reviewed `docs/decisions/0003-host-history-and-recovery-feasibility.md` records the proven public or guarded host boundary and exact unsupported cases.
-- [ ] **P0-E6:** After all automated Phase 0 evidence passes, the user installs the exact production package in dedicated desktop and Android test Vaults, records the bundle digest plus Obsidian, operating-system, hardware, and Android-device versions, and manually verifies enable, reload, disable, re-enable, Live Preview, Source, Reading View, split panes, mixed Markdown and annotation Undo or Redo order, annotation touch selection, native one-finger scroll, two-finger note zoom, software-keyboard entry, restart, and truthful fail-closed status.
-- [ ] **P0-E7:** Raw and compressed artifacts, embedded worker, cold module and CSS work, complete pre-load through `onload()`, peak heap, worker-resident ownership, and zero-balance disposal pass their exact Phase 0 profile on every supported cell.
+- [ ] **P0-E6:** After all automated Phase 0 evidence passes, the user installs the exact production package in dedicated desktop and Android test Vaults, records the bundle digest plus Obsidian, operating-system, hardware, and Android-device versions, and manually verifies enable, reload, disable, re-enable, Live Preview, Source, Reading View, split panes, mixed Markdown and annotation Undo or Redo order, annotation touch selection, native one-finger scroll, two-finger note zoom, software-keyboard entry, restart, and truthful fail-closed status. The complete functional review passed on the superseded `main.js` SHA-256 `5edec8b1b569e2147ec0089de1eccd756680397ac7cd22ff669529059742f9fc`; the instrumentation-only package SHA-256 `228a6f8d9531832915e7740f0c4c86f16c6085efc4fda990a6f1bee5da6cf2c4` requires exact-package revalidation on the recorded desktop and Android cells.
+- [ ] **P0-E7:** Raw and compressed artifacts, embedded worker, cold module and CSS work, complete pre-load through `onload()`, peak heap, worker-resident ownership, and zero-balance disposal pass their exact Phase 0 profile on every supported cell. Deterministic artifact limits and automated zero-balance disposal pass; cold host timing, peak heap, and real-cell runtime evidence remain unmeasured.
+
+After `P0-E6` and `P0-E7` evidence is archived, the cleanup is owned by `P1-D7` and verified by `P1-E5`. It does not occur before the required Phase 0 evidence is complete.
 
 If unified host history, transactional recovery, required view attachment, or Android worker launch cannot be proven, broad feature implementation stops. The architecture, supported modes, device matrix, or minimum Obsidian version must change explicitly before Phase 1.
 
@@ -74,6 +88,7 @@ If unified host history, transactional recovery, required view attachment, or An
 - [Sidecar Persistence](07-sidecar-persistence.md), schema and limits only
 - [Quality and Performance](09-quality-and-performance.md)
 - [Testing and Acceptance](10-testing-and-acceptance.md)
+- [Obsidian Host Contract](14-obsidian-host-contract.md), production package, lifecycle, and user-interface boundaries only
 - [Domain Model and Codecs](15-domain-model-and-codecs.md)
 - [Operations, Sessions, and Recovery](16-operations-sessions-and-recovery.md)
 
@@ -81,10 +96,16 @@ If unified host history, transactional recovery, required view attachment, or An
 
 - `P1-D1`: [Domain Sections 1 to 6](15-domain-model-and-codecs.md#1-scalar-and-identity-types) and [Anchors Section 2](05-anchors-and-layout.md#2-binding-types).
 - `P1-D2`: [Domain Sections 8 and 9](15-domain-model-and-codecs.md#8-delta-varint-v1-wire-format), [Sidecar Sections 3, 4, and 10](07-sidecar-persistence.md#3-top-level-schema), and [Testing Sections 3 and 4](10-testing-and-acceptance.md#3-persistence-and-fault-tests).
-- `P1-D3` and `P1-D4`: [Operations Sections 1 to 6](16-operations-sessions-and-recovery.md#1-operation-identity-and-common-contract), [Source Coordination Sections 1 to 3](18-source-coordination-and-persistence-operations.md#1-source-offset-maps-and-multi-pane-admission), and [Testing Section 3](10-testing-and-acceptance.md#3-persistence-and-fault-tests).
+- `P1-D3`: [Operations Sections 1 to 6](16-operations-sessions-and-recovery.md#1-operation-identity-and-common-contract), [Source Coordination Sections 1 to 3](18-source-coordination-and-persistence-operations.md#1-source-offset-maps-and-multi-pane-admission), and [Testing Section 3](10-testing-and-acceptance.md#3-persistence-and-fault-tests).
+- `P1-D4`: [Operations Sections 1 to 6](16-operations-sessions-and-recovery.md#1-operation-identity-and-common-contract), [Source Coordination Sections 1 to 3](18-source-coordination-and-persistence-operations.md#1-source-offset-maps-and-multi-pane-admission), and [Testing Section 3](10-testing-and-acceptance.md#3-persistence-and-fault-tests).
 - `P1-D5`: [Operations Section 6](16-operations-sessions-and-recovery.md#6-recovery-records-and-store), [Sidecar Section 9](07-sidecar-persistence.md#9-recovery), and [Testing Section 3](10-testing-and-acceptance.md#3-persistence-and-fault-tests).
 - `P1-D6`: [Domain Sections 4 and 6](15-domain-model-and-codecs.md#4-object-ports-and-attached-linear-endpoints), [SVG Section 4.1](06-svg-rendering.md#41-selection-geometry), and [Testing Sections 2.11, 2.12, and 4](10-testing-and-acceptance.md#211-lines-tables-and-axes).
-- `P1-E1` to `P1-E4`: [Architecture Sections 1 and 2](04-architecture.md#1-architectural-goals), [Quality Sections 2.2, 3, 4, and 6](09-quality-and-performance.md#22-phase-exit-validation), and [Testing Sections 3, 4, 6, and 7](10-testing-and-acceptance.md#3-persistence-and-fault-tests).
+- `P1-D7`: [Host Contract Sections 2, 3, and 7](14-obsidian-host-contract.md#2-package-and-manifest), [Quality Sections 2.1, 3, 4, and 5](09-quality-and-performance.md#21-per-commit-ci), and [Testing Sections 7, 8.1, 8.2, and 8.6](10-testing-and-acceptance.md#7-coverage-and-test-completeness).
+- `P1-E1`: [Quality Sections 2.2 and 3](09-quality-and-performance.md#22-phase-exit-validation) and [Testing Sections 3, 4, and 7](10-testing-and-acceptance.md#3-persistence-and-fault-tests).
+- `P1-E2`: [Architecture Sections 1 and 2](04-architecture.md#1-architectural-goals), [Quality Section 3](09-quality-and-performance.md#3-architecture-gates), and [Testing Sections 4 and 7](10-testing-and-acceptance.md#4-geometry-and-rendering-tests).
+- `P1-E3`: [Domain Sections 6 and 9](15-domain-model-and-codecs.md#6-groups-object-order-and-scene-state), [Quality Sections 4 to 6](09-quality-and-performance.md#4-performance-workload), and [Testing Sections 4 and 6](10-testing-and-acceptance.md#4-geometry-and-rendering-tests).
+- `P1-E4`: [Operations Section 6](16-operations-sessions-and-recovery.md#6-recovery-records-and-store), [Quality Section 6](09-quality-and-performance.md#6-resource-efficiency), and [Testing Section 3](10-testing-and-acceptance.md#3-persistence-and-fault-tests).
+- `P1-E5`: [Host Contract Sections 2, 3, and 7](14-obsidian-host-contract.md#2-package-and-manifest), [Quality Sections 2.1, 3, and 5](09-quality-and-performance.md#21-per-commit-ci), and [Testing Sections 7, 8.1, 8.2, and 8.6](10-testing-and-acceptance.md#7-coverage-and-test-completeness).
 
 ### Deliverables
 
@@ -94,6 +115,7 @@ If unified host history, transactional recovery, required view attachment, or An
 - [ ] **P1-D4:** Implement the pure command-admission function, closed errors, session snapshot types, host-effect lifecycle, recovery attempts, source-checkpoint records, and relocation or removal record codecs.
 - [ ] **P1-D5:** Turn the Phase 0 IndexedDB probe into the production `RecoveryStore` adapter with transactional compare-and-swap, exact byte accounting, bounded cleanup, corruption handling, and idempotent disposal.
 - [ ] **P1-D6:** Implement pure selection-model derivation and object-port resolution for attached Line and Arrow endpoints without DOM or Obsidian imports.
+- [ ] **P1-D7:** Retire the Phase 0 probe composition root after its evidence is archived. Rename every existing phase-named source, test, configuration, script, fixture, and directory path to a stable functional or domain name, update all imports and mirrored test paths, and prohibit replacement aliases with phase names. Remove probe commands, Notices, overlay markers, context menus, probe CSS, synthetic worker payloads, and user-visible probe status from the production bundle. Move reusable history, recovery, worker, lifecycle, resource-accounting, and gesture foundations into neutrally named production modules and preserve their automated regression tests under neutral paths. Any manual harness still needed MUST be compile-time gated to a default-off non-release diagnostics build, be tree-shaken from production, and use neutral Inkbook diagnostics naming.
 
 ### Exit evidence
 
@@ -101,6 +123,7 @@ If unified host history, transactional recovery, required view attachment, or An
 - [ ] **P1-E2:** Every public domain type is deeply immutable and its import direction passes the architecture checker.
 - [ ] **P1-E3:** Deterministic 5,000- and 10,000-element scene generators produce schema-valid canonical scenes whose future sidecar encoding fits all simultaneous V1 limits, while one-element and one-Group publications path-copy only affected runtime-store branches and allocate no flat scene-array spine.
 - [ ] **P1-E4:** Repeated recovery cycles remain within 8 MiB per note and exact cleanup leaves no actionable host handle without its operation.
+- [ ] **P1-E5:** A repository-wide path scan finds no phase-named file or directory in source, tests, configuration, scripts, fixtures, documentation, or artifacts. The exact production package and an installed production build expose no probe command, Notice, overlay, menu, style, synthetic payload, debug registration, or Phase 0 identifier. Artifact scanning proves release exclusion, optional diagnostics-build tests prove the compile-time gate, reusable subsystem regressions still pass from their neutral paths, and unload leaves every retained foundation at zero owned resources.
 
 Vault writes, SVG, real pointer input, binding inference, and product UI remain outside this phase.
 
@@ -123,10 +146,15 @@ Vault writes, SVG, real pointer input, binding inference, and product UI remain 
 
 - `P2-D1`: [Architecture Section 5](04-architecture.md#5-note-sessions-and-multiple-views), [Operations Section 4](16-operations-sessions-and-recovery.md#4-note-session-state-and-admission), and [Testing Sections 2.3, 3, 8.2, and 8.3](10-testing-and-acceptance.md#23-unified-undo-and-redo).
 - `P2-D2`: [Anchors Section 4](05-anchors-and-layout.md#4-markdown-edits-and-reflow), [Source Coordination Section 1](18-source-coordination-and-persistence-operations.md#1-source-offset-maps-and-multi-pane-admission), [Architecture Section 9](04-architecture.md#9-publication-order), and [Testing Sections 2.6 and 3](10-testing-and-acceptance.md#26-anchor-reflow).
-- `P2-D3` and `P2-D4`: [Sidecar Sections 1 to 10](07-sidecar-persistence.md#1-storage-decision), [Source Coordination Sections 2 and 3](18-source-coordination-and-persistence-operations.md#2-initial-sidecar-and-save-acknowledgement), and [Testing Sections 2.1, 2.2, 3, and 8.7](10-testing-and-acceptance.md#21-native-markdown).
+- `P2-D3`: [Sidecar Sections 1 to 6 and 8 to 10](07-sidecar-persistence.md#1-storage-decision), [Source Coordination Section 2](18-source-coordination-and-persistence-operations.md#2-initial-sidecar-and-save-acknowledgement), and [Testing Sections 2.1, 2.2, 3, and 8.7](10-testing-and-acceptance.md#21-native-markdown).
+- `P2-D4`: [Sidecar Sections 6 to 8](07-sidecar-persistence.md#6-conflict-handling), [Source Coordination Section 3](18-source-coordination-and-persistence-operations.md#3-relocation-and-removal-records), and [Testing Sections 3 and 8.7](10-testing-and-acceptance.md#3-persistence-and-fault-tests).
 - `P2-D5`: [Settings Section 6](08-settings.md#6-storage-and-recovery), [Host Contract Sections 8 and 9](14-obsidian-host-contract.md#8-settings-contract), and [Testing Section 8.7](10-testing-and-acceptance.md#87-settings-and-vault).
 - `P2-D6`: [Operations Sections 3 and 4](16-operations-sessions-and-recovery.md#3-revision-rules-and-command-results), [Quality Section 7.2](09-quality-and-performance.md#72-verification-and-data-minimization), and [Testing Sections 3 and 5](10-testing-and-acceptance.md#3-persistence-and-fault-tests).
-- `P2-E1` to `P2-E4`: [Testing Sections 3 and 8.7](10-testing-and-acceptance.md#3-persistence-and-fault-tests). `P2-E5`: [Quality Sections 5 and 6](09-quality-and-performance.md#5-performance-gates) and [Testing Section 6](10-testing-and-acceptance.md#6-performance-acceptance).
+- `P2-E1`: [Testing Section 3](10-testing-and-acceptance.md#3-persistence-and-fault-tests) and [Testing Section 8.7](10-testing-and-acceptance.md#87-settings-and-vault).
+- `P2-E2`: [Testing Section 2.2](10-testing-and-acceptance.md#22-first-annotation), [Sidecar Sections 2 and 5](07-sidecar-persistence.md#2-yaml-presence-marker), and [Source Coordination Section 2](18-source-coordination-and-persistence-operations.md#2-initial-sidecar-and-save-acknowledgement).
+- `P2-E3`: [Testing Sections 2.6 and 3](10-testing-and-acceptance.md#26-anchor-reflow), [Anchors Section 4](05-anchors-and-layout.md#4-markdown-edits-and-reflow), and [Source Coordination Section 1](18-source-coordination-and-persistence-operations.md#1-source-offset-maps-and-multi-pane-admission).
+- `P2-E4`: [Testing Sections 3 and 8.7](10-testing-and-acceptance.md#3-persistence-and-fault-tests), [Sidecar Sections 6 to 8](07-sidecar-persistence.md#6-conflict-handling), and [Source Coordination Section 3](18-source-coordination-and-persistence-operations.md#3-relocation-and-removal-records).
+- `P2-E5`: [Quality Sections 5 and 6](09-quality-and-performance.md#5-performance-gates) and [Testing Section 6](10-testing-and-acceptance.md#6-performance-acceptance).
 
 ### Deliverables
 
@@ -167,7 +195,10 @@ Vault writes, SVG, real pointer input, binding inference, and product UI remain 
 - `P3-D3`: [Interaction Section 2](02-interaction-and-tools.md#2-tool-set), [SVG Sections 3, 7, 9, and 11](06-svg-rendering.md#3-stroke-representation), and [Testing Sections 2.4, 2.5, 4, and 6](10-testing-and-acceptance.md#24-touch-routing).
 - `P3-D4`: [Architecture Section 9](04-architecture.md#9-publication-order), [Sidecar Sections 5 and 9](07-sidecar-persistence.md#5-save-protocol), [Operations Sections 1 to 6](16-operations-sessions-and-recovery.md#1-operation-identity-and-common-contract), and [Testing Sections 2.2, 2.3, and 3](10-testing-and-acceptance.md#22-first-annotation).
 - `P3-D5`: [Host Contract Section 5](14-obsidian-host-contract.md#5-editor-and-codemirror-contract), [Settings Section 8](08-settings.md#8-commands-and-hotkeys), and [Testing Section 8.4](10-testing-and-acceptance.md#84-editor-integration).
-- `P3-E1` to `P3-E4`: [Testing Sections 2.3 to 2.5, 3, 4, 6, and 8.8](10-testing-and-acceptance.md#23-unified-undo-and-redo) and [Quality Sections 4 to 6](09-quality-and-performance.md#4-performance-workload).
+- `P3-E1`: [Testing Sections 2.3 to 2.5, 3, 4, and 8.8](10-testing-and-acceptance.md#23-unified-undo-and-redo) and [Host Contract Sections 5 and 10](14-obsidian-host-contract.md#5-editor-and-codemirror-contract).
+- `P3-E2`: [Testing Sections 4 and 6](10-testing-and-acceptance.md#4-geometry-and-rendering-tests), [SVG Section 9](06-svg-rendering.md#9-worker-and-ui-framework-boundaries), and [Quality Sections 4 and 5](09-quality-and-performance.md#4-performance-workload).
+- `P3-E3`: [Testing Section 6](10-testing-and-acceptance.md#6-performance-acceptance) and [Quality Sections 4 to 6](09-quality-and-performance.md#4-performance-workload).
+- `P3-E4`: [Testing Sections 4 and 6](10-testing-and-acceptance.md#4-geometry-and-rendering-tests), [SVG Sections 5 and 6](06-svg-rendering.md#5-viewport-culling), and [Quality Sections 4 to 6](09-quality-and-performance.md#4-performance-workload).
 
 ### Deliverables
 
@@ -206,7 +237,11 @@ Vault writes, SVG, real pointer input, binding inference, and product UI remain 
 - `P4-D3`: [Anchors Sections 4, 6, and 8](05-anchors-and-layout.md#4-markdown-edits-and-reflow), [SVG Sections 2 and 8](06-svg-rendering.md#2-scene-layers), and [Testing Sections 2.6, 2.7, and 4](10-testing-and-acceptance.md#26-anchor-reflow).
 - `P4-D4`: [Anchors Sections 2.2 and 5](05-anchors-and-layout.md#22-object-attachments), [Operations Section 2](16-operations-sessions-and-recovery.md#2-closed-annotation-operation-union), and [Testing Sections 2.6, 2.7, 2.11, and 3](10-testing-and-acceptance.md#26-anchor-reflow).
 - `P4-D5`: [Architecture Sections 5 and 8](04-architecture.md#5-note-sessions-and-multiple-views), [Anchors Sections 4 and 6](05-anchors-and-layout.md#4-markdown-edits-and-reflow), and [Testing Section 2.7](10-testing-and-acceptance.md#27-automatic-binding-and-variable-width).
-- `P4-E1` to `P4-E4`: [Testing Sections 2.6, 2.7, 3, and 4](10-testing-and-acceptance.md#26-anchor-reflow). `P4-E5`: [Quality Section 5](09-quality-and-performance.md#5-performance-gates) and [Testing Section 6](10-testing-and-acceptance.md#6-performance-acceptance).
+- `P4-E1`: [Testing Sections 2.6, 2.7, 3, and 4](10-testing-and-acceptance.md#26-anchor-reflow) and [Anchors Sections 2.1 and 4](05-anchors-and-layout.md#21-anchor-canonicalization-v1).
+- `P4-E2`: [Testing Section 2.7](10-testing-and-acceptance.md#27-automatic-binding-and-variable-width), [Architecture Sections 5 and 8](04-architecture.md#5-note-sessions-and-multiple-views), and [Anchors Sections 4 and 6](05-anchors-and-layout.md#4-markdown-edits-and-reflow).
+- `P4-E3`: [Testing Sections 2.6, 2.7, and 3](10-testing-and-acceptance.md#26-anchor-reflow), [Anchors Sections 3 to 5 and 9](05-anchors-and-layout.md#3-initial-binding-inference), and [Operations Section 2](16-operations-sessions-and-recovery.md#2-closed-annotation-operation-union).
+- `P4-E4`: [Testing Sections 2.6, 2.11, 3, and 4](10-testing-and-acceptance.md#26-anchor-reflow), [Anchors Sections 2.2 and 6](05-anchors-and-layout.md#22-object-attachments), and [Domain Section 4](15-domain-model-and-codecs.md#4-object-ports-and-attached-linear-endpoints).
+- `P4-E5`: [Quality Section 5](09-quality-and-performance.md#5-performance-gates) and [Testing Section 6](10-testing-and-acceptance.md#6-performance-acceptance).
 
 ### Deliverables
 
@@ -240,11 +275,15 @@ Vault writes, SVG, real pointer input, binding inference, and product UI remain 
 
 ### Exact implementation references
 
-- `P5-D1` to `P5-D3`: [Toolbar Sections 1 to 7](03-toolbar-and-stylebar.md#1-surface-model), [Interaction Sections 2, 3, and 7](02-interaction-and-tools.md#2-tool-set), [Settings Sections 2 to 5](08-settings.md#2-general), and [Testing Sections 2.9 and 5](10-testing-and-acceptance.md#29-toolbar-and-stylebar).
+- `P5-D1`: [Toolbar Sections 1 to 4](03-toolbar-and-stylebar.md#1-surface-model), [Settings Section 4](08-settings.md#4-tool-defaults), and [Testing Sections 2.9 and 5](10-testing-and-acceptance.md#29-toolbar-and-stylebar).
+- `P5-D2`: [Toolbar Sections 1 to 3 and 5 to 7](03-toolbar-and-stylebar.md#1-surface-model), [Settings Sections 2 and 2.2](08-settings.md#2-general), and [Testing Sections 2.9 and 5](10-testing-and-acceptance.md#29-toolbar-and-stylebar).
+- `P5-D3`: [Toolbar Sections 2 to 4](03-toolbar-and-stylebar.md#2-toolbar-contents), [Interaction Sections 2, 3, and 7](02-interaction-and-tools.md#2-tool-set), [Settings Sections 3 to 5](08-settings.md#3-input-and-stylus), and [Testing Sections 2.9 and 5](10-testing-and-acceptance.md#29-toolbar-and-stylebar).
 - `P5-D4`: [Host Contract Section 7](14-obsidian-host-contract.md#7-host-native-user-interface), [Settings Section 8](08-settings.md#8-commands-and-hotkeys), and [Testing Sections 2.9, 5, and 8.6](10-testing-and-acceptance.md#29-toolbar-and-stylebar).
 - `P5-D5`: [Settings Sections 1 to 9](08-settings.md#1-settings-principles), [Host Contract Section 8](14-obsidian-host-contract.md#8-settings-contract), and [Testing Section 8.7](10-testing-and-acceptance.md#87-settings-and-vault).
-- `P5-E1`: [Testing Sections 2.9, 5, 8.6, and 8.7](10-testing-and-acceptance.md#29-toolbar-and-stylebar). `P5-E2`: [Quality Section 5](09-quality-and-performance.md#5-performance-gates) and [Testing Section 6](10-testing-and-acceptance.md#6-performance-acceptance).
-- `P5-E3`: [Testing Section 8.7](10-testing-and-acceptance.md#87-settings-and-vault). `P5-E4`: [Toolbar Section 8](03-toolbar-and-stylebar.md#8-mockup-contract) and [Toolbar Mockup Non-Goals](12-toolbar-mockup.md#non-goals).
+- `P5-E1`: [Testing Sections 2.9, 5, 8.6, and 8.7](10-testing-and-acceptance.md#29-toolbar-and-stylebar).
+- `P5-E2`: [Quality Section 5](09-quality-and-performance.md#5-performance-gates) and [Testing Section 6](10-testing-and-acceptance.md#6-performance-acceptance).
+- `P5-E3`: [Testing Section 8.7](10-testing-and-acceptance.md#87-settings-and-vault).
+- `P5-E4`: [Toolbar Section 8](03-toolbar-and-stylebar.md#8-mockup-contract) and [Toolbar Mockup Non-Goals](12-toolbar-mockup.md#non-goals).
 
 ### Deliverables
 
@@ -278,10 +317,14 @@ Vault writes, SVG, real pointer input, binding inference, and product UI remain 
 ### Exact implementation references
 
 - `P6-D1`: [Interaction Section 2.3](02-interaction-and-tools.md#23-tool-specific-behavior), [Domain Sections 3 to 5](15-domain-model-and-codecs.md#3-geometry-records), [SVG Sections 4 and 6](06-svg-rendering.md#4-shapes-and-construction-objects), and [Testing Sections 2.11, 2.12, and 4](10-testing-and-acceptance.md#211-lines-tables-and-axes).
-- `P6-D2` and `P6-D3`: [Product Scope Section 2.2](01-product-scope.md#22-construction-objects), [Interaction Section 2.3](02-interaction-and-tools.md#23-tool-specific-behavior), [Toolbar Section 4.6](03-toolbar-and-stylebar.md#46-axes-and-tables), [Domain Sections 3 and 5](15-domain-model-and-codecs.md#3-geometry-records), and [Testing Section 2.11](10-testing-and-acceptance.md#211-lines-tables-and-axes).
+- `P6-D2`: [Product Scope Section 2.2](01-product-scope.md#22-construction-objects), [Interaction Section 2.3](02-interaction-and-tools.md#23-tool-specific-behavior), [Toolbar Section 4.6](03-toolbar-and-stylebar.md#46-axes-and-tables), [Domain Sections 3 and 5](15-domain-model-and-codecs.md#3-geometry-records), and [Testing Section 2.11](10-testing-and-acceptance.md#211-lines-tables-and-axes).
+- `P6-D3`: [Product Scope Section 2.2](01-product-scope.md#22-construction-objects), [Interaction Section 2.3](02-interaction-and-tools.md#23-tool-specific-behavior), [Toolbar Section 4.6](03-toolbar-and-stylebar.md#46-axes-and-tables), [Domain Sections 3 and 5](15-domain-model-and-codecs.md#3-geometry-records), and [Testing Section 2.11](10-testing-and-acceptance.md#211-lines-tables-and-axes).
 - `P6-D4`: [Interaction Sections 3 to 5](02-interaction-and-tools.md#3-selection-and-manipulation), [Domain Sections 4, 6, and 7](15-domain-model-and-codecs.md#4-object-ports-and-attached-linear-endpoints), [Operations Section 2](16-operations-sessions-and-recovery.md#2-closed-annotation-operation-union), and [Testing Sections 2.11, 2.12, 3, 4, and 5](10-testing-and-acceptance.md#211-lines-tables-and-axes).
 - `P6-D5`: [Toolbar Sections 2 to 4](03-toolbar-and-stylebar.md#2-toolbar-contents), [SVG Section 9](06-svg-rendering.md#9-worker-and-ui-framework-boundaries), and [Testing Sections 2.9 and 6](10-testing-and-acceptance.md#29-toolbar-and-stylebar).
-- `P6-E1` to `P6-E3`: [Testing Sections 2.11, 2.12, 3, and 4](10-testing-and-acceptance.md#211-lines-tables-and-axes). `P6-E4`: [Quality Section 5](09-quality-and-performance.md#5-performance-gates) and [Testing Section 6](10-testing-and-acceptance.md#6-performance-acceptance).
+- `P6-E1`: [Testing Sections 2.11, 2.12, 3, 4, and 5](10-testing-and-acceptance.md#211-lines-tables-and-axes) and [Interaction Sections 2 and 3](02-interaction-and-tools.md#2-tool-set).
+- `P6-E2`: [Testing Sections 2.11, 2.12, 3, and 4](10-testing-and-acceptance.md#211-lines-tables-and-axes), [Anchors Section 2.2](05-anchors-and-layout.md#22-object-attachments), and [Domain Section 4](15-domain-model-and-codecs.md#4-object-ports-and-attached-linear-endpoints).
+- `P6-E3`: [Testing Sections 2.11, 2.12, 3, and 4](10-testing-and-acceptance.md#211-lines-tables-and-axes), [Domain Sections 3, 5, and 6](15-domain-model-and-codecs.md#3-geometry-records), and [Operations Section 2](16-operations-sessions-and-recovery.md#2-closed-annotation-operation-union).
+- `P6-E4`: [Quality Section 5](09-quality-and-performance.md#5-performance-gates) and [Testing Section 6](10-testing-and-acceptance.md#6-performance-acceptance).
 
 ### Deliverables
 
@@ -319,7 +362,10 @@ Vault writes, SVG, real pointer input, binding inference, and product UI remain 
 - `P7-D2`: [Interaction Section 6](02-interaction-and-tools.md#6-whole-note-zoom), [Anchors Section 9](05-anchors-and-layout.md#9-zoom-and-layout), [Settings Section 5](08-settings.md#5-note-appearance-and-zoom), and [Testing Section 2.10](10-testing-and-acceptance.md#210-zoom).
 - `P7-D3`: [Architecture Section 7](04-architecture.md#7-reading-view-integration), [Anchors Section 8](05-anchors-and-layout.md#8-reading-view-resolution), [Host Contract Section 6](14-obsidian-host-contract.md#6-reading-view-contract), and [Testing Sections 8.3 and 8.5](10-testing-and-acceptance.md#83-workspace-and-views).
 - `P7-D4`: [Architecture Sections 4 and 8](04-architecture.md#4-plugin-lifecycle), [Host Contract Sections 3 and 4](14-obsidian-host-contract.md#3-startup-ownership-and-disposal), and [Testing Sections 2.8 and 8.2 to 8.5](10-testing-and-acceptance.md#28-background-alignment).
-- `P7-E1` to `P7-E3`: [Testing Sections 2.7, 2.8, 2.10, and 8.5](10-testing-and-acceptance.md#27-automatic-binding-and-variable-width). `P7-E4`: [Quality Section 5](09-quality-and-performance.md#5-performance-gates) and [Testing Section 6](10-testing-and-acceptance.md#6-performance-acceptance).
+- `P7-E1`: [Testing Sections 2.7, 2.8, and 2.10](10-testing-and-acceptance.md#27-automatic-binding-and-variable-width), [Anchors Sections 7 and 9](05-anchors-and-layout.md#7-background-alignment), and [Settings Section 5](08-settings.md#5-note-appearance-and-zoom).
+- `P7-E2`: [Testing Sections 2.8 and 8.5](10-testing-and-acceptance.md#28-background-alignment), [Architecture Section 7](04-architecture.md#7-reading-view-integration), and [Host Contract Section 6](14-obsidian-host-contract.md#6-reading-view-contract).
+- `P7-E3`: [Testing Section 2.10](10-testing-and-acceptance.md#210-zoom), [Anchors Section 9](05-anchors-and-layout.md#9-zoom-and-layout), and [Interaction Section 6](02-interaction-and-tools.md#6-whole-note-zoom).
+- `P7-E4`: [Quality Section 5](09-quality-and-performance.md#5-performance-gates) and [Testing Section 6](10-testing-and-acceptance.md#6-performance-acceptance).
 
 ### Deliverables
 
@@ -343,11 +389,17 @@ All documents in the [Specification Index](00-readme.md) and every accepted ADR 
 
 ### Exact implementation references
 
-- `P8-D1` and `P8-D2`: [Quality Sections 2.3, 4, and 5](09-quality-and-performance.md#23-release-validation) and [Testing Sections 6 to 8](10-testing-and-acceptance.md#6-performance-acceptance).
+- `P8-D1`: [Quality Sections 2.3, 4, and 5](09-quality-and-performance.md#23-release-validation) and [Testing Sections 6 and 7](10-testing-and-acceptance.md#6-performance-acceptance).
+- `P8-D2`: [Quality Sections 2.3, 4, and 5](09-quality-and-performance.md#23-release-validation), [Testing Sections 6 to 8](10-testing-and-acceptance.md#6-performance-acceptance), and [GitHub and CI Section 5](17-github-and-ci.md#5-performance-evidence).
 - `P8-D3`: [Quality Sections 7 to 10](09-quality-and-performance.md#7-security-and-privacy) and [Testing Sections 5, 7, and 8](10-testing-and-acceptance.md#5-accessibility-tests).
 - `P8-D4`: [Quality Sections 4 to 6](09-quality-and-performance.md#4-performance-workload) and [Testing Section 6](10-testing-and-acceptance.md#6-performance-acceptance).
 - `P8-D5`: [Host Contract Sections 2 and 11](14-obsidian-host-contract.md#2-package-and-manifest), [GitHub and CI Sections 3 to 5](17-github-and-ci.md#3-workflows), and [Testing Sections 8.1 and 8.8](10-testing-and-acceptance.md#81-package-and-compatibility).
-- `P8-E1` to `P8-E4`: [Testing Section 7](10-testing-and-acceptance.md#7-coverage-and-test-completeness), [Quality Sections 7 to 10](09-quality-and-performance.md#7-security-and-privacy), [Host Contract Sections 11 and 12](14-obsidian-host-contract.md#11-public-release-and-community-directory), and [GitHub and CI Sections 3 and 4](17-github-and-ci.md#3-workflows).
+- `P8-D6`: [Quality Sections 1 to 3, 6, and 10](09-quality-and-performance.md#1-code-quality-requirements), [Host Contract Sections 2, 3, 7, and 11](14-obsidian-host-contract.md#2-package-and-manifest), and [Testing Sections 7, 8.1, 8.2, and 8.6](10-testing-and-acceptance.md#7-coverage-and-test-completeness).
+- `P8-E1`: [Testing Section 7](10-testing-and-acceptance.md#7-coverage-and-test-completeness) and [Quality Section 10](09-quality-and-performance.md#10-release-definition-of-done).
+- `P8-E2`: [Quality Sections 5 to 10](09-quality-and-performance.md#5-performance-gates), [Testing Sections 3 to 8](10-testing-and-acceptance.md#3-persistence-and-fault-tests), and [Host Contract Section 12](14-obsidian-host-contract.md#12-verification-ownership).
+- `P8-E3`: [Quality Sections 7 to 10](09-quality-and-performance.md#7-security-and-privacy), [Testing Section 7](10-testing-and-acceptance.md#7-coverage-and-test-completeness), and [Host Contract Section 12](14-obsidian-host-contract.md#12-verification-ownership).
+- `P8-E4`: [Host Contract Section 11](14-obsidian-host-contract.md#11-public-release-and-community-directory), [GitHub and CI Sections 3 and 4](17-github-and-ci.md#3-workflows), and [Testing Section 8.8](10-testing-and-acceptance.md#88-android-and-release).
+- `P8-E5`: [Quality Sections 2.3, 3, 6, and 10](09-quality-and-performance.md#23-release-validation), [Host Contract Sections 2, 3, 7, and 11](14-obsidian-host-contract.md#2-package-and-manifest), and [Testing Sections 7, 8.1, 8.2, and 8.6](10-testing-and-acceptance.md#7-coverage-and-test-completeness).
 
 ### Deliverables
 
@@ -356,6 +408,7 @@ All documents in the [Specification Index](00-readme.md) and every accepted ADR 
 - [ ] **P8-D3:** Complete WCAG 2.2 AA manual review, security abuse review, dependency audit, license review, privacy and legal-applicability assessment, and 50-cycle lifecycle leak checks.
 - [ ] **P8-D4:** Pass every 5,000-element minimum-capacity and 10,000-element stress workflow, including open, mutation readiness, draw, select, lasso, resize, Table, axes, reflow, save, conflict, recovery, Undo or Redo, unload, paint, dropped frames, and memory.
 - [ ] **P8-D5:** Finalize public `README.md`, compatible `LICENSE`, real publisher metadata, accurate local-data and sidecar disclosures, Community policy evidence, manifest, package, `versions.json` when required, tag, draft release, and the three loadable artifacts.
+- [ ] **P8-D6:** Complete a final productization pass over the complete repository and production dependency graph. Remove every phase-named file and directory, obsolete probe, synthetic payload, temporary command or UI, milestone or phase flag, debug registration, temporary migration scaffold, dead adapter, and temporary re-export. Preserve only compatibility adapters and data migrations explicitly required by the supported host and schema contracts, under stable product or domain names. A diagnostics capability remains only when it is an explicitly specified product feature; all other developer harnesses are compile-time excluded from the release artifact.
 
 ### Exit evidence
 
@@ -363,3 +416,4 @@ All documents in the [Specification Index](00-readme.md) and every accepted ADR 
 - [ ] **P8-E2:** No unresolved critical or high security finding, data-loss case, stale conflict, Android input regression, accessibility blocker, persistent resource leak, uncalibrated critical path, or failed quality gate remains.
 - [ ] **P8-E3:** The release report names changes, exact checks and results, checks not executed with reasons, compatibility cells, residual risks, uncertainty, and the factual legal-applicability assessment.
 - [ ] **P8-E4:** A draft release is reviewed manually before publication. Commit, push, tag, and publication remain explicit user-authorized actions.
+- [ ] **P8-E5:** A repository-wide file and directory path scan, static source-graph checks, dead-code checks, exact-artifact string and registration scans, and an installed-production-package review prove that no phase-named path and no phase, probe, milestone, synthetic, temporary-debug, or migration-scaffold residue remains reachable or visible in production. Commands, menus, Notices, styles, storage, and diagnostics expose only specified product behavior, and unload returns every production resource owner to zero balance.

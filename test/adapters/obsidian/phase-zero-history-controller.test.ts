@@ -9,6 +9,11 @@ import { describe, expect, it } from "vitest";
 
 import { PhaseZeroHistoryController } from "../../../src/adapters/obsidian/phase-zero-history-controller";
 import {
+  RESOURCE_BUDGET_V1,
+  RESOURCE_CATEGORIES_V1,
+  ResourceCoordinatorV1,
+} from "../../../src/application/resource-coordinator";
+import {
   probeIndexedDbRecovery,
   type RecoveryIndexedDbStore,
 } from "../../../src/adapters/recovery-indexed-db";
@@ -18,13 +23,17 @@ const NOTE = {
   markdownPath: "note.md",
   vaultIdentityHint: "test-vault",
 };
-const HISTORY_SESSION_LIMIT = 32;
+const HISTORY_SESSION_LIMIT = 16;
 const HISTORY_SESSION_OVERFLOW_COUNT = HISTORY_SESSION_LIMIT + 1;
 
-async function createStore(name: string): Promise<RecoveryIndexedDbStore> {
+async function createStore(
+  name: string,
+  resourceCoordinator: ResourceCoordinatorV1,
+): Promise<RecoveryIndexedDbStore> {
   const result = await probeIndexedDbRecovery({
     databaseName: name,
     indexedDb: new IDBFactory(),
+    resourceCoordinator,
   });
   if (result.kind !== "ready") throw new Error(result.reason);
   return result.store;
@@ -43,7 +52,10 @@ function editorFor(view: EditorView): Editor {
 
 describe("PhaseZeroHistoryController", () => {
   it("preserves Markdown A, annotation B, and Markdown C in host order", async () => {
-    const store = await createStore("history-order");
+    const resourceCoordinator = new ResourceCoordinatorV1(
+      RESOURCE_BUDGET_V1.desktopOrAndroidTablet,
+    );
+    const store = await createStore("history-order", resourceCoordinator);
     const notices: string[] = [];
     const controller = new PhaseZeroHistoryController({
       getRecoveryStore: (): Promise<RecoveryIndexedDbStore> =>
@@ -51,8 +63,9 @@ describe("PhaseZeroHistoryController", () => {
       notice: (message): void => {
         notices.push(message);
       },
+      resourceCoordinator,
       vaultIdentityHint: NOTE.vaultIdentityHint,
-      views: new PhaseZeroViewRegistry(),
+      views: new PhaseZeroViewRegistry(resourceCoordinator),
     });
     const state = EditorState.create({
       doc: "A",
@@ -84,16 +97,27 @@ describe("PhaseZeroHistoryController", () => {
         "host-recorded-undo",
         "host-recorded-redo",
       ]);
+      expect(loaded.releaseResources()).toBe(true);
     }
     expect(notices).toEqual([]);
 
     view.destroy();
     controller.dispose();
+    await controller.settle();
     await store.dispose();
+    expect(resourceCoordinator.snapshot().balanced).toBe(true);
   });
+});
 
+describe("PhaseZeroHistoryController recovery", () => {
   it("fails closed when recovery cannot confirm a host-recorded effect", async () => {
-    const durable = await createStore("history-recovery-failure");
+    const resourceCoordinator = new ResourceCoordinatorV1(
+      RESOURCE_BUDGET_V1.desktopOrAndroidTablet,
+    );
+    const durable = await createStore(
+      "history-recovery-failure",
+      resourceCoordinator,
+    );
     const store: RecoveryIndexedDbStore = {
       ...durable,
       deleteAttempt: (request) => durable.deleteAttempt(request),
@@ -111,8 +135,9 @@ describe("PhaseZeroHistoryController", () => {
       notice: (message): void => {
         notices.push(message);
       },
+      resourceCoordinator,
       vaultIdentityHint: NOTE.vaultIdentityHint,
-      views: new PhaseZeroViewRegistry(),
+      views: new PhaseZeroViewRegistry(resourceCoordinator),
     });
     const view = new EditorView({
       parent: document.body,
@@ -133,13 +158,21 @@ describe("PhaseZeroHistoryController", () => {
 
     view.destroy();
     controller.dispose();
+    await controller.settle();
     await durable.dispose();
+    expect(resourceCoordinator.snapshot().balanced).toBe(true);
   });
 });
 
 describe("PhaseZeroHistoryController ownership", () => {
   it("hands ownership to a new editor after the old host history is unreachable", async () => {
-    const store = await createStore("history-epoch-handoff");
+    const resourceCoordinator = new ResourceCoordinatorV1(
+      RESOURCE_BUDGET_V1.desktopOrAndroidTablet,
+    );
+    const store = await createStore(
+      "history-epoch-handoff",
+      resourceCoordinator,
+    );
     const notices: string[] = [];
     const controller = new PhaseZeroHistoryController({
       getRecoveryStore: (): Promise<RecoveryIndexedDbStore> =>
@@ -147,8 +180,9 @@ describe("PhaseZeroHistoryController ownership", () => {
       notice: (message): void => {
         notices.push(message);
       },
+      resourceCoordinator,
       vaultIdentityHint: NOTE.vaultIdentityHint,
-      views: new PhaseZeroViewRegistry(),
+      views: new PhaseZeroViewRegistry(resourceCoordinator),
     });
     const first = new EditorView({
       parent: document.body,
@@ -169,17 +203,30 @@ describe("PhaseZeroHistoryController ownership", () => {
     expect(undo(first)).toBe(true);
     await controller.settle();
     first.destroy();
+    expect(
+      resourceCoordinator.snapshot().categories[
+        RESOURCE_CATEGORIES_V1.hostHistoryRecord
+      ]?.current,
+    ).toEqual({ bytes: 0, count: 0 });
     await controller.insertProbeAnnotation(editorFor(second), markdownView());
     await controller.settle();
 
     expect(notices).toEqual([]);
     second.destroy();
     controller.dispose();
+    await controller.settle();
     await store.dispose();
+    expect(resourceCoordinator.snapshot().balanced).toBe(true);
   });
 
   it("fails closed after the bounded history session capacity is reached", async () => {
-    const store = await createStore("history-session-capacity");
+    const resourceCoordinator = new ResourceCoordinatorV1(
+      RESOURCE_BUDGET_V1.desktopOrAndroidTablet,
+    );
+    const store = await createStore(
+      "history-session-capacity",
+      resourceCoordinator,
+    );
     const notices: string[] = [];
     const controller = new PhaseZeroHistoryController({
       getRecoveryStore: (): Promise<RecoveryIndexedDbStore> =>
@@ -187,20 +234,19 @@ describe("PhaseZeroHistoryController ownership", () => {
       notice: (message): void => {
         notices.push(message);
       },
+      resourceCoordinator,
       vaultIdentityHint: NOTE.vaultIdentityHint,
-      views: new PhaseZeroViewRegistry(),
+      views: new PhaseZeroViewRegistry(resourceCoordinator),
     });
-    const views: EditorView[] = [];
+    const view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc: "A",
+        extensions: [history(), controller.bridge.extension],
+      }),
+    });
 
     for (let index = 0; index < HISTORY_SESSION_OVERFLOW_COUNT; index += 1) {
-      const view = new EditorView({
-        parent: document.body,
-        state: EditorState.create({
-          doc: "A",
-          extensions: [history(), controller.bridge.extension],
-        }),
-      });
-      views.push(view);
       await controller.insertProbeAnnotation(
         editorFor(view),
         markdownView(`capacity-${String(index)}.md`),
@@ -210,8 +256,10 @@ describe("PhaseZeroHistoryController ownership", () => {
     expect(notices).toEqual([
       "Inkbook annotation blocked: history session capacity exceeded.",
     ]);
-    for (const view of views) view.destroy();
+    view.destroy();
     controller.dispose();
+    await controller.settle();
     await store.dispose();
+    expect(resourceCoordinator.snapshot().balanced).toBe(true);
   });
 });

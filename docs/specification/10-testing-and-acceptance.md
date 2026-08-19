@@ -49,17 +49,19 @@ Tests MUST assert observable contracts rather than internal implementation detai
 
 1. Activate Pen on a phone or touch emulator.
 2. Touch an existing shape and verify it becomes selected without a new stroke.
-3. Touch and drag empty note content and verify native scroll.
-4. Cross the exact 8-CSS-pixel two-finger distance slop from `InputGestureProfileV1` on note content and verify plugin whole-note zoom, while an operating-system accessibility zoom gesture is not intercepted.
-5. Draw with a stylus and verify the gesture is claimed by Pen.
-6. Right-click without dragging on native Markdown and empty note content and verify Obsidian's native context menu opens without an Inkbook selection or operation.
-7. Right-click without dragging on a plugin element and verify the Inkbook target menu opens while the native context menu is suppressed.
-8. At 100 percent zoom or with no available pan range, move the secondary button below, exactly at, and above 8 CSS pixels and verify Inkbook does not claim panning.
-9. At non-100-percent zoom with an available pan range, move below 8 CSS pixels and verify no panning or premature event suppression.
-10. Repeat at exactly and above 8 CSS pixels and verify the shared note surface pans with no context menu, selection change, annotation operation, host-history effect, or sidecar generation.
-11. Start the claimed pan on an annotation and verify the annotation itself never moves.
-12. Cancel, dispose, and unload during pending and active states and verify pointer capture, listeners, and pending menu state are released.
-13. Release a short tap, lose pointer capture, add a third pointer, transfer ownership, dispatch successfully, dispose the view, and unload the plugin around the 500 ms boundary. Verify every path cancels the timer idempotently and no delayed menu opens.
+3. Touch and drag empty note content and verify native scroll, no prevented event, and no retained non-passive Inkbook move listener.
+4. Place a second direct-touch contact before the host claims the sequence. Verify only its cancelable `touchstart` is prevented to reserve a potential pinch, with no propagation stop, zoom change, canonical mutation, history effect, or sidecar generation before intent is proven.
+5. Move below, exactly at, and above the 8-CSS-pixel two-finger distance slop from `InputGestureProfileV1`. Verify no zoom below the threshold, then continuous current-sample plugin zoom while both contacts remain down at and above it, with no release-time jump. Verify an operating-system accessibility zoom gesture is not intercepted.
+6. Repeat with a non-cancelable, already prevented, or otherwise host-owned second contact. Verify Inkbook yields the complete sequence and applies no delayed zoom when it ends. Add a third contact, cancel, dispose, and unload before and after claim and verify exact listener and gesture-state release.
+7. Draw with a stylus and verify the gesture is claimed by Pen.
+8. Right-click without dragging on native Markdown and empty note content and verify Obsidian's native context menu opens without an Inkbook selection or operation.
+9. Right-click without dragging on a plugin element and verify the Inkbook target menu opens while the native context menu is suppressed.
+10. At 100 percent zoom or with no available pan range, move the secondary button below, exactly at, and above 8 CSS pixels and verify Inkbook does not claim panning.
+11. At non-100-percent zoom with an available pan range, move below 8 CSS pixels and verify no panning or premature event suppression.
+12. Repeat at exactly and above 8 CSS pixels and verify the shared note surface pans with no context menu, selection change, annotation operation, host-history effect, or sidecar generation.
+13. Start the claimed pan on an annotation and verify the annotation itself never moves.
+14. Cancel, dispose, and unload during pending and active states and verify pointer capture, listeners, and pending menu state are released.
+15. Release a short tap, lose pointer capture, add a third pointer, transfer ownership, dispatch successfully, dispose the view, and unload the plugin around the 500 ms boundary. Verify every path cancels the timer idempotently and no delayed menu opens.
 
 ### 2.5 Lasso Isolation
 

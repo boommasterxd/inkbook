@@ -1,3 +1,5 @@
+import type { ResourceCoordinatorV1 } from "../../application/resource-coordinator";
+
 /* Recovery budgets are normative binary-megabyte contract values. */
 // eslint-disable-next-line @typescript-eslint/no-magic-numbers
 export const DEFAULT_GLOBAL_BYTE_LIMIT = 32 * 1024 * 1024;
@@ -86,6 +88,7 @@ export type RecoveryLoadResult =
   | {
       readonly kind: "loaded";
       readonly records: readonly RecoveryProbeRecord[];
+      releaseResources(): boolean;
     }
   | { readonly kind: "corrupt"; readonly recordKey: string }
   | RecoveryOperationFailure;
@@ -96,9 +99,13 @@ export type RecoveryOperationFailure =
   | { readonly kind: "disposed" }
   | { readonly kind: "invalid-input" }
   | { readonly kind: "quota-exceeded" }
+  | { readonly kind: "resource-limited" }
   | { readonly kind: "transaction-aborted" };
 
 export interface RecoveryIndexedDbFaultInjector {
+  beforeExecute?(
+    operation: "prepare" | "record" | "direction" | "load" | "usage" | "delete",
+  ): Promise<void>;
   beforeCommit(
     operation: "prepare" | "record" | "direction" | "delete",
     transaction: IDBTransaction,
@@ -111,10 +118,14 @@ export interface RecoveryIndexedDbOptions {
   readonly globalByteLimit?: number | undefined;
   readonly noteByteLimit?: number | undefined;
   readonly faultInjector?: RecoveryIndexedDbFaultInjector | undefined;
+  readonly resourceCoordinator: ResourceCoordinatorV1;
 }
 
 export type RecoveryProbeFailureReason =
-  "backend-unavailable" | "non-transactional" | "schema-incompatible";
+  | "backend-unavailable"
+  | "non-transactional"
+  | "resource-limited"
+  | "schema-incompatible";
 
 interface RecoveryReadOnlyProbeResult {
   readonly kind: "read-only";

@@ -1,0 +1,26 @@
+{
+  "$schema": "./artifact-budget.v1.schema.json",
+  "schema": "ARTIFACT_BUDGET_V1",
+  "version": 1,
+  "limits": {
+    "mainRawBytes": 2097152,
+    "mainGzipBytes": 524288,
+    "embeddedWorkerRawBytes": 786432,
+    "stylesRawBytes": 131072,
+    "stylesGzipBytes": 32768
+  },
+  "runtime": {
+    "moduleCssTopLevelEvaluationP95Ms": {
+      "desktopTablet": 50,
+      "androidPhone": 100
+    },
+    "preOnloadSettledP95Ms": {
+      "desktopTablet": 100,
+      "androidPhone": 200
+    },
+    "peakAdditionalHeapMiB": {
+      "desktopTablet": 32,
+      "androidPhone": 24
+    }
+  }
+}

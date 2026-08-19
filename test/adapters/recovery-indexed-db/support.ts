@@ -1,14 +1,47 @@
 import type {
   PreparedForwardProbeRecord,
+  RecoveryIndexedDbOptions,
   RecoveryIndexedDbProbeResult,
   RecoveryIndexedDbStore,
   RecoveryNoteKey,
 } from "../../../src/adapters/recovery-indexed-db";
+import { probeIndexedDbRecovery } from "../../../src/adapters/recovery-indexed-db";
+import {
+  RESOURCE_BUDGET_V1,
+  ResourceCoordinatorV1,
+} from "../../../src/application/resource-coordinator";
 
 export const NOTE: RecoveryNoteKey = {
   vaultIdentityHint: "vault-fixture",
   markdownPath: "notes/example.md",
 };
+
+function createTestResourceCoordinator(): ResourceCoordinatorV1 {
+  return new ResourceCoordinatorV1(RESOURCE_BUDGET_V1.desktopOrAndroidTablet);
+}
+
+export function probeRecovery(
+  options: Omit<RecoveryIndexedDbOptions, "resourceCoordinator">,
+  resourceCoordinator = createTestResourceCoordinator(),
+): Promise<RecoveryIndexedDbProbeResult> {
+  return probeIndexedDbRecovery({ ...options, resourceCoordinator });
+}
+
+export async function loadAndRelease(
+  store: RecoveryIndexedDbStore,
+  note: RecoveryNoteKey,
+): Promise<
+  | { readonly kind: "loaded"; readonly records: readonly unknown[] }
+  | Exclude<
+      Awaited<ReturnType<RecoveryIndexedDbStore["loadNote"]>>,
+      { kind: "loaded" }
+    >
+> {
+  const result = await store.loadNote(note);
+  if (result.kind !== "loaded") return result;
+  result.releaseResources();
+  return { kind: result.kind, records: result.records };
+}
 
 export function preparedRecord(
   attemptId = "attempt-1",

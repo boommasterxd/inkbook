@@ -1,22 +1,24 @@
-import {
-  addBytes,
-  readByteUsage,
-  readSessionOrderHighWater,
-  writeByteUsage,
-  writeSessionOrderHighWater,
-} from "./accounting";
+import type {
+  BatchResourceHandleV1,
+  ResourceCoordinatorV1,
+} from "../../application/resource-coordinator";
 import { mapIndexedDbFailure } from "./error-mapping";
-import { requestResult, transactionDone } from "./idb-promises";
-import { encodeRecord, recordsEqual } from "./record-codec";
+import { recoveryNoteKey } from "./record-codec";
+import type { RecoveryLoadDataResult } from "./read-operations";
 import {
-  createHostRecordedRecord,
-  resolveDirectionIdentifiers,
-  resolvePreparedIdentifiers,
-  resolveRequestIdentifiers,
-} from "./record-transitions";
-import { getRecoveryByteUsage, loadRecoveryNote } from "./read-operations";
-import { ACCOUNTING_STORE, ATTEMPTS_STORE, type StoredAttempt } from "./schema";
-import { createStoredAttempt, validateStoredAttempt } from "./stored-attempt";
+  admitRecoveryQueueOperation,
+  completeRecoveryReservation,
+  type RecoveryQueueReservation,
+  type RecoveryResourceCharge,
+} from "./resource-admission";
+import {
+  LOAD_COMPLETION_BYTES,
+  measureForwardRequestCharge,
+  measureNoteRequestCharge,
+  measureRecordCharge,
+  type MeasuredRecoveryCharge,
+} from "./resource-charge";
+import { RecoveryTransactions } from "./transactions";
 import {
   DEFAULT_GLOBAL_BYTE_LIMIT,
   DEFAULT_NOTE_BYTE_LIMIT,
@@ -35,311 +37,270 @@ import {
 } from "./types";
 
 interface StoreConfiguration {
-  readonly globalByteLimit?: number | undefined;
-  readonly noteByteLimit?: number | undefined;
+  readonly databaseName: string;
   readonly faultInjector?: RecoveryIndexedDbFaultInjector | undefined;
+  readonly globalByteLimit?: number | undefined;
+  readonly listenerHandle: BatchResourceHandleV1;
+  readonly noteByteLimit?: number | undefined;
+  readonly resourceCoordinator: ResourceCoordinatorV1;
 }
+
+type InternalOperationResult =
+  | RecoveryMutationResult
+  | RecoveryDeleteResult
+  | RecoveryLoadDataResult
+  | RecoveryByteUsage;
+
+interface PendingOperation {
+  readonly execute: () => Promise<InternalOperationResult>;
+  readonly kind: RecoveryOperationKind;
+  readonly ownerId: string;
+  readonly reservation: RecoveryQueueReservation;
+  readonly resolve: (
+    result: InternalOperationResult | RecoveryOperationFailure,
+  ) => void;
+}
+
+type RecoveryOperationKind =
+  "prepare" | "record" | "direction" | "load" | "usage" | "delete";
 
 export class IndexedDbRecoveryStore implements RecoveryIndexedDbStore {
   readonly #database: IDBDatabase;
-  readonly #globalByteLimit: number;
-  readonly #noteByteLimit: number;
+  readonly #databaseName: string;
   readonly #faultInjector: RecoveryIndexedDbFaultInjector | undefined;
+  readonly #listenerHandle: BatchResourceHandleV1;
+  readonly #queue: PendingOperation[] = [];
+  readonly #resources: ResourceCoordinatorV1;
+  readonly #transactions: RecoveryTransactions;
+  readonly #versionChangeHandler = (): void => this.#handleVersionChange();
+  #active: PendingOperation | undefined;
+  #backendAvailable = true;
   #disposed = false;
-  #tail: Promise<void> = Promise.resolve();
+  #disposePromise: Promise<void> | undefined;
+  #resolveDisposal: (() => void) | undefined;
+  #nextOperationId = 1;
 
   public constructor(database: IDBDatabase, configuration: StoreConfiguration) {
     this.#database = database;
-    this.#globalByteLimit =
-      configuration.globalByteLimit ?? DEFAULT_GLOBAL_BYTE_LIMIT;
-    this.#noteByteLimit =
-      configuration.noteByteLimit ?? DEFAULT_NOTE_BYTE_LIMIT;
+    this.#databaseName = configuration.databaseName;
     this.#faultInjector = configuration.faultInjector;
-    this.#database.addEventListener("versionchange", () =>
-      this.#database.close(),
+    this.#listenerHandle = configuration.listenerHandle;
+    this.#resources = configuration.resourceCoordinator;
+    this.#transactions = new RecoveryTransactions(database, {
+      faultInjector: configuration.faultInjector,
+      globalByteLimit:
+        configuration.globalByteLimit ?? DEFAULT_GLOBAL_BYTE_LIMIT,
+      noteByteLimit: configuration.noteByteLimit ?? DEFAULT_NOTE_BYTE_LIMIT,
+    });
+    this.#database.addEventListener(
+      "versionchange",
+      this.#versionChangeHandler,
     );
   }
 
   public prepareForward(
     record: PreparedForwardProbeRecord,
   ): Promise<RecoveryMutationResult> {
-    return this.#enqueue(() => this.#prepareForward(record));
+    const scopeId = recoveryNoteKey(record.note);
+    const charge = measureRecordCharge(record);
+    if (scopeId === null || charge === null) return invalidResult();
+    return this.#enqueue("prepare", scopeId, charge, () =>
+      this.#transactions.prepareForward(record),
+    );
   }
 
   public recordForward(
     request: RecordForwardRequest,
   ): Promise<RecoveryMutationResult> {
-    return this.#enqueue(() => this.#recordForward(request));
+    const scopeId = recoveryNoteKey(request.note);
+    const charge = measureForwardRequestCharge(request);
+    if (scopeId === null || charge === null) return invalidResult();
+    return this.#enqueue("record", scopeId, charge, () =>
+      this.#transactions.recordForward(request),
+    );
   }
 
   public recordDirection(
     record: RecordDirectionRequest,
   ): Promise<RecoveryMutationResult> {
-    return this.#enqueue(() => this.#recordDirection(record));
+    const scopeId = recoveryNoteKey(record.note);
+    const charge = measureRecordCharge(record);
+    if (scopeId === null || charge === null) return invalidResult();
+    return this.#enqueue("direction", scopeId, charge, () =>
+      this.#transactions.recordDirection(record),
+    );
   }
 
   public loadNote(note: RecoveryNoteKey): Promise<RecoveryLoadResult> {
-    return this.#enqueue(() => loadRecoveryNote(this.#database, note));
+    const scopeId = recoveryNoteKey(note);
+    const charge = measureNoteRequestCharge(note, LOAD_COMPLETION_BYTES);
+    if (scopeId === null || charge === null) return invalidResult();
+    return this.#enqueue("load", scopeId, charge, () =>
+      this.#transactions.loadNote(note),
+    ) as Promise<RecoveryLoadResult>;
   }
 
   public deleteAttempt(
     request: DeleteAttemptRequest,
   ): Promise<RecoveryDeleteResult> {
-    return this.#enqueue(() => this.#deleteAttempt(request));
+    const scopeId = recoveryNoteKey(request.note);
+    const charge = measureNoteRequestCharge(request);
+    if (scopeId === null || charge === null) return invalidResult();
+    return this.#enqueue("delete", scopeId, charge, () =>
+      this.#transactions.deleteAttempt(request),
+    );
   }
 
   public getByteUsage(
     note: RecoveryNoteKey,
   ): Promise<RecoveryByteUsage | RecoveryOperationFailure> {
-    return this.#enqueue(() => getRecoveryByteUsage(this.#database, note));
+    const scopeId = recoveryNoteKey(note);
+    const charge = measureNoteRequestCharge(note);
+    if (scopeId === null || charge === null) return invalidResult();
+    return this.#enqueue("usage", scopeId, charge, () =>
+      this.#transactions.getByteUsage(note),
+    );
   }
 
-  public async dispose(): Promise<void> {
-    if (!this.#disposed) {
-      this.#disposed = true;
-      await this.#tail;
-      this.#database.close();
+  public dispose(): Promise<void> {
+    if (this.#disposePromise !== undefined) return this.#disposePromise;
+    this.#disposed = true;
+    this.#disposePromise = new Promise<void>((resolve) => {
+      this.#resolveDisposal = resolve;
+    });
+    this.#cancelQueued({ kind: "disposed" });
+    this.#transactions.abort();
+    this.#finishDisposalIfIdle();
+    return this.#disposePromise;
+  }
+
+  #enqueue<T extends InternalOperationResult>(
+    kind: RecoveryOperationKind,
+    scopeId: string,
+    charge: MeasuredRecoveryCharge,
+    execute: () => Promise<T>,
+  ): Promise<T | RecoveryOperationFailure> {
+    if (this.#disposed) return Promise.resolve({ kind: "disposed" });
+    if (!this.#backendAvailable) {
+      return Promise.resolve({ kind: "backend-unavailable" });
+    }
+    const ownerId = `${this.#databaseName}:${kind}:${String(this.#nextOperationId)}`;
+    const resourceCharge: RecoveryResourceCharge = {
+      ...charge,
+      ownerId,
+      scopeId,
+    };
+    const reservation = admitRecoveryQueueOperation(
+      this.#resources,
+      resourceCharge,
+    );
+    if (reservation === null) {
+      return Promise.resolve({ kind: "resource-limited" });
+    }
+    this.#nextOperationId += 1;
+    const result = new Promise<
+      InternalOperationResult | RecoveryOperationFailure
+    >((resolve) => {
+      this.#queue.push({
+        execute,
+        kind,
+        ownerId,
+        reservation,
+        resolve,
+      });
+    });
+    this.#drain();
+    return result as Promise<T | RecoveryOperationFailure>;
+  }
+
+  #drain(): void {
+    if (this.#active !== undefined || this.#disposed) return;
+    const pending = this.#queue.shift();
+    if (pending === undefined) {
+      this.#finishDisposalIfIdle();
       return;
     }
-    await this.#tail;
+    this.#active = pending;
+    void this.#executePending(pending);
   }
 
-  async #prepareForward(
-    record: PreparedForwardProbeRecord,
-  ): Promise<RecoveryMutationResult> {
-    const identifiers = resolvePreparedIdentifiers(record);
-    const serialized = encodeRecord(record);
-    if (identifiers === null || serialized === null) {
-      return { kind: "invalid-input" };
-    }
-    const stored = createStoredAttempt(
-      identifiers.attemptKey,
-      identifiers.noteKey,
-      serialized,
-    );
-    return this.#runMutation("prepare", async (transaction) => {
-      const attempts = transaction.objectStore(ATTEMPTS_STORE);
-      const existing = await requestResult(
-        attempts.get(stored.key) as IDBRequest<unknown>,
-      );
-      const usage = await readByteUsage(transaction, stored.noteKey);
-      if (existing !== undefined) {
-        const validated = validateStoredAttempt(existing, stored.key);
-        return validated?.stored.serialized === serialized
-          ? { kind: "unchanged", byteUsage: usage }
-          : { kind: "concurrent-change" };
-      }
-      const highWater = await readSessionOrderHighWater(
-        transaction,
-        stored.noteKey,
-      );
-      if (record.sessionOrder <= highWater) {
-        return { kind: "concurrent-change" };
-      }
-      writeSessionOrderHighWater(
-        transaction,
-        stored.noteKey,
-        record.sessionOrder,
-      );
-      return this.#writeAttempt(transaction, stored, usage, 0);
-    });
-  }
-
-  async #recordForward(
-    request: RecordForwardRequest,
-  ): Promise<RecoveryMutationResult> {
-    const identifiers = resolveRequestIdentifiers(request);
-    if (identifiers === null) {
-      return { kind: "invalid-input" };
-    }
-    return this.#runMutation("record", async (transaction) => {
-      const attempts = transaction.objectStore(ATTEMPTS_STORE);
-      const value = await requestResult(
-        attempts.get(identifiers.attemptKey) as IDBRequest<unknown>,
-      );
-      const validated = validateStoredAttempt(value, identifiers.attemptKey);
-      if (validated === null) {
-        return { kind: "concurrent-change" };
-      }
-      const usage = await readByteUsage(transaction, identifiers.noteKey);
-      const replacement = createHostRecordedRecord(validated.record, request);
-      if (replacement === null) {
-        return { kind: "concurrent-change" };
-      }
-      if (recordsEqual(validated.record, replacement)) {
-        return { kind: "unchanged", byteUsage: usage };
-      }
-      const serialized = encodeRecord(replacement);
-      if (serialized === null) {
-        return { kind: "invalid-input" };
-      }
-      const stored = createStoredAttempt(
-        identifiers.attemptKey,
-        identifiers.noteKey,
-        serialized,
-      );
-      return this.#writeAttempt(
-        transaction,
-        stored,
-        usage,
-        validated.stored.byteSize,
-      );
-    });
-  }
-
-  async #recordDirection(
-    record: RecordDirectionRequest,
-  ): Promise<RecoveryMutationResult> {
-    const identifiers = resolveDirectionIdentifiers(record);
-    const serialized = encodeRecord(record);
-    if (identifiers === null || serialized === null) {
-      return { kind: "invalid-input" };
-    }
-    const stored = createStoredAttempt(
-      identifiers.attemptKey,
-      identifiers.noteKey,
-      serialized,
-    );
-    return this.#runMutation("direction", async (transaction) => {
-      const attempts = transaction.objectStore(ATTEMPTS_STORE);
-      const existing = await requestResult(
-        attempts.get(stored.key) as IDBRequest<unknown>,
-      );
-      const usage = await readByteUsage(transaction, stored.noteKey);
-      if (existing !== undefined) {
-        const validated = validateStoredAttempt(existing, stored.key);
-        return validated?.stored.serialized === serialized
-          ? { kind: "unchanged", byteUsage: usage }
-          : { kind: "concurrent-change" };
-      }
-      const highWater = await readSessionOrderHighWater(
-        transaction,
-        stored.noteKey,
-      );
-      if (record.sessionOrder <= highWater) {
-        return { kind: "concurrent-change" };
-      }
-      writeSessionOrderHighWater(
-        transaction,
-        stored.noteKey,
-        record.sessionOrder,
-      );
-      return this.#writeAttempt(transaction, stored, usage, 0);
-    });
-  }
-
-  async #deleteAttempt(
-    request: DeleteAttemptRequest,
-  ): Promise<RecoveryDeleteResult> {
-    const identifiers = resolveRequestIdentifiers(request);
-    if (identifiers === null) {
-      return { kind: "invalid-input" };
-    }
-    return this.#runMutation("delete", async (transaction) => {
-      const attempts = transaction.objectStore(ATTEMPTS_STORE);
-      const value = await requestResult(
-        attempts.get(identifiers.attemptKey) as IDBRequest<unknown>,
-      );
-      const usage = await readByteUsage(transaction, identifiers.noteKey);
-      if (value === undefined) {
-        return { kind: "not-found", byteUsage: usage };
-      }
-      const validated = validateStoredAttempt(value, identifiers.attemptKey);
-      if (validated === null) {
-        return { kind: "concurrent-change" };
-      }
-      const replacementUsage = addBytes(usage, -validated.stored.byteSize);
-      if (replacementUsage === null) {
-        return { kind: "concurrent-change" };
-      }
-      attempts.delete(identifiers.attemptKey);
-      writeByteUsage(transaction, identifiers.noteKey, replacementUsage);
-      return { kind: "deleted", byteUsage: replacementUsage };
-    });
-  }
-
-  #writeAttempt(
-    transaction: IDBTransaction,
-    stored: StoredAttempt,
-    usage: RecoveryByteUsage,
-    replacedBytes: number,
-  ): RecoveryMutationResult {
-    const replacementUsage = addBytes(usage, stored.byteSize - replacedBytes);
-    if (
-      replacementUsage === null ||
-      replacementUsage.globalBytes > this.#globalByteLimit ||
-      replacementUsage.noteBytes > this.#noteByteLimit
-    ) {
-      return { kind: "quota-exceeded" };
-    }
-    transaction.objectStore(ATTEMPTS_STORE).put(stored);
-    writeByteUsage(transaction, stored.noteKey, replacementUsage);
-    return { kind: "written", byteUsage: replacementUsage };
-  }
-
-  async #runMutation<T extends RecoveryMutationResult | RecoveryDeleteResult>(
-    operation: "prepare" | "record" | "direction" | "delete",
-    work: (transaction: IDBTransaction) => Promise<T> | T,
-  ): Promise<T | RecoveryOperationFailure> {
-    let done: Promise<void> | undefined;
+  async #executePending(pending: PendingOperation): Promise<void> {
+    let result: InternalOperationResult | RecoveryOperationFailure;
     try {
-      const transaction = this.#database.transaction(
-        [ATTEMPTS_STORE, ACCOUNTING_STORE],
-        "readwrite",
-      );
-      done = transactionDone(transaction);
-      const result = await work(transaction);
-      if (!isSuccessfulMutation(result)) {
-        transaction.abort();
-        await done.catch(() => undefined);
-        return result;
-      }
-      this.#injectFault(operation, transaction);
-      await done;
-      return result;
-    } catch (error) {
-      await done?.catch(() => undefined);
-      return mapIndexedDbFailure(error);
-    }
-  }
-
-  #injectFault(
-    operation: "prepare" | "record" | "direction" | "delete",
-    transaction: IDBTransaction,
-  ): void {
-    try {
-      this.#faultInjector?.beforeCommit(operation, transaction);
-    } catch (error) {
-      transaction.abort();
-      throw error;
-    }
-  }
-
-  #enqueue<T>(work: () => Promise<T>): Promise<T | RecoveryOperationFailure> {
-    if (this.#disposed) {
-      return Promise.resolve({ kind: "disposed" });
-    }
-    const result = this.#tail.then(async () => {
+      await this.#faultInjector?.beforeExecute?.(pending.kind);
       if (this.#disposed) {
-        return { kind: "disposed" } as const;
+        result = { kind: "disposed" };
+      } else if (!this.#backendAvailable) {
+        result = { kind: "backend-unavailable" };
+      } else if (!pending.reservation.activate()) {
+        result = { kind: "resource-limited" };
+      } else {
+        result = await pending.execute();
       }
-      return work();
-    });
-    this.#tail = result.then(
-      () => undefined,
-      () => undefined,
+    } catch (error) {
+      result = mapIndexedDbFailure(error);
+    }
+    let terminal = result;
+    if (this.#disposed) terminal = { kind: "disposed" };
+    else if (!this.#backendAvailable) {
+      terminal = { kind: "backend-unavailable" };
+    }
+    this.#settlePending(pending, terminal);
+  }
+
+  #settlePending(
+    pending: PendingOperation,
+    result: InternalOperationResult | RecoveryOperationFailure,
+  ): void {
+    const resultKind = "kind" in result ? result.kind : undefined;
+    const release = completeRecoveryReservation(
+      pending.reservation,
+      pending.ownerId,
+      resultKind === "loaded",
     );
-    return result;
+    const publicResult =
+      resultKind === "loaded" && release !== null
+        ? { ...result, releaseResources: release }
+        : result;
+    pending.resolve(publicResult);
+    this.#active = undefined;
+    if (this.#disposed) this.#finishDisposalIfIdle();
+    else this.#drain();
+  }
+
+  #cancelQueued(failure: RecoveryOperationFailure): void {
+    for (const pending of this.#queue.splice(0)) {
+      pending.reservation.release();
+      pending.resolve(failure);
+    }
+  }
+
+  #handleVersionChange(): void {
+    if (!this.#backendAvailable) return;
+    this.#backendAvailable = false;
+    this.#removeVersionListener();
+    this.#database.close();
+    this.#transactions.abort();
+    this.#cancelQueued({ kind: "backend-unavailable" });
+  }
+
+  #removeVersionListener(): void {
+    this.#database.removeEventListener(
+      "versionchange",
+      this.#versionChangeHandler,
+    );
+    this.#listenerHandle.release();
+  }
+
+  #finishDisposalIfIdle(): void {
+    if (!this.#disposed || this.#active !== undefined) return;
+    this.#removeVersionListener();
+    this.#database.close();
+    this.#resolveDisposal?.();
+    this.#resolveDisposal = undefined;
   }
 }
 
-function isSuccessfulMutation(
-  result: RecoveryMutationResult | RecoveryDeleteResult,
-): boolean {
-  return (
-    result.kind === "written" ||
-    result.kind === "unchanged" ||
-    result.kind === "deleted" ||
-    result.kind === "not-found"
-  );
+function invalidResult<T>(): Promise<T | RecoveryOperationFailure> {
+  return Promise.resolve({ kind: "invalid-input" });
 }

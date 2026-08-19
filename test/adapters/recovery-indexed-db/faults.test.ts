@@ -1,23 +1,22 @@
 import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 
-import {
-  DATABASE_SCHEMA_VERSION,
-  probeIndexedDbRecovery,
-} from "../../../src/adapters/recovery-indexed-db";
+import { DATABASE_SCHEMA_VERSION } from "../../../src/adapters/recovery-indexed-db";
 import {
   corruptFirstAttempt,
   expectReady,
+  loadAndRelease,
   NOTE,
   openRawDatabase,
   preparedRecord,
+  probeRecovery,
 } from "./support";
 
 describe("IndexedDB recovery failures", () => {
   it("rolls back an explicitly aborted transaction without accounting drift", async () => {
     let abortNext = true;
     const store = expectReady(
-      await probeIndexedDbRecovery({
+      await probeRecovery({
         indexedDb: new IDBFactory(),
         databaseName: "transaction-abort",
         faultInjector: {
@@ -33,7 +32,7 @@ describe("IndexedDB recovery failures", () => {
     await expect(store.prepareForward(preparedRecord())).resolves.toEqual({
       kind: "transaction-aborted",
     });
-    await expect(store.loadNote(NOTE)).resolves.toEqual({
+    await expect(loadAndRelease(store, NOTE)).resolves.toEqual({
       kind: "loaded",
       records: [],
     });
@@ -52,7 +51,7 @@ describe("IndexedDB recovery failures", () => {
   it("maps storage quota errors and preserves the prior durable record", async () => {
     let exhaustQuota = false;
     const store = expectReady(
-      await probeIndexedDbRecovery({
+      await probeRecovery({
         indexedDb: new IDBFactory(),
         databaseName: "backend-quota",
         faultInjector: {
@@ -70,7 +69,7 @@ describe("IndexedDB recovery failures", () => {
     await expect(
       store.prepareForward(preparedRecord("attempt-2", 1 + 1)),
     ).resolves.toEqual({ kind: "quota-exceeded" });
-    await expect(store.loadNote(NOTE)).resolves.toMatchObject({
+    await expect(loadAndRelease(store, NOTE)).resolves.toMatchObject({
       kind: "loaded",
       records: [{ attemptId: "attempt-1" }],
     });
@@ -83,7 +82,7 @@ describe("IndexedDB recovery failures", () => {
       JSON.stringify(record),
     ).byteLength;
     const accepted = expectReady(
-      await probeIndexedDbRecovery({
+      await probeRecovery({
         indexedDb: new IDBFactory(),
         databaseName: "exact-budget",
         noteByteLimit: exactBytes,
@@ -97,7 +96,7 @@ describe("IndexedDB recovery failures", () => {
     await accepted.dispose();
 
     const rejected = expectReady(
-      await probeIndexedDbRecovery({
+      await probeRecovery({
         indexedDb: new IDBFactory(),
         databaseName: "over-budget",
         noteByteLimit: exactBytes - 1,
@@ -120,7 +119,7 @@ describe("IndexedDB recovery integrity failures", () => {
     const factory = new IDBFactory();
     const name = "corruption";
     const store = expectReady(
-      await probeIndexedDbRecovery({ indexedDb: factory, databaseName: name }),
+      await probeRecovery({ indexedDb: factory, databaseName: name }),
     );
     await store.prepareForward(preparedRecord());
     await store.dispose();
@@ -133,9 +132,9 @@ describe("IndexedDB recovery integrity failures", () => {
     database.close();
 
     const restarted = expectReady(
-      await probeIndexedDbRecovery({ indexedDb: factory, databaseName: name }),
+      await probeRecovery({ indexedDb: factory, databaseName: name }),
     );
-    await expect(restarted.loadNote(NOTE)).resolves.toMatchObject({
+    await expect(loadAndRelease(restarted, NOTE)).resolves.toMatchObject({
       kind: "corrupt",
     });
     await expect(
@@ -158,7 +157,7 @@ describe("IndexedDB recovery integrity failures", () => {
     const factory = new IDBFactory();
     const name = "backend-loss";
     const store = expectReady(
-      await probeIndexedDbRecovery({ indexedDb: factory, databaseName: name }),
+      await probeRecovery({ indexedDb: factory, databaseName: name }),
     );
     const replacement = await openRawDatabase(
       factory,
@@ -176,7 +175,7 @@ describe("IndexedDB recovery integrity failures", () => {
     const factory = new IDBFactory();
     const name = "accounting-corruption";
     const store = expectReady(
-      await probeIndexedDbRecovery({ indexedDb: factory, databaseName: name }),
+      await probeRecovery({ indexedDb: factory, databaseName: name }),
     );
     await store.prepareForward(preparedRecord());
     const database = await openRawDatabase(

@@ -5,6 +5,11 @@ import { MarkdownView, type App, type PluginManifest } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import InkbookPlugin from "../src/main";
+import { PhaseZeroRuntime } from "../src/adapters/obsidian/phase-zero-runtime";
+import {
+  RESOURCE_BUDGET_V1,
+  ResourceCoordinatorV1,
+} from "../src/application/resource-coordinator";
 
 const COMMAND_COUNT = 4;
 const EVENT_COUNT = 2;
@@ -80,6 +85,25 @@ describe("InkbookPlugin", () => {
     Object.defineProperty(globalThis, "indexedDB", {
       configurable: true,
       value: priorIndexedDb,
+    });
+  });
+
+  it("releases the plugin-wide resource ledger after terminal disposal", async () => {
+    const plugin = createPlugin("resource-vault");
+    const resources = new ResourceCoordinatorV1(
+      RESOURCE_BUDGET_V1.desktopOrAndroidTablet,
+    );
+    const runtime = new PhaseZeroRuntime(plugin, resources);
+
+    runtime.register();
+    runtime.dispose();
+    await runtime.settle();
+
+    expect(resources.snapshot()).toMatchObject({
+      balanced: true,
+      current: { bytes: 0, count: 0 },
+      disposed: true,
+      reserved: { bytes: 0, count: 0 },
     });
   });
 });

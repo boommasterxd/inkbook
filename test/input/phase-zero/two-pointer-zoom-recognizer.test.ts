@@ -82,6 +82,21 @@ describe("TwoPointerZoomRecognizer", () => {
     expect(firstClaim.zoom?.scaleDelta).toBeCloseTo(1.4);
     expect(liveUpdate.zoom?.scaleDelta).toBeCloseTo(1.25);
   });
+});
+
+describe("TwoPointerZoomRecognizer live updates and termination", () => {
+  it("emits continuous latest-sample deltas after claiming", () => {
+    const recognizer = new TwoPointerZoomRecognizer();
+    recognizer.pointerDown(point(1, 0, 0));
+    recognizer.pointerDown(point(2, 100, 0));
+    recognizer.pointerMove(point(2, 108, 0));
+
+    const scales = [109, 110, 111, 112].map(
+      (x) => recognizer.pointerMove(point(2, x, 0)).zoom?.scaleDelta,
+    );
+
+    expect(scales).toEqual([109 / 108, 110 / 109, 111 / 110, 112 / 111]);
+  });
 
   it("cancels invalid pairs and additional-pointer races without zoom output", () => {
     const zeroDistance = new TwoPointerZoomRecognizer();

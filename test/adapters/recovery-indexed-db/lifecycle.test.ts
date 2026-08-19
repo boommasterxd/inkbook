@@ -1,15 +1,20 @@
 import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 
-import { probeIndexedDbRecovery } from "../../../src/adapters/recovery-indexed-db";
-import { expectReady, NOTE, preparedRecord } from "./support";
+import {
+  expectReady,
+  loadAndRelease,
+  NOTE,
+  preparedRecord,
+  probeRecovery,
+} from "./support";
 
 describe("IndexedDB recovery lifecycle", () => {
   it("survives prepared and host-recorded crash windows across restarts", async () => {
     const factory = new IDBFactory();
     const databaseName = "restart-windows";
     const first = expectReady(
-      await probeIndexedDbRecovery({ indexedDb: factory, databaseName }),
+      await probeRecovery({ indexedDb: factory, databaseName }),
     );
     await expect(first.prepareForward(preparedRecord())).resolves.toMatchObject(
       {
@@ -19,9 +24,9 @@ describe("IndexedDB recovery lifecycle", () => {
     await first.dispose();
 
     const second = expectReady(
-      await probeIndexedDbRecovery({ indexedDb: factory, databaseName }),
+      await probeRecovery({ indexedDb: factory, databaseName }),
     );
-    await expect(second.loadNote(NOTE)).resolves.toMatchObject({
+    await expect(loadAndRelease(second, NOTE)).resolves.toMatchObject({
       kind: "loaded",
       records: [{ kind: "prepared-forward" }],
     });
@@ -41,9 +46,9 @@ describe("IndexedDB recovery lifecycle", () => {
     await second.dispose();
 
     const third = expectReady(
-      await probeIndexedDbRecovery({ indexedDb: factory, databaseName }),
+      await probeRecovery({ indexedDb: factory, databaseName }),
     );
-    await expect(third.loadNote(NOTE)).resolves.toMatchObject({
+    await expect(loadAndRelease(third, NOTE)).resolves.toMatchObject({
       kind: "loaded",
       records: [{ kind: "host-recorded-forward" }],
     });
@@ -52,7 +57,7 @@ describe("IndexedDB recovery lifecycle", () => {
 
   it("deletes exactly one attempt and accounts only its encoded bytes", async () => {
     const store = expectReady(
-      await probeIndexedDbRecovery({
+      await probeRecovery({
         indexedDb: new IDBFactory(),
         databaseName: "exact-delete",
       }),
@@ -78,7 +83,7 @@ describe("IndexedDB recovery lifecycle", () => {
         noteBytes: second.byteUsage.noteBytes - first.byteUsage.noteBytes,
       },
     });
-    await expect(store.loadNote(NOTE)).resolves.toMatchObject({
+    await expect(loadAndRelease(store, NOTE)).resolves.toMatchObject({
       kind: "loaded",
       records: [{ attemptId: "attempt-2" }],
     });
@@ -93,7 +98,7 @@ describe("IndexedDB recovery disposal", () => {
   it("disposes idempotently, rejects queued work, and invokes no write hook", async () => {
     let callbackCount = 0;
     const store = expectReady(
-      await probeIndexedDbRecovery({
+      await probeRecovery({
         indexedDb: new IDBFactory(),
         databaseName: "disposal",
         faultInjector: {

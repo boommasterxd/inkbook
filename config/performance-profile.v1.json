@@ -1,0 +1,187 @@
+{
+  "$schema": "./performance-profile.v1.schema.json",
+  "schema": "PerformanceProfileV1",
+  "version": 1,
+  "profileId": "phase-0-baseline-v1",
+  "phase": "P0",
+  "status": "draft",
+  "commit": "91f658dc715ea09050d9ad39a38d620d788e9bf7",
+  "artifactBudget": "ARTIFACT_BUDGET_V1",
+  "artifact": {
+    "mainJsSha256": "228a6f8d9531832915e7740f0c4c86f16c6085efc4fda990a6f1bee5da6cf2c4",
+    "mainJsBytes": 107260,
+    "mainJsGzipBytes": 29749,
+    "embeddedWorkerSha256": "c804f000f56e90dd4af360c9d6954d211748b1963c63938ae8bc5d6149b51d70",
+    "embeddedWorkerBytes": 1925,
+    "stylesCssSha256": "0e5d2137bdda31f9ec08efd7515e03db6cf5e4c597285122ca479ef2e5917295",
+    "stylesCssBytes": 1035,
+    "stylesCssGzipBytes": 373,
+    "packageChecksums": {
+      "main.js": "228a6f8d9531832915e7740f0c4c86f16c6085efc4fda990a6f1bee5da6cf2c4",
+      "manifest.json": "085141e57a10102bf4467dce2b71dd6433b3f4bb2a812bf6f7e0331beb696836",
+      "styles.css": "0e5d2137bdda31f9ec08efd7515e03db6cf5e4c597285122ca479ef2e5917295"
+    }
+  },
+  "fixtures": [
+    {
+      "id": "P0-FIXTURE-PACKAGE",
+      "generator": "phase-zero-package-fixture-v1",
+      "digest": "a11c30ecf8e4d2c974f38f9e4ac5c47cabc1b104bf3e9e930b14f7eb517b418e"
+    }
+  ],
+  "cells": [
+    {
+      "id": "P0-SAMSUNG-GALAXY-BOOK-5",
+      "platform": "desktop",
+      "host": "Obsidian 1.13.7, installer 1.13.7",
+      "os": "Fedora Linux 44, kernel 7.1.8-200.fc44.x86_64, Wayland",
+      "device": "Samsung Galaxy Book5 Pro 360 (960QHA)",
+      "refreshRateHz": 119.98,
+      "budgetClass": "desktopTablet"
+    },
+    {
+      "id": "P0-SAMSUNG-GALAXY-TAB-S6",
+      "platform": "android",
+      "host": "Obsidian Mobile 1.13.7",
+      "os": "Android 12",
+      "device": "Samsung Galaxy Tab S6",
+      "refreshRateHz": null,
+      "budgetClass": "desktopTablet"
+    }
+  ],
+  "procedure": {
+    "version": "P0-PERF-PROCEDURE-V1",
+    "warmups": 5,
+    "samples": 100,
+    "percentile": "nearest-rank",
+    "steps": [
+      "Install the locked dependencies and build the production package without network access during measurement.",
+      "Measure the exact package identified by the commit and main.js SHA-256 in this profile.",
+      "Discard warmups, collect 100 samples per row, and record p50, p95, p99, and maximum.",
+      "Record host, operating system, device, refresh rate, fixture digest, and reviewer attestation with the evidence.",
+      "Do not change the bundle, profile, thresholds, or fixture generator after observation."
+    ]
+  },
+  "rows": [
+    {
+      "id": "P0-ARTIFACT-MAIN-RAW",
+      "metric": "artifact.mainJs.rawBytes",
+      "kind": "deterministic",
+      "unit": "bytes",
+      "warmups": 0,
+      "samples": 1,
+      "thresholds": {
+        "P0-SAMSUNG-GALAXY-BOOK-5": { "max": 2097152 },
+        "P0-SAMSUNG-GALAXY-TAB-S6": { "max": 2097152 }
+      }
+    },
+    {
+      "id": "P0-ARTIFACT-MAIN-GZIP",
+      "metric": "artifact.mainJs.gzipBytes",
+      "kind": "deterministic",
+      "unit": "bytes",
+      "warmups": 0,
+      "samples": 1,
+      "thresholds": {
+        "P0-SAMSUNG-GALAXY-BOOK-5": { "max": 524288 },
+        "P0-SAMSUNG-GALAXY-TAB-S6": { "max": 524288 }
+      }
+    },
+    {
+      "id": "P0-ARTIFACT-WORKER-RAW",
+      "metric": "artifact.embeddedWorker.rawBytes",
+      "kind": "deterministic",
+      "unit": "bytes",
+      "warmups": 0,
+      "samples": 1,
+      "thresholds": {
+        "P0-SAMSUNG-GALAXY-BOOK-5": { "max": 786432 },
+        "P0-SAMSUNG-GALAXY-TAB-S6": { "max": 786432 }
+      }
+    },
+    {
+      "id": "P0-ARTIFACT-STYLES-RAW",
+      "metric": "artifact.stylesCss.rawBytes",
+      "kind": "deterministic",
+      "unit": "bytes",
+      "warmups": 0,
+      "samples": 1,
+      "thresholds": {
+        "P0-SAMSUNG-GALAXY-BOOK-5": { "max": 131072 },
+        "P0-SAMSUNG-GALAXY-TAB-S6": { "max": 131072 }
+      }
+    },
+    {
+      "id": "P0-ARTIFACT-STYLES-GZIP",
+      "metric": "artifact.stylesCss.gzipBytes",
+      "kind": "deterministic",
+      "unit": "bytes",
+      "warmups": 0,
+      "samples": 1,
+      "thresholds": {
+        "P0-SAMSUNG-GALAXY-BOOK-5": { "max": 32768 },
+        "P0-SAMSUNG-GALAXY-TAB-S6": { "max": 32768 }
+      }
+    },
+    {
+      "id": "P0-COLD-MODULE-EVAL-P95",
+      "metric": "runtime.moduleCssTopLevelEvaluation.p95",
+      "kind": "runtime",
+      "unit": "ms",
+      "warmups": 5,
+      "samples": 100,
+      "thresholds": {
+        "P0-SAMSUNG-GALAXY-BOOK-5": { "p95Max": 50 },
+        "P0-SAMSUNG-GALAXY-TAB-S6": { "p95Max": 50 }
+      }
+    },
+    {
+      "id": "P0-COLD-ONLOAD-P95",
+      "metric": "runtime.preOnloadSettled.p95",
+      "kind": "runtime",
+      "unit": "ms",
+      "warmups": 5,
+      "samples": 100,
+      "thresholds": {
+        "P0-SAMSUNG-GALAXY-BOOK-5": { "p95Max": 100 },
+        "P0-SAMSUNG-GALAXY-TAB-S6": { "p95Max": 100 }
+      }
+    },
+    {
+      "id": "P0-COLD-PEAK-HEAP",
+      "metric": "runtime.peakAdditionalHeap.maximum",
+      "kind": "runtime",
+      "unit": "MiB",
+      "warmups": 5,
+      "samples": 100,
+      "thresholds": {
+        "P0-SAMSUNG-GALAXY-BOOK-5": { "max": 32 },
+        "P0-SAMSUNG-GALAXY-TAB-S6": { "max": 32 }
+      }
+    },
+    {
+      "id": "P0-WORKER-RESIDENT-OWNERSHIP",
+      "metric": "lifecycle.workerResidentOwnership",
+      "kind": "assertion",
+      "unit": "boolean",
+      "warmups": 0,
+      "samples": 1,
+      "thresholds": {
+        "P0-SAMSUNG-GALAXY-BOOK-5": { "required": true },
+        "P0-SAMSUNG-GALAXY-TAB-S6": { "required": true }
+      }
+    },
+    {
+      "id": "P0-ZERO-BALANCE-DISPOSAL",
+      "metric": "lifecycle.zeroBalanceDisposal",
+      "kind": "assertion",
+      "unit": "boolean",
+      "warmups": 0,
+      "samples": 1,
+      "thresholds": {
+        "P0-SAMSUNG-GALAXY-BOOK-5": { "required": true },
+        "P0-SAMSUNG-GALAXY-TAB-S6": { "required": true }
+      }
+    }
+  ]
+}

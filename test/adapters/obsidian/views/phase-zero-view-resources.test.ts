@@ -7,15 +7,20 @@ import {
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  PhaseZeroViewRegistry,
-  type ViewResourceContext,
-} from "../../../../src/adapters/obsidian/views";
 import { INPUT_GESTURE_PROFILE_V1 } from "../../../../src/input/phase-zero";
+import {
+  directTouch,
+  installObsidianElementProperties,
+  phaseZeroViewContext as context,
+  phaseZeroViewRegistry,
+  pointer,
+} from "./phase-zero-view-test-helpers";
 
 const REPROCESSED_GENERATION_COUNT = 2;
 const RETAINED_ANNOTATION_LIMIT = 128;
 const EXPECTED_MENU_COUNT = 2;
+const FIRST_TOUCH_SCALE = 1.96;
+const SECOND_TOUCH_SCALE = 3.24;
 const LONG_PRESS_DELAY_MS = INPUT_GESTURE_PROFILE_V1.longPressDelayMs;
 const menuProbe = Menu as typeof Menu & {
   readonly positions: {
@@ -24,42 +29,9 @@ const menuProbe = Menu as typeof Menu & {
   }[];
 };
 
-function installObsidianElementProperties(element: HTMLElement): void {
-  Object.defineProperties(element, {
-    doc: { get: (): Document => document },
-    hasPointerCapture: { value: vi.fn(() => true) },
-    releasePointerCapture: { value: vi.fn() },
-    setPointerCapture: { value: vi.fn() },
-    win: { get: (): Window => window },
-  });
-}
-
-function context(
-  container: HTMLElement,
-  surface: "live-preview" | "reading" | "source",
-): ViewResourceContext {
-  const environment = {
-    doc: document,
-    instanceOf: (): boolean => true,
-    onWindowMigrated: (): { dispose(): void } => ({
-      dispose: (): void => undefined,
-    }),
-    win: window,
-  };
-  return {
-    document,
-    element: environment,
-    fileIdentity: "note.md",
-    leaf: {
-      isDeferred: false,
-      readView: (): never => {
-        throw new Error();
-      },
-    },
-    surface,
-    viewIdentity: { containerEl: container },
-    window,
-  };
+function transformScale(transform: string | undefined): number | undefined {
+  const value = /scale\(([^)]+)\)$/u.exec(transform ?? "")?.[1];
+  return value === undefined ? undefined : Number(value);
 }
 
 function exerciseTouchAndZoom(
@@ -77,44 +49,33 @@ function exerciseTouchAndZoom(
   expect(selection.defaultPrevented).toBe(true);
   expect(marker.classList.contains("is-selected")).toBe(true);
   marker.dispatchEvent(pointer("pointerup", { pointerId: 1 }));
-  container.dispatchEvent(
-    pointer("pointerdown", {
-      clientX: 20,
-      clientY: 20,
-      pointerId: 2,
-      pointerType: "touch",
-    }),
+  const first = { clientX: 20, clientY: 20, identifier: 2 } as const;
+  const second = { clientX: 40, clientY: 20, identifier: 3 } as const;
+  container.dispatchEvent(directTouch("touchstart", [first], [first]));
+  container.dispatchEvent(directTouch("touchstart", [second], [first, second]));
+  const firstZoom = directTouch(
+    "touchmove",
+    [{ clientX: 48, clientY: 20, identifier: 3 }],
+    [first, { clientX: 48, clientY: 20, identifier: 3 }],
   );
-  container.dispatchEvent(
-    pointer("pointerdown", {
-      clientX: 40,
-      clientY: 20,
-      pointerId: 3,
-      pointerType: "touch",
-    }),
-  );
-  const firstZoom = pointer("pointermove", {
-    clientX: 48,
-    clientY: 20,
-    pointerId: 3,
-    pointerType: "touch",
-  });
   container.dispatchEvent(firstZoom);
   const firstTransform = container.querySelector("svg")?.style.transform;
-  const liveZoom = pointer("pointermove", {
-    clientX: 56,
-    clientY: 20,
-    pointerId: 3,
-    pointerType: "touch",
-  });
+  expect(container.querySelector("svg")?.style.transformOrigin).toBe(
+    "48px 48px",
+  );
+  const liveZoom = directTouch(
+    "touchmove",
+    [{ clientX: 56, clientY: 20, identifier: 3 }],
+    [first, { clientX: 56, clientY: 20, identifier: 3 }],
+  );
   container.dispatchEvent(liveZoom);
   const liveTransform = container.querySelector("svg")?.style.transform;
   expect(firstZoom.defaultPrevented).toBe(true);
   expect(liveZoom.defaultPrevented).toBe(true);
-  expect(firstTransform).toContain("scale(1.4)");
-  expect(liveTransform).toContain("scale(1.8)");
+  expect(transformScale(firstTransform)).toBeCloseTo(FIRST_TOUCH_SCALE);
+  expect(transformScale(liveTransform)).toBeCloseTo(SECOND_TOUCH_SCALE);
   expect(liveTransform).not.toBe(firstTransform);
-  container.dispatchEvent(pointer("pointercancel", { pointerId: 2 }));
+  container.dispatchEvent(directTouch("touchcancel", [second], [first]));
 }
 
 function exerciseTouchpadZoom(container: HTMLElement): void {
@@ -324,20 +285,12 @@ function exerciseOutsideTapDeselection(
   expect(marker.classList).toContain("is-selected");
 }
 
-function pointer(type: string, options: PointerEventInit): PointerEvent {
-  return new PointerEvent(type, {
-    bubbles: true,
-    cancelable: true,
-    ...options,
-  });
-}
-
 describe("PhaseZeroViewRegistry", () => {
   it("uses one retained overlay and routes touch, zoom, and context menus", () => {
     const container = document.createElement("div");
     installObsidianElementProperties(container);
     document.body.append(container);
-    const registry = new PhaseZeroViewRegistry();
+    const registry = phaseZeroViewRegistry();
     const binding = registry.bind(context(container, "live-preview"));
 
     registry.render("note.md", "B");
@@ -391,7 +344,7 @@ describe("PhaseZeroViewRegistry", () => {
     installObsidianElementProperties(section);
     container.append(section);
     document.body.append(container);
-    const registry = new PhaseZeroViewRegistry();
+    const registry = phaseZeroViewRegistry();
     registry.bind(context(container, "reading"));
     const children: MarkdownRenderChild[] = [];
     const processor = {
@@ -420,7 +373,7 @@ describe("PhaseZeroViewRegistry", () => {
     const section = document.createElement("section");
     installObsidianElementProperties(container);
     installObsidianElementProperties(section);
-    const registry = new PhaseZeroViewRegistry();
+    const registry = phaseZeroViewRegistry();
     registry.bind(context(container, "reading"));
     registry.reportReadingSection(section, {
       addChild: vi.fn(),
@@ -438,7 +391,7 @@ describe("PhaseZeroViewRegistry", () => {
 
 describe("PhaseZeroViewRegistry resource bounds", () => {
   it("evicts old retained annotation state at the fixed capacity", () => {
-    const registry = new PhaseZeroViewRegistry();
+    const registry = phaseZeroViewRegistry();
     for (let index = 0; index <= RETAINED_ANNOTATION_LIMIT; index += 1) {
       registry.render(`note-${String(index)}.md`, "B");
     }

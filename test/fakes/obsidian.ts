@@ -12,6 +12,19 @@ export class Component {
   }
 }
 
+export const Platform = Object.freeze({
+  isAndroidApp: false,
+  isDesktop: true,
+  isDesktopApp: true,
+  isIosApp: false,
+  isMacOS: false,
+  isMobile: false,
+  isMobileApp: false,
+  isPhone: false,
+  isTablet: false,
+  isWin: false,
+});
+
 export class Plugin extends Component {
   public readonly commands: unknown[] = [];
   public readonly editorExtensions: unknown[] = [];
