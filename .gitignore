@@ -1,9 +1,5 @@
 node_modules/
 coverage/
-playwright-report/
-test-results/
-/main.js
-/styles.css
+/dist/
 *.log
 .DS_Store
-test/vault/.obsidian/workspace*.json

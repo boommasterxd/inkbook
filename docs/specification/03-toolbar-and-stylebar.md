@@ -8,6 +8,8 @@ The contextual stylebar opens directly below the toolbar. It is part of the same
 
 Both surfaces mount only inside native Markdown views and share the lifecycle owner of that concrete view. Inkbook adds no Ribbon action, persistent Obsidian status-bar item, custom workspace view, or Bases surface in V1.
 
+Each supported Markdown view owns one bounded toolbar host for its complete view lifetime. That host, its immutable-selector subscriptions, the expanded toolbar subtree, and one independent `Show or hide Inkbook toolbar` toggle remain mounted until the view is disposed. Collapsing changes only the view-local visibility state: the toolbar and stylebar use the platform-equivalent of `hidden`, leave layout, focus order, and the accessibility tree, and retain their tool, preset, and selection-derived state without reconstructing the host. Transient menus and popovers are still disposed when closed. The annotation overlay, session, rendering, selection, and sidecar state remain unaffected.
+
 ## 2. Toolbar Contents
 
 The toolbar renders utility controls in fixed positions and annotation tools in the configured order from `ToolbarOrderV1`:
@@ -20,6 +22,8 @@ The toolbar renders utility controls in fixed positions and annotation tools in 
 6. a Settings launcher using one guarded host-settings adapter. When a tested host capability can open Inkbook's registered tab, the adapter MAY use it. Otherwise the control shows an accessible host-native instruction for navigating to Inkbook in Settings and MUST NOT access untyped global settings internals.
 
 The canonical default membership and order of the two annotation-tool groups are defined in [Interaction and Tools](02-interaction-and-tools.md). Obsidian's normal plugin settings allow reordering within each fixed group. Utility controls are never included in that order setting.
+
+One compact `Show or hide Inkbook toolbar` toggle sits in the plugin-owned note-header edge outside the expandable toolbar. It remains visible whenever the toolbar is collapsed, is never hidden by a toolbar-visibility preference, and is not a Ribbon or status-bar action. It exposes an accessible name, `aria-controls`, and the current `aria-expanded` state. Hiding from keyboard focus moves focus to this toggle before the toolbar becomes hidden. The equivalent registered Obsidian command targets the originating Markdown view and changes the same view-local visibility state.
 
 The toolbar MUST NOT contain file rename, save, export, page, image, search, Markdown text, window, or document-title controls.
 
@@ -34,6 +38,8 @@ The stylebar MUST appear when:
 - a Background control is active.
 
 The stylebar SHOULD close when Cursor is active with no selection and no open Background control. Reopening the same tool MUST preserve its current preset for the session.
+
+Collapsing the toolbar also hides the stylebar but does not clear the active tool, selection, presets, or toolbar state. Re-expanding restores the same applicable panel. The persistent external toggle is the only Inkbook control that remains visible while the toolbar is collapsed.
 
 Selection styles override active-tool defaults. Mixed selections MUST show an explicit mixed state instead of guessing the first element's value. A style change over a multi-selection MUST produce one reversible operation.
 
@@ -72,22 +78,23 @@ Freehand and straight-line variants change geometry only. They MUST NOT select o
 
 - outline color;
 - outline width;
-- opacity;
+- outline opacity;
 - solid, dashed, or dotted outline;
-- fill color or no fill.
+- fill color or no fill;
+- fill opacity, independently from outline opacity, whenever a solid fill is active.
 
-Resize changes shape geometry but not outline width, dash pattern, opacity, color, or fill style. The line-width control is the only stylebar control that changes the stored outline width.
+Outline opacity maps to `ShapeStyleV1.opacity`; fill opacity maps independently to `ShapeStyleV1.fill.opacity`. The UI MUST NOT implement either value through a shared group opacity. With no fill, fill opacity is disabled or omitted and no invisible fill hit target is implied. Enabling a fill initializes its independent color and opacity from the current creation preset or the canonical fallback. Resize changes shape geometry but not outline width, dash pattern, outline opacity, fill opacity, color, or fill kind. The line-width control is the only stylebar control that changes the stored outline width.
 
-### 4.5 Lines, Arrows, and Connectors
+### 4.5 Lines and Arrows
 
 - line color, width, opacity, and dash pattern;
 - start cap and end cap independently chosen from none, arrow, dot, circle, diamond, or bar;
 - curve amount or straight mode for Line and Arrow;
-- connector attachment status where applicable.
+- start and end attachment status where applicable.
 
 A selected Line or Arrow exposes the same center curve-handle interaction. The stylebar's curve control and the on-canvas handle edit the same optional canonical quadratic control point and therefore share one preview, validation, commit, and undo contract.
 
-Connector is straight in V1. Its selection stylebar exposes start and end attachment state and Reconnect or Detach where applicable, but no curve control.
+Each endpoint may be free or attached to an object port. The selection stylebar exposes start and end attachment state plus Reconnect or Detach where applicable. Attachment does not replace the Line or Arrow kind, curve control, caps, or style.
 
 ### 4.6 Axes and Tables
 
@@ -106,6 +113,8 @@ These objects do not contain a plugin-owned text editor, cell editor, label, or 
 ### 4.7 Selection
 
 The selection stylebar exposes only properties common to the complete selection. It MAY additionally expose group, ungroup, z-order, duplicate, text binding, and delete actions when they are safe and applicable. Its controls use the `linear`, `area`, `axis-set`, or `aggregate` selection model owned by [Interaction and Tools](02-interaction-and-tools.md); it MUST NOT invent a generic bounding-box behavior.
+
+For every selection model with a rotate handle, the visible selection chrome follows the current canonical orientation and the accessible selection summary reports that angle in degrees. Free angles remain exact display values. A snap preview reports the applicable absolute quarter-turn without rewriting the canonical value until commit. Deselecting and reselecting an object MUST reproduce the same angle and oriented control frame.
 
 For a single selected element, the stylebar MUST expose one `Text binding` control with exactly these values:
 
@@ -139,15 +148,18 @@ The toolbar MUST support:
 - `floating`: a rounded surface with bounded shadow and inline margins;
 - `docked`: a full-width note surface attached to the note header area without floating shadow.
 
-The contextual stylebar follows the same presentation. The choice is a device-local preference because desktop and mobile layouts differ.
+The contextual stylebar follows the same presentation. The choice is a device-local preference because desktop and Android layouts differ.
 
 Changing presentation MUST not alter the sidecar, note Markdown, current tool, selection, undo history, or per-note background.
 
+Presentation and visibility are orthogonal. Floating or Docked selects the expanded surface geometry; the view-local collapsed state selects whether that expanded surface is currently visible. Neither state disposes or recreates the toolbar host.
+
 ## 6. Responsive Behavior
 
-At narrow widths the toolbar and stylebar remain desktop-class Obsidian plugin UI adapted to a phone. They do not become a separate mobile product.
+At narrow widths the toolbar and stylebar remain desktop-class Obsidian plugin UI adapted to an Android phone. They do not become a separate product.
 
 - Controls keep 44 by 44 CSS-pixel touch targets.
+- The independent Show or Hide toggle remains reachable with a 44 by 44 CSS-pixel compact target even while the toolbar is collapsed.
 - The primary tool row MAY scroll horizontally.
 - Less frequent tools remain inside More Tools.
 - The configured order within each group remains unchanged at every width.
@@ -179,5 +191,7 @@ The non-normative interactive design reference is [mockup/index.html](mockup/ind
 The mockup is not production code and contains no persistence or actual Obsidian API integration. [Toolbar Mockup](12-toolbar-mockup.md) describes how to run it.
 
 The static mockup demonstrates the canonical default tool order. Production users configure the order through Obsidian's normal plugin settings; the mockup does not simulate that setting.
+
+The persistent external visibility toggle and its retained mounted-host behavior are normative even if the static mockup does not yet simulate the collapsed state.
 
 The textual binding contract in this document and [Anchors and Layout](05-anchors-and-layout.md) is authoritative where the static mockup does not simulate binding inference, range projection, or reflow. The mockup's generic selection rectangle is illustrative only. Production selection frames, endpoints, axes handles, resize semantics, and constant-width behavior are governed by [Interaction and Tools](02-interaction-and-tools.md) and [SVG Rendering](06-svg-rendering.md).

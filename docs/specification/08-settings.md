@@ -17,18 +17,20 @@ Every stored settings object is versioned, strictly validated, and published as 
 
 ## 2. General
 
-| Setting              | Type and values                          | Default                                    | Scope         | Purpose                                                                                               |
-| -------------------- | ---------------------------------------- | ------------------------------------------ | ------------- | ----------------------------------------------------------------------------------------------------- |
-| Toolbar presentation | `floating` or `docked`                   | `floating`                                 | Device-local  | Chooses the note toolbar and stylebar surface.                                                        |
-| Toolbar visibility   | `always`, `annotated-notes`, or `manual` | `always`                                   | Device-local  | Controls when the note toolbar is mounted. Manual mode remains reachable through an Obsidian command. |
-| Toolbar tool order   | `ToolbarOrderV1`                         | Canonical order from Interaction and Tools | Plugin-global | Orders tools within the fixed primary and More Tools groups.                                          |
-| Dominant hand        | `auto`, `left`, or `right`               | `auto`                                     | Device-local  | Adjusts compact overflow and edge placement without changing the configured tool order.               |
+| Setting              | Type and values                          | Default                                    | Scope         | Purpose                                                                                 |
+| -------------------- | ---------------------------------------- | ------------------------------------------ | ------------- | --------------------------------------------------------------------------------------- |
+| Toolbar presentation | `floating` or `docked`                   | `floating`                                 | Device-local  | Chooses the note toolbar and stylebar surface.                                          |
+| Toolbar visibility   | `always`, `annotated-notes`, or `manual` | `always`                                   | Device-local  | Initializes the expanded or collapsed state of the retained view-local toolbar host.    |
+| Toolbar tool order   | `ToolbarOrderV1`                         | Canonical order from Interaction and Tools | Plugin-global | Orders tools within the fixed primary and More Tools groups.                            |
+| Dominant hand        | `auto`, `left`, or `right`               | `auto`                                     | Device-local  | Adjusts compact overflow and edge placement without changing the configured tool order. |
 
 Inkbook MUST inherit Obsidian theme, font, locale, accent, and reduced-motion settings. It MUST NOT duplicate them.
 
 The actual settings UI uses sentence-case labels and starts directly with the controls below. It MUST NOT render a redundant top-level `General` heading; this document heading is organizational only.
 
-### 1.1 Canonical Settings Records
+Every supported Markdown view mounts one toolbar host and one independent Show or Hide toggle regardless of this preference. `always` initializes the toolbar expanded. `annotated-notes` initializes it expanded only when the current note has a validated annotation locator or nonempty loaded annotation scene. `manual` initializes it collapsed. The external toggle and the registered visibility command can override that initial state for the lifetime of the concrete view in every mode. This runtime override is view-local and is not persisted. Collapsing hides the toolbar and stylebar subtrees without unmounting the host, clearing state, changing the active tool or selection, or affecting Markdown, scene, sidecar, history, and overlay state. The external toggle remains visible, keyboard reachable, and at least 44 by 44 CSS pixels on compact layouts.
+
+### 2.1 Canonical Settings Records
 
 ```ts
 export type SettingsRevision = number & {
@@ -44,7 +46,6 @@ export interface PluginSettingsV1 {
   readonly shapeDefaults: ShapeStyleV1;
   readonly lineDefaults: LinearStyleV1;
   readonly arrowDefaults: LinearStyleV1;
-  readonly connectorDefaults: LinearStyleV1;
   readonly constructionDefaults: ConstructionStyleV1;
   readonly tableRows: number;
   readonly tableColumns: number;
@@ -81,11 +82,11 @@ export interface DeviceSettingsV1 {
 
 Both revisions start at `1` and increase by one for each accepted replacement of that complete store. The application validates `expectedRevision`, constructs and publishes one immutable replacement snapshot, serializes writes per store, and never exposes a partially changed object. A failed persistence write retains that replacement as session-only with Retry and does not advance the acknowledged durable snapshot. Reload validates the complete object before publication. Future versions require explicit migration; an unsupported newer version preserves the raw host value, loads safe V1 defaults for the session, reports read-only settings incompatibility, and MUST NOT overwrite the newer value automatically.
 
-The canonical plugin-global defaults are the toolbar order in Section 2.1, Pen `currentColor`, width `3`, opacity `1`, solid, pointer pressure enabled, smoothing `0.50`, streamline `0.50`, thinning `0.50`, and stroke profile `1`; Highlighter `#ffd84dff`, width `12`, opacity `0.35`, solid, freehand; Shape `currentColor`, width `2`, opacity `1`, solid, no fill; Line `currentColor`, width `2`, opacity `1`, solid, no caps, cap size `8`; Arrow the same with only end cap arrow; Connector the same as Line; construction `currentColor`, width `2`, opacity `1`, solid, positive cap arrow, cap size `8`; Table `3` by `3`; axes 2D with `0` grid divisions; note appearance none, standard, low; adjacent storage; and sync acknowledgement false. Pen and Highlighter dash MUST remain solid.
+The canonical plugin-global defaults are the toolbar order in Section 2.2, Pen `currentColor`, width `3`, opacity `1`, solid, pointer pressure enabled, smoothing `0.50`, streamline `0.50`, thinning `0.50`, and stroke profile `1`; Highlighter `#ffd84dff`, width `12`, opacity `0.35`, solid, freehand; Shape outline `currentColor`, width `2`, outline opacity `1`, solid, and no fill, with a newly enabled solid fill initialized to `currentColor` and fill opacity `1`; Line `currentColor`, width `2`, opacity `1`, solid, no caps, cap size `8`; Arrow the same with only end cap arrow; construction `currentColor`, width `2`, opacity `1`, solid, positive cap arrow, cap size `8`; Table `3` by `3`; axes 2D with `0` grid divisions; note appearance none, standard, low; adjacent storage; and sync acknowledgement false. Pen and Highlighter dash MUST remain solid.
 
 The canonical device-local defaults are floating, always visible, auto dominant hand, auto input, barrel erase on, haptics on, eraser radius `12`, zoom `100`, remember zoom on, empty remembered map, debug logging off, and performance overlay off. Stored zoom is from `50` through `400`, timestamps are non-negative safe integers, paths pass the same normalized identity-hint validation as other device-local records, entries are unique by path, and the array contains at most 100 entries in descending last-focused order.
 
-### 2.1 Toolbar Order
+### 2.2 Toolbar Order
 
 ```ts
 export type ToolbarToolId =
@@ -102,7 +103,6 @@ export type ToolbarToolId =
   | "diamond"
   | "octagon"
   | "line"
-  | "connector"
   | "coordinate-system"
   | "table";
 
@@ -159,16 +159,19 @@ Highlighter width is constant and has no pressure setting.
 
 - outline color, default `currentColor`;
 - outline width, default 2 note CSS pixels;
-- opacity, default 100 percent;
+- outline opacity, default 100 percent;
 - dash pattern, default solid;
-- fill, default none.
+- fill, default none;
+- solid-fill color, initialized to `currentColor` when fill is enabled;
+- fill opacity, initialized to 100 percent when fill is enabled and always independent from outline opacity.
 
-### 4.4 Lines, Arrows, and Connectors
+### 4.4 Lines and Arrows
 
 - line color, width, opacity, and dash pattern;
 - start cap, default none;
-- end cap, default arrow for Arrow and none for Line or Connector;
-- Line and Arrow curve mode, default straight; Connector remains straight in V1 and has no curve-mode setting.
+- end cap, default arrow for Arrow and none for Line;
+- curve mode, default straight;
+- no global attachment default, because each endpoint snaps or remains free during element interaction.
 
 ### 4.5 Eraser and Lasso
 
@@ -256,7 +259,7 @@ No diagnostics mode may enable network transmission or content logging implicitl
 
 ## 8. Commands and Hotkeys
 
-Inkbook registers lightweight named Obsidian commands during `onload()` for toolbar visibility, tools, non-history annotation operations, select next and previous annotation, zoom, background, sidecar validation, migration, and annotation removal. Command IDs are stable ASCII identifiers without a redundant `inkbook-` prefix. It registers no annotation-only Undo or Redo command. Commands that require an editor use `editorCallback` or `editorCheckCallback` and the supplied originating editor and view. A `checking: true` callback performs no mutation.
+Inkbook registers lightweight named Obsidian commands during `onload()` for toggling the originating view's retained toolbar visibility, tools, non-history annotation operations, select next and previous annotation, zoom, background, sidecar validation, migration, and annotation removal. Command IDs are stable ASCII identifiers without a redundant `inkbook-` prefix. It registers no annotation-only Undo or Redo command. Commands that require an editor use `editorCallback` or `editorCheckCallback` and the supplied originating editor and view. A `checking: true` callback performs no mutation.
 
 Obsidian's Hotkeys settings own bindings and conflict resolution. The plugin MUST NOT store custom shortcut bindings in its own settings and public releases ship no default hotkeys. A later reviewed exception uses Obsidian's `Mod` abstraction and uppercase letter keys and MUST NOT override common native Markdown editing, navigation, search, or application commands.
 

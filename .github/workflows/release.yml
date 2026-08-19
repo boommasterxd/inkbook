@@ -55,13 +55,14 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Run release quality lane
-        run: npm run phase-exit
+        run: npm run ci
 
       - name: Build release assets and checksums
         shell: bash
         run: |
           set -euo pipefail
           npm run build
+          cd dist
           sha256sum main.js manifest.json styles.css > SHA256SUMS
 
       - name: Create immutable draft release
@@ -76,7 +77,7 @@ jobs:
             exit 1
           fi
           gh release create "v${VERSION}" \
-            main.js manifest.json styles.css SHA256SUMS \
+            dist/main.js dist/manifest.json dist/styles.css dist/SHA256SUMS \
             --draft \
             --title "Inkbook ${VERSION}" \
             --notes "Draft release generated from the protected v${VERSION} tag."

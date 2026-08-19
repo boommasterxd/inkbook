@@ -73,7 +73,7 @@ export type AnnotationPatchV1 =
   | ReplaceGeometryPatchV1
   | ReplaceStylePatchV1
   | ReplaceBindingPatchV1
-  | ReplaceConnectorEndpointsPatchV1
+  | ReplaceLinearGeometryPatchV1
   | ReplaceObjectOrderPatchV1
   | ReplaceGroupsPatchV1
   | ReplaceNoteAppearancePatchV1
@@ -93,7 +93,7 @@ export interface DeleteElementsPatchV1 {
 
 export interface ReplaceGeometryPatchV1 {
   readonly kind: "replace-geometry";
-  readonly changes: readonly ComponentReplacementV1<NonConnectorGeometryV1>[];
+  readonly changes: readonly ComponentReplacementV1<NonLinearGeometryV1>[];
 }
 
 export interface ReplaceStylePatchV1 {
@@ -106,9 +106,9 @@ export interface ReplaceBindingPatchV1 {
   readonly changes: readonly ComponentReplacementV1<ElementBinding>[];
 }
 
-export interface ReplaceConnectorEndpointsPatchV1 {
-  readonly kind: "replace-connector-endpoints";
-  readonly changes: readonly ComponentReplacementV1<ConnectorGeometryV1>[];
+export interface ReplaceLinearGeometryPatchV1 {
+  readonly kind: "replace-linear-geometry";
+  readonly changes: readonly ComponentReplacementV1<LinearGeometryV1>[];
 }
 
 export interface OrderPlacementV1 {
@@ -143,15 +143,15 @@ export interface AtomicBatchPatchV1 {
 export type BatchMemberV1 = Exclude<AnnotationPatchV1, AtomicBatchPatchV1>;
 ```
 
-`BatchMemberV1` is the patch union without `AtomicBatchPatchV1`. A batch is non-empty, contains no nested batch, uses one outer dispatch identity and expected scene revision, and publishes one scene revision. It is used for aggregate transforms, transform plus rebind, target deletion plus connector disconnection, and Group operations. One failure rejects the entire batch. An `AnnotationHistoryEntryV1` is created before initial admission and retains one validated forward and inverse patch pair while its host effect remains actionable.
+`BatchMemberV1` is the patch union without `AtomicBatchPatchV1`. A batch is non-empty, contains no nested batch, uses one outer dispatch identity and expected scene revision, and publishes one scene revision. It is used for aggregate transforms, transform plus rebind, target deletion plus Line or Arrow endpoint detachment, and Group operations. One failure rejects the entire batch. An `AnnotationHistoryEntryV1` is created before initial admission and retains one validated forward and inverse patch pair while its host effect remains actionable.
 
 For `create-elements`, `movedElementIds` equals the absent created IDs and inserts them between validated adjacent anchors without a removal step. For `delete-elements`, it equals present deleted IDs whose current placement matches `priorPlacement` and removes them without reinsertion. Only `replace-object-order` removes the named present IDs and inserts them between the named adjacent predecessor and successor in the remaining order. Both anchors may be null only when the applicable remaining order is empty. The moved IDs retain their listed relative order. This permits work proportional to moved members plus indexed order updates without serializing a complete 10,000-element order for a one-element move.
 
-Create, delete, Group, and attachment operations are dependency-closed. Deleting a target includes every required connector disconnection and Group change in the same batch. A direct operation that would leave an unresolved ID, invalid Group, invalid port, or incomplete object order is rejected.
+Create, delete, Group, and attachment operations are dependency-closed. Deleting a target includes every required Line or Arrow endpoint detachment and Group change in the same batch. A direct operation that would leave an unresolved ID, invalid Group, invalid port, or incomplete object order is rejected.
 
 ## 3. Revision Rules and Command Results
 
-A successful dispatch produces `scene.revision = expectedSceneRevision + 1`. Every created or changed component receives that new scene revision as its component revision; every unrelated component revision is preserved. Geometry replacement changes only affected geometry revisions, style replacement only affected style revisions, and binding replacement only affected binding revisions. Connector endpoint replacement is the sole authority for Connector geometry, advances its geometry revision exactly once, and updates the reverse attachment index atomically. A batch may advance multiple component revisions on one element once each but still publishes one scene revision. Forward, Undo, and Redo each use a fresh operation envelope against the current scene. Repeated Undo or Redo and branch-after-Undo therefore cannot restore an earlier revision value or create revision ABA.
+A successful dispatch produces `scene.revision = expectedSceneRevision + 1`. Every created or changed component receives that new scene revision as its component revision; every unrelated component revision is preserved. Geometry replacement changes only affected geometry revisions, style replacement only affected style revisions, and binding replacement only affected binding revisions. Linear geometry replacement is the sole authority for Line and Arrow endpoint attachments and curve geometry, advances each affected geometry revision exactly once, and updates the reverse attachment index atomically. A batch may advance multiple component revisions on one element once each but still publishes one scene revision. Forward, Undo, and Redo each use a fresh operation envelope against the current scene. Repeated Undo or Redo and branch-after-Undo therefore cannot restore an earlier revision value or create revision ABA.
 
 ```ts
 export type CommandErrorCodeV1 =
@@ -483,6 +483,6 @@ export interface RecoveryStore {
 }
 ```
 
-Each mutating method is one atomic transaction and uses compare-and-swap over its expected prior state. V1 selects a transactional IndexedDB adapter. The database schema is versioned independently from sidecars. `localStorage`, `saveLocalStorage()`, plugin data JSON, and the Vault are not conforming recovery backends. Phase 0 MUST prove the host capability and transaction behavior on every supported desktop, iOS, and Android matrix cell; Phase 1 turns that probe into the fully tested production adapter. Failure keeps annotation mutation read-only.
+Each mutating method is one atomic transaction and uses compare-and-swap over its expected prior state. V1 selects a transactional IndexedDB adapter. The database schema is versioned independently from sidecars. `localStorage`, `saveLocalStorage()`, plugin data JSON, and the Vault are not conforming recovery backends. Phase 0 MUST prove the host capability and transaction behavior on every supported desktop and Android environment; Phase 1 turns that probe into the fully tested production adapter. Failure keeps annotation mutation read-only.
 
 The store enforces the 32 MiB global and 8 MiB per-note budgets before accepting a write. A single operation that cannot fit is rejected before history or scene publication. `acknowledgeSidecar()` compares `expectedPriorBase`, requires `sidecarRevision === acknowledgedReplacementBase.revision`, validates the acknowledged replacement path and raw digest, deletes exactly the listed covered attempts and checkpoints, and rebases every retained direct-successor attempt and checkpoint from that prior base to `acknowledgedReplacementBase` in the same atomic transaction. A gap, fork, conflicting base, non-successor record, missing covered ID, or acknowledgement mismatch aborts cleanup and enters recovery conflict. It never removes an actionable host envelope or history entry. Recovery records contain no Markdown text.

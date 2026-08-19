@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import InkbookPlugin from "../../src/main";
+import InkbookPlugin from "../src/main";
 
 describe("InkbookPlugin", () => {
   it("loads and unloads without starting product work during bootstrap", async () => {

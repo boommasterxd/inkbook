@@ -4,11 +4,11 @@ Status: Accepted
 
 ## Context
 
-Inkbook requires current maintained tooling without turning mutable network state into an unreproducible build. Obsidian mobile support also requires a production bundle without Node.js, Electron, native modules, remote code, or a fourth runtime artifact.
+Inkbook requires current maintained tooling without turning mutable network state into an unreproducible build. Obsidian Android support also requires a production bundle without Node.js, Electron, native modules, remote code, or a fourth runtime artifact.
 
 ## Decision
 
-Inkbook uses npm as its only package manager, Node.js 26 during its Current phase and subsequent LTS phases for development and CI, TypeScript, esbuild, ESLint, Prettier, Vitest with V8 coverage, fast-check, Playwright, dependency-cruiser, jscpd, knip, npm audit, and project-owned validation scripts.
+Inkbook uses npm as its only package manager, Node.js 26 during its Current phase and subsequent LTS phases for development and CI, TypeScript, esbuild, ESLint, Prettier, Vitest with V8 coverage, dependency-cruiser, jscpd, knip, and npm audit.
 
 `package.json` uses maintained semantic ranges. The npm-generated lockfile records the exact reviewed graph and `npm ci` reproduces it. Direct GitHub Actions use full immutable commit SHAs because workflow execution is supply-chain-sensitive, while Dependabot continually proposes newer reviewed stable action releases. The runtime plugin never downloads code or dependencies.
 
@@ -26,8 +26,6 @@ The bootstrap resolution on 2026-08-18 selected:
 | TypeScript                                      | 6.0.3                                           |
 | Prettier                                        | 3.9.6                                           |
 | Vitest and V8 coverage                          | 4.1.11                                          |
-| fast-check                                      | 4.9.0                                           |
-| Playwright                                      | 1.62.1                                          |
 | dependency-cruiser                              | 18.2.0                                          |
 | jscpd                                           | 5.0.16                                          |
 | knip                                            | 6.32.2                                          |
@@ -37,19 +35,19 @@ TypeScript 7.0.2 was the newest standalone stable TypeScript release at bootstra
 
 `skipLibCheck` is enabled only because the published Obsidian 1.13.1 declaration bundle contains host classes that declare `HistoryHandler` without declaring its required `onHistoryBack()` member. Project sources and tests remain fully strict and receive no skip or path exclusion. This narrow upstream boundary MUST be retested and removed when a corrected Obsidian declaration release is selected.
 
-The production build targets ES2022, produces CommonJS `main.js`, treats Obsidian, CodeMirror, and Lezer host packages as external, copies the namespaced stylesheet, minifies release output, and emits no source map. The release package contains exactly `main.js`, `manifest.json`, and `styles.css`.
+The production build targets ES2022, stages CommonJS `dist/main.js`, `dist/manifest.json`, and `dist/styles.css`, treats Obsidian, CodeMirror, and Lezer host packages as external, copies the namespaced stylesheet, minifies release output, and emits no source map. The release exposes those three files at the root of the installed plugin package.
 
 ## Update Policy
 
-Dependabot checks npm and GitHub Actions weekly. Minor and patch updates may auto-merge only through all required checks. Major updates remain isolated for review. Before every phase exit and release freeze, `npm run freshness:check` resolves official stable channels again. For Node.js it verifies the newest stable patch on the selected Node 26 line throughout the Current-to-LTS transition. An older version is accepted only while a documented current compatibility constraint makes the newer version unusable; such a constraint blocks silent drift and is removed at the first compatible update.
+Dependabot checks npm and GitHub Actions weekly. Minor and patch updates may auto-merge only through all required checks. Major updates remain isolated for review. Node.js, npm, and gitleaks updates are reviewed when their upstream release channels change. An older version is accepted only while a documented current compatibility constraint makes the newer version unusable; such a constraint blocks silent drift and is removed at the first compatible update. Test-only tools are added when a real executable suite needs them, not as unused placeholders.
 
 ## Consequences
 
-Daily builds remain reproducible through the lockfile while maintenance continuously follows current stable releases. Build and CI action versions are evidence, not permanent project constants. Phase 0 remains incomplete until host-history, worker, IndexedDB, view-attachment, touch, zoom, mobile, and real-device probes pass the compatibility matrix.
+Daily builds remain reproducible through the lockfile while maintenance continuously follows current stable releases. Build and CI action versions are evidence, not permanent project constants. Phase 0 remains incomplete until host-history, worker, IndexedDB, view-attachment, touch, zoom, Android, and real-device probes pass on every supported environment.
 
 ## References
 
 - [Implementation Roadmap](../specification/11-implementation-roadmap.md)
 - [Quality and Performance](../specification/09-quality-and-performance.md)
-- [Repository and CI Governance](../specification/17-repository-and-ci-governance.md)
+- [GitHub and CI](../specification/17-github-and-ci.md)
 - [Obsidian Host Contract](../specification/14-obsidian-host-contract.md)

@@ -11,7 +11,7 @@ You may not:
 - modify, adapt, translate, or create derivative works from the software;
 - publish, distribute, sublicense, sell, rent, lease, host, or otherwise make the software or its source code available to another person;
 - use the software on behalf of an organization, for a public service, or for a commercial purpose;
-- remove or alter copyright, license, authorship, or provenance notices;
+- remove or alter copyright, license, or authorship notices;
 - use trademarks, names, or branding except as needed to identify an unmodified permitted copy.
 
 Third-party components remain subject to their own licenses. This license grants no rights to those components beyond the rights their licensors provide.

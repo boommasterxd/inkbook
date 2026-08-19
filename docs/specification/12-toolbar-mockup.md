@@ -33,6 +33,8 @@ The mockup-only preview controls for theme, viewport, and toolbar presentation a
 
 The static mockup shows the canonical default order within the primary toolbar and More Tools menu. Production users can reorder tools within those fixed groups through Obsidian's normal plugin settings. The mockup does not simulate order persistence, validation, migration, or its accessible settings controls.
 
+Production additionally keeps one view-local toolbar host and an independent always-visible Show or Hide toggle mounted while the Markdown view exists. The current static mockup does not simulate this collapsed state. Lines and Arrows represent both free and object-port-attached linear annotations; there is no additional linear tool kind.
+
 ## Non-Goals
 
 The mockup does not provide:

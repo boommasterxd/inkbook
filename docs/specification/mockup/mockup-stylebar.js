@@ -76,9 +76,7 @@ function piPanelFor(kind, context) {
     return `${piRange("Radius", 12, 4, 40, " px")}<span class="control-label">Whole-element eraser</span>`;
   if (kind === "background") return piBackgroundPanel(state);
   if (["arrow", "line"].includes(kind))
-    return `${piSwatches()}${piRange("Width", 3, 1, 12, " px")}${piRange("Opacity", 100, 10, 100, "%")}${piSegmented("Line", ["Solid", "Dashed", "Dotted"], "Solid")}${piSegmented("Path", ["Straight", "Curved"], "Straight")}${piSegmented("Start", ["None", "Arrow", "Dot", "Circle", "Diamond", "Bar"], "None")}${piSegmented("End", ["None", "Arrow", "Dot", "Circle", "Diamond", "Bar"], kind === "arrow" ? "Arrow" : "None")}`;
-  if (kind === "connector")
-    return `${piSwatches()}${piRange("Width", 3, 1, 12, " px")}${piRange("Opacity", 100, 10, 100, "%")}${piSegmented("Line", ["Solid", "Dashed", "Dotted"], "Solid")}${piSegmented("Start", ["None", "Arrow", "Dot", "Circle", "Diamond", "Bar"], "None")}${piSegmented("End", ["None", "Arrow", "Dot", "Circle", "Diamond", "Bar"], "None")}<span class="value-chip">Attached</span><button class="toggle" type="button">Reconnect</button>`;
+    return `${piSwatches()}${piRange("Width", 3, 1, 12, " px")}${piRange("Opacity", 100, 10, 100, "%")}${piSegmented("Line", ["Solid", "Dashed", "Dotted"], "Solid")}${piSegmented("Path", ["Straight", "Curved"], "Straight")}${piSegmented("Start", ["None", "Arrow", "Dot", "Circle", "Diamond", "Bar"], "None")}${piSegmented("End", ["None", "Arrow", "Dot", "Circle", "Diamond", "Bar"], kind === "arrow" ? "Arrow" : "None")}<span class="value-chip">Endpoints snap to object ports</span><button class="toggle" type="button">Detach endpoint</button>`;
   if (kind === "coordinate-system") {
     const selectedDimensions =
       elementDimensions[state.selectedElement] || state.coordinateDimensions;
@@ -93,7 +91,7 @@ function piPanelFor(kind, context) {
       : state.tableDefaults;
     return `${piSwatches()}${piRange("Width", 2, 1, 12, " px")}${piRange("Opacity", 100, 10, 100, "%")}${piTableCount("Rows", counts.rows)}${piTableCount("Columns", counts.columns)}${piSegmented("Line", ["Solid", "Dashed", "Dotted"], "Solid")}`;
   }
-  return `${piSwatches("Outline")}${piRange("Width", 2, 1, 12, " px")}${piRange("Opacity", 100, 10, 100, "%")}${piSegmented("Line", ["Solid", "Dashed", "Dotted"], "Solid")}${piSegmented("Fill", ["None", "Light", "Solid"], "None")}${piSwatches("Fill color")}`;
+  return `${piSwatches("Outline")}${piRange("Width", 2, 1, 12, " px")}${piRange("Outline opacity", 100, 0, 100, "%")}${piSegmented("Line", ["Solid", "Dashed", "Dotted"], "Solid")}${piSegmented("Fill", ["None", "Solid"], "None")}${piSwatches("Fill color")}${piRange("Fill opacity", 100, 0, 100, "%")}`;
 }
 
 function piSelectSegment(button) {

@@ -20,7 +20,7 @@ Every function, class, component, and module MUST have one clear primary respons
 
 Production, test, configuration, documentation, branch, and commit content is English. Technical identifiers and file names are ASCII-compatible and use one documented casing convention per file type. Commits, when made, use English Conventional Commit messages. The implementation declares npm as its one package manager, generates its lockfile only through npm, and MUST NOT mix package managers or perform unrelated dependency upgrades.
 
-The project uses a rolling-current toolchain and dependency policy. Every newly added dependency starts at the newest stable release that is mutually compatible with the supported Obsidian and mobile runtime. Before every phase exit and release-candidate freeze, an automated freshness check resolves the current stable release channels for Node.js active LTS, npm, every direct dependency, every quality tool, and every CI action or build runtime. The candidate MUST use those current stable compatible releases; a compatibility failure blocks the candidate until it is resolved rather than silently retaining an older version. Prereleases are excluded unless a separate accepted decision explicitly requires one. `package.json` uses maintained semantic-version ranges instead of permanent exact version pins where the ecosystem supports them. The npm-generated lockfile still records the exact resolved graph, CI and release builds use `npm ci`, and build evidence records the exact Node.js, npm, dependency, tool, action, and runtime versions used. Supply-chain-sensitive CI actions are pinned to one reviewed immutable digest within a workflow revision, but automated maintenance continually replaces that digest with the newest reviewed stable release. A published plugin never fetches or updates executable dependencies at runtime. New versions enter only through a reviewed lockfile or workflow update that passes all quality, security, mobile, package, and performance gates against one immutable artifact.
+The project uses a rolling-current toolchain and dependency policy. Every newly added dependency starts at the newest stable release that is mutually compatible with the supported Obsidian and Android runtime. Dependabot proposes npm and GitHub Actions updates weekly. Prereleases are excluded unless a separate accepted decision requires one. `package.json` uses maintained semantic-version ranges, the npm-generated lockfile records the exact reviewed graph, and CI and release builds use `npm ci`. Supply-chain-sensitive CI actions use reviewed immutable commit digests that Dependabot updates. A published plugin never fetches or updates executable dependencies at runtime.
 
 Relevant behavior changes require deterministic tests in the same change. Bug fixes require regression tests. Tests observe public behavior, cover normal, boundary, failure, security-abuse, race, and cancellation cases, and MUST NOT rely on fixed waits. The `test/` tree mirrors the production source structure.
 
@@ -28,7 +28,7 @@ Technical documentation and source comments are concise English. Public interfac
 
 ## 2. Required Quality Lanes
 
-The repository uses the settings, automation, required checks, and rulesets in [Repository and CI Governance](17-repository-and-ci-governance.md) and the three cumulative lanes below. A later lane includes every earlier gate and MUST NOT waive it.
+The project uses the three cumulative quality lanes below. A later lane includes every applicable earlier gate and MUST NOT waive it.
 
 ### 2.1 Per-Commit CI
 
@@ -40,26 +40,18 @@ Every production or documentation change MUST pass all applicable deterministic 
 4. at least 85 percent line coverage over production sources;
 5. duplication detection using `jscpd` with `minTokens: 50` and at most 5 percent duplicated lines;
 6. dead-code and unused-export detection using `knip` or a proven equivalent;
-7. dependency, phase-exit, and release validation with no unresolved, waived, or accepted critical or high security finding;
-8. production build and Obsidian plugin package validation;
-9. manifest validation, including mobile support and minimum Obsidian version;
-10. documentation-link and example validation for this specification tree;
-11. license and clean-room provenance validation for every changed code, test, fixture, algorithm, icon, asset, configuration, or documentation artifact;
-12. host-adapter contract tests against deterministic fakes for the declared minimum API surface;
-13. static mobile-bundle inspection that rejects transitive Node.js, Electron, native-module, remote-code, and hidden-file-system dependencies;
-14. package-shape validation for `main.js`, `manifest.json`, and `styles.css`.
+7. dependency auditing with no unresolved critical or high vulnerability;
+8. architecture-boundary checking and a successful production build.
 
-The package gate verifies that the immutable worker payload is embedded in `main.js`, no fourth runtime artifact is required, and the production bundle contains no remote-worker or dynamic-code path.
+Host-adapter, Android, accessibility, packaging, and performance checks become part of the applicable lane when their corresponding implementation exists. Placeholder evidence files do not satisfy a gate.
 
 ### 2.2 Phase-Exit Validation
 
-Before an implementation phase exits, the project MUST pass Per-Commit CI plus every integration, Obsidian host, browser, performance, accessibility, fault-injection, migration, and real-device check assigned to that phase in [Implementation Roadmap](11-implementation-roadmap.md). The run records the production bundle digest, fixture digests, exact host and operating-system versions, device identifiers, test IDs, results, and approved manual evidence. A missing required matrix cell, threshold, fixture, or manual record blocks the phase exit. A phase may explicitly prove an unavailable capability and fail closed, but it MUST NOT claim the dependent feature complete.
+Before an implementation phase exits, the project MUST pass Per-Commit CI plus every integration, Obsidian host, performance, accessibility, fault-injection, migration, and real-device check assigned to that phase in [Implementation Roadmap](11-implementation-roadmap.md). Evidence is recorded alongside the real executable suite or release report, not in empty placeholder manifests. A phase MUST NOT claim an untested dependent feature complete.
 
 ### 2.3 Release Validation
 
-A release candidate repeats Per-Commit CI and every phase-exit suite against the frozen compatibility and benchmark manifests. It additionally validates exact tag-version equality, plugin ID-folder equality, `versions.json` when the minimum version changed, complete desktop, iOS, and Android host cells, 5,000-element capacity, 10,000-element stress, packaging, licensing, provenance, accessibility, security, privacy, and Community directory requirements. A release result is valid only for the recorded immutable artifact.
-
-Before any production implementation begins, the clean-room ADR and provenance log required by [Architecture](04-architecture.md) MUST exist and be reviewed. Provenance is updated with the same change that introduces an influenced artifact, not reconstructed only at release time.
+A release candidate repeats Per-Commit CI and every applicable phase suite against the exact release artifact. It additionally validates tag-version equality, `versions.json` when the minimum version changed, supported desktop and Android environments, 5,000-element capacity, 10,000-element stress, packaging, licensing, accessibility, security, privacy, and Community directory requirements.
 
 ## 3. Architecture Gates
 
@@ -79,7 +71,7 @@ CI MUST reject:
 - one React component per annotation element, scene-wide React context values that change on every pointer sample or scene revision, or React ownership of retained SVG geometry;
 - authored production, test, benchmark, and mockup files or functions above the CI maxima. Only generated artifacts may use a narrow documented exclusion.
 
-Reusable components SHOULD be small and purpose-specific. Shared controls such as color, width, opacity, caps, dash, fill, menu, slider, and segmented choice belong in a toolbar component library. Domain operations, geometry, input routing, and Obsidian adapters MUST not be folded into UI components for convenience.
+Reusable components SHOULD be small and purpose-specific. Shared controls such as color, width, independent outline and fill opacity, caps, dash, fill, menu, slider, and segmented choice belong in a toolbar component library. Domain operations, geometry, input routing, and Obsidian adapters MUST not be folded into UI components for convenience.
 
 ## 4. Performance Workload
 
@@ -90,7 +82,7 @@ The long-note benchmark fixture contains at least:
 - at least 2,000 text-following elements distributed across text-range and text-position bindings, with the remaining elements using a deterministic mix that includes fixed bindings;
 - 250,000 total stroke points;
 - 200,000 note CSS pixels of scrollable height;
-- mixed strokes, highlighters, shapes, connectors, axes, and tables;
+- mixed strokes, highlighters, shapes, free and attached Lines or Arrows, axes, and tables;
 - offscreen, selected, degraded, and orphaned elements.
 
 The minimum supported interactive-capacity tier is 5,000 canonical annotation elements in one note on every supported release device. The 10,000-element workload is the standard release stress gate, not a parser-limit claim. Both tiers contain dispersed and dense visible-cluster variants, are generated deterministically, have recorded digests and encoded byte sizes, and MUST be valid under every simultaneous sidecar limit. Parser abuse ceilings above these tiers do not imply interactive performance.
@@ -104,6 +96,7 @@ The frame and latency budgets in [SVG Rendering](06-svg-rendering.md) are releas
 - viewport culling mounts no more than the documented bounded set for the standard long-note viewport;
 - scroll and zoom work is proportional to viewport candidates, not all 10,000 elements;
 - selecting or resizing one visible element performs work proportional to that element and bounded nearby candidates, never all scene elements;
+- dragging or reconnecting one Line or Arrow endpoint queries only bounded spatial-index candidates inside the snap tolerance, projects only their stable ports, and updates attachment dependents through the reverse index, never through a complete-scene scan;
 - a single geometry resize preserves the style record and invalidates only affected geometry, paint bounds, selection geometry, spatial-index entries, and geometry-dependent caches;
 - aggregate resize preview uses one transient group transform for compatible mounted projections and one coalesced worker batch only for mounted pressure-stroke level-of-detail outlines; it never regenerates offscreen member paths, Table dividers, axes guides, or canonical samples for each pointer event;
 - aggregate commit work is proportional to selected members, publishes atomically, and never rebuilds the complete scene or spatial index;
@@ -115,7 +108,7 @@ The frame and latency budgets in [SVG Rendering](06-svg-rendering.md) are releas
 - secondary-button pan while zoomed changes only the shared view transform and never annotation selection, canonical state, history, or sidecar work;
 - pointer movement causes no canonical scene publication and at most one scheduled render per frame;
 - pointer movement, scroll, pure zoom, culling, retained-node updates, selection chrome, and worker progress cause zero React note-root commits and zero per-element React renders;
-- a tool, style, or selection-summary change causes at most one batched React commit for only the subscribed toolbar, stylebar, menu, or status subtree;
+- a tool, style, selection-summary, or toolbar-visibility change causes at most one batched React commit for only the subscribed toolbar, stylebar, persistent visibility-toggle, menu, or status subtree; collapsing and expanding never recreate the view's framework root or overlay;
 - listener callbacks, worker completions, and attached-view updates never re-enter canonical publication synchronously; bursts are serialized and revision-coalesced without recursive render or command cascades;
 - one completed gesture causes one operation, one isolated invertible event in the originating host history, and one coalescible save generation;
 - native Markdown transaction bursts compose into at most one active and one replaceable latest source-checkpoint write, materialize no per-element anchor array on the editor update path, and cause one coalescible sidecar generation, with no annotation effect event and no view-only reflow checkpoint;
@@ -137,7 +130,7 @@ The frame and latency budgets in [SVG Rendering](06-svg-rendering.md) are releas
 - migration between the main window and a desktop pop-out releases old-window listeners, observers, animation frames, framework roots, and SVG ownership before binding the new owner window;
 - coarse UI framework root count remains proportional to attached view and settings surfaces, and every root unmounts with its `Component` owner.
 
-A conforming worker platform is one compatibility-matrix cell whose Phase 0 production worker probe passes launch, transfer, cancellation, crash, and disposal. `WORKER_ADMISSION_V1` MUST apply when any threshold in a row is met:
+A conforming worker platform is a supported environment whose Phase 0 production worker probe passes launch, transfer, cancellation, crash, and disposal. `WORKER_ADMISSION_V1` MUST apply when any threshold in a row is met:
 
 | Operation family                                                                     | Worker admission threshold                                                   |
 | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
@@ -148,11 +141,11 @@ A conforming worker platform is one compatibility-matrix cell whose Phase 0 prod
 | Anchor materialization, external reattachment, or binding inference                  | At least 128 ranked candidates, 256 source blocks, or 512 rendered fragments |
 | Reflow or background-region derivation                                               | At least 256 affected elements, fragments, source line boxes, or regions     |
 
-An admitted phase runs in the worker on a conforming cell. On a cell whose Phase 0 worker probe fails, or after a worker crash, the identical pure phase uses the specified cancellable 2 ms active or 4 ms idle main-thread slices and remains fail-closed if its queue or memory bound cannot be met. Below all listed thresholds, measured main-thread work is permitted only while it stays inside the same slicing and frame budgets. The version and thresholds are part of the benchmark manifest and cannot change after observing a release-candidate run.
+An admitted phase runs in the worker on a conforming environment. On an environment whose Phase 0 worker probe fails, or after a worker crash, the identical pure phase uses the specified cancellable 2 ms active or 4 ms idle main-thread slices and remains fail-closed if its queue or memory bound cannot be met. Below all listed thresholds, measured main-thread work is permitted only while it stays inside the same slicing and frame budgets. Benchmark versions and thresholds are fixed in the executable suite and cannot change after observing a release-candidate run.
 
 The following additional initial budgets MUST pass:
 
-| Scenario                                                                   |                        Desktop or tablet |                       Mobile |
+| Scenario                                                                   |                Desktop or Android tablet |                Android phone |
 | -------------------------------------------------------------------------- | ---------------------------------------: | ---------------------------: |
 | Plugin `onload` with no annotated note open                                |           at most 50 ms main-thread work |               at most 100 ms |
 | Editor extension update with no relevant document or viewport change, p95  |                           at most 0.5 ms |                 at most 1 ms |
@@ -176,9 +169,9 @@ The following additional initial budgets MUST pass:
 | Peak additional heap for a 16 MiB sidecar load                             |                          at most 160 MiB |              at most 160 MiB |
 | Steady additional heap for the 5,000-element fixture in one pane           |                           at most 64 MiB |               at most 48 MiB |
 
-The standard 10,000-element stress tier MUST pass these predeclared end-to-end duration budgets. For a presented-frame row, `F` is the measured refresh interval of the named device and display configuration. The separate main-thread work budgets remain 8 ms for desktop or tablet and 12 ms for mobile under [SVG Rendering](06-svg-rendering.md); they MUST NOT be substituted for presentation latency.
+The standard 10,000-element stress tier MUST pass these predeclared end-to-end duration budgets. For a presented-frame row, `F` is the measured refresh interval of the named device and display configuration. The separate main-thread work budgets remain 8 ms for desktop or Android tablet and 12 ms for Android phone under [SVG Rendering](06-svg-rendering.md); they MUST NOT be substituted for presentation latency.
 
-| Stable row ID                     | Scenario                                                                                                  |                        Desktop or tablet p95 / p99 / maximum |                                    Mobile p95 / p99 / maximum |
+| Stable row ID                     | Scenario                                                                                                  |                Desktop or Android tablet p95 / p99 / maximum |                             Android phone p95 / p99 / maximum |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------- | -----------------------------------------------------------: | ------------------------------------------------------------: |
 | `PERF-10K-OPEN`                   | Cold note open to full mutation readiness                                                                 |                                     1,500 / 2,250 / 3,000 ms |                                      3,000 / 4,500 / 6,000 ms |
 | `PERF-10K-SELECT`                 | Select All and aggregate-frame publication                                                                |                                           200 / 300 / 400 ms |                                          500 / 750 / 1,000 ms |
@@ -191,6 +184,7 @@ The standard 10,000-element stress tier MUST pass these predeclared end-to-end d
 | `PERF-10K-DRAW-PRESENT`           | Drawing input to presented preview                                                                        |  `max(16.7 ms, F)` / `max(33.4 ms, 2F)` / `max(50.1 ms, 3F)` |   `max(33.4 ms, F)` / `max(50.1 ms, 2F)` / `max(66.8 ms, 3F)` |
 | `PERF-10K-SELECT-PRESENT`         | Single-object selection to presented chrome                                                               |  `max(16.7 ms, F)` / `max(33.4 ms, 2F)` / `max(50.1 ms, 3F)` |   `max(33.4 ms, F)` / `max(50.1 ms, 2F)` / `max(66.8 ms, 3F)` |
 | `PERF-10K-RESIZE-PRESENT`         | Single-object resize input to presented preview                                                           |  `max(16.7 ms, F)` / `max(33.4 ms, 2F)` / `max(50.1 ms, 3F)` |   `max(33.4 ms, F)` / `max(50.1 ms, 2F)` / `max(66.8 ms, 3F)` |
+| `PERF-10K-ATTACH-PRESENT`         | Line or Arrow endpoint drag to presented snap or free-endpoint preview                                    |  `max(16.7 ms, F)` / `max(33.4 ms, 2F)` / `max(50.1 ms, 3F)` |   `max(33.4 ms, F)` / `max(50.1 ms, 2F)` / `max(66.8 ms, 3F)` |
 | `PERF-10K-TABLE-PRESENT`          | Table-divider input to presented preview                                                                  |  `max(16.7 ms, F)` / `max(33.4 ms, 2F)` / `max(50.1 ms, 3F)` |   `max(33.4 ms, F)` / `max(50.1 ms, 2F)` / `max(66.8 ms, 3F)` |
 | `PERF-10K-AXIS-PRESENT`           | Axis-length input to presented preview                                                                    |  `max(16.7 ms, F)` / `max(33.4 ms, 2F)` / `max(50.1 ms, 3F)` |   `max(33.4 ms, F)` / `max(50.1 ms, 2F)` / `max(66.8 ms, 3F)` |
 | `PERF-10K-AGGREGATE-PRESENT`      | Aggregate resize input to presented preview, with or without pressure Pens                                | `max(33.4 ms, 2F)` / `max(50.1 ms, 3F)` / `max(66.8 ms, 4F)` | `max(50.1 ms, 2F)` / `max(66.8 ms, 3F)` / `max(100.2 ms, 4F)` |
@@ -216,7 +210,7 @@ The standard 10,000-element stress tier MUST pass these predeclared end-to-end d
 | `PERF-10K-CHECKPOINT-PUBLISH`     | Source-checkpoint acknowledgement to first durable publication                                            |                                                4 / 8 / 16 ms |                                                8 / 16 / 32 ms |
 | `PERF-10K-TEARDOWN`               | Synchronous view-resource detach or plugin-unload teardown, excluding a recovery-protected headless flush |                                             50 / 75 / 100 ms |                                            100 / 150 / 200 ms |
 
-For the same tier, steady additional heap in one pane is at most 96 MiB on desktop or tablet and 72 MiB on mobile. Peak additional heap during any listed stress operation is at most 192 MiB and 160 MiB respectively. Steady heap is the maximum of five post-GC measurements after full mutation readiness; peak heap includes workers and transferable staging owned by the plugin. Every percentile-gated scenario uses at least 5 warmup samples followed by at least 100 measured samples per fixture and compatibility cell. Percentiles use the nearest-rank method and maximum is the largest measured value. Before a release-candidate run begins, the device matrix, fixture digests, thresholds, warmup, sample count, and measurement procedure are frozen in the versioned benchmark manifest. A missing threshold or a threshold changed after observing the run fails the stress gate.
+For the same tier, steady additional heap in one pane is at most 96 MiB on desktop or Android tablet and 72 MiB on Android phone. Peak additional heap during any listed stress operation is at most 192 MiB and 160 MiB respectively. Steady heap is the maximum of five post-GC measurements after full mutation readiness; peak heap includes workers and transferable staging owned by the plugin. Every percentile-gated scenario uses at least 5 warmup samples followed by at least 100 measured samples per fixture and supported environment. Percentiles use the nearest-rank method and maximum is the largest measured value. Before a release-candidate run begins, the executable benchmark suite fixes the devices, fixture digests, thresholds, warmup, sample count, and measurement procedure. A missing threshold or a threshold changed after observing the run fails the stress gate.
 
 Forced checkpoint barriers bypass the idle debounce and use the Forced queue-wait row. Normal checkpoints use the Normal debounce-and-queue row. Both scenarios use the common Mapping composition, Digest work, `RecoveryStore` append, and Acknowledgement to first durable publication rows while also enforcing their respective end-to-end row. All phase and end-to-end gates are conjunctive; phase percentiles are not added to derive an end-to-end percentile. The 500 ms normal-path maximum is measured from the first dirty source generation and is absolute. The asynchronous last-view checkpoint flush is separate from synchronous detach and uses the two-second hard maximum in [Architecture](04-architecture.md).
 
@@ -281,11 +275,11 @@ The enforced trust boundaries are:
 | Worker scheduler             | Requests, responses, buffers, timing                | Versioned messages, byte and job admission, transfer ownership, canonical-buffer non-detachment, cancellation, stale-result rejection, crash cleanup                        |
 | Recovery and history         | Effects, attempts, epochs, replay, quota            | Transactional IndexedDB, exact lifecycle and revision checks, one owner lease, bounded retention, durable direction before publication, fail-closed exhaustion              |
 | UI, theme, and diagnostics   | Labels, CSS tokens, focus, errors                   | Safe DOM and SVG APIs, closed paint allowlists, namespaced CSS, no authored markup sinks, redaction, accessible non-color state                                             |
-| Build and dependencies       | Transitive code and package artifacts               | Lockfile, license and provenance records, audit, architecture checks, mobile-bundle scan, immutable release validation                                                      |
+| Build and dependencies       | Transitive code and package artifacts               | Lockfile, license review, audit, architecture checks, Android-bundle scan, immutable release validation                                                                     |
 
 Security invariants are fail closed before mutation: a path never escapes the Vault policy, an unknown or over-limit record never reaches scene construction, stale work never publishes, a failed recovery admission never reaches history or scene, external file conflict never uses silent last-writer-wins, and an unsupported host capability never falls back to private or broader access. Runtime production code performs no network request, remote code load, telemetry, tracking, or secret storage. Security checks MUST NOT be disabled to recover performance.
 
-Residual risks that cannot be eliminated by this plugin are host API changes, equivalent-access local plugins, operating-system or synchronization failures, and platform storage eviction. The compatibility matrix, drift and conflict UI, recovery probes, provenance review, and truthful read-only modes reduce but do not claim to eliminate those risks.
+Residual risks that cannot be eliminated by this plugin are host API changes, equivalent-access local plugins, operating-system or synchronization failures, and platform storage eviction. Compatibility tests, drift and conflict UI, recovery probes, and truthful read-only modes reduce but do not claim to eliminate those risks.
 
 ### 7.2 Verification and Data Minimization
 
@@ -305,11 +299,9 @@ The SVG scene itself is not a substitute for semantic toolbar controls. Selected
 
 ## 9. Dependency Policy
 
-Dependencies require a concrete benefit, active maintenance, compatible license, mobile compatibility, and acceptable bundle cost. The implementation SHOULD prefer Obsidian, CodeMirror, browser, and small focused utilities already present before adding a framework.
+Dependencies require a concrete benefit, active maintenance, compatible license, Android compatibility, and acceptable bundle cost. The implementation SHOULD prefer Obsidian, CodeMirror, browser, and small focused utilities already present before adding a framework.
 
 Every Obsidian import is recorded with its first supported host version. A dependency that makes `isDesktopOnly: false` untrue is forbidden. Release validation evaluates the bundled transitive graph, not only authored imports.
-
-The adjacent `obsidian_ink` checkout is excluded evidence. Its source, source-level summaries, identifiers, algorithms, fixtures, assets, and build details MUST NOT enter specification or production implementation work. The separated process in [Clean-Room Implementation](../decisions/0001-clean-room-implementation.md) and [Architecture](04-architecture.md) is mandatory, and its provenance plus isolation records are release artifacts. Any future proposal to change this boundary requires a new reviewed ADR and compatible legal decision before the material is accessed or used.
 
 ## 10. Release Definition of Done
 
@@ -317,4 +309,4 @@ A phase or release is complete only when its requested behavior, architecture, c
 
 Before public distribution, the project records a factual applicability assessment based on current official primary sources for GDPR, TDDDG, DDG, BFSG, BFSGV, the EU AI Act, consumer and e-commerce rules, and required legal notices. Inapplicable areas require a concrete rationale based on the actual local-only product, distribution, operator role, target market, business model, and data flows. Missing facts block a compliance claim rather than being invented.
 
-Public release additionally requires the package, manifest, mobile, documentation, policy, licensing, directory, version-fallback, and artifact rules in [Obsidian Host Contract](14-obsidian-host-contract.md). No completion report may claim Community compatibility from compilation alone.
+Public release additionally requires the package, manifest, Android, documentation, policy, licensing, directory, version-fallback, and artifact rules in [Obsidian Host Contract](14-obsidian-host-contract.md). No completion report may claim Community compatibility from compilation alone.

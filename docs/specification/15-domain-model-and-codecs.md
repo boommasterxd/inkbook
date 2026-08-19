@@ -85,7 +85,7 @@ export interface ConstructionStyleV1 extends StrokePaintV1 {
 }
 ```
 
-Opacity and fill opacity are in `[0, 1]`. Width is in `[0.25, 128]` note pixels. Cap size is in `[1, 128]` note pixels. Smoothing, streamline, and thinning are in `[0, 1]`. UI step sizes are presentation concerns, but accepted canonical values are quantized to increments of `0.01`. Highlighter style MUST use constant width and ignores pointer pressure. A stored dotted line uses round visual dots separated by `2 * width`; dashed uses dash length `4 * width` and gap `2 * width`. These derived values are not persisted.
+Every `StrokePaintV1.opacity` and solid `FillV1.opacity` is independently validated in `[0, 1]`. For `ShapeStyleV1`, inherited `opacity` is exclusively outline opacity and `fill.opacity` is exclusively fill opacity; neither value is derived from or multiplied by the other, and a renderer MUST NOT replace them with one shared group opacity. Width is in `[0.25, 128]` note pixels. Cap size is in `[1, 128]` note pixels. Smoothing, streamline, and thinning are in `[0, 1]`. UI step sizes are presentation concerns, but accepted canonical values are quantized to increments of `0.01`. Highlighter style MUST use constant width and ignores pointer pressure. A stored dotted line uses round visual dots separated by `2 * width`; dashed uses dash length `4 * width` and gap `2 * width`. These derived values are not persisted.
 
 The V1 pressure-outline algorithm consumes the canonical samples, `PenStyleV1`, and `strokeProfileVersion`. Its golden geometry fixtures are frozen before Phase 3 exits. Changing the algorithm without changing `strokeProfileVersion` is forbidden. Resize never changes a style or its revision.
 
@@ -101,6 +101,11 @@ export interface EncodedStrokeV1 {
   readonly data: string;
 }
 
+export interface StrokeGeometryV1 {
+  readonly stroke: EncodedStrokeV1;
+  readonly selectionRotationRadians: number;
+}
+
 export interface AreaGeometryV1 {
   readonly center: NotePointV1;
   readonly width: number;
@@ -109,8 +114,8 @@ export interface AreaGeometryV1 {
 }
 
 export interface LinearGeometryV1 {
-  readonly start: NotePointV1;
-  readonly end: NotePointV1;
+  readonly start: LinearEndpointV1;
+  readonly end: LinearEndpointV1;
   readonly control: NotePointV1 | null;
 }
 
@@ -130,15 +135,14 @@ export interface Axes3DGeometryV1 extends Axes2DGeometryV1 {
   readonly zAxis: NoteVectorV1;
 }
 
-export type NonConnectorGeometryV1 =
-  | EncodedStrokeV1
+export type NonLinearGeometryV1 =
+  | StrokeGeometryV1
   | AreaGeometryV1
-  | LinearGeometryV1
   | TableGeometryV1
   | Axes2DGeometryV1
   | Axes3DGeometryV1;
 
-export type CanonicalGeometryV1 = NonConnectorGeometryV1 | ConnectorGeometryV1;
+export type CanonicalGeometryV1 = NonLinearGeometryV1 | LinearGeometryV1;
 
 export type CanonicalStyleV1 =
   | PenStyleV1
@@ -148,13 +152,13 @@ export type CanonicalStyleV1 =
   | ConstructionStyleV1;
 ```
 
-Shape area width and height are each at least `0.01`. Shape and Table rotation is canonicalized to `[-Math.PI, Math.PI)`, where `Math.PI` canonicalizes to `-Math.PI`. Positive rotation is visually counterclockwise in the CSS note plane. A local area point `(lx, ly)` maps exactly to `(center.x + lx * cos(theta) + ly * sin(theta), center.y - lx * sin(theta) + ly * cos(theta))`. Table width and height are at least `2`; divider validation and equal redistribution use the formulas in [Interaction and Tools](02-interaction-and-tools.md). Axis vectors are non-zero, pairwise non-collinear projected vectors. `gridDivisions` is an integer from `0` through `64`.
+Shape area width and height are each at least `0.01`. Shape, Table, Stroke, and persisted Group selection rotation is canonicalized to `[-Math.PI, Math.PI)`, where `Math.PI` canonicalizes to `-Math.PI`. Positive rotation is visually counterclockwise in the CSS note plane. A new Pen or Highlighter stores `selectionRotationRadians: 0`; rotation materializes its samples in note coordinates and replaces that field with the committed absolute angle. To reconstruct one stroke frame at angle `theta`, derive the finite sample-bounds center, inverse-rotate every relevant cached or canonical sample around that center by `theta`, compute the local axis-aligned bounds, and rotate that bounds rectangle forward by `theta`. This prevents the stored orientation from rotating already materialized samples a second time. Deselect, reload, Undo, and Redo preserve the angle exactly. A local area point `(lx, ly)` maps exactly to `(center.x + lx * cos(theta) + ly * sin(theta), center.y - lx * sin(theta) + ly * cos(theta))`. Table width and height are at least `2`; divider validation and equal redistribution use the formulas in [Interaction and Tools](02-interaction-and-tools.md). Axis vectors are non-zero, pairwise non-collinear projected vectors. `gridDivisions` is an integer from `0` through `64`.
 
-A curved Line or Arrow uses the quadratic Bézier point `(1 - t)^2 * start + 2 * (1 - t) * t * control + t^2 * end` for `t` in `[0, 1]`. Its curve handle addresses the canonical `control` point directly. A null control renders and hit-tests the straight start-to-end segment.
+A curved Line or Arrow first resolves each endpoint from its own binding and optional object-port attachment, then uses the quadratic Bézier point `(1 - t)^2 * start + 2 * (1 - t) * t * control + t^2 * end` for `t` in `[0, 1]`. Its curve handle addresses the canonical `control` point directly. A null control renders and hit-tests the straight resolved start-to-end segment.
 
-Pen and Highlighter geometry use `EncodedStrokeV1`. Pointer-pressure Pen requires `pressure: "present"`; constant Pen and every Highlighter require `pressure: "absent"`. Pen and Highlighter dash is always solid. Rectangle, Ellipse, Triangle, Diamond, and Octagon use `AreaGeometryV1`. Line and Arrow use `LinearGeometryV1`. Only Line and Arrow may persist a quadratic `control`; Connector is straight in V1 and has no curve control. Table and axes use their semantic records above. Derived paths, cells, guides, bounds, handles, fragments, and SVG nodes are never canonical records.
+Pen and Highlighter geometry use `StrokeGeometryV1`, whose `stroke` uses `EncodedStrokeV1`. Pointer-pressure Pen requires `pressure: "present"`; constant Pen and every Highlighter require `pressure: "absent"`. Pen and Highlighter dash is always solid. Rectangle, Ellipse, Triangle, Diamond, and Octagon use `AreaGeometryV1`. Line and Arrow use `LinearGeometryV1` and may persist a quadratic `control` plus zero, one, or two endpoint attachments. Table and axes use their semantic records above. Derived paths, cells, guides, bounds, handles, fragments, and SVG nodes are never canonical records.
 
-## 4. Connector Ports and Endpoints
+## 4. Object Ports and Attached Linear Endpoints
 
 ```ts
 export type ObjectPortIdV1 =
@@ -167,27 +171,22 @@ export type ObjectPortIdV1 =
   | "axes:y-positive"
   | "axes:z-positive";
 
-export interface ConnectorAttachmentV1 {
+export interface ObjectPortAttachmentV1 {
   readonly targetElementId: ElementId;
   readonly portId: ObjectPortIdV1;
 }
 
-export interface ConnectorEndpointV1 {
+export interface LinearEndpointV1 {
   readonly fallbackPoint: NotePointV1;
-  readonly attachment: ConnectorAttachmentV1 | null;
-}
-
-export interface ConnectorGeometryV1 {
-  readonly start: ConnectorEndpointV1;
-  readonly end: ConnectorEndpointV1;
+  readonly attachment: ObjectPortAttachmentV1 | null;
 }
 ```
 
-Rectangle, Ellipse, Triangle, Diamond, Octagon, and Table expose the four area ports at the midpoints of their local oriented bounds. A 2D axes object exposes origin, X-positive, and Y-positive. A 3D axes object additionally exposes Z-positive. Pen, Highlighter, Line, Arrow, Connector, and Group expose no V1 ports. A port that is invalid for the target kind rejects the complete scene.
+Rectangle, Ellipse, Triangle, Diamond, Octagon, and Table expose the four area ports where rays from the local center in the north, east, south, and west directions first intersect the actual closed outline defined in [SVG Rendering](06-svg-rendering.md). Rectangle and Table therefore use edge midpoints, Ellipse uses its cardinal extrema, and polygon ports lie on their actual edges or vertices rather than on an unrelated bounds corner. A 2D axes object exposes origin, X-positive, and Y-positive. A 3D axes object additionally exposes Z-positive. Pen, Highlighter, Line, Arrow, and Group expose no V1 ports. A port that is invalid for the target kind rejects the complete scene.
 
 Area ports are transformed by the same center, local frame, rotation, binding projection, and whole-note view transform as their target. Axis ports resolve to the stored origin or positive vector endpoint. A range-bound enclosure target resolves its area ports from the current view-local enclosure projection, so two panes may display different endpoint positions without canonical mutation. The endpoint fallback remains canonical note geometry.
 
-A reverse attachment index maps targets to attached connector endpoints. Target move, resize, rotation, reflow, and preview update only those returned endpoints. A committed canonical target transform updates each attached endpoint's `fallbackPoint` in the same atomic batch. View-only text reflow changes only the resolved projection and does not mutate the fallback or scene. Target deletion resolves the last current endpoint when possible, otherwise retains `fallbackPoint`, clears the attachment, and publishes target deletion plus all disconnects atomically. Undo restores the target and attachments exactly. Connectors cannot target connectors, so attachment cycles are structurally impossible. One target admits at most 1,024 attached endpoints.
+A reverse attachment index maps targets to attached Line or Arrow endpoints. Target move, resize, rotation, reflow, and preview update only those returned endpoints. A committed canonical target transform updates each attached endpoint's `fallbackPoint` in the same atomic batch. View-only text reflow changes only the resolved projection and does not mutate the fallback or scene. Target deletion resolves the last current endpoint when possible, otherwise retains `fallbackPoint`, clears the attachment, and publishes target deletion plus all disconnects atomically. Undo restores the target and attachments exactly. Lines and Arrows cannot be attachment targets, so attachment cycles are structurally impossible. One target admits at most 1,024 attached endpoints.
 
 ## 5. Scene Elements
 
@@ -202,13 +201,13 @@ export interface ElementCommonV1 {
 
 export interface PenElementV1 extends ElementCommonV1 {
   readonly kind: "pen";
-  readonly geometry: EncodedStrokeV1;
+  readonly geometry: StrokeGeometryV1;
   readonly style: PenStyleV1;
 }
 
 export interface HighlighterElementV1 extends ElementCommonV1 {
   readonly kind: "highlighter";
-  readonly geometry: EncodedStrokeV1;
+  readonly geometry: StrokeGeometryV1;
   readonly style: HighlighterStyleV1;
 }
 
@@ -221,12 +220,6 @@ export interface ShapeElementV1 extends ElementCommonV1 {
 export interface LineElementV1 extends ElementCommonV1 {
   readonly kind: "line" | "arrow";
   readonly geometry: LinearGeometryV1;
-  readonly style: LinearStyleV1;
-}
-
-export interface ConnectorElementV1 extends ElementCommonV1 {
-  readonly kind: "connector";
-  readonly geometry: ConnectorGeometryV1;
   readonly style: LinearStyleV1;
 }
 
@@ -253,7 +246,6 @@ export type SceneElementV1 =
   | HighlighterElementV1
   | ShapeElementV1
   | LineElementV1
-  | ConnectorElementV1
   | TableElementV1
   | Axes2DElementV1
   | Axes3DElementV1;
@@ -273,6 +265,7 @@ Eraser, Cursor, Lasso, selection chrome, Table cells, Table dividers, axis guide
 export interface GroupRecordV1 {
   readonly groupId: GroupId;
   readonly childIds: readonly (ElementId | GroupId)[];
+  readonly selectionRotationRadians: number;
 }
 
 export interface SceneStateV1 {
@@ -290,7 +283,7 @@ export interface NoteAppearanceV1 {
 }
 ```
 
-`elements` contains each `ElementId` exactly once. `objectOrder` is a complete duplicate-free back-to-front permutation of those IDs. Groups contain at least two ordered direct children, references resolve, one child has at most one direct parent, and nesting is at most 32. Groups have no independent style, binding, geometry, or object-order slot. Recursively flattening one Group's `childIds` in stored order MUST equal exactly the contiguous `objectOrder` subsequence occupied by that Group. Sidecar validation, clipboard validation, and every Group replacement enforce this same invariant.
+`elements` contains each `ElementId` exactly once. `objectOrder` is a complete duplicate-free back-to-front permutation of those IDs. Groups contain at least two ordered direct children, references resolve, one child has at most one direct parent, and nesting is at most 32. Groups have no independent style, binding, element geometry, or object-order slot. `selectionRotationRadians` is only the canonical orientation authority for reconstructing that persisted Group's aggregate selection frame; creating a Group initializes it to zero, and a committed Group rotation updates it by the same absolute rotation used to materialize every descendant transform. Reconstruction inverse-rotates descendant selection geometry by the stored angle around any common finite origin, computes its local union bounds, and rotates that rectangle forward; the result is origin-independent and does not rotate descendants twice. Recursively flattening one Group's `childIds` in stored order MUST equal exactly the contiguous `objectOrder` subsequence occupied by that Group. Sidecar validation, clipboard validation, and every Group replacement enforce this same invariant.
 
 Creating a Group preserves descendant relative order and compacts its leaf descendants into one contiguous block at the earliest selected leaf position. Nested selected roots are reduced to their highest selected ancestor before compaction. Ungrouping preserves the current leaf order. A Group z-order command moves its complete contiguous leaf block while preserving internal order. Any operation that would interleave another element inside a Group block is invalid. This makes Group selection and z-order deterministic without a second ordering authority.
 
@@ -306,8 +299,8 @@ export interface ClipboardElementV1 {
   readonly kind: SceneElementV1["kind"];
   readonly geometry: CanonicalGeometryV1;
   readonly style: CanonicalStyleV1;
-  readonly connectorStartAttachment: ClipboardAttachmentV1 | null;
-  readonly connectorEndAttachment: ClipboardAttachmentV1 | null;
+  readonly linearStartAttachment: ClipboardAttachmentV1 | null;
+  readonly linearEndAttachment: ClipboardAttachmentV1 | null;
 }
 
 export interface ClipboardAttachmentV1 {
@@ -317,6 +310,7 @@ export interface ClipboardAttachmentV1 {
 
 export interface ClipboardGroupV1 {
   readonly localGroupId: number;
+  readonly selectionRotationRadians: number;
   readonly childRefs: readonly (
     | { readonly kind: "element"; readonly localId: number }
     | { readonly kind: "group"; readonly localGroupId: number }
@@ -333,11 +327,11 @@ export interface InkbookClipboardV1 {
 }
 ```
 
-The payload is non-empty. Local IDs are contiguous integers from zero. `objectOrder` is a complete permutation of element local IDs. Group rules equal scene Group rules. Geometry and style must match the declared kind. `sourceOrigin` is the center of the finite axis-aligned union of canonical geometry bounds after external connector endpoints are resolved. A Connector's transferred `ConnectorGeometryV1` contains null endpoint attachments; its optional clipboard attachments may reference only an attachable element within the payload and carry the original valid port. A copied endpoint attached outside the selection is converted to a free endpoint at its current safely resolved fallback before serialization. Non-Connector records require both clipboard attachments to be null. Bindings, element or Group IDs, revisions, note identity, source text, anchor contexts, selection state, and viewport state are forbidden.
+The payload is non-empty. Local IDs are contiguous integers from zero. `objectOrder` is a complete permutation of element local IDs. Group rules equal scene Group rules, including canonical persisted selection orientation. Geometry and style must match the declared kind. `sourceOrigin` is the center of the finite axis-aligned union of canonical geometry bounds after external Line or Arrow endpoints are resolved. A transferred Line or Arrow `LinearGeometryV1` contains null endpoint attachments; its optional clipboard attachments may reference only an attachable element within the payload and carry the original valid port. A copied endpoint attached outside the selection is converted to a free endpoint at its current safely resolved fallback before serialization. Every other element record requires both clipboard attachments to be null. Bindings, element or Group IDs, revisions, note identity, source text, anchor contexts, selection DOM, viewport state, and transient multi-selection orientation are forbidden.
 
-Paste allocates fresh cryptographic IDs, assigns every created component the next scene publication revision, remaps internal connector and Group references, translates `sourceOrigin` to the requested current note point, and runs normal binding inference for every created element against one current layout token. Keyboard paste without a pointer target uses the center of the visible unzoomed note viewport. Duplicate uses the same pipeline with an offset of exactly 16 note pixels on both axes. Failure of any ID, resource, geometry, relationship, binding, recovery, or history step rejects the complete atomic batch. Cut writes and acknowledges the clipboard payload before attempting one dependency-closed delete operation.
+Paste allocates fresh cryptographic IDs, assigns every created component the next scene publication revision, remaps internal Line or Arrow endpoint attachments and Group references, translates `sourceOrigin` to the requested current note point, and runs normal binding inference for every created element against one current layout token. Keyboard paste without a pointer target uses the center of the visible unzoomed note viewport. Duplicate uses the same pipeline with an offset of exactly 16 note pixels on both axes. Failure of any ID, resource, geometry, relationship, binding, recovery, or history step rejects the complete atomic batch. Cut writes and acknowledges the clipboard payload before attempting one dependency-closed delete operation.
 
-The encoded payload is at most 1 MiB UTF-8, 5,000 elements, 100,000 total stroke points, 32 Group levels, 64 JSON levels, and 1,024 connector endpoints attached to one copied target. Limits are enforced before immutable construction. Unknown major versions, future minor fields, duplicate keys, non-finite values, invalid cross-kind records, external references, and over-limit input are rejected without clipboard-driven mutation.
+The encoded payload is at most 1 MiB UTF-8, 5,000 elements, 100,000 total stroke points, 32 Group levels, 64 JSON levels, and 1,024 Line or Arrow endpoints attached to one copied target. Limits are enforced before immutable construction. Unknown major versions, future minor fields, duplicate keys, non-finite values, invalid cross-kind records, external references, and over-limit input are rejected without clipboard-driven mutation.
 
 ## 8. `delta-varint-v1` Wire Format
 

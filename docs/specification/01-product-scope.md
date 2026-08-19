@@ -11,18 +11,18 @@ Markdown is always authored through Obsidian. Inkbook owns only its overlay elem
 Users MUST be able to:
 
 1. open an ordinary Markdown note and immediately use native Obsidian text editing;
-2. activate an annotation tool from a compact toolbar at the top of the note;
+2. activate an annotation tool from a compact toolbar at the top of the note, with an independent always-visible note-header toggle that shows or hides the toolbar without detaching its view-local host;
 3. draw with pen and highlighter using mouse or stylus, while finger touch remains reserved for annotation selection, native scrolling, and whole-note pinch zoom;
 4. erase, select, lasso, move, regroup, restyle, copy, cut, paste, duplicate, reorder, and delete plugin-owned elements, and resize or rotate them where their binding-specific selection model exposes those geometry controls;
-5. create rectangles, ellipses, triangles, diamonds, octagons, lines, arrows, connectors, 2D or 3D coordinate systems through one Coordinate system tool, and tables directly over Obsidian's native text editor;
-6. configure line width, opacity, fill, dash pattern, endpoints, curvature, pressure, and applicable tool-specific options through a contextual stylebar;
+5. create rectangles, ellipses, triangles, diamonds, octagons, free or object-attached lines and arrows, 2D or 3D coordinate systems through one Coordinate system tool, and tables directly over Obsidian's native text editor;
+6. configure line width, stroke or outline opacity, fill color, fill opacity, dash pattern, endpoints, curvature, pressure, and applicable tool-specific options through a contextual stylebar;
 7. have the plugin infer whether each completed element follows a text range, one text position, or a fixed note position from its geometry and current relationship to rendered text;
 8. inspect and correct the inferred binding without switching to a separate drawing tool;
 9. manually move a text-bound element and have its binding recomputed at the destination;
 10. zoom the entire note, including Markdown and SVG annotations, as one visual surface;
 11. use optional ruled, squared, or dotted note backgrounds whose vertical rhythm follows the current Obsidian body line height and whose horizontal density scales with the same measured text rhythm;
 12. undo and redo annotation operations through the same ordered host-editor history as Markdown changes in the originating editable pane, without a separate annotation-only shortcut history;
-13. choose whether new sidecars are stored beside each note or below one validated Vault-relative folder, and use the same annotated note on desktop and mobile when the selected Vault synchronization configuration transfers the Markdown file and its `.inkbook.json` sidecar.
+13. choose whether new sidecars are stored beside each note or below one validated Vault-relative folder, and use the same annotated note on desktop and Android when the selected Vault synchronization configuration transfers the Markdown file and its `.inkbook.json` sidecar.
 
 Resize is geometric, not stylistic. At a fixed whole-note zoom, resizing a bounded shape or Table changes its occupied area and canonical geometry while preserving every outline, border, divider, guide, and axis line width in note units. Line-like elements are edited through their endpoints rather than an area-resize box. Each coordinate-system axis has its own constrained length control, so its length can change without changing the shared origin, axis direction, or angle to the other axes. Whole-note zoom still scales Markdown and the complete annotation presentation together.
 
@@ -54,6 +54,10 @@ Tables use one oriented rectangular selection box for whole-table move, resize, 
 
 Tables and axes MUST NOT provide Markdown editing, cell text editing, labels, plugin-owned text boxes, a camera, or a separate 3D scene. A 3D axes object is a two-dimensional projection expressed by three finite note-space axis vectors.
 
+### 2.3 Attached Lines and Arrows
+
+A Line or Arrow is one linear annotation whose start endpoint, end endpoint, or both may snap to stable ports on attachable plugin-owned objects. An attached endpoint continues to resolve against its target when that target moves, resizes, rotates, or reflows. One or both endpoints may instead remain free note points. Attachment does not create a separate element kind, tool, or Group relationship. Detach and reconnect are reversible endpoint operations.
+
 ## 3. Native Obsidian Responsibilities
 
 Inkbook MUST NOT replace or duplicate:
@@ -67,6 +71,8 @@ Inkbook MUST NOT replace or duplicate:
 - Obsidian themes, locale selection, window chrome, file operations, synchronization, or export.
 
 The Cursor tool is the native text-interaction mode. There is no separate Text tool and no plugin-owned Markdown text box.
+
+Cursor also selects plugin-owned annotations. A primary click or stylus tap whose frozen hit target is an annotation or explicit annotation handle selects that plugin target, while an unclaimed event over native Markdown remains fully owned by Obsidian for caret placement, text selection, editing, IME, and software-keyboard input. Users do not switch tools merely to alternate between Markdown editing and annotation selection.
 
 ## 4. Explicitly Excluded Capabilities
 
@@ -101,6 +107,8 @@ Inkbook augments only native Markdown Live Preview, Source, and Reading View. It
 
 ## 6. Platform Support
 
+The supported platforms are desktop Obsidian and Android Obsidian on phones and tablets. Release claims and compatibility evidence MUST NOT imply support for an untested platform.
+
 The plugin manifest MUST use `isDesktopOnly: false`. Production code MUST not depend on Electron, Node.js file-system APIs, hard-coded `.obsidian` paths, desktop-only pointer assumptions, hover-only controls, or a physical keyboard.
 
 The plugin MUST document that a synchronization provider or file filter which excludes `.inkbook.json` cannot synchronize annotations. The YAML locator makes an annotated note self-describing when devices use different default storage settings, but it does not make an excluded sidecar available. A missing sidecar on another device is handled as the explicit drift state in [Sidecar Persistence](07-sidecar-persistence.md), never as an empty annotation scene.
@@ -113,8 +121,8 @@ The interaction model MUST support:
 - native one-finger scrolling on unclaimed note areas and plugin whole-note zoom through a two-finger pinch;
 - the platform software keyboard for native Markdown text entry.
 
-The exact Obsidian package, lifecycle, workspace, editor, user-interface, Vault, mobile, and release boundaries are defined in [Obsidian Host Contract](14-obsidian-host-contract.md).
+The exact Obsidian package, lifecycle, workspace, editor, user-interface, Vault, Android, and release boundaries are defined in [Obsidian Host Contract](14-obsidian-host-contract.md).
 
 ## 7. Product Acceptance Boundary
 
-The plugin is not complete merely because an SVG is visible. Completion requires deterministic persistence, anchor reattachment, mobile-safe input routing, bounded rendering, accessible toolbar and stylebar operation, fault handling, and all gates in [Testing and Acceptance](10-testing-and-acceptance.md).
+The plugin is not complete merely because an SVG is visible. Completion requires deterministic persistence, anchor reattachment, Android-safe input routing, bounded rendering, accessible toolbar and stylebar operation, fault handling, and all gates in [Testing and Acceptance](10-testing-and-acceptance.md).

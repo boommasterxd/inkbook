@@ -4,7 +4,7 @@
 
 Inkbook is a Community plugin whose canonical plugin ID is `inkbook` and whose display name is `Inkbook`. The production default export MUST extend Obsidian `Plugin`, implement asynchronous `onload()`, and release owned resources through `onunload()` and Obsidian `Component` ownership.
 
-The initial compatibility baseline is `minAppVersion: "1.8.7"` and `isDesktopOnly: false`. Before every release, an automated compatibility matrix MUST prove that every imported Obsidian API exists and behaves as required on the declared minimum desktop, iOS, and Android versions. `test/compatibility/compatibility-matrix.schema.json` defines the checked-in format and `test/compatibility/compatibility-matrix.json` contains the selected cells. Every cell records the exact Obsidian version, platform, OS build, device model or desktop hardware profile, imported API set, expected capability, guarded fallback, and evidence references. Results reference the immutable manifest cell and exact production bundle digest. Missing cells, unrecorded APIs, undocumented fallbacks, or unavailable named devices fail release acceptance. An API introduced after the baseline requires a guarded equivalent fallback or an intentional minimum-version increase with an updated root `versions.json`.
+The initial compatibility baseline is `minAppVersion: "1.8.7"` and `isDesktopOnly: false`. The supported platforms are desktop and Android. Before every release, executable tests MUST prove that every imported Obsidian API exists and behaves as required on the declared minimum desktop and Android versions. Release notes record the exact Obsidian version, platform, OS build, device model or desktop hardware profile, imported API set, expected capability, and guarded fallback for every supported environment. An API introduced after the baseline requires a guarded equivalent fallback or an intentional minimum-version increase with an updated root `versions.json`.
 
 ## 2. Package and Manifest
 
@@ -30,7 +30,7 @@ styles.css
 - a validated optional `authorUrl` only when supplied by the publisher;
 - `fundingUrl` only when the publisher actually accepts financial support through the named target.
 
-The immutable plugin ID uses lowercase ASCII letters and hyphens only, does not contain `obsidian`, does not end in `plugin`, and is checked for Community-directory uniqueness before submission. The display name uses permitted Basic Latin characters, includes neither `Obsidian` nor `Plugin`, and is checked for uniqueness. The package validator MUST reject an ID-folder mismatch, missing required property, non-SemVer version, release-tag mismatch, or a mobile bundle containing Node.js or Electron code.
+The immutable plugin ID uses lowercase ASCII letters and hyphens only, does not contain `obsidian`, does not end in `plugin`, and is checked for Community-directory uniqueness before submission. The display name uses permitted Basic Latin characters, includes neither `Obsidian` nor `Plugin`, and is checked for uniqueness. The package validator MUST reject an ID-folder mismatch, missing required property, non-SemVer version, release-tag mismatch, or an Android-compatible bundle containing Node.js or Electron code.
 
 ## 3. Startup, Ownership, and Disposal
 
@@ -50,7 +50,7 @@ One view adapter is keyed by the concrete workspace leaf and host Markdown view 
 
 Obsidian may defer a leaf's view. Passive discovery MUST check `WorkspaceLeaf.isDeferred` and skip a deferred leaf without calling `loadIfDeferred()` or `revealLeaf()`. Production code MUST NOT import or use `instanceof` against a non-public `DeferredView` class. An explicit user command that requires the view MAY await `workspace.revealLeaf()`, recheck the resulting view and file identity, then act. Direct `loadIfDeferred()` is allowed only behind a compatibility adapter when the documented user action cannot be implemented otherwise, and its use and latency MUST be measured.
 
-When a Markdown view migrates into or out of a desktop pop-out window, the adapter handles `HTMLElement.onWindowMigrated()`, releases old-window resources, and rebinds or remounts against the new `element.doc` and `element.win`. Cross-window type checks use `element.instanceOf()` and `event.instanceOf()`, never native `instanceof` against main-window constructors. Mobile does not need to emulate pop-out windows, but desktop split and pop-out behavior is release-tested.
+When a Markdown view migrates into or out of a desktop pop-out window, the adapter handles `HTMLElement.onWindowMigrated()`, releases old-window resources, and rebinds or remounts against the new `element.doc` and `element.win`. Cross-window type checks use `element.instanceOf()` and `event.instanceOf()`, never native `instanceof` against main-window constructors. Android does not need to emulate pop-out windows, but desktop split and pop-out behavior is release-tested.
 
 ## 5. Editor and CodeMirror Contract
 
@@ -64,7 +64,7 @@ Any access to a host editor property that Obsidian does not type publicly, such 
 
 CodeMirror state fields contain only small immutable view-local markers. Their `create()` and `update()` functions are pure, process effects in transaction order, and perform no DOM work, note-session mutation, application dispatch, or unbounded computation. External projection messages carry view identity plus editor, layout, and scene revisions and enter through typed `StateEffect` dispatch. Stale effects are ignored. External code MUST NOT mutate a field or view-plugin value directly.
 
-On a release-supported editable CM6 surface, one annotation operation contributes one isolated invertible effect to the concrete editor's existing history without changing Markdown. Inkbook installs no second `history()` extension, replacement history keymap, or annotation-only Undo and Redo command. The bridge uses bounded immutable payloads, isolates text groups across an annotation boundary, and forwards effect intents in order to the originating `NoteSession`. Toolbar and platform Undo and Redo use this same host-history path. Unsupported, stale, malformed, disposed, or recovery-blocked bridge state fails annotation mutation closed. This contract is proven per compatibility-matrix cell before release; no private-history or separate-stack fallback is permitted.
+On a release-supported editable CM6 surface, one annotation operation contributes one isolated invertible effect to the concrete editor's existing history without changing Markdown. Inkbook installs no second `history()` extension, replacement history keymap, or annotation-only Undo and Redo command. The bridge uses bounded immutable payloads, isolates text groups across an annotation boundary, and forwards effect intents in order to the originating `NoteSession`. Toolbar and platform Undo and Redo use this same host-history path. Unsupported, stale, malformed, disposed, or recovery-blocked bridge state fails annotation mutation closed. This contract is proven on every supported environment before release; no private-history or separate-stack fallback is permitted.
 
 Editor decorations are viewport-neutral. They MAY expose lightweight markers or measurement probes, but MUST NOT replace or hide authored Markdown, add line breaks, alter vertical document layout, or retain canonical SVG scene state. Viewport-bounded decorations belong to the per-view plugin. A state field is used outside the viewport only for a documented small marker set or a measured layout probe.
 
@@ -82,6 +82,8 @@ Reading View is presentation-only in V1. Every toolbar, stylebar, handle, contex
 
 Annotation menus use Obsidian `Menu`. Pointer invocation uses `showAtMouseEvent()`. Keyboard or touch invocation uses `showAtPosition(position, ownerDocument)` with coordinates expressed relative to the originating element's window. Native Markdown context menus remain untouched when Inkbook does not own the target.
 
+Each supported Markdown view owns one bounded Inkbook toolbar host and one independent note-header Show or Hide toggle for the complete concrete-view lifetime. The toggle is plugin-owned safe DOM inside that view, remains mounted and operable while the expanded toolbar is hidden, and never uses a Ribbon action or persistent status-bar item as its only entry point. Collapsing changes view-local presentation only. It MUST NOT dispose the host, annotation overlay, selection, scene subscription, or active tool state. View disposal removes the toggle, toolbar, stylebar, framework root, and subscriptions together and exactly once.
+
 Recovery, conflict, and destructive decisions use Obsidian `Modal` or an accessibility-equivalent host-native modal. Opening a modal does not mutate state. Escape and Cancel preserve the prior state. A chosen action closes the modal before invoking its at-most-once command, and focus returns predictably.
 
 Production DOM is built with safe APIs such as `createEl()`, `createDiv()`, `createSpan()`, attributes, and `textContent`. `innerHTML`, `outerHTML`, `insertAdjacentHTML`, raw authored SVG strings, and untrusted HTML parsing are forbidden. A container uses `empty()` or its owned-node disposer before rerendering.
@@ -90,7 +92,7 @@ Icons use Obsidian `setIcon()` for current supported Lucide IDs or `addIcon()` f
 
 All production CSS is namespaced beneath an Inkbook class and uses Obsidian theme variables. Layout uses logical properties. Inkbook observes host right-to-left state without mutating it, honors `.markdown-source-view[dir]`, per-line direction in mixed editor content, and Reading View `dir="auto"`. Text controls use `unicode-bidi: plaintext` where appropriate. Inkbook relies on Obsidian's automatic RTL icon mirroring and unsets the host transform only for an icon whose meaning is physically fixed.
 
-V1 adds neither a Ribbon action nor a persistent Obsidian status-bar item. Mobile does not expose the desktop status bar consistently, and neither surface is required for the in-note workflow. Save, conflict, recovery, and inference states use bounded view-scoped visible text and an accessible live region owned by the originating view.
+V1 adds neither a Ribbon action nor a persistent Obsidian status-bar item. Android does not expose the desktop status bar consistently, and neither surface is required for the in-note workflow. Save, conflict, recovery, and inference states use bounded view-scoped visible text and an accessible live region owned by the originating view.
 
 ## 8. Settings Contract
 
@@ -118,24 +120,24 @@ An existing sidecar save first obtains its bounded comparison base with `cachedR
 
 Trash behavior uses the host trash contract through `FileManager.trashFile()` or its version-compatible equivalent. Inkbook never calls permanent `Vault.delete()` as a fallback. Rename, create, delete, and modify listeners are owned registrations and tolerate rename, sync, and save races as specified in [Sidecar Persistence](07-sidecar-persistence.md).
 
-## 10. Mobile and Worker Compatibility
+## 10. Android and Worker Compatibility
 
-The production and transitive mobile bundle MUST contain no Node.js built-ins, Electron imports, native modules, or unconditional desktop globals. Platform branches use Obsidian `Platform` capabilities and are exercised on real iOS and Android devices. Desktop mobile emulation is supplementary evidence only.
+The production and transitive Android-compatible bundle MUST contain no Node.js built-ins, Electron imports, native modules, or unconditional desktop globals. Platform branches use Obsidian `Platform` capabilities and are exercised on real Android devices. Desktop mobile emulation is supplementary evidence only.
 
-Runtime syntax is compiled for the selected mobile baseline. RegExp lookbehind is forbidden unless the supported iOS floor and every Android target prove it and a tested fallback exists. Touch behavior has no hover dependency, every required action has a 44 by 44 CSS-pixel target, and software-keyboard text entry remains native Obsidian behavior.
+Runtime syntax is compiled for the selected Android baseline. RegExp lookbehind is forbidden unless every supported Android target proves it and a tested fallback exists. Touch behavior has no hover dependency, every required action has a 44 by 44 CSS-pixel target, and software-keyboard text entry remains native Obsidian behavior.
 
-V1 worker source is included as a build-time static payload in `main.js` and launches through one Phase-0-proven desktop, iOS, and Android adapter. No additional release artifact is assumed. The adapter proves that its local URL or Blob mechanism is permitted by every supported host, revokes temporary URLs during disposal, and falls back to the bounded slices in [SVG Rendering](06-svg-rendering.md) when workers are unavailable. Workers never import Obsidian host APIs or receive mutable canonical buffers.
+V1 worker source is included as a build-time static payload in `main.js` and launches through one Phase-0-proven desktop and Android adapter. No additional release artifact is assumed. The adapter proves that its local URL or Blob mechanism is permitted by every supported host, revokes temporary URLs during disposal, and falls back to the bounded slices in [SVG Rendering](06-svg-rendering.md) when workers are unavailable. Workers never import Obsidian host APIs or receive mutable canonical buffers.
 
 V1 recovery uses the transactional IndexedDB adapter selected in [Operations, Sessions, and Recovery](16-operations-sessions-and-recovery.md). The Phase 0 production-shaped probe MUST exercise creation, transaction commit and abort, quota failure, restart, corruption, exact cleanup, and disposal in every compatibility cell. Inkbook MUST NOT substitute synchronous local storage, plugin JSON, or Vault files when IndexedDB is unavailable or non-conforming; annotation mutation remains read-only with truthful status.
 
 ## 11. Public Release and Community Directory
 
-Public distribution is blocked until the current Community plugin policies and submission requirements are rechecked. The repository and README MUST state capabilities, local data flow, sidecar behavior, mobile support, network absence, compatibility limits, known risks, licensing, and independent third-party status accurately. The implementation MUST not obfuscate behavior, self-install, self-update, download executable code, or claim endorsement by Obsidian.
+Public distribution is blocked until the current Community plugin policies and submission requirements are rechecked. The repository and README MUST state capabilities, local data flow, sidecar behavior, Android support, network absence, compatibility limits, known risks, licensing, and independent third-party status accurately. The implementation MUST not obfuscate behavior, self-install, self-update, download executable code, or claim endorsement by Obsidian.
 
 For every public release:
 
 1. the manifest version, exact Git tag, and release version match;
-2. the lockfile-based production build, type check, tests, audits, mobile bundle check, and package validation pass;
+2. the lockfile-based production build, type check, tests, audits, Android-bundle check, and package validation pass;
 3. `main.js`, `manifest.json`, and `styles.css` are attached to the release;
 4. `versions.json` is updated whenever `minAppVersion` changes and its fallback selection is tested;
 5. a draft release is reviewed before publication;
@@ -143,7 +145,7 @@ For every public release:
 
 The first present package script in the Community scanner order `build`, `build:plugin`, `compile` MUST execute the production plugin build. No earlier script in that order may emit a development artifact or bypass package validation.
 
-The automated GitHub Actions release workflow and repository controls follow [Repository and CI Governance](17-repository-and-ci-governance.md). The workflow resolves the newest stable supported action and runtime releases through the rolling-current policy before each release-candidate freeze. Supply-chain-sensitive actions are pinned to reviewed immutable commit digests within that workflow revision, then automatically refreshed and revalidated when a newer stable release appears; no action or runtime version is frozen permanently by this specification. Signed artifact attestations are required when the adopted release workflow and repository permissions support them.
+The GitHub Actions release workflow and repository controls follow [GitHub and CI](17-github-and-ci.md). Supply-chain-sensitive actions are pinned to reviewed immutable commit digests and updated through Dependabot. Signed artifact attestations are used when the adopted release workflow and repository permissions support them.
 
 Official beta-testing distribution is outside the V1 release requirement. If later adopted, beta versions, channels, and user warnings require a separate reviewed contract. Organization ownership is likewise conditional on the actual publisher and MUST NOT be invented.
 

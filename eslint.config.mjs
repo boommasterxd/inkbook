@@ -21,13 +21,7 @@ const typescriptFiles = ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts"];
 
 export default tseslint.config(
   {
-    ignores: [
-      "coverage/**",
-      "main.js",
-      "node_modules/**",
-      "playwright-report/**",
-      "test-results/**",
-    ],
+    ignores: ["coverage/**", "dist/**", "node_modules/**"],
   },
   eslint.configs.recommended,
   ...tseslint.configs.strictTypeChecked.map((config) => ({

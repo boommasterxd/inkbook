@@ -109,14 +109,10 @@ The React guide informs lifecycle and root-disposal requirements because the cur
 - [React Profiler](https://react.dev/reference/react/Profiler), for measured coarse-UI commit and render-count evidence.
 - [React `useSyncExternalStore`](https://react.dev/reference/react/useSyncExternalStore), as an implementation option for narrow immutable subscriptions.
 
-## Excluded Local Reference
-
-The adjacent `obsidian_ink` checkout is not permitted evidence and is not an implementation or specification input. No requirement, algorithm, fixture, identifier, lifecycle rule, persistence rule, or performance technique may rely on checkout or source inspection. Before production implementation begins, the Phase 0 isolation assessment MUST trace every historically adjacent-project-related claim to an independent user requirement, official public evidence, public standard, or documented black-box observation. A claim that cannot be independently rederived is removed from implementation input. Production implementers receive no checkout-derived notes or source-level summaries. The clean-room provenance requirements in [Clean-Room Implementation](../decisions/0001-clean-room-implementation.md), [Architecture](04-architecture.md), and [Quality and Performance](09-quality-and-performance.md) remain release-blocking.
-
 ## Historical Inkbook References
 
 The previous standalone Inkbook specifications and UI mockup were used only for still-applicable visual and interaction requirements, especially the toolbar, contextual stylebar, tool set, selection handles, style controls, pressure behavior, and code-quality gates. Standalone-only concepts are explicitly excluded in [Product Scope](01-product-scope.md).
 
 ## Reverification
 
-Obsidian APIs, policies, minimum versions, mobile behavior, directory procedures, and release examples are versioned external dependencies. The implementation MUST recheck the exact official pages and API types against the selected minimum and release versions before every public release. Samples are evidence, not permission to freeze old action, runtime, icon-library, or API versions indefinitely.
+Obsidian APIs, policies, minimum versions, Android behavior, directory procedures, and release examples are versioned external dependencies. The implementation MUST recheck the exact official pages and API types against the selected minimum and release versions before every public release. Samples are evidence, not permission to freeze old action, runtime, icon-library, or API versions indefinitely.

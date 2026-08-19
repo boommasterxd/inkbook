@@ -31,7 +31,6 @@ const toolLabels = {
   diamond: "Diamond",
   octagon: "Octagon",
   line: "Line",
-  connector: "Connector",
   "coordinate-system": "Coordinate system",
   table: "Table",
   background: "Background",

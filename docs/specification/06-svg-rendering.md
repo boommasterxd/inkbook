@@ -12,7 +12,7 @@ Each view adapter maintains these logical layers:
 
 1. background, implemented with CSS gradients outside the element scene;
 2. translucent highlighter elements;
-3. opaque strokes, shapes, lines, connectors, axes, and tables;
+3. opaque strokes, shapes, free or attached lines and arrows, axes, and tables;
 4. transient gesture preview;
 5. selection, anchor, endpoint, resize, rotate, and curve chrome.
 
@@ -36,7 +36,11 @@ Reflowable Highlighter and underline presentations MAY derive different visible 
 
 Shapes are stored as semantic geometry and style, not raw SVG strings. Resizing a shape changes its geometry while preserving outline width in note units.
 
-Line and Arrow store endpoints plus an optional finite quadratic curve control point in canonical note coordinates. A missing curve control point denotes straight geometry. Connector stores two free or attached endpoints and remains straight in V1. All three store independent start and end caps plus dash pattern. Line and Arrow selection chrome edit the same canonical curve field. Preview, cancellation, hit testing, spatial-index bounds, and retained rendering MUST use the applicable canonical definition and MUST NOT rebuild unrelated scene elements.
+For local half-extents `hx = width / 2` and `hy = height / 2`, Rectangle uses the four corners `(±hx, ±hy)`, Ellipse uses `x^2 / hx^2 + y^2 / hy^2 = 1`, Triangle uses `(0, -hy)`, `(hx, hy)`, and `(-hx, hy)`, and Diamond uses `(0, -hy)`, `(hx, 0)`, `(0, hy)`, and `(-hx, 0)`. For Octagon, let `a = sqrt(2) - 1`; its clockwise CSS-plane vertices are `(-a*hx, -hy)`, `(a*hx, -hy)`, `(hx, -a*hy)`, `(hx, a*hy)`, `(a*hx, hy)`, `(-a*hx, hy)`, `(-hx, a*hy)`, and `(-hx, -a*hy)`. These definitions own rendering, fill containment, narrow-phase hit testing, lasso coverage, bounds, and port projection so those subsystems cannot diverge.
+
+A shape resolves `ShapeStyleV1.opacity` only to its outline paint and resolves a solid `ShapeStyleV1.fill.opacity` only to its fill paint. Retained SVG uses independent allowlisted stroke and fill opacity attributes and MUST NOT place both paints under one shared group opacity. Changing either value updates only that selected element's retained paint attributes and affected style revision; it does not regenerate geometry, rebuild unrelated elements, or alter the other opacity.
+
+Line and Arrow store two free or attached endpoints plus an optional finite quadratic curve control point in canonical note coordinates. A missing curve control point denotes straight geometry. Both store independent start and end caps plus dash pattern. Selection chrome edits the same canonical endpoints, attachments, and curve field. Preview, cancellation, hit testing, spatial-index bounds, and retained rendering MUST use the applicable canonical definition and MUST NOT rebuild unrelated scene elements.
 
 Tables and axes use the closed canonical geometry records in [Sidecar Persistence](07-sidecar-persistence.md) and render to derived SVG groups. A Table frame and its ordered row and column divider offsets are computed in its local oriented rectangle, then transformed around its canonical center by `rotationRadians`. One Table produces at most a bounded outer-frame path, one composed row-divider path, and one composed column-divider path rather than a node per cell or divider.
 
@@ -63,13 +67,15 @@ Definitions such as markers and clip paths MUST use view-scoped unique IDs. Two 
 
 Selection control geometry is distinct from paint bounds and spatial-index broad-phase bounds:
 
-- a Line or Arrow derives endpoint handles and its applicable curve handle from the actual segment or quadratic curve; a Connector derives only endpoint and attachment handles from its straight segment; none has an area frame;
-- a Pen or Highlighter stroke derives a rectangular area frame from canonical sample bounds; a fixed-width stroke may preview a width-preserving retained-centerline transform, while a pressure-varying Pen regenerates its selected-element outline from transformed bounded centerline or level-of-detail data without changing pressure or style; commit materializes transformed sample coordinates;
+- a Line or Arrow derives endpoint and attachment handles plus its curve handle from the actual segment or quadratic curve and has no area frame;
+- a Pen or Highlighter stroke derives an oriented rectangular area frame from canonical sample bounds and stored `selectionRotationRadians`; a fixed-width stroke may preview a width-preserving retained-centerline transform, while a pressure-varying Pen regenerates its selected-element outline from transformed bounded centerline or level-of-detail data without changing pressure or style; commit materializes transformed sample coordinates and the absolute frame orientation;
 - a closed shape or Table derives one oriented rectangular area frame from local canonical geometry, and a transformable Table additionally derives constrained hit corridors and handles for its internal dividers; when its `text-range` presentation derives visible geometry from an enclosure envelope, the frame remains selectable but exposes no resize or rotation controls;
 - a 2D or 3D axes object derives one separate oriented linear control bound and positive-end length handle for each axis, plus a shared move target and rigid-rotation handle, with no common area-resize frame;
-- a Group or multi-selection derives one aggregate rectangular frame from the union of member control geometry.
+- a persisted Group derives its aggregate rectangular frame in stored `selectionRotationRadians`; a transient multi-selection derives a zero-oriented aggregate frame from the union of member control geometry.
 
 Paint bounds include the current line width, caps, and conservative hit tolerance. The spatial index MAY store an axis-aligned envelope of paint bounds for broad-phase lookup, but that envelope MUST NOT become selection chrome or resize authority. Control frames, handles, paint bounds, and index envelopes are disposable view projections and MUST NOT be serialized.
+
+An area or persisted-Group selection frame renders at its current canonical orientation, not at a newly computed axis-aligned angle. During rotation preview it uses the current snapped or unsnapped absolute angle from `ROTATION_SNAP_PROFILE_V1`. Deselecting and reselecting reconstructs the same orientation from canonical geometry or Group state. Only the broad-phase spatial-index envelope remains axis-aligned.
 
 Control geometry MUST be derived from canonical records and cached geometry, not repeated DOM layout reads. `getBBox()`, `getBoundingClientRect()`, and equivalent per-element DOM measurement are forbidden during pointer-move resize. A zero-width or zero-height stroke bound is expanded only for screen-space control chrome; the corresponding canonical scale handle is disabled until the stroke has nonzero extent. Handle visuals and effective hit targets remain screen-space sized; canonical object geometry remains in unzoomed note coordinates.
 
@@ -89,6 +95,8 @@ Visible plugin objects use geometry-aware hit testing with a screen-space tolera
 
 Curved Line and Arrow hit testing and bounds MUST use their complete quadratic curve. Table and axes hit testing addresses the complete semantic construction element even when its visible geometry is emitted as several composed paths.
 
+Endpoint snap candidates come only from the spatial-index query around the pointer's 12-CSS-pixel screen tolerance, followed by exact current-view port projection and deterministic narrow-phase ordering. Pointer movement updates the active Line or Arrow preview, eligible port indicators, and reverse-indexed dependent previews only. It MUST NOT scan every scene element, rebuild the attachment index, or route candidate changes through React.
+
 Table rendering, spatial bounds, lasso coverage, hit testing, resize handles, and selection chrome MUST use the same local-frame-to-note transform defined by `center` and `rotationRadians`. No subsystem may approximate a rotated Table as its axis-aligned bounding box except for spatial-index broad-phase candidate lookup.
 
 Touch targets MAY be larger than rendered geometry. A hit on a plugin-owned element routes to selection before an active drawing tool. Transparent root overlay regions MUST use pass-through pointer behavior so unclaimed note interactions remain native.
@@ -105,7 +113,7 @@ During pointer movement:
 - no sidecar write occurs;
 - at most one animation-frame render is queued.
 
-A single-object resize, Table-divider, or axis-length preview updates only that object's retained projection and selection chrome. Pressure-varying Pen preview may replace only that selected element's derived outline and MUST discard stale worker generations. An aggregate resize updates one transient group transform plus one aggregate frame for compatible mounted projections. Mounted pressure-varying Pen members use one coalesced, revision-bound worker batch that transforms cached level-of-detail centerlines and regenerates derived outlines from unchanged pressure and style; offscreen members are not preview-generated. At most one latest aggregate pressure-preview request is queued per view, and stale results are discarded. Commit may materialize work proportional to affected members in cancellable worker chunks before one atomic publication, but never to unrelated scene elements.
+A single-object resize, attached-endpoint drag, Table-divider, or axis-length preview updates only that object's retained projection, bounded nearby port indicators where applicable, reverse-indexed dependents, and selection chrome. Pressure-varying Pen preview may replace only that selected element's derived outline and MUST discard stale worker generations. An aggregate resize updates one transient group transform plus one aggregate frame for compatible mounted projections. Mounted pressure-varying Pen members use one coalesced, revision-bound worker batch that transforms cached level-of-detail centerlines and regenerates derived outlines from unchanged pressure and style; offscreen members are not preview-generated. At most one latest aggregate pressure-preview request is queued per view, and stale results are discarded. Commit may materialize work proportional to affected members in cancellable worker chunks before one atomic publication, but never to unrelated scene elements.
 
 Pointer up for element creation or destination movement of a non-fixed element freezes the gesture's Markdown and layout token and performs bounded binding inference. Movement of a `fixed` element preserves its binding. Pointer up for resize or rotation performs only the current-binding validation permitted by [Anchors and Layout](05-anchors-and-layout.md), never classification. Exactly one operation is published only when every required token remains current. It invalidates only affected bounds and caches. Pointer cancellation or stale inference or validation removes preview state, restores the prior SVG projection, and publishes nothing.
 
@@ -125,22 +133,22 @@ CPU-intensive DOM-independent work MUST use a bounded shared worker scheduler wh
 
 Worker use is performance-driven, not unconditional message passing. A calibrated task threshold keeps truly constant-time work on the main thread when serialization and transfer would cost more. All other eligible work is worker-first. Large geometry payloads use packed typed arrays and transferable ownership rather than repeated object cloning. Only worker-owned staging buffers may be transferred; a buffer reachable from the canonical scene, history, recovery state, or retained renderer MUST NOT be detached or exposed for shared mutation. Worker requests and responses are immutable, versioned, size-bounded, cancellable, and bound to scene and layout revisions. Stale results are discarded, newest-current work has priority, queues have hard limits, and cancellation is checked between chunks.
 
-The scheduler creates no worker per element or view. Its concurrency is bounded by a calibrated device profile, never exceeds two workers on mobile or four on desktop, and leaves at least one logical processor for the host when concurrency information is available. If workers are unavailable, the same algorithms run in cancellable main-thread slices of at most 2 ms during active interaction and 4 ms while idle. Loss or disposal of a worker rejects or safely reschedules owned work and releases transferred buffers, listeners, ports, and timers.
+The scheduler creates no worker per element or view. Its concurrency is bounded by a calibrated device profile, never exceeds two workers on Android or four on desktop, and leaves at least one logical processor for the host when concurrency information is available. If workers are unavailable, the same algorithms run in cancellable main-thread slices of at most 2 ms during active interaction and 4 ms while idle. Loss or disposal of a worker rejects or safely reschedules owned work and releases transferred buffers, listeners, ports, and timers.
 
 ## 10. Rendering Performance Budgets
 
 Budgets are initial engineering targets and MUST be calibrated on named real devices before release. `F` is the measured refresh interval of the named device and display configuration.
 
-| Scenario                                                                     |  Desktop or tablet target |             Mobile target |
-| ---------------------------------------------------------------------------- | ------------------------: | ------------------------: |
-| Drawing, scroll, or zoom main-thread work, p95                               |    at most 8 ms per frame |   at most 12 ms per frame |
-| Drawing, scroll, or zoom main-thread work, p99                               |         less than 16.7 ms |         less than 16.7 ms |
-| Input to next visibly presented preview frame, p95                           | at most `max(16.7 ms, F)` | at most `max(33.4 ms, F)` |
-| First visible overlay from a warm sidecar                                    |            at most 300 ms |            at most 750 ms |
-| Warm one-element sidecar save acknowledgement                                |            at most 250 ms |            at most 750 ms |
-| Single command synchronous publication                                       |              at most 8 ms |             at most 12 ms |
-| Single-object selection or resize preview in the 10,000-element fixture, p95 |              at most 8 ms |             at most 12 ms |
-| Write-ahead recovery append, p95                                             |             at most 30 ms |             at most 75 ms |
+| Scenario                                                                     | Desktop or Android tablet target |      Android phone target |
+| ---------------------------------------------------------------------------- | -------------------------------: | ------------------------: |
+| Drawing, scroll, or zoom main-thread work, p95                               |           at most 8 ms per frame |   at most 12 ms per frame |
+| Drawing, scroll, or zoom main-thread work, p99                               |                less than 16.7 ms |         less than 16.7 ms |
+| Input to next visibly presented preview frame, p95                           |        at most `max(16.7 ms, F)` | at most `max(33.4 ms, F)` |
+| First visible overlay from a warm sidecar                                    |                   at most 300 ms |            at most 750 ms |
+| Warm one-element sidecar save acknowledgement                                |                   at most 250 ms |            at most 750 ms |
+| Single command synchronous publication                                       |                     at most 8 ms |             at most 12 ms |
+| Single-object selection or resize preview in the 10,000-element fixture, p95 |                     at most 8 ms |             at most 12 ms |
+| Write-ahead recovery append, p95                                             |                    at most 30 ms |             at most 75 ms |
 
 No supported benchmark may create a main-thread task longer than 50 ms during active input. Performance claims require the benchmark protocol in [Quality and Performance](09-quality-and-performance.md).
 

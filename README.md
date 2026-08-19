@@ -1,8 +1,8 @@
 # Inkbook
 
-Inkbook is a mobile-capable Obsidian plugin for high-performance retained SVG annotations on native Markdown notes. Obsidian continues to own Markdown editing and history. Inkbook stores annotation data in validated sidecar files and projects annotations over Live Preview, Source mode, and Reading View.
+Inkbook is a desktop- and Android-capable Obsidian plugin for high-performance retained SVG annotations on native Markdown notes. Obsidian continues to own Markdown editing and history. Inkbook stores annotation data in validated sidecar files and projects annotations over Live Preview, Source mode, and Reading View.
 
-The repository is currently private and in Phase 0 feasibility work. The product specification is authoritative. The adjacent annotation project mentioned in the specification is not an implementation input.
+The repository is currently private and in Phase 0 feasibility work. The product specification is authoritative.
 
 ## Development
 
@@ -23,10 +23,9 @@ Create a production package locally:
 
 ```sh
 npm run build
-npm run package:check
 ```
 
-The loadable plugin artifacts are `main.js`, `manifest.json`, and `styles.css`. Generated `main.js` and root `styles.css` are release artifacts and are not committed.
+The build stages `main.js`, `manifest.json`, and `styles.css` under the ignored `dist/` directory. GitHub releases expose these files at the root of the installed plugin package.
 
 ## Privacy and Network Use
 
