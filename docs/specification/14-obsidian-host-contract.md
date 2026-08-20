@@ -4,7 +4,7 @@
 
 Inkbook is a Community plugin whose canonical plugin ID is `inkbook` and whose display name is `Inkbook`. The production default export MUST extend Obsidian `Plugin`, implement asynchronous `onload()`, and release owned resources through `onunload()` and Obsidian `Component` ownership.
 
-The initial compatibility baseline is `minAppVersion: "1.8.7"` and `isDesktopOnly: false`. The supported platforms are desktop and Android. Before every release, executable tests MUST prove that every imported Obsidian API exists and behaves as required on the declared minimum desktop and Android versions. Release notes record the exact Obsidian version, platform, OS build, device model or desktop hardware profile, imported API set, expected capability, and guarded fallback for every supported environment. An API introduced after the baseline requires a guarded equivalent fallback or an intentional minimum-version increase with an updated root `versions.json`.
+The initial compatibility baseline is `minAppVersion: "1.8.7"` and `isDesktopOnly: false`. The supported platforms are desktop and Android. Before every release, capability-configurable fake-host tests MUST verify every imported Obsidian API and guarded fallback. Packaged-host automation is added only for behavior that a fake cannot faithfully observe and only where Obsidian exposes a stable controllable surface. The executing test reports the host version and platform in its normal output; no generated compatibility-evidence schema or separate runner framework is required. An API introduced after the baseline requires a guarded equivalent fallback or an intentional minimum-version increase with an updated root `versions.json`.
 
 ## 2. Package and Manifest
 
@@ -18,7 +18,7 @@ styles.css
 
 `styles.css` is required because Inkbook supplies toolbar, stylebar, overlay, and selection styles. Source code is TypeScript, while `main.js` is a production bundle. Public Community distribution additionally requires a root `README.md`, a compatible `LICENSE`, and repository metadata required by the current submission rules. Sample-plugin scaffolding, development-only code, source maps containing local paths, and test fixtures MUST NOT enter the release package.
 
-The production package is subject to the raw, compressed, embedded-worker, cold parse and evaluation, CSS, pre-`onload`, and peak-heap budgets in `ARTIFACT_BUDGET_V1` from [Quality and Performance](09-quality-and-performance.md). Measurement begins immediately before the host loads the plugin module and stylesheet, not at entry to `Plugin.onload()`. Top-level module evaluation may define constants and the plugin class only; it MUST NOT allocate a scene, instantiate a worker, enumerate the Vault, attach a view, or decode the embedded worker payload.
+The production package is subject to the raw, compressed, embedded-worker, cold parse and evaluation, CSS, pre-`onload`, and peak-heap budgets in [Quality and Performance](09-quality-and-performance.md). Measurement begins immediately before the host loads the plugin module and stylesheet, not at entry to `Plugin.onload()`. Top-level module evaluation may define constants and the plugin class only; it MUST NOT allocate a scene, instantiate a worker, enumerate the Vault, attach a view, or decode the embedded worker payload.
 
 `manifest.json` MUST contain:
 
@@ -54,6 +54,8 @@ Obsidian may defer a leaf's view. Passive discovery MUST check `WorkspaceLeaf.is
 
 When a Markdown view migrates into or out of a desktop pop-out window, the adapter handles `HTMLElement.onWindowMigrated()`, releases old-window resources, and rebinds or remounts against the new `element.doc` and `element.win`. Cross-window type checks use `element.instanceOf()` and `event.instanceOf()`, never native `instanceof` against main-window constructors. Android does not need to emulate pop-out windows, but desktop split and pop-out behavior is release-tested.
 
+Each concrete Markdown view's shared zoom surface MUST expose its actual current horizontal and vertical overflow through that view's native scroll surface. Plugin overlay roots are pass-through outside real annotation geometry and preserve native two-axis one-finger touch scrolling, momentum, overscroll, and platform accessibility behavior. Inkbook MUST NOT synthesize touch, wheel, or scroll events or register a competing one-finger pan recognizer. A view with no range on one axis keeps that axis clamped without blocking native movement on the other. Scroll offsets and ranges are view-local and are released with the adapter.
+
 ## 5. Editor and CodeMirror Contract
 
 Native Markdown content is read and changed through the supplied Obsidian `Editor`. An editor command uses `editorCallback` or `editorCheckCallback` and the callback's actual `Editor` and `MarkdownView`; it never looks up a globally active editor. `checkCallback` and `editorCheckCallback` repeat capability checks in both invocations, keep `checking: true` side-effect-free, and mutate only when `checking` is false.
@@ -70,6 +72,10 @@ On a release-supported editable CM6 surface, one annotation operation contribute
 
 Editor decorations are viewport-neutral. They MAY expose lightweight markers or measurement probes, but MUST NOT replace or hide authored Markdown, add line breaks, alter vertical document layout, or retain canonical SVG scene state. Viewport-bounded decorations belong to the per-view plugin. A state field is used outside the viewport only for a documented small marker set or a measured layout probe.
 
+The annotation-aware bottom scroll extent in [Anchors and Layout](05-anchors-and-layout.md#10-annotation-aware-bottom-scroll-extent) uses exactly one inert, per-editor contribution owned by the Inkbook view adapter. It is not authored Markdown and MUST NOT be a layout-changing CodeMirror Decoration. The adapter uses a supported editor extension or equivalent host scroll-surface mechanism, preserves every existing native line position and the host's effective trailing allowance, and excludes its previous contribution when deriving the next value. It MUST NOT access private CodeMirror layout fields, directly mutate CodeMirror-managed descendants, create a synthetic line, affect selection, focus, virtualization, or history, or assume a fixed fraction of the viewport. Disposal restores the native scroll surface and removes the contribution exactly once.
+
+Selection-move edge autoscroll uses that concrete editable view's supported native scroll surface and owner-window animation-frame API. The adapter reads the current viewport, ranges, and matrices in the frame read phase, writes at most one clamped vertical scroll delta, and derives the next retained preview from the applied delta without a synchronous layout read after the write. It MUST NOT mutate CodeMirror-managed descendants, dispatch a synthetic input event, force offscreen Markdown to mount, or retain more than one frame request and latest pointer sample. Editor replacement, mode change, migration, disposal, and unload cancel the loop and release pointer capture before the old adapter is released.
+
 ## 6. Reading View Contract
 
 Reading View uses `registerMarkdownPostProcessor()` and reads only rendered HTML for the section being processed. Rendered DOM order is neither a source-range authority nor a lifecycle oracle. Source relationships come from documented `MarkdownPostProcessorContext` data and validated bounded mapping evidence.
@@ -77,6 +83,8 @@ Reading View uses `registerMarkdownPostProcessor()` and reads only rendered HTML
 Each callback adds one `MarkdownRenderChild` through `context.addChild()` for section-owned observers and background regions. The whole-note overlay remains owned by the concrete Reading View coordinator. Reprocessing replaces the affected section generation without duplicating the overlay. Inkbook registers no Markdown code-block processor and never replaces authored rendered content.
 
 The supported-version probe MUST verify callback granularity, section source mapping, reprocessing, child teardown, and whole-view disposal. Missing trustworthy source evidence produces the degraded read-only placement defined in [Anchors and Layout](05-anchors-and-layout.md), never a guessed binding.
+
+The whole-note Reading View coordinator owns exactly one inert annotation scroll-extent contribution for that concrete view. Section children report their current projected paint bounds to the coordinator but MUST NOT create independent carriers. Reprocessing removes obsolete section entries and updates the existing whole-view contribution without removing it. Mode change, view detach, and disposal remove the contribution without changing rendered Markdown positions or leaving residual scroll space.
 
 Reading View is presentation-only in V1. Every toolbar, stylebar, handle, context-menu, clipboard, hotkey, and command entry point revalidates the concrete host mode immediately before dispatch. Mutation controls are disabled or omitted with an accessible read-only explanation. No Reading View interaction publishes an annotation operation, mutates Markdown, appends history, or enqueues sidecar work.
 
@@ -124,7 +132,7 @@ Trash behavior uses the host trash contract through `FileManager.trashFile()` or
 
 ## 10. Android and Worker Compatibility
 
-The production and transitive Android-compatible bundle MUST contain no Node.js built-ins, Electron imports, native modules, or unconditional desktop globals. Platform branches use Obsidian `Platform` capabilities and are exercised on real Android devices. Desktop mobile emulation is supplementary evidence only.
+The production and transitive Android-compatible bundle MUST contain no Node.js built-ins, Electron imports, native modules, or unconditional desktop globals. Platform branches use Obsidian `Platform` capabilities and are exercised through deterministic Android simulation. Device or emulator automation is added only for an implemented behavior that simulation cannot establish and when a stable control surface exists. Desktop mobile emulation cannot prove physical-device behavior, and missing device automation MUST NOT be replaced by a repeated user-run test matrix or speculative runner infrastructure.
 
 Runtime syntax is compiled for the selected Android baseline. RegExp lookbehind is forbidden unless every supported Android target proves it and a tested fallback exists. Touch behavior has no hover dependency, every required action has a 44 by 44 CSS-pixel target, and software-keyboard text entry remains native Obsidian behavior.
 
@@ -153,4 +161,4 @@ Official beta-testing distribution is outside the V1 release requirement. If lat
 
 ## 12. Verification Ownership
 
-The adapter contracts and release cases in this document are tested by [Testing and Acceptance](10-testing-and-acceptance.md). Performance counters and package gates are owned by [Quality and Performance](09-quality-and-performance.md). The official pages used for this contract and pages reviewed as intentionally inapplicable are recorded in [References](13-references.md).
+The adapter contracts and release cases in this document are tested by [Testing and Acceptance](10-testing-and-acceptance.md). Fake-host suites run continuously. Packaged-host, simulator, emulator, or device automation is used only where the environment exposes stable control and the contract cannot be established at a simpler layer. Performance counters and package gates are owned by [Quality and Performance](09-quality-and-performance.md). One concise phase sanity check may cover only newly visible host behavior and never substitutes for automatable tests. The official pages used for this contract and pages reviewed as intentionally inapplicable are recorded in [References](13-references.md).

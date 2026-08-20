@@ -27,7 +27,13 @@ export function restoreHostHistory(
   if (snapshot === undefined) {
     return { kind: restore.hostEffectsMayBeReachable ? "blocked" : "empty" };
   }
-  if (!isValidSnapshot(snapshot, noteIdentity, limits)) {
+  let valid: boolean;
+  try {
+    valid = isValidSnapshot(snapshot, noteIdentity, limits);
+  } catch {
+    return { kind: "blocked" };
+  }
+  if (!valid) {
     return { kind: "blocked" };
   }
   for (const entry of snapshot.entries) entries.set(entry.effectId, entry);

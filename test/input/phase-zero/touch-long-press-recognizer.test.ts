@@ -48,7 +48,7 @@ describe("TouchLongPressRecognizer", () => {
     expect(recognizer.state).toBe("idle");
   });
 
-  it("cancels at the inclusive movement slop and for another touch", () => {
+  it("cancels at the inclusive movement slop and for a third pointer", () => {
     const moved = new TouchLongPressRecognizer();
     moved.pointerDown(touch(1, 0, 0));
     expect(moved.pointerMove(touch(1, 8, 0))).toMatchObject({
@@ -60,6 +60,9 @@ describe("TouchLongPressRecognizer", () => {
     const multiTouch = new TouchLongPressRecognizer();
     multiTouch.pointerDown(touch(1, 0, 0));
     expect(multiTouch.pointerDown(touch(2, 20, 0))).toMatchObject({
+      cancelTimer: false,
+    });
+    expect(multiTouch.pointerDown(touch(3, 40, 0))).toMatchObject({
       cancelTimer: true,
     });
     expect(multiTouch.state).toBe("idle");

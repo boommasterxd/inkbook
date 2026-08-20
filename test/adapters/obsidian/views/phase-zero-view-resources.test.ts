@@ -66,6 +66,10 @@ function exerciseTouchAndZoom(
   container: HTMLElement,
   marker: SVGCircleElement,
 ): void {
+  const firstExpectedScale = 1.96;
+  const liveExpectedScale = 3.24;
+  const svg = container.querySelector("svg");
+  expect(svg?.style.transformOrigin).toBe("48px 48px");
   const selection = pointer("pointerdown", {
     button: 0,
     clientX: 48,
@@ -77,44 +81,26 @@ function exerciseTouchAndZoom(
   expect(selection.defaultPrevented).toBe(true);
   expect(marker.classList.contains("is-selected")).toBe(true);
   marker.dispatchEvent(pointer("pointerup", { pointerId: 1 }));
-  container.dispatchEvent(
-    pointer("pointerdown", {
-      clientX: 20,
-      clientY: 20,
-      pointerId: 2,
-      pointerType: "touch",
-    }),
-  );
-  container.dispatchEvent(
-    pointer("pointerdown", {
-      clientX: 40,
-      clientY: 20,
-      pointerId: 3,
-      pointerType: "touch",
-    }),
-  );
-  const firstZoom = pointer("pointermove", {
-    clientX: 48,
-    clientY: 20,
-    pointerId: 3,
-    pointerType: "touch",
-  });
+  const first = { clientX: 20, clientY: 20, identifier: 2 };
+  const second = { clientX: 40, clientY: 20, identifier: 3 };
+  container.dispatchEvent(touch("touchstart", [first], [first]));
+  container.dispatchEvent(touch("touchstart", [second], [first, second]));
+  const moved = { ...second, clientX: 48 };
+  const firstZoom = touch("touchmove", [moved], [first, moved]);
   container.dispatchEvent(firstZoom);
   const firstTransform = container.querySelector("svg")?.style.transform;
-  const liveZoom = pointer("pointermove", {
-    clientX: 56,
-    clientY: 20,
-    pointerId: 3,
-    pointerType: "touch",
-  });
+  const live = { ...second, clientX: 56 };
+  const liveZoom = touch("touchmove", [live], [first, live]);
   container.dispatchEvent(liveZoom);
   const liveTransform = container.querySelector("svg")?.style.transform;
   expect(firstZoom.defaultPrevented).toBe(true);
   expect(liveZoom.defaultPrevented).toBe(true);
-  expect(firstTransform).toContain("scale(1.4)");
-  expect(liveTransform).toContain("scale(1.8)");
+  expect(readScale(firstTransform)).toBeCloseTo(firstExpectedScale);
+  expect(readScale(liveTransform)).toBeCloseTo(liveExpectedScale);
+  expect(firstTransform).toMatch(/^translate\(0px, 0px\) scale\(/u);
+  expect(liveTransform).toMatch(/^translate\(0px, 0px\) scale\(/u);
   expect(liveTransform).not.toBe(firstTransform);
-  container.dispatchEvent(pointer("pointercancel", { pointerId: 2 }));
+  container.dispatchEvent(touch("touchcancel", [live], [first]));
 }
 
 function exerciseTouchpadZoom(container: HTMLElement): void {
@@ -330,6 +316,42 @@ function pointer(type: string, options: PointerEventInit): PointerEvent {
     cancelable: true,
     ...options,
   });
+}
+
+function readScale(transform: string | undefined): number {
+  const value = /scale\(([^)]+)\)$/u.exec(transform ?? "")?.[1];
+  if (value === undefined) throw new Error("Expected scale transform.");
+  return Number(value);
+}
+
+function touch(
+  type: string,
+  changed: readonly TouchPoint[],
+  active: readonly TouchPoint[],
+): TouchEvent {
+  const event = new Event(type, {
+    bubbles: true,
+    cancelable: true,
+  }) as TouchEvent;
+  Object.defineProperties(event, {
+    changedTouches: { value: touchList(changed) },
+    touches: { value: touchList(active) },
+  });
+  return event;
+}
+
+interface TouchPoint {
+  readonly clientX: number;
+  readonly clientY: number;
+  readonly identifier: number;
+}
+
+function touchList(values: readonly TouchPoint[]): TouchList {
+  return {
+    item: (index: number): Touch | null =>
+      (values[index] as Touch | undefined) ?? null,
+    length: values.length,
+  } as TouchList;
 }
 
 describe("PhaseZeroViewRegistry", () => {

@@ -28,6 +28,7 @@ export class PhaseZeroRuntime {
   readonly #history: PhaseZeroHistoryController;
   #recovery: Promise<RecoveryIndexedDbStore | undefined> | undefined;
   #disposed = false;
+  #registered = false;
 
   public constructor(plugin: Plugin) {
     this.#plugin = plugin;
@@ -50,6 +51,8 @@ export class PhaseZeroRuntime {
   }
 
   public register(): void {
+    if (this.#registered || this.#disposed) return;
+    this.#registered = true;
     this.#plugin.registerEditorExtension(this.#history.bridge.extension);
     this.#plugin.registerMarkdownPostProcessor((element, context): void => {
       if (!this.#disposed) this.#views.reportReadingSection(element, context);
@@ -69,7 +72,9 @@ export class PhaseZeroRuntime {
       name: "Phase 0: Insert annotation history probe",
       editorCheckCallback: (checking, editor, view): boolean => {
         const available =
-          view instanceof MarkdownView && this.#history.canInsert(view);
+          !this.#disposed &&
+          view instanceof MarkdownView &&
+          this.#history.canInsert(view);
         if (!checking && available) {
           void this.#history.insertProbeAnnotation(editor, view);
         }
@@ -80,7 +85,10 @@ export class PhaseZeroRuntime {
       id: "phase-zero-show-transient-input-probe",
       name: "Phase 0: Show transient input probe",
       editorCheckCallback: (checking, _editor, view): boolean => {
-        const path = view instanceof MarkdownView ? view.file?.path : undefined;
+        const path =
+          !this.#disposed && view instanceof MarkdownView
+            ? view.file?.path
+            : undefined;
         if (!checking && path !== undefined) {
           this.#views.render(path, "transient-input-probe");
         }
@@ -129,6 +137,7 @@ export class PhaseZeroRuntime {
   }
 
   async #runEnvironmentProbe(): Promise<void> {
+    if (this.#disposed) return;
     const environment = readWorkerEnvironment(globalThis);
     const slices = createSliceScheduler(globalThis);
     const scheduler = new PhaseZeroWorkerScheduler({

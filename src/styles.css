@@ -20,7 +20,6 @@
   height: 100%;
   overflow: visible;
   pointer-events: none;
-  transform-origin: 0 0;
 }
 
 .inkbook-phase-zero-marker {

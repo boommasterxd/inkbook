@@ -1,4 +1,8 @@
-import { decodeRecord } from "./record-codec";
+import {
+  decodeRecord,
+  recoveryAttemptKey,
+  recoveryNoteKey,
+} from "./record-codec";
 import type { StoredAttempt } from "./schema";
 import type { RecoveryProbeRecord } from "./types";
 
@@ -36,6 +40,14 @@ export function validateStoredAttempt(
   }
   const record = decodeRecord(serialized);
   if (record === null) {
+    return null;
+  }
+  const expectedNoteKey = recoveryNoteKey(record.note);
+  const expectedAttemptKey =
+    expectedNoteKey === null
+      ? null
+      : recoveryAttemptKey(expectedNoteKey, record.attemptId);
+  if (noteKey !== expectedNoteKey || key !== expectedAttemptKey) {
     return null;
   }
   return {

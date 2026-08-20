@@ -12,17 +12,18 @@ Users MUST be able to:
 
 1. open an ordinary Markdown note and immediately use native Obsidian text editing;
 2. activate an annotation tool from a compact toolbar at the top of the note, with an independent always-visible note-header toggle that shows or hides the toolbar without detaching its view-local host;
-3. draw with pen and highlighter using mouse or stylus, while finger touch remains reserved for annotation selection, native scrolling, and whole-note pinch zoom;
-4. erase, select, lasso, move, regroup, restyle, copy, cut, paste, duplicate, reorder, and delete plugin-owned elements, and resize or rotate them where their binding-specific selection model exposes those geometry controls;
+3. draw with pen and highlighter using mouse or stylus, while finger touch remains reserved for annotation selection, native two-axis scrolling of a zoomed note, and whole-note pinch zoom;
+4. erase, select, lasso, move, regroup, restyle, copy, cut, paste, duplicate, reorder, and delete plugin-owned elements, resize or rotate them where their binding-specific selection model exposes those geometry controls, and move a selection beyond the visible top or bottom through bounded vertical edge autoscroll;
 5. create rectangles, ellipses, triangles, diamonds, octagons, free or object-attached lines and arrows, 2D or 3D coordinate systems through one Coordinate system tool, and tables directly over Obsidian's native text editor;
 6. configure line width, stroke or outline opacity, fill color, fill opacity, dash pattern, endpoints, curvature, pressure, and applicable tool-specific options through a contextual stylebar;
 7. have the plugin infer whether each completed element follows a text range, one text position, or a fixed note position from its geometry and current relationship to rendered text;
 8. inspect and correct the inferred binding without switching to a separate drawing tool;
 9. manually move a text-bound element and have its binding recomputed at the destination;
-10. zoom the entire note, including Markdown and SVG annotations, as one visual surface;
-11. use optional ruled, squared, or dotted note backgrounds whose vertical rhythm follows the current Obsidian body line height and whose horizontal density scales with the same measured text rhythm;
-12. undo and redo annotation operations through the same ordered host-editor history as Markdown changes in the originating editable pane, without a separate annotation-only shortcut history;
-13. choose whether new sidecars are stored beside each note or below one validated Vault-relative folder, and use the same annotated note on desktop and Android when the selected Vault synchronization configuration transfers the Markdown file and its `.inkbook.json` sidecar.
+10. zoom the entire note, including Markdown and SVG annotations, as one visual surface and pan every available horizontal or vertical range through native one-finger touch scrolling or the secondary-button pointer shortcut;
+11. scroll far enough below the native Markdown content to reach every annotation and continue drawing, with the same effective trailing allowance that the current Obsidian view provides after native content;
+12. use optional ruled, squared, or dotted note backgrounds whose vertical rhythm follows the current Obsidian body line height and whose horizontal density scales with the same measured text rhythm;
+13. undo and redo annotation operations through the same ordered host-editor history as Markdown changes in the originating editable pane, without a separate annotation-only shortcut history;
+14. choose whether new sidecars are stored beside each note or below one validated Vault-relative folder, and use the same annotated note on desktop and Android when the selected Vault synchronization configuration transfers the Markdown file and its `.inkbook.json` sidecar.
 
 Resize is geometric, not stylistic. At a fixed whole-note zoom, resizing a bounded shape or Table changes its occupied area and canonical geometry while preserving every outline, border, divider, guide, and axis line width in note units. Line-like elements are edited through their endpoints rather than an area-resize box. Each coordinate-system axis has its own constrained length control, so its length can change without changing the shared origin, axis direction, or angle to the other axes. Whole-note zoom still scales Markdown and the complete annotation presentation together.
 

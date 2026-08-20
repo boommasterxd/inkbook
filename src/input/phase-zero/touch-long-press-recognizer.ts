@@ -34,6 +34,7 @@ const NONE: TouchLongPressResult = {
 };
 
 const PRIMARY_BUTTON = 0;
+const MAX_ACTIVE_POINTERS = 2;
 
 type Pending = Readonly<{
   pointerId: number;
@@ -42,6 +43,7 @@ type Pending = Readonly<{
 }>;
 
 export class TouchLongPressRecognizer {
+  readonly #activePointerIds = new Set<number>();
   #state: TouchLongPressState = "idle";
   #pending: Pending | undefined;
 
@@ -57,10 +59,16 @@ export class TouchLongPressRecognizer {
     ) {
       return NONE;
     }
-    if (this.#state !== "idle") {
-      return this.#cancel();
-    }
     if (!isValidPointerSample(input)) return NONE;
+    if (this.#state === "pending") {
+      if (this.#activePointerIds.has(input.pointerId)) return NONE;
+      if (this.#activePointerIds.size >= MAX_ACTIVE_POINTERS) {
+        return this.#cancel();
+      }
+      this.#activePointerIds.add(input.pointerId);
+      return NONE;
+    }
+    if (this.#state !== "idle") return NONE;
     if (
       input.hit.kind !== "plugin-element" &&
       input.hit.kind !== "plugin-handle"
@@ -72,6 +80,7 @@ export class TouchLongPressRecognizer {
       origin: { x: input.clientX, y: input.clientY },
       pointerId: input.pointerId,
     };
+    this.#activePointerIds.add(input.pointerId);
     this.#state = "pending";
     return {
       ...NONE,
@@ -125,19 +134,23 @@ export class TouchLongPressRecognizer {
     const result = this.#state === "pending" ? this.#cancel() : NONE;
     this.#state = "disposed";
     this.#pending = undefined;
+    this.#activePointerIds.clear();
     return result;
   }
 
   #finish(pointerId: number): TouchLongPressResult {
+    this.#activePointerIds.delete(pointerId);
     if (this.#pending?.pointerId !== pointerId) return NONE;
     if (this.#state === "pending") return this.#cancel();
     this.#pending = undefined;
+    this.#activePointerIds.clear();
     this.#state = "idle";
     return NONE;
   }
 
   #cancel(): TouchLongPressResult {
     this.#pending = undefined;
+    this.#activePointerIds.clear();
     this.#state = "idle";
     return { ...NONE, cancelTimer: true };
   }

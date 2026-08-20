@@ -10,6 +10,8 @@ Inkbook adds a retained SVG annotation layer to ordinary Obsidian Markdown notes
 
 The words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are normative. An implementation is conforming only when every applicable MUST is implemented and verified.
 
+Verification is automation-first. Every behavior, invariant, boundary, failure path, race, lifecycle rule, and performance property that can be driven or observed through code MUST have executable coverage at the lowest faithful test layer. A written manual procedure MUST NOT replace an automatable test. Each implementation phase ends with one concise human sanity check of only the newly visible workflow; it supplements the automated evidence and never carries compatibility-matrix, performance, coverage, resource-accounting, or fault-injection proof.
+
 ## Product Boundary
 
 The plugin MUST:

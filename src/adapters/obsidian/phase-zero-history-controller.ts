@@ -119,6 +119,7 @@ export class PhaseZeroHistoryController {
       return;
     }
     const session = await pendingSession;
+    if (!this.canInsert(markdownView)) return;
     const prepared = session.coordinator.prepare({
       effectId: this.#id("effect") as HostEffectId,
       historyEntryId: this.#id("entry") as HistoryEntryId,
@@ -130,6 +131,7 @@ export class PhaseZeroHistoryController {
       return;
     }
     const stored = await this.#prepareRecovery(session, prepared.intent);
+    if (!this.canInsert(markdownView)) return;
     if (!stored) {
       session.coordinator.cancelAdmission(
         prepared.envelope.effectId,
@@ -211,7 +213,7 @@ export class PhaseZeroHistoryController {
   }
 
   async #createSession(path: string): Promise<HistorySession> {
-    const store = await this.#options.getRecoveryStore();
+    const store = await this.#recoveryStore();
     const note = {
       markdownPath: path,
       vaultIdentityHint: this.#options.vaultIdentityHint,
@@ -269,7 +271,7 @@ export class PhaseZeroHistoryController {
     session: HistorySession,
     intent: HostDispatchIntentV1,
   ): Promise<boolean> {
-    const store = await this.#options.getRecoveryStore();
+    const store = await this.#recoveryStore();
     if (store === undefined) return false;
     const record: PreparedForwardProbeRecord = {
       attemptId: intent.operationId,
@@ -295,7 +297,7 @@ export class PhaseZeroHistoryController {
     intent: HostDispatchIntentV1,
     acknowledgement: HostEffectAcknowledgementV1,
   ): Promise<boolean> {
-    const store = await this.#options.getRecoveryStore();
+    const store = await this.#recoveryStore();
     if (store === undefined) return false;
     if (intent.direction === "forward") {
       const prepared = session.prepared.get(intent.historyEntryId);
@@ -327,6 +329,14 @@ export class PhaseZeroHistoryController {
     if (result.kind !== "written" && result.kind !== "unchanged") return false;
     session.nextSessionOrder += 1;
     return true;
+  }
+
+  async #recoveryStore(): Promise<RecoveryIndexedDbStore | undefined> {
+    try {
+      return await this.#options.getRecoveryStore();
+    } catch {
+      return undefined;
+    }
   }
 
   async #deliver(

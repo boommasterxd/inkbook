@@ -8,7 +8,13 @@ export default class InkbookPlugin extends Plugin {
   public override onload(): Promise<void> {
     const runtime = new PhaseZeroRuntime(this);
     this.#runtime = runtime;
-    runtime.register();
+    try {
+      runtime.register();
+    } catch (error: unknown) {
+      runtime.dispose();
+      this.#runtime = undefined;
+      throw error;
+    }
     return Promise.resolve();
   }
 

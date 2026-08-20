@@ -117,13 +117,17 @@ export class ViewAttachmentProbe {
     }
 
     current?.dispose();
+    if (!this.readiness.isCurrent(token)) {
+      this.attachments.delete(leaf);
+      return;
+    }
     const next = ViewAttachmentOwner.create(
       leaf,
       snapshot,
       this.options.resources,
       this.options.failures,
     );
-    if (!this.readiness.isCurrent(token) || this.disposed) {
+    if (!this.readiness.isCurrent(token)) {
       next?.dispose();
       this.attachments.delete(leaf);
       return;

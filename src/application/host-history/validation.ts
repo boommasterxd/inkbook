@@ -1,5 +1,7 @@
 import type {
+  AcceptedDeliverySnapshotV1,
   ActionableHistoryEntrySnapshotV1,
+  EditorEpochHighWaterSnapshotV1,
   HostDispatchIntentV1,
   HostEffectEnvelopeV1,
   HostHistoryLimitsV1,
@@ -81,21 +83,32 @@ export function isValidSnapshot(
   limits: HostHistoryLimitsV1,
 ): boolean {
   if (
+    !isSnapshotVersion(snapshot.version) ||
     !sameNoteIdentity(snapshot.noteIdentity, noteIdentity) ||
     !Number.isSafeInteger(snapshot.scene.revision) ||
     snapshot.scene.revision < 0 ||
+    !isNullableBoundedString(snapshot.scene.annotation) ||
     !isPositiveCounter(snapshot.nextEpoch) ||
-    !fitsLimits(snapshot.entries, limits)
+    !fitsLimits(snapshot.entries, limits) ||
+    snapshot.lease.kind === "blocked" ||
+    !hasUnique(snapshot.entries, (entry) => entry.effectId) ||
+    !hasUnique(snapshot.entries, (entry) => entry.historyEntryId) ||
+    !hasUnique(snapshot.highWaterMarks, editorEpochSnapshotKey) ||
+    !hasUnique(snapshot.acceptedDeliveries, editorEpochSnapshotKey)
   ) {
     return false;
   }
   return (
     snapshot.entries.every((entry) => isValidEntry(entry, snapshot)) &&
-    snapshot.highWaterMarks.every((mark) => isPositiveCounter(mark.sequence)) &&
+    snapshot.highWaterMarks.every((mark) => isValidHighWater(mark, snapshot)) &&
     snapshot.acceptedDeliveries.every((delivery) =>
-      isValidAcceptedDelivery(delivery.intent, delivery.envelope),
+      isValidAcceptedDelivery(delivery, snapshot),
     )
   );
+}
+
+function isSnapshotVersion(value: number): boolean {
+  return value === 1;
 }
 
 function isValidEntry(
@@ -136,14 +149,59 @@ function isValidIntent(
 }
 
 function isValidAcceptedDelivery(
-  intent: HostDispatchIntentV1,
-  envelope: HostEffectEnvelopeV1,
+  delivery: AcceptedDeliverySnapshotV1,
+  snapshot: HostHistorySnapshotV1,
 ): boolean {
+  const { envelope, intent } = delivery;
+  const mark = snapshot.highWaterMarks.find(
+    (candidate) =>
+      editorEpochSnapshotKey(candidate) === editorEpochSnapshotKey(delivery),
+  );
   return (
     isValidEnvelope(envelope) &&
+    sameNoteIdentity(envelope.noteIdentity, snapshot.noteIdentity) &&
+    isBoundedString(delivery.editorViewId, MAX_ID_LENGTH) &&
+    isPositiveCounter(delivery.sequence) &&
+    delivery.sequence === mark?.sequence &&
     intent.historyEntryId === envelope.historyEntryId &&
-    intent.historyEpoch === envelope.historyEpoch
+    intent.historyEpoch === envelope.historyEpoch &&
+    ((envelope.direction === "inverse" && intent.direction === "undo") ||
+      (envelope.direction === "forward" &&
+        (intent.direction === "forward" || intent.direction === "redo")))
   );
+}
+
+function isValidHighWater(
+  mark: EditorEpochHighWaterSnapshotV1,
+  snapshot: HostHistorySnapshotV1,
+): boolean {
+  return (
+    isBoundedString(mark.editorViewId, MAX_ID_LENGTH) &&
+    isPositiveCounter(mark.historyEpoch) &&
+    isPositiveCounter(mark.sequence) &&
+    snapshot.lease.kind === "owned" &&
+    snapshot.lease.epoch === mark.historyEpoch
+  );
+}
+
+function editorEpochSnapshotKey(value: {
+  readonly editorViewId: string;
+  readonly historyEpoch: number;
+}): string {
+  return `${value.editorViewId}\u0000${String(value.historyEpoch)}`;
+}
+
+function hasUnique<T>(
+  values: readonly T[],
+  keyOf: (value: T) => string,
+): boolean {
+  const keys = new Set<string>();
+  for (const value of values) {
+    const key = keyOf(value);
+    if (keys.has(key)) return false;
+    keys.add(key);
+  }
+  return true;
 }
 
 function isNullableBoundedString(value: string | null): boolean {

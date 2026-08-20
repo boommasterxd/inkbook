@@ -23,25 +23,18 @@ import {
   ReadingSectionCoordinator,
   type ReadingSectionReport,
 } from "./reading-section-coordinator";
+import { DirectTouchZoomReservation } from "./direct-touch-zoom-reservation";
 import { PhaseZeroContextMenuController } from "./phase-zero-context-menu";
+import { PhaseZeroViewZoom } from "./phase-zero-view-zoom";
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const ELEMENT_NODE = 1;
-const MIN_ZOOM_PERCENT = 50;
-const MAX_ZOOM_PERCENT = 400;
 const INITIAL_MARKER_X = 48;
 const INITIAL_MARKER_Y = 48;
 const MARKER_RADIUS = 18;
-const DEFAULT_ZOOM_PERCENT = 100;
 const MAX_RETAINED_ANNOTATIONS = 128;
 const MAX_READING_SECTION_GENERATIONS = 256;
 const GESTURE_SURFACE_CLASS = "inkbook-phase-zero-gesture-surface";
-const WHEEL_DELTA_LINE = 1;
-const WHEEL_DELTA_PAGE = 2;
-const WHEEL_LINE_PIXELS = 16;
-const WHEEL_PAGE_FALLBACK_PIXELS = 800;
-const MAX_WHEEL_DELTA_PIXELS = 120;
-const WHEEL_ZOOM_SENSITIVITY = 0.002;
 
 export class PhaseZeroViewRegistry implements ViewResourceFactory, Disposable {
   readonly #bindings = new Map<string, Set<PhaseZeroViewBinding>>();
@@ -114,7 +107,9 @@ class PhaseZeroViewBinding implements Disposable {
   readonly #root: HTMLDivElement;
   readonly #svg: SVGSVGElement;
   readonly #marker: SVGCircleElement;
-  readonly #zoom = new TwoPointerZoomRecognizer();
+  readonly #pointerZoom = new TwoPointerZoomRecognizer();
+  readonly #directTouchZoom: DirectTouchZoomReservation;
+  readonly #viewZoom: PhaseZeroViewZoom;
   readonly #secondary = new SecondaryButtonRouter();
   readonly #selectionDismiss = new OutsideTapSelectionRecognizer();
   readonly #contextMenus: PhaseZeroContextMenuController;
@@ -123,9 +118,7 @@ class PhaseZeroViewBinding implements Disposable {
   readonly #reading: ReadingSectionCoordinator | undefined;
   readonly #sectionGenerations = new Map<string, number>();
   #disposed = false;
-  #zoomPercent = DEFAULT_ZOOM_PERCENT;
-  #panX = 0;
-  #panY = 0;
+  #touchMoveListening = false;
 
   public constructor(context: ViewResourceContext, onDispose: () => void) {
     this.#onDispose = onDispose;
@@ -140,6 +133,7 @@ class PhaseZeroViewBinding implements Disposable {
     this.#svg = document.createElementNS(SVG_NAMESPACE, "svg");
     this.#svg.setAttribute("aria-label", "Inkbook Phase 0 annotation layer");
     this.#svg.setAttribute("role", "img");
+    this.#svg.style.transformOrigin = `${String(INITIAL_MARKER_X)}px ${String(INITIAL_MARKER_Y)}px`;
     this.#marker = document.createElementNS(SVG_NAMESPACE, "circle");
     this.#marker.classList.add("inkbook-phase-zero-marker");
     this.#marker.dataset.inkbookElementId = "phase-zero-annotation";
@@ -153,6 +147,16 @@ class PhaseZeroViewBinding implements Disposable {
       document,
       this.#marker,
     );
+    this.#viewZoom = new PhaseZeroViewZoom(this.#container, this.#svg);
+    this.#directTouchZoom = new DirectTouchZoomReservation({
+      gestureClaimed: (): void => {
+        this.#contextMenus.hostClaimedGesture();
+        this.#selectionDismiss.hostClaimedGesture();
+      },
+      releaseMoveStream: (): void => this.#releaseTouchMove(),
+      reserveMoveStream: (): boolean => this.#reserveTouchMove(),
+      scale: (scaleDelta): void => this.#viewZoom.touch(scaleDelta),
+    });
     this.#svg.append(this.#marker);
     this.#root.append(this.#svg);
     this.#container.append(this.#root);
@@ -216,8 +220,9 @@ class PhaseZeroViewBinding implements Disposable {
   public dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#directTouchZoom.dispose();
     this.#unlisten();
-    this.#applyZoomResult(this.#zoom.dispose(), undefined);
+    this.#applyZoomResult(this.#pointerZoom.dispose(), undefined);
     this.#applySecondaryResult(this.#secondary.dispose(), undefined);
     this.#selectionDismiss.dispose();
     this.#contextMenus.dispose();
@@ -250,17 +255,19 @@ class PhaseZeroViewBinding implements Disposable {
       applyClaim(event, decision.preventDefault, decision.stopPropagation);
       this.#marker.classList.add("is-selected");
     }
-    this.#applyZoomResult(this.#zoom.pointerDown(event), event);
+    if (normalizePointerKind(event.pointerType) !== "touch") {
+      this.#applyZoomResult(this.#pointerZoom.pointerDown(event), event);
+    }
     this.#applySecondaryResult(
       this.#secondary.pointerDown({
         button: event.button,
         clientX: event.clientX,
         clientY: event.clientY,
         hit,
-        panRangeX: Math.abs(this.#panX),
-        panRangeY: Math.abs(this.#panY),
+        panRangeX: Math.abs(this.#viewZoom.panX),
+        panRangeY: Math.abs(this.#viewZoom.panY),
         pointerId: event.pointerId,
-        zoomPercent: this.#zoomPercent,
+        zoomPercent: this.#viewZoom.zoomPercent,
       }),
       event,
     );
@@ -269,7 +276,9 @@ class PhaseZeroViewBinding implements Disposable {
   readonly #onPointerMove = (event: PointerEvent): void => {
     this.#contextMenus.pointerMove(event);
     this.#selectionDismiss.pointerMove(event);
-    this.#applyZoomResult(this.#zoom.pointerMove(event), event);
+    if (normalizePointerKind(event.pointerType) !== "touch") {
+      this.#applyZoomResult(this.#pointerZoom.pointerMove(event), event);
+    }
     this.#applySecondaryResult(this.#secondary.pointerMove(event), event);
   };
 
@@ -278,7 +287,12 @@ class PhaseZeroViewBinding implements Disposable {
     if (this.#selectionDismiss.pointerUp(event.pointerId).dismissSelection) {
       this.#marker.classList.remove("is-selected");
     }
-    this.#applyZoomResult(this.#zoom.pointerUp(event.pointerId), event);
+    if (normalizePointerKind(event.pointerType) !== "touch") {
+      this.#applyZoomResult(
+        this.#pointerZoom.pointerUp(event.pointerId),
+        event,
+      );
+    }
     this.#applySecondaryResult(
       this.#secondary.pointerUp(event.pointerId),
       event,
@@ -288,7 +302,12 @@ class PhaseZeroViewBinding implements Disposable {
   readonly #onPointerCancel = (event: PointerEvent): void => {
     this.#contextMenus.pointerCancel(event);
     this.#selectionDismiss.pointerCancel(event.pointerId);
-    this.#applyZoomResult(this.#zoom.pointerCancel(event.pointerId), event);
+    if (normalizePointerKind(event.pointerType) !== "touch") {
+      this.#applyZoomResult(
+        this.#pointerZoom.pointerCancel(event.pointerId),
+        event,
+      );
+    }
     this.#applySecondaryResult(
       this.#secondary.pointerCancel(event.pointerId),
       event,
@@ -308,15 +327,23 @@ class PhaseZeroViewBinding implements Disposable {
   };
 
   readonly #onWheel = (event: WheelEvent): void => {
-    if (!event.ctrlKey || event.defaultPrevented) return;
-    const deltaPixels = normalizeWheelDelta(
-      event,
-      this.#container.clientHeight,
-    );
-    if (deltaPixels === undefined || deltaPixels === 0) return;
-    event.preventDefault();
-    event.stopPropagation();
-    this.#applyScaleDelta(Math.exp(-deltaPixels * WHEEL_ZOOM_SENSITIVITY));
+    this.#viewZoom.wheel(event);
+  };
+
+  readonly #onTouchStart = (event: TouchEvent): void => {
+    this.#directTouchZoom.touchStart(event);
+  };
+
+  readonly #onTouchMove = (event: TouchEvent): void => {
+    this.#directTouchZoom.touchMove(event);
+  };
+
+  readonly #onTouchEnd = (event: TouchEvent): void => {
+    this.#directTouchZoom.touchEnd(event);
+  };
+
+  readonly #onTouchCancel = (event: TouchEvent): void => {
+    this.#directTouchZoom.touchCancel(event);
   };
 
   #applyZoomResult(
@@ -335,17 +362,7 @@ class PhaseZeroViewBinding implements Disposable {
       safelyRelease(this.#container, pointerId);
     }
     if (result.zoom === undefined) return;
-    this.#applyScaleDelta(result.zoom.scaleDelta);
-  }
-
-  #applyScaleDelta(scaleDelta: number): void {
-    if (!Number.isFinite(scaleDelta) || scaleDelta <= 0) return;
-    this.#zoomPercent = clamp(
-      this.#zoomPercent * scaleDelta,
-      MIN_ZOOM_PERCENT,
-      MAX_ZOOM_PERCENT,
-    );
-    this.#updateTransform();
+    this.#viewZoom.touch(result.zoom.scaleDelta);
   }
 
   #applySecondaryResult(
@@ -360,15 +377,8 @@ class PhaseZeroViewBinding implements Disposable {
       safelyRelease(this.#container, result.releasePointerId);
     }
     if (result.panDeltaScreen !== undefined) {
-      this.#panX += result.panDeltaScreen.x;
-      this.#panY += result.panDeltaScreen.y;
-      this.#updateTransform();
+      this.#viewZoom.pan(result.panDeltaScreen);
     }
-  }
-
-  #updateTransform(): void {
-    const scale = this.#zoomPercent / DEFAULT_ZOOM_PERCENT;
-    this.#svg.style.transform = `translate(${String(this.#panX)}px, ${String(this.#panY)}px) scale(${String(scale)})`;
   }
 
   #listen(): void {
@@ -376,8 +386,17 @@ class PhaseZeroViewBinding implements Disposable {
     this.#container.addEventListener("pointermove", this.#onPointerMove);
     this.#container.addEventListener("pointerup", this.#onPointerUp);
     this.#container.addEventListener("pointercancel", this.#onPointerCancel);
+    this.#container.addEventListener(
+      "lostpointercapture",
+      this.#onPointerCancel,
+    );
     this.#container.addEventListener("contextmenu", this.#onContextMenu);
     this.#container.addEventListener("keydown", this.#onKeyDown);
+    this.#container.addEventListener("touchstart", this.#onTouchStart, {
+      passive: false,
+    });
+    this.#container.addEventListener("touchend", this.#onTouchEnd);
+    this.#container.addEventListener("touchcancel", this.#onTouchCancel);
     this.#container.addEventListener("wheel", this.#onWheel, {
       passive: false,
     });
@@ -388,9 +407,36 @@ class PhaseZeroViewBinding implements Disposable {
     this.#container.removeEventListener("pointermove", this.#onPointerMove);
     this.#container.removeEventListener("pointerup", this.#onPointerUp);
     this.#container.removeEventListener("pointercancel", this.#onPointerCancel);
+    this.#container.removeEventListener(
+      "lostpointercapture",
+      this.#onPointerCancel,
+    );
     this.#container.removeEventListener("contextmenu", this.#onContextMenu);
     this.#container.removeEventListener("keydown", this.#onKeyDown);
+    this.#container.removeEventListener("touchstart", this.#onTouchStart);
+    this.#container.removeEventListener("touchend", this.#onTouchEnd);
+    this.#container.removeEventListener("touchcancel", this.#onTouchCancel);
     this.#container.removeEventListener("wheel", this.#onWheel);
+    this.#releaseTouchMove();
+  }
+
+  #reserveTouchMove(): boolean {
+    if (this.#touchMoveListening) return true;
+    try {
+      this.#container.addEventListener("touchmove", this.#onTouchMove, {
+        passive: false,
+      });
+      this.#touchMoveListening = true;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  #releaseTouchMove(): void {
+    if (!this.#touchMoveListening) return;
+    this.#touchMoveListening = false;
+    this.#container.removeEventListener("touchmove", this.#onTouchMove);
   }
 }
 
@@ -468,25 +514,4 @@ function safelyRelease(element: HTMLElement, pointerId: number): void {
   } catch {
     // Disposal remains idempotent if the host already released capture.
   }
-}
-
-function clamp(value: number, minimum: number, maximum: number): number {
-  return Math.min(maximum, Math.max(minimum, value));
-}
-
-function normalizeWheelDelta(
-  event: WheelEvent,
-  containerHeight: number,
-): number | undefined {
-  if (!Number.isFinite(event.deltaY)) return undefined;
-  const pagePixels =
-    containerHeight > 0 ? containerHeight : WHEEL_PAGE_FALLBACK_PIXELS;
-  let multiplier = 1;
-  if (event.deltaMode === WHEEL_DELTA_LINE) multiplier = WHEEL_LINE_PIXELS;
-  if (event.deltaMode === WHEEL_DELTA_PAGE) multiplier = pagePixels;
-  return clamp(
-    event.deltaY * multiplier,
-    -MAX_WHEEL_DELTA_PIXELS,
-    MAX_WHEEL_DELTA_PIXELS,
-  );
 }
