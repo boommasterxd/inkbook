@@ -33,9 +33,7 @@ export function restoreHostHistory(
   } catch {
     return { kind: "blocked" };
   }
-  if (!valid) {
-    return { kind: "blocked" };
-  }
+  if (!valid) return { kind: "blocked" };
   for (const entry of snapshot.entries) entries.set(entry.effectId, entry);
   for (const delivery of snapshot.acceptedDeliveries) {
     accepted.set(

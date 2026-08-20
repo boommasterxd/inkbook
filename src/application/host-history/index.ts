@@ -1,16 +1,14 @@
 export { HostHistoryCoordinatorV1 } from "./coordinator";
 export type {
+  ActionableHistoryEntrySnapshotV1,
   HistoryEntryId,
   HistoryEpoch,
-  HostDispatchIntentV1,
-  HostEffectAcknowledgementV1,
   HostEffectDeliveryV1,
   HostEffectEnvelopeV1,
   HostEffectId,
-  HostEffectRecoveryPortV1,
   HostHistoryCoordinatorConfigV1,
+  HostHistoryRecoveryContextV1,
   HostTransactionSequence,
-  OperationId,
   PrepareHostEffectResultV1,
   ViewId,
 } from "./types";

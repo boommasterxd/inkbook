@@ -1,4 +1,4 @@
-import { TwoPointerZoomRecognizer } from "../../../input/phase-zero";
+import { TwoPointerZoomRecognizer } from "../../../input/gestures";
 
 import type { Disposable } from "./contracts";
 

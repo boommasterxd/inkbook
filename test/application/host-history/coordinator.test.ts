@@ -1,167 +1,130 @@
+/* eslint-disable @typescript-eslint/no-magic-numbers -- Exact history sequences and scene revisions are the fixtures under test. */
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  createAnnotationHistoryEntryV1,
+  createHistoryEpoch,
+  parseHistoryEntryId,
+  parseOperationId,
+} from "../../../src/domain/operations";
+import { createSceneRevision } from "../../../src/domain/model";
+import {
+  createRuntimeSceneStateV1,
+  type RuntimeSceneStateV1,
+} from "../../../src/domain/scene";
+import type {
+  HostEffectEnvelopeV1,
+  HostTransactionSequence,
+  NoteIdentityV1,
+  SessionOrder,
+  ViewId,
+} from "../../../src/application/note-session";
+import {
+  createHostTransactionSequence,
+  parseHostEffectId,
+  parseRecoveryAttemptId,
+  parseSha256Digest,
+  parseViewId,
+} from "../../../src/application/note-session";
+import type {
+  HostRecordedDirectionAttemptV1,
+  PreparedForwardAttemptV1,
+} from "../../../src/application/recovery";
+import {
   HostHistoryCoordinatorV1,
-  type HistoryEntryId,
-  type HostDispatchIntentV1,
   type HostEffectDeliveryV1,
-  type HostEffectEnvelopeV1,
-  type HostEffectId,
-  type HostEffectRecoveryPortV1,
   type HostHistoryCoordinatorConfigV1,
-  type HostTransactionSequence,
-  type OperationId,
+  type HostHistoryRecoveryContextV1,
   type PrepareHostEffectResultV1,
-  type ViewId,
 } from "../../../src/application/host-history";
+import { rectangleElement } from "../../domain/model/support";
+import {
+  createRecovery,
+  type RecoveryFixtureObservations,
+  type RecoveryFixtureState,
+} from "./recovery-fixture";
 
-const NOTE = Object.freeze({
+const NOTE: NoteIdentityV1 = Object.freeze({
   vaultIdHint: "vault",
-  vaultRelativeMarkdownPath: "Notes/probe.md",
+  vaultRelativeMarkdownPath: "Notes/history.md",
 });
-const PANE_A = "view_a" as ViewId;
-const PANE_B = "view_b" as ViewId;
-const EDITOR_A = "editor_a" as ViewId;
-const EDITOR_B = "editor_b" as ViewId;
-const FIRST_SEQUENCE = 1 as HostTransactionSequence;
-const SECOND_SEQUENCE = (FIRST_SEQUENCE + 1) as HostTransactionSequence;
-const THIRD_SEQUENCE = (SECOND_SEQUENCE + 1) as HostTransactionSequence;
-const FOURTH_SEQUENCE = (THIRD_SEQUENCE + 1) as HostTransactionSequence;
+const PANE_A = parseViewId("view_a");
+const PANE_B = parseViewId("view_b");
+const EDITOR_A = parseViewId("editor_a");
+const EDITOR_B = parseViewId("editor_b");
+const NOTE_APPEARANCE = Object.freeze({
+  background: "none" as const,
+  contrast: "medium" as const,
+  horizontalSpacing: "standard" as const,
+});
 
 describe("HostHistoryCoordinatorV1", () => {
-  it("applies initial Forward once and creates fresh revision-bound Undo and Redo intents", async () => {
+  it("applies real forward, undo, and redo operations with durable recovery", async () => {
     const harness = createHarness();
-    const prepared = prepare(harness.coordinator, PANE_A, "one", null, "B");
+    const prepared = await prepare(harness.coordinator, PANE_A, 1, 0);
 
     const forward = await harness.coordinator.deliver(
       EDITOR_A,
       PANE_A,
-      delivery(prepared.envelope, FIRST_SEQUENCE),
+      delivery(prepared.envelope, 1),
     );
     const duplicate = await harness.coordinator.deliver(
       EDITOR_A,
       PANE_A,
-      delivery(prepared.envelope, FIRST_SEQUENCE),
+      delivery(prepared.envelope, 1),
     );
-    const inverseEnvelope = invert(prepared.envelope);
     const undo = await harness.coordinator.deliver(
       EDITOR_A,
       PANE_A,
-      delivery(inverseEnvelope, SECOND_SEQUENCE),
+      delivery(invert(prepared.envelope), 2),
     );
     const redo = await harness.coordinator.deliver(
       EDITOR_A,
       PANE_A,
-      delivery(prepared.envelope, THIRD_SEQUENCE),
+      delivery(prepared.envelope, 3),
     );
 
-    expect(forward).toMatchObject({
-      kind: "accepted",
-      scene: { annotation: "B", revision: 1 },
-    });
-    expect(duplicate).toMatchObject({
-      kind: "duplicate",
-      scene: { annotation: "B", revision: 1 },
-    });
-    expect(undo).toMatchObject({
-      kind: "accepted",
-      scene: { annotation: null, revision: 2 },
-    });
-    expect(redo).toMatchObject({
-      kind: "accepted",
-      scene: { annotation: "B", revision: 3 },
-    });
-    expect(harness.recorded.map(({ intent }) => intent.direction)).toEqual([
+    expect(sceneSummary(forward)).toEqual({ elements: 1, revision: 1 });
+    expect(sceneSummary(duplicate)).toEqual({ elements: 1, revision: 1 });
+    expect(sceneSummary(undo)).toEqual({ elements: 0, revision: 2 });
+    expect(sceneSummary(redo)).toEqual({ elements: 1, revision: 3 });
+    expect(harness.recordedDirections).toEqual([
       "forward",
-      "undo",
-      "redo",
+      "inverse",
+      "forward",
     ]);
-    expect(
-      new Set(harness.recorded.map(({ intent }) => intent.operationId)).size,
-    ).toBe(THIRD_SEQUENCE);
-    expect(
-      harness.recorded.map(({ intent }) => intent.expectedSceneRevision),
-    ).toEqual([0, FIRST_SEQUENCE, SECOND_SEQUENCE]);
+    expect(new Set(harness.operationIds).size).toBe(3);
+    expect(harness.prepareAttempts).toHaveLength(1);
+    expect(harness.directionAttempts.map(({ kind }) => kind)).toEqual([
+      "host-recorded-undo",
+      "host-recorded-redo",
+    ]);
   });
-});
 
-describe("HostHistoryCoordinatorV1 invalid delivery", () => {
-  it("rejects delayed duplicates, stale sequences, and lifecycle-invalid directions", async () => {
+  it("serializes alternating deliveries and preserves per-editor epoch high-water", async () => {
     const harness = createHarness();
-    const prepared = prepare(harness.coordinator, PANE_A, "one", null, "B");
-    const inverseEnvelope = invert(prepared.envelope);
-
+    const prepared = await prepare(harness.coordinator, PANE_A, 1, 0);
     await harness.coordinator.deliver(
       EDITOR_A,
       PANE_A,
-      delivery(prepared.envelope, FIRST_SEQUENCE),
-    );
-    const invalidForward = await harness.coordinator.deliver(
-      EDITOR_A,
-      PANE_A,
-      delivery(prepared.envelope, SECOND_SEQUENCE),
-    );
-    const undo = await harness.coordinator.deliver(
-      EDITOR_A,
-      PANE_A,
-      delivery(inverseEnvelope, THIRD_SEQUENCE),
-    );
-    const delayedForward = await harness.coordinator.deliver(
-      EDITOR_A,
-      PANE_A,
-      delivery(prepared.envelope, FIRST_SEQUENCE),
-    );
-    const delayedInverse = await harness.coordinator.deliver(
-      EDITOR_A,
-      PANE_A,
-      delivery(inverseEnvelope, SECOND_SEQUENCE),
-    );
-
-    expect(invalidForward).toEqual({
-      kind: "rejected",
-      reason: "lifecycle-mismatch",
-    });
-    expect(undo.kind).toBe("accepted");
-    expect(delayedForward).toEqual({
-      kind: "rejected",
-      reason: "stale-sequence",
-    });
-    expect(delayedInverse).toEqual({
-      kind: "rejected",
-      reason: "stale-sequence",
-    });
-    expect(harness.coordinator.scene).toEqual({
-      annotation: null,
-      revision: SECOND_SEQUENCE,
-    });
-  });
-});
-
-describe("HostHistoryCoordinatorV1 sequencing and ownership", () => {
-  it("serializes rapid alternating deliveries without revision ABA", async () => {
-    const harness = createHarness();
-    const prepared = prepare(harness.coordinator, PANE_A, "one", null, "B");
-    await harness.coordinator.deliver(
-      EDITOR_A,
-      PANE_A,
-      delivery(prepared.envelope, FIRST_SEQUENCE),
+      delivery(prepared.envelope, 1),
     );
 
     const results = await Promise.all([
       harness.coordinator.deliver(
         EDITOR_A,
         PANE_A,
-        delivery(invert(prepared.envelope), SECOND_SEQUENCE),
+        delivery(invert(prepared.envelope), 2),
       ),
       harness.coordinator.deliver(
         EDITOR_A,
         PANE_A,
-        delivery(prepared.envelope, THIRD_SEQUENCE),
+        delivery(prepared.envelope, 3),
       ),
       harness.coordinator.deliver(
         EDITOR_A,
         PANE_A,
-        delivery(invert(prepared.envelope), FOURTH_SEQUENCE),
+        delivery(invert(prepared.envelope), 4),
       ),
     ]);
 
@@ -170,280 +133,338 @@ describe("HostHistoryCoordinatorV1 sequencing and ownership", () => {
       "accepted",
       "accepted",
     ]);
-    expect(harness.coordinator.scene).toEqual({
-      annotation: null,
-      revision: FOURTH_SEQUENCE,
-    });
+    expect(harness.coordinator.scene.revision).toBe(4);
     expect(
-      harness.recorded.map(({ intent }) => intent.expectedSceneRevision),
-    ).toEqual([0, FIRST_SEQUENCE, SECOND_SEQUENCE, THIRD_SEQUENCE]);
+      harness.coordinator.sequenceHighWater(EDITOR_A, createHistoryEpoch(1)),
+    ).toBe(createHostTransactionSequence(4));
+    expect(harness.expectedSceneRevisions).toEqual([0, 1, 2, 3]);
   });
 
-  it("keeps a single pane lease and permanently rejects an earlier epoch after handoff", async () => {
+  it("rejects stale sequences and keeps the scene unchanged", async () => {
     const harness = createHarness();
-    const first = prepare(harness.coordinator, PANE_A, "one", null, "B");
-    const paneBConflict = harness.coordinator.prepare({
-      effectId: "eff_two" as HostEffectId,
-      historyEntryId: "he_two" as HistoryEntryId,
-      patch: { prior: null, replacement: "C" },
-      viewId: PANE_B,
-    });
+    const prepared = await prepare(harness.coordinator, PANE_A, 1, 0);
     await harness.coordinator.deliver(
       EDITOR_A,
       PANE_A,
-      delivery(first.envelope, FIRST_SEQUENCE),
+      delivery(prepared.envelope, 1),
     );
 
-    expect(paneBConflict).toEqual({ kind: "rejected", reason: "non-owner" });
+    expect(
+      await harness.coordinator.deliver(
+        EDITOR_A,
+        PANE_A,
+        delivery(prepared.envelope, 0),
+      ),
+    ).toEqual({ kind: "rejected", reason: "invalid-sequence" });
+    expect(harness.coordinator.scene.revision).toBe(1);
+  });
+});
+
+describe("HostHistoryCoordinatorV1 delivery bounds", () => {
+  it("rejects delivery queue overflow before retention processing", async () => {
+    const harness = createHarness({
+      holdRecord: true,
+      maxActionableEntries: 1,
+    });
+    const prepared = await prepare(harness.coordinator, PANE_A, 1, 0);
+    const pending = harness.coordinator.deliver(
+      EDITOR_A,
+      PANE_A,
+      delivery(prepared.envelope, 1),
+    );
+    await harness.recordStarted;
+
+    await expect(
+      harness.coordinator.deliver(
+        EDITOR_A,
+        PANE_A,
+        delivery(prepared.envelope, 2),
+      ),
+    ).resolves.toEqual({ kind: "rejected", reason: "payload-limit" });
+
+    harness.releaseRecord();
+    expect((await pending).kind).toBe("accepted");
+  });
+});
+
+describe("HostHistoryCoordinatorV1 lease and branching", () => {
+  it("releases the unreachable branch and advances the lease epoch", async () => {
+    const released = vi.fn();
+    const harness = createHarness({ onRelease: released });
+    const first = await prepare(harness.coordinator, PANE_A, 1, 0);
+    await harness.coordinator.deliver(
+      EDITOR_A,
+      PANE_A,
+      delivery(first.envelope, 1),
+    );
+    await harness.coordinator.deliver(
+      EDITOR_A,
+      PANE_A,
+      delivery(invert(first.envelope), 2),
+    );
+
+    const branch = await prepare(harness.coordinator, PANE_A, 1, 1);
+    await harness.coordinator.deliver(
+      EDITOR_A,
+      PANE_A,
+      delivery(branch.envelope, 3),
+    );
+    expect(released).toHaveBeenCalledOnce();
+
     expect(harness.coordinator.closeOwner(PANE_A, true)).toBe(true);
-    const second = prepare(harness.coordinator, PANE_B, "two", "B", "C");
+    const next = await prepare(harness.coordinator, PANE_B, 2, 2);
     const stale = await harness.coordinator.deliver(
       EDITOR_A,
       PANE_A,
-      delivery(invert(first.envelope), SECOND_SEQUENCE),
+      delivery(invert(branch.envelope), 4),
     );
     const accepted = await harness.coordinator.deliver(
       EDITOR_B,
       PANE_B,
-      delivery(second.envelope, FIRST_SEQUENCE),
+      delivery(next.envelope, 1),
     );
 
-    expect(second.envelope.historyEpoch).toBe(SECOND_SEQUENCE);
+    expect(next.envelope.historyEpoch).toBe(createHistoryEpoch(2));
     expect(stale).toEqual({ kind: "rejected", reason: "stale-epoch" });
-    expect(accepted.kind).toBe("accepted");
-    expect(harness.coordinator.scene).toEqual({
-      annotation: "C",
-      revision: SECOND_SEQUENCE,
-    });
+    expect(sceneSummary(accepted)).toEqual({ elements: 2, revision: 4 });
   });
 });
 
-describe("HostHistoryCoordinatorV1 retention and recovery", () => {
-  it("releases the unreachable redo branch when a new original Forward is observed", async () => {
-    const released = vi.fn();
-    const harness = createHarness({ onRelease: released });
-    const first = prepare(harness.coordinator, PANE_A, "one", null, "B");
-    await harness.coordinator.deliver(
-      EDITOR_A,
-      PANE_A,
-      delivery(first.envelope, FIRST_SEQUENCE),
-    );
-    await harness.coordinator.deliver(
-      EDITOR_A,
-      PANE_A,
-      delivery(invert(first.envelope), SECOND_SEQUENCE),
-    );
-    const branch = prepare(harness.coordinator, PANE_A, "two", null, "C");
-    await harness.coordinator.deliver(
-      EDITOR_A,
-      PANE_A,
-      delivery(branch.envelope, THIRD_SEQUENCE),
-    );
+describe("HostHistoryCoordinatorV1 recovery and lifecycle", () => {
+  it("retries a failed prepare without publishing lease or history", async () => {
+    const harness = createHarness({ prepareFailures: 1 });
+    const first = await prepareResult(harness.coordinator, PANE_A, 1, 0);
+    expect(first).toEqual({ kind: "rejected", reason: "recovery-failed" });
+    expect(harness.coordinator.lease).toEqual({ kind: "unowned" });
 
-    expect(released).toHaveBeenCalledOnce();
-    expect(released).toHaveBeenCalledWith(
-      expect.objectContaining({ effectId: "eff_one" }),
-    );
-    const unreachableRedo = await harness.coordinator.deliver(
-      EDITOR_A,
-      PANE_A,
-      delivery(first.envelope, FOURTH_SEQUENCE),
-    );
-    expect(unreachableRedo).toEqual({
-      kind: "rejected",
-      reason: "entry-not-found",
-    });
-    expect(harness.coordinator.scene).toEqual({
-      annotation: "C",
-      revision: THIRD_SEQUENCE,
-    });
+    const second = await prepare(harness.coordinator, PANE_A, 1, 0);
+    expect(second.envelope.historyEpoch).toBe(createHistoryEpoch(1));
   });
 
-  it("fails closed when durable host acknowledgement cannot be recorded", async () => {
-    const harness = createHarness({ recoveryResult: false });
-    const prepared = prepare(harness.coordinator, PANE_A, "one", null, "B");
-
+  it("fails closed when host acknowledgement persistence fails", async () => {
+    const harness = createHarness({ recordFailures: 1 });
+    const prepared = await prepare(harness.coordinator, PANE_A, 1, 0);
     const result = await harness.coordinator.deliver(
       EDITOR_A,
       PANE_A,
-      delivery(prepared.envelope, FIRST_SEQUENCE),
+      delivery(prepared.envelope, 1),
     );
 
     expect(result).toEqual({ kind: "rejected", reason: "recovery-failed" });
-    expect(harness.coordinator.scene).toEqual({
-      annotation: null,
-      revision: 0,
-    });
+    expect(harness.coordinator.scene.revision).toBe(0);
     expect(harness.coordinator.lease).toEqual({
       kind: "blocked",
       reason: "recovery-failed",
     });
   });
-});
 
-describe("HostHistoryCoordinatorV1 restart and bounds", () => {
-  it("restores actionable entries and sequence high-water before accepting a reachable Undo", async () => {
+  it("restores a reachable host history and disposes unreachable history", async () => {
     const firstHarness = createHarness();
-    const prepared = prepare(
-      firstHarness.coordinator,
-      PANE_A,
-      "one",
-      null,
-      "B",
-    );
+    const prepared = await prepare(firstHarness.coordinator, PANE_A, 1, 0);
     await firstHarness.coordinator.deliver(
       EDITOR_A,
       PANE_A,
-      delivery(prepared.envelope, FIRST_SEQUENCE),
+      delivery(prepared.envelope, 1),
     );
     const disposal = firstHarness.coordinator.disposeForReload(true);
     expect(disposal.kind).toBe("snapshot");
-    if (disposal.kind !== "snapshot")
-      throw new Error("Expected reload snapshot");
+    if (disposal.kind !== "snapshot") throw new Error("Expected snapshot");
 
-    const restoredHarness = createHarness({
-      restore: {
-        hostEffectsMayBeReachable: true,
-        snapshot: disposal.snapshot,
-      },
+    const restored = createHarness({
+      restore: { hostEffectsMayBeReachable: true, snapshot: disposal.snapshot },
     });
-    const undo = await restoredHarness.coordinator.deliver(
+    const undo = await restored.coordinator.deliver(
       EDITOR_A,
       PANE_A,
-      delivery(invert(prepared.envelope), SECOND_SEQUENCE),
+      delivery(invert(prepared.envelope), 2),
     );
-    const missingSnapshot = createHarness({
-      restore: { hostEffectsMayBeReachable: true },
-    }).coordinator;
+    expect(sceneSummary(undo)).toEqual({ elements: 0, revision: 2 });
+    expect(
+      restored.coordinator.sequenceHighWater(EDITOR_A, createHistoryEpoch(1)),
+    ).toBe(createHostTransactionSequence(2));
 
-    expect(
-      restoredHarness.coordinator.sequenceHighWater(
-        EDITOR_A,
-        prepared.envelope.historyEpoch,
-      ),
-    ).toBe(SECOND_SEQUENCE);
-    expect(undo).toMatchObject({
-      kind: "accepted",
-      scene: { annotation: null, revision: 2 },
+    const disposed = createHarness().coordinator;
+    expect(disposed.disposeForReload(false)).toEqual({
+      kind: "disposed-unreachable",
     });
-    expect(missingSnapshot.lease).toEqual({
-      kind: "blocked",
-      reason: "unrestorable-history",
+    expect(disposed.lease).toEqual({ kind: "unowned" });
+  });
+
+  it("enforces the actionable entry limit before publishing a second entry", async () => {
+    const harness = createHarness({ maxActionableEntries: 1 });
+    const first = await prepare(harness.coordinator, PANE_A, 1, 0);
+    await harness.coordinator.deliver(
+      EDITOR_A,
+      PANE_A,
+      delivery(first.envelope, 1),
+    );
+    expect(await prepareResult(harness.coordinator, PANE_A, 1, 1)).toEqual({
+      kind: "rejected",
+      reason: "payload-limit",
     });
-    expect(
-      missingSnapshot.prepare({
-        effectId: "eff_blocked" as HostEffectId,
-        historyEntryId: "he_blocked" as HistoryEntryId,
-        patch: { prior: null, replacement: "X" },
-        viewId: PANE_A,
+  });
+
+  it("rejects an invalid configured note identity", () => {
+    expect(() =>
+      createHarness({
+        noteIdentity: {
+          vaultIdHint: "vault",
+          vaultRelativeMarkdownPath: "../history.md",
+        },
       }),
-    ).toEqual({ kind: "rejected", reason: "blocked" });
-  });
-
-  it("does not snapshot while an acknowledgement delivery remains unsettled", async () => {
-    let resolveRecovery: ((value: boolean) => void) | undefined;
-    const recovery: HostEffectRecoveryPortV1 = {
-      record: () =>
-        new Promise<boolean>((resolve) => {
-          resolveRecovery = resolve;
-        }),
-    };
-    const harness = createHarness({ recovery });
-    const prepared = prepare(harness.coordinator, PANE_A, "one", null, "B");
-    const pending = harness.coordinator.deliver(
-      EDITOR_A,
-      PANE_A,
-      delivery(prepared.envelope, FIRST_SEQUENCE),
-    );
-
-    expect(harness.coordinator.disposeForReload(true)).toEqual({
-      kind: "blocked",
-      reason: "unrestorable-history",
-    });
-    resolveRecovery?.(true);
-    await pending;
-    expect(harness.coordinator.scene).toEqual({
-      annotation: null,
-      revision: 0,
-    });
-    expect(harness.coordinator.lease.kind).toBe("blocked");
-  });
-
-  it("rejects an entry before lease acquisition when its bounded payload cannot fit", () => {
-    const harness = createHarness({ maxPayloadBytes: 1 });
-    const result = harness.coordinator.prepare({
-      effectId: "eff_large" as HostEffectId,
-      historyEntryId: "he_large" as HistoryEntryId,
-      patch: { prior: null, replacement: "payload" },
-      viewId: PANE_A,
-    });
-
-    expect(result).toEqual({ kind: "rejected", reason: "payload-limit" });
-    expect(harness.coordinator.lease).toEqual({ kind: "unowned" });
+    ).toThrow("note identity is invalid");
   });
 });
 
 interface HarnessOptions {
-  readonly maxPayloadBytes?: number;
+  readonly holdRecord?: boolean;
+  readonly maxActionableEntries?: number;
+  readonly noteIdentity?: NoteIdentityV1;
   readonly onRelease?: HostHistoryCoordinatorConfigV1["onRelease"];
-  readonly recovery?: HostEffectRecoveryPortV1;
-  readonly recoveryResult?: boolean;
+  readonly prepareFailures?: number;
+  readonly recordFailures?: number;
+  readonly directionFailures?: number;
   readonly restore?: ConstructorParameters<typeof HostHistoryCoordinatorV1>[1];
 }
 
-function createHarness(options: HarnessOptions = {}): {
+interface Harness {
   readonly coordinator: HostHistoryCoordinatorV1;
-  readonly recorded: { readonly intent: HostDispatchIntentV1 }[];
-} {
-  let operation = 0;
-  const recorded: { readonly intent: HostDispatchIntentV1 }[] = [];
-  const recovery = options.recovery ?? {
-    record: async (intent: HostDispatchIntentV1): Promise<boolean> => {
-      recorded.push({ intent });
-      return options.recoveryResult ?? true;
+  readonly prepareAttempts: readonly PreparedForwardAttemptV1[];
+  readonly directionAttempts: readonly HostRecordedDirectionAttemptV1[];
+  readonly recordedDirections: readonly ("forward" | "inverse")[];
+  readonly operationIds: readonly string[];
+  readonly expectedSceneRevisions: readonly number[];
+  readonly recordStarted: Promise<void>;
+  readonly releaseRecord: () => void;
+}
+
+function createHarness(options: HarnessOptions = {}): Harness {
+  let operationNumber = 0;
+  let attemptNumber = 0;
+  let sessionOrder = 0;
+  let resolveRecordStarted = (): void => undefined;
+  let resolveRecord: (() => void) | undefined;
+  const recordStarted = new Promise<void>((resolve) => {
+    resolveRecordStarted = resolve;
+  });
+  const recordRelease = new Promise<void>((resolve) => {
+    resolveRecord = resolve;
+  });
+  const observations: RecoveryFixtureObservations = {
+    prepareAttempts: [],
+    directionAttempts: [],
+    recordedDirections: [],
+    operationIds: [],
+    expectedSceneRevisions: [],
+  };
+  const recoveryState: RecoveryFixtureState = {
+    prepareFailures: options.prepareFailures ?? 0,
+    recordFailures: options.recordFailures ?? 0,
+    directionFailures: options.directionFailures ?? 0,
+    resolveRecordStarted,
+    recordRelease,
+  };
+  const recovery = createRecovery(options, recoveryState, observations);
+  const recoveryContext: HostHistoryRecoveryContextV1 = {
+    base: {
+      markdownPath: NOTE.vaultRelativeMarkdownPath,
+      rawTextSha256: null,
+      revision: null,
+      vaultRelativePath: NOTE.vaultRelativeMarkdownPath,
     },
+    createRecoveryAttemptId: () =>
+      parseRecoveryAttemptId(identifier("ra", ++attemptNumber)),
+    expectedSourceDigest: parseSha256Digest("0".repeat(64)),
+    expectedSourceGeneration:
+      1 as import("../../../src/application/note-session").SourceGeneration,
+    nextSessionOrder: () => ++sessionOrder as SessionOrder,
   };
   const config: HostHistoryCoordinatorConfigV1 = {
-    createOperationId: () => `op_${String(++operation)}` as OperationId,
-    initialAnnotation: null,
-    noteIdentity: NOTE,
+    createOperationId: () =>
+      parseOperationId(identifier("op", ++operationNumber)),
+    initialScene: emptyScene(),
+    noteIdentity: options.noteIdentity ?? NOTE,
     recovery,
-    ...(options.maxPayloadBytes === undefined
-      ? {}
-      : { limits: { maxPayloadBytes: options.maxPayloadBytes } }),
+    recoveryContext,
     ...(options.onRelease === undefined
       ? {}
       : { onRelease: options.onRelease }),
+    ...(options.maxActionableEntries === undefined
+      ? {}
+      : { limits: { maxActionableEntries: options.maxActionableEntries } }),
   };
   return {
     coordinator: new HostHistoryCoordinatorV1(config, options.restore),
-    recorded,
+    ...observations,
+    recordStarted,
+    releaseRecord: () => resolveRecord?.(),
   };
 }
 
-function prepare(
+async function prepare(
   coordinator: HostHistoryCoordinatorV1,
   viewId: ViewId,
-  suffix: string,
-  prior: string | null,
-  replacement: string,
-): Extract<PrepareHostEffectResultV1, { readonly kind: "prepared" }> {
-  const result = coordinator.prepare({
-    effectId: `eff_${suffix}` as HostEffectId,
-    historyEntryId: `he_${suffix}` as HistoryEntryId,
-    patch: { prior, replacement },
+  epoch: number,
+  elementIndex: number,
+): Promise<Extract<PrepareHostEffectResultV1, { readonly kind: "prepared" }>> {
+  const result = await prepareResult(coordinator, viewId, epoch, elementIndex);
+  if (result.kind !== "prepared") {
+    throw new Error(`Preparation failed: ${result.reason}`);
+  }
+  return result;
+}
+
+function prepareResult(
+  coordinator: HostHistoryCoordinatorV1,
+  viewId: ViewId,
+  epoch: number,
+  elementIndex: number,
+): Promise<PrepareHostEffectResultV1> {
+  const element = rectangleElement(elementIndex);
+  const value = {
+    binding: element.binding,
+    elementId: element.elementId,
+    geometry: element.geometry,
+    kind: element.kind,
+    style: element.style,
+  };
+  const predecessorId =
+    coordinator.scene.objectOrder.get(
+      coordinator.scene.objectOrder.length - 1,
+    ) ?? null;
+  const historyEntry = createAnnotationHistoryEntryV1({
+    forward: {
+      elements: [value],
+      kind: "create-elements",
+      placement: {
+        movedElementIds: [element.elementId],
+        predecessorId,
+        successorId: null,
+      },
+    },
+    historyEntryId: parseHistoryEntryId(identifier("he", elementIndex + epoch)),
+    historyEpoch: createHistoryEpoch(epoch),
+  });
+  if (!historyEntry.ok) throw new Error("History fixture is invalid.");
+  return coordinator.prepare({
+    effectId: parseHostEffectId(identifier("eff", elementIndex + epoch)),
+    historyEntry: historyEntry.value,
+    operationId: parseOperationId(identifier("op", 100 + elementIndex + epoch)),
     viewId,
   });
-  if (result.kind !== "prepared")
-    throw new Error(`Preparation failed: ${result.reason}`);
-  return result;
 }
 
 function delivery(
   envelope: HostEffectEnvelopeV1,
-  transactionSequence: HostTransactionSequence,
+  sequence: number,
 ): HostEffectDeliveryV1 {
-  return Object.freeze({ envelope, transactionSequence });
+  return Object.freeze({
+    envelope,
+    transactionSequence:
+      sequence === 0
+        ? (sequence as HostTransactionSequence)
+        : createHostTransactionSequence(sequence),
+  });
 }
 
 function invert(envelope: HostEffectEnvelopeV1): HostEffectEnvelopeV1 {
@@ -451,4 +472,29 @@ function invert(envelope: HostEffectEnvelopeV1): HostEffectEnvelopeV1 {
     ...envelope,
     direction: envelope.direction === "forward" ? "inverse" : "forward",
   });
+}
+
+function emptyScene(): RuntimeSceneStateV1 {
+  return createRuntimeSceneStateV1({
+    elements: [],
+    groups: [],
+    noteAppearance: NOTE_APPEARANCE,
+    objectOrder: [],
+    revision: createSceneRevision(0),
+  });
+}
+
+function sceneSummary(
+  result: Awaited<ReturnType<HostHistoryCoordinatorV1["deliver"]>>,
+): { readonly elements: number; readonly revision: number } {
+  if (result.kind === "rejected")
+    throw new Error(`Delivery failed: ${result.reason}`);
+  return {
+    elements: result.scene.elementsById.size,
+    revision: result.scene.revision,
+  };
+}
+
+function identifier(prefix: string, index: number): string {
+  return `${prefix}_${index.toString(16).padStart(26, "0")}`;
 }

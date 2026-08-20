@@ -1,345 +1,300 @@
+import type {
+  CommandResultV1,
+  RecoveryAttemptId,
+} from "../../application/note-session";
 import {
-  addBytes,
-  readByteUsage,
-  readSessionOrderHighWater,
-  writeByteUsage,
-  writeSessionOrderHighWater,
-} from "./accounting";
-import { mapIndexedDbFailure } from "./error-mapping";
-import { requestResult, transactionDone } from "./idb-promises";
-import { encodeRecord, recordsEqual } from "./record-codec";
+  RECOVERY_STORE_LIMITS_V1,
+  type HostAcknowledgementV1,
+  type HostRecordedDirectionAttemptV1,
+  type PreparedForwardAttemptV1,
+  type RecoveryLoadRequestV1,
+  type RecoveryPersistenceRecordV1,
+  type RecoveryRekeyV1,
+  type RecoverySagaCompletionV1,
+  type RecoverySnapshotV1,
+  type RecoveryStore,
+  type RelocationRecordV1,
+  type RelocationTransitionV1,
+  type RemovalRecordV1,
+  type RemovalTransitionV1,
+  type SidecarRecoveryAcknowledgementV1,
+} from "../../application/recovery";
+import type { SourceCheckpointOperationV1 } from "../../application/source-coordination";
+import { acknowledgeSidecar } from "./acknowledgement";
+import { loadNote } from "./load";
 import {
-  createHostRecordedRecord,
-  resolveDirectionIdentifiers,
-  resolvePreparedIdentifiers,
-  resolveRequestIdentifiers,
-} from "./record-transitions";
-import { getRecoveryByteUsage, loadRecoveryNote } from "./read-operations";
-import { ACCOUNTING_STORE, ATTEMPTS_STORE, type StoredAttempt } from "./schema";
-import { createStoredAttempt, validateStoredAttempt } from "./stored-attempt";
-import {
-  DEFAULT_GLOBAL_BYTE_LIMIT,
-  DEFAULT_NOTE_BYTE_LIMIT,
-  type DeleteAttemptRequest,
-  type PreparedForwardProbeRecord,
-  type RecordDirectionRequest,
-  type RecordForwardRequest,
-  type RecoveryByteUsage,
-  type RecoveryDeleteResult,
-  type RecoveryIndexedDbFaultInjector,
-  type RecoveryIndexedDbStore,
-  type RecoveryLoadResult,
-  type RecoveryMutationResult,
-  type RecoveryNoteKey,
-  type RecoveryOperationFailure,
+  admitQueueRequest,
+  admitRecoveryRecord,
+  admitRecoveryTransition,
+  type AdmittedRecoveryTransition,
+} from "./queue-admission";
+import { rekeyNote } from "./rekey";
+import type {
+  IndexedDbRecoveryLimits,
+  IndexedDbRecoveryOptions,
 } from "./types";
+import {
+  appendDirection,
+  appendSourceCheckpoint,
+  beginRelocation,
+  beginRemoval,
+  completeSaga,
+  prepareForward,
+  recordForward,
+  advanceRelocation,
+  advanceRemoval,
+  type WriteContext,
+} from "./write-operations";
 
-interface StoreConfiguration {
-  readonly globalByteLimit?: number | undefined;
-  readonly noteByteLimit?: number | undefined;
-  readonly faultInjector?: RecoveryIndexedDbFaultInjector | undefined;
-}
+const DEFAULT_MAX_QUEUED_OPERATIONS = 64;
+const DEFAULT_MAX_QUEUED_BYTES = RECOVERY_STORE_LIMITS_V1.maxGlobalBytes;
+const MAXIMUM_LIMITS: IndexedDbRecoveryLimits = Object.freeze({
+  directSuccessors: RECOVERY_STORE_LIMITS_V1.maxDirectSuccessorsPerBase,
+  globalBytes: RECOVERY_STORE_LIMITS_V1.maxGlobalBytes,
+  globalRecords: RECOVERY_STORE_LIMITS_V1.maxGlobalRecords,
+  noteBytes: RECOVERY_STORE_LIMITS_V1.maxNoteBytes,
+  noteRecords: RECOVERY_STORE_LIMITS_V1.maxNoteRecords,
+  queuedBytes: DEFAULT_MAX_QUEUED_BYTES,
+  queuedOperations: DEFAULT_MAX_QUEUED_OPERATIONS,
+});
 
-export class IndexedDbRecoveryStore implements RecoveryIndexedDbStore {
-  readonly #database: IDBDatabase;
-  readonly #globalByteLimit: number;
-  readonly #noteByteLimit: number;
-  readonly #faultInjector: RecoveryIndexedDbFaultInjector | undefined;
+export class IndexedDbRecoveryStore implements RecoveryStore {
+  readonly #context: WriteContext;
+  readonly #onVersionChange: () => void;
   #disposed = false;
+  #outstandingBytes = 0;
+  #outstandingOperations = 0;
   #tail: Promise<void> = Promise.resolve();
 
-  public constructor(database: IDBDatabase, configuration: StoreConfiguration) {
-    this.#database = database;
-    this.#globalByteLimit =
-      configuration.globalByteLimit ?? DEFAULT_GLOBAL_BYTE_LIMIT;
-    this.#noteByteLimit =
-      configuration.noteByteLimit ?? DEFAULT_NOTE_BYTE_LIMIT;
-    this.#faultInjector = configuration.faultInjector;
-    this.#database.addEventListener("versionchange", () =>
-      this.#database.close(),
-    );
+  public constructor(database: IDBDatabase, options: IndexedDbRecoveryOptions) {
+    this.#context = {
+      database,
+      faultInjector: options.faultInjector,
+      limits: resolveLimits(options.limits),
+    };
+    this.#onVersionChange = (): void => database.close();
+    database.addEventListener("versionchange", this.#onVersionChange);
   }
 
   public prepareForward(
-    record: PreparedForwardProbeRecord,
-  ): Promise<RecoveryMutationResult> {
-    return this.#enqueue(() => this.#prepareForward(record));
+    attempt: PreparedForwardAttemptV1,
+  ): Promise<CommandResultV1<void>> {
+    return this.#enqueueRecord(attempt, (record, bytes) =>
+      prepareForward(this.#context, record, bytes),
+    );
   }
 
   public recordForward(
-    request: RecordForwardRequest,
-  ): Promise<RecoveryMutationResult> {
-    return this.#enqueue(() => this.#recordForward(request));
+    attemptId: RecoveryAttemptId,
+    acknowledgement: HostAcknowledgementV1,
+  ): Promise<CommandResultV1<void>> {
+    return this.#enqueueRequest({ acknowledgement, attemptId }, (request) =>
+      recordForward(this.#context, request.attemptId, request.acknowledgement),
+    );
   }
 
-  public recordDirection(
-    record: RecordDirectionRequest,
-  ): Promise<RecoveryMutationResult> {
-    return this.#enqueue(() => this.#recordDirection(record));
+  public appendDirection(
+    attempt: HostRecordedDirectionAttemptV1,
+  ): Promise<CommandResultV1<void>> {
+    return this.#enqueueRecord(attempt, (record, bytes) =>
+      appendDirection(this.#context, record, bytes),
+    );
   }
 
-  public loadNote(note: RecoveryNoteKey): Promise<RecoveryLoadResult> {
-    return this.#enqueue(() => loadRecoveryNote(this.#database, note));
+  public appendSourceCheckpoint(
+    checkpoint: SourceCheckpointOperationV1,
+  ): Promise<CommandResultV1<void>> {
+    return this.#enqueueRecord(checkpoint, (record, bytes) =>
+      appendSourceCheckpoint(this.#context, record, bytes),
+    );
   }
 
-  public deleteAttempt(
-    request: DeleteAttemptRequest,
-  ): Promise<RecoveryDeleteResult> {
-    return this.#enqueue(() => this.#deleteAttempt(request));
+  public acknowledgeSidecar(
+    request: SidecarRecoveryAcknowledgementV1,
+  ): Promise<CommandResultV1<void>> {
+    return this.#enqueueRequest(request, (admitted) =>
+      acknowledgeSidecar(this.#context, admitted),
+    );
   }
 
-  public getByteUsage(
-    note: RecoveryNoteKey,
-  ): Promise<RecoveryByteUsage | RecoveryOperationFailure> {
-    return this.#enqueue(() => getRecoveryByteUsage(this.#database, note));
+  public beginRelocation(
+    record: RelocationRecordV1,
+  ): Promise<CommandResultV1<void>> {
+    return this.#enqueueRecord(record, (admitted, bytes) =>
+      beginRelocation(this.#context, admitted, bytes),
+    );
+  }
+
+  public advanceRelocation(
+    request: RelocationTransitionV1,
+  ): Promise<CommandResultV1<void>> {
+    return this.#enqueueTransition(request, (admitted) =>
+      advanceRelocation(
+        this.#context,
+        admitted.transition,
+        admitted.expectedBytes,
+        admitted.replacementBytes,
+      ),
+    );
+  }
+
+  public beginRemoval(record: RemovalRecordV1): Promise<CommandResultV1<void>> {
+    return this.#enqueueRecord(record, (admitted, bytes) =>
+      beginRemoval(this.#context, admitted, bytes),
+    );
+  }
+
+  public advanceRemoval(
+    request: RemovalTransitionV1,
+  ): Promise<CommandResultV1<void>> {
+    return this.#enqueueTransition(request, (admitted) =>
+      advanceRemoval(
+        this.#context,
+        admitted.transition,
+        admitted.expectedBytes,
+        admitted.replacementBytes,
+      ),
+    );
+  }
+
+  public completeSaga(
+    request: RecoverySagaCompletionV1,
+  ): Promise<CommandResultV1<void>> {
+    return this.#enqueueRequest(request, (admitted) =>
+      completeSaga(this.#context, admitted),
+    );
+  }
+
+  public rekeyNote(request: RecoveryRekeyV1): Promise<CommandResultV1<void>> {
+    return this.#enqueueRequest(request, (admitted) =>
+      rekeyNote(this.#context, admitted),
+    );
+  }
+
+  public loadNote(
+    request: RecoveryLoadRequestV1,
+  ): Promise<CommandResultV1<RecoverySnapshotV1>> {
+    return this.#enqueueRequest(request, (admitted) =>
+      loadNote(this.#context.database, this.#context.limits, admitted),
+    );
   }
 
   public async dispose(): Promise<void> {
     if (!this.#disposed) {
       this.#disposed = true;
       await this.#tail;
-      this.#database.close();
+      this.#context.database.removeEventListener(
+        "versionchange",
+        this.#onVersionChange,
+      );
+      this.#context.database.close();
       return;
     }
     await this.#tail;
   }
 
-  async #prepareForward(
-    record: PreparedForwardProbeRecord,
-  ): Promise<RecoveryMutationResult> {
-    const identifiers = resolvePreparedIdentifiers(record);
-    const serialized = encodeRecord(record);
-    if (identifiers === null || serialized === null) {
-      return { kind: "invalid-input" };
-    }
-    const stored = createStoredAttempt(
-      identifiers.attemptKey,
-      identifiers.noteKey,
-      serialized,
+  #enqueueRecord<T extends RecoveryPersistenceRecordV1, R>(
+    record: T,
+    work: (record: T, bytes: Uint8Array) => Promise<CommandResultV1<R>>,
+  ): Promise<CommandResultV1<R>> {
+    const admitted = admitRecoveryRecord(record);
+    if (!admitted.ok) return Promise.resolve(admitted);
+    return this.#enqueue(admitted.value.bytes.byteLength, () =>
+      work(admitted.value.record, admitted.value.bytes),
     );
-    return this.#runMutation("prepare", async (transaction) => {
-      const attempts = transaction.objectStore(ATTEMPTS_STORE);
-      const existing = await requestResult(
-        attempts.get(stored.key) as IDBRequest<unknown>,
-      );
-      const usage = await readByteUsage(transaction, stored.noteKey);
-      if (existing !== undefined) {
-        const validated = validateStoredAttempt(existing, stored.key);
-        return validated?.stored.serialized === serialized
-          ? { kind: "unchanged", byteUsage: usage }
-          : { kind: "concurrent-change" };
-      }
-      const highWater = await readSessionOrderHighWater(
-        transaction,
-        stored.noteKey,
-      );
-      if (record.sessionOrder <= highWater) {
-        return { kind: "concurrent-change" };
-      }
-      writeSessionOrderHighWater(
-        transaction,
-        stored.noteKey,
-        record.sessionOrder,
-      );
-      return this.#writeAttempt(transaction, stored, usage, 0);
-    });
   }
 
-  async #recordForward(
-    request: RecordForwardRequest,
-  ): Promise<RecoveryMutationResult> {
-    const identifiers = resolveRequestIdentifiers(request);
-    if (identifiers === null) {
-      return { kind: "invalid-input" };
-    }
-    return this.#runMutation("record", async (transaction) => {
-      const attempts = transaction.objectStore(ATTEMPTS_STORE);
-      const value = await requestResult(
-        attempts.get(identifiers.attemptKey) as IDBRequest<unknown>,
-      );
-      const validated = validateStoredAttempt(value, identifiers.attemptKey);
-      if (validated === null) {
-        return { kind: "concurrent-change" };
-      }
-      const usage = await readByteUsage(transaction, identifiers.noteKey);
-      const replacement = createHostRecordedRecord(validated.record, request);
-      if (replacement === null) {
-        return { kind: "concurrent-change" };
-      }
-      if (recordsEqual(validated.record, replacement)) {
-        return { kind: "unchanged", byteUsage: usage };
-      }
-      const serialized = encodeRecord(replacement);
-      if (serialized === null) {
-        return { kind: "invalid-input" };
-      }
-      const stored = createStoredAttempt(
-        identifiers.attemptKey,
-        identifiers.noteKey,
-        serialized,
-      );
-      return this.#writeAttempt(
-        transaction,
-        stored,
-        usage,
-        validated.stored.byteSize,
-      );
-    });
-  }
-
-  async #recordDirection(
-    record: RecordDirectionRequest,
-  ): Promise<RecoveryMutationResult> {
-    const identifiers = resolveDirectionIdentifiers(record);
-    const serialized = encodeRecord(record);
-    if (identifiers === null || serialized === null) {
-      return { kind: "invalid-input" };
-    }
-    const stored = createStoredAttempt(
-      identifiers.attemptKey,
-      identifiers.noteKey,
-      serialized,
+  #enqueueRequest<T, R>(
+    request: T,
+    work: (request: T) => Promise<CommandResultV1<R>>,
+  ): Promise<CommandResultV1<R>> {
+    const admitted = admitQueueRequest(request);
+    if (!admitted.ok) return Promise.resolve(admitted);
+    return this.#enqueue(admitted.value.byteSize, () =>
+      work(admitted.value.value),
     );
-    return this.#runMutation("direction", async (transaction) => {
-      const attempts = transaction.objectStore(ATTEMPTS_STORE);
-      const existing = await requestResult(
-        attempts.get(stored.key) as IDBRequest<unknown>,
-      );
-      const usage = await readByteUsage(transaction, stored.noteKey);
-      if (existing !== undefined) {
-        const validated = validateStoredAttempt(existing, stored.key);
-        return validated?.stored.serialized === serialized
-          ? { kind: "unchanged", byteUsage: usage }
-          : { kind: "concurrent-change" };
-      }
-      const highWater = await readSessionOrderHighWater(
-        transaction,
-        stored.noteKey,
-      );
-      if (record.sessionOrder <= highWater) {
-        return { kind: "concurrent-change" };
-      }
-      writeSessionOrderHighWater(
-        transaction,
-        stored.noteKey,
-        record.sessionOrder,
-      );
-      return this.#writeAttempt(transaction, stored, usage, 0);
-    });
   }
 
-  async #deleteAttempt(
-    request: DeleteAttemptRequest,
-  ): Promise<RecoveryDeleteResult> {
-    const identifiers = resolveRequestIdentifiers(request);
-    if (identifiers === null) {
-      return { kind: "invalid-input" };
-    }
-    return this.#runMutation("delete", async (transaction) => {
-      const attempts = transaction.objectStore(ATTEMPTS_STORE);
-      const value = await requestResult(
-        attempts.get(identifiers.attemptKey) as IDBRequest<unknown>,
-      );
-      const usage = await readByteUsage(transaction, identifiers.noteKey);
-      if (value === undefined) {
-        return { kind: "not-found", byteUsage: usage };
-      }
-      const validated = validateStoredAttempt(value, identifiers.attemptKey);
-      if (validated === null) {
-        return { kind: "concurrent-change" };
-      }
-      const replacementUsage = addBytes(usage, -validated.stored.byteSize);
-      if (replacementUsage === null) {
-        return { kind: "concurrent-change" };
-      }
-      attempts.delete(identifiers.attemptKey);
-      writeByteUsage(transaction, identifiers.noteKey, replacementUsage);
-      return { kind: "deleted", byteUsage: replacementUsage };
-    });
+  #enqueueTransition<
+    TExpected extends RecoveryPersistenceRecordV1,
+    TReplacement extends RecoveryPersistenceRecordV1,
+    R,
+  >(
+    request: Readonly<{ expected: TExpected; replacement: TReplacement }>,
+    work: (
+      admitted: AdmittedRecoveryTransition<TExpected, TReplacement>,
+    ) => Promise<CommandResultV1<R>>,
+  ): Promise<CommandResultV1<R>> {
+    const admitted = admitRecoveryTransition(request);
+    if (!admitted.ok) return Promise.resolve(admitted);
+    return this.#enqueue(admitted.value.byteSize, () => work(admitted.value));
   }
 
-  #writeAttempt(
-    transaction: IDBTransaction,
-    stored: StoredAttempt,
-    usage: RecoveryByteUsage,
-    replacedBytes: number,
-  ): RecoveryMutationResult {
-    const replacementUsage = addBytes(usage, stored.byteSize - replacedBytes);
+  #enqueue<T>(
+    retainedBytes: number,
+    work: () => Promise<CommandResultV1<T>>,
+  ): Promise<CommandResultV1<T>> {
+    if (this.#disposed) return Promise.resolve(disposed());
     if (
-      replacementUsage === null ||
-      replacementUsage.globalBytes > this.#globalByteLimit ||
-      replacementUsage.noteBytes > this.#noteByteLimit
+      this.#outstandingOperations >= this.#context.limits.queuedOperations ||
+      retainedBytes > this.#context.limits.queuedBytes - this.#outstandingBytes
     ) {
-      return { kind: "quota-exceeded" };
+      return Promise.resolve({ ok: false, code: "recovery-limit" });
     }
-    transaction.objectStore(ATTEMPTS_STORE).put(stored);
-    writeByteUsage(transaction, stored.noteKey, replacementUsage);
-    return { kind: "written", byteUsage: replacementUsage };
-  }
-
-  async #runMutation<T extends RecoveryMutationResult | RecoveryDeleteResult>(
-    operation: "prepare" | "record" | "direction" | "delete",
-    work: (transaction: IDBTransaction) => Promise<T> | T,
-  ): Promise<T | RecoveryOperationFailure> {
-    let done: Promise<void> | undefined;
-    try {
-      const transaction = this.#database.transaction(
-        [ATTEMPTS_STORE, ACCOUNTING_STORE],
-        "readwrite",
-      );
-      done = transactionDone(transaction);
-      const result = await work(transaction);
-      if (!isSuccessfulMutation(result)) {
-        transaction.abort();
-        await done.catch(() => undefined);
-        return result;
-      }
-      this.#injectFault(operation, transaction);
-      await done;
-      return result;
-    } catch (error) {
-      await done?.catch(() => undefined);
-      return mapIndexedDbFailure(error);
-    }
-  }
-
-  #injectFault(
-    operation: "prepare" | "record" | "direction" | "delete",
-    transaction: IDBTransaction,
-  ): void {
-    try {
-      this.#faultInjector?.beforeCommit(operation, transaction);
-    } catch (error) {
-      transaction.abort();
-      throw error;
-    }
-  }
-
-  #enqueue<T>(work: () => Promise<T>): Promise<T | RecoveryOperationFailure> {
-    if (this.#disposed) {
-      return Promise.resolve({ kind: "disposed" });
-    }
-    const result = this.#tail.then(async () => {
-      if (this.#disposed) {
-        return { kind: "disposed" } as const;
-      }
+    this.#outstandingBytes += retainedBytes;
+    this.#outstandingOperations += 1;
+    const result = this.#tail.then<CommandResultV1<T>>(async () => {
+      if (this.#disposed) return disposed<T>();
       return work();
     });
-    this.#tail = result.then(
+    const settled = result.finally(() => {
+      this.#outstandingBytes -= retainedBytes;
+      this.#outstandingOperations -= 1;
+    });
+    this.#tail = settled.then(
       () => undefined,
       () => undefined,
     );
-    return result;
+    return settled;
   }
 }
 
-function isSuccessfulMutation(
-  result: RecoveryMutationResult | RecoveryDeleteResult,
-): boolean {
-  return (
-    result.kind === "written" ||
-    result.kind === "unchanged" ||
-    result.kind === "deleted" ||
-    result.kind === "not-found"
-  );
+function resolveLimits(
+  overrides: Partial<IndexedDbRecoveryLimits> | undefined,
+): IndexedDbRecoveryLimits {
+  const limits = {
+    directSuccessors:
+      overrides?.directSuccessors ??
+      RECOVERY_STORE_LIMITS_V1.maxDirectSuccessorsPerBase,
+    globalBytes:
+      overrides?.globalBytes ?? RECOVERY_STORE_LIMITS_V1.maxGlobalBytes,
+    globalRecords:
+      overrides?.globalRecords ?? RECOVERY_STORE_LIMITS_V1.maxGlobalRecords,
+    noteBytes: overrides?.noteBytes ?? RECOVERY_STORE_LIMITS_V1.maxNoteBytes,
+    noteRecords:
+      overrides?.noteRecords ?? RECOVERY_STORE_LIMITS_V1.maxNoteRecords,
+    queuedBytes: overrides?.queuedBytes ?? DEFAULT_MAX_QUEUED_BYTES,
+    queuedOperations:
+      overrides?.queuedOperations ?? DEFAULT_MAX_QUEUED_OPERATIONS,
+  };
+  const configured = Object.entries(limits) as readonly [
+    keyof IndexedDbRecoveryLimits,
+    number,
+  ][];
+  if (
+    configured.some(([key, value]) => !validLimit(value, MAXIMUM_LIMITS[key]))
+  ) {
+    throw new RangeError(
+      "Recovery store limits must be positive safe integers at or below product maxima.",
+    );
+  }
+  return limits;
+}
+
+function validLimit(value: number, maximum: number): boolean {
+  return Number.isSafeInteger(value) && value > 0 && value <= maximum;
+}
+
+function disposed<T>(): CommandResultV1<T> {
+  return { ok: false, code: "disposed" };
 }

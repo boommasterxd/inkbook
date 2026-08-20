@@ -1,10 +1,14 @@
+// @vitest-environment happy-dom
+
 import {
   Annotation,
   EditorState,
   Facet,
   type Transaction,
 } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
+import { createHistoryEpoch } from "../../../../src/domain/operations";
 
 import type {
   HistoryEntryId,
@@ -18,6 +22,7 @@ import type {
 import {
   createEditorHistoryBridgeV1,
   EditorHistoryEffectSequencerV1,
+  MAX_TRACKED_HISTORY_EPOCHS_V1,
   type CodeMirrorHistoryCapabilitiesV1,
   type EditorHistoryBridgeCallbacksV1,
   type EditorHistoryBridgeFailureV1,
@@ -28,8 +33,10 @@ const OWNER = "owner" as ViewId;
 const EPOCH = 1 as HistoryEpoch;
 const NOTE = Object.freeze({
   vaultIdHint: "vault",
-  vaultRelativeMarkdownPath: "Notes/probe.md",
+  vaultRelativeMarkdownPath: "Notes/history.md",
 });
+const EFFECT_ID = "eff_00000000000000000000000000" as HostEffectId;
+const HISTORY_ENTRY_ID = "he_00000000000000000000000000" as HistoryEntryId;
 
 describe("CodeMirror editor history bridge", () => {
   it("creates a real isolated invertible StateEffect without changing Markdown", () => {
@@ -86,6 +93,28 @@ describe("CodeMirror editor history bridge", () => {
 });
 
 describe("CodeMirror editor history bridge delivery", () => {
+  it("fails closed without an editor attachment", () => {
+    const harness = createCallbackHarness();
+    const bridge = createEditorHistoryBridgeV1(createCapabilities(), {
+      ...harness.callbacks,
+      attachEditor: () => null,
+    });
+    if (bridge.kind !== "available") throw new Error("Bridge unavailable");
+    const view = new EditorView({
+      parent: document.body,
+      state: EditorState.create({ extensions: bridge.extension }),
+    });
+    const transaction = bridge.transaction(envelope("forward"));
+    if (transaction === null) throw new Error("Expected transaction spec");
+
+    view.dispatch(transaction);
+
+    expect(harness.deliveries).toEqual([]);
+    expect(harness.detached).toEqual([]);
+    expect(harness.malformed).toEqual([]);
+    view.destroy();
+  });
+
   it("delivers effects in transaction order with restored per-editor epoch high-water", () => {
     const capabilities = createCapabilities();
     const restoredHighWater = Number("7") as HostTransactionSequence;
@@ -170,6 +199,77 @@ describe("CodeMirror editor history bridge delivery", () => {
   });
 });
 
+describe("CodeMirror editor history bridge validation", () => {
+  it("rejects malformed host effects without delivery", () => {
+    const harness = createCallbackHarness();
+    const bridge = createEditorHistoryBridgeV1(
+      createCapabilities(),
+      harness.callbacks,
+    );
+    if (bridge.kind !== "available") throw new Error("Bridge unavailable");
+    const sequencer = new EditorHistoryEffectSequencerV1(
+      { editorViewId: EDITOR, ownerViewId: OWNER },
+      bridge.effectType,
+      harness.callbacks,
+    );
+    const malformed = Object.freeze({
+      ...envelope("forward"),
+      effectId: "" as HostEffectId,
+    });
+    const transaction = EditorState.create().update({
+      effects: bridge.effectType.of(malformed),
+    });
+
+    sequencer.accept([transaction]);
+
+    expect(harness.deliveries).toEqual([]);
+    expect(harness.malformed).toEqual([
+      { editorViewId: EDITOR, reason: "invalid-envelope" },
+    ]);
+    sequencer.dispose();
+  });
+
+  it("fails closed after retaining the maximum number of history epochs", () => {
+    const harness = createCallbackHarness();
+    const bridge = createEditorHistoryBridgeV1(
+      createCapabilities(),
+      harness.callbacks,
+    );
+    if (bridge.kind !== "available") throw new Error("Bridge unavailable");
+    const sequencer = new EditorHistoryEffectSequencerV1(
+      { editorViewId: EDITOR, ownerViewId: OWNER },
+      bridge.effectType,
+      harness.callbacks,
+    );
+    let state = EditorState.create({ doc: "" });
+    const transactions = [] as Transaction[];
+    for (
+      let epoch = 1;
+      epoch <= MAX_TRACKED_HISTORY_EPOCHS_V1 + 1;
+      epoch += 1
+    ) {
+      const transaction = state.update({
+        effects: bridge.effectType.of(
+          envelope("forward", createHistoryEpoch(epoch)),
+        ),
+      });
+      transactions.push(transaction);
+      state = transaction.state;
+    }
+
+    sequencer.accept(transactions);
+    expect(harness.deliveries).toHaveLength(MAX_TRACKED_HISTORY_EPOCHS_V1);
+    expect(harness.malformed).toEqual([
+      { editorViewId: EDITOR, reason: "epoch-limit-exhausted" },
+    ]);
+
+    const retained = transactions[0];
+    if (retained === undefined) throw new Error("Expected retained epoch");
+    sequencer.accept([retained]);
+    expect(harness.deliveries).toHaveLength(MAX_TRACKED_HISTORY_EPOCHS_V1 + 1);
+  });
+});
+
 function createCapabilities(): Required<CodeMirrorHistoryCapabilitiesV1> {
   type Inverter = (transaction: Transaction) => readonly never[];
   return {
@@ -214,12 +314,15 @@ function createCallbackHarness(
   return { callbacks, deliveries, detached, malformed };
 }
 
-function envelope(direction: "forward" | "inverse"): HostEffectEnvelopeV1 {
+function envelope(
+  direction: "forward" | "inverse",
+  historyEpoch: HistoryEpoch = EPOCH,
+): HostEffectEnvelopeV1 {
   return Object.freeze({
     direction,
-    effectId: "eff_probe" as HostEffectId,
-    historyEntryId: "he_probe" as HistoryEntryId,
-    historyEpoch: EPOCH,
+    effectId: EFFECT_ID,
+    historyEntryId: HISTORY_ENTRY_ID,
+    historyEpoch,
     noteIdentity: NOTE,
   });
 }
