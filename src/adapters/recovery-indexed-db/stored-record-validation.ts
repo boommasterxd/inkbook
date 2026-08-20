@@ -4,6 +4,7 @@ const NULL_REVISION = -1;
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/u;
 const SESSION_INDEX_LENGTH = 2;
 const STORED_RECORD_KEYS = [
+  "activePrefixRelocation",
   "baseDigest",
   "basePath",
   "baseRevision",
@@ -58,7 +59,10 @@ function validStoredIndices(candidate: Partial<StoredRecoveryRecord>): boolean {
     typeof candidate.baseDigest === "string" &&
     validInteger(candidate.sessionOrder, 0) &&
     validSessionIndex(candidate.noteSessionOrder) &&
-    validStringArray(candidate.prefixScopes)
+    validStringArray(candidate.prefixScopes) &&
+    (candidate.activePrefixRelocation === null ||
+      candidate.activePrefixRelocation === "active" ||
+      candidate.activePrefixRelocation === "retained")
   );
 }
 

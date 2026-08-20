@@ -4,6 +4,7 @@ import type {
 } from "../../application/note-session";
 import type { SourceCheckpointOperationV1 } from "../../application/source-coordination";
 import {
+  decodeRecoveryRecordV1,
   isTerminalRelocation,
   isTerminalRemoval,
   validateRelocationStart,
@@ -12,6 +13,7 @@ import {
   validateRemovalTransition,
   type HostAcknowledgementV1,
   type HostRecordedDirectionAttemptV1,
+  type HostRecordedForwardAttemptV1,
   type PreparedForwardAttemptV1,
   type RecoveryPersistenceRecordV1,
   type RecoverySagaCompletionV1,
@@ -26,6 +28,7 @@ import {
   writeAccounting,
 } from "./accounting";
 import { requestResult } from "./idb-promises";
+import { deletePrefixRelocationPlan } from "./prefix-plan";
 import {
   conflict,
   insertRecord,
@@ -33,6 +36,10 @@ import {
   success,
 } from "./record-admission";
 import { readRecordByKey } from "./read-record";
+import {
+  insertPrefixRelocationRecord,
+  retainCompletedPrefixRule,
+} from "./retained-prefix-rules";
 import {
   createStoredRecord,
   decodeStoredRecordInTransaction,
@@ -96,7 +103,7 @@ export async function recordForward(
   context: WriteContext,
   attemptId: RecoveryAttemptId,
   acknowledgement: HostAcknowledgementV1,
-): Promise<CommandResultV1<void>> {
+): Promise<CommandResultV1<HostRecordedForwardAttemptV1>> {
   if (!/^ra_[0-7][0-9a-hjkmnp-tv-z]{25}$/u.test(attemptId)) {
     return { ok: false, code: "invalid-command" };
   }
@@ -120,19 +127,30 @@ export async function recordForward(
     acknowledgement,
     kind: "host-recorded-forward" as const,
   };
+  const candidate = await createStoredRecord(replacement);
+  if (!candidate.ok) return candidate;
+  const durable = decodeRecoveryRecordV1(candidate.value.encoded);
+  if (
+    !durable.ok ||
+    !("attemptId" in durable.value) ||
+    durable.value.kind !== "host-recorded-forward"
+  ) {
+    return { ok: false, code: "recovery-unavailable" };
+  }
+  const durableAttempt = durable.value;
   if (prior.kind === "host-recorded-forward") {
-    const candidate = await createStoredRecord(replacement);
-    if (!candidate.ok) return candidate;
     return storedPayloadEqual(existing.value.stored, candidate.value)
-      ? success()
+      ? { ok: true, value: prior }
       : conflict();
   }
-  return replaceWithCas(
+  const persisted = await replaceWithCas(
     context,
     "record-forward",
     existing.value.stored,
     replacement,
+    candidate.value,
   );
+  return persisted.ok ? { ok: true, value: durableAttempt } : persisted;
 }
 
 export async function advanceRelocation(
@@ -196,6 +214,22 @@ export async function completeSaga(
     ) {
       return conflict();
     }
+    if (isPrefixRecord(current.value.record)) {
+      if (current.value.stored.activePrefixRelocation === "retained") {
+        return success();
+      }
+      const deletedPlan = await deletePrefixRelocationPlan(
+        transaction,
+        current.value.record,
+      );
+      return deletedPlan.ok
+        ? retainCompletedPrefixRule(
+            transaction,
+            current.value.stored,
+            current.value.record,
+          )
+        : deletedPlan;
+    }
     return deleteStoredRecord(transaction, current.value.stored);
   });
 }
@@ -214,7 +248,14 @@ async function appendRecord(
   const stored = await createStoredRecord(record, admittedBytes);
   if (!stored.ok) return stored;
   return runMutation(context, operation, (transaction) =>
-    insertRecord(transaction, stored.value, context.limits),
+    isPrefixRecord(record)
+      ? insertPrefixRelocationRecord(
+          transaction,
+          stored.value,
+          record,
+          context.limits,
+        )
+      : insertRecord(transaction, stored.value, context.limits),
   );
 }
 
@@ -288,6 +329,18 @@ function isTerminalSaga(
     );
   }
   return "relocationId" in record && isTerminalRelocation(record);
+}
+
+function isPrefixRecord(
+  record: RecoveryPersistenceRecordV1,
+): record is Extract<
+  RelocationRecordV1,
+  { kind: "folder-prefix" | "storage-root" }
+> {
+  return (
+    "relocationId" in record &&
+    (record.kind === "folder-prefix" || record.kind === "storage-root")
+  );
 }
 
 async function deleteStoredRecord(

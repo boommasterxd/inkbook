@@ -1,6 +1,7 @@
 import {
   decodeRecoveryRecordV1,
   encodeRecoveryRecordV1,
+  type PrefixRelocationRecordV1,
   type RecoveryPersistenceRecordV1,
   type SidecarBaseIdentityV1,
 } from "../../application/recovery";
@@ -32,6 +33,7 @@ export async function createStoredRecord(
   return {
     ok: true,
     value: {
+      activePrefixRelocation: isPrefixRelocation(record) ? "active" : null,
       baseDigest: base?.rawTextSha256 ?? EMPTY_DIGEST,
       basePath: base?.vaultRelativePath ?? null,
       baseRevision: base?.revision ?? NULL_REVISION,
@@ -64,7 +66,11 @@ export async function decodeStoredRecord(
   const decoded = decodeRecoveryRecordV1(stored.encoded);
   if (!decoded.ok) return { ok: false, code: "recovery-unavailable" };
   const rebuilt = await createStoredRecord(decoded.value);
-  if (!rebuilt.ok || !sameStoredRecord(stored, rebuilt.value)) {
+  const expected =
+    rebuilt.ok && stored.activePrefixRelocation === "retained"
+      ? retainCompletedPrefixRecord(rebuilt.value, decoded.value)
+      : rebuilt;
+  if (!expected.ok || !sameStoredRecord(stored, expected.value)) {
     return { ok: false, code: "recovery-unavailable" };
   }
   return { ok: true, value: { stored, record: decoded.value } };
@@ -120,6 +126,23 @@ export function storedPayloadEqual(
   );
 }
 
+export function retainCompletedPrefixRecord(
+  stored: StoredRecoveryRecord,
+  record: RecoveryPersistenceRecordV1,
+): CommandResultV1<StoredRecoveryRecord> {
+  if (!isPrefixRelocation(record) || record.step !== "complete") {
+    return { ok: false, code: "sidecar-conflict" };
+  }
+  return {
+    ok: true,
+    value: {
+      ...stored,
+      activePrefixRelocation: "retained",
+      prefixScopes: Object.freeze([]),
+    },
+  };
+}
+
 function recordIdentity(record: RecoveryPersistenceRecordV1): {
   kind: StoredRecordKind;
   id: string;
@@ -172,6 +195,7 @@ function sameStoredRecord(
 ): boolean {
   return (
     left.key === right.key &&
+    left.activePrefixRelocation === right.activePrefixRelocation &&
     left.kind === right.kind &&
     left.noteKey === right.noteKey &&
     left.successorKey === right.successorKey &&
@@ -195,22 +219,56 @@ function metadataMatchesRecord(
   const base = recordBase(record);
   const noteKey = recordNoteKey(record);
   const sessionOrder = recordSessionOrder(record);
+  const retained = stored.activePrefixRelocation === "retained";
   return (
     stored.key === recordKey(record) &&
+    activePrefixMetadataMatches(stored, record) &&
     stored.kind === recordIdentity(record).kind &&
     stored.noteKey === noteKey &&
     stored.basePath === (base?.vaultRelativePath ?? null) &&
     stored.baseRevision === (base?.revision ?? NULL_REVISION) &&
     stored.baseDigest === (base?.rawTextSha256 ?? EMPTY_DIGEST) &&
     stored.sessionOrder === sessionOrder &&
-    stored.successorKey ===
-      (base === null || noteKey === null
-        ? null
-        : recoverySuccessorKey(noteKey, base)) &&
+    successorMetadataMatches(stored, noteKey, base) &&
     JSON.stringify(stored.noteSessionOrder) ===
       JSON.stringify(
         noteKey === null || sessionOrder === 0 ? null : [noteKey, sessionOrder],
       ) &&
-    JSON.stringify(stored.prefixScopes) === JSON.stringify(prefixScopes(record))
+    JSON.stringify(stored.prefixScopes) ===
+      JSON.stringify(retained ? [] : prefixScopes(record))
+  );
+}
+
+function successorMetadataMatches(
+  stored: StoredRecoveryRecord,
+  noteKey: string | null,
+  base: SidecarBaseIdentityV1 | null,
+): boolean {
+  const expected =
+    base === null || noteKey === null
+      ? null
+      : recoverySuccessorKey(noteKey, base);
+  return stored.successorKey === expected;
+}
+
+function activePrefixMetadataMatches(
+  stored: StoredRecoveryRecord,
+  record: RecoveryPersistenceRecordV1,
+): boolean {
+  if (!isPrefixRelocation(record)) {
+    return stored.activePrefixRelocation === null;
+  }
+  return (
+    stored.activePrefixRelocation === "active" ||
+    (stored.activePrefixRelocation === "retained" && record.step === "complete")
+  );
+}
+
+function isPrefixRelocation(
+  record: RecoveryPersistenceRecordV1,
+): record is PrefixRelocationRecordV1 {
+  return (
+    "relocationId" in record &&
+    (record.kind === "folder-prefix" || record.kind === "storage-root")
   );
 }

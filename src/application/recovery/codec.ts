@@ -68,6 +68,7 @@ const RECOVERY_JSON_LIMITS: BoundedJsonLimits = Object.freeze({
   maxArrays: MAX_JSON_COLLECTION_ITEMS,
   maxNesting: 64,
   maxObjectMembers: MAX_JSON_COLLECTION_ITEMS,
+  maxObjectMembersPerObject: 64,
   maxObjects: MAX_JSON_COLLECTION_ITEMS,
   maxStringUtf16Units: MAX_RECORD_BYTES,
   maxUtf8Bytes: MAX_RECORD_BYTES,

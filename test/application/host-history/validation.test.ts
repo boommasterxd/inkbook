@@ -144,6 +144,10 @@ function actionableEntry(
     effectId: parseHostEffectId("eff_00000000000000000000000000"),
     historyEntry: historyEntry.value,
     lifecycle: "admitting",
+    noteIdentity: {
+      vaultIdHint: "vault",
+      vaultRelativeMarkdownPath: "Notes/history.md",
+    },
     ownerViewId: parseViewId(ownerViewId),
     preparedForward: operation.value,
     recoveryAttemptId: parseRecoveryAttemptId("ra_00000000000000000000000000"),

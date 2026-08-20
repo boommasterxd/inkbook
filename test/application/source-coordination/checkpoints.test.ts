@@ -9,6 +9,7 @@ import {
 } from "../../../src/application/note-session";
 import {
   validateSourceCheckpointChain,
+  recoverSourceCheckpointChain,
   type SourceCheckpointOperationV1,
   type SourceCheckpointRootV1,
 } from "../../../src/application/source-coordination";
@@ -61,10 +62,20 @@ function checkpoint(
 
 describe("source checkpoint chain validation", () => {
   it("accepts and freezes a contiguous canonical chain", () => {
-    const result = validateSourceCheckpointChain(ROOT, [checkpoint()]);
+    const candidate = checkpoint();
+    const result = validateSourceCheckpointChain(ROOT, [candidate]);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    const suppliedSpan = candidate.offsetMap.spans[0] as {
+      newToUtf16: number;
+    };
+    suppliedSpan.newToUtf16 = 4;
     expect(Object.isFrozen(result.value)).toBe(true);
+    expect(Object.isFrozen(result.value[0])).toBe(true);
+    expect(Object.isFrozen(result.value[0]?.offsetMap)).toBe(true);
+    expect(Object.isFrozen(result.value[0]?.offsetMap.spans)).toBe(true);
+    expect(result.value[0]?.offsetMap.spans[0]?.newToUtf16).toBe(3);
+    expect(result.value[0]).not.toBeUndefined();
   });
 
   it.each([
@@ -90,5 +101,96 @@ describe("source checkpoint chain validation", () => {
       sessionOrder: createSessionOrder(1),
     });
     expect(validateSourceCheckpointChain(ROOT, [first, second]).ok).toBe(false);
+  });
+});
+
+describe("bounded source checkpoint recovery", () => {
+  it("selects one contiguous chain through the exact current digest", () => {
+    const first = checkpoint();
+    const second = checkpoint({
+      checkpointId: parseSourceCheckpointId(`scp_1${PAYLOAD.slice(1)}`),
+      offsetMap: {
+        spans: [
+          {
+            newFromUtf16: 5,
+            newToUtf16: 6,
+            oldFromUtf16: 5,
+            oldToUtf16: 5,
+          },
+        ],
+      },
+      priorDigest: DIGEST_B,
+      priorGeneration: createSourceGeneration(2),
+      priorUtf16Length: 5,
+      replacementDigest: parseSha256Digest("c".repeat(DIGEST_LENGTH)),
+      replacementGeneration: createSourceGeneration(3),
+      replacementUtf16Length: 6,
+      sessionOrder: createSessionOrder(2),
+    });
+    const result = recoverSourceCheckpointChain(ROOT, [second, first], {
+      digest: second.replacementDigest,
+      utf16Length: second.replacementUtf16Length,
+    });
+    expect(result).toEqual({ ok: true, value: [first, second] });
+  });
+
+  it("rejects gaps, forks, and a target unrelated to the chain", () => {
+    const first = checkpoint();
+    const fork = checkpoint({
+      checkpointId: parseSourceCheckpointId(`scp_1${PAYLOAD.slice(1)}`),
+      replacementDigest: parseSha256Digest("d".repeat(DIGEST_LENGTH)),
+    });
+    expect(
+      recoverSourceCheckpointChain(ROOT, [first, fork], {
+        digest: DIGEST_B,
+        utf16Length: 5,
+      }),
+    ).toEqual({ ok: false, code: "recovery-unavailable" });
+    expect(
+      recoverSourceCheckpointChain(ROOT, [first], {
+        digest: parseSha256Digest("e".repeat(DIGEST_LENGTH)),
+        utf16Length: 5,
+      }),
+    ).toEqual({ ok: false, code: "recovery-unavailable" });
+  });
+
+  it("rejects duplicate checkpoint order during recovery", () => {
+    const first = checkpoint();
+    const second = checkpoint({
+      checkpointId: parseSourceCheckpointId(`scp_1${PAYLOAD.slice(1)}`),
+      offsetMap: {
+        spans: [
+          {
+            newFromUtf16: 5,
+            newToUtf16: 6,
+            oldFromUtf16: 5,
+            oldToUtf16: 5,
+          },
+        ],
+      },
+      priorDigest: DIGEST_B,
+      priorGeneration: createSourceGeneration(2),
+      priorUtf16Length: 5,
+      replacementDigest: parseSha256Digest("c".repeat(DIGEST_LENGTH)),
+      replacementGeneration: createSourceGeneration(3),
+      replacementUtf16Length: 6,
+      sessionOrder: createSessionOrder(1),
+    });
+
+    expect(
+      recoverSourceCheckpointChain(ROOT, [second, first], {
+        digest: second.replacementDigest,
+        utf16Length: second.replacementUtf16Length,
+      }),
+    ).toEqual({ ok: false, code: "recovery-unavailable" });
+  });
+
+  it("uses no checkpoint when current Markdown exactly matches the root", () => {
+    expect(
+      recoverSourceCheckpointChain(ROOT, [checkpoint()], {
+        digest: ROOT.digest,
+        utf16Length: ROOT.utf16Length,
+      }),
+    ).toEqual({ ok: true, value: [] });
   });
 });

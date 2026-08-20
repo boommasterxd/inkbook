@@ -1,4 +1,8 @@
 export { HostHistoryCoordinatorV1 } from "./coordinator";
+export {
+  replayMaterializedRecoveryHistory,
+  type ReplayMaterializedRecoveryHistoryRequestV1,
+} from "./recovery-replay";
 export type {
   ActionableHistoryEntrySnapshotV1,
   HistoryEntryId,
@@ -8,6 +12,8 @@ export type {
   HostEffectId,
   HostHistoryCoordinatorConfigV1,
   HostHistoryRecoveryContextV1,
+  HostHistorySnapshotV1,
+  HostRecordedRecoveryAttemptV1,
   HostTransactionSequence,
   PrepareHostEffectResultV1,
   ViewId,

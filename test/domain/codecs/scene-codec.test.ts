@@ -23,6 +23,7 @@ const PHONE_WRITE_LIMIT = 8 * 1_024 * 1_024;
 const HEADROOM_FACTOR = 1.1;
 const MINIMUM_CAPACITY = 5_000;
 const STRESS_CAPACITY = 10_000;
+const COVERAGE_STRESS_TIMEOUT_MS = 15_000;
 const POINTS_PER_STROKE = 25;
 const STRESS_POINT_COUNT = STRESS_CAPACITY * POINTS_PER_STROKE;
 const FUZZ_CASES = 128;
@@ -78,6 +79,31 @@ function generatedScene(size: number): SerializedSceneStateV1 {
       contrast: "low",
     },
   };
+}
+
+function expectCapacityRoundTrip(size: number): void {
+  const source = generatedScene(size);
+  const runtime = validateSerializedSceneStateV1(source);
+  const encoded = encodeRuntimeSceneJsonV1(runtime);
+  const decoded = decodeSceneJsonV1(encoded, CURRENT_VERSION);
+
+  expect(decoded.kind).toBe("current");
+  if (decoded.kind !== "current") return;
+  expect(decoded.scene.elementsById.size).toBe(size);
+  expect(decoded.scene.objectOrder).toHaveLength(size);
+  if (size !== STRESS_CAPACITY) return;
+  const points = source.elements.reduce(
+    (total, element) =>
+      total +
+      (element.kind === "pen" || element.kind === "highlighter"
+        ? element.geometry.stroke.pointCount
+        : 0),
+    0,
+  );
+  expect(points).toBe(STRESS_POINT_COUNT);
+  expect(encoded.byteLength * HEADROOM_FACTOR).toBeLessThanOrEqual(
+    PHONE_WRITE_LIMIT,
+  );
 }
 
 describe("scene canonical codec", () => {
@@ -153,7 +179,7 @@ describe("scene canonical codec", () => {
 });
 
 describe("scene codec boundaries", () => {
-  it("reuses parser-measured bytes for current and future JSON decode", () => {
+  it("reuses measured bytes and incrementally admits direct current scenes", () => {
     const encodeSpy = vi.spyOn(canonicalJsonCodec, "encodeCanonicalJson");
     try {
       const source = completeScene();
@@ -171,7 +197,7 @@ describe("scene codec boundaries", () => {
       expect(
         decodeSceneStateV1({ future: true }, { major: 2, minor: 0 }).kind,
       ).toBe("read-only-newer-version");
-      expect(encodeSpy).toHaveBeenCalledTimes(2);
+      expect(encodeSpy).toHaveBeenCalledTimes(1);
     } finally {
       encodeSpy.mockRestore();
     }
@@ -230,32 +256,15 @@ describe("scene malicious and generated workloads", () => {
     }
   });
 
-  it.each([MINIMUM_CAPACITY, STRESS_CAPACITY])(
-    "round-trips a generated %i-element scene within parser limits",
-    (size) => {
-      const source = generatedScene(size);
-      const runtime = validateSerializedSceneStateV1(source);
-      const encoded = encodeRuntimeSceneJsonV1(runtime);
-      const decoded = decodeSceneJsonV1(encoded, CURRENT_VERSION);
+  it("round-trips a generated 5,000-element scene within parser limits", () => {
+    expectCapacityRoundTrip(MINIMUM_CAPACITY);
+  });
 
-      expect(decoded.kind).toBe("current");
-      if (decoded.kind !== "current") return;
-      expect(decoded.scene.elementsById.size).toBe(size);
-      expect(decoded.scene.objectOrder).toHaveLength(size);
-      if (size === STRESS_CAPACITY) {
-        const points = source.elements.reduce(
-          (total, element) =>
-            total +
-            (element.kind === "pen" || element.kind === "highlighter"
-              ? element.geometry.stroke.pointCount
-              : 0),
-          0,
-        );
-        expect(points).toBe(STRESS_POINT_COUNT);
-        expect(encoded.byteLength * HEADROOM_FACTOR).toBeLessThanOrEqual(
-          PHONE_WRITE_LIMIT,
-        );
-      }
+  it(
+    "round-trips a generated 10,000-element scene within parser limits",
+    () => {
+      expectCapacityRoundTrip(STRESS_CAPACITY);
     },
+    COVERAGE_STRESS_TIMEOUT_MS,
   );
 });

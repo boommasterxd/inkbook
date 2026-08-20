@@ -1,6 +1,6 @@
 import type { CommandResultV1 } from "../../application/note-session";
 import { transactionDone } from "./idb-promises";
-import { ACCOUNTING_STORE, RECORDS_STORE } from "./schema";
+import { ACCOUNTING_STORE, PREFIX_PLAN_STORE, RECORDS_STORE } from "./schema";
 import type {
   IndexedDbRecoveryFaultInjector,
   RecoveryMutationKind,
@@ -19,7 +19,7 @@ export async function runMutation<T>(
   let done: Promise<void> | undefined;
   try {
     const transaction = context.database.transaction(
-      [RECORDS_STORE, ACCOUNTING_STORE],
+      [RECORDS_STORE, ACCOUNTING_STORE, PREFIX_PLAN_STORE],
       "readwrite",
     );
     done = transactionDone(transaction);

@@ -11,6 +11,7 @@ import type {
   ViewId,
 } from "./types";
 import { DEFAULT_HOST_HISTORY_LIMITS, sameNoteIdentity } from "./validation";
+import { isValidNoteIdentity } from "../recovery/validation";
 
 export function resolveLimits(
   limits: HostHistoryCoordinatorConfigV1["limits"],
@@ -47,6 +48,16 @@ export function freezeNoteIdentity(
   return Object.freeze({ ...noteIdentity });
 }
 
+export function resolveRekeyedNoteIdentity(
+  current: NoteIdentityV1,
+  prior: NoteIdentityV1,
+  replacement: NoteIdentityV1,
+): NoteIdentityV1 | null {
+  return sameNoteIdentity(current, prior) && isValidNoteIdentity(replacement)
+    ? freezeNoteIdentity(replacement)
+    : null;
+}
+
 function freezeIntent(intent: HostDispatchIntentV1): HostDispatchIntentV1 {
   return Object.freeze({ ...intent });
 }
@@ -67,6 +78,7 @@ export function freezeEntry(
   return Object.freeze({
     ...entry,
     historyEntry: freezeHistoryEntry(entry.historyEntry),
+    noteIdentity: freezeNoteIdentity(entry.noteIdentity),
     preparedForward: freezeIntent(entry.preparedForward),
   });
 }
@@ -106,6 +118,7 @@ export function matchesEntry(
     entry.effectId === envelope.effectId &&
     entry.historyEntry.historyEntryId === envelope.historyEntryId &&
     entry.historyEntry.historyEpoch === envelope.historyEpoch &&
+    sameNoteIdentity(entry.noteIdentity, envelope.noteIdentity) &&
     entry.ownerViewId === ownerViewId
   );
 }

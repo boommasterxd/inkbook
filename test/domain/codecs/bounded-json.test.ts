@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BOUNDED_JSON_PROCESS_MAX_UTF16_UNITS,
   type BoundedJsonLimits,
+  createBoundedJsonProcessor,
   parseBoundedJson,
 } from "../../../src/domain/codecs/bounded-json";
 
@@ -34,6 +36,10 @@ const REAL_MAGNITUDE = 1e20;
 const INTEGER_MAGNITUDE = 1_000_000;
 const MAX_COLLECTION_SIZE = 5;
 const MAX_STRING_SIZE = 8;
+const RESUMABLE_STRING_SIZE = 64;
+const TWO_UTF16_UNITS = 2;
+const NEGATIVE_WORK_LIMIT = -1;
+const FRACTIONAL_WORK_LIMIT = 1.5;
 const NULL_KIND = 0;
 const BOOLEAN_KIND = 1;
 const NUMBER_KIND = 2;
@@ -46,6 +52,7 @@ const DEFAULT_LIMITS: BoundedJsonLimits = {
   maxStringUtf16Units: DEFAULT_LIMIT,
   maxArrayItems: DEFAULT_LIMIT,
   maxObjectMembers: DEFAULT_LIMIT,
+  maxObjectMembersPerObject: 64,
   maxArrays: DEFAULT_LIMIT,
   maxObjects: DEFAULT_LIMIT,
 };
@@ -147,6 +154,75 @@ describe("bounded JSON parsing", () => {
       }),
     ).toMatchObject({ ok: true, counters: { utf8Bytes: byteLength } });
     expect(parseBoundedJson('"€"', DEFAULT_LIMITS)).toMatchObject({ ok: true });
+  });
+});
+
+describe("bounded JSON processing", () => {
+  it("resumes one bounded UTF-16 slice at a time and materializes once", () => {
+    const input = `{"value":"${"x".repeat(RESUMABLE_STRING_SIZE)}"}`;
+    const processor = createBoundedJsonProcessor(input, DEFAULT_LIMITS);
+    let slices = 0;
+
+    expect(processor.complete()).toBeUndefined();
+    while (!processor.processNext(1)) slices += 1;
+
+    const completed = processor.complete();
+    expect(slices).toBeGreaterThan(input.length);
+    expect(completed).toEqual(parseBoundedJson(input, DEFAULT_LIMITS));
+    expect(processor.complete()).toBe(completed);
+    expect(processor.processNext(1)).toBe(true);
+    expect(processor.complete()).toBe(completed);
+  });
+
+  it("caps caller work requests at the fixed parser chunk limit", () => {
+    const input = `"${"x".repeat(BOUNDED_JSON_PROCESS_MAX_UTF16_UNITS)}"`;
+    const processor = createBoundedJsonProcessor(input, DEFAULT_LIMITS);
+
+    expect(processor.processNext(Number.MAX_SAFE_INTEGER)).toBe(false);
+    expect(processor.complete()).toBeUndefined();
+  });
+
+  it("finishes raw admission before constructing bounded values", () => {
+    const processor = createBoundedJsonProcessor("[0]", {
+      ...DEFAULT_LIMITS,
+      maxArrayItems: 0,
+    });
+
+    expect(processor.processNext(THREE_ITEMS)).toBe(false);
+    expect(processor.complete()).toBeUndefined();
+    expect(processor.processNext(THREE_ITEMS)).toBe(true);
+    expect(processor.complete()).toMatchObject({
+      ok: false,
+      error: { code: "array-item-limit" },
+    });
+  });
+
+  it("validates surrogate pairs split across admission slices", () => {
+    const valid = createBoundedJsonProcessor('"😀"', DEFAULT_LIMITS);
+    const invalid = createBoundedJsonProcessor('"\ud800x"', DEFAULT_LIMITS);
+
+    while (!valid.processNext(1)) {
+      // Drive the deliberately smallest supported slice.
+    }
+    expect(valid.complete()).toMatchObject({ ok: true });
+    expect(invalid.processNext(TWO_UTF16_UNITS)).toBe(false);
+    expect(invalid.processNext(1)).toBe(true);
+    expect(invalid.complete()).toMatchObject({
+      ok: false,
+      error: { code: "invalid-unicode", offset: 1 },
+    });
+  });
+
+  it.each([
+    0,
+    NEGATIVE_WORK_LIMIT,
+    FRACTIONAL_WORK_LIMIT,
+    Number.POSITIVE_INFINITY,
+  ])("rejects invalid per-slice work limits: %s", (limit) => {
+    const processor = createBoundedJsonProcessor("null", DEFAULT_LIMITS);
+
+    expect(() => processor.processNext(limit)).toThrow(RangeError);
+    expect(processor.complete()).toBeUndefined();
   });
 });
 

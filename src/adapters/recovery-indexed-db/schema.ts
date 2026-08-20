@@ -1,7 +1,12 @@
-export const DATABASE_SCHEMA_VERSION = 3;
+export const DATABASE_SCHEMA_VERSION = 5;
 export const RECORDS_STORE = "records";
 export const ACCOUNTING_STORE = "accounting";
 export const CONFORMANCE_STORE = "conformance";
+export const PREFIX_PLAN_STORE = "prefixPlanMembers";
+export const RELOCATION_ID_INDEX = "relocationId";
+export const ACTIVE_PREFIX_INDEX = "activePrefixRelocation";
+export const ACTIVE_PREFIX_VALUE = "active";
+export const RETAINED_PREFIX_VALUE = "retained";
 
 export const NOTE_KEY_INDEX = "noteKey";
 export const SUCCESSOR_KEY_INDEX = "successorKey";
@@ -25,6 +30,7 @@ export interface StoredRecoveryRecord {
   readonly sessionOrder: number;
   readonly noteSessionOrder: readonly [string, number] | null;
   readonly prefixScopes: readonly string[];
+  readonly activePrefixRelocation: "active" | "retained" | null;
   readonly encoded: Uint8Array;
   readonly byteSize: number;
   readonly sha256: string;
@@ -35,6 +41,17 @@ export interface StoredAccounting {
   readonly bytes: number;
   readonly records: number;
   readonly sessionOrderHighWater: number;
+  readonly prefixGenerationHighWater: number;
+}
+
+export interface StoredPrefixRelocationMember {
+  readonly key: string;
+  readonly relocationId: string;
+  readonly ordinal: number;
+  readonly noteKey: string;
+  readonly encoded: Uint8Array;
+  readonly byteSize: number;
+  readonly sha256: string;
 }
 
 export function upgradeRecoverySchema(event: IDBVersionChangeEvent): void {
@@ -69,6 +86,15 @@ function createRecoveryStores(database: IDBDatabase): void {
     multiEntry: true,
     unique: false,
   });
+  records.createIndex(ACTIVE_PREFIX_INDEX, ACTIVE_PREFIX_INDEX, {
+    unique: false,
+  });
   database.createObjectStore(ACCOUNTING_STORE, { keyPath: "key" });
   database.createObjectStore(CONFORMANCE_STORE);
+  const plans = database.createObjectStore(PREFIX_PLAN_STORE, {
+    keyPath: "key",
+  });
+  plans.createIndex(RELOCATION_ID_INDEX, RELOCATION_ID_INDEX, {
+    unique: false,
+  });
 }

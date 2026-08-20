@@ -180,6 +180,76 @@ export interface RecoverySnapshotV1 {
   readonly removals: readonly RemovalRecordV1[];
 }
 
+export interface DiscardConfirmedNoteRecoveryV1 {
+  readonly noteIdentity: NoteIdentityV1;
+  readonly expectedBase: SidecarBaseIdentityV1;
+  readonly expectedAttempts: readonly RecoveryAttemptV1[];
+  readonly expectedCheckpoints: readonly SourceCheckpointOperationV1[];
+}
+
+export interface FinalizeRemovalRecoveryV1 {
+  readonly expectedRemoval: RemovalRecordV1;
+  readonly expectedAttempts: readonly RecoveryAttemptV1[];
+  readonly expectedCheckpoints: readonly SourceCheckpointOperationV1[];
+}
+
+export interface LoadActiveRemovalV1 {
+  readonly noteIdentity: NoteIdentityV1;
+}
+
+export interface ActiveRemovalRecoveryV1 {
+  readonly removal: RemovalRecordV1;
+  readonly attempts: readonly RecoveryAttemptV1[];
+  readonly checkpoints: readonly SourceCheckpointOperationV1[];
+}
+
+export interface PrefixRelocationPlanV1 {
+  readonly relocationId: RelocationId;
+  readonly generation: number;
+  readonly admittedRecordCount: number;
+  readonly expectedSettingsRevision: SettingsRevision;
+}
+
+export interface PrefixRelocationMemberV1 {
+  readonly ordinal: number;
+  readonly priorNoteIdentity: NoteIdentityV1;
+  readonly replacementNoteIdentity: NoteIdentityV1;
+  readonly expectedSceneRevision: SceneRevision | null;
+  readonly sidecarBase: SidecarBaseIdentityV1 | null;
+  readonly sourceSidecarPath: string | null;
+  readonly destinationSidecarPath: string | null;
+}
+
+export interface PreparePrefixRelocationPlanV1 {
+  readonly expectedPrefixRecord: PrefixRelocationRecordV1;
+  readonly members: readonly PrefixRelocationMemberV1[];
+}
+
+export interface LoadPrefixRelocationMemberV1 {
+  readonly relocationId: RelocationId;
+  readonly ordinal: number;
+}
+
+export interface LoadRelocationByIdV1 {
+  readonly relocationId: RelocationId;
+}
+
+export interface LoadActivePrefixRelocationsV1 {
+  readonly limit: number;
+}
+
+export interface LoadRetainedPrefixRelocationRulesV1 {
+  readonly limit: number;
+}
+
+export interface BeginPrefixRelocationBatchV1 {
+  readonly records: readonly PrefixRelocationRecordV1[];
+}
+
+export interface RemoveRetainedPrefixRelocationRuleForMaintenanceV1 {
+  readonly expectedRule: PrefixRelocationRecordV1;
+}
+
 export type RecoveryPersistenceRecordV1 =
   | RecoveryAttemptV1
   | SourceCheckpointOperationV1

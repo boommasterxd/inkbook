@@ -17,10 +17,15 @@ export type RecoveryMutationKind =
   | "append-checkpoint"
   | "acknowledge-sidecar"
   | "begin-relocation"
+  | "begin-prefix-relocation-batch"
   | "advance-relocation"
   | "begin-removal"
   | "advance-removal"
   | "complete-saga"
+  | "discard-confirmed-note-recovery"
+  | "finalize-removal-recovery"
+  | "prepare-prefix-relocation-plan"
+  | "remove-retained-prefix-relocation-rule"
   | "rekey-note";
 
 export interface IndexedDbRecoveryFaultInjector {
@@ -45,4 +50,5 @@ export interface RecoveryAccounting {
   readonly bytes: number;
   readonly records: number;
   readonly sessionOrderHighWater: number;
+  readonly prefixGenerationHighWater: number;
 }

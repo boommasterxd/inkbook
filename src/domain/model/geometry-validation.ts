@@ -1,4 +1,7 @@
-import { decodeDeltaVarintStroke } from "../codecs/delta-varint";
+import {
+  decodeDeltaVarintStroke,
+  type ValidatedDeltaVarintStrokeV1,
+} from "../codecs/delta-varint";
 import type { SceneElementV1, SceneElementValueV1 } from "./elements";
 import { materializeSceneElementV1 } from "./elements";
 import type {
@@ -209,18 +212,18 @@ function axes(
   );
 }
 
-function stroke(value: unknown): NonLinearGeometryV1 {
+function stroke(
+  value: unknown,
+  validatedStroke?: ValidatedDeltaVarintStrokeV1,
+): NonLinearGeometryV1 {
   const data = closedRecord(
     value,
     ["selectionRotationRadians", "stroke"],
     "Stroke geometry",
   );
   canonicalRotation(data.selectionRotationRadians, "Stroke selection rotation");
-  const decoded = decodeDeltaVarintStroke(data.stroke);
-  for (const sample of decoded.points) {
-    noteCoordinate(sample.x, "Stroke X");
-    noteCoordinate(sample.y, "Stroke Y");
-  }
+  if (validatedStroke === undefined) decodeDeltaVarintStroke(data.stroke);
+  else data.stroke = validatedStroke.encoded;
   return materializeStrokeGeometryV1(
     data as unknown as Parameters<typeof materializeStrokeGeometryV1>[0],
   );
@@ -272,7 +275,17 @@ export function validateNonLinearGeometryV1(
   value: unknown,
   kind: NonLinearKind,
 ): NonLinearGeometryV1 {
-  if (kind === "pen" || kind === "highlighter") return stroke(value);
+  return validateNonLinearGeometry(value, kind);
+}
+
+function validateNonLinearGeometry(
+  value: unknown,
+  kind: NonLinearKind,
+  validatedStroke?: ValidatedDeltaVarintStrokeV1,
+): NonLinearGeometryV1 {
+  if (kind === "pen" || kind === "highlighter") {
+    return stroke(value, validatedStroke);
+  }
   if (kind === "table") return table(value);
   if (kind === "axes-2d") return axes(value, AXES_2D);
   if (kind === "axes-3d") return axes(value, AXES_3D);
@@ -282,6 +295,7 @@ export function validateNonLinearGeometryV1(
 function validateElement(
   value: unknown,
   revisions: boolean,
+  validatedStroke?: ValidatedDeltaVarintStrokeV1,
 ): SceneElementV1 | SceneElementValueV1 {
   if (value === null || typeof value !== "object") {
     throw new TypeError("Scene element must be a data object.");
@@ -318,7 +332,11 @@ function validateElement(
   parseElementId(data.elementId);
   data.binding = validateElementBindingV1(data.binding);
   data.style = validateCanonicalStyleV1(data.style, kind);
-  data.geometry = validateCanonicalGeometryV1(data.geometry, kind);
+  data.geometry = validateCanonicalGeometry(
+    data.geometry,
+    kind,
+    validatedStroke,
+  );
   validateStrokePressure(data, kind);
   if (!revisions) {
     return Object.freeze({ ...data }) as unknown as SceneElementValueV1;
@@ -355,6 +373,13 @@ export function validateSceneElementV1(value: unknown): SceneElementV1 {
   return validateElement(value, true) as SceneElementV1;
 }
 
+export function validateSceneElementAfterStrokeValidationV1(
+  value: unknown,
+  validatedStroke: ValidatedDeltaVarintStrokeV1,
+): SceneElementV1 {
+  return validateElement(value, true, validatedStroke) as SceneElementV1;
+}
+
 export function validateSceneElementValueV1(
   value: unknown,
 ): SceneElementValueV1 {
@@ -365,7 +390,15 @@ export function validateCanonicalGeometryV1(
   value: unknown,
   kind: ElementKind,
 ): CanonicalGeometryV1 {
+  return validateCanonicalGeometry(value, kind);
+}
+
+function validateCanonicalGeometry(
+  value: unknown,
+  kind: ElementKind,
+  validatedStroke?: ValidatedDeltaVarintStrokeV1,
+): CanonicalGeometryV1 {
   return kind === "line" || kind === "arrow"
     ? validateLinearGeometryV1(value)
-    : validateNonLinearGeometryV1(value, kind);
+    : validateNonLinearGeometry(value, kind, validatedStroke);
 }

@@ -208,7 +208,12 @@ function writeRekeyAccounting(
   };
   writeAccounting(transaction, request.prior.vaultRelativeMarkdownPath, {
     global: replacementGlobal,
-    note: { bytes: 0, records: 0, sessionOrderHighWater: 0 },
+    note: {
+      bytes: 0,
+      prefixGenerationHighWater: 0,
+      records: 0,
+      sessionOrderHighWater: 0,
+    },
   });
   writeAccounting(transaction, request.replacement.vaultRelativeMarkdownPath, {
     global: replacementGlobal,
@@ -216,6 +221,7 @@ function writeRekeyAccounting(
       bytes: replacementBytes,
       records: prior.records,
       sessionOrderHighWater: prior.sessionOrderHighWater,
+      prefixGenerationHighWater: prior.prefixGenerationHighWater,
     },
   });
 }

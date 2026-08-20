@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  ByteWorkerScheduler,
   MAX_WORKER_REQUEST_BYTES,
   StaleWorkerResultError,
   WORKER_PROTOCOL_VERSION,
@@ -9,11 +8,14 @@ import {
   WorkerDisposedError,
   WorkerQueueExhaustedError,
   type ByteWorkerRequest,
-  type LaunchedBrowserWorker,
   type WorkerRevision,
-  type WorkerSliceMode,
+} from "../../../src/workers/scheduler/protocol";
+import type { LaunchedBrowserWorker } from "../../../src/workers/scheduler/browser-worker-adapter";
+import {
+  ByteWorkerScheduler,
   type WorkerSliceScheduler,
-} from "../../../src/workers/scheduler";
+} from "../../../src/workers/scheduler/scheduler";
+import { ManualSlices } from "./support";
 
 const CURRENT_REVISION: WorkerRevision = { scene: 7, layout: 11 };
 const BYTE_TWO = 2;
@@ -95,29 +97,6 @@ class ManualWorker extends EventTarget {
 
   public crash(): void {
     this.dispatchEvent(new Event("error"));
-  }
-}
-
-class ManualSlices implements WorkerSliceScheduler {
-  public readonly modes: WorkerSliceMode[] = [];
-  private readonly callbacks: { cancelled: boolean; run: () => void }[] = [];
-
-  public schedule(mode: WorkerSliceMode, callback: () => void): () => void {
-    this.modes.push(mode);
-    const item = { cancelled: false, run: callback };
-    this.callbacks.push(item);
-    return (): void => {
-      item.cancelled = true;
-    };
-  }
-
-  public flushOne(): void {
-    const item = this.callbacks.shift();
-    if (item !== undefined && !item.cancelled) item.run();
-  }
-
-  public flushAll(): void {
-    while (this.callbacks.length > 0) this.flushOne();
   }
 }
 

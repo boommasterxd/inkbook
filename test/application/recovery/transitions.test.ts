@@ -151,6 +151,30 @@ describe("relocation saga transitions", () => {
     }
   });
 
+  it("requires discriminator-specific Markdown path transitions", () => {
+    expect(
+      validateRelocationStart({
+        ...fileRecord("prepared"),
+        destinationMarkdownPath: NOTE.vaultRelativeMarkdownPath,
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateRelocationStart({
+        ...fileRecord("prepared"),
+        destinationMarkdownPath: NOTE.vaultRelativeMarkdownPath,
+        kind: "sidecar-location",
+      }).ok,
+    ).toBe(true);
+    expect(
+      validateRelocationStart({
+        ...fileRecord("prepared"),
+        kind: "sidecar-location",
+      }).ok,
+    ).toBe(false);
+  });
+});
+
+describe("prefix relocation saga transitions", () => {
   it("advances prefix cursors only through processing and completes at count", () => {
     expect(
       validateRelocationTransition({
@@ -248,6 +272,12 @@ describe("removal saga transitions", () => {
     expect(
       validateRemovalTransition({ expected: removal(), replacement: removal() })
         .ok,
+    ).toBe(false);
+    expect(
+      validateRemovalTransition({
+        expected: removal(),
+        replacement: removal({ markerState: "removing" }),
+      }).ok,
     ).toBe(false);
   });
 

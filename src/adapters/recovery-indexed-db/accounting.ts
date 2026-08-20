@@ -8,11 +8,13 @@ const ACCOUNTING_KEYS = [
   "bytes",
   "key",
   "records",
+  "prefixGenerationHighWater",
   "sessionOrderHighWater",
 ] as const;
 const EMPTY_ACCOUNTING: RecoveryAccounting = Object.freeze({
   bytes: 0,
   records: 0,
+  prefixGenerationHighWater: 0,
   sessionOrderHighWater: 0,
 });
 
@@ -93,6 +95,7 @@ function applyDelta(
   return {
     bytes,
     records,
+    prefixGenerationHighWater: current.prefixGenerationHighWater,
     sessionOrderHighWater:
       sessionOrder === undefined
         ? current.sessionOrderHighWater
@@ -112,6 +115,7 @@ async function readEntry(
   return {
     bytes: value.bytes,
     records: value.records,
+    prefixGenerationHighWater: value.prefixGenerationHighWater,
     sessionOrderHighWater: value.sessionOrderHighWater,
   };
 }
@@ -133,6 +137,7 @@ function isStoredAccounting(
     candidate.key === expectedKey &&
     validCounter(candidate.bytes) &&
     validCounter(candidate.records) &&
+    validCounter(candidate.prefixGenerationHighWater) &&
     validCounter(candidate.sessionOrderHighWater)
   );
 }

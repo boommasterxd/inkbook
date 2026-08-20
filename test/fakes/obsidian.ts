@@ -25,11 +25,17 @@ export const Platform = Object.freeze({
   isWin: false,
 });
 
+export function normalizePath(path: string): string {
+  return path.split("/").filter(Boolean).join("/");
+}
+
 export class Plugin extends Component {
   public readonly commands: unknown[] = [];
   public readonly editorExtensions: unknown[] = [];
   public readonly postProcessors: unknown[] = [];
   public readonly events: unknown[] = [];
+  public loadedData: unknown = null;
+  public readonly savedData: unknown[] = [];
 
   public constructor(
     public readonly app: unknown,
@@ -55,9 +61,41 @@ export class Plugin extends Component {
     this.postProcessors.push(processor);
     return processor;
   }
+
+  public loadData(): Promise<unknown> {
+    return Promise.resolve(this.loadedData);
+  }
+
+  public saveData(value: unknown): Promise<void> {
+    this.savedData.push(value);
+    return Promise.resolve();
+  }
 }
 
 export class MarkdownView extends Component {}
+
+export abstract class TAbstractFile {
+  public constructor(public path: string) {}
+}
+
+export class TFile extends TAbstractFile {
+  public readonly stat = { ctime: 0, mtime: 0, size: 0 };
+  public basename = "";
+  public extension = "";
+  public name = "";
+  public parent = null;
+  public vault = null;
+}
+
+export class TFolder extends TAbstractFile {
+  public readonly children: TAbstractFile[] = [];
+  public isRoot(): boolean {
+    return this.path.length === 0;
+  }
+  public name = "";
+  public parent = null;
+  public vault = null;
+}
 
 export class MarkdownRenderChild extends Component {
   public constructor(public readonly containerEl: unknown) {

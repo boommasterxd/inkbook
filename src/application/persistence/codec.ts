@@ -2,19 +2,20 @@ import {
   encodeCanonicalSidecarJson,
   parseBoundedJson,
   SCENE_RESOURCE_LIMITS_V1,
-  serializeRuntimeSceneStateV1,
-  validateSerializedSceneStateV1,
 } from "../../domain/codecs";
+import type { BoundedJsonParseResult } from "../../domain/codecs";
 import type {
   InkbookSidecarV1,
+  PreparedCanonicalSidecarV1,
   SidecarDecodeResultV1,
   SidecarWritableTierV1,
 } from "./types";
+export type { PreparedCanonicalSidecarV1 } from "./types";
 import {
   validateBoundedInkbookSidecarV1,
-  validateInkbookSidecarV1,
   validateSidecarVersionStructure,
 } from "./validation";
+import { createPreparedCanonicalSidecarProcessorV1 } from "./prepared-sidecar-processor";
 
 const BYTE_ORDER_MARK = "\ufeff";
 const CURRENT_MAJOR = 1;
@@ -22,6 +23,7 @@ const CURRENT_MINOR = 0;
 const MAX_JSON_STRING_UTF16 = 5_333_334;
 const MAX_JSON_COLLECTION_ITEMS = 500_000;
 const MAX_JSON_OBJECT_MEMBERS = 1_000_000;
+const MAX_JSON_OBJECT_MEMBERS_PER_OBJECT = 64;
 const MEBIBYTE = 1_048_576;
 const SIDECAR_READ_MAX_BYTES = Number("16") * MEBIBYTE;
 const PHONE_WRITE_MAX_BYTES = Number("8") * MEBIBYTE;
@@ -33,6 +35,7 @@ export const SIDECAR_RESOURCE_LIMITS_V1 = Object.freeze({
   maxStringUtf16Units: MAX_JSON_STRING_UTF16,
   maxArrayItems: MAX_JSON_COLLECTION_ITEMS,
   maxObjectMembers: MAX_JSON_OBJECT_MEMBERS,
+  maxObjectMembersPerObject: MAX_JSON_OBJECT_MEMBERS_PER_OBJECT,
   maxArrays: MAX_JSON_COLLECTION_ITEMS,
   maxObjects: MAX_JSON_OBJECT_MEMBERS,
 });
@@ -93,6 +96,12 @@ export function decodeInkbookSidecarV1(
     decodeInput(input),
     SIDECAR_RESOURCE_LIMITS_V1,
   );
+  return decodeBoundedInkbookSidecarV1(parsed);
+}
+
+export function decodeBoundedInkbookSidecarV1(
+  parsed: BoundedJsonParseResult,
+): SidecarDecodeResultV1 {
   if (!parsed.ok) {
     throw new SyntaxError(
       `${parsed.error.code} at UTF-16 offset ${String(parsed.error.offset)}: ${parsed.error.message}`,
@@ -105,15 +114,37 @@ export function encodeInkbookSidecarV1(
   sidecar: InkbookSidecarV1,
   writableTier: SidecarWritableTierV1,
 ): Uint8Array {
-  const validated = validateInkbookSidecarV1(sidecar);
-  const runtimeScene = validateSerializedSceneStateV1(validated.scene);
-  const writableScene = serializeRuntimeSceneStateV1(runtimeScene);
+  const prepared = prepareCanonicalSidecarV1(sidecar);
   const encoded = encodeCanonicalSidecarJson({
-    ...validated,
-    scene: writableScene,
+    ...prepared.sidecarWithoutElements,
+    scene: {
+      ...prepared.sidecarWithoutElements.scene,
+      elements: prepared.elements,
+    },
   });
-  if (encoded.byteLength > SIDECAR_WRITE_LIMITS_UTF8_BYTES_V1[writableTier]) {
+  assertWritableSidecarSizeV1(encoded.byteLength, writableTier);
+  return encoded;
+}
+
+export function prepareCanonicalSidecarV1(
+  sidecar: InkbookSidecarV1,
+): PreparedCanonicalSidecarV1 {
+  const processor = createPreparedCanonicalSidecarProcessorV1(sidecar);
+  while (!processor.processNext()) {
+    // The synchronous API drives the same resumable preparation pipeline.
+  }
+  const prepared = processor.complete();
+  if (prepared === undefined) {
+    throw new Error("Canonical sidecar preparation is incomplete.");
+  }
+  return prepared;
+}
+
+export function assertWritableSidecarSizeV1(
+  byteLength: number,
+  writableTier: SidecarWritableTierV1,
+): void {
+  if (byteLength > SIDECAR_WRITE_LIMITS_UTF8_BYTES_V1[writableTier]) {
     throw new RangeError("Encoded sidecar exceeds the V1 write byte limit.");
   }
-  return encoded;
 }

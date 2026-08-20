@@ -121,6 +121,9 @@ export function validateRemovalTransition(
   const markerProgress =
     MARKER_RANK[replacement.markerState] ===
     MARKER_RANK[expected.markerState] + 1;
+  const markerBarrierSatisfied =
+    !markerProgress ||
+    (replacement.trashAcknowledged && replacement.deleteEventAcknowledged);
   const flagRegression =
     (expected.trashAcknowledged && !replacement.trashAcknowledged) ||
     (expected.deleteEventAcknowledged && !replacement.deleteEventAcknowledged);
@@ -130,6 +133,7 @@ export function validateRemovalTransition(
       MARKER_RANK[expected.markerState] + 1;
   if (
     flagRegression ||
+    !markerBarrierSatisfied ||
     markerRegressionOrSkip ||
     (!trashProgress && !eventProgress && !markerProgress)
   ) {
@@ -213,6 +217,10 @@ function isFileRelocation(
 }
 
 function validFileFields(record: FileRelocationRecordV1): boolean {
+  const validPathTransition =
+    record.kind === "markdown-file"
+      ? record.sourceMarkdownPath !== record.destinationMarkdownPath
+      : record.sourceMarkdownPath === record.destinationMarkdownPath;
   return (
     isFileRelocationKind(record.kind) &&
     isRelocationId(record.relocationId) &&
@@ -225,7 +233,7 @@ function validFileFields(record: FileRelocationRecordV1): boolean {
     isNormalizedVaultPath(record.destinationMarkdownPath) &&
     isNormalizedVaultPath(record.sourceSidecarPath) &&
     isNormalizedVaultPath(record.destinationSidecarPath) &&
-    record.sourceMarkdownPath !== record.destinationMarkdownPath &&
+    validPathTransition &&
     record.sourceSidecarPath !== record.destinationSidecarPath
   );
 }

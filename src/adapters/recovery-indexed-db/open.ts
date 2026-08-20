@@ -1,6 +1,7 @@
 import { requestResult, transactionDone } from "./idb-promises";
 import {
   ACCOUNTING_STORE,
+  ACTIVE_PREFIX_INDEX,
   BASE_DIGEST_INDEX,
   BASE_PATH_INDEX,
   BASE_REVISION_INDEX,
@@ -8,6 +9,8 @@ import {
   DATABASE_SCHEMA_VERSION,
   NOTE_KEY_INDEX,
   PREFIX_SCOPE_INDEX,
+  PREFIX_PLAN_STORE,
+  RELOCATION_ID_INDEX,
   RECORDS_STORE,
   SESSION_ORDER_INDEX,
   SUCCESSOR_KEY_INDEX,
@@ -20,26 +23,38 @@ import type {
 } from "./types";
 
 const DEFAULT_DATABASE_NAME = "inkbook-recovery";
-const CONFORMANCE_KEY = "atomicity-check";
+const CONFORMANCE_KEY_PREFIX = "atomicity-check:";
 const COMMITTED_VALUE = "committed";
 const ABORTED_VALUE = "aborted";
+const CONFORMANCE_RANDOM_BYTES = 16;
+const HEX_RADIX = 16;
+const HEX_BYTE_WIDTH = 2;
+
+interface RandomValuesCapability {
+  getRandomValues<T extends ArrayBufferView>(array: T): T;
+}
 
 export async function openIndexedDbRecoveryStore(
   options: IndexedDbRecoveryOptions = {},
 ): Promise<IndexedDbRecoveryOpenResult> {
   const factory = resolveFactory(options);
   if (factory === undefined) return unavailable();
+  const conformanceKey = createConformanceKey();
+  if (conformanceKey === null) return unavailable();
   const name = options.databaseName ?? DEFAULT_DATABASE_NAME;
   let database: IDBDatabase | undefined;
   try {
     database = await openDatabase(factory, name);
-    if (!hasExpectedSchema(database) || !(await verifiesAtomicity(database))) {
+    if (
+      !hasExpectedSchema(database) ||
+      !(await verifiesAtomicity(database, conformanceKey))
+    ) {
       database.close();
       return unavailable();
     }
     database.close();
     database = await openDatabase(factory, name);
-    if (!(await verifiesRestartAndCleanup(database))) {
+    if (!(await verifiesRestartAndCleanup(database, conformanceKey))) {
       database.close();
       return unavailable();
     }
@@ -77,13 +92,14 @@ function hasExpectedSchema(database: IDBDatabase): boolean {
   if (
     !database.objectStoreNames.contains(RECORDS_STORE) ||
     !database.objectStoreNames.contains(ACCOUNTING_STORE) ||
-    !database.objectStoreNames.contains(CONFORMANCE_STORE)
+    !database.objectStoreNames.contains(CONFORMANCE_STORE) ||
+    !database.objectStoreNames.contains(PREFIX_PLAN_STORE)
   ) {
     return false;
   }
   const transaction = database.transaction(RECORDS_STORE, "readonly");
   const indices = transaction.objectStore(RECORDS_STORE).indexNames;
-  return [
+  const validRecordIndices = [
     NOTE_KEY_INDEX,
     SUCCESSOR_KEY_INDEX,
     BASE_PATH_INDEX,
@@ -91,20 +107,29 @@ function hasExpectedSchema(database: IDBDatabase): boolean {
     BASE_DIGEST_INDEX,
     SESSION_ORDER_INDEX,
     PREFIX_SCOPE_INDEX,
+    ACTIVE_PREFIX_INDEX,
   ].every((name) => indices.contains(name));
+  const planTransaction = database.transaction(PREFIX_PLAN_STORE, "readonly");
+  return (
+    validRecordIndices &&
+    planTransaction
+      .objectStore(PREFIX_PLAN_STORE)
+      .indexNames.contains(RELOCATION_ID_INDEX)
+  );
 }
 
-async function verifiesAtomicity(database: IDBDatabase): Promise<boolean> {
+async function verifiesAtomicity(
+  database: IDBDatabase,
+  key: string,
+): Promise<boolean> {
   try {
-    await writeConformanceValue(database, COMMITTED_VALUE);
+    await writeConformanceValue(database, key, COMMITTED_VALUE);
     const transaction = database.transaction(CONFORMANCE_STORE, "readwrite");
     const done = transactionDone(transaction);
-    transaction
-      .objectStore(CONFORMANCE_STORE)
-      .put(ABORTED_VALUE, CONFORMANCE_KEY);
+    transaction.objectStore(CONFORMANCE_STORE).put(ABORTED_VALUE, key);
     transaction.abort();
     await done.catch(() => undefined);
-    return (await readConformanceValue(database)) === COMMITTED_VALUE;
+    return (await readConformanceValue(database, key)) === COMMITTED_VALUE;
   } catch {
     return false;
   }
@@ -112,15 +137,16 @@ async function verifiesAtomicity(database: IDBDatabase): Promise<boolean> {
 
 async function verifiesRestartAndCleanup(
   database: IDBDatabase,
+  key: string,
 ): Promise<boolean> {
   try {
-    if ((await readConformanceValue(database)) !== COMMITTED_VALUE)
+    if ((await readConformanceValue(database, key)) !== COMMITTED_VALUE)
       return false;
     const transaction = database.transaction(CONFORMANCE_STORE, "readwrite");
     const done = transactionDone(transaction);
-    transaction.objectStore(CONFORMANCE_STORE).delete(CONFORMANCE_KEY);
+    transaction.objectStore(CONFORMANCE_STORE).delete(key);
     await done;
-    return (await readConformanceValue(database)) === undefined;
+    return (await readConformanceValue(database, key)) === undefined;
   } catch {
     return false;
   }
@@ -128,24 +154,48 @@ async function verifiesRestartAndCleanup(
 
 async function writeConformanceValue(
   database: IDBDatabase,
+  key: string,
   value: string,
 ): Promise<void> {
   const transaction = database.transaction(CONFORMANCE_STORE, "readwrite");
   const done = transactionDone(transaction);
-  transaction.objectStore(CONFORMANCE_STORE).put(value, CONFORMANCE_KEY);
+  transaction.objectStore(CONFORMANCE_STORE).put(value, key);
   await done;
 }
 
-async function readConformanceValue(database: IDBDatabase): Promise<unknown> {
+async function readConformanceValue(
+  database: IDBDatabase,
+  key: string,
+): Promise<unknown> {
   const transaction = database.transaction(CONFORMANCE_STORE, "readonly");
   const done = transactionDone(transaction);
   const value = await requestResult(
-    transaction
-      .objectStore(CONFORMANCE_STORE)
-      .get(CONFORMANCE_KEY) as IDBRequest<unknown>,
+    transaction.objectStore(CONFORMANCE_STORE).get(key) as IDBRequest<unknown>,
   );
   await done;
   return value;
+}
+
+function createConformanceKey(): string | null {
+  const candidate = Reflect.get(globalThis, "crypto") as unknown;
+  if (
+    candidate === null ||
+    typeof candidate !== "object" ||
+    typeof Reflect.get(candidate, "getRandomValues") !== "function"
+  ) {
+    return null;
+  }
+  const crypto = candidate as RandomValuesCapability;
+  try {
+    const bytes = new Uint8Array(CONFORMANCE_RANDOM_BYTES);
+    crypto.getRandomValues(bytes);
+    const token = Array.from(bytes, (byte) =>
+      byte.toString(HEX_RADIX).padStart(HEX_BYTE_WIDTH, "0"),
+    ).join("");
+    return `${CONFORMANCE_KEY_PREFIX}${token}`;
+  } catch {
+    return null;
+  }
 }
 
 function resolveFactory(

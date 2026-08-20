@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   launchByteWorker,
   type BrowserWorkerEnvironment,
-} from "../../../src/workers/scheduler";
+} from "../../../src/workers/scheduler/browser-worker-adapter";
 
 const STATIC_WORKER_SOURCE = '"use strict";';
 

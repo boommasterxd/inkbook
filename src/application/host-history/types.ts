@@ -5,9 +5,12 @@ import type {
   OperationId,
 } from "../../domain/operations";
 import type { AnnotationDependencyIndexV1 } from "../../domain/operations";
+import type { ElementId, GroupId } from "../../domain/model";
 import type { RuntimeSceneStateV1 } from "../../domain/scene";
 import type {
   HostAcknowledgementV1,
+  HostRecordedDirectionAttemptV1,
+  HostRecordedForwardAttemptV1,
   RecoveryStore,
   SidecarBaseIdentityV1,
 } from "../recovery";
@@ -35,6 +38,9 @@ export type {
 } from "../note-session";
 
 export type HostDispatchIntentV1 = AnnotationOperationV1;
+
+export type HostRecordedRecoveryAttemptV1 =
+  HostRecordedForwardAttemptV1 | HostRecordedDirectionAttemptV1;
 
 export interface HostHistoryRecoveryContextV1 {
   readonly base: SidecarBaseIdentityV1;
@@ -88,6 +94,11 @@ export type HostEffectDeliveryResultV1 =
       readonly kind: "accepted";
       readonly intent: HostDispatchIntentV1;
       readonly scene: RuntimeSceneStateV1;
+      readonly recoveryAttempt: HostRecordedRecoveryAttemptV1;
+      readonly affectedIds: {
+        readonly elementIds: readonly ElementId[];
+        readonly groupIds: readonly GroupId[];
+      };
     }
   | {
       readonly kind: "duplicate";
@@ -107,6 +118,7 @@ export type HostHistoryLeaseSnapshotV1 =
 
 export interface ActionableHistoryEntrySnapshotV1 {
   readonly effectId: HostEffectId;
+  readonly noteIdentity: NoteIdentityV1;
   readonly ownerViewId: ViewId;
   readonly historyEntry: AnnotationHistoryEntryV1;
   readonly lifecycle: HostEffectLifecycleV1;

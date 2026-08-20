@@ -7,7 +7,7 @@ import {
   type Transaction,
 } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createHistoryEpoch } from "../../../../src/domain/operations";
 
 import type {
@@ -92,6 +92,32 @@ describe("CodeMirror editor history bridge", () => {
   });
 });
 
+describe("CodeMirror editor history bridge source capture", () => {
+  it("does not materialize prior or replacement Markdown in the bridge", () => {
+    const harness = createCallbackHarness();
+    const bridge = createEditorHistoryBridgeV1(
+      createCapabilities(),
+      harness.callbacks,
+    );
+    if (bridge.kind !== "available") throw new Error("Bridge unavailable");
+    const sequencer = new EditorHistoryEffectSequencerV1(
+      { editorViewId: EDITOR, ownerViewId: OWNER },
+      bridge.effectType,
+      harness.callbacks,
+    );
+    const transaction = EditorState.create({ doc: "prior" }).update({
+      changes: { from: 5, insert: " replacement" },
+    });
+    const priorToString = vi.spyOn(transaction.startState.doc, "toString");
+    const replacementToString = vi.spyOn(transaction.newDoc, "toString");
+
+    sequencer.accept([transaction]);
+
+    expect(priorToString).not.toHaveBeenCalled();
+    expect(replacementToString).not.toHaveBeenCalled();
+  });
+});
+
 describe("CodeMirror editor history bridge delivery", () => {
   it("fails closed without an editor attachment", () => {
     const harness = createCallbackHarness();
@@ -159,6 +185,7 @@ describe("CodeMirror editor history bridge delivery", () => {
       },
     ]);
     expect(inverseB.newDoc.toString()).toBe("AC");
+    expectSourceTransitions(harness.sourceTransitions);
   });
 
   it("rejects multiple annotation effects in one host transaction and disposes once", () => {
@@ -198,6 +225,47 @@ describe("CodeMirror editor history bridge delivery", () => {
     expect(bridge.transaction(envelope("inverse"))).toBeNull();
   });
 });
+
+function expectSourceTransitions(sourceTransitions: readonly unknown[]): void {
+  expect(sourceTransitions).toEqual([
+    {
+      editorViewId: EDITOR,
+      transition: {
+        hostTransactionSequence: 1,
+        offsetMap: {
+          spans: [
+            {
+              newFromUtf16: 0,
+              newToUtf16: 1,
+              oldFromUtf16: 0,
+              oldToUtf16: 0,
+            },
+          ],
+        },
+        priorMarkdown: "",
+        replacementMarkdown: "A",
+      },
+    },
+    {
+      editorViewId: EDITOR,
+      transition: {
+        hostTransactionSequence: 2,
+        offsetMap: {
+          spans: [
+            {
+              newFromUtf16: 1,
+              newToUtf16: 2,
+              oldFromUtf16: 1,
+              oldToUtf16: 1,
+            },
+          ],
+        },
+        priorMarkdown: "A",
+        replacementMarkdown: "AC",
+      },
+    },
+  ]);
+}
 
 describe("CodeMirror editor history bridge validation", () => {
   it("rejects malformed host effects without delivery", () => {
@@ -267,6 +335,10 @@ describe("CodeMirror editor history bridge validation", () => {
     if (retained === undefined) throw new Error("Expected retained epoch");
     sequencer.accept([retained]);
     expect(harness.deliveries).toHaveLength(MAX_TRACKED_HISTORY_EPOCHS_V1 + 1);
+    expect(
+      harness.deliveries[harness.deliveries.length - 1]?.delivery
+        .transactionSequence,
+    ).toBe(harness.deliveries[0]?.delivery.transactionSequence);
   });
 });
 
@@ -290,6 +362,7 @@ interface CallbackHarness {
     readonly editorViewId: ViewId;
     readonly reason: EditorHistoryBridgeFailureV1;
   }[];
+  readonly sourceTransitions: unknown[];
 }
 
 function createCallbackHarness(
@@ -298,6 +371,7 @@ function createCallbackHarness(
   const deliveries: CallbackHarness["deliveries"] = [];
   const detached: ViewId[] = [];
   const malformed: CallbackHarness["malformed"] = [];
+  const sourceTransitions: unknown[] = [];
   const callbacks: EditorHistoryBridgeCallbacksV1 = {
     attachEditor: () => ({ editorViewId: EDITOR, ownerViewId: OWNER }),
     detachEditor: (editorViewId) => {
@@ -306,12 +380,29 @@ function createCallbackHarness(
     enqueueDelivery: (editorViewId, ownerViewId, delivery) => {
       deliveries.push({ delivery, editorViewId, ownerViewId });
     },
+    enqueueSourceTransition: (editorViewId, transition) => {
+      sourceTransitions.push({
+        editorViewId,
+        transition: {
+          hostTransactionSequence: transition.hostTransactionSequence,
+          offsetMap: transition.offsetMap,
+          priorMarkdown: transition.priorDocument.sliceString(
+            0,
+            transition.priorDocument.utf16Length,
+          ),
+          replacementMarkdown: transition.replacementDocument.sliceString(
+            0,
+            transition.replacementDocument.utf16Length,
+          ),
+        },
+      });
+    },
     reportMalformed: (editorViewId, reason) => {
       malformed.push({ editorViewId, reason });
     },
     sequenceHighWater: () => highWater,
   };
-  return { callbacks, deliveries, detached, malformed };
+  return { callbacks, deliveries, detached, malformed, sourceTransitions };
 }
 
 function envelope(

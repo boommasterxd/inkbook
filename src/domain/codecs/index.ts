@@ -4,6 +4,8 @@ export * from "./delta-varint";
 export * from "./scene-codec";
 export {
   SCENE_RESOURCE_LIMITS_V1,
+  createSerializedSceneValidationProcessorV1,
+  type SerializedSceneValidationProcessorV1,
   validateGroupRecordV1,
   validateNoteAppearanceV1,
   validateSerializedSceneStateV1,

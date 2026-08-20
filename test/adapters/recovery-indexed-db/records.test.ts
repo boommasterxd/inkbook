@@ -1,15 +1,18 @@
 /* eslint-disable @typescript-eslint/no-magic-numbers -- Exact recovery revisions and ordering boundaries are under test. */
 import { describe, expect, it } from "vitest";
 
+import { encodeRecoveryRecordV1 } from "../../../src/application/recovery";
 import {
   createSidecarRevision,
   createSourceGeneration,
   parseRecoveryAttemptId,
+  parseSha256Digest,
   parseSourceCheckpointId,
 } from "../../../src/application/note-session";
 import { createSceneRevision } from "../../../src/domain/model";
 import {
   BASE,
+  DIGEST_A,
   DIGEST_B,
   NEXT_BASE,
   NOTE,
@@ -21,7 +24,10 @@ import {
   idPayload,
   openStore,
   preparedAttempt,
+  replaceStoredEncoded,
 } from "./support";
+
+const DIGEST_C = parseSha256Digest("c".repeat(64));
 
 // eslint-disable-next-line max-lines-per-function -- The record lifecycle scenarios form one cohesive adapter contract suite.
 describe("IndexedDB recovery records", () => {
@@ -36,10 +42,28 @@ describe("IndexedDB recovery records", () => {
       ok: true,
       value: undefined,
     });
-    await expect(
-      store.recordForward(prepared.attemptId, hostAcknowledgement()),
-    ).resolves.toEqual({ ok: true, value: undefined });
-    await store.appendDirection(directionAttempt(2, 2));
+    const recorded = await store.recordForward(
+      prepared.attemptId,
+      hostAcknowledgement(),
+    );
+    expect(recorded).toMatchObject({
+      ok: true,
+      value: {
+        attemptId: prepared.attemptId,
+        kind: "host-recorded-forward",
+      },
+    });
+    if (!recorded.ok) throw new Error("Expected a durable forward attempt.");
+    expect(Object.isFrozen(recorded.value)).toBe(true);
+    expect(Object.isFrozen(recorded.value.acknowledgement)).toBe(true);
+    expect(Object.isFrozen(recorded.value.base)).toBe(true);
+    expect(Object.isFrozen(recorded.value.forward)).toBe(true);
+    const direction = directionAttempt(2, 2);
+    const appended = await store.appendDirection(direction);
+    expect(appended).toEqual({ ok: true, value: direction });
+    if (!appended.ok) throw new Error("Expected a durable direction attempt.");
+    expect(Object.isFrozen(appended.value)).toBe(true);
+    expect(Object.isFrozen(appended.value.acknowledgement)).toBe(true);
     await store.dispose();
 
     const reopened = await openStore("attempt-restart", {}, factory);
@@ -90,12 +114,10 @@ describe("IndexedDB recovery records", () => {
     const attempt = preparedAttempt();
     const acknowledged = hostAcknowledgement(1);
     await store.prepareForward(attempt);
-    await expect(
-      store.recordForward(attempt.attemptId, acknowledged),
-    ).resolves.toEqual({ ok: true, value: undefined });
-    await expect(
-      store.recordForward(attempt.attemptId, acknowledged),
-    ).resolves.toEqual({ ok: true, value: undefined });
+    const first = await store.recordForward(attempt.attemptId, acknowledged);
+    const retry = await store.recordForward(attempt.attemptId, acknowledged);
+    expect(first.ok).toBe(true);
+    expect(retry).toEqual(first);
     await expect(
       store.recordForward(attempt.attemptId, hostAcknowledgement(2)),
     ).resolves.toEqual({ ok: false, code: "sidecar-conflict" });
@@ -119,8 +141,8 @@ describe("IndexedDB recovery records", () => {
         noteIdentity: NOTE,
         sceneRevision: createSceneRevision(2),
         sidecarRevision: createSidecarRevision(2),
-        sourceDigest: DIGEST_B,
-        sourceGeneration: createSourceGeneration(2),
+        sourceDigest: DIGEST_A,
+        sourceGeneration: createSourceGeneration(1),
       }),
     ).resolves.toEqual({ ok: true, value: undefined });
     await expect(
@@ -129,6 +151,63 @@ describe("IndexedDB recovery records", () => {
     await expect(
       store.prepareForward(preparedAttempt(2, 2, NEXT_BASE, 2)),
     ).resolves.toEqual({ ok: true, value: undefined });
+    await store.dispose();
+  });
+
+  it("rejects invalid acknowledgement metadata and rebases a later checkpoint", async () => {
+    const { store } = await openStore("sidecar-acknowledgement-validation");
+    const covered = preparedAttempt(1, 1);
+    const retainedCheckpoint = checkpoint(1, 2);
+    await store.prepareForward(covered);
+    await store.appendSourceCheckpoint(retainedCheckpoint);
+    const request = {
+      acknowledgedReplacementBase: NEXT_BASE,
+      coveredAttemptIds: [covered.attemptId],
+      coveredCheckpointIds: [] as const,
+      expectedPriorBase: BASE,
+      noteIdentity: NOTE,
+      sceneRevision: createSceneRevision(2),
+      sidecarRevision: createSidecarRevision(2),
+      sourceDigest: DIGEST_A,
+      sourceGeneration: createSourceGeneration(1),
+    };
+    await expect(
+      store.acknowledgeSidecar({
+        ...request,
+        sceneRevision: -1 as typeof request.sceneRevision,
+      }),
+    ).resolves.toEqual({ ok: false, code: "sidecar-conflict" });
+    await expect(store.acknowledgeSidecar(request)).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    const finalBase = {
+      ...NEXT_BASE,
+      rawTextSha256: DIGEST_A,
+      revision: createSidecarRevision(3),
+    };
+    await expect(
+      store.acknowledgeSidecar({
+        acknowledgedReplacementBase: finalBase,
+        coveredAttemptIds: [],
+        coveredCheckpointIds: [retainedCheckpoint.checkpointId],
+        expectedPriorBase: NEXT_BASE,
+        noteIdentity: NOTE,
+        sceneRevision: createSceneRevision(2),
+        sidecarRevision: createSidecarRevision(3),
+        sourceDigest: DIGEST_B,
+        sourceGeneration: createSourceGeneration(2),
+      }),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    await expect(
+      store.loadNote(existingLoad(finalBase, DIGEST_B, 5)),
+    ).resolves.toMatchObject({
+      ok: true,
+      value: {
+        attempts: [],
+        checkpoints: [],
+      },
+    });
     await store.dispose();
   });
 
@@ -168,6 +247,144 @@ describe("IndexedDB recovery records", () => {
         checkpoints: [],
       },
     });
+    await store.dispose();
+  });
+
+  it("rejects checkpoint cleanup when the acknowledged source evidence does not match", async () => {
+    const { store } = await openStore("sidecar-source-evidence-conflict");
+    const covered = preparedAttempt(1, 1, BASE, 1);
+    const sourceCheckpoint = checkpoint(1, 2);
+    await store.prepareForward(covered);
+    await store.appendSourceCheckpoint(sourceCheckpoint);
+
+    await expect(
+      store.acknowledgeSidecar({
+        acknowledgedReplacementBase: NEXT_BASE,
+        coveredAttemptIds: [covered.attemptId],
+        coveredCheckpointIds: [sourceCheckpoint.checkpointId],
+        expectedPriorBase: BASE,
+        noteIdentity: NOTE,
+        sceneRevision: createSceneRevision(2),
+        sidecarRevision: createSidecarRevision(2),
+        sourceDigest: DIGEST_A,
+        sourceGeneration: createSourceGeneration(2),
+      }),
+    ).resolves.toEqual({ ok: false, code: "sidecar-conflict" });
+    await expect(
+      store.acknowledgeSidecar({
+        acknowledgedReplacementBase: NEXT_BASE,
+        coveredAttemptIds: [covered.attemptId],
+        coveredCheckpointIds: [sourceCheckpoint.checkpointId],
+        expectedPriorBase: BASE,
+        noteIdentity: NOTE,
+        sceneRevision: createSceneRevision(2),
+        sidecarRevision: createSidecarRevision(2),
+        sourceDigest: DIGEST_B,
+        sourceGeneration: createSourceGeneration(2),
+      }),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    await store.dispose();
+  });
+
+  it("accepts an empty recovery acknowledgement as an idempotent no-op", async () => {
+    const { store } = await openStore("sidecar-empty-acknowledgement");
+    const request = {
+      acknowledgedReplacementBase: NEXT_BASE,
+      coveredAttemptIds: [] as const,
+      coveredCheckpointIds: [] as const,
+      expectedPriorBase: BASE,
+      noteIdentity: NOTE,
+      sceneRevision: createSceneRevision(2),
+      sidecarRevision: createSidecarRevision(2),
+      sourceDigest: DIGEST_A,
+      sourceGeneration: createSourceGeneration(1),
+    };
+    await expect(store.acknowledgeSidecar(request)).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    await expect(store.acknowledgeSidecar(request)).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    await expect(store.loadNote(existingLoad())).resolves.toMatchObject({
+      ok: true,
+      value: { attempts: [], checkpoints: [] },
+    });
+    await store.dispose();
+  });
+
+  it("fails acknowledgement closed after a database version change", async () => {
+    const name = "sidecar-acknowledgement-version-change";
+    const { store, factory } = await openStore(name);
+    await new Promise<void>((resolve, reject) => {
+      const deletion = factory.deleteDatabase(name);
+      deletion.onerror = (): void =>
+        reject(deletion.error ?? new Error("Expected database deletion."));
+      deletion.onsuccess = (): void => resolve();
+    });
+    await expect(
+      store.acknowledgeSidecar({
+        acknowledgedReplacementBase: NEXT_BASE,
+        coveredAttemptIds: [],
+        coveredCheckpointIds: [],
+        expectedPriorBase: BASE,
+        noteIdentity: NOTE,
+        sceneRevision: createSceneRevision(2),
+        sidecarRevision: createSidecarRevision(2),
+        sourceDigest: DIGEST_A,
+        sourceGeneration: createSourceGeneration(1),
+      }),
+    ).resolves.toEqual({ ok: false, code: "recovery-unavailable" });
+    await store.dispose();
+  });
+
+  it("requires a contiguous multi-checkpoint generation, digest, and length chain", async () => {
+    const gaps = [
+      {
+        priorGeneration: createSourceGeneration(3),
+        replacementGeneration: createSourceGeneration(4),
+      },
+      { priorDigest: DIGEST_A },
+      { priorUtf16Length: 4, replacementUtf16Length: 5 },
+    ] as const;
+    for (const [index, overrides] of gaps.entries()) {
+      const name = `sidecar-checkpoint-gap-${String(index)}`;
+      const { store, factory } = await openStore(name);
+      const attempt = preparedAttempt(1, 1);
+      const first = checkpoint(1, 2);
+      const second = successorCheckpoint();
+      await store.prepareForward(attempt);
+      await store.appendSourceCheckpoint(first);
+      await store.appendSourceCheckpoint(second);
+      await store.dispose();
+      const corrupted = encodeRecoveryRecordV1(successorCheckpoint(overrides));
+      if (!corrupted.ok) throw new Error("Expected valid corrupted fixture.");
+      await replaceStoredEncoded(
+        factory,
+        name,
+        `checkpoint:${second.checkpointId}`,
+        corrupted.value,
+      );
+      const reopened = await openStore(name, {}, factory);
+      await expect(
+        reopened.store.acknowledgeSidecar(
+          chainAcknowledgement(attempt, first, second),
+        ),
+      ).resolves.toEqual({ ok: false, code: "sidecar-conflict" });
+      await reopened.store.dispose();
+    }
+
+    const { store } = await openStore("sidecar-checkpoint-contiguous");
+    const attempt = preparedAttempt(1, 1);
+    const first = checkpoint(1, 2);
+    const second = successorCheckpoint();
+    await store.prepareForward(attempt);
+    await store.appendSourceCheckpoint(first);
+    await store.appendSourceCheckpoint(second);
+    await expect(
+      store.acknowledgeSidecar(chainAcknowledgement(attempt, first, second)),
+    ).resolves.toEqual({ ok: true, value: undefined });
     await store.dispose();
   });
 
@@ -223,3 +440,39 @@ describe("IndexedDB recovery records", () => {
     await store.dispose();
   });
 });
+
+function successorCheckpoint(
+  overrides: Partial<ReturnType<typeof checkpoint>> = {},
+): ReturnType<typeof checkpoint> {
+  return {
+    ...checkpoint(2, 3),
+    checkpointId: parseSourceCheckpointId(`scp_${idPayload(2)}`),
+    priorDigest: DIGEST_B,
+    priorGeneration: createSourceGeneration(2),
+    priorUtf16Length: 5,
+    replacementDigest: DIGEST_C,
+    replacementGeneration: createSourceGeneration(3),
+    replacementUtf16Length: 6,
+    ...overrides,
+  };
+}
+
+function chainAcknowledgement(
+  attempt: ReturnType<typeof preparedAttempt>,
+  first: ReturnType<typeof checkpoint>,
+  second: ReturnType<typeof checkpoint>,
+): Parameters<
+  Awaited<ReturnType<typeof openStore>>["store"]["acknowledgeSidecar"]
+>[0] {
+  return {
+    acknowledgedReplacementBase: NEXT_BASE,
+    coveredAttemptIds: [attempt.attemptId],
+    coveredCheckpointIds: [first.checkpointId, second.checkpointId],
+    expectedPriorBase: BASE,
+    noteIdentity: NOTE,
+    sceneRevision: createSceneRevision(2),
+    sidecarRevision: createSidecarRevision(2),
+    sourceDigest: DIGEST_C,
+    sourceGeneration: createSourceGeneration(3),
+  };
+}

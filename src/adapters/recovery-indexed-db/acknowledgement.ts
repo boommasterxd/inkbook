@@ -193,6 +193,8 @@ function validCoverage(
   }
   const available = new Set(records.map((item) => item.stored.key));
   if ([...covered].some((key) => !available.has(key))) return false;
+  const sourceNodes = coveredSourceNodes(records, covered, request);
+  if (sourceNodes === null) return false;
   let greatestCoveredOrder = 0;
   for (const item of records) {
     const isCovered = covered.has(item.stored.key);
@@ -201,7 +203,11 @@ function validCoverage(
         greatestCoveredOrder,
         item.stored.sessionOrder,
       );
-    if (!coverageMatchesEvidence(item.record, isCovered, request)) return false;
+    if (
+      !coverageMatchesEvidence(item.record, isCovered, request, sourceNodes)
+    ) {
+      return false;
+    }
     if (!sameSidecarBase(item.record.base, request.expectedPriorBase))
       return false;
   }
@@ -216,14 +222,83 @@ function coverageMatchesEvidence(
   record: SuccessorRecord["record"],
   covered: boolean,
   request: SidecarRecoveryAcknowledgementV1,
+  sourceNodes: ReadonlySet<string>,
 ): boolean {
   if ("attemptId" in record) {
+    const matchesSource = sourceNodes.has(
+      sourceNodeKey(
+        record.expectedSourceGeneration,
+        record.expectedSourceDigest,
+      ),
+    );
     return covered
-      ? record.expectedSceneRevision < request.sceneRevision
+      ? record.expectedSceneRevision < request.sceneRevision && matchesSource
       : record.expectedSceneRevision >= request.sceneRevision;
   }
   if (covered) return record.replacementGeneration <= request.sourceGeneration;
   return record.priorGeneration >= request.sourceGeneration;
+}
+
+function coveredSourceNodes(
+  records: readonly SuccessorRecord[],
+  covered: ReadonlySet<string>,
+  request: SidecarRecoveryAcknowledgementV1,
+): ReadonlySet<string> | null {
+  const checkpoints = records
+    .filter(
+      (
+        item,
+      ): item is SuccessorRecord & {
+        readonly record: SourceCheckpointOperationV1;
+      } => "checkpointId" in item.record && covered.has(item.stored.key),
+    )
+    .sort(
+      (left, right) =>
+        left.record.priorGeneration - right.record.priorGeneration,
+    );
+  if (checkpoints.length === 0) {
+    return new Set([
+      sourceNodeKey(request.sourceGeneration, request.sourceDigest),
+    ]);
+  }
+  const first = checkpoints[0]?.record;
+  if (first === undefined) return null;
+  const nodes = new Set<string>([
+    sourceNodeKey(first.priorGeneration, first.priorDigest),
+  ]);
+  let prior = first;
+  nodes.add(
+    sourceNodeKey(prior.replacementGeneration, prior.replacementDigest),
+  );
+  for (const item of checkpoints.slice(1)) {
+    const next = item.record;
+    if (!checkpointsAreContiguous(prior, next)) return null;
+    nodes.add(
+      sourceNodeKey(next.replacementGeneration, next.replacementDigest),
+    );
+    prior = next;
+  }
+  return prior.replacementGeneration === request.sourceGeneration &&
+    prior.replacementDigest === request.sourceDigest
+    ? nodes
+    : null;
+}
+
+function checkpointsAreContiguous(
+  prior: SourceCheckpointOperationV1,
+  next: SourceCheckpointOperationV1,
+): boolean {
+  return (
+    next.priorGeneration === prior.replacementGeneration &&
+    next.priorDigest === prior.replacementDigest &&
+    next.priorUtf16Length === prior.replacementUtf16Length &&
+    next.sessionOrder > prior.sessionOrder &&
+    sameSidecarBase(next.base, prior.base)
+  );
+}
+
+function sourceNodeKey(generation: number, digest: string): string {
+  return `${String(generation)}:${digest}`;
 }
 
 function coveredKeys(

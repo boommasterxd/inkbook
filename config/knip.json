@@ -1,5 +1,15 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/main.ts", "scripts/*.mjs", "test/**/*.test.ts"],
-  "project": ["src/**/*.ts", "scripts/*.mjs", "test/**/*.ts"]
+  "entry": [
+    "src/main.ts!",
+    "src/workers/shared-worker-entry.ts!",
+    "scripts/*.mjs",
+    "test/**/*.test.ts"
+  ],
+  "project": ["src/**/*.ts!", "scripts/*.mjs", "test/**/*.ts"],
+  "ignoreFiles": [
+    "src/adapters/obsidian/views/**",
+    "src/domain/geometry/**",
+    "src/input/gestures/**"
+  ]
 }

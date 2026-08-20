@@ -22,6 +22,10 @@ import type {
   ViewId,
 } from "../../../application/host-history";
 import { isValidEnvelope } from "../../../application/host-history/validation";
+import type {
+  ImmutableSourceDocumentV1,
+  SourceOffsetMapV1,
+} from "../../../application/source-coordination";
 
 type InvertEffects = (
   transaction: Transaction,
@@ -51,11 +55,22 @@ export interface EditorHistoryBridgeCallbacksV1 {
     ownerViewId: ViewId,
     delivery: HostEffectDeliveryV1,
   ): void;
+  enqueueSourceTransition?(
+    editorViewId: ViewId,
+    transition: EditorSourceTransitionV1,
+  ): void;
   reportMalformed(
     editorViewId: ViewId,
     reason: EditorHistoryBridgeFailureV1,
   ): void;
   detachEditor(editorViewId: ViewId): void;
+}
+
+export interface EditorSourceTransitionV1 {
+  readonly hostTransactionSequence: HostTransactionSequence;
+  readonly offsetMap: SourceOffsetMapV1;
+  readonly priorDocument: ImmutableSourceDocumentV1;
+  readonly replacementDocument: ImmutableSourceDocumentV1;
 }
 
 export type EditorHistoryBridgeFailureV1 =
@@ -149,7 +164,9 @@ export class EditorHistoryEffectSequencerV1 {
   readonly #callbacks: EditorHistoryBridgeCallbacksV1;
   readonly #sequences = new Map<HistoryEpoch, number>();
   readonly #exhausted = new Set<HistoryEpoch>();
+  readonly #delivered = new WeakMap<Transaction, HostEffectDeliveryV1>();
   #disposed = false;
+  #sourceSequence = 0;
 
   public constructor(
     attachment: EditorHistoryAttachmentV1,
@@ -176,6 +193,12 @@ export class EditorHistoryEffectSequencerV1 {
   }
 
   #acceptTransaction(transaction: Transaction): void {
+    this.#acceptSourceTransaction(transaction);
+    const priorDelivery = this.#delivered.get(transaction);
+    if (priorDelivery !== undefined) {
+      this.#enqueue(priorDelivery);
+      return;
+    }
     const envelopes = transaction.effects
       .filter((effect) => effect.is(this.#effectType))
       .map((effect) => effect.value);
@@ -192,12 +215,40 @@ export class EditorHistoryEffectSequencerV1 {
     }
     const sequence = this.#sequenceFor(envelope.historyEpoch);
     if (sequence === null) return;
-    this.#callbacks.enqueueDelivery(
+    const delivery = Object.freeze({
+      envelope,
+      transactionSequence: sequence as HostTransactionSequence,
+    });
+    this.#delivered.set(transaction, delivery);
+    this.#enqueue(delivery);
+  }
+
+  #acceptSourceTransaction(transaction: Transaction): void {
+    if (!transaction.docChanged) return;
+    if (this.#sourceSequence === Number.MAX_SAFE_INTEGER) {
+      this.#report("sequence-exhausted");
+      return;
+    }
+    this.#sourceSequence += 1;
+    const spans: SourceOffsetMapV1["spans"][number][] = [];
+    transaction.changes.iterChangedRanges((fromA, toA, fromB, toB) => {
+      spans.push(
+        Object.freeze({
+          newFromUtf16: fromB,
+          newToUtf16: toB,
+          oldFromUtf16: fromA,
+          oldToUtf16: toA,
+        }),
+      );
+    });
+    this.#callbacks.enqueueSourceTransition?.(
       this.#attachment.editorViewId,
-      this.#attachment.ownerViewId,
       Object.freeze({
-        envelope,
-        transactionSequence: sequence as HostTransactionSequence,
+        hostTransactionSequence: this
+          .#sourceSequence as HostTransactionSequence,
+        offsetMap: Object.freeze({ spans: Object.freeze(spans) }),
+        priorDocument: sourceDocumentCapability(transaction.startState.doc),
+        replacementDocument: sourceDocumentCapability(transaction.newDoc),
       }),
     );
   }
@@ -239,6 +290,35 @@ export class EditorHistoryEffectSequencerV1 {
   #report(reason: EditorHistoryBridgeFailureV1): void {
     this.#callbacks.reportMalformed(this.#attachment.editorViewId, reason);
   }
+
+  #enqueue(delivery: HostEffectDeliveryV1): void {
+    this.#callbacks.enqueueDelivery(
+      this.#attachment.editorViewId,
+      this.#attachment.ownerViewId,
+      delivery,
+    );
+  }
+}
+
+function sourceDocumentCapability(
+  document: Transaction["newDoc"],
+): ImmutableSourceDocumentV1 {
+  const utf16Length = document.length;
+  return Object.freeze({
+    sliceString(fromUtf16: number, toUtf16: number): string {
+      if (
+        !Number.isSafeInteger(fromUtf16) ||
+        !Number.isSafeInteger(toUtf16) ||
+        fromUtf16 < 0 ||
+        toUtf16 < fromUtf16 ||
+        toUtf16 > utf16Length
+      ) {
+        throw new RangeError("Invalid immutable source document range.");
+      }
+      return document.sliceString(fromUtf16, toUtf16);
+    },
+    utf16Length,
+  });
 }
 
 function createEffectInverter(

@@ -3,19 +3,39 @@ import { validateSerializedSceneStateV1 } from "../../domain/codecs";
 import { validateBoundedSerializedSceneStateV1 } from "../../domain/codecs/scene-validation";
 import { closedRecord } from "../../domain/model/validation-support";
 import { materializeSerializedSceneStateV1 } from "../../domain/scene";
+import {
+  normalizeVaultRelativePathV1,
+  type VaultPathNormalizerV1,
+  type VaultPathValidationOptionsV1,
+} from "../vault-path";
 import type {
   FutureSidecarVersionV1,
   InkbookSidecarV1,
   SidecarNoteIdentityV1,
   SidecarSchemaVersionV1,
   SidecarStorageLayoutV1,
+  SidecarStoragePolicyV1,
 } from "./types";
 
 const FORMAT = "inkbook-obsidian-annotations";
 const CURRENT_MAJOR = 1;
 const CURRENT_MINOR = 0;
 const MARKDOWN_SUFFIX = ".md";
-const WINDOWS_ABSOLUTE_PATH = /^[a-z]:\//iu;
+
+const SIDECAR_PATH_SUFFIX_V1 = ".inkbook.json";
+
+export type { VaultPathNormalizerV1, VaultPathValidationOptionsV1 };
+
+export interface ValidatedSidecarEnvelopeV1 {
+  readonly format: "inkbook-obsidian-annotations";
+  readonly schemaVersion: SidecarSchemaVersionV1;
+  readonly noteIdentity: SidecarNoteIdentityV1;
+  readonly storageLayout: SidecarStorageLayoutV1;
+  readonly revision: number;
+  readonly baseRevision: number | null;
+  readonly savedAtEpochMs: number;
+  readonly scene: unknown;
+}
 
 function safeInteger(value: unknown, name: string, minimum: number): number {
   if (!Number.isSafeInteger(value) || (value as number) < minimum) {
@@ -33,31 +53,94 @@ function stringValue(value: unknown, name: string): string {
   return value;
 }
 
-function validateVaultRelativePath(
+export function normalizeVaultRelativePath(
   value: unknown,
-  name: string,
-  requiredSuffix: string | null,
+  optionsOrNormalizer?: VaultPathValidationOptionsV1 | VaultPathNormalizerV1,
 ): string {
-  const path = stringValue(value, name);
-  const segments = path.split("/");
-  const invalidSegment = segments.some(
-    (segment) =>
-      segment.length === 0 ||
-      segment === "." ||
-      segment === ".." ||
-      segment.startsWith("."),
-  );
-  if (
-    path.startsWith("/") ||
-    WINDOWS_ABSOLUTE_PATH.test(path) ||
-    path.includes("\\") ||
-    path.includes("\0") ||
-    invalidSegment ||
-    (requiredSuffix !== null && !path.endsWith(requiredSuffix))
-  ) {
-    throw new TypeError(`${name} is not a normalized Vault-relative path.`);
+  const options: VaultPathValidationOptionsV1 =
+    typeof optionsOrNormalizer === "function"
+      ? { normalizePath: optionsOrNormalizer }
+      : (optionsOrNormalizer ?? {});
+  return normalizeVaultRelativePathV1(value, options);
+}
+
+export function validateSidecarPathV1(
+  value: unknown,
+  options: Omit<VaultPathValidationOptionsV1, "requiredSuffix"> = {},
+): string {
+  return normalizeVaultRelativePath(value, {
+    ...options,
+    requiredSuffix: SIDECAR_PATH_SUFFIX_V1,
+    name: options.name ?? "Sidecar path",
+  });
+}
+
+function policyDiscriminator(value: unknown): unknown {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError("Storage policy must be a closed data object.");
   }
-  return path;
+  const descriptor = Object.getOwnPropertyDescriptor(value, "mode");
+  if (
+    descriptor === undefined ||
+    !descriptor.enumerable ||
+    !("value" in descriptor)
+  ) {
+    throw new TypeError("Storage policy must contain a data discriminator.");
+  }
+  return descriptor.value;
+}
+
+export function validateSidecarStoragePolicyV1(
+  value: unknown,
+  options: Omit<VaultPathValidationOptionsV1, "requiredSuffix"> = {},
+): SidecarStoragePolicyV1 {
+  const mode = policyDiscriminator(value);
+  if (mode === "adjacent") {
+    const data = closedRecord(
+      value,
+      ["version", "mode"],
+      "Adjacent storage policy",
+    );
+    if (data.version !== 1) {
+      throw new RangeError("Storage policy version is not writable V1.");
+    }
+    return Object.freeze({ version: 1, mode: "adjacent" });
+  }
+  if (mode === "vault-root") {
+    const data = closedRecord(
+      value,
+      ["version", "mode", "vaultRelativeRoot"],
+      "Vault-root storage policy",
+    );
+    if (data.version !== 1) {
+      throw new RangeError("Storage policy version is not writable V1.");
+    }
+    return Object.freeze({
+      version: 1,
+      mode: "vault-root",
+      vaultRelativeRoot: normalizeVaultRelativePath(data.vaultRelativeRoot, {
+        ...options,
+        name: options.name ?? "Storage root",
+      }),
+    });
+  }
+  throw new TypeError("Storage policy has an unsupported mode.");
+}
+
+export function isSidecarStoragePolicyV1(
+  value: unknown,
+  options: Omit<VaultPathValidationOptionsV1, "requiredSuffix"> = {},
+): value is SidecarStoragePolicyV1 {
+  try {
+    validateSidecarStoragePolicyV1(value, options);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function defaultSidecarStoragePolicyV1(): SidecarStoragePolicyV1 {
+  return Object.freeze({ version: 1, mode: "adjacent" });
 }
 
 export function validateSidecarVersionStructure(
@@ -80,17 +163,23 @@ function validateCurrentVersion(value: unknown): SidecarSchemaVersionV1 {
   return Object.freeze({ major: CURRENT_MAJOR, minor: CURRENT_MINOR });
 }
 
-function validateNoteIdentity(value: unknown): SidecarNoteIdentityV1 {
+function validateNoteIdentity(
+  value: unknown,
+  pathOptions: VaultPathValidationOptionsV1,
+): SidecarNoteIdentityV1 {
   const data = closedRecord(
     value,
     ["vaultRelativeMarkdownPath", "markdownContentDigest", "sourceGeneration"],
     "Sidecar note identity",
   );
   return Object.freeze({
-    vaultRelativeMarkdownPath: validateVaultRelativePath(
+    vaultRelativeMarkdownPath: normalizeVaultRelativePath(
       data.vaultRelativeMarkdownPath,
-      "Markdown path",
-      MARKDOWN_SUFFIX,
+      {
+        ...pathOptions,
+        name: "Markdown path",
+        requiredSuffix: MARKDOWN_SUFFIX,
+      },
     ),
     markdownContentDigest: parseSha256Digest(
       stringValue(data.markdownContentDigest, "Markdown content digest"),
@@ -118,7 +207,10 @@ function readStorageKind(value: unknown): unknown {
   return descriptor.value;
 }
 
-function validateStorageLayout(value: unknown): SidecarStorageLayoutV1 {
+function validateStorageLayout(
+  value: unknown,
+  pathOptions: VaultPathValidationOptionsV1,
+): SidecarStorageLayoutV1 {
   const kind = readStorageKind(value);
   if (kind === "adjacent") {
     closedRecord(value, ["kind"], "Adjacent storage layout");
@@ -132,11 +224,10 @@ function validateStorageLayout(value: unknown): SidecarStorageLayoutV1 {
     );
     return Object.freeze({
       kind,
-      vaultRelativeRoot: validateVaultRelativePath(
-        data.vaultRelativeRoot,
-        "Storage root",
-        null,
-      ),
+      vaultRelativeRoot: normalizeVaultRelativePath(data.vaultRelativeRoot, {
+        ...pathOptions,
+        name: "Storage root",
+      }),
     });
   }
   throw new TypeError("Storage layout has an unsupported discriminator.");
@@ -165,7 +256,26 @@ function validateRevisions(
 function validateSidecar(
   value: unknown,
   measuredUtf8Bytes: number | undefined,
+  pathOptions: VaultPathValidationOptionsV1,
 ): InkbookSidecarV1 {
+  const envelope = validateInkbookSidecarEnvelopeV1(value, pathOptions);
+  const runtimeScene =
+    measuredUtf8Bytes === undefined
+      ? validateSerializedSceneStateV1(envelope.scene)
+      : validateBoundedSerializedSceneStateV1(
+          envelope.scene,
+          measuredUtf8Bytes,
+        );
+  return Object.freeze({
+    ...envelope,
+    scene: materializeSerializedSceneStateV1(runtimeScene),
+  });
+}
+
+export function validateInkbookSidecarEnvelopeV1(
+  value: unknown,
+  pathOptions: VaultPathValidationOptionsV1 = {},
+): ValidatedSidecarEnvelopeV1 {
   const data = closedRecord(
     value,
     [
@@ -183,17 +293,13 @@ function validateSidecar(
   if (data.format !== FORMAT)
     throw new TypeError("Sidecar format is unsupported.");
   const schemaVersion = validateCurrentVersion(data.schemaVersion);
-  const noteIdentity = validateNoteIdentity(data.noteIdentity);
-  const storageLayout = validateStorageLayout(data.storageLayout);
+  const noteIdentity = validateNoteIdentity(data.noteIdentity, pathOptions);
+  const storageLayout = validateStorageLayout(data.storageLayout, pathOptions);
   const [revision, baseRevision] = validateRevisions(
     data.revision,
     data.baseRevision,
   );
   const savedAtEpochMs = safeInteger(data.savedAtEpochMs, "Saved timestamp", 0);
-  const runtimeScene =
-    measuredUtf8Bytes === undefined
-      ? validateSerializedSceneStateV1(data.scene)
-      : validateBoundedSerializedSceneStateV1(data.scene, measuredUtf8Bytes);
   return Object.freeze({
     format: FORMAT,
     schemaVersion,
@@ -202,17 +308,21 @@ function validateSidecar(
     revision,
     baseRevision,
     savedAtEpochMs,
-    scene: materializeSerializedSceneStateV1(runtimeScene),
+    scene: data.scene,
   });
 }
 
-export function validateInkbookSidecarV1(value: unknown): InkbookSidecarV1 {
-  return validateSidecar(value, undefined);
+export function validateInkbookSidecarV1(
+  value: unknown,
+  pathOptions: VaultPathValidationOptionsV1 = {},
+): InkbookSidecarV1 {
+  return validateSidecar(value, undefined, pathOptions);
 }
 
 export function validateBoundedInkbookSidecarV1(
   value: unknown,
   measuredUtf8Bytes: number,
+  pathOptions: VaultPathValidationOptionsV1 = {},
 ): InkbookSidecarV1 {
-  return validateSidecar(value, measuredUtf8Bytes);
+  return validateSidecar(value, measuredUtf8Bytes, pathOptions);
 }

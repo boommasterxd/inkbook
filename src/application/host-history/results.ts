@@ -1,9 +1,11 @@
 import type {
   ActionableHistoryEntrySnapshotV1,
+  HistoryEpoch,
   HostEffectDeliveryResultV1,
   HostHistoryFailureV1,
   HostHistoryLeaseSnapshotV1,
   PrepareHostEffectResultV1,
+  ViewId,
 } from "./types";
 
 export type DeliveryValidationResult =
@@ -18,7 +20,10 @@ export interface EntryTransition {
   readonly intent: import("./types").HostDispatchIntentV1;
   readonly lifecycle: "applied" | "undone";
   readonly recovery:
-    | { readonly kind: "forward"; readonly attemptId: string }
+    | {
+        readonly kind: "forward";
+        readonly attemptId: import("../note-session").RecoveryAttemptId;
+      }
     | {
         readonly kind: "direction";
         readonly attempt: Omit<
@@ -53,4 +58,37 @@ export function invalidDelivery(
   reason: HostHistoryFailureV1,
 ): DeliveryValidationResult {
   return { kind: "complete", result: rejectDelivery(reason) };
+}
+
+export function prospectiveLease(
+  current: HostHistoryLeaseSnapshotV1,
+  nextEpoch: number,
+  viewId: ViewId,
+  historyEpoch: HistoryEpoch,
+): ProspectiveLeaseResult {
+  if (current.kind === "owned") {
+    if (current.ownerViewId !== viewId) {
+      return { kind: "rejected", reason: "non-owner" };
+    }
+    return current.epoch === historyEpoch
+      ? { kind: "accepted", lease: current }
+      : { kind: "rejected", reason: "stale-epoch" };
+  }
+  if (current.kind === "blocked") {
+    return { kind: "rejected", reason: "blocked" };
+  }
+  if (historyEpoch !== nextEpoch) {
+    return { kind: "rejected", reason: "stale-epoch" };
+  }
+  if (nextEpoch === Number.MAX_SAFE_INTEGER) {
+    return { kind: "rejected", reason: "payload-limit" };
+  }
+  return {
+    kind: "accepted",
+    lease: Object.freeze({
+      epoch: historyEpoch,
+      kind: "owned",
+      ownerViewId: viewId,
+    }),
+  };
 }

@@ -65,10 +65,12 @@ describe("IndexedDB recovery schema", () => {
     expect(Array.from(database.objectStoreNames)).toEqual([
       "accounting",
       "conformance",
+      "prefixPlanMembers",
       "records",
     ]);
     const transaction = database.transaction("records", "readonly");
     expect(Array.from(transaction.objectStore("records").indexNames)).toEqual([
+      "activePrefixRelocation",
       "baseDigest",
       "basePath",
       "baseRevision",
@@ -77,6 +79,13 @@ describe("IndexedDB recovery schema", () => {
       "prefixScopes",
       "successorKey",
     ]);
+    const planTransaction = database.transaction(
+      "prefixPlanMembers",
+      "readonly",
+    );
+    expect(
+      Array.from(planTransaction.objectStore("prefixPlanMembers").indexNames),
+    ).toEqual(["relocationId"]);
     database.close();
   });
 
@@ -123,6 +132,23 @@ describe("IndexedDB recovery schema", () => {
 });
 
 describe("IndexedDB recovery lifecycle", () => {
+  it("opens the same recovery database concurrently without probe collisions", async () => {
+    const factory = new IDBFactory();
+    const options = {
+      databaseName: "parallel-open",
+      indexedDb: factory,
+    };
+
+    const [first, second] = await Promise.all([
+      openIndexedDbRecoveryStore(options),
+      openIndexedDbRecoveryStore(options),
+    ]);
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    if (first.ok) await first.value.dispose();
+    if (second.ok) await second.value.dispose();
+  });
+
   it("removes its version-change listener exactly once before closing", async () => {
     const listeners = new Set<EventListenerOrEventListenerObject>();
     const addEventListener = vi.fn(

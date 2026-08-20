@@ -32,6 +32,7 @@ import {
 import type { IndexedDbRecoveryLimits } from "./types";
 
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/u;
+const MAX_PREFIX_SCOPE_QUERIES = 130;
 
 export async function loadNote(
   database: IDBDatabase,
@@ -74,6 +75,10 @@ async function loadIndexedRecords(
   }>
 > {
   const noteKey = request.noteIdentity.vaultRelativeMarkdownPath;
+  const prefixScopes = prefixScopesForPath(noteKey);
+  if (prefixScopes.length > MAX_PREFIX_SCOPE_QUERIES) {
+    return { ok: false, code: "recovery-limit" };
+  }
   const transaction = database.transaction(
     [RECORDS_STORE, ACCOUNTING_STORE],
     "readonly",
@@ -92,7 +97,7 @@ async function loadIndexedRecords(
     await done.catch(() => undefined);
     return { ok: false, code: "recovery-limit" };
   }
-  const prefixRecords = await loadPrefixRecords(store, noteKey, limits);
+  const prefixRecords = await loadPrefixRecords(store, prefixScopes, limits);
   const noteAccounting = await readNoteAccounting(transaction, noteKey);
   await done;
   const records = deduplicate([...noteRecords, ...prefixRecords]);
@@ -101,12 +106,12 @@ async function loadIndexedRecords(
 
 async function loadPrefixRecords(
   store: IDBObjectStore,
-  noteKey: string,
+  scopes: readonly string[],
   limits: IndexedDbRecoveryLimits,
 ): Promise<StoredRecoveryRecord[]> {
   const index = store.index(PREFIX_SCOPE_INDEX);
   const records: StoredRecoveryRecord[] = [];
-  for (const scope of prefixScopesForPath(noteKey)) {
+  for (const scope of scopes) {
     const matching = await requestResult(
       index.getAll(scope, limits.globalRecords + 1) as IDBRequest<
         StoredRecoveryRecord[]
@@ -198,9 +203,9 @@ function selectAbsentEvidence(
     return null;
   }
   if (snapshot.checkpoints.length === 0) {
-    return snapshot.attempts.every(
-      (attempt) =>
-        attempt.expectedSourceDigest === request.currentMarkdownDigest,
+    return hasOneAbsentSourceNode(
+      snapshot.attempts,
+      request.currentMarkdownDigest,
     )
       ? snapshot
       : null;
@@ -215,6 +220,26 @@ function selectAbsentEvidence(
     request.currentMarkdownDigest,
     request.currentMarkdownUtf16Length,
   );
+}
+
+function hasOneAbsentSourceNode(
+  attempts: RecoverySnapshotV1["attempts"],
+  currentDigest: Sha256Digest,
+): boolean {
+  const sessionOrders = new Set<number>();
+  let generation: SourceGeneration | null = null;
+  for (const attempt of attempts) {
+    if (
+      attempt.expectedSourceDigest !== currentDigest ||
+      sessionOrders.has(attempt.sessionOrder)
+    ) {
+      return false;
+    }
+    sessionOrders.add(attempt.sessionOrder);
+    generation ??= attempt.expectedSourceGeneration;
+    if (attempt.expectedSourceGeneration !== generation) return false;
+  }
+  return true;
 }
 
 function selectCheckpointPrefix(
@@ -250,6 +275,9 @@ function selectCheckpointPrefix(
   if (matches.length !== 1) return null;
   const selectedCount = matches[0];
   if (selectedCount === undefined) return null;
+  const selectedCheckpoints = Object.freeze(
+    snapshot.checkpoints.slice(0, selectedCount),
+  );
   const selectedNodes = new Set(
     nodes
       .slice(0, selectedCount + 1)
@@ -268,10 +296,57 @@ function selectCheckpointPrefix(
   ) {
     return null;
   }
+  if (
+    !hasValidTotalEvidenceOrder(
+      snapshot.attempts,
+      selectedCheckpoints,
+      initialGeneration,
+      initialDigest,
+    )
+  ) {
+    return null;
+  }
   return Object.freeze({
     ...snapshot,
-    checkpoints: Object.freeze(snapshot.checkpoints.slice(0, selectedCount)),
+    checkpoints: selectedCheckpoints,
   });
+}
+
+function hasValidTotalEvidenceOrder(
+  attempts: RecoverySnapshotV1["attempts"],
+  checkpoints: readonly SourceCheckpointOperationV1[],
+  initialGeneration: SourceGeneration,
+  initialDigest: Sha256Digest,
+): boolean {
+  const reachedAt = new Map<string, number>([
+    [sourceNodeKey(initialGeneration, initialDigest), 0],
+  ]);
+  const sessionOrders = new Set<number>();
+  for (const checkpoint of checkpoints) {
+    if (sessionOrders.has(checkpoint.sessionOrder)) return false;
+    sessionOrders.add(checkpoint.sessionOrder);
+    reachedAt.set(
+      sourceNodeKey(
+        checkpoint.replacementGeneration,
+        checkpoint.replacementDigest,
+      ),
+      checkpoint.sessionOrder,
+    );
+  }
+  for (const attempt of attempts) {
+    if (sessionOrders.has(attempt.sessionOrder)) return false;
+    sessionOrders.add(attempt.sessionOrder);
+    const sourceOrder = reachedAt.get(
+      sourceNodeKey(
+        attempt.expectedSourceGeneration,
+        attempt.expectedSourceDigest,
+      ),
+    );
+    if (sourceOrder === undefined || sourceOrder >= attempt.sessionOrder) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function checkpointNodes(

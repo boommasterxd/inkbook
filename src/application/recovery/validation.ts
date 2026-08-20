@@ -19,8 +19,10 @@ import type {
   SidecarRecoveryAcknowledgementV1,
 } from "./types";
 import type { SidecarBaseIdentityV1 } from "./base";
-
-const MAX_PATH_LENGTH = 4096;
+import {
+  isValidVaultRelativePathV1,
+  isValidVaultRelativePrefixV1,
+} from "../vault-path";
 
 export interface FirstSidecarRecoveryContextV1 {
   readonly noteIdentity: NoteIdentityV1;
@@ -56,24 +58,11 @@ export function sameSidecarBase(
 }
 
 export function isNormalizedVaultPath(value: unknown): value is string {
-  if (
-    typeof value !== "string" ||
-    value.length === 0 ||
-    value.length > MAX_PATH_LENGTH ||
-    value.includes("\0") ||
-    value.startsWith("/") ||
-    value.endsWith("/") ||
-    value.includes("\\")
-  ) {
-    return false;
-  }
-  return value
-    .split("/")
-    .every((segment) => segment !== "" && segment !== "." && segment !== "..");
+  return isValidVaultRelativePathV1(value);
 }
 
 export function isNormalizedVaultPrefix(value: unknown): value is string {
-  return value === "" || isNormalizedVaultPath(value);
+  return isValidVaultRelativePrefixV1(value);
 }
 
 export function isValidNoteIdentity(value: unknown): value is NoteIdentityV1 {

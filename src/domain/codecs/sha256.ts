@@ -1,16 +1,14 @@
+import { sha256 } from "@noble/hashes/sha2.js";
+
 const HEX_RADIX = 16;
 const HEX_BYTE_WIDTH = 2;
 
 export async function sha256Bytes(bytes: Uint8Array): Promise<string> {
-  const digest = await globalThis.crypto.subtle.digest(
-    "SHA-256",
-    Uint8Array.from(bytes),
-  );
-  return Array.from(new Uint8Array(digest), (byte) =>
-    byte.toString(HEX_RADIX).padStart(HEX_BYTE_WIDTH, "0"),
-  ).join("");
+  return bytesToHex(sha256.create().update(bytes).digest());
 }
 
-export function sha256Utf8(text: string): Promise<string> {
-  return sha256Bytes(new TextEncoder().encode(text));
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) =>
+    byte.toString(HEX_RADIX).padStart(HEX_BYTE_WIDTH, "0"),
+  ).join("");
 }

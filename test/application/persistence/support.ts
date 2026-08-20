@@ -1,4 +1,10 @@
-import type { InkbookSidecarV1 } from "../../../src/application/persistence";
+import {
+  createPersistenceCodecFallbackProcessorV1,
+  type InkbookSidecarV1,
+  type PersistenceCodecWorkResultV1,
+  type PersistenceCodecWorkV1,
+} from "../../../src/application/persistence";
+import { PersistenceElementChunkCacheV1 } from "../../../src/application/persistence/element-chunk-cache";
 import {
   createSourceGeneration,
   parseSha256Digest,
@@ -25,4 +31,22 @@ export function completeSidecar(): InkbookSidecarV1 {
     savedAtEpochMs: 1_755_734_400_000,
     scene: completeScene(),
   };
+}
+
+export function executePersistenceCodecProcessor(
+  work: PersistenceCodecWorkV1,
+  elementCache = new PersistenceElementChunkCacheV1(),
+): PersistenceCodecWorkResultV1 {
+  const processor = createPersistenceCodecFallbackProcessorV1(
+    work,
+    elementCache,
+  );
+  try {
+    while (!processor.processNext()) {
+      // Drive the canonical resumable processor without a second production runner.
+    }
+    return processor.complete();
+  } finally {
+    processor.dispose();
+  }
 }

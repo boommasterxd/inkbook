@@ -129,6 +129,49 @@ describe("IndexedDB recovery request validation", () => {
     await store.dispose();
   });
 
+  it("rejects attempts that reference a source node reached later in SessionOrder", async () => {
+    const { store } = await openStore("future-source-node-attempt");
+    await store.prepareForward({
+      ...preparedAttempt(1, 1, BASE, 2),
+      expectedSourceDigest: DIGEST_B,
+      expectedSourceGeneration: createSourceGeneration(2),
+    });
+    await store.appendSourceCheckpoint(checkpoint(1, 2));
+    const request = existingLoad(BASE, DIGEST_B, 5);
+    if (request.kind !== "existing-sidecar") {
+      throw new Error("Invalid fixture.");
+    }
+
+    await expect(
+      store.loadNote({
+        ...request,
+        validatedSidecarSourceDigest: DIGEST_A,
+        validatedSidecarSourceGeneration: createSourceGeneration(1),
+      }),
+    ).resolves.toEqual({ ok: false, code: "sidecar-conflict" });
+    await store.dispose();
+  });
+});
+
+describe("IndexedDB recovery load command validation", () => {
+  it("bounds prefix-index queries for deeply segmented paths", async () => {
+    const { store } = await openStore("prefix-query-bound");
+    const markdownPath = `${"a/".repeat(129)}note.md`;
+    const base = {
+      ...BASE,
+      markdownPath,
+      vaultRelativePath: `${"a/".repeat(129)}note.inkbook.json`,
+    };
+
+    await expect(
+      store.loadNote({
+        ...existingLoad(base),
+        noteIdentity: { ...NOTE, vaultRelativeMarkdownPath: markdownPath },
+      }),
+    ).resolves.toEqual({ ok: false, code: "recovery-limit" });
+    await store.dispose();
+  });
+
   it("rejects unrelated current digests, invalid lengths, and stale sidecar bases", async () => {
     const { store } = await openStore("invalid-load-evidence");
     await store.prepareForward(preparedAttempt());

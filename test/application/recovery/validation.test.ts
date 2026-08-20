@@ -20,6 +20,7 @@ import {
   parseViewId,
 } from "../../../src/application/note-session";
 import {
+  isNormalizedVaultPath,
   validateFirstSidecarRecovery,
   validateSidecarAcknowledgement,
   type FirstSidecarRecoveryContextV1,
@@ -50,6 +51,23 @@ const PATCH: ReplaceNoteAppearancePatchV1 = {
     horizontalSpacing: "wide",
   },
 };
+
+describe("recovery Vault path validation", () => {
+  it("uses the strict visible Vault-relative path boundary", () => {
+    expect(isNormalizedVaultPath("notes/source.md")).toBe(true);
+    for (const invalid of [
+      "/notes/source.md",
+      "C:/notes/source.md",
+      "notes\\source.md",
+      "notes/../source.md",
+      ".obsidian/source.md",
+      "notes/.hidden/source.md",
+      "notes/source.md/",
+    ]) {
+      expect(isNormalizedVaultPath(invalid)).toBe(false);
+    }
+  });
+});
 
 function firstSidecarFixture(): {
   readonly pending: Parameters<typeof validateFirstSidecarRecovery>[0];

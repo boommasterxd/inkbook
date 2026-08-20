@@ -107,6 +107,8 @@ export function isValidSnapshot(
     !isValidSceneRevision(snapshot.scene.revision) ||
     !isPositiveCounter(snapshot.nextEpoch) ||
     snapshot.lease.kind === "blocked" ||
+    (snapshot.lease.kind === "owned" &&
+      snapshot.nextEpoch <= snapshot.lease.epoch) ||
     !fitsLimits(snapshot.entries, limits) ||
     !hasUnique(snapshot.entries, (entry) => entry.effectId) ||
     !hasUnique(
@@ -135,7 +137,12 @@ function isValidEntry(
   entry: ActionableHistoryEntrySnapshotV1,
   snapshot: HostHistorySnapshotV1,
 ): boolean {
-  if (!isValidHistoryEntry(entry.historyEntry)) return false;
+  if (
+    !isValidHistoryEntry(entry.historyEntry) ||
+    !isValidNoteIdentityValue(entry.noteIdentity)
+  ) {
+    return false;
+  }
   if (
     snapshot.lease.kind !== "owned" ||
     snapshot.lease.ownerViewId !== entry.ownerViewId ||
@@ -176,9 +183,13 @@ function isValidAcceptedDelivery(
     (candidate) =>
       editorEpochSnapshotKey(candidate) === editorEpochSnapshotKey(delivery),
   );
+  const entry = snapshot.entries.find(
+    (candidate) => candidate.effectId === envelope.effectId,
+  );
   return (
     isValidEnvelope(envelope) &&
-    sameNoteIdentity(envelope.noteIdentity, snapshot.noteIdentity) &&
+    entry !== undefined &&
+    sameNoteIdentity(envelope.noteIdentity, entry.noteIdentity) &&
     isBoundedString(delivery.editorViewId, MAX_ID_LENGTH) &&
     isPositiveCounter(delivery.sequence) &&
     delivery.sequence === mark?.sequence &&

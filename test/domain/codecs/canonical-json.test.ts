@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CANONICAL_JSON_PROCESS_MAX_UTF16_UNITS,
   canonicalizeJson,
+  createCanonicalJsonProcessor,
   encodeCanonicalJson,
   encodeCanonicalSidecarJson,
 } from "../../../src/domain/codecs/canonical-json";
@@ -9,12 +11,16 @@ import {
 const MAX_NESTING = 64;
 const ABOVE_MAX_NESTING = 65;
 const LAST_INDEX = -1;
+const INVALID_CHUNK_INDEX = -1;
 const RFC_LARGE_DECIMAL = Number("333333333.33333329");
 const RFC_LARGE_EXPONENT = 1e30;
 const RFC_TRAILING_ZERO = 4.5;
 const RFC_SMALL_DECIMAL = 0.002;
 const RFC_SMALL_EXPONENT = 1e-27;
 const UNSUPPORTED_BIGINT = BigInt(1);
+const ABOVE_PROCESS_LIMIT = CANONICAL_JSON_PROCESS_MAX_UTF16_UNITS + 1;
+const NEGATIVE_PROCESS_LIMIT = -1;
+const FRACTIONAL_PROCESS_LIMIT = 1.5;
 
 describe("RFC 8785 canonical JSON", () => {
   it("matches the RFC 8785 primitive serialization fixture", () => {
@@ -72,6 +78,58 @@ describe("canonical JSON UTF-8 boundaries", () => {
 
     expect(decoded).toBe('{"text":"line\\n"}\n');
     expect(decoded.endsWith("\n\n")).toBe(false);
+  });
+});
+
+describe("resumable canonical JSON encoding", () => {
+  it("uses bounded chunks while preserving the synchronous canonical result", () => {
+    const value = {
+      array: [null, true, '😀\u0000\n\\"', { z: 1, a: 2 }],
+      text: "x".repeat(ABOVE_PROCESS_LIMIT),
+    };
+    const processor = createCanonicalJsonProcessor(value);
+    let processCalls = 0;
+
+    while (!processor.processNext(1)) processCalls += 1;
+    const chunks = processor.complete();
+
+    expect(chunks).toBeDefined();
+    expect(chunks?.every((chunk) => chunk.length <= 1)).toBe(true);
+    expect(processor.chunkCount).toBe(chunks?.length);
+    expect(processor.chunkAt(0)).toBe(chunks?.[0]);
+    expect(processor.chunkAt(INVALID_CHUNK_INDEX)).toBeUndefined();
+    expect(chunks?.join("")).toBe(canonicalizeJson(value));
+    expect(processCalls).toBeGreaterThan(
+      CANONICAL_JSON_PROCESS_MAX_UTF16_UNITS,
+    );
+  });
+
+  it("caps oversized slices and completes without deferred encoding work", () => {
+    const processor = createCanonicalJsonProcessor(
+      "x".repeat(ABOVE_PROCESS_LIMIT),
+    );
+
+    expect(processor.complete()).toBeUndefined();
+    expect(processor.processNext(ABOVE_PROCESS_LIMIT)).toBe(false);
+    expect(processor.processNext(ABOVE_PROCESS_LIMIT)).toBe(true);
+    const completed = processor.complete();
+
+    expect(completed?.[0]?.length).toBe(CANONICAL_JSON_PROCESS_MAX_UTF16_UNITS);
+    expect(processor.complete()).toBe(completed);
+    expect(processor.processNext()).toBe(true);
+    expect(processor.complete()).toBe(completed);
+  });
+
+  it.each([
+    0,
+    NEGATIVE_PROCESS_LIMIT,
+    FRACTIONAL_PROCESS_LIMIT,
+    Number.POSITIVE_INFINITY,
+  ])("rejects invalid process limit %s", (limit) => {
+    const processor = createCanonicalJsonProcessor(null);
+
+    expect(() => processor.processNext(limit)).toThrow(RangeError);
+    expect(processor.done).toBe(false);
   });
 });
 

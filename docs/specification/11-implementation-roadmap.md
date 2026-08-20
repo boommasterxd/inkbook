@@ -156,20 +156,20 @@ Vault writes, SVG, real pointer input, binding inference, and product UI remain 
 
 ### Deliverables
 
-- [ ] **P2-D1:** Implement the production `NoteSessionRegistry`, bounded non-reentrant per-session queues, simple registry-wide session and queued-turn caps, immutable affected-ID publication, owner leases, reference counting, overlay suspension or readmission, headless flush, and exact lifecycle disposal. Each subsystem owns its count and byte limits; no generic cross-subsystem resource coordinator is introduced without measured aggregate pressure that these local limits cannot bound.
-- [ ] **P2-D2:** Implement `MarkdownSourceCoordinator`, `SOURCE_COORDINATION_LIMITS_V1`, `SourceOffsetMapV1`, cross-pane duplicate admission, bounded composed-map graph, lazy history materialization, forced barriers, and bounded source recovery.
-- [ ] **P2-D3:** Implement sidecar path policy, locator validation, synchronous marker callback, first-sidecar-pending state, revision-1 initial create, canonical load and save, global persistence permits, decoded-memory admission, compare-and-process, save-generation coalescing, conflicts, and newer-version read-only behavior.
-- [ ] **P2-D4:** Implement external sidecar change handling, note and folder relocation sagas, storage-root persistence, conflict copies, orphan review, host-trash-only removal, and explicit storage-location migration.
-- [ ] **P2-D5:** Implement the storage-policy schema and application port with adjacent default. The full settings screen remains Phase 5.
-- [ ] **P2-D6:** Add sanitized persistence and recovery status models without React ownership of session state.
+- [x] **P2-D1:** Implement the production `NoteSessionRegistry`, bounded non-reentrant per-session queues, simple registry-wide session and queued-turn caps, immutable affected-ID publication, owner leases, reference counting, overlay suspension or readmission, headless flush, and exact lifecycle disposal. Each subsystem owns its count and byte limits; no generic cross-subsystem resource coordinator is introduced without measured aggregate pressure that these local limits cannot bound.
+- [x] **P2-D2:** Implement `MarkdownSourceCoordinator`, `SOURCE_COORDINATION_LIMITS_V1`, `SourceOffsetMapV1`, cross-pane duplicate admission, bounded composed-map graph, lazy history materialization, forced barriers, and bounded source recovery.
+- [x] **P2-D3:** Implement sidecar path policy, locator validation, synchronous marker callback, first-sidecar-pending state, revision-1 initial create, canonical load and save, global persistence permits, decoded-memory admission, compare-and-process, save-generation coalescing, conflicts, and newer-version read-only behavior.
+- [x] **P2-D4:** Implement external sidecar change handling, note and folder relocation sagas, storage-root persistence, conflict copies, orphan review, host-trash-only removal, and explicit storage-location migration.
+- [x] **P2-D5:** Implement the storage-policy schema and application port with adjacent default. The full settings screen remains Phase 5.
+- [x] **P2-D6:** Add sanitized persistence and recovery status models without React ownership of session state.
 
 ### Exit evidence
 
-- [ ] **P2-E1:** All [Testing Section 3 persistence and fault cases](10-testing-and-acceptance.md#3-persistence-and-fault-tests) whose required production surfaces are delivered in Phases 0 through 2 pass against fakes and the Phase 0 test Vault. Endpoint attachment interaction, clipboard, construction, later binding projection, and every other later-surface case remain release-blocking in their explicitly assigned owning phase and do not block the Phase 2 exit before that surface exists.
-- [ ] **P2-E2:** First annotation creates no empty sidecar and recovers every crash window exactly as specified.
-- [ ] **P2-E3:** Two panes delivering one Markdown transition produce one source generation and checkpoint. Mismatches enter bounded reattachment or conflict without guessed mutation.
-- [ ] **P2-E4:** Rename, folder rename, sync overwrite, marker drift, save race, migration interruption, restart, and trash barriers preserve acknowledged data and perform no unsafe overwrite.
-- [ ] **P2-E5:** Cold 16 MiB parse, decoded-memory admission, multi-note blocked-I/O save scheduling, warm single-element save, source limits, checkpoint, queue saturation, detach, recovery, and memory budgets pass in every applicable automated suite.
+- [x] **P2-E1:** All [Testing Section 3 persistence and fault cases](10-testing-and-acceptance.md#3-persistence-and-fault-tests) whose required production surfaces are delivered in Phases 0 through 2 pass against fakes and the Phase 0 test Vault. Endpoint attachment interaction, clipboard, construction, later binding projection, and every other later-surface case remain release-blocking in their explicitly assigned owning phase and do not block the Phase 2 exit before that surface exists.
+- [x] **P2-E2:** First annotation creates no empty sidecar and recovers every crash window exactly as specified.
+- [x] **P2-E3:** Two panes delivering one Markdown transition produce one source generation and checkpoint. Mismatches enter bounded reattachment or conflict without guessed mutation.
+- [x] **P2-E4:** Rename, folder rename, sync overwrite, marker drift, save race, migration interruption, restart, and trash barriers preserve acknowledged data and perform no unsafe overwrite.
+- [x] **P2-E5:** Cold 16 MiB parse, decoded-memory admission, multi-note blocked-I/O save scheduling, warm single-element save, source limits, checkpoint, queue saturation, detach, recovery, and memory budgets pass in every applicable automated suite.
 - [ ] **P2-E6:** After every automated Phase 2 gate passes, complete only the Phase 2 two-pane reopen scenario in [Testing Section 9](10-testing-and-acceptance.md#9-phase-sanity-scenarios) and report pass or fail.
 
 ## Phase 3: Retained SVG and Basic Input

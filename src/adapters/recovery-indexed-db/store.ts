@@ -3,9 +3,22 @@ import type {
   RecoveryAttemptId,
 } from "../../application/note-session";
 import {
-  RECOVERY_STORE_LIMITS_V1,
+  type ActiveRemovalRecoveryV1,
+  type BeginPrefixRelocationBatchV1,
+  type FinalizeRemovalRecoveryV1,
   type HostAcknowledgementV1,
   type HostRecordedDirectionAttemptV1,
+  type HostRecordedForwardAttemptV1,
+  type LoadRelocationByIdV1,
+  type LoadActiveRemovalV1,
+  type LoadPrefixRelocationMemberV1,
+  type LoadActivePrefixRelocationsV1,
+  type LoadRetainedPrefixRelocationRulesV1,
+  type PrefixRelocationMemberV1,
+  type PrefixRelocationPlanV1,
+  type PrefixRelocationRecordV1,
+  type PreparePrefixRelocationPlanV1,
+  type DiscardConfirmedNoteRecoveryV1,
   type PreparedForwardAttemptV1,
   type RecoveryLoadRequestV1,
   type RecoveryPersistenceRecordV1,
@@ -13,6 +26,7 @@ import {
   type RecoverySagaCompletionV1,
   type RecoverySnapshotV1,
   type RecoveryStore,
+  type RemoveRetainedPrefixRelocationRuleForMaintenanceV1,
   type RelocationRecordV1,
   type RelocationTransitionV1,
   type RemovalRecordV1,
@@ -21,7 +35,18 @@ import {
 } from "../../application/recovery";
 import type { SourceCheckpointOperationV1 } from "../../application/source-coordination";
 import { acknowledgeSidecar } from "./acknowledgement";
+import {
+  discardConfirmedNoteRecovery,
+  prepareRecoveryDiscard,
+} from "./discard";
 import { loadNote } from "./load";
+import { admitRelocationLoad, loadRelocationById } from "./relocation-load";
+import {
+  admitPrefixRelocationPlan,
+  loadActivePrefixRelocations,
+  loadPrefixRelocationMember,
+  preparePrefixRelocationPlan,
+} from "./prefix-plan";
 import {
   admitQueueRequest,
   admitRecoveryRecord,
@@ -29,10 +54,23 @@ import {
   type AdmittedRecoveryTransition,
 } from "./queue-admission";
 import { rekeyNote } from "./rekey";
-import type {
-  IndexedDbRecoveryLimits,
-  IndexedDbRecoveryOptions,
-} from "./types";
+import {
+  admitActiveRemovalLoad,
+  finalizeRemovalRecovery,
+  loadActiveRemoval,
+  prepareRemovalFinalization,
+} from "./removal-recovery";
+import { resolveRecoveryStoreLimits } from "./store-limits";
+import {
+  admitPrefixRelocationBatch,
+  admitRetainedRuleLoad,
+  admitRetainedRuleRemoval,
+  beginPrefixRelocationBatch,
+  hasPrefixRelocationKind,
+  loadRetainedPrefixRelocationRules,
+  removeRetainedPrefixRelocationRuleForMaintenance,
+} from "./retained-prefix-rules";
+import type { IndexedDbRecoveryOptions } from "./types";
 import {
   appendDirection,
   appendSourceCheckpoint,
@@ -46,31 +84,26 @@ import {
   type WriteContext,
 } from "./write-operations";
 
-const DEFAULT_MAX_QUEUED_OPERATIONS = 64;
-const DEFAULT_MAX_QUEUED_BYTES = RECOVERY_STORE_LIMITS_V1.maxGlobalBytes;
-const MAXIMUM_LIMITS: IndexedDbRecoveryLimits = Object.freeze({
-  directSuccessors: RECOVERY_STORE_LIMITS_V1.maxDirectSuccessorsPerBase,
-  globalBytes: RECOVERY_STORE_LIMITS_V1.maxGlobalBytes,
-  globalRecords: RECOVERY_STORE_LIMITS_V1.maxGlobalRecords,
-  noteBytes: RECOVERY_STORE_LIMITS_V1.maxNoteBytes,
-  noteRecords: RECOVERY_STORE_LIMITS_V1.maxNoteRecords,
-  queuedBytes: DEFAULT_MAX_QUEUED_BYTES,
-  queuedOperations: DEFAULT_MAX_QUEUED_OPERATIONS,
-});
+const MINIMUM_QUEUE_FOR_COMPLETION_RESERVE = 8;
+const COMPLETION_OPERATION_RESERVE = 4;
+const COMPLETION_BYTE_RESERVE_DIVISOR = 8;
 
 export class IndexedDbRecoveryStore implements RecoveryStore {
   readonly #context: WriteContext;
   readonly #onVersionChange: () => void;
-  #disposed = false;
+  #closing = false;
+  #disposePromise: Promise<void> | null = null;
   #outstandingBytes = 0;
   #outstandingOperations = 0;
+  #ordinaryOutstandingBytes = 0;
+  #ordinaryOutstandingOperations = 0;
   #tail: Promise<void> = Promise.resolve();
 
   public constructor(database: IDBDatabase, options: IndexedDbRecoveryOptions) {
     this.#context = {
       database,
       faultInjector: options.faultInjector,
-      limits: resolveLimits(options.limits),
+      limits: resolveRecoveryStoreLimits(options.limits),
     };
     this.#onVersionChange = (): void => database.close();
     database.addEventListener("versionchange", this.#onVersionChange);
@@ -87,18 +120,26 @@ export class IndexedDbRecoveryStore implements RecoveryStore {
   public recordForward(
     attemptId: RecoveryAttemptId,
     acknowledgement: HostAcknowledgementV1,
-  ): Promise<CommandResultV1<void>> {
-    return this.#enqueueRequest({ acknowledgement, attemptId }, (request) =>
-      recordForward(this.#context, request.attemptId, request.acknowledgement),
+  ): Promise<CommandResultV1<HostRecordedForwardAttemptV1>> {
+    return this.#enqueueRequest(
+      { acknowledgement, attemptId },
+      (request) =>
+        recordForward(
+          this.#context,
+          request.attemptId,
+          request.acknowledgement,
+        ),
+      true,
     );
   }
 
   public appendDirection(
     attempt: HostRecordedDirectionAttemptV1,
-  ): Promise<CommandResultV1<void>> {
-    return this.#enqueueRecord(attempt, (record, bytes) =>
-      appendDirection(this.#context, record, bytes),
-    );
+  ): Promise<CommandResultV1<HostRecordedDirectionAttemptV1>> {
+    return this.#enqueueRecord(attempt, async (record, bytes) => {
+      const result = await appendDirection(this.#context, record, bytes);
+      return result.ok ? { ok: true, value: record } : result;
+    });
   }
 
   public appendSourceCheckpoint(
@@ -112,29 +153,47 @@ export class IndexedDbRecoveryStore implements RecoveryStore {
   public acknowledgeSidecar(
     request: SidecarRecoveryAcknowledgementV1,
   ): Promise<CommandResultV1<void>> {
-    return this.#enqueueRequest(request, (admitted) =>
-      acknowledgeSidecar(this.#context, admitted),
+    return this.#enqueueRequest(
+      request,
+      (admitted) => acknowledgeSidecar(this.#context, admitted),
+      true,
     );
   }
 
   public beginRelocation(
     record: RelocationRecordV1,
   ): Promise<CommandResultV1<void>> {
+    if (hasPrefixRelocationKind(record)) {
+      return this.beginPrefixRelocationBatch({ records: [record] });
+    }
     return this.#enqueueRecord(record, (admitted, bytes) =>
       beginRelocation(this.#context, admitted, bytes),
+    );
+  }
+
+  public beginPrefixRelocationBatch(
+    request: BeginPrefixRelocationBatchV1,
+  ): Promise<CommandResultV1<void>> {
+    const admitted = admitPrefixRelocationBatch(request);
+    if (!admitted.ok) return Promise.resolve(admitted);
+    return this.#enqueue(admitted.value.retainedBytes, () =>
+      beginPrefixRelocationBatch(this.#context, admitted.value),
     );
   }
 
   public advanceRelocation(
     request: RelocationTransitionV1,
   ): Promise<CommandResultV1<void>> {
-    return this.#enqueueTransition(request, (admitted) =>
-      advanceRelocation(
-        this.#context,
-        admitted.transition,
-        admitted.expectedBytes,
-        admitted.replacementBytes,
-      ),
+    return this.#enqueueTransition(
+      request,
+      (admitted) =>
+        advanceRelocation(
+          this.#context,
+          admitted.transition,
+          admitted.expectedBytes,
+          admitted.replacementBytes,
+        ),
+      true,
     );
   }
 
@@ -147,21 +206,26 @@ export class IndexedDbRecoveryStore implements RecoveryStore {
   public advanceRemoval(
     request: RemovalTransitionV1,
   ): Promise<CommandResultV1<void>> {
-    return this.#enqueueTransition(request, (admitted) =>
-      advanceRemoval(
-        this.#context,
-        admitted.transition,
-        admitted.expectedBytes,
-        admitted.replacementBytes,
-      ),
+    return this.#enqueueTransition(
+      request,
+      (admitted) =>
+        advanceRemoval(
+          this.#context,
+          admitted.transition,
+          admitted.expectedBytes,
+          admitted.replacementBytes,
+        ),
+      true,
     );
   }
 
   public completeSaga(
     request: RecoverySagaCompletionV1,
   ): Promise<CommandResultV1<void>> {
-    return this.#enqueueRequest(request, (admitted) =>
-      completeSaga(this.#context, admitted),
+    return this.#enqueueRequest(
+      request,
+      (admitted) => completeSaga(this.#context, admitted),
+      true,
     );
   }
 
@@ -179,18 +243,131 @@ export class IndexedDbRecoveryStore implements RecoveryStore {
     );
   }
 
+  public discardConfirmedNoteRecovery(
+    request: DiscardConfirmedNoteRecoveryV1,
+  ): Promise<CommandResultV1<void>> {
+    const prepared = prepareRecoveryDiscard(request, this.#context);
+    if (!prepared.ok) return Promise.resolve(prepared);
+    return this.#enqueue(
+      prepared.value.retainedBytes,
+      () => discardConfirmedNoteRecovery(this.#context, prepared.value),
+      true,
+    );
+  }
+
+  public finalizeRemovalRecovery(
+    request: FinalizeRemovalRecoveryV1,
+  ): Promise<CommandResultV1<void>> {
+    const prepared = prepareRemovalFinalization(request, this.#context);
+    if (!prepared.ok) return Promise.resolve(prepared);
+    return this.#enqueue(
+      prepared.value.retainedBytes,
+      () => finalizeRemovalRecovery(this.#context, prepared.value),
+      true,
+    );
+  }
+
+  public loadActiveRemoval(
+    request: LoadActiveRemovalV1,
+  ): Promise<CommandResultV1<ActiveRemovalRecoveryV1 | null>> {
+    const admitted = admitActiveRemovalLoad(request);
+    if (!admitted.ok) return Promise.resolve(admitted);
+    return this.#enqueue(
+      admitted.value.byteSize,
+      () => loadActiveRemoval(this.#context, admitted.value.value),
+      true,
+    );
+  }
+
+  public preparePrefixRelocationPlan(
+    request: PreparePrefixRelocationPlanV1,
+  ): Promise<CommandResultV1<PrefixRelocationPlanV1>> {
+    const admitted = admitPrefixRelocationPlan(request);
+    if (!admitted.ok) return Promise.resolve(admitted);
+    return this.#enqueue(
+      admitted.value.retainedBytes,
+      () => preparePrefixRelocationPlan(this.#context, admitted.value),
+      true,
+    );
+  }
+
+  public loadPrefixRelocationMember(
+    request: LoadPrefixRelocationMemberV1,
+  ): Promise<CommandResultV1<PrefixRelocationMemberV1>> {
+    return this.#enqueueRequest(
+      request,
+      (admitted) =>
+        loadPrefixRelocationMember(this.#context.database, admitted),
+      true,
+    );
+  }
+
+  public loadRelocationById(
+    request: LoadRelocationByIdV1,
+  ): Promise<CommandResultV1<RelocationRecordV1 | null>> {
+    const admitted = admitRelocationLoad(request);
+    if (!admitted.ok) return Promise.resolve(admitted);
+    return this.#enqueue(
+      admitted.value.byteSize,
+      () => loadRelocationById(this.#context.database, admitted.value.value),
+      true,
+    );
+  }
+
+  public loadActivePrefixRelocations(
+    request: LoadActivePrefixRelocationsV1,
+  ): Promise<CommandResultV1<readonly PrefixRelocationRecordV1[]>> {
+    return this.#enqueueRequest(
+      request,
+      (admitted) =>
+        loadActivePrefixRelocations(this.#context.database, admitted),
+      true,
+    );
+  }
+
+  public loadRetainedPrefixRelocationRules(
+    request: LoadRetainedPrefixRelocationRulesV1,
+  ): Promise<CommandResultV1<readonly PrefixRelocationRecordV1[]>> {
+    const admitted = admitRetainedRuleLoad(request);
+    if (!admitted.ok) return Promise.resolve(admitted);
+    return this.#enqueue(
+      admitted.value.byteSize,
+      () =>
+        loadRetainedPrefixRelocationRules(
+          this.#context.database,
+          admitted.value.value,
+        ),
+      true,
+    );
+  }
+
+  public removeRetainedPrefixRelocationRuleForMaintenance(
+    request: RemoveRetainedPrefixRelocationRuleForMaintenanceV1,
+  ): Promise<CommandResultV1<void>> {
+    const admitted = admitRetainedRuleRemoval(request);
+    if (!admitted.ok) return Promise.resolve(admitted);
+    return this.#enqueue(
+      admitted.value.byteSize,
+      () =>
+        removeRetainedPrefixRelocationRuleForMaintenance(
+          this.#context,
+          admitted.value,
+        ),
+      true,
+    );
+  }
+
   public async dispose(): Promise<void> {
-    if (!this.#disposed) {
-      this.#disposed = true;
-      await this.#tail;
+    if (this.#disposePromise !== null) return this.#disposePromise;
+    this.#closing = true;
+    this.#disposePromise = this.#tail.then(() => {
       this.#context.database.removeEventListener(
         "versionchange",
         this.#onVersionChange,
       );
       this.#context.database.close();
-      return;
-    }
-    await this.#tail;
+    });
+    return this.#disposePromise;
   }
 
   #enqueueRecord<T extends RecoveryPersistenceRecordV1, R>(
@@ -207,11 +384,14 @@ export class IndexedDbRecoveryStore implements RecoveryStore {
   #enqueueRequest<T, R>(
     request: T,
     work: (request: T) => Promise<CommandResultV1<R>>,
+    critical = false,
   ): Promise<CommandResultV1<R>> {
     const admitted = admitQueueRequest(request);
     if (!admitted.ok) return Promise.resolve(admitted);
-    return this.#enqueue(admitted.value.byteSize, () =>
-      work(admitted.value.value),
+    return this.#enqueue(
+      admitted.value.byteSize,
+      () => work(admitted.value.value),
+      critical,
     );
   }
 
@@ -224,32 +404,43 @@ export class IndexedDbRecoveryStore implements RecoveryStore {
     work: (
       admitted: AdmittedRecoveryTransition<TExpected, TReplacement>,
     ) => Promise<CommandResultV1<R>>,
+    critical = false,
   ): Promise<CommandResultV1<R>> {
     const admitted = admitRecoveryTransition(request);
     if (!admitted.ok) return Promise.resolve(admitted);
-    return this.#enqueue(admitted.value.byteSize, () => work(admitted.value));
+    return this.#enqueue(
+      admitted.value.byteSize,
+      () => work(admitted.value),
+      critical,
+    );
   }
 
   #enqueue<T>(
     retainedBytes: number,
     work: () => Promise<CommandResultV1<T>>,
+    critical = false,
   ): Promise<CommandResultV1<T>> {
-    if (this.#disposed) return Promise.resolve(disposed());
-    if (
-      this.#outstandingOperations >= this.#context.limits.queuedOperations ||
-      retainedBytes > this.#context.limits.queuedBytes - this.#outstandingBytes
-    ) {
+    if (this.#closing) return Promise.resolve(disposed());
+    if (!this.#hasQueueCapacity(retainedBytes, critical)) {
       return Promise.resolve({ ok: false, code: "recovery-limit" });
     }
     this.#outstandingBytes += retainedBytes;
     this.#outstandingOperations += 1;
+    if (!critical) {
+      this.#ordinaryOutstandingBytes += retainedBytes;
+      this.#ordinaryOutstandingOperations += 1;
+    }
     const result = this.#tail.then<CommandResultV1<T>>(async () => {
-      if (this.#disposed) return disposed<T>();
+      if (this.#closing && !critical) return disposed<T>();
       return work();
     });
     const settled = result.finally(() => {
       this.#outstandingBytes -= retainedBytes;
       this.#outstandingOperations -= 1;
+      if (!critical) {
+        this.#ordinaryOutstandingBytes -= retainedBytes;
+        this.#ordinaryOutstandingOperations -= 1;
+      }
     });
     this.#tail = settled.then(
       () => undefined,
@@ -257,42 +448,32 @@ export class IndexedDbRecoveryStore implements RecoveryStore {
     );
     return settled;
   }
-}
 
-function resolveLimits(
-  overrides: Partial<IndexedDbRecoveryLimits> | undefined,
-): IndexedDbRecoveryLimits {
-  const limits = {
-    directSuccessors:
-      overrides?.directSuccessors ??
-      RECOVERY_STORE_LIMITS_V1.maxDirectSuccessorsPerBase,
-    globalBytes:
-      overrides?.globalBytes ?? RECOVERY_STORE_LIMITS_V1.maxGlobalBytes,
-    globalRecords:
-      overrides?.globalRecords ?? RECOVERY_STORE_LIMITS_V1.maxGlobalRecords,
-    noteBytes: overrides?.noteBytes ?? RECOVERY_STORE_LIMITS_V1.maxNoteBytes,
-    noteRecords:
-      overrides?.noteRecords ?? RECOVERY_STORE_LIMITS_V1.maxNoteRecords,
-    queuedBytes: overrides?.queuedBytes ?? DEFAULT_MAX_QUEUED_BYTES,
-    queuedOperations:
-      overrides?.queuedOperations ?? DEFAULT_MAX_QUEUED_OPERATIONS,
-  };
-  const configured = Object.entries(limits) as readonly [
-    keyof IndexedDbRecoveryLimits,
-    number,
-  ][];
-  if (
-    configured.some(([key, value]) => !validLimit(value, MAXIMUM_LIMITS[key]))
-  ) {
-    throw new RangeError(
-      "Recovery store limits must be positive safe integers at or below product maxima.",
+  #hasQueueCapacity(retainedBytes: number, critical: boolean): boolean {
+    const limits = this.#context.limits;
+    if (
+      this.#outstandingOperations >= limits.queuedOperations ||
+      retainedBytes > limits.queuedBytes - this.#outstandingBytes
+    ) {
+      return false;
+    }
+    if (
+      critical ||
+      limits.queuedOperations < MINIMUM_QUEUE_FOR_COMPLETION_RESERVE
+    ) {
+      return true;
+    }
+    const ordinaryOperationLimit =
+      limits.queuedOperations - COMPLETION_OPERATION_RESERVE;
+    const reservedBytes = Math.floor(
+      limits.queuedBytes / COMPLETION_BYTE_RESERVE_DIVISOR,
+    );
+    return (
+      this.#ordinaryOutstandingOperations < ordinaryOperationLimit &&
+      retainedBytes <=
+        limits.queuedBytes - reservedBytes - this.#ordinaryOutstandingBytes
     );
   }
-  return limits;
-}
-
-function validLimit(value: number, maximum: number): boolean {
-  return Number.isSafeInteger(value) && value > 0 && value <= maximum;
 }
 
 function disposed<T>(): CommandResultV1<T> {

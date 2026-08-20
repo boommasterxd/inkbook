@@ -15,6 +15,7 @@ const CURRENT_SCHEMA_MINOR = 0;
 const MAX_JSON_STRING_UTF16 = 5_333_334;
 const MAX_JSON_ARRAY_ITEMS = Number("500000");
 const MAX_JSON_OBJECT_MEMBERS = Number("1000000");
+const MAX_JSON_OBJECT_MEMBERS_PER_OBJECT = 64;
 const MAX_JSON_VALUES = Number("5000000");
 const BYTE_ORDER_MARK = "\ufeff";
 const ANCHOR_CONTEXT_WRITE_LIMIT = 128;
@@ -24,6 +25,7 @@ const SCENE_JSON_LIMITS = Object.freeze({
   maxStringUtf16Units: MAX_JSON_STRING_UTF16,
   maxArrayItems: MAX_JSON_ARRAY_ITEMS,
   maxObjectMembers: MAX_JSON_OBJECT_MEMBERS,
+  maxObjectMembersPerObject: MAX_JSON_OBJECT_MEMBERS_PER_OBJECT,
   maxArrays: Number("500000"),
   maxObjects: Number("1000000"),
 });

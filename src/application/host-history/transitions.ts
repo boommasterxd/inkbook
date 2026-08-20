@@ -10,11 +10,14 @@ import type {
   HostRecordedDirectionAttemptV1,
   PreparedForwardAttemptV1,
 } from "../recovery";
+import { commandFailure } from "../note-session/results";
+import type { CommandResultV1 } from "../note-session/types";
 import type {
   HostHistoryCoordinatorConfigV1,
   HostEffectAcknowledgementV1,
   HostHistoryFailureV1,
   HostHistoryRecoveryContextV1,
+  HostRecordedRecoveryAttemptV1,
   HistoryEpoch,
 } from "./types";
 import type { EntryTransition } from "./results";
@@ -129,23 +132,21 @@ export async function recordRecoveryV1(
   config: HostHistoryCoordinatorConfigV1,
   transition: EntryTransition,
   acknowledgement: HostEffectAcknowledgementV1,
-): Promise<boolean> {
+): Promise<CommandResultV1<HostRecordedRecoveryAttemptV1>> {
   try {
     if (transition.recovery.kind === "forward") {
-      const result = await config.recovery.recordForward(
-        transition.recovery
-          .attemptId as import("../note-session").RecoveryAttemptId,
+      return await config.recovery.recordForward(
+        transition.recovery.attemptId,
         acknowledgement,
       );
-      return result.ok;
     }
-    const attempt = Object.freeze({
+    const attempt: HostRecordedDirectionAttemptV1 = Object.freeze({
       ...transition.recovery.attempt,
       acknowledgement,
     });
-    return (await config.recovery.appendDirection(attempt)).ok;
+    return await config.recovery.appendDirection(attempt);
   } catch {
-    return false;
+    return commandFailure("recovery-unavailable");
   }
 }
 

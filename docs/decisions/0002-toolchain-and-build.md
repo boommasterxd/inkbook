@@ -22,6 +22,7 @@ The bootstrap resolution on 2026-08-18 selected:
 | CodeMirror commands                             | 6.10.1                                          |
 | CodeMirror state                                | 6.5.0                                           |
 | CodeMirror view                                 | 6.38.6                                          |
+| @noble/hashes                                   | 2.3.0                                           |
 | Current release host used by the initial matrix | 1.13.7                                          |
 | esbuild                                         | 0.28.2                                          |
 | ESLint                                          | 10.8.1                                          |
@@ -40,9 +41,13 @@ TypeScript 7.0.2 was the newest standalone stable TypeScript release at bootstra
 
 Obsidian API 1.13.1 declares exact peers on `@codemirror/state` 6.5.0 and `@codemirror/view` 6.38.6. CodeMirror commands 6.11.0 requires state 6.7 or newer, so commands 6.10.1 is the newest stable release compatible with the host-declared graph. These three packages remain exact until a reviewed Obsidian API package advances the peer boundary.
 
+Phase 2 uses exact `@noble/hashes` 2.3.0 for incremental SHA-256. It is MIT-licensed, supports the selected Node runtime, is bundled locally without remote code, and lets Markdown UTF-8 input be hashed in bounded chunks without a second full-size byte copy. WebCrypto remains unsuitable for this path because its SHA-256 API accepts only a complete input buffer. The dependency is pinned because digest compatibility and its production bundle contribution are security and persistence inputs.
+
 `skipLibCheck` is enabled only because the published Obsidian 1.13.1 declaration bundle contains host classes that declare `HistoryHandler` without declaring its required `onHistoryBack()` member. Project sources and tests remain fully strict and receive no skip or path exclusion. This narrow upstream boundary MUST be retested and removed when a corrected Obsidian declaration release is selected.
 
 The production build targets ES2022, stages CommonJS `dist/main.js`, `dist/manifest.json`, and `dist/styles.css`, treats Obsidian, CodeMirror, and Lezer host packages as external, copies the namespaced stylesheet, minifies release output, and emits no source map. The release exposes those three files at the root of the installed plugin package.
+
+CI runs Knip once across production and tests and once from the production entry points only. The production-reachability pass narrowly excludes the retained Phase 1 view, geometry, and gesture modules because their host integration belongs to later roadmap phases. It does not exclude Phase 2 modules, so a production-shaped implementation referenced only by tests fails CI instead of being mistaken for integrated behavior.
 
 ## Update Policy
 

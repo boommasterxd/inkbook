@@ -7,12 +7,16 @@ import {
   type RecoveryLoadRequestV1,
 } from "../../../src/application/recovery";
 import {
+  createSidecarRevision,
+  createSourceGeneration,
   parseRelocationId,
   parseSha256Digest,
 } from "../../../src/application/note-session";
+import { createSceneRevision } from "../../../src/domain/model";
 import {
   BASE,
   DIGEST_A,
+  NEXT_BASE,
   NOTE,
   existingLoad,
   fileRelocation,
@@ -256,6 +260,28 @@ describe("IndexedDB recovery sagas", () => {
         },
       }),
     ).resolves.toEqual({ ok: false, code: "sidecar-conflict" });
+    await store.dispose();
+  });
+
+  it("fails sidecar acknowledgement closed while a removal saga owns the base", async () => {
+    const { store } = await openStore("removal-blocks-acknowledgement");
+    await expect(store.beginRemoval(removal())).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    await expect(
+      store.acknowledgeSidecar({
+        acknowledgedReplacementBase: NEXT_BASE,
+        coveredAttemptIds: [],
+        coveredCheckpointIds: [],
+        expectedPriorBase: BASE,
+        noteIdentity: NOTE,
+        sceneRevision: createSceneRevision(2),
+        sidecarRevision: createSidecarRevision(2),
+        sourceDigest: DIGEST_A,
+        sourceGeneration: createSourceGeneration(1),
+      }),
+    ).resolves.toEqual({ ok: false, code: "recovery-unavailable" });
     await store.dispose();
   });
 });

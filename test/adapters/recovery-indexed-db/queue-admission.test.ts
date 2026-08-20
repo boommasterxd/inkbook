@@ -12,7 +12,9 @@ import {
   DIGEST_A,
   existingLoad,
   fileRelocation,
+  hostAcknowledgement,
   openStore,
+  prefixRelocation,
   preparedAttempt,
 } from "./support";
 
@@ -65,6 +67,39 @@ describe("IndexedDB recovery queue admission", () => {
     await expect(store.prepareForward(thirdAttempt)).resolves.toEqual({
       ok: true,
       value: undefined,
+    });
+    await store.dispose();
+  });
+
+  it("reserves completion capacity for an accepted recovery acknowledgement", async () => {
+    const { store } = await openStore("reserved-completion-queue", {
+      limits: { queuedOperations: 8 },
+    });
+    const attempts = Array.from({ length: 4 }, (_, index) =>
+      preparedAttempt(index + 1, index + 1),
+    );
+    const writes = attempts.map((attempt) => store.prepareForward(attempt));
+    await expect(store.prepareForward(preparedAttempt(5, 5))).resolves.toEqual({
+      ok: false,
+      code: "recovery-limit",
+    });
+
+    const firstAttempt = attempts[0];
+    if (firstAttempt === undefined) throw new Error("Expected an attempt.");
+    const acknowledgement = store.recordForward(
+      firstAttempt.attemptId,
+      hostAcknowledgement(),
+    );
+
+    await expect(Promise.all(writes)).resolves.toEqual(
+      attempts.map(() => ({ ok: true, value: undefined })),
+    );
+    await expect(acknowledgement).resolves.toMatchObject({
+      ok: true,
+      value: {
+        attemptId: firstAttempt.attemptId,
+        kind: "host-recorded-forward",
+      },
     });
     await store.dispose();
   });
@@ -197,8 +232,17 @@ describe("IndexedDB recovery rejected structural inputs", () => {
         return preparedAttempt().forward;
       },
     });
+    const hostileRelocation = { ...prefixRelocation() };
+    Object.defineProperty(hostileRelocation, "kind", {
+      enumerable: true,
+      get: () => {
+        getterReads += 1;
+        return "folder-prefix";
+      },
+    });
     const rejectedRequest = store.loadNote(hostile);
     const rejectedRecord = store.prepareForward(hostileAttempt);
+    const rejectedRelocation = store.beginRelocation(hostileRelocation);
     const admitted = store.prepareForward(preparedAttempt());
 
     await expect(rejectedRequest).resolves.toEqual({
@@ -206,6 +250,10 @@ describe("IndexedDB recovery rejected structural inputs", () => {
       code: "invalid-command",
     });
     await expect(rejectedRecord).resolves.toEqual({
+      ok: false,
+      code: "invalid-command",
+    });
+    await expect(rejectedRelocation).resolves.toEqual({
       ok: false,
       code: "invalid-command",
     });

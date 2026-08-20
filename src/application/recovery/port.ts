@@ -1,13 +1,28 @@
 import type { CommandResultV1, RecoveryAttemptId } from "../note-session/types";
 import type { SourceCheckpointOperationV1 } from "../source-coordination/types";
 import type {
+  ActiveRemovalRecoveryV1,
+  BeginPrefixRelocationBatchV1,
+  DiscardConfirmedNoteRecoveryV1,
+  FinalizeRemovalRecoveryV1,
   HostAcknowledgementV1,
   HostRecordedDirectionAttemptV1,
+  HostRecordedForwardAttemptV1,
+  LoadRelocationByIdV1,
+  LoadActiveRemovalV1,
+  LoadPrefixRelocationMemberV1,
+  LoadActivePrefixRelocationsV1,
+  LoadRetainedPrefixRelocationRulesV1,
+  PrefixRelocationRecordV1,
+  PrefixRelocationMemberV1,
+  PrefixRelocationPlanV1,
+  PreparePrefixRelocationPlanV1,
   PreparedForwardAttemptV1,
   RecoveryLoadRequestV1,
   RecoveryRekeyV1,
   RecoverySagaCompletionV1,
   RecoverySnapshotV1,
+  RemoveRetainedPrefixRelocationRuleForMaintenanceV1,
   RelocationRecordV1,
   RelocationTransitionV1,
   RemovalRecordV1,
@@ -35,10 +50,10 @@ export interface RecoveryStore {
   recordForward(
     attemptId: RecoveryAttemptId,
     acknowledgement: HostAcknowledgementV1,
-  ): Promise<CommandResultV1<void>>;
+  ): Promise<CommandResultV1<HostRecordedForwardAttemptV1>>;
   appendDirection(
     attempt: HostRecordedDirectionAttemptV1,
-  ): Promise<CommandResultV1<void>>;
+  ): Promise<CommandResultV1<HostRecordedDirectionAttemptV1>>;
   appendSourceCheckpoint(
     checkpoint: SourceCheckpointOperationV1,
   ): Promise<CommandResultV1<void>>;
@@ -46,6 +61,9 @@ export interface RecoveryStore {
     request: SidecarRecoveryAcknowledgementV1,
   ): Promise<CommandResultV1<void>>;
   beginRelocation(record: RelocationRecordV1): Promise<CommandResultV1<void>>;
+  beginPrefixRelocationBatch(
+    request: BeginPrefixRelocationBatchV1,
+  ): Promise<CommandResultV1<void>>;
   advanceRelocation(
     request: RelocationTransitionV1,
   ): Promise<CommandResultV1<void>>;
@@ -58,5 +76,32 @@ export interface RecoveryStore {
   loadNote(
     request: RecoveryLoadRequestV1,
   ): Promise<CommandResultV1<RecoverySnapshotV1>>;
+  discardConfirmedNoteRecovery(
+    request: DiscardConfirmedNoteRecoveryV1,
+  ): Promise<CommandResultV1<void>>;
+  finalizeRemovalRecovery(
+    request: FinalizeRemovalRecoveryV1,
+  ): Promise<CommandResultV1<void>>;
+  loadActiveRemoval(
+    request: LoadActiveRemovalV1,
+  ): Promise<CommandResultV1<ActiveRemovalRecoveryV1 | null>>;
+  preparePrefixRelocationPlan(
+    request: PreparePrefixRelocationPlanV1,
+  ): Promise<CommandResultV1<PrefixRelocationPlanV1>>;
+  loadPrefixRelocationMember(
+    request: LoadPrefixRelocationMemberV1,
+  ): Promise<CommandResultV1<PrefixRelocationMemberV1>>;
+  loadRelocationById(
+    request: LoadRelocationByIdV1,
+  ): Promise<CommandResultV1<RelocationRecordV1 | null>>;
+  loadActivePrefixRelocations(
+    request: LoadActivePrefixRelocationsV1,
+  ): Promise<CommandResultV1<readonly PrefixRelocationRecordV1[]>>;
+  loadRetainedPrefixRelocationRules(
+    request: LoadRetainedPrefixRelocationRulesV1,
+  ): Promise<CommandResultV1<readonly PrefixRelocationRecordV1[]>>;
+  removeRetainedPrefixRelocationRuleForMaintenance(
+    request: RemoveRetainedPrefixRelocationRuleForMaintenanceV1,
+  ): Promise<CommandResultV1<void>>;
   dispose(): Promise<void>;
 }
