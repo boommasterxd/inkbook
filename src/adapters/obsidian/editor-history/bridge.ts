@@ -156,6 +156,7 @@ export class EditorHistoryEffectSequencerV1 {
   readonly #effectType: StateEffectType<HostEffectEnvelopeV1>;
   readonly #callbacks: EditorHistoryBridgeCallbacksV1;
   readonly #sequences = new Map<HistoryEpoch, number>();
+  readonly #exhausted = new Set<HistoryEpoch>();
   #disposed = false;
 
   public constructor(
@@ -178,6 +179,7 @@ export class EditorHistoryEffectSequencerV1 {
     if (this.#disposed) return;
     this.#disposed = true;
     this.#sequences.clear();
+    this.#exhausted.clear();
     this.#callbacks.detachEditor(this.#attachment.editorViewId);
   }
 
@@ -210,7 +212,9 @@ export class EditorHistoryEffectSequencerV1 {
 
   #advanceKnownEpochs(): void {
     for (const [epoch, sequence] of this.#sequences) {
+      if (this.#exhausted.has(epoch)) continue;
       if (sequence === Number.MAX_SAFE_INTEGER) {
+        this.#exhausted.add(epoch);
         this.#report("sequence-exhausted");
         continue;
       }
@@ -219,6 +223,7 @@ export class EditorHistoryEffectSequencerV1 {
   }
 
   #sequenceFor(epoch: HistoryEpoch): number | null {
+    if (this.#exhausted.has(epoch)) return null;
     const existing = this.#sequences.get(epoch);
     if (existing !== undefined) return existing;
     const restored = this.#callbacks.sequenceHighWater(
@@ -227,6 +232,7 @@ export class EditorHistoryEffectSequencerV1 {
     );
     const sequence = (restored ?? 0) + 1;
     if (!Number.isSafeInteger(sequence)) {
+      this.#exhausted.add(epoch);
       this.#report("sequence-exhausted");
       return null;
     }

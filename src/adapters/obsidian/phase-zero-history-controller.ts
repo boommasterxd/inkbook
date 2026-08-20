@@ -14,7 +14,6 @@ import type {
   ViewId,
 } from "../../application/host-history";
 import { HostHistoryCoordinatorV1 } from "../../application/host-history";
-import type { ResourceCoordinatorV1 } from "../../application/resource-coordinator";
 import type {
   PreparedForwardProbeRecord,
   RecoveryIndexedDbStore,
@@ -27,26 +26,20 @@ import {
   type AvailableEditorHistoryBridgeV1,
 } from "./editor-history";
 import type { PhaseZeroViewRegistry } from "./views";
-import {
-  BoundedHistoryDeliveryQueueV1,
-  estimateHistoryPayloadBytesV1,
-  PhaseZeroHistoryResourceOwnerV1,
-  type PhaseZeroHistorySessionResourcesV1,
-} from "./phase-zero-history-resources";
+
+const MAX_HISTORY_SESSIONS = 32;
 
 interface HistorySession {
   readonly coordinator: HostHistoryCoordinatorV1;
   readonly note: RecoveryNoteKey;
   readonly path: string;
   readonly prepared: Map<string, PreparedForwardProbeRecord>;
-  readonly resources: PhaseZeroHistorySessionResourcesV1;
   nextSessionOrder: number;
 }
 
 export interface PhaseZeroHistoryControllerOptions {
   readonly getRecoveryStore: () => Promise<RecoveryIndexedDbStore | undefined>;
   readonly notice: (message: string) => void;
-  readonly resourceCoordinator: ResourceCoordinatorV1;
   readonly vaultIdentityHint: string;
   readonly views: PhaseZeroViewRegistry;
 }
@@ -58,36 +51,22 @@ export class PhaseZeroHistoryController {
   readonly #sessions = new Map<string, Promise<HistorySession>>();
   readonly #epochSessions = new Map<string, HistorySession>();
   readonly #blockedPaths = new Set<string>();
-  readonly #resourceOwner: PhaseZeroHistoryResourceOwnerV1;
-  readonly #deliveryQueue = new BoundedHistoryDeliveryQueueV1();
   readonly bridge: AvailableEditorHistoryBridgeV1;
   #nextIdentity = 1;
   #disposed = false;
-  #disposal: Promise<void> | null = null;
+  #deliveryTail: Promise<void> = Promise.resolve();
 
   public constructor(options: PhaseZeroHistoryControllerOptions) {
     this.#options = options;
-    this.#resourceOwner = new PhaseZeroHistoryResourceOwnerV1(
-      options.resourceCoordinator,
-    );
     const bridge = createEditorHistoryBridgeV1(
       { invertedEffects, isolateHistory },
       {
         attachEditor: (view) => this.#attachEditor(view),
         detachEditor: (editorViewId) => this.#detachEditor(editorViewId),
         enqueueDelivery: (editorViewId, ownerViewId, delivery) => {
-          if (
-            !this.#deliveryQueue.enqueue(() =>
-              this.#deliver(editorViewId, ownerViewId, delivery),
-            )
-          ) {
-            this.#blockedPaths.add(
-              delivery.envelope.noteIdentity.vaultRelativeMarkdownPath,
-            );
-            this.#options.notice(
-              "Inkbook history effect blocked: delivery queue capacity exceeded.",
-            );
-          }
+          this.#deliveryTail = this.#deliveryTail.then(() =>
+            this.#deliver(editorViewId, ownerViewId, delivery),
+          );
         },
         reportMalformed: (_editorViewId, reason) => {
           this.#options.notice(`Inkbook history probe blocked: ${reason}.`);
@@ -140,50 +119,19 @@ export class PhaseZeroHistoryController {
       return;
     }
     const session = await pendingSession;
-    const effectId = this.#id("effect") as HostEffectId;
-    const historyEntryId = this.#id("entry") as HistoryEntryId;
-    const patch = {
-      prior: session.coordinator.scene.annotation,
-      replacement: "B",
-    };
-    const payloadBytes = estimateHistoryPayloadBytesV1({
-      effectId,
-      historyEntryId,
-      patch,
-      path,
-    });
-    if (
-      !session.resources.reserveAction(effectId, payloadBytes, payloadBytes)
-    ) {
-      this.#options.notice(
-        "Inkbook annotation blocked: history resources unavailable.",
-      );
-      return;
-    }
+    if (!this.canInsert(markdownView)) return;
     const prepared = session.coordinator.prepare({
-      effectId,
-      historyEntryId,
-      patch,
+      effectId: this.#id("effect") as HostEffectId,
+      historyEntryId: this.#id("entry") as HistoryEntryId,
+      patch: { prior: session.coordinator.scene.annotation, replacement: "B" },
       viewId: editorViewId,
     });
     if (prepared.kind !== "prepared") {
-      session.resources.releaseAction(effectId);
       this.#options.notice(`Inkbook annotation blocked: ${prepared.reason}.`);
       return;
     }
-    if (!session.resources.activateRetention(effectId)) {
-      session.coordinator.cancelAdmission(
-        prepared.envelope.effectId,
-        prepared.envelope.historyEpoch,
-      );
-      this.#options.notice(
-        "Inkbook annotation blocked: history resources unavailable.",
-      );
-      return;
-    }
-    const stored = await session.resources.runPreparation(effectId, () =>
-      this.#prepareRecovery(session, prepared.intent),
-    );
+    const stored = await this.#prepareRecovery(session, prepared.intent);
+    if (!this.canInsert(markdownView)) return;
     if (!stored) {
       session.coordinator.cancelAdmission(
         prepared.envelope.effectId,
@@ -208,7 +156,7 @@ export class PhaseZeroHistoryController {
       session,
     );
     access.view.dispatch(transaction);
-    await this.#deliveryQueue.settle();
+    await this.#deliveryTail;
   }
 
   public status(): string {
@@ -224,42 +172,30 @@ export class PhaseZeroHistoryController {
   }
 
   public settle(): Promise<void> {
-    return this.#disposal ?? this.#deliveryQueue.settle();
+    return this.#deliveryTail;
   }
 
   public dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
-    this.#deliveryQueue.close();
-    const pendingSessions = [...this.#sessions.values()];
-    this.#disposal = this.#deliveryQueue.settle().then(async () => {
-      const settled = await Promise.allSettled(pendingSessions);
-      for (const result of settled) {
-        if (result.status !== "fulfilled") continue;
-        const session = result.value;
+    for (const pending of this.#sessions.values()) {
+      void pending.then((session) => {
         const hasReachableEffects =
           session.coordinator.snapshot().entries.length > 0;
         session.coordinator.disposeForReload(hasReachableEffects);
-      }
-      this.#resourceOwner.dispose();
-      this.#sessions.clear();
-      this.#epochSessions.clear();
-      this.#blockedPaths.clear();
-    });
+      });
+    }
+    this.#sessions.clear();
+    this.#epochSessions.clear();
+    this.#blockedPaths.clear();
   }
 
   #attachEditor(view: EditorView): {
     readonly editorViewId: ViewId;
     readonly ownerViewId: ViewId;
     readonly inputProbe: EditorInputProbe;
-  } | null {
+  } {
     const editorViewId = this.#id("editor") as ViewId;
-    if (!this.#resourceOwner.admitEditorProbe(editorViewId)) {
-      this.#options.notice(
-        "Inkbook history probe unavailable: editor resources unavailable.",
-      );
-      return null;
-    }
     const inputProbe = new EditorInputProbe();
     this.#attachments.set(view, editorViewId);
     this.#editorProbes.set(editorViewId, inputProbe);
@@ -269,19 +205,15 @@ export class PhaseZeroHistoryController {
   #session(path: string): Promise<HistorySession> | undefined {
     let pending = this.#sessions.get(path);
     if (pending === undefined) {
-      const resources = this.#resourceOwner.admitSession(path);
-      if (resources === null) return undefined;
-      pending = this.#createSession(path, resources);
+      if (this.#sessions.size >= MAX_HISTORY_SESSIONS) return undefined;
+      pending = this.#createSession(path);
       this.#sessions.set(path, pending);
     }
     return pending;
   }
 
-  async #createSession(
-    path: string,
-    resources: PhaseZeroHistorySessionResourcesV1,
-  ): Promise<HistorySession> {
-    const store = await this.#options.getRecoveryStore();
+  async #createSession(path: string): Promise<HistorySession> {
+    const store = await this.#recoveryStore();
     const note = {
       markdownPath: path,
       vaultIdentityHint: this.#options.vaultIdentityHint,
@@ -290,8 +222,7 @@ export class PhaseZeroHistoryController {
       store === undefined
         ? ({ kind: "backend-unavailable" } as const)
         : await store.loadNote(note);
-    const records = loaded.kind === "loaded" ? [...loaded.records] : [];
-    if (loaded.kind === "loaded") loaded.releaseResources();
+    const records = loaded.kind === "loaded" ? loaded.records : [];
     const reference: { current?: HistorySession } = {};
     const recovery: HostEffectRecoveryPortV1 = {
       record: (intent, acknowledgement) => {
@@ -312,7 +243,6 @@ export class PhaseZeroHistoryController {
         },
         onRelease: (entry): void => {
           reference.current?.prepared.delete(entry.historyEntryId);
-          resources.releaseAction(entry.effectId);
         },
         recovery,
       },
@@ -331,7 +261,6 @@ export class PhaseZeroHistoryController {
       note,
       path,
       prepared: new Map(),
-      resources,
     };
     reference.current = session;
     if (coordinator.lease.kind === "blocked") this.#blockedPaths.add(path);
@@ -342,7 +271,7 @@ export class PhaseZeroHistoryController {
     session: HistorySession,
     intent: HostDispatchIntentV1,
   ): Promise<boolean> {
-    const store = await this.#options.getRecoveryStore();
+    const store = await this.#recoveryStore();
     if (store === undefined) return false;
     const record: PreparedForwardProbeRecord = {
       attemptId: intent.operationId,
@@ -368,7 +297,7 @@ export class PhaseZeroHistoryController {
     intent: HostDispatchIntentV1,
     acknowledgement: HostEffectAcknowledgementV1,
   ): Promise<boolean> {
-    const store = await this.#options.getRecoveryStore();
+    const store = await this.#recoveryStore();
     if (store === undefined) return false;
     if (intent.direction === "forward") {
       const prepared = session.prepared.get(intent.historyEntryId);
@@ -379,11 +308,7 @@ export class PhaseZeroHistoryController {
         expectedSessionOrder: prepared.sessionOrder,
         note: session.note,
       });
-      const recorded = result.kind === "written" || result.kind === "unchanged";
-      if (recorded) {
-        session.prepared.delete(intent.historyEntryId);
-      }
-      return recorded;
+      return result.kind === "written" || result.kind === "unchanged";
     }
     const result = await store.recordDirection({
       acknowledgement: toProbeAcknowledgement(acknowledgement),
@@ -406,6 +331,14 @@ export class PhaseZeroHistoryController {
     return true;
   }
 
+  async #recoveryStore(): Promise<RecoveryIndexedDbStore | undefined> {
+    try {
+      return await this.#options.getRecoveryStore();
+    } catch {
+      return undefined;
+    }
+  }
+
   async #deliver(
     editorViewId: ViewId,
     ownerViewId: ViewId,
@@ -421,32 +354,19 @@ export class PhaseZeroHistoryController {
       return;
     }
     const session = await pendingSession;
-    const completed = await session.resources.runDelivery(
-      delivery.envelope.effectId,
-      async () => {
-        const result = await session.coordinator.deliver(
-          editorViewId,
-          ownerViewId,
-          delivery,
-        );
-        if (result.kind === "accepted" || result.kind === "duplicate") {
-          this.#options.views.render(session.path, result.scene.annotation);
-          return;
-        }
-        if (session.coordinator.lease.kind === "blocked") {
-          this.#blockedPaths.add(session.path);
-        }
-        this.#options.notice(
-          `Inkbook history effect blocked: ${result.reason}.`,
-        );
-      },
+    const result = await session.coordinator.deliver(
+      editorViewId,
+      ownerViewId,
+      delivery,
     );
-    if (!completed) {
-      this.#blockedPaths.add(session.path);
-      this.#options.notice(
-        "Inkbook history effect blocked: completion resources unavailable.",
-      );
+    if (result.kind === "accepted" || result.kind === "duplicate") {
+      this.#options.views.render(session.path, result.scene.annotation);
+      return;
     }
+    if (session.coordinator.lease.kind === "blocked") {
+      this.#blockedPaths.add(session.path);
+    }
+    this.#options.notice(`Inkbook history effect blocked: ${result.reason}.`);
   }
 
   #id(kind: string): string {
@@ -457,17 +377,6 @@ export class PhaseZeroHistoryController {
 
   #detachEditor(editorViewId: ViewId): void {
     this.#editorProbes.delete(editorViewId);
-    this.#resourceOwner.releaseEditorProbe(editorViewId);
-    if (this.#deliveryQueue.idle) {
-      this.#closeEditorEpochs(editorViewId);
-      return;
-    }
-    void this.#deliveryQueue
-      .settle()
-      .then(() => this.#closeEditorEpochs(editorViewId));
-  }
-
-  #closeEditorEpochs(editorViewId: ViewId): void {
     const prefix = `${editorViewId}\u0000`;
     const sessions = new Set<HistorySession>();
     for (const [key, session] of this.#epochSessions) {

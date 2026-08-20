@@ -50,7 +50,7 @@ Dependabot checks npm and GitHub Actions weekly. Minor and patch updates may aut
 
 ## Consequences
 
-Daily builds remain reproducible through the lockfile while maintenance continuously follows current stable releases. Build and CI action versions are evidence, not permanent project constants. Phase 0 remains incomplete until host-history, worker, IndexedDB, view-attachment, touch, zoom, Android, and real-device probes pass on every supported environment.
+Daily builds remain reproducible through the lockfile while maintenance continuously follows current stable releases. Build and CI action versions are compatibility inputs, not permanent project constants. Phase 0 remains incomplete until its automated host-history, worker, IndexedDB, view-attachment, input, zoom, lifecycle, resource-boundary, and build checks pass, followed by the one concise Phase 0 sanity scenario defined by the roadmap.
 
 ## References
 

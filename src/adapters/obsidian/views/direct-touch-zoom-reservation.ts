@@ -31,17 +31,21 @@ export class DirectTouchZoomReservation implements Disposable {
         event,
       );
     });
+    if (this.#recognizer.state === "blocked") {
+      this.#yieldToHost();
+      return;
+    }
     if (this.#recognizer.state !== "tracking-two") return;
     if (event.defaultPrevented || !event.cancelable) {
       this.#yieldToHost();
       return;
     }
-    event.preventDefault();
     if (!this.options.reserveMoveStream()) {
       this.#yieldToHost();
       return;
     }
     this.#reserved = true;
+    event.preventDefault();
   }
 
   public touchMove(event: TouchEvent): void {
@@ -72,10 +76,7 @@ export class DirectTouchZoomReservation implements Disposable {
     this.#visitChangedTouches(event, (identifier) => {
       this.#publish(this.#recognizer.pointerUp(identifier), event);
     });
-    if (
-      this.#recognizer.state !== "tracking-two" &&
-      this.#recognizer.state !== "claimed"
-    ) {
+    if (this.#recognizer.state !== "tracking-two") {
       this.#releaseReservation();
     }
   }

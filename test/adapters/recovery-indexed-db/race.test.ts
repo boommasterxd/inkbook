@@ -1,23 +1,18 @@
 import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 
-import {
-  expectReady,
-  loadAndRelease,
-  NOTE,
-  preparedRecord,
-  probeRecovery,
-} from "./support";
+import { probeIndexedDbRecovery } from "../../../src/adapters/recovery-indexed-db";
+import { expectReady, NOTE, preparedRecord } from "./support";
 
 describe("IndexedDB recovery concurrency", () => {
   it("serializes competing prepare writes and detects the losing session", async () => {
     const factory = new IDBFactory();
     const databaseName = "concurrent-prepare";
     const first = expectReady(
-      await probeRecovery({ indexedDb: factory, databaseName }),
+      await probeIndexedDbRecovery({ indexedDb: factory, databaseName }),
     );
     const second = expectReady(
-      await probeRecovery({ indexedDb: factory, databaseName }),
+      await probeIndexedDbRecovery({ indexedDb: factory, databaseName }),
     );
 
     const outcomes = await Promise.all([
@@ -29,7 +24,7 @@ describe("IndexedDB recovery concurrency", () => {
         .map((outcome) => outcome.kind)
         .sort((left, right) => left.localeCompare(right)),
     ).toEqual(["concurrent-change", "written"]);
-    const snapshot = await loadAndRelease(first, NOTE);
+    const snapshot = await first.loadNote(NOTE);
     expect(snapshot).toMatchObject({ kind: "loaded" });
     if (snapshot.kind !== "loaded") {
       throw new Error("Expected one durable concurrent winner");
@@ -40,7 +35,7 @@ describe("IndexedDB recovery concurrency", () => {
 
   it("enforces a durable monotonic session order even after cleanup", async () => {
     const store = expectReady(
-      await probeRecovery({
+      await probeIndexedDbRecovery({
         indexedDb: new IDBFactory(),
         databaseName: "session-order",
       }),
@@ -64,10 +59,10 @@ describe("IndexedDB recovery compare-and-swap", () => {
     const factory = new IDBFactory();
     const databaseName = "concurrent-record";
     const first = expectReady(
-      await probeRecovery({ indexedDb: factory, databaseName }),
+      await probeIndexedDbRecovery({ indexedDb: factory, databaseName }),
     );
     const second = expectReady(
-      await probeRecovery({ indexedDb: factory, databaseName }),
+      await probeIndexedDbRecovery({ indexedDb: factory, databaseName }),
     );
     await first.prepareForward(preparedRecord());
     const base = {
@@ -105,7 +100,7 @@ describe("IndexedDB recovery compare-and-swap", () => {
 
   it("treats exact prepare and acknowledgement retries as idempotent", async () => {
     const store = expectReady(
-      await probeRecovery({
+      await probeIndexedDbRecovery({
         indexedDb: new IDBFactory(),
         databaseName: "idempotent-retry",
       }),

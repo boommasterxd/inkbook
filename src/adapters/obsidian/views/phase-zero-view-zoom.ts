@@ -1,9 +1,13 @@
 import type { ScreenPoint } from "../../../input/phase-zero";
-import { normalizePhaseZeroWheelDelta } from "./phase-zero-view-host-owners";
 
 const MIN_ZOOM_PERCENT = 50;
 const MAX_ZOOM_PERCENT = 400;
 const DEFAULT_ZOOM_PERCENT = 100;
+const WHEEL_DELTA_LINE = 1;
+const WHEEL_DELTA_PAGE = 2;
+const WHEEL_LINE_PIXELS = 16;
+const WHEEL_PAGE_FALLBACK_PIXELS = 800;
+const MAX_WHEEL_DELTA_PIXELS = 120;
 const WHEEL_ZOOM_SENSITIVITY = 0.01;
 const TOUCH_ZOOM_EXPONENT = 2;
 
@@ -31,7 +35,7 @@ export class PhaseZeroViewZoom {
 
   public wheel(event: WheelEvent): void {
     if (!event.ctrlKey || event.defaultPrevented) return;
-    const deltaPixels = normalizePhaseZeroWheelDelta(
+    const deltaPixels = normalizeWheelDelta(
       event.deltaY,
       event.deltaMode,
       this.container.clientHeight,
@@ -74,4 +78,22 @@ export class PhaseZeroViewZoom {
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+function normalizeWheelDelta(
+  deltaY: number,
+  deltaMode: number,
+  containerHeight: number,
+): number | undefined {
+  if (!Number.isFinite(deltaY)) return undefined;
+  const pagePixels =
+    containerHeight > 0 ? containerHeight : WHEEL_PAGE_FALLBACK_PIXELS;
+  let multiplier = 1;
+  if (deltaMode === WHEEL_DELTA_LINE) multiplier = WHEEL_LINE_PIXELS;
+  else if (deltaMode === WHEEL_DELTA_PAGE) multiplier = pagePixels;
+  return clamp(
+    deltaY * multiplier,
+    -MAX_WHEEL_DELTA_PIXELS,
+    MAX_WHEEL_DELTA_PIXELS,
+  );
 }

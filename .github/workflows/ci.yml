@@ -34,5 +34,5 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run per-commit quality and deterministic artifact lane
+      - name: Run per-commit quality lane
         run: npm run ci

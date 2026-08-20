@@ -4,14 +4,13 @@ import {
   type MarkdownView,
 } from "obsidian";
 
-import type { ResourceCoordinatorV1 } from "../../../application/resource-coordinator";
-
 import {
   decideInitialPointerOwnership,
   normalizePointerKind,
   OutsideTapSelectionRecognizer,
   SecondaryButtonRouter,
   TwoPointerZoomRecognizer,
+  type InputHit,
   type SecondaryButtonResult,
   type TwoPointerZoomResult,
 } from "../../../input/phase-zero";
@@ -24,27 +23,15 @@ import {
   ReadingSectionCoordinator,
   type ReadingSectionReport,
 } from "./reading-section-coordinator";
-import { PhaseZeroContextMenuController } from "./phase-zero-context-menu";
-import {
-  applyClaim,
-  createPhaseZeroOverlay,
-  isHtmlElement,
-  PhaseZeroListenerOwner,
-  PhaseZeroReadingChild,
-  readHit,
-  readingReservationKey,
-  readSectionIdentity,
-  runDisposalSteps,
-  safelyDispose,
-  safelyRelease,
-} from "./phase-zero-view-host-owners";
-import {
-  PhaseZeroViewOwnership,
-  type ReadingGenerationReservation,
-} from "./phase-zero-view-ownership";
-import { PhaseZeroViewZoom } from "./phase-zero-view-zoom";
 import { DirectTouchZoomReservation } from "./direct-touch-zoom-reservation";
+import { PhaseZeroContextMenuController } from "./phase-zero-context-menu";
+import { PhaseZeroViewZoom } from "./phase-zero-view-zoom";
 
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+const ELEMENT_NODE = 1;
+const INITIAL_MARKER_X = 48;
+const INITIAL_MARKER_Y = 48;
+const MARKER_RADIUS = 18;
 const MAX_RETAINED_ANNOTATIONS = 128;
 const MAX_READING_SECTION_GENERATIONS = 256;
 const GESTURE_SURFACE_CLASS = "inkbook-phase-zero-gesture-surface";
@@ -53,28 +40,15 @@ export class PhaseZeroViewRegistry implements ViewResourceFactory, Disposable {
   readonly #bindings = new Map<string, Set<PhaseZeroViewBinding>>();
   readonly #annotations = new Map<string, string | null>();
   #disposed = false;
-  #nextBindingId = 1;
-
-  public constructor(private readonly resources: ResourceCoordinatorV1) {}
 
   public bind(context: ViewResourceContext): Disposable {
     if (this.#disposed) throw new Error("View registry is disposed.");
-    const ownerId = `phase-zero-view:${String(this.#nextBindingId)}`;
-    this.#nextBindingId += 1;
-    const ownership = PhaseZeroViewOwnership.reserve(this.resources, ownerId);
-    if (ownership === undefined) return SUSPENDED_VIEW_BINDING;
     const reference: { current?: PhaseZeroViewBinding } = {};
-    let binding: PhaseZeroViewBinding;
-    try {
-      binding = new PhaseZeroViewBinding(context, ownership, () => {
-        if (reference.current !== undefined) {
-          this.#remove(context.fileIdentity, reference.current);
-        }
-      });
-    } catch (error: unknown) {
-      ownership.dispose();
-      throw error;
-    }
+    const binding = new PhaseZeroViewBinding(context, () => {
+      if (reference.current !== undefined) {
+        this.#remove(context.fileIdentity, reference.current);
+      }
+    });
     reference.current = binding;
     const bindings = this.#bindings.get(context.fileIdentity) ?? new Set();
     bindings.add(binding);
@@ -85,7 +59,6 @@ export class PhaseZeroViewRegistry implements ViewResourceFactory, Disposable {
   }
 
   public render(fileIdentity: string, annotation: string | null): void {
-    if (this.#disposed) return;
     this.#retainAnnotation(fileIdentity, annotation);
     for (const binding of this.#bindings.get(fileIdentity) ?? []) {
       binding.render(annotation);
@@ -108,7 +81,7 @@ export class PhaseZeroViewRegistry implements ViewResourceFactory, Disposable {
     if (this.#disposed) return;
     this.#disposed = true;
     for (const bindings of this.#bindings.values()) {
-      for (const binding of [...bindings]) safelyDispose(binding);
+      for (const binding of [...bindings]) binding.dispose();
     }
     this.#bindings.clear();
     this.#annotations.clear();
@@ -129,110 +102,82 @@ export class PhaseZeroViewRegistry implements ViewResourceFactory, Disposable {
   }
 }
 
-const SUSPENDED_VIEW_BINDING: Disposable = Object.freeze({
-  dispose: (): void => undefined,
-});
-
 class PhaseZeroViewBinding implements Disposable {
   readonly #container: HTMLElement;
   readonly #root: HTMLDivElement;
   readonly #svg: SVGSVGElement;
   readonly #marker: SVGCircleElement;
-  readonly #listeners: PhaseZeroListenerOwner;
-  readonly #ownership: PhaseZeroViewOwnership;
-  readonly #viewZoom: PhaseZeroViewZoom;
   readonly #pointerZoom = new TwoPointerZoomRecognizer();
   readonly #directTouchZoom: DirectTouchZoomReservation;
+  readonly #viewZoom: PhaseZeroViewZoom;
   readonly #secondary = new SecondaryButtonRouter();
   readonly #selectionDismiss = new OutsideTapSelectionRecognizer();
   readonly #contextMenus: PhaseZeroContextMenuController;
   readonly #onDispose: () => void;
   readonly #document: object;
-  readonly #window: Window & typeof globalThis;
   readonly #reading: ReadingSectionCoordinator | undefined;
   readonly #sectionGenerations = new Map<string, number>();
-  readonly #readingReservations = new Map<
-    string,
-    ReadingGenerationReservation
-  >();
   #disposed = false;
+  #touchMoveListening = false;
 
-  public constructor(
-    context: ViewResourceContext,
-    ownership: PhaseZeroViewOwnership,
-    onDispose: () => void,
-  ) {
+  public constructor(context: ViewResourceContext, onDispose: () => void) {
     this.#onDispose = onDispose;
-    this.#ownership = ownership;
     this.#document = context.document;
-    this.#window = context.window as Window & typeof globalThis;
     const view = context.viewIdentity as MarkdownView;
     this.#container = view.containerEl;
+    this.#container.classList.add(GESTURE_SURFACE_CLASS);
     const document = context.document as Document;
-    const overlay = createPhaseZeroOverlay(document, context.surface);
-    this.#root = overlay.root;
-    this.#svg = overlay.svg;
-    this.#marker = overlay.marker;
-    this.#viewZoom = new PhaseZeroViewZoom(this.#container, this.#svg);
+    this.#root = document.createElement("div");
+    this.#root.className = "inkbook-phase-zero-overlay";
+    this.#root.dataset.inkbookSurface = context.surface;
+    this.#svg = document.createElementNS(SVG_NAMESPACE, "svg");
+    this.#svg.setAttribute("aria-label", "Inkbook Phase 0 annotation layer");
+    this.#svg.setAttribute("role", "img");
+    this.#svg.style.transformOrigin = `${String(INITIAL_MARKER_X)}px ${String(INITIAL_MARKER_Y)}px`;
+    this.#marker = document.createElementNS(SVG_NAMESPACE, "circle");
+    this.#marker.classList.add("inkbook-phase-zero-marker");
+    this.#marker.dataset.inkbookElementId = "phase-zero-annotation";
+    this.#marker.setAttribute("cx", String(INITIAL_MARKER_X));
+    this.#marker.setAttribute("cy", String(INITIAL_MARKER_Y));
+    this.#marker.setAttribute("r", String(MARKER_RADIUS));
+    this.#marker.setAttribute("tabindex", "0");
+    this.#marker.setAttribute("aria-label", "Phase 0 annotation probe");
     this.#contextMenus = new PhaseZeroContextMenuController(
-      this.#window,
+      context.window as Window,
       document,
       this.#marker,
-      ownership,
     );
+    this.#viewZoom = new PhaseZeroViewZoom(this.#container, this.#svg);
     this.#directTouchZoom = new DirectTouchZoomReservation({
       gestureClaimed: (): void => {
         this.#contextMenus.hostClaimedGesture();
         this.#selectionDismiss.hostClaimedGesture();
       },
-      releaseMoveStream: (): void => this.#listeners.releaseTouchMove(),
-      reserveMoveStream: (): boolean => this.#listeners.reserveTouchMove(),
+      releaseMoveStream: (): void => this.#releaseTouchMove(),
+      reserveMoveStream: (): boolean => this.#reserveTouchMove(),
       scale: (scaleDelta): void => this.#viewZoom.touch(scaleDelta),
     });
+    this.#svg.append(this.#marker);
+    this.#root.append(this.#svg);
+    this.#container.append(this.#root);
     this.#reading =
       context.surface === "reading"
         ? new ReadingSectionCoordinator(
             { dispose: (): void => undefined },
             {
-              create: (report, sectionContext): Disposable => {
+              create: (_report, sectionContext): Disposable => {
                 const container = sectionContext.container;
                 if (!isHtmlElement(container)) {
                   throw new TypeError(
                     "Reading section container is unavailable.",
                   );
                 }
-                return this.#createReadingChild(report, container);
+                return new PhaseZeroReadingChild(container);
               },
             },
           )
         : undefined;
-    try {
-      this.#container.classList.add(GESTURE_SURFACE_CLASS);
-      this.#container.append(this.#root);
-      this.#listeners = new PhaseZeroListenerOwner(this.#container, {
-        contextmenu: this.#onContextMenu,
-        keydown: this.#onKeyDown,
-        lostpointercapture: this.#onPointerCancel,
-        pointercancel: this.#onPointerCancel,
-        pointerdown: this.#onPointerDown,
-        pointermove: this.#onPointerMove,
-        pointerup: this.#onPointerUp,
-        touchcancel: (event): void => this.#directTouchZoom.touchCancel(event),
-        touchend: (event): void => this.#directTouchZoom.touchEnd(event),
-        touchmove: (event): void => this.#directTouchZoom.touchMove(event),
-        touchstart: (event): void => this.#directTouchZoom.touchStart(event),
-        wheel: this.#onWheel,
-      });
-    } catch (error: unknown) {
-      runDisposalSteps([
-        (): void => this.#directTouchZoom.dispose(),
-        (): void => this.#contextMenus.dispose(),
-        (): void => this.#reading?.dispose(),
-        (): void => this.#root.remove(),
-        (): void => this.#container.classList.remove(GESTURE_SURFACE_CLASS),
-      ]);
-      throw error;
-    }
+    this.#listen();
   }
 
   public render(annotation: string | null): void {
@@ -246,13 +191,7 @@ class PhaseZeroViewBinding implements Disposable {
     context: MarkdownPostProcessorContext,
     sectionIdentity: string,
   ): void {
-    if (
-      this.#reading === undefined ||
-      element.doc !== this.#document ||
-      !this.#container.contains(element)
-    ) {
-      return;
-    }
+    if (this.#reading === undefined || element.doc !== this.#document) return;
     if (
       !this.#sectionGenerations.has(sectionIdentity) &&
       this.#sectionGenerations.size >= MAX_READING_SECTION_GENERATIONS
@@ -260,6 +199,7 @@ class PhaseZeroViewBinding implements Disposable {
       return;
     }
     const generation = (this.#sectionGenerations.get(sectionIdentity) ?? 0) + 1;
+    this.#sectionGenerations.set(sectionIdentity, generation);
     const report: ReadingSectionReport = {
       documentIdentity: context.docId,
       generation,
@@ -268,82 +208,29 @@ class PhaseZeroViewBinding implements Disposable {
       sourcePath: context.sourcePath,
       trustworthySourceEvidence: true,
     };
-    const reservation = this.#ownership.prepareReadingGeneration(
-      sectionIdentity,
-      generation,
-    );
-    if (reservation === undefined) return;
-    const key = readingReservationKey(report);
-    this.#readingReservations.set(key, reservation);
-    try {
-      const result = this.#reading.report(report, {
-        addChild: (child): void => {
-          if (child instanceof MarkdownRenderChild) context.addChild(child);
-          else throw new TypeError("Invalid reading section child.");
-        },
-        commitOwnership: (): boolean => reservation.commit(),
-        container: element,
-      });
-      if (result !== "accepted") {
-        reservation.cancel();
-        return;
-      }
-      this.#sectionGenerations.set(sectionIdentity, generation);
-    } catch (error: unknown) {
-      reservation.cancel();
-      throw error;
-    } finally {
-      this.#readingReservations.delete(key);
-    }
+    this.#reading.report(report, {
+      addChild: (child): void => {
+        if (child instanceof MarkdownRenderChild) context.addChild(child);
+        else throw new TypeError("Invalid reading section child.");
+      },
+      container: element,
+    });
   }
 
   public dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
-    runDisposalSteps([
-      (): void => this.#directTouchZoom.dispose(),
-      (): void => this.#listeners.dispose(),
-      (): void => this.#applyZoomResult(this.#pointerZoom.dispose(), undefined),
-      (): void =>
-        this.#applySecondaryResult(this.#secondary.dispose(), undefined),
-      (): void => {
-        this.#selectionDismiss.dispose();
-      },
-      (): void => this.#contextMenus.dispose(),
-      (): void => this.#reading?.dispose(),
-      (): void => this.#sectionGenerations.clear(),
-      (): void => this.#readingReservations.clear(),
-      (): void =>
-        this.#ownership.releaseAllPointers((pointerId) =>
-          safelyRelease(this.#container, pointerId),
-        ),
-      (): void => this.#root.remove(),
-      (): void => this.#container.classList.remove(GESTURE_SURFACE_CLASS),
-      (): void => this.#ownership.dispose(),
-      this.#onDispose,
-    ]);
-  }
-
-  #createReadingChild(
-    report: ReadingSectionReport,
-    container: HTMLElement,
-  ): Disposable {
-    const reservation = this.#readingReservations.get(
-      readingReservationKey(report),
-    );
-    if (reservation === undefined) {
-      throw new Error("Reading section admission is unavailable.");
-    }
-    return new PhaseZeroReadingChild(container, this.#window, () => {
-      reservation.release();
-      this.#reading?.forget(report);
-      if (
-        this.#sectionGenerations.get(report.sectionIdentity) ===
-        report.generation
-      ) {
-        this.#sectionGenerations.delete(report.sectionIdentity);
-      }
-    });
+    this.#directTouchZoom.dispose();
+    this.#unlisten();
+    this.#applyZoomResult(this.#pointerZoom.dispose(), undefined);
+    this.#applySecondaryResult(this.#secondary.dispose(), undefined);
+    this.#selectionDismiss.dispose();
+    this.#contextMenus.dispose();
+    this.#reading?.dispose();
+    this.#sectionGenerations.clear();
+    this.#root.remove();
+    this.#container.classList.remove(GESTURE_SURFACE_CLASS);
+    this.#onDispose();
   }
 
   readonly #onPointerDown = (event: PointerEvent): void => {
@@ -425,9 +312,6 @@ class PhaseZeroViewBinding implements Disposable {
       this.#secondary.pointerCancel(event.pointerId),
       event,
     );
-    this.#ownership.releasePointer(event.pointerId, (pointerId) =>
-      safelyRelease(this.#container, pointerId),
-    );
   };
 
   readonly #onContextMenu = (event: MouseEvent): void => {
@@ -441,8 +325,25 @@ class PhaseZeroViewBinding implements Disposable {
   readonly #onKeyDown = (event: KeyboardEvent): void => {
     this.#contextMenus.keyDown(event);
   };
+
   readonly #onWheel = (event: WheelEvent): void => {
     this.#viewZoom.wheel(event);
+  };
+
+  readonly #onTouchStart = (event: TouchEvent): void => {
+    this.#directTouchZoom.touchStart(event);
+  };
+
+  readonly #onTouchMove = (event: TouchEvent): void => {
+    this.#directTouchZoom.touchMove(event);
+  };
+
+  readonly #onTouchEnd = (event: TouchEvent): void => {
+    this.#directTouchZoom.touchEnd(event);
+  };
+
+  readonly #onTouchCancel = (event: TouchEvent): void => {
+    this.#directTouchZoom.touchCancel(event);
   };
 
   #applyZoomResult(
@@ -455,16 +356,10 @@ class PhaseZeroViewBinding implements Disposable {
       this.#selectionDismiss.hostClaimedGesture();
     }
     for (const pointerId of result.capturePointerIds) {
-      this.#ownership.capturePointer(
-        pointerId,
-        (id) => this.#container.setPointerCapture(id),
-        (id) => safelyRelease(this.#container, id),
-      );
+      safelyCapture(this.#container, pointerId);
     }
     for (const pointerId of result.releasePointerIds) {
-      this.#ownership.releasePointer(pointerId, (id) =>
-        safelyRelease(this.#container, id),
-      );
+      safelyRelease(this.#container, pointerId);
     }
     if (result.zoom === undefined) return;
     this.#viewZoom.touch(result.zoom.scaleDelta);
@@ -476,19 +371,147 @@ class PhaseZeroViewBinding implements Disposable {
   ): void {
     applyClaim(event, result.preventDefault, result.stopPropagation);
     if (result.capturePointerId !== undefined) {
-      this.#ownership.capturePointer(
-        result.capturePointerId,
-        (id) => this.#container.setPointerCapture(id),
-        (id) => safelyRelease(this.#container, id),
-      );
+      safelyCapture(this.#container, result.capturePointerId);
     }
     if (result.releasePointerId !== undefined) {
-      this.#ownership.releasePointer(result.releasePointerId, (id) =>
-        safelyRelease(this.#container, id),
-      );
+      safelyRelease(this.#container, result.releasePointerId);
     }
     if (result.panDeltaScreen !== undefined) {
       this.#viewZoom.pan(result.panDeltaScreen);
     }
+  }
+
+  #listen(): void {
+    this.#container.addEventListener("pointerdown", this.#onPointerDown);
+    this.#container.addEventListener("pointermove", this.#onPointerMove);
+    this.#container.addEventListener("pointerup", this.#onPointerUp);
+    this.#container.addEventListener("pointercancel", this.#onPointerCancel);
+    this.#container.addEventListener(
+      "lostpointercapture",
+      this.#onPointerCancel,
+    );
+    this.#container.addEventListener("contextmenu", this.#onContextMenu);
+    this.#container.addEventListener("keydown", this.#onKeyDown);
+    this.#container.addEventListener("touchstart", this.#onTouchStart, {
+      passive: false,
+    });
+    this.#container.addEventListener("touchend", this.#onTouchEnd);
+    this.#container.addEventListener("touchcancel", this.#onTouchCancel);
+    this.#container.addEventListener("wheel", this.#onWheel, {
+      passive: false,
+    });
+  }
+
+  #unlisten(): void {
+    this.#container.removeEventListener("pointerdown", this.#onPointerDown);
+    this.#container.removeEventListener("pointermove", this.#onPointerMove);
+    this.#container.removeEventListener("pointerup", this.#onPointerUp);
+    this.#container.removeEventListener("pointercancel", this.#onPointerCancel);
+    this.#container.removeEventListener(
+      "lostpointercapture",
+      this.#onPointerCancel,
+    );
+    this.#container.removeEventListener("contextmenu", this.#onContextMenu);
+    this.#container.removeEventListener("keydown", this.#onKeyDown);
+    this.#container.removeEventListener("touchstart", this.#onTouchStart);
+    this.#container.removeEventListener("touchend", this.#onTouchEnd);
+    this.#container.removeEventListener("touchcancel", this.#onTouchCancel);
+    this.#container.removeEventListener("wheel", this.#onWheel);
+    this.#releaseTouchMove();
+  }
+
+  #reserveTouchMove(): boolean {
+    if (this.#touchMoveListening) return true;
+    try {
+      this.#container.addEventListener("touchmove", this.#onTouchMove, {
+        passive: false,
+      });
+      this.#touchMoveListening = true;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  #releaseTouchMove(): void {
+    if (!this.#touchMoveListening) return;
+    this.#touchMoveListening = false;
+    this.#container.removeEventListener("touchmove", this.#onTouchMove);
+  }
+}
+
+class PhaseZeroReadingChild extends MarkdownRenderChild implements Disposable {
+  #disposed = false;
+
+  public dispose(): void {
+    if (this.#disposed) return;
+    this.#disposed = true;
+    this.unload();
+  }
+}
+
+function readHit(target: EventTarget | null): InputHit {
+  if (typeof target === "object" && target !== null) {
+    const candidate = target as {
+      closest?: (selector: string) => Element | null;
+    };
+    const element = candidate.closest?.("[data-inkbook-element-id]") as
+      HTMLElement | SVGElement | null | undefined;
+    const elementId = element?.dataset.inkbookElementId;
+    if (elementId !== undefined && elementId.length > 0) {
+      return { elementId, kind: "plugin-element" };
+    }
+  }
+  return { kind: "native-markdown" };
+}
+
+function readSectionIdentity(
+  section: { readonly lineStart: number; readonly lineEnd: number } | null,
+): string | undefined {
+  if (
+    section === null ||
+    !Number.isSafeInteger(section.lineStart) ||
+    !Number.isSafeInteger(section.lineEnd) ||
+    section.lineStart < 0 ||
+    section.lineEnd < section.lineStart
+  ) {
+    return undefined;
+  }
+  return `${String(section.lineStart)}:${String(section.lineEnd)}`;
+}
+
+function isHtmlElement(value: unknown): value is HTMLElement {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "nodeType" in value &&
+    value.nodeType === ELEMENT_NODE
+  );
+}
+
+function applyClaim(
+  event: Event | undefined,
+  preventDefault: boolean,
+  stopPropagation: boolean,
+): void {
+  if (preventDefault) event?.preventDefault();
+  if (stopPropagation) event?.stopPropagation();
+}
+
+function safelyCapture(element: HTMLElement, pointerId: number): void {
+  try {
+    element.setPointerCapture(pointerId);
+  } catch {
+    // A host may release the pointer before the recognizer claims it.
+  }
+}
+
+function safelyRelease(element: HTMLElement, pointerId: number): void {
+  try {
+    if (element.hasPointerCapture(pointerId)) {
+      element.releasePointerCapture(pointerId);
+    }
+  } catch {
+    // Disposal remains idempotent if the host already released capture.
   }
 }

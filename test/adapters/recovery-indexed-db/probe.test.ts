@@ -1,20 +1,18 @@
 import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 
-import { DATABASE_SCHEMA_VERSION } from "../../../src/adapters/recovery-indexed-db";
 import {
-  expectReady,
-  openRawDatabase,
-  probeRecovery,
-  requestValue,
-} from "./support";
+  DATABASE_SCHEMA_VERSION,
+  probeIndexedDbRecovery,
+} from "../../../src/adapters/recovery-indexed-db";
+import { expectReady, openRawDatabase, requestValue } from "./support";
 
 describe("IndexedDB recovery conformance probe", () => {
   it("creates the versioned schema and removes its transaction probe exactly", async () => {
     const factory = new IDBFactory();
     const name = "schema-creation";
     const store = expectReady(
-      await probeRecovery({ indexedDb: factory, databaseName: name }),
+      await probeIndexedDbRecovery({ indexedDb: factory, databaseName: name }),
     );
     await store.dispose();
 
@@ -49,7 +47,7 @@ describe("IndexedDB recovery conformance probe", () => {
     legacy.close();
 
     const store = expectReady(
-      await probeRecovery({ indexedDb: factory, databaseName: name }),
+      await probeIndexedDbRecovery({ indexedDb: factory, databaseName: name }),
     );
     await store.dispose();
     const upgraded = await openRawDatabase(
@@ -62,7 +60,9 @@ describe("IndexedDB recovery conformance probe", () => {
   });
 
   it("returns truthful read-only results for unavailable and future schemas", async () => {
-    await expect(probeRecovery({ indexedDb: undefined })).resolves.toEqual({
+    await expect(
+      probeIndexedDbRecovery({ indexedDb: undefined }),
+    ).resolves.toEqual({
       kind: "read-only",
       reason: "backend-unavailable",
     });
@@ -75,7 +75,7 @@ describe("IndexedDB recovery conformance probe", () => {
     );
     future.close();
     await expect(
-      probeRecovery({
+      probeIndexedDbRecovery({
         indexedDb: factory,
         databaseName: "future-schema",
       }),

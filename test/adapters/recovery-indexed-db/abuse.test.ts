@@ -1,18 +1,13 @@
 import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 
-import {
-  expectReady,
-  loadAndRelease,
-  NOTE,
-  preparedRecord,
-  probeRecovery,
-} from "./support";
+import { probeIndexedDbRecovery } from "../../../src/adapters/recovery-indexed-db";
+import { expectReady, NOTE, preparedRecord } from "./support";
 
 describe("IndexedDB recovery input boundaries", () => {
   it("rejects malformed record and note identities without durable writes", async () => {
     const store = expectReady(
-      await probeRecovery({
+      await probeIndexedDbRecovery({
         indexedDb: new IDBFactory(),
         databaseName: "invalid-input",
       }),
@@ -37,7 +32,7 @@ describe("IndexedDB recovery input boundaries", () => {
       store.prepareForward(recordWithForbiddenField),
     ).resolves.toEqual({ kind: "invalid-input" });
     await expect(
-      loadAndRelease(store, { ...NOTE, vaultIdentityHint: "" }),
+      store.loadNote({ ...NOTE, vaultIdentityHint: "" }),
     ).resolves.toEqual({ kind: "invalid-input" });
     await expect(
       store.getByteUsage({ ...NOTE, markdownPath: "" }),
@@ -50,7 +45,7 @@ describe("IndexedDB recovery input boundaries", () => {
 
   it("rejects stale and malformed host transitions without replacing prepared data", async () => {
     const store = expectReady(
-      await probeRecovery({
+      await probeIndexedDbRecovery({
         indexedDb: new IDBFactory(),
         databaseName: "invalid-transition",
       }),
@@ -95,7 +90,7 @@ describe("IndexedDB recovery input boundaries", () => {
         },
       }),
     ).resolves.toEqual({ kind: "concurrent-change" });
-    await expect(loadAndRelease(store, NOTE)).resolves.toMatchObject({
+    await expect(store.loadNote(NOTE)).resolves.toMatchObject({
       kind: "loaded",
       records: [{ kind: "prepared-forward" }],
     });
@@ -117,7 +112,7 @@ describe("IndexedDB recovery global budget", () => {
       JSON.stringify(second),
     ).byteLength;
     const store = expectReady(
-      await probeRecovery({
+      await probeIndexedDbRecovery({
         indexedDb: new IDBFactory(),
         databaseName: "global-budget",
         globalByteLimit: firstBytes + secondBytes - 1,
@@ -131,7 +126,7 @@ describe("IndexedDB recovery global budget", () => {
     await expect(store.prepareForward(second)).resolves.toEqual({
       kind: "quota-exceeded",
     });
-    await expect(loadAndRelease(store, second.note)).resolves.toEqual({
+    await expect(store.loadNote(second.note)).resolves.toEqual({
       kind: "loaded",
       records: [],
     });

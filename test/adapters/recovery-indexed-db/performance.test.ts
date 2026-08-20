@@ -3,7 +3,8 @@ import { performance } from "node:perf_hooks";
 import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 
-import { expectReady, NOTE, preparedRecord, probeRecovery } from "./support";
+import { probeIndexedDbRecovery } from "../../../src/adapters/recovery-indexed-db";
+import { expectReady, NOTE, preparedRecord } from "./support";
 
 const WARMUP_SAMPLES = 5;
 const MEASURED_SAMPLES = 100;
@@ -19,7 +20,7 @@ const LAST_SAMPLE_OFFSET = -1;
 describe("PERF-10K-RECOVERY", () => {
   it("keeps prepare plus durable host transition within desktop gates", async () => {
     const store = expectReady(
-      await probeRecovery({
+      await probeIndexedDbRecovery({
         databaseName: "performance-recovery",
         indexedDb: new IDBFactory(),
       }),

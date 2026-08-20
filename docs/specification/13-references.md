@@ -79,6 +79,8 @@ The complete 47-page navigation set supplied for this review was checked page by
 
 - [CodeMirror inverted effects example](https://codemirror.net/examples/inverted-effect/), for adding non-document effects to the existing editor history.
 - [CodeMirror commands reference](https://codemirror.net/docs/ref/#commands.invertedEffects), for `invertedEffects`, `isolateHistory`, and the host history contract.
+- [CodeMirror `scrollPastEnd` reference](https://codemirror.net/docs/ref/#view.scrollPastEnd), for the stock editor-height-minus-one-line semantics, which are engine evidence rather than the configured Obsidian trailing allowance.
+- [CodeMirror `scrollPastEnd` implementation](https://raw.githubusercontent.com/codemirror/view/main/src/scrollpastend.ts), as implementation evidence for the current public extension behavior, not as a private Obsidian API contract.
 - [Migrate to declarative settings](https://docs.obsidian.md/plugins/guides/migrate-declarative-settings)
 - [Manifest reference](https://docs.obsidian.md/Reference/Manifest)
 - [Versions reference](https://docs.obsidian.md/Reference/Versions)

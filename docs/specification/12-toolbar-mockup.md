@@ -13,7 +13,7 @@ It deliberately does not reproduce an Obsidian application shell or implement pe
 - [Stylebar controls](mockup/mockup-stylebar.js)
 - [Interaction script](mockup/mockup.js)
 
-Open `mockup/index.html` directly in a modern browser. The mockup has no build step, external script, remote font, network request, or dependency.
+The mockup has no build step, external script, remote font, network request, or dependency. Direct browser opening is optional design inspection. Automated acceptance targets the implemented production toolbar and stylebar, not this documentation mockup, so the mockup MUST NOT create a separate browser suite, runner, fixture tree, or release gate.
 
 ## Demonstrated Behavior
 

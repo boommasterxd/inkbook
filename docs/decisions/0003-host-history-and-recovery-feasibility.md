@@ -26,9 +26,9 @@ These boundaries are feasible for an active, continuously loaded plugin instance
 
 ## Evidence
 
-The accepted implementation passed 124 deterministic tests across 24 test files, including a real CodeMirror A-B-C history integration test, branch and sequence rejection, recovery faults and races, worker cancellation and failure, view lifecycle and disposal, input routing, bounded-resource abuse, and the predeclared `PERF-10K-RECOVERY` benchmark. The exact Node.js 26.7.0 and npm 12.0.2 run also passed formatting, ESLint, strict TypeScript, coverage, duplication, dead-code, architecture, dependency audit, and production build gates. Line coverage remained above the required 85 percent threshold.
+The accepted implementation passes deterministic tests for real CodeMirror A-B-C history ordering, branch and sequence rejection, recovery faults and races, worker cancellation and failure, view lifecycle and disposal, input routing, resource limits, and bounded recovery performance. The Phase 0 verification entry point also runs formatting, ESLint, strict TypeScript, coverage, duplication, dead-code, architecture, dependency audit, and the production build. Line coverage remains above the required 85 percent threshold.
 
-Manual installation and host verification on the selected Obsidian desktop and Android cells remains required by `P0-E6`. This ADR does not substitute for that gate.
+Automated CI and scripted host or device probes cover every repeatable verification owned by this decision. `P0-E6` retains only one concise user-facing Phase 0 sanity scenario for newly visible host behavior. It does not replace the automated gate, and this ADR does not substitute for either result.
 
 ## Consequences
 

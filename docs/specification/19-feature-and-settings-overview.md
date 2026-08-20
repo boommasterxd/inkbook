@@ -8,14 +8,15 @@ This document is a short, non-normative product overview. The linked [specificat
 - Use Cursor for both native Markdown editing and annotation selection. Touch always selects an existing Inkbook element before a drawing tool can claim it.
 - Draw with Pen, Highlighter, Line highlighter, and whole-element Eraser.
 - Create Rectangle, Ellipse, Triangle, Diamond, Octagon, Line, Arrow, Table, and one Coordinate system tool with a 2D or 3D creation choice.
-- Select with Cursor or annotation-only Lasso, then move, resize, rotate, restyle, group, reorder, duplicate, cut, copy, paste, or delete supported elements.
+- Select with Cursor or annotation-only Lasso, then move, resize, rotate, restyle, group, reorder, duplicate, cut, copy, paste, or delete supported elements. Moving a selection near the top or bottom edge autoscrolls vertically.
 - Keep line, outline, divider, guide, axis, and cap widths constant while resizing geometry.
 - Attach either endpoint of a Line or Arrow to stable ports on supported shapes, Tables, and coordinate systems. Attached endpoints follow target movement, resize, rotation, and text reflow.
 - Preserve freely chosen rotation such as 15 degrees across deselection, save, reload, Undo, and Redo, while snapping near absolute 0, 90, 180, and 270 degrees.
 - Resize a Table as one object, drag its internal dividers without splitting it, and change its selected row and column counts from 1 through 200.
 - Resize individual coordinate-system axes along their existing directions while preserving the shared origin and inter-axis angles.
 - Infer `Text range`, `Text position`, or `Fixed` binding after creation and reproject text-bound annotations when Markdown wraps or moves.
-- Zoom Markdown, backgrounds, annotations, selection, and hit testing together from 50 through 400 percent.
+- Zoom Markdown, backgrounds, annotations, selection, and hit testing together from 50 through 400 percent, then pan every available axis through native one-finger touch scrolling or secondary-button drag.
+- Keep handwriting-only notes and annotations below the final Markdown line reachable by extending each concrete view with the same effective trailing scroll allowance as its native content.
 - Apply none, ruled, squared, or dotted note backgrounds aligned to Obsidian's measured body line height.
 - Use the same ordered Obsidian Undo and Redo history for Markdown and annotations in the owning editable pane.
 - Store annotation data in one validated `.inkbook.json` sidecar per annotated note, with a YAML locator in the Markdown note.

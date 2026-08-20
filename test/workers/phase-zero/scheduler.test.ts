@@ -1,10 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  RESOURCE_BUDGET_V1,
-  ResourceCoordinatorV1,
-} from "../../../src/application/resource-coordinator";
-import {
   PHASE_ZERO_MAX_REQUEST_BYTES,
   PHASE_ZERO_PROTOCOL_VERSION,
   PhaseZeroWorkerScheduler,
@@ -31,18 +27,6 @@ const BYTE_252 = 252;
 const BYTE_253 = 253;
 const BYTE_254 = 254;
 const BYTE_255 = 255;
-
-function testResources(): {
-  readonly resourceCoordinator: ResourceCoordinatorV1;
-  readonly resourceOwnerId: string;
-} {
-  return {
-    resourceCoordinator: new ResourceCoordinatorV1(
-      RESOURCE_BUDGET_V1.androidPhone,
-    ),
-    resourceOwnerId: "phase-zero-scheduler-test",
-  };
-}
 
 class ManualWorker extends EventTarget {
   public readonly posted: PhaseZeroWorkerRequest[] = [];
@@ -149,7 +133,6 @@ function createWorkerHarness(autoComplete = false): {
   const disposeWorker = vi.fn<() => void>(() => worker.terminate());
   const slices = new ManualSlices();
   const scheduler = new PhaseZeroWorkerScheduler({
-    ...testResources(),
     launchWorker: (): LaunchedBrowserWorker =>
       ({ worker, dispose: disposeWorker }) as unknown as LaunchedBrowserWorker,
     clock: { now: (): number => 0 },
@@ -168,7 +151,6 @@ function createFallbackHarness(
 } {
   const slices = new ManualSlices();
   const scheduler = new PhaseZeroWorkerScheduler({
-    ...testResources(),
     launchWorker: (): undefined => undefined,
     clock: { now: clock },
     slices,
@@ -302,7 +284,6 @@ describe("PhaseZeroWorkerScheduler resource limits", () => {
   it("enforces request, queue, and byte limits under abuse", () => {
     const { scheduler } = createWorkerHarness();
     const constrained = new PhaseZeroWorkerScheduler({
-      ...testResources(),
       launchWorker: (): undefined => undefined,
       clock: { now: (): number => 0 },
       slices: new ManualSlices(),

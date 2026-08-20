@@ -1,11 +1,6 @@
 import { isSchemaVersionError } from "./error-mapping";
 import { requestResult, transactionDone } from "./idb-promises";
 import {
-  admitProbeResources,
-  admitStoreListener,
-  completeProbeResources,
-} from "./resource-admission";
-import {
   ACCOUNTING_STORE,
   ATTEMPTS_STORE,
   DATABASE_SCHEMA_VERSION,
@@ -26,19 +21,13 @@ const COMMITTED_VALUE = "committed";
 const ABORTED_VALUE = "aborted";
 
 export async function probeIndexedDbRecovery(
-  options: RecoveryIndexedDbOptions,
+  options: RecoveryIndexedDbOptions = {},
 ): Promise<RecoveryIndexedDbProbeResult> {
   const factory = options.indexedDb ?? getGlobalIndexedDb();
   if (factory === undefined) {
     return readOnly("backend-unavailable");
   }
   const databaseName = options.databaseName ?? DEFAULT_DATABASE_NAME;
-  const probeOwnerId = `${databaseName}:probe`;
-  const probeResources = admitProbeResources(
-    options.resourceCoordinator,
-    probeOwnerId,
-  );
-  if (probeResources === null) return readOnly("resource-limited");
   let database: IDBDatabase | undefined;
   try {
     database = await openDatabase(factory, databaseName);
@@ -56,21 +45,9 @@ export async function probeIndexedDbRecovery(
       database.close();
       return readOnly("non-transactional");
     }
-    const listenerHandle = admitStoreListener(
-      options.resourceCoordinator,
-      `${databaseName}:versionchange-listener`,
-    );
-    if (listenerHandle === null) {
-      database.close();
-      return readOnly("resource-limited");
-    }
     return {
       kind: "ready",
-      store: new IndexedDbRecoveryStore(database, {
-        ...options,
-        databaseName,
-        listenerHandle,
-      }),
+      store: new IndexedDbRecoveryStore(database, options),
     };
   } catch (error) {
     database?.close();
@@ -79,8 +56,6 @@ export async function probeIndexedDbRecovery(
         ? "schema-incompatible"
         : "backend-unavailable",
     );
-  } finally {
-    completeProbeResources(probeResources, probeOwnerId);
   }
 }
 

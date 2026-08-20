@@ -130,7 +130,7 @@ An accepted change updates every mounted note view immediately and creates no Ma
 | Haptic feedback      | Boolean                                                 | `true`    | Device-local  | Provides short feedback for tool or selection changes on capable devices. Unsupported devices ignore it.                         |
 | Pen pressure         | `pointer` or `constant`, edited as an On or Off control | `pointer` | Plugin-global | Reads and replaces `penDefaults.pressure`, the sole persisted authority. The active value remains available in the Pen stylebar. |
 
-There is no Finger Drawing setting. Touch on a plugin element always selects it. One finger on empty note space remains available for native Obsidian scrolling; a recognized two-finger pinch controls plugin whole-note zoom. There is no Pen in Text setting because Cursor is the native Obsidian text mode.
+There is no Finger Drawing setting. Touch on a plugin element always selects or manipulates it. One finger on native Markdown or empty pass-through note space remains available for native Obsidian scrolling and pans every available horizontal or vertical range at whole-note zoom; a recognized two-finger pinch controls plugin whole-note zoom. Selection-move edge autoscroll uses the fixed interaction profile and is not a setting. There is no Pen in Text setting because Cursor is the native Obsidian text mode.
 
 ## 4. Tool Defaults
 

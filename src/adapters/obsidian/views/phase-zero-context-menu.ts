@@ -7,7 +7,6 @@ import {
   type TouchLongPressResult,
 } from "../../../input/phase-zero";
 import type { Disposable } from "./contracts";
-import type { PhaseZeroViewOwnership } from "./phase-zero-view-ownership";
 
 export class PhaseZeroContextMenuController implements Disposable {
   readonly #document: Document;
@@ -16,13 +15,11 @@ export class PhaseZeroContextMenuController implements Disposable {
   readonly #window: Window;
   #disposed = false;
   #timer: number | undefined;
-  #timerLease: Disposable | undefined;
 
   public constructor(
     window: Window,
     document: Document,
     marker: SVGCircleElement,
-    private readonly ownership: PhaseZeroViewOwnership,
   ) {
     this.#window = window;
     this.#document = document;
@@ -102,39 +99,18 @@ export class PhaseZeroContextMenuController implements Disposable {
 
   #schedule(delayMs: number): void {
     this.#clearTimer();
-    const lease = this.ownership.reserveTimer();
-    if (lease === undefined) {
-      this.#apply(this.#recognizer.hostClaimedGesture(), undefined);
-      return;
-    }
-    this.#timerLease = lease;
-    try {
-      this.#timer = this.#window.setTimeout(() => {
-        this.#timer = undefined;
-        this.#releaseTimerLease();
-        if (!this.#disposed) {
-          this.#apply(this.#recognizer.timerElapsed(), undefined);
-        }
-      }, delayMs);
-    } catch {
-      this.#releaseTimerLease();
-      this.#apply(this.#recognizer.hostClaimedGesture(), undefined);
-    }
+    this.#timer = this.#window.setTimeout(() => {
+      this.#timer = undefined;
+      if (!this.#disposed) {
+        this.#apply(this.#recognizer.timerElapsed(), undefined);
+      }
+    }, delayMs);
   }
 
   #clearTimer(): void {
-    const timer = this.#timer;
+    if (this.#timer === undefined) return;
+    this.#window.clearTimeout(this.#timer);
     this.#timer = undefined;
-    try {
-      if (timer !== undefined) this.#window.clearTimeout(timer);
-    } finally {
-      this.#releaseTimerLease();
-    }
-  }
-
-  #releaseTimerLease(): void {
-    this.#timerLease?.dispose();
-    this.#timerLease = undefined;
   }
 
   #showAtPosition(position: Readonly<{ x: number; y: number }>): void {

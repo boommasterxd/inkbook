@@ -15,7 +15,6 @@ export interface ReadingSectionReport {
 export interface ReadingSectionContext {
   readonly container?: object;
   addChild(child: Disposable): void;
-  commitOwnership?(): boolean;
 }
 
 export interface ReadingSectionResourceFactory {
@@ -31,7 +30,6 @@ export type ReadingSectionResult =
   | "disposed"
   | "duplicate"
   | "invalid"
-  | "ownership-rejected"
   | "stale"
   | "untrusted";
 
@@ -119,27 +117,9 @@ export class ReadingSectionCoordinator implements Disposable {
       child.dispose();
       throw error;
     }
-    if (context.commitOwnership?.() === false) {
-      child.dispose();
-      return "ownership-rejected";
-    }
     this.records.set(key, { child, generation: report.generation });
     current?.child.dispose();
     return "accepted";
-  }
-
-  public forget(report: ReadingSectionReport): void {
-    const key = createSectionKey(report);
-    const current = this.records.get(key);
-    if (current?.generation === report.generation) this.records.delete(key);
-  }
-
-  public remove(report: ReadingSectionReport): void {
-    const key = createSectionKey(report);
-    const current = this.records.get(key);
-    if (current?.generation !== report.generation) return;
-    this.records.delete(key);
-    current.child.dispose();
   }
 }
 

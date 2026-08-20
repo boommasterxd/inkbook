@@ -19,13 +19,12 @@ export class ViewAttachmentOwner implements Disposable {
     private snapshot: MarkdownViewSnapshot,
     private readonly resources: ViewResourceFactory,
     private readonly failures: AttachmentFailureReporter,
-    binding: Disposable,
-    migrationListener: Disposable,
+    initial: InitialBinding,
   ) {
-    this.binding = binding;
-    this.migrationListener = migrationListener;
-    this.document = snapshot.element.doc;
-    this.window = snapshot.element.win;
+    this.binding = initial.binding;
+    this.migrationListener = initial.migrationListener;
+    this.document = initial.document;
+    this.window = initial.window;
   }
 
   public static create(
@@ -34,9 +33,11 @@ export class ViewAttachmentOwner implements Disposable {
     resources: ViewResourceFactory,
     failures: AttachmentFailureReporter,
   ): ViewAttachmentOwner | undefined {
+    let context: ViewResourceContext;
     let binding: Disposable;
     try {
-      binding = resources.bind(createContext(leaf, snapshot));
+      context = createContext(leaf, snapshot);
+      binding = resources.bind(context);
     } catch (error: unknown) {
       failures.report("bind-failed", error);
       return undefined;
@@ -47,14 +48,14 @@ export class ViewAttachmentOwner implements Disposable {
       const listener = snapshot.element.onWindowMigrated(() => {
         owner?.rebindAfterMigration(failures);
       });
-      owner = new ViewAttachmentOwner(
-        leaf,
-        snapshot,
-        resources,
-        failures,
+      owner = new ViewAttachmentOwner(leaf, snapshot, resources, failures, {
         binding,
-        listener,
-      );
+        document: context.document,
+        migrationListener: listener,
+        window: context.window,
+      });
+      owner.rebindAfterMigration(failures);
+      if (owner.isDisposed()) return undefined;
       return owner;
     } catch (error: unknown) {
       disposeResource(binding, failures);
@@ -115,6 +116,13 @@ export class ViewAttachmentOwner implements Disposable {
   private isDisposed(): boolean {
     return this.disposed;
   }
+}
+
+interface InitialBinding {
+  readonly binding: Disposable;
+  readonly document: object;
+  readonly migrationListener: Disposable;
+  readonly window: object;
 }
 
 function createContext(

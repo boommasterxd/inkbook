@@ -7,20 +7,15 @@ import {
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { INPUT_GESTURE_PROFILE_V1 } from "../../../../src/input/phase-zero";
 import {
-  directTouch,
-  installObsidianElementProperties,
-  phaseZeroViewContext as context,
-  phaseZeroViewRegistry,
-  pointer,
-} from "./phase-zero-view-test-helpers";
+  PhaseZeroViewRegistry,
+  type ViewResourceContext,
+} from "../../../../src/adapters/obsidian/views";
+import { INPUT_GESTURE_PROFILE_V1 } from "../../../../src/input/phase-zero";
 
 const REPROCESSED_GENERATION_COUNT = 2;
 const RETAINED_ANNOTATION_LIMIT = 128;
 const EXPECTED_MENU_COUNT = 2;
-const FIRST_TOUCH_SCALE = 1.96;
-const SECOND_TOUCH_SCALE = 3.24;
 const LONG_PRESS_DELAY_MS = INPUT_GESTURE_PROFILE_V1.longPressDelayMs;
 const menuProbe = Menu as typeof Menu & {
   readonly positions: {
@@ -29,15 +24,52 @@ const menuProbe = Menu as typeof Menu & {
   }[];
 };
 
-function transformScale(transform: string | undefined): number | undefined {
-  const value = /scale\(([^)]+)\)$/u.exec(transform ?? "")?.[1];
-  return value === undefined ? undefined : Number(value);
+function installObsidianElementProperties(element: HTMLElement): void {
+  Object.defineProperties(element, {
+    doc: { get: (): Document => document },
+    hasPointerCapture: { value: vi.fn(() => true) },
+    releasePointerCapture: { value: vi.fn() },
+    setPointerCapture: { value: vi.fn() },
+    win: { get: (): Window => window },
+  });
+}
+
+function context(
+  container: HTMLElement,
+  surface: "live-preview" | "reading" | "source",
+): ViewResourceContext {
+  const environment = {
+    doc: document,
+    instanceOf: (): boolean => true,
+    onWindowMigrated: (): { dispose(): void } => ({
+      dispose: (): void => undefined,
+    }),
+    win: window,
+  };
+  return {
+    document,
+    element: environment,
+    fileIdentity: "note.md",
+    leaf: {
+      isDeferred: false,
+      readView: (): never => {
+        throw new Error();
+      },
+    },
+    surface,
+    viewIdentity: { containerEl: container },
+    window,
+  };
 }
 
 function exerciseTouchAndZoom(
   container: HTMLElement,
   marker: SVGCircleElement,
 ): void {
+  const firstExpectedScale = 1.96;
+  const liveExpectedScale = 3.24;
+  const svg = container.querySelector("svg");
+  expect(svg?.style.transformOrigin).toBe("48px 48px");
   const selection = pointer("pointerdown", {
     button: 0,
     clientX: 48,
@@ -49,33 +81,26 @@ function exerciseTouchAndZoom(
   expect(selection.defaultPrevented).toBe(true);
   expect(marker.classList.contains("is-selected")).toBe(true);
   marker.dispatchEvent(pointer("pointerup", { pointerId: 1 }));
-  const first = { clientX: 20, clientY: 20, identifier: 2 } as const;
-  const second = { clientX: 40, clientY: 20, identifier: 3 } as const;
-  container.dispatchEvent(directTouch("touchstart", [first], [first]));
-  container.dispatchEvent(directTouch("touchstart", [second], [first, second]));
-  const firstZoom = directTouch(
-    "touchmove",
-    [{ clientX: 48, clientY: 20, identifier: 3 }],
-    [first, { clientX: 48, clientY: 20, identifier: 3 }],
-  );
+  const first = { clientX: 20, clientY: 20, identifier: 2 };
+  const second = { clientX: 40, clientY: 20, identifier: 3 };
+  container.dispatchEvent(touch("touchstart", [first], [first]));
+  container.dispatchEvent(touch("touchstart", [second], [first, second]));
+  const moved = { ...second, clientX: 48 };
+  const firstZoom = touch("touchmove", [moved], [first, moved]);
   container.dispatchEvent(firstZoom);
   const firstTransform = container.querySelector("svg")?.style.transform;
-  expect(container.querySelector("svg")?.style.transformOrigin).toBe(
-    "48px 48px",
-  );
-  const liveZoom = directTouch(
-    "touchmove",
-    [{ clientX: 56, clientY: 20, identifier: 3 }],
-    [first, { clientX: 56, clientY: 20, identifier: 3 }],
-  );
+  const live = { ...second, clientX: 56 };
+  const liveZoom = touch("touchmove", [live], [first, live]);
   container.dispatchEvent(liveZoom);
   const liveTransform = container.querySelector("svg")?.style.transform;
   expect(firstZoom.defaultPrevented).toBe(true);
   expect(liveZoom.defaultPrevented).toBe(true);
-  expect(transformScale(firstTransform)).toBeCloseTo(FIRST_TOUCH_SCALE);
-  expect(transformScale(liveTransform)).toBeCloseTo(SECOND_TOUCH_SCALE);
+  expect(readScale(firstTransform)).toBeCloseTo(firstExpectedScale);
+  expect(readScale(liveTransform)).toBeCloseTo(liveExpectedScale);
+  expect(firstTransform).toMatch(/^translate\(0px, 0px\) scale\(/u);
+  expect(liveTransform).toMatch(/^translate\(0px, 0px\) scale\(/u);
   expect(liveTransform).not.toBe(firstTransform);
-  container.dispatchEvent(directTouch("touchcancel", [second], [first]));
+  container.dispatchEvent(touch("touchcancel", [live], [first]));
 }
 
 function exerciseTouchpadZoom(container: HTMLElement): void {
@@ -285,12 +310,56 @@ function exerciseOutsideTapDeselection(
   expect(marker.classList).toContain("is-selected");
 }
 
+function pointer(type: string, options: PointerEventInit): PointerEvent {
+  return new PointerEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    ...options,
+  });
+}
+
+function readScale(transform: string | undefined): number {
+  const value = /scale\(([^)]+)\)$/u.exec(transform ?? "")?.[1];
+  if (value === undefined) throw new Error("Expected scale transform.");
+  return Number(value);
+}
+
+function touch(
+  type: string,
+  changed: readonly TouchPoint[],
+  active: readonly TouchPoint[],
+): TouchEvent {
+  const event = new Event(type, {
+    bubbles: true,
+    cancelable: true,
+  }) as TouchEvent;
+  Object.defineProperties(event, {
+    changedTouches: { value: touchList(changed) },
+    touches: { value: touchList(active) },
+  });
+  return event;
+}
+
+interface TouchPoint {
+  readonly clientX: number;
+  readonly clientY: number;
+  readonly identifier: number;
+}
+
+function touchList(values: readonly TouchPoint[]): TouchList {
+  return {
+    item: (index: number): Touch | null =>
+      (values[index] as Touch | undefined) ?? null,
+    length: values.length,
+  } as TouchList;
+}
+
 describe("PhaseZeroViewRegistry", () => {
   it("uses one retained overlay and routes touch, zoom, and context menus", () => {
     const container = document.createElement("div");
     installObsidianElementProperties(container);
     document.body.append(container);
-    const registry = phaseZeroViewRegistry();
+    const registry = new PhaseZeroViewRegistry();
     const binding = registry.bind(context(container, "live-preview"));
 
     registry.render("note.md", "B");
@@ -344,7 +413,7 @@ describe("PhaseZeroViewRegistry", () => {
     installObsidianElementProperties(section);
     container.append(section);
     document.body.append(container);
-    const registry = phaseZeroViewRegistry();
+    const registry = new PhaseZeroViewRegistry();
     registry.bind(context(container, "reading"));
     const children: MarkdownRenderChild[] = [];
     const processor = {
@@ -373,7 +442,7 @@ describe("PhaseZeroViewRegistry", () => {
     const section = document.createElement("section");
     installObsidianElementProperties(container);
     installObsidianElementProperties(section);
-    const registry = phaseZeroViewRegistry();
+    const registry = new PhaseZeroViewRegistry();
     registry.bind(context(container, "reading"));
     registry.reportReadingSection(section, {
       addChild: vi.fn(),
@@ -391,7 +460,7 @@ describe("PhaseZeroViewRegistry", () => {
 
 describe("PhaseZeroViewRegistry resource bounds", () => {
   it("evicts old retained annotation state at the fixed capacity", () => {
-    const registry = phaseZeroViewRegistry();
+    const registry = new PhaseZeroViewRegistry();
     for (let index = 0; index <= RETAINED_ANNOTATION_LIMIT; index += 1) {
       registry.render(`note-${String(index)}.md`, "B");
     }
