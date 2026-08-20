@@ -105,22 +105,22 @@ If unified host history, transactional recovery, required view attachment, or An
 
 ### Deliverables
 
-- [ ] **P1-D1:** Implement branded IDs, revisions, points, vectors, styles, geometries, bindings, ports, attachments, elements, Groups, object order, note appearance, persistent path-copy `RuntimeSceneStateV1`, and flat codec-only `SerializedSceneStateV1` in framework-independent domain modules.
-- [ ] **P1-D2:** Implement complete validation in the specified order, canonical RFC 8785 serialization, SHA-256 boundaries, and exact `delta-varint-v1` encoding and decoding.
-- [ ] **P1-D3:** Implement the closed revision-free patch union, sparse Group replacements, fresh dispatch envelopes, stable history entries, metadata-free batch members, exact non-revision inverse derivation, monotonic component-generation rules without ABA, dependency closure, operation-specific order placement, attached Line and Arrow endpoint authority, and Group leaf-block order equality.
-- [ ] **P1-D4:** Implement the pure command-admission function, closed errors, session snapshot types, host-effect lifecycle, recovery attempts, source-checkpoint records, and relocation or removal record codecs.
-- [ ] **P1-D5:** Turn the Phase 0 IndexedDB probe into the production `RecoveryStore` adapter with transactional compare-and-swap, exact byte accounting, bounded cleanup, corruption handling, and idempotent disposal.
-- [ ] **P1-D6:** Implement pure selection-model derivation and object-port resolution for attached Line and Arrow endpoints without DOM or Obsidian imports.
-- [ ] **P1-D7:** Replace the Phase 0 probe composition root with the production feature composition. Rename retained phase-named source and mirrored test paths to stable functional names, remove probe commands, Notices, marker UI, probe CSS, and synthetic payloads from the production bundle, and preserve only reusable history, recovery, worker, lifecycle, and gesture code with its focused regression tests.
+- [x] **P1-D1:** Implement branded IDs, revisions, points, vectors, styles, geometries, bindings, ports, attachments, elements, Groups, object order, note appearance, persistent path-copy `RuntimeSceneStateV1`, and flat codec-only `SerializedSceneStateV1` in framework-independent domain modules.
+- [x] **P1-D2:** Implement complete validation in the specified order, canonical RFC 8785 serialization, SHA-256 boundaries, and exact `delta-varint-v1` encoding and decoding.
+- [x] **P1-D3:** Implement the closed revision-free patch union, sparse Group replacements, fresh dispatch envelopes, stable history entries, metadata-free batch members, exact non-revision inverse derivation, monotonic component-generation rules without ABA, dependency closure, operation-specific order placement, attached Line and Arrow endpoint authority, and Group leaf-block order equality.
+- [x] **P1-D4:** Implement the pure command-admission function, closed errors, session snapshot types, host-effect lifecycle, recovery attempts, source-checkpoint records, and relocation or removal record codecs.
+- [x] **P1-D5:** Turn the Phase 0 IndexedDB probe into the production `RecoveryStore` adapter with transactional compare-and-swap, exact byte accounting, bounded cleanup, corruption handling, and idempotent disposal.
+- [x] **P1-D6:** Implement pure selection-model derivation and object-port resolution for attached Line and Arrow endpoints without DOM or Obsidian imports.
+- [x] **P1-D7:** Replace the Phase 0 probe composition root with the production feature composition. Rename retained phase-named source and mirrored test paths to stable functional names, remove probe commands, Notices, marker UI, probe CSS, and synthetic payloads from the production bundle, and preserve only reusable history, recovery, worker, lifecycle, and gesture code with its focused regression tests.
 
 ### Exit evidence
 
-- [ ] **P1-E1:** Unit, property, fuzz, codec-golden, inverse, revision, attachment, Group, order, resource-limit, corruption, and RecoveryStore fault tests pass at required coverage.
-- [ ] **P1-E2:** Every public domain type is deeply immutable and its import direction passes the architecture checker.
-- [ ] **P1-E3:** Deterministic 5,000- and 10,000-element scene generators produce schema-valid canonical scenes whose future sidecar encoding fits all simultaneous V1 limits, while one-element and one-Group publications path-copy only affected runtime-store branches and allocate no flat scene-array spine.
-- [ ] **P1-E4:** Repeated recovery cycles remain within 8 MiB per note and exact cleanup leaves no actionable host handle without its operation.
-- [ ] **P1-E5:** Existing source search, architecture, dead-code, test, and build checks find no phase-named production or test path. Direct inspection of the exact three-file production package finds no probe command, Notice, overlay, menu, style, synthetic payload, debug registration, or Phase 0 identifier. Reusable subsystem regressions pass from neutral paths, and unload leaves no owned listener, observer, timer, worker, port, queue turn, pointer capture, framework root, or view adapter. No separate artifact scanner or diagnostics build is required.
-- [ ] **P1-E6:** After every automated Phase 1 gate passes, complete only the Phase 1 no-regression scenario in [Testing Section 9](10-testing-and-acceptance.md#9-phase-sanity-scenarios) and report pass or fail.
+- [x] **P1-E1:** Unit, property, fuzz, codec-golden, inverse, revision, attachment, Group, order, resource-limit, corruption, and RecoveryStore fault tests pass at required coverage.
+- [x] **P1-E2:** Every public domain type is deeply immutable and its import direction passes the architecture checker.
+- [x] **P1-E3:** Deterministic 5,000- and 10,000-element scene generators produce schema-valid canonical scenes whose future sidecar encoding fits all simultaneous V1 limits, while one-element and one-Group publications path-copy only affected runtime-store branches and allocate no flat scene-array spine.
+- [x] **P1-E4:** Repeated recovery cycles remain within 8 MiB per note and exact cleanup leaves no actionable host handle without its operation.
+- [x] **P1-E5:** Existing source search, architecture, dead-code, test, and build checks find no phase-named production or test path. Direct inspection of the exact three-file production package finds no probe command, Notice, overlay, menu, style, synthetic payload, debug registration, or Phase 0 identifier. Reusable subsystem regressions pass from neutral paths, and unload leaves no owned listener, observer, timer, worker, port, queue turn, pointer capture, framework root, or view adapter. No separate artifact scanner or diagnostics build is required.
+- [x] **P1-E6:** After every automated Phase 1 gate passes, complete only the Phase 1 no-regression scenario in [Testing Section 9](10-testing-and-acceptance.md#9-phase-sanity-scenarios) and report pass or fail.
 
 Vault writes, SVG, real pointer input, binding inference, and product UI remain outside this phase.
 

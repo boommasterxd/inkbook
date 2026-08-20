@@ -1,3 +1,12 @@
+import {
+  createAnnotationOperationV1,
+  isHistoryEntryId,
+  isHistoryEpoch,
+  validateAnnotationHistoryEntryV1,
+} from "../../domain/operations";
+import { encodeCanonicalJson } from "../../domain/codecs";
+import { parseHostEffectId } from "../note-session";
+import { isValidNoteIdentity as isValidRecoveryNoteIdentity } from "../recovery/validation";
 import type {
   AcceptedDeliverySnapshotV1,
   ActionableHistoryEntrySnapshotV1,
@@ -7,22 +16,27 @@ import type {
   HostHistoryLimitsV1,
   HostHistorySnapshotV1,
   NoteIdentityV1,
-  ProbeAnnotationPatchV1,
 } from "./types";
 
 export const DEFAULT_HOST_HISTORY_LIMITS: HostHistoryLimitsV1 = Object.freeze({
-  // The specification fixes the actionable table at 256 entries.
   maxActionableEntries: 256,
-  // The specification fixes the per-pane payload budget at 32 MiB.
   // eslint-disable-next-line @typescript-eslint/no-magic-numbers
   maxPayloadBytes: 32 * 1024 * 1024,
 });
 
 const MAX_ID_LENGTH = 128;
 const MAX_IDENTITY_PART_LENGTH = 1024;
-// Probe values stay deliberately smaller than the complete history budget.
-// eslint-disable-next-line @typescript-eslint/no-magic-numbers
-const MAX_PROBE_VALUE_LENGTH = 64 * 1024;
+const ENVELOPE_KEYS = [
+  "direction",
+  "effectId",
+  "historyEntryId",
+  "historyEpoch",
+  "noteIdentity",
+] as const;
+const NOTE_IDENTITY_KEYS = [
+  "vaultIdHint",
+  "vaultRelativeMarkdownPath",
+] as const;
 
 export function sameNoteIdentity(
   left: NoteIdentityV1,
@@ -34,28 +48,30 @@ export function sameNoteIdentity(
   );
 }
 
-function isValidNoteIdentity(value: NoteIdentityV1): boolean {
-  return (
-    isBoundedString(value.vaultIdHint, MAX_IDENTITY_PART_LENGTH) &&
-    isBoundedString(value.vaultRelativeMarkdownPath, MAX_IDENTITY_PART_LENGTH)
-  );
+export function isValidEnvelope(value: unknown): value is HostEffectEnvelopeV1 {
+  try {
+    const fields = plainDataValues(value, ENVELOPE_KEYS);
+    if (fields === null) return false;
+    const [direction, effectId, historyEntryId, historyEpoch, noteIdentity] =
+      fields;
+    return (
+      (direction === "forward" || direction === "inverse") &&
+      isValidHostEffectId(effectId) &&
+      isHistoryEntryId(historyEntryId) &&
+      isHistoryEpoch(historyEpoch) &&
+      isValidNoteIdentityValue(noteIdentity)
+    );
+  } catch {
+    return false;
+  }
 }
 
-export function isValidEnvelope(value: HostEffectEnvelopeV1): boolean {
-  return (
-    isBoundedString(value.effectId, MAX_ID_LENGTH) &&
-    isBoundedString(value.historyEntryId, MAX_ID_LENGTH) &&
-    isPositiveCounter(value.historyEpoch) &&
-    isValidNoteIdentity(value.noteIdentity)
-  );
-}
-
-export function isValidPatch(value: ProbeAnnotationPatchV1): boolean {
-  return (
-    isNullableBoundedString(value.prior) &&
-    isNullableBoundedString(value.replacement) &&
-    value.prior !== value.replacement
-  );
+export function isValidHistoryEntry(value: unknown): boolean {
+  try {
+    return validateAnnotationHistoryEntryV1(value).ok;
+  } catch {
+    return false;
+  }
 }
 
 export function isPositiveCounter(value: number): boolean {
@@ -63,7 +79,7 @@ export function isPositiveCounter(value: number): boolean {
 }
 
 function estimateEntryBytes(entry: ActionableHistoryEntrySnapshotV1): number {
-  return JSON.stringify(entry).length;
+  return encodeCanonicalJson(entry).byteLength;
 }
 
 export function fitsLimits(
@@ -71,10 +87,14 @@ export function fitsLimits(
   limits: HostHistoryLimitsV1,
 ): boolean {
   if (entries.length > limits.maxActionableEntries) return false;
-  return (
-    entries.reduce((total, entry) => total + estimateEntryBytes(entry), 0) <=
-    limits.maxPayloadBytes
-  );
+  try {
+    return (
+      entries.reduce((total, entry) => total + estimateEntryBytes(entry), 0) <=
+      limits.maxPayloadBytes
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function isValidSnapshot(
@@ -83,16 +103,16 @@ export function isValidSnapshot(
   limits: HostHistoryLimitsV1,
 ): boolean {
   if (
-    !isSnapshotVersion(snapshot.version) ||
     !sameNoteIdentity(snapshot.noteIdentity, noteIdentity) ||
-    !Number.isSafeInteger(snapshot.scene.revision) ||
-    snapshot.scene.revision < 0 ||
-    !isNullableBoundedString(snapshot.scene.annotation) ||
+    !isValidSceneRevision(snapshot.scene.revision) ||
     !isPositiveCounter(snapshot.nextEpoch) ||
-    !fitsLimits(snapshot.entries, limits) ||
     snapshot.lease.kind === "blocked" ||
+    !fitsLimits(snapshot.entries, limits) ||
     !hasUnique(snapshot.entries, (entry) => entry.effectId) ||
-    !hasUnique(snapshot.entries, (entry) => entry.historyEntryId) ||
+    !hasUnique(
+      snapshot.entries,
+      (entry) => entry.historyEntry.historyEntryId,
+    ) ||
     !hasUnique(snapshot.highWaterMarks, editorEpochSnapshotKey) ||
     !hasUnique(snapshot.acceptedDeliveries, editorEpochSnapshotKey)
   ) {
@@ -107,45 +127,44 @@ export function isValidSnapshot(
   );
 }
 
-function isSnapshotVersion(value: number): boolean {
-  return value === 1;
+function isValidSceneRevision(value: number): boolean {
+  return Number.isSafeInteger(value) && value >= 0;
 }
 
 function isValidEntry(
   entry: ActionableHistoryEntrySnapshotV1,
   snapshot: HostHistorySnapshotV1,
 ): boolean {
-  const envelope: HostEffectEnvelopeV1 = {
-    direction: "forward",
-    effectId: entry.effectId,
-    historyEntryId: entry.historyEntryId,
-    historyEpoch: entry.historyEpoch,
-    noteIdentity: snapshot.noteIdentity,
-  };
-  const ownedLease = snapshot.lease.kind === "owned" ? snapshot.lease : null;
-  return (
-    ownedLease !== null &&
-    ownedLease.ownerViewId === entry.ownerViewId &&
-    ownedLease.epoch === entry.historyEpoch &&
-    isValidEnvelope(envelope) &&
-    isValidPatch(entry.patch) &&
-    isValidIntent(entry.preparedForward, entry)
-  );
+  if (!isValidHistoryEntry(entry.historyEntry)) return false;
+  if (
+    snapshot.lease.kind !== "owned" ||
+    snapshot.lease.ownerViewId !== entry.ownerViewId ||
+    snapshot.lease.epoch !== entry.historyEntry.historyEpoch ||
+    !isBoundedString(entry.recoveryAttemptId, MAX_ID_LENGTH)
+  ) {
+    return false;
+  }
+  return isValidIntent(entry.preparedForward, entry.historyEntry);
 }
 
 function isValidIntent(
   intent: HostDispatchIntentV1,
-  entry: ActionableHistoryEntrySnapshotV1,
+  historyEntry: ActionableHistoryEntrySnapshotV1["historyEntry"],
 ): boolean {
-  return (
-    intent.historyEntryId === entry.historyEntryId &&
-    intent.historyEpoch === entry.historyEpoch &&
-    intent.direction === "forward" &&
-    intent.patch.prior === entry.patch.prior &&
-    intent.patch.replacement === entry.patch.replacement &&
-    Number.isSafeInteger(intent.expectedSceneRevision) &&
-    intent.expectedSceneRevision >= 0
-  );
+  if (
+    !createAnnotationOperationV1(intent).ok ||
+    intent.direction !== "forward" ||
+    intent.historyEntryId !== historyEntry.historyEntryId ||
+    intent.historyEpoch !== historyEntry.historyEpoch
+  ) {
+    return false;
+  }
+  return validateAnnotationHistoryEntryV1({
+    forward: intent.patch,
+    historyEntryId: historyEntry.historyEntryId,
+    historyEpoch: historyEntry.historyEpoch,
+    inverse: historyEntry.inverse,
+  }).ok;
 }
 
 function isValidAcceptedDelivery(
@@ -165,9 +184,9 @@ function isValidAcceptedDelivery(
     delivery.sequence === mark?.sequence &&
     intent.historyEntryId === envelope.historyEntryId &&
     intent.historyEpoch === envelope.historyEpoch &&
-    ((envelope.direction === "inverse" && intent.direction === "undo") ||
-      (envelope.direction === "forward" &&
-        (intent.direction === "forward" || intent.direction === "redo")))
+    createAnnotationOperationV1(intent).ok &&
+    ((envelope.direction === "inverse" && intent.direction === "inverse") ||
+      (envelope.direction === "forward" && intent.direction === "forward"))
   );
 }
 
@@ -204,10 +223,66 @@ function hasUnique<T>(
   return true;
 }
 
-function isNullableBoundedString(value: string | null): boolean {
-  return value === null || value.length <= MAX_PROBE_VALUE_LENGTH;
-}
-
 function isBoundedString(value: string, maximum: number): boolean {
   return value.length > 0 && value.length <= maximum;
+}
+
+function isBoundedStringValue(
+  value: unknown,
+  maximum: number,
+): value is string {
+  return typeof value === "string" && isBoundedString(value, maximum);
+}
+
+function isValidNoteIdentityValue(value: unknown): value is NoteIdentityV1 {
+  if (!isValidRecoveryNoteIdentity(value)) return false;
+  const fields = plainDataValues(value, NOTE_IDENTITY_KEYS);
+  if (fields === null) return false;
+  const [vaultIdHint, vaultRelativeMarkdownPath] = fields;
+  return (
+    isBoundedStringValue(vaultIdHint, MAX_IDENTITY_PART_LENGTH) &&
+    isBoundedStringValue(vaultRelativeMarkdownPath, MAX_IDENTITY_PART_LENGTH)
+  );
+}
+
+function isValidHostEffectId(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  try {
+    parseHostEffectId(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function plainDataValues(
+  value: unknown,
+  keys: readonly string[],
+): readonly unknown[] | null {
+  if (typeof value !== "object" || value === null) return null;
+  const objectValue = value;
+  const prototype = Reflect.getPrototypeOf(objectValue);
+  if (prototype !== Object.prototype && prototype !== null) {
+    return null;
+  }
+  const ownKeys = Reflect.ownKeys(objectValue);
+  if (
+    ownKeys.length !== keys.length ||
+    ownKeys.some((key) => typeof key !== "string" || !keys.includes(key))
+  ) {
+    return null;
+  }
+  const values: unknown[] = [];
+  for (const key of keys) {
+    const descriptor = Object.getOwnPropertyDescriptor(objectValue, key);
+    if (
+      descriptor === undefined ||
+      !descriptor.enumerable ||
+      !("value" in descriptor)
+    ) {
+      return null;
+    }
+    values.push(descriptor.value);
+  }
+  return values;
 }

@@ -1,6 +1,5 @@
 import type {
   ActionableHistoryEntrySnapshotV1,
-  HostDispatchIntentV1,
   HostEffectDeliveryResultV1,
   HostHistoryFailureV1,
   HostHistoryLeaseSnapshotV1,
@@ -16,8 +15,17 @@ export type DeliveryValidationResult =
   | { readonly kind: "complete"; readonly result: HostEffectDeliveryResultV1 };
 
 export interface EntryTransition {
-  readonly intent: HostDispatchIntentV1;
+  readonly intent: import("./types").HostDispatchIntentV1;
   readonly lifecycle: "applied" | "undone";
+  readonly recovery:
+    | { readonly kind: "forward"; readonly attemptId: string }
+    | {
+        readonly kind: "direction";
+        readonly attempt: Omit<
+          import("../recovery").HostRecordedDirectionAttemptV1,
+          "acknowledgement"
+        >;
+      };
 }
 
 export type OwnedLease = Extract<

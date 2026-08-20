@@ -9,9 +9,8 @@ export type {
   WorkspaceLeafBoundary,
 } from "./contracts";
 export { ObsidianWorkspaceBoundary } from "./obsidian-workspace-boundary";
-export { PhaseZeroViewRegistry } from "./phase-zero-view-resources";
 export {
   ReadingSectionCoordinator,
   type ReadingSectionReport,
 } from "./reading-section-coordinator";
-export { ViewAttachmentProbe } from "./view-attachment-probe";
+export { ViewAttachmentController } from "./view-attachment-controller";

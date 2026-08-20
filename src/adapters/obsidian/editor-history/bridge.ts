@@ -21,13 +21,14 @@ import type {
   HostTransactionSequence,
   ViewId,
 } from "../../../application/host-history";
-import type { EditorInputProbeContract } from "../../../input/phase-zero";
 import { isValidEnvelope } from "../../../application/host-history/validation";
-import { CodeMirrorInputProbeBinding } from "./input-probe-binding";
 
 type InvertEffects = (
   transaction: Transaction,
 ) => readonly StateEffect<unknown>[];
+
+// The sequencer retains one high-water counter per epoch until editor disposal.
+export const MAX_TRACKED_HISTORY_EPOCHS_V1 = 256;
 
 export interface CodeMirrorHistoryCapabilitiesV1 {
   readonly invertedEffects?: Facet<InvertEffects, readonly InvertEffects[]>;
@@ -37,7 +38,6 @@ export interface CodeMirrorHistoryCapabilitiesV1 {
 export interface EditorHistoryAttachmentV1 {
   readonly editorViewId: ViewId;
   readonly ownerViewId: ViewId;
-  readonly inputProbe?: EditorInputProbeContract;
 }
 
 export interface EditorHistoryBridgeCallbacksV1 {
@@ -59,12 +59,12 @@ export interface EditorHistoryBridgeCallbacksV1 {
 }
 
 export type EditorHistoryBridgeFailureV1 =
-  | "attachment-unavailable"
+  | "epoch-limit-exhausted"
   | "invalid-envelope"
   | "multiple-effects-in-transaction"
   | "sequence-exhausted";
 
-export interface AvailableEditorHistoryBridgeV1 {
+interface AvailableEditorHistoryBridgeV1 {
   readonly kind: "available";
   readonly extension: Extension;
   readonly effectType: StateEffectType<HostEffectEnvelopeV1>;
@@ -100,13 +100,11 @@ export function createEditorHistoryBridgeV1(
   const plugin = ViewPlugin.fromClass(
     class implements PluginValue {
       readonly #sequencer: EditorHistoryEffectSequencerV1 | null;
-      readonly #input: CodeMirrorInputProbeBinding | null;
 
       public constructor(view: EditorView) {
         const attachment = callbacks.attachEditor(view);
         if (attachment === null) {
           this.#sequencer = null;
-          this.#input = null;
           return;
         }
         this.#sequencer = new EditorHistoryEffectSequencerV1(
@@ -114,19 +112,13 @@ export function createEditorHistoryBridgeV1(
           effectType,
           callbacks,
         );
-        this.#input =
-          attachment.inputProbe === undefined
-            ? null
-            : new CodeMirrorInputProbeBinding(view, attachment.inputProbe);
       }
 
       public update(update: ViewUpdate): void {
         this.#sequencer?.accept(update.transactions);
-        this.#input?.update(update);
       }
 
       public destroy(): void {
-        this.#input?.dispose();
         this.#sequencer?.dispose();
       }
     },
@@ -226,6 +218,10 @@ export class EditorHistoryEffectSequencerV1 {
     if (this.#exhausted.has(epoch)) return null;
     const existing = this.#sequences.get(epoch);
     if (existing !== undefined) return existing;
+    if (this.#sequences.size >= MAX_TRACKED_HISTORY_EPOCHS_V1) {
+      this.#report("epoch-limit-exhausted");
+      return null;
+    }
     const restored = this.#callbacks.sequenceHighWater(
       this.#attachment.editorViewId,
       epoch,

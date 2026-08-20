@@ -1,31 +1,33 @@
-import type {
-  AcceptedDeliverySnapshotV1,
-  ActionableHistoryEntrySnapshotV1,
-  EditorEpochHighWaterSnapshotV1,
-  HistoryEpoch,
-  HostDispatchIntentV1,
-  HostEffectAcknowledgementV1,
-  HostEffectDeliveryResultV1,
-  HostEffectDeliveryV1,
-  HostHistoryCoordinatorConfigV1,
-  HostHistoryDisposalResultV1,
-  HostHistoryFailureV1,
-  HostHistoryLeaseSnapshotV1,
-  HostHistoryLimitsV1,
-  HostHistoryRestoreOptionsV1,
-  HostHistorySnapshotV1,
-  HostTransactionSequence,
-  PrepareHostEffectRequestV1,
-  PrepareHostEffectResultV1,
-  ProbeAnnotationPatchV1,
-  ProbeSceneSnapshotV1,
-  ViewId,
+import {
+  applyAnnotationOperationV1,
+  createAnnotationDependencyIndexV1,
+  validateAnnotationHistoryEntryV1,
+} from "../../domain/operations";
+import type { RuntimeSceneStateV1 } from "../../domain/scene";
+import { isValidNoteIdentity as isValidRecoveryNoteIdentity } from "../recovery/validation";
+import {
+  type AcceptedDeliverySnapshotV1,
+  type ActionableHistoryEntrySnapshotV1,
+  type EditorEpochHighWaterSnapshotV1,
+  type HistoryEpoch,
+  type HostEffectDeliveryV1,
+  type HostEffectDeliveryResultV1,
+  type HostHistoryCoordinatorConfigV1,
+  type HostHistoryDisposalResultV1,
+  type HostHistoryFailureV1,
+  type HostHistoryLeaseSnapshotV1,
+  type HostHistoryRestoreOptionsV1,
+  type HostHistorySnapshotV1,
+  type HostTransactionSequence,
+  type PrepareHostEffectRequestV1,
+  type PrepareHostEffectResultV1,
+  type ViewId,
 } from "./types";
 import {
   fitsLimits,
   isPositiveCounter,
   isValidEnvelope,
-  isValidPatch,
+  isValidHistoryEntry,
   sameNoteIdentity,
 } from "./validation";
 import {
@@ -33,38 +35,51 @@ import {
   freezeAcknowledgement,
   freezeEntry,
   freezeEnvelope,
-  freezeIntent,
   freezeNoteIdentity,
-  freezePatch,
-  freezeScene,
-  invertPatch,
   matchesEntry,
   resolveLimits,
-  sameEnvelope,
 } from "./value-objects";
 import {
   invalidDelivery,
   rejectDelivery,
   rejectPrepare,
   type DeliveryValidationResult,
-  type EntryTransition,
   type OwnedLease,
   type ProspectiveLeaseResult,
 } from "./results";
 import { restoreHostHistory } from "./restore";
+import {
+  createAnnotationOperationForHistoryV1,
+  createEntryTransitionV1,
+  createPreparedForwardAttemptV1,
+  mapOperationFailure,
+  recordRecoveryV1,
+} from "./transitions";
+import {
+  acceptDelivery,
+  clearDeliveryState,
+  hasAdmittingEntry,
+  hasHistoryIdentity,
+  releaseEntry,
+  releaseEpochDeliveryState,
+  releaseRedoBranch,
+  validateSequence,
+} from "./retention";
 
 const SNAPSHOT_VERSION = 1 as const;
 
 export class HostHistoryCoordinatorV1 {
   readonly #config: HostHistoryCoordinatorConfigV1;
-  readonly #limits: HostHistoryLimitsV1;
+  readonly #limits: import("./types").HostHistoryLimitsV1;
   readonly #entries = new Map<string, ActionableHistoryEntrySnapshotV1>();
   readonly #accepted = new Map<string, AcceptedDeliverySnapshotV1>();
   readonly #highWater = new Map<string, EditorEpochHighWaterSnapshotV1>();
   #lease: HostHistoryLeaseSnapshotV1 = Object.freeze({ kind: "unowned" });
-  #scene: ProbeSceneSnapshotV1;
+  #scene: RuntimeSceneStateV1;
+  #dependencies: import("../../domain/operations").AnnotationDependencyIndexV1;
   #nextEpoch = 1;
   #disposed = false;
+  #preparing = false;
   #queuedDeliveries = 0;
   #deliveryTail: Promise<void> = Promise.resolve();
 
@@ -74,13 +89,26 @@ export class HostHistoryCoordinatorV1 {
       hostEffectsMayBeReachable: false,
     },
   ) {
+    if (!isValidRecoveryNoteIdentity(config.noteIdentity)) {
+      throw new TypeError("The host history note identity is invalid.");
+    }
     this.#config = config;
+    this.#scene = config.initialScene;
+    const dependencies =
+      config.initialDependencies === undefined
+        ? createAnnotationDependencyIndexV1(this.#scene)
+        : { ok: true as const, value: config.initialDependencies };
+    if (!dependencies.ok) {
+      throw new TypeError(
+        "The initial runtime scene has invalid dependencies.",
+      );
+    }
+    this.#dependencies = dependencies.value;
     this.#limits = resolveLimits(config.limits);
-    this.#scene = freezeScene(config.initialAnnotation, 0);
     this.#restoreOrBlock(restore);
   }
 
-  public get scene(): ProbeSceneSnapshotV1 {
+  public get scene(): RuntimeSceneStateV1 {
     return this.#scene;
   }
 
@@ -88,54 +116,83 @@ export class HostHistoryCoordinatorV1 {
     return this.#lease;
   }
 
-  public prepare(
+  public async prepare(
     request: PrepareHostEffectRequestV1,
-  ): PrepareHostEffectResultV1 {
+  ): Promise<PrepareHostEffectResultV1> {
     const unavailable = this.#availabilityFailure();
     if (unavailable !== null) return rejectPrepare(unavailable);
-    if (!isValidPatch(request.patch)) return rejectPrepare("invalid-patch");
-    if (request.patch.prior !== this.#scene.annotation) {
-      return rejectPrepare("revision-mismatch");
-    }
-    const leaseResult = this.#prospectiveLease(request.viewId);
-    if (leaseResult.kind === "rejected") {
-      return rejectPrepare(leaseResult.reason);
-    }
-    if (this.#hasAdmittingEntry()) return rejectPrepare("pending-admission");
-    if (this.#hasIdentity(request.effectId, request.historyEntryId)) {
+    if (this.#preparing) return rejectPrepare("pending-admission");
+    if (!isValidHistoryEntry(request.historyEntry))
+      return rejectPrepare("invalid-operation");
+    if (
+      hasHistoryIdentity(
+        this.#entries,
+        request.effectId,
+        request.historyEntry.historyEntryId,
+      )
+    )
       return rejectPrepare("duplicate-identity");
-    }
+    const historyEntry = validateAnnotationHistoryEntryV1(request.historyEntry);
+    if (!historyEntry.ok) return rejectPrepare("invalid-operation");
+    const leaseResult = this.#prospectiveLease(
+      request.viewId,
+      historyEntry.value.historyEpoch,
+    );
+    if (leaseResult.kind === "rejected")
+      return rejectPrepare(leaseResult.reason);
+    if (hasAdmittingEntry(this.#entries))
+      return rejectPrepare("pending-admission");
 
-    const patch = freezePatch(request.patch);
-    const intent = freezeIntent({
-      direction: "forward",
-      expectedSceneRevision: this.#scene.revision,
-      historyEntryId: request.historyEntryId,
-      historyEpoch: leaseResult.lease.epoch,
-      operationId: this.#config.createOperationId(),
-      patch,
-    });
+    const operation = createAnnotationOperationForHistoryV1(
+      request.operationId,
+      historyEntry.value,
+      "forward",
+      this.#scene.revision,
+      historyEntry.value.forward,
+      leaseResult.lease.epoch,
+    );
+    if (operation.kind === "rejected") return rejectPrepare(operation.reason);
+    const validation = applyAnnotationOperationV1(
+      this.#scene,
+      this.#dependencies,
+      operation.value,
+    );
+    if (!validation.ok)
+      return rejectPrepare(mapOperationFailure(validation.code));
+
+    const attempt = createPreparedForwardAttemptV1(
+      operation.value,
+      historyEntry.value,
+      this.#config,
+    );
     const entry = freezeEntry({
       effectId: request.effectId,
-      historyEntryId: request.historyEntryId,
-      historyEpoch: leaseResult.lease.epoch,
+      historyEntry: historyEntry.value,
       lifecycle: "admitting",
       ownerViewId: request.viewId,
-      patch,
-      preparedForward: intent,
+      preparedForward: operation.value,
+      recoveryAttemptId: attempt.attemptId,
     });
     if (!fitsLimits([...this.#entries.values(), entry], this.#limits)) {
       return rejectPrepare("payload-limit");
     }
 
-    this.#commitLease(leaseResult.lease);
-    this.#entries.set(entry.effectId, entry);
-    const envelope = freezeEnvelope(
-      entry,
-      this.#config.noteIdentity,
-      "forward",
-    );
-    return Object.freeze({ kind: "prepared", envelope, intent });
+    this.#preparing = true;
+    try {
+      const persisted = await this.#config.recovery.prepareForward(attempt);
+      if (!persisted.ok) return rejectPrepare("recovery-failed");
+      this.#commitLease(leaseResult.lease);
+      this.#entries.set(entry.effectId, entry);
+      return Object.freeze({
+        envelope: freezeEnvelope(entry, this.#config.noteIdentity, "forward"),
+        intent: operation.value,
+        kind: "prepared",
+      });
+    } catch {
+      return rejectPrepare("recovery-failed");
+    } finally {
+      this.#preparing = false;
+    }
   }
 
   public deliver(
@@ -143,6 +200,9 @@ export class HostHistoryCoordinatorV1 {
     ownerViewId: ViewId,
     delivery: HostEffectDeliveryV1,
   ): Promise<HostEffectDeliveryResultV1> {
+    if (this.#queuedDeliveries >= this.#limits.maxActionableEntries) {
+      return Promise.resolve(rejectDelivery("payload-limit"));
+    }
     this.#queuedDeliveries += 1;
     const result = this.#deliveryTail.then(() =>
       this.#processDelivery(editorViewId, ownerViewId, delivery),
@@ -160,17 +220,17 @@ export class HostHistoryCoordinatorV1 {
   ): boolean {
     const entry = this.#entries.get(effectId);
     if (
-      entry?.historyEpoch !== historyEpoch ||
+      entry?.historyEntry.historyEpoch !== historyEpoch ||
       entry.lifecycle !== "admitting"
     ) {
       return false;
     }
-    this.#releaseEntry(entry);
+    releaseEntry(this.#entries, entry, this.#config.onRelease);
     if (
       this.#lease.kind === "owned" &&
       this.#lease.epoch === historyEpoch &&
       ![...this.#entries.values()].some(
-        (candidate) => candidate.historyEpoch === historyEpoch,
+        (candidate) => candidate.historyEntry.historyEpoch === historyEpoch,
       )
     ) {
       this.#lease = Object.freeze({ kind: "unowned" });
@@ -191,9 +251,13 @@ export class HostHistoryCoordinatorV1 {
     historyEpoch: HistoryEpoch,
   ): boolean {
     const entry = this.#entries.get(effectId);
-    if (entry?.historyEpoch !== historyEpoch) return false;
-    if (entry.lifecycle !== "undone") return false;
-    this.#releaseEntry(entry);
+    if (
+      entry?.historyEntry.historyEpoch !== historyEpoch ||
+      entry.lifecycle !== "undone"
+    ) {
+      return false;
+    }
+    releaseEntry(this.#entries, entry, this.#config.onRelease);
     return true;
   }
 
@@ -203,16 +267,19 @@ export class HostHistoryCoordinatorV1 {
     }
     const ownedEpoch = this.#lease.epoch;
     const ownedEntries = [...this.#entries.values()].filter(
-      (entry) => entry.historyEpoch === ownedEpoch,
+      (entry) => entry.historyEntry.historyEpoch === ownedEpoch,
     );
     if (
+      this.#preparing ||
       this.#queuedDeliveries > 0 ||
       (!effectsAreUnreachable && ownedEntries.length > 0)
     ) {
       this.#block("unrestorable-history");
       return false;
     }
-    for (const entry of ownedEntries) this.#releaseEntry(entry);
+    for (const entry of ownedEntries)
+      releaseEntry(this.#entries, entry, this.#config.onRelease);
+    releaseEpochDeliveryState(this.#accepted, this.#highWater, ownedEpoch);
     this.#lease = Object.freeze({ kind: "unowned" });
     return true;
   }
@@ -221,13 +288,18 @@ export class HostHistoryCoordinatorV1 {
     hostEffectsMayBeReachable: boolean,
   ): HostHistoryDisposalResultV1 {
     if (this.#disposed) return Object.freeze({ kind: "disposed-unreachable" });
-    if (this.#queuedDeliveries > 0 || this.#lease.kind === "blocked") {
+    if (
+      this.#preparing ||
+      this.#queuedDeliveries > 0 ||
+      this.#lease.kind === "blocked"
+    ) {
       this.#block("unrestorable-history");
       return Object.freeze({ kind: "blocked", reason: "unrestorable-history" });
     }
     if (!hostEffectsMayBeReachable) {
       for (const entry of [...this.#entries.values()])
-        this.#releaseEntry(entry);
+        releaseEntry(this.#entries, entry, this.#config.onRelease);
+      clearDeliveryState(this.#accepted, this.#highWater);
       this.#disposed = true;
       return Object.freeze({ kind: "disposed-unreachable" });
     }
@@ -260,43 +332,57 @@ export class HostHistoryCoordinatorV1 {
       delivery,
     );
     if (validation.kind !== "ready") return validation.result;
-    const { entry, key } = validation;
-    const transition = this.#createTransition(
-      entry,
+    const transition = createEntryTransitionV1(
+      validation.entry,
       delivery.envelope.direction,
+      this.#scene,
+      this.#dependencies,
+      this.#config,
     );
-    if (transition === null) return rejectDelivery("lifecycle-mismatch");
-    if (!this.#patchMatchesScene(transition.intent.patch, transition.intent)) {
-      return rejectDelivery("revision-mismatch");
-    }
-    if (entry.lifecycle === "admitting")
-      this.#releaseRedoBranch(entry.effectId);
-
-    const acknowledgement = freezeAcknowledgement(
-      editorViewId,
-      ownerViewId,
-      delivery,
-    );
-    const recorded = await this.#recordRecovery(
-      transition.intent,
-      acknowledgement,
-    );
-    if (!recorded) {
+    if (transition.kind === "rejected")
+      return rejectDelivery(transition.reason);
+    const acknowledgement = freezeAcknowledgement(editorViewId, delivery);
+    if (
+      !(await recordRecoveryV1(this.#config, transition.value, acknowledgement))
+    ) {
       this.#block("recovery-failed");
       return rejectDelivery("recovery-failed");
     }
-
-    this.#scene = freezeScene(
-      transition.intent.patch.replacement,
-      this.#scene.revision + 1,
+    const publication = applyAnnotationOperationV1(
+      this.#scene,
+      this.#dependencies,
+      transition.value.intent,
     );
+    if (!publication.ok) {
+      this.#block(mapOperationFailure(publication.code));
+      return rejectDelivery(mapOperationFailure(publication.code));
+    }
+    if (validation.entry.lifecycle === "admitting") {
+      releaseRedoBranch(
+        this.#entries,
+        validation.entry.effectId,
+        this.#config.onRelease,
+      );
+    }
+    this.#scene = publication.value.scene;
+    this.#dependencies = publication.value.dependencies;
     this.#entries.set(
-      entry.effectId,
-      freezeEntry({ ...entry, lifecycle: transition.lifecycle }),
+      validation.entry.effectId,
+      freezeEntry({
+        ...validation.entry,
+        lifecycle: transition.value.lifecycle,
+      }),
     );
-    this.#acceptDelivery(key, editorViewId, delivery, transition.intent);
+    acceptDelivery(
+      this.#highWater,
+      this.#accepted,
+      validation.key,
+      editorViewId,
+      delivery,
+      transition.value.intent,
+    );
     return Object.freeze({
-      intent: transition.intent,
+      intent: transition.value.intent,
       kind: "accepted",
       scene: this.#scene,
     });
@@ -309,158 +395,60 @@ export class HostHistoryCoordinatorV1 {
   ): DeliveryValidationResult {
     const unavailable = this.#availabilityFailure();
     if (unavailable !== null) return invalidDelivery(unavailable);
-    if (!isValidEnvelope(delivery.envelope)) {
+    if (!isValidEnvelope(delivery.envelope))
       return invalidDelivery("invalid-envelope");
-    }
-    if (!isPositiveCounter(delivery.transactionSequence)) {
+    if (!isPositiveCounter(delivery.transactionSequence))
       return invalidDelivery("invalid-sequence");
-    }
     if (
       !sameNoteIdentity(
         delivery.envelope.noteIdentity,
         this.#config.noteIdentity,
       )
-    ) {
+    )
       return invalidDelivery("invalid-envelope");
-    }
     if (this.#lease.kind !== "owned") return invalidDelivery("stale-epoch");
-    if (this.#lease.epoch !== delivery.envelope.historyEpoch) {
+    if (this.#lease.epoch !== delivery.envelope.historyEpoch)
       return invalidDelivery("stale-epoch");
-    }
     if (this.#lease.ownerViewId !== ownerViewId)
       return invalidDelivery("non-owner");
     const entry = this.#entries.get(delivery.envelope.effectId);
     if (entry === undefined) return invalidDelivery("entry-not-found");
-    if (!matchesEntry(entry, delivery.envelope, ownerViewId)) {
+    if (!matchesEntry(entry, delivery.envelope, ownerViewId))
       return invalidDelivery("invalid-envelope");
-    }
     const key = editorEpochKey(editorViewId, delivery.envelope.historyEpoch);
-    const sequenceResult = this.#validateSequence(key, delivery);
+    const sequenceResult = validateSequence(
+      this.#highWater,
+      this.#accepted,
+      key,
+      delivery,
+      this.#scene,
+    );
     if (sequenceResult !== null) return sequenceResult;
     return { entry, key, kind: "ready" };
   }
 
-  #validateSequence(
-    key: string,
-    delivery: HostEffectDeliveryV1,
-  ): DeliveryValidationResult | null {
-    const mark = this.#highWater.get(key);
-    if (mark === undefined || delivery.transactionSequence > mark.sequence) {
-      return null;
-    }
-    if (delivery.transactionSequence < mark.sequence) {
-      return invalidDelivery("stale-sequence");
-    }
-    const accepted = this.#accepted.get(key);
-    if (
-      accepted !== undefined &&
-      sameEnvelope(accepted.envelope, delivery.envelope)
-    ) {
-      return {
-        kind: "complete",
-        result: Object.freeze({
-          intent: accepted.intent,
-          kind: "duplicate",
-          scene: this.#scene,
-        }),
-      };
-    }
-    return invalidDelivery("out-of-order");
-  }
-
-  #createTransition(
-    entry: ActionableHistoryEntrySnapshotV1,
-    envelopeDirection: "forward" | "inverse",
-  ): EntryTransition | null {
-    if (entry.lifecycle === "admitting" && envelopeDirection === "forward") {
-      return { intent: entry.preparedForward, lifecycle: "applied" };
-    }
-    if (entry.lifecycle === "applied" && envelopeDirection === "inverse") {
-      return {
-        intent: this.#freshIntent(entry, "undo", invertPatch(entry.patch)),
-        lifecycle: "undone",
-      };
-    }
-    if (entry.lifecycle === "undone" && envelopeDirection === "forward") {
-      return {
-        intent: this.#freshIntent(entry, "redo", entry.patch),
-        lifecycle: "applied",
-      };
-    }
-    return null;
-  }
-
-  #freshIntent(
-    entry: ActionableHistoryEntrySnapshotV1,
-    direction: "undo" | "redo",
-    patch: ProbeAnnotationPatchV1,
-  ): HostDispatchIntentV1 {
-    return freezeIntent({
-      direction,
-      expectedSceneRevision: this.#scene.revision,
-      historyEntryId: entry.historyEntryId,
-      historyEpoch: entry.historyEpoch,
-      operationId: this.#config.createOperationId(),
-      patch,
-    });
-  }
-
-  #patchMatchesScene(
-    patch: ProbeAnnotationPatchV1,
-    intent: HostDispatchIntentV1,
-  ): boolean {
-    return (
-      patch.prior === this.#scene.annotation &&
-      intent.expectedSceneRevision === this.#scene.revision
-    );
-  }
-
-  async #recordRecovery(
-    intent: HostDispatchIntentV1,
-    acknowledgement: HostEffectAcknowledgementV1,
-  ): Promise<boolean> {
-    try {
-      return await this.#config.recovery.record(intent, acknowledgement);
-    } catch {
-      return false;
-    }
-  }
-
-  #acceptDelivery(
-    key: string,
-    editorViewId: ViewId,
-    delivery: HostEffectDeliveryV1,
-    intent: HostDispatchIntentV1,
-  ): void {
-    const mark = Object.freeze({
-      editorViewId,
-      historyEpoch: delivery.envelope.historyEpoch,
-      sequence: delivery.transactionSequence,
-    });
-    const accepted = Object.freeze({
-      editorViewId,
-      envelope: delivery.envelope,
-      historyEpoch: delivery.envelope.historyEpoch,
-      intent,
-      sequence: delivery.transactionSequence,
-    });
-    this.#highWater.set(key, mark);
-    this.#accepted.set(key, accepted);
-  }
-
-  #prospectiveLease(viewId: ViewId): ProspectiveLeaseResult {
+  #prospectiveLease(
+    viewId: ViewId,
+    historyEpoch: HistoryEpoch,
+  ): ProspectiveLeaseResult {
     if (this.#lease.kind === "owned") {
-      return this.#lease.ownerViewId === viewId
+      if (this.#lease.ownerViewId !== viewId) {
+        return { kind: "rejected", reason: "non-owner" };
+      }
+      return this.#lease.epoch === historyEpoch
         ? { kind: "accepted", lease: this.#lease }
-        : { kind: "rejected", reason: "non-owner" };
+        : { kind: "rejected", reason: "stale-epoch" };
     }
     if (this.#lease.kind === "blocked") {
       return { kind: "rejected", reason: "blocked" };
     }
+    if (historyEpoch !== this.#nextEpoch) {
+      return { kind: "rejected", reason: "stale-epoch" };
+    }
     return {
       kind: "accepted",
       lease: Object.freeze({
-        epoch: this.#nextEpoch as HistoryEpoch,
+        epoch: historyEpoch,
         kind: "owned",
         ownerViewId: viewId,
       }),
@@ -469,34 +457,9 @@ export class HostHistoryCoordinatorV1 {
 
   #commitLease(lease: OwnedLease): void {
     if (this.#lease.kind === "owned") return;
+    clearDeliveryState(this.#accepted, this.#highWater);
     this.#lease = lease;
     this.#nextEpoch += 1;
-  }
-
-  #hasAdmittingEntry(): boolean {
-    return [...this.#entries.values()].some(
-      (entry) => entry.lifecycle === "admitting",
-    );
-  }
-
-  #hasIdentity(effectId: string, historyEntryId: string): boolean {
-    return [...this.#entries.values()].some(
-      (entry) =>
-        entry.effectId === effectId || entry.historyEntryId === historyEntryId,
-    );
-  }
-
-  #releaseRedoBranch(currentEffectId: string): void {
-    for (const entry of [...this.#entries.values()]) {
-      if (entry.effectId !== currentEffectId && entry.lifecycle === "undone") {
-        this.#releaseEntry(entry);
-      }
-    }
-  }
-
-  #releaseEntry(entry: ActionableHistoryEntrySnapshotV1): void {
-    this.#entries.delete(entry.effectId);
-    this.#config.onRelease?.(entry);
   }
 
   #availabilityFailure(): HostHistoryFailureV1 | null {
@@ -526,7 +489,15 @@ export class HostHistoryCoordinatorV1 {
       return;
     }
     if (result.kind === "empty") return;
+    const dependencies = createAnnotationDependencyIndexV1(
+      result.snapshot.scene,
+    );
+    if (!dependencies.ok) {
+      this.#block("unrestorable-history");
+      return;
+    }
     this.#scene = result.snapshot.scene;
+    this.#dependencies = dependencies.value;
     this.#lease = result.snapshot.lease;
     this.#nextEpoch = result.snapshot.nextEpoch;
   }

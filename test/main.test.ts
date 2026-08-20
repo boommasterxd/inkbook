@@ -1,117 +1,102 @@
 // @vitest-environment happy-dom
 
-import { IDBFactory } from "fake-indexeddb";
-import { MarkdownView, type App, type PluginManifest } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { Notice, type App, type PluginManifest } from "obsidian";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import InkbookPlugin from "../src/main";
 
-const COMMAND_COUNT = 4;
-const EVENT_COUNT = 2;
+const REPEATED_LOAD_CYCLES = 3;
 
-function createPlugin(vaultName: string): InkbookPlugin {
-  return new InkbookPlugin(
-    {
-      vault: { getName: (): string => vaultName },
-      workspace: {
-        iterateAllLeaves: vi.fn(),
-        on: vi.fn(() => ({})),
-        onLayoutReady: vi.fn(),
-      },
-    } as unknown as App,
-    { id: "inkbook" } as PluginManifest,
-  );
+interface PluginRegistrations {
+  readonly commands: readonly unknown[];
+  readonly editorExtensions: readonly unknown[];
+  readonly events: readonly unknown[];
+  readonly postProcessors: readonly unknown[];
 }
 
-describe("InkbookPlugin", () => {
-  it("loads and unloads without starting product work during bootstrap", async () => {
-    const onLayoutReady = vi.fn<(callback: () => void) => void>();
+function createPlugin(): InkbookPlugin {
+  return new InkbookPlugin({} as App, { id: "inkbook" } as PluginManifest);
+}
+
+function registrations(plugin: InkbookPlugin): PluginRegistrations {
+  return plugin as unknown as PluginRegistrations;
+}
+
+function noticeMessages(): string[] {
+  return (Notice as unknown as { readonly messages: string[] }).messages;
+}
+
+describe("InkbookPlugin production composition", () => {
+  beforeEach(() => {
+    noticeMessages().splice(0);
+  });
+
+  it("registers only one editor history bridge during bounded startup", async () => {
+    const timeout = vi.spyOn(globalThis, "setTimeout");
+    const plugin = createPlugin();
+
+    await expect(plugin.onload()).resolves.toBeUndefined();
+    await expect(plugin.onload()).resolves.toBeUndefined();
+
+    expect(registrations(plugin)).toMatchObject({
+      commands: [],
+      events: [],
+      postProcessors: [],
+    });
+    expect(registrations(plugin).editorExtensions).toHaveLength(1);
+    expect(noticeMessages()).toEqual([]);
+    expect(timeout).not.toHaveBeenCalled();
+  });
+
+  it("does not access background resources during load", async () => {
+    const priorIndexedDb = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "indexedDB",
+    );
+    const indexedDbAccess = vi.fn();
+    Object.defineProperty(globalThis, "indexedDB", {
+      configurable: true,
+      get: indexedDbAccess,
+    });
+    const appAccess = vi.fn();
     const plugin = new InkbookPlugin(
-      {
-        vault: { getName: (): string => "test-vault" },
-        workspace: {
-          iterateAllLeaves: vi.fn(),
-          on: vi.fn(() => ({})),
-          onLayoutReady,
+      new Proxy(
+        {},
+        {
+          get: (_target, property): never => {
+            appAccess(property);
+            throw new Error("Startup accessed the Obsidian application.");
+          },
         },
-      } as unknown as App,
+      ) as App,
       { id: "inkbook" } as PluginManifest,
     );
 
-    await expect(plugin.onload()).resolves.toBeUndefined();
-    expect(onLayoutReady).toHaveBeenCalledOnce();
-    const registered = plugin as unknown as {
-      readonly commands: readonly unknown[];
-      readonly editorExtensions: readonly unknown[];
-      readonly events: readonly unknown[];
-      readonly postProcessors: readonly unknown[];
-    };
-    expect(registered.commands).toHaveLength(COMMAND_COUNT);
-    expect(registered.editorExtensions).toHaveLength(1);
-    expect(registered.events).toHaveLength(EVENT_COUNT);
-    expect(registered.postProcessors).toHaveLength(1);
-    expect(plugin.onunload()).toBeUndefined();
+    try {
+      await expect(plugin.onload()).resolves.toBeUndefined();
+      expect(appAccess).not.toHaveBeenCalled();
+      expect(indexedDbAccess).not.toHaveBeenCalled();
+      expect(document.body.childElementCount).toBe(0);
+    } finally {
+      plugin.onunload();
+      if (priorIndexedDb === undefined) {
+        Reflect.deleteProperty(globalThis, "indexedDB");
+      } else {
+        Object.defineProperty(globalThis, "indexedDB", priorIndexedDb);
+      }
+    }
   });
 
-  it("runs the lazy worker and IndexedDB environment command", async () => {
-    const priorIndexedDb = globalThis.indexedDB;
-    Object.defineProperty(globalThis, "indexedDB", {
-      configurable: true,
-      value: new IDBFactory(),
-    });
-    const plugin = createPlugin("environment-vault");
-    await plugin.onload();
-    const commands = (
-      plugin as unknown as {
-        commands: {
-          callback?: () => unknown;
-          id: string;
-        }[];
-      }
-    ).commands;
-    const environment = commands.find(
-      (command) => command.id === "phase-zero-run-environment-probe",
-    );
+  it("unloads idempotently and supports independent repeated load cycles", async () => {
+    for (let cycle = 0; cycle < REPEATED_LOAD_CYCLES; cycle += 1) {
+      const plugin = createPlugin();
+      await plugin.onload();
 
-    await environment?.callback?.();
-    expect(environment).toBeDefined();
+      expect(registrations(plugin).editorExtensions).toHaveLength(1);
+      expect(plugin.onunload()).toBeUndefined();
+      expect(plugin.onunload()).toBeUndefined();
+    }
 
-    plugin.onunload();
-    Object.defineProperty(globalThis, "indexedDB", {
-      configurable: true,
-      value: priorIndexedDb,
-    });
-  });
-});
-
-describe("InkbookPlugin input probe", () => {
-  it("shows the transient input probe without requiring recovery", async () => {
-    const plugin = createPlugin("input-vault");
-    await plugin.onload();
-    const commands = (
-      plugin as unknown as {
-        commands: {
-          editorCheckCallback?: (
-            checking: boolean,
-            editor: unknown,
-            view: MarkdownView,
-          ) => boolean;
-          id: string;
-        }[];
-      }
-    ).commands;
-    const command = commands.find(
-      (candidate) => candidate.id === "phase-zero-show-transient-input-probe",
-    );
-    const ViewConstructor = MarkdownView as unknown as new () => MarkdownView;
-    const view = new ViewConstructor();
-    Object.defineProperty(view, "file", {
-      value: { path: "input-probe.md" },
-    });
-
-    expect(command?.editorCheckCallback?.(true, {}, view)).toBe(true);
-    expect(command?.editorCheckCallback?.(false, {}, view)).toBe(true);
-    expect(command).toBeDefined();
-    plugin.onunload();
+    expect(noticeMessages()).toEqual([]);
   });
 });

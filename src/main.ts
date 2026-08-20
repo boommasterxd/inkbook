@@ -1,12 +1,13 @@
 import { Plugin } from "obsidian";
 
-import { PhaseZeroRuntime } from "./adapters/obsidian/phase-zero-runtime";
+import { PluginRuntime } from "./adapters/obsidian/plugin-runtime";
 
 export default class InkbookPlugin extends Plugin {
-  #runtime: PhaseZeroRuntime | undefined;
+  #runtime: PluginRuntime | undefined;
 
   public override onload(): Promise<void> {
-    const runtime = new PhaseZeroRuntime(this);
+    if (this.#runtime !== undefined) return Promise.resolve();
+    const runtime = new PluginRuntime(this);
     this.#runtime = runtime;
     try {
       runtime.register();
