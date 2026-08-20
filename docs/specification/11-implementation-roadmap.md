@@ -204,10 +204,10 @@ Vault writes, SVG, real pointer input, binding inference, and product UI remain 
 ### Deliverables
 
 - [ ] **P3-D1:** Implement retained SVG layers, incremental spatial, stroke-segment, selectable-order, and annotation-bottom indices, `OVERSCAN_PROFILE_V1`, bounded candidate continuations, geometry and paint bounds, annotation-aware bottom scroll extent, culling, cache limits, view transforms, and imperative node updates outside React.
-- [ ] **P3-D2:** Implement pointer routing, one-preview and one-commit gestures, pointer capture, cancellation, touch selection, native scrolling, bounded vertical selection-move edge autoscroll, right-button routing, long press, and keyboard selection.
+- [ ] **P3-D2:** Extend the product-named gesture and input components preserved by `P1-D7` into the one production pointer-routing path with one-preview and one-commit gestures, pointer capture, cancellation, touch selection, native scrolling, bounded vertical selection-move edge autoscroll, right-button routing, long press, and keyboard selection. Do not introduce a second recognizer, event-ownership path, or gesture state machine for behavior already retained from Phase 1.
 - [ ] **P3-D3:** Implement Pen, freehand and straight Highlighter, whole-element Eraser, Cursor, Lasso, pressure snapshots, constant-width projection, pressure-outline workers, and safe sliced fallback.
 - [ ] **P3-D4:** Integrate every accepted gesture with operation, host-history, recovery, session publication, retained rendering, and coalesced sidecar save.
-- [ ] **P3-D5:** Add minimal development commands for tool activation. Production toolbar and stylebar remain Phase 5.
+- [ ] **P3-D5:** Add only the minimal temporary development commands needed to activate completed tools through the same application command ports that production UI will use. They own no parallel tool state or execution path and MUST be replaced and removed by `P5-D4`. Production toolbar and stylebar remain Phase 5.
 
 ### Exit evidence
 
@@ -295,14 +295,14 @@ Vault writes, SVG, real pointer input, binding inference, and product UI remain 
 - [ ] **P5-D1:** Implement a small reusable control library for color, width, independent outline and fill opacity, pressure, caps, dash, fill, sliders, segmented choices, menus, and mixed selection state.
 - [ ] **P5-D2:** Implement the retained per-view toolbar host, independent always-visible Show or Hide toggle, Floating and Docked toolbar, contextual stylebar, responsive overflow, fixed group membership, configurable order, focus restoration, and 44-CSS-pixel compact targets.
 - [ ] **P5-D3:** Implement production controls for completed tools and binding correction. Construction controls are wired to stable ports and become enabled only with Phase 6 implementations; no milestone build may present an action as functional before its command exists.
-- [ ] **P5-D4:** Implement Obsidian commands, host Hotkeys ownership, native Menu and Modal surfaces, safe DOM, Obsidian icons, logical CSS, RTL, visible status, and accessible live regions.
-- [ ] **P5-D5:** Implement the imperative 1.8.7 settings tab, complete validated plugin-global and device-local snapshots, defaults, storage policy, toolbar order, write failure with Retry, guarded external-change reload, diagnostics, and reset.
+- [ ] **P5-D4:** Replace and remove every temporary development command from `P3-D5`, then implement each specified Obsidian command exactly once through the existing application command ports, with host Hotkeys ownership, native Menu and Modal surfaces, safe DOM, Obsidian icons, logical CSS, RTL, visible status, and accessible live regions. No development command, duplicate registration, or parallel tool-activation path remains.
+- [ ] **P5-D5:** Extend the storage-policy schema and application port delivered by `P2-D5` into the one complete validated plugin-global and device-local settings snapshot. Implement the imperative 1.8.7 settings tab, defaults, toolbar order, write failure with Retry, guarded external-change reload, diagnostics, and reset without creating a second settings store, storage-policy schema, or persistence path.
 
 ### Exit evidence
 
-- [ ] **P5-E1:** Toolbar, stylebar, settings, command, focus, keyboard, screen-reader, touch, narrow-width, reduced-motion, default light, default dark, and forced-colors or high-contrast tests pass.
+- [ ] **P5-E1:** Toolbar, stylebar, settings, command, focus, keyboard, screen-reader, touch, narrow-width, reduced-motion, default light, default dark, and forced-colors or high-contrast tests pass. Source search and direct package inspection find no temporary development command or duplicate tool-activation registration.
 - [ ] **P5-E2:** Tool or style changes rerender only subscribed coarse UI subtrees. Pointer, scene, scroll, culling, and worker changes cause zero unrelated React commits.
-- [ ] **P5-E3:** Settings corruption, migration, failed persistence, guarded external notification, settings-tab reopen reload, root rename, and cross-device locator behavior pass.
+- [ ] **P5-E3:** Settings corruption, migration, failed persistence, guarded external notification, settings-tab reopen reload, root rename, and cross-device locator behavior pass through the single settings snapshot and the reused `P2-D5` storage-policy port, with no parallel schema or store.
 - [ ] **P5-E4:** The mockup remains non-normative and no product behavior is inferred only from it.
 - [ ] **P5-E5:** After every automated Phase 5 gate passes, complete only the Phase 5 toolbar, style or setting, and focus scenario in [Testing Section 9](10-testing-and-acceptance.md#9-phase-sanity-scenarios) and report pass or fail.
 
@@ -338,14 +338,14 @@ Vault writes, SVG, real pointer input, binding inference, and product UI remain 
 - [ ] **P6-D1:** Implement Rectangle, Ellipse, Triangle, Diamond, Octagon, Line, Arrow, endpoint caps, optional stable-port attachment for either linear endpoint, and Line or Arrow quadratic curve control.
 - [ ] **P6-D2:** Implement the one Coordinate system tool with 2D or 3D creation choice, semantic vectors, individual axis-length controls, shared move, and rigid rotation.
 - [ ] **P6-D3:** Implement one semantic Table with Rows and Columns creation and selected-object controls, whole-frame move, resize, rotation, and constrained divider editing.
-- [ ] **P6-D4:** Implement linear, area, axis-set, and aggregate selection models, Group operations, z-order, duplicate, cut, copy, worker-batched bulk paste and binding inference, target menus, and dependency-closed delete.
+- [ ] **P6-D4:** Extend the single pure selection-model and object-port service delivered by `P1-D6` for construction elements and route required automatic binding through the existing Phase 4 binding-inference service. Add Group operations, z-order, duplicate, cut, copy, worker-batched bulk paste, target menus, and dependency-closed delete without introducing a second selection model, port resolver, or binding-inference path.
 - [ ] **P6-D5:** Integrate construction tools into the Phase 5 toolbar and stylebar without adding per-element React components.
 
 ### Exit evidence
 
 - [ ] **P6-E1:** Every tool passes creation, selection, style, transform, constant-width, binding, save, reload, exact Undo or Redo, cancellation, clipboard, and malicious-input tests.
 - [ ] **P6-E2:** Line and Arrow may remain straight or curve while either endpoint is free or attached. Every valid port, attachment, maximum-fanout target move, reflow, delete-detach, and Undo path passes without a scene scan.
-- [ ] **P6-E3:** Table rows, columns, dividers, minimum tracks, rotation, axes vectors, grid guides, limits, Groups, and order pass exact semantic and composed-path tests.
+- [ ] **P6-E3:** Table rows, columns, dividers, minimum tracks, rotation, axes vectors, grid guides, limits, Groups, and order pass exact semantic and composed-path tests through the single selection, port-resolution, and binding-inference services.
 - [ ] **P6-E4:** Single and aggregate transforms keep style bytes and line widths unchanged, remain atomic, and pass 5,000- and 10,000-element applicable budgets.
 - [ ] **P6-E5:** After every automated Phase 6 gate passes, complete only the Phase 6 shape, attachment, move, and Undo scenario in [Testing Section 9](10-testing-and-acceptance.md#9-phase-sanity-scenarios) and report pass or fail.
 
@@ -379,7 +379,7 @@ Vault writes, SVG, real pointer input, binding inference, and product UI remain 
 ### Deliverables
 
 - [ ] **P7-D1:** Implement none, ruled, squared, and dotted backgrounds with block-scoped measured rhythm, whole-view fallback ownership, section-owned overrides, bounded region merging, and truthful unavailable-metric degradation.
-- [ ] **P7-D2:** Implement 50 to 400 percent whole-note zoom through controls and pinch, shared note and overlay transforms, native horizontal and vertical one-finger pan over available ranges, pointer inversion, focus preservation, viewport preservation, and bounded device-local remembered zoom.
+- [ ] **P7-D2:** Extend the retained two-pointer recognizer and the existing Phase 3 view-transform and input path with 50 to 400 percent whole-note zoom through controls and pinch, shared note and overlay transforms, native horizontal and vertical one-finger pan over available ranges, pointer inversion, focus preservation, viewport preservation, and bounded device-local remembered zoom. Do not create a second recognizer, scroll owner, or transform pipeline.
 - [ ] **P7-D3:** Complete Reading View section reporting, source evidence, one whole-note overlay and annotation scroll-extent carrier, read-only projections, background ownership, section reprocessing, and disposal.
 - [ ] **P7-D4:** Integrate theme, font, writing width, mode, resize, scroll, annotation-bottom, viewport-height, and pop-out invalidation with revision-bound layout publication.
 
@@ -387,7 +387,7 @@ Vault writes, SVG, real pointer input, binding inference, and product UI remain 
 
 - [ ] **P7-E1:** The complete background formula, ownership, region-limit, mode, width, theme, font, zoom, hit-test, empty-note, and unavailable-metric matrix passes.
 - [ ] **P7-E2:** Reading View never mutates scene, Markdown, history, recovery, or sidecars and never duplicates overlays, children, observers, background regions, or annotation scroll-extent carriers.
-- [ ] **P7-E3:** Pure zoom reuses layout metrics when logical width is unchanged, native one-finger pan covers each available horizontal and vertical range through the host scroll surface, and neither path creates canonical mutation, reclassification, history, recovery, or save work.
+- [ ] **P7-E3:** Pure zoom reuses layout metrics and the existing recognizer and view-transform path when logical width is unchanged, native one-finger pan covers each available horizontal and vertical range through the host scroll surface, and neither path creates canonical mutation, reclassification, history, recovery, or save work. Source and runtime inspection find exactly one gesture-recognition and transform pipeline for these behaviors.
 - [ ] **P7-E4:** Native one-finger pan, scroll, annotation-bottom updates, zoom, culling, background, presentation, dropped-frame, paint, memory, pop-out, and teardown budgets pass at the lowest faithful automated layer. A physical claim remains unverified when no stable physical automation exists; that limitation does not block structural and simulation checks or require a generic device-runner framework.
 - [ ] **P7-E5:** After every automated Phase 7 gate passes, complete only the Phase 7 background, zoom, and Reading View scenario in [Testing Section 9](10-testing-and-acceptance.md#9-phase-sanity-scenarios) and report pass or fail.
 
