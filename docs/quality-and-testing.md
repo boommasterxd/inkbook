@@ -257,6 +257,8 @@ Unit tests cover pure or isolated behavior:
 - anchor generation for every eligible target, including ellipse cardinal points 90, 180, 270, and 360 degrees plus canonical serialization of 360 as 0
 - snap radii, hysteresis, deterministic ties, connection validation, resolution, detachment, and minimum line length
 - target move, scale, rotation, handle changes, minimum-length rejection, 3D-axis detachment, deletion, Undo, Redo, and clipboard-local ID remapping with connections
+- selection Style summaries for coordinate-system dimensionality and table column count, including homogeneous, mixed-value, mixed-kind, absolute multi-selection edits, and no-op states
+- coordinate-system dimensionality commands and table column-count commands, including retained and removed-axis connections, canonical persisted column width, local-right addition and removal, fractional widths such as a 121-unit three-column creation, repeated count changes without column-width drift, the maximum per-edit rendered left-edge displacement across the complete rotation range with a 0.003-page-unit bound, per-table multi-selection geometry, bounds rejection, atomic dependent-anchor updates, Undo, and Redo
 - zoom, camera clamping, anchored-scroll equations, and resize calculations
 - settings defaults, scope, validation, precedence, and migration
 - filename creation, path validation, MIME parsing, and reference decisions
@@ -285,6 +287,7 @@ Integration tests cover only important boundaries:
 - zoom and resize adapters proving all layout reads occur before the first DOM write and unchanged observations schedule nothing
 - renderer order plus order-only worker updates across both fixed render bands
 - connection reverse map plus renderer, bounds, path cache, and spatial-index updates after target transforms
+- selected coordinate-system and table structural Style edits proving one coarse UI update, geometry deltas only for changed targets and resolved dependents, no full-store scan or clone, exact compound-path replacement, and complete active-versus-standalone SVG parity
 - editor state plus direct live-path and transform previews
 - serializer plus worker protocol plus purpose-specific stale-result rejection, proving that clipboard, preflight, and read-back jobs do not invalidate a prepared export generation or its stable save operation
 - worker-backed unlock parsing, sequential migration, post-migration validation, bounded transferable point-buffer batches, cancellation before publication, and atomic publication after index construction
