@@ -288,6 +288,7 @@ type CoordinateSystemElementV1 = CoordinateSystemBaseV1 &
 - Scaling changes the endpoint distances from the origin and never changes outline width.
 - Changing from 3D to 2D removes the third endpoint within the same undoable style command. Changing back sets the third endpoint to `origin - 0.5 * (firstAxisVector + secondAxisVector)`.
 - Before a 3D-to-2D change removes axis index 2, every connection to that endpoint is detached at its last resolved point. The dimension change, detachment, reverse-map update, and dependent records are one atomic command; Undo restores the axis and connections.
+- When one command targets several selected coordinate systems, it applies the requested absolute dimension independently. Systems already at that dimension remain unchanged. All changed systems, connection detachments or resolutions, bounds, reverse-map entries, and dependent records validate and commit atomically; if every target is unchanged, the command is a no-op.
 
 ### Tables
 
@@ -296,7 +297,7 @@ interface TableElementV1 extends ElementBaseV1 {
   kind: "table";
   x: number;
   y: number;
-  width: number;
+  columnWidth: number;
   height: number;
   columns: number;
   headerHeight: number;
@@ -307,11 +308,14 @@ interface TableElementV1 extends ElementBaseV1 {
 - A table is one atomic element made from one outer rectangle, equal-width vertical column separators, and one horizontal header separator.
 - It contains no row separators and no editable text.
 - Column count is an integer from 1 through 12 and defaults to 3.
-- Minimum column width is 40 page units. Minimum total height is 80 page units.
+- `columnWidth` is canonical persisted geometry. Total table width is always derived as `columns * columnWidth` and is not stored separately. Minimum column width is 40 page units. Minimum total height is 80 page units.
 - Header height defaults to 30 percent of total height and is clamped to `24..height / 2`.
-- For table creation, let `sx = end.x >= start.x ? 1 : -1` and `sy = end.y >= start.y ? 1 : -1`. Set `width = max(abs(end.x - start.x), columns * 40)`, `height = max(abs(end.y - start.y), 80)`, `x = sx > 0 ? start.x : start.x - width`, and `y = sy > 0 ? start.y : start.y - height`. Crossing the start point therefore changes the expanding direction without producing negative dimensions.
-- Changing the column count redistributes separators equally. If the current width is less than `columns * 40`, the same command expands the right edge to that minimum while keeping `x` fixed.
-- Scaling changes bounds, separators, and header height proportionally, never outline width.
+- For table creation, let `sx = end.x >= start.x ? 1 : -1` and `sy = end.y >= start.y ? 1 : -1`. Canonicalize `columnWidth = max(abs(end.x - start.x) / columns, 40)` once, then derive `width = columns * columnWidth`. Set `height = max(abs(end.y - start.y), 80)`, `x = sx > 0 ? start.x : start.x - width`, and `y = sy > 0 ? start.y : start.y - height`. Crossing the start point therefore changes the expanding direction without producing negative dimensions. The derived width may differ from the raw drag width by the canonical rounding of one column, but every column remains exactly equal.
+- For a column-count edit from `columns` to `newColumns`, retain the canonical `columnWidth` unchanged and derive `oldWidth = columns * columnWidth` and `newWidth = newColumns * columnWidth`. Adding columns therefore extends the local right side, while removing columns removes local rightmost columns and shrinks the table. The command does not redistribute the retained columns across the old total width, and repeated count changes cannot accumulate column-width drift.
+- The rendered local left edge is the fixed anchor of a column-count edit. Let `R` rotate a vector clockwise by `rotation`, `oldPivot` be the pre-command pivot, and `deltaWidth = newWidth - oldWidth`. Calculate the unrounded candidate `newPivot = oldPivot + R({ x: deltaWidth / 2, y: 0 })`, `newX = newPivot.x - newWidth / 2`, and `newY = newPivot.y - height / 2`, then apply the normal canonical rounding once to the resulting stored coordinates. At zero rotation, `newX` equals the previous `x`. After canonicalization, each endpoint of the rendered left edge MUST remain within 0.003 page units of its immediately preceding position. This bound covers the worst-case independent three-decimal rounding of the pivot and bounds coordinates for one edit over the complete rotation range.
+- A column-count edit preserves `y` only at zero rotation and always preserves height, header height, rotation, style, outline width, and the persisted `columnWidth`. It validates the `1..12` range, the 40-page-unit minimum column width, finite numbers, canonical rounding, page bounds, the per-edit fixed-edge tolerance, and every connected dependent before commit. If the complete result is invalid, the command is rejected without changing the table, revision, or history.
+- When one command targets several selected tables, it applies the requested absolute column count independently while preserving each table's own persisted `columnWidth`. Changed tables and all affected line or arrow dependents commit atomically. A table already at the requested count remains unchanged; if every target is unchanged, the command is a no-op.
+- Scaling changes bounds, separators, `columnWidth`, and header height proportionally, never outline width.
 
 ## Transform Rules
 
@@ -321,7 +325,7 @@ interface TableElementV1 extends ElementBaseV1 {
 - Single-element scaling is performed in the element's unrotated local frame around the opposite handle `anchor`. Unrotate the start and current pointer by `-rotation` around the current pivot, compute `sx = (current.x - anchor.x) / (start.x - anchor.x)` and `sy = (current.y - anchor.y) / (start.y - anchor.y)`, and clamp each factor before it reaches zero so every documented minimum remains satisfied. Every canonical point becomes `anchor + (sx * (point.x - anchor.x), sy * (point.y - anchor.y))`; bounds and table fields are derived from those transformed corners. The pivot is recomputed from the result. Handle crossing never mirrors an element.
 - Multi-element scaling is uniform only. Let `anchor` be the opposite selection-bounds corner and `s = max(minimumScale, distance(anchor,currentPointer) / distance(anchor,startPointer))`, where `minimumScale` is the greatest per-element factor needed to retain every documented minimum. Every geometry point and pivot becomes `anchor + s * (value - anchor)`. Bounds, table header height, and axis lengths scale by `s`; each element's rotation is unchanged.
 - Single-element rotation adds the gesture angle delta to `rotation`; geometry and pivot remain unchanged. Multi-element rotation uses the selection-bounds center `c`: each element's canonical geometry and pivot first move by `rotate(pivot - c, delta) + c - pivot`, then its normalized `rotation` increases by `delta`.
-- Endpoint, bend, axis, and dedicated shape-handle edits update their named canonical fields directly and recompute the pivot where the element kind requires a bounds center. Editing a connected endpoint follows the connection rules above. Coordinate-system pivot always equals its origin.
+- Endpoint, bend, axis, dedicated shape-handle, coordinate-system dimensionality, and table column-count edits update their named canonical fields directly and recompute the pivot where the element kind requires a bounds center. Editing a connected endpoint follows the connection rules above. Coordinate-system pivot always equals its origin. Structural edits use the kind-specific geometry rules above rather than a selection-scale transform.
 - Style widths, node sizes, and eraser radius never change through geometric scaling. Invalid or degenerate results are clamped before commit.
 
 ## Bounds

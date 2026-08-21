@@ -103,9 +103,9 @@ Lines, arrows, closed shapes, coordinate systems, and tables are created by drag
 
 Lines, arrows, coordinate systems, and tables do not have a fill. All closed shapes additionally support a fill color.
 
-A coordinate system can be either two-dimensional or three-dimensional. Its dimensionality is selected in the Style menu. Scaling changes the lengths of its axes without changing their line width.
+A coordinate system can be either two-dimensional or three-dimensional. Its dimensionality is selected in the Style menu when the tool is active and remains editable there when existing coordinate systems are selected. Scaling changes the lengths of its axes without changing their line width.
 
-The Table tool creates a connected table from lines. Its number of columns is configurable. It has no row separators except for a single horizontal separator below the column headings. Scaling changes the lengths of its lines without changing their line width.
+The Table tool creates a connected table from lines. Its number of columns is configurable during creation and remains editable in the Style menu when existing tables are selected. It has no row separators except for a single horizontal separator below the column headings. Scaling changes the lengths of its lines without changing their line width.
 
 ## Line and Arrow Connections
 
@@ -200,6 +200,10 @@ Tables only:
 
 - number of columns
 
+The coordinate-system dimensionality and table column-count controls apply both to the active creation tool and to an existing applicable selection. A selection containing only coordinate systems exposes dimensionality. A selection containing only tables exposes column count. If all selected elements support the same structural property but currently have different values, the control shows a mixed state until the user chooses one concrete value; that value is then applied independently to every selected element. A mixed selection containing another element kind hides these structural controls.
+
+Changing the column count of a selected table preserves that table's current column width. Adding a column extends the table by one column width on its local right side, while removing a column removes the local rightmost column and shrinks the total width by one column width. Height, header height, rotation, and line width remain unchanged. The rendered local left edge stays fixed, including for a rotated table.
+
 Colors:
 
 - Theme text color
@@ -212,7 +216,7 @@ Colors:
 - violet
 - pink
 
-When elements are selected, the flyout edits the selection instead of the current tool. For a mixed selection, it only shows properties that apply to all selected elements.
+When elements are selected, the flyout edits the selection instead of the current tool. For a mixed selection, it only shows properties that apply to all selected elements. One accepted structural change is one atomic undo step and changes neither session tool values nor vault defaults. Choosing the existing value is a no-op with no revision or history entry.
 
 Exact geometry, hit tolerances, bounds, node sizing, and serialization are defined in [File Format and Geometry](file-format.md). Built-in and user-configurable defaults are defined in [Settings](settings.md).
 
