@@ -12,12 +12,12 @@
 
 Settings have four scopes:
 
-| Scope | Storage | Examples |
-|---|---|---|
-| Vault | Obsidian plugin data | Tool defaults, default background, page buffer, file placement |
-| Device and vault | Obsidian local storage | Finger drawing, pen-tap insertion, handedness, motion preference |
-| File | Editable SVG snapshot | Current background type and spacing, element styles |
-| Session | Memory only | Current tool, current flyout values, finger toggle, zoom, camera position |
+| Scope            | Storage                | Examples                                                                  |
+| ---------------- | ---------------------- | ------------------------------------------------------------------------- |
+| Vault            | Obsidian plugin data   | Tool defaults, default background, page buffer, file placement            |
+| Device and vault | Obsidian local storage | Finger drawing, pen-tap insertion, handedness, motion preference          |
+| File             | Editable SVG snapshot  | Current background type and spacing, element styles                       |
+| Session          | Memory only            | Current tool, current flyout values, finger toggle, zoom, camera position |
 
 Vault settings use `Plugin.loadData()` and `Plugin.saveData()`. Device settings use `App.loadLocalStorage("inkbook:device-settings:v1")` and `App.saveLocalStorage(...)`. They are local to the current device and vault and contain preferences only, never vault paths, note content, clipboard data, or ink data.
 
@@ -46,8 +46,7 @@ interface ToolDefaultsV1 {
   highlighter: HighlighterDefaultsV1;
   straightHighlighter: HighlighterDefaultsV1;
   eraser: EraserDefaultsV1;
-  shapes: Record<ClosedShapeToolV1, ShapeDefaultsV1> &
-    Record<OutlineOnlyToolV1, OutlineDefaultsV1>;
+  shapes: Record<ClosedShapeToolV1, ShapeDefaultsV1> & Record<OutlineOnlyToolV1, OutlineDefaultsV1>;
   arrow: { startNode: ArrowNodeV1; endNode: ArrowNodeV1 };
   coordinateSystem: { dimension: "2d" | "3d" };
   table: { columns: number };
@@ -74,17 +73,17 @@ The built-in startup tool is `draw`.
 
 The built-in palette uses these exact snapshot values:
 
-| Name | Value |
-|---|---|
+| Name             | Value                      |
+| ---------------- | -------------------------- |
 | Theme text color | `{ "type": "theme-text" }` |
-| Red | `#EF4444FF` |
-| Orange | `#F97316FF` |
-| Yellow | `#EAB308FF` |
-| Green | `#22C55EFF` |
-| Cyan | `#06B6D4FF` |
-| Blue | `#3B82F6FF` |
-| Violet | `#8B5CF6FF` |
-| Pink | `#EC4899FF` |
+| Red              | `#EF4444FF`                |
+| Orange           | `#F97316FF`                |
+| Yellow           | `#EAB308FF`                |
+| Green            | `#22C55EFF`                |
+| Cyan             | `#06B6D4FF`                |
+| Blue             | `#3B82F6FF`                |
+| Violet           | `#8B5CF6FF`                |
+| Pink             | `#EC4899FF`                |
 
 Custom colors are not part of the first release. Opacity remains a separate normalized value.
 
@@ -230,18 +229,18 @@ The selected background type and all three spacing defaults are independent. A n
 
 All numeric ranges are inclusive.
 
-| Field | Accepted values | UI step |
-|---|---|---:|
-| Pen or highlighter opacity | finite number from 0 through 1 | 0.05 |
-| Shape outline or fill opacity | finite number from 0 through 1 | 0.05 |
-| Pen or highlighter width | the listed discrete width values | Discrete |
-| Shape outline width | the listed discrete width values | Discrete |
-| Eraser radius | integer from 8 through 64 CSS pixels | 4 |
-| Table columns | integer from 1 through 12 | 1 |
-| Writing-line height | integer from 50 through 200 page units | 10 |
-| Active buffer lines | integer from 1 through 8 | 1 |
-| Locked buffer lines | integer 0 or 1 | 1 |
-| Enumerations and colors | exactly one documented value | Discrete |
+| Field                         | Accepted values                        |  UI step |
+| ----------------------------- | -------------------------------------- | -------: |
+| Pen or highlighter opacity    | finite number from 0 through 1         |     0.05 |
+| Shape outline or fill opacity | finite number from 0 through 1         |     0.05 |
+| Pen or highlighter width      | the listed discrete width values       | Discrete |
+| Shape outline width           | the listed discrete width values       | Discrete |
+| Eraser radius                 | integer from 8 through 64 CSS pixels   |        4 |
+| Table columns                 | integer from 1 through 12              |        1 |
+| Writing-line height           | integer from 50 through 200 page units |       10 |
+| Active buffer lines           | integer from 1 through 8               |        1 |
+| Locked buffer lines           | integer 0 or 1                         |        1 |
+| Enumerations and colors       | exactly one documented value           | Discrete |
 
 Unknown object properties, missing required properties, invalid enum values, non-finite numbers, and values outside these ranges make the containing persisted settings field invalid. The loader replaces only that field with its built-in default, records a non-content diagnostic code, and continues loading the other valid fields.
 

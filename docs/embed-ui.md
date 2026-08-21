@@ -90,18 +90,18 @@ The overflow and selection context menus expose a non-interactive Arrange label 
 
 Canvas menus use Obsidian's native menu component, never a React-rendered SVG overlay. Every actionable entry has a built-in Lucide icon:
 
-| Action | Icon |
-|---|---|
-| Copy, Copy embed | `copy` |
-| Cut | `scissors` |
-| Paste | `clipboard-paste` |
-| Delete, Delete embed | `trash-2` |
-| Arrange label | `layers` |
-| Bring forward | `arrow-up` |
-| Send backward | `arrow-down` |
-| Bring to front | `chevrons-up` |
-| Send to back | `chevrons-down` |
-| Erase all | `eraser` |
+| Action               | Icon              |
+| -------------------- | ----------------- |
+| Copy, Copy embed     | `copy`            |
+| Cut                  | `scissors`        |
+| Paste                | `clipboard-paste` |
+| Delete, Delete embed | `trash-2`         |
+| Arrange label        | `layers`          |
+| Bring forward        | `arrow-up`        |
+| Send backward        | `arrow-down`      |
+| Bring to front       | `chevrons-up`     |
+| Send to back         | `chevrons-down`   |
+| Erase all            | `eraser`          |
 
 Arrange calls `setIsLabel(true)` and has no click handler. Delete, Erase all, and Delete embed use the host warning presentation so both icon and text are red. Cut remains a normal action because it is clipboard-preserving and undoable. Separators divide selection actions from canvas or embed actions. Menu items use sentence case, expose their visible title as the accessible name, and retain visible disabled Arrange boundary actions.
 

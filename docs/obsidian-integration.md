@@ -8,11 +8,11 @@ Inkbook supports Obsidian desktop, iOS, and Android with `minAppVersion: "1.13.0
 
 The required host behavior is:
 
-| Obsidian mode | Inkbook behavior | Public integration |
-|---|---|---|
-| Reading view | Preserve the native static SVG preview and progressively add activation behavior | `Plugin.registerMarkdownPostProcessor()` |
-| Live Preview | Replace visible Inkbook embeds with viewport-bounded widgets | `Plugin.registerEditorExtension()` with a CM6 `ViewPlugin`, `Decoration`, and `WidgetType` |
-| Source mode | Preserve editable Markdown source; do not replace the embed text | Obsidian `Editor` for user-initiated text changes |
+| Obsidian mode | Inkbook behavior                                                                 | Public integration                                                                         |
+| ------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Reading view  | Preserve the native static SVG preview and progressively add activation behavior | `Plugin.registerMarkdownPostProcessor()`                                                   |
+| Live Preview  | Replace visible Inkbook embeds with viewport-bounded widgets                     | `Plugin.registerEditorExtension()` with a CM6 `ViewPlugin`, `Decoration`, and `WidgetType` |
+| Source mode   | Preserve editable Markdown source; do not replace the embed text                 | Obsidian `Editor` for user-initiated text changes                                          |
 
 Obsidian does not expose a dedicated public handler for native `![[file.svg]]` embeds. Reading-view enhancement therefore MUST be progressive. The postprocessor correlates a candidate through `MarkdownPostProcessorContext.sourcePath` and the section returned by `getSectionInfo()` immediately before use. If section information is `null`, the target cannot be resolved unambiguously, or the generated DOM is unfamiliar, Inkbook leaves the native preview unchanged and does not unlock it. This fallback is safe and MUST be covered against every supported Obsidian version.
 
@@ -66,19 +66,19 @@ All paths are untrusted. Inkbook rejects absolute paths and traversal segments b
 
 Supported operations are:
 
-| Operation | Required API and rule |
-|---|---|
-| Resolve a known path | `Vault.getFileByPath()` or `Vault.getFolderByPath()`, followed by a concrete `TFile` or `TFolder` check |
-| Read for display | `Vault.cachedRead()` |
-| Read for editor unlock | Size preflight through `TFile.stat.size`, then `Vault.readBinary()` and transferable worker validation |
-| Save an existing SVG | Worker-validated `Vault.read()` preflight followed by `Vault.process()` with a synchronous exact-base check |
-| Create an SVG | `Vault.create()` after collision-safe path resolution |
-| Resolve attachment placement | `FileManager.getAvailablePathForAttachment(filename, sourcePath)` |
-| Generate Markdown link text | `FileManager.generateMarkdownLink(file, sourcePath, undefined, "")`, prefixed with `!` for an embed |
-| Resolve a link target | `MetadataCache.getFirstLinkpathDest(linkpath, sourcePath)` |
-| Determine references | `MetadataCache.resolvedLinks` only after metadata resolution; uncertainty denies deletion |
-| Rename a managed file | `FileManager.renameFile()` |
-| Delete recoverably | `FileManager.trashFile()` |
+| Operation                    | Required API and rule                                                                                       |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Resolve a known path         | `Vault.getFileByPath()` or `Vault.getFolderByPath()`, followed by a concrete `TFile` or `TFolder` check     |
+| Read for display             | `Vault.cachedRead()`                                                                                        |
+| Read for editor unlock       | Size preflight through `TFile.stat.size`, then `Vault.readBinary()` and transferable worker validation      |
+| Save an existing SVG         | Worker-validated `Vault.read()` preflight followed by `Vault.process()` with a synchronous exact-base check |
+| Create an SVG                | `Vault.create()` after collision-safe path resolution                                                       |
+| Resolve attachment placement | `FileManager.getAvailablePathForAttachment(filename, sourcePath)`                                           |
+| Generate Markdown link text  | `FileManager.generateMarkdownLink(file, sourcePath, undefined, "")`, prefixed with `!` for an embed         |
+| Resolve a link target        | `MetadataCache.getFirstLinkpathDest(linkpath, sourcePath)`                                                  |
+| Determine references         | `MetadataCache.resolvedLinks` only after metadata resolution; uncertainty denies deletion                   |
+| Rename a managed file        | `FileManager.renameFile()`                                                                                  |
+| Delete recoverably           | `FileManager.trashFile()`                                                                                   |
 
 The complete SVG is generated and validated before `Vault.process()` starts. A preceding uncached `Vault.read()` is hashed and revision-checked in the document worker against the last confirmed base. Normal preflight and read-back carry the active save's same `saveOperationId` and target revision and do not advance `exportGeneration`; stale identities are rejected before adoption. If the executor fails after writing begins, read-back instead uses the new executor epoch and a new `verificationOperationId` bound to the immutable old save ID, revision, and output hash. The exact preflight string is retained only until the synchronous `Vault.process()` callback compares the callback's current content with it. This catches an external change in the preflight-to-process race; a mismatch throws a structured conflict and writes nothing. The callback also scans at most 4 KiB for the canonical `data-inkbook-revision` and compares the prepared result revision with the editor's current revision immediately before returning output. It performs no XML or JSON parsing, hashing, serialization, asynchronous work, or allocation proportional to element count. Exact string comparison counts toward the autosave main-thread budget. A successful callback returns the already generated complete SVG and releases the preflight string. The plugin MUST NOT implement a temporary-file rename protocol through `Vault.adapter`, because the public API does not guarantee portable atomic replacement through that path.
 
@@ -112,13 +112,13 @@ Every actionable menu entry calls `MenuItem.setIcon()` with the built-in icon sp
 
 Built-in Lucide icons use `setIcon()`. A custom icon is allowed only when no suitable built-in icon exists and is registered through `addIcon()`. Every icon-only control still has an accessible name and tooltip.
 
-Static styling lives in `styles.css`, is scoped below one Inkbook root class except for the single lease-owned scroll-element marker defined above, and uses Obsidian variables such as `--background-secondary`, `--background-modifier-border`, `--text-normal`, and `--interactive-accent`. Runtime geometry uses SVG attributes or narrowly scoped CSS custom properties. Untrusted text is assigned with `textContent` or Obsidian DOM helpers. `innerHTML`, `outerHTML`, and `insertAdjacentHTML` are forbidden.
+Static styling is authored in `src/obsidian/styles/inkbook.css` and built as the release artifact `styles.css`. It is scoped below one Inkbook root class except for the single lease-owned scroll-element marker defined above, and uses Obsidian variables such as `--background-secondary`, `--background-modifier-border`, `--text-normal`, and `--interactive-accent`. Runtime geometry uses SVG attributes or narrowly scoped CSS custom properties. Untrusted text is assigned with `textContent` or Obsidian DOM helpers. `innerHTML`, `outerHTML`, and `insertAdjacentHTML` are forbidden.
 
 Obsidian variables style host chrome only. The active document graphic and saved standalone SVG use the fixed self-contained palette in [Standalone SVG Envelope and Theme Rendering](svg-envelope.md), because external editors cannot resolve Community-theme variables. The plugin registers `Workspace.on("css-change")`, reads `App.isDarkMode()`, and updates each mounted presentation's root scheme once through that presentation's lifecycle owner. It does not scan files, rebuild paths, increment revisions, dispatch exports, or write the vault. Reading-view and Live Preview embed hosts expose the same scheme to the embedded SVG through `color-scheme`.
 
 ## Community Directory Release Contract
 
-Before a Community directory submission, the repository MUST contain root `README.md`, `LICENSE`, and `manifest.json` files. These do not exist yet, so the current documentation repository is not submission-ready.
+Before a Community directory submission, the repository MUST contain root `README.md`, `LICENSE`, and `manifest.json` files. `README.md` and `manifest.json` now exist, but a license has not been selected. The repository therefore remains private, its package is marked `UNLICENSED`, and it is not submission-ready until an appropriate root `LICENSE` file is deliberately added and verified.
 
 The release contract is:
 

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["src/main.ts", "scripts/*.mjs"],
+  "project": ["src/**/*.ts", "test/**/*.ts", "scripts/*.mjs"],
+  "vitest": {
+    "config": ["vitest.config.ts"],
+    "entry": ["test/{unit,integration}/**/*.test.ts"]
+  }
+}

@@ -56,13 +56,61 @@ The complete host API, lifecycle, UI, and Community directory contract is define
 
 The implementation uses five responsibility areas:
 
-| Area | Responsibility | May depend on |
-|---|---|---|
-| `domain` | Elements, geometry, commands, history, bounds, spatial index, schemas, and pure calculations | Nothing outside `domain` |
-| `editor` | Tool state, pointer arbitration, selection, gesture transactions, session state, and autosave scheduling | `domain` |
-| `rendering` | React application chrome plus an imperative SVG scene renderer for committed nodes, previews, animation, and viewport culling | `domain`, read-only editor state |
-| `persistence` | SVG serialization, snapshot validation, migrations, atomic vault writes, clipboard codec, and document worker | `domain`, injected Obsidian adapter interfaces |
-| `obsidian` | Plugin lifecycle, Markdown embed widgets, CodeMirror integration, settings UI, commands, notices, and vault adapters | All other areas through their public entry points |
+| Area          | Responsibility                                                                                                                | May depend on                                     |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `domain`      | Elements, geometry, commands, history, bounds, spatial index, schemas, and pure calculations                                  | Nothing outside `domain`                          |
+| `editor`      | Tool state, pointer arbitration, selection, gesture transactions, session state, and autosave scheduling                      | `domain`                                          |
+| `rendering`   | React application chrome plus an imperative SVG scene renderer for committed nodes, previews, animation, and viewport culling | `domain`, read-only editor state                  |
+| `persistence` | SVG serialization, snapshot validation, migrations, atomic vault writes, clipboard codec, and document worker                 | `domain`, injected Obsidian adapter interfaces    |
+| `obsidian`    | Plugin lifecycle, Markdown embed widgets, CodeMirror integration, settings UI, commands, notices, and vault adapters          | All other areas through their public entry points |
+
+### Source Topology and Module Boundaries
+
+The target source topology is:
+
+```text
+src/
+├── main.ts
+├── domain/
+│   ├── commands/
+│   ├── elements/
+│   ├── geometry/
+│   ├── schema/
+│   └── spatial/
+├── editor/
+│   ├── input/
+│   └── session/
+├── rendering/
+│   ├── scene/
+│   └── ui/
+├── persistence/
+│   ├── clipboard/
+│   ├── documents/
+│   ├── saving/
+│   └── worker/
+└── obsidian/
+    ├── inkbook-plugin.ts
+    ├── embeds/
+    ├── settings/
+    ├── styles/
+    └── vault/
+```
+
+This tree defines ownership, not a requirement to create empty directories. A leaf directory is introduced only when it contains an implementation with that responsibility. `src/main.ts` is the build entry and composition root only; it exports the plugin and MUST NOT accumulate lifecycle, domain, rendering, or persistence logic.
+
+Dependency arrows point inward: `editor`, `rendering`, and `persistence` may import `domain`; `obsidian` performs final composition and may import the other areas through their public entry points. Imports MUST follow the `May depend on` column above. In particular:
+
+- `domain` imports no framework, browser, worker, vault, React, CodeMirror, or Obsidian module.
+- `editor` depends only on `domain` contracts and never imports renderer, persistence, React, CodeMirror, or Obsidian implementations.
+- `rendering` may consume immutable domain records and narrow read-only editor projections. Imperative scene code and React UI code remain in separate leaf folders and communicate through coarse typed state rather than DOM references.
+- `persistence` owns codecs, migrations, worker messages, and save orchestration. It receives host I/O through narrow ports and never imports a concrete Obsidian adapter.
+- `obsidian` is the outer integration layer and composition owner. It may connect the other areas but MUST NOT reimplement their rules.
+
+Each module has one primary reason to change. Feature-specific types, tests, styles, and helpers stay with their owning area. Generic `utils`, `common`, `shared`, `services`, or `helpers` dumping grounds are forbidden. A shared abstraction is introduced only for a current cross-area contract or verified duplication, receives a domain-specific name, and is placed at the narrowest dependency boundary that can own it without creating a cycle.
+
+Cross-area APIs stay small and explicit. Prefer direct imports from the owning module. Add an area-level `public.ts` only when several external consumers need a stable boundary; do not create recursive barrel files or re-export internal implementation details. Dependency cycles, cross-area mutable globals, hidden singleton access, and framework types in pure contracts are forbidden.
+
+Tests mirror source ownership. Pure behavior belongs under `test/unit/<area>/`; focused host or worker boundaries belong under `test/integration/<area>/`; reusable external-boundary doubles belong under `test/adapters/<boundary>/`. Tests MUST NOT gain access to internal modules through a broader public API than production code requires.
 
 Additional architecture rules:
 
@@ -82,14 +130,14 @@ Additional architecture rules:
 
 Each embed is in exactly one state:
 
-| State | Input | Visible result | Exit |
-|---|---|---|---|
-| `locked` | Preview activation only | Static preview with at most one empty writing line | `unlocking` |
-| `unlocking` | Ignored except coordinator cancellation, widget detachment, or plugin unload | Preview remains visible while the editor mounts, measures, and expands | `active`, `locked`, `load-error`, or removed |
-| `active` | Full editor input | Interactive SVG with the configured active buffer, three lines by default | `locking`, `save-error`, or `load-error` |
-| `locking` | Disabled immediately | Editor animates to width fit and locked height while save completes | `locked` or `save-error` |
-| `save-error` | Recovery controls only | Dirty editor remains mounted with Retry, Save local copy, and Cancel | `locking`, `active`, or removed |
-| `load-error` | Recovery controls only | Last known safe preview with editing disabled | `locked` or removed |
+| State        | Input                                                                        | Visible result                                                            | Exit                                         |
+| ------------ | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------- | -------------------------------------------- |
+| `locked`     | Preview activation only                                                      | Static preview with at most one empty writing line                        | `unlocking`                                  |
+| `unlocking`  | Ignored except coordinator cancellation, widget detachment, or plugin unload | Preview remains visible while the editor mounts, measures, and expands    | `active`, `locked`, `load-error`, or removed |
+| `active`     | Full editor input                                                            | Interactive SVG with the configured active buffer, three lines by default | `locking`, `save-error`, or `load-error`     |
+| `locking`    | Disabled immediately                                                         | Editor animates to width fit and locked height while save completes       | `locked` or `save-error`                     |
+| `save-error` | Recovery controls only                                                       | Dirty editor remains mounted with Retry, Save local copy, and Cancel      | `locking`, `active`, or removed              |
+| `load-error` | Recovery controls only                                                       | Last known safe preview with editing disabled                             | `locked` or removed                          |
 
 At most one workspace session, whether attached or detached, may be `unlocking`, `active`, `locking`, or `save-error`. Activating another embed first completes the current lock operation. A failed lock MUST keep the existing editor data in memory and MUST NOT replace the preview with stale content. Retry re-enters `locking`; Save local copy writes and validates a new file, replaces this embed's Markdown target, then locks; Cancel returns to `active` without discarding data. Another embed cannot activate while recovery is unresolved.
 
@@ -136,17 +184,17 @@ All pointer gestures MUST:
 
 The active canvas uses `touch-action: none`; Inkbook, rather than the browser gesture recognizer, owns touch pointers inside it. The input reducer uses these states:
 
-| State | Entry | Transition or commit |
-|---|---|---|
-| `idle` | No active pointer | Pointer down enters one state below and captures the pointer immediately |
-| `touch-pending` | One touch on empty canvas with finger drawing off | Start a 500 ms timer and remain pending while total movement is at most 10 pixels |
-| `note-scroll` | From pending only after movement exceeds 10 pixels and vertical movement is dominant, or any direction exceeds 10 pixels at fit zoom | Apply movement to the nearest pane scroller; dominant means `abs(dy) > 1.25 * abs(dx)` |
-| `page-pan` | From pending only after movement exceeds 10 pixels, horizontal movement is dominant, and zoom is above fit | Apply horizontal movement to `camera.x`; dominant means `abs(dx) >= 1.25 * abs(dy)` |
-| `element-move` | Touch begins on an element regardless of tool, or mouse/pen begins on an element while Select is active | Select immediately; a stationary 500 ms touch opens the native menu, while movement beyond 6 pixels cancels its timer and previews a move |
-| `lasso` | Mouse, pen, or enabled-finger drag begins on empty canvas while Select is active | Preview one lasso transaction after movement exceeds 6 pixels |
-| `eraser-gesture` | Pen or mouse begins with Eraser active, or enabled-finger input begins on empty canvas with Eraser active | Preview candidate opacity only; commit one removal command on release |
-| `tool-gesture` | Pen or mouse begins with Draw, either highlighter, or a shape active, or enabled-finger input begins on empty canvas with one of those tools active | Preview one creation transaction |
-| `pinch` | Second touch arrives | Cancel pending long press, element move, or tool preview; capture both touches and zoom from their midpoint |
+| State            | Entry                                                                                                                                               | Transition or commit                                                                                                                      |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `idle`           | No active pointer                                                                                                                                   | Pointer down enters one state below and captures the pointer immediately                                                                  |
+| `touch-pending`  | One touch on empty canvas with finger drawing off                                                                                                   | Start a 500 ms timer and remain pending while total movement is at most 10 pixels                                                         |
+| `note-scroll`    | From pending only after movement exceeds 10 pixels and vertical movement is dominant, or any direction exceeds 10 pixels at fit zoom                | Apply movement to the nearest pane scroller; dominant means `abs(dy) > 1.25 * abs(dx)`                                                    |
+| `page-pan`       | From pending only after movement exceeds 10 pixels, horizontal movement is dominant, and zoom is above fit                                          | Apply horizontal movement to `camera.x`; dominant means `abs(dx) >= 1.25 * abs(dy)`                                                       |
+| `element-move`   | Touch begins on an element regardless of tool, or mouse/pen begins on an element while Select is active                                             | Select immediately; a stationary 500 ms touch opens the native menu, while movement beyond 6 pixels cancels its timer and previews a move |
+| `lasso`          | Mouse, pen, or enabled-finger drag begins on empty canvas while Select is active                                                                    | Preview one lasso transaction after movement exceeds 6 pixels                                                                             |
+| `eraser-gesture` | Pen or mouse begins with Eraser active, or enabled-finger input begins on empty canvas with Eraser active                                           | Preview candidate opacity only; commit one removal command on release                                                                     |
+| `tool-gesture`   | Pen or mouse begins with Draw, either highlighter, or a shape active, or enabled-finger input begins on empty canvas with one of those tools active | Preview one creation transaction                                                                                                          |
+| `pinch`          | Second touch arrives                                                                                                                                | Cancel pending long press, element move, or tool preview; capture both touches and zoom from their midpoint                               |
 
 If movement exceeds 10 pixels without a dominant axis, `touch-pending` chooses note scrolling. Horizontal movement at fit zoom also chooses note scrolling and never enters a dead state. A long press opens the native context menu only when its timer fires with no second touch, no winning gesture, and movement no greater than 6 pixels from an annotation start or 10 pixels from an empty-canvas start. Before `Menu.showAtPosition()`, the reducer cancels its timer and any zero-distance preview, releases pointer capture, marks the still-down pointer as consumed until its eventual release or cancellation, and returns to `idle`. That later pointer event cannot start or finish a gesture. This exit creates no history entry and does not dirty the file. Pointer cancellation restores the pre-gesture camera, scroll, selection geometry, and model state. Eraser candidates remain present in the model while their preview opacity fades; pointer-up removes them in one command, while cancellation restores full opacity without a history entry.
 
