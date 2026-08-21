@@ -1,0 +1,59 @@
+{
+  "name": "inkbook",
+  "version": "0.1.0",
+  "description": "Create and edit responsive handwriting embeds stored as portable SVG files.",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "main.js",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "audit": "npm audit --audit-level=high",
+    "benchmark": "node scripts/check-performance-budget.mjs",
+    "build": "node scripts/build.mjs",
+    "ci": "npm run format:check && npm run lint && npm run typecheck && npm run test:coverage && npm run duplication && npm run dead-code && npm run audit && npm run build && npm run benchmark && npm run package:verify",
+    "dead-code": "knip",
+    "dev": "node scripts/build.mjs --watch",
+    "duplication": "jscpd",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint . --max-warnings 0",
+    "package:verify": "node scripts/verify-package.mjs",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run test/integration",
+    "test:unit": "vitest run test/unit",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p test/tsconfig.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/boommasterxd/inkbook.git"
+  },
+  "bugs": {
+    "url": "https://github.com/boommasterxd/inkbook/issues"
+  },
+  "homepage": "https://github.com/boommasterxd/inkbook#readme",
+  "devDependencies": {
+    "@codemirror/state": "6.5.0",
+    "@codemirror/view": "6.38.6",
+    "@types/node": "24.13.3",
+    "@vitest/coverage-v8": "4.1.11",
+    "eslint": "10.9.0",
+    "eslint-plugin-obsidianmd": "0.4.1",
+    "eslint-plugin-sonarjs": "4.2.0",
+    "esbuild": "0.28.2",
+    "globals": "17.11.0",
+    "jscpd": "5.0.16",
+    "knip": "6.32.2",
+    "obsidian": "1.13.1",
+    "prettier": "3.9.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.67.0",
+    "vitest": "4.1.11"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}

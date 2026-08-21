@@ -1,0 +1,11 @@
+.inkbook-root {
+  box-sizing: border-box;
+  max-inline-size: 100%;
+  position: relative;
+}
+
+.inkbook-root *,
+.inkbook-root *::before,
+.inkbook-root *::after {
+  box-sizing: inherit;
+}

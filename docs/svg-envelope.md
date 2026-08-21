@@ -41,16 +41,17 @@ Additional envelope rules:
 
 Format version 1 uses this fixed document palette, derived from Obsidian's default base color roles but serialized explicitly so external software has no Obsidian dependency:
 
-| Role | Light | Dark |
-|---|---|---|
-| Page surface | `#F6F6F6FF` | `#282828FF` |
-| Theme text | `#222222FF` | `#DADADAFF` |
+| Role             | Light       | Dark        |
+| ---------------- | ----------- | ----------- |
+| Page surface     | `#F6F6F6FF` | `#282828FF` |
+| Theme text       | `#222222FF` | `#DADADAFF` |
 | Background guide | `#70707040` | `#99999940` |
 
 `ColorV1` values with `type: "theme-text"` use the Theme text role. Explicit RGBA colors, including built-in highlighter and palette colors, retain the same value in both schemes.
 
 The serializer emits one constant-size stylesheet equivalent to:
 
+<!-- prettier-ignore -->
 ```css
 :root {
   color-scheme: light dark;
