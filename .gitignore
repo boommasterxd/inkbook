@@ -1,0 +1,8 @@
+coverage/
+dist/
+main.js
+*.js.map
+node_modules/
+.DS_Store
+.idea/
+.vscode/

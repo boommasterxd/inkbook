@@ -51,9 +51,7 @@ interface PointV1 {
 
 type StrokeSamplesV1 = number[];
 
-type ColorV1 =
-  | { type: "theme-text" }
-  | { type: "rgba"; value: `#${string}` };
+type ColorV1 = { type: "theme-text" } | { type: "rgba"; value: `#${string}` };
 
 interface ElementBaseV1 {
   id: string;
@@ -153,8 +151,14 @@ interface EndpointConnectionV1 {
 }
 
 type BoxAnchorV1 =
-  | "top-left" | "top-center" | "top-right" | "middle-right"
-  | "bottom-right" | "bottom-center" | "bottom-left" | "middle-left";
+  | "top-left"
+  | "top-center"
+  | "top-right"
+  | "middle-right"
+  | "bottom-right"
+  | "bottom-center"
+  | "bottom-left"
+  | "middle-left";
 
 type ShapeAnchorV1 =
   | { kind: "box"; position: BoxAnchorV1 }
@@ -412,19 +416,19 @@ interface InkClipboardV1 {
 
 Files exceeding a limit open read-only and are never rewritten automatically.
 
-| Limit | File | Clipboard |
-|---|---:|---:|
-| Total input bytes | 64 MiB | 8 MiB |
-| Snapshot metadata bytes | 60 MiB | 8 MiB |
-| Elements | 20,000 | 5,000 |
-| Freehand strokes | 15,000 | 4,000 |
-| Total stroke points | 2,000,000 | 500,000 |
-| Points per stroke | 4,096 | 4,096 |
-| Connected endpoints | 20,000 | 5,000 |
-| Connected endpoints per target | 512 | 128 |
-| Spatial-index overflow elements | 512 | 128 |
-| Absolute coordinate | 1,000,000 page units | 1,000,000 page units |
-| Maximum derived height | 1,000,000 page units | Not applicable |
+| Limit                           |                 File |            Clipboard |
+| ------------------------------- | -------------------: | -------------------: |
+| Total input bytes               |               64 MiB |                8 MiB |
+| Snapshot metadata bytes         |               60 MiB |                8 MiB |
+| Elements                        |               20,000 |                5,000 |
+| Freehand strokes                |               15,000 |                4,000 |
+| Total stroke points             |            2,000,000 |              500,000 |
+| Points per stroke               |                4,096 |                4,096 |
+| Connected endpoints             |               20,000 |                5,000 |
+| Connected endpoints per target  |                  512 |                  128 |
+| Spatial-index overflow elements |                  512 |                  128 |
+| Absolute coordinate             | 1,000,000 page units | 1,000,000 page units |
+| Maximum derived height          | 1,000,000 page units |       Not applicable |
 
 The standard 10,000-stroke fixture MUST serialize to at most 32 MiB of compact snapshot metadata and at most 48 MiB for the complete SVG. CI records total bytes, metadata bytes, static-markup bytes, and bytes per stroke point. The stress fixture is accepted only when it satisfies the hard byte limits above; otherwise it is rejected by byte limits before any full domain or path-cache allocation.
 

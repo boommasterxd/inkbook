@@ -1,0 +1,9 @@
+{
+  "id": "inkbook",
+  "name": "Inkbook",
+  "version": "0.1.0",
+  "minAppVersion": "1.13.0",
+  "description": "Create and edit responsive handwriting embeds stored as portable SVG files.",
+  "author": "Yannick Schäfer",
+  "isDesktopOnly": false
+}

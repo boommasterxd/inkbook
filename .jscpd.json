@@ -1,0 +1,11 @@
+{
+  "absolute": true,
+  "exitCode": 1,
+  "format": ["css", "javascript", "typescript"],
+  "gitignore": true,
+  "ignore": ["**/coverage/**", "**/dist/**", "**/node_modules/**"],
+  "minTokens": 50,
+  "path": ["src", "test", "scripts"],
+  "reporters": ["console"],
+  "threshold": 0
+}

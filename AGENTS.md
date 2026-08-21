@@ -6,7 +6,9 @@ This repository contains the implementation specification for Inkbook's handwrit
 
 Keep the architecture small: one workspace activation coordinator, one normalized element store, one command history, one uniform spatial index, one imperative SVG scene renderer with one canvas input surface, one document worker per active document, and thin adapters for Obsidian, vault, clipboard, and worker boundaries. The coordinator serializes activation across tabs, panes, and pop-out windows and may retain at most one detached dirty session until save or recovery completes. React owns application chrome and coarse UI state only; it never renders ink elements or participates in pointer, camera, culling, snapping, or animation-frame updates. The store owns two fixed render bands, stable order within each band, semantic shape anchors, one derived reverse map for connected line and arrow endpoints, and domain-classified deltas with commit-time geometry and paint versions. The document worker owns bounded file validation, migration, clipboard codecs, SVG export, hashing, and persisted-output verification, but never DOM, pointer, camera, scroll, or Obsidian API work. Do not add a backend, dependency-injection container, state-management framework, generic graph library, worker pool, or plugin-internal extension system.
 
-No implementation or build configuration is currently present. The normative contracts under `docs/` define the intended implementation and acceptance behavior.
+A minimal mobile-compatible Obsidian plugin entry point and the repository quality, build, security, and release tooling are present. Introduce implementation modules only when they own real behavior in one of the documented responsibility areas. The normative contracts under `docs/` define the intended implementation and acceptance behavior.
+
+All plugin runtime code and static plugin styles live in responsibility-specific folders below `src/`; shared source files MUST NOT accumulate directly under `src/` except for the build entry point. Obsidian host styling belongs below `src/obsidian/styles/`. Keep focused test code below `test/`, repository automation below `scripts/`, and generated Obsidian release files below `dist/`. Root files are limited to repository documentation, metadata, and configuration required by npm, Obsidian, GitHub, or quality tooling.
 
 ## Obsidian Integration Boundaries
 
@@ -52,18 +54,18 @@ Use `npm`, TypeScript, esbuild, Vitest, ESLint, the official `eslint-plugin-obsi
 
 ## Documentation Index
 
-| Document | Purpose |
-|---|---|
-| [`docs/architecture-flows.md`](docs/architecture-flows.md) | Visualizes runtime ownership, session lifecycle, workspace activation, native scrolling, imperative rendering, document-worker boundaries, and persistence recovery. |
-| [`docs/core-model.md`](docs/core-model.md) | Defines the SVG-backed handwriting file model and page dimensions. |
-| [`docs/editor-tools.md`](docs/editor-tools.md) | Specifies selection, drawing, highlighting, shapes, endpoint snapping, arranging, erasing, and style behavior. |
-| [`docs/embed-ui.md`](docs/embed-ui.md) | Describes locked and unlocked embed states, toolbar layout, responsiveness, and flyouts. |
-| [`docs/features.md`](docs/features.md) | Specifies backgrounds, page expansion, history, clipboard, input, arranging, locking, and overflow actions. |
-| [`docs/file-format.md`](docs/file-format.md) | Defines the versioned SVG envelope, compact editable snapshot schema, ordering, connections, geometry, size limits, and migrations. |
-| [`docs/obsidian-integration.md`](docs/obsidian-integration.md) | Defines supported Obsidian surfaces, multi-window ownership, native-scrollbar stability, public APIs, lifecycle, host storage, UI rules, and release requirements. |
-| [`docs/quality-and-testing.md`](docs/quality-and-testing.md) | Defines performance, memory, file-size, scroll stability, document-worker, multi-window, animation, accessibility, and verification requirements. |
-| [`docs/rendering-and-performance.md`](docs/rendering-and-performance.md) | Defines the imperative SVG scene, gesture updates, culling, bounded caches, document-worker boundary, and coalesced asynchronous persistence. |
-| [`docs/settings.md`](docs/settings.md) | Defines tool defaults, page preferences, input settings, scope, precedence, and validation. |
-| [`docs/specification.md`](docs/specification.md) | Defines implementation scope, platform baseline, architecture, workspace activation, state transitions, persistence, and security. |
-| [`docs/svg-envelope.md`](docs/svg-envelope.md) | Defines the standalone SVG envelope, portable light and dark palette, strict CSS allowlist, and external-rendering fidelity. |
-| [`docs/zoom.md`](docs/zoom.md) | Specifies width-fit zoom, navigation inputs, anchoring, frame updates, and lock transitions. |
+| Document                                                                 | Purpose                                                                                                                                                              |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`docs/architecture-flows.md`](docs/architecture-flows.md)               | Visualizes runtime ownership, session lifecycle, workspace activation, native scrolling, imperative rendering, document-worker boundaries, and persistence recovery. |
+| [`docs/core-model.md`](docs/core-model.md)                               | Defines the SVG-backed handwriting file model and page dimensions.                                                                                                   |
+| [`docs/editor-tools.md`](docs/editor-tools.md)                           | Specifies selection, drawing, highlighting, shapes, endpoint snapping, arranging, erasing, and style behavior.                                                       |
+| [`docs/embed-ui.md`](docs/embed-ui.md)                                   | Describes locked and unlocked embed states, toolbar layout, responsiveness, and flyouts.                                                                             |
+| [`docs/features.md`](docs/features.md)                                   | Specifies backgrounds, page expansion, history, clipboard, input, arranging, locking, and overflow actions.                                                          |
+| [`docs/file-format.md`](docs/file-format.md)                             | Defines the versioned SVG envelope, compact editable snapshot schema, ordering, connections, geometry, size limits, and migrations.                                  |
+| [`docs/obsidian-integration.md`](docs/obsidian-integration.md)           | Defines supported Obsidian surfaces, multi-window ownership, native-scrollbar stability, public APIs, lifecycle, host storage, UI rules, and release requirements.   |
+| [`docs/quality-and-testing.md`](docs/quality-and-testing.md)             | Defines performance, memory, file-size, scroll stability, document-worker, multi-window, animation, accessibility, and verification requirements.                    |
+| [`docs/rendering-and-performance.md`](docs/rendering-and-performance.md) | Defines the imperative SVG scene, gesture updates, culling, bounded caches, document-worker boundary, and coalesced asynchronous persistence.                        |
+| [`docs/settings.md`](docs/settings.md)                                   | Defines tool defaults, page preferences, input settings, scope, precedence, and validation.                                                                          |
+| [`docs/specification.md`](docs/specification.md)                         | Defines implementation scope, platform baseline, architecture, workspace activation, state transitions, persistence, and security.                                   |
+| [`docs/svg-envelope.md`](docs/svg-envelope.md)                           | Defines the standalone SVG envelope, portable light and dark palette, strict CSS allowlist, and external-rendering fidelity.                                         |
+| [`docs/zoom.md`](docs/zoom.md)                                           | Specifies width-fit zoom, navigation inputs, anchoring, frame updates, and lock transitions.                                                                         |

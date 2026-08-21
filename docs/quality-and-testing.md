@@ -34,10 +34,10 @@ The dense-viewport fixture contains 2,500 simple paths whose exact conservative 
 
 Performance is measured on both profiles:
 
-| Profile | Minimum class |
-|---|---|
-| Desktop | 4 physical CPU cores, 8 GiB RAM, integrated graphics, 60 Hz display, current supported Obsidian desktop |
-| Mobile | 2021-or-newer mid-range iOS or Android device, 6 GiB RAM where the platform exposes RAM, 60 Hz display, current supported Obsidian mobile |
+| Profile | Minimum class                                                                                                                             |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Desktop | 4 physical CPU cores, 8 GiB RAM, integrated graphics, 60 Hz display, current supported Obsidian desktop                                   |
+| Mobile  | 2021-or-newer mid-range iOS or Android device, 6 GiB RAM where the platform exposes RAM, 60 Hz display, current supported Obsidian mobile |
 
 Every release report records the exact devices, OS versions, Obsidian versions, document fixture hash, build mode, and measurement method. Production builds are required.
 
@@ -47,22 +47,22 @@ Production builds use a 1,200 by 800 CSS-pixel desktop viewport and a 390 by 700
 
 Each scenario has one warm-up run followed by five measured runs. Duration and sample counts are minimums:
 
-| Scenario | Script and timing endpoints | Samples per run |
-|---|---|---:|
-| Unlock | Preview activation event to the first frame with measured editor, visible committed content, toolbar ready, and input listener enabled | 20 unlocks |
-| Draw | 30 seconds of 120-Hz synthetic pointer samples in viewport-local sine strokes; event timestamp to live-path attribute update | 3,600 samples |
-| Maximum stroke | One 4,096-point pressure stroke; each retained sample to bounded-tail update, then release to committed-path handoff | 20 strokes |
-| Erase | 30 seconds of sweeps across 50 visible and indexed offscreen candidates; frame start to paint submission | 1,800 frames |
-| Pan and zoom | Alternating horizontal pan and anchored zoom for 30 seconds; animation-frame start to submitted DOM updates | 1,800 frames |
-| Viewport reconciliation | Small scroll steps and alternating full-viewport jumps; invalidation to entrant, exit, and changed-node mutations | 1,800 frames |
-| Transform | Move and rotate a 100-element visible selection for 30 seconds, then repeat with all 10,000 strokes selected and only the bounded preview subset mounted | 1,800 frames each |
-| Query and commit | Fixed hit-test points, eraser segments, one-stroke commits, and the 10,000-element transform commit | 500 operations, or 50 for the full-selection commit |
-| Snap and connection update | Fixed endpoint drags through dense anchor candidates, then move, scale, and rotate the 512-endpoint target | 500 queries and 100 target frames |
-| Arrange | All four order operations on fixed single selections and an alternating 5,000-element selection in a 10,000-element band | 500 operations, or 50 for large-selection operations |
-| Export | Worker request post to validated result receipt, excluding vault I/O | 20 full and 100 incremental exports |
-| Clipboard codecs | Worker encode and decode of the 5,000-element, 500,000-point clipboard-limit fixture, including delta synchronization, ID remapping, placement, validation, and main-thread adoption | 20 copies and 20 pastes |
-| Save latency | One standard-fixture commit with production worker and local-vault adapters; debounce expiry to latest revision confirmation | 20 saves |
-| Save backpressure | One commit through its 500 ms dispatch, then four commits 50 ms apart while 300 ms worker and 300 ms vault delays are active; request counts, queue depth, retained results, and final revision | 50 sequences |
+| Scenario                   | Script and timing endpoints                                                                                                                                                                     |                                      Samples per run |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------: |
+| Unlock                     | Preview activation event to the first frame with measured editor, visible committed content, toolbar ready, and input listener enabled                                                          |                                           20 unlocks |
+| Draw                       | 30 seconds of 120-Hz synthetic pointer samples in viewport-local sine strokes; event timestamp to live-path attribute update                                                                    |                                        3,600 samples |
+| Maximum stroke             | One 4,096-point pressure stroke; each retained sample to bounded-tail update, then release to committed-path handoff                                                                            |                                           20 strokes |
+| Erase                      | 30 seconds of sweeps across 50 visible and indexed offscreen candidates; frame start to paint submission                                                                                        |                                         1,800 frames |
+| Pan and zoom               | Alternating horizontal pan and anchored zoom for 30 seconds; animation-frame start to submitted DOM updates                                                                                     |                                         1,800 frames |
+| Viewport reconciliation    | Small scroll steps and alternating full-viewport jumps; invalidation to entrant, exit, and changed-node mutations                                                                               |                                         1,800 frames |
+| Transform                  | Move and rotate a 100-element visible selection for 30 seconds, then repeat with all 10,000 strokes selected and only the bounded preview subset mounted                                        |                                    1,800 frames each |
+| Query and commit           | Fixed hit-test points, eraser segments, one-stroke commits, and the 10,000-element transform commit                                                                                             |  500 operations, or 50 for the full-selection commit |
+| Snap and connection update | Fixed endpoint drags through dense anchor candidates, then move, scale, and rotate the 512-endpoint target                                                                                      |                    500 queries and 100 target frames |
+| Arrange                    | All four order operations on fixed single selections and an alternating 5,000-element selection in a 10,000-element band                                                                        | 500 operations, or 50 for large-selection operations |
+| Export                     | Worker request post to validated result receipt, excluding vault I/O                                                                                                                            |                  20 full and 100 incremental exports |
+| Clipboard codecs           | Worker encode and decode of the 5,000-element, 500,000-point clipboard-limit fixture, including delta synchronization, ID remapping, placement, validation, and main-thread adoption            |                              20 copies and 20 pastes |
+| Save latency               | One standard-fixture commit with production worker and local-vault adapters; debounce expiry to latest revision confirmation                                                                    |                                             20 saves |
+| Save backpressure          | One commit through its 500 ms dispatch, then four commits 50 ms apart while 300 ms worker and 300 ms vault delays are active; request counts, queue depth, retained results, and final revision |                                         50 sequences |
 
 Frame data is collected with `requestAnimationFrame` timestamps and Long Animation Frame data when available. Input latency uses event timestamps and a mark immediately after the live DOM mutation. Each run reports p50, p95, p99, maximum, missed-vsync rate, and longest consecutive missed-vsync sequence; the release result is the worst measured run, not a percentile pooled across runs.
 
@@ -72,31 +72,31 @@ Memory is additional heap compared with the same Obsidian pane and locked previe
 
 The 10,000-stroke fixture MUST satisfy:
 
-| Operation | Desktop | Mobile |
-|---|---:|---:|
-| Plugin startup with no active embed | at most 25 ms main-thread work | at most 40 ms main-thread work |
-| Locked preview React mounts | 0 | 0 |
-| Unlock to first interactive frame, p95 | at most 750 ms | at most 1,500 ms |
-| Main-thread work caused by worker-backed unlock in one frame | at most 8 ms | at most 12 ms |
-| Worker clipboard codec at the clipboard limit, p95 | at most 750 ms | at most 1,500 ms |
-| Main-thread work caused by one worker clipboard operation in one frame | at most 8 ms | at most 12 ms |
-| Pointer sample to live-path DOM update, p95 | at most 8 ms | at most 16 ms |
-| Scroll-owner `clientWidth` change caused by pen contact | 0 CSS pixels | 0 CSS pixels |
-| Interaction frames meeting one 60-Hz refresh interval | at least 99 percent at 16.7 ms | at least 99 percent at 16.7 ms |
-| Interaction frame time, p99 | at most 16.7 ms | at most 16.7 ms |
-| Longest consecutive missed refresh intervals | at most 1 | at most 1 |
-| Hit test or eraser candidate query, p95 | at most 8 ms | at most 12 ms |
-| Command commit excluding export, p95 | at most 12 ms | at most 20 ms |
-| 10,000-element uniform transform commit, p95 | at most 100 ms, chunked after immediate visual commit | at most 200 ms, chunked after immediate visual commit |
-| Worker SVG export after a full snapshot, p95 | at most 750 ms | at most 1,500 ms |
-| Incremental worker export after one stroke, p95 | at most 100 ms | at most 200 ms |
-| Main-thread work caused by autosave in one frame | at most 8 ms | at most 12 ms |
-| Debounce expiry to latest revision save confirmation with production adapters, p95 | at most 2,000 ms | at most 4,000 ms |
-| Additional plugin memory while active | at most 200 MiB | at most 140 MiB |
-| Mounted content paths in a normal viewport | at most 1,200 | at most 900 |
-| Mounted SVG nodes in a normal viewport | at most 2,000 | at most 1,500 |
-| Compact snapshot metadata for the standard fixture | at most 32 MiB | at most 32 MiB |
-| Complete SVG for the standard fixture | at most 48 MiB | at most 48 MiB |
+| Operation                                                                          |                                               Desktop |                                                Mobile |
+| ---------------------------------------------------------------------------------- | ----------------------------------------------------: | ----------------------------------------------------: |
+| Plugin startup with no active embed                                                |                        at most 25 ms main-thread work |                        at most 40 ms main-thread work |
+| Locked preview React mounts                                                        |                                                     0 |                                                     0 |
+| Unlock to first interactive frame, p95                                             |                                        at most 750 ms |                                      at most 1,500 ms |
+| Main-thread work caused by worker-backed unlock in one frame                       |                                          at most 8 ms |                                         at most 12 ms |
+| Worker clipboard codec at the clipboard limit, p95                                 |                                        at most 750 ms |                                      at most 1,500 ms |
+| Main-thread work caused by one worker clipboard operation in one frame             |                                          at most 8 ms |                                         at most 12 ms |
+| Pointer sample to live-path DOM update, p95                                        |                                          at most 8 ms |                                         at most 16 ms |
+| Scroll-owner `clientWidth` change caused by pen contact                            |                                          0 CSS pixels |                                          0 CSS pixels |
+| Interaction frames meeting one 60-Hz refresh interval                              |                        at least 99 percent at 16.7 ms |                        at least 99 percent at 16.7 ms |
+| Interaction frame time, p99                                                        |                                       at most 16.7 ms |                                       at most 16.7 ms |
+| Longest consecutive missed refresh intervals                                       |                                             at most 1 |                                             at most 1 |
+| Hit test or eraser candidate query, p95                                            |                                          at most 8 ms |                                         at most 12 ms |
+| Command commit excluding export, p95                                               |                                         at most 12 ms |                                         at most 20 ms |
+| 10,000-element uniform transform commit, p95                                       | at most 100 ms, chunked after immediate visual commit | at most 200 ms, chunked after immediate visual commit |
+| Worker SVG export after a full snapshot, p95                                       |                                        at most 750 ms |                                      at most 1,500 ms |
+| Incremental worker export after one stroke, p95                                    |                                        at most 100 ms |                                        at most 200 ms |
+| Main-thread work caused by autosave in one frame                                   |                                          at most 8 ms |                                         at most 12 ms |
+| Debounce expiry to latest revision save confirmation with production adapters, p95 |                                      at most 2,000 ms |                                      at most 4,000 ms |
+| Additional plugin memory while active                                              |                                       at most 200 MiB |                                       at most 140 MiB |
+| Mounted content paths in a normal viewport                                         |                                         at most 1,200 |                                           at most 900 |
+| Mounted SVG nodes in a normal viewport                                             |                                         at most 2,000 |                                         at most 1,500 |
+| Compact snapshot metadata for the standard fixture                                 |                                        at most 32 MiB |                                        at most 32 MiB |
+| Complete SVG for the standard fixture                                              |                                        at most 48 MiB |                                        at most 48 MiB |
 
 Additional rules:
 
@@ -163,26 +163,26 @@ Durations are milliseconds. A single easing curve is intentional and keeps the m
 
 Every user-visible state change animates unless listed as immediate or reduced motion is active.
 
-| Transition | Duration | Properties |
-|---|---:|---|
-| Toolbar enter or exit | 180 ms | opacity, translateY |
-| Tool active state | 120 ms | background color, foreground color, scale |
-| Flyout open or close | 180 ms | opacity, translateY, scale |
-| Selection handles enter or exit | 120 ms | opacity, scale |
-| Eraser pending-removal feedback | 160 ms | opacity |
-| Committed shape or pasted-element entrance | 120 ms | opacity, scale from 0.96 to 1 |
-| Delete, Cut, or command-removal exit | 120 ms | retained visual tombstone opacity, scale to 0.96 |
-| Background type or spacing change | 180 ms | old/new background crossfade |
-| Color, opacity, width, fill, or outline-style change | 120 ms | supported property interpolation or old/new path crossfade |
-| Locked to active height | 240 ms | container height with scroll compensation |
-| Active to locked height | 240 ms | container height with scroll compensation |
-| Unlock preview-to-editor crossfade | final 120 ms of the 240 ms layout transition | opacity |
-| Lock editor-to-preview crossfade | 120 ms after the exact saved preview is ready | opacity |
-| Automatic page growth or shrink | 180 ms | container height with scroll compensation |
-| Overflow edge gradient | 120 ms | opacity |
-| Conditional toolbar control enter or exit | 120 ms | opacity, scale, width |
-| Arrange result | 120 ms | old/new path opacity crossfade where overlap changes visibly |
-| Snap candidate marker enter or exit | 120 ms | opacity, scale |
+| Transition                                           |                                      Duration | Properties                                                   |
+| ---------------------------------------------------- | --------------------------------------------: | ------------------------------------------------------------ |
+| Toolbar enter or exit                                |                                        180 ms | opacity, translateY                                          |
+| Tool active state                                    |                                        120 ms | background color, foreground color, scale                    |
+| Flyout open or close                                 |                                        180 ms | opacity, translateY, scale                                   |
+| Selection handles enter or exit                      |                                        120 ms | opacity, scale                                               |
+| Eraser pending-removal feedback                      |                                        160 ms | opacity                                                      |
+| Committed shape or pasted-element entrance           |                                        120 ms | opacity, scale from 0.96 to 1                                |
+| Delete, Cut, or command-removal exit                 |                                        120 ms | retained visual tombstone opacity, scale to 0.96             |
+| Background type or spacing change                    |                                        180 ms | old/new background crossfade                                 |
+| Color, opacity, width, fill, or outline-style change |                                        120 ms | supported property interpolation or old/new path crossfade   |
+| Locked to active height                              |                                        240 ms | container height with scroll compensation                    |
+| Active to locked height                              |                                        240 ms | container height with scroll compensation                    |
+| Unlock preview-to-editor crossfade                   |  final 120 ms of the 240 ms layout transition | opacity                                                      |
+| Lock editor-to-preview crossfade                     | 120 ms after the exact saved preview is ready | opacity                                                      |
+| Automatic page growth or shrink                      |                                        180 ms | container height with scroll compensation                    |
+| Overflow edge gradient                               |                                        120 ms | opacity                                                      |
+| Conditional toolbar control enter or exit            |                                        120 ms | opacity, scale, width                                        |
+| Arrange result                                       |                                        120 ms | old/new path opacity crossfade where overlap changes visibly |
+| Snap candidate marker enter or exit                  |                                        120 ms | opacity, scale                                               |
 
 Implementation rules:
 

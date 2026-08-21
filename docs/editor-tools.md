@@ -21,7 +21,7 @@ When a selection is dragged to the edge of the visible area, the plugin automati
 
 ## Arrange
 
-Selected annotations can be reordered through four actions:
+Selected annotations can be reordered through four actions in the selection context menu:
 
 - Bring forward
 - Send backward
