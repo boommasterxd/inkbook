@@ -1,0 +1,452 @@
+# File Format and Geometry
+
+## Authority
+
+The editable snapshot is the source of truth. SVG drawing elements are a derived static representation. If validated snapshot data and SVG paths disagree, the editor uses the snapshot and regenerates the SVG on the next successful save.
+
+## SVG Envelope
+
+The required XML structure, standalone page surface, portable light and dark palette, strict static-markup allowlist, and external-viewer contract are defined in [Standalone SVG Envelope and Theme Rendering](svg-envelope.md). This document defines the editable snapshot and canonical geometry carried by that envelope.
+
+## Snapshot Root
+
+```ts
+interface InkSnapshotV1 {
+  format: "inkbook";
+  version: 1;
+  revision: number;
+  page: PageV1;
+  elements: InkElementV1[];
+}
+
+interface PageV1 {
+  innerWidth: 2000;
+  margin: 24.3;
+  background: BackgroundV1;
+  writingLineHeight: number;
+  activeBufferLines: number;
+  lockedBufferLines: 0 | 1;
+}
+
+type BackgroundV1 =
+  | { type: "none" }
+  | { type: "lines"; spacing: 50 | 100 | 150 | 200 }
+  | { type: "dots"; spacing: 20 | 40 | 60 | 80 }
+  | { type: "squares"; spacing: 20 | 40 | 60 | 80 };
+```
+
+The 2,000-unit width is the patterned writing area. The 24.3-unit margin surrounds it on every side and is writable. The total SVG width is therefore exactly 2,048.6 page units.
+
+Page values are copied from vault defaults when the file is created. Background changes are file commands. Later vault-default changes never alter this `PageV1` implicitly. `writingLineHeight` is an integer from 50 through 200, `activeBufferLines` is an integer from 1 through 8, and `lockedBufferLines` is 0 or 1.
+
+Element coordinates use the outer SVG's top-left corner as `(0, 0)`. Positive `x` points right and positive `y` points down. Elements may extend into the margin but MUST remain within the enforced numeric limits.
+
+## Shared Types
+
+```ts
+interface PointV1 {
+  x: number;
+  y: number;
+}
+
+type StrokeSamplesV1 = number[];
+
+type ColorV1 =
+  | { type: "theme-text" }
+  | { type: "rgba"; value: `#${string}` };
+
+interface ElementBaseV1 {
+  id: string;
+  createdAt: number;
+  rotation: number;
+  pivot: PointV1;
+}
+
+interface StrokeStyleV1 {
+  color: ColorV1;
+  width: 2 | 4 | 8 | 14 | 22;
+  opacity: number;
+  pressureEnabled: boolean;
+  smoothing: 0.5;
+}
+
+interface OutlineStyleV1 {
+  outlineColor: ColorV1;
+  outlineWidth: 2 | 4 | 8 | 12;
+  outlineOpacity: number;
+  outlineStyle: "solid" | "dashed" | "dotted";
+}
+
+interface ShapeStyleV1 extends OutlineStyleV1 {
+  fillColor: ColorV1 | null;
+  fillOpacity: number;
+}
+```
+
+Validation rules:
+
+- All numbers MUST be finite.
+- Snapshot revision is a non-negative safe integer.
+- Opacity and pressure are in the inclusive range `0..1`. Version 1 stroke smoothing is exactly `0.5`.
+- Canonical geometry and rotation are rounded on command commit to at most three decimal places. Pressure and opacity are rounded to at most four decimal places. Negative zero is stored and serialized as zero. Anchor resolution uses canonical geometry before connected endpoints are committed.
+- Rotation is stored in clockwise degrees normalized to `[-180, 180)`.
+- Rotation is applied around the stored page-space pivot. New strokes, linear elements, closed shapes, and tables use their unrotated bounds center. Coordinate systems use their origin.
+- IDs are lowercase UUID v4 strings and unique within the document.
+- `createdAt` is a non-negative integer Unix timestamp in milliseconds.
+- RGBA colors use exactly `#RRGGBBAA`.
+- `theme-text` is preserved semantically and resolves through the versioned portable light and dark document palette in [Standalone SVG Envelope and Theme Rendering](svg-envelope.md). It never captures a transient Community-theme value.
+
+The `elements` array is partitioned into two fixed render bands. All highlighter and straight-highlighter elements appear first in back-to-front highlight order. Every other element follows in back-to-front content order. Writers MUST emit this partitioned order and readers reject an element in the highlight band after content has begun. This keeps every highlight below every content element without a separate persisted layer field.
+
+Arrange commands change only array order inside a render band. Frontward means toward a larger array index. Determine selected runs once from the original band, then apply one stable pass:
+
+- Bring forward replaces every original `[selected run, next unselected element]` with `[next unselected element, selected run]`.
+- Send backward replaces every original `[previous unselected element, selected run]` with `[selected run, previous unselected element]`.
+- Bring to front uses a stable partition that places unselected elements first and selected elements last.
+- Send to back uses the inverse stable partition.
+
+A mixed selection applies the same operation independently to both bands in one command. Relative selected order is preserved. A boundary no-op does not change revision or history.
+
+For example, with back-to-front order `[A*, B, C*, D, E]`, where `*` is selected, Bring forward produces `[B, A*, D, C*, E]`. Send backward on `[A, B*, C, D*]` produces `[B*, A, D*, C]`.
+
+## Element Union
+
+```ts
+type InkElementV1 =
+  | StrokeElementV1
+  | LinearElementV1
+  | BoxShapeElementV1
+  | CoordinateSystemElementV1
+  | TableElementV1;
+```
+
+### Freehand Strokes
+
+```ts
+interface StrokeElementV1 extends ElementBaseV1 {
+  kind: "stroke";
+  tool: "pen" | "highlighter";
+  points: StrokeSamplesV1;
+  style: StrokeStyleV1;
+}
+```
+
+- Stroke samples are flat `x, y, pressure` triples. The array length is divisible by three and contains between 1 and 4,096 triples.
+- The wire array is validated before conversion to one runtime-owned `Float64Array` per execution boundary. Published typed buffers are write-once despite the mutable platform type; geometry changes allocate a replacement buffer. Live capture uses a geometrically growing numeric buffer and the committed record receives one exact copy.
+- A single-point stroke renders as a round dot using its effective width.
+- Pen pressure comes from hardware when available and from the deterministic simulated-pressure function otherwise.
+- Highlighter strokes set `pressureEnabled` to `false`.
+- Point coordinates are canonical page-space geometry. A committed move updates them directly; only a gesture preview uses a temporary transform.
+
+### Lines, Arrows, and Straight Highlighters
+
+```ts
+interface LinearBaseV1 extends ElementBaseV1 {
+  start: PointV1;
+  end: PointV1;
+  bend: PointV1 | null;
+}
+
+interface EndpointConnectionV1 {
+  targetId: string;
+  anchor: ShapeAnchorV1;
+}
+
+type BoxAnchorV1 =
+  | "top-left" | "top-center" | "top-right" | "middle-right"
+  | "bottom-right" | "bottom-center" | "bottom-left" | "middle-left";
+
+type ShapeAnchorV1 =
+  | { kind: "box"; position: BoxAnchorV1 }
+  | { kind: "ellipse-cardinal"; angle: 0 | 90 | 180 | 270 }
+  | { kind: "polygon-vertex"; index: number }
+  | { kind: "polygon-edge-midpoint"; index: number }
+  | { kind: "coordinate-origin" }
+  | { kind: "coordinate-axis-end"; index: number };
+
+interface ConnectableLinearBaseV1 extends LinearBaseV1 {
+  startConnection: EndpointConnectionV1 | null;
+  endConnection: EndpointConnectionV1 | null;
+}
+
+interface LineElementV1 extends ConnectableLinearBaseV1 {
+  kind: "line";
+  startNode: "none";
+  endNode: "none";
+  style: OutlineStyleV1;
+}
+
+interface ArrowElementV1 extends ConnectableLinearBaseV1 {
+  kind: "arrow";
+  startNode: ArrowNodeV1;
+  endNode: ArrowNodeV1;
+  style: OutlineStyleV1;
+}
+
+interface StraightHighlighterElementV1 extends LinearBaseV1 {
+  kind: "straight-highlighter";
+  bend: null;
+  startNode: "none";
+  endNode: "none";
+  style: StrokeStyleV1;
+}
+
+type LinearElementV1 = LineElementV1 | ArrowElementV1 | StraightHighlighterElementV1;
+type ArrowNodeV1 = "none" | "arrow" | "triangle" | "diamond" | "circle";
+```
+
+- `bend` is the control point of a quadratic Bézier curve.
+- Lines and arrows use `OutlineStyleV1`. Straight highlighters use `StrokeStyleV1`.
+- Straight highlighters always use `bend: null` and both nodes set to `none`.
+- Straight-highlighter style always uses `pressureEnabled: false` and `smoothing: 0.5`.
+- Lines default to both nodes set to `none`.
+- Arrows default to `startNode: "none"` and `endNode: "arrow"`.
+- Node size is `max(12, outlineWidth * 4)` page units and does not grow when the element is scaled.
+- A linear drag stores the pointer-down point as `start` and the pointer-up point as `end`. Its minimum length is 8 page units. A shorter non-zero drag extends in its drag direction; a zero-length drag extends right.
+- Straight highlighters have no connection fields. Lines and arrows initialize both connections to `null` unless an endpoint snaps.
+
+Outline rendering is exact: Solid has no dash array; Dashed uses `[4 * outlineWidth, 3 * outlineWidth]`; Dotted uses round caps and `[0, 2.5 * outlineWidth]`. For a bent line, endpoint direction uses the normalized quadratic tangent, `bend - start` at the start and `end - bend` at the end; otherwise it uses `end - start`. Reverse the direction for a start node so every node points away from the line body.
+
+For node size `s`, outward unit direction `u`, and perpendicular `n`, node geometry is:
+
+- Arrow: two open segments from the endpoint to `endpoint - s * rotate(u, +30 degrees)` and `endpoint - s * rotate(u, -30 degrees)`.
+- Triangle: filled polygon `[endpoint, endpoint - s * u + 0.5 * s * n, endpoint - s * u - 0.5 * s * n]`.
+- Diamond: filled polygon `[endpoint, endpoint - 0.5 * s * u + 0.5 * s * n, endpoint - s * u, endpoint - 0.5 * s * u - 0.5 * s * n]`.
+- Circle: filled circle of radius `s / 2` centered at `endpoint - 0.5 * s * u`.
+
+Filled nodes use the outline color and opacity. The line body ends at the node endpoint and remains visible below an open Arrow node.
+
+### Endpoint Connections
+
+An endpoint connection targets only a closed shape, coordinate system, or table. Strokes, highlighters, lines, and arrows are never targets, so connection cycles are impossible. Anchor validity is exact:
+
+- rectangle and table use every `box` position
+- ellipse uses `ellipse-cardinal` at 0, 90, 180, or 270 degrees
+- triangle, diamond, parallelogram, and octagon use each valid `polygon-vertex` and `polygon-edge-midpoint` index
+- coordinate systems use `coordinate-origin` and each current `coordinate-axis-end` index
+
+`box` positions use the named corners and side midpoints of the unrotated bounds. Ellipse angles are clockwise in page coordinates: the user-facing points are 90 at the bottom, 180 at the left, 270 at the top, and 360 at the right; persisted 360 is canonicalized to 0. Polygon indices use the normalized vertex order defined below; edge midpoint `i` lies halfway from vertex `i` to vertex `(i + 1) mod vertexCount`. Coordinate-axis indices are zero-based positions in `axes`.
+
+The deterministic semantic anchor order is: `box` positions in their `BoxAnchorV1` declaration order; ellipse angles 0, 90, 180, 270; polygon vertices by ascending index before polygon edge midpoints by ascending index; coordinate origin before axis endpoints by ascending index. Equal-distance candidates compare frontmost render rank, target ID, then this anchor order.
+
+Resolve an anchor in the target's unrotated canonical geometry, then rotate it clockwise around the target pivot. `start` and `end` store the last successfully resolved page point and MUST equal the current resolved anchor within 0.001 page units while connected. A dangling target, incompatible anchor kind, invalid index, or mismatched resolved point makes a file invalid and read-only.
+
+The store maintains a derived reverse map from target ID to `{ linearId, endpoint }` references. A target move, scale, rotation, shape-handle edit, axis edit, or table geometry edit resolves only its dependents, updates their endpoint coordinates, bounds, path caches, and spatial-index records, then commits the target and dependents atomically. The bend remains in page coordinates. During a live target gesture, visible dependent paths update in the same frame without tweening.
+
+Bounds and geometry validation treat the target and all re-resolved dependents as one atomic candidate. Any edge correction is applied to the proposed target transform, then anchors and dependent bounds are recomputed. Dependents are never translated independently merely to satisfy a target command. If any resulting line or arrow is shorter than 8 page units, or no valid corrected target transform keeps every affected bound within the page and height limits, the complete command is rejected. Connected linear geometry therefore never needs a zero-vector node-direction fallback.
+
+Dragging a connected endpoint previews a free point. Release on a valid candidate replaces the connection; release elsewhere stores `null` and the free point. Moving an entire line or arrow moves its bend and free endpoints; connected endpoints remain at their anchors. Removing a target first replaces every dependent connection with `null` at its last resolved endpoint in the same removal command. Undo and Redo restore both records atomically.
+
+For a multi-selection containing both a target and its dependent line or arrow, apply the selection transform once to the target, bend, and free endpoints, then resolve connected endpoints from the final target geometry. This order prevents double translation.
+
+### Closed Shapes
+
+```ts
+interface BoxShapeElementV1 extends ElementBaseV1 {
+  kind: "rectangle" | "ellipse" | "triangle" | "octagon" | "parallelogram" | "diamond";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  style: ShapeStyleV1;
+}
+```
+
+- Width and height are positive and at least 1 page unit.
+- Rotation occurs around the bounds center.
+- Dragging a closed shape in any direction sets `x = min(start.x, end.x)`, `y = min(start.y, end.y)`, `width = max(1, abs(end.x - start.x))`, and `height = max(1, abs(end.y - start.y))`.
+- Normalized vertices are triangle `[(0.5,0),(1,1),(0,1)]`, diamond `[(0.5,0),(1,0.5),(0.5,1),(0,0.5)]`, and parallelogram `[(0.2,0),(1,0),(0.8,1),(0,1)]`. For an octagon, let `i = min(width,height) * 0.293`, `rx = i / width`, and `ry = i / height`; its vertices are `[(rx,0),(1-rx,0),(1,ry),(1,1-ry),(1-rx,1),(rx,1),(0,1-ry),(0,ry)]`.
+- The parallelogram horizontal inset is 20 percent of width.
+- The octagon corner inset is `min(width, height) * 0.293`.
+- Scaling changes bounds and vertex positions, never outline width.
+
+### Coordinate Systems
+
+```ts
+interface CoordinateSystemBaseV1 extends ElementBaseV1 {
+  kind: "coordinate-system";
+  origin: PointV1;
+  style: OutlineStyleV1;
+}
+
+type CoordinateSystemElementV1 = CoordinateSystemBaseV1 &
+  (
+    | { dimension: "2d"; axes: [PointV1, PointV1] }
+    | { dimension: "3d"; axes: [PointV1, PointV1, PointV1] }
+  );
+```
+
+- Each axis value is its arrow endpoint in page coordinates.
+- Creation sets the drag start as `origin`. Let `dx = end.x - start.x` and `dy = end.y - start.y`. The x-axis vector is `(signedMinimum(dx, 40), 0)` and the y-axis vector is `(0, signedMinimum(dy, 40))`; a zero component uses `+200` for x and `-200` for y. `signedMinimum(value, 40)` preserves the non-zero sign and clamps its absolute value to at least 40.
+- A new 3D system adds endpoint `origin - 0.5 * (xAxisVector + yAxisVector)`. With the default axes this is a 141.421-unit diagonal down and left.
+- Every axis ends with an arrow node. Axes have no fill.
+- The origin and endpoints have individual edit handles.
+- Scaling changes the endpoint distances from the origin and never changes outline width.
+- Changing from 3D to 2D removes the third endpoint within the same undoable style command. Changing back sets the third endpoint to `origin - 0.5 * (firstAxisVector + secondAxisVector)`.
+- Before a 3D-to-2D change removes axis index 2, every connection to that endpoint is detached at its last resolved point. The dimension change, detachment, reverse-map update, and dependent records are one atomic command; Undo restores the axis and connections.
+
+### Tables
+
+```ts
+interface TableElementV1 extends ElementBaseV1 {
+  kind: "table";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  columns: number;
+  headerHeight: number;
+  style: OutlineStyleV1;
+}
+```
+
+- A table is one atomic element made from one outer rectangle, equal-width vertical column separators, and one horizontal header separator.
+- It contains no row separators and no editable text.
+- Column count is an integer from 1 through 12 and defaults to 3.
+- Minimum column width is 40 page units. Minimum total height is 80 page units.
+- Header height defaults to 30 percent of total height and is clamped to `24..height / 2`.
+- For table creation, let `sx = end.x >= start.x ? 1 : -1` and `sy = end.y >= start.y ? 1 : -1`. Set `width = max(abs(end.x - start.x), columns * 40)`, `height = max(abs(end.y - start.y), 80)`, `x = sx > 0 ? start.x : start.x - width`, and `y = sy > 0 ? start.y : start.y - height`. Crossing the start point therefore changes the expanding direction without producing negative dimensions.
+- Changing the column count redistributes separators equally. If the current width is less than `columns * 40`, the same command expands the right edge to that minimum while keeping `x` fixed.
+- Scaling changes bounds, separators, and header height proportionally, never outline width.
+
+## Transform Rules
+
+- Snapshot geometry is canonical page-space geometry. No translation, scale, or transform matrix is persisted. Rendering applies the stored clockwise rotation around `pivot` after reading canonical geometry.
+- Gesture previews MAY use one temporary SVG transform. A commit materializes the result once and removes the preview transform.
+- Move by vector `d` adds `d` to every geometry point and to `pivot`. For bounds-based elements it adds `d.x` to `x` and `d.y` to `y`. Rotation is unchanged.
+- Single-element scaling is performed in the element's unrotated local frame around the opposite handle `anchor`. Unrotate the start and current pointer by `-rotation` around the current pivot, compute `sx = (current.x - anchor.x) / (start.x - anchor.x)` and `sy = (current.y - anchor.y) / (start.y - anchor.y)`, and clamp each factor before it reaches zero so every documented minimum remains satisfied. Every canonical point becomes `anchor + (sx * (point.x - anchor.x), sy * (point.y - anchor.y))`; bounds and table fields are derived from those transformed corners. The pivot is recomputed from the result. Handle crossing never mirrors an element.
+- Multi-element scaling is uniform only. Let `anchor` be the opposite selection-bounds corner and `s = max(minimumScale, distance(anchor,currentPointer) / distance(anchor,startPointer))`, where `minimumScale` is the greatest per-element factor needed to retain every documented minimum. Every geometry point and pivot becomes `anchor + s * (value - anchor)`. Bounds, table header height, and axis lengths scale by `s`; each element's rotation is unchanged.
+- Single-element rotation adds the gesture angle delta to `rotation`; geometry and pivot remain unchanged. Multi-element rotation uses the selection-bounds center `c`: each element's canonical geometry and pivot first move by `rotate(pivot - c, delta) + c - pivot`, then its normalized `rotation` increases by `delta`.
+- Endpoint, bend, axis, and dedicated shape-handle edits update their named canonical fields directly and recompute the pivot where the element kind requires a bounds center. Editing a connected endpoint follows the connection rules above. Coordinate-system pivot always equals its origin.
+- Style widths, node sizes, and eraser radius never change through geometric scaling. Invalid or degenerate results are clamped before commit.
+
+## Bounds
+
+Every element provides a conservative axis-aligned page-space bounding box that includes:
+
+- transformed geometry
+- half the maximum visible stroke or outline width
+- arrow or endpoint-node extents
+- curve extrema
+- rotation around the element pivot
+
+The spatial index, viewport culling, eraser candidate lookup, selection bounds, and page extent MUST use the same bounds implementation. Approximation is allowed only when it overestimates. Visible content must never be clipped or culled because of an underestimated bound.
+
+Committed conservative bounds MUST satisfy `minX >= 0`, `maxX <= 2048.6`, and `minY >= 0`. Before a creation, paste, move, rotate, scale, or handle-edit commit:
+
+1. Calculate the candidate conservative bounds.
+2. If their width exceeds 2,048.6 page units, reject the commit, retain the pre-gesture state, and show a concise size notice.
+3. Otherwise translate the entire candidate right by `-minX` when `minX < 0`, left by `2048.6 - maxX` when `maxX > 2048.6`, and down by `-minY` when `minY < 0`.
+4. Recalculate and validate bounds and the maximum derived height before the atomic commit.
+
+This normalization also applies to default coordinate-system axes created near the top or side edge. The page expands only downward; there is no horizontal or negative-y overflow model in version 1.
+
+## Page Extent
+
+The file does not persist editor or preview height as independent state. Both are derived from validated elements and the per-file `PageV1`.
+
+```text
+backgroundStep = background spacing, or 1 for None
+bufferUnit = ceil(page.writingLineHeight / backgroundStep) × backgroundStep
+occupiedBottom = page.margin when elements is empty,
+                 otherwise max(page.margin, maximum element bounds maxY)
+occupiedRows = ceil(max(0, occupiedBottom - page.margin) / backgroundStep)
+activeWritableBottom = page.margin
+  + (occupiedRows + page.activeBufferLines × bufferUnit / backgroundStep) × backgroundStep
+lockedWritableBottom = page.margin
+  + (occupiedRows + page.lockedBufferLines × bufferUnit / backgroundStep) × backgroundStep
+activeHeight = activeWritableBottom + page.margin
+lockedHeight = lockedWritableBottom + page.margin
+```
+
+The background phase starts at `page.margin`, so these heights always end on a complete background step. A buffer line means one background-aligned `bufferUnit`, not the raw writing-line height. The locked preview therefore has at most one configured buffer line; completing the background cell that contains the last element is content normalization, not an additional buffer line. An empty default file has exactly three buffer units when active and one when locked, plus both margins.
+
+Runtime height changes only after committed geometry or page commands:
+
+- On activation, set the current height to `activeHeight`.
+- Grow to the recomputed `activeHeight` when `occupiedBottom` enters the final `bufferUnit` of the current writable extent.
+- Shrink to the recomputed `activeHeight` when it is at least one `bufferUnit` below the current height.
+- A background or per-file page-setting command always adopts the recomputed height.
+- Lock always targets the exact recomputed `lockedHeight`; unlock always targets the exact recomputed `activeHeight`.
+- Selection edge-drag is the only pre-commit exception: when the pointer enters the final 24 CSS pixels at the container bottom, extend the transient writable bottom by exactly one `bufferUnit`. Do not extend again until the 180-millisecond transition completes and the pointer remains in that edge zone. This session-only extension changes no snapshot, revision, or history.
+- Selection release commits geometry and transitions to the recomputed `activeHeight`. Cancellation transitions to the height that existed before the gesture. No other pointer sample changes a height target.
+- During any transition, a new target starts from the currently rendered height.
+
+## Clipboard Format
+
+- Logical MIME type: `application/x-inkbook-elements+json;version=1`. The Async Clipboard custom-format key is `web application/x-inkbook-elements+json;version=1`, using the standards-defined `web ` prefix.
+- Plain-text fallback starts with `Inkbook elements v1:` followed by the same compact JSON.
+- The payload type is:
+
+```ts
+interface ClipboardEndpointConnectionV1 {
+  targetClipId: string;
+  anchor: ShapeAnchorV1;
+}
+
+type ClipboardElementBodyV1<T> = T extends LineElementV1 | ArrowElementV1
+  ? Omit<T, "id" | "createdAt" | "startConnection" | "endConnection"> & {
+      startConnection: ClipboardEndpointConnectionV1 | null;
+      endConnection: ClipboardEndpointConnectionV1 | null;
+    }
+  : Omit<T, "id" | "createdAt">;
+
+interface ClipboardElementV1 {
+  clipId: string;
+  element: ClipboardElementBodyV1<InkElementV1>;
+}
+
+interface InkClipboardV1 {
+  format: "inkbook-elements";
+  version: 1;
+  elements: ClipboardElementV1[];
+}
+```
+
+- Copy assigns compact unique `clipId` values in selection order, removes `id` and `createdAt`, and preserves geometry, style, render-band order, and relative positions. A connection whose target is selected becomes `targetClipId`; a connection to an unselected target becomes `null` at its resolved endpoint.
+- Paste first validates `InkClipboardV1` against clipboard limits. It maps every `clipId` to a new UUID, assigns `createdAt = pasteCommandTimestamp`, resolves connection targets through that complete map, translates the group, validates the resulting document limits, and commits atomically. Pasted elements enter the front of their respective render bands while retaining clipboard order. A failed step changes nothing.
+- The prefixed system custom format takes precedence over the system `text/plain` representation, which takes precedence over the in-session fallback, when each candidate validates. Copy attempts to construct a `ClipboardItem` with the custom format directly and catches construction or write failure; `ClipboardItem.supports()` is not a feature gate for web custom formats. A synchronous custom-format construction failure immediately falls back to a `text/plain`-only write within the same user activation, and every path retains the validated in-session payload.
+- Codec execution, operation identity, revision synchronization, and worker fallback are defined in [Rendering and Performance](rendering-and-performance.md#document-worker-autosave-and-export).
+
+## Limits
+
+Files exceeding a limit open read-only and are never rewritten automatically.
+
+| Limit | File | Clipboard |
+|---|---:|---:|
+| Total input bytes | 64 MiB | 8 MiB |
+| Snapshot metadata bytes | 60 MiB | 8 MiB |
+| Elements | 20,000 | 5,000 |
+| Freehand strokes | 15,000 | 4,000 |
+| Total stroke points | 2,000,000 | 500,000 |
+| Points per stroke | 4,096 | 4,096 |
+| Connected endpoints | 20,000 | 5,000 |
+| Connected endpoints per target | 512 | 128 |
+| Spatial-index overflow elements | 512 | 128 |
+| Absolute coordinate | 1,000,000 page units | 1,000,000 page units |
+| Maximum derived height | 1,000,000 page units | Not applicable |
+
+The standard 10,000-stroke fixture MUST serialize to at most 32 MiB of compact snapshot metadata and at most 48 MiB for the complete SVG. CI records total bytes, metadata bytes, static-markup bytes, and bytes per stroke point. The stress fixture is accepted only when it satisfies the hard byte limits above; otherwise it is rejected by byte limits before any full domain or path-cache allocation.
+
+Before XML parsing, reject input above the total byte limit. Reject `DOCTYPE`, entity declarations, processing instructions, and any snapshot metadata section above its byte limit. Extract only the single required metadata text with a non-networked XML parser, reject XML parse errors or duplicate snapshot metadata, then parse JSON. Validate the parsed unknown value iteratively with depth and count budgets before constructing domain records or path caches. JSON parsing necessarily allocates its parsed representation; the requirement is to avoid additional domain arrays and derived geometry until validation succeeds.
+
+JSON nesting deeper than 16 levels, duplicate IDs, unknown discriminators, unknown required enum values, non-finite numbers, and invalid ranges are rejected. The parser may retain at most one input string, one parsed representation, and the validated domain snapshot at a time; it releases temporary data before generating paths.
+
+## Versioning and Migration
+
+- Writers emit version 1 only.
+- Inkbook may insert a replacement preview for a newer unsupported version only after its static SVG passes the same exact element-and-attribute allowlist as generated output; otherwise Inkbook leaves the host-owned native image surface non-interactive or replaces it with a non-rendering placeholder where the host surface permits. It cannot be edited.
+- Older supported versions migrate in memory through sequential pure migrations in the document worker during unlock. Runtime batches and the export baseline are created only after the migrated current-version result passes schema and limit validation. The equivalent bounded main-thread fallback is used when workers are unavailable.
+- Before the first write of a migrated document, preserve the original as `<base>.backup-v<old-version>.svg` unless that exact backup already exists.
+- Migration failure leaves the original untouched and opens read-only.
+- Unknown properties in the current schema are rejected rather than silently discarded.
+
+## Related Documentation
+
+- [Implementation specification](specification.md)
+- [Core model](core-model.md)
+- [Editor tools](editor-tools.md)
+- [Rendering and performance](rendering-and-performance.md)
+- [Standalone SVG envelope and theme rendering](svg-envelope.md)
+- [Settings](settings.md)
+- [Quality and testing](quality-and-testing.md)
