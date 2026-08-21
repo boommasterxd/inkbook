@@ -3,13 +3,12 @@
   "entry": [
     "src/main.ts!",
     "src/workers/shared-worker-entry.ts!",
+    "src/adapters/obsidian/views/index.ts!",
+    "src/adapters/obsidian/views/direct-touch-zoom-reservation.ts!",
+    "src/domain/geometry/index.ts!",
+    "src/input/gestures/index.ts!",
     "scripts/*.mjs",
     "test/**/*.test.ts"
   ],
-  "project": ["src/**/*.ts!", "scripts/*.mjs", "test/**/*.ts"],
-  "ignoreFiles": [
-    "src/adapters/obsidian/views/**",
-    "src/domain/geometry/**",
-    "src/input/gestures/**"
-  ]
+  "project": ["src/**/*.ts!", "scripts/*.mjs", "test/**/*.ts"]
 }

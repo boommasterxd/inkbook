@@ -16,7 +16,7 @@ import type {
   SourceMapWorkPortV1,
   SourceMapWorkSubmissionV1,
 } from "../application/source-coordination/work-ports";
-import type { WorkerRevision, WorkerWorkKind } from "./scheduler/protocol";
+import type { WorkerRevision } from "./scheduler/protocol";
 import type {
   StructuredWorkerSubmission,
   WorkerFallbackProcessor,
@@ -28,10 +28,6 @@ const MAX_ENCODED_MAP_BYTES = 4_194_304;
 export class SchedulerSourceMapWorkPortV1 implements SourceMapWorkPortV1 {
   constructor(
     private readonly scheduler: ByteWorkerScheduler,
-    private readonly workKind: Extract<
-      WorkerWorkKind,
-      "source-map-compose" | "source-map-compact"
-    >,
     private readonly readRevision: () => WorkerRevision,
   ) {}
 
@@ -42,7 +38,7 @@ export class SchedulerSourceMapWorkPortV1 implements SourceMapWorkPortV1 {
       validateAndNormalizeSourceMapCompositionRequestV1(request);
     if (!normalized.ok) throw new TypeError("Source map work is invalid.");
     const workerSubmission = this.scheduler.submitStructured({
-      kind: this.workKind,
+      kind: "source-map-compose",
       payload: normalized.value,
       inputBytes: compositionInputBytes(normalized.value),
       revision: this.readRevision(),

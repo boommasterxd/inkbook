@@ -15,11 +15,6 @@ export interface WorkerSliceScheduler {
   schedule(mode: WorkerSliceMode, callback: () => void): () => void;
 }
 
-export interface WorkerFallbackWork extends WorkerWorkBounds {
-  readonly kind: Exclude<WorkerWorkKind, "byte-process">;
-  readonly input: Uint8Array<ArrayBuffer>;
-}
-
 export interface WorkerFallbackProcessor<TResult = Uint8Array<ArrayBuffer>> {
   /** Performs one bounded unit and reports whether all pure work is complete. */
   processNext(): boolean;
@@ -33,18 +28,9 @@ export interface ByteWorkerSchedulerOptions {
   readonly clock: WorkerClock;
   readonly slices: WorkerSliceScheduler;
   readonly isCurrent: (revision: WorkerRevision) => boolean;
-  readonly processFallbackByte: (value: number, index: number) => number;
-  readonly createFallbackProcessor?: (
-    work: WorkerFallbackWork,
-  ) => WorkerFallbackProcessor;
   readonly maxOutstandingRequests?: number;
   readonly maxOutstandingBytes?: number;
   readonly maxReservedBytes?: number;
-}
-
-export interface WorkerSubmission {
-  readonly result: Promise<Uint8Array<ArrayBuffer>>;
-  cancel(): void;
 }
 
 export interface StructuredWorkerSubmission<TResult> {
@@ -53,7 +39,7 @@ export interface StructuredWorkerSubmission<TResult> {
 }
 
 export interface StructuredWorkerWork<TResult> extends WorkerWorkBounds {
-  readonly kind: Exclude<WorkerWorkKind, "byte-process">;
+  readonly kind: WorkerWorkKind;
   readonly payload: unknown;
   readonly inputBytes: number;
   readonly revision: WorkerRevision;
@@ -64,28 +50,18 @@ export interface StructuredWorkerWork<TResult> extends WorkerWorkBounds {
   readonly workerFirst?: boolean;
 }
 
-export interface TypedWorkerWork extends WorkerWorkBounds {
-  readonly kind: Exclude<WorkerWorkKind, "byte-process">;
-  readonly input: Uint8Array;
-  readonly revision: WorkerRevision;
-  readonly priority: WorkerPriority;
-  readonly mode: WorkerSliceMode;
-}
-
 export interface TaskInput {
   readonly workKind: WorkerWorkKind;
-  readonly input: Uint8Array<ArrayBuffer>;
   readonly revision: WorkerRevision;
   readonly priority: WorkerPriority;
   readonly mode: WorkerSliceMode;
   readonly maxOutputBytes: number;
   readonly scratchBytes: number;
   readonly workerFirst: boolean;
-  readonly requireSameSize: boolean;
-  readonly inputBytes?: number;
-  readonly structuredPayload?: unknown;
-  readonly normalizeStructuredResult?: (value: unknown) => unknown;
-  readonly suppliedFallbackProcessorFactory?: () => WorkerFallbackProcessor<unknown>;
+  readonly inputBytes: number;
+  readonly structuredPayload: unknown;
+  readonly normalizeStructuredResult: (value: unknown) => unknown;
+  readonly fallbackProcessorFactory: () => WorkerFallbackProcessor<unknown>;
 }
 
 export interface PendingTask extends TaskInput {
@@ -96,8 +72,6 @@ export interface PendingTask extends TaskInput {
   readonly resolve: (result: unknown) => void;
   readonly reject: (reason: Error) => void;
   cancelled: boolean;
-  output?: Uint8Array<ArrayBuffer>;
   fallbackProcessor?: WorkerFallbackProcessor<unknown>;
   sentToWorker: boolean;
-  offset: number;
 }

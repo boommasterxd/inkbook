@@ -297,7 +297,7 @@ function composition(
       resolveMarkdownFile: (): TFile => noteFile,
       settingsRevision: createSettingsRevision(1),
       sourceDigestWorkPort: workers.sourceDigest,
-      sourceMapWorkPort: workers.sourceMapCompaction,
+      sourceMapWorkPort: workers.sourceMapWork,
       storagePolicy: { mode: "adjacent", version: 1 },
       vault,
       writableTier: "desktop-tablet",

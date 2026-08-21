@@ -38,7 +38,7 @@ export interface SharedWorkerPortsOptionsV1 {
 }
 
 export interface SharedWorkerPortsV1 {
-  readonly sourceMapCompaction: SourceMapWorkPortV1;
+  readonly sourceMapWork: SourceMapWorkPortV1;
   readonly sourceDigest: SourceDigestWorkPortV1;
   readonly persistenceCodec: PersistenceCodecPortV1;
   dispose(): void;
@@ -63,7 +63,6 @@ export function createSharedWorkerPortsV1(
     clock: options.clock,
     slices: options.slices,
     isCurrent: options.isCurrent,
-    processFallbackByte: (value): number => value,
     maxOutstandingRequests: MAX_OUTSTANDING_REQUESTS,
     maxOutstandingBytes: MAX_OUTSTANDING_INPUT_BYTES,
     maxReservedBytes: MAX_RESERVED_BYTES,
@@ -73,9 +72,8 @@ export function createSharedWorkerPortsV1(
     options.readRevision,
   );
   return Object.freeze({
-    sourceMapCompaction: new SchedulerSourceMapWorkPortV1(
+    sourceMapWork: new SchedulerSourceMapWorkPortV1(
       scheduler,
-      "source-map-compact",
       options.readRevision,
     ),
     sourceDigest: new SchedulerSourceDigestWorkPortV1(

@@ -19,11 +19,10 @@ import {
 } from "./persistence-worker-runtime";
 import {
   MAX_WORKER_DECODED_OUTPUT_BYTES,
-  MAX_WORKER_REQUEST_BYTES,
   MAX_WORKER_TASK_INPUT_BYTES,
   MAX_WORKER_TASK_SCRATCH_BYTES,
   WORKER_PROTOCOL_VERSION,
-  type ByteWorkerRequest,
+  type WorkerRequest,
   type StructuredWorkRequest,
   type WorkerRevision,
 } from "./scheduler/protocol";
@@ -120,19 +119,7 @@ export function installSharedWorkerRuntime(
       return;
     }
     try {
-      if (request.kind === "process") {
-        scope.postMessage(
-          {
-            protocolVersion: WORKER_PROTOCOL_VERSION,
-            kind: "complete",
-            requestId: request.requestId,
-            revision: request.revision,
-            byteLength: request.payload.byteLength,
-            payload: request.payload,
-          },
-          [request.payload],
-        );
-      } else processStructured(scope, state, request);
+      processStructured(scope, state, request);
     } catch {
       postWorkerError(scope, request.requestId);
     }
@@ -155,10 +142,7 @@ function processStructured(
   state: WorkerRuntimeState,
   request: StructuredWorkRequest,
 ): void {
-  if (
-    request.workKind === "source-map-compose" ||
-    request.workKind === "source-map-compact"
-  ) {
+  if (request.workKind === "source-map-compose") {
     startMap(scope, state, request);
     return;
   }
@@ -370,18 +354,18 @@ function normalizeDecodedReservation(value: unknown): number {
   return admitted as number;
 }
 
-function readRequest(value: unknown): ByteWorkerRequest | null {
+function readRequest(value: unknown): WorkerRequest | null {
   if (typeof value !== "object" || value === null) return null;
-  const request = value as Partial<ByteWorkerRequest>;
+  const request = value as Partial<WorkerRequest>;
   if (
     request.protocolVersion !== WORKER_PROTOCOL_VERSION ||
     !isPositiveSafeInteger(request.requestId)
   ) {
     return null;
   }
-  if (request.kind === "cancel") return request as ByteWorkerRequest;
+  if (request.kind === "cancel") return request as WorkerRequest;
   const processRequest = request as Partial<
-    Exclude<ByteWorkerRequest, { readonly kind: "cancel" }>
+    Exclude<WorkerRequest, { readonly kind: "cancel" }>
   >;
   if (
     !isRevision(processRequest.revision) ||
@@ -389,14 +373,7 @@ function readRequest(value: unknown): ByteWorkerRequest | null {
   ) {
     return null;
   }
-  if (request.kind === "process" && request.payload instanceof ArrayBuffer) {
-    return request.payload.byteLength === request.byteLength &&
-      request.byteLength <= MAX_WORKER_REQUEST_BYTES
-      ? (request as ByteWorkerRequest)
-      : null;
-  }
-  if (request.kind === "process-structured")
-    return request as ByteWorkerRequest;
+  if (request.kind === "process-structured") return request as WorkerRequest;
   return null;
 }
 
@@ -447,7 +424,7 @@ function isNonNegativeSafeInteger(value: unknown): value is number {
 }
 
 function hasValidRequestBounds(
-  request: Partial<Exclude<ByteWorkerRequest, { readonly kind: "cancel" }>>,
+  request: Partial<Exclude<WorkerRequest, { readonly kind: "cancel" }>>,
 ): boolean {
   return (
     typeof request.byteLength === "number" &&

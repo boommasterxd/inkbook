@@ -33,7 +33,6 @@ function fallbackHarness(): {
       clock: { now: (): number => time++ },
       slices,
       isCurrent: (): boolean => true,
-      processFallbackByte: (value): number => value,
       maxOutstandingBytes: MAX_INPUT_BYTES,
       maxReservedBytes: MAX_RESERVED_BYTES,
     }),
@@ -58,7 +57,7 @@ it("creates exactly one fallback scheduler when the worker platform is unavailab
   });
 
   expect(ports.sourceDigest).toBeDefined();
-  expect(ports.sourceMapCompaction).toBeDefined();
+  expect(ports.sourceMapWork).toBeDefined();
   expect(ports.persistenceCodec).toBeDefined();
   ports.dispose();
   ports.dispose();
@@ -95,13 +94,9 @@ it("cancels digest state and rejects without waiting for another slice", async (
   scheduler.dispose();
 });
 
-it("runs source-map compaction through resumable fallback without partial publication", async () => {
+it("runs source-map composition and compaction through the same port", async () => {
   const { scheduler, slices } = fallbackHarness();
-  const port = new SchedulerSourceMapWorkPortV1(
-    scheduler,
-    "source-map-compact",
-    () => REVISION,
-  );
+  const port = new SchedulerSourceMapWorkPortV1(scheduler, () => REVISION);
   const request = validateAndNormalizeSourceMapCompositionRequestV1({
     wireVersion: 1,
     priorUtf16Length: 2,
@@ -129,6 +124,12 @@ it("runs source-map compaction through resumable fallback without partial public
   slices.flushAll();
 
   await expect(submission.completion).resolves.toEqual({
+    ok: true,
+    value: request.value.segments[0]?.offsetMap,
+  });
+  const compacted = port.submit(request.value);
+  slices.flushAll();
+  await expect(compacted.completion).resolves.toEqual({
     ok: true,
     value: request.value.segments[0]?.offsetMap,
   });

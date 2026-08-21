@@ -18,11 +18,6 @@ interface WorkerWorkProfile {
 }
 
 const WORK_PROFILES: Readonly<Record<WorkerWorkKind, WorkerWorkProfile>> = {
-  "byte-process": {
-    maxInputBytes: MAX_WORKER_TASK_INPUT_BYTES,
-    maxOutputBytes: MAX_WORKER_TASK_OUTPUT_BYTES,
-    maxScratchBytes: MAX_WORKER_TASK_SCRATCH_BYTES,
-  },
   "source-digest": {
     maxInputBytes: MAX_WORKER_TASK_INPUT_BYTES,
     maxOutputBytes: SHA256_BYTES,
@@ -30,11 +25,6 @@ const WORK_PROFILES: Readonly<Record<WorkerWorkKind, WorkerWorkProfile>> = {
     exactOutputBytes: SHA256_BYTES,
   },
   "source-map-compose": {
-    maxInputBytes: SOURCE_MAP_BYTES,
-    maxOutputBytes: SOURCE_MAP_BYTES,
-    maxScratchBytes: MAX_WORKER_TASK_SCRATCH_BYTES,
-  },
-  "source-map-compact": {
     maxInputBytes: SOURCE_MAP_BYTES,
     maxOutputBytes: SOURCE_MAP_BYTES,
     maxScratchBytes: MAX_WORKER_TASK_SCRATCH_BYTES,
@@ -57,7 +47,7 @@ export interface WorkerWorkBounds {
 }
 
 export function assertWorkerWorkBounds(
-  workKind: Exclude<WorkerWorkKind, "byte-process">,
+  workKind: WorkerWorkKind,
   inputBytes: number,
   bounds: WorkerWorkBounds,
 ): void {

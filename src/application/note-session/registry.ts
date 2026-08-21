@@ -190,13 +190,12 @@ export class NoteSessionRegistryV1 {
       return Promise.resolve();
     }
     entry.references -= 1;
+    const hostEffectsAreUnreachable =
+      options?.hostEffectsAreUnreachable ?? false;
     const closeOwner =
       entry.session.snapshot.historyLease.kind === "owned" &&
       entry.session.snapshot.historyLease.ownerViewId === viewId
-        ? entry.session.closeOwner(
-            viewId,
-            options?.hostEffectsAreUnreachable ?? false,
-          )
+        ? entry.session.closeOwner(viewId, hostEffectsAreUnreachable)
         : Promise.resolve();
     return closeOwner.then(async () => {
       if (entry.references > 0) return;
@@ -205,7 +204,8 @@ export class NoteSessionRegistryV1 {
         result === "readmitted" ||
         this.#entries.get(entry.key) !== entry ||
         entry.references > 0 ||
-        entry.session.snapshot.historyLease.kind === "blocked"
+        (entry.session.snapshot.historyLease.kind === "blocked" &&
+          !hostEffectsAreUnreachable)
       ) {
         return;
       }

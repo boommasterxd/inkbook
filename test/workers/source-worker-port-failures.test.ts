@@ -5,7 +5,7 @@ import { validateAndNormalizeSourceMapCompositionRequestV1 } from "../../src/app
 import type { NormalizedSourceMapCompositionRequestV1 } from "../../src/application/source-coordination/work-ports";
 import {
   WORKER_PROTOCOL_VERSION,
-  type ByteWorkerRequest,
+  type WorkerRequest,
   type WorkerRevision,
 } from "../../src/workers/scheduler/protocol";
 import type { LaunchedBrowserWorker } from "../../src/workers/scheduler/browser-worker-adapter";
@@ -17,10 +17,10 @@ import { ManualSlices } from "./scheduler/support";
 const REVISION: WorkerRevision = Object.freeze({ scene: 2, layout: 3 });
 
 class ControlledWorker extends EventTarget {
-  readonly posted: ByteWorkerRequest[] = [];
+  readonly posted: WorkerRequest[] = [];
   terminate = vi.fn<() => void>();
 
-  postMessage(message: ByteWorkerRequest): void {
+  postMessage(message: WorkerRequest): void {
     this.posted.push(message);
   }
 
@@ -75,7 +75,6 @@ function harness(workerAvailable = true): Harness {
       clock: { now: (): number => 0 },
       slices,
       isCurrent: (): boolean => true,
-      processFallbackByte: (value): number => value,
       maxOutstandingBytes: 16_777_216,
       maxReservedBytes: 67_108_864,
     }),
@@ -277,7 +276,6 @@ describe("source map worker port failures", () => {
     const invalid = harness(false);
     const port = new SchedulerSourceMapWorkPortV1(
       invalid.scheduler,
-      "source-map-compose",
       () => REVISION,
     );
     expect(() =>
@@ -288,7 +286,6 @@ describe("source map worker port failures", () => {
     const fallback = harness(false);
     const submission = new SchedulerSourceMapWorkPortV1(
       fallback.scheduler,
-      "source-map-compose",
       () => REVISION,
     ).submit(smallMapRequest(10));
     fallback.slices.flushOne();
@@ -307,7 +304,6 @@ describe("source map worker port failures", () => {
     const test = harness();
     const submission = new SchedulerSourceMapWorkPortV1(
       test.scheduler,
-      "source-map-compact",
       () => REVISION,
     ).submit(largeMapRequest());
     const request = test.worker.posted[0];
@@ -322,7 +318,6 @@ describe("source map worker port failures", () => {
     const test = harness();
     const port = new SchedulerSourceMapWorkPortV1(
       test.scheduler,
-      "source-map-compact",
       () => REVISION,
     );
     const failed = port.submit(largeMapRequest());

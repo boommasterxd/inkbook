@@ -334,12 +334,16 @@ export class PluginRuntime {
       void acquired.value.release({ hostEffectsAreUnreachable: true });
       return null;
     }
+    if (runtime.persistence?.attachView(editorViewId) === false) {
+      this.#editorIds.release(editorViewId);
+      void acquired.value.release({ hostEffectsAreUnreachable: true });
+      return null;
+    }
     this.#attachments.set(editorViewId, {
       history: runtime.history,
       persistence: runtime.persistence,
       reference: acquired.value,
     });
-    runtime.persistence?.attachView(editorViewId);
     void this.#relocation?.resumeActive();
     return { editorViewId, ownerViewId: editorViewId };
   }

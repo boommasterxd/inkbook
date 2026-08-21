@@ -231,7 +231,7 @@ function createRuntimePersistence(
     resolveSidecar: (identity: NoteIdentityV1): RuntimeSidecarResolutionV1 =>
       resolveRuntimeSidecar(plugin, storagePolicy, identity),
     sourceDigestWorkPort: workers.sourceDigest,
-    sourceMapWorkPort: workers.sourceMapCompaction,
+    sourceMapWorkPort: workers.sourceMapWork,
     vault,
     writableTier: Platform.isPhone ? "phone" : "desktop-tablet",
   };

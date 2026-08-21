@@ -93,6 +93,15 @@ export class FakeHistoryAuthority implements NoteSessionHistoryAuthorityV1 {
     });
   }
 
+  public block(
+    reason: Extract<
+      NoteSessionSnapshotV1["historyLease"],
+      { readonly kind: "blocked" }
+    >["reason"],
+  ): void {
+    this.#lease = Object.freeze({ kind: "blocked", reason });
+  }
+
   public closeOwner(viewId: ViewId): boolean {
     if (this.#lease.kind !== "owned" || this.#lease.ownerViewId !== viewId) {
       return false;

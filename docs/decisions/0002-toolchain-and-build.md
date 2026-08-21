@@ -47,7 +47,7 @@ Phase 2 uses exact `@noble/hashes` 2.3.0 for incremental SHA-256. It is MIT-lice
 
 The production build targets ES2022, stages CommonJS `dist/main.js`, `dist/manifest.json`, and `dist/styles.css`, treats Obsidian, CodeMirror, and Lezer host packages as external, copies the namespaced stylesheet, minifies release output, and emits no source map. The release exposes those three files at the root of the installed plugin package.
 
-CI runs Knip once across production and tests and once from the production entry points only. The production-reachability pass narrowly excludes the retained Phase 1 view, geometry, and gesture modules because their host integration belongs to later roadmap phases. It does not exclude Phase 2 modules, so a production-shaped implementation referenced only by tests fails CI instead of being mistaken for integrated behavior.
+CI runs Knip once across production and tests and once from the production entry points only. Four exact entry points retain deliberate future handoffs without a broad source exclusion: the view attachment barrel for `P3-D1` and its Reading View coordinator for `P7-D3`, direct-touch zoom reservation for `P3-D2` and later `P7-D2`, geometry for `P3-D2` and `P3-D4`, and gestures for `P3-D2` and `P3-D4`. Phase 3 removes each temporary root when its production composition consumes that owner. This keeps every retained file visible to dead-code analysis without presenting the foundations as reachable from the packaged Phase 2 plugin, so a production-shaped implementation referenced only by tests fails CI instead of being mistaken for integrated behavior.
 
 ## Update Policy
 

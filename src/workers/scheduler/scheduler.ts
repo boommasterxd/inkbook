@@ -4,16 +4,11 @@ import {
   IDLE_WORKER_SLICE_MS,
   WORKER_ADMISSION_BYTES,
   WORKER_PROTOCOL_VERSION,
-  WORKER_CHUNK_BYTES,
   StaleWorkerResultError,
   WorkerCrashedError,
   WorkerDisposedError,
   WorkerQueueExhaustedError,
   WorkerRequestCancelledError,
-  type ByteWorkRequest,
-  type WorkerPriority,
-  type WorkerRevision,
-  type WorkerSliceMode,
 } from "./protocol";
 import { handleWorkerResponse } from "./response";
 import { readSchedulerLimits } from "./scheduler-config";
@@ -23,29 +18,19 @@ import type {
   TaskInput,
   StructuredWorkerSubmission,
   StructuredWorkerWork,
-  TypedWorkerWork,
-  WorkerFallbackProcessor,
-  WorkerFallbackWork,
-  WorkerSubmission,
 } from "./scheduler-types";
 import { assertWorkerWorkBounds } from "./work-profiles";
 import {
-  assertOwnedStaging,
   assertWorkerRevision,
   createPendingTask,
-  isAdmissibleByteOutput,
   toWorkerProcessingError,
 } from "./task";
 
 export type {
   ByteWorkerSchedulerOptions,
-  TypedWorkerWork,
   StructuredWorkerSubmission,
   StructuredWorkerWork,
-  WorkerFallbackProcessor,
-  WorkerFallbackWork,
   WorkerSliceScheduler,
-  WorkerSubmission,
 } from "./scheduler-types";
 
 export class ByteWorkerScheduler {
@@ -72,51 +57,6 @@ export class ByteWorkerScheduler {
     this.maxReservedBytes = limits.maxReservedBytes;
   }
 
-  public submit(
-    input: Uint8Array<ArrayBuffer>,
-    revision: WorkerRevision,
-    priority: WorkerPriority,
-    mode: WorkerSliceMode,
-  ): WorkerSubmission {
-    this.assertOpen();
-    assertOwnedStaging(input);
-    assertWorkerRevision(revision);
-    return this.admit({
-      workKind: "byte-process",
-      input,
-      revision,
-      priority,
-      mode,
-      maxOutputBytes: input.byteLength,
-      scratchBytes: 0,
-      workerFirst: true,
-      requireSameSize: true,
-    }) as WorkerSubmission;
-  }
-
-  public submitWork(work: TypedWorkerWork): WorkerSubmission {
-    this.assertOpen();
-    assertWorkerRevision(work.revision);
-    assertWorkerWorkBounds(work.kind, work.input.byteLength, work);
-    this.assertCapacity(
-      work.input.byteLength,
-      work.input.byteLength + work.maxOutputBytes + work.scratchBytes,
-    );
-    const staging = new Uint8Array(work.input.byteLength);
-    staging.set(work.input);
-    return this.admit({
-      workKind: work.kind,
-      input: staging,
-      revision: work.revision,
-      priority: work.priority,
-      mode: work.mode,
-      maxOutputBytes: work.maxOutputBytes,
-      scratchBytes: work.scratchBytes,
-      workerFirst: work.input.byteLength >= WORKER_ADMISSION_BYTES,
-      requireSameSize: false,
-    }) as WorkerSubmission;
-  }
-
   public submitStructured<TResult>(
     work: StructuredWorkerWork<TResult>,
   ): StructuredWorkerSubmission<TResult> {
@@ -129,7 +69,6 @@ export class ByteWorkerScheduler {
     );
     return this.admit({
       workKind: work.kind,
-      input: new Uint8Array(0),
       revision: work.revision,
       priority: work.priority,
       mode: work.mode,
@@ -137,10 +76,9 @@ export class ByteWorkerScheduler {
       scratchBytes: work.scratchBytes,
       workerFirst:
         work.workerFirst === true || work.inputBytes >= WORKER_ADMISSION_BYTES,
-      requireSameSize: false,
       structuredPayload: work.payload,
       normalizeStructuredResult: work.normalizeResult,
-      suppliedFallbackProcessorFactory: work.createFallbackProcessor,
+      fallbackProcessorFactory: work.createFallbackProcessor,
       inputBytes: work.inputBytes,
     }) as StructuredWorkerSubmission<TResult>;
   }
@@ -159,10 +97,8 @@ export class ByteWorkerScheduler {
 
   private admit(input: TaskInput): StructuredWorkerSubmission<unknown> {
     const reservedBytes =
-      (input.inputBytes ?? input.input.byteLength) +
-      input.maxOutputBytes +
-      input.scratchBytes;
-    const inputBytes = input.inputBytes ?? input.input.byteLength;
+      input.inputBytes + input.maxOutputBytes + input.scratchBytes;
+    const inputBytes = input.inputBytes;
     this.assertCapacity(inputBytes, reservedBytes);
     const task = createPendingTask(input, this.nextId++);
     this.outstandingBytes += task.byteLength;
@@ -227,30 +163,6 @@ export class ByteWorkerScheduler {
   }
 
   private sendToWorker(task: PendingTask): void {
-    if (task.structuredPayload !== undefined) {
-      this.sendStructuredToWorker(task);
-      return;
-    }
-    const request: ByteWorkRequest = {
-      protocolVersion: WORKER_PROTOCOL_VERSION,
-      kind: "process",
-      requestId: task.id,
-      workKind: task.workKind,
-      revision: task.revision,
-      byteLength: task.byteLength,
-      maxOutputBytes: task.maxOutputBytes,
-      scratchBytes: task.scratchBytes,
-      chunkBytes: WORKER_CHUNK_BYTES,
-      payload: task.input.buffer,
-    };
-    try {
-      this.launched?.worker.postMessage(request, [request.payload]);
-    } catch {
-      this.handleWorkerFailure();
-    }
-  }
-
-  private sendStructuredToWorker(task: PendingTask): void {
     try {
       const request = {
         protocolVersion: WORKER_PROTOCOL_VERSION,
@@ -289,9 +201,7 @@ export class ByteWorkerScheduler {
 
   private startFallbackSlice(task: PendingTask): void {
     try {
-      if (task.workKind === "byte-process") {
-        task.output ??= new Uint8Array(task.input.byteLength);
-      } else task.fallbackProcessor ??= this.createFallbackProcessor(task);
+      task.fallbackProcessor ??= task.fallbackProcessorFactory();
     } catch (error: unknown) {
       this.finish(task, toWorkerProcessingError(error));
       return;
@@ -328,76 +238,23 @@ export class ByteWorkerScheduler {
   }
 
   private runFallbackWork(task: PendingTask, deadline: number): boolean {
-    if (task.fallbackProcessor !== undefined) {
-      while (this.options.clock.now() < deadline) {
-        if (task.fallbackProcessor.processNext()) return true;
-      }
-      return false;
+    const processor = task.fallbackProcessor;
+    if (processor === undefined) {
+      throw new Error("Fallback processor is unavailable.");
     }
-    const output = task.output;
-    while (
-      output !== undefined &&
-      task.offset < task.input.length &&
-      this.options.clock.now() < deadline
-    ) {
-      const value = task.input[task.offset] ?? 0;
-      output[task.offset] = this.options.processFallbackByte(
-        value,
-        task.offset,
-      );
-      task.offset += 1;
+    while (this.options.clock.now() < deadline) {
+      if (processor.processNext()) return true;
     }
-    return task.offset === task.input.length;
+    return false;
   }
 
   private completeFallback(task: PendingTask): void {
     try {
-      const output = task.fallbackProcessor?.complete() ?? task.output;
-      if (task.structuredPayload !== undefined) {
-        if (task.normalizeStructuredResult === undefined) {
-          this.finish(
-            task,
-            new Error("Fallback result violates its work contract."),
-          );
-          return;
-        }
-        this.publish(task, task.normalizeStructuredResult(output));
-        return;
-      }
-      if (
-        !(output instanceof Uint8Array) ||
-        !isAdmissibleByteOutput(task, output)
-      ) {
-        this.finish(
-          task,
-          new Error("Fallback response violates its work bounds."),
-        );
-        return;
-      }
-      this.publish(task, output);
+      const output = task.fallbackProcessor?.complete();
+      this.publish(task, task.normalizeStructuredResult(output));
     } catch (error: unknown) {
       this.finish(task, toWorkerProcessingError(error));
     }
-  }
-
-  private createFallbackProcessor(
-    task: PendingTask,
-  ): WorkerFallbackProcessor<unknown> {
-    if (task.suppliedFallbackProcessorFactory !== undefined) {
-      return task.suppliedFallbackProcessorFactory();
-    }
-    const factory = this.options.createFallbackProcessor;
-    if (factory === undefined) {
-      throw new Error(
-        `No fallback processor is available for ${task.workKind}.`,
-      );
-    }
-    return factory({
-      kind: task.workKind as WorkerFallbackWork["kind"],
-      input: task.input,
-      maxOutputBytes: task.maxOutputBytes,
-      scratchBytes: task.scratchBytes,
-    });
   }
 
   private publish(task: PendingTask, output: unknown): void {
@@ -448,7 +305,7 @@ export class ByteWorkerScheduler {
     this.outstandingReservedBytes -= task.reservedBytes;
     task.fallbackProcessor?.dispose?.();
     if (error !== undefined) task.reject(error);
-    else if (output !== undefined) task.resolve(output);
+    else task.resolve(output);
   }
 
   private releaseWorker(): void {

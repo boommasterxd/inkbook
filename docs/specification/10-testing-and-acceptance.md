@@ -17,6 +17,12 @@ Tests MUST assert observable contracts rather than incidental implementation det
 
 Sections 2 through 8 are executable acceptance contracts, not recurring instructions for the user. Each scenario is implemented at the lowest faithful automated layer. Packaged-host, emulator, or device automation is added only when a fake or simulation cannot observe an implemented contract and a stable control surface exists. Normal test output and direct production-package inspection are sufficient records. The sole routine human activity is the one short phase-sanity scenario defined by the roadmap after all automation passes.
 
+### 1.1 Implementation Continuity Acceptance
+
+Every phase after Phase 0 MUST apply the [Implementation Continuity Gate](09-quality-and-performance.md#221-implementation-continuity-gate) to the actual integrated repository and production package, not only to files changed during that phase. Existing source search, architecture and dead-code checks, duplication detection, affected unit and integration suites, the production build, and direct package inspection verify that inherited responsibilities are reused, deliberately replaced, or retained only as a conforming deferred handoff; every applicable caller reaches the selected production owner, prior applicable behavior still passes, and no obsolete or parallel runtime or test path remains.
+
+Tests and fixtures move with the selected owner instead of preserving a superseded implementation solely for coverage. A required host-compatibility adapter or persisted-data migration is tested through the current production composition and is not a second authority. The phase-specific roadmap exit item identifies the relevant owners and handoffs; it MUST NOT create a separate inventory, scanner, result schema, or runner.
+
 ## 2. Product Acceptance Scenarios
 
 ### 2.1 Native Markdown
@@ -341,7 +347,7 @@ Package performance acceptance automatically checks exact raw and gzip artifact 
 
 ## 7. Coverage and Test Completeness
 
-Automated tests MUST cover at least 85 percent of production lines and every relevant normal, boundary, failure, race, cancellation, recovery, disposal, and abuse behavior that can be driven or observed through code. Tests use clear behavior-oriented names and stay close to the production area they verify. A feature is incomplete when any automatable normative behavior lacks an executable test. Manual evidence is permitted only for a quality that no programmatic interface can observe, and it is limited to the single concise phase-sanity scenario. Empty manifests, generated requirement inventories, and written procedures are not test evidence.
+Automated tests MUST cover at least 85 percent of production lines and every relevant normal, boundary, failure, race, cancellation, recovery, disposal, and abuse behavior that can be driven or observed through code. Tests use clear behavior-oriented names and stay close to the production area they verify. A feature is incomplete when any automatable normative behavior lacks an executable test or when an extended or replaced responsibility still has a parallel runtime or test owner. Manual evidence is permitted only for a quality that no programmatic interface can observe, and it is limited to the single concise phase-sanity scenario. Empty manifests, generated requirement inventories, and written procedures are not test evidence.
 
 ## 8. Obsidian Host Contract Acceptance
 

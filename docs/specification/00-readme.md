@@ -60,6 +60,8 @@ The plugin MUST NOT implement a separate document format, page manager, finite p
 
 Each subject has one owning document. Other documents link to that owner instead of redefining its contract. When an implementation decision changes observable behavior, persistence, compatibility, security, or package boundaries, the owning document MUST be updated in the same change.
 
+[Quality and Performance](09-quality-and-performance.md#221-implementation-continuity-gate) owns the common implementation-continuity gate. [Testing and Acceptance](10-testing-and-acceptance.md#11-implementation-continuity-acceptance) defines how existing executable and structural checks apply that gate. [Implementation Roadmap](11-implementation-roadmap.md) names only the phase-specific owners and handoffs that the common gate evaluates.
+
 | Subject                                                                               | Owning document                                                                                        |
 | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | Product capability and exclusions                                                     | [Product Scope](01-product-scope.md)                                                                   |
@@ -70,7 +72,7 @@ Each subject has one owning document. Other documents link to that owner instead
 | Projection, retained SVG, culling, and hit testing                                    | [SVG Rendering](06-svg-rendering.md)                                                                   |
 | Sidecar envelope, Vault writes, conflicts, and relocation                             | [Sidecar Persistence](07-sidecar-persistence.md)                                                       |
 | User settings and defaults                                                            | [Settings](08-settings.md)                                                                             |
-| Quality, security, resource, and performance gates                                    | [Quality and Performance](09-quality-and-performance.md)                                               |
+| Quality, security, resource, performance, and implementation-continuity gates         | [Quality and Performance](09-quality-and-performance.md)                                               |
 | Verification and acceptance tests                                                     | [Testing and Acceptance](10-testing-and-acceptance.md)                                                 |
 | Delivery order and phase exit criteria                                                | [Implementation Roadmap](11-implementation-roadmap.md)                                                 |
 | Obsidian API, package, and release boundaries                                         | [Obsidian Host Contract](14-obsidian-host-contract.md)                                                 |

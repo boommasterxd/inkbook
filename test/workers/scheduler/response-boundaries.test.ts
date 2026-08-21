@@ -15,15 +15,20 @@ const SECOND_INPUT_BYTE = 2;
 function createTask(): PendingTask {
   return createPendingTask(
     {
-      workKind: "byte-process",
-      input: new Uint8Array([1, SECOND_INPUT_BYTE]),
+      workKind: "persistence-encode",
       revision: REVISION,
       priority: "current",
       mode: "active",
       maxOutputBytes: TASK_BYTES,
       scratchBytes: 0,
       workerFirst: true,
-      requireSameSize: false,
+      inputBytes: TASK_BYTES,
+      structuredPayload: { wireVersion: 1 },
+      normalizeStructuredResult: (value): unknown => value,
+      fallbackProcessorFactory: () => ({
+        processNext: (): boolean => true,
+        complete: (): number => SECOND_INPUT_BYTE,
+      }),
     },
     REQUEST_ID,
   );
@@ -55,7 +60,7 @@ describe("worker response protocol boundaries", () => {
     });
   });
 
-  it("rejects a structured completion for a byte task", () => {
+  it("accepts a bounded structured completion", () => {
     const outcome = handleWorkerResponse(
       {
         protocolVersion: WORKER_PROTOCOL_VERSION,
@@ -68,13 +73,10 @@ describe("worker response protocol boundaries", () => {
       createTask(),
     );
 
-    expect(outcome).toMatchObject({
-      kind: "error",
-      error: { message: "Worker result violates its work contract." },
-    });
+    expect(outcome).toEqual({ kind: "complete", output: { byte: 1 } });
   });
 
-  it("accepts a bounded complete response", () => {
+  it("rejects the removed byte-complete response", () => {
     const payload = Uint8Array.from([OUTPUT_BYTE, SECOND_OUTPUT_BYTE]);
     const outcome = handleWorkerResponse(
       {
@@ -88,7 +90,10 @@ describe("worker response protocol boundaries", () => {
       createTask(),
     );
 
-    expect(outcome).toEqual({ kind: "complete", output: payload });
+    expect(outcome).toMatchObject({
+      kind: "error",
+      error: { message: "Worker response violates its protocol." },
+    });
   });
 
   it.each([1, { scene: 2, layout: 3.5 }])(

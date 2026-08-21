@@ -10,8 +10,8 @@ import { validateAndNormalizeSourceMapCompositionRequestV1 } from "../../src/app
 import { encodedSourceOffsetMapBytes } from "../../src/application/source-coordination/offset-map";
 import {
   WORKER_PROTOCOL_VERSION,
-  type ByteWorkerRequest,
-  type ByteWorkerResponse,
+  type WorkerRequest,
+  type WorkerResponse,
   type StructuredWorkRequest,
   type WorkerRevision,
 } from "../../src/workers/scheduler/protocol";
@@ -24,7 +24,7 @@ import { completeSidecar } from "../application/persistence/support";
 const REVISION: WorkerRevision = { scene: 1, layout: 2 };
 
 class ControlledWorkerScope implements SharedWorkerScope {
-  readonly responses: ByteWorkerResponse[] = [];
+  readonly responses: WorkerResponse[] = [];
   readonly transfers: Transferable[][] = [];
   readonly #timers: (() => void)[] = [];
   #listener: ((event: MessageEvent<unknown>) => void) | undefined;
@@ -38,7 +38,7 @@ class ControlledWorkerScope implements SharedWorkerScope {
 
   postMessage(message: unknown, transfer: Transferable[] = []): void {
     this.responses.push(
-      structuredClone(message, { transfer }) as ByteWorkerResponse,
+      structuredClone(message, { transfer }) as WorkerResponse,
     );
     this.transfers.push(transfer);
   }
@@ -48,7 +48,7 @@ class ControlledWorkerScope implements SharedWorkerScope {
     return this.#timers.length;
   }
 
-  dispatch(request: ByteWorkerRequest): void {
+  dispatch(request: WorkerRequest): void {
     this.#listener?.(new MessageEvent("message", { data: request }));
   }
 
@@ -93,30 +93,6 @@ function persistenceEncodeFixture(): {
     ),
   };
 }
-
-it("preserves the existing byte-work protocol with one ownership transfer", () => {
-  const scope = new ControlledWorkerScope();
-  installSharedWorkerRuntime(scope);
-  const payload = new Uint8Array([1, 2, 3]).buffer;
-  scope.dispatch({
-    protocolVersion: WORKER_PROTOCOL_VERSION,
-    kind: "process",
-    requestId: 9,
-    workKind: "byte-process",
-    revision: REVISION,
-    byteLength: payload.byteLength,
-    maxOutputBytes: payload.byteLength,
-    scratchBytes: 0,
-    chunkBytes: 16_384,
-    payload,
-  });
-
-  const response = scope.responses[0];
-  expect(response?.kind).toBe("complete");
-  if (response?.kind !== "complete") return;
-  expect(new Uint8Array(response.payload)).toEqual(new Uint8Array([1, 2, 3]));
-  expect(scope.transfers[0]).toHaveLength(1);
-});
 
 it("computes a semantic streaming SHA-256 digest", () => {
   const scope = new ControlledWorkerScope();
@@ -240,7 +216,7 @@ it("composes canonical source maps and acknowledges cancellation", () => {
   scope.dispatch(
     structuredRequest(
       5,
-      "source-map-compact",
+      "source-map-compose",
       request.value,
       inputBytes,
       4_194_304,

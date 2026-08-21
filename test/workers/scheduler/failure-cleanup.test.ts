@@ -3,17 +3,28 @@ import { expect, it } from "vitest";
 import { WORKER_ADMISSION_BYTES } from "../../../src/workers/scheduler/protocol";
 import {
   ByteWorkerScheduler,
-  type WorkerFallbackProcessor,
-  type WorkerFallbackWork,
+  type StructuredWorkerWork,
 } from "../../../src/workers/scheduler/scheduler";
+import type { WorkerFallbackProcessor } from "../../../src/workers/scheduler/scheduler-types";
 import { ManualSlices } from "./support";
 
 const REVISION = { scene: 1, layout: 1 };
 
-function copyingProcessor(work: WorkerFallbackWork): WorkerFallbackProcessor {
+function work(inputBytes: number): StructuredWorkerWork<number> {
   return {
-    processNext: (): boolean => true,
-    complete: (): Uint8Array<ArrayBuffer> => new Uint8Array(work.input),
+    kind: "persistence-encode",
+    payload: { wireVersion: 1 },
+    inputBytes,
+    revision: REVISION,
+    priority: "background",
+    mode: "idle",
+    maxOutputBytes: inputBytes,
+    scratchBytes: 0,
+    createFallbackProcessor: (): WorkerFallbackProcessor<number> => ({
+      processNext: (): boolean => true,
+      complete: (): number => inputBytes,
+    }),
+    normalizeResult: (value): number => Number(value),
   };
 }
 
@@ -26,22 +37,12 @@ it("uses fallback when the lazy worker launcher throws", async () => {
     clock: { now: (): number => 0 },
     slices,
     isCurrent: (): boolean => true,
-    processFallbackByte: (value): number => value,
-    createFallbackProcessor: copyingProcessor,
     maxOutstandingBytes: WORKER_ADMISSION_BYTES,
   });
-  const submission = scheduler.submitWork({
-    kind: "persistence-encode",
-    input: new Uint8Array(WORKER_ADMISSION_BYTES),
-    revision: REVISION,
-    priority: "background",
-    mode: "idle",
-    maxOutputBytes: WORKER_ADMISSION_BYTES,
-    scratchBytes: 0,
-  });
+  const submission = scheduler.submitStructured(work(WORKER_ADMISSION_BYTES));
   slices.flushAll();
 
-  await expect(submission.result).resolves.toHaveLength(WORKER_ADMISSION_BYTES);
+  await expect(submission.result).resolves.toBe(WORKER_ADMISSION_BYTES);
   scheduler.dispose();
 });
 
@@ -56,14 +57,8 @@ it("rejects and releases fallback work when slice scheduling throws", async () =
       },
     },
     isCurrent: (): boolean => true,
-    processFallbackByte: (value): number => value,
   });
-  const submission = scheduler.submit(
-    new Uint8Array([1]),
-    REVISION,
-    "current",
-    "active",
-  );
+  const submission = scheduler.submitStructured(work(1));
 
   await expect(submission.result).rejects.toBe(failure);
   scheduler.dispose();

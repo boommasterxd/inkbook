@@ -7,14 +7,12 @@ export class RuntimeViewAttachmentsV1 {
   readonly #views = new Set<ViewId>();
   #source: RuntimePersistenceSourceV1 | null = null;
 
-  public attach(viewId: ViewId): void {
-    if (
-      this.#views.has(viewId) ||
-      this.#views.size >= MAX_RUNTIME_ATTACHED_VIEWS
-    )
-      return;
+  public attach(viewId: ViewId): boolean {
+    if (this.#views.has(viewId)) return true;
+    if (this.#views.size >= MAX_RUNTIME_ATTACHED_VIEWS) return false;
     this.#views.add(viewId);
     this.#source?.attach(viewId);
+    return true;
   }
 
   public detach(viewId: ViewId): void {
@@ -26,6 +24,10 @@ export class RuntimeViewAttachmentsV1 {
     if (this.#source !== null) return;
     this.#source = source;
     for (const viewId of this.#views) source.attach(viewId);
+  }
+
+  public has(viewId: ViewId): boolean {
+    return this.#views.has(viewId);
   }
 
   public dispose(): void {

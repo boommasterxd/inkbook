@@ -2,7 +2,7 @@ import {
   StaleWorkerResultError,
   WORKER_PROTOCOL_VERSION,
   WorkerRequestCancelledError,
-  type ByteWorkerResponse,
+  type WorkerResponse,
   type WorkerRevision,
 } from "./protocol";
 import type { PendingTask } from "./scheduler-types";
@@ -32,31 +32,14 @@ export function handleWorkerResponse(
   if (!sameWorkerRevision(response.revision, task.revision)) {
     return protocolError(new StaleWorkerResultError());
   }
-  if (response.kind === "structured-complete") {
-    return handleStructuredResponse(response, task);
-  }
-  if (
-    (task.requireSameSize && response.byteLength !== task.byteLength) ||
-    !isValidWorkerOutputLength(
-      task.workKind,
-      response.byteLength,
-      task.maxOutputBytes,
-    )
-  ) {
-    return protocolError("Worker response length violates its work bounds.");
-  }
-  return { kind: "complete", output: new Uint8Array(response.payload) };
+  return handleStructuredResponse(response, task);
 }
 
 function handleStructuredResponse(
-  response: Extract<
-    ByteWorkerResponse,
-    { readonly kind: "structured-complete" }
-  >,
+  response: Extract<WorkerResponse, { readonly kind: "structured-complete" }>,
   task: PendingTask,
 ): WorkerResponseOutcome {
   if (
-    task.normalizeStructuredResult === undefined ||
     !isValidWorkerOutputLength(
       task.workKind,
       response.byteLength,
@@ -86,9 +69,9 @@ function parseWorkerResponse(
   value: unknown,
   requestId: number,
   maxOutputBytes: number,
-): ByteWorkerResponse | undefined {
+): WorkerResponse | undefined {
   if (typeof value !== "object" || value === null) return undefined;
-  const candidate = value as Partial<ByteWorkerResponse>;
+  const candidate = value as Partial<WorkerResponse>;
   if (
     candidate.protocolVersion !== WORKER_PROTOCOL_VERSION ||
     candidate.requestId !== requestId
@@ -96,7 +79,7 @@ function parseWorkerResponse(
     return undefined;
   }
   if (candidate.kind === "cancelled" || candidate.kind === "error") {
-    return candidate as ByteWorkerResponse;
+    return candidate as WorkerResponse;
   }
   if (
     candidate.kind === "structured-complete" &&
@@ -106,16 +89,7 @@ function parseWorkerResponse(
     candidate.byteLength <= maxOutputBytes &&
     isWorkerRevision(candidate.revision)
   ) {
-    return candidate as ByteWorkerResponse;
-  }
-  if (
-    candidate.kind === "complete" &&
-    candidate.payload instanceof ArrayBuffer &&
-    isWorkerRevision(candidate.revision) &&
-    candidate.byteLength === candidate.payload.byteLength &&
-    candidate.byteLength <= maxOutputBytes
-  ) {
-    return candidate as ByteWorkerResponse;
+    return candidate as WorkerResponse;
   }
   return undefined;
 }

@@ -219,8 +219,8 @@ export class RuntimePersistenceV1 {
     });
   }
 
-  public attachView(viewId: Session.ViewId): void {
-    if (!this.#disposed) this.#views.attach(viewId);
+  public attachView(viewId: Session.ViewId): boolean {
+    return !this.#disposed && this.#views.attach(viewId);
   }
 
   public get issueStatus(): RuntimePersistenceIssueStatusV1 | null {
@@ -238,7 +238,7 @@ export class RuntimePersistenceV1 {
     viewId: Session.ViewId,
     transition: EditorSourceTransitionV1,
   ): void {
-    if (this.#disposed) return;
+    if (this.#disposed || !this.#views.has(viewId)) return;
     this.#earlySource.accept(viewId, transition, this.#source);
   }
 

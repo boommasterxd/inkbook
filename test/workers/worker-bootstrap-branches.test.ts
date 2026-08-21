@@ -3,14 +3,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSharedWorkerPortsV1 } from "../../src/workers/shared-worker-ports";
 import { readStaticSharedWorkerSource } from "../../src/workers/static-worker-source";
 import type { BrowserWorkerEnvironment } from "../../src/workers/scheduler/browser-worker-adapter";
-import type { ByteWorkerRequest } from "../../src/workers/scheduler/protocol";
+import type { WorkerRequest } from "../../src/workers/scheduler/protocol";
 import { ManualSlices } from "./scheduler/support";
 
 class BootstrapWorker extends EventTarget {
-  readonly posted: ByteWorkerRequest[] = [];
+  readonly posted: WorkerRequest[] = [];
   terminate = vi.fn<() => void>();
 
-  postMessage(message: ByteWorkerRequest): void {
+  postMessage(message: WorkerRequest): void {
     this.posted.push(message);
   }
 }

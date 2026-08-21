@@ -15,6 +15,7 @@ import {
 const MAX_GLOBAL_TURNS = MAX_TEST_GLOBAL_TURNS;
 const REGISTRY_RESERVED_TURNS = TEST_REGISTRY_RESERVED_TURNS;
 const LIFECYCLE_CYCLES = 50;
+const ABOVE_PRODUCTION_SESSION_LIMIT = 257;
 const EXPECTED_REFERENCES = 2;
 const RENAMED_IDENTITY = Object.freeze({
   ...NOTE_IDENTITY,
@@ -97,6 +98,33 @@ describe("note session registry owner retention", () => {
       reason: "history-unavailable",
     });
     await registry.dispose(true);
+  });
+
+  it("releases more than 256 closed sessions when recovery is unavailable", async () => {
+    const registry = createRegistry({
+      historyFactory: () => {
+        const history = new FakeHistoryAuthority();
+        history.block("recovery-unavailable");
+        return history;
+      },
+      limits: {
+        maxQueuedTurns: MAX_GLOBAL_TURNS,
+        maxSessions: 256,
+        reservedCriticalTurns: REGISTRY_RESERVED_TURNS,
+      },
+    });
+
+    for (let index = 0; index < ABOVE_PRODUCTION_SESSION_LIMIT; index += 1) {
+      const identity = {
+        ...NOTE_IDENTITY,
+        vaultRelativeMarkdownPath: `notes/recovery-unavailable-${String(index)}.md`,
+      };
+      const reference = registry.acquire(identity, VIEW_A);
+      if (!reference.ok) throw new Error("A closed session was retained.");
+
+      await reference.value.release({ hostEffectsAreUnreachable: true });
+      expect(registry.sessionCount).toBe(0);
+    }
   });
 });
 

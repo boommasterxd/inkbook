@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import { validateAndNormalizeSourceMapCompositionRequestV1 } from "../../src/application/source-coordination/map-composition-fallback";
 import { encodedSourceOffsetMapBytes } from "../../src/application/source-coordination/offset-map";
 import {
-  MAX_WORKER_REQUEST_BYTES,
   WORKER_PROTOCOL_VERSION,
   type StructuredWorkRequest,
 } from "../../src/workers/scheduler/protocol";
@@ -157,30 +156,7 @@ describe("shared worker request validation", () => {
       { ...structured(4, "source-digest", {}), maxOutputBytes: -1 },
       { ...structured(5, "source-digest", {}), scratchBytes: -1 },
       { ...structured(6, "source-digest", {}), kind: "unknown" },
-      {
-        protocolVersion: WORKER_PROTOCOL_VERSION,
-        kind: "process",
-        requestId: 7,
-        workKind: "byte-process",
-        revision: REVISION,
-        byteLength: 2,
-        maxOutputBytes: 1,
-        scratchBytes: 0,
-        chunkBytes: 16_384,
-        payload: new ArrayBuffer(1),
-      },
-      {
-        protocolVersion: WORKER_PROTOCOL_VERSION,
-        kind: "process",
-        requestId: 8,
-        workKind: "byte-process",
-        revision: REVISION,
-        byteLength: MAX_WORKER_REQUEST_BYTES + 1,
-        maxOutputBytes: 1,
-        scratchBytes: 0,
-        chunkBytes: 16_384,
-        payload: new ArrayBuffer(MAX_WORKER_REQUEST_BYTES + 1),
-      },
+      { ...structured(7, "source-digest", {}), kind: "process" },
     ]) {
       scope.dispatch(value);
     }
@@ -272,10 +248,10 @@ describe("shared worker map admission and cancellation", () => {
     );
     expectLastKind(scope, "error");
     scope.dispatch(
-      structured(3, "source-map-compact", fixture.payload, fixture.byteLength),
+      structured(3, "source-map-compose", fixture.payload, fixture.byteLength),
     );
     scope.dispatch(
-      structured(3, "source-map-compact", fixture.payload, fixture.byteLength),
+      structured(3, "source-map-compose", fixture.payload, fixture.byteLength),
     );
     expectLastKind(scope, "error");
     scope.dispatch({
