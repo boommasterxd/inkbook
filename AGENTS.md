@@ -52,6 +52,8 @@ All plugin runtime code and static plugin styles live in responsibility-specific
 
 Use `npm`, TypeScript, esbuild, Vitest, ESLint, the official `eslint-plugin-obsidianmd` recommended type-aware configuration, a formatter, `jscpd` with `minTokens: 50`, `knip`, and `npm audit`. Applicable Obsidian API, lifecycle, mobile, command, styling, path, settings, and sample-code findings are errors. CI must run formatting verification, linting, type checking, Unit and Integration tests with coverage, duplicate and dead-code detection, dependency audit, deterministic performance benchmarks, and a production artifact build.
 
+Keep CodeMirror and Lezer external to the production bundle. Do not add direct CodeMirror development dependencies until source imports require them. When required, pin them to the exact peer versions declared by the selected `obsidian` package and update that compatibility set together; generic Dependabot updates for direct CodeMirror peers remain ignored.
+
 ## Documentation Index
 
 | Document                                                                 | Purpose                                                                                                                                                              |
