@@ -256,9 +256,13 @@ describe("scene malicious and generated workloads", () => {
     }
   });
 
-  it("round-trips a generated 5,000-element scene within parser limits", () => {
-    expectCapacityRoundTrip(MINIMUM_CAPACITY);
-  });
+  it(
+    "round-trips a generated 5,000-element scene within parser limits",
+    () => {
+      expectCapacityRoundTrip(MINIMUM_CAPACITY);
+    },
+    COVERAGE_STRESS_TIMEOUT_MS,
+  );
 
   it(
     "round-trips a generated 10,000-element scene within parser limits",

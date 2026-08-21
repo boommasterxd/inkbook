@@ -10,6 +10,7 @@ import type { SceneElementV1 } from "../../../src/domain/model";
 import { completeScene } from "./scene-support";
 
 const MIN_STROKE_WORK_CALLS = 5;
+const COVERAGE_BOUNDARY_TIMEOUT_MS = 15_000;
 
 function drive(
   processor: ReturnType<typeof createSerializedSceneValidationProcessorV1>,
@@ -126,6 +127,7 @@ describe("resumable scene resource admission", () => {
       );
       expect(() => drive(processor)).toThrow(expectedError);
     },
+    COVERAGE_BOUNDARY_TIMEOUT_MS,
   );
 
   it("reserves separate work units for large encoded stroke chunks", () => {
