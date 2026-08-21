@@ -2,80 +2,20 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  assertWritableSidecarSizeV1,
   decodeInkbookSidecarV1,
   encodeInkbookSidecarV1,
   SIDECAR_RESOURCE_LIMITS_V1,
   SIDECAR_WRITE_LIMITS_UTF8_BYTES_V1,
   validateInkbookSidecarV1,
 } from "../../../src/application/persistence";
-import type { InkbookSidecarV1 } from "../../../src/application/persistence";
 import { canonicalizeJson } from "../../../src/domain/codecs";
-import { createSceneRevision } from "../../../src/domain/model";
-import { rectangleElement } from "../../domain/model/support";
 import { completeSidecar } from "./support";
-
-const BOUNDARY_TEST_TIMEOUT_MS = 30_000;
 
 function encodedText(): string {
   return new TextDecoder().decode(
     encodeInkbookSidecarV1(completeSidecar(), "phone"),
   );
-}
-
-function resizeEnvelopeToBytes(
-  sidecar: InkbookSidecarV1,
-  targetBytes: number,
-): InkbookSidecarV1 {
-  const empty = withRectangleCount(sidecar, 0);
-  const one = withRectangleCount(sidecar, 1);
-  const unitBytes = encodedByteLength(one) - encodedByteLength(empty);
-  let count = Math.floor((targetBytes - encodedByteLength(empty)) / unitBytes);
-
-  for (;;) {
-    const candidate = withRectangleCount(sidecar, count);
-    const remaining = targetBytes - encodedByteLength(candidate);
-    if (remaining >= 0 && remaining <= 4_000) {
-      return withStoragePadding(candidate, remaining);
-    }
-    const adjustment = Math.max(1, Math.floor(Math.abs(remaining) / unitBytes));
-    count += remaining > 0 ? adjustment : -adjustment;
-  }
-}
-
-function withRectangleCount(
-  sidecar: InkbookSidecarV1,
-  count: number,
-): InkbookSidecarV1 {
-  const elements = Array.from({ length: count }, (_, index) =>
-    rectangleElement(index),
-  );
-  return {
-    ...sidecar,
-    scene: {
-      elements,
-      groups: [],
-      noteAppearance: sidecar.scene.noteAppearance,
-      objectOrder: elements.map(({ elementId }) => elementId),
-      revision: createSceneRevision(count),
-    },
-  };
-}
-
-function withStoragePadding(
-  sidecar: InkbookSidecarV1,
-  paddingBytes: number,
-): InkbookSidecarV1 {
-  return {
-    ...sidecar,
-    storageLayout: {
-      kind: "vault-root",
-      vaultRelativeRoot: `Annotations${"r".repeat(paddingBytes)}`,
-    },
-  };
-}
-
-function encodedByteLength(sidecar: InkbookSidecarV1): number {
-  return new TextEncoder().encode(`${canonicalizeJson(sidecar)}\n`).byteLength;
 }
 
 function expectRejectedSidecar(
@@ -250,63 +190,16 @@ describe("Inkbook sidecar validation", () => {
 });
 
 describe("Inkbook sidecar parser limits", () => {
-  it(
-    "admits the phone write boundary and rejects immediately over",
-    () => {
-      const limit = SIDECAR_WRITE_LIMITS_UTF8_BYTES_V1.phone;
-      const boundarySidecar = resizeEnvelopeToBytes(completeSidecar(), limit);
-      if (boundarySidecar.storageLayout.kind !== "vault-root") {
-        throw new TypeError("Expected a Vault-root boundary fixture.");
-      }
-      const boundaryRoot = boundarySidecar.storageLayout.vaultRelativeRoot;
-
-      expect(encodeInkbookSidecarV1(boundarySidecar, "phone")).toHaveLength(
-        limit,
-      );
-      expect(() =>
-        encodeInkbookSidecarV1(
-          {
-            ...boundarySidecar,
-            storageLayout: {
-              kind: "vault-root",
-              vaultRelativeRoot: `${boundaryRoot}r`,
-            },
-          },
-          "phone",
-        ),
-      ).toThrow(/write byte limit/u);
-    },
-    BOUNDARY_TEST_TIMEOUT_MS,
-  );
-
-  it(
-    "admits the desktop-tablet write boundary and rejects immediately over",
-    () => {
-      const limit = SIDECAR_WRITE_LIMITS_UTF8_BYTES_V1["desktop-tablet"];
-      const boundarySidecar = resizeEnvelopeToBytes(completeSidecar(), limit);
-      if (boundarySidecar.storageLayout.kind !== "vault-root") {
-        throw new TypeError("Expected a Vault-root boundary fixture.");
-      }
-      const boundaryRoot = boundarySidecar.storageLayout.vaultRelativeRoot;
-
-      expect(
-        encodeInkbookSidecarV1(boundarySidecar, "desktop-tablet"),
-      ).toHaveLength(limit);
-      expect(() =>
-        encodeInkbookSidecarV1(
-          {
-            ...boundarySidecar,
-            storageLayout: {
-              kind: "vault-root",
-              vaultRelativeRoot: `${boundaryRoot}r`,
-            },
-          },
-          "desktop-tablet",
-        ),
-      ).toThrow(/write byte limit/u);
-    },
-    BOUNDARY_TEST_TIMEOUT_MS,
-  );
+  it.each([
+    ["phone", SIDECAR_WRITE_LIMITS_UTF8_BYTES_V1.phone],
+    ["desktop-tablet", SIDECAR_WRITE_LIMITS_UTF8_BYTES_V1["desktop-tablet"]],
+  ] as const)("enforces the %s write boundary", (tier, limit) => {
+    expect(() => assertWritableSidecarSizeV1(limit - 1, tier)).not.toThrow();
+    expect(() => assertWritableSidecarSizeV1(limit, tier)).not.toThrow();
+    expect(() => assertWritableSidecarSizeV1(limit + 1, tier)).toThrow(
+      /write byte limit/u,
+    );
+  });
 
   it("rejects BOM, malformed UTF-8, duplicate keys, and excessive nesting", () => {
     expect(() => decodeInkbookSidecarV1(`\ufeff${encodedText()}`)).toThrow(
