@@ -367,7 +367,7 @@ activeHeight = activeWritableBottom + page.margin
 lockedHeight = lockedWritableBottom + page.margin
 ```
 
-The background phase starts at `page.margin`, so these heights always end on a complete background step. A buffer line means one background-aligned `bufferUnit`, not the raw writing-line height. Completing the background cell that contains the last element is content normalization, not an additional buffer line. An empty default file has exactly three buffer units both when active and when locked, plus both margins, so its portable SVG remains a useful writing surface at full note width.
+The background phase starts at `page.margin`, so these heights always end on a complete background step. A buffer line means one background-aligned `bufferUnit`, not the raw writing-line height. Completing the background cell that contains the last element is content normalization, not an additional buffer line. An empty default file has exactly three active buffer units and one locked buffer unit, plus both vertical margins. The complete rectangular page, including its unpatterned top, right, bottom, and left margins, is writable. Guides are clipped to the inner patterned extent, while committed bounds may occupy a margin. Content entering the bottom margin grows the aligned writable extent and retains a complete margin below it.
 
 Runtime height changes only after committed geometry or page commands:
 

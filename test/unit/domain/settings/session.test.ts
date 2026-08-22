@@ -50,7 +50,7 @@ describe("settings scope and session behavior", () => {
       background: { type: "lines", spacing: 150 },
       writingLineHeight: 100,
       activeBufferLines: 3,
-      lockedBufferLines: 3,
+      lockedBufferLines: 1,
     });
   });
 

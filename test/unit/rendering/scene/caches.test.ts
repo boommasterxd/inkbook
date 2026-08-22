@@ -39,6 +39,7 @@ describe("scene caches", () => {
       margin: 24.3,
       visibleBottom: 300,
       visibleTop: 100,
+      writableBottom: 1_024.3,
     });
     const second = cache.resolve({
       background: { spacing: 20, type: "squares" },
@@ -46,6 +47,7 @@ describe("scene caches", () => {
       margin: 24.3,
       visibleBottom: 301,
       visibleTop: 101,
+      writableBottom: 1_024.3,
     });
 
     expect(first.hit).toBe(false);
@@ -62,11 +64,41 @@ describe("scene caches", () => {
       margin: 24.3,
       visibleBottom: 900_000,
       visibleTop: 0,
+      writableBottom: 900_024.3,
     });
 
     expect(result.d.length).toBeLessThan(200);
     expect(result.d.match(/M /g)).toHaveLength(1);
     expect(cache.builds).toBe(1);
+  });
+
+  it("keeps the patterned coverage inside the writable SVG margins", () => {
+    const cache = new SceneBackgroundCache();
+    const result = cache.resolve({
+      background: { spacing: 100, type: "lines" },
+      innerWidth: 2000,
+      margin: 24.3,
+      visibleBottom: 500,
+      visibleTop: 0,
+      writableBottom: 324.3,
+    });
+
+    expect(result.d).toBe("M 24.3 24.3 H 2024.3 V 324.3 H 24.3 Z");
+    expect(result.lastVisibleIndex).toBe(3);
+  });
+
+  it("collapses placeholder-height coverage instead of inverting the top margin", () => {
+    const cache = new SceneBackgroundCache();
+    const result = cache.resolve({
+      background: { spacing: 100, type: "lines" },
+      innerWidth: 2000,
+      margin: 24.3,
+      visibleBottom: 1,
+      visibleTop: 0,
+      writableBottom: -23.3,
+    });
+
+    expect(result.d).toBe("M 24.3 24.3 H 2024.3 V 24.3 H 24.3 Z");
   });
 });
 

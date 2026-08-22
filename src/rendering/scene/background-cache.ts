@@ -7,6 +7,7 @@ export interface BackgroundGeometryRequest {
   readonly margin: number;
   readonly visibleBottom: number;
   readonly visibleTop: number;
+  readonly writableBottom: number;
 }
 
 export interface BackgroundGeometryResult {
@@ -37,19 +38,25 @@ export class SceneBackgroundCache {
     if (request.background.type === "none") return this.resolveNone(request);
     const spacing = request.background.spacing;
     const viewportHeight = Math.max(0, request.visibleBottom - request.visibleTop);
-    const firstVisibleIndex = Math.max(
-      0,
-      Math.floor((request.visibleTop - viewportHeight - request.margin) / spacing),
+    const writableBottom = Math.max(request.margin, request.writableBottom);
+    const maximumIndex = Math.max(0, Math.floor((writableBottom - request.margin) / spacing));
+    const firstVisibleIndex = Math.min(
+      maximumIndex,
+      Math.max(0, Math.floor((request.visibleTop - viewportHeight - request.margin) / spacing)),
     );
-    const lastVisibleIndex = Math.max(
-      firstVisibleIndex,
-      Math.ceil((request.visibleBottom + viewportHeight - request.margin) / spacing),
+    const lastVisibleIndex = Math.min(
+      maximumIndex,
+      Math.max(
+        firstVisibleIndex,
+        Math.ceil((request.visibleBottom + viewportHeight - request.margin) / spacing),
+      ),
     );
     const key = [
       request.background.type,
       spacing,
       request.innerWidth,
       request.margin,
+      writableBottom,
       firstVisibleIndex,
       lastVisibleIndex,
     ].join(":");
@@ -62,6 +69,7 @@ export class SceneBackgroundCache {
       spacing,
       request.margin,
       request.innerWidth,
+      writableBottom,
       firstVisibleIndex,
       lastVisibleIndex,
     );
@@ -95,13 +103,14 @@ function buildBackgroundPath(
   spacing: number,
   margin: number,
   innerWidth: number,
+  writableBottom: number,
   firstIndex: number,
   lastIndex: number,
 ): string {
   const left = margin;
   const right = margin + innerWidth;
   const top = canonical(margin + firstIndex * spacing);
-  const bottom = canonical(margin + (lastIndex + 1) * spacing);
+  const bottom = canonical(Math.min(writableBottom, margin + (lastIndex + 1) * spacing));
   return `M ${canonical(left)} ${top} H ${canonical(right)} V ${bottom} H ${canonical(left)} Z`;
 }
 

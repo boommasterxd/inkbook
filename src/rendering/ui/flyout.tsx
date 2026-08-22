@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { createFlyoutPositionLifecycle } from "./flyout-position";
@@ -162,6 +162,7 @@ export function StyleFlyout(props: StyleFlyoutProps) {
 }
 
 interface ChoiceButtonsProps<T extends string> {
+  readonly controlId?: string;
   readonly label: string;
   readonly onChange: (value: T) => void;
   readonly options: readonly (readonly [T, string])[];
@@ -170,17 +171,19 @@ interface ChoiceButtonsProps<T extends string> {
 
 function ChoiceButtons<T extends string>(props: ChoiceButtonsProps<T>) {
   return (
-    <fieldset className="inkbook-flyout-fieldset">
+    <fieldset className="inkbook-flyout-fieldset" data-control={props.controlId}>
       <legend>{props.label}</legend>
       <div className="inkbook-choice-grid">
         {props.options.map(([value, label]) => (
           <button
             aria-pressed={props.value === value}
+            data-value={value}
             key={value}
             onClick={() => props.onChange(value)}
             type="button"
           >
-            {label}
+            <ChoicePreview controlId={props.controlId} value={value} />
+            <span className="inkbook-choice-label">{label}</span>
           </button>
         ))}
       </div>
@@ -197,7 +200,7 @@ function StyleField({
 }) {
   if (control.kind === "toggle") {
     return (
-      <label className="inkbook-style-toggle">
+      <label className="inkbook-style-field inkbook-style-toggle" data-control={control.id}>
         <span>{control.label}</span>
         <input
           checked={control.checked}
@@ -209,7 +212,7 @@ function StyleField({
   }
   if (control.kind === "number") {
     return (
-      <label className="inkbook-style-number">
+      <label className="inkbook-style-field inkbook-style-number" data-control={control.id}>
         <span>{control.label}</span>
         <input
           aria-label={control.mixed === true ? `${control.label}, mixed` : control.label}
@@ -225,11 +228,57 @@ function StyleField({
     );
   }
   return (
-    <ChoiceButtons
-      label={control.mixed === true ? `${control.label}, mixed` : control.label}
-      onChange={(value) => onChange(control.id, value)}
-      options={control.options.map((option) => [option.value, option.label] as const)}
-      value={control.value}
-    />
+    <div className="inkbook-style-field" data-control={control.id}>
+      <ChoiceButtons
+        controlId={control.id}
+        label={control.mixed === true ? `${control.label}, mixed` : control.label}
+        onChange={(value) => onChange(control.id, value)}
+        options={control.options.map((option) => [option.value, option.label] as const)}
+        value={control.value}
+      />
+    </div>
   );
+}
+
+function ChoicePreview({
+  controlId,
+  value,
+}: {
+  readonly controlId: string | undefined;
+  readonly value: string;
+}) {
+  if (controlId?.endsWith("color") === true) {
+    const color = value === "theme-text" ? "var(--text-normal)" : value;
+    const style = { "--inkbook-option-color": color } as CSSProperties;
+    return (
+      <span
+        aria-hidden="true"
+        className="inkbook-choice-preview inkbook-color-preview"
+        data-empty={value === "none" ? "true" : undefined}
+        style={style}
+      />
+    );
+  }
+  if (controlId?.endsWith("width") === true) {
+    const width = Math.min(8, Math.max(2, Number(value) / 2));
+    const style = { "--inkbook-option-line-width": `${String(width)}px` } as CSSProperties;
+    return (
+      <span
+        aria-hidden="true"
+        className="inkbook-choice-preview inkbook-line-preview"
+        style={style}
+      />
+    );
+  }
+  if (controlId === "outline-style") {
+    const style = { "--inkbook-option-line-style": value } as CSSProperties;
+    return (
+      <span
+        aria-hidden="true"
+        className="inkbook-choice-preview inkbook-line-preview"
+        style={style}
+      />
+    );
+  }
+  return null;
 }

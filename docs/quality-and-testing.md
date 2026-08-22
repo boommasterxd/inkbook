@@ -376,7 +376,8 @@ Manual checks are not smoke or end-to-end test suites. They are focused acceptan
 - active-scene, Reading-view, Live Preview, and saved-SVG graphic parity in light and dark schemes, including a pop-out window and one external vector editor; software without media-query support must show the deterministic light fallback
 - host-theme chrome, high contrast, and reduced motion
 - 10,000-stroke frame, memory, unlock, animation, and export budgets
-- in-place lock and unlock with identical root, width, initial height, and document position; only the absolute toolbar overlay becomes newly visible, while automatic-height growth remains a later content-driven operation without flicker or scroll jumps
+- in-place lock and unlock with identical root, width, attachment, and top-edge anchor; the same block animates once between exact locked and active heights without duplicate insertion, flicker, unintended scroll jumps, or editor remounting
+- active and standalone SVG verification that guides stop at the inner edge of all four writable page margins, input remains available throughout those margins, and content entering the bottom margin restores a complete margin after growth
 - consecutive stroke commits, autosaves, resource refreshes, and theme changes without active-editor detachment, widget remount, focus loss, or session closure
 - Reading view, Live Preview, Source mode, pop-out windows, settings search, enable, disable, and reload without leaked listeners, workers, scrollbar leases, host-element references, portals, or React roots
 - production editor-chrome module loading under Obsidian's default CSP in the main window and a real pop-out realm, including distinct owner-document React roots, toolbar measurement before input handoff, close-before-load cancellation, retryable CSP/import failure, timeout cleanup, and no retained Blob URL

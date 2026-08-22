@@ -76,7 +76,7 @@ export function createBuiltInSettings(): InkbookSettingsV1 {
       backgroundSpacing: { lines: 100, dots: 40, squares: 40 },
       writingLineHeight: 100,
       activeBufferLines: 3,
-      lockedBufferLines: 3,
+      lockedBufferLines: 1,
     },
     filePlacement: { mode: "obsidian-attachment-folder" },
   };

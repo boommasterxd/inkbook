@@ -4,7 +4,7 @@
 
 The saved file is a complete, standalone SVG image as well as an Inkbook document. A supported external SVG viewer or editor MUST reproduce the same canonical locked document view as the plugin for the same light or dark color scheme: page surface, background guides, element geometry, paint, opacity, and back-to-front order inside the saved `viewBox`.
 
-Plugin chrome is outside this fidelity contract. The floating toolbar, menus, selection handles, cursors, dynamic rounded container, clipping radius, and other interactive overlays are host UI and are not serialized. Unlock begins at exactly `lockedHeight`; configured active buffer lines permit later content-driven growth only when less than one aligned writable line remains. Any resulting workspace beyond `lockedHeight` is transient and is not part of the canonical locked view. The SVG page itself remains rectangular, including its writable side margin.
+Plugin chrome is outside this fidelity contract. The floating toolbar, menus, selection handles, cursors, dynamic rounded container, clipping radius, and other interactive overlays are host UI and are not serialized. Unlock animates the lifecycle-owned block from the serialized `lockedHeight` to derived `activeHeight`; workspace beyond `lockedHeight` is transient and is not part of the canonical locked view. The SVG page itself remains rectangular. Its unpatterned margin is serialized on all four sides, scales with the page, and remains writable; background guides stop at the margin's inner edge.
 
 The editable snapshot remains the source of truth. Static SVG drawing elements and the embedded theme stylesheet are deterministic derived output.
 

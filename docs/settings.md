@@ -215,7 +215,7 @@ Built-in values:
 - Squares spacing: M, 40 page units
 - writing line height: 100 page units
 - active buffer lines: 3
-- locked buffer lines: 3
+- locked buffer lines: 1
 
 Validation:
 

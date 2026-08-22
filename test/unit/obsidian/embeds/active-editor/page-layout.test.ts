@@ -19,14 +19,14 @@ describe("active page-height policy", () => {
     const initial = layout.committed(page, undefined);
     expect(initial).toEqual({
       animate: false,
-      height: derivePageExtent(page, null).lockedHeight,
+      height: derivePageExtent(page, null).activeHeight,
     });
 
-    expect(layout.committed(page, page.margin)).toBeUndefined();
-    const growth = layout.committed(page, page.margin + 1);
+    expect(layout.committed(page, page.margin + 199)).toBeUndefined();
+    const growth = layout.committed(page, page.margin + 201);
     expect(growth).toEqual({
       animate: true,
-      height: derivePageExtent(page, page.margin + 1).activeHeight,
+      height: derivePageExtent(page, page.margin + 201).activeHeight,
     });
   });
 
@@ -73,7 +73,7 @@ describe("active page-height policy", () => {
 
   it("extends one buffer per completed bottom-edge transition and restores on cancel", () => {
     const layout = new ActivePageLayout();
-    const initialHeight = derivePageExtent(page, null).lockedHeight;
+    const initialHeight = derivePageExtent(page, null).activeHeight;
     layout.committed(page, undefined);
     layout.beginSelection();
 

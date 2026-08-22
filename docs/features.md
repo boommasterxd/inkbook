@@ -33,7 +33,7 @@ The page height always ends on a complete background line or grid cell. The bott
 
 ## Automatic Page Expansion
 
-By default, the plugin keeps three empty writing lines below the content.
+By default, the active editor keeps three empty writing lines below the content, while the locked preview keeps one.
 
 All elements are taken into account for the calculation:
 
@@ -62,7 +62,7 @@ With a lined background, the alignment step is the current line spacing. With a 
 
 The page is not remeasured after every pointer sample. After a committed geometry change, it grows when less than one writing line of active buffer remains and restores the configured buffer in one 180-millisecond height transition. The sole pre-commit exception is the bounded one-buffer-unit extension while a selection remains in the bottom-edge drag zone; its exact threshold, cancellation, and commit rules are defined in [File Format and Geometry](file-format.md).
 
-When content is deleted, the active embed can shrink again. The active editor and locked preview both default to three empty writing lines below content. Each per-file buffer remains independently configurable. Unlock and Lock animate between these derived heights over 240 milliseconds.
+When content is deleted, the active embed can shrink again. The active editor defaults to three empty writing lines below content and the locked preview defaults to one. Each per-file buffer remains independently configurable. Unlock and Lock animate between these derived heights over 240 milliseconds. The page includes writable unpatterned margins on all four sides; writing into the bottom margin triggers aligned growth that restores the complete margin below the occupied extent.
 
 The exact active, locked, empty-page, and background-snapping equations are defined in [File Format and Geometry](file-format.md).
 

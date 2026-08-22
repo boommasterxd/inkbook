@@ -98,6 +98,13 @@ describe("active and standalone SVG graphic parity", () => {
           expect(active.coverage.get("fill")).toBe("none");
           expect(active.patternPath.get("d")).toBe("");
         } else {
+          const writableBottom = standalone.lockedHeight - snapshot.page.margin;
+          expect(active.coverage.get("d")).toBe(
+            `M ${serializeSvgNumber(snapshot.page.margin)} ${serializeSvgNumber(snapshot.page.margin)} ` +
+              `H ${serializeSvgNumber(snapshot.page.margin + snapshot.page.innerWidth)} ` +
+              `V ${serializeSvgNumber(writableBottom)} ` +
+              `H ${serializeSvgNumber(snapshot.page.margin)} Z`,
+          );
           expect(active.pattern.get("x")).toBe(serializeSvgNumber(snapshot.page.margin));
           expect(active.pattern.get("y")).toBe(serializeSvgNumber(snapshot.page.margin));
           expect(active.pattern.get("width")).toBe(String(background.spacing));

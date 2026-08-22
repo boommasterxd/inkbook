@@ -1,7 +1,11 @@
 import { sys } from "typescript";
 import { describe, expect, it } from "vitest";
 
-const stylesheet = readStylesheet("src/obsidian/styles/inkbook.css");
+const stylesheet = [
+  readStylesheet("src/obsidian/styles/inkbook.css"),
+  readStylesheet("src/obsidian/styles/editor-toolbar.css"),
+  readStylesheet("src/obsidian/styles/editor-flyouts.css"),
+].join("\n");
 const motionStylesheet = readStylesheet("src/obsidian/styles/motion.css");
 
 describe("Inkbook host styles", () => {
@@ -22,12 +26,12 @@ describe("Inkbook host styles", () => {
     expect(button).toContain("inline-size: 44px");
     expect(button).not.toContain("transform:");
     expect(button).toContain("color var(--inkbook-motion-fast)");
-    expect(active).toContain("color: var(--text-on-accent)");
-    expect(activeVisual).toContain("background: var(--interactive-accent)");
+    expect(active).toContain("color: var(--interactive-accent)");
+    expect(activeVisual).toContain("var(--interactive-accent) 14%");
     expect(activeVisual).toContain("transform: scale(0.96)");
     expect(visual).toContain("transform var(--inkbook-motion-fast) var(--inkbook-motion-easing)");
-    expect(icon).toContain("block-size: 20px");
-    expect(icon).toContain("inline-size: 20px");
+    expect(icon).toContain("block-size: 19px");
+    expect(icon).toContain("inline-size: 19px");
   });
 
   it("uses standard motion for toolbar enter and locking exit", () => {

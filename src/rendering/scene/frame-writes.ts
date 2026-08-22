@@ -174,6 +174,7 @@ export function writeBackground(options: BackgroundWriteOptions): {
     margin: page.margin,
     visibleBottom: (viewport.top + viewport.height) / zoom,
     visibleTop: viewport.top / zoom,
+    writableBottom: pageHeight - page.margin,
   });
   if (!result.hit) {
     dom.backgroundPath.setAttribute("d", result.d);

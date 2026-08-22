@@ -12,9 +12,10 @@ The following rules apply:
 - When another embed is opened, the plugin saves and locks the previously active embed.
 - The locked preview and active scene occupy the same lifecycle-owned inline block. Unlocking never appends a second editor before or after that block.
 - The existing preview remains visible until the in-place editor has fully loaded and has been measured correctly.
-- The active scene starts with exactly the serialized locked height. Unlocking does not change the block's size or document position. During the final 120 milliseconds, the preview fades out while the editor and its overlay toolbar fade in. Input is enabled and the preview is unmounted only after the transition completes.
-- Automatic page growth may occur later, but only when committed content leaves less than one aligned writable line. It is independent of activation.
-- With reduced motion, measurement is still awaited, then height and preview/editor visibility are exchanged in one frame.
+- After the active scene has been measured, the same block grows from the serialized `lockedHeight` to the derived `activeHeight` over 240 milliseconds. Its top edge, width, root, and document position remain anchored; no second editor is inserted.
+- The preview remains visible over the growing scene. During the final 120 milliseconds, the preview fades out while the editor and its overlay toolbar fade in. Input is enabled and the preview is unmounted only after the transition completes.
+- Automatic page growth may occur later when committed content leaves less than one aligned writable line.
+- With reduced motion, measurement is still awaited, then target height and preview/editor visibility are applied without interpolation.
 
 This prevents an empty, incorrectly scaled, or partially initialized drawing area from appearing briefly.
 
@@ -39,9 +40,9 @@ Its appearance:
 - rounded background-container corners
 - dynamic radius of `clamp(10px, 2% of the container width, 20px)`
 - no additional internal CSS padding
-- the visible page margin is part of the SVG page and is therefore writable
+- the visible unpatterned margin on all four sides is part of the SVG page, scales with it, and is writable
 
-The SVG page itself is not rounded. The background container provides the dynamic corner radius and clips the SVG at its corners. The rounded background remains visible below the toolbar, while the visible side margin is embedded directly in the SVG rather than being created by a separate frame or CSS padding.
+The SVG page itself is not rounded. The background container provides the dynamic corner radius and clips the SVG at its corners. The rounded background remains visible below the toolbar. The top, right, bottom, and left page margins are embedded directly in the SVG rather than being created by a separate frame or CSS padding. Background guides stop at the inner edge of those margins, while the input surface and element renderer cover the complete page. Writing into a margin is therefore retained, and downward growth restores a complete bottom margin below the new occupied extent.
 
 The normative DOM layer hierarchy is:
 
@@ -52,7 +53,7 @@ The normative DOM layer hierarchy is:
 5. One transparent, focusable canvas input surface is above that content, below toolbar and flyouts, and owns canvas pointer, wheel, context-menu, and keyboard events.
 6. Flyouts are portalled within the owning embed's document so they are not clipped by the background container and remain correct in pop-out windows.
 
-Activation preserves the root, block position, measured width, initial block height, presentation attachment, and active editor identity. The only newly visible layout layer is the absolute toolbar overlay. A stroke commit, autosave, SVG resource refresh, theme change, or asynchronous document reclassification MUST NOT detach, remount, move, or lock the active editor.
+Activation preserves the root, top-edge anchor, measured width, presentation attachment, and active editor identity while intentionally animating the block from `lockedHeight` to `activeHeight`. The only newly visible layout layer is the absolute toolbar overlay. A stroke commit, autosave, SVG resource refresh, theme change, or asynchronous document reclassification MUST NOT detach, remount, move, or lock the active editor.
 
 The embed uses its own final background-container content-box width after the resolved note scroller's native right-hand scrollbar gutter has been stabilized. It respects note padding, readable-line width, lists, callouts, and other nested constraints; it never adopts the full scroller width. No Inkbook layer, including the toolbar, input surface, flyout, focus treatment, or background container, extends over the owner client edge or scrollbar gutter. Pointer contact does not add or remove any layout-affecting UI. The host-scroll ownership, edge clamp, and platform-specific native overlay behavior are defined in [Obsidian Integration](obsidian-integration.md#native-scroll-owner-and-scrollbar-stability).
 
@@ -115,18 +116,11 @@ The native menu owns arrow-key navigation and `Escape`. After it closes, focus r
 
 All controls share one continuous toolbar surface. They are not rendered as separate circular controls.
 
-The toolbar is:
-
-- rounded
-- exactly `max(2.75em, 44px)` high
-- arranged with 8-pixel spacing between controls
-- filled and color-inverted for the active control
-- keyboard-focusable
-- equipped with a visible `focus-visible` ring
+The toolbar is one 50-pixel-high rounded surface with a 1-pixel host-theme border, a restrained host shadow, and three visually coherent regions. Controls use close spacing within each region. Merged and scrollable layouts separate adjacent regions with subtle dividers; the wide layout uses its measured spatial separation. Active controls keep normal icon geometry and use an accent-tinted inset surface plus accent outline instead of a fully color-inverted button. Destructive Delete uses the host error color. Every control is keyboard-focusable and has a visible `focus-visible` ring.
 
 Every control has a 44-by-44-pixel hit target. The icon may be visually smaller and does not change size between rest, hover, active, and focus states.
 
-The toolbar has 8 pixels of spacing above it and 12 pixels between it and the drawing area.
+The toolbar has 8 pixels of spacing above it. It remains an overlay, so it does not create dead page padding or remove writable SVG space.
 
 It is positioned as an overlay above the embed and does not occupy its own layout height. When the note is scrolled, it remains at the visible top edge while its associated embed is still visible. At the bottom of the embed, the toolbar also leaves the viewport.
 
@@ -156,6 +150,8 @@ The following rules apply:
 - Flyouts are clamped to the visible boundary of the Obsidian area.
 - On narrow embeds, they are shifted so that they are not clipped.
 - The flyouts appear above the finger-input overlay and therefore remain operable.
+- Flyouts use one compact panel surface with a clear heading, grouped fields, 44-pixel choice targets, visible selection borders, and host-theme focus rings.
+- The Style flyout represents colors as labelled swatches, widths and dash styles as line previews, Boolean values as switches, and structural values as compact labelled controls. Labels remain available to assistive technology even when the visual choice is primarily graphical.
 
 Menus and portals use the document that owns the embed. Static UI styling is scoped beneath the Inkbook root in `styles.css` and uses Obsidian CSS variables. The concrete host API and pop-out requirements are defined in [Obsidian Integration](obsidian-integration.md).
 

@@ -65,7 +65,7 @@ describe("vault settings loading", () => {
     expect(result.value.toolDefaults.pen.opacity).toBe(1);
     expect(result.value.toolDefaults.table.columns).toBe(3);
     expect(result.value.pageDefaults.activeBufferLines).toBe(7);
-    expect(result.value.pageDefaults.lockedBufferLines).toBe(3);
+    expect(result.value.pageDefaults.lockedBufferLines).toBe(1);
     expect(result.diagnostics).toEqual([
       { code: "settings.invalid-field", path: "toolDefaults.pen.opacity" },
       { code: "settings.invalid-field", path: "toolDefaults.table" },
