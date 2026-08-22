@@ -3,8 +3,17 @@ import { DELTA_DOMAINS, type DeltaDomain, type ElementRecord, type StoreDelta } 
 interface PendingDelta {
   after: ElementRecord | null;
   before: ElementRecord | null;
-  readonly domains: Set<DeltaDomain>;
+  domains: number;
 }
+
+const DOMAIN_BITS: Readonly<Record<DeltaDomain, number>> = Object.freeze({
+  connection: 1 << 3,
+  geometry: 1 << 0,
+  order: 1 << 2,
+  paint: 1 << 1,
+  visibility: 1 << 4,
+});
+const ORDER_DOMAINS: readonly DeltaDomain[] = Object.freeze(["order"]);
 
 export class DeltaBuilder {
   readonly #changes = new Map<string, PendingDelta>();
@@ -16,14 +25,27 @@ export class DeltaBuilder {
     after: ElementRecord | null,
     domains: readonly DeltaDomain[],
   ): void {
+    this.merge(id, before, after, domainMask(domains));
+  }
+
+  public addOrder(id: string, record: ElementRecord): void {
+    this.merge(id, record, record, DOMAIN_BITS.order);
+  }
+
+  private merge(
+    id: string,
+    before: ElementRecord | null,
+    after: ElementRecord | null,
+    domains: number,
+  ): void {
     const current = this.#changes.get(id);
     if (current === undefined) {
-      this.#changes.set(id, { after, before, domains: new Set(domains) });
+      this.#changes.set(id, { after, before, domains });
       return;
     }
     current.after = after;
     if (current.before === null) current.before = before;
-    for (const domain of domains) current.domains.add(domain);
+    current.domains |= domains;
   }
 
   public dirtyBand(band: "content" | "highlight"): void {
@@ -36,7 +58,12 @@ export class DeltaBuilder {
       Object.freeze({
         after: change.after,
         before: change.before,
-        domains: Object.freeze(DELTA_DOMAINS.filter((domain) => change.domains.has(domain))),
+        domains:
+          change.domains === DOMAIN_BITS.order
+            ? ORDER_DOMAINS
+            : Object.freeze(
+                DELTA_DOMAINS.filter((domain) => (change.domains & DOMAIN_BITS[domain]) !== 0),
+              ),
         id,
       }),
     );
@@ -47,4 +74,10 @@ export class DeltaBuilder {
       paintVersion,
     });
   }
+}
+
+function domainMask(domains: readonly DeltaDomain[]): number {
+  let mask = 0;
+  for (const domain of domains) mask |= DOMAIN_BITS[domain];
+  return mask;
 }

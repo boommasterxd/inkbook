@@ -39,6 +39,7 @@ export class ElementStoreOrdering {
   public refresh(band: RenderBand, start: number, delta: DeltaBuilder): void {
     const state = this.#state();
     const ids = state.bands[band];
+    let changed = false;
     for (let rank = start; rank < ids.length; rank += 1) {
       const id = ids[rank]!;
       const previous = state.ranks.get(id);
@@ -46,9 +47,10 @@ export class ElementStoreOrdering {
       state.ranks.set(id, { band, rank });
       const record = state.records.get(id);
       if (record === undefined) throw new RangeError(`Unknown element ID: ${id}`);
-      delta.add(id, record, record, ["order"]);
-      delta.dirtyBand(band);
+      delta.addOrder(id, record);
+      changed = true;
     }
+    if (changed) delta.dirtyBand(band);
   }
 }
 
