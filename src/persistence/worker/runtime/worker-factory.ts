@@ -117,7 +117,7 @@ function isWorkerWindow(value: unknown): value is WorkerWindow {
     "Worker" in value &&
     typeof value.Worker === "function" &&
     "URL" in value &&
-    typeof value.URL === "object" &&
+    (typeof value.URL === "object" || typeof value.URL === "function") &&
     value.URL !== null &&
     "createObjectURL" in value.URL &&
     typeof value.URL.createObjectURL === "function" &&

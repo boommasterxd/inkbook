@@ -152,9 +152,10 @@ function requirePluginRuntimeWindow(value: unknown): PluginRuntimeWindow {
     throw new Error("The owning window does not provide embedded runtime APIs.");
   }
   const url: unknown = value.URL;
+  if (url === null || (typeof url !== "object" && typeof url !== "function")) {
+    throw new Error("The owning window does not provide object URL APIs.");
+  }
   if (
-    typeof url !== "object" ||
-    url === null ||
     !("createObjectURL" in url) ||
     typeof url.createObjectURL !== "function" ||
     !("revokeObjectURL" in url) ||
