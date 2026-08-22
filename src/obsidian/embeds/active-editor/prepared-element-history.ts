@@ -100,25 +100,25 @@ export class PreparedElementHistory {
     return true;
   }
 
-  #commitApplied(
+  async #commitApplied(
     previous: readonly InkElementV1[],
     replacements: readonly InkElementV1[],
     generation: number,
     previewCommit: ReturnType<PreparedElementHistoryOptions["motion"]["beginPreviewCommit"]>,
   ): Promise<boolean> {
-    return this.#replace(
+    const committed = await this.#replace(
       replacements,
       generation,
       previous.map(({ id }) => id),
       previewCommit,
-    ).then((committed) => {
-      if (!committed) return false;
-      this.#history.registerAppliedReplacement(previous, replacements, {
-        redo: () => this.#replace(replacements, this.#generation),
-        undo: () => this.#replace(previous, this.#generation),
-      });
-      return true;
+    );
+    if (!committed) return false;
+    await this.#yieldHostFrame();
+    this.#history.registerAppliedReplacement(previous, replacements, {
+      redo: () => this.#replace(replacements, this.#generation),
+      undo: () => this.#replace(previous, this.#generation),
     });
+    return true;
   }
 
   async #replace(
@@ -157,15 +157,21 @@ export class PreparedElementHistory {
       isCancelled: () => this.#isCancelled(generation),
       shouldYield: () => this.#ownerWindow.performance.now() >= deadline,
       yieldControl: () =>
-        new Promise<void>((resolve) => {
-          const frame = this.#ownerWindow.requestAnimationFrame(() => {
-            this.#pendingFrames.delete(frame);
-            deadline = this.#ownerWindow.performance.now() + SLICE_BUDGET_MS;
-            resolve();
-          });
-          this.#pendingFrames.set(frame, resolve);
+        this.#yieldHostFrame().then(() => {
+          deadline = this.#ownerWindow.performance.now() + SLICE_BUDGET_MS;
         }),
     };
+  }
+
+  #yieldHostFrame(): Promise<void> {
+    if (this.#disposed) return Promise.resolve();
+    return new Promise((resolve) => {
+      const frame = this.#ownerWindow.requestAnimationFrame(() => {
+        this.#pendingFrames.delete(frame);
+        resolve();
+      });
+      this.#pendingFrames.set(frame, resolve);
+    });
   }
 
   #isCancelled(generation: number): boolean {

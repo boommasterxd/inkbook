@@ -94,7 +94,10 @@ export async function measureTransformRun(
       const elements = strokeIds.map((id) => requireStroke(store, id));
       const stableId = strokeIds[0] as string;
       const stableRecord = store.get(stableId);
-      const scheduler = new MeasuredSliceScheduler(2, () => onYield?.(stableId, stableRecord));
+      let committed = false;
+      const scheduler = new MeasuredSliceScheduler(2, () => {
+        if (!committed) onYield?.(stableId, stableRecord);
+      });
       const distance = operation % 2 === 0 ? 0.001 : -0.001;
       const materializationStarted = performance.now();
       const moved = await moveSelectionTimeSliced(
@@ -114,6 +117,8 @@ export async function measureTransformRun(
       const atomicCommitStarted = performance.now();
       const result = store.commitPreparedElementReplacement(prepared.token);
       atomicCommitDurations.push(performance.now() - atomicCommitStarted);
+      committed = true;
+      await scheduler.yieldControl();
       const historyRegistrationStarted = performance.now();
       if (
         !history.registerAppliedReplacement(elements, moved, {
