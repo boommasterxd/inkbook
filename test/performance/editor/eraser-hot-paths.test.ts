@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { BoxShapeElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
 import { EraserSweep, type EraserSliceScheduler } from "../../../src/editor/gestures/public";
 import { maximumStroke } from "./maximum-stroke-fixture";
+import { timingBudget } from "../timing-budget";
 
 declare const gc: (() => void) | undefined;
 
@@ -23,7 +24,7 @@ describe("eraser hot paths", () => {
     }
 
     expect(eraser.candidateCount).toBe(DENSE_STROKES);
-    expect(Math.max(...frameDurations)).toBeLessThanOrEqual(MAX_FRAME_MS);
+    expect(Math.max(...frameDurations)).toBeLessThanOrEqual(timingBudget(MAX_FRAME_MS));
   });
 
   it.each([5_000, 20_000])("keeps incremental feedback linear for %i candidates", (count) => {
@@ -61,7 +62,7 @@ describe("eraser hot paths", () => {
     expect(eraser.candidateCount).toBe(count);
     expect(addedCount).toBe(count);
     expect(fullSetUpdates).toBe(0);
-    expect(duration).toBeLessThan(2_000);
+    expect(duration).toBeLessThan(timingBudget(2_000));
   });
 });
 
@@ -81,7 +82,7 @@ describe("eraser finalization performance", () => {
 
     expect(removed).toBe(strokes.length);
     expect(scheduler.yieldCount).toBeGreaterThan(0);
-    expect(scheduler.maximumSliceMs).toBeLessThanOrEqual(12);
+    expect(scheduler.maximumSliceMs).toBeLessThanOrEqual(timingBudget(12));
   });
 });
 

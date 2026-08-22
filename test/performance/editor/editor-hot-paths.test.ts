@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { EraserSweep } from "../../../src/editor/gestures/public";
 import { maximumStroke } from "./maximum-stroke-fixture";
 import { createPassThroughMoveSession } from "./selection-session-fixture";
+import { timingBudget } from "../timing-budget";
 
 describe("editor gesture hot paths", () => {
   it("bounds maximum-stroke preview and eraser work independently of sweep length", () => {
@@ -48,7 +49,7 @@ describe("editor gesture hot paths", () => {
       }
     }
 
-    expect(Math.max(...previewDurations)).toBeLessThanOrEqual(8);
-    expect(Math.max(...eraserDurations)).toBeLessThanOrEqual(250);
+    expect(Math.max(...previewDurations)).toBeLessThanOrEqual(timingBudget(8));
+    expect(Math.max(...eraserDurations)).toBeLessThanOrEqual(timingBudget(250));
   });
 });

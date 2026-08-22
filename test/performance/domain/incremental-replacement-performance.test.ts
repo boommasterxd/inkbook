@@ -5,6 +5,7 @@ import { moveSelectionTimeSliced } from "../../../src/editor/selection/transform
 
 import { MeasuredSliceScheduler, percentile, requireStroke } from "./domain-scenarios";
 import { createStandardDomainFixture } from "./standard-domain-fixture";
+import { timingBudget } from "../timing-budget";
 
 describe("incremental replacement performance", () => {
   it("prepares in bounded slices and atomically commits only changed records", async ({
@@ -35,8 +36,8 @@ describe("incremental replacement performance", () => {
         `maxPreparationSlice=${maximumPreparationSlice.toFixed(3)} ms`,
       "performance",
     );
-    expect(commitP95).toBeLessThanOrEqual(16.7);
-    expect(maximumPreparationSlice).toBeLessThanOrEqual(16.7);
+    expect(commitP95).toBeLessThanOrEqual(timingBudget(16.7));
+    expect(maximumPreparationSlice).toBeLessThanOrEqual(timingBudget(16.7));
     expect(store.instrumentation).toMatchObject({
       fullStoreScans: 0,
       publishedDeltas: 6,

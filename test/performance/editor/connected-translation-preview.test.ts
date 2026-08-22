@@ -4,6 +4,7 @@ import { ElementStore, resolveConnectedTranslationPreview } from "../../../src/d
 import { indexedStroke } from "../../fixtures/editor/stroke";
 import { connectedLine, rectangle } from "../../unit/domain/store/fixtures";
 import { percentile } from "../domain/domain-scenarios";
+import { timingBudget } from "../timing-budget";
 
 const DEPENDENT_COUNT = 512;
 const SELECTED_STROKE_COUNT = 10_000;
@@ -35,7 +36,7 @@ describe("connected translation preview performance", () => {
       expect(preview).toHaveLength(DEPENDENT_COUNT);
     }
 
-    expect(percentile(durations, 0.95)).toBeLessThanOrEqual(8);
+    expect(percentile(durations, 0.95)).toBeLessThanOrEqual(timingBudget(8));
     expect(store.instrumentation).toMatchObject({
       fullStoreScans: 0,
       reverseDependencyVisits: DEPENDENT_COUNT * durations.length,

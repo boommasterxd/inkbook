@@ -15,6 +15,7 @@ import { MeasuredSliceScheduler } from "../domain/domain-scenarios";
 import { connectedLine } from "../../unit/domain/store/fixtures";
 import { maximumStroke } from "./maximum-stroke-fixture";
 import { createPassThroughMoveSession } from "./selection-session-fixture";
+import { timingBudget } from "../timing-budget";
 
 describe("selection hot paths", () => {
   it("routes 488 maximum strokes through bounded commit slices and cached exact hit blocks", async () => {
@@ -41,9 +42,9 @@ describe("selection hot paths", () => {
     }
     expect(first.points.slice(0, 3)).toEqual(new Float64Array([4, 103, 0.5]));
     expect(last.points.slice(-3)).toEqual(new Float64Array([11, 103.487, 0.5]));
-    expect(Math.max(...decisionDurations)).toBeLessThanOrEqual(8);
-    expect(Math.max(...hitDurations)).toBeLessThanOrEqual(8);
-    expect(maximumSlice).toBeLessThanOrEqual(16.7);
+    expect(Math.max(...decisionDurations)).toBeLessThanOrEqual(timingBudget(8));
+    expect(Math.max(...hitDurations)).toBeLessThanOrEqual(timingBudget(8));
+    expect(maximumSlice).toBeLessThanOrEqual(timingBudget(16.7));
   });
 
   it("bounds preparation for a near-maximum 19,929-endpoint selection fan-out", async () => {
@@ -75,8 +76,8 @@ describe("selection hot paths", () => {
       fullStoreScans: 0,
       reverseDependencyVisits: 19_929,
     });
-    expect(previewDuration).toBeLessThanOrEqual(8);
-    expect(scheduler.maxSliceDuration).toBeLessThanOrEqual(16.7);
+    expect(previewDuration).toBeLessThanOrEqual(timingBudget(8));
+    expect(scheduler.maxSliceDuration).toBeLessThanOrEqual(timingBudget(16.7));
   }, 30_000);
 });
 

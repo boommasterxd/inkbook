@@ -5,6 +5,7 @@ import {
   createDenseViewportFixture,
   createDenseViewportHarness,
 } from "../../../integration/rendering/scene/dense-viewport-fixture";
+import { timingBudget } from "../../timing-budget";
 
 describe("dense viewport reconciliation performance", () => {
   for (const profile of DENSE_VIEWPORT_PROFILES) {
@@ -21,7 +22,7 @@ describe("dense viewport reconciliation performance", () => {
 
       const maximumDuration = Math.max(...durations);
       const maximumFrames = Math.max(...frames);
-      expect(maximumDuration).toBeLessThanOrEqual(profile.elapsedLimitMs);
+      expect(maximumDuration).toBeLessThanOrEqual(timingBudget(profile.elapsedLimitMs));
       expect(maximumFrames).toBeLessThanOrEqual(profile.frameLimit);
       await annotate(
         `${profile.name}: max=${maximumDuration.toFixed(3)} ms, frames=${String(maximumFrames)}`,

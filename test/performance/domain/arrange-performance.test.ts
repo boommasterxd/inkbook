@@ -8,6 +8,7 @@ import {
   collectProfileGarbage,
   summarizeDurations,
 } from "../persistence/metrics";
+import { timingBudget } from "../timing-budget";
 
 const ELEMENT_COUNT = 10_000;
 const SAMPLE_COUNT = 10;
@@ -54,7 +55,9 @@ describe("arrange command performance", () => {
       }
 
       await annotateDurations(annotate, action, durations);
-      expect.soft(summarizeDurations(durations).p95).toBeLessThanOrEqual(COMMAND_COMMIT_BUDGET_MS);
+      expect
+        .soft(summarizeDurations(durations).p95)
+        .toBeLessThanOrEqual(timingBudget(COMMAND_COMMIT_BUDGET_MS));
     }
   });
 });

@@ -9,6 +9,7 @@ import {
 } from "../../../src/persistence/worker/runtime/public";
 import { createStandardPersistenceFixture } from "./fixtures";
 import { annotateDurations, summarizeDurations, type MetricAnnotator } from "./metrics";
+import { timingBudget } from "../timing-budget";
 
 declare const process: {
   threadCpuUsage: () => { readonly system: number; readonly user: number };
@@ -169,7 +170,7 @@ async function assertFallbackMeasurements(
   }
   expect
     .soft(summarizeDurations(probe.durations).maximum)
-    .toBeLessThanOrEqual(MAIN_THREAD_BUDGET_MS);
+    .toBeLessThanOrEqual(timingBudget(MAIN_THREAD_BUDGET_MS));
 }
 
 class FailingWorker implements DocumentRuntimePort {

@@ -345,7 +345,7 @@ Runtime frame, animation, mobile input, and host-scroll budgets are verified man
 
 ## Coverage and CI Gates
 
-Hosted CI separates compatibility and timing without changing either gate. The `CI` job runs the complete quality, coverage, audit, build, and package-verification suite on the standard `ubuntu-latest` runner with the minimum supported Node.js 24 runtime. The required `Performance` job runs the unchanged absolute benchmark budgets on a separate standard `ubuntu-latest` runner with Node.js 26. Isolating the performance suite from the quality job avoids cross-job contention; hosted-runner results do not replace the named desktop and mobile release-reference measurements.
+Hosted CI separates compatibility and timing without changing the product budgets. The `CI` job runs the complete quality, coverage, audit, build, and package-verification suite on the standard `ubuntu-latest` runner with the minimum supported Node.js 24 runtime. The required `Performance` job runs the same scenarios on a separate standard `ubuntu-latest` runner with Node.js 26. Because this shared x64 runner is not a release-reference device, its `hosted-ubuntu` profile applies a fixed five-times multiplier only to elapsed-time assertions. The unscaled reference timings remain the default for local and release-reference measurements. Memory, file-size, count, cache, allocation, ordering, correctness, and instrumentation limits are never scaled. Isolating the suite from the quality job avoids cross-job contention; hosted-runner results do not replace the named desktop and mobile release-reference measurements.
 
 CI MUST run:
 

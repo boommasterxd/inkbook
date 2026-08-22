@@ -14,6 +14,7 @@ import {
   fakeNode,
 } from "../../../unit/rendering/scene/fakes";
 import { MeasuredSliceScheduler } from "../../domain/domain-scenarios";
+import { timingBudget } from "../../timing-budget";
 
 const ELEMENT_COUNT = 10_000;
 const PAGE: PageV1 = {
@@ -109,8 +110,8 @@ describe("selection preview handoff performance", () => {
       "performance",
     );
     expect(subscriberDurations).toHaveLength(5);
-    expect(maximumSubscriberDuration).toBeLessThanOrEqual(16.7);
-    expect(maximumCommitDuration).toBeLessThanOrEqual(100);
+    expect(maximumSubscriberDuration).toBeLessThanOrEqual(timingBudget(16.7));
+    expect(maximumCommitDuration).toBeLessThanOrEqual(timingBudget(100));
   }, 180_000);
 });
 

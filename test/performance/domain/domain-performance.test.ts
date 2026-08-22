@@ -33,6 +33,7 @@ import {
   worstDistribution,
 } from "./domain-scenarios";
 import { collectProfileGarbage } from "../persistence/metrics";
+import { timingBudget } from "../timing-budget";
 
 let fixture: StandardDomainFixture;
 let store: ElementStore;
@@ -63,7 +64,7 @@ describe("standard 10,000-stroke domain fixture", () => {
     expect(fixture.arrowCount).toBe(250);
     expect(store.size).toBe(11_000);
     expect(store.getMaximumBottom()).toBeGreaterThanOrEqual(200_000);
-    expect(storeConstructionDuration).toBeLessThanOrEqual(750);
+    expect(storeConstructionDuration).toBeLessThanOrEqual(timingBudget(750));
 
     let dependentEndpoints = 0;
     store.visitDependents(fixture.connectedTargetId, () => {
@@ -91,8 +92,8 @@ describe("standard 10,000-stroke domain fixture", () => {
       hydrationElementVisits: 22_000,
       publishedDeltas: 0,
     });
-    expect(duration).toBeLessThanOrEqual(750);
-    expect(scheduler.maxSliceDuration).toBeLessThanOrEqual(16.7);
+    expect(duration).toBeLessThanOrEqual(timingBudget(750));
+    expect(scheduler.maxSliceDuration).toBeLessThanOrEqual(timingBudget(16.7));
   });
 });
 
@@ -118,7 +119,7 @@ describe("normalized store and command costs", () => {
     }
 
     const p95 = percentile(durations, 0.95);
-    expect(p95).toBeLessThanOrEqual(12);
+    expect(p95).toBeLessThanOrEqual(timingBudget(12));
     expect(store.get(stableId)).toBe(stableRecord);
     expect(store.instrumentation.estimatedRetainedBytes).toBe(retainedBytes);
     expect(store.instrumentation).toMatchObject({
@@ -149,7 +150,7 @@ describe("normalized store and command costs", () => {
     const duration = performance.now() - started;
 
     expect(delta?.changes).toHaveLength(257);
-    expect(duration).toBeLessThanOrEqual(12);
+    expect(duration).toBeLessThanOrEqual(timingBudget(12));
     expect(store.instrumentation).toMatchObject({
       fullStoreScans: 0,
       reverseDependencyVisits: 512,
@@ -167,7 +168,7 @@ describe("normalized store and command costs", () => {
     const duration = performance.now() - started;
 
     expect(delta?.changes.length).toBeGreaterThanOrEqual(10_000);
-    expect(duration).toBeLessThanOrEqual(12);
+    expect(duration).toBeLessThanOrEqual(timingBudget(12));
     expect(store.get(fixture.strokeIds[1] as string)).toBe(stableRecord);
     expect(store.instrumentation).toMatchObject({
       bandScans: 2,
@@ -193,7 +194,7 @@ describe("spatial queries, selection, and snapping", () => {
     }
 
     const p95 = percentile(durations, 0.95);
-    expect(p95).toBeLessThanOrEqual(8);
+    expect(p95).toBeLessThanOrEqual(timingBudget(8));
     expect(scratch.allocationCount).toBe(warmAllocations);
     expect(scratch.candidateVisitCount).toBeLessThan(10);
   });
@@ -208,7 +209,7 @@ describe("spatial queries, selection, and snapping", () => {
     const duration = performance.now() - started;
 
     expect(selection.size).toBe(11_000);
-    expect(duration).toBeLessThanOrEqual(12);
+    expect(duration).toBeLessThanOrEqual(timingBudget(12));
     expect(store.get(fixture.strokeIds[0] as string)).toBe(stableRecord);
   });
 
@@ -233,7 +234,7 @@ describe("spatial queries, selection, and snapping", () => {
     }
 
     const p95 = percentile(durations, 0.95);
-    expect(p95).toBeLessThanOrEqual(8);
+    expect(p95).toBeLessThanOrEqual(timingBudget(8));
     expect(query.scratch.allocationCount).toBe(query.warmAllocationCount);
     expect(query.storeScratch.allocationCount).toBe(query.warmStoreAllocationCount);
     expect(snapStore.instrumentation).toMatchObject({
@@ -311,9 +312,9 @@ describe("large selection commit", () => {
       expect(run.materialization.sampleCount).toBe(50);
       expect(run.commit.sampleCount).toBe(50);
     }
-    expect(releaseMaterialization.p95).toBeLessThanOrEqual(100);
-    expect(releaseCommit.p95).toBeLessThanOrEqual(100);
-    expect(maximumSlice).toBeLessThanOrEqual(16.7);
+    expect(releaseMaterialization.p95).toBeLessThanOrEqual(timingBudget(100));
+    expect(releaseCommit.p95).toBeLessThanOrEqual(timingBudget(100));
+    expect(maximumSlice).toBeLessThanOrEqual(timingBudget(16.7));
     expect(partialStoreObserved).toBe(false);
     expect(publishedDeltas).toBe(250);
     expect(history.commandCount).toBeGreaterThan(0);
@@ -374,7 +375,7 @@ describe("maximum live-stroke primitives", () => {
     const publishDuration = performance.now() - started;
 
     expect(published).toHaveLength(4096 * 3);
-    expect(publishDuration).toBeLessThanOrEqual(8);
+    expect(publishDuration).toBeLessThanOrEqual(timingBudget(8));
     expect(capture.instrumentation).toEqual({
       appendedSamples: 4096,
       bufferGrowths: 8,
@@ -390,9 +391,9 @@ describe("maximum live-stroke primitives", () => {
     const releaseHandoff = worstDistribution(measuredRuns.map(({ handoff }) => handoff));
 
     expect(releaseAppend.sampleCount).toBe(20 * 4096);
-    expect(releaseAppend.p95).toBeLessThanOrEqual(8);
+    expect(releaseAppend.p95).toBeLessThanOrEqual(timingBudget(8));
     expect(releaseHandoff.sampleCount).toBe(20);
-    expect(releaseHandoff.p95).toBeLessThanOrEqual(16.7);
+    expect(releaseHandoff.p95).toBeLessThanOrEqual(timingBudget(16.7));
     expect(measuredRuns.every(({ maximumTailSamples }) => maximumTailSamples <= 16)).toBe(true);
     expect(
       measuredRuns.every(({ maximumFinalizedChunkSamples }) =>

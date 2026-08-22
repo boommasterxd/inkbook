@@ -1,5 +1,7 @@
 import { expect } from "vitest";
 
+import { timingBudget } from "../timing-budget";
+
 declare const gc: (() => void) | undefined;
 
 export interface MeasuredOperation<T> {
@@ -40,7 +42,9 @@ export function summarizeDurations(durations: readonly number[]): DurationSummar
 }
 
 export function expectProfileBudget(durations: readonly number[], desktopBudgetMs: number): void {
-  expect.soft(summarizeDurations(durations).maximum).toBeLessThanOrEqual(desktopBudgetMs);
+  expect
+    .soft(summarizeDurations(durations).maximum)
+    .toBeLessThanOrEqual(timingBudget(desktopBudgetMs));
 }
 
 export async function annotateDurations(
@@ -84,7 +88,7 @@ export function expectProfileRunsBudget(
   desktopBudgetMs: number,
 ): void {
   for (const run of runs) {
-    expect.soft(summarizeDurations(run).p95).toBeLessThanOrEqual(desktopBudgetMs);
+    expect.soft(summarizeDurations(run).p95).toBeLessThanOrEqual(timingBudget(desktopBudgetMs));
   }
 }
 

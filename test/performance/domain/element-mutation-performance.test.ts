@@ -8,6 +8,7 @@ import {
 
 import { MeasuredSliceScheduler } from "./domain-scenarios";
 import { createStandardDomainFixture } from "./standard-domain-fixture";
+import { timingBudget } from "../timing-budget";
 
 interface MutationMeasurement {
   readonly commitDuration: number;
@@ -53,10 +54,10 @@ it("keeps atomic clipboard-scale store adoption within main-thread slice budgets
 
   expect(cuts).toHaveLength(5);
   expect(restores).toHaveLength(5);
-  expect(maximumCut).toBeLessThanOrEqual(750);
-  expect(maximumRestore).toBeLessThanOrEqual(750);
-  expect(maximumCommit).toBeLessThanOrEqual(8);
-  expect(maximumSlice).toBeLessThanOrEqual(8);
+  expect(maximumCut).toBeLessThanOrEqual(timingBudget(750));
+  expect(maximumRestore).toBeLessThanOrEqual(timingBudget(750));
+  expect(maximumCommit).toBeLessThanOrEqual(timingBudget(8));
+  expect(maximumSlice).toBeLessThanOrEqual(timingBudget(8));
   expect(store.size).toBe(11_000);
 }, 60_000);
 

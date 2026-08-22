@@ -33,6 +33,8 @@ jobs:
   Performance:
     name: Performance
     runs-on: ubuntu-latest
+    env:
+      INKBOOK_PERFORMANCE_PROFILE: hosted-ubuntu
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
