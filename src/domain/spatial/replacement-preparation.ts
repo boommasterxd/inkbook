@@ -12,6 +12,8 @@ import {
 } from "./index-state";
 import { heapifyBottom, type BottomHeapEntry } from "./max-bottom-heap";
 
+const HEAPIFY_ADMISSION_SIZE = 1_000;
+
 export interface SpatialReplacementPreparationPorts<Id, Owner extends object> {
   readonly createReplacement: (
     current: IndexedEntry<Id>,
@@ -66,7 +68,8 @@ export async function prepareSpatialReplacementsTimeSliced<Id, Owner extends obj
   if (staged === "cancelled") return staged;
   const prepared = await prepareEntriesTimeSliced(staged.entries, ports, scheduler);
   if (prepared === "cancelled") return prepared;
-  const result = finishPreparation(prepared, ports);
+  const result = await finishPreparationTimeSliced(prepared, ports, scheduler);
+  if (result === "cancelled") return result;
   return (await checkpoint(scheduler)) ? result : "cancelled";
 }
 
@@ -172,6 +175,32 @@ function finishPreparation<Id, Owner extends object>(
     if (!replacement.overflow) extentHeap.push(ports.extentEntry(replacement));
   }
   heapifyBottom(extentHeap);
+  return createPreparedPlan(prepared, extentHeap, ports);
+}
+
+async function finishPreparationTimeSliced<Id, Owner extends object>(
+  prepared: readonly PreparedReplacement<Id>[],
+  ports: SpatialReplacementPreparationPorts<Id, Owner>,
+  scheduler: SpatialReplacementPreparationScheduler,
+): Promise<PreparedSpatialReplacements<Id> | "cancelled"> {
+  const extentHeap: BottomHeapEntry<Id>[] = [];
+  for (const { replacement } of prepared) {
+    if (!replacement.overflow) extentHeap.push(ports.extentEntry(replacement));
+    if (!(await checkpoint(scheduler))) return "cancelled";
+  }
+  if (prepared.length >= HEAPIFY_ADMISSION_SIZE || scheduler.shouldYield()) {
+    await scheduler.yieldControl();
+    if (scheduler.isCancelled?.() ?? false) return "cancelled";
+  }
+  heapifyBottom(extentHeap);
+  return createPreparedPlan(prepared, extentHeap, ports);
+}
+
+function createPreparedPlan<Id, Owner extends object>(
+  prepared: readonly PreparedReplacement<Id>[],
+  extentHeap: BottomHeapEntry<Id>[],
+  ports: SpatialReplacementPreparationPorts<Id, Owner>,
+): PreparedSpatialReplacements<Id> {
   const state: PreparedSpatialState<Id, Owner> = {
     consumed: false,
     extentHeap,

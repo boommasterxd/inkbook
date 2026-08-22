@@ -107,7 +107,7 @@ describe("ElementStore incremental prepared replacement", () => {
 });
 
 describe("ElementStore large replacement admission", () => {
-  it("admits a large atomic commit only after yielding a fresh host slice", async () => {
+  it("admits large heapification and atomic commit in separate fresh host slices", async () => {
     const elements = Array.from({ length: 1_000 }, (_, index) =>
       rectangle(`00000000-0000-4000-8002-${index.toString().padStart(12, "0")}`),
     );
@@ -126,7 +126,7 @@ describe("ElementStore large replacement admission", () => {
       },
     );
 
-    expect(yields).toBe(4);
+    expect(yields).toBe(5);
     if (prepared.token === null) throw new Error("Expected a prepared replacement token.");
     expect(store.commitPreparedElementReplacement(prepared.token).status).toBe("committed");
     expect(store.instrumentation.publishedDeltas).toBe(1);
