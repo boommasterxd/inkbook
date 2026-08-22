@@ -142,15 +142,16 @@ function runtimeWindow(): {
   readonly revokeObjectUrl: ReturnType<typeof vi.fn>;
 } {
   const revokeObjectUrl = vi.fn();
+  const objectUrlApi = Object.assign(function URL() {}, {
+    createObjectURL: vi.fn(() => "blob:inkbook-runtime"),
+    revokeObjectURL: revokeObjectUrl,
+  });
   return {
     ownerWindow: {
       Blob,
       DecompressionStream,
       Response,
-      URL: {
-        createObjectURL: vi.fn(() => "blob:inkbook-runtime"),
-        revokeObjectURL: revokeObjectUrl,
-      },
+      URL: objectUrlApi,
     },
     revokeObjectUrl,
   };
