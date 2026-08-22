@@ -1,0 +1,231 @@
+import { describe, expect, it } from "vitest";
+
+import type {
+  BoxShapeElementV1,
+  InkElementV1,
+  LineElementV1,
+  StrokeElementV1,
+} from "../../../src/domain/schema/public";
+import { assertElementsWithinPageBounds } from "../../../src/domain/geometry/public";
+import { ElementStore } from "../../../src/domain/store/public";
+import type { TimeSlicedSelectionCommitPreparation } from "../../../src/editor/selection/handle-session";
+import { findFrontmostHit, SelectionHandleSession } from "../../../src/editor/selection/public";
+
+import { MeasuredSliceScheduler } from "../domain/domain-scenarios";
+import { connectedLine } from "../../unit/domain/store/fixtures";
+import { maximumStroke } from "./maximum-stroke-fixture";
+import { createPassThroughMoveSession } from "./selection-session-fixture";
+
+describe("selection hot paths", () => {
+  it("routes 488 maximum strokes through bounded commit slices and cached exact hit blocks", async () => {
+    const strokes = Array.from({ length: 488 }, (_, index) => pageBoundedMaximumStroke(index));
+    expect(() => assertElementsWithinPageBounds(strokes)).not.toThrow();
+    const candidates = strokes.map((element, rank) => ({
+      band: "content" as const,
+      element,
+      rank,
+    }));
+    const session = movedSession(strokes);
+
+    const decisionDurations = measureCommitDecisions(session);
+    findFrontmostHit({ x: 2_048, y: 50 }, "mouse", 1, candidates);
+    const hitDurations = measureDenseMisses(candidates);
+    const { maximumSlice, prepared } = await prepareInMeasuredSlices(session);
+
+    expect(prepared.status).toBe("ready");
+    if (prepared.status !== "ready") throw new Error("Expected an exact time-sliced commit.");
+    const first = prepared.replacements[0];
+    const last = prepared.replacements[prepared.replacements.length - 1];
+    if (first?.kind !== "stroke" || last?.kind !== "stroke") {
+      throw new Error("Expected maximum-stroke replacements.");
+    }
+    expect(first.points.slice(0, 3)).toEqual(new Float64Array([4, 103, 0.5]));
+    expect(last.points.slice(-3)).toEqual(new Float64Array([11, 103.487, 0.5]));
+    expect(Math.max(...decisionDurations)).toBeLessThanOrEqual(8);
+    expect(Math.max(...hitDurations)).toBeLessThanOrEqual(8);
+    expect(maximumSlice).toBeLessThanOrEqual(16.7);
+  });
+
+  it("bounds preparation for a near-maximum 19,929-endpoint selection fan-out", async () => {
+    const { elements, targetIds } = maximumEndpointFixture();
+    expect(() => assertElementsWithinPageBounds(elements)).not.toThrow();
+    const store = new ElementStore(elements);
+    await warmEndpointPreparation(store, targetIds);
+    store.resetInstrumentation();
+    const session = endpointSession(store, targetIds);
+
+    const previewStarted = performance.now();
+    const preview = session.update({ x: 2, y: 3 });
+    const previewDuration = performance.now() - previewStarted;
+    expect(preview).toMatchObject({ exactElements: [], exactPreviewTruncated: true });
+    expect(session.prepareCommit()).toEqual({ status: "time-sliced-required" });
+
+    const scheduler = new MeasuredSliceScheduler(2);
+    const materialized = await session.prepareCommitTimeSliced(scheduler);
+    if (materialized.status !== "ready") throw new Error("Expected transformed targets.");
+    const prepared = await store.prepareElementReplacement(materialized.replacements, scheduler);
+    scheduler.finish();
+    if (prepared.token === null) throw new Error("Expected a prepared replacement token.");
+    const commit = store.commitPreparedElementReplacement(prepared.token);
+
+    expect(commit.status).toBe("committed");
+    expect(commit.delta?.changes).toHaveLength(elements.length);
+    expect(store.get(elements[39]!.id)?.element).toMatchObject({ start: { x: 23, y: 24 } });
+    expect(store.instrumentation).toMatchObject({
+      fullStoreScans: 0,
+      reverseDependencyVisits: 19_929,
+    });
+    expect(previewDuration).toBeLessThanOrEqual(8);
+    expect(scheduler.maxSliceDuration).toBeLessThanOrEqual(16.7);
+  }, 30_000);
+});
+
+function movedSession(strokes: readonly StrokeElementV1[]): SelectionHandleSession {
+  const session = createPassThroughMoveSession(strokes, { x: 0, y: 0 });
+  session.update({ x: 2, y: 3 });
+  return session;
+}
+
+function measureCommitDecisions(session: SelectionHandleSession): number[] {
+  const durations: number[] = [];
+  for (let run = 0; run < 6; run += 1) {
+    const started = performance.now();
+    const decision = session.prepareCommit();
+    const duration = performance.now() - started;
+    expect(decision).toEqual({ status: "time-sliced-required" });
+    if (run > 0) durations.push(duration);
+  }
+  return durations;
+}
+
+function measureDenseMisses(
+  candidates: readonly {
+    readonly band: "content";
+    readonly element: StrokeElementV1;
+    readonly rank: number;
+  }[],
+): number[] {
+  const durations: number[] = [];
+  for (let run = 0; run < 5; run += 1) {
+    const started = performance.now();
+    expect(findFrontmostHit({ x: 2_048, y: 50 }, "mouse", 1, candidates)).toBeNull();
+    durations.push(performance.now() - started);
+  }
+  return durations;
+}
+
+async function prepareInMeasuredSlices(session: SelectionHandleSession): Promise<{
+  readonly maximumSlice: number;
+  readonly prepared: TimeSlicedSelectionCommitPreparation;
+}> {
+  let sliceStarted = performance.now();
+  let maximumSlice = 0;
+  const prepared = await session.prepareCommitTimeSliced({
+    shouldYield: () => true,
+    yieldControl: async () => {
+      maximumSlice = Math.max(maximumSlice, performance.now() - sliceStarted);
+      sliceStarted = performance.now();
+    },
+  });
+  maximumSlice = Math.max(maximumSlice, performance.now() - sliceStarted);
+  return { maximumSlice, prepared };
+}
+
+function maximumEndpointFixture(): {
+  readonly elements: readonly InkElementV1[];
+  readonly targetIds: readonly string[];
+} {
+  const targetCount = 39;
+  const endpointsPerTarget = 511;
+  const targets = Array.from({ length: targetCount }, (_, index) => endpointTarget(index));
+  const lines = targets.flatMap((target, targetIndex) =>
+    Array.from({ length: endpointsPerTarget }, (_, endpointIndex) =>
+      endpointLine(target, targetCount + targetIndex * endpointsPerTarget + endpointIndex),
+    ),
+  );
+  return { elements: [...targets, ...lines], targetIds: targets.map(({ id }) => id) };
+}
+
+async function warmEndpointPreparation(
+  store: ElementStore,
+  targetIds: readonly string[],
+): Promise<void> {
+  const session = endpointSession(store, targetIds);
+  session.update({ x: 1, y: 1 });
+  const scheduler = new MeasuredSliceScheduler(2);
+  const materialized = await session.prepareCommitTimeSliced(scheduler);
+  if (materialized.status !== "ready") throw new Error("Expected warm-up targets.");
+  const preparation = await store.prepareElementReplacement(materialized.replacements, scheduler);
+  if (preparation.token === null) throw new Error("Expected a warm-up replacement token.");
+  if (store.commitPreparedElementReplacement(preparation.token).status !== "committed") {
+    throw new Error("Expected the warm-up replacement to commit.");
+  }
+}
+
+function endpointSession(
+  store: ElementStore,
+  targetIds: readonly string[],
+): SelectionHandleSession {
+  const targets = targetIds.map((id) => store.get(id)!.element as InkElementV1);
+  const session = new SelectionHandleSession({
+    action: { kind: "move" },
+    elements: targets,
+    planner: store,
+    startPointer: { x: 0, y: 0 },
+  });
+  return session;
+}
+
+function endpointTarget(index: number): BoxShapeElementV1 {
+  const x = 20 + (index % 8) * 220;
+  const y = 20 + Math.floor(index / 8) * 150;
+  return {
+    createdAt: index,
+    height: 100,
+    id: fixtureId(index),
+    kind: "rectangle",
+    pivot: { x: x + 100, y: y + 50 },
+    rotation: 0,
+    style: { ...outlineStyle(), fillColor: null, fillOpacity: 0 },
+    width: 200,
+    x,
+    y,
+  };
+}
+
+function pageBoundedMaximumStroke(index: number): StrokeElementV1 {
+  const source = maximumStroke(index);
+  const points = new Float64Array(source.points.length);
+  for (let offset = 0; offset < points.length; offset += 3) {
+    points[offset] = 2 + ((offset / 3) % 2_044);
+    points[offset + 1] = 100 + index * 0.001;
+    points[offset + 2] = 0.5;
+  }
+  return {
+    ...source,
+    pivot: { x: 1_024, y: 100 + index * 0.001 },
+    points: points as unknown as StrokeElementV1["points"],
+  };
+}
+
+function endpointLine(target: BoxShapeElementV1, index: number): LineElementV1 {
+  return {
+    ...connectedLine(target),
+    createdAt: index,
+    id: fixtureId(index),
+    style: outlineStyle(),
+  };
+}
+
+function outlineStyle() {
+  return {
+    outlineColor: { type: "theme-text" as const },
+    outlineOpacity: 1,
+    outlineStyle: "solid" as const,
+    outlineWidth: 2 as const,
+  };
+}
+
+function fixtureId(index: number): string {
+  return `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
+}

@@ -2,7 +2,7 @@
 
 ## Architecture
 
-This repository contains the implementation specification for Inkbook's handwriting embed. The target implementation uses five responsibility areas: pure domain logic, editor orchestration, SVG rendering, persistence, and Obsidian integration.
+This repository contains the implementation and normative specification for Inkbook's handwriting embed. The implementation uses five responsibility areas: pure domain logic, editor orchestration, SVG rendering, persistence, and Obsidian integration.
 
 Keep the architecture small: one workspace activation coordinator, one normalized element store, one command history, one uniform spatial index, one imperative SVG scene renderer with one canvas input surface, one document worker per active document, and thin adapters for Obsidian, vault, clipboard, and worker boundaries. The coordinator serializes activation across tabs, panes, and pop-out windows and may retain at most one detached dirty session until save or recovery completes. React owns application chrome and coarse UI state only; it never renders ink elements or participates in pointer, camera, culling, snapping, or animation-frame updates. The store owns two fixed render bands, stable order within each band, semantic shape anchors, one derived reverse map for connected line and arrow endpoints, and domain-classified deltas with commit-time geometry and paint versions. The document worker owns bounded file validation, migration, clipboard codecs, SVG export, hashing, and persisted-output verification, but never DOM, pointer, camera, scroll, or Obsidian API work. Do not add a backend, dependency-injection container, state-management framework, generic graph library, worker pool, or plugin-internal extension system.
 

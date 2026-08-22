@@ -62,11 +62,11 @@ stateDiagram-v2
   unlocking --> locked: cancelled or superseded
   unlocking --> [*]: clean detached session released
   unlocking --> loadError: validation or load failure
-  loadError --> locked: dismiss or safe reload
+  loadError --> unlocking: Retry
+  loadError --> locked: Discard or Dismiss
   loadError --> [*]: presentation removed
 
   active --> locking: lock or different document request
-  active --> loadError: load-state failure disables editing
   active --> saveError: autosave conflict or failure
   active --> [*]: clean presentation detaches
   locking --> locked: exact revision saved and confirmed
@@ -86,6 +86,8 @@ stateDiagram-v2
   headlessRecovery --> headlessRecovery: recovery modal closes
   headlessRecovery --> [*]: Reload external or Save local copy
 ```
+
+This diagram describes the authoritative document-session state. Its `load-error` state is reached only when unlocking cannot produce a validated runtime document: Retry returns that session to `unlocking`, while Discard or Dismiss returns it to `locked`. By contrast, the per-embed state table in the [Implementation specification](specification.md#document-and-editor-states) also allows a presentation-local `active` to `load-error` transition when editor-chrome mounting fails. That presentation disposes its scene, returns to the static preview, and exposes retry UI without changing the authoritative document session from `active`; normal lock, detach, and recovery coordination still govern that session.
 
 Only one workspace session may be in `unlocking`, `active`, `locking`, `save-error`, detached-save, or headless-recovery mode. Detached saving and headless recovery are coordinator ownership modes for the same document session, not additional persisted editor states.
 
@@ -215,7 +217,9 @@ flowchart TD
   changedIds --> mountedChanges
   mountedChanges --> work
   diff --> work["Entrants, exits, changed nodes, and affected reorders only"]
-  work --> pathCache{"Path cache matches ID plus geometryVersion?"}
+  work --> mountBudget{"Absolute deadline, 4,096 stroke points, and 16,384 geometry cost permit the next entrant?"}
+  mountBudget -->|No| nextFrame
+  mountBudget -->|Yes| pathCache{"Path cache matches ID plus geometryVersion?"}
   pathCache -->|Yes| reuse["Reuse the path"]
   pathCache -->|No| build["Build only the required mounted path"]
   reuse --> applied["Compare applied node versions and attributes"]
@@ -241,9 +245,9 @@ flowchart TD
   remaining -->|No| complete["Frame complete without a React render"]
 ```
 
-The ordinary frame cost follows reusable spatial-index candidates, mounted visible elements, and the classified published delta, rather than all 10,000 stored strokes. The renderer mounts only the viewport plus exactly 80 screen pixels of overscan and mutates only entering, exiting, changed, or affected reordered nodes and attributes. Large or unusually dense viewports reconcile every exact visible element in input-aware slices while the last complete frame remains visible.
+The ordinary frame cost follows reusable spatial-index candidates, mounted visible elements, and the classified published delta, rather than all 10,000 stored strokes. The renderer mounts only the viewport plus exactly 80 screen pixels of overscan and mutates only entering, exiting, changed, or affected reordered nodes and attributes. Large or unusually dense viewports reconcile every exact visible element through a persistent band-and-rank cursor. Each slice uses the frame's absolute deadline plus fixed point and geometry budgets, admits at least one element for progress, and reuses the unchanged viewport query while the last complete frame remains visible.
 
-All layout reads happen before pure calculations and DOM writes, so the frame does not alternate between layout measurement and mutation. Path and anchor entries are valid only for the same element ID and geometry version. The recently unmounted main-thread path LRU is capped at 2,048 entries and 24 MiB, and the target-anchor LRU at 4,096 targets and 8 MiB, with the active-document memory ceiling taking precedence. Background guides share one compound path and regenerate only when their aligned visible-index key changes. Transform previews use SVG transforms, and visible connected endpoints follow their target during the same frame. Canonical paths, bounds, spatial-index cells, and endpoint records update once on commit.
+All layout reads happen before pure calculations and DOM writes, so the frame does not alternate between layout measurement and mutation. Path and anchor entries are valid only for the same element ID and geometry version. The recently unmounted main-thread path LRU is capped at 4,096 entries and 32 MiB, and the target-anchor LRU at 4,096 targets and 8 MiB, with the active-document memory ceiling taking precedence. Background guides use bounded SVG pattern tiles aligned to the visible range and regenerate only when their geometry key changes. Transform previews use SVG transforms, and visible connected endpoints follow their target during the same frame. Canonical paths, bounds, spatial-index cells, and endpoint records update once on commit.
 
 React receives at most one coarse notification after a consistent committed transaction or discrete UI transition. Pointer samples, preview geometry, camera changes, culling, snapping, connection propagation, and animation-frame work stay entirely in the imperative renderer. This prevents the 10,000-stroke scene from producing component renders or virtual-tree work on the hot path.
 
@@ -343,9 +347,9 @@ sequenceDiagram
   end
 ```
 
-Incremental export updates worker-owned fragments, but every successful persistence pass writes one complete SVG file containing one matching editable snapshot. At most one export request, one non-replaceable active save, one prepared successor, and one `Vault.process()` call exist per session. A newer export may replace only the prepared successor. Read-back of an active save always updates the confirmed vault base; it clears dirty state and releases a detached lease only when that revision is still the authoritative latest revision. If the executor fails after a write begins, a new-epoch verification operation checks the immutable old save ID, revision, and hash without repeating the write. Detachment removes presentation resources immediately but does not cancel dirty persistence work.
+Incremental export updates worker-owned fragments, but every successful persistence pass writes one complete SVG file containing one matching editable snapshot. At most one export request, one non-replaceable active save, one prepared successor, and one `Vault.process()` call exist per session. A newer export may replace only the prepared successor. Every full host read is serialized per normalized path and guarded by the public file identity plus path, timestamps, and size before and after materialization; changed or oversized bytes are rejected. Read-back of an active save always updates the confirmed vault base; it clears dirty state and releases a detached lease only when that revision is still the authoritative latest revision. If the executor fails after a write begins, a new-epoch verification operation checks the immutable old save ID, revision, and hash without repeating the write. Detachment removes presentation resources immediately but does not cancel dirty persistence work.
 
-The sequence shows an existing SVG save. Initial creation uses `Vault.create()` after path validation and then applies the same worker-assisted read-back confirmation. Attached recovery offers Retry, Save local copy, and Cancel. Headless recovery offers Retry, Reload external version, and Save local copy; closing its modal preserves the recovery session.
+The sequence shows an existing SVG save. Initial creation uses `Vault.create()` after path validation and then applies the same worker-assisted read-back confirmation. Attached recovery offers Retry, Save local copy, and Cancel. Headless recovery offers Retry, Reload external version, and Save local copy; closing its modal preserves the recovery session. Recovery results are bound to their basis revision, workspace token, session and worker epoch, and attached presentation when applicable. A same-document handoff cancels unresolved recovery before reattachment, and a non-active phase never mounts an editable scene.
 
 ## Cross-cutting Invariants
 

@@ -1,0 +1,18 @@
+import type { PageV1 } from "../../../domain/schema/public";
+import type { SvgSceneRenderer } from "../../../rendering/scene/index";
+import type { ToolbarLayoutStage } from "../../../rendering/ui/index";
+import type { ActiveEditorResizeAnchor, ActiveEditorResizeUpdate } from "./layout-resize";
+
+export interface ActiveEditorLayoutOptions {
+  readonly chromeHost: HTMLElement;
+  readonly container: HTMLElement;
+  readonly onLayout: (layout: ToolbarLayoutStage) => void;
+  readonly onReady: () => void;
+  readonly onResize?: (update: ActiveEditorResizeUpdate) => void;
+  readonly onZoom: (zoom: number) => void;
+  readonly page: () => PageV1;
+  readonly readResizeAnchor?: () => ActiveEditorResizeAnchor | undefined;
+  readonly renderer: SvgSceneRenderer;
+  readonly root: HTMLElement;
+  readonly storeMaximumBottom: () => number | undefined;
+}

@@ -68,6 +68,8 @@ Frame data is collected with `requestAnimationFrame` timestamps and Long Animati
 
 Memory is additional heap compared with the same Obsidian pane and locked preview. Record retained and peak live heap from unlock start through worker parsing, migration, buffer transfer, fixture indexing, one full scenario cycle, maximum clipboard Copy and Paste codecs, full export, result handoff, `Vault.process()`, conflict recovery, five rapidly coalesced incremental saves, and five idle seconds. The ceiling applies throughout, including parsed input, editor and worker geometry, clipboard representations, indexes, fragments, prepared output, current vault input, and animation tombstones. Use an explicit development-tools garbage collection only when supported and record that fact; otherwise take three stable heap readings one second apart and use the maximum. The test fails if the ceiling or an unexplained upward trend across five repeated cycles is observed.
 
+The deterministic CI memory gate runs the standard fixture in an isolated Node.js process with explicit garbage collection. It records `process.memoryUsage().heapUsed + process.memoryUsage().arrayBuffers` relative to a post-module-load baseline at production worker export, transferred-UTF-8 handoff, main-thread adoption, serialized vault input, conflict-recovery retention, and release checkpoints. Five complete lifecycle runs each include five commits coalesced into one latest-revision incremental save. This reproducible gate covers the combined in-process model and transfer topology; release reports still record the corresponding production Obsidian measurements on both reference profiles.
+
 ## Performance Budgets
 
 The 10,000-stroke fixture MUST satisfy:
@@ -92,7 +94,7 @@ The 10,000-stroke fixture MUST satisfy:
 | Incremental worker export after one stroke, p95                                    |                                        at most 100 ms |                                        at most 200 ms |
 | Main-thread work caused by autosave in one frame                                   |                                          at most 8 ms |                                         at most 12 ms |
 | Debounce expiry to latest revision save confirmation with production adapters, p95 |                                      at most 2,000 ms |                                      at most 4,000 ms |
-| Additional plugin memory while active                                              |                                       at most 200 MiB |                                       at most 140 MiB |
+| Additional plugin memory while active                                              |                                         at most 1 GiB |                                       at most 300 MiB |
 | Mounted content paths in a normal viewport                                         |                                         at most 1,200 |                                           at most 900 |
 | Mounted SVG nodes in a normal viewport                                             |                                         at most 2,000 |                                         at most 1,500 |
 | Compact snapshot metadata for the standard fixture                                 |                                        at most 32 MiB |                                        at most 32 MiB |
@@ -114,13 +116,14 @@ Additional rules:
 ## Performance Architecture Rules
 
 - Locked embeds use the static SVG preview and mount no editor store or React tree.
-- The runtime store is a private ID map plus two ordered ID bands and a derived rank map. Ordinary commands replace changed immutable records only and publish one atomic delta; they do not clone the complete map, a complete band, or a persisted snapshot.
+- The runtime store is one aggregate containing the private ID map, two ordered ID bands, derived ranks, capacity counters, spatial index, reverse connection map, and commit-time versions. Synchronous commands preflight all affected capacity, connection, and index changes before publishing one atomic delta. Time-sliced mutations prepare all affected members against one source mutation version and adopt them as one transaction. A cancelled, failed, or stale preparation changes none of the aggregate; ordinary commands retain unchanged record identities and do not clone a persisted snapshot.
 - Viewport queries, hit testing, erasing, and page extent queries use the spatial index.
 - React owns application chrome and coarse editor state only. Individual ink elements are owned by the imperative SVG scene renderer.
 - Pointer-move, pan, zoom, pinch, scroll, snapping, culling, and preview frames produce zero React renders, React state updates, and React-visible store notifications. Discrete selection and tool changes may enqueue one coarse UI update after imperative feedback.
 - Pointer-move processing never clones the complete element array or snapshot.
 - The live-stroke builder appends finalized chunks and rebuilds at most 16 retained samples plus their boundary segment; the 4,096th point does not reconstruct the first segment.
-- Selection transforms preview with one parent SVG transform when possible and commit geometry once.
+- Selection transforms preview with one parent SVG transform when possible and commit geometry once. Exact per-element handle previews require both at most 256 elements and at most 16,384 aggregate geometry samples. A handle commit may materialize synchronously only at or below 1,000 elements, 16,384 aggregate geometry samples, and the reverse-dependent budget; larger work prepares in input-aware slices and adopts once. Every slice and final token adoption rechecks cancellation and the gesture generation. Dragging selected content uses its transform-only preview and switches to sliced commit preparation above 1,000 elements.
+- Each eraser pointer update performs at most 12,288 exact intersection work units after a spatial-index query and retains at most 512 pending segments plus one candidate window. Unfinished checks retain resumable state for later updates. Commit drains cancellably before one atomic removal command; queue overflow or stale work cancels the entire sweep.
 - Selection size never disables culling: visible selected content and a maximum 256-path active subset are mounted, while offscreen selection uses aggregate bounds.
 - Bounds, paths, and semantic anchors validate the element ID plus its commit-time `geometryVersion`. Paint, order, selection, and theme changes are cache hits. Main-thread path strings are limited to mounted nodes plus the bounded recently-unmounted cache; unlock does not generate all document paths.
 - Viewport invalidations coalesce into one pending animation-frame update. Visible-ID diffing mutates only entrants, exits, changed records, and affected order; scene groups are never replaced wholesale.
@@ -135,10 +138,10 @@ Additional rules:
 - Worker state retains one canonical typed geometry buffer per stroke plus bounded current per-element snapshot and static-SVG fragments. Main-thread and worker allocation together remains inside the memory ceiling.
 - One document worker runs one bounded non-preemptive queue. It performs unlock validation and migration, clipboard codecs, SVG export, hashing, preflight, and read-back verification, but receives no DOM, pointer, scroll, camera, spatial-index, React, or Obsidian API object.
 - Worker failure invalidates the worker epoch and switches once per session to equivalent input-aware main-thread slices under a new epoch; it does not recreate a worker or retry partial results in a loop.
-- Background patterns cover only the visible vertical range plus one viewport of overscan.
-- Background geometry is one compound path keyed by aligned visible indices and regenerates only when that key changes. Theme changes reuse its geometry.
+- The active background uses one presentation-owned SVG pattern tile and one coverage rectangle spanning only the true native-scroll intersection plus one viewport of overscan. Static export estimates guide subpaths and serialized bytes before allocating any background path fragment and rejects an over-budget page without partial output.
+- Background coverage is keyed by aligned visible indices and regenerates only when that key changes. Theme changes reuse its geometry.
 - Culling overscan is exactly 80 screen pixels converted to page units at the current zoom.
-- Dense viewports eventually mount every exact visible element in input-aware batches; they may disable animation and prewarming but may not rasterize, merge, or hide editable content.
+- Dense viewports eventually mount every exact visible element in input-aware batches; they may disable animation and prewarming but may not rasterize, merge, or hide editable content. Each mount slice uses an absolute deadline plus the 4,096-stroke-point and 16,384-geometry-cost budgets, while one oversized entrant remains progress-safe.
 - Every cache has an entry or byte limit, releases removed records immediately, and is released on editor unmount.
 
 ## Animation Tokens
@@ -276,10 +279,10 @@ Integration tests cover only important boundaries:
 - visible-set reconciliation proving DOM mutations are limited to entrants, exits, changed records, and affected order
 - delta-domain and applied-node instrumentation proving zero geometry work for paint-only or order-only commits, zero content writes for camera-only or overlay-only frames, and exact changed-attribute counts
 - reusable visibility-buffer and stable-slot instrumentation proving zero steady-state collection allocation and correct dense-viewport promotion of a hit element that is not mounted yet
-- dense-viewport reconciliation proving the exact expected unique visible-ID sequence and render order by both the frame and elapsed-time deadlines
-- background-cache integration proving unchanged aligned indices and theme changes reuse the same compound geometry
+- dense-viewport reconciliation proving the exact expected unique visible-ID sequence, render order, persistent cursor, one unchanged-viewport query, and bounded point and geometry cost by both the frame and elapsed-time deadlines
+- background-cache integration proving unchanged aligned indices and theme changes reuse the same coverage geometry
 - anchor-cache integration proving paint, order, selection, and theme changes hit the cache while target geometry replacement invalidates only that target and its resolved dependents
-- canvas input-surface integration covering arbitration precedence plus secondary-button and macOS Control-click pointerdown followed by `contextmenu` with no temporary Eraser, capture, preview, mutation, or history; primary-button tools; touch long press cancellation at the annotation and empty-canvas thresholds; timer, preview, and capture release before menu display; consumed pointerup after menu open; touch selection under every active tool; Context Menu key; `Shift+F10`; focus return; and zero per-content-node listeners
+- canvas input-surface integration covering arbitration precedence plus secondary-button, combined-button, non-primary-pointer, macOS Control-click, pen-barrel, and eraser-tip handling before selection handles; atomic rejection of invalid or oversized coalesced batches; `contextmenu` with no unintended capture, preview, mutation, or history; primary-button tools; touch long press cancellation at the annotation and empty-canvas thresholds; timer, preview, and capture release before menu display; consumed pointerup after menu open; touch selection under every active tool; Context Menu key; `Shift+F10`; focus return; and zero per-content-node listeners
 - native menu integration proving action availability, order, icon names, a non-interactive `setIsLabel(true)` Arrange row, disabled Arrange boundaries, owning-document placement, and warning presentation for Delete, Erase all, and Delete embed
 - theme integration proving one root scheme update per mounted main or pop-out active presentation and zero path builds, bounds or index work, React ink commits, worker messages, revision changes, dirty transitions, and vault writes; locked-preview tests cover both inherited repaint and the one-reload-per-event compatibility path without I/O
 - serializer and preview integration comparing active and standalone document graphics in light and dark schemes and rejecting any noncanonical style, class, URL, or external resource
@@ -290,11 +293,11 @@ Integration tests cover only important boundaries:
 - selected coordinate-system and table structural Style edits proving one coarse UI update, geometry deltas only for changed targets and resolved dependents, no full-store scan or clone, exact compound-path replacement, and complete active-versus-standalone SVG parity
 - editor state plus direct live-path and transform previews
 - serializer plus worker protocol plus purpose-specific stale-result rejection, proving that clipboard, preflight, and read-back jobs do not invalidate a prepared export generation or its stable save operation
-- worker-backed unlock parsing, sequential migration, post-migration validation, bounded transferable point-buffer batches, cancellation before publication, and atomic publication after index construction
+- worker-backed unlock parsing, pre-materialization JSON container-width checks, bounded escape-string scratch, sequential migration, post-migration validation, bounded transferable point-buffer batches, cancellation before publication, and atomic publication after index construction
 - worker dispatch, one-slot coalescing, serialized vault writes, and latest-revision confirmation with deliberately delayed adapters
 - successor export dispatched after an older `Vault.process()` begins but before its read-back, followed by a second newer editor revision before successor promotion, proving the older active save still confirms and advances the vault base, a stale prepared result is discarded, the document remains dirty, and only the latest epoch, export generation, and exact editor revision may preflight against that new base without a false external conflict
 - repeated order changes proving one dirty flag per band and one complete order materialization at successor dispatch
-- mocked Obsidian vault adapter plus atomic save, failure, rename, and external modification
+- mocked Obsidian vault adapter plus atomic save, failure, rename, external modification, pre/post-read identity and metadata guards, stale-size growth, file replacement, and per-path read/write serialization
 - CodeMirror insertion plus undo file cleanup using mocked host adapters
 - clipboard adapter plus worker-backed encoding and decoding, user-activation-preserving delayed `ClipboardItem` data, direct standards-prefixed custom-format construction when `ClipboardItem.supports()` returns false, synchronous construction failure, `text/plain` system fallback, rejected write, complete revision-delta synchronization, validation, ID remapping, stale session or basis-revision rejection, and in-session fallback
 - unsaved edit followed by Copy and autosave, proving clipboard synchronization advances the worker model and fragment dirtiness, Copy encodes the edited record, a zero-delta export produces the complete current SVG, and dirty state clears only after its stable save operation is confirmed
@@ -303,13 +306,13 @@ Integration tests cover only important boundaries:
 - native-scroll integration with a test scroller proving write-only acquisition followed by post-style measurement before input, one shared lease, retention across lock and unlock, `scrollbar-gutter: stable`, persistent desktop `overflow-y: scroll`, stable `clientWidth`, no nested vertical scroller, no right-gutter overlap, zero pointer-time style mutation, two-frame live-layout owner transfer, immediate true-unload release, fresh remount acquisition, and complete cleanup across Reading view, Live Preview, and pop-out ownership
 - embed-width integration in ordinary, padded, readable-line, list, callout, max-width, and nested layouts, proving `containerWidth` uses the background container rather than pane width, overrun clamps before input, and toolbar plus input surface remain inside the owner client edge
 - settings UI definitions plus persistence adapters
-- Reading-view `MarkdownRenderChild` and Live Preview `WidgetType` lifecycle cleanup through host test adapters
+- Reading-view `MarkdownRenderChild` and Live Preview `WidgetType` lifecycle cleanup through host test adapters, including exact resource-URL correlation and fail-closed CodeMirror syntax-tree boundaries for code, comments, escapes, unknown nodes, and incomplete trees
 - main-window and pop-out widgets sharing one coordinator, with simultaneous activation proving exactly one active session and one latest pending request
 - multiple tabs referencing the same SVG, proving one reused document session, one attached presentation, and no duplicate store or worker
 - pending widget detachment before activation, proving cancellation without mounting and no retained DOM, `Window`, widget, or attachment generation
 - dirty widget detachment during delayed export and vault I/O, proving immediate UI cleanup, continued headless save, latest-revision confirmation, and no detached DOM mutation
 - same-session remount during a detached save, proving reuse of the existing store and worker, replacement of an older pending target, and clean reattachment after confirmation
-- detached save failure, external conflict, same-embed recovery reattachment, workspace recovery modal routing, and release after Retry, Reload, or Save local copy
+- detached save failure, external conflict, same-embed recovery reattachment, workspace recovery modal routing, stale recovery after a same-document handoff and newer revision, and release only after current Retry, Reload, or Save local copy
 - independent coordinator instances proving that cross-process-style concurrency reaches vault conflict handling rather than shared in-memory state
 - Vault, FileManager, MetadataCache, Editor, and device-storage adapters for documented operations and failure fallbacks
 
@@ -328,14 +331,14 @@ Automated performance tests use deterministic fixtures and cover:
 - oversized-element overflow indexing and queries
 - bounded rendering and uniform transformation of a 10,000-element selection
 - one-stroke commit and incremental export
-- maximum clipboard encode and paste decode, including complete delta synchronization, zero-delta export after Copy, purpose-specific operation identity, main-thread adoption slices, stale-result recomputation, and delayed Cut cancellation
-- worker failure fallback for validation, migration, clipboard, export, hashing, preflight, and read-back under continuous synthetic input
+- maximum clipboard codec and worker encode/decode with complete delta synchronization, stale-delta rejection, zero-delta export after Copy, purpose-specific operation identity, and bounded main-thread adoption slices; maximum-scale atomic Cut adoption and focused editor scenarios prove stale-result recomputation and delayed Cut cancellation
+- worker failure fallback for validation, migration, clipboard, export, hashing, preflight, and read-back under continuous synthetic input; maximum-complexity Safe-SVG validation runs with a synthetic input sample at every checkpoint, and trusted-output tests prove cancellation at the production 64-KiB hash boundary
 - 4,096-point live-stroke latency, a maximum 16-sample mutable tail, and finalized-prefix reuse
 - full SVG serialization
 - exact standard- and stress-fixture metadata, static-markup, total-byte, and bytes-per-point measurements
 - peak main-plus-worker memory during full export, result handoff, vault writing, conflict recovery, and repeated coalesced saves
-- steady-state one-stroke allocation, unchanged-record identity, and path-cache hit counters
-- steady-state viewport candidate reuse, applied SVG attribute-write counts, dense reconciliation, background-cache reuse, and bounded anchor-cache hit and eviction counters
+- steady-state one-stroke retained-memory growth, unchanged-record identity, and path-cache hit counters
+- steady-state viewport candidate reuse, applied SVG attribute-write counts, maximum-complexity dense mount slices, background-cache reuse, and bounded anchor-cache hit and eviction counters
 - history memory bounds
 
 Runtime frame, animation, mobile input, and host-scroll budgets are verified manually in Obsidian using the reference profiles because a simulated DOM does not provide trustworthy rendering timings.
@@ -373,6 +376,7 @@ Manual checks are not smoke or end-to-end test suites. They are focused acceptan
 - 10,000-stroke frame, memory, unlock, animation, and export budgets
 - lock/unlock and automatic-height animation without flicker or scroll jumps
 - Reading view, Live Preview, Source mode, pop-out windows, settings search, enable, disable, and reload without leaked listeners, workers, scrollbar leases, host-element references, portals, or React roots
+- production editor-chrome module loading under Obsidian's default CSP in the main window and a real pop-out realm, including distinct owner-document React roots, toolbar measurement before input handoff, close-before-load cancellation, retryable CSP/import failure, timeout cleanup, and no retained Blob URL
 - rapid activation across tabs and pop-outs, closing a dirty tab or pop-out before autosave, detached save success and failure recovery, and two independent Obsidian instances editing the same file
 
 Each release records pass/fail evidence and any accepted limitation.

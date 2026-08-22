@@ -1,0 +1,310 @@
+import { renderBandOf } from "../commands/render-bands";
+import { getCanonicalStrokeReplacementProof } from "../elements/stroke-replacement-proof";
+import { validateRuntimeInkElementV1 } from "../schema/element-validation";
+import type { InkElementV1 } from "../schema/public";
+import { validateInkElementV1 } from "../schema/public";
+
+import {
+  assertResolvedConnections,
+  isAnchorTarget,
+  isConnectable,
+  resolveConnections,
+} from "./connections";
+import { classifyReplacement, elementsEqual } from "./element-comparison";
+import { assertReplacementPageBoundsWhenSourceWasValid } from "./replacement-page-bounds";
+import { cancelled, yieldWhenRequested } from "./replacement-scheduler";
+import type {
+  DeltaDomain,
+  ElementRecord,
+  EndpointReference,
+  ImmutableInkElement,
+  StoreSliceScheduler,
+} from "./types";
+
+export interface ReplacementCandidate {
+  readonly current: ElementRecord;
+  readonly domains: readonly DeltaDomain[];
+  readonly element: InkElementV1;
+}
+
+const CANONICAL_TRANSLATION_DOMAINS = Object.freeze(["geometry"] as const);
+
+export interface ReplacementPlannerPorts {
+  readonly getRecord: (id: string) => ElementRecord;
+  readonly getReferences: (targetId: string) => readonly EndpointReference[] | undefined;
+  readonly onReverseVisit: () => void;
+}
+
+export interface TimeSlicedReplacementCandidates {
+  readonly candidates: readonly ReplacementCandidate[];
+  readonly yields: number;
+}
+
+export function prepareReplacementCandidates(
+  replacements: readonly InkElementV1[],
+  ports: ReplacementPlannerPorts,
+): ReplacementCandidate[] {
+  const drafts = prepareReplacementDrafts(replacements, ports);
+  assertReplacementPageBoundsWhenSourceWasValid(drafts, ports.getRecord);
+  return classifyReplacementDrafts(drafts, ports.getRecord);
+}
+
+export async function prepareReplacementCandidatesTimeSliced(
+  replacements: readonly InkElementV1[],
+  ports: ReplacementPlannerPorts,
+  scheduler: StoreSliceScheduler,
+): Promise<TimeSlicedReplacementCandidates | "cancelled"> {
+  const prepared = await prepareReplacementDraftsTimeSliced(replacements, ports, scheduler);
+  if (prepared === "cancelled") return prepared;
+  assertReplacementPageBoundsWhenSourceWasValid(prepared.drafts, ports.getRecord);
+  const classified = await classifyReplacementDraftsTimeSliced(
+    prepared.drafts,
+    ports.getRecord,
+    scheduler,
+  );
+  if (classified === "cancelled") return classified;
+  return { candidates: classified.candidates, yields: prepared.yields + classified.yields };
+}
+
+export function prepareReplacementDrafts(
+  replacements: readonly InkElementV1[],
+  ports: ReplacementPlannerPorts,
+): Map<string, InkElementV1> {
+  const drafts = prepareDrafts(replacements, ports.getRecord);
+  propagateTargetChanges(drafts, ports);
+  return drafts;
+}
+
+export async function prepareReplacementDraftsTimeSliced(
+  replacements: readonly InkElementV1[],
+  ports: ReplacementPlannerPorts,
+  scheduler: StoreSliceScheduler,
+): Promise<{ readonly drafts: Map<string, InkElementV1>; readonly yields: number } | "cancelled"> {
+  const drafts = new Map<string, InkElementV1>();
+  let yields = 0;
+  for (const replacement of replacements) {
+    if (cancelled(scheduler)) return "cancelled";
+    prepareDraft(drafts, replacement, ports.getRecord);
+    const checkpoint = await yieldWhenRequested(scheduler);
+    if (checkpoint === "cancelled") return checkpoint;
+    yields += checkpoint;
+  }
+  const lookup = createLookup(drafts, ports.getRecord);
+  for (const [id, draft] of drafts) {
+    if (cancelled(scheduler)) return "cancelled";
+    if (isConnectable(draft)) drafts.set(id, resolveConnections(draft, lookup));
+    const checkpoint = await yieldWhenRequested(scheduler);
+    if (checkpoint === "cancelled") return checkpoint;
+    yields += checkpoint;
+  }
+  const propagation = await propagateTargetChangesTimeSliced(drafts, ports, scheduler);
+  if (propagation === "cancelled") return propagation;
+  yields += propagation;
+  return { drafts, yields };
+}
+
+function prepareDrafts(
+  replacements: readonly InkElementV1[],
+  getRecord: (id: string) => ElementRecord,
+): Map<string, InkElementV1> {
+  const drafts = new Map<string, InkElementV1>();
+  for (const replacement of replacements) prepareDraft(drafts, replacement, getRecord);
+  const lookup = createLookup(drafts, getRecord);
+  for (const [id, draft] of drafts) {
+    if (isConnectable(draft)) drafts.set(id, resolveConnections(draft, lookup));
+  }
+  return drafts;
+}
+
+function prepareDraft(
+  drafts: Map<string, InkElementV1>,
+  replacement: InkElementV1,
+  getRecord: (id: string) => ElementRecord,
+): void {
+  const current = getRecord(replacement.id);
+  assertReplacementIdentity(current.element, replacement);
+  if (!isCanonicalStrokeTranslation(current.element, replacement)) {
+    assertValidReplacementElement(current.element, replacement);
+  }
+  if (drafts.has(replacement.id)) {
+    throw new RangeError(`Duplicate replacement ID: ${replacement.id}`);
+  }
+  drafts.set(replacement.id, replacement);
+}
+
+function propagateTargetChanges(
+  drafts: Map<string, InkElementV1>,
+  ports: ReplacementPlannerPorts,
+): void {
+  const lookup = createLookup(drafts, ports.getRecord);
+  for (const [targetId, draft] of drafts) {
+    const current = ports.getRecord(targetId);
+    if (!isGeometryTargetChange(current.element, draft)) continue;
+    const references = ports.getReferences(targetId);
+    if (references === undefined) continue;
+    for (const reference of references) {
+      ports.onReverseVisit();
+      const source = drafts.get(reference.linearId) ?? ports.getRecord(reference.linearId).element;
+      drafts.set(reference.linearId, resolveConnections(source, lookup, "detach"));
+    }
+  }
+}
+
+async function propagateTargetChangesTimeSliced(
+  drafts: Map<string, InkElementV1>,
+  ports: ReplacementPlannerPorts,
+  scheduler: StoreSliceScheduler,
+): Promise<number | "cancelled"> {
+  const lookup = createLookup(drafts, ports.getRecord);
+  let yields = 0;
+  for (const [targetId, draft] of drafts) {
+    if (cancelled(scheduler)) return "cancelled";
+    const current = ports.getRecord(targetId);
+    if (isGeometryTargetChange(current.element, draft)) {
+      const references = ports.getReferences(targetId) ?? [];
+      for (const reference of references) {
+        if (cancelled(scheduler)) return "cancelled";
+        ports.onReverseVisit();
+        const source =
+          drafts.get(reference.linearId) ?? ports.getRecord(reference.linearId).element;
+        drafts.set(reference.linearId, resolveConnections(source, lookup, "detach"));
+        const checkpoint = await yieldWhenRequested(scheduler);
+        if (checkpoint === "cancelled") return checkpoint;
+        yields += checkpoint;
+      }
+    }
+    const checkpoint = await yieldWhenRequested(scheduler);
+    if (checkpoint === "cancelled") return checkpoint;
+    yields += checkpoint;
+  }
+  return yields;
+}
+
+export function classifyReplacementDrafts(
+  drafts: Map<string, InkElementV1>,
+  getRecord: (id: string) => ElementRecord,
+): ReplacementCandidate[] {
+  const candidates: ReplacementCandidate[] = [];
+  const lookup = createLookup(drafts, getRecord);
+  for (const [id, element] of drafts) {
+    const candidate = classifyCandidate(id, element, getRecord, lookup);
+    if (candidate !== null) candidates.push(candidate);
+  }
+  return candidates;
+}
+
+export async function classifyReplacementDraftsTimeSliced(
+  drafts: Map<string, InkElementV1>,
+  getRecord: (id: string) => ElementRecord,
+  scheduler: StoreSliceScheduler,
+): Promise<
+  { readonly candidates: readonly ReplacementCandidate[]; readonly yields: number } | "cancelled"
+> {
+  const candidates: ReplacementCandidate[] = [];
+  const lookup = createLookup(drafts, getRecord);
+  let yields = 0;
+  for (const [id, element] of drafts) {
+    if (cancelled(scheduler)) return "cancelled";
+    const candidate = classifyCandidate(id, element, getRecord, lookup);
+    if (candidate !== null) candidates.push(candidate);
+    const checkpoint = await yieldWhenRequested(scheduler);
+    if (checkpoint === "cancelled") return checkpoint;
+    yields += checkpoint;
+  }
+  return { candidates, yields };
+}
+
+function classifyCandidate(
+  id: string,
+  element: InkElementV1,
+  getRecord: (id: string) => ElementRecord,
+  lookup: (id: string) => ImmutableInkElement | InkElementV1 | undefined,
+): ReplacementCandidate | null {
+  const current = getRecord(id);
+  const translation = canonicalStrokeTranslation(current.element, element);
+  if (translation !== null) {
+    return translation.x === 0 && translation.y === 0
+      ? null
+      : { current, domains: CANONICAL_TRANSLATION_DOMAINS, element };
+  }
+  if (elementsEqual(current.element, element)) return null;
+  const domains = classifyReplacement(current.element, element);
+  if (domains.length === 0) throw new RangeError("Replacement changed unsupported record fields.");
+  assertValidReplacementElement(current.element, element);
+  assertResolvedConnections(element, lookup);
+  return { current, domains: Object.freeze(domains), element };
+}
+
+function isCanonicalStrokeTranslation(
+  current: ImmutableInkElement,
+  replacement: InkElementV1,
+): boolean {
+  return canonicalStrokeTranslation(current, replacement) !== null;
+}
+
+function canonicalStrokeTranslation(
+  current: ImmutableInkElement,
+  replacement: InkElementV1,
+): Readonly<{ x: number; y: number }> | null {
+  if (current.kind !== "stroke" || replacement.kind !== "stroke") return null;
+  const proof = getCanonicalStrokeReplacementProof(replacement);
+  return proof?.source === current ? proof.translation : null;
+}
+
+function createLookup(
+  drafts: ReadonlyMap<string, InkElementV1>,
+  getRecord: (id: string) => ElementRecord,
+): (id: string) => ImmutableInkElement | InkElementV1 | undefined {
+  return (id) => drafts.get(id) ?? getOptionalRecord(getRecord, id)?.element;
+}
+
+function getOptionalRecord(
+  getRecord: (id: string) => ElementRecord,
+  id: string,
+): ElementRecord | undefined {
+  try {
+    return getRecord(id);
+  } catch {
+    return undefined;
+  }
+}
+
+function isGeometryTargetChange(current: ImmutableInkElement, draft: InkElementV1): boolean {
+  return isAnchorTarget(draft) && classifyReplacement(current, draft).includes("geometry");
+}
+
+export function assertReplacementIdentity(
+  current: ImmutableInkElement,
+  replacement: InkElementV1,
+): void {
+  if (
+    current.id !== replacement.id ||
+    current.kind !== replacement.kind ||
+    current.createdAt !== replacement.createdAt ||
+    renderBandOf(current) !== renderBandOf(replacement)
+  ) {
+    throw new RangeError(
+      "Replacement identity, kind, creation time, and render band are immutable.",
+    );
+  }
+}
+
+export function assertValidElement(element: InkElementV1): void {
+  const result = validateInkElementV1(element);
+  if (!result.ok) throw new RangeError(`Invalid element replacement: ${result.error.code}`);
+}
+
+export function assertValidReplacementElement(
+  current: ImmutableInkElement,
+  replacement: InkElementV1,
+): void {
+  const isOwnedRuntimeStroke =
+    current.kind === "stroke" &&
+    current.points instanceof Float64Array &&
+    replacement.kind === "stroke" &&
+    replacement.points instanceof Float64Array;
+  const result = isOwnedRuntimeStroke
+    ? validateRuntimeInkElementV1(replacement)
+    : validateInkElementV1(replacement);
+  if (!result.ok) throw new RangeError(`Invalid element replacement: ${result.error.code}`);
+}

@@ -1,0 +1,500 @@
+import type { InputPoint, InputState, PointerSample } from "../../../editor/input/index";
+import { reduceInput } from "../../../editor/input/index";
+import {
+  accumulateWheelDelta,
+  accumulateZoomInput,
+  applyAnchoredZoom,
+  calculateFitZoom,
+  calculateZoomLimits,
+  clampCameraX,
+  consumeWheelFrame,
+  consumeZoomFrame,
+  createWheelZoomState,
+  createZoomFrameState,
+  keyboardZoomFactor,
+  normalizeWheelVector,
+  renderedContainerHeight,
+  zoomFrameHasPending,
+  type WheelZoomState,
+  type ZoomAnchor,
+  type ZoomFrameState,
+} from "../../../editor/zoom/index";
+import type { SvgSceneRenderer } from "../../../rendering/scene/index";
+import { browserScrollMetrics, type BrowserScrollElement } from "../../scrolling/index";
+import { normalizePointerType } from "./controller-helpers";
+import { measureElementBox } from "./element-content-box";
+import {
+  applyNativePan,
+  localScreenPointAnchor,
+  pagePointAnchor,
+  readNavigationLayout,
+  visibleCenterPoint,
+  wheelAnchor,
+  type NavigationLayoutRead,
+  readOwnerScrollBounds,
+} from "./navigation-layout";
+import type { ActiveEditorResizeAnchor, ActiveEditorResizeUpdate } from "./layout-resize";
+import {
+  horizontalWheelDelta,
+  isZoomWheel,
+  positiveOr,
+  projectedScrollBounds,
+  validViewState,
+  wheelDeltaMode,
+} from "./navigation-helpers";
+
+export interface ActiveEditorZoomLayoutUpdate {
+  readonly blockSize: number;
+  readonly zoom: number;
+}
+
+export interface ActiveEditorCameraUpdate {
+  readonly x: number;
+  readonly zoom: number;
+}
+
+export interface ActiveEditorNavigationOptions {
+  readonly activePageHeight: () => number;
+  readonly applyCamera?: (camera: ActiveEditorCameraUpdate) => void;
+  readonly applyZoomLayout: (update: ActiveEditorZoomLayoutUpdate) => void;
+  readonly container: HTMLElement;
+  readonly renderer: SvgSceneRenderer;
+  readonly scrollOwner: BrowserScrollElement;
+  readonly getInput: () => InputState;
+  readonly setInput: (input: InputState) => void;
+}
+
+export interface ActiveEditorViewState {
+  readonly cameraX: number;
+  readonly zoom: number;
+}
+
+export interface ActiveEditorWheelInput {
+  readonly clientX: number;
+  readonly clientY: number;
+  readonly ctrlKey?: boolean;
+  readonly deltaMode: number;
+  readonly deltaX?: number;
+  readonly deltaY: number;
+  readonly metaKey?: boolean;
+  readonly shiftKey?: boolean;
+}
+
+export class ActiveEditorNavigation {
+  readonly #activePageHeight: () => number;
+  readonly #applyCamera: (camera: ActiveEditorCameraUpdate) => void;
+  readonly #applyZoomLayout: (update: ActiveEditorZoomLayoutUpdate) => void;
+  readonly #container: HTMLElement;
+  #scrollOwner: BrowserScrollElement;
+  readonly #getInput: () => InputState;
+  #ownerWindow: Window;
+  readonly #setInput: (input: InputState) => void;
+  #cameraX = 0;
+  #frame: number | undefined;
+  #frameState: ZoomFrameState = createZoomFrameState();
+  #gestureLayout: NavigationLayoutRead | undefined;
+  #latestAnchor: ZoomAnchor | undefined;
+  #origin: { cameraX: number; scrollTop: number } | undefined;
+  #pendingLayout: NavigationLayoutRead | undefined;
+  #wheelState: WheelZoomState = createWheelZoomState();
+  #zoom: number;
+
+  public constructor(options: ActiveEditorNavigationOptions) {
+    this.#activePageHeight = options.activePageHeight;
+    this.#applyCamera = options.applyCamera ?? ((camera) => options.renderer.setCamera(camera));
+    this.#applyZoomLayout = options.applyZoomLayout;
+    this.#container = options.container;
+    this.#scrollOwner = options.scrollOwner;
+    this.#getInput = options.getInput;
+    this.#setInput = options.setInput;
+    const ownerWindow = options.container.ownerDocument.defaultView;
+    if (ownerWindow === null) throw new Error("The active editor requires an owning window.");
+    this.#ownerWindow = ownerWindow;
+    this.#zoom = positiveOr(options.getInput().zoom, 1);
+  }
+
+  public get cameraX(): number {
+    return this.#cameraX;
+  }
+
+  public get zoom(): number {
+    return this.#zoom;
+  }
+
+  public begin(): void {
+    this.#gestureLayout ??= readNavigationLayout(this.#container, this.#scrollOwner);
+    this.#origin ??= {
+      cameraX: this.#cameraX,
+      scrollTop: browserScrollMetrics.getScrollTop(this.#scrollOwner),
+    };
+  }
+
+  public finish(): void {
+    this.#origin = undefined;
+    this.#gestureLayout = undefined;
+  }
+
+  public dispose(): void {
+    if (this.#frame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#frame);
+    this.#frame = undefined;
+    this.#clearPendingFrame();
+    this.#gestureLayout = undefined;
+    this.#origin = undefined;
+  }
+
+  public getViewState(): ActiveEditorViewState {
+    return { cameraX: this.#cameraX, zoom: this.#zoom };
+  }
+
+  public beginGestureGeometry(): boolean {
+    const layout = readNavigationLayout(this.#container, this.#scrollOwner);
+    this.#gestureLayout = layout;
+    return layout !== undefined;
+  }
+
+  public pagePoint(event: Pick<MouseEvent, "clientX" | "clientY">): InputPoint {
+    const bounds =
+      this.#gestureLayout?.containerBounds ?? measureElementBox(this.#container).contentBox;
+    return {
+      x: (event.clientX - bounds.left) / this.#zoom - this.#cameraX,
+      y: (event.clientY - bounds.top) / this.#zoom,
+    };
+  }
+
+  public localScreenPoint(event: Pick<MouseEvent, "clientX" | "clientY">): InputPoint {
+    const bounds =
+      this.#gestureLayout?.containerBounds ?? measureElementBox(this.#container).contentBox;
+    return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+  }
+
+  public pointer(event: PointerEvent): PointerSample {
+    return {
+      ...this.pagePoint(event),
+      pointerId: event.pointerId,
+      pointerType: normalizePointerType(event.pointerType),
+      pressure: event.pressure,
+    };
+  }
+
+  public screenPointer(event: PointerEvent): PointerSample {
+    const bounds =
+      this.#gestureLayout?.containerBounds ?? measureElementBox(this.#container).contentBox;
+    return {
+      x: event.clientX - bounds.left,
+      y: event.clientY - bounds.top,
+      pointerId: event.pointerId,
+      pointerType: normalizePointerType(event.pointerType),
+      pressure: event.pressure,
+    };
+  }
+
+  public pageSample(sample: PointerSample): PointerSample {
+    return {
+      ...sample,
+      x: sample.x / this.#zoom - this.#cameraX,
+      y: sample.y / this.#zoom,
+    };
+  }
+
+  public pagePointFromScreen(point: InputPoint): InputPoint {
+    return { x: point.x / this.#zoom - this.#cameraX, y: point.y / this.#zoom };
+  }
+
+  public pan(screenDeltaX: number): void {
+    if (!Number.isFinite(screenDeltaX)) return;
+    this.begin();
+    this.#frameState = accumulateZoomInput(this.#frameState, { panX: screenDeltaX });
+    this.#scheduleFrame();
+  }
+
+  public revert(): void {
+    const origin = this.#origin;
+    if (origin === undefined) return;
+    this.#cancelPendingFrame();
+    this.#cameraX = origin.cameraX;
+    browserScrollMetrics.setScrollTop(this.#scrollOwner, origin.scrollTop);
+    this.#applyCamera({ x: this.#cameraX, zoom: this.#zoom });
+    this.#origin = undefined;
+    this.#gestureLayout = undefined;
+  }
+
+  public scroll(screenDeltaY: number): void {
+    if (!Number.isFinite(screenDeltaY)) return;
+    this.begin();
+    this.#frameState = accumulateZoomInput(this.#frameState, { panY: screenDeltaY });
+    this.#scheduleFrame();
+  }
+
+  public setZoom(zoom: number): void {
+    if (!Number.isFinite(zoom) || zoom <= 0) return;
+    this.#zoom = zoom;
+    this.#cameraX = 0;
+    this.#setInput(reduceInput(this.#getInput(), { type: "configure", fitZoom: zoom, zoom }).state);
+    this.#applyCamera({ x: this.#cameraX, zoom: this.#zoom });
+  }
+
+  public restoreViewState(state: ActiveEditorViewState): boolean {
+    if (!validViewState(state)) return false;
+    const layout = readNavigationLayout(this.#container, this.#scrollOwner);
+    if (layout === undefined) return false;
+    const fitZoom = calculateFitZoom(layout.containerWidth);
+    if (fitZoom === undefined) return false;
+    this.#zoom = Math.max(fitZoom, Math.min(calculateZoomLimits(fitZoom).maxZoom, state.zoom));
+    this.#cameraX = clampCameraX(state.cameraX, layout.containerWidth, this.#zoom);
+    this.#applyZoomLayout({
+      blockSize: renderedContainerHeight(Math.max(0, this.#activePageHeight()), this.#zoom),
+      zoom: this.#zoom,
+    });
+    this.#setInput(
+      reduceInput(this.#getInput(), { type: "configure", fitZoom, zoom: this.#zoom }).state,
+    );
+    this.#applyCamera({ x: this.#cameraX, zoom: this.#zoom });
+    return true;
+  }
+
+  public readResizeAnchor(): ActiveEditorResizeAnchor | undefined {
+    const layout = readNavigationLayout(this.#container, this.#scrollOwner);
+    if (layout === undefined) return undefined;
+    return {
+      anchorViewportY: (layout.ownerViewport.bottom - layout.ownerViewport.top) / 2,
+      embedTopInScrollContent: layout.embedTopInScrollContent,
+      oldCameraX: this.#cameraX,
+      oldRenderedContainerHeight: layout.containerBorderBounds.height,
+      oldScrollTop: layout.scrollTop,
+      scrollBounds: readOwnerScrollBounds(this.#scrollOwner),
+      viewportWidth: layout.containerWidth,
+    };
+  }
+
+  public applyResize(update: ActiveEditorResizeUpdate): boolean {
+    if (
+      !Number.isFinite(update.cameraX) ||
+      !Number.isFinite(update.fitZoom) ||
+      update.fitZoom <= 0 ||
+      !Number.isFinite(update.scrollTop) ||
+      !Number.isFinite(update.zoom) ||
+      update.zoom <= 0
+    ) {
+      return false;
+    }
+    this.#cancelPendingFrame();
+    this.#cameraX = update.cameraX;
+    this.#zoom = update.zoom;
+    this.#setInput(
+      reduceInput(this.#getInput(), {
+        type: "configure",
+        fitZoom: update.fitZoom,
+        zoom: update.zoom,
+      }).state,
+    );
+    this.#applyCamera({ x: update.cameraX, zoom: update.zoom });
+    browserScrollMetrics.setScrollTop(this.#scrollOwner, update.scrollTop);
+    return true;
+  }
+
+  public transferScrollOwner(scrollOwner: BrowserScrollElement): boolean {
+    if (scrollOwner === this.#scrollOwner) return false;
+    const ownerWindow = scrollOwner.ownerDocument.defaultView;
+    if (ownerWindow === null) return false;
+    this.#cancelPendingFrame();
+    this.#origin = undefined;
+    this.#gestureLayout = undefined;
+    this.#scrollOwner = scrollOwner;
+    this.#ownerWindow = ownerWindow;
+    return true;
+  }
+
+  public updateKeyboard(
+    event: Pick<KeyboardEvent, "altKey" | "ctrlKey" | "key" | "metaKey">,
+    lastScreenPointer: InputPoint | null,
+  ): boolean {
+    const factor = keyboardZoomFactor(event);
+    if (factor === undefined) return false;
+    const layout = this.#pendingLayout ?? readNavigationLayout(this.#container, this.#scrollOwner);
+    const anchor =
+      lastScreenPointer !== null &&
+      Number.isFinite(lastScreenPointer.x) &&
+      Number.isFinite(lastScreenPointer.y) &&
+      layout !== undefined
+        ? localScreenPointAnchor(layout, lastScreenPointer)
+        : undefined;
+    if (layout !== undefined) this.#pendingLayout = layout;
+    if (anchor !== undefined) this.#latestAnchor = anchor;
+    this.#frameState = accumulateZoomInput(this.#frameState, {
+      ...(anchor === undefined ? {} : { anchor }),
+      factor,
+    });
+    this.#scheduleFrame();
+    return true;
+  }
+
+  public updatePinch(anchor: InputPoint, factor: number): void {
+    if (!Number.isFinite(factor) || factor <= 0) return;
+    this.begin();
+    const layout = this.#gestureLayout ?? readNavigationLayout(this.#container, this.#scrollOwner);
+    if (layout === undefined) return;
+    this.#latestAnchor = pagePointAnchor(layout, anchor, this.#cameraX, this.#zoom);
+    this.#frameState = accumulateZoomInput(this.#frameState, {
+      anchor: this.#latestAnchor,
+      factor,
+    });
+    this.#scheduleFrame();
+  }
+
+  public updatePinchScreen(anchor: InputPoint, factor: number): void {
+    this.updatePinch(this.pagePointFromScreen(anchor), factor);
+  }
+
+  public updateWheel(event: ActiveEditorWheelInput): boolean {
+    if (!Number.isFinite(event.deltaY) || !Number.isFinite(event.deltaX ?? 0)) return false;
+    const ownerPageHeight = browserScrollMetrics.getClientHeight(this.#scrollOwner);
+    const normalization = ownerPageHeight > 0 ? { pageHeight: ownerPageHeight } : {};
+    if (isZoomWheel(event)) {
+      const layout =
+        this.#pendingLayout ?? readNavigationLayout(this.#container, this.#scrollOwner);
+      if (layout === undefined) return false;
+      this.#pendingLayout = layout;
+      this.#latestAnchor = wheelAnchor(layout, event);
+      this.#wheelState = accumulateWheelDelta(
+        this.#wheelState,
+        event.deltaY,
+        wheelDeltaMode(event.deltaMode),
+        normalization,
+      );
+      this.#scheduleFrame();
+      return true;
+    }
+    if (this.#zoom <= this.#getInput().fitZoom) return false;
+    const delta = normalizeWheelVector(
+      event.deltaX ?? 0,
+      event.deltaY,
+      wheelDeltaMode(event.deltaMode),
+      normalization,
+    );
+    const horizontal = horizontalWheelDelta(event.shiftKey === true, delta.x, delta.y);
+    if (horizontal === undefined) return false;
+    this.#frameState = accumulateZoomInput(this.#frameState, { panX: -horizontal });
+    this.#scheduleFrame();
+    return true;
+  }
+
+  #scheduleFrame(): void {
+    if (this.#frame !== undefined) return;
+    this.#frame = this.#ownerWindow.requestAnimationFrame(() => {
+      this.#frame = undefined;
+      this.#applyFrame();
+      if (this.#hasPendingFrame()) this.#scheduleFrame();
+    });
+  }
+
+  #applyFrame(): void {
+    const wheel = consumeWheelFrame(this.#wheelState);
+    this.#wheelState = wheel.state;
+    if (wheel.frame.factor !== 1) {
+      this.#frameState = accumulateZoomInput(this.#frameState, {
+        factor: wheel.frame.factor,
+        ...(this.#latestAnchor === undefined ? {} : { anchor: this.#latestAnchor }),
+      });
+    }
+    const reduction = consumeZoomFrame(this.#frameState);
+    this.#frameState = reduction.state;
+    const frame = reduction.frame;
+    if (frame.factor === 1 && frame.panX === 0 && frame.panY === 0) return;
+    const layout = this.#pendingLayout ?? readNavigationLayout(this.#container, this.#scrollOwner);
+    this.#pendingLayout = undefined;
+    if (layout === undefined) return;
+    const fitZoom = calculateFitZoom(layout.containerWidth);
+    if (fitZoom === undefined) return;
+    const anchor = frame.anchor ?? this.#visibleAnchor(layout);
+    const requestedZoom = this.#zoom * frame.factor;
+    const boundedZoom = Math.max(
+      fitZoom,
+      Math.min(calculateZoomLimits(fitZoom).maxZoom, requestedZoom),
+    );
+    const pageHeight = Math.max(0, this.#activePageHeight());
+    const blockSize = renderedContainerHeight(pageHeight, boundedZoom);
+    const scrollBounds = projectedScrollBounds(this.#scrollOwner, layout, blockSize);
+    const zoomed = applyAnchoredZoom({
+      anchor,
+      containerWidth: layout.containerWidth,
+      derivedPageHeight: pageHeight,
+      embedTopInScrollContent: layout.embedTopInScrollContent,
+      oldCameraX: this.#cameraX,
+      oldScrollTop: layout.scrollTop,
+      oldZoom: this.#zoom,
+      requestedZoom: boundedZoom,
+      scrollBounds,
+      zoomLimits: calculateZoomLimits(fitZoom),
+    });
+    if (boundedZoom !== this.#zoom) {
+      this.#applyZoomLayout({ blockSize, zoom: boundedZoom });
+    }
+    this.#zoom = zoomed.camera.zoom;
+    this.#cameraX = clampCameraX(
+      zoomed.camera.x + frame.panX / this.#zoom,
+      layout.containerWidth,
+      this.#zoom,
+    );
+    this.#setInput(
+      reduceInput(this.#getInput(), {
+        type: "configure",
+        fitZoom,
+        zoom: this.#zoom,
+      }).state,
+    );
+    this.#applyCamera({ x: this.#cameraX, zoom: this.#zoom });
+    browserScrollMetrics.setScrollTop(
+      this.#scrollOwner,
+      applyNativePan(zoomed.scrollTop, frame.panY, scrollBounds),
+    );
+  }
+
+  public screenPoint(point: InputPoint): InputPoint {
+    const bounds =
+      this.#gestureLayout?.containerBounds ?? measureElementBox(this.#container).contentBox;
+    const local = this.localPointFromPage(point);
+    return {
+      x: bounds.left + local.x,
+      y: bounds.top + local.y,
+    };
+  }
+
+  public localPointFromPage(point: InputPoint): InputPoint {
+    return {
+      x: (point.x + this.#cameraX) * this.#zoom,
+      y: point.y * this.#zoom,
+    };
+  }
+
+  public visibleCenter(): InputPoint {
+    const layout = readNavigationLayout(this.#container, this.#scrollOwner);
+    if (layout === undefined) return { x: 0, y: 0 };
+    return visibleCenterPoint(layout, this.#cameraX, this.#zoom);
+  }
+
+  #visibleAnchor(layout: NonNullable<ReturnType<typeof readNavigationLayout>>): ZoomAnchor {
+    return pagePointAnchor(
+      layout,
+      visibleCenterPoint(layout, this.#cameraX, this.#zoom),
+      this.#cameraX,
+      this.#zoom,
+    );
+  }
+
+  #hasPendingFrame(): boolean {
+    return Math.abs(this.#wheelState.pendingSteps) >= 1 || zoomFrameHasPending(this.#frameState);
+  }
+
+  #cancelPendingFrame(): void {
+    if (this.#frame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#frame);
+    this.#frame = undefined;
+    this.#clearPendingFrame();
+  }
+
+  #clearPendingFrame(): void {
+    this.#wheelState = createWheelZoomState();
+    this.#frameState = createZoomFrameState();
+    this.#latestAnchor = undefined;
+    this.#pendingLayout = undefined;
+  }
+}
