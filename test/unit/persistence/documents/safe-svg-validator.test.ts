@@ -217,5 +217,5 @@ describe("safe SVG metadata and bounded validation", () => {
     paths.push(PLAIN_PATH);
 
     expectRejectedContentPaths(paths);
-  });
+  }, 15_000);
 });

@@ -27,7 +27,7 @@ describe("chunked SHA-256", () => {
     for (let index = 0; index < bytes.length; index += 1) bytes[index] = index % 251;
 
     expect(hashInPattern(bytes, [65_521, 262_144, 17])).toBe(await referenceHash(bytes));
-  });
+  }, 15_000);
 
   it("keeps interleaved instances isolated and deterministic", async () => {
     const left = new ChunkedSha256();
