@@ -16,11 +16,7 @@ import { removeElements } from "./element-removal";
 import { mutableElement } from "./immutability";
 import { EMPTY_STORE_INSTRUMENTATION, type MutableStoreInstrumentation } from "./instrumentation";
 import { normalizeElementInput } from "./input-normalization";
-import {
-  arrangeIdsInPlace,
-  assertCompleteBandOrder,
-  ElementStoreOrdering,
-} from "./order-operations";
+import { assertCompleteBandOrder, ElementStoreOrdering } from "./order-operations";
 import {
   preparePageBoundedReplacementCandidates,
   preparePageBoundedReplacementCandidatesTimeSliced,
@@ -388,7 +384,7 @@ export class ElementStore {
     const delta = new DeltaBuilder();
     for (const band of ["highlight", "content"] as const) {
       const ids = this.#bands[band];
-      arrangeIdsInPlace(ids, selectedIds, action);
+      this.#ordering.arrange(ids, selectedIds, action);
       this.#instrumentation.bandScans += 1;
       this.#ordering.refresh(band, 0, delta);
     }

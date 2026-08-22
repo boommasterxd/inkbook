@@ -11,10 +11,15 @@ interface OrderingState {
 }
 
 export class ElementStoreOrdering {
+  readonly #arrangeScratch: string[] = [];
   readonly #state: () => OrderingState;
 
   public constructor(state: () => OrderingState) {
     this.#state = state;
+  }
+
+  public arrange(ids: string[], selectedIds: ReadonlySet<string>, action: ArrangeAction): boolean {
+    return arrangeIdsInPlace(ids, selectedIds, action, this.#arrangeScratch);
   }
 
   public insert(
@@ -44,7 +49,11 @@ export class ElementStoreOrdering {
       const id = ids[rank]!;
       const previous = state.ranks.get(id);
       if (previous?.rank === rank && previous.band === band) continue;
-      state.ranks.set(id, { band, rank });
+      if (previous === undefined) state.ranks.set(id, { band, rank });
+      else {
+        previous.band = band;
+        previous.rank = rank;
+      }
       const record = state.records.get(id);
       if (record === undefined) throw new RangeError(`Unknown element ID: ${id}`);
       delta.addOrder(id, record);
@@ -70,10 +79,11 @@ export function assertCompleteBandOrder(
   }
 }
 
-export function arrangeIdsInPlace(
+function arrangeIdsInPlace(
   ids: string[],
   selectedIds: ReadonlySet<string>,
   action: ArrangeAction,
+  partitionScratch: string[] = [],
 ): boolean {
   if (ids.length < 2 || selectedIds.size === 0) return false;
   switch (action) {
@@ -82,9 +92,9 @@ export function arrangeIdsInPlace(
     case "send-backward":
       return sendBackward(ids, selectedIds);
     case "bring-to-front":
-      return stablePartition(ids, selectedIds, true);
+      return stablePartition(ids, selectedIds, true, partitionScratch);
     case "send-to-back":
-      return stablePartition(ids, selectedIds, false);
+      return stablePartition(ids, selectedIds, false, partitionScratch);
   }
 }
 
@@ -132,8 +142,9 @@ function stablePartition(
   ids: string[],
   selectedIds: ReadonlySet<string>,
   selectedLast: boolean,
+  selected: string[],
 ): boolean {
-  const selected: string[] = [];
+  selected.length = 0;
   let writeIndex = 0;
   for (const id of ids) {
     if (selectedIds.has(id)) selected.push(id);

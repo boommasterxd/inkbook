@@ -5,8 +5,8 @@ import type { SpatialBounds } from "../spatial/index";
 type ElementId = string;
 
 export interface ElementRank {
-  readonly band: RenderBand;
-  readonly rank: number;
+  band: RenderBand;
+  rank: number;
 }
 
 export type DeepReadonly<T> = T extends (...arguments_: never[]) => unknown

@@ -158,7 +158,11 @@ function refreshRanks(
     const id = state.bands[band][rank]!;
     const previous = state.ranks.get(id);
     if (previous?.rank === rank) continue;
-    state.ranks.set(id, { band, rank });
+    if (previous === undefined) state.ranks.set(id, { band, rank });
+    else {
+      previous.band = band;
+      previous.rank = rank;
+    }
     const record = requireElementRecord(state.records, id);
     delta.add(id, record, record, ["order"]);
     delta.dirtyBand(band);
