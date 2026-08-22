@@ -1,0 +1,1 @@
+export const MAXIMUM_TOTAL_PATH_DATA_BYTES = 48 * 1024 * 1024;

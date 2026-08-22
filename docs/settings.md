@@ -175,7 +175,7 @@ Line defaults use none for both nodes. Node settings are not shown for other sha
 - columns: 3
 - valid range: 1 through 12
 - header height: 30 percent of initial height
-- no fill and no row separators
+- no fill and no data-row separators; each table has exactly one horizontal header separator
 
 ## Eraser Defaults
 
@@ -259,6 +259,7 @@ Custom folders:
 
 - are normalized as vault-relative paths
 - must not be absolute or contain traversal segments
+- are limited before normalization to 4,096 UTF-8 bytes, 128 path segments, and 255 UTF-8 bytes per segment
 - are created only after explicit user confirmation through Settings
 - fall back to the note folder when unavailable
 

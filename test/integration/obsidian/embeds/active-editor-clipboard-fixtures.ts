@@ -1,0 +1,92 @@
+import { vi } from "vitest";
+
+import type { EncodedClipboard } from "../../../../src/persistence/clipboard/public";
+import type { PreparedElementMutation } from "../../../../src/domain/store/public";
+import type { PageV1 } from "../../../../src/domain/schema/public";
+import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
+
+export function createEncodedClipboardFixture(): EncodedClipboard {
+  const customText = 'INKBOOK/1:{"format":"inkbook-elements"}';
+  return {
+    byteLength: customText.length,
+    compactJson: "{}",
+    customText,
+    fingerprint: "fixture",
+    payload: { elements: [], format: "inkbook-elements", version: 1 },
+    plainText: customText,
+  };
+}
+
+function createClipboardPage(): PageV1 {
+  return {
+    activeBufferLines: 3,
+    background: { type: "none" },
+    innerWidth: 2_000,
+    lockedBufferLines: 1,
+    margin: 24.3,
+    writingLineHeight: 100,
+  };
+}
+
+export function createClipboardModelDefaults() {
+  return {
+    commitPreparedElementReplacement: vi.fn(() => "noop" as const),
+    prepareElementReplacement: vi.fn(async () => ({ status: "noop" as const, token: null })),
+    removeElements: vi.fn(),
+    replaceElements: vi.fn(),
+    setGestureActive: vi.fn(),
+  };
+}
+
+export function createClipboardDocumentModel(options: {
+  readonly commitBandOrder?: EditableDocumentModel["commitBandOrder"];
+  readonly commitPreparedElementMutation: EditableDocumentModel["commitPreparedElementMutation"];
+  readonly encodeClipboard?: EditableDocumentModel["encodeClipboard"];
+  readonly planClipboardPaste: EditableDocumentModel["planClipboardPaste"];
+  readonly prepareElementMutation: EditableDocumentModel["prepareElementMutation"];
+  readonly revision?: () => number;
+  readonly store: EditableDocumentModel["store"];
+}): EditableDocumentModel {
+  return {
+    mutationAvailability: "available",
+    page: createClipboardPage(),
+    get revision() {
+      return options.revision?.() ?? 7;
+    },
+    store: options.store,
+    arrangeElements: vi.fn(),
+    commitBandOrder: options.commitBandOrder ?? vi.fn(),
+    commitElement: vi.fn(),
+    commitElements: vi.fn(),
+    commitPage: vi.fn(),
+    commitPreparedElementMutation: options.commitPreparedElementMutation,
+    ...createClipboardModelDefaults(),
+    encodeClipboard: options.encodeClipboard ?? vi.fn(async () => null),
+    planClipboardPaste: options.planClipboardPaste,
+    prepareElementMutation: options.prepareElementMutation,
+  };
+}
+
+export function createDeferredPreparation(): {
+  complete(): void;
+  readonly promise: Promise<{
+    readonly status: "prepared";
+    readonly token: PreparedElementMutation;
+  }>;
+} {
+  let resolve: (() => void) | undefined;
+  const promise = new Promise<void>((complete) => {
+    resolve = complete;
+  }).then(() => ({ status: "prepared" as const, token: createPreparedToken() }));
+  return {
+    complete: () => {
+      if (resolve === undefined) throw new Error("Preparation is not pending.");
+      resolve();
+    },
+    promise,
+  };
+}
+
+export function createPreparedToken(): PreparedElementMutation {
+  return Object.freeze({}) as PreparedElementMutation;
+}

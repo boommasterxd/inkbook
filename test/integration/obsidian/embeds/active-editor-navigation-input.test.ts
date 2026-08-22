@@ -1,0 +1,289 @@
+import { describe, expect, it, vi } from "vitest";
+
+import { createInputState, type InputState } from "../../../../src/editor/input/index";
+import { OUTER_PAGE_WIDTH } from "../../../../src/editor/zoom/index";
+import {
+  ActiveEditorNavigation,
+  type ActiveEditorWheelInput,
+} from "../../../../src/obsidian/embeds/active-editor/navigation";
+import type { BrowserScrollElement } from "../../../../src/obsidian/scrolling/index";
+import type { SvgSceneRenderer } from "../../../../src/rendering/scene/index";
+import { domRect } from "../../../fixtures/obsidian/active-editor";
+
+class Frames {
+  readonly callbacks = new Map<number, FrameRequestCallback>();
+  #next = 1;
+
+  readonly window = {
+    cancelAnimationFrame: (frame: number) => this.callbacks.delete(frame),
+    innerHeight: 600,
+    innerWidth: 1_000,
+    requestAnimationFrame: (callback: FrameRequestCallback) => {
+      const frame = this.#next++;
+      this.callbacks.set(frame, callback);
+      return frame;
+    },
+  };
+
+  flush(): void {
+    const entry = this.callbacks.entries().next().value as
+      readonly [number, FrameRequestCallback] | undefined;
+    if (entry === undefined) throw new Error("No frame is pending.");
+    this.callbacks.delete(entry[0]);
+    entry[1](0);
+  }
+}
+
+function createHarness() {
+  const frames = new Frames();
+  const sequence: string[] = [];
+  const rect = { height: 1_000, left: 20, top: 100, width: 1_000 };
+  let scrollTop = 200;
+  let input: InputState = createInputState({
+    fitZoom: rect.width / OUTER_PAGE_WIDTH,
+    zoom: rect.width / OUTER_PAGE_WIDTH,
+  });
+  const documentPort = { defaultView: frames.window, scrollingElement: null };
+  const owner = {
+    clientHeight: 500,
+    getBoundingClientRect: () => domRect({ height: 500, left: 0, top: 0, width: 1_000 }),
+    ownerDocument: documentPort,
+    scrollHeight: 4_000,
+    get scrollTop() {
+      return scrollTop;
+    },
+    set scrollTop(value: number) {
+      sequence.push("scroll-write");
+      scrollTop = value;
+    },
+  } as unknown as BrowserScrollElement;
+  const readBounds = vi.fn(() => {
+    sequence.push("layout-read");
+    return domRect(rect);
+  });
+  const container = {
+    getBoundingClientRect: readBounds,
+    ownerDocument: documentPort,
+  } as unknown as HTMLElement;
+  const navigation = new ActiveEditorNavigation({
+    activePageHeight: () => 2_000,
+    applyZoomLayout: ({ blockSize }) => {
+      sequence.push("layout-write");
+      rect.height = blockSize;
+    },
+    container,
+    getInput: () => input,
+    renderer: {
+      setCamera: () => sequence.push("camera-write"),
+    } as unknown as SvgSceneRenderer,
+    scrollOwner: owner,
+    setInput: (next) => {
+      input = next;
+    },
+  });
+  return { frames, input: () => input, navigation, owner, readBounds, rect, sequence };
+}
+
+describe("active editor keyboard and wheel navigation", () => {
+  it("applies keyboard zoom through the same atomic anchored frame", () => {
+    const harness = createHarness();
+    const pointer = { x: 400, y: 200 };
+    const oldScrollTop = harness.owner.scrollTop;
+    const oldPage = harness.navigation.pagePointFromScreen(pointer);
+    const anchorViewportY = 100 + pointer.y;
+    const embedTopInScrollContent = oldScrollTop + 100;
+
+    expect(
+      harness.navigation.updateKeyboard(
+        {
+          altKey: false,
+          ctrlKey: true,
+          key: "+",
+          metaKey: false,
+        },
+        pointer,
+      ),
+    ).toBe(true);
+    expect(
+      harness.navigation.updateKeyboard(
+        { altKey: false, ctrlKey: true, key: "0", metaKey: false },
+        pointer,
+      ),
+    ).toBe(false);
+    harness.frames.flush();
+
+    expect(harness.navigation.zoom).toBeCloseTo((1_000 / OUTER_PAGE_WIDTH) * 1.08);
+    expect(harness.navigation.pagePointFromScreen(pointer).x).toBeCloseTo(oldPage.x);
+    expect(
+      (harness.owner.scrollTop + anchorViewportY - embedTopInScrollContent) /
+        harness.navigation.zoom,
+    ).toBeCloseTo(oldPage.y);
+    expect(harness.sequence.slice(-3)).toEqual(["layout-write", "camera-write", "scroll-write"]);
+  });
+});
+
+describe("active editor navigation input ordering", () => {
+  it("uses the latest anchor when wheel and keyboard zoom race in one frame", () => {
+    const keyboardLast = createHarness();
+    const keyboardOldScrollTop = keyboardLast.owner.scrollTop;
+    keyboardLast.navigation.updateWheel({
+      clientX: 200,
+      clientY: 250,
+      deltaMode: 1,
+      deltaY: -6.25,
+    });
+    const keyboardPointer = { x: 400, y: 200 };
+    const keyboardPage = keyboardLast.navigation.pagePointFromScreen(keyboardPointer);
+    const keyboardAnchorViewportY = 100 + keyboardPointer.y;
+    keyboardLast.navigation.updateKeyboard(
+      { altKey: false, ctrlKey: true, key: "+", metaKey: false },
+      keyboardPointer,
+    );
+    keyboardLast.frames.flush();
+
+    expect(keyboardLast.navigation.pagePointFromScreen(keyboardPointer).x).toBeCloseTo(
+      keyboardPage.x,
+    );
+    expect(
+      (keyboardLast.owner.scrollTop + keyboardAnchorViewportY - (keyboardOldScrollTop + 100)) /
+        keyboardLast.navigation.zoom,
+    ).toBeCloseTo(keyboardPage.y);
+
+    const wheelLast = createHarness();
+    const oldZoom = wheelLast.navigation.zoom;
+    const wheelClient = { x: 800, y: 350 };
+    const wheelPageX = (wheelClient.x - 20) / oldZoom;
+    const wheelPageY = (wheelLast.owner.scrollTop + wheelClient.y - 300) / oldZoom;
+    wheelLast.navigation.updateKeyboard(
+      { altKey: false, ctrlKey: true, key: "+", metaKey: false },
+      { x: 200, y: 200 },
+    );
+    wheelLast.navigation.updateWheel({
+      clientX: wheelClient.x,
+      clientY: wheelClient.y,
+      deltaMode: 1,
+      deltaY: -6.25,
+    });
+    wheelLast.frames.flush();
+
+    expect(
+      (wheelClient.x - 20) / wheelLast.navigation.zoom - wheelLast.navigation.cameraX,
+    ).toBeCloseTo(wheelPageX);
+    expect(
+      (wheelLast.owner.scrollTop + wheelClient.y - 300) / wheelLast.navigation.zoom,
+    ).toBeCloseTo(wheelPageY);
+  });
+
+  it("claims horizontal trackpad and Shift-wheel input only above fit", () => {
+    const harness = createHarness();
+    expect(harness.navigation.updateWheel(horizontalWheel())).toBe(false);
+    harness.navigation.restoreViewState({ cameraX: -100, zoom: 1 });
+
+    expect(harness.navigation.updateWheel(horizontalWheel())).toBe(true);
+    expect(
+      harness.navigation.updateWheel(
+        horizontalWheel({ deltaMode: 1, deltaX: 0, deltaY: 2, shiftKey: true }),
+      ),
+    ).toBe(true);
+    harness.frames.flush();
+
+    expect(harness.navigation.cameraX).toBeCloseTo(-212);
+  });
+});
+
+describe("active editor pointer-anchored keyboard navigation", () => {
+  it("anchors keyboard zoom to the last screen position after pan and resize", () => {
+    const harness = createHarness();
+    const lastScreenPointer = { x: 400, y: 200 };
+    harness.navigation.restoreViewState({ cameraX: -100, zoom: 1 });
+
+    harness.navigation.pan(-120);
+    harness.frames.flush();
+    harness.navigation.finish();
+    const expectKeyboardZoomAnchor = (expectedPageX: number) => {
+      harness.navigation.updateKeyboard(
+        { altKey: false, ctrlKey: true, key: "+", metaKey: false },
+        lastScreenPointer,
+      );
+      harness.frames.flush();
+      expect(harness.navigation.pagePointFromScreen(lastScreenPointer).x).toBeCloseTo(
+        expectedPageX,
+      );
+    };
+    const pageAfterPan = harness.navigation.pagePointFromScreen(lastScreenPointer);
+    expectKeyboardZoomAnchor(pageAfterPan.x);
+
+    harness.rect.width = 1_200;
+    expect(
+      harness.navigation.applyResize({
+        cameraX: -250,
+        fitZoom: 1_200 / OUTER_PAGE_WIDTH,
+        scrollTop: harness.owner.scrollTop,
+        zoom: 1.2,
+      }),
+    ).toBe(true);
+    const pageAfterResize = harness.navigation.pagePointFromScreen(lastScreenPointer);
+    expectKeyboardZoomAnchor(pageAfterResize.x);
+  });
+});
+
+describe("active editor gesture geometry and view transfer", () => {
+  it("keeps arbitration in screen pixels and caches geometry across samples", () => {
+    const harness = createHarness();
+    harness.navigation.restoreViewState({ cameraX: -100, zoom: 2 });
+    harness.readBounds.mockClear();
+    expect(harness.navigation.beginGestureGeometry()).toBe(true);
+    const event = {
+      clientX: 220,
+      clientY: 300,
+      pointerId: 4,
+      pointerType: "touch",
+      pressure: 0.5,
+    } as PointerEvent;
+
+    const screen = harness.navigation.screenPointer(event);
+    expect(screen).toMatchObject({ x: 200, y: 200 });
+    expect(harness.navigation.pageSample(screen)).toMatchObject({ x: 200, y: 100 });
+    expect(harness.navigation.localPointFromPage({ x: 200, y: 100 })).toEqual({ x: 200, y: 200 });
+    expect(harness.navigation.screenPoint({ x: 200, y: 100 })).toEqual({ x: 220, y: 300 });
+    harness.navigation.screenPointer({ ...event, clientX: 230 });
+    harness.navigation.updatePinchScreen({ x: 210, y: 200 }, 1.1);
+    expect(harness.readBounds).toHaveBeenCalledTimes(1);
+    harness.frames.flush();
+    expect(harness.readBounds).toHaveBeenCalledTimes(2);
+    harness.navigation.finish();
+  });
+
+  it("preserves a clamped camera across zoom updates, remount restoration, and owner transfer", () => {
+    const harness = createHarness();
+    expect(harness.navigation.restoreViewState({ cameraX: -300, zoom: 1 })).toBe(true);
+    expect(harness.navigation.cameraX).toBe(-300);
+    expect(harness.navigation.getViewState()).toEqual({ cameraX: -300, zoom: 1 });
+
+    const secondDocument = { defaultView: harness.frames.window, scrollingElement: null };
+    const secondOwner = {
+      clientHeight: 400,
+      getBoundingClientRect: () => domRect({ height: 400, left: 0, top: 0, width: 900 }),
+      ownerDocument: secondDocument,
+      scrollHeight: 3_000,
+      scrollTop: 50,
+    } as unknown as BrowserScrollElement;
+    expect(harness.navigation.transferScrollOwner(secondOwner)).toBe(true);
+    expect(harness.navigation.transferScrollOwner(secondOwner)).toBe(false);
+    expect(harness.navigation.getViewState()).toEqual({ cameraX: -300, zoom: 1 });
+  });
+});
+
+function horizontalWheel(overrides: Partial<ActiveEditorWheelInput> = {}): ActiveEditorWheelInput {
+  return {
+    clientX: 100,
+    clientY: 100,
+    ctrlKey: false,
+    deltaMode: 0,
+    deltaX: 80,
+    deltaY: 10,
+    metaKey: false,
+    shiftKey: false,
+    ...overrides,
+  };
+}

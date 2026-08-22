@@ -2,7 +2,7 @@
 
 ## Authority
 
-The editable snapshot is the source of truth. SVG drawing elements are a derived static representation. If validated snapshot data and SVG paths disagree, the editor uses the snapshot and regenerates the SVG on the next successful save.
+The editable snapshot is the semantic source of truth only inside a fully canonical envelope. SVG drawing elements are a derived static representation, but they protect externally edited or damaged files from silent replacement: if validated snapshot data and canonical static SVG paths disagree, Inkbook keeps the file static and read-only and does not rewrite it. This is the stricter safe-envelope rule used to resolve any apparent conflict between snapshot authority and external-viewer fidelity.
 
 ## SVG Envelope
 
@@ -86,7 +86,7 @@ Validation rules:
 - All numbers MUST be finite.
 - Snapshot revision is a non-negative safe integer.
 - Opacity and pressure are in the inclusive range `0..1`. Version 1 stroke smoothing is exactly `0.5`.
-- Canonical geometry and rotation are rounded on command commit to at most three decimal places. Pressure and opacity are rounded to at most four decimal places. Negative zero is stored and serialized as zero. Anchor resolution uses canonical geometry before connected endpoints are committed.
+- Canonical geometry and rotation are rounded on command commit to at most three decimal places. Pressure and opacity in the editable JSON snapshot are rounded to at most four decimal places. Generated SVG opacity attributes retain at most four decimal places; every other numeric SVG attribute retains at most three, as defined by the [standalone SVG envelope](svg-envelope.md#strict-static-markup-allowlist). Negative zero is stored and serialized as zero. Anchor resolution uses canonical geometry before connected endpoints are committed.
 - Rotation is stored in clockwise degrees normalized to `[-180, 180)`.
 - Rotation is applied around the stored page-space pivot. New strokes, linear elements, closed shapes, and tables use their unrotated bounds center. Coordinate systems use their origin.
 - IDs are lowercase UUID v4 strings and unique within the document.
@@ -431,22 +431,27 @@ Files exceeding a limit open read-only and are never rewritten automatically.
 | Connected endpoints             |               20,000 |                5,000 |
 | Connected endpoints per target  |                  512 |                  128 |
 | Spatial-index overflow elements |                  512 |                  128 |
+| Spatial-index cell memberships  |              262,144 |              262,144 |
+| JSON entries in one container   |               20,000 |               12,288 |
 | Absolute coordinate             | 1,000,000 page units | 1,000,000 page units |
 | Maximum derived height          | 1,000,000 page units |       Not applicable |
 
 The standard 10,000-stroke fixture MUST serialize to at most 32 MiB of compact snapshot metadata and at most 48 MiB for the complete SVG. CI records total bytes, metadata bytes, static-markup bytes, and bytes per stroke point. The stress fixture is accepted only when it satisfies the hard byte limits above; otherwise it is rejected by byte limits before any full domain or path-cache allocation.
 
-Before XML parsing, reject input above the total byte limit. Reject `DOCTYPE`, entity declarations, processing instructions, and any snapshot metadata section above its byte limit. Extract only the single required metadata text with a non-networked XML parser, reject XML parse errors or duplicate snapshot metadata, then parse JSON. Validate the parsed unknown value iteratively with depth and count budgets before constructing domain records or path caches. JSON parsing necessarily allocates its parsed representation; the requirement is to avoid additional domain arrays and derived geometry until validation succeeds.
+Before XML parsing, reject input above the total byte limit. Reject `DOCTYPE`, entity declarations, processing instructions, and any snapshot metadata section above its byte limit. Extract only the single required metadata text with a bounded non-networked streaming XML tokenizer and reject XML errors or duplicate snapshot metadata. The tokenizer compares supplied static groups with canonical generated fragments and discards supplied path text incrementally; it never joins or retains the complete SVG. The synchronous fallback runs a string-aware structural pass before native `JSON.parse()`; the production load uses the bounded chunked parser, which rejects duplicate keys before assigning them. Both enforce container width and nesting depth before materializing another child value. Validate the parsed unknown value iteratively with the remaining depth and count budgets, compare current-version decoded metadata exactly with canonical compact reserialization, and verify its root SHA-256 consistency binding before constructing domain records or path caches. JSON parsing necessarily allocates its parsed representation; the requirement is to avoid additional complete metadata strings, domain arrays, and derived geometry until validation succeeds.
 
-JSON nesting deeper than 16 levels, duplicate IDs, unknown discriminators, unknown required enum values, non-finite numbers, and invalid ranges are rejected. The parser may retain at most one input string, one parsed representation, and the validated domain snapshot at a time; it releases temporary data before generating paths.
+JSON nesting deeper than 16 levels, a container wider than its table limit, duplicate IDs, unknown discriminators, unknown required enum values, non-finite numbers, and invalid ranges are rejected. Structural scans ignore braces, brackets, commas, quotes, and backslashes inside strings. String decoding uses one reusable 16,384-code-unit UTF-16 scratch block, so retained fragments grow with decoded output blocks rather than escape count. Validation MUST NOT first materialize a sibling-key or sibling-frame array proportional to hostile input width. The parser may retain at most one input string, one parsed representation, bounded parser scratch, and the validated domain snapshot at a time; it releases temporary data before generating paths.
+
+Browser clipboard materialization and receiver-side worker batch limits are defined at their execution boundaries in [Rendering and Performance](rendering-and-performance.md#document-worker-autosave-and-export); the schema limits in this document remain authoritative for decoded document and clipboard content.
 
 ## Versioning and Migration
 
 - Writers emit version 1 only.
 - Inkbook may insert a replacement preview for a newer unsupported version only after its static SVG passes the same exact element-and-attribute allowlist as generated output; otherwise Inkbook leaves the host-owned native image surface non-interactive or replaces it with a non-rendering placeholder where the host surface permits. It cannot be edited.
-- Older supported versions migrate in memory through sequential pure migrations in the document worker during unlock. Runtime batches and the export baseline are created only after the migrated current-version result passes schema and limit validation. The equivalent bounded main-thread fallback is used when workers are unavailable.
-- Before the first write of a migrated document, preserve the original as `<base>.backup-v<old-version>.svg` unless that exact backup already exists.
-- Migration failure leaves the original untouched and opens read-only.
+- Version 0 uses the same envelope, snapshot fields, ordering, connections, and canonical geometry as version 1 except that both the root `data-inkbook-version` and snapshot `version` are `0` and the root omits `data-inkbook-snapshot-sha256`. Its only migration changes the snapshot discriminator to `1`. The first version 1 save adds the canonical metadata hash; the version 1 exact-text and hash requirements do not block loading the supported legacy source.
+- Older supported versions migrate in memory through sequential pure migrations in the document worker during unlock. Every adjacent step validates its complete output before the next step begins. Runtime batches and the export baseline are created only after the migrated current-version result passes schema and byte, depth, container, element, geometry, and connection limits. Cancellation applies between migration and validation slices. The equivalent bounded main-thread fallback uses the same registry, checkpoints, limits, and failure result when workers are unavailable.
+- Before the first write that would replace a successfully migrated document, preserve the exact original content as `<base>.backup-v<old-version>.svg`. Creation uses the public Vault boundary and is read back before replacement. If that collision-safe path already exists, it is accepted only when its content exactly equals the original; Inkbook never replaces a different existing backup. The verified backup is required exactly once per adopted migrated source.
+- Migration or unlock cancellation leaves the original untouched and the presentation static/read-only. Backup creation or verification failure prevents the version 1 replacement and leaves the session in recovery-required state with the original still untouched.
 - Unknown properties in the current schema are rejected rather than silently discarded.
 
 ## Related Documentation

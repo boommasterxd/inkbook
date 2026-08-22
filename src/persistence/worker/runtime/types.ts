@@ -1,0 +1,181 @@
+import type { InkElementV1, InkSnapshotV1, PageV1 } from "../../../domain/schema/public";
+import type {
+  ClipboardCandidates,
+  ClipboardResult,
+  ClipboardWritePayload,
+  DecodedClipboard,
+  PasteInvocation,
+  PastePlan,
+  PasteRepeatState,
+} from "../../clipboard/types";
+import type {
+  ExportIdentity,
+  ExportRequest,
+  ExportResult,
+  PurposeOperationIdentity,
+  VerifiedPersistedOutput,
+} from "../protocol";
+
+export type DocumentExportRequest = ExportRequest<InkElementV1, PageV1, InkSnapshotV1>;
+
+interface ModelSyncIdentity {
+  readonly identity: PurposeOperationIdentity;
+  readonly modelRevision: number;
+}
+
+export interface FullModelSyncRuntimeRequest extends ModelSyncIdentity {
+  readonly baseModelRevision: null;
+  readonly snapshot: InkSnapshotV1;
+  readonly type: "model-sync-full";
+}
+
+export interface IncrementalModelSyncRuntimeRequest extends ModelSyncIdentity {
+  readonly baseModelRevision: number;
+  readonly changedElements?: readonly InkElementV1[];
+  readonly orderChanges?: Readonly<Partial<Record<"content" | "highlight", readonly string[]>>>;
+  readonly page?: PageV1;
+  readonly removedIds?: readonly string[];
+  readonly type: "model-sync-incremental";
+}
+
+export type ModelSyncRuntimeRequest =
+  FullModelSyncRuntimeRequest | IncrementalModelSyncRuntimeRequest;
+
+export interface UnlockRuntimeRequest {
+  readonly identity: PurposeOperationIdentity;
+  readonly input: string | Uint8Array;
+  readonly type: "unlock";
+}
+
+interface EncodeClipboardRuntimeRequest {
+  readonly basisRevision: number;
+  readonly identity: PurposeOperationIdentity;
+  readonly selectedIds: readonly string[];
+  readonly type: "clipboard-encode";
+}
+
+interface DecodeClipboardRuntimeRequest {
+  readonly basisRevision: number;
+  readonly candidates: ClipboardCandidates;
+  readonly identity: PurposeOperationIdentity;
+  readonly type: "clipboard-decode";
+}
+
+interface PlanClipboardPasteRuntimeRequest {
+  readonly basisRevision: number;
+  readonly candidates: ClipboardCandidates;
+  readonly commandTimestamp: number;
+  readonly identity: PurposeOperationIdentity;
+  readonly invocation: PasteInvocation;
+  readonly previousRepeat?: PasteRepeatState;
+  readonly type: "clipboard-plan-paste";
+}
+
+interface VerifyRuntimeRequest {
+  readonly identity: PurposeOperationIdentity;
+  readonly input: string | Uint8Array;
+  readonly type: "verify-output";
+}
+
+export type DocumentRuntimeRequest =
+  | DecodeClipboardRuntimeRequest
+  | DocumentExportRequest
+  | EncodeClipboardRuntimeRequest
+  | ModelSyncRuntimeRequest
+  | PlanClipboardPasteRuntimeRequest
+  | UnlockRuntimeRequest
+  | VerifyRuntimeRequest;
+
+interface UnlockRuntimeSuccess {
+  readonly identity: PurposeOperationIdentity;
+  readonly outputHash: string;
+  readonly sourceVersion: number;
+  readonly snapshot: Omit<InkSnapshotV1, "elements"> & {
+    readonly batchCount: number;
+    readonly elementCount: number;
+  };
+  readonly type: "unlock-success";
+}
+
+export interface UnlockRuntimeBatch {
+  readonly batchIndex: number;
+  readonly elements: readonly InkElementV1[];
+  readonly identity: PurposeOperationIdentity;
+}
+
+export interface DocumentRuntimeObserver {
+  unlockBatch(batch: UnlockRuntimeBatch, signal: AbortSignal): Promise<void> | void;
+}
+
+export interface EncodeClipboardRuntimeSuccess {
+  readonly identity: PurposeOperationIdentity;
+  readonly result: ClipboardResult<ClipboardWritePayload>;
+  readonly type: "clipboard-encode-success";
+}
+
+export interface DecodeClipboardRuntimeSuccess {
+  readonly identity: PurposeOperationIdentity;
+  readonly result: ClipboardResult<DecodedClipboard>;
+  readonly type: "clipboard-decode-success";
+}
+
+export interface PlanClipboardPasteRuntimeSuccess {
+  readonly identity: PurposeOperationIdentity;
+  readonly result: ClipboardResult<PastePlan>;
+  readonly type: "clipboard-plan-paste-success";
+}
+
+export interface ModelSyncRuntimeSuccess {
+  readonly identity: PurposeOperationIdentity;
+  readonly modelRevision: number;
+  readonly type: "model-sync-success";
+}
+
+interface VerifyRuntimeSuccess {
+  readonly identity: PurposeOperationIdentity;
+  readonly persisted: VerifiedPersistedOutput;
+  readonly type: "verify-output-success";
+}
+
+interface RuntimeFailure {
+  readonly code: string;
+  readonly identity: PurposeOperationIdentity;
+  readonly retryable: boolean;
+  readonly type: "runtime-failure";
+}
+
+export type DocumentRuntimeResult =
+  | DecodeClipboardRuntimeSuccess
+  | EncodeClipboardRuntimeSuccess
+  | ExportResult
+  | ModelSyncRuntimeSuccess
+  | PlanClipboardPasteRuntimeSuccess
+  | RuntimeFailure
+  | UnlockRuntimeSuccess
+  | VerifyRuntimeSuccess;
+
+export interface DocumentRuntimePort {
+  acknowledgeExport?(identity: ExportIdentity, accepted: boolean): void;
+  execute(
+    request: DocumentRuntimeRequest,
+    observer?: DocumentRuntimeObserver,
+  ): Promise<DocumentRuntimeResult>;
+  requestPrewarm?(): void;
+  setLiveInputActive?(active: boolean): void;
+  terminate(): void;
+}
+
+export interface DocumentRuntimeServices {
+  createId(): string;
+}
+
+export interface InputAwareSliceScheduler {
+  checkpoint(signal: AbortSignal): Promise<void>;
+  run<T>(operation: (signal: AbortSignal) => T | Promise<T>, signal: AbortSignal): Promise<T>;
+  setLiveInputActive?(active: boolean): void;
+}
+
+export interface RuntimeSliceContext {
+  readonly checkpoint: () => Promise<void>;
+  readonly signal: AbortSignal;
+}

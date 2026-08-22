@@ -1,0 +1,347 @@
+import { describe, expect, it } from "vitest";
+
+import { AutosaveCoordinator } from "../../../src/persistence/saving/autosave/public";
+import type {
+  AutosaveClock,
+  AutosaveDocumentSource,
+} from "../../../src/persistence/saving/autosave/public";
+import type {
+  DocumentRuntimePort,
+  DocumentRuntimeRequest,
+  DocumentRuntimeResult,
+} from "../../../src/persistence/worker/runtime/public";
+import type {
+  ExistingFilePort,
+  MetadataGuardedFileRead,
+} from "../../../src/persistence/saving/save-ports";
+import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
+import type { ExportSuccess } from "../../../src/persistence/worker/protocol";
+import { createMinimalPersistenceFixture } from "./fixtures";
+import { annotateDurations, measureAsync, summarizeDurations } from "./metrics";
+
+const SEQUENCES_PER_RUN = 50;
+
+describe("autosave backpressure", () => {
+  it("rejects a stale receipt while retaining its worker-model baseline", async () => {
+    const clock = new ManualClock();
+    const document = new MutableDocument();
+    const executor = new ControlledExecutor();
+    const coordinator = createCoordinator(
+      clock,
+      document,
+      executor,
+      new ControlledVault(output(0)),
+    );
+    document.commit();
+    coordinator.recordCommit({ modelRevision: 1 });
+    clock.advance(500);
+    await settle();
+    document.commit();
+    coordinator.recordCommit({ modelRevision: 2 });
+    executor.completeExport(0);
+    await settle();
+
+    expect(executor.acknowledgements).toEqual([{ accepted: false, modelRevision: 1 }]);
+    clock.advance(500);
+    await settle();
+    expect(executor.exportRequests[1]).toMatchObject({
+      baseModelRevision: 1,
+      modelRevision: 2,
+      type: "export-incremental",
+    });
+    coordinator.dispose();
+  });
+
+  it("serializes writes and drains one coalesced successor without another user action", async ({
+    annotate,
+  }) => {
+    await runBackpressureBatch();
+    const measuredRuns: number[][] = [];
+    for (let run = 1; run <= 5; run += 1) {
+      const durations = await runBackpressureBatch();
+      measuredRuns.push(durations);
+      await annotateDurations(annotate, `autosave backpressure run ${run}`, durations);
+    }
+    const worstRunMaximum = Math.max(
+      ...measuredRuns.map((durations) => summarizeDurations(durations).maximum),
+    );
+    await annotate(
+      `autosave backpressure: 5 measured runs, ${SEQUENCES_PER_RUN} sequences per run, ` +
+        `worstRunMax=${worstRunMaximum.toFixed(3)} ms`,
+      "performance",
+    );
+  }, 120_000);
+});
+
+async function runBackpressureBatch(): Promise<number[]> {
+  const durations: number[] = [];
+  for (let sequence = 0; sequence < SEQUENCES_PER_RUN; sequence += 1) {
+    const measured = await measureAsync(runBackpressureSequence);
+    durations.push(measured.durationMs);
+  }
+  return durations;
+}
+
+async function runBackpressureSequence(): Promise<void> {
+  const clock = new ManualClock();
+  const document = new MutableDocument();
+  const executor = new ControlledExecutor();
+  const vault = new ControlledVault(output(0));
+  const coordinator = createCoordinator(clock, document, executor, vault);
+
+  document.commit();
+  coordinator.recordCommit({ modelRevision: 1 });
+  clock.advance(500);
+  await settle();
+  expect(executor.exportRequests).toHaveLength(1);
+
+  clock.advance(300);
+  executor.completeExport(0);
+  await settle();
+  expect(vault.processCalls).toBe(1);
+
+  for (let revision = 2; revision <= 5; revision += 1) {
+    document.commit();
+    coordinator.recordCommit({ modelRevision: revision });
+    clock.advance(50);
+  }
+  clock.advance(100);
+  vault.completeWrite();
+  await settle();
+  expect(executor.exportRequests).toHaveLength(2);
+  expect(executor.maximumActiveExports).toBe(1);
+
+  clock.advance(300);
+  executor.completeExport(1);
+  await settle();
+  expect(vault.processCalls).toBe(2);
+  expect(vault.maximumActiveWrites).toBe(1);
+
+  clock.advance(300);
+  vault.completeWrite();
+  await settle();
+  expect(coordinator.dirty).toBe(false);
+  expect(vault.revision).toBe(5);
+  coordinator.dispose();
+}
+
+function createCoordinator(
+  clock: ManualClock,
+  document: MutableDocument,
+  executor: ControlledExecutor,
+  vault: ControlledVault,
+): AutosaveCoordinator {
+  return new AutosaveCoordinator({
+    clock,
+    confirmedBase: { outputHash: hash(0), revision: 0, type: "confirmed" },
+    confirmedContent: output(0),
+    documentSource: document,
+    executor,
+    initialSnapshot: document.snapshot(),
+    path: "performance.svg",
+    sessionId: "performance",
+    vault,
+    workerEpoch: 1,
+  });
+}
+
+class MutableDocument implements AutosaveDocumentSource {
+  #revision = 0;
+
+  public commit(): void {
+    this.#revision += 1;
+  }
+
+  public currentRevision(): number {
+    return this.#revision;
+  }
+
+  public isGestureActive(): boolean {
+    return false;
+  }
+
+  public orderByBand(): Readonly<Partial<Record<"content" | "highlight", readonly string[]>>> {
+    return {};
+  }
+
+  public snapshot() {
+    return createMinimalPersistenceFixture(this.#revision);
+  }
+}
+
+class ManualClock implements AutosaveClock {
+  #nextId = 0;
+  #now = 0;
+  readonly #tasks = new Map<number, { callback: () => void; due: number }>();
+
+  public clearTimeout(handle: unknown): void {
+    if (typeof handle === "number") this.#tasks.delete(handle);
+  }
+
+  public setTimeout(callback: () => void, milliseconds: number): unknown {
+    const id = ++this.#nextId;
+    this.#tasks.set(id, { callback, due: this.#now + milliseconds });
+    return id;
+  }
+
+  public advance(milliseconds: number): void {
+    const target = this.#now + milliseconds;
+    while (true) {
+      const next = [...this.#tasks.entries()]
+        .filter(([, task]) => task.due <= target)
+        .sort((left, right) => left[1].due - right[1].due || left[0] - right[0])[0];
+      if (next === undefined) break;
+      this.#tasks.delete(next[0]);
+      this.#now = next[1].due;
+      next[1].callback();
+    }
+    this.#now = target;
+  }
+}
+
+class ControlledExecutor implements DocumentRuntimePort {
+  readonly acknowledgements: Array<{ accepted: boolean; modelRevision: number }> = [];
+  readonly exportRequests: Array<
+    Extract<DocumentRuntimeRequest, { type: "export-full" | "export-incremental" }>
+  > = [];
+  readonly #exports: Array<Deferred<DocumentRuntimeResult>> = [];
+  #activeExports = 0;
+  maximumActiveExports = 0;
+
+  public execute(request: DocumentRuntimeRequest): Promise<DocumentRuntimeResult> {
+    if (request.type === "export-full" || request.type === "export-incremental") {
+      const pending = deferred<DocumentRuntimeResult>();
+      this.exportRequests.push(request);
+      this.#exports.push(pending);
+      this.#activeExports += 1;
+      this.maximumActiveExports = Math.max(this.maximumActiveExports, this.#activeExports);
+      return pending.promise.finally(() => {
+        this.#activeExports -= 1;
+      });
+    }
+    if (request.type === "verify-output") {
+      const revision = readRevision(request.input);
+      return Promise.resolve({
+        identity: request.identity,
+        persisted:
+          revision === null
+            ? { type: "unreadable" }
+            : { outputHash: hash(revision), revision, type: "confirmed" },
+        type: "verify-output-success",
+      });
+    }
+    throw new Error(`Unexpected performance request: ${request.type}`);
+  }
+
+  public completeExport(index: number): void {
+    const request = this.exportRequests[index];
+    const pending = this.#exports[index];
+    if (request === undefined || pending === undefined) throw new Error("Missing export request.");
+    pending.resolve({
+      exportGeneration: request.exportGeneration,
+      modelRevision: request.modelRevision,
+      output: output(request.modelRevision),
+      outputHash: hash(request.modelRevision),
+      sessionId: request.sessionId,
+      type: "export-success",
+      workerEpoch: request.workerEpoch,
+    } satisfies ExportSuccess);
+  }
+
+  public acknowledgeExport(identity: ExportSuccess, accepted: boolean): void {
+    this.acknowledgements.push({ accepted, modelRevision: identity.modelRevision });
+  }
+
+  public terminate(): void {}
+}
+
+class ControlledVault implements ExistingFilePort {
+  #activeWrites = 0;
+  #content: string;
+  #pending: { next: string; result: Deferred<string> } | null = null;
+  maximumActiveWrites = 0;
+  processCalls = 0;
+
+  public constructor(content: string) {
+    this.#content = content;
+  }
+
+  public get revision(): number | null {
+    return readRevision(this.#content);
+  }
+
+  public process(_path: string, update: (current: string) => string): Promise<string> {
+    if (this.#pending !== null) throw new Error("Concurrent vault write detected.");
+    const result = deferred<string>();
+    this.#pending = { next: update(this.#content), result };
+    this.processCalls += 1;
+    this.#activeWrites += 1;
+    this.maximumActiveWrites = Math.max(this.maximumActiveWrites, this.#activeWrites);
+    return result.promise.finally(() => {
+      this.#activeWrites -= 1;
+    });
+  }
+
+  public readWithMetadataGuard(path: string): Promise<MetadataGuardedFileRead> {
+    const size = new TextEncoder().encode(this.#content).byteLength;
+    return Promise.resolve({
+      content: this.#content,
+      identity: { ctime: 1, mtime: 1, path, size },
+      materialization: "host-full-read-not-bounded",
+      stabilityEvidence: "object-identity-and-stat-unchanged",
+    });
+  }
+
+  public completeWrite(): void {
+    if (this.#pending === null) throw new Error("No vault write is active.");
+    const pending = this.#pending;
+    this.#pending = null;
+    this.#content = pending.next;
+    pending.result.resolve(this.#content);
+  }
+}
+
+interface Deferred<T> {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolvePromise: ((value: T) => void) | undefined;
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return { promise, resolve: (value) => resolvePromise?.(value) };
+}
+
+function output(revision: number): string {
+  return serializedOutput(revision).svg;
+}
+
+function hash(revision: number): string {
+  return serializedOutput(revision).hash;
+}
+
+const serializedOutputs = new Map<
+  number,
+  Extract<ReturnType<typeof serializeInkbookDocument>, { readonly ok: true }>["value"]
+>();
+
+function serializedOutput(revision: number) {
+  const cached = serializedOutputs.get(revision);
+  if (cached !== undefined) return cached;
+  const serialized = serializeInkbookDocument(createMinimalPersistenceFixture(revision));
+  if (!serialized.ok) throw new Error(`Failed to serialize revision ${revision}.`);
+  serializedOutputs.set(revision, serialized.value);
+  return serialized.value;
+}
+
+function readRevision(value: string | Uint8Array): number | null {
+  const text = typeof value === "string" ? value : new TextDecoder().decode(value);
+  const match = /data-inkbook-revision="(\d+)"/u.exec(text);
+  return match === null ? null : Number(match[1]);
+}
+
+async function settle(): Promise<void> {
+  for (let index = 0; index < 32; index += 1) await Promise.resolve();
+}
