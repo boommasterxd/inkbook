@@ -1,3 +1,4 @@
+export * from "./document-recognition";
 export * from "./live-preview";
 export * from "./markdown-embed";
 export * from "./obsidian-document-resolver";

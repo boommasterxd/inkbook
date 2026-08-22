@@ -248,7 +248,7 @@ Obsidian remains the sole vertical scroll owner. As soon as a Reading-view or Li
 
 - New files resolve [File Placement](settings.md#file-placement): `obsidian-attachment-folder` uses `FileManager.getAvailablePathForAttachment()`, `note-folder` uses the current note folder, and `custom-vault-folder` uses a validated path normalized by `normalizePath()`. Any unavailable or invalid destination falls back to the note folder and shows a notice.
 - Names use `inkbook-YYYYMMDD-HHmmss-<six-lowercase-hex>.svg` and retry with a new suffix on collision.
-- Markdown embed text prefixes `!` to the result of `FileManager.generateMarkdownLink()` for the created SVG.
+- Markdown embed text prefixes `!` to the complete result of `FileManager.generateMarkdownLink(file, sourcePath)` for the created SVG. Empty alias or subpath arguments MUST NOT be supplied because the host's preferred link format owns the delimiters.
 - Duplicate creates and validates the new file before replacing the pasted Markdown path.
 - Reference lookup uses `MetadataCache.getFirstLinkpathDest()` and `MetadataCache.resolvedLinks` after metadata resolution. It never scans or reparses every Markdown file.
 - Recoverable deletion uses `FileManager.trashFile()` and never `Vault.delete()`.

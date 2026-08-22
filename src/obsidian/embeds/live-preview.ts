@@ -1,5 +1,5 @@
 import { syntaxTree, syntaxTreeAvailable } from "@codemirror/language";
-import { RangeSetBuilder, type Extension } from "@codemirror/state";
+import { RangeSetBuilder, StateEffect, type Extension } from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
@@ -17,6 +17,7 @@ import { PresentationController } from "./presentation-controller";
 import type { EmbedIntegrationPorts, ResolvedInkbookDocument } from "./presentation-port";
 
 let nextLivePreviewAttachmentId = 0;
+const documentRecognitionChanged = StateEffect.define<string>();
 
 export interface VisibleTextRange {
   readonly from: number;
@@ -202,7 +203,7 @@ function findVisibleEmbeds(
   const lastRange = view.visibleRanges[view.visibleRanges.length - 1];
   let tree: ReturnType<typeof syntaxTree> | undefined;
   let syntaxChecked = false;
-  return findEmbedsInVisibleRanges(
+  const candidates = findEmbedsInVisibleRanges(
     (from, to) => state.doc.sliceString(from, to),
     view.visibleRanges,
     sourcePath,
@@ -237,6 +238,12 @@ function findVisibleEmbeds(
       return true;
     },
   );
+  return candidates.filter((candidate) => {
+    const documentId = candidate.resolved.documentId;
+    const recognized = ports.documents.cached(documentId);
+    if (recognized === undefined) void ports.documents.recognize(documentId);
+    return recognized === true;
+  });
 }
 
 export class InkbookLivePreviewWidget extends WidgetType {
@@ -294,7 +301,9 @@ export class InkbookLivePreviewWidget extends WidgetType {
       { capability: browserLockedPreviewSchemeCapability, image },
     );
     controller.mount();
-    const activate = (): void => {
+    const activate = (event: MouseEvent): void => {
+      event.preventDefault();
+      event.stopPropagation();
       controller.activate();
     };
     button.addEventListener("click", activate);
@@ -331,19 +340,34 @@ export function createLivePreviewExtension(ports: EmbedIntegrationPorts): Extens
     class {
       decorations: DecorationSet;
       #context: LivePreviewContext;
+      readonly #releaseRecognition: () => void;
 
       constructor(view: EditorView) {
         this.#context = livePreviewContext(view);
         this.decorations = buildDecorations(view, ports);
+        this.#releaseRecognition = ports.documents.subscribe((documentId) => {
+          view.dispatch({ effects: documentRecognitionChanged.of(documentId) });
+        });
       }
 
       update(update: ViewUpdate): void {
         const context = livePreviewContext(update.view);
         const syntaxChanged = syntaxTree(update.startState) !== syntaxTree(update.state);
-        if (syntaxChanged || shouldRefreshLivePreview(update, this.#context, context)) {
+        const recognitionChanged = update.transactions.some((transaction) =>
+          transaction.effects.some((effect) => effect.is(documentRecognitionChanged)),
+        );
+        if (
+          recognitionChanged ||
+          syntaxChanged ||
+          shouldRefreshLivePreview(update, this.#context, context)
+        ) {
           this.decorations = buildDecorations(update.view, ports);
         }
         this.#context = context;
+      }
+
+      destroy(): void {
+        this.#releaseRecognition();
       }
     },
     { decorations: (value) => value.decorations },

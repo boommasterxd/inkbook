@@ -25,6 +25,11 @@ function createPorts(): EmbedIntegrationPorts & {
   return {
     attachments,
     calls,
+    documents: {
+      cached: () => true,
+      recognize: async () => true,
+      subscribe: () => () => undefined,
+    },
     lifecycle: new PresentationLifecycleRegistry(),
     resolveDocument: (linkpath) =>
       linkpath === "drawings/ink.svg"
@@ -166,8 +171,11 @@ describe("Reading-view embed lifecycle", () => {
       sectionTo: 21,
       sourcePath: "notes/note.md",
     });
+    const bubbledActivation = vi.fn();
+    root.addEventListener("click", bubbledActivation);
     activationButton?.dispatch("click");
     expect(ports.calls[ports.calls.length - 1]).toBe("activate:drawings/ink.svg");
+    expect(bubbledActivation).not.toHaveBeenCalled();
     child?.unload();
     expect(ports.calls[ports.calls.length - 1]).toBe("detach:drawings/ink.svg");
     expect(root.classNames).not.toContain("inkbook-scrollbar-stable");

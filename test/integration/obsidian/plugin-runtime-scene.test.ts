@@ -53,7 +53,7 @@ interface TestPluginRegistration {
         getSectionInfo(): { readonly text: string } | null;
         readonly sourcePath: string;
       },
-    ) => void
+    ) => Promise<unknown> | void
   >;
   readonly settingTabs: Array<{
     setControlValue(key: string, value: unknown): Promise<void>;
@@ -163,6 +163,7 @@ function createPluginHarness() {
     },
     saveLocalStorage: vi.fn(),
     vault: {
+      cachedRead: async () => document.svg,
       getAbstractFileByPath: (path: string) => (path === file.path ? file : null),
       getFileByPath: (path: string) => (path === file.path ? file : null),
       getFolderByPath: () => null,
@@ -202,11 +203,11 @@ function createPluginHarness() {
   };
 }
 
-function mountReadingEmbed(plugin: InkbookPlugin): {
+async function mountReadingEmbed(plugin: InkbookPlugin): Promise<{
   readonly child: MarkdownRenderChild;
   readonly image: FakePresentationElement;
   readonly root: FakePresentationElement;
-} {
+}> {
   const root = new FakePresentationElement();
   const image = new FakePresentationElement(root.ownerDocument, "img");
   image.src = "app://vault/drawings/ink.svg";
@@ -214,7 +215,7 @@ function mountReadingEmbed(plugin: InkbookPlugin): {
   let child: MarkdownRenderChild | undefined;
   const processor = (plugin as unknown as TestPluginRegistration).postProcessors[0];
   if (processor === undefined) throw new Error("Reading-view postprocessor was not registered.");
-  void processor(root as unknown as HTMLElement, {
+  await processor(root as unknown as HTMLElement, {
     addChild: (candidate: MarkdownRenderChild) => {
       child = candidate;
       candidate.load();
@@ -231,11 +232,11 @@ async function createReadyReadingEmbed() {
   scenes.records.length = 0;
   const harness = createPluginHarness();
   await harness.plugin.onload();
-  return { harness, presentation: mountReadingEmbed(harness.plugin) };
+  return { harness, presentation: await mountReadingEmbed(harness.plugin) };
 }
 
 async function activatePresentation(
-  presentation: ReturnType<typeof mountReadingEmbed>,
+  presentation: Awaited<ReturnType<typeof mountReadingEmbed>>,
 ): Promise<void> {
   presentation.image.dispatch("click");
   await vi.waitFor(() => expect(scenes.records).toHaveLength(1));
@@ -365,7 +366,7 @@ describe("plugin workspace realm integration", () => {
     const noticeCount = notices.length;
     const harness = createPluginHarness();
     await harness.plugin.onload();
-    const presentation = mountReadingEmbed(harness.plugin);
+    const presentation = await mountReadingEmbed(harness.plugin);
 
     presentation.image.dispatch("click");
     await vi.waitFor(() => expect(scenes.records).toHaveLength(1));

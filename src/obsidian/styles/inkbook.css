@@ -87,6 +87,7 @@
 .inkbook-root .inkbook-locked-preview img {
   display: block;
   inline-size: 100%;
+  pointer-events: none;
 }
 
 .inkbook-root .inkbook-locked-preview:focus-visible {

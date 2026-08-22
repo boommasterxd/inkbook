@@ -1,5 +1,6 @@
 import type { AttachmentIdentity } from "../../editor/session/session-state";
 import type { ColorSchemeBroadcaster } from "../theme/color-scheme";
+import type { InkbookDocumentRecognitionPort } from "./document-recognition";
 import type { PresentationLifecycleRegistry } from "./presentation-lifecycle-registry";
 
 export interface ResolvedInkbookDocument {
@@ -53,6 +54,7 @@ export interface PresentationSessionPort {
 }
 
 export interface EmbedIntegrationPorts {
+  readonly documents: InkbookDocumentRecognitionPort;
   readonly lifecycle: PresentationLifecycleRegistry;
   readonly resolveDocument: (
     linkpath: string,

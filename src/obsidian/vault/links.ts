@@ -13,6 +13,14 @@ export interface CurrentSourceReferenceCount {
   readonly sourcePath: string;
 }
 
+function isCompleteMarkdownLink(value: string): boolean {
+  if (value.includes("\n") || value.includes("\r")) return false;
+  return (
+    (value.startsWith("[[") && value.endsWith("]]")) ||
+    (value.startsWith("[") && value.includes("](") && value.endsWith(")"))
+  );
+}
+
 export class ObsidianLinkAdapter {
   readonly #classes: ObsidianFileClasses;
   readonly #fileManager: FileManager;
@@ -40,7 +48,11 @@ export class ObsidianLinkAdapter {
   generateEmbed(filePath: string, sourcePath: string): string {
     const file = this.#files.resolveFile(filePath);
     const source = normalizeSourcePath(sourcePath, this.#normalizePath);
-    return `!${this.#fileManager.generateMarkdownLink(file, source, undefined, "")}`;
+    const link = this.#fileManager.generateMarkdownLink(file, source);
+    if (!isCompleteMarkdownLink(link)) {
+      throw new Error("Obsidian generated an incomplete Markdown link.");
+    }
+    return `!${link}`;
   }
 
   resolveLinkTarget(linkpath: string, sourcePath: string): TFile | null {

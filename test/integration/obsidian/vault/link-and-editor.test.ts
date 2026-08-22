@@ -7,6 +7,7 @@ import { ObsidianLinkAdapter } from "../../../../src/obsidian/vault/links";
 import { fakeObsidianFileClasses, FakeObsidianFile } from "../../../fixtures/obsidian/vault-files";
 
 function createLinkAdapter(options: {
+  readonly generatedLink?: string;
   readonly resolved: boolean;
   readonly resolvedLinks: Record<string, Record<string, number>>;
 }) {
@@ -15,7 +16,7 @@ function createLinkAdapter(options: {
     getFileByPath: (path: string) => (path === target.path ? target : null),
   } as unknown as Vault;
   const files = new ObsidianVaultFileAdapter(vault, fakeObsidianFileClasses, (path) => path);
-  const generateMarkdownLink = vi.fn(() => "[[../drawings/page.svg]]");
+  const generateMarkdownLink = vi.fn(() => options.generatedLink ?? "[[../drawings/page.svg]]");
   const getFirstLinkpathDest = vi.fn((linkpath: string) =>
     linkpath === "page.svg" ? target : null,
   );
@@ -41,7 +42,19 @@ describe("Obsidian link boundary", () => {
     });
 
     expect(adapter.generateEmbed(target.path, "notes/note.md")).toBe("![[../drawings/page.svg]]");
-    expect(generateMarkdownLink).toHaveBeenCalledWith(target, "notes/note.md", undefined, "");
+    expect(generateMarkdownLink).toHaveBeenCalledWith(target, "notes/note.md");
+  });
+
+  it("rejects an incomplete host-generated link before it reaches the editor", () => {
+    const { adapter, target } = createLinkAdapter({
+      generatedLink: "[[../drawings/page.svg",
+      resolved: true,
+      resolvedLinks: {},
+    });
+
+    expect(() => adapter.generateEmbed(target.path, "notes/note.md")).toThrow(
+      "Obsidian generated an incomplete Markdown link.",
+    );
   });
 
   it("resolves linkpaths only to concrete files", () => {

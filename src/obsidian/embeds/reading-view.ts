@@ -131,7 +131,9 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
     });
     if (this.#releaseLifecycle === undefined) return;
     this.#controller.mount();
-    this.registerDomEvent(this.#button, "click", () => {
+    this.registerDomEvent(this.#button, "click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
       this.#controller.activate();
     });
   }
@@ -149,11 +151,19 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
 export function createReadingViewPostProcessor(
   ports: EmbedIntegrationPorts,
 ): MarkdownPostProcessor {
-  return (element, context): void => {
-    const candidate = recognizeReadingViewCandidate(element, context, ports.resolveDocument);
-    if (candidate === undefined) {
-      return;
-    }
-    context.addChild(new InkbookReadingRenderChild(candidate, ports));
+  return (element, context): Promise<void> | void => {
+    const initial = recognizeReadingViewCandidate(element, context, ports.resolveDocument);
+    if (initial === undefined) return;
+    const attach = (): void => {
+      const candidate = recognizeReadingViewCandidate(element, context, ports.resolveDocument);
+      if (candidate?.resolved.documentId !== initial.resolved.documentId) return;
+      context.addChild(new InkbookReadingRenderChild(candidate, ports));
+    };
+    const cached = ports.documents.cached(initial.resolved.documentId);
+    if (cached === true) return attach();
+    if (cached === false) return;
+    return ports.documents.recognize(initial.resolved.documentId).then((recognized) => {
+      if (recognized) attach();
+    });
   };
 }

@@ -52,9 +52,11 @@ describe("Inkbook host styles", () => {
 
   it("draws locked-preview keyboard focus entirely inside the stabilized owner width", () => {
     const focus = declarationsFor(".inkbook-root .inkbook-locked-preview:focus-visible");
+    const image = declarationsFor(".inkbook-root .inkbook-locked-preview img");
 
     expect(focus).toContain("outline: 2px solid var(--interactive-accent)");
     expect(focus).toContain("outline-offset: -2px");
+    expect(image).toContain("pointer-events: none");
   });
 
   it("uses the same 22-pixel leading shift covered by the left-handed width threshold", () => {

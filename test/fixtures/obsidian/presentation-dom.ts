@@ -5,6 +5,11 @@ interface FakePresentationCollection {
   item(index: number): FakePresentationElement | null;
 }
 
+interface FakePresentationEvent {
+  event: Event;
+  stopped: boolean;
+}
+
 export class FakePresentationElement {
   readonly attributes = new Map<string, string>();
   readonly children: FakePresentationElement[] = [];
@@ -155,15 +160,26 @@ export class FakePresentationElement {
   }
 
   public dispatch(type: string): void {
-    this.dispatchEvent({ type } as Event);
+    const dispatched: FakePresentationEvent = {
+      event: undefined as unknown as Event,
+      stopped: false,
+    };
+    dispatched.event = {
+      preventDefault: vi.fn(),
+      stopPropagation: () => {
+        dispatched.stopped = true;
+      },
+      type,
+    } as unknown as Event;
+    this.dispatchEvent(dispatched);
   }
 
-  private dispatchEvent(event: Event): void {
-    for (const callback of this.listeners.get(event.type) ?? []) {
-      if (typeof callback === "function") callback(event);
-      else callback.handleEvent(event);
+  private dispatchEvent(dispatched: FakePresentationEvent): void {
+    for (const callback of this.listeners.get(dispatched.event.type) ?? []) {
+      if (typeof callback === "function") callback(dispatched.event);
+      else callback.handleEvent(dispatched.event);
     }
-    this.parentElement?.dispatchEvent(event);
+    if (!dispatched.stopped) this.parentElement?.dispatchEvent(dispatched);
   }
 
   public getElementsByTagName(name: string): FakePresentationCollection {
