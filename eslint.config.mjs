@@ -99,6 +99,21 @@ export default [
     },
   },
   {
+    files: ["src/obsidian/embeds/editor-chrome-loader.ts", "src/obsidian/plugin-loader.ts"],
+    rules: {
+      "no-unsanitized/method": [
+        "error",
+        {},
+        {
+          import: {
+            escape: { methods: ["sanitizeOwnedModuleUrl"] },
+            properties: [0],
+          },
+        },
+      ],
+    },
+  },
+  {
     files: ["src/domain/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": restrictImports(
@@ -210,6 +225,18 @@ export default [
     },
     rules: {
       "import/no-extraneous-dependencies": "off",
+      "obsidianmd/no-nodejs-modules": "off",
+    },
+  },
+  {
+    files: ["test/performance/persistence/memory-*.{ts,tsx}"],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
+    },
+    rules: {
+      "obsidianmd/no-global-this": "off",
       "obsidianmd/no-nodejs-modules": "off",
     },
   },

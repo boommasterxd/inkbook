@@ -60,6 +60,14 @@ if (outputMain.trim().length === 0 || outputMain.includes("sourceMappingURL")) {
   throw new Error("dist/main.js must be non-empty and contain no source map reference.");
 }
 
+if (
+  outputMain.includes("__INKBOOK_PLUGIN_RUNTIME_SOURCE__") ||
+  !outputMain.includes("inkbook-plugin-bootstrap") ||
+  !outputMain.includes("import(")
+) {
+  throw new Error("dist/main.js must contain the embedded Inkbook runtime module.");
+}
+
 if (!outputStyles.includes(".inkbook-root")) {
   throw new Error("dist/styles.css does not contain the scoped Inkbook root styles.");
 }

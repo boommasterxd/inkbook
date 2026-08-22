@@ -1,0 +1,209 @@
+import type {
+  ColorV1,
+  EndpointConnectionV1,
+  InkElementV1,
+  InkSnapshotV1,
+  OutlineStyleV1,
+  PageV1,
+  ShapeAnchorV1,
+  ShapeStyleV1,
+  StrokeStyleV1,
+} from "../../domain/schema/public";
+
+export function canonicalSnapshot(
+  snapshot: InkSnapshotV1,
+  preserveRuntimeStrokeBuffers = false,
+): InkSnapshotV1 {
+  return {
+    format: "inkbook",
+    version: 1,
+    revision: snapshot.revision,
+    page: canonicalPage(snapshot.page),
+    elements: snapshot.elements.map((element) =>
+      canonicalElement(element, preserveRuntimeStrokeBuffers),
+    ),
+  };
+}
+
+export function canonicalPage(page: PageV1): PageV1 {
+  let background: PageV1["background"];
+  if (page.background.type === "none") background = { type: "none" };
+  else if (page.background.type === "lines") {
+    background = { type: "lines", spacing: page.background.spacing };
+  } else if (page.background.type === "dots") {
+    background = { type: "dots", spacing: page.background.spacing };
+  } else {
+    background = { type: "squares", spacing: page.background.spacing };
+  }
+  return {
+    innerWidth: 2000,
+    margin: 24.3,
+    background,
+    writingLineHeight: page.writingLineHeight,
+    activeBufferLines: page.activeBufferLines,
+    lockedBufferLines: page.lockedBufferLines,
+  };
+}
+
+export function canonicalElement(
+  element: InkElementV1,
+  preserveRuntimeStrokeBuffers = false,
+): InkElementV1 {
+  const base = {
+    kind: element.kind,
+    id: element.id,
+    createdAt: element.createdAt,
+    rotation: element.rotation,
+    pivot: canonicalPoint(element.pivot),
+  };
+  if (element.kind === "stroke") {
+    return {
+      ...base,
+      kind: "stroke",
+      tool: element.tool,
+      points:
+        preserveRuntimeStrokeBuffers && element.points instanceof Float64Array
+          ? element.points
+          : [...element.points],
+      style: canonicalStrokeStyle(element.style),
+    };
+  }
+  if (element.kind === "line") {
+    return {
+      ...base,
+      kind: "line",
+      ...canonicalConnectedLinear(element),
+      startNode: element.startNode,
+      endNode: element.endNode,
+    };
+  }
+  if (element.kind === "arrow") {
+    return {
+      ...base,
+      kind: "arrow",
+      ...canonicalConnectedLinear(element),
+      startNode: element.startNode,
+      endNode: element.endNode,
+    };
+  }
+  if (element.kind === "straight-highlighter") {
+    return {
+      ...base,
+      kind: "straight-highlighter",
+      start: canonicalPoint(element.start),
+      end: canonicalPoint(element.end),
+      bend: null,
+      startNode: "none",
+      endNode: "none",
+      style: canonicalStrokeStyle(element.style),
+    };
+  }
+  if (element.kind === "coordinate-system") {
+    const axes = element.axes.map(canonicalPoint);
+    return element.dimension === "2d"
+      ? {
+          ...base,
+          kind: "coordinate-system",
+          origin: canonicalPoint(element.origin),
+          dimension: "2d",
+          axes: [axes[0]!, axes[1]!],
+          style: canonicalOutlineStyle(element.style),
+        }
+      : {
+          ...base,
+          kind: "coordinate-system",
+          origin: canonicalPoint(element.origin),
+          dimension: "3d",
+          axes: [axes[0]!, axes[1]!, axes[2]!],
+          style: canonicalOutlineStyle(element.style),
+        };
+  }
+  if (element.kind === "table") {
+    return {
+      ...base,
+      kind: "table",
+      x: element.x,
+      y: element.y,
+      columnWidth: element.columnWidth,
+      height: element.height,
+      columns: element.columns,
+      headerHeight: element.headerHeight,
+      style: canonicalOutlineStyle(element.style),
+    };
+  }
+  return {
+    ...base,
+    kind: element.kind,
+    x: element.x,
+    y: element.y,
+    width: element.width,
+    height: element.height,
+    style: canonicalShapeStyle(element.style),
+  };
+}
+
+function canonicalConnectedLinear(element: Extract<InkElementV1, { kind: "arrow" | "line" }>) {
+  return {
+    start: canonicalPoint(element.start),
+    end: canonicalPoint(element.end),
+    bend: element.bend === null ? null : canonicalPoint(element.bend),
+    style: canonicalOutlineStyle(element.style),
+    startConnection: canonicalConnection(element.startConnection),
+    endConnection: canonicalConnection(element.endConnection),
+  };
+}
+
+function canonicalPoint(point: { readonly x: number; readonly y: number }): {
+  x: number;
+  y: number;
+} {
+  return { x: point.x, y: point.y };
+}
+
+function canonicalColor(color: ColorV1): ColorV1 {
+  return color.type === "theme-text"
+    ? { type: "theme-text" }
+    : { type: "rgba", value: color.value };
+}
+
+function canonicalStrokeStyle(style: StrokeStyleV1): StrokeStyleV1 {
+  return {
+    color: canonicalColor(style.color),
+    width: style.width,
+    opacity: style.opacity,
+    pressureEnabled: style.pressureEnabled,
+    smoothing: 0.5,
+  };
+}
+
+function canonicalOutlineStyle(style: OutlineStyleV1): OutlineStyleV1 {
+  return {
+    outlineColor: canonicalColor(style.outlineColor),
+    outlineWidth: style.outlineWidth,
+    outlineOpacity: style.outlineOpacity,
+    outlineStyle: style.outlineStyle,
+  };
+}
+
+function canonicalShapeStyle(style: ShapeStyleV1): ShapeStyleV1 {
+  return {
+    ...canonicalOutlineStyle(style),
+    fillColor: style.fillColor === null ? null : canonicalColor(style.fillColor),
+    fillOpacity: style.fillOpacity,
+  };
+}
+
+function canonicalConnection(connection: EndpointConnectionV1 | null): EndpointConnectionV1 | null {
+  return connection === null
+    ? null
+    : { targetId: connection.targetId, anchor: canonicalAnchor(connection.anchor) };
+}
+
+function canonicalAnchor(anchor: ShapeAnchorV1): ShapeAnchorV1 {
+  if (anchor.kind === "box") return { kind: "box", position: anchor.position };
+  if (anchor.kind === "ellipse-cardinal") {
+    return { kind: "ellipse-cardinal", angle: anchor.angle };
+  }
+  if (anchor.kind === "coordinate-origin") return { kind: "coordinate-origin" };
+  return { kind: anchor.kind, index: anchor.index };
+}

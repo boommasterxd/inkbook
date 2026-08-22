@@ -1,0 +1,389 @@
+import { describe, expect, it } from "vitest";
+
+import { deriveRenderBands } from "../../../../src/domain/commands/render-bands";
+import { calculateElementBounds } from "../../../../src/domain/geometry/public";
+import type {
+  BackgroundV1,
+  InkElementV1,
+  InkSnapshotV1,
+} from "../../../../src/domain/schema/public";
+import { PORTABLE_PALETTE_V1 } from "../../../../src/domain/schema/public";
+import { validateSafeSvg } from "../../../../src/persistence/documents/safe-svg-validator";
+import { serializeSvgNumber } from "../../../../src/persistence/documents/svg-number";
+import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
+import { SvgSceneRenderer, type SceneElementRecord } from "../../../../src/rendering/scene";
+import type { InkbookColorScheme } from "../../../../src/obsidian/theme/color-scheme";
+import { createAllElementSnapshot, uuid } from "../../../unit/persistence/serialization/fixtures";
+import {
+  FakeDocument,
+  FakeNode,
+  FakeSceneStore,
+  FakeScheduler,
+  asElement,
+  fakeNode,
+} from "../../../unit/rendering/scene/fakes";
+
+type Attributes = ReadonlyMap<string, string>;
+
+interface Segment {
+  readonly x1: number;
+  readonly x2: number;
+  readonly y1: number;
+  readonly y2: number;
+}
+
+const BACKGROUNDS: readonly BackgroundV1[] = [
+  { type: "none" },
+  { spacing: 100, type: "lines" },
+  { spacing: 80, type: "dots" },
+  { spacing: 80, type: "squares" },
+];
+
+describe("active and standalone SVG graphic parity", () => {
+  it.each(["light", "dark"] as const)(
+    "matches every element, style, and arrow-node presentation in %s mode",
+    (scheme) => {
+      const snapshot = representativeSnapshot();
+      const { safe, standalone } = serializeValidatedSnapshot(snapshot);
+
+      const scene = renderScene(snapshot, standalone.lockedHeight, scheme);
+      const active = activeBandPaths(scene.renderer);
+      const saved = {
+        content: parsePathMarkup(
+          standalone.svg.slice(safe.groups.content.start, safe.groups.content.end),
+        ),
+        highlight: parsePathMarkup(
+          standalone.svg.slice(safe.groups.highlights.start, safe.groups.highlights.end),
+        ),
+      };
+
+      expect(active.highlight.map((path) => semanticPath(path, scheme))).toEqual(
+        saved.highlight.map((path) => semanticPath(path, scheme)),
+      );
+      expect(active.content.map((path) => semanticPath(path, scheme))).toEqual(
+        saved.content.map((path) => semanticPath(path, scheme)),
+      );
+      expect(active.highlight.length + active.content.length).toBeGreaterThan(
+        snapshot.elements.length,
+      );
+      scene.renderer.destroy();
+    },
+  );
+
+  it.each(BACKGROUNDS)(
+    "matches the active $type background pattern to standalone guide geometry",
+    (background) => {
+      const snapshot = representativeSnapshot();
+      snapshot.page.background = background;
+      const { safe, standalone } = serializeValidatedSnapshot(snapshot);
+      const saved = parsePathMarkup(
+        standalone.svg.slice(safe.groups.background.start, safe.groups.background.end),
+      );
+      const savedPage = saved[0];
+      expect(savedPage).toBeDefined();
+      if (savedPage === undefined) return;
+
+      for (const scheme of ["light", "dark"] as const) {
+        const scene = renderScene(snapshot, standalone.lockedHeight, scheme);
+        const active = activeBackground(scene.renderer);
+        expect(semanticPath(active.page, scheme)).toEqual(semanticPath(savedPage, scheme));
+        expect(styleValue(scene.renderer, "--inkbook-page")).toBe(PORTABLE_PALETTE_V1[scheme].page);
+        expect(styleValue(scene.renderer, "--inkbook-guide")).toBe(
+          PORTABLE_PALETTE_V1[scheme].guide,
+        );
+
+        const savedSegments = saved.slice(1).flatMap((path) => pathSegments(path.get("d") ?? ""));
+        if (background.type === "none") {
+          expect(savedSegments).toEqual([]);
+          expect(active.coverage.get("fill")).toBe("none");
+          expect(active.patternPath.get("d")).toBe("");
+        } else {
+          expect(active.pattern.get("x")).toBe(serializeSvgNumber(snapshot.page.margin));
+          expect(active.pattern.get("y")).toBe(serializeSvgNumber(snapshot.page.margin));
+          expect(active.pattern.get("width")).toBe(String(background.spacing));
+          expect(active.pattern.get("height")).toBe(String(background.spacing));
+          expect(active.patternPath.get("class")).toBe("inkbook-theme-guide");
+          expect(activePatternSegments(active, background, standalone.lockedHeight)).toEqual(
+            savedSegments,
+          );
+        }
+        scene.renderer.destroy();
+      }
+    },
+  );
+});
+
+function serializeValidatedSnapshot(snapshot: InkSnapshotV1) {
+  const result = serializeInkbookDocument(snapshot);
+  expect(result.ok, result.ok ? "" : JSON.stringify(result.error)).toBe(true);
+  if (!result.ok) throw new Error("Expected representative snapshot serialization to succeed.");
+  const safe = validateSafeSvg(result.value.svg);
+  expect(safe).not.toBeNull();
+  if (safe === null) throw new Error("Expected a safe standalone SVG envelope.");
+  return { safe, standalone: result.value };
+}
+
+function representativeSnapshot(): InkSnapshotV1 {
+  const snapshot = createAllElementSnapshot();
+  const first = snapshot.elements[0];
+  if (first?.kind === "straight-highlighter") {
+    first.style = { ...first.style, opacity: 0.1234 };
+  }
+  const rectangle = snapshot.elements.find((element) => element.kind === "rectangle");
+  if (rectangle?.kind === "rectangle") {
+    rectangle.style = { ...rectangle.style, fillOpacity: 0.0001, outlineOpacity: 0 };
+  }
+  snapshot.elements.splice(1, 0, freehandHighlighter(15));
+  snapshot.elements.push(
+    arrow(13, 700, "arrow", "diamond", { type: "theme-text" }),
+    arrow(14, 900, "none", "none", { type: "rgba", value: "#00AA66CC" }),
+  );
+  return snapshot;
+}
+
+function arrow(
+  id: number,
+  y: number,
+  startNode: "arrow" | "none",
+  endNode: "diamond" | "none",
+  outlineColor:
+    { readonly type: "theme-text" } | { readonly type: "rgba"; readonly value: `#${string}` },
+): InkElementV1 {
+  return {
+    bend: { x: 350, y: y - 40 },
+    createdAt: id,
+    end: { x: 500, y },
+    endConnection: null,
+    endNode,
+    id: uuid(id),
+    kind: "arrow",
+    pivot: { x: 350, y },
+    rotation: 15,
+    start: { x: 200, y },
+    startConnection: null,
+    startNode,
+    style: {
+      outlineColor,
+      outlineOpacity: id === 13 ? 0.0001 : 1,
+      outlineStyle: id === 13 ? "dashed" : "solid",
+      outlineWidth: 8,
+    },
+  };
+}
+
+function freehandHighlighter(id: number): InkElementV1 {
+  return {
+    createdAt: id,
+    id: uuid(id),
+    kind: "stroke",
+    pivot: { x: 800, y: 650 },
+    points: [700, 650, 0.5, 800, 670, 0.5, 900, 650, 0.5],
+    rotation: 0,
+    style: {
+      color: { type: "rgba", value: "#FFCC0080" },
+      opacity: 1,
+      pressureEnabled: false,
+      smoothing: 0.5,
+      width: 22,
+    },
+    tool: "highlighter",
+  };
+}
+
+function renderScene(
+  snapshot: InkSnapshotV1,
+  lockedHeight: number,
+  scheme: InkbookColorScheme,
+): { readonly renderer: SvgSceneRenderer } {
+  const document = new FakeDocument();
+  const container = new FakeNode(document, "div");
+  const scheduler = new FakeScheduler();
+  const store = sceneStore(snapshot.elements);
+  const renderer = new SvgSceneRenderer({
+    container: asElement(container),
+    inputHandlers: {},
+    layout: {
+      readViewport: () => ({ height: lockedHeight, left: 0, top: 0, width: 2048.6 }),
+    },
+    page: snapshot.page,
+    scheduler,
+    store,
+  });
+  renderer.setPage(snapshot.page, lockedHeight);
+  renderer.setScheme(scheme);
+  scheduler.runAll();
+  return { renderer };
+}
+
+function sceneStore(elements: readonly InkElementV1[]): FakeSceneStore {
+  const store = new FakeSceneStore();
+  const bands = deriveRenderBands(elements);
+  for (const band of ["highlight", "content"] as const) {
+    for (const [rank, element] of bands[band].entries()) {
+      const record: SceneElementRecord = {
+        band,
+        bounds: calculateElementBounds(element),
+        element,
+        geometryVersion: 1,
+        id: element.id,
+        paintVersion: 1,
+        rank,
+      };
+      store.records.set(element.id, record);
+    }
+  }
+  return store;
+}
+
+function activeBandPaths(renderer: SvgSceneRenderer): {
+  readonly content: Attributes[];
+  readonly highlight: Attributes[];
+} {
+  const camera = sceneCamera(renderer);
+  return {
+    content: childAttributes(camera.nodes[3]),
+    highlight: childAttributes(camera.nodes[2]),
+  };
+}
+
+function activeBackground(renderer: SvgSceneRenderer): {
+  readonly coverage: Attributes;
+  readonly page: Attributes;
+  readonly pattern: Attributes;
+  readonly patternPath: Attributes;
+} {
+  const svg = fakeNode(renderer.svg);
+  const camera = sceneCamera(renderer);
+  const definitions = requiredNode(svg.nodes[3], "defs");
+  const pattern = requiredNode(definitions.nodes[0], "pattern");
+  return {
+    coverage: requiredNode(camera.nodes[1], "path").attributes,
+    page: requiredNode(camera.nodes[0], "path").attributes,
+    pattern: pattern.attributes,
+    patternPath: requiredNode(pattern.nodes[0], "path").attributes,
+  };
+}
+
+function sceneCamera(renderer: SvgSceneRenderer): FakeNode {
+  return requiredNode(fakeNode(renderer.svg).nodes[1], "g");
+}
+
+function childAttributes(node: FakeNode | undefined): Attributes[] {
+  return requiredNode(node, "g").nodes.map((child) => requiredNode(child, "path").attributes);
+}
+
+function requiredNode(node: FakeNode | undefined, tagName: string): FakeNode {
+  if (node === undefined || node.tagName !== tagName) {
+    throw new Error(`Expected ${tagName} scene node.`);
+  }
+  return node;
+}
+
+function parsePathMarkup(markup: string): Attributes[] {
+  const paths: Attributes[] = [];
+  const pathPattern = /<path ([^>]+)\/>/gu;
+  for (const match of markup.matchAll(pathPattern)) {
+    const attributes = new Map<string, string>();
+    for (const attribute of match[1]!.matchAll(/([a-z-]+)="([^"]*)"/gu)) {
+      attributes.set(attribute[1]!, attribute[2]!);
+    }
+    paths.push(attributes);
+  }
+  return paths;
+}
+
+function semanticPath(attributes: Attributes, scheme: InkbookColorScheme): object {
+  const className = attributes.get("class") ?? null;
+  return {
+    className,
+    d: pathTokens(attributes.get("d") ?? ""),
+    fill: resolvedPaint(attributes.get("fill") ?? "#000000FF", className, "fill", scheme),
+    fillOpacity: attributes.get("fill-opacity") ?? "1",
+    fillRule: attributes.get("fill-rule") ?? "nonzero",
+    lineCap: attributes.get("stroke-linecap") ?? "butt",
+    lineJoin: attributes.get("stroke-linejoin") ?? "miter",
+    stroke: resolvedPaint(attributes.get("stroke") ?? "none", className, "stroke", scheme),
+    strokeDasharray: attributes.get("stroke-dasharray") ?? "none",
+    strokeOpacity: attributes.get("stroke-opacity") ?? "1",
+    strokeWidth: attributes.get("stroke-width") ?? "1",
+  };
+}
+
+function resolvedPaint(
+  fallback: string,
+  className: string | null,
+  paint: "fill" | "stroke",
+  scheme: InkbookColorScheme,
+): string {
+  if (className === "inkbook-theme-page" && paint === "fill") {
+    return PORTABLE_PALETTE_V1[scheme].page;
+  }
+  if (className === "inkbook-theme-guide" && paint === "stroke") {
+    return PORTABLE_PALETTE_V1[scheme].guide;
+  }
+  if (className === `inkbook-theme-${paint}` || className === "inkbook-theme-stroke-fill") {
+    return PORTABLE_PALETTE_V1[scheme].text;
+  }
+  return fallback;
+}
+
+function pathTokens(path: string): readonly string[] {
+  return [...path.matchAll(/[A-Z]|-?(?:0|[1-9]\d*)(?:\.\d+)?/gu)].map((match) => match[0]);
+}
+
+function pathSegments(path: string): Segment[] {
+  const tokens = pathTokens(path);
+  const segments: Segment[] = [];
+  for (let index = 0; index < tokens.length;) {
+    if (tokens[index] !== "M") throw new Error("Expected background move command.");
+    const x1 = Number(tokens[index + 1]);
+    const y1 = Number(tokens[index + 2]);
+    if (tokens[index + 3] !== "L") throw new Error("Expected background line command.");
+    const x2 = Number(tokens[index + 4]);
+    const y2 = Number(tokens[index + 5]);
+    segments.push({ x1, x2, y1, y2 });
+    index += 6;
+  }
+  return segments;
+}
+
+function activePatternSegments(
+  active: ReturnType<typeof activeBackground>,
+  background: Exclude<BackgroundV1, { type: "none" }>,
+  lockedHeight: number,
+): Segment[] {
+  const startX = Number(active.pattern.get("x"));
+  const startY = Number(active.pattern.get("y"));
+  const spacing = Number(active.pattern.get("width"));
+  const endX = 2048.6 - startX;
+  const endY = lockedHeight - startY;
+  const segments: Segment[] = [];
+  for (let y = startY; y <= endY; y += spacing) {
+    if (background.type === "dots") {
+      for (let x = startX; x <= endX; x += spacing) {
+        segments.push(segment(x, y, x, y));
+      }
+    } else {
+      segments.push(segment(startX, y, endX, y));
+    }
+  }
+  if (background.type === "squares") {
+    for (let x = startX; x <= endX; x += spacing) {
+      segments.push(segment(x, startY, x, endY));
+    }
+  }
+  return segments;
+}
+
+function segment(x1: number, y1: number, x2: number, y2: number): Segment {
+  return {
+    x1: Number(serializeSvgNumber(x1)),
+    x2: Number(serializeSvgNumber(x2)),
+    y1: Number(serializeSvgNumber(y1)),
+    y2: Number(serializeSvgNumber(y2)),
+  };
+}
+
+function styleValue(renderer: SvgSceneRenderer, property: string): unknown {
+  return fakeNode(renderer.svg).style[property];
+}

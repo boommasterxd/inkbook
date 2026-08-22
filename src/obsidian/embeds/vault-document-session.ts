@@ -1,0 +1,482 @@
+import type { FileManager } from "obsidian";
+import type { InkElementV1, InkSnapshotV1 } from "../../domain/schema/public";
+import { ElementStore, type PreparedElementReplacementResult } from "../../domain/store/public";
+import type {
+  DocumentSessionPort,
+  DocumentSessionSnapshot,
+  RecoveryOperationIdentity,
+  RecoveryResult,
+  SaveResult,
+  SessionIdentity,
+  SessionOperationIdentity,
+  UnlockResult,
+} from "../../editor/session/session-port";
+import { AutosaveCoordinator } from "../../persistence/saving/autosave/public";
+import { prepareAutosaveForUnload } from "../../persistence/saving/autosave/session-coordinator";
+import { ensureMigrationBackup } from "../../persistence/documents/migration-backup";
+import { validateVaultPath } from "../../persistence/documents/vault-path";
+import type { DocumentRuntimePort } from "../../persistence/worker/runtime/public";
+import type { DocumentRuntimeFactories, EditableDocumentModel } from "./document-model-port";
+import {
+  createVaultDocumentExecutor,
+  createVaultFallbackFactory,
+  loadVaultDocument,
+  loadVaultDocumentWithExecutorRecovery,
+  type LoadedVaultDocument,
+  type VaultDocumentFilePort,
+} from "./vault-document-loader";
+import {
+  acceptsRecoveryOperation,
+  acceptsSessionOperation,
+  recoveryHasStopped,
+  reloadCleanExternalChange,
+  reloadExternalDocument,
+  restoreWorkerBaseline,
+  saveSessionRecoveryCopy,
+  type RecoveryCompletionOptions,
+  type SessionExternalChangeOutcome,
+  type VaultDocumentSessionHooks,
+} from "./vault-document-recovery";
+import {
+  createConfirmedPersistenceObserver,
+  createVaultAutosaveSession,
+  createVaultClipboardCoordinator,
+  createVaultEditableModel,
+  prepareVaultElementReplacement,
+  requireVaultPage,
+} from "./vault-document-model";
+import { VaultDocumentSessionMutations } from "./vault-document-session-mutations";
+import { ActiveEditorHistory } from "./active-editor/history";
+export type { DocumentRuntimeFactories, EditableDocumentModel } from "./document-model-port";
+
+export interface ActiveDocumentEditorContext {
+  readonly history: ActiveEditorHistory;
+  readonly model: EditableDocumentModel;
+}
+
+export class VaultDocumentSession implements DocumentSessionPort {
+  readonly #cancelled = new Set<number>();
+  readonly #identity: SessionIdentity;
+  readonly #fileManager: FileManager;
+  readonly #files: VaultDocumentFilePort;
+  readonly #hooks: VaultDocumentSessionHooks;
+  readonly #onDispose: () => void;
+  readonly #runtimes: DocumentRuntimeFactories;
+  #autosave: AutosaveCoordinator | undefined;
+  #confirmedRevision = 0;
+  readonly #lifecycle = { disposed: false, preparingForUnload: false };
+  #unloadPreparation: Promise<void> | undefined;
+  #executor: DocumentRuntimePort | undefined;
+  #fallbackUsed = false;
+  #gestureActive = false;
+  #history: ActiveEditorHistory | undefined;
+  #migrationBackupSourceVersion: number | undefined;
+  #model: EditableDocumentModel | undefined;
+  #page: InkSnapshotV1["page"] | undefined;
+  #recoveryOperation: RecoveryOperationIdentity | undefined;
+  #revision = 0;
+  #workerEpoch = 1;
+  constructor(
+    fileManager: FileManager,
+    runtimes: DocumentRuntimeFactories,
+    files: VaultDocumentFilePort,
+    identity: SessionIdentity,
+    onDispose: () => void,
+    hooks: VaultDocumentSessionHooks = {},
+  ) {
+    this.#fileManager = fileManager;
+    this.#runtimes = runtimes;
+    this.#files = files;
+    this.#identity = identity;
+    this.#onDispose = onDispose;
+    this.#hooks = hooks;
+  }
+  get documentModel(): EditableDocumentModel | undefined {
+    return this.#lifecycle.preparingForUnload ? undefined : this.#model;
+  }
+  get editorContext(): ActiveDocumentEditorContext | undefined {
+    const history = this.#history;
+    const model = this.documentModel;
+    return history === undefined || model === undefined ? undefined : { history, model };
+  }
+  cancelOperation(operation: SessionOperationIdentity): void {
+    if (this.#lifecycle.disposed) return;
+    this.#cancelled.add(operation.operationId);
+  }
+  dispose(): void {
+    if (this.#lifecycle.disposed) return;
+    this.#lifecycle.disposed = true;
+    this.#autosave?.dispose();
+    if (this.#autosave === undefined) this.#executor?.terminate();
+    this.#autosave = undefined;
+    this.#executor = undefined;
+    this.#history?.dispose();
+    this.#history = undefined;
+    this.#model = undefined;
+    this.#page = undefined;
+    this.#recoveryOperation = undefined;
+    this.#cancelled.clear();
+    this.#onDispose();
+  }
+
+  prepareForUnload(): Promise<void> {
+    if (this.#unloadPreparation !== undefined) return this.#unloadPreparation;
+    if (this.#lifecycle.disposed) return Promise.resolve();
+    this.#lifecycle.preparingForUnload = true;
+    this.#gestureActive = false;
+    this.#executor?.setLiveInputActive?.(false);
+    this.#recoveryOperation = undefined;
+    this.#cancelled.clear();
+    this.#unloadPreparation = prepareAutosaveForUnload(this.#autosave, () => this.dispose());
+    return this.#unloadPreparation;
+  }
+
+  async notifyExternalChange(
+    operation?: SessionOperationIdentity,
+  ): Promise<SessionExternalChangeOutcome> {
+    if (
+      this.#lifecycle.disposed ||
+      this.#lifecycle.preparingForUnload ||
+      this.#autosave === undefined
+    ) {
+      return "conflict";
+    }
+    return reloadCleanExternalChange({
+      accepts: (candidate) => acceptsSessionOperation(this.#identity, this.#workerEpoch, candidate),
+      baseRevision: () => this.#revision,
+      notify: () => this.#autosave!.notifyExternalChange(),
+      ...(operation === undefined ? {} : { operation }),
+      reload: (recovery) => this.#runExternalReload(recovery),
+    });
+  }
+
+  async #runExternalReload(operation: RecoveryOperationIdentity): Promise<RecoveryResult> {
+    this.#recoveryOperation = operation;
+    const result = await this.#reloadExternal(operation);
+    if (this.#recoveryOperation === operation) this.#recoveryOperation = undefined;
+    return result;
+  }
+  getSnapshot(): DocumentSessionSnapshot {
+    const autosave = this.#autosave;
+    return {
+      ...this.#identity,
+      confirmedRevision: this.#confirmedRevision,
+      dirty: autosave?.dirty ?? false,
+      persistencePending:
+        autosave !== undefined &&
+        (autosave.status === "debouncing" ||
+          autosave.status === "saving" ||
+          autosave.status === "waiting-for-gesture"),
+      revision: this.#revision,
+      workerEpoch: this.#workerEpoch,
+    };
+  }
+  async lockLatest(operation: SessionOperationIdentity): Promise<SaveResult> {
+    const outcome = await this.#autosave?.flush("lock");
+    if (this.#lifecycle.disposed || outcome === undefined || outcome !== "clean") {
+      return { ...operation, revision: this.#revision, status: "failed" };
+    }
+    this.#confirmedRevision = this.#revision;
+    return { ...operation, revision: this.#revision, status: "confirmed" };
+  }
+  async resolveRecovery(
+    action: "reload-external" | "save-local-copy",
+    operation: RecoveryOperationIdentity,
+    completion: RecoveryCompletionOptions = {},
+  ): Promise<RecoveryResult> {
+    if (
+      this.#lifecycle.disposed ||
+      this.#lifecycle.preparingForUnload ||
+      !acceptsRecoveryOperation(this.#identity, this.#revision, this.#workerEpoch, operation)
+    ) {
+      return { ...operation, status: "failed" };
+    }
+    if (this.#recoveryOperation !== undefined) {
+      this.#cancelled.add(this.#recoveryOperation.operationId);
+    }
+    this.#recoveryOperation = operation;
+    const result = await (action === "reload-external"
+      ? this.#reloadExternal(operation)
+      : this.#saveLocalCopy(operation, completion));
+    if (this.#recoveryOperation === operation) this.#recoveryOperation = undefined;
+    this.#cancelled.delete(operation.operationId);
+    return result;
+  }
+  async unlock(operation: SessionOperationIdentity): Promise<UnlockResult> {
+    if (this.#lifecycle.preparingForUnload || this.#model !== undefined) {
+      return { ...operation, status: "load-error" };
+    }
+    try {
+      const executor = await this.#createExecutor();
+      if (this.#lifecycle.disposed || this.#cancelled.delete(operation.operationId)) {
+        executor.terminate();
+        return { ...operation, status: "load-error" };
+      }
+      const recovered = await loadVaultDocumentWithExecutorRecovery({
+        cancelled: () => this.#lifecycle.disposed || this.#cancelled.has(operation.operationId),
+        createFallback: this.#createFallbackFactory(),
+        executor,
+        fallbackUsed: this.#fallbackUsed,
+        load: (candidate, workerEpoch) =>
+          this.#loadDocument(operation, candidate, "unlock", workerEpoch),
+        workerEpoch: this.#workerEpoch,
+      });
+      const loaded = recovered.loaded;
+      if (
+        loaded === undefined ||
+        this.#lifecycle.disposed ||
+        this.#cancelled.delete(operation.operationId)
+      ) {
+        recovered.executor.terminate();
+        return { ...operation, status: "load-error" };
+      }
+      this.#adoptDocument(
+        loaded.snapshot,
+        loaded.outputHash,
+        recovered.executor,
+        loaded.store,
+        loaded.sourceVersion,
+      );
+      return { ...operation, workerEpoch: this.#workerEpoch, status: "active" };
+    } catch {
+      this.#executor?.terminate();
+      this.#executor = undefined;
+      return { ...operation, workerEpoch: this.#workerEpoch, status: "load-error" };
+    }
+  }
+  async #loadDocument(
+    operation: SessionOperationIdentity,
+    executor: DocumentRuntimePort,
+    purpose: "recovery" | "unlock",
+    workerEpoch = this.#workerEpoch,
+  ): Promise<LoadedVaultDocument | undefined> {
+    return loadVaultDocument({
+      cancelled: () => this.#lifecycle.disposed || this.#cancelled.has(operation.operationId),
+      documentId: this.#identity.documentId,
+      executor,
+      operation,
+      purpose,
+      scheduler: (isCancelled) =>
+        this.#runtimes.createStoreScheduler(this.#identity.documentId, isCancelled),
+      files: this.#files,
+      workerEpoch,
+    });
+  }
+  async #createExecutor(): Promise<DocumentRuntimePort> {
+    const created = await createVaultDocumentExecutor({
+      disposed: () => this.#lifecycle.disposed,
+      documentId: this.#identity.documentId,
+      fallbackUsed: this.#fallbackUsed,
+      isGestureActive: () => this.#gestureActive,
+      runtimes: this.#runtimes,
+      sessionId: this.#identity.sessionId,
+      workerEpoch: this.#workerEpoch,
+    });
+    this.#executor = created.executor;
+    this.#fallbackUsed = created.fallbackUsed;
+    this.#workerEpoch = created.workerEpoch;
+    return created.executor;
+  }
+  #createFallbackFactory(): (workerEpoch: number) => DocumentRuntimePort {
+    return createVaultFallbackFactory({
+      adopt: (fallback, workerEpoch) => {
+        this.#fallbackUsed = true;
+        this.#executor = fallback;
+        this.#workerEpoch = workerEpoch;
+      },
+      disposed: () => this.#lifecycle.disposed,
+      isGestureActive: () => this.#gestureActive,
+      runtimes: this.#runtimes,
+      sessionId: this.#identity.sessionId,
+    });
+  }
+  #adoptDocument(
+    snapshot: InkSnapshotV1,
+    outputHash: string,
+    executor: DocumentRuntimePort,
+    store: ElementStore,
+    sourceVersion: number,
+  ): void {
+    this.#migrationBackupSourceVersion =
+      sourceVersion < snapshot.version ? sourceVersion : undefined;
+    this.#page = snapshot.page;
+    this.#revision = snapshot.revision;
+    this.#confirmedRevision = snapshot.revision;
+    const clipboard = createVaultClipboardCoordinator({
+      autosave: () => this.#autosave,
+      disposed: () => this.#lifecycle.disposed,
+      executor: () => this.#executor,
+      now: () => this.#runtimes.now(this.#identity.documentId),
+      revision: () => this.#revision,
+      sessionId: this.#identity.sessionId,
+      workerEpoch: () => this.#workerEpoch,
+    });
+    const mutations = new VaultDocumentSessionMutations({
+      autosave: () => this.#autosave,
+      commitState: (committed) => ({ page: this.#page, revision: this.#revision } = committed),
+      revision: () => this.#revision,
+      setRevision: (revision) => {
+        this.#revision = revision;
+      },
+      store: () => this.#model?.store,
+    });
+    const model = createVaultEditableModel({
+      actions: {
+        commitBandOrder: (order) => mutations.commitBandOrder(order),
+        commitElement: (element) => mutations.commitElements([element]),
+        commitElements: (elements) => mutations.commitElements(elements),
+        prepareElementMutation: (mutation, cancellation) =>
+          this.#lifecycle.disposed
+            ? Promise.resolve({ status: "cancelled", token: null })
+            : store.prepareElementMutation(
+                mutation,
+                this.#runtimes.createStoreScheduler(
+                  this.#identity.documentId,
+                  () => this.#lifecycle.disposed || cancellation.isCancelled(),
+                ),
+              ),
+        commitPreparedElementMutation: (token) => mutations.commitPreparedElementMutation(token),
+        commitPage: (page) => mutations.commitPage(page),
+        encodeClipboard: (selectedIds) => clipboard.encode(selectedIds),
+        planClipboardPaste: (candidates, invocation, previousRepeat) =>
+          clipboard.planPaste(candidates, invocation, previousRepeat),
+        arrangeElements: (ids, action) => mutations.arrangeElements(ids, action),
+        removeElements: (ids) => mutations.removeElements(ids),
+        replaceElements: (elements) => mutations.replaceElements(elements),
+        prepareElementReplacement: (replacements, cancellation) =>
+          this.#prepareElementReplacement(replacements, cancellation),
+        commitPreparedElementReplacement: (token) =>
+          mutations.commitPreparedElementReplacement(token),
+        setGestureActive: (active) => {
+          if (this.#lifecycle.disposed) return;
+          this.#gestureActive = active;
+          this.#executor?.setLiveInputActive?.(active);
+        },
+      },
+      state: {
+        mutationAvailability: () =>
+          this.#revision < Number.MAX_SAFE_INTEGER ? "available" : "revision-exhausted",
+        page: () => requireVaultPage(this.#page),
+        revision: () => this.#revision,
+      },
+      store,
+    });
+    this.#history?.dispose();
+    this.#history = new ActiveEditorHistory(model);
+    this.#model = model;
+    const createFallback = this.#fallbackUsed ? undefined : this.#createFallbackFactory();
+    this.#autosave = createVaultAutosaveSession({
+      beforeExistingWrite: (expectedContent) => this.#preserveMigrationSource(expectedContent),
+      clock: this.#runtimes.clock(this.#identity.documentId),
+      confirmed: createConfirmedPersistenceObserver({
+        active: () => !this.#lifecycle.disposed && !this.#lifecycle.preparingForUnload,
+        documentId: this.#identity.documentId,
+        persisted: this.#hooks.persisted,
+      }),
+      ...(createFallback === undefined ? {} : { createFallback }),
+      currentRevision: () => this.#revision,
+      executor,
+      files: this.#files,
+      identity: this.#identity,
+      initialSnapshot: snapshot,
+      isGestureActive: () => this.#gestureActive,
+      outputHash,
+      page: () => requireVaultPage(this.#page),
+      store,
+      workerEpoch: this.#workerEpoch,
+    });
+    executor.requestPrewarm?.();
+  }
+  async #preserveMigrationSource(expectedContent: string): Promise<void> {
+    const sourceVersion = this.#migrationBackupSourceVersion;
+    if (sourceVersion === undefined) return;
+    const path = validateVaultPath(this.#identity.documentId);
+    if (path === null) throw new Error("migration-backup-invalid-path");
+    await ensureMigrationBackup({
+      original: expectedContent,
+      path,
+      port: this.#files,
+      sourceVersion,
+    });
+    if (this.#migrationBackupSourceVersion === sourceVersion) {
+      this.#migrationBackupSourceVersion = undefined;
+    }
+  }
+  async #prepareElementReplacement(
+    replacements: readonly InkElementV1[],
+    cancellation: { isCancelled(): boolean },
+  ): Promise<PreparedElementReplacementResult> {
+    return prepareVaultElementReplacement({
+      active: this.#autosave !== undefined,
+      cancellation,
+      replacements,
+      scheduler: (isCancelled) =>
+        this.#runtimes.createStoreScheduler(this.#identity.documentId, isCancelled),
+      store: this.#model?.store,
+    });
+  }
+  async #reloadExternal(operation: RecoveryOperationIdentity): Promise<RecoveryResult> {
+    const executor = this.#executor;
+    if (executor === undefined) return { ...operation, status: "failed" };
+    const confirmed = await reloadExternalDocument({
+      adopt: (loaded: LoadedVaultDocument) =>
+        this.#adoptDocument(
+          loaded.snapshot,
+          loaded.outputHash,
+          executor,
+          loaded.store,
+          loaded.sourceVersion,
+        ),
+      load: () => this.#loadDocument(operation, executor, "recovery"),
+      releaseAutosave: () => {
+        this.#autosave?.dispose("preserve-executor");
+        this.#autosave = undefined;
+      },
+      restore: () => {
+        const model = this.#model;
+        if (this.#lifecycle.disposed || model === undefined) return Promise.resolve();
+        return restoreWorkerBaseline({
+          executor,
+          identity: this.#identity,
+          revision: this.#revision,
+          snapshot: model.store.materializeSnapshot({ page: model.page, revision: this.#revision }),
+          workerEpoch: this.#workerEpoch,
+        });
+      },
+      stopped: () => this.#recoveryStopped(operation),
+    });
+    return { ...operation, status: confirmed ? "confirmed" : "failed" };
+  }
+
+  async #saveLocalCopy(
+    operation: RecoveryOperationIdentity,
+    completion: RecoveryCompletionOptions,
+  ): Promise<RecoveryResult> {
+    return saveSessionRecoveryCopy({
+      completion,
+      documentId: this.#identity.documentId,
+      executor: this.#executor,
+      fileManager: this.#fileManager,
+      files: this.#files,
+      operation,
+      snapshot: () => {
+        const model = this.#model;
+        return model?.store.materializeSnapshot({
+          page: model.page,
+          revision: operation.baseRevision,
+        });
+      },
+      stopped: () => this.#recoveryStopped(operation),
+      workerEpoch: this.#workerEpoch,
+    });
+  }
+  #recoveryStopped(operation: RecoveryOperationIdentity): boolean {
+    return recoveryHasStopped(
+      this.#lifecycle.disposed,
+      this.#recoveryOperation,
+      operation,
+      this.#revision,
+      this.#cancelled,
+    );
+  }
+}

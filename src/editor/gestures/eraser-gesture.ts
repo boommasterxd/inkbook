@@ -1,0 +1,286 @@
+import { calculateElementBounds } from "../../domain/geometry/bounds";
+import type { Bounds } from "../../domain/geometry/public";
+import type { InkElementV1, PointV1 } from "../../domain/schema/public";
+import {
+  createSweptCapsuleCheck,
+  sweptCapsuleTouchesElement,
+  type SweptCapsuleCheck,
+} from "./eraser-intersection";
+
+const ERASER_FADE_MS = 160;
+const EXACT_WORK_UNITS_PER_UPDATE = 12_288;
+const FINALIZATION_CHECKPOINT_WORK_UNITS = 1_024;
+const UPDATE_SLICE_BUDGET_MS = 8;
+export const MAX_RETAINED_ERASER_SWEEPS = 512;
+
+export function screenPixelsToPageUnits(screenPixels: number, zoom: number): number {
+  if (!Number.isFinite(screenPixels) || screenPixels < 0) {
+    throw new RangeError("Screen pixels must be finite and non-negative.");
+  }
+  if (!Number.isFinite(zoom) || zoom <= 0) {
+    throw new RangeError("Zoom must be finite and positive.");
+  }
+  return screenPixels / zoom;
+}
+
+interface PendingSweep {
+  readonly end: PointV1;
+  readonly start: PointV1;
+}
+
+interface ActiveSweep extends PendingSweep {
+  readonly ids: readonly string[];
+  check: SweptCapsuleCheck | null;
+  index: number;
+}
+
+export interface EraserQuerySink {
+  add(id: string): void;
+}
+
+export interface EraserQueryPort {
+  query(bounds: Bounds, sink: EraserQuerySink): void;
+  getElement(id: string): InkElementV1 | undefined;
+}
+
+export interface EraserFeedbackPort {
+  setCandidateFade(ids: ReadonlySet<string>, durationMs: number): void;
+  addCandidateFade?(ids: readonly string[], durationMs: number): void;
+  clearCandidateFade(ids: ReadonlySet<string>): void;
+}
+
+export interface EraserSliceScheduler {
+  isCancelled(): boolean;
+  shouldYield(): boolean;
+  yieldControl(): Promise<void>;
+}
+
+export type EraserUpdateResult = "accepted" | "cancelled";
+
+export class EraserSweep {
+  readonly #candidates = new Set<string>();
+  readonly #feedback: EraserFeedbackPort;
+  readonly #pendingSweeps: PendingSweep[] = [];
+  readonly #query: EraserQueryPort;
+  readonly #radius: number;
+  readonly #updateAdded: string[] = [];
+  #activeSweep: ActiveSweep | null = null;
+  #previous: PointV1;
+  #state: "active" | "cancelled" | "finished" | "finishing" = "active";
+
+  public constructor(
+    start: PointV1,
+    radius: number,
+    query: EraserQueryPort,
+    feedback: EraserFeedbackPort,
+  ) {
+    if (!Number.isFinite(radius) || radius <= 0)
+      throw new RangeError("Eraser radius must be positive.");
+    this.#previous = finitePoint(start);
+    this.#radius = radius;
+    this.#query = query;
+    this.#feedback = feedback;
+    this.#pendingSweeps.push({ end: this.#previous, start: this.#previous });
+    this.#processUpdatePending();
+  }
+
+  public get candidateCount(): number {
+    return this.#candidates.size;
+  }
+
+  public get candidateIds(): ReadonlySet<string> {
+    return new Set(this.#candidates);
+  }
+
+  public get retainedCandidateIdCount(): number {
+    return this.#activeSweep?.ids.length ?? 0;
+  }
+
+  public get retainedSweepCount(): number {
+    return this.#pendingSweeps.length + Number(this.#activeSweep !== null);
+  }
+
+  public update(pointValue: PointV1): EraserUpdateResult {
+    if (this.#state === "cancelled") return "cancelled";
+    if (this.#state !== "active") throw new Error("A finalized eraser sweep cannot be updated.");
+    assertFinitePoint(pointValue);
+    if (pointValue.x === this.#previous.x && pointValue.y === this.#previous.y) {
+      this.#processUpdatePending();
+      return "accepted";
+    }
+    const point = { x: pointValue.x, y: pointValue.y };
+    let processed = false;
+    if (this.retainedSweepCount >= MAX_RETAINED_ERASER_SWEEPS) {
+      this.#processUpdatePending();
+      processed = true;
+    }
+    if (this.retainedSweepCount >= MAX_RETAINED_ERASER_SWEEPS) {
+      this.revert();
+      return "cancelled";
+    }
+    this.#pendingSweeps.push({ end: point, start: this.#previous });
+    this.#previous = point;
+    if (!processed) this.#processUpdatePending();
+    return "accepted";
+  }
+
+  public async commit(
+    remove: (ids: ReadonlySet<string>) => boolean | Promise<boolean>,
+    scheduler: EraserSliceScheduler,
+  ): Promise<boolean> {
+    if (this.#state === "cancelled") return false;
+    if (this.#state !== "active") throw new Error("An eraser sweep can only be committed once.");
+    this.#state = "finishing";
+    const added: string[] = [];
+    while (this.retainedSweepCount > 0) {
+      if (scheduler.isCancelled()) return this.#cancelFinalization();
+      this.#processPending(FINALIZATION_CHECKPOINT_WORK_UNITS, added);
+      if (this.retainedSweepCount > 0 && scheduler.shouldYield()) await scheduler.yieldControl();
+    }
+    this.#publishAdded(added);
+    if (scheduler.isCancelled()) return this.#cancelFinalization();
+    try {
+      return this.#candidates.size > 0 && (await remove(this.#candidates));
+    } finally {
+      this.#feedback.clearCandidateFade(this.#candidates);
+      this.#candidates.clear();
+      this.#state = "finished";
+    }
+  }
+
+  public revert(): void {
+    if (this.#state === "finished" || this.#state === "cancelled") return;
+    this.#feedback.clearCandidateFade(this.#candidates);
+    this.#candidates.clear();
+    this.#activeSweep = null;
+    this.#pendingSweeps.length = 0;
+    this.#state = "cancelled";
+  }
+
+  #cancelFinalization(): false {
+    this.revert();
+    return false;
+  }
+
+  #processUpdatePending(): void {
+    const deadline = performance.now() + UPDATE_SLICE_BUDGET_MS;
+    const added = this.#updateAdded;
+    for (
+      let remaining = EXACT_WORK_UNITS_PER_UPDATE;
+      remaining > 0 && this.retainedSweepCount > 0;
+      remaining -= FINALIZATION_CHECKPOINT_WORK_UNITS
+    ) {
+      this.#processPending(Math.min(remaining, FINALIZATION_CHECKPOINT_WORK_UNITS), added);
+      if (performance.now() >= deadline) break;
+    }
+    this.#publishAdded(added);
+    added.length = 0;
+  }
+
+  #processPending(workUnits: number, added: string[]): void {
+    let remaining = workUnits;
+    while (remaining > 0) {
+      const sweep = this.#activeSweep ?? this.#activateNextSweep();
+      if (sweep === null) break;
+      const before = remaining;
+      remaining = this.#advanceActiveSweep(sweep, remaining, added);
+      if (sweep.index >= sweep.ids.length) this.#activeSweep = null;
+      if (remaining === before && this.#activeSweep !== null) break;
+    }
+  }
+
+  #publishAdded(added: readonly string[]): void {
+    if (added.length === 0) return;
+    if (this.#feedback.addCandidateFade !== undefined)
+      this.#feedback.addCandidateFade(added, ERASER_FADE_MS);
+    else this.#feedback.setCandidateFade(this.#candidates, ERASER_FADE_MS);
+  }
+
+  #activateNextSweep(): ActiveSweep | null {
+    const pending = this.#pendingSweeps.shift();
+    if (pending === undefined) return null;
+    const ids: string[] = [];
+    this.#query.query(sweepBounds(pending.start, pending.end, this.#radius), {
+      add: (id) => {
+        if (!this.#candidates.has(id)) ids.push(id);
+      },
+    });
+    this.#activeSweep = { ...pending, check: null, ids, index: 0 };
+    return this.#activeSweep;
+  }
+
+  #advanceActiveSweep(sweep: ActiveSweep, workUnits: number, added: string[]): number {
+    let remaining = workUnits;
+    while (sweep.index < sweep.ids.length) {
+      const id = sweep.ids[sweep.index]!;
+      if (this.#candidates.has(id)) {
+        sweep.index += 1;
+        sweep.check = null;
+        continue;
+      }
+      const check = this.#ensureCheck(sweep, id);
+      if (check === null) {
+        sweep.index += 1;
+        continue;
+      }
+      const progress = check.advance(remaining);
+      remaining -= progress.workUnits;
+      if (progress.result === null) return remaining;
+      sweep.check = null;
+      sweep.index += 1;
+      if (progress.result) {
+        this.#candidates.add(id);
+        added.push(id);
+      }
+      if (remaining <= 0) return remaining;
+    }
+    return remaining;
+  }
+
+  #ensureCheck(sweep: ActiveSweep, id: string): SweptCapsuleCheck | null {
+    if (sweep.check !== null) return sweep.check;
+    const element = this.#query.getElement(id);
+    if (element === undefined) return null;
+    sweep.check = createSweptCapsuleCheck(sweep.start, sweep.end, this.#radius, element);
+    return sweep.check;
+  }
+}
+
+export function sweepTouchesElement(
+  start: PointV1,
+  end: PointV1,
+  radius: number,
+  element: InkElementV1,
+): boolean {
+  const bounds = calculateElementBounds(element);
+  if (!boundsOverlap(bounds, sweepBounds(start, end, radius))) return false;
+  return sweptCapsuleTouchesElement(start, end, radius, element);
+}
+
+function sweepBounds(start: PointV1, end: PointV1, radius: number): Bounds {
+  return {
+    minX: Math.min(start.x, end.x) - radius,
+    minY: Math.min(start.y, end.y) - radius,
+    maxX: Math.max(start.x, end.x) + radius,
+    maxY: Math.max(start.y, end.y) + radius,
+  };
+}
+
+function boundsOverlap(left: Bounds, right: Bounds): boolean {
+  return (
+    left.minX <= right.maxX &&
+    left.maxX >= right.minX &&
+    left.minY <= right.maxY &&
+    left.maxY >= right.minY
+  );
+}
+
+function finitePoint(point: PointV1): PointV1 {
+  assertFinitePoint(point);
+  return { x: point.x, y: point.y };
+}
+
+function assertFinitePoint(point: PointV1): void {
+  if (!Number.isFinite(point.x) || !Number.isFinite(point.y))
+    throw new RangeError("Eraser points must be finite.");
+}

@@ -1,0 +1,244 @@
+import { createBuiltInDeviceSettings, createBuiltInSettings } from "./defaults";
+import { migrateSettingsToV1 } from "./migrations";
+import { validateCustomVaultFolderPath } from "./path";
+import {
+  BACKGROUND_TYPES,
+  LINE_SPACINGS,
+  MOTION_PREFERENCES,
+  PATTERN_SPACINGS,
+  PEN_TAP_INSERTIONS,
+  STARTUP_TOOLS,
+  type FilePlacementV1,
+  type InkbookDeviceSettingsV1,
+  type InkbookSettingsV1,
+  type SettingsDiagnostic,
+  type SettingsLoadResult,
+} from "./types";
+import {
+  hasExactKeys,
+  isIntegerInRange,
+  isOneOf,
+  isRecord,
+  loadToolDefaults,
+  validOrDefault,
+} from "./validation";
+
+function invalid(diagnostics: SettingsDiagnostic[], path: string): void {
+  diagnostics.push({ code: "settings.invalid-field", path });
+}
+
+function loadBackgroundSpacing(
+  input: unknown,
+  fallback: InkbookSettingsV1["pageDefaults"]["backgroundSpacing"],
+  diagnostics: SettingsDiagnostic[],
+): InkbookSettingsV1["pageDefaults"]["backgroundSpacing"] {
+  if (!hasExactKeys(input, ["lines", "dots", "squares"])) {
+    invalid(diagnostics, "pageDefaults.backgroundSpacing");
+    return structuredClone(fallback);
+  }
+  return {
+    lines: validOrDefault(
+      input.lines,
+      fallback.lines,
+      (value): value is typeof fallback.lines => isOneOf(value, LINE_SPACINGS),
+      diagnostics,
+      "pageDefaults.backgroundSpacing.lines",
+    ),
+    dots: validOrDefault(
+      input.dots,
+      fallback.dots,
+      (value): value is typeof fallback.dots => isOneOf(value, PATTERN_SPACINGS),
+      diagnostics,
+      "pageDefaults.backgroundSpacing.dots",
+    ),
+    squares: validOrDefault(
+      input.squares,
+      fallback.squares,
+      (value): value is typeof fallback.squares => isOneOf(value, PATTERN_SPACINGS),
+      diagnostics,
+      "pageDefaults.backgroundSpacing.squares",
+    ),
+  };
+}
+
+function loadPageDefaults(
+  input: unknown,
+  fallback: InkbookSettingsV1["pageDefaults"],
+  diagnostics: SettingsDiagnostic[],
+): InkbookSettingsV1["pageDefaults"] {
+  const keys = [
+    "backgroundType",
+    "backgroundSpacing",
+    "writingLineHeight",
+    "activeBufferLines",
+    "lockedBufferLines",
+  ];
+  if (!hasExactKeys(input, keys)) {
+    invalid(diagnostics, "pageDefaults");
+    return structuredClone(fallback);
+  }
+
+  return {
+    backgroundType: validOrDefault(
+      input.backgroundType,
+      fallback.backgroundType,
+      (value): value is InkbookSettingsV1["pageDefaults"]["backgroundType"] =>
+        isOneOf(value, BACKGROUND_TYPES),
+      diagnostics,
+      "pageDefaults.backgroundType",
+    ),
+    backgroundSpacing: loadBackgroundSpacing(
+      input.backgroundSpacing,
+      fallback.backgroundSpacing,
+      diagnostics,
+    ),
+    writingLineHeight: validOrDefault(
+      input.writingLineHeight,
+      fallback.writingLineHeight,
+      (value): value is number => isIntegerInRange(value, 50, 200),
+      diagnostics,
+      "pageDefaults.writingLineHeight",
+    ),
+    activeBufferLines: validOrDefault(
+      input.activeBufferLines,
+      fallback.activeBufferLines,
+      (value): value is number => isIntegerInRange(value, 1, 8),
+      diagnostics,
+      "pageDefaults.activeBufferLines",
+    ),
+    lockedBufferLines: validOrDefault(
+      input.lockedBufferLines,
+      fallback.lockedBufferLines,
+      (value): value is 0 | 1 => value === 0 || value === 1,
+      diagnostics,
+      "pageDefaults.lockedBufferLines",
+    ),
+  };
+}
+
+function loadFilePlacement(
+  value: unknown,
+  fallback: FilePlacementV1,
+  diagnostics: SettingsDiagnostic[],
+): FilePlacementV1 {
+  if (!isRecord(value) || typeof value.mode !== "string") {
+    invalid(diagnostics, "filePlacement");
+    return structuredClone(fallback);
+  }
+  if (value.mode === "obsidian-attachment-folder" || value.mode === "note-folder") {
+    if (hasExactKeys(value, ["mode"])) return { mode: value.mode };
+  } else if (
+    value.mode === "custom-vault-folder" &&
+    hasExactKeys(value, ["mode", "folder"]) &&
+    typeof value.folder === "string"
+  ) {
+    const result = validateCustomVaultFolderPath(value.folder);
+    if (result.valid) return { mode: value.mode, folder: result.path };
+  }
+  invalid(diagnostics, "filePlacement");
+  return structuredClone(fallback);
+}
+
+type PreparedSettingsRoot<T> =
+  | {
+      readonly valid: true;
+      readonly value: Record<string, unknown>;
+      diagnostics: SettingsDiagnostic[];
+    }
+  | { readonly valid: false; readonly result: SettingsLoadResult<T> };
+
+function prepareSettingsRoot<T>(
+  input: unknown,
+  fallback: T,
+  keys: readonly string[],
+): PreparedSettingsRoot<T> {
+  const migrated = migrateSettingsToV1(input);
+  const diagnostics = [...migrated.diagnostics];
+  if (diagnostics.length > 0) return { valid: false, result: { value: fallback, diagnostics } };
+  if (!hasExactKeys(migrated.value, keys) || migrated.value.version !== 1) {
+    diagnostics.push({ code: "settings.invalid-root", path: "$" });
+    return { valid: false, result: { value: fallback, diagnostics } };
+  }
+  return { valid: true, value: migrated.value, diagnostics };
+}
+
+export function loadSettings(input: unknown): SettingsLoadResult<InkbookSettingsV1> {
+  const fallback = createBuiltInSettings();
+  const prepared = prepareSettingsRoot(input, fallback, [
+    "version",
+    "startupTool",
+    "toolDefaults",
+    "pageDefaults",
+    "filePlacement",
+  ]);
+  if (!prepared.valid) return prepared.result;
+  const { value, diagnostics } = prepared;
+
+  const placement = loadFilePlacement(value.filePlacement, fallback.filePlacement, diagnostics);
+  return {
+    value: {
+      version: 1,
+      startupTool: validOrDefault(
+        value.startupTool,
+        fallback.startupTool,
+        (value): value is InkbookSettingsV1["startupTool"] => isOneOf(value, STARTUP_TOOLS),
+        diagnostics,
+        "startupTool",
+      ),
+      toolDefaults: loadToolDefaults(value.toolDefaults, fallback.toolDefaults, diagnostics),
+      pageDefaults: loadPageDefaults(value.pageDefaults, fallback.pageDefaults, diagnostics),
+      filePlacement: placement,
+    },
+    diagnostics,
+  };
+}
+
+export function loadDeviceSettings(input: unknown): SettingsLoadResult<InkbookDeviceSettingsV1> {
+  const fallback = createBuiltInDeviceSettings();
+  const prepared = prepareSettingsRoot(input, fallback, [
+    "version",
+    "fingerDrawingEnabled",
+    "penTapInsertion",
+    "leftHandedToolbar",
+    "motion",
+  ]);
+  if (!prepared.valid) return prepared.result;
+  const { value, diagnostics } = prepared;
+
+  const booleanValue = (value: unknown): value is boolean => typeof value === "boolean";
+  return {
+    value: {
+      version: 1,
+      fingerDrawingEnabled: validOrDefault(
+        value.fingerDrawingEnabled,
+        fallback.fingerDrawingEnabled,
+        booleanValue,
+        diagnostics,
+        "fingerDrawingEnabled",
+      ),
+      penTapInsertion: validOrDefault(
+        value.penTapInsertion,
+        fallback.penTapInsertion,
+        (value): value is InkbookDeviceSettingsV1["penTapInsertion"] =>
+          isOneOf(value, PEN_TAP_INSERTIONS),
+        diagnostics,
+        "penTapInsertion",
+      ),
+      leftHandedToolbar: validOrDefault(
+        value.leftHandedToolbar,
+        fallback.leftHandedToolbar,
+        booleanValue,
+        diagnostics,
+        "leftHandedToolbar",
+      ),
+      motion: validOrDefault(
+        value.motion,
+        fallback.motion,
+        (value): value is InkbookDeviceSettingsV1["motion"] => isOneOf(value, MOTION_PREFERENCES),
+        diagnostics,
+        "motion",
+      ),
+    },
+    diagnostics,
+  };
+}

@@ -4,9 +4,7 @@ Inkbook is an Obsidian plugin for creating and editing responsive handwriting em
 
 ## Project status
 
-The repository is ready for implementation, but the editor itself is not implemented yet. The current code provides a minimal desktop-and-mobile-compatible Obsidian plugin entry point, a production build, one host-boundary Integration test, strict quality gates, dependency automation, secret scanning, and release automation.
-
-The first release is specified to include:
+The first-release implementation is present and is being validated as a release candidate. It includes:
 
 - pen, highlighter, straight highlighter, eraser, selection, and lasso tools
 - lines, arrows, closed shapes, coordinate systems, and configurable tables
@@ -16,7 +14,7 @@ The first release is specified to include:
 - locked SVG previews across tabs, panes, and pop-out windows with one active editor per workspace
 - responsive interaction with the required 10,000-stroke acceptance dataset
 
-These are specification targets, not claims about the current scaffold. See [docs/specification.md](docs/specification.md) for the normative scope and [docs/quality-and-testing.md](docs/quality-and-testing.md) for acceptance budgets.
+The automated suite covers pure domain behavior and focused Obsidian, renderer, worker, vault, clipboard, and settings boundaries through deterministic adapters. Real-device validation in Obsidian, including mobile hardware, pop-out windows, pen input, and external SVG editors, remains a manual release step. See [docs/specification.md](docs/specification.md) for the normative scope and [docs/quality-and-testing.md](docs/quality-and-testing.md) for acceptance budgets.
 
 ## Requirements
 
@@ -35,33 +33,38 @@ Development and production output is written to `dist/`. Copy its contents, or l
 
 Useful commands:
 
-| Command                  | Purpose                                                                     |
-| ------------------------ | --------------------------------------------------------------------------- |
-| `npm run dev`            | Watch source and emit a development build with inline source maps.          |
-| `npm run build`          | Create the minified production plugin package under `dist/`.                |
-| `npm test`               | Run all currently implemented automated tests.                              |
-| `npm run test:coverage`  | Run tests with the 85 percent executable-source line threshold.             |
-| `npm run lint`           | Enforce Obsidian, architecture, size, complexity, and mobile-runtime rules. |
-| `npm run typecheck`      | Type-check plugin source separately from Node-based test tooling.           |
-| `npm run ci`             | Run every local gate used by the required GitHub `CI` check.                |
-| `npm run benchmark`      | Verify the deterministic production-bundle size budget.                     |
-| `npm run package:verify` | Verify versions and the exact Obsidian release-artifact envelope.           |
+| Command                    | Purpose                                                                     |
+| -------------------------- | --------------------------------------------------------------------------- |
+| `npm run dev`              | Watch source and emit a development build with inline source maps.          |
+| `npm run build`            | Create the minified production plugin package under `dist/`.                |
+| `npm test`                 | Run the Unit and focused Integration test suites.                           |
+| `npm run test:coverage`    | Run tests with the 85 percent executable-source line threshold.             |
+| `npm run test:unit`        | Run only deterministic Unit tests.                                          |
+| `npm run test:integration` | Run only focused boundary Integration tests.                                |
+| `npm run test:performance` | Run the serial deterministic performance profiles.                          |
+| `npm run lint`             | Enforce Obsidian, architecture, size, complexity, and mobile-runtime rules. |
+| `npm run typecheck`        | Type-check plugin source separately from Node-based test tooling.           |
+| `npm run ci`               | Run every local gate used by the required GitHub `CI` check.                |
+| `npm run benchmark`        | Run performance profiles and verify their recorded budgets.                 |
+| `npm run package:verify`   | Verify versions and the exact Obsidian release-artifact envelope.           |
 
-The complete gate also checks formatting, duplication, dead code, dependency vulnerabilities, coverage, the production build, and package contents.
+The complete gate also checks formatting, duplication, dead code, dependency vulnerabilities, coverage, deterministic performance budgets, the production build, and package contents.
 
 ## Architecture
 
-The target implementation follows five dependency-directed responsibility areas:
+The implementation follows five dependency-directed responsibility areas:
 
 - `domain`: pure elements, geometry, commands, schemas, and spatial data
 - `editor`: input arbitration, gestures, selection, sessions, and autosave scheduling
-- `rendering`: React application chrome and the separate imperative SVG scene
+- `rendering`: asynchronously loaded React application chrome and the separate imperative SVG scene
 - `persistence`: document codecs, migrations, worker tasks, and save orchestration
 - `obsidian`: plugin lifecycle, embeds, settings, host adapters, and host styling
 
 `src/main.ts` is the only source file directly under `src/` and remains a thin build entry. Static plugin CSS belongs to `src/obsidian/styles/`, tests mirror source ownership under `test/`, and generated release files remain under ignored `dist/`. Empty architecture folders are not created before they own real implementation.
 
-The exact dependency rules and target folder topology are defined in [docs/specification.md](docs/specification.md#source-topology-and-module-boundaries). Runtime ownership and data flows are visualized in [docs/architecture-flows.md](docs/architecture-flows.md), and the public Obsidian boundary is defined in [docs/obsidian-integration.md](docs/obsidian-integration.md).
+React is restricted to toolbar and flyout chrome. The production build generates the complete activation runtime and its nested React editor-chrome and document-worker modules from checked-in TypeScript, compresses them, and embeds them in `main.js`; activation decodes owned modules locally without a network request. Pointer input, camera updates, snapping, culling, animation frames, and SVG reconciliation remain imperative hot paths. The exact dependency rules and folder topology are defined in [docs/specification.md](docs/specification.md#source-topology-and-module-boundaries). Runtime ownership and data flows are visualized in [docs/architecture-flows.md](docs/architecture-flows.md), and the public Obsidian boundary is defined in [docs/obsidian-integration.md](docs/obsidian-integration.md).
+
+The production build is reproducible from the public source and uses ordinary esbuild and Terser minification. `scripts/build.mjs` gzip-compresses and Base91-encodes the generated activation runtime, React 18 editor chrome, and document worker inside `main.js`. The small synchronous Obsidian entry decompresses the activation runtime and imports it through a locally owned Blob URL; the activation runtime loads the nested editor chrome and worker through the same local mechanism when needed. This is build-time packaging, not purpose-hiding obfuscation: the complete TypeScript entries remain in `src/`, no code is fetched from the network, and neither `eval` nor the `Function` constructor is used. Package verification rejects unresolved placeholders, missing runtime markers, source maps, and extra release artifacts without imposing an arbitrary JavaScript byte limit.
 
 ## GitHub automation
 

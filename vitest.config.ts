@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 const projectRoot = fileURLToPath(new URL(".", import.meta.url));
+const exposeGarbageCollector = process.execArgv.includes("--expose-gc");
 
 export default defineConfig({
   resolve: {
@@ -11,8 +12,9 @@ export default defineConfig({
     },
   },
   test: {
+    execArgv: ["--max-old-space-size=384", ...(exposeGarbageCollector ? ["--expose-gc"] : [])],
     coverage: {
-      include: ["src/**/*.ts"],
+      include: ["src/**/*.{ts,tsx}"],
       provider: "v8",
       reporter: ["text", "json-summary", "lcov"],
       reportsDirectory: "coverage",
@@ -21,7 +23,11 @@ export default defineConfig({
       },
     },
     environment: "node",
-    include: ["test/unit/**/*.test.ts", "test/integration/**/*.test.ts"],
+    include: [
+      "test/unit/**/*.test.{ts,tsx}",
+      "test/integration/**/*.test.{ts,tsx}",
+      "test/performance/**/*.test.{ts,tsx}",
+    ],
     passWithNoTests: false,
     root: projectRoot,
   },

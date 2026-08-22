@@ -1,0 +1,9 @@
+export const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+export const VIEWPORT_OVERSCAN_SCREEN_PX = 80;
+export const PATH_CACHE_MAX_ENTRIES = 4_096;
+export const PATH_CACHE_MAX_BYTES = 32 * 1_024 * 1_024;
+export const DEFAULT_FRAME_BUDGET_MS = 8;
+export const MOUNT_SLICE_STROKE_POINT_BUDGET = 4_096;
+export const MOUNT_SLICE_GEOMETRY_COST_BUDGET = 16_384;
+// Use the stricter supported profile because the scene renderer is platform-neutral.
+export const DENSE_RECONCILIATION_VISIBLE_ELEMENT_THRESHOLD = 900;

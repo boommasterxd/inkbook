@@ -1,1 +1,1 @@
-export { default } from "./obsidian/inkbook-plugin";
+export { default } from "./obsidian/plugin-loader";
