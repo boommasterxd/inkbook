@@ -127,16 +127,16 @@ function createFixture(
 }
 
 describe("active editor unlock preview motion", () => {
-  it("keeps the preview until measured and completes the full 240 ms handoff", () => {
+  it("keeps the preview in the same block until the in-place editor is ready", () => {
     const fixture = createFixture("full", true);
     expect(fixture.rootClasses.contains("inkbook-active-preparing")).toBe(true);
     expect(fixture.container.style.blockSize).toBe("96px");
     expect(fixture.preview.hidden).toBe(false);
 
-    fixture.setActiveBlockSize("240px");
+    fixture.setActiveBlockSize("96px");
     fixture.handoff.ready(fixture.completed);
     expect(fixture.rootClasses.contains("inkbook-active-transitioning")).toBe(true);
-    expect(fixture.container.style.blockSize).toBe("240px");
+    expect(fixture.container.style.blockSize).toBe("96px");
     expect(fixture.preview.hidden).toBe(false);
     expect(fixture.completed).not.toHaveBeenCalled();
 
@@ -149,7 +149,7 @@ describe("active editor unlock preview motion", () => {
 
   it("applies reduced motion immediately after the stable measurement", () => {
     const fixture = createFixture("reduced");
-    fixture.setActiveBlockSize("240px");
+    fixture.setActiveBlockSize("96px");
     fixture.handoff.ready();
     expect(fixture.rootClasses.contains("inkbook-active-transitioning")).toBe(false);
     expect(fixture.rootClasses.contains("inkbook-active-ready")).toBe(true);
@@ -159,7 +159,7 @@ describe("active editor unlock preview motion", () => {
 
   it("follows system motion changes and releases lifecycle resources", () => {
     const fixture = createFixture("system");
-    fixture.setActiveBlockSize("240px");
+    fixture.setActiveBlockSize("96px");
     fixture.handoff.ready();
     expect(fixture.timerPending()).toBe(true);
 
@@ -175,7 +175,7 @@ describe("active editor unlock preview motion", () => {
 
   it("cancels a pending handoff when the scene is disposed", () => {
     const fixture = createFixture("system");
-    fixture.setActiveBlockSize("240px");
+    fixture.setActiveBlockSize("96px");
     fixture.handoff.ready();
     expect(fixture.timerPending()).toBe(true);
 

@@ -13,7 +13,7 @@ All plugin runtime code and static plugin styles live in responsibility-specific
 ## Obsidian Integration Boundaries
 
 - Use documented public Obsidian APIs. Live Preview uses `registerEditorExtension()`, Reading view uses `registerMarkdownPostProcessor()` with owned `MarkdownRenderChild` instances, active-note text changes use `Editor`, and vault files use `Vault` and `FileManager`.
-- Prefer progressive enhancement. If a native SVG embed cannot be identified through documented context, preserve Obsidian's static preview instead of depending on private DOM structure.
+- Use the explicit `!inkbook` Markdown embed contract. Ordinary native SVG embeds remain host-owned and MUST NOT be intercepted. Reading view and Live Preview replace only an exact standalone Inkbook block through documented lifecycle APIs, without private DOM structure.
 - Own DOM, listeners, timers, observers, React roots, portals, and pointer work through an Obsidian `Component` or widget lifecycle. A workspace coordinator owns only the authoritative session and its worker while active or draining a detached dirty save. Support pop-out windows through the owning document and window.
 - Use `Plugin.loadData()` and `Plugin.saveData()` for vault settings and `App.loadLocalStorage()` and `App.saveLocalStorage()` for device-local, vault-specific preferences.
 - Preserve desktop and mobile support without Node.js, Electron, Adapter APIs, private host fields, or private CSS selectors.

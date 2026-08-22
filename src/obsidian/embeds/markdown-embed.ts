@@ -10,8 +10,8 @@ interface MarkdownSuppressedRange {
   readonly to: number;
 }
 
-const WIKI_EMBED_PATTERN = /!\[\[([^\]\n]+)\]\]/gu;
-const MARKDOWN_EMBED_PATTERN = /!\[[^\]\n]*\]\(([^)\n]+)\)/gu;
+const WIKI_EMBED_PATTERN = /!inkbook\[\[([^\]\n]+)\]\]/gu;
+const MARKDOWN_EMBED_PATTERN = /!inkbook\[[^\]\n]*\]\(([^)\n]+)\)/gu;
 
 export const MARKDOWN_EMBED_LIMITS = Object.freeze({
   inputBytes: 8 * 1024 * 1024,
@@ -33,6 +33,15 @@ function linkpathFromMarkdownTarget(target: string): string {
 function isSvgLinkpath(linkpath: string): boolean {
   const pathWithoutFragment = linkpath.split("#", 1)[0] ?? "";
   return pathWithoutFragment.toLowerCase().endsWith(".svg");
+}
+
+function isStandaloneLine(text: string, from: number, to: number): boolean {
+  const lineFrom = text.lastIndexOf("\n", from - 1) + 1;
+  const followingNewline = text.indexOf("\n", to);
+  const lineTo = followingNewline < 0 ? text.length : followingNewline;
+  return (
+    text.slice(lineFrom, from).trim().length === 0 && text.slice(to, lineTo).trim().length === 0
+  );
 }
 
 function isWithinUtf8Limit(text: string, maximumBytes: number): boolean {
@@ -204,10 +213,11 @@ function collectMatches(
     }
     if (isEscaped(text, from) || rangeContains(suppressedRanges, from)) continue;
     const linkpath = toLinkpath(target);
-    if (linkpath.length === 0 || !isSvgLinkpath(linkpath)) {
+    const to = from + markdown.length;
+    if (linkpath.length === 0 || !isSvgLinkpath(linkpath) || !isStandaloneLine(text, from, to)) {
       continue;
     }
-    matches.push({ from, linkpath, markdown, to: from + markdown.length });
+    matches.push({ from, linkpath, markdown, to });
   }
   return matches;
 }

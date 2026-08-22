@@ -8,20 +8,20 @@ This document is an informative visual map of Inkbook's runtime architecture. Th
 flowchart LR
   subgraph host["Obsidian host"]
     reading["Reading view"]
-    readingPreview["Host-owned native SVG preview"]
+    readingSource["Rendered custom Inkbook link"]
     live["Live Preview"]
     source["Source mode"]
     noteScroller["Native note scroller and right-hand scrollbar"]
   end
 
-  reading --> readingPreview
+  reading --> readingSource
   reading --> readingChild["MarkdownRenderChild"]
   live --> liveWidget["CodeMirror WidgetType"]
-  source --> rawMarkdown["Raw Markdown embed"]
+  source --> rawMarkdown["Raw !inkbook Markdown"]
 
-  readingPreview -. "Exact standalone correlation only" .-> readingChild
-  readingChild --> ownedPreview["Plugin-owned full-width background preview"]
-  liveWidget --> ownedPreview
+  readingSource -. "Exact standalone correlation only" .-> readingChild
+  readingChild --> ownedPreview["Plugin-owned full-width block host and background preview"]
+  liveWidget -->|"Highest-precedence block replacement"| ownedPreview
   ownedPreview --> widgetPreview["Static preview and editor mount"]
   readingChild --> coordinator["WorkspaceEditorCoordinator"]
   liveWidget --> coordinator

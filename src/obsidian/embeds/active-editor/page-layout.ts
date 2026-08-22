@@ -35,7 +35,7 @@ export class ActivePageLayout {
     force = false,
   ): PageHeightUpdate | undefined {
     const extent = derivePageExtent(page, maximumBottom ?? null);
-    if (this.#height === undefined) return this.#start(extent.activeHeight, false);
+    if (this.#height === undefined) return this.#start(extent.lockedHeight, false);
     const reference = this.height ?? extent.activeHeight;
     const remainingBuffer = reference - page.margin - extent.occupiedBottom;
     const shouldGrow = extent.activeHeight > reference && remainingBuffer < extent.bufferUnit;

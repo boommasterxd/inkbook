@@ -7,7 +7,7 @@ This SVG file contains two things:
 - a regular, self-contained SVG graphic with deterministic light and dark document palettes
 - a versioned embedded snapshot containing strokes, shapes, styles, render-band ordering, endpoint connections, and background settings
 
-This allows Obsidian to display the file as an image even when the editor is not active. When the embed is unlocked, the plugin also loads the embedded ink data and opens the interactive editor.
+The note references this file through the explicit non-image `!inkbook` Markdown contract. Inkbook displays the saved SVG through its own locked preview, while opening the SVG file in an external viewer still produces the complete portable static graphic. When the embed is unlocked, the plugin also loads the embedded ink data and opens the interactive editor.
 
 The patterned writing area has a fixed width of 2,000 page units. A writable but unpatterned margin of 24.3 page units surrounds it on every side, so the total SVG width is exactly 2,048.6 page units. Page height is derived from content bounds, the selected background, and the active or locked writing buffer.
 

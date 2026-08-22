@@ -58,14 +58,14 @@ describe("vault settings loading", () => {
     pen.opacity = Number.NaN;
     table.columns = 13;
     pageDefaults.activeBufferLines = 7;
-    pageDefaults.lockedBufferLines = 2;
+    pageDefaults.lockedBufferLines = 9;
 
     const result = loadSettings(input);
 
     expect(result.value.toolDefaults.pen.opacity).toBe(1);
     expect(result.value.toolDefaults.table.columns).toBe(3);
     expect(result.value.pageDefaults.activeBufferLines).toBe(7);
-    expect(result.value.pageDefaults.lockedBufferLines).toBe(1);
+    expect(result.value.pageDefaults.lockedBufferLines).toBe(3);
     expect(result.diagnostics).toEqual([
       { code: "settings.invalid-field", path: "toolDefaults.pen.opacity" },
       { code: "settings.invalid-field", path: "toolDefaults.table" },

@@ -211,18 +211,20 @@ async function mountReadingEmbed(plugin: InkbookPlugin): Promise<{
   readonly root: FakePresentationElement;
 }> {
   const root = new FakePresentationElement();
+  const nativeHost = new FakePresentationElement(root.ownerDocument);
   const image = new FakePresentationElement(root.ownerDocument, "img");
   image.src = "app://vault/drawings/ink.svg";
-  root.append(image);
+  nativeHost.append(image);
+  root.append(nativeHost);
   let child: MarkdownRenderChild | undefined;
   const processor = (plugin as unknown as TestPluginRegistration).postProcessors[0];
   if (processor === undefined) throw new Error("Reading-view postprocessor was not registered.");
-  await processor(root as unknown as HTMLElement, {
+  await processor(nativeHost as unknown as HTMLElement, {
     addChild: (candidate: MarkdownRenderChild) => {
       child = candidate;
       candidate.load();
     },
-    getSectionInfo: () => ({ text: "![[drawings/ink.svg]]" }),
+    getSectionInfo: () => ({ text: "!inkbook[[drawings/ink.svg]]" }),
     sourcePath: "notes/page.md",
   });
   if (child === undefined) throw new Error("Reading-view child was not mounted.");

@@ -15,19 +15,19 @@ export function createInkbookLockedPreview(
 ): InkbookLockedPreviewSurface {
   const element = button.createDiv({ cls: "inkbook-locked-preview-media" });
   element.setAttribute("aria-hidden", "true");
-  element.setCssProps({ aspectRatio: String(descriptor.aspectRatio) });
+  element.setCssProps({ "--inkbook-preview-aspect-ratio": String(descriptor.aspectRatio) });
   let currentSource = source;
   const setSource = (nextSource: string): void => {
     currentSource = nextSource;
-    element.setCssProps({ backgroundImage: cssImageUrl(currentSource) });
+    element.setCssProps({ "--inkbook-preview-image": cssImageUrl(currentSource) });
   };
   setSource(source);
   return {
     element,
     refresh: () => {
-      element.setCssProps({ backgroundImage: "none" });
+      element.setCssProps({ "--inkbook-preview-image": "none" });
       element.getBoundingClientRect();
-      element.setCssProps({ backgroundImage: cssImageUrl(currentSource) });
+      element.setCssProps({ "--inkbook-preview-image": cssImageUrl(currentSource) });
     },
     setSource,
   };

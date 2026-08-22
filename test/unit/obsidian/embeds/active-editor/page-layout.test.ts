@@ -17,19 +17,24 @@ describe("active page-height policy", () => {
   it("grows only after less than one aligned writing line remains", () => {
     const layout = new ActivePageLayout();
     const initial = layout.committed(page, undefined);
-    expect(initial).toEqual({ animate: false, height: 348.6 });
+    expect(initial).toEqual({
+      animate: false,
+      height: derivePageExtent(page, null).lockedHeight,
+    });
 
-    expect(layout.committed(page, 224)).toBeUndefined();
-    const growth = layout.committed(page, 225);
+    expect(layout.committed(page, page.margin)).toBeUndefined();
+    const growth = layout.committed(page, page.margin + 1);
     expect(growth).toEqual({
       animate: true,
-      height: derivePageExtent(page, 225).activeHeight,
+      height: derivePageExtent(page, page.margin + 1).activeHeight,
     });
   });
 
   it("shrinks when the exact derived height is at least one buffer unit lower", () => {
     const layout = new ActivePageLayout();
+    layout.committed(page, undefined);
     layout.committed(page, 225);
+    layout.transitionCompleted(page);
     expect(layout.committed(page, 224)).toEqual({
       animate: true,
       height: derivePageExtent(page, 224).activeHeight,
@@ -68,7 +73,7 @@ describe("active page-height policy", () => {
 
   it("extends one buffer per completed bottom-edge transition and restores on cancel", () => {
     const layout = new ActivePageLayout();
-    const initialHeight = derivePageExtent(page, null).activeHeight;
+    const initialHeight = derivePageExtent(page, null).lockedHeight;
     layout.committed(page, undefined);
     layout.beginSelection();
 

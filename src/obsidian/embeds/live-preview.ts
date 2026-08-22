@@ -1,5 +1,12 @@
 import { syntaxTree, syntaxTreeAvailable } from "@codemirror/language";
-import { RangeSetBuilder, StateEffect, type Extension } from "@codemirror/state";
+import {
+  Prec,
+  RangeSetBuilder,
+  StateEffect,
+  StateField,
+  type EditorState,
+  type Extension,
+} from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
@@ -72,7 +79,6 @@ export function findEmbedsInVisibleRanges(
   });
 }
 
-const EXECUTABLE_EMBED_NODES = new Set(["Image", "hmd-embed"]);
 const SUPPRESSED_EMBED_ANCESTORS = new Set([
   "BlockComment",
   "CodeBlock",
@@ -85,21 +91,21 @@ const SUPPRESSED_EMBED_ANCESTORS = new Set([
 ]);
 
 export function isExecutableEmbedSyntax(view: EditorView, from: number, to: number): boolean {
-  if (from < 0 || to <= from || !syntaxTreeAvailable(view.state, to)) return false;
-  let recognized = false;
+  return isExecutableEmbedState(view.state, from, to);
+}
+
+function isExecutableEmbedState(state: EditorState, from: number, to: number): boolean {
+  if (from < 0 || to <= from || !syntaxTreeAvailable(state, to)) return false;
   let suppressed = false;
-  syntaxTree(view.state).iterate({
+  syntaxTree(state).iterate({
     enter: (node) => {
       if (node.to <= from || node.from >= to) return;
       if (SUPPRESSED_EMBED_ANCESTORS.has(node.name)) suppressed = true;
-      if (node.from === from && node.to === to && EXECUTABLE_EMBED_NODES.has(node.name)) {
-        recognized = true;
-      }
     },
     from,
     to,
   });
-  return recognized && !suppressed;
+  return !suppressed;
 }
 
 function readBoundedVisibleText(
@@ -139,6 +145,7 @@ function collectExecutableEmbeds(
   let invalidSyntaxOrder = false;
   let previousSyntaxTo = 0;
   for (const range of ranges) {
+    const executableRanges: ExecutableSyntaxRange[] = [];
     const complete = iterateExecutableSyntax(range, (syntax) => {
       if (
         exceeded ||
@@ -157,25 +164,36 @@ function collectExecutableEmbeds(
         return;
       }
       previousSyntaxTo = syntax.to;
-      const text = range.text.slice(syntax.from - range.from, syntax.to - range.from);
-      const parsed = findMarkdownInkbookEmbeds(text);
-      const embed = parsed.length === 1 ? parsed[0] : undefined;
-      if (embed === undefined || embed.from !== 0 || embed.to !== text.length) return;
-      if (embeds.length >= MARKDOWN_EMBED_LIMITS.matches) {
-        exceeded = true;
-        return;
-      }
-      embeds.push({ from: syntax.from, linkpath: embed.linkpath, to: syntax.to });
+      executableRanges.push(syntax);
     });
     if (!complete) return null;
+    const parsed = findMarkdownInkbookEmbeds(range.text);
+    for (const embed of parsed) {
+      if (embeds.length >= MARKDOWN_EMBED_LIMITS.matches) {
+        exceeded = true;
+        break;
+      }
+      const from = range.from + embed.from;
+      const to = range.from + embed.to;
+      if (!executableRanges.some((syntax) => syntax.from === from && syntax.to === to)) continue;
+      embeds.push({
+        from,
+        linkpath: embed.linkpath,
+        to,
+      });
+    }
   }
   return exceeded || invalidSyntaxOrder ? null : embeds;
 }
 
 function livePreviewContext(view: EditorView): LivePreviewContext {
+  return livePreviewStateContext(view.state);
+}
+
+function livePreviewStateContext(state: EditorState): LivePreviewContext {
   return {
-    enabled: view.state.field(editorLivePreviewField, false) ?? false,
-    sourcePath: view.state.field(editorInfoField, false)?.file?.path,
+    enabled: state.field(editorLivePreviewField, false) ?? false,
+    sourcePath: state.field(editorInfoField, false)?.file?.path,
   };
 }
 
@@ -221,25 +239,12 @@ function findVisibleEmbeds(
         }
       }
       if (tree === undefined) return false;
-      let suppressedDepth = 0;
-      tree.iterate({
-        enter: (node) => {
-          if (SUPPRESSED_EMBED_ANCESTORS.has(node.name)) suppressedDepth += 1;
-          if (
-            suppressedDepth === 0 &&
-            node.from >= range.from &&
-            node.to <= range.to &&
-            EXECUTABLE_EMBED_NODES.has(node.name)
-          ) {
-            visit({ from: node.from, to: node.to });
-          }
-        },
-        from: range.from,
-        leave: (node) => {
-          if (SUPPRESSED_EMBED_ANCESTORS.has(node.name)) suppressedDepth -= 1;
-        },
-        to: range.to,
-      });
+      const visibleText = state.doc.sliceString(range.from, range.to);
+      for (const embed of findMarkdownInkbookEmbeds(visibleText)) {
+        const from = range.from + embed.from;
+        const to = range.from + embed.to;
+        if (isExecutableEmbedSyntax(view, from, to)) visit({ from, to });
+      }
       return true;
     },
   );
@@ -275,7 +280,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
   }
 
   override toDOM(view: EditorView): HTMLElement {
-    const root = view.dom.createSpan({
+    const root = view.dom.createDiv({
       attr: { contenteditable: "false" },
       cls: "inkbook-root inkbook-embed-root",
     });
@@ -310,6 +315,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
       {
         element: preview.element,
         refresh: preview.refresh,
+        requestHostMeasure: () => view.requestMeasure(),
         setSource: preview.setSource,
       },
     );
@@ -336,53 +342,125 @@ export class InkbookLivePreviewWidget extends WidgetType {
   }
 }
 
-function buildDecorations(view: EditorView, ports: EmbedIntegrationPorts): DecorationSet {
+function buildStateDecorations(state: EditorState, ports: EmbedIntegrationPorts): DecorationSet {
+  const context = livePreviewStateContext(state);
+  if (!context.enabled || context.sourcePath === undefined) return Decoration.none;
+  const text = state.doc.toString();
   const builder = new RangeSetBuilder<Decoration>();
-  for (const embed of findVisibleEmbeds(view, ports)) {
+  for (const embed of findMarkdownInkbookEmbeds(text)) {
+    const resolved = ports.resolveDocument(embed.linkpath, context.sourcePath);
+    if (resolved === undefined) continue;
+    const preview = ports.documents.cached(resolved.documentId);
+    if (preview === undefined || preview === false) continue;
     builder.add(
       embed.from,
       embed.to,
-      Decoration.replace({ widget: new InkbookLivePreviewWidget(embed, ports) }),
+      Decoration.replace({
+        block: true,
+        widget: new InkbookLivePreviewWidget(
+          {
+            from: embed.from,
+            preview,
+            resolved,
+            sourcePath: context.sourcePath,
+            to: embed.to,
+          },
+          ports,
+        ),
+      }),
     );
   }
   return builder.finish();
 }
 
-export function createLivePreviewExtension(ports: EmbedIntegrationPorts): Extension {
-  return ViewPlugin.fromClass(
-    class {
-      decorations: DecorationSet;
-      #context: LivePreviewContext;
-      readonly #releaseRecognition: () => void;
-
-      constructor(view: EditorView) {
-        this.#context = livePreviewContext(view);
-        this.decorations = buildDecorations(view, ports);
-        this.#releaseRecognition = ports.documents.subscribe((documentId) => {
-          view.dispatch({ effects: documentRecognitionChanged.of(documentId) });
-        });
-      }
-
-      update(update: ViewUpdate): void {
-        const context = livePreviewContext(update.view);
-        const syntaxChanged = syntaxTree(update.startState) !== syntaxTree(update.state);
-        const recognitionChanged = update.transactions.some((transaction) =>
-          transaction.effects.some((effect) => effect.is(documentRecognitionChanged)),
-        );
-        if (
-          recognitionChanged ||
-          syntaxChanged ||
-          shouldRefreshLivePreview(update, this.#context, context)
-        ) {
-          this.decorations = buildDecorations(update.view, ports);
-        }
-        this.#context = context;
-      }
-
-      destroy(): void {
-        this.#releaseRecognition();
-      }
-    },
-    { decorations: (value) => value.decorations },
+function changedRecognitionsArePending(
+  state: EditorState,
+  ports: EmbedIntegrationPorts,
+  changedDocumentIds: ReadonlySet<string>,
+): boolean {
+  const context = livePreviewStateContext(state);
+  if (!context.enabled || context.sourcePath === undefined) return false;
+  const relevantDocumentIds = new Set<string>();
+  for (const embed of findMarkdownInkbookEmbeds(state.doc.toString())) {
+    const resolved = ports.resolveDocument(embed.linkpath, context.sourcePath);
+    if (resolved !== undefined && changedDocumentIds.has(resolved.documentId)) {
+      relevantDocumentIds.add(resolved.documentId);
+    }
+  }
+  return (
+    relevantDocumentIds.size > 0 &&
+    [...relevantDocumentIds].every((documentId) => ports.documents.cached(documentId) === undefined)
   );
+}
+
+export function createLivePreviewExtension(ports: EmbedIntegrationPorts): Extension {
+  const blockDecorations = StateField.define<DecorationSet>({
+    create: (state) => buildStateDecorations(state, ports),
+    provide: (field) => [
+      EditorView.decorations.from(field),
+      EditorView.atomicRanges.of((view) => view.state.field(field)),
+    ],
+    update: (decorations, transaction) => {
+      const changedDocumentIds = new Set(
+        transaction.effects.flatMap((effect) =>
+          effect.is(documentRecognitionChanged) ? [effect.value] : [],
+        ),
+      );
+      const recognitionChanged = changedDocumentIds.size > 0;
+      const previousContext = livePreviewStateContext(transaction.startState);
+      const currentContext = livePreviewStateContext(transaction.state);
+      if (
+        recognitionChanged &&
+        !transaction.docChanged &&
+        previousContext.enabled === currentContext.enabled &&
+        previousContext.sourcePath === currentContext.sourcePath &&
+        changedRecognitionsArePending(transaction.state, ports, changedDocumentIds)
+      ) {
+        return decorations;
+      }
+      return transaction.docChanged ||
+        recognitionChanged ||
+        previousContext.enabled !== currentContext.enabled ||
+        previousContext.sourcePath !== currentContext.sourcePath
+        ? buildStateDecorations(transaction.state, ports)
+        : decorations;
+    },
+  });
+  return Prec.highest([
+    blockDecorations,
+    ViewPlugin.fromClass(
+      class {
+        #context: LivePreviewContext;
+        readonly #releaseRecognition: () => void;
+
+        constructor(view: EditorView) {
+          this.#context = livePreviewContext(view);
+          void findVisibleEmbeds(view, ports);
+          this.#releaseRecognition = ports.documents.subscribe((documentId) => {
+            view.dispatch({ effects: documentRecognitionChanged.of(documentId) });
+          });
+        }
+
+        update(update: ViewUpdate): void {
+          const context = livePreviewContext(update.view);
+          const syntaxChanged = syntaxTree(update.startState) !== syntaxTree(update.state);
+          const recognitionChanged = update.transactions.some((transaction) =>
+            transaction.effects.some((effect) => effect.is(documentRecognitionChanged)),
+          );
+          if (
+            recognitionChanged ||
+            syntaxChanged ||
+            shouldRefreshLivePreview(update, this.#context, context)
+          ) {
+            void findVisibleEmbeds(update.view, ports);
+          }
+          this.#context = context;
+        }
+
+        destroy(): void {
+          this.#releaseRecognition();
+        }
+      },
+    ),
+  ]);
 }

@@ -25,7 +25,7 @@ interface PageV1 {
   background: BackgroundV1;
   writingLineHeight: number;
   activeBufferLines: number;
-  lockedBufferLines: 0 | 1;
+  lockedBufferLines: number;
 }
 
 type BackgroundV1 =
@@ -37,7 +37,7 @@ type BackgroundV1 =
 
 The 2,000-unit width is the patterned writing area. The 24.3-unit margin surrounds it on every side and is writable. The total SVG width is therefore exactly 2,048.6 page units.
 
-Page values are copied from vault defaults when the file is created. Background changes are file commands. Later vault-default changes never alter this `PageV1` implicitly. `writingLineHeight` is an integer from 50 through 200, `activeBufferLines` is an integer from 1 through 8, and `lockedBufferLines` is 0 or 1.
+Page values are copied from vault defaults when the file is created. Background changes are file commands. Later vault-default changes never alter this `PageV1` implicitly. `writingLineHeight` is an integer from 50 through 200, `activeBufferLines` is an integer from 1 through 8, and `lockedBufferLines` is an integer from 0 through 8.
 
 Element coordinates use the outer SVG's top-left corner as `(0, 0)`. Positive `x` points right and positive `y` points down. Elements may extend into the margin but MUST remain within the enforced numeric limits.
 
@@ -367,7 +367,7 @@ activeHeight = activeWritableBottom + page.margin
 lockedHeight = lockedWritableBottom + page.margin
 ```
 
-The background phase starts at `page.margin`, so these heights always end on a complete background step. A buffer line means one background-aligned `bufferUnit`, not the raw writing-line height. The locked preview therefore has at most one configured buffer line; completing the background cell that contains the last element is content normalization, not an additional buffer line. An empty default file has exactly three buffer units when active and one when locked, plus both margins.
+The background phase starts at `page.margin`, so these heights always end on a complete background step. A buffer line means one background-aligned `bufferUnit`, not the raw writing-line height. Completing the background cell that contains the last element is content normalization, not an additional buffer line. An empty default file has exactly three buffer units both when active and when locked, plus both margins, so its portable SVG remains a useful writing surface at full note width.
 
 Runtime height changes only after committed geometry or page commands:
 
@@ -447,7 +447,7 @@ Browser clipboard materialization and receiver-side worker batch limits are defi
 ## Versioning and Migration
 
 - Writers emit version 1 only.
-- Inkbook may insert a replacement preview for a newer unsupported version only after its static SVG passes the same exact element-and-attribute allowlist as generated output; otherwise Inkbook leaves the host-owned native image surface non-interactive or replaces it with a non-rendering placeholder where the host surface permits. It cannot be edited.
+- Inkbook may display a replacement preview for a newer unsupported version only after its static SVG passes the same exact element-and-attribute allowlist as generated output; otherwise it leaves the custom Markdown link noninteractive or replaces its owned presentation with a non-rendering placeholder. The document cannot be edited.
 - Version 0 uses the same envelope, snapshot fields, ordering, connections, and canonical geometry as version 1 except that both the root `data-inkbook-version` and snapshot `version` are `0` and the root omits `data-inkbook-snapshot-sha256`. Its only migration changes the snapshot discriminator to `1`. The first version 1 save adds the canonical metadata hash; the version 1 exact-text and hash requirements do not block loading the supported legacy source.
 - Older supported versions migrate in memory through sequential pure migrations in the document worker during unlock. Every adjacent step validates its complete output before the next step begins. Runtime batches and the export baseline are created only after the migrated current-version result passes schema and byte, depth, container, element, geometry, and connection limits. Cancellation applies between migration and validation slices. The equivalent bounded main-thread fallback uses the same registry, checkpoints, limits, and failure result when workers are unavailable.
 - Before the first write that would replace a successfully migrated document, preserve the exact original content as `<base>.backup-v<old-version>.svg`. Creation uses the public Vault boundary and is read back before replacement. If that collision-safe path already exists, it is accepted only when its content exactly equals the original; Inkbook never replaces a different existing backup. The verified backup is required exactly once per adopted migrated source.

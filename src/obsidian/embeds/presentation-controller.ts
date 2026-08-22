@@ -25,6 +25,7 @@ interface PresentationMeasurement {
 export interface PresentationPreviewLifecycle {
   readonly element: HTMLElement;
   readonly refresh?: () => void;
+  readonly requestHostMeasure?: () => void;
   readonly setSource?: (source: string) => void;
 }
 
@@ -131,6 +132,7 @@ export class PresentationController {
       this.#frame = undefined;
       if (!this.#mounted || !this.#scroll.mount()) return;
       this.#observer = new owningWindow.ResizeObserver(() => {
+        this.#previewLifecycle?.requestHostMeasure?.();
         this.#scroll.transferAfterLayoutChange();
         this.#scheduleSettledMeasurement();
       });

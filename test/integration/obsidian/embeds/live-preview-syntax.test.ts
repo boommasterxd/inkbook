@@ -31,11 +31,10 @@ describe("Live Preview syntax correlation", () => {
     languageMocks.syntaxTreeAvailable.mockReturnValue(true);
   });
 
-  it.each([
-    ["Markdown image", "Image"],
-    ["Wiki embed", "hmd-embed"],
-  ])("accepts an exact executable %s node", (_label, name) => {
-    expect(isExecutableEmbedSyntax(viewWithSyntax([{ from: 4, name, to: 28 }]), 4, 28)).toBe(true);
+  it("accepts custom Inkbook syntax outside suppressed Markdown", () => {
+    expect(
+      isExecutableEmbedSyntax(viewWithSyntax([{ from: 4, name: "Text", to: 36 }]), 4, 36),
+    ).toBe(true);
   });
 
   it("rejects exact embed nodes inside code syntax", () => {
@@ -43,27 +42,16 @@ describe("Live Preview syntax correlation", () => {
       isExecutableEmbedSyntax(
         viewWithSyntax([
           { from: 0, name: "InlineCode", to: 30 },
-          { from: 4, name: "hmd-embed", to: 28 },
+          { from: 4, name: "Text", to: 36 },
         ]),
         4,
-        28,
+        36,
       ),
     ).toBe(false);
   });
 
-  it("fails closed for unavailable, unknown, or inexact syntax", () => {
+  it("fails closed when the syntax tree is unavailable", () => {
     languageMocks.syntaxTreeAvailable.mockReturnValue(false);
     expect(isExecutableEmbedSyntax(viewWithSyntax([]), 4, 28)).toBe(false);
-
-    languageMocks.syntaxTreeAvailable.mockReturnValue(true);
-    expect(
-      isExecutableEmbedSyntax(viewWithSyntax([{ from: 4, name: "Text", to: 28 }]), 4, 28),
-    ).toBe(false);
-    expect(
-      isExecutableEmbedSyntax(viewWithSyntax([{ from: 0, name: "Image", to: 30 }]), 4, 28),
-    ).toBe(false);
-    expect(
-      isExecutableEmbedSyntax(viewWithSyntax([{ from: 4, name: "custom-embed", to: 28 }]), 4, 28),
-    ).toBe(false);
   });
 });

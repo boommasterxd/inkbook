@@ -10,8 +10,10 @@ The following rules apply:
 
 - Only one ink embed can be active at a time.
 - When another embed is opened, the plugin saves and locks the previously active embed.
-- The existing preview remains visible until the new editor has fully loaded and has been measured correctly.
-- The background container then animates to active height over 240 milliseconds. During the final 120 milliseconds, the preview fades out while the editor fades in. Input is enabled and the preview is unmounted only after the transition completes.
+- The locked preview and active scene occupy the same lifecycle-owned inline block. Unlocking never appends a second editor before or after that block.
+- The existing preview remains visible until the in-place editor has fully loaded and has been measured correctly.
+- The active scene starts with exactly the serialized locked height. Unlocking does not change the block's size or document position. During the final 120 milliseconds, the preview fades out while the editor and its overlay toolbar fade in. Input is enabled and the preview is unmounted only after the transition completes.
+- Automatic page growth may occur later, but only when committed content leaves less than one aligned writable line. It is independent of activation.
 - With reduced motion, measurement is still awaited, then height and preview/editor visibility are exchanged in one frame.
 
 This prevents an empty, incorrectly scaled, or partially initialized drawing area from appearing briefly.
@@ -49,6 +51,8 @@ The normative DOM layer hierarchy is:
 4. The SVG committed-content bands and decorative overlays are inside the clipped background container and use `pointer-events: none`.
 5. One transparent, focusable canvas input surface is above that content, below toolbar and flyouts, and owns canvas pointer, wheel, context-menu, and keyboard events.
 6. Flyouts are portalled within the owning embed's document so they are not clipped by the background container and remain correct in pop-out windows.
+
+Activation preserves the root, block position, measured width, initial block height, presentation attachment, and active editor identity. The only newly visible layout layer is the absolute toolbar overlay. A stroke commit, autosave, SVG resource refresh, theme change, or asynchronous document reclassification MUST NOT detach, remount, move, or lock the active editor.
 
 The embed uses its own final background-container content-box width after the resolved note scroller's native right-hand scrollbar gutter has been stabilized. It respects note padding, readable-line width, lists, callouts, and other nested constraints; it never adopts the full scroller width. No Inkbook layer, including the toolbar, input surface, flyout, focus treatment, or background container, extends over the owner client edge or scrollbar gutter. Pointer contact does not add or remove any layout-affecting UI. The host-scroll ownership, edge clamp, and platform-specific native overlay behavior are defined in [Obsidian Integration](obsidian-integration.md#native-scroll-owner-and-scrollbar-stability).
 

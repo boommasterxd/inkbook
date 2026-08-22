@@ -136,7 +136,7 @@ function assertPage(value: unknown, path: string): asserts value is PageV1 {
   assertBackground(value.background, `${path}.background`);
   assertIntegerRange(value.writingLineHeight, 50, 200, `${path}.writingLineHeight`);
   assertIntegerRange(value.activeBufferLines, 1, 8, `${path}.activeBufferLines`);
-  assertOneOf(value.lockedBufferLines, [0, 1] as const, `${path}.lockedBufferLines`);
+  assertIntegerRange(value.lockedBufferLines, 0, 8, `${path}.lockedBufferLines`);
 }
 
 function assertBackground(value: unknown, path: string): asserts value is BackgroundV1 {

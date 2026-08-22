@@ -14,7 +14,6 @@ let nextReadingAttachmentId = 0;
 
 interface ReadingViewCandidate {
   readonly host: HTMLElement;
-  readonly image: HTMLImageElement;
   readonly markdown: string;
   readonly range: { readonly from: number; readonly to: number };
   readonly resolved: ResolvedInkbookDocument;
@@ -24,20 +23,6 @@ interface ReadingViewCandidate {
     readonly text: string;
   };
   readonly sourcePath: string;
-}
-
-function canonicalResourceUrl(value: string, baseUrl: string): string | undefined {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return undefined;
-  try {
-    return new URL(trimmed, baseUrl).href;
-  } catch {
-    return undefined;
-  }
-}
-
-function renderedImageUrl(image: HTMLImageElement): string {
-  return image.currentSrc.trim() || image.src.trim();
 }
 
 function isInsideCode(element: HTMLElement): boolean {
@@ -56,26 +41,13 @@ function recognizeReadingViewCandidate(
   if (isInsideCode(element)) return undefined;
   const embeds = findMarkdownInkbookEmbeds(section.text);
   if (embeds.length !== 1) return undefined;
-  const imageElements = element.getElementsByTagName("img");
-  const images: HTMLImageElement[] = [];
-  for (let index = 0; index < imageElements.length; index += 1) {
-    const image = imageElements.item(index);
-    if (image !== null && !isInsideCode(image)) images.push(image);
-  }
-  if (images.length !== 1) return undefined;
   const embed = embeds[0];
   if (embed === undefined) return undefined;
   if (section.text.trim() !== embed.markdown) return undefined;
   const resolved = resolveDocument(embed.linkpath, context.sourcePath);
   if (resolved === undefined) return undefined;
-  const resourceUrl = canonicalResourceUrl(resolved.resourceUrl, element.ownerDocument.baseURI);
-  const image = images[0];
-  if (resourceUrl === undefined || image === undefined) return undefined;
-  const imageUrl = canonicalResourceUrl(renderedImageUrl(image), element.ownerDocument.baseURI);
-  if (imageUrl !== resourceUrl) return undefined;
   return {
     host: element,
-    image,
     markdown: embed.markdown,
     range: { from: embed.from, to: embed.to },
     resolved,
@@ -87,9 +59,8 @@ function recognizeReadingViewCandidate(
 class InkbookReadingRenderChild extends MarkdownRenderChild {
   readonly #button: HTMLButtonElement;
   readonly #controller: PresentationController;
-  readonly #host: HTMLElement;
-  readonly #nativeChildren: readonly ChildNode[];
-  readonly #root: HTMLSpanElement;
+  readonly #nativeHost: HTMLElement;
+  readonly #root: HTMLDivElement;
   readonly #lifecycle: EmbedIntegrationPorts["lifecycle"];
   #releaseLifecycle: (() => void) | undefined;
 
@@ -98,9 +69,9 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
     previewDescriptor: Exclude<InkbookDocumentRecognition, false>,
     ports: EmbedIntegrationPorts,
   ) {
-    const nativeChildren = Array.from(candidate.host.childNodes);
-    const root = candidate.host.createSpan({ cls: "inkbook-root inkbook-embed-root" });
-    candidate.host.replaceChildren(root);
+    const root = candidate.host.createDiv({ cls: "inkbook-root inkbook-embed-root" });
+    root.remove();
+    candidate.host.replaceWith(root);
     const button = root.createEl("button", {
       attr: { "aria-label": "Edit handwriting", type: "button" },
       cls: "inkbook-locked-preview",
@@ -112,8 +83,7 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
     );
     super(root);
     this.#button = button;
-    this.#host = candidate.host;
-    this.#nativeChildren = nativeChildren;
+    this.#nativeHost = candidate.host;
     this.#lifecycle = ports.lifecycle;
     this.#root = root;
     const attachmentId = `reading-${++nextReadingAttachmentId}`;
@@ -160,7 +130,7 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
     this.#releaseLifecycle?.();
     this.#releaseLifecycle = undefined;
     this.#controller.dispose();
-    if (this.#root.isConnected) this.#host.replaceChildren(...this.#nativeChildren);
+    if (this.#root.isConnected) this.#root.replaceWith(this.#nativeHost);
   }
 }
 

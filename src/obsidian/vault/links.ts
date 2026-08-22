@@ -52,7 +52,7 @@ export class ObsidianLinkAdapter {
     if (!isCompleteMarkdownLink(link)) {
       throw new Error("Obsidian generated an incomplete Markdown link.");
     }
-    return `!${link}`;
+    return `!inkbook${link}`;
   }
 
   resolveLinkTarget(linkpath: string, sourcePath: string): TFile | null {

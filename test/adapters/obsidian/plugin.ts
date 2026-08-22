@@ -2,7 +2,7 @@ import { StateField } from "@codemirror/state";
 
 export interface TestEditorInfo {
   readonly editor?: Editor;
-  readonly file: TFile | null;
+  readonly file: { readonly path: string } | null;
 }
 
 let editorInfo: TestEditorInfo = { file: null };
@@ -20,7 +20,7 @@ export const Platform = {
 };
 
 export function configureTestEditorState(options: {
-  readonly file?: TFile | null;
+  readonly file?: { readonly path: string } | null;
   readonly livePreview?: boolean;
 }): void {
   if (options.file !== undefined) {

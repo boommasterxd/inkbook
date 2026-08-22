@@ -26,7 +26,7 @@ export interface NewFilePageSettings {
       };
   readonly writingLineHeight: number;
   readonly activeBufferLines: number;
-  readonly lockedBufferLines: 0 | 1;
+  readonly lockedBufferLines: number;
 }
 
 export function initializeEditorSettingsSession(

@@ -58,11 +58,11 @@ aligned occupied extent
 + writingBufferLines × backgroundAlignedWritingUnit
 ```
 
-With a lined background, the alignment step is the current line spacing. With a grid, it is the grid cell size. The buffer unit is the smallest whole number of background steps that is at least the file's writing-line height. This preserves complete background cells and makes the locked maximum of one buffer line deterministic for every valid combination.
+With a lined background, the alignment step is the current line spacing. With a grid, it is the grid cell size. The buffer unit is the smallest whole number of background steps that is at least the file's writing-line height. This preserves complete background cells for every valid combination.
 
 The page is not remeasured after every pointer sample. After a committed geometry change, it grows when less than one writing line of active buffer remains and restores the configured buffer in one 180-millisecond height transition. The sole pre-commit exception is the bounded one-buffer-unit extension while a selection remains in the bottom-edge drag zone; its exact threshold, cancellation, and commit rules are defined in [File Format and Geometry](file-format.md).
 
-When content is deleted, the active embed can shrink again. The active editor defaults to three empty writing lines below content. The locked preview has at most one empty writing line. Unlock and Lock animate between these derived heights over 240 milliseconds.
+When content is deleted, the active embed can shrink again. The active editor and locked preview both default to three empty writing lines below content. Each per-file buffer remains independently configurable. Unlock and Lock animate between these derived heights over 240 milliseconds.
 
 The exact active, locked, empty-page, and background-snapping equations are defined in [File Format and Geometry](file-format.md).
 
@@ -229,7 +229,7 @@ A tap creates a new handwriting embed only when all of the following conditions 
 On success:
 
 1. The plugin creates a new handwriting SVG file.
-2. It inserts the embed Markdown in a block-safe manner.
+2. It inserts the custom `!inkbook` embed Markdown in a block-safe manner. The syntax references the SVG through a normal link but never creates a native Obsidian image embed.
 3. The next mounted embed editor is activated automatically.
 4. After the widget is mounted and measured on two consecutive animation frames, the new embed opens in editing mode. If this does not happen within two seconds, insertion remains intact and a retryable notice is shown.
 5. A notice with Undo remains visible for five seconds.

@@ -59,8 +59,19 @@ describe("Inkbook host styles", () => {
     expect(focus).toContain("outline-offset: -2px");
     expect(preview).toContain("inline-size: 100%");
     expect(preview).toContain("overflow: clip");
+    expect(image).toContain("aspect-ratio: var(--inkbook-preview-aspect-ratio)");
+    expect(image).toContain("background-image: var(--inkbook-preview-image)");
     expect(image).toContain("pointer-events: none");
     expect(image).toContain("background-size: contain");
+  });
+
+  it("keeps the active background in the locked preview's flow position", () => {
+    const background = declarationsFor(".inkbook-root .inkbook-background-container");
+    const chromeHost = declarationsFor(".inkbook-root .inkbook-editor-chrome-host");
+
+    expect(background).not.toContain("margin-block-start");
+    expect(chromeHost).toContain("position: absolute");
+    expect(chromeHost).toContain("inset: 0");
   });
 
   it("uses the same 22-pixel leading shift covered by the left-handed width threshold", () => {

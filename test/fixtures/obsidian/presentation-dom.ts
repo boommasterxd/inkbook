@@ -19,8 +19,8 @@ export class FakePresentationElement {
   readonly ownerDocument: Document;
   readonly tagName: string;
   readonly style = {
-    aspectRatio: "",
-    backgroundImage: "",
+    "--inkbook-preview-aspect-ratio": "",
+    "--inkbook-preview-image": "",
     colorScheme: "",
     removeProperty: (name: string): void => {
       delete (this.style as unknown as Record<string, unknown>)[name];
@@ -186,7 +186,7 @@ export class FakePresentationElement {
 
   public setCssProps(properties: Record<string, string>): void {
     for (const [name, value] of Object.entries(properties)) {
-      (this.style as unknown as Record<string, unknown>)[name] = value;
+      this.style.setProperty(name, value);
     }
   }
 
@@ -202,6 +202,7 @@ export class FakePresentationElement {
       const index = this.parentElement.children.indexOf(this);
       if (index >= 0) this.parentElement.children.splice(index, 1, replacement);
       replacement.parentElement = this.parentElement;
+      replacement.isConnected = this.isConnected;
       this.parentElement = null;
     }
     this.isConnected = false;
