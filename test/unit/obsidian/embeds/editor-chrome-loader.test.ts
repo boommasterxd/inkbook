@@ -25,6 +25,13 @@ function createWindowFixture(name: string): WindowFixture {
   const revoked: string[] = [];
   const timers = new Map<number, () => void>();
   let nextTimer = 0;
+  const objectUrlApi = Object.assign(function URL() {}, {
+    createObjectURL: (blob: Blob) => {
+      blobs.push(blob);
+      return `blob:${name}`;
+    },
+    revokeObjectURL: (url: string) => revoked.push(url),
+  });
   const window: EditorChromeWindow = {
     Blob,
     clearTimeout: (handle) => timers.delete(handle),
@@ -35,13 +42,7 @@ function createWindowFixture(name: string): WindowFixture {
       timers.set(handle, callback);
       return handle;
     },
-    URL: {
-      createObjectURL: (blob) => {
-        blobs.push(blob);
-        return `blob:${name}`;
-      },
-      revokeObjectURL: (url) => revoked.push(url),
-    },
+    URL: objectUrlApi,
   };
   const document = { defaultView: window } as unknown as Document;
   return {

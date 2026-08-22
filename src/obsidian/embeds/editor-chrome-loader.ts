@@ -230,9 +230,8 @@ function isEditorChromeWindow(value: unknown): value is EditorChromeWindow {
   )
     return false;
   const url: unknown = value.URL;
+  if (url === null || (typeof url !== "object" && typeof url !== "function")) return false;
   return (
-    typeof url === "object" &&
-    url !== null &&
     "createObjectURL" in url &&
     typeof url.createObjectURL === "function" &&
     "revokeObjectURL" in url &&

@@ -30,17 +30,18 @@ class FakeWorker extends TestWorkerEndpoint {
 function createWindow() {
   const blobs: Blob[] = [];
   const revoked: string[] = [];
+  const objectUrlApi = Object.assign(function URL() {}, {
+    createObjectURL: (blob: Blob) => {
+      blobs.push(blob);
+      return "blob:inkbook-worker";
+    },
+    revokeObjectURL: (url: string) => revoked.push(url),
+  });
   const owningWindow: WorkerWindow = {
     Blob,
     DecompressionStream,
     Response,
-    URL: {
-      createObjectURL: (blob) => {
-        blobs.push(blob);
-        return "blob:inkbook-worker";
-      },
-      revokeObjectURL: (url) => revoked.push(url),
-    },
+    URL: objectUrlApi,
     Worker: FakeWorker,
   };
   return { blobs, owningWindow, revoked };
