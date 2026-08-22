@@ -26,8 +26,8 @@ function createPorts(): EmbedIntegrationPorts & {
     attachments,
     calls,
     documents: {
-      cached: () => true,
-      recognize: async () => true,
+      cached: () => ({ aspectRatio: 12 }),
+      recognize: async () => ({ aspectRatio: 12 }),
       subscribe: () => () => undefined,
     },
     lifecycle: new PresentationLifecycleRegistry(),
@@ -48,6 +48,19 @@ function createPorts(): EmbedIntegrationPorts & {
       dark = true;
     },
   };
+}
+
+function requireOwnedPreview(
+  root: FakeElement,
+  activationButton: FakeElement | undefined,
+): FakeElement {
+  expect(activationButton?.tagName).toBe("BUTTON");
+  expect(activationButton?.attributes.get("aria-label")).toBe("Edit handwriting");
+  expect(activationButton?.attributes.get("type")).toBe("button");
+  expect(activationButton?.children[0]?.classNames).toContain("inkbook-locked-preview-media");
+  expect(root.getElementsByTagName("img").length).toBe(0);
+  if (activationButton === undefined) throw new Error("Missing activation button.");
+  return activationButton;
 }
 
 describe("Markdown embed recognition", () => {
@@ -127,9 +140,13 @@ describe("Reading-view embed lifecycle", () => {
   it("owns Reading-view activation and cleanup through a render child", () => {
     const ports = createPorts();
     const root = new FakeElement();
+    const nativeWrapper = new FakeElement(root.ownerDocument);
     const image = new FakeElement(root.ownerDocument, "img");
     image.src = "app://vault/ink.svg";
-    root.append(image);
+    const nativeControls = new FakeElement(root.ownerDocument);
+    nativeWrapper.append(image);
+    root.append(nativeWrapper);
+    root.append(nativeControls);
     const processor = createReadingViewPostProcessor(ports);
     let child: { load(): void; unload(): void } | undefined;
 
@@ -153,11 +170,8 @@ describe("Reading-view embed lifecycle", () => {
     expect(root.children[0]?.classNames).toContain("inkbook-root");
     expect(root.classNames).toContain("inkbook-scrollbar-stable");
     expect(root.children[0]?.style.colorScheme).toBe("light");
-    const activationButton = root.children[0]?.children[0];
-    expect(activationButton?.tagName).toBe("BUTTON");
-    expect(activationButton?.attributes.get("aria-label")).toBe("Edit handwriting");
-    expect(activationButton?.attributes.get("type")).toBe("button");
-    expect(activationButton?.children[0]).toBe(image);
+    const activationButton = requireOwnedPreview(root, root.children[0]?.children[0]);
+    expect(root.children).toHaveLength(1);
     expect(ports.attachments[0]?.embedReference).toEqual({
       documentId: "drawings/ink.svg",
       kind: "reading-view",
@@ -179,6 +193,7 @@ describe("Reading-view embed lifecycle", () => {
     child?.unload();
     expect(ports.calls[ports.calls.length - 1]).toBe("detach:drawings/ink.svg");
     expect(root.classNames).not.toContain("inkbook-scrollbar-stable");
+    expect(root.children).toEqual([nativeWrapper, nativeControls]);
     image.dispatch("click");
     expect(ports.calls.filter((call) => call.startsWith("activate"))).toHaveLength(1);
   });
@@ -209,7 +224,7 @@ describe("Reading-view target correlation", () => {
     expect(addChild).not.toHaveBeenCalled();
   });
 
-  it("requires exactly one recognized raw embed before correlating the rendered image", () => {
+  it("requires a standalone recognized raw embed before correlating the rendered image", () => {
     const ports = createPorts();
     const root = new FakeElement();
     const image = new FakeElement(root.ownerDocument, "img");
@@ -222,7 +237,7 @@ describe("Reading-view target correlation", () => {
       {
         sourcePath: "notes/note.md",
         getSectionInfo: () => ({
-          text: "![[drawings/missing.svg]] ![[drawings/ink.svg]]",
+          text: "Before ![[drawings/ink.svg]] after",
         }),
         addChild,
       } as never,
@@ -361,6 +376,7 @@ describe("Live Preview widget lifecycle", () => {
     const widget = new InkbookLivePreviewWidget(
       {
         from: 4,
+        preview: { aspectRatio: 12 },
         resolved: { documentId: "drawings/ink.svg", resourceUrl: "app://vault/ink.svg" },
         sourcePath: "notes/note.md",
         to: 28,
@@ -379,12 +395,8 @@ describe("Live Preview widget lifecycle", () => {
     } as never) as unknown as FakeElement;
 
     expect(created).toHaveLength(1);
-    const activationButton = root.children[0];
-    expect(activationButton?.tagName).toBe("BUTTON");
-    expect(activationButton?.attributes.get("aria-label")).toBe("Edit handwriting");
-    expect(activationButton?.attributes.get("type")).toBe("button");
-    expect(activationButton?.children[0]?.alt).toBe("");
-    expect(activationButton?.children[0]?.src).toBe("app://vault/ink.svg");
+    const activationButton = requireOwnedPreview(root, root.children[0]);
+    expect(activationButton?.children[0]?.style.backgroundImage).toBe('url("app://vault/ink.svg")');
     activationButton?.dispatch("click");
     expect(ports.calls).toEqual(["mount:drawings/ink.svg", "activate:drawings/ink.svg"]);
     expect(ports.attachments[0]?.embedReference).toEqual({
@@ -405,6 +417,7 @@ describe("Live Preview widget reconciliation", () => {
     const widget = new InkbookLivePreviewWidget(
       {
         from: 4,
+        preview: { aspectRatio: 12 },
         resolved: { documentId: "drawings/ink.svg", resourceUrl: "app://vault/ink.svg" },
         sourcePath: "notes/note.md",
         to: 28,
@@ -417,6 +430,7 @@ describe("Live Preview widget reconciliation", () => {
         new InkbookLivePreviewWidget(
           {
             from: 4,
+            preview: { aspectRatio: 12 },
             resolved: { documentId: "drawings/ink.svg", resourceUrl: "app://vault/ink.svg" },
             sourcePath: "notes/note.md",
             to: 28,
@@ -430,6 +444,7 @@ describe("Live Preview widget reconciliation", () => {
         new InkbookLivePreviewWidget(
           {
             from: 4,
+            preview: { aspectRatio: 12 },
             resolved: {
               documentId: "drawings/ink.svg",
               resourceUrl: "app://vault/reissued.svg",
@@ -446,6 +461,7 @@ describe("Live Preview widget reconciliation", () => {
         new InkbookLivePreviewWidget(
           {
             from: 5,
+            preview: { aspectRatio: 12 },
             resolved: { documentId: "drawings/ink.svg", resourceUrl: "app://vault/ink.svg" },
             sourcePath: "notes/note.md",
             to: 28,
@@ -460,6 +476,7 @@ describe("Live Preview widget reconciliation", () => {
     const ports = createPorts();
     const embed = {
       from: 4,
+      preview: { aspectRatio: 12 },
       resolved: { documentId: "drawings/ink.svg", resourceUrl: "app://vault/ink.svg" },
       sourcePath: "notes/note.md",
       to: 28,

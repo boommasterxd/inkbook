@@ -51,15 +51,27 @@ describe("Inkbook document recognition", () => {
     expect(changed).toHaveBeenCalledOnce();
   });
 
+  it("rejects an Inkbook marker without the canonical preview viewBox", async () => {
+    const { file, recognition } = recognitionHarness(
+      "drawings/marker-only.svg",
+      128,
+      '<svg data-inkbook-format="inkbook"></svg>',
+    );
+
+    await expect(recognition.recognize(file.path)).resolves.toBe(false);
+  });
+
   it("invalidates a recognized file without retaining stale classification", async () => {
     const { changed, file, recognition } = recognitionHarness(
       "drawings/ink.svg",
       160,
-      '<svg data-inkbook-format="inkbook"></svg>',
+      '<svg viewBox="0 0 2048.6 168.6" data-inkbook-format="inkbook"></svg>',
     );
 
-    await expect(recognition.recognize(file.path)).resolves.toBe(true);
-    expect(recognition.cached(file.path)).toBe(true);
+    await expect(recognition.recognize(file.path)).resolves.toEqual({
+      aspectRatio: 2048.6 / 168.6,
+    });
+    expect(recognition.cached(file.path)).toEqual({ aspectRatio: 2048.6 / 168.6 });
     recognition.invalidate(file.path);
     expect(recognition.cached(file.path)).toBeUndefined();
     expect(changed).toHaveBeenCalledTimes(2);

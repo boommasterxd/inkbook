@@ -38,6 +38,8 @@ export interface PresentationAttachment {
   readonly documentId: string;
   readonly embedReference: PresentationEmbedReference;
   readonly root: HTMLElement;
+  readonly preview?: HTMLElement;
+  readonly setPreviewSource?: (source: string) => void;
   readonly scrollOwner: () => HTMLElement | null;
 }
 
@@ -45,7 +47,10 @@ export function presentationAttachmentKey(attachment: AttachmentIdentity): strin
   return `${attachment.attachmentId}:${attachment.attachmentGeneration}`;
 }
 
-export type PresentationAttachmentInput = Omit<PresentationAttachment, "scrollOwner">;
+export type PresentationAttachmentInput = Omit<
+  PresentationAttachment,
+  "preview" | "scrollOwner" | "setPreviewSource"
+>;
 
 export interface PresentationSessionPort {
   activate(attachment: PresentationAttachment): void;

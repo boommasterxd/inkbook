@@ -7,7 +7,8 @@ const LOCK_CROSSFADE_DURATION_MS = 120;
 interface PreviewHandoffOptions {
   readonly container: HTMLElement;
   readonly motion: MotionPreference;
-  readonly preview: HTMLImageElement | undefined;
+  readonly preview: HTMLElement | undefined;
+  readonly setPreviewSource?: (source: string) => void;
   readonly root: HTMLElement;
 }
 
@@ -16,10 +17,11 @@ export class ActiveScenePreviewHandoff {
   readonly #mediaQuery: MediaQueryList | undefined;
   #motion: MotionPreference;
   readonly #ownerWindow: Window;
-  readonly #preview: HTMLImageElement | undefined;
+  readonly #preview: HTMLElement | undefined;
   readonly #previewNextSibling: ChildNode | null;
   readonly #previewParent: Node | null;
   readonly #root: HTMLElement;
+  readonly #setPreviewSource: ((source: string) => void) | undefined;
   readonly #lockedBlockSize: string;
   #disposed = false;
   #onComplete: (() => void) | undefined;
@@ -36,6 +38,7 @@ export class ActiveScenePreviewHandoff {
     this.#motion = options.motion;
     this.#ownerWindow = ownerWindow;
     this.#preview = options.preview;
+    this.#setPreviewSource = options.setPreviewSource;
     this.#previewNextSibling = options.preview?.nextSibling ?? null;
     this.#previewParent = options.preview?.parentNode ?? null;
     this.#root = options.root;
@@ -65,7 +68,7 @@ export class ActiveScenePreviewHandoff {
       "inkbook-active-ready",
     );
     this.#preview?.classList.remove("inkbook-preview-handoff");
-    const previewStyle = (this.#preview as Partial<HTMLImageElement> | undefined)?.style;
+    const previewStyle = this.#preview?.style;
     previewStyle?.removeProperty("inset");
     previewStyle?.removeProperty("opacity");
     previewStyle?.removeProperty("position");
@@ -117,9 +120,15 @@ export class ActiveScenePreviewHandoff {
   public setPreviewSource(source: string): Promise<void> {
     const preview = this.#preview;
     if (preview === undefined) return Promise.resolve();
-    preview.src = source;
-    return typeof preview.decode === "function"
-      ? preview.decode().catch(() => undefined)
+    if (this.#setPreviewSource !== undefined) {
+      this.#setPreviewSource(source);
+      return Promise.resolve();
+    }
+    if (preview.tagName !== "IMG") return Promise.resolve();
+    const image = preview as HTMLImageElement;
+    image.src = source;
+    return typeof image.decode === "function"
+      ? image.decode().catch(() => undefined)
       : Promise.resolve();
   }
 

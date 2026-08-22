@@ -192,6 +192,10 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
             this.#lifecycle.markFirstStroke(attachment.documentId);
           },
           root: attachment.root,
+          ...(attachment.preview === undefined ? {} : { preview: attachment.preview }),
+          ...(attachment.setPreviewSource === undefined
+            ? {}
+            : { setPreviewSource: attachment.setPreviewSource }),
           scheme: initialScheme,
           scrollOwner: attachment.scrollOwner,
           startupTool: settings.vault.startupTool,
@@ -231,11 +235,9 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     this.#lifecycle.detachAutoActivation(attachment);
     this.#pruneOwnerWindows();
   }
-
   hasActivePresentation(): boolean {
     return this.#coordinator.getSnapshot().current?.phase === "active";
   }
-
   execute(action: InkbookCommandAction): void {
     if (action === "lock") {
       if (!this.lockActivePresentation()) throw new Error("No active Inkbook presentation.");
@@ -247,7 +249,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     }
     scene.executeAction(action);
   }
-
   isAvailable(action: InkbookCommandAction): boolean {
     if (action === "lock") return this.hasActivePresentation();
     return this.#activeScene()?.isActionAvailable(action) ?? false;

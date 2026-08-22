@@ -5,7 +5,8 @@ import {
 } from "obsidian";
 
 import { findMarkdownInkbookEmbeds } from "./markdown-embed";
-import { browserLockedPreviewSchemeCapability } from "./locked-preview-scheme-capability";
+import type { InkbookDocumentRecognition } from "./document-recognition";
+import { createInkbookLockedPreview } from "./locked-preview";
 import { PresentationController } from "./presentation-controller";
 import type { EmbedIntegrationPorts, ResolvedInkbookDocument } from "./presentation-port";
 
@@ -64,6 +65,7 @@ function recognizeReadingViewCandidate(
   if (images.length !== 1) return undefined;
   const embed = embeds[0];
   if (embed === undefined) return undefined;
+  if (section.text.trim() !== embed.markdown) return undefined;
   const resolved = resolveDocument(embed.linkpath, context.sourcePath);
   if (resolved === undefined) return undefined;
   const resourceUrl = canonicalResourceUrl(resolved.resourceUrl, element.ownerDocument.baseURI);
@@ -85,21 +87,33 @@ function recognizeReadingViewCandidate(
 class InkbookReadingRenderChild extends MarkdownRenderChild {
   readonly #button: HTMLButtonElement;
   readonly #controller: PresentationController;
-  readonly #image: HTMLImageElement;
+  readonly #host: HTMLElement;
+  readonly #nativeChildren: readonly ChildNode[];
   readonly #root: HTMLSpanElement;
   readonly #lifecycle: EmbedIntegrationPorts["lifecycle"];
   #releaseLifecycle: (() => void) | undefined;
 
-  constructor(candidate: ReadingViewCandidate, ports: EmbedIntegrationPorts) {
+  constructor(
+    candidate: ReadingViewCandidate,
+    previewDescriptor: Exclude<InkbookDocumentRecognition, false>,
+    ports: EmbedIntegrationPorts,
+  ) {
+    const nativeChildren = Array.from(candidate.host.childNodes);
     const root = candidate.host.createSpan({ cls: "inkbook-root inkbook-embed-root" });
+    candidate.host.replaceChildren(root);
     const button = root.createEl("button", {
       attr: { "aria-label": "Edit handwriting", type: "button" },
       cls: "inkbook-locked-preview",
     });
-    button.append(candidate.image);
+    const preview = createInkbookLockedPreview(
+      button,
+      candidate.resolved.resourceUrl,
+      previewDescriptor,
+    );
     super(root);
     this.#button = button;
-    this.#image = candidate.image;
+    this.#host = candidate.host;
+    this.#nativeChildren = nativeChildren;
     this.#lifecycle = ports.lifecycle;
     this.#root = root;
     const attachmentId = `reading-${++nextReadingAttachmentId}`;
@@ -121,7 +135,11 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
       },
       ports.sessions,
       ports.scheme,
-      { capability: browserLockedPreviewSchemeCapability, image: candidate.image },
+      {
+        element: preview.element,
+        refresh: preview.refresh,
+        setSource: preview.setSource,
+      },
     );
   }
 
@@ -142,9 +160,7 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
     this.#releaseLifecycle?.();
     this.#releaseLifecycle = undefined;
     this.#controller.dispose();
-    if (this.#root.isConnected) {
-      this.#root.replaceWith(this.#controller.lockedPreviewImage ?? this.#image);
-    }
+    if (this.#root.isConnected) this.#host.replaceChildren(...this.#nativeChildren);
   }
 }
 
@@ -154,16 +170,16 @@ export function createReadingViewPostProcessor(
   return (element, context): Promise<void> | void => {
     const initial = recognizeReadingViewCandidate(element, context, ports.resolveDocument);
     if (initial === undefined) return;
-    const attach = (): void => {
+    const attach = (preview: Exclude<InkbookDocumentRecognition, false>): void => {
       const candidate = recognizeReadingViewCandidate(element, context, ports.resolveDocument);
       if (candidate?.resolved.documentId !== initial.resolved.documentId) return;
-      context.addChild(new InkbookReadingRenderChild(candidate, ports));
+      context.addChild(new InkbookReadingRenderChild(candidate, preview, ports));
     };
     const cached = ports.documents.cached(initial.resolved.documentId);
-    if (cached === true) return attach();
+    if (cached !== undefined && cached !== false) return attach(cached);
     if (cached === false) return;
     return ports.documents.recognize(initial.resolved.documentId).then((recognized) => {
-      if (recognized) attach();
+      if (recognized !== false) attach(recognized);
     });
   };
 }

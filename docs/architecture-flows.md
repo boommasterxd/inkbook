@@ -19,8 +19,10 @@ flowchart LR
   live --> liveWidget["CodeMirror WidgetType"]
   source --> rawMarkdown["Raw Markdown embed"]
 
-  readingChild -. "Progressively adds activation" .-> readingPreview
-  liveWidget --> widgetPreview["Widget-owned static preview and editor mount"]
+  readingPreview -. "Exact standalone correlation only" .-> readingChild
+  readingChild --> ownedPreview["Plugin-owned full-width background preview"]
+  liveWidget --> ownedPreview
+  ownedPreview --> widgetPreview["Static preview and editor mount"]
   readingChild --> coordinator["WorkspaceEditorCoordinator"]
   liveWidget --> coordinator
 

@@ -19,7 +19,12 @@ export class FakePresentationElement {
   readonly ownerDocument: Document;
   readonly tagName: string;
   readonly style = {
+    aspectRatio: "",
+    backgroundImage: "",
     colorScheme: "",
+    removeProperty: (name: string): void => {
+      delete (this.style as unknown as Record<string, unknown>)[name];
+    },
     setProperty: (name: string, value: string): void => {
       (this.style as unknown as Record<string, unknown>)[name] = value;
     },
@@ -73,6 +78,20 @@ export class FakePresentationElement {
     this.ownerDocument = documentPort as unknown as Document;
   }
 
+  public get childNodes(): readonly FakePresentationElement[] {
+    return this.children;
+  }
+
+  public get nextSibling(): FakePresentationElement | null {
+    if (this.parentElement === null) return null;
+    const index = this.parentElement.children.indexOf(this);
+    return index < 0 ? null : (this.parentElement.children[index + 1] ?? null);
+  }
+
+  public get parentNode(): FakePresentationElement | null {
+    return this.parentElement;
+  }
+
   readonly classList = {
     add: (...names: string[]): void => {
       for (const name of names) this.classNames.add(name);
@@ -99,7 +118,27 @@ export class FakePresentationElement {
       if (previousIndex >= 0) child.parentElement.children.splice(previousIndex, 1);
     }
     child.parentElement = this;
+    child.isConnected = this.isConnected;
     this.children.push(child);
+  }
+
+  public insertBefore(child: FakePresentationElement, reference: FakePresentationElement): void {
+    const referenceIndex = this.children.indexOf(reference);
+    if (referenceIndex < 0) {
+      this.append(child);
+      return;
+    }
+    child.parentElement?.removeChild(child);
+    child.parentElement = this;
+    child.isConnected = this.isConnected;
+    this.children.splice(referenceIndex, 0, child);
+  }
+
+  private removeChild(child: FakePresentationElement): void {
+    const index = this.children.indexOf(child);
+    if (index >= 0) this.children.splice(index, 1);
+    child.parentElement = null;
+    child.isConnected = false;
   }
 
   public cloneNode(): FakePresentationElement {
@@ -138,6 +177,19 @@ export class FakePresentationElement {
     return child;
   }
 
+  public createDiv(options?: { readonly cls?: string }): FakePresentationElement {
+    const child = new FakePresentationElement(this.ownerDocument);
+    for (const className of options?.cls?.split(" ") ?? []) child.classList.add(className);
+    this.append(child);
+    return child;
+  }
+
+  public setCssProps(properties: Record<string, string>): void {
+    for (const [name, value] of Object.entries(properties)) {
+      (this.style as unknown as Record<string, unknown>)[name] = value;
+    }
+  }
+
   public createSpan(options?: { readonly cls?: string }): FakePresentationElement {
     const child = new FakePresentationElement(this.ownerDocument, "span");
     for (const className of options?.cls?.split(" ") ?? []) child.classList.add(className);
@@ -155,7 +207,13 @@ export class FakePresentationElement {
     this.isConnected = false;
   }
 
+  public replaceChildren(...replacements: FakePresentationElement[]): void {
+    for (const child of [...this.children]) this.removeChild(child);
+    for (const replacement of replacements) this.append(replacement);
+  }
+
   public remove(): void {
+    this.parentElement?.removeChild(this);
     this.isConnected = false;
   }
 

@@ -12,7 +12,8 @@ import { editorInfoField, editorLivePreviewField } from "obsidian";
 
 import { utf8ByteLengthWithinLimit } from "../../persistence/scheduling/utf8-byte-length";
 import { findMarkdownInkbookEmbeds, MARKDOWN_EMBED_LIMITS } from "./markdown-embed";
-import { browserLockedPreviewSchemeCapability } from "./locked-preview-scheme-capability";
+import type { InkbookDocumentRecognition } from "./document-recognition";
+import { createInkbookLockedPreview } from "./locked-preview";
 import { PresentationController } from "./presentation-controller";
 import type { EmbedIntegrationPorts, ResolvedInkbookDocument } from "./presentation-port";
 
@@ -29,6 +30,10 @@ export interface VisibleEmbed {
   readonly resolved: ResolvedInkbookDocument;
   readonly sourcePath: string;
   readonly to: number;
+}
+
+interface RecognizedVisibleEmbed extends VisibleEmbed {
+  readonly preview: Exclude<InkbookDocumentRecognition, false>;
 }
 
 export interface LivePreviewContext {
@@ -190,7 +195,7 @@ export function shouldRefreshLivePreview(
 function findVisibleEmbeds(
   view: EditorView,
   ports: EmbedIntegrationPorts,
-): readonly VisibleEmbed[] {
+): readonly RecognizedVisibleEmbed[] {
   const context = livePreviewContext(view);
   if (!context.enabled) {
     return [];
@@ -238,19 +243,21 @@ function findVisibleEmbeds(
       return true;
     },
   );
-  return candidates.filter((candidate) => {
+  return candidates.flatMap((candidate) => {
     const documentId = candidate.resolved.documentId;
     const recognized = ports.documents.cached(documentId);
     if (recognized === undefined) void ports.documents.recognize(documentId);
-    return recognized === true;
+    return recognized === undefined || recognized === false
+      ? []
+      : [{ ...candidate, preview: recognized }];
   });
 }
 
 export class InkbookLivePreviewWidget extends WidgetType {
-  readonly #embed: VisibleEmbed;
+  readonly #embed: RecognizedVisibleEmbed;
   readonly #ports: EmbedIntegrationPorts;
 
-  constructor(embed: VisibleEmbed, ports: EmbedIntegrationPorts) {
+  constructor(embed: RecognizedVisibleEmbed, ports: EmbedIntegrationPorts) {
     super();
     this.#embed = embed;
     this.#ports = ports;
@@ -277,9 +284,11 @@ export class InkbookLivePreviewWidget extends WidgetType {
       attr: { "aria-label": "Edit handwriting", type: "button" },
       cls: "inkbook-locked-preview",
     });
-    const image = button.createEl("img", {
-      attr: { alt: "", src: this.#embed.resolved.resourceUrl },
-    });
+    const preview = createInkbookLockedPreview(
+      button,
+      this.#embed.resolved.resourceUrl,
+      this.#embed.preview,
+    );
 
     const attachmentId = `live-preview-${++nextLivePreviewAttachmentId}`;
     const controller = new PresentationController(
@@ -298,7 +307,11 @@ export class InkbookLivePreviewWidget extends WidgetType {
       },
       this.#ports.sessions,
       this.#ports.scheme,
-      { capability: browserLockedPreviewSchemeCapability, image },
+      {
+        element: preview.element,
+        refresh: preview.refresh,
+        setSource: preview.setSource,
+      },
     );
     controller.mount();
     const activate = (event: MouseEvent): void => {

@@ -73,18 +73,22 @@
 
 .inkbook-root .inkbook-locked-preview {
   appearance: none;
-  background: transparent;
-  border: 0;
-  border-radius: inherit;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: clamp(10px, 2cqi, 20px);
   color: inherit;
   cursor: pointer;
   display: block;
   inline-size: 100%;
   margin: 0;
+  overflow: clip;
   padding: 0;
 }
 
-.inkbook-root .inkbook-locked-preview img {
+.inkbook-root .inkbook-locked-preview-media {
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
   display: block;
   inline-size: 100%;
   pointer-events: none;

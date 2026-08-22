@@ -204,8 +204,10 @@ function createPluginHarness() {
 }
 
 async function mountReadingEmbed(plugin: InkbookPlugin): Promise<{
+  readonly button: FakePresentationElement;
   readonly child: MarkdownRenderChild;
   readonly image: FakePresentationElement;
+  readonly preview: FakePresentationElement;
   readonly root: FakePresentationElement;
 }> {
   const root = new FakePresentationElement();
@@ -224,7 +226,11 @@ async function mountReadingEmbed(plugin: InkbookPlugin): Promise<{
     sourcePath: "notes/page.md",
   });
   if (child === undefined) throw new Error("Reading-view child was not mounted.");
-  return { child, image, root };
+  const presentationRoot = inkbookRoot(root);
+  const button = presentationRoot.children[0];
+  const preview = button?.children[0];
+  if (button === undefined || preview === undefined) throw new Error("Missing locked preview.");
+  return { button, child, image, preview, root };
 }
 
 async function createReadyReadingEmbed() {
@@ -238,7 +244,7 @@ async function createReadyReadingEmbed() {
 async function activatePresentation(
   presentation: Awaited<ReturnType<typeof mountReadingEmbed>>,
 ): Promise<void> {
-  presentation.image.dispatch("click");
+  presentation.button.dispatch("click");
   await vi.waitFor(() => expect(scenes.records).toHaveLength(1));
   expect(inkbookRoot(presentation.root).dataset.inkbookState).toBe("active");
 }
@@ -337,7 +343,7 @@ describe("plugin workspace realm integration", () => {
     presentation.child.unload();
     expect(scene?.dispose).toHaveBeenCalledTimes(1);
     expect(presentation.root.classNames).not.toContain("inkbook-scrollbar-stable");
-    expect(presentation.image.listeners.get("click")?.size ?? 0).toBe(0);
+    expect(presentation.button.listeners.get("click")?.size ?? 0).toBe(0);
 
     harness.plugin.onunload();
   });
@@ -349,7 +355,7 @@ describe("plugin workspace realm integration", () => {
     harness.plugin.onunload();
 
     expect(presentation.root.classNames).not.toContain("inkbook-scrollbar-stable");
-    expect(presentation.image.listeners.get("click")?.size ?? 0).toBe(0);
+    expect(presentation.button.listeners.get("click")?.size ?? 0).toBe(0);
   });
 
   it("keeps the static preview and reports a retryable editor-chrome load failure", async () => {
@@ -368,7 +374,7 @@ describe("plugin workspace realm integration", () => {
     await harness.plugin.onload();
     const presentation = await mountReadingEmbed(harness.plugin);
 
-    presentation.image.dispatch("click");
+    presentation.button.dispatch("click");
     await vi.waitFor(() => expect(scenes.records).toHaveLength(1));
     rejectReadiness(new Error("blocked by script-src"));
     await vi.waitFor(() => {
@@ -376,7 +382,7 @@ describe("plugin workspace realm integration", () => {
     });
 
     expect(scenes.records[0]?.dispose).toHaveBeenCalledOnce();
-    expect(presentation.image.hidden).toBe(false);
+    expect(presentation.preview.hidden).toBe(false);
     expect(notices).toHaveLength(noticeCount + 1);
     expect(notices[notices.length - 1]?.message).toContain("select the embed to retry");
     presentation.child.unload();
@@ -447,7 +453,7 @@ describe("plugin workspace activation serialization", () => {
 
     scene.options.onLock();
     expect(inkbookRoot(presentation.root).dataset.inkbookState).toBe("locking");
-    presentation.image.dispatch("click");
+    presentation.button.dispatch("click");
     await Promise.resolve();
 
     expect(scenes.records).toHaveLength(1);

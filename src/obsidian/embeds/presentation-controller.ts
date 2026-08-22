@@ -9,10 +9,6 @@ import {
   ScrollbarLeaseRegistry,
 } from "../scrolling";
 import type {
-  LockedPreviewSchemeCapability,
-  LockedPreviewSchemeCapabilityCheck,
-} from "./locked-preview-scheme-capability";
-import type {
   PresentationAttachment,
   PresentationAttachmentInput,
   PresentationSessionPort,
@@ -27,9 +23,9 @@ interface PresentationMeasurement {
 }
 
 export interface PresentationPreviewLifecycle {
-  readonly capability?: LockedPreviewSchemeCapability;
-  readonly image: HTMLImageElement;
-  readonly onImageReplaced?: (image: HTMLImageElement) => void;
+  readonly element: HTMLElement;
+  readonly refresh?: () => void;
+  readonly setSource?: (source: string) => void;
 }
 
 function leasesFor(document: Document): ScrollbarLeaseRegistry<HTMLElement> {
@@ -50,15 +46,12 @@ export class PresentationController {
   #frame: number | undefined;
   #activationPending = false;
   #appliedScheme: InkbookColorScheme | undefined;
-  readonly #capability: LockedPreviewSchemeCapabilityCheck | undefined;
   #measured = false;
   #measurementFrame: number | undefined;
   #mounted = false;
   #observer: ResizeObserver | undefined;
   readonly #owningWindow: Window;
-  #previewImage: HTMLImageElement | undefined;
   readonly #previewLifecycle: PresentationPreviewLifecycle | undefined;
-  #schemeGeneration = 0;
   readonly #scroll: PresentationScrollLifecycle<HTMLElement, PresentationMeasurement>;
 
   constructor(
@@ -73,11 +66,17 @@ export class PresentationController {
     if (owningWindow === null) throw new Error("The Inkbook presentation has no owning window.");
     this.#owningWindow = owningWindow;
     this.#previewLifecycle = previewLifecycle;
-    this.#previewImage = previewLifecycle?.image;
-    this.#capability = previewLifecycle?.capability?.supportsContextRepaint(owningWindow);
     let lifecycle: PresentationScrollLifecycle<HTMLElement, PresentationMeasurement> | undefined;
     this.#attachment = {
       ...attachment,
+      ...(previewLifecycle === undefined
+        ? {}
+        : {
+            preview: previewLifecycle.element,
+            ...(previewLifecycle.setSource === undefined
+              ? {}
+              : { setPreviewSource: previewLifecycle.setSource }),
+          }),
       scrollOwner: () => lifecycle?.owner ?? null,
     };
     this.#scroll = lifecycle = new PresentationScrollLifecycle<
@@ -116,12 +115,8 @@ export class PresentationController {
       if (previousScheme === nextScheme) return;
       this.#appliedScheme = nextScheme;
       applyColorScheme(attachment.root, nextScheme);
-      if (previousScheme !== undefined) this.#schedulePreviewReplacement();
+      if (previousScheme !== undefined) this.#previewLifecycle?.refresh?.();
     });
-  }
-
-  public get lockedPreviewImage(): HTMLImageElement | undefined {
-    return this.#previewImage;
   }
 
   mount(): void {
@@ -190,34 +185,11 @@ export class PresentationController {
     });
   }
 
-  #schedulePreviewReplacement(): void {
-    const capability = this.#capability;
-    if (capability === undefined) return;
-    const generation = ++this.#schemeGeneration;
-    void capability.result.then((supported) => {
-      if (
-        supported ||
-        generation !== this.#schemeGeneration ||
-        !this.#mounted ||
-        this.#attachment.root.dataset.inkbookState !== "locked"
-      )
-        return;
-      const image = this.#previewImage;
-      if (image === undefined || !this.#attachment.root.contains(image)) return;
-      const replacement = image.cloneNode(false) as HTMLImageElement;
-      image.replaceWith(replacement);
-      this.#previewImage = replacement;
-      this.#previewLifecycle?.onImageReplaced?.(replacement);
-    });
-  }
-
   dispose(): void {
     this.#disposeScheme?.();
     this.#disposeScheme = undefined;
-    this.#capability?.dispose();
     if (this.#mounted) {
       this.#mounted = false;
-      this.#schemeGeneration += 1;
       this.#activationPending = false;
       this.#measured = false;
       const owningWindow = this.#attachment.root.ownerDocument.defaultView;

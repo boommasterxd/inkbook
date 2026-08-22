@@ -6,14 +6,16 @@ const MAXIMUM_RECOGNITION_CACHE_ENTRIES = 256;
 const MAXIMUM_ROOT_TAG_CHARACTERS = 4096;
 
 interface RecognitionEntry {
-  readonly promise: Promise<boolean> | undefined;
+  readonly promise: Promise<InkbookDocumentRecognition> | undefined;
   readonly signature: string;
-  readonly value: boolean | undefined;
+  readonly value: InkbookDocumentRecognition | undefined;
 }
 
+export type InkbookDocumentRecognition = false | { readonly aspectRatio: number };
+
 export interface InkbookDocumentRecognitionPort {
-  cached(documentId: string): boolean | undefined;
-  recognize(documentId: string): Promise<boolean>;
+  cached(documentId: string): InkbookDocumentRecognition | undefined;
+  recognize(documentId: string): Promise<InkbookDocumentRecognition>;
   subscribe(listener: (documentId: string) => void): () => void;
 }
 
@@ -30,6 +32,20 @@ export function hasCanonicalInkbookRootMarker(content: string): boolean {
   return /\sdata-inkbook-format=(?:"inkbook"|'inkbook')(?=\s|>)/u.test(rootTag);
 }
 
+function recognizeCanonicalInkbookRoot(content: string): InkbookDocumentRecognition {
+  const prefix = content.slice(0, MAXIMUM_ROOT_TAG_CHARACTERS).trimStart();
+  if (!hasCanonicalInkbookRootMarker(prefix)) return false;
+  const closing = prefix.indexOf(">");
+  const rootTag = prefix.slice(0, closing + 1);
+  const viewBox =
+    /\sviewBox=(?:"0 0 2048\.6 ([0-9]+(?:\.[0-9]+)?)"|'0 0 2048\.6 ([0-9]+(?:\.[0-9]+)?)')(?=\s|>)/u.exec(
+      rootTag,
+    );
+  const height = Number(viewBox?.[1] ?? viewBox?.[2]);
+  if (!Number.isFinite(height) || height <= 0) return false;
+  return { aspectRatio: 2048.6 / height };
+}
+
 export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecognitionPort {
   readonly #entries = new Map<string, RecognitionEntry>();
   readonly #listeners = new Set<(documentId: string) => void>();
@@ -39,7 +55,7 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     this.#vault = vault;
   }
 
-  public cached(documentId: string): boolean | undefined {
+  public cached(documentId: string): InkbookDocumentRecognition | undefined {
     const file = this.#resolveFile(documentId);
     if (file === undefined) return false;
     const entry = this.#entries.get(documentId);
@@ -48,7 +64,7 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     return entry.value;
   }
 
-  public recognize(documentId: string): Promise<boolean> {
+  public recognize(documentId: string): Promise<InkbookDocumentRecognition> {
     const file = this.#resolveFile(documentId);
     if (file === undefined) return Promise.resolve(false);
     const signature = fileSignature(file);
@@ -86,7 +102,7 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     this.#listeners.clear();
   }
 
-  async #readMarker(file: TFile, signature: string): Promise<boolean> {
+  async #readMarker(file: TFile, signature: string): Promise<InkbookDocumentRecognition> {
     if (file.stat.size < 0 || file.stat.size > FILE_SCHEMA_LIMITS.totalInputBytes) return false;
     try {
       const content = await this.#vault.cachedRead(file);
@@ -94,7 +110,7 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
       return (
         current === file &&
         fileSignature(current) === signature &&
-        hasCanonicalInkbookRootMarker(content)
+        recognizeCanonicalInkbookRoot(content)
       );
     } catch {
       return false;

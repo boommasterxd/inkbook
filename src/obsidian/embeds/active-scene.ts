@@ -57,6 +57,8 @@ export interface ActiveInkbookSceneOptions {
   readonly onDeleteEmbed: () => void;
   readonly onFirstStrokeCommitted?: () => void;
   readonly root: HTMLElement;
+  readonly preview?: HTMLElement;
+  readonly setPreviewSource?: (source: string) => void;
   readonly scheme: InkbookColorScheme;
   readonly scrollOwner?: () => BrowserScrollElement | null;
   readonly startupTool: StartupToolV1;
@@ -105,7 +107,7 @@ export class ActiveInkbookScene {
     this.#chromeHost = elements.chromeHost;
     this.#container = elements.container;
     this.#editorChrome = elements.editorChrome;
-    this.#previewHandoff = elements.previewHandoff;
+    this.#previewHandoff = createPreviewHandoff(elements.container, options);
     this.#memory = new ActiveSceneMemoryBinding(options.model.store);
     this.#store = this.#memory.store;
     const scrollOwner = options.scrollOwner?.() ?? resolveActiveScrollOwner(options.root);
@@ -452,16 +454,23 @@ function createSceneElements(
   readonly chromeHost: HTMLDivElement;
   readonly container: HTMLDivElement;
   readonly editorChrome: HTMLDivElement;
-  readonly previewHandoff: ActiveScenePreviewHandoff;
 } {
   root.classList.add("inkbook-root");
   root.dataset.inkbookMotion = motion;
-  const preview = root.getElementsByTagName("img").item(0) ?? undefined;
-  const { chromeHost, container, editorChrome } = createActiveSceneChromeElements(root);
-  return {
-    chromeHost,
+  return createActiveSceneChromeElements(root);
+}
+
+function createPreviewHandoff(
+  container: HTMLElement,
+  options: ActiveInkbookSceneOptions,
+): ActiveScenePreviewHandoff {
+  return new ActiveScenePreviewHandoff({
     container,
-    editorChrome,
-    previewHandoff: new ActiveScenePreviewHandoff({ container, motion, preview, root }),
-  };
+    motion: options.deviceSettings.motion,
+    preview: options.preview,
+    root: options.root,
+    ...(options.setPreviewSource === undefined
+      ? {}
+      : { setPreviewSource: options.setPreviewSource }),
+  });
 }

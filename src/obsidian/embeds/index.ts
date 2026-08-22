@@ -1,5 +1,6 @@
 export * from "./document-recognition";
 export * from "./live-preview";
+export * from "./locked-preview";
 export * from "./markdown-embed";
 export * from "./obsidian-document-resolver";
 export * from "./presentation-port";
