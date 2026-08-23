@@ -199,12 +199,20 @@ export class ActiveInkbookScene {
   public disableInput(): void {
     this.#controller.setEnabled(false);
     this.#beginLockTransition();
+    this.#layout.suspend();
   }
 
   public enableInput(): void {
     if (!this.#readyForInput) return;
     this.#cancelLockTransition();
+    this.#layout.resume();
     this.#controller.setEnabled(true);
+  }
+
+  public restoreAfterFailedLock(): void {
+    if (this.#disposed) return;
+    this.#cancelLockTransition();
+    this.#layout.resume();
   }
 
   public finishLock(): Promise<void> {

@@ -3,7 +3,7 @@ export interface InkbookLockedPreviewDescriptor {
 }
 
 export interface InkbookLockedPreviewSurface {
-  readonly element: HTMLElement;
+  readonly element: HTMLButtonElement;
   readonly refresh: () => void;
   readonly setSource: (source: string) => void;
 }
@@ -23,7 +23,7 @@ export function createInkbookLockedPreview(
   };
   setSource(source);
   return {
-    element,
+    element: button,
     refresh: () => {
       element.setCssProps({ "--inkbook-preview-image": "none" });
       element.getBoundingClientRect();

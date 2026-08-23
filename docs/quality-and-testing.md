@@ -217,6 +217,7 @@ When reduced motion is active:
 - Unlock and lock show no empty, unmeasured, stale, or half-rendered frame.
 - Controls never change hit-target size between normal, hover, active, and focus states.
 - Conditional toolbar controls do not overlap or cause repeated layout-stage oscillation.
+- Conditional Copy, Cut, Paste, and Delete controls appear as separate 52-pixel circular surfaces to the right of the primary pill without changing its measured center; the scrollable stage reserves a symmetric 136-pixel corridor so at least one action remains visible, and the owner-window resize observer refreshes the pill edge even when the responsive stage does not change.
 - Every destructive action has confirmation where documented and preserves undo when possible.
 - Every failed operation leaves a clear next action such as Retry, Reload, Save copy, or Cancel.
 - Cursor, selection handles, eraser radius, and toolbar controls remain screen-sized across zoom levels.
@@ -228,9 +229,9 @@ The editor targets WCAG 2.2 AA within the capabilities of the Obsidian host.
 
 - Every icon-only control has an accessible name and tooltip.
 - The canvas input surface is keyboard-focusable, has an accessible name, and shows a visible `focus-visible` indicator without changing document geometry.
-- The toolbar exposes one `toolbar` role and three labelled groups.
+- The toolbar exposes one `toolbar` role, one labelled primary control group, and a second labelled editing-action group only while context actions are present.
 - Tool buttons expose pressed or selected state. Flyout buttons expose expanded state and their controlled popup.
-- Tab enters and leaves the toolbar. Arrow keys move within the current group. Home and End move to group boundaries.
+- Tab enters and leaves each visible toolbar group. Arrow keys move within the primary track or context-action strip. Home and End move to the first and last visible controls in that group. If the last context action disappears while focused, focus moves to the primary overflow trigger.
 - Escape closes the current flyout, cancels an uncommitted gesture, or clears selection in that order.
 - Focus returns to the trigger when a flyout closes and moves to the nearest surviving control when a conditional button disappears.
 - Keyboard commands exist for every toolbar action that is not inherently pointer-geometric.
@@ -377,7 +378,10 @@ Manual checks are not smoke or end-to-end test suites. They are focused acceptan
 - host-theme chrome, high contrast, and reduced motion
 - 10,000-stroke frame, memory, unlock, animation, and export budgets
 - in-place lock and unlock with identical root, width, attachment, and top-edge anchor; the same block animates once between exact locked and active heights without duplicate insertion, flicker, unintended scroll jumps, or editor remounting
+- empty locked previews with at least 2.5 writing lines rounded to the next background step, no clipping by host button sizing, and the same minimum after reload
 - active and standalone SVG verification that guides stop at the inner edge of all four writable page margins, input remains available throughout those margins, and content entering the bottom margin restores a complete margin after growth
+- attached save recovery restores the active page height and camera before presenting its compact icon-action overlay at the lower center of the editor, so all four writable SVG margins remain visible and no failed-lock measurement reads a released document page
+- toolbar overflow opening directly below its three-dot trigger, Background submenu hover and keyboard behavior with icons, exact primary-toolbar centering while context buttons appear, and Canvas context-menu section separators with an icon on every actionable entry
 - consecutive stroke commits, autosaves, resource refreshes, and theme changes without active-editor detachment, widget remount, focus loss, or session closure
 - Reading view, Live Preview, Source mode, pop-out windows, settings search, enable, disable, and reload without leaked listeners, workers, scrollbar leases, host-element references, portals, or React roots
 - production editor-chrome module loading under Obsidian's default CSP in the main window and a real pop-out realm, including distinct owner-document React roots, toolbar measurement before input handoff, close-before-load cancellation, retryable CSP/import failure, timeout cleanup, and no retained Blob URL

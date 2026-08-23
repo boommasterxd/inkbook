@@ -82,7 +82,9 @@ describe("shared conservative element bounds", () => {
       ),
     ).toBe(true);
   });
+});
 
+describe("page extent bounds", () => {
   it("derives active and locked heights on background-aligned rows", () => {
     const page: PageV1 = {
       innerWidth: 2000,
@@ -92,13 +94,31 @@ describe("shared conservative element bounds", () => {
       activeBufferLines: 3,
       lockedBufferLines: 1,
     };
-    expect(derivePageExtent(page, null)).toMatchObject({
+    const emptyExtent = derivePageExtent(page, null);
+    expect(emptyExtent).toMatchObject({
       backgroundStep: 50,
       bufferUnit: 100,
       occupiedRows: 0,
       activeHeight: 348.6,
-      lockedHeight: 148.6,
     });
+    expect(emptyExtent.lockedHeight).toBeCloseTo(248.6);
     expect(derivePageExtent(page, calculateElementBounds(table()).maxY).occupiedRows).toBe(2);
+  });
+
+  it("keeps an empty page at least two and a half writing lines tall", () => {
+    const page: PageV1 = {
+      innerWidth: 2000,
+      margin: 24.3,
+      background: { type: "squares", spacing: 40 },
+      writingLineHeight: 100,
+      activeBufferLines: 1,
+      lockedBufferLines: 0,
+    };
+
+    expect(derivePageExtent(page, null)).toMatchObject({
+      activeHeight: 328.6,
+      lockedHeight: 328.6,
+    });
+    expect(derivePageExtent(page, page.margin + 40).lockedHeight).toBe(88.6);
   });
 });

@@ -31,11 +31,11 @@ function render(overrides: Partial<ToolbarState> = {}): string {
 }
 
 describe("Inkbook toolbar", () => {
-  it("renders one accessible toolbar with three labelled groups", () => {
+  it("renders one accessible toolbar with one continuous control track", () => {
     const markup = render();
     expect(markup.match(/role="toolbar"/gu)).toHaveLength(1);
-    expect(markup.match(/role="group"/gu)).toHaveLength(3);
-    expect(markup).toContain('aria-label="Drawing tools"');
+    expect(markup.match(/role="group"/gu)).toHaveLength(1);
+    expect(markup).toContain('aria-label="Tools and actions"');
     expect(markup).toContain('aria-pressed="true"');
   });
 
@@ -53,15 +53,20 @@ describe("Inkbook toolbar", () => {
     expect(markup).toContain('aria-label="Cut"');
     expect(markup).toContain('aria-label="Delete"');
     expect(markup).toContain('aria-label="Paste"');
+    expect(markup).toContain('class="inkbook-toolbar-group inkbook-toolbar-context-actions"');
     expect(markup).toMatch(/aria-expanded="true"[^>]*aria-label="Style"/u);
     expect(markup).toContain('aria-controls="inkbook-style-flyout"');
     expect(markup).toContain('aria-haspopup="dialog"');
+    expect(markup.indexOf('class="inkbook-toolbar inkbook-toolbar-wide"')).toBeLessThan(
+      markup.indexOf("inkbook-toolbar-context-actions"),
+    );
   });
 
   it("uses roving tab stops and resolves group keyboard navigation", () => {
     const markup = render();
-    expect(markup).toContain('data-inkbook-action="background" tabindex="0"');
-    expect(markup).toContain('data-inkbook-action="select" tabindex="0"');
+    expect(markup).not.toContain('data-inkbook-action="background"');
+    expect(markup).toContain('data-inkbook-action="undo" tabindex="0"');
+    expect(markup).toContain('data-inkbook-action="select" tabindex="-1"');
     expect(nextToolbarIndex("ArrowRight", 2, 4)).toBe(3);
     expect(nextToolbarIndex("ArrowRight", 3, 4)).toBe(0);
     expect(nextToolbarIndex("ArrowLeft", 0, 4)).toBe(3);

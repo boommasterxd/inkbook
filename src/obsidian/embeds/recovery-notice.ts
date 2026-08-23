@@ -1,3 +1,5 @@
+import { setIcon } from "obsidian";
+
 export interface HeadlessRecoveryActions {
   reloadExternal(): Promise<boolean>;
   retry(): boolean;
@@ -21,10 +23,13 @@ export function showAttachedRecoveryPanel(
 ): HTMLElement {
   const panel = root.createDiv({ cls: "inkbook-recovery" });
   panel.setAttribute("role", "alert");
-  panel.createSpan({ text: "Inkbook could not save this drawing." });
-  const retry = panel.createEl("button", { text: "Retry" });
-  const saveCopy = panel.createEl("button", { text: "Save local copy" });
-  const cancel = panel.createEl("button", { text: "Cancel" });
+  panel.setAttribute("aria-label", "Save failed");
+  const message = panel.createDiv({ cls: "inkbook-recovery-message" });
+  message.textContent = "Could not save changes";
+  const actionGroup = panel.createDiv({ cls: "inkbook-recovery-actions" });
+  const retry = recoveryIconButton(actionGroup, "Retry save", "rotate-ccw");
+  const saveCopy = recoveryIconButton(actionGroup, "Save copy", "copy-plus");
+  const cancel = recoveryIconButton(actionGroup, "Continue editing", "pencil");
   retry.addEventListener("click", () => runAttachedAction(panel, () => actions.retry(), onClosed));
   saveCopy.addEventListener("click", () => {
     setPending(panel, true);
@@ -131,6 +136,19 @@ function recoveryButton(container: HTMLElement, text: string, label?: string): H
   button.type = "button";
   button.textContent = text;
   if (label !== undefined) button.setAttribute("aria-label", label);
+  return button;
+}
+
+function recoveryIconButton(
+  container: HTMLElement,
+  label: string,
+  icon: string,
+): HTMLButtonElement {
+  const button = recoveryButton(container, "", label);
+  button.setAttribute("class", "inkbook-recovery-icon-button");
+  button.setAttribute("title", label);
+  const iconElement = button.createSpan({ cls: "inkbook-recovery-action-icon" });
+  setIcon(iconElement, icon);
   return button;
 }
 

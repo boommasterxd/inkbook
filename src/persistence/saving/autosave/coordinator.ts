@@ -184,11 +184,6 @@ export class AutosaveCoordinator {
   }
   public async notifyExternalChange(): Promise<ExternalChangeOutcome> {
     if (this.#disposed) return "conflict";
-    if (this.dirty) {
-      this.#setStatus("conflict");
-      this.#resolveWaiters();
-      return "conflict";
-    }
     const expectedRevision = this.#document.currentRevision();
     let content: string;
     try {
@@ -206,13 +201,24 @@ export class AutosaveCoordinator {
       throw error;
     }
     if (this.#disposed) return "conflict";
-    if (this.#document.currentRevision() !== expectedRevision || this.dirty) {
+    if (
+      sameVaultBase(persisted, this.#confirmedBase) ||
+      (this.#save !== null &&
+        sameVaultBase(persisted, {
+          outputHash: this.#save.proof.outputHash,
+          revision: this.#save.proof.revision,
+          type: "confirmed",
+        }))
+    ) {
+      return "unchanged";
+    }
+    if (
+      persisted.type === "unreadable" ||
+      this.#document.currentRevision() !== expectedRevision ||
+      this.dirty
+    ) {
       this.#setStatus("conflict");
       this.#resolveWaiters();
-      return "conflict";
-    }
-    if (persisted.type === "unreadable") {
-      this.#setStatus("conflict");
       return "conflict";
     }
     this.#confirmedBase = persisted;

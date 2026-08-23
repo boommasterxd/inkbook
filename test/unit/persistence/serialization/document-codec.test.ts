@@ -275,7 +275,7 @@ describe("Inkbook document parsing failures", () => {
     ).toMatchObject({ ok: false, error: { code: "revision-mismatch" } });
     expect(
       parseInkbookDocument(
-        serialized.value.svg.replace('viewBox="0 0 2048.6 148.6"', 'viewBox="0 0 2048.6 149.6"'),
+        serialized.value.svg.replace('viewBox="0 0 2048.6 348.6"', 'viewBox="0 0 2048.6 349.6"'),
       ),
     ).toMatchObject({ ok: false, error: { code: "locked-height-mismatch" } });
   });

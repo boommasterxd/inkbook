@@ -15,7 +15,7 @@ export type ToolbarAction =
   | "lock"
   | "overflow";
 
-export type FlyoutId = "background" | "shape" | "style";
+export type FlyoutId = "background" | "overflow" | "shape" | "style";
 
 export interface ToolbarState {
   readonly activeTool: ToolId;

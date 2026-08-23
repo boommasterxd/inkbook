@@ -45,6 +45,21 @@ describe("WorkspaceEditorCoordinator recovery outcomes", () => {
     expect(dirtyHarness.attachedRecoveryRequired).toHaveBeenCalledOnce();
   });
 
+  it("keeps the active presentation unchanged for a confirmed host write notification", async () => {
+    const harness = createHarness();
+    const session = await activate(harness, documentA);
+    session.externalChangeOutcome = "unchanged";
+
+    await expect(harness.coordinator.notifyExternalChange(documentA.documentId)).resolves.toBe(
+      "unchanged",
+    );
+
+    expect(harness.coordinator.getSnapshot().current?.phase).toBe("active");
+    expect(harness.release).not.toHaveBeenCalled();
+    expect(harness.disableInput).not.toHaveBeenCalled();
+    expect(harness.attachedRecoveryRequired).not.toHaveBeenCalled();
+  });
+
   it("resolves headless recovery before activating the waiting document", async () => {
     const harness = createHarness();
     const session = await enterHeadlessRecovery(harness);

@@ -72,7 +72,7 @@ export interface AutosaveCoordinatorOptions {
 export type FlushReason = "detach" | "lock" | "retry";
 export type FlushOutcome =
   "clean" | "conflict" | "executor-failed" | "retryable-error" | "verification-required";
-export type ExternalChangeOutcome = "conflict" | "reload-required";
+export type ExternalChangeOutcome = "conflict" | "reload-required" | "unchanged";
 
 export interface ActiveAutosave {
   readonly previousBase: VaultBase;

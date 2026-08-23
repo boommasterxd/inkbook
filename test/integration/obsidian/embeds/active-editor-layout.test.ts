@@ -132,6 +132,11 @@ function harness(motion: "full" | "reduced" | "system" = "full", horizontalInset
   const onResize = vi.fn<(update: ActiveEditorResizeUpdate) => void>();
   const onZoom = vi.fn();
   let maximumBottom: number | undefined;
+  let pageAvailable = true;
+  const readPage = vi.fn(() => {
+    if (!pageAvailable) throw new Error("The document page is unavailable.");
+    return page();
+  });
   const layout = new ActiveEditorLayout({
     chromeHost: { querySelector: () => null } as unknown as HTMLElement,
     container,
@@ -139,7 +144,7 @@ function harness(motion: "full" | "reduced" | "system" = "full", horizontalInset
     onReady: vi.fn(),
     onResize,
     onZoom,
-    page,
+    page: readPage,
     readResizeAnchor: () => ({
       anchorViewportY: 250,
       embedTopInScrollContent: 200,
@@ -163,6 +168,9 @@ function harness(motion: "full" | "reduced" | "system" = "full", horizontalInset
     renderer,
     setMaximumBottom: (value: number | undefined) => {
       maximumBottom = value;
+    },
+    setPageAvailable: (available: boolean) => {
+      pageAvailable = available;
     },
     styleProperties,
     triggerChromeMutation: () => chromeMutation?.([], {} as MutationObserver),
@@ -213,6 +221,24 @@ describe("active editor layout integration", () => {
     test.layout.dispose();
   });
 
+  it("cancels and suppresses measurements while the locking model is released", () => {
+    const test = harness();
+    test.layout.chromeMounted();
+    test.work.flushFrames();
+    test.layout.chromeChanged();
+    expect(test.work.frames.size).toBe(1);
+
+    test.layout.suspend();
+    test.setPageAvailable(false);
+    expect(test.work.frames.size).toBe(0);
+    test.layout.chromeChanged();
+    expect(test.work.frames.size).toBe(0);
+
+    test.layout.dispose();
+  });
+});
+
+describe("active editor layout sizing", () => {
   it("uses the resize hooks to retain horizontal camera and native-scroll anchoring", () => {
     const test = harness();
     test.layout.chromeMounted();

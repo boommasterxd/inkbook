@@ -46,6 +46,7 @@ export class ActiveEditorLayout {
   #ready = false;
   #readyFrame: number | undefined;
   #stableWidth: StableWidthState = createStableWidthState();
+  #suspended = false;
   #zoom: number | undefined;
 
   public constructor(options: ActiveEditorLayoutOptions) {
@@ -130,6 +131,21 @@ export class ActiveEditorLayout {
     this.scheduleMeasurement();
   }
 
+  public resume(): void {
+    if (!this.#suspended) return;
+    this.#suspended = false;
+    this.scheduleMeasurement();
+  }
+
+  public suspend(): void {
+    if (this.#suspended) return;
+    this.#suspended = true;
+    if (this.#frame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#frame);
+    if (this.#readyFrame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#readyFrame);
+    this.#frame = undefined;
+    this.#readyFrame = undefined;
+  }
+
   public setSelectionBottomEdge(active: boolean): void {
     this.#applyHeightUpdate(
       this.#pageLayout.updateSelectionBottomEdge(active, this.#options.page()),
@@ -148,9 +164,10 @@ export class ActiveEditorLayout {
   }
 
   private scheduleMeasurement(): void {
-    if (!this.#chromeMounted || this.#frame !== undefined) return;
+    if (this.#suspended || !this.#chromeMounted || this.#frame !== undefined) return;
     this.#frame = this.#ownerWindow.requestAnimationFrame(() => {
       this.#frame = undefined;
+      if (this.#suspended) return;
       this.measure();
     });
   }

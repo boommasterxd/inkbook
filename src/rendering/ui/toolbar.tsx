@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, Ref, UIEventHandler } from "react";
 
 import type {
@@ -15,7 +15,6 @@ export { nextToolbarIndex, resolveToolbarFocusRecovery } from "./toolbar-focus";
 
 const LEFT_BUTTONS: readonly ToolbarButtonDefinition[] = [
   { action: "finger-drawing", icon: "hand", label: "Finger drawing" },
-  { action: "background", icon: "grid-3x3", label: "Background" },
   { action: "undo", icon: "undo-2", label: "Undo" },
   { action: "redo", icon: "redo-2", label: "Redo" },
 ];
@@ -31,15 +30,26 @@ const TOOL_BUTTONS: readonly ToolbarButtonDefinition[] = [
 ];
 
 const RIGHT_BUTTONS: readonly ToolbarButtonDefinition[] = [
-  { action: "copy", icon: "copy", label: "Copy" },
-  { action: "cut", icon: "scissors", label: "Cut" },
-  { action: "delete", icon: "trash-2", label: "Delete" },
-  { action: "paste", icon: "clipboard-paste", label: "Paste" },
   { action: "lock", icon: "lock", label: "Lock" },
   { action: "overflow", icon: "more-vertical", label: "More options" },
 ];
 
+const CONTEXT_BUTTONS: readonly ToolbarButtonDefinition[] = [
+  { action: "copy", icon: "copy", label: "Copy" },
+  { action: "cut", icon: "scissors", label: "Cut" },
+  { action: "paste", icon: "clipboard-paste", label: "Paste" },
+  { action: "delete", icon: "trash-2", label: "Delete" },
+];
+
+const TOOLBAR_BUTTONS: readonly ToolbarButtonDefinition[] = [
+  ...LEFT_BUTTONS,
+  ...TOOL_BUTTONS,
+  ...RIGHT_BUTTONS,
+  ...CONTEXT_BUTTONS,
+];
+
 interface IconButtonProps {
+  readonly buttonClassName?: string | undefined;
   readonly definition: ToolbarButtonDefinition;
   readonly expanded: boolean | undefined;
   readonly onAction: (action: ToolbarAction) => void;
@@ -64,11 +74,11 @@ function IconButton(props: IconButtonProps) {
     <button
       aria-controls={flyout === null ? undefined : `inkbook-${flyout}-flyout`}
       aria-expanded={props.expanded}
-      aria-haspopup={flyout === null ? undefined : "dialog"}
+      aria-haspopup={flyout === null ? undefined : flyout === "overflow" ? "menu" : "dialog"}
       aria-label={props.definition.label}
       aria-pressed={props.pressed}
       aria-hidden={props.presence === "exiting" ? "true" : undefined}
-      className="inkbook-toolbar-button"
+      className={["inkbook-toolbar-button", props.buttonClassName].filter(Boolean).join(" ")}
       data-inkbook-action={props.definition.action}
       data-presence={props.presence === "present" ? undefined : props.presence}
       disabled={props.presence === "exiting"}
@@ -108,7 +118,12 @@ function expandedState(action: ToolbarAction, state: ToolbarState): boolean | un
 }
 
 function flyoutForAction(action: ToolbarAction): FlyoutId | null {
-  return action === "background" || action === "shape" || action === "style" ? action : null;
+  return action === "background" ||
+    action === "overflow" ||
+    action === "shape" ||
+    action === "style"
+    ? action
+    : null;
 }
 
 function isToolId(action: ToolbarAction): action is ToolId {
@@ -123,8 +138,10 @@ function isToolId(action: ToolbarAction): action is ToolId {
 }
 
 interface ToolbarGroupProps {
+  readonly buttonClassName?: string | undefined;
   readonly buttons: readonly ToolbarButtonDefinition[];
   readonly className: string;
+  readonly fallbackFocus?: (() => void) | undefined;
   readonly label: string;
   readonly onAction: (action: ToolbarAction) => void;
   readonly registerButton?: IconButtonProps["registerButton"] | undefined;
@@ -162,6 +179,8 @@ function ToolbarGroup(props: ToolbarGroupProps) {
         const recoveredIndex = visibleActions.indexOf(recoveredAction);
         setActiveIndex(recoveredIndex);
         buttonElements.current.get(recoveredAction)?.focus();
+      } else {
+        props.fallbackFocus?.();
       }
     }
     previousActions.current = visibleActions;
@@ -174,7 +193,7 @@ function ToolbarGroup(props: ToolbarGroupProps) {
           ? toolbarActionFromElement(activeElement)
           : null;
     };
-  }, [visibleKey]);
+  }, [props.fallbackFocus, visibleKey]);
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
     const nextIndex = nextToolbarIndex(event.key, safeIndex, visibleButtons.length);
@@ -184,6 +203,8 @@ function ToolbarGroup(props: ToolbarGroupProps) {
     const nextAction = visibleActions[nextIndex];
     if (nextAction !== undefined) buttonElements.current.get(nextAction)?.focus();
   }
+
+  if (presentButtons.length === 0) return null;
 
   return (
     <div
@@ -202,6 +223,7 @@ function ToolbarGroup(props: ToolbarGroupProps) {
         const index = visibleActions.indexOf(button.action);
         return (
           <IconButton
+            buttonClassName={props.buttonClassName}
             definition={button}
             expanded={expandedState(button.action, props.state)}
             key={button.action}
@@ -229,13 +251,11 @@ function toolbarActionFromElement(element: Element): ToolbarAction | null {
 }
 
 function isToolbarAction(value: string): value is ToolbarAction {
-  return [...LEFT_BUTTONS, ...TOOL_BUTTONS, ...RIGHT_BUTTONS].some(
-    (definition) => definition.action === value,
-  );
+  return TOOLBAR_BUTTONS.some((definition) => definition.action === value);
 }
 
 export interface InkbookToolbarProps {
-  readonly layout: "wide" | "merged" | "scrollable";
+  readonly layout: "wide" | "scrollable";
   readonly leftHanded?: boolean | undefined;
   readonly onAction: (action: ToolbarAction) => void;
   readonly onScroll?: UIEventHandler<HTMLDivElement> | undefined;
@@ -246,6 +266,8 @@ export interface InkbookToolbarProps {
 }
 
 export function InkbookToolbar(props: InkbookToolbarProps) {
+  const primaryButtons = useRef(new Map<ToolbarAction, HTMLButtonElement>());
+  const focusOverflow = useCallback(() => primaryButtons.current.get("overflow")?.focus(), []);
   const className = [
     "inkbook-toolbar",
     `inkbook-toolbar-${props.layout}`,
@@ -255,35 +277,28 @@ export function InkbookToolbar(props: InkbookToolbarProps) {
     .join(" ");
 
   return (
-    <div
-      aria-label="Inkbook tools"
-      className={className}
-      onScroll={props.onScroll}
-      ref={props.toolbarRef}
-      role="toolbar"
-    >
+    <div aria-label="Inkbook tools" className="inkbook-toolbar-composition" role="toolbar">
+      <div className={className} onScroll={props.onScroll} ref={props.toolbarRef}>
+        <ToolbarGroup
+          buttons={[...LEFT_BUTTONS, ...TOOL_BUTTONS, ...RIGHT_BUTTONS]}
+          className="inkbook-toolbar-track"
+          label="Tools and actions"
+          onAction={props.onAction}
+          registerButton={(action, element) => {
+            if (element === null) primaryButtons.current.delete(action);
+            else primaryButtons.current.set(action, element);
+            props.registerButton?.(action, element);
+          }}
+          renderIcon={props.renderIcon}
+          state={props.state}
+        />
+      </div>
       <ToolbarGroup
-        buttons={LEFT_BUTTONS}
-        className="inkbook-toolbar-general"
-        label="General actions"
-        onAction={props.onAction}
-        registerButton={props.registerButton}
-        renderIcon={props.renderIcon}
-        state={props.state}
-      />
-      <ToolbarGroup
-        buttons={TOOL_BUTTONS}
-        className="inkbook-toolbar-tools"
-        label="Drawing tools"
-        onAction={props.onAction}
-        registerButton={props.registerButton}
-        renderIcon={props.renderIcon}
-        state={props.state}
-      />
-      <ToolbarGroup
-        buttons={RIGHT_BUTTONS}
-        className="inkbook-toolbar-context"
-        label="Selection and document actions"
+        buttonClassName="inkbook-toolbar-context-button"
+        buttons={CONTEXT_BUTTONS}
+        className="inkbook-toolbar-context-actions"
+        fallbackFocus={focusOverflow}
+        label="Editing actions"
         onAction={props.onAction}
         registerButton={props.registerButton}
         renderIcon={props.renderIcon}

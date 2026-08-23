@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   InkbookEditorChrome,
+  registerToolbarResize,
   renderEditorFlyoutContent,
   resolveToolbarOverflow,
 } from "../../../../src/rendering/ui/editor-chrome";
@@ -18,6 +19,7 @@ describe("Inkbook editor chrome", () => {
           onBackgroundSpacingChange: vi.fn(),
           onBackgroundTypeChange: vi.fn(),
           onFlyoutClose: vi.fn(),
+          onOverflowAction: vi.fn(),
           onShapeChange: vi.fn(),
           onStyleChange: vi.fn(),
         }}
@@ -26,6 +28,16 @@ describe("Inkbook editor chrome", () => {
         leftHanded
         onToolbarAction={vi.fn()}
         ownerDocument={{} as Document}
+        overflowMenu={{
+          arrange: {
+            "bring-forward": false,
+            "bring-to-front": false,
+            "send-backward": false,
+            "send-to-back": false,
+          },
+          canEraseAll: false,
+          hasSelection: false,
+        }}
         renderIcon={vi.fn()}
         selectedShape="rectangle"
         styleControls={[]}
@@ -74,6 +86,19 @@ describe("Inkbook editor chrome", () => {
       "No shared style options",
     );
   });
+
+  it("remeasures the primary pill through the owning window resize observer", () => {
+    const observer = resizeObserverHarness();
+    const onResize = vi.fn();
+    const element = {} as Element;
+    const dispose = registerToolbarResize(element, observer.ownerDocument, onResize);
+
+    expect(observer.observe).toHaveBeenCalledWith(element);
+    observer.notify();
+    expect(onResize).toHaveBeenCalledOnce();
+    dispose();
+    expect(observer.disconnect).toHaveBeenCalledOnce();
+  });
 });
 
 function renderNode(node: ReactNode): string {
@@ -88,6 +113,7 @@ function createProps(ownerDocument: Document): InkbookEditorChromeProps {
       onBackgroundSpacingChange: vi.fn(),
       onBackgroundTypeChange: vi.fn(),
       onFlyoutClose: vi.fn(),
+      onOverflowAction: vi.fn(),
       onShapeChange: vi.fn(),
       onStyleChange: vi.fn(),
     },
@@ -95,6 +121,16 @@ function createProps(ownerDocument: Document): InkbookEditorChromeProps {
     layout: "wide",
     onToolbarAction: vi.fn(),
     ownerDocument,
+    overflowMenu: {
+      arrange: {
+        "bring-forward": false,
+        "bring-to-front": false,
+        "send-backward": false,
+        "send-to-back": false,
+      },
+      canEraseAll: false,
+      hasSelection: false,
+    },
     renderIcon: vi.fn(),
     selectedShape: "rectangle",
     styleControls: [],
@@ -108,5 +144,27 @@ function createProps(ownerDocument: Document): InkbookEditorChromeProps {
       hasSelection: false,
       openFlyout: null,
     },
+  };
+}
+
+function resizeObserverHarness() {
+  let notify = (): void => undefined;
+  const observe = vi.fn();
+  const disconnect = vi.fn();
+  class FixtureResizeObserver {
+    public constructor(callback: ResizeObserverCallback) {
+      notify = () => callback([], this);
+    }
+    public observe = observe;
+    public disconnect = disconnect;
+    public unobserve(): void {}
+  }
+  return {
+    disconnect,
+    notify: () => notify(),
+    observe,
+    ownerDocument: {
+      defaultView: { ResizeObserver: FixtureResizeObserver },
+    } as unknown as Document,
   };
 }

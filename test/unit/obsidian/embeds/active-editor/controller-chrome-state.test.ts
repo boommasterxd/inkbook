@@ -26,9 +26,9 @@ describe("active editor chrome state", () => {
     state.setFlyout(null);
     expect(onStateChanged).not.toHaveBeenCalled();
 
-    state.setLayout("merged");
+    state.setLayout("wide");
     state.toggleFlyout("style");
-    expect(state.layout).toBe("merged");
+    expect(state.layout).toBe("wide");
     expect(state.openFlyout).toBe("style");
     expect(onStateChanged).toHaveBeenCalledTimes(2);
   });

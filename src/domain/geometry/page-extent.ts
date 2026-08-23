@@ -1,5 +1,7 @@
 import type { PageV1 } from "../schema/public";
 
+const MINIMUM_EMPTY_WRITING_LINES = 2.5;
+
 export interface PageExtent {
   activeHeight: number;
   activeWritableBottom: number;
@@ -17,12 +19,20 @@ export function derivePageExtent(page: PageV1, maximumElementBottom: number | nu
   const occupiedBottom =
     maximumElementBottom === null ? page.margin : Math.max(page.margin, maximumElementBottom);
   const occupiedRows = Math.ceil(Math.max(0, occupiedBottom - page.margin) / backgroundStep);
-  const activeWritableBottom =
-    page.margin +
-    (occupiedRows + (page.activeBufferLines * bufferUnit) / backgroundStep) * backgroundStep;
-  const lockedWritableBottom =
-    page.margin +
-    (occupiedRows + (page.lockedBufferLines * bufferUnit) / backgroundStep) * backgroundStep;
+  const minimumEmptyRows =
+    maximumElementBottom === null
+      ? Math.ceil((MINIMUM_EMPTY_WRITING_LINES * page.writingLineHeight) / backgroundStep)
+      : 0;
+  const activeRows = Math.max(
+    occupiedRows + (page.activeBufferLines * bufferUnit) / backgroundStep,
+    minimumEmptyRows,
+  );
+  const lockedRows = Math.max(
+    occupiedRows + (page.lockedBufferLines * bufferUnit) / backgroundStep,
+    minimumEmptyRows,
+  );
+  const activeWritableBottom = page.margin + activeRows * backgroundStep;
+  const lockedWritableBottom = page.margin + lockedRows * backgroundStep;
   return {
     activeHeight: activeWritableBottom + page.margin,
     activeWritableBottom,

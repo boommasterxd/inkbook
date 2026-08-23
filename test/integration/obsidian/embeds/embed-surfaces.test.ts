@@ -14,13 +14,19 @@ import { ColorSchemeBroadcaster } from "../../../../src/obsidian/theme/color-sch
 import { executableSyntaxIn } from "../../../fixtures/obsidian/live-preview";
 import { FakePresentationElement as FakeElement } from "../../../fixtures/obsidian/presentation-dom";
 function createPorts(): EmbedIntegrationPorts & {
-  readonly attachments: Array<{ readonly embedReference: unknown }>;
+  readonly attachments: Array<{
+    readonly embedReference: unknown;
+    readonly preview?: HTMLElement;
+  }>;
   readonly calls: string[];
   readonly setDark: () => void;
 } {
   let dark = false;
   const calls: string[] = [];
-  const attachments: Array<{ readonly embedReference: unknown }> = [];
+  const attachments: Array<{
+    readonly embedReference: unknown;
+    readonly preview?: HTMLElement;
+  }> = [];
   return {
     attachments,
     calls,
@@ -390,6 +396,7 @@ describe("Live Preview widget lifecycle", () => {
       sourcePath: "notes/note.md",
       to: 28,
     });
+    expect(ports.attachments[0]?.preview).toBe(activationButton);
     widget.destroy(root as unknown as HTMLElement);
     expect(ports.calls[ports.calls.length - 1]).toBe("detach:drawings/ink.svg");
   });

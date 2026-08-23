@@ -5,9 +5,11 @@ import { BackgroundFlyout, FlyoutPortal, ShapeFlyout, StyleFlyout } from "./flyo
 import type {
   BackgroundFlyoutState,
   EditorFlyoutCallbacks,
+  OverflowMenuState,
   ShapeId,
   StyleControl,
 } from "./flyout-types";
+import { OverflowMenu } from "./overflow-menu";
 import { InkbookToolbar } from "./toolbar";
 import type { ToolbarLayoutStage } from "./toolbar-layout";
 import type { FlyoutId, ToolbarAction, ToolbarState } from "./toolbar-types";
@@ -20,6 +22,7 @@ export interface InkbookEditorChromeProps {
   readonly leftHanded?: boolean;
   readonly onToolbarAction: (action: ToolbarAction) => void;
   readonly ownerDocument: Document;
+  readonly overflowMenu: OverflowMenuState;
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
   readonly selectedShape: ShapeId;
   readonly styleControls: readonly StyleControl[];
@@ -35,6 +38,7 @@ const NO_OVERFLOW: OverflowEdges = { end: false, start: false };
 
 export function InkbookEditorChrome(props: InkbookEditorChromeProps) {
   const buttons = useRef(new Map<ToolbarAction, HTMLButtonElement>());
+  const shell = useRef<HTMLDivElement>(null);
   const toolbar = useRef<HTMLDivElement>(null);
   const [overflow, setOverflow] = useState<OverflowEdges>(NO_OVERFLOW);
   const [renderedFlyout, setRenderedFlyout] = useState<FlyoutId | null>(
@@ -51,6 +55,10 @@ export function InkbookEditorChrome(props: InkbookEditorChromeProps) {
       setOverflow((current) => (current.start || current.end ? NO_OVERFLOW : current));
       return;
     }
+    shell.current?.style.setProperty(
+      "--inkbook-toolbar-main-half",
+      `${String(element.getBoundingClientRect().width / 2)}px`,
+    );
     const next = resolveToolbarOverflow(
       props.layout,
       element.clientWidth,
@@ -63,6 +71,13 @@ export function InkbookEditorChrome(props: InkbookEditorChromeProps) {
   }, [props.layout]);
 
   useLayoutEffect(updateOverflow, [props.toolbarState, updateOverflow]);
+
+  useLayoutEffect(() => {
+    const element = toolbar.current;
+    return element === null
+      ? undefined
+      : registerToolbarResize(element, props.ownerDocument, updateOverflow);
+  }, [props.ownerDocument, updateOverflow]);
 
   const requestedFlyout = props.toolbarState.openFlyout;
   useLayoutEffect(() => {
@@ -80,6 +95,7 @@ export function InkbookEditorChrome(props: InkbookEditorChromeProps) {
         className="inkbook-toolbar-shell"
         data-overflow-end={overflow.end ? "true" : undefined}
         data-overflow-start={overflow.start ? "true" : undefined}
+        ref={shell}
       >
         <InkbookToolbar
           layout={props.layout}
@@ -133,6 +149,8 @@ function EditorFlyout({
       onClose={close}
       onExitComplete={onExitComplete}
       ownerDocument={props.ownerDocument}
+      role={flyout === "overflow" ? "menu" : "dialog"}
+      showTitle={flyout !== "overflow"}
     >
       {renderEditorFlyoutContent(flyout, props)}
     </FlyoutPortal>
@@ -152,6 +170,18 @@ export function renderEditorFlyoutContent(
       />
     );
   }
+  if (flyout === "overflow") {
+    return (
+      <OverflowMenu
+        background={props.background}
+        onAction={props.callbacks.onOverflowAction}
+        onBackgroundSpacingChange={props.callbacks.onBackgroundSpacingChange}
+        onBackgroundTypeChange={props.callbacks.onBackgroundTypeChange}
+        renderIcon={props.renderIcon}
+        state={props.overflowMenu}
+      />
+    );
+  }
   if (flyout === "shape") {
     return <ShapeFlyout onChange={props.callbacks.onShapeChange} value={props.selectedShape} />;
   }
@@ -160,6 +190,7 @@ export function renderEditorFlyoutContent(
 
 function flyoutLabel(flyout: FlyoutId): string {
   if (flyout === "background") return "Background";
+  if (flyout === "overflow") return "More options";
   if (flyout === "shape") return "Shape";
   return "Style";
 }
@@ -175,4 +206,16 @@ export function resolveToolbarOverflow(
     start: scrollLeft > 1,
     end: scrollLeft + clientWidth < scrollWidth - 1,
   };
+}
+
+export function registerToolbarResize(
+  element: Element,
+  ownerDocument: Document,
+  onResize: () => void,
+): () => void {
+  const ResizeObserverConstructor = ownerDocument.defaultView?.ResizeObserver;
+  if (ResizeObserverConstructor === undefined) return () => undefined;
+  const observer = new ResizeObserverConstructor(() => onResize());
+  observer.observe(element);
+  return () => observer.disconnect();
 }

@@ -126,18 +126,22 @@ describe("context menu population", () => {
     expect(titles(menu)).toEqual([
       "Copy",
       "Cut",
+      "Paste",
       "Delete",
       "Arrange",
       "Bring forward",
       "Send backward",
       "Bring to front",
       "Send to back",
-      "Paste",
       "Copy embed",
       "Erase all",
       "Delete embed",
     ]);
-    expect(menu.entries.filter((entry) => entry === "separator")).toHaveLength(2);
+    expect(menu.entries.filter((entry) => entry === "separator")).toHaveLength(3);
+    for (const entry of menu.entries) {
+      if (entry === "separator" || entry.calls.includes("label:true")) continue;
+      expect(entry.calls.some((call) => call.startsWith("icon:"))).toBe(true);
+    }
   });
 
   it("keeps Arrange boundaries visible and disables only unavailable actions", () => {

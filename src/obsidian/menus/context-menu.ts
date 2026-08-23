@@ -108,6 +108,7 @@ function configureSelectionItems(
 ): void {
   configureItem(menu, "Copy", CONTEXT_MENU_ICONS.copy, handlers.copy);
   configureItem(menu, "Cut", CONTEXT_MENU_ICONS.cut, handlers.cut);
+  if (state.canPaste) configureItem(menu, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
   configureItem(menu, "Delete", CONTEXT_MENU_ICONS.delete, handlers.delete, { warning: true });
   menu.addSeparator();
   configureArrangeLabel(menu);
@@ -130,12 +131,14 @@ function configureCanvasItems(
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
 ): void {
-  if (state.canPaste) {
+  if (!state.hasSelection && state.canPaste) {
     configureItem(menu, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
+    menu.addSeparator();
   }
   configureItem(menu, "Copy embed", CONTEXT_MENU_ICONS.copy, handlers.copyEmbed, {
     disabled: state.canCopyEmbed === false,
   });
+  menu.addSeparator();
   configureItem(menu, "Erase all", CONTEXT_MENU_ICONS.eraseAll, handlers.eraseAll, {
     disabled: state.canEraseAll === false,
     warning: true,

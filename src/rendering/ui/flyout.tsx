@@ -48,6 +48,8 @@ export interface FlyoutPortalProps {
   readonly onClose: () => void;
   readonly onExitComplete?: (() => void) | undefined;
   readonly ownerDocument: Document;
+  readonly role?: "dialog" | "menu";
+  readonly showTitle?: boolean;
 }
 
 export function FlyoutPortal(props: FlyoutPortalProps) {
@@ -96,9 +98,9 @@ export function FlyoutPortal(props: FlyoutPortalProps) {
         }
       }}
       ref={panelRef}
-      role="dialog"
+      role={props.role ?? "dialog"}
     >
-      <div className="inkbook-flyout-title">{props.label}</div>
+      {props.showTitle === false ? null : <div className="inkbook-flyout-title">{props.label}</div>}
       {props.children}
     </div>,
     host,

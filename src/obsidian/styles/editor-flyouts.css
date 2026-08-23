@@ -5,11 +5,15 @@
   z-index: var(--layer-menu);
 }
 
-.inkbook-root .inkbook-flyout {
+.inkbook-root .inkbook-flyout,
+.inkbook-root .inkbook-overflow-background-region > .inkbook-overflow-submenu {
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
   border-radius: calc(var(--radius-l) + 2px);
   box-shadow: var(--shadow-l);
+}
+
+.inkbook-root .inkbook-flyout {
   color: var(--text-normal);
   inline-size: min(320px, calc(100vi - 16px));
   max-block-size: calc(100vb - 16px);
@@ -20,6 +24,104 @@
   position: fixed;
   transform-origin: top center;
   z-index: var(--layer-menu);
+}
+
+.inkbook-root .inkbook-flyout[role="menu"] {
+  inline-size: min(260px, calc(100vi - 16px));
+  overflow: visible;
+  padding: 6px;
+}
+
+.inkbook-root .inkbook-overflow-menu,
+.inkbook-root .inkbook-overflow-submenu {
+  display: grid;
+  gap: 2px;
+}
+
+.inkbook-root .inkbook-overflow-background-region {
+  display: grid;
+  gap: 4px;
+  position: relative;
+}
+
+.inkbook-root .inkbook-overflow-background-region > div.inkbook-overflow-submenu {
+  inline-size: 226px;
+  inset-block-start: -4px;
+  inset-inline-end: calc(100% + 8px);
+  padding: 6px;
+  position: absolute;
+  z-index: 1;
+}
+
+.inkbook-root .inkbook-overflow-menu-item,
+.inkbook-root .inkbook-overflow-menu-label {
+  align-items: center;
+  border-radius: var(--radius-s);
+  color: var(--text-normal);
+  display: grid;
+  font-size: var(--font-ui-small);
+  gap: 10px;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  inline-size: 100%;
+  min-block-size: 40px;
+  padding: 7px 9px;
+  text-align: start;
+}
+
+.inkbook-root .inkbook-overflow-menu-item {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  margin: 0;
+}
+
+.inkbook-root .inkbook-overflow-menu-item:hover,
+.inkbook-root .inkbook-overflow-menu-item:focus-visible {
+  background: var(--background-modifier-hover);
+  outline: none;
+}
+
+.inkbook-root .inkbook-overflow-menu-item[aria-checked="true"] {
+  background: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+  color: var(--interactive-accent);
+}
+
+.inkbook-root .inkbook-overflow-menu-item:disabled {
+  color: var(--text-faint);
+  opacity: 0.72;
+}
+
+.inkbook-root .inkbook-overflow-menu-item[data-destructive="true"] {
+  color: var(--text-error);
+}
+
+.inkbook-root .inkbook-overflow-menu-item[data-destructive="true"]:hover,
+.inkbook-root .inkbook-overflow-menu-item[data-destructive="true"]:focus-visible {
+  background: color-mix(in srgb, var(--text-error) 12%, transparent);
+}
+
+.inkbook-root .inkbook-overflow-menu-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-medium);
+  min-block-size: 32px;
+}
+
+.inkbook-root .inkbook-overflow-menu-icon,
+.inkbook-root .inkbook-overflow-menu-icon svg {
+  block-size: 18px;
+  inline-size: 18px;
+}
+
+.inkbook-root .inkbook-overflow-submenu-chevron {
+  grid-column: 3;
+}
+
+.inkbook-root .inkbook-overflow-menu-separator {
+  background: var(--background-modifier-border);
+  block-size: 1px;
+  margin: 4px 6px;
 }
 
 .inkbook-root .inkbook-flyout[data-state="open"] {

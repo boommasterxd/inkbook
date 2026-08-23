@@ -7,6 +7,7 @@
   --inkbook-motion-standard: 180ms;
   --inkbook-motion-layout: 240ms;
   --inkbook-motion-easing: cubic-bezier(0.2, 0, 0, 1);
+  --inkbook-toolbar-reserved-block-size: 66px;
   box-sizing: border-box;
   inline-size: 100%;
   max-inline-size: min(100%, var(--inkbook-owner-inline-limit, 100%));
@@ -41,6 +42,7 @@
 
 .inkbook-root.inkbook-active-preparing .inkbook-editor-chrome {
   opacity: 0;
+  padding-block-start: 0;
   transition: none;
 }
 
@@ -50,12 +52,15 @@
 
 .inkbook-root.inkbook-active-transitioning .inkbook-editor-chrome,
 .inkbook-root.inkbook-active-transitioning .inkbook-preview-handoff {
-  transition: opacity var(--inkbook-motion-fast) var(--inkbook-motion-easing)
-    calc(var(--inkbook-motion-layout) - var(--inkbook-motion-fast));
+  transition:
+    opacity var(--inkbook-motion-fast) var(--inkbook-motion-easing)
+      calc(var(--inkbook-motion-layout) - var(--inkbook-motion-fast)),
+    padding-block-start var(--inkbook-motion-layout) var(--inkbook-motion-easing);
 }
 
 .inkbook-root.inkbook-active-transitioning .inkbook-editor-chrome {
   opacity: 1;
+  padding-block-start: var(--inkbook-toolbar-reserved-block-size);
 }
 
 .inkbook-root.inkbook-active-transitioning .inkbook-preview-handoff {
@@ -76,6 +81,7 @@
 .inkbook-root .inkbook-locked-preview {
   appearance: none;
   background: var(--background-secondary);
+  block-size: auto;
   border: 1px solid var(--background-modifier-border);
   border-radius: clamp(10px, 2cqi, 20px);
   color: inherit;
@@ -118,11 +124,20 @@
   display: flow-root;
   inline-size: 100%;
   opacity: 1;
+  padding-block-start: var(--inkbook-toolbar-reserved-block-size);
   position: relative;
 }
 
+.inkbook-root[data-inkbook-state="locking"] .inkbook-editor-chrome {
+  padding-block-start: 0;
+  transition: padding-block-start var(--inkbook-motion-layout) var(--inkbook-motion-easing);
+}
+
 .inkbook-root .inkbook-editor-chrome-host {
-  inset: 0;
+  block-size: 0;
+  inset-block-start: 0;
+  inset-inline: 0;
+  overflow: visible;
   pointer-events: none;
   position: absolute;
   z-index: var(--layer-popover);
@@ -159,6 +174,69 @@
 .inkbook-root .inkbook-canvas-input:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: -2px;
+}
+
+.inkbook-root .inkbook-recovery {
+  align-items: center;
+  background: color-mix(in srgb, var(--background-primary) 96%, transparent);
+  border: 1px solid var(--background-modifier-border-hover);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-l);
+  color: var(--text-normal);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  inset-block-end: 16px;
+  inset-block-start: auto;
+  inset-inline-start: 50%;
+  justify-content: center;
+  max-inline-size: calc(100% - 24px);
+  padding: 10px 12px;
+  position: absolute;
+  translate: -50% 0;
+  width: max-content;
+  z-index: var(--layer-menu);
+}
+
+.inkbook-root .inkbook-recovery-message {
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+}
+
+.inkbook-root .inkbook-recovery .inkbook-recovery-actions {
+  gap: 6px;
+}
+
+.inkbook-root .inkbook-recovery .inkbook-recovery-icon-button {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-m);
+  box-shadow: none;
+  color: var(--text-muted);
+  display: inline-flex;
+  inline-size: 36px;
+  justify-content: center;
+  margin: 0;
+  min-block-size: 36px;
+  padding: 0;
+}
+
+.inkbook-root .inkbook-recovery .inkbook-recovery-icon-button:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.inkbook-root .inkbook-recovery .inkbook-recovery-icon-button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+.inkbook-root .inkbook-recovery-action-icon,
+.inkbook-root .inkbook-recovery-action-icon svg {
+  block-size: 18px;
+  inline-size: 18px;
 }
 
 .inkbook-root.inkbook-recovery-overlay {

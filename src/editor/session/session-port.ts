@@ -46,7 +46,8 @@ export interface RecoveryCompletionPort {
   readonly reportSavedPath?: (savedPath: string) => void;
 }
 
-export type ExternalChangeOutcome = "conflict" | "reload-failed" | "reload-required" | "reloaded";
+export type ExternalChangeOutcome =
+  "conflict" | "reload-failed" | "reload-required" | "reloaded" | "unchanged";
 
 export interface DocumentSessionPort {
   cancelOperation(operation: SessionOperationIdentity): void;

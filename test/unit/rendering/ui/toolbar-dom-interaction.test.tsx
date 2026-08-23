@@ -41,7 +41,7 @@ afterEach(() => {
 });
 
 describe("mounted Inkbook toolbar accessibility", () => {
-  it("moves a single roving focus stop within each group and leaves Tab unhandled", () => {
+  it("moves one roving focus stop across the continuous track and leaves Tab unhandled", () => {
     const mounted = mountToolbar(completeState);
     const select = mounted.button("select");
     focus(select);
@@ -49,15 +49,15 @@ describe("mounted Inkbook toolbar accessibility", () => {
     expect(key(select, "ArrowRight").defaultPrevented).toBe(true);
     expect(document.activeElement).toBe(mounted.button("eraser"));
     expect(key(document.activeElement as HTMLElement, "End").defaultPrevented).toBe(true);
-    expect(document.activeElement).toBe(mounted.button("style"));
+    expect(document.activeElement).toBe(mounted.button("overflow"));
     expect(key(document.activeElement as HTMLElement, "Home").defaultPrevented).toBe(true);
-    expect(document.activeElement).toBe(select);
-    expect(key(select, "ArrowLeft").defaultPrevented).toBe(true);
-    expect(document.activeElement).toBe(mounted.button("style"));
+    expect(document.activeElement).toBe(mounted.button("finger-drawing"));
+    expect(key(document.activeElement as HTMLElement, "ArrowLeft").defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(mounted.button("overflow"));
 
     const tab = key(document.activeElement as HTMLElement, "Tab");
     expect(tab.defaultPrevented).toBe(false);
-    expect(groupTabStops(mounted.container)).toEqual([1, 1, 1]);
+    expect(groupTabStops(mounted.container)).toEqual([1, 1]);
     mounted.unmount();
   });
 
@@ -70,9 +70,8 @@ describe("mounted Inkbook toolbar accessibility", () => {
 
     expect(toolbar?.getAttribute("aria-label")).toBe("Inkbook tools");
     expect([...groups].map((group) => group.getAttribute("aria-label"))).toEqual([
-      "General actions",
-      "Drawing tools",
-      "Selection and document actions",
+      "Tools and actions",
+      "Editing actions",
     ]);
     expect(buttons.length).toBeGreaterThan(0);
     for (const button of buttons) {
@@ -112,8 +111,8 @@ describe("mounted Inkbook toolbar accessibility", () => {
 
     mounted.update({ ...completeState, canPaste: false, hasSelection: false });
 
-    expect(document.activeElement).toBe(mounted.button("lock"));
-    expect(mounted.button("lock").tabIndex).toBe(0);
+    expect(document.activeElement).toBe(mounted.button("overflow"));
+    expect(mounted.button("overflow").tabIndex).toBe(0);
     expect(cut.disabled).toBe(true);
     expect(cut.tabIndex).toBe(-1);
     expect(cut.getAttribute("aria-hidden")).toBe("true");
@@ -122,7 +121,7 @@ describe("mounted Inkbook toolbar accessibility", () => {
       cut.dispatchEvent(new Event("animationend", { bubbles: true }));
     });
     expect(mounted.container.contains(cut)).toBe(false);
-    expect(document.activeElement).toBe(mounted.button("lock"));
+    expect(document.activeElement).toBe(mounted.button("overflow"));
     mounted.unmount();
   });
 });
@@ -131,7 +130,7 @@ describe("mounted Inkbook flyout focus", () => {
   it("closes on Escape, consumes the key, and restores trigger focus", () => {
     const onFlyoutClose = vi.fn();
     const mounted = mountChrome(chromeProps(null, onFlyoutClose));
-    mounted.update(chromeProps("background", onFlyoutClose));
+    mounted.update(chromeProps("shape", onFlyoutClose));
     const dialog = requiredDialog();
     const choice = requiredElement<HTMLButtonElement>(dialog, "button");
     focus(choice);
@@ -139,12 +138,10 @@ describe("mounted Inkbook flyout focus", () => {
     const escape = key(document, "Escape");
 
     expect(escape.defaultPrevented).toBe(true);
-    expect(onFlyoutClose).toHaveBeenCalledWith("background");
-    expect(document.activeElement).toBe(mounted.button("background"));
-    expect(mounted.button("background").getAttribute("aria-expanded")).toBe("true");
-    expect(mounted.button("background").getAttribute("aria-controls")).toBe(
-      "inkbook-background-flyout",
-    );
+    expect(onFlyoutClose).toHaveBeenCalledWith("shape");
+    expect(document.activeElement).toBe(mounted.button("shape"));
+    expect(mounted.button("shape").getAttribute("aria-expanded")).toBe("true");
+    expect(mounted.button("shape").getAttribute("aria-controls")).toBe("inkbook-shape-flyout");
     mounted.unmount();
   });
 
@@ -235,6 +232,7 @@ function chromeProps(
       onBackgroundSpacingChange: vi.fn(),
       onBackgroundTypeChange: vi.fn(),
       onFlyoutClose,
+      onOverflowAction: vi.fn(),
       onShapeChange: vi.fn(),
       onStyleChange: vi.fn(),
     },
@@ -242,6 +240,16 @@ function chromeProps(
     layout: "wide",
     onToolbarAction: vi.fn(),
     ownerDocument: document,
+    overflowMenu: {
+      arrange: {
+        "bring-forward": false,
+        "bring-to-front": false,
+        "send-backward": false,
+        "send-to-back": false,
+      },
+      canEraseAll: false,
+      hasSelection: false,
+    },
     renderIcon: (element, icon) => element.setAttribute("data-icon", icon),
     selectedShape: "rectangle",
     styleControls: [],

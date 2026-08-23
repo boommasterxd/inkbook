@@ -298,6 +298,17 @@ describe("vault-backed document save verification", () => {
 });
 
 describe("vault-backed document recovery", () => {
+  it("propagates an unchanged persisted identity without reloading the document", async () => {
+    const { factory, session } = persistenceHarness();
+    await session.unlock(operation());
+    const model = factory.getDocumentModel("session-1");
+
+    await expect(factory.notifyExternalChange("drawings/ink.svg", operation())).resolves.toBe(
+      "unchanged",
+    );
+    expect(factory.getDocumentModel("session-1")).toBe(model);
+  });
+
   it("exposes clean and dirty external-change outcomes through the factory hook", async () => {
     const { factory, replaceExternal, session } = persistenceHarness();
     await session.unlock(operation());
@@ -310,6 +321,7 @@ describe("vault-backed document recovery", () => {
     const dirtyHarness = persistenceHarness();
     await dirtyHarness.session.unlock(operation());
     dirtyHarness.factory.getDocumentModel("session-1")?.commitElement(rectangle());
+    dirtyHarness.replaceExternal(documentFromSnapshot({ ...emptySnapshot(), revision: 13 }));
     await expect(dirtyHarness.factory.notifyExternalChange("drawings/ink.svg")).resolves.toBe(
       "conflict",
     );

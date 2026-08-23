@@ -371,6 +371,10 @@ export class Notice {
   }
 }
 
+export function setIcon(element: HTMLElement, icon: string): void {
+  element.setAttribute("data-icon", icon);
+}
+
 class TestNoticeElement {
   readonly attributes = new Map<string, string>();
   readonly children: TestNoticeElement[] = [];
@@ -378,22 +382,27 @@ class TestNoticeElement {
   readonly listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
   readonly ownerDocument = { defaultView: null };
   removed = false;
+  readonly tagName: string;
   textContent = "";
 
-  createEl(_tag: string, options?: { readonly text?: string }): TestNoticeElement {
-    return this.createChild(options);
+  constructor(tagName = "div") {
+    this.tagName = tagName;
+  }
+
+  createEl(tag: string, options?: { readonly text?: string }): TestNoticeElement {
+    return this.createChild(tag, options);
   }
 
   createDiv(): TestNoticeElement {
-    return this.createChild();
+    return this.createChild("div");
   }
 
   createSpan(options?: { readonly text?: string }): TestNoticeElement {
-    return this.createChild(options);
+    return this.createChild("span", options);
   }
 
-  private createChild(options?: { readonly text?: string }): TestNoticeElement {
-    const child = new TestNoticeElement();
+  private createChild(tagName: string, options?: { readonly text?: string }): TestNoticeElement {
+    const child = new TestNoticeElement(tagName);
     child.textContent = options?.text ?? "";
     this.children.push(child);
     return child;
@@ -424,7 +433,17 @@ class TestNoticeElement {
     readonly length: number;
     item(index: number): TestNoticeElement | null;
   } {
-    const matches = tag === "button" ? this.children : [];
+    const matches = this.children.flatMap((child) => [
+      ...(child.tagName === tag ? [child] : []),
+      ...child.collectByTagName(tag),
+    ]);
     return { length: matches.length, item: (index) => matches[index] ?? null };
+  }
+
+  private collectByTagName(tag: string): TestNoticeElement[] {
+    return this.children.flatMap((child) => [
+      ...(child.tagName === tag ? [child] : []),
+      ...child.collectByTagName(tag),
+    ]);
   }
 }

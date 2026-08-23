@@ -7,36 +7,41 @@
   align-items: center;
   background: var(--inkbook-toolbar-surface);
   border: 1px solid var(--background-modifier-border);
-  border-radius: calc(var(--radius-l) + 2px);
-  box-shadow: var(--shadow-s);
+  border-radius: 999px;
+  box-shadow:
+    0 8px 24px rgb(0 0 0 / 18%),
+    0 1px 2px rgb(0 0 0 / 22%);
   color: var(--text-normal);
   display: flex;
   gap: 0;
   inset-block-start: 8px;
   margin-inline: auto;
   max-inline-size: calc(100% - 16px);
-  min-block-size: 50px;
-  padding: 3px;
+  min-block-size: 52px;
+  padding: 4px;
   position: sticky;
   width: max-content;
   z-index: var(--layer-popover);
 }
 
-.inkbook-root .inkbook-toolbar-wide {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  width: calc(100% - 16px);
+.inkbook-root .inkbook-toolbar-composition {
+  --inkbook-toolbar-context-corridor: 136px;
+  block-size: 52px;
+  inline-size: 100%;
+  pointer-events: none;
+  position: relative;
 }
 
-.inkbook-root .inkbook-toolbar-merged {
-  justify-content: center;
+.inkbook-root .inkbook-toolbar-wide {
+  display: flex;
+  width: max-content;
 }
 
 .inkbook-root .inkbook-toolbar-scrollable {
   justify-content: flex-start;
   overflow-x: auto;
   scrollbar-width: none;
-  width: calc(100% - 16px);
+  width: max(52px, calc(100% - var(--inkbook-toolbar-context-corridor)));
 }
 
 .inkbook-root .inkbook-toolbar-scrollable::-webkit-scrollbar {
@@ -47,45 +52,42 @@
   align-items: center;
   display: flex;
   flex: 0 0 auto;
-  gap: 1px;
+  gap: 2px;
 }
 
-.inkbook-root
-  .inkbook-toolbar:not(.inkbook-toolbar-wide)
-  .inkbook-toolbar-group
-  + .inkbook-toolbar-group {
-  border-inline-start: 1px solid var(--background-modifier-border);
-  margin-inline-start: 4px;
-  padding-inline-start: 4px;
+.inkbook-root .inkbook-toolbar-context-actions {
+  gap: 8px;
+  inset-block-start: 0;
+  inset-inline-start: calc(50% + var(--inkbook-toolbar-main-half, 0px) + 8px);
+  max-inline-size: max(0px, calc(50% - var(--inkbook-toolbar-main-half, 0px) - 16px));
+  overflow-x: auto;
+  pointer-events: auto;
+  position: absolute;
+  scrollbar-width: none;
 }
 
-.inkbook-root .inkbook-toolbar-wide .inkbook-toolbar-general {
-  justify-self: start;
+.inkbook-root .inkbook-toolbar-context-actions:empty {
+  display: none;
 }
 
-.inkbook-root .inkbook-toolbar-wide .inkbook-toolbar-tools {
-  justify-self: center;
-}
-
-.inkbook-root .inkbook-toolbar-wide .inkbook-toolbar-context {
-  justify-self: end;
-}
-
-.inkbook-root .inkbook-toolbar-wide.inkbook-toolbar-left-handed .inkbook-toolbar-tools {
-  translate: -22px 0;
+.inkbook-root .inkbook-toolbar-context-actions::-webkit-scrollbar {
+  display: none;
 }
 
 .inkbook-root .inkbook-toolbar-button {
   align-items: center;
+  appearance: none;
   background: transparent;
   border: 0;
   border-radius: var(--radius-m);
   block-size: 44px;
+  box-shadow: none;
   color: var(--text-muted);
   display: inline-flex;
   flex: 0 0 44px;
   inline-size: 44px;
   justify-content: center;
+  margin: 0;
   padding: 0;
   position: relative;
   transition: color var(--inkbook-motion-fast) var(--inkbook-motion-easing);
@@ -126,6 +128,18 @@
 
 .inkbook-root .inkbook-toolbar-button[data-inkbook-action="delete"] {
   color: var(--text-error);
+}
+
+.inkbook-root .inkbook-toolbar-context-button {
+  background: var(--inkbook-toolbar-surface);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  block-size: 52px;
+  box-shadow:
+    0 8px 24px rgb(0 0 0 / 18%),
+    0 1px 2px rgb(0 0 0 / 22%);
+  flex-basis: 52px;
+  inline-size: 52px;
 }
 
 .inkbook-root .inkbook-toolbar-button[data-inkbook-action="delete"]:hover::before {
@@ -178,6 +192,11 @@
   margin-inline: auto;
   pointer-events: auto;
   position: relative;
+  translate: 0 0;
+}
+
+.inkbook-root .inkbook-toolbar-shell .inkbook-toolbar-composition {
+  pointer-events: none;
 }
 
 .inkbook-root .inkbook-toolbar-edge {
@@ -208,13 +227,5 @@
 @container inkbook-embed (max-width: 520px) {
   .inkbook-root .inkbook-toolbar {
     border-radius: var(--radius-l);
-  }
-
-  .inkbook-root
-    .inkbook-toolbar:not(.inkbook-toolbar-wide)
-    .inkbook-toolbar-group
-    + .inkbook-toolbar-group {
-    margin-inline-start: 2px;
-    padding-inline-start: 2px;
   }
 }

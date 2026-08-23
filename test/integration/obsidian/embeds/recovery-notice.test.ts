@@ -79,8 +79,10 @@ class TestDialogElement {
     }
   }
 
-  createDiv(options?: { readonly cls?: string }): TestDialogElement {
-    return this.createChild("div", options?.cls);
+  createDiv(options?: { readonly cls?: string; readonly text?: string }): TestDialogElement {
+    const child = this.createChild("div", options?.cls);
+    child.textContent = options?.text ?? "";
+    return child;
   }
 
   createEl(tagName: string, options?: { readonly text?: string }): TestDialogElement {
@@ -300,13 +302,20 @@ describe("attached recovery panel", () => {
       },
       closed,
     ) as unknown as TestNoticeElement;
-    const actionButtons = panel.children.slice(1);
+    const actionButtons = panel.children[1]?.children ?? [];
 
     expect(panel.attributes.get("role")).toBe("alert");
-    expect(actionButtons.map((button) => button.textContent)).toEqual([
-      "Retry",
-      "Save local copy",
-      "Cancel",
+    expect(panel.attributes.get("aria-label")).toBe("Save failed");
+    expect(panel.children[0]?.textContent).toBe("Could not save changes");
+    expect(actionButtons.map((button) => button.attributes.get("aria-label"))).toEqual([
+      "Retry save",
+      "Save copy",
+      "Continue editing",
+    ]);
+    expect(actionButtons.map((button) => button.children[0]?.attributes.get("data-icon"))).toEqual([
+      "rotate-ccw",
+      "copy-plus",
+      "pencil",
     ]);
     actionButtons[0]?.dispatch("click");
     expect(actionButtons.every((button) => !button.disabled)).toBe(true);

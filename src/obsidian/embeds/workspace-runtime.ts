@@ -19,6 +19,7 @@ import { observeActiveSceneReadiness } from "./workspace-runtime-scene-readiness
 import { ownsMarkdownEditorChange } from "./workspace-runtime-editor";
 import { createWorkspaceDocumentRuntimes } from "./workspace-runtime-workers";
 import { copyWorkspaceEmbed, deleteWorkspaceEmbed } from "./workspace-embed-actions";
+import { createHeadlessRecoveryActions } from "./workspace-recovery-actions";
 import { VaultDocumentSessionFactory } from "./vault-document-session-factory";
 import {
   showAttachedRecoveryPanel,
@@ -285,7 +286,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     }
   }
   readonly prepareForQuit = (): Promise<void> => this.#sessions.prepareForUnload();
-
   dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
@@ -368,6 +368,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     this.#headlessRecovery = undefined;
     const mounted = this.#mounted.get(presentationAttachmentKey(notice));
     if (mounted === undefined) return;
+    mounted.scene?.restoreAfterFailedLock();
     mounted.recovery?.remove();
     const recovery = showAttachedRecoveryPanel(
       mounted.attachment.root,
@@ -436,19 +437,14 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   #showHeadlessRecovery(documentId: string): void {
     if (this.#disposed) return;
     this.#headlessRecovery?.close();
-    this.#headlessRecovery = showHeadlessRecoveryNotice(documentId, {
-      reloadExternal: async () =>
-        (await this.#coordinator.resolveRecovery("reload-external")).confirmed,
-      retry: () => this.#coordinator.retryRecovery(),
-      saveLocalCopy: async () =>
-        (
-          await this.#coordinator.resolveRecovery("save-local-copy", {
-            reportSavedPath: (savedPath) => {
-              new Notice(`Inkbook saved the recovery copy to ${savedPath}.`);
-            },
-          })
-        ).confirmed,
+    const actions = createHeadlessRecoveryActions(this.#coordinator, (savedPath) => {
+      new Notice(`Inkbook saved the recovery copy to ${savedPath}.`);
     });
+    this.#headlessRecovery = showHeadlessRecoveryNotice(
+      documentId,
+      actions,
+      () => this.#owningWindow(documentId).document,
+    );
   }
 
   #setState(attachment: AttachmentIdentity, state: string): void {
