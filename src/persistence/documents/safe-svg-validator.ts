@@ -1,14 +1,14 @@
 import { validateDashArray, validatePathDataSteps } from "./path-data-validator";
 import {
-  CANONICAL_THEME_STYLESHEET,
   DOCUMENT_PALETTE,
+  DOCUMENT_THEME_FALLBACK,
   THEME_CLASSES,
+  isSupportedThemeStylesheet,
   type ThemeClass,
 } from "./svg-theme";
 import { parseCanonicalSvgDecimal, parseCanonicalSvgOpacity } from "./svg-number";
 import { parseSafeSvgRoot, type SafeSvgRoot, type SafeSvgVersionPolicy } from "./svg-envelope-root";
 import { MAXIMUM_TOTAL_PATH_DATA_BYTES } from "./svg-output-limits";
-
 const MAXIMUM_FILE_BYTES = 64 * 1024 * 1024;
 const MAXIMUM_METADATA_BYTES = 60 * 1024 * 1024;
 const MAXIMUM_PATHS = 60_004;
@@ -31,7 +31,6 @@ const PATH_ATTRIBUTES = new Set([
   "stroke-opacity",
   "stroke-width",
 ]);
-
 interface ParsedTag {
   readonly attributes: ReadonlyMap<string, string>;
   readonly name: string;
@@ -49,7 +48,6 @@ export type SafeSvgGroupRange = Readonly<{ end: number; start: number }>;
 type SafeSvgGroupRanges = Readonly<
   Record<"background" | "content" | "highlights", SafeSvgGroupRange>
 >;
-
 export interface SafeSvgValidationStepOptions {
   readonly deadlineExceeded?: () => boolean;
   readonly pathsPerStep?: number;
@@ -229,7 +227,7 @@ function validateThemeFallback(
     case "inkbook-theme-page":
       return attributes.get("fill") === DOCUMENT_PALETTE.light.page;
     case "inkbook-theme-guide":
-      return attributes.get("stroke") === DOCUMENT_PALETTE.light.guide;
+      return attributes.get("stroke") === DOCUMENT_THEME_FALLBACK.guide;
     case "inkbook-theme-stroke":
       return attributes.get("stroke") === text;
     case "inkbook-theme-fill":
@@ -422,7 +420,7 @@ function parseSafeSvgPrefix(
   if (rootTag === null || root === null) return null;
   cursor = skipWhitespace(svg, rootTag.next);
   const style = expectTextElement(svg, cursor, "style", { id: "inkbook-theme" });
-  if (style === null || style.text !== CANONICAL_THEME_STYLESHEET) return null;
+  if (style === null || !isSupportedThemeStylesheet(style.text)) return null;
   cursor = skipWhitespace(svg, style.next);
   const metadata = expectTextElement(svg, cursor, "metadata", {
     "data-encoding": "json",

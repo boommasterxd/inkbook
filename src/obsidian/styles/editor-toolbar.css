@@ -1,9 +1,5 @@
 .inkbook-root .inkbook-toolbar-composition {
-  --inkbook-toolbar-surface: color-mix(
-    in srgb,
-    var(--background-primary) 88%,
-    var(--background-secondary)
-  );
+  --inkbook-toolbar-surface: var(--inkbook-page-surface);
   --inkbook-toolbar-context-corridor: 136px;
   block-size: 52px;
   inline-size: 100%;

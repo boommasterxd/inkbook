@@ -8,7 +8,7 @@ import type { EditorTool } from "../../../editor/input/index";
 
 export class ActiveEditorChromeState {
   readonly #onStateChanged: () => void;
-  #layout: ToolbarLayoutStage = "scrollable";
+  #layout: ToolbarLayoutStage = "wide";
   #openFlyout: ToolbarState["openFlyout"] = null;
   #selectedShape: ShapeId = "line";
 

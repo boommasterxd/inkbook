@@ -27,9 +27,9 @@ export function showAttachedRecoveryPanel(
   const message = panel.createDiv({ cls: "inkbook-recovery-message" });
   message.textContent = "Could not save changes";
   const actionGroup = panel.createDiv({ cls: "inkbook-recovery-actions" });
-  const retry = recoveryIconButton(actionGroup, "Retry save", "rotate-ccw");
-  const saveCopy = recoveryIconButton(actionGroup, "Save copy", "copy-plus");
-  const cancel = recoveryIconButton(actionGroup, "Continue editing", "pencil");
+  const retry = createRecoveryIconButton(actionGroup, "Retry save", "rotate-ccw");
+  const saveCopy = createRecoveryIconButton(actionGroup, "Save copy", "copy-plus");
+  const cancel = createRecoveryIconButton(actionGroup, "Continue editing", "pencil");
   retry.addEventListener("click", () => runAttachedAction(panel, () => actions.retry(), onClosed));
   saveCopy.addEventListener("click", () => {
     setPending(panel, true);
@@ -58,13 +58,13 @@ export function showHeadlessRecoveryNotice(
   let dialog: HTMLElement | undefined = overlay.createDiv({
     cls: "inkbook-headless-recovery-dialog",
   });
-  const closeButton = recoveryButton(dialog, "Close", "Close recovery dialog");
+  const closeButton = createRecoveryIconButton(dialog, "Close recovery dialog", "x");
   const title = dialog.createEl("h2", { text: "Inkbook could not save this drawing" });
   dialog.createEl("p", { text: "Unsaved changes remain available for recovery." });
   const actionsElement = dialog.createDiv({ cls: "inkbook-recovery-actions" });
-  const retry = recoveryButton(actionsElement, "Retry");
-  const reload = recoveryButton(actionsElement, "Reload external version");
-  const saveCopy = recoveryButton(actionsElement, "Save local copy");
+  const retry = createRecoveryIconButton(actionsElement, "Retry", "rotate-ccw");
+  const reload = createRecoveryIconButton(actionsElement, "Reload external version", "refresh-cw");
+  const saveCopy = createRecoveryIconButton(actionsElement, "Save local copy", "copy-plus");
   const focusable = [closeButton, retry, reload, saveCopy];
   const listeners: Array<readonly [EventTarget, string, EventListener]> = [];
   title.id = "inkbook-headless-recovery-title";
@@ -139,7 +139,7 @@ function recoveryButton(container: HTMLElement, text: string, label?: string): H
   return button;
 }
 
-function recoveryIconButton(
+export function createRecoveryIconButton(
   container: HTMLElement,
   label: string,
   icon: string,

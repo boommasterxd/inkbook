@@ -27,6 +27,7 @@ import {
   ObsidianWorkspaceRuntime,
   PresentationLifecycleRegistry,
 } from "./embeds";
+import { registerInkbookIcons } from "./icons/inkbook-icons";
 import { InkbookSettingsStore, InkbookSettingTab } from "./settings";
 import { ColorSchemeBroadcaster } from "./theme/color-scheme";
 import { ObsidianVaultFolderAdapter } from "./vault";
@@ -37,6 +38,7 @@ export async function activateInkbookPlugin(
 ): Promise<(() => void) | undefined> {
   const settings = await loadSettings(plugin);
   if (!isActive()) return undefined;
+  const unregisterIcons = registerInkbookIcons();
   let active = true;
   plugin.addSettingTab(
     new InkbookSettingTab(
@@ -124,6 +126,7 @@ export async function activateInkbookPlugin(
     documentRecognition.dispose();
     runtime.dispose();
     scheme.clear();
+    unregisterIcons();
   };
 }
 

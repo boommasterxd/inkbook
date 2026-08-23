@@ -3,6 +3,7 @@
 @import "./editor-flyouts.css";
 
 .inkbook-root {
+  --inkbook-page-surface: #f6f6f6;
   --inkbook-motion-fast: 120ms;
   --inkbook-motion-standard: 180ms;
   --inkbook-motion-layout: 240ms;
@@ -12,6 +13,10 @@
   inline-size: 100%;
   max-inline-size: min(100%, var(--inkbook-owner-inline-limit, 100%));
   position: relative;
+}
+
+.inkbook-root[data-inkbook-scheme="dark"] {
+  --inkbook-page-surface: #212121;
 }
 
 .inkbook-root.inkbook-embed-root {
@@ -80,7 +85,7 @@
 
 .inkbook-root .inkbook-locked-preview {
   appearance: none;
-  background: var(--background-secondary);
+  background: var(--inkbook-page-surface);
   block-size: auto;
   border: 1px solid var(--background-modifier-border);
   border-radius: clamp(10px, 2cqi, 20px);
@@ -110,7 +115,7 @@
 }
 
 .inkbook-root .inkbook-background-container {
-  background: var(--background-secondary);
+  background: var(--inkbook-page-surface);
   border: 1px solid var(--background-modifier-border);
   border-radius: clamp(10px, 2cqi, 20px);
   clip-path: inset(0 round clamp(10px, 2cqi, 20px));
@@ -207,7 +212,7 @@
   gap: 6px;
 }
 
-.inkbook-root .inkbook-recovery .inkbook-recovery-icon-button {
+.inkbook-root .inkbook-recovery-icon-button {
   align-items: center;
   appearance: none;
   background: transparent;
@@ -223,12 +228,12 @@
   padding: 0;
 }
 
-.inkbook-root .inkbook-recovery .inkbook-recovery-icon-button:hover {
+.inkbook-root .inkbook-recovery-icon-button:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
-.inkbook-root .inkbook-recovery .inkbook-recovery-icon-button:focus-visible {
+.inkbook-root .inkbook-recovery-icon-button:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: -2px;
 }

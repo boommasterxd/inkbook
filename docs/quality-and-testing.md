@@ -215,6 +215,7 @@ When reduced motion is active:
 ## UX Acceptance
 
 - Unlock and lock show no empty, unmeasured, stale, or half-rendered frame.
+- First unlock shows the same centered measured toolbar geometry as the next resize; no resize is required to correct its stage or width.
 - Controls never change hit-target size between normal, hover, active, and focus states.
 - Conditional toolbar controls do not overlap or cause repeated layout-stage oscillation.
 - Conditional Copy, Cut, Paste, and Delete controls appear as separate 52-pixel circular surfaces to the right of the primary pill without changing its measured center; the scrollable stage reserves a symmetric 136-pixel corridor so at least one action remains visible, and the owner-window resize observer refreshes the pill edge even when the responsive stage does not change.
@@ -379,8 +380,9 @@ Manual checks are not smoke or end-to-end test suites. They are focused acceptan
 - 10,000-stroke frame, memory, unlock, animation, and export budgets
 - in-place lock and unlock with identical root, width, attachment, and top-edge anchor; the same block animates once between exact locked and active heights without duplicate insertion, flicker, unintended scroll jumps, or editor remounting
 - empty locked previews with at least 2.5 writing lines rounded to the next background step, no clipping by host button sizing, and the same minimum after reload
-- active and standalone SVG verification that guides stop at the inner edge of all four writable page margins, input remains available throughout those margins, and content entering the bottom margin restores a complete margin after growth
+- active and standalone SVG verification that guides stop at the inner edge of all four writable page margins, square patterns close their right and bottom edge cells, guide weight remains scale-independent, input remains available throughout those margins, and content entering the bottom margin restores a complete margin after growth
 - attached save recovery restores the active page height and camera before presenting its compact icon-action overlay at the lower center of the editor, so all four writable SVG margins remain visible and no failed-lock measurement reads a released document page
+- attached load and save recovery shows only circular icon actions with tooltips and accessible names, remains at the lower center of the preserved surface, and never substitutes text action buttons
 - toolbar overflow opening directly below its three-dot trigger, Background submenu hover and keyboard behavior with icons, exact primary-toolbar centering while context buttons appear, and Canvas context-menu section separators with an icon on every actionable entry
 - consecutive stroke commits, autosaves, resource refreshes, and theme changes without active-editor detachment, widget remount, focus loss, or session closure
 - Reading view, Live Preview, Source mode, pop-out windows, settings search, enable, disable, and reload without leaked listeners, workers, scrollbar leases, host-element references, portals, or React roots

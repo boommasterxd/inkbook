@@ -22,13 +22,14 @@ describe("active editor chrome state", () => {
     const onStateChanged = vi.fn();
     const state = new ActiveEditorChromeState(onStateChanged);
 
-    state.setLayout("scrollable");
+    expect(state.layout).toBe("wide");
+    state.setLayout("wide");
     state.setFlyout(null);
     expect(onStateChanged).not.toHaveBeenCalled();
 
-    state.setLayout("wide");
+    state.setLayout("scrollable");
     state.toggleFlyout("style");
-    expect(state.layout).toBe("wide");
+    expect(state.layout).toBe("scrollable");
     expect(state.openFlyout).toBe("style");
     expect(onStateChanged).toHaveBeenCalledTimes(2);
   });

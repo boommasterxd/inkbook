@@ -10,6 +10,7 @@ export {
   calculateElementBounds,
   effectiveStrokeWidth,
 } from "./bounds";
+export { centeredGuideAxis } from "./background-guides";
 export {
   changeCoordinateSystemDimension,
   changeTableColumns,

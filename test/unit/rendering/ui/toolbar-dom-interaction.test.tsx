@@ -8,6 +8,7 @@ import {
   InkbookEditorChrome,
   type InkbookEditorChromeProps,
 } from "../../../../src/rendering/ui/editor-chrome";
+import { STRAIGHT_HIGHLIGHTER_ICON_ID } from "../../../../src/rendering/ui/icon-ids";
 import { InkbookToolbar } from "../../../../src/rendering/ui/toolbar";
 import type { ToolbarAction, ToolbarState } from "../../../../src/rendering/ui/toolbar-types";
 
@@ -83,6 +84,17 @@ describe("mounted Inkbook toolbar accessibility", () => {
       );
     }
     expect(mounted.button("draw").getAttribute("aria-pressed")).toBe("true");
+    mounted.unmount();
+  });
+
+  it("uses the registered ruler-marked highlighter icon for straight highlighting", () => {
+    const mounted = mountToolbar(completeState);
+    const icon = requiredElement<HTMLElement>(
+      mounted.button("straight-highlighter"),
+      ".inkbook-toolbar-icon",
+    );
+
+    expect(icon.dataset.icon).toBe(STRAIGHT_HIGHLIGHTER_ICON_ID);
     mounted.unmount();
   });
 

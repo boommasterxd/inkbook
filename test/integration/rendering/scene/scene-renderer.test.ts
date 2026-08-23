@@ -173,7 +173,7 @@ describe("imperative SVG scene renderer", () => {
       spatialQueries: 0,
       themeWrites: 1,
     });
-    expect(fakeNode(renderer.svg).style["--inkbook-page"]).toBe("#282828FF");
+    expect(fakeNode(renderer.svg).style["--inkbook-page"]).toBe("#212121FF");
 
     renderer.resetInstrumentation();
     renderer.setCamera({ x: 5, zoom: 2 });

@@ -78,6 +78,8 @@ The tools are located in the center:
 - Shape
 - Style
 
+The Straight Highlighter control uses the same marker silhouette as Highlighter with three short ruler marks inside the body instead of a generic line symbol. Inkbook registers this custom icon through Obsidian's public `addIcon()` API and removes it on plugin deactivation through `removeIcon()`.
+
 The end of the primary track contains:
 
 - Lock
@@ -117,11 +119,13 @@ Arrange calls `setIsLabel(true)` and has no click handler. Delete, Erase all, an
 
 The native menu owns arrow-key navigation and `Escape`. After it closes, focus returns to the control that opened it or to the canvas input surface. Mouse, touch, keyboard placement, target selection, and action availability are normative in [Features](features.md#canvas-context-menus).
 
+Attached load and save failures preserve the last safe preview or active scene and place one compact recovery panel at the lower center of that surface. Recovery actions are circular icon-only controls with an accessible name and tooltip; they never fall back to text buttons inside the embed. A load failure offers Retry and Discard, while a save failure offers Retry, Save copy, and Continue editing. The longer detached-session recovery dialog uses the same icon actions while retaining explanatory text because no editor remains attached.
+
 ## Toolbar Design
 
 All primary controls share one continuous toolbar surface. Copy, Cut, Paste, and Delete intentionally use separate circular surfaces outside that primary pill.
 
-The primary toolbar is one 52-pixel-high rounded surface with a 1-pixel host-theme border and a restrained host shadow. Every 44-pixel primary control and its hover, active, and focus treatment are circular, with a consistent 2-pixel gap across the complete track. Each conditional context action is a 52-pixel circular surface with exactly the same resolved background color, border, and shadow as the primary toolbar and an 8-pixel gap from adjacent surfaces. Active controls keep normal icon geometry and use an accent-tinted inset surface plus accent outline instead of a fully color-inverted button. Destructive Delete uses the host error color. Every control is keyboard-focusable and has a visible `focus-visible` ring.
+The primary toolbar is one 52-pixel-high rounded surface with the exact current portable page-surface color, a 1-pixel host-theme border, and a restrained host shadow. The locked preview container, active background container, toolbar, and separate circular context controls therefore resolve to `#F6F6F6` in light mode and `#212121` in dark mode. Every 44-pixel primary control and its hover, active, and focus treatment are circular, with a consistent 2-pixel gap across the complete track. Each conditional context action is a 52-pixel circular surface with exactly the same resolved background color, border, and shadow as the primary toolbar and an 8-pixel gap from adjacent surfaces. Active controls keep normal icon geometry and use an accent-tinted inset surface plus accent outline instead of a fully color-inverted button. Destructive Delete uses the host error color. Every control is keyboard-focusable and has a visible `focus-visible` ring.
 
 Every control has a 44-by-44-pixel hit target. The icon may be visually smaller and does not change size between rest, hover, active, and focus states.
 
@@ -137,6 +141,8 @@ The primary toolbar has two layout stages, selected from the measured width of i
 2. Scrollable: use this stage when the complete track is wider than the available width. Buttons and gaps remain unchanged. The toolbar scrolls horizontally, hides only its own horizontal scrollbar, and shows a 24-pixel edge gradient only where more content exists. It never affects the native vertical Obsidian scrollbar.
 
 The buttons are never reduced in size and never overlap. Context controls are absolutely positioned from the measured end of the centered primary pill. Their presence does not contribute to the primary pill's centering calculation. The responsive layout permanently reserves a symmetric 136-pixel corridor around a scrollable primary pill, leaving one 52-pixel action viewport plus its gaps on the right without moving the pill center; additional context controls scroll only inside that right-hand viewport. The owner-window `ResizeObserver` refreshes the measured pill edge whenever its actual size changes, including resizes that remain within the same responsive stage.
+
+The pre-measurement state is Wide. The editor keeps the chrome hidden during its initial stable-width measurement, resolves the actual stage from the mounted control track, and reveals only that measured result. A later window resize uses the same calculation and MUST NOT be required to correct first-open geometry.
 
 The left-handed setting changes input behavior without breaking the continuous toolbar order or its fit calculation.
 

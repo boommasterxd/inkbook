@@ -9,10 +9,10 @@ import { createStressLimitFixture, STRESS_POINTS, STRESS_STROKES } from "./fixtu
 import { measure } from "./metrics";
 
 const EXPECTED_METADATA_BYTES = 23_776_586;
-const EXPECTED_STATIC_MARKUP_BYTES = 41_996_051;
-const EXPECTED_TOTAL_BYTES = 65_772_701;
-const EXPECTED_BYTES_PER_STROKE_POINT = 32.886_350_5;
-const EXPECTED_HASH = "5f04599b5111ba29f944bddbc74de4d40b5e48bdd958bf78cd6acddda8285900";
+const EXPECTED_STATIC_MARKUP_BYTES = 41_996_111;
+const EXPECTED_TOTAL_BYTES = 65_772_761;
+const EXPECTED_BYTES_PER_STROKE_POINT = 32.886_380_5;
+const EXPECTED_HASH = "9af628c1f447d26c5d14bee74b19a8d5f75c04182ec852f9221550fbc1f716be";
 
 describe("combined persistence stress limits", () => {
   it("validates exactly 15,000 strokes and 2,000,000 points at the schema limits", async ({

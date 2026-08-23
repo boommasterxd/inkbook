@@ -9,6 +9,7 @@ import type {
   ToolId,
 } from "./toolbar-types";
 import { nextToolbarIndex, resolveToolbarFocusRecovery } from "./toolbar-focus";
+import { STRAIGHT_HIGHLIGHTER_ICON_ID } from "./icon-ids";
 import { type ToolbarButtonPresence, useToolbarButtonPresence } from "./toolbar-presence";
 
 export { nextToolbarIndex, resolveToolbarFocusRecovery } from "./toolbar-focus";
@@ -24,7 +25,11 @@ const TOOL_BUTTONS: readonly ToolbarButtonDefinition[] = [
   { action: "eraser", icon: "eraser", label: "Eraser" },
   { action: "draw", icon: "pen", label: "Draw" },
   { action: "highlighter", icon: "highlighter", label: "Highlighter" },
-  { action: "straight-highlighter", icon: "minus", label: "Straight highlighter" },
+  {
+    action: "straight-highlighter",
+    icon: STRAIGHT_HIGHLIGHTER_ICON_ID,
+    label: "Straight highlighter",
+  },
   { action: "shape", icon: "shapes", label: "Shape" },
   { action: "style", icon: "palette", label: "Style" },
 ];

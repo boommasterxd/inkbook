@@ -9,7 +9,7 @@ let nextBackgroundPatternId = 0;
 
 const ACTIVE_THEME_STYLESHEET =
   ".inkbook-theme-page{fill:var(--inkbook-page)}" +
-  ".inkbook-theme-guide{stroke:var(--inkbook-guide)}" +
+  ".inkbook-theme-guide{stroke:var(--inkbook-guide);shape-rendering:crispEdges}" +
   ".inkbook-theme-stroke{stroke:var(--inkbook-text)}" +
   ".inkbook-theme-fill{fill:var(--inkbook-text)}" +
   ".inkbook-theme-stroke-fill{stroke:var(--inkbook-text);fill:var(--inkbook-text)}" +
@@ -84,11 +84,13 @@ export class SceneDom {
     this.#backgroundPattern.setAttribute("patternUnits", "userSpaceOnUse");
     this.#backgroundPatternPath.setAttribute("class", "inkbook-theme-guide");
     this.#backgroundPatternPath.setAttribute("fill", "none");
+    this.#backgroundPatternPath.setAttribute("vector-effect", "non-scaling-stroke");
     this.#backgroundPattern.append(this.#backgroundPatternPath);
     this.#outgoingBackgroundPattern.setAttribute("id", this.#outgoingBackgroundPatternId);
     this.#outgoingBackgroundPattern.setAttribute("patternUnits", "userSpaceOnUse");
     this.#outgoingBackgroundPatternPath.setAttribute("class", "inkbook-theme-guide");
     this.#outgoingBackgroundPatternPath.setAttribute("fill", "none");
+    this.#outgoingBackgroundPatternPath.setAttribute("vector-effect", "non-scaling-stroke");
     this.#outgoingBackgroundPattern.append(this.#outgoingBackgroundPatternPath);
     this.highlightGroup.setAttribute("pointer-events", "none");
     this.highlightGroup.setAttribute("class", "inkbook-scene-highlights");
@@ -180,16 +182,16 @@ export class SceneDom {
     this.svg.style.colorScheme = scheme;
   }
 
-  public setBackgroundPaint(background: BackgroundV1, margin: number): void {
+  public setBackgroundPaint(background: BackgroundV1, patternX: number, patternY: number): void {
     if (background.type === "none") {
       this.backgroundPath.setAttribute("fill", "none");
+      this.setSquareBoundary(false);
       this.#backgroundPatternPath.setAttribute("d", "");
       return;
     }
     const spacing = String(background.spacing);
-    const origin = String(margin);
-    this.#backgroundPattern.setAttribute("x", origin);
-    this.#backgroundPattern.setAttribute("y", origin);
+    this.#backgroundPattern.setAttribute("x", String(patternX));
+    this.#backgroundPattern.setAttribute("y", String(patternY));
     this.#backgroundPattern.setAttribute("width", spacing);
     this.#backgroundPattern.setAttribute("height", spacing);
     this.#backgroundPatternPath.setAttribute("d", patternPath(background));
@@ -201,6 +203,7 @@ export class SceneDom {
       "stroke-width",
       background.type === "dots" ? "2" : "1",
     );
+    this.setSquareBoundary(background.type === "squares");
     this.backgroundPath.setAttribute("fill", `url(#${this.#backgroundPatternId})`);
   }
 
@@ -216,6 +219,12 @@ export class SceneDom {
       "d",
       "stroke-linecap",
       "stroke-width",
+    ]);
+    copyAttributes(this.backgroundPath, this.backgroundOutgoingPath, [
+      "class",
+      "stroke",
+      "stroke-width",
+      "vector-effect",
     ]);
     this.backgroundOutgoingPath.setAttribute("d", this.backgroundPath.getAttribute("d") ?? "");
     this.backgroundOutgoingPath.setAttribute(
@@ -245,6 +254,19 @@ export class SceneDom {
 
   private createSvg<K extends keyof SVGElementTagNameMap>(name: K): SVGElementTagNameMap[K] {
     return this.ownerDocument.createElementNS(SVG_NAMESPACE, name);
+  }
+
+  private setSquareBoundary(enabled: boolean): void {
+    if (!enabled) {
+      for (const attribute of ["class", "stroke", "stroke-width", "vector-effect"]) {
+        this.backgroundPath.removeAttribute(attribute);
+      }
+      return;
+    }
+    this.backgroundPath.setAttribute("class", "inkbook-theme-guide");
+    this.backgroundPath.setAttribute("stroke", PORTABLE_PALETTE_V1.light.guide);
+    this.backgroundPath.setAttribute("stroke-width", "1");
+    this.backgroundPath.setAttribute("vector-effect", "non-scaling-stroke");
   }
 
   private attachHandlers(handlers: SceneInputHandlers): void {

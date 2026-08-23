@@ -9,6 +9,10 @@ import {
 import { serializeSvgEnvelope } from "../../../../src/persistence/documents/svg-envelope";
 import { MAXIMUM_TOTAL_PATH_DATA_BYTES } from "../../../../src/persistence/documents/svg-output-limits";
 import {
+  CANONICAL_THEME_STYLESHEET,
+  LEGACY_THEME_STYLESHEET_V1,
+} from "../../../../src/persistence/documents/svg-theme";
+import {
   createMaximumComplexityPath,
   MAXIMUM_PATH_BYTES,
 } from "../../../fixtures/persistence/safe-svg";
@@ -92,6 +96,12 @@ describe("strict safe SVG validation", () => {
     });
   });
 
+  it("accepts the previous exact dark page palette for version 1 input", () => {
+    const legacySvg = validSvg().replace(CANONICAL_THEME_STYLESHEET, LEGACY_THEME_STYLESHEET_V1);
+
+    expect(validateSafeSvg(legacySvg)).not.toBeNull();
+  });
+
   it.each([
     (svg: string) => `<?xml version="1.0"?>${svg}`,
     (svg: string) => `<!DOCTYPE svg>${svg}`,
@@ -99,7 +109,7 @@ describe("strict safe SVG validation", () => {
       svg.replace('<g id="inkbook-content">', '<script>bad()</script><g id="inkbook-content">'),
     (svg: string) => svg.replace('stroke-width="4"', 'onclick="bad()"'),
     (svg: string) => svg.replace('stroke="#112233FF"', 'stroke="url(https://invalid)"'),
-    (svg: string) => svg.replace('fill="#F6F6F6FF"', 'fill="#282828FF"'),
+    (svg: string) => svg.replace('fill="#F6F6F6FF"', 'fill="#212121FF"'),
     (svg: string) => svg.replace('stroke="#70707040"', 'stroke="#99999940"'),
     (svg: string) => svg.replace('stroke="#222222FF"', 'stroke="#DADADAFF"'),
     (svg: string) => svg.replace('fill="#222222FF"', 'fill="#DADADAFF"'),

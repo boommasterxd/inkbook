@@ -29,7 +29,7 @@ When switching to a different background type, the file adopts the configured va
 
 The current background selection is stored for each handwriting file.
 
-The page height always ends on a complete background line or grid cell. The bottom margin therefore does not cut off partial lines or squares.
+The page height always ends on a complete background line or grid cell. The bottom margin therefore does not cut off partial lines or squares. Square and dot backgrounds fit the greatest whole number of spacing intervals inside the writable width and height, omit every partial remainder, and split unused space equally across the opposite sides. The active editor explicitly closes the last visible square at the right and bottom edges instead of relying on the half-open boundary of an SVG pattern tile. The active editor and standalone SVG therefore show the same centered full-cell geometry without open or clipped cells at the top, right, bottom, or left edge.
 
 ## Automatic Page Expansion
 

@@ -30,7 +30,9 @@ describe("scene caches", () => {
     expect(byteBounded.statistics()).toMatchObject({ entries: 3, evictions: 1 });
     expect(byteBounded.cacheMemoryUsage()).toBeLessThanOrEqual(PATH_CACHE_MAX_BYTES);
   });
+});
 
+describe("scene background cache", () => {
   it("reuses background geometry for unchanged aligned indices", () => {
     const cache = new SceneBackgroundCache();
     const first = cache.resolve({
@@ -85,6 +87,22 @@ describe("scene caches", () => {
 
     expect(result.d).toBe("M 24.3 24.3 H 2024.3 V 324.3 H 24.3 Z");
     expect(result.lastVisibleIndex).toBe(3);
+  });
+
+  it("centers complete square cells instead of clipping a remainder at either side", () => {
+    const cache = new SceneBackgroundCache();
+    const result = cache.resolve({
+      background: { spacing: 60, type: "squares" },
+      innerWidth: 2000,
+      margin: 24.3,
+      visibleBottom: 500,
+      visibleTop: 0,
+      writableBottom: 324.3,
+    });
+
+    expect(result.patternX).toBe(34.3);
+    expect(result.patternY).toBe(24.3);
+    expect(result.d).toBe("M 34.3 24.3 H 2014.3 V 324.3 H 34.3 Z");
   });
 
   it("collapses placeholder-height coverage instead of inverting the top margin", () => {

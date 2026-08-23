@@ -91,6 +91,12 @@ class TestDialogElement {
     return child;
   }
 
+  createSpan(options?: { readonly cls?: string; readonly text?: string }): TestDialogElement {
+    const child = this.createChild("span", options?.cls);
+    child.textContent = options?.text ?? "";
+    return child;
+  }
+
   dispatch(type: string): void {
     this.#listeners.dispatch(type, { type } as Event);
   }
@@ -195,12 +201,15 @@ describe("headless recovery notice", () => {
 
     expect(first.body.children).toHaveLength(1);
     expect(second.body.children).toHaveLength(0);
-    expect(actionButtons(first).map((button) => button.textContent)).toEqual([
+    expect(actionButtons(first).map((button) => button.attributes.get("aria-label"))).toEqual([
       "Retry",
       "Reload external version",
       "Save local copy",
     ]);
-    expect(first.activeElement?.textContent).toBe("Retry");
+    expect(
+      actionButtons(first).map((button) => button.children[0]?.attributes.get("data-icon")),
+    ).toEqual(["rotate-ccw", "refresh-cw", "copy-plus"]);
+    expect(first.activeElement?.attributes.get("aria-label")).toBe("Retry");
     expect(headlessDialog(first)?.attributes.get("role")).toBe("dialog");
     expect(headlessDialog(first)?.attributes.get("aria-modal")).toBe("true");
     expect(headlessDialog(first)?.children[2]?.textContent).toBe(

@@ -385,6 +385,14 @@ describe("plugin workspace realm integration", () => {
 
     expect(scenes.records[0]?.dispose).toHaveBeenCalledOnce();
     expect(presentation.preview.hidden).toBe(false);
+    const recoveryPanel = presentation.root.getElementsByClassName("inkbook-recovery").item(0);
+    const recoveryButtons = recoveryPanel?.getElementsByTagName("button");
+    expect(recoveryPanel?.attributes.get("aria-label")).toBe("Load failed");
+    expect(recoveryButtons?.length).toBe(2);
+    expect(recoveryButtons?.item(0)?.attributes.get("aria-label")).toBe("Retry load");
+    expect(recoveryButtons?.item(0)?.children[0]?.attributes.get("data-icon")).toBe("rotate-ccw");
+    expect(recoveryButtons?.item(1)?.attributes.get("aria-label")).toBe("Discard load attempt");
+    expect(recoveryButtons?.item(1)?.children[0]?.attributes.get("data-icon")).toBe("x");
     expect(notices).toHaveLength(noticeCount + 1);
     expect(notices[notices.length - 1]?.message).toContain("select the embed to retry");
     presentation.child.unload();

@@ -41,6 +41,7 @@ export class FakePresentationElement {
   scrollHeight = 200;
   scrollTop = 0;
   src = "";
+  textContent = "";
 
   public constructor(ownerDocument?: Document, tagName = "div") {
     this.tagName = tagName.toUpperCase();
@@ -190,9 +191,13 @@ export class FakePresentationElement {
     }
   }
 
-  public createSpan(options?: { readonly cls?: string }): FakePresentationElement {
+  public createSpan(options?: {
+    readonly cls?: string;
+    readonly text?: string;
+  }): FakePresentationElement {
     const child = new FakePresentationElement(this.ownerDocument, "span");
     for (const className of options?.cls?.split(" ") ?? []) child.classList.add(className);
+    child.textContent = options?.text ?? "";
     this.append(child);
     return child;
   }

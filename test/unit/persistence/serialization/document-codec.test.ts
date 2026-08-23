@@ -13,6 +13,7 @@ import {
   sha256Hex,
   type DocumentHashPort,
 } from "../../../../src/persistence/serialization/public";
+import { CANONICAL_THEME_STYLESHEET } from "../../../../src/persistence/documents/svg-theme";
 import {
   appendMetadataProperty,
   createAllElementSnapshot,
@@ -79,6 +80,35 @@ describe("Inkbook document serialization", () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(validateSafeSvg(result.value.svg)).not.toBeNull();
+  });
+
+  it("centers complete square cells in the standalone SVG", () => {
+    const result = serializeSquareBackground();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.svg).toContain("M34.3 24.3L2014.3 24.3");
+    expect(result.value.svg).toContain("M34.3 24.3L34.3");
+    expect(result.value.svg).not.toContain("M24.3 24.3L2024.3 24.3");
+  });
+
+  it("loads version-one files written before scale-independent guide styling", () => {
+    const result = serializeSquareBackground();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const previousStylesheet = CANONICAL_THEME_STYLESHEET.replace(
+      ";vector-effect:non-scaling-stroke",
+      "",
+    );
+    const previousFile = result.value.svg.replace(CANONICAL_THEME_STYLESHEET, previousStylesheet);
+
+    expect(previousFile).not.toBe(result.value.svg);
+    expect(validateSafeSvg(previousFile)).not.toBeNull();
+    expect(parseInkbookDocument(previousFile)).toMatchObject({
+      ok: true,
+      value: { snapshot: { page: { background: { type: "squares", spacing: 60 } } } },
+    });
   });
 });
 
@@ -322,4 +352,10 @@ function toVersionZeroDocument(svg: string): string {
     .replace('data-inkbook-version="1"', 'data-inkbook-version="0"')
     .replace(/ data-inkbook-snapshot-sha256="[0-9a-f]{64}"/u, "")
     .replace('"version":1', '"version":0');
+}
+
+function serializeSquareBackground() {
+  const snapshot = createSnapshot();
+  snapshot.page.background = { type: "squares", spacing: 60 };
+  return serializeInkbookDocument(snapshot);
 }

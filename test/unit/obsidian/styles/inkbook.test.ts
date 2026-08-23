@@ -93,6 +93,10 @@ describe("Inkbook editor chrome styles", () => {
   });
 
   it("keeps the main toolbar centered while context actions sit beside it", () => {
+    const root = declarationsFor(".inkbook-root");
+    const darkRoot = declarationsFor('.inkbook-root[data-inkbook-scheme="dark"]');
+    const preview = declarationsFor(".inkbook-root .inkbook-locked-preview");
+    const background = declarationsFor(".inkbook-root .inkbook-background-container");
     const composition = declarationsFor(".inkbook-root .inkbook-toolbar-composition");
     const main = declarationsFor(".inkbook-root .inkbook-toolbar");
     const scrollable = declarationsFor(".inkbook-root .inkbook-toolbar-scrollable");
@@ -100,7 +104,11 @@ describe("Inkbook editor chrome styles", () => {
     const contextButton = declarationsFor(".inkbook-root .inkbook-toolbar-context-button");
 
     expect(composition).toContain("position: relative");
-    expect(composition).toContain("--inkbook-toolbar-surface: color-mix(");
+    expect(root).toContain("--inkbook-page-surface: #f6f6f6");
+    expect(darkRoot).toContain("--inkbook-page-surface: #212121");
+    expect(preview).toContain("background: var(--inkbook-page-surface)");
+    expect(background).toContain("background: var(--inkbook-page-surface)");
+    expect(composition).toContain("--inkbook-toolbar-surface: var(--inkbook-page-surface)");
     expect(main).toContain("margin-inline: auto");
     expect(main).toContain("width: max-content");
     expect(scrollable).toContain(

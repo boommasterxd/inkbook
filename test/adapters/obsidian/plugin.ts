@@ -371,6 +371,16 @@ export class Notice {
   }
 }
 
+export const testIconRegistry = new Map<string, string>();
+
+export function addIcon(iconId: string, svgContent: string): void {
+  testIconRegistry.set(iconId, svgContent);
+}
+
+export function removeIcon(iconId: string): void {
+  testIconRegistry.delete(iconId);
+}
+
 export function setIcon(element: HTMLElement, icon: string): void {
   element.setAttribute("data-icon", icon);
 }

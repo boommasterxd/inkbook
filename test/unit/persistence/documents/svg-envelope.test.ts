@@ -11,6 +11,8 @@ import {
 import {
   CANONICAL_THEME_STYLESHEET,
   DOCUMENT_PALETTE,
+  LEGACY_THEME_STYLESHEET_V1,
+  isSupportedThemeStylesheet,
 } from "../../../../src/persistence/documents/svg-theme";
 import { escapeXmlText } from "../../../../src/persistence/documents/xml-text";
 
@@ -57,8 +59,21 @@ describe("SVG primitives", () => {
 
   it("keeps the portable theme independent from Obsidian variables", () => {
     expect(DOCUMENT_PALETTE).toEqual(PORTABLE_PALETTE_V1);
+    expect(DOCUMENT_PALETTE.dark.page).toBe("#212121FF");
+    expect(DOCUMENT_PALETTE.dark.guide).toBe("#383838FF");
     expect(DOCUMENT_PALETTE.dark.text).toBe("#DADADAFF");
     expect(CANONICAL_THEME_STYLESHEET).toContain("prefers-color-scheme:dark");
+    expect(CANONICAL_THEME_STYLESHEET).toContain("--inkbook-page:#212121FF");
+    expect(CANONICAL_THEME_STYLESHEET).toContain("shape-rendering:crispEdges");
+    expect(CANONICAL_THEME_STYLESHEET).toContain("vector-effect:non-scaling-stroke");
+    expect(
+      isSupportedThemeStylesheet(
+        CANONICAL_THEME_STYLESHEET.replace(";vector-effect:non-scaling-stroke", ""),
+      ),
+    ).toBe(true);
+    expect(LEGACY_THEME_STYLESHEET_V1).toContain("--inkbook-page:#282828FF");
+    expect(isSupportedThemeStylesheet(LEGACY_THEME_STYLESHEET_V1)).toBe(true);
+    expect(isSupportedThemeStylesheet("body{}")).toBe(false);
     expect(CANONICAL_THEME_STYLESHEET).not.toContain("--text-normal");
   });
 });

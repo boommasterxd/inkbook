@@ -22,6 +22,7 @@ import { copyWorkspaceEmbed, deleteWorkspaceEmbed } from "./workspace-embed-acti
 import { createHeadlessRecoveryActions } from "./workspace-recovery-actions";
 import { VaultDocumentSessionFactory } from "./vault-document-session-factory";
 import {
+  createRecoveryIconButton,
   showAttachedRecoveryPanel,
   showHeadlessRecoveryNotice,
   type HeadlessRecoveryNotice,
@@ -414,9 +415,11 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     if (typeof mounted.attachment.root.createDiv !== "function") return;
     const panel = mounted.attachment.root.createDiv({ cls: "inkbook-recovery" });
     panel.setAttribute("role", "alert");
-    panel.createSpan({ text: "Inkbook could not load this drawing." });
-    const retry = panel.createEl("button", { text: "Retry" });
-    const discard = panel.createEl("button", { text: "Discard" });
+    panel.setAttribute("aria-label", "Load failed");
+    panel.createSpan({ cls: "inkbook-recovery-message", text: "Could not load drawing" });
+    const actionGroup = panel.createDiv({ cls: "inkbook-recovery-actions" });
+    const retry = createRecoveryIconButton(actionGroup, "Retry load", "rotate-ccw");
+    const discard = createRecoveryIconButton(actionGroup, "Discard load attempt", "x");
     retry.addEventListener("click", () => {
       if (mounted.loadError !== panel) return;
       panel.remove();

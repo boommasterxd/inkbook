@@ -55,6 +55,6 @@ export const CLIPBOARD_SCHEMA_LIMITS: Readonly<SchemaLimits> = Object.freeze({
 });
 
 export const PORTABLE_PALETTE_V1 = Object.freeze({
-  light: Object.freeze({ page: "#F6F6F6FF", text: "#222222FF", guide: "#70707040" }),
-  dark: Object.freeze({ page: "#282828FF", text: "#DADADAFF", guide: "#99999940" }),
+  light: Object.freeze({ page: "#F6F6F6FF", text: "#222222FF", guide: "#DCDCDCFF" }),
+  dark: Object.freeze({ page: "#212121FF", text: "#DADADAFF", guide: "#383838FF" }),
 });

@@ -45,9 +45,9 @@ Format version 1 uses this fixed document palette, derived from Obsidian's defau
 
 | Role             | Light       | Dark        |
 | ---------------- | ----------- | ----------- |
-| Page surface     | `#F6F6F6FF` | `#282828FF` |
+| Page surface     | `#F6F6F6FF` | `#212121FF` |
 | Theme text       | `#222222FF` | `#DADADAFF` |
-| Background guide | `#70707040` | `#99999940` |
+| Background guide | `#DCDCDCFF` | `#383838FF` |
 
 `ColorV1` values with `type: "theme-text"` use the Theme text role. Explicit RGBA colors, including built-in highlighter and palette colors, retain the same value in both schemes.
 
@@ -59,24 +59,24 @@ The serializer emits one constant-size stylesheet equivalent to:
   color-scheme: light dark;
   --inkbook-page: #F6F6F6FF;
   --inkbook-text: #222222FF;
-  --inkbook-guide: #70707040;
+  --inkbook-guide: #DCDCDCFF;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --inkbook-page: #282828FF;
+    --inkbook-page: #212121FF;
     --inkbook-text: #DADADAFF;
-    --inkbook-guide: #99999940;
+    --inkbook-guide: #383838FF;
   }
 }
 @media print {
   :root {
     --inkbook-page: #F6F6F6FF;
     --inkbook-text: #222222FF;
-    --inkbook-guide: #70707040;
+    --inkbook-guide: #DCDCDCFF;
   }
 }
 .inkbook-theme-page { fill: var(--inkbook-page); }
-.inkbook-theme-guide { stroke: var(--inkbook-guide); }
+.inkbook-theme-guide { stroke: var(--inkbook-guide); shape-rendering: crispEdges; }
 .inkbook-theme-stroke { stroke: var(--inkbook-text); }
 .inkbook-theme-fill { fill: var(--inkbook-text); }
 .inkbook-theme-stroke-fill { stroke: var(--inkbook-text); fill: var(--inkbook-text); }
@@ -85,6 +85,10 @@ The serializer emits one constant-size stylesheet equivalent to:
 Theme-dependent paths also carry the corresponding direct light RGBA presentation attribute. That attribute is the deterministic fallback when an external editor does not apply internal CSS or media queries. Theme-dependent geometry is never duplicated into separate light and dark groups.
 
 The plugin's active SVG scene uses the same palette values. Obsidian variables style only host chrome, menus, focus treatment, the border, and the rounded container. Community themes may change that host chrome, but they do not change the portable document palette. This separation is required for external fidelity without theme-driven file rewrites.
+
+Readers also accept the previous exact version 1 stylesheets whose guide colors were `#70707040` and `#99999940`, including the earlier dark page surfaces `#282828FF` and `#212121FF`, plus the immediately preceding canonical stylesheet without scale-independent guide strokes. These compatibility inputs are not emitted. Unlocking reconstructs the active scene from the semantic snapshot with the current opaque midpoint guide colors and crisp guide rasterization, and the next successful save emits only the current canonical stylesheet. That stylesheet applies `vector-effect: non-scaling-stroke` to the unchanged theme-guide path geometry, so responsive viewers retain a uniform one-screen-pixel guide weight instead of alternating between light, dark, thin, or thick subpixel phases. Keeping the rule in the stylesheet preserves exact version-1 static-group integrity for existing files. Theme-guide paths retain the previous direct light fallback stroke for compatibility, while their required class resolves to the current palette in every canonical renderer.
+
+Square and dot guide coordinates contain only the greatest whole number of spacing intervals that fit inside the writable rectangle. Any horizontal or vertical remainder is split equally between the corresponding margins. The standalone SVG and active scene use the same centered bounds, and the active square coverage closes its terminal right and bottom lines, so neither presentation clips or leaves a cell open at an edge.
 
 ## Strict Static-Markup Allowlist
 
@@ -95,7 +99,7 @@ Generated static markup uses only `svg`, `style`, `metadata`, `g`, and `path`. T
 - `d`, `fill`, `fill-opacity`, `fill-rule`, `stroke`, `stroke-width`, `stroke-opacity`, `stroke-linecap`, `stroke-linejoin`, `stroke-dasharray`, and one allowlisted `class` on paths
 - exact `#RRGGBBAA`, `none`, or the canonical theme-class override for paint
 
-The only classes are `inkbook-theme-page`, `inkbook-theme-guide`, `inkbook-theme-stroke`, `inkbook-theme-fill`, and `inkbook-theme-stroke-fill`. A path has at most one theme class; the combined class avoids duplicating closed-shape geometry when both outline and fill use Theme text. The only accepted style element has `id="inkbook-theme"` in the required position and text exactly equal to the serializer's canonical minified stylesheet. The validator rejects additional CSS, selectors, declarations, custom properties, `url()`, `@import`, unknown classes, transforms, namespace extensions, and every unlisted element or attribute. Export bakes element rotation into path coordinates.
+The only classes are `inkbook-theme-page`, `inkbook-theme-guide`, `inkbook-theme-stroke`, `inkbook-theme-fill`, and `inkbook-theme-stroke-fill`. A path has at most one theme class; the combined class avoids duplicating closed-shape geometry when both outline and fill use Theme text. The only accepted style element has `id="inkbook-theme"` in the required position and text exactly equal to either the serializer's canonical minified stylesheet or the explicitly allowlisted previous version 1 stylesheet. The validator rejects additional CSS, selectors, declarations, custom properties, `url()`, `@import`, unknown classes, transforms, namespace extensions, and every unlisted element or attribute. Export bakes element rotation into path coordinates.
 
 Safe-preview attribute values are validated before any replacement SVG DOM is created:
 
