@@ -79,7 +79,7 @@
   appearance: none;
   background: transparent;
   border: 0;
-  border-radius: var(--radius-m);
+  border-radius: 50%;
   block-size: 44px;
   box-shadow: none;
   color: var(--text-muted);

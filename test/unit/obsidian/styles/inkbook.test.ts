@@ -24,12 +24,14 @@ describe("Inkbook host styles", () => {
     expect(root).toContain("--inkbook-motion-fast: 120ms");
     expect(button).toContain("block-size: 44px");
     expect(button).toContain("inline-size: 44px");
+    expect(button).toContain("border-radius: 50%");
     expect(button).not.toContain("transform:");
     expect(button).toContain("color var(--inkbook-motion-fast)");
     expect(active).toContain("color: var(--interactive-accent)");
     expect(activeVisual).toContain("var(--interactive-accent) 14%");
     expect(activeVisual).toContain("transform: scale(0.96)");
     expect(visual).toContain("transform var(--inkbook-motion-fast) var(--inkbook-motion-easing)");
+    expect(visual).toContain("border-radius: inherit");
     expect(icon).toContain("block-size: 19px");
     expect(icon).toContain("inline-size: 19px");
   });
