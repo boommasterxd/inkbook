@@ -49,13 +49,16 @@ describe("overflow menu", () => {
 
     const background = buttonWithText(container, "Background");
     expect(background.getAttribute("aria-haspopup")).toBe("menu");
-    expect(background.querySelector("[data-icon='grid-2x2']")).not.toBeNull();
+    expect(background.querySelector("[data-icon='table-2']")).not.toBeNull();
 
     void act(() => background.dispatchEvent(new PointerEvent("pointerover", { bubbles: true })));
     const submenu = container.querySelector<HTMLElement>(".inkbook-overflow-submenu");
     expect(submenu?.getAttribute("role")).toBe("menu");
     expect(buttonWithText(container, "Lines").getAttribute("aria-checked")).toBe("true");
     expect(submenu?.querySelectorAll(".inkbook-overflow-menu-icon").length).toBeGreaterThan(0);
+    expect(
+      buttonWithText(container, "Squares").querySelector("[data-icon='table-2']"),
+    ).not.toBeNull();
 
     act(() => buttonWithText(container, "Squares").click());
     expect(onBackgroundTypeChange).toHaveBeenCalledWith("squares");

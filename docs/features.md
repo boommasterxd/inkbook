@@ -85,7 +85,7 @@ Every completed canvas gesture is stored as a command, for example:
 
 Each such gesture is exactly one undo step.
 
-The Undo and Redo toolbar buttons operate directly on the canvas history. They only appear when the corresponding action is available.
+The Undo and Redo toolbar buttons operate directly on the canvas history. Both remain visible in stable toolbar positions and are disabled when the corresponding action is unavailable.
 
 Within the unlocked embed, `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` use an additional unified history maintained separately for each Obsidian pane. This history can chronologically combine canvas actions with changes to the surrounding Markdown.
 

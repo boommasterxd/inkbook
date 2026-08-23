@@ -17,6 +17,7 @@ describe("Inkbook host styles", () => {
       '.inkbook-root .inkbook-toolbar-button[aria-pressed="true"]::before',
     );
     const visual = declarationsFor(".inkbook-root .inkbook-toolbar-button::before");
+    const disabled = declarationsFor(".inkbook-root .inkbook-toolbar-button:disabled");
     const icon = declarationsFor(
       ".inkbook-root .inkbook-toolbar-icon,\n.inkbook-root .inkbook-toolbar-icon svg",
     );
@@ -32,6 +33,8 @@ describe("Inkbook host styles", () => {
     expect(activeVisual).toContain("transform: scale(0.96)");
     expect(visual).toContain("transform var(--inkbook-motion-fast) var(--inkbook-motion-easing)");
     expect(visual).toContain("border-radius: inherit");
+    expect(disabled).toContain("color: var(--text-faint)");
+    expect(disabled).toContain("opacity: 0.48");
     expect(icon).toContain("block-size: 19px");
     expect(icon).toContain("inline-size: 19px");
   });

@@ -39,9 +39,10 @@ describe("Inkbook toolbar", () => {
     expect(markup).toContain('aria-pressed="true"');
   });
 
-  it("omits unavailable conditional controls", () => {
+  it("keeps unavailable history controls disabled and omits contextual controls", () => {
     const markup = render();
-    expect(markup).not.toContain('aria-label="Redo"');
+    expect(markup).toContain('aria-label="Undo"');
+    expect(markup).toMatch(/aria-label="Redo"[^>]*disabled=""/u);
     expect(markup).not.toContain('aria-label="Copy"');
     expect(markup).not.toContain('aria-label="Paste"');
     expect(markup).not.toContain('aria-label="Finger drawing"');

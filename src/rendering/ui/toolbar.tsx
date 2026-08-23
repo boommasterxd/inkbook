@@ -51,6 +51,7 @@ const TOOLBAR_BUTTONS: readonly ToolbarButtonDefinition[] = [
 interface IconButtonProps {
   readonly buttonClassName?: string | undefined;
   readonly definition: ToolbarButtonDefinition;
+  readonly disabled: boolean;
   readonly expanded: boolean | undefined;
   readonly onAction: (action: ToolbarAction) => void;
   readonly onPresenceComplete: (action: ToolbarAction) => void;
@@ -81,7 +82,7 @@ function IconButton(props: IconButtonProps) {
       className={["inkbook-toolbar-button", props.buttonClassName].filter(Boolean).join(" ")}
       data-inkbook-action={props.definition.action}
       data-presence={props.presence === "present" ? undefined : props.presence}
-      disabled={props.presence === "exiting"}
+      disabled={props.disabled || props.presence === "exiting"}
       onAnimationEnd={(event) => {
         if (event.currentTarget === event.target) {
           props.onPresenceComplete(props.definition.action);
@@ -100,11 +101,15 @@ function IconButton(props: IconButtonProps) {
 
 function buttonVisible(action: ToolbarAction, state: ToolbarState): boolean {
   if (action === "finger-drawing") return state.fingerDrawingAvailable;
-  if (action === "undo") return state.canUndo;
-  if (action === "redo") return state.canRedo;
   if (action === "copy" || action === "cut" || action === "delete") return state.hasSelection;
   if (action === "paste") return state.canPaste;
   return true;
+}
+
+function buttonDisabled(action: ToolbarAction, state: ToolbarState): boolean {
+  if (action === "undo") return !state.canUndo;
+  if (action === "redo") return !state.canRedo;
+  return false;
 }
 
 function pressedState(action: ToolbarAction, state: ToolbarState): boolean | undefined {
@@ -153,8 +158,13 @@ function ToolbarGroup(props: ToolbarGroupProps) {
   const visibleButtons = props.buttons.filter((button) =>
     buttonVisible(button.action, props.state),
   );
+  const enabledButtons = visibleButtons.filter(
+    (button) => !buttonDisabled(button.action, props.state),
+  );
   const visibleActions = visibleButtons.map((button) => button.action);
+  const enabledActions = enabledButtons.map((button) => button.action);
   const visibleKey = visibleActions.join("\u0000");
+  const enabledKey = enabledActions.join("\u0000");
   const [presentButtons, completePresence] = useToolbarButtonPresence(
     props.buttons,
     visibleButtons,
@@ -164,26 +174,25 @@ function ToolbarGroup(props: ToolbarGroupProps) {
   const buttonElements = useRef(new Map<ToolbarAction, HTMLButtonElement>());
   const focusBeforeUpdate = useRef<ToolbarAction | null>(null);
   const groupRef = useRef<HTMLDivElement>(null);
-  const previousActions = useRef<readonly ToolbarAction[]>(visibleActions);
-  const safeIndex = Math.min(activeIndex, Math.max(visibleButtons.length - 1, 0));
-
+  const previousActions = useRef<readonly ToolbarAction[]>(enabledActions);
+  const safeIndex = Math.min(activeIndex, Math.max(enabledButtons.length - 1, 0));
   useLayoutEffect(() => {
     const focusedAction = focusBeforeUpdate.current;
-    if (focusedAction !== null && !visibleActions.includes(focusedAction)) {
+    if (focusedAction !== null && !enabledActions.includes(focusedAction)) {
       const recoveredAction = resolveToolbarFocusRecovery(
         previousActions.current,
-        visibleActions,
+        enabledActions,
         focusedAction,
       );
       if (recoveredAction !== null) {
-        const recoveredIndex = visibleActions.indexOf(recoveredAction);
+        const recoveredIndex = enabledActions.indexOf(recoveredAction);
         setActiveIndex(recoveredIndex);
         buttonElements.current.get(recoveredAction)?.focus();
       } else {
         props.fallbackFocus?.();
       }
     }
-    previousActions.current = visibleActions;
+    previousActions.current = enabledActions;
     focusBeforeUpdate.current = null;
     return () => {
       const group = groupRef.current;
@@ -193,17 +202,15 @@ function ToolbarGroup(props: ToolbarGroupProps) {
           ? toolbarActionFromElement(activeElement)
           : null;
     };
-  }, [props.fallbackFocus, visibleKey]);
-
+  }, [enabledKey, props.fallbackFocus]);
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
-    const nextIndex = nextToolbarIndex(event.key, safeIndex, visibleButtons.length);
+    const nextIndex = nextToolbarIndex(event.key, safeIndex, enabledButtons.length);
     if (nextIndex === null) return;
     event.preventDefault();
     setActiveIndex(nextIndex);
-    const nextAction = visibleActions[nextIndex];
+    const nextAction = enabledActions[nextIndex];
     if (nextAction !== undefined) buttonElements.current.get(nextAction)?.focus();
   }
-
   if (presentButtons.length === 0) return null;
 
   return (
@@ -212,7 +219,7 @@ function ToolbarGroup(props: ToolbarGroupProps) {
       className={`inkbook-toolbar-group ${props.className}`}
       onFocus={(event) => {
         const focusedAction = toolbarActionFromElement(event.target);
-        const index = focusedAction === null ? -1 : visibleActions.indexOf(focusedAction);
+        const index = focusedAction === null ? -1 : enabledActions.indexOf(focusedAction);
         if (index >= 0) setActiveIndex(index);
       }}
       onKeyDown={handleKeyDown}
@@ -220,11 +227,13 @@ function ToolbarGroup(props: ToolbarGroupProps) {
       role="group"
     >
       {presentButtons.map(({ definition: button, presence }) => {
-        const index = visibleActions.indexOf(button.action);
+        const disabled = buttonDisabled(button.action, props.state);
+        const index = enabledActions.indexOf(button.action);
         return (
           <IconButton
             buttonClassName={props.buttonClassName}
             definition={button}
+            disabled={disabled}
             expanded={expandedState(button.action, props.state)}
             key={button.action}
             onAction={props.onAction}
@@ -237,7 +246,7 @@ function ToolbarGroup(props: ToolbarGroupProps) {
               props.registerButton?.(action, element);
             }}
             renderIcon={props.renderIcon}
-            tabIndex={presence !== "exiting" && index === safeIndex ? 0 : -1}
+            tabIndex={!disabled && presence !== "exiting" && index === safeIndex ? 0 : -1}
           />
         );
       })}

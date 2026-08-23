@@ -65,8 +65,8 @@ The primary toolbar is one continuous control track. Context-sensitive clipboard
 The general actions are located at the start of the primary track:
 
 - finger-drawing toggle when finger drawing is enabled for this device and vault
-- Undo, when an action can be undone
-- Redo, when an action can be redone
+- Undo, always visible and disabled when no action can be undone
+- Redo, always visible and disabled when no action can be redone
 
 The tools are located in the center:
 
@@ -90,7 +90,7 @@ Context-sensitive actions appear as separate circular controls to the right of t
 - Paste
 - Delete
 
-Copy, Cut, and Delete only appear when there is an active selection. Paste only appears when a valid ink clipboard payload is known. Undo and Redo also disappear completely when the corresponding action is unavailable. Appearing or disappearing context controls MUST NOT move the primary track away from the exact editor center.
+Copy, Cut, and Delete only appear when there is an active selection. Paste only appears when a valid ink clipboard payload is known. Undo and Redo remain visible at stable positions for the complete active-editor lifetime; each is disabled, removed from sequential and roving keyboard focus, and visually muted when its corresponding action is unavailable. Appearing or disappearing context controls MUST NOT move the primary track away from the exact editor center.
 
 The overflow menu opens directly below the three-dot trigger and never at the canvas center. Its Background item has an icon and opens a separate icon-labelled side submenu on pointer hover, keyboard focus, or explicit activation without resizing or repositioning the anchored parent menu. The submenu exposes None, Lines, Dots, Squares, and the applicable spacing choices. Because Obsidian's public native `Menu` API has no submenu contract, this toolbar overflow uses the same owner-document React portal and bounded positioning lifecycle as the other editor flyouts; canvas context menus remain native Obsidian menus.
 

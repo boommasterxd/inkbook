@@ -126,6 +126,25 @@ describe("mounted Inkbook toolbar accessibility", () => {
   });
 });
 
+describe("mounted Inkbook history controls", () => {
+  it("retains disabled controls and skips them during roving keyboard navigation", () => {
+    const mounted = mountToolbar({ ...completeState, canRedo: false, canUndo: false });
+    const undo = mounted.button("undo");
+    const redo = mounted.button("redo");
+    const fingerDrawing = mounted.button("finger-drawing");
+
+    expect(undo.disabled).toBe(true);
+    expect(redo.disabled).toBe(true);
+    expect(undo.tabIndex).toBe(-1);
+    expect(redo.tabIndex).toBe(-1);
+
+    focus(fingerDrawing);
+    expect(key(fingerDrawing, "ArrowRight").defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(mounted.button("select"));
+    mounted.unmount();
+  });
+});
+
 describe("mounted Inkbook flyout focus", () => {
   it("closes on Escape, consumes the key, and restores trigger focus", () => {
     const onFlyoutClose = vi.fn();
