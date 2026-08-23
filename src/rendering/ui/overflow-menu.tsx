@@ -25,7 +25,7 @@ const BACKGROUNDS: readonly {
   { icon: "ban", label: "None", value: "none" },
   { icon: "rows-3", label: "Lines", value: "lines" },
   { icon: "ellipsis", label: "Dots", value: "dots" },
-  { icon: "table-2", label: "Squares", value: "squares" },
+  { icon: "square", label: "Squares", value: "squares" },
 ];
 
 const SPACINGS: readonly { readonly label: string; readonly value: BackgroundSpacing }[] = [
@@ -67,7 +67,7 @@ export function OverflowMenu(props: OverflowMenuProps) {
       >
         <MenuButton
           expanded={backgroundOpen}
-          icon="table-2"
+          icon="wallpaper"
           label="Background"
           onClick={() => setBackgroundOpen(true)}
           onKeyDown={(key) => {

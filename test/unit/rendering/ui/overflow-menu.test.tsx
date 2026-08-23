@@ -49,7 +49,7 @@ describe("overflow menu", () => {
 
     const background = buttonWithText(container, "Background");
     expect(background.getAttribute("aria-haspopup")).toBe("menu");
-    expect(background.querySelector("[data-icon='table-2']")).not.toBeNull();
+    expect(background.querySelector("[data-icon='wallpaper']")).not.toBeNull();
 
     void act(() => background.dispatchEvent(new PointerEvent("pointerover", { bubbles: true })));
     const submenu = container.querySelector<HTMLElement>(".inkbook-overflow-submenu");
@@ -57,7 +57,7 @@ describe("overflow menu", () => {
     expect(buttonWithText(container, "Lines").getAttribute("aria-checked")).toBe("true");
     expect(submenu?.querySelectorAll(".inkbook-overflow-menu-icon").length).toBeGreaterThan(0);
     expect(
-      buttonWithText(container, "Squares").querySelector("[data-icon='table-2']"),
+      buttonWithText(container, "Squares").querySelector("[data-icon='square']"),
     ).not.toBeNull();
 
     act(() => buttonWithText(container, "Squares").click());

@@ -100,6 +100,7 @@ describe("Inkbook editor chrome styles", () => {
     const contextButton = declarationsFor(".inkbook-root .inkbook-toolbar-context-button");
 
     expect(composition).toContain("position: relative");
+    expect(composition).toContain("--inkbook-toolbar-surface: color-mix(");
     expect(main).toContain("margin-inline: auto");
     expect(main).toContain("width: max-content");
     expect(scrollable).toContain(
@@ -110,6 +111,7 @@ describe("Inkbook editor chrome styles", () => {
     );
     expect(context).toContain("position: absolute");
     expect(contextButton).toContain("border-radius: 999px");
+    expect(contextButton).toContain("background: var(--inkbook-toolbar-surface)");
     expect(contextButton).toContain("block-size: 52px");
     expect(contextButton).toContain("inline-size: 52px");
   });

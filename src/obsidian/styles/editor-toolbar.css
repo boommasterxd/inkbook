@@ -1,9 +1,17 @@
-.inkbook-root .inkbook-toolbar {
+.inkbook-root .inkbook-toolbar-composition {
   --inkbook-toolbar-surface: color-mix(
     in srgb,
     var(--background-primary) 88%,
     var(--background-secondary)
   );
+  --inkbook-toolbar-context-corridor: 136px;
+  block-size: 52px;
+  inline-size: 100%;
+  pointer-events: none;
+  position: relative;
+}
+
+.inkbook-root .inkbook-toolbar {
   align-items: center;
   background: var(--inkbook-toolbar-surface);
   border: 1px solid var(--background-modifier-border);
@@ -22,14 +30,6 @@
   position: sticky;
   width: max-content;
   z-index: var(--layer-popover);
-}
-
-.inkbook-root .inkbook-toolbar-composition {
-  --inkbook-toolbar-context-corridor: 136px;
-  block-size: 52px;
-  inline-size: 100%;
-  pointer-events: none;
-  position: relative;
 }
 
 .inkbook-root .inkbook-toolbar-wide {
