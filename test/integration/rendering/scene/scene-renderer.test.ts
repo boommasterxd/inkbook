@@ -280,8 +280,8 @@ describe("live stroke scene handoff", () => {
       liveMaximumChunkNodes: latestPreview.finalizedChunks.length,
       liveMaximumTailNodes: 1,
       livePreviewUpdates: 4096,
-      liveTailNodesCreated: 4096,
-      liveTailNodesRemoved: 4095,
+      liveTailNodesCreated: 1,
+      liveTailNodesRemoved: 0,
     });
 
     renderer.clearLiveStroke();
@@ -289,7 +289,7 @@ describe("live stroke scene handoff", () => {
     expect(liveGroup.attributes.has("opacity")).toBe(false);
     expect(renderer.instrumentation()).toMatchObject({
       liveChunkNodesRemoved: latestPreview.finalizedChunks.length,
-      liveTailNodesRemoved: 4096,
+      liveTailNodesRemoved: 1,
     });
   });
 });

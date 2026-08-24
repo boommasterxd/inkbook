@@ -37,7 +37,7 @@ The process:
 
 The live preview and saved stroke use the same path builder. This prevents them from differing because of two separate rendering methods.
 
-The live builder MUST NOT rebuild the complete path for every sample. Each finalized preview chunk contains at most 256 retained samples. The mutable tail contains at most 16 retained samples, including four read-only boundary samples that preserve smoothing and tangent context but are not emitted twice. A new sample rebuilds only that tail and its boundary segment; it never reconstructs an older finalized segment. On commit, the chunks and tail produce exactly the same geometry as a one-pass build from the stored samples. Live input uses a geometrically growing numeric buffer and copies its samples exactly once into the committed immutable record.
+The live builder MUST NOT rebuild the complete path for every sample. Each finalized preview chunk contains at most 256 retained samples. The mutable tail contains at most 16 retained samples, including four read-only boundary samples that preserve smoothing and tangent context but are not emitted twice. A new sample rebuilds only that tail and its boundary segment; it never reconstructs an older finalized segment. The renderer retains one tail `path` node for the complete gesture and updates only its `d` attribute; newly finalized chunk nodes are inserted before that stable tail. On commit, the chunks and tail produce exactly the same geometry as a one-pass build from the stored samples. Live input uses a geometrically growing numeric buffer and copies its samples exactly once into the committed immutable record.
 
 Strokes with a constant width are rendered as an SVG centerline. Pressure-sensitive pen strokes are generated as a filled outline path.
 

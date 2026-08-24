@@ -24,7 +24,7 @@ import {
   editCoordinateOrigin,
   editLinearBend,
   editLinearEndpoint,
-  minimumUniformScaleForElement,
+  minimumUniformScaleForSelection,
   moveSelection,
   resizeBoxShape,
   rotateSelection,
@@ -32,7 +32,7 @@ import {
   scaleElementFromPointers,
   scaleFactorsFromPointers,
   scaleSelectionFromPointers,
-  scaleSelectionUniform,
+  scaleSelectionUniformAtLeast,
   type TransformSliceScheduler,
 } from "./transforms";
 import {
@@ -59,6 +59,7 @@ export class SelectionHandleSession {
   readonly #action: SelectionHandleAction;
   readonly #elements: readonly InkElementV1[];
   readonly #planner: SelectionReplacementPlanner;
+  readonly #minimumUniformScale: number | undefined;
   readonly #snapScratch = new SnapCandidateScratch();
   readonly #snap: SelectionSnapPorts | undefined;
   readonly #startPointer: PointV1;
@@ -75,6 +76,10 @@ export class SelectionHandleSession {
     this.#action = options.action;
     this.#elements = options.elements;
     this.#planner = options.planner;
+    this.#minimumUniformScale =
+      options.action.kind === "scale" && options.elements.length > 1
+        ? minimumUniformScaleForSelection(options.elements)
+        : undefined;
     this.#snap = options.snap;
     this.#startPointer = options.startPointer;
     this.#currentPointer = options.startPointer;
@@ -179,6 +184,7 @@ export class SelectionHandleSession {
               this.#action.anchor,
               this.#startPointer,
               this.#currentPointer,
+              this.#minimumUniformScale,
             );
       case "rotate":
         return rotationFromPointers(
@@ -226,7 +232,12 @@ export class SelectionHandleSession {
     if (this.#action.kind === "scale") {
       return uniformFactor === undefined
         ? this.#scaleSingleAt(element, pointer)
-        : scaleSelectionUniform([element], this.#action.anchor, uniformFactor)[0]!;
+        : scaleSelectionUniformAtLeast(
+            [element],
+            this.#action.anchor,
+            uniformFactor,
+            this.#minimumUniformScale ?? 0,
+          )[0]!;
     }
     return this.#replaceActionTargetAt(pointer)[0]!;
   }
@@ -238,14 +249,10 @@ export class SelectionHandleSession {
   ): Promise<number | null | undefined> {
     if (this.#action.kind !== "scale" || this.#elements.length === 1) return undefined;
     const startDistance = pointDistance(this.#action.anchor, this.#startPointer);
-    let factor =
+    const factor =
       startDistance === 0 ? 1 : pointDistance(this.#action.anchor, pointer) / startDistance;
-    for (const element of this.#elements) {
-      if (this.#preparationCancelled(scheduler, generation)) return null;
-      factor = Math.max(factor, minimumUniformScaleForElement(element));
-      if (!(await this.#continuePreparation(scheduler, generation))) return null;
-    }
-    return factor;
+    if (this.#preparationCancelled(scheduler, generation)) return null;
+    return Math.max(factor, this.#minimumUniformScale ?? 0);
   }
 
   #replaceActionTarget(): InkElementV1[] {
@@ -364,10 +371,7 @@ export class SelectionHandleSession {
     const startDistance = pointDistance(this.#action.anchor, this.#startPointer);
     const factor =
       startDistance === 0 ? 1 : pointDistance(this.#action.anchor, pointer) / startDistance;
-    return this.#elements.reduce(
-      (value, element) => Math.max(value, minimumUniformScaleForElement(element)),
-      factor,
-    );
+    return Math.max(factor, this.#minimumUniformScale ?? 0);
   }
 
   #translation(): PointV1 {

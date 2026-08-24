@@ -66,17 +66,30 @@ export function scaleSelectionUniform(
   anchor: PointV1,
   factor: number,
 ): InkElementV1[] {
-  if (!Number.isFinite(factor) || factor <= 0) throw new RangeError("Scale must be positive.");
-  const minimum = elements.reduce(
-    (value, element) => Math.max(value, minimumUniformScale(element)),
-    0,
+  return scaleSelectionUniformAtLeast(
+    elements,
+    anchor,
+    factor,
+    minimumUniformScaleForSelection(elements),
   );
+}
+
+export function scaleSelectionUniformAtLeast(
+  elements: readonly InkElementV1[],
+  anchor: PointV1,
+  factor: number,
+  minimum: number,
+): InkElementV1[] {
+  if (!Number.isFinite(factor) || factor <= 0) throw new RangeError("Scale must be positive.");
+  if (!Number.isFinite(minimum) || minimum < 0) {
+    throw new RangeError("Minimum scale must be finite and non-negative.");
+  }
   const clamped = Math.max(factor, minimum);
   return elements.map((element) => scaleElement(element, anchor, { x: clamped, y: clamped }));
 }
 
-export function minimumUniformScaleForElement(element: InkElementV1): number {
-  return minimumUniformScale(element);
+export function minimumUniformScaleForSelection(elements: readonly InkElementV1[]): number {
+  return elements.reduce((value, element) => Math.max(value, minimumUniformScale(element)), 0);
 }
 
 export function scaleElementFromPointers(
@@ -115,13 +128,14 @@ export function scaleSelectionFromPointers(
   anchor: PointV1,
   startPointer: PointV1,
   currentPointer: PointV1,
+  minimum = minimumUniformScaleForSelection(elements),
 ): InkElementV1[] {
   assertFinitePoint(anchor);
   assertFinitePoint(startPointer);
   assertFinitePoint(currentPointer);
   const startDistance = pointDistance(anchor, startPointer);
   const factor = startDistance === 0 ? 1 : pointDistance(anchor, currentPointer) / startDistance;
-  return scaleSelectionUniform(elements, anchor, factor);
+  return scaleSelectionUniformAtLeast(elements, anchor, factor, minimum);
 }
 
 export function resizeBoxShape(
