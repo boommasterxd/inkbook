@@ -50,6 +50,8 @@ export function createInstrumentation(): MutableSceneInstrumentation {
     staleFrames: 0,
     themeWrites: 0,
     visibilityCandidateCacheHits: 0,
+    visibilityHysteresisHits: 0,
+    visibilitySortSkips: 0,
   };
 }
 

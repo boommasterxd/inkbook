@@ -52,13 +52,34 @@ describe("resumable scene reconciliation", () => {
     expect(renderer.mountedCount).toBe(0);
     renderer.resetInstrumentation();
 
-    renderer.setCamera({ x: -20, zoom: 1 });
+    renderer.setCamera({ x: -50, zoom: 1 });
     scheduler.runAll();
 
     expect(renderer.mountedIds("content")).toEqual(["edge"]);
     expect(renderer.instrumentation()).toMatchObject({
       spatialQueries: 0,
       visibilityCandidateCacheHits: 1,
+    });
+  });
+
+  it("retains sorted visibility when camera movement crosses the hysteresis reserve", () => {
+    const scheduler = new FakeScheduler();
+    const store = new FakeSceneStore();
+    store.records.set("stable", fakeRectangleRecord("stable", 0, 10));
+    const renderer = createRenderer(store, scheduler);
+    scheduler.runAll();
+    renderer.resetInstrumentation();
+
+    renderer.setCamera({ x: -50, zoom: 1 });
+    scheduler.runAll();
+
+    expect(renderer.mountedIds("content")).toEqual(["stable"]);
+    expect(renderer.instrumentation()).toMatchObject({
+      domEntrants: 0,
+      domExits: 0,
+      spatialQueries: 0,
+      visibilityCandidateCacheHits: 1,
+      visibilitySortSkips: 1,
     });
   });
 

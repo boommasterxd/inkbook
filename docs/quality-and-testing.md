@@ -140,7 +140,7 @@ Additional rules:
 - Worker failure invalidates the worker epoch and switches once per session to equivalent input-aware main-thread slices under a new epoch; it does not recreate a worker or retry partial results in a loop.
 - The active square and ruled backgrounds use one cached direct compound guide path spanning only the true native-scroll intersection plus one viewport of overscan, capped at 2,048 segments so their geometry matches the standalone SVG. Guides use normal antialiasing, a scale-independent one-screen-pixel stroke, and the same 25-percent-alpha scheme palette in both presentations. Dots and requests above that cap use one presentation-owned SVG pattern tile and one bounded coverage rectangle. Static export estimates guide subpaths and serialized bytes before allocating any background path fragment and rejects an over-budget page without partial output.
 - Background coverage is keyed by aligned visible indices and regenerates only when that key changes. Theme changes reuse its geometry.
-- Culling overscan is exactly 80 screen pixels converted to page units at the current zoom.
+- A culling refresh uses 80 screen pixels of overscan converted to page units at the current zoom. The mounted envelope is reused only while the current viewport plus a 40-screen-pixel safety reserve remains inside it, so no visible element can be omitted and the retained trailing edge never exceeds 120 screen pixels before refresh.
 - Dense viewports eventually mount every exact visible element in input-aware batches; they may disable animation and prewarming but may not rasterize, merge, or hide editable content. Each mount slice uses an absolute deadline plus the 4,096-stroke-point and 16,384-geometry-cost budgets, while one oversized entrant remains progress-safe.
 - Every cache has an entry or byte limit, releases removed records immediately, and is released on editor unmount.
 
@@ -356,7 +356,7 @@ Automated performance tests use deterministic fixtures and cover:
 - exact standard- and stress-fixture metadata, static-markup, total-byte, and bytes-per-point measurements
 - peak main-plus-worker memory during full export, result handoff, vault writing, conflict recovery, and repeated coalesced saves
 - steady-state one-stroke retained-memory growth, unchanged-record identity, and path-cache hit counters
-- steady-state viewport candidate reuse, applied SVG attribute-write counts, maximum-complexity dense mount slices, background-cache reuse, and bounded anchor-cache hit and eviction counters
+- steady-state viewport candidate and hysteresis reuse, unchanged-membership sort suppression, applied SVG attribute-write counts, maximum-complexity dense mount slices, background-cache reuse, and bounded anchor-cache hit and eviction counters
 - history memory bounds
 
 Runtime frame, animation, mobile input, and host-scroll budgets are verified manually in Obsidian using the reference profiles because a simulated DOM does not provide trustworthy rendering timings.

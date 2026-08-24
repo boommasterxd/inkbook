@@ -1,5 +1,9 @@
 import type { Bounds } from "../../domain/geometry/primitives";
-import { DENSE_RECONCILIATION_VISIBLE_ELEMENT_THRESHOLD } from "./constants";
+import {
+  DENSE_RECONCILIATION_VISIBLE_ELEMENT_THRESHOLD,
+  VIEWPORT_OVERSCAN_SCREEN_PX,
+  VISIBILITY_HYSTERESIS_RESERVE_SCREEN_PX,
+} from "./constants";
 import type { SceneMotionController } from "./scene-motion-controller";
 import type { ScenePathCache } from "./path-cache";
 import type { SceneCamera, SceneViewport } from "./types";
@@ -68,5 +72,15 @@ export function visiblePageBounds(
     minY: viewport.top / camera.zoom - overscan,
     maxX: (viewport.left + viewport.width) / camera.zoom - camera.x + overscan,
     maxY: (viewport.top + viewport.height) / camera.zoom + overscan,
+  };
+}
+
+export function visibilityPageBounds(
+  viewport: SceneViewport,
+  camera: SceneCamera,
+): { readonly envelope: Bounds; readonly retained: Bounds } {
+  return {
+    envelope: visiblePageBounds(viewport, camera, VIEWPORT_OVERSCAN_SCREEN_PX),
+    retained: visiblePageBounds(viewport, camera, VISIBILITY_HYSTERESIS_RESERVE_SCREEN_PX),
   };
 }

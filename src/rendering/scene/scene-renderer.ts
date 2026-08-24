@@ -6,7 +6,7 @@ import type {
   StrokeStyleV1,
 } from "../../domain/schema/public";
 import { sameBackground, SceneBackgroundCache } from "./background-cache";
-import { DEFAULT_FRAME_BUDGET_MS, VIEWPORT_OVERSCAN_SCREEN_PX } from "./constants";
+import { DEFAULT_FRAME_BUDGET_MS } from "./constants";
 import { SceneContentRenderer } from "./content-renderer";
 import { SceneElementPreviewController } from "./element-preview-controller";
 import { SceneFrameWriter } from "./scene-frame-writer";
@@ -23,7 +23,7 @@ import { SceneCommitCoordinator } from "./scene-commit-coordinator";
 import { SceneDeltaCoordinator } from "./scene-delta-coordinator";
 import { SceneLiveStrokeRenderer } from "./live-stroke-renderer";
 import { SceneMotionController } from "./scene-motion-controller";
-import { SceneResourcePolicy, visiblePageBounds } from "./scene-resource-policy";
+import { SceneResourcePolicy, visibilityPageBounds } from "./scene-resource-policy";
 import {
   browserScheduler,
   sameViewport,
@@ -302,7 +302,6 @@ export class SvgSceneRenderer {
     this.#deltas.addFades(ids);
     this.#content.setElementFade(ids, this.#motion.duration(durationMs));
   }
-
   public clearElementFade(ids: readonly string[]): void {
     this.assertActive();
     this.#deltas.removeFades(ids);
@@ -313,7 +312,6 @@ export class SvgSceneRenderer {
     validatePreviewVersion(version, "Element preview");
     if (this.#elementPreviews.set(elements, version)) this.schedule();
   }
-
   public clearElementPreviews(): void {
     this.assertActive();
     if (this.#previewCommits.requestClear()) return;
@@ -478,10 +476,12 @@ export class SvgSceneRenderer {
       }
       return;
     }
-    const bounds = visiblePageBounds(this.#viewport, this.#camera, VIEWPORT_OVERSCAN_SCREEN_PX);
+    const { envelope, retained } = visibilityPageBounds(this.#viewport, this.#camera);
     this.#visibilityDirty = false;
     this.#orderVisibilityDirty = false;
-    const visibility = this.#visibility.query(bounds);
+    const result = this.#visibility.query(envelope, retained);
+    if (!result.changed) return;
+    const { visibility } = result;
     this.#content.replaceVisibility(visibility);
     this.#resourcePolicy.updateVisibility(visibility);
   }

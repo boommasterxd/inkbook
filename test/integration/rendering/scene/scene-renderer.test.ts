@@ -183,7 +183,7 @@ describe("imperative SVG scene renderer", () => {
       contentAttributeWrites: 0,
       geometryBuilds: 0,
       spatialQueries: 0,
-      visibilityCandidateCacheHits: 1,
+      visibilityHysteresisHits: 1,
     });
 
     renderer.resetInstrumentation();

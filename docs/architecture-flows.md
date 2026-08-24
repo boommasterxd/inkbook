@@ -205,7 +205,10 @@ flowchart TD
   contentGate -->|No| reuseContent["No content calculation or write"]
   contentGate -->|Yes| visibilityGate{"Visibility or viewport dirty?"}
   visibilityGate -->|No| mountedChanges["Use dirty mounted IDs only"]
-  visibilityGate -->|Yes| visibleRect["Calculate viewport plus 80 screen pixels of overscan"]
+  visibilityGate -->|Yes| hysteresis{"Viewport plus 40-pixel reserve remains inside the retained envelope?"}
+  hysteresis -->|Yes| reuseVisibility["Reuse published visibility and sorted bands"]
+  hysteresis -->|No| visibleRect["Calculate viewport plus 80 screen pixels of overscan"]
+  reuseVisibility --> reuseContent
   visibleRect --> spatialQuery["Query spatial grid and bounded overflow collection"]
   spatialQuery --> candidateCache{"Same cell range and no relevant cell delta?"}
   candidateCache -->|Yes| reuseCandidates["Reuse numeric candidate slots"]
@@ -213,8 +216,11 @@ flowchart TD
   reuseCandidates --> exactBounds["Reject nonintersecting conservative bounds"]
   refillCandidates --> exactBounds
   exactBounds --> visibleSet["Fill reusable next-visible slots"]
+  visibleSet --> membership{"Band membership changed?"}
+  membership -->|No| reuseVisibility
+  membership -->|Yes| sorted["Sort visible bands by rank and ID"]
 
-  visibleSet --> diff["Diff against the ID-to-node map"]
+  sorted --> diff["Diff against the ID-to-node map"]
   storeDelta --> changedIds["Changed IDs and affected rank data"]
   changedIds --> mountedChanges
   mountedChanges --> work
@@ -247,7 +253,7 @@ flowchart TD
   remaining -->|No| complete["Frame complete without a React render"]
 ```
 
-The ordinary frame cost follows reusable spatial-index candidates, mounted visible elements, and the classified published delta, rather than all 10,000 stored strokes. The renderer mounts only the viewport plus exactly 80 screen pixels of overscan and mutates only entering, exiting, changed, or affected reordered nodes and attributes. Large or unusually dense viewports reconcile every exact visible element through a persistent band-and-rank cursor. Each slice uses the frame's absolute deadline plus fixed point and geometry budgets, admits at least one element for progress, and reuses the unchanged viewport query while the last complete frame remains visible.
+The ordinary frame cost follows reusable spatial-index candidates, mounted visible elements, and the classified published delta, rather than all 10,000 stored strokes. A refresh mounts the viewport plus 80 screen pixels of overscan. That envelope is retained while the current viewport plus a 40-screen-pixel safety reserve remains inside it, so small camera movements perform neither classification nor sorting and never omit visible content. A later refresh reuses the sorted bands when membership and order remain unchanged. The renderer mutates only entering, exiting, changed, or affected reordered nodes and attributes. Large or unusually dense viewports reconcile every exact visible element through a persistent band-and-rank cursor. Each slice uses the frame's absolute deadline plus fixed point and geometry budgets, admits at least one element for progress, and reuses the unchanged viewport query while the last complete frame remains visible.
 
 All layout reads happen before pure calculations and DOM writes, so the frame does not alternate between layout measurement and mutation. Path and anchor entries are valid only for the same element ID and geometry version. The recently unmounted main-thread path LRU is capped at 4,096 entries and 32 MiB, and the target-anchor LRU at 4,096 targets and 8 MiB, with the active-document memory ceiling taking precedence. Background guides use bounded SVG pattern tiles aligned to the visible range and regenerate only when their geometry key changes. Transform previews use SVG transforms, and visible connected endpoints follow their target during the same frame. Canonical paths, bounds, spatial-index cells, and endpoint records update once on commit.
 

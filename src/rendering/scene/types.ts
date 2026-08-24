@@ -163,6 +163,8 @@ export interface SceneInstrumentationSnapshot {
   readonly staleFrames: number;
   readonly themeWrites: number;
   readonly visibilityCandidateCacheHits: number;
+  readonly visibilityHysteresisHits: number;
+  readonly visibilitySortSkips: number;
 }
 
 export interface MutableSceneInstrumentation {
@@ -212,4 +214,6 @@ export interface MutableSceneInstrumentation {
   staleFrames: number;
   themeWrites: number;
   visibilityCandidateCacheHits: number;
+  visibilityHysteresisHits: number;
+  visibilitySortSkips: number;
 }
