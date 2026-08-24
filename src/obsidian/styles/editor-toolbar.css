@@ -1,7 +1,7 @@
 .inkbook-root .inkbook-toolbar-composition {
   --inkbook-toolbar-surface: var(--inkbook-page-surface);
-  --inkbook-toolbar-context-corridor: 136px;
-  block-size: 52px;
+  --inkbook-toolbar-context-corridor: 128px;
+  block-size: 48px;
   inline-size: 100%;
   pointer-events: none;
   position: relative;
@@ -9,20 +9,13 @@
 
 .inkbook-root .inkbook-toolbar {
   align-items: center;
-  background: var(--inkbook-toolbar-surface);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 999px;
-  box-shadow:
-    0 8px 24px rgb(0 0 0 / 18%),
-    0 1px 2px rgb(0 0 0 / 22%);
   color: var(--text-normal);
   display: flex;
   gap: 0;
   inset-block-start: 8px;
   margin-inline: auto;
   max-inline-size: calc(100% - 16px);
-  min-block-size: 52px;
-  padding: 4px;
+  padding: 2px;
   position: sticky;
   width: max-content;
   z-index: var(--layer-popover);
@@ -37,7 +30,7 @@
   justify-content: flex-start;
   overflow-x: auto;
   scrollbar-width: none;
-  width: max(52px, calc(100% - var(--inkbook-toolbar-context-corridor)));
+  width: max(48px, calc(100% - var(--inkbook-toolbar-context-corridor)));
 }
 
 .inkbook-root .inkbook-toolbar-scrollable::-webkit-scrollbar {
@@ -52,8 +45,11 @@
 }
 
 .inkbook-root .inkbook-toolbar-context-actions {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
   gap: 8px;
-  inset-block-start: 0;
+  inset-block-start: 8px;
   inset-inline-start: calc(50% + var(--inkbook-toolbar-main-half, 0px) + 8px);
   max-inline-size: max(0px, calc(50% - var(--inkbook-toolbar-main-half, 0px) - 16px));
   overflow-x: auto;
@@ -104,6 +100,23 @@
     transform var(--inkbook-motion-fast) var(--inkbook-motion-easing);
 }
 
+.inkbook-root .inkbook-toolbar-context-button {
+  flex-basis: 48px;
+  inline-size: 48px;
+}
+
+.inkbook-root .inkbook-toolbar,
+.inkbook-root .inkbook-toolbar-context-button {
+  background: var(--inkbook-toolbar-surface);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  block-size: 48px;
+  box-sizing: border-box;
+  box-shadow:
+    0 8px 24px rgb(0 0 0 / 18%),
+    0 1px 2px rgb(0 0 0 / 22%);
+}
+
 .inkbook-root .inkbook-toolbar-button:hover {
   color: var(--text-normal);
 }
@@ -139,18 +152,6 @@
   color: var(--text-error);
 }
 
-.inkbook-root .inkbook-toolbar-context-button {
-  background: var(--inkbook-toolbar-surface);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 999px;
-  block-size: 52px;
-  box-shadow:
-    0 8px 24px rgb(0 0 0 / 18%),
-    0 1px 2px rgb(0 0 0 / 22%);
-  flex-basis: 52px;
-  inline-size: 52px;
-}
-
 .inkbook-root .inkbook-toolbar-button[data-inkbook-action="delete"]:hover::before {
   background: color-mix(in srgb, var(--text-error) 12%, transparent);
 }
@@ -171,6 +172,14 @@
   pointer-events: none;
 }
 
+.inkbook-root .inkbook-toolbar-context-button[data-presence="entering"] {
+  animation-name: inkbook-toolbar-context-control-enter;
+}
+
+.inkbook-root .inkbook-toolbar-context-button[data-presence="exiting"] {
+  animation-name: inkbook-toolbar-context-control-exit;
+}
+
 .inkbook-root .inkbook-toolbar-icon,
 .inkbook-root .inkbook-toolbar-icon svg {
   block-size: 19px;
@@ -183,12 +192,13 @@
 
 .inkbook-root .inkbook-toolbar-shell {
   animation: inkbook-toolbar-enter var(--inkbook-motion-standard) var(--inkbook-motion-easing) both;
-  block-size: 0;
-  inset-block-start: 8px;
+  block-size: var(--inkbook-toolbar-overlay-block-size);
+  inset-block-start: 0;
   inline-size: 100%;
   max-inline-size: 100%;
   pointer-events: none;
-  position: sticky;
+  position: absolute;
+  translate: 0 -100%;
   z-index: var(--layer-popover);
 }
 
@@ -197,7 +207,7 @@
 }
 
 .inkbook-root .inkbook-toolbar-shell .inkbook-toolbar {
-  inset-block-start: auto;
+  inset-block-start: 8px;
   margin-inline: auto;
   pointer-events: auto;
   position: relative;
@@ -209,7 +219,7 @@
 }
 
 .inkbook-root .inkbook-toolbar-edge {
-  block-size: 50px;
+  block-size: 48px;
   inset-block-start: 0;
   inline-size: 24px;
   opacity: 0;
@@ -231,10 +241,4 @@
 .inkbook-root .inkbook-toolbar-shell[data-overflow-start="true"] .inkbook-toolbar-edge-start,
 .inkbook-root .inkbook-toolbar-shell[data-overflow-end="true"] .inkbook-toolbar-edge-end {
   opacity: 1;
-}
-
-@container inkbook-embed (max-width: 520px) {
-  .inkbook-root .inkbook-toolbar {
-    border-radius: var(--radius-l);
-  }
 }

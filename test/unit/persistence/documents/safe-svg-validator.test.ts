@@ -92,6 +92,7 @@ describe("strict safe SVG validation", () => {
       lockedHeight: 148.6,
       pathCommands: 15,
       paths: 6,
+      requiresCanonicalRewrite: false,
       revision: 3,
     });
   });
@@ -99,7 +100,7 @@ describe("strict safe SVG validation", () => {
   it("accepts the previous exact dark page palette for version 1 input", () => {
     const legacySvg = validSvg().replace(CANONICAL_THEME_STYLESHEET, LEGACY_THEME_STYLESHEET_V1);
 
-    expect(validateSafeSvg(legacySvg)).not.toBeNull();
+    expect(validateSafeSvg(legacySvg)).toMatchObject({ requiresCanonicalRewrite: true });
   });
 
   it.each([

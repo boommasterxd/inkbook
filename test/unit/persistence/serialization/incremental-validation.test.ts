@@ -13,7 +13,7 @@ import {
 import { createAllElementSnapshot, createSnapshot, uuid } from "./fixtures";
 
 describe("incremental serializer validation", () => {
-  it("rejects invalid changed elements and out-of-page bounds atomically", () => {
+  it("rejects invalid changed elements while accepting viewport overflow", () => {
     const snapshot = createAllElementSnapshot();
     const serializer = initialized(snapshot);
     const stroke = snapshot.elements[1];
@@ -25,13 +25,10 @@ describe("incremental serializer validation", () => {
       ok: false,
     });
     const outsidePage = { ...stroke, points: [-1, 100, 0.5, 50, 100, 0.5] };
-    expect(change(serializer, outsidePage)).toMatchObject({
-      error: { code: "snapshot-invalid", validationError: { code: "invalid-range" } },
-      ok: false,
-    });
+    expect(change(serializer, outsidePage)).toEqual({ ok: true, value: undefined });
     expect(serializer.serialize()).toMatchObject({
       ok: true,
-      value: { snapshot: { revision: snapshot.revision } },
+      value: { snapshot: { revision: snapshot.revision + 1 } },
     });
   });
 

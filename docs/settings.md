@@ -203,7 +203,7 @@ interface PageDefaultsV1 {
   };
   writingLineHeight: number;
   activeBufferLines: number;
-  lockedBufferLines: number;
+  lockedBufferLines: 1;
 }
 ```
 
@@ -215,15 +215,15 @@ Built-in values:
 - Squares spacing: M, 40 page units
 - writing line height: 100 page units
 - active buffer lines: 3
-- locked buffer lines: 1
+- locked compatibility value: 1
 
 Validation:
 
 - writing line height: integer from 50 through 200 page units, step 10
 - active buffer lines: integer from 1 through 8, step 1
-- locked buffer lines: integer from 0 through 8, step 1
+- locked compatibility value: current writers use 1; the loader still accepts legacy integers from 0 through 8
 
-The selected background type and all three spacing defaults are independent. A new file copies the selected type, that type's spacing, writing-line height, and both buffer counts into its `PageV1`. Switching an existing file to another background type copies that type's current vault spacing into the file through one undoable background command. Later vault-setting changes never mutate existing files.
+The selected background type and all three spacing defaults are independent. A new file copies the selected type, that type's spacing, writing-line height, and active buffer count into its `PageV1`, then writes the canonical locked compatibility value `1`. Locked trailing space is fixed by the page-extent contract and is not exposed as a setting. Switching an existing file to another background type copies that type's current vault spacing into the file through one undoable background command. Later vault-setting changes never mutate existing files.
 
 ## Validation Matrix
 
@@ -239,7 +239,6 @@ All numeric ranges are inclusive.
 | Table columns                 | integer from 1 through 12              |        1 |
 | Writing-line height           | integer from 50 through 200 page units |       10 |
 | Active buffer lines           | integer from 1 through 8               |        1 |
-| Locked buffer lines           | integer from 0 through 8               |        1 |
 | Enumerations and colors       | exactly one documented value           | Discrete |
 
 Unknown object properties, missing required properties, invalid enum values, non-finite numbers, and values outside these ranges make the containing persisted settings field invalid. The loader replaces only that field with its built-in default, records a non-content diagnostic code, and continues loading the other valid fields.

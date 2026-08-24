@@ -18,4 +18,14 @@ describe("centered background guides", () => {
       start: 25,
     });
   });
+
+  it("keeps exact canonical intervals stable after floating-point subtraction", () => {
+    const derivedLength = 1068.6 - 2 * 24.3;
+
+    expect(centeredGuideAxis(24.3, derivedLength, 60)).toEqual({
+      end: 1044.3,
+      intervalCount: 17,
+      start: 24.3,
+    });
+  });
 });

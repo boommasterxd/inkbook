@@ -181,7 +181,9 @@ describe("active editor timer and style sessions", () => {
       store,
     });
 
-    expect(session.controls("draw").some(({ id }) => id === "outline-width")).toBe(true);
+    expect(session.presentation("draw").controls.some(({ id }) => id === "outline-width")).toBe(
+      true,
+    );
     session.apply("draw", "outline-width", 8);
     expect(stateChanged).toHaveBeenCalledTimes(1);
     expect(store.get(element.id)?.element.style).toMatchObject({ outlineWidth: 8 });

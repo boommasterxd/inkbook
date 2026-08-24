@@ -27,7 +27,7 @@ An Inkbook file is UTF-8 XML with this required order:
 </svg>
 ```
 
-The background group starts with one page-surface path covering the complete `viewBox`, including the writable margin. Background guides follow it. The page path has no rounded corners; the plugin's dynamic host container performs clipping.
+The background group starts with one page-surface path covering the complete `viewBox`, including the writable margin. Background guides follow it. The page path has no rounded corners; the plugin's dynamic host container performs rounded clipping. The canonical root stylesheet sets `overflow: hidden` on the standalone SVG, so geometry outside the rectangular `viewBox` remains editable in metadata but is not painted by external viewers.
 
 Additional envelope rules:
 
@@ -47,7 +47,7 @@ Format version 1 uses this fixed document palette, derived from Obsidian's defau
 | ---------------- | ----------- | ----------- |
 | Page surface     | `#F6F6F6FF` | `#212121FF` |
 | Theme text       | `#222222FF` | `#DADADAFF` |
-| Background guide | `#DCDCDCFF` | `#383838FF` |
+| Background guide | `#ABABAB40` | `#66666640` |
 
 `ColorV1` values with `type: "theme-text"` use the Theme text role. Explicit RGBA colors, including built-in highlighter and palette colors, retain the same value in both schemes.
 
@@ -59,24 +59,25 @@ The serializer emits one constant-size stylesheet equivalent to:
   color-scheme: light dark;
   --inkbook-page: #F6F6F6FF;
   --inkbook-text: #222222FF;
-  --inkbook-guide: #DCDCDCFF;
+  --inkbook-guide: #ABABAB40;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --inkbook-page: #212121FF;
     --inkbook-text: #DADADAFF;
-    --inkbook-guide: #383838FF;
+    --inkbook-guide: #66666640;
   }
 }
 @media print {
   :root {
     --inkbook-page: #F6F6F6FF;
     --inkbook-text: #222222FF;
-    --inkbook-guide: #DCDCDCFF;
+    --inkbook-guide: #ABABAB40;
   }
 }
+svg { overflow: hidden; }
 .inkbook-theme-page { fill: var(--inkbook-page); }
-.inkbook-theme-guide { stroke: var(--inkbook-guide); shape-rendering: crispEdges; }
+.inkbook-theme-guide { stroke: var(--inkbook-guide); vector-effect: non-scaling-stroke; }
 .inkbook-theme-stroke { stroke: var(--inkbook-text); }
 .inkbook-theme-fill { fill: var(--inkbook-text); }
 .inkbook-theme-stroke-fill { stroke: var(--inkbook-text); fill: var(--inkbook-text); }
@@ -86,7 +87,7 @@ Theme-dependent paths also carry the corresponding direct light RGBA presentatio
 
 The plugin's active SVG scene uses the same palette values. Obsidian variables style only host chrome, menus, focus treatment, the border, and the rounded container. Community themes may change that host chrome, but they do not change the portable document palette. This separation is required for external fidelity without theme-driven file rewrites.
 
-Readers also accept the previous exact version 1 stylesheets whose guide colors were `#70707040` and `#99999940`, including the earlier dark page surfaces `#282828FF` and `#212121FF`, plus the immediately preceding canonical stylesheet without scale-independent guide strokes. These compatibility inputs are not emitted. Unlocking reconstructs the active scene from the semantic snapshot with the current opaque midpoint guide colors and crisp guide rasterization, and the next successful save emits only the current canonical stylesheet. That stylesheet applies `vector-effect: non-scaling-stroke` to the unchanged theme-guide path geometry, so responsive viewers retain a uniform one-screen-pixel guide weight instead of alternating between light, dark, thin, or thick subpixel phases. Keeping the rule in the stylesheet preserves exact version-1 static-group integrity for existing files. Theme-guide paths retain the previous direct light fallback stroke for compatibility, while their required class resolves to the current palette in every canonical renderer.
+Readers also accept the previous exact version 1 stylesheets whose guide colors were `#DCDCDCFF` and `#383838FF`, and the earlier translucent variants `#70707040` and `#99999940`, including the earlier dark page surfaces `#282828FF` and `#212121FF`, plus the immediately preceding canonical stylesheets without scale-independent guide strokes or explicit root overflow clipping. These compatibility inputs are not emitted. Loading marks any supported non-current stylesheet for a canonical rewrite, so locking after unlock performs a verified save even without a content edit and refreshes the preview only after readback succeeds. Unlocking reconstructs the active scene from the semantic snapshot with the current low-contrast guide palette. Guide colors use 25-percent alpha, matching the restrained host-grid contrast while remaining self-contained. Normal SVG antialiasing replaces `crispEdges`, which avoids neighboring guides being rounded to visibly different physical widths at fractional zoom or display scale. `vector-effect: non-scaling-stroke` retains a uniform one-screen-pixel guide weight in a correctly sized SVG viewport. Theme-guide paths keep their version-1 direct fallback stroke for static-group compatibility, while their required class resolves to the current palette in every canonical renderer.
 
 Square and dot guide coordinates contain only the greatest whole number of spacing intervals that fit inside the writable rectangle. Any horizontal or vertical remainder is split equally between the corresponding margins. The standalone SVG and active scene use the same centered bounds, and the active square coverage closes its terminal right and bottom lines, so neither presentation clips or leaves a cell open at an edge.
 
@@ -117,9 +118,9 @@ The plugin registers the public workspace `css-change` event and reads the curre
 
 A scheme change performs no path construction, geometry calculation, bounds or anchor invalidation, spatial-index update, React ink render, document revision, history entry, dirty transition, worker export, or vault write. Every mounted main-window and pop-out presentation updates through its own lifecycle owner. Unmounted files are not scanned or opened.
 
-Lifecycle-owned Reading-view and Live Preview hosts set their owned background-image surface's embedding root `color-scheme` to the result of `App.isDarkMode()`. The standalone SVG evaluates `prefers-color-scheme` from that embedding context. A real scheme transition reapplies the same vault resource URL to the owned surface once to force a repaint without file I/O, serialization, or cache-busting. If Reading-view enhancement cannot identify and validate the exact custom Inkbook block, it leaves the non-image Markdown link unchanged and disables Inkbook interaction. Inkbook MUST NOT compensate with private DOM selectors.
+Lifecycle-owned Reading-view and Live Preview hosts set their embedding root `color-scheme` to the result of `App.isDarkMode()`. The locked preview removes the validated file stylesheet and applies equivalent canonical paint through rules scoped to that owned root; the standalone file continues to evaluate `prefers-color-scheme` itself. A real scheme transition remounts the already validated inert presentation markup with the new scoped scheme without file I/O, serialization, or cache-busting. If Reading-view enhancement cannot identify and validate the exact custom Inkbook block, it leaves the non-image Markdown link unchanged and disables Inkbook interaction. Inkbook MUST NOT compensate with private DOM selectors.
 
-The plugin-owned background-image surface does not need an HTML-image capability probe or native-image replacement path. A `css-change` whose `App.isDarkMode()` result differs from the presentation's remembered scheme clears and reapplies only the surface's existing CSS image value once after updating `color-scheme`. Repeated CSS changes within the same scheme do nothing. This compatibility repaint performs no vault read or write, SVG serialization, worker dispatch, revision change, cache-busting query, unlock, or DOM search. It never scans unmounted notes or files, and it does not alter an unrecognized custom link. Active editor scenes still use the root-palette update.
+The plugin-owned locked surface uses neither an HTML image nor an object or iframe browsing context. A `css-change` whose `App.isDarkMode()` result differs from the presentation's remembered scheme remounts only its already validated presentation tree after updating the root scheme. Repeated CSS changes within the same scheme do nothing. This repaint performs no vault read or write, SVG serialization, worker dispatch, revision change, cache-busting query, unlock, or document-wide DOM search. It never scans unmounted notes or files, and it does not alter an unrecognized custom link. Active editor scenes still use the root-palette update.
 
 ## External Compatibility and Verification
 

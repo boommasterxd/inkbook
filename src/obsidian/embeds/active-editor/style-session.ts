@@ -2,11 +2,12 @@ import type { ToolDefaultsV1 } from "../../../domain/settings/types";
 import type { InkElementV1 } from "../../../domain/schema/public";
 import type { ElementStore } from "../../../domain/store/public";
 import type { EditorTool } from "../../../editor/input/index";
-import type { StyleControl } from "../../../rendering/ui/index";
+import type { StyleControl, ToolbarStyleIconState } from "../../../rendering/ui/index";
 
 import { selectedElements } from "./controller-elements";
 import {
   createActiveEditorStyleControls,
+  createActiveEditorStyleIcon,
   createSelectionStyleReplacement,
   updateSessionToolDefaults,
 } from "./controller-styles";
@@ -43,12 +44,18 @@ export class ActiveEditorStyleSession {
     return this.#defaults;
   }
 
-  public controls(tool: EditorTool): readonly StyleControl[] {
-    return createActiveEditorStyleControls({
-      defaults: this.#defaults,
-      selection: selectedElements(this.#sceneStore, this.#selection()),
-      tool,
-    });
+  public presentation(tool: EditorTool): {
+    readonly controls: readonly StyleControl[];
+    readonly icon: ToolbarStyleIconState;
+  } {
+    return {
+      controls: createActiveEditorStyleControls({
+        defaults: this.#defaults,
+        selection: selectedElements(this.#sceneStore, this.#selection()),
+        tool,
+      }),
+      icon: createActiveEditorStyleIcon(this.#defaults, tool),
+    };
   }
 
   public apply(tool: EditorTool, id: string, value: boolean | number | string): void {
@@ -75,7 +82,7 @@ function completeReplacement(
   readonly previous: readonly InkElementV1[];
   readonly replacements: readonly InkElementV1[];
 } | null {
-  const plan = store.planPageBoundedReplacements(requested);
+  const plan = store.planReplacements(requested);
   if (plan === null) return null;
   const previous = plan.elements.map(({ id }) => {
     const record = store.get(id);

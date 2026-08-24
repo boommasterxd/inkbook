@@ -41,6 +41,12 @@ describe("Inkbook editor chrome", () => {
         renderIcon={vi.fn()}
         selectedShape="rectangle"
         styleControls={[]}
+        styleIcon={{
+          fillColor: null,
+          fillOpacity: 0,
+          outlineColor: null,
+          outlineStyle: "solid",
+        }}
         toolbarState={{
           activeTool: "select",
           canPaste: false,
@@ -134,6 +140,7 @@ function createProps(ownerDocument: Document): InkbookEditorChromeProps {
     renderIcon: vi.fn(),
     selectedShape: "rectangle",
     styleControls: [],
+    styleIcon: { fillColor: null, fillOpacity: 0, outlineColor: null, outlineStyle: "solid" },
     toolbarState: {
       activeTool: "select",
       canPaste: false,

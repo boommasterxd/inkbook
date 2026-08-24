@@ -37,7 +37,14 @@ export function useToolbarButtonPresence(
       }),
     }));
   };
-  return [state.buttons, complete];
+  const currentDefinitions = new Map(
+    definitions.map((definition) => [definition.action, definition]),
+  );
+  const currentButtons = state.buttons.map((button) => ({
+    ...button,
+    definition: currentDefinitions.get(button.definition.action) ?? button.definition,
+  }));
+  return [currentButtons, complete];
 }
 
 export function resolvePresenceButtons(

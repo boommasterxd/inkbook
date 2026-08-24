@@ -26,7 +26,8 @@ export interface PresentationPreviewLifecycle {
   readonly element: HTMLElement;
   readonly refresh?: () => void;
   readonly requestHostMeasure?: () => void;
-  readonly setSource?: (source: string) => void;
+  readonly setAspectRatio?: (aspectRatio: number) => void;
+  readonly setSource?: (source: string) => Promise<void>;
 }
 
 function leasesFor(document: Document): ScrollbarLeaseRegistry<HTMLElement> {
@@ -74,6 +75,9 @@ export class PresentationController {
         ? {}
         : {
             preview: previewLifecycle.element,
+            ...(previewLifecycle.setAspectRatio === undefined
+              ? {}
+              : { setPreviewAspectRatio: previewLifecycle.setAspectRatio }),
             ...(previewLifecycle.setSource === undefined
               ? {}
               : { setPreviewSource: previewLifecycle.setSource }),
@@ -162,6 +166,10 @@ export class PresentationController {
       "--inkbook-container-width",
       `${String(measurement.contentWidth)}px`,
     );
+    this.#attachment.root.style.setProperty(
+      "--inkbook-shell-radius",
+      `${String(shellRadius(measurement.contentWidth))}px`,
+    );
     if (measurement.requiresSettledRead) {
       this.#measured = false;
       this.#scheduleSettledMeasurement();
@@ -209,6 +217,10 @@ export class PresentationController {
       this.#sessions.detach(this.#attachment);
     }
   }
+}
+
+function shellRadius(contentWidth: number): number {
+  return Math.min(20, Math.max(10, contentWidth * 0.02));
 }
 
 function readPresentationMeasurement(

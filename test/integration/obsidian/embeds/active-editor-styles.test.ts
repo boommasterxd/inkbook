@@ -5,6 +5,7 @@ import { createBuiltInSettings } from "../../../../src/domain/settings/defaults"
 import { createDragElement, createFreehandElement } from "../../../../src/editor/tools/public";
 import {
   createActiveEditorStyleControls,
+  createActiveEditorStyleIcon,
   createSelectionStyleReplacement,
   updateSessionToolDefaults,
 } from "../../../../src/obsidian/embeds/active-editor/controller-styles";
@@ -57,6 +58,37 @@ describe("active editor Style controls", () => {
     expect(controlIds("table")).toContain("table-columns");
     expect(controlIds("eraser")).toEqual(["eraser-radius"]);
     expect(controlIds("select")).toEqual([]);
+  });
+
+  it("derives the toolbar palette from the active tool defaults", () => {
+    const defaults = createBuiltInSettings().toolDefaults;
+    defaults.pen.color = { type: "rgba", value: "#EF4444FF" };
+    defaults.shapes.rectangle = {
+      ...defaults.shapes.rectangle,
+      fillColor: { type: "rgba", value: "#8B5CF6FF" },
+      fillOpacity: 0.3,
+      outlineColor: { type: "rgba", value: "#F97316FF" },
+      outlineStyle: "dashed",
+    };
+
+    expect(createActiveEditorStyleIcon(defaults, "draw")).toEqual({
+      fillColor: null,
+      fillOpacity: 0,
+      outlineColor: { type: "rgba", value: "#EF4444FF" },
+      outlineStyle: "solid",
+    });
+    expect(createActiveEditorStyleIcon(defaults, "rectangle")).toEqual({
+      fillColor: { type: "rgba", value: "#8B5CF6FF" },
+      fillOpacity: 0.3,
+      outlineColor: { type: "rgba", value: "#F97316FF" },
+      outlineStyle: "dashed",
+    });
+    expect(createActiveEditorStyleIcon(defaults, "select")).toEqual({
+      fillColor: null,
+      fillOpacity: 0,
+      outlineColor: null,
+      outlineStyle: "solid",
+    });
   });
 
   it("reports mixed shared selection values and hides incompatible properties", () => {

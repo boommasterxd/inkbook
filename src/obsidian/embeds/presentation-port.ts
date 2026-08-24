@@ -39,7 +39,8 @@ export interface PresentationAttachment {
   readonly embedReference: PresentationEmbedReference;
   readonly root: HTMLElement;
   readonly preview?: HTMLElement;
-  readonly setPreviewSource?: (source: string) => void;
+  readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
+  readonly setPreviewSource?: (source: string) => Promise<void>;
   readonly scrollOwner: () => HTMLElement | null;
 }
 
@@ -49,8 +50,22 @@ export function presentationAttachmentKey(attachment: AttachmentIdentity): strin
 
 export type PresentationAttachmentInput = Omit<
   PresentationAttachment,
-  "preview" | "scrollOwner" | "setPreviewSource"
+  "preview" | "scrollOwner" | "setPreviewAspectRatio" | "setPreviewSource"
 >;
+
+export function presentationPreviewOptions(
+  attachment: PresentationAttachment,
+): Pick<PresentationAttachment, "preview" | "setPreviewAspectRatio" | "setPreviewSource"> {
+  return {
+    ...(attachment.preview === undefined ? {} : { preview: attachment.preview }),
+    ...(attachment.setPreviewAspectRatio === undefined
+      ? {}
+      : { setPreviewAspectRatio: attachment.setPreviewAspectRatio }),
+    ...(attachment.setPreviewSource === undefined
+      ? {}
+      : { setPreviewSource: attachment.setPreviewSource }),
+  };
+}
 
 export interface PresentationSessionPort {
   activate(attachment: PresentationAttachment): void;

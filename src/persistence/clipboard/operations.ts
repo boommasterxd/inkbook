@@ -8,9 +8,7 @@ import type {
 import { FILE_SCHEMA_LIMITS, validateInkElementV1 } from "../../domain/schema/public";
 import {
   calculateElementBounds,
-  correctElementsToPageBounds,
   derivePageExtent,
-  isWithinPageBounds,
   translateElementGeometry,
 } from "../../domain/geometry/public";
 import { measureSpatialCapacity, type SpatialBounds } from "../../domain/spatial/index";
@@ -32,7 +30,6 @@ import type {
 import { getValidatedClipboardBounds } from "./validation";
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const PAGE_WIDTH = 2048.6;
 
 export interface PlanPasteOptions {
   decoded: DecodedClipboard;
@@ -283,9 +280,6 @@ export const planPaste = (options: PlanPasteOptions): ClipboardResult<PastePlan>
     x: round3(options.target.x + repeatedOffset - (initialBounds.minX + initialBounds.maxX) / 2),
     y: round3(options.target.y + repeatedOffset - (initialBounds.minY + initialBounds.maxY) / 2),
   };
-  if (initialBounds.maxX - initialBounds.minX > PAGE_WIDTH) {
-    return failure("Pasted content is wider than the page.");
-  }
   const requested = adopted.map((element) =>
     translateElementGeometry(element, requestedTranslation),
   );
@@ -293,23 +287,13 @@ export const planPaste = (options: PlanPasteOptions): ClipboardResult<PastePlan>
     validatedBounds === null
       ? unionBounds(requested, calculateElementBounds)
       : translateBounds(initialBounds, requestedTranslation);
-  const correction = isWithinPageBounds(requestedBounds)
-    ? { correction: { x: 0, y: 0 }, elements: requested, status: "accepted" as const }
-    : correctElementsToPageBounds(requested);
-  if (correction.status === "rejected")
-    return failure("Pasted content cannot be normalized within document bounds.");
-  const translated = correction.elements;
-  const translation = {
-    x: round3(requestedTranslation.x + correction.correction.x),
-    y: round3(requestedTranslation.y + correction.correction.y),
-  };
-  const translatedBounds = validatedBounds?.map((value) => translateBounds(value, translation));
-  const bounds =
-    correction.correction.x === 0 && correction.correction.y === 0
-      ? requestedBounds
-      : unionBounds(translated, calculateElementBounds);
+  const translated = requested;
+  const translatedBounds = validatedBounds?.map((value) =>
+    translateBounds(value, requestedTranslation),
+  );
+  const bounds = requestedBounds;
   if (bounds.maxY > (DOCUMENT_LIMITS.maximumDerivedHeight ?? Infinity)) {
-    return failure("Pasted content cannot be normalized within document bounds.");
+    return failure("Pasted content exceeds the supported document height.");
   }
   if (validatedBounds === null) {
     const records = validateUntrustedInsertionRecords(translated);
@@ -346,7 +330,7 @@ export const planPaste = (options: PlanPasteOptions): ClipboardResult<PastePlan>
       insertAtBandFront: true,
       activateTool: "select",
       commandTimestamp: options.commandTimestamp,
-      translation,
+      translation: requestedTranslation,
       repeatState: repeat.state,
     },
   };

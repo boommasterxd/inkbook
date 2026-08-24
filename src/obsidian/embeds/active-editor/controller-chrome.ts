@@ -24,7 +24,10 @@ export interface ActiveEditorChromeOptions {
   readonly renderIcon: InkbookEditorChromeProps["renderIcon"];
   readonly selectedShape: ShapeId;
   readonly setFlyoutClosed: () => void;
-  readonly styleControls: readonly StyleControl[];
+  readonly style: {
+    readonly controls: readonly StyleControl[];
+    readonly icon: InkbookEditorChromeProps["styleIcon"];
+  };
   readonly toolbarState: ToolbarState;
 }
 
@@ -47,7 +50,8 @@ export function createChromeProps(options: ActiveEditorChromeOptions): InkbookEd
     overflowMenu: options.overflowMenu,
     renderIcon: options.renderIcon,
     selectedShape: options.selectedShape,
-    styleControls: options.styleControls,
+    styleControls: options.style.controls,
+    styleIcon: options.style.icon,
     toolbarState: options.toolbarState,
   };
 }

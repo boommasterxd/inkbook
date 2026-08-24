@@ -1,38 +1,49 @@
+import { createPreviewSvg, loadValidatedPreviewSvg } from "./safe-preview-svg";
+
 export interface InkbookLockedPreviewDescriptor {
   readonly aspectRatio: number;
+  readonly safeSvg: string;
 }
 
 export interface InkbookLockedPreviewSurface {
   readonly element: HTMLButtonElement;
   readonly refresh: () => void;
-  readonly setSource: (source: string) => void;
+  readonly setAspectRatio: (aspectRatio: number) => void;
+  readonly setSource: (source: string) => Promise<void>;
 }
 
 export function createInkbookLockedPreview(
   button: HTMLButtonElement,
-  source: string,
   descriptor: InkbookLockedPreviewDescriptor,
 ): InkbookLockedPreviewSurface {
   const element = button.createDiv({ cls: "inkbook-locked-preview-media" });
   element.setAttribute("aria-hidden", "true");
-  element.setCssProps({ "--inkbook-preview-aspect-ratio": String(descriptor.aspectRatio) });
-  let currentSource = source;
-  const setSource = (nextSource: string): void => {
-    currentSource = nextSource;
-    element.setCssProps({ "--inkbook-preview-image": cssImageUrl(currentSource) });
+  const owningWindow = button.ownerDocument.defaultView;
+  if (owningWindow === null) throw new Error("The Inkbook preview has no owning window.");
+  const setAspectRatio = (aspectRatio: number): void => {
+    if (!Number.isFinite(aspectRatio) || aspectRatio <= 0) return;
+    element.setCssProps({ "--inkbook-preview-aspect-ratio": String(aspectRatio) });
   };
-  setSource(source);
+  setAspectRatio(descriptor.aspectRatio);
+  let currentSvg = descriptor.safeSvg;
+  let sourceGeneration = 0;
+  const mount = (safeSvg: string): void => {
+    element.replaceChildren(createPreviewSvg(button.ownerDocument, safeSvg));
+  };
+  const setSource = async (nextSource: string): Promise<void> => {
+    const generation = ++sourceGeneration;
+    const safeSvg = await loadValidatedPreviewSvg(nextSource, owningWindow);
+    if (generation !== sourceGeneration) return;
+    currentSvg = safeSvg;
+    mount(safeSvg);
+  };
+  mount(currentSvg);
   return {
     element: button,
     refresh: () => {
-      element.setCssProps({ "--inkbook-preview-image": "none" });
-      element.getBoundingClientRect();
-      element.setCssProps({ "--inkbook-preview-image": cssImageUrl(currentSource) });
+      mount(currentSvg);
     },
+    setAspectRatio,
     setSource,
   };
-}
-
-function cssImageUrl(source: string): string {
-  return `url(${JSON.stringify(source)})`;
 }

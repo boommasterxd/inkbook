@@ -5,6 +5,8 @@ import {
   hasCanonicalInkbookRootMarker,
   ObsidianInkbookDocumentRecognition,
 } from "../../../../src/obsidian/embeds/document-recognition";
+import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
+import { createSnapshot } from "../../../unit/persistence/serialization/fixtures";
 
 function testFile(path: string, size: number): TFile {
   const Constructor = TFile as unknown as new (filePath: string, fileSize: number) => TFile;
@@ -62,16 +64,23 @@ describe("Inkbook document recognition", () => {
   });
 
   it("invalidates a recognized file without retaining stale classification", async () => {
+    const serialized = serializeInkbookDocument(createSnapshot());
+    expect(serialized.ok).toBe(true);
+    if (!serialized.ok) return;
     const { changed, file, recognition } = recognitionHarness(
       "drawings/ink.svg",
-      160,
-      '<svg viewBox="0 0 2048.6 168.6" data-inkbook-format="inkbook"></svg>',
+      new TextEncoder().encode(serialized.value.svg).byteLength,
+      serialized.value.svg,
     );
 
-    await expect(recognition.recognize(file.path)).resolves.toEqual({
-      aspectRatio: 2048.6 / 168.6,
+    await expect(recognition.recognize(file.path)).resolves.toMatchObject({
+      aspectRatio: 2048.6 / serialized.value.lockedHeight,
+      safeSvg: serialized.value.svg,
     });
-    expect(recognition.cached(file.path)).toEqual({ aspectRatio: 2048.6 / 168.6 });
+    expect(recognition.cached(file.path)).toMatchObject({
+      aspectRatio: 2048.6 / serialized.value.lockedHeight,
+      safeSvg: serialized.value.svg,
+    });
     recognition.invalidate(file.path);
     expect(recognition.cached(file.path)).toBeUndefined();
     expect(changed).toHaveBeenCalledTimes(2);

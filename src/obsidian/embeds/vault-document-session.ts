@@ -1,6 +1,7 @@
 import type { FileManager } from "obsidian";
 import type { InkElementV1, InkSnapshotV1 } from "../../domain/schema/public";
 import { ElementStore, type PreparedElementReplacementResult } from "../../domain/store/public";
+import { derivePageExtent, PAGE_WIDTH } from "../../domain/geometry/public";
 import type {
   DocumentSessionPort,
   DocumentSessionSnapshot,
@@ -233,6 +234,7 @@ export class VaultDocumentSession implements DocumentSessionPort {
       this.#adoptDocument(
         loaded.snapshot,
         loaded.outputHash,
+        loaded.requiresCanonicalRewrite,
         recovered.executor,
         loaded.store,
         loaded.sourceVersion,
@@ -293,6 +295,7 @@ export class VaultDocumentSession implements DocumentSessionPort {
   #adoptDocument(
     snapshot: InkSnapshotV1,
     outputHash: string,
+    requiresCanonicalRewrite: boolean,
     executor: DocumentRuntimePort,
     store: ElementStore,
     sourceVersion: number,
@@ -371,6 +374,7 @@ export class VaultDocumentSession implements DocumentSessionPort {
       confirmed: createConfirmedPersistenceObserver({
         active: () => !this.#lifecycle.disposed && !this.#lifecycle.preparingForUnload,
         documentId: this.#identity.documentId,
+        lockedAspectRatio: () => lockedAspectRatio(this.#page, store),
         persisted: this.#hooks.persisted,
       }),
       ...(createFallback === undefined ? {} : { createFallback }),
@@ -381,6 +385,7 @@ export class VaultDocumentSession implements DocumentSessionPort {
       initialSnapshot: snapshot,
       isGestureActive: () => this.#gestureActive,
       outputHash,
+      requiresCanonicalRewrite,
       page: () => requireVaultPage(this.#page),
       store,
       workerEpoch: this.#workerEpoch,
@@ -423,6 +428,7 @@ export class VaultDocumentSession implements DocumentSessionPort {
         this.#adoptDocument(
           loaded.snapshot,
           loaded.outputHash,
+          loaded.requiresCanonicalRewrite,
           executor,
           loaded.store,
           loaded.sourceVersion,
@@ -479,4 +485,11 @@ export class VaultDocumentSession implements DocumentSessionPort {
       this.#cancelled,
     );
   }
+}
+
+function lockedAspectRatio(page: InkSnapshotV1["page"] | undefined, store: ElementStore): number {
+  return (
+    PAGE_WIDTH /
+    derivePageExtent(requireVaultPage(page), store.getMaximumBottom() ?? null).lockedHeight
+  );
 }

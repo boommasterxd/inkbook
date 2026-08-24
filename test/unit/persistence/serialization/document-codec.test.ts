@@ -7,6 +7,7 @@ import {
   CURRENT_METADATA_REWRITES,
   rewriteDocumentMetadata,
 } from "../../../fixtures/persistence/metadata-rewrite";
+import { serializeLegacyLockedHeightDocument } from "../../../fixtures/persistence/legacy-locked-height";
 import {
   parseInkbookDocument,
   serializeInkbookDocument,
@@ -107,7 +108,10 @@ describe("Inkbook document serialization", () => {
     expect(validateSafeSvg(previousFile)).not.toBeNull();
     expect(parseInkbookDocument(previousFile)).toMatchObject({
       ok: true,
-      value: { snapshot: { page: { background: { type: "squares", spacing: 60 } } } },
+      value: {
+        requiresCanonicalRewrite: true,
+        snapshot: { page: { background: { type: "squares", spacing: 60 } } },
+      },
     });
   });
 });
@@ -212,6 +216,20 @@ describe("SVG numeric precision", () => {
 });
 
 describe("Inkbook document parsing", () => {
+  it("loads a canonical legacy locked height and rewrites it on the next save", () => {
+    const snapshot = createDottedRectangleSnapshot(400);
+    snapshot.page.lockedBufferLines = 3;
+    const legacy = serializeLegacyLockedHeightDocument(snapshot);
+
+    const parsed = parseInkbookDocument(legacy);
+
+    expect(parsed.ok, JSON.stringify(parsed)).toBe(true);
+    if (!parsed.ok) return;
+    const rewritten = serializeInkbookDocument(parsed.value.snapshot);
+    expect(rewritten.ok).toBe(true);
+    if (rewritten.ok) expect(rewritten.value.lockedHeight).toBeLessThan(parsed.value.lockedHeight);
+  });
+
   it("round-trips UTF-8 bytes and verifies revision, height, and hash", () => {
     const serialized = serializeInkbookDocument(createAllElementSnapshot());
     expect(serialized.ok).toBe(true);
@@ -224,6 +242,7 @@ describe("Inkbook document parsing", () => {
       value: {
         hash: serialized.value.hash,
         lockedHeight: serialized.value.lockedHeight,
+        requiresCanonicalRewrite: false,
         snapshot: serialized.value.snapshot,
         sourceVersion: 1,
       },

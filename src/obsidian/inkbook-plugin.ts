@@ -3,6 +3,7 @@ import {
   normalizePath,
   Notice,
   Plugin,
+  setIcon,
   TFile,
   TFolder,
   type Editor,
@@ -218,7 +219,13 @@ function showInsertionNotice(
     ownerWindow,
     (retry) => {
       const retryNotice = new Notice("Handwriting was inserted but the editor is not ready. ");
-      const retryButton = retryNotice.messageEl.createEl("button", { text: "Retry" });
+      retryNotice.messageEl.classList.add("inkbook-root");
+      const retryButton = retryNotice.messageEl.createEl("button", {
+        attr: { "aria-label": "Retry editor activation", title: "Retry editor activation" },
+        cls: "inkbook-notice-icon-button",
+      });
+      const retryIcon = retryButton.createSpan({ cls: "inkbook-notice-action-icon" });
+      setIcon(retryIcon, "rotate-ccw");
       retryButton.addEventListener(
         "click",
         () => {

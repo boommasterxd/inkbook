@@ -2,9 +2,9 @@ import type { ArrowElementV1, PageV1, StrokeElementV1 } from "../../../../src/do
 import { describe, expect, it } from "vitest";
 
 import {
-  boundsCorrection,
   boundsIntersect,
   calculateElementBounds,
+  deriveLegacyLockedHeight,
   derivePageExtent,
   effectiveStrokeWidth,
 } from "../../../../src/domain/geometry/public";
@@ -71,10 +71,7 @@ describe("shared conservative element bounds", () => {
     expect(calculateElementBounds(highlighter)).toEqual({ minX: 0, minY: 0, maxX: 20, maxY: 20 });
   });
 
-  it("provides horizontal and top-edge corrections without underflow", () => {
-    expect(boundsCorrection({ minX: -5, minY: -3, maxX: 100, maxY: 20 })).toEqual({ x: 5, y: 3 });
-    expect(boundsCorrection({ minX: 2000, minY: 0, maxX: 2100, maxY: 10 })?.x).toBeCloseTo(-51.4);
-    expect(boundsCorrection({ minX: -1, minY: 0, maxX: 2050, maxY: 10 })).toBeNull();
+  it("detects bounds that touch at their edges", () => {
     expect(
       boundsIntersect(
         { minX: 0, minY: 0, maxX: 10, maxY: 10 },
@@ -119,6 +116,23 @@ describe("page extent bounds", () => {
       activeHeight: 328.6,
       lockedHeight: 328.6,
     });
-    expect(derivePageExtent(page, page.margin + 40).lockedHeight).toBe(88.6);
+    expect(derivePageExtent(page, page.margin + 40).lockedHeight).toBe(128.6);
+  });
+
+  it("keeps exactly one complete pattern row after occupied content when locked", () => {
+    const page: PageV1 = {
+      innerWidth: 2000,
+      margin: 24.3,
+      background: { type: "squares", spacing: 40 },
+      writingLineHeight: 100,
+      activeBufferLines: 3,
+      lockedBufferLines: 8,
+    };
+
+    const extent = derivePageExtent(page, page.margin + 61);
+
+    expect(extent.occupiedRows).toBe(2);
+    expect(extent.lockedHeight).toBeCloseTo(168.6);
+    expect(deriveLegacyLockedHeight(page, page.margin + 61)).toBeCloseTo(1088.6);
   });
 });

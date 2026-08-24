@@ -11,6 +11,7 @@ import type { ActiveEditorViewState } from "./active-editor/navigation";
 import { isLiveOwnerWindow, OwnerWindowRegistry } from "./owner-window-registry";
 import {
   presentationAttachmentKey,
+  presentationPreviewOptions,
   type PresentationAttachment,
   type PresentationSessionPort,
 } from "./presentation-port";
@@ -194,10 +195,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
             this.#lifecycle.markFirstStroke(attachment.documentId);
           },
           root: attachment.root,
-          ...(attachment.preview === undefined ? {} : { preview: attachment.preview }),
-          ...(attachment.setPreviewSource === undefined
-            ? {}
-            : { setPreviewSource: attachment.setPreviewSource }),
+          ...presentationPreviewOptions(attachment),
           scheme: initialScheme,
           scrollOwner: attachment.scrollOwner,
           startupTool: settings.vault.startupTool,

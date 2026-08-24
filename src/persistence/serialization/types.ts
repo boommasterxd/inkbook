@@ -12,6 +12,7 @@ export interface SerializedInkbookDocument<TOutput extends string | Uint8Array =
 export interface ParsedInkbookDocument {
   readonly hash: string;
   readonly lockedHeight: number;
+  readonly requiresCanonicalRewrite: boolean;
   readonly snapshot: InkSnapshotV1;
   readonly sourceVersion: number;
 }

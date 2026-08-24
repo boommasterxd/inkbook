@@ -11,7 +11,7 @@ export function centeredGuideAxis(
   availableLength: number,
   spacing: number,
 ): CenteredGuideAxis {
-  const boundedLength = Math.max(0, availableLength);
+  const boundedLength = roundCanonical(Math.max(0, availableLength));
   const intervalCount = Math.max(0, Math.floor(boundedLength / spacing));
   const coveredLength = intervalCount * spacing;
   const start = roundCanonical(availableStart + (boundedLength - coveredLength) / 2);

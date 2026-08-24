@@ -32,7 +32,9 @@ export type ModelExportResult =
     };
 
 export interface ModelUnlockResult {
+  readonly lockedHeight: number;
   readonly outputHash: string;
+  readonly requiresCanonicalRewrite: boolean;
   readonly snapshot: InkSnapshotV1;
   readonly sourceVersion: number;
 }
@@ -89,7 +91,9 @@ export class DocumentModelRuntime {
     const snapshot = this.#snapshot;
     if (snapshot === null) throw new RuntimeModelError("snapshot-invalid", false);
     return {
+      lockedHeight: parsed.value.lockedHeight,
       outputHash: parsed.value.hash,
+      requiresCanonicalRewrite: parsed.value.requiresCanonicalRewrite,
       snapshot,
       sourceVersion: parsed.value.sourceVersion,
     };

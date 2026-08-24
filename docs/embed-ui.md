@@ -12,9 +12,10 @@ The following rules apply:
 - When another embed is opened, the plugin saves and locks the previously active embed.
 - The locked preview and active scene occupy the same lifecycle-owned inline block. Unlocking never appends a second editor before or after that block.
 - An empty locked preview contains at least 2.5 writing lines, rounded up to the next complete background step, plus the writable SVG margins. Obsidian's generic button height MUST NOT override this intrinsic preview height.
+- A non-empty patterned locked preview contains the complete row holding the lowest annotation, exactly one further complete pattern row, and the writable bottom margin. It never retains the active writing buffer or a legacy locked-buffer multiplier.
 - The existing preview remains visible until the in-place editor has fully loaded and has been measured correctly.
-- After the active scene has been measured, the same block grows from the serialized `lockedHeight` to the derived `activeHeight` plus the active-only toolbar row over 240 milliseconds. Its top edge, width, root, and document position remain anchored; no second editor is inserted.
-- The preview remains visible over the growing scene. During the final 120 milliseconds, the preview fades out while the editor and its overlay toolbar fade in. Input is enabled and the preview is unmounted only after the transition completes.
+- After the active scene has been measured, the same block grows from the serialized `lockedHeight` to the derived `activeHeight` over 240 milliseconds. Its top edge, width, root, and document position remain anchored; no second editor is inserted and toolbar chrome contributes no block height.
+- The preview remains visible over the growing scene. Before the first growth frame, the active SVG scene is laid out once at its final `activeHeight`, remains top-anchored at that fixed block size for one complete painted frame, and stays unchanged while only the rounded background container grows and clips progressively more of it. The active editor becomes opaque in the same frame that growth starts, so newly revealed space always contains the final scene. The preview stays opaque over the original locked area and fades out during the final 120 milliseconds. Input is enabled and the preview is unmounted only after the transition completes. There is no frame in which both presentations are hidden or detached.
 - Automatic page growth may occur later when committed content leaves less than one aligned writable line.
 - With reduced motion, measurement is still awaited, then target height and preview/editor visibility are applied without interpolation.
 
@@ -48,13 +49,13 @@ The SVG page itself is not rounded. The background container provides the dynami
 The normative DOM layer hierarchy is:
 
 1. The embed root owns measurement and relative positioning but does not clip descendants.
-2. The toolbar is an absolutely positioned sibling in an active-only control row above the background container.
+2. A zero-height sticky host is the first child of the active editor. The toolbar is an absolutely positioned overlay lifted above that host and therefore contributes no layout height.
 3. The background container owns the border, background, radius, and clipping.
 4. The SVG committed-content bands and decorative overlays are inside the clipped background container and use `pointer-events: none`.
 5. One transparent, focusable canvas input surface is above that content, below toolbar and flyouts, and owns canvas pointer, wheel, context-menu, and keyboard events.
 6. Flyouts are portalled within the owning embed's document so they are not clipped by the background container and remain correct in pop-out windows.
 
-Activation preserves the root, top-edge anchor, measured width, presentation attachment, and active editor identity while intentionally animating the block from `lockedHeight` to the active page plus its toolbar row. The toolbar row exists only while the editor is active and does not reduce, cover, or pad the SVG page. A stroke commit, autosave, SVG resource refresh, theme change, or asynchronous document reclassification MUST NOT detach, remount, move, or lock the active editor.
+Activation preserves the root, top-edge anchor, measured width, presentation attachment, and active editor identity while intentionally animating the block from `lockedHeight` to `activeHeight`. The toolbar overlays the note immediately above the page, including Markdown already painted there, and does not move that content or reduce, cover, or pad the SVG page. The embed root explicitly preserves visible overflow and disables host-imposed paint containment so the upward toolbar overhang remains painted and hit-testable; paint containment remains scoped to the page surface below it. A stroke commit, autosave, SVG resource refresh, theme change, or asynchronous document reclassification MUST NOT detach, remount, move, or lock the active editor.
 
 The embed uses its own final background-container content-box width after the resolved note scroller's native right-hand scrollbar gutter has been stabilized. It respects note padding, readable-line width, lists, callouts, and other nested constraints; it never adopts the full scroller width. No Inkbook layer, including the toolbar, input surface, flyout, focus treatment, or background container, extends over the owner client edge or scrollbar gutter. Pointer contact does not add or remove any layout-affecting UI. The host-scroll ownership, edge clamp, and platform-specific native overlay behavior are defined in [Obsidian Integration](obsidian-integration.md#native-scroll-owner-and-scrollbar-stability).
 
@@ -75,10 +76,13 @@ The tools are located in the center:
 - Draw
 - Highlighter
 - Straight Highlighter
-- Shape
+- Active Shape, displaying the currently selected shape icon
+- Shape Picker
 - Style
 
-The Straight Highlighter control uses the same marker silhouette as Highlighter with three short ruler marks inside the body instead of a generic line symbol. Inkbook registers this custom icon through Obsidian's public `addIcon()` API and removes it on plugin deactivation through `removeIcon()`.
+The Straight Highlighter control uses the same marker silhouette as Highlighter with two short, evenly spaced ruler marks inside the body instead of a generic line symbol. Inkbook registers this custom icon through Obsidian's public `addIcon()` API and removes it on plugin deactivation through `removeIcon()`.
+
+The Style control retains the canonical 19-pixel Palette geometry instead of swapping among stored icon assets. Its SVG attributes update from the active tool defaults: the glyph outline uses the tool color, line-cap-safe dash patterns distinguish solid, dashed, and dotted outlines, and a closed shape fills the palette body with its fill color and exact fill opacity. The four palette wells stay solid and use the outline color. The SVG node and button remain mounted while these attributes change, and Theme text color resolves through the owning toolbar's current host color in every window.
 
 The end of the primary track contains:
 
@@ -125,13 +129,13 @@ Attached load and save failures preserve the last safe preview or active scene a
 
 All primary controls share one continuous toolbar surface. Copy, Cut, Paste, and Delete intentionally use separate circular surfaces outside that primary pill.
 
-The primary toolbar is one 52-pixel-high rounded surface with the exact current portable page-surface color, a 1-pixel host-theme border, and a restrained host shadow. The locked preview container, active background container, toolbar, and separate circular context controls therefore resolve to `#F6F6F6` in light mode and `#212121` in dark mode. Every 44-pixel primary control and its hover, active, and focus treatment are circular, with a consistent 2-pixel gap across the complete track. Each conditional context action is a 52-pixel circular surface with exactly the same resolved background color, border, and shadow as the primary toolbar and an 8-pixel gap from adjacent surfaces. Active controls keep normal icon geometry and use an accent-tinted inset surface plus accent outline instead of a fully color-inverted button. Destructive Delete uses the host error color. Every control is keyboard-focusable and has a visible `focus-visible` ring.
+The primary toolbar is one 48-pixel-high rounded surface with 2 pixels of internal padding, the exact current portable page-surface color, a 1-pixel host-theme border, and a restrained host shadow. The locked preview container, active background container, toolbar, and separate circular context controls therefore resolve to `#F6F6F6` in light mode and `#212121` in dark mode. Every 44-pixel primary control and its hover, active, and focus treatment are circular, with a consistent 2-pixel gap across the complete track. Each conditional context action is a 48-pixel circular surface with exactly the same resolved background color, border, shadow, and top edge as the primary toolbar and an 8-pixel gap from adjacent surfaces; its transparent positioning group contributes no visible backdrop. Presence motion never changes the surface opacity or targets the 44-pixel primary-control size. Active controls keep normal icon geometry and use an accent-tinted inset surface plus accent outline instead of a fully color-inverted button. Destructive Delete uses the host error color. Every control is keyboard-focusable and has a visible `focus-visible` ring.
 
 Every control has a 44-by-44-pixel hit target. The icon may be visually smaller and does not change size between rest, hover, active, and focus states.
 
-The toolbar has 8 pixels of spacing above it and 6 pixels below it. Its 66-pixel active-only control row is outside the background container, so it creates no dead page padding and removes no writable SVG space.
+The 48-pixel toolbar track is positioned inside a 62-pixel overlay envelope with 8 pixels above and 6 pixels below it. The complete envelope is translated above a zero-height host, so it creates no dead page padding, moves no surrounding Markdown, and removes no writable SVG space.
 
-It is positioned above the drawing area inside the same in-place editor block. When the note is scrolled, it remains at the visible top edge while its associated embed is still visible. At the bottom of the embed, the toolbar also leaves the viewport.
+It is positioned above the drawing area inside the same in-place editor boundary while painting over the note rather than participating in note flow. The zero-height host uses native sticky positioning. Its inset compensates for the measured top padding of the already resolved public scroll owner, without private Obsidian selectors or per-scroll JavaScript writes. As the note scrolls, the toolbar moves normally until it reaches the visible top edge, remains there while its embed is visible, and leaves the viewport with the embed's bottom boundary.
 
 ## Responsive Behavior
 
@@ -140,7 +144,7 @@ The primary toolbar has two layout stages, selected from the measured width of i
 1. Wide: use this stage when the complete track fits within the available width. The track remains centered.
 2. Scrollable: use this stage when the complete track is wider than the available width. Buttons and gaps remain unchanged. The toolbar scrolls horizontally, hides only its own horizontal scrollbar, and shows a 24-pixel edge gradient only where more content exists. It never affects the native vertical Obsidian scrollbar.
 
-The buttons are never reduced in size and never overlap. Context controls are absolutely positioned from the measured end of the centered primary pill. Their presence does not contribute to the primary pill's centering calculation. The responsive layout permanently reserves a symmetric 136-pixel corridor around a scrollable primary pill, leaving one 52-pixel action viewport plus its gaps on the right without moving the pill center; additional context controls scroll only inside that right-hand viewport. The owner-window `ResizeObserver` refreshes the measured pill edge whenever its actual size changes, including resizes that remain within the same responsive stage.
+The buttons are never reduced in size and never overlap. Context controls are absolutely positioned from the measured end of the centered primary pill. Their presence does not contribute to the primary pill's centering calculation. The responsive layout permanently reserves a symmetric 128-pixel corridor around a scrollable primary pill, leaving one 48-pixel action viewport plus its gaps on the right without moving the pill center; additional context controls scroll only inside that right-hand viewport. The owner-window `ResizeObserver` refreshes the measured pill edge whenever its actual size changes, including resizes that remain within the same responsive stage.
 
 The pre-measurement state is Wide. The editor keeps the chrome hidden during its initial stable-width measurement, resolves the actual stage from the mounted control track, and reveals only that measured result. A later window resize uses the same calculation and MUST NOT be required to correct first-open geometry.
 
@@ -150,7 +154,7 @@ Toolbar, flyout, selection, container-height, and preview transitions follow [Qu
 
 ## Flyouts
 
-Background, Shape, and Style open flyouts.
+Background, Shape Picker, and Style open flyouts. Active Shape is a drawing-tool control and never doubles as the picker trigger.
 
 The following rules apply:
 

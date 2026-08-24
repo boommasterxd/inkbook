@@ -78,6 +78,34 @@
   }
 }
 
+@keyframes inkbook-toolbar-context-control-enter {
+  from {
+    flex-basis: 0;
+    inline-size: 0;
+    transform: scale(0.96);
+  }
+
+  to {
+    flex-basis: 48px;
+    inline-size: 48px;
+    transform: scale(1);
+  }
+}
+
+@keyframes inkbook-toolbar-context-control-exit {
+  from {
+    flex-basis: 48px;
+    inline-size: 48px;
+    transform: scale(1);
+  }
+
+  to {
+    flex-basis: 0;
+    inline-size: 0;
+    transform: scale(0.96);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .inkbook-root:not([data-inkbook-motion="full"]) {
     --inkbook-motion-fast: 0ms;

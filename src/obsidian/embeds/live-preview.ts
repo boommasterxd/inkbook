@@ -289,11 +289,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
       attr: { "aria-label": "Edit handwriting", type: "button" },
       cls: "inkbook-locked-preview",
     });
-    const preview = createInkbookLockedPreview(
-      button,
-      this.#embed.resolved.resourceUrl,
-      this.#embed.preview,
-    );
+    const preview = createInkbookLockedPreview(button, this.#embed.preview);
 
     const attachmentId = `live-preview-${++nextLivePreviewAttachmentId}`;
     const controller = new PresentationController(
@@ -316,6 +312,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
         element: preview.element,
         refresh: preview.refresh,
         requestHostMeasure: () => view.requestMeasure(),
+        setAspectRatio: preview.setAspectRatio,
         setSource: preview.setSource,
       },
     );

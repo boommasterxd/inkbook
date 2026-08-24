@@ -13,10 +13,23 @@ import {
 import { ColorSchemeBroadcaster } from "../../../../src/obsidian/theme/color-scheme";
 import { executableSyntaxIn } from "../../../fixtures/obsidian/live-preview";
 import { FakePresentationElement as FakeElement } from "../../../fixtures/obsidian/presentation-dom";
+
+const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata></svg>';
+
+function livePreviewEmbed(resourceUrl = "app://vault/ink.svg") {
+  return {
+    from: 4,
+    preview: { aspectRatio: 12, safeSvg: SAFE_PREVIEW_SVG },
+    resolved: { documentId: "drawings/ink.svg", resourceUrl },
+    sourcePath: "notes/note.md",
+    to: 28,
+  };
+}
 function createPorts(): EmbedIntegrationPorts & {
   readonly attachments: Array<{
     readonly embedReference: unknown;
     readonly preview?: HTMLElement;
+    readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
   }>;
   readonly calls: string[];
   readonly setDark: () => void;
@@ -26,13 +39,14 @@ function createPorts(): EmbedIntegrationPorts & {
   const attachments: Array<{
     readonly embedReference: unknown;
     readonly preview?: HTMLElement;
+    readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
   }> = [];
   return {
     attachments,
     calls,
     documents: {
-      cached: () => ({ aspectRatio: 12 }),
-      recognize: async () => ({ aspectRatio: 12 }),
+      cached: () => ({ aspectRatio: 12, safeSvg: SAFE_PREVIEW_SVG }),
+      recognize: async () => ({ aspectRatio: 12, safeSvg: SAFE_PREVIEW_SVG }),
       subscribe: () => () => undefined,
     },
     lifecycle: new PresentationLifecycleRegistry(),
@@ -359,16 +373,7 @@ describe("Live Preview widget lifecycle", () => {
     const ports = createPorts();
     const created: FakeElement[] = [];
     const ownerDocument = new FakeElement().ownerDocument;
-    const widget = new InkbookLivePreviewWidget(
-      {
-        from: 4,
-        preview: { aspectRatio: 12 },
-        resolved: { documentId: "drawings/ink.svg", resourceUrl: "app://vault/ink.svg" },
-        sourcePath: "notes/note.md",
-        to: 28,
-      },
-      ports,
-    );
+    const widget = new InkbookLivePreviewWidget(livePreviewEmbed(), ports);
     const root = widget.toDOM({
       dom: {
         ownerDocument,
@@ -384,8 +389,8 @@ describe("Live Preview widget lifecycle", () => {
     expect(root.tagName).toBe("DIV");
     const activationButton = requireOwnedPreview(root, root.children[0]);
     expect(activationButton?.children[0]?.style["--inkbook-preview-aspect-ratio"]).toBe("12");
-    expect(activationButton?.children[0]?.style["--inkbook-preview-image"]).toBe(
-      'url("app://vault/ink.svg")',
+    expect(activationButton?.children[0]?.children[0]?.classNames).toContain(
+      "inkbook-locked-preview-svg",
     );
     activationButton?.dispatch("click");
     expect(ports.calls).toEqual(["mount:drawings/ink.svg", "activate:drawings/ink.svg"]);
@@ -397,6 +402,8 @@ describe("Live Preview widget lifecycle", () => {
       to: 28,
     });
     expect(ports.attachments[0]?.preview).toBe(activationButton);
+    ports.attachments[0]?.setPreviewAspectRatio?.(4);
+    expect(activationButton.children[0]?.style["--inkbook-preview-aspect-ratio"]).toBe("4");
     widget.destroy(root as unknown as HTMLElement);
     expect(ports.calls[ports.calls.length - 1]).toBe("detach:drawings/ink.svg");
   });
@@ -405,23 +412,14 @@ describe("Live Preview widget lifecycle", () => {
 describe("Live Preview widget reconciliation", () => {
   it("includes both the document path and resource URL in widget identity", () => {
     const ports = createPorts();
-    const widget = new InkbookLivePreviewWidget(
-      {
-        from: 4,
-        preview: { aspectRatio: 12 },
-        resolved: { documentId: "drawings/ink.svg", resourceUrl: "app://vault/ink.svg" },
-        sourcePath: "notes/note.md",
-        to: 28,
-      },
-      ports,
-    );
+    const widget = new InkbookLivePreviewWidget(livePreviewEmbed(), ports);
 
     expect(
       widget.eq(
         new InkbookLivePreviewWidget(
           {
             from: 4,
-            preview: { aspectRatio: 12 },
+            preview: { aspectRatio: 12, safeSvg: SAFE_PREVIEW_SVG },
             resolved: { documentId: "drawings/ink.svg", resourceUrl: "app://vault/ink.svg" },
             sourcePath: "notes/note.md",
             to: 28,
@@ -435,7 +433,7 @@ describe("Live Preview widget reconciliation", () => {
         new InkbookLivePreviewWidget(
           {
             from: 4,
-            preview: { aspectRatio: 12 },
+            preview: { aspectRatio: 12, safeSvg: SAFE_PREVIEW_SVG },
             resolved: {
               documentId: "drawings/ink.svg",
               resourceUrl: "app://vault/reissued.svg",
@@ -452,7 +450,7 @@ describe("Live Preview widget reconciliation", () => {
         new InkbookLivePreviewWidget(
           {
             from: 5,
-            preview: { aspectRatio: 12 },
+            preview: { aspectRatio: 12, safeSvg: SAFE_PREVIEW_SVG },
             resolved: { documentId: "drawings/ink.svg", resourceUrl: "app://vault/ink.svg" },
             sourcePath: "notes/note.md",
             to: 28,
@@ -467,7 +465,7 @@ describe("Live Preview widget reconciliation", () => {
     const ports = createPorts();
     const embed = {
       from: 4,
-      preview: { aspectRatio: 12 },
+      preview: { aspectRatio: 12, safeSvg: SAFE_PREVIEW_SVG },
       resolved: { documentId: "drawings/ink.svg", resourceUrl: "app://vault/ink.svg" },
       sourcePath: "notes/note.md",
       to: 28,

@@ -30,6 +30,7 @@ import { attachActiveSceneInputListeners } from "./active-scene-input";
 import { bindActiveSceneScrollOwner, type ActiveSceneScrollBinding } from "./active-scene-scroll";
 import {
   applyLockedFitLayout,
+  lockedPageAspectRatio,
   LOCK_LAYOUT_DURATION_MS,
   restoreActiveLayout,
   type LockedFitTransition,
@@ -58,7 +59,8 @@ export interface ActiveInkbookSceneOptions {
   readonly onFirstStrokeCommitted?: () => void;
   readonly root: HTMLElement;
   readonly preview?: HTMLElement;
-  readonly setPreviewSource?: (source: string) => void;
+  readonly setPreviewSource?: (source: string) => Promise<void>;
+  readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
   readonly scheme: InkbookColorScheme;
   readonly scrollOwner?: () => BrowserScrollElement | null;
   readonly startupTool: StartupToolV1;
@@ -165,6 +167,7 @@ export class ActiveInkbookScene {
       invalidate: () => this.#renderer.invalidateLayout(),
       ownerWindow,
       ...(options.scrollOwner === undefined ? {} : { provider: options.scrollOwner }),
+      root: options.root,
       transfer: (owner) => this.#controller.transferScrollOwner(owner),
     });
     this.#removeViewportListeners = () => scrollBinding?.dispose();
@@ -267,6 +270,7 @@ export class ActiveInkbookScene {
 
   public setPreviewSource(source: string): void {
     if (this.#disposed) return;
+    this.#refreshPreviewAspectRatio();
     this.#previewReady = this.#previewHandoff.setPreviewSource(source);
   }
 
@@ -311,6 +315,7 @@ export class ActiveInkbookScene {
     this.#lockGeneration += 1;
     this.#preLockBlockSize = this.#container.style.blockSize;
     this.#preLockViewState = this.#controller.getViewState();
+    this.#refreshPreviewAspectRatio();
     this.#lockLayoutTransition = applyLockedFitLayout({
       anchor: this.#controller.readResizeAnchor(),
       applyResize: (update) => this.#controller.applyResize(update),
@@ -374,6 +379,12 @@ export class ActiveInkbookScene {
 
   #storeMaximumBottom(): number | undefined {
     return this.#model.store.getMaximumBottom();
+  }
+
+  #refreshPreviewAspectRatio(): void {
+    this.#previewHandoff.setPreviewAspectRatio(
+      lockedPageAspectRatio(this.#controllerModelPage(), this.#storeMaximumBottom()),
+    );
   }
 
   #completePreviewHandoff(): void {
@@ -477,6 +488,9 @@ function createPreviewHandoff(
     motion: options.deviceSettings.motion,
     preview: options.preview,
     root: options.root,
+    ...(options.setPreviewAspectRatio === undefined
+      ? {}
+      : { setPreviewAspectRatio: options.setPreviewAspectRatio }),
     ...(options.setPreviewSource === undefined
       ? {}
       : { setPreviewSource: options.setPreviewSource }),

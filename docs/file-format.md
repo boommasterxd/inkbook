@@ -37,7 +37,7 @@ type BackgroundV1 =
 
 The 2,000-unit width is the patterned writing area. The 24.3-unit margin surrounds it on every side and is writable. The total SVG width is therefore exactly 2,048.6 page units.
 
-Page values are copied from vault defaults when the file is created. Background changes are file commands. Later vault-default changes never alter this `PageV1` implicitly. `writingLineHeight` is an integer from 50 through 200, `activeBufferLines` is an integer from 1 through 8, and `lockedBufferLines` is an integer from 0 through 8.
+Page values are copied from vault defaults when the file is created. Background changes are file commands. Later vault-default changes never alter this `PageV1` implicitly. `writingLineHeight` is an integer from 50 through 200 and `activeBufferLines` is an integer from 1 through 8. `lockedBufferLines` remains an integer from 0 through 8 so existing version 1 metadata remains readable, but current writers emit `1` and current layout does not use the legacy value as a writing-line multiplier.
 
 Element coordinates use the outer SVG's top-left corner as `(0, 0)`. Positive `x` points right and positive `y` points down. Elements may extend into the margin but MUST remain within the enforced numeric limits.
 
@@ -237,7 +237,7 @@ Resolve an anchor in the target's unrotated canonical geometry, then rotate it c
 
 The store maintains a derived reverse map from target ID to `{ linearId, endpoint }` references. A target move, scale, rotation, shape-handle edit, axis edit, or table geometry edit resolves only its dependents, updates their endpoint coordinates, bounds, path caches, and spatial-index records, then commits the target and dependents atomically. The bend remains in page coordinates. During a live target gesture, visible dependent paths update in the same frame without tweening.
 
-Bounds and geometry validation treat the target and all re-resolved dependents as one atomic candidate. Any edge correction is applied to the proposed target transform, then anchors and dependent bounds are recomputed. Dependents are never translated independently merely to satisfy a target command. If any resulting line or arrow is shorter than 8 page units, or no valid corrected target transform keeps every affected bound within the page and height limits, the complete command is rejected. Connected linear geometry therefore never needs a zero-vector node-direction fallback.
+Bounds and geometry validation treat the target and all re-resolved dependents as one atomic candidate. Anchors and dependent bounds are recomputed from the exact proposed target transform. No target or dependent receives an edge correction. If any resulting line or arrow is shorter than 8 page units, or the complete candidate violates geometry, resource, or derived-height limits, the complete command is rejected. Connected linear geometry therefore never needs a zero-vector node-direction fallback.
 
 Dragging a connected endpoint previews a free point. Release on a valid candidate replaces the connection; release elsewhere stores `null` and the free point. Moving an entire line or arrow moves its bend and free endpoints; connected endpoints remain at their anchors. Removing a target first replaces every dependent connection with `null` at its last resolved endpoint in the same removal command. Undo and Redo restore both records atomically.
 
@@ -313,7 +313,7 @@ interface TableElementV1 extends ElementBaseV1 {
 - For table creation, let `sx = end.x >= start.x ? 1 : -1` and `sy = end.y >= start.y ? 1 : -1`. Canonicalize `columnWidth = max(abs(end.x - start.x) / columns, 40)` once, then derive `width = columns * columnWidth`. Set `height = max(abs(end.y - start.y), 80)`, `x = sx > 0 ? start.x : start.x - width`, and `y = sy > 0 ? start.y : start.y - height`. Crossing the start point therefore changes the expanding direction without producing negative dimensions. The derived width may differ from the raw drag width by the canonical rounding of one column, but every column remains exactly equal.
 - For a column-count edit from `columns` to `newColumns`, retain the canonical `columnWidth` unchanged and derive `oldWidth = columns * columnWidth` and `newWidth = newColumns * columnWidth`. Adding columns therefore extends the local right side, while removing columns removes local rightmost columns and shrinks the table. The command does not redistribute the retained columns across the old total width, and repeated count changes cannot accumulate column-width drift.
 - The rendered local left edge is the fixed anchor of a column-count edit. Let `R` rotate a vector clockwise by `rotation`, `oldPivot` be the pre-command pivot, and `deltaWidth = newWidth - oldWidth`. Calculate the unrounded candidate `newPivot = oldPivot + R({ x: deltaWidth / 2, y: 0 })`, `newX = newPivot.x - newWidth / 2`, and `newY = newPivot.y - height / 2`, then apply the normal canonical rounding once to the resulting stored coordinates. At zero rotation, `newX` equals the previous `x`. After canonicalization, each endpoint of the rendered left edge MUST remain within 0.003 page units of its immediately preceding position. This bound covers the worst-case independent three-decimal rounding of the pivot and bounds coordinates for one edit over the complete rotation range.
-- A column-count edit preserves `y` only at zero rotation and always preserves height, header height, rotation, style, outline width, and the persisted `columnWidth`. It validates the `1..12` range, the 40-page-unit minimum column width, finite numbers, canonical rounding, page bounds, the per-edit fixed-edge tolerance, and every connected dependent before commit. If the complete result is invalid, the command is rejected without changing the table, revision, or history.
+- A column-count edit preserves `y` only at zero rotation and always preserves height, header height, rotation, style, outline width, and the persisted `columnWidth`. It validates the `1..12` range, the 40-page-unit minimum column width, finite numbers, canonical rounding, the per-edit fixed-edge tolerance, resource limits, derived height, and every connected dependent before commit. If the complete result is invalid, the command is rejected without changing the table, revision, or history.
 - When one command targets several selected tables, it applies the requested absolute column count independently while preserving each table's own persisted `columnWidth`. Changed tables and all affected line or arrow dependents commit atomically. A table already at the requested count remains unchanged; if every target is unchanged, the command is a no-op.
 - Scaling changes bounds, separators, `columnWidth`, and header height proportionally, never outline width.
 
@@ -340,14 +340,9 @@ Every element provides a conservative axis-aligned page-space bounding box that 
 
 The spatial index, viewport culling, eraser candidate lookup, selection bounds, and page extent MUST use the same bounds implementation. Approximation is allowed only when it overestimates. Visible content must never be clipped or culled because of an underestimated bound.
 
-Committed conservative bounds MUST satisfy `minX >= 0`, `maxX <= 2048.6`, and `minY >= 0`. Before a creation, paste, move, rotate, scale, or handle-edit commit:
+Committed conservative bounds may extend beyond the fixed `0..2048.6` horizontal viewport or above `y = 0`. Creation, paste, move, rotate, scale, style, structural, and handle-edit commits preserve the exact canonical geometry and never translate a candidate merely to bring it back into view. The active canvas and standalone SVG viewport clip every outside portion visually. If a partially visible annotation is moved inward later, the preserved outside geometry becomes visible again.
 
-1. Calculate the candidate conservative bounds.
-2. If their width exceeds 2,048.6 page units, reject the commit, retain the pre-gesture state, and show a concise size notice.
-3. Otherwise translate the entire candidate right by `-minX` when `minX < 0`, left by `2048.6 - maxX` when `maxX > 2048.6`, and down by `-minY` when `minY < 0`.
-4. Recalculate and validate bounds and the maximum derived height before the atomic commit.
-
-This normalization also applies to default coordinate-system axes created near the top or side edge. The page expands only downward; there is no horizontal or negative-y overflow model in version 1.
+All bounds remain subject to canonical coordinate, element, spatial-index membership and overflow, file-size, and maximum-derived-height limits. Bounds and geometry validation still treat every explicitly changed target and all re-resolved dependents as one atomic candidate. Positive-y geometry participates in downward page expansion; horizontal and negative-y overflow do not expand the viewport.
 
 ## Page Extent
 
@@ -362,12 +357,16 @@ occupiedRows = ceil(max(0, occupiedBottom - page.margin) / backgroundStep)
 activeWritableBottom = page.margin
   + (occupiedRows + page.activeBufferLines × bufferUnit / backgroundStep) × backgroundStep
 lockedWritableBottom = page.margin
-  + (occupiedRows + page.lockedBufferLines × bufferUnit / backgroundStep) × backgroundStep
+  + (occupiedRows + lockedTrailingRows) × backgroundStep
+lockedTrailingRows = 1 for Lines, Dots, or Squares,
+                     bufferUnit / backgroundStep for None
 activeHeight = activeWritableBottom + page.margin
 lockedHeight = lockedWritableBottom + page.margin
 ```
 
-The background phase starts at `page.margin`, so these heights always end on a complete background step. A buffer line means one background-aligned `bufferUnit`, not the raw writing-line height. Completing the background cell that contains the last element is content normalization, not an additional buffer line. An empty default file has exactly three active buffer units and one locked buffer unit, plus both vertical margins. The complete rectangular page, including its unpatterned top, right, bottom, and left margins, is writable. Guides are clipped to the inner patterned extent, while committed bounds may occupy a margin. Content entering the bottom margin grows the aligned writable extent and retains a complete margin below it.
+The background phase starts at `page.margin`, so these heights always end on a complete background step. An active buffer line means one background-aligned `bufferUnit`, not the raw writing-line height. For a non-empty patterned page, the locked height ends after exactly one complete pattern row beyond the row containing the lowest element. A page with no pattern retains one aligned writing buffer instead. Completing the background cell that contains the last element is content normalization, not the trailing row. An empty file keeps the 2.5-writing-line minimum in both states. The complete rectangular page, including its unpatterned top, right, bottom, and left margins, is writable. Guides are clipped to the inner patterned extent, while committed bounds may occupy a margin. Content entering the bottom margin grows the aligned writable extent and retains a complete margin below it.
+
+Version 1 files produced by earlier Inkbook builds may contain the previous exact locked height derived from `lockedBufferLines × bufferUnit`. The loader accepts only that exact legacy derivation or the current exact derivation and verifies all static paths against the supplied height. A legacy-height unlock schedules one full canonical export without requiring a content edit; Lock flushes that rewrite if it has not completed. The replacement retains the document revision, uses the normal expected-base and read-back verification path, and requires no migration backup because the snapshot schema version is unchanged. Arbitrary heights remain invalid.
 
 Runtime height changes only after committed geometry or page commands:
 

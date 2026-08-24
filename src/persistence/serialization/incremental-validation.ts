@@ -2,7 +2,6 @@ import { calculateElementBounds, derivePageExtent } from "../../domain/geometry/
 import {
   FILE_SCHEMA_LIMITS,
   MAX_DERIVED_HEIGHT,
-  PAGE_WIDTH,
   type InkElementV1,
   type PageV1,
   type ValidationError,
@@ -11,7 +10,6 @@ import { MAX_ELEMENT_CELLS, spatialCellMembershipCount } from "../../domain/spat
 
 export interface ElementFacts {
   readonly bottom: number;
-  readonly boundsValid: boolean;
   readonly spatialMemberships: number;
   readonly spatialOverflow: number;
   readonly strokePoints: number;
@@ -19,7 +17,6 @@ export interface ElementFacts {
 }
 
 export interface AggregateFacts {
-  readonly boundsInvalid: number;
   readonly elements: number;
   readonly maximumBottom: number | null;
   readonly maximumBottomCount: number;
@@ -40,7 +37,6 @@ export function elementFacts(element: InkElementV1): ElementFacts {
   const spatialOverflow = Number(memberships > MAX_ELEMENT_CELLS);
   return {
     bottom: bounds.maxY,
-    boundsValid: bounds.minX >= 0 && bounds.maxX <= PAGE_WIDTH && bounds.minY >= 0,
     spatialMemberships: spatialOverflow === 0 ? memberships : 0,
     spatialOverflow,
     strokePoints: element.kind === "stroke" ? element.points.length / 3 : 0,
@@ -116,9 +112,6 @@ export function validateAggregateFacts(
   facts: AggregateFacts,
   page: PageV1,
 ): ValidationError | null {
-  if (facts.boundsInvalid > 0) {
-    return validationError("invalid-range", "Conservative bounds lie outside the page.");
-  }
   if (facts.elements > FILE_SCHEMA_LIMITS.elements) {
     return validationError("element-limit-exceeded", "Element count exceeds the limit.");
   }
@@ -153,7 +146,6 @@ function validationError(code: ValidationError["code"], message: string): Valida
 }
 
 function mutableAggregate(): {
-  boundsInvalid: number;
   elements: number;
   maximumBottom: number | null;
   maximumBottomCount: number;
@@ -163,7 +155,6 @@ function mutableAggregate(): {
   strokes: number;
 } {
   return {
-    boundsInvalid: 0,
     elements: 0,
     maximumBottom: null,
     maximumBottomCount: 0,
@@ -175,7 +166,6 @@ function mutableAggregate(): {
 }
 
 function addFact(aggregate: ReturnType<typeof mutableAggregate>, fact: ElementFacts, sign: 1 | -1) {
-  aggregate.boundsInvalid += sign * Number(!fact.boundsValid);
   aggregate.elements += sign;
   aggregate.spatialMemberships += sign * fact.spatialMemberships;
   aggregate.spatialOverflow += sign * fact.spatialOverflow;

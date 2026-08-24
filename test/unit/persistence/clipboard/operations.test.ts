@@ -124,7 +124,7 @@ describe("paste record planning", () => {
     }
   });
 
-  it("normalizes negative placement and rejects invalid UUID injection atomically", () => {
+  it("preserves negative placement and rejects invalid UUID injection atomically", () => {
     const normalizedIds = [NEW_RECTANGLE_ID, NEW_ARROW_ID];
     const normalized = planPaste({
       decoded: decodedFixture(),
@@ -137,9 +137,9 @@ describe("paste record planning", () => {
     expect(normalized.ok).toBe(true);
     if (normalized.ok) {
       expect(
-        normalized.value.elements.every((element) => {
+        normalized.value.elements.some((element) => {
           const bounds = calculateElementBounds(element);
-          return bounds.minX >= 0 && bounds.minY >= 0;
+          return bounds.minX < 0 || bounds.minY < 0;
         }),
       ).toBe(true);
     }

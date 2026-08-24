@@ -1,8 +1,10 @@
 import { TFile, type Vault } from "obsidian";
 
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
+import { validatePreviewSvg } from "./safe-preview-svg";
 
 const MAXIMUM_RECOGNITION_CACHE_ENTRIES = 256;
+const MAXIMUM_RECOGNITION_MARKUP_CODE_UNITS = 32 * 1024 * 1024;
 const MAXIMUM_ROOT_TAG_CHARACTERS = 4096;
 
 interface RecognitionEntry {
@@ -11,7 +13,8 @@ interface RecognitionEntry {
   readonly value: InkbookDocumentRecognition | undefined;
 }
 
-export type InkbookDocumentRecognition = false | { readonly aspectRatio: number };
+export type InkbookDocumentRecognition =
+  false | { readonly aspectRatio: number; readonly safeSvg: string };
 
 export interface InkbookDocumentRecognitionPort {
   cached(documentId: string): InkbookDocumentRecognition | undefined;
@@ -32,7 +35,7 @@ export function hasCanonicalInkbookRootMarker(content: string): boolean {
   return /\sdata-inkbook-format=(?:"inkbook"|'inkbook')(?=\s|>)/u.test(rootTag);
 }
 
-function recognizeCanonicalInkbookRoot(content: string): InkbookDocumentRecognition {
+function recognizeCanonicalInkbookRoot(content: string): false | { readonly aspectRatio: number } {
   const prefix = content.slice(0, MAXIMUM_ROOT_TAG_CHARACTERS).trimStart();
   if (!hasCanonicalInkbookRootMarker(prefix)) return false;
   const closing = prefix.indexOf(">");
@@ -107,11 +110,14 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     try {
       const content = await this.#vault.cachedRead(file);
       const current = this.#resolveFile(file.path);
-      return (
-        current === file &&
-        fileSignature(current) === signature &&
-        recognizeCanonicalInkbookRoot(content)
-      );
+      if (current !== file || fileSignature(current) !== signature) return false;
+      const descriptor = recognizeCanonicalInkbookRoot(content);
+      if (descriptor === false) return false;
+      const safeSvg = await validatePreviewSvg(content);
+      const confirmed = this.#resolveFile(file.path);
+      return safeSvg !== null && confirmed === file && fileSignature(confirmed) === signature
+        ? { ...descriptor, safeSvg }
+        : false;
     } catch {
       return false;
     }
@@ -128,11 +134,23 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
   }
 
   #evictOverflow(): void {
-    while (this.#entries.size > MAXIMUM_RECOGNITION_CACHE_ENTRIES) {
-      const oldest = this.#entries.keys().next().value;
+    while (
+      this.#entries.size > MAXIMUM_RECOGNITION_CACHE_ENTRIES ||
+      (this.#entries.size > 1 &&
+        this.#retainedMarkupCodeUnits() > MAXIMUM_RECOGNITION_MARKUP_CODE_UNITS)
+    ) {
+      const oldest = [...this.#entries].find(([, entry]) => entry.promise === undefined)?.[0];
       if (oldest === undefined) return;
       this.#entries.delete(oldest);
     }
+  }
+
+  #retainedMarkupCodeUnits(): number {
+    let total = 0;
+    for (const entry of this.#entries.values()) {
+      if (entry.value !== undefined && entry.value !== false) total += entry.value.safeSvg.length;
+    }
+    return total;
   }
 
   #notify(documentId: string): void {

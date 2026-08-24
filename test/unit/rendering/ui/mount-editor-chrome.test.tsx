@@ -36,6 +36,7 @@ function createProps(ownerDocument: Document): InkbookEditorChromeProps {
     renderIcon: vi.fn(),
     selectedShape: "line",
     styleControls: [],
+    styleIcon: { fillColor: null, fillOpacity: 0, outlineColor: null, outlineStyle: "solid" },
     toolbarState: {
       activeTool: "draw",
       canPaste: false,

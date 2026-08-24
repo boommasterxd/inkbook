@@ -6,7 +6,6 @@ import type {
   LineElementV1,
   StrokeElementV1,
 } from "../../../src/domain/schema/public";
-import { assertElementsWithinPageBounds } from "../../../src/domain/geometry/public";
 import { ElementStore } from "../../../src/domain/store/public";
 import type { TimeSlicedSelectionCommitPreparation } from "../../../src/editor/selection/handle-session";
 import { findFrontmostHit, SelectionHandleSession } from "../../../src/editor/selection/public";
@@ -19,8 +18,7 @@ import { timingBudget } from "../timing-budget";
 
 describe("selection hot paths", () => {
   it("routes 488 maximum strokes through bounded commit slices and cached exact hit blocks", async () => {
-    const strokes = Array.from({ length: 488 }, (_, index) => pageBoundedMaximumStroke(index));
-    expect(() => assertElementsWithinPageBounds(strokes)).not.toThrow();
+    const strokes = Array.from({ length: 488 }, (_, index) => maximumViewportStroke(index));
     const candidates = strokes.map((element, rank) => ({
       band: "content" as const,
       element,
@@ -49,7 +47,6 @@ describe("selection hot paths", () => {
 
   it("bounds preparation for a near-maximum 19,929-endpoint selection fan-out", async () => {
     const { elements, targetIds } = maximumEndpointFixture();
-    expect(() => assertElementsWithinPageBounds(elements)).not.toThrow();
     const store = new ElementStore(elements);
     await warmEndpointPreparation(store, targetIds);
     store.resetInstrumentation();
@@ -194,7 +191,7 @@ function endpointTarget(index: number): BoxShapeElementV1 {
   };
 }
 
-function pageBoundedMaximumStroke(index: number): StrokeElementV1 {
+function maximumViewportStroke(index: number): StrokeElementV1 {
   const source = maximumStroke(index);
   const points = new Float64Array(source.points.length);
   for (let offset = 0; offset < points.length; offset += 3) {

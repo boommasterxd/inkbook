@@ -184,16 +184,22 @@ export function writeBackground(options: BackgroundWriteOptions): {
     dom.setPageHeight(pageHeight);
     instrumentation.attributeWrites += 1;
   }
-  const key = backgroundPaintKey(page, result.patternX, result.patternY);
+  const key = backgroundPaintKey(page, result.paint, result.patternX, result.patternY, zoom);
   if (key !== applied.key) {
-    dom.setBackgroundPaint(page.background, result.patternX, result.patternY);
+    dom.setBackgroundPaint(page.background, result.paint, result.patternX, result.patternY, zoom);
     instrumentation.attributeWrites += 2;
   }
   return { key, pageHeight };
 }
 
-function backgroundPaintKey(page: PageV1, patternX: number, patternY: number): string {
+function backgroundPaintKey(
+  page: PageV1,
+  paint: "direct" | "none" | "pattern",
+  patternX: number,
+  patternY: number,
+  zoom: number,
+): string {
   return page.background.type === "none"
     ? "none"
-    : `${page.background.type}:${String(page.background.spacing)}:${String(patternX)}:${String(patternY)}`;
+    : `${page.background.type}:${paint}:${String(page.background.spacing)}:${String(patternX)}:${String(patternY)}:${String(zoom)}`;
 }

@@ -262,8 +262,8 @@ describe("SelectionHandleSession geometry boundaries", () => {
   });
 });
 
-describe("SelectionHandleSession page boundaries", () => {
-  it("corrects a moved selection as one candidate before replacement planning", () => {
+describe("SelectionHandleSession viewport overflow", () => {
+  it("preserves an outside-viewport move before replacement planning", () => {
     const shape = rectangle();
     const store = new ElementStore([shape]);
     const session = new SelectionHandleSession({
@@ -275,16 +275,16 @@ describe("SelectionHandleSession page boundaries", () => {
 
     const preview = session.update({ x: -1_000, y: -1_000 });
     expect(preview.exactElements).toHaveLength(1);
-    expect(calculateElementBounds(preview.exactElements[0]!).minX).toBe(0);
-    expect(calculateElementBounds(preview.exactElements[0]!).minY).toBe(0);
+    expect(calculateElementBounds(preview.exactElements[0]!).minX).toBe(-1_102);
+    expect(calculateElementBounds(preview.exactElements[0]!).minY).toBe(-1_052);
 
     const prepared = session.prepareCommit();
-    if (prepared.status !== "ready") throw new Error("Expected a corrected move commit.");
-    expect(calculateElementBounds(prepared.replacements[0]!).minX).toBe(0);
-    expect(calculateElementBounds(prepared.replacements[0]!).minY).toBe(0);
+    if (prepared.status !== "ready") throw new Error("Expected an exact move commit.");
+    expect(calculateElementBounds(prepared.replacements[0]!).minX).toBe(-1_102);
+    expect(calculateElementBounds(prepared.replacements[0]!).minY).toBe(-1_052);
   });
 
-  it("rejects a scaled selection wider than the page without a partial replacement", () => {
+  it("accepts a scaled selection wider than the viewport", () => {
     const shape = rectangle();
     const store = new ElementStore([shape]);
     const session = new SelectionHandleSession({
@@ -294,8 +294,8 @@ describe("SelectionHandleSession page boundaries", () => {
       startPointer: { x: 300, y: 200 },
     });
 
-    expect(session.update({ x: 3_000, y: 200 })).toMatchObject({ exactElements: [] });
-    expect(session.prepareCommit()).toEqual({ status: "noop" });
+    expect(session.update({ x: 3_000, y: 200 }).exactElements).toHaveLength(1);
+    expect(session.prepareCommit()).toMatchObject({ status: "ready" });
     expect(element(store, shape.id)).toEqual(shape);
   });
 });
@@ -338,16 +338,15 @@ describe("SelectionHandleSession coordinate handles", () => {
 describe("SelectionHandleSession lifecycle", () => {
   it("includes near-maximum document endpoint work in preview and commit budgets", async () => {
     const target = rectangle();
-    const planPageBoundedReplacements = vi.fn(replacementPlan);
+    const planReplacements = vi.fn(replacementPlan);
     const countReverseDependencies = vi.fn(() => 19_968);
     const session = new SelectionHandleSession({
       action: { kind: "move" },
       elements: [target],
       planner: {
         countReverseDependencies,
-        planPageBoundedReplacements,
-        planPageBoundedReplacementsTimeSliced: async (replacements) =>
-          replacementPlan(replacements),
+        planReplacements,
+        planReplacementsTimeSliced: async (replacements) => replacementPlan(replacements),
       },
       startPointer: target.pivot,
     });
@@ -357,7 +356,7 @@ describe("SelectionHandleSession lifecycle", () => {
       exactPreviewTruncated: true,
       transform: { delta: { x: 10, y: 20 }, kind: "translate" },
     });
-    expect(planPageBoundedReplacements).not.toHaveBeenCalled();
+    expect(planReplacements).not.toHaveBeenCalled();
     expect(session.prepareCommit()).toEqual({ status: "time-sliced-required" });
     expect(countReverseDependencies).toHaveBeenCalledWith([target.id], 255);
     await expect(
@@ -376,12 +375,11 @@ describe("SelectionHandleSession lifecycle", () => {
       elements: strokes,
       planner: {
         countReverseDependencies: () => 0,
-        planPageBoundedReplacements: (replacements) => {
+        planReplacements: (replacements) => {
           planned += 1;
           return replacementPlan(replacements);
         },
-        planPageBoundedReplacementsTimeSliced: async (replacements) =>
-          replacementPlan(replacements),
+        planReplacementsTimeSliced: async (replacements) => replacementPlan(replacements),
       },
       startPointer: { x: 0, y: 0 },
     });
@@ -446,7 +444,7 @@ describe("SelectionHandleSession asynchronous lifecycle", () => {
       },
     });
     expect(prepared.status).toBe("ready");
-    expect(yields).toBe(6_006);
+    expect(yields).toBe(5_005);
 
     const cancelled = await session.prepareCommitTimeSliced({
       isCancelled: () => true,
@@ -456,7 +454,7 @@ describe("SelectionHandleSession asynchronous lifecycle", () => {
     expect(cancelled).toEqual({ status: "cancelled" });
   });
 
-  it("corrects time-sliced materialization before returning replacements", async () => {
+  it("preserves time-sliced materialization outside the viewport", async () => {
     const session = largeMoveSession({ x: -100, y: -100 });
 
     const prepared = await session.prepareCommitTimeSliced({
@@ -464,10 +462,10 @@ describe("SelectionHandleSession asynchronous lifecycle", () => {
       yieldControl: async () => undefined,
     });
 
-    if (prepared.status !== "ready") throw new Error("Expected corrected replacements.");
+    if (prepared.status !== "ready") throw new Error("Expected exact replacements.");
     const bounds = prepared.replacements.map(calculateElementBounds);
-    expect(Math.min(...bounds.map(({ minX }) => minX))).toBe(0);
-    expect(Math.min(...bounds.map(({ minY }) => minY))).toBe(0);
+    expect(Math.min(...bounds.map(({ minX }) => minX))).toBe(-81);
+    expect(Math.min(...bounds.map(({ minY }) => minY))).toBe(-81);
   });
 
   it("cancels a preparation changed during its final yield", async () => {
@@ -477,9 +475,8 @@ describe("SelectionHandleSession asynchronous lifecycle", () => {
       elements: [target],
       planner: {
         countReverseDependencies: () => 20_000,
-        planPageBoundedReplacements: replacementPlan,
-        planPageBoundedReplacementsTimeSliced: async (replacements) =>
-          replacementPlan(replacements),
+        planReplacements: replacementPlan,
+        planReplacementsTimeSliced: async (replacements) => replacementPlan(replacements),
       },
       startPointer: target.pivot,
     });

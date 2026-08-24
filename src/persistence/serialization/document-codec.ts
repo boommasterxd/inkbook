@@ -15,6 +15,7 @@ import { validateCurrentMetadataIntegrity } from "./canonical-metadata";
 import { canonicalSnapshot } from "./canonical-snapshot";
 import { migrateAndValidateDocumentSnapshot } from "./document-migration";
 import { assertJsonContainerWidths } from "./json-container-width";
+import { isSupportedLockedHeight } from "./locked-height-compatibility";
 import { serializeElementPaths } from "./path-markup";
 import { SHA256_DOCUMENT_HASHER, type DocumentHashPort } from "./sha256";
 import { verifyStaticPathIntegrity } from "./static-path-integrity";
@@ -111,9 +112,8 @@ export function parseInkbookDocument(
   if (snapshot.revision !== safe.revision) {
     return failure("revision-mismatch", "Root and snapshot revisions do not match.");
   }
-  const extent = derivePageExtent(snapshot.page, maximumElementBottom(snapshot));
-  const lockedHeight = canonicalSvgNumber(extent.lockedHeight);
-  if (lockedHeight !== safe.lockedHeight) {
+  const maximumBottom = maximumElementBottom(snapshot);
+  if (!isSupportedLockedHeight(snapshot.page, maximumBottom, safe.lockedHeight)) {
     return failure(
       "locked-height-mismatch",
       "The SVG viewBox height is not the derived locked height.",
@@ -129,7 +129,8 @@ export function parseInkbookDocument(
     ok: true,
     value: {
       hash: hasher.hash(decoded.value.hashInput),
-      lockedHeight,
+      lockedHeight: safe.lockedHeight,
+      requiresCanonicalRewrite: safe.requiresCanonicalRewrite,
       snapshot,
       sourceVersion: migrated.value.sourceVersion,
     },

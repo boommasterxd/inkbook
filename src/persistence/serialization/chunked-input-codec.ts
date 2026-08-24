@@ -1,4 +1,4 @@
-import { calculateElementBounds, derivePageExtent } from "../../domain/geometry/public";
+import { calculateElementBounds } from "../../domain/geometry/public";
 import type { InkSnapshotV1, ValidationError } from "../../domain/schema/public";
 import { FILE_SCHEMA_LIMITS, MAX_JSON_DEPTH } from "../../domain/schema/public";
 import { jsonContainerBudget, jsonNodeBudget } from "../../domain/schema/validation-internals";
@@ -6,7 +6,6 @@ import {
   validateEditableSafeSvgPrelude,
   type SafeSvgPrelude,
 } from "../documents/safe-svg-validator";
-import { serializeSvgNumber } from "../documents/svg-number";
 import { backgroundFitsStaticLimit } from "./background";
 import { validateCurrentMetadataIntegrity } from "./canonical-metadata";
 import {
@@ -15,6 +14,7 @@ import {
   parseChunkedJson,
 } from "./chunked-json-parser";
 import { combineInputBytes, positiveInputInteger } from "./chunked-input-utils";
+import { isSupportedLockedHeight } from "./locked-height-compatibility";
 import { ChunkedSha256 } from "./chunked-output-sha256";
 import {
   migrateAndValidateDocumentSnapshotSteps,
@@ -156,6 +156,7 @@ export class ChunkedInkbookInputParser {
         value: {
           hash: this.#completeHash(),
           lockedHeight: this.#prelude.lockedHeight,
+          requiresCanonicalRewrite: this.#prelude.requiresCanonicalRewrite,
           snapshot: this.#migrated.snapshot,
           sourceVersion: this.#migrated.sourceVersion,
         },
@@ -357,10 +358,7 @@ export class ChunkedInkbookInputParser {
       return failure("revision-mismatch", "Root and snapshot revisions do not match.");
     }
     const maximumBottom = await maximumElementBottom(snapshot, () => this.#runCheckpoint());
-    const lockedHeight = Number(
-      serializeSvgNumber(derivePageExtent(snapshot.page, maximumBottom).lockedHeight),
-    );
-    if (lockedHeight !== prelude.lockedHeight) {
+    if (!isSupportedLockedHeight(snapshot.page, maximumBottom, prelude.lockedHeight)) {
       return failure(
         "locked-height-mismatch",
         "The SVG viewBox height is not the derived locked height.",
@@ -369,14 +367,14 @@ export class ChunkedInkbookInputParser {
     if (
       !backgroundFitsStaticLimit(
         snapshot.page.background,
-        lockedHeight,
+        prelude.lockedHeight,
         FILE_SCHEMA_LIMITS.totalInputBytes,
       )
     ) {
       return failure("static-path-mismatch", "Static SVG background exceeds the canonical limit.");
     }
     this.#migrated = migrated;
-    this.#staticMatcher = new StreamingStaticIntegrityMatcher(snapshot, lockedHeight);
+    this.#staticMatcher = new StreamingStaticIntegrityMatcher(snapshot, prelude.lockedHeight);
     this.#streamPhase = "static";
     await this.#onValidatedSnapshot?.(snapshot);
     this.#throwIfCancelled();

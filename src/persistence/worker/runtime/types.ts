@@ -88,7 +88,9 @@ export type DocumentRuntimeRequest =
 
 interface UnlockRuntimeSuccess {
   readonly identity: PurposeOperationIdentity;
+  readonly lockedHeight: number;
   readonly outputHash: string;
+  readonly requiresCanonicalRewrite: boolean;
   readonly sourceVersion: number;
   readonly snapshot: Omit<InkSnapshotV1, "elements"> & {
     readonly batchCount: number;

@@ -111,6 +111,21 @@ describe("active scene lock layout", () => {
   });
 });
 
+describe("active scene occupied lock extent", () => {
+  it("keeps the last pattern row plus one complete row", () => {
+    const fixture = createFixture();
+    const maximumBottom = page.margin + 101;
+    const transition = applyLockedFitLayout(fixture.options(true, maximumBottom));
+
+    transition.finish();
+
+    const expectedFit = 1_000 / PAGE_WIDTH;
+    expect(Number.parseFloat(fixture.style.blockSize)).toBeCloseTo(
+      derivePageExtent(page, maximumBottom).lockedHeight * expectedFit,
+    );
+  });
+});
+
 function createFixture() {
   const frames = new Map<number, FrameRequestCallback>();
   let nextFrame = 1;
@@ -161,11 +176,11 @@ function createFixture() {
     connected,
     container,
     frames,
-    options: (reducedMotion: boolean) => ({
+    options: (reducedMotion: boolean, maximumBottom?: number) => ({
       anchor,
       applyResize,
       container,
-      maximumBottom: undefined,
+      maximumBottom,
       oldViewState: { cameraX: -100, zoom: 1 },
       page,
       reducedMotion,

@@ -63,6 +63,7 @@ describe("Inkbook host styles", () => {
     const focus = declarationsFor(".inkbook-root .inkbook-locked-preview:focus-visible");
     const preview = declarationsFor(".inkbook-root .inkbook-locked-preview");
     const image = declarationsFor(".inkbook-root .inkbook-locked-preview-media");
+    const svg = declarationsFor(".inkbook-root .inkbook-locked-preview-svg");
 
     expect(focus).toContain("outline: 2px solid var(--interactive-accent)");
     expect(focus).toContain("outline-offset: -2px");
@@ -70,26 +71,54 @@ describe("Inkbook host styles", () => {
     expect(preview).toContain("block-size: auto");
     expect(preview).toContain("overflow: clip");
     expect(image).toContain("aspect-ratio: var(--inkbook-preview-aspect-ratio)");
-    expect(image).toContain("background-image: var(--inkbook-preview-image)");
     expect(image).toContain("pointer-events: none");
-    expect(image).toContain("background-size: contain");
+    expect(svg).toContain("block-size: 100%");
+    expect(svg).toContain("pointer-events: none");
   });
 });
 
 describe("Inkbook editor chrome styles", () => {
-  it("reserves one animated toolbar row above the active background", () => {
+  it("overlays a zero-height sticky toolbar without moving the active background", () => {
+    const activeRoot = declarationsFor(
+      '.inkbook-root[data-inkbook-state="active"],\n.inkbook-root[data-inkbook-state="locking"]',
+    );
     const background = declarationsFor(".inkbook-root .inkbook-background-container");
     const chromeHost = declarationsFor(".inkbook-root .inkbook-editor-chrome-host");
-    const editorChrome = declarationsFor(".inkbook-root .inkbook-editor-chrome");
-
-    expect(background).not.toContain("margin-block-start");
-    expect(editorChrome).toContain(
-      "padding-block-start: var(--inkbook-toolbar-reserved-block-size)",
+    const embedRoot = declarationsFor(".inkbook-root.inkbook-embed-root");
+    const livePreviewRoot = declarationsFor(
+      '.inkbook-root.inkbook-embed-root[contenteditable="false"][data-inkbook-scheme][data-inkbook-state]',
     );
-    expect(chromeHost).toContain("position: absolute");
+    const editorChrome = declarationsFor(".inkbook-root .inkbook-editor-chrome");
+    const shell = declarationsFor(".inkbook-root .inkbook-toolbar-shell");
+    const fixedUnlockScene = declarationsFor(
+      ".inkbook-root.inkbook-active-preparing .inkbook-background-container > .inkbook-scene,\n.inkbook-root.inkbook-active-transitioning .inkbook-background-container > .inkbook-scene",
+    );
+    const preparingBackground = declarationsFor(
+      ".inkbook-root.inkbook-active-preparing .inkbook-background-container",
+    );
+
+    expect(activeRoot).toContain("z-index: var(--layer-popover)");
+    expect(background).not.toContain("margin-block-start");
+    expect(embedRoot).toContain("contain: none !important");
+    expect(embedRoot).toContain("overflow: visible");
+    expect(livePreviewRoot).toContain("contain: none !important");
+    expect(editorChrome).not.toContain("padding-block-start");
+    expect(chromeHost).toContain("position: sticky");
     expect(chromeHost).toContain("block-size: 0");
-    expect(chromeHost).toContain("inset-block-start: 0");
+    expect(chromeHost).toContain("var(--inkbook-toolbar-overlay-block-size)");
+    expect(chromeHost).toContain("var(--inkbook-toolbar-scrollport-padding)");
     expect(chromeHost).toContain("overflow: visible");
+    expect(shell).toContain("position: absolute");
+    expect(shell).toContain("translate: 0 -100%");
+    expect(shell).toContain("block-size: var(--inkbook-toolbar-overlay-block-size)");
+    expect(background).toContain("overflow: clip");
+    expect(preparingBackground).toContain(
+      "block-size: var(--inkbook-locked-container-block-size) !important",
+    );
+    expect(fixedUnlockScene).toContain(
+      "block-size: calc(var(--inkbook-active-scene-block-size) - 2px)",
+    );
+    expect(fixedUnlockScene).toContain("inset-block-end: auto");
   });
 
   it("keeps the main toolbar centered while context actions sit beside it", () => {
@@ -99,6 +128,9 @@ describe("Inkbook editor chrome styles", () => {
     const background = declarationsFor(".inkbook-root .inkbook-background-container");
     const composition = declarationsFor(".inkbook-root .inkbook-toolbar-composition");
     const main = declarationsFor(".inkbook-root .inkbook-toolbar");
+    const sharedSurface = declarationsFor(
+      ".inkbook-root .inkbook-toolbar,\n.inkbook-root .inkbook-toolbar-context-button",
+    );
     const scrollable = declarationsFor(".inkbook-root .inkbook-toolbar-scrollable");
     const context = declarationsFor(".inkbook-root .inkbook-toolbar-context-actions");
     const contextButton = declarationsFor(".inkbook-root .inkbook-toolbar-context-button");
@@ -110,20 +142,51 @@ describe("Inkbook editor chrome styles", () => {
     expect(background).toContain("background: var(--inkbook-page-surface)");
     expect(composition).toContain("--inkbook-toolbar-surface: var(--inkbook-page-surface)");
     expect(main).toContain("margin-inline: auto");
+    expect(composition).toContain("--inkbook-toolbar-context-corridor: 128px");
+    expect(composition).toContain("block-size: 48px");
+    expect(sharedSurface).toContain("block-size: 48px");
+    expect(sharedSurface).toContain("box-sizing: border-box");
+    expect(main).toContain("padding: 2px");
     expect(main).toContain("width: max-content");
     expect(scrollable).toContain(
-      "width: max(52px, calc(100% - var(--inkbook-toolbar-context-corridor)))",
+      "width: max(48px, calc(100% - var(--inkbook-toolbar-context-corridor)))",
     );
     expect(context).toContain(
       "inset-inline-start: calc(50% + var(--inkbook-toolbar-main-half, 0px) + 8px)",
     );
+    expect(context).toContain("inset-block-start: 8px");
+    expect(context).toContain("background: transparent");
+    expect(context).toContain("border: 0");
+    expect(context).toContain("box-shadow: none");
     expect(context).toContain("position: absolute");
-    expect(contextButton).toContain("border-radius: 999px");
-    expect(contextButton).toContain("background: var(--inkbook-toolbar-surface)");
-    expect(contextButton).toContain("block-size: 52px");
-    expect(contextButton).toContain("inline-size: 52px");
+    expect(sharedSurface).toContain("border-radius: 999px");
+    expect(sharedSurface).toContain("background: var(--inkbook-toolbar-surface)");
+    expect(contextButton).toContain("inline-size: 48px");
+    expect(
+      declarationsFor('.inkbook-root .inkbook-toolbar-context-button[data-presence="entering"]'),
+    ).toContain("animation-name: inkbook-toolbar-context-control-enter");
+    expect(motionStylesheet).toContain("flex-basis: 48px");
+    expect(motionStylesheet).toContain("@keyframes inkbook-toolbar-context-control-enter");
   });
+});
 
+describe("Inkbook editor handoff styles", () => {
+  it("keeps an opaque presentation throughout the unlock handoff", () => {
+    const editor = declarationsFor(
+      ".inkbook-root.inkbook-active-transitioning .inkbook-editor-chrome",
+    );
+    const preview = declarationsFor(
+      ".inkbook-root.inkbook-active-transitioning .inkbook-preview-handoff",
+    );
+
+    expect(editor).toContain("opacity: 1");
+    expect(editor).toContain("transition: none");
+    expect(preview).toContain("opacity: 0");
+    expect(preview).toContain("calc(var(--inkbook-motion-layout) - var(--inkbook-motion-fast))");
+  });
+});
+
+describe("Inkbook editor overlays", () => {
   it("anchors attached save recovery at the bottom center", () => {
     const recovery = declarationsFor(".inkbook-root .inkbook-recovery");
 
@@ -131,6 +194,19 @@ describe("Inkbook editor chrome styles", () => {
     expect(recovery).toContain("inset-block-start: auto");
     expect(recovery).toContain("inset-inline-start: 50%");
     expect(recovery).toContain("translate: -50% 0");
+  });
+
+  it("uses icon-only controls for retry actions in host notices", () => {
+    const button = declarationsFor(".inkbook-root .inkbook-notice-icon-button");
+    const icon = declarationsFor(
+      ".inkbook-root .inkbook-notice-action-icon,\n.inkbook-root .inkbook-notice-action-icon svg",
+    );
+
+    expect(button).toContain("border-radius: 50%");
+    expect(button).toContain("inline-size: 36px");
+    expect(button).toContain("min-block-size: 36px");
+    expect(icon).toContain("block-size: 18px");
+    expect(icon).toContain("inline-size: 18px");
   });
 
   it("keeps the background submenu beside the anchored overflow menu", () => {

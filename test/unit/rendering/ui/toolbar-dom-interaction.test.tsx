@@ -8,8 +8,12 @@ import {
   InkbookEditorChrome,
   type InkbookEditorChromeProps,
 } from "../../../../src/rendering/ui/editor-chrome";
-import { STRAIGHT_HIGHLIGHTER_ICON_ID } from "../../../../src/rendering/ui/icon-ids";
+import {
+  SHAPE_ICON_IDS,
+  STRAIGHT_HIGHLIGHTER_ICON_ID,
+} from "../../../../src/rendering/ui/icon-ids";
 import { InkbookToolbar } from "../../../../src/rendering/ui/toolbar";
+import type { ToolbarStyleIconState } from "../../../../src/rendering/ui/style-icon";
 import type { ToolbarAction, ToolbarState } from "../../../../src/rendering/ui/toolbar-types";
 
 const completeState: ToolbarState = {
@@ -21,6 +25,13 @@ const completeState: ToolbarState = {
   fingerDrawingEnabled: false,
   hasSelection: true,
   openFlyout: null,
+};
+
+const defaultStyleIcon: ToolbarStyleIconState = {
+  fillColor: null,
+  fillOpacity: 0,
+  outlineColor: { type: "rgba", value: "#EF4444FF" },
+  outlineStyle: "solid",
 };
 
 const reactEnvironment = window as Window & {
@@ -138,6 +149,51 @@ describe("mounted Inkbook toolbar accessibility", () => {
   });
 });
 
+describe("mounted Inkbook style control", () => {
+  it("updates the style glyph in place when the active tool paint changes", () => {
+    const mounted = mountToolbar(completeState);
+    const button = mounted.button("style");
+    const icon = requiredElement<SVGSVGElement>(button, ".inkbook-toolbar-style-icon svg");
+
+    mounted.update(completeState, "rectangle", {
+      fillColor: { type: "rgba", value: "#8B5CF6FF" },
+      fillOpacity: 0.6,
+      outlineColor: { type: "rgba", value: "#F97316FF" },
+      outlineStyle: "dashed",
+    });
+
+    expect(mounted.button("style")).toBe(button);
+    expect(requiredElement(button, ".inkbook-toolbar-style-icon svg")).toBe(icon);
+    expect(icon.dataset.outlineStyle).toBe("dashed");
+    expect(icon.dataset.fill).toBe("color");
+    expect(icon.querySelector("path")?.getAttribute("stroke-dasharray")).toBe("3.4 2.4");
+    expect(icon.querySelector("path")?.getAttribute("fill-opacity")).toBe("0.6");
+    mounted.unmount();
+  });
+});
+
+describe("mounted Inkbook shape controls", () => {
+  it("shows the selected shape separately from its picker", () => {
+    const mounted = mountToolbar(completeState);
+
+    expect(
+      requiredElement<HTMLElement>(mounted.button("shape"), ".inkbook-toolbar-icon").dataset.icon,
+    ).toBe(SHAPE_ICON_IDS.rectangle);
+    expect(mounted.button("shape").getAttribute("aria-label")).toBe("Shape: Rectangle");
+    expect(mounted.button("shape").hasAttribute("aria-haspopup")).toBe(false);
+    expect(mounted.button("shape-picker").getAttribute("aria-controls")).toBe(
+      "inkbook-shape-flyout",
+    );
+
+    mounted.update(completeState, "triangle");
+    expect(
+      requiredElement<HTMLElement>(mounted.button("shape"), ".inkbook-toolbar-icon").dataset.icon,
+    ).toBe(SHAPE_ICON_IDS.triangle);
+    expect(mounted.button("shape").getAttribute("aria-label")).toBe("Shape: Triangle");
+    mounted.unmount();
+  });
+});
+
 describe("mounted Inkbook history controls", () => {
   it("retains disabled controls and skips them during roving keyboard navigation", () => {
     const mounted = mountToolbar({ ...completeState, canRedo: false, canUndo: false });
@@ -170,9 +226,11 @@ describe("mounted Inkbook flyout focus", () => {
 
     expect(escape.defaultPrevented).toBe(true);
     expect(onFlyoutClose).toHaveBeenCalledWith("shape");
-    expect(document.activeElement).toBe(mounted.button("shape"));
-    expect(mounted.button("shape").getAttribute("aria-expanded")).toBe("true");
-    expect(mounted.button("shape").getAttribute("aria-controls")).toBe("inkbook-shape-flyout");
+    expect(document.activeElement).toBe(mounted.button("shape-picker"));
+    expect(mounted.button("shape-picker").getAttribute("aria-expanded")).toBe("true");
+    expect(mounted.button("shape-picker").getAttribute("aria-controls")).toBe(
+      "inkbook-shape-flyout",
+    );
     mounted.unmount();
   });
 
@@ -195,7 +253,7 @@ describe("mounted Inkbook flyout focus", () => {
       );
     });
 
-    expect(document.activeElement).toBe(mounted.button("shape"));
+    expect(document.activeElement).toBe(mounted.button("shape-picker"));
     expect(document.body.contains(dialog)).toBe(false);
     mounted.unmount();
   });
@@ -205,7 +263,11 @@ interface MountedToolbar {
   readonly button: (action: ToolbarAction) => HTMLButtonElement;
   readonly container: HTMLDivElement;
   readonly unmount: () => void;
-  readonly update: (state: ToolbarState) => void;
+  readonly update: (
+    state: ToolbarState,
+    selectedShape?: "rectangle" | "triangle",
+    styleIcon?: ToolbarStyleIconState,
+  ) => void;
 }
 
 interface MountedChrome {
@@ -217,14 +279,20 @@ interface MountedChrome {
 function mountToolbar(initialState: ToolbarState): MountedToolbar {
   const container = document.body.createDiv();
   const root = createRoot(container);
-  const render = (state: ToolbarState): void => {
+  const render = (
+    state: ToolbarState,
+    selectedShape: "rectangle" | "triangle" = "rectangle",
+    styleIcon: ToolbarStyleIconState = defaultStyleIcon,
+  ): void => {
     act(() => {
       root.render(
         <InkbookToolbar
           layout="wide"
           onAction={vi.fn()}
           renderIcon={(element, icon) => element.setAttribute("data-icon", icon)}
+          selectedShape={selectedShape}
           state={state}
+          styleIcon={styleIcon}
         />,
       );
     });
@@ -284,6 +352,7 @@ function chromeProps(
     renderIcon: (element, icon) => element.setAttribute("data-icon", icon),
     selectedShape: "rectangle",
     styleControls: [],
+    styleIcon: { fillColor: null, fillOpacity: 0, outlineColor: null, outlineStyle: "solid" },
     toolbarState: { ...completeState, openFlyout },
   };
 }

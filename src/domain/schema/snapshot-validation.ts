@@ -11,7 +11,6 @@ import {
   INKBOOK_VERSION,
   PAGE_INNER_WIDTH,
   PAGE_MARGIN,
-  PAGE_WIDTH,
   type SchemaLimits,
 } from "./constants";
 import { assertInkElement } from "./element-validation";
@@ -266,13 +265,6 @@ function* validateBoundsAndExtent(
   const allBounds = [];
   for (let index = 0; index < elements.length; index += 1) {
     const bounds = calculateElementBounds(elements[index] as InkElementV1);
-    if (bounds.minX < 0 || bounds.maxX > PAGE_WIDTH || bounds.minY < 0) {
-      fail(
-        "invalid-range",
-        `$.elements[${index}]`,
-        "Conservative bounds lie outside the supported page.",
-      );
-    }
     allBounds.push(bounds);
     maximumBottom = Math.max(maximumBottom ?? 0, bounds.maxY);
     if ((index + 1) % 128 === 0) yield;

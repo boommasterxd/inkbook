@@ -84,6 +84,7 @@ function createProps(ownerDocument: Document, layout: "scrollable" | "wide" = "w
     renderIcon: vi.fn(),
     selectedShape: "line",
     styleControls: [],
+    styleIcon: { fillColor: null, fillOpacity: 0, outlineColor: null, outlineStyle: "solid" },
     toolbarState: {
       activeTool: "draw",
       canPaste: false,

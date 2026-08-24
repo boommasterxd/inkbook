@@ -60,12 +60,16 @@ describe("SVG primitives", () => {
   it("keeps the portable theme independent from Obsidian variables", () => {
     expect(DOCUMENT_PALETTE).toEqual(PORTABLE_PALETTE_V1);
     expect(DOCUMENT_PALETTE.dark.page).toBe("#212121FF");
-    expect(DOCUMENT_PALETTE.dark.guide).toBe("#383838FF");
+    expect(DOCUMENT_PALETTE.dark.guide).toBe("#66666640");
     expect(DOCUMENT_PALETTE.dark.text).toBe("#DADADAFF");
     expect(CANONICAL_THEME_STYLESHEET).toContain("prefers-color-scheme:dark");
     expect(CANONICAL_THEME_STYLESHEET).toContain("--inkbook-page:#212121FF");
-    expect(CANONICAL_THEME_STYLESHEET).toContain("shape-rendering:crispEdges");
+    expect(CANONICAL_THEME_STYLESHEET).not.toContain("shape-rendering:crispEdges");
     expect(CANONICAL_THEME_STYLESHEET).toContain("vector-effect:non-scaling-stroke");
+    expect(CANONICAL_THEME_STYLESHEET).toContain("svg{overflow:hidden}");
+    expect(
+      isSupportedThemeStylesheet(CANONICAL_THEME_STYLESHEET.replace("svg{overflow:hidden}", "")),
+    ).toBe(true);
     expect(
       isSupportedThemeStylesheet(
         CANONICAL_THEME_STYLESHEET.replace(";vector-effect:non-scaling-stroke", ""),

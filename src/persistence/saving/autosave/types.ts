@@ -32,6 +32,7 @@ export interface AutosaveSessionBaseOptions {
   readonly initialSnapshot: InkSnapshotV1;
   readonly isGestureActive: () => boolean;
   readonly outputHash: string;
+  readonly requiresCanonicalRewrite?: boolean;
   readonly workerEpoch: number;
 }
 
@@ -64,6 +65,7 @@ export interface AutosaveCoordinatorOptions {
   readonly initialSnapshot: InkSnapshotV1;
   readonly observer?: AutosaveObserver;
   readonly path: string;
+  readonly requiresCanonicalRewrite?: boolean;
   readonly sessionId: string;
   readonly vault: ExistingFilePort & Partial<NewFilePort>;
   readonly workerEpoch?: number;

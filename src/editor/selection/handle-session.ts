@@ -109,7 +109,7 @@ export class SelectionHandleSession {
     if (this.#requiresTimeSlicedCommit()) {
       return { status: "time-sliced-required" };
     }
-    const plan = this.#planner.planPageBoundedReplacements(this.#materializeDirect());
+    const plan = this.#planner.planReplacements(this.#materializeDirect());
     if (plan === null) return { status: "noop" };
     return { previous: this.#elements, replacements: plan.replacements, status: "ready" };
   }
@@ -123,7 +123,7 @@ export class SelectionHandleSession {
     const pointer = this.#currentPointer;
     const materialized = await this.#materializeTimeSliced(scheduler, generation, pointer);
     if (materialized === null) return { status: "cancelled" };
-    const plan = await this.#planner.planPageBoundedReplacementsTimeSliced(materialized, {
+    const plan = await this.#planner.planReplacementsTimeSliced(materialized, {
       isCancelled: () => this.#preparationCancelled(scheduler, generation),
       shouldYield: scheduler.shouldYield,
       yieldControl: scheduler.yieldControl,
@@ -147,7 +147,7 @@ export class SelectionHandleSession {
       };
     }
     try {
-      const planned = this.#planner.planPageBoundedReplacements(this.#materializeDirect());
+      const planned = this.#planner.planReplacements(this.#materializeDirect());
       this.#valid = planned !== null;
       return {
         exactElements: planned?.elements ?? [],

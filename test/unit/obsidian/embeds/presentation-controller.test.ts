@@ -65,6 +65,7 @@ describe("presentation owner measurement", () => {
 
     expect(styles.get("--inkbook-owner-inline-limit")).toBe("300px");
     expect(styles.get("--inkbook-container-width")).toBe("300px");
+    expect(styles.get("--inkbook-shell-radius")).toBe("10px");
     expect(controller.scrollOwner).toBe(owner);
     controller.dispose();
   });

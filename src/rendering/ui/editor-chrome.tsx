@@ -13,6 +13,7 @@ import { OverflowMenu } from "./overflow-menu";
 import { InkbookToolbar } from "./toolbar";
 import type { ToolbarLayoutStage } from "./toolbar-layout";
 import type { FlyoutId, ToolbarAction, ToolbarState } from "./toolbar-types";
+import type { ToolbarStyleIconState } from "./style-icon";
 
 export interface InkbookEditorChromeProps {
   readonly background: BackgroundFlyoutState;
@@ -26,6 +27,7 @@ export interface InkbookEditorChromeProps {
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
   readonly selectedShape: ShapeId;
   readonly styleControls: readonly StyleControl[];
+  readonly styleIcon: ToolbarStyleIconState;
   readonly toolbarState: ToolbarState;
 }
 
@@ -87,7 +89,8 @@ export function InkbookEditorChrome(props: InkbookEditorChromeProps) {
   }, [renderedFlyout, requestedFlyout]);
 
   const flyout = renderedFlyout;
-  const anchor = flyout === null ? null : (buttons.current.get(flyout) ?? null);
+  const anchor =
+    flyout === null ? null : (buttons.current.get(toolbarActionForFlyout(flyout)) ?? null);
 
   return (
     <>
@@ -104,7 +107,9 @@ export function InkbookEditorChrome(props: InkbookEditorChromeProps) {
           onScroll={updateOverflow}
           registerButton={registerButton}
           renderIcon={props.renderIcon}
+          selectedShape={props.selectedShape}
           state={props.toolbarState}
+          styleIcon={props.styleIcon}
           toolbarRef={toolbar}
         />
         <span aria-hidden="true" className="inkbook-toolbar-edge inkbook-toolbar-edge-start" />
@@ -123,6 +128,10 @@ export function InkbookEditorChrome(props: InkbookEditorChromeProps) {
       )}
     </>
   );
+}
+
+function toolbarActionForFlyout(flyout: FlyoutId): ToolbarAction {
+  return flyout === "shape" ? "shape-picker" : flyout;
 }
 
 function EditorFlyout({

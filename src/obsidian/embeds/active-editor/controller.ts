@@ -197,7 +197,7 @@ export class ActiveEditorController {
       renderIcon: this.#renderIcon,
       selectedShape: this.#chromeState.selectedShape,
       setFlyoutClosed: () => this.#chromeState.setFlyout(null),
-      styleControls: this.#styles.controls(this.#input.activeTool),
+      style: this.#styles.presentation(this.#input.activeTool),
       toolbarState: this.toolbarState(),
     });
   }
@@ -238,13 +238,13 @@ export class ActiveEditorController {
   public handleToolbarAction(action: ToolbarAction): void {
     if (!this.#availability.acceptsInput) return;
     if (isTool(action)) {
-      const tool = this.#chromeState.activateTool(action, this.#input.activeTool);
-      if (tool !== undefined) this.#configureTool(tool);
+      this.#configureTool(this.#chromeState.activateTool(action));
       return;
     }
     if (action === "undo") this.#historyTraversal.undo();
     else if (action === "redo") this.#historyTraversal.redo();
     else if (action === "lock") this.#onLock();
+    else if (action === "shape-picker") this.#chromeState.toggleFlyout("shape");
     else if (action === "background" || action === "overflow" || action === "style")
       this.#chromeState.toggleFlyout(action);
     else if (action === "finger-drawing") this.#toggleFingerDrawing();

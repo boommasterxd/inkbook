@@ -46,6 +46,7 @@ interface HandoffFixture {
   readonly rootClasses: FakeClassList;
   readonly runTimer: () => void;
   readonly runFrame: () => void;
+  readonly framePending: () => boolean;
   readonly setActiveBlockSize: (value: string) => void;
   readonly setTimeoutSpy: ReturnType<typeof vi.fn>;
   readonly timerPending: () => boolean;
@@ -55,6 +56,7 @@ interface HandoffFixture {
 function createFixture(
   motion: "full" | "reduced" | "system",
   systemReduced = false,
+  setPreviewAspectRatio?: (aspectRatio: number) => void,
 ): HandoffFixture {
   const media = new FakeMediaQueryList(systemReduced);
   let timer: (() => void) | undefined;
@@ -84,8 +86,16 @@ function createFixture(
   } as unknown as HTMLElement;
   const style = {
     blockSize: "",
+    properties: new Map<string, string>(),
+    getPropertyValue: (name: string): string => style.properties.get(name) ?? "",
+    removeProperty: (name: string): string => {
+      const previous = style.properties.get(name) ?? "";
+      style.properties.delete(name);
+      return previous;
+    },
     setProperty: (name: string, value: string): void => {
       if (name === "block-size") style.blockSize = value;
+      else style.properties.set(name, value);
     },
   };
   const container = {
@@ -112,10 +122,17 @@ function createFixture(
   return {
     completed,
     container,
-    handoff: new ActiveScenePreviewHandoff({ container, motion, preview, root }),
+    handoff: new ActiveScenePreviewHandoff({
+      container,
+      motion,
+      preview,
+      root,
+      ...(setPreviewAspectRatio === undefined ? {} : { setPreviewAspectRatio }),
+    }),
     media,
     preview,
     rootClasses,
+    framePending: () => frame !== undefined,
     runTimer: () => timer?.(),
     runFrame: () => frame?.(),
     setActiveBlockSize: (value) => {
@@ -131,20 +148,39 @@ describe("active editor unlock preview motion", () => {
     const fixture = createFixture("full", true);
     expect(fixture.rootClasses.contains("inkbook-active-preparing")).toBe(true);
     expect(fixture.container.style.blockSize).toBe("96px");
+    expect(fixture.container.style.getPropertyValue("--inkbook-locked-container-block-size")).toBe(
+      "96px",
+    );
     expect(fixture.preview.hidden).toBe(false);
 
     fixture.setActiveBlockSize("240px");
     fixture.handoff.ready(fixture.completed);
-    expect(fixture.rootClasses.contains("inkbook-active-transitioning")).toBe(true);
+    expect(fixture.rootClasses.contains("inkbook-active-preparing")).toBe(true);
     expect(fixture.container.style.blockSize).toBe("240px");
+    expect(fixture.container.style.getPropertyValue("--inkbook-active-scene-block-size")).toBe(
+      "240px",
+    );
     expect(fixture.preview.hidden).toBe(false);
     expect(fixture.completed).not.toHaveBeenCalled();
+    expect(fixture.setTimeoutSpy).not.toHaveBeenCalled();
+
+    fixture.runFrame();
+    expect(fixture.rootClasses.contains("inkbook-active-preparing")).toBe(true);
+    expect(fixture.preview.hidden).toBe(false);
+    expect(fixture.setTimeoutSpy).not.toHaveBeenCalled();
+
+    fixture.runFrame();
+    expect(fixture.rootClasses.contains("inkbook-active-transitioning")).toBe(true);
 
     expect(fixture.setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 240);
     fixture.runTimer();
     expect(fixture.rootClasses.contains("inkbook-active-ready")).toBe(true);
     expect(fixture.preview.hidden).toBe(true);
     expect(fixture.completed).toHaveBeenCalledOnce();
+    expect(fixture.container.style.getPropertyValue("--inkbook-active-scene-block-size")).toBe("");
+    expect(fixture.container.style.getPropertyValue("--inkbook-locked-container-block-size")).toBe(
+      "",
+    );
   });
 
   it("applies reduced motion immediately after the stable measurement", () => {
@@ -161,7 +197,7 @@ describe("active editor unlock preview motion", () => {
     const fixture = createFixture("system");
     fixture.setActiveBlockSize("240px");
     fixture.handoff.ready();
-    expect(fixture.timerPending()).toBe(true);
+    expect(fixture.framePending()).toBe(true);
 
     fixture.media.setMatches(true);
     expect(fixture.preview.hidden).toBe(true);
@@ -171,16 +207,21 @@ describe("active editor unlock preview motion", () => {
     expect(fixture.media.removeEventListener).toHaveBeenCalledOnce();
     expect(fixture.preview.hidden).toBe(false);
     expect(fixture.rootClasses.contains("inkbook-active-ready")).toBe(false);
+    expect(fixture.container.style.getPropertyValue("--inkbook-active-scene-block-size")).toBe("");
+    expect(fixture.container.style.getPropertyValue("--inkbook-locked-container-block-size")).toBe(
+      "",
+    );
   });
 
   it("cancels a pending handoff when the scene is disposed", () => {
     const fixture = createFixture("system");
     fixture.setActiveBlockSize("240px");
     fixture.handoff.ready();
-    expect(fixture.timerPending()).toBe(true);
+    expect(fixture.framePending()).toBe(true);
 
     fixture.handoff.dispose();
     expect(fixture.timerPending()).toBe(false);
+    expect(fixture.framePending()).toBe(false);
     expect(fixture.media.removeEventListener).toHaveBeenCalledOnce();
     expect(fixture.preview.hidden).toBe(false);
     fixture.runTimer();
@@ -189,6 +230,15 @@ describe("active editor unlock preview motion", () => {
 });
 
 describe("active editor lock preview motion", () => {
+  it("updates the held preview ratio before the lock handoff", () => {
+    const setPreviewAspectRatio = vi.fn();
+    const fixture = createFixture("full", false, setPreviewAspectRatio);
+
+    fixture.handoff.setPreviewAspectRatio(4);
+
+    expect(setPreviewAspectRatio).toHaveBeenCalledWith(4);
+  });
+
   it("crossfades the complete editor chrome including its toolbar for 120 ms", () => {
     const fixture = createFixture("full");
     const editorChrome = startFullMotionCrossfade(fixture);
@@ -199,6 +249,21 @@ describe("active editor lock preview motion", () => {
     expect(fixture.completed).not.toHaveBeenCalled();
     fixture.runTimer();
     expect(fixture.completed).toHaveBeenCalledOnce();
+  });
+
+  it("keeps one complete presentation visible across the lock replacement frame", () => {
+    const fixture = createFixture("full");
+    fixture.preview.hidden = true;
+    const editor = createEditorChrome();
+
+    fixture.handoff.crossfadeToPreview(editor, fixture.completed);
+
+    expect(fixture.preview.hidden).toBe(false);
+    expect(fixture.preview.style.opacity).toBe("0");
+    expect(editor.style.opacity).toBe("1");
+    fixture.runFrame();
+    expect(fixture.preview.style.opacity).toBe("1");
+    expect(editor.style.opacity).toBe("0");
   });
 
   it("finishes the complete lock crossfade when reduced motion becomes active", () => {
@@ -238,12 +303,17 @@ describe("active editor lock preview motion", () => {
 });
 
 function startFullMotionCrossfade(fixture: HandoffFixture): HTMLElement {
+  const editor = createEditorChrome();
+  fixture.handoff.crossfadeToPreview(editor, fixture.completed);
+  fixture.runFrame();
+  return editor;
+}
+
+function createEditorChrome(): HTMLElement {
   const style = { opacity: "", transition: "" };
   const editor = {
     setCssProps: (properties: Record<string, string>) => Object.assign(style, properties),
     style,
   } as unknown as HTMLElement;
-  fixture.handoff.crossfadeToPreview(editor, fixture.completed);
-  fixture.runFrame();
   return editor;
 }

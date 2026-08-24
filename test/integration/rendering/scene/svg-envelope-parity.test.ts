@@ -135,31 +135,30 @@ function verifyPatternedBackground(
   const left = background.type === "lines" ? snapshot.page.margin : horizontal.start;
   const right =
     background.type === "lines" ? snapshot.page.margin + snapshot.page.innerWidth : horizontal.end;
+  const inset = background.type === "dots" ? 1 : 0.5;
+  if (background.type !== "dots") {
+    expect(active.coverage.get("fill")).toBe("none");
+    expect(active.coverage.get("class")).toBe("inkbook-theme-guide");
+    expect(active.coverage.get("stroke-width")).toBe("1");
+    expect(active.coverage.get("vector-effect")).toBe("non-scaling-stroke");
+    expect(pathSegments(active.coverage.get("d") ?? "")).toEqual(savedSegments);
+    expect(active.patternPath.get("d")).toBe("");
+    return;
+  }
   expect(active.coverage.get("d")).toBe(
     `M ${serializeSvgNumber(left)} ${serializeSvgNumber(vertical.start)} ` +
       `H ${serializeSvgNumber(right)} V ${serializeSvgNumber(vertical.end)} ` +
       `H ${serializeSvgNumber(left)} Z`,
   );
-  expect(active.pattern.get("x")).toBe(serializeSvgNumber(horizontal.start));
-  expect(active.pattern.get("y")).toBe(serializeSvgNumber(vertical.start));
+  expect(active.pattern.get("x")).toBe(serializeSvgNumber(horizontal.start - inset));
+  expect(active.pattern.get("y")).toBe(serializeSvgNumber(vertical.start - inset));
   expect(active.pattern.get("width")).toBe(String(background.spacing));
   expect(active.pattern.get("height")).toBe(String(background.spacing));
   expect(active.patternPath.get("class")).toBe("inkbook-theme-guide");
-  expect(active.patternPath.get("vector-effect")).toBe("non-scaling-stroke");
+  expect(active.patternPath.has("vector-effect")).toBe(false);
+  expect(Number(active.patternPath.get("stroke-width"))).toBe(2);
   expect(saved.slice(1).every((path) => !path.has("vector-effect"))).toBe(true);
-  verifySquareBoundary(active.coverage, background.type === "squares");
-  expect(activePatternSegments(active, background, lockedHeight)).toEqual(savedSegments);
-}
-
-function verifySquareBoundary(coverage: Attributes, expected: boolean): void {
-  if (!expected) {
-    expect(coverage.has("stroke")).toBe(false);
-    return;
-  }
-  expect(coverage.get("class")).toBe("inkbook-theme-guide");
-  expect(coverage.get("stroke")).toBe(PORTABLE_PALETTE_V1.light.guide);
-  expect(coverage.get("stroke-width")).toBe("1");
-  expect(coverage.get("vector-effect")).toBe("non-scaling-stroke");
+  expect(activePatternSegments(active, background, lockedHeight, inset)).toEqual(savedSegments);
 }
 
 function serializeValidatedSnapshot(snapshot: InkSnapshotV1) {
@@ -400,9 +399,10 @@ function activePatternSegments(
   active: ReturnType<typeof activeBackground>,
   background: Exclude<BackgroundV1, { type: "none" }>,
   lockedHeight: number,
+  inset: number,
 ): Segment[] {
-  const startX = Number(active.pattern.get("x"));
-  const startY = Number(active.pattern.get("y"));
+  const startX = Number(active.pattern.get("x")) + (background.type === "lines" ? 0 : inset);
+  const startY = Number(active.pattern.get("y")) + inset;
   const spacing = Number(active.pattern.get("width"));
   const endX = 2048.6 - startX;
   const endY = lockedHeight - startY;

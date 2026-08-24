@@ -162,7 +162,9 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       const { snapshot } = unlocked;
       return {
         identity: request.identity,
+        lockedHeight: unlocked.lockedHeight,
         outputHash: unlocked.outputHash,
+        requiresCanonicalRewrite: unlocked.requiresCanonicalRewrite,
         sourceVersion: unlocked.sourceVersion,
         snapshot: {
           batchCount,

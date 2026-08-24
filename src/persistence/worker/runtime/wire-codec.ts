@@ -424,6 +424,10 @@ export function isDocumentRuntimeWireResult(value: unknown): value is DocumentRu
   if (!isRuntimeWireResultType(value.type)) return false;
   if (value.type === "unlock-success") {
     return (
+      typeof value.lockedHeight === "number" &&
+      Number.isFinite(value.lockedHeight) &&
+      value.lockedHeight > 0 &&
+      typeof value.requiresCanonicalRewrite === "boolean" &&
       typeof value.sourceVersion === "number" &&
       Number.isSafeInteger(value.sourceVersion) &&
       value.sourceVersion >= 0 &&

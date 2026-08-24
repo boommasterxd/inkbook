@@ -7,6 +7,7 @@ export type ToolbarAction =
   | "undo"
   | "redo"
   | ToolId
+  | "shape-picker"
   | "style"
   | "copy"
   | "cut"

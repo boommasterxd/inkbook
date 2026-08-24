@@ -335,8 +335,17 @@ describe("scene DOM ownership", () => {
     const background = camera.nodes[1]!;
     expect(background.attributes.get("d")?.match(/M /g)).toHaveLength(1);
     expect(background.attributes.get("fill")).toMatch(/^url\(#inkbook-background-pattern-/);
-    const patternPath = container.nodes[0]!.nodes[3]!.nodes[0]!.nodes[0]!;
-    expect(patternPath.attributes.get("d")).toBe("M 0 0 L 0 0");
+    const pattern = container.nodes[0]!.nodes[3]!.nodes[0]!;
+    const patternPath = pattern.nodes[0]!;
+    expect(patternPath.attributes.get("d")).toBe("M 1 1 L 1 1");
+    renderer.setPage({ ...page, background: { spacing: 20, type: "squares" } }, 500);
+    renderer.setCamera({ x: 0, zoom: 0.25 });
+    scheduler.runAll();
+
+    expect(background.attributes.get("fill")).toBe("none");
+    expect(background.attributes.get("vector-effect")).toBe("non-scaling-stroke");
+    expect(background.attributes.get("d")?.match(/M /gu)?.length).toBeGreaterThan(20);
+    expect(patternPath.attributes.get("d")).toBe("");
   });
 });
 

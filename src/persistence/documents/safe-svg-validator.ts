@@ -1,5 +1,6 @@
 import { validateDashArray, validatePathDataSteps } from "./path-data-validator";
 import {
+  CANONICAL_THEME_STYLESHEET,
   DOCUMENT_PALETTE,
   DOCUMENT_THEME_FALLBACK,
   THEME_CLASSES,
@@ -9,13 +10,12 @@ import {
 import { parseCanonicalSvgDecimal, parseCanonicalSvgOpacity } from "./svg-number";
 import { parseSafeSvgRoot, type SafeSvgRoot, type SafeSvgVersionPolicy } from "./svg-envelope-root";
 import { MAXIMUM_TOTAL_PATH_DATA_BYTES } from "./svg-output-limits";
+import { decodeMetadataTextSteps, measureUtf8BytesSteps } from "./safe-svg-metadata";
 const MAXIMUM_FILE_BYTES = 64 * 1024 * 1024;
 const MAXIMUM_METADATA_BYTES = 60 * 1024 * 1024;
 const MAXIMUM_PATHS = 60_004;
 const MAXIMUM_TOTAL_COMMANDS = 8_000_000;
 const DEFAULT_PATHS_PER_STEP = 128;
-const METADATA_CODE_UNITS_PER_STEP = 256 * 1024;
-const METADATA_DECODE_CODE_UNITS_PER_STEP = 16 * 1024;
 const RGBA = /^#[0-9A-F]{8}$/u;
 const ATTRIBUTE_NAME = /^[A-Za-z][A-Za-z0-9-]*$/u;
 const PATH_ATTRIBUTES = new Set([
@@ -41,6 +41,7 @@ interface ParsedTag {
 interface SafeSvgPrefix {
   readonly cursor: number;
   readonly metadataText: string;
+  readonly requiresCanonicalRewrite: boolean;
   readonly root: SafeSvgRoot;
 }
 
@@ -63,12 +64,16 @@ export interface SafeSvgValidation {
   readonly pathCommands: number;
   readonly paths: number;
   readonly revision: number;
+  readonly requiresCanonicalRewrite: boolean;
   readonly snapshotHash: string | null;
   readonly version: number;
 }
 
 export type SafeSvgPrelude = Readonly<
-  Pick<SafeSvgRoot, "revision" | "snapshotHash" | "version"> & { lockedHeight: number }
+  Pick<SafeSvgRoot, "revision" | "snapshotHash" | "version"> & {
+    lockedHeight: number;
+    requiresCanonicalRewrite: boolean;
+  }
 >;
 
 interface SafeSvgMetadata {
@@ -332,6 +337,7 @@ export function validateEditableSafeSvgPrelude(prefix: string): SafeSvgPrelude |
     ? null
     : {
         lockedHeight: safe.lockedHeight,
+        requiresCanonicalRewrite: safe.requiresCanonicalRewrite,
         revision: safe.revision,
         snapshotHash: safe.snapshotHash,
         version: safe.version,
@@ -394,6 +400,7 @@ export function* validateSafeSvgSteps(
     pathCommands: totals.commands,
     paths: totals.paths,
     revision: prefix.root.revision,
+    requiresCanonicalRewrite: prefix.requiresCanonicalRewrite,
     snapshotHash: prefix.root.snapshotHash,
     version: prefix.root.version,
   };
@@ -428,7 +435,12 @@ function parseSafeSvgPrefix(
   });
   return metadata === null
     ? null
-    : { cursor: skipWhitespace(svg, metadata.next), metadataText: metadata.text, root };
+    : {
+        cursor: skipWhitespace(svg, metadata.next),
+        metadataText: metadata.text,
+        requiresCanonicalRewrite: style.text !== CANONICAL_THEME_STYLESHEET,
+        root,
+      };
 }
 
 function completeValidation(
@@ -437,62 +449,4 @@ function completeValidation(
   let step = steps.next();
   while (!step.done) step = steps.next();
   return step.value;
-}
-
-function* measureUtf8BytesSteps(input: string): Generator<void, number> {
-  const encoder = new TextEncoder();
-  let bytes = 0;
-  let start = 0;
-  while (start < input.length) {
-    let end = Math.min(start + METADATA_CODE_UNITS_PER_STEP, input.length);
-    const trailing = input.charCodeAt(end - 1);
-    if (end < input.length && trailing >= 0xd800 && trailing <= 0xdbff) end -= 1;
-    bytes += encoder.encode(input.slice(start, end)).byteLength;
-    start = end;
-    if (start < input.length) yield;
-  }
-  return bytes;
-}
-
-function* decodeMetadataTextSteps(input: string): Generator<void, string | null> {
-  const decodedChunks: string[] = [];
-  let currentParts: string[] = [];
-  let cursor = 0;
-  let literalStart = 0;
-  let sliceStart = 0;
-  while (cursor < input.length) {
-    const character = input[cursor];
-    if (character === "<") return null;
-    if (character === "&") {
-      currentParts.push(input.slice(literalStart, cursor));
-      const entity = decodeAllowedEntity(input, cursor);
-      if (entity === null) return null;
-      currentParts.push(entity.value);
-      cursor = entity.next;
-      literalStart = cursor;
-    } else {
-      cursor += 1;
-    }
-    if (cursor - sliceStart >= METADATA_DECODE_CODE_UNITS_PER_STEP) {
-      currentParts.push(input.slice(literalStart, cursor));
-      decodedChunks.push(currentParts.join(""));
-      currentParts = [];
-      literalStart = cursor;
-      sliceStart = cursor;
-      yield;
-    }
-  }
-  currentParts.push(input.slice(literalStart));
-  decodedChunks.push(currentParts.join(""));
-  return decodedChunks.join("");
-}
-
-function decodeAllowedEntity(
-  input: string,
-  start: number,
-): { readonly next: number; readonly value: string } | null {
-  if (input.startsWith("&amp;", start)) return { next: start + 5, value: "&" };
-  if (input.startsWith("&lt;", start)) return { next: start + 4, value: "<" };
-  if (input.startsWith("&gt;", start)) return { next: start + 4, value: ">" };
-  return null;
 }

@@ -34,6 +34,9 @@ export function createAutosaveSession(options: AutosaveSessionOptions): Autosave
     initialSnapshot: options.initialSnapshot,
     observer: { confirmed: options.confirmed, statusChanged: () => undefined },
     path: options.path,
+    ...(options.requiresCanonicalRewrite === undefined
+      ? {}
+      : { requiresCanonicalRewrite: options.requiresCanonicalRewrite }),
     sessionId: options.sessionId,
     vault: options.vault,
     workerEpoch: options.workerEpoch,

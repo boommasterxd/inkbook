@@ -15,6 +15,7 @@ export interface BackgroundGeometryResult {
   readonly firstVisibleIndex: number;
   readonly hit: boolean;
   readonly lastVisibleIndex: number;
+  readonly paint: "direct" | "none" | "pattern";
   readonly patternX: number;
   readonly patternY: number;
 }
@@ -22,6 +23,8 @@ export interface BackgroundGeometryResult {
 interface BackgroundCacheEntry extends BackgroundGeometryResult {
   readonly key: string;
 }
+
+const MAXIMUM_DIRECT_GUIDE_SEGMENTS = 2_048;
 
 export class SceneBackgroundCache {
   #builds = 0;
@@ -73,8 +76,17 @@ export class SceneBackgroundCache {
       return { ...this.#entry, hit: true };
     }
 
+    const visibleRows = lastVisibleIndex - firstVisibleIndex + 1;
+    const directSegments =
+      visibleRows + (request.background.type === "squares" ? horizontal.intervalCount + 1 : 0);
+    const paint =
+      request.background.type !== "dots" && directSegments <= MAXIMUM_DIRECT_GUIDE_SEGMENTS
+        ? "direct"
+        : "pattern";
     const d = buildBackgroundPath(
+      paint,
       spacing,
+      request.background.type === "squares",
       {
         bottom: vertical.end,
         left: request.background.type === "lines" ? request.margin : horizontal.start,
@@ -94,6 +106,7 @@ export class SceneBackgroundCache {
       hit: false,
       key,
       lastVisibleIndex,
+      paint,
       patternX: horizontal.start,
       patternY: vertical.start,
     };
@@ -122,6 +135,7 @@ export class SceneBackgroundCache {
       hit: false,
       key,
       lastVisibleIndex: 0,
+      paint: "none",
       patternX: request.margin,
       patternY: request.margin,
     };
@@ -137,12 +151,28 @@ interface BackgroundCoverageBounds {
 }
 
 function buildBackgroundPath(
+  paint: "direct" | "pattern",
   spacing: number,
+  includeVertical: boolean,
   bounds: BackgroundCoverageBounds,
   firstIndex: number,
   lastIndex: number,
 ): string {
   const top = canonical(bounds.top + firstIndex * spacing);
+  const lastGuide = canonical(Math.min(bounds.bottom, bounds.top + lastIndex * spacing));
+  if (paint === "direct") {
+    const guides: string[] = [];
+    for (let index = firstIndex; index <= lastIndex; index += 1) {
+      const y = canonical(Math.min(bounds.bottom, bounds.top + index * spacing));
+      guides.push(`M ${canonical(bounds.left)} ${y} L ${canonical(bounds.right)} ${y}`);
+    }
+    if (includeVertical) {
+      for (let x = bounds.left; x <= bounds.right; x += spacing) {
+        guides.push(`M ${canonical(x)} ${top} L ${canonical(x)} ${lastGuide}`);
+      }
+    }
+    return guides.join(" ");
+  }
   const bottom = canonical(Math.min(bounds.bottom, bounds.top + (lastIndex + 1) * spacing));
   return `M ${canonical(bounds.left)} ${top} H ${canonical(bounds.right)} V ${bottom} H ${canonical(bounds.left)} Z`;
 }

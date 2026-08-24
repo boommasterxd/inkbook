@@ -36,6 +36,7 @@ export {
   isRgbaColor,
 } from "./canonical";
 export {
+  CANONICAL_LOCKED_BUFFER_LINES,
   CLIPBOARD_SCHEMA_LIMITS,
   FILE_SCHEMA_LIMITS,
   MAX_ABSOLUTE_COORDINATE,

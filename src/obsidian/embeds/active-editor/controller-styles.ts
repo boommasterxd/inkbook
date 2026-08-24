@@ -30,6 +30,7 @@ import {
   createStructuralStyleControls,
   type StyleChoiceOption,
   type StyleControl,
+  type ToolbarStyleIconState,
 } from "../../../rendering/ui/index";
 
 const COLOR_LABELS = [
@@ -92,6 +93,32 @@ export function createActiveEditorStyleControls(
     return selectionControls(summarizeSelectionStyle(context.selection));
   }
   return activeToolControls(summarizeActiveToolStyle(context.defaults, context.tool));
+}
+
+export function createActiveEditorStyleIcon(
+  defaults: ToolDefaultsV1,
+  tool: StartupToolV1,
+): ToolbarStyleIconState {
+  const summary = summarizeActiveToolStyle(defaults, tool);
+  if (summary === null || summary.kind === "eraser") return neutralStyleIcon();
+  if (summary.kind === "stroke") {
+    return {
+      fillColor: null,
+      fillOpacity: 0,
+      outlineColor: summary.color,
+      outlineStyle: "solid",
+    };
+  }
+  return {
+    fillColor: summary.fill?.fillColor ?? null,
+    fillOpacity: summary.fill?.fillOpacity ?? 0,
+    outlineColor: summary.style.outlineColor,
+    outlineStyle: summary.style.outlineStyle,
+  };
+}
+
+function neutralStyleIcon(): ToolbarStyleIconState {
+  return { fillColor: null, fillOpacity: 0, outlineColor: null, outlineStyle: "solid" };
 }
 
 export function createSelectionStyleReplacement(

@@ -3,6 +3,7 @@ import {
   type InkElementV1,
   type InkSnapshotV1,
 } from "../../domain/schema/public";
+import { derivePageExtent } from "../../domain/geometry/public";
 import { ElementStore, type StoreSliceScheduler } from "../../domain/store/public";
 import type { SessionOperationIdentity } from "../../editor/session/session-port";
 import type {
@@ -13,6 +14,7 @@ import type { UnlockFile } from "../vault/file-adapter";
 import type { ExistingFilePort, NewFilePort } from "../../persistence/saving/save-ports";
 import type { RecoveryFilePort } from "./vault-document-recovery";
 import type { MigrationBackupPort } from "../../persistence/documents/migration-backup";
+import { serializeSvgNumber } from "../../persistence/documents/svg-number";
 
 interface VaultUnlockFilePort {
   readBinaryForUnlock(path: string, maximumBytes: number): Promise<UnlockFile>;
@@ -110,6 +112,7 @@ export function createVaultFallbackFactory(options: {
 
 export interface LoadedVaultDocument {
   readonly outputHash: string;
+  readonly requiresCanonicalRewrite: boolean;
   readonly snapshot: InkSnapshotV1;
   readonly sourceVersion: number;
   readonly store: ElementStore;
@@ -216,6 +219,14 @@ export async function loadVaultDocument(
     };
     return {
       outputHash: result.outputHash,
+      requiresCanonicalRewrite:
+        result.requiresCanonicalRewrite ||
+        result.lockedHeight !==
+          Number(
+            serializeSvgNumber(
+              derivePageExtent(snapshot.page, store.getMaximumBottom() ?? null).lockedHeight,
+            ),
+          ),
       snapshot,
       sourceVersion: result.sourceVersion,
       store,

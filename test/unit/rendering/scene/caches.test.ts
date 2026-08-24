@@ -85,10 +85,16 @@ describe("scene background cache", () => {
       writableBottom: 324.3,
     });
 
-    expect(result.d).toBe("M 24.3 24.3 H 2024.3 V 324.3 H 24.3 Z");
+    expect(result.d).toBe(
+      "M 24.3 24.3 L 2024.3 24.3 M 24.3 124.3 L 2024.3 124.3 " +
+        "M 24.3 224.3 L 2024.3 224.3 M 24.3 324.3 L 2024.3 324.3",
+    );
     expect(result.lastVisibleIndex).toBe(3);
+    expect(result.paint).toBe("direct");
   });
+});
 
+describe("scene square background cache", () => {
   it("centers complete square cells instead of clipping a remainder at either side", () => {
     const cache = new SceneBackgroundCache();
     const result = cache.resolve({
@@ -102,7 +108,10 @@ describe("scene background cache", () => {
 
     expect(result.patternX).toBe(34.3);
     expect(result.patternY).toBe(24.3);
-    expect(result.d).toBe("M 34.3 24.3 H 2014.3 V 324.3 H 34.3 Z");
+    expect(result.paint).toBe("direct");
+    expect(result.d.match(/M /gu)).toHaveLength(40);
+    expect(result.d).toContain("M 34.3 24.3 L 2014.3 24.3");
+    expect(result.d).toContain("M 2014.3 24.3 L 2014.3 324.3");
   });
 
   it("collapses placeholder-height coverage instead of inverting the top margin", () => {
@@ -116,7 +125,23 @@ describe("scene background cache", () => {
       writableBottom: -23.3,
     });
 
-    expect(result.d).toBe("M 24.3 24.3 H 2024.3 V 24.3 H 24.3 Z");
+    expect(result.d).toBe("M 24.3 24.3 L 2024.3 24.3");
+  });
+
+  it("falls back to one bounded pattern coverage path for pathological guide counts", () => {
+    const cache = new SceneBackgroundCache();
+    const result = cache.resolve({
+      background: { spacing: 20, type: "squares" },
+      innerWidth: 2000,
+      margin: 24.3,
+      visibleBottom: 900_000,
+      visibleTop: 0,
+      writableBottom: 900_024.3,
+    });
+
+    expect(result.paint).toBe("pattern");
+    expect(result.d.length).toBeLessThan(200);
+    expect(result.d.match(/M /gu)).toHaveLength(1);
   });
 });
 

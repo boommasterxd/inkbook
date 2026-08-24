@@ -7,6 +7,7 @@ import {
   resolveToolbarFocusRecovery,
 } from "../../../../src/rendering/ui/toolbar";
 import type { ToolbarState } from "../../../../src/rendering/ui/toolbar-types";
+import type { ToolbarStyleIconState } from "../../../../src/rendering/ui/style-icon";
 
 const state: ToolbarState = {
   activeTool: "draw",
@@ -19,13 +20,25 @@ const state: ToolbarState = {
   openFlyout: null,
 };
 
-function render(overrides: Partial<ToolbarState> = {}): string {
+const DEFAULT_STYLE_ICON: ToolbarStyleIconState = {
+  fillColor: null,
+  fillOpacity: 0,
+  outlineColor: { type: "rgba", value: "#EF4444FF" },
+  outlineStyle: "solid",
+};
+
+function render(
+  overrides: Partial<ToolbarState> = {},
+  styleIcon: ToolbarStyleIconState = DEFAULT_STYLE_ICON,
+): string {
   return renderToStaticMarkup(
     <InkbookToolbar
       layout="wide"
       onAction={vi.fn()}
       renderIcon={vi.fn()}
+      selectedShape="rectangle"
       state={{ ...state, ...overrides }}
+      styleIcon={styleIcon}
     />,
   );
 }
@@ -61,6 +74,26 @@ describe("Inkbook toolbar", () => {
     expect(markup.indexOf('class="inkbook-toolbar inkbook-toolbar-wide"')).toBeLessThan(
       markup.indexOf("inkbook-toolbar-context-actions"),
     );
+  });
+
+  it("renders the current tool paint on the original palette geometry", () => {
+    const markup = render(
+      {},
+      {
+        fillColor: { type: "rgba", value: "#8B5CF6FF" },
+        fillOpacity: 0.3,
+        outlineColor: { type: "rgba", value: "#EF4444FF" },
+        outlineStyle: "dotted",
+      },
+    );
+
+    expect(markup).toContain('data-outline-style="dotted"');
+    expect(markup).toContain('data-fill="color"');
+    expect(markup).toContain('stroke="#EF4444FF"');
+    expect(markup).toContain('fill="#8B5CF6FF"');
+    expect(markup).toContain('fill-opacity="0.3"');
+    expect(markup).toContain('stroke-dasharray=".5 2.5"');
+    expect(markup.match(/<circle/gu)).toHaveLength(4);
   });
 
   it("uses roving tab stops and resolves group keyboard navigation", () => {

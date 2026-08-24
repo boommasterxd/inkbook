@@ -17,6 +17,8 @@ export class FakePresentationElement {
   readonly dataset: Record<string, string> = {};
   readonly listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
   readonly ownerDocument: Document;
+  readonly localName: string;
+  readonly namespaceURI: string;
   readonly tagName: string;
   readonly style = {
     "--inkbook-preview-aspect-ratio": "",
@@ -45,11 +47,34 @@ export class FakePresentationElement {
 
   public constructor(ownerDocument?: Document, tagName = "div") {
     this.tagName = tagName.toUpperCase();
+    this.localName = tagName.toLowerCase();
+    this.namespaceURI =
+      this.localName === "svg" || this.localName === "style"
+        ? "http://www.w3.org/2000/svg"
+        : "http://www.w3.org/1999/xhtml";
     if (ownerDocument !== undefined) {
       this.ownerDocument = ownerDocument;
       return;
     }
+    const documentPort: {
+      baseURI: string;
+      defaultView: unknown;
+      importNode: (node: FakePresentationElement, deep: boolean) => FakePresentationElement;
+      scrollingElement: FakePresentationElement | null;
+    } = {
+      baseURI: "app://vault/",
+      defaultView: undefined,
+      importNode: (node, deep) => node.cloneNode(deep),
+      scrollingElement: this,
+    };
     const owningWindow = {
+      DOMParser: class {
+        public parseFromString(): { documentElement: FakePresentationElement } {
+          const svg = new FakePresentationElement(documentPort as unknown as Document, "svg");
+          svg.append(new FakePresentationElement(documentPort as unknown as Document, "style"));
+          return { documentElement: svg };
+        }
+      },
       ResizeObserver: class {
         public disconnect(): void {}
         public observe(): void {}
@@ -67,15 +92,7 @@ export class FakePresentationElement {
         return 1;
       },
     };
-    const documentPort: {
-      baseURI: string;
-      defaultView: unknown;
-      scrollingElement: FakePresentationElement | null;
-    } = {
-      baseURI: "app://vault/",
-      defaultView: owningWindow,
-      scrollingElement: this,
-    };
+    documentPort.defaultView = owningWindow;
     this.ownerDocument = documentPort as unknown as Document;
   }
 
@@ -142,13 +159,14 @@ export class FakePresentationElement {
     child.isConnected = false;
   }
 
-  public cloneNode(): FakePresentationElement {
+  public cloneNode(deep = false): FakePresentationElement {
     const clone = new FakePresentationElement(this.ownerDocument, this.tagName);
     clone.alt = this.alt;
     clone.currentSrc = this.currentSrc;
     clone.src = this.src;
     for (const [name, value] of this.attributes) clone.attributes.set(name, value);
     for (const className of this.classNames) clone.classNames.add(className);
+    if (deep) for (const child of this.children) clone.append(child.cloneNode(true));
     return clone;
   }
 

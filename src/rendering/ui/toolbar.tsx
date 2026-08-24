@@ -8,8 +8,10 @@ import type {
   ToolbarState,
   ToolId,
 } from "./toolbar-types";
+import type { ShapeId } from "./flyout-types";
 import { nextToolbarIndex, resolveToolbarFocusRecovery } from "./toolbar-focus";
-import { STRAIGHT_HIGHLIGHTER_ICON_ID } from "./icon-ids";
+import { SHAPE_ICON_IDS, STRAIGHT_HIGHLIGHTER_ICON_ID } from "./icon-ids";
+import { ToolbarStyleIcon, type ToolbarStyleIconState } from "./style-icon";
 import { type ToolbarButtonPresence, useToolbarButtonPresence } from "./toolbar-presence";
 
 export { nextToolbarIndex, resolveToolbarFocusRecovery } from "./toolbar-focus";
@@ -30,7 +32,8 @@ const TOOL_BUTTONS: readonly ToolbarButtonDefinition[] = [
     icon: STRAIGHT_HIGHLIGHTER_ICON_ID,
     label: "Straight highlighter",
   },
-  { action: "shape", icon: "shapes", label: "Shape" },
+  { action: "shape", icon: SHAPE_ICON_IDS.line, label: "Active shape" },
+  { action: "shape-picker", icon: "shapes", label: "Choose shape" },
   { action: "style", icon: "palette", label: "Style" },
 ];
 
@@ -65,6 +68,7 @@ interface IconButtonProps {
   readonly registerButton?:
     ((action: ToolbarAction, element: HTMLButtonElement | null) => void) | undefined;
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
+  readonly styleIcon: ToolbarStyleIconState;
   readonly tabIndex: number;
 }
 
@@ -73,8 +77,10 @@ function IconButton(props: IconButtonProps) {
   const flyout = flyoutForAction(props.definition.action);
 
   useEffect(() => {
-    if (iconRef.current !== null) props.renderIcon(iconRef.current, props.definition.icon);
-  }, [props.definition.icon, props.renderIcon]);
+    if (props.definition.action !== "style" && iconRef.current !== null) {
+      props.renderIcon(iconRef.current, props.definition.icon);
+    }
+  }, [props.definition.action, props.definition.icon, props.renderIcon]);
 
   return (
     <button
@@ -99,7 +105,11 @@ function IconButton(props: IconButtonProps) {
       title={props.definition.label}
       type="button"
     >
-      <span aria-hidden="true" className="inkbook-toolbar-icon" ref={iconRef} />
+      {props.definition.action === "style" ? (
+        <ToolbarStyleIcon state={props.styleIcon} />
+      ) : (
+        <span aria-hidden="true" className="inkbook-toolbar-icon" ref={iconRef} />
+      )}
     </button>
   );
 }
@@ -130,9 +140,11 @@ function expandedState(action: ToolbarAction, state: ToolbarState): boolean | un
 function flyoutForAction(action: ToolbarAction): FlyoutId | null {
   return action === "background" ||
     action === "overflow" ||
-    action === "shape" ||
+    action === "shape-picker" ||
     action === "style"
-    ? action
+    ? action === "shape-picker"
+      ? "shape"
+      : action
     : null;
 }
 
@@ -157,6 +169,7 @@ interface ToolbarGroupProps {
   readonly registerButton?: IconButtonProps["registerButton"] | undefined;
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
   readonly state: ToolbarState;
+  readonly styleIcon: ToolbarStyleIconState;
 }
 
 function ToolbarGroup(props: ToolbarGroupProps) {
@@ -251,6 +264,7 @@ function ToolbarGroup(props: ToolbarGroupProps) {
               props.registerButton?.(action, element);
             }}
             renderIcon={props.renderIcon}
+            styleIcon={props.styleIcon}
             tabIndex={!disabled && presence !== "exiting" && index === safeIndex ? 0 : -1}
           />
         );
@@ -275,7 +289,9 @@ export interface InkbookToolbarProps {
   readonly onScroll?: UIEventHandler<HTMLDivElement> | undefined;
   readonly registerButton?: IconButtonProps["registerButton"] | undefined;
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
+  readonly selectedShape: ShapeId;
   readonly state: ToolbarState;
+  readonly styleIcon: ToolbarStyleIconState;
   readonly toolbarRef?: Ref<HTMLDivElement> | undefined;
 }
 
@@ -294,7 +310,7 @@ export function InkbookToolbar(props: InkbookToolbarProps) {
     <div aria-label="Inkbook tools" className="inkbook-toolbar-composition" role="toolbar">
       <div className={className} onScroll={props.onScroll} ref={props.toolbarRef}>
         <ToolbarGroup
-          buttons={[...LEFT_BUTTONS, ...TOOL_BUTTONS, ...RIGHT_BUTTONS]}
+          buttons={primaryButtonsForShape(props.selectedShape)}
           className="inkbook-toolbar-track"
           label="Tools and actions"
           onAction={props.onAction}
@@ -305,6 +321,7 @@ export function InkbookToolbar(props: InkbookToolbarProps) {
           }}
           renderIcon={props.renderIcon}
           state={props.state}
+          styleIcon={props.styleIcon}
         />
       </div>
       <ToolbarGroup
@@ -317,7 +334,26 @@ export function InkbookToolbar(props: InkbookToolbarProps) {
         registerButton={props.registerButton}
         renderIcon={props.renderIcon}
         state={props.state}
+        styleIcon={props.styleIcon}
       />
     </div>
   );
+}
+
+function primaryButtonsForShape(shape: ShapeId): readonly ToolbarButtonDefinition[] {
+  return [
+    ...LEFT_BUTTONS,
+    ...TOOL_BUTTONS.map((button) =>
+      button.action === "shape"
+        ? { ...button, icon: SHAPE_ICON_IDS[shape], label: `Shape: ${shapeLabel(shape)}` }
+        : button,
+    ),
+    ...RIGHT_BUTTONS,
+  ];
+}
+
+function shapeLabel(shape: ShapeId): string {
+  return shape === "coordinate-system"
+    ? "Coordinate system"
+    : shape.charAt(0).toUpperCase() + shape.slice(1);
 }

@@ -42,6 +42,10 @@ export function applyLockedFitLayout(options: LockedFitLayoutOptions): LockedFit
   return transition;
 }
 
+export function lockedPageAspectRatio(page: PageV1, maximumBottom: number | undefined): number {
+  return PAGE_WIDTH / derivePageExtent(page, maximumBottom ?? null).lockedHeight;
+}
+
 interface SceneLayoutAnchor {
   readonly anchorViewportY: number;
   readonly embedTopInScrollContent: number;

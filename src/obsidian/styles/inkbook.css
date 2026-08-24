@@ -8,7 +8,9 @@
   --inkbook-motion-standard: 180ms;
   --inkbook-motion-layout: 240ms;
   --inkbook-motion-easing: cubic-bezier(0.2, 0, 0, 1);
-  --inkbook-toolbar-reserved-block-size: 66px;
+  --inkbook-shell-radius: 10px;
+  --inkbook-toolbar-overlay-block-size: 62px;
+  --inkbook-toolbar-scrollport-padding: 0px;
   box-sizing: border-box;
   inline-size: 100%;
   max-inline-size: min(100%, var(--inkbook-owner-inline-limit, 100%));
@@ -20,9 +22,19 @@
 }
 
 .inkbook-root.inkbook-embed-root {
-  container-name: inkbook-embed;
-  container-type: inline-size;
+  /* Obsidian applies paint containment with !important to every block decoration. */
+  contain: none !important;
   display: block;
+  overflow: visible;
+}
+
+.inkbook-root.inkbook-embed-root[contenteditable="false"][data-inkbook-scheme][data-inkbook-state] {
+  contain: none !important;
+}
+
+.inkbook-root[data-inkbook-state="active"],
+.inkbook-root[data-inkbook-state="locking"] {
+  z-index: var(--layer-popover);
 }
 
 .inkbook-root[data-inkbook-motion="reduced"] {
@@ -37,8 +49,8 @@
   opacity: 1;
 }
 
-.inkbook-root.inkbook-active-preparing .inkbook-preview-handoff,
-.inkbook-root.inkbook-active-transitioning .inkbook-preview-handoff {
+.inkbook-root.inkbook-active-transitioning .inkbook-preview-handoff,
+.inkbook-root.inkbook-active-preparing .inkbook-preview-handoff {
   inset-block-start: 0;
   inset-inline: 0;
   position: absolute;
@@ -47,29 +59,32 @@
 
 .inkbook-root.inkbook-active-preparing .inkbook-editor-chrome {
   opacity: 0;
-  padding-block-start: 0;
   transition: none;
+}
+
+.inkbook-root.inkbook-active-preparing .inkbook-background-container {
+  block-size: var(--inkbook-locked-container-block-size) !important;
 }
 
 .inkbook-root.inkbook-active-transitioning .inkbook-background-container {
   transition: block-size var(--inkbook-motion-layout) var(--inkbook-motion-easing);
 }
 
-.inkbook-root.inkbook-active-transitioning .inkbook-editor-chrome,
-.inkbook-root.inkbook-active-transitioning .inkbook-preview-handoff {
-  transition:
-    opacity var(--inkbook-motion-fast) var(--inkbook-motion-easing)
-      calc(var(--inkbook-motion-layout) - var(--inkbook-motion-fast)),
-    padding-block-start var(--inkbook-motion-layout) var(--inkbook-motion-easing);
-}
-
-.inkbook-root.inkbook-active-transitioning .inkbook-editor-chrome {
-  opacity: 1;
-  padding-block-start: var(--inkbook-toolbar-reserved-block-size);
+.inkbook-root.inkbook-active-preparing .inkbook-background-container > .inkbook-scene,
+.inkbook-root.inkbook-active-transitioning .inkbook-background-container > .inkbook-scene {
+  block-size: calc(var(--inkbook-active-scene-block-size) - 2px);
+  inset-block-end: auto;
 }
 
 .inkbook-root.inkbook-active-transitioning .inkbook-preview-handoff {
   opacity: 0;
+  transition: opacity var(--inkbook-motion-fast) var(--inkbook-motion-easing)
+    calc(var(--inkbook-motion-layout) - var(--inkbook-motion-fast));
+}
+
+.inkbook-root.inkbook-active-transitioning .inkbook-editor-chrome {
+  opacity: 1;
+  transition: none;
 }
 
 .inkbook-root *,
@@ -88,7 +103,7 @@
   background: var(--inkbook-page-surface);
   block-size: auto;
   border: 1px solid var(--background-modifier-border);
-  border-radius: clamp(10px, 2cqi, 20px);
+  border-radius: var(--inkbook-shell-radius);
   color: inherit;
   cursor: pointer;
   display: block;
@@ -100,13 +115,61 @@
 
 .inkbook-root .inkbook-locked-preview-media {
   aspect-ratio: var(--inkbook-preview-aspect-ratio);
-  background-image: var(--inkbook-preview-image);
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: contain;
   display: block;
   inline-size: 100%;
   pointer-events: none;
+}
+
+.inkbook-root .inkbook-locked-preview-svg {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.inkbook-root[data-inkbook-scheme="light"] .inkbook-locked-preview-svg .inkbook-theme-page {
+  fill: #f6f6f6ff;
+}
+
+.inkbook-root[data-inkbook-scheme="light"] .inkbook-locked-preview-svg .inkbook-theme-guide {
+  stroke: #ababab40;
+  vector-effect: non-scaling-stroke;
+}
+
+.inkbook-root[data-inkbook-scheme="light"] .inkbook-locked-preview-svg .inkbook-theme-stroke {
+  stroke: #222222ff;
+}
+
+.inkbook-root[data-inkbook-scheme="light"] .inkbook-locked-preview-svg .inkbook-theme-fill {
+  fill: #222222ff;
+}
+
+.inkbook-root[data-inkbook-scheme="light"] .inkbook-locked-preview-svg .inkbook-theme-stroke-fill {
+  fill: #222222ff;
+  stroke: #222222ff;
+}
+
+.inkbook-root[data-inkbook-scheme="dark"] .inkbook-locked-preview-svg .inkbook-theme-page {
+  fill: #212121ff;
+}
+
+.inkbook-root[data-inkbook-scheme="dark"] .inkbook-locked-preview-svg .inkbook-theme-guide {
+  stroke: #66666640;
+  vector-effect: non-scaling-stroke;
+}
+
+.inkbook-root[data-inkbook-scheme="dark"] .inkbook-locked-preview-svg .inkbook-theme-stroke {
+  stroke: #dadadaff;
+}
+
+.inkbook-root[data-inkbook-scheme="dark"] .inkbook-locked-preview-svg .inkbook-theme-fill {
+  fill: #dadadaff;
+}
+
+.inkbook-root[data-inkbook-scheme="dark"] .inkbook-locked-preview-svg .inkbook-theme-stroke-fill {
+  fill: #dadadaff;
+  stroke: #dadadaff;
 }
 
 .inkbook-root .inkbook-locked-preview:focus-visible {
@@ -117,8 +180,8 @@
 .inkbook-root .inkbook-background-container {
   background: var(--inkbook-page-surface);
   border: 1px solid var(--background-modifier-border);
-  border-radius: clamp(10px, 2cqi, 20px);
-  clip-path: inset(0 round clamp(10px, 2cqi, 20px));
+  border-radius: var(--inkbook-shell-radius);
+  clip-path: inset(0 round var(--inkbook-shell-radius));
   contain: layout paint style;
   inline-size: 100%;
   overflow: clip;
@@ -129,22 +192,18 @@
   display: flow-root;
   inline-size: 100%;
   opacity: 1;
-  padding-block-start: var(--inkbook-toolbar-reserved-block-size);
   position: relative;
-}
-
-.inkbook-root[data-inkbook-state="locking"] .inkbook-editor-chrome {
-  padding-block-start: 0;
-  transition: padding-block-start var(--inkbook-motion-layout) var(--inkbook-motion-easing);
 }
 
 .inkbook-root .inkbook-editor-chrome-host {
   block-size: 0;
-  inset-block-start: 0;
-  inset-inline: 0;
+  inset-block-start: calc(
+    var(--inkbook-toolbar-overlay-block-size) - var(--inkbook-toolbar-scrollport-padding)
+  );
+  inline-size: 100%;
   overflow: visible;
   pointer-events: none;
-  position: absolute;
+  position: sticky;
   z-index: var(--layer-popover);
 }
 
@@ -240,6 +299,38 @@
 
 .inkbook-root .inkbook-recovery-action-icon,
 .inkbook-root .inkbook-recovery-action-icon svg {
+  block-size: 18px;
+  inline-size: 18px;
+}
+
+.inkbook-root .inkbook-notice-icon-button {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: none;
+  color: var(--text-muted);
+  display: inline-flex;
+  inline-size: 36px;
+  justify-content: center;
+  margin-inline-start: 8px;
+  min-block-size: 36px;
+  padding: 0;
+}
+
+.inkbook-root .inkbook-notice-icon-button:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.inkbook-root .inkbook-notice-icon-button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+.inkbook-root .inkbook-notice-action-icon,
+.inkbook-root .inkbook-notice-action-icon svg {
   block-size: 18px;
   inline-size: 18px;
 }

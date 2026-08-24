@@ -76,11 +76,7 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
       attr: { "aria-label": "Edit handwriting", type: "button" },
       cls: "inkbook-locked-preview",
     });
-    const preview = createInkbookLockedPreview(
-      button,
-      candidate.resolved.resourceUrl,
-      previewDescriptor,
-    );
+    const preview = createInkbookLockedPreview(button, previewDescriptor);
     super(root);
     this.#button = button;
     this.#nativeHost = candidate.host;
@@ -108,6 +104,7 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
       {
         element: preview.element,
         refresh: preview.refresh,
+        setAspectRatio: preview.setAspectRatio,
         setSource: preview.setSource,
       },
     );
