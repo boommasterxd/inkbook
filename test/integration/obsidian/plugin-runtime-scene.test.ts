@@ -53,7 +53,7 @@ interface TestPluginRegistration {
         getSectionInfo(): { readonly text: string } | null;
         readonly sourcePath: string;
       },
-    ) => void
+    ) => Promise<unknown> | void
   >;
   readonly settingTabs: Array<{
     setControlValue(key: string, value: unknown): Promise<void>;
@@ -163,6 +163,7 @@ function createPluginHarness() {
     },
     saveLocalStorage: vi.fn(),
     vault: {
+      cachedRead: async () => document.svg,
       getAbstractFileByPath: (path: string) => (path === file.path ? file : null),
       getFileByPath: (path: string) => (path === file.path ? file : null),
       getFolderByPath: () => null,
@@ -202,28 +203,36 @@ function createPluginHarness() {
   };
 }
 
-function mountReadingEmbed(plugin: InkbookPlugin): {
+async function mountReadingEmbed(plugin: InkbookPlugin): Promise<{
+  readonly button: FakePresentationElement;
   readonly child: MarkdownRenderChild;
   readonly image: FakePresentationElement;
+  readonly preview: FakePresentationElement;
   readonly root: FakePresentationElement;
-} {
+}> {
   const root = new FakePresentationElement();
+  const nativeHost = new FakePresentationElement(root.ownerDocument);
   const image = new FakePresentationElement(root.ownerDocument, "img");
   image.src = "app://vault/drawings/ink.svg";
-  root.append(image);
+  nativeHost.append(image);
+  root.append(nativeHost);
   let child: MarkdownRenderChild | undefined;
   const processor = (plugin as unknown as TestPluginRegistration).postProcessors[0];
   if (processor === undefined) throw new Error("Reading-view postprocessor was not registered.");
-  void processor(root as unknown as HTMLElement, {
+  await processor(nativeHost as unknown as HTMLElement, {
     addChild: (candidate: MarkdownRenderChild) => {
       child = candidate;
       candidate.load();
     },
-    getSectionInfo: () => ({ text: "![[drawings/ink.svg]]" }),
+    getSectionInfo: () => ({ text: "!inkbook[[drawings/ink.svg]]" }),
     sourcePath: "notes/page.md",
   });
   if (child === undefined) throw new Error("Reading-view child was not mounted.");
-  return { child, image, root };
+  const presentationRoot = inkbookRoot(root);
+  const button = presentationRoot.children[0];
+  const preview = button?.children[0];
+  if (button === undefined || preview === undefined) throw new Error("Missing locked preview.");
+  return { button, child, image, preview, root };
 }
 
 async function createReadyReadingEmbed() {
@@ -231,13 +240,13 @@ async function createReadyReadingEmbed() {
   scenes.records.length = 0;
   const harness = createPluginHarness();
   await harness.plugin.onload();
-  return { harness, presentation: mountReadingEmbed(harness.plugin) };
+  return { harness, presentation: await mountReadingEmbed(harness.plugin) };
 }
 
 async function activatePresentation(
-  presentation: ReturnType<typeof mountReadingEmbed>,
+  presentation: Awaited<ReturnType<typeof mountReadingEmbed>>,
 ): Promise<void> {
-  presentation.image.dispatch("click");
+  presentation.button.dispatch("click");
   await vi.waitFor(() => expect(scenes.records).toHaveLength(1));
   expect(inkbookRoot(presentation.root).dataset.inkbookState).toBe("active");
 }
@@ -336,7 +345,7 @@ describe("plugin workspace realm integration", () => {
     presentation.child.unload();
     expect(scene?.dispose).toHaveBeenCalledTimes(1);
     expect(presentation.root.classNames).not.toContain("inkbook-scrollbar-stable");
-    expect(presentation.image.listeners.get("click")?.size ?? 0).toBe(0);
+    expect(presentation.button.listeners.get("click")?.size ?? 0).toBe(0);
 
     harness.plugin.onunload();
   });
@@ -348,7 +357,7 @@ describe("plugin workspace realm integration", () => {
     harness.plugin.onunload();
 
     expect(presentation.root.classNames).not.toContain("inkbook-scrollbar-stable");
-    expect(presentation.image.listeners.get("click")?.size ?? 0).toBe(0);
+    expect(presentation.button.listeners.get("click")?.size ?? 0).toBe(0);
   });
 
   it("keeps the static preview and reports a retryable editor-chrome load failure", async () => {
@@ -365,9 +374,9 @@ describe("plugin workspace realm integration", () => {
     const noticeCount = notices.length;
     const harness = createPluginHarness();
     await harness.plugin.onload();
-    const presentation = mountReadingEmbed(harness.plugin);
+    const presentation = await mountReadingEmbed(harness.plugin);
 
-    presentation.image.dispatch("click");
+    presentation.button.dispatch("click");
     await vi.waitFor(() => expect(scenes.records).toHaveLength(1));
     rejectReadiness(new Error("blocked by script-src"));
     await vi.waitFor(() => {
@@ -375,7 +384,19 @@ describe("plugin workspace realm integration", () => {
     });
 
     expect(scenes.records[0]?.dispose).toHaveBeenCalledOnce();
-    expect(presentation.image.hidden).toBe(false);
+    expect(presentation.preview.hidden).toBe(false);
+    const recoveryPanel = presentation.root.getElementsByClassName("inkbook-recovery").item(0);
+    const pendingFeedback = presentation.root
+      .getElementsByClassName("inkbook-operation-feedback")
+      .item(0);
+    const recoveryButtons = recoveryPanel?.getElementsByTagName("button");
+    expect(recoveryPanel?.attributes.get("aria-label")).toBe("Load failed");
+    expect(pendingFeedback).toBeNull();
+    expect(recoveryButtons?.length).toBe(2);
+    expect(recoveryButtons?.item(0)?.attributes.get("aria-label")).toBe("Retry load");
+    expect(recoveryButtons?.item(0)?.children[0]?.attributes.get("data-icon")).toBe("rotate-ccw");
+    expect(recoveryButtons?.item(1)?.attributes.get("aria-label")).toBe("Discard load attempt");
+    expect(recoveryButtons?.item(1)?.children[0]?.attributes.get("data-icon")).toBe("x");
     expect(notices).toHaveLength(noticeCount + 1);
     expect(notices[notices.length - 1]?.message).toContain("select the embed to retry");
     presentation.child.unload();
@@ -436,7 +457,6 @@ describe("plugin workspace activation serialization", () => {
     releaseProcess();
     await draining;
     expect(settled).toBe(true);
-
     harness.plugin.onunload();
   });
 
@@ -445,12 +465,16 @@ describe("plugin workspace activation serialization", () => {
       await createDirtyPresentationWithBlockedSave();
 
     scene.options.onLock();
-    expect(inkbookRoot(presentation.root).dataset.inkbookState).toBe("locking");
-    presentation.image.dispatch("click");
+    const root = inkbookRoot(presentation.root);
+    expect(root.dataset.inkbookState).toBe("locking");
+    expect(
+      root.getElementsByClassName("inkbook-operation-feedback").item(0)?.dataset.inkbookOperation,
+    ).toBe("saving");
+    presentation.button.dispatch("click");
     await Promise.resolve();
-
     expect(scenes.records).toHaveLength(1);
-    expect(inkbookRoot(presentation.root).dataset.inkbookState).toBe("locking");
+    expect(root.dataset.inkbookState).toBe("locking");
+    expect(root.getElementsByClassName("inkbook-operation-feedback").item(0)).not.toBeNull();
     harness.plugin.onunload();
     releaseProcess();
   });

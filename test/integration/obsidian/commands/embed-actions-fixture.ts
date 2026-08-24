@@ -65,7 +65,7 @@ export function createHarness(options: HarnessOptions = {}) {
   const source = new FakeObsidianFile("notes/note.md");
   const target = new FakeObsidianFile("drawings/page.svg");
   const recovered = new FakeObsidianFile("drawings/recovered.svg");
-  let vaultText = options.documentText ?? "![[drawings/page.svg]]";
+  let vaultText = options.documentText ?? "!inkbook[[drawings/page.svg]]";
   source.stat.size = new TextEncoder().encode(vaultText).byteLength;
   const editor = new FakeEditor(vaultText);
   const writeText = vi.fn(async (_text: string) => undefined);

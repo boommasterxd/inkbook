@@ -1,6 +1,10 @@
 import type { App } from "obsidian";
 
-import type { BackgroundV1, InkSnapshotV1 } from "../../domain/schema/public";
+import {
+  CANONICAL_LOCKED_BUFFER_LINES,
+  type BackgroundV1,
+  type InkSnapshotV1,
+} from "../../domain/schema/public";
 import type { InkbookSettingsStore } from "../settings";
 import { serializeInkbookDocument } from "../../persistence/serialization/public";
 import {
@@ -39,7 +43,7 @@ function emptySnapshot(settings: InkbookSettingsStore): InkSnapshotV1 {
       activeBufferLines: page.activeBufferLines,
       background: snapshotBackground(settings),
       innerWidth: 2000,
-      lockedBufferLines: page.lockedBufferLines,
+      lockedBufferLines: CANONICAL_LOCKED_BUFFER_LINES,
       margin: 24.3,
       writingLineHeight: page.writingLineHeight,
     },

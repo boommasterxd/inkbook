@@ -1,4 +1,8 @@
-import type { InkSnapshotV1, ValidationError } from "../../domain/schema/public";
+import type {
+  InkSnapshotV1,
+  SnapshotValidationDerivations,
+  ValidationError,
+} from "../../domain/schema/public";
 
 export interface SerializedInkbookDocument<TOutput extends string | Uint8Array = string> {
   readonly hash: string;
@@ -10,8 +14,10 @@ export interface SerializedInkbookDocument<TOutput extends string | Uint8Array =
 }
 
 export interface ParsedInkbookDocument {
+  readonly derivations: SnapshotValidationDerivations;
   readonly hash: string;
   readonly lockedHeight: number;
+  readonly requiresCanonicalRewrite: boolean;
   readonly snapshot: InkSnapshotV1;
   readonly sourceVersion: number;
 }

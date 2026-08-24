@@ -23,12 +23,15 @@ export interface RecoveryCompletionOptions {
   readonly reportSavedPath?: (savedPath: string) => void;
 }
 
+export interface VaultDocumentPersistedEvent {
+  readonly documentId: string;
+  readonly lockedAspectRatio: number;
+  readonly outputHash: string;
+  readonly revision: number;
+}
+
 export interface VaultDocumentSessionHooks {
-  readonly persisted?: (event: {
-    readonly documentId: string;
-    readonly outputHash: string;
-    readonly revision: number;
-  }) => void;
+  readonly persisted?: (event: VaultDocumentPersistedEvent) => void;
 }
 
 export type SessionExternalChangeOutcome = ExternalChangeOutcome | "reloaded" | "reload-failed";

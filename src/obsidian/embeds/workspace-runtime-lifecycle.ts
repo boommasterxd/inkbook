@@ -4,6 +4,7 @@ import type { ExternalChangeOutcome } from "../../editor/session/session-port";
 import type { ActiveInkbookScene } from "./active-scene";
 import { isLiveOwnerWindow } from "./owner-window-registry";
 import { presentationAttachmentKey, type PresentationAttachment } from "./presentation-port";
+import type { VaultDocumentPersistedEvent } from "./vault-document-recovery";
 
 interface RuntimePresentation {
   readonly attachment: PresentationAttachment;
@@ -157,14 +158,15 @@ export class WorkspaceRuntimeLifecycle {
     else ownerWindow.setTimeout(run, 0);
   }
 
-  public handlePersisted(event: {
-    readonly documentId: string;
-    readonly outputHash: string;
-    readonly revision: number;
-  }): void {
+  public handlePersisted(event: VaultDocumentPersistedEvent): void {
     if (this.#options.isDisposed()) return;
     if (this.#pendingExternalChanges.has(event.documentId)) {
       this.#confirmedHostWrites.add(event.documentId);
+    }
+    for (const mounted of this.#options.presentations()) {
+      if (mounted.attachment.documentId === event.documentId) {
+        mounted.attachment.setPreviewAspectRatio?.(event.lockedAspectRatio);
+      }
     }
     const hint = this.#insertionUndoHints.get(event.documentId);
     if (hint?.strokeCommitted === true) {

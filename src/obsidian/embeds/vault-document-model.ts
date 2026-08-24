@@ -19,11 +19,12 @@ import type {
   StoreDelta,
   StoreSliceScheduler,
 } from "../../domain/store/public";
-import { changedElements } from "./vault-document-model-delta";
+import { changedElementDerivations, changedElements } from "./vault-document-model-delta";
 
 import type { EditableDocumentModel } from "./document-model-port";
 import { attachEditableDocumentState } from "./editable-document-state";
 import { SessionClipboardCoordinator } from "./session-clipboard";
+import type { VaultDocumentPersistedEvent } from "./vault-document-recovery";
 
 type EditableActions = Parameters<typeof attachEditableDocumentState>[0];
 type EditableState = Parameters<typeof attachEditableDocumentState>[1];
@@ -61,6 +62,9 @@ export function createVaultAutosaveSession(
     }),
     outputHash: options.outputHash,
     path: options.identity.documentId,
+    ...(options.requiresCanonicalRewrite === undefined
+      ? {}
+      : { requiresCanonicalRewrite: options.requiresCanonicalRewrite }),
     sessionId: options.identity.sessionId,
     snapshot: () =>
       options.store.materializeSnapshot({
@@ -99,17 +103,17 @@ export function createVaultClipboardCoordinator(options: {
 export function createConfirmedPersistenceObserver(options: {
   readonly active: () => boolean;
   readonly documentId: string;
-  readonly persisted:
-    | ((event: {
-        readonly documentId: string;
-        readonly outputHash: string;
-        readonly revision: number;
-      }) => void)
-    | undefined;
+  readonly lockedAspectRatio: () => number;
+  readonly persisted: ((event: VaultDocumentPersistedEvent) => void) | undefined;
 }): (persistence: ConfirmedPersistence) => void {
   return ({ outputHash, revision }) => {
     if (!options.active()) return;
-    options.persisted?.({ documentId: options.documentId, outputHash, revision });
+    options.persisted?.({
+      documentId: options.documentId,
+      lockedAspectRatio: options.lockedAspectRatio(),
+      outputHash,
+      revision,
+    });
   };
 }
 
@@ -152,6 +156,7 @@ export function recordVaultStoreDelta(options: {
 }): void {
   if (options.autosave === undefined) return;
   options.autosave.recordCommit({
+    changedElementDerivations: changedElementDerivations(options.delta),
     changedElements: options.changedElements,
     dirtyBands: (Object.keys(options.delta.dirtyBands) as Array<"content" | "highlight">).filter(
       (band) => options.delta.dirtyBands[band],

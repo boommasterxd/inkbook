@@ -1,24 +1,20 @@
-export type ToolbarLayoutStage = "wide" | "merged" | "scrollable";
+export type ToolbarLayoutStage = "wide" | "scrollable";
 
-export const LEFT_HANDED_TOOL_TRANSLATION_PX = -22;
+export const TOOLBAR_CONTEXT_CORRIDOR_PX = 136;
+const TOOLBAR_CONTEXT_EDGE_ALLOWANCE_PX = 16;
 
 export interface ToolbarMeasurements {
   readonly availableWidth: number;
-  readonly centerWidth: number;
-  readonly centerTranslation?: number;
-  readonly leftWidth: number;
-  readonly mergedWidth: number;
-  readonly rightWidth: number;
+  readonly contentWidth: number;
+  readonly contextWidth?: number;
 }
 
 export function resolveToolbarLayout(measurements: ToolbarMeasurements): ToolbarLayoutStage {
-  const centerTranslation = measurements.centerTranslation ?? 0;
-  const leftRequirement =
-    measurements.centerWidth + 2 * measurements.leftWidth + 32 - 2 * centerTranslation;
-  const rightRequirement =
-    measurements.centerWidth + 2 * measurements.rightWidth + 32 + 2 * centerTranslation;
-  if (Math.max(leftRequirement, rightRequirement) <= measurements.availableWidth) {
-    return "wide";
-  }
-  return measurements.mergedWidth <= measurements.availableWidth ? "merged" : "scrollable";
+  const contextCorridor = Math.max(
+    TOOLBAR_CONTEXT_CORRIDOR_PX,
+    2 * (Math.max(0, measurements.contextWidth ?? 0) + TOOLBAR_CONTEXT_EDGE_ALLOWANCE_PX),
+  );
+  return measurements.contentWidth + contextCorridor <= measurements.availableWidth
+    ? "wide"
+    : "scrollable";
 }

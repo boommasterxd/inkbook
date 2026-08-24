@@ -1,7 +1,7 @@
 import type { InputPoint, InputState, PointerSample } from "../../../editor/input/index";
 import { reduceInput } from "../../../editor/input/index";
 import {
-  accumulateWheelDelta,
+  accumulateWheelSteps,
   accumulateZoomInput,
   applyAnchoredZoom,
   calculateFitZoom,
@@ -9,6 +9,7 @@ import {
   clampCameraX,
   consumeWheelFrame,
   consumeZoomFrame,
+  continuousWheelZoomFactor,
   createWheelZoomState,
   createZoomFrameState,
   keyboardZoomFactor,
@@ -19,7 +20,6 @@ import {
   type ZoomAnchor,
   type ZoomFrameState,
 } from "../../../editor/zoom/index";
-import type { SvgSceneRenderer } from "../../../rendering/scene/index";
 import { browserScrollMetrics, type BrowserScrollElement } from "../../scrolling/index";
 import { normalizePointerType } from "./controller-helpers";
 import { measureElementBox } from "./element-content-box";
@@ -34,8 +34,16 @@ import {
   readOwnerScrollBounds,
 } from "./navigation-layout";
 import type { ActiveEditorResizeAnchor, ActiveEditorResizeUpdate } from "./layout-resize";
+import type {
+  ActiveEditorCameraUpdate,
+  ActiveEditorNavigationOptions,
+  ActiveEditorViewState,
+  ActiveEditorWheelInput,
+  ActiveEditorZoomLayoutUpdate,
+} from "./navigation-types";
 import {
   horizontalWheelDelta,
+  isContinuousZoomWheel,
   isZoomWheel,
   positiveOr,
   projectedScrollBounds,
@@ -43,42 +51,13 @@ import {
   wheelDeltaMode,
 } from "./navigation-helpers";
 
-export interface ActiveEditorZoomLayoutUpdate {
-  readonly blockSize: number;
-  readonly zoom: number;
-}
-
-export interface ActiveEditorCameraUpdate {
-  readonly x: number;
-  readonly zoom: number;
-}
-
-export interface ActiveEditorNavigationOptions {
-  readonly activePageHeight: () => number;
-  readonly applyCamera?: (camera: ActiveEditorCameraUpdate) => void;
-  readonly applyZoomLayout: (update: ActiveEditorZoomLayoutUpdate) => void;
-  readonly container: HTMLElement;
-  readonly renderer: SvgSceneRenderer;
-  readonly scrollOwner: BrowserScrollElement;
-  readonly getInput: () => InputState;
-  readonly setInput: (input: InputState) => void;
-}
-
-export interface ActiveEditorViewState {
-  readonly cameraX: number;
-  readonly zoom: number;
-}
-
-export interface ActiveEditorWheelInput {
-  readonly clientX: number;
-  readonly clientY: number;
-  readonly ctrlKey?: boolean;
-  readonly deltaMode: number;
-  readonly deltaX?: number;
-  readonly deltaY: number;
-  readonly metaKey?: boolean;
-  readonly shiftKey?: boolean;
-}
+export type {
+  ActiveEditorCameraUpdate,
+  ActiveEditorNavigationOptions,
+  ActiveEditorViewState,
+  ActiveEditorWheelInput,
+  ActiveEditorZoomLayoutUpdate,
+} from "./navigation-types";
 
 export class ActiveEditorNavigation {
   readonly #activePageHeight: () => number;
@@ -355,12 +334,14 @@ export class ActiveEditorNavigation {
       if (layout === undefined) return false;
       this.#pendingLayout = layout;
       this.#latestAnchor = wheelAnchor(layout, event);
-      this.#wheelState = accumulateWheelDelta(
-        this.#wheelState,
-        event.deltaY,
-        wheelDeltaMode(event.deltaMode),
-        normalization,
-      );
+      if (isContinuousZoomWheel(event)) {
+        this.#frameState = accumulateZoomInput(this.#frameState, {
+          anchor: this.#latestAnchor,
+          factor: continuousWheelZoomFactor(event.deltaY, normalization),
+        });
+      } else {
+        this.#wheelState = accumulateWheelSteps(this.#wheelState, -Math.sign(event.deltaY));
+      }
       this.#scheduleFrame();
       return true;
     }

@@ -36,6 +36,7 @@ export {
   isRgbaColor,
 } from "./canonical";
 export {
+  CANONICAL_LOCKED_BUFFER_LINES,
   CLIPBOARD_SCHEMA_LIMITS,
   FILE_SCHEMA_LIMITS,
   MAX_ABSOLUTE_COORDINATE,
@@ -47,6 +48,15 @@ export {
   PORTABLE_PALETTE_V1,
 } from "./constants";
 export { validateInkElementV1 } from "./element-validation";
+export { validatedElementDerivationBounds } from "./derivation-validation";
 export { isColorV1 } from "./style-validation";
-export { validateInkSnapshotV1 } from "./snapshot-validation";
-export type { ValidationError } from "./validation-types";
+export {
+  validateInkConnectionRelationsV1,
+  validateInkPageV1,
+  validateInkSnapshotV1,
+} from "./snapshot-validation";
+export type {
+  ElementValidationDerivation,
+  SnapshotValidationDerivations,
+  ValidationError,
+} from "./validation-types";

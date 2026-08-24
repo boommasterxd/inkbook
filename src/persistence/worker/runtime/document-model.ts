@@ -1,4 +1,4 @@
-import type { InkSnapshotV1 } from "../../../domain/schema/public";
+import type { InkSnapshotV1, SnapshotValidationDerivations } from "../../../domain/schema/public";
 import { encodeRuntimeSelection, resolveClipboardPayload } from "../../clipboard/codec";
 import { planPaste, resolvePasteTarget } from "../../clipboard/operations";
 import type {
@@ -32,7 +32,9 @@ export type ModelExportResult =
     };
 
 export interface ModelUnlockResult {
+  readonly lockedHeight: number;
   readonly outputHash: string;
+  readonly requiresCanonicalRewrite: boolean;
   readonly snapshot: InkSnapshotV1;
   readonly sourceVersion: number;
 }
@@ -52,13 +54,50 @@ type IncrementalModelRequest =
 const MAX_PREWARM_BYTES = 64 * 1024 * 1024;
 const MAX_PREWARM_ELEMENTS = 20_000;
 
+interface UnlockPhaseDurations {
+  readonly batchAdoptionMs: number;
+  readonly inputValidationMs: number;
+  readonly modelAdoptionMs: number;
+  readonly parserFinalizeMs: number;
+  readonly runtimeCopyMs: number;
+  readonly totalMs: number;
+}
+
+interface ExportPhaseDurations {
+  readonly modelUpdateMs: number;
+  readonly serializationMs: number;
+  readonly totalMs: number;
+}
+
+const ZERO_UNLOCK_PHASES: UnlockPhaseDurations = Object.freeze({
+  batchAdoptionMs: 0,
+  inputValidationMs: 0,
+  modelAdoptionMs: 0,
+  parserFinalizeMs: 0,
+  runtimeCopyMs: 0,
+  totalMs: 0,
+});
+
+const ZERO_EXPORT_PHASES: ExportPhaseDurations = Object.freeze({
+  modelUpdateMs: 0,
+  serializationMs: 0,
+  totalMs: 0,
+});
+
 export class DocumentModelRuntime {
   readonly #serializer = new IncrementalDocumentSerializer();
+  readonly #now: () => number;
+  #lastExportPhases = ZERO_EXPORT_PHASES;
+  #lastUnlockPhases = ZERO_UNLOCK_PHASES;
   #prewarmedBytes = 0;
   #prewarmedElementCount = 0;
   #prewarmVisitedElementCount = 0;
   #prewarmCursor = 0;
   #snapshot: InkSnapshotV1 | null = null;
+
+  public constructor(now: () => number = () => performance.now()) {
+    this.#now = now;
+  }
 
   public get modelRevision(): number | null {
     return this.#snapshot?.revision ?? null;
@@ -67,6 +106,8 @@ export class DocumentModelRuntime {
   public get instrumentation() {
     return {
       ...this.#serializer.instrumentation,
+      lastExportPhases: this.#lastExportPhases,
+      lastUnlockPhases: this.#lastUnlockPhases,
       prewarmedBytes: this.#prewarmedBytes,
       prewarmedElements: this.#prewarmedElementCount,
       prewarmVisitedElements: this.#prewarmVisitedElementCount,
@@ -77,19 +118,49 @@ export class DocumentModelRuntime {
   public async unlock(
     input: string | Uint8Array,
     sliceContext?: RuntimeSliceContext,
-    onValidatedSnapshot?: (snapshot: InkSnapshotV1) => Promise<void> | void,
+    onValidatedSnapshot?: (
+      snapshot: InkSnapshotV1,
+      derivations: SnapshotValidationDerivations,
+    ) => Promise<void> | void,
   ): Promise<ModelUnlockResult> {
+    const started = this.#now();
+    let callbackFinished = started;
+    let batchAdoptionMs = 0;
+    let inputValidationMs = 0;
+    let runtimeCopyMs = 0;
     let stagedRuntimeSnapshot: RuntimeInkSnapshot | null = null;
-    const parsed = await parseRuntimeInput(input, sliceContext, async (snapshot) => {
+    let stagedDerivations: SnapshotValidationDerivations | null = null;
+    const parsed = await parseRuntimeInput(input, sliceContext, async (snapshot, derivations) => {
+      const validationFinished = this.#now();
+      inputValidationMs = validationFinished - started;
       stagedRuntimeSnapshot = copySnapshotToRuntime(snapshot);
-      await onValidatedSnapshot?.(stagedRuntimeSnapshot);
+      const copyFinished = this.#now();
+      runtimeCopyMs = copyFinished - validationFinished;
+      stagedDerivations = derivations;
+      await onValidatedSnapshot?.(stagedRuntimeSnapshot, derivations);
+      callbackFinished = this.#now();
+      batchAdoptionMs = callbackFinished - copyFinished;
     });
     if (!parsed.ok) throw new RuntimeModelError(parsed.error.code, false);
-    this.#reset(stagedRuntimeSnapshot ?? parsed.value.snapshot);
+    const parserFinished = this.#now();
+    const runtimeSnapshot = stagedRuntimeSnapshot ?? copySnapshotToRuntime(parsed.value.snapshot);
+    const modelAdoptionStarted = this.#now();
+    this.#resetValidated(runtimeSnapshot, stagedDerivations ?? parsed.value.derivations);
+    const finished = this.#now();
+    this.#lastUnlockPhases = Object.freeze({
+      batchAdoptionMs,
+      inputValidationMs,
+      modelAdoptionMs: finished - modelAdoptionStarted,
+      parserFinalizeMs: parserFinished - callbackFinished,
+      runtimeCopyMs,
+      totalMs: finished - started,
+    });
     const snapshot = this.#snapshot;
     if (snapshot === null) throw new RuntimeModelError("snapshot-invalid", false);
     return {
+      lockedHeight: parsed.value.lockedHeight,
       outputHash: parsed.value.hash,
+      requiresCanonicalRewrite: parsed.value.requiresCanonicalRewrite,
       snapshot,
       sourceVersion: parsed.value.sourceVersion,
     };
@@ -116,19 +187,29 @@ export class DocumentModelRuntime {
     this.#prewarmVisitedElementCount = 0;
     this.#prewarmCursor = 0;
     this.#snapshot = null;
+    this.#lastExportPhases = ZERO_EXPORT_PHASES;
+    this.#lastUnlockPhases = ZERO_UNLOCK_PHASES;
   }
 
   public async export(
     request: DocumentExportRequest,
     sliceContext?: RuntimeSliceContext,
   ): Promise<ModelExportResult> {
+    const started = this.#now();
     try {
       const update =
         request.type === "export-full"
           ? this.#resetForExport(request.snapshot, request.modelRevision)
           : this.#applyIncremental(request);
+      const modelUpdated = this.#now();
       if (!update.ok) return failure(update.error.code, true);
       const serialized = await this.#serializeRuntimeChunked(sliceContext);
+      const finished = this.#now();
+      this.#lastExportPhases = Object.freeze({
+        modelUpdateMs: modelUpdated - started,
+        serializationMs: finished - modelUpdated,
+        totalMs: finished - started,
+      });
       if (!serialized.ok) return failure(serialized.error.code, true);
       this.#snapshot = serialized.value.snapshot;
       this.#resetPrewarmState();
@@ -289,7 +370,14 @@ export class DocumentModelRuntime {
   }
 
   #reset(snapshot: InkSnapshotV1): void {
-    const result = this.#serializer.resetRuntime(this.#runtimeSnapshot(snapshot));
+    this.#adoptResetResult(this.#serializer.resetRuntime(this.#runtimeSnapshot(snapshot)));
+  }
+
+  #resetValidated(snapshot: InkSnapshotV1, derivations: SnapshotValidationDerivations): void {
+    this.#adoptResetResult(this.#serializer.resetValidatedRuntime(snapshot, derivations));
+  }
+
+  #adoptResetResult(result: ReturnType<IncrementalDocumentSerializer["resetRuntime"]>): void {
     if (!result.ok) throw new RuntimeModelError(result.error.code, false);
     this.#snapshot = this.#serializer.currentSnapshot();
     if (this.#snapshot === null) throw new RuntimeModelError("snapshot-invalid", false);
@@ -343,7 +431,10 @@ function failure(code: string, retryable: boolean): ModelExportResult {
 async function parseRuntimeInput(
   input: string | Uint8Array,
   context?: RuntimeSliceContext,
-  onValidatedSnapshot?: (snapshot: InkSnapshotV1) => Promise<void> | void,
+  onValidatedSnapshot?: (
+    snapshot: InkSnapshotV1,
+    derivations: SnapshotValidationDerivations,
+  ) => Promise<void> | void,
 ) {
   const parser = new ChunkedInkbookInputParser({
     ...(context === undefined ? {} : { checkpoint: context.checkpoint, signal: context.signal }),

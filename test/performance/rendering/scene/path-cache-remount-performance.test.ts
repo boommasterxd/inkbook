@@ -75,6 +75,7 @@ it("counts exact paint writes and reuses background geometry across repaint work
     scheduler,
     store,
   });
+  renderer.setPage(linedPage, 100);
   scheduler.runAll();
 
   if (initial.element.kind !== "rectangle") throw new Error("Expected a rectangle fixture.");

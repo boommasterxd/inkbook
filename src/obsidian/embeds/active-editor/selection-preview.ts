@@ -133,7 +133,7 @@ export class MovePreview implements GesturePreview {
     if (this.#current.x !== 0 || this.#current.y !== 0) {
       committed = this.#options.preparedHistory.commitMove(this.#elements, this.#current);
       if (!committed) {
-        const plan = this.#options.store.planPageBoundedReplacements(
+        const plan = this.#options.store.planReplacements(
           moveSelection(this.#elements, this.#current),
         );
         if (plan !== null) {

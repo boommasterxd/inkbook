@@ -2,7 +2,7 @@ import { StateField } from "@codemirror/state";
 
 export interface TestEditorInfo {
   readonly editor?: Editor;
-  readonly file: TFile | null;
+  readonly file: { readonly path: string } | null;
 }
 
 let editorInfo: TestEditorInfo = { file: null };
@@ -20,7 +20,7 @@ export const Platform = {
 };
 
 export function configureTestEditorState(options: {
-  readonly file?: TFile | null;
+  readonly file?: { readonly path: string } | null;
   readonly livePreview?: boolean;
 }): void {
   if (options.file !== undefined) {
@@ -371,6 +371,20 @@ export class Notice {
   }
 }
 
+export const testIconRegistry = new Map<string, string>();
+
+export function addIcon(iconId: string, svgContent: string): void {
+  testIconRegistry.set(iconId, svgContent);
+}
+
+export function removeIcon(iconId: string): void {
+  testIconRegistry.delete(iconId);
+}
+
+export function setIcon(element: HTMLElement, icon: string): void {
+  element.setAttribute("data-icon", icon);
+}
+
 class TestNoticeElement {
   readonly attributes = new Map<string, string>();
   readonly children: TestNoticeElement[] = [];
@@ -378,22 +392,27 @@ class TestNoticeElement {
   readonly listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
   readonly ownerDocument = { defaultView: null };
   removed = false;
+  readonly tagName: string;
   textContent = "";
 
-  createEl(_tag: string, options?: { readonly text?: string }): TestNoticeElement {
-    return this.createChild(options);
+  constructor(tagName = "div") {
+    this.tagName = tagName;
+  }
+
+  createEl(tag: string, options?: { readonly text?: string }): TestNoticeElement {
+    return this.createChild(tag, options);
   }
 
   createDiv(): TestNoticeElement {
-    return this.createChild();
+    return this.createChild("div");
   }
 
   createSpan(options?: { readonly text?: string }): TestNoticeElement {
-    return this.createChild(options);
+    return this.createChild("span", options);
   }
 
-  private createChild(options?: { readonly text?: string }): TestNoticeElement {
-    const child = new TestNoticeElement();
+  private createChild(tagName: string, options?: { readonly text?: string }): TestNoticeElement {
+    const child = new TestNoticeElement(tagName);
     child.textContent = options?.text ?? "";
     this.children.push(child);
     return child;
@@ -424,7 +443,17 @@ class TestNoticeElement {
     readonly length: number;
     item(index: number): TestNoticeElement | null;
   } {
-    const matches = tag === "button" ? this.children : [];
+    const matches = this.children.flatMap((child) => [
+      ...(child.tagName === tag ? [child] : []),
+      ...child.collectByTagName(tag),
+    ]);
     return { length: matches.length, item: (index) => matches[index] ?? null };
+  }
+
+  private collectByTagName(tag: string): TestNoticeElement[] {
+    return this.children.flatMap((child) => [
+      ...(child.tagName === tag ? [child] : []),
+      ...child.collectByTagName(tag),
+    ]);
   }
 }

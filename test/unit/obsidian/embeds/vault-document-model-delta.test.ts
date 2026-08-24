@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ElementStore } from "../../../../src/domain/store/public";
 import {
+  changedElementDerivations,
   changedElements,
   removedElementIds,
 } from "../../../../src/obsidian/embeds/vault-document-model-delta";
@@ -56,5 +57,11 @@ describe("vault document model deltas", () => {
 
     expect(changedElements(arranged)).toEqual([]);
     expect(changedElements(replaced)).toEqual([painted]);
+    expect(changedElementDerivations(replaced)).toEqual([
+      expect.objectContaining({
+        bounds: replaced.changes[0]!.after!.bounds,
+        elementId: painted.id,
+      }),
+    ]);
   });
 });

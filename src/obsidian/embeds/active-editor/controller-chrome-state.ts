@@ -8,7 +8,7 @@ import type { EditorTool } from "../../../editor/input/index";
 
 export class ActiveEditorChromeState {
   readonly #onStateChanged: () => void;
-  #layout: ToolbarLayoutStage = "scrollable";
+  #layout: ToolbarLayoutStage = "wide";
   #openFlyout: ToolbarState["openFlyout"] = null;
   #selectedShape: ShapeId = "line";
 
@@ -28,11 +28,8 @@ export class ActiveEditorChromeState {
     return this.#selectedShape;
   }
 
-  public activateTool(tool: ToolId, activeTool: EditorTool): EditorTool | undefined {
-    if (tool !== "shape") return tool;
-    if (activeTool !== this.#selectedShape) return this.#selectedShape;
-    this.toggleFlyout("shape");
-    return undefined;
+  public activateTool(tool: ToolId): EditorTool {
+    return tool === "shape" ? this.#selectedShape : tool;
   }
 
   public closeFlyout(): boolean {
@@ -42,7 +39,9 @@ export class ActiveEditorChromeState {
   }
 
   public selectShape(shape: ShapeId): ShapeId {
+    if (this.#selectedShape === shape) return shape;
     this.#selectedShape = shape;
+    this.#onStateChanged();
     return shape;
   }
 

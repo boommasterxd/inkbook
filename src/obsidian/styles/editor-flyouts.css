@@ -1,0 +1,348 @@
+.inkbook-root.inkbook-portal-root {
+  inset: 0;
+  pointer-events: none;
+  position: fixed;
+  z-index: var(--layer-menu);
+}
+
+.inkbook-root .inkbook-flyout,
+.inkbook-root .inkbook-overflow-background-region > .inkbook-overflow-submenu {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: calc(var(--radius-l) + 2px);
+  box-shadow: var(--shadow-l);
+}
+
+.inkbook-root .inkbook-flyout {
+  color: var(--text-normal);
+  inline-size: min(320px, calc(100vi - 16px));
+  max-block-size: calc(100vb - 16px);
+  max-inline-size: calc(100vi - 16px);
+  overflow: auto;
+  padding: 10px;
+  pointer-events: auto;
+  position: fixed;
+  transform-origin: top center;
+  z-index: var(--layer-menu);
+}
+
+.inkbook-root .inkbook-flyout[role="menu"] {
+  inline-size: min(260px, calc(100vi - 16px));
+  overflow: visible;
+  padding: 6px;
+}
+
+.inkbook-root .inkbook-overflow-menu,
+.inkbook-root .inkbook-overflow-submenu {
+  display: grid;
+  gap: 2px;
+}
+
+.inkbook-root .inkbook-overflow-background-region {
+  display: grid;
+  gap: 4px;
+  position: relative;
+}
+
+.inkbook-root .inkbook-overflow-background-region > div.inkbook-overflow-submenu {
+  inline-size: 226px;
+  inset-block-start: -4px;
+  inset-inline-end: calc(100% + 8px);
+  padding: 6px;
+  position: absolute;
+  z-index: 1;
+}
+
+.inkbook-root .inkbook-overflow-menu-item,
+.inkbook-root .inkbook-overflow-menu-label {
+  align-items: center;
+  border-radius: var(--radius-s);
+  color: var(--text-normal);
+  display: grid;
+  font-size: var(--font-ui-small);
+  gap: 10px;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  inline-size: 100%;
+  min-block-size: 40px;
+  padding: 7px 9px;
+  text-align: start;
+}
+
+.inkbook-root .inkbook-overflow-menu-item {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  margin: 0;
+}
+
+.inkbook-root .inkbook-overflow-menu-item:hover,
+.inkbook-root .inkbook-overflow-menu-item:focus-visible {
+  background: var(--background-modifier-hover);
+  outline: none;
+}
+
+.inkbook-root .inkbook-overflow-menu-item[aria-checked="true"] {
+  background: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+  color: var(--interactive-accent);
+}
+
+.inkbook-root .inkbook-overflow-menu-item:disabled {
+  color: var(--text-faint);
+  opacity: 0.72;
+}
+
+.inkbook-root .inkbook-overflow-menu-item[data-destructive="true"] {
+  color: var(--text-error);
+}
+
+.inkbook-root .inkbook-overflow-menu-item[data-destructive="true"]:hover,
+.inkbook-root .inkbook-overflow-menu-item[data-destructive="true"]:focus-visible {
+  background: color-mix(in srgb, var(--text-error) 12%, transparent);
+}
+
+.inkbook-root .inkbook-overflow-menu-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-medium);
+  min-block-size: 32px;
+}
+
+.inkbook-root .inkbook-overflow-menu-icon,
+.inkbook-root .inkbook-overflow-menu-icon svg {
+  block-size: 18px;
+  inline-size: 18px;
+}
+
+.inkbook-root .inkbook-overflow-submenu-chevron {
+  grid-column: 3;
+}
+
+.inkbook-root .inkbook-overflow-menu-separator {
+  background: var(--background-modifier-border);
+  block-size: 1px;
+  margin: 4px 6px;
+}
+
+.inkbook-root .inkbook-flyout[data-state="open"] {
+  animation: inkbook-flyout-enter var(--inkbook-motion-standard) var(--inkbook-motion-easing);
+}
+
+.inkbook-root .inkbook-flyout[data-state="closing"] {
+  animation: inkbook-flyout-exit var(--inkbook-motion-standard) var(--inkbook-motion-easing);
+}
+
+.inkbook-root .inkbook-flyout-title {
+  border-block-end: 1px solid var(--background-modifier-border);
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+  margin-block-end: 10px;
+  padding: 2px 4px 10px;
+}
+
+.inkbook-root .inkbook-flyout-fieldset {
+  border: 0;
+  margin: 0;
+  min-inline-size: 0;
+  padding: 0;
+}
+
+.inkbook-root .inkbook-flyout-fieldset + .inkbook-flyout-fieldset {
+  margin-block-start: 12px;
+}
+
+.inkbook-root .inkbook-flyout-fieldset legend {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-medium);
+  margin-block-end: 6px;
+  padding: 0 2px;
+}
+
+.inkbook-root .inkbook-choice-grid {
+  display: grid;
+  gap: 5px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.inkbook-root .inkbook-choice-grid button {
+  align-items: center;
+  background: var(--background-secondary);
+  border: 1px solid transparent;
+  border-radius: var(--radius-s);
+  color: var(--text-normal);
+  display: inline-flex;
+  font-size: var(--font-ui-small);
+  gap: 7px;
+  justify-content: center;
+  min-block-size: 44px;
+  min-inline-size: 0;
+  padding: 6px 9px;
+}
+
+.inkbook-root .inkbook-choice-grid button:hover {
+  background: var(--background-modifier-hover);
+}
+
+.inkbook-root .inkbook-choice-grid button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-secondary));
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+}
+
+.inkbook-root .inkbook-choice-grid button:focus-visible,
+.inkbook-root .inkbook-style-controls input:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.inkbook-root .inkbook-style-controls {
+  display: grid;
+  gap: 8px;
+}
+
+.inkbook-root .inkbook-style-field {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  padding: 9px;
+}
+
+.inkbook-root .inkbook-style-field .inkbook-choice-grid button {
+  background: var(--background-primary);
+}
+
+.inkbook-root .inkbook-style-field .inkbook-choice-grid button:hover {
+  background: var(--background-modifier-hover);
+}
+
+.inkbook-root .inkbook-style-field .inkbook-choice-grid button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-primary));
+}
+
+.inkbook-root .inkbook-style-field[data-control$="color"] .inkbook-choice-grid {
+  grid-template-columns: repeat(5, 44px);
+  justify-content: space-between;
+}
+
+.inkbook-root .inkbook-style-field[data-control$="color"] .inkbook-choice-grid button {
+  inline-size: 44px;
+  padding: 0;
+}
+
+.inkbook-root .inkbook-style-field[data-control$="color"] .inkbook-choice-label {
+  block-size: 1px;
+  clip-path: inset(50%);
+  inline-size: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+}
+
+.inkbook-root .inkbook-choice-preview {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.inkbook-root .inkbook-color-preview {
+  background: var(--inkbook-option-color);
+  border: 1px solid var(--background-modifier-border-hover);
+  border-radius: 999px;
+  block-size: 22px;
+  box-shadow: inset 0 0 0 2px var(--background-primary);
+  inline-size: 22px;
+}
+
+.inkbook-root .inkbook-color-preview[data-empty="true"] {
+  background:
+    linear-gradient(135deg, transparent 46%, var(--text-error) 47% 53%, transparent 54%),
+    var(--background-primary);
+}
+
+.inkbook-root .inkbook-line-preview {
+  border-block-start-color: var(--text-normal);
+  border-block-start-style: var(--inkbook-option-line-style, solid);
+  border-block-start-width: var(--inkbook-option-line-width, 2px);
+  inline-size: 28px;
+}
+
+.inkbook-root .inkbook-style-field[data-control$="width"] .inkbook-choice-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.inkbook-root .inkbook-style-field[data-control="outline-style"] .inkbook-choice-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.inkbook-root .inkbook-style-toggle,
+.inkbook-root .inkbook-style-number {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-block-size: 44px;
+}
+
+.inkbook-root .inkbook-style-toggle input {
+  appearance: none;
+  background: var(--background-modifier-border-hover);
+  border: 0;
+  border-radius: 999px;
+  block-size: 24px;
+  cursor: pointer;
+  flex: 0 0 42px;
+  inline-size: 42px;
+  margin: 0;
+  padding: 3px;
+  transition: background-color var(--inkbook-motion-fast) var(--inkbook-motion-easing);
+}
+
+.inkbook-root .inkbook-style-toggle input::before {
+  background: var(--background-primary);
+  border-radius: 999px;
+  box-shadow: var(--shadow-s);
+  content: "";
+  display: block;
+  block-size: 18px;
+  inline-size: 18px;
+  transition: translate var(--inkbook-motion-fast) var(--inkbook-motion-easing);
+}
+
+.inkbook-root .inkbook-style-toggle input:checked {
+  background: var(--interactive-accent);
+}
+
+.inkbook-root .inkbook-style-toggle input:checked::before {
+  translate: 18px 0;
+}
+
+.inkbook-root .inkbook-style-number input {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  block-size: 36px;
+  color: var(--text-normal);
+  inline-size: 88px;
+  padding-inline: 10px;
+  text-align: end;
+}
+
+.inkbook-root .inkbook-flyout-empty {
+  color: var(--text-muted);
+  margin: 0;
+  padding: 4px;
+}
+
+@media (max-width: 420px) {
+  .inkbook-root .inkbook-flyout {
+    inline-size: min(296px, calc(100vi - 16px));
+  }
+
+  .inkbook-root .inkbook-style-field[data-control$="color"] .inkbook-choice-grid {
+    grid-template-columns: repeat(5, 40px);
+  }
+
+  .inkbook-root .inkbook-style-field[data-control$="color"] .inkbook-choice-grid button {
+    inline-size: 40px;
+  }
+}

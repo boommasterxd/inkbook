@@ -109,7 +109,7 @@ function loadPageDefaults(
     lockedBufferLines: validOrDefault(
       input.lockedBufferLines,
       fallback.lockedBufferLines,
-      (value): value is 0 | 1 => value === 0 || value === 1,
+      (value): value is number => isIntegerInRange(value, 0, 8),
       diagnostics,
       "pageDefaults.lockedBufferLines",
     ),

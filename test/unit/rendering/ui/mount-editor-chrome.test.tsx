@@ -15,6 +15,7 @@ function createProps(ownerDocument: Document): InkbookEditorChromeProps {
       onBackgroundSpacingChange: vi.fn(),
       onBackgroundTypeChange: vi.fn(),
       onFlyoutClose: vi.fn(),
+      onOverflowAction: vi.fn(),
       onShapeChange: vi.fn(),
       onStyleChange: vi.fn(),
     },
@@ -22,9 +23,20 @@ function createProps(ownerDocument: Document): InkbookEditorChromeProps {
     layout: "wide",
     onToolbarAction: vi.fn(),
     ownerDocument,
+    overflowMenu: {
+      arrange: {
+        "bring-forward": false,
+        "bring-to-front": false,
+        "send-backward": false,
+        "send-to-back": false,
+      },
+      canEraseAll: false,
+      hasSelection: false,
+    },
     renderIcon: vi.fn(),
     selectedShape: "line",
     styleControls: [],
+    styleIcon: { fillColor: null, fillOpacity: 0, outlineColor: null, outlineStyle: "solid" },
     toolbarState: {
       activeTool: "draw",
       canPaste: false,

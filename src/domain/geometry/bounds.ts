@@ -16,7 +16,6 @@ import {
   type ArrowNodeGeometry,
 } from "./element-path";
 import {
-  PAGE_WIDTH,
   boundsFromPoints,
   expandBounds,
   quadraticBounds,
@@ -37,15 +36,6 @@ export function calculateElementBounds(element: InkElementV1): Bounds {
     return linearBounds(element);
   }
   return closedShapeBounds(element);
-}
-
-export function boundsCorrection(bounds: Bounds): PointV1 | null {
-  if (bounds.maxX - bounds.minX > PAGE_WIDTH) return null;
-  let x = 0;
-  if (bounds.minX < 0) x = -bounds.minX;
-  if (bounds.maxX + x > PAGE_WIDTH) x += PAGE_WIDTH - (bounds.maxX + x);
-  const y = bounds.minY < 0 ? -bounds.minY : 0;
-  return { x, y };
 }
 
 export function boundsIntersect(left: Bounds, right: Bounds): boolean {

@@ -122,6 +122,7 @@ export interface StructuredTransfer<T> {
 
 export interface DocumentRuntimeWireUnlockBatch {
   readonly batchIndex: number;
+  readonly derivations: UnlockRuntimeBatch["derivations"];
   readonly elements: PackedElements;
   readonly identity: UnlockRuntimeBatch["identity"];
 }
@@ -402,7 +403,12 @@ export function encodeUnlockBatch(
   const elements = packElements(batch.elements);
   return {
     transfer: buffersAsTransferables(elements.pointBuffers),
-    value: { batchIndex: batch.batchIndex, elements, identity: batch.identity },
+    value: {
+      batchIndex: batch.batchIndex,
+      derivations: batch.derivations,
+      elements,
+      identity: batch.identity,
+    },
   };
 }
 
@@ -424,6 +430,10 @@ export function isDocumentRuntimeWireResult(value: unknown): value is DocumentRu
   if (!isRuntimeWireResultType(value.type)) return false;
   if (value.type === "unlock-success") {
     return (
+      typeof value.lockedHeight === "number" &&
+      Number.isFinite(value.lockedHeight) &&
+      value.lockedHeight > 0 &&
+      typeof value.requiresCanonicalRewrite === "boolean" &&
       typeof value.sourceVersion === "number" &&
       Number.isSafeInteger(value.sourceVersion) &&
       value.sourceVersion >= 0 &&
@@ -447,6 +457,7 @@ export function isDocumentRuntimeWireUnlockBatch(
     typeof value.batchIndex === "number" &&
     Number.isSafeInteger(value.batchIndex) &&
     value.batchIndex >= 0 &&
+    Array.isArray(value.derivations) &&
     isPurposeIdentity(value.identity) &&
     isPackedElements(value.elements)
   );

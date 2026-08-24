@@ -1,3 +1,5 @@
+import { setIcon } from "obsidian";
+
 export interface HeadlessRecoveryActions {
   reloadExternal(): Promise<boolean>;
   retry(): boolean;
@@ -14,6 +16,34 @@ export interface AttachedRecoveryActions {
   saveLocalCopy(): Promise<boolean>;
 }
 
+export interface LoadRecoveryActions {
+  discard(): boolean;
+  retry(): void;
+}
+
+export function showLoadRecoveryPanel(
+  root: HTMLElement,
+  actions: LoadRecoveryActions,
+  onClosed: () => void,
+): HTMLElement {
+  const panel = root.createDiv({ cls: "inkbook-recovery" });
+  panel.setAttribute("role", "alert");
+  panel.setAttribute("aria-label", "Load failed");
+  panel.createSpan({ cls: "inkbook-recovery-message", text: "Could not load drawing" });
+  const actionGroup = panel.createDiv({ cls: "inkbook-recovery-actions" });
+  const retry = createRecoveryIconButton(actionGroup, "Retry load", "rotate-ccw");
+  const discard = createRecoveryIconButton(actionGroup, "Discard load attempt", "x");
+  retry.addEventListener("click", () => {
+    panel.remove();
+    onClosed();
+    actions.retry();
+  });
+  discard.addEventListener("click", () =>
+    runAttachedAction(panel, () => actions.discard(), onClosed),
+  );
+  return panel;
+}
+
 export function showAttachedRecoveryPanel(
   root: HTMLElement,
   actions: AttachedRecoveryActions,
@@ -21,10 +51,13 @@ export function showAttachedRecoveryPanel(
 ): HTMLElement {
   const panel = root.createDiv({ cls: "inkbook-recovery" });
   panel.setAttribute("role", "alert");
-  panel.createSpan({ text: "Inkbook could not save this drawing." });
-  const retry = panel.createEl("button", { text: "Retry" });
-  const saveCopy = panel.createEl("button", { text: "Save local copy" });
-  const cancel = panel.createEl("button", { text: "Cancel" });
+  panel.setAttribute("aria-label", "Save failed");
+  const message = panel.createDiv({ cls: "inkbook-recovery-message" });
+  message.textContent = "Could not save changes";
+  const actionGroup = panel.createDiv({ cls: "inkbook-recovery-actions" });
+  const retry = createRecoveryIconButton(actionGroup, "Retry save", "rotate-ccw");
+  const saveCopy = createRecoveryIconButton(actionGroup, "Save copy", "copy-plus");
+  const cancel = createRecoveryIconButton(actionGroup, "Continue editing", "pencil");
   retry.addEventListener("click", () => runAttachedAction(panel, () => actions.retry(), onClosed));
   saveCopy.addEventListener("click", () => {
     setPending(panel, true);
@@ -53,13 +86,13 @@ export function showHeadlessRecoveryNotice(
   let dialog: HTMLElement | undefined = overlay.createDiv({
     cls: "inkbook-headless-recovery-dialog",
   });
-  const closeButton = recoveryButton(dialog, "Close", "Close recovery dialog");
+  const closeButton = createRecoveryIconButton(dialog, "Close recovery dialog", "x");
   const title = dialog.createEl("h2", { text: "Inkbook could not save this drawing" });
   dialog.createEl("p", { text: "Unsaved changes remain available for recovery." });
   const actionsElement = dialog.createDiv({ cls: "inkbook-recovery-actions" });
-  const retry = recoveryButton(actionsElement, "Retry");
-  const reload = recoveryButton(actionsElement, "Reload external version");
-  const saveCopy = recoveryButton(actionsElement, "Save local copy");
+  const retry = createRecoveryIconButton(actionsElement, "Retry", "rotate-ccw");
+  const reload = createRecoveryIconButton(actionsElement, "Reload external version", "refresh-cw");
+  const saveCopy = createRecoveryIconButton(actionsElement, "Save local copy", "copy-plus");
   const focusable = [closeButton, retry, reload, saveCopy];
   const listeners: Array<readonly [EventTarget, string, EventListener]> = [];
   title.id = "inkbook-headless-recovery-title";
@@ -131,6 +164,19 @@ function recoveryButton(container: HTMLElement, text: string, label?: string): H
   button.type = "button";
   button.textContent = text;
   if (label !== undefined) button.setAttribute("aria-label", label);
+  return button;
+}
+
+function createRecoveryIconButton(
+  container: HTMLElement,
+  label: string,
+  icon: string,
+): HTMLButtonElement {
+  const button = recoveryButton(container, "", label);
+  button.setAttribute("class", "inkbook-recovery-icon-button");
+  button.setAttribute("title", label);
+  const iconElement = button.createSpan({ cls: "inkbook-recovery-action-icon" });
+  setIcon(iconElement, icon);
   return button;
 }
 

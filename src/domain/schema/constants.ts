@@ -3,6 +3,7 @@ export const INKBOOK_VERSION = 1 as const;
 export const PAGE_INNER_WIDTH = 2000 as const;
 export const PAGE_MARGIN = 24.3 as const;
 export const PAGE_WIDTH = 2048.6 as const;
+export const CANONICAL_LOCKED_BUFFER_LINES = 1 as const;
 
 export const MAX_JSON_DEPTH = 16 as const;
 export const MAX_ABSOLUTE_COORDINATE = 1_000_000 as const;
@@ -55,6 +56,6 @@ export const CLIPBOARD_SCHEMA_LIMITS: Readonly<SchemaLimits> = Object.freeze({
 });
 
 export const PORTABLE_PALETTE_V1 = Object.freeze({
-  light: Object.freeze({ page: "#F6F6F6FF", text: "#222222FF", guide: "#70707040" }),
-  dark: Object.freeze({ page: "#282828FF", text: "#DADADAFF", guide: "#99999940" }),
+  light: Object.freeze({ page: "#F6F6F6FF", text: "#222222FF", guide: "#ABABAB40" }),
+  dark: Object.freeze({ page: "#212121FF", text: "#DADADAFF", guide: "#66666640" }),
 });

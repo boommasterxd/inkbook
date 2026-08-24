@@ -71,12 +71,6 @@ function pageBufferPage(): SettingDefinitionPage<SettingsControlKey> {
         8,
         1,
       ),
-      dropdown(
-        "pageDefaults.lockedBufferLines",
-        "Locked buffer lines",
-        "Set the locked buffer in new files.",
-        { "0": "0", "1": "1" },
-      ),
     ],
   };
 }

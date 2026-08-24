@@ -49,7 +49,7 @@ class FakeEditor {
   }
 }
 
-const CLIPBOARD = "![[drawings/source.svg]]";
+const CLIPBOARD = "!inkbook[[drawings/source.svg]]";
 const SOURCE = '<svg data-inkbook-version="1"></svg>';
 const TestTFile = TFile as unknown as new (path: string, size?: number) => TFile;
 
@@ -91,7 +91,7 @@ function harness(choice: "duplicate" | "reference" | null) {
     links: {
       generateEmbed: (path) => {
         events.push(`link:${path}`);
-        return `![[${path}]]`;
+        return `!inkbook[[${path}]]`;
       },
       resolveLinkTarget: (linkpath) =>
         linkpath === "drawings/source.svg" ? { path: "drawings/source.svg" } : null,
@@ -189,7 +189,7 @@ describe("copied Inkbook embed duplication", () => {
       kind: "inserted",
       mode: "duplicate",
     });
-    expect(editor.content).toBe("![[drawings/duplicate.svg]]");
+    expect(editor.content).toBe("!inkbook[[drawings/duplicate.svg]]");
     expect(test.events).toEqual([
       "read:drawings/source.svg",
       `validate:${SOURCE}`,
@@ -199,7 +199,7 @@ describe("copied Inkbook embed duplication", () => {
       "read:drawings/duplicate.svg",
       `validate:${SOURCE}`,
       "link:drawings/duplicate.svg",
-      "replace:![[drawings/duplicate.svg]]",
+      "replace:!inkbook[[drawings/duplicate.svg]]",
     ]);
   });
 
@@ -300,7 +300,7 @@ describe("Obsidian copied-embed composition", () => {
     expect(result).toEqual({ kind: "inserted", mode: "duplicate" });
     expect(placementNotice).not.toHaveBeenCalled();
     expect(test.duplicatePath).toMatch(/^drawings\/inkbook-\d{8}-\d{6}-010101\.svg$/u);
-    expect(editor.content).toBe(`![[${test.duplicatePath}]]`);
+    expect(editor.content).toBe(`!inkbook[[${test.duplicatePath}]]`);
     expect(files.get(test.duplicatePath)?.text).toBe(serialized.value.svg);
     expect(
       getFileByPath.mock.calls.filter(([path]) => path === "drawings/source.svg").length,
@@ -330,7 +330,7 @@ describe("Obsidian copied-embed composition", () => {
       expect(result).toEqual({ kind: "inserted", mode: "duplicate" });
       expect(placementNotice).toHaveBeenCalledWith(message);
       expect(test.getRandomValues).toHaveBeenCalled();
-      expect(test.editor.content).toMatch(/^!\[\[notes\/inkbook-.*\.svg\]\]$/u);
+      expect(test.editor.content).toMatch(/^!inkbook\[\[notes\/inkbook-.*\.svg\]\]$/u);
     },
   );
 
@@ -345,7 +345,7 @@ describe("Obsidian copied-embed composition", () => {
     });
 
     expect(result).toEqual({ kind: "inserted", mode: "duplicate" });
-    expect(test.editor.content).toMatch(/^!\[\[notes\/inkbook-.*\.svg\]\]$/u);
+    expect(test.editor.content).toMatch(/^!inkbook\[\[notes\/inkbook-.*\.svg\]\]$/u);
   });
 
   it("does not report regular note-folder placement", async () => {

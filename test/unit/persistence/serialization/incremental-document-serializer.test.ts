@@ -95,6 +95,55 @@ describe("incremental document fragments", () => {
   });
 });
 
+describe("incremental bounds derivation reuse", () => {
+  it("reuses validated store bounds and rejects mismatched derivations atomically", () => {
+    const snapshot = createAllElementSnapshot();
+    const serializer = new IncrementalDocumentSerializer();
+    expect(serializer.reset(snapshot).ok).toBe(true);
+    const original = snapshot.elements[1]!;
+    if (original.kind !== "stroke") throw new Error("Missing stroke fixture.");
+    const changed = { ...original, points: [...original.points] };
+    changed.points[0] = changed.points[0]! + 1;
+    const nextSnapshot = {
+      ...snapshot,
+      elements: snapshot.elements.map((element) => (element.id === changed.id ? changed : element)),
+      revision: 8,
+    };
+    const validation = validateInkSnapshotV1(nextSnapshot);
+    if (!validation.ok) throw new Error(validation.error.message);
+    const derivation = validation.derivations.elements.find(
+      ({ elementId }) => elementId === changed.id,
+    )!;
+    const reusesBefore = serializer.instrumentation.derivedBoundsReuses;
+
+    expect(
+      serializer.applyDelta({
+        baseModelRevision: 7,
+        changedElementDerivations: [derivation],
+        changedElements: [changed],
+        modelRevision: 8,
+      }),
+    ).toEqual({ ok: true, value: undefined });
+    expect(serializer.instrumentation.derivedBoundsReuses).toBe(reusesBefore + 1);
+
+    const staleDerivation = {
+      ...derivation,
+      bounds: { ...derivation.bounds, maxX: derivation.bounds.maxX + 1 },
+    };
+    for (const invalidDerivation of [staleDerivation, { ...derivation, elementId: uuid(99) }]) {
+      expect(
+        serializer.applyDelta({
+          baseModelRevision: 8,
+          changedElementDerivations: [invalidDerivation],
+          changedElements: [changed],
+          modelRevision: 9,
+        }),
+      ).toMatchObject({ error: { code: "invalid-delta" }, ok: false });
+      expect(serializer.currentSnapshot()?.revision).toBe(8);
+    }
+  });
+});
+
 describe("incremental fragment cache lifecycle", () => {
   it("releases stale, removed, and cleared fragment revisions within the hard byte bound", () => {
     const snapshot = createAllElementSnapshot();

@@ -85,6 +85,26 @@ function createHarness() {
 }
 
 describe("active editor keyboard and wheel navigation", () => {
+  it("applies magnitude-proportional trackpad pinch zoom in the next animation frame", () => {
+    const harness = createHarness();
+    const oldZoom = harness.navigation.zoom;
+
+    expect(harness.navigation.updateWheel(zoomWheel(-4))).toBe(true);
+    harness.frames.flush();
+
+    expect(harness.navigation.zoom).toBeCloseTo(oldZoom * 1.08 ** 0.625);
+  });
+
+  it("keeps a large pixel-mode mouse-wheel event at one discrete step", () => {
+    const harness = createHarness();
+    const oldZoom = harness.navigation.zoom;
+
+    expect(harness.navigation.updateWheel(zoomWheel(-100))).toBe(true);
+    harness.frames.flush();
+
+    expect(harness.navigation.zoom).toBeCloseTo(oldZoom * 1.08);
+  });
+
   it("applies keyboard zoom through the same atomic anchored frame", () => {
     const harness = createHarness();
     const pointer = { x: 400, y: 200 };
@@ -285,5 +305,17 @@ function horizontalWheel(overrides: Partial<ActiveEditorWheelInput> = {}): Activ
     metaKey: false,
     shiftKey: false,
     ...overrides,
+  };
+}
+
+function zoomWheel(deltaY: number): ActiveEditorWheelInput {
+  return {
+    clientX: 500,
+    clientY: 300,
+    ctrlKey: true,
+    deltaMode: 0,
+    deltaX: 0,
+    deltaY,
+    metaKey: false,
   };
 }

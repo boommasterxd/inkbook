@@ -25,7 +25,10 @@ export function elementRenderBand(element: InkElementV1): RenderBand {
   return isHighlightElement(element) ? "highlight" : "content";
 }
 
-export function buildElementFragments(element: InkElementV1): ElementFragments {
+export function buildElementFragments(
+  element: InkElementV1,
+  bottom = calculateElementBounds(element).maxY,
+): ElementFragments {
   const canonicalMetadata = serializeCanonicalElementMetadata(element);
   const metadata = escapeXmlText(canonicalMetadata);
   const svg = serializeElementPaths(element).join("");
@@ -35,6 +38,7 @@ export function buildElementFragments(element: InkElementV1): ElementFragments {
     metadata,
     svg,
     serializedPathDataByteLength(svg),
+    bottom,
   );
 }
 
@@ -44,12 +48,13 @@ function elementFragments(
   metadata: string,
   svg: string,
   pathDataBytes: number,
+  bottom: number,
 ): ElementFragments {
   const canonicalMetadataBytes = encodedByteLength(canonicalMetadata);
   const canonicalMetadataUtf8 = new TextEncoder().encode(canonicalMetadata);
   const bytes = encodedByteLength(metadata) + encodedByteLength(svg);
   return {
-    bottom: calculateElementBounds(element).maxY,
+    bottom,
     bytes,
     canonicalMetadata,
     canonicalMetadataBytes,

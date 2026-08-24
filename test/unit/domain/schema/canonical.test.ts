@@ -69,8 +69,10 @@ describe("schema canonical values", () => {
     expect(PORTABLE_PALETTE_V1.light).toEqual({
       page: "#F6F6F6FF",
       text: "#222222FF",
-      guide: "#70707040",
+      guide: "#ABABAB40",
     });
+    expect(PORTABLE_PALETTE_V1.dark.page).toBe("#212121FF");
+    expect(PORTABLE_PALETTE_V1.dark.guide).toBe("#66666640");
     expect(PORTABLE_PALETTE_V1.dark.text).toBe("#DADADAFF");
   });
 });

@@ -256,7 +256,7 @@ describe("active editor ordinary selection move", () => {
     expect(fixture.elementPreviews[fixture.elementPreviews.length - 1]).toEqual([]);
   });
 
-  it("commits a shared page-bound correction without changing selection relationships", () => {
+  it("commits exact outside-viewport geometry without changing selection relationships", () => {
     const first = rectangle();
     const second = {
       ...rectangle(),
@@ -283,9 +283,9 @@ describe("active editor ordinary selection move", () => {
     expect(movedFirst?.kind).toBe("rectangle");
     expect(movedSecond?.kind).toBe("rectangle");
     if (movedFirst?.kind !== "rectangle" || movedSecond?.kind !== "rectangle") {
-      throw new TypeError("Expected corrected rectangle replacements.");
+      throw new TypeError("Expected rectangle replacements.");
     }
-    expect(calculateElementBounds(movedFirst)).toMatchObject({ minX: 0, minY: 0 });
+    expect(calculateElementBounds(movedFirst)).toMatchObject({ minX: -602, minY: -502 });
     expect({ x: movedSecond.x - movedFirst.x, y: movedSecond.y - movedFirst.y }).toEqual({
       x: 400,
       y: 250,

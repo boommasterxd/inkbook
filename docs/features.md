@@ -29,11 +29,11 @@ When switching to a different background type, the file adopts the configured va
 
 The current background selection is stored for each handwriting file.
 
-The page height always ends on a complete background line or grid cell. The bottom margin therefore does not cut off partial lines or squares.
+The page height always ends on a complete background line or grid cell. The bottom margin therefore does not cut off partial lines or squares. Square and dot backgrounds fit the greatest whole number of spacing intervals inside the writable width and height, omit every partial remainder, and split unused space equally across the opposite sides. The active editor explicitly closes the last visible square at the right and bottom edges instead of relying on the half-open boundary of an SVG pattern tile. The active editor and standalone SVG therefore show the same centered full-cell geometry without open or clipped cells at the top, right, bottom, or left edge.
 
 ## Automatic Page Expansion
 
-By default, the plugin keeps three empty writing lines below the content.
+By default, the active editor keeps three empty writing lines below the content, while the locked preview keeps one.
 
 All elements are taken into account for the calculation:
 
@@ -58,11 +58,11 @@ aligned occupied extent
 + writingBufferLines × backgroundAlignedWritingUnit
 ```
 
-With a lined background, the alignment step is the current line spacing. With a grid, it is the grid cell size. The buffer unit is the smallest whole number of background steps that is at least the file's writing-line height. This preserves complete background cells and makes the locked maximum of one buffer line deterministic for every valid combination.
+With a lined background, the alignment step is the current line spacing. With a grid, it is the grid cell size. The buffer unit is the smallest whole number of background steps that is at least the file's writing-line height. This preserves complete background cells for every valid combination.
 
 The page is not remeasured after every pointer sample. After a committed geometry change, it grows when less than one writing line of active buffer remains and restores the configured buffer in one 180-millisecond height transition. The sole pre-commit exception is the bounded one-buffer-unit extension while a selection remains in the bottom-edge drag zone; its exact threshold, cancellation, and commit rules are defined in [File Format and Geometry](file-format.md).
 
-When content is deleted, the active embed can shrink again. The active editor defaults to three empty writing lines below content. The locked preview has at most one empty writing line. Unlock and Lock animate between these derived heights over 240 milliseconds.
+When content is deleted, the active embed can shrink again. The active editor defaults to three empty writing lines below content. A non-empty locked preview ends after the complete pattern row containing the lowest annotation plus exactly one additional complete pattern row. A page without a pattern retains one aligned writing buffer, while an empty page keeps the shared 2.5-writing-line minimum. The active per-file buffer remains configurable; locked trailing space is fixed so preview height follows content consistently. Unlock and Lock animate between these derived heights over 240 milliseconds. The page includes writable unpatterned margins on all four sides; writing into the bottom margin triggers aligned growth that restores the complete margin below the occupied extent.
 
 The exact active, locked, empty-page, and background-snapping equations are defined in [File Format and Geometry](file-format.md).
 
@@ -85,7 +85,7 @@ Every completed canvas gesture is stored as a command, for example:
 
 Each such gesture is exactly one undo step.
 
-The Undo and Redo toolbar buttons operate directly on the canvas history. They only appear when the corresponding action is available.
+The Undo and Redo toolbar buttons operate directly on the canvas history. Both remain visible in stable toolbar positions and are disabled when the corresponding action is unavailable.
 
 Within the unlocked embed, `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z` use an additional unified history maintained separately for each Obsidian pane. This history can chronologically combine canvas actions with changes to the surrounding Markdown.
 
@@ -229,7 +229,7 @@ A tap creates a new handwriting embed only when all of the following conditions 
 On success:
 
 1. The plugin creates a new handwriting SVG file.
-2. It inserts the embed Markdown in a block-safe manner.
+2. It inserts the custom `!inkbook` embed Markdown in a block-safe manner. The syntax references the SVG through a normal link but never creates a native Obsidian image embed.
 3. The next mounted embed editor is activated automatically.
 4. After the widget is mounted and measured on two consecutive animation frames, the new embed opens in editing mode. If this does not happen within two seconds, insertion remains intact and a retryable notice is shown.
 5. A notice with Undo remains visible for five seconds.

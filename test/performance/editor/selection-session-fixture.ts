@@ -10,11 +10,11 @@ export function createPassThroughMoveSession(
     elements,
     planner: {
       countReverseDependencies: () => 0,
-      planPageBoundedReplacements: (replacements) => ({
+      planReplacements: (replacements) => ({
         elements: replacements,
         replacements,
       }),
-      planPageBoundedReplacementsTimeSliced: async (replacements) => ({
+      planReplacementsTimeSliced: async (replacements) => ({
         elements: replacements,
         replacements,
       }),

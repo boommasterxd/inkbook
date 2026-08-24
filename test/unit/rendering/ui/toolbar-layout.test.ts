@@ -1,58 +1,47 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  LEFT_HANDED_TOOL_TRANSLATION_PX,
   resolveToolbarLayout,
+  TOOLBAR_CONTEXT_CORRIDOR_PX,
 } from "../../../../src/rendering/ui/toolbar-layout";
 
 describe("toolbar layout", () => {
-  it("keeps the tool group exactly centered when both sides fit", () => {
+  it("uses one fitted row while the complete toolbar content fits", () => {
     expect(
       resolveToolbarLayout({
-        availableWidth: 700,
-        centerWidth: 300,
-        leftWidth: 120,
-        mergedWidth: 600,
-        rightWidth: 160,
+        availableWidth: 620 + TOOLBAR_CONTEXT_CORRIDOR_PX,
+        contentWidth: 620,
       }),
     ).toBe("wide");
   });
 
-  it("merges groups when the centered layout collides but one row still fits", () => {
+  it("keeps every visible context action beside a wide centered toolbar", () => {
     expect(
       resolveToolbarLayout({
-        availableWidth: 620,
-        centerWidth: 300,
-        leftWidth: 160,
-        mergedWidth: 600,
-        rightWidth: 180,
+        availableWidth: 620 + 2 * 216 + 32,
+        contentWidth: 620,
+        contextWidth: 216,
       }),
-    ).toBe("merged");
-  });
-
-  it("accounts for the exact left-handed translation before choosing the wide layout", () => {
-    const measurements = {
-      availableWidth: 616,
-      centerTranslation: LEFT_HANDED_TOOL_TRANSLATION_PX,
-      centerWidth: 300,
-      leftWidth: 120,
-      mergedWidth: 580,
-      rightWidth: 160,
-    };
-
-    expect(resolveToolbarLayout(measurements)).toBe("wide");
-    expect(resolveToolbarLayout({ ...measurements, availableWidth: 615 })).toBe("merged");
-  });
-
-  it("uses horizontal scrolling without shrinking controls", () => {
+    ).toBe("wide");
     expect(
       resolveToolbarLayout({
-        availableWidth: 500,
-        centerWidth: 300,
-        leftWidth: 160,
-        mergedWidth: 600,
-        rightWidth: 180,
+        availableWidth: 620 + 2 * 216 + 31,
+        contentWidth: 620,
+        contextWidth: 216,
       }),
     ).toBe("scrollable");
+  });
+
+  it("uses horizontal scrolling without shrinking controls when content overflows", () => {
+    expect(
+      resolveToolbarLayout({
+        availableWidth: 619 + TOOLBAR_CONTEXT_CORRIDOR_PX,
+        contentWidth: 620,
+      }),
+    ).toBe("scrollable");
+  });
+
+  it("treats a zero-width owner as scrollable", () => {
+    expect(resolveToolbarLayout({ availableWidth: 0, contentWidth: 1 })).toBe("scrollable");
   });
 });

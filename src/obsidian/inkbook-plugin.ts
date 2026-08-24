@@ -3,6 +3,7 @@ import {
   normalizePath,
   Notice,
   Plugin,
+  setIcon,
   TFile,
   TFolder,
   type Editor,
@@ -23,9 +24,11 @@ import {
   createLivePreviewExtension,
   createObsidianDocumentResolver,
   createReadingViewPostProcessor,
+  ObsidianInkbookDocumentRecognition,
   ObsidianWorkspaceRuntime,
   PresentationLifecycleRegistry,
 } from "./embeds";
+import { registerInkbookIcons } from "./icons/inkbook-icons";
 import { InkbookSettingsStore, InkbookSettingTab } from "./settings";
 import { ColorSchemeBroadcaster } from "./theme/color-scheme";
 import { ObsidianVaultFolderAdapter } from "./vault";
@@ -36,6 +39,7 @@ export async function activateInkbookPlugin(
 ): Promise<(() => void) | undefined> {
   const settings = await loadSettings(plugin);
   if (!isActive()) return undefined;
+  const unregisterIcons = registerInkbookIcons();
   let active = true;
   plugin.addSettingTab(
     new InkbookSettingTab(
@@ -90,16 +94,11 @@ export async function activateInkbookPlugin(
   const embedPaste = createObsidianEmbedPasteController(plugin.app, settings);
 
   const lifecycle = new PresentationLifecycleRegistry();
-  const ports = {
-    lifecycle,
-    resolveDocument: createObsidianDocumentResolver(plugin.app),
-    scheme,
-    sessions: runtime,
-  };
+  const { documentRecognition, ports } = createEmbedIntegration(plugin, lifecycle, scheme, runtime);
   plugin.app.workspace.onLayoutReady(() => {
     if (!active || !isActive()) return;
     layoutReady = true;
-    registerVaultLifecycle(plugin, runtime);
+    registerVaultLifecycle(plugin, runtime, documentRecognition);
     registerMarkdownHistory(plugin, runtime);
     plugin.registerMarkdownPostProcessor(createReadingViewPostProcessor(ports));
     plugin.registerEditorExtension([
@@ -125,14 +124,41 @@ export async function activateInkbookPlugin(
   return () => {
     active = false;
     lifecycle.disposeAll();
+    documentRecognition.dispose();
     runtime.dispose();
     scheme.clear();
+    unregisterIcons();
   };
 }
 
-function registerVaultLifecycle(plugin: Plugin, runtime: ObsidianWorkspaceRuntime): void {
+function createEmbedIntegration(
+  plugin: Plugin,
+  lifecycle: PresentationLifecycleRegistry,
+  scheme: ColorSchemeBroadcaster,
+  runtime: ObsidianWorkspaceRuntime,
+) {
+  const documentRecognition = new ObsidianInkbookDocumentRecognition(plugin.app.vault);
+  return {
+    documentRecognition,
+    ports: {
+      documents: documentRecognition,
+      lifecycle,
+      resolveDocument: createObsidianDocumentResolver(plugin.app),
+      scheme,
+      sessions: runtime,
+    },
+  };
+}
+
+function registerVaultLifecycle(
+  plugin: Plugin,
+  runtime: ObsidianWorkspaceRuntime,
+  recognition: ObsidianInkbookDocumentRecognition,
+): void {
   const handleFileChange = (file: unknown): void => {
-    if (file instanceof TFile) runtime.handleVaultModification(file.path);
+    if (!(file instanceof TFile)) return;
+    recognition.invalidate(file.path);
+    runtime.handleVaultModification(file.path);
   };
   plugin.registerEvent(plugin.app.vault.on("create", handleFileChange));
   plugin.registerEvent(plugin.app.vault.on("modify", handleFileChange));
@@ -193,7 +219,13 @@ function showInsertionNotice(
     ownerWindow,
     (retry) => {
       const retryNotice = new Notice("Handwriting was inserted but the editor is not ready. ");
-      const retryButton = retryNotice.messageEl.createEl("button", { text: "Retry" });
+      retryNotice.messageEl.classList.add("inkbook-root");
+      const retryButton = retryNotice.messageEl.createEl("button", {
+        attr: { "aria-label": "Retry editor activation", title: "Retry editor activation" },
+        cls: "inkbook-notice-icon-button",
+      });
+      const retryIcon = retryButton.createSpan({ cls: "inkbook-notice-action-icon" });
+      setIcon(retryIcon, "rotate-ccw");
       retryButton.addEventListener(
         "click",
         () => {

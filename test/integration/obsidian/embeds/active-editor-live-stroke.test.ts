@@ -5,8 +5,10 @@ import { ElementStore } from "../../../../src/domain/store/public";
 import { CreationPreview } from "../../../../src/obsidian/embeds/active-editor/creation-preview";
 import { CoalescedPointerInput } from "../../../../src/obsidian/embeds/active-editor/coalesced-input";
 import type { GesturePreview } from "../../../../src/editor/gestures/public";
-import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";
-import { creationPreviewRenderer } from "../../../fixtures/obsidian/active-editor";
+import {
+  activeEditorStoreHistory,
+  creationPreviewRenderer,
+} from "../../../fixtures/obsidian/active-editor";
 
 describe("active editor live stroke preview", () => {
   it("consumes coalesced samples and commits the incremental stroke", () => {
@@ -127,7 +129,7 @@ describe("active editor live stroke limits", () => {
 
 function createLiveStrokeHarness(identity: string) {
   const store = new ElementStore();
-  const history = strokeHistory(store);
+  const history = activeEditorStoreHistory(store);
   const clearLiveStroke = vi.fn();
   const updateLiveStroke = vi.fn();
   const preview = new CreationPreview({
@@ -153,7 +155,7 @@ function createLiveStrokeHarness(identity: string) {
 
 function createPressurePreview(identity: string, pointerType: "mouse" | "pen") {
   const store = new ElementStore();
-  const history = strokeHistory(store);
+  const history = activeEditorStoreHistory(store);
   const preview = new CreationPreview({
     defaults: createBuiltInSettings().toolDefaults,
     history,
@@ -167,16 +169,6 @@ function createPressurePreview(identity: string, pointerType: "mouse" | "pen") {
     },
   });
   return { preview, store };
-}
-
-function strokeHistory(store: ElementStore): ActiveEditorHistory {
-  return new ActiveEditorHistory({
-    commitBandOrder: (order) => void store.reorderBands(order),
-    commitElements: (elements) => void store.create(elements),
-    commitPage: vi.fn(),
-    removeElements: (ids) => void store.remove(ids),
-    replaceElements: (elements) => void store.replaceMany(elements),
-  });
 }
 
 function coalescedHarness(

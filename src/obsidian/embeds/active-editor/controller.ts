@@ -16,7 +16,7 @@ import type { ActiveEditorActions } from "./controller-actions";
 import type { ActiveEditorControllerOptions } from "./controller-types";
 import type { CoalescedPointerInput } from "./coalesced-input";
 import { ActiveEditorBackgroundSession } from "./background-session";
-import { createChromeProps } from "./controller-chrome";
+import { createChromeProps, overflowMenuState } from "./controller-chrome";
 import { applyInputAction } from "./controller-dispatch";
 import type { ActiveEditorMenuController } from "./controller-menu";
 import {
@@ -54,7 +54,7 @@ export class ActiveEditorController {
   readonly #historyTraversal: ActiveEditorHistoryTraversal;
   readonly #interruptLayoutForInput: () => void;
   readonly #keyboard: ActiveEditorKeyboardController;
-  readonly #pointerInput: ActiveEditorPointerController;
+  readonly #pointer: ActiveEditorPointerController;
   readonly #preparedHistory: PreparedElementHistory;
   #input: EditorInput.InputState;
   readonly #longPress: ActiveEditorLongPressScheduler;
@@ -170,7 +170,7 @@ export class ActiveEditorController {
     this.#menus = interactions.menus;
     this.#preparedHistory = interactions.preparedHistory;
     this.#keyboard = this.#createKeyboardController(options);
-    this.#pointerInput = this.#createPointerController(ownerWindow);
+    this.#pointer = this.#createPointerController(ownerWindow);
     this.#gestures = this.#createGestureController();
   }
   public chromeProps() {
@@ -180,15 +180,24 @@ export class ActiveEditorController {
       leftHanded: this.#leftHanded,
       onBackgroundSpacingChange: (spacing) => this.#background.changeSpacing(spacing),
       onBackgroundTypeChange: (type) => this.#background.changeType(type),
+      onOverflowAction: (action) => {
+        this.#chromeState.setFlyout(null);
+        if (this.#actions.isAvailable(action)) this.#actions.execute(action);
+      },
       onShapeChange: (shape) => this.#configureTool(this.#chromeState.selectShape(shape)),
       onStyleChange: (id, value) => this.#styles.apply(this.#input.activeTool, id, value),
       onToolbarAction: (action) => this.handleToolbarAction(action),
       ownerDocument: this.#ownerWindow.document,
+      overflowMenu: overflowMenuState(
+        this.#actions.arrangeAvailability(),
+        this.#actions.isAvailable("erase-all"),
+        this.#selection.size > 0,
+      ),
       page: this.#model.page,
       renderIcon: this.#renderIcon,
       selectedShape: this.#chromeState.selectedShape,
       setFlyoutClosed: () => this.#chromeState.setFlyout(null),
-      styleControls: this.#styles.controls(this.#input.activeTool),
+      style: this.#styles.presentation(this.#input.activeTool),
       toolbarState: this.toolbarState(),
     });
   }
@@ -207,8 +216,7 @@ export class ActiveEditorController {
     this.#navigation.dispose();
     this.#model.setGestureActive(false);
   }
-  public readonly handleContextMenu = (event: MouseEvent): void =>
-    this.#pointerInput.handleContextMenu(event);
+  readonly handleContextMenu = (event: MouseEvent): void => this.#pointer.handleContextMenu(event);
   public handleKeyDown(event: KeyboardEvent): void {
     if (!this.#availability.acceptsInput) return;
     if (this.#keyboard.handleKeyDown(event)) event.preventDefault();
@@ -217,43 +225,37 @@ export class ActiveEditorController {
     if (!this.#availability.acceptsInput || event.defaultPrevented) return;
     if (this.#keyboard.handleHoverZoom(event)) event.preventDefault();
   }
-  public readonly handlePointerCancel = (event: PointerEvent): void =>
-    this.#pointerInput.handlePointerCancel(event);
+  readonly handlePointerCancel = (event: PointerEvent) => this.#pointer.handlePointerCancel(event);
   public handlePointerBoundary(pointerOver: boolean): void {
     this.#keyboard.setPointerOver(pointerOver);
     if (pointerOver) void this.#actions.refreshPasteAvailability();
   }
-  public readonly handlePointerDown = (event: PointerEvent): void =>
-    this.#pointerInput.handlePointerDown(event);
-  public readonly handlePointerMove = (event: PointerEvent): void =>
-    this.#pointerInput.handlePointerMove(event);
-  public readonly handlePointerUp = (event: PointerEvent): void =>
-    this.#pointerInput.handlePointerUp(event);
+  readonly handlePointerDown = (event: PointerEvent): void =>
+    this.#pointer.handlePointerDown(event);
+  readonly handlePointerMove = (event: PointerEvent): void =>
+    this.#pointer.handlePointerMove(event);
+  readonly handlePointerUp = (event: PointerEvent): void => this.#pointer.handlePointerUp(event);
   public handleToolbarAction(action: ToolbarAction): void {
     if (!this.#availability.acceptsInput) return;
     if (isTool(action)) {
-      const tool = this.#chromeState.activateTool(action, this.#input.activeTool);
-      if (tool !== undefined) this.#configureTool(tool);
+      this.#configureTool(this.#chromeState.activateTool(action));
       return;
     }
     if (action === "undo") this.#historyTraversal.undo();
     else if (action === "redo") this.#historyTraversal.redo();
     else if (action === "lock") this.#onLock();
-    else if (action === "background" || action === "style") this.#chromeState.toggleFlyout(action);
+    else if (action === "shape-picker") this.#chromeState.toggleFlyout("shape");
+    else if (action === "background" || action === "overflow" || action === "style")
+      this.#chromeState.toggleFlyout(action);
     else if (action === "finger-drawing") this.#toggleFingerDrawing();
-    else if (action === "overflow")
-      this.#menus.openFromToolbar(
-        this.#navigation.visibleCenter(),
-        this.#ownerWindow.document.activeElement,
-      );
     else if (
       (action === "delete" || action === "copy" || action === "cut" || action === "paste") &&
       this.#actions.isAvailable(action)
     )
       this.#actions.execute(action);
   }
-  public readonly handleLostPointerCapture = (event: PointerEvent): void =>
-    this.#pointerInput.handleLostPointerCapture(event);
+  readonly handleLostPointerCapture = (event: PointerEvent) =>
+    this.#pointer.handleLostPointerCapture(event);
   public handleWheel(event: WheelEvent): void {
     if (!this.#availability.acceptsInput) return;
     if (this.#navigation.updateWheel(event)) event.preventDefault();

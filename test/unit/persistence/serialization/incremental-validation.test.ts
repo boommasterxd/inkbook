@@ -13,7 +13,7 @@ import {
 import { createAllElementSnapshot, createSnapshot, uuid } from "./fixtures";
 
 describe("incremental serializer validation", () => {
-  it("rejects invalid changed elements and out-of-page bounds atomically", () => {
+  it("rejects invalid changed elements while accepting viewport overflow", () => {
     const snapshot = createAllElementSnapshot();
     const serializer = initialized(snapshot);
     const stroke = snapshot.elements[1];
@@ -25,13 +25,10 @@ describe("incremental serializer validation", () => {
       ok: false,
     });
     const outsidePage = { ...stroke, points: [-1, 100, 0.5, 50, 100, 0.5] };
-    expect(change(serializer, outsidePage)).toMatchObject({
-      error: { code: "snapshot-invalid", validationError: { code: "invalid-range" } },
-      ok: false,
-    });
+    expect(change(serializer, outsidePage)).toEqual({ ok: true, value: undefined });
     expect(serializer.serialize()).toMatchObject({
       ok: true,
-      value: { snapshot: { revision: snapshot.revision } },
+      value: { snapshot: { revision: snapshot.revision + 1 } },
     });
   });
 
@@ -118,7 +115,7 @@ describe("incremental serializer spatial capacity", () => {
 });
 
 describe("incremental serializer relation validation", () => {
-  it("uses full snapshot validation for page and connection relation changes", () => {
+  it("validates page and connection changes without a full snapshot rescan", () => {
     const snapshot = createAllElementSnapshot();
     const serializer = initialized(snapshot);
     const initialFullRuns = serializer.instrumentation.fullValidationRuns;
@@ -136,7 +133,7 @@ describe("incremental serializer relation validation", () => {
       error: { code: "snapshot-invalid", validationError: { code: "invalid-connection-target" } },
       ok: false,
     });
-    expect(serializer.instrumentation.fullValidationRuns).toBe(initialFullRuns + 1);
+    expect(serializer.instrumentation.fullValidationRuns).toBe(initialFullRuns);
     expect(
       serializer.applyDelta({
         baseModelRevision: snapshot.revision,
@@ -144,7 +141,15 @@ describe("incremental serializer relation validation", () => {
         page: { ...snapshot.page, writingLineHeight: 49 },
       }),
     ).toMatchObject({ error: { code: "snapshot-invalid" }, ok: false });
-    expect(serializer.instrumentation.fullValidationRuns).toBe(initialFullRuns + 2);
+    expect(serializer.instrumentation.fullValidationRuns).toBe(initialFullRuns);
+    expect(
+      serializer.applyDelta({
+        baseModelRevision: snapshot.revision,
+        modelRevision: snapshot.revision + 1,
+        page: { ...snapshot.page, writingLineHeight: 60 },
+      }),
+    ).toEqual({ ok: true, value: undefined });
+    expect(serializer.instrumentation.fullValidationRuns).toBe(initialFullRuns);
   });
 });
 

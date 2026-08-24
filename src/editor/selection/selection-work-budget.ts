@@ -2,10 +2,8 @@ import type { InkElementV1 } from "../../domain/schema/public";
 
 export interface SelectionReplacementPlanner {
   countReverseDependencies(targetIds: readonly string[], limit: number): number;
-  planPageBoundedReplacements(
-    replacements: readonly InkElementV1[],
-  ): SelectionReplacementPlan | null;
-  planPageBoundedReplacementsTimeSliced(
+  planReplacements(replacements: readonly InkElementV1[]): SelectionReplacementPlan | null;
+  planReplacementsTimeSliced(
     replacements: readonly InkElementV1[],
     scheduler: SelectionReplacementSliceScheduler,
   ): Promise<SelectionReplacementPlan | "cancelled" | null>;

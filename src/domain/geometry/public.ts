@@ -4,12 +4,8 @@ export {
   semanticAnchorOrder,
   semanticAnchors,
 } from "./anchors";
-export {
-  boundsCorrection,
-  boundsIntersect,
-  calculateElementBounds,
-  effectiveStrokeWidth,
-} from "./bounds";
+export { boundsIntersect, calculateElementBounds, effectiveStrokeWidth } from "./bounds";
+export { centeredGuideAxis } from "./background-guides";
 export {
   changeCoordinateSystemDimension,
   changeTableColumns,
@@ -30,14 +26,8 @@ export {
   nodeSize,
   outlineDashPattern,
 } from "./element-path";
-export { derivePageExtent } from "./page-extent";
-export {
-  assertElementsWithinPageBounds,
-  canonicalPageBoundsCorrection,
-  correctElementsToPageBounds,
-  isWithinPageBounds,
-  translateElementGeometry,
-} from "./page-bounds";
+export { deriveLegacyLockedHeight, derivePageExtent } from "./page-extent";
+export { translateElementGeometry } from "./translation";
 export {
   PAGE_WIDTH,
   canonicalPoint,

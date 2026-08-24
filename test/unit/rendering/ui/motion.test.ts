@@ -21,7 +21,14 @@ const interpolateNumber = (from: number, to: number, progress: number): number =
 
 describe("motion tokens", () => {
   it("exposes the documented duration and easing tokens", () => {
-    expect(motion).toEqual({ fast: 120, standard: 180, erase: 160, layout: 240 });
+    expect(motion).toEqual({
+      fast: 120,
+      toolbar: 300,
+      standard: 180,
+      erase: 160,
+      layout: 240,
+      slow: 300,
+    });
     expect(easing.standard).toBe("cubic-bezier(0.2, 0, 0, 1)");
     expect(easing.emphasized).toBe(easing.standard);
     expect(MOTION_TOKENS).toBe(motion);
@@ -30,7 +37,7 @@ describe("motion tokens", () => {
 
   it("maps every documented transition to its contract duration", () => {
     expect(transitionDurations).toEqual({
-      toolbarEnterExit: 180,
+      toolbarEnterExit: 300,
       toolActiveState: 120,
       flyoutOpenClose: 180,
       selectionHandlesEnterExit: 120,
@@ -41,11 +48,10 @@ describe("motion tokens", () => {
       styleChange: 120,
       lockedToActiveHeight: 240,
       activeToLockedHeight: 240,
-      unlockPreviewCrossfade: 120,
       lockEditorCrossfade: 120,
       automaticPageGrowth: 180,
       overflowEdgeGradient: 120,
-      conditionalToolbarControl: 120,
+      conditionalToolbarControl: 300,
       arrangeResult: 120,
       snapCandidateMarker: 120,
       fallback: 120,

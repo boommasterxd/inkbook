@@ -32,6 +32,7 @@ export interface AutosaveSessionBaseOptions {
   readonly initialSnapshot: InkSnapshotV1;
   readonly isGestureActive: () => boolean;
   readonly outputHash: string;
+  readonly requiresCanonicalRewrite?: boolean;
   readonly workerEpoch: number;
 }
 
@@ -64,6 +65,7 @@ export interface AutosaveCoordinatorOptions {
   readonly initialSnapshot: InkSnapshotV1;
   readonly observer?: AutosaveObserver;
   readonly path: string;
+  readonly requiresCanonicalRewrite?: boolean;
   readonly sessionId: string;
   readonly vault: ExistingFilePort & Partial<NewFilePort>;
   readonly workerEpoch?: number;
@@ -72,7 +74,7 @@ export interface AutosaveCoordinatorOptions {
 export type FlushReason = "detach" | "lock" | "retry";
 export type FlushOutcome =
   "clean" | "conflict" | "executor-failed" | "retryable-error" | "verification-required";
-export type ExternalChangeOutcome = "conflict" | "reload-required";
+export type ExternalChangeOutcome = "conflict" | "reload-required" | "unchanged";
 
 export interface ActiveAutosave {
   readonly previousBase: VaultBase;

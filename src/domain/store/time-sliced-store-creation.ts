@@ -1,12 +1,16 @@
 import { renderBandOf, type RenderBand } from "../commands/render-bands";
 import { FILE_SCHEMA_LIMITS } from "../schema/constants";
 import { validateRuntimeInkElementV1 } from "../schema/element-validation";
-import type { InkElementV1 } from "../schema/public";
+import type { ElementValidationDerivation, InkElementV1 } from "../schema/public";
 import { UniformSpatialIndex } from "../spatial/index";
 
 import { assertResolvedConnections, connectionReferences } from "./connections";
 import { DocumentCapacity } from "./document-capacity";
-import { createInitialRecord, createOwnedInitialRecord } from "./record-factory";
+import {
+  createInitialRecord,
+  createOwnedInitialRecord,
+  createOwnedValidatedInitialRecord,
+} from "./record-factory";
 import { assertValidElement } from "./replacement-planner";
 import { StoreAppendBuilder } from "./store-append-builder";
 import type { ElementRecord, EndpointReference, StoreSliceScheduler } from "./types";
@@ -48,16 +52,41 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
     elements: readonly InkElementV1[],
     ownsRuntimeElements: boolean,
   ): Promise<"accepted" | "cancelled"> {
+    return this.#append(elements, ownsRuntimeElements);
+  }
+
+  public appendOwnedValidatedRuntime(
+    elements: readonly InkElementV1[],
+    derivations: readonly ElementValidationDerivation[],
+  ): Promise<"accepted" | "cancelled"> {
+    if (elements.length !== derivations.length) {
+      throw new TypeError("Validated element derivations are incomplete.");
+    }
+    return this.#append(elements, true, derivations);
+  }
+
+  async #append(
+    elements: readonly InkElementV1[],
+    ownsRuntimeElements: boolean,
+    derivations?: readonly ElementValidationDerivation[],
+  ): Promise<"accepted" | "cancelled"> {
     this.#assertOpen();
-    for (const element of elements) {
+    for (let index = 0; index < elements.length; index += 1) {
+      const element = elements[index]!;
       if (this.#isCancelled()) return this.#cancel();
-      if (ownsRuntimeElements) assertValidRuntimeElement(element);
-      else assertValidElement(element);
+      if (derivations === undefined) {
+        if (ownsRuntimeElements) assertValidRuntimeElement(element);
+        else assertValidElement(element);
+      }
       if (this.#records.has(element.id))
         throw new RangeError(`Duplicate element ID: ${element.id}`);
-      const record = ownsRuntimeElements
-        ? createOwnedInitialRecord(element)
-        : createInitialRecord(element);
+      const derivation = derivations?.[index];
+      const record =
+        derivation === undefined
+          ? ownsRuntimeElements
+            ? createOwnedInitialRecord(element)
+            : createInitialRecord(element)
+          : createOwnedValidatedInitialRecord(element, derivation);
       const capacityPatch = this.#capacity.prepare([], [record]);
       this.#index.insert(element.id, record.bounds);
       this.#capacity.commit(capacityPatch);

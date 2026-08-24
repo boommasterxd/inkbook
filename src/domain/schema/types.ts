@@ -12,7 +12,7 @@ export interface PageV1 {
   background: BackgroundV1;
   writingLineHeight: number;
   activeBufferLines: number;
-  lockedBufferLines: 0 | 1;
+  lockedBufferLines: number;
 }
 
 export type BackgroundV1 =

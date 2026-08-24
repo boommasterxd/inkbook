@@ -4,7 +4,7 @@
 
 The saved file is a complete, standalone SVG image as well as an Inkbook document. A supported external SVG viewer or editor MUST reproduce the same canonical locked document view as the plugin for the same light or dark color scheme: page surface, background guides, element geometry, paint, opacity, and back-to-front order inside the saved `viewBox`.
 
-Plugin chrome is outside this fidelity contract. The floating toolbar, menus, selection handles, cursors, dynamic rounded container, clipping radius, and other interactive overlays are host UI and are not serialized. The active editor's additional writable bottom buffer beyond `lockedHeight` is transient workspace, not part of the canonical locked view. The SVG page itself remains rectangular, including its writable side margin.
+Plugin chrome is outside this fidelity contract. The floating toolbar, menus, selection handles, cursors, dynamic rounded container, clipping radius, and other interactive overlays are host UI and are not serialized. Unlock animates the lifecycle-owned block from the serialized `lockedHeight` to derived `activeHeight`; workspace beyond `lockedHeight` is transient and is not part of the canonical locked view. The SVG page itself remains rectangular. Its unpatterned margin is serialized on all four sides, scales with the page, and remains writable; background guides stop at the margin's inner edge.
 
 The editable snapshot remains the source of truth. Static SVG drawing elements and the embedded theme stylesheet are deterministic derived output.
 
@@ -27,7 +27,7 @@ An Inkbook file is UTF-8 XML with this required order:
 </svg>
 ```
 
-The background group starts with one page-surface path covering the complete `viewBox`, including the writable margin. Background guides follow it. The page path has no rounded corners; the plugin's dynamic host container performs clipping.
+The background group starts with one page-surface path covering the complete `viewBox`, including the writable margin. Background guides follow it. The page path has no rounded corners; the plugin's dynamic host container performs rounded clipping. The canonical root stylesheet sets `overflow: hidden` on the standalone SVG, so geometry outside the rectangular `viewBox` remains editable in metadata but is not painted by external viewers.
 
 Additional envelope rules:
 
@@ -45,9 +45,9 @@ Format version 1 uses this fixed document palette, derived from Obsidian's defau
 
 | Role             | Light       | Dark        |
 | ---------------- | ----------- | ----------- |
-| Page surface     | `#F6F6F6FF` | `#282828FF` |
+| Page surface     | `#F6F6F6FF` | `#212121FF` |
 | Theme text       | `#222222FF` | `#DADADAFF` |
-| Background guide | `#70707040` | `#99999940` |
+| Background guide | `#ABABAB40` | `#66666640` |
 
 `ColorV1` values with `type: "theme-text"` use the Theme text role. Explicit RGBA colors, including built-in highlighter and palette colors, retain the same value in both schemes.
 
@@ -59,24 +59,25 @@ The serializer emits one constant-size stylesheet equivalent to:
   color-scheme: light dark;
   --inkbook-page: #F6F6F6FF;
   --inkbook-text: #222222FF;
-  --inkbook-guide: #70707040;
+  --inkbook-guide: #ABABAB40;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --inkbook-page: #282828FF;
+    --inkbook-page: #212121FF;
     --inkbook-text: #DADADAFF;
-    --inkbook-guide: #99999940;
+    --inkbook-guide: #66666640;
   }
 }
 @media print {
   :root {
     --inkbook-page: #F6F6F6FF;
     --inkbook-text: #222222FF;
-    --inkbook-guide: #70707040;
+    --inkbook-guide: #ABABAB40;
   }
 }
+svg { overflow: hidden; }
 .inkbook-theme-page { fill: var(--inkbook-page); }
-.inkbook-theme-guide { stroke: var(--inkbook-guide); }
+.inkbook-theme-guide { stroke: var(--inkbook-guide); vector-effect: non-scaling-stroke; }
 .inkbook-theme-stroke { stroke: var(--inkbook-text); }
 .inkbook-theme-fill { fill: var(--inkbook-text); }
 .inkbook-theme-stroke-fill { stroke: var(--inkbook-text); fill: var(--inkbook-text); }
@@ -85,6 +86,10 @@ The serializer emits one constant-size stylesheet equivalent to:
 Theme-dependent paths also carry the corresponding direct light RGBA presentation attribute. That attribute is the deterministic fallback when an external editor does not apply internal CSS or media queries. Theme-dependent geometry is never duplicated into separate light and dark groups.
 
 The plugin's active SVG scene uses the same palette values. Obsidian variables style only host chrome, menus, focus treatment, the border, and the rounded container. Community themes may change that host chrome, but they do not change the portable document palette. This separation is required for external fidelity without theme-driven file rewrites.
+
+Readers also accept the previous exact version 1 stylesheets whose guide colors were `#DCDCDCFF` and `#383838FF`, and the earlier translucent variants `#70707040` and `#99999940`, including the earlier dark page surfaces `#282828FF` and `#212121FF`, plus the immediately preceding canonical stylesheets without scale-independent guide strokes or explicit root overflow clipping. These compatibility inputs are not emitted. Loading marks any supported non-current stylesheet for a canonical rewrite, so locking after unlock performs a verified save even without a content edit and refreshes the preview only after readback succeeds. Unlocking reconstructs the active scene from the semantic snapshot with the current low-contrast guide palette. Guide colors use 25-percent alpha, matching the restrained host-grid contrast while remaining self-contained. Normal SVG antialiasing replaces `crispEdges`, which avoids neighboring guides being rounded to visibly different physical widths at fractional zoom or display scale. `vector-effect: non-scaling-stroke` retains a uniform one-screen-pixel guide weight in a correctly sized SVG viewport. Theme-guide paths keep their version-1 direct fallback stroke for static-group compatibility, while their required class resolves to the current palette in every canonical renderer.
+
+Square and dot guide coordinates contain only the greatest whole number of spacing intervals that fit inside the writable rectangle. Any horizontal or vertical remainder is split equally between the corresponding margins. The standalone SVG and active scene use the same centered bounds, and the active square coverage closes its terminal right and bottom lines, so neither presentation clips or leaves a cell open at an edge.
 
 ## Strict Static-Markup Allowlist
 
@@ -95,7 +100,7 @@ Generated static markup uses only `svg`, `style`, `metadata`, `g`, and `path`. T
 - `d`, `fill`, `fill-opacity`, `fill-rule`, `stroke`, `stroke-width`, `stroke-opacity`, `stroke-linecap`, `stroke-linejoin`, `stroke-dasharray`, and one allowlisted `class` on paths
 - exact `#RRGGBBAA`, `none`, or the canonical theme-class override for paint
 
-The only classes are `inkbook-theme-page`, `inkbook-theme-guide`, `inkbook-theme-stroke`, `inkbook-theme-fill`, and `inkbook-theme-stroke-fill`. A path has at most one theme class; the combined class avoids duplicating closed-shape geometry when both outline and fill use Theme text. The only accepted style element has `id="inkbook-theme"` in the required position and text exactly equal to the serializer's canonical minified stylesheet. The validator rejects additional CSS, selectors, declarations, custom properties, `url()`, `@import`, unknown classes, transforms, namespace extensions, and every unlisted element or attribute. Export bakes element rotation into path coordinates.
+The only classes are `inkbook-theme-page`, `inkbook-theme-guide`, `inkbook-theme-stroke`, `inkbook-theme-fill`, and `inkbook-theme-stroke-fill`. A path has at most one theme class; the combined class avoids duplicating closed-shape geometry when both outline and fill use Theme text. The only accepted style element has `id="inkbook-theme"` in the required position and text exactly equal to either the serializer's canonical minified stylesheet or the explicitly allowlisted previous version 1 stylesheet. The validator rejects additional CSS, selectors, declarations, custom properties, `url()`, `@import`, unknown classes, transforms, namespace extensions, and every unlisted element or attribute. Export bakes element rotation into path coordinates.
 
 Safe-preview attribute values are validated before any replacement SVG DOM is created:
 
@@ -113,9 +118,9 @@ The plugin registers the public workspace `css-change` event and reads the curre
 
 A scheme change performs no path construction, geometry calculation, bounds or anchor invalidation, spatial-index update, React ink render, document revision, history entry, dirty transition, worker export, or vault write. Every mounted main-window and pop-out presentation updates through its own lifecycle owner. Unmounted files are not scanned or opened.
 
-Lifecycle-owned Reading-view and Live Preview image hosts set their embedding node's `color-scheme` to the result of `App.isDarkMode()`. Secure embedded SVG images evaluate `prefers-color-scheme` from that embedding context. If progressive Reading-view enhancement cannot identify the host node, Inkbook leaves the native preview unchanged and disables Inkbook interaction. That host-owned fallback may follow the operating-system scheme rather than Obsidian's scheme because Obsidian exposes no public native-embed handle; Inkbook MUST NOT compensate with private DOM selectors.
+Lifecycle-owned Reading-view and Live Preview hosts set their embedding root `color-scheme` to the result of `App.isDarkMode()`. The locked preview removes the validated file stylesheet and applies equivalent canonical paint through rules scoped to that owned root; the standalone file continues to evaluate `prefers-color-scheme` itself. A real scheme transition remounts the already validated inert presentation markup with the new scoped scheme without file I/O, serialization, or cache-busting. If Reading-view enhancement cannot identify and validate the exact custom Inkbook block, it leaves the non-image Markdown link unchanged and disables Inkbook interaction. Inkbook MUST NOT compensate with private DOM selectors.
 
-At startup, each owning `Window` performs one constant-size capability check against an in-memory canonical SVG to verify that changing the embedding `color-scheme` repaints an SVG image. If a supported host version fails that check, a `css-change` whose `App.isDarkMode()` result differs from the presentation's remembered scheme replaces only each currently mounted, lifecycle-owned locked-preview image node in that window once with an equivalent node using the same vault URL and file bytes. Repeated CSS changes within the same scheme do nothing. This compatibility fallback performs no vault read or write, SVG serialization, worker dispatch, revision change, cache-busting query, or unlock. It never scans unmounted notes or files, and it does not alter a host preview that progressive enhancement could not safely identify. Active editor scenes still use the root-palette update.
+The plugin-owned locked surface uses neither an HTML image nor an object or iframe browsing context. A `css-change` whose `App.isDarkMode()` result differs from the presentation's remembered scheme remounts only its already validated presentation tree after updating the root scheme. Repeated CSS changes within the same scheme do nothing. This repaint performs no vault read or write, SVG serialization, worker dispatch, revision change, cache-busting query, unlock, or document-wide DOM search. It never scans unmounted notes or files, and it does not alter an unrecognized custom link. Active editor scenes still use the root-palette update.
 
 ## External Compatibility and Verification
 
@@ -128,7 +133,7 @@ At startup, each owning `Window` performs one constant-size capability check aga
 
 Release verification compares the same fixture in the active scene and saved SVG in light and dark mode, including fixed colors, Theme text, transparency, highlighters, every background, shapes, arrow nodes, and overlapping render bands. The matrix covers Reading view, Live Preview, main and pop-out windows, current Chromium-, Firefox-, and Safari-based SVG viewers, and at least one external vector editor. Raster comparisons use one documented anti-aliasing tolerance; geometry, order, and canonical colors require exact agreement. The fallback light rendering is checked with media-query application disabled.
 
-For every supported Obsidian version and platform, the release matrix separately verifies that an unidentified host-owned native Reading-view preview inherits the correct scheme. A failure blocks claiming theme parity for that host version, but does not permit private DOM integration. Runtime encounters with an unfamiliar host preview retain the safe noninteractive fallback and expose this documented theme limitation.
+For every supported Obsidian version and platform, the release matrix verifies that the custom Inkbook block becomes the same plugin-owned preview in Reading view and Live Preview. An unrecognized or invalid block remains a non-image link and never claims theme parity or interactive behavior.
 
 ## Standards References
 

@@ -1,3 +1,4 @@
+import { roundCanonical } from "../../domain/geometry/public";
 import { PAGE_WIDTH, PORTABLE_PALETTE_V1, type BackgroundV1 } from "../../domain/schema/public";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import { SVG_NAMESPACE } from "./constants";
@@ -180,27 +181,43 @@ export class SceneDom {
     this.svg.style.colorScheme = scheme;
   }
 
-  public setBackgroundPaint(background: BackgroundV1, margin: number): void {
-    if (background.type === "none") {
+  public setBackgroundPaint(
+    background: BackgroundV1,
+    paint: "direct" | "none" | "pattern",
+    patternX: number,
+    patternY: number,
+    zoom: number,
+  ): void {
+    if (paint === "none" || background.type === "none") {
       this.backgroundPath.setAttribute("fill", "none");
+      this.setDirectGuide(false);
       this.#backgroundPatternPath.setAttribute("d", "");
       return;
     }
+    if (paint === "direct") {
+      this.backgroundPath.setAttribute("fill", "none");
+      this.setDirectGuide(true);
+      this.#backgroundPatternPath.setAttribute("d", "");
+      return;
+    }
+    const strokeWidth = background.type === "dots" ? 2 : 1;
+    const inset = roundCanonical(strokeWidth / (2 * zoom));
     const spacing = String(background.spacing);
-    const origin = String(margin);
-    this.#backgroundPattern.setAttribute("x", origin);
-    this.#backgroundPattern.setAttribute("y", origin);
+    const originX = background.type === "lines" ? patternX : patternX - inset;
+    this.#backgroundPattern.setAttribute("x", String(roundCanonical(originX)));
+    this.#backgroundPattern.setAttribute("y", String(roundCanonical(patternY - inset)));
     this.#backgroundPattern.setAttribute("width", spacing);
     this.#backgroundPattern.setAttribute("height", spacing);
-    this.#backgroundPatternPath.setAttribute("d", patternPath(background));
+    this.#backgroundPatternPath.setAttribute("d", patternPath(background, inset));
     this.#backgroundPatternPath.setAttribute(
       "stroke-linecap",
       background.type === "dots" ? "round" : "butt",
     );
     this.#backgroundPatternPath.setAttribute(
       "stroke-width",
-      background.type === "dots" ? "2" : "1",
+      String(roundCanonical(strokeWidth / zoom)),
     );
+    this.setDirectGuide(false);
     this.backgroundPath.setAttribute("fill", `url(#${this.#backgroundPatternId})`);
   }
 
@@ -216,6 +233,12 @@ export class SceneDom {
       "d",
       "stroke-linecap",
       "stroke-width",
+    ]);
+    copyAttributes(this.backgroundPath, this.backgroundOutgoingPath, [
+      "class",
+      "stroke",
+      "stroke-width",
+      "vector-effect",
     ]);
     this.backgroundOutgoingPath.setAttribute("d", this.backgroundPath.getAttribute("d") ?? "");
     this.backgroundOutgoingPath.setAttribute(
@@ -247,6 +270,19 @@ export class SceneDom {
     return this.ownerDocument.createElementNS(SVG_NAMESPACE, name);
   }
 
+  private setDirectGuide(enabled: boolean): void {
+    if (!enabled) {
+      for (const attribute of ["class", "stroke", "stroke-width", "vector-effect"]) {
+        this.backgroundPath.removeAttribute(attribute);
+      }
+      return;
+    }
+    this.backgroundPath.setAttribute("class", "inkbook-theme-guide");
+    this.backgroundPath.setAttribute("stroke", PORTABLE_PALETTE_V1.light.guide);
+    this.backgroundPath.setAttribute("stroke-width", "1");
+    this.backgroundPath.setAttribute("vector-effect", "non-scaling-stroke");
+  }
+
   private attachHandlers(handlers: SceneInputHandlers): void {
     for (const name of Object.keys(handlers) as InputEventName[]) {
       const handler = handlers[name];
@@ -266,9 +302,10 @@ function copyAttributes(source: Element, target: Element, names: readonly string
   }
 }
 
-function patternPath(background: Exclude<BackgroundV1, { type: "none" }>): string {
+function patternPath(background: Exclude<BackgroundV1, { type: "none" }>, inset: number): string {
   const spacing = String(background.spacing);
-  if (background.type === "dots") return "M 0 0 L 0 0";
-  if (background.type === "lines") return `M 0 0 H ${spacing}`;
-  return `M 0 0 H ${spacing} M 0 0 V ${spacing}`;
+  const offset = String(inset);
+  if (background.type === "dots") return `M ${offset} ${offset} L ${offset} ${offset}`;
+  if (background.type === "lines") return `M 0 ${offset} H ${spacing}`;
+  return `M 0 ${offset} H ${spacing} M ${offset} 0 V ${spacing}`;
 }

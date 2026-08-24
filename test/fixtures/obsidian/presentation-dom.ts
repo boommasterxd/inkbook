@@ -5,6 +5,11 @@ interface FakePresentationCollection {
   item(index: number): FakePresentationElement | null;
 }
 
+interface FakePresentationEvent {
+  event: Event;
+  stopped: boolean;
+}
+
 export class FakePresentationElement {
   readonly attributes = new Map<string, string>();
   readonly children: FakePresentationElement[] = [];
@@ -12,9 +17,16 @@ export class FakePresentationElement {
   readonly dataset: Record<string, string> = {};
   readonly listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
   readonly ownerDocument: Document;
+  readonly localName: string;
+  readonly namespaceURI: string;
   readonly tagName: string;
   readonly style = {
+    "--inkbook-preview-aspect-ratio": "",
+    "--inkbook-preview-image": "",
     colorScheme: "",
+    removeProperty: (name: string): void => {
+      delete (this.style as unknown as Record<string, unknown>)[name];
+    },
     setProperty: (name: string, value: string): void => {
       (this.style as unknown as Record<string, unknown>)[name] = value;
     },
@@ -31,41 +43,87 @@ export class FakePresentationElement {
   scrollHeight = 200;
   scrollTop = 0;
   src = "";
+  textContent = "";
 
   public constructor(ownerDocument?: Document, tagName = "div") {
     this.tagName = tagName.toUpperCase();
+    this.localName = tagName.toLowerCase();
+    this.namespaceURI =
+      this.localName === "svg" || this.localName === "style"
+        ? "http://www.w3.org/2000/svg"
+        : "http://www.w3.org/1999/xhtml";
     if (ownerDocument !== undefined) {
       this.ownerDocument = ownerDocument;
       return;
     }
+    const documentPort: {
+      baseURI: string;
+      defaultView: unknown;
+      importNode: (node: FakePresentationElement, deep: boolean) => FakePresentationElement;
+      scrollingElement: FakePresentationElement | null;
+    } = {
+      baseURI: "app://vault/",
+      defaultView: undefined,
+      importNode: (node, deep) => node.cloneNode(deep),
+      scrollingElement: this,
+    };
+    const windowListeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
     const owningWindow = {
+      addEventListener: (type: string, callback: EventListenerOrEventListenerObject) => {
+        const listeners = windowListeners.get(type) ?? new Set();
+        listeners.add(callback);
+        windowListeners.set(type, listeners);
+      },
+      DOMParser: class {
+        public parseFromString(): { documentElement: FakePresentationElement } {
+          const svg = new FakePresentationElement(documentPort as unknown as Document, "svg");
+          svg.append(new FakePresentationElement(documentPort as unknown as Document, "style"));
+          return { documentElement: svg };
+        }
+      },
       ResizeObserver: class {
         public disconnect(): void {}
         public observe(): void {}
       },
       cancelAnimationFrame: vi.fn(),
       clearTimeout: vi.fn(),
+      dispatchEvent: (event: Event) => {
+        for (const callback of windowListeners.get(event.type) ?? []) {
+          if (typeof callback === "function") callback(event);
+          else callback.handleEvent(event);
+        }
+        return true;
+      },
       getComputedStyle: () => ({ overflowY: "visible" }),
       performance,
       requestAnimationFrame: (callback: FrameRequestCallback) => {
         callback(0);
         return 1;
       },
+      removeEventListener: (type: string, callback: EventListenerOrEventListenerObject) => {
+        windowListeners.get(type)?.delete(callback);
+      },
       setTimeout: (callback: () => void) => {
         callback();
         return 1;
       },
     };
-    const documentPort: {
-      baseURI: string;
-      defaultView: unknown;
-      scrollingElement: FakePresentationElement | null;
-    } = {
-      baseURI: "app://vault/",
-      defaultView: owningWindow,
-      scrollingElement: this,
-    };
+    documentPort.defaultView = owningWindow;
     this.ownerDocument = documentPort as unknown as Document;
+  }
+
+  public get childNodes(): readonly FakePresentationElement[] {
+    return this.children;
+  }
+
+  public get nextSibling(): FakePresentationElement | null {
+    if (this.parentElement === null) return null;
+    const index = this.parentElement.children.indexOf(this);
+    return index < 0 ? null : (this.parentElement.children[index + 1] ?? null);
+  }
+
+  public get parentNode(): FakePresentationElement | null {
+    return this.parentElement;
   }
 
   readonly classList = {
@@ -94,16 +152,37 @@ export class FakePresentationElement {
       if (previousIndex >= 0) child.parentElement.children.splice(previousIndex, 1);
     }
     child.parentElement = this;
+    child.isConnected = this.isConnected;
     this.children.push(child);
   }
 
-  public cloneNode(): FakePresentationElement {
+  public insertBefore(child: FakePresentationElement, reference: FakePresentationElement): void {
+    const referenceIndex = this.children.indexOf(reference);
+    if (referenceIndex < 0) {
+      this.append(child);
+      return;
+    }
+    child.parentElement?.removeChild(child);
+    child.parentElement = this;
+    child.isConnected = this.isConnected;
+    this.children.splice(referenceIndex, 0, child);
+  }
+
+  private removeChild(child: FakePresentationElement): void {
+    const index = this.children.indexOf(child);
+    if (index >= 0) this.children.splice(index, 1);
+    child.parentElement = null;
+    child.isConnected = false;
+  }
+
+  public cloneNode(deep = false): FakePresentationElement {
     const clone = new FakePresentationElement(this.ownerDocument, this.tagName);
     clone.alt = this.alt;
     clone.currentSrc = this.currentSrc;
     clone.src = this.src;
     for (const [name, value] of this.attributes) clone.attributes.set(name, value);
     for (const className of this.classNames) clone.classNames.add(className);
+    if (deep) for (const child of this.children) clone.append(child.cloneNode(true));
     return clone;
   }
 
@@ -133,9 +212,26 @@ export class FakePresentationElement {
     return child;
   }
 
-  public createSpan(options?: { readonly cls?: string }): FakePresentationElement {
+  public createDiv(options?: { readonly cls?: string }): FakePresentationElement {
+    const child = new FakePresentationElement(this.ownerDocument);
+    for (const className of options?.cls?.split(" ") ?? []) child.classList.add(className);
+    this.append(child);
+    return child;
+  }
+
+  public setCssProps(properties: Record<string, string>): void {
+    for (const [name, value] of Object.entries(properties)) {
+      this.style.setProperty(name, value);
+    }
+  }
+
+  public createSpan(options?: {
+    readonly cls?: string;
+    readonly text?: string;
+  }): FakePresentationElement {
     const child = new FakePresentationElement(this.ownerDocument, "span");
     for (const className of options?.cls?.split(" ") ?? []) child.classList.add(className);
+    child.textContent = options?.text ?? "";
     this.append(child);
     return child;
   }
@@ -145,25 +241,43 @@ export class FakePresentationElement {
       const index = this.parentElement.children.indexOf(this);
       if (index >= 0) this.parentElement.children.splice(index, 1, replacement);
       replacement.parentElement = this.parentElement;
+      replacement.isConnected = this.isConnected;
       this.parentElement = null;
     }
     this.isConnected = false;
   }
 
+  public replaceChildren(...replacements: FakePresentationElement[]): void {
+    for (const child of [...this.children]) this.removeChild(child);
+    for (const replacement of replacements) this.append(replacement);
+  }
+
   public remove(): void {
+    this.parentElement?.removeChild(this);
     this.isConnected = false;
   }
 
   public dispatch(type: string): void {
-    this.dispatchEvent({ type } as Event);
+    const dispatched: FakePresentationEvent = {
+      event: undefined as unknown as Event,
+      stopped: false,
+    };
+    dispatched.event = {
+      preventDefault: vi.fn(),
+      stopPropagation: () => {
+        dispatched.stopped = true;
+      },
+      type,
+    } as unknown as Event;
+    this.dispatchEvent(dispatched);
   }
 
-  private dispatchEvent(event: Event): void {
-    for (const callback of this.listeners.get(event.type) ?? []) {
-      if (typeof callback === "function") callback(event);
-      else callback.handleEvent(event);
+  private dispatchEvent(dispatched: FakePresentationEvent): void {
+    for (const callback of this.listeners.get(dispatched.event.type) ?? []) {
+      if (typeof callback === "function") callback(dispatched.event);
+      else callback.handleEvent(dispatched.event);
     }
-    this.parentElement?.dispatchEvent(event);
+    if (!dispatched.stopped) this.parentElement?.dispatchEvent(dispatched);
   }
 
   public getElementsByTagName(name: string): FakePresentationCollection {

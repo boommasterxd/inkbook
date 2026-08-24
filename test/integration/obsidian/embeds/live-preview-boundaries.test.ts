@@ -37,7 +37,7 @@ describe("Live Preview aggregate boundaries", () => {
   });
 
   it("fails closed without resolving partial targets above the aggregate match limit", () => {
-    const embed = "![[drawings/ink.svg]]";
+    const embed = "!inkbook[[drawings/ink.svg]]";
     const first = Array.from({ length: MARKDOWN_EMBED_LIMITS.matches / 2 }, () => embed).join("\n");
     const second = Array.from({ length: MARKDOWN_EMBED_LIMITS.matches / 2 + 1 }, () => embed).join(
       "\n",
@@ -62,8 +62,8 @@ describe("Live Preview aggregate boundaries", () => {
   });
 
   it("keeps below-limit split ranges synchronized with the current syntax and document state", () => {
-    const first = "![[drawings/ink.svg]]";
-    const second = "![Handwriting](drawings/ink.svg)";
+    const first = "!inkbook[[drawings/ink.svg]]";
+    const second = "!inkbook[Handwriting](drawings/ink.svg)";
     let text = `${first}\ngap\n${second}`;
     const secondFrom = text.indexOf(second);
     const ranges = [

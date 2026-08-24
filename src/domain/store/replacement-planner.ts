@@ -11,7 +11,6 @@ import {
   resolveConnections,
 } from "./connections";
 import { classifyReplacement, elementsEqual } from "./element-comparison";
-import { assertReplacementPageBoundsWhenSourceWasValid } from "./replacement-page-bounds";
 import { cancelled, yieldWhenRequested } from "./replacement-scheduler";
 import type {
   DeltaDomain,
@@ -37,6 +36,7 @@ export interface ReplacementPlannerPorts {
 
 export interface TimeSlicedReplacementCandidates {
   readonly candidates: readonly ReplacementCandidate[];
+  readonly drafts: ReadonlyMap<string, InkElementV1>;
   readonly yields: number;
 }
 
@@ -45,7 +45,6 @@ export function prepareReplacementCandidates(
   ports: ReplacementPlannerPorts,
 ): ReplacementCandidate[] {
   const drafts = prepareReplacementDrafts(replacements, ports);
-  assertReplacementPageBoundsWhenSourceWasValid(drafts, ports.getRecord);
   return classifyReplacementDrafts(drafts, ports.getRecord);
 }
 
@@ -56,14 +55,17 @@ export async function prepareReplacementCandidatesTimeSliced(
 ): Promise<TimeSlicedReplacementCandidates | "cancelled"> {
   const prepared = await prepareReplacementDraftsTimeSliced(replacements, ports, scheduler);
   if (prepared === "cancelled") return prepared;
-  assertReplacementPageBoundsWhenSourceWasValid(prepared.drafts, ports.getRecord);
   const classified = await classifyReplacementDraftsTimeSliced(
     prepared.drafts,
     ports.getRecord,
     scheduler,
   );
   if (classified === "cancelled") return classified;
-  return { candidates: classified.candidates, yields: prepared.yields + classified.yields };
+  return {
+    candidates: classified.candidates,
+    drafts: prepared.drafts,
+    yields: prepared.yields + classified.yields,
+  };
 }
 
 export function prepareReplacementDrafts(
@@ -75,7 +77,7 @@ export function prepareReplacementDrafts(
   return drafts;
 }
 
-export async function prepareReplacementDraftsTimeSliced(
+async function prepareReplacementDraftsTimeSliced(
   replacements: readonly InkElementV1[],
   ports: ReplacementPlannerPorts,
   scheduler: StoreSliceScheduler,
@@ -193,7 +195,7 @@ export function classifyReplacementDrafts(
   return candidates;
 }
 
-export async function classifyReplacementDraftsTimeSliced(
+async function classifyReplacementDraftsTimeSliced(
   drafts: Map<string, InkElementV1>,
   getRecord: (id: string) => ElementRecord,
   scheduler: StoreSliceScheduler,

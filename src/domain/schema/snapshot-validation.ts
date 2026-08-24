@@ -4,14 +4,13 @@ import {
   isAnchorTarget,
   resolveShapeAnchor,
 } from "../geometry/public";
-import { measureSpatialCapacity } from "../spatial/index";
+import { MAX_ELEMENT_CELLS, spatialCellMembershipCount } from "../spatial/index";
 import {
   FILE_SCHEMA_LIMITS,
   INKBOOK_FORMAT,
   INKBOOK_VERSION,
   PAGE_INNER_WIDTH,
   PAGE_MARGIN,
-  PAGE_WIDTH,
   type SchemaLimits,
 } from "./constants";
 import { assertInkElement } from "./element-validation";
@@ -26,6 +25,7 @@ import type {
 import {
   assertExactKeys,
   assertIntegerRange,
+  assertJsonTree,
   assertJsonTreeSteps,
   assertLiteral,
   assertOneOf,
@@ -38,7 +38,13 @@ import {
   toValidationError,
   type ValidationContext,
 } from "./validation-internals";
-import type { SnapshotValidationResult, ValidationByteLengths } from "./validation-types";
+import type {
+  ElementValidationDerivation,
+  SnapshotValidationDerivations,
+  SnapshotValidationResult,
+  ValidationByteLengths,
+  ValidationResult,
+} from "./validation-types";
 
 const CONNECTION_TOLERANCE = 0.001;
 const FLOAT_COMPARISON_EPSILON = 1e-9;
@@ -59,6 +65,39 @@ export function validateRuntimeInkSnapshotV1(
   options: SnapshotValidationOptions = {},
 ): SnapshotValidationResult {
   return completeValidation(validateSnapshotSteps(value, options, true));
+}
+
+export function validateInkPageV1(value: unknown): ValidationResult<PageV1> {
+  const statistics = createStatistics();
+  try {
+    statistics.maximumDepth = assertJsonTree(
+      value,
+      jsonNodeBudget(FILE_SCHEMA_LIMITS),
+      jsonContainerBudget(FILE_SCHEMA_LIMITS),
+    );
+    assertPage(value, "$.page");
+    return { ok: true, statistics, value };
+  } catch (error: unknown) {
+    return { error: toValidationError(error), ok: false };
+  }
+}
+
+export function validateInkConnectionRelationsV1(
+  elements: readonly InkElementV1[],
+): ValidationResult<void> {
+  const statistics = createStatistics();
+  try {
+    const byId = new Map(elements.map((element) => [element.id, element]));
+    const steps = validateConnections(elements, byId, {
+      limits: FILE_SCHEMA_LIMITS,
+      statistics,
+    });
+    let step = steps.next();
+    while (!step.done) step = steps.next();
+    return { ok: true, statistics, value: undefined };
+  } catch (error: unknown) {
+    return { error: toValidationError(error), ok: false };
+  }
 }
 
 /** Yields after bounded JSON-tree batches and after every validated document element. */
@@ -95,8 +134,12 @@ function* validateSnapshotSteps(
 
     const context = { allowRuntimeStrokeBuffers, limits, statistics };
     yield* validateElements(value.elements, context);
-    yield* validateDocumentRelations(value.elements as InkElementV1[], value.page, context);
-    return { ok: true, value: value as unknown as InkSnapshotV1, statistics };
+    const derivations = yield* validateDocumentRelations(
+      value.elements as InkElementV1[],
+      value.page,
+      context,
+    );
+    return { derivations, ok: true, value: value as unknown as InkSnapshotV1, statistics };
   } catch (error: unknown) {
     return { ok: false, error: toValidationError(error) };
   }
@@ -136,7 +179,7 @@ function assertPage(value: unknown, path: string): asserts value is PageV1 {
   assertBackground(value.background, `${path}.background`);
   assertIntegerRange(value.writingLineHeight, 50, 200, `${path}.writingLineHeight`);
   assertIntegerRange(value.activeBufferLines, 1, 8, `${path}.activeBufferLines`);
-  assertOneOf(value.lockedBufferLines, [0, 1] as const, `${path}.lockedBufferLines`);
+  assertIntegerRange(value.lockedBufferLines, 0, 8, `${path}.lockedBufferLines`);
 }
 
 function assertBackground(value: unknown, path: string): asserts value is BackgroundV1 {
@@ -176,7 +219,7 @@ function* validateDocumentRelations(
   elements: InkElementV1[],
   page: PageV1,
   context: ValidationContext,
-): Generator<void, void> {
+): Generator<void, SnapshotValidationDerivations> {
   const byId = new Map<string, InkElementV1>();
   for (let index = 0; index < elements.length; index += 1) {
     const element = elements[index] as InkElementV1;
@@ -186,11 +229,11 @@ function* validateDocumentRelations(
     if ((index + 1) % 128 === 0) yield;
   }
   yield* validateConnections(elements, byId, context);
-  yield* validateBoundsAndExtent(elements, page, context);
+  return yield* validateBoundsAndExtent(elements, page, context);
 }
 
 function* validateConnections(
-  elements: InkElementV1[],
+  elements: readonly InkElementV1[],
   byId: ReadonlyMap<string, InkElementV1>,
   context: ValidationContext,
 ): Generator<void, void> {
@@ -261,28 +304,34 @@ function* validateBoundsAndExtent(
   elements: InkElementV1[],
   page: PageV1,
   context: ValidationContext,
-): Generator<void, void> {
+): Generator<void, SnapshotValidationDerivations> {
   let maximumBottom: number | null = null;
-  const allBounds = [];
+  let cellMemberships = 0;
+  let overflowElements = 0;
+  const derivations: ElementValidationDerivation[] = [];
   for (let index = 0; index < elements.length; index += 1) {
-    const bounds = calculateElementBounds(elements[index] as InkElementV1);
-    if (bounds.minX < 0 || bounds.maxX > PAGE_WIDTH || bounds.minY < 0) {
-      fail(
-        "invalid-range",
-        `$.elements[${index}]`,
-        "Conservative bounds lie outside the supported page.",
-      );
-    }
-    allBounds.push(bounds);
+    const element = elements[index] as InkElementV1;
+    const bounds = Object.freeze(calculateElementBounds(element));
+    const memberships = spatialCellMembershipCount(bounds);
+    const spatialOverflow = memberships > MAX_ELEMENT_CELLS;
+    if (spatialOverflow) overflowElements += 1;
+    else cellMemberships += memberships;
+    derivations.push(
+      Object.freeze({
+        bounds,
+        elementId: element.id,
+        spatialMemberships: spatialOverflow ? 0 : memberships,
+        spatialOverflow,
+      }),
+    );
     maximumBottom = Math.max(maximumBottom ?? 0, bounds.maxY);
     if ((index + 1) % 128 === 0) yield;
   }
-  const spatial = measureSpatialCapacity(allBounds);
-  context.statistics.spatialIndexCellMemberships = spatial.cellMemberships;
-  context.statistics.spatialIndexOverflowElements = spatial.overflowElements;
+  context.statistics.spatialIndexCellMemberships = cellMemberships;
+  context.statistics.spatialIndexOverflowElements = overflowElements;
   if (
-    spatial.cellMemberships > context.limits.spatialIndexCellMemberships ||
-    spatial.overflowElements > context.limits.spatialIndexOverflowElements
+    cellMemberships > context.limits.spatialIndexCellMemberships ||
+    overflowElements > context.limits.spatialIndexOverflowElements
   ) {
     fail(
       "spatial-index-limit-exceeded",
@@ -290,15 +339,17 @@ function* validateBoundsAndExtent(
       "Spatial-index aggregate capacity exceeds the configured limit.",
     );
   }
-  if (context.limits.maximumDerivedHeight === null) return;
-  const extent = derivePageExtent(page, maximumBottom);
-  if (
-    (maximumBottom ?? 0) > context.limits.maximumDerivedHeight ||
-    extent.activeHeight > context.limits.maximumDerivedHeight ||
-    extent.lockedHeight > context.limits.maximumDerivedHeight
-  ) {
-    fail("invalid-range", "$.elements", "Maximum derived page height exceeds the limit.");
+  if (context.limits.maximumDerivedHeight !== null) {
+    const extent = derivePageExtent(page, maximumBottom);
+    if (
+      (maximumBottom ?? 0) > context.limits.maximumDerivedHeight ||
+      extent.activeHeight > context.limits.maximumDerivedHeight ||
+      extent.lockedHeight > context.limits.maximumDerivedHeight
+    ) {
+      fail("invalid-range", "$.elements", "Maximum derived page height exceeds the limit.");
+    }
   }
+  return Object.freeze({ elements: Object.freeze(derivations), maximumBottom });
 }
 
 function completeValidation(

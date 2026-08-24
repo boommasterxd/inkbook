@@ -30,7 +30,8 @@ import { attachActiveSceneInputListeners } from "./active-scene-input";
 import { bindActiveSceneScrollOwner, type ActiveSceneScrollBinding } from "./active-scene-scroll";
 import {
   applyLockedFitLayout,
-  LOCK_LAYOUT_DURATION_MS,
+  lockedPageAspectRatio,
+  LOCK_PRESENTATION_DURATION_MS,
   restoreActiveLayout,
   type LockedFitTransition,
 } from "./active-scene-lock";
@@ -57,6 +58,9 @@ export interface ActiveInkbookSceneOptions {
   readonly onDeleteEmbed: () => void;
   readonly onFirstStrokeCommitted?: () => void;
   readonly root: HTMLElement;
+  readonly preview?: HTMLElement;
+  readonly setPreviewSource?: (source: string) => Promise<void>;
+  readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
   readonly scheme: InkbookColorScheme;
   readonly scrollOwner?: () => BrowserScrollElement | null;
   readonly startupTool: StartupToolV1;
@@ -105,7 +109,7 @@ export class ActiveInkbookScene {
     this.#chromeHost = elements.chromeHost;
     this.#container = elements.container;
     this.#editorChrome = elements.editorChrome;
-    this.#previewHandoff = elements.previewHandoff;
+    this.#previewHandoff = createPreviewHandoff(elements.container, options);
     this.#memory = new ActiveSceneMemoryBinding(options.model.store);
     this.#store = this.#memory.store;
     const scrollOwner = options.scrollOwner?.() ?? resolveActiveScrollOwner(options.root);
@@ -163,6 +167,7 @@ export class ActiveInkbookScene {
       invalidate: () => this.#renderer.invalidateLayout(),
       ownerWindow,
       ...(options.scrollOwner === undefined ? {} : { provider: options.scrollOwner }),
+      root: options.root,
       transfer: (owner) => this.#controller.transferScrollOwner(owner),
     });
     this.#removeViewportListeners = () => scrollBinding?.dispose();
@@ -196,13 +201,21 @@ export class ActiveInkbookScene {
 
   public disableInput(): void {
     this.#controller.setEnabled(false);
+    this.#layout.suspend();
     this.#beginLockTransition();
   }
 
   public enableInput(): void {
     if (!this.#readyForInput) return;
     this.#cancelLockTransition();
+    this.#layout.resume();
     this.#controller.setEnabled(true);
+  }
+
+  public restoreAfterFailedLock(): void {
+    if (this.#disposed) return;
+    this.#cancelLockTransition();
+    this.#layout.resume();
   }
 
   public finishLock(): Promise<void> {
@@ -257,6 +270,7 @@ export class ActiveInkbookScene {
 
   public setPreviewSource(source: string): void {
     if (this.#disposed) return;
+    this.#refreshPreviewAspectRatio();
     this.#previewReady = this.#previewHandoff.setPreviewSource(source);
   }
 
@@ -301,6 +315,7 @@ export class ActiveInkbookScene {
     this.#lockGeneration += 1;
     this.#preLockBlockSize = this.#container.style.blockSize;
     this.#preLockViewState = this.#controller.getViewState();
+    this.#refreshPreviewAspectRatio();
     this.#lockLayoutTransition = applyLockedFitLayout({
       anchor: this.#controller.readResizeAnchor(),
       applyResize: (update) => this.#controller.applyResize(update),
@@ -342,7 +357,7 @@ export class ActiveInkbookScene {
     if (ownerWindow === null) return;
     const elapsed = ownerWindow.performance.now() - (this.#lockStartedAt ?? 0);
     const reduced = this.#previewHandoff.reducedMotion;
-    const remaining = reduced ? 0 : Math.max(0, LOCK_LAYOUT_DURATION_MS - elapsed);
+    const remaining = reduced ? 0 : Math.max(0, LOCK_PRESENTATION_DURATION_MS - elapsed);
     if (remaining > 0) {
       await this.#lockDelay.wait(remaining);
     }
@@ -350,7 +365,7 @@ export class ActiveInkbookScene {
     await this.#previewReady;
     if (this.#disposed || generation !== this.#lockGeneration) return;
     await new Promise<void>((resolve) => {
-      this.#previewHandoff.crossfadeToPreview(this.#editorChrome, resolve, () => {
+      this.#previewHandoff.handoffToPreview(this.#editorChrome, resolve, () => {
         const transition = this.#lockLayoutTransition;
         this.#lockLayoutTransition = undefined;
         transition?.finish();
@@ -364,6 +379,12 @@ export class ActiveInkbookScene {
 
   #storeMaximumBottom(): number | undefined {
     return this.#model.store.getMaximumBottom();
+  }
+
+  #refreshPreviewAspectRatio(): void {
+    this.#previewHandoff.setPreviewAspectRatio(
+      lockedPageAspectRatio(this.#controllerModelPage(), this.#storeMaximumBottom()),
+    );
   }
 
   #completePreviewHandoff(): void {
@@ -397,6 +418,7 @@ export class ActiveInkbookScene {
 
   #sceneCommitted(): void {
     this.#memory.evaluate();
+    this.#layout.sceneCommitted();
     this.#flushPendingChromeUpdate();
     if (this.#initialSceneReadiness.markSceneCommitted()) this.#completePreviewHandoff();
   }
@@ -452,16 +474,26 @@ function createSceneElements(
   readonly chromeHost: HTMLDivElement;
   readonly container: HTMLDivElement;
   readonly editorChrome: HTMLDivElement;
-  readonly previewHandoff: ActiveScenePreviewHandoff;
 } {
   root.classList.add("inkbook-root");
   root.dataset.inkbookMotion = motion;
-  const preview = root.getElementsByTagName("img").item(0) ?? undefined;
-  const { chromeHost, container, editorChrome } = createActiveSceneChromeElements(root);
-  return {
-    chromeHost,
+  return createActiveSceneChromeElements(root);
+}
+
+function createPreviewHandoff(
+  container: HTMLElement,
+  options: ActiveInkbookSceneOptions,
+): ActiveScenePreviewHandoff {
+  return new ActiveScenePreviewHandoff({
     container,
-    editorChrome,
-    previewHandoff: new ActiveScenePreviewHandoff({ container, motion, preview, root }),
-  };
+    motion: options.deviceSettings.motion,
+    preview: options.preview,
+    root: options.root,
+    ...(options.setPreviewAspectRatio === undefined
+      ? {}
+      : { setPreviewAspectRatio: options.setPreviewAspectRatio }),
+    ...(options.setPreviewSource === undefined
+      ? {}
+      : { setPreviewSource: options.setPreviewSource }),
+  });
 }

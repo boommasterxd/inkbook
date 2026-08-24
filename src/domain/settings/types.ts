@@ -97,7 +97,7 @@ interface PageDefaultsV1 {
   };
   writingLineHeight: number;
   activeBufferLines: number;
-  lockedBufferLines: 0 | 1;
+  lockedBufferLines: number;
 }
 
 export type FilePlacementV1 =

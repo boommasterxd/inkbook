@@ -14,17 +14,41 @@ import { ColorSchemeBroadcaster } from "../../../../src/obsidian/theme/color-sch
 import { executableSyntaxIn } from "../../../fixtures/obsidian/live-preview";
 import { FakePresentationElement as FakeElement } from "../../../fixtures/obsidian/presentation-dom";
 
+const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata></svg>';
+
+function livePreviewEmbed(resourceUrl = "app://vault/ink.svg") {
+  return {
+    from: 4,
+    preview: { aspectRatio: 12, safeSvg: SAFE_PREVIEW_SVG },
+    resolved: { documentId: "drawings/ink.svg", resourceUrl },
+    sourcePath: "notes/note.md",
+    to: 28,
+  };
+}
 function createPorts(): EmbedIntegrationPorts & {
-  readonly attachments: Array<{ readonly embedReference: unknown }>;
+  readonly attachments: Array<{
+    readonly embedReference: unknown;
+    readonly preview?: HTMLElement;
+    readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
+  }>;
   readonly calls: string[];
   readonly setDark: () => void;
 } {
   let dark = false;
   const calls: string[] = [];
-  const attachments: Array<{ readonly embedReference: unknown }> = [];
+  const attachments: Array<{
+    readonly embedReference: unknown;
+    readonly preview?: HTMLElement;
+    readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
+  }> = [];
   return {
     attachments,
     calls,
+    documents: {
+      cached: () => ({ aspectRatio: 12, safeSvg: SAFE_PREVIEW_SVG }),
+      recognize: async () => ({ aspectRatio: 12, safeSvg: SAFE_PREVIEW_SVG }),
+      subscribe: () => () => undefined,
+    },
     lifecycle: new PresentationLifecycleRegistry(),
     resolveDocument: (linkpath) =>
       linkpath === "drawings/ink.svg"
@@ -44,32 +68,51 @@ function createPorts(): EmbedIntegrationPorts & {
     },
   };
 }
-
+function requireOwnedPreview(
+  root: FakeElement,
+  activationButton: FakeElement | undefined,
+): FakeElement {
+  expect(activationButton?.tagName).toBe("BUTTON");
+  expect(activationButton?.attributes.get("aria-label")).toBe("Edit handwriting");
+  expect(activationButton?.attributes.get("type")).toBe("button");
+  expect(activationButton?.children[0]?.classNames).toContain("inkbook-locked-preview-media");
+  expect(root.getElementsByTagName("img").length).toBe(0);
+  if (activationButton === undefined) throw new Error("Missing activation button.");
+  return activationButton;
+}
 describe("Markdown embed recognition", () => {
-  it("parses supported SVG embeds without treating other attachments as ink", () => {
+  it("parses standalone Inkbook embeds without treating native SVG embeds as ink", () => {
     expect(
-      findMarkdownInkbookEmbeds("![[drawings/ink.svg|600]] and ![preview](other.svg) ![[note.md]]"),
+      findMarkdownInkbookEmbeds(
+        [
+          "!inkbook[[drawings/ink.svg|600]]",
+          "!inkbook[preview](other.svg)",
+          "![[drawings/native.svg]]",
+          "![preview](native.svg)",
+          "![[note.md]]",
+        ].join("\n"),
+      ),
     ).toMatchObject([
-      { linkpath: "drawings/ink.svg", markdown: "![[drawings/ink.svg|600]]" },
-      { linkpath: "other.svg", markdown: "![preview](other.svg)" },
+      { linkpath: "drawings/ink.svg", markdown: "!inkbook[[drawings/ink.svg|600]]" },
+      { linkpath: "other.svg", markdown: "!inkbook[preview](other.svg)" },
     ]);
   });
 
   it("ignores embed-like text in code, comments, and escaped Markdown", () => {
     const markdown = [
-      "`![[drawings/ink.svg]]`",
+      "`!inkbook[[drawings/ink.svg]]`",
       "```md",
-      "![[drawings/ink.svg]]",
+      "!inkbook[[drawings/ink.svg]]",
       "```",
-      "<!-- ![preview](drawings/ink.svg) -->",
-      String.raw`\![[drawings/ink.svg]]`,
-      "![[drawings/ink.svg]]",
-      "![preview](drawings/ink.svg)",
+      "<!-- !inkbook[preview](drawings/ink.svg) -->",
+      String.raw`\!inkbook[[drawings/ink.svg]]`,
+      "!inkbook[[drawings/ink.svg]]",
+      "!inkbook[preview](drawings/ink.svg)",
     ].join("\n");
 
     expect(findMarkdownInkbookEmbeds(markdown).map((embed) => embed.markdown)).toEqual([
-      "![[drawings/ink.svg]]",
-      "![preview](drawings/ink.svg)",
+      "!inkbook[[drawings/ink.svg]]",
+      "!inkbook[preview](drawings/ink.svg)",
     ]);
   });
 
@@ -78,17 +121,15 @@ describe("Markdown embed recognition", () => {
 
     expect(findMarkdownInkbookEmbeds(oversized)).toEqual([]);
   });
-
   it("fails closed before accumulating too many Markdown matches", () => {
     const tooManyEmbeds = Array.from(
       { length: MARKDOWN_EMBED_LIMITS.matches + 1 },
-      () => "![[drawings/ink.svg]]",
+      () => "!inkbook[[drawings/ink.svg]]",
     ).join("\n");
 
     expect(findMarkdownInkbookEmbeds(tooManyEmbeds)).toEqual([]);
   });
 });
-
 describe("Reading-view embed lifecycle", () => {
   it("leaves Reading view unchanged when public context is ambiguous", () => {
     const ports = createPorts();
@@ -111,20 +152,24 @@ describe("Reading-view embed lifecycle", () => {
       root as unknown as HTMLElement,
       {
         sourcePath: "notes/note.md",
-        getSectionInfo: () => ({ text: "![[drawings/ink.svg]] ![[drawings/ink.svg]]" }),
+        getSectionInfo: () => ({
+          text: "!inkbook[[drawings/ink.svg]] !inkbook[[drawings/ink.svg]]",
+        }),
         addChild,
       } as never,
     );
     expect(addChild).not.toHaveBeenCalled();
     expect(ports.calls).toEqual([]);
   });
-
-  it("owns Reading-view activation and cleanup through a render child", () => {
+  it("replaces the complete custom Reading-view block", () => {
     const ports = createPorts();
-    const root = new FakeElement();
-    const image = new FakeElement(root.ownerDocument, "img");
-    image.src = "app://vault/ink.svg";
-    root.append(image);
+    const section = new FakeElement();
+    const root = new FakeElement(section.ownerDocument);
+    section.append(root);
+    const markerText = new FakeElement(root.ownerDocument, "span");
+    const fileLink = new FakeElement(root.ownerDocument, "a");
+    root.append(markerText);
+    root.append(fileLink);
     const processor = createReadingViewPostProcessor(ports);
     let child: { load(): void; unload(): void } | undefined;
 
@@ -135,7 +180,7 @@ describe("Reading-view embed lifecycle", () => {
         getSectionInfo: () => ({
           lineEnd: 12,
           lineStart: 12,
-          text: "![[drawings/ink.svg]]",
+          text: "!inkbook[[drawings/ink.svg]]",
         }),
         addChild: (nextChild: { load(): void; unload(): void }) => {
           child = nextChild;
@@ -145,39 +190,45 @@ describe("Reading-view embed lifecycle", () => {
     );
 
     expect(ports.calls).toEqual(["mount:drawings/ink.svg"]);
-    expect(root.children[0]?.classNames).toContain("inkbook-root");
-    expect(root.classNames).toContain("inkbook-scrollbar-stable");
-    expect(root.children[0]?.style.colorScheme).toBe("light");
-    const activationButton = root.children[0]?.children[0];
-    expect(activationButton?.tagName).toBe("BUTTON");
-    expect(activationButton?.attributes.get("aria-label")).toBe("Edit handwriting");
-    expect(activationButton?.attributes.get("type")).toBe("button");
-    expect(activationButton?.children[0]).toBe(image);
+    const ownedRoot = section.children[0];
+    expect(ownedRoot?.tagName).toBe("DIV");
+    expect(ownedRoot?.classNames).toContain("inkbook-root");
+    expect(section.classNames).toContain("inkbook-scrollbar-stable");
+    expect(ownedRoot?.style.colorScheme).toBe("light");
+    const activationButton = requireOwnedPreview(ownedRoot ?? root, ownedRoot?.children[0]);
+    expect(root.isConnected).toBe(false);
+    expect(section.children).toHaveLength(1);
     expect(ports.attachments[0]?.embedReference).toEqual({
       documentId: "drawings/ink.svg",
       kind: "reading-view",
-      markdown: "![[drawings/ink.svg]]",
+      markdown: "!inkbook[[drawings/ink.svg]]",
       section: {
         lineEnd: 12,
         lineStart: 12,
-        text: "![[drawings/ink.svg]]",
+        text: "!inkbook[[drawings/ink.svg]]",
       },
       sectionFrom: 0,
-      sectionTo: 21,
+      sectionTo: 28,
       sourcePath: "notes/note.md",
     });
+    const bubbledActivation = vi.fn();
+    section.addEventListener("click", bubbledActivation);
     activationButton?.dispatch("click");
     expect(ports.calls[ports.calls.length - 1]).toBe("activate:drawings/ink.svg");
+    expect(bubbledActivation).not.toHaveBeenCalled();
     child?.unload();
     expect(ports.calls[ports.calls.length - 1]).toBe("detach:drawings/ink.svg");
-    expect(root.classNames).not.toContain("inkbook-scrollbar-stable");
-    image.dispatch("click");
+    expect(section.classNames).not.toContain("inkbook-scrollbar-stable");
+    expect(section.children).toEqual([root]);
+    expect(root.isConnected).toBe(true);
+    expect(root.children).toEqual([markerText, fileLink]);
+    fileLink.dispatch("click");
     expect(ports.calls.filter((call) => call.startsWith("activate"))).toHaveLength(1);
   });
 });
 
 describe("Reading-view target correlation", () => {
-  it("fails closed when a Reading-view section contains another native image", () => {
+  it("fails closed when a Reading-view section contains other Markdown", () => {
     const ports = createPorts();
     const root = new FakeElement();
     const unrelated = new FakeElement(root.ownerDocument, "img");
@@ -193,7 +244,7 @@ describe("Reading-view target correlation", () => {
       root as unknown as HTMLElement,
       {
         sourcePath: "notes/note.md",
-        getSectionInfo: () => ({ text: "![other](unrelated.png) ![[drawings/ink.svg]]" }),
+        getSectionInfo: () => ({ text: "![other](unrelated.png) !inkbook[[drawings/ink.svg]]" }),
         addChild,
       } as never,
     );
@@ -201,7 +252,7 @@ describe("Reading-view target correlation", () => {
     expect(addChild).not.toHaveBeenCalled();
   });
 
-  it("requires exactly one recognized raw embed before correlating the rendered image", () => {
+  it("requires a standalone recognized raw embed", () => {
     const ports = createPorts();
     const root = new FakeElement();
     const image = new FakeElement(root.ownerDocument, "img");
@@ -214,7 +265,7 @@ describe("Reading-view target correlation", () => {
       {
         sourcePath: "notes/note.md",
         getSectionInfo: () => ({
-          text: "![[drawings/missing.svg]] ![[drawings/ink.svg]]",
+          text: "Before !inkbook[[drawings/ink.svg]] after",
         }),
         addChild,
       } as never,
@@ -223,38 +274,10 @@ describe("Reading-view target correlation", () => {
     expect(addChild).not.toHaveBeenCalled();
   });
 
-  it("fails closed for mismatched, ambiguous, and code-contained Reading-view images", () => {
+  it("fails closed inside code", () => {
     const ports = createPorts();
     const processor = createReadingViewPostProcessor(ports);
     const addChild = vi.fn();
-    const mismatchedRoot = new FakeElement();
-    const mismatchedImage = new FakeElement(mismatchedRoot.ownerDocument, "img");
-    mismatchedImage.src = "app://vault/other.svg";
-    mismatchedRoot.append(mismatchedImage);
-    void processor(
-      mismatchedRoot as unknown as HTMLElement,
-      {
-        sourcePath: "notes/note.md",
-        getSectionInfo: () => ({ text: "![[drawings/ink.svg]]" }),
-        addChild,
-      } as never,
-    );
-
-    const ambiguousRoot = new FakeElement();
-    for (let index = 0; index < 2; index += 1) {
-      const image = new FakeElement(ambiguousRoot.ownerDocument, "img");
-      image.src = "app://vault/ink.svg";
-      ambiguousRoot.append(image);
-    }
-    void processor(
-      ambiguousRoot as unknown as HTMLElement,
-      {
-        sourcePath: "notes/note.md",
-        getSectionInfo: () => ({ text: "![[drawings/ink.svg]]" }),
-        addChild,
-      } as never,
-    );
-
     const code = new FakeElement(undefined, "code");
     const codeImage = new FakeElement(code.ownerDocument, "img");
     codeImage.src = "app://vault/ink.svg";
@@ -263,7 +286,7 @@ describe("Reading-view target correlation", () => {
       code as unknown as HTMLElement,
       {
         sourcePath: "notes/note.md",
-        getSectionInfo: () => ({ text: "![[drawings/ink.svg]]" }),
+        getSectionInfo: () => ({ text: "!inkbook[[drawings/ink.svg]]" }),
         addChild,
       } as never,
     );
@@ -274,8 +297,8 @@ describe("Reading-view target correlation", () => {
 
 describe("Live Preview embed integration", () => {
   it("creates candidates only inside visible ranges", () => {
-    const text = "![[drawings/hidden.svg]]\ntext\n![[drawings/ink.svg]]";
-    const visibleFrom = text.indexOf("![[drawings/ink.svg]]");
+    const text = "!inkbook[[drawings/hidden.svg]]\ntext\n!inkbook[[drawings/ink.svg]]";
+    const visibleFrom = text.indexOf("!inkbook[[drawings/ink.svg]]");
     const readText = vi.fn((from: number, to: number) => text.slice(from, to));
     const resolved = findEmbedsInVisibleRanges(
       readText,
@@ -298,7 +321,7 @@ describe("Live Preview embed integration", () => {
   });
 
   it("fails closed when visible embed syntax is missing or unknown", () => {
-    const text = "![[drawings/ink.svg]]";
+    const text = "!inkbook[[drawings/ink.svg]]";
     const resolveDocument = createPorts().resolveDocument;
 
     expect(
@@ -312,8 +335,8 @@ describe("Live Preview embed integration", () => {
     ).toEqual([]);
   });
 
-  it("accepts executable Wiki and Markdown image syntax", () => {
-    const text = "![[drawings/ink.svg]]\n![Handwriting](drawings/ink.svg)";
+  it("accepts executable Inkbook Wiki-link and Markdown-link syntax", () => {
+    const text = "!inkbook[[drawings/ink.svg]]\n!inkbook[Handwriting](drawings/ink.svg)";
     const embeds = findEmbedsInVisibleRanges(
       (from, to) => text.slice(from, to),
       [{ from: 0, to: text.length }],
@@ -323,8 +346,8 @@ describe("Live Preview embed integration", () => {
     );
 
     expect(embeds.map(({ from, to }) => text.slice(from, to))).toEqual([
-      "![[drawings/ink.svg]]",
-      "![Handwriting](drawings/ink.svg)",
+      "!inkbook[[drawings/ink.svg]]",
+      "!inkbook[Handwriting](drawings/ink.svg)",
     ]);
   });
 
@@ -350,19 +373,11 @@ describe("Live Preview widget lifecycle", () => {
     const ports = createPorts();
     const created: FakeElement[] = [];
     const ownerDocument = new FakeElement().ownerDocument;
-    const widget = new InkbookLivePreviewWidget(
-      {
-        from: 4,
-        resolved: { documentId: "drawings/ink.svg", resourceUrl: "app://vault/ink.svg" },
-        sourcePath: "notes/note.md",
-        to: 28,
-      },
-      ports,
-    );
+    const widget = new InkbookLivePreviewWidget(livePreviewEmbed(), ports);
     const root = widget.toDOM({
       dom: {
         ownerDocument,
-        createSpan: () => {
+        createDiv: () => {
           const element = new FakeElement(ownerDocument);
           created.push(element);
           return element;
@@ -371,12 +386,12 @@ describe("Live Preview widget lifecycle", () => {
     } as never) as unknown as FakeElement;
 
     expect(created).toHaveLength(1);
-    const activationButton = root.children[0];
-    expect(activationButton?.tagName).toBe("BUTTON");
-    expect(activationButton?.attributes.get("aria-label")).toBe("Edit handwriting");
-    expect(activationButton?.attributes.get("type")).toBe("button");
-    expect(activationButton?.children[0]?.alt).toBe("");
-    expect(activationButton?.children[0]?.src).toBe("app://vault/ink.svg");
+    expect(root.tagName).toBe("DIV");
+    const activationButton = requireOwnedPreview(root, root.children[0]);
+    expect(activationButton?.children[0]?.style["--inkbook-preview-aspect-ratio"]).toBe("12");
+    expect(activationButton?.children[0]?.children[0]?.classNames).toContain(
+      "inkbook-locked-preview-svg",
+    );
     activationButton?.dispatch("click");
     expect(ports.calls).toEqual(["mount:drawings/ink.svg", "activate:drawings/ink.svg"]);
     expect(ports.attachments[0]?.embedReference).toEqual({
@@ -386,6 +401,9 @@ describe("Live Preview widget lifecycle", () => {
       sourcePath: "notes/note.md",
       to: 28,
     });
+    expect(ports.attachments[0]?.preview).toBe(activationButton);
+    ports.attachments[0]?.setPreviewAspectRatio?.(4);
+    expect(activationButton.children[0]?.style["--inkbook-preview-aspect-ratio"]).toBe("4");
     widget.destroy(root as unknown as HTMLElement);
     expect(ports.calls[ports.calls.length - 1]).toBe("detach:drawings/ink.svg");
   });
@@ -394,21 +412,14 @@ describe("Live Preview widget lifecycle", () => {
 describe("Live Preview widget reconciliation", () => {
   it("includes both the document path and resource URL in widget identity", () => {
     const ports = createPorts();
-    const widget = new InkbookLivePreviewWidget(
-      {
-        from: 4,
-        resolved: { documentId: "drawings/ink.svg", resourceUrl: "app://vault/ink.svg" },
-        sourcePath: "notes/note.md",
-        to: 28,
-      },
-      ports,
-    );
+    const widget = new InkbookLivePreviewWidget(livePreviewEmbed(), ports);
 
     expect(
       widget.eq(
         new InkbookLivePreviewWidget(
           {
             from: 4,
+            preview: { aspectRatio: 12, safeSvg: SAFE_PREVIEW_SVG },
             resolved: { documentId: "drawings/ink.svg", resourceUrl: "app://vault/ink.svg" },
             sourcePath: "notes/note.md",
             to: 28,
@@ -422,6 +433,7 @@ describe("Live Preview widget reconciliation", () => {
         new InkbookLivePreviewWidget(
           {
             from: 4,
+            preview: { aspectRatio: 12, safeSvg: SAFE_PREVIEW_SVG },
             resolved: {
               documentId: "drawings/ink.svg",
               resourceUrl: "app://vault/reissued.svg",
@@ -438,6 +450,7 @@ describe("Live Preview widget reconciliation", () => {
         new InkbookLivePreviewWidget(
           {
             from: 5,
+            preview: { aspectRatio: 12, safeSvg: SAFE_PREVIEW_SVG },
             resolved: { documentId: "drawings/ink.svg", resourceUrl: "app://vault/ink.svg" },
             sourcePath: "notes/note.md",
             to: 28,
@@ -452,6 +465,7 @@ describe("Live Preview widget reconciliation", () => {
     const ports = createPorts();
     const embed = {
       from: 4,
+      preview: { aspectRatio: 12, safeSvg: SAFE_PREVIEW_SVG },
       resolved: { documentId: "drawings/ink.svg", resourceUrl: "app://vault/ink.svg" },
       sourcePath: "notes/note.md",
       to: 28,
@@ -462,7 +476,7 @@ describe("Live Preview widget reconciliation", () => {
     const root = mounted.toDOM({
       dom: {
         ownerDocument,
-        createSpan: () => new FakeElement(ownerDocument),
+        createDiv: () => new FakeElement(ownerDocument),
       },
     } as never);
 

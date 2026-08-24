@@ -120,10 +120,6 @@ export class ActiveEditorMenuController {
     this.open(resolvedPosition, source === "pointer" ? this.#event : undefined);
   }
 
-  public openFromToolbar(position: InputPoint, trigger: Element | null): void {
-    this.open(position, undefined, overflowButton(trigger));
-  }
-
   public open(position: InputPoint, event?: MouseEvent, returnFocus?: FocusTargetPort): void {
     this.dispose();
     const generation = this.#openGeneration;
@@ -165,9 +161,4 @@ export class ActiveEditorMenuController {
       ...(returnFocus === undefined ? {} : { returnFocus }),
     });
   }
-}
-
-function overflowButton(element: Element | null): FocusTargetPort | undefined {
-  if (element?.getAttribute("data-inkbook-action") !== "overflow") return undefined;
-  return "focus" in element ? (element as FocusTargetPort) : undefined;
 }

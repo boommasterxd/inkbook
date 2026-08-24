@@ -1,4 +1,6 @@
-import type { PageV1 } from "../schema/public";
+import { CANONICAL_LOCKED_BUFFER_LINES, type PageV1 } from "../schema/public";
+
+const MINIMUM_EMPTY_WRITING_LINES = 2.5;
 
 export interface PageExtent {
   activeHeight: number;
@@ -17,12 +19,19 @@ export function derivePageExtent(page: PageV1, maximumElementBottom: number | nu
   const occupiedBottom =
     maximumElementBottom === null ? page.margin : Math.max(page.margin, maximumElementBottom);
   const occupiedRows = Math.ceil(Math.max(0, occupiedBottom - page.margin) / backgroundStep);
-  const activeWritableBottom =
-    page.margin +
-    (occupiedRows + (page.activeBufferLines * bufferUnit) / backgroundStep) * backgroundStep;
-  const lockedWritableBottom =
-    page.margin +
-    (occupiedRows + (page.lockedBufferLines * bufferUnit) / backgroundStep) * backgroundStep;
+  const minimumEmptyRows =
+    maximumElementBottom === null
+      ? Math.ceil((MINIMUM_EMPTY_WRITING_LINES * page.writingLineHeight) / backgroundStep)
+      : 0;
+  const activeRows = Math.max(
+    occupiedRows + (page.activeBufferLines * bufferUnit) / backgroundStep,
+    minimumEmptyRows,
+  );
+  const lockedTrailingRows =
+    page.background.type === "none" ? bufferUnit / backgroundStep : CANONICAL_LOCKED_BUFFER_LINES;
+  const lockedRows = Math.max(occupiedRows + lockedTrailingRows, minimumEmptyRows);
+  const activeWritableBottom = page.margin + activeRows * backgroundStep;
+  const lockedWritableBottom = page.margin + lockedRows * backgroundStep;
   return {
     activeHeight: activeWritableBottom + page.margin,
     activeWritableBottom,
@@ -33,4 +42,21 @@ export function derivePageExtent(page: PageV1, maximumElementBottom: number | nu
     occupiedBottom,
     occupiedRows,
   };
+}
+
+/** Returns the pre-pattern-row locked height accepted only while loading existing version 1 files. */
+export function deriveLegacyLockedHeight(
+  page: PageV1,
+  maximumElementBottom: number | null,
+): number {
+  const extent = derivePageExtent(page, maximumElementBottom);
+  const minimumEmptyRows =
+    maximumElementBottom === null
+      ? Math.ceil((MINIMUM_EMPTY_WRITING_LINES * page.writingLineHeight) / extent.backgroundStep)
+      : 0;
+  const lockedRows = Math.max(
+    extent.occupiedRows + (page.lockedBufferLines * extent.bufferUnit) / extent.backgroundStep,
+    minimumEmptyRows,
+  );
+  return page.margin + lockedRows * extent.backgroundStep + page.margin;
 }
