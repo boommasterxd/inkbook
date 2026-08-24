@@ -1,17 +1,26 @@
-import { calculateElementBounds, derivePageExtent } from "../../domain/geometry/public";
+import {
+  calculateElementBounds,
+  derivePageExtent,
+  isAnchorTarget,
+} from "../../domain/geometry/public";
 import {
   FILE_SCHEMA_LIMITS,
   MAX_DERIVED_HEIGHT,
-  PAGE_WIDTH,
+  validatedElementDerivationBounds,
+  type ElementValidationDerivation,
   type InkElementV1,
   type PageV1,
   type ValidationError,
 } from "../../domain/schema/public";
-import { MAX_ELEMENT_CELLS, spatialCellMembershipCount } from "../../domain/spatial/index";
+import {
+  MAX_ELEMENT_CELLS,
+  spatialCellMembershipCount,
+  type SpatialBounds,
+} from "../../domain/spatial/index";
 
 export interface ElementFacts {
   readonly bottom: number;
-  readonly boundsValid: boolean;
+  readonly connectedEndpoints: number;
   readonly spatialMemberships: number;
   readonly spatialOverflow: number;
   readonly strokePoints: number;
@@ -19,7 +28,7 @@ export interface ElementFacts {
 }
 
 export interface AggregateFacts {
-  readonly boundsInvalid: number;
+  readonly connectedEndpoints: number;
   readonly elements: number;
   readonly maximumBottom: number | null;
   readonly maximumBottomCount: number;
@@ -34,18 +43,50 @@ export interface ValidatedDeltaFacts {
   readonly changed: ReadonlyMap<string, ElementFacts>;
 }
 
-export function elementFacts(element: InkElementV1): ElementFacts {
-  const bounds = calculateElementBounds(element);
+export function elementFacts(
+  element: InkElementV1,
+  derivation?: ElementValidationDerivation,
+): ElementFacts {
+  const bounds =
+    derivation === undefined
+      ? calculateElementBounds(element)
+      : validatedElementDerivationBounds(element, derivation);
+  return factsFromBounds(element, bounds);
+}
+
+export function validatedDeltaElementFacts(
+  element: InkElementV1,
+  derivation?: ElementValidationDerivation,
+): ElementFacts {
+  if (derivation === undefined) return elementFacts(element);
+  const derivedBounds = validatedElementDerivationBounds(element, derivation);
+  const calculatedBounds = calculateElementBounds(element);
+  if (!sameBounds(derivedBounds, calculatedBounds)) {
+    throw new TypeError("Element derivation does not match its geometry.");
+  }
+  return factsFromBounds(element, derivedBounds);
+}
+
+function factsFromBounds(element: InkElementV1, bounds: Readonly<SpatialBounds>): ElementFacts {
   const memberships = spatialCellMembershipCount(bounds);
   const spatialOverflow = Number(memberships > MAX_ELEMENT_CELLS);
   return {
     bottom: bounds.maxY,
-    boundsValid: bounds.minX >= 0 && bounds.maxX <= PAGE_WIDTH && bounds.minY >= 0,
+    connectedEndpoints: connectionCount(element),
     spatialMemberships: spatialOverflow === 0 ? memberships : 0,
     spatialOverflow,
     strokePoints: element.kind === "stroke" ? element.points.length / 3 : 0,
     strokes: Number(element.kind === "stroke"),
   };
+}
+
+function sameBounds(left: Readonly<SpatialBounds>, right: Readonly<SpatialBounds>): boolean {
+  return (
+    left.minX === right.minX &&
+    left.minY === right.minY &&
+    left.maxX === right.maxX &&
+    left.maxY === right.maxY
+  );
 }
 
 export function aggregateElementFacts(facts: Iterable<ElementFacts>): AggregateFacts {
@@ -88,23 +129,53 @@ export function updateAggregateFacts(
 }
 
 export function connectionRelationsAffected(
-  currentElements: Iterable<InkElementV1>,
+  currentElements: ReadonlyMap<string, InkElementV1>,
   changed: ReadonlyMap<string, InkElementV1>,
   removed: ReadonlySet<string>,
 ): boolean {
+  const changedTargets = collectChangedAnchorTargets(currentElements, changed, removed);
+  if (changedTargets === null) return true;
+  return changedTargets.size > 0 && hasConnectionToTarget(currentElements, changedTargets);
+}
+
+function collectChangedAnchorTargets(
+  currentElements: ReadonlyMap<string, InkElementV1>,
+  changed: ReadonlyMap<string, InkElementV1>,
+  removed: ReadonlySet<string>,
+): ReadonlySet<string> | null {
+  const changedTargets = new Set<string>();
   for (const element of changed.values()) {
-    if (hasEndpointConnection(element)) return true;
-  }
-  for (const element of currentElements) {
-    if (element.kind !== "line" && element.kind !== "arrow") continue;
-    if ((changed.has(element.id) || removed.has(element.id)) && hasEndpointConnection(element)) {
-      return true;
+    const current = currentElements.get(element.id);
+    if (
+      hasEndpointConnection(element) ||
+      (current !== undefined && hasEndpointConnection(current))
+    ) {
+      return null;
     }
+    if (isAnchorTarget(element) || (current !== undefined && isAnchorTarget(current))) {
+      changedTargets.add(element.id);
+    }
+  }
+  for (const id of removed) {
+    const current = currentElements.get(id);
+    if (current === undefined) continue;
+    if (hasEndpointConnection(current)) return null;
+    if (isAnchorTarget(current)) changedTargets.add(id);
+  }
+  return changedTargets;
+}
+
+function hasConnectionToTarget(
+  currentElements: ReadonlyMap<string, InkElementV1>,
+  changedTargets: ReadonlySet<string>,
+): boolean {
+  for (const element of currentElements.values()) {
+    if (element.kind !== "line" && element.kind !== "arrow") continue;
     const startTarget = element.startConnection?.targetId;
     const endTarget = element.endConnection?.targetId;
     if (
-      (startTarget !== undefined && (changed.has(startTarget) || removed.has(startTarget))) ||
-      (endTarget !== undefined && (changed.has(endTarget) || removed.has(endTarget)))
+      (startTarget !== undefined && changedTargets.has(startTarget)) ||
+      (endTarget !== undefined && changedTargets.has(endTarget))
     ) {
       return true;
     }
@@ -116,9 +187,6 @@ export function validateAggregateFacts(
   facts: AggregateFacts,
   page: PageV1,
 ): ValidationError | null {
-  if (facts.boundsInvalid > 0) {
-    return validationError("invalid-range", "Conservative bounds lie outside the page.");
-  }
   if (facts.elements > FILE_SCHEMA_LIMITS.elements) {
     return validationError("element-limit-exceeded", "Element count exceeds the limit.");
   }
@@ -127,6 +195,12 @@ export function validateAggregateFacts(
   }
   if (facts.strokePoints > FILE_SCHEMA_LIMITS.strokePoints) {
     return validationError("stroke-point-limit-exceeded", "Stroke point count exceeds the limit.");
+  }
+  if (facts.connectedEndpoints > FILE_SCHEMA_LIMITS.connectedEndpoints) {
+    return validationError(
+      "connection-limit-exceeded",
+      "Connected endpoint count exceeds the limit.",
+    );
   }
   if (
     facts.spatialMemberships > FILE_SCHEMA_LIMITS.spatialIndexCellMemberships ||
@@ -153,8 +227,8 @@ function validationError(code: ValidationError["code"], message: string): Valida
 }
 
 function mutableAggregate(): {
-  boundsInvalid: number;
   elements: number;
+  connectedEndpoints: number;
   maximumBottom: number | null;
   maximumBottomCount: number;
   spatialMemberships: number;
@@ -163,7 +237,7 @@ function mutableAggregate(): {
   strokes: number;
 } {
   return {
-    boundsInvalid: 0,
+    connectedEndpoints: 0,
     elements: 0,
     maximumBottom: null,
     maximumBottomCount: 0,
@@ -175,8 +249,8 @@ function mutableAggregate(): {
 }
 
 function addFact(aggregate: ReturnType<typeof mutableAggregate>, fact: ElementFacts, sign: 1 | -1) {
-  aggregate.boundsInvalid += sign * Number(!fact.boundsValid);
   aggregate.elements += sign;
+  aggregate.connectedEndpoints += sign * fact.connectedEndpoints;
   aggregate.spatialMemberships += sign * fact.spatialMemberships;
   aggregate.spatialOverflow += sign * fact.spatialOverflow;
   aggregate.strokePoints += sign * fact.strokePoints;
@@ -218,4 +292,9 @@ function recomputeMaximumBottom(
 function hasEndpointConnection(element: InkElementV1): boolean {
   if (element.kind !== "line" && element.kind !== "arrow") return false;
   return element.startConnection !== null || element.endConnection !== null;
+}
+
+function connectionCount(element: InkElementV1): number {
+  if (element.kind !== "line" && element.kind !== "arrow") return 0;
+  return Number(element.startConnection !== null) + Number(element.endConnection !== null);
 }

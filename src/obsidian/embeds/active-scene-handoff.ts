@@ -1,13 +1,17 @@
 import type { InkbookDeviceSettingsV1 } from "../../domain/settings/types";
+import { transitionDurations } from "../../rendering/ui/motion";
 
 type MotionPreference = InkbookDeviceSettingsV1["motion"];
 
-const LOCK_CROSSFADE_DURATION_MS = 120;
+const ACTIVE_SCENE_BLOCK_SIZE_PROPERTY = "--inkbook-active-scene-block-size";
+const LOCKED_CONTAINER_BLOCK_SIZE_PROPERTY = "--inkbook-locked-container-block-size";
 
 interface PreviewHandoffOptions {
   readonly container: HTMLElement;
   readonly motion: MotionPreference;
-  readonly preview: HTMLImageElement | undefined;
+  readonly preview: HTMLElement | undefined;
+  readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
+  readonly setPreviewSource?: (source: string) => Promise<void>;
   readonly root: HTMLElement;
 }
 
@@ -16,13 +20,15 @@ export class ActiveScenePreviewHandoff {
   readonly #mediaQuery: MediaQueryList | undefined;
   #motion: MotionPreference;
   readonly #ownerWindow: Window;
-  readonly #preview: HTMLImageElement | undefined;
+  readonly #preview: HTMLElement | undefined;
   readonly #previewNextSibling: ChildNode | null;
   readonly #previewParent: Node | null;
   readonly #root: HTMLElement;
+  readonly #setPreviewAspectRatio: ((aspectRatio: number) => void) | undefined;
+  readonly #setPreviewSource: ((source: string) => Promise<void>) | undefined;
   readonly #lockedBlockSize: string;
   #disposed = false;
-  #onComplete: (() => void) | undefined;
+  #onReady: (() => void) | undefined;
   #onLockComplete: (() => void) | undefined;
   #lockEditor: HTMLElement | undefined;
   #started = false;
@@ -36,6 +42,8 @@ export class ActiveScenePreviewHandoff {
     this.#motion = options.motion;
     this.#ownerWindow = ownerWindow;
     this.#preview = options.preview;
+    this.#setPreviewAspectRatio = options.setPreviewAspectRatio;
+    this.#setPreviewSource = options.setPreviewSource;
     this.#previewNextSibling = options.preview?.nextSibling ?? null;
     this.#previewParent = options.preview?.parentNode ?? null;
     this.#root = options.root;
@@ -45,12 +53,19 @@ export class ActiveScenePreviewHandoff {
     this.#preview?.classList.add("inkbook-preview-handoff");
     const lockedHeight = this.#preview?.getBoundingClientRect().height ?? 0;
     this.#lockedBlockSize = lockedHeight > 0 ? `${String(lockedHeight)}px` : "";
-    if (this.#lockedBlockSize !== "") this.#container.style.blockSize = this.#lockedBlockSize;
+    if (this.#lockedBlockSize !== "") {
+      this.#container.style.blockSize = this.#lockedBlockSize;
+      this.#container.style.setProperty(
+        LOCKED_CONTAINER_BLOCK_SIZE_PROPERTY,
+        this.#lockedBlockSize,
+      );
+    }
   }
 
   public dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#onReady = undefined;
     this.#clearTimer();
     if (this.#frame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#frame);
     this.#frame = undefined;
@@ -64,32 +79,59 @@ export class ActiveScenePreviewHandoff {
       "inkbook-active-transitioning",
       "inkbook-active-ready",
     );
+    this.#container.style.removeProperty(ACTIVE_SCENE_BLOCK_SIZE_PROPERTY);
+    this.#container.style.removeProperty(LOCKED_CONTAINER_BLOCK_SIZE_PROPERTY);
     this.#preview?.classList.remove("inkbook-preview-handoff");
-    const previewStyle = (this.#preview as Partial<HTMLImageElement> | undefined)?.style;
-    previewStyle?.removeProperty("inset");
-    previewStyle?.removeProperty("opacity");
-    previewStyle?.removeProperty("position");
-    previewStyle?.removeProperty("transition");
+    this.#resetPreviewLayer();
+    this.#resetEditorLayer(this.#lockEditor);
     this.restorePreview();
   }
 
-  public ready(onComplete?: () => void): void {
-    if (this.#disposed || this.#root.classList.contains("inkbook-active-ready")) return;
-    this.#onComplete = onComplete;
+  public ready(onReady?: () => void): void {
+    if (this.#disposed || this.#started || this.#root.classList.contains("inkbook-active-ready")) {
+      return;
+    }
+    this.#onReady = onReady;
     this.#started = true;
     const activeBlockSize = this.#container.style.blockSize;
-    if (this.#lockedBlockSize !== "" && activeBlockSize !== this.#lockedBlockSize) {
-      this.#container.style.blockSize = this.#lockedBlockSize;
-      this.#container.getBoundingClientRect();
+    if (activeBlockSize !== "") {
+      this.#container.style.setProperty(ACTIVE_SCENE_BLOCK_SIZE_PROPERTY, activeBlockSize);
     }
-    this.#root.classList.remove("inkbook-active-preparing");
-    this.#root.classList.add("inkbook-active-transitioning");
-    this.#container.style.blockSize = activeBlockSize;
+    this.#container.getBoundingClientRect();
     if (this.#reducedMotion()) {
+      this.#startUnlockTransition(activeBlockSize);
       this.#complete();
       return;
     }
-    this.#timer = this.#ownerWindow.setTimeout(() => this.#complete(), 240);
+    this.#scheduleUnlockTransition(activeBlockSize);
+  }
+
+  #scheduleUnlockTransition(activeBlockSize: string): void {
+    this.#scheduleAfterPaint(() => this.#startUnlockTransition(activeBlockSize));
+  }
+
+  #scheduleAfterPaint(callback: () => void): void {
+    this.#frame = this.#ownerWindow.requestAnimationFrame(() => {
+      this.#frame = undefined;
+      if (this.#disposed) return;
+      this.#frame = this.#ownerWindow.requestAnimationFrame(() => {
+        this.#frame = undefined;
+        if (this.#disposed) return;
+        callback();
+      });
+    });
+  }
+
+  #startUnlockTransition(activeBlockSize: string): void {
+    if (this.#preview !== undefined) this.#preview.hidden = true;
+    this.#root.classList.remove("inkbook-active-preparing");
+    this.#root.classList.add("inkbook-active-transitioning");
+    this.#container.style.blockSize = activeBlockSize;
+    this.#notifyReady();
+    this.#timer = this.#ownerWindow.setTimeout(
+      () => this.#complete(),
+      transitionDurations.lockedToActiveHeight,
+    );
   }
 
   public restorePreview(): void {
@@ -117,13 +159,22 @@ export class ActiveScenePreviewHandoff {
   public setPreviewSource(source: string): Promise<void> {
     const preview = this.#preview;
     if (preview === undefined) return Promise.resolve();
-    preview.src = source;
-    return typeof preview.decode === "function"
-      ? preview.decode().catch(() => undefined)
+    if (this.#setPreviewSource !== undefined) {
+      return this.#setPreviewSource(source);
+    }
+    if (preview.tagName !== "IMG") return Promise.resolve();
+    const image = preview as HTMLImageElement;
+    image.src = source;
+    return typeof image.decode === "function"
+      ? image.decode().catch(() => undefined)
       : Promise.resolve();
   }
 
-  public crossfadeToPreview(
+  public setPreviewAspectRatio(aspectRatio: number): void {
+    this.#setPreviewAspectRatio?.(aspectRatio);
+  }
+
+  public handoffToPreview(
     editorChrome: HTMLElement,
     onComplete: () => void,
     finalizeLayout: () => void = () => undefined,
@@ -137,8 +188,7 @@ export class ActiveScenePreviewHandoff {
       return;
     }
     if (this.#reducedMotion()) {
-      preview.setCssProps({ opacity: "1", transition: "none" });
-      editorChrome.setCssProps({ opacity: "0", transition: "none" });
+      editorChrome.hidden = true;
       onComplete();
       return;
     }
@@ -147,26 +197,20 @@ export class ActiveScenePreviewHandoff {
     preview.classList.add("inkbook-preview-handoff");
     preview.setCssProps({
       inset: "0",
-      opacity: "0",
       position: "absolute",
-      transition: `opacity ${String(LOCK_CROSSFADE_DURATION_MS)}ms ease`,
+      zIndex: "1",
     });
     editorChrome.setCssProps({
-      opacity: "1",
-      transition: `opacity ${String(LOCK_CROSSFADE_DURATION_MS)}ms ease`,
+      zIndex: "2",
     });
-    this.#frame = this.#ownerWindow.requestAnimationFrame(() => {
-      this.#frame = undefined;
-      if (this.#disposed) return;
-      preview.setCssProps({ opacity: "1" });
-      editorChrome.setCssProps({ opacity: "0" });
-      this.#timer = this.#ownerWindow.setTimeout(() => {
-        this.#timer = undefined;
-        const complete = this.#onLockComplete;
-        this.#onLockComplete = undefined;
-        this.#lockEditor = undefined;
-        complete?.();
-      }, LOCK_CROSSFADE_DURATION_MS);
+    this.#scheduleAfterPaint(() => {
+      this.#resetPreviewLayer();
+      editorChrome.hidden = true;
+      this.#resetEditorLayer(editorChrome);
+      const complete = this.#onLockComplete;
+      this.#onLockComplete = undefined;
+      this.#lockEditor = undefined;
+      complete?.();
     });
   }
 
@@ -184,8 +228,11 @@ export class ActiveScenePreviewHandoff {
     const lockComplete = this.#onLockComplete;
     if (lockComplete !== undefined) {
       this.restorePreview();
-      this.#preview?.setCssProps({ opacity: "1", transition: "none" });
-      this.#lockEditor?.setCssProps({ opacity: "0", transition: "none" });
+      this.#resetPreviewLayer();
+      if (this.#lockEditor !== undefined) {
+        this.#lockEditor.hidden = true;
+        this.#resetEditorLayer(this.#lockEditor);
+      }
       this.#onLockComplete = undefined;
       this.#lockEditor = undefined;
       lockComplete();
@@ -200,18 +247,35 @@ export class ActiveScenePreviewHandoff {
     this.#timer = undefined;
   }
 
+  #resetPreviewLayer(): void {
+    const previewStyle = this.#preview?.style;
+    previewStyle?.removeProperty("inset");
+    previewStyle?.removeProperty("position");
+    previewStyle?.removeProperty("z-index");
+  }
+
+  #resetEditorLayer(editor: HTMLElement | undefined): void {
+    editor?.style.removeProperty("z-index");
+  }
+
   #complete(): void {
     if (this.#disposed) return;
     this.#clearTimer();
     this.#root.classList.remove("inkbook-active-preparing", "inkbook-active-transitioning");
     this.#root.classList.add("inkbook-active-ready");
+    this.#container.style.removeProperty(ACTIVE_SCENE_BLOCK_SIZE_PROPERTY);
+    this.#container.style.removeProperty(LOCKED_CONTAINER_BLOCK_SIZE_PROPERTY);
     if (this.#preview !== undefined) {
       this.#preview.hidden = true;
       (this.#preview as Partial<{ remove(): void }>).remove?.();
     }
-    const onComplete = this.#onComplete;
-    this.#onComplete = undefined;
-    onComplete?.();
+    this.#notifyReady();
+  }
+
+  #notifyReady(): void {
+    const onReady = this.#onReady;
+    this.#onReady = undefined;
+    onReady?.();
   }
 
   #reducedMotion(): boolean {

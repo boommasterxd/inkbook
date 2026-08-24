@@ -1,0 +1,258 @@
+.inkbook-root .inkbook-toolbar-composition {
+  --inkbook-toolbar-surface: var(--inkbook-page-surface);
+  background: transparent;
+  block-size: 50px;
+  inset-block-start: 7px;
+  inline-size: 100%;
+  pointer-events: none;
+  position: relative;
+}
+
+.inkbook-root .inkbook-toolbar-rail {
+  block-size: 48px;
+  inset-block-start: 1px;
+  inline-size: 100%;
+  pointer-events: none;
+  position: relative;
+}
+
+.inkbook-root .inkbook-toolbar-composition-scrollable {
+  border-radius: 999px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  pointer-events: auto;
+  scrollbar-width: none;
+}
+
+.inkbook-root .inkbook-toolbar-composition-scrollable::-webkit-scrollbar {
+  display: none;
+}
+
+.inkbook-root .inkbook-toolbar-composition-scrollable .inkbook-toolbar-rail {
+  align-items: flex-start;
+  box-sizing: border-box;
+  display: flex;
+  gap: 8px;
+  inline-size: max-content;
+  min-inline-size: 100%;
+  padding-inline: 8px;
+}
+
+.inkbook-root .inkbook-toolbar {
+  align-items: center;
+  color: var(--text-normal);
+  display: flex;
+  gap: 0;
+  inset-block-start: 0;
+  margin-inline: auto;
+  max-inline-size: calc(100% - 16px);
+  padding: 2px;
+  position: sticky;
+  width: max-content;
+  z-index: var(--layer-popover);
+}
+
+.inkbook-root .inkbook-toolbar-wide {
+  display: flex;
+  width: max-content;
+}
+
+.inkbook-root .inkbook-toolbar-scrollable {
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  margin-inline: 0;
+  max-inline-size: none;
+  width: max-content;
+}
+
+.inkbook-root .inkbook-toolbar-group {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+.inkbook-root .inkbook-toolbar-track {
+  position: relative;
+}
+
+.inkbook-root .inkbook-toolbar-context-actions {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  gap: 8px;
+  inset-block-start: 0;
+  inset-inline-start: calc(50% + var(--inkbook-toolbar-main-half, 0px) + 8px);
+  max-inline-size: max(0px, calc(50% - var(--inkbook-toolbar-main-half, 0px) - 16px));
+  overflow-x: auto;
+  pointer-events: auto;
+  position: absolute;
+  scrollbar-width: none;
+}
+
+.inkbook-root .inkbook-toolbar-context-actions:empty {
+  display: none;
+}
+
+.inkbook-root .inkbook-toolbar-context-actions::-webkit-scrollbar {
+  display: none;
+}
+
+.inkbook-root .inkbook-toolbar-composition-scrollable .inkbook-toolbar-context-actions {
+  flex: 0 0 auto;
+  inset: auto;
+  margin-block-start: 0;
+  max-inline-size: none;
+  overflow: visible;
+  position: static;
+}
+
+.inkbook-root .inkbook-toolbar-button {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  block-size: 44px;
+  box-shadow: none;
+  color: var(--text-muted);
+  display: inline-flex;
+  flex: 0 0 44px;
+  inline-size: 44px;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  position: relative;
+  transition: color var(--inkbook-motion-fast) var(--inkbook-motion-easing);
+  z-index: 1;
+}
+
+.inkbook-root .inkbook-toolbar-active-indicator {
+  background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 45%, transparent);
+  border-radius: 50%;
+  block-size: 36px;
+  inline-size: 36px;
+  inset-block-start: 4px;
+  inset-inline-start: 0;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  transform: translate3d(var(--inkbook-toolbar-active-offset, 0px), 0, 0);
+  transition: transform var(--inkbook-motion-fast) var(--inkbook-motion-easing);
+  z-index: 0;
+}
+
+.inkbook-root .inkbook-toolbar-active-indicator[data-ready="true"] {
+  opacity: 1;
+}
+
+.inkbook-root .inkbook-toolbar-button::before {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: inherit;
+  content: "";
+  inset: 4px;
+  pointer-events: none;
+  position: absolute;
+  transform: scale(1);
+  transition:
+    background-color var(--inkbook-motion-fast) var(--inkbook-motion-easing),
+    border-color var(--inkbook-motion-fast) var(--inkbook-motion-easing),
+    transform var(--inkbook-motion-fast) var(--inkbook-motion-easing);
+}
+
+.inkbook-root .inkbook-toolbar-context-button {
+  flex-basis: 48px;
+  inline-size: 48px;
+}
+
+.inkbook-root .inkbook-toolbar,
+.inkbook-root .inkbook-toolbar-context-button {
+  background: var(--inkbook-toolbar-surface);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  block-size: 48px;
+  box-sizing: border-box;
+  box-shadow: none;
+}
+
+.inkbook-root .inkbook-toolbar-button:hover {
+  color: var(--text-normal);
+}
+
+.inkbook-root .inkbook-toolbar-button:disabled {
+  color: var(--text-faint);
+  cursor: default;
+  opacity: 0.48;
+}
+
+.inkbook-root .inkbook-toolbar-button:disabled::before,
+.inkbook-root .inkbook-toolbar-button:disabled:hover::before {
+  background: transparent;
+  border-color: transparent;
+  transform: none;
+}
+
+.inkbook-root .inkbook-toolbar-button:hover::before {
+  background: var(--background-modifier-hover);
+}
+
+.inkbook-root .inkbook-toolbar-button[aria-pressed="true"] {
+  color: var(--interactive-accent);
+}
+
+.inkbook-root .inkbook-toolbar-button[aria-pressed="true"]::before {
+  background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--interactive-accent) 45%, transparent);
+  transform: scale(0.96);
+}
+
+.inkbook-root .inkbook-toolbar-button[data-inkbook-tool="true"][aria-pressed="true"]::before {
+  background: transparent;
+  border-color: transparent;
+  transform: none;
+}
+
+.inkbook-root .inkbook-toolbar-button[data-inkbook-action="delete"] {
+  color: var(--text-error);
+}
+
+.inkbook-root .inkbook-toolbar-button[data-inkbook-action="delete"]:hover::before {
+  background: color-mix(in srgb, var(--text-error) 12%, transparent);
+}
+
+.inkbook-root .inkbook-toolbar-button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -4px;
+}
+
+.inkbook-root .inkbook-toolbar-icon,
+.inkbook-root .inkbook-toolbar-icon svg {
+  block-size: 19px;
+  inline-size: 19px;
+}
+
+.inkbook-root .inkbook-toolbar-icon {
+  position: relative;
+}
+
+.inkbook-root .inkbook-toolbar-shell {
+  block-size: var(--inkbook-toolbar-overlay-block-size);
+  filter: drop-shadow(0 8px 12px rgb(0 0 0 / 14%)) drop-shadow(0 1px 1px rgb(0 0 0 / 18%));
+  inset-block-start: 0;
+  inline-size: 100%;
+  max-inline-size: 100%;
+  pointer-events: none;
+  position: absolute;
+  translate: 0 -100%;
+  z-index: var(--layer-popover);
+}
+
+.inkbook-root .inkbook-toolbar-shell .inkbook-toolbar {
+  inset-block-start: 0;
+  margin-inline: auto;
+  pointer-events: auto;
+  position: relative;
+  translate: 0 0;
+}

@@ -1,18 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import { FILE_SCHEMA_LIMITS } from "../../../../src/domain/schema/public";
+import { FILE_SCHEMA_LIMITS, validateInkSnapshotV1 } from "../../../../src/domain/schema/public";
 import { jsonContainerBudget } from "../../../../src/domain/schema/validation-internals";
 import { validateSafeSvg } from "../../../../src/persistence/documents/safe-svg-validator";
 import {
   CURRENT_METADATA_REWRITES,
   rewriteDocumentMetadata,
 } from "../../../fixtures/persistence/metadata-rewrite";
+import { serializeLegacyLockedHeightDocument } from "../../../fixtures/persistence/legacy-locked-height";
 import {
   parseInkbookDocument,
   serializeInkbookDocument,
   sha256Hex,
   type DocumentHashPort,
 } from "../../../../src/persistence/serialization/public";
+import { CANONICAL_THEME_STYLESHEET } from "../../../../src/persistence/documents/svg-theme";
 import {
   appendMetadataProperty,
   createAllElementSnapshot,
@@ -79,6 +81,38 @@ describe("Inkbook document serialization", () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(validateSafeSvg(result.value.svg)).not.toBeNull();
+  });
+
+  it("centers complete square cells in the standalone SVG", () => {
+    const result = serializeSquareBackground();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.svg).toContain("M34.3 24.3L2014.3 24.3");
+    expect(result.value.svg).toContain("M34.3 24.3L34.3");
+    expect(result.value.svg).not.toContain("M24.3 24.3L2024.3 24.3");
+  });
+
+  it("loads version-one files written before scale-independent guide styling", () => {
+    const result = serializeSquareBackground();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const previousStylesheet = CANONICAL_THEME_STYLESHEET.replace(
+      ";vector-effect:non-scaling-stroke",
+      "",
+    );
+    const previousFile = result.value.svg.replace(CANONICAL_THEME_STYLESHEET, previousStylesheet);
+
+    expect(previousFile).not.toBe(result.value.svg);
+    expect(validateSafeSvg(previousFile)).not.toBeNull();
+    expect(parseInkbookDocument(previousFile)).toMatchObject({
+      ok: true,
+      value: {
+        requiresCanonicalRewrite: true,
+        snapshot: { page: { background: { type: "squares", spacing: 60 } } },
+      },
+    });
   });
 });
 
@@ -182,18 +216,36 @@ describe("SVG numeric precision", () => {
 });
 
 describe("Inkbook document parsing", () => {
+  it("loads a canonical legacy locked height and rewrites it on the next save", () => {
+    const snapshot = createDottedRectangleSnapshot(400);
+    snapshot.page.lockedBufferLines = 3;
+    const legacy = serializeLegacyLockedHeightDocument(snapshot);
+
+    const parsed = parseInkbookDocument(legacy);
+
+    expect(parsed.ok, JSON.stringify(parsed)).toBe(true);
+    if (!parsed.ok) return;
+    const rewritten = serializeInkbookDocument(parsed.value.snapshot);
+    expect(rewritten.ok).toBe(true);
+    if (rewritten.ok) expect(rewritten.value.lockedHeight).toBeLessThan(parsed.value.lockedHeight);
+  });
+
   it("round-trips UTF-8 bytes and verifies revision, height, and hash", () => {
     const serialized = serializeInkbookDocument(createAllElementSnapshot());
     expect(serialized.ok).toBe(true);
     if (!serialized.ok) return;
 
     const parsed = parseInkbookDocument(new TextEncoder().encode(serialized.value.svg));
+    const validation = validateInkSnapshotV1(serialized.value.snapshot);
+    if (!validation.ok) throw new Error(validation.error.message);
 
     expect(parsed).toEqual({
       ok: true,
       value: {
+        derivations: validation.derivations,
         hash: serialized.value.hash,
         lockedHeight: serialized.value.lockedHeight,
+        requiresCanonicalRewrite: false,
         snapshot: serialized.value.snapshot,
         sourceVersion: 1,
       },
@@ -275,7 +327,7 @@ describe("Inkbook document parsing failures", () => {
     ).toMatchObject({ ok: false, error: { code: "revision-mismatch" } });
     expect(
       parseInkbookDocument(
-        serialized.value.svg.replace('viewBox="0 0 2048.6 148.6"', 'viewBox="0 0 2048.6 149.6"'),
+        serialized.value.svg.replace('viewBox="0 0 2048.6 348.6"', 'viewBox="0 0 2048.6 349.6"'),
       ),
     ).toMatchObject({ ok: false, error: { code: "locked-height-mismatch" } });
   });
@@ -322,4 +374,10 @@ function toVersionZeroDocument(svg: string): string {
     .replace('data-inkbook-version="1"', 'data-inkbook-version="0"')
     .replace(/ data-inkbook-snapshot-sha256="[0-9a-f]{64}"/u, "")
     .replace('"version":1', '"version":0');
+}
+
+function serializeSquareBackground() {
+  const snapshot = createSnapshot();
+  snapshot.page.background = { type: "squares", spacing: 60 };
+  return serializeInkbookDocument(snapshot);
 }

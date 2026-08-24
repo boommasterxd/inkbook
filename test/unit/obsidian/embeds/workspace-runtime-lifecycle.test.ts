@@ -4,7 +4,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { PresentationAttachment } from "../../../../src/obsidian/embeds/presentation-port";
 import { WorkspaceRuntimeLifecycle } from "../../../../src/obsidian/embeds/workspace-runtime-lifecycle";
 
-function createHarness() {
+function createHarness(
+  presentations: Array<{
+    readonly attachment: PresentationAttachment;
+    readonly scene: undefined;
+  }> = [],
+  queueAutoActivation = true,
+) {
   const dismiss = vi.fn();
   const notifyExternalChange = vi.fn(async () => "reloaded" as const);
   const reloadPresentation = vi.fn();
@@ -21,18 +27,25 @@ function createHarness() {
     fallbackWindow: () => ownerWindow,
     isDisposed: () => false,
     notifyExternalChange,
-    presentations: () => [],
+    presentations: () => presentations,
     reloadPresentation,
     vault: { getFileByPath: () => null } as unknown as Vault,
   });
-  lifecycle.queueAutoActivation("drawings/ink.svg", ownerWindow, vi.fn(), dismiss);
+  if (queueAutoActivation) {
+    lifecycle.queueAutoActivation("drawings/ink.svg", ownerWindow, vi.fn(), dismiss);
+  }
   return { dismiss, lifecycle, notifyExternalChange, reloadPresentation, timers };
 }
 
 describe("WorkspaceRuntimeLifecycle", () => {
   it("dismisses the insertion undo hint only after the first stroke is persisted", () => {
     const harness = createHarness();
-    const persisted = { documentId: "drawings/ink.svg", outputHash: "hash", revision: 1 };
+    const persisted = {
+      documentId: "drawings/ink.svg",
+      lockedAspectRatio: 4,
+      outputHash: "hash",
+      revision: 1,
+    };
 
     harness.lifecycle.handlePersisted(persisted);
     expect(harness.dismiss).not.toHaveBeenCalled();
@@ -40,6 +53,29 @@ describe("WorkspaceRuntimeLifecycle", () => {
     harness.lifecycle.handlePersisted({ ...persisted, revision: 2 });
 
     expect(harness.dismiss).toHaveBeenCalledOnce();
+  });
+
+  it("updates every mounted preview to the confirmed locked aspect ratio", () => {
+    const setPreviewAspectRatio = vi.fn();
+    const presentations = [
+      {
+        attachment: {
+          documentId: "drawings/ink.svg",
+          setPreviewAspectRatio,
+        } as unknown as PresentationAttachment,
+        scene: undefined,
+      },
+    ];
+    const harness = createHarness(presentations, false);
+
+    harness.lifecycle.handlePersisted({
+      documentId: "drawings/ink.svg",
+      lockedAspectRatio: 4,
+      outputHash: "hash",
+      revision: 1,
+    });
+
+    expect(setPreviewAspectRatio).toHaveBeenCalledWith(4);
   });
 
   it("coalesces a host modification and remounts a clean same-worker reload", async () => {
@@ -59,6 +95,7 @@ describe("WorkspaceRuntimeLifecycle", () => {
     harness.lifecycle.handleVaultModification("drawings/ink.svg");
     harness.lifecycle.handlePersisted({
       documentId: "drawings/ink.svg",
+      lockedAspectRatio: 4,
       outputHash: "hash",
       revision: 1,
     });

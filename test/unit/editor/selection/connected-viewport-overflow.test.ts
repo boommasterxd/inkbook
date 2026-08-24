@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  calculateElementBounds,
-  canonicalPoint,
-  isWithinPageBounds,
-  resolveShapeAnchor,
-} from "../../../../src/domain/geometry/public";
+import { canonicalPoint, resolveShapeAnchor } from "../../../../src/domain/geometry/public";
 import type {
   ArrowElementV1,
   BoxShapeElementV1,
@@ -69,7 +64,7 @@ function connectedThickLine(
   };
 }
 
-describe("connected selection page-edge correction", () => {
+describe("connected selection viewport overflow", () => {
   it.each([
     {
       delta: { x: -47, y: 0 },
@@ -90,7 +85,7 @@ describe("connected selection page-edge correction", () => {
       target: rectangle(IDS.target, 500, 50),
     },
   ])(
-    "corrects the target and its thick $kind together at the $edge page edge",
+    "preserves the target and its thick $kind together beyond the $edge viewport edge",
     ({ delta, kind, target }) => {
       const freeEnd =
         delta.x < 0 ? { x: 300, y: 100 } : delta.x > 0 ? { x: 1_700, y: 100 } : { x: 500, y: 200 };
@@ -107,28 +102,32 @@ describe("connected selection page-edge correction", () => {
       const session = moveSession(store, target);
       const rawTarget = movedTarget(target, delta);
 
-      expect(isWithinPageBounds(calculateElementBounds(rawTarget))).toBe(true);
       const preview = session.update({
         x: target.pivot.x + delta.x,
         y: target.pivot.y + delta.y,
       });
       expect(preview.exactElements).toHaveLength(2);
-      expect(preview.exactElements.every(withinPage)).toBe(true);
-      expect(preview.exactElements.find(({ id }) => id === target.id)).not.toEqual(rawTarget);
+      expect(preview.exactElements.find(({ id }) => id === target.id)).toEqual(rawTarget);
 
       const prepared = session.prepareCommit();
-      if (prepared.status !== "ready") throw new Error("Expected a corrected target commit.");
+      if (prepared.status !== "ready") throw new Error("Expected an exact target commit.");
       store.replaceMany(prepared.replacements);
-      expect(isWithinPageBounds(store.get(target.id)!.bounds)).toBe(true);
-      expect(isWithinPageBounds(store.get(dependent.id)!.bounds)).toBe(true);
+      expect(element(store, target.id)).toEqual(rawTarget);
+      const changedDependent = element(store, dependent.id);
+      if (changedDependent.kind !== "line" && changedDependent.kind !== "arrow") {
+        throw new Error(`Expected the connected ${kind} dependent.`);
+      }
+      expect(changedDependent.start).toEqual(
+        resolveShapeAnchor(rawTarget, changedDependent.startConnection!.anchor),
+      );
       expect(store.instrumentation).toMatchObject({ fullStoreScans: 0 });
       expect(store.instrumentation.reverseDependencyVisits).toBeGreaterThan(0);
     },
   );
 });
 
-describe("connected selection compound page bounds", () => {
-  it("applies shared correction after a target scale", () => {
+describe("connected selection compound viewport overflow", () => {
+  it("preserves an exact target scale beyond the viewport", () => {
     const target = rectangle(IDS.target, 1_800, 100);
     const arrow = connectedArrow(target, "00000000-0000-4000-8000-000000000097", "top-right", {
       x: 1_700,
@@ -145,14 +144,12 @@ describe("connected selection compound page bounds", () => {
     const preview = session.update({ x: 2_045, y: 200 });
 
     expect(preview.exactElements).toHaveLength(2);
-    expect(preview.exactElements.every(withinPage)).toBe(true);
-    const correctedTarget = preview.exactElements.find(({ id }) => id === target.id);
-    expect(correctedTarget).toMatchObject({ width: 245 });
-    if (correctedTarget?.kind !== "rectangle") throw new Error("Expected a rectangle target.");
-    expect(correctedTarget.x).toBeLessThan(target.x);
+    const scaledTarget = preview.exactElements.find(({ id }) => id === target.id);
+    expect(scaledTarget).toMatchObject({ width: 245, x: target.x });
+    if (scaledTarget?.kind !== "rectangle") throw new Error("Expected a rectangle target.");
   });
 
-  it("recomputes rotated anchors for multiple dependents after correction", () => {
+  it("recomputes rotated anchors for multiple dependents without edge correction", () => {
     const target = { ...rectangle(IDS.target, 1_750, 200), rotation: 45 };
     const arrow = connectedArrow(target, "00000000-0000-4000-8000-000000000092", "top-right", {
       x: 1_550,
@@ -170,20 +167,19 @@ describe("connected selection compound page bounds", () => {
     });
 
     expect(preview.exactElements).toHaveLength(3);
-    const correctedTarget = preview.exactElements.find(({ id }) => id === target.id);
-    if (correctedTarget?.kind !== "rectangle") throw new Error("Expected a rectangle target.");
-    expect(correctedTarget.x).toBeLessThan(target.x + 90);
+    const movedTarget = preview.exactElements.find(({ id }) => id === target.id);
+    if (movedTarget?.kind !== "rectangle") throw new Error("Expected a rectangle target.");
+    expect(movedTarget.x).toBe(target.x + 90);
     for (const dependent of [arrow, secondArrow]) {
       const changed = preview.exactElements.find(({ id }) => id === dependent.id);
       if (changed?.kind !== "arrow") throw new Error("Expected an arrow dependent.");
       expect(changed.start).toEqual(
-        resolveShapeAnchor(correctedTarget, changed.startConnection!.anchor),
+        resolveShapeAnchor(movedTarget, changed.startConnection!.anchor),
       );
-      expect(withinPage(changed)).toBe(true);
     }
   });
 
-  it("rejects a target and dependent that cannot fit the page together", () => {
+  it("accepts a target and dependent spanning beyond the viewport", () => {
     const target = rectangle(IDS.target, 900, 100);
     const arrow = connectedArrow(target, "00000000-0000-4000-8000-000000000094", "top-right", {
       x: 6,
@@ -192,17 +188,16 @@ describe("connected selection compound page bounds", () => {
     const store = new ElementStore([target, arrow]);
     const session = moveSession(store, target);
 
-    expect(session.update({ x: target.pivot.x + 946, y: target.pivot.y })).toMatchObject({
-      exactElements: [],
-      exactPreviewTruncated: false,
-    });
-    expect(session.prepareCommit()).toEqual({ status: "noop" });
+    const preview = session.update({ x: target.pivot.x + 946, y: target.pivot.y });
+    expect(preview.exactElements).toHaveLength(2);
+    expect(preview.exactElements.find(({ id }) => id === target.id)).toMatchObject({ x: 1_846 });
+    expect(session.prepareCommit()).toMatchObject({ status: "ready" });
     expect(element(store, target.id)).toEqual(target);
     expect(element(store, arrow.id)).toEqual(arrow);
   });
 });
 
-describe("connected selection page-bound lifecycle", () => {
+describe("connected selection planning lifecycle", () => {
   it("cancels planning without changing the store", async () => {
     const target = rectangle(IDS.target, 50, 100);
     const arrow = connectedArrow(target, "00000000-0000-4000-8000-000000000095", "top-left", {
@@ -255,8 +250,8 @@ describe("connected selection page-bound lifecycle", () => {
   });
 });
 
-describe("selected connected dependent correction", () => {
-  it("moves free geometry once and resolves the endpoint from the corrected target", () => {
+describe("selected connected dependent viewport overflow", () => {
+  it("moves free geometry once and resolves the endpoint from the exact target", () => {
     const target = rectangle(IDS.target, 50, 100);
     const arrow = connectedArrow(target, "00000000-0000-4000-8000-000000000098", "top-left", {
       x: 300,
@@ -271,17 +266,17 @@ describe("selected connected dependent correction", () => {
     });
 
     const preview = session.update({ x: target.pivot.x - 47, y: target.pivot.y });
-    const correctedTarget = preview.exactElements.find(({ id }) => id === target.id);
-    const correctedArrow = preview.exactElements.find(({ id }) => id === arrow.id);
-    if (correctedTarget?.kind !== "rectangle" || correctedArrow?.kind !== "arrow") {
-      throw new Error("Expected corrected target and arrow candidates.");
+    const movedTarget = preview.exactElements.find(({ id }) => id === target.id);
+    const movedArrow = preview.exactElements.find(({ id }) => id === arrow.id);
+    if (movedTarget?.kind !== "rectangle" || movedArrow?.kind !== "arrow") {
+      throw new Error("Expected exact target and arrow candidates.");
     }
-    expect(correctedTarget.x).toBe(6);
-    expect(correctedArrow.start).toEqual({ x: 6, y: 100 });
-    expect(correctedArrow.end).toEqual({ x: 256, y: 100 });
+    expect(movedTarget.x).toBe(3);
+    expect(movedArrow.start).toEqual({ x: 3, y: 100 });
+    expect(movedArrow.end).toEqual({ x: 253, y: 100 });
 
     const prepared = session.prepareCommit();
-    if (prepared.status !== "ready") throw new Error("Expected a corrected selection commit.");
+    if (prepared.status !== "ready") throw new Error("Expected an exact selection commit.");
     expect(prepared.replacements.map(({ id }) => id)).toEqual([target.id, arrow.id]);
   });
 });
@@ -305,8 +300,4 @@ function movedTarget(
     x: target.x + delta.x,
     y: target.y + delta.y,
   };
-}
-
-function withinPage(candidate: InkElementV1): boolean {
-  return isWithinPageBounds(calculateElementBounds(candidate));
 }

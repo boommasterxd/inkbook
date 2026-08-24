@@ -1,5 +1,5 @@
 import { deriveRenderBands } from "../../domain/commands/render-bands";
-import { calculateElementBounds, derivePageExtent } from "../../domain/geometry/public";
+import { derivePageExtent } from "../../domain/geometry/public";
 import type { InkSnapshotV1, ValidationError } from "../../domain/schema/public";
 import {
   FILE_SCHEMA_LIMITS,
@@ -15,6 +15,7 @@ import { validateCurrentMetadataIntegrity } from "./canonical-metadata";
 import { canonicalSnapshot } from "./canonical-snapshot";
 import { migrateAndValidateDocumentSnapshot } from "./document-migration";
 import { assertJsonContainerWidths } from "./json-container-width";
+import { isSupportedLockedHeight } from "./locked-height-compatibility";
 import { serializeElementPaths } from "./path-markup";
 import { SHA256_DOCUMENT_HASHER, type DocumentHashPort } from "./sha256";
 import { verifyStaticPathIntegrity } from "./static-path-integrity";
@@ -37,7 +38,7 @@ export function serializeInkbookDocument(
     return failure("snapshot-invalid", "Snapshot validation failed.", validation.error);
   }
   const snapshot = canonicalSnapshot(validation.value);
-  const extent = derivePageExtent(snapshot.page, maximumElementBottom(snapshot));
+  const extent = derivePageExtent(snapshot.page, validation.derivations.maximumBottom);
   const lockedHeight = canonicalSvgNumber(extent.lockedHeight);
   if (
     !backgroundFitsStaticLimit(
@@ -111,9 +112,8 @@ export function parseInkbookDocument(
   if (snapshot.revision !== safe.revision) {
     return failure("revision-mismatch", "Root and snapshot revisions do not match.");
   }
-  const extent = derivePageExtent(snapshot.page, maximumElementBottom(snapshot));
-  const lockedHeight = canonicalSvgNumber(extent.lockedHeight);
-  if (lockedHeight !== safe.lockedHeight) {
+  const maximumBottom = migrated.value.derivations.maximumBottom;
+  if (!isSupportedLockedHeight(snapshot.page, maximumBottom, safe.lockedHeight)) {
     return failure(
       "locked-height-mismatch",
       "The SVG viewBox height is not the derived locked height.",
@@ -128,8 +128,10 @@ export function parseInkbookDocument(
   return {
     ok: true,
     value: {
+      derivations: migrated.value.derivations,
       hash: hasher.hash(decoded.value.hashInput),
-      lockedHeight,
+      lockedHeight: safe.lockedHeight,
+      requiresCanonicalRewrite: safe.requiresCanonicalRewrite,
       snapshot,
       sourceVersion: migrated.value.sourceVersion,
     },
@@ -159,14 +161,6 @@ function parseAndValidateSnapshot(
 
 function canonicalSvgNumber(value: number): number {
   return Number(serializeSvgNumber(value));
-}
-
-function maximumElementBottom(snapshot: InkSnapshotV1): number | null {
-  let maximum: number | null = null;
-  for (const element of snapshot.elements) {
-    maximum = Math.max(maximum ?? 0, calculateElementBounds(element).maxY);
-  }
-  return maximum;
 }
 
 function decodeInput(input: string | Uint8Array): DocumentCodecResult<{

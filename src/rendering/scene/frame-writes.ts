@@ -174,6 +174,7 @@ export function writeBackground(options: BackgroundWriteOptions): {
     margin: page.margin,
     visibleBottom: (viewport.top + viewport.height) / zoom,
     visibleTop: viewport.top / zoom,
+    writableBottom: pageHeight - page.margin,
   });
   if (!result.hit) {
     dom.backgroundPath.setAttribute("d", result.d);
@@ -183,16 +184,22 @@ export function writeBackground(options: BackgroundWriteOptions): {
     dom.setPageHeight(pageHeight);
     instrumentation.attributeWrites += 1;
   }
-  const key = backgroundPaintKey(page);
+  const key = backgroundPaintKey(page, result.paint, result.patternX, result.patternY, zoom);
   if (key !== applied.key) {
-    dom.setBackgroundPaint(page.background, page.margin);
+    dom.setBackgroundPaint(page.background, result.paint, result.patternX, result.patternY, zoom);
     instrumentation.attributeWrites += 2;
   }
   return { key, pageHeight };
 }
 
-function backgroundPaintKey(page: PageV1): string {
+function backgroundPaintKey(
+  page: PageV1,
+  paint: "direct" | "none" | "pattern",
+  patternX: number,
+  patternY: number,
+  zoom: number,
+): string {
   return page.background.type === "none"
     ? "none"
-    : `${page.background.type}:${String(page.background.spacing)}:${String(page.margin)}`;
+    : `${page.background.type}:${paint}:${String(page.background.spacing)}:${String(patternX)}:${String(patternY)}:${String(zoom)}`;
 }

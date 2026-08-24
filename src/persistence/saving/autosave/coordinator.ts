@@ -39,6 +39,7 @@ import { assertAutosaveInitialState } from "./coordinator-validation";
 
 export class AutosaveCoordinator {
   readonly #beforeExistingWrite;
+  #canonicalRewritePending: boolean;
   #confirmedBase: VaultBase;
   #confirmedContent: string | null;
   readonly #createFallback;
@@ -68,6 +69,7 @@ export class AutosaveCoordinator {
     assertAutosaveInitialState(options);
     this.#confirmedContent = options.confirmedContent ?? null;
     this.#beforeExistingWrite = options.beforeExistingWrite;
+    this.#canonicalRewritePending = options.requiresCanonicalRewrite ?? false;
     this.#confirmedBase = options.confirmedBase;
     this.#createFallback = options.createFallback;
     this.#document = options.documentSource;
@@ -80,6 +82,10 @@ export class AutosaveCoordinator {
     this.#terminalVault = createTerminalVaultPort(options.vault, () => this.#disposed);
     this.#workerEpoch = options.workerEpoch ?? 0;
     this.#workerModel = new AutosaveWorkerModelState(options.initialSnapshot.revision);
+    if (this.#canonicalRewritePending) {
+      this.#workerModel.requireFull(options.initialSnapshot.revision);
+      this.#timer.schedule(AUTOSAVE_DELAY_MS);
+    }
     this.#verifier = new AutosavePersistedOutputVerifier({
       executor: () => this.#executor,
       isDisposed: () => this.#disposed,
@@ -90,6 +96,7 @@ export class AutosaveCoordinator {
   }
   public get dirty(): boolean {
     return (
+      this.#canonicalRewritePending ||
       this.#confirmedBase.type === "missing" ||
       this.#confirmedBase.revision !== this.#document.currentRevision()
     );
@@ -184,11 +191,6 @@ export class AutosaveCoordinator {
   }
   public async notifyExternalChange(): Promise<ExternalChangeOutcome> {
     if (this.#disposed) return "conflict";
-    if (this.dirty) {
-      this.#setStatus("conflict");
-      this.#resolveWaiters();
-      return "conflict";
-    }
     const expectedRevision = this.#document.currentRevision();
     let content: string;
     try {
@@ -206,13 +208,24 @@ export class AutosaveCoordinator {
       throw error;
     }
     if (this.#disposed) return "conflict";
-    if (this.#document.currentRevision() !== expectedRevision || this.dirty) {
+    if (
+      sameVaultBase(persisted, this.#confirmedBase) ||
+      (this.#save !== null &&
+        sameVaultBase(persisted, {
+          outputHash: this.#save.proof.outputHash,
+          revision: this.#save.proof.revision,
+          type: "confirmed",
+        }))
+    ) {
+      return "unchanged";
+    }
+    if (
+      persisted.type === "unreadable" ||
+      this.#document.currentRevision() !== expectedRevision ||
+      this.dirty
+    ) {
       this.#setStatus("conflict");
       this.#resolveWaiters();
-      return "conflict";
-    }
-    if (persisted.type === "unreadable") {
-      this.#setStatus("conflict");
       return "conflict";
     }
     this.#confirmedBase = persisted;
@@ -366,6 +379,7 @@ export class AutosaveCoordinator {
         type: "confirmed",
       };
       this.#confirmedContent = null;
+      this.#canonicalRewritePending = false;
       this.#save = null;
       notifyConfirmedPersistence(this.#observer, this.#path, this.#confirmedBase);
       this.#executor.requestPrewarm?.();
@@ -423,6 +437,7 @@ export class AutosaveCoordinator {
     if (sameVaultBase(persisted, expected)) {
       this.#confirmedBase = expected;
       this.#confirmedContent = null;
+      this.#canonicalRewritePending = false;
       this.#save = null;
       notifyConfirmedPersistence(this.#observer, this.#path, expected);
       this.#executor.requestPrewarm?.();

@@ -13,16 +13,15 @@ describe("stable resize width reduction", () => {
     expect(initial).toEqual(createStableWidthState());
   });
 
-  it("requires two frames again after the candidate changes", () => {
+  it("accepts every positive resize after the initial stable width", () => {
     const first = observeStableWidth(createStableWidthState(), 800);
     const accepted = observeStableWidth(first.state, 800);
     const changed = observeStableWidth(accepted.state, 900);
-    expect(changed.observation).toBeUndefined();
-    expect(changed.state.acceptedWidth).toBe(800);
-    expect(observeStableWidth(changed.state, 900).observation).toEqual({
+    expect(changed.observation).toEqual({
       width: 900,
       accepted: true,
     });
+    expect(changed.state.acceptedWidth).toBe(900);
   });
 
   it("discards hidden and non-finite candidates", () => {

@@ -111,7 +111,7 @@ function pageBoundsPlanner() {
   }));
   return {
     plan,
-    store: { planPageBoundedReplacementsTimeSliced: plan } as unknown as ElementStore,
+    store: { planReplacementsTimeSliced: plan } as unknown as ElementStore,
   };
 }
 

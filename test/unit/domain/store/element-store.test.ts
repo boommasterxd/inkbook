@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { getCanonicalStrokeReplacementProof } from "../../../../src/domain/elements/stroke-replacement-proof";
-import { correctElementsToPageBounds } from "../../../../src/domain/geometry/public";
 import type { InkElementV1, StrokeElementV1 } from "../../../../src/domain/schema/public";
 import { MAX_SPATIAL_MEMBERSHIPS, SpatialQueryScratch } from "../../../../src/domain/spatial/index";
 import { ElementStore, type ImmutableInkElement } from "../../../../src/domain/store/public";
@@ -249,38 +248,34 @@ describe("ElementStore prepared replacement rejection", () => {
 });
 
 describe("ElementStore transaction validation", () => {
-  it("requires replacement callers to apply the shared page-bound correction", () => {
+  it("preserves replacement geometry beyond the viewport", () => {
     const target = rectangle();
     const store = new ElementStore([target]);
     const moved = rectangle(target.id, -100, -50);
 
-    expect(() => store.replace(target.id, moved)).toThrow(
-      "Conservative element bounds must remain within the supported page",
-    );
-    const correction = correctElementsToPageBounds([moved]);
-    expect(correction.status).toBe("accepted");
-    if (correction.status !== "accepted") return;
-    expect(store.replace(target.id, correction.elements[0]!)).not.toBeNull();
-    expect(store.get(target.id)?.bounds).toMatchObject({ minX: 0, minY: 0 });
+    expect(() => store.replace(target.id, moved)).not.toThrow();
+    expect(store.get(target.id)?.element).toEqual(moved);
+    expect(store.get(target.id)?.bounds).toMatchObject({ minX: -102, minY: -52 });
   });
 
-  it("corrects created geometry at the horizontal and top page edges before commit", () => {
+  it("preserves created geometry beyond the horizontal and top viewport edges", () => {
     const candidate = rectangle(IDS.other, -100, -50);
     const store = new ElementStore();
 
     const delta = store.create(candidate);
 
     expect(delta?.changes).toHaveLength(1);
-    expect(store.get(candidate.id)?.bounds).toMatchObject({ minX: 0, minY: 0 });
-    expect(store.get(candidate.id)?.element.pivot).toEqual({ x: 102, y: 52 });
+    expect(store.get(candidate.id)?.bounds).toMatchObject({ minX: -102, minY: -52 });
+    expect(store.get(candidate.id)?.element).toEqual(candidate);
   });
 
-  it("rejects created geometry whose conservative width cannot fit the page", () => {
+  it("accepts created geometry wider than the viewport", () => {
     const candidate = { ...rectangle(), pivot: { x: 1_024, y: 150 }, width: 2_048, x: 0 };
     const store = new ElementStore();
 
-    expect(() => store.create(candidate)).toThrow("exceeds the supported page width");
-    expect(store.size).toBe(0);
+    expect(() => store.create(candidate)).not.toThrow();
+    expect(store.size).toBe(1);
+    expect(store.get(candidate.id)?.element).toEqual(candidate);
   });
 
   it("rejects duplicate and invalid creations without publishing partial state", () => {

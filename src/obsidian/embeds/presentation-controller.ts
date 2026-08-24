@@ -9,10 +9,6 @@ import {
   ScrollbarLeaseRegistry,
 } from "../scrolling";
 import type {
-  LockedPreviewSchemeCapability,
-  LockedPreviewSchemeCapabilityCheck,
-} from "./locked-preview-scheme-capability";
-import type {
   PresentationAttachment,
   PresentationAttachmentInput,
   PresentationSessionPort,
@@ -27,9 +23,11 @@ interface PresentationMeasurement {
 }
 
 export interface PresentationPreviewLifecycle {
-  readonly capability?: LockedPreviewSchemeCapability;
-  readonly image: HTMLImageElement;
-  readonly onImageReplaced?: (image: HTMLImageElement) => void;
+  readonly element: HTMLElement;
+  readonly refresh?: () => void;
+  readonly requestHostMeasure?: () => void;
+  readonly setAspectRatio?: (aspectRatio: number) => void;
+  readonly setSource?: (source: string) => Promise<void>;
 }
 
 function leasesFor(document: Document): ScrollbarLeaseRegistry<HTMLElement> {
@@ -50,15 +48,12 @@ export class PresentationController {
   #frame: number | undefined;
   #activationPending = false;
   #appliedScheme: InkbookColorScheme | undefined;
-  readonly #capability: LockedPreviewSchemeCapabilityCheck | undefined;
   #measured = false;
   #measurementFrame: number | undefined;
   #mounted = false;
   #observer: ResizeObserver | undefined;
   readonly #owningWindow: Window;
-  #previewImage: HTMLImageElement | undefined;
   readonly #previewLifecycle: PresentationPreviewLifecycle | undefined;
-  #schemeGeneration = 0;
   readonly #scroll: PresentationScrollLifecycle<HTMLElement, PresentationMeasurement>;
 
   constructor(
@@ -73,11 +68,20 @@ export class PresentationController {
     if (owningWindow === null) throw new Error("The Inkbook presentation has no owning window.");
     this.#owningWindow = owningWindow;
     this.#previewLifecycle = previewLifecycle;
-    this.#previewImage = previewLifecycle?.image;
-    this.#capability = previewLifecycle?.capability?.supportsContextRepaint(owningWindow);
     let lifecycle: PresentationScrollLifecycle<HTMLElement, PresentationMeasurement> | undefined;
     this.#attachment = {
       ...attachment,
+      ...(previewLifecycle === undefined
+        ? {}
+        : {
+            preview: previewLifecycle.element,
+            ...(previewLifecycle.setAspectRatio === undefined
+              ? {}
+              : { setPreviewAspectRatio: previewLifecycle.setAspectRatio }),
+            ...(previewLifecycle.setSource === undefined
+              ? {}
+              : { setPreviewSource: previewLifecycle.setSource }),
+          }),
       scrollOwner: () => lifecycle?.owner ?? null,
     };
     this.#scroll = lifecycle = new PresentationScrollLifecycle<
@@ -116,12 +120,8 @@ export class PresentationController {
       if (previousScheme === nextScheme) return;
       this.#appliedScheme = nextScheme;
       applyColorScheme(attachment.root, nextScheme);
-      if (previousScheme !== undefined) this.#schedulePreviewReplacement();
+      if (previousScheme !== undefined) this.#previewLifecycle?.refresh?.();
     });
-  }
-
-  public get lockedPreviewImage(): HTMLImageElement | undefined {
-    return this.#previewImage;
   }
 
   mount(): void {
@@ -129,6 +129,9 @@ export class PresentationController {
       return;
     }
     this.#mounted = true;
+    this.#owningWindow.addEventListener("resize", this.#handleOwningWindowResize, {
+      passive: true,
+    });
     this.#sessions.mount(this.#attachment);
     const owningWindow = this.#attachment.root.ownerDocument.defaultView;
     if (owningWindow === null) return;
@@ -136,6 +139,7 @@ export class PresentationController {
       this.#frame = undefined;
       if (!this.#mounted || !this.#scroll.mount()) return;
       this.#observer = new owningWindow.ResizeObserver(() => {
+        this.#previewLifecycle?.requestHostMeasure?.();
         this.#scroll.transferAfterLayoutChange();
         this.#scheduleSettledMeasurement();
       });
@@ -165,6 +169,10 @@ export class PresentationController {
       "--inkbook-container-width",
       `${String(measurement.contentWidth)}px`,
     );
+    this.#attachment.root.style.setProperty(
+      "--inkbook-shell-radius",
+      `${String(shellRadius(measurement.contentWidth))}px`,
+    );
     if (measurement.requiresSettledRead) {
       this.#measured = false;
       this.#scheduleSettledMeasurement();
@@ -190,34 +198,19 @@ export class PresentationController {
     });
   }
 
-  #schedulePreviewReplacement(): void {
-    const capability = this.#capability;
-    if (capability === undefined) return;
-    const generation = ++this.#schemeGeneration;
-    void capability.result.then((supported) => {
-      if (
-        supported ||
-        generation !== this.#schemeGeneration ||
-        !this.#mounted ||
-        this.#attachment.root.dataset.inkbookState !== "locked"
-      )
-        return;
-      const image = this.#previewImage;
-      if (image === undefined || !this.#attachment.root.contains(image)) return;
-      const replacement = image.cloneNode(false) as HTMLImageElement;
-      image.replaceWith(replacement);
-      this.#previewImage = replacement;
-      this.#previewLifecycle?.onImageReplaced?.(replacement);
-    });
-  }
+  readonly #handleOwningWindowResize = (): void => {
+    if (!this.#mounted) return;
+    this.#previewLifecycle?.requestHostMeasure?.();
+    this.#scroll.transferAfterLayoutChange();
+    this.#scheduleSettledMeasurement();
+  };
 
   dispose(): void {
     this.#disposeScheme?.();
     this.#disposeScheme = undefined;
-    this.#capability?.dispose();
     if (this.#mounted) {
       this.#mounted = false;
-      this.#schemeGeneration += 1;
+      this.#owningWindow.removeEventListener("resize", this.#handleOwningWindowResize);
       this.#activationPending = false;
       this.#measured = false;
       const owningWindow = this.#attachment.root.ownerDocument.defaultView;
@@ -235,6 +228,10 @@ export class PresentationController {
       this.#sessions.detach(this.#attachment);
     }
   }
+}
+
+function shellRadius(contentWidth: number): number {
+  return Math.min(20, Math.max(10, contentWidth * 0.02));
 }
 
 function readPresentationMeasurement(

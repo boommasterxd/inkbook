@@ -1,6 +1,6 @@
 # Inkbook
 
-Inkbook is an Obsidian plugin for creating and editing responsive handwriting embeds stored as self-contained SVG files. It is designed for low-latency pen, touch, and mouse input while preserving a portable static preview outside the plugin.
+Inkbook is an Obsidian plugin for creating and editing responsive handwriting embeds stored as self-contained SVG files. Notes use the explicit non-image syntax `!inkbook[[path.svg]]`, so Inkbook owns the complete presentation while ordinary SVG embeds and image plugins remain unaffected. It is designed for low-latency pen, touch, and mouse input while preserving a portable static SVG outside the plugin.
 
 ## Project status
 

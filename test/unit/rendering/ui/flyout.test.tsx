@@ -14,8 +14,8 @@ describe("editor chrome flyouts", () => {
     );
     expect(markup).toContain("Background type");
     expect(markup).toContain("Spacing");
-    expect(markup).toMatch(/aria-pressed="true"[^>]*>Lines/u);
-    expect(markup).toMatch(/aria-pressed="true"[^>]*>M/u);
+    expect(markup).toMatch(/aria-pressed="true"[^>]*data-value="lines"/u);
+    expect(markup).toMatch(/aria-pressed="true"[^>]*data-value="m"/u);
 
     const none = renderToStaticMarkup(
       <BackgroundFlyout
@@ -30,7 +30,7 @@ describe("editor chrome flyouts", () => {
   it("renders every specified shape and marks the current shape", () => {
     const markup = renderToStaticMarkup(<ShapeFlyout onChange={vi.fn()} value="table" />);
     expect(markup).toContain("Coordinate system");
-    expect(markup).toMatch(/aria-pressed="true"[^>]*>Table/u);
+    expect(markup).toMatch(/aria-pressed="true"[^>]*data-value="table"/u);
     expect(markup.match(/<button/gu)).toHaveLength(10);
   });
 
@@ -58,5 +58,38 @@ describe("editor chrome flyouts", () => {
     expect(markup).toContain("Width, mixed");
     expect(markup).toContain("Pressure sensitivity");
     expect(markup).toContain('aria-label="Columns"');
+    expect(markup).toContain('data-control="width"');
+  });
+
+  it("renders semantic color and line previews without replacing accessible labels", () => {
+    const markup = renderToStaticMarkup(
+      <StyleFlyout
+        controls={[
+          {
+            id: "outline-color",
+            kind: "choice",
+            label: "Outline color",
+            options: [
+              { label: "Theme text color", value: "theme-text" },
+              { label: "Red", value: "#EF4444FF" },
+            ],
+            value: "theme-text",
+          },
+          {
+            id: "outline-style",
+            kind: "choice",
+            label: "Outline style",
+            options: [{ label: "Dashed", value: "dashed" }],
+            value: "dashed",
+          },
+        ]}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(markup).toContain("inkbook-color-preview");
+    expect(markup).toContain("inkbook-line-preview");
+    expect(markup).toContain("Theme text color");
+    expect(markup).toContain("Dashed");
   });
 });

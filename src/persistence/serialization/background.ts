@@ -1,7 +1,8 @@
+import { centeredGuideAxis } from "../../domain/geometry/public";
 import type { BackgroundV1, PageV1 } from "../../domain/schema/public";
 import { PAGE_MARGIN, PAGE_WIDTH } from "../../domain/schema/public";
 import { serializeSvgNumber } from "../documents/svg-number";
-import { DOCUMENT_PALETTE } from "../documents/svg-theme";
+import { DOCUMENT_PALETTE, DOCUMENT_THEME_FALLBACK } from "../documents/svg-theme";
 import { serializePath } from "./path-markup";
 
 const GUIDE_WIDTH = 1;
@@ -80,7 +81,7 @@ function guideAttributes(type: Exclude<BackgroundV1["type"], "none">) {
   return {
     class: "inkbook-theme-guide",
     fill: "none",
-    stroke: DOCUMENT_PALETTE.light.guide,
+    stroke: DOCUMENT_THEME_FALLBACK.guide,
     "stroke-width": type === "dots" ? DOT_WIDTH : GUIDE_WIDTH,
     "stroke-linecap": type === "dots" ? "round" : "butt",
   } as const;
@@ -90,19 +91,19 @@ function backgroundCommandStatistics(
   background: Exclude<BackgroundV1, { type: "none" }>,
   lockedHeight: number,
 ): { readonly bytes: number; readonly subpaths: number } {
-  const { endX, endY } = guideExtent(lockedHeight);
-  const xs = axisStatistics(PAGE_MARGIN, endX, background.spacing);
-  const ys = axisStatistics(PAGE_MARGIN, endY, background.spacing);
+  const extent = guideExtent(background.type, background.spacing, lockedHeight);
+  const xs = axisStatistics(extent.startX, extent.endX, background.spacing);
+  const ys = axisStatistics(extent.startY, extent.endY, background.spacing);
   if (background.type === "dots") {
     return {
       bytes: ys.count * (4 * xs.count + 2 * xs.serializedBytes) + 2 * xs.count * ys.serializedBytes,
       subpaths: xs.count * ys.count,
     };
   }
-  const fixedHorizontalBytes = number(PAGE_MARGIN).length + number(endX).length + 4;
+  const fixedHorizontalBytes = number(extent.startX).length + number(extent.endX).length + 4;
   const horizontalBytes = ys.count * fixedHorizontalBytes + 2 * ys.serializedBytes;
   if (background.type === "lines") return { bytes: horizontalBytes, subpaths: ys.count };
-  const fixedVerticalBytes = number(PAGE_MARGIN).length + number(endY).length + 4;
+  const fixedVerticalBytes = number(extent.startY).length + number(extent.endY).length + 4;
   return {
     bytes: horizontalBytes + xs.count * fixedVerticalBytes + 2 * xs.serializedBytes,
     subpaths: ys.count + xs.count,
@@ -125,13 +126,13 @@ function axisStatistics(
 
 function gridPaths(type: "lines" | "squares", spacing: number, lockedHeight: number): string[] {
   const paths = new GuidePathChunks();
-  const { endX, endY } = guideExtent(lockedHeight);
-  for (let y = PAGE_MARGIN; y <= endY; y += spacing) {
-    paths.push(lineSubpath(PAGE_MARGIN, y, endX, y));
+  const extent = guideExtent(type, spacing, lockedHeight);
+  for (let y = extent.startY; y <= extent.endY; y += spacing) {
+    paths.push(lineSubpath(extent.startX, y, extent.endX, y));
   }
   if (type === "squares") {
-    for (let x = PAGE_MARGIN; x <= endX; x += spacing) {
-      paths.push(lineSubpath(x, PAGE_MARGIN, x, endY));
+    for (let x = extent.startX; x <= extent.endX; x += spacing) {
+      paths.push(lineSubpath(x, extent.startY, x, extent.endY));
     }
   }
   return paths.finish();
@@ -139,17 +140,47 @@ function gridPaths(type: "lines" | "squares", spacing: number, lockedHeight: num
 
 function dotPaths(spacing: number, lockedHeight: number): string[] {
   const paths = new GuidePathChunks();
-  const { endX, endY } = guideExtent(lockedHeight);
-  for (let y = PAGE_MARGIN; y <= endY; y += spacing) {
-    for (let x = PAGE_MARGIN; x <= endX; x += spacing) {
+  const extent = guideExtent("dots", spacing, lockedHeight);
+  for (let y = extent.startY; y <= extent.endY; y += spacing) {
+    for (let x = extent.startX; x <= extent.endX; x += spacing) {
       paths.push(lineSubpath(x, y, x, y));
     }
   }
   return paths.finish();
 }
 
-function guideExtent(lockedHeight: number): { readonly endX: number; readonly endY: number } {
-  return { endX: PAGE_WIDTH - PAGE_MARGIN, endY: lockedHeight - PAGE_MARGIN };
+interface GuideExtent {
+  readonly endX: number;
+  readonly endY: number;
+  readonly startX: number;
+  readonly startY: number;
+}
+
+function guideExtent(
+  type: Exclude<BackgroundV1["type"], "none">,
+  spacing: number,
+  lockedHeight: number,
+): GuideExtent {
+  const vertical = centeredGuideAxis(
+    PAGE_MARGIN,
+    Math.max(0, lockedHeight - 2 * PAGE_MARGIN),
+    spacing,
+  );
+  if (type === "lines") {
+    return {
+      endX: PAGE_WIDTH - PAGE_MARGIN,
+      endY: vertical.end,
+      startX: PAGE_MARGIN,
+      startY: vertical.start,
+    };
+  }
+  const horizontal = centeredGuideAxis(PAGE_MARGIN, PAGE_WIDTH - 2 * PAGE_MARGIN, spacing);
+  return {
+    endX: horizontal.end,
+    endY: vertical.end,
+    startX: horizontal.start,
+    startY: vertical.start,
+  };
 }
 
 class GuidePathChunks {

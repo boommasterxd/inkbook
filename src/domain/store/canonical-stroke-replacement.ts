@@ -1,5 +1,4 @@
 import { getCanonicalStrokeReplacementProof } from "../elements/stroke-replacement-proof";
-import { isWithinPageBounds, PAGE_WIDTH } from "../geometry/public";
 import type { InkElementV1 } from "../schema/public";
 
 import { createOwnedTranslatedReplacementRecord } from "./record-factory";
@@ -10,7 +9,7 @@ import type {
   ElementReplacementSource,
   PreparedReplacementRecords,
 } from "./time-sliced-element-replacement";
-import type { ElementRecord, StoreSliceScheduler } from "./types";
+import type { StoreSliceScheduler } from "./types";
 
 const CANONICAL_TRANSLATION_DOMAINS = Object.freeze(["geometry"] as const);
 const MAX_DETECTION_RECORDS_PER_SLICE = 256;
@@ -25,13 +24,7 @@ export async function planCanonicalStrokeReplacement(
   const detection = await detectCanonicalBatch(source, replacements, scheduler);
   if (detection === "cancelled" || detection.status === "fallback") return detection;
   const geometryVersion = nextVersion(source.geometryVersion);
-  const prepared = await prepareRecords(
-    source,
-    replacements,
-    geometryVersion,
-    detection.sourceWithinPage,
-    scheduler,
-  );
+  const prepared = await prepareRecords(source, replacements, geometryVersion, scheduler);
   if (prepared === "cancelled") return prepared;
   let yields = detection.yields + prepared.yields;
   let indexYields = 0;
@@ -66,7 +59,6 @@ export interface CanonicalFallback {
 }
 
 interface CanonicalDetection {
-  readonly sourceWithinPage: boolean;
   readonly status: "canonical";
   readonly yields: number;
 }
@@ -78,7 +70,6 @@ async function detectCanonicalBatch(
 ): Promise<CanonicalDetection | "cancelled" | CanonicalFallback> {
   const ids = new Set<string>();
   let recordsInSlice = 0;
-  let sourceWithinPage = true;
   let yields = 0;
   for (const replacement of replacements) {
     if (cancelled(scheduler)) return "cancelled";
@@ -92,7 +83,6 @@ async function detectCanonicalBatch(
     const proof = getCanonicalStrokeReplacementProof(replacement);
     if (proof?.source !== current.element) return { status: "fallback", yields };
     assertReplacementIdentity(current.element, replacement);
-    sourceWithinPage &&= isWithinPageBounds(current.bounds);
     recordsInSlice += 1;
     const checkpoint = await yieldWhenRequested(
       scheduler,
@@ -102,14 +92,13 @@ async function detectCanonicalBatch(
     if (checkpoint === 1) recordsInSlice = 0;
     yields += checkpoint;
   }
-  return { sourceWithinPage, status: "canonical", yields };
+  return { status: "canonical", yields };
 }
 
 async function prepareRecords(
   source: ElementReplacementSource,
   replacements: readonly InkElementV1[],
   geometryVersion: number,
-  enforcePageBounds: boolean,
   scheduler: StoreSliceScheduler,
 ): Promise<PreparedReplacementRecords | "cancelled"> {
   const prepared: PreparedReplacementRecords = {
@@ -126,9 +115,6 @@ async function prepareRecords(
     const current = requireElementRecord(source.records, replacement.id);
     const proof = getCanonicalStrokeReplacementProof(replacement)!;
     if (proof.translation.x === 0 && proof.translation.y === 0) continue;
-    if (enforcePageBounds && !translatedBoundsWithinPage(current, proof.translation)) {
-      throw new RangeError("Conservative element bounds must remain within the supported page.");
-    }
     const record = createOwnedTranslatedReplacementRecord(
       replacement,
       current,
@@ -157,17 +143,6 @@ async function prepareRecords(
     yields += checkpoint;
   }
   return { ...prepared, yields };
-}
-
-function translatedBoundsWithinPage(
-  current: ElementRecord,
-  translation: Readonly<{ x: number; y: number }>,
-): boolean {
-  return (
-    current.bounds.minX + translation.x >= 0 &&
-    current.bounds.maxX + translation.x <= PAGE_WIDTH &&
-    current.bounds.minY + translation.y >= 0
-  );
 }
 
 function finishPlan(

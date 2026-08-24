@@ -18,10 +18,10 @@ import { EMPTY_STORE_INSTRUMENTATION, type MutableStoreInstrumentation } from ".
 import { normalizeElementInput } from "./input-normalization";
 import { assertCompleteBandOrder, ElementStoreOrdering } from "./order-operations";
 import {
-  preparePageBoundedReplacementCandidates,
-  preparePageBoundedReplacementCandidatesTimeSliced,
-  type PageBoundedReplacementPlan,
-} from "./replacement-page-bound-planner";
+  prepareReplacementPlan,
+  prepareReplacementPlanTimeSliced,
+  type ReplacementPlan,
+} from "./replacement-plan";
 import { PreparedElementMutations } from "./prepared-element-mutations";
 import { createRemovalTransition } from "./removal-transition";
 import { assignRecordVersions, createInitialRecord, nextRecordVersion } from "./record-factory";
@@ -215,24 +215,19 @@ export class ElementStore {
     if (candidates.length === 0) return null;
     return this.#commitReplacements(candidates);
   }
-  public planPageBoundedReplacements(
-    replacements: readonly InkElementV1[],
-  ): PageBoundedReplacementPlan | null {
+  public planReplacements(replacements: readonly InkElementV1[]): ReplacementPlan | null {
     if (replacements.length === 0) return null;
-    const prepared = preparePageBoundedReplacementCandidates(
-      replacements,
-      this.#replacementPorts(),
-    );
-    return prepared === null || prepared.elements.length === 0 ? null : prepared;
+    const prepared = prepareReplacementPlan(replacements, this.#replacementPorts());
+    return prepared.elements.length === 0 ? null : prepared;
   }
 
-  public async planPageBoundedReplacementsTimeSliced(
+  public async planReplacementsTimeSliced(
     replacements: readonly InkElementV1[],
     scheduler: StoreSliceScheduler,
-  ): Promise<PageBoundedReplacementPlan | "cancelled" | null> {
+  ): Promise<ReplacementPlan | "cancelled" | null> {
     if (replacements.length === 0) return null;
     const mutationVersion = this.#mutationVersion;
-    const prepared = await preparePageBoundedReplacementCandidatesTimeSliced(
+    const prepared = await prepareReplacementPlanTimeSliced(
       replacements,
       this.#replacementPorts(),
       {
@@ -243,7 +238,7 @@ export class ElementStore {
       },
     );
     if (prepared === "cancelled" || this.#mutationVersion !== mutationVersion) return "cancelled";
-    return prepared === null || prepared.elements.length === 0 ? null : prepared;
+    return prepared.elements.length === 0 ? null : prepared;
   }
 
   public async prepareElementReplacement(

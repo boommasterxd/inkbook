@@ -33,8 +33,8 @@ export class FakeSession implements DocumentSessionPort {
   readonly cancelled: SessionOperationIdentity[] = [];
   disposed = false;
   preparedForUnload = false;
-  externalChangeOutcome: "conflict" | "reload-failed" | "reload-required" | "reloaded" =
-    "reload-required";
+  externalChangeOutcome:
+    "conflict" | "reload-failed" | "reload-required" | "reloaded" | "unchanged" = "reload-required";
   readonly locks: Array<{
     deferred: Deferred<SaveResult>;
     operation: SessionOperationIdentity;
@@ -85,7 +85,9 @@ export class FakeSession implements DocumentSessionPort {
     return pending.promise;
   }
 
-  notifyExternalChange(): Promise<"conflict" | "reload-failed" | "reload-required" | "reloaded"> {
+  notifyExternalChange(): Promise<
+    "conflict" | "reload-failed" | "reload-required" | "reloaded" | "unchanged"
+  > {
     return Promise.resolve(this.externalChangeOutcome);
   }
 

@@ -188,7 +188,7 @@ function recordRectangleCommit(harness: Harness, revision: number, x: number): v
 }
 
 describe("autosave trust boundaries", () => {
-  it("rejects external-change adoption when a local commit wins the asynchronous race", async () => {
+  it("ignores a delayed notification for the confirmed base when a local commit wins the race", async () => {
     const harness = await createHarness();
     let releaseRead = (): void => undefined;
     harness.vault.readGate = new Promise<void>((resolve) => {
@@ -201,8 +201,36 @@ describe("autosave trust boundaries", () => {
     harness.vault.readGate = null;
     releaseRead();
 
-    await expect(notification).resolves.toBe("conflict");
-    expect(harness.coordinator.status).toBe("conflict");
+    await expect(notification).resolves.toBe("unchanged");
+    expect(harness.coordinator.status).toBe("debouncing");
+    expect(harness.coordinator.dirty).toBe(true);
+  });
+
+  it("distinguishes unchanged host content from a dirty external conflict", async () => {
+    const unchanged = await createHarness();
+    recordRectangleCommit(unchanged, 1, 136);
+
+    await expect(unchanged.coordinator.notifyExternalChange()).resolves.toBe("unchanged");
+    expect(unchanged.coordinator.status).toBe("debouncing");
+    expect(unchanged.coordinator.dirty).toBe(true);
+
+    const changed = await createHarness();
+    recordRectangleCommit(changed, 1, 137);
+    changed.vault.content = serializeSnapshot({ ...snapshot(), revision: 12 }).svg;
+
+    await expect(changed.coordinator.notifyExternalChange()).resolves.toBe("conflict");
+    expect(changed.coordinator.status).toBe("conflict");
+    expect(changed.coordinator.dirty).toBe(true);
+  });
+
+  it("ignores a notification for an indeterminate write that matches the active save proof", async () => {
+    const harness = await createHarness();
+    harness.vault.failAfterWrite = true;
+    recordRectangleCommit(harness, 1, 138);
+
+    await expect(harness.coordinator.flush("retry")).resolves.toBe("verification-required");
+    await expect(harness.coordinator.notifyExternalChange()).resolves.toBe("unchanged");
+    expect(harness.coordinator.status).toBe("verification-required");
     expect(harness.coordinator.dirty).toBe(true);
   });
 

@@ -8,9 +8,11 @@
 
 export const motion = Object.freeze({
   fast: 120,
+  toolbar: 300,
   standard: 180,
   erase: 160,
   layout: 240,
+  slow: 300,
 } as const);
 
 export const easing = Object.freeze({
@@ -19,7 +21,7 @@ export const easing = Object.freeze({
 } as const);
 
 export const transitionDurations = Object.freeze({
-  toolbarEnterExit: motion.standard,
+  toolbarEnterExit: motion.toolbar,
   toolActiveState: motion.fast,
   flyoutOpenClose: motion.standard,
   selectionHandlesEnterExit: motion.fast,
@@ -30,11 +32,10 @@ export const transitionDurations = Object.freeze({
   styleChange: motion.fast,
   lockedToActiveHeight: motion.layout,
   activeToLockedHeight: motion.layout,
-  unlockPreviewCrossfade: motion.fast,
   lockEditorCrossfade: motion.fast,
   automaticPageGrowth: motion.standard,
   overflowEdgeGradient: motion.fast,
-  conditionalToolbarControl: motion.fast,
+  conditionalToolbarControl: motion.toolbar,
   arrangeResult: motion.fast,
   snapCandidateMarker: motion.fast,
   fallback: motion.fast,

@@ -1,4 +1,9 @@
-import type { InkElementV1, InkSnapshotV1, PageV1 } from "../../../domain/schema/public";
+import type {
+  ElementValidationDerivation,
+  InkElementV1,
+  InkSnapshotV1,
+  PageV1,
+} from "../../../domain/schema/public";
 import type {
   ClipboardCandidates,
   ClipboardResult,
@@ -31,6 +36,7 @@ export interface FullModelSyncRuntimeRequest extends ModelSyncIdentity {
 
 export interface IncrementalModelSyncRuntimeRequest extends ModelSyncIdentity {
   readonly baseModelRevision: number;
+  readonly changedElementDerivations?: readonly ElementValidationDerivation[];
   readonly changedElements?: readonly InkElementV1[];
   readonly orderChanges?: Readonly<Partial<Record<"content" | "highlight", readonly string[]>>>;
   readonly page?: PageV1;
@@ -88,7 +94,9 @@ export type DocumentRuntimeRequest =
 
 interface UnlockRuntimeSuccess {
   readonly identity: PurposeOperationIdentity;
+  readonly lockedHeight: number;
   readonly outputHash: string;
+  readonly requiresCanonicalRewrite: boolean;
   readonly sourceVersion: number;
   readonly snapshot: Omit<InkSnapshotV1, "elements"> & {
     readonly batchCount: number;
@@ -99,6 +107,7 @@ interface UnlockRuntimeSuccess {
 
 export interface UnlockRuntimeBatch {
   readonly batchIndex: number;
+  readonly derivations: readonly ElementValidationDerivation[];
   readonly elements: readonly InkElementV1[];
   readonly identity: PurposeOperationIdentity;
 }
@@ -167,6 +176,7 @@ export interface DocumentRuntimePort {
 
 export interface DocumentRuntimeServices {
   createId(): string;
+  now?(this: void): number;
 }
 
 export interface InputAwareSliceScheduler {

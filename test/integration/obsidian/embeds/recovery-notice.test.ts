@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   showAttachedRecoveryPanel,
   showHeadlessRecoveryNotice,
+  showLoadRecoveryPanel,
   type HeadlessRecoveryActions,
 } from "../../../../src/obsidian/embeds/recovery-notice";
 
@@ -79,12 +80,20 @@ class TestDialogElement {
     }
   }
 
-  createDiv(options?: { readonly cls?: string }): TestDialogElement {
-    return this.createChild("div", options?.cls);
+  createDiv(options?: { readonly cls?: string; readonly text?: string }): TestDialogElement {
+    const child = this.createChild("div", options?.cls);
+    child.textContent = options?.text ?? "";
+    return child;
   }
 
   createEl(tagName: string, options?: { readonly text?: string }): TestDialogElement {
     const child = this.createChild(tagName);
+    child.textContent = options?.text ?? "";
+    return child;
+  }
+
+  createSpan(options?: { readonly cls?: string; readonly text?: string }): TestDialogElement {
+    const child = this.createChild("span", options?.cls);
     child.textContent = options?.text ?? "";
     return child;
   }
@@ -193,12 +202,15 @@ describe("headless recovery notice", () => {
 
     expect(first.body.children).toHaveLength(1);
     expect(second.body.children).toHaveLength(0);
-    expect(actionButtons(first).map((button) => button.textContent)).toEqual([
+    expect(actionButtons(first).map((button) => button.attributes.get("aria-label"))).toEqual([
       "Retry",
       "Reload external version",
       "Save local copy",
     ]);
-    expect(first.activeElement?.textContent).toBe("Retry");
+    expect(
+      actionButtons(first).map((button) => button.children[0]?.attributes.get("data-icon")),
+    ).toEqual(["rotate-ccw", "refresh-cw", "copy-plus"]);
+    expect(first.activeElement?.attributes.get("aria-label")).toBe("Retry");
     expect(headlessDialog(first)?.attributes.get("role")).toBe("dialog");
     expect(headlessDialog(first)?.attributes.get("aria-modal")).toBe("true");
     expect(headlessDialog(first)?.children[2]?.textContent).toBe(
@@ -282,6 +294,37 @@ describe("headless recovery notice", () => {
 });
 
 describe("attached recovery panel", () => {
+  it("replaces a load failure with icon-only retry and discard actions", () => {
+    const host = new Notice("").messageEl;
+    const retry = vi.fn();
+    const discard = vi.fn(() => true);
+    const closed = vi.fn();
+    const panel = showLoadRecoveryPanel(
+      host,
+      { discard, retry },
+      closed,
+    ) as unknown as TestNoticeElement;
+    const actionButtons = panel.children[1]?.children ?? [];
+
+    expect(panel.attributes.get("aria-label")).toBe("Load failed");
+    expect(actionButtons.map((button) => button.attributes.get("aria-label"))).toEqual([
+      "Retry load",
+      "Discard load attempt",
+    ]);
+    actionButtons[0]?.dispatch("click");
+    expect(retry).toHaveBeenCalledOnce();
+    expect(closed).toHaveBeenCalledOnce();
+
+    const discardPanel = showLoadRecoveryPanel(
+      host,
+      { discard, retry },
+      closed,
+    ) as unknown as TestNoticeElement;
+    discardPanel.children[1]?.children[1]?.dispatch("click");
+    expect(discard).toHaveBeenCalledOnce();
+    expect(closed).toHaveBeenCalledTimes(2);
+  });
+
   it("offers retry, local copy, and cancel with accessible pending behavior", async () => {
     const host = new Notice("").messageEl;
     const closed = vi.fn();
@@ -300,13 +343,20 @@ describe("attached recovery panel", () => {
       },
       closed,
     ) as unknown as TestNoticeElement;
-    const actionButtons = panel.children.slice(1);
+    const actionButtons = panel.children[1]?.children ?? [];
 
     expect(panel.attributes.get("role")).toBe("alert");
-    expect(actionButtons.map((button) => button.textContent)).toEqual([
-      "Retry",
-      "Save local copy",
-      "Cancel",
+    expect(panel.attributes.get("aria-label")).toBe("Save failed");
+    expect(panel.children[0]?.textContent).toBe("Could not save changes");
+    expect(actionButtons.map((button) => button.attributes.get("aria-label"))).toEqual([
+      "Retry save",
+      "Save copy",
+      "Continue editing",
+    ]);
+    expect(actionButtons.map((button) => button.children[0]?.attributes.get("data-icon"))).toEqual([
+      "rotate-ccw",
+      "copy-plus",
+      "pencil",
     ]);
     actionButtons[0]?.dispatch("click");
     expect(actionButtons.every((button) => !button.disabled)).toBe(true);

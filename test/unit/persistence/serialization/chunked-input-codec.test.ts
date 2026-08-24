@@ -10,6 +10,7 @@ import {
   CURRENT_METADATA_REWRITES,
   rewriteDocumentMetadata,
 } from "../../../fixtures/persistence/metadata-rewrite";
+import { serializeLegacyLockedHeightDocument } from "../../../fixtures/persistence/legacy-locked-height";
 import {
   parseInkbookDocument,
   serializeInkbookDocument,
@@ -17,6 +18,7 @@ import {
 import {
   appendMetadataProperty,
   createAllElementSnapshot,
+  createDottedRectangleSnapshot,
   createSnapshot,
   wideMetadataArrayProperty,
 } from "./fixtures";
@@ -47,6 +49,16 @@ async function expectSnapshotMetadataPrefixAccepted(
 }
 
 describe("chunked Inkbook input", () => {
+  it("matches synchronous loading for a legacy locked height", async () => {
+    const snapshot = createDottedRectangleSnapshot(400);
+    snapshot.page.lockedBufferLines = 3;
+
+    await expectChunkedInputToMatchSynchronous(serializeLegacyLockedHeightDocument(snapshot), {
+      inputSliceBytes: 37,
+      pathBatchSize: 2,
+    });
+  });
+
   it("matches the synchronous codec across byte boundaries", async () => {
     const serialized = serializeInkbookDocument(createAllElementSnapshot());
     expect(serialized.ok).toBe(true);

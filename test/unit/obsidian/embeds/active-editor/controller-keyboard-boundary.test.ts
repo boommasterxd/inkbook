@@ -155,22 +155,13 @@ describe("active editor native paste DOM boundary", () => {
     harness.dispose();
   });
 
-  it("returns overflow-menu focus to the toolbar trigger", async () => {
+  it("opens the controlled overflow flyout without invoking a native menu", () => {
     const harness = createHarness();
-    const overflow = document.createElementNS(
-      "http://www.w3.org/1999/xhtml",
-      "button",
-    ) as HTMLButtonElement;
-    document.body.append(overflow);
-    overflow.dataset.inkbookAction = "overflow";
-    overflow.focus();
 
     harness.controller.handleToolbarAction("overflow");
-    await vi.waitFor(() => expect(harness.menu.positions).toHaveLength(1));
-    harness.menu.close();
-    expect(document.activeElement).toBe(overflow);
+    expect(harness.controller.chromeProps().toolbarState.openFlyout).toBe("overflow");
+    expect(harness.menu.positions).toHaveLength(0);
 
-    overflow.remove();
     harness.dispose();
   });
 

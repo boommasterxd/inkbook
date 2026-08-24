@@ -2,6 +2,8 @@ import { TFile, Tasks, type Editor, type MarkdownView } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import { activateInkbookPlugin } from "../../../src/obsidian/inkbook-plugin";
+import { STRAIGHT_HIGHLIGHTER_ICON_ID } from "../../../src/rendering/ui/icon-ids";
+import { testIconRegistry } from "../../adapters/obsidian/plugin";
 import { TestPlugin } from "../../fixtures/obsidian/test-plugin";
 
 const TestTFile = TFile as unknown as new (path: string) => TFile;
@@ -62,6 +64,12 @@ describe("plugin host registration", () => {
     const plugin = new TestPlugin(app as never, {} as never);
 
     const deactivate = await activateInkbookPlugin(plugin);
+    const straightHighlighterIcon = testIconRegistry.get(STRAIGHT_HIGHLIGHTER_ICON_ID);
+    expect(straightHighlighterIcon).toMatch(/^<svg /u);
+    expect(straightHighlighterIcon).toContain('viewBox="0 0 24 24"');
+    expect(straightHighlighterIcon).toContain('fill="none" stroke="currentColor"');
+    expect(straightHighlighterIcon).toContain('data-inkbook-ruler-marks="true"');
+    expect(straightHighlighterIcon).not.toContain("<g");
     const registrations = plugin as unknown as {
       readonly commands: Array<{
         readonly checkCallback?: (checking: boolean) => boolean | void;
@@ -127,6 +135,7 @@ describe("plugin host registration", () => {
     await expect(tasks.promise()).resolves.toEqual([undefined]);
 
     deactivate?.();
+    expect(testIconRegistry.has(STRAIGHT_HIGHLIGHTER_ICON_ID)).toBe(false);
   });
 
   it("does not register layout-owned surfaces after deactivation", async () => {

@@ -1,5 +1,6 @@
 import type { AttachmentIdentity } from "../../editor/session/session-state";
 import type { ColorSchemeBroadcaster } from "../theme/color-scheme";
+import type { InkbookDocumentRecognitionPort } from "./document-recognition";
 import type { PresentationLifecycleRegistry } from "./presentation-lifecycle-registry";
 
 export interface ResolvedInkbookDocument {
@@ -37,6 +38,9 @@ export interface PresentationAttachment {
   readonly documentId: string;
   readonly embedReference: PresentationEmbedReference;
   readonly root: HTMLElement;
+  readonly preview?: HTMLElement;
+  readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
+  readonly setPreviewSource?: (source: string) => Promise<void>;
   readonly scrollOwner: () => HTMLElement | null;
 }
 
@@ -44,7 +48,24 @@ export function presentationAttachmentKey(attachment: AttachmentIdentity): strin
   return `${attachment.attachmentId}:${attachment.attachmentGeneration}`;
 }
 
-export type PresentationAttachmentInput = Omit<PresentationAttachment, "scrollOwner">;
+export type PresentationAttachmentInput = Omit<
+  PresentationAttachment,
+  "preview" | "scrollOwner" | "setPreviewAspectRatio" | "setPreviewSource"
+>;
+
+export function presentationPreviewOptions(
+  attachment: PresentationAttachment,
+): Pick<PresentationAttachment, "preview" | "setPreviewAspectRatio" | "setPreviewSource"> {
+  return {
+    ...(attachment.preview === undefined ? {} : { preview: attachment.preview }),
+    ...(attachment.setPreviewAspectRatio === undefined
+      ? {}
+      : { setPreviewAspectRatio: attachment.setPreviewAspectRatio }),
+    ...(attachment.setPreviewSource === undefined
+      ? {}
+      : { setPreviewSource: attachment.setPreviewSource }),
+  };
+}
 
 export interface PresentationSessionPort {
   activate(attachment: PresentationAttachment): void;
@@ -53,6 +74,7 @@ export interface PresentationSessionPort {
 }
 
 export interface EmbedIntegrationPorts {
+  readonly documents: InkbookDocumentRecognitionPort;
   readonly lifecycle: PresentationLifecycleRegistry;
   readonly resolveDocument: (
     linkpath: string,

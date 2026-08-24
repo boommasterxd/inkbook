@@ -58,6 +58,24 @@ export interface EditorFlyoutCallbacks {
   readonly onBackgroundSpacingChange: (spacing: BackgroundSpacing) => void;
   readonly onBackgroundTypeChange: (type: BackgroundType) => void;
   readonly onFlyoutClose: (flyout: FlyoutId) => void;
+  readonly onOverflowAction: (action: OverflowMenuAction) => void;
   readonly onShapeChange: (shape: ShapeId) => void;
   readonly onStyleChange: (controlId: string, value: boolean | number | string) => void;
+}
+
+export type OverflowMenuAction =
+  | "bring-forward"
+  | "bring-to-front"
+  | "copy-embed"
+  | "delete-embed"
+  | "erase-all"
+  | "send-backward"
+  | "send-to-back";
+
+export interface OverflowMenuState {
+  readonly arrange: Readonly<
+    Record<"bring-forward" | "bring-to-front" | "send-backward" | "send-to-back", boolean>
+  >;
+  readonly canEraseAll: boolean;
+  readonly hasSelection: boolean;
 }

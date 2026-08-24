@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { deriveRenderBands } from "../../../../src/domain/commands/render-bands";
-import { calculateElementBounds } from "../../../../src/domain/geometry/public";
+import { calculateElementBounds, centeredGuideAxis } from "../../../../src/domain/geometry/public";
 import type {
   BackgroundV1,
   InkElementV1,
@@ -37,6 +37,7 @@ const BACKGROUNDS: readonly BackgroundV1[] = [
   { spacing: 100, type: "lines" },
   { spacing: 80, type: "dots" },
   { spacing: 80, type: "squares" },
+  { spacing: 60, type: "squares" },
 ];
 
 describe("active and standalone SVG graphic parity", () => {
@@ -72,46 +73,93 @@ describe("active and standalone SVG graphic parity", () => {
 
   it.each(BACKGROUNDS)(
     "matches the active $type background pattern to standalone guide geometry",
-    (background) => {
-      const snapshot = representativeSnapshot();
-      snapshot.page.background = background;
-      const { safe, standalone } = serializeValidatedSnapshot(snapshot);
-      const saved = parsePathMarkup(
-        standalone.svg.slice(safe.groups.background.start, safe.groups.background.end),
-      );
-      const savedPage = saved[0];
-      expect(savedPage).toBeDefined();
-      if (savedPage === undefined) return;
-
-      for (const scheme of ["light", "dark"] as const) {
-        const scene = renderScene(snapshot, standalone.lockedHeight, scheme);
-        const active = activeBackground(scene.renderer);
-        expect(semanticPath(active.page, scheme)).toEqual(semanticPath(savedPage, scheme));
-        expect(styleValue(scene.renderer, "--inkbook-page")).toBe(PORTABLE_PALETTE_V1[scheme].page);
-        expect(styleValue(scene.renderer, "--inkbook-guide")).toBe(
-          PORTABLE_PALETTE_V1[scheme].guide,
-        );
-
-        const savedSegments = saved.slice(1).flatMap((path) => pathSegments(path.get("d") ?? ""));
-        if (background.type === "none") {
-          expect(savedSegments).toEqual([]);
-          expect(active.coverage.get("fill")).toBe("none");
-          expect(active.patternPath.get("d")).toBe("");
-        } else {
-          expect(active.pattern.get("x")).toBe(serializeSvgNumber(snapshot.page.margin));
-          expect(active.pattern.get("y")).toBe(serializeSvgNumber(snapshot.page.margin));
-          expect(active.pattern.get("width")).toBe(String(background.spacing));
-          expect(active.pattern.get("height")).toBe(String(background.spacing));
-          expect(active.patternPath.get("class")).toBe("inkbook-theme-guide");
-          expect(activePatternSegments(active, background, standalone.lockedHeight)).toEqual(
-            savedSegments,
-          );
-        }
-        scene.renderer.destroy();
-      }
-    },
+    verifyBackgroundParity,
   );
 });
+
+function verifyBackgroundParity(background: BackgroundV1): void {
+  const snapshot = representativeSnapshot();
+  snapshot.page.background = background;
+  const { safe, standalone } = serializeValidatedSnapshot(snapshot);
+  const saved = parsePathMarkup(
+    standalone.svg.slice(safe.groups.background.start, safe.groups.background.end),
+  );
+  const savedPage = saved[0];
+  expect(savedPage).toBeDefined();
+  if (savedPage === undefined) return;
+
+  for (const scheme of ["light", "dark"] as const) {
+    const scene = renderScene(snapshot, standalone.lockedHeight, scheme);
+    const active = activeBackground(scene.renderer);
+    expect(semanticPath(active.page, scheme)).toEqual(semanticPath(savedPage, scheme));
+    expect(styleValue(scene.renderer, "--inkbook-page")).toBe(PORTABLE_PALETTE_V1[scheme].page);
+    expect(styleValue(scene.renderer, "--inkbook-guide")).toBe(PORTABLE_PALETTE_V1[scheme].guide);
+
+    const savedSegments = saved.slice(1).flatMap((path) => pathSegments(path.get("d") ?? ""));
+    if (background.type === "none") {
+      expect(savedSegments).toEqual([]);
+      expect(active.coverage.get("fill")).toBe("none");
+      expect(active.patternPath.get("d")).toBe("");
+    } else {
+      verifyPatternedBackground(
+        active,
+        background,
+        snapshot,
+        standalone.lockedHeight,
+        saved,
+        savedSegments,
+      );
+    }
+    scene.renderer.destroy();
+  }
+}
+
+function verifyPatternedBackground(
+  active: ReturnType<typeof activeBackground>,
+  background: Exclude<BackgroundV1, { type: "none" }>,
+  snapshot: InkSnapshotV1,
+  lockedHeight: number,
+  saved: Attributes[],
+  savedSegments: Segment[],
+): void {
+  const vertical = centeredGuideAxis(
+    snapshot.page.margin,
+    lockedHeight - 2 * snapshot.page.margin,
+    background.spacing,
+  );
+  const horizontal = centeredGuideAxis(
+    snapshot.page.margin,
+    snapshot.page.innerWidth,
+    background.spacing,
+  );
+  const left = background.type === "lines" ? snapshot.page.margin : horizontal.start;
+  const right =
+    background.type === "lines" ? snapshot.page.margin + snapshot.page.innerWidth : horizontal.end;
+  const inset = background.type === "dots" ? 1 : 0.5;
+  if (background.type !== "dots") {
+    expect(active.coverage.get("fill")).toBe("none");
+    expect(active.coverage.get("class")).toBe("inkbook-theme-guide");
+    expect(active.coverage.get("stroke-width")).toBe("1");
+    expect(active.coverage.get("vector-effect")).toBe("non-scaling-stroke");
+    expect(pathSegments(active.coverage.get("d") ?? "")).toEqual(savedSegments);
+    expect(active.patternPath.get("d")).toBe("");
+    return;
+  }
+  expect(active.coverage.get("d")).toBe(
+    `M ${serializeSvgNumber(left)} ${serializeSvgNumber(vertical.start)} ` +
+      `H ${serializeSvgNumber(right)} V ${serializeSvgNumber(vertical.end)} ` +
+      `H ${serializeSvgNumber(left)} Z`,
+  );
+  expect(active.pattern.get("x")).toBe(serializeSvgNumber(horizontal.start - inset));
+  expect(active.pattern.get("y")).toBe(serializeSvgNumber(vertical.start - inset));
+  expect(active.pattern.get("width")).toBe(String(background.spacing));
+  expect(active.pattern.get("height")).toBe(String(background.spacing));
+  expect(active.patternPath.get("class")).toBe("inkbook-theme-guide");
+  expect(active.patternPath.has("vector-effect")).toBe(false);
+  expect(Number(active.patternPath.get("stroke-width"))).toBe(2);
+  expect(saved.slice(1).every((path) => !path.has("vector-effect"))).toBe(true);
+  expect(activePatternSegments(active, background, lockedHeight, inset)).toEqual(savedSegments);
+}
 
 function serializeValidatedSnapshot(snapshot: InkSnapshotV1) {
   const result = serializeInkbookDocument(snapshot);
@@ -351,9 +399,10 @@ function activePatternSegments(
   active: ReturnType<typeof activeBackground>,
   background: Exclude<BackgroundV1, { type: "none" }>,
   lockedHeight: number,
+  inset: number,
 ): Segment[] {
-  const startX = Number(active.pattern.get("x"));
-  const startY = Number(active.pattern.get("y"));
+  const startX = Number(active.pattern.get("x")) + (background.type === "lines" ? 0 : inset);
+  const startY = Number(active.pattern.get("y")) + inset;
   const spacing = Number(active.pattern.get("width"));
   const endX = 2048.6 - startX;
   const endY = lockedHeight - startY;

@@ -1,10 +1,31 @@
 import { sys } from "typescript";
 import { describe, expect, it } from "vitest";
 
-const stylesheet = readStylesheet("src/obsidian/styles/inkbook.css");
+const stylesheet = [
+  readStylesheet("src/obsidian/styles/inkbook.css"),
+  readStylesheet("src/obsidian/styles/editor-toolbar.css"),
+  readStylesheet("src/obsidian/styles/editor-flyouts.css"),
+].join("\n");
 const motionStylesheet = readStylesheet("src/obsidian/styles/motion.css");
+const toolbarMotionStylesheet = readStylesheet("src/obsidian/styles/editor-toolbar-motion.css");
 
 describe("Inkbook host styles", () => {
+  it("centers delayed operation feedback without changing layout", () => {
+    const feedback = declarationsFor(".inkbook-root .inkbook-operation-feedback");
+    const icon = declarationsFor(".inkbook-root .inkbook-operation-feedback-icon");
+    const reducedMotion = blockFor(
+      '.inkbook-root:not([data-inkbook-motion="full"]) .inkbook-operation-feedback-icon',
+      motionStylesheet,
+    );
+
+    expect(feedback).toContain("position: absolute");
+    expect(feedback).toContain("inset-block-start: 50%");
+    expect(feedback).toContain("inset-inline-start: 50%");
+    expect(feedback).toContain("pointer-events: none");
+    expect(icon).toContain("animation: inkbook-operation-spin 800ms linear infinite");
+    expect(reducedMotion).toContain("animation: none");
+  });
+
   it("animates the active tool visual without resizing its button or icon", () => {
     const root = declarationsFor(".inkbook-root");
     const button = declarationsFor(".inkbook-root .inkbook-toolbar-button");
@@ -12,7 +33,12 @@ describe("Inkbook host styles", () => {
     const activeVisual = declarationsFor(
       '.inkbook-root .inkbook-toolbar-button[aria-pressed="true"]::before',
     );
+    const activeToolVisual = declarationsFor(
+      '.inkbook-root .inkbook-toolbar-button[data-inkbook-tool="true"][aria-pressed="true"]::before',
+    );
+    const indicator = declarationsFor(".inkbook-root .inkbook-toolbar-active-indicator");
     const visual = declarationsFor(".inkbook-root .inkbook-toolbar-button::before");
+    const disabled = declarationsFor(".inkbook-root .inkbook-toolbar-button:disabled");
     const icon = declarationsFor(
       ".inkbook-root .inkbook-toolbar-icon,\n.inkbook-root .inkbook-toolbar-icon svg",
     );
@@ -20,49 +46,318 @@ describe("Inkbook host styles", () => {
     expect(root).toContain("--inkbook-motion-fast: 120ms");
     expect(button).toContain("block-size: 44px");
     expect(button).toContain("inline-size: 44px");
+    expect(button).toContain("border-radius: 50%");
     expect(button).not.toContain("transform:");
     expect(button).toContain("color var(--inkbook-motion-fast)");
-    expect(active).toContain("color: var(--text-on-accent)");
-    expect(activeVisual).toContain("background: var(--interactive-accent)");
+    expect(active).toContain("color: var(--interactive-accent)");
+    expect(activeVisual).toContain("var(--interactive-accent) 14%");
     expect(activeVisual).toContain("transform: scale(0.96)");
+    expect(activeToolVisual).toContain("background: transparent");
+    expect(activeToolVisual).toContain("border-color: transparent");
+    expect(indicator).toContain("block-size: 36px");
+    expect(indicator).toContain("inline-size: 36px");
+    expect(indicator).toContain(
+      "transform: translate3d(var(--inkbook-toolbar-active-offset, 0px), 0, 0)",
+    );
+    expect(indicator).toContain("transition: transform var(--inkbook-motion-fast)");
     expect(visual).toContain("transform var(--inkbook-motion-fast) var(--inkbook-motion-easing)");
-    expect(icon).toContain("block-size: 20px");
-    expect(icon).toContain("inline-size: 20px");
-  });
-
-  it("uses standard motion for toolbar enter and locking exit", () => {
-    const root = declarationsFor(".inkbook-root");
-    const shell = declarationsFor(".inkbook-root .inkbook-toolbar-shell");
-    const locking = declarationsFor(
-      '.inkbook-root[data-inkbook-state="locking"] .inkbook-toolbar-shell',
-    );
-
-    expect(root).toContain("--inkbook-motion-standard: 180ms");
-    expect(shell).toContain("animation: inkbook-toolbar-enter var(--inkbook-motion-standard)");
-    expect(locking).toContain("animation-name: inkbook-toolbar-exit");
-    expect(keyframeDeclarations("inkbook-toolbar-enter", "from")).toContain("opacity: 0");
-    expect(keyframeDeclarations("inkbook-toolbar-enter", "from")).toContain(
-      "transform: translateY(-4px)",
-    );
-    expect(keyframeDeclarations("inkbook-toolbar-exit", "to")).toContain("opacity: 0");
-    expect(keyframeDeclarations("inkbook-toolbar-exit", "to")).toContain(
-      "transform: translateY(-4px)",
-    );
+    expect(visual).toContain("border-radius: inherit");
+    expect(disabled).toContain("color: var(--text-faint)");
+    expect(disabled).toContain("opacity: 0.48");
+    expect(icon).toContain("block-size: 19px");
+    expect(icon).toContain("inline-size: 19px");
   });
 
   it("draws locked-preview keyboard focus entirely inside the stabilized owner width", () => {
     const focus = declarationsFor(".inkbook-root .inkbook-locked-preview:focus-visible");
+    const preview = declarationsFor(".inkbook-root .inkbook-locked-preview");
+    const image = declarationsFor(".inkbook-root .inkbook-locked-preview-media");
+    const svg = declarationsFor(".inkbook-root .inkbook-locked-preview-svg");
 
     expect(focus).toContain("outline: 2px solid var(--interactive-accent)");
     expect(focus).toContain("outline-offset: -2px");
+    expect(preview).toContain("inline-size: 100%");
+    expect(preview).toContain("block-size: auto");
+    expect(preview).toContain("box-shadow: none");
+    expect(preview).toContain("overflow: clip");
+    expect(preview).toContain("transform: none");
+    expect(preview).toContain("transition: none");
+    expect(preview).toContain("contain: layout paint");
+    expect(image).toContain("aspect-ratio: var(--inkbook-preview-aspect-ratio)");
+    expect(image).toContain("pointer-events: none");
+    expect(svg).toContain("block-size: 100%");
+    expect(svg).toContain("pointer-events: none");
   });
+});
 
-  it("uses the same 22-pixel leading shift covered by the left-handed width threshold", () => {
-    const tools = declarationsFor(
-      ".inkbook-root .inkbook-toolbar-wide.inkbook-toolbar-left-handed .inkbook-toolbar-tools",
+describe("Inkbook toolbar motion styles", () => {
+  it("scales the complete primary pill without animating its individual buttons", () => {
+    const root = declarationsFor(".inkbook-root");
+    const toolbar = blockFor(
+      ".inkbook-root .inkbook-toolbar-shell .inkbook-toolbar",
+      toolbarMotionStylesheet,
+    );
+    const locking = blockFor(
+      '.inkbook-root[data-inkbook-state="locking"] .inkbook-toolbar-shell .inkbook-toolbar',
+      toolbarMotionStylesheet,
     );
 
-    expect(tools).toContain("translate: -22px 0");
+    expect(root).toContain("--inkbook-motion-toolbar: 300ms");
+    expect(root).not.toContain("--inkbook-motion-toolbar-button-delay");
+    expect(toolbar).toContain("animation: inkbook-toolbar-enter var(--inkbook-motion-toolbar)");
+    expect(locking).toContain("animation: inkbook-toolbar-exit var(--inkbook-motion-toolbar)");
+    expect(toolbar).toContain("transform-origin: center");
+    expect(toolbarMotionStylesheet).not.toContain("inkbook-toolbar-button-enter");
+    expect(keyframeDeclarations("inkbook-toolbar-enter", "from")).toContain("scale: 0");
+    expect(keyframeDeclarations("inkbook-toolbar-enter", "from")).not.toContain("opacity:");
+    expect(keyframeDeclarations("inkbook-toolbar-exit", "to")).toContain("scale: 0");
+    expect(keyframeDeclarations("inkbook-toolbar-exit", "to")).not.toContain("opacity:");
+  });
+});
+
+describe("Inkbook editor chrome styles", () => {
+  it("overlays a zero-height sticky toolbar without moving the active background", () => {
+    const activeRoot = declarationsFor(
+      '.inkbook-root[data-inkbook-state="active"],\n.inkbook-root[data-inkbook-state="locking"]',
+    );
+    const background = declarationsFor(".inkbook-root .inkbook-background-container");
+    const chromeHost = declarationsFor(".inkbook-root .inkbook-editor-chrome-host");
+    const embedRoot = declarationsFor(".inkbook-root.inkbook-embed-root");
+    const livePreviewRoot = declarationsFor(
+      '.inkbook-root.inkbook-embed-root[contenteditable="false"][data-inkbook-scheme][data-inkbook-state]',
+    );
+    const editorChrome = declarationsFor(".inkbook-root .inkbook-editor-chrome");
+    const scene = declarationsFor(".inkbook-root .inkbook-scene");
+    const transitioningScene = declarationsFor(
+      ".inkbook-root .inkbook-background-container.inkbook-page-height-transitioning > .inkbook-scene",
+    );
+    const shell = declarationsFor(".inkbook-root .inkbook-toolbar-shell");
+    const fixedUnlockScene = declarationsFor(
+      ".inkbook-root.inkbook-active-preparing .inkbook-background-container > .inkbook-scene,\n.inkbook-root.inkbook-active-transitioning .inkbook-background-container > .inkbook-scene",
+    );
+    const preparingBackground = declarationsFor(
+      ".inkbook-root.inkbook-active-preparing .inkbook-background-container",
+    );
+    const unlockTransitionBackground = declarationsFor(
+      ".inkbook-root.inkbook-active-preparing .inkbook-background-container,\n.inkbook-root.inkbook-active-transitioning .inkbook-background-container",
+    );
+    const presentationShell = declarationsFor(".inkbook-root.inkbook-embed-root::before");
+
+    expect(activeRoot).toContain("z-index: var(--layer-popover)");
+    expect(background).not.toContain("margin-block-start");
+    expect(embedRoot).toContain("contain: none !important");
+    expect(embedRoot).toContain("overflow: visible");
+    expect(livePreviewRoot).toContain("contain: none !important");
+    expect(editorChrome).not.toContain("padding-block-start");
+    expect(chromeHost).toContain("position: sticky");
+    expect(chromeHost).toContain("block-size: 0");
+    expect(chromeHost).toContain("var(--inkbook-toolbar-overlay-block-size)");
+    expect(chromeHost).toContain("var(--inkbook-toolbar-scrollport-padding)");
+    expect(chromeHost).toContain("overflow: visible");
+    expect(shell).toContain("position: absolute");
+    expect(shell).toContain("translate: 0 -100%");
+    expect(shell).toContain("block-size: var(--inkbook-toolbar-overlay-block-size)");
+    expect(background).toContain("overflow: clip");
+    expect(preparingBackground).toContain(
+      "block-size: var(--inkbook-locked-container-block-size) !important",
+    );
+    expect(unlockTransitionBackground).toContain(
+      "transition: block-size var(--inkbook-motion-layout) var(--inkbook-motion-layout-easing)",
+    );
+    expect(unlockTransitionBackground).toContain("will-change: block-size");
+    expect(fixedUnlockScene).toContain(
+      "block-size: calc(var(--inkbook-active-scene-block-size) - 2px)",
+    );
+    expect(fixedUnlockScene).toContain("inset-block-end: auto");
+    expect(scene).toContain("inset-block-start: 0");
+    expect(scene).toContain("inset-block-end: auto");
+    expect(scene).toContain("transform-origin: top left");
+    expect(transitioningScene).toContain("inset-block-start: 0");
+    expect(transitioningScene).toContain("inset-block-end: auto");
+    expect(presentationShell).toContain("background: var(--inkbook-page-surface)");
+    expect(presentationShell).toContain("border: 1px solid var(--background-modifier-border)");
+    expect(presentationShell).toContain("pointer-events: none");
+  });
+});
+
+describe("Inkbook responsive toolbar styles", () => {
+  it("keeps the main toolbar centered while context actions sit beside it", () => {
+    const root = declarationsFor(".inkbook-root");
+    const darkRoot = declarationsFor('.inkbook-root[data-inkbook-scheme="dark"]');
+    const preview = declarationsFor(".inkbook-root .inkbook-locked-preview");
+    const background = declarationsFor(".inkbook-root .inkbook-background-container");
+    const composition = declarationsFor(".inkbook-root .inkbook-toolbar-composition");
+    const shell = declarationsFor(".inkbook-root .inkbook-toolbar-shell");
+    const rail = declarationsFor(".inkbook-root .inkbook-toolbar-rail");
+    const scrollableComposition = declarationsFor(
+      ".inkbook-root .inkbook-toolbar-composition-scrollable",
+    );
+    const scrollableRail = declarationsFor(
+      ".inkbook-root .inkbook-toolbar-composition-scrollable .inkbook-toolbar-rail",
+    );
+    const main = declarationsFor(".inkbook-root .inkbook-toolbar");
+    const sharedSurface = declarationsFor(
+      ".inkbook-root .inkbook-toolbar,\n.inkbook-root .inkbook-toolbar-context-button",
+    );
+    const scrollable = declarationsFor(".inkbook-root .inkbook-toolbar-scrollable");
+    const context = declarationsFor(".inkbook-root .inkbook-toolbar-context-actions");
+    const contextButton = declarationsFor(".inkbook-root .inkbook-toolbar-context-button");
+
+    expect(composition).toContain("position: relative");
+    expect(root).toContain("--inkbook-page-surface: #f6f6f6");
+    expect(root).toContain("--inkbook-toolbar-overlay-block-size: 68px");
+    expect(darkRoot).toContain("--inkbook-page-surface: #212121");
+    expect(preview).toContain("background: transparent");
+    expect(preview).toContain("border: 1px solid transparent");
+    expect(background).toContain("background: transparent");
+    expect(background).toContain("border: 1px solid transparent");
+    expect(composition).toContain("--inkbook-toolbar-surface: var(--inkbook-page-surface)");
+    expect(main).toContain("margin-inline: auto");
+    expect(composition).toContain("background: transparent");
+    expect(composition).toContain("block-size: 50px");
+    expect(composition).toContain("inset-block-start: 7px");
+    expect(rail).toContain("block-size: 48px");
+    expect(rail).toContain("inset-block-start: 1px");
+    expect(rail).toContain("position: relative");
+    expect(scrollableComposition).toContain("overflow-x: auto");
+    expect(scrollableComposition).toContain("border-radius: 999px");
+    expect(scrollableComposition).toContain("scrollbar-width: none");
+    expect(scrollableRail).toContain("display: flex");
+    expect(scrollableRail).toContain("inline-size: max-content");
+    expect(scrollableRail).toContain("gap: 8px");
+    expect(shell).toContain(
+      "filter: drop-shadow(0 8px 12px rgb(0 0 0 / 14%)) drop-shadow(0 1px 1px rgb(0 0 0 / 18%))",
+    );
+    expect(sharedSurface).toContain("block-size: 48px");
+    expect(sharedSurface).toContain("box-sizing: border-box");
+    expect(main).toContain("padding: 2px");
+    expect(main).toContain("width: max-content");
+    expect(scrollable).toContain("width: max-content");
+    expect(scrollable).not.toContain("overflow-x: auto");
+    expect(context).toContain(
+      "inset-inline-start: calc(50% + var(--inkbook-toolbar-main-half, 0px) + 8px)",
+    );
+    expect(context).toContain("inset-block-start: 0");
+    expect(context).toContain("background: transparent");
+    expect(context).toContain("border: 0");
+    expect(context).toContain("box-shadow: none");
+    expect(context).toContain("position: absolute");
+    expect(sharedSurface).toContain("border-radius: 999px");
+    expect(sharedSurface).toContain("background: var(--inkbook-toolbar-surface)");
+    expect(sharedSurface).toContain("box-shadow: none");
+    expect(contextButton).toContain("inline-size: 48px");
+  });
+});
+
+describe("Inkbook context toolbar motion styles", () => {
+  it("scales context controls with staggered state changes and a bounded lock exit", () => {
+    const root = declarationsFor(".inkbook-root");
+
+    expect(
+      blockFor(".inkbook-root .inkbook-toolbar-context-button", toolbarMotionStylesheet),
+    ).toContain("animation: inkbook-toolbar-context-control-enter");
+    expect(
+      blockFor(
+        '.inkbook-root .inkbook-toolbar-context-button[data-presence="entering"]',
+        toolbarMotionStylesheet,
+      ),
+    ).toContain("var(--inkbook-motion-toolbar) ease-out");
+    expect(
+      blockFor(
+        '.inkbook-root .inkbook-toolbar-context-button[data-presence="exiting"]',
+        toolbarMotionStylesheet,
+      ),
+    ).toContain("var(--inkbook-motion-toolbar) ease-in");
+    expect(
+      blockFor(
+        '.inkbook-root[data-inkbook-state="locking"] .inkbook-toolbar-context-button',
+        toolbarMotionStylesheet,
+      ),
+    ).toContain("animation-delay: 0ms");
+    expect(
+      blockFor(
+        '.inkbook-root .inkbook-toolbar-context-button[data-presence-order="1"]',
+        toolbarMotionStylesheet,
+      ),
+    ).toContain("--inkbook-presence-delay: var(--inkbook-motion-toolbar-context-stagger)");
+    expect(root).toContain("--inkbook-motion-toolbar-context-stagger: 50ms");
+    expect(keyframeDeclarations("inkbook-toolbar-context-control-enter", "from")).not.toContain(
+      "flex-basis:",
+    );
+    expect(keyframeDeclarations("inkbook-toolbar-context-control-enter", "to")).not.toContain(
+      "flex-basis:",
+    );
+    expect(motionStylesheet).toContain("@keyframes inkbook-toolbar-context-control-enter");
+  });
+});
+
+describe("Inkbook editor handoff styles", () => {
+  it("keeps one persistent opaque shell while switching borderless presentations", () => {
+    const shell = declarationsFor(".inkbook-root.inkbook-embed-root::before");
+    const editor = declarationsFor(".inkbook-root .inkbook-editor-chrome");
+    const handoff = declarationsFor(".inkbook-root .inkbook-preview-handoff");
+    const hiddenHandoff = declarationsFor(".inkbook-root .inkbook-preview-handoff[hidden]");
+    const preview = declarationsFor(
+      ".inkbook-root.inkbook-active-transitioning .inkbook-preview-handoff,\n.inkbook-root.inkbook-active-preparing .inkbook-preview-handoff",
+    );
+
+    expect(shell).toContain("background: var(--inkbook-page-surface)");
+    expect(shell).toContain("border: 1px solid var(--background-modifier-border)");
+    expect(shell).toContain("box-shadow: var(--inkbook-surface-shadow)");
+    expect(editor).not.toContain("opacity:");
+    expect(handoff).not.toContain("display:");
+    expect(hiddenHandoff).toContain("display: none !important");
+    expect(preview).not.toContain("opacity:");
+    expect(preview).toContain("position: absolute");
+    expect(preview).toContain("z-index: 2");
+  });
+
+  it("clips a stable scene envelope during content-driven height motion", () => {
+    const scene = declarationsFor(".inkbook-root .inkbook-scene");
+    const transitioningScene = declarationsFor(
+      ".inkbook-root .inkbook-background-container.inkbook-page-height-transitioning > .inkbook-scene",
+    );
+
+    expect(scene).toContain("contain: layout paint");
+    expect(transitioningScene).toContain(
+      "block-size: calc(var(--inkbook-page-height-envelope-block-size) - 2px)",
+    );
+    expect(transitioningScene).toContain("inset-block-end: auto");
+  });
+});
+
+describe("Inkbook editor overlays", () => {
+  it("anchors attached save recovery at the bottom center", () => {
+    const recovery = declarationsFor(".inkbook-root .inkbook-recovery");
+
+    expect(recovery).toContain("inset-block-end: 16px");
+    expect(recovery).toContain("inset-block-start: auto");
+    expect(recovery).toContain("inset-inline-start: 50%");
+    expect(recovery).toContain("translate: -50% 0");
+  });
+
+  it("uses icon-only controls for retry actions in host notices", () => {
+    const button = declarationsFor(".inkbook-root .inkbook-notice-icon-button");
+    const icon = declarationsFor(
+      ".inkbook-root .inkbook-notice-action-icon,\n.inkbook-root .inkbook-notice-action-icon svg",
+    );
+
+    expect(button).toContain("border-radius: 50%");
+    expect(button).toContain("inline-size: 36px");
+    expect(button).toContain("min-block-size: 36px");
+    expect(icon).toContain("block-size: 18px");
+    expect(icon).toContain("inline-size: 18px");
+  });
+
+  it("keeps the background submenu beside the anchored overflow menu", () => {
+    const menu = declarationsFor('.inkbook-root .inkbook-flyout[role="menu"]');
+    const submenu = declarationsFor(
+      ".inkbook-root .inkbook-overflow-background-region > div.inkbook-overflow-submenu",
+    );
+
+    expect(menu).toContain("overflow: visible");
+    expect(submenu).toContain("inset-inline-end: calc(100% + 8px)");
+    expect(submenu).toContain("position: absolute");
   });
 
   it("reduces toolbar and active-state motion to zero", () => {

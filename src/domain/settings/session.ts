@@ -1,4 +1,5 @@
 import type { BackgroundTypeV1, InkbookSettingsV1, StartupToolV1, ToolDefaultsV1 } from "./types";
+import { CANONICAL_LOCKED_BUFFER_LINES } from "../schema/public";
 
 interface SettingsValue<T> {
   readonly present: true;
@@ -26,7 +27,7 @@ export interface NewFilePageSettings {
       };
   readonly writingLineHeight: number;
   readonly activeBufferLines: number;
-  readonly lockedBufferLines: 0 | 1;
+  readonly lockedBufferLines: number;
 }
 
 export function initializeEditorSettingsSession(
@@ -62,6 +63,6 @@ export function createPageSettings(settings: InkbookSettingsV1): NewFilePageSett
     background,
     writingLineHeight: defaults.writingLineHeight,
     activeBufferLines: defaults.activeBufferLines,
-    lockedBufferLines: defaults.lockedBufferLines,
+    lockedBufferLines: CANONICAL_LOCKED_BUFFER_LINES,
   };
 }

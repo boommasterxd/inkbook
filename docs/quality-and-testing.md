@@ -110,7 +110,7 @@ Additional rules:
 - Snap lookup uses the spatial index, and target transforms use the reverse connection map. Neither may scan the complete element store.
 - A synchronous document-worker fallback may exceed the corresponding worker duration, but it MUST yield between chunks so no main-thread slice exceeds 8 ms desktop or 12 ms mobile and MUST pause while a live gesture is active.
 - Autosave timers do not count as permission to perform work during an active gesture.
-- Save latency reports worker computation, message handoff, string adoption, conflict checks, and host I/O separately. No main-thread preparation or adoption slice may exceed the autosave frame budget.
+- Unlock worker instrumentation reports input parsing and validation, runtime-buffer copy, bounded batch transfer plus Store adoption, parser finalization, worker-model adoption, and total elapsed time separately. Export worker instrumentation reports model update plus delta validation, SVG serialization, and total worker time separately. End-to-end save benchmarks cover representative message handoff, receiver adoption, conflict-check, host-I/O, and confirmation costs where those adapters participate. No main-thread preparation or adoption slice may exceed the autosave frame budget.
 - A standard-fixture size report records total bytes, metadata bytes, static-markup bytes, and bytes per stroke point. Pretty-printed output fails regardless of the total.
 
 ## Performance Architecture Rules
@@ -138,7 +138,7 @@ Additional rules:
 - Worker state retains one canonical typed geometry buffer per stroke plus bounded current per-element snapshot and static-SVG fragments. Main-thread and worker allocation together remains inside the memory ceiling.
 - One document worker runs one bounded non-preemptive queue. It performs unlock validation and migration, clipboard codecs, SVG export, hashing, preflight, and read-back verification, but receives no DOM, pointer, scroll, camera, spatial-index, React, or Obsidian API object.
 - Worker failure invalidates the worker epoch and switches once per session to equivalent input-aware main-thread slices under a new epoch; it does not recreate a worker or retry partial results in a loop.
-- The active background uses one presentation-owned SVG pattern tile and one coverage rectangle spanning only the true native-scroll intersection plus one viewport of overscan. Static export estimates guide subpaths and serialized bytes before allocating any background path fragment and rejects an over-budget page without partial output.
+- The active square and ruled backgrounds use one cached direct compound guide path spanning only the true native-scroll intersection plus one viewport of overscan, capped at 2,048 segments so their geometry matches the standalone SVG. Guides use normal antialiasing, a scale-independent one-screen-pixel stroke, and the same 25-percent-alpha scheme palette in both presentations. Dots and requests above that cap use one presentation-owned SVG pattern tile and one bounded coverage rectangle. Static export estimates guide subpaths and serialized bytes before allocating any background path fragment and rejects an over-budget page without partial output.
 - Background coverage is keyed by aligned visible indices and regenerates only when that key changes. Theme changes reuse its geometry.
 - Culling overscan is exactly 80 screen pixels converted to page units at the current zoom.
 - Dense viewports eventually mount every exact visible element in input-aware batches; they may disable animation and prewarming but may not rasterize, merge, or hide editable content. Each mount slice uses an absolute deadline plus the 4,096-stroke-point and 16,384-geometry-cost budgets, while one oversized entrant remains progress-safe.
@@ -149,6 +149,7 @@ Additional rules:
 ```ts
 const motion = {
   fast: 120,
+  toolbar: 300,
   standard: 180,
   erase: 160,
   layout: 240,
@@ -158,42 +159,45 @@ const easing = {
   standard: "cubic-bezier(0.2, 0, 0, 1)",
   emphasized: "cubic-bezier(0.2, 0, 0, 1)",
 } as const;
+
+const layoutEasing = "ease-out";
 ```
 
-Durations are milliseconds. A single easing curve is intentional and keeps the motion system small.
+Durations are milliseconds. Element and chrome motion shares one default curve. Container-height transitions use the immediate-start layout curve so their first visible frame does not hesitate before moving.
 
 ## Animation Contract
 
 Every user-visible state change animates unless listed as immediate or reduced motion is active.
 
-| Transition                                           |                                      Duration | Properties                                                   |
-| ---------------------------------------------------- | --------------------------------------------: | ------------------------------------------------------------ |
-| Toolbar enter or exit                                |                                        180 ms | opacity, translateY                                          |
-| Tool active state                                    |                                        120 ms | background color, foreground color, scale                    |
-| Flyout open or close                                 |                                        180 ms | opacity, translateY, scale                                   |
-| Selection handles enter or exit                      |                                        120 ms | opacity, scale                                               |
-| Eraser pending-removal feedback                      |                                        160 ms | opacity                                                      |
-| Committed shape or pasted-element entrance           |                                        120 ms | opacity, scale from 0.96 to 1                                |
-| Delete, Cut, or command-removal exit                 |                                        120 ms | retained visual tombstone opacity, scale to 0.96             |
-| Background type or spacing change                    |                                        180 ms | old/new background crossfade                                 |
-| Color, opacity, width, fill, or outline-style change |                                        120 ms | supported property interpolation or old/new path crossfade   |
-| Locked to active height                              |                                        240 ms | container height with scroll compensation                    |
-| Active to locked height                              |                                        240 ms | container height with scroll compensation                    |
-| Unlock preview-to-editor crossfade                   |  final 120 ms of the 240 ms layout transition | opacity                                                      |
-| Lock editor-to-preview crossfade                     | 120 ms after the exact saved preview is ready | opacity                                                      |
-| Automatic page growth or shrink                      |                                        180 ms | container height with scroll compensation                    |
-| Overflow edge gradient                               |                                        120 ms | opacity                                                      |
-| Conditional toolbar control enter or exit            |                                        120 ms | opacity, scale, width                                        |
-| Arrange result                                       |                                        120 ms | old/new path opacity crossfade where overlap changes visibly |
-| Snap candidate marker enter or exit                  |                                        120 ms | opacity, scale                                               |
+| Transition                                           | Duration | Properties                                                   |
+| ---------------------------------------------------- | -------: | ------------------------------------------------------------ |
+| Complete primary toolbar pill enter or exit          |   300 ms | fixed-position scale between 0 and 1                         |
+| Tool active state                                    |   120 ms | shared indicator translate, foreground color                 |
+| Flyout open or close                                 |   180 ms | opacity, translateY, scale                                   |
+| Selection handles enter or exit                      |   120 ms | opacity, scale                                               |
+| Eraser pending-removal feedback                      |   160 ms | opacity                                                      |
+| Committed shape or pasted-element entrance           |   120 ms | opacity, scale from 0.96 to 1                                |
+| Delete, Cut, or command-removal exit                 |   120 ms | retained visual tombstone opacity, scale to 0.96             |
+| Background type or spacing change                    |   180 ms | old/new background crossfade                                 |
+| Color, opacity, width, fill, or outline-style change |   120 ms | supported property interpolation or old/new path crossfade   |
+| Locked to active height                              |   240 ms | container height with scroll compensation                    |
+| Active to locked height                              |   240 ms | container height with scroll compensation                    |
+| Unlock preview-to-editor representation swap         |     0 ms | atomic visibility after editor readiness                     |
+| Lock editor-to-preview representation swap           |     0 ms | atomic visibility after exact preview paint                  |
+| Automatic page growth or shrink                      |   180 ms | container height with scroll compensation                    |
+| Conditional toolbar control enter or exit            |   300 ms | fixed-surface scale, 50 ms left-to-right stagger             |
+| Arrange result                                       |   120 ms | old/new path opacity crossfade where overlap changes visibly |
+| Snap candidate marker enter or exit                  |   120 ms | opacity, scale                                               |
 
 Implementation rules:
 
-- Opacity and transforms are preferred because they avoid layout and paint work.
-- Height animation is permitted only for the single background container. Measure start and end heights once. Prefer a compositor visual transition with one final layout commit when host layout permits; otherwise animate the explicit height only while it continues to meet the interaction frame budget.
+- Opacity and transforms are preferred for eligible element and chrome transitions because they avoid layout and paint work. The embed shell and preview/editor representation handoff never animate opacity.
+- Height animation is permitted only for the single background container. Measure start and end heights once. During unlock, size the active SVG scene to the final active height, preserve that geometry behind the locked clip for one complete painted frame, then keep it top-anchored and fixed while the container reveals it through clipping. The scene keeps block-start zero and a top-left transform origin in every transition phase and is never vertically centered. During automatic page growth or shrink, pin the scene to the larger endpoint: growth waits for the target scene commit and one paint opportunity before revealing it, while shrink applies the smaller scene geometry only after clipping reaches the target. Release the fixed size only after the container and scene agree. Prefer a compositor visual transition with one final layout commit when host layout permits; otherwise animate the explicit container height only while it continues to meet the interaction frame budget.
 - Scroll compensation, camera transform, overlay geometry, and container height update in the same animation frame.
-- Unlock keeps the locked preview visible until a hidden editor is mounted and measured. It then animates height for 240 milliseconds and crossfades preview to editor during the final 120 milliseconds. Input is enabled and the preview unmounted after completion.
-- Lock disables input immediately and runs the 240-millisecond width-fit and height transition concurrently with saving. If saving takes longer, the disabled editor waits at locked geometry. Once the exact saved preview is ready, an independent 120-millisecond editor-to-preview crossfade runs before unmount.
+- One persistent outer shell owned by the presentation root draws the background, border, radius, restrained shadow, and clipping edge throughout locked, unlocking, active, and locking states. The preview and editor are borderless inner layers and never make that shell transparent. Native button shadows are suppressed, so hover never changes the embed depth.
+- Unlock keeps the locked preview visible above the mounted editor until the editor is measured and painted once at its final scene height behind the locked clip. The block-size transition is armed during that preparation frame and uses an immediate-start ease-out curve, so the atomic inner-layer exchange and target-size write do not spend the first visible animation frame installing transition state. The inner layers exchange visibility atomically when the 240-millisecond container growth starts. Ready state, input, focus, toolbar availability, and loading-feedback completion are released in that same start frame rather than waiting for the animation duration; the completion timer only removes the hidden preview and temporary clip geometry. Lock prepares the exact preview below the disabled editor, gives it one complete paint opportunity, then atomically exchanges the inner layers before unmounting the editor. Neither direction contains a frame with both representations hidden or detached.
+- Lock disables input immediately and runs the 240-millisecond width-fit and height transition concurrently with saving and the 300-millisecond whole-pill toolbar exit. If saving or the decorative toolbar exit takes longer, the disabled editor waits at locked geometry; persistence itself is never delayed by chrome motion. The exact saved preview is adopted only after validation, layout, the toolbar exit, and a paint opportunity. The representation swap itself has zero duration and never modifies shell opacity.
+- Context controls use their 50-millisecond stagger when selection or clipboard state makes them appear or disappear. Completed exits retain non-interactive fixed layout slots until the final staggered exit completes, then the complete exit batch is removed atomically without moving an exit that is still visible. A complete editor lock instead starts every still-visible context-control exit with the whole-pill exit so the presentation can detach after their shared 300-millisecond duration without truncation.
 - Automatic page growth starts only after a committed geometry change, except for the bounded one-buffer-unit selection edge-drag extension. That exception may retarget only after the preceding 180-millisecond height transition completes, never on every pointer sample.
 - A new input gesture immediately completes or cancels any automatic height, tool, or flyout animation that would delay handling, applies its correct final layout and scroll compensation, and then handles the gesture in the same frame.
 - Live ink paths, eraser sweeps, and selection transform previews update immediately and are never tweened behind the pointer.
@@ -215,8 +219,17 @@ When reduced motion is active:
 ## UX Acceptance
 
 - Unlock and lock show no empty, unmeasured, stale, or half-rendered frame.
+- Unlock and lock begin without an artificial delay. Unlock mounts no pending status before 1,200 milliseconds, while lock mounts none before 150 milliseconds. If the respective operation remains unresolved at its boundary, one non-layout, non-interactive icon status is present even when unlock target height is still unknown. Completion removes it synchronously, and a known failure shows or replaces it with the matching recovery UI immediately, before the browser can paint both states. Reduced motion keeps the status and removes only its rotation.
+- Unlock and lock retain exactly one continuously painted shell border, background, and radius while exchanging only borderless inner representations. No frame may expose the host background or a retained locked-height SVG edge. Automatic page growth reveals a fully committed larger scene, and shrink clips the previous larger scene until its outer transition completes; neither direction jumps after the container moves.
+- First unlock shows the same centered measured toolbar geometry as the next resize; no resize is required to correct its stage or width.
+- During a continuous window resize after initialization, every positive observed content width is applied in the next coalesced frame. The SVG, proportional zoom, page height, and scroll anchor track the live width without waiting for two equal resize frames or jumping when resizing stops.
+- Growing an owning window invalidates the outer width clamp even when the currently clamped Inkbook root has not changed size yet. The mounted toolbar is observed directly, and its Wide or Scrollable stage and measured primary-pill edge are correct after both growth and shrink. Stage selection uses the intrinsic primary control-track width rather than the current scrollport width, so shrinking to Scrollable and growing back cannot retain a stale stage.
+- A modifier-key pixel-wheel sequence whose two axis magnitudes remain below 16 pixels changes zoom in its first animation frame, remains proportional at 2.5 times the raw fractional step, preserves its pointer anchor, and prevents the host zoom only while Inkbook owns that gesture. Larger pixel events plus line- and page-mode mouse-wheel events apply one signed 1.08 step per event. Keyboard steps retain the 1.08 factor, while touchscreen pinch remains the direct finger-distance ratio.
 - Controls never change hit-target size between normal, hover, active, and focus states.
 - Conditional toolbar controls do not overlap or cause repeated layout-stage oscillation.
+- The mounted Style control updates its existing Palette SVG when the active tool or its defaults change: stroke and highlighter colors affect only the solid glyph, line and shape outlines reproduce `solid`, `dashed`, or `dotted`, closed-shape fill uses the configured color and opacity, canonical wells remain solid, and Select or Eraser uses the neutral host icon color.
+- Conditional Copy, Cut, Paste, and Delete controls appear as separate 48-pixel circular surfaces to the right of the primary pill without changing its measured center in Wide. If the primary pill plus every visible context action does not fit, one transparent rounded horizontal scrollport owns the complete row and preserves every 48-pixel outline with vertical breathing room. The outer non-scrolling composition paints the toolbar shadow beyond the clipped viewport, and the scrollport applies no edge fade or alpha mask. Every action remains pointer- and keyboard-reachable without shrinking controls, a rectangular background strip, a clipped shadow, or a second hidden action viewport. The owner-window resize observer refreshes the row overflow and pill edge even when the responsive stage does not change.
+- The primary tool group owns exactly one non-interactive active-tool indicator. It remains mounted while its transform slides between the exact 36-pixel inset circles of the old and new tool over 120 milliseconds, retargets from its currently rendered transform during rapid changes, and moves immediately under reduced motion. Tool buttons and icons remain mounted throughout.
 - Every destructive action has confirmation where documented and preserves undo when possible.
 - Every failed operation leaves a clear next action such as Retry, Reload, Save copy, or Cancel.
 - Cursor, selection handles, eraser radius, and toolbar controls remain screen-sized across zoom levels.
@@ -228,9 +241,9 @@ The editor targets WCAG 2.2 AA within the capabilities of the Obsidian host.
 
 - Every icon-only control has an accessible name and tooltip.
 - The canvas input surface is keyboard-focusable, has an accessible name, and shows a visible `focus-visible` indicator without changing document geometry.
-- The toolbar exposes one `toolbar` role and three labelled groups.
+- The toolbar exposes one `toolbar` role, one labelled primary control group, and a second labelled editing-action group only while context actions are present.
 - Tool buttons expose pressed or selected state. Flyout buttons expose expanded state and their controlled popup.
-- Tab enters and leaves the toolbar. Arrow keys move within the current group. Home and End move to group boundaries.
+- Tab enters and leaves each visible toolbar group. Arrow keys move within the primary track or context-action strip. Home and End move to the first and last visible controls in that group. If the last context action disappears while focused, focus moves to the primary overflow trigger.
 - Escape closes the current flyout, cancels an uncommitted gesture, or clears selection in that order.
 - Focus returns to the trigger when a flyout closes and moves to the nearest surviving control when a conditional button disappears.
 - Keyboard commands exist for every toolbar action that is not inherently pointer-geometric.
@@ -261,6 +274,7 @@ Unit tests cover pure or isolated behavior:
 - snap radii, hysteresis, deterministic ties, connection validation, resolution, detachment, and minimum line length
 - target move, scale, rotation, handle changes, minimum-length rejection, 3D-axis detachment, deletion, Undo, Redo, and clipboard-local ID remapping with connections
 - selection Style summaries for coordinate-system dimensionality and table column count, including homogeneous, mixed-value, mixed-kind, absolute multi-selection edits, and no-op states
+- active-tool Style-icon derivation and in-place toolbar updates for neutral, stroke, outline-only, no-fill shape, and filled-shape states across every supported outline style and Theme text color
 - coordinate-system dimensionality commands and table column-count commands, including retained and removed-axis connections, canonical persisted column width, local-right addition and removal, fractional widths such as a 121-unit three-column creation, repeated count changes without column-width drift, the maximum per-edit rendered left-edge displacement across the complete rotation range with a 0.003-page-unit bound, per-table multi-selection geometry, bounds rejection, atomic dependent-anchor updates, Undo, and Redo
 - zoom, camera clamping, anchored-scroll equations, and resize calculations
 - settings defaults, scope, validation, precedence, and migration
@@ -268,6 +282,7 @@ Unit tests cover pure or isolated behavior:
 - animation state transitions and reduced-motion duration selection
 - workspace activation coordinator tokens, document/session/attachment identity, idempotent current-attachment requests, same-document presentation handoff, latest-pending replacement, dirty detachment, detached-save completion, and headless recovery transitions
 - document-worker protocol identity with separate worker epoch, export generation, non-replaceable active save, replaceable prepared successor, verification operation, clipboard operation, and unlock operation; job priority, bounded queue states, stale-result rejection, migration equivalence, clipboard ID plans, and the once-per-session fallback transition; protocol types cannot represent DOM, pointer, scroll, camera, spatial-index, React, or Obsidian API messages
+- revision-bound validation derivations, exact element and batch alignment, Store-to-worker bounds reuse, stale-derivation eviction during coalescing, safe fallback calculation when a derivation is absent, targeted page and connection validation, and atomic rejection without model advancement
 - scroll-owner resolution for scrollable and short notes, `scrollingElement` fallback, reference-counted scrollbar leases, two-frame live-layout transfer, immediate true-unload release, fresh remount acquisition, pen scroll-guard frame coalescing, and complete cleanup after cancellation or lost capture
 
 ### Integration Tests
@@ -286,6 +301,7 @@ Integration tests cover only important boundaries:
 - native menu integration proving action availability, order, icon names, a non-interactive `setIsLabel(true)` Arrange row, disabled Arrange boundaries, owning-document placement, and warning presentation for Delete, Erase all, and Delete embed
 - theme integration proving one root scheme update per mounted main or pop-out active presentation and zero path builds, bounds or index work, React ink commits, worker messages, revision changes, dirty transitions, and vault writes; locked-preview tests cover both inherited repaint and the one-reload-per-event compatibility path without I/O
 - serializer and preview integration comparing active and standalone document graphics in light and dark schemes and rejecting any noncanonical style, class, URL, or external resource
+- locked-preview integration proving that only completely safe-envelope-validated presentation markup mounts, metadata and embedded styles are absent from the mounted tree, native image handlers cannot attach, and guide weight and intensity match the active scene at DPR 1 and 2 across representative fractional width-fit scales
 - renderer topology integration proving one path for each stroke or simple shape when paint permits, compound paths for compatible table and coordinate-system geometry, no unnecessary per-element wrapper, direct ID-to-node references, and ordered `DocumentFragment` insertion for contiguous runs
 - zoom and resize adapters proving all layout reads occur before the first DOM write and unchanged observations schedule nothing
 - renderer order plus order-only worker updates across both fixed render bands
@@ -306,7 +322,7 @@ Integration tests cover only important boundaries:
 - native-scroll integration with a test scroller proving write-only acquisition followed by post-style measurement before input, one shared lease, retention across lock and unlock, `scrollbar-gutter: stable`, persistent desktop `overflow-y: scroll`, stable `clientWidth`, no nested vertical scroller, no right-gutter overlap, zero pointer-time style mutation, two-frame live-layout owner transfer, immediate true-unload release, fresh remount acquisition, and complete cleanup across Reading view, Live Preview, and pop-out ownership
 - embed-width integration in ordinary, padded, readable-line, list, callout, max-width, and nested layouts, proving `containerWidth` uses the background container rather than pane width, overrun clamps before input, and toolbar plus input surface remain inside the owner client edge
 - settings UI definitions plus persistence adapters
-- Reading-view `MarkdownRenderChild` and Live Preview `WidgetType` lifecycle cleanup through host test adapters, including exact resource-URL correlation and fail-closed CodeMirror syntax-tree boundaries for code, comments, escapes, unknown nodes, and incomplete trees
+- Reading-view `MarkdownRenderChild` and Live Preview `WidgetType` lifecycle cleanup through host test adapters, including exact standalone custom-embed and resolved-document correlation, complete section-host replacement without any native or owned HTML image, restoration on unload, a full-width Live Preview block widget provided directly from a `StateField` rather than a forbidden dynamic plugin decoration, ordinary SVG non-interference, fail-closed CodeMirror syntax-tree boundaries for inline content, code, comments, escapes, and incomplete trees, preservation of the same widget while save-triggered reclassification is pending, and terminal-negative removal
 - main-window and pop-out widgets sharing one coordinator, with simultaneous activation proving exactly one active session and one latest pending request
 - multiple tabs referencing the same SVG, proving one reused document session, one attached presentation, and no duplicate store or worker
 - pending widget detachment before activation, proving cancellation without mounting and no retained DOM, `Window`, widget, or attachment generation
@@ -326,11 +342,13 @@ Automated performance tests use deterministic fixtures and cover:
 - store construction and spatial-index insertion
 - viewport query and hit testing
 - spatial-query candidate counts, reused scratch-buffer allocations, and repeated page-extent updates after deleting the lowest element
+- 500 alternating bottom-element additions and removals against the 10,000-stroke fixture with zero full-store scans and a 4-millisecond p99 mutation budget, plus 500 alternating growth and shrink transition runs with at most 12 submitted frames, no incomplete transition, and a 1-millisecond p99 orchestration budget
 - dense snap candidate lookup and a 512-dependent target transform
 - all four arrange operations on an alternating 5,000-element selection in a 10,000-element band and order-only worker export
 - oversized-element overflow indexing and queries
 - bounded rendering and uniform transformation of a 10,000-element selection
 - one-stroke commit and incremental export
+- worker-backed unlock phase timing and one-stroke save phase timing, including direct validated Store hydration and serializer reuse counters proving that matching Store bounds reach incremental fragment assembly without later duplicate geometry calculation, plus the one-pass export fragment list used without repeated LRU mutation
 - maximum clipboard codec and worker encode/decode with complete delta synchronization, stale-delta rejection, zero-delta export after Copy, purpose-specific operation identity, and bounded main-thread adoption slices; maximum-scale atomic Cut adoption and focused editor scenarios prove stale-result recomputation and delayed Cut cancellation
 - worker failure fallback for validation, migration, clipboard, export, hashing, preflight, and read-back under continuous synthetic input; maximum-complexity Safe-SVG validation runs with a synthetic input sample at every checkpoint, and trusted-output tests prove cancellation at the production 64-KiB hash boundary
 - 4,096-point live-stroke latency, a maximum 16-sample mutable tail, and finalized-prefix reuse
@@ -376,7 +394,18 @@ Manual checks are not smoke or end-to-end test suites. They are focused acceptan
 - active-scene, Reading-view, Live Preview, and saved-SVG graphic parity in light and dark schemes, including a pop-out window and one external vector editor; software without media-query support must show the deterministic light fallback
 - host-theme chrome, high contrast, and reduced motion
 - 10,000-stroke frame, memory, unlock, animation, and export budgets
-- lock/unlock and automatic-height animation without flicker or scroll jumps
+- in-place lock and unlock with identical root, width, attachment, and top-edge anchor; the same block animates once between exact locked and active heights without duplicate insertion, stale preview border, flicker, unintended scroll jumps, or editor remounting
+- committed content growth and eraser-driven shrink at several intermediate frames, proving that the larger scene envelope stays top-anchored, growth waits for a complete renderer frame, shrink defers smaller renderer geometry until clipping completes, and interruption leaves exact final height and scroll compensation
+- empty locked previews with at least 2.5 writing lines rounded to the next background step, no clipping by host button sizing, and the same minimum after reload
+- active and standalone SVG verification that guides stop at the inner edge of all four writable page margins, square patterns close their right and bottom edge cells, ordinary square and ruled viewports use the same direct compound guide geometry, normally antialiased scale-independent one-screen-pixel weight, and 25-percent-alpha scheme palette as the saved SVG, bounded pattern fallback remains available, input remains available throughout those margins, and content entering the bottom margin restores a complete margin after growth
+- attached save recovery restores the active page height and camera before presenting its compact icon-action overlay at the lower center of the editor, so all four writable SVG margins remain visible and no failed-lock measurement reads a released document page
+- attached load and save recovery and retryable activation notices show only circular icon actions with tooltips and accessible names, attached recovery remains at the lower center of the preserved surface, and no retry, discard, copy, or continue action substitutes a text button
+- delayed loading and saving feedback under intentionally blocked worker and vault operations, including the 1,200-millisecond load boundary, 150-millisecond save boundary, an unknown unlock target height, exact-revision successor saves, Retry, immediate failure recovery, reduced motion, and cleanup on detach or plugin unload
+- toolbar overlay and native-sticky behavior proving that activation adds no toolbar height, surrounding Markdown does not move, scroll-owner top padding is compensated without private selectors, the toolbar pins at the visible owner edge, and the embed bottom bounds its sticky lifetime
+- confirmed persistence propagates the current locked aspect ratio to every mounted preview before resource refresh, so a non-empty patterned lock shrinks to the complete occupied row plus exactly one complete pattern row and unlock grows back to `activeHeight`
+- exact legacy version 1 locked heights remain loadable, schedule one canonical full export without a content edit, flush on Lock, retain the revision, pass normal expected-base and read-back verification, and produce the compact current preview geometry without a schema-migration backup
+- toolbar overflow opening directly below its three-dot trigger, Background submenu hover and keyboard behavior with icons, exact primary-toolbar centering while context buttons appear, and Canvas context-menu section separators with an icon on every actionable entry
+- consecutive stroke commits, autosaves, resource refreshes, and theme changes without active-editor detachment, widget remount, focus loss, or session closure
 - Reading view, Live Preview, Source mode, pop-out windows, settings search, enable, disable, and reload without leaked listeners, workers, scrollbar leases, host-element references, portals, or React roots
 - production editor-chrome module loading under Obsidian's default CSP in the main window and a real pop-out realm, including distinct owner-document React roots, toolbar measurement before input handoff, close-before-load cancellation, retryable CSP/import failure, timeout cleanup, and no retained Blob URL
 - rapid activation across tabs and pop-outs, closing a dirty tab or pop-out before autosave, detached save success and failure recovery, and two independent Obsidian instances editing the same file

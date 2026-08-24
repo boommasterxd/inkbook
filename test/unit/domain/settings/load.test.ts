@@ -58,7 +58,7 @@ describe("vault settings loading", () => {
     pen.opacity = Number.NaN;
     table.columns = 13;
     pageDefaults.activeBufferLines = 7;
-    pageDefaults.lockedBufferLines = 2;
+    pageDefaults.lockedBufferLines = 9;
 
     const result = loadSettings(input);
 

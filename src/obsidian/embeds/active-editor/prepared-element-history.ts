@@ -87,10 +87,7 @@ export class PreparedElementHistory {
         const scheduler = this.#scheduler(generation);
         const replacements = await moveSelectionTimeSliced(elements, delta, scheduler);
         if (replacements === null) return false;
-        const plan = await this.#model.store.planPageBoundedReplacementsTimeSliced(
-          replacements,
-          scheduler,
-        );
+        const plan = await this.#model.store.planReplacementsTimeSliced(replacements, scheduler);
         if (plan === null || plan === "cancelled") return false;
         return await this.#commitApplied(elements, plan.replacements, generation, previewCommit);
       } finally {

@@ -14,7 +14,7 @@ describe("structural style controls", () => {
     );
 
     expect(markup).toContain("Dimensions");
-    expect(markup).toMatch(/aria-pressed="true"[^>]*>3D/u);
+    expect(markup).toMatch(/aria-pressed="true"[^>]*data-value="3d"/u);
     expect(markup).toContain('aria-label="Columns"');
     expect(markup).toContain('max="12"');
     expect(markup).toContain('min="1"');

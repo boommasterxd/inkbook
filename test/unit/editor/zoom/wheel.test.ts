@@ -4,11 +4,15 @@ import {
   DEFAULT_WHEEL_LINE_HEIGHT,
   DEFAULT_WHEEL_PAGE_HEIGHT,
   MAX_FRAME_ZOOM_FACTOR,
+  TRACKPAD_ZOOM_DELTA_LIMIT,
+  TRACKPAD_ZOOM_PIXELS_PER_STEP,
+  TRACKPAD_ZOOM_SENSITIVITY,
   WHEEL_PIXELS_PER_STEP,
   accumulateWheelDelta,
   accumulateWheelSteps,
   accumulateZoomInput,
   classifyOneFingerGesture,
+  continuousWheelZoomFactor,
   consumeWheelFrame,
   consumeZoomFrame,
   createWheelZoomState,
@@ -36,6 +40,16 @@ describe("wheel normalization", () => {
     expect(classifyOneFingerGesture(12.5, 10)).toBe("horizontal");
     expect(classifyOneFingerGesture(-12.5, 10)).toBe("horizontal");
     expect(classifyOneFingerGesture(12.49, 10)).toBe("vertical");
+  });
+
+  it("turns small trackpad pixel deltas into continuous zoom factors", () => {
+    expect(TRACKPAD_ZOOM_DELTA_LIMIT).toBe(16);
+    expect(TRACKPAD_ZOOM_SENSITIVITY).toBe(2.5);
+    expect(TRACKPAD_ZOOM_PIXELS_PER_STEP).toBe(6.4);
+    expect(continuousWheelZoomFactor(-4)).toBeCloseTo(1.08 ** 0.625);
+    expect(continuousWheelZoomFactor(4)).toBeCloseTo(1.08 ** -0.625);
+    expect(continuousWheelZoomFactor(-TRACKPAD_ZOOM_PIXELS_PER_STEP)).toBeCloseTo(1.08);
+    expect(continuousWheelZoomFactor(-50, { pixelsPerStep: 50 })).toBeCloseTo(1.08);
   });
 });
 

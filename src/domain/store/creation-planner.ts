@@ -1,4 +1,3 @@
-import { assertElementsWithinPageBounds, correctElementsToPageBounds } from "../geometry/public";
 import type { InkElementV1 } from "../schema/public";
 
 import { resolveConnections } from "./connections";
@@ -25,15 +24,5 @@ export function prepareCreatedRecords(
   }
   const initialLookup = (id: string) => staged.get(id) ?? ports.getExisting(id);
   const resolved = elements.map((element) => resolveConnections(element, initialLookup));
-  const correction = correctElementsToPageBounds(resolved);
-  if (correction.status === "rejected") {
-    throw new RangeError("Created element geometry exceeds the supported page width.");
-  }
-  const correctedById = new Map(correction.elements.map((element) => [element.id, element]));
-  const correctedLookup = (id: string) => correctedById.get(id) ?? ports.getExisting(id);
-  const corrected = correction.elements.map((element) =>
-    resolveConnections(element, correctedLookup),
-  );
-  assertElementsWithinPageBounds(corrected);
-  return corrected.map((element) => createInitialRecord(element));
+  return resolved.map((element) => createInitialRecord(element));
 }

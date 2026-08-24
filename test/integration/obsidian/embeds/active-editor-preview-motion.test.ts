@@ -1,22 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { ActiveScenePreviewHandoff } from "../../../../src/obsidian/embeds/active-scene";
-
-class FakeClassList {
-  readonly #values = new Set<string>();
-
-  add(...values: string[]): void {
-    for (const value of values) this.#values.add(value);
-  }
-
-  contains(value: string): boolean {
-    return this.#values.has(value);
-  }
-
-  remove(...values: string[]): void {
-    for (const value of values) this.#values.delete(value);
-  }
-}
+import { FakeClassList } from "../../../fixtures/obsidian/class-list";
 
 class FakeMediaQueryList {
   readonly addEventListener = vi.fn((_type: string, listener: () => void) => {
@@ -46,6 +31,7 @@ interface HandoffFixture {
   readonly rootClasses: FakeClassList;
   readonly runTimer: () => void;
   readonly runFrame: () => void;
+  readonly framePending: () => boolean;
   readonly setActiveBlockSize: (value: string) => void;
   readonly setTimeoutSpy: ReturnType<typeof vi.fn>;
   readonly timerPending: () => boolean;
@@ -55,6 +41,7 @@ interface HandoffFixture {
 function createFixture(
   motion: "full" | "reduced" | "system",
   systemReduced = false,
+  setPreviewAspectRatio?: (aspectRatio: number) => void,
 ): HandoffFixture {
   const media = new FakeMediaQueryList(systemReduced);
   let timer: (() => void) | undefined;
@@ -84,8 +71,16 @@ function createFixture(
   } as unknown as HTMLElement;
   const style = {
     blockSize: "",
+    properties: new Map<string, string>(),
+    getPropertyValue: (name: string): string => style.properties.get(name) ?? "",
+    removeProperty: (name: string): string => {
+      const previous = style.properties.get(name) ?? "";
+      style.properties.delete(name);
+      return previous;
+    },
     setProperty: (name: string, value: string): void => {
       if (name === "block-size") style.blockSize = value;
+      else style.properties.set(name, value);
     },
   };
   const container = {
@@ -95,9 +90,8 @@ function createFixture(
   const previewClasses = new FakeClassList();
   const previewStyle = {
     inset: "",
-    opacity: "",
     position: "",
-    transition: "",
+    zIndex: "",
     removeProperty: vi.fn(),
   };
   const preview = {
@@ -112,10 +106,17 @@ function createFixture(
   return {
     completed,
     container,
-    handoff: new ActiveScenePreviewHandoff({ container, motion, preview, root }),
+    handoff: new ActiveScenePreviewHandoff({
+      container,
+      motion,
+      preview,
+      root,
+      ...(setPreviewAspectRatio === undefined ? {} : { setPreviewAspectRatio }),
+    }),
     media,
     preview,
     rootClasses,
+    framePending: () => frame !== undefined,
     runTimer: () => timer?.(),
     runFrame: () => frame?.(),
     setActiveBlockSize: (value) => {
@@ -127,24 +128,45 @@ function createFixture(
 }
 
 describe("active editor unlock preview motion", () => {
-  it("keeps the preview until measured and completes the full 240 ms handoff", () => {
+  it("keeps the preview in the same block until the in-place editor is ready", () => {
     const fixture = createFixture("full", true);
     expect(fixture.rootClasses.contains("inkbook-active-preparing")).toBe(true);
     expect(fixture.container.style.blockSize).toBe("96px");
+    expect(fixture.container.style.getPropertyValue("--inkbook-locked-container-block-size")).toBe(
+      "96px",
+    );
     expect(fixture.preview.hidden).toBe(false);
 
     fixture.setActiveBlockSize("240px");
     fixture.handoff.ready(fixture.completed);
-    expect(fixture.rootClasses.contains("inkbook-active-transitioning")).toBe(true);
+    expect(fixture.rootClasses.contains("inkbook-active-preparing")).toBe(true);
     expect(fixture.container.style.blockSize).toBe("240px");
+    expect(fixture.container.style.getPropertyValue("--inkbook-active-scene-block-size")).toBe(
+      "240px",
+    );
     expect(fixture.preview.hidden).toBe(false);
     expect(fixture.completed).not.toHaveBeenCalled();
+    expect(fixture.setTimeoutSpy).not.toHaveBeenCalled();
+
+    fixture.runFrame();
+    expect(fixture.rootClasses.contains("inkbook-active-preparing")).toBe(true);
+    expect(fixture.preview.hidden).toBe(false);
+    expect(fixture.setTimeoutSpy).not.toHaveBeenCalled();
+
+    fixture.runFrame();
+    expect(fixture.rootClasses.contains("inkbook-active-transitioning")).toBe(true);
+    expect(fixture.preview.hidden).toBe(true);
+    expect(fixture.completed).toHaveBeenCalledOnce();
 
     expect(fixture.setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 240);
     fixture.runTimer();
     expect(fixture.rootClasses.contains("inkbook-active-ready")).toBe(true);
     expect(fixture.preview.hidden).toBe(true);
     expect(fixture.completed).toHaveBeenCalledOnce();
+    expect(fixture.container.style.getPropertyValue("--inkbook-active-scene-block-size")).toBe("");
+    expect(fixture.container.style.getPropertyValue("--inkbook-locked-container-block-size")).toBe(
+      "",
+    );
   });
 
   it("applies reduced motion immediately after the stable measurement", () => {
@@ -161,7 +183,7 @@ describe("active editor unlock preview motion", () => {
     const fixture = createFixture("system");
     fixture.setActiveBlockSize("240px");
     fixture.handoff.ready();
-    expect(fixture.timerPending()).toBe(true);
+    expect(fixture.framePending()).toBe(true);
 
     fixture.media.setMatches(true);
     expect(fixture.preview.hidden).toBe(true);
@@ -171,16 +193,21 @@ describe("active editor unlock preview motion", () => {
     expect(fixture.media.removeEventListener).toHaveBeenCalledOnce();
     expect(fixture.preview.hidden).toBe(false);
     expect(fixture.rootClasses.contains("inkbook-active-ready")).toBe(false);
+    expect(fixture.container.style.getPropertyValue("--inkbook-active-scene-block-size")).toBe("");
+    expect(fixture.container.style.getPropertyValue("--inkbook-locked-container-block-size")).toBe(
+      "",
+    );
   });
 
   it("cancels a pending handoff when the scene is disposed", () => {
     const fixture = createFixture("system");
     fixture.setActiveBlockSize("240px");
     fixture.handoff.ready();
-    expect(fixture.timerPending()).toBe(true);
+    expect(fixture.framePending()).toBe(true);
 
     fixture.handoff.dispose();
     expect(fixture.timerPending()).toBe(false);
+    expect(fixture.framePending()).toBe(false);
     expect(fixture.media.removeEventListener).toHaveBeenCalledOnce();
     expect(fixture.preview.hidden).toBe(false);
     fixture.runTimer();
@@ -189,27 +216,62 @@ describe("active editor unlock preview motion", () => {
 });
 
 describe("active editor lock preview motion", () => {
-  it("crossfades the complete editor chrome including its toolbar for 120 ms", () => {
-    const fixture = createFixture("full");
-    const editorChrome = startFullMotionCrossfade(fixture);
+  it("updates the held preview ratio before the lock handoff", () => {
+    const setPreviewAspectRatio = vi.fn();
+    const fixture = createFixture("full", false, setPreviewAspectRatio);
 
-    expect(fixture.preview.style.opacity).toBe("1");
-    expect(editorChrome.style.opacity).toBe("0");
-    expect(fixture.setTimeoutSpy).toHaveBeenLastCalledWith(expect.any(Function), 120);
+    fixture.handoff.setPreviewAspectRatio(4);
+
+    expect(setPreviewAspectRatio).toHaveBeenCalledWith(4);
+  });
+
+  it("prepares the exact preview behind the editor before the atomic replacement", () => {
+    const fixture = createFixture("full");
+    const editorChrome = createEditorChrome();
+
+    fixture.handoff.handoffToPreview(editorChrome, fixture.completed);
+
+    expect(fixture.preview.style.position).toBe("absolute");
+    expect(fixture.preview.style.zIndex).toBe("1");
+    expect(editorChrome.style.zIndex).toBe("2");
+    expect(editorChrome.hidden).toBe(false);
+    expect(fixture.timerPending()).toBe(false);
     expect(fixture.completed).not.toHaveBeenCalled();
-    fixture.runTimer();
+    fixture.runFrame();
+    expect(fixture.completed).not.toHaveBeenCalled();
+    fixture.runFrame();
+    expect(editorChrome.hidden).toBe(true);
     expect(fixture.completed).toHaveBeenCalledOnce();
   });
 
-  it("finishes the complete lock crossfade when reduced motion becomes active", () => {
+  it("keeps one complete presentation visible across the lock replacement frame", () => {
     const fixture = createFixture("full");
-    const editorChrome = startFullMotionCrossfade(fixture);
+    fixture.preview.hidden = true;
+    const editor = createEditorChrome();
+
+    fixture.handoff.handoffToPreview(editor, fixture.completed);
+
+    expect(fixture.preview.hidden).toBe(false);
+    expect(fixture.preview.style.zIndex).toBe("1");
+    expect(editor.style.zIndex).toBe("2");
+    expect(editor.hidden).toBe(false);
+    fixture.runFrame();
+    expect(editor.hidden).toBe(false);
+    expect(fixture.timerPending()).toBe(false);
+    fixture.runFrame();
+    expect(editor.hidden).toBe(true);
+    expect(fixture.timerPending()).toBe(false);
+    expect(fixture.completed).toHaveBeenCalledOnce();
+  });
+
+  it("finishes the pending lock handoff when reduced motion becomes active", () => {
+    const fixture = createFixture("full");
+    const editorChrome = createEditorChrome();
+    fixture.handoff.handoffToPreview(editorChrome, fixture.completed);
+    fixture.runFrame();
     fixture.handoff.updateMotion("reduced");
 
-    expect(fixture.preview.style.opacity).toBe("1");
-    expect(fixture.preview.style.transition).toBe("none");
-    expect(editorChrome.style.opacity).toBe("0");
-    expect(editorChrome.style.transition).toBe("none");
+    expect(editorChrome.hidden).toBe(true);
     expect(fixture.timerPending()).toBe(false);
     expect(fixture.completed).toHaveBeenCalledOnce();
   });
@@ -218,10 +280,9 @@ describe("active editor lock preview motion", () => {
     const fixture = createFixture("reduced");
     const order: string[] = [];
     fixture.preview.hidden = true;
-    const setEditorCss = vi.fn();
-    const editor = { setCssProps: setEditorCss } as unknown as HTMLElement;
+    const editor = createEditorChrome();
 
-    fixture.handoff.crossfadeToPreview(
+    fixture.handoff.handoffToPreview(
       editor,
       () => order.push("complete"),
       () => {
@@ -231,19 +292,21 @@ describe("active editor lock preview motion", () => {
     );
 
     expect(fixture.preview.hidden).toBe(false);
-    expect(setEditorCss).toHaveBeenCalledWith({ opacity: "0", transition: "none" });
+    expect(editor.hidden).toBe(true);
     expect(order).toEqual(["layout", "complete"]);
     expect(fixture.timerPending()).toBe(false);
   });
 });
 
-function startFullMotionCrossfade(fixture: HandoffFixture): HTMLElement {
-  const style = { opacity: "", transition: "" };
+function createEditorChrome(): HTMLElement {
+  const style = {
+    zIndex: "",
+    removeProperty: vi.fn(),
+  };
   const editor = {
+    hidden: false,
     setCssProps: (properties: Record<string, string>) => Object.assign(style, properties),
     style,
   } as unknown as HTMLElement;
-  fixture.handoff.crossfadeToPreview(editor, fixture.completed);
-  fixture.runFrame();
   return editor;
 }

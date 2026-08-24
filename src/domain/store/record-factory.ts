@@ -1,6 +1,10 @@
 import { calculateElementBounds } from "../geometry/bounds";
 import { markStoredStroke } from "../elements/stroke-replacement-proof";
-import type { InkElementV1 } from "../schema/public";
+import {
+  validatedElementDerivationBounds,
+  type ElementValidationDerivation,
+  type InkElementV1,
+} from "../schema/public";
 import {
   MAX_ELEMENT_CELLS,
   MAX_OVERFLOW_ELEMENTS,
@@ -20,9 +24,21 @@ export function createOwnedInitialRecord(element: InkElementV1): ElementRecord {
   return initialRecord(takeImmutableElementOwnership(element));
 }
 
-function initialRecord(immutable: ElementRecord["element"]): ElementRecord {
+export function createOwnedValidatedInitialRecord(
+  element: InkElementV1,
+  derivation: ElementValidationDerivation,
+): ElementRecord {
+  const bounds = validatedElementDerivationBounds(element, derivation);
+  return initialRecord(takeImmutableElementOwnership(element), Object.freeze({ ...bounds }));
+}
+
+function initialRecord(
+  immutable: ElementRecord["element"],
+  validatedBounds?: Readonly<SpatialBounds>,
+): ElementRecord {
   if (immutable.kind === "stroke") markStoredStroke(immutable);
-  const bounds = Object.freeze(calculateElementBounds(immutable as unknown as InkElementV1));
+  const bounds =
+    validatedBounds ?? Object.freeze(calculateElementBounds(immutable as unknown as InkElementV1));
   return Object.freeze({ bounds, element: immutable, geometryVersion: 0, paintVersion: 0 });
 }
 

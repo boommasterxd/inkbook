@@ -19,6 +19,8 @@ Available interactions:
 
 When a selection is dragged to the edge of the visible area, the plugin automatically continues scrolling. If it reaches the bottom-edge threshold, the editor adds bounded transient page space as specified in [File Format and Geometry](file-format.md); commit or cancellation then restores the exact derived height.
 
+Every annotation retains its exact page-space geometry when it is created, moved, scaled, rotated, or edited. Portions beyond the fixed left, right, or top page edge are hidden by the active canvas and standalone SVG viewport, never translated back into view. Moving an annotation inward later reveals the preserved outside portion. Positive-y geometry continues to participate in automatic downward page growth.
+
 ## Arrange
 
 Selected annotations can be reordered through four actions in the selection context menu:
@@ -81,7 +83,7 @@ This keeps text or ink beneath the highlighter visible.
 
 ## Shapes
 
-The toolbar has a shared Shape slot for the following shapes:
+The toolbar has adjacent Active Shape and Shape Picker controls. The Active Shape control displays the exact currently selected shape icon and activates that shape tool. The Shape Picker opens the shape selection and updates the Active Shape control; it is not itself a drawing tool. The available shapes are:
 
 - Line
 - Arrow
@@ -94,10 +96,7 @@ The toolbar has a shared Shape slot for the following shapes:
 - Coordinate System
 - Table
 
-The button remembers the most recently used shape.
-
-- The first click activates the most recently used shape.
-- Clicking the already active Shape button again opens the selection containing all shapes.
+The Active Shape control remembers the most recently selected shape. Repeated activation keeps that tool active; only the adjacent Shape Picker opens or closes the selection.
 
 Lines, arrows, closed shapes, coordinate systems, and tables are created by dragging from a start point to an end point. The live preview uses normalized geometry, and pointer release commits one element. Gestures below the element's minimum geometry are clamped on commit.
 
@@ -149,6 +148,8 @@ When released, the editor automatically switches back to the previous tool.
 ## Style
 
 Style is not a standalone drawing tool, but a context-sensitive flyout.
+
+The toolbar Style control uses the canonical Palette glyph and continuously previews the active tool defaults. Its glyph outline uses the current pen, highlighter, line, arrow, or shape color. Pen and highlighter glyphs remain solid and unfilled. Line, arrow, and shape glyphs reproduce the active `solid`, `dashed`, or `dotted` outline style. A closed shape additionally fills the palette body with its current fill color at the configured fill opacity; no-fill shapes leave the body transparent. Select and Eraser use the neutral host icon color because they have no paint color. The four canonical palette wells retain the same solid outline color and geometry regardless of the outer dash style or fill.
 
 The following options are available for the pen and the highlighters:
 

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { validateInkSnapshotV1 } from "../../../../src/domain/schema/public";
 import { encodeSelection } from "../../../../src/persistence/clipboard/public";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import {
@@ -408,8 +409,10 @@ describe("document worker bridge input boundary", () => {
 
   it("rejects an oversized unlock batch before observer adoption", async () => {
     const harness = unlockBatchBoundaryHarness();
+    const derivation = oneStrokeDerivations()[0]!;
     const encoded = encodeUnlockBatch({
       batchIndex: 0,
+      derivations: Array.from({ length: 257 }, () => derivation),
       elements: Array.from({ length: 257 }, () => oneStrokeSnapshot().elements[0]!),
       identity: unlockRequest(new Uint8Array()).identity,
     });
@@ -421,6 +424,7 @@ describe("document worker bridge input boundary", () => {
     const harness = unlockBatchBoundaryHarness();
     const encoded = encodeUnlockBatch({
       batchIndex: 0,
+      derivations: oneStrokeDerivations(),
       elements: oneStrokeSnapshot().elements,
       identity: {
         operationId: 1,
@@ -433,6 +437,12 @@ describe("document worker bridge input boundary", () => {
     await expectRejectedUnlockBatch(harness, encoded.value);
   });
 });
+
+function oneStrokeDerivations() {
+  const validation = validateInkSnapshotV1(oneStrokeSnapshot());
+  if (!validation.ok) throw new Error(validation.error.message);
+  return validation.derivations.elements;
+}
 
 describe("document worker clipboard bridge", () => {
   it("adopts one canonical text transfer and releases each completed request", async () => {

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { correctElementsToPageBounds } from "../../../../src/domain/geometry/public";
 import { validateInkElementV1, type InkElementV1 } from "../../../../src/domain/schema/public";
 import {
   immutableElement,
@@ -68,9 +67,7 @@ describe("runtime element ownership", () => {
       { x: 0, y: 0 },
       90,
     )[0]!;
-    const corrected = correctElementsToPageBounds([rotated]);
-    if (corrected.status !== "accepted") throw new Error("Expected corrected rotation geometry.");
-    expect(() => store.replace(source.id, corrected.elements[0]!)).not.toThrow();
+    expect(() => store.replace(source.id, rotated)).not.toThrow();
     expect(store.instrumentation.publishedDeltas).toBe(2);
   });
 });

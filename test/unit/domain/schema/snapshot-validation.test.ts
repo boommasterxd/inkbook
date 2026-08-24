@@ -128,12 +128,7 @@ describe("InkSnapshotV1 relational and security validation", () => {
     });
   });
 
-  it("rejects conservative bounds outside the page and excessive derived height", () => {
-    const outside = rectangle();
-    outside.x = 0;
-    outside.pivot.x = 50;
-    expectValidationCode(snapshot([outside]), "invalid-range");
-
+  it("rejects excessive derived height", () => {
     const tall = rectangle();
     tall.y = 999_800;
     tall.pivot.y = 999_850;

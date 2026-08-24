@@ -12,14 +12,15 @@ describe("conditional toolbar control presence", () => {
     const previous = definitions.map((definition) => ({
       definition,
       presence: "present" as const,
+      presenceOrder: 0,
     }));
     expect(resolvePresenceButtons(definitions, [definitions[0]], previous)).toEqual([
-      { definition: definitions[0], presence: "present" },
-      { definition: definitions[1], presence: "exiting" },
+      { definition: definitions[0], presence: "present", presenceOrder: 0 },
+      { definition: definitions[1], presence: "exiting", presenceOrder: 0 },
     ]);
     expect(resolvePresenceButtons(definitions, definitions, [])).toEqual([
-      { definition: definitions[0], presence: "entering" },
-      { definition: definitions[1], presence: "entering" },
+      { definition: definitions[0], presence: "entering", presenceOrder: 0 },
+      { definition: definitions[1], presence: "entering", presenceOrder: 1 },
     ]);
   });
 });

@@ -30,7 +30,9 @@ describe("scene caches", () => {
     expect(byteBounded.statistics()).toMatchObject({ entries: 3, evictions: 1 });
     expect(byteBounded.cacheMemoryUsage()).toBeLessThanOrEqual(PATH_CACHE_MAX_BYTES);
   });
+});
 
+describe("scene background cache", () => {
   it("reuses background geometry for unchanged aligned indices", () => {
     const cache = new SceneBackgroundCache();
     const first = cache.resolve({
@@ -39,6 +41,7 @@ describe("scene caches", () => {
       margin: 24.3,
       visibleBottom: 300,
       visibleTop: 100,
+      writableBottom: 1_024.3,
     });
     const second = cache.resolve({
       background: { spacing: 20, type: "squares" },
@@ -46,6 +49,7 @@ describe("scene caches", () => {
       margin: 24.3,
       visibleBottom: 301,
       visibleTop: 101,
+      writableBottom: 1_024.3,
     });
 
     expect(first.hit).toBe(false);
@@ -62,11 +66,82 @@ describe("scene caches", () => {
       margin: 24.3,
       visibleBottom: 900_000,
       visibleTop: 0,
+      writableBottom: 900_024.3,
     });
 
     expect(result.d.length).toBeLessThan(200);
     expect(result.d.match(/M /g)).toHaveLength(1);
     expect(cache.builds).toBe(1);
+  });
+
+  it("keeps the patterned coverage inside the writable SVG margins", () => {
+    const cache = new SceneBackgroundCache();
+    const result = cache.resolve({
+      background: { spacing: 100, type: "lines" },
+      innerWidth: 2000,
+      margin: 24.3,
+      visibleBottom: 500,
+      visibleTop: 0,
+      writableBottom: 324.3,
+    });
+
+    expect(result.d).toBe(
+      "M 24.3 24.3 L 2024.3 24.3 M 24.3 124.3 L 2024.3 124.3 " +
+        "M 24.3 224.3 L 2024.3 224.3 M 24.3 324.3 L 2024.3 324.3",
+    );
+    expect(result.lastVisibleIndex).toBe(3);
+    expect(result.paint).toBe("direct");
+  });
+});
+
+describe("scene square background cache", () => {
+  it("centers complete square cells instead of clipping a remainder at either side", () => {
+    const cache = new SceneBackgroundCache();
+    const result = cache.resolve({
+      background: { spacing: 60, type: "squares" },
+      innerWidth: 2000,
+      margin: 24.3,
+      visibleBottom: 500,
+      visibleTop: 0,
+      writableBottom: 324.3,
+    });
+
+    expect(result.patternX).toBe(34.3);
+    expect(result.patternY).toBe(24.3);
+    expect(result.paint).toBe("direct");
+    expect(result.d.match(/M /gu)).toHaveLength(40);
+    expect(result.d).toContain("M 34.3 24.3 L 2014.3 24.3");
+    expect(result.d).toContain("M 2014.3 24.3 L 2014.3 324.3");
+  });
+
+  it("collapses placeholder-height coverage instead of inverting the top margin", () => {
+    const cache = new SceneBackgroundCache();
+    const result = cache.resolve({
+      background: { spacing: 100, type: "lines" },
+      innerWidth: 2000,
+      margin: 24.3,
+      visibleBottom: 1,
+      visibleTop: 0,
+      writableBottom: -23.3,
+    });
+
+    expect(result.d).toBe("M 24.3 24.3 L 2024.3 24.3");
+  });
+
+  it("falls back to one bounded pattern coverage path for pathological guide counts", () => {
+    const cache = new SceneBackgroundCache();
+    const result = cache.resolve({
+      background: { spacing: 20, type: "squares" },
+      innerWidth: 2000,
+      margin: 24.3,
+      visibleBottom: 900_000,
+      visibleTop: 0,
+      writableBottom: 900_024.3,
+    });
+
+    expect(result.paint).toBe("pattern");
+    expect(result.d.length).toBeLessThan(200);
+    expect(result.d.match(/M /gu)).toHaveLength(1);
   });
 });
 

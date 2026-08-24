@@ -31,6 +31,7 @@ interface NavigationHarness {
 class FrameHarness {
   readonly #callbacks = new Map<number, FrameRequestCallback>();
   #nextFrame = 1;
+  #time = 0;
 
   public readonly window = {
     cancelAnimationFrame: (frame: number): void => {
@@ -54,7 +55,8 @@ class FrameHarness {
       readonly [number, FrameRequestCallback] | undefined;
     if (entry === undefined) throw new Error("No animation frame is pending.");
     this.#callbacks.delete(entry[0]);
-    entry[1](0);
+    this.#time += 16;
+    entry[1](this.#time);
   }
 
   public flushAll(): void {
@@ -265,12 +267,13 @@ describe("active editor navigation geometry and lifecycle", () => {
 });
 
 describe("active editor measured layout", () => {
-  it("preserves user magnification across content height and container width changes", () => {
+  it("preserves magnification and remeasures after zoom interrupts height motion", () => {
     const frames = new FrameHarness();
     const rect: MutableRect = { height: 1_000, left: 0, top: 0, width: 1_000 };
-    const style = { blockSize: "" };
+    const style = layoutStyle();
     const ownerDocument = { defaultView: frames.window };
     const container = {
+      classList: layoutClassList(),
       getBoundingClientRect: () => domRect(rect),
       ownerDocument,
       style,
@@ -302,10 +305,13 @@ describe("active editor measured layout", () => {
     frames.flushAll();
     const fitZoom = rect.width / OUTER_PAGE_WIDTH;
     const firstHeight = derivePageExtent(layoutPage(), maximumBottom).activeHeight;
-    layout.applyZoom({ blockSize: firstHeight * fitZoom * 2, zoom: fitZoom * 2 });
-
     maximumBottom = 2_200;
     layout.contentChanged();
+    frames.flushOne();
+    expect(frames.pending).toBe(1);
+
+    layout.applyZoom({ blockSize: firstHeight * fitZoom * 2, zoom: fitZoom * 2 });
+    expect(frames.pending).toBe(1);
     frames.flushAll();
     const nextHeight = derivePageExtent(layoutPage(), maximumBottom).activeHeight;
     expect(style.blockSize).toBe(`${String(nextHeight * fitZoom * 2)}px`);
@@ -324,9 +330,10 @@ describe("active editor measured layout", () => {
     const frames = new FrameHarness();
     const ownerDocument = { defaultView: frames.window };
     const container = {
+      classList: layoutClassList(),
       getBoundingClientRect: () => domRect({ height: 1_000, left: 0, top: 0, width: 1_000 }),
       ownerDocument,
-      style: { blockSize: "" },
+      style: layoutStyle(),
     } as unknown as HTMLElement;
     const onReady = vi.fn();
     const layout = new ActiveEditorLayout({
@@ -353,6 +360,21 @@ describe("active editor measured layout", () => {
     expect(onReady).not.toHaveBeenCalled();
   });
 });
+
+function layoutClassList(): DOMTokenList {
+  return {
+    add: vi.fn(),
+    remove: vi.fn(),
+  } as unknown as DOMTokenList;
+}
+
+function layoutStyle(): CSSStyleDeclaration {
+  return {
+    blockSize: "",
+    removeProperty: vi.fn(),
+    setProperty: vi.fn(),
+  } as unknown as CSSStyleDeclaration;
+}
 
 function layoutPage(): PageV1 {
   return {
