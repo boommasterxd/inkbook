@@ -24,25 +24,21 @@
 
 @keyframes inkbook-toolbar-enter {
   from {
-    opacity: 0;
-    transform: translateY(-4px);
+    scale: 0;
   }
 
   to {
-    opacity: 1;
-    transform: translateY(0);
+    scale: 1;
   }
 }
 
 @keyframes inkbook-toolbar-exit {
   from {
-    opacity: 1;
-    transform: translateY(0);
+    scale: 1;
   }
 
   to {
-    opacity: 0;
-    transform: translateY(-4px);
+    scale: 0;
   }
 }
 
@@ -80,36 +76,40 @@
 
 @keyframes inkbook-toolbar-context-control-enter {
   from {
-    flex-basis: 0;
-    inline-size: 0;
-    transform: scale(0.96);
+    scale: 0;
   }
 
   to {
-    flex-basis: 48px;
-    inline-size: 48px;
-    transform: scale(1);
+    scale: 1;
   }
 }
 
 @keyframes inkbook-toolbar-context-control-exit {
   from {
-    flex-basis: 48px;
-    inline-size: 48px;
-    transform: scale(1);
+    scale: 1;
   }
 
   to {
-    flex-basis: 0;
-    inline-size: 0;
-    transform: scale(0.96);
+    scale: 0;
+  }
+}
+
+@keyframes inkbook-operation-spin {
+  to {
+    rotate: 1turn;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .inkbook-root:not([data-inkbook-motion="full"]) {
-    --inkbook-motion-fast: 0ms;
-    --inkbook-motion-standard: 0ms;
+    --inkbook-motion-toolbar-context-stagger: 0ms;
+    --inkbook-motion-toolbar: 0ms;
     --inkbook-motion-layout: 0ms;
+    --inkbook-motion-standard: 0ms;
+    --inkbook-motion-fast: 0ms;
+  }
+
+  .inkbook-root:not([data-inkbook-motion="full"]) .inkbook-operation-feedback-icon {
+    animation: none;
   }
 }

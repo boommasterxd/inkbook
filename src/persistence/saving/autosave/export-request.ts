@@ -91,6 +91,9 @@ function incrementalPayload(
   plan: Extract<CoalescedExportPlan<InkElementV1, PageV1, InkSnapshotV1>, { type: "incremental" }>,
 ) {
   return {
+    ...(plan.changedElementDerivations === undefined
+      ? {}
+      : { changedElementDerivations: plan.changedElementDerivations }),
     ...(plan.changedElements.length === 0 ? {} : { changedElements: plan.changedElements }),
     ...(Object.keys(plan.orderChanges).length === 0 ? {} : { orderChanges: plan.orderChanges }),
     ...(plan.removedIds.length === 0 ? {} : { removedIds: plan.removedIds }),

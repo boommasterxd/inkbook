@@ -71,6 +71,20 @@ describe("active page-height policy", () => {
     expect(layout.transitionCompleted(page)).toBeUndefined();
   });
 
+  it("adopts the visible height when an input or lifecycle change cancels motion", () => {
+    const layout = new ActivePageLayout();
+    layout.committed(page, undefined);
+    layout.committed(page, 225);
+    layout.committed(page, 525);
+
+    layout.cancelTransitions(400);
+
+    expect(layout.height).toBe(400);
+    expect(layout.transitionCompleted(page)).toBeUndefined();
+  });
+});
+
+describe("active page-height selection policy", () => {
   it("extends one buffer per completed bottom-edge transition and restores on cancel", () => {
     const layout = new ActivePageLayout();
     const initialHeight = derivePageExtent(page, null).activeHeight;

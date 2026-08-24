@@ -69,6 +69,29 @@ describe("presentation owner measurement", () => {
     expect(controller.scrollOwner).toBe(owner);
     controller.dispose();
   });
+
+  it("remeasures host geometry when the owning window changes size", () => {
+    const owner = new FakePresentationElement();
+    owner.clientWidth = 800;
+    const root = new FakePresentationElement(owner.ownerDocument);
+    owner.append(root);
+    const requestHostMeasure = vi.fn();
+    const controller = new PresentationController(
+      createPresentationAttachment(root, "reading-window-resize"),
+      { activate: vi.fn(), detach: vi.fn(), mount: vi.fn() },
+      new ColorSchemeBroadcaster({ getColorScheme: () => "light" }),
+      { element: root as unknown as HTMLElement, requestHostMeasure },
+    );
+    controller.mount();
+
+    owner.clientWidth = 1_000;
+    root.ownerDocument.defaultView?.dispatchEvent(new Event("resize"));
+
+    expect(requestHostMeasure).toHaveBeenCalledOnce();
+    controller.dispose();
+    root.ownerDocument.defaultView?.dispatchEvent(new Event("resize"));
+    expect(requestHostMeasure).toHaveBeenCalledOnce();
+  });
 });
 
 function createPresentationAttachment(

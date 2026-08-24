@@ -108,16 +108,61 @@ describe("mounted Inkbook toolbar accessibility", () => {
     expect(icon.dataset.icon).toBe(STRAIGHT_HIGHLIGHTER_ICON_ID);
     mounted.unmount();
   });
+});
+
+describe("mounted Inkbook toolbar motion and responsiveness", () => {
+  it("staggers fixed-size contextual action pops without fading their surfaces", () => {
+    const mounted = mountToolbar({
+      ...completeState,
+      canPaste: false,
+      hasSelection: false,
+    });
+
+    mounted.update(completeState);
+
+    expect(
+      ["copy", "cut", "paste", "delete"].map((action) => ({
+        order: mounted.button(action as ToolbarAction).dataset.presenceOrder,
+        presence: mounted.button(action as ToolbarAction).dataset.presence,
+      })),
+    ).toEqual([
+      { order: "0", presence: "entering" },
+      { order: "1", presence: "entering" },
+      { order: "2", presence: "entering" },
+      { order: "3", presence: "entering" },
+    ]);
+    void act(() => {
+      mounted.button("copy").dispatchEvent(new Event("animationend", { bubbles: true }));
+    });
+    expect(
+      ["cut", "paste", "delete"].map(
+        (action) => mounted.button(action as ToolbarAction).dataset.presenceOrder,
+      ),
+    ).toEqual(["1", "2", "3"]);
+    mounted.unmount();
+  });
 
   it("updates the active tool on stable 44-pixel controls without replacing their icons", () => {
     const mounted = mountToolbar(completeState);
     const draw = mounted.button("draw");
     const select = mounted.button("select");
+    const indicator = requiredElement<HTMLSpanElement>(
+      mounted.container,
+      ".inkbook-toolbar-active-indicator",
+    );
     const drawIcon = requiredElement<HTMLElement>(draw, ".inkbook-toolbar-icon");
     const selectIcon = requiredElement<HTMLElement>(select, ".inkbook-toolbar-icon");
+    setButtonMetrics(draw, 196);
+    mounted.update(completeState);
+    expect(indicator.style.getPropertyValue("--inkbook-toolbar-active-offset")).toBe("200px");
+
+    setButtonMetrics(select, 104);
 
     mounted.update({ ...completeState, activeTool: "select" });
 
+    expect(requiredElement(mounted.container, ".inkbook-toolbar-active-indicator")).toBe(indicator);
+    expect(indicator.style.getPropertyValue("--inkbook-toolbar-active-offset")).toBe("108px");
+    expect(indicator.getAttribute("aria-hidden")).toBe("true");
     expect(mounted.button("draw")).toBe(draw);
     expect(mounted.button("select")).toBe(select);
     expect(draw.getAttribute("aria-pressed")).toBe("false");
@@ -127,9 +172,29 @@ describe("mounted Inkbook toolbar accessibility", () => {
     mounted.unmount();
   });
 
-  it("moves focus to the nearest surviving control before an exit animation completes", () => {
+  it("keeps contextual actions in the same scrollable rail as the primary toolbar", () => {
+    const mounted = mountToolbar(completeState, "scrollable");
+    const composition = requiredElement<HTMLElement>(
+      mounted.container,
+      ".inkbook-toolbar-composition-scrollable",
+    );
+    const rail = requiredElement<HTMLElement>(composition, ".inkbook-toolbar-rail");
+    const context = requiredElement<HTMLElement>(rail, ".inkbook-toolbar-context-actions");
+
+    expect(rail.contains(mounted.button("delete"))).toBe(true);
+    expect(context.previousElementSibling?.classList.contains("inkbook-toolbar-scrollable")).toBe(
+      true,
+    );
+    mounted.unmount();
+  });
+});
+
+describe("mounted Inkbook toolbar focus recovery", () => {
+  it("keeps every exit slot until the staggered batch completes, then removes it atomically", () => {
     const mounted = mountToolbar({ ...completeState, canPaste: false });
+    const copy = mounted.button("copy");
     const cut = mounted.button("cut");
+    const deleteButton = mounted.button("delete");
     focus(cut);
 
     mounted.update({ ...completeState, canPaste: false, hasSelection: false });
@@ -141,9 +206,18 @@ describe("mounted Inkbook toolbar accessibility", () => {
     expect(cut.getAttribute("aria-hidden")).toBe("true");
 
     void act(() => {
+      copy.dispatchEvent(new Event("animationend", { bubbles: true }));
       cut.dispatchEvent(new Event("animationend", { bubbles: true }));
     });
+    expect(mounted.container.contains(copy)).toBe(true);
+    expect(mounted.container.contains(cut)).toBe(true);
+    expect(mounted.container.contains(deleteButton)).toBe(true);
+    void act(() => {
+      deleteButton.dispatchEvent(new Event("animationend", { bubbles: true }));
+    });
+    expect(mounted.container.contains(copy)).toBe(false);
     expect(mounted.container.contains(cut)).toBe(false);
+    expect(mounted.container.contains(deleteButton)).toBe(false);
     expect(document.activeElement).toBe(mounted.button("overflow"));
     mounted.unmount();
   });
@@ -276,7 +350,10 @@ interface MountedChrome {
   readonly update: (props: InkbookEditorChromeProps) => void;
 }
 
-function mountToolbar(initialState: ToolbarState): MountedToolbar {
+function mountToolbar(
+  initialState: ToolbarState,
+  layout: "wide" | "scrollable" = "wide",
+): MountedToolbar {
   const container = document.body.createDiv();
   const root = createRoot(container);
   const render = (
@@ -287,7 +364,7 @@ function mountToolbar(initialState: ToolbarState): MountedToolbar {
     act(() => {
       root.render(
         <InkbookToolbar
-          layout="wide"
+          layout={layout}
           onAction={vi.fn()}
           renderIcon={(element, icon) => element.setAttribute("data-icon", icon)}
           selectedShape={selectedShape}
@@ -304,6 +381,13 @@ function mountToolbar(initialState: ToolbarState): MountedToolbar {
     unmount: () => unmount(root),
     update: render,
   };
+}
+
+function setButtonMetrics(button: HTMLButtonElement, offsetLeft: number): void {
+  Object.defineProperties(button, {
+    offsetLeft: { configurable: true, value: offsetLeft },
+    offsetWidth: { configurable: true, value: 44 },
+  });
 }
 
 function mountChrome(initialProps: InkbookEditorChromeProps): MountedChrome {

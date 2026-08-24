@@ -1,8 +1,8 @@
 import type { InkbookDeviceSettingsV1 } from "../../domain/settings/types";
+import { transitionDurations } from "../../rendering/ui/motion";
 
 type MotionPreference = InkbookDeviceSettingsV1["motion"];
 
-const LOCK_CROSSFADE_DURATION_MS = 120;
 const ACTIVE_SCENE_BLOCK_SIZE_PROPERTY = "--inkbook-active-scene-block-size";
 const LOCKED_CONTAINER_BLOCK_SIZE_PROPERTY = "--inkbook-locked-container-block-size";
 
@@ -28,7 +28,7 @@ export class ActiveScenePreviewHandoff {
   readonly #setPreviewSource: ((source: string) => Promise<void>) | undefined;
   readonly #lockedBlockSize: string;
   #disposed = false;
-  #onComplete: (() => void) | undefined;
+  #onReady: (() => void) | undefined;
   #onLockComplete: (() => void) | undefined;
   #lockEditor: HTMLElement | undefined;
   #started = false;
@@ -65,6 +65,7 @@ export class ActiveScenePreviewHandoff {
   public dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#onReady = undefined;
     this.#clearTimer();
     if (this.#frame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#frame);
     this.#frame = undefined;
@@ -81,19 +82,16 @@ export class ActiveScenePreviewHandoff {
     this.#container.style.removeProperty(ACTIVE_SCENE_BLOCK_SIZE_PROPERTY);
     this.#container.style.removeProperty(LOCKED_CONTAINER_BLOCK_SIZE_PROPERTY);
     this.#preview?.classList.remove("inkbook-preview-handoff");
-    const previewStyle = this.#preview?.style;
-    previewStyle?.removeProperty("inset");
-    previewStyle?.removeProperty("opacity");
-    previewStyle?.removeProperty("position");
-    previewStyle?.removeProperty("transition");
+    this.#resetPreviewLayer();
+    this.#resetEditorLayer(this.#lockEditor);
     this.restorePreview();
   }
 
-  public ready(onComplete?: () => void): void {
+  public ready(onReady?: () => void): void {
     if (this.#disposed || this.#started || this.#root.classList.contains("inkbook-active-ready")) {
       return;
     }
-    this.#onComplete = onComplete;
+    this.#onReady = onReady;
     this.#started = true;
     const activeBlockSize = this.#container.style.blockSize;
     if (activeBlockSize !== "") {
@@ -109,22 +107,31 @@ export class ActiveScenePreviewHandoff {
   }
 
   #scheduleUnlockTransition(activeBlockSize: string): void {
+    this.#scheduleAfterPaint(() => this.#startUnlockTransition(activeBlockSize));
+  }
+
+  #scheduleAfterPaint(callback: () => void): void {
     this.#frame = this.#ownerWindow.requestAnimationFrame(() => {
       this.#frame = undefined;
       if (this.#disposed) return;
       this.#frame = this.#ownerWindow.requestAnimationFrame(() => {
         this.#frame = undefined;
         if (this.#disposed) return;
-        this.#startUnlockTransition(activeBlockSize);
+        callback();
       });
     });
   }
 
   #startUnlockTransition(activeBlockSize: string): void {
+    if (this.#preview !== undefined) this.#preview.hidden = true;
     this.#root.classList.remove("inkbook-active-preparing");
     this.#root.classList.add("inkbook-active-transitioning");
     this.#container.style.blockSize = activeBlockSize;
-    this.#timer = this.#ownerWindow.setTimeout(() => this.#complete(), 240);
+    this.#notifyReady();
+    this.#timer = this.#ownerWindow.setTimeout(
+      () => this.#complete(),
+      transitionDurations.lockedToActiveHeight,
+    );
   }
 
   public restorePreview(): void {
@@ -167,7 +174,7 @@ export class ActiveScenePreviewHandoff {
     this.#setPreviewAspectRatio?.(aspectRatio);
   }
 
-  public crossfadeToPreview(
+  public handoffToPreview(
     editorChrome: HTMLElement,
     onComplete: () => void,
     finalizeLayout: () => void = () => undefined,
@@ -181,8 +188,7 @@ export class ActiveScenePreviewHandoff {
       return;
     }
     if (this.#reducedMotion()) {
-      preview.setCssProps({ opacity: "1", transition: "none" });
-      editorChrome.setCssProps({ opacity: "0", transition: "none" });
+      editorChrome.hidden = true;
       onComplete();
       return;
     }
@@ -191,26 +197,20 @@ export class ActiveScenePreviewHandoff {
     preview.classList.add("inkbook-preview-handoff");
     preview.setCssProps({
       inset: "0",
-      opacity: "0",
       position: "absolute",
-      transition: `opacity ${String(LOCK_CROSSFADE_DURATION_MS)}ms ease`,
+      zIndex: "1",
     });
     editorChrome.setCssProps({
-      opacity: "1",
-      transition: `opacity ${String(LOCK_CROSSFADE_DURATION_MS)}ms ease`,
+      zIndex: "2",
     });
-    this.#frame = this.#ownerWindow.requestAnimationFrame(() => {
-      this.#frame = undefined;
-      if (this.#disposed) return;
-      preview.setCssProps({ opacity: "1" });
-      editorChrome.setCssProps({ opacity: "0" });
-      this.#timer = this.#ownerWindow.setTimeout(() => {
-        this.#timer = undefined;
-        const complete = this.#onLockComplete;
-        this.#onLockComplete = undefined;
-        this.#lockEditor = undefined;
-        complete?.();
-      }, LOCK_CROSSFADE_DURATION_MS);
+    this.#scheduleAfterPaint(() => {
+      this.#resetPreviewLayer();
+      editorChrome.hidden = true;
+      this.#resetEditorLayer(editorChrome);
+      const complete = this.#onLockComplete;
+      this.#onLockComplete = undefined;
+      this.#lockEditor = undefined;
+      complete?.();
     });
   }
 
@@ -228,8 +228,11 @@ export class ActiveScenePreviewHandoff {
     const lockComplete = this.#onLockComplete;
     if (lockComplete !== undefined) {
       this.restorePreview();
-      this.#preview?.setCssProps({ opacity: "1", transition: "none" });
-      this.#lockEditor?.setCssProps({ opacity: "0", transition: "none" });
+      this.#resetPreviewLayer();
+      if (this.#lockEditor !== undefined) {
+        this.#lockEditor.hidden = true;
+        this.#resetEditorLayer(this.#lockEditor);
+      }
       this.#onLockComplete = undefined;
       this.#lockEditor = undefined;
       lockComplete();
@@ -244,6 +247,17 @@ export class ActiveScenePreviewHandoff {
     this.#timer = undefined;
   }
 
+  #resetPreviewLayer(): void {
+    const previewStyle = this.#preview?.style;
+    previewStyle?.removeProperty("inset");
+    previewStyle?.removeProperty("position");
+    previewStyle?.removeProperty("z-index");
+  }
+
+  #resetEditorLayer(editor: HTMLElement | undefined): void {
+    editor?.style.removeProperty("z-index");
+  }
+
   #complete(): void {
     if (this.#disposed) return;
     this.#clearTimer();
@@ -255,9 +269,13 @@ export class ActiveScenePreviewHandoff {
       this.#preview.hidden = true;
       (this.#preview as Partial<{ remove(): void }>).remove?.();
     }
-    const onComplete = this.#onComplete;
-    this.#onComplete = undefined;
-    onComplete?.();
+    this.#notifyReady();
+  }
+
+  #notifyReady(): void {
+    const onReady = this.#onReady;
+    this.#onReady = undefined;
+    onReady?.();
   }
 
   #reducedMotion(): boolean {

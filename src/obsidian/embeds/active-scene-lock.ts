@@ -1,10 +1,15 @@
 import { derivePageExtent, PAGE_WIDTH } from "../../domain/geometry/public";
 import type { PageV1 } from "../../domain/schema/public";
 import { applyAnchoredZoom, calculateZoomLimits, type ScrollBounds } from "../../editor/zoom/index";
+import { transitionDurations } from "../../rendering/ui/motion";
 import { measureElementBox } from "./active-editor/element-content-box";
 import type { ActiveEditorViewState } from "./active-editor/navigation";
 
 const LOCK_LAYOUT_DURATION_MS = 240;
+const LOCK_PRESENTATION_DURATION_MS = Math.max(
+  LOCK_LAYOUT_DURATION_MS,
+  transitionDurations.toolbarEnterExit,
+);
 const activeTransitions = new WeakMap<HTMLElement, LockedFitTransition>();
 
 interface LockedFitLayoutOptions {
@@ -239,4 +244,4 @@ function interpolate(from: number, to: number, progress: number): number {
   return from + (to - from) * progress;
 }
 
-export { LOCK_LAYOUT_DURATION_MS };
+export { LOCK_PRESENTATION_DURATION_MS };

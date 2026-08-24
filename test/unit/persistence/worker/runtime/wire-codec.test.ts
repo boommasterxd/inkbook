@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { StrokeElementV1 } from "../../../../../src/domain/schema/public";
+import {
+  validateInkSnapshotV1,
+  type StrokeElementV1,
+} from "../../../../../src/domain/schema/public";
 import { encodeSelection } from "../../../../../src/persistence/clipboard/public";
 import { CLIPBOARD_LIMITS } from "../../../../../src/persistence/clipboard/constants";
 import { INKBOOK_CLIPBOARD_TEXT_PREFIX } from "../../../../../src/persistence/clipboard/constants";
@@ -70,6 +73,7 @@ describe("document worker wire codec", () => {
 
     const incremental = encodeRuntimeRequest({
       baseModelRevision: 0,
+      changedElementDerivations: [validatedElementDerivation(STROKE)],
       changedElements: [STROKE],
       identity: clipboardIdentity(8),
       modelRevision: 1,
@@ -77,6 +81,7 @@ describe("document worker wire codec", () => {
     });
     expect(incremental.value.type).toBe("model-sync-incremental-wire");
     expect(decodeRuntimeRequest(incremental.value)).toMatchObject({
+      changedElementDerivations: [{ elementId: STROKE.id }],
       changedElements: [{ id: STROKE.id }],
       modelRevision: 1,
       type: "model-sync-incremental",
@@ -394,11 +399,18 @@ describe("document worker wire validation", () => {
       "wire protocol",
     );
   });
+});
 
+describe("document worker unlock batch wire validation", () => {
   it("round-trips bounded unlock batches with copied point transfers", () => {
-    const elements = snapshot().elements;
+    const source = snapshot();
+    const validation = validateInkSnapshotV1(source);
+    if (!validation.ok) throw new Error(validation.error.message);
+    const elements = source.elements;
+    const derivations = validation.derivations.elements;
     const encoded = encodeUnlockBatch({
       batchIndex: 0,
+      derivations,
       elements,
       identity: {
         operationId: 1,
@@ -410,6 +422,7 @@ describe("document worker wire validation", () => {
 
     expect(decodeUnlockBatch(encoded.value)).toEqual({
       batchIndex: 0,
+      derivations,
       elements,
       identity: {
         operationId: 1,
@@ -430,6 +443,7 @@ describe("document worker wire validation", () => {
     };
     const tooManyElements = encodeUnlockBatch({
       batchIndex: 0,
+      derivations: Array.from({ length: 257 }, () => validatedSnapshotDerivations()[0]!),
       elements: Array.from({ length: 257 }, () => snapshot().elements[0]!),
       identity,
     });
@@ -438,6 +452,7 @@ describe("document worker wire validation", () => {
     const { points: _points, ...strokeRecord } = STROKE;
     const oversizedPointBuffer = {
       batchIndex: 0,
+      derivations: [validatedSnapshotDerivations()[0]!],
       elements: {
         pointBuffers: [new Float64Array((4 * 1024 * 1024) / 8 + 1)],
         records: [{ ...strokeRecord, pointsBufferIndex: 0 }],
@@ -460,3 +475,15 @@ describe("document worker wire validation", () => {
     expect(() => decodeUnlockBatch(aliasedPointBuffers)).toThrow("exclusive backing stores");
   });
 });
+
+function validatedSnapshotDerivations() {
+  const validation = validateInkSnapshotV1(snapshot());
+  if (!validation.ok) throw new Error(validation.error.message);
+  return validation.derivations.elements;
+}
+
+function validatedElementDerivation(element: StrokeElementV1) {
+  const validation = validateInkSnapshotV1({ ...snapshot(), elements: [element] });
+  if (!validation.ok) throw new Error(validation.error.message);
+  return validation.derivations.elements[0]!;
+}

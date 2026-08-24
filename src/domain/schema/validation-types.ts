@@ -1,4 +1,5 @@
 import type { InkSnapshotV1 } from "./types";
+import type { SpatialBounds } from "../spatial/index";
 
 export type ValidationErrorCode =
   | "invalid-json-value"
@@ -50,4 +51,23 @@ export interface ValidationByteLengths {
   metadataBytes?: number;
 }
 
-export type SnapshotValidationResult = ValidationResult<InkSnapshotV1>;
+export interface ElementValidationDerivation {
+  readonly bounds: Readonly<SpatialBounds>;
+  readonly elementId: string;
+  readonly spatialMemberships: number;
+  readonly spatialOverflow: boolean;
+}
+
+export interface SnapshotValidationDerivations {
+  readonly elements: readonly ElementValidationDerivation[];
+  readonly maximumBottom: number | null;
+}
+
+export type SnapshotValidationResult =
+  | {
+      readonly derivations: SnapshotValidationDerivations;
+      readonly ok: true;
+      readonly statistics: ValidationStatistics;
+      readonly value: InkSnapshotV1;
+    }
+  | { readonly error: ValidationError; readonly ok: false };

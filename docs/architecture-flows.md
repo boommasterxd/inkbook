@@ -253,6 +253,28 @@ All layout reads happen before pure calculations and DOM writes, so the frame do
 
 React receives at most one coarse notification after a consistent committed transaction or discrete UI transition. Pointer samples, preview geometry, camera changes, culling, snapping, connection propagation, and animation-frame work stay entirely in the imperative renderer. This prevents the 10,000-stroke scene from producing component renders or virtual-tree work on the hot path.
 
+## Page-Height Scene Handoff
+
+```mermaid
+flowchart TD
+  delta["Committed content delta"] --> extent["Derive aligned target height from maximum-bottom index"]
+  extent --> direction{"Grow or shrink?"}
+  direction -->|Grow| targetScene["Set larger renderer page height"]
+  targetScene --> sceneCommit["Wait for complete renderer commit"]
+  sceneCommit --> paint["Keep committed scene behind current clip for one paint opportunity"]
+  paint --> animate["Animate outer container and scroll compensation for 180 ms"]
+  direction -->|Shrink| retain["Retain larger renderer page height"]
+  retain --> animate
+  animate --> clipped["Pin scene to larger endpoint and clip at rounded container"]
+  clipped --> complete{"Container reached target?"}
+  complete -->|No| animate
+  complete -->|Yes, grow| release["Release pinned envelope"]
+  complete -->|Yes, shrink| shrinkScene["Apply smaller renderer page height"]
+  shrinkScene --> release
+```
+
+Unlock uses one persistent presentation-root shell with a 240-millisecond block-size transition. That shell continuously owns the page surface, border, radius, and clipping edge. The active scene is fully measured and painted behind the locked inner preview before the two borderless representations exchange visibility atomically in one frame. Lock prepares and paints the exact persisted preview below the disabled editor, then performs the same zero-duration inner-layer exchange before removing the editor. Neither direction animates shell opacity or replaces the shell.
+
 ## Document Worker Boundary and Queue
 
 ```mermaid
@@ -265,7 +287,7 @@ flowchart LR
   end
 
   subgraph documentWorker["One document worker"]
-    unlock["UTF-8, XML, metadata, schema, limits, and migrations"]
+    unlock["UTF-8, XML, metadata, schema, limits, migrations, and one-pass bounds derivation"]
     clipboard["Clipboard encode, decode, validation, placement, and ID plan"]
     export["Incremental SVG fragments and complete output"]
     verification["Hashes, preflight, and read-back verification"]
@@ -277,7 +299,7 @@ flowchart LR
   orchestration --> export
   orchestration --> verification
   orchestration --> background
-  unlock -->|"Validated runtime batches"| orchestration
+  unlock -->|"Validated runtime batches plus aligned bounds and capacity facts"| orchestration
   clipboard -->|"Validated payload or insertion records"| orchestration
   export -->|"Complete SVG plus revision and generation"| orchestration
   verification -->|"Structured confirmation or conflict"| orchestration
@@ -299,7 +321,7 @@ sequenceDiagram
 
   Editor->>Editor: Commit revision and start 500 ms inactivity timer
   Editor->>Editor: Wait for inactivity and no live gesture
-  Editor->>Worker: Dispatch one incremental export generation
+  Editor->>Worker: Dispatch one incremental export generation with matching Store bounds
   Note over Editor,Worker: Later commits coalesce into one successor revision
   Worker-->>Editor: Complete SVG with model revision, export generation, and hash
   alt Export generation or revision is stale

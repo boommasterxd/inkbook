@@ -23,6 +23,7 @@ import type { DocumentCodecResult, SerializedInkbookDocument } from "./types";
 
 interface PreparedRuntimeExport {
   readonly background: string;
+  readonly fragments: readonly ElementFragments[];
   readonly lockedHeight: number;
   readonly metadataBytes: number;
   readonly metadataHash: string;
@@ -43,7 +44,7 @@ export async function serializeRuntimeSnapshotToUtf8(
   if (!prepared.ok) return prepared;
   const value = prepared.value;
   const assembled = await assembleAndHashChunkedUtf8Output(
-    runtimeDocumentFragments(snapshot, value, resolveFragment),
+    runtimeDocumentFragments(snapshot, value),
     value.totalBytes,
     { ...options, maximumBytes: FILE_SCHEMA_LIMITS.totalInputBytes },
   );
@@ -78,11 +79,13 @@ async function prepareRuntimeExport(
     metadataPrefixBytes,
   );
   let maximumBottom: number | null = null;
+  const fragments: ElementFragments[] = [];
   const pathDataBudget = new EncodedByteBudget(MAXIMUM_TOTAL_PATH_DATA_BYTES);
   for (let index = 0; index < snapshot.elements.length; index += 1) {
     options.signal?.throwIfAborted();
     const element = snapshot.elements[index]!;
     const fragment = resolveFragment(element);
+    fragments.push(fragment);
     const separatorBytes = index === 0 ? 0 : 1;
     canonicalMetadataBytes += fragment.canonicalMetadataBytes + separatorBytes;
     if (
@@ -111,7 +114,7 @@ async function prepareRuntimeExport(
   if (background === null) return limitFailure();
   const metadataHash = await canonicalMetadataSha256Async(
     canonicalPrefix,
-    fragmentCanonicalMetadata(snapshot, resolveFragment),
+    fragmentCanonicalMetadata(fragments),
     canonicalMetadataBytes,
     options,
   );
@@ -125,6 +128,7 @@ async function prepareRuntimeExport(
     ok: true,
     value: {
       background,
+      fragments,
       lockedHeight,
       metadataBytes: metadataBudget.usedBytes,
       metadataHash,
@@ -134,17 +138,13 @@ async function prepareRuntimeExport(
   };
 }
 
-function* fragmentCanonicalMetadata(
-  snapshot: InkSnapshotV1,
-  resolveFragment: RuntimeElementFragmentResolver,
-): Iterable<Uint8Array> {
-  for (const element of snapshot.elements) yield resolveFragment(element).canonicalMetadataUtf8;
+function* fragmentCanonicalMetadata(fragments: readonly ElementFragments[]): Iterable<Uint8Array> {
+  for (const fragment of fragments) yield fragment.canonicalMetadataUtf8;
 }
 
 function runtimeDocumentFragments(
   snapshot: InkSnapshotV1,
   prepared: PreparedRuntimeExport,
-  resolveFragment: RuntimeElementFragmentResolver,
 ): Iterable<string> {
   return documentFragments(
     snapshot.revision,
@@ -152,29 +152,25 @@ function runtimeDocumentFragments(
     prepared.metadataPrefix,
     prepared.metadataHash,
     {
-      content: fragmentMarkup(snapshot, "content", resolveFragment),
-      highlight: fragmentMarkup(snapshot, "highlight", resolveFragment),
-      metadata: fragmentMetadata(snapshot, resolveFragment),
+      content: fragmentMarkup(prepared.fragments, "content"),
+      highlight: fragmentMarkup(prepared.fragments, "highlight"),
+      metadata: fragmentMetadata(prepared.fragments),
     },
     prepared.background,
   );
 }
 
-function* fragmentMetadata(
-  snapshot: InkSnapshotV1,
-  resolveFragment: RuntimeElementFragmentResolver,
-): Iterable<string> {
-  for (const element of snapshot.elements) yield resolveFragment(element).metadata;
+function* fragmentMetadata(fragments: readonly ElementFragments[]): Iterable<string> {
+  for (const fragment of fragments) yield fragment.metadata;
 }
 
 function* fragmentMarkup(
-  snapshot: InkSnapshotV1,
+  fragments: readonly ElementFragments[],
   band: "content" | "highlight",
-  resolveFragment: RuntimeElementFragmentResolver,
 ): Iterable<ElementFragments> {
-  for (const element of snapshot.elements) {
-    if (elementRenderBand(element) !== band) continue;
-    yield resolveFragment(element);
+  for (const fragment of fragments) {
+    if (elementRenderBand(fragment.element) !== band) continue;
+    yield fragment;
   }
 }
 

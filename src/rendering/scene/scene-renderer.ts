@@ -217,6 +217,7 @@ export class SvgSceneRenderer {
     this.#page = page;
     this.#pageHeight = height;
     this.#backgroundDirty = true;
+    this.#sceneCommits.markPending();
     this.schedule();
   }
   public setScheme(scheme: DocumentScheme): void {

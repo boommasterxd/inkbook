@@ -1,13 +1,12 @@
 import { derivePageExtent } from "../../domain/geometry/public";
 import {
   FILE_SCHEMA_LIMITS,
-  validateInkElementV1,
   validateInkSnapshotV1,
   type InkElementV1,
   type InkSnapshotV1,
   type PageV1,
+  type SnapshotValidationDerivations,
 } from "../../domain/schema/public";
-import { validateRuntimeInkElementV1 } from "../../domain/schema/element-validation";
 import { validateRuntimeInkSnapshotV1 } from "../../domain/schema/snapshot-validation";
 import { serializeSvgNumber } from "../documents/svg-number";
 import { BackgroundFragmentCache } from "./background";
@@ -27,6 +26,7 @@ import {
   type RenderBand,
 } from "./element-fragments";
 import { ElementFragmentCache } from "./element-fragment-cache";
+import { prepareDocumentDelta, validateDocumentDelta } from "./incremental-document-delta";
 import { encodedByteLength, type EncodedByteBudget } from "./encoded-byte-budget";
 import * as incrementalValidation from "./incremental-validation";
 import type {
@@ -35,13 +35,11 @@ import type {
   ElementAssembly,
   FragmentSerializerInstrumentation,
   FragmentAssembly,
-  PreparedDelta,
 } from "./incremental-document-serializer-types";
 import { prepareSerialization } from "./serialization-budgets";
 import { SHA256_DOCUMENT_HASHER, type DocumentHashPort } from "./sha256";
 import { serializeRuntimeSnapshotToUtf8 } from "./streaming-runtime-export";
 import type { DocumentCodecResult, SerializedInkbookDocument } from "./types";
-const { connectionRelationsAffected } = incrementalValidation;
 export class IncrementalDocumentSerializer {
   readonly #cache = new ElementFragmentCache();
   readonly #elements = new Map<string, InkElementV1>();
@@ -50,6 +48,7 @@ export class IncrementalDocumentSerializer {
   readonly #backgroundCache = new BackgroundFragmentCache();
   #fragmentBuilds = 0;
   #fragmentHits = 0;
+  #derivedBoundsReuses = 0;
   #fullValidationRuns = 0;
   #incrementalValidationRuns = 0;
   #aggregateFacts = incrementalValidation.emptyAggregateFacts();
@@ -61,6 +60,7 @@ export class IncrementalDocumentSerializer {
       backgroundBuilds: this.#backgroundCache.builds,
       cacheBytes: this.#cache.retainedBytes,
       cacheElements: this.#cache.size,
+      derivedBoundsReuses: this.#derivedBoundsReuses,
       fragmentBuilds: this.#fragmentBuilds,
       fragmentHits: this.#fragmentHits,
       fullValidationRuns: this.#fullValidationRuns,
@@ -81,7 +81,7 @@ export class IncrementalDocumentSerializer {
       this.#cache.touch(id);
       return 0;
     }
-    const fragments = buildElementFragments(element);
+    const fragments = buildElementFragments(element, this.#facts.get(id)?.bottom);
     if (fragments.bytes > maximumBytes) return null;
     this.#fragmentBuilds += 1;
     this.#cache.replace(id, fragments);
@@ -93,13 +93,44 @@ export class IncrementalDocumentSerializer {
   public resetRuntime(snapshot: InkSnapshotV1): DocumentCodecResult<void> {
     return this.#reset(snapshot, true);
   }
-  #reset(snapshot: InkSnapshotV1, runtimeStrokeBuffers: boolean): DocumentCodecResult<void> {
-    const validation = runtimeStrokeBuffers
-      ? validateRuntimeInkSnapshotV1(snapshot)
-      : validateInkSnapshotV1(snapshot);
-    this.#fullValidationRuns += 1;
-    if (!validation.ok) return invalidSnapshot(validation.error);
-    const canonical = canonicalSnapshot(validation.value, runtimeStrokeBuffers);
+  public resetValidatedRuntime(
+    snapshot: InkSnapshotV1,
+    derivations: SnapshotValidationDerivations,
+  ): DocumentCodecResult<void> {
+    return this.#reset(snapshot, true, derivations);
+  }
+  #reset(
+    snapshot: InkSnapshotV1,
+    runtimeStrokeBuffers: boolean,
+    validatedDerivations?: SnapshotValidationDerivations,
+  ): DocumentCodecResult<void> {
+    let validatedSnapshot = snapshot;
+    let derivations = validatedDerivations;
+    if (derivations === undefined) {
+      const validation = runtimeStrokeBuffers
+        ? validateRuntimeInkSnapshotV1(snapshot)
+        : validateInkSnapshotV1(snapshot);
+      this.#fullValidationRuns += 1;
+      if (!validation.ok) return invalidSnapshot(validation.error);
+      validatedSnapshot = validation.value;
+      derivations = validation.derivations;
+    }
+    if (derivations.elements.length !== validatedSnapshot.elements.length) {
+      return codecFailure("invalid-delta", "Validated element derivations are incomplete.");
+    }
+    const canonical = canonicalSnapshot(validatedSnapshot, runtimeStrokeBuffers);
+    const nextFacts = new Map<string, incrementalValidation.ElementFacts>();
+    try {
+      for (let index = 0; index < canonical.elements.length; index += 1) {
+        const element = canonical.elements[index]!;
+        nextFacts.set(
+          element.id,
+          incrementalValidation.elementFacts(element, derivations.elements[index]),
+        );
+      }
+    } catch {
+      return codecFailure("invalid-delta", "Validated element derivation is inconsistent.");
+    }
     this.#runtimeStrokeBuffers = runtimeStrokeBuffers;
     const activeIds = new Set(canonical.elements.map(({ id }) => id));
     for (const id of this.#cache.ids()) {
@@ -111,10 +142,12 @@ export class IncrementalDocumentSerializer {
     this.#orders.highlight = [];
     this.#page = canonical.page;
     this.#revision = canonical.revision;
-    for (const element of canonical.elements) {
+    for (let index = 0; index < canonical.elements.length; index += 1) {
+      const element = canonical.elements[index]!;
       this.#cache.adopt(element);
       this.#elements.set(element.id, element);
-      this.#facts.set(element.id, incrementalValidation.elementFacts(element));
+      this.#facts.set(element.id, nextFacts.get(element.id)!);
+      this.#derivedBoundsReuses += 1;
       this.#orders[elementRenderBand(element)].push(element.id);
     }
     this.#aggregateFacts = incrementalValidation.aggregateElementFacts(this.#facts.values());
@@ -127,9 +160,22 @@ export class IncrementalDocumentSerializer {
         "Delta base revision does not match the model.",
       );
     }
-    const prepared = this.#prepareDelta(delta);
+    const prepared = prepareDocumentDelta({
+      currentElements: this.#elements,
+      currentOrders: this.#orders,
+      currentPage: this.#page!,
+      delta,
+    });
     if (!prepared.ok) return prepared;
-    const facts = this.#validateDelta(prepared.value, delta.page !== undefined);
+    const facts = validateDocumentDelta({
+      aggregate: this.#aggregateFacts,
+      currentElements: this.#elements,
+      currentFacts: this.#facts,
+      currentPage: this.#page!,
+      pageChanged: delta.page !== undefined,
+      prepared: prepared.value,
+      runtimeStrokeBuffers: this.#runtimeStrokeBuffers,
+    });
     if (!facts.ok) return facts;
     for (const id of prepared.value.removed) {
       this.#facts.delete(id);
@@ -140,7 +186,10 @@ export class IncrementalDocumentSerializer {
       const element = canonicalElement(changedElement, this.#runtimeStrokeBuffers);
       this.#elements.set(element.id, element);
       this.#facts.set(element.id, facts.value.changed.get(element.id)!);
-      this.#cache.replace(element.id, buildElementFragments(element));
+      this.#cache.replace(
+        element.id,
+        buildElementFragments(element, facts.value.changed.get(element.id)!.bottom),
+      );
       this.#fragmentBuilds += 1;
     }
     this.#orders.highlight = prepared.value.orders.highlight;
@@ -148,6 +197,8 @@ export class IncrementalDocumentSerializer {
     this.#page = canonicalPage(prepared.value.snapshot.page);
     this.#revision = delta.modelRevision;
     this.#aggregateFacts = facts.value.aggregate;
+    this.#derivedBoundsReuses += prepared.value.derivations.size;
+    this.#incrementalValidationRuns += 1;
     return { ok: true, value: undefined };
   }
   public serialize(
@@ -298,113 +349,6 @@ export class IncrementalDocumentSerializer {
     this.#runtimeStrokeBuffers = false;
     this.#aggregateFacts = incrementalValidation.emptyAggregateFacts();
   }
-  #prepareDelta(delta: DocumentSerializationDelta): DocumentCodecResult<PreparedDelta> {
-    if (!Number.isSafeInteger(delta.modelRevision) || delta.modelRevision < 0) {
-      return codecFailure(
-        "invalid-delta",
-        "Delta model revision must be a non-negative safe integer.",
-      );
-    }
-    const removed = new Set(delta.removedIds ?? []);
-    if (removed.size !== (delta.removedIds?.length ?? 0)) {
-      return codecFailure("invalid-delta", "Removed element IDs must be unique.");
-    }
-    const changed = new Map<string, InkElementV1>();
-    for (const element of delta.changedElements ?? []) {
-      if (removed.has(element.id) || changed.has(element.id)) {
-        return codecFailure(
-          "invalid-delta",
-          "Changed and removed element IDs must be disjoint and unique.",
-        );
-      }
-      changed.set(element.id, element);
-    }
-    const orders = this.#prepareOrders(delta.orderChanges ?? {}, changed, removed);
-    if (!orders.ok) return orders;
-    const elements = [...orders.value.highlight, ...orders.value.content].map(
-      (id) => changed.get(id) ?? this.#elements.get(id)!,
-    );
-    const page = delta.page === undefined ? this.#page! : delta.page;
-    return {
-      ok: true,
-      value: {
-        changed,
-        orders: orders.value,
-        removed,
-        snapshot: { elements, format: "inkbook", page, revision: delta.modelRevision, version: 1 },
-      },
-    };
-  }
-  #validateDelta(
-    prepared: PreparedDelta,
-    pageChanged: boolean,
-  ): DocumentCodecResult<incrementalValidation.ValidatedDeltaFacts> {
-    const changedFacts = new Map<string, incrementalValidation.ElementFacts>();
-    for (const element of prepared.changed.values()) {
-      const validation = this.#runtimeStrokeBuffers
-        ? validateRuntimeInkElementV1(element)
-        : validateInkElementV1(element);
-      if (!validation.ok) return invalidSnapshot(validation.error);
-      changedFacts.set(element.id, incrementalValidation.elementFacts(element));
-    }
-    const aggregate = incrementalValidation.updateAggregateFacts(
-      this.#aggregateFacts,
-      this.#facts,
-      changedFacts,
-      prepared.removed,
-    );
-    const needsFullValidation =
-      pageChanged ||
-      connectionRelationsAffected(this.#elements.values(), prepared.changed, prepared.removed);
-    if (needsFullValidation) {
-      const validation = this.#runtimeStrokeBuffers
-        ? validateRuntimeInkSnapshotV1(prepared.snapshot)
-        : validateInkSnapshotV1(prepared.snapshot);
-      this.#fullValidationRuns += 1;
-      if (!validation.ok) return invalidSnapshot(validation.error);
-      return { ok: true, value: { aggregate, changed: changedFacts } };
-    }
-    this.#incrementalValidationRuns += 1;
-    const aggregateError = incrementalValidation.validateAggregateFacts(aggregate, this.#page!);
-    return aggregateError === null
-      ? { ok: true, value: { aggregate, changed: changedFacts } }
-      : invalidSnapshot(aggregateError);
-  }
-  #prepareOrders(
-    changes: Readonly<Partial<Record<RenderBand, readonly string[]>>>,
-    changed: ReadonlyMap<string, InkElementV1>,
-    removed: ReadonlySet<string>,
-  ): DocumentCodecResult<Record<RenderBand, string[]>> {
-    const available = new Map(this.#elements);
-    for (const id of removed) available.delete(id);
-    for (const [id, element] of changed) available.set(id, element);
-    const orders = { content: [] as string[], highlight: [] as string[] };
-    for (const band of ["highlight", "content"] as const) {
-      orders[band] =
-        changes[band] === undefined
-          ? this.#orders[band].filter((id) => available.has(id))
-          : [...changes[band]];
-    }
-    const ordered = [...orders.highlight, ...orders.content];
-    if (ordered.length !== available.size || new Set(ordered).size !== ordered.length) {
-      return codecFailure(
-        "invalid-order",
-        "Band order must contain every current element ID exactly once.",
-      );
-    }
-    for (const band of ["highlight", "content"] as const) {
-      for (const id of orders[band]) {
-        const element = available.get(id);
-        if (element === undefined || elementRenderBand(element) !== band) {
-          return codecFailure(
-            "invalid-order",
-            "Band order contains an unknown or misclassified element ID.",
-          );
-        }
-      }
-    }
-    return { ok: true, value: orders };
-  }
   #assembleElements(
     outputBudget: EncodedByteBudget,
     metadataBudget: EncodedByteBudget,
@@ -468,7 +412,7 @@ export class IncrementalDocumentSerializer {
       this.#cache.touch(element.id);
       return cached;
     }
-    const fragments = buildElementFragments(element);
+    const fragments = buildElementFragments(element, this.#facts.get(element.id)?.bottom);
     this.#fragmentBuilds += 1;
     this.#cache.retainIfSpace(element.id, fragments);
     return fragments;

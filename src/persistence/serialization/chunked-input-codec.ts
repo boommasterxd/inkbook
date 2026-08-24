@@ -1,5 +1,8 @@
-import { calculateElementBounds } from "../../domain/geometry/public";
-import type { InkSnapshotV1, ValidationError } from "../../domain/schema/public";
+import type {
+  InkSnapshotV1,
+  SnapshotValidationDerivations,
+  ValidationError,
+} from "../../domain/schema/public";
 import { FILE_SCHEMA_LIMITS, MAX_JSON_DEPTH } from "../../domain/schema/public";
 import { jsonContainerBudget, jsonNodeBudget } from "../../domain/schema/validation-internals";
 import {
@@ -46,7 +49,10 @@ export interface ChunkedInkbookInputOptions {
   readonly checkpoint?: ChunkedInputCheckpoint;
   readonly hasher?: DocumentHashPort;
   readonly inputSliceBytes?: number;
-  readonly onValidatedSnapshot?: (snapshot: InkSnapshotV1) => Promise<void> | void;
+  readonly onValidatedSnapshot?: (
+    snapshot: InkSnapshotV1,
+    derivations: SnapshotValidationDerivations,
+  ) => Promise<void> | void;
   readonly pathBatchSize?: number;
   readonly signal?: AbortSignal;
 }
@@ -67,7 +73,12 @@ export class ChunkedInkbookInputParser {
   readonly #hasher: DocumentHashPort | null;
   readonly #incrementalHash: ChunkedSha256;
   readonly #inputSliceBytes: number;
-  readonly #onValidatedSnapshot: ((snapshot: InkSnapshotV1) => Promise<void> | void) | undefined;
+  readonly #onValidatedSnapshot:
+    | ((
+        snapshot: InkSnapshotV1,
+        derivations: SnapshotValidationDerivations,
+      ) => Promise<void> | void)
+    | undefined;
   readonly #signal: AbortSignal | undefined;
   readonly #byteChunks: Uint8Array[] = [];
   readonly #metadata = new StreamingSvgMetadataParser(FILE_SCHEMA_LIMITS.metadataBytes);
@@ -154,6 +165,7 @@ export class ChunkedInkbookInputParser {
       return {
         ok: true,
         value: {
+          derivations: this.#migrated.derivations,
           hash: this.#completeHash(),
           lockedHeight: this.#prelude.lockedHeight,
           requiresCanonicalRewrite: this.#prelude.requiresCanonicalRewrite,
@@ -357,7 +369,7 @@ export class ChunkedInkbookInputParser {
     if (snapshot.revision !== prelude.revision) {
       return failure("revision-mismatch", "Root and snapshot revisions do not match.");
     }
-    const maximumBottom = await maximumElementBottom(snapshot, () => this.#runCheckpoint());
+    const maximumBottom = migrated.derivations.maximumBottom;
     if (!isSupportedLockedHeight(snapshot.page, maximumBottom, prelude.lockedHeight)) {
       return failure(
         "locked-height-mismatch",
@@ -376,7 +388,7 @@ export class ChunkedInkbookInputParser {
     this.#migrated = migrated;
     this.#staticMatcher = new StreamingStaticIntegrityMatcher(snapshot, prelude.lockedHeight);
     this.#streamPhase = "static";
-    await this.#onValidatedSnapshot?.(snapshot);
+    await this.#onValidatedSnapshot?.(snapshot, migrated.derivations);
     this.#throwIfCancelled();
     return { ok: true, value: undefined };
   }
@@ -454,21 +466,6 @@ async function runSteps<T>(
     step = iterator.next();
   }
   return step.value;
-}
-
-async function maximumElementBottom(
-  snapshot: InkSnapshotV1,
-  checkpoint: () => Promise<void> | null,
-): Promise<number | null> {
-  let maximum: number | null = null;
-  for (let index = 0; index < snapshot.elements.length; index += 1) {
-    maximum = Math.max(maximum ?? 0, calculateElementBounds(snapshot.elements[index]!).maxY);
-    if ((index + 1) % 128 === 0) {
-      const pending = checkpoint();
-      if (pending !== null) await pending;
-    }
-  }
-  return maximum;
 }
 
 function isHighSurrogate(value: number): boolean {

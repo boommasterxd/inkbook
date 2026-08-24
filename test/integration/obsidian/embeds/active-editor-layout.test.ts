@@ -8,25 +8,19 @@ import {
 } from "../../../../src/obsidian/embeds/active-editor/layout";
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene/index";
 import { domRect } from "../../../fixtures/obsidian/active-editor";
-
+import { FakeClassList } from "../../../fixtures/obsidian/class-list";
 class ScheduledWork {
   readonly frames = new Map<number, FrameRequestCallback>();
-  readonly timers = new Map<number, () => void>();
   readonly motionQuery = new MotionQuery();
   #next = 1;
+  #time = 0;
 
   readonly window = {
     cancelAnimationFrame: (id: number): void => void this.frames.delete(id),
-    clearTimeout: (id: number): void => void this.timers.delete(id),
     matchMedia: () => this.motionQuery,
     requestAnimationFrame: (callback: FrameRequestCallback): number => {
       const id = this.#next++;
       this.frames.set(id, callback);
-      return id;
-    },
-    setTimeout: (callback: () => void): number => {
-      const id = this.#next++;
-      this.timers.set(id, callback);
       return id;
     },
   };
@@ -35,21 +29,14 @@ class ScheduledWork {
     const entry = this.frames.entries().next().value;
     if (entry === undefined) throw new Error("No animation frame is pending.");
     this.frames.delete(entry[0]);
-    entry[1](0);
+    this.#time += 16;
+    entry[1](this.#time);
   }
 
   flushFrames(): void {
     while (this.frames.size > 0) this.flushFrame();
   }
-
-  flushTimer(): void {
-    const entry = this.timers.entries().next().value;
-    if (entry === undefined) throw new Error("No timer is pending.");
-    this.timers.delete(entry[0]);
-    entry[1]();
-  }
 }
-
 class MotionQuery {
   matches = false;
   readonly #listeners = new Set<(event: MediaQueryListEvent) => void>();
@@ -84,28 +71,11 @@ function harness(motion: "full" | "reduced" | "system" = "full", horizontalInset
   let chromeMutation: MutationCallback | undefined;
   const rect = { height: 0, width: 1_000 };
   const styleProperties = new Map<string, string>();
-  const style = {
-    get blockSize() {
-      return `${String(rect.height)}px`;
-    },
-    set blockSize(value: string) {
-      rect.height = Number.parseFloat(value);
-    },
-    removeProperty: (name: string) => void styleProperties.delete(name),
-    setProperty: (name: string, value: string) => void styleProperties.set(name, value),
-  } as unknown as CSSStyleDeclaration;
+  const style = layoutStyle(rect, styleProperties);
   const ownerDocument = { defaultView: work.window };
+  const classList = new FakeClassList();
   Object.assign(work.window, {
-    getComputedStyle: () => ({
-      borderBottomWidth: "0px",
-      borderLeftWidth: horizontalInset > 0 ? "2px" : "0px",
-      borderRightWidth: horizontalInset > 0 ? "2px" : "0px",
-      borderTopWidth: "0px",
-      paddingBottom: "0px",
-      paddingLeft: horizontalInset > 0 ? `${String(horizontalInset / 2 - 2)}px` : "0px",
-      paddingRight: horizontalInset > 0 ? `${String(horizontalInset / 2 - 2)}px` : "0px",
-      paddingTop: "0px",
-    }),
+    getComputedStyle: () => computedStyle(horizontalInset),
     MutationObserver: class {
       public constructor(callback: MutationCallback) {
         chromeMutation = callback;
@@ -117,16 +87,28 @@ function harness(motion: "full" | "reduced" | "system" = "full", horizontalInset
     },
   });
   const container = {
+    classList,
     getBoundingClientRect: () =>
       domRect({ height: rect.height, left: 0, top: 0, width: rect.width }),
     ownerDocument,
     style,
   } as unknown as HTMLElement;
   const invalidateLayout = vi.fn();
+  let scenePending = false;
+  let pageChangesBecomePending = false;
+  let rendererPageHeight: number | undefined;
+  const setPage = vi.fn((_page: PageV1, height?: number) => {
+    if (height === undefined || height === rendererPageHeight) return;
+    rendererPageHeight = height;
+    if (pageChangesBecomePending) scenePending = true;
+  });
   const renderer = {
+    get hasPendingSceneCommit() {
+      return scenePending;
+    },
     invalidateLayout,
     setCamera: vi.fn(),
-    setPage: vi.fn(),
+    setPage,
   } as unknown as SvgSceneRenderer;
   const onLayout = vi.fn();
   const onResize = vi.fn<(update: ActiveEditorResizeUpdate) => void>();
@@ -160,21 +142,57 @@ function harness(motion: "full" | "reduced" | "system" = "full", horizontalInset
   });
   return {
     layout,
+    classList,
     invalidateLayout,
     onLayout,
     onResize,
     onZoom,
     rect,
-    renderer,
     setMaximumBottom: (value: number | undefined) => {
       maximumBottom = value;
     },
+    setPage,
     setPageAvailable: (available: boolean) => {
       pageAvailable = available;
+    },
+    setPageChangesBecomePending: (enabled: boolean) => {
+      pageChangesBecomePending = enabled;
+    },
+    setScenePending: (pending: boolean) => {
+      scenePending = pending;
     },
     styleProperties,
     triggerChromeMutation: () => chromeMutation?.([], {} as MutationObserver),
     work,
+  };
+}
+
+function layoutStyle(
+  rect: { height: number },
+  properties: Map<string, string>,
+): CSSStyleDeclaration {
+  return {
+    get blockSize() {
+      return `${String(rect.height)}px`;
+    },
+    set blockSize(value: string) {
+      rect.height = Number.parseFloat(value);
+    },
+    removeProperty: (name: string) => void properties.delete(name),
+    setProperty: (name: string, value: string) => void properties.set(name, value),
+  } as unknown as CSSStyleDeclaration;
+}
+
+function computedStyle(horizontalInset: number): Partial<CSSStyleDeclaration> {
+  return {
+    borderBottomWidth: "0px",
+    borderLeftWidth: horizontalInset > 0 ? "2px" : "0px",
+    borderRightWidth: horizontalInset > 0 ? "2px" : "0px",
+    borderTopWidth: "0px",
+    paddingBottom: "0px",
+    paddingLeft: horizontalInset > 0 ? `${String(horizontalInset / 2 - 2)}px` : "0px",
+    paddingRight: horizontalInset > 0 ? `${String(horizontalInset / 2 - 2)}px` : "0px",
+    paddingTop: "0px",
   };
 }
 
@@ -189,15 +207,17 @@ describe("active editor layout integration", () => {
     test.layout.dispose();
   });
 
-  it("accepts a positive width only after two equal frames and remeasures chrome changes", () => {
+  it("stabilizes the first width and then applies each positive resize frame", () => {
     const test = harness();
     test.layout.chromeMounted();
-    test.work.flushFrame();
+    test.work.flushFrames();
+    test.onZoom.mockClear();
     test.rect.width = 1_100;
+    test.layout.contentChanged();
     test.work.flushFrame();
-    expect(test.onZoom).not.toHaveBeenCalled();
-    test.work.flushFrame();
-    expect(test.onZoom).toHaveBeenCalledWith(1_100 / PAGE_WIDTH);
+    expect(test.onResize).toHaveBeenCalledWith(
+      expect.objectContaining({ fitZoom: 1_100 / PAGE_WIDTH }),
+    );
     test.work.flushFrames();
 
     const previousMeasurements = test.onLayout.mock.calls.length;
@@ -267,17 +287,17 @@ describe("active editor layout sizing", () => {
     test.layout.beginSelectionEdgeDrag();
 
     test.layout.updateSelectionEdgeDrag({ x: 500, y: originalHeight - 24.01 });
-    expect(test.work.timers.size).toBe(0);
+    expect(test.work.frames.size).toBe(0);
     test.layout.updateSelectionEdgeDrag({ x: 500, y: originalHeight - 24 });
-    expect(test.work.timers.size).toBe(1);
-    expect(test.rect.height).toBeGreaterThan(originalHeight);
-    expect(test.styleProperties.get("transition")).toContain("180ms");
+    expect(test.work.frames.size).toBe(1);
+    expect(test.rect.height).toBeCloseTo(originalHeight);
+    expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(true);
+    expect(test.styleProperties.get("--inkbook-page-height-envelope-block-size")).toBeDefined();
 
     test.layout.finishSelectionEdgeDrag("cancel");
-    test.work.flushTimer();
-    expect(test.work.timers.size).toBe(1);
-    test.work.flushTimer();
+    test.work.flushFrames();
     expect(test.rect.height).toBeCloseTo(originalHeight);
+    expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(false);
     test.layout.dispose();
   });
 
@@ -291,19 +311,83 @@ describe("active editor layout sizing", () => {
 
     test.layout.updateSelectionEdgeDrag({ x: 500, y: originalHeight - 10 });
     expect(test.rect.height).toBeCloseTo(originalHeight + bufferHeight);
-    expect(test.work.timers.size).toBe(0);
     test.layout.dispose();
   });
 });
 
 describe("active editor layout motion", () => {
+  it("reveals a committed larger scene and clips a shrinking scene before resizing it", () => {
+    const test = harness("full");
+    test.layout.chromeMounted();
+    test.work.flushFrames();
+    const sizes = pageTransitionSizes(test.rect.height);
+
+    exerciseGrowth(test, sizes);
+    exerciseShrink(test, sizes);
+    expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(false);
+    expect(test.styleProperties.has("--inkbook-page-height-envelope-block-size")).toBe(false);
+    test.layout.dispose();
+  });
+});
+
+describe("active editor pending-scene layout motion", () => {
+  it("does not reveal an uncommitted growth scene when input interrupts layout", () => {
+    const test = harness("full");
+    test.layout.chromeMounted();
+    test.work.flushFrames();
+    const initialHeight = test.rect.height;
+    const initialPageHeight = derivePageExtent(page(), null).activeHeight;
+    test.setScenePending(true);
+    test.setMaximumBottom(500);
+    test.layout.contentChanged();
+    test.work.flushFrame();
+
+    test.layout.interruptForInput();
+
+    expect(test.rect.height).toBeCloseTo(initialHeight);
+    expect(test.setPage).toHaveBeenLastCalledWith(page(), initialPageHeight);
+    expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(false);
+    expect(test.work.frames.size).toBe(1);
+
+    test.work.flushFrame();
+    expect(test.rect.height).toBeCloseTo(initialHeight);
+    expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(true);
+    test.setScenePending(false);
+    test.layout.sceneCommitted();
+    test.work.flushFrames();
+    expect(test.rect.height).toBeGreaterThan(initialHeight);
+    test.layout.dispose();
+  });
+
+  it("waits for a pending scene before completing a reduced-motion height change", () => {
+    const test = harness("full");
+    test.layout.chromeMounted();
+    test.work.flushFrames();
+    const initialHeight = test.rect.height;
+    const target = derivePageExtent(page(), 500).activeHeight * (1_000 / PAGE_WIDTH);
+    test.setScenePending(true);
+    test.setMaximumBottom(500);
+    test.layout.contentChanged();
+    test.work.flushFrame();
+
+    test.layout.updateMotion("reduced");
+    expect(test.rect.height).toBeCloseTo(initialHeight);
+    expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(true);
+    test.setScenePending(false);
+    test.layout.sceneCommitted();
+    expect(test.rect.height).toBeCloseTo(target);
+    expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(false);
+    test.layout.dispose();
+  });
+});
+
+describe("active editor layout motion preferences", () => {
   it("resolves system reduced motion live and completes an active height transition", () => {
     const test = runningHeightTransition("system");
 
     test.work.motionQuery.setMatches(true);
 
-    expect(test.work.timers.size).toBe(0);
-    expect(test.styleProperties.has("transition")).toBe(false);
+    expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(false);
     test.layout.dispose();
   });
 
@@ -312,8 +396,7 @@ describe("active editor layout motion", () => {
 
     test.layout.updateMotion("reduced");
 
-    expect(test.work.timers.size).toBe(0);
-    expect(test.styleProperties.has("transition")).toBe(false);
+    expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(false);
     test.layout.dispose();
   });
 
@@ -342,11 +425,68 @@ describe("active editor layout motion", () => {
 
     test.layout.interruptForInput();
 
-    expect(test.work.timers.size).toBe(0);
-    expect(test.styleProperties.has("transition")).toBe(false);
+    expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(false);
     test.layout.dispose();
   });
 });
+
+function pageTransitionSizes(initialHeight: number) {
+  return {
+    grownPageHeight: derivePageExtent(page(), 500).activeHeight,
+    initialHeight,
+    initialPageHeight: derivePageExtent(page(), null).activeHeight,
+    zoom: 1_000 / PAGE_WIDTH,
+  };
+}
+
+function exerciseGrowth(
+  test: ReturnType<typeof harness>,
+  sizes: ReturnType<typeof pageTransitionSizes>,
+): void {
+  test.setScenePending(true);
+  test.setMaximumBottom(500);
+  test.layout.contentChanged();
+  test.work.flushFrame();
+
+  expect(test.setPage).toHaveBeenLastCalledWith(page(), sizes.grownPageHeight);
+  expect(test.rect.height).toBeCloseTo(sizes.initialHeight);
+  expect(test.work.frames.size).toBe(0);
+  expect(test.styleProperties.get("--inkbook-page-height-envelope-block-size")).toBe(
+    `${String(sizes.grownPageHeight * sizes.zoom)}px`,
+  );
+  test.setScenePending(false);
+  test.layout.sceneCommitted();
+  test.work.flushFrame();
+  expect(test.rect.height).toBeCloseTo(sizes.initialHeight);
+  test.work.flushFrame();
+  expect(test.rect.height).toBeGreaterThan(sizes.initialHeight);
+  expect(test.rect.height).toBeLessThan(sizes.grownPageHeight * sizes.zoom);
+  test.work.flushFrames();
+  expect(test.rect.height).toBeCloseTo(sizes.grownPageHeight * sizes.zoom);
+}
+
+function exerciseShrink(
+  test: ReturnType<typeof harness>,
+  sizes: ReturnType<typeof pageTransitionSizes>,
+): void {
+  test.setPageChangesBecomePending(true);
+  test.setMaximumBottom(undefined);
+  test.layout.contentChanged();
+  test.work.flushFrame();
+  expect(test.setPage).toHaveBeenLastCalledWith(page(), sizes.grownPageHeight);
+  expect(test.rect.height).toBeCloseTo(sizes.grownPageHeight * sizes.zoom);
+  test.work.flushFrame();
+  expect(test.rect.height).toBeCloseTo(sizes.grownPageHeight * sizes.zoom);
+  test.work.flushFrame();
+  expect(test.rect.height).toBeLessThan(sizes.grownPageHeight * sizes.zoom);
+  expect(test.rect.height).toBeGreaterThan(sizes.initialPageHeight * sizes.zoom);
+  test.work.flushFrames();
+  expect(test.setPage).toHaveBeenLastCalledWith(page(), sizes.initialPageHeight);
+  expect(test.rect.height).toBeCloseTo(sizes.initialHeight);
+  expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(true);
+  test.setScenePending(false);
+  test.layout.sceneCommitted();
+}
 
 function runningHeightTransition(motion: "full" | "system") {
   const test = harness(motion);
@@ -354,6 +494,7 @@ function runningHeightTransition(motion: "full" | "system") {
   test.work.flushFrames();
   test.layout.beginSelectionEdgeDrag();
   test.layout.setSelectionBottomEdge(true);
-  expect(test.work.timers.size).toBe(1);
+  expect(test.work.frames.size).toBe(1);
+  expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(true);
   return test;
 }

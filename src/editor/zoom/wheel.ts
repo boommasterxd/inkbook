@@ -8,6 +8,9 @@ import { requireFinite, requirePositive } from "./numeric-validation";
 
 export const DEFAULT_WHEEL_LINE_HEIGHT = 16;
 export const DEFAULT_WHEEL_PAGE_HEIGHT = 800;
+export const TRACKPAD_ZOOM_DELTA_LIMIT = 16;
+export const TRACKPAD_ZOOM_SENSITIVITY = 2.5;
+export const TRACKPAD_ZOOM_PIXELS_PER_STEP = TRACKPAD_ZOOM_DELTA_LIMIT / TRACKPAD_ZOOM_SENSITIVITY;
 export const WHEEL_PIXELS_PER_STEP = 100;
 
 export type WheelDeltaMode = 0 | 1 | 2;
@@ -15,7 +18,7 @@ export type WheelDeltaMode = 0 | 1 | 2;
 export interface WheelNormalization {
   readonly lineHeight?: number;
   readonly pageHeight?: number;
-  /** Adapter override because the specification does not define a pixel threshold per step. */
+  /** Optional calibration override for a specific input adapter or deterministic test. */
   readonly pixelsPerStep?: number;
 }
 
@@ -116,6 +119,16 @@ export function accumulateWheelDelta(
     "pixelsPerStep",
   );
   return accumulateWheelSteps(state, -normalizedDelta / pixelsPerStep);
+}
+
+/** Converts a pixel-based modifier-wheel delta into a continuous trackpad zoom factor. */
+export function continuousWheelZoomFactor(delta: number, options: WheelNormalization = {}): number {
+  const normalizedDelta = normalizeWheelDelta(delta, 0, options);
+  const pixelsPerStep = requirePositive(
+    options.pixelsPerStep ?? TRACKPAD_ZOOM_PIXELS_PER_STEP,
+    "pixelsPerStep",
+  );
+  return requirePositive(ZOOM_STEP_FACTOR ** (-normalizedDelta / pixelsPerStep), "zoomFactor");
 }
 
 export function accumulateWheelSteps(state: WheelZoomState, steps: number): WheelZoomState {

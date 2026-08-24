@@ -15,6 +15,23 @@ describe("toolbar layout", () => {
     ).toBe("wide");
   });
 
+  it("keeps every visible context action beside a wide centered toolbar", () => {
+    expect(
+      resolveToolbarLayout({
+        availableWidth: 620 + 2 * 216 + 32,
+        contentWidth: 620,
+        contextWidth: 216,
+      }),
+    ).toBe("wide");
+    expect(
+      resolveToolbarLayout({
+        availableWidth: 620 + 2 * 216 + 31,
+        contentWidth: 620,
+        contextWidth: 216,
+      }),
+    ).toBe("scrollable");
+  });
+
   it("uses horizontal scrolling without shrinking controls when content overflows", () => {
     expect(
       resolveToolbarLayout({

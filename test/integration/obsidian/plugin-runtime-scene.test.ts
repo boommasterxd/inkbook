@@ -386,8 +386,12 @@ describe("plugin workspace realm integration", () => {
     expect(scenes.records[0]?.dispose).toHaveBeenCalledOnce();
     expect(presentation.preview.hidden).toBe(false);
     const recoveryPanel = presentation.root.getElementsByClassName("inkbook-recovery").item(0);
+    const pendingFeedback = presentation.root
+      .getElementsByClassName("inkbook-operation-feedback")
+      .item(0);
     const recoveryButtons = recoveryPanel?.getElementsByTagName("button");
     expect(recoveryPanel?.attributes.get("aria-label")).toBe("Load failed");
+    expect(pendingFeedback).toBeNull();
     expect(recoveryButtons?.length).toBe(2);
     expect(recoveryButtons?.item(0)?.attributes.get("aria-label")).toBe("Retry load");
     expect(recoveryButtons?.item(0)?.children[0]?.attributes.get("data-icon")).toBe("rotate-ccw");
@@ -453,7 +457,6 @@ describe("plugin workspace activation serialization", () => {
     releaseProcess();
     await draining;
     expect(settled).toBe(true);
-
     harness.plugin.onunload();
   });
 
@@ -462,12 +465,16 @@ describe("plugin workspace activation serialization", () => {
       await createDirtyPresentationWithBlockedSave();
 
     scene.options.onLock();
-    expect(inkbookRoot(presentation.root).dataset.inkbookState).toBe("locking");
+    const root = inkbookRoot(presentation.root);
+    expect(root.dataset.inkbookState).toBe("locking");
+    expect(
+      root.getElementsByClassName("inkbook-operation-feedback").item(0)?.dataset.inkbookOperation,
+    ).toBe("saving");
     presentation.button.dispatch("click");
     await Promise.resolve();
-
     expect(scenes.records).toHaveLength(1);
-    expect(inkbookRoot(presentation.root).dataset.inkbookState).toBe("locking");
+    expect(root.dataset.inkbookState).toBe("locking");
+    expect(root.getElementsByClassName("inkbook-operation-feedback").item(0)).not.toBeNull();
     harness.plugin.onunload();
     releaseProcess();
   });

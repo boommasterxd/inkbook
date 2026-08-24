@@ -1,7 +1,9 @@
 import { assertSafeCounter } from "./identity";
+import type { ElementValidationDerivation } from "../../domain/schema/public";
 import type { DocumentRevision, ElementId, RenderBand } from "./protocol";
 
 export interface ExportDelta<TElement, TPage> {
+  readonly changedElementDerivations?: readonly ElementValidationDerivation[];
   readonly changedElements?: readonly TElement[];
   readonly dirtyBands?: readonly RenderBand[];
   readonly modelRevision: DocumentRevision;
@@ -11,6 +13,7 @@ export interface ExportDelta<TElement, TPage> {
 
 interface IncrementalExportPlan<TElement, TPage> {
   readonly baseModelRevision: DocumentRevision;
+  readonly changedElementDerivations?: readonly ElementValidationDerivation[];
   readonly changedElements: readonly TElement[];
   readonly modelRevision: DocumentRevision;
   readonly orderChanges: Readonly<Partial<Record<RenderBand, readonly ElementId[]>>>;
@@ -38,6 +41,7 @@ export class CoalescedExportTarget<TElement, TPage> {
   readonly #baseModelRevision: DocumentRevision;
   readonly #getElementId: (element: TElement) => ElementId;
   readonly #changedElements = new Map<ElementId, TElement>();
+  readonly #changedElementDerivations = new Map<ElementId, ElementValidationDerivation>();
   readonly #removedIds = new Set<ElementId>();
   readonly #dirtyBands = new Set<RenderBand>();
   #modelRevision: DocumentRevision;
@@ -68,11 +72,15 @@ export class CoalescedExportTarget<TElement, TPage> {
     if (delta.modelRevision < this.#modelRevision) {
       throw new RangeError("A coalesced export target cannot move to an older revision.");
     }
+    const changedElements = delta.changedElements ?? [];
+    const derivations = this.#requiresFullSnapshot
+      ? new Map<ElementId, ElementValidationDerivation>()
+      : this.#prepareDerivations(changedElements, delta.changedElementDerivations ?? []);
     this.#modelRevision = delta.modelRevision;
     if (this.#requiresFullSnapshot) {
       return;
     }
-    this.#recordChanges(delta.changedElements ?? []);
+    this.#recordChanges(changedElements, derivations);
     this.#recordRemovals(delta.removedIds ?? []);
     for (const band of delta.dirtyBands ?? []) {
       this.#dirtyBands.add(band);
@@ -91,6 +99,7 @@ export class CoalescedExportTarget<TElement, TPage> {
     this.#modelRevision = modelRevision;
     this.#requiresFullSnapshot = true;
     this.#changedElements.clear();
+    this.#changedElementDerivations.clear();
     this.#removedIds.clear();
     this.#dirtyBands.clear();
     this.#latestPage = undefined;
@@ -120,6 +129,9 @@ export class CoalescedExportTarget<TElement, TPage> {
       orderChanges,
       removedIds: [...this.#removedIds],
       type: "incremental",
+      ...(this.#changedElementDerivations.size === 0
+        ? {}
+        : { changedElementDerivations: [...this.#changedElementDerivations.values()] }),
       ...(this.#hasPage ? { page: this.#latestPage as TPage } : {}),
     };
     return plan;
@@ -139,17 +151,44 @@ export class CoalescedExportTarget<TElement, TPage> {
     return result;
   }
 
-  #recordChanges(elements: readonly TElement[]): void {
+  #recordChanges(
+    elements: readonly TElement[],
+    derivationsById: ReadonlyMap<ElementId, ElementValidationDerivation>,
+  ): void {
     for (const element of elements) {
       const id = this.#getElementId(element);
       this.#removedIds.delete(id);
       this.#changedElements.set(id, element);
+      const derivation = derivationsById.get(id);
+      if (derivation === undefined) this.#changedElementDerivations.delete(id);
+      else this.#changedElementDerivations.set(id, derivation);
     }
+  }
+
+  #prepareDerivations(
+    elements: readonly TElement[],
+    derivations: readonly ElementValidationDerivation[],
+  ): ReadonlyMap<ElementId, ElementValidationDerivation> {
+    const elementIds = new Set(elements.map((element) => this.#getElementId(element)));
+    const derivationsById = new Map<ElementId, ElementValidationDerivation>();
+    for (const derivation of derivations) {
+      if (derivationsById.has(derivation.elementId)) {
+        throw new Error("Changed element derivations must have unique IDs.");
+      }
+      if (!elementIds.has(derivation.elementId)) {
+        throw new Error(
+          "Changed element derivations must match changed elements in the same delta.",
+        );
+      }
+      derivationsById.set(derivation.elementId, derivation);
+    }
+    return derivationsById;
   }
 
   #recordRemovals(ids: readonly ElementId[]): void {
     for (const id of ids) {
       this.#changedElements.delete(id);
+      this.#changedElementDerivations.delete(id);
       this.#removedIds.add(id);
     }
   }

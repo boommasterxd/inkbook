@@ -50,6 +50,8 @@ describe("Inkbook toolbar", () => {
     expect(markup.match(/role="group"/gu)).toHaveLength(1);
     expect(markup).toContain('aria-label="Tools and actions"');
     expect(markup).toContain('aria-pressed="true"');
+    expect(markup.match(/inkbook-toolbar-active-indicator/gu)).toHaveLength(1);
+    expect(markup).toContain('class="inkbook-toolbar-rail"');
   });
 
   it("keeps unavailable history controls disabled and omits contextual controls", () => {
@@ -68,6 +70,9 @@ describe("Inkbook toolbar", () => {
     expect(markup).toContain('aria-label="Delete"');
     expect(markup).toContain('aria-label="Paste"');
     expect(markup).toContain('class="inkbook-toolbar-group inkbook-toolbar-context-actions"');
+    expect(markup).toMatch(
+      /inkbook-toolbar-rail[\s\S]*inkbook-toolbar-wide[\s\S]*inkbook-toolbar-context-actions/u,
+    );
     expect(markup).toMatch(/aria-expanded="true"[^>]*aria-label="Style"/u);
     expect(markup).toContain('aria-controls="inkbook-style-flyout"');
     expect(markup).toContain('aria-haspopup="dialog"');
@@ -100,7 +105,7 @@ describe("Inkbook toolbar", () => {
     const markup = render();
     expect(markup).not.toContain('data-inkbook-action="background"');
     expect(markup).toContain('data-inkbook-action="undo" tabindex="0"');
-    expect(markup).toContain('data-inkbook-action="select" tabindex="-1"');
+    expect(markup).toMatch(/data-inkbook-action="select"[^>]*tabindex="-1"/u);
     expect(nextToolbarIndex("ArrowRight", 2, 4)).toBe(3);
     expect(nextToolbarIndex("ArrowRight", 3, 4)).toBe(0);
     expect(nextToolbarIndex("ArrowLeft", 0, 4)).toBe(3);

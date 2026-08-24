@@ -16,6 +16,34 @@ export interface AttachedRecoveryActions {
   saveLocalCopy(): Promise<boolean>;
 }
 
+export interface LoadRecoveryActions {
+  discard(): boolean;
+  retry(): void;
+}
+
+export function showLoadRecoveryPanel(
+  root: HTMLElement,
+  actions: LoadRecoveryActions,
+  onClosed: () => void,
+): HTMLElement {
+  const panel = root.createDiv({ cls: "inkbook-recovery" });
+  panel.setAttribute("role", "alert");
+  panel.setAttribute("aria-label", "Load failed");
+  panel.createSpan({ cls: "inkbook-recovery-message", text: "Could not load drawing" });
+  const actionGroup = panel.createDiv({ cls: "inkbook-recovery-actions" });
+  const retry = createRecoveryIconButton(actionGroup, "Retry load", "rotate-ccw");
+  const discard = createRecoveryIconButton(actionGroup, "Discard load attempt", "x");
+  retry.addEventListener("click", () => {
+    panel.remove();
+    onClosed();
+    actions.retry();
+  });
+  discard.addEventListener("click", () =>
+    runAttachedAction(panel, () => actions.discard(), onClosed),
+  );
+  return panel;
+}
+
 export function showAttachedRecoveryPanel(
   root: HTMLElement,
   actions: AttachedRecoveryActions,
@@ -139,7 +167,7 @@ function recoveryButton(container: HTMLElement, text: string, label?: string): H
   return button;
 }
 
-export function createRecoveryIconButton(
+function createRecoveryIconButton(
   container: HTMLElement,
   label: string,
   icon: string,

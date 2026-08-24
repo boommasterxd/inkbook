@@ -129,6 +129,9 @@ export class PresentationController {
       return;
     }
     this.#mounted = true;
+    this.#owningWindow.addEventListener("resize", this.#handleOwningWindowResize, {
+      passive: true,
+    });
     this.#sessions.mount(this.#attachment);
     const owningWindow = this.#attachment.root.ownerDocument.defaultView;
     if (owningWindow === null) return;
@@ -195,11 +198,19 @@ export class PresentationController {
     });
   }
 
+  readonly #handleOwningWindowResize = (): void => {
+    if (!this.#mounted) return;
+    this.#previewLifecycle?.requestHostMeasure?.();
+    this.#scroll.transferAfterLayoutChange();
+    this.#scheduleSettledMeasurement();
+  };
+
   dispose(): void {
     this.#disposeScheme?.();
     this.#disposeScheme = undefined;
     if (this.#mounted) {
       this.#mounted = false;
+      this.#owningWindow.removeEventListener("resize", this.#handleOwningWindowResize);
       this.#activationPending = false;
       this.#measured = false;
       const owningWindow = this.#attachment.root.ownerDocument.defaultView;

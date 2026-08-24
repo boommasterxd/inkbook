@@ -1,4 +1,4 @@
-import type { WheelDeltaMode } from "../../../editor/zoom/index";
+import { TRACKPAD_ZOOM_DELTA_LIMIT, type WheelDeltaMode } from "../../../editor/zoom/index";
 import { browserScrollMetrics, type BrowserScrollElement } from "../../scrolling/index";
 
 import type { ActiveEditorViewState, ActiveEditorWheelInput } from "./navigation";
@@ -31,6 +31,15 @@ export function isZoomWheel(event: ActiveEditorWheelInput): boolean {
     event.metaKey === undefined &&
     event.shiftKey === undefined &&
     event.deltaX === undefined
+  );
+}
+
+export function isContinuousZoomWheel(event: ActiveEditorWheelInput): boolean {
+  return (
+    (event.ctrlKey === true || event.metaKey === true) &&
+    wheelDeltaMode(event.deltaMode) === 0 &&
+    Math.abs(event.deltaY) < TRACKPAD_ZOOM_DELTA_LIMIT &&
+    Math.abs(event.deltaX ?? 0) < TRACKPAD_ZOOM_DELTA_LIMIT
   );
 }
 

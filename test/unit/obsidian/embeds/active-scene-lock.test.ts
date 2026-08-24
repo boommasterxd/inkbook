@@ -4,6 +4,7 @@ import { derivePageExtent, PAGE_WIDTH } from "../../../../src/domain/geometry/pu
 import type { PageV1 } from "../../../../src/domain/schema/public";
 import {
   applyLockedFitLayout,
+  LOCK_PRESENTATION_DURATION_MS,
   restoreActiveLayout,
   type SceneLayoutUpdate,
 } from "../../../../src/obsidian/embeds/active-scene-lock";
@@ -19,6 +20,10 @@ const page: PageV1 = {
 };
 
 describe("active scene lock layout", () => {
+  it("retains the presentation until the whole-toolbar exit completes", () => {
+    expect(LOCK_PRESENTATION_DURATION_MS).toBe(300);
+  });
+
   it("animates content-box fit camera and height on one 240 ms timeline", () => {
     const fixture = createFixture();
     const transition = applyLockedFitLayout(fixture.options(false));

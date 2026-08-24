@@ -12,7 +12,7 @@ The fit zoom is calculated in CSS pixels per page unit as:
 fitZoom = containerWidth / outerPageWidth
 ```
 
-`containerWidth` is the positive content-box width of Inkbook's own background container after the native-scrollbar lease and any owner-client-edge clamp have settled. It is never the full pane or scroll-owner width.
+`containerWidth` is the positive content-box width of Inkbook's own background container after the native-scrollbar lease and any owner-client-edge clamp have settled. It is never the full pane or scroll-owner width. The first visible width requires two equal animation-frame measurements. After that initialization, every changed positive width is accepted in the next coalesced frame so the camera, SVG, container height, and native-scroll anchor track a continuous window resize without a delayed jump.
 
 The outer page width is:
 
@@ -43,7 +43,7 @@ The following controls work in the active handwriting embed:
 
 The keyboard shortcuts only take effect when the pointer is over the active canvas. Otherwise, the normal Obsidian zoom functions remain active.
 
-One mouse-wheel or keyboard step changes the zoom by exactly a factor of 1.08. Wheel input is normalized by `deltaMode` before steps are accumulated.
+One mouse-wheel or keyboard step changes the zoom by exactly a factor of 1.08. A modifier-key pixel event is treated as continuous trackpad input only while both axis magnitudes are below 16 pixels. Its magnitude uses a 2.5 responsiveness multiplier, equivalent to one 1.08 step per 6.4 pixels, so a small trackpad pinch follows the fingers without making mouse-wheel notches jump. Trackpad input is coalesced once per animation frame and never waits for a complete discrete wheel step. Larger pixel events plus line- and page-mode events are discrete mouse-wheel input and apply exactly one signed 1.08 step per event. Touch pinch keeps its direct distance ratio.
 
 ## Anchored Zoom
 
@@ -132,7 +132,7 @@ relativeMagnification = oldZoom / oldFitZoom
 newZoom = clamp(relativeMagnification × newFitZoom, newFitZoom, max(5, newFitZoom × 5))
 ```
 
-The editor then applies the same anchored horizontal and vertical equations using the viewport center. A zero-width or hidden container delays the update until a positive stable width is observed on two consecutive animation frames.
+The editor then applies the same anchored horizontal and vertical equations using the viewport center. A zero-width or hidden container delays initialization until a positive stable width is observed on two consecutive animation frames. It does not reapply that stabilization delay to later positive resize observations.
 
 ## Related Documentation
 

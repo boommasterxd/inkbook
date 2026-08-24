@@ -152,6 +152,23 @@ describe("delta-aware visibility candidates", () => {
 });
 
 describe("scene reconciliation frame priority", () => {
+  it("keeps a page-height update pending until its complete scene frame", () => {
+    const scheduler = new FakeScheduler();
+    const store = new FakeSceneStore();
+    const committed = vi.fn();
+    const renderer = createRenderer(store, scheduler, committed);
+    scheduler.runAll();
+    committed.mockClear();
+
+    renderer.setPage(PAGE, 600);
+
+    expect(renderer.hasPendingSceneCommit).toBe(true);
+    expect(committed).not.toHaveBeenCalled();
+    scheduler.runAll();
+    expect(renderer.hasPendingSceneCommit).toBe(false);
+    expect(committed).toHaveBeenCalledOnce();
+  });
+
   it("defers initial readiness until visibility and background are committed", () => {
     const scheduler = new AdvancingScheduler();
     const store = new FakeSceneStore();
@@ -360,12 +377,17 @@ describe("active-document cache pressure", () => {
   });
 });
 
-function createRenderer(store: FakeSceneStore, scheduler: FakeScheduler): SvgSceneRenderer {
+function createRenderer(
+  store: FakeSceneStore,
+  scheduler: FakeScheduler,
+  onSceneCommitted?: () => void,
+): SvgSceneRenderer {
   const document = new FakeDocument();
   return new SvgSceneRenderer({
     container: asElement(new FakeNode(document, "div")),
     frameBudgetMs: 8,
     layout: { readViewport: () => ({ height: 100, left: 0, top: 0, width: 100 }) },
+    ...(onSceneCommitted === undefined ? {} : { onSceneCommitted }),
     page: PAGE,
     scheduler,
     store,

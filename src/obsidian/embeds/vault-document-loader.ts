@@ -191,7 +191,10 @@ export async function loadVaultDocument(
         unlockBatch: async (batch, signal) => {
           signal.throwIfAborted();
           acceptBatch(batch, options.operation, options.workerEpoch, nextBatchIndex);
-          if ((await builder.appendOwnedRuntime(batch.elements)) === "cancelled") {
+          if (
+            (await builder.appendOwnedValidatedRuntime(batch.elements, batch.derivations)) ===
+            "cancelled"
+          ) {
             throw new Error("The incremental store adoption was cancelled.");
           }
           nextBatchIndex += 1;

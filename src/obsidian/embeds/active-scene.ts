@@ -31,7 +31,7 @@ import { bindActiveSceneScrollOwner, type ActiveSceneScrollBinding } from "./act
 import {
   applyLockedFitLayout,
   lockedPageAspectRatio,
-  LOCK_LAYOUT_DURATION_MS,
+  LOCK_PRESENTATION_DURATION_MS,
   restoreActiveLayout,
   type LockedFitTransition,
 } from "./active-scene-lock";
@@ -201,8 +201,8 @@ export class ActiveInkbookScene {
 
   public disableInput(): void {
     this.#controller.setEnabled(false);
-    this.#beginLockTransition();
     this.#layout.suspend();
+    this.#beginLockTransition();
   }
 
   public enableInput(): void {
@@ -357,7 +357,7 @@ export class ActiveInkbookScene {
     if (ownerWindow === null) return;
     const elapsed = ownerWindow.performance.now() - (this.#lockStartedAt ?? 0);
     const reduced = this.#previewHandoff.reducedMotion;
-    const remaining = reduced ? 0 : Math.max(0, LOCK_LAYOUT_DURATION_MS - elapsed);
+    const remaining = reduced ? 0 : Math.max(0, LOCK_PRESENTATION_DURATION_MS - elapsed);
     if (remaining > 0) {
       await this.#lockDelay.wait(remaining);
     }
@@ -365,7 +365,7 @@ export class ActiveInkbookScene {
     await this.#previewReady;
     if (this.#disposed || generation !== this.#lockGeneration) return;
     await new Promise<void>((resolve) => {
-      this.#previewHandoff.crossfadeToPreview(this.#editorChrome, resolve, () => {
+      this.#previewHandoff.handoffToPreview(this.#editorChrome, resolve, () => {
         const transition = this.#lockLayoutTransition;
         this.#lockLayoutTransition = undefined;
         transition?.finish();
@@ -418,6 +418,7 @@ export class ActiveInkbookScene {
 
   #sceneCommitted(): void {
     this.#memory.evaluate();
+    this.#layout.sceneCommitted();
     this.#flushPendingChromeUpdate();
     if (this.#initialSceneReadiness.markSceneCommitted()) this.#completePreviewHandoff();
   }

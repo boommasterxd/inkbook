@@ -12,21 +12,25 @@ import type { ActiveEditorZoomLayoutUpdate } from "./navigation";
 import { calculateActiveEditorResize, type ActiveEditorResizeAnchor } from "./layout-resize";
 import {
   ActivePageLayout,
-  AUTOMATIC_PAGE_HEIGHT_TRANSITION_MS,
   SELECTION_BOTTOM_EDGE_ZONE_PX,
   type PageHeightUpdate,
 } from "./page-layout";
 import { measureToolbarLayout } from "./toolbar-measurement";
 import { ActiveEditorMotion, type ActiveEditorMotionPreference } from "./layout-motion";
 import { measureElementBox } from "./element-content-box";
+import { ActiveHeightTransition } from "./height-transition";
 
 export type { ActiveEditorResizeAnchor, ActiveEditorResizeUpdate } from "./layout-resize";
 export type { ActiveEditorLayoutOptions } from "./layout-contracts";
 
 interface HeightFrameRead {
-  readonly anchor: ActiveEditorResizeAnchor;
-  readonly fitZoom: number;
   readonly renderedHeight: number;
+  readonly resize:
+    | {
+        readonly anchor: ActiveEditorResizeAnchor;
+        readonly fitZoom: number;
+      }
+    | undefined;
 }
 
 export class ActiveEditorLayout {
@@ -37,16 +41,17 @@ export class ActiveEditorLayout {
   readonly #ownerWindow: Window;
   readonly #motion: ActiveEditorMotion;
   readonly #pageLayout = new ActivePageLayout();
+  readonly #heightTransition: ActiveHeightTransition;
   #chromeMounted = false;
   #fitZoom: number | undefined;
   #forcePageHeight = false;
   #frame: number | undefined;
-  #heightTimer: number | undefined;
   #layoutStage: ToolbarLayoutStage | undefined;
   #ready = false;
   #readyFrame: number | undefined;
   #stableWidth: StableWidthState = createStableWidthState();
   #suspended = false;
+  #toolbar: HTMLElement | undefined;
   #zoom: number | undefined;
 
   public constructor(options: ActiveEditorLayoutOptions) {
@@ -55,6 +60,7 @@ export class ActiveEditorLayout {
     const ownerWindow = options.root.ownerDocument.defaultView;
     if (ownerWindow === null) throw new Error("The active editor requires an owning window.");
     this.#ownerWindow = ownerWindow;
+    this.#heightTransition = new ActiveHeightTransition(this.#container, ownerWindow);
     this.#motion = new ActiveEditorMotion(
       ownerWindow,
       motionPreference(options.root.dataset?.inkbookMotion),
@@ -68,7 +74,7 @@ export class ActiveEditorLayout {
     this.#chromeObserver =
       ChromeObserver === undefined
         ? undefined
-        : new ChromeObserver(() => this.scheduleMeasurement());
+        : new ChromeObserver(() => this.#handleChromeMutation());
     this.#chromeObserver?.observe(options.chromeHost, {
       attributeFilter: ["data-presence"],
       attributes: true,
@@ -78,10 +84,13 @@ export class ActiveEditorLayout {
   }
 
   public applyZoom(update: ActiveEditorZoomLayoutUpdate): void {
-    this.#completeHeightTransitionImmediately();
+    const retainedPageHeight = this.#cancelHeightTransitionAtCurrent();
     this.#zoom = update.zoom;
-    this.#container.style.blockSize = `${String(update.blockSize)}px`;
+    const blockSize =
+      retainedPageHeight === undefined ? update.blockSize : retainedPageHeight * update.zoom;
+    this.#container.style.blockSize = `${String(blockSize)}px`;
     this.#options.renderer.invalidateLayout();
+    if (retainedPageHeight !== undefined) this.scheduleMeasurement();
   }
 
   public beginSelectionEdgeDrag(): void {
@@ -95,6 +104,7 @@ export class ActiveEditorLayout {
   public chromeMounted(): void {
     if (this.#chromeMounted) return;
     this.#chromeMounted = true;
+    this.#observeToolbar();
     this.scheduleMeasurement();
   }
 
@@ -108,7 +118,7 @@ export class ActiveEditorLayout {
     this.#motion.dispose();
     if (this.#frame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#frame);
     if (this.#readyFrame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#readyFrame);
-    this.#clearHeightTimer();
+    this.#heightTransition.cancel();
     this.#frame = undefined;
     this.#readyFrame = undefined;
   }
@@ -123,7 +133,7 @@ export class ActiveEditorLayout {
   }
 
   public interruptForInput(): void {
-    this.#completeHeightTransitionImmediately();
+    if (this.#cancelHeightTransitionAtCurrent() !== undefined) this.scheduleMeasurement();
   }
 
   public pageChanged(): void {
@@ -139,6 +149,7 @@ export class ActiveEditorLayout {
 
   public suspend(): void {
     if (this.#suspended) return;
+    this.#cancelHeightTransitionAtCurrent();
     this.#suspended = true;
     if (this.#frame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#frame);
     if (this.#readyFrame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#readyFrame);
@@ -163,6 +174,10 @@ export class ActiveEditorLayout {
     this.setSelectionBottomEdge(active);
   }
 
+  public sceneCommitted(): void {
+    this.#heightTransition.sceneCommitted();
+  }
+
   private scheduleMeasurement(): void {
     if (this.#suspended || !this.#chromeMounted || this.#frame !== undefined) return;
     this.#frame = this.#ownerWindow.requestAnimationFrame(() => {
@@ -170,6 +185,19 @@ export class ActiveEditorLayout {
       if (this.#suspended) return;
       this.measure();
     });
+  }
+
+  #handleChromeMutation(): void {
+    this.#observeToolbar();
+    this.scheduleMeasurement();
+  }
+
+  #observeToolbar(): void {
+    const toolbar = this.#options.chromeHost.querySelector<HTMLElement>(".inkbook-toolbar");
+    if (toolbar === null || toolbar === this.#toolbar) return;
+    if (this.#toolbar !== undefined) this.#observer?.unobserve(this.#toolbar);
+    this.#toolbar = toolbar;
+    this.#observer?.observe(toolbar);
   }
 
   private measure(): void {
@@ -257,27 +285,37 @@ export class ActiveEditorLayout {
     if (update === undefined) return;
     const zoom = this.#zoom;
     const frameRead = zoom === undefined ? undefined : this.#readHeightFrame();
-    this.#options.renderer.setPage(this.#options.page(), update.height);
-    if (zoom === undefined) return;
-    if (!update.animate || this.#motion.reduced) {
-      this.#clearHeightTimer();
-      this.#setTransition("none");
+    const page = this.#options.page();
+    if (zoom === undefined) {
+      this.#options.renderer.setPage(page, update.height);
+      return;
+    }
+    if (!update.animate) {
+      this.#heightTransition.cancel();
+      this.#options.renderer.setPage(page, update.height);
       this.#writeHeightFrame(update.height, zoom, frameRead);
       this.#completeHeightTransition(false);
       return;
     }
-    this.#setTransition("block-size 180ms cubic-bezier(0.2, 0, 0, 1)");
-    this.#writeHeightFrame(update.height, zoom, frameRead);
-    this.#heightTimer = this.#setTimeout(
-      () => this.#completeHeightTransition(),
-      AUTOMATIC_PAGE_HEIGHT_TRANSITION_MS,
-    );
-    if (this.#heightTimer === undefined) this.#completeHeightTransition(false);
+    const currentRenderedHeight = frameRead?.renderedHeight ?? update.height * zoom;
+    const currentPageHeight = currentRenderedHeight / zoom;
+    const targetRenderedHeight = update.height * zoom;
+    const preparationHeight =
+      targetRenderedHeight >= currentRenderedHeight ? update.height : currentPageHeight;
+    this.#options.renderer.setPage(page, preparationHeight);
+    this.#heightTransition.begin({
+      applyFrame: (renderedHeight) =>
+        this.#writeHeightFrame(renderedHeight / zoom, zoom, frameRead),
+      applySurfaceTarget: () => this.#options.renderer.setPage(this.#options.page(), update.height),
+      currentRenderedHeight,
+      onComplete: () => this.#completeHeightTransition(!this.#motion.reduced),
+      sceneCommitPending: () => this.#options.renderer.hasPendingSceneCommit,
+      targetRenderedHeight,
+    });
+    if (this.#motion.reduced) this.#heightTransition.finishImmediately();
   }
 
   #completeHeightTransition(continueSelectionExtension = true): void {
-    this.#clearHeightTimer();
-    this.#setTransition("");
     const next = this.#pageLayout.transitionCompleted(
       this.#options.page(),
       continueSelectionExtension,
@@ -286,9 +324,17 @@ export class ActiveEditorLayout {
   }
 
   #completeHeightTransitionImmediately(): void {
-    if (this.#heightTimer === undefined) return;
-    this.#clearHeightTimer();
-    this.#applyHeightUpdate(this.#pageLayout.completeTransitions());
+    this.#heightTransition.finishImmediately();
+  }
+
+  #cancelHeightTransitionAtCurrent(): number | undefined {
+    const renderedHeight = this.#heightTransition.cancelAtCurrent();
+    const zoom = this.#zoom;
+    if (renderedHeight === undefined || zoom === undefined || zoom <= 0) return undefined;
+    const pageHeight = renderedHeight / zoom;
+    this.#pageLayout.cancelTransitions(pageHeight);
+    this.#options.renderer.setPage(this.#options.page(), pageHeight);
+    return pageHeight;
   }
 
   #writeBlockSize(pageHeight: number | undefined, zoom: number): void {
@@ -299,15 +345,16 @@ export class ActiveEditorLayout {
   }
 
   #readHeightFrame(): HeightFrameRead | undefined {
+    const renderedHeight = Math.max(0, this.#container.getBoundingClientRect().height);
+    if (!Number.isFinite(renderedHeight)) return undefined;
     const fitZoom = this.#fitZoom;
     const anchor = this.#options.readResizeAnchor?.();
     if (fitZoom === undefined || anchor === undefined || this.#options.onResize === undefined) {
-      return undefined;
+      return { renderedHeight, resize: undefined };
     }
     return {
-      anchor,
-      fitZoom,
-      renderedHeight: Math.max(0, this.#container.getBoundingClientRect().height),
+      renderedHeight,
+      resize: { anchor, fitZoom },
     };
   }
 
@@ -315,17 +362,18 @@ export class ActiveEditorLayout {
     const renderedHeight = pageHeight * zoom;
     this.#container.style.blockSize = `${String(renderedHeight)}px`;
     this.#options.renderer.invalidateLayout();
-    if (read === undefined) return;
+    const resize = read?.resize;
+    if (read === undefined || resize === undefined) return;
     const projectedMaximum = Math.max(
-      read.anchor.scrollBounds.min,
-      read.anchor.scrollBounds.max + renderedHeight - read.renderedHeight,
+      resize.anchor.scrollBounds.min,
+      resize.anchor.scrollBounds.max + renderedHeight - read.renderedHeight,
     );
     this.#options.onResize?.({
-      cameraX: read.anchor.oldCameraX,
-      fitZoom: read.fitZoom,
+      cameraX: resize.anchor.oldCameraX,
+      fitZoom: resize.fitZoom,
       scrollTop: Math.max(
-        read.anchor.scrollBounds.min,
-        Math.min(projectedMaximum, read.anchor.oldScrollTop),
+        resize.anchor.scrollBounds.min,
+        Math.min(projectedMaximum, resize.anchor.oldScrollTop),
       ),
       zoom,
     });
@@ -357,23 +405,6 @@ export class ActiveEditorLayout {
       this.#readyFrame = undefined;
       this.#options.onReady();
     });
-  }
-
-  #setTimeout(callback: () => void, delay: number): number | undefined {
-    if (typeof this.#ownerWindow.setTimeout !== "function") return undefined;
-    return this.#ownerWindow.setTimeout(callback, delay);
-  }
-
-  #clearHeightTimer(): void {
-    if (this.#heightTimer === undefined) return;
-    this.#ownerWindow.clearTimeout?.(this.#heightTimer);
-    this.#heightTimer = undefined;
-  }
-
-  #setTransition(value: string): void {
-    const style = this.#container.style as Partial<CSSStyleDeclaration>;
-    if (value === "") style.removeProperty?.("transition");
-    else style.setProperty?.("transition", value);
   }
 }
 

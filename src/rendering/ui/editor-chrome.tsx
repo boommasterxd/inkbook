@@ -31,18 +31,11 @@ export interface InkbookEditorChromeProps {
   readonly toolbarState: ToolbarState;
 }
 
-export interface OverflowEdges {
-  readonly end: boolean;
-  readonly start: boolean;
-}
-
-const NO_OVERFLOW: OverflowEdges = { end: false, start: false };
-
 export function InkbookEditorChrome(props: InkbookEditorChromeProps) {
   const buttons = useRef(new Map<ToolbarAction, HTMLButtonElement>());
+  const composition = useRef<HTMLDivElement>(null);
   const shell = useRef<HTMLDivElement>(null);
   const toolbar = useRef<HTMLDivElement>(null);
-  const [overflow, setOverflow] = useState<OverflowEdges>(NO_OVERFLOW);
   const [renderedFlyout, setRenderedFlyout] = useState<FlyoutId | null>(
     props.toolbarState.openFlyout,
   );
@@ -51,35 +44,23 @@ export function InkbookEditorChrome(props: InkbookEditorChromeProps) {
     else buttons.current.set(action, element);
   }, []);
 
-  const updateOverflow = useCallback(() => {
-    const element = toolbar.current;
-    if (element === null) {
-      setOverflow((current) => (current.start || current.end ? NO_OVERFLOW : current));
-      return;
-    }
+  const measureToolbar = useCallback(() => {
+    const main = toolbar.current;
+    if (main === null) return;
     shell.current?.style.setProperty(
       "--inkbook-toolbar-main-half",
-      `${String(element.getBoundingClientRect().width / 2)}px`,
+      `${String(main.getBoundingClientRect().width / 2)}px`,
     );
-    const next = resolveToolbarOverflow(
-      props.layout,
-      element.clientWidth,
-      element.scrollLeft,
-      element.scrollWidth,
-    );
-    setOverflow((current) =>
-      current.start === next.start && current.end === next.end ? current : next,
-    );
-  }, [props.layout]);
+  }, []);
 
-  useLayoutEffect(updateOverflow, [props.toolbarState, updateOverflow]);
+  useLayoutEffect(measureToolbar, [props.toolbarState, measureToolbar]);
 
   useLayoutEffect(() => {
-    const element = toolbar.current;
+    const element = composition.current;
     return element === null
       ? undefined
-      : registerToolbarResize(element, props.ownerDocument, updateOverflow);
-  }, [props.ownerDocument, updateOverflow]);
+      : registerToolbarResize(element, props.ownerDocument, measureToolbar);
+  }, [measureToolbar, props.ownerDocument]);
 
   const requestedFlyout = props.toolbarState.openFlyout;
   useLayoutEffect(() => {
@@ -94,17 +75,12 @@ export function InkbookEditorChrome(props: InkbookEditorChromeProps) {
 
   return (
     <>
-      <div
-        className="inkbook-toolbar-shell"
-        data-overflow-end={overflow.end ? "true" : undefined}
-        data-overflow-start={overflow.start ? "true" : undefined}
-        ref={shell}
-      >
+      <div className="inkbook-toolbar-shell" ref={shell}>
         <InkbookToolbar
+          compositionRef={composition}
           layout={props.layout}
           leftHanded={props.leftHanded}
           onAction={props.onToolbarAction}
-          onScroll={updateOverflow}
           registerButton={registerButton}
           renderIcon={props.renderIcon}
           selectedShape={props.selectedShape}
@@ -112,8 +88,6 @@ export function InkbookEditorChrome(props: InkbookEditorChromeProps) {
           styleIcon={props.styleIcon}
           toolbarRef={toolbar}
         />
-        <span aria-hidden="true" className="inkbook-toolbar-edge inkbook-toolbar-edge-start" />
-        <span aria-hidden="true" className="inkbook-toolbar-edge inkbook-toolbar-edge-end" />
       </div>
       {flyout === null || anchor === null ? null : (
         <EditorFlyout
@@ -202,19 +176,6 @@ function flyoutLabel(flyout: FlyoutId): string {
   if (flyout === "overflow") return "More options";
   if (flyout === "shape") return "Shape";
   return "Style";
-}
-
-export function resolveToolbarOverflow(
-  layout: ToolbarLayoutStage,
-  clientWidth: number,
-  scrollLeft: number,
-  scrollWidth: number,
-): OverflowEdges {
-  if (layout !== "scrollable") return NO_OVERFLOW;
-  return {
-    start: scrollLeft > 1,
-    end: scrollLeft + clientWidth < scrollWidth - 1,
-  };
 }
 
 export function registerToolbarResize(

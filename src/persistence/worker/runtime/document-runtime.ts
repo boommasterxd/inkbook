@@ -1,4 +1,4 @@
-import type { InkElementV1 } from "../../../domain/schema/public";
+import type { InkElementV1, SnapshotValidationDerivations } from "../../../domain/schema/public";
 import { WorkerJobQueue } from "../job-queue";
 import type { ExecutorIdentity, ExportIdentity, WorkerJobKind } from "../protocol";
 import { yieldToMainThread } from "../../scheduling/main-thread-yield";
@@ -36,7 +36,7 @@ const PREWARM_SLICE_MS = 6;
 export class DocumentWorkerRuntime implements DocumentRuntimePort {
   readonly #abortController = new AbortController();
   readonly #executor: ExecutorIdentity;
-  readonly #model = new DocumentModelRuntime();
+  readonly #model: DocumentModelRuntime;
   readonly #jobs = new Map<string, PendingJob>();
   readonly #queue = new WorkerJobQueue<DocumentRuntimeRequest>();
   readonly #unacknowledgedExports = new Map<string, ExportIdentity>();
@@ -58,6 +58,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     this.#executor = executor;
     this.#scheduler = scheduler;
     this.#services = services;
+    this.#model = new DocumentModelRuntime(services.now);
   }
 
   public get instrumentation() {
@@ -156,9 +157,19 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
     const sliceContext = runtimeSliceContext(this.#scheduler, signal);
     if (request.type === "unlock") {
       let batchCount = 0;
-      const unlocked = await this.#model.unlock(request.input, sliceContext, async (snapshot) => {
-        batchCount = await emitUnlockBatches(request.identity, snapshot.elements, observer, signal);
-      });
+      const unlocked = await this.#model.unlock(
+        request.input,
+        sliceContext,
+        async (snapshot, derivations) => {
+          batchCount = await emitUnlockBatches(
+            request.identity,
+            snapshot.elements,
+            derivations,
+            observer,
+            signal,
+          );
+        },
+      );
       const { snapshot } = unlocked;
       return {
         identity: request.identity,
@@ -416,34 +427,51 @@ function runtimeSliceContext(
 
 const DEFAULT_RUNTIME_SERVICES: DocumentRuntimeServices = Object.freeze({
   createId: () => crypto.randomUUID(),
+  now: () => performance.now(),
 });
 
 async function emitUnlockBatches(
   identity: Extract<DocumentRuntimeRequest, { type: "unlock" }>["identity"],
   elements: readonly InkElementV1[],
+  derivations: SnapshotValidationDerivations,
   observer: DocumentRuntimeObserver | undefined,
   signal: AbortSignal,
 ): Promise<number> {
+  if (elements.length !== derivations.elements.length) {
+    throw new TypeError("Validated element derivations are incomplete.");
+  }
   let batchIndex = 0;
   let current: InkElementV1[] = [];
+  let currentDerivations = [] as (typeof derivations.elements)[number][];
   let currentBytes = 0;
-  for (const element of elements) {
+  for (let index = 0; index < elements.length; index += 1) {
+    const element = elements[index]!;
     const elementBytes = strokePointByteLength(element);
     if (
       current.length > 0 &&
       (current.length >= MAX_UNLOCK_BATCH_ELEMENTS ||
         currentBytes + elementBytes > MAX_UNLOCK_BATCH_POINT_BYTES)
     ) {
-      await emitUnlockBatch({ batchIndex, elements: current, identity }, observer, signal);
+      await emitUnlockBatch(
+        { batchIndex, derivations: currentDerivations, elements: current, identity },
+        observer,
+        signal,
+      );
       batchIndex += 1;
       current = [];
+      currentDerivations = [];
       currentBytes = 0;
     }
     current.push(element);
+    currentDerivations.push(derivations.elements[index]!);
     currentBytes += elementBytes;
   }
   if (current.length > 0) {
-    await emitUnlockBatch({ batchIndex, elements: current, identity }, observer, signal);
+    await emitUnlockBatch(
+      { batchIndex, derivations: currentDerivations, elements: current, identity },
+      observer,
+      signal,
+    );
     batchIndex += 1;
   }
   return batchIndex;

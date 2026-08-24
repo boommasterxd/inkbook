@@ -1,7 +1,6 @@
 import { derivePageExtent } from "../../../domain/geometry/public";
 import { MAX_DERIVED_HEIGHT, type PageV1 } from "../../../domain/schema/public";
 
-export const AUTOMATIC_PAGE_HEIGHT_TRANSITION_MS = 180;
 export const SELECTION_BOTTOM_EDGE_ZONE_PX = 24;
 
 export interface PageHeightUpdate {
@@ -67,6 +66,12 @@ export class ActivePageLayout {
     this.#transitionTarget = undefined;
     this.#queuedHeight = undefined;
     return { animate: false, height };
+  }
+
+  public cancelTransitions(height: number): void {
+    this.#height = height;
+    this.#queuedHeight = undefined;
+    this.#transitionTarget = undefined;
   }
 
   public updateSelectionBottomEdge(active: boolean, page: PageV1): PageHeightUpdate | undefined {

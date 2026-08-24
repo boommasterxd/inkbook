@@ -1,4 +1,4 @@
-import type { InkSnapshotV1 } from "../../domain/schema/public";
+import type { InkSnapshotV1, SnapshotValidationDerivations } from "../../domain/schema/public";
 import {
   validateInkSnapshotV1,
   validateInkSnapshotV1Steps,
@@ -17,6 +17,7 @@ interface MigrationValidationOptions {
 }
 
 export interface MigratedSnapshot {
+  readonly derivations: SnapshotValidationDerivations;
   readonly snapshot: InkSnapshotV1;
   readonly sourceVersion: number;
 }
@@ -27,7 +28,6 @@ export function migrateAndValidateDocumentSnapshot(
 ): DocumentCodecResult<MigratedSnapshot> {
   const migrated = migrateSnapshotSequentially(value, createDocumentSnapshotMigrations(options));
   if (!migrated.ok) return migrationFailure();
-  if (migrated.migrated) return migratedSnapshot(migrated.value, migrated.sourceVersion);
   const validation = validateInkSnapshotV1(migrated.value, options);
   if (!validation.ok) {
     return {
@@ -41,7 +41,11 @@ export function migrateAndValidateDocumentSnapshot(
   }
   return {
     ok: true,
-    value: { snapshot: validation.value, sourceVersion: migrated.sourceVersion },
+    value: {
+      derivations: validation.derivations,
+      snapshot: validation.value,
+      sourceVersion: migrated.sourceVersion,
+    },
   };
 }
 
@@ -59,9 +63,6 @@ export function* migrateAndValidateDocumentSnapshotSteps(
     migrationStep = migration.next();
   }
   if (!migrationStep.value.ok) return migrationFailure();
-  if (migrationStep.value.migrated) {
-    return migratedSnapshot(migrationStep.value.value, migrationStep.value.sourceVersion);
-  }
   const validation = validateInkSnapshotV1Steps(migrationStep.value.value, options);
   let validationStep = validation.next();
   while (!validationStep.done) {
@@ -81,19 +82,10 @@ export function* migrateAndValidateDocumentSnapshotSteps(
   return {
     ok: true,
     value: {
+      derivations: validationStep.value.derivations,
       snapshot: validationStep.value.value,
       sourceVersion: migrationStep.value.sourceVersion,
     },
-  };
-}
-
-function migratedSnapshot(
-  value: unknown,
-  sourceVersion: number,
-): DocumentCodecResult<MigratedSnapshot> {
-  return {
-    ok: true,
-    value: { snapshot: value as InkSnapshotV1, sourceVersion },
   };
 }
 

@@ -6,7 +6,6 @@ import {
   InkbookEditorChrome,
   registerToolbarResize,
   renderEditorFlyoutContent,
-  resolveToolbarOverflow,
 } from "../../../../src/rendering/ui/editor-chrome";
 import type { InkbookEditorChromeProps } from "../../../../src/rendering/ui/editor-chrome";
 
@@ -63,24 +62,9 @@ describe("Inkbook editor chrome", () => {
     expect(markup).toContain("inkbook-toolbar-shell");
     expect(markup).toContain("inkbook-toolbar-scrollable");
     expect(markup).toContain("inkbook-toolbar-left-handed");
+    expect(markup).not.toContain("inkbook-toolbar-edge");
     expect(markup).not.toContain("inkbook-scene");
     expect(markup).not.toContain("inkbook-canvas-input");
-  });
-
-  it("resolves scroll gradients only where toolbar content remains", () => {
-    expect(resolveToolbarOverflow("wide", 100, 20, 300)).toEqual({ start: false, end: false });
-    expect(resolveToolbarOverflow("scrollable", 100, 0, 300)).toEqual({
-      start: false,
-      end: true,
-    });
-    expect(resolveToolbarOverflow("scrollable", 100, 100, 300)).toEqual({
-      start: true,
-      end: true,
-    });
-    expect(resolveToolbarOverflow("scrollable", 100, 200, 300)).toEqual({
-      start: true,
-      end: false,
-    });
   });
 
   it("selects the content for each controlled flyout", () => {

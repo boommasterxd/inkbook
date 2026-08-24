@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   showAttachedRecoveryPanel,
   showHeadlessRecoveryNotice,
+  showLoadRecoveryPanel,
   type HeadlessRecoveryActions,
 } from "../../../../src/obsidian/embeds/recovery-notice";
 
@@ -293,6 +294,37 @@ describe("headless recovery notice", () => {
 });
 
 describe("attached recovery panel", () => {
+  it("replaces a load failure with icon-only retry and discard actions", () => {
+    const host = new Notice("").messageEl;
+    const retry = vi.fn();
+    const discard = vi.fn(() => true);
+    const closed = vi.fn();
+    const panel = showLoadRecoveryPanel(
+      host,
+      { discard, retry },
+      closed,
+    ) as unknown as TestNoticeElement;
+    const actionButtons = panel.children[1]?.children ?? [];
+
+    expect(panel.attributes.get("aria-label")).toBe("Load failed");
+    expect(actionButtons.map((button) => button.attributes.get("aria-label"))).toEqual([
+      "Retry load",
+      "Discard load attempt",
+    ]);
+    actionButtons[0]?.dispatch("click");
+    expect(retry).toHaveBeenCalledOnce();
+    expect(closed).toHaveBeenCalledOnce();
+
+    const discardPanel = showLoadRecoveryPanel(
+      host,
+      { discard, retry },
+      closed,
+    ) as unknown as TestNoticeElement;
+    discardPanel.children[1]?.children[1]?.dispatch("click");
+    expect(discard).toHaveBeenCalledOnce();
+    expect(closed).toHaveBeenCalledTimes(2);
+  });
+
   it("offers retry, local copy, and cancel with accessible pending behavior", async () => {
     const host = new Notice("").messageEl;
     const closed = vi.fn();

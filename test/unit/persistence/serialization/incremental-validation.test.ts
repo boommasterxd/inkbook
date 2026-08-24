@@ -115,7 +115,7 @@ describe("incremental serializer spatial capacity", () => {
 });
 
 describe("incremental serializer relation validation", () => {
-  it("uses full snapshot validation for page and connection relation changes", () => {
+  it("validates page and connection changes without a full snapshot rescan", () => {
     const snapshot = createAllElementSnapshot();
     const serializer = initialized(snapshot);
     const initialFullRuns = serializer.instrumentation.fullValidationRuns;
@@ -133,7 +133,7 @@ describe("incremental serializer relation validation", () => {
       error: { code: "snapshot-invalid", validationError: { code: "invalid-connection-target" } },
       ok: false,
     });
-    expect(serializer.instrumentation.fullValidationRuns).toBe(initialFullRuns + 1);
+    expect(serializer.instrumentation.fullValidationRuns).toBe(initialFullRuns);
     expect(
       serializer.applyDelta({
         baseModelRevision: snapshot.revision,
@@ -141,7 +141,15 @@ describe("incremental serializer relation validation", () => {
         page: { ...snapshot.page, writingLineHeight: 49 },
       }),
     ).toMatchObject({ error: { code: "snapshot-invalid" }, ok: false });
-    expect(serializer.instrumentation.fullValidationRuns).toBe(initialFullRuns + 2);
+    expect(serializer.instrumentation.fullValidationRuns).toBe(initialFullRuns);
+    expect(
+      serializer.applyDelta({
+        baseModelRevision: snapshot.revision,
+        modelRevision: snapshot.revision + 1,
+        page: { ...snapshot.page, writingLineHeight: 60 },
+      }),
+    ).toEqual({ ok: true, value: undefined });
+    expect(serializer.instrumentation.fullValidationRuns).toBe(initialFullRuns);
   });
 });
 

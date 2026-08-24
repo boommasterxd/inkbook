@@ -25,6 +25,12 @@ export function observeStableWidth(state: StableWidthState, width: number): Stab
       observation: undefined,
     };
   }
+  if (state.acceptedWidth !== undefined && state.acceptedWidth !== width) {
+    return {
+      state: { acceptedWidth: width, candidateFrames: 1, candidateWidth: width },
+      observation: { width, accepted: true },
+    };
+  }
   const candidateFrames = state.candidateWidth === width ? state.candidateFrames + 1 : 1;
   const candidateState = { ...state, candidateWidth: width, candidateFrames };
   if (candidateFrames < 2 || state.acceptedWidth === width) {

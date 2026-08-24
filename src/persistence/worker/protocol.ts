@@ -1,3 +1,5 @@
+import type { ElementValidationDerivation } from "../../domain/schema/public";
+
 export type SessionId = string;
 export type ElementId = string;
 export type WorkerEpoch = number;
@@ -41,6 +43,7 @@ interface FullExportRequest<TSnapshot> extends ExportIdentity {
 
 interface IncrementalExportRequest<TElement, TPage> extends ExportIdentity {
   readonly baseModelRevision: DocumentRevision;
+  readonly changedElementDerivations?: readonly ElementValidationDerivation[];
   readonly changedElements?: readonly TElement[];
   readonly orderChanges?: Readonly<Partial<Record<RenderBand, readonly ElementId[]>>>;
   readonly page?: TPage;

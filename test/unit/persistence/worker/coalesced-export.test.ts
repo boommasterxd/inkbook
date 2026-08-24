@@ -70,4 +70,26 @@ describe("coalesced export target", () => {
     expect(() => target.record({ modelRevision: 4 })).toThrow(RangeError);
     expect(() => target.requireFullSnapshot(4)).toThrow(RangeError);
   });
+
+  it("keeps only derivations that match the latest coalesced element revision", () => {
+    const target = new CoalescedExportTarget<ElementRecord, never>(0, ({ id }) => id);
+    const derivation = {
+      bounds: { maxX: 2, maxY: 2, minX: 1, minY: 1 },
+      elementId: "a",
+      spatialMemberships: 1,
+      spatialOverflow: false,
+    };
+    target.record({
+      changedElementDerivations: [derivation],
+      changedElements: [{ id: "a", value: 1 }],
+      modelRevision: 1,
+    });
+    expect(target.materialize({})).toMatchObject({ changedElementDerivations: [derivation] });
+
+    target.record({ changedElements: [{ id: "a", value: 2 }], modelRevision: 2 });
+    expect(target.materialize({})).not.toHaveProperty("changedElementDerivations");
+    expect(() =>
+      target.record({ changedElementDerivations: [derivation], modelRevision: 3 }),
+    ).toThrow("match changed elements");
+  });
 });

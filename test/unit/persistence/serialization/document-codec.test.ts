@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { FILE_SCHEMA_LIMITS } from "../../../../src/domain/schema/public";
+import { FILE_SCHEMA_LIMITS, validateInkSnapshotV1 } from "../../../../src/domain/schema/public";
 import { jsonContainerBudget } from "../../../../src/domain/schema/validation-internals";
 import { validateSafeSvg } from "../../../../src/persistence/documents/safe-svg-validator";
 import {
@@ -236,10 +236,13 @@ describe("Inkbook document parsing", () => {
     if (!serialized.ok) return;
 
     const parsed = parseInkbookDocument(new TextEncoder().encode(serialized.value.svg));
+    const validation = validateInkSnapshotV1(serialized.value.snapshot);
+    if (!validation.ok) throw new Error(validation.error.message);
 
     expect(parsed).toEqual({
       ok: true,
       value: {
+        derivations: validation.derivations,
         hash: serialized.value.hash,
         lockedHeight: serialized.value.lockedHeight,
         requiresCanonicalRewrite: false,

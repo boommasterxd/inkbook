@@ -67,7 +67,13 @@ export class FakePresentationElement {
       importNode: (node, deep) => node.cloneNode(deep),
       scrollingElement: this,
     };
+    const windowListeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
     const owningWindow = {
+      addEventListener: (type: string, callback: EventListenerOrEventListenerObject) => {
+        const listeners = windowListeners.get(type) ?? new Set();
+        listeners.add(callback);
+        windowListeners.set(type, listeners);
+      },
       DOMParser: class {
         public parseFromString(): { documentElement: FakePresentationElement } {
           const svg = new FakePresentationElement(documentPort as unknown as Document, "svg");
@@ -81,11 +87,21 @@ export class FakePresentationElement {
       },
       cancelAnimationFrame: vi.fn(),
       clearTimeout: vi.fn(),
+      dispatchEvent: (event: Event) => {
+        for (const callback of windowListeners.get(event.type) ?? []) {
+          if (typeof callback === "function") callback(event);
+          else callback.handleEvent(event);
+        }
+        return true;
+      },
       getComputedStyle: () => ({ overflowY: "visible" }),
       performance,
       requestAnimationFrame: (callback: FrameRequestCallback) => {
         callback(0);
         return 1;
+      },
+      removeEventListener: (type: string, callback: EventListenerOrEventListenerObject) => {
+        windowListeners.get(type)?.delete(callback);
       },
       setTimeout: (callback: () => void) => {
         callback();
