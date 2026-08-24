@@ -102,6 +102,7 @@ The 10,000-stroke fixture MUST satisfy:
 
 Additional rules:
 
+- The dedicated 120-Hz interaction profile uses an 8.333-millisecond frame cadence and requires at most 6 milliseconds of p99 measured main-thread work, leaving the remaining frame time for host rendering and scheduling. It covers 3,600 live pressure samples plus 600 camera frames and 600 bounded large-selection preview frames against the 10,000-stroke fixture. Hosted-runner timing scaling follows the CI profile below; the unscaled 6-millisecond target remains normative for release-reference measurements.
 - No input-related main-thread task may exceed 16.7 ms. The chunked 10,000-element transform commit may span multiple tasks, but each slice obeys this limit and the already rendered transform remains visually stable.
 - No pointer sample supplied by `getCoalescedEvents()` may be silently dropped. Nearby samples may be deterministically merged by the documented path builder.
 - Unlock, pan, zoom, and drawing must not mount all 10,000 strokes.
@@ -343,6 +344,7 @@ Integration tests do not launch a complete Obsidian application.
 
 Automated performance tests use deterministic fixtures and cover:
 
+- the dedicated 120-Hz interaction profile with an 8.333-millisecond cadence and 6-millisecond p99 main-thread target for live pressure strokes, camera frames, and bounded 10,000-element selection previews
 - snapshot validation and parsing
 - store construction and spatial-index insertion
 - viewport query and hit testing

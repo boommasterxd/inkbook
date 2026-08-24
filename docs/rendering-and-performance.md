@@ -106,6 +106,8 @@ One frame may contain several dirty domains, but work is always attempted in thi
 
 Separate dirty flags prevent an overlay-only frame from querying visibility and prevent a paint-only frame from rebuilding geometry. At measured checkpoints the renderer stops before lower-priority work would exceed the current interaction-frame budget, retains the last complete scene, and queues one successor frame. A live gesture pauses cache prewarming, background work that is not required for correctness, tombstone creation, and worker-result adoption on the main thread. No lower-priority task may delay pointer feedback.
 
+The 120-Hz interaction profile uses an 8.333-millisecond frame cadence and a 6-millisecond p99 main-thread-work target. The remaining frame time is reserved for Obsidian, browser style and paint, compositing, and scheduling variance.
+
 ## Viewport Culling
 
 The store always retains every element. A visibility refresh mounts only elements returned by the spatial index that intersect the visible area plus 80 screen pixels of overscan. The resulting envelope is retained while the current visible area plus a 40-screen-pixel safety reserve remains inside it. This hysteresis avoids classification and ordering work during small camera movements while preserving every visible element; a retained trailing edge may temporarily extend to 120 screen pixels before the next refresh.
