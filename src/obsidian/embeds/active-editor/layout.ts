@@ -47,11 +47,13 @@ export class ActiveEditorLayout {
   #forcePageHeight = false;
   #frame: number | undefined;
   #layoutStage: ToolbarLayoutStage | undefined;
+  #chromeLayoutKey: string | undefined;
   #ready = false;
   #readyFrame: number | undefined;
   #stableWidth: StableWidthState = createStableWidthState();
   #suspended = false;
   #toolbar: HTMLElement | undefined;
+  #toolbarLayoutDirty = true;
   #zoom: number | undefined;
 
   public constructor(options: ActiveEditorLayoutOptions) {
@@ -68,7 +70,12 @@ export class ActiveEditorLayout {
     );
     const Observer = ownerWindow.ResizeObserver;
     this.#observer =
-      Observer === undefined ? undefined : new Observer(() => this.scheduleMeasurement());
+      Observer === undefined
+        ? undefined
+        : new Observer(() => {
+            this.#toolbarLayoutDirty = true;
+            this.scheduleMeasurement();
+          });
     this.#observer?.observe(options.root);
     const ChromeObserver = ownerWindow.MutationObserver;
     this.#chromeObserver =
@@ -97,7 +104,10 @@ export class ActiveEditorLayout {
     this.#applyHeightUpdate(this.#pageLayout.beginSelection());
   }
 
-  public chromeChanged(): void {
+  public chromeChanged(layoutKey?: string): void {
+    if (layoutKey !== undefined && layoutKey === this.#chromeLayoutKey) return;
+    this.#chromeLayoutKey = layoutKey;
+    this.#toolbarLayoutDirty = true;
     this.scheduleMeasurement();
   }
 
@@ -188,6 +198,7 @@ export class ActiveEditorLayout {
   }
 
   #handleChromeMutation(): void {
+    this.#toolbarLayoutDirty = true;
     this.#observeToolbar();
     this.scheduleMeasurement();
   }
@@ -197,6 +208,7 @@ export class ActiveEditorLayout {
     if (toolbar === null || toolbar === this.#toolbar) return;
     if (this.#toolbar !== undefined) this.#observer?.unobserve(this.#toolbar);
     this.#toolbar = toolbar;
+    this.#toolbarLayoutDirty = true;
     this.#observer?.observe(toolbar);
   }
 
@@ -223,7 +235,7 @@ export class ActiveEditorLayout {
     this.#applyHeightUpdate(heightUpdate);
     const fitZoom = width / PAGE_WIDTH;
     if (widthChanged || this.#fitZoom === undefined) this.#applyWidth(width, fitZoom);
-    this.#options.onLayout(this.#resolveLayoutAndSchedule(width));
+    this.#options.onLayout(this.#resolveLayoutAndSchedule(width, widthChanged));
     this.#markReady();
   }
 
@@ -389,7 +401,11 @@ export class ActiveEditorLayout {
     );
   }
 
-  #resolveLayoutAndSchedule(availableWidth: number): ToolbarLayoutStage {
+  #resolveLayoutAndSchedule(availableWidth: number, widthChanged: boolean): ToolbarLayoutStage {
+    if (!widthChanged && !this.#toolbarLayoutDirty && this.#layoutStage !== undefined) {
+      return this.#layoutStage;
+    }
+    this.#toolbarLayoutDirty = false;
     const stage = measureToolbarLayout(this.#options.chromeHost, availableWidth);
     if (stage !== this.#layoutStage) {
       this.#layoutStage = stage;

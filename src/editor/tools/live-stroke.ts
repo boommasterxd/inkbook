@@ -1,9 +1,4 @@
-import {
-  buildStrokePath,
-  pointDistance,
-  roundCanonical,
-  smoothStrokeCenters,
-} from "../../domain/geometry/public";
+import { buildStrokePath, roundCanonical, smoothStrokeCenters } from "../../domain/geometry/public";
 import {
   buildCenterlineSlice,
   buildPressureOutlineSlice,
@@ -129,8 +124,7 @@ export class LiveStrokeBuilder {
 
   private shouldReplaceTip(sample: RawStrokeSample): boolean {
     if (this.retainedSamples <= 1) return false;
-    const tip = this.rawSample(this.retainedSamples - 1);
-    return pointDistance(tip, sample) * this.options.input.zoom < 0.5;
+    return this.distanceToSample(this.retainedSamples - 1, sample) * this.options.input.zoom < 0.5;
   }
 
   private replaceTip(sample: RawStrokeSample): void {
@@ -156,10 +150,11 @@ export class LiveStrokeBuilder {
       return Math.min(1, Math.max(0, sample.pressure));
     }
     if (previousIndex < 0) return 0.5;
-    const previous = this.rawSample(previousIndex);
     const previousPressure = this.buffer[previousIndex * VALUES_PER_SAMPLE + 2] as number;
-    const elapsed = Math.max(1, sample.time - previous.time);
-    const speed = (pointDistance(previous, sample) * this.options.input.zoom) / elapsed;
+    const previousTime = this.buffer[previousIndex * VALUES_PER_SAMPLE + 3] as number;
+    const elapsed = Math.max(1, sample.time - previousTime);
+    const speed =
+      (this.distanceToSample(previousIndex, sample) * this.options.input.zoom) / elapsed;
     const target = Math.min(1, Math.max(0.25, 1 - speed / 1.5));
     return 0.7 * previousPressure + 0.3 * target;
   }
@@ -260,14 +255,12 @@ export class LiveStrokeBuilder {
     this.buffer[offset + 3] = sample.time;
   }
 
-  private rawSample(index: number): RawStrokeSample {
+  private distanceToSample(index: number, sample: RawStrokeSample): number {
     const offset = index * VALUES_PER_SAMPLE;
-    return {
-      x: this.buffer[offset] as number,
-      y: this.buffer[offset + 1] as number,
-      pressure: this.buffer[offset + 2] as number,
-      time: this.buffer[offset + 3] as number,
-    };
+    return Math.hypot(
+      (this.buffer[offset] as number) - sample.x,
+      (this.buffer[offset + 1] as number) - sample.y,
+    );
   }
 
   private ensureCapacity(requiredSamples: number): void {

@@ -33,8 +33,16 @@ describe("active scene chrome updates", () => {
     expect(container.classNames).toContain("inkbook-background-container");
   });
 
-  it("remeasures layout after updating React chrome state", () => {
-    const props = { marker: "next" };
+  it("passes the semantic layout key after updating React chrome state", () => {
+    const props = {
+      layout: "wide",
+      leftHanded: false,
+      toolbarState: {
+        canPaste: false,
+        fingerDrawingAvailable: true,
+        hasSelection: false,
+      },
+    };
     const chrome = { update: vi.fn() };
     const controller = { chromeProps: vi.fn(() => props) };
     const layout = { chromeChanged: vi.fn() };
@@ -42,6 +50,6 @@ describe("active scene chrome updates", () => {
     updateActiveSceneChrome(chrome as never, controller as never, layout);
 
     expect(chrome.update).toHaveBeenCalledWith(props);
-    expect(layout.chromeChanged).toHaveBeenCalledOnce();
+    expect(layout.chromeChanged).toHaveBeenCalledWith("wide:right:finger:no-selection:no-paste");
   });
 });

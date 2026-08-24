@@ -48,6 +48,25 @@ function createWindow() {
 }
 
 describe("production document worker factory", () => {
+  it("releases workers and owned URLs across repeated runtime cycles", async () => {
+    FakeWorker.instances = [];
+    FakeWorker.constructionError = undefined;
+    const { owningWindow, revoked } = createWindow();
+
+    for (let cycle = 0; cycle < 25; cycle += 1) {
+      const runtime = await createDocumentRuntime(
+        `session-${String(cycle)}`,
+        cycle + 1,
+        owningWindow,
+      );
+      runtime.terminate();
+    }
+
+    expect(FakeWorker.instances).toHaveLength(25);
+    expect(FakeWorker.instances.every(({ terminated }) => terminated)).toBe(true);
+    expect(revoked).toHaveLength(25);
+  });
+
   it("creates one named worker and releases its Blob URL exactly once", async () => {
     FakeWorker.instances = [];
     FakeWorker.constructionError = undefined;

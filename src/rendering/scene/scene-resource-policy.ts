@@ -61,7 +61,7 @@ export class SceneResourcePolicy implements ActiveDocumentMemoryScenePort {
   }
 }
 
-export function visiblePageBounds(
+function visiblePageBounds(
   viewport: SceneViewport,
   camera: SceneCamera,
   overscanScreenPx: number,

@@ -25,15 +25,15 @@ describe("SelectionHandleSession performance contracts", () => {
     });
     session.update({ x: 500, y: 0 });
     let yields = 0;
+    const recordYield = async () => {
+      yields += 1;
+    };
 
     const prepared = await session.prepareCommitTimeSliced({
       shouldYield: () => true,
-      yieldControl: async () => {
-        yields += 1;
-      },
+      yieldControl: recordYield,
     });
 
-    expect(prepared.status).toBe("ready");
-    expect(yields).toBe(shapes.length);
+    expect({ status: prepared.status, yields }).toEqual({ status: "ready", yields: shapes.length });
   });
 });

@@ -120,8 +120,10 @@ Additional rules:
 - Viewport queries, hit testing, erasing, and page extent queries use the spatial index.
 - React owns application chrome and coarse editor state only. Individual ink elements are owned by the imperative SVG scene renderer.
 - Pointer-move, pan, zoom, pinch, scroll, snapping, culling, and preview frames produce zero React renders, React state updates, and React-visible store notifications. Discrete selection and tool changes may enqueue one coarse UI update after imperative feedback.
+- Chrome callbacks remain referentially stable for one active presentation. A semantic chrome snapshot suppresses `root.render()` when toolbar, flyout, style, background, layout, and callback state is unchanged.
 - Pointer-move processing never clones the complete element array or snapshot.
 - The live-stroke builder appends finalized chunks and rebuilds at most 16 retained samples plus their boundary segment; the 4,096th point does not reconstruct the first segment.
+- Live-stroke distance, timing, and pressure decisions read the numeric sample buffer directly without reconstructing temporary sample objects for retained points.
 - Selection transforms preview with one parent SVG transform when possible and commit geometry once. Exact per-element handle previews require both at most 256 elements and at most 16,384 aggregate geometry samples. A handle commit may materialize synchronously only at or below 1,000 elements, 16,384 aggregate geometry samples, and the reverse-dependent budget; larger work prepares in input-aware slices and adopts once. Every slice and final token adoption rechecks cancellation and the gesture generation. Dragging selected content uses its transform-only preview and switches to sliced commit preparation above 1,000 elements.
 - Each eraser pointer update performs at most 12,288 exact intersection work units after a spatial-index query and retains at most 512 pending segments plus one candidate window. Unfinished checks retain resumable state for later updates. Commit drains cancellably before one atomic removal command; queue overflow or stale work cancels the entire sweep.
 - Selection size never disables culling: visible selected content and a maximum 256-path active subset are mounted, while offscreen selection uses aggregate bounds.
@@ -130,7 +132,7 @@ Additional rules:
 - Visible-set reconciliation uses stable numeric slots, reusable buffers, and epoch markers or bitsets. An ordinary frame allocates no replacement full candidate, visible, entrant, exit, or deduplication collection.
 - Committed paths and decorative overlays use `pointer-events: none`; one presentation-owned focusable input surface handles the canvas. No SVG content node owns an event listener.
 - Applied-node state suppresses unchanged SVG attributes. Geometry, paint, order, connection, visibility, camera, overlay, background, and theme dirtiness remain independently observable in renderer instrumentation.
-- Each scene frame completes layout reads before DOM writes. Repeated observers and unchanged dimensions schedule no work.
+- Each scene frame completes layout reads before DOM writes. Repeated observers and unchanged dimensions schedule no work. Toolbar overflow reads run only after a changed positive width, a dirty layout observation, or a semantic layout-key change.
 - Document-worker state synchronization contains changed and removed IDs, order, and page state after initialization; it atomically advances `modelRevision` and fragment dirtiness, while clipboard encoding uses selection IDs rather than a complete selection clone.
 - Order-only changes carry explicit render-band order, and target changes carry every automatically re-resolved line or arrow.
 - The newest dispatched export generation orders only replaceable export results and `preparedSuccessor`. Once admitted, `activeSaveOperation` remains valid through mandatory read-back even when a newer export is dispatched. Other worker jobs have independent operation IDs; queued timers have no identity.
@@ -143,6 +145,7 @@ Additional rules:
 - A culling refresh uses 80 screen pixels of overscan converted to page units at the current zoom. The mounted envelope is reused only while the current viewport plus a 40-screen-pixel safety reserve remains inside it, so no visible element can be omitted and the retained trailing edge never exceeds 120 screen pixels before refresh.
 - Dense viewports eventually mount every exact visible element in input-aware batches; they may disable animation and prewarming but may not rasterize, merge, or hide editable content. Each mount slice uses an absolute deadline plus the 4,096-stroke-point and 16,384-geometry-cost budgets, while one oversized entrant remains progress-safe.
 - Every cache has an entry or byte limit, releases removed records immediately, and is released on editor unmount.
+- Lifecycle soak tests repeatedly mount and unmount React chrome and flyouts, switch notes and attachments, create and terminate workers, and run the 10,000-stroke memory lifecycle without retaining roots, portals, listeners, observers, animation frames, workers, or host references.
 
 ## Animation Tokens
 
@@ -294,6 +297,7 @@ Integration tests cover only important boundaries:
 - visible-set reconciliation proving DOM mutations are limited to entrants, exits, changed records, and affected order
 - delta-domain and applied-node instrumentation proving zero geometry work for paint-only or order-only commits, zero content writes for camera-only or overlay-only frames, and exact changed-attribute counts
 - reusable visibility-buffer and stable-slot instrumentation proving zero steady-state collection allocation and correct dense-viewport promotion of a hit element that is not mounted yet
+- semantic chrome snapshots proving unchanged state skips React root renders, callback identities remain stable, and toolbar measurement is skipped when layout-relevant state and width are unchanged
 - dense-viewport reconciliation proving the exact expected unique visible-ID sequence, render order, persistent cursor, one unchanged-viewport query, and bounded point and geometry cost by both the frame and elapsed-time deadlines
 - background-cache integration proving unchanged aligned indices and theme changes reuse the same coverage geometry
 - anchor-cache integration proving paint, order, selection, and theme changes hit the cache while target geometry replacement invalidates only that target and its resolved dependents
@@ -325,6 +329,7 @@ Integration tests cover only important boundaries:
 - Reading-view `MarkdownRenderChild` and Live Preview `WidgetType` lifecycle cleanup through host test adapters, including exact standalone custom-embed and resolved-document correlation, complete section-host replacement without any native or owned HTML image, restoration on unload, a full-width Live Preview block widget provided directly from a `StateField` rather than a forbidden dynamic plugin decoration, ordinary SVG non-interference, fail-closed CodeMirror syntax-tree boundaries for inline content, code, comments, escapes, and incomplete trees, preservation of the same widget while save-triggered reclassification is pending, and terminal-negative removal
 - main-window and pop-out widgets sharing one coordinator, with simultaneous activation proving exactly one active session and one latest pending request
 - multiple tabs referencing the same SVG, proving one reused document session, one attached presentation, and no duplicate store or worker
+- repeated mount and unmount, note switching, worker creation and termination, and flyout lifecycle soak checks proving that every owned root, portal, listener, observer, animation frame, worker, and host reference is released
 - pending widget detachment before activation, proving cancellation without mounting and no retained DOM, `Window`, widget, or attachment generation
 - dirty widget detachment during delayed export and vault I/O, proving immediate UI cleanup, continued headless save, latest-revision confirmation, and no detached DOM mutation
 - same-session remount during a detached save, proving reuse of the existing store and worker, replacement of an older pending target, and clean reattachment after confirmation
@@ -351,7 +356,7 @@ Automated performance tests use deterministic fixtures and cover:
 - worker-backed unlock phase timing and one-stroke save phase timing, including direct validated Store hydration and serializer reuse counters proving that matching Store bounds reach incremental fragment assembly without later duplicate geometry calculation, plus the one-pass export fragment list used without repeated LRU mutation
 - maximum clipboard codec and worker encode/decode with complete delta synchronization, stale-delta rejection, zero-delta export after Copy, purpose-specific operation identity, and bounded main-thread adoption slices; maximum-scale atomic Cut adoption and focused editor scenarios prove stale-result recomputation and delayed Cut cancellation
 - worker failure fallback for validation, migration, clipboard, export, hashing, preflight, and read-back under continuous synthetic input; maximum-complexity Safe-SVG validation runs with a synthetic input sample at every checkpoint, and trusted-output tests prove cancellation at the production 64-KiB hash boundary
-- 4,096-point live-stroke latency, a maximum 16-sample mutable tail, and finalized-prefix reuse
+- 4,096-point live-stroke latency, a maximum 16-sample mutable tail, finalized-prefix reuse, and direct scalar buffer reads without retained-sample object reconstruction
 - full SVG serialization
 - exact standard- and stress-fixture metadata, static-markup, total-byte, and bytes-per-point measurements
 - peak main-plus-worker memory during full export, result handoff, vault writing, conflict recovery, and repeated coalesced saves
