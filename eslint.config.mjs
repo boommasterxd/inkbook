@@ -37,13 +37,15 @@ const mobileRuntimePatterns = [
   },
 ];
 const defaultProjectFiles = [
+  ".dependency-cruiser.mjs",
   "eslint.config.mjs",
   "scripts/*.mjs",
+  "stylelint.config.mjs",
   "test/unit/scripts/*.test.mjs",
   "vitest.config.ts",
 ];
 
-function restrictImports(paths = [], groups = []) {
+function restrictImports(paths = [], groups = [], regexes = []) {
   return [
     "error",
     {
@@ -53,6 +55,10 @@ function restrictImports(paths = [], groups = []) {
         ...groups.map((group) => ({
           group,
           message: "This import crosses an Inkbook architecture boundary.",
+        })),
+        ...regexes.map((regex) => ({
+          message: "This import crosses an Inkbook architecture boundary.",
+          regex,
         })),
       ],
     },
@@ -94,13 +100,93 @@ export default [
     },
     rules: {
       "@typescript-eslint/no-deprecated": "error",
+      "@typescript-eslint/naming-convention": [
+        "error",
+        {
+          format: ["UPPER_CASE"],
+          modifiers: ["const", "exported"],
+          selector: "variable",
+          types: ["array", "boolean", "number", "string"],
+        },
+        {
+          format: ["camelCase", "PascalCase", "UPPER_CASE"],
+          leadingUnderscore: "allow",
+          selector: "variable",
+        },
+        {
+          format: ["camelCase"],
+          leadingUnderscore: "allow",
+          selector: "parameter",
+        },
+        {
+          format: ["camelCase", "PascalCase"],
+          selector: "function",
+        },
+        {
+          format: ["camelCase"],
+          selector: "method",
+        },
+        {
+          custom: { match: false, regex: "^I[A-Z]" },
+          format: ["PascalCase"],
+          selector: "typeLike",
+        },
+        {
+          format: ["PascalCase", "UPPER_CASE"],
+          selector: "enumMember",
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/**/*.ts"],
+    rules: {
+      "@typescript-eslint/naming-convention": [
+        "error",
+        {
+          format: ["UPPER_CASE"],
+          modifiers: ["const", "exported"],
+          selector: "variable",
+          types: ["array", "boolean", "number", "string"],
+        },
+        {
+          format: ["camelCase", "UPPER_CASE"],
+          leadingUnderscore: "allow",
+          selector: "variable",
+        },
+        {
+          format: ["camelCase"],
+          leadingUnderscore: "allow",
+          selector: "parameter",
+        },
+        {
+          format: ["camelCase"],
+          selector: ["function", "method"],
+        },
+        {
+          custom: { match: false, regex: "^I[A-Z]" },
+          format: ["PascalCase"],
+          selector: "typeLike",
+        },
+        {
+          format: ["PascalCase", "UPPER_CASE"],
+          selector: "enumMember",
+        },
+      ],
     },
   },
   {
     files: ["src/**/*.{ts,tsx}"],
     rules: {
+      "no-restricted-exports": ["error", { restrictedNamedExports: ["default"] }],
       "no-restricted-imports": restrictImports(),
       "obsidianmd/prefer-active-doc": "error",
+    },
+  },
+  {
+    files: ["src/main.ts", "src/obsidian/plugin-loader.ts"],
+    rules: {
+      "no-restricted-exports": "off",
     },
   },
   {
@@ -162,6 +248,36 @@ export default [
     },
   },
   {
+    files: ["src/rendering/motion/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": restrictImports(
+        [
+          { name: "obsidian", message: "Motion contracts must remain framework-independent." },
+          { name: "react", message: "Motion contracts must remain framework-independent." },
+          { name: "react-dom", message: "Motion contracts must remain framework-independent." },
+        ],
+        [
+          [
+            "@codemirror/**",
+            "react/**",
+            "react-dom/**",
+            "**/obsidian/**",
+            "**/persistence/**",
+            "**/rendering/ui/**",
+          ],
+        ],
+        [String.raw`^(?:\.\.?/)+(?:rendering/)?ui(?:/|$)`],
+      ),
+      "no-restricted-syntax": [
+        "error",
+        {
+          message: "Framework-free motion contracts must not load modules dynamically.",
+          selector: "ImportExpression",
+        },
+      ],
+    },
+  },
+  {
     files: ["src/persistence/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": restrictImports(
@@ -177,8 +293,39 @@ export default [
   {
     files: ["src/rendering/scene/**/*.{ts,tsx}"],
     rules: {
+      "no-restricted-imports": restrictImports(
+        [
+          { name: "obsidian", message: "Host APIs belong to the Obsidian integration boundary." },
+          { name: "react", message: "React must not participate in scene rendering." },
+          { name: "react-dom", message: "React DOM must not participate in scene rendering." },
+        ],
+        [
+          [
+            "@codemirror/**",
+            "react/**",
+            "react-dom/**",
+            "**/obsidian/**",
+            "**/persistence/**",
+            "**/rendering/ui/**",
+          ],
+        ],
+        [String.raw`^(?:\.\.?/)+(?:rendering/)?ui(?:/|$)`],
+      ),
       "no-restricted-syntax": [
         "error",
+        {
+          message: "The imperative SVG scene must not load modules dynamically.",
+          selector: "ImportExpression",
+        },
+        {
+          message: "JSX belongs to React-owned chrome, never to the imperative SVG scene.",
+          selector: "JSXElement, JSXFragment",
+        },
+        {
+          message: "React roots, portals, and state APIs must not participate in scene rendering.",
+          selector:
+            "CallExpression[callee.name=/^(createRoot|hydrateRoot|createPortal|useState|useReducer|useSyncExternalStore)$/], CallExpression[callee.property.name=/^(createRoot|hydrateRoot|createPortal|useState|useReducer|useSyncExternalStore)$/]",
+        },
         {
           message: "Scene reconciliation uses retained node references, never selector queries.",
           selector:
@@ -198,7 +345,25 @@ export default [
     },
   },
   {
-    files: ["scripts/**/*.mjs", "test/unit/scripts/**/*.mjs", "eslint.config.mjs"],
+    files: ["src/rendering/scene/**/*.tsx"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          message: "The imperative SVG scene must use TypeScript files, never TSX files.",
+          selector: "Program",
+        },
+      ],
+    },
+  },
+  {
+    files: [
+      ".dependency-cruiser.mjs",
+      "scripts/**/*.mjs",
+      "test/unit/scripts/**/*.mjs",
+      "eslint.config.mjs",
+      "stylelint.config.mjs",
+    ],
     languageOptions: {
       globals: {
         ...globals.node,
@@ -206,6 +371,7 @@ export default [
       parserOptions: {
         projectService: {
           allowDefaultProject: defaultProjectFiles,
+          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 13,
         },
         tsconfigRootDir: import.meta.dirname,
       },

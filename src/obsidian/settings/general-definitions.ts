@@ -12,7 +12,7 @@ import type { RefreshRateProfileStatus } from "../performance";
 import type { SettingsControlKey } from "./control-values";
 import { dropdown, resetAction, sentenceCaseLabel, slider } from "./definition-helpers";
 
-const labels = (values: readonly string[]): Record<string, string> =>
+const createLabels = (values: readonly string[]): Record<string, string> =>
   Object.fromEntries(values.map((value) => [value, sentenceCaseLabel(value)]));
 const numberLabels = (values: readonly number[]): Record<string, string> =>
   Object.fromEntries(values.map((value) => [String(value), String(value)]));
@@ -27,7 +27,7 @@ function backgroundPage(): SettingDefinitionPage<SettingsControlKey> {
         "pageDefaults.backgroundType",
         "Background type",
         "Choose the background for newly created files.",
-        labels(BACKGROUND_TYPES),
+        createLabels(BACKGROUND_TYPES),
       ),
       dropdown(
         "pageDefaults.backgroundSpacing.lines",
@@ -116,7 +116,7 @@ export function generalGroup(
         "startupTool",
         "Startup tool",
         "Choose the tool selected when an editor opens.",
-        labels(STARTUP_TOOLS),
+        createLabels(STARTUP_TOOLS),
       ),
       dropdown(
         "refreshRatePreference",
@@ -169,4 +169,4 @@ function refreshRateDescription(status: RefreshRateProfileStatus): string {
   return "Use quick per-window detection or select a fixed frame-rate profile.";
 }
 
-export { labels };
+export { createLabels };

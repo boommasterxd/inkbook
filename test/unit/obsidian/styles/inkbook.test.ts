@@ -57,7 +57,7 @@ describe("Inkbook host styles", () => {
     expect(indicator).toContain("block-size: 36px");
     expect(indicator).toContain("inline-size: 36px");
     expect(indicator).toContain(
-      "transform: translate3d(var(--inkbook-toolbar-active-offset, 0px), 0, 0)",
+      "transform: translate3d(var(--inkbook-toolbar-active-offset, 0), 0, 0)",
     );
     expect(indicator).toContain("transition: transform var(--inkbook-motion-fast)");
     expect(visual).toContain("transform var(--inkbook-motion-fast) var(--inkbook-motion-easing)");
@@ -169,11 +169,9 @@ describe("Inkbook editor chrome styles", () => {
       "block-size: calc(var(--inkbook-active-scene-block-size) - 2px)",
     );
     expect(fixedUnlockScene).toContain("inset-block-end: auto");
-    expect(scene).toContain("inset-block-start: 0");
-    expect(scene).toContain("inset-block-end: auto");
+    expect(scene).toContain("inset-block: 0 auto");
     expect(scene).toContain("transform-origin: top left");
-    expect(transitioningScene).toContain("inset-block-start: 0");
-    expect(transitioningScene).toContain("inset-block-end: auto");
+    expect(transitioningScene).toContain("inset-block: 0 auto");
     expect(presentationShell).toContain("background: var(--inkbook-page-surface)");
     expect(presentationShell).toContain("border: 1px solid var(--background-modifier-border)");
     expect(presentationShell).toContain("pointer-events: none");
@@ -219,7 +217,7 @@ describe("Inkbook responsive toolbar styles", () => {
     expect(rail).toContain("block-size: 48px");
     expect(rail).toContain("inset-block-start: 1px");
     expect(rail).toContain("position: relative");
-    expect(scrollableComposition).toContain("overflow-x: auto");
+    expect(scrollableComposition).toContain("overflow: auto hidden");
     expect(scrollableComposition).toContain("border-radius: 999px");
     expect(scrollableComposition).toContain("scrollbar-width: none");
     expect(scrollableRail).toContain("display: flex");
@@ -322,7 +320,7 @@ describe("Inkbook editor handoff styles", () => {
     expect(transitioningScene).toContain(
       "block-size: calc(var(--inkbook-page-height-envelope-block-size) - 2px)",
     );
-    expect(transitioningScene).toContain("inset-block-end: auto");
+    expect(transitioningScene).toContain("inset-block: 0 auto");
   });
 });
 
@@ -330,8 +328,7 @@ describe("Inkbook editor overlays", () => {
   it("anchors attached save recovery at the bottom center", () => {
     const recovery = declarationsFor(".inkbook-root .inkbook-recovery");
 
-    expect(recovery).toContain("inset-block-end: 16px");
-    expect(recovery).toContain("inset-block-start: auto");
+    expect(recovery).toContain("inset-block: auto 16px");
     expect(recovery).toContain("inset-inline-start: 50%");
     expect(recovery).toContain("translate: -50% 0");
   });
@@ -352,7 +349,7 @@ describe("Inkbook editor overlays", () => {
   it("keeps the background submenu beside the anchored overflow menu", () => {
     const menu = declarationsFor('.inkbook-root .inkbook-flyout[role="menu"]');
     const submenu = declarationsFor(
-      ".inkbook-root .inkbook-overflow-background-region > div.inkbook-overflow-submenu",
+      ".inkbook-root .inkbook-overflow-background-region > .inkbook-overflow-submenu",
     );
 
     expect(menu).toContain("overflow: visible");

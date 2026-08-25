@@ -8,7 +8,7 @@ import type {
   ElementReplacementPlan,
   ElementReplacementSource,
   PreparedReplacementRecords,
-} from "./time-sliced-element-replacement";
+} from "./replacement-types";
 import type { StoreSliceScheduler } from "./types";
 
 const CANONICAL_TRANSLATION_DOMAINS = Object.freeze(["geometry"] as const);

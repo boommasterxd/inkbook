@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ActiveHeightTransition } from "../../../src/obsidian/embeds/active-editor/height-transition";
-import { transitionDurations } from "../../../src/rendering/ui/motion";
+import { TRANSITION_DURATIONS } from "../../../src/rendering/motion/transitions";
 import {
   INTERACTION_REFRESH_PROFILE,
   interactionProfileAnnotation,
@@ -22,7 +22,7 @@ describe("automatic page-height performance", () => {
     expect(p99).toBeLessThanOrEqual(timingBudget(1));
     expect(harness.maximumFramesPerTransition).toBeLessThanOrEqual(
       Math.ceil(
-        transitionDurations.automaticPageGrowth / INTERACTION_REFRESH_PROFILE.frameDurationMs,
+        TRANSITION_DURATIONS.automaticPageGrowth / INTERACTION_REFRESH_PROFILE.frameDurationMs,
       ) + 2,
     );
     expect(harness.incompleteTransitions).toBe(0);
@@ -88,7 +88,7 @@ function transitionHarness(frameDurationMs: number) {
       maximumFramesPerTransition = Math.max(maximumFramesPerTransition, frameCount);
       if (!completed || transition.active) incompleteTransitions += 1;
       expect(elapsed).toBeLessThanOrEqual(
-        transitionDurations.automaticPageGrowth + frameDurationMs * 2,
+        TRANSITION_DURATIONS.automaticPageGrowth + frameDurationMs * 2,
       );
     },
   };

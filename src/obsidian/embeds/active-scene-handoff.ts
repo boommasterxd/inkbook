@@ -1,5 +1,5 @@
 import type { InkbookDeviceSettingsV1 } from "../../domain/settings/types";
-import { transitionDurations } from "../../rendering/ui/motion";
+import { TRANSITION_DURATIONS } from "../../rendering/motion/transitions";
 
 type MotionPreference = InkbookDeviceSettingsV1["motion"];
 
@@ -130,7 +130,7 @@ export class ActiveScenePreviewHandoff {
     this.#notifyReady();
     this.#timer = this.#ownerWindow.setTimeout(
       () => this.#complete(),
-      transitionDurations.lockedToActiveHeight,
+      TRANSITION_DURATIONS.lockedToActiveHeight,
     );
   }
 

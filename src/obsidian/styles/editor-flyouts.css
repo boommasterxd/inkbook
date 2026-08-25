@@ -5,8 +5,14 @@
   z-index: var(--layer-menu);
 }
 
-.inkbook-root .inkbook-flyout,
-.inkbook-root .inkbook-overflow-background-region > .inkbook-overflow-submenu {
+.inkbook-root .inkbook-overflow-menu,
+.inkbook-root .inkbook-overflow-submenu {
+  display: grid;
+  gap: 2px;
+}
+
+.inkbook-root .inkbook-overflow-background-region > .inkbook-overflow-submenu,
+.inkbook-root .inkbook-flyout {
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
   border-radius: calc(var(--radius-l) + 2px);
@@ -32,19 +38,13 @@
   padding: 6px;
 }
 
-.inkbook-root .inkbook-overflow-menu,
-.inkbook-root .inkbook-overflow-submenu {
-  display: grid;
-  gap: 2px;
-}
-
 .inkbook-root .inkbook-overflow-background-region {
   display: grid;
   gap: 4px;
   position: relative;
 }
 
-.inkbook-root .inkbook-overflow-background-region > div.inkbook-overflow-submenu {
+.inkbook-root .inkbook-overflow-background-region > .inkbook-overflow-submenu {
   inline-size: 226px;
   inset-block-start: -4px;
   inset-inline-end: calc(100% + 8px);
@@ -184,14 +184,13 @@
   background: var(--background-modifier-hover);
 }
 
-.inkbook-root .inkbook-choice-grid button[aria-pressed="true"] {
+.inkbook-root .inkbook-choice-grid [aria-pressed="true"] {
   background: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-secondary));
   border-color: var(--interactive-accent);
   color: var(--text-normal);
 }
 
-.inkbook-root .inkbook-choice-grid button:focus-visible,
-.inkbook-root .inkbook-style-controls input:focus-visible {
+.inkbook-root .inkbook-choice-grid button:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: 2px;
 }
@@ -216,7 +215,7 @@
   background: var(--background-modifier-hover);
 }
 
-.inkbook-root .inkbook-style-field .inkbook-choice-grid button[aria-pressed="true"] {
+.inkbook-root .inkbook-style-field .inkbook-choice-grid [aria-pressed="true"] {
   background: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-primary));
 }
 
@@ -260,9 +259,8 @@
 }
 
 .inkbook-root .inkbook-line-preview {
-  border-block-start-color: var(--text-normal);
-  border-block-start-style: var(--inkbook-option-line-style, solid);
-  border-block-start-width: var(--inkbook-option-line-width, 2px);
+  border-block-start: var(--inkbook-option-line-width, 2px) var(--inkbook-option-line-style, solid)
+    var(--text-normal);
   inline-size: 28px;
 }
 
@@ -281,6 +279,17 @@
   gap: 12px;
   justify-content: space-between;
   min-block-size: 44px;
+}
+
+.inkbook-root .inkbook-style-number input {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  block-size: 36px;
+  color: var(--text-normal);
+  inline-size: 88px;
+  padding-inline: 10px;
+  text-align: end;
 }
 
 .inkbook-root .inkbook-style-toggle input {
@@ -316,15 +325,9 @@
   translate: 18px 0;
 }
 
-.inkbook-root .inkbook-style-number input {
-  background: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-s);
-  block-size: 36px;
-  color: var(--text-normal);
-  inline-size: 88px;
-  padding-inline: 10px;
-  text-align: end;
+.inkbook-root .inkbook-style-controls input:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
 }
 
 .inkbook-root .inkbook-flyout-empty {
@@ -333,7 +336,7 @@
   padding: 4px;
 }
 
-@media (max-width: 420px) {
+@media (width <= 420px) {
   .inkbook-root .inkbook-flyout {
     inline-size: min(296px, calc(100vi - 16px));
   }

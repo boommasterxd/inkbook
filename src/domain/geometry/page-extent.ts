@@ -1,4 +1,5 @@
-import { CANONICAL_LOCKED_BUFFER_LINES, type PageV1 } from "../schema/public";
+import { CANONICAL_LOCKED_BUFFER_LINES } from "../schema/constants";
+import type { PageV1 } from "../schema/types";
 
 const MINIMUM_EMPTY_WRITING_LINES = 2.5;
 

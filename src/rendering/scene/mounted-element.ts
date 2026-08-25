@@ -7,7 +7,7 @@ import {
   type PresentationAttribute,
 } from "./element-presentation";
 import type { MutableSceneInstrumentation, SceneElementRecord } from "./types";
-import { easing } from "../ui/motion";
+import { EASING_TOKENS } from "../motion/transitions";
 import { clearMotionStyle, writeMotionStyle } from "./motion-visual";
 
 interface MountedPath {
@@ -157,7 +157,7 @@ export function updateMountedElementPreview(
 export function setMountedElementFade(entry: MountedSceneElement, durationMs: number | null): void {
   for (const path of entry.paths) {
     path.node.style.transition =
-      durationMs === null ? "" : `opacity ${String(durationMs)}ms ${easing.standard}`;
+      durationMs === null ? "" : `opacity ${String(durationMs)}ms ${EASING_TOKENS.standard}`;
     path.node.style.opacity = durationMs === null ? "" : "0";
   }
 }

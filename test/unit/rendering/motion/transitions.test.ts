@@ -6,22 +6,19 @@ import {
   TRANSITION_DURATIONS,
   advanceTransition,
   createTransition,
-  easing,
   finishTransition,
   getMotionDuration,
   getTransitionDuration,
   interruptTransition,
   isReducedMotion,
-  motion,
-  transitionDurations,
-} from "../../../../src/rendering/ui/motion";
+} from "../../../../src/rendering/motion/transitions";
 
 const interpolateNumber = (from: number, to: number, progress: number): number =>
   from + (to - from) * progress;
 
 describe("motion tokens", () => {
   it("exposes the documented duration and easing tokens", () => {
-    expect(motion).toEqual({
+    expect(MOTION_TOKENS).toEqual({
       fast: 120,
       toolbar: 300,
       standard: 180,
@@ -29,14 +26,12 @@ describe("motion tokens", () => {
       layout: 240,
       slow: 300,
     });
-    expect(easing.standard).toBe("cubic-bezier(0.2, 0, 0, 1)");
-    expect(easing.emphasized).toBe(easing.standard);
-    expect(MOTION_TOKENS).toBe(motion);
-    expect(EASING_TOKENS).toBe(easing);
+    expect(EASING_TOKENS.standard).toBe("cubic-bezier(0.2, 0, 0, 1)");
+    expect(EASING_TOKENS.emphasized).toBe(EASING_TOKENS.standard);
   });
 
   it("maps every documented transition to its contract duration", () => {
-    expect(transitionDurations).toEqual({
+    expect(TRANSITION_DURATIONS).toEqual({
       toolbarEnterExit: 300,
       toolActiveState: 120,
       flyoutOpenClose: 180,
@@ -56,7 +51,6 @@ describe("motion tokens", () => {
       snapCandidateMarker: 120,
       fallback: 120,
     });
-    expect(TRANSITION_DURATIONS).toBe(transitionDurations);
     expect(getTransitionDuration("lockedToActiveHeight")).toBe(240);
   });
 

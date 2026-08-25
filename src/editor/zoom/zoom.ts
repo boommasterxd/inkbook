@@ -83,7 +83,6 @@ export function calculateFitZoom(
   return containerWidth / outerPageWidth;
 }
 
-/** Calculates the exact lower and upper camera zoom limits for a fit zoom. */
 export function calculateZoomLimits(fitZoom: number): ZoomLimits {
   requirePositive(fitZoom, "fitZoom");
 
@@ -93,7 +92,6 @@ export function calculateZoomLimits(fitZoom: number): ZoomLimits {
   };
 }
 
-/** Clamps a finite number to an inclusive finite interval. */
 export function clamp(value: number, min: number, max: number): number {
   requireFinite(value, "value");
   requireFinite(min, "min");
@@ -105,7 +103,6 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-/** Applies the width-fit zoom limits to a requested zoom. */
 export function clampZoom(zoom: number, limits: ZoomLimits): number {
   return clamp(zoom, limits.minZoom, limits.maxZoom);
 }
@@ -124,14 +121,12 @@ export function zoomBySteps(currentZoom: number, steps: number, limits: ZoomLimi
   return clampZoom(currentZoom * zoomFactorForSteps(steps), limits);
 }
 
-/** Converts a camera zoom to the percentage shown by the editor. */
 export function displayedPercent(cameraZoom: number, fitZoom: number): number {
   requirePositive(cameraZoom, "cameraZoom");
   requirePositive(fitZoom, "fitZoom");
   return (cameraZoom / fitZoom) * 100;
 }
 
-/** Derives the background container height for the current camera zoom. */
 export function renderedContainerHeight(derivedPageHeight: number, zoom: number): number {
   requireNonNegative(derivedPageHeight, "derivedPageHeight");
   requirePositive(zoom, "zoom");
@@ -231,7 +226,6 @@ export function anchoredScrollTop(
   return clampScrollTop(candidateScrollTop, scrollBounds);
 }
 
-/** Clamps a native scroll position to the supplied owner bounds. */
 export function clampScrollTop(scrollTop: number, scrollBounds: ScrollBounds): number {
   return clamp(scrollTop, scrollBounds.min, scrollBounds.max);
 }

@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { PointV1 } from "../../../../src/domain/schema/public";
+import { boundsFromPoints } from "../../../../src/domain/geometry/primitives";
 
 import {
   canonicalPoint,
@@ -13,6 +15,7 @@ import {
 describe("canonical geometry primitives", () => {
   it("rounds geometry and removes negative zero", () => {
     expect(roundCanonical(1.23456)).toBe(1.235);
+    expect(roundCanonical(0.12345, 4)).toBe(0.1235);
     expect(roundCanonical(-0.0001)).toBe(0);
     expect(canonicalPoint({ x: 2.3456, y: -0.0002 })).toEqual({ x: 2.346, y: 0 });
     expect(() => roundCanonical(Number.POSITIVE_INFINITY)).toThrow(RangeError);
@@ -48,5 +51,13 @@ describe("canonical geometry primitives", () => {
     const end = { x: 20, y: 0 };
     expect(quadraticPoint(start, control, end, 0.5)).toEqual({ x: 10, y: 10 });
     expect(quadraticBounds(start, control, end)).toEqual({ minX: 0, minY: 0, maxX: 20, maxY: 10 });
+  });
+
+  it("rejects empty bounds and ignores sparse point entries", () => {
+    expect(() => boundsFromPoints([])).toThrow("at least one point");
+    const points = new Array<PointV1>(3);
+    points[0] = { x: 2, y: 3 };
+    points[2] = { x: 8, y: 9 };
+    expect(boundsFromPoints(points)).toEqual({ minX: 2, minY: 3, maxX: 8, maxY: 9 });
   });
 });

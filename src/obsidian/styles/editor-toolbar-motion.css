@@ -20,6 +20,7 @@
 
 .inkbook-root .inkbook-toolbar-context-button {
   --inkbook-presence-delay: 0ms;
+
   animation: inkbook-toolbar-context-control-enter var(--inkbook-motion-toolbar) ease-out both;
   animation-delay: var(--inkbook-presence-delay);
   transform-origin: center;

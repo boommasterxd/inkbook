@@ -4,7 +4,7 @@ import type {
   LinearElementV1,
   PointV1,
   StrokeElementV1,
-} from "../schema/public";
+} from "../schema/types";
 
 import { addPoints, canonicalPoint } from "./primitives";
 

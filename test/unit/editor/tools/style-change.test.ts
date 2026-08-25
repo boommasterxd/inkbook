@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type {
+  BoxShapeElementV1,
   CoordinateSystemElementV1,
   TableElementV1,
 } from "../../../../src/domain/schema/public";
@@ -72,6 +73,146 @@ describe("selection paint Style changes", () => {
         value: 0.5,
       }),
     ).toThrow(/not shared/);
+  });
+});
+
+describe("selection paint property families", () => {
+  it("applies every compatible paint property to its element family", () => {
+    const defaults = createBuiltInSettings().toolDefaults;
+    const pen = createFreehandElement({
+      identity,
+      tool: "draw",
+      samples: [10, 10, 0.5],
+      defaults,
+    });
+    const line = createDragElement({
+      identity: { ...identity, id: "123e4567-e89b-42d3-a456-426614174001" },
+      tool: "line",
+      start: { x: 10, y: 10 },
+      end: { x: 100, y: 10 },
+      defaults,
+    });
+    const rectangle = createDragElement({
+      identity: { ...identity, id: "123e4567-e89b-42d3-a456-426614174002" },
+      tool: "rectangle",
+      start: { x: 10, y: 10 },
+      end: { x: 100, y: 100 },
+      defaults,
+    });
+
+    const changedPen = applySelectionStyleChange([pen], {
+      property: "color",
+      value: { type: "rgba", value: "#FF00AAFF" },
+    });
+    expect(changedPen.elements[0]?.style).toMatchObject({
+      color: { type: "rgba", value: "#FF00AAFF" },
+    });
+    expect(
+      applySelectionStyleChange([pen], { property: "stroke-width", value: 2 }).elements[0]?.style,
+    ).toMatchObject({ width: 2 });
+
+    const changedLine = applySelectionStyleChange([line], {
+      property: "outline-color",
+      value: { type: "rgba", value: "#00AAFFFF" },
+    });
+    expect(changedLine.elements[0]?.style).toMatchObject({
+      outlineColor: { type: "rgba", value: "#00AAFFFF" },
+    });
+    expect(
+      applySelectionStyleChange([line], { property: "outline-style", value: "dashed" }).elements[0]
+        ?.style,
+    ).toMatchObject({ outlineStyle: "dashed" });
+    expect(
+      applySelectionStyleChange([line], { property: "outline-opacity", value: 0.25 }).elements[0]
+        ?.style,
+    ).toMatchObject({ outlineOpacity: 0.25 });
+
+    const changedRectangle = applySelectionStyleChange([rectangle], {
+      property: "fill-color",
+      value: { type: "theme-text" },
+    });
+    expect(changedRectangle.elements[0]?.style).toMatchObject({
+      fillColor: { type: "theme-text" },
+    });
+    expect(
+      applySelectionStyleChange([rectangle], { property: "fill-opacity", value: 0.75 }).elements[0]
+        ?.style,
+    ).toMatchObject({ fillOpacity: 0.75 });
+  });
+});
+
+describe("selection paint compatibility", () => {
+  it("rejects empty and element-incompatible selections", () => {
+    const defaults = createBuiltInSettings().toolDefaults;
+    const pen = createFreehandElement({ identity, tool: "draw", samples: [10, 10, 0.5], defaults });
+    const arrow = createDragElement({
+      identity: { ...identity, id: "123e4567-e89b-42d3-a456-426614174003" },
+      tool: "arrow",
+      start: { x: 10, y: 10 },
+      end: { x: 100, y: 10 },
+      defaults,
+    });
+
+    expect(() => applySelectionStyleChange([], { property: "opacity", value: 0.5 })).toThrow(
+      /non-empty/,
+    );
+    expect(() => applySelectionStyleChange([pen], { property: "outline-width", value: 2 })).toThrow(
+      /not shared/,
+    );
+    expect(() =>
+      applySelectionStyleChange([pen], { property: "pressure-enabled", value: false }),
+    ).toThrow(/not shared/);
+    expect(() =>
+      applySelectionStyleChange([pen], { property: "eraser-radius", value: 24 }),
+    ).toThrow(/not shared/);
+    expect(() =>
+      applySelectionStyleChange([arrow], { property: "fill-opacity", value: 0.5 }),
+    ).toThrow(/not shared/);
+    expect(() =>
+      applySelectionStyleChange([rectangleForStyleTest(defaults)], {
+        property: "arrow-end-node",
+        value: "circle",
+      }),
+    ).toThrow(/not shared/);
+  });
+
+  it("changes arrow endpoints and canonicalizes colors and opacities", () => {
+    const defaults = createBuiltInSettings().toolDefaults;
+    const arrow = createDragElement({
+      identity,
+      tool: "arrow",
+      start: { x: 10, y: 10 },
+      end: { x: 100, y: 10 },
+      defaults,
+    });
+    const changed = applySelectionStyleChange([arrow], {
+      property: "arrow-start-node",
+      value: "circle",
+    });
+    expect(changed.elements[0]).toMatchObject({ startNode: "circle" });
+    const endChanged = applySelectionStyleChange(changed.elements, {
+      property: "arrow-end-node",
+      value: "diamond",
+    });
+    expect(endChanged.elements[0]).toMatchObject({ endNode: "diamond" });
+
+    const rectangle = rectangleForStyleTest(defaults);
+    const transparent = applySelectionStyleChange([rectangle], {
+      property: "fill-color",
+      value: null,
+    });
+    expect(transparent.elements[0]?.style).toMatchObject({ fillColor: null });
+    const opacity = applySelectionStyleChange([rectangle], {
+      property: "fill-opacity",
+      value: 0.12345,
+    });
+    expect(opacity.elements[0]?.style).toMatchObject({ fillOpacity: 0.1235 });
+    expect(() =>
+      applySelectionStyleChange([rectangle], {
+        property: "outline-color",
+        value: { type: "rgba", value: "invalid" } as never,
+      }),
+    ).toThrow(/canonical RGBA/);
   });
 });
 
@@ -206,3 +347,115 @@ describe("active tool Style changes", () => {
     ).toThrow(/does not apply/);
   });
 });
+
+describe("active tool default families", () => {
+  it("updates stroke, highlighter, shape, coordinate, and table defaults", () => {
+    const draw = createBuiltInSettings().toolDefaults;
+    expect(
+      applyToolStyleChange(draw, "draw", {
+        property: "color",
+        value: { type: "rgba", value: "#FF00AAFF" },
+      }).toolValues.pen,
+    ).toMatchObject({ color: { type: "rgba", value: "#FF00AAFF" } });
+    expect(
+      applyToolStyleChange(draw, "draw", { property: "stroke-width", value: 2 }).toolValues.pen,
+    ).toMatchObject({ width: 2 });
+    expect(
+      applyToolStyleChange(draw, "draw", { property: "pressure-enabled", value: false }).toolValues
+        .pen,
+    ).toMatchObject({ pressureEnabled: false });
+
+    const highlighter = createBuiltInSettings().toolDefaults;
+    expect(
+      applyToolStyleChange(highlighter, "highlighter", {
+        property: "opacity",
+        value: 0.12345,
+      }).toolValues.highlighter,
+    ).toMatchObject({ opacity: 0.1235 });
+    const straight = createBuiltInSettings().toolDefaults;
+    expect(
+      applyToolStyleChange(straight, "straight-highlighter", {
+        property: "stroke-width",
+        value: 14,
+      }).toolValues.straightHighlighter,
+    ).toMatchObject({ width: 14 });
+
+    const shapeValues = createBuiltInSettings().toolDefaults;
+    const shapeChange = applyToolStyleChange(shapeValues, "rectangle", {
+      property: "outline-color",
+      value: { type: "rgba", value: "#00AAFFFF" },
+    });
+    expect(shapeChange.toolValues.shapes.rectangle).toMatchObject({
+      outlineColor: { type: "rgba", value: "#00AAFFFF" },
+    });
+    for (const change of [
+      { property: "outline-width", value: 8 },
+      { property: "outline-style", value: "dotted" },
+      { property: "outline-opacity", value: 0.25 },
+      { property: "fill-color", value: { type: "theme-text" } },
+      { property: "fill-opacity", value: 0.75 },
+    ] as const) {
+      const result = applyToolStyleChange(
+        createBuiltInSettings().toolDefaults,
+        "rectangle",
+        change,
+      );
+      expect(result.changed).toBe(true);
+    }
+
+    const coordinate = createBuiltInSettings().toolDefaults;
+    expect(
+      applyToolStyleChange(coordinate, "coordinate-system", {
+        property: "coordinate-dimension",
+        value: "3d",
+      }).toolValues.coordinateSystem,
+    ).toEqual({ dimension: "3d" });
+    const table = createBuiltInSettings().toolDefaults;
+    expect(
+      applyToolStyleChange(table, "table", { property: "table-columns", value: 12 }).toolValues
+        .table,
+    ).toEqual({ columns: 12 });
+  });
+});
+
+describe("active tool compatibility", () => {
+  it("preserves no-op tool defaults and rejects unsupported tool properties", () => {
+    const values = createBuiltInSettings().toolDefaults;
+    expect(
+      applyToolStyleChange(values, "draw", {
+        property: "color",
+        value: { type: "theme-text" },
+      }),
+    ).toEqual({ toolValues: values, changed: false });
+    expect(
+      applyToolStyleChange(values, "rectangle", {
+        property: "fill-opacity",
+        value: 0.15,
+      }),
+    ).toEqual({ toolValues: values, changed: false });
+    expect(() =>
+      applyToolStyleChange(values, "select", { property: "color", value: { type: "theme-text" } }),
+    ).toThrow(/does not apply/);
+    expect(() =>
+      applyToolStyleChange(values, "line", { property: "fill-color", value: null }),
+    ).toThrow(/does not apply/);
+    expect(() =>
+      applyToolStyleChange(values, "rectangle", {
+        property: "color",
+        value: { type: "theme-text" },
+      }),
+    ).toThrow(/does not apply/);
+  });
+});
+
+function rectangleForStyleTest(
+  defaults: ReturnType<typeof createBuiltInSettings>["toolDefaults"],
+): BoxShapeElementV1 {
+  return createDragElement({
+    identity: { ...identity, id: "123e4567-e89b-42d3-a456-426614174004" },
+    tool: "rectangle",
+    start: { x: 10, y: 10 },
+    end: { x: 100, y: 100 },
+    defaults,
+  }) as BoxShapeElementV1;
+}

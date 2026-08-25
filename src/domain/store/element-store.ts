@@ -23,6 +23,7 @@ import {
   type ReplacementPlan,
 } from "./replacement-plan";
 import { PreparedElementMutations } from "./prepared-element-mutations";
+import type { PreparedReplacementState } from "./replacement-types";
 import { createRemovalTransition } from "./removal-transition";
 import { assignRecordVersions, createInitialRecord, nextRecordVersion } from "./record-factory";
 import {
@@ -52,7 +53,6 @@ import type {
   PreparedElementMutationResult,
   PreparedElementReplacement,
   PreparedElementReplacementResult,
-  PreparedReplacementState,
   SnapshotMaterialization,
   StoreDelta,
   StoreDeltaListener,
@@ -126,7 +126,7 @@ export class ElementStore {
     if ((await builder.append(elements)) === "cancelled") return null;
     return builder.finalize();
   }
-  public static createBuilder(scheduler: StoreSliceScheduler): ElementStoreBuilder {
+  public static createBuilder(scheduler: StoreSliceScheduler): ElementStoreBuilder<ElementStore> {
     return createElementStoreBuilder(scheduler, (state) => this.adoptTimeSlicedState(state));
   }
   public static adoptTimeSlicedState(state: TimeSlicedStoreState): ElementStore {

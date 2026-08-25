@@ -98,12 +98,6 @@ export interface PreparedElementReplacementResult {
   readonly token: PreparedElementReplacement | null;
 }
 
-export interface PreparedReplacementState {
-  readonly isCancelled: () => boolean;
-  readonly mutationVersion: number;
-  readonly plan: import("./time-sliced-element-replacement").ElementReplacementPlan;
-}
-
 export interface ElementMutation {
   readonly bands: Readonly<Record<RenderBand, readonly string[]>>;
   readonly elements?: readonly InkElementV1[];

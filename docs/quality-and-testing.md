@@ -375,13 +375,30 @@ The deterministic suite covers JavaScript work that can be measured without brow
 
 Hosted CI separates compatibility and timing without changing the product budgets. Pull requests and manual dispatches run the complete gate; the post-merge `main` push does not repeat the already tested squash tree, while the release workflow reruns the complete gate for the tagged commit before publishing. The required `gitleaks` check retains its standalone standard `ubuntu-latest` job so branch protection receives the stable check name, while the `CI` job runs quality, coverage, audit, build, and package verification on one standard `ubuntu-latest` runner with the minimum supported Node.js 24 runtime. Performance uses two parallel standard `ubuntu-latest` Node.js 26 shards. The shared shard runs every invariant benchmark once and every budget-only benchmark once at 240 Hz. The shorter cadence-sensitive shard runs the complete classified set serially at 60, 90, 120, 144, and 240 Hz. Keeping the five short profiles on one runner avoids per-job minute rounding and setup costs without extending the workflow critical path beyond the shared shard. Tests remain serial within each shard so concurrent benchmark work never competes for one runner's CPU. The manifest is exhaustive and a new benchmark fails the Unit gate until its refresh-rate data dependency is classified. Each file remains process-isolated and reports its elapsed time. Local diagnostic runs record every violation and exit unsuccessfully only after printing the complete aggregate; CI stops at the first failing benchmark file in a shard and cancels its remaining work. Because the shared x64 runner is not a release-reference device, its `hosted-ubuntu` profile applies a fixed five-times multiplier only to elapsed-time assertions. The unscaled reference timings remain the default for local and release-reference measurements. Memory, file-size, count, cache, allocation, ordering, correctness, and instrumentation limits are never scaled. Hosted-runner results do not replace the named desktop and mobile release-reference measurements.
 
+Executable source MUST retain these project-wide coverage thresholds:
+
+| Metric     | Minimum |
+| ---------- | ------: |
+| Lines      |     85% |
+| Statements |     85% |
+| Functions  |     85% |
+| Branches   |     80% |
+
+The hard ESLint gate fails on functions over 100 lines, files over 500 lines, cyclomatic complexity over 20, cognitive complexity over 25, more than 6 parameters, or nesting deeper than 4 levels. Reviewers still assess large or complex units for clear responsibilities, cohesion, and readability, but the project does not emit a second set of arbitrary lower numeric warnings.
+
+TypeScript and TSX source filenames use `kebab-case`; executable tests use `*.test.ts`, `*.test.tsx`, or `*.test.mjs`. Types, classes, and React components use `PascalCase`; functions, methods, and variables use `camelCase`; genuine module constants use `UPPER_CASE`; public exports use meaningful names without interface-style `I` prefixes or unnecessary defaults. ESLint enforces identifier and export rules, while the source-layout gate enforces filenames, test suffixes, Scene TSX absence, and the 500-line CSS limit.
+
+The dependency-cruiser gate evaluates the complete `src/` graph including TypeScript type-only edges. It rejects every cycle and every import that violates the documented `domain`, `editor`, `rendering`, `persistence`, `obsidian`, and build-entry directions. The Scene-specific ESLint gate rejects React, ReactDOM, JSX, TSX, React-owned UI imports, roots, portals, state APIs, selector queries, and descendant DOM walks while allowing imperative DOM and SVG. The entry-based worker typecheck uses `ES2021` plus `WebWorker` and excludes DOM, `Window`, React, Obsidian, and the main-thread worker factory. Stylelint verifies source CSS syntax, known properties, duplicate selectors, specificity, qualifying types, and nesting depth.
+
 CI MUST run:
 
 - formatting verification
-- linting with project size and complexity limits
-- TypeScript type checking
+- hard linting with project size, complexity, naming, mobile, Obsidian, and architecture-boundary rules
+- source-layout and CSS linting
+- complete import-graph cycle and area-direction verification
+- main, test, and isolated worker TypeScript type checking
 - Unit and Integration tests
-- at least 85 percent line coverage across executable source
+- the project-wide coverage thresholds above
 - `jscpd` with `minTokens: 50`
 - `knip`
 - dependency security audit

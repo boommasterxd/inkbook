@@ -6,7 +6,7 @@
  * and interruption semantics consistent across rendering surfaces.
  */
 
-export const motion = Object.freeze({
+export const MOTION_TOKENS = Object.freeze({
   fast: 120,
   toolbar: 300,
   standard: 180,
@@ -15,40 +15,36 @@ export const motion = Object.freeze({
   slow: 300,
 } as const);
 
-export const easing = Object.freeze({
+export const EASING_TOKENS = Object.freeze({
   standard: "cubic-bezier(0.2, 0, 0, 1)",
   emphasized: "cubic-bezier(0.2, 0, 0, 1)",
 } as const);
 
-export const transitionDurations = Object.freeze({
-  toolbarEnterExit: motion.toolbar,
-  toolActiveState: motion.fast,
-  flyoutOpenClose: motion.standard,
-  selectionHandlesEnterExit: motion.fast,
-  eraserPendingRemoval: motion.erase,
-  committedEntrance: motion.fast,
-  commandRemovalExit: motion.fast,
-  backgroundChange: motion.standard,
-  styleChange: motion.fast,
-  lockedToActiveHeight: motion.layout,
-  activeToLockedHeight: motion.layout,
-  lockEditorCrossfade: motion.fast,
-  automaticPageGrowth: motion.standard,
-  overflowEdgeGradient: motion.fast,
-  conditionalToolbarControl: motion.toolbar,
-  arrangeResult: motion.fast,
-  snapCandidateMarker: motion.fast,
-  fallback: motion.fast,
+export const TRANSITION_DURATIONS = Object.freeze({
+  toolbarEnterExit: MOTION_TOKENS.toolbar,
+  toolActiveState: MOTION_TOKENS.fast,
+  flyoutOpenClose: MOTION_TOKENS.standard,
+  selectionHandlesEnterExit: MOTION_TOKENS.fast,
+  eraserPendingRemoval: MOTION_TOKENS.erase,
+  committedEntrance: MOTION_TOKENS.fast,
+  commandRemovalExit: MOTION_TOKENS.fast,
+  backgroundChange: MOTION_TOKENS.standard,
+  styleChange: MOTION_TOKENS.fast,
+  lockedToActiveHeight: MOTION_TOKENS.layout,
+  activeToLockedHeight: MOTION_TOKENS.layout,
+  lockEditorCrossfade: MOTION_TOKENS.fast,
+  automaticPageGrowth: MOTION_TOKENS.standard,
+  overflowEdgeGradient: MOTION_TOKENS.fast,
+  conditionalToolbarControl: MOTION_TOKENS.toolbar,
+  arrangeResult: MOTION_TOKENS.fast,
+  snapCandidateMarker: MOTION_TOKENS.fast,
+  fallback: MOTION_TOKENS.fast,
 } as const);
 
 export type MotionPreference = "system" | "full" | "reduced";
-export type TransitionName = keyof typeof transitionDurations;
-type EasingName = keyof typeof easing;
+export type TransitionName = keyof typeof TRANSITION_DURATIONS;
+type EasingName = keyof typeof EASING_TOKENS;
 type TransitionStatus = "running" | "complete";
-
-export const MOTION_TOKENS = Object.freeze(motion);
-export const EASING_TOKENS = Object.freeze(easing);
-export const TRANSITION_DURATIONS = Object.freeze(transitionDurations);
 
 /** Resolve a persisted motion preference against the host's system setting. */
 export function isReducedMotion(
@@ -72,9 +68,8 @@ export function getMotionDuration(durationMs: number, reducedMotion = false): nu
   return reducedMotion ? 0 : durationMs;
 }
 
-/** Resolve a named contract duration for the current motion preference. */
 export function getTransitionDuration(transition: TransitionName, reducedMotion = false): number {
-  return getMotionDuration(transitionDurations[transition], reducedMotion);
+  return getMotionDuration(TRANSITION_DURATIONS[transition], reducedMotion);
 }
 
 type MotionInterpolator<T> = (from: T, to: T, progress: number) => T;

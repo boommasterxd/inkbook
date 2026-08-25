@@ -12,7 +12,6 @@ export interface ElementBoxMeasurement {
   readonly contentBox: ElementContentBox;
 }
 
-/** Reads the element's visual border box and derives its exact content box. */
 export function measureElementBox(element: HTMLElement): ElementBoxMeasurement {
   const borderBox = element.getBoundingClientRect();
   const style = element.ownerDocument.defaultView?.getComputedStyle?.(element);
