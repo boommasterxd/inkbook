@@ -1,5 +1,7 @@
 const SUPPORTED_REFRESH_RATES = [60, 90, 120, 144, 240] as const;
 const MAIN_THREAD_FRAME_SHARE = 0.55;
+const MINIMUM_P99_SAMPLE_COUNT = 100;
+const ATOMIC_COMMIT_MAX_MS = 1_000 / 60;
 
 declare const process: { readonly env: Readonly<Record<string, string | undefined>> };
 
@@ -8,6 +10,8 @@ const refreshRate = readRefreshRate();
 export const INTERACTION_REFRESH_PROFILE = Object.freeze({
   refreshRate,
   frameDurationMs: 1_000 / refreshRate,
+  atomicCommitMaxMs: ATOMIC_COMMIT_MAX_MS,
+  interruptibleSliceDeadlineMs: (1_000 / refreshRate) * MAIN_THREAD_FRAME_SHARE,
   mainThreadP99Ms: (1_000 / refreshRate) * MAIN_THREAD_FRAME_SHARE,
   sampleCount: 600,
 });
@@ -42,6 +46,11 @@ function percentile(values: readonly number[], fraction: number): number {
 }
 
 export function interactionP99(values: readonly number[]): number {
+  if (values.length < MINIMUM_P99_SAMPLE_COUNT) {
+    throw new RangeError(
+      `Interaction p99 requires at least ${MINIMUM_P99_SAMPLE_COUNT} samples; received ${values.length}.`,
+    );
+  }
   return percentile(values, 0.99);
 }
 

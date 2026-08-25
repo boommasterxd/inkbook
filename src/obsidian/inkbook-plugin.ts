@@ -41,14 +41,18 @@ export async function activateInkbookPlugin(
   if (!isActive()) return undefined;
   const unregisterIcons = registerInkbookIcons();
   let active = true;
-  plugin.addSettingTab(
-    new InkbookSettingTab(
-      plugin.app,
-      plugin,
-      settings,
-      new ObsidianVaultFolderAdapter(plugin.app.vault, TFolder, normalizePath),
-    ),
+  let runtimeForSettings: ObsidianWorkspaceRuntime | undefined;
+  const settingTab = new InkbookSettingTab(
+    plugin.app,
+    plugin,
+    settings,
+    new ObsidianVaultFolderAdapter(plugin.app.vault, TFolder, normalizePath),
+    () =>
+      runtimeForSettings?.refreshRateProfiles.status(
+        plugin.app.workspace.containerEl.ownerDocument.defaultView,
+      ),
   );
+  plugin.addSettingTab(settingTab);
   const scheme = new ColorSchemeBroadcaster({
     getColorScheme: () => (plugin.app.isDarkMode() ? "dark" : "light"),
   });
@@ -76,6 +80,8 @@ export async function activateInkbookPlugin(
     embedActions,
     () => plugin.app.workspace.containerEl.ownerDocument.defaultView ?? undefined,
   );
+  runtimeForSettings = runtime;
+  plugin.register(runtime.refreshRateProfiles.subscribe(() => settingTab.update()));
   registerSettingsSubscriptions(plugin, settings, runtime);
   const insertion = createObsidianInsertionController(plugin.app, settings, {
     failed: (message) => {

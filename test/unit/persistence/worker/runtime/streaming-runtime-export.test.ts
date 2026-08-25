@@ -26,7 +26,7 @@ import {
   GestureAwareSliceScheduler,
   createProductionDocumentRuntime,
 } from "../../../../../src/persistence/worker/runtime/public";
-import { rectangle, snapshot } from "./fixtures";
+import { rectangle, rectangleDocument, snapshot } from "./fixtures";
 
 const executor = { sessionId: "session-a", workerEpoch: 3 } as const;
 const textEncoder = new TextEncoder();
@@ -265,16 +265,6 @@ function fallbackRuntime(): DocumentWorkerRuntime {
       yieldControl: async () => undefined,
     }),
   );
-}
-
-function rectangleDocument(elementCount: number): InkSnapshotV1 {
-  return {
-    ...snapshot(),
-    elements: Array.from({ length: elementCount }, (_, index) => ({
-      ...rectangle(),
-      id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
-    })),
-  };
 }
 
 function canonicalMetadataByteLength(

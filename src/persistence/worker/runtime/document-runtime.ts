@@ -420,9 +420,15 @@ function runtimeSliceContext(
   scheduler: InputAwareSliceScheduler | null,
   signal: AbortSignal,
 ): RuntimeSliceContext | undefined {
-  return scheduler === null
-    ? undefined
-    : { checkpoint: () => scheduler.checkpoint(signal), signal };
+  if (scheduler === null) return undefined;
+  const sliceMilliseconds = scheduler.getSliceMilliseconds?.bind(scheduler);
+  const workProfile = scheduler.getSliceWorkProfile?.bind(scheduler);
+  return {
+    checkpoint: () => scheduler.checkpoint(signal),
+    ...(sliceMilliseconds === undefined ? {} : { sliceMilliseconds }),
+    ...(workProfile === undefined ? {} : { workProfile: workProfile() }),
+    signal,
+  };
 }
 
 const DEFAULT_RUNTIME_SERVICES: DocumentRuntimeServices = Object.freeze({

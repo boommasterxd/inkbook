@@ -19,8 +19,9 @@ export async function collectTestFiles(directory = performanceRoot) {
   return files.sort();
 }
 
-export async function runRefreshRateMatrix(testFiles, refreshRates) {
+export async function runRefreshRateMatrix(testFiles, refreshRates, options = {}) {
   if (testFiles.length === 0) throw new Error("No performance test files were selected.");
+  const failFast = options.failFast ?? false;
   const violations = [];
   for (const refreshRate of refreshRates) {
     process.stdout.write(`\nRunning complete performance suite at ${refreshRate} Hz...\n`);
@@ -29,6 +30,7 @@ export async function runRefreshRateMatrix(testFiles, refreshRates) {
       const label = relative(projectRoot, testFile);
       process.stdout.write(`  ${result.length === 0 ? "PASS" : "FAIL"} ${label}\n`);
       violations.push(...result);
+      if (failFast && result.length > 0) return violations;
     }
   }
   return violations;

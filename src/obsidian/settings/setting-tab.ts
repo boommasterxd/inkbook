@@ -14,6 +14,7 @@ import {
   createBuiltInSettings,
   type InkbookSettingsV2,
 } from "../../domain/settings";
+import { DEFAULT_REFRESH_RATE, type RefreshRateProfileStatus } from "../performance";
 import { SettingsControlValues, type SettingsControlKey } from "./control-values";
 import { dropdown, resetAction, slider, toggle } from "./definition-helpers";
 import { generalGroup, labels } from "./general-definitions";
@@ -38,6 +39,7 @@ export class InkbookSettingTab extends PluginSettingTab {
     plugin: Plugin,
     private readonly store: InkbookSettingsStore,
     private readonly folderPort?: CustomFolderPort,
+    private readonly refreshRateStatus?: () => RefreshRateProfileStatus | undefined,
   ) {
     super(app, plugin);
     this.controls = new SettingsControlValues(store);
@@ -58,6 +60,11 @@ export class InkbookSettingTab extends PluginSettingTab {
         isCustomFolder: () => this.isCustomFolder(),
         canCreateFolder: () => this.folderPort !== undefined && this.isCustomFolder(),
         createFolder: (element) => this.createCustomFolder(element),
+        refreshRateStatus: () =>
+          this.refreshRateStatus?.() ?? {
+            kind: "detecting",
+            refreshRate: DEFAULT_REFRESH_RATE,
+          },
         reset: () => this.resetGeneral(),
       }),
       toolGroup("Pen", penItems(), () => this.resetToolGroup("pen")),

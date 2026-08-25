@@ -39,6 +39,36 @@ describe("ElementStore atomic element mutation", () => {
     expect(store.get(target.id)).toBeUndefined();
     expect(store.get(line.id)?.element).toMatchObject({ startConnection: null });
   });
+
+  it("detaches and restores both endpoints when both connection targets are removed", async () => {
+    const startTarget = rectangle("00000000-0000-4000-8000-000000000020", 100);
+    const endTarget = rectangle("00000000-0000-4000-8000-000000000021", 500);
+    const line = {
+      ...connectedLine(startTarget),
+      end: { x: endTarget.x, y: endTarget.y },
+      endConnection: {
+        anchor: { kind: "box" as const, position: "top-left" as const },
+        targetId: endTarget.id,
+      },
+      pivot: { x: (startTarget.x + endTarget.x) / 2, y: startTarget.y },
+    };
+    const store = new ElementStore([startTarget, endTarget, line]);
+
+    const applied = await commit(store, {
+      bands: { content: [line.id], highlight: [] },
+      removeIds: [startTarget.id, endTarget.id],
+    });
+
+    expect(store.get(line.id)?.element).toMatchObject({
+      endConnection: null,
+      startConnection: null,
+    });
+    await commit(store, applied.reverse);
+    expect(store.get(line.id)?.element).toMatchObject({
+      endConnection: { targetId: endTarget.id },
+      startConnection: { targetId: startTarget.id },
+    });
+  });
 });
 
 describe("ElementStore prepared mutation traversal", () => {

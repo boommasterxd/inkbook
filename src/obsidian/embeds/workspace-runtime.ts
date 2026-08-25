@@ -47,7 +47,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly #lifecycle: WorkspaceRuntimeLifecycle;
   readonly #ownerWindows = new OwnerWindowRegistry();
   readonly #mounted = new Map<string, WorkspaceMountedPresentation>();
-  readonly #refreshProfiles: WorkspaceRefreshProfiles;
+  readonly refreshRateProfiles: WorkspaceRefreshProfiles;
   readonly #scheme: ColorSchemeBroadcaster;
   readonly #sessions: VaultDocumentSessionFactory;
   readonly #settings: () => {
@@ -71,7 +71,8 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     this.#fallbackOwnerWindow = fallbackOwnerWindow;
     this.#scheme = scheme;
     this.#settings = settings;
-    this.#refreshProfiles = new WorkspaceRefreshProfiles(settings().vault.refreshRatePreference);
+    this.refreshRateProfiles = new WorkspaceRefreshProfiles(settings().vault.refreshRatePreference);
+    this.refreshRateProfiles.observeDefault(this.#fallbackOwnerWindow());
     this.#lifecycle = new WorkspaceRuntimeLifecycle({
       activate: (attachment, attempt) => this.#activate(attachment, attempt),
       fallbackWindow: () => this.#fallbackWindow(),
@@ -87,7 +88,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       createWorkspaceDocumentRuntimes({
         fallbackWindow: () => this.#fallbackWindow(),
         owningWindow: (documentId) => this.#owningWindow(documentId),
-        sliceBudgetMs: (ownerWindow) => this.#refreshProfiles.sliceBudgetMs(ownerWindow),
+        sliceBudgetMs: (ownerWindow) => this.refreshRateProfiles.sliceBudgetMs(ownerWindow),
       }),
       {
         persisted: (event) => this.#lifecycle.handlePersisted(event),
@@ -131,7 +132,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       scene: undefined,
     });
     this.#ownerWindows.observe(attachment.documentId, attachment.root.ownerDocument.defaultView);
-    this.#refreshProfiles.acquire(
+    this.refreshRateProfiles.acquire(
       key,
       attachment.root.ownerDocument.defaultView,
       attachment.root.ownerDocument,
@@ -207,7 +208,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
           },
           root: attachment.root,
           sliceBudgetMs: () =>
-            this.#refreshProfiles.sliceBudgetMs(attachment.root.ownerDocument.defaultView),
+            this.refreshRateProfiles.sliceBudgetMs(attachment.root.ownerDocument.defaultView),
           ...presentationPreviewOptions(attachment),
           scheme: initialScheme,
           scrollOwner: attachment.scrollOwner,
@@ -245,7 +246,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     this.#coordinator.detachAttachment(attachment);
     this.#releaseScene(attachment);
     this.#mounted.delete(presentationAttachmentKey(attachment));
-    this.#refreshProfiles.release(presentationAttachmentKey(attachment));
+    this.refreshRateProfiles.release(presentationAttachmentKey(attachment));
     this.#lifecycle.detachAutoActivation(attachment);
     pruneOwnerWindowRegistry(
       this.#ownerWindows,
@@ -281,7 +282,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
 
   updateVaultSettings(settings: InkbookSettingsV2): void {
     if (this.#disposed) return;
-    this.#refreshProfiles.setPreference(settings.refreshRatePreference);
+    this.refreshRateProfiles.setPreference(settings.refreshRatePreference);
   }
 
   queueAutoActivation(
@@ -324,7 +325,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       mounted.attachment.root.dataset.inkbookState = "locked";
     }
     this.#mounted.clear();
-    this.#refreshProfiles.dispose();
+    this.refreshRateProfiles.dispose();
     this.#viewState.clear();
     this.#ownerWindows.clear();
   }

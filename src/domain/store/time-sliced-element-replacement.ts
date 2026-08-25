@@ -7,7 +7,7 @@ import { type PreparedSpatialReplacements, UniformSpatialIndex } from "../spatia
 
 import {
   commitReverseConnectionPatches,
-  createReverseConnectionPatches,
+  createReverseConnectionPatchesTimeSliced,
   type ReverseConnectionPatch,
 } from "./replacement-reverse-patch";
 import { planCanonicalStrokeReplacement } from "./canonical-stroke-replacement";
@@ -52,11 +52,19 @@ interface ReplacementPorts {
 }
 
 export interface PreparedReplacementRecords {
+  readonly capacityPreviousRecords: ElementRecord[];
+  readonly capacityRecords: ElementRecord[];
   readonly changes: Array<StoreDelta["changes"][number]>;
-  readonly previousRecords: ElementRecord[];
   readonly records: ElementRecord[];
   readonly spatialReplacements: Array<{ bounds: ElementRecord["bounds"]; id: string }>;
   readonly yields: number;
+}
+
+interface PreparedCandidateRecords extends PreparedReplacementRecords {
+  readonly connectionCandidates: ReplacementCandidate[];
+  readonly connectionRecords: ElementRecord[];
+  readonly geometryVersion: number;
+  readonly paintVersion: number;
 }
 
 export interface ElementReplacementSource {
@@ -95,22 +103,25 @@ export async function planElementReplacement(
   let yields = fallbackYields + preparedCandidates.yields;
   if (candidates.length === 0) return null;
 
-  const changesGeometry = candidates.some(({ domains }) => domains.includes("geometry"));
-  const changesPaint = candidates.some(({ domains }) => domains.includes("paint"));
-  const nextGeometryVersion = changesGeometry
-    ? nextVersion(source.geometryVersion, "geometryVersion")
-    : source.geometryVersion;
-  const nextPaintVersion = changesPaint
-    ? nextVersion(source.paintVersion, "paintVersion")
-    : source.paintVersion;
   const preparedRecords = await prepareCandidateRecords(
     candidates,
-    nextGeometryVersion,
-    nextPaintVersion,
+    source.geometryVersion,
+    source.paintVersion,
+    source.capacity,
     scheduler,
   );
   if (preparedRecords === "cancelled") return preparedRecords;
-  const { changes, previousRecords, records, spatialReplacements } = preparedRecords;
+  const {
+    capacityPreviousRecords,
+    capacityRecords,
+    changes,
+    connectionCandidates,
+    connectionRecords,
+    geometryVersion: nextGeometryVersion,
+    paintVersion: nextPaintVersion,
+    records,
+    spatialReplacements,
+  } = preparedRecords;
   yields += preparedRecords.yields;
 
   let indexYields = 0;
@@ -124,21 +135,19 @@ export async function planElementReplacement(
   });
   if (indexPatch === "cancelled") return indexPatch;
   yields += indexYields;
-  const reversePatches = createReverseConnectionPatches(
-    source.reverseConnections,
-    candidates,
-    records,
+  const dependentPatches = await prepareDependentPatches(
+    source,
+    { capacityPreviousRecords, capacityRecords, connectionCandidates, connectionRecords },
+    scheduler,
   );
-  const capacityPatch = source.capacity.prepare(previousRecords, records);
-  const patchCheckpoint = await yieldWhenRequested(scheduler);
-  if (patchCheckpoint === "cancelled") return patchCheckpoint;
-  yields += patchCheckpoint;
+  if (dependentPatches === "cancelled") return dependentPatches;
+  yields += dependentPatches.yields;
   const admission = await admitAtomicCommit(candidates.length, scheduler);
   if (admission === "cancelled") return admission;
   yields += admission;
   Object.freeze(changes);
   return {
-    capacityPatch,
+    capacityPatch: dependentPatches.capacityPatch,
     delta: Object.freeze({
       changes,
       dirtyBands: Object.freeze({ content: false, highlight: false }),
@@ -151,30 +160,91 @@ export async function planElementReplacement(
     paintVersion: nextPaintVersion,
     records: Object.freeze(records),
     replacementCount: candidates.length,
-    reversePatches,
+    reversePatches: dependentPatches.reversePatches,
     yields,
+  };
+}
+
+async function prepareDependentPatches(
+  source: ElementReplacementSource,
+  prepared: Pick<
+    PreparedCandidateRecords,
+    "capacityPreviousRecords" | "capacityRecords" | "connectionCandidates" | "connectionRecords"
+  >,
+  scheduler: StoreSliceScheduler,
+): Promise<
+  | {
+      readonly capacityPatch: DocumentCapacityPatch;
+      readonly reversePatches: readonly ReverseConnectionPatch[];
+      readonly yields: number;
+    }
+  | "cancelled"
+> {
+  const reverse =
+    prepared.connectionCandidates.length === 0
+      ? { patches: Object.freeze([]), yields: 0 }
+      : await createReverseConnectionPatchesTimeSliced(
+          source.reverseConnections,
+          prepared.connectionCandidates,
+          prepared.connectionRecords,
+          scheduler,
+        );
+  if (reverse === "cancelled") return reverse;
+  const capacity =
+    prepared.capacityRecords.length === 0
+      ? { patch: source.capacity.prepareUnchanged(), yields: 0 }
+      : await source.capacity.prepareTimeSliced(
+          prepared.capacityPreviousRecords,
+          prepared.capacityRecords,
+          scheduler,
+        );
+  if (capacity === "cancelled") return capacity;
+  return {
+    capacityPatch: capacity.patch,
+    reversePatches: reverse.patches,
+    yields: reverse.yields + capacity.yields,
   };
 }
 
 async function prepareCandidateRecords(
   candidates: readonly ReplacementCandidate[],
-  geometryVersion: number,
-  paintVersion: number,
+  currentGeometryVersion: number,
+  currentPaintVersion: number,
+  capacity: DocumentCapacity,
   scheduler: StoreSliceScheduler,
-): Promise<PreparedReplacementRecords | "cancelled"> {
-  const previousRecords: ElementRecord[] = [];
+): Promise<PreparedCandidateRecords | "cancelled"> {
   const records: ElementRecord[] = [];
+  const capacityPreviousRecords: ElementRecord[] = [];
+  const capacityRecords: ElementRecord[] = [];
+  const connectionCandidates: ReplacementCandidate[] = [];
+  const connectionRecords: ElementRecord[] = [];
   const spatialReplacements: PreparedReplacementRecords["spatialReplacements"] = [];
   const changes: PreparedReplacementRecords["changes"] = [];
+  let geometryVersion = currentGeometryVersion;
+  let paintVersion = currentPaintVersion;
   let recordsInSlice = 0;
   let yields = 0;
   for (const candidate of candidates) {
     if (cancelled(scheduler)) return "cancelled";
+    if (candidate.domains.includes("geometry") && geometryVersion === currentGeometryVersion) {
+      geometryVersion = nextVersion(currentGeometryVersion, "geometryVersion");
+    }
+    if (candidate.domains.includes("paint") && paintVersion === currentPaintVersion) {
+      paintVersion = nextVersion(currentPaintVersion, "paintVersion");
+    }
     const record = createCandidateRecord(candidate, geometryVersion, paintVersion);
-    previousRecords.push(candidate.current);
     records.push(record);
     if (candidate.domains.includes("geometry")) {
+      capacity.validateReplacementBounds(record);
       spatialReplacements.push({ bounds: record.bounds, id: record.element.id });
+    }
+    if (changesCapacity(candidate, record)) {
+      capacityPreviousRecords.push(candidate.current);
+      capacityRecords.push(record);
+    }
+    if (candidate.domains.includes("connection")) {
+      connectionCandidates.push(candidate);
+      connectionRecords.push(record);
     }
     changes.push(
       Object.freeze({
@@ -193,7 +263,27 @@ async function prepareCandidateRecords(
     if (checkpoint === 1) recordsInSlice = 0;
     yields += checkpoint;
   }
-  return { changes, previousRecords, records, spatialReplacements, yields };
+  return {
+    capacityPreviousRecords,
+    capacityRecords,
+    changes,
+    connectionCandidates,
+    connectionRecords,
+    geometryVersion,
+    paintVersion,
+    records,
+    spatialReplacements,
+    yields,
+  };
+}
+
+function changesCapacity(candidate: ReplacementCandidate, record: ElementRecord): boolean {
+  if (candidate.domains.includes("connection")) return true;
+  return (
+    candidate.current.element.kind === "stroke" &&
+    record.element.kind === "stroke" &&
+    candidate.current.element.points.length !== record.element.points.length
+  );
 }
 
 async function admitAtomicCommit(

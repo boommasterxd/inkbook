@@ -81,6 +81,7 @@ export class FakePresentationElement {
           return { documentElement: svg };
         }
       },
+      document: documentPort as unknown as Document,
       ResizeObserver: class {
         public disconnect(): void {}
         public observe(): void {}

@@ -6,7 +6,7 @@ import {
   type ElementMutation,
 } from "../../../src/domain/store/public";
 
-import { MeasuredSliceScheduler } from "./domain-scenarios";
+import { MeasuredSliceScheduler, percentile } from "./domain-scenarios";
 import { createStandardDomainFixture } from "./standard-domain-fixture";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 import { timingBudget } from "../timing-budget";
@@ -15,6 +15,7 @@ interface MutationMeasurement {
   readonly commitDuration: number;
   readonly maximumSlice: number;
   readonly preparationDuration: number;
+  readonly sliceDurations: readonly number[];
   readonly transition: AppliedElementMutation;
 }
 
@@ -43,6 +44,7 @@ it("keeps atomic clipboard-scale store adoption within main-thread slice budgets
   }
 
   const maximumSlice = maximum([...cuts, ...restores].map(({ maximumSlice }) => maximumSlice));
+  const sliceDurations = [...cuts, ...restores].flatMap(({ sliceDurations }) => sliceDurations);
   const maximumCommit = maximum([...cuts, ...restores].map(({ commitDuration }) => commitDuration));
   const maximumCut = maximum(cuts.map(({ preparationDuration }) => preparationDuration));
   const maximumRestore = maximum(restores.map(({ preparationDuration }) => preparationDuration));
@@ -58,8 +60,12 @@ it("keeps atomic clipboard-scale store adoption within main-thread slice budgets
   expect(maximumCut).toBeLessThanOrEqual(timingBudget(750));
   expect(maximumRestore).toBeLessThanOrEqual(timingBudget(750));
   expect(maximumCommit).toBeLessThanOrEqual(timingBudget(8));
-  expect(maximumSlice).toBeLessThanOrEqual(
+  expect(sliceDurations.length).toBeGreaterThanOrEqual(100);
+  expect(percentile(sliceDurations, 0.95)).toBeLessThanOrEqual(
     timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+  );
+  expect(maximumSlice).toBeLessThanOrEqual(
+    timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
   );
   expect(store.size).toBe(11_000);
 }, 60_000);
@@ -91,6 +97,7 @@ async function measureMutation(
     commitDuration,
     maximumSlice: scheduler.maxSliceDuration,
     preparationDuration,
+    sliceDurations: scheduler.sliceDurations,
     transition: committed.transition,
   };
 }

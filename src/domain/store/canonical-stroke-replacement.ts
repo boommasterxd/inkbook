@@ -41,7 +41,7 @@ export async function planCanonicalStrokeReplacement(
   );
   if (indexPatch === "cancelled") return indexPatch;
   yields += indexYields;
-  const capacityPatch = source.capacity.prepare(prepared.previousRecords, prepared.records);
+  const capacityPatch = source.capacity.prepareUnchanged();
   const capacityCheckpoint = await yieldWhenRequested(scheduler);
   if (capacityCheckpoint === "cancelled") return capacityCheckpoint;
   yields += capacityCheckpoint;
@@ -102,8 +102,9 @@ async function prepareRecords(
   scheduler: StoreSliceScheduler,
 ): Promise<PreparedReplacementRecords | "cancelled"> {
   const prepared: PreparedReplacementRecords = {
+    capacityPreviousRecords: [],
+    capacityRecords: [],
     changes: [],
-    previousRecords: [],
     records: [],
     spatialReplacements: [],
     yields: 0,
@@ -122,7 +123,7 @@ async function prepareRecords(
       current.paintVersion,
       proof.translation,
     );
-    prepared.previousRecords.push(current);
+    source.capacity.validateReplacementBounds(record);
     prepared.records.push(record);
     prepared.spatialReplacements.push({ bounds: record.bounds, id: record.element.id });
     prepared.changes.push(

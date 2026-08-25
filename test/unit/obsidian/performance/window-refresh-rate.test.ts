@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import type { RefreshRatePreferenceV2 } from "../../../../src/domain/settings";
 import {
   detectRefreshRate,
   refreshRateProfile,
@@ -62,6 +63,24 @@ function completeMeasurement(harness: WindowHarness, intervalMs: number): void {
   for (let index = 0; index <= 18; index += 1) harness.step(index * intervalMs);
 }
 
+function acquiredProfiles(preference: RefreshRatePreferenceV2 = "auto", hidden = false) {
+  const harness = windowHarness(hidden);
+  const profiles = new WindowRefreshRateProfiles(preference);
+  const release = profiles.acquire(harness.ownerWindow, harness.ownerDocument);
+  return { harness, profiles, release };
+}
+
+function completeScheduledMeasurement(
+  harness: WindowHarness,
+  profiles: WindowRefreshRateProfiles,
+  refreshRate: 60 | 90 | 120 | 144 | 240,
+): void {
+  expect(harness.pendingFrames()).toBe(1);
+  completeMeasurement(harness, 1_000 / refreshRate);
+  expect(profiles.profile(harness.ownerWindow).refreshRate).toBe(refreshRate);
+  expect(harness.pendingFrames()).toBe(0);
+}
+
 describe("refresh-rate profiles", () => {
   it.each([
     [60, 16.67],
@@ -79,20 +98,26 @@ describe("refresh-rate profiles", () => {
   it("classifies jitter and dropped frames conservatively", () => {
     expect(detectRefreshRate([8.2, 8.4, 16.7, 8.3, 8.5, 25, 8.3, 8.4])).toBe(120);
     expect(detectRefreshRate([6.8, 6.9, 13.8, 7, 6.95, 20.8])).toBe(144);
-    expect(detectRefreshRate([])).toBe(240);
+    expect(detectRefreshRate([])).toBe(120);
   });
 });
 
 describe("per-window automatic refresh-rate measurement", () => {
-  it("uses the conservative 240 Hz profile until one startup measurement completes", () => {
-    const harness = windowHarness();
-    const profiles = new WindowRefreshRateProfiles("auto");
-    const release = profiles.acquire(harness.ownerWindow, harness.ownerDocument);
+  it("uses the 120 Hz profile until one startup measurement completes", () => {
+    const { harness, profiles, release } = acquiredProfiles();
 
-    expect(profiles.profile(harness.ownerWindow).refreshRate).toBe(240);
+    expect(profiles.profile(harness.ownerWindow).refreshRate).toBe(120);
+    expect(profiles.status(harness.ownerWindow)).toEqual({
+      kind: "detecting",
+      refreshRate: 120,
+    });
     completeMeasurement(harness, 1_000 / 120);
 
     expect(profiles.profile(harness.ownerWindow).refreshRate).toBe(120);
+    expect(profiles.status(harness.ownerWindow)).toEqual({
+      kind: "detected",
+      refreshRate: 120,
+    });
     expect(harness.pendingFrames()).toBe(0);
 
     harness.setHidden(true);
@@ -106,9 +131,7 @@ describe("per-window automatic refresh-rate measurement", () => {
   });
 
   it("waits for a hidden window to become visible and then measures once", () => {
-    const harness = windowHarness(true);
-    const profiles = new WindowRefreshRateProfiles("auto");
-    profiles.acquire(harness.ownerWindow, harness.ownerDocument);
+    const { harness, profiles } = acquiredProfiles("auto", true);
 
     expect(harness.pendingFrames()).toBe(0);
     harness.setHidden(false);
@@ -121,6 +144,37 @@ describe("per-window automatic refresh-rate measurement", () => {
     expect(harness.pendingFrames()).toBe(0);
   });
 
+  it("restarts one incomplete startup measurement after the owning window becomes visible", () => {
+    const { harness, profiles } = acquiredProfiles();
+
+    harness.step(0);
+    harness.step(1_000 / 60);
+    harness.setHidden(true);
+    expect(harness.pendingFrames()).toBe(0);
+
+    harness.setHidden(false);
+    completeScheduledMeasurement(harness, profiles, 144);
+  });
+
+  it("publishes detecting and detected status changes once per measurement", () => {
+    const harness = windowHarness();
+    const changed = vi.fn();
+    const profiles = new WindowRefreshRateProfiles("auto", changed);
+    profiles.acquire(harness.ownerWindow, harness.ownerDocument);
+
+    expect(profiles.status(harness.ownerWindow).kind).toBe("detecting");
+    completeMeasurement(harness, 1_000 / 144);
+
+    expect(changed).toHaveBeenCalledOnce();
+    expect(changed).toHaveBeenCalledWith(harness.ownerWindow);
+    expect(profiles.status(harness.ownerWindow)).toEqual({
+      kind: "detected",
+      refreshRate: 144,
+    });
+  });
+});
+
+describe("refresh-rate profile lifecycle", () => {
   it("measures pop-out windows independently and releases their animation work", () => {
     const first = windowHarness();
     const second = windowHarness();
@@ -138,25 +192,19 @@ describe("per-window automatic refresh-rate measurement", () => {
   });
 
   it("does not start automatic measurement for a fixed profile", () => {
-    const harness = windowHarness();
-    const profiles = new WindowRefreshRateProfiles(240);
-    profiles.acquire(harness.ownerWindow, harness.ownerDocument);
+    const { harness, profiles } = acquiredProfiles(240);
 
     expect(profiles.profile(harness.ownerWindow).refreshRate).toBe(240);
+    expect(profiles.status(harness.ownerWindow)).toEqual({ kind: "fixed", refreshRate: 240 });
     expect(harness.pendingFrames()).toBe(0);
   });
 
   it("measures once when fixed mode changes to Auto and cancels when Auto changes to fixed", () => {
-    const harness = windowHarness();
-    const profiles = new WindowRefreshRateProfiles(120);
-    profiles.acquire(harness.ownerWindow, harness.ownerDocument);
+    const { harness, profiles } = acquiredProfiles(120);
     expect(harness.pendingFrames()).toBe(0);
 
     profiles.setPreference("auto");
-    expect(harness.pendingFrames()).toBe(1);
-    completeMeasurement(harness, 1_000 / 144);
-    expect(profiles.profile(harness.ownerWindow).refreshRate).toBe(144);
-    expect(harness.pendingFrames()).toBe(0);
+    completeScheduledMeasurement(harness, profiles, 144);
 
     profiles.setPreference(90);
     expect(harness.pendingFrames()).toBe(0);

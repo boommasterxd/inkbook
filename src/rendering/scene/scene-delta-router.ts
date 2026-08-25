@@ -14,35 +14,63 @@ export interface SceneDeltaRoutingPorts {
   readonly visibility: SceneVisibilityState;
 }
 
-export function routeSceneDeltaDomain(
-  affected: SceneDeltaEntry,
-  domain: SceneStoreDelta["affected"][number]["domains"][number],
-  ports: SceneDeltaRoutingPorts,
-): void {
-  const { id } = affected;
-  if (domain === "geometry") {
-    ports.content.markGeometry(id);
-    invalidateVisibility(affected, ports);
-  } else if (domain === "paint") ports.content.markPaint(id);
-  else if (domain === "order") {
-    ports.content.markOrder(id);
-    ports.markOrderVisibilityDirty();
-    ports.content.cancelPendingVisibility();
-  } else if (domain === "visibility") {
-    if (ports.store.get(id) === undefined) {
-      ports.pathCache.invalidate(id);
-      ports.visibility.releaseId(id);
+export function routeSceneDelta(delta: SceneStoreDelta, ports: SceneDeltaRoutingPorts): void {
+  let firstVisibilityChange: SceneDeltaEntry | undefined;
+  let hasMultipleVisibilityChanges = false;
+  let orderIds: string[] | undefined;
+  for (const affected of delta.affected) {
+    let geometryDirty = false;
+    let visibilityDirty = false;
+    for (const domain of affected.domains) {
+      if (domain === "geometry") {
+        ports.content.markGeometry(affected.id);
+        geometryDirty = true;
+        visibilityDirty = true;
+      } else if (domain === "paint") ports.content.markPaint(affected.id);
+      else if (domain === "order") {
+        orderIds ??= [];
+        orderIds.push(affected.id);
+      } else if (domain === "visibility") {
+        releaseRemovedElement(affected.id, geometryDirty, ports);
+        visibilityDirty = true;
+      }
     }
-    invalidateVisibility(affected, ports);
+    if (!visibilityDirty) continue;
+    if (firstVisibilityChange === undefined) firstVisibilityChange = affected;
+    else hasMultipleVisibilityChanges = true;
+  }
+  if (orderIds !== undefined) {
+    ports.content.markOrders(orderIds);
+    ports.markOrderVisibilityDirty();
+  }
+  if (firstVisibilityChange !== undefined) {
+    invalidateVisibility(firstVisibilityChange, hasMultipleVisibilityChanges, ports);
   }
 }
 
-function invalidateVisibility(affected: SceneDeltaEntry, ports: SceneDeltaRoutingPorts): void {
-  ports.visibility.invalidateCandidatesForChange(
-    elementBounds(affected.before),
-    currentBounds(affected, ports.store),
-  );
+function invalidateVisibility(
+  affected: SceneDeltaEntry,
+  hasMultipleChanges: boolean,
+  ports: SceneDeltaRoutingPorts,
+): void {
+  if (hasMultipleChanges) ports.visibility.invalidateForChanges();
+  else {
+    ports.visibility.invalidateForChanges(
+      elementBounds(affected.before),
+      currentBounds(affected, ports.store),
+    );
+  }
   ports.invalidateVisibility();
+}
+
+function releaseRemovedElement(
+  id: string,
+  geometryDirty: boolean,
+  ports: SceneDeltaRoutingPorts,
+): void {
+  if (ports.store.get(id) !== undefined) return;
+  if (!geometryDirty) ports.pathCache.invalidate(id);
+  ports.visibility.releaseId(id);
 }
 
 function currentBounds(

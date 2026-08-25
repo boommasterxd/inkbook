@@ -181,11 +181,21 @@ export interface DocumentRuntimeServices {
 
 export interface InputAwareSliceScheduler {
   checkpoint(signal: AbortSignal): Promise<void>;
+  getSliceMilliseconds?(): number;
+  getSliceWorkProfile?(): RuntimeSliceWorkProfile;
   run<T>(operation: (signal: AbortSignal) => T | Promise<T>, signal: AbortSignal): Promise<T>;
   setLiveInputActive?(active: boolean): void;
 }
 
+export interface RuntimeSliceWorkProfile {
+  readonly inputByteLimit: number;
+  readonly nodeLimit: number;
+  readonly outputByteLimit: number;
+}
+
 export interface RuntimeSliceContext {
   readonly checkpoint: () => Promise<void>;
+  readonly sliceMilliseconds?: () => number;
+  readonly workProfile?: RuntimeSliceWorkProfile;
   readonly signal: AbortSignal;
 }

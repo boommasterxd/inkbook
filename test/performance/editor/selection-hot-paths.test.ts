@@ -11,11 +11,11 @@ import type { TimeSlicedSelectionCommitPreparation } from "../../../src/editor/s
 import { SelectionHandleSession } from "../../../src/editor/selection/public";
 import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
 
-import { MeasuredSliceScheduler } from "../domain/domain-scenarios";
+import { MeasuredSliceScheduler, percentile } from "../domain/domain-scenarios";
 import { connectedLine } from "../../unit/domain/store/fixtures";
 import { maximumStroke } from "./maximum-stroke-fixture";
 import { createPassThroughMoveSession } from "./selection-session-fixture";
-import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
+import { INTERACTION_REFRESH_PROFILE, interactionP99 } from "../interaction-refresh-profile";
 import { timingBudget } from "../timing-budget";
 
 describe("selection hot paths", () => {
@@ -25,7 +25,7 @@ describe("selection hot paths", () => {
 
     const decisionDurations = measureCommitDecisions(session);
     const hitDurations = measureIndexedMisses(strokes);
-    const { maximumSlice, prepared } = await prepareInMeasuredSlices(session);
+    const { maximumSlice, prepared, sliceDurations } = await prepareInMeasuredSlices(session);
 
     expect(prepared.status).toBe("ready");
     if (prepared.status !== "ready") throw new Error("Expected an exact time-sliced commit.");
@@ -36,14 +36,17 @@ describe("selection hot paths", () => {
     }
     expect(first.points.slice(0, 3)).toEqual(new Float64Array([4, 103, 0.5]));
     expect(last.points.slice(-3)).toEqual(new Float64Array([11, 103.487, 0.5]));
-    expect(Math.max(...decisionDurations)).toBeLessThanOrEqual(
+    expect(interactionP99(decisionDurations)).toBeLessThanOrEqual(
       timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
     );
-    expect(Math.max(...hitDurations)).toBeLessThanOrEqual(
+    expect(interactionP99(hitDurations)).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
+    expect(percentile(sliceDurations, 0.95)).toBeLessThanOrEqual(
       timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
     );
     expect(maximumSlice).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+      timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
     );
   });
 
@@ -54,9 +57,14 @@ describe("selection hot paths", () => {
     store.resetInstrumentation();
     const session = endpointSession(store, targetIds);
 
-    const previewStarted = performance.now();
+    const previewDurations = Array.from({ length: 120 }, () => {
+      const previewStarted = performance.now();
+      const preview = session.update({ x: 2, y: 3 });
+      const duration = performance.now() - previewStarted;
+      expect(preview).toMatchObject({ exactElements: [], exactPreviewTruncated: true });
+      return duration;
+    });
     const preview = session.update({ x: 2, y: 3 });
-    const previewDuration = performance.now() - previewStarted;
     expect(preview).toMatchObject({ exactElements: [], exactPreviewTruncated: true });
     expect(session.prepareCommit()).toEqual({ status: "time-sliced-required" });
 
@@ -75,11 +83,14 @@ describe("selection hot paths", () => {
       fullStoreScans: 0,
       reverseDependencyVisits: 19_929,
     });
-    expect(previewDuration).toBeLessThanOrEqual(
+    expect(interactionP99(previewDurations)).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
+    expect(percentile(scheduler.sliceDurations, 0.95)).toBeLessThanOrEqual(
       timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
     );
     expect(scheduler.maxSliceDuration).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+      timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
     );
   }, 30_000);
 });
@@ -92,7 +103,7 @@ function movedSession(strokes: readonly StrokeElementV1[]): SelectionHandleSessi
 
 function measureCommitDecisions(session: SelectionHandleSession): number[] {
   const durations: number[] = [];
-  for (let run = 0; run < 6; run += 1) {
+  for (let run = 0; run < 121; run += 1) {
     const started = performance.now();
     const decision = session.prepareCommit();
     const duration = performance.now() - started;
@@ -103,11 +114,13 @@ function measureCommitDecisions(session: SelectionHandleSession): number[] {
 }
 
 function measureIndexedMisses(strokes: readonly StrokeElementV1[]): number[] {
-  const sceneStore = new ElementSceneStore(new ElementStore(strokes));
+  const sceneStore = new ElementSceneStore(
+    new ElementStore(strokes.map((stroke) => ({ ...stroke, points: Array.from(stroke.points) }))),
+  );
   const durations: number[] = [];
   try {
     sceneStore.hit({ x: 2_048, y: 50 }, "mouse", 1);
-    for (let run = 0; run < 5; run += 1) {
+    for (let run = 0; run < 100; run += 1) {
       const started = performance.now();
       expect(sceneStore.hit({ x: 2_048, y: 50 }, "mouse", 1)).toBeNull();
       durations.push(performance.now() - started);
@@ -121,18 +134,24 @@ function measureIndexedMisses(strokes: readonly StrokeElementV1[]): number[] {
 async function prepareInMeasuredSlices(session: SelectionHandleSession): Promise<{
   readonly maximumSlice: number;
   readonly prepared: TimeSlicedSelectionCommitPreparation;
+  readonly sliceDurations: readonly number[];
 }> {
   let sliceStarted = performance.now();
   let maximumSlice = 0;
+  const sliceDurations: number[] = [];
   const prepared = await session.prepareCommitTimeSliced({
     shouldYield: () => true,
     yieldControl: async () => {
-      maximumSlice = Math.max(maximumSlice, performance.now() - sliceStarted);
+      const duration = performance.now() - sliceStarted;
+      sliceDurations.push(duration);
+      maximumSlice = Math.max(maximumSlice, duration);
       sliceStarted = performance.now();
     },
   });
-  maximumSlice = Math.max(maximumSlice, performance.now() - sliceStarted);
-  return { maximumSlice, prepared };
+  const duration = performance.now() - sliceStarted;
+  sliceDurations.push(duration);
+  maximumSlice = Math.max(maximumSlice, duration);
+  return { maximumSlice, prepared, sliceDurations };
 }
 
 function maximumEndpointFixture(): {

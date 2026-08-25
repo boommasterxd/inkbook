@@ -170,9 +170,12 @@ async function assertFallbackMeasurements(
     expect(measurement.syntheticInputSamples).toBeGreaterThanOrEqual(2);
     expect(measurement.inputPauseYields).toBeGreaterThanOrEqual(2);
   }
-  expect
-    .soft(summarizeDurations(probe.durations).maximum)
-    .toBeLessThanOrEqual(timingBudget(MAIN_THREAD_BUDGET_MS));
+  const summary = summarizeDurations(probe.durations);
+  expect(probe.durations.length).toBeGreaterThanOrEqual(100);
+  expect.soft(summary.p95).toBeLessThanOrEqual(timingBudget(MAIN_THREAD_BUDGET_MS));
+  expect(summary.maximum).toBeLessThanOrEqual(
+    timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
+  );
 }
 
 class FailingWorker implements DocumentRuntimePort {

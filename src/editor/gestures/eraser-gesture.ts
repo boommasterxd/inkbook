@@ -9,7 +9,10 @@ import {
 
 const ERASER_FADE_MS = 160;
 const EXACT_WORK_UNITS_PER_UPDATE = 12_288;
-const FINALIZATION_CHECKPOINT_WORK_UNITS = 1_024;
+const UPDATE_CHECKPOINT_WORK_UNITS = 1_024;
+const MAX_FINALIZATION_CHECKPOINT_WORK_UNITS = 256;
+const FINALIZATION_WORK_UNITS_PER_MS = 16;
+const FINALIZATION_SCHEDULING_RESERVE_MS = 0.25;
 export const MAX_RETAINED_ERASER_SWEEPS = 512;
 
 export function screenPixelsToPageUnits(screenPixels: number, zoom: number): number {
@@ -135,9 +138,15 @@ export class EraserSweep {
     this.#state = "finishing";
     const added: string[] = [];
     while (this.retainedSweepCount > 0) {
-      if (scheduler.isCancelled()) return this.#cancelFinalization();
-      this.#processPending(FINALIZATION_CHECKPOINT_WORK_UNITS, added);
-      if (this.retainedSweepCount > 0 && scheduler.shouldYield()) await scheduler.yieldControl();
+      const sliceBudgetMs = Math.max(0, this.#sliceBudgetMs() - FINALIZATION_SCHEDULING_RESERVE_MS);
+      const deadline = performance.now() + sliceBudgetMs;
+      const workUnits = finalizationWorkUnits(sliceBudgetMs);
+      do {
+        if (scheduler.isCancelled()) return this.#cancelFinalization();
+        this.#processPending(workUnits, added);
+        if (this.retainedSweepCount === 0) break;
+      } while (!scheduler.shouldYield() && performance.now() < deadline);
+      if (this.retainedSweepCount > 0) await scheduler.yieldControl();
     }
     this.#publishAdded(added);
     if (scheduler.isCancelled()) return this.#cancelFinalization();
@@ -170,9 +179,9 @@ export class EraserSweep {
     for (
       let remaining = EXACT_WORK_UNITS_PER_UPDATE;
       remaining > 0 && this.retainedSweepCount > 0;
-      remaining -= FINALIZATION_CHECKPOINT_WORK_UNITS
+      remaining -= UPDATE_CHECKPOINT_WORK_UNITS
     ) {
-      this.#processPending(Math.min(remaining, FINALIZATION_CHECKPOINT_WORK_UNITS), added);
+      this.#processPending(Math.min(remaining, UPDATE_CHECKPOINT_WORK_UNITS), added);
       if (performance.now() >= deadline) break;
     }
     this.#publishAdded(added);
@@ -246,6 +255,17 @@ export class EraserSweep {
     sweep.check = createSweptCapsuleCheck(sweep.start, sweep.end, this.#radius, element);
     return sweep.check;
   }
+}
+
+function finalizationWorkUnits(sliceBudgetMs: number): number {
+  if (!Number.isFinite(sliceBudgetMs) || sliceBudgetMs <= 0) return 1;
+  return Math.max(
+    1,
+    Math.min(
+      MAX_FINALIZATION_CHECKPOINT_WORK_UNITS,
+      Math.floor(sliceBudgetMs * FINALIZATION_WORK_UNITS_PER_MS),
+    ),
+  );
 }
 
 export function sweepTouchesElement(

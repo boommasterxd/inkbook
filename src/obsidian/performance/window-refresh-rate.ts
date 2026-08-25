@@ -2,6 +2,7 @@ import type { RefreshRatePreferenceV2 } from "../../domain/settings";
 
 import {
   conservativeRefreshRate,
+  DEFAULT_REFRESH_RATE,
   fixedRefreshRate,
   refreshRateProfile,
   type FixedRefreshRate,
@@ -21,16 +22,26 @@ interface WindowRefreshState {
   sampleFrames: number;
   references: number;
   frame: number | undefined;
-  readonly resumeMeasurement: () => void;
+  readonly visibilityChanged: () => void;
 }
+
+export type RefreshRateProfileStatus =
+  | { readonly kind: "detected"; readonly refreshRate: FixedRefreshRate }
+  | { readonly kind: "detecting"; readonly refreshRate: typeof DEFAULT_REFRESH_RATE }
+  | { readonly kind: "fixed"; readonly refreshRate: FixedRefreshRate };
 
 export class WindowRefreshRateProfiles {
   readonly #states = new Map<Window, WindowRefreshState>();
   #detectedRates = new WeakMap<Window, FixedRefreshRate>();
   #preference: RefreshRatePreferenceV2;
+  readonly #profileChanged: (ownerWindow: Window) => void;
 
-  public constructor(preference: RefreshRatePreferenceV2) {
+  public constructor(
+    preference: RefreshRatePreferenceV2,
+    profileChanged: (ownerWindow: Window) => void = () => undefined,
+  ) {
     this.#preference = preference;
+    this.#profileChanged = profileChanged;
   }
 
   public acquire(ownerWindow: Window, ownerDocument: Document): () => void {
@@ -55,8 +66,22 @@ export class WindowRefreshRateProfiles {
     const fixed = fixedRefreshRate(this.#preference);
     if (fixed !== undefined) return refreshRateProfile(fixed);
     const detected =
-      this.#states.get(ownerWindow)?.detectedRate ?? this.#detectedRates.get(ownerWindow) ?? 240;
+      this.#states.get(ownerWindow)?.detectedRate ??
+      this.#detectedRates.get(ownerWindow) ??
+      DEFAULT_REFRESH_RATE;
     return refreshRateProfile(detected);
+  }
+
+  public status(ownerWindow: Window | undefined): RefreshRateProfileStatus {
+    const fixed = fixedRefreshRate(this.#preference);
+    if (fixed !== undefined) return { kind: "fixed", refreshRate: fixed };
+    const detected =
+      ownerWindow === undefined
+        ? undefined
+        : (this.#states.get(ownerWindow)?.detectedRate ?? this.#detectedRates.get(ownerWindow));
+    return detected === undefined
+      ? { kind: "detecting", refreshRate: DEFAULT_REFRESH_RATE }
+      : { kind: "detected", refreshRate: detected };
   }
 
   public setPreference(preference: RefreshRatePreferenceV2): void {
@@ -67,6 +92,7 @@ export class WindowRefreshRateProfiles {
       this.#cancel(ownerWindow, state);
       state.detectedRate = undefined;
       if (preference === "auto") this.#start(ownerWindow, state);
+      this.#profileChanged(ownerWindow);
     }
   }
 
@@ -85,13 +111,17 @@ export class WindowRefreshRateProfiles {
       sampleFrames: 0,
       references: 0,
       frame: undefined,
-      resumeMeasurement: () => this.#resumeMeasurement(ownerWindow, state),
+      visibilityChanged: () => this.#visibilityChanged(ownerWindow, state),
     };
-    ownerDocument.addEventListener?.("visibilitychange", state.resumeMeasurement);
+    ownerDocument.addEventListener?.("visibilitychange", state.visibilityChanged);
     return state;
   }
 
-  #resumeMeasurement(ownerWindow: Window, state: WindowRefreshState): void {
+  #visibilityChanged(ownerWindow: Window, state: WindowRefreshState): void {
+    if (state.ownerDocument.visibilityState === "hidden") {
+      this.#cancel(ownerWindow, state);
+      return;
+    }
     if (this.#preference !== "auto" || state.references === 0 || state.detectedRate !== undefined) {
       return;
     }
@@ -130,6 +160,7 @@ export class WindowRefreshRateProfiles {
       ) {
         state.detectedRate = detectRefreshRate(state.intervals);
         this.#detectedRates.set(ownerWindow, state.detectedRate);
+        this.#profileChanged(ownerWindow);
         return;
       }
       requestNext();
@@ -147,7 +178,7 @@ export class WindowRefreshRateProfiles {
 
   #removeState(ownerWindow: Window, state: WindowRefreshState): void {
     this.#cancel(ownerWindow, state);
-    state.ownerDocument.removeEventListener?.("visibilitychange", state.resumeMeasurement);
+    state.ownerDocument.removeEventListener?.("visibilitychange", state.visibilityChanged);
     this.#states.delete(ownerWindow);
   }
 }
@@ -161,7 +192,7 @@ export function detectRefreshRate(intervals: readonly number[]): FixedRefreshRat
         interval <= MAXIMUM_INTERVAL_MS,
     )
     .sort((left, right) => left - right);
-  if (valid.length === 0) return 240;
+  if (valid.length === 0) return DEFAULT_REFRESH_RATE;
   const representative = valid[Math.floor((valid.length - 1) * 0.25)] ?? valid[0] ?? 0;
   return conservativeRefreshRate(1_000 / representative);
 }

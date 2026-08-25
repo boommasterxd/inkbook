@@ -1,4 +1,4 @@
-import type { InputAwareSliceScheduler } from "./types";
+import type { InputAwareSliceScheduler, RuntimeSliceWorkProfile } from "./types";
 
 export interface SliceSchedulerOptions {
   readonly isInputActive: () => boolean;
@@ -10,6 +10,37 @@ export interface SliceSchedulerOptions {
 
 const DESKTOP_SLICE_MS = 6;
 const MOBILE_SLICE_MS = 10;
+
+const DEFAULT_WORK_PROFILE: RuntimeSliceWorkProfile = Object.freeze({
+  inputByteLimit: 16 * 1024,
+  nodeLimit: 256,
+  outputByteLimit: 64 * 1024,
+});
+
+export function runtimeSliceWorkProfile(
+  sliceMilliseconds: number | undefined,
+): RuntimeSliceWorkProfile {
+  if (
+    sliceMilliseconds === undefined ||
+    !Number.isFinite(sliceMilliseconds) ||
+    sliceMilliseconds <= 0
+  ) {
+    return DEFAULT_WORK_PROFILE;
+  }
+  if (sliceMilliseconds <= 2.75) {
+    return { inputByteLimit: 4 * 1024, nodeLimit: 64, outputByteLimit: 16 * 1024 };
+  }
+  if (sliceMilliseconds <= 4.25) {
+    return { inputByteLimit: 6 * 1024, nodeLimit: 96, outputByteLimit: 24 * 1024 };
+  }
+  if (sliceMilliseconds <= 5.5) {
+    return { inputByteLimit: 8 * 1024, nodeLimit: 128, outputByteLimit: 32 * 1024 };
+  }
+  if (sliceMilliseconds <= 7) {
+    return { inputByteLimit: 12 * 1024, nodeLimit: 192, outputByteLimit: 48 * 1024 };
+  }
+  return DEFAULT_WORK_PROFILE;
+}
 
 export class GestureAwareSliceScheduler implements InputAwareSliceScheduler {
   readonly #isInputActive: () => boolean;
@@ -35,6 +66,14 @@ export class GestureAwareSliceScheduler implements InputAwareSliceScheduler {
     this.#liveInputActive = active;
   }
 
+  public getSliceMilliseconds(): number {
+    return validateSliceMilliseconds(this.#sliceMilliseconds());
+  }
+
+  public getSliceWorkProfile(): RuntimeSliceWorkProfile {
+    return runtimeSliceWorkProfile(this.getSliceMilliseconds());
+  }
+
   public async checkpoint(signal: AbortSignal): Promise<void> {
     while (this.#inputActive()) {
       signal.throwIfAborted();
@@ -42,7 +81,7 @@ export class GestureAwareSliceScheduler implements InputAwareSliceScheduler {
       this.#sliceStarted = this.#now();
     }
     signal.throwIfAborted();
-    if (this.#now() - this.#sliceStarted < validateSliceMilliseconds(this.#sliceMilliseconds())) {
+    if (this.#now() - this.#sliceStarted < this.getSliceMilliseconds()) {
       return;
     }
     await this.#yieldControl();

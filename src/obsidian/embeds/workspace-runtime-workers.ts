@@ -16,15 +16,19 @@ interface WorkspaceRuntimeWindowPorts {
   readonly fallbackWindow: () => Window | undefined;
   readonly owningWindow: (documentId: string) => Window;
   readonly sliceBudgetMs?: (ownerWindow: Window) => number;
+  readonly warn?: (ownerWindow: Window | undefined, message: string) => void;
 }
 
 const DOCUMENT_RUNTIME_TIMEOUT_MS = 30_000;
+const WORKER_FALLBACK_WARNING =
+  "Inkbook: Document Worker unavailable or failed; using the bounded main-thread fallback. Performance may be reduced.";
 
 export function createWorkspaceDocumentRuntimes(
   windows: WorkspaceRuntimeWindowPorts,
   profile = Platform.isMobile ? ("mobile" as const) : ("desktop" as const),
 ): DocumentRuntimeFactories {
   const sliceBudgetMs = windows.sliceBudgetMs ?? (() => (profile === "mobile" ? 12 : 8));
+  const warnFallback = createFallbackWarning(windows);
   return {
     clock: (documentId) => ({
       clearTimeout: (handle) => {
@@ -46,6 +50,7 @@ export function createWorkspaceDocumentRuntimes(
       });
     },
     createFallback: (sessionId, workerEpoch, isInputActive) => {
+      warnFallback();
       const scheduler = new GestureAwareSliceScheduler({
         isInputActive,
         now: () => windows.fallbackWindow()?.performance.now() ?? performance.now(),
@@ -88,6 +93,30 @@ export function createWorkspaceDocumentRuntimes(
       const performance = windows.owningWindow(documentId).performance;
       return Math.floor(performance.timeOrigin + performance.now());
     },
+  };
+}
+
+function createFallbackWarning(windows: WorkspaceRuntimeWindowPorts): () => void {
+  const warnedWindows = new WeakSet<Window>();
+  let warnedWithoutWindow = false;
+  return () => {
+    const ownerWindow = windows.fallbackWindow();
+    if (ownerWindow === undefined) {
+      if (warnedWithoutWindow) return;
+      warnedWithoutWindow = true;
+    } else {
+      if (warnedWindows.has(ownerWindow)) return;
+      warnedWindows.add(ownerWindow);
+    }
+    if (windows.warn !== undefined) {
+      windows.warn(ownerWindow, WORKER_FALLBACK_WARNING);
+      return;
+    }
+    if (ownerWindow !== undefined) {
+      const ownerConsole = (ownerWindow as Window & { readonly console?: Pick<Console, "warn"> })
+        .console;
+      ownerConsole?.warn(WORKER_FALLBACK_WARNING);
+    }
   };
 }
 

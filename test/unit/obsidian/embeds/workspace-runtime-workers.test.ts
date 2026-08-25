@@ -4,7 +4,9 @@ import { createWorkspaceDocumentRuntimes } from "../../../../src/obsidian/embeds
 
 function windowHarness() {
   let now = 0;
+  const warn = vi.fn();
   const ownerWindow = {
+    console: { warn },
     performance: {
       now: () => now,
       timeOrigin: 1_000,
@@ -19,6 +21,7 @@ function windowHarness() {
       now = value;
     },
     ownerWindow,
+    warn,
   };
 }
 
@@ -78,5 +81,23 @@ describe("workspace document runtime profiles", () => {
     expect(scheduler.shouldYield()).toBe(false);
     fixture.now(6.87);
     expect(scheduler.shouldYield()).toBe(true);
+  });
+
+  it("warns once per owning window when the bounded fallback is activated", () => {
+    const fixture = windowHarness();
+    const runtimes = createWorkspaceDocumentRuntimes({
+      fallbackWindow: () => fixture.ownerWindow,
+      owningWindow: () => fixture.ownerWindow,
+    });
+
+    const first = runtimes.createFallback("session-a", 1, () => false);
+    const second = runtimes.createFallback("session-b", 1, () => false);
+
+    expect(fixture.warn).toHaveBeenCalledOnce();
+    expect(fixture.warn).toHaveBeenCalledWith(
+      "Inkbook: Document Worker unavailable or failed; using the bounded main-thread fallback. Performance may be reduced.",
+    );
+    first.terminate();
+    second.terminate();
   });
 });

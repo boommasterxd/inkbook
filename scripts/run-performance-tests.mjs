@@ -5,6 +5,8 @@ import {
 } from "./performance-test-runner.mjs";
 
 const refreshRates = [60, 90, 120, 144, 240];
-const violations = await runRefreshRateMatrix(await collectTestFiles(), refreshRates);
+const violations = await runRefreshRateMatrix(await collectTestFiles(), refreshRates, {
+  failFast: process.env["CI"] === "true",
+});
 reportPerformanceViolations(violations);
 if (violations.length > 0) process.exitCode = 1;

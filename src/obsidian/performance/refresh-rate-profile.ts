@@ -4,6 +4,7 @@ const FIXED_REFRESH_RATES = [60, 90, 120, 144, 240] as const;
 export type FixedRefreshRate = (typeof FIXED_REFRESH_RATES)[number];
 
 const MAIN_THREAD_SHARE = 0.55;
+export const DEFAULT_REFRESH_RATE: FixedRefreshRate = 120;
 
 export interface RefreshRateProfile {
   readonly refreshRate: FixedRefreshRate;
@@ -27,7 +28,7 @@ export function fixedRefreshRate(
 }
 
 export function conservativeRefreshRate(measuredRate: number): FixedRefreshRate {
-  if (!Number.isFinite(measuredRate) || measuredRate <= 0) return 240;
+  if (!Number.isFinite(measuredRate) || measuredRate <= 0) return DEFAULT_REFRESH_RATE;
   for (const refreshRate of FIXED_REFRESH_RATES) {
     if (measuredRate <= refreshRate * 1.03) return refreshRate;
   }

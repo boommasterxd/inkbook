@@ -32,12 +32,19 @@ export function createInteractionFixture() {
   };
 }
 
-export function createInteractionRenderer(store: ElementStore) {
+export function createInteractionRenderer(
+  store: ElementStore,
+  options: {
+    readonly frameBudgetMs?: () => number;
+    readonly scheduler?: FakeScheduler;
+  } = {},
+) {
   const document = new FakeDocument();
-  const scheduler = new FakeScheduler();
+  const scheduler = options.scheduler ?? new FakeScheduler();
   const container = asElement(new FakeNode(document, "div"));
   const renderer = new SvgSceneRenderer({
     container,
+    ...(options.frameBudgetMs === undefined ? {} : { frameBudgetMs: options.frameBudgetMs }),
     layout: { readViewport: () => ({ height: 100, left: 0, top: 0, width: 100 }) },
     page: INTERACTION_PAGE,
     scheduler,

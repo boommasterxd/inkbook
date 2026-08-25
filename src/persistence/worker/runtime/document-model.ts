@@ -395,7 +395,13 @@ export class DocumentModelRuntime {
     return this.#serializer.serializeRuntimeChunked(
       sliceContext === undefined
         ? {}
-        : { checkpoint: sliceContext.checkpoint, signal: sliceContext.signal },
+        : {
+            checkpoint: sliceContext.checkpoint,
+            ...(sliceContext.workProfile === undefined
+              ? {}
+              : { sliceByteLimit: sliceContext.workProfile.outputByteLimit }),
+            signal: sliceContext.signal,
+          },
     );
   }
 
@@ -436,26 +442,35 @@ async function parseRuntimeInput(
     derivations: SnapshotValidationDerivations,
   ) => Promise<void> | void,
 ) {
+  const inputSliceBytes = context?.workProfile?.inputByteLimit ?? 256 * 1024;
+  const inputWriteChunk = context?.workProfile?.inputByteLimit ?? 16 * 1024;
   const parser = new ChunkedInkbookInputParser({
     ...(context === undefined ? {} : { checkpoint: context.checkpoint, signal: context.signal }),
+    inputSliceBytes,
     ...(onValidatedSnapshot === undefined ? {} : { onValidatedSnapshot }),
   });
-  if (typeof input === "string") await writeStringInput(parser, input);
-  else await writeByteInput(parser, input);
+  if (typeof input === "string") await writeStringInput(parser, input, inputWriteChunk);
+  else await writeByteInput(parser, input, inputWriteChunk);
   return parser.finish();
 }
 
-async function writeByteInput(parser: ChunkedInkbookInputParser, input: Uint8Array): Promise<void> {
-  const chunkBytes = 16 * 1024;
+async function writeByteInput(
+  parser: ChunkedInkbookInputParser,
+  input: Uint8Array,
+  chunkBytes: number,
+): Promise<void> {
   for (let offset = 0; offset < input.byteLength; offset += chunkBytes) {
     const written = await parser.write(input.subarray(offset, offset + chunkBytes));
     if (!written.ok) return;
   }
 }
 
-async function writeStringInput(parser: ChunkedInkbookInputParser, input: string): Promise<void> {
+async function writeStringInput(
+  parser: ChunkedInkbookInputParser,
+  input: string,
+  chunkCodeUnits: number,
+): Promise<void> {
   const encoder = new TextEncoder();
-  const chunkCodeUnits = 16 * 1024;
   for (let offset = 0; offset < input.length;) {
     let end = Math.min(input.length, offset + chunkCodeUnits);
     const trailing = input.charCodeAt(end - 1);

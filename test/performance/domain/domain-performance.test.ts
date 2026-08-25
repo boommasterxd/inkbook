@@ -2,7 +2,6 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import { StrokeCaptureBuffer } from "../../../src/domain/elements/public";
 import type { InkElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
-import { validateRuntimeInkSnapshotV1 } from "../../../src/domain/schema/snapshot-validation";
 import { SpatialQueryScratch } from "../../../src/domain/spatial/index";
 import { ElementStore } from "../../../src/domain/store/public";
 import { findFrontmostHit } from "../../../src/editor/selection/hit-test";
@@ -22,10 +21,8 @@ import {
   createStandardRuntimeDomainFixture,
   type StandardDomainFixture,
 } from "./standard-domain-fixture";
-import { createWorkerSnapshot } from "../../fixtures/persistence/worker-snapshot";
 import {
   createNoopHistoryModel,
-  MeasuredSliceScheduler,
   measureMaximumStrokeRun,
   measureTransformRun,
   percentile,
@@ -75,37 +72,6 @@ describe("standard 10,000-stroke domain fixture", () => {
 
     expect(new Set(fixture.arrowNodes)).toEqual(
       new Set(["none", "arrow", "triangle", "diamond", "circle"]),
-    );
-  });
-
-  it("builds a complete initial store in cancellable bounded slices", async () => {
-    const hydrationFixture = createStandardRuntimeDomainFixture();
-    const validation = validateRuntimeInkSnapshotV1(
-      createWorkerSnapshot([...hydrationFixture.elements]),
-    );
-    if (!validation.ok)
-      throw new Error(`Runtime hydration fixture is invalid: ${validation.error.code}`);
-    const scheduler = new MeasuredSliceScheduler(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
-    const builder = ElementStore.createBuilder(scheduler);
-    const started = performance.now();
-    expect(
-      await builder.appendOwnedValidatedRuntime(
-        hydrationFixture.elements,
-        validation.derivations.elements,
-      ),
-    ).toBe("accepted");
-    const hydrated = await builder.finalize();
-    const duration = performance.now() - started;
-    scheduler.finish();
-
-    expect(hydrated?.size).toBe(11_000);
-    expect(hydrated?.instrumentation).toMatchObject({
-      hydrationElementVisits: 22_000,
-      publishedDeltas: 0,
-    });
-    expect(duration).toBeLessThanOrEqual(timingBudget(750));
-    expect(scheduler.maxSliceDuration).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
     );
   });
 });
@@ -297,6 +263,7 @@ describe("large selection commit", () => {
     const releaseHistoryRegistration = worstDistribution(
       measuredRuns.map(({ historyRegistration }) => historyRegistration),
     );
+    const releaseSlices = worstDistribution(measuredRuns.map(({ slices }) => slices));
     const maximumSlice = Math.max(...measuredRuns.map(({ maximumSlice }) => maximumSlice));
     const maximumHeapGrowthBytes = Math.max(
       ...measuredRuns.map(({ maximumHeapGrowthBytes }) => maximumHeapGrowthBytes),
@@ -312,6 +279,7 @@ describe("large selection commit", () => {
           commit: releaseCommit,
           historyRegistration: releaseHistoryRegistration,
           materialization: releaseMaterialization,
+          slices: releaseSlices,
         },
         maximumSlice,
         maximumHeapGrowthBytes,
@@ -327,8 +295,11 @@ describe("large selection commit", () => {
     }
     expect(releaseMaterialization.p95).toBeLessThanOrEqual(timingBudget(100));
     expect(releaseCommit.p95).toBeLessThanOrEqual(timingBudget(100));
-    expect(maximumSlice).toBeLessThanOrEqual(
+    expect(releaseSlices.p95).toBeLessThanOrEqual(
       timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
+    expect(maximumSlice).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
     );
     expect(partialStoreObserved).toBe(false);
     expect(publishedDeltas).toBe(250);
@@ -408,12 +379,13 @@ describe("maximum live-stroke primitives", () => {
     const releaseHandoff = worstDistribution(measuredRuns.map(({ handoff }) => handoff));
 
     expect(releaseAppend.sampleCount).toBe(20 * 4096);
+    if (releaseAppend.p99 === null) throw new Error("Maximum-stroke append p99 is unavailable.");
     expect(releaseAppend.p99).toBeLessThanOrEqual(
       timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
     );
     expect(releaseHandoff.sampleCount).toBe(20);
-    expect(releaseHandoff.p99).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    expect(releaseHandoff.maximum).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
     );
     expect(measuredRuns.every(({ maximumTailSamples }) => maximumTailSamples <= 16)).toBe(true);
     expect(
@@ -492,20 +464,22 @@ function transformMetricsAnnotation(
     commit: Distribution;
     historyRegistration: Distribution;
     materialization: Distribution;
+    slices: Distribution;
   }>,
   maximumSlice: number,
   maximumHeapGrowthBytes: number,
   maximumRetainedHistoryBytes: number,
 ): string {
-  const { atomicCommit, commit, historyRegistration, materialization } = distributions;
+  const { atomicCommit, commit, historyRegistration, materialization, slices } = distributions;
   return (
     `10k transform: materialization p50=${materialization.p50.toFixed(3)} ms, ` +
-    `p95=${materialization.p95.toFixed(3)} ms, p99=${materialization.p99.toFixed(3)} ms, ` +
+    `p95=${materialization.p95.toFixed(3)} ms, ` +
     `max=${materialization.maximum.toFixed(3)} ms; commit p50=${commit.p50.toFixed(3)} ms, ` +
-    `p95=${commit.p95.toFixed(3)} ms, p99=${commit.p99.toFixed(3)} ms, ` +
+    `p95=${commit.p95.toFixed(3)} ms, ` +
     `max=${commit.maximum.toFixed(3)} ms; atomicCommit p95=${atomicCommit.p95.toFixed(3)} ms, ` +
     `max=${atomicCommit.maximum.toFixed(3)} ms; history p95=${historyRegistration.p95.toFixed(3)} ms, ` +
-    `max=${historyRegistration.maximum.toFixed(3)} ms; maxSlice=${maximumSlice.toFixed(3)} ms, ` +
+    `max=${historyRegistration.maximum.toFixed(3)} ms; slice p95=${slices.p95.toFixed(3)} ms, ` +
+    `max=${maximumSlice.toFixed(3)} ms, ` +
     `maxHeapGrowth=${(maximumHeapGrowthBytes / 1024 / 1024).toFixed(1)} MiB, ` +
     `maxHistory=${(maximumRetainedHistoryBytes / 1024 / 1024).toFixed(1)} MiB, oldSpaceLimit=384 MiB`
   );

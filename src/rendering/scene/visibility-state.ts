@@ -46,6 +46,7 @@ export class SceneVisibilityState implements SpatialQuerySink {
   #visibleBands = new Uint8Array(0);
   #visibleEpoch = 0;
   #visibleMarkers = new Uint32Array(0);
+  #visibleRanks = new Float64Array(0);
 
   public constructor(store: SceneStorePort, instrumentation: MutableSceneInstrumentation) {
     this.#store = store;
@@ -81,6 +82,8 @@ export class SceneVisibilityState implements SpatialQuerySink {
   }
 
   public resortCurrent(): VisibilityResult {
+    this.refreshRanks(this.#highlightIds, this.#highlightCount, "highlight");
+    this.refreshRanks(this.#contentIds, this.#contentCount, "content");
     this.sortBand(this.#highlightIds, this.#highlightCount, "highlight");
     this.sortBand(this.#contentIds, this.#contentCount, "content");
     return this.currentResult();
@@ -94,6 +97,7 @@ export class SceneVisibilityState implements SpatialQuerySink {
     this.#candidateMarkers[slot] = 0;
     this.#visibleMarkers[slot] = 0;
     this.#visibleBands[slot] = 0;
+    this.#visibleRanks[slot] = 0;
     this.#freeSlots.push(slot);
   }
 
@@ -107,10 +111,12 @@ export class SceneVisibilityState implements SpatialQuerySink {
     this.#candidateKey = undefined;
   }
 
-  public invalidateCandidatesForChange(
+  public invalidateForChanges(
     before: Bounds | null | undefined,
     after: Bounds | null | undefined,
-  ): boolean {
+  ): void;
+  public invalidateForChanges(): void;
+  public invalidateForChanges(before?: Bounds | null, after?: Bounds | null): void {
     this.#currentInvalidated = true;
     const range = this.#candidateBounds;
     if (
@@ -119,10 +125,9 @@ export class SceneVisibilityState implements SpatialQuerySink {
       after !== undefined &&
       relevantToRange(before, range) === relevantToRange(after, range)
     ) {
-      return false;
+      return;
     }
     this.invalidateCandidates();
-    return true;
   }
 
   public release(): void {
@@ -142,6 +147,7 @@ export class SceneVisibilityState implements SpatialQuerySink {
     this.#candidateMarkers = new Uint32Array(0);
     this.#visibleMarkers = new Uint32Array(0);
     this.#visibleBands = new Uint8Array(0);
+    this.#visibleRanks = new Float64Array(0);
     this.#candidateBounds = undefined;
     this.#candidateKey = undefined;
     this.#visibilityEnvelope = undefined;
@@ -212,6 +218,7 @@ export class SceneVisibilityState implements SpatialQuerySink {
       }
       this.#visibleMarkers[slot] = this.#visibleEpoch;
       this.#visibleBands[slot] = bandCode;
+      this.#visibleRanks[slot] = record.rank;
       this.pushNextBand(record.band, id);
     }
     return (
@@ -280,6 +287,21 @@ export class SceneVisibilityState implements SpatialQuerySink {
     }
   }
 
+  private refreshRanks(
+    ids: readonly (string | undefined)[],
+    count: number,
+    band: RenderBand,
+  ): void {
+    for (let index = 0; index < count; index += 1) {
+      const id = ids[index];
+      if (id === undefined) continue;
+      const slot = this.#slotById.get(id);
+      if (slot === undefined) continue;
+      const record = this.#store.get(id);
+      if (record?.band === band) this.#visibleRanks[slot] = record.rank;
+    }
+  }
+
   private siftDown(
     ids: (string | undefined)[],
     start: number,
@@ -307,8 +329,12 @@ export class SceneVisibilityState implements SpatialQuerySink {
   }
 
   private rank(id: string, band: RenderBand): number {
-    const record = this.#store.get(id);
-    return record?.band === band ? record.rank : Number.MAX_SAFE_INTEGER;
+    const slot = this.#slotById.get(id);
+    if (slot === undefined) return Number.MAX_SAFE_INTEGER;
+    const bandCode = band === "highlight" ? 1 : 2;
+    return this.#visibleBands[slot] === bandCode
+      ? this.#visibleRanks[slot]!
+      : Number.MAX_SAFE_INTEGER;
   }
 
   private slotFor(id: string): number {
@@ -333,6 +359,9 @@ export class SceneVisibilityState implements SpatialQuerySink {
     const visibleBands = new Uint8Array(capacity);
     visibleBands.set(this.#visibleBands);
     this.#visibleBands = visibleBands;
+    const visibleRanks = new Float64Array(capacity);
+    visibleRanks.set(this.#visibleRanks);
+    this.#visibleRanks = visibleRanks;
     this.#instrumentation.collectionAllocations += 1;
   }
 
