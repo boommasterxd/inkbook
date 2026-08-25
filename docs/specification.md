@@ -82,6 +82,7 @@ src/
 │   ├── input/
 │   └── session/
 ├── rendering/
+│   ├── motion/
 │   ├── scene/
 │   └── ui/
 ├── persistence/
@@ -103,13 +104,13 @@ Dependency arrows point inward: `editor`, `rendering`, and `persistence` may imp
 
 - `domain` imports no framework, browser, worker, vault, React, CodeMirror, or Obsidian module.
 - `editor` depends only on `domain` contracts and never imports renderer, persistence, React, CodeMirror, or Obsidian implementations.
-- `rendering` may consume immutable domain records and narrow read-only editor projections. Imperative scene code and React UI code remain in separate leaf folders and communicate through coarse typed state rather than DOM references.
+- `rendering` may consume immutable domain records and narrow read-only editor projections. Framework-free motion contracts, imperative scene code, and React UI code remain in separate leaf folders. Scene and UI communicate through coarse typed state rather than DOM references.
 - `persistence` owns codecs, migrations, worker messages, and save orchestration. It receives host I/O through narrow ports and never imports a concrete Obsidian adapter.
 - `obsidian` is the outer integration layer and composition owner. It may connect the other areas but MUST NOT reimplement their rules.
 
 Each module has one primary reason to change. Feature-specific types, tests, styles, and helpers stay with their owning area. Generic `utils`, `common`, `shared`, `services`, or `helpers` dumping grounds are forbidden. A shared abstraction is introduced only for a current cross-area contract or verified duplication, receives a domain-specific name, and is placed at the narrowest dependency boundary that can own it without creating a cycle.
 
-Cross-area APIs stay small and explicit. Prefer direct imports from the owning module. Add an area-level `public.ts` only when several external consumers need a stable boundary; do not create recursive barrel files or re-export internal implementation details. Dependency cycles, cross-area mutable globals, hidden singleton access, and framework types in pure contracts are forbidden.
+Cross-area APIs stay small and explicit. Prefer direct imports from the owning module. Add an area-level `public.ts` only when several external consumers need a stable boundary; do not create recursive barrel files or re-export internal implementation details. Dependency cycles, cross-area mutable globals, hidden singleton access, and framework types in pure contracts are forbidden. The automated source import-graph gate includes TypeScript type-only edges and rejects cycles or imports that violate the responsibility directions above. Naming, coverage, and quality enforcement are defined in [Quality and Testing](quality-and-testing.md#coverage-and-ci-gates).
 
 Tests mirror source ownership. Pure behavior belongs under `test/unit/<area>/`; focused host or worker boundaries belong under `test/integration/<area>/`; reusable external-boundary doubles belong under `test/adapters/<boundary>/`. Tests MUST NOT gain access to internal modules through a broader public API than production code requires.
 

@@ -7,7 +7,7 @@ import type {
   StraightHighlighterElementV1,
   StrokeElementV1,
   TableElementV1,
-} from "../schema/public";
+} from "../schema/types";
 import { shapeVertices, tableWidth } from "./creation";
 import {
   arrowNodeGeometry,

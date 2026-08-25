@@ -2,35 +2,13 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { BackgroundFlyout, FlyoutPortal, ShapeFlyout, StyleFlyout } from "./flyout";
-import type {
-  BackgroundFlyoutState,
-  EditorFlyoutCallbacks,
-  OverflowMenuState,
-  ShapeId,
-  StyleControl,
-} from "./flyout-types";
 import { OverflowMenu } from "./overflow-menu";
 import { InkbookToolbar } from "./toolbar";
-import type { ToolbarLayoutStage } from "./toolbar-layout";
-import type { FlyoutId, ToolbarAction, ToolbarState } from "./toolbar-types";
-import type { ToolbarStyleIconState } from "./style-icon";
+import type { FlyoutId, ToolbarAction } from "./toolbar-types";
 import { editorChromeLayoutKey } from "./editor-chrome-snapshot";
+import type { InkbookEditorChromeProps } from "./editor-chrome-types";
 
-export interface InkbookEditorChromeProps {
-  readonly background: BackgroundFlyoutState;
-  readonly callbacks: EditorFlyoutCallbacks;
-  readonly canvasInput: HTMLElement | null;
-  readonly layout: ToolbarLayoutStage;
-  readonly leftHanded?: boolean;
-  readonly onToolbarAction: (action: ToolbarAction) => void;
-  readonly ownerDocument: Document;
-  readonly overflowMenu: OverflowMenuState;
-  readonly renderIcon: (element: HTMLElement, icon: string) => void;
-  readonly selectedShape: ShapeId;
-  readonly styleControls: readonly StyleControl[];
-  readonly styleIcon: ToolbarStyleIconState;
-  readonly toolbarState: ToolbarState;
-}
+export type { InkbookEditorChromeProps } from "./editor-chrome-types";
 
 export function InkbookEditorChrome(props: InkbookEditorChromeProps) {
   const buttons = useRef(new Map<ToolbarAction, HTMLButtonElement>());

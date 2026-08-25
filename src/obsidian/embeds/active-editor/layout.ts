@@ -68,21 +68,21 @@ export class ActiveEditorLayout {
       motionPreference(options.root.dataset?.inkbookMotion),
       () => this.#completeHeightTransitionImmediately(),
     );
-    const Observer = ownerWindow.ResizeObserver;
+    const observerConstructor = ownerWindow.ResizeObserver;
     this.#observer =
-      Observer === undefined
+      observerConstructor === undefined
         ? undefined
-        : new Observer(() => {
+        : new observerConstructor(() => {
             this.#toolbarLayoutDirty = true;
             this.#options.renderer.invalidateLayout("coverage");
             this.scheduleMeasurement();
           });
     this.#observer?.observe(options.root);
-    const ChromeObserver = ownerWindow.MutationObserver;
+    const chromeObserverConstructor = ownerWindow.MutationObserver;
     this.#chromeObserver =
-      ChromeObserver === undefined
+      chromeObserverConstructor === undefined
         ? undefined
-        : new ChromeObserver(() => this.#handleChromeMutation());
+        : new chromeObserverConstructor(() => this.#handleChromeMutation());
     this.#chromeObserver?.observe(options.chromeHost, {
       attributeFilter: ["data-presence"],
       attributes: true,

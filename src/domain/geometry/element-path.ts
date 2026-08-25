@@ -6,7 +6,7 @@ import type {
   LinearElementV1,
   PointV1,
   TableElementV1,
-} from "../schema/public";
+} from "../schema/types";
 import { shapeVertices, tableWidth } from "./creation";
 import {
   addPoints,

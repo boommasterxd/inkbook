@@ -33,22 +33,26 @@ Development and production output is written to `dist/`. Copy its contents, or l
 
 Useful commands:
 
-| Command                    | Purpose                                                                     |
-| -------------------------- | --------------------------------------------------------------------------- |
-| `npm run dev`              | Watch source and emit a development build with inline source maps.          |
-| `npm run build`            | Create the minified production plugin package under `dist/`.                |
-| `npm test`                 | Run the Unit and focused Integration test suites.                           |
-| `npm run test:coverage`    | Run tests with the 85 percent executable-source line threshold.             |
-| `npm run test:unit`        | Run only deterministic Unit tests.                                          |
-| `npm run test:integration` | Run only focused boundary Integration tests.                                |
-| `npm run test:performance` | Run the serial deterministic performance profiles.                          |
-| `npm run lint`             | Enforce Obsidian, architecture, size, complexity, and mobile-runtime rules. |
-| `npm run typecheck`        | Type-check plugin source separately from Node-based test tooling.           |
-| `npm run ci`               | Run every local gate used by the required GitHub `CI` check.                |
-| `npm run benchmark`        | Run performance profiles and verify their recorded budgets.                 |
-| `npm run package:verify`   | Verify versions and the exact Obsidian release-artifact envelope.           |
+| Command                    | Purpose                                                                                      |
+| -------------------------- | -------------------------------------------------------------------------------------------- |
+| `npm run dev`              | Watch source and emit a development build with inline source maps.                           |
+| `npm run build`            | Create the minified production plugin package under `dist/`.                                 |
+| `npm test`                 | Run the Unit and focused Integration test suites.                                            |
+| `npm run test:coverage`    | Enforce 85 percent lines, statements, and functions plus 80 percent branches.                |
+| `npm run test:unit`        | Run only deterministic Unit tests.                                                           |
+| `npm run test:integration` | Run only focused boundary Integration tests.                                                 |
+| `npm run test:performance` | Run the complete classified performance profiles.                                            |
+| `npm run lint`             | Enforce Obsidian, naming, size, complexity, architecture-boundary, and mobile-runtime rules. |
+| `npm run lint:styles`      | Validate source CSS with Stylelint.                                                          |
+| `npm run lint:layout`      | Validate source/test naming, Scene file type, and CSS file size.                             |
+| `npm run architecture`     | Reject source dependency cycles and invalid area directions.                                 |
+| `npm run typecheck`        | Type-check plugin source separately from Node-based test tooling.                            |
+| `npm run typecheck:worker` | Type-check the actual worker graph without main-thread platform types.                       |
+| `npm run ci`               | Run the complete local quality and performance gate.                                         |
+| `npm run benchmark`        | Run performance profiles and verify their recorded budgets.                                  |
+| `npm run package:verify`   | Verify versions and the exact Obsidian release-artifact envelope.                            |
 
-The complete gate also checks formatting, duplication, dead code, dependency vulnerabilities, coverage, deterministic performance budgets, the production build, and package contents.
+The complete gate also checks formatting, source layout, import cycles and direction, worker isolation, duplication, dead code, dependency vulnerabilities, coverage, deterministic performance budgets, the production build, and package contents.
 
 ## Architecture
 
@@ -56,7 +60,7 @@ The implementation follows five dependency-directed responsibility areas:
 
 - `domain`: pure elements, geometry, commands, schemas, and spatial data
 - `editor`: input arbitration, gestures, selection, sessions, and autosave scheduling
-- `rendering`: asynchronously loaded React application chrome and the separate imperative SVG scene
+- `rendering`: framework-free motion contracts, asynchronously loaded React application chrome, and the separate imperative SVG scene
 - `persistence`: document codecs, migrations, worker tasks, and save orchestration
 - `obsidian`: plugin lifecycle, embeds, settings, host adapters, and host styling
 
@@ -64,11 +68,11 @@ The implementation follows five dependency-directed responsibility areas:
 
 React is restricted to toolbar and flyout chrome. The production build generates the complete activation runtime and its nested React editor-chrome and document-worker modules from checked-in TypeScript, compresses them, and embeds them in `main.js`; activation decodes owned modules locally without a network request. Pointer input, camera updates, snapping, culling, animation frames, and SVG reconciliation remain imperative hot paths. The exact dependency rules and folder topology are defined in [docs/specification.md](docs/specification.md#source-topology-and-module-boundaries). Runtime ownership and data flows are visualized in [docs/architecture-flows.md](docs/architecture-flows.md), and the public Obsidian boundary is defined in [docs/obsidian-integration.md](docs/obsidian-integration.md).
 
-The production build is reproducible from the public source and uses ordinary esbuild and Terser minification. `scripts/build.mjs` gzip-compresses and Base91-encodes the generated activation runtime, React 18 editor chrome, and document worker inside `main.js`. The small synchronous Obsidian entry decompresses the activation runtime and imports it through a locally owned Blob URL; the activation runtime loads the nested editor chrome and worker through the same local mechanism when needed. This is build-time packaging, not purpose-hiding obfuscation: the complete TypeScript entries remain in `src/`, no code is fetched from the network, and neither `eval` nor the `Function` constructor is used. Package verification rejects unresolved placeholders, missing runtime markers, source maps, and extra release artifacts without imposing an arbitrary JavaScript byte limit.
+The production build is reproducible from the public source and uses ordinary esbuild and Terser minification. `scripts/build.mjs` gzip-compresses and Base91-encodes the generated activation runtime, React editor chrome, and document worker inside `main.js`. The small synchronous Obsidian entry decompresses the activation runtime and imports it through a locally owned Blob URL; the activation runtime loads the nested editor chrome and worker through the same local mechanism when needed. This is build-time packaging, not purpose-hiding obfuscation: the complete TypeScript entries remain in `src/`, no code is fetched from the network, and neither `eval` nor the `Function` constructor is used. Package verification rejects unresolved placeholders, missing runtime markers, source maps, and extra release artifacts without imposing an arbitrary JavaScript byte limit.
 
 ## GitHub automation
 
-Every pull request requires the exact checks `CI`, `gitleaks`, and `Validate PR Title`. All workflow actions are pinned to full commit SHAs and remain tracked by Dependabot.
+Every pull request requires the exact checks `CI`, `Performance (shared)`, `Performance (refresh profiles)`, `gitleaks`, and `Validate PR Title`. All workflow actions are pinned to full commit SHAs and remain tracked by Dependabot.
 
 Dependabot checks npm and GitHub Actions every Monday at 08:00 Europe/Berlin. Minor and patch updates are grouped and become squash auto-merge eligible only after required checks pass. Major updates remain separate for manual review. CodeMirror peers are updated only together with the selected Obsidian API version because Obsidian requires exact compatible peer versions. A separate monthly workflow updates the checksum-pinned gitleaks CLI.
 

@@ -1,4 +1,4 @@
-import { transitionDurations } from "../../../rendering/ui/motion";
+import { TRANSITION_DURATIONS } from "../../../rendering/motion/transitions";
 
 const TRANSITION_CLASS = "inkbook-page-height-transitioning";
 const ENVELOPE_PROPERTY = "--inkbook-page-height-envelope-block-size";
@@ -119,7 +119,7 @@ export class ActiveHeightTransition {
     if (request === undefined || this.#phase !== "running") return;
     const progress = Math.min(
       1,
-      Math.max(0, (time - this.#startedAt) / transitionDurations.automaticPageGrowth),
+      Math.max(0, (time - this.#startedAt) / TRANSITION_DURATIONS.automaticPageGrowth),
     );
     const eased = progress * progress * (3 - 2 * progress);
     if (progress < 1) {

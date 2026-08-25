@@ -6,7 +6,7 @@ import type {
   ShapeAnchorV1,
   TableElementV1,
   InkElementV1,
-} from "../schema/public";
+} from "../schema/types";
 import { shapeVertices, tableWidth } from "./creation";
 import { canonicalPoint, midpoint, rotatePointClockwise } from "./primitives";
 

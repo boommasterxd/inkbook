@@ -1,5 +1,5 @@
 import type { ColorV1 } from "../../domain/schema/public";
-import type { InkbookEditorChromeProps } from "./editor-chrome";
+import type { InkbookEditorChromeProps } from "./editor-chrome-types";
 import type { StyleControl } from "./flyout-types";
 
 export function sameEditorChromeProps(

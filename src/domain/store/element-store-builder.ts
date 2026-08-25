@@ -1,12 +1,11 @@
 import type { ElementValidationDerivation, InkElementV1 } from "../schema/public";
 
-import type { ElementStore } from "./element-store";
 import { StoreAppendBuilder } from "./store-append-builder";
 import { TimeSlicedStoreBuilder } from "./time-sliced-store-creation";
 import type { TimeSlicedStoreState } from "./time-sliced-store-creation";
 import type { StoreSliceScheduler } from "./types";
 
-export interface ElementStoreBuilder {
+export interface ElementStoreBuilder<TStore> {
   append(elements: readonly InkElementV1[]): Promise<"accepted" | "cancelled">;
   /** Validates runtime elements and adopts their exclusively owned nested buffers. */
   appendOwnedRuntime(elements: readonly InkElementV1[]): Promise<"accepted" | "cancelled">;
@@ -16,18 +15,21 @@ export interface ElementStoreBuilder {
     derivations: readonly ElementValidationDerivation[],
   ): Promise<"accepted" | "cancelled">;
   cancel(): void;
-  finalize(): Promise<ElementStore | null>;
+  finalize(): Promise<TStore | null>;
 }
 
-class DefaultElementStoreBuilder extends StoreAppendBuilder implements ElementStoreBuilder {
+class DefaultElementStoreBuilder<TStore>
+  extends StoreAppendBuilder
+  implements ElementStoreBuilder<TStore>
+{
   readonly #builder: TimeSlicedStoreBuilder;
   #cancelled = false;
   #finalized = false;
-  readonly #publish: (state: TimeSlicedStoreState) => ElementStore;
+  readonly #publish: (state: TimeSlicedStoreState) => TStore;
 
   public constructor(
     scheduler: StoreSliceScheduler,
-    publish: (state: TimeSlicedStoreState) => ElementStore,
+    publish: (state: TimeSlicedStoreState) => TStore,
   ) {
     super();
     this.#builder = new TimeSlicedStoreBuilder(scheduler);
@@ -72,7 +74,7 @@ class DefaultElementStoreBuilder extends StoreAppendBuilder implements ElementSt
     this.#builder.cancel();
   }
 
-  public async finalize(): Promise<ElementStore | null> {
+  public async finalize(): Promise<TStore | null> {
     if (this.#cancelled) return null;
     try {
       const state = await this.#builder.finalize();
@@ -89,9 +91,9 @@ class DefaultElementStoreBuilder extends StoreAppendBuilder implements ElementSt
   }
 }
 
-export function createElementStoreBuilder(
+export function createElementStoreBuilder<TStore>(
   scheduler: StoreSliceScheduler,
-  publish: (state: TimeSlicedStoreState) => ElementStore,
-): ElementStoreBuilder {
+  publish: (state: TimeSlicedStoreState) => TStore,
+): ElementStoreBuilder<TStore> {
   return new DefaultElementStoreBuilder(scheduler, publish);
 }

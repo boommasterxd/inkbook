@@ -1,4 +1,4 @@
-import type { ChunkedJsonLimits } from "./chunked-json-parser";
+import type { ChunkedJsonLimits } from "./chunked-json-limits";
 
 export function validateChunkedJsonLimits(limits: ChunkedJsonLimits): ChunkedJsonLimits {
   return {
