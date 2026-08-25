@@ -5,6 +5,10 @@ import { ElementStore } from "../../../src/domain/store/public";
 import { ActiveHeightTransition } from "../../../src/obsidian/embeds/active-editor/height-transition";
 import { transitionDurations } from "../../../src/rendering/ui/motion";
 import { createStandardRuntimeDomainFixture } from "../domain/standard-domain-fixture";
+import {
+  INTERACTION_REFRESH_PROFILE,
+  interactionProfileAnnotation,
+} from "../interaction-refresh-profile";
 import { timingBudget } from "../timing-budget";
 
 let store: ElementStore;
@@ -47,19 +51,26 @@ describe("automatic page-height performance", () => {
     await annotate(`500 bottom-extent mutations: p99=${p99.toFixed(3)} ms, fullScans=0`);
   });
 
-  it("keeps growth and shrink animation-frame orchestration below one millisecond", async ({
+  it(`keeps ${INTERACTION_REFRESH_PROFILE.refreshRate} Hz growth and shrink animation frames below one millisecond`, async ({
     annotate,
   }) => {
-    const harness = transitionHarness();
+    const harness = transitionHarness(INTERACTION_REFRESH_PROFILE.frameDurationMs);
     for (let transition = 0; transition < 500; transition += 1) {
       harness.run(transition % 2 === 0 ? [480, 720] : [720, 480]);
     }
 
     const p99 = percentile(harness.frameDurations, 0.99);
     expect(p99).toBeLessThanOrEqual(timingBudget(1));
-    expect(harness.maximumFramesPerTransition).toBeLessThanOrEqual(12);
+    expect(harness.maximumFramesPerTransition).toBeLessThanOrEqual(
+      Math.ceil(
+        transitionDurations.automaticPageGrowth / INTERACTION_REFRESH_PROFILE.frameDurationMs,
+      ) + 2,
+    );
     expect(harness.incompleteTransitions).toBe(0);
-    await annotate(`500 alternating growth/shrink transitions: frame p99=${p99.toFixed(3)} ms`);
+    await annotate(
+      interactionProfileAnnotation("automatic page growth and shrink", p99),
+      "performance",
+    );
   });
 });
 
@@ -85,7 +96,7 @@ function bottomMarker(index: number, y: number): BoxShapeElementV1 {
   };
 }
 
-function transitionHarness() {
+function transitionHarness(frameDurationMs: number) {
   const classNames = new Set<string>();
   const frames: FrameRequestCallback[] = [];
   const ownerWindow = {
@@ -134,12 +145,14 @@ function transitionHarness() {
         const started = performance.now();
         frame(elapsed);
         frameDurations.push(performance.now() - started);
-        elapsed += 1000 / 60;
+        elapsed += frameDurationMs;
         frameCount += 1;
       }
       maximumFramesPerTransition = Math.max(maximumFramesPerTransition, frameCount);
       if (!completed || transition.active) incompleteTransitions += 1;
-      expect(elapsed).toBeLessThanOrEqual(transitionDurations.automaticPageGrowth + 34);
+      expect(elapsed).toBeLessThanOrEqual(
+        transitionDurations.automaticPageGrowth + frameDurationMs * 2,
+      );
     },
   };
 }

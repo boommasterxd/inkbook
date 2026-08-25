@@ -157,3 +157,26 @@ describe("InkbookSettingsStore device subscriptions", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 });
+
+describe("InkbookSettingsStore vault subscriptions", () => {
+  it("publishes the persisted refresh profile after a successful serialized write", async () => {
+    const store = new InkbookSettingsStore(
+      new VaultFake(createBuiltInSettings()),
+      new DeviceFake(createBuiltInDeviceSettings()),
+    );
+    await store.load();
+    const listener = vi.fn();
+    store.subscribeVaultSettings(listener);
+
+    await store.updateVaultSettings((settings) => ({
+      ...settings,
+      refreshRatePreference: 144,
+    }));
+
+    expect(listener).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenCalledWith({
+      ...createBuiltInSettings(),
+      refreshRatePreference: 144,
+    });
+  });
+});

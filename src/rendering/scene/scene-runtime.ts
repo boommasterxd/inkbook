@@ -49,3 +49,10 @@ export function validatePreviewVersion(value: number, subject: string): void {
     throw new RangeError(`${subject} version must be a non-negative safe integer.`);
   }
 }
+
+export function validateFrameBudget(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new RangeError("frameBudgetMs must be finite and positive.");
+  }
+  return value;
+}

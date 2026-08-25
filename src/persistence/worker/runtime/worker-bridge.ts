@@ -61,6 +61,7 @@ export interface WorkerDocumentRuntimePortOptions {
   readonly onExecutorFailure?: (failure: WorkerRuntimeFailure) => void;
   readonly profile?: "desktop" | "mobile";
   readonly requestTimeoutMilliseconds?: number;
+  readonly sliceMilliseconds?: number | (() => number);
 }
 
 export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
@@ -69,7 +70,7 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
   readonly #pending = new Map<number, PendingBridgeRequest>();
   readonly #exportReceipts = new Map<string, BridgeSuccess>();
   readonly #requestTimeoutMilliseconds: number;
-  readonly #sliceMilliseconds: number;
+  readonly #sliceMilliseconds: () => number;
   readonly #inputWaiters = new Set<() => void>();
   #failureReported = false;
   #liveInputActive = false;
@@ -85,8 +86,11 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
       throw new RangeError("requestTimeoutMilliseconds must be a positive finite number.");
     }
     this.#requestTimeoutMilliseconds = timeout;
+    const configuredSlice =
+      options.sliceMilliseconds ??
+      (options.profile === "mobile" ? MOBILE_MAIN_THREAD_SLICE_MS : DESKTOP_MAIN_THREAD_SLICE_MS);
     this.#sliceMilliseconds =
-      options.profile === "mobile" ? MOBILE_MAIN_THREAD_SLICE_MS : DESKTOP_MAIN_THREAD_SLICE_MS;
+      typeof configuredSlice === "function" ? configuredSlice : () => configuredSlice;
     this.#onExecutorFailure = options.onExecutorFailure;
     this.#endpoint = createWorker();
     this.#endpoint.addEventListener("message", this.#onMessage);
@@ -373,7 +377,7 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
       while (this.#liveInputActive) {
         await new Promise<void>((resolve) => this.#inputWaiters.add(resolve));
       }
-      if (performance.now() - sliceStarted < this.#sliceMilliseconds) return;
+      if (performance.now() - sliceStarted < this.#sliceMilliseconds()) return;
       await yieldToMainThread();
       sliceStarted = performance.now();
     };

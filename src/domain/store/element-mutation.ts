@@ -63,6 +63,7 @@ export async function planElementMutation(
   requested: ElementMutation,
   scheduler: StoreSliceScheduler,
 ): Promise<ElementMutationPlan | "cancelled" | null> {
+  scheduler = minimumProgressScheduler(scheduler);
   const sourceRanks = source.ranks ?? (await buildRanks(source.bands, scheduler));
   if (sourceRanks === "cancelled") return sourceRanks;
   const removeIds = new Set(requested.removeIds ?? []);
@@ -106,6 +107,26 @@ export async function planElementMutation(
     ranks,
     records,
     reverseConnections,
+  };
+}
+
+function minimumProgressScheduler(scheduler: StoreSliceScheduler): StoreSliceScheduler {
+  let processedAtLeastOne = false;
+  return {
+    ...(scheduler.isCancelled === undefined
+      ? {}
+      : { isCancelled: () => scheduler.isCancelled?.() ?? false }),
+    shouldYield: () => {
+      if (!processedAtLeastOne) {
+        processedAtLeastOne = true;
+        return false;
+      }
+      return scheduler.shouldYield();
+    },
+    yieldControl: async () => {
+      await scheduler.yieldControl();
+      processedAtLeastOne = false;
+    },
   };
 }
 

@@ -216,6 +216,7 @@ describe("InkbookSettingTab definitions", () => {
     expect(general).toBeDefined();
     expect(general?.items?.map((item) => item.name)).toEqual([
       "Startup tool",
+      "Display refresh rate",
       "File placement",
       "Custom vault folder",
       "Create custom folder",
@@ -314,7 +315,9 @@ describe("InkbookSettingTab visible labels", () => {
     expect(multiWordLabels).toEqual(
       expect.arrayContaining(["Straight highlighter", "Coordinate system"]),
     );
-    expect(multiWordLabels.filter((label) => !sentenceCase.test(label))).toEqual([]);
+    expect(
+      multiWordLabels.filter((label) => !sentenceCase.test(label) && !/^\d+ Hz$/.test(label)),
+    ).toEqual([]);
   });
 });
 

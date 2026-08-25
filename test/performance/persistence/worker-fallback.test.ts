@@ -8,6 +8,7 @@ import {
   type DocumentRuntimeRequest,
 } from "../../../src/persistence/worker/runtime/public";
 import { createStandardPersistenceFixture } from "./fixtures";
+import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 import { annotateDurations, summarizeDurations, type MetricAnnotator } from "./metrics";
 import { timingBudget } from "../timing-budget";
 
@@ -16,7 +17,7 @@ declare const process: {
 };
 declare function setImmediate(callback: () => void): void;
 
-const MAIN_THREAD_BUDGET_MS = 8;
+const MAIN_THREAD_BUDGET_MS = INTERACTION_REFRESH_PROFILE.mainThreadP99Ms;
 const snapshot = createFallbackFixture();
 const serialized = requireSerialized();
 
@@ -58,6 +59,7 @@ function createScheduledFallback(): {
   const scheduler = new GestureAwareSliceScheduler({
     isInputActive: probe.isInputActive,
     now: () => performance.now(),
+    sliceMilliseconds: INTERACTION_REFRESH_PROFILE.mainThreadP99Ms,
     yieldControl: probe.yieldControl,
   });
   return {

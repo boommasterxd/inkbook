@@ -20,6 +20,7 @@ export interface ActiveEditorPreviewOptions {
   readonly preparedHistory: PreparedElementHistory;
   readonly renderer: SvgSceneRenderer;
   readonly sceneStore: ElementSceneStore;
+  readonly sliceBudgetMs: () => number;
   readonly selection: () => ReadonlySet<string>;
   readonly selectionEdgeDrag?: SelectionEdgeDragPort;
   readonly setSelection: (selection: ReadonlySet<string>) => void;
@@ -39,6 +40,7 @@ export function createActiveEditorPreview(
       radius: screenPixelsToPageUnits(options.defaults.eraser.radius, zoom),
       renderer: options.renderer,
       sceneStore: options.sceneStore,
+      sliceBudgetMs: options.sliceBudgetMs,
       start,
     });
   }

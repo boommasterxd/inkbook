@@ -1,16 +1,11 @@
 import { setIcon } from "obsidian";
 
-import type {
-  InkbookDeviceSettingsV1,
-  InkbookSettingsV1,
-  StartupToolV1,
-  ToolDefaultsV1,
-} from "../../domain/settings/types";
+import type { InkbookDeviceSettingsV1 } from "../../domain/settings/types";
 import type { InkElementV1 } from "../../domain/schema/public";
 import type { StoreDelta } from "../../domain/store/public";
 import { SvgSceneRenderer, type SceneInputHandlers } from "../../rendering/scene/index";
 import { beginEditorChromeMount, type PendingEditorChrome } from "./editor-chrome-loader";
-import type { ContextMenuAction, MenuFactoryPort } from "../menus/index";
+import type { ContextMenuAction } from "../menus/index";
 import { obsidianMenuFactory } from "../menus/index";
 import {
   browserScrollMetrics,
@@ -39,32 +34,10 @@ import { createActiveSceneChromeElements, updateActiveSceneChrome } from "./acti
 import { readActiveSceneViewport } from "./active-scene-viewport";
 import { InitialSceneReadiness } from "./initial-scene-readiness";
 import type { EditableDocumentModel } from "./vault-document-session";
-import type { ActiveEditorHistory } from "./active-editor/history";
+import type { ActiveInkbookSceneOptions } from "./active-scene-types";
 
 export { ActiveScenePreviewHandoff } from "./active-scene-handoff";
 export { readActiveSceneViewport } from "./active-scene-viewport";
-
-export interface ActiveInkbookSceneOptions {
-  readonly backgroundSpacing: () => InkbookSettingsV1["pageDefaults"]["backgroundSpacing"];
-  readonly defaults: ToolDefaultsV1;
-  readonly deviceSettings: InkbookDeviceSettingsV1;
-  readonly menuFactory?: MenuFactoryPort;
-  readonly initialViewState?: ActiveEditorViewState;
-  readonly history: ActiveEditorHistory;
-  readonly model: EditableDocumentModel;
-  readonly onLock: () => void;
-  readonly onNotice: (message: string) => void;
-  readonly onCopyEmbed: () => void;
-  readonly onDeleteEmbed: () => void;
-  readonly onFirstStrokeCommitted?: () => void;
-  readonly root: HTMLElement;
-  readonly preview?: HTMLElement;
-  readonly setPreviewSource?: (source: string) => Promise<void>;
-  readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
-  readonly scheme: InkbookColorScheme;
-  readonly scrollOwner?: () => BrowserScrollElement | null;
-  readonly startupTool: StartupToolV1;
-}
 
 export class ActiveInkbookScene {
   readonly #chrome: PendingEditorChrome;
@@ -121,6 +94,7 @@ export class ActiveInkbookScene {
     let scrollBinding: ActiveSceneScrollBinding | undefined;
     this.#renderer = new SvgSceneRenderer({
       container: this.#container,
+      frameBudgetMs: options.sliceBudgetMs,
       inputHandlers: createSceneInputHandlers(() => controller),
       layout: {
         readViewport: () =>
@@ -153,6 +127,7 @@ export class ActiveInkbookScene {
       renderIcon: (element, icon) => setIcon(element, icon),
       renderer: this.#renderer,
       sceneStore: this.#store,
+      sliceBudgetMs: options.sliceBudgetMs,
       selectionEdgeDrag: {
         begin: () => this.#layout.beginSelectionEdgeDrag(),
         finish: (outcome) => this.#layout.finishSelectionEdgeDrag(outcome),

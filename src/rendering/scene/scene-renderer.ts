@@ -6,7 +6,7 @@ import type {
   StrokeStyleV1,
 } from "../../domain/schema/public";
 import { sameBackground, SceneBackgroundCache } from "./background-cache";
-import { DEFAULT_FRAME_BUDGET_MS } from "./constants";
+import { DEFAULT_CAMERA, DEFAULT_FRAME_BUDGET_MS } from "./constants";
 import { SceneContentRenderer } from "./content-renderer";
 import { SceneElementPreviewController } from "./element-preview-controller";
 import { SceneFrameWriter } from "./scene-frame-writer";
@@ -27,6 +27,7 @@ import { SceneResourcePolicy, visibilityPageBounds } from "./scene-resource-poli
 import {
   browserScheduler,
   sameViewport,
+  validateFrameBudget,
   validateCamera,
   validateNonNegativeDuration,
   validatePreviewVersion,
@@ -46,7 +47,6 @@ import type {
 } from "./types";
 import { SceneTransformPreviewController } from "./transform-preview-controller";
 import { SceneVisibilityState } from "./visibility-state";
-const DEFAULT_CAMERA: SceneCamera = Object.freeze({ x: 0, zoom: 1 });
 export class SvgSceneRenderer {
   #backgroundDirty = true;
   #backgroundTransitionPending = false;
@@ -55,7 +55,7 @@ export class SvgSceneRenderer {
   readonly #content: SceneContentRenderer;
   #disposed = false;
   readonly #dom: SceneDom;
-  readonly #frameBudgetMs: number;
+  readonly #frameBudgetMs: () => number;
   readonly #frameWriter: SceneFrameWriter;
   #frameHandle: number | undefined;
   #generation = 1;
@@ -81,10 +81,10 @@ export class SvgSceneRenderer {
   public constructor(options: SceneRendererOptions) {
     this.#options = options;
     this.#page = options.page;
-    this.#frameBudgetMs = options.frameBudgetMs ?? DEFAULT_FRAME_BUDGET_MS;
-    if (!Number.isFinite(this.#frameBudgetMs) || this.#frameBudgetMs <= 0) {
-      throw new RangeError("frameBudgetMs must be finite and positive.");
-    }
+    const configuredBudget = options.frameBudgetMs ?? DEFAULT_FRAME_BUDGET_MS;
+    this.#frameBudgetMs =
+      typeof configuredBudget === "function" ? configuredBudget : () => configuredBudget;
+    validateFrameBudget(this.#frameBudgetMs());
     this.#scheduler = options.scheduler ?? browserScheduler(options.container.ownerDocument);
     this.#dom = new SceneDom(
       options.container,
@@ -390,7 +390,7 @@ export class SvgSceneRenderer {
     this.#motion.expireSuppression();
     this.#instrumentation.frames += 1;
     const startedAt = Number.isFinite(frameTime) ? frameTime : this.#scheduler.now();
-    const deadline = startedAt + this.#frameBudgetMs;
+    const deadline = startedAt + validateFrameBudget(this.#frameBudgetMs());
     this.performReadPhase();
     if (this.#previewCommits.releaseCommitted()) {
       this.#content.materializePreviewGeometry(this.#transformPreviews.values);

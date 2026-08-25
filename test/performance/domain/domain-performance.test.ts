@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import { StrokeCaptureBuffer } from "../../../src/domain/elements/public";
 import type { InkElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
+import { validateRuntimeInkSnapshotV1 } from "../../../src/domain/schema/snapshot-validation";
 import { SpatialQueryScratch } from "../../../src/domain/spatial/index";
 import { ElementStore } from "../../../src/domain/store/public";
 import { findFrontmostHit } from "../../../src/editor/selection/hit-test";
@@ -21,6 +22,7 @@ import {
   createStandardRuntimeDomainFixture,
   type StandardDomainFixture,
 } from "./standard-domain-fixture";
+import { createWorkerSnapshot } from "../../fixtures/persistence/worker-snapshot";
 import {
   createNoopHistoryModel,
   MeasuredSliceScheduler,
@@ -33,8 +35,8 @@ import {
   worstDistribution,
 } from "./domain-scenarios";
 import { collectProfileGarbage } from "../persistence/metrics";
+import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 import { timingBudget } from "../timing-budget";
-
 let fixture: StandardDomainFixture;
 let store: ElementStore;
 let storeConstructionDuration = 0;
@@ -53,7 +55,6 @@ beforeAll(async () => {
   store = loadedStore;
   fixture = { ...loadedFixture, elements: [] };
 });
-
 describe("standard 10,000-stroke domain fixture", () => {
   it("matches the normative point, shape, connection, overflow, and extent boundaries", () => {
     expect(fixture.strokeCount).toBe(10_000);
@@ -79,10 +80,20 @@ describe("standard 10,000-stroke domain fixture", () => {
 
   it("builds a complete initial store in cancellable bounded slices", async () => {
     const hydrationFixture = createStandardRuntimeDomainFixture();
-    const scheduler = new MeasuredSliceScheduler(8);
+    const validation = validateRuntimeInkSnapshotV1(
+      createWorkerSnapshot([...hydrationFixture.elements]),
+    );
+    if (!validation.ok)
+      throw new Error(`Runtime hydration fixture is invalid: ${validation.error.code}`);
+    const scheduler = new MeasuredSliceScheduler(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     const builder = ElementStore.createBuilder(scheduler);
     const started = performance.now();
-    expect(await builder.appendOwnedRuntime(hydrationFixture.elements)).toBe("accepted");
+    expect(
+      await builder.appendOwnedValidatedRuntime(
+        hydrationFixture.elements,
+        validation.derivations.elements,
+      ),
+    ).toBe("accepted");
     const hydrated = await builder.finalize();
     const duration = performance.now() - started;
     scheduler.finish();
@@ -93,7 +104,9 @@ describe("standard 10,000-stroke domain fixture", () => {
       publishedDeltas: 0,
     });
     expect(duration).toBeLessThanOrEqual(timingBudget(750));
-    expect(scheduler.maxSliceDuration).toBeLessThanOrEqual(timingBudget(16.7));
+    expect(scheduler.maxSliceDuration).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
   });
 });
 
@@ -314,7 +327,9 @@ describe("large selection commit", () => {
     }
     expect(releaseMaterialization.p95).toBeLessThanOrEqual(timingBudget(100));
     expect(releaseCommit.p95).toBeLessThanOrEqual(timingBudget(100));
-    expect(maximumSlice).toBeLessThanOrEqual(timingBudget(16.7));
+    expect(maximumSlice).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
     expect(partialStoreObserved).toBe(false);
     expect(publishedDeltas).toBe(250);
     expect(history.commandCount).toBeGreaterThan(0);
@@ -375,7 +390,9 @@ describe("maximum live-stroke primitives", () => {
     const publishDuration = performance.now() - started;
 
     expect(published).toHaveLength(4096 * 3);
-    expect(publishDuration).toBeLessThanOrEqual(timingBudget(8));
+    expect(publishDuration).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
     expect(capture.instrumentation).toEqual({
       appendedSamples: 4096,
       bufferGrowths: 8,
@@ -391,9 +408,13 @@ describe("maximum live-stroke primitives", () => {
     const releaseHandoff = worstDistribution(measuredRuns.map(({ handoff }) => handoff));
 
     expect(releaseAppend.sampleCount).toBe(20 * 4096);
-    expect(releaseAppend.p95).toBeLessThanOrEqual(timingBudget(8));
+    expect(releaseAppend.p99).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
     expect(releaseHandoff.sampleCount).toBe(20);
-    expect(releaseHandoff.p95).toBeLessThanOrEqual(timingBudget(16.7));
+    expect(releaseHandoff.p99).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
     expect(measuredRuns.every(({ maximumTailSamples }) => maximumTailSamples <= 16)).toBe(true);
     expect(
       measuredRuns.every(({ maximumFinalizedChunkSamples }) =>

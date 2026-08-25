@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { EraserSweep } from "../../../src/editor/gestures/public";
 import { maximumStroke } from "./maximum-stroke-fixture";
 import { createPassThroughMoveSession } from "./selection-session-fixture";
+import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 import { timingBudget } from "../timing-budget";
 
 describe("editor gesture hot paths", () => {
@@ -49,7 +50,9 @@ describe("editor gesture hot paths", () => {
       }
     }
 
-    expect(Math.max(...previewDurations)).toBeLessThanOrEqual(timingBudget(8));
+    expect(Math.max(...previewDurations)).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
     expect(Math.max(...eraserDurations)).toBeLessThanOrEqual(timingBudget(250));
   });
 });

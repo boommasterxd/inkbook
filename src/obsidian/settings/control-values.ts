@@ -3,12 +3,13 @@ import {
   loadSettings,
   type ColorV1,
   type InkbookDeviceSettingsV1,
-  type InkbookSettingsV1,
+  type InkbookSettingsV2,
 } from "../../domain/settings";
 import { InkbookSettingsStore } from "./storage";
 
 type VaultControlKey =
   | "startupTool"
+  | "refreshRatePreference"
   | "filePlacement.mode"
   | "filePlacement.folder"
   | `pageDefaults.${"backgroundType" | "writingLineHeight" | "activeBufferLines" | "lockedBufferLines"}`
@@ -16,7 +17,7 @@ type VaultControlKey =
   | `toolDefaults.pen.${"color" | "width" | "opacity" | "pressureEnabled"}`
   | `toolDefaults.${"highlighter" | "straightHighlighter"}.${"color" | "width" | "opacity"}`
   | "toolDefaults.eraser.radius"
-  | `toolDefaults.shapes.${keyof InkbookSettingsV1["toolDefaults"]["shapes"]}.${
+  | `toolDefaults.shapes.${keyof InkbookSettingsV2["toolDefaults"]["shapes"]}.${
       | "outlineColor"
       | "outlineWidth"
       | "outlineStyle"
@@ -83,6 +84,7 @@ function controlValue(value: unknown): unknown {
 }
 
 function domainValue(key: SettingsControlKey, value: unknown): unknown {
+  if (key === "refreshRatePreference") return value === "auto" ? value : Number(value);
   if (key.endsWith("Color") || key.endsWith(".color")) return COLOR_VALUES.get(String(value));
   if (NUMERIC_KEY_SUFFIXES.some((suffix) => key.endsWith(suffix))) return Number(value);
   return value;

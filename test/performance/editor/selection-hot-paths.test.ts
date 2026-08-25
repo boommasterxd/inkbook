@@ -8,27 +8,23 @@ import type {
 } from "../../../src/domain/schema/public";
 import { ElementStore } from "../../../src/domain/store/public";
 import type { TimeSlicedSelectionCommitPreparation } from "../../../src/editor/selection/handle-session";
-import { findFrontmostHit, SelectionHandleSession } from "../../../src/editor/selection/public";
+import { SelectionHandleSession } from "../../../src/editor/selection/public";
+import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
 
 import { MeasuredSliceScheduler } from "../domain/domain-scenarios";
 import { connectedLine } from "../../unit/domain/store/fixtures";
 import { maximumStroke } from "./maximum-stroke-fixture";
 import { createPassThroughMoveSession } from "./selection-session-fixture";
+import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 import { timingBudget } from "../timing-budget";
 
 describe("selection hot paths", () => {
-  it("routes 488 maximum strokes through bounded commit slices and cached exact hit blocks", async () => {
+  it("routes 488 maximum strokes through the indexed hit path and bounded commit slices", async () => {
     const strokes = Array.from({ length: 488 }, (_, index) => maximumViewportStroke(index));
-    const candidates = strokes.map((element, rank) => ({
-      band: "content" as const,
-      element,
-      rank,
-    }));
     const session = movedSession(strokes);
 
     const decisionDurations = measureCommitDecisions(session);
-    findFrontmostHit({ x: 2_048, y: 50 }, "mouse", 1, candidates);
-    const hitDurations = measureDenseMisses(candidates);
+    const hitDurations = measureIndexedMisses(strokes);
     const { maximumSlice, prepared } = await prepareInMeasuredSlices(session);
 
     expect(prepared.status).toBe("ready");
@@ -40,9 +36,15 @@ describe("selection hot paths", () => {
     }
     expect(first.points.slice(0, 3)).toEqual(new Float64Array([4, 103, 0.5]));
     expect(last.points.slice(-3)).toEqual(new Float64Array([11, 103.487, 0.5]));
-    expect(Math.max(...decisionDurations)).toBeLessThanOrEqual(timingBudget(8));
-    expect(Math.max(...hitDurations)).toBeLessThanOrEqual(timingBudget(8));
-    expect(maximumSlice).toBeLessThanOrEqual(timingBudget(16.7));
+    expect(Math.max(...decisionDurations)).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
+    expect(Math.max(...hitDurations)).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
+    expect(maximumSlice).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
   });
 
   it("bounds preparation for a near-maximum 19,929-endpoint selection fan-out", async () => {
@@ -73,8 +75,12 @@ describe("selection hot paths", () => {
       fullStoreScans: 0,
       reverseDependencyVisits: 19_929,
     });
-    expect(previewDuration).toBeLessThanOrEqual(timingBudget(8));
-    expect(scheduler.maxSliceDuration).toBeLessThanOrEqual(timingBudget(16.7));
+    expect(previewDuration).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
+    expect(scheduler.maxSliceDuration).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
   }, 30_000);
 });
 
@@ -96,18 +102,18 @@ function measureCommitDecisions(session: SelectionHandleSession): number[] {
   return durations;
 }
 
-function measureDenseMisses(
-  candidates: readonly {
-    readonly band: "content";
-    readonly element: StrokeElementV1;
-    readonly rank: number;
-  }[],
-): number[] {
+function measureIndexedMisses(strokes: readonly StrokeElementV1[]): number[] {
+  const sceneStore = new ElementSceneStore(new ElementStore(strokes));
   const durations: number[] = [];
-  for (let run = 0; run < 5; run += 1) {
-    const started = performance.now();
-    expect(findFrontmostHit({ x: 2_048, y: 50 }, "mouse", 1, candidates)).toBeNull();
-    durations.push(performance.now() - started);
+  try {
+    sceneStore.hit({ x: 2_048, y: 50 }, "mouse", 1);
+    for (let run = 0; run < 5; run += 1) {
+      const started = performance.now();
+      expect(sceneStore.hit({ x: 2_048, y: 50 }, "mouse", 1)).toBeNull();
+      durations.push(performance.now() - started);
+    }
+  } finally {
+    sceneStore.release();
   }
   return durations;
 }

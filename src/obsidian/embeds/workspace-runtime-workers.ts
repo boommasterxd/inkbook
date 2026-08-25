@@ -15,6 +15,7 @@ import {
 interface WorkspaceRuntimeWindowPorts {
   readonly fallbackWindow: () => Window | undefined;
   readonly owningWindow: (documentId: string) => Window;
+  readonly sliceBudgetMs?: (ownerWindow: Window) => number;
 }
 
 const DOCUMENT_RUNTIME_TIMEOUT_MS = 30_000;
@@ -23,7 +24,7 @@ export function createWorkspaceDocumentRuntimes(
   windows: WorkspaceRuntimeWindowPorts,
   profile = Platform.isMobile ? ("mobile" as const) : ("desktop" as const),
 ): DocumentRuntimeFactories {
-  const sliceMilliseconds = profile === "mobile" ? 12 : 8;
+  const sliceBudgetMs = windows.sliceBudgetMs ?? (() => (profile === "mobile" ? 12 : 8));
   return {
     clock: (documentId) => ({
       clearTimeout: (handle) => {
@@ -41,6 +42,7 @@ export function createWorkspaceDocumentRuntimes(
       return createDocumentRuntime(sessionId, workerEpoch, windows.owningWindow(documentId), {
         profile,
         requestTimeoutMilliseconds: DOCUMENT_RUNTIME_TIMEOUT_MS,
+        sliceMilliseconds: () => sliceBudgetMs(windows.owningWindow(documentId)),
       });
     },
     createFallback: (sessionId, workerEpoch, isInputActive) => {
@@ -48,6 +50,19 @@ export function createWorkspaceDocumentRuntimes(
         isInputActive,
         now: () => windows.fallbackWindow()?.performance.now() ?? performance.now(),
         profile,
+        sliceMilliseconds:
+          windows.sliceBudgetMs === undefined
+            ? profile === "mobile"
+              ? 10
+              : 6
+            : () => {
+                const ownerWindow = windows.fallbackWindow();
+                return ownerWindow === undefined
+                  ? profile === "mobile"
+                    ? 10
+                    : 6
+                  : (windows.sliceBudgetMs?.(ownerWindow) ?? 6);
+              },
         yieldControl: () => yieldToWindow(windows.fallbackWindow()),
       });
       return new DocumentWorkerRuntime({ sessionId, workerEpoch }, scheduler);
@@ -57,7 +72,8 @@ export function createWorkspaceDocumentRuntimes(
       return {
         isCancelled,
         shouldYield: () =>
-          windows.owningWindow(documentId).performance.now() - sliceStarted >= sliceMilliseconds,
+          windows.owningWindow(documentId).performance.now() - sliceStarted >=
+          sliceBudgetMs(windows.owningWindow(documentId)),
         yieldControl: () =>
           new Promise((resolve) => {
             const owningWindow = windows.owningWindow(documentId);

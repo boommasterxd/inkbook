@@ -77,7 +77,7 @@ export interface SceneInputHandlers {
 export interface SceneRendererOptions {
   readonly accessibleName?: string;
   readonly container: HTMLElement;
-  readonly frameBudgetMs?: number;
+  readonly frameBudgetMs?: number | (() => number);
   readonly inputHandlers?: SceneInputHandlers;
   readonly layout: SceneLayoutPort;
   readonly page: PageV1;

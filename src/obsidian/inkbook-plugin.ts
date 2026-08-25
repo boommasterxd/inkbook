@@ -76,11 +76,7 @@ export async function activateInkbookPlugin(
     embedActions,
     () => plugin.app.workspace.containerEl.ownerDocument.defaultView ?? undefined,
   );
-  plugin.register(
-    settings.subscribeDeviceSettings((deviceSettings) => {
-      runtime.updateDeviceSettings(deviceSettings);
-    }),
-  );
+  registerSettingsSubscriptions(plugin, settings, runtime);
   const insertion = createObsidianInsertionController(plugin.app, settings, {
     failed: (message) => {
       new Notice(message);
@@ -129,6 +125,15 @@ export async function activateInkbookPlugin(
     scheme.clear();
     unregisterIcons();
   };
+}
+
+function registerSettingsSubscriptions(
+  plugin: Plugin,
+  settings: InkbookSettingsStore,
+  runtime: ObsidianWorkspaceRuntime,
+): void {
+  plugin.register(settings.subscribeDeviceSettings((value) => runtime.updateDeviceSettings(value)));
+  plugin.register(settings.subscribeVaultSettings((value) => runtime.updateVaultSettings(value)));
 }
 
 function createEmbedIntegration(

@@ -4,6 +4,7 @@ import {
   BACKGROUND_TYPES,
   LINE_SPACINGS,
   PATTERN_SPACINGS,
+  REFRESH_RATE_PREFERENCES,
   STARTUP_TOOLS,
   validateCustomVaultFolderPath,
 } from "../../domain/settings";
@@ -114,6 +115,17 @@ export function generalGroup(
         "Startup tool",
         "Choose the tool selected when an editor opens.",
         labels(STARTUP_TOOLS),
+      ),
+      dropdown(
+        "refreshRatePreference",
+        "Display refresh rate",
+        "Use quick per-window detection or select a fixed frame-rate profile.",
+        Object.fromEntries(
+          REFRESH_RATE_PREFERENCES.map((value) => [
+            String(value),
+            value === "auto" ? "Auto" : `${value} Hz`,
+          ]),
+        ),
       ),
       dropdown(
         "filePlacement.mode",

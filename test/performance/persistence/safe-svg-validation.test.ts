@@ -3,9 +3,10 @@ import { describe, expect, it } from "vitest";
 import { yieldToMainThread } from "../../../src/persistence/scheduling/main-thread-yield";
 import { inspectTrustedSvgOutput } from "../../../src/persistence/scheduling/trusted-svg-output";
 import { createMaximumComplexitySvg } from "../../fixtures/persistence/safe-svg";
+import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 import { annotateDurations, expectProfileBudget, summarizeDurations } from "./metrics";
 
-const MAIN_THREAD_BUDGET_MS = 8;
+const MAIN_THREAD_BUDGET_MS = INTERACTION_REFRESH_PROFILE.mainThreadP99Ms;
 
 describe("safe SVG validation performance", () => {
   it("validates a maximum-size, maximum-command path in bounded main-thread slices", async ({

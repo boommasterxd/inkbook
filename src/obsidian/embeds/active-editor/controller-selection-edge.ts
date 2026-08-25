@@ -48,6 +48,16 @@ export class ActiveEditorSelectionEdgeDrag implements SelectionEdgeDragPort {
   }
 }
 
+export function createActiveEditorSelectionEdgeDrag(
+  options: Omit<ActiveEditorSelectionEdgeOptions, "lifecycle"> & {
+    readonly lifecycle: SelectionEdgeDragPort | undefined;
+  },
+): ActiveEditorSelectionEdgeDrag | undefined {
+  return options.lifecycle === undefined
+    ? undefined
+    : new ActiveEditorSelectionEdgeDrag({ ...options, lifecycle: options.lifecycle });
+}
+
 function readSelectionViewport(
   owner: BrowserScrollElement,
   ownerWindow: Window,

@@ -39,3 +39,54 @@ export function isLiveOwnerWindow(ownerWindow: Window | undefined): ownerWindow 
     return false;
   }
 }
+
+interface OwnedPresentation {
+  readonly attachment: {
+    readonly documentId: string;
+    readonly root: HTMLElement;
+  };
+}
+
+export function resolvePresentationWindow(
+  documentId: string,
+  presentations: Iterable<OwnedPresentation>,
+): Window | undefined {
+  for (const mounted of presentations) {
+    if (mounted.attachment.documentId !== documentId) continue;
+    const ownerWindow = mounted.attachment.root.ownerDocument.defaultView ?? undefined;
+    if (isLiveOwnerWindow(ownerWindow)) return ownerWindow;
+  }
+  return undefined;
+}
+
+export function resolveFallbackWindow(
+  currentDocumentId: string | undefined,
+  presentations: Iterable<OwnedPresentation>,
+  registry: OwnerWindowRegistry,
+  fallback: () => Window | undefined,
+): Window | undefined {
+  const mounted = [...presentations];
+  if (currentDocumentId !== undefined) {
+    const current = resolvePresentationWindow(currentDocumentId, mounted);
+    if (current !== undefined) return current;
+    const retained = registry.resolve(currentDocumentId);
+    if (retained !== undefined) return retained;
+  }
+  for (const presentation of mounted) {
+    const ownerWindow = presentation.attachment.root.ownerDocument.defaultView ?? undefined;
+    if (isLiveOwnerWindow(ownerWindow)) return ownerWindow;
+  }
+  const candidate = fallback();
+  return isLiveOwnerWindow(candidate) ? candidate : undefined;
+}
+
+export function pruneOwnerWindowRegistry(
+  registry: OwnerWindowRegistry,
+  presentations: Iterable<OwnedPresentation>,
+  currentDocumentId: string | undefined,
+): void {
+  const retained = new Set<string>();
+  for (const mounted of presentations) retained.add(mounted.attachment.documentId);
+  if (currentDocumentId !== undefined) retained.add(currentDocumentId);
+  registry.prune(retained);
+}

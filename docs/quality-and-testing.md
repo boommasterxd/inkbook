@@ -102,14 +102,14 @@ The 10,000-stroke fixture MUST satisfy:
 
 Additional rules:
 
-- The dedicated 120-Hz interaction profile uses an 8.333-millisecond frame cadence and requires at most 6 milliseconds of p99 measured main-thread work, leaving the remaining frame time for host rendering and scheduling. It covers 3,600 live pressure samples plus 600 camera frames and 600 bounded large-selection preview frames against the 10,000-stroke fixture. Hosted-runner timing scaling follows the CI profile below; the unscaled 6-millisecond target remains normative for release-reference measurements.
+- The complete benchmark manifest runs independently at 60, 90, 120, 144, and 240 Hz with frame cadences of approximately 16.67, 11.11, 8.33, 6.94, and 4.17 milliseconds. Each profile reserves 55 percent for Inkbook main-thread work, producing p99 budgets of approximately 9.17, 6.11, 4.58, 3.82, and 2.29 milliseconds. Continuous 600-frame profiles cover live pressure input, indexed eraser feedback, trackpad zoom, pan and native vertical scroll, camera and culling hysteresis, renderer reconciliation, selection transforms, semantic-anchor snapping, connected endpoints, preview-to-commit handoff, and semantically unchanged React chrome updates against representative fixtures up to 10,000 elements. Automatic page growth and shrink uses the selected cadence for 500 transitions. Longer operations retain their separate total-latency budgets and additionally enforce the selected profile budget for measured main-thread slices across Store hydration and mutation, maximum-stroke publication, selection and eraser commit work, Safe-SVG validation, worker handoff, adoption, and fallback processing. Hosted-runner timing scaling follows the CI profile below; the unscaled profile budgets remain normative for release-reference measurements.
 - No input-related main-thread task may exceed 16.7 ms. The chunked 10,000-element transform commit may span multiple tasks, but each slice obeys this limit and the already rendered transform remains visually stable.
 - No pointer sample supplied by `getCoalescedEvents()` may be silently dropped. Nearby samples may be deterministically merged by the documented path builder.
 - Unlock, pan, zoom, and drawing must not mount all 10,000 strokes.
 - Background generation, bounds updates, spatial-index updates, and cache invalidation must be incremental.
 - Camera-only, overlay-only, and theme-only frames perform zero committed-content attribute writes. Paint-only and order-only commits perform zero path construction, bounds calculation, anchor generation, or spatial-index mutation.
 - Snap lookup uses the spatial index, and target transforms use the reverse connection map. Neither may scan the complete element store.
-- A synchronous document-worker fallback may exceed the corresponding worker duration, but it MUST yield between chunks so no main-thread slice exceeds 8 ms desktop or 12 ms mobile and MUST pause while a live gesture is active.
+- A synchronous document-worker fallback may exceed the corresponding worker duration, but it MUST yield between chunks so no main-thread slice exceeds the selected refresh-rate profile budget and MUST pause while a live gesture is active.
 - Autosave timers do not count as permission to perform work during an active gesture.
 - Unlock worker instrumentation reports input parsing and validation, runtime-buffer copy, bounded batch transfer plus Store adoption, parser finalization, worker-model adoption, and total elapsed time separately. Export worker instrumentation reports model update plus delta validation, SVG serialization, and total worker time separately. End-to-end save benchmarks cover representative message handoff, receiver adoption, conflict-check, host-I/O, and confirmation costs where those adapters participate. No main-thread preparation or adoption slice may exceed the autosave frame budget.
 - A standard-fixture size report records total bytes, metadata bytes, static-markup bytes, and bytes per stroke point. Pretty-printed output fails regardless of the total.
@@ -282,6 +282,7 @@ Unit tests cover pure or isolated behavior:
 - coordinate-system dimensionality commands and table column-count commands, including retained and removed-axis connections, canonical persisted column width, local-right addition and removal, fractional widths such as a 121-unit three-column creation, repeated count changes without column-width drift, the maximum per-edit rendered left-edge displacement across the complete rotation range with a 0.003-page-unit bound, per-table multi-selection geometry, bounds rejection, atomic dependent-anchor updates, Undo, and Redo
 - zoom, camera clamping, anchored-scroll equations, and resize calculations
 - settings defaults, scope, validation, precedence, and migration
+- refresh-rate settings migration and UI values for Auto, 60, 90, 120, 144, and 240 Hz; one-shot per-window Auto classification under jitter and dropped frames; hidden-window deferral; independent pop-out measurements; fixed-mode bypass; disposal; and live profile changes
 - filename creation, path validation, MIME parsing, and reference decisions
 - animation state transitions and reduced-motion duration selection
 - workspace activation coordinator tokens, document/session/attachment identity, idempotent current-attachment requests, same-document presentation handoff, latest-pending replacement, dirty detachment, detached-save completion, and headless recovery transitions
@@ -300,6 +301,7 @@ Integration tests cover only important boundaries:
 - reusable visibility-buffer and stable-slot instrumentation proving zero steady-state collection allocation and correct dense-viewport promotion of a hit element that is not mounted yet
 - semantic chrome snapshots proving unchanged state skips React root renders, callback identities remain stable, and toolbar measurement is skipped when layout-relevant state and width are unchanged
 - dense-viewport reconciliation proving the exact expected unique visible-ID sequence, render order, persistent cursor, one unchanged-viewport query, and bounded point and geometry cost by both the frame and elapsed-time deadlines
+- already-expired 144-Hz and 240-Hz deadlines proving that every renderer and time-sliced store consumer processes at least one bounded unit before yielding, including a maximum-complexity path
 - background-cache integration proving unchanged aligned indices and theme changes reuse the same coverage geometry
 - anchor-cache integration proving paint, order, selection, and theme changes hit the cache while target geometry replacement invalidates only that target and its resolved dependents
 - canvas input-surface integration covering arbitration precedence plus secondary-button, combined-button, non-primary-pointer, macOS Control-click, pen-barrel, and eraser-tip handling before selection handles; atomic rejection of invalid or oversized coalesced batches; `contextmenu` with no unintended capture, preview, mutation, or history; primary-button tools; touch long press cancellation at the annotation and empty-canvas thresholds; timer, preview, and capture release before menu display; consumed pointerup after menu open; touch selection under every active tool; Context Menu key; `Shift+F10`; focus return; and zero per-content-node listeners
@@ -344,12 +346,12 @@ Integration tests do not launch a complete Obsidian application.
 
 Automated performance tests use deterministic fixtures and cover:
 
-- the dedicated 120-Hz interaction profile with an 8.333-millisecond cadence and 6-millisecond p99 main-thread target for live pressure strokes, camera frames, and bounded 10,000-element selection previews
+- the complete 60, 90, 120, 144, and 240-Hz matrix with profile-specific cadence and 55-percent p99 main-thread targets for live pressure strokes, indexed eraser feedback, trackpad zoom, pan and native vertical scroll, camera and culling hysteresis, renderer reconciliation, selection transforms, semantic-anchor snapping, connected endpoints, preview-to-commit handoff, and semantically unchanged React chrome updates
 - snapshot validation and parsing
 - store construction and spatial-index insertion
 - viewport query and hit testing
 - spatial-query candidate counts, reused scratch-buffer allocations, and repeated page-extent updates after deleting the lowest element
-- 500 alternating bottom-element additions and removals against the 10,000-stroke fixture with zero full-store scans and a 4-millisecond p99 mutation budget, plus 500 alternating growth and shrink transition runs with at most 12 submitted frames, no incomplete transition, and a 1-millisecond p99 orchestration budget
+- 500 alternating bottom-element additions and removals against the 10,000-stroke fixture with zero full-store scans and a 4-millisecond p99 mutation budget, plus 500 alternating growth and shrink transition runs driven at every fixed refresh-rate profile with at most `ceil(180 ms / frame duration) + 2` submitted frames, no incomplete transition, and a 1-millisecond p99 orchestration budget
 - dense snap candidate lookup and a 512-dependent target transform
 - all four arrange operations on an alternating 5,000-element selection in a 10,000-element band and order-only worker export
 - oversized-element overflow indexing and queries
@@ -366,11 +368,11 @@ Automated performance tests use deterministic fixtures and cover:
 - steady-state viewport candidate and hysteresis reuse, unchanged-membership sort suppression, applied SVG attribute-write counts, maximum-complexity dense mount slices, background-cache reuse, and bounded anchor-cache hit and eviction counters
 - history memory bounds
 
-Runtime frame, animation, mobile input, and host-scroll budgets are verified manually in Obsidian using the reference profiles because a simulated DOM does not provide trustworthy rendering timings.
+The deterministic suite covers JavaScript work that can be measured without browser rendering. Actual style, paint, compositing, native host scrolling, and high-refresh input behavior are verified manually in Obsidian using the reference profiles because a simulated DOM does not provide trustworthy rendering timings.
 
 ## Coverage and CI Gates
 
-Hosted CI separates compatibility and timing without changing the product budgets. The `CI` job runs the complete quality, coverage, audit, build, and package-verification suite on the standard `ubuntu-latest` runner with the minimum supported Node.js 24 runtime. The required `Performance` job runs the same scenarios on a separate standard `ubuntu-latest` runner with Node.js 26. Because this shared x64 runner is not a release-reference device, its `hosted-ubuntu` profile applies a fixed five-times multiplier only to elapsed-time assertions. The unscaled reference timings remain the default for local and release-reference measurements. Memory, file-size, count, cache, allocation, ordering, correctness, and instrumentation limits are never scaled. Isolating the suite from the quality job avoids cross-job contention; hosted-runner results do not replace the named desktop and mobile release-reference measurements.
+Hosted CI separates compatibility and timing without changing the product budgets. The `CI` job runs the complete quality, coverage, audit, build, and package-verification suite on the standard `ubuntu-latest` runner with the minimum supported Node.js 24 runtime. The required `Performance` job runs `npm run test:performance`, which executes every benchmark file independently for 60, 90, 120, 144, and 240 Hz on a separate standard `ubuntu-latest` runner with Node.js 26. The matrix never fails fast: it records every test violation and exits unsuccessfully only after printing the complete aggregate. Because this shared x64 runner is not a release-reference device, its `hosted-ubuntu` profile applies a fixed five-times multiplier only to elapsed-time assertions. The unscaled reference timings remain the default for local and release-reference measurements. Memory, file-size, count, cache, allocation, ordering, correctness, and instrumentation limits are never scaled. Isolating the suite from the quality job avoids cross-job contention; hosted-runner results do not replace the named desktop and mobile release-reference measurements.
 
 CI MUST run:
 

@@ -8,6 +8,7 @@ import {
 
 import { MeasuredSliceScheduler } from "./domain-scenarios";
 import { createStandardDomainFixture } from "./standard-domain-fixture";
+import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 import { timingBudget } from "../timing-budget";
 
 interface MutationMeasurement {
@@ -57,7 +58,9 @@ it("keeps atomic clipboard-scale store adoption within main-thread slice budgets
   expect(maximumCut).toBeLessThanOrEqual(timingBudget(750));
   expect(maximumRestore).toBeLessThanOrEqual(timingBudget(750));
   expect(maximumCommit).toBeLessThanOrEqual(timingBudget(8));
-  expect(maximumSlice).toBeLessThanOrEqual(timingBudget(8));
+  expect(maximumSlice).toBeLessThanOrEqual(
+    timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+  );
   expect(store.size).toBe(11_000);
 }, 60_000);
 
@@ -67,7 +70,7 @@ async function measureMutation(
   expectedSizeBeforeCommit: number,
 ): Promise<MutationMeasurement> {
   let partialStoreObserved = false;
-  const scheduler = new MeasuredSliceScheduler(4, () => {
+  const scheduler = new MeasuredSliceScheduler(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms, () => {
     partialStoreObserved ||= store.size !== expectedSizeBeforeCommit;
   });
   const preparationStarted = performance.now();

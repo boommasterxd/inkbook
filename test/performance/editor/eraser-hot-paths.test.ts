@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { BoxShapeElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
 import { EraserSweep, type EraserSliceScheduler } from "../../../src/editor/gestures/public";
 import { maximumStroke } from "./maximum-stroke-fixture";
+import { INTERACTION_REFRESH_PROFILE, interactionP99 } from "../interaction-refresh-profile";
 import { timingBudget } from "../timing-budget";
 
 declare const gc: (() => void) | undefined;
@@ -24,6 +25,9 @@ describe("eraser hot paths", () => {
     }
 
     expect(eraser.candidateCount).toBe(DENSE_STROKES);
+    expect(interactionP99(frameDurations)).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
     expect(Math.max(...frameDurations)).toBeLessThanOrEqual(timingBudget(MAX_FRAME_MS));
   });
 
@@ -67,11 +71,11 @@ describe("eraser hot paths", () => {
 });
 
 describe("eraser finalization performance", () => {
-  it("keeps exact finalization slices within the mobile main-thread budget", async () => {
+  it("keeps exact finalization slices within the selected main-thread budget", async () => {
     const strokes = Array.from({ length: 128 }, (_, index) => maximumStroke(index));
     const eraser = createDenseStrokeEraser(strokes);
     eraser.update({ x: 5_000, y: 0 });
-    const scheduler = new MeasuredEraserScheduler(4);
+    const scheduler = new MeasuredEraserScheduler(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     let removed = 0;
 
     await eraser.commit((ids) => {
@@ -82,7 +86,9 @@ describe("eraser finalization performance", () => {
 
     expect(removed).toBe(strokes.length);
     expect(scheduler.yieldCount).toBeGreaterThan(0);
-    expect(scheduler.maximumSliceMs).toBeLessThanOrEqual(timingBudget(12));
+    expect(scheduler.maximumSliceMs).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
   });
 });
 

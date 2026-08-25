@@ -5,7 +5,7 @@ import {
   createBuiltInSettings,
   loadDeviceSettings,
   loadSettings,
-  migrateSettingsToV1,
+  migrateVaultSettingsToV2,
 } from "../../../../src/domain/settings";
 
 describe("vault settings loading", () => {
@@ -170,17 +170,43 @@ describe("vault settings structural validation", () => {
       diagnostics: [{ code: "settings.invalid-root", path: "$" }],
     });
 
-    const result = loadSettings({ version: 2 });
+    const result = loadSettings({ version: 3 });
     expect(result.value).toEqual(createBuiltInSettings());
     expect(result.diagnostics).toEqual([{ code: "settings.unsupported-version", path: "version" }]);
   });
+});
 
+describe("vault settings version two migration", () => {
   it("does not mutate versioned input", () => {
     const input = createBuiltInSettings();
-    const migrated = migrateSettingsToV1(input);
+    const migrated = migrateVaultSettingsToV2(input);
 
     expect(migrated).toEqual({ value: input, diagnostics: [] });
     expect(migrated.value).toBe(input);
+  });
+
+  it("migrates version-one vault settings to automatic refresh-rate detection", () => {
+    const current = createBuiltInSettings();
+    const input = { ...current, version: 1 } as Record<string, unknown>;
+    delete input.refreshRatePreference;
+
+    const result = loadSettings(input);
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.value).toEqual(current);
+    expect(input).not.toHaveProperty("refreshRatePreference");
+  });
+
+  it.each(["fast", 75, 360, null])("rejects invalid refresh-rate preference %j", (value) => {
+    const input = { ...createBuiltInSettings(), refreshRatePreference: value };
+
+    const result = loadSettings(input);
+
+    expect(result.value.refreshRatePreference).toBe("auto");
+    expect(result.diagnostics).toContainEqual({
+      code: "settings.invalid-field",
+      path: "refreshRatePreference",
+    });
   });
 });
 

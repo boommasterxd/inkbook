@@ -4,7 +4,7 @@ export interface SliceSchedulerOptions {
   readonly isInputActive: () => boolean;
   readonly now?: () => number;
   readonly profile?: "desktop" | "mobile";
-  readonly sliceMilliseconds?: number;
+  readonly sliceMilliseconds?: number | (() => number);
   readonly yieldControl: () => Promise<void>;
 }
 
@@ -14,7 +14,7 @@ const MOBILE_SLICE_MS = 10;
 export class GestureAwareSliceScheduler implements InputAwareSliceScheduler {
   readonly #isInputActive: () => boolean;
   readonly #now: () => number;
-  readonly #sliceMilliseconds: number;
+  readonly #sliceMilliseconds: () => number;
   readonly #yieldControl: () => Promise<void>;
   #liveInputActive = false;
   #sliceStarted: number;
@@ -22,12 +22,11 @@ export class GestureAwareSliceScheduler implements InputAwareSliceScheduler {
   public constructor(options: SliceSchedulerOptions) {
     this.#isInputActive = options.isInputActive;
     this.#now = options.now ?? (() => performance.now());
-    this.#sliceMilliseconds =
+    const configured =
       options.sliceMilliseconds ??
       (options.profile === "mobile" ? MOBILE_SLICE_MS : DESKTOP_SLICE_MS);
-    if (!(this.#sliceMilliseconds > 0) || !Number.isFinite(this.#sliceMilliseconds)) {
-      throw new RangeError("sliceMilliseconds must be a positive finite number.");
-    }
+    this.#sliceMilliseconds = typeof configured === "function" ? configured : () => configured;
+    validateSliceMilliseconds(this.#sliceMilliseconds());
     this.#yieldControl = options.yieldControl;
     this.#sliceStarted = this.#now();
   }
@@ -43,7 +42,9 @@ export class GestureAwareSliceScheduler implements InputAwareSliceScheduler {
       this.#sliceStarted = this.#now();
     }
     signal.throwIfAborted();
-    if (this.#now() - this.#sliceStarted < this.#sliceMilliseconds) return;
+    if (this.#now() - this.#sliceStarted < validateSliceMilliseconds(this.#sliceMilliseconds())) {
+      return;
+    }
     await this.#yieldControl();
     this.#sliceStarted = this.#now();
     signal.throwIfAborted();
@@ -61,4 +62,11 @@ export class GestureAwareSliceScheduler implements InputAwareSliceScheduler {
   #inputActive(): boolean {
     return this.#liveInputActive || this.#isInputActive();
   }
+}
+
+function validateSliceMilliseconds(value: number): number {
+  if (!(value > 0) || !Number.isFinite(value)) {
+    throw new RangeError("sliceMilliseconds must be a positive finite number.");
+  }
+  return value;
 }

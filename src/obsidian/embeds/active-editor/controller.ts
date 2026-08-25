@@ -38,7 +38,7 @@ import type { ActiveEditorResizeAnchor, ActiveEditorResizeUpdate } from "./layou
 import type { SynchronousClipboardData } from "./clipboard-reader";
 import { ActiveEditorKeyboardController } from "./controller-keyboard";
 import { ActiveEditorPointerController } from "./controller-pointer";
-import { ActiveEditorSelectionEdgeDrag } from "./controller-selection-edge";
+import { createActiveEditorSelectionEdgeDrag } from "./controller-selection-edge";
 import { ActiveEditorAvailability } from "./controller-availability";
 import { ActiveEditorChromeState } from "./controller-chrome-state";
 import { ActivePointerCaptureOwner } from "./pointer-capture";
@@ -69,6 +69,7 @@ export class ActiveEditorController {
   readonly #renderIcon: ActiveEditorControllerOptions["renderIcon"];
   readonly #renderer: SvgSceneRenderer;
   readonly #sceneStore: ElementSceneStore;
+  readonly #sliceBudgetMs: () => number;
   #scrollOwner: BrowserScrollElement;
   readonly #styles: ActiveEditorStyleSession;
   readonly #toolbarAction: InkbookEditorChromeProps["onToolbarAction"] = (action) =>
@@ -95,6 +96,7 @@ export class ActiveEditorController {
     this.#renderer = options.renderer;
     this.#captures = new ActivePointerCaptureOwner(options.renderer.inputSurface);
     this.#sceneStore = options.sceneStore;
+    this.#sliceBudgetMs = options.sliceBudgetMs ?? (() => 8);
     this.#scrollOwner = options.scrollOwner;
     this.#availability = new ActiveEditorAvailability({
       onDisabled: () => this.#resetForDisable(),
@@ -145,15 +147,12 @@ export class ActiveEditorController {
         this.#input = input;
       },
     });
-    this.#selectionEdgeDrag =
-      options.selectionEdgeDrag === undefined
-        ? undefined
-        : new ActiveEditorSelectionEdgeDrag({
-            lifecycle: options.selectionEdgeDrag,
-            navigation: this.#navigation,
-            ownerWindow,
-            scrollOwner: () => this.#scrollOwner,
-          });
+    this.#selectionEdgeDrag = createActiveEditorSelectionEdgeDrag({
+      lifecycle: options.selectionEdgeDrag,
+      navigation: this.#navigation,
+      ownerWindow,
+      scrollOwner: () => this.#scrollOwner,
+    });
     const interactions = createActiveEditorInteractions({
       controller: options,
       dispatchMove: (pointer) => this.#dispatch({ type: "pointer-move", ...pointer }),
@@ -334,6 +333,7 @@ export class ActiveEditorController {
         preparedHistory: this.#preparedHistory,
         renderer: this.#renderer,
         sceneStore: this.#sceneStore,
+        sliceBudgetMs: this.#sliceBudgetMs,
         selection: () => this.#selection,
         ...(this.#selectionEdgeDrag === undefined
           ? {}

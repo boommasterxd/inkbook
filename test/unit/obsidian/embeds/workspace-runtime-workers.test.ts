@@ -56,4 +56,27 @@ describe("workspace document runtime profiles", () => {
     fixture.now(12);
     expect(scheduler.shouldYield()).toBe(true);
   });
+
+  it("reads the current refresh-profile budget for every store slice", async () => {
+    const fixture = windowHarness();
+    let budget = 4.58;
+    const runtimes = createWorkspaceDocumentRuntimes({
+      fallbackWindow: () => fixture.ownerWindow,
+      owningWindow: () => fixture.ownerWindow,
+      sliceBudgetMs: () => budget,
+    });
+    const scheduler = runtimes.createStoreScheduler("drawing.svg", () => false);
+
+    fixture.now(4.57);
+    expect(scheduler.shouldYield()).toBe(false);
+    fixture.now(4.58);
+    expect(scheduler.shouldYield()).toBe(true);
+    await scheduler.yieldControl();
+
+    budget = 2.29;
+    fixture.now(6.86);
+    expect(scheduler.shouldYield()).toBe(false);
+    fixture.now(6.87);
+    expect(scheduler.shouldYield()).toBe(true);
+  });
 });

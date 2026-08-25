@@ -10,7 +10,6 @@ import {
 const ERASER_FADE_MS = 160;
 const EXACT_WORK_UNITS_PER_UPDATE = 12_288;
 const FINALIZATION_CHECKPOINT_WORK_UNITS = 1_024;
-const UPDATE_SLICE_BUDGET_MS = 8;
 export const MAX_RETAINED_ERASER_SWEEPS = 512;
 
 export function screenPixelsToPageUnits(screenPixels: number, zoom: number): number {
@@ -63,6 +62,7 @@ export class EraserSweep {
   readonly #pendingSweeps: PendingSweep[] = [];
   readonly #query: EraserQueryPort;
   readonly #radius: number;
+  readonly #sliceBudgetMs: () => number;
   readonly #updateAdded: string[] = [];
   #activeSweep: ActiveSweep | null = null;
   #previous: PointV1;
@@ -73,6 +73,7 @@ export class EraserSweep {
     radius: number,
     query: EraserQueryPort,
     feedback: EraserFeedbackPort,
+    sliceBudgetMs: () => number = () => 8,
   ) {
     if (!Number.isFinite(radius) || radius <= 0)
       throw new RangeError("Eraser radius must be positive.");
@@ -80,6 +81,7 @@ export class EraserSweep {
     this.#radius = radius;
     this.#query = query;
     this.#feedback = feedback;
+    this.#sliceBudgetMs = sliceBudgetMs;
     this.#pendingSweeps.push({ end: this.#previous, start: this.#previous });
     this.#processUpdatePending();
   }
@@ -163,7 +165,7 @@ export class EraserSweep {
   }
 
   #processUpdatePending(): void {
-    const deadline = performance.now() + UPDATE_SLICE_BUDGET_MS;
+    const deadline = performance.now() + this.#sliceBudgetMs();
     const added = this.#updateAdded;
     for (
       let remaining = EXACT_WORK_UNITS_PER_UPDATE;
