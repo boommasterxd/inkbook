@@ -268,18 +268,25 @@ flowchart TD
   direction -->|Grow| targetScene["Set larger renderer page height"]
   targetScene --> sceneCommit["Wait for complete renderer commit"]
   sceneCommit --> paint["Keep committed scene behind current clip for one paint opportunity"]
-  paint --> animate["Animate outer container and scroll compensation for 180 ms"]
+  paint --> grow["Animate outer container and scroll compensation for 180 ms"]
+  grow --> extend["Coverage-aware layout read extends background before newly revealed writable space"]
+  extend --> growComplete{"Container reached target?"}
+  growComplete -->|No| grow
+  growComplete -->|Yes| release["Release pinned envelope"]
   direction -->|Shrink| retain["Retain larger renderer page height"]
-  retain --> animate
-  animate --> clipped["Pin scene to larger endpoint and clip at rounded container"]
-  clipped --> complete{"Container reached target?"}
-  complete -->|No| animate
-  complete -->|Yes, grow| release["Release pinned envelope"]
-  complete -->|Yes, shrink| shrinkScene["Apply smaller renderer page height"]
-  shrinkScene --> release
+  retain --> shrink["Animate outer container and scroll compensation for 180 ms"]
+  shrink --> clipped["Pin scene and background to larger endpoint; update only culling while clipping"]
+  clipped --> shrinkComplete{"Container reached target?"}
+  shrinkComplete -->|No| shrink
+  shrinkComplete -->|Yes| shrinkScene["Apply smaller renderer page height"]
+  shrinkScene --> finalScene["Wait for atomic final scene commit"]
+  finalScene --> targetFrame["Apply exact outer target height"]
+  targetFrame --> release
 ```
 
 Unlock uses one persistent presentation-root shell with a 240-millisecond block-size transition. That shell continuously owns the page surface, border, radius, and clipping edge. The active scene is fully measured and painted behind the locked inner preview before the two borderless representations exchange visibility atomically in one frame. Lock prepares and paints the exact persisted preview below the disabled editor, then performs the same zero-duration inner-layer exchange before removing the editor. Neither direction animates shell opacity or replaces the shell.
+
+Every observed presentation-size change enters the same coverage-aware renderer path. Unlock, automatic growth, window resize, zoom layout, toolbar reflow, and host layout changes extend only the bounded end of the top-anchored background path when they expose additional writable space. Existing guide positions and the pattern origin stay fixed. Automatic shrink retains the larger top-anchored background geometry for the complete clip transition. Intermediate shrink viewport reads may update visible element membership, but they cannot regenerate or realign the background. The smaller background and exact outer target height become paintable together only after the final scene commit.
 
 ## Document Worker Boundary and Queue
 

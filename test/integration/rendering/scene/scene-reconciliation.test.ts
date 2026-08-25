@@ -4,6 +4,7 @@ import type { Bounds } from "../../../../src/domain/geometry/public";
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
 import type { BoxShapeElementV1, PageV1 } from "../../../../src/domain/schema/public";
 import { SvgSceneRenderer, type SpatialQuerySink } from "../../../../src/rendering/scene";
+import type { SceneViewport } from "../../../../src/rendering/scene/types";
 import {
   FakeDocument,
   FakeNode,
@@ -43,6 +44,36 @@ class QueryCostStore extends FakeSceneStore {
 }
 
 describe("resumable scene reconciliation", () => {
+  it("keeps background geometry frozen while a larger scene is clipped", () => {
+    const scheduler = new FakeScheduler();
+    const store = new FakeSceneStore();
+    const squarePage: PageV1 = { ...PAGE, background: { spacing: 40, type: "squares" } };
+    let viewport: SceneViewport = { height: 400, left: 0, top: 0, width: 100 };
+    const renderer = createRenderer(store, scheduler, {
+      page: squarePage,
+      readViewport: () => viewport,
+    });
+    renderer.setPage(squarePage, 500);
+    scheduler.runAll();
+    const background = fakeNode(renderer.svg).nodes[1]!.nodes[1]!;
+    const completeGeometry = background.attributes.get("d");
+    renderer.resetInstrumentation();
+
+    viewport = { ...viewport, height: 100 };
+    renderer.invalidateLayout("clip");
+    scheduler.runAll();
+
+    expect(background.attributes.get("d")).toBe(completeGeometry);
+    expect(renderer.instrumentation().backgroundBuilds).toBe(0);
+
+    viewport = { ...viewport, height: 60 };
+    renderer.invalidateLayout();
+    scheduler.runAll();
+    expect(renderer.instrumentation().backgroundBuilds).toBe(1);
+  });
+
+  it("extends bounded background coverage as a large page becomes visible", verifyGrowthCoverage);
+
   it("reuses a cell-range candidate union while exact bounds change within those cells", () => {
     const scheduler = new FakeScheduler();
     const store = new FakeSceneStore();
@@ -177,7 +208,7 @@ describe("scene reconciliation frame priority", () => {
     const scheduler = new FakeScheduler();
     const store = new FakeSceneStore();
     const committed = vi.fn();
-    const renderer = createRenderer(store, scheduler, committed);
+    const renderer = createRenderer(store, scheduler, { onSceneCommitted: committed });
     scheduler.runAll();
     committed.mockClear();
 
@@ -401,18 +432,56 @@ describe("active-document cache pressure", () => {
 function createRenderer(
   store: FakeSceneStore,
   scheduler: FakeScheduler,
-  onSceneCommitted?: () => void,
+  options: {
+    readonly onSceneCommitted?: () => void;
+    readonly page?: PageV1;
+    readonly readViewport?: () => SceneViewport;
+  } = {},
 ): SvgSceneRenderer {
   const document = new FakeDocument();
   return new SvgSceneRenderer({
     container: asElement(new FakeNode(document, "div")),
     frameBudgetMs: 8,
-    layout: { readViewport: () => ({ height: 100, left: 0, top: 0, width: 100 }) },
-    ...(onSceneCommitted === undefined ? {} : { onSceneCommitted }),
-    page: PAGE,
+    layout: {
+      readViewport: options.readViewport ?? (() => ({ height: 100, left: 0, top: 0, width: 100 })),
+    },
+    ...(options.onSceneCommitted === undefined
+      ? {}
+      : { onSceneCommitted: options.onSceneCommitted }),
+    page: options.page ?? PAGE,
     scheduler,
     store,
   });
+}
+
+function verifyGrowthCoverage(): void {
+  const scheduler = new FakeScheduler();
+  const store = new FakeSceneStore();
+  const squarePage: PageV1 = { ...PAGE, background: { spacing: 40, type: "squares" } };
+  let viewport: SceneViewport = { height: 100, left: 0, top: 0, width: 100 };
+  const renderer = createRenderer(store, scheduler, {
+    page: squarePage,
+    readViewport: () => viewport,
+  });
+  renderer.setPage(squarePage, 2_500);
+  scheduler.runAll();
+  const background = fakeNode(renderer.svg).nodes[1]!.nodes[1]!;
+  const initialGeometry = background.attributes.get("d");
+  renderer.resetInstrumentation();
+
+  viewport = { ...viewport, height: 60 };
+  renderer.invalidateLayout("coverage");
+  scheduler.runAll();
+  expect(background.attributes.get("d")).toBe(initialGeometry);
+  expect(renderer.instrumentation().backgroundBuilds).toBe(0);
+
+  viewport = { ...viewport, height: 800 };
+  renderer.invalidateLayout("coverage");
+  renderer.invalidateLayout("clip");
+  scheduler.runAll();
+
+  expect(background.attributes.get("d")).not.toBe(initialGeometry);
+  expect(renderer.instrumentation().backgroundBuilds).toBe(1);
 }
 
 function populateRectangles(store: FakeSceneStore, count: number): string[] {

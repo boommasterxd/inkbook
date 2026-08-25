@@ -27,6 +27,7 @@ import { SceneResourcePolicy, visibilityPageBounds } from "./scene-resource-poli
 import {
   browserScheduler,
   sameViewport,
+  SceneLayoutInvalidationState,
   validateFrameBudget,
   validateCamera,
   validateNonNegativeDuration,
@@ -63,6 +64,7 @@ export class SvgSceneRenderer {
   readonly #deltas: SceneDeltaCoordinator;
   readonly #instrumentation: MutableSceneInstrumentation = createInstrumentation();
   #layoutDirty = true;
+  readonly #layoutInvalidation = new SceneLayoutInvalidationState();
   readonly #liveStroke: SceneLiveStrokeRenderer;
   readonly #motion: SceneMotionController;
   #orderVisibilityDirty = false;
@@ -196,13 +198,15 @@ export class SvgSceneRenderer {
     this.#viewport = viewport;
     this.#transformPreviews.setContext(this.#camera, viewport);
     this.#layoutDirty = false;
+    this.#layoutInvalidation.reset();
     this.invalidateVisibility();
     this.#backgroundDirty = true;
     this.schedule();
   }
-  public invalidateLayout(): void {
+  public invalidateLayout(mode: "complete" | "coverage" | "clip" = "complete"): void {
     this.assertActive();
     this.#layoutDirty = true;
+    this.#layoutInvalidation.add(mode);
     this.schedule();
   }
   public setPage(page: PageV1, height = this.#pageHeight): void {
@@ -261,7 +265,6 @@ export class SvgSceneRenderer {
     this.#motion.setSnapPath(d);
     this.schedule();
   }
-
   public suppressMotionForNextDelta(ids: readonly string[]): void {
     this.assertActive();
     this.#motion.suppress(ids);
@@ -304,8 +307,8 @@ export class SvgSceneRenderer {
   }
   public clearElementFade(ids: readonly string[]): void {
     this.assertActive();
-    this.#deltas.removeFades(ids);
-    this.#content.setElementFade(ids, null);
+    const activeIds = this.#deltas.removeFades(ids);
+    this.#content.setElementFade(activeIds, null);
   }
   public setElementPreviews(elements: readonly InkElementV1[], version: number): void {
     this.assertActive();
@@ -317,12 +320,10 @@ export class SvgSceneRenderer {
     if (this.#previewCommits.requestClear()) return;
     this.#elementPreviews.clear();
   }
-
   public promoteVisible(id: string): void {
     this.assertActive();
     if (this.#content.promoteVisible(id)) this.schedule();
   }
-
   public instrumentation(): SceneInstrumentationSnapshot {
     this.refreshCacheInstrumentation();
     this.#motion.refreshInstrumentation();
@@ -334,7 +335,6 @@ export class SvgSceneRenderer {
     this.#backgroundCache.resetStatistics();
     this.#motion.refreshInstrumentation();
   }
-
   public mountedIds(band: RenderBand): readonly string[] {
     return this.#content.mountedIds(band);
   }
@@ -348,7 +348,6 @@ export class SvgSceneRenderer {
     this.invalidateVisibility();
     this.schedule();
   }
-
   public destroy(): void {
     if (this.#disposed) return;
     this.#disposed = true;
@@ -370,7 +369,6 @@ export class SvgSceneRenderer {
     this.#elementPreviews.release();
     this.#sceneCommits.release();
   }
-
   private schedule(): void {
     if (this.#disposed || this.#frameHandle !== undefined) return;
     const generation = this.#generation;
@@ -457,11 +455,13 @@ export class SvgSceneRenderer {
     const viewport = this.#options.layout.readViewport();
     this.#instrumentation.layoutReads += 1;
     validateViewport(viewport);
-    if (!sameViewport(this.#viewport, viewport)) {
+    const previousViewport = this.#viewport;
+    const refreshBackground = this.#layoutInvalidation.consume(previousViewport, viewport);
+    if (!sameViewport(previousViewport, viewport)) {
       this.#viewport = viewport;
       this.#transformPreviews.setContext(this.#camera, viewport);
       this.invalidateVisibility();
-      this.#backgroundDirty = true;
+      if (refreshBackground) this.#backgroundDirty = true;
     }
     this.#layoutDirty = false;
   }
@@ -485,7 +485,6 @@ export class SvgSceneRenderer {
     this.#content.replaceVisibility(visibility);
     this.#resourcePolicy.updateVisibility(visibility);
   }
-
   private invalidateVisibility(): void {
     this.#visibilityDirty = true;
     this.#content.cancelPendingVisibility();
@@ -493,7 +492,6 @@ export class SvgSceneRenderer {
   private refreshCacheInstrumentation(): void {
     refreshCacheInstrumentation(this.#instrumentation, this.#backgroundCache, this.#pathCache);
   }
-
   private assertActive(): void {
     if (this.#disposed) throw new Error("The SVG scene renderer has been destroyed.");
   }

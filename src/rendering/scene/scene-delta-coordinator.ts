@@ -36,8 +36,12 @@ export class SceneDeltaCoordinator {
     for (const id of ids) this.#fadedIds.add(id);
   }
 
-  public removeFades(ids: readonly string[]): void {
-    for (const id of ids) this.#fadedIds.delete(id);
+  public removeFades(ids: readonly string[]): readonly string[] {
+    const active: string[] = [];
+    for (const id of ids) {
+      if (this.#fadedIds.delete(id)) active.push(id);
+    }
+    return active;
   }
 
   public release(): void {

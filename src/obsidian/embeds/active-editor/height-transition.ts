@@ -12,6 +12,11 @@ interface ActiveHeightTransitionRequest {
   readonly targetRenderedHeight: number;
 }
 
+export interface CancelledHeightTransition {
+  readonly renderedHeight: number;
+  readonly settleToTarget: boolean;
+}
+
 type TransitionPhase =
   "waiting-for-scene" | "waiting-for-paint" | "running" | "waiting-for-final-scene";
 
@@ -57,7 +62,7 @@ export class ActiveHeightTransition {
 
   public sceneCommitted(): void {
     if (this.#phase === "waiting-for-final-scene") {
-      this.#complete();
+      this.#applyTargetFrameAndComplete();
       return;
     }
     if (this.#phase === "waiting-for-scene") {
@@ -78,21 +83,15 @@ export class ActiveHeightTransition {
       return;
     }
     this.#cancelFrame();
-    if (!this.#surfaceTargetApplied) request.applySurfaceTarget();
-    request.applyFrame(request.targetRenderedHeight);
-    this.#renderedHeight = request.targetRenderedHeight;
-    if (request.sceneCommitPending()) {
-      this.#phase = "waiting-for-final-scene";
-      return;
-    }
-    this.#complete();
+    this.#prepareFinalSurface();
   }
 
-  public cancelAtCurrent(): number | undefined {
+  public cancelAtCurrent(): CancelledHeightTransition | undefined {
     if (this.#request === undefined) return undefined;
     const renderedHeight = this.#renderedHeight;
+    const settleToTarget = this.#phase === "running" || this.#phase === "waiting-for-final-scene";
     this.cancel();
-    return renderedHeight;
+    return { renderedHeight, settleToTarget };
   }
 
   public cancel(): void {
@@ -123,22 +122,17 @@ export class ActiveHeightTransition {
       Math.max(0, (time - this.#startedAt) / transitionDurations.automaticPageGrowth),
     );
     const eased = progress * progress * (3 - 2 * progress);
-    this.#renderedHeight = interpolate(
-      request.currentRenderedHeight,
-      request.targetRenderedHeight,
-      eased,
-    );
-    request.applyFrame(this.#renderedHeight);
     if (progress < 1) {
+      this.#renderedHeight = interpolate(
+        request.currentRenderedHeight,
+        request.targetRenderedHeight,
+        eased,
+      );
+      request.applyFrame(this.#renderedHeight);
       this.#scheduleTick();
       return;
     }
-    if (!this.#surfaceTargetApplied) request.applySurfaceTarget();
-    if (request.sceneCommitPending()) {
-      this.#phase = "waiting-for-final-scene";
-      return;
-    }
-    this.#complete();
+    this.#prepareFinalSurface();
   };
 
   #complete(): void {
@@ -148,15 +142,28 @@ export class ActiveHeightTransition {
   }
 
   #finishAfterSceneCommit(): void {
+    this.#prepareFinalSurface();
+  }
+
+  #prepareFinalSurface(): void {
     const request = this.#request;
     if (request === undefined) return;
-    if (!this.#surfaceTargetApplied) request.applySurfaceTarget();
-    this.#renderedHeight = request.targetRenderedHeight;
-    request.applyFrame(this.#renderedHeight);
+    if (!this.#surfaceTargetApplied) {
+      request.applySurfaceTarget();
+      this.#surfaceTargetApplied = true;
+    }
     if (request.sceneCommitPending()) {
       this.#phase = "waiting-for-final-scene";
       return;
     }
+    this.#applyTargetFrameAndComplete();
+  }
+
+  #applyTargetFrameAndComplete(): void {
+    const request = this.#request;
+    if (request === undefined) return;
+    this.#renderedHeight = request.targetRenderedHeight;
+    request.applyFrame(this.#renderedHeight);
     this.#complete();
   }
 

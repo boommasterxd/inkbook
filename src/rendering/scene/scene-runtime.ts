@@ -1,5 +1,7 @@
 import type { SceneCamera, SceneScheduler, SceneViewport } from "./types";
 
+type SceneLayoutInvalidation = "complete" | "coverage" | "clip";
+
 export function browserScheduler(ownerDocument: Document): SceneScheduler {
   const ownerWindow = ownerDocument.defaultView;
   if (ownerWindow === null) {
@@ -36,6 +38,27 @@ export function sameViewport(left: SceneViewport | undefined, right: SceneViewpo
     left.width === right.width &&
     left.height === right.height
   );
+}
+
+export class SceneLayoutInvalidationState {
+  #mode: SceneLayoutInvalidation = "complete";
+
+  public add(next: SceneLayoutInvalidation): void {
+    if (this.#mode === "complete" || next === "complete") this.#mode = "complete";
+    else if (this.#mode === "coverage" || next === "coverage") this.#mode = "coverage";
+  }
+
+  public reset(): void {
+    this.#mode = "clip";
+  }
+
+  public consume(previous: SceneViewport | undefined, next: SceneViewport): boolean {
+    const mode = this.#mode;
+    this.reset();
+    if (mode === "complete" || previous === undefined) return true;
+    if (mode === "clip") return false;
+    return next.top < previous.top || next.top + next.height > previous.top + previous.height;
+  }
 }
 
 export function validateNonNegativeDuration(value: number): void {

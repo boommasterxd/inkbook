@@ -74,6 +74,7 @@ export class ActiveEditorLayout {
         ? undefined
         : new Observer(() => {
             this.#toolbarLayoutDirty = true;
+            this.#options.renderer.invalidateLayout("coverage");
             this.scheduleMeasurement();
           });
     this.#observer?.observe(options.root);
@@ -91,7 +92,7 @@ export class ActiveEditorLayout {
   }
 
   public applyZoom(update: ActiveEditorZoomLayoutUpdate): void {
-    const retainedPageHeight = this.#cancelHeightTransitionAtCurrent();
+    const retainedPageHeight = this.#cancelHeightTransitionAtBoundary(false);
     this.#zoom = update.zoom;
     const blockSize =
       retainedPageHeight === undefined ? update.blockSize : retainedPageHeight * update.zoom;
@@ -143,7 +144,7 @@ export class ActiveEditorLayout {
   }
 
   public interruptForInput(): void {
-    if (this.#cancelHeightTransitionAtCurrent() !== undefined) this.scheduleMeasurement();
+    if (this.#cancelHeightTransitionAtBoundary(true) !== undefined) this.scheduleMeasurement();
   }
 
   public pageChanged(): void {
@@ -159,7 +160,7 @@ export class ActiveEditorLayout {
 
   public suspend(): void {
     if (this.#suspended) return;
-    this.#cancelHeightTransitionAtCurrent();
+    this.#cancelHeightTransitionAtBoundary(true);
     this.#suspended = true;
     if (this.#frame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#frame);
     if (this.#readyFrame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#readyFrame);
@@ -310,14 +311,19 @@ export class ActiveEditorLayout {
       return;
     }
     const currentRenderedHeight = frameRead?.renderedHeight ?? update.height * zoom;
-    const currentPageHeight = currentRenderedHeight / zoom;
+    const currentPageHeight = this.#pageLayout.settledHeight ?? currentRenderedHeight / zoom;
     const targetRenderedHeight = update.height * zoom;
-    const preparationHeight =
-      targetRenderedHeight >= currentRenderedHeight ? update.height : currentPageHeight;
+    const growing = update.height >= currentPageHeight;
+    const preparationHeight = growing ? update.height : currentPageHeight;
     this.#options.renderer.setPage(page, preparationHeight);
     this.#heightTransition.begin({
       applyFrame: (renderedHeight) =>
-        this.#writeHeightFrame(renderedHeight / zoom, zoom, frameRead),
+        this.#writeHeightFrame(
+          renderedHeight / zoom,
+          zoom,
+          frameRead,
+          growing ? "coverage" : "clip",
+        ),
       applySurfaceTarget: () => this.#options.renderer.setPage(this.#options.page(), update.height),
       currentRenderedHeight,
       onComplete: () => this.#completeHeightTransition(!this.#motion.reduced),
@@ -339,13 +345,18 @@ export class ActiveEditorLayout {
     this.#heightTransition.finishImmediately();
   }
 
-  #cancelHeightTransitionAtCurrent(): number | undefined {
-    const renderedHeight = this.#heightTransition.cancelAtCurrent();
+  #cancelHeightTransitionAtBoundary(applyFrame: boolean): number | undefined {
+    const cancelled = this.#heightTransition.cancelAtCurrent();
     const zoom = this.#zoom;
-    if (renderedHeight === undefined || zoom === undefined || zoom <= 0) return undefined;
-    const pageHeight = renderedHeight / zoom;
-    this.#pageLayout.cancelTransitions(pageHeight);
+    if (cancelled === undefined || zoom === undefined || zoom <= 0) return undefined;
+    const currentPageHeight = cancelled.renderedHeight / zoom;
+    const completed = cancelled.settleToTarget ? this.#pageLayout.completeTransitions() : undefined;
+    const pageHeight = completed?.height ?? currentPageHeight;
+    if (completed === undefined) this.#pageLayout.cancelTransitions(pageHeight);
     this.#options.renderer.setPage(this.#options.page(), pageHeight);
+    if (applyFrame && completed !== undefined) {
+      this.#writeHeightFrame(pageHeight, zoom, this.#readHeightFrame());
+    }
     return pageHeight;
   }
 
@@ -370,10 +381,15 @@ export class ActiveEditorLayout {
     };
   }
 
-  #writeHeightFrame(pageHeight: number, zoom: number, read: HeightFrameRead | undefined): void {
+  #writeHeightFrame(
+    pageHeight: number,
+    zoom: number,
+    read: HeightFrameRead | undefined,
+    invalidation: "complete" | "coverage" | "clip" = "complete",
+  ): void {
     const renderedHeight = pageHeight * zoom;
     this.#container.style.blockSize = `${String(renderedHeight)}px`;
-    this.#options.renderer.invalidateLayout();
+    this.#options.renderer.invalidateLayout(invalidation);
     const resize = read?.resize;
     if (read === undefined || resize === undefined) return;
     const projectedMaximum = Math.max(
