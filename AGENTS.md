@@ -47,6 +47,7 @@ All plugin runtime code and static plugin styles live in responsibility-specific
 - The implementation uses Unit and focused Integration tests only. End-to-end and smoke test suites are explicitly excluded.
 - Unit tests cover pure domain, geometry, schema, state-machine, workspace activation coordination, command, settings, zoom, scroll-owner leases, document-worker state, serialization, render ordering, shape anchors, endpoint connections, detachment, propagation, migration, and clipboard ID remapping.
 - Integration tests cover only important renderer, document-worker and fallback, workspace and pop-out lifecycle, native-scrollbar stability, Vault/FileManager, CodeMirror, Reading-view lifecycle, clipboard, and settings boundaries through test adapters.
+- Classify every performance test explicitly in the exhaustive performance manifest. Run refresh-rate-invariant tests once, budget-only tests once against the strictest 240-Hz threshold, and cadence-sensitive tests at every fixed 60, 90, 120, 144, and 240-Hz profile. A benchmark is cadence-sensitive whenever the selected profile reaches scheduler deadlines, simulated frame time, timestamps, or production input rather than only its assertion threshold.
 - Maintain at least 85 percent line coverage across executable source and satisfy the acceptance requirements in `docs/quality-and-testing.md`.
 
 ### Manual Obsidian Display Verification

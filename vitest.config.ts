@@ -24,8 +24,8 @@ export default defineConfig({
     },
     environment: "node",
     include: [
-      "test/unit/**/*.test.{ts,tsx}",
-      "test/integration/**/*.test.{ts,tsx}",
+      "test/unit/**/*.test.{ts,tsx,mjs}",
+      "test/integration/**/*.test.{ts,tsx,mjs}",
       "test/performance/**/*.test.{ts,tsx}",
     ],
     passWithNoTests: false,
