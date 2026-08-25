@@ -1,8 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -17,6 +15,7 @@ jobs:
   CI:
     name: CI
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -31,10 +30,26 @@ jobs:
         run: npm run ci:quality
 
   Performance:
-    name: Performance
+    name: Performance (${{ matrix.label }})
     runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    strategy:
+      fail-fast: true
+      max-parallel: 2
+      matrix:
+        include:
+          - label: shared
+            suite: shared
+            refresh-rate: "120"
+            timeout_minutes: 15
+          - label: refresh profiles
+            suite: cadence
+            refresh-rate: "120"
+            timeout_minutes: 5
     env:
       INKBOOK_PERFORMANCE_PROFILE: hosted-ubuntu
+      INKBOOK_PERFORMANCE_REFRESH_RATE: ${{ matrix.refresh-rate }}
+      INKBOOK_PERFORMANCE_SUITE: ${{ matrix.suite }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

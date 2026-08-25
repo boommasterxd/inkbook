@@ -3,10 +3,16 @@ import { readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { PERFORMANCE_TEST_MANIFEST } from "./performance-test-manifest.mjs";
+
 export const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 export const performanceRoot = join(projectRoot, "test", "performance");
 
 const vitestEntry = fileURLToPath(new URL("../node_modules/vitest/vitest.mjs", import.meta.url));
+
+export const SUPPORTED_REFRESH_RATES = Object.freeze([60, 90, 120, 144, 240]);
+export const DEFAULT_REFRESH_RATE = 120;
+export const STRICTEST_REFRESH_RATE = 240;
 
 export async function collectTestFiles(directory = performanceRoot) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -19,18 +25,76 @@ export async function collectTestFiles(directory = performanceRoot) {
   return files.sort();
 }
 
-export async function runRefreshRateMatrix(testFiles, refreshRates, options = {}) {
-  if (testFiles.length === 0) throw new Error("No performance test files were selected.");
+export async function collectPerformanceTestPlan(directory = performanceRoot) {
+  return createPerformanceTestPlan(await collectTestFiles(directory));
+}
+
+export function createPerformanceTestPlan(testFiles) {
+  const discovered = new Map(
+    testFiles.map((testFile) => [relative(projectRoot, testFile).replaceAll("\\", "/"), testFile]),
+  );
+  const classified = new Set();
+  const plan = {};
+  for (const [category, manifestFiles] of Object.entries(PERFORMANCE_TEST_MANIFEST)) {
+    plan[category] = manifestFiles.map((manifestFile) => {
+      if (classified.has(manifestFile)) {
+        throw new Error(`Performance test is classified more than once: ${manifestFile}`);
+      }
+      classified.add(manifestFile);
+      const discoveredFile = discovered.get(manifestFile);
+      if (discoveredFile === undefined) {
+        throw new Error(`Classified performance test was not found: ${manifestFile}`);
+      }
+      return discoveredFile;
+    });
+  }
+  const unclassified = [...discovered.keys()].filter((testFile) => !classified.has(testFile));
+  if (unclassified.length > 0) {
+    throw new Error(`Unclassified performance tests:\n${unclassified.join("\n")}`);
+  }
+  return Object.freeze(plan);
+}
+
+export function selectPerformanceRuns(plan, suite, configuredRefreshRate) {
+  if (suite === "shared") {
+    return [
+      {
+        label: "refresh-rate-invariant",
+        refreshRate: DEFAULT_REFRESH_RATE,
+        testFiles: plan.invariant,
+      },
+      { label: "budget-only", refreshRate: STRICTEST_REFRESH_RATE, testFiles: plan.budgetOnly },
+    ];
+  }
+  if (suite === "profile") {
+    const refreshRate = parseRefreshRate(configuredRefreshRate);
+    return [{ label: "cadence-sensitive", refreshRate, testFiles: plan.cadenceSensitive }];
+  }
+  if (suite === "cadence") {
+    return SUPPORTED_REFRESH_RATES.map((refreshRate) => ({
+      label: "cadence-sensitive",
+      refreshRate,
+      testFiles: plan.cadenceSensitive,
+    }));
+  }
+  if (suite !== "all") throw new TypeError(`Unsupported performance suite: ${suite}`);
+  return [...selectPerformanceRuns(plan, "shared"), ...selectPerformanceRuns(plan, "cadence")];
+}
+
+export async function runPerformanceRuns(runs, options = {}) {
   const failFast = options.failFast ?? false;
   const violations = [];
-  for (const refreshRate of refreshRates) {
-    process.stdout.write(`\nRunning complete performance suite at ${refreshRate} Hz...\n`);
-    for (const testFile of testFiles) {
-      const result = await runTestFile(testFile, refreshRate);
+  for (const run of runs) {
+    process.stdout.write(`\nRunning ${run.label} performance suite at ${run.refreshRate} Hz...\n`);
+    for (const testFile of run.testFiles) {
+      const result = await runTestFile(testFile, run.refreshRate);
       const label = relative(projectRoot, testFile);
-      process.stdout.write(`  ${result.length === 0 ? "PASS" : "FAIL"} ${label}\n`);
-      violations.push(...result);
-      if (failFast && result.length > 0) return violations;
+      process.stdout.write(
+        `  ${result.violations.length === 0 ? "PASS" : "FAIL"} ${label} ` +
+          `(${(result.durationMs / 1_000).toFixed(1)}s)\n`,
+      );
+      violations.push(...result.violations);
+      if (failFast && result.violations.length > 0) return violations;
     }
   }
   return violations;
@@ -52,6 +116,7 @@ export function reportPerformanceViolations(violations) {
 function runTestFile(testFile, refreshRate) {
   const relativeTestFile = relative(projectRoot, testFile);
   return new Promise((resolve) => {
+    const startedAt = performance.now();
     let stdout = "";
     let stderr = "";
     const child = spawn(
@@ -75,24 +140,37 @@ function runTestFile(testFile, refreshRate) {
     child.stdout.on("data", (chunk) => (stdout += chunk));
     child.stderr.on("data", (chunk) => (stderr += chunk));
     child.once("error", (error) => {
-      resolve([fileViolation(refreshRate, relativeTestFile, "Test process", error.message)]);
+      resolve({
+        durationMs: performance.now() - startedAt,
+        violations: [fileViolation(refreshRate, relativeTestFile, "Test process", error.message)],
+      });
     });
     child.once("exit", (code, signal) => {
       if (code === 0) {
-        resolve([]);
+        resolve({ durationMs: performance.now() - startedAt, violations: [] });
         return;
       }
-      resolve(
-        parseViolations(
+      resolve({
+        durationMs: performance.now() - startedAt,
+        violations: parseViolations(
           stdout,
           refreshRate,
           relativeTestFile,
           signal ?? `exit code ${code}`,
           stderr,
         ),
-      );
+      });
     });
   });
+}
+
+function parseRefreshRate(configuredRefreshRate) {
+  const candidate = Number(configuredRefreshRate);
+  const refreshRate = SUPPORTED_REFRESH_RATES.find((value) => value === candidate);
+  if (refreshRate === undefined) {
+    throw new TypeError(`Unsupported performance refresh rate: ${String(configuredRefreshRate)}`);
+  }
+  return refreshRate;
 }
 
 function parseViolations(rawReport, refreshRate, file, exitReason, stderr) {

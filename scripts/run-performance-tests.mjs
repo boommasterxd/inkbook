@@ -1,11 +1,17 @@
 import {
-  collectTestFiles,
+  collectPerformanceTestPlan,
   reportPerformanceViolations,
-  runRefreshRateMatrix,
+  runPerformanceRuns,
+  selectPerformanceRuns,
 } from "./performance-test-runner.mjs";
 
-const refreshRates = [60, 90, 120, 144, 240];
-const violations = await runRefreshRateMatrix(await collectTestFiles(), refreshRates, {
+const suite = process.env["INKBOOK_PERFORMANCE_SUITE"] ?? "all";
+const runs = selectPerformanceRuns(
+  await collectPerformanceTestPlan(),
+  suite,
+  process.env["INKBOOK_PERFORMANCE_REFRESH_RATE"],
+);
+const violations = await runPerformanceRuns(runs, {
   failFast: process.env["CI"] === "true",
 });
 reportPerformanceViolations(violations);

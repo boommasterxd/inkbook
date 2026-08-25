@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { BoxShapeElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
-import { EraserSweep, type EraserSliceScheduler } from "../../../src/editor/gestures/public";
-import { percentile } from "../domain/domain-scenarios";
+import type { BoxShapeElementV1 } from "../../../src/domain/schema/public";
+import { EraserSweep } from "../../../src/editor/gestures/public";
 import { maximumStroke } from "./maximum-stroke-fixture";
+import { createDenseStrokeEraser } from "./eraser-performance-fixture";
 import { INTERACTION_REFRESH_PROFILE, interactionP99 } from "../interaction-refresh-profile";
 import { timingBudget } from "../timing-budget";
 
@@ -11,7 +11,6 @@ declare const gc: (() => void) | undefined;
 
 const DENSE_STROKES = 488;
 const MAX_FRAME_MS = 16.7;
-const FINALIZATION_RUNS = 50;
 
 describe("eraser hot paths", () => {
   it("resumes exact checks for a dense two-million-point batch within the frame budget", () => {
@@ -71,113 +70,6 @@ describe("eraser hot paths", () => {
     expect(duration).toBeLessThan(timingBudget(2_000));
   });
 });
-
-describe("eraser finalization performance", () => {
-  it("keeps exact finalization slices within the selected main-thread budget", async () => {
-    const strokes = Array.from({ length: 128 }, (_, index) => maximumStroke(index));
-    const sliceDurationsMs: number[] = [];
-    let maximumSliceMs = 0;
-    for (let run = 0; run < FINALIZATION_RUNS; run += 1) {
-      const eraser = createDenseStrokeEraser(
-        strokes,
-        () => INTERACTION_REFRESH_PROFILE.mainThreadP99Ms,
-      );
-      eraser.update({ x: 5_000, y: 0 });
-      const scheduler = new MeasuredEraserScheduler(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
-      let removed = 0;
-      await eraser.commit((ids) => {
-        removed = ids.size;
-        return true;
-      }, scheduler);
-      scheduler.finish();
-      expect(removed).toBe(strokes.length);
-      expect(scheduler.yieldCount).toBeGreaterThan(0);
-      sliceDurationsMs.push(...scheduler.sliceDurationsMs);
-      maximumSliceMs = Math.max(maximumSliceMs, scheduler.maximumSliceMs);
-    }
-
-    expect(sliceDurationsMs.length).toBeGreaterThanOrEqual(100);
-    expect(percentile(sliceDurationsMs, 0.95)).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
-    expect(maximumSliceMs).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
-    );
-  }, 10_000);
-});
-
-class MeasuredEraserScheduler implements EraserSliceScheduler {
-  readonly #budgetMs: number;
-  readonly #sliceDurationsMs: number[] = [];
-  #maximumSliceMs = 0;
-  #sliceStarted = performance.now();
-  #yieldCount = 0;
-
-  public constructor(budgetMs: number) {
-    this.#budgetMs = budgetMs;
-  }
-
-  public get maximumSliceMs(): number {
-    return this.#maximumSliceMs;
-  }
-
-  public get yieldCount(): number {
-    return this.#yieldCount;
-  }
-
-  public get sliceDurationsMs(): readonly number[] {
-    return this.#sliceDurationsMs;
-  }
-
-  public isCancelled(): boolean {
-    return false;
-  }
-
-  public shouldYield(): boolean {
-    return performance.now() - this.#sliceStarted >= this.#budgetMs;
-  }
-
-  public async yieldControl(): Promise<void> {
-    this.#recordSlice();
-    this.#yieldCount += 1;
-    await Promise.resolve();
-    this.#sliceStarted = performance.now();
-  }
-
-  public finish(): void {
-    this.#recordSlice();
-  }
-
-  #recordSlice(): void {
-    const duration = performance.now() - this.#sliceStarted;
-    this.#sliceDurationsMs.push(duration);
-    this.#maximumSliceMs = Math.max(this.#maximumSliceMs, duration);
-  }
-}
-
-function createDenseStrokeEraser(
-  strokes: readonly StrokeElementV1[],
-  sliceBudgetMs?: () => number,
-): EraserSweep {
-  const byId = new Map(strokes.map((stroke) => [stroke.id, stroke]));
-  let queryCount = 0;
-  return new EraserSweep(
-    { x: -1_000, y: 0 },
-    4,
-    {
-      getElement: (id) => byId.get(id),
-      query: (_bounds, sink) => {
-        if (queryCount++ === 1) for (const { id } of strokes) sink.add(id);
-      },
-    },
-    {
-      addCandidateFade: () => undefined,
-      clearCandidateFade: () => undefined,
-      setCandidateFade: () => undefined,
-    },
-    sliceBudgetMs,
-  );
-}
 
 function rectangle(): BoxShapeElementV1 {
   return {
