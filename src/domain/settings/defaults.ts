@@ -3,7 +3,7 @@ import {
   OUTLINE_ONLY_TOOLS,
   type ColorV1,
   type InkbookDeviceSettingsV1,
-  type InkbookSettingsV1,
+  type InkbookSettingsV2,
   type OutlineDefaultsV1,
   type ShapeDefaultsV1,
   type ToolDefaultsV1,
@@ -66,9 +66,9 @@ function toolDefaults(): ToolDefaultsV1 {
   };
 }
 
-export function createBuiltInSettings(): InkbookSettingsV1 {
+export function createBuiltInSettings(): InkbookSettingsV2 {
   return {
-    version: 1,
+    version: 2,
     startupTool: "draw",
     toolDefaults: toolDefaults(),
     pageDefaults: {
@@ -79,6 +79,7 @@ export function createBuiltInSettings(): InkbookSettingsV1 {
       lockedBufferLines: 1,
     },
     filePlacement: { mode: "obsidian-attachment-folder" },
+    refreshRatePreference: "auto",
   };
 }
 

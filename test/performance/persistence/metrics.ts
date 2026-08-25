@@ -13,7 +13,7 @@ export interface DurationSummary {
   readonly maximum: number;
   readonly p50: number;
   readonly p95: number;
-  readonly p99: number;
+  readonly p99: number | null;
 }
 
 export type MetricAnnotator = (message: string, type?: string) => Promise<unknown>;
@@ -37,7 +37,7 @@ export function summarizeDurations(durations: readonly number[]): DurationSummar
     maximum: sorted[sorted.length - 1]!,
     p50: percentile(sorted, 0.5),
     p95: percentile(sorted, 0.95),
-    p99: percentile(sorted, 0.99),
+    p99: sorted.length >= 100 ? percentile(sorted, 0.99) : null,
   };
 }
 
@@ -55,7 +55,7 @@ export async function annotateDurations(
   const summary = summarizeDurations(durations);
   await annotate(
     `${name}: p50=${format(summary.p50)} ms, p95=${format(summary.p95)} ms, ` +
-      `p99=${format(summary.p99)} ms, max=${format(summary.maximum)} ms`,
+      `${formatP99(summary.p99)}, max=${format(summary.maximum)} ms`,
     "performance",
   );
 }
@@ -77,7 +77,7 @@ export async function annotateProfileRuns(
   );
   await annotate(
     `${name}: worstRun=${worstRun.index + 1}, p50=${format(worstRun.summary.p50)} ms, ` +
-      `p95=${format(worstRun.summary.p95)} ms, p99=${format(worstRun.summary.p99)} ms, ` +
+      `p95=${format(worstRun.summary.p95)} ms, ${formatP99(worstRun.summary.p99)}, ` +
       `max=${format(worstRun.summary.maximum)} ms`,
     "performance",
   );
@@ -106,4 +106,8 @@ function percentile(sorted: readonly number[], quantile: number): number {
 
 function format(value: number): string {
   return value.toFixed(3);
+}
+
+function formatP99(value: number | null): string {
+  return value === null ? "p99=n/a (<100 samples)" : `p99=${format(value)} ms`;
 }

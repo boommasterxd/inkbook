@@ -15,6 +15,8 @@ import { assertValidElement } from "./replacement-planner";
 import { StoreAppendBuilder } from "./store-append-builder";
 import type { ElementRecord, EndpointReference, StoreSliceScheduler } from "./types";
 
+const MAX_HYDRATION_RECORDS_PER_SLICE = 64;
+
 interface InitialRankEntry {
   readonly band: RenderBand;
   readonly rank: number;
@@ -71,32 +73,67 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
     derivations?: readonly ElementValidationDerivation[],
   ): Promise<"accepted" | "cancelled"> {
     this.#assertOpen();
+    if (derivations !== undefined) return this.#appendValidatedRuntime(elements, derivations);
     for (let index = 0; index < elements.length; index += 1) {
       const element = elements[index]!;
       if (this.#isCancelled()) return this.#cancel();
-      if (derivations === undefined) {
-        if (ownsRuntimeElements) assertValidRuntimeElement(element);
-        else assertValidElement(element);
-      }
+      if (ownsRuntimeElements) assertValidRuntimeElement(element);
+      else assertValidElement(element);
       if (this.#records.has(element.id))
         throw new RangeError(`Duplicate element ID: ${element.id}`);
-      const derivation = derivations?.[index];
-      const record =
-        derivation === undefined
-          ? ownsRuntimeElements
-            ? createOwnedInitialRecord(element)
-            : createInitialRecord(element)
-          : createOwnedValidatedInitialRecord(element, derivation);
+      const record = ownsRuntimeElements
+        ? createOwnedInitialRecord(element)
+        : createInitialRecord(element);
       const capacityPatch = this.#capacity.prepare([], [record]);
       this.#index.insert(element.id, record.bounds);
       this.#capacity.commit(capacityPatch);
-      this.#records.set(element.id, record);
-      const band = renderBandOf(element);
-      this.#ranks.set(element.id, { band, rank: this.#bands[band].length });
-      this.#bands[band].push(element.id);
+      this.#appendRecord(record);
       this.#yields += await yieldWhenRequested(this.#scheduler);
     }
     return "accepted";
+  }
+
+  async #appendValidatedRuntime(
+    elements: readonly InkElementV1[],
+    derivations: readonly ElementValidationDerivation[],
+  ): Promise<"accepted" | "cancelled"> {
+    const records: ElementRecord[] = [];
+    const batchIds = new Set<string>();
+    for (let index = 0; index < elements.length; index += 1) {
+      const element = elements[index]!;
+      if (this.#isCancelled()) return this.#cancel();
+      if (this.#records.has(element.id) || batchIds.has(element.id)) {
+        throw new RangeError(`Duplicate element ID: ${element.id}`);
+      }
+      batchIds.add(element.id);
+      records.push(createOwnedValidatedInitialRecord(element, derivations[index]!));
+      if (records.length >= MAX_HYDRATION_RECORDS_PER_SLICE || index === elements.length - 1) {
+        if (this.#isCancelled()) return this.#cancel();
+        this.#commitValidatedRecords(records);
+        records.length = 0;
+      }
+      this.#yields += await yieldWhenRequested(
+        this.#scheduler,
+        (index + 1) % MAX_HYDRATION_RECORDS_PER_SLICE === 0,
+      );
+    }
+    if (this.#isCancelled()) return this.#cancel();
+    return "accepted";
+  }
+
+  #commitValidatedRecords(records: readonly ElementRecord[]): void {
+    const capacityPatch = this.#capacity.prepare([], records);
+    this.#index.insertMany(records.map(({ bounds, element }) => ({ bounds, id: element.id })));
+    this.#capacity.commit(capacityPatch);
+    for (const record of records) this.#appendRecord(record);
+  }
+
+  #appendRecord(record: ElementRecord): void {
+    const { element } = record;
+    this.#records.set(element.id, record);
+    const band = renderBandOf(element);
+    this.#ranks.set(element.id, { band, rank: this.#bands[band].length });
+    this.#bands[band].push(element.id);
   }
 
   public async finalize(): Promise<TimeSlicedStoreState | "cancelled"> {
@@ -104,6 +141,7 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
     this.#finished = true;
     const reverseConnections = new Map<string, EndpointReference[]>();
     const lookup = (id: string) => this.#records.get(id)?.element;
+    let recordsInSlice = 0;
     for (const record of this.#records.values()) {
       if (this.#isCancelled()) return this.#cancel();
       assertResolvedConnections(record.element, lookup);
@@ -115,8 +153,13 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
         if (!reverseConnections.has(targetId)) reverseConnections.set(targetId, references);
         references.push(Object.freeze(reference));
       }
-      this.#yields += await yieldWhenRequested(this.#scheduler);
+      recordsInSlice += 1;
+      this.#yields += await yieldWhenRequested(
+        this.#scheduler,
+        recordsInSlice % MAX_HYDRATION_RECORDS_PER_SLICE === 0,
+      );
     }
+    if (this.#isCancelled()) return this.#cancel();
     return {
       bands: this.#bands,
       capacity: this.#capacity,
@@ -153,8 +196,8 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
   }
 }
 
-async function yieldWhenRequested(scheduler: StoreSliceScheduler): Promise<number> {
-  if (!scheduler.shouldYield()) return 0;
+async function yieldWhenRequested(scheduler: StoreSliceScheduler, force = false): Promise<number> {
+  if (!force && !scheduler.shouldYield()) return 0;
   await scheduler.yieldControl();
   return 1;
 }

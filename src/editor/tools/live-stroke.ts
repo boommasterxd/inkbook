@@ -1,9 +1,4 @@
-import {
-  buildStrokePath,
-  pointDistance,
-  roundCanonical,
-  smoothStrokeCenters,
-} from "../../domain/geometry/public";
+import { buildStrokePath, roundCanonical, smoothStrokeCenters } from "../../domain/geometry/public";
 import {
   buildCenterlineSlice,
   buildPressureOutlineSlice,
@@ -63,6 +58,7 @@ export interface LiveStrokeBuilderOptions {
 
 export class LiveStrokeBuilder {
   private buffer = new Float64Array(INITIAL_SAMPLE_CAPACITY * VALUES_PER_SAMPLE);
+  private readonly canonicalPoints: number[] = [];
   private retainedSamples = 0;
   private finalizedSamples = 0;
   private readonly chunks: LiveStrokeChunk[] = [];
@@ -107,8 +103,8 @@ export class LiveStrokeBuilder {
     if (this.finished) throw new Error("A live stroke can only be finished once.");
     if (this.retainedSamples === 0) throw new RangeError("A stroke requires at least one sample.");
     this.finished = true;
-    const points = this.copyCanonicalPoints(0, this.retainedSamples);
-    const geometry = this.buildGeometry(points);
+    const points = this.canonicalPoints;
+    const geometry = this.buildCommitGeometry(points);
     this.commitBuilds += 1;
     return { points, geometry, instrumentation: this.instrumentation() };
   }
@@ -129,8 +125,7 @@ export class LiveStrokeBuilder {
 
   private shouldReplaceTip(sample: RawStrokeSample): boolean {
     if (this.retainedSamples <= 1) return false;
-    const tip = this.rawSample(this.retainedSamples - 1);
-    return pointDistance(tip, sample) * this.options.input.zoom < 0.5;
+    return this.distanceToSample(this.retainedSamples - 1, sample) * this.options.input.zoom < 0.5;
   }
 
   private replaceTip(sample: RawStrokeSample): void {
@@ -156,10 +151,11 @@ export class LiveStrokeBuilder {
       return Math.min(1, Math.max(0, sample.pressure));
     }
     if (previousIndex < 0) return 0.5;
-    const previous = this.rawSample(previousIndex);
     const previousPressure = this.buffer[previousIndex * VALUES_PER_SAMPLE + 2] as number;
-    const elapsed = Math.max(1, sample.time - previous.time);
-    const speed = (pointDistance(previous, sample) * this.options.input.zoom) / elapsed;
+    const previousTime = this.buffer[previousIndex * VALUES_PER_SAMPLE + 3] as number;
+    const elapsed = Math.max(1, sample.time - previousTime);
+    const speed =
+      (this.distanceToSample(previousIndex, sample) * this.options.input.zoom) / elapsed;
     const target = Math.min(1, Math.max(0.25, 1 - speed / 1.5));
     return 0.7 * previousPressure + 0.3 * target;
   }
@@ -222,6 +218,17 @@ export class LiveStrokeBuilder {
     });
   }
 
+  private buildCommitGeometry(points: number[]): StrokePathGeometry {
+    if (this.tail === null) throw new RangeError("A live stroke requires at least one sample.");
+    if (this.chunks.length === 0) return this.tail.geometry;
+    if (this.options.style.pressureEnabled && !usesDirectPressureOutline(points)) {
+      return this.buildGeometry(points);
+    }
+    return this.options.style.pressureEnabled
+      ? combinePressureGeometry(this.chunks, this.tail)
+      : combineCenterlineGeometry(this.chunks, this.tail);
+  }
+
   private buildSliceGeometry(
     contextStart: number,
     contextEnd: number,
@@ -240,16 +247,7 @@ export class LiveStrokeBuilder {
   }
 
   private copyCanonicalPoints(start: number, end: number): number[] {
-    const points = new Array<number>((end - start) * 3);
-    let output = 0;
-    for (let index = start; index < end; index += 1) {
-      const offset = index * VALUES_PER_SAMPLE;
-      points[output] = roundCanonical(this.buffer[offset] as number);
-      points[output + 1] = roundCanonical(this.buffer[offset + 1] as number);
-      points[output + 2] = roundCanonical(this.buffer[offset + 2] as number, 4);
-      output += 3;
-    }
-    return points;
+    return this.canonicalPoints.slice(start * 3, end * 3);
   }
 
   private writeSample(index: number, sample: RawStrokeSample, pressure: number): void {
@@ -258,16 +256,18 @@ export class LiveStrokeBuilder {
     this.buffer[offset + 1] = sample.y;
     this.buffer[offset + 2] = pressure;
     this.buffer[offset + 3] = sample.time;
+    const canonicalOffset = index * 3;
+    this.canonicalPoints[canonicalOffset] = roundCanonical(sample.x);
+    this.canonicalPoints[canonicalOffset + 1] = roundCanonical(sample.y);
+    this.canonicalPoints[canonicalOffset + 2] = roundCanonical(pressure, 4);
   }
 
-  private rawSample(index: number): RawStrokeSample {
+  private distanceToSample(index: number, sample: RawStrokeSample): number {
     const offset = index * VALUES_PER_SAMPLE;
-    return {
-      x: this.buffer[offset] as number,
-      y: this.buffer[offset + 1] as number,
-      pressure: this.buffer[offset + 2] as number,
-      time: this.buffer[offset + 3] as number,
-    };
+    return Math.hypot(
+      (this.buffer[offset] as number) - sample.x,
+      (this.buffer[offset + 1] as number) - sample.y,
+    );
   }
 
   private ensureCapacity(requiredSamples: number): void {
@@ -290,4 +290,95 @@ export class LiveStrokeBuilder {
       throw new RangeError("Pen pressure must be finite.");
     }
   }
+}
+
+function combineCenterlineGeometry(
+  chunks: readonly LiveStrokeChunk[],
+  tail: LiveStrokePreview["tail"],
+): StrokePathGeometry {
+  // Preview slices overlap one quadratic at stable boundaries to hide seams.
+  // Removing only that overlap reconstructs the exact one-pass centerline.
+  const paths = new Array<string>(chunks.length + 1);
+  paths[0] = chunks[0]!.geometry.d;
+  for (let index = 1; index < chunks.length; index += 1) {
+    paths[index] = afterOverlappingQuadratic(chunks[index]!.geometry.d);
+  }
+  paths[chunks.length] = afterOverlappingQuadratic(tail.geometry.d);
+  return { d: paths.join(""), paint: "stroke" };
+}
+
+function combinePressureGeometry(
+  chunks: readonly LiveStrokeChunk[],
+  tail: LiveStrokePreview["tail"],
+): StrokePathGeometry {
+  // Pressure slices also contain temporary boundary connectors. Reordering their
+  // two sides without those connectors avoids rebuilding every outline pair.
+  const paths = new Array<string>(chunks.length * 2 + 1);
+  for (let index = 0; index < chunks.length; index += 1) {
+    const d = chunks[index]!.geometry.d;
+    const firstQuadratic = requireCommand(d, "Q");
+    const endConnector = requireCommand(d, "L", firstQuadratic);
+    paths[index] =
+      index === 0
+        ? d.slice(0, endConnector)
+        : d.slice(requireCommand(d, "Q", firstQuadratic + 1), endConnector);
+  }
+
+  const tailPath = tail.geometry.d;
+  const tailFirstQuadratic = requireCommand(tailPath, "Q");
+  paths[chunks.length] = tailPath.slice(
+    requireCommand(tailPath, "Q", tailFirstQuadratic + 1),
+    tailPath.lastIndexOf("L"),
+  );
+
+  for (let index = chunks.length - 1; index >= 0; index -= 1) {
+    const d = chunks[index]!.geometry.d;
+    const firstQuadratic = requireCommand(d, "Q");
+    const endConnector = requireCommand(d, "L", firstQuadratic);
+    const firstReverseQuadratic = requireCommand(d, "Q", endConnector);
+    const reverseStart = requireCommand(d, "Q", firstReverseQuadratic + 1);
+    const reverseEnd = index === 0 ? d.length : d.lastIndexOf("L");
+    paths[chunks.length * 2 - index] = d.slice(reverseStart, reverseEnd);
+  }
+  return { d: paths.join(""), paint: "fill" };
+}
+
+function afterOverlappingQuadratic(d: string): string {
+  const firstQuadratic = requireCommand(d, "Q");
+  return d.slice(requireCommand(d, "Q", firstQuadratic + 1));
+}
+
+function requireCommand(d: string, command: "L" | "Q", fromIndex = 0): number {
+  const index = d.indexOf(command, fromIndex);
+  if (index < 0) throw new Error(`Live stroke geometry is missing the ${command} command.`);
+  return index;
+}
+
+function usesDirectPressureOutline(points: readonly number[]): boolean {
+  const pointCount = points.length / 3;
+  let previous = smoothedPointAt(points, 0, pointCount);
+  for (let index = 0; index < pointCount; index += 1) {
+    const center = index === 0 ? previous : smoothedPointAt(points, index, pointCount);
+    if (index > 0 && center.x === previous.x && center.y === previous.y) return false;
+    const next = smoothedPointAt(points, Math.min(pointCount - 1, index + 1), pointCount);
+    const tangentLength = Math.hypot(next.x - previous.x, next.y - previous.y);
+    if (tangentLength === 0 || !Number.isFinite(tangentLength)) return false;
+    previous = center;
+  }
+  return true;
+}
+
+function smoothedPointAt(
+  points: readonly number[],
+  index: number,
+  pointCount: number,
+): { readonly x: number; readonly y: number } {
+  const offset = index * 3;
+  if (index === 0 || index === pointCount - 1) {
+    return { x: points[offset]!, y: points[offset + 1]! };
+  }
+  return {
+    x: points[offset - 3]! * 0.25 + points[offset]! * 0.5 + points[offset + 3]! * 0.25,
+    y: points[offset - 2]! * 0.25 + points[offset + 1]! * 0.5 + points[offset + 4]! * 0.25,
+  };
 }

@@ -5,6 +5,7 @@ import { moveSelectionTimeSliced } from "../../../src/editor/selection/transform
 
 import { MeasuredSliceScheduler, percentile, requireStroke } from "./domain-scenarios";
 import { createStandardDomainFixture } from "./standard-domain-fixture";
+import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 import { timingBudget } from "../timing-budget";
 
 describe("incremental replacement performance", () => {
@@ -14,6 +15,7 @@ describe("incremental replacement performance", () => {
     const fixture = createStandardDomainFixture();
     const store = new ElementStore(fixture.elements);
     const commitDurations: number[] = [];
+    const sliceDurations: number[] = [];
     let maximumPreparationSlice = 0;
     for (let run = 0; run < 6; run += 1) {
       const strokes = fixture.strokeIds.map((id) => requireStroke(store, id));
@@ -24,6 +26,7 @@ describe("incremental replacement performance", () => {
       const prepared = await store.prepareElementReplacement(moved, scheduler);
       if (prepared.token === null) throw new Error("Expected a prepared replacement token.");
       scheduler.finish();
+      sliceDurations.push(...scheduler.sliceDurations);
       maximumPreparationSlice = Math.max(maximumPreparationSlice, scheduler.maxSliceDuration);
       const started = performance.now();
       expect(store.commitPreparedElementReplacement(prepared.token).status).toBe("committed");
@@ -36,8 +39,16 @@ describe("incremental replacement performance", () => {
         `maxPreparationSlice=${maximumPreparationSlice.toFixed(3)} ms`,
       "performance",
     );
-    expect(commitP95).toBeLessThanOrEqual(timingBudget(16.7));
-    expect(maximumPreparationSlice).toBeLessThanOrEqual(timingBudget(16.7));
+    expect(commitP95).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
+    );
+    expect(sliceDurations.length).toBeGreaterThanOrEqual(100);
+    expect(percentile(sliceDurations, 0.95)).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
+    expect(maximumPreparationSlice).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
+    );
     expect(store.instrumentation).toMatchObject({
       fullStoreScans: 0,
       publishedDeltas: 6,

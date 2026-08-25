@@ -14,44 +14,15 @@ import {
   createProductionDocumentRuntime,
 } from "../../../../../src/persistence/worker/runtime/public";
 import { DocumentModelRuntime } from "../../../../../src/persistence/worker/runtime/document-model";
-import { rectangle, snapshot } from "./fixtures";
-
-const executor = { sessionId: "session-a", workerEpoch: 3 } as const;
-const unlockIdentity = {
-  ...executor,
-  operationId: 1,
-  purpose: "unlock" as const,
-};
-
-async function unlockedRuntime(): Promise<DocumentWorkerRuntime> {
-  const serialized = serializeInkbookDocument(snapshot());
-  if (!serialized.ok) throw new Error(serialized.error.code);
-  const runtime = new DocumentWorkerRuntime(executor);
-  await runtime.execute({ identity: unlockIdentity, input: serialized.value.svg, type: "unlock" });
-  return runtime;
-}
-
-function rectangleDocument(elementCount: number) {
-  const elements = Array.from({ length: elementCount }, (_, index) => ({
-    ...rectangle(),
-    id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
-  }));
-  return { ...snapshot(), elements };
-}
-
-async function expectClipboardEncodeSuccess(
-  runtime: DocumentWorkerRuntime,
-  basisRevision: number,
-): Promise<void> {
-  await expect(
-    runtime.execute({
-      basisRevision,
-      identity: { ...executor, operationId: 3, purpose: "clipboard" },
-      selectedIds: [rectangle().id],
-      type: "clipboard-encode",
-    }),
-  ).resolves.toMatchObject({ result: { ok: true }, type: "clipboard-encode-success" });
-}
+import {
+  executor,
+  expectClipboardEncodeSuccess,
+  rectangle,
+  rectangleDocument,
+  snapshot,
+  unlockedRuntime,
+  unlockIdentity,
+} from "./fixtures";
 
 describe("document worker runtime", () => {
   it.each(CURRENT_METADATA_REWRITES)(
@@ -341,6 +312,29 @@ describe("document worker clipboard planning", () => {
 });
 
 describe("document worker fallback clipboard codec", () => {
+  it.each([
+    [60, (1_000 / 60) * 0.55, 16 * 1024, 256, 64 * 1024],
+    [90, (1_000 / 90) * 0.55, 12 * 1024, 192, 48 * 1024],
+    [120, (1_000 / 120) * 0.55, 8 * 1024, 128, 32 * 1024],
+    [144, (1_000 / 144) * 0.55, 6 * 1024, 96, 24 * 1024],
+    [240, (1_000 / 240) * 0.55, 4 * 1024, 64, 16 * 1024],
+  ])(
+    "selects bounded fallback work units for %i Hz",
+    (_rate, sliceMilliseconds, inputByteLimit, nodeLimit, outputByteLimit) => {
+      const scheduler = new GestureAwareSliceScheduler({
+        isInputActive: () => false,
+        sliceMilliseconds,
+        yieldControl: () => Promise.resolve(),
+      });
+
+      expect(scheduler.getSliceWorkProfile()).toEqual({
+        inputByteLimit,
+        nodeLimit,
+        outputByteLimit,
+      });
+    },
+  );
+
   it("uses sliced clipboard codecs without changing their canonical output", async () => {
     const model = new DocumentModelRuntime();
     const document = rectangleDocument(257);

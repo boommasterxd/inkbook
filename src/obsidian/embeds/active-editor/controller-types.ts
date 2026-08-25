@@ -31,6 +31,7 @@ export interface ActiveEditorControllerOptions {
   readonly onStateChanged: () => void;
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
   readonly renderer: SvgSceneRenderer;
+  readonly sliceBudgetMs?: () => number;
   readonly sceneStore: ElementSceneStore;
   readonly selectionEdgeDrag?: SelectionEdgeDragPort;
   readonly scrollOwner: BrowserScrollElement;

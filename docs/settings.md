@@ -14,7 +14,7 @@ Settings have four scopes:
 
 | Scope            | Storage                | Examples                                                                  |
 | ---------------- | ---------------------- | ------------------------------------------------------------------------- |
-| Vault            | Obsidian plugin data   | Tool defaults, default background, page buffer, file placement            |
+| Vault            | Obsidian plugin data   | Tool defaults, page defaults, file placement, display refresh-rate mode   |
 | Device and vault | Obsidian local storage | Finger drawing, pen-tap insertion, handedness, motion preference          |
 | File             | Editable SVG snapshot  | Current background type and spacing, element styles                       |
 | Session          | Memory only            | Current tool, current flyout values, finger toggle, zoom, camera position |
@@ -33,12 +33,13 @@ On editor activation, session tool values are initialized from vault defaults. S
 ## Settings Root
 
 ```ts
-interface InkbookSettingsV1 {
-  version: 1;
+interface InkbookSettingsV2 {
+  version: 2;
   startupTool: StartupToolV1;
   toolDefaults: ToolDefaultsV1;
   pageDefaults: PageDefaultsV1;
   filePlacement: FilePlacementV1;
+  refreshRatePreference: "auto" | 60 | 90 | 120 | 144 | 240;
 }
 
 interface ToolDefaultsV1 {
@@ -68,6 +69,16 @@ interface InkbookDeviceSettingsV1 {
 `OutlineOnlyToolV1` is `"line" | "arrow" | "coordinate-system" | "table"`.
 
 The built-in startup tool is `draw`.
+
+Version 1 vault settings migrate to version 2 by adding `refreshRatePreference: "auto"`; every existing tool, page, and placement value is preserved. The device-settings schema remains version 1.
+
+## Display Refresh Rate
+
+The General settings group offers `Auto`, `60 Hz`, `90 Hz`, `120 Hz`, `144 Hz`, and `240 Hz`. The built-in value is `Auto`. This preference is stored in the vault settings, so vault synchronization may carry it between devices. While `Auto` is selected, the closed dropdown reports `Auto (detecting…)` until measurement completes and then `Auto (detected: <rate> Hz)` for the settings window.
+
+`Auto` therefore performs one quick `requestAnimationFrame` measurement for the main Obsidian window when the plugin runtime starts and for each additional owning pop-out window after it first becomes visible. It samples 18 valid frame intervals, selects the next conservative supported profile, keeps that result weakly associated with the window in memory, and performs no recurring or background measurement. Closing and reopening presentations in the same live window reuses the result. A pop-out window measures independently. Until measurement completes, or when no valid result can be obtained, the window uses the 120-Hz profile. A fixed choice starts no measurement. Switching from a fixed choice to `Auto` clears any previous Auto result and starts one measurement for each observed window; switching from `Auto` to a fixed choice cancels any unfinished measurement immediately. Changing the setting applies to active presentations without rewriting any Inkbook file.
+
+The choice controls main-thread slice deadlines only. It does not cap the display refresh rate, change animation duration, weaken correctness checks, alter worker-internal work budgets, or expose internal cache and geometry limits. Higher profiles yield sooner and can make long non-interactive operations take slightly longer while preserving more frame time for Obsidian, style, paint, and compositing.
 
 ## Color Values
 
@@ -238,6 +249,7 @@ All numeric ranges are inclusive.
 | Eraser radius                 | integer from 8 through 64 CSS pixels   |        4 |
 | Table columns                 | integer from 1 through 12              |        1 |
 | Writing-line height           | integer from 50 through 200 page units |       10 |
+| Display refresh rate          | auto, 60, 90, 120, 144, or 240         | Discrete |
 | Active buffer lines           | integer from 1 through 8               |        1 |
 | Enumerations and colors       | exactly one documented value           | Discrete |
 

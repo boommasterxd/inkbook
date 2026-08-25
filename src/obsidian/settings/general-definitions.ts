@@ -4,9 +4,11 @@ import {
   BACKGROUND_TYPES,
   LINE_SPACINGS,
   PATTERN_SPACINGS,
+  REFRESH_RATE_PREFERENCES,
   STARTUP_TOOLS,
   validateCustomVaultFolderPath,
 } from "../../domain/settings";
+import type { RefreshRateProfileStatus } from "../performance";
 import type { SettingsControlKey } from "./control-values";
 import { dropdown, resetAction, sentenceCaseLabel, slider } from "./definition-helpers";
 
@@ -100,6 +102,7 @@ export interface GeneralGroupCallbacks {
   readonly isCustomFolder: () => boolean;
   readonly canCreateFolder: () => boolean;
   readonly createFolder: (element: HTMLElement) => void;
+  readonly refreshRateStatus: () => RefreshRateProfileStatus;
   readonly reset: () => void;
 }
 
@@ -114,6 +117,17 @@ export function generalGroup(
         "Startup tool",
         "Choose the tool selected when an editor opens.",
         labels(STARTUP_TOOLS),
+      ),
+      dropdown(
+        "refreshRatePreference",
+        "Display refresh rate",
+        refreshRateDescription(callbacks.refreshRateStatus()),
+        Object.fromEntries(
+          REFRESH_RATE_PREFERENCES.map((value) => [
+            String(value),
+            value === "auto" ? autoRefreshRateLabel(callbacks.refreshRateStatus()) : `${value} Hz`,
+          ]),
+        ),
       ),
       dropdown(
         "filePlacement.mode",
@@ -137,6 +151,22 @@ export function generalGroup(
       resetAction("Reset group to defaults", callbacks.reset),
     ],
   };
+}
+
+function autoRefreshRateLabel(status: RefreshRateProfileStatus): string {
+  if (status.kind === "detected") return `Auto (detected: ${status.refreshRate} Hz)`;
+  if (status.kind === "detecting") return "Auto (detecting…)";
+  return "Auto";
+}
+
+function refreshRateDescription(status: RefreshRateProfileStatus): string {
+  if (status.kind === "detected") {
+    return `Detected ${status.refreshRate} Hz for this Obsidian window. Other windows are measured independently.`;
+  }
+  if (status.kind === "detecting") {
+    return "Detecting this Obsidian window. Inkbook uses the 120 Hz profile until detection completes.";
+  }
+  return "Use quick per-window detection or select a fixed frame-rate profile.";
 }
 
 export { labels };

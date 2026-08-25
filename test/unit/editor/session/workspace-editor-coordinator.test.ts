@@ -119,6 +119,31 @@ describe("WorkspaceEditorCoordinator activation", () => {
   });
 });
 
+describe("WorkspaceEditorCoordinator lifecycle soak", () => {
+  it("releases every superseded session across repeated note switches", async () => {
+    const harness = createHarness();
+    let current = await activate(harness, documentA);
+    harness.coordinator.mountAttachment(documentB);
+
+    for (let cycle = 0; cycle < 20; cycle += 1) {
+      const target = cycle % 2 === 0 ? documentB : documentA;
+      const activation = harness.coordinator.requestActivation(target);
+      current.completeSave();
+      await Promise.resolve();
+      const next = harness.sessions[harness.sessions.length - 1];
+      if (next === undefined) throw new Error("Expected a successor session.");
+      next.completeUnlock();
+      await expect(activation.outcome).resolves.toMatchObject({ kind: "activated" });
+      current = next;
+    }
+
+    harness.coordinator.dispose();
+    expect(harness.sessions).toHaveLength(21);
+    expect(harness.sessions.every(({ disposed }) => disposed)).toBe(true);
+    expect(harness.coordinator.getSnapshot().current).toBeUndefined();
+  });
+});
+
 describe("WorkspaceEditorCoordinator activation races", () => {
   it("adopts an unlock completed by a session fallback executor", async () => {
     const harness = createHarness();

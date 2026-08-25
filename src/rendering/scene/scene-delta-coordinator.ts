@@ -1,7 +1,7 @@
 import type { SceneMotionController } from "./scene-motion-controller";
 import type { ScenePreviewCommitController } from "./preview-commit-handoff";
 import type { SceneCommitCoordinator } from "./scene-commit-coordinator";
-import { routeSceneDeltaDomain, type SceneDeltaRoutingPorts } from "./scene-delta-router";
+import { routeSceneDelta, type SceneDeltaRoutingPorts } from "./scene-delta-router";
 import type { SceneStoreDelta } from "./types";
 
 interface SceneDeltaCoordinatorOptions {
@@ -26,11 +26,7 @@ export class SceneDeltaCoordinator {
       }
     }
     const consumedSuppression = this.options.motion.applyDelta(delta.affected, fadedRemovals);
-    for (const affected of delta.affected) {
-      for (const domain of affected.domains) {
-        routeSceneDeltaDomain(affected, domain, this.options.routing);
-      }
-    }
+    routeSceneDelta(delta, this.options.routing);
     this.options.previews.consume(consumedSuppression);
     this.options.commits.markPending();
     this.options.schedule();
@@ -40,8 +36,12 @@ export class SceneDeltaCoordinator {
     for (const id of ids) this.#fadedIds.add(id);
   }
 
-  public removeFades(ids: readonly string[]): void {
-    for (const id of ids) this.#fadedIds.delete(id);
+  public removeFades(ids: readonly string[]): readonly string[] {
+    const active: string[] = [];
+    for (const id of ids) {
+      if (this.#fadedIds.delete(id)) active.push(id);
+    }
+    return active;
   }
 
   public release(): void {

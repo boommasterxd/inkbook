@@ -77,7 +77,7 @@ export interface SceneInputHandlers {
 export interface SceneRendererOptions {
   readonly accessibleName?: string;
   readonly container: HTMLElement;
-  readonly frameBudgetMs?: number;
+  readonly frameBudgetMs?: number | (() => number);
   readonly inputHandlers?: SceneInputHandlers;
   readonly layout: SceneLayoutPort;
   readonly page: PageV1;
@@ -163,6 +163,8 @@ export interface SceneInstrumentationSnapshot {
   readonly staleFrames: number;
   readonly themeWrites: number;
   readonly visibilityCandidateCacheHits: number;
+  readonly visibilityHysteresisHits: number;
+  readonly visibilitySortSkips: number;
 }
 
 export interface MutableSceneInstrumentation {
@@ -212,4 +214,6 @@ export interface MutableSceneInstrumentation {
   staleFrames: number;
   themeWrites: number;
   visibilityCandidateCacheHits: number;
+  visibilityHysteresisHits: number;
+  visibilitySortSkips: number;
 }

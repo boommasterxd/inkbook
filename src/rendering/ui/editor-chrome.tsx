@@ -14,6 +14,7 @@ import { InkbookToolbar } from "./toolbar";
 import type { ToolbarLayoutStage } from "./toolbar-layout";
 import type { FlyoutId, ToolbarAction, ToolbarState } from "./toolbar-types";
 import type { ToolbarStyleIconState } from "./style-icon";
+import { editorChromeLayoutKey } from "./editor-chrome-snapshot";
 
 export interface InkbookEditorChromeProps {
   readonly background: BackgroundFlyoutState;
@@ -39,6 +40,7 @@ export function InkbookEditorChrome(props: InkbookEditorChromeProps) {
   const [renderedFlyout, setRenderedFlyout] = useState<FlyoutId | null>(
     props.toolbarState.openFlyout,
   );
+  const toolbarLayoutKey = editorChromeLayoutKey(props);
   const registerButton = useCallback((action: ToolbarAction, element: HTMLButtonElement | null) => {
     if (element === null) buttons.current.delete(action);
     else buttons.current.set(action, element);
@@ -53,7 +55,7 @@ export function InkbookEditorChrome(props: InkbookEditorChromeProps) {
     );
   }, []);
 
-  useLayoutEffect(measureToolbar, [props.toolbarState, measureToolbar]);
+  useLayoutEffect(measureToolbar, [measureToolbar, toolbarLayoutKey]);
 
   useLayoutEffect(() => {
     const element = composition.current;

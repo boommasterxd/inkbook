@@ -24,6 +24,7 @@ export interface EraserPreviewOptions {
   readonly radius: number;
   readonly renderer: EraserPreviewRenderer;
   readonly sceneStore: ElementSceneStore;
+  readonly sliceBudgetMs?: () => number;
   readonly start: GesturePreviewStart;
 }
 
@@ -32,6 +33,7 @@ export class EraserPreview implements GesturePreview {
   readonly #model: EditableDocumentModel;
   readonly #ownerWindow: Window;
   readonly #sweep: EraserSweep;
+  readonly #sliceBudgetMs: () => number;
   #cancelled = false;
   #completion: Promise<boolean> | null = null;
   #finished = false;
@@ -42,6 +44,7 @@ export class EraserPreview implements GesturePreview {
     this.#history = options.history;
     this.#model = options.model;
     this.#ownerWindow = options.ownerWindow;
+    this.#sliceBudgetMs = options.sliceBudgetMs ?? (() => 8);
     const feedback = createFeedback(options.renderer);
     this.#sweep = new EraserSweep(
       options.start.pointer,
@@ -51,6 +54,7 @@ export class EraserPreview implements GesturePreview {
         query: (bounds, sink) => options.sceneStore.query(bounds, sink),
       },
       feedback,
+      this.#sliceBudgetMs,
     );
   }
 
@@ -63,7 +67,7 @@ export class EraserPreview implements GesturePreview {
     this.#finished = true;
     if (this.#cancelled) return false;
     const generation = ++this.#generation;
-    const scheduler = new EraserFrameScheduler(this.#ownerWindow);
+    const scheduler = new EraserFrameScheduler(this.#ownerWindow, this.#sliceBudgetMs);
     this.#scheduler = scheduler;
     this.#completion = this.#sweep
       .commit((ids) => this.#remove(ids, generation, scheduler), scheduler)

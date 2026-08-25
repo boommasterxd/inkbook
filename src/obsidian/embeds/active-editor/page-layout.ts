@@ -28,6 +28,10 @@ export class ActivePageLayout {
     return this.#queuedHeight ?? this.#transitionTarget ?? this.#height;
   }
 
+  public get settledHeight(): number | undefined {
+    return this.#height;
+  }
+
   public committed(
     page: PageV1,
     maximumBottom: number | undefined,

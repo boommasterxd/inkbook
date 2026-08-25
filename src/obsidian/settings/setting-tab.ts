@@ -12,8 +12,9 @@ import {
   PEN_TAP_INSERTIONS,
   createBuiltInDeviceSettings,
   createBuiltInSettings,
-  type InkbookSettingsV1,
+  type InkbookSettingsV2,
 } from "../../domain/settings";
+import { DEFAULT_REFRESH_RATE, type RefreshRateProfileStatus } from "../performance";
 import { SettingsControlValues, type SettingsControlKey } from "./control-values";
 import { dropdown, resetAction, slider, toggle } from "./definition-helpers";
 import { generalGroup, labels } from "./general-definitions";
@@ -24,9 +25,9 @@ export interface CustomFolderPort {
   createFolder(path: string): Promise<void>;
 }
 
-function cloneDefaults<K extends keyof InkbookSettingsV1["toolDefaults"]>(
+function cloneDefaults<K extends keyof InkbookSettingsV2["toolDefaults"]>(
   key: K,
-): InkbookSettingsV1["toolDefaults"][K] {
+): InkbookSettingsV2["toolDefaults"][K] {
   return structuredClone(createBuiltInSettings().toolDefaults[key]);
 }
 
@@ -38,6 +39,7 @@ export class InkbookSettingTab extends PluginSettingTab {
     plugin: Plugin,
     private readonly store: InkbookSettingsStore,
     private readonly folderPort?: CustomFolderPort,
+    private readonly refreshRateStatus?: () => RefreshRateProfileStatus | undefined,
   ) {
     super(app, plugin);
     this.controls = new SettingsControlValues(store);
@@ -58,6 +60,11 @@ export class InkbookSettingTab extends PluginSettingTab {
         isCustomFolder: () => this.isCustomFolder(),
         canCreateFolder: () => this.folderPort !== undefined && this.isCustomFolder(),
         createFolder: (element) => this.createCustomFolder(element),
+        refreshRateStatus: () =>
+          this.refreshRateStatus?.() ?? {
+            kind: "detecting",
+            refreshRate: DEFAULT_REFRESH_RATE,
+          },
         reset: () => this.resetGeneral(),
       }),
       toolGroup("Pen", penItems(), () => this.resetToolGroup("pen")),
@@ -104,13 +111,14 @@ export class InkbookSettingTab extends PluginSettingTab {
       .updateVaultSettings((settings) => ({
         ...settings,
         startupTool: defaults.startupTool,
+        refreshRatePreference: defaults.refreshRatePreference,
         pageDefaults: structuredClone(defaults.pageDefaults),
         filePlacement: structuredClone(defaults.filePlacement),
       }))
       .then(() => this.update());
   }
 
-  private resetToolGroup<K extends keyof InkbookSettingsV1["toolDefaults"]>(key: K): void {
+  private resetToolGroup<K extends keyof InkbookSettingsV2["toolDefaults"]>(key: K): void {
     void this.store
       .updateVaultSettings((settings) => {
         settings.toolDefaults[key] = cloneDefaults(key);

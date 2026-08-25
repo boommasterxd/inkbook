@@ -67,7 +67,8 @@ describe("dense viewport reconciliation acceptance", () => {
       expect(renderer.instrumentation()).toMatchObject({
         collectionAllocations: 0,
         spatialQueries: 0,
-        visibilityCandidateCacheHits: 1,
+        visibilityCandidateCacheHits: 0,
+        visibilityHysteresisHits: 1,
       });
       expect(store.queryCount).toBe(1);
       renderer.destroy();

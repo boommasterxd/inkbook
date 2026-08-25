@@ -38,6 +38,7 @@ import {
   createBuiltInDeviceSettings,
   createBuiltInSettings,
 } from "../../../../src/domain/settings";
+import type { RefreshRateProfileStatus } from "../../../../src/obsidian/performance";
 import { InkbookSettingTab } from "../../../../src/obsidian/settings/setting-tab";
 import type { SettingsControlKey } from "../../../../src/obsidian/settings/control-values";
 import {
@@ -86,11 +87,16 @@ function groups(tab: InkbookSettingTab): SettingDefinitionGroup<SettingsControlK
     );
 }
 
-function createTab(store: InkbookSettingsStore): InkbookSettingTab {
+function createTab(
+  store: InkbookSettingsStore,
+  refreshRateStatus?: () => RefreshRateProfileStatus,
+): InkbookSettingTab {
   return new InkbookSettingTab(
     {} as ConstructorParameters<typeof InkbookSettingTab>[0],
     {} as ConstructorParameters<typeof InkbookSettingTab>[1],
     store,
+    undefined,
+    refreshRateStatus,
   );
 }
 
@@ -216,6 +222,7 @@ describe("InkbookSettingTab definitions", () => {
     expect(general).toBeDefined();
     expect(general?.items?.map((item) => item.name)).toEqual([
       "Startup tool",
+      "Display refresh rate",
       "File placement",
       "Custom vault folder",
       "Create custom folder",
@@ -227,6 +234,34 @@ describe("InkbookSettingTab definitions", () => {
     expect(typeof customFolder?.visible === "function" && customFolder.visible()).toBe(false);
     await tab.setControlValue("filePlacement.mode", "custom-vault-folder");
     expect(typeof customFolder?.visible === "function" && customFolder.visible()).toBe(true);
+  });
+
+  it("shows the live automatic refresh-rate result in the selected option", () => {
+    const store = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());
+    const detectingTab = createTab(store, () => ({ kind: "detecting", refreshRate: 120 }));
+    const detectingRate = groups(detectingTab)[0]?.items?.find(
+      (item) => item.name === "Display refresh rate",
+    );
+    const tab = createTab(store, () => ({ kind: "detected", refreshRate: 144 }));
+    const refreshRate = groups(tab)[0]?.items?.find((item) => item.name === "Display refresh rate");
+    if (refreshRate === undefined || !("control" in refreshRate)) {
+      throw new Error("Missing display refresh-rate control.");
+    }
+    if (detectingRate === undefined || !("control" in detectingRate)) {
+      throw new Error("Missing detecting refresh-rate control.");
+    }
+
+    expect(
+      detectingRate.control?.type === "dropdown"
+        ? detectingRate.control.options["auto"]
+        : undefined,
+    ).toBe("Auto (detecting…)");
+    expect(refreshRate.control?.type).toBe("dropdown");
+    if (refreshRate.control?.type !== "dropdown") throw new Error("Expected dropdown control.");
+    expect(refreshRate.control.options["auto"]).toBe("Auto (detected: 144 Hz)");
+    expect(refreshRate.desc).toBe(
+      "Detected 144 Hz for this Obsidian window. Other windows are measured independently.",
+    );
   });
 });
 
@@ -314,7 +349,14 @@ describe("InkbookSettingTab visible labels", () => {
     expect(multiWordLabels).toEqual(
       expect.arrayContaining(["Straight highlighter", "Coordinate system"]),
     );
-    expect(multiWordLabels.filter((label) => !sentenceCase.test(label))).toEqual([]);
+    expect(
+      multiWordLabels.filter(
+        (label) =>
+          !sentenceCase.test(label) &&
+          !/^\d+ Hz$/.test(label) &&
+          !/^Auto \((?:detected: \d+ Hz|detecting…)\)$/.test(label),
+      ),
+    ).toEqual([]);
   });
 });
 

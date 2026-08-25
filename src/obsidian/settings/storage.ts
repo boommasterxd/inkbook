@@ -4,7 +4,7 @@ import {
   loadDeviceSettings,
   loadSettings,
   type InkbookDeviceSettingsV1,
-  type InkbookSettingsV1,
+  type InkbookSettingsV2,
   type SettingsDiagnostic,
 } from "../../domain/settings";
 
@@ -12,7 +12,7 @@ export const DEVICE_SETTINGS_STORAGE_KEY = "inkbook:device-settings:v1";
 
 export interface VaultSettingsPort {
   loadData(): Promise<unknown>;
-  saveData(data: InkbookSettingsV1): Promise<void>;
+  saveData(data: InkbookSettingsV2): Promise<void>;
 }
 
 export interface DeviceSettingsPort {
@@ -26,6 +26,7 @@ export interface LoadedSettingsDiagnostics {
 }
 
 export type DeviceSettingsListener = (settings: Readonly<InkbookDeviceSettingsV1>) => void;
+export type VaultSettingsListener = (settings: Readonly<InkbookSettingsV2>) => void;
 
 function deviceSettingsEqual(
   left: InkbookDeviceSettingsV1,
@@ -43,6 +44,7 @@ export class InkbookSettingsStore {
   private vaultSettings = createBuiltInSettings();
   private deviceSettings = createBuiltInDeviceSettings();
   private readonly deviceSettingsListeners = new Set<DeviceSettingsListener>();
+  private readonly vaultSettingsListeners = new Set<VaultSettingsListener>();
   private vaultWrites: Promise<void> = Promise.resolve();
 
   public constructor(
@@ -60,7 +62,7 @@ export class InkbookSettingsStore {
     return { vault: vaultResult.diagnostics, device: deviceResult.diagnostics };
   }
 
-  public getVaultSettings(): InkbookSettingsV1 {
+  public getVaultSettings(): InkbookSettingsV2 {
     return structuredClone(this.vaultSettings);
   }
 
@@ -75,7 +77,14 @@ export class InkbookSettingsStore {
     };
   }
 
-  public async replaceVaultSettings(value: InkbookSettingsV1): Promise<void> {
+  public subscribeVaultSettings(listener: VaultSettingsListener): () => void {
+    this.vaultSettingsListeners.add(listener);
+    return () => {
+      this.vaultSettingsListeners.delete(listener);
+    };
+  }
+
+  public async replaceVaultSettings(value: InkbookSettingsV2): Promise<void> {
     await this.enqueueVaultWrite(() => value);
   }
 
@@ -87,7 +96,7 @@ export class InkbookSettingsStore {
   }
 
   public async updateVaultSettings(
-    update: (settings: InkbookSettingsV1) => InkbookSettingsV1,
+    update: (settings: InkbookSettingsV2) => InkbookSettingsV2,
   ): Promise<void> {
     await this.enqueueVaultWrite(update);
   }
@@ -106,7 +115,7 @@ export class InkbookSettingsStore {
   }
 
   private async enqueueVaultWrite(
-    update: (settings: InkbookSettingsV1) => InkbookSettingsV1,
+    update: (settings: InkbookSettingsV2) => InkbookSettingsV2,
   ): Promise<void> {
     const operation = this.vaultWrites.then(async () => {
       const candidate = update(structuredClone(this.vaultSettings));
@@ -114,6 +123,9 @@ export class InkbookSettingsStore {
       if (result.diagnostics.length > 0) throw new Error("Invalid vault settings");
       await this.vaultPort.saveData(result.value);
       this.vaultSettings = result.value;
+      for (const listener of [...this.vaultSettingsListeners]) {
+        listener(structuredClone(this.vaultSettings));
+      }
     });
     this.vaultWrites = operation.catch(() => undefined);
     await operation;

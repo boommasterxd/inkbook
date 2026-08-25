@@ -9,6 +9,7 @@ import {
 } from "../../../src/persistence/worker/runtime/public";
 import { decodeRuntimeResultChunked } from "../../../src/persistence/worker/runtime/wire-codec";
 import { EXPORT_OUTPUT_WIRE_FORMAT } from "../../../src/persistence/worker/runtime/export-output-wire";
+import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 import { createStandardPersistenceFixture, STANDARD_STROKES } from "./fixtures";
 import {
   annotateDurations,
@@ -17,7 +18,7 @@ import {
   summarizeDurations,
 } from "./metrics";
 
-const AUTOSAVE_MAIN_THREAD_BUDGET_MS = 8;
+const AUTOSAVE_MAIN_THREAD_BUDGET_MS = INTERACTION_REFRESH_PROFILE.mainThreadP99Ms;
 const FULL_OUTPUT_BYTES = 48 * 1024 * 1024;
 const CLIPBOARD_OUTPUT_BYTES = 5 * 1024 * 1024 + 1;
 const WIRE_REFERENCE_BYTES = 8 * 1024 * 1024;

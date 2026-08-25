@@ -57,7 +57,7 @@ function setupRenderer(): {
 }
 
 describe("incremental live stroke renderer", () => {
-  it("retains finalized chunk nodes and replaces only the bounded tail", () => {
+  it("retains finalized chunk nodes and updates one bounded tail node", () => {
     const { document, group, instrumentation, renderer } = setupRenderer();
     const firstChunk = chunk("M 0 0 Z", "fill");
 
@@ -70,8 +70,10 @@ describe("incremental live stroke renderer", () => {
 
     expect(group.nodes).toHaveLength(2);
     expect(group.nodes[0]).toBe(stableChunkNode);
-    expect(group.nodes[1]).not.toBe(secondTail);
-    expect(firstTail?.parent).toBeUndefined();
+    expect(group.nodes[1]).toBe(secondTail);
+    expect(group.nodes[1]).toBe(firstTail);
+    expect(firstTail?.parent).toBe(group);
+    expect(firstTail?.attributes.get("d")).toBe("M 2 2 Z");
     expect(stableChunkNode?.ownerDocument).toBe(document);
     expect(Object.fromEntries(stableChunkNode?.attributes ?? [])).toMatchObject({
       class: "inkbook-theme-fill",
@@ -88,8 +90,8 @@ describe("incremental live stroke renderer", () => {
       liveMaximumChunkNodes: 1,
       liveMaximumTailNodes: 1,
       livePreviewUpdates: 3,
-      liveTailNodesCreated: 3,
-      liveTailNodesRemoved: 2,
+      liveTailNodesCreated: 1,
+      liveTailNodesRemoved: 0,
     });
 
     renderer.clear();
@@ -97,7 +99,7 @@ describe("incremental live stroke renderer", () => {
     expect(group.attributes.has("opacity")).toBe(false);
     expect(instrumentation).toMatchObject({
       liveChunkNodesRemoved: 1,
-      liveTailNodesRemoved: 3,
+      liveTailNodesRemoved: 1,
     });
   });
 });

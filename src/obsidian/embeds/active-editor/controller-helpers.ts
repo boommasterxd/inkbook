@@ -1,5 +1,5 @@
 import type { PageV1 } from "../../../domain/schema/public";
-import type { InkbookSettingsV1 } from "../../../domain/settings/types";
+import type { InkbookSettingsV2 } from "../../../domain/settings/types";
 import type { EditorTool, PointerSample } from "../../../editor/input/index";
 import type {
   BackgroundSpacing,
@@ -75,7 +75,7 @@ export function backgroundState(page: PageV1): {
   return { spacing, type: page.background.type };
 }
 
-export type BackgroundSpacingDefaults = InkbookSettingsV1["pageDefaults"]["backgroundSpacing"];
+export type BackgroundSpacingDefaults = InkbookSettingsV2["pageDefaults"]["backgroundSpacing"];
 
 function backgroundForType(
   type: BackgroundType,

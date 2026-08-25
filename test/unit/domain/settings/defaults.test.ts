@@ -13,17 +13,18 @@ describe("settings defaults", () => {
     const settings = createBuiltInSettings();
 
     expect(settings).toMatchObject({
-      version: 1,
+      version: 2,
       startupTool: "draw",
-      pageDefaults: {
-        backgroundType: "squares",
-        backgroundSpacing: { lines: 100, dots: 40, squares: 40 },
-        writingLineHeight: 100,
-        activeBufferLines: 3,
-        lockedBufferLines: 1,
-      },
-      filePlacement: { mode: "obsidian-attachment-folder" },
+      refreshRatePreference: "auto",
     });
+    expect(settings.pageDefaults).toEqual({
+      activeBufferLines: 3,
+      backgroundSpacing: { dots: 40, lines: 100, squares: 40 },
+      backgroundType: "squares",
+      lockedBufferLines: 1,
+      writingLineHeight: 100,
+    });
+    expect(settings.filePlacement).toEqual({ mode: "obsidian-attachment-folder" });
     expect(settings.toolDefaults.pen).toEqual({
       color: { type: "theme-text" },
       width: 8,

@@ -8,28 +8,24 @@ import type {
 } from "../../../src/domain/schema/public";
 import { ElementStore } from "../../../src/domain/store/public";
 import type { TimeSlicedSelectionCommitPreparation } from "../../../src/editor/selection/handle-session";
-import { findFrontmostHit, SelectionHandleSession } from "../../../src/editor/selection/public";
+import { SelectionHandleSession } from "../../../src/editor/selection/public";
+import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
 
-import { MeasuredSliceScheduler } from "../domain/domain-scenarios";
+import { MeasuredSliceScheduler, percentile } from "../domain/domain-scenarios";
 import { connectedLine } from "../../unit/domain/store/fixtures";
 import { maximumStroke } from "./maximum-stroke-fixture";
 import { createPassThroughMoveSession } from "./selection-session-fixture";
+import { INTERACTION_REFRESH_PROFILE, interactionP99 } from "../interaction-refresh-profile";
 import { timingBudget } from "../timing-budget";
 
 describe("selection hot paths", () => {
-  it("routes 488 maximum strokes through bounded commit slices and cached exact hit blocks", async () => {
+  it("routes 488 maximum strokes through the indexed hit path and bounded commit slices", async () => {
     const strokes = Array.from({ length: 488 }, (_, index) => maximumViewportStroke(index));
-    const candidates = strokes.map((element, rank) => ({
-      band: "content" as const,
-      element,
-      rank,
-    }));
     const session = movedSession(strokes);
 
     const decisionDurations = measureCommitDecisions(session);
-    findFrontmostHit({ x: 2_048, y: 50 }, "mouse", 1, candidates);
-    const hitDurations = measureDenseMisses(candidates);
-    const { maximumSlice, prepared } = await prepareInMeasuredSlices(session);
+    const hitDurations = measureIndexedMisses(strokes);
+    const { maximumSlice, prepared, sliceDurations } = await prepareInMeasuredSlices(session);
 
     expect(prepared.status).toBe("ready");
     if (prepared.status !== "ready") throw new Error("Expected an exact time-sliced commit.");
@@ -40,9 +36,18 @@ describe("selection hot paths", () => {
     }
     expect(first.points.slice(0, 3)).toEqual(new Float64Array([4, 103, 0.5]));
     expect(last.points.slice(-3)).toEqual(new Float64Array([11, 103.487, 0.5]));
-    expect(Math.max(...decisionDurations)).toBeLessThanOrEqual(timingBudget(8));
-    expect(Math.max(...hitDurations)).toBeLessThanOrEqual(timingBudget(8));
-    expect(maximumSlice).toBeLessThanOrEqual(timingBudget(16.7));
+    expect(interactionP99(decisionDurations)).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
+    expect(interactionP99(hitDurations)).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
+    expect(percentile(sliceDurations, 0.95)).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
+    expect(maximumSlice).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
+    );
   });
 
   it("bounds preparation for a near-maximum 19,929-endpoint selection fan-out", async () => {
@@ -52,9 +57,14 @@ describe("selection hot paths", () => {
     store.resetInstrumentation();
     const session = endpointSession(store, targetIds);
 
-    const previewStarted = performance.now();
+    const previewDurations = Array.from({ length: 120 }, () => {
+      const previewStarted = performance.now();
+      const preview = session.update({ x: 2, y: 3 });
+      const duration = performance.now() - previewStarted;
+      expect(preview).toMatchObject({ exactElements: [], exactPreviewTruncated: true });
+      return duration;
+    });
     const preview = session.update({ x: 2, y: 3 });
-    const previewDuration = performance.now() - previewStarted;
     expect(preview).toMatchObject({ exactElements: [], exactPreviewTruncated: true });
     expect(session.prepareCommit()).toEqual({ status: "time-sliced-required" });
 
@@ -73,8 +83,15 @@ describe("selection hot paths", () => {
       fullStoreScans: 0,
       reverseDependencyVisits: 19_929,
     });
-    expect(previewDuration).toBeLessThanOrEqual(timingBudget(8));
-    expect(scheduler.maxSliceDuration).toBeLessThanOrEqual(timingBudget(16.7));
+    expect(interactionP99(previewDurations)).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
+    expect(percentile(scheduler.sliceDurations, 0.95)).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
+    expect(scheduler.maxSliceDuration).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
+    );
   }, 30_000);
 });
 
@@ -86,7 +103,7 @@ function movedSession(strokes: readonly StrokeElementV1[]): SelectionHandleSessi
 
 function measureCommitDecisions(session: SelectionHandleSession): number[] {
   const durations: number[] = [];
-  for (let run = 0; run < 6; run += 1) {
+  for (let run = 0; run < 121; run += 1) {
     const started = performance.now();
     const decision = session.prepareCommit();
     const duration = performance.now() - started;
@@ -96,18 +113,20 @@ function measureCommitDecisions(session: SelectionHandleSession): number[] {
   return durations;
 }
 
-function measureDenseMisses(
-  candidates: readonly {
-    readonly band: "content";
-    readonly element: StrokeElementV1;
-    readonly rank: number;
-  }[],
-): number[] {
+function measureIndexedMisses(strokes: readonly StrokeElementV1[]): number[] {
+  const sceneStore = new ElementSceneStore(
+    new ElementStore(strokes.map((stroke) => ({ ...stroke, points: Array.from(stroke.points) }))),
+  );
   const durations: number[] = [];
-  for (let run = 0; run < 5; run += 1) {
-    const started = performance.now();
-    expect(findFrontmostHit({ x: 2_048, y: 50 }, "mouse", 1, candidates)).toBeNull();
-    durations.push(performance.now() - started);
+  try {
+    sceneStore.hit({ x: 2_048, y: 50 }, "mouse", 1);
+    for (let run = 0; run < 100; run += 1) {
+      const started = performance.now();
+      expect(sceneStore.hit({ x: 2_048, y: 50 }, "mouse", 1)).toBeNull();
+      durations.push(performance.now() - started);
+    }
+  } finally {
+    sceneStore.release();
   }
   return durations;
 }
@@ -115,18 +134,24 @@ function measureDenseMisses(
 async function prepareInMeasuredSlices(session: SelectionHandleSession): Promise<{
   readonly maximumSlice: number;
   readonly prepared: TimeSlicedSelectionCommitPreparation;
+  readonly sliceDurations: readonly number[];
 }> {
   let sliceStarted = performance.now();
   let maximumSlice = 0;
+  const sliceDurations: number[] = [];
   const prepared = await session.prepareCommitTimeSliced({
     shouldYield: () => true,
     yieldControl: async () => {
-      maximumSlice = Math.max(maximumSlice, performance.now() - sliceStarted);
+      const duration = performance.now() - sliceStarted;
+      sliceDurations.push(duration);
+      maximumSlice = Math.max(maximumSlice, duration);
       sliceStarted = performance.now();
     },
   });
-  maximumSlice = Math.max(maximumSlice, performance.now() - sliceStarted);
-  return { maximumSlice, prepared };
+  const duration = performance.now() - sliceStarted;
+  sliceDurations.push(duration);
+  maximumSlice = Math.max(maximumSlice, duration);
+  return { maximumSlice, prepared, sliceDurations };
 }
 
 function maximumEndpointFixture(): {

@@ -2,6 +2,7 @@ import { GestureController, type GesturePreviewStart } from "../../../editor/ges
 import * as EditorInput from "../../../editor/input/index";
 import { selectElement } from "../../../editor/selection/public";
 import type { SvgSceneRenderer } from "../../../rendering/scene/index";
+import type { InkbookEditorChromeProps } from "../../../rendering/ui/editor-chrome";
 import type { ToolbarAction, ToolbarLayoutStage, ToolbarState } from "../../../rendering/ui/index";
 import type { ContextMenuAction } from "../../menus/index";
 import {
@@ -16,7 +17,7 @@ import type { ActiveEditorActions } from "./controller-actions";
 import type { ActiveEditorControllerOptions } from "./controller-types";
 import type { CoalescedPointerInput } from "./coalesced-input";
 import { ActiveEditorBackgroundSession } from "./background-session";
-import { createChromeProps, overflowMenuState } from "./controller-chrome";
+import { createChromeCallbacks, createChromeProps, overflowMenuState } from "./controller-chrome";
 import { applyInputAction } from "./controller-dispatch";
 import type { ActiveEditorMenuController } from "./controller-menu";
 import {
@@ -37,7 +38,7 @@ import type { ActiveEditorResizeAnchor, ActiveEditorResizeUpdate } from "./layou
 import type { SynchronousClipboardData } from "./clipboard-reader";
 import { ActiveEditorKeyboardController } from "./controller-keyboard";
 import { ActiveEditorPointerController } from "./controller-pointer";
-import { ActiveEditorSelectionEdgeDrag } from "./controller-selection-edge";
+import { createActiveEditorSelectionEdgeDrag } from "./controller-selection-edge";
 import { ActiveEditorAvailability } from "./controller-availability";
 import { ActiveEditorChromeState } from "./controller-chrome-state";
 import { ActivePointerCaptureOwner } from "./pointer-capture";
@@ -47,6 +48,7 @@ export class ActiveEditorController {
   readonly #background: ActiveEditorBackgroundSession;
   readonly #captures: ActivePointerCaptureOwner;
   readonly #chromeState: ActiveEditorChromeState;
+  readonly #chromeCallbacks: InkbookEditorChromeProps["callbacks"];
   readonly #coalesced: CoalescedPointerInput;
   readonly #gestures: GestureController;
   readonly #handles: ActiveEditorHandleInteraction;
@@ -67,8 +69,11 @@ export class ActiveEditorController {
   readonly #renderIcon: ActiveEditorControllerOptions["renderIcon"];
   readonly #renderer: SvgSceneRenderer;
   readonly #sceneStore: ElementSceneStore;
+  readonly #sliceBudgetMs: () => number;
   #scrollOwner: BrowserScrollElement;
   readonly #styles: ActiveEditorStyleSession;
+  readonly #toolbarAction: InkbookEditorChromeProps["onToolbarAction"] = (action) =>
+    this.handleToolbarAction(action);
   readonly #selectionEdgeDrag: ActiveEditorControllerOptions["selectionEdgeDrag"];
   readonly #navigation: ActiveEditorNavigation;
   #selection: ReadonlySet<string> = new Set();
@@ -91,6 +96,7 @@ export class ActiveEditorController {
     this.#renderer = options.renderer;
     this.#captures = new ActivePointerCaptureOwner(options.renderer.inputSurface);
     this.#sceneStore = options.sceneStore;
+    this.#sliceBudgetMs = options.sliceBudgetMs ?? (() => 8);
     this.#scrollOwner = options.scrollOwner;
     this.#availability = new ActiveEditorAvailability({
       onDisabled: () => this.#resetForDisable(),
@@ -141,15 +147,12 @@ export class ActiveEditorController {
         this.#input = input;
       },
     });
-    this.#selectionEdgeDrag =
-      options.selectionEdgeDrag === undefined
-        ? undefined
-        : new ActiveEditorSelectionEdgeDrag({
-            lifecycle: options.selectionEdgeDrag,
-            navigation: this.#navigation,
-            ownerWindow,
-            scrollOwner: () => this.#scrollOwner,
-          });
+    this.#selectionEdgeDrag = createActiveEditorSelectionEdgeDrag({
+      lifecycle: options.selectionEdgeDrag,
+      navigation: this.#navigation,
+      ownerWindow,
+      scrollOwner: () => this.#scrollOwner,
+    });
     const interactions = createActiveEditorInteractions({
       controller: options,
       dispatchMove: (pointer) => this.#dispatch({ type: "pointer-move", ...pointer }),
@@ -172,31 +175,23 @@ export class ActiveEditorController {
     this.#keyboard = this.#createKeyboardController(options);
     this.#pointer = this.#createPointerController(ownerWindow);
     this.#gestures = this.#createGestureController();
+    this.#chromeCallbacks = createChromeCallbacks(
+      [this.#actions, this.#background, this.#chromeState, this.#styles],
+      [() => this.#input.activeTool, (tool) => this.#configureTool(tool)],
+    );
   }
   public chromeProps() {
     return createChromeProps({
       canvasInput: this.#renderer.inputSurface,
+      callbacks: this.#chromeCallbacks,
       layout: this.#chromeState.layout,
       leftHanded: this.#leftHanded,
-      onBackgroundSpacingChange: (spacing) => this.#background.changeSpacing(spacing),
-      onBackgroundTypeChange: (type) => this.#background.changeType(type),
-      onOverflowAction: (action) => {
-        this.#chromeState.setFlyout(null);
-        if (this.#actions.isAvailable(action)) this.#actions.execute(action);
-      },
-      onShapeChange: (shape) => this.#configureTool(this.#chromeState.selectShape(shape)),
-      onStyleChange: (id, value) => this.#styles.apply(this.#input.activeTool, id, value),
-      onToolbarAction: (action) => this.handleToolbarAction(action),
+      onToolbarAction: this.#toolbarAction,
       ownerDocument: this.#ownerWindow.document,
-      overflowMenu: overflowMenuState(
-        this.#actions.arrangeAvailability(),
-        this.#actions.isAvailable("erase-all"),
-        this.#selection.size > 0,
-      ),
+      overflowMenu: overflowMenuState(this.#actions, this.#selection.size > 0),
       page: this.#model.page,
       renderIcon: this.#renderIcon,
       selectedShape: this.#chromeState.selectedShape,
-      setFlyoutClosed: () => this.#chromeState.setFlyout(null),
       style: this.#styles.presentation(this.#input.activeTool),
       toolbarState: this.toolbarState(),
     });
@@ -338,6 +333,7 @@ export class ActiveEditorController {
         preparedHistory: this.#preparedHistory,
         renderer: this.#renderer,
         sceneStore: this.#sceneStore,
+        sliceBudgetMs: this.#sliceBudgetMs,
         selection: () => this.#selection,
         ...(this.#selectionEdgeDrag === undefined
           ? {}

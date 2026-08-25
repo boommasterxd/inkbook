@@ -1,7 +1,9 @@
 import { FILE_SCHEMA_LIMITS } from "../schema/constants";
 
 import { connectionReferences } from "./connections";
-import type { ElementRecord } from "./types";
+import type { ElementRecord, StoreSliceScheduler } from "./types";
+
+const MAX_RECORDS_PER_SLICE = 256;
 
 interface CapacityTotals {
   connectedEndpoints: number;
@@ -35,13 +37,52 @@ export class DocumentCapacity {
     for (const record of previous) applyRecord(totals, fanout, this.#fanout, record, -1);
     for (const record of next) applyRecord(totals, fanout, this.#fanout, record, 1);
     assertTotals(totals);
-    for (const count of fanout.values()) {
-      if (count > FILE_SCHEMA_LIMITS.connectedEndpointsPerTarget) {
-        throw new RangeError("The per-target connected-endpoint limit was exceeded.");
-      }
-      if (count < 0) throw new Error("Document capacity state is inconsistent.");
-    }
     return { consumed: false, fanout, generation: this.#generation, totals };
+  }
+
+  public async prepareTimeSliced(
+    previous: readonly ElementRecord[],
+    next: readonly ElementRecord[],
+    scheduler: StoreSliceScheduler,
+  ): Promise<{ readonly patch: DocumentCapacityPatch; readonly yields: number } | "cancelled"> {
+    const totals = { ...this.#totals };
+    const fanout = new Map<string, number>();
+    let recordsInSlice = 0;
+    let yields = 0;
+    for (const [records, direction] of [
+      [previous, -1],
+      [next, 1],
+    ] as const) {
+      for (const record of records) {
+        if (cancelled(scheduler)) return "cancelled";
+        applyRecord(totals, fanout, this.#fanout, record, direction);
+        recordsInSlice += 1;
+        if (recordsInSlice >= MAX_RECORDS_PER_SLICE || scheduler.shouldYield()) {
+          await scheduler.yieldControl();
+          if (cancelled(scheduler)) return "cancelled";
+          recordsInSlice = 0;
+          yields += 1;
+        }
+      }
+    }
+    assertTotals(totals);
+    return {
+      patch: { consumed: false, fanout, generation: this.#generation, totals },
+      yields,
+    };
+  }
+
+  public prepareUnchanged(): DocumentCapacityPatch {
+    return {
+      consumed: false,
+      fanout: new Map(),
+      generation: this.#generation,
+      totals: this.#totals,
+    };
+  }
+
+  public validateReplacementBounds(record: ElementRecord): void {
+    assertBounds(record);
   }
 
   public commit(patch: DocumentCapacityPatch): void {
@@ -56,6 +97,10 @@ export class DocumentCapacity {
     }
     this.#generation += 1;
   }
+}
+
+function cancelled(scheduler: StoreSliceScheduler): boolean {
+  return scheduler.isCancelled?.() ?? false;
 }
 
 function applyRecord(
@@ -75,7 +120,9 @@ function applyRecord(
   totals.connectedEndpoints += direction * connections.length;
   for (const { targetId } of connections) {
     const count = fanoutPatch.get(targetId) ?? currentFanout.get(targetId) ?? 0;
-    fanoutPatch.set(targetId, count + direction);
+    const nextCount = count + direction;
+    assertFanoutCount(nextCount);
+    fanoutPatch.set(targetId, nextCount);
   }
 }
 
@@ -102,4 +149,11 @@ function assertTotals(totals: CapacityTotals): void {
   ) {
     throw new RangeError("The document connected-endpoint limit was exceeded.");
   }
+}
+
+function assertFanoutCount(count: number): void {
+  if (count > FILE_SCHEMA_LIMITS.connectedEndpointsPerTarget) {
+    throw new RangeError("The per-target connected-endpoint limit was exceeded.");
+  }
+  if (count < 0) throw new Error("Document capacity state is inconsistent.");
 }
