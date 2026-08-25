@@ -1,0 +1,34 @@
+name: Secret scan
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: gitleaks-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run gitleaks
+        shell: bash
+        run: |
+          version=$(jq -r '.version' .gitleaks-version)
+          checksum=$(jq -r '.sha256' .gitleaks-version)
+          archive="$RUNNER_TEMP/gitleaks.tar.gz"
+          binary="$RUNNER_TEMP/gitleaks"
+          curl --fail --location --retry 3 --silent --show-error \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz" \
+            --output "$archive"
+          echo "${checksum}  ${archive}" | sha256sum --check --strict
+          tar --extract --gzip --file "$archive" --directory "$RUNNER_TEMP" gitleaks
+          "$binary" dir --no-banner --redact --exit-code 1 --verbose .
