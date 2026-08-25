@@ -5,7 +5,7 @@ vi.mock("../../../../src/rendering/ui/editor-chrome-source", () => ({
     "<Ah!!!!!9-SOx5;6=n}85SXsqn,*>3h^H>}Exb9V{|jvA7Y:d=.UqU,ZbU-W<0z#{mr4#O5Q(g)*!!!!",
 }));
 
-import type { InkbookEditorChromeProps } from "../../../../src/rendering/ui/editor-chrome";
+import { createEditorChromeProps } from "../../../fixtures/editor-chrome";
 import {
   beginEditorChromeMount,
   EditorChromeModuleLoader,
@@ -57,45 +57,7 @@ function createWindowFixture(name: string): WindowFixture {
 }
 
 function createProps(ownerDocument: Document, layout: "scrollable" | "wide" = "wide") {
-  return {
-    background: { spacing: null, type: "none" },
-    callbacks: {
-      onBackgroundSpacingChange: vi.fn(),
-      onBackgroundTypeChange: vi.fn(),
-      onFlyoutClose: vi.fn(),
-      onOverflowAction: vi.fn(),
-      onShapeChange: vi.fn(),
-      onStyleChange: vi.fn(),
-    },
-    canvasInput: null,
-    layout,
-    onToolbarAction: vi.fn(),
-    ownerDocument,
-    overflowMenu: {
-      arrange: {
-        "bring-forward": false,
-        "bring-to-front": false,
-        "send-backward": false,
-        "send-to-back": false,
-      },
-      canEraseAll: false,
-      hasSelection: false,
-    },
-    renderIcon: vi.fn(),
-    selectedShape: "line",
-    styleControls: [],
-    styleIcon: { fillColor: null, fillOpacity: 0, outlineColor: null, outlineStyle: "solid" },
-    toolbarState: {
-      activeTool: "draw",
-      canPaste: false,
-      canRedo: false,
-      canUndo: false,
-      fingerDrawingAvailable: false,
-      fingerDrawingEnabled: false,
-      hasSelection: false,
-      openFlyout: null,
-    },
-  } satisfies InkbookEditorChromeProps;
+  return { ...createEditorChromeProps(ownerDocument), layout };
 }
 
 function createContainer(ownerDocument: Document): HTMLElement {

@@ -95,12 +95,21 @@ export class SceneContentRenderer {
   }
 
   public markOrder(id: string): void {
+    this.markOrderDirty(id);
+    this.#reconciler.cancel();
+  }
+
+  public markOrders(ids: readonly string[]): void {
+    for (const id of ids) this.markOrderDirty(id);
+    this.#reconciler.cancel();
+  }
+
+  private markOrderDirty(id: string): void {
     const record = this.#store.get(id);
     if (record === undefined) {
       this.#orderDirty.content.add(id);
       this.#orderDirty.highlight.add(id);
     } else this.#orderDirty[record.band].add(id);
-    this.#reconciler.cancel();
   }
 
   public materializePreviewGeometry(previews: ReadonlyMap<string, PreviewTransform>): void {

@@ -7,6 +7,24 @@ import { domRect } from "../../../fixtures/obsidian/active-editor";
 import { FakeClassList } from "../../../fixtures/obsidian/class-list";
 
 describe("active editor responsive layout", () => {
+  it("skips toolbar reads for repeated chrome keys and non-width content updates", () => {
+    const fixture = responsiveFixture();
+    fixture.layout.chromeMounted();
+    fixture.flushFrames();
+    const initialReads = fixture.toolbarReads();
+
+    fixture.layout.chromeChanged("wide:right:no-finger:no-selection:no-paste");
+    fixture.flushFrames();
+    const keyedReads = fixture.toolbarReads();
+    expect(keyedReads).toBeGreaterThan(initialReads);
+
+    fixture.layout.chromeChanged("wide:right:no-finger:no-selection:no-paste");
+    fixture.layout.contentChanged();
+    fixture.flushFrames();
+    expect(fixture.toolbarReads()).toBe(keyedReads);
+    fixture.layout.dispose();
+  });
+
   it("remeasures the toolbar directly when its geometry changes at a fixed page width", () => {
     const fixture = responsiveFixture();
     fixture.layout.chromeMounted();
@@ -44,9 +62,11 @@ function responsiveFixture() {
   let frameTime = 0;
   const callbacks: ResponsiveCallbacks = {};
   let contextWidth = 0;
+  let toolbarReads = 0;
   let toolbarWidth = 554;
   const track = {
     get scrollWidth() {
+      toolbarReads += 1;
       return toolbarWidth;
     },
   } as unknown as HTMLElement;
@@ -129,6 +149,7 @@ function responsiveFixture() {
       callbacks.mutation?.([], {} as MutationObserver);
     },
     toolbar: () => toolbar,
+    toolbarReads: () => toolbarReads,
     triggerResize: () => callbacks.resize?.([], {} as ResizeObserver),
   };
 }

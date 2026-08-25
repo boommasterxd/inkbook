@@ -1,202 +1,19 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { derivePageExtent, PAGE_WIDTH } from "../../../../src/domain/geometry/public";
-import type { PageV1 } from "../../../../src/domain/schema/public";
-import {
-  ActiveEditorLayout,
-  type ActiveEditorResizeUpdate,
-} from "../../../../src/obsidian/embeds/active-editor/layout";
-import type { SvgSceneRenderer } from "../../../../src/rendering/scene/index";
-import { domRect } from "../../../fixtures/obsidian/active-editor";
-import { FakeClassList } from "../../../fixtures/obsidian/class-list";
-class ScheduledWork {
-  readonly frames = new Map<number, FrameRequestCallback>();
-  readonly motionQuery = new MotionQuery();
-  #next = 1;
-  #time = 0;
-
-  readonly window = {
-    cancelAnimationFrame: (id: number): void => void this.frames.delete(id),
-    matchMedia: () => this.motionQuery,
-    requestAnimationFrame: (callback: FrameRequestCallback): number => {
-      const id = this.#next++;
-      this.frames.set(id, callback);
-      return id;
-    },
-  };
-
-  flushFrame(): void {
-    const entry = this.frames.entries().next().value;
-    if (entry === undefined) throw new Error("No animation frame is pending.");
-    this.frames.delete(entry[0]);
-    this.#time += 16;
-    entry[1](this.#time);
-  }
-
-  flushFrames(): void {
-    while (this.frames.size > 0) this.flushFrame();
-  }
-}
-class MotionQuery {
-  matches = false;
-  readonly #listeners = new Set<(event: MediaQueryListEvent) => void>();
-
-  addEventListener(_type: "change", listener: (event: MediaQueryListEvent) => void): void {
-    this.#listeners.add(listener);
-  }
-
-  removeEventListener(_type: "change", listener: (event: MediaQueryListEvent) => void): void {
-    this.#listeners.delete(listener);
-  }
-
-  setMatches(matches: boolean): void {
-    this.matches = matches;
-    for (const listener of this.#listeners) listener({ matches } as MediaQueryListEvent);
-  }
-}
-
-function page(): PageV1 {
-  return {
-    activeBufferLines: 3,
-    background: { type: "lines", spacing: 100 },
-    innerWidth: 2000,
-    lockedBufferLines: 1,
-    margin: 24.3,
-    writingLineHeight: 100,
-  };
-}
-
-function harness(motion: "full" | "reduced" | "system" = "full", horizontalInset = 0) {
-  const work = new ScheduledWork();
-  let chromeMutation: MutationCallback | undefined;
-  const rect = { height: 0, width: 1_000 };
-  const styleProperties = new Map<string, string>();
-  const style = layoutStyle(rect, styleProperties);
-  const ownerDocument = { defaultView: work.window };
-  const classList = new FakeClassList();
-  Object.assign(work.window, {
-    getComputedStyle: () => computedStyle(horizontalInset),
-    MutationObserver: class {
-      public constructor(callback: MutationCallback) {
-        chromeMutation = callback;
-      }
-
-      public disconnect(): void {}
-
-      public observe(): void {}
-    },
-  });
-  const container = {
-    classList,
-    getBoundingClientRect: () =>
-      domRect({ height: rect.height, left: 0, top: 0, width: rect.width }),
-    ownerDocument,
-    style,
-  } as unknown as HTMLElement;
-  const invalidateLayout = vi.fn();
-  let scenePending = false;
-  let pageChangesBecomePending = false;
-  let rendererPageHeight: number | undefined;
-  const setPage = vi.fn((_page: PageV1, height?: number) => {
-    if (height === undefined || height === rendererPageHeight) return;
-    rendererPageHeight = height;
-    if (pageChangesBecomePending) scenePending = true;
-  });
-  const renderer = {
-    get hasPendingSceneCommit() {
-      return scenePending;
-    },
-    invalidateLayout,
-    setCamera: vi.fn(),
-    setPage,
-  } as unknown as SvgSceneRenderer;
-  const onLayout = vi.fn();
-  const onResize = vi.fn<(update: ActiveEditorResizeUpdate) => void>();
-  const onZoom = vi.fn();
-  let maximumBottom: number | undefined;
-  let pageAvailable = true;
-  const readPage = vi.fn(() => {
-    if (!pageAvailable) throw new Error("The document page is unavailable.");
-    return page();
-  });
-  const layout = new ActiveEditorLayout({
-    chromeHost: { querySelector: () => null } as unknown as HTMLElement,
-    container,
-    onLayout,
-    onReady: vi.fn(),
-    onResize,
-    onZoom,
-    page: readPage,
-    readResizeAnchor: () => ({
-      anchorViewportY: 250,
-      embedTopInScrollContent: 200,
-      oldCameraX: -400,
-      oldRenderedContainerHeight: rect.height,
-      oldScrollTop: 500,
-      scrollBounds: { min: 0, max: 5_000 },
-      viewportWidth: rect.width - horizontalInset,
-    }),
-    renderer,
-    root: { dataset: { inkbookMotion: motion }, ownerDocument } as unknown as HTMLElement,
-    storeMaximumBottom: () => maximumBottom,
-  });
-  return {
-    layout,
-    classList,
-    invalidateLayout,
-    onLayout,
-    onResize,
-    onZoom,
-    rect,
-    setMaximumBottom: (value: number | undefined) => {
-      maximumBottom = value;
-    },
-    setPage,
-    setPageAvailable: (available: boolean) => {
-      pageAvailable = available;
-    },
-    setPageChangesBecomePending: (enabled: boolean) => {
-      pageChangesBecomePending = enabled;
-    },
-    setScenePending: (pending: boolean) => {
-      scenePending = pending;
-    },
-    styleProperties,
-    triggerChromeMutation: () => chromeMutation?.([], {} as MutationObserver),
-    work,
-  };
-}
-
-function layoutStyle(
-  rect: { height: number },
-  properties: Map<string, string>,
-): CSSStyleDeclaration {
-  return {
-    get blockSize() {
-      return `${String(rect.height)}px`;
-    },
-    set blockSize(value: string) {
-      rect.height = Number.parseFloat(value);
-    },
-    removeProperty: (name: string) => void properties.delete(name),
-    setProperty: (name: string, value: string) => void properties.set(name, value),
-  } as unknown as CSSStyleDeclaration;
-}
-
-function computedStyle(horizontalInset: number): Partial<CSSStyleDeclaration> {
-  return {
-    borderBottomWidth: "0px",
-    borderLeftWidth: horizontalInset > 0 ? "2px" : "0px",
-    borderRightWidth: horizontalInset > 0 ? "2px" : "0px",
-    borderTopWidth: "0px",
-    paddingBottom: "0px",
-    paddingLeft: horizontalInset > 0 ? `${String(horizontalInset / 2 - 2)}px` : "0px",
-    paddingRight: horizontalInset > 0 ? `${String(horizontalInset / 2 - 2)}px` : "0px",
-    paddingTop: "0px",
-  };
-}
+import { layoutHarness as harness, page } from "./active-editor-layout-fixture";
 
 describe("active editor layout integration", () => {
+  it("requests coverage refresh when the observed presentation reveals more canvas", () => {
+    const test = harness("full");
+    test.invalidateLayout.mockClear();
+
+    test.triggerResize();
+
+    expect(test.invalidateLayout).toHaveBeenCalledWith("coverage");
+    test.layout.dispose();
+  });
+
   it("derives width fit from the content box when border and padding are present", () => {
     const test = harness("full", 24);
     test.rect.width = 1_024;
@@ -328,6 +145,28 @@ describe("active editor layout motion", () => {
     expect(test.styleProperties.has("--inkbook-page-height-envelope-block-size")).toBe(false);
     test.layout.dispose();
   });
+
+  it("retains the exact aligned scene height when CSS pixels round before shrink", () => {
+    const test = harness("full");
+    test.layout.chromeMounted();
+    test.work.flushFrames();
+    const grownPageHeight = derivePageExtent(page(), 500).activeHeight;
+    const zoom = 1_000 / PAGE_WIDTH;
+    test.setMaximumBottom(500);
+    test.layout.contentChanged();
+    test.work.flushFrames();
+    expect(test.setPage).toHaveBeenLastCalledWith(page(), grownPageHeight);
+
+    test.rect.height = Math.floor(test.rect.height * 64) / 64;
+    test.setPage.mockClear();
+    test.setMaximumBottom(undefined);
+    test.layout.contentChanged();
+    test.work.flushFrame();
+
+    expect(test.setPage).toHaveBeenCalledWith(page(), grownPageHeight);
+    expect(test.setPage).not.toHaveBeenCalledWith(page(), test.rect.height / zoom);
+    test.layout.dispose();
+  });
 });
 
 describe("active editor pending-scene layout motion", () => {
@@ -422,9 +261,58 @@ describe("active editor layout motion preferences", () => {
 
   it("finishes automatic height motion before a new input gesture proceeds", () => {
     const test = runningHeightTransition("full");
+    const targetPageHeight = derivePageExtent(page(), null).activeHeight + 100;
+    const zoom = 1_000 / PAGE_WIDTH;
+
+    test.work.flushFrame();
+    test.work.flushFrame();
+    expect(test.rect.height).toBeGreaterThan(derivePageExtent(page(), null).activeHeight * zoom);
+    expect(test.rect.height).toBeLessThan(targetPageHeight * zoom);
 
     test.layout.interruptForInput();
 
+    expectSettledTransition(test, targetPageHeight, zoom);
+  });
+});
+
+describe("active editor interrupted height motion", () => {
+  it("settles an interpolated page height before applying a zoom frame", () => {
+    const test = runningHeightTransition("full");
+    const targetPageHeight = derivePageExtent(page(), null).activeHeight + 100;
+    const fitZoom = 1_000 / PAGE_WIDTH;
+    const zoom = fitZoom * 1.5;
+
+    test.work.flushFrame();
+    test.work.flushFrame();
+    test.layout.applyZoom({ blockSize: targetPageHeight * zoom, zoom });
+
+    expectSettledTransition(test, targetPageHeight, zoom);
+  });
+
+  it("keeps deletion-driven shrinkage on an aligned page height when input interrupts it", () => {
+    const test = harness("full");
+    const initialPageHeight = derivePageExtent(page(), null).activeHeight;
+    const grownPageHeight = derivePageExtent(page(), 500).activeHeight;
+    const zoom = 1_000 / PAGE_WIDTH;
+    test.layout.chromeMounted();
+    test.work.flushFrames();
+    test.setMaximumBottom(500);
+    test.layout.contentChanged();
+    test.work.flushFrames();
+    expect(test.rect.height).toBeCloseTo(grownPageHeight * zoom);
+
+    test.setMaximumBottom(undefined);
+    test.layout.contentChanged();
+    test.work.flushFrame();
+    test.work.flushFrame();
+    test.work.flushFrame();
+    expect(test.rect.height).toBeGreaterThan(initialPageHeight * zoom);
+    expect(test.rect.height).toBeLessThan(grownPageHeight * zoom);
+
+    test.layout.interruptForInput();
+
+    expect(test.setPage).toHaveBeenLastCalledWith(page(), initialPageHeight);
+    expect(test.rect.height).toBeCloseTo(initialPageHeight * zoom);
     expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(false);
     test.layout.dispose();
   });
@@ -443,6 +331,7 @@ function exerciseGrowth(
   test: ReturnType<typeof harness>,
   sizes: ReturnType<typeof pageTransitionSizes>,
 ): void {
+  test.invalidateLayout.mockClear();
   test.setScenePending(true);
   test.setMaximumBottom(500);
   test.layout.contentChanged();
@@ -463,12 +352,15 @@ function exerciseGrowth(
   expect(test.rect.height).toBeLessThan(sizes.grownPageHeight * sizes.zoom);
   test.work.flushFrames();
   expect(test.rect.height).toBeCloseTo(sizes.grownPageHeight * sizes.zoom);
+  expect(test.invalidateLayout).toHaveBeenCalledWith("coverage");
+  expect(test.invalidateLayout).not.toHaveBeenCalledWith("clip");
 }
 
 function exerciseShrink(
   test: ReturnType<typeof harness>,
   sizes: ReturnType<typeof pageTransitionSizes>,
 ): void {
+  test.invalidateLayout.mockClear();
   test.setPageChangesBecomePending(true);
   test.setMaximumBottom(undefined);
   test.layout.contentChanged();
@@ -482,10 +374,13 @@ function exerciseShrink(
   expect(test.rect.height).toBeGreaterThan(sizes.initialPageHeight * sizes.zoom);
   test.work.flushFrames();
   expect(test.setPage).toHaveBeenLastCalledWith(page(), sizes.initialPageHeight);
-  expect(test.rect.height).toBeCloseTo(sizes.initialHeight);
+  expect(test.rect.height).toBeGreaterThan(sizes.initialHeight);
   expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(true);
   test.setScenePending(false);
   test.layout.sceneCommitted();
+  expect(test.rect.height).toBeCloseTo(sizes.initialHeight);
+  expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(false);
+  expect(test.invalidateLayout).toHaveBeenCalledWith("clip");
 }
 
 function runningHeightTransition(motion: "full" | "system") {
@@ -497,4 +392,15 @@ function runningHeightTransition(motion: "full" | "system") {
   expect(test.work.frames.size).toBe(1);
   expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(true);
   return test;
+}
+
+function expectSettledTransition(
+  test: ReturnType<typeof harness>,
+  targetPageHeight: number,
+  zoom: number,
+): void {
+  expect(test.setPage).toHaveBeenLastCalledWith(page(), targetPageHeight);
+  expect(test.rect.height).toBeCloseTo(targetPageHeight * zoom);
+  expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(false);
+  test.layout.dispose();
 }

@@ -14,7 +14,22 @@ function createApp() {
   const vaultEvents = new Map<string, (file: TFile) => void>();
   const workspaceEvents = new Map<string, (...arguments_: never[]) => void>();
   let markLayoutReady: (() => void) | undefined;
-  const ownerWindow = { closed: false } as Window;
+  let frameTimestamp = 0;
+  const ownerDocument = {
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    visibilityState: "visible",
+  } as unknown as Document;
+  const ownerWindow = {
+    cancelAnimationFrame: vi.fn(),
+    closed: false,
+    document: ownerDocument,
+    requestAnimationFrame: (callback: FrameRequestCallback) => {
+      frameTimestamp += 1_000 / 120;
+      callback(frameTimestamp);
+      return frameTimestamp;
+    },
+  } as unknown as Window;
   const containerEl = {
     ownerDocument: { defaultView: ownerWindow },
   } as unknown as HTMLElement;

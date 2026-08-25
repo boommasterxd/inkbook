@@ -104,6 +104,7 @@ describe("live stroke builder", () => {
     const commit = builder.finish();
 
     expect(commit.points).toHaveLength(4096 * 3);
+    expect(commit.geometry).toEqual(onePassPath(commit.points, penStyle));
     expect(commit.instrumentation.maximumTailSamples).toBeLessThanOrEqual(16);
     expect(commit.instrumentation.maximumFinalizedChunkSamples).toBeLessThanOrEqual(16);
     expect(commit.instrumentation.retainedSamples).toBe(4096);
@@ -189,6 +190,26 @@ describe("live stroke preview geometry", () => {
       expect(chunk.geometry.d).not.toContain("A");
     }
     expect(preview.tail.geometry.d.match(/A/g)).toHaveLength(1);
+  });
+
+  it("falls back to exact one-pass pressure geometry for repeated smoothed centers", () => {
+    const builder = new LiveStrokeBuilder({
+      input: { pressureSource: "pen", zoom: 1 },
+      style: penStyle,
+    });
+    for (let index = 0; index < 80; index += 1) {
+      builder.append({
+        pressure: 0.5,
+        time: index,
+        x: index % 2,
+        y: 0,
+      });
+    }
+
+    const commit = builder.finish();
+
+    expect(commit.geometry).toEqual(onePassPath(commit.points, penStyle));
+    expect(commit.instrumentation.commitBuilds).toBe(1);
   });
 });
 

@@ -1,6 +1,6 @@
 import { Notice, type FileManager, type Vault } from "obsidian";
 
-import type { InkbookDeviceSettingsV1, InkbookSettingsV1 } from "../../domain/settings/types";
+import type { InkbookDeviceSettingsV1, InkbookSettingsV2 } from "../../domain/settings/types";
 import type { PresentationLifecyclePort } from "../../editor/session/session-port";
 import { WorkspaceEditorCoordinator } from "../../editor/session/workspace-editor-coordinator";
 import type { AttachmentIdentity } from "../../editor/session/session-state";
@@ -8,7 +8,12 @@ import type { ColorSchemeBroadcaster } from "../theme/color-scheme";
 import type { InkbookCommandAction, ObsidianEmbedActions } from "../commands";
 import { ActiveInkbookScene } from "./active-scene";
 import type { ActiveEditorViewState } from "./active-editor/navigation";
-import { isLiveOwnerWindow, OwnerWindowRegistry } from "./owner-window-registry";
+import {
+  OwnerWindowRegistry,
+  pruneOwnerWindowRegistry,
+  resolveFallbackWindow,
+  resolvePresentationWindow,
+} from "./owner-window-registry";
 import {
   presentationAttachmentKey,
   presentationPreviewOptions,
@@ -31,6 +36,7 @@ import {
 } from "./recovery-notice";
 import { PresentationOperationFeedback } from "./presentation-operation-feedback";
 import type { PresentationOperationFeedbackHandle } from "./presentation-operation-feedback";
+import { WorkspaceRefreshProfiles } from "./workspace-refresh-profiles";
 
 export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly #coordinator: WorkspaceEditorCoordinator;
@@ -41,11 +47,12 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly #lifecycle: WorkspaceRuntimeLifecycle;
   readonly #ownerWindows = new OwnerWindowRegistry();
   readonly #mounted = new Map<string, WorkspaceMountedPresentation>();
+  readonly refreshRateProfiles: WorkspaceRefreshProfiles;
   readonly #scheme: ColorSchemeBroadcaster;
   readonly #sessions: VaultDocumentSessionFactory;
   readonly #settings: () => {
     readonly device: InkbookDeviceSettingsV1;
-    readonly vault: InkbookSettingsV1;
+    readonly vault: InkbookSettingsV2;
   };
   readonly #viewState = new Map<string, ActiveEditorViewState>();
 
@@ -55,7 +62,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     scheme: ColorSchemeBroadcaster,
     settings: () => {
       readonly device: InkbookDeviceSettingsV1;
-      readonly vault: InkbookSettingsV1;
+      readonly vault: InkbookSettingsV2;
     },
     embedActions: ObsidianEmbedActions,
     fallbackOwnerWindow: () => Window | undefined,
@@ -63,6 +70,9 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     this.#embedActions = embedActions;
     this.#fallbackOwnerWindow = fallbackOwnerWindow;
     this.#scheme = scheme;
+    this.#settings = settings;
+    this.refreshRateProfiles = new WorkspaceRefreshProfiles(settings().vault.refreshRatePreference);
+    this.refreshRateProfiles.observeDefault(this.#fallbackOwnerWindow());
     this.#lifecycle = new WorkspaceRuntimeLifecycle({
       activate: (attachment, attempt) => this.#activate(attachment, attempt),
       fallbackWindow: () => this.#fallbackWindow(),
@@ -78,12 +88,12 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       createWorkspaceDocumentRuntimes({
         fallbackWindow: () => this.#fallbackWindow(),
         owningWindow: (documentId) => this.#owningWindow(documentId),
+        sliceBudgetMs: (ownerWindow) => this.refreshRateProfiles.sliceBudgetMs(ownerWindow),
       }),
       {
         persisted: (event) => this.#lifecycle.handlePersisted(event),
       },
     );
-    this.#settings = settings;
     const presentations: PresentationLifecyclePort = {
       cancelGesture: (attachment) =>
         this.#mounted.get(presentationAttachmentKey(attachment))?.scene?.disableInput(),
@@ -122,6 +132,11 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       scene: undefined,
     });
     this.#ownerWindows.observe(attachment.documentId, attachment.root.ownerDocument.defaultView);
+    this.refreshRateProfiles.acquire(
+      key,
+      attachment.root.ownerDocument.defaultView,
+      attachment.root.ownerDocument,
+    );
     attachment.root.dataset.inkbookState = "locked";
     this.#coordinator.mountAttachment(attachment);
     this.#lifecycle.continueAutoActivation(attachment);
@@ -173,15 +188,9 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
           history: editorContext.history,
           ...(initialViewState === undefined ? {} : { initialViewState }),
           model: editorContext.model,
-          onLock: () => {
-            this.lockActivePresentation();
-          },
-          onNotice: (message) => {
-            new Notice(message);
-          },
-          onCopyEmbed: () => {
-            void copyWorkspaceEmbed(this.#embedActions, attachment.embedReference);
-          },
+          onLock: () => this.lockActivePresentation(),
+          onNotice: (message) => void new Notice(message),
+          onCopyEmbed: () => void copyWorkspaceEmbed(this.#embedActions, attachment.embedReference),
           onDeleteEmbed: () => {
             const invokingScene = mounted.scene;
             if (invokingScene === undefined) return;
@@ -198,6 +207,8 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
             this.#lifecycle.markFirstStroke(attachment.documentId);
           },
           root: attachment.root,
+          sliceBudgetMs: () =>
+            this.refreshRateProfiles.sliceBudgetMs(attachment.root.ownerDocument.defaultView),
           ...presentationPreviewOptions(attachment),
           scheme: initialScheme,
           scrollOwner: attachment.scrollOwner,
@@ -235,8 +246,13 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     this.#coordinator.detachAttachment(attachment);
     this.#releaseScene(attachment);
     this.#mounted.delete(presentationAttachmentKey(attachment));
+    this.refreshRateProfiles.release(presentationAttachmentKey(attachment));
     this.#lifecycle.detachAutoActivation(attachment);
-    this.#pruneOwnerWindows();
+    pruneOwnerWindowRegistry(
+      this.#ownerWindows,
+      this.#mounted.values(),
+      this.#coordinator.getSnapshot().current?.documentId,
+    );
   }
   hasActivePresentation(): boolean {
     return this.#coordinator.getSnapshot().current?.phase === "active";
@@ -262,6 +278,11 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   updateDeviceSettings(settings: InkbookDeviceSettingsV1): void {
     if (this.#disposed) return;
     for (const mounted of this.#mounted.values()) mounted.scene?.updateDeviceSettings(settings);
+  }
+
+  updateVaultSettings(settings: InkbookSettingsV2): void {
+    if (this.#disposed) return;
+    this.refreshRateProfiles.setPreference(settings.refreshRatePreference);
   }
 
   queueAutoActivation(
@@ -304,6 +325,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       mounted.attachment.root.dataset.inkbookState = "locked";
     }
     this.#mounted.clear();
+    this.refreshRateProfiles.dispose();
     this.#viewState.clear();
     this.#ownerWindows.clear();
   }
@@ -457,11 +479,8 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   }
 
   #owningWindow(documentId: string): Window {
-    for (const mounted of this.#mounted.values()) {
-      if (mounted.attachment.documentId !== documentId) continue;
-      const owningWindow = mounted.attachment.root.ownerDocument.defaultView ?? undefined;
-      if (isLiveOwnerWindow(owningWindow)) return owningWindow;
-    }
+    const mountedWindow = resolvePresentationWindow(documentId, this.#mounted.values());
+    if (mountedWindow !== undefined) return mountedWindow;
     const leasedWindow = this.#ownerWindows.resolve(documentId);
     if (leasedWindow !== undefined) return leasedWindow;
     const fallbackWindow = this.#fallbackWindow();
@@ -470,31 +489,11 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   }
 
   #fallbackWindow(): Window | undefined {
-    const current = this.#coordinator.getSnapshot().current;
-    if (current !== undefined) {
-      for (const mounted of this.#mounted.values()) {
-        if (mounted.attachment.documentId !== current.documentId) continue;
-        const owningWindow = mounted.attachment.root.ownerDocument.defaultView ?? undefined;
-        if (isLiveOwnerWindow(owningWindow)) return owningWindow;
-      }
-    }
-    if (current !== undefined) {
-      const leasedWindow = this.#ownerWindows.resolve(current.documentId);
-      if (leasedWindow !== undefined) return leasedWindow;
-    }
-    for (const mounted of this.#mounted.values()) {
-      const ownerWindow = mounted.attachment.root.ownerDocument.defaultView ?? undefined;
-      if (isLiveOwnerWindow(ownerWindow)) return ownerWindow;
-    }
-    const fallbackWindow = this.#fallbackOwnerWindow();
-    return isLiveOwnerWindow(fallbackWindow) ? fallbackWindow : undefined;
-  }
-
-  #pruneOwnerWindows(): void {
-    const retained = new Set<string>();
-    for (const mounted of this.#mounted.values()) retained.add(mounted.attachment.documentId);
-    const current = this.#coordinator.getSnapshot().current;
-    if (current !== undefined) retained.add(current.documentId);
-    this.#ownerWindows.prune(retained);
+    return resolveFallbackWindow(
+      this.#coordinator.getSnapshot().current?.documentId,
+      this.#mounted.values(),
+      this.#ownerWindows,
+      this.#fallbackOwnerWindow,
+    );
   }
 }

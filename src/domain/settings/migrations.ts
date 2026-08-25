@@ -1,4 +1,9 @@
-import type { SettingsDiagnostic, SettingsLoadResult } from "./types";
+import type {
+  InkbookSettingsV1,
+  InkbookSettingsV2,
+  SettingsDiagnostic,
+  SettingsLoadResult,
+} from "./types";
 
 interface VersionedValue {
   readonly version: unknown;
@@ -22,4 +27,26 @@ export function migrateSettingsToV1(input: unknown): SettingsLoadResult<unknown>
     path: "version",
   };
   return { value: undefined, diagnostics: [diagnostic] };
+}
+
+/** Adds the refresh-rate preference while preserving every version-one vault setting. */
+export function migrateVaultSettingsToV2(input: unknown): SettingsLoadResult<unknown> {
+  if (!isVersionedValue(input)) return { value: input, diagnostics: [] };
+  if (input.version === 2) return { value: input, diagnostics: [] };
+  if (input.version === 1) {
+    const previous = input as InkbookSettingsV1;
+    const migrated: InkbookSettingsV2 = {
+      ...previous,
+      version: 2,
+      refreshRatePreference: "auto",
+    };
+    return {
+      value: migrated,
+      diagnostics: [],
+    };
+  }
+  return {
+    value: undefined,
+    diagnostics: [{ code: "settings.unsupported-version", path: "version" }],
+  };
 }

@@ -56,6 +56,39 @@ describe("DocumentCapacity exact aggregate limits", () => {
     expect(() => capacity.prepare([], [excessive])).toThrow(RangeError);
     expect(() => capacity.commit(capacity.prepare([exact], [rectangleRecord(2)]))).not.toThrow();
   });
+
+  it("time-slices fanout patches and leaves cancelled preparation uncommitted", async () => {
+    const capacity = new DocumentCapacity();
+    const previous = Array.from({ length: 512 }, () => linearRecord("old-target"));
+    const next = Array.from({ length: 512 }, () => linearRecord("new-target"));
+    capacity.commit(capacity.prepare([], previous));
+    let yields = 0;
+
+    const cancelled = await capacity.prepareTimeSliced(previous, next, {
+      isCancelled: () => yields === 2,
+      shouldYield: () => false,
+      yieldControl: async () => {
+        yields += 1;
+      },
+    });
+
+    expect(cancelled).toBe("cancelled");
+    expect(() => capacity.prepare([], [linearRecord("old-target")])).toThrow(RangeError);
+    expect(() => capacity.prepare([], [linearRecord("new-target")])).not.toThrow();
+  });
+
+  it("rejects a time-sliced patch made stale by another capacity commit", async () => {
+    const capacity = new DocumentCapacity();
+    const prepared = await capacity.prepareTimeSliced([], [rectangleRecord()], {
+      shouldYield: () => false,
+      yieldControl: async () => undefined,
+    });
+    if (prepared === "cancelled") throw new Error("Expected a capacity patch.");
+
+    capacity.commit(capacity.prepareUnchanged());
+
+    expect(() => capacity.commit(prepared.patch)).toThrow(/stale/);
+  });
 });
 
 function rectangleRecord(maxY = 1): ElementRecord {

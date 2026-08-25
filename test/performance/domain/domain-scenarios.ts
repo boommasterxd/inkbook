@@ -19,7 +19,7 @@ export interface Distribution {
   readonly maximum: number;
   readonly p50: number;
   readonly p95: number;
-  readonly p99: number;
+  readonly p99: number | null;
   readonly sampleCount: number;
 }
 
@@ -31,6 +31,7 @@ export interface TransformRun {
   readonly maximumHeapGrowthBytes: number;
   readonly maximumRetainedHistoryBytes: number;
   readonly maximumSlice: number;
+  readonly slices: Distribution;
 }
 
 export interface MaximumStrokeRun {
@@ -42,6 +43,7 @@ export interface MaximumStrokeRun {
 
 export class MeasuredSliceScheduler {
   public maxSliceDuration = 0;
+  readonly #sliceDurations: number[] = [];
   #deadline: number;
   #sliceStarted = readThreadCpuMilliseconds();
 
@@ -66,11 +68,14 @@ export class MeasuredSliceScheduler {
     this.#measureSlice();
   }
 
+  public get sliceDurations(): readonly number[] {
+    return this.#sliceDurations;
+  }
+
   #measureSlice(): void {
-    this.maxSliceDuration = Math.max(
-      this.maxSliceDuration,
-      readThreadCpuMilliseconds() - this.#sliceStarted,
-    );
+    const duration = readThreadCpuMilliseconds() - this.#sliceStarted;
+    this.#sliceDurations.push(duration);
+    this.maxSliceDuration = Math.max(this.maxSliceDuration, duration);
   }
 }
 
@@ -89,6 +94,7 @@ export async function measureTransformRun(
   let maximumHeapBytes = baselineHeapBytes;
   let maximumRetainedHistoryBytes = history.retainedPayloadBytes;
   let maximumSlice = 0;
+  const sliceDurations: number[] = [];
   for (let operation = 0; operation < operationCount; operation += 1) {
     {
       const elements = strokeIds.map((id) => requireStroke(store, id));
@@ -131,6 +137,7 @@ export async function measureTransformRun(
       historyRegistrationDurations.push(performance.now() - historyRegistrationStarted);
       commitDurations.push(performance.now() - commitStarted);
       scheduler.finish();
+      sliceDurations.push(...scheduler.sliceDurations);
       maximumSlice = Math.max(maximumSlice, scheduler.maxSliceDuration);
       maximumRetainedHistoryBytes = Math.max(
         maximumRetainedHistoryBytes,
@@ -151,6 +158,7 @@ export async function measureTransformRun(
     maximumHeapGrowthBytes: Math.max(0, maximumHeapBytes - baselineHeapBytes),
     maximumRetainedHistoryBytes,
     maximumSlice,
+    slices: distribution(sliceDurations),
   };
 }
 
@@ -209,17 +217,18 @@ function distribution(values: readonly number[]): Distribution {
     maximum: Math.max(...values),
     p50: percentile(values, 0.5),
     p95: percentile(values, 0.95),
-    p99: percentile(values, 0.99),
+    p99: values.length >= 100 ? percentile(values, 0.99) : null,
     sampleCount: values.length,
   };
 }
 
 export function worstDistribution(values: readonly Distribution[]): Distribution {
+  const p99Values = values.flatMap(({ p99 }) => (p99 === null ? [] : [p99]));
   return {
     maximum: Math.max(...values.map(({ maximum }) => maximum)),
     p50: Math.max(...values.map(({ p50 }) => p50)),
     p95: Math.max(...values.map(({ p95 }) => p95)),
-    p99: Math.max(...values.map(({ p99 }) => p99)),
+    p99: p99Values.length === values.length ? Math.max(...p99Values) : null,
     sampleCount: values[0]?.sampleCount ?? 0,
   };
 }

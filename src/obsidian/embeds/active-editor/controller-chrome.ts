@@ -1,4 +1,5 @@
 import type { PageV1 } from "../../../domain/schema/public";
+import type { EditorTool } from "../../../editor/input/index";
 import type {
   InkbookEditorChromeProps,
   ShapeId,
@@ -6,24 +7,52 @@ import type {
   ToolbarState,
   StyleControl,
 } from "../../../rendering/ui/index";
+import type { ActiveEditorBackgroundSession } from "./background-session";
+import type { ActiveEditorActions } from "./controller-actions";
+import type { ActiveEditorChromeState } from "./controller-chrome-state";
 import { backgroundState } from "./controller-helpers";
+import type { ActiveEditorStyleSession } from "./style-session";
+
+type ActiveEditorChromeDependencies = readonly [
+  actions: ActiveEditorActions,
+  background: ActiveEditorBackgroundSession,
+  chromeState: ActiveEditorChromeState,
+  styles: ActiveEditorStyleSession,
+];
+
+type ActiveEditorChromeHandlers = readonly [
+  activeTool: () => EditorTool,
+  configureTool: (tool: EditorTool) => void,
+];
+
+export function createChromeCallbacks(
+  [actions, background, chromeState, styles]: ActiveEditorChromeDependencies,
+  [activeTool, configureTool]: ActiveEditorChromeHandlers,
+): InkbookEditorChromeProps["callbacks"] {
+  return {
+    onBackgroundSpacingChange: (spacing) => background.changeSpacing(spacing),
+    onBackgroundTypeChange: (type) => background.changeType(type),
+    onFlyoutClose: () => chromeState.setFlyout(null),
+    onOverflowAction: (action) => {
+      chromeState.setFlyout(null);
+      if (actions.isAvailable(action)) actions.execute(action);
+    },
+    onShapeChange: (shape) => configureTool(chromeState.selectShape(shape)),
+    onStyleChange: (id, value) => styles.apply(activeTool(), id, value),
+  };
+}
 
 export interface ActiveEditorChromeOptions {
   readonly canvasInput: HTMLElement;
+  readonly callbacks: InkbookEditorChromeProps["callbacks"];
   readonly layout: ToolbarLayoutStage;
   readonly leftHanded: boolean;
-  readonly onBackgroundSpacingChange: InkbookEditorChromeProps["callbacks"]["onBackgroundSpacingChange"];
-  readonly onBackgroundTypeChange: InkbookEditorChromeProps["callbacks"]["onBackgroundTypeChange"];
-  readonly onOverflowAction: InkbookEditorChromeProps["callbacks"]["onOverflowAction"];
-  readonly onShapeChange: (shape: ShapeId) => void;
-  readonly onStyleChange: InkbookEditorChromeProps["callbacks"]["onStyleChange"];
   readonly onToolbarAction: InkbookEditorChromeProps["onToolbarAction"];
   readonly ownerDocument: Document;
   readonly overflowMenu: InkbookEditorChromeProps["overflowMenu"];
   readonly page: PageV1;
   readonly renderIcon: InkbookEditorChromeProps["renderIcon"];
   readonly selectedShape: ShapeId;
-  readonly setFlyoutClosed: () => void;
   readonly style: {
     readonly controls: readonly StyleControl[];
     readonly icon: InkbookEditorChromeProps["styleIcon"];
@@ -34,14 +63,7 @@ export interface ActiveEditorChromeOptions {
 export function createChromeProps(options: ActiveEditorChromeOptions): InkbookEditorChromeProps {
   return {
     background: backgroundState(options.page),
-    callbacks: {
-      onBackgroundSpacingChange: options.onBackgroundSpacingChange,
-      onBackgroundTypeChange: options.onBackgroundTypeChange,
-      onFlyoutClose: options.setFlyoutClosed,
-      onOverflowAction: options.onOverflowAction,
-      onShapeChange: options.onShapeChange,
-      onStyleChange: options.onStyleChange,
-    },
+    callbacks: options.callbacks,
     canvasInput: options.canvasInput,
     layout: options.layout,
     leftHanded: options.leftHanded,
@@ -57,9 +79,12 @@ export function createChromeProps(options: ActiveEditorChromeOptions): InkbookEd
 }
 
 export function overflowMenuState(
-  arrange: InkbookEditorChromeProps["overflowMenu"]["arrange"],
-  canEraseAll: boolean,
+  actions: ActiveEditorActions,
   hasSelection: boolean,
 ): InkbookEditorChromeProps["overflowMenu"] {
-  return { arrange, canEraseAll, hasSelection };
+  return {
+    arrange: actions.arrangeAvailability(),
+    canEraseAll: actions.isAvailable("erase-all"),
+    hasSelection,
+  };
 }

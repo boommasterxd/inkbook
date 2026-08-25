@@ -3,6 +3,7 @@ import { useLayoutEffect } from "react";
 
 import { InkbookEditorChrome } from "./editor-chrome";
 import type { InkbookEditorChromeProps } from "./editor-chrome";
+import { sameEditorChromeProps } from "./editor-chrome-snapshot";
 
 export interface MountedEditorChrome {
   readonly ready: Promise<boolean>;
@@ -22,6 +23,7 @@ export function mountEditorChrome(
     resolveReady = resolve;
   });
   const root = createRoot(container);
+  let renderedProps = initialProps;
   const onCommit = (): void => {
     if (!mounted || committed) return;
     committed = true;
@@ -34,6 +36,8 @@ export function mountEditorChrome(
     update(props) {
       if (!mounted) throw new Error("Cannot update an unmounted Inkbook editor chrome");
       assertOwnerDocument(container, props.ownerDocument);
+      if (sameEditorChromeProps(renderedProps, props)) return;
+      renderedProps = props;
       renderChrome(root, props, onCommit);
     },
     unmount() {

@@ -114,6 +114,18 @@ describe("active editor keyboard DOM boundary", () => {
   });
 });
 
+describe("active editor chrome callback boundary", () => {
+  it("retains callback identities across semantic state snapshots", () => {
+    const harness = createHarness();
+    const first = harness.controller.chromeProps();
+    const second = harness.controller.chromeProps();
+
+    expect(second.callbacks).toBe(first.callbacks);
+    expect(second.onToolbarAction).toBe(first.onToolbarAction);
+    harness.dispose();
+  });
+});
+
 describe("active editor native paste DOM boundary", () => {
   it("does not consume a native Inkbook paste while editable text owns focus", () => {
     const harness = createHarness();

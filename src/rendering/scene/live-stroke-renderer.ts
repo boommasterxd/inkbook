@@ -55,13 +55,10 @@ export class SceneLiveStrokeRenderer {
       return;
     }
     this.validateEntrants(preview);
-    this.removeTail();
     this.appendChunks(preview);
-    this.#tailNode = this.createPath(preview.tail.geometry.d);
-    this.#group.append(this.#tailNode);
+    this.updateTail(preview.tail.geometry.d);
     this.#lastTail = preview.tail;
     this.#instrumentation.livePreviewUpdates += 1;
-    this.#instrumentation.liveTailNodesCreated += 1;
     this.#instrumentation.liveMaximumTailNodes = 1;
   }
 
@@ -85,7 +82,7 @@ export class SceneLiveStrokeRenderer {
       const chunk = preview.finalizedChunks[index];
       if (chunk === undefined) continue;
       const node = this.createPath(chunk.geometry.d);
-      this.#group.append(node);
+      this.#group.insertBefore(node, this.#tailNode ?? null);
       this.#chunkNodes.push(node);
       this.#lastChunk = chunk;
       this.#instrumentation.liveChunkNodesCreated += 1;
@@ -163,6 +160,18 @@ export class SceneLiveStrokeRenderer {
     this.#tailNode.remove();
     this.#tailNode = undefined;
     this.#instrumentation.liveTailNodesRemoved += 1;
+  }
+
+  private updateTail(d: string): void {
+    if (this.#tailNode === undefined) {
+      this.#tailNode = this.createPath(d);
+      this.#group.append(this.#tailNode);
+      this.#instrumentation.liveTailNodesCreated += 1;
+      return;
+    }
+    if (this.#tailNode.getAttribute("d") === d) return;
+    this.#tailNode.setAttribute("d", d);
+    this.#instrumentation.attributeWrites += 1;
   }
 
   private removeAllNodes(): void {

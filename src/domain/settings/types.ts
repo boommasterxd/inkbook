@@ -35,6 +35,7 @@ export const LINE_SPACINGS = [50, 100, 150, 200] as const;
 export const PATTERN_SPACINGS = [20, 40, 60, 80] as const;
 export const PEN_TAP_INSERTIONS = ["off", "handwriting"] as const;
 export const MOTION_PREFERENCES = ["system", "full", "reduced"] as const;
+export const REFRESH_RATE_PREFERENCES = ["auto", 60, 90, 120, 144, 240] as const;
 
 export type StartupToolV1 = (typeof STARTUP_TOOLS)[number];
 export type ClosedShapeToolV1 = (typeof CLOSED_SHAPE_TOOLS)[number];
@@ -111,6 +112,17 @@ export interface InkbookSettingsV1 {
   toolDefaults: ToolDefaultsV1;
   pageDefaults: PageDefaultsV1;
   filePlacement: FilePlacementV1;
+}
+
+export type RefreshRatePreferenceV2 = (typeof REFRESH_RATE_PREFERENCES)[number];
+
+export interface InkbookSettingsV2 {
+  version: 2;
+  startupTool: StartupToolV1;
+  toolDefaults: ToolDefaultsV1;
+  pageDefaults: PageDefaultsV1;
+  filePlacement: FilePlacementV1;
+  refreshRatePreference: RefreshRatePreferenceV2;
 }
 
 export interface InkbookDeviceSettingsV1 {

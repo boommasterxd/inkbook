@@ -35,6 +35,7 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
     motion: controller.renderer,
     onPendingChanged: options.onPendingChanged,
     ownerWindow: options.ownerWindow,
+    sliceBudgetMs: controller.sliceBudgetMs ?? (() => 8),
   });
   const actions = new ActiveEditorActions({
     currentSelection: options.selection,

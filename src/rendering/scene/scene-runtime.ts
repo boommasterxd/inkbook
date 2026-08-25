@@ -1,5 +1,7 @@
 import type { SceneCamera, SceneScheduler, SceneViewport } from "./types";
 
+type SceneLayoutInvalidation = "complete" | "coverage" | "clip";
+
 export function browserScheduler(ownerDocument: Document): SceneScheduler {
   const ownerWindow = ownerDocument.defaultView;
   if (ownerWindow === null) {
@@ -38,6 +40,27 @@ export function sameViewport(left: SceneViewport | undefined, right: SceneViewpo
   );
 }
 
+export class SceneLayoutInvalidationState {
+  #mode: SceneLayoutInvalidation = "complete";
+
+  public add(next: SceneLayoutInvalidation): void {
+    if (this.#mode === "complete" || next === "complete") this.#mode = "complete";
+    else if (this.#mode === "coverage" || next === "coverage") this.#mode = "coverage";
+  }
+
+  public reset(): void {
+    this.#mode = "clip";
+  }
+
+  public consume(previous: SceneViewport | undefined, next: SceneViewport): boolean {
+    const mode = this.#mode;
+    this.reset();
+    if (mode === "complete" || previous === undefined) return true;
+    if (mode === "clip") return false;
+    return next.top < previous.top || next.top + next.height > previous.top + previous.height;
+  }
+}
+
 export function validateNonNegativeDuration(value: number): void {
   if (!Number.isFinite(value) || value < 0) {
     throw new RangeError("Element fade duration must be finite and non-negative.");
@@ -48,4 +71,11 @@ export function validatePreviewVersion(value: number, subject: string): void {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new RangeError(`${subject} version must be a non-negative safe integer.`);
   }
+}
+
+export function validateFrameBudget(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new RangeError("frameBudgetMs must be finite and positive.");
+  }
+  return value;
 }

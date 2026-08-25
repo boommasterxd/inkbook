@@ -58,6 +58,16 @@ describe("SettingsControlValues", () => {
     });
   });
 
+  it.each(["auto", "60", "90", "120", "144", "240"])(
+    "persists refresh-rate preference %s in the vault scope",
+    async (value) => {
+      await values.set("refreshRatePreference", value);
+
+      expect(values.get("refreshRatePreference")).toBe(value === "auto" ? "auto" : Number(value));
+      expect(vault.saved.refreshRatePreference).toBe(value === "auto" ? "auto" : Number(value));
+    },
+  );
+
   it("routes device controls only through local storage", async () => {
     await values.set("device.motion", "reduced");
 

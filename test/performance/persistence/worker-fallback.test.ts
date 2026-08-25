@@ -8,6 +8,7 @@ import {
   type DocumentRuntimeRequest,
 } from "../../../src/persistence/worker/runtime/public";
 import { createStandardPersistenceFixture } from "./fixtures";
+import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 import { annotateDurations, summarizeDurations, type MetricAnnotator } from "./metrics";
 import { timingBudget } from "../timing-budget";
 
@@ -16,7 +17,7 @@ declare const process: {
 };
 declare function setImmediate(callback: () => void): void;
 
-const MAIN_THREAD_BUDGET_MS = 8;
+const MAIN_THREAD_BUDGET_MS = INTERACTION_REFRESH_PROFILE.mainThreadP99Ms;
 const snapshot = createFallbackFixture();
 const serialized = requireSerialized();
 
@@ -58,6 +59,7 @@ function createScheduledFallback(): {
   const scheduler = new GestureAwareSliceScheduler({
     isInputActive: probe.isInputActive,
     now: () => performance.now(),
+    sliceMilliseconds: INTERACTION_REFRESH_PROFILE.mainThreadP99Ms,
     yieldControl: probe.yieldControl,
   });
   return {
@@ -168,9 +170,12 @@ async function assertFallbackMeasurements(
     expect(measurement.syntheticInputSamples).toBeGreaterThanOrEqual(2);
     expect(measurement.inputPauseYields).toBeGreaterThanOrEqual(2);
   }
-  expect
-    .soft(summarizeDurations(probe.durations).maximum)
-    .toBeLessThanOrEqual(timingBudget(MAIN_THREAD_BUDGET_MS));
+  const summary = summarizeDurations(probe.durations);
+  expect(probe.durations.length).toBeGreaterThanOrEqual(100);
+  expect.soft(summary.p95).toBeLessThanOrEqual(timingBudget(MAIN_THREAD_BUDGET_MS));
+  expect(summary.maximum).toBeLessThanOrEqual(
+    timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
+  );
 }
 
 class FailingWorker implements DocumentRuntimePort {

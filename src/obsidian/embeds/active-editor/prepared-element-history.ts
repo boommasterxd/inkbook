@@ -9,8 +9,6 @@ import type { EditableDocumentModel } from "../vault-document-session";
 import type { ActiveEditorHistory } from "./history";
 
 const SYNCHRONOUS_SELECTION_LIMIT = 1_000;
-const SLICE_BUDGET_MS = 8;
-
 export interface PreparedElementHistoryOptions {
   readonly history: ActiveEditorHistory;
   readonly isAttached: () => boolean;
@@ -23,6 +21,7 @@ export interface PreparedElementHistoryOptions {
   };
   readonly onPendingChanged: (pending: boolean) => void;
   readonly ownerWindow: Window;
+  readonly sliceBudgetMs?: () => number;
 }
 
 export class PreparedElementHistory {
@@ -32,6 +31,7 @@ export class PreparedElementHistory {
   readonly #motion: PreparedElementHistoryOptions["motion"];
   readonly #onPendingChanged: (pending: boolean) => void;
   readonly #ownerWindow: Window;
+  readonly #sliceBudgetMs: () => number;
   readonly #pendingFrames = new Map<number, () => void>();
   #disposed = false;
   #generation = 0;
@@ -44,6 +44,7 @@ export class PreparedElementHistory {
     this.#motion = options.motion;
     this.#onPendingChanged = options.onPendingChanged;
     this.#ownerWindow = options.ownerWindow;
+    this.#sliceBudgetMs = options.sliceBudgetMs ?? (() => 8);
   }
 
   public dispose(): void {
@@ -149,13 +150,13 @@ export class PreparedElementHistory {
   }
 
   #scheduler(generation: number): TransformSliceScheduler {
-    let deadline = this.#ownerWindow.performance.now() + SLICE_BUDGET_MS;
+    let deadline = this.#ownerWindow.performance.now() + this.#sliceBudgetMs();
     return {
       isCancelled: () => this.#isCancelled(generation),
       shouldYield: () => this.#ownerWindow.performance.now() >= deadline,
       yieldControl: () =>
         this.#yieldHostFrame().then(() => {
-          deadline = this.#ownerWindow.performance.now() + SLICE_BUDGET_MS;
+          deadline = this.#ownerWindow.performance.now() + this.#sliceBudgetMs();
         }),
     };
   }

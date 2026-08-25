@@ -1,12 +1,13 @@
 import type { PendingEditorChrome } from "./editor-chrome-loader";
 import type { InkbookEditorChromeProps } from "../../rendering/ui/editor-chrome";
+import { editorChromeLayoutKey } from "../../rendering/ui/editor-chrome-snapshot";
 
 interface ActiveSceneChromeController {
   chromeProps(): InkbookEditorChromeProps;
 }
 
 interface ActiveSceneChromeLayout {
-  chromeChanged(): void;
+  chromeChanged(layoutKey: string): void;
 }
 
 export interface ActiveSceneChromeElements {
@@ -27,6 +28,7 @@ export function updateActiveSceneChrome(
   controller: ActiveSceneChromeController,
   layout: ActiveSceneChromeLayout,
 ): void {
-  chrome.update(controller.chromeProps());
-  layout.chromeChanged();
+  const props = controller.chromeProps();
+  chrome.update(props);
+  layout.chromeChanged(editorChromeLayoutKey(props));
 }

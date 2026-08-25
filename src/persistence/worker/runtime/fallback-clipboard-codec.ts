@@ -15,24 +15,30 @@ import type {
 } from "../../clipboard/types";
 import { validateClipboardPayload } from "../../clipboard/validation";
 import { parseChunkedJson } from "../../serialization/chunked-json-parser";
-import type { RuntimeSliceContext } from "./types";
+import { runtimeSliceWorkProfile } from "./slice-scheduler";
+import type { RuntimeSliceContext, RuntimeSliceWorkProfile } from "./types";
 
 const encoder = new TextEncoder();
-const JSON_CHUNK_CODE_UNITS = 16 * 1024;
-const CHECKPOINT_INTERVAL = 256;
+const DEFAULT_CHECKPOINT_INTERVAL = 256;
+
+function runtimeWorkProfile(context: RuntimeSliceContext): RuntimeSliceWorkProfile {
+  if (context.workProfile !== undefined) return context.workProfile;
+  return runtimeSliceWorkProfile(context.sliceMilliseconds?.());
+}
 
 export async function encodeRuntimeSelectionChunked(
   elementsInRenderOrder: readonly InkElementV1[],
   selectedIds: readonly string[],
   context: RuntimeSliceContext,
 ): Promise<ClipboardResult<ClipboardWritePayload>> {
+  const profile = runtimeWorkProfile(context);
   const selection = new Set(selectedIds);
   if (selection.size === 0) return clipboardFailure("empty-selection", "No elements are selected.");
   const selected: InkElementV1[] = [];
   for (let index = 0; index < elementsInRenderOrder.length; index += 1) {
     if (selection.has(elementsInRenderOrder[index]!.id))
       selected.push(elementsInRenderOrder[index]!);
-    await periodicCheckpoint(index, context);
+    await periodicCheckpoint(index, context, profile.nodeLimit);
   }
   if (selected.length !== selection.size) {
     return clipboardFailure("missing-selection", "The selection contains an unknown element.");
@@ -40,7 +46,7 @@ export async function encodeRuntimeSelectionChunked(
   const documentIds = new Map<string, string>();
   for (let index = 0; index < selected.length; index += 1) {
     documentIds.set(selected[index]!.id, compactClipId(index));
-    await periodicCheckpoint(index, context);
+    await periodicCheckpoint(index, context, profile.nodeLimit);
   }
   const clipboardElements: ClipboardElementV1[] = [];
   for (let index = 0; index < selected.length; index += 1) {
@@ -49,12 +55,13 @@ export async function encodeRuntimeSelectionChunked(
       clipId: compactClipId(index),
       element: createBody(element, documentIds),
     });
-    await periodicCheckpoint(index, context);
+    await periodicCheckpoint(index, context, profile.nodeLimit);
   }
   const encoded = await serializeClipboardPayload(
     { elements: clipboardElements, format: "inkbook-elements", version: 1 },
     context,
     true,
+    profile,
   );
   if (!encoded.ok) return encoded;
   return {
@@ -90,21 +97,22 @@ async function decodeCandidate(
         : null
       : input;
   if (json === null) return clipboardFailure("invalid-prefix", "Plain text is not Inkbook data.");
-  const inputBytes = await utf8ByteLength(json, context);
+  const profile = runtimeWorkProfile(context);
+  const inputBytes = await utf8ByteLength(json, context, profile.inputByteLimit);
   if (inputBytes > CLIPBOARD_LIMITS.totalInputBytes) {
     return clipboardFailure("limit-exceeded", "Clipboard input exceeds the 8 MiB input limit.");
   }
   let value: unknown;
   try {
     value = await parseChunkedJson(json, {
-      batchCharacters: JSON_CHUNK_CODE_UNITS,
+      batchCharacters: profile.inputByteLimit,
       checkpoint: context.checkpoint,
       limits: {
         maximumContainerEntries: CLIPBOARD_LIMITS.pointsPerStroke * 3,
         maximumDepth: MAX_JSON_DEPTH,
         maximumNodes: CLIPBOARD_LIMITS.strokePoints * 4 + CLIPBOARD_LIMITS.elements * 64,
         maximumOutputCharacters: CLIPBOARD_LIMITS.totalInputBytes,
-        maximumStringScratchCharacters: JSON_CHUNK_CODE_UNITS,
+        maximumStringScratchCharacters: profile.inputByteLimit,
       },
       signal: context.signal,
     });
@@ -115,7 +123,7 @@ async function decodeCandidate(
   const validated = validateClipboardPayload(value);
   if (!validated.ok) return validated;
   await context.checkpoint();
-  const canonical = await serializeClipboardPayload(validated.value, context, false);
+  const canonical = await serializeClipboardPayload(validated.value, context, false, profile);
   if (!canonical.ok) return canonical;
   return {
     ok: true,
@@ -135,8 +143,9 @@ async function serializeClipboardPayload(
   payload: InkClipboardV1,
   context: RuntimeSliceContext,
   requirePlainFallbackWithinLimit: boolean,
+  profile = runtimeWorkProfile(context),
 ): Promise<ClipboardResult<{ readonly byteLength: number; readonly text: string }>> {
-  const writer = new CanonicalJsonWriter(context);
+  const writer = new CanonicalJsonWriter(context, profile);
   await writer.write(payload);
   const result = await writer.finish();
   const prefixBytes = encoder.encode(INKBOOK_CLIPBOARD_TEXT_PREFIX).byteLength;
@@ -153,17 +162,21 @@ async function serializeClipboardPayload(
 class CanonicalJsonWriter {
   readonly #chunks: string[] = [];
   readonly #context: RuntimeSliceContext;
+  readonly #profile: RuntimeSliceWorkProfile;
   #current = "";
   #nodes = 0;
 
-  public constructor(context: RuntimeSliceContext) {
+  public constructor(context: RuntimeSliceContext, profile: RuntimeSliceWorkProfile) {
     this.#context = context;
+    this.#profile = profile;
   }
 
   public async write(value: unknown): Promise<void> {
     this.#context.signal.throwIfAborted();
     this.#nodes += 1;
-    if (this.#nodes % CHECKPOINT_INTERVAL === 0) await this.#context.checkpoint();
+    if (this.#nodes % this.#profile.nodeLimit === 0) {
+      await this.#context.checkpoint();
+    }
     if (value instanceof Float64Array || Array.isArray(value)) {
       await this.#writeArray(value);
       return;
@@ -185,7 +198,7 @@ class CanonicalJsonWriter {
       const chunk = this.#chunks[index]!;
       text += chunk;
       byteLength += encoder.encode(chunk).byteLength;
-      await periodicCheckpoint(index, this.#context);
+      await periodicCheckpoint(index, this.#context, this.#profile.nodeLimit);
     }
     return { byteLength, text };
   }
@@ -213,7 +226,7 @@ class CanonicalJsonWriter {
 
   #append(value: string): void {
     this.#current += value;
-    if (this.#current.length >= JSON_CHUNK_CODE_UNITS) this.#flush();
+    if (this.#current.length >= this.#profile.inputByteLimit) this.#flush();
   }
 
   #flush(): void {
@@ -257,10 +270,14 @@ function clipboardCandidates(
   return available;
 }
 
-async function utf8ByteLength(value: string, context: RuntimeSliceContext): Promise<number> {
+async function utf8ByteLength(
+  value: string,
+  context: RuntimeSliceContext,
+  chunkCodeUnits = runtimeWorkProfile(context).inputByteLimit,
+): Promise<number> {
   let bytes = 0;
   for (let offset = 0; offset < value.length;) {
-    let end = Math.min(value.length, offset + JSON_CHUNK_CODE_UNITS);
+    let end = Math.min(value.length, offset + chunkCodeUnits);
     const trailing = value.charCodeAt(end - 1);
     if (end < value.length && trailing >= 0xd800 && trailing <= 0xdbff) end -= 1;
     bytes += encoder.encode(value.slice(offset, end)).byteLength;
@@ -271,8 +288,12 @@ async function utf8ByteLength(value: string, context: RuntimeSliceContext): Prom
   return bytes;
 }
 
-async function periodicCheckpoint(index: number, context: RuntimeSliceContext): Promise<void> {
-  if ((index + 1) % CHECKPOINT_INTERVAL === 0) await context.checkpoint();
+async function periodicCheckpoint(
+  index: number,
+  context: RuntimeSliceContext,
+  interval = DEFAULT_CHECKPOINT_INTERVAL,
+): Promise<void> {
+  if ((index + 1) % interval === 0) await context.checkpoint();
 }
 
 function compactClipId(index: number): string {
