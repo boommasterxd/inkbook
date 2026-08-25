@@ -17,7 +17,7 @@ import {
 import { DEFAULT_REFRESH_RATE, type RefreshRateProfileStatus } from "../performance";
 import { SettingsControlValues, type SettingsControlKey } from "./control-values";
 import { dropdown, resetAction, slider, toggle } from "./definition-helpers";
-import { generalGroup, labels } from "./general-definitions";
+import { createLabels, generalGroup } from "./general-definitions";
 import { InkbookSettingsStore } from "./storage";
 import { highlighterItems, penItems, shapeSections, toolGroup } from "./tool-definitions";
 
@@ -174,7 +174,7 @@ export class InkbookSettingTab extends PluginSettingTab {
           "device.penTapInsertion",
           "Pen-tap insertion",
           "Choose how a pen tap inserts an Inkbook embed.",
-          labels(PEN_TAP_INSERTIONS),
+          createLabels(PEN_TAP_INSERTIONS),
         ),
         resetAction("Reset group to defaults", () => {
           this.store.updateDeviceSettings((settings) => ({
@@ -204,7 +204,7 @@ export class InkbookSettingTab extends PluginSettingTab {
           "device.motion",
           "Motion",
           "Choose how Inkbook presents non-essential motion.",
-          labels(MOTION_PREFERENCES),
+          createLabels(MOTION_PREFERENCES),
         ),
         resetAction("Reset group to defaults", () => {
           this.store.updateDeviceSettings((settings) => ({

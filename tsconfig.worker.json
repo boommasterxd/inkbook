@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "jsx": "preserve",
+    "lib": ["ES2021", "WebWorker"],
+    "types": []
+  },
+  "include": [],
+  "files": ["src/persistence/worker/runtime/document-worker-entry.ts"]
+}

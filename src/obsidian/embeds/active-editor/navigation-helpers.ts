@@ -1,7 +1,7 @@
 import { TRACKPAD_ZOOM_DELTA_LIMIT, type WheelDeltaMode } from "../../../editor/zoom/index";
 import { browserScrollMetrics, type BrowserScrollElement } from "../../scrolling/index";
 
-import type { ActiveEditorViewState, ActiveEditorWheelInput } from "./navigation";
+import type { ActiveEditorViewState, ActiveEditorWheelInput } from "./navigation-types";
 import type { NavigationLayoutRead } from "./navigation-layout";
 
 export function wheelDeltaMode(deltaMode: number): WheelDeltaMode {

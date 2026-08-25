@@ -1,7 +1,7 @@
-@import "./motion.css";
-@import "./editor-toolbar.css";
-@import "./editor-toolbar-motion.css";
-@import "./editor-flyouts.css";
+@import url("./motion.css");
+@import url("./editor-toolbar.css");
+@import url("./editor-toolbar-motion.css");
+@import url("./editor-flyouts.css");
 
 .inkbook-root {
   --inkbook-page-surface: #f6f6f6;
@@ -16,6 +16,7 @@
   --inkbook-surface-shadow: 0 4px 14px rgb(0 0 0 / 14%), 0 1px 2px rgb(0 0 0 / 18%);
   --inkbook-toolbar-overlay-block-size: 68px;
   --inkbook-toolbar-scrollport-padding: 0px;
+
   box-sizing: border-box;
   inline-size: 100%;
   max-inline-size: min(100%, var(--inkbook-owner-inline-limit, 100%));
@@ -68,6 +69,35 @@
 
 .inkbook-root .inkbook-preview-handoff[hidden] {
   display: none !important;
+}
+
+.inkbook-root .inkbook-background-container {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--inkbook-shell-radius);
+  clip-path: inset(0 round var(--inkbook-shell-radius));
+  contain: layout paint style;
+  inline-size: 100%;
+  overflow: clip;
+  position: relative;
+}
+
+.inkbook-root .inkbook-scene {
+  contain: layout paint;
+  display: block;
+  inset-block: 0 auto;
+  inset-inline: 0 auto;
+  inline-size: 100%;
+  position: absolute;
+  transform-origin: top left;
+  vertical-align: top;
+}
+
+.inkbook-root .inkbook-scene,
+.inkbook-root .inkbook-scene-content,
+.inkbook-root .inkbook-scene-highlights,
+.inkbook-root .inkbook-scene-overlays {
+  pointer-events: none;
 }
 
 .inkbook-root.inkbook-active-transitioning .inkbook-preview-handoff,
@@ -151,16 +181,16 @@
 }
 
 .inkbook-root[data-inkbook-scheme="light"] .inkbook-locked-preview-svg .inkbook-theme-stroke {
-  stroke: #222222ff;
+  stroke: #222f;
 }
 
 .inkbook-root[data-inkbook-scheme="light"] .inkbook-locked-preview-svg .inkbook-theme-fill {
-  fill: #222222ff;
+  fill: #222f;
 }
 
 .inkbook-root[data-inkbook-scheme="light"] .inkbook-locked-preview-svg .inkbook-theme-stroke-fill {
-  fill: #222222ff;
-  stroke: #222222ff;
+  fill: #222f;
+  stroke: #222f;
 }
 
 .inkbook-root[data-inkbook-scheme="dark"] .inkbook-locked-preview-svg .inkbook-theme-page {
@@ -190,21 +220,9 @@
   outline-offset: -2px;
 }
 
-.inkbook-root .inkbook-background-container {
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--inkbook-shell-radius);
-  clip-path: inset(0 round var(--inkbook-shell-radius));
-  contain: layout paint style;
-  inline-size: 100%;
-  overflow: clip;
-  position: relative;
-}
-
 .inkbook-root .inkbook-background-container.inkbook-page-height-transitioning > .inkbook-scene {
   block-size: calc(var(--inkbook-page-height-envelope-block-size) - 2px);
-  inset-block-start: 0;
-  inset-block-end: auto;
+  inset-block: 0 auto;
 }
 
 .inkbook-root .inkbook-editor-chrome {
@@ -226,44 +244,21 @@
   z-index: var(--layer-popover);
 }
 
-.inkbook-root .inkbook-scene {
-  contain: layout paint;
-  display: block;
-  inset-block-end: auto;
-  inset-block-start: 0;
-  inset-inline-end: auto;
-  inset-inline-start: 0;
-  inline-size: 100%;
-  position: absolute;
-  transform-origin: top left;
-  vertical-align: top;
-}
-
 .inkbook-root .inkbook-canvas-input {
+  background: transparent;
+  border: 0;
   display: block;
   inset: 0;
   inline-size: 100%;
+  pointer-events: auto;
   position: absolute;
-}
-
-.inkbook-root .inkbook-scene,
-.inkbook-root .inkbook-scene-content,
-.inkbook-root .inkbook-scene-highlights,
-.inkbook-root .inkbook-scene-overlays {
-  pointer-events: none;
+  touch-action: none;
 }
 
 .inkbook-root .inkbook-scene-overlays path {
   fill: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
   stroke: var(--interactive-accent);
   stroke-width: 1.5;
-}
-
-.inkbook-root .inkbook-canvas-input {
-  background: transparent;
-  border: 0;
-  pointer-events: auto;
-  touch-action: none;
 }
 
 .inkbook-root .inkbook-canvas-input:focus-visible {
@@ -310,8 +305,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px 14px;
-  inset-block-end: 16px;
-  inset-block-start: auto;
+  inset-block: auto 16px;
   inset-inline-start: 50%;
   justify-content: center;
   max-inline-size: calc(100% - 24px);
@@ -325,10 +319,6 @@
 .inkbook-root .inkbook-recovery-message {
   font-size: var(--font-ui-small);
   font-weight: var(--font-medium);
-}
-
-.inkbook-root .inkbook-recovery .inkbook-recovery-actions {
-  gap: 6px;
 }
 
 .inkbook-root .inkbook-recovery-icon-button {
@@ -405,6 +395,16 @@
   z-index: var(--layer-modal, 1000);
 }
 
+.inkbook-root .inkbook-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+}
+
+.inkbook-root .inkbook-recovery .inkbook-recovery-actions {
+  gap: 6px;
+}
+
 .inkbook-root .inkbook-headless-recovery-dialog {
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
@@ -413,12 +413,6 @@
   color: var(--text-normal);
   max-inline-size: min(32rem, calc(100vi - 2rem));
   padding: var(--size-4-5);
-}
-
-.inkbook-root .inkbook-recovery-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--size-4-2);
 }
 
 .inkbook-root .inkbook-headless-recovery-dialog button:focus-visible {

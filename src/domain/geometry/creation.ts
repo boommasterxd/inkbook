@@ -3,7 +3,7 @@ import type {
   CoordinateSystemElementV1,
   PointV1,
   TableElementV1,
-} from "../schema/public";
+} from "../schema/types";
 import {
   addPoints,
   canonicalPoint,

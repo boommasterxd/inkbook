@@ -1,5 +1,6 @@
 .inkbook-root .inkbook-toolbar-composition {
   --inkbook-toolbar-surface: var(--inkbook-page-surface);
+
   background: transparent;
   block-size: 50px;
   inset-block-start: 7px;
@@ -18,8 +19,7 @@
 
 .inkbook-root .inkbook-toolbar-composition-scrollable {
   border-radius: 999px;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: auto hidden;
   pointer-events: auto;
   scrollbar-width: none;
 }
@@ -138,7 +138,7 @@
   opacity: 0;
   pointer-events: none;
   position: absolute;
-  transform: translate3d(var(--inkbook-toolbar-active-offset, 0px), 0, 0);
+  transform: translate3d(var(--inkbook-toolbar-active-offset, 0), 0, 0);
   transition: transform var(--inkbook-motion-fast) var(--inkbook-motion-easing);
   z-index: 0;
 }
@@ -187,15 +187,15 @@
   opacity: 0.48;
 }
 
+.inkbook-root .inkbook-toolbar-button:hover::before {
+  background: var(--background-modifier-hover);
+}
+
 .inkbook-root .inkbook-toolbar-button:disabled::before,
 .inkbook-root .inkbook-toolbar-button:disabled:hover::before {
   background: transparent;
   border-color: transparent;
   transform: none;
-}
-
-.inkbook-root .inkbook-toolbar-button:hover::before {
-  background: var(--background-modifier-hover);
 }
 
 .inkbook-root .inkbook-toolbar-button[aria-pressed="true"] {

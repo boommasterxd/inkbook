@@ -1,4 +1,5 @@
-import { MAX_ABSOLUTE_COORDINATE, type PointV1 } from "../schema/public";
+import { MAX_ABSOLUTE_COORDINATE } from "../schema/constants";
+import type { PointV1 } from "../schema/types";
 import { roundCanonical } from "./primitives";
 
 const MAXIMUM_FAST_ABSOLUTE_VALUE = MAX_ABSOLUTE_COORDINATE * 2;

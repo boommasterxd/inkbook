@@ -1,4 +1,4 @@
-import type { InkElementV1 } from "../schema/public";
+import type { InkElementV1 } from "../schema/types";
 import { measureSpatialCapacity, type SpatialCapacityMeasurement } from "../spatial/index";
 
 import { calculateElementBounds } from "./bounds";

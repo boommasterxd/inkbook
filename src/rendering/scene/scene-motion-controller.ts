@@ -1,5 +1,5 @@
 import { FILE_SCHEMA_LIMITS, type InkElementV1 } from "../../domain/schema/public";
-import { transitionDurations } from "../ui/motion";
+import { TRANSITION_DURATIONS } from "../motion/transitions";
 import type { SceneContentRenderer } from "./content-renderer";
 import { interpolateElement, standardMotionProgress } from "./motion-interpolation";
 import {
@@ -258,7 +258,7 @@ export class SceneMotionController {
 
   private writeEntry(entry: MotionEntry, frameTime: number): void {
     entry.startTime ??= frameTime;
-    const raw = Math.min(1, (frameTime - entry.startTime) / transitionDurations.fallback);
+    const raw = Math.min(1, (frameTime - entry.startTime) / TRANSITION_DURATIONS.fallback);
     const progress = standardMotionProgress(raw);
     if (entry.kind === "entrance") {
       this.#content.setElementMotion(entry.ids, progress, 0.96 + progress * 0.04);
@@ -360,7 +360,7 @@ export class SceneMotionController {
   ): OverlayMotion | undefined {
     if (motion === undefined) return undefined;
     motion.startTime ??= frameTime;
-    const raw = Math.min(1, (frameTime - motion.startTime) / transitionDurations.fallback);
+    const raw = Math.min(1, (frameTime - motion.startTime) / TRANSITION_DURATIONS.fallback);
     const progress = standardMotionProgress(raw);
     const visible = motion.direction === "enter" ? progress : 1 - progress;
     writeMotionStyle(node, visible, 0.96 + visible * 0.04);
@@ -375,7 +375,7 @@ export class SceneMotionController {
     this.#backgroundStart ??= frameTime;
     const raw = Math.min(
       1,
-      (frameTime - this.#backgroundStart) / transitionDurations.backgroundChange,
+      (frameTime - this.#backgroundStart) / TRANSITION_DURATIONS.backgroundChange,
     );
     const progress = standardMotionProgress(raw);
     this.#dom.backgroundOutgoingPath.style.setProperty("opacity", String(1 - progress));

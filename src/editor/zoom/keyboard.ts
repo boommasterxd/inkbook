@@ -21,7 +21,6 @@ export function keyboardZoomStep(input: KeyboardZoomInput): KeyboardZoomStep | u
   return undefined;
 }
 
-/** Returns the exact factor represented by a recognized keyboard shortcut. */
 export function keyboardZoomFactor(input: KeyboardZoomInput): number | undefined {
   const step = keyboardZoomStep(input);
   return step === undefined ? undefined : zoomFactorForSteps(step);

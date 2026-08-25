@@ -3,7 +3,7 @@ import {
   type CanonicalStrokeReplacementProof,
 } from "../elements/stroke-replacement-proof";
 import type { InkElementV1 } from "../schema/public";
-import { type PreparedSpatialReplacements, UniformSpatialIndex } from "../spatial/index";
+import { UniformSpatialIndex } from "../spatial/index";
 
 import {
   commitReverseConnectionPatches,
@@ -22,28 +22,19 @@ import {
   type ReplacementCandidate,
 } from "./replacement-planner";
 import type {
+  ElementReplacementPlan,
+  ElementReplacementSource,
+  PreparedReplacementRecords,
+} from "./replacement-types";
+import type {
   ElementRecord,
   EndpointReference,
   ImmutableInkElement,
-  StoreDelta,
   StoreSliceScheduler,
 } from "./types";
 
 const ATOMIC_COMMIT_ADMISSION_SIZE = 1_000;
 const MAX_RECORDS_PER_PREPARATION_SLICE = 256;
-
-export interface ElementReplacementPlan {
-  readonly capacityPatch: DocumentCapacityPatch;
-  readonly delta: StoreDelta;
-  readonly geometryVersion: number;
-  readonly indexPatch: PreparedSpatialReplacements<string>;
-  readonly indexVisitCount: number;
-  readonly paintVersion: number;
-  readonly records: readonly ElementRecord[];
-  readonly replacementCount: number;
-  readonly reversePatches: readonly ReverseConnectionPatch[];
-  readonly yields: number;
-}
 
 interface ReplacementPorts {
   readonly getRecord: (id: string) => ElementRecord;
@@ -51,29 +42,11 @@ interface ReplacementPorts {
   readonly onReverseVisit: () => void;
 }
 
-export interface PreparedReplacementRecords {
-  readonly capacityPreviousRecords: ElementRecord[];
-  readonly capacityRecords: ElementRecord[];
-  readonly changes: Array<StoreDelta["changes"][number]>;
-  readonly records: ElementRecord[];
-  readonly spatialReplacements: Array<{ bounds: ElementRecord["bounds"]; id: string }>;
-  readonly yields: number;
-}
-
 interface PreparedCandidateRecords extends PreparedReplacementRecords {
   readonly connectionCandidates: ReplacementCandidate[];
   readonly connectionRecords: ElementRecord[];
   readonly geometryVersion: number;
   readonly paintVersion: number;
-}
-
-export interface ElementReplacementSource {
-  readonly capacity: DocumentCapacity;
-  readonly geometryVersion: number;
-  readonly paintVersion: number;
-  readonly records: ReadonlyMap<string, ElementRecord>;
-  readonly reverseConnections: ReadonlyMap<string, readonly EndpointReference[]>;
-  readonly spatialIndex: UniformSpatialIndex<string>;
 }
 
 export async function planElementReplacement(

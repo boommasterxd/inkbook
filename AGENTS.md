@@ -17,34 +17,36 @@
 | `persistence` | Document validation, migration, clipboard codecs, SVG export, hashing, persisted-output verification, worker protocol, and save orchestration | DOM, pointer, camera, scroll, or Obsidian APIs                                                                                       |
 | `obsidian`    | Plugin composition, Markdown surfaces, workspace lifecycle, settings UI and host storage, vault adapters, and pop-out-window integration      | Reimplementation of domain, editor, rendering, or persistence rules                                                                  |
 
-Dependencies point inward from `obsidian` and thin boundary adapters for Obsidian, vault, clipboard, and workers toward editor, persistence, rendering, and pure domain contracts. Avoid cycles, cross-area mutable globals, hidden singletons, generic grab-bag modules, recursive barrels, and broad re-exports.
+Dependencies point inward from `obsidian` and thin boundary adapters for Obsidian, vault, clipboard, and workers toward editor, persistence, rendering, and pure domain contracts. The complete `src/` import graph, including TypeScript type-only edges, must remain cycle-free and satisfy these area directions under the automated architecture gate. Avoid cross-area mutable globals, hidden singletons, generic grab-bag modules, recursive barrels, and broad re-exports.
 
 ### Runtime Cardinality and Ownership
 
 - Keep one workspace activation coordinator per plugin instance. It serializes activation across tabs, panes, and pop-out windows and may retain at most one detached dirty session until save or recovery finishes.
 - Each authoritative active or draining document session owns one normalized element store, one command history, one uniform spatial index, and one document worker. Each attached presentation owns one imperative SVG scene renderer and one canvas input surface.
 - The store owns two fixed render bands, stable order within each band, semantic shape anchors, one derived reverse map for connected line and arrow endpoints, and domain-classified deltas with commit-time geometry and paint versions.
-- React owns application chrome and coarse UI state only. It never renders ink elements or participates in pointer, camera, culling, snapping, or animation-frame updates.
-- The document worker owns bounded editable-document validation, migration, clipboard codecs, SVG export, hashing, and persisted-output verification. It never owns DOM, pointer, camera, scroll, or Obsidian API work.
+- React owns application chrome and coarse UI state only. It never renders ink elements or participates in pointer, camera, culling, snapping, or animation-frame updates. Static lint rules reject React, ReactDOM, JSX, TSX, React-owned UI imports, roots, portals, and state APIs in `src/rendering/scene/`; imperative DOM and SVG remain allowed there.
+- The document worker owns bounded editable-document validation, migration, clipboard codecs, SVG export, hashing, and persisted-output verification. It never owns DOM, `Window`, React, pointer, camera, scroll, or Obsidian API work. Its entry-based `ES2021` plus `WebWorker` typecheck excludes the main-thread `worker-factory.ts`.
 - Do not add a backend, dependency-injection container, state-management framework, event-bus framework, generic graph library, worker pool, or plugin-internal extension system.
 
 The complete dependency and runtime flows are canonical in [`docs/specification.md`](docs/specification.md) and [`docs/architecture-flows.md`](docs/architecture-flows.md).
 
 ## Repository Layout
 
-| Path                   | Responsibility                                                    |
-| ---------------------- | ----------------------------------------------------------------- |
-| `src/main.ts`          | Build entry point and the only source file directly under `src/`  |
-| `src/domain/`          | Pure model and geometry logic                                     |
-| `src/editor/`          | Editor orchestration and interaction logic                        |
-| `src/rendering/`       | Imperative scene rendering and React chrome                       |
-| `src/persistence/`     | File formats, workers, export, validation, and save orchestration |
-| `src/obsidian/`        | Obsidian integration and adapters                                 |
-| `src/obsidian/styles/` | Static plugin and host-integration styles                         |
-| `test/`                | Focused source-parallel Unit, Integration, and performance tests  |
-| `scripts/`             | Repository automation and verification scripts                    |
-| `docs/`                | Normative technical documentation in focused subtopics            |
-| `dist/`                | Generated Obsidian release artifacts, never hand-edited           |
+| Path                    | Responsibility                                                    |
+| ----------------------- | ----------------------------------------------------------------- |
+| `src/main.ts`           | Build entry point and the only source file directly under `src/`  |
+| `src/domain/`           | Pure model and geometry logic                                     |
+| `src/editor/`           | Editor orchestration and interaction logic                        |
+| `src/rendering/motion/` | Framework-free motion contracts                                   |
+| `src/rendering/scene/`  | Imperative SVG scene rendering                                    |
+| `src/rendering/ui/`     | React-owned application chrome                                    |
+| `src/persistence/`      | File formats, workers, export, validation, and save orchestration |
+| `src/obsidian/`         | Obsidian integration and adapters                                 |
+| `src/obsidian/styles/`  | Static plugin and host-integration styles                         |
+| `test/`                 | Focused source-parallel Unit, Integration, and performance tests  |
+| `scripts/`              | Repository automation and verification scripts                    |
+| `docs/`                 | Normative technical documentation in focused subtopics            |
+| `dist/`                 | Generated Obsidian release artifacts, never hand-edited           |
 
 Root files are limited to repository documentation, metadata, and configuration required by npm, Obsidian, GitHub, or quality tooling. Do not accumulate shared runtime code or styles directly under `src/`, and do not create generic `common`, `helpers`, `services`, `shared`, or `utils` dumping grounds.
 
@@ -82,7 +84,8 @@ Detailed rendering, cache, scheduling, memory, and latency contracts are canonic
 ## Testing and Acceptance
 
 - Use Unit and focused Integration tests only. End-to-end and smoke suites are explicitly excluded.
-- Add deterministic regression coverage for every relevant behavior change. Maintain at least 85 percent line coverage across executable source.
+- Add deterministic regression coverage for every relevant behavior change. Across executable source, maintain at least 85 percent lines, statements, and functions plus at least 80 percent branches.
+- Enforce hard CI maxima of 100 function lines, 500 file lines, cyclomatic complexity 20, cognitive complexity 25, 6 parameters, and nesting depth 4. Review large or complex units for clear responsibilities and readability without treating an additional arbitrary numeric threshold as a defect.
 - Documentation-only changes require a complete content review, working relative links, balanced Markdown code fences, and a synchronized Documentation Index. Do not add parser, snapshot, or string-comparison tests solely for documentation prose.
 - The exhaustive performance manifest must classify every benchmark into exactly one class. A new benchmark fails the Unit gate until classified.
 
@@ -124,25 +127,29 @@ The complete test matrix, performance budgets, and acceptance requirements are c
 
 ## Tooling and Commands
 
-Use `npm`, TypeScript, esbuild, Vitest, ESLint with the official type-aware `eslint-plugin-obsidianmd` configuration, Prettier, `jscpd` with `minTokens: 50`, `knip`, and `npm audit`. Applicable Obsidian API, lifecycle, mobile, command, styling, path, settings, and sample-code findings are errors.
+Use `npm`, TypeScript, esbuild, Vitest, ESLint with the official type-aware `eslint-plugin-obsidianmd` configuration, dependency-cruiser, Stylelint, Prettier, `jscpd` with `minTokens: 50`, `knip`, and `npm audit`. Applicable Obsidian API, lifecycle, mobile, command, styling, path, settings, and sample-code findings are errors.
 
-| Command                    | Purpose                                                                                       |
-| -------------------------- | --------------------------------------------------------------------------------------------- |
-| `npm run ci`               | Run the complete local quality and performance gate                                           |
-| `npm run ci:quality`       | Run formatting, lint, type, coverage, duplication, dead-code, audit, build, and package gates |
-| `npm run benchmark`        | Run the complete classified performance suite                                                 |
-| `npm test`                 | Run Unit and Integration tests without coverage                                               |
-| `npm run test:unit`        | Run Unit tests                                                                                |
-| `npm run test:integration` | Run focused Integration tests                                                                 |
-| `npm run test:coverage`    | Run Unit and Integration tests with coverage                                                  |
-| `npm run format:check`     | Verify formatting                                                                             |
-| `npm run lint`             | Run ESLint with zero warnings allowed                                                         |
-| `npm run typecheck`        | Type-check runtime and test projects                                                          |
-| `npm run duplication`      | Run `jscpd` duplication detection                                                             |
-| `npm run dead-code`        | Run `knip` dead-code detection                                                                |
-| `npm run audit`            | Fail on high-severity dependency vulnerabilities                                              |
-| `npm run build`            | Produce the production plugin artifacts                                                       |
-| `npm run package:verify`   | Verify the distributable package contract                                                     |
+| Command                    | Purpose                                                                        |
+| -------------------------- | ------------------------------------------------------------------------------ |
+| `npm run ci`               | Run the complete local quality and performance gate                            |
+| `npm run ci:quality`       | Run every non-performance quality, architecture, test, build, and package gate |
+| `npm run benchmark`        | Run the complete classified performance suite                                  |
+| `npm run architecture`     | Verify the complete source import graph, cycles, and area directions           |
+| `npm test`                 | Run Unit and Integration tests without coverage                                |
+| `npm run test:unit`        | Run Unit tests                                                                 |
+| `npm run test:integration` | Run focused Integration tests                                                  |
+| `npm run test:coverage`    | Run Unit and Integration tests with coverage                                   |
+| `npm run format:check`     | Verify formatting                                                              |
+| `npm run lint`             | Run ESLint with zero warnings allowed                                          |
+| `npm run lint:styles`      | Run Stylelint for source CSS                                                   |
+| `npm run lint:layout`      | Verify source and test filenames, Scene TSX absence, and CSS file size         |
+| `npm run typecheck`        | Type-check runtime and test projects                                           |
+| `npm run typecheck:worker` | Type-check the actual worker graph without DOM, React, or Obsidian types       |
+| `npm run duplication`      | Run `jscpd` duplication detection                                              |
+| `npm run dead-code`        | Run `knip` dead-code detection                                                 |
+| `npm run audit`            | Fail on high-severity dependency vulnerabilities                               |
+| `npm run build`            | Produce the production plugin artifacts                                        |
+| `npm run package:verify`   | Verify the distributable package contract                                      |
 
 Keep CodeMirror and Lezer external to the production bundle. Add direct CodeMirror development dependencies only when source imports require them, pin them to the exact peer versions declared by the selected `obsidian` package, and update that compatibility set together. Generic Dependabot updates for direct CodeMirror peers remain ignored.
 

@@ -1,4 +1,4 @@
-import type { PointV1 } from "../schema/public";
+import type { PointV1 } from "../schema/types";
 import {
   canonicalizeGeometryNumber,
   canonicalizeRotation,
