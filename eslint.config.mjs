@@ -36,7 +36,12 @@ const mobileRuntimePatterns = [
     message: "Node.js APIs are unavailable in plugin runtime code.",
   },
 ];
-const defaultProjectFiles = ["eslint.config.mjs", "scripts/*.mjs", "vitest.config.ts"];
+const defaultProjectFiles = [
+  "eslint.config.mjs",
+  "scripts/*.mjs",
+  "test/unit/scripts/*.test.mjs",
+  "vitest.config.ts",
+];
 
 function restrictImports(paths = [], groups = []) {
   return [
@@ -193,7 +198,7 @@ export default [
     },
   },
   {
-    files: ["scripts/**/*.mjs", "eslint.config.mjs"],
+    files: ["scripts/**/*.mjs", "test/unit/scripts/**/*.mjs", "eslint.config.mjs"],
     languageOptions: {
       globals: {
         ...globals.node,
