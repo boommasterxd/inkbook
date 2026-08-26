@@ -1,4 +1,4 @@
-import { Notice, type FileManager, type Vault } from "obsidian";
+import type { FileManager, Vault } from "obsidian";
 
 import type { InkbookDeviceSettingsV1, InkbookSettingsV2 } from "../../domain/settings/types";
 import type { PresentationLifecyclePort } from "../../editor/session/session-port";
@@ -21,27 +21,28 @@ import {
 } from "./presentation-port";
 import { WorkspaceRuntimeLifecycle } from "./workspace-runtime-lifecycle";
 import { showWorkspaceLoadRecovery } from "./workspace-load-recovery";
-import type { WorkspaceMountedPresentation } from "./workspace-load-recovery";
+import type {
+  WorkspaceLoadFeedbackCode,
+  WorkspaceMountedPresentation,
+} from "./workspace-load-recovery";
 import { observeActiveSceneReadiness } from "./workspace-runtime-scene-readiness";
 import { ownsMarkdownEditorChange } from "./workspace-runtime-editor";
 import { createWorkspaceDocumentRuntimes } from "./workspace-runtime-workers";
 import { copyWorkspaceEmbed, deleteWorkspaceEmbed } from "./workspace-embed-actions";
-import { createHeadlessRecoveryActions } from "./workspace-recovery-actions";
+import { showWorkspaceHeadlessRecovery } from "./workspace-recovery-actions";
 import { VaultDocumentSessionFactory } from "./vault-document-session-factory";
-import {
-  showAttachedRecoveryPanel,
-  showHeadlessRecoveryNotice,
-  type HeadlessRecoveryNotice,
-} from "./recovery-notice";
+import { showAttachedRecoveryPanel, type HeadlessRecoveryNotice } from "./recovery-notice";
 import { PresentationOperationFeedback } from "./presentation-operation-feedback";
 import type { PresentationOperationFeedbackHandle } from "./presentation-operation-feedback";
 import { WorkspaceRefreshProfiles } from "./workspace-refresh-profiles";
+import { WorkspaceFeedbackRouter, type WorkspaceFeedbackHost } from "./workspace-feedback-router";
 
 export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly #coordinator: WorkspaceEditorCoordinator;
   #disposed = false;
   readonly #embedActions: ObsidianEmbedActions;
   readonly #fallbackOwnerWindow: () => Window | undefined;
+  readonly #feedback: WorkspaceFeedbackRouter;
   #headlessRecovery: HeadlessRecoveryNotice | undefined;
   readonly #lifecycle: WorkspaceRuntimeLifecycle;
   readonly #ownerWindows = new OwnerWindowRegistry();
@@ -63,10 +64,13 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       readonly vault: InkbookSettingsV2;
     },
     embedActions: ObsidianEmbedActions,
-    fallbackOwnerWindow: () => Window | undefined,
+    host: WorkspaceFeedbackHost,
   ) {
     this.#embedActions = embedActions;
-    this.#fallbackOwnerWindow = fallbackOwnerWindow;
+    this.#fallbackOwnerWindow = host.fallbackOwnerWindow;
+    this.#feedback = new WorkspaceFeedbackRouter(host.manager, host.view, (documentId) =>
+      this.#owningWindow(documentId),
+    );
     this.#scheme = scheme;
     this.#settings = settings;
     this.refreshRateProfiles = new WorkspaceRefreshProfiles(settings().vault.refreshRatePreference);
@@ -147,7 +151,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     if (this.#disposed) return;
     const mounted = this.#mounted.get(presentationAttachmentKey(attachment));
     if (mounted === undefined) return;
-    mounted.loadError?.remove();
+    mounted.loadError?.close();
     mounted.loadError = undefined;
     const loadFeedback = mounted.savingFeedback ? undefined : mounted.feedback.begin("loading");
     this.#setState(attachment, "unlocking");
@@ -184,8 +188,11 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
           history: editorContext.history,
           model: editorContext.model,
           onLock: () => this.lockActivePresentation(),
-          onNotice: (message) => void new Notice(message),
-          onCopyEmbed: () => void copyWorkspaceEmbed(this.#embedActions, attachment.embedReference),
+          onFeedback: (code) => this.#feedback.showInPresentation(attachment.root, code),
+          onCopyEmbed: () =>
+            void copyWorkspaceEmbed(this.#embedActions, attachment.embedReference, {
+              show: (code) => this.#feedback.showInPresentation(attachment.root, code),
+            }),
           onDeleteEmbed: () => {
             const invokingScene = mounted.scene;
             if (invokingScene === undefined) return;
@@ -196,6 +203,9 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
                 mounted.scene === invokingScene,
               reference: attachment.embedReference,
               scene: invokingScene,
+              feedback: {
+                show: (code) => this.#feedback.showInPresentation(attachment.root, code),
+              },
             });
           },
           onFirstStrokeCommitted: () => {
@@ -220,7 +230,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
           mounted,
           onFailure: () => {
             this.#setState(attachment, "load-error", loadFeedback);
-            this.#showLoadError(mounted);
+            this.#showLoadError(mounted, "editor-start-failed");
             this.#lifecycle.failAutoActivation(attachment, autoActivationAttempt);
           },
           onReady: () => {
@@ -314,8 +324,8 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     for (const mounted of this.#mounted.values()) {
       mounted.disposeScheme?.();
       mounted.feedback.dispose();
-      mounted.loadError?.remove();
-      mounted.recovery?.remove();
+      mounted.loadError?.close();
+      mounted.recovery?.close();
       mounted.scene?.dispose();
       mounted.attachment.root.dataset.inkbookState = "locked";
     }
@@ -334,14 +344,15 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   #releaseScene(attachment: AttachmentIdentity): void {
     const mounted = this.#mounted.get(presentationAttachmentKey(attachment));
     if (mounted === undefined) return;
+    this.#feedback.closePresentation(mounted.attachment.root);
     const current = this.#coordinator.getSnapshot().current;
     mounted.disposeScheme?.();
     mounted.disposeScheme = undefined;
     mounted.feedback.finish();
     mounted.savingFeedback = undefined;
-    mounted.recovery?.remove();
+    mounted.recovery?.close();
     mounted.recovery = undefined;
-    mounted.loadError?.remove();
+    mounted.loadError?.close();
     mounted.loadError = undefined;
     const scene = mounted.scene;
     if (
@@ -379,10 +390,11 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     this.#headlessRecovery = undefined;
     const mounted = this.#mounted.get(presentationAttachmentKey(notice));
     if (mounted === undefined) return;
+    this.#feedback.closePresentation(mounted.attachment.root);
     mounted.savingFeedback?.finish();
     mounted.savingFeedback = undefined;
     mounted.scene?.restoreAfterFailedLock();
-    mounted.recovery?.remove();
+    mounted.recovery?.close();
     const recovery = showAttachedRecoveryPanel(
       mounted.attachment.root,
       {
@@ -425,7 +437,11 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     mounted.recovery = recovery;
   }
 
-  #showLoadError(mounted: WorkspaceMountedPresentation): void {
+  #showLoadError(
+    mounted: WorkspaceMountedPresentation,
+    code: WorkspaceLoadFeedbackCode = "drawing-load-failed",
+  ): void {
+    this.#feedback.closePresentation(mounted.attachment.root);
     showWorkspaceLoadRecovery({
       activate: () => this.activate(mounted.attachment),
       discard: () => {
@@ -436,20 +452,19 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
         !this.#disposed &&
         this.#mounted.get(presentationAttachmentKey(mounted.attachment)) === mounted,
       mounted,
+      code,
     });
   }
 
   #showHeadlessRecovery(documentId: string): void {
     if (this.#disposed) return;
     this.#headlessRecovery?.close();
-    const actions = createHeadlessRecoveryActions(this.#coordinator, (savedPath) => {
-      new Notice(`Inkbook saved the recovery copy to ${savedPath}.`);
-    });
-    this.#headlessRecovery = showHeadlessRecoveryNotice(
+    this.#headlessRecovery = showWorkspaceHeadlessRecovery({
+      coordinator: this.#coordinator,
       documentId,
-      actions,
-      () => this.#owningWindow(documentId).document,
-    );
+      feedback: this.#feedback,
+      owningWindow: () => this.#owningWindow(documentId),
+    });
   }
 
   #setState(

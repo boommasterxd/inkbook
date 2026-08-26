@@ -97,7 +97,7 @@ Arrange actions change the stable back-to-front element order inside the fixed h
 
 Line and arrow endpoint connections follow every semantic target anchor that remains valid when a shape moves, scales, rotates, or changes geometry. This includes table anchors affected by a selected table's column-count change. Changing a coordinate system from 3D to 2D removes its third axis, so connections to that removed endpoint detach at their last resolved positions instead of following an anchor that no longer exists. The target change, every retained endpoint update, and every required detachment are one atomic history command. Target deletion, Cut, or erasing likewise detaches surviving external lines and arrows at their last resolved positions within the same command. Exact ordering and connection contracts are defined in [File Format and Geometry](file-format.md).
 
-When the unified history is empty, the plugin does not automatically lock the embed. Instead, a notice indicates that the embed must be locked to continue undoing in Obsidian. This prevents existing canvas redo history from being lost unexpectedly.
+When the unified history is empty, the plugin does not automatically lock the embed. Instead, attached feedback indicates that the embed must be locked to continue undoing in Obsidian. This prevents existing canvas redo history from being lost unexpectedly.
 
 ## Copy, Cut, Delete, and Paste Elements
 
@@ -231,12 +231,12 @@ On success:
 1. The plugin creates a new handwriting SVG file.
 2. It inserts the custom `!inkbook` embed Markdown in a block-safe manner. The syntax references the SVG through a normal link but never creates a native Obsidian image embed.
 3. The next mounted embed editor is activated automatically.
-4. After the widget is mounted and measured on two consecutive animation frames, the new embed opens in editing mode. If this does not happen within two seconds, insertion remains intact and a retryable notice is shown.
-5. A notice with Undo remains visible for five seconds.
+4. After the widget is mounted and measured on two consecutive animation frames, the new embed opens in editing mode. If this does not happen within two seconds, insertion remains intact and retryable shared feedback is shown over the active view or owning window.
+5. Shared success feedback with an icon-only Undo action remains visible for five seconds.
 
 Undo removes both the Markdown embed and the newly created file. The file is deleted through `FileManager.trashFile()` and therefore follows the user's Obsidian trash preference.
 
-As soon as the first stroke is saved, the Undo notice disappears automatically. If the notice merely expires, the empty embed remains.
+As soon as the first stroke is saved, the Undo feedback disappears automatically. If the feedback merely expires, the empty embed remains.
 
 ## Lock
 

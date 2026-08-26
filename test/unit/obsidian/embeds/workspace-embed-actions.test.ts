@@ -27,14 +27,14 @@ function actionHarness(deleteKind: "cancelled" | "deleted") {
   );
   const recordMarkdownHistory = vi.fn();
   const show = vi.fn();
-  return { actions: { copyEmbed, deleteEmbed }, notices: { show }, recordMarkdownHistory, show };
+  return { actions: { copyEmbed, deleteEmbed }, feedback: { show }, recordMarkdownHistory, show };
 }
 
 describe("workspace embed Markdown history", () => {
   it("does not record a Markdown marker for copy", async () => {
     const harness = actionHarness("deleted");
 
-    await copyWorkspaceEmbed(harness.actions, reference);
+    await copyWorkspaceEmbed(harness.actions, reference, harness.feedback);
 
     expect(harness.actions.copyEmbed).toHaveBeenCalledWith(reference);
     expect(harness.recordMarkdownHistory).not.toHaveBeenCalled();
@@ -46,7 +46,7 @@ describe("workspace embed Markdown history", () => {
     await deleteWorkspaceEmbed({
       actions: harness.actions,
       isCurrent: () => true,
-      notices: harness.notices,
+      feedback: harness.feedback,
       reference,
       scene: harness,
     });
@@ -61,7 +61,7 @@ describe("workspace embed Markdown history", () => {
     await deleteWorkspaceEmbed({
       actions: harness.actions,
       isCurrent: () => true,
-      notices: harness.notices,
+      feedback: harness.feedback,
       reference,
       scene: harness,
     });
@@ -75,7 +75,7 @@ describe("workspace embed Markdown history", () => {
     await deleteWorkspaceEmbed({
       actions: harness.actions,
       isCurrent: () => false,
-      notices: harness.notices,
+      feedback: harness.feedback,
       reference,
       scene: harness,
     });
@@ -84,7 +84,7 @@ describe("workspace embed Markdown history", () => {
   });
 });
 
-describe("workspace embed action notices", () => {
+describe("workspace embed action feedback", () => {
   it("reports an uncertain reference check without recording history", async () => {
     const harness = actionHarness("deleted");
     harness.actions.deleteEmbed.mockResolvedValueOnce({
@@ -95,14 +95,12 @@ describe("workspace embed action notices", () => {
     await deleteWorkspaceEmbed({
       actions: harness.actions,
       isCurrent: () => true,
-      notices: harness.notices,
+      feedback: harness.feedback,
       reference,
       scene: harness,
     });
 
-    expect(harness.show).toHaveBeenCalledWith(
-      "Inkbook could not verify whether the handwriting file has other references. Nothing was deleted.",
-    );
+    expect(harness.show).toHaveBeenCalledWith("embed-delete-references-unavailable");
     expect(harness.recordMarkdownHistory).not.toHaveBeenCalled();
   });
 
@@ -116,14 +114,12 @@ describe("workspace embed action notices", () => {
     await deleteWorkspaceEmbed({
       actions: harness.actions,
       isCurrent: () => true,
-      notices: harness.notices,
+      feedback: harness.feedback,
       reference,
       scene: harness,
     });
 
-    expect(harness.show).toHaveBeenCalledWith(
-      "Inkbook could not delete the embed because the note changed. The handwriting file was preserved.",
-    );
+    expect(harness.show).toHaveBeenCalledWith("embed-delete-note-changed");
     expect(harness.recordMarkdownHistory).not.toHaveBeenCalled();
   });
 
@@ -137,14 +133,12 @@ describe("workspace embed action notices", () => {
     await deleteWorkspaceEmbed({
       actions: harness.actions,
       isCurrent: () => true,
-      notices: harness.notices,
+      feedback: harness.feedback,
       reference,
       scene: harness,
     });
 
-    expect(harness.show).toHaveBeenCalledWith(
-      "Inkbook removed the embed but could not move the handwriting file to trash. The file was preserved.",
-    );
+    expect(harness.show).toHaveBeenCalledWith("embed-delete-file-kept");
     expect(harness.recordMarkdownHistory).not.toHaveBeenCalled();
   });
 
@@ -153,18 +147,15 @@ describe("workspace embed action notices", () => {
     harness.actions.copyEmbed.mockRejectedValueOnce(new Error("clipboard failed"));
     harness.actions.deleteEmbed.mockRejectedValueOnce(new Error("edit failed"));
 
-    await copyWorkspaceEmbed(harness.actions, reference, harness.notices);
+    await copyWorkspaceEmbed(harness.actions, reference, harness.feedback);
     await deleteWorkspaceEmbed({
       actions: harness.actions,
       isCurrent: () => true,
-      notices: harness.notices,
+      feedback: harness.feedback,
       reference,
       scene: harness,
     });
 
-    expect(harness.show.mock.calls).toEqual([
-      ["Inkbook could not copy the embed."],
-      ["Inkbook could not delete the embed. The handwriting file was preserved."],
-    ]);
+    expect(harness.show.mock.calls).toEqual([["embed-copy-failed"], ["embed-delete-failed"]]);
   });
 });

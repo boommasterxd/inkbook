@@ -18,6 +18,6 @@ export interface EditorInsertionCommandPort {
   request(editor: Editor, sourcePath: string): boolean;
 }
 
-export interface PlacementFallbackNoticePort {
-  show(message: string): void;
+export interface PlacementFallbackFeedbackPort {
+  show(fallback: "attachment-folder-unavailable" | "custom-folder-unavailable"): void;
 }

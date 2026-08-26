@@ -212,7 +212,7 @@ describe("copied Inkbook embed duplication", () => {
     });
 
     await expect(test.controller.paste(request(editor))).resolves.toEqual({
-      duplicateTrashed: true,
+      cleanup: "trashed",
       kind: "stale",
     });
     expect(editor.content).toBe("user edit");
@@ -291,14 +291,14 @@ describe("Obsidian copied-embed composition", () => {
   it("validates through the bounded fallback and reads back a new Vault file before insertion", async () => {
     const test = createCompositionHarness();
     const { app, editor, files, getFileByPath, serialized, settings } = test;
-    const placementNotice = vi.fn();
+    const placementFeedback = vi.fn();
 
     const result = await createObsidianEmbedPasteController(app, settings, {
-      show: placementNotice,
+      show: placementFeedback,
     }).paste(request(editor));
 
     expect(result).toEqual({ kind: "inserted", mode: "duplicate" });
-    expect(placementNotice).not.toHaveBeenCalled();
+    expect(placementFeedback).not.toHaveBeenCalled();
     expect(test.duplicatePath).toMatch(/^drawings\/inkbook-\d{8}-\d{6}-010101\.svg$/u);
     expect(editor.content).toBe(`!inkbook[[${test.duplicatePath}]]`);
     expect(files.get(test.duplicatePath)?.text).toBe(serialized.value.svg);
@@ -314,34 +314,34 @@ describe("Obsidian copied-embed composition", () => {
     [
       "attachment folder",
       { mode: "obsidian-attachment-folder" } as const,
-      "Inkbook could not use Obsidian's attachment folder. Using this note's folder instead.",
+      "attachment-folder-unavailable",
     ],
     [
       "custom folder",
       { folder: "missing", mode: "custom-vault-folder" } as const,
-      "Inkbook could not use the configured custom folder. Using this note's folder instead.",
+      "custom-folder-unavailable",
     ],
   ])(
     "reports the unavailable %s and duplicates in the note folder",
     async (_, placement, message) => {
       const test = createCompositionHarness({ attachmentUnavailable: true, placement });
-      const { placementNotice, result } = await runCompositionPaste(test);
+      const { placementFeedback, result } = await runCompositionPaste(test);
 
       expect(result).toEqual({ kind: "inserted", mode: "duplicate" });
-      expect(placementNotice).toHaveBeenCalledWith(message);
+      expect(placementFeedback).toHaveBeenCalledWith(message);
       expect(test.getRandomValues).toHaveBeenCalled();
       expect(test.editor.content).toMatch(/^!inkbook\[\[notes\/inkbook-.*\.svg\]\]$/u);
     },
   );
 
-  it("continues duplication when the placement notice port throws", async () => {
+  it("continues duplication when the placement feedback port throws", async () => {
     const test = createCompositionHarness({
       attachmentUnavailable: true,
       placement: { mode: "obsidian-attachment-folder" },
     });
 
     const { result } = await runCompositionPaste(test, () => {
-      throw new Error("notice unavailable");
+      throw new Error("feedback unavailable");
     });
 
     expect(result).toEqual({ kind: "inserted", mode: "duplicate" });
@@ -350,10 +350,10 @@ describe("Obsidian copied-embed composition", () => {
 
   it("does not report regular note-folder placement", async () => {
     const test = createCompositionHarness({ placement: { mode: "note-folder" } });
-    const { placementNotice, result } = await runCompositionPaste(test);
+    const { placementFeedback, result } = await runCompositionPaste(test);
 
     expect(result).toEqual({ kind: "inserted", mode: "duplicate" });
-    expect(placementNotice).not.toHaveBeenCalled();
+    expect(placementFeedback).not.toHaveBeenCalled();
   });
 });
 
@@ -364,7 +364,9 @@ describe("Obsidian copied-embed size boundaries", () => {
       sourceSize: 1,
       readSource: () => oversized,
     });
-    const result = await createObsidianEmbedPasteController(app, settings).paste(request(editor));
+    const result = await createObsidianEmbedPasteController(app, settings, {
+      show: vi.fn(),
+    }).paste(request(editor));
 
     expect(result).toEqual({ kind: "inserted", mode: "original" });
     expect(editor.content).toBe(CLIPBOARD);
@@ -373,12 +375,14 @@ describe("Obsidian copied-embed size boundaries", () => {
 
 async function runCompositionPaste(
   test: ReturnType<typeof createCompositionHarness>,
-  placementNotice: (message: string) => void = vi.fn(),
+  placementFeedback: (
+    fallback: "attachment-folder-unavailable" | "custom-folder-unavailable",
+  ) => void = vi.fn(),
 ) {
   const result = await createObsidianEmbedPasteController(test.app, test.settings, {
-    show: placementNotice,
+    show: placementFeedback,
   }).paste(request(test.editor));
-  return { placementNotice, result };
+  return { placementFeedback, result };
 }
 
 function createCompositionHarness(

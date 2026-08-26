@@ -220,7 +220,7 @@ describe("empty-line insertion", () => {
     expect(harness.fakeEditor.lines[0]).toBe("new text");
     expect(harness.inserted).not.toHaveBeenCalled();
     expect(harness.failed).toHaveBeenCalledWith(
-      "Inkbook could not edit the note, so the new handwriting file was moved to trash.",
+      "insertion-note-changed-cleaned",
       expect.any(Error),
     );
   });
@@ -249,7 +249,7 @@ describe("empty-line insertion", () => {
   });
 });
 
-describe("empty-line insertion failure notices", () => {
+describe("empty-line insertion failure feedback", () => {
   it("preserves a user-modified embed when undo is stale", async () => {
     const harness = await insertIntoEmptyEditor();
     harness.fakeEditor.lines[0] = "changed";
@@ -257,10 +257,7 @@ describe("empty-line insertion failure notices", () => {
     expect(await harness.insertions[0]?.undo()).toBe(false);
     expect(harness.editor.getLine(0)).toBe("changed");
     expect(harness.trash).not.toHaveBeenCalled();
-    expect(harness.failed).toHaveBeenCalledWith(
-      "Inkbook could not undo the insertion because the note changed. The handwriting file was preserved.",
-      expect.any(Error),
-    );
+    expect(harness.failed).toHaveBeenCalledWith("insertion-undo-note-changed", expect.any(Error));
   });
 
   it("reports an incomplete undo when moving the file to trash rejects", async () => {
@@ -270,10 +267,7 @@ describe("empty-line insertion failure notices", () => {
     await expect(harness.insertions[0]?.undo()).resolves.toBe(false);
 
     expect(harness.editor.getLine(0)).toBe("");
-    expect(harness.failed).toHaveBeenCalledWith(
-      "Inkbook removed the embed but could not move the handwriting file to trash. The file was preserved.",
-      expect.any(Error),
-    );
+    expect(harness.failed).toHaveBeenCalledWith("insertion-undo-file-kept", expect.any(Error));
     await expect(harness.insertions[0]?.undo()).resolves.toBe(false);
   });
 
@@ -291,10 +285,7 @@ describe("empty-line insertion failure notices", () => {
 
     await vi.waitFor(() => expect(harness.failed).toHaveBeenCalledOnce());
 
-    expect(harness.failed).toHaveBeenCalledWith(
-      "Inkbook could not finish inserting the handwriting embed or move the created file to trash. The file may require manual cleanup.",
-      expect.any(Error),
-    );
+    expect(harness.failed).toHaveBeenCalledWith("insertion-cleanup-failed", expect.any(Error));
   });
 });
 
@@ -311,12 +302,12 @@ describe("Obsidian empty-line insertion composition", () => {
       path = `drawings/${filename}`;
       return path;
     });
-    const placementNotice = vi.fn();
+    const placementFeedback = vi.fn();
     const controller = createObsidianInsertionController(
       app,
       settingsForPlacement({ mode: "obsidian-attachment-folder" }),
       { failed, inserted },
-      { show: placementNotice },
+      { show: placementFeedback },
     );
     const editor = new FakeEditor([""]);
 
@@ -324,7 +315,7 @@ describe("Obsidian empty-line insertion composition", () => {
     await vi.waitFor(() => expect(inserted).toHaveBeenCalledOnce());
 
     expect(failed).not.toHaveBeenCalled();
-    expect(placementNotice).not.toHaveBeenCalled();
+    expect(placementFeedback).not.toHaveBeenCalled();
     expect(path).toMatch(/^drawings\/inkbook-\d{8}-\d{6}-090909\.svg$/u);
     expect(editor.lines[0]).toBe(`!inkbook[[${path}]]`);
     expect(files.get(path)?.text).toContain('data-inkbook-version="1"');
@@ -334,12 +325,12 @@ describe("Obsidian empty-line insertion composition", () => {
     [
       "attachment folder",
       { mode: "obsidian-attachment-folder" } as const,
-      "Inkbook could not use Obsidian's attachment folder. Using this note's folder instead.",
+      "attachment-folder-unavailable",
     ],
     [
       "custom folder",
       { folder: "missing", mode: "custom-vault-folder" } as const,
-      "Inkbook could not use the configured custom folder. Using this note's folder instead.",
+      "custom-folder-unavailable",
     ],
   ])("reports the unavailable %s and inserts in the note folder", async (_, placement, message) => {
     const test = createFallbackInsertionHarness(placement);
@@ -347,16 +338,16 @@ describe("Obsidian empty-line insertion composition", () => {
     await requestAndAwaitInsertion(test);
 
     expect(test.failed).not.toHaveBeenCalled();
-    expect(test.placementNotice).toHaveBeenCalledWith(message);
+    expect(test.placementFeedback).toHaveBeenCalledWith(message);
     expect(test.getRandomValues).toHaveBeenCalled();
     expect(test.editor.getLine(0)).toMatch(/^!inkbook\[\[notes\/inkbook-.*\.svg\]\]$/u);
   });
 
-  it("continues insertion when the placement notice port throws", async () => {
+  it("continues insertion when the placement feedback port throws", async () => {
     const test = createFallbackInsertionHarness(
       { folder: "missing", mode: "custom-vault-folder" },
       () => {
-        throw new Error("notice unavailable");
+        throw new Error("feedback unavailable");
       },
     );
 
@@ -371,20 +362,20 @@ describe("Obsidian empty-line insertion composition", () => {
 
     await requestAndAwaitInsertion(test);
 
-    expect(test.placementNotice).not.toHaveBeenCalled();
+    expect(test.placementFeedback).not.toHaveBeenCalled();
   });
 });
 
 function createFallbackInsertionHarness(
   placement: FilePlacementV1,
-  show: (message: string) => void = vi.fn(),
+  show: (fallback: "attachment-folder-unavailable" | "custom-folder-unavailable") => void = vi.fn(),
 ) {
   const files: MemoryVaultFiles = new Map();
   const getRandomValues = vi.fn((bytes: Uint8Array) => bytes.fill(9));
   const ownerWindow = { crypto: { getRandomValues } } as unknown as Window;
   const inserted = vi.fn();
   const failed = vi.fn();
-  const placementNotice = vi.fn(show);
+  const placementFeedback = vi.fn(show);
   const app = createInsertionApp(files, ownerWindow, async () => {
     throw new Error("attachment folder unavailable");
   });
@@ -393,9 +384,9 @@ function createFallbackInsertionHarness(
     app,
     settingsForPlacement(placement),
     { failed, inserted },
-    { show: placementNotice },
+    { show: placementFeedback },
   );
-  return { controller, editor, failed, getRandomValues, inserted, placementNotice };
+  return { controller, editor, failed, getRandomValues, inserted, placementFeedback };
 }
 
 function createMemoryVault(files: MemoryVaultFiles) {

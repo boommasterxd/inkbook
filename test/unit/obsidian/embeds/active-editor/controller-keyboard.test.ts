@@ -23,6 +23,7 @@ function keyboardHarness(
     readonly lastScreenPointer?: InputPoint | null;
     readonly pointerOver?: boolean;
     readonly selectionSize?: number;
+    readonly history?: ActiveEditorHistory;
   } = {},
 ) {
   const ownerDocument = {} as Document;
@@ -44,7 +45,7 @@ function keyboardHarness(
     updateKeyboard,
     visibleCenter: vi.fn(() => ({ x: 20, y: 30 })),
   } as unknown as ActiveEditorNavigation;
-  const onNotice = vi.fn();
+  const onFeedback = vi.fn();
   const openKeyboardMenu = vi.fn();
   const clearSelection = vi.fn();
   const controller = new ActiveEditorKeyboardController({
@@ -53,11 +54,11 @@ function keyboardHarness(
     cancelGesture,
     clearSelection,
     closeFlyout,
-    history: history(),
+    history: options.history ?? history(),
     lastScreenPointer: () => options.lastScreenPointer ?? null,
     navigation,
     ownerDocument,
-    onNotice,
+    onFeedback,
     onPendingChanged: vi.fn(),
     openKeyboardMenu,
     selectionSize: () => options.selectionSize ?? 0,
@@ -70,7 +71,7 @@ function keyboardHarness(
     controller,
     execute,
     navigation,
-    onNotice,
+    onFeedback,
     openKeyboardMenu,
     pasteFromClipboardData,
     isAvailable,
@@ -207,8 +208,21 @@ describe("active editor native paste and history keyboard handling", () => {
     const harness = keyboardHarness();
 
     expect(harness.controller.handleKeyDown(key("z", { ctrlKey: true }))).toBe(true);
-    expect(harness.onNotice).toHaveBeenCalledWith(
-      "The embed must be locked to continue undoing in Obsidian.",
+    expect(harness.onFeedback).toHaveBeenCalledWith("history-lock-required");
+  });
+
+  it("reports a failed Canvas history transition", async () => {
+    const canvasHistory = history();
+    const harness = keyboardHarness({ history: canvasHistory });
+    canvasHistory.registerApplied({
+      payloadBytes: 1,
+      redo: async () => true,
+      undo: async () => false,
+    });
+
+    expect(harness.controller.handleKeyDown(key("z", { ctrlKey: true }))).toBe(true);
+    await vi.waitFor(() =>
+      expect(harness.onFeedback).toHaveBeenCalledWith("history-change-failed"),
     );
   });
 });

@@ -1,4 +1,3 @@
-import { Notice } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -7,6 +6,7 @@ import {
   showLoadRecoveryPanel,
   type HeadlessRecoveryActions,
 } from "../../../../src/obsidian/embeds/recovery-notice";
+import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
 
 interface TestNoticeElement {
   readonly attributes: Map<string, string>;
@@ -14,6 +14,7 @@ interface TestNoticeElement {
   disabled: boolean;
   dispatch(type: string): void;
   readonly removed: boolean;
+  readonly style: Record<string, string>;
   readonly textContent: string;
 }
 
@@ -43,6 +44,7 @@ class TestDialogElement {
   readonly attributes = new Map<string, string>();
   readonly children: TestDialogElement[] = [];
   disabled = false;
+  readonly dataset: Record<string, string> = {};
   id = "";
   readonly #listeners = new TestListeners();
   parent: TestDialogElement | undefined;
@@ -169,7 +171,16 @@ class TestDocument {
 }
 
 function actionButtons(document: TestDocument): TestDialogElement[] {
-  return headlessDialog(document)?.children[3]?.children ?? [];
+  return headlessDialog(document)?.children[1]?.children[2]?.children ?? [];
+}
+
+function attachedActionButtons(panel: TestNoticeElement): TestNoticeElement[] {
+  return panel.children[2]?.children ?? [];
+}
+
+function expectAttachedError(panel: TestNoticeElement, title: string): void {
+  expect(panel.attributes.get("role")).toBe("alert");
+  expect(panel.children[1]?.children[0]?.textContent).toBe(title);
 }
 
 function headlessDialog(document: TestDocument): TestDialogElement | undefined {
@@ -203,18 +214,18 @@ describe("headless recovery notice", () => {
     expect(first.body.children).toHaveLength(1);
     expect(second.body.children).toHaveLength(0);
     expect(actionButtons(first).map((button) => button.attributes.get("aria-label"))).toEqual([
-      "Retry",
+      "Retry save",
       "Reload external version",
-      "Save local copy",
+      "Save copy",
     ]);
     expect(
       actionButtons(first).map((button) => button.children[0]?.attributes.get("data-icon")),
     ).toEqual(["rotate-ccw", "refresh-cw", "copy-plus"]);
-    expect(first.activeElement?.attributes.get("aria-label")).toBe("Retry");
+    expect(first.activeElement?.attributes.get("aria-label")).toBe("Retry save");
     expect(headlessDialog(first)?.attributes.get("role")).toBe("dialog");
     expect(headlessDialog(first)?.attributes.get("aria-modal")).toBe("true");
-    expect(headlessDialog(first)?.children[2]?.textContent).toBe(
-      "Unsaved changes remain available for recovery.",
+    expect(headlessDialog(first)?.children[1]?.children[1]?.children[1]?.textContent).toBe(
+      "Your changes are still available in the editor.",
     );
     expect(
       headlessDialog(first)
@@ -295,42 +306,49 @@ describe("headless recovery notice", () => {
 
 describe("attached recovery panel", () => {
   it("replaces a load failure with icon-only retry and discard actions", () => {
-    const host = new Notice("").messageEl;
+    const host = new FakePresentationElement();
     const retry = vi.fn();
     const discard = vi.fn(() => true);
     const closed = vi.fn();
     const panel = showLoadRecoveryPanel(
-      host,
+      host as unknown as HTMLElement,
       { discard, retry },
       closed,
-    ) as unknown as TestNoticeElement;
-    const actionButtons = panel.children[1]?.children ?? [];
+      "drawing-load-failed",
+    );
+    const panelElement = panel.element as unknown as TestNoticeElement;
+    const actionButtons = attachedActionButtons(panelElement);
 
-    expect(panel.attributes.get("aria-label")).toBe("Load failed");
+    expectAttachedError(panelElement, "The drawing couldn't be opened.");
+    expect(panelElement.style.insetBlockEnd).toBe("16px");
+    expect(panelElement.style.insetInlineStart).toBe("300px");
     expect(actionButtons.map((button) => button.attributes.get("aria-label"))).toEqual([
-      "Retry load",
-      "Discard load attempt",
+      "Retry opening drawing",
+      "Keep saved preview",
     ]);
     actionButtons[0]?.dispatch("click");
     expect(retry).toHaveBeenCalledOnce();
     expect(closed).toHaveBeenCalledOnce();
 
     const discardPanel = showLoadRecoveryPanel(
-      host,
+      host as unknown as HTMLElement,
       { discard, retry },
       closed,
-    ) as unknown as TestNoticeElement;
-    discardPanel.children[1]?.children[1]?.dispatch("click");
+      "drawing-load-failed",
+    );
+    (discardPanel.element as unknown as TestNoticeElement).children[2]?.children[1]?.dispatch(
+      "click",
+    );
     expect(discard).toHaveBeenCalledOnce();
     expect(closed).toHaveBeenCalledTimes(2);
   });
 
   it("offers retry, local copy, and cancel with accessible pending behavior", async () => {
-    const host = new Notice("").messageEl;
+    const host = new FakePresentationElement();
     const closed = vi.fn();
     let finish: ((confirmed: boolean) => void) | undefined;
     const panel = showAttachedRecoveryPanel(
-      host,
+      host as unknown as HTMLElement,
       {
         cancel: vi.fn(() => true),
         retry: vi.fn(() => false),
@@ -342,12 +360,11 @@ describe("attached recovery panel", () => {
         ),
       },
       closed,
-    ) as unknown as TestNoticeElement;
-    const actionButtons = panel.children[1]?.children ?? [];
+    );
+    const panelElement = panel.element as unknown as TestNoticeElement;
+    const actionButtons = attachedActionButtons(panelElement);
 
-    expect(panel.attributes.get("role")).toBe("alert");
-    expect(panel.attributes.get("aria-label")).toBe("Save failed");
-    expect(panel.children[0]?.textContent).toBe("Could not save changes");
+    expectAttachedError(panelElement, "Changes couldn't be saved.");
     expect(actionButtons.map((button) => button.attributes.get("aria-label"))).toEqual([
       "Retry save",
       "Save copy",
@@ -365,7 +382,7 @@ describe("attached recovery panel", () => {
     finish?.(false);
     await vi.waitFor(() => expect(actionButtons.every((button) => !button.disabled)).toBe(true));
     actionButtons[2]?.dispatch("click");
-    expect(panel.removed).toBe(true);
+    expect(host.children).toHaveLength(0);
     expect(closed).toHaveBeenCalledTimes(1);
   });
 });

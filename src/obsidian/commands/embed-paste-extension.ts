@@ -2,14 +2,17 @@ import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { editorInfoField } from "obsidian";
 
-import { EmbedPasteController } from "./embed-paste";
+import { EmbedPasteController, type EmbedPasteOutcome } from "./embed-paste";
 import { eventPathHasClass } from "./event-path";
 
 function isInsideInkbook(event: ClipboardEvent): boolean {
   return eventPathHasClass(event, "inkbook-root");
 }
 
-export function createEmbedPasteExtension(controller: EmbedPasteController): Extension {
+export function createEmbedPasteExtension(
+  controller: EmbedPasteController,
+  report: (outcome: EmbedPasteOutcome) => void,
+): Extension {
   return EditorView.domEventHandlers({
     paste: (event, view) => {
       const clipboardText = event.clipboardData?.getData("text/plain");
@@ -25,7 +28,7 @@ export function createEmbedPasteExtension(controller: EmbedPasteController): Ext
       };
       if (!controller.canHandle(request)) return false;
       event.preventDefault();
-      void controller.paste(request);
+      void controller.paste(request).then(report);
       return true;
     },
   });

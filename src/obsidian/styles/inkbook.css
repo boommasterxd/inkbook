@@ -1,4 +1,5 @@
 @import url("./motion.css");
+@import url("./feedback.css");
 @import url("./editor-toolbar.css");
 @import url("./editor-toolbar-motion.css");
 @import url("./editor-flyouts.css");
@@ -293,8 +294,6 @@
   display: flex;
   block-size: 40px;
   inline-size: 40px;
-  inset-block-start: 50%;
-  inset-inline-start: 50%;
   justify-content: center;
   pointer-events: none;
   position: absolute;
@@ -312,96 +311,6 @@
   animation: inkbook-operation-spin 800ms linear infinite;
 }
 
-.inkbook-root .inkbook-recovery {
-  align-items: center;
-  background: color-mix(in srgb, var(--background-primary) 96%, transparent);
-  border: 1px solid var(--background-modifier-border-hover);
-  border-radius: var(--radius-l);
-  box-shadow: var(--shadow-l);
-  color: var(--text-normal);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 14px;
-  inset-block: auto 16px;
-  inset-inline-start: 50%;
-  justify-content: center;
-  max-inline-size: calc(100% - 24px);
-  padding: 10px 12px;
-  position: absolute;
-  translate: -50% 0;
-  width: max-content;
-  z-index: var(--layer-menu);
-}
-
-.inkbook-root .inkbook-recovery-message {
-  font-size: var(--font-ui-small);
-  font-weight: var(--font-medium);
-}
-
-.inkbook-root .inkbook-recovery-icon-button {
-  align-items: center;
-  appearance: none;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-m);
-  box-shadow: none;
-  color: var(--text-muted);
-  display: inline-flex;
-  inline-size: 36px;
-  justify-content: center;
-  margin: 0;
-  min-block-size: 36px;
-  padding: 0;
-}
-
-.inkbook-root .inkbook-recovery-icon-button:hover {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
-}
-
-.inkbook-root .inkbook-recovery-icon-button:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: -2px;
-}
-
-.inkbook-root .inkbook-recovery-action-icon,
-.inkbook-root .inkbook-recovery-action-icon svg {
-  block-size: 18px;
-  inline-size: 18px;
-}
-
-.inkbook-root .inkbook-notice-icon-button {
-  align-items: center;
-  appearance: none;
-  background: transparent;
-  border: 0;
-  border-radius: 50%;
-  box-shadow: none;
-  color: var(--text-muted);
-  display: inline-flex;
-  inline-size: 36px;
-  justify-content: center;
-  margin-inline-start: 8px;
-  min-block-size: 36px;
-  padding: 0;
-}
-
-.inkbook-root .inkbook-notice-icon-button:hover {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
-}
-
-.inkbook-root .inkbook-notice-icon-button:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: -2px;
-}
-
-.inkbook-root .inkbook-notice-action-icon,
-.inkbook-root .inkbook-notice-action-icon svg {
-  block-size: 18px;
-  inline-size: 18px;
-}
-
 .inkbook-root.inkbook-recovery-overlay {
   align-items: center;
   background: var(--background-modifier-cover);
@@ -412,16 +321,6 @@
   z-index: var(--layer-modal, 1000);
 }
 
-.inkbook-root .inkbook-recovery-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--size-4-2);
-}
-
-.inkbook-root .inkbook-recovery .inkbook-recovery-actions {
-  gap: 6px;
-}
-
 .inkbook-root .inkbook-headless-recovery-dialog {
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
@@ -430,6 +329,7 @@
   color: var(--text-normal);
   max-inline-size: min(32rem, calc(100vi - 2rem));
   padding: var(--size-4-5);
+  position: relative;
 }
 
 .inkbook-root .inkbook-headless-recovery-dialog button:focus-visible {
