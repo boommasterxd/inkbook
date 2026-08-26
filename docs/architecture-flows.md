@@ -139,13 +139,15 @@ flowchart TD
   arbitration --> palm["Ignore touch as palm input"]
   arbitration --> eraser["Temporary or active eraser"]
   arbitration --> pinch["Two-touch pinch"]
-  arbitration --> elementMove["Touch selects or moves hit element"]
+  arbitration --> touchPending["Touch tap, pan, scroll, or long-press candidate"]
+  arbitration --> elementMove["Preselected-element touch move"]
   arbitration --> activeTool["Pen, mouse, or enabled-finger active tool"]
   arbitration --> navigation["Note scroll, page pan, or long press"]
   arbitration --> menu["Spatial-index target and native context menu"]
 
   eraser --> gesture["Input reducer gesture state"]
   pinch --> gesture
+  touchPending --> gesture
   elementMove --> gesture
   activeTool --> gesture
   navigation --> gesture
@@ -174,7 +176,7 @@ flowchart TD
   revision --> autosave["Schedule autosave after 500 ms of inactivity"]
 ```
 
-Pointer movement applies direct imperative feedback and creates no element records, history entries, React renders, or save work. Committed SVG paths and decorative overlays receive no pointer events and own no listeners. Creation and transformation gestures mutate preview nodes, while navigation updates the owned scroller or camera. The reducer states are `idle`, `touch-pending`, `note-scroll`, `page-pan`, `element-move`, `lasso`, `eraser-gesture`, `tool-gesture`, and `pinch`. Candidate lookup for hit testing, context targets, erasing, culling, and snapping uses the spatial index. A target transform follows the reverse connection map so connected arrow and line endpoints update without scanning all elements.
+Pointer movement applies direct imperative feedback and creates no element records, history entries, React renders, or save work. Committed SVG paths and decorative overlays receive no pointer events and own no listeners. Creation and transformation gestures mutate preview nodes. An unselected touch target remains in `touch-pending` until release confirms a short tap or movement permanently resolves to pan or scroll; navigation never emits selection. Only a target selected before contact may enter `element-move`. `page-pan` updates the horizontal camera and may continue through the shared kinetic animation frame without writing native `scrollTop`, while `note-scroll` classifies lifecycle only and leaves vertical motion plus kinetic scrolling to the native Obsidian scroll owner. Pending and vertically classified touch events remain available to the host; propagation is contained only after Inkbook claims horizontal page pan, pinch, finger drawing, or a preselected-element move. The reducer states are `idle`, `touch-pending`, `note-scroll`, `page-pan`, `element-move`, `lasso`, `eraser-gesture`, `tool-gesture`, and `pinch`. Candidate lookup for hit testing, context targets, erasing, culling, and snapping uses the spatial index. A target transform follows the reverse connection map so connected arrow and line endpoints update without scanning all elements.
 
 The native-scrollbar lease is acquired before Inkbook's first width-derived preview or editor measurement and remains unchanged across lock and unlock for the complete recognized-presentation lifetime. It is not a pointer-state transition. Inkbook measures its own background container and clamps its right edge to the resolved scroller's client edge; the canvas never adopts the pane width or covers the right-hand gutter. A live layout move acquires the new lease and adopts post-style geometry before releasing the old lease in the next frame, while a destroyed presentation releases immediately. The pen scroll guard only restores an unexpected `scrollTop` change in the next animation frame.
 

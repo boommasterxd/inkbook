@@ -41,6 +41,7 @@ describe("input exit cleanup", () => {
       const exited = apply(pending.state, { type, pointerId: 1 });
       expect(inputPhase(exited.state)).toBe("idle");
       expect(exited.effects).toEqual([
+        ...(type === "pointer-up" ? [{ type: "clear-selection" as const }] : []),
         { type: "cancel-long-press", pointerId: 1 },
         { type: "release-pointer", pointerId: 1 },
       ]);
@@ -50,7 +51,7 @@ describe("input exit cleanup", () => {
   it("cancels an element timer without inventing a zero-distance commit", () => {
     const moving = apply(
       createInputState(),
-      touchDown({ target: { elementId: "shape-a", isSelected: false } }),
+      touchDown({ target: { elementId: "shape-a", isSelected: true } }),
     );
     const cancelled = apply(moving.state, { type: "pointer-cancel", pointerId: 1 });
     expect(types(cancelled.effects)).toEqual(["cancel-long-press", "release-pointer"]);
@@ -59,7 +60,7 @@ describe("input exit cleanup", () => {
   it("reverts an element move after its timer was cancelled by movement", () => {
     const moving = apply(
       createInputState(),
-      touchDown({ target: { elementId: "shape-a", isSelected: false } }),
+      touchDown({ target: { elementId: "shape-a", isSelected: true } }),
     );
     const preview = apply(moving.state, {
       type: "pointer-move",

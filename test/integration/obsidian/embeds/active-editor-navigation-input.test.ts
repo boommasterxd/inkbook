@@ -6,6 +6,7 @@ import {
   ActiveEditorNavigation,
   type ActiveEditorWheelInput,
 } from "../../../../src/obsidian/embeds/active-editor/navigation";
+import { responsiveTrackpadPanDelta } from "../../../../src/obsidian/embeds/active-editor/trackpad-pan-momentum";
 import type { BrowserScrollElement } from "../../../../src/obsidian/scrolling/index";
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene/index";
 import { domRect } from "../../../fixtures/obsidian/active-editor";
@@ -13,11 +14,13 @@ import { domRect } from "../../../fixtures/obsidian/active-editor";
 class Frames {
   readonly callbacks = new Map<number, FrameRequestCallback>();
   #next = 1;
+  #now = 0;
 
   readonly window = {
     cancelAnimationFrame: (frame: number) => this.callbacks.delete(frame),
     innerHeight: 600,
     innerWidth: 1_000,
+    performance: { now: () => this.#now },
     requestAnimationFrame: (callback: FrameRequestCallback) => {
       const frame = this.#next++;
       this.callbacks.set(frame, callback);
@@ -25,12 +28,17 @@ class Frames {
     },
   };
 
-  flush(): void {
+  flush(timestamp = 0): void {
     const entry = this.callbacks.entries().next().value as
       readonly [number, FrameRequestCallback] | undefined;
     if (entry === undefined) throw new Error("No frame is pending.");
     this.callbacks.delete(entry[0]);
-    entry[1](0);
+    this.#now = timestamp;
+    entry[1](timestamp);
+  }
+
+  setNow(timestamp: number): void {
+    this.#now = timestamp;
   }
 }
 
@@ -193,13 +201,20 @@ describe("active editor navigation input ordering", () => {
       (wheelLast.owner.scrollTop + wheelClient.y - 300) / wheelLast.navigation.zoom,
     ).toBeCloseTo(wheelPageY);
   });
+});
 
+describe("active editor horizontal wheel routing", () => {
   it("claims horizontal trackpad and Shift-wheel input only above fit", () => {
     const harness = createHarness();
     expect(harness.navigation.updateWheel(horizontalWheel())).toBe(false);
     harness.navigation.restoreViewState({ cameraX: -100, zoom: 1 });
 
+    expect(harness.navigation.updateWheel(horizontalWheel({ deltaX: 1, deltaY: 20 }))).toBe(false);
+    harness.frames.setNow(0);
+    expect(harness.navigation.updateWheel(horizontalWheel({ deltaX: 20, deltaY: 18 }))).toBe(true);
+    harness.frames.setNow(16);
     expect(harness.navigation.updateWheel(horizontalWheel())).toBe(true);
+    harness.frames.setNow(32);
     expect(
       harness.navigation.updateWheel(
         horizontalWheel({ deltaMode: 1, deltaX: 0, deltaY: 2, shiftKey: true }),
@@ -207,7 +222,38 @@ describe("active editor navigation input ordering", () => {
     ).toBe(true);
     harness.frames.flush();
 
-    expect(harness.navigation.cameraX).toBeCloseTo(-212);
+    expect(harness.navigation.cameraX).toBeCloseTo(
+      -100 + responsiveTrackpadPanDelta(-20, undefined) + responsiveTrackpadPanDelta(-80, 16) - 32,
+    );
+  });
+
+  it("continues a horizontal pixel-wheel burst after its native inertial tail ends", () => {
+    const harness = createHarness();
+    harness.navigation.restoreViewState({ cameraX: -100, zoom: 1 });
+    for (const [timestamp, deltaX, deltaY] of [
+      [0, 10, 2],
+      [16, 8, 2],
+      [32, 5, 3],
+      [48, 3, 2],
+    ] as const) {
+      harness.frames.setNow(timestamp);
+      expect(harness.navigation.updateWheel(horizontalWheel({ deltaX, deltaY }))).toBe(true);
+      harness.frames.flush(timestamp);
+    }
+
+    const directPan = [-10, -8, -5, -3]
+      .map((delta, index) => responsiveTrackpadPanDelta(delta, index === 0 ? undefined : 16))
+      .reduce((total, delta) => total + delta, 0);
+    expect(harness.navigation.cameraX).toBeCloseTo(-100 + directPan);
+    expect(harness.frames.callbacks.size).toBe(1);
+    harness.frames.flush(64);
+    expect(harness.navigation.cameraX).toBeCloseTo(-100 + directPan);
+    harness.frames.flush(72);
+    expect(harness.navigation.cameraX).toBeCloseTo(-100 + directPan);
+    harness.frames.flush(88);
+
+    expect(harness.navigation.cameraX).toBeLessThan(-100 + directPan);
+    expect(harness.sequence).not.toContain("scroll-write");
   });
 });
 
@@ -244,6 +290,23 @@ describe("active editor pointer-anchored keyboard navigation", () => {
     ).toBe(true);
     const pageAfterResize = harness.navigation.pagePointFromScreen(lastScreenPointer);
     expectKeyboardZoomAnchor(pageAfterResize.x);
+  });
+
+  it("applies transition camera state without rewriting native scroll", () => {
+    const harness = createHarness();
+    const scrollTop = harness.owner.scrollTop;
+    harness.sequence.length = 0;
+
+    expect(
+      harness.navigation.applyResize({
+        cameraX: -120,
+        fitZoom: 1,
+        zoom: 1.2,
+      }),
+    ).toBe(true);
+
+    expect(harness.owner.scrollTop).toBe(scrollTop);
+    expect(harness.sequence).toEqual(["camera-write"]);
   });
 });
 

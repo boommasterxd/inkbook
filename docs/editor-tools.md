@@ -7,7 +7,7 @@ The Select tool is used to select and edit existing elements.
 Available interactions:
 
 - With mouse input, click an element to select it while Select is active.
-- With touch input, tap an element to select it regardless of the active tool.
+- With touch input, complete a short stationary tap to select an element regardless of the active tool. Contact alone, pan, and note scroll do not change selection. A touch drag moves an annotation only when it was already selected before contact.
 - Drag from empty canvas while Select is active to draw a lasso area and select multiple elements. Lasso is not a separate toolbar tool.
 - Hold Shift to add more elements to the selection.
 - Move a selection.

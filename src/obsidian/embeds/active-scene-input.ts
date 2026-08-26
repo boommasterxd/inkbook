@@ -1,11 +1,20 @@
 import type { SvgSceneRenderer } from "../../rendering/scene/index";
 
 import type { ActiveEditorController } from "./active-editor/controller";
+import { CanvasTouchBoundary } from "./canvas-touch-boundary";
 
 export function attachActiveSceneInputListeners(
   renderer: SvgSceneRenderer,
   controller: ActiveEditorController,
 ): () => void {
+  const touchBoundary = new CanvasTouchBoundary(renderer.inputSurface, {
+    onPrimaryTouchStart: () => controller.preparePrimaryTouchStart(),
+    onTouchInterrupted: () => controller.recoverInterruptedTouch(),
+    onTouchPointerMove: (event) => controller.handlePointerMove(event),
+    onTouchPointerStart: (event) => controller.handlePointerDown(event),
+    onTouchTerminal: (pointerId) => controller.recoverTouchTerminal(pointerId),
+    shouldBlockTouchEvent: () => controller.blocksNativeTouchScrolling(),
+  });
   const lostCapture = (event: PointerEvent): void => controller.handleLostPointerCapture(event);
   const paste = (event: ClipboardEvent): void => {
     if (controller.handlePaste(event.clipboardData)) event.preventDefault();
@@ -24,6 +33,7 @@ export function attachActiveSceneInputListeners(
   renderer.inputSurface.addEventListener("pointerleave", pointerLeave);
   ownerDocument.addEventListener("keydown", hoverZoom);
   return () => {
+    touchBoundary.dispose();
     renderer.inputSurface.removeEventListener("lostpointercapture", lostCapture);
     renderer.inputSurface.removeEventListener("paste", paste);
     renderer.inputSurface.removeEventListener("pointerenter", pointerEnter);

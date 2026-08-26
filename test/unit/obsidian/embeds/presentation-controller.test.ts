@@ -76,13 +76,7 @@ describe("presentation owner measurement", () => {
     const root = new FakePresentationElement(owner.ownerDocument);
     owner.append(root);
     const requestHostMeasure = vi.fn();
-    const controller = new PresentationController(
-      createPresentationAttachment(root, "reading-window-resize"),
-      { activate: vi.fn(), detach: vi.fn(), mount: vi.fn() },
-      new ColorSchemeBroadcaster({ getColorScheme: () => "light" }),
-      { element: root as unknown as HTMLElement, requestHostMeasure },
-    );
-    controller.mount();
+    const controller = mountMeasuredPresentation(root, "reading-window-resize", requestHostMeasure);
 
     owner.clientWidth = 1_000;
     root.ownerDocument.defaultView?.dispatchEvent(new Event("resize"));
@@ -92,7 +86,73 @@ describe("presentation owner measurement", () => {
     root.ownerDocument.defaultView?.dispatchEvent(new Event("resize"));
     expect(requestHostMeasure).toHaveBeenCalledOnce();
   });
+
+  it("defers repeated host measurements until a height transition ends", () => {
+    const owner = new FakePresentationElement();
+    const root = new FakePresentationElement(owner.ownerDocument);
+    owner.append(root);
+    const observers = installObservers(root.ownerDocument.defaultView as Window);
+    const requestHostMeasure = vi.fn();
+    const controller = mountMeasuredPresentation(
+      root,
+      "reading-height-transition",
+      requestHostMeasure,
+    );
+    root.classList.add("inkbook-layout-transitioning");
+
+    observers.resize();
+    observers.resize();
+    expect(requestHostMeasure).not.toHaveBeenCalled();
+
+    root.classList.remove("inkbook-layout-transitioning");
+    observers.mutate();
+    expect(requestHostMeasure).toHaveBeenCalledOnce();
+    controller.dispose();
+  });
 });
+
+function mountMeasuredPresentation(
+  root: FakePresentationElement,
+  id: string,
+  requestHostMeasure: () => void,
+): PresentationController {
+  const controller = new PresentationController(
+    createPresentationAttachment(root, id),
+    { activate: vi.fn(), detach: vi.fn(), mount: vi.fn() },
+    new ColorSchemeBroadcaster({ getColorScheme: () => "light" }),
+    { element: root as unknown as HTMLElement, requestHostMeasure },
+  );
+  controller.mount();
+  return controller;
+}
+
+function installObservers(ownerWindow: Window): {
+  readonly mutate: () => void;
+  readonly resize: () => void;
+} {
+  let mutationCallback: MutationCallback | undefined;
+  let resizeCallback: ResizeObserverCallback | undefined;
+  Object.assign(ownerWindow, {
+    MutationObserver: class {
+      public constructor(callback: MutationCallback) {
+        mutationCallback = callback;
+      }
+      public disconnect(): void {}
+      public observe(): void {}
+    },
+    ResizeObserver: class {
+      public constructor(callback: ResizeObserverCallback) {
+        resizeCallback = callback;
+      }
+      public disconnect(): void {}
+      public observe(): void {}
+    },
+  });
+  return {
+    mutate: () => mutationCallback?.([], {} as MutationObserver),
+    resize: () => resizeCallback?.([], {} as ResizeObserver),
+  };
+}
 
 function createPresentationAttachment(
   root: FakePresentationElement,

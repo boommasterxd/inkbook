@@ -1,10 +1,14 @@
-import { TRACKPAD_ZOOM_DELTA_LIMIT, type WheelDeltaMode } from "../../../editor/zoom/index";
+import {
+  normalizeWheelVector,
+  TRACKPAD_ZOOM_DELTA_LIMIT,
+  type WheelDeltaMode,
+} from "../../../editor/zoom/index";
 import { browserScrollMetrics, type BrowserScrollElement } from "../../scrolling/index";
 
 import type { ActiveEditorViewState, ActiveEditorWheelInput } from "./navigation-types";
 import type { NavigationLayoutRead } from "./navigation-layout";
 
-export function wheelDeltaMode(deltaMode: number): WheelDeltaMode {
+function wheelDeltaMode(deltaMode: number): WheelDeltaMode {
   return deltaMode === 1 || deltaMode === 2 ? deltaMode : 0;
 }
 
@@ -12,16 +16,29 @@ export function positiveOr(value: number, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
-export function horizontalWheelDelta(
+function horizontalWheelDelta(
   shifted: boolean,
   deltaX: number,
   deltaY: number,
 ): number | undefined {
   if (shifted) {
-    const delta = Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY;
-    return delta === 0 ? undefined : delta;
+    return deltaX === 0 && deltaY !== 0 ? deltaY : undefined;
   }
-  return deltaX !== 0 && Math.abs(deltaX) >= 1.25 * Math.abs(deltaY) ? deltaX : undefined;
+  return deltaX !== 0 && Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : undefined;
+}
+
+export function horizontalPanWheel(
+  event: ActiveEditorWheelInput,
+  normalization: { readonly pageHeight?: number },
+): number | undefined {
+  const delta = normalizeWheelVector(
+    event.deltaX ?? 0,
+    event.deltaY,
+    wheelDeltaMode(event.deltaMode),
+    normalization,
+  );
+  const horizontal = horizontalWheelDelta(event.shiftKey === true, delta.x, delta.y);
+  return horizontal === undefined ? undefined : -horizontal;
 }
 
 export function isZoomWheel(event: ActiveEditorWheelInput): boolean {

@@ -34,4 +34,25 @@ describe("ActivePointerCaptureOwner", () => {
 
     expect(surface.releasePointerCapture).not.toHaveBeenCalled();
   });
+
+  it("drops ownership before native release can synchronously notify listeners", () => {
+    let owner: ActivePointerCaptureOwner;
+    const captured = new Set<number>();
+    const ownershipDuringRelease: boolean[] = [];
+    const surface = {
+      hasPointerCapture: vi.fn((pointerId: number) => captured.has(pointerId)),
+      releasePointerCapture: vi.fn((pointerId: number) => {
+        ownershipDuringRelease.push(owner.owns(pointerId));
+        captured.delete(pointerId);
+      }),
+      setPointerCapture: vi.fn((pointerId: number) => captured.add(pointerId)),
+    };
+    owner = new ActivePointerCaptureOwner(surface);
+    owner.capture(11);
+
+    owner.release(11);
+
+    expect(ownershipDuringRelease).toEqual([false]);
+    expect(owner.owns(11)).toBe(false);
+  });
 });

@@ -196,7 +196,7 @@ Duplicate creates and validates a new SVG file before replacing the file path in
 The following behavior applies by default:
 
 - A pen draws.
-- One finger scrolls the note, pans while zoomed, selects a touched annotation regardless of the active tool, or opens the context menu with the bounded long press defined above.
+- One finger scrolls the note, pans while zoomed, selects an annotation only after a confirmed short tap, moves only an annotation that was already selected before contact, or opens the context menu with the bounded long press defined above. Pan and scroll never select an annotation.
 - Two fingers zoom.
 - Finger drawing is disabled by default in the device-local setting for the current vault.
 

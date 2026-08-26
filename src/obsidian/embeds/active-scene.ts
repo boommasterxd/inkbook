@@ -22,7 +22,7 @@ import { ActiveScenePreviewHandoff } from "./active-scene-handoff";
 import { ActiveSceneMemoryBinding } from "./active-scene-memory";
 import { ActiveSceneTimeout } from "./active-scene-timeout";
 import { attachActiveSceneInputListeners } from "./active-scene-input";
-import { bindActiveSceneScrollOwner, type ActiveSceneScrollBinding } from "./active-scene-scroll";
+import type { ActiveSceneScrollBinding } from "./active-scene-scroll";
 import {
   applyLockedFitLayout,
   lockedPageAspectRatio,
@@ -30,9 +30,11 @@ import {
   restoreActiveLayout,
   type LockedFitTransition,
 } from "./active-scene-lock";
-import { createActiveSceneChromeElements, updateActiveSceneChrome } from "./active-scene-chrome";
+import { updateActiveSceneChrome } from "./active-scene-chrome";
 import { readActiveSceneViewport } from "./active-scene-viewport";
 import { InitialSceneReadiness } from "./initial-scene-readiness";
+import { bindSceneScrollOwner, createInitialSceneRuntime } from "./active-scene-runtime";
+import type { TransitionScrollStability } from "./transition-scroll-stability";
 import type { EditableDocumentModel } from "./vault-document-session";
 import type { ActiveInkbookSceneOptions } from "./active-scene-types";
 
@@ -64,12 +66,12 @@ export class ActiveInkbookScene {
   readonly #removeViewportListeners: () => void;
   #readyForInput = false;
   #previewReady: Promise<void> = Promise.resolve();
-  readonly #initialViewState: ActiveEditorViewState | undefined;
   readonly #initialSceneReadiness = new InitialSceneReadiness();
   readonly #resolveReady: (ready: boolean) => void;
   readonly #renderer: SvgSceneRenderer;
   readonly #root: HTMLElement;
   readonly #store: ElementSceneStore;
+  readonly #transitionScrollStability: TransitionScrollStability;
   readonly #unsubscribeStore: () => void;
   public readonly ready: Promise<boolean>;
 
@@ -77,35 +79,31 @@ export class ActiveInkbookScene {
     this.#root = options.root;
     this.#model = options.model;
     this.#onFirstStrokeCommitted = options.onFirstStrokeCommitted;
-    this.#initialViewState = options.initialViewState;
-    const elements = createSceneElements(options.root, options.deviceSettings.motion);
-    this.#chromeHost = elements.chromeHost;
-    this.#container = elements.container;
-    this.#editorChrome = elements.editorChrome;
-    this.#previewHandoff = createPreviewHandoff(elements.container, options);
-    this.#memory = new ActiveSceneMemoryBinding(options.model.store);
-    this.#store = this.#memory.store;
     const scrollOwner = options.scrollOwner?.() ?? resolveActiveScrollOwner(options.root);
     const ownerWindow = options.root.ownerDocument.defaultView;
     if (ownerWindow === null) throw new Error("The active scene requires an owning window.");
+    let scrollBinding: ActiveSceneScrollBinding | undefined;
+    const initial = createInitialSceneRuntime(
+      options,
+      ownerWindow,
+      () => scrollBinding?.current() ?? scrollOwner,
+    );
+    const elements = initial.elements;
+    this.#transitionScrollStability = initial.stability;
+    this.#chromeHost = elements.chromeHost;
+    this.#container = elements.container;
+    this.#editorChrome = elements.editorChrome;
+    this.#previewHandoff = initial.handoff;
+    this.#memory = new ActiveSceneMemoryBinding(options.model.store);
+    this.#store = this.#memory.store;
     this.#lockDelay = new ActiveSceneTimeout(ownerWindow);
 
     let controller: ActiveEditorController | undefined;
-    let scrollBinding: ActiveSceneScrollBinding | undefined;
-    this.#renderer = new SvgSceneRenderer({
-      container: this.#container,
-      frameBudgetMs: options.sliceBudgetMs,
-      inputHandlers: createSceneInputHandlers(() => controller),
-      layout: {
-        readViewport: () =>
-          readActiveSceneViewport(this.#container, scrollBinding?.current() ?? scrollOwner),
-      },
-      page: options.model.page,
-      onResourceUsageChanged: this.#memory.evaluate,
-      onSceneCommitted: () => this.#sceneCommitted(),
-      reducedMotion: this.#previewHandoff.reducedMotion,
-      store: this.#store,
-    });
+    this.#renderer = this.#createRenderer(
+      options,
+      () => controller,
+      () => scrollBinding?.current() ?? scrollOwner,
+    );
     this.#memory.attach(this.#renderer);
     this.#renderer.setScheme(options.scheme);
     this.#controller = controller = new ActiveEditorController({
@@ -137,19 +135,19 @@ export class ActiveInkbookScene {
       scrollOwner,
       startupTool: options.startupTool,
     });
-    scrollBinding = bindActiveSceneScrollOwner({
-      initialOwner: scrollOwner,
-      invalidate: () => this.#renderer.invalidateLayout(),
+    scrollBinding = bindSceneScrollOwner(
+      scrollOwner,
       ownerWindow,
-      ...(options.scrollOwner === undefined ? {} : { provider: options.scrollOwner }),
-      root: options.root,
-      transfer: (owner) => this.#controller.transferScrollOwner(owner),
-    });
+      options,
+      this.#renderer,
+      this.#controller,
+    );
     this.#removeViewportListeners = () => scrollBinding?.dispose();
     this.#controller.setEnabled(false);
     this.#chrome = beginEditorChromeMount(this.#chromeHost, this.#controller.chromeProps());
     this.#removeInputListeners = attachActiveSceneInputListeners(this.#renderer, this.#controller);
     this.#layout = new ActiveEditorLayout({
+      beginScrollStability: () => this.#transitionScrollStability.begin(),
       chromeHost: this.#chromeHost,
       container: this.#container,
       onLayout: (layout) => this.#controller.setLayout(layout),
@@ -209,6 +207,7 @@ export class ActiveInkbookScene {
     this.#controller.setEnabled(false);
     this.#lockDelay.cancel();
     this.#lockLayoutTransition?.cancel();
+    this.#lockLayoutTransition?.releaseViewportStability();
     this.#lockLayoutTransition = undefined;
     this.#layout.dispose();
     this.#unsubscribeStore();
@@ -219,6 +218,7 @@ export class ActiveInkbookScene {
     this.#memory.release();
     this.#renderer.destroy();
     this.#previewHandoff.dispose();
+    this.#transitionScrollStability.dispose();
     this.#editorChrome.remove();
   }
 
@@ -282,6 +282,26 @@ export class ActiveInkbookScene {
     }
   }
 
+  #createRenderer(
+    options: ActiveInkbookSceneOptions,
+    controller: () => ActiveEditorController | undefined,
+    scrollOwner: () => BrowserScrollElement,
+  ): SvgSceneRenderer {
+    return new SvgSceneRenderer({
+      container: this.#container,
+      frameBudgetMs: options.sliceBudgetMs,
+      inputHandlers: createSceneInputHandlers(controller),
+      layout: {
+        readViewport: () => readActiveSceneViewport(this.#container, scrollOwner()),
+      },
+      page: options.model.page,
+      onResourceUsageChanged: this.#memory.evaluate,
+      onSceneCommitted: () => this.#sceneCommitted(),
+      reducedMotion: this.#previewHandoff.reducedMotion,
+      store: this.#store,
+    });
+  }
+
   #beginLockTransition(): void {
     if (this.#disposed || this.#lockStartedAt !== undefined) return;
     const ownerWindow = this.#root.ownerDocument.defaultView;
@@ -294,6 +314,8 @@ export class ActiveInkbookScene {
     this.#lockLayoutTransition = applyLockedFitLayout({
       anchor: this.#controller.readResizeAnchor(),
       applyResize: (update) => this.#controller.applyResize(update),
+      beginScrollStability: (minimumRangeReserve) =>
+        this.#transitionScrollStability.begin(minimumRangeReserve),
       container: this.#container,
       maximumBottom: this.#storeMaximumBottom(),
       oldViewState: this.#preLockViewState,
@@ -305,7 +327,8 @@ export class ActiveInkbookScene {
 
   #cancelLockTransition(): void {
     if (this.#lockStartedAt === undefined) return;
-    this.#lockLayoutTransition?.cancel();
+    const transition = this.#lockLayoutTransition;
+    transition?.cancel();
     this.#lockGeneration += 1;
     this.#lockDelay.cancel();
     this.#lockLayoutTransition = undefined;
@@ -323,6 +346,7 @@ export class ActiveInkbookScene {
         targetViewState: this.#preLockViewState,
       });
     }
+    transition?.releaseViewportStability();
     this.#preLockBlockSize = undefined;
     this.#preLockViewState = undefined;
   }
@@ -330,22 +354,27 @@ export class ActiveInkbookScene {
   async #finishLockTransition(generation: number): Promise<void> {
     const ownerWindow = this.#root.ownerDocument.defaultView;
     if (ownerWindow === null) return;
-    const elapsed = ownerWindow.performance.now() - (this.#lockStartedAt ?? 0);
-    const reduced = this.#previewHandoff.reducedMotion;
-    const remaining = reduced ? 0 : Math.max(0, LOCK_PRESENTATION_DURATION_MS - elapsed);
-    if (remaining > 0) {
-      await this.#lockDelay.wait(remaining);
-    }
-    if (this.#disposed || generation !== this.#lockGeneration) return;
-    await this.#previewReady;
-    if (this.#disposed || generation !== this.#lockGeneration) return;
-    await new Promise<void>((resolve) => {
-      this.#previewHandoff.handoffToPreview(this.#editorChrome, resolve, () => {
-        const transition = this.#lockLayoutTransition;
-        this.#lockLayoutTransition = undefined;
-        transition?.finish();
+    const transition = this.#lockLayoutTransition;
+    try {
+      const elapsed = ownerWindow.performance.now() - (this.#lockStartedAt ?? 0);
+      const reduced = this.#previewHandoff.reducedMotion;
+      const remaining = reduced ? 0 : Math.max(0, LOCK_PRESENTATION_DURATION_MS - elapsed);
+      if (remaining > 0) {
+        await this.#lockDelay.wait(remaining);
+      }
+      if (this.#disposed || generation !== this.#lockGeneration) return;
+      await this.#previewReady;
+      if (this.#disposed || generation !== this.#lockGeneration) return;
+      await new Promise<void>((resolve) => {
+        this.#previewHandoff.handoffToPreview(this.#editorChrome, resolve, () => {
+          transition?.finish();
+        });
       });
-    });
+    } finally {
+      transition?.releaseViewportStability();
+      if (this.#lockLayoutTransition === transition) this.#lockLayoutTransition = undefined;
+      await this.#transitionScrollStability.waitForSettlement();
+    }
   }
 
   #controllerModelPage() {
@@ -364,9 +393,6 @@ export class ActiveInkbookScene {
 
   #completePreviewHandoff(): void {
     if (this.#disposed) return;
-    if (this.#initialViewState !== undefined) {
-      this.#controller.restoreViewState(this.#initialViewState);
-    }
     this.#previewHandoff.ready(() => {
       if (this.#disposed) return;
       this.#readyForInput = true;
@@ -440,35 +466,4 @@ function createSceneReadiness(
     }),
     resolve,
   };
-}
-
-function createSceneElements(
-  root: HTMLElement,
-  motion: InkbookDeviceSettingsV1["motion"],
-): {
-  readonly chromeHost: HTMLDivElement;
-  readonly container: HTMLDivElement;
-  readonly editorChrome: HTMLDivElement;
-} {
-  root.classList.add("inkbook-root");
-  root.dataset.inkbookMotion = motion;
-  return createActiveSceneChromeElements(root);
-}
-
-function createPreviewHandoff(
-  container: HTMLElement,
-  options: ActiveInkbookSceneOptions,
-): ActiveScenePreviewHandoff {
-  return new ActiveScenePreviewHandoff({
-    container,
-    motion: options.deviceSettings.motion,
-    preview: options.preview,
-    root: options.root,
-    ...(options.setPreviewAspectRatio === undefined
-      ? {}
-      : { setPreviewAspectRatio: options.setPreviewAspectRatio }),
-    ...(options.setPreviewSource === undefined
-      ? {}
-      : { setPreviewSource: options.setPreviewSource }),
-  });
 }

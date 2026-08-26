@@ -13,12 +13,13 @@ export interface ActiveEditorResizeAnchor {
 export interface ActiveEditorResizeUpdate {
   readonly cameraX: number;
   readonly fitZoom: number;
-  readonly scrollTop: number;
+  readonly scrollTop?: number;
   readonly zoom: number;
 }
 
 interface ActiveEditorResizeCalculation extends ActiveEditorResizeUpdate {
   readonly renderedContainerHeight: number;
+  readonly scrollTop: number;
 }
 
 interface ActiveEditorResizeInput {

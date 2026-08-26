@@ -3,7 +3,9 @@ import type { StartupToolV1 } from "../../domain/settings/types";
 export const LONG_PRESS_DELAY_MS = 500;
 export const ELEMENT_DRAG_THRESHOLD_PX = 6;
 export const EMPTY_TOUCH_THRESHOLD_PX = 10;
-export const HORIZONTAL_GESTURE_RATIO = 1.25;
+export const TOUCH_AXIS_LOCK_THRESHOLD_PX = 4;
+export const TOUCH_TAP_MAX_DURATION_MS = 350;
+export const TOUCH_TAP_MAX_MOVEMENT_PX = 6;
 
 export type EditorTool = StartupToolV1;
 
@@ -43,6 +45,7 @@ export interface PointerDownAction extends PointerSample {
   readonly isPlatformContextClick: boolean;
   readonly penRole?: "normal" | "eraser" | "side-button";
   readonly target?: PointerTarget;
+  readonly timestamp?: number;
 }
 
 export interface PointerMoveAction extends PointerSample {
@@ -52,6 +55,7 @@ export interface PointerMoveAction extends PointerSample {
 export interface PointerExitAction {
   readonly type: "pointer-up" | "pointer-cancel" | "lost-pointer-capture";
   readonly pointerId: number;
+  readonly timestamp?: number;
 }
 
 export interface LongPressAction {
@@ -88,6 +92,7 @@ interface SinglePointerInteraction {
   readonly pointerType: PointerSample["pointerType"];
   readonly penRole: "normal" | "eraser" | "side-button";
   readonly start: InputPoint;
+  readonly startedAt?: number;
   readonly current: InputPoint;
   readonly previewStarted: boolean;
   readonly longPressScheduled: boolean;
@@ -99,6 +104,7 @@ interface SinglePointerInteraction {
 
 export interface TouchPendingInteraction extends SinglePointerInteraction {
   readonly phase: "touch-pending";
+  readonly target?: PointerTarget;
 }
 
 interface NoteScrollInteraction extends SinglePointerInteraction {

@@ -7,7 +7,9 @@ const ACTIVE_SCENE_BLOCK_SIZE_PROPERTY = "--inkbook-active-scene-block-size";
 const LOCKED_CONTAINER_BLOCK_SIZE_PROPERTY = "--inkbook-locked-container-block-size";
 
 interface PreviewHandoffOptions {
+  readonly beginScrollStability?: () => () => void;
   readonly container: HTMLElement;
+  readonly initialScrollStabilityRelease?: () => void;
   readonly motion: MotionPreference;
   readonly preview: HTMLElement | undefined;
   readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
@@ -16,6 +18,7 @@ interface PreviewHandoffOptions {
 }
 
 export class ActiveScenePreviewHandoff {
+  readonly #beginScrollStability: (() => () => void) | undefined;
   readonly #container: HTMLElement;
   readonly #mediaQuery: MediaQueryList | undefined;
   #motion: MotionPreference;
@@ -31,6 +34,7 @@ export class ActiveScenePreviewHandoff {
   #onReady: (() => void) | undefined;
   #onLockComplete: (() => void) | undefined;
   #lockEditor: HTMLElement | undefined;
+  #releaseScrollStability: (() => void) | undefined;
   #started = false;
   #timer: number | undefined;
   #frame: number | undefined;
@@ -38,6 +42,7 @@ export class ActiveScenePreviewHandoff {
   public constructor(options: PreviewHandoffOptions) {
     const ownerWindow = options.root.ownerDocument.defaultView;
     if (ownerWindow === null) throw new Error("The preview handoff requires an owning window.");
+    this.#beginScrollStability = options.beginScrollStability;
     this.#container = options.container;
     this.#motion = options.motion;
     this.#ownerWindow = ownerWindow;
@@ -47,6 +52,7 @@ export class ActiveScenePreviewHandoff {
     this.#previewNextSibling = options.preview?.nextSibling ?? null;
     this.#previewParent = options.preview?.parentNode ?? null;
     this.#root = options.root;
+    this.#releaseScrollStability = options.initialScrollStabilityRelease;
     this.#mediaQuery = ownerWindow.matchMedia?.("(prefers-reduced-motion: reduce)");
     this.#mediaQuery?.addEventListener("change", this.#handleMotionChange);
     this.#root.classList.add("inkbook-active-preparing");
@@ -67,6 +73,7 @@ export class ActiveScenePreviewHandoff {
     this.#disposed = true;
     this.#onReady = undefined;
     this.#clearTimer();
+    this.#releaseTransitionStability();
     if (this.#frame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#frame);
     this.#frame = undefined;
     this.#mediaQuery?.removeEventListener("change", this.#handleMotionChange);
@@ -123,6 +130,7 @@ export class ActiveScenePreviewHandoff {
   }
 
   #startUnlockTransition(activeBlockSize: string): void {
+    this.#releaseScrollStability ??= this.#beginScrollStability?.();
     if (this.#preview !== undefined) this.#preview.hidden = true;
     this.#root.classList.remove("inkbook-active-preparing");
     this.#root.classList.add("inkbook-active-transitioning");
@@ -270,6 +278,13 @@ export class ActiveScenePreviewHandoff {
       (this.#preview as Partial<{ remove(): void }>).remove?.();
     }
     this.#notifyReady();
+    this.#releaseTransitionStability();
+  }
+
+  #releaseTransitionStability(): void {
+    const release = this.#releaseScrollStability;
+    this.#releaseScrollStability = undefined;
+    release?.();
   }
 
   #notifyReady(): void {

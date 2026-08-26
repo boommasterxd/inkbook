@@ -1,6 +1,8 @@
 import {
   ELEMENT_DRAG_THRESHOLD_PX,
   EMPTY_TOUCH_THRESHOLD_PX,
+  TOUCH_TAP_MAX_DURATION_MS,
+  TOUCH_TAP_MAX_MOVEMENT_PX,
   type InputEffect,
   type InputInteraction,
   type InputReduction,
@@ -43,13 +45,14 @@ export function handlePointerExit(state: InputState, action: PointerExitAction):
     return exitPinch(state, interaction, action);
   }
   return action.type === "pointer-up"
-    ? commitSingleInteraction(state, interaction)
+    ? commitSingleInteraction(state, interaction, action)
     : cancelInteraction(state, interaction, false);
 }
 
 function commitSingleInteraction(
   state: InputState,
   interaction: Exclude<InputInteraction, PinchInteraction>,
+  action: PointerExitAction,
 ): InputReduction {
   const effects = cleanupEffects(interaction);
   const kind = previewKind(interaction);
@@ -57,6 +60,16 @@ function commitSingleInteraction(
     effects.unshift({ type: "commit-preview", kind });
   } else if (interaction.phase === "lasso" && !interaction.shift) {
     effects.unshift({ type: "clear-selection" });
+  } else if (interaction.phase === "touch-pending" && isTouchTap(interaction, action)) {
+    effects.unshift(
+      interaction.target === undefined
+        ? { type: "clear-selection" }
+        : {
+            type: "select-element",
+            elementId: interaction.target.elementId,
+            mode: "preserve-or-replace",
+          },
+    );
   }
   return { state: { ...state, interaction: undefined }, effects };
 }
@@ -120,11 +133,21 @@ export function handleLongPress(state: InputState, action: LongPressAction): Inp
     return unchangedEffects(state);
   }
   const threshold =
-    interaction.phase === "element-move" ? ELEMENT_DRAG_THRESHOLD_PX : EMPTY_TOUCH_THRESHOLD_PX;
+    interaction.phase === "element-move" ||
+    (interaction.phase === "touch-pending" && interaction.target !== undefined)
+      ? ELEMENT_DRAG_THRESHOLD_PX
+      : EMPTY_TOUCH_THRESHOLD_PX;
   if (distance(delta(interaction.start, interaction.current)) > threshold) {
     return unchangedEffects(state);
   }
   const effects = cleanupEffects(interaction);
+  if (interaction.phase === "touch-pending" && interaction.target !== undefined) {
+    effects.push({
+      type: "select-element",
+      elementId: interaction.target.elementId,
+      mode: "preserve-or-replace",
+    });
+  }
   effects.push({
     type: "open-context-menu",
     source: "touch",
@@ -138,6 +161,18 @@ export function handleLongPress(state: InputState, action: LongPressAction): Inp
     },
     effects,
   };
+}
+
+function isTouchTap(
+  interaction: Extract<InputInteraction, { readonly phase: "touch-pending" }>,
+  action: PointerExitAction,
+): boolean {
+  if (distance(delta(interaction.start, interaction.current)) >= TOUCH_TAP_MAX_MOVEMENT_PX) {
+    return false;
+  }
+  if (interaction.startedAt === undefined || action.timestamp === undefined) return true;
+  const duration = action.timestamp - interaction.startedAt;
+  return duration >= 0 && duration < TOUCH_TAP_MAX_DURATION_MS;
 }
 
 export function beginPinch(

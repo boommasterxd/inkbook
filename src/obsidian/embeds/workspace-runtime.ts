@@ -7,7 +7,6 @@ import type { AttachmentIdentity } from "../../editor/session/session-state";
 import type { ColorSchemeBroadcaster } from "../theme/color-scheme";
 import type { InkbookCommandAction, ObsidianEmbedActions } from "../commands";
 import { ActiveInkbookScene } from "./active-scene";
-import type { ActiveEditorViewState } from "./active-editor/navigation";
 import {
   OwnerWindowRegistry,
   pruneOwnerWindowRegistry,
@@ -54,7 +53,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     readonly device: InkbookDeviceSettingsV1;
     readonly vault: InkbookSettingsV2;
   };
-  readonly #viewState = new Map<string, ActiveEditorViewState>();
 
   constructor(
     vault: Vault,
@@ -101,7 +99,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
         const mounted = this.#mounted.get(presentationAttachmentKey(attachment));
         mounted?.scene?.disableInput();
         if (mounted !== undefined) {
-          this.#viewState.delete(mounted.attachment.documentId);
           mounted.savingFeedback = mounted.feedback.begin("saving");
         }
         this.#setState(attachment, "locking");
@@ -180,13 +177,11 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
         mounted.disposeScheme?.();
         const initialScheme = attachment.root.dataset.inkbookScheme === "dark" ? "dark" : "light";
         const settings = this.#settings();
-        const initialViewState = this.#viewState.get(attachment.documentId);
         mounted.scene = new ActiveInkbookScene({
           backgroundSpacing: () => this.#settings().vault.pageDefaults.backgroundSpacing,
           defaults: settings.vault.toolDefaults,
           deviceSettings: settings.device,
           history: editorContext.history,
-          ...(initialViewState === undefined ? {} : { initialViewState }),
           model: editorContext.model,
           onLock: () => this.lockActivePresentation(),
           onNotice: (message) => void new Notice(message),
@@ -326,7 +321,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     }
     this.#mounted.clear();
     this.refreshRateProfiles.dispose();
-    this.#viewState.clear();
     this.#ownerWindows.clear();
   }
 
@@ -341,16 +335,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     const mounted = this.#mounted.get(presentationAttachmentKey(attachment));
     if (mounted === undefined) return;
     const current = this.#coordinator.getSnapshot().current;
-    const viewState = mounted.scene?.getViewState();
-    if (
-      !this.#disposed &&
-      current?.documentId === mounted.attachment.documentId &&
-      current.phase === "active" &&
-      viewState !== undefined
-    ) {
-      this.#viewState.clear();
-      this.#viewState.set(mounted.attachment.documentId, viewState);
-    }
     mounted.disposeScheme?.();
     mounted.disposeScheme = undefined;
     mounted.feedback.finish();
