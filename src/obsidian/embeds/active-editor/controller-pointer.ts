@@ -139,6 +139,7 @@ export class ActiveEditorPointerController {
           isPlatformContextClick: classification.isPlatformContextClick,
           penRole: classification.penRole,
           shift: event.shiftKey,
+          timestamp: event.timeStamp,
           ...(target === undefined ? {} : { target }),
         }),
     );
@@ -180,7 +181,11 @@ export class ActiveEditorPointerController {
       return;
     }
     this.#recordTouchPan(event, previous);
-    this.#options.dispatch({ type: "pointer-up", pointerId: event.pointerId });
+    this.#options.dispatch({
+      type: "pointer-up",
+      pointerId: event.pointerId,
+      timestamp: event.timeStamp,
+    });
     if (blocksHostGesture) this.#options.navigation.releaseTouchPan(event.timeStamp);
     if (claimsPointerGesture(event, previous)) event.preventDefault();
     if (blocksHostGesture) event.stopPropagation();

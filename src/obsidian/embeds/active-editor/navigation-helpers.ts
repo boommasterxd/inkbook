@@ -22,10 +22,9 @@ function horizontalWheelDelta(
   deltaY: number,
 ): number | undefined {
   if (shifted) {
-    const delta = Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY;
-    return delta === 0 ? undefined : delta;
+    return deltaX === 0 && deltaY !== 0 ? deltaY : undefined;
   }
-  return deltaX !== 0 && Math.abs(deltaX) >= 1.25 * Math.abs(deltaY) ? deltaX : undefined;
+  return deltaX !== 0 && Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : undefined;
 }
 
 export function horizontalPanWheel(

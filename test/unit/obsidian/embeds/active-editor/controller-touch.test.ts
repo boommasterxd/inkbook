@@ -12,7 +12,7 @@ describe("active editor touch routing", () => {
     expect(touchPanDelta(-10)).toBe(-12);
   });
 
-  it("leaves pending and vertical touches native but blocks claimed page pans", () => {
+  it("leaves pending and vertical touches native but blocks claimed gestures", () => {
     const base = touchInteraction();
 
     expect(touchInteractionBlocksNativeScroll({ ...base, phase: "touch-pending" })).toBe(false);
@@ -20,7 +20,7 @@ describe("active editor touch routing", () => {
     expect(touchInteractionBlocksNativeScroll({ ...base, phase: "page-pan" })).toBe(true);
     expect(
       touchInteractionBlocksNativeScroll({ ...base, phase: "element-move", elementId: "shape-a" }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       touchInteractionBlocksNativeScroll({
         ...base,

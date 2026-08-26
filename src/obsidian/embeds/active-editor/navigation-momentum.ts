@@ -14,7 +14,7 @@ export class ActiveEditorPanMomentum {
 
   public constructor(ownerWindow: Window, onRelease: () => void) {
     this.#onRelease = onRelease;
-    this.#trackpad = new TrackpadPanMomentum(ownerWindow, onRelease);
+    this.#trackpad = new TrackpadPanMomentum(ownerWindow);
   }
 
   public get active(): boolean {
@@ -58,8 +58,6 @@ export class ActiveEditorPanMomentum {
   public recordTrackpadWheel(screenDeltaX: number, event: ActiveEditorWheelInput): boolean {
     const input: TrackpadPanInput = {
       deltaMode: event.deltaMode,
-      deltaX: event.deltaX ?? 0,
-      deltaY: event.deltaY,
       shiftKey: event.shiftKey === true,
     };
     if (!isTrackpadPanInput(input)) return false;
@@ -69,6 +67,6 @@ export class ActiveEditorPanMomentum {
 
   public transferOwnerWindow(ownerWindow: Window): void {
     this.#touch.cancel();
-    this.#trackpad.transferScheduler(ownerWindow);
+    this.#trackpad.transferClock(ownerWindow);
   }
 }

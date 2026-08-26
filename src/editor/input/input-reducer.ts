@@ -1,7 +1,6 @@
 import {
   ELEMENT_DRAG_THRESHOLD_PX,
-  EMPTY_TOUCH_THRESHOLD_PX,
-  HORIZONTAL_GESTURE_RATIO,
+  TOUCH_AXIS_LOCK_THRESHOLD_PX,
   type ConfigureInputAction,
   type ContextMenuAction,
   type InputAction,
@@ -152,7 +151,17 @@ function startSinglePointer(state: InputState, action: PointerDownAction): Input
     capture.push({ type: "activate-temporary-eraser", previousTool: state.activeTool });
   }
   if (action.pointerType === "touch" && action.target !== undefined) {
-    return startElementMove(state, base, action.target.elementId, capture, true);
+    if (action.target.isSelected) {
+      return startElementMove(state, base, action.target.elementId, capture, true, true);
+    }
+    const interaction: TouchPendingInteraction = {
+      ...base,
+      phase: "touch-pending",
+      longPressScheduled: true,
+      target: action.target,
+    };
+    capture.push(longPressEffect(action.pointerId));
+    return withInteraction(state, interaction, capture);
   }
   if (action.pointerType === "touch" && !fingerDrawingEnabled(state)) {
     const interaction: InputInteraction = {
@@ -164,7 +173,14 @@ function startSinglePointer(state: InputState, action: PointerDownAction): Input
     return withInteraction(state, interaction, capture);
   }
   if (tool === "select" && action.target !== undefined) {
-    return startElementMove(state, base, action.target.elementId, capture, false);
+    return startElementMove(
+      state,
+      base,
+      action.target.elementId,
+      capture,
+      false,
+      action.target.isSelected,
+    );
   }
   if (tool === "select") {
     return withInteraction(state, { ...base, phase: "lasso" }, capture);
@@ -187,6 +203,7 @@ function startElementMove(
   elementId: string,
   effects: InputEffect[],
   isTouch: boolean,
+  isSelected: boolean,
 ): InputReduction {
   const interaction: InputInteraction = {
     ...base,
@@ -194,11 +211,13 @@ function startElementMove(
     elementId,
     longPressScheduled: isTouch,
   };
-  effects.push({
-    type: "select-element",
-    elementId,
-    mode: isTouch ? "preserve-or-replace" : base.shift ? "add" : "preserve-or-replace",
-  });
+  if (!isSelected) {
+    effects.push({
+      type: "select-element",
+      elementId,
+      mode: isTouch ? "preserve-or-replace" : base.shift ? "add" : "preserve-or-replace",
+    });
+  }
   if (isTouch) {
     effects.push(longPressEffect(base.pointerId));
   }
@@ -225,39 +244,7 @@ function handlePointerMove(state: InputState, action: PointerMoveAction): InputR
   if (interaction.phase === "note-scroll" || interaction.phase === "page-pan") {
     return moveNavigation(state, interaction, action);
   }
-  if (
-    interaction.phase === "element-move" &&
-    interaction.pointerType === "touch" &&
-    !interaction.previewStarted
-  ) {
-    const noteScroll = moveElementTouchToNoteScroll(state, interaction, action);
-    if (noteScroll !== undefined) return noteScroll;
-  }
   return movePreview(state, interaction, action);
-}
-
-function moveElementTouchToNoteScroll(
-  state: InputState,
-  interaction: Exclude<InputInteraction, PinchInteraction> & { readonly phase: "element-move" },
-  action: PointerMoveAction,
-): InputReduction | undefined {
-  const total = delta(interaction.start, action);
-  if (
-    distance(total) <= ELEMENT_DRAG_THRESHOLD_PX ||
-    Math.abs(total.y) <= HORIZONTAL_GESTURE_RATIO * Math.abs(total.x)
-  ) {
-    return undefined;
-  }
-  const changed: InputInteraction = {
-    ...interaction,
-    phase: "note-scroll",
-    current: point(action),
-    longPressScheduled: false,
-  };
-  return withInteraction(state, changed, [
-    { type: "cancel-long-press", pointerId: action.pointerId },
-    movementEffect("note-scroll", delta(interaction.current, action)),
-  ]);
 }
 
 function movePendingTouch(
@@ -266,10 +253,10 @@ function movePendingTouch(
   action: PointerMoveAction,
 ): InputReduction {
   const total = delta(interaction.start, action);
-  if (distance(total) <= EMPTY_TOUCH_THRESHOLD_PX) {
+  if (distance(total) <= TOUCH_AXIS_LOCK_THRESHOLD_PX) {
     return updateCurrent(state, interaction, action, []);
   }
-  const horizontal = Math.abs(total.x) >= HORIZONTAL_GESTURE_RATIO * Math.abs(total.y);
+  const horizontal = Math.abs(total.x) > Math.abs(total.y);
   const phase = horizontal ? "page-pan" : "note-scroll";
   const movement = movementEffect(phase, delta(interaction.current, action));
   const changed: InputInteraction =

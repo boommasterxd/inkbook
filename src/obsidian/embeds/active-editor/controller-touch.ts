@@ -26,8 +26,7 @@ export function touchInteractionBlocksNativeScroll(
     isTouchInteraction(interaction) &&
     interaction !== undefined &&
     interaction.phase !== "touch-pending" &&
-    interaction.phase !== "note-scroll" &&
-    (interaction.phase !== "element-move" || interaction.previewStarted)
+    interaction.phase !== "note-scroll"
   );
 }
 

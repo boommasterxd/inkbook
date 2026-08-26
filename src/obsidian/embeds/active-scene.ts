@@ -66,7 +66,6 @@ export class ActiveInkbookScene {
   readonly #removeViewportListeners: () => void;
   #readyForInput = false;
   #previewReady: Promise<void> = Promise.resolve();
-  readonly #initialViewState: ActiveEditorViewState | undefined;
   readonly #initialSceneReadiness = new InitialSceneReadiness();
   readonly #resolveReady: (ready: boolean) => void;
   readonly #renderer: SvgSceneRenderer;
@@ -80,7 +79,6 @@ export class ActiveInkbookScene {
     this.#root = options.root;
     this.#model = options.model;
     this.#onFirstStrokeCommitted = options.onFirstStrokeCommitted;
-    this.#initialViewState = options.initialViewState;
     const scrollOwner = options.scrollOwner?.() ?? resolveActiveScrollOwner(options.root);
     const ownerWindow = options.root.ownerDocument.defaultView;
     if (ownerWindow === null) throw new Error("The active scene requires an owning window.");
@@ -395,9 +393,6 @@ export class ActiveInkbookScene {
 
   #completePreviewHandoff(): void {
     if (this.#disposed) return;
-    if (this.#initialViewState !== undefined) {
-      this.#controller.restoreViewState(this.#initialViewState);
-    }
     this.#previewHandoff.ready(() => {
       if (this.#disposed) return;
       this.#readyForInput = true;

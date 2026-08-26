@@ -12,13 +12,11 @@ import { domRect } from "../../../fixtures/obsidian/active-editor";
 
 class Frames {
   readonly callbacks = new Map<number, FrameRequestCallback>();
-  readonly timers = new Map<number, { readonly callback: () => void; readonly delay: number }>();
   #next = 1;
   #now = 0;
 
   readonly window = {
     cancelAnimationFrame: (frame: number) => this.callbacks.delete(frame),
-    clearTimeout: (timer: number) => this.timers.delete(timer),
     innerHeight: 600,
     innerWidth: 1_000,
     performance: { now: () => this.#now },
@@ -26,11 +24,6 @@ class Frames {
       const frame = this.#next++;
       this.callbacks.set(frame, callback);
       return frame;
-    },
-    setTimeout: (callback: () => void, delay: number) => {
-      const timer = this.#next++;
-      this.timers.set(timer, { callback, delay });
-      return timer;
     },
   };
 
@@ -41,15 +34,6 @@ class Frames {
     this.callbacks.delete(entry[0]);
     this.#now = timestamp;
     entry[1](timestamp);
-  }
-
-  flushTimers(): void {
-    const timers = [...this.timers.values()];
-    this.timers.clear();
-    for (const timer of timers) {
-      this.#now += timer.delay;
-      timer.callback();
-    }
   }
 
   setNow(timestamp: number): void {
@@ -223,6 +207,7 @@ describe("active editor navigation input ordering", () => {
     harness.navigation.restoreViewState({ cameraX: -100, zoom: 1 });
 
     expect(harness.navigation.updateWheel(horizontalWheel({ deltaX: 1, deltaY: 20 }))).toBe(false);
+    expect(harness.navigation.updateWheel(horizontalWheel({ deltaX: 20, deltaY: 18 }))).toBe(true);
     expect(harness.navigation.updateWheel(horizontalWheel())).toBe(true);
     expect(
       harness.navigation.updateWheel(
@@ -231,24 +216,32 @@ describe("active editor navigation input ordering", () => {
     ).toBe(true);
     harness.frames.flush();
 
-    expect(harness.navigation.cameraX).toBeCloseTo(-212);
+    expect(harness.navigation.cameraX).toBeCloseTo(-232);
   });
 
-  it("continues a horizontal trackpad burst after its quiet window", () => {
+  it("continues a horizontal pixel-wheel burst after its native inertial tail ends", () => {
     const harness = createHarness();
     harness.navigation.restoreViewState({ cameraX: -100, zoom: 1 });
-    for (const timeStamp of [0, 16, 32]) {
-      harness.frames.setNow(timeStamp);
-      expect(harness.navigation.updateWheel(horizontalWheel({ deltaX: 10, deltaY: 1 }))).toBe(true);
-      harness.frames.flush(timeStamp);
+    for (const [timestamp, deltaX, deltaY] of [
+      [0, 10, 2],
+      [16, 8, 2],
+      [32, 5, 3],
+      [48, 3, 2],
+    ] as const) {
+      harness.frames.setNow(timestamp);
+      expect(harness.navigation.updateWheel(horizontalWheel({ deltaX, deltaY }))).toBe(true);
+      harness.frames.flush(timestamp);
     }
-    const afterDirectPan = harness.navigation.cameraX;
-    expect(harness.sequence).not.toContain("scroll-write");
 
-    harness.frames.flushTimers();
-    harness.frames.flush(128);
+    expect(harness.navigation.cameraX).toBeCloseTo(-126);
+    expect(harness.frames.callbacks.size).toBe(1);
+    harness.frames.flush(64);
+    expect(harness.navigation.cameraX).toBeCloseTo(-126);
+    harness.frames.flush(72);
+    expect(harness.navigation.cameraX).toBeCloseTo(-126);
+    harness.frames.flush(88);
 
-    expect(harness.navigation.cameraX).toBeLessThan(afterDirectPan - 10);
+    expect(harness.navigation.cameraX).toBeLessThan(-126);
     expect(harness.sequence).not.toContain("scroll-write");
   });
 });

@@ -1,62 +1,68 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   isTrackpadPanInput,
-  TRACKPAD_PAN_IDLE_MS,
+  TRACKPAD_PAN_DEFAULT_IDLE_MS,
+  TRACKPAD_PAN_MAX_IDLE_MS,
+  TRACKPAD_PAN_MIN_IDLE_MS,
   TrackpadPanMomentum,
+  trackpadPanIdleDelay,
 } from "../../../../../src/obsidian/embeds/active-editor/trackpad-pan-momentum";
 
 describe("trackpad pan momentum", () => {
-  it("classifies only small unshifted pixel-wheel input as trackpad movement", () => {
+  it("classifies every unshifted pixel-wheel burst without a magnitude cutoff", () => {
     expect(isTrackpadPanInput(input())).toBe(true);
     expect(isTrackpadPanInput(input({ deltaMode: 1 }))).toBe(false);
-    expect(isTrackpadPanInput(input({ deltaX: 100 }))).toBe(false);
     expect(isTrackpadPanInput(input({ shiftKey: true }))).toBe(false);
   });
 
-  it("releases a recorded wheel burst after one quiet window", () => {
-    const scheduler = new Scheduler();
-    const onRelease = vi.fn();
-    const momentum = new TrackpadPanMomentum(scheduler, onRelease);
-    momentum.record(-10);
-    scheduler.advance(16);
-    momentum.record(-10);
-    scheduler.advance(16);
-    momentum.record(-10);
+  it("releases after one cadence-derived missing-event window", () => {
+    const clock = new Clock();
+    const momentum = new TrackpadPanMomentum(clock);
+    recordBurst(momentum, clock);
 
-    scheduler.flush();
-
-    expect(scheduler.lastDelay).toBe(TRACKPAD_PAN_IDLE_MS);
-    expect(onRelease).toHaveBeenCalledOnce();
+    expect(momentum.advance(55)).toBe(0);
     expect(momentum.active).toBe(true);
-    expect(momentum.advance(scheduler.now + 16)).toBeLessThan(-10);
+    expect(momentum.advance(56)).toBe(0);
+    expect(momentum.advance(72)).toBeLessThan(-10);
+
+    expect(momentum.active).toBe(true);
   });
 
-  it("restarts the quiet window and cancels pending or active momentum", () => {
-    const scheduler = new Scheduler();
-    const onRelease = vi.fn();
-    const momentum = new TrackpadPanMomentum(scheduler, onRelease);
-    momentum.record(10);
-    scheduler.advance(16);
-    momentum.record(10);
-    expect(scheduler.pending).toBe(1);
+  it("postpones synthetic release while native inertial wheel events continue", () => {
+    const clock = new Clock();
+    const momentum = new TrackpadPanMomentum(clock);
+    recordBurst(momentum, clock);
 
-    scheduler.advance(16);
-    momentum.record(10);
-    expect(scheduler.pending).toBe(1);
+    clock.advance(23);
+    momentum.record(-2);
+    expect(momentum.advance(89)).toBe(0);
+
+    expect(momentum.advance(90.5)).toBeLessThan(0);
+
+    expect(momentum.active).toBe(true);
+  });
+
+  it("bounds cadence-derived release delay for very fast and sparse input", () => {
+    expect(trackpadPanIdleDelay(1)).toBe(TRACKPAD_PAN_MIN_IDLE_MS);
+    expect(trackpadPanIdleDelay(80)).toBe(TRACKPAD_PAN_MAX_IDLE_MS);
+    expect(trackpadPanIdleDelay(101)).toBe(TRACKPAD_PAN_DEFAULT_IDLE_MS);
+    expect(trackpadPanIdleDelay(Number.NaN)).toBe(TRACKPAD_PAN_DEFAULT_IDLE_MS);
+  });
+
+  it("cancels a pending or active release without leaving frame work", () => {
+    const clock = new Clock();
+    const momentum = new TrackpadPanMomentum(clock);
+    recordBurst(momentum, clock);
     momentum.cancel();
-    scheduler.flush();
 
-    expect(onRelease).not.toHaveBeenCalled();
     expect(momentum.active).toBe(false);
+    expect(momentum.advance(1_000)).toBe(0);
   });
 });
 
-class Scheduler {
-  readonly #callbacks = new Map<number, () => void>();
-  #next = 1;
+class Clock {
   #now = 0;
-  lastDelay = 0;
 
   public readonly performance = { now: () => this.#now };
 
@@ -64,38 +70,22 @@ class Scheduler {
     return this.#now;
   }
 
-  public get pending(): number {
-    return this.#callbacks.size;
-  }
-
-  public clearTimeout(handle: number): void {
-    this.#callbacks.delete(handle);
-  }
-
-  public setTimeout(callback: () => void, delay: number): number {
-    const handle = this.#next++;
-    this.lastDelay = delay;
-    this.#callbacks.set(handle, callback);
-    return handle;
-  }
-
   public advance(elapsed: number): void {
     this.#now += elapsed;
   }
+}
 
-  public flush(): void {
-    this.advance(this.lastDelay);
-    const callbacks = [...this.#callbacks.values()];
-    this.#callbacks.clear();
-    for (const callback of callbacks) callback();
-  }
+function recordBurst(momentum: TrackpadPanMomentum, clock: Clock): void {
+  momentum.record(-12);
+  clock.advance(16);
+  momentum.record(-11);
+  clock.advance(16);
+  momentum.record(-10);
 }
 
 function input(overrides: Partial<Parameters<typeof isTrackpadPanInput>[0]> = {}) {
   return {
     deltaMode: 0,
-    deltaX: 12,
-    deltaY: 1,
     shiftKey: false,
     ...overrides,
   };
