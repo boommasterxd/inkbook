@@ -12,25 +12,48 @@ import { domRect } from "../../../fixtures/obsidian/active-editor";
 
 class Frames {
   readonly callbacks = new Map<number, FrameRequestCallback>();
+  readonly timers = new Map<number, { readonly callback: () => void; readonly delay: number }>();
   #next = 1;
+  #now = 0;
 
   readonly window = {
     cancelAnimationFrame: (frame: number) => this.callbacks.delete(frame),
+    clearTimeout: (timer: number) => this.timers.delete(timer),
     innerHeight: 600,
     innerWidth: 1_000,
+    performance: { now: () => this.#now },
     requestAnimationFrame: (callback: FrameRequestCallback) => {
       const frame = this.#next++;
       this.callbacks.set(frame, callback);
       return frame;
     },
+    setTimeout: (callback: () => void, delay: number) => {
+      const timer = this.#next++;
+      this.timers.set(timer, { callback, delay });
+      return timer;
+    },
   };
 
-  flush(): void {
+  flush(timestamp = 0): void {
     const entry = this.callbacks.entries().next().value as
       readonly [number, FrameRequestCallback] | undefined;
     if (entry === undefined) throw new Error("No frame is pending.");
     this.callbacks.delete(entry[0]);
-    entry[1](0);
+    this.#now = timestamp;
+    entry[1](timestamp);
+  }
+
+  flushTimers(): void {
+    const timers = [...this.timers.values()];
+    this.timers.clear();
+    for (const timer of timers) {
+      this.#now += timer.delay;
+      timer.callback();
+    }
+  }
+
+  setNow(timestamp: number): void {
+    this.#now = timestamp;
   }
 }
 
@@ -199,6 +222,7 @@ describe("active editor navigation input ordering", () => {
     expect(harness.navigation.updateWheel(horizontalWheel())).toBe(false);
     harness.navigation.restoreViewState({ cameraX: -100, zoom: 1 });
 
+    expect(harness.navigation.updateWheel(horizontalWheel({ deltaX: 1, deltaY: 20 }))).toBe(false);
     expect(harness.navigation.updateWheel(horizontalWheel())).toBe(true);
     expect(
       harness.navigation.updateWheel(
@@ -208,6 +232,24 @@ describe("active editor navigation input ordering", () => {
     harness.frames.flush();
 
     expect(harness.navigation.cameraX).toBeCloseTo(-212);
+  });
+
+  it("continues a horizontal trackpad burst after its quiet window", () => {
+    const harness = createHarness();
+    harness.navigation.restoreViewState({ cameraX: -100, zoom: 1 });
+    for (const timeStamp of [0, 16, 32]) {
+      harness.frames.setNow(timeStamp);
+      expect(harness.navigation.updateWheel(horizontalWheel({ deltaX: 10, deltaY: 1 }))).toBe(true);
+      harness.frames.flush(timeStamp);
+    }
+    const afterDirectPan = harness.navigation.cameraX;
+    expect(harness.sequence).not.toContain("scroll-write");
+
+    harness.frames.flushTimers();
+    harness.frames.flush(128);
+
+    expect(harness.navigation.cameraX).toBeLessThan(afterDirectPan - 10);
+    expect(harness.sequence).not.toContain("scroll-write");
   });
 });
 

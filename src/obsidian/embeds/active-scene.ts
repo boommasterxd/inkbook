@@ -209,6 +209,7 @@ export class ActiveInkbookScene {
     this.#controller.setEnabled(false);
     this.#lockDelay.cancel();
     this.#lockLayoutTransition?.cancel();
+    this.#lockLayoutTransition?.releaseViewportStability();
     this.#lockLayoutTransition = undefined;
     this.#layout.dispose();
     this.#unsubscribeStore();
@@ -312,14 +313,14 @@ export class ActiveInkbookScene {
     this.#preLockBlockSize = this.#container.style.blockSize;
     this.#preLockViewState = this.#controller.getViewState();
     this.#refreshPreviewAspectRatio();
-    const releaseScrollStability = this.#transitionScrollStability.begin();
     this.#lockLayoutTransition = applyLockedFitLayout({
       anchor: this.#controller.readResizeAnchor(),
       applyResize: (update) => this.#controller.applyResize(update),
+      beginScrollStability: (minimumRangeReserve) =>
+        this.#transitionScrollStability.begin(minimumRangeReserve),
       container: this.#container,
       maximumBottom: this.#storeMaximumBottom(),
       oldViewState: this.#preLockViewState,
-      onSettled: releaseScrollStability,
       page: this.#controllerModelPage(),
       reducedMotion: this.#previewHandoff.reducedMotion,
       restoreViewState: (state) => this.#controller.restoreViewState(state),
@@ -328,7 +329,8 @@ export class ActiveInkbookScene {
 
   #cancelLockTransition(): void {
     if (this.#lockStartedAt === undefined) return;
-    this.#lockLayoutTransition?.cancel();
+    const transition = this.#lockLayoutTransition;
+    transition?.cancel();
     this.#lockGeneration += 1;
     this.#lockDelay.cancel();
     this.#lockLayoutTransition = undefined;
@@ -336,7 +338,6 @@ export class ActiveInkbookScene {
     this.#lockStartedAt = undefined;
     this.#container.style.removeProperty("transition");
     if (this.#preLockBlockSize !== undefined && this.#preLockViewState !== undefined) {
-      const releaseScrollStability = this.#transitionScrollStability.begin();
       restoreActiveLayout({
         anchor: this.#controller.readResizeAnchor(),
         applyResize: (update) => this.#controller.applyResize(update),
@@ -346,8 +347,8 @@ export class ActiveInkbookScene {
         targetBlockSize: this.#preLockBlockSize,
         targetViewState: this.#preLockViewState,
       });
-      releaseScrollStability();
     }
+    transition?.releaseViewportStability();
     this.#preLockBlockSize = undefined;
     this.#preLockViewState = undefined;
   }
@@ -355,22 +356,27 @@ export class ActiveInkbookScene {
   async #finishLockTransition(generation: number): Promise<void> {
     const ownerWindow = this.#root.ownerDocument.defaultView;
     if (ownerWindow === null) return;
-    const elapsed = ownerWindow.performance.now() - (this.#lockStartedAt ?? 0);
-    const reduced = this.#previewHandoff.reducedMotion;
-    const remaining = reduced ? 0 : Math.max(0, LOCK_PRESENTATION_DURATION_MS - elapsed);
-    if (remaining > 0) {
-      await this.#lockDelay.wait(remaining);
-    }
-    if (this.#disposed || generation !== this.#lockGeneration) return;
-    await this.#previewReady;
-    if (this.#disposed || generation !== this.#lockGeneration) return;
-    await new Promise<void>((resolve) => {
-      this.#previewHandoff.handoffToPreview(this.#editorChrome, resolve, () => {
-        const transition = this.#lockLayoutTransition;
-        this.#lockLayoutTransition = undefined;
-        transition?.finish();
+    const transition = this.#lockLayoutTransition;
+    try {
+      const elapsed = ownerWindow.performance.now() - (this.#lockStartedAt ?? 0);
+      const reduced = this.#previewHandoff.reducedMotion;
+      const remaining = reduced ? 0 : Math.max(0, LOCK_PRESENTATION_DURATION_MS - elapsed);
+      if (remaining > 0) {
+        await this.#lockDelay.wait(remaining);
+      }
+      if (this.#disposed || generation !== this.#lockGeneration) return;
+      await this.#previewReady;
+      if (this.#disposed || generation !== this.#lockGeneration) return;
+      await new Promise<void>((resolve) => {
+        this.#previewHandoff.handoffToPreview(this.#editorChrome, resolve, () => {
+          transition?.finish();
+        });
       });
-    });
+    } finally {
+      transition?.releaseViewportStability();
+      if (this.#lockLayoutTransition === transition) this.#lockLayoutTransition = undefined;
+      await this.#transitionScrollStability.waitForSettlement();
+    }
   }
 
   #controllerModelPage() {

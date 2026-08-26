@@ -5,14 +5,27 @@ import { describe, expect, it, vi } from "vitest";
 import { CanvasTouchBoundary } from "../../../../src/obsidian/embeds/canvas-touch-boundary";
 
 describe("canvas touch boundary", () => {
-  it("claims touch starts and moves before host pane gestures can begin", () => {
+  it("lets unclaimed touch events reach host scrolling without cancelling them", () => {
     const fixture = createFixture();
 
     const start = dispatchTouch(fixture.surface, "touchstart", [touch(1, 20, 20)]);
     const move = dispatchTouch(fixture.surface, "touchmove", [touch(1, 22, 40)]);
 
-    expect(start.defaultPrevented).toBe(true);
-    expect(move.defaultPrevented).toBe(true);
+    expect(start.defaultPrevented).toBe(false);
+    expect(move.defaultPrevented).toBe(false);
+    expect(fixture.hostStarts).toHaveBeenCalledOnce();
+    expect(fixture.hostMoves).toHaveBeenCalledOnce();
+    fixture.dispose();
+  });
+
+  it("stops claimed touch events before host drawer gestures", () => {
+    const fixture = createFixture(true);
+
+    const start = dispatchTouch(fixture.surface, "touchstart", [touch(1, 20, 20)]);
+    const move = dispatchTouch(fixture.surface, "touchmove", [touch(1, 40, 22)]);
+
+    expect(start.defaultPrevented).toBe(false);
+    expect(move.defaultPrevented).toBe(false);
     expect(fixture.hostStarts).not.toHaveBeenCalled();
     expect(fixture.hostMoves).not.toHaveBeenCalled();
     fixture.dispose();
@@ -70,7 +83,7 @@ describe("canvas touch boundary", () => {
   });
 });
 
-function createFixture() {
+function createFixture(blockTouch = false) {
   const host = htmlDiv();
   const surface = htmlDiv();
   host.append(surface);
@@ -94,6 +107,7 @@ function createFixture() {
     onTouchPointerMove,
     onTouchPointerStart,
     onTouchTerminal,
+    shouldBlockTouchEvent: () => blockTouch,
   });
   return {
     dispose: () => {

@@ -44,4 +44,4 @@ export {
 export type { WheelDeltaMode, WheelZoomState, ZoomFrameState } from "./wheel";
 export { createStableWidthState, observeStableWidth } from "./resize";
 export { keyboardZoomFactor, keyboardZoomStep } from "./keyboard";
-export { TouchPanMomentum } from "./touch-pan-momentum";
+export { HorizontalPanMomentum } from "./horizontal-pan-momentum";

@@ -139,6 +139,15 @@
   overflow-anchor: none;
 }
 
+.inkbook-root .inkbook-scroll-range-reserve {
+  display: block;
+  inline-size: 1px;
+  inset-block-start: 100%;
+  inset-inline-start: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
 .inkbook-root .inkbook-locked-preview {
   appearance: none;
   background: transparent;
@@ -236,6 +245,10 @@
   z-index: 1;
 }
 
+.inkbook-root .inkbook-editor-chrome[hidden] {
+  display: none !important;
+}
+
 .inkbook-root .inkbook-editor-chrome-host {
   block-size: 0;
   inset-block-start: calc(
@@ -256,7 +269,7 @@
   inline-size: 100%;
   pointer-events: auto;
   position: absolute;
-  touch-action: none;
+  touch-action: pan-y;
 }
 
 .inkbook-root .inkbook-scene-overlays path {

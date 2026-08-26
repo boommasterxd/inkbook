@@ -225,7 +225,39 @@ function handlePointerMove(state: InputState, action: PointerMoveAction): InputR
   if (interaction.phase === "note-scroll" || interaction.phase === "page-pan") {
     return moveNavigation(state, interaction, action);
   }
+  if (
+    interaction.phase === "element-move" &&
+    interaction.pointerType === "touch" &&
+    !interaction.previewStarted
+  ) {
+    const noteScroll = moveElementTouchToNoteScroll(state, interaction, action);
+    if (noteScroll !== undefined) return noteScroll;
+  }
   return movePreview(state, interaction, action);
+}
+
+function moveElementTouchToNoteScroll(
+  state: InputState,
+  interaction: Exclude<InputInteraction, PinchInteraction> & { readonly phase: "element-move" },
+  action: PointerMoveAction,
+): InputReduction | undefined {
+  const total = delta(interaction.start, action);
+  if (
+    distance(total) <= ELEMENT_DRAG_THRESHOLD_PX ||
+    Math.abs(total.y) <= HORIZONTAL_GESTURE_RATIO * Math.abs(total.x)
+  ) {
+    return undefined;
+  }
+  const changed: InputInteraction = {
+    ...interaction,
+    phase: "note-scroll",
+    current: point(action),
+    longPressScheduled: false,
+  };
+  return withInteraction(state, changed, [
+    { type: "cancel-long-press", pointerId: action.pointerId },
+    movementEffect("note-scroll", delta(interaction.current, action)),
+  ]);
 }
 
 function movePendingTouch(

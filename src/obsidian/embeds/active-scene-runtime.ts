@@ -28,8 +28,14 @@ function createSceneScrollStability(
   root: HTMLElement,
   ownerWindow: Window,
   owner: () => BrowserScrollElement,
+  rangeReserve: ActiveInkbookSceneOptions["scrollRangeReserve"],
 ): TransitionScrollStability {
-  return new TransitionScrollStability({ owner, ownerWindow, root });
+  return new TransitionScrollStability({
+    owner,
+    ownerWindow,
+    ...(rangeReserve === undefined ? {} : { rangeReserve }),
+    root,
+  });
 }
 
 export function createInitialSceneRuntime(
@@ -41,7 +47,12 @@ export function createInitialSceneRuntime(
   readonly handoff: ActiveScenePreviewHandoff;
   readonly stability: TransitionScrollStability;
 } {
-  const stability = createSceneScrollStability(options.root, ownerWindow, owner);
+  const stability = createSceneScrollStability(
+    options.root,
+    ownerWindow,
+    owner,
+    options.scrollRangeReserve,
+  );
   const releaseInitialStability = stability.begin();
   try {
     options.root.classList.add("inkbook-root");

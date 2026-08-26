@@ -13,7 +13,7 @@ export function applyInputAction(
   penGuard: PenScrollGuard<BrowserScrollElement>,
   navigation: ActiveEditorNavigation,
 ): InputState {
-  if (action.type === "reset") navigation.cancelTouchPanMomentum();
+  if (action.type === "reset") navigation.cancelPanMomentum();
   const wasActive = input.interaction !== undefined;
   const reduction = reduceInput(input, action);
   gestures.apply(reduction);

@@ -3,15 +3,15 @@ const SAMPLE_WINDOW_MS = 120;
 const MIN_RELEASE_SPEED_PX_PER_SECOND = 100;
 const MAX_RELEASE_SPEED_PX_PER_SECOND = 4_000;
 const STOP_SPEED_PX_PER_SECOND = 15;
-const FRICTION_PER_60_HZ_FRAME = 0.92;
+const FRICTION_PER_60_HZ_FRAME = 0.935;
 const SIXTY_HZ_FRAME_MS = 1_000 / 60;
 const MAX_FRAME_GAP_MS = 100;
 
 /**
- * Tracks horizontal touch-pan velocity without allocating in the pointer or
+ * Tracks horizontal pan velocity without allocating in the input or
  * animation-frame hot paths. Scheduling and camera clamping remain adapter-owned.
  */
-export class TouchPanMomentum {
+export class HorizontalPanMomentum {
   readonly #deltas = new Float64Array(SAMPLE_CAPACITY);
   readonly #times = new Float64Array(SAMPLE_CAPACITY);
   #active = false;
@@ -44,13 +44,13 @@ export class TouchPanMomentum {
     this.#count = Math.min(this.#count + 1, SAMPLE_CAPACITY);
   }
 
-  public release(timestamp: number): boolean {
+  public release(sampleTimestamp: number, animationTimestamp = sampleTimestamp): boolean {
     this.#active = false;
-    if (!validTime(timestamp)) {
+    if (!validTime(sampleTimestamp) || !validTime(animationTimestamp)) {
       this.cancel();
       return false;
     }
-    const velocity = this.#releaseVelocity(timestamp);
+    const velocity = this.#releaseVelocity(sampleTimestamp);
     this.#count = 0;
     this.#next = 0;
     if (velocity === undefined) {
@@ -61,7 +61,7 @@ export class TouchPanMomentum {
       -MAX_RELEASE_SPEED_PX_PER_SECOND,
       Math.min(MAX_RELEASE_SPEED_PX_PER_SECOND, velocity),
     );
-    this.#lastFrameTime = timestamp;
+    this.#lastFrameTime = animationTimestamp;
     this.#active = true;
     return true;
   }
@@ -97,12 +97,8 @@ export class TouchPanMomentum {
       const index = (start + offset) % SAMPLE_CAPACITY;
       const time = this.#times[index] ?? 0;
       if (time > now || now - time > SAMPLE_WINDOW_MS) continue;
-      if (firstTime === undefined) {
-        firstTime = time;
-        lastTime = time;
-        continue;
-      }
       distance += this.#deltas[index] ?? 0;
+      firstTime ??= time;
       lastTime = time;
     }
     if (firstTime === undefined || lastTime === undefined || lastTime <= firstTime)

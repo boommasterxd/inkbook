@@ -7,7 +7,7 @@ import type { ActiveEditorMenuController } from "../../../../../src/obsidian/emb
 import type { ActiveEditorNavigation } from "../../../../../src/obsidian/embeds/active-editor/navigation";
 import type { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
 import type { SvgSceneRenderer } from "../../../../../src/rendering/scene/index";
-import { createInputState } from "../../../../../src/editor/input/index";
+import { createInputState, type InputState } from "../../../../../src/editor/input/index";
 
 describe("active editor pointer controller", () => {
   it("uses screen pixels for arbitration and page coordinates for indexed hit testing", () => {
@@ -90,7 +90,9 @@ describe("active editor pointer controller", () => {
     expect(releasePointer).toHaveBeenCalledWith(7);
     expect(finishHandlePointer).toHaveBeenCalledOnce();
   });
+});
 
+describe("active editor pointer gesture ownership", () => {
   it("stops a claimed horizontal touch pan before it reaches Obsidian", () => {
     const controller = horizontalPanController();
     const preventDefault = vi.fn();
@@ -101,6 +103,25 @@ describe("active editor pointer controller", () => {
 
     expect(preventDefault).toHaveBeenCalledOnce();
     expect(stopPropagation).toHaveBeenCalledOnce();
+  });
+
+  it("leaves dominant vertical touch movement available to native scrolling", () => {
+    const interaction = { ...pagePanInteraction(), phase: "note-scroll" as const };
+    const preventDefault = vi.fn();
+    const stopPropagation = vi.fn();
+    const controller = horizontalPanController({
+      getInput: () => ({ ...createInputState(), interaction }),
+    });
+
+    controller.handlePointerMove(pointerEvent("touch", { preventDefault, stopPropagation }));
+
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(stopPropagation).not.toHaveBeenCalled();
+
+    controller.handlePointerUp(pointerEvent("touch", { preventDefault, stopPropagation }));
+
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(stopPropagation).not.toHaveBeenCalled();
   });
 });
 
@@ -123,7 +144,8 @@ describe("active editor pointer momentum", () => {
     controller.handlePointerMove(pointerEvent("touch", { timeStamp: 24 }));
     controller.handlePointerUp(pointerEvent("touch", { timeStamp: 32 }));
 
-    expect(navigation.recordTouchPan).toHaveBeenCalledWith(12, 24);
+    expect(navigation.recordTouchPan.mock.calls[0]?.[0]).toBeCloseTo(14.4);
+    expect(navigation.recordTouchPan.mock.calls[0]?.[1]).toBe(24);
     expect(navigation.releaseTouchPan).toHaveBeenCalledWith(32);
   });
 });
@@ -143,17 +165,17 @@ describe("active editor pointer recovery", () => {
 
 function navigationPort() {
   const begin = vi.fn(() => true);
-  const cancelTouchPanMomentum = vi.fn();
+  const cancelPanMomentum = vi.fn();
   const recordTouchPan = vi.fn();
   const releaseTouchPan = vi.fn();
   return {
     begin,
-    cancelTouchPanMomentum,
+    cancelPanMomentum,
     recordTouchPan,
     releaseTouchPan,
     value: {
       beginGestureGeometry: begin,
-      cancelTouchPanMomentum,
+      cancelPanMomentum,
       pageSample: (sample: { readonly x: number; readonly y: number }) => ({
         ...sample,
         x: sample.x + 100,
@@ -176,9 +198,7 @@ function navigationPort() {
 function horizontalPanController(overrides?: {
   readonly coalescedDispatch?: (event: PointerEvent) => boolean;
   readonly dispatch?: (action: unknown) => void;
-  readonly getInput?: () => ReturnType<typeof createInputState> & {
-    readonly interaction: ReturnType<typeof pagePanInteraction>;
-  };
+  readonly getInput?: () => InputState;
   readonly navigation?: ActiveEditorNavigation;
   readonly releasePointer?: (pointerId: number) => void;
 }): ActiveEditorPointerController {

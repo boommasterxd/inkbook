@@ -18,17 +18,15 @@ const page: PageV1 = {
   margin: 24.3,
   writingLineHeight: 100,
 };
+const FIXTURE_VERTICAL_INSETS = 24;
 
 describe("active scene lock layout", () => {
-  it("retains the presentation until the whole-toolbar exit completes", () => {
-    expect(LOCK_PRESENTATION_DURATION_MS).toBe(300);
-  });
-
   it("animates content-box fit camera and height on one 240 ms timeline", () => {
     const fixture = createFixture();
     const transition = applyLockedFitLayout(fixture.options(false));
     const expectedFit = 1_000 / PAGE_WIDTH;
-    const expectedHeight = derivePageExtent(page, null).lockedHeight * expectedFit;
+    const expectedHeight =
+      derivePageExtent(page, null).lockedHeight * expectedFit + FIXTURE_VERTICAL_INSETS;
 
     fixture.runFrame(120);
     const halfway = fixture.applyResize.mock.calls[fixture.applyResize.mock.calls.length - 1]?.[0];
@@ -44,9 +42,12 @@ describe("active scene lock layout", () => {
       expect.objectContaining({ fitZoom: expectedFit, zoom: expectedFit }),
     );
     expect(fixture.frames.size).toBe(0);
-    expect(fixture.onSettled).toHaveBeenCalledOnce();
+    expect(fixture.releaseScrollStability).not.toHaveBeenCalled();
     transition.finish();
     expect(fixture.applyResize).toHaveBeenCalledTimes(2);
+    transition.releaseViewportStability();
+    transition.releaseViewportStability();
+    expect(fixture.releaseScrollStability).toHaveBeenCalledOnce();
   });
 
   it("defers reduced-motion camera and height until synchronous finalization", () => {
@@ -61,7 +62,7 @@ describe("active scene lock layout", () => {
 
     const expectedFit = 1_000 / PAGE_WIDTH;
     expect(Number.parseFloat(fixture.style.blockSize)).toBeCloseTo(
-      derivePageExtent(page, null).lockedHeight * expectedFit,
+      derivePageExtent(page, null).lockedHeight * expectedFit + FIXTURE_VERTICAL_INSETS,
     );
     expect(fixture.applyResize).toHaveBeenCalledWith(
       expect.objectContaining({ fitZoom: expectedFit, zoom: expectedFit }),
@@ -77,7 +78,9 @@ describe("active scene lock layout", () => {
     expect(fixture.frames.size).toBe(0);
     expect(fixture.style.blockSize).toBe("480px");
     expect(fixture.applyResize).not.toHaveBeenCalled();
-    expect(fixture.onSettled).toHaveBeenCalledOnce();
+    expect(fixture.releaseScrollStability).not.toHaveBeenCalled();
+    transition.releaseViewportStability();
+    expect(fixture.releaseScrollStability).toHaveBeenCalledOnce();
   });
 
   it("stops animation work after the container is detached", () => {
@@ -118,6 +121,46 @@ describe("active scene lock layout", () => {
   });
 });
 
+describe("active scene lock viewport stability", () => {
+  it("retains the presentation until the whole-toolbar exit completes", () => {
+    expect(LOCK_PRESENTATION_DURATION_MS).toBe(300);
+  });
+
+  it("runs each lock layout frame before the viewport stability frame", () => {
+    const fixture = createFixture(true);
+
+    applyLockedFitLayout(fixture.options(false));
+    fixture.runFrame(120);
+
+    expect(fixture.applyResize).toHaveBeenCalledOnce();
+    expect(fixture.stabilityFrames).toBe(0);
+    fixture.runFrame(120);
+    expect(fixture.stabilityFrames).toBe(1);
+  });
+
+  it("preallocates the complete shrink range when locking at the native bottom", () => {
+    const fixture = createFixture(false, true);
+    const expectedFit = 1_000 / PAGE_WIDTH;
+    const expectedHeight =
+      derivePageExtent(page, null).lockedHeight * expectedFit + FIXTURE_VERTICAL_INSETS;
+
+    applyLockedFitLayout(fixture.options(false));
+
+    expect(fixture.beginScrollStability).toHaveBeenCalledWith(480 - expectedHeight);
+  });
+
+  it("releases a superseded lock transition before retaining its replacement", () => {
+    const fixture = createFixture();
+    applyLockedFitLayout(fixture.options(false));
+
+    const replacement = applyLockedFitLayout(fixture.options(false));
+
+    expect(fixture.releaseScrollStability).toHaveBeenCalledOnce();
+    replacement.releaseViewportStability();
+    expect(fixture.releaseScrollStability).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("active scene overlapping lock layout", () => {
   it("freezes the visible unlock height before the first lock frame", () => {
     const fixture = createFixture();
@@ -141,12 +184,12 @@ describe("active scene occupied lock extent", () => {
 
     const expectedFit = 1_000 / PAGE_WIDTH;
     expect(Number.parseFloat(fixture.style.blockSize)).toBeCloseTo(
-      derivePageExtent(page, maximumBottom).lockedHeight * expectedFit,
+      derivePageExtent(page, maximumBottom).lockedHeight * expectedFit + FIXTURE_VERTICAL_INSETS,
     );
   });
 });
 
-function createFixture() {
+function createFixture(scheduleStabilityFrame = false, atBottom = false) {
   const frames = new Map<number, FrameRequestCallback>();
   let nextFrame = 1;
   const ownerWindow = {
@@ -190,27 +233,37 @@ function createFixture() {
     style,
   } as unknown as HTMLElement;
   const applyResize = vi.fn<(update: SceneLayoutUpdate) => boolean>(() => true);
-  const onSettled = vi.fn();
+  const releaseScrollStability = vi.fn();
+  let stabilityFrames = 0;
+  const beginScrollStability = vi.fn((_minimumRangeReserve: number) => {
+    if (scheduleStabilityFrame) {
+      ownerWindow.requestAnimationFrame(() => {
+        stabilityFrames += 1;
+      });
+    }
+    return releaseScrollStability;
+  });
   const anchor = {
     anchorViewportY: 300,
     embedTopInScrollContent: 200,
-    oldScrollTop: 400,
+    oldScrollTop: atBottom ? 2_000 : 400,
     scrollBounds: { min: 0, max: 2_000 },
     viewportWidth: 1_000,
   };
   return {
     anchor,
     applyResize,
+    beginScrollStability,
     connected,
     container,
     frames,
     options: (reducedMotion: boolean, maximumBottom?: number) => ({
       anchor,
       applyResize,
+      beginScrollStability,
       container,
       maximumBottom,
       oldViewState: { cameraX: -100, zoom: 1 },
-      onSettled,
       page,
       reducedMotion,
       restoreViewState: vi.fn(() => true),
@@ -227,7 +280,10 @@ function createFixture() {
     setVisibleHeight: (height: number) => {
       visibleHeight = height;
     },
-    onSettled,
+    releaseScrollStability,
     style,
+    get stabilityFrames() {
+      return stabilityFrames;
+    },
   };
 }

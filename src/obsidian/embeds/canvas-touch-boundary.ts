@@ -4,6 +4,7 @@ interface CanvasTouchBoundaryOptions {
   readonly onTouchPointerMove: (event: PointerEvent) => void;
   readonly onTouchPointerStart: (event: PointerEvent) => void;
   readonly onTouchTerminal: (pointerId: number) => void;
+  readonly shouldBlockTouchEvent: () => boolean;
 }
 
 /**
@@ -33,11 +34,11 @@ export class CanvasTouchBoundary {
       capture: true,
       passive: false,
     });
-    surface.addEventListener("touchstart", blockTouchEvent, {
+    surface.addEventListener("touchstart", this.#handleTouchEvent, {
       capture: true,
       passive: false,
     });
-    surface.addEventListener("touchmove", blockTouchEvent, {
+    surface.addEventListener("touchmove", this.#handleTouchEvent, {
       capture: true,
       passive: false,
     });
@@ -52,8 +53,8 @@ export class CanvasTouchBoundary {
     this.#disposed = true;
     this.#surface.removeEventListener("pointerdown", this.#handlePointerStart, true);
     this.#surface.removeEventListener("pointermove", this.#handlePointerMove, true);
-    this.#surface.removeEventListener("touchstart", blockTouchEvent, true);
-    this.#surface.removeEventListener("touchmove", blockTouchEvent, true);
+    this.#surface.removeEventListener("touchstart", this.#handleTouchEvent, true);
+    this.#surface.removeEventListener("touchmove", this.#handleTouchEvent, true);
     this.#ownerWindow.removeEventListener("pointerup", this.#handlePointerTerminal, true);
     this.#ownerWindow.removeEventListener("pointercancel", this.#handlePointerTerminal, true);
     for (const timer of this.#terminalRecoveries.values()) this.#ownerWindow.clearTimeout(timer);
@@ -66,13 +67,17 @@ export class CanvasTouchBoundary {
     if (event.pointerType !== "touch") return;
     if (event.isPrimary) this.#options.onPrimaryTouchStart();
     this.#options.onTouchPointerStart(event);
-    blockHostPropagation(event);
+    stopHostPropagation(event);
   };
 
   readonly #handlePointerMove = (event: PointerEvent): void => {
     if (event.pointerType !== "touch") return;
     this.#options.onTouchPointerMove(event);
-    blockHostPropagation(event);
+    stopHostPropagation(event);
+  };
+
+  readonly #handleTouchEvent = (event: TouchEvent): void => {
+    if (this.#options.shouldBlockTouchEvent()) stopHostPropagation(event);
   };
 
   readonly #handlePointerTerminal = (event: PointerEvent): void => {
@@ -94,11 +99,6 @@ export class CanvasTouchBoundary {
   };
 }
 
-function blockTouchEvent(event: TouchEvent): void {
-  blockHostPropagation(event);
-}
-
-function blockHostPropagation(event: Event): void {
-  if (event.cancelable) event.preventDefault();
+function stopHostPropagation(event: Event): void {
   event.stopPropagation();
 }

@@ -13,6 +13,7 @@ export function attachActiveSceneInputListeners(
     onTouchPointerMove: (event) => controller.handlePointerMove(event),
     onTouchPointerStart: (event) => controller.handlePointerDown(event),
     onTouchTerminal: (pointerId) => controller.recoverTouchTerminal(pointerId),
+    shouldBlockTouchEvent: () => controller.blocksNativeTouchScrolling(),
   });
   const lostCapture = (event: PointerEvent): void => controller.handleLostPointerCapture(event);
   const paste = (event: ClipboardEvent): void => {

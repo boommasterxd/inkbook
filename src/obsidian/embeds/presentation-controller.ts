@@ -13,7 +13,10 @@ import type {
   PresentationAttachmentInput,
   PresentationSessionPort,
 } from "./presentation-port";
-import { LAYOUT_TRANSITION_CLASS } from "./transition-scroll-stability";
+import {
+  LAYOUT_TRANSITION_CLASS,
+  PresentationScrollRangeReserve,
+} from "./transition-scroll-stability";
 
 const LEASES_BY_DOCUMENT = new WeakMap<Document, ScrollbarLeaseRegistry<HTMLElement>>();
 
@@ -57,6 +60,7 @@ export class PresentationController {
   readonly #owningWindow: Window;
   readonly #previewLifecycle: PresentationPreviewLifecycle | undefined;
   readonly #scroll: PresentationScrollLifecycle<HTMLElement, PresentationMeasurement>;
+  readonly #scrollRangeReserve: PresentationScrollRangeReserve;
   readonly #transitionObserver: MutationObserver | undefined;
 
   constructor(
@@ -72,6 +76,7 @@ export class PresentationController {
     this.#owningWindow = owningWindow;
     this.#previewLifecycle = previewLifecycle;
     let lifecycle: PresentationScrollLifecycle<HTMLElement, PresentationMeasurement> | undefined;
+    this.#scrollRangeReserve = new PresentationScrollRangeReserve(() => lifecycle?.owner ?? null);
     this.#attachment = {
       ...attachment,
       ...(previewLifecycle === undefined
@@ -85,6 +90,7 @@ export class PresentationController {
               ? {}
               : { setPreviewSource: previewLifecycle.setSource }),
           }),
+      scrollRangeReserve: this.#scrollRangeReserve,
       scrollOwner: () => lifecycle?.owner ?? null,
     };
     this.#scroll = lifecycle = new PresentationScrollLifecycle<
@@ -259,6 +265,7 @@ export class PresentationController {
       this.#observer?.disconnect();
       this.#observer = undefined;
       this.#hostMeasureDeferred = false;
+      this.#scrollRangeReserve.dispose();
       this.#scroll.unload();
       this.#sessions.detach(this.#attachment);
     }
