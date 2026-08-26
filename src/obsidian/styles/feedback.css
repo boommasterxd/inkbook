@@ -1,0 +1,188 @@
+.inkbook-root .inkbook-feedback {
+  animation: inkbook-feedback-in var(--inkbook-motion-fast) var(--inkbook-motion-easing);
+  align-items: center;
+  background: color-mix(in srgb, var(--background-primary) 96%, transparent);
+  border: 1px solid var(--background-modifier-border-hover);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-l);
+  color: var(--text-normal);
+  display: flex;
+  gap: 10px;
+  max-inline-size: min(36rem, calc(100% - 24px));
+  padding: 9px 10px;
+  width: max-content;
+  z-index: var(--layer-menu);
+}
+
+@keyframes inkbook-feedback-in {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+.inkbook-root .inkbook-feedback-presentation {
+  background: var(--inkbook-page-surface);
+  pointer-events: auto;
+  position: absolute;
+  translate: -50% 0;
+}
+
+.inkbook-root .inkbook-feedback-headless {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  max-inline-size: 100%;
+  padding: 0;
+  padding-inline-end: 52px;
+  width: 100%;
+}
+
+.inkbook-root .inkbook-headless-recovery-close {
+  inset-block-start: 8px;
+  inset-inline-end: 8px;
+  position: absolute;
+  z-index: 1;
+}
+
+.inkbook-root.inkbook-feedback-host {
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: var(--layer-notice, 1000);
+}
+
+.inkbook-root.inkbook-feedback-host-window {
+  position: fixed;
+}
+
+.inkbook-root.inkbook-feedback-host .inkbook-feedback-global {
+  inset-block: auto max(24px, env(safe-area-inset-bottom));
+  inset-inline-start: 50%;
+  pointer-events: auto;
+  position: absolute;
+  translate: -50% 0;
+}
+
+.inkbook-root .inkbook-feedback-status-icon,
+.inkbook-root .inkbook-feedback-action-icon {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+  line-height: 0;
+}
+
+.inkbook-root .inkbook-feedback-status-icon,
+.inkbook-root .inkbook-feedback-status-icon svg,
+.inkbook-root .inkbook-feedback-action-icon,
+.inkbook-root .inkbook-feedback-action-icon svg {
+  block-size: 18px;
+  inline-size: 18px;
+}
+
+.inkbook-root .inkbook-feedback-status-icon svg,
+.inkbook-root .inkbook-feedback-action-icon svg {
+  display: block;
+}
+
+.inkbook-root .inkbook-feedback-status-icon {
+  color: var(--text-muted);
+  flex: 0 0 auto;
+}
+
+.inkbook-root
+  .inkbook-feedback[data-inkbook-feedback-severity="error"]
+  .inkbook-feedback-status-icon {
+  color: var(--text-error);
+}
+
+.inkbook-root
+  .inkbook-feedback[data-inkbook-feedback-severity="success"]
+  .inkbook-feedback-status-icon {
+  color: var(--text-success);
+}
+
+.inkbook-root
+  .inkbook-feedback[data-inkbook-feedback-severity="warning"]
+  .inkbook-feedback-status-icon {
+  color: var(--text-warning);
+}
+
+.inkbook-root .inkbook-feedback-copy {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.inkbook-root .inkbook-feedback-title {
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+}
+
+.inkbook-root .inkbook-feedback-detail {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-block-start: 2px;
+}
+
+.inkbook-root .inkbook-feedback-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  margin-inline-start: auto;
+}
+
+.inkbook-root .inkbook-feedback-actions:empty {
+  display: none;
+}
+
+.inkbook-root .inkbook-feedback-icon-button {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: none;
+  color: var(--text-muted);
+  display: inline-flex;
+  inline-size: 44px;
+  justify-content: center;
+  margin: 0;
+  min-block-size: 44px;
+  padding: 0;
+}
+
+.inkbook-root .inkbook-feedback-icon-button:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.inkbook-root .inkbook-feedback-icon-button[data-inkbook-feedback-tone="danger"] {
+  color: var(--text-error);
+}
+
+.inkbook-root .inkbook-feedback-icon-button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+@media (width <= 500px) {
+  .inkbook-root .inkbook-feedback {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .inkbook-root .inkbook-feedback-actions {
+    margin-inline-start: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inkbook-root .inkbook-feedback {
+    animation: none;
+  }
+}

@@ -52,7 +52,7 @@ export type EmbedPasteOutcome =
   | { readonly kind: "failed"; readonly error: unknown }
   | { readonly kind: "ignored" }
   | { readonly kind: "inserted"; readonly mode: "duplicate" | "original" | "reference" }
-  | { readonly duplicateTrashed: boolean; readonly kind: "stale" };
+  | { readonly cleanup: "failed" | "not-needed" | "trashed"; readonly kind: "stale" };
 
 export interface EmbedPasteDependencies {
   readonly choices: EmbedPasteChoicePort;
@@ -174,7 +174,7 @@ export class EmbedPasteController {
     if (choice === "reference") {
       return replaceIfCurrent(request.editor, target, request.clipboardText)
         ? { kind: "inserted", mode: "reference" }
-        : { duplicateTrashed: false, kind: "stale" };
+        : { cleanup: "not-needed", kind: "stale" };
     }
     return this.#duplicate(request, target, sourceContent);
   }
@@ -207,7 +207,7 @@ export class EmbedPasteController {
       }
       const duplicateTrashed = await this.#trashCreated(duplicatePath);
       created = false;
-      return { duplicateTrashed, kind: "stale" };
+      return { cleanup: duplicateTrashed ? "trashed" : "failed", kind: "stale" };
     } catch (error: unknown) {
       if (created && duplicatePath !== null) await this.#trashCreated(duplicatePath);
       return { error, kind: "failed" };
@@ -217,7 +217,7 @@ export class EmbedPasteController {
   #insertOriginal(request: EmbedPasteRequest, target: CapturedEditorTarget): EmbedPasteOutcome {
     return replaceIfCurrent(request.editor, target, request.clipboardText)
       ? { kind: "inserted", mode: "original" }
-      : { duplicateTrashed: false, kind: "stale" };
+      : { cleanup: "not-needed", kind: "stale" };
   }
 
   async #trashCreated(path: string): Promise<boolean> {

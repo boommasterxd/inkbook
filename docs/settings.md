@@ -298,7 +298,7 @@ Custom folders:
 - default: system
 - system follows `prefers-reduced-motion`
 - full enables all specified transitions
-- reduced removes non-essential interpolation while preserving immediate state changes, focus movement, notices, and final geometry
+- reduced removes non-essential interpolation while preserving immediate state changes, focus movement, feedback, and final geometry
 
 ## Settings UI
 

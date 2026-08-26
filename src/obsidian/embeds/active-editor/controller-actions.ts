@@ -13,6 +13,7 @@ import {
 import { ActiveDocumentHistory } from "./document-history";
 import type { ActiveEditorHistory } from "./history";
 import type { ElementSceneStore } from "./scene-store";
+import type { InkbookFeedbackCode } from "../../feedback";
 
 export interface ActiveEditorActionsOptions {
   readonly currentSelection: () => ReadonlySet<string>;
@@ -21,7 +22,7 @@ export interface ActiveEditorActionsOptions {
   readonly model: EditableDocumentModel;
   readonly onCopyEmbed: () => void;
   readonly onDeleteEmbed: () => void;
-  readonly onNotice?: (message: string) => void;
+  readonly onFeedback?: (code: InkbookFeedbackCode) => void;
   readonly onPasteCommitted: () => void;
   readonly onPendingChanged: (pending: boolean) => void;
   readonly onStateChanged: () => void;
@@ -41,6 +42,7 @@ export class ActiveEditorActions {
   readonly #model: EditableDocumentModel;
   readonly #onCopyEmbed: () => void;
   readonly #onDeleteEmbed: () => void;
+  readonly #onFeedback: ((code: InkbookFeedbackCode) => void) | undefined;
   readonly #onStateChanged: () => void;
   readonly #ownerWindow: Window;
   readonly #sceneStore: ElementSceneStore;
@@ -58,6 +60,7 @@ export class ActiveEditorActions {
     this.#model = options.model;
     this.#onCopyEmbed = options.onCopyEmbed;
     this.#onDeleteEmbed = options.onDeleteEmbed;
+    this.#onFeedback = options.onFeedback;
     this.#onStateChanged = options.onStateChanged;
     this.#ownerWindow = options.ownerWindow;
     this.#sceneStore = options.sceneStore;
@@ -81,15 +84,8 @@ export class ActiveEditorActions {
       onPasteCommitted: () => options.onPasteCommitted(),
       onPendingChanged: options.onPendingChanged,
       onResult: (result) => {
-        if (
-          result.action === "cut" &&
-          result.kind === "unavailable" &&
-          result.reason === "stale-operation"
-        ) {
-          options.onNotice?.(
-            "Copy succeeded, but Cut was cancelled because the selection changed.",
-          );
-        }
+        const code = feedbackForClipboardResult(result);
+        if (code !== undefined && options.isEnabled()) this.#onFeedback?.(code);
       },
       onSelectionChanged: options.setSelection,
       ownerWindow: options.ownerWindow,
@@ -233,6 +229,9 @@ export class ActiveEditorActions {
       sameSelection(selection, this.#currentSelection()),
     );
     if (outcome === "applied") this.#setSelection(new Set());
+    else if (outcome === "failed" || outcome === "stale") {
+      this.#onFeedback?.("history-change-failed");
+    }
   }
 
   async #eraseAll(): Promise<void> {
@@ -241,12 +240,34 @@ export class ActiveEditorActions {
       ...this.#sceneStore.materializeBandOrder("highlight"),
       ...this.#sceneStore.materializeBandOrder("content"),
     ];
-    if ((await this.#documentHistory.remove(ids)) === "applied") this.#setSelection(new Set());
+    const outcome = await this.#documentHistory.remove(ids);
+    if (outcome === "applied") this.#setSelection(new Set());
+    else if (outcome === "failed" || outcome === "stale") {
+      this.#onFeedback?.("history-change-failed");
+    }
   }
 
   #toolbarPaste(): PasteInvocation {
     return { kind: "toolbar", visibleCanvasCenter: this.#visibleCenter() };
   }
+}
+
+function feedbackForClipboardResult(
+  result: import("./controller-clipboard").ClipboardControllerResult,
+): InkbookFeedbackCode | undefined {
+  if (result.kind === "copied" || result.kind === "committed") {
+    return "systemWriteSucceeded" in result && !result.systemWriteSucceeded
+      ? "clipboard-copy-fallback"
+      : undefined;
+  }
+  if (result.reason === "encode-failed") return "clipboard-copy-failed";
+  if (result.reason === "clipboard-read-failed") return "clipboard-paste-read-failed";
+  if (result.reason === "invalid-payload") return "clipboard-paste-invalid";
+  if (result.reason === "stale-operation") {
+    if (result.action === "cut") return "cut-selection-changed";
+    return result.action === "paste" ? "clipboard-paste-stale" : "clipboard-copy-failed";
+  }
+  return undefined;
 }
 
 function sameSelection(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {

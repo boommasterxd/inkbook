@@ -1,20 +1,19 @@
 import type { App } from "obsidian";
 
 import type { InkbookSettingsStore } from "../settings";
-import type { PlacementFallbackNoticePort } from "./command-ports";
+import type { PlacementFallbackFeedbackPort } from "./command-ports";
 import { EmbedPasteController, OwnerWindowEmbedPasteChoice } from "./embed-paste";
 import { validateDocumentOutput } from "./document-output-validation";
 import {
   activeMarkdownOwnerWindow,
   createObsidianCommandVaultPorts,
   notifyPlacementFallback,
-  ObsidianPlacementFallbackNoticeAdapter,
 } from "./obsidian-host";
 
 export function createObsidianEmbedPasteController(
   app: App,
   settings: InkbookSettingsStore,
-  placementNotices: PlacementFallbackNoticePort = new ObsidianPlacementFallbackNoticeAdapter(),
+  placementFeedback: PlacementFallbackFeedbackPort,
 ): EmbedPasteController {
   const { files, links, managedFiles, placement } = createObsidianCommandVaultPorts(
     app,
@@ -39,7 +38,7 @@ export function createObsidianEmbedPasteController(
           new Date(),
           { fill: (bytes) => activeMarkdownOwnerWindow(app).crypto.getRandomValues(bytes) },
         );
-        notifyPlacementFallback(resolved.fallback, placementNotices);
+        notifyPlacementFallback(resolved.fallback, placementFeedback);
         return resolved.path;
       },
     },

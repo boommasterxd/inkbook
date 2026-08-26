@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const stylesheet = [
   readStylesheet("src/obsidian/styles/inkbook.css"),
+  readStylesheet("src/obsidian/styles/feedback.css"),
   readStylesheet("src/obsidian/styles/editor-toolbar.css"),
   readStylesheet("src/obsidian/styles/editor-flyouts.css"),
 ].join("\n");
@@ -10,7 +11,15 @@ const motionStylesheet = readStylesheet("src/obsidian/styles/motion.css");
 const toolbarMotionStylesheet = readStylesheet("src/obsidian/styles/editor-toolbar-motion.css");
 
 describe("Inkbook host styles", () => {
-  it("centers delayed operation feedback without changing layout", () => {
+  it("anchors presentation feedback without layout participation", () => {
+    const feedback = declarationsFor(".inkbook-root .inkbook-feedback-presentation");
+
+    expect(feedback).toContain("position: absolute");
+    expect(feedback).toContain("pointer-events: auto");
+    expect(feedback).toContain("translate: -50% 0");
+  });
+
+  it("centers delayed operation feedback in the visible embed without changing layout", () => {
     const feedback = declarationsFor(".inkbook-root .inkbook-operation-feedback");
     const icon = declarationsFor(".inkbook-root .inkbook-operation-feedback-icon");
     const reducedMotion = blockFor(
@@ -19,8 +28,8 @@ describe("Inkbook host styles", () => {
     );
 
     expect(feedback).toContain("position: absolute");
-    expect(feedback).toContain("inset-block-start: 50%");
-    expect(feedback).toContain("inset-inline-start: 50%");
+    expect(feedback).toContain("translate: -50% -50%");
+    expect(feedback).not.toContain("inset-block-start: 50%");
     expect(feedback).toContain("pointer-events: none");
     expect(icon).toContain("animation: inkbook-operation-spin 800ms linear infinite");
     expect(reducedMotion).toContain("animation: none");
@@ -334,25 +343,40 @@ describe("Inkbook editor handoff styles", () => {
 });
 
 describe("Inkbook editor overlays", () => {
-  it("anchors attached save recovery at the bottom center", () => {
-    const recovery = declarationsFor(".inkbook-root .inkbook-recovery");
+  it("anchors attached save recovery within the viewport-positioned presentation", () => {
+    const recovery = declarationsFor(".inkbook-root .inkbook-feedback-presentation");
 
-    expect(recovery).toContain("inset-block: auto 16px");
-    expect(recovery).toContain("inset-inline-start: 50%");
+    expect(recovery).toContain("position: absolute");
+    expect(recovery).toContain("pointer-events: auto");
     expect(recovery).toContain("translate: -50% 0");
   });
 
-  it("uses icon-only controls for retry actions in host notices", () => {
-    const button = declarationsFor(".inkbook-root .inkbook-notice-icon-button");
+  it("uses accessible icon-only feedback controls with complete touch targets", () => {
+    const actions = declarationsFor(".inkbook-root .inkbook-feedback-actions");
+    const button = declarationsFor(".inkbook-root .inkbook-feedback-icon-button");
+    const copy = declarationsFor(".inkbook-root .inkbook-feedback-copy");
+    const iconContainer = declarationsFor(
+      ".inkbook-root .inkbook-feedback-status-icon,\n.inkbook-root .inkbook-feedback-action-icon",
+    );
     const icon = declarationsFor(
-      ".inkbook-root .inkbook-notice-action-icon,\n.inkbook-root .inkbook-notice-action-icon svg",
+      ".inkbook-root .inkbook-feedback-status-icon,\n.inkbook-root .inkbook-feedback-status-icon svg,\n.inkbook-root .inkbook-feedback-action-icon,\n.inkbook-root .inkbook-feedback-action-icon svg",
     );
 
     expect(button).toContain("border-radius: 50%");
-    expect(button).toContain("inline-size: 36px");
-    expect(button).toContain("min-block-size: 36px");
+    expect(button).toContain("inline-size: 44px");
+    expect(button).toContain("min-block-size: 44px");
+    expect(copy).toContain("flex: 1 1 auto");
+    expect(actions).toContain("margin-inline-start: auto");
+    expect(iconContainer).toContain("display: inline-flex");
+    expect(iconContainer).toContain("line-height: 0");
     expect(icon).toContain("block-size: 18px");
     expect(icon).toContain("inline-size: 18px");
+  });
+
+  it("reserves modal space for the separate recovery close action", () => {
+    const headless = declarationsFor(".inkbook-root .inkbook-feedback-headless");
+
+    expect(headless).toContain("padding-inline-end: 52px");
   });
 
   it("keeps the background submenu beside the anchored overflow menu", () => {

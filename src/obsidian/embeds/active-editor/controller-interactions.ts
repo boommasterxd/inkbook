@@ -44,7 +44,7 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
     model: controller.model,
     onCopyEmbed: controller.onCopyEmbed,
     onDeleteEmbed: controller.onDeleteEmbed,
-    onNotice: controller.onNotice,
+    onFeedback: controller.onFeedback,
     onPasteCommitted: options.onPasteCommitted,
     onPendingChanged: options.onPendingChanged,
     onStateChanged: controller.onStateChanged,

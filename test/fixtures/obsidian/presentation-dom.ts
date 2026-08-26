@@ -24,12 +24,21 @@ export class FakePresentationElement {
     "--inkbook-preview-aspect-ratio": "",
     "--inkbook-preview-image": "",
     colorScheme: "",
+    insetBlockEnd: "",
+    insetBlockStart: "",
+    insetInlineStart: "",
+    maxInlineSize: "",
+    pointerEvents: "",
     removeProperty: (name: string): void => {
-      delete (this.style as unknown as Record<string, unknown>)[name];
+      const key = name.startsWith("--")
+        ? name
+        : name.replaceAll(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase());
+      delete (this.style as unknown as Record<string, unknown>)[key];
     },
     setProperty: (name: string, value: string): void => {
       (this.style as unknown as Record<string, unknown>)[name] = value;
     },
+    visibility: "",
   };
   alt = "";
   clientHeight = 100;
@@ -58,15 +67,30 @@ export class FakePresentationElement {
     }
     const documentPort: {
       baseURI: string;
+      body: FakePresentationElement;
       defaultView: unknown;
+      documentElement: FakePresentationElement;
       importNode: (node: FakePresentationElement, deep: boolean) => FakePresentationElement;
       scrollingElement: FakePresentationElement | null;
     } = {
       baseURI: "app://vault/",
+      body: this,
       defaultView: undefined,
+      documentElement: this,
       importNode: (node, deep) => node.cloneNode(deep),
       scrollingElement: this,
     };
+    const documentListeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
+    Object.assign(documentPort, {
+      addEventListener: (type: string, callback: EventListenerOrEventListenerObject) => {
+        const listeners = documentListeners.get(type) ?? new Set();
+        listeners.add(callback);
+        documentListeners.set(type, listeners);
+      },
+      removeEventListener: (type: string, callback: EventListenerOrEventListenerObject) => {
+        documentListeners.get(type)?.delete(callback);
+      },
+    });
     const windowListeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
     const owningWindow = {
       addEventListener: (type: string, callback: EventListenerOrEventListenerObject) => {

@@ -117,7 +117,7 @@ export class ActiveInkbookScene {
       menuFactory: options.menuFactory ?? obsidianMenuFactory,
       model: options.model,
       onLock: options.onLock,
-      onNotice: options.onNotice,
+      onFeedback: options.onFeedback,
       onCopyEmbed: options.onCopyEmbed,
       onDeleteEmbed: options.onDeleteEmbed,
       onPageChanged: () => this.#layout.pageChanged(),

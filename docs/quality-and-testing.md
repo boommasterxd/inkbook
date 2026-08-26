@@ -217,7 +217,7 @@ When reduced motion is active:
 
 - all non-essential durations become 0 ms
 - height, camera, and preview state changes apply in one frame while retaining the native scroll position
-- focus movement, notices, visibility, and final geometry remain unchanged
+- focus movement, feedback, visibility, and final geometry remain unchanged
 - no information may depend on animation alone
 
 ## UX Acceptance
@@ -237,7 +237,7 @@ When reduced motion is active:
 - Conditional Copy, Cut, Paste, and Delete controls appear as separate 48-pixel circular surfaces to the right of the primary pill without changing its measured center in Wide. If the primary pill plus every visible context action does not fit, one transparent rounded horizontal scrollport owns the complete row and preserves every 48-pixel outline with vertical breathing room. The outer non-scrolling composition paints the toolbar shadow beyond the clipped viewport, and the scrollport applies no edge fade or alpha mask. Every action remains pointer- and keyboard-reachable without shrinking controls, a rectangular background strip, a clipped shadow, or a second hidden action viewport. The owner-window resize observer refreshes the row overflow and pill edge even when the responsive stage does not change.
 - The primary tool group owns exactly one non-interactive active-tool indicator. It remains mounted while its transform slides between the exact 36-pixel inset circles of the old and new tool over 120 milliseconds, retargets from its currently rendered transform during rapid changes, and moves immediately under reduced motion. Tool buttons and icons remain mounted throughout.
 - Every destructive action has confirmation where documented and preserves undo when possible.
-- Every failed operation leaves a clear next action such as Retry, Reload, Save copy, or Cancel.
+- Every failed operation leaves an accurate outcome and a clear next action such as Retry, Reload, Save copy, or Continue editing. Expected unavailability that does not begin an operation may remain silent.
 - Cursor, selection handles, eraser radius, and toolbar controls remain screen-sized across zoom levels.
 - Animation starts from the currently rendered state when interrupted and never jumps back to an earlier state.
 
@@ -257,7 +257,7 @@ The editor targets WCAG 2.2 AA within the capabilities of the Obsidian host.
 - The Context Menu key and `Shift+F10` open the native canvas menu, whose close operation returns focus to the canvas surface or invoking control.
 - Focus indicators, icons, text, active states, selection outlines, and gradients meet applicable contrast requirements in light and dark themes.
 - Touch targets are at least 44 by 44 CSS pixels even when the visual icon is smaller.
-- Notices and confirmations are announced through the host's accessible UI.
+- Inkbook feedback and confirmations are announced through accessible UI in the owning document.
 - Canvas element manipulation remains primarily graphical in version 1, but Delete, Cut, Copy, Paste, Undo, Redo, and style changes are keyboard-operable for the current selection.
 
 ## Automated Test Strategy
@@ -431,7 +431,8 @@ Manual checks are not smoke or end-to-end test suites. They are focused acceptan
 - empty locked previews with at least 2.5 writing lines rounded to the next background step, no clipping by host button sizing, and the same minimum after reload
 - active and standalone SVG verification that guides stop at the inner edge of all four writable page margins, square patterns close their right and bottom edge cells, ordinary square and ruled viewports use the same direct compound guide geometry, normally antialiased scale-independent one-screen-pixel weight, and 25-percent-alpha scheme palette as the saved SVG, bounded pattern fallback remains available, input remains available throughout those margins, and content entering the bottom margin restores a complete margin after growth
 - attached save recovery restores the active page height and camera before presenting its compact icon-action overlay at the lower center of the editor, so all four writable SVG margins remain visible and no failed-lock measurement reads a released document page
-- attached load and save recovery and retryable activation notices show only circular icon actions with tooltips and accessible names, attached recovery remains at the lower center of the preserved surface, and no retry, discard, copy, or continue action substitutes a text button
+- attached load and save recovery, retryable activation, insertion Undo, clipboard, history, copied-embed Paste, and embed action feedback use the shared status-icon surface with concise outcome-aware copy; presentation feedback remains at the lower center of the embed's current native-scroll intersection across scrolling, zoom, and resize, non-presentation feedback targets the active Markdown view or owning window, identical-anchor messages replace instead of stack, and no retry, keep-preview, dismiss, undo, copy, reload, delete, or continue action substitutes a text button
+- editor-interface startup failure produces one attached recovery surface without an additional native Obsidian notice, while failed or stale copied-embed Paste, clipboard read or encoding, rejected system clipboard Copy, and failed Canvas history traversal produce the matching typed feedback without changing recoverable data
 - delayed loading and saving feedback under intentionally blocked worker and vault operations, including the 1,200-millisecond load boundary, 150-millisecond save boundary, an unknown unlock target height, exact-revision successor saves, Retry, immediate failure recovery, reduced motion, and cleanup on detach or plugin unload
 - toolbar overlay and native-sticky behavior proving that activation adds no toolbar height, surrounding Markdown does not move, scroll-owner top padding is compensated without private selectors, the toolbar pins at the visible owner edge, and the embed bottom bounds its sticky lifetime
 - confirmed persistence propagates the current locked aspect ratio to every mounted preview before resource refresh, so a non-empty patterned lock shrinks to the complete occupied row plus exactly one complete pattern row and unlock grows back to `activeHeight`

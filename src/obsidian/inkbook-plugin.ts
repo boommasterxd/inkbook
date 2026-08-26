@@ -1,9 +1,7 @@
 import {
   MarkdownView,
   normalizePath,
-  Notice,
   Plugin,
-  setIcon,
   TFile,
   TFolder,
   type Editor,
@@ -19,6 +17,7 @@ import {
   PenTapInsertionController,
   registerInkbookCommands,
   type CompletedEmptyLineInsertion,
+  type EmbedPasteOutcome,
 } from "./commands";
 import {
   createLivePreviewExtension,
@@ -29,6 +28,7 @@ import {
   PresentationLifecycleRegistry,
 } from "./embeds";
 import { registerInkbookIcons } from "./icons/inkbook-icons";
+import { InkbookFeedbackManager, type InkbookFeedbackCode } from "./feedback";
 import { InkbookSettingsStore, InkbookSettingTab } from "./settings";
 import { ColorSchemeBroadcaster } from "./theme/color-scheme";
 import { ObsidianVaultFolderAdapter } from "./vault";
@@ -40,19 +40,10 @@ export async function activateInkbookPlugin(
   const settings = await loadSettings(plugin);
   if (!isActive()) return undefined;
   const unregisterIcons = registerInkbookIcons();
+  const feedback = new InkbookFeedbackManager();
   let active = true;
   let runtimeForSettings: ObsidianWorkspaceRuntime | undefined;
-  const settingTab = new InkbookSettingTab(
-    plugin.app,
-    plugin,
-    settings,
-    new ObsidianVaultFolderAdapter(plugin.app.vault, TFolder, normalizePath),
-    () =>
-      runtimeForSettings?.refreshRateProfiles.status(
-        plugin.app.workspace.containerEl.ownerDocument.defaultView,
-      ),
-  );
-  plugin.addSettingTab(settingTab);
+  const settingTab = addSettingsTab(plugin, settings, () => runtimeForSettings);
   const scheme = new ColorSchemeBroadcaster({
     getColorScheme: () => (plugin.app.isDarkMode() ? "dark" : "light"),
   });
@@ -69,31 +60,30 @@ export async function activateInkbookPlugin(
     }),
   );
   const embedActions = createObsidianEmbedActions(plugin.app, () => metadataResolved);
-  const runtime = new ObsidianWorkspaceRuntime(
-    plugin.app.vault,
-    plugin.app.fileManager,
-    scheme,
-    () => ({
-      device: settings.getDeviceSettings(),
-      vault: settings.getVaultSettings(),
-    }),
-    embedActions,
-    () => plugin.app.workspace.containerEl.ownerDocument.defaultView ?? undefined,
-  );
+  const runtime = createWorkspaceRuntime(plugin, settings, scheme, embedActions, feedback);
   runtimeForSettings = runtime;
   plugin.register(runtime.refreshRateProfiles.subscribe(() => settingTab.update()));
   registerSettingsSubscriptions(plugin, settings, runtime);
-  const insertion = createObsidianInsertionController(plugin.app, settings, {
-    failed: (message) => {
-      new Notice(message);
+  const insertion = createObsidianInsertionController(
+    plugin.app,
+    settings,
+    {
+      failed: (code) => {
+        showGlobalFeedback(plugin, feedback, code);
+      },
+      inserted: (completed) => showInsertionFeedback(plugin, feedback, runtime, completed),
     },
-    inserted: (completed) => showInsertionNotice(runtime, completed),
-  });
+    createPlacementFeedback(plugin, feedback),
+  );
   const penTap = new PenTapInsertionController(
     insertion,
     () => layoutReady && settings.getDeviceSettings().penTapInsertion === "handwriting",
   );
-  const embedPaste = createObsidianEmbedPasteController(plugin.app, settings);
+  const embedPaste = createObsidianEmbedPasteController(
+    plugin.app,
+    settings,
+    createPlacementFeedback(plugin, feedback),
+  );
 
   const lifecycle = new PresentationLifecycleRegistry();
   const { documentRecognition, ports } = createEmbedIntegration(plugin, lifecycle, scheme, runtime);
@@ -106,7 +96,10 @@ export async function activateInkbookPlugin(
     plugin.registerEditorExtension([
       createLivePreviewExtension(ports),
       createPenTapInsertionExtension(penTap),
-      createEmbedPasteExtension(embedPaste),
+      createEmbedPasteExtension(embedPaste, (outcome) => {
+        const code = feedbackForEmbedPaste(outcome);
+        if (code !== undefined) showGlobalFeedback(plugin, feedback, code);
+      }),
     ]);
   });
   plugin.registerEvent(
@@ -128,9 +121,54 @@ export async function activateInkbookPlugin(
     lifecycle.disposeAll();
     documentRecognition.dispose();
     runtime.dispose();
+    feedback.dispose();
     scheme.clear();
     unregisterIcons();
   };
+}
+
+function addSettingsTab(
+  plugin: Plugin,
+  settings: InkbookSettingsStore,
+  getRuntime: () => ObsidianWorkspaceRuntime | undefined,
+): InkbookSettingTab {
+  const settingTab = new InkbookSettingTab(
+    plugin.app,
+    plugin,
+    settings,
+    new ObsidianVaultFolderAdapter(plugin.app.vault, TFolder, normalizePath),
+    () =>
+      getRuntime()?.refreshRateProfiles.status(
+        plugin.app.workspace.containerEl.ownerDocument.defaultView,
+      ),
+  );
+  plugin.addSettingTab(settingTab);
+  return settingTab;
+}
+
+function createWorkspaceRuntime(
+  plugin: Plugin,
+  settings: InkbookSettingsStore,
+  scheme: ColorSchemeBroadcaster,
+  embedActions: ReturnType<typeof createObsidianEmbedActions>,
+  feedback: InkbookFeedbackManager,
+): ObsidianWorkspaceRuntime {
+  return new ObsidianWorkspaceRuntime(
+    plugin.app.vault,
+    plugin.app.fileManager,
+    scheme,
+    () => ({
+      device: settings.getDeviceSettings(),
+      vault: settings.getVaultSettings(),
+    }),
+    embedActions,
+    {
+      fallbackOwnerWindow: () =>
+        plugin.app.workspace.containerEl.ownerDocument.defaultView ?? undefined,
+      manager: feedback,
+      view: () => plugin.app.workspace.getActiveViewOfType(MarkdownView)?.containerEl,
+    },
+  );
 }
 
 function registerSettingsSubscriptions(
@@ -205,49 +243,74 @@ function registerMarkdownHistory(plugin: Plugin, runtime: ObsidianWorkspaceRunti
   );
 }
 
-function showInsertionNotice(
+function showInsertionFeedback(
+  plugin: Plugin,
+  feedback: InkbookFeedbackManager,
   runtime: ObsidianWorkspaceRuntime,
   insertion: CompletedEmptyLineInsertion,
 ): void {
-  const notice = new Notice("Handwriting inserted. ", 5000);
-  const undo = notice.messageEl.createEl("button", { text: "Undo" });
-  undo.addEventListener(
-    "click",
-    () => {
-      void insertion.undo().then((removed) => {
-        if (removed) {
-          runtime.abortAutoActivation(insertion.filePath);
-          notice.hide();
-        }
-      });
-    },
-    { once: true },
-  );
-  const ownerWindow = notice.messageEl.ownerDocument.defaultView;
-  if (ownerWindow === null) return;
+  const target = feedbackTarget(plugin);
+  const inserted = feedback.showInViewOrWindow(target.ownerWindow, target.view, {
+    actions: [
+      {
+        id: "undo-insertion",
+        run: async () => {
+          const removed = await insertion.undo();
+          if (removed) runtime.abortAutoActivation(insertion.filePath);
+          return removed;
+        },
+      },
+    ],
+    code: "handwriting-inserted",
+    timeoutMs: 5_000,
+  });
   runtime.queueAutoActivation(
     insertion.filePath,
-    ownerWindow,
+    target.ownerWindow,
     (retry) => {
-      const retryNotice = new Notice("Handwriting was inserted but the editor is not ready. ");
-      retryNotice.messageEl.classList.add("inkbook-root");
-      const retryButton = retryNotice.messageEl.createEl("button", {
-        attr: { "aria-label": "Retry editor activation", title: "Retry editor activation" },
-        cls: "inkbook-notice-icon-button",
+      feedback.showInViewOrWindow(target.ownerWindow, target.view, {
+        actions: [
+          { id: "retry-open", run: retry },
+          { id: "dismiss", run: () => undefined },
+        ],
+        code: "editor-activation-delayed",
       });
-      const retryIcon = retryButton.createSpan({ cls: "inkbook-notice-action-icon" });
-      setIcon(retryIcon, "rotate-ccw");
-      retryButton.addEventListener(
-        "click",
-        () => {
-          retryNotice.hide();
-          retry();
-        },
-        { once: true },
-      );
     },
-    () => notice.hide(),
+    () => inserted.close(),
   );
+}
+
+function showGlobalFeedback(
+  plugin: Plugin,
+  feedback: InkbookFeedbackManager,
+  code: InkbookFeedbackCode,
+): void {
+  const target = feedbackTarget(plugin);
+  feedback.showInViewOrWindow(target.ownerWindow, target.view, { code });
+}
+
+function feedbackTarget(plugin: Plugin): {
+  readonly ownerWindow: Window;
+  readonly view?: HTMLElement;
+} {
+  const view = plugin.app.workspace.getActiveViewOfType(MarkdownView)?.containerEl;
+  const fallback = plugin.app.workspace.containerEl;
+  const ownerWindow = (view ?? fallback).ownerDocument.defaultView;
+  if (ownerWindow === null) throw new Error("Inkbook feedback requires an owning window.");
+  return {
+    ownerWindow,
+    ...(view === undefined ? {} : { view }),
+  };
+}
+
+function createPlacementFeedback(plugin: Plugin, feedback: InkbookFeedbackManager) {
+  return { show: () => showGlobalFeedback(plugin, feedback, "placement-folder-fallback") };
+}
+
+function feedbackForEmbedPaste(outcome: EmbedPasteOutcome): InkbookFeedbackCode | undefined {
+  if (outcome.kind === "failed") return "embed-paste-failed";
+  if (outcome.kind !== "stale") return undefined;
+  return outcome.cleanup === "failed" ? "embed-paste-cleanup-failed" : "embed-paste-note-changed";
 }
 
 function resolveEditorPane(

@@ -1,6 +1,5 @@
-import { Notice } from "obsidian";
-
 import type { CopyEmbedOutcome, DeleteEmbedOutcome } from "../commands";
+import type { InkbookFeedbackCode } from "../feedback";
 import type { PresentationEmbedReference } from "./presentation-port";
 
 interface WorkspaceEmbedActionPort {
@@ -12,19 +11,13 @@ interface MarkdownHistoryPort {
   recordMarkdownHistory(): void;
 }
 
-export interface WorkspaceEmbedActionNoticePort {
-  show(message: string): void;
+export interface WorkspaceEmbedActionFeedbackPort {
+  show(code: InkbookFeedbackCode): void;
 }
 
-const DEFAULT_NOTICES: WorkspaceEmbedActionNoticePort = {
-  show: (message) => {
-    new Notice(message);
-  },
-};
-
-function showNotice(notices: WorkspaceEmbedActionNoticePort, message: string): void {
+function showFeedback(feedback: WorkspaceEmbedActionFeedbackPort, code: InkbookFeedbackCode): void {
   try {
-    notices.show(message);
+    feedback.show(code);
   } catch {
     // A host notification failure must not change the completed data operation.
   }
@@ -32,45 +25,42 @@ function showNotice(notices: WorkspaceEmbedActionNoticePort, message: string): v
 
 function reportCopyFailure(
   outcome: Exclude<CopyEmbedOutcome, { readonly kind: "copied" }>,
-  notices: WorkspaceEmbedActionNoticePort,
+  feedback: WorkspaceEmbedActionFeedbackPort,
 ): void {
-  const message =
+  const code =
     outcome.kind === "unavailable" && outcome.reason === "clipboard-unavailable"
-      ? "Inkbook could not copy the embed because the system clipboard is unavailable."
-      : "Inkbook could not copy the embed.";
-  showNotice(notices, message);
+      ? "embed-copy-clipboard-unavailable"
+      : "embed-copy-failed";
+  showFeedback(feedback, code);
 }
 
 function reportDeleteFailure(
   outcome: Exclude<DeleteEmbedOutcome, { readonly kind: "cancelled" | "deleted" }>,
-  notices: WorkspaceEmbedActionNoticePort,
+  feedback: WorkspaceEmbedActionFeedbackPort,
 ): void {
   if (outcome.kind === "failed") {
-    showNotice(
-      notices,
-      "Inkbook removed the embed but could not move the handwriting file to trash. The file was preserved.",
-    );
+    showFeedback(feedback, "embed-delete-file-kept");
     return;
   }
-  const message =
+  const code =
     outcome.reason === "metadata-unresolved"
-      ? "Inkbook could not verify whether the handwriting file has other references. Nothing was deleted."
+      ? "embed-delete-references-unavailable"
       : outcome.reason === "editor-changed"
-        ? "Inkbook could not delete the embed because the note changed. The handwriting file was preserved."
-        : "Inkbook could not delete the embed. The handwriting file was preserved.";
-  showNotice(notices, message);
+        ? "embed-delete-note-changed"
+        : "embed-delete-failed";
+  showFeedback(feedback, code);
 }
 
 export async function copyWorkspaceEmbed(
   actions: WorkspaceEmbedActionPort,
   reference: PresentationEmbedReference,
-  notices: WorkspaceEmbedActionNoticePort = DEFAULT_NOTICES,
+  feedback: WorkspaceEmbedActionFeedbackPort,
 ): Promise<void> {
   try {
     const outcome = await actions.copyEmbed(reference);
-    if (outcome.kind !== "copied") reportCopyFailure(outcome, notices);
+    if (outcome.kind !== "copied") reportCopyFailure(outcome, feedback);
   } catch {
-    showNotice(notices, "Inkbook could not copy the embed.");
+    showFeedback(feedback, "embed-copy-failed");
   }
 }
 
@@ -79,17 +69,17 @@ export async function deleteWorkspaceEmbed(options: {
   readonly isCurrent: () => boolean;
   readonly reference: PresentationEmbedReference;
   readonly scene: MarkdownHistoryPort;
-  readonly notices?: WorkspaceEmbedActionNoticePort;
+  readonly feedback: WorkspaceEmbedActionFeedbackPort;
 }): Promise<void> {
-  const notices = options.notices ?? DEFAULT_NOTICES;
+  const feedback = options.feedback;
   try {
     const outcome = await options.actions.deleteEmbed(options.reference);
     if (outcome.kind === "deleted" && options.isCurrent()) {
       options.scene.recordMarkdownHistory();
     } else if (outcome.kind !== "cancelled" && outcome.kind !== "deleted") {
-      reportDeleteFailure(outcome, notices);
+      reportDeleteFailure(outcome, feedback);
     }
   } catch {
-    showNotice(notices, "Inkbook could not delete the embed. The handwriting file was preserved.");
+    showFeedback(feedback, "embed-delete-failed");
   }
 }
