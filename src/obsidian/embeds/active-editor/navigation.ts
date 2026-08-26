@@ -378,10 +378,9 @@ export class ActiveEditorNavigation {
       this.#panMomentum.cancelTrackpad();
       return false;
     }
-    this.#frameState = accumulateZoomInput(this.#frameState, { panX });
-    if (!this.#panMomentum.recordTrackpadWheel(panX, event)) {
-      this.#panMomentum.cancelTrackpad();
-    }
+    const trackpadPanX = this.#panMomentum.trackpadWheelDelta(panX, event);
+    this.#frameState = accumulateZoomInput(this.#frameState, { panX: trackpadPanX ?? panX });
+    if (trackpadPanX === undefined) this.#panMomentum.cancelTrackpad();
     this.#scheduleFrame();
     return true;
   }

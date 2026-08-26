@@ -55,14 +55,15 @@ export class ActiveEditorPanMomentum {
     this.cancel();
   }
 
-  public recordTrackpadWheel(screenDeltaX: number, event: ActiveEditorWheelInput): boolean {
+  public trackpadWheelDelta(
+    screenDeltaX: number,
+    event: ActiveEditorWheelInput,
+  ): number | undefined {
     const input: TrackpadPanInput = {
       deltaMode: event.deltaMode,
       shiftKey: event.shiftKey === true,
     };
-    if (!isTrackpadPanInput(input)) return false;
-    this.#trackpad.record(screenDeltaX);
-    return true;
+    return isTrackpadPanInput(input) ? this.#trackpad.record(screenDeltaX) : undefined;
   }
 
   public transferOwnerWindow(ownerWindow: Window): void {
