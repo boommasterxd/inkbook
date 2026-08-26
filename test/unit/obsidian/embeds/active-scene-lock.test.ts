@@ -118,6 +118,19 @@ describe("active scene lock layout", () => {
   });
 });
 
+describe("active scene overlapping lock layout", () => {
+  it("freezes the visible unlock height before the first lock frame", () => {
+    const fixture = createFixture();
+    fixture.setInlineBlockSize("720px");
+    fixture.setVisibleHeight(612.25);
+
+    applyLockedFitLayout(fixture.options(false));
+
+    expect(fixture.style.blockSize).toBe("612.25px");
+    expect(fixture.applyResize).not.toHaveBeenCalled();
+  });
+});
+
 describe("active scene occupied lock extent", () => {
   it("keeps the last pattern row plus one complete row", () => {
     const fixture = createFixture();
@@ -155,13 +168,20 @@ function createFixture() {
       return id;
     },
   } as unknown as Window;
+  let inlineBlockSize = "480px";
   const style = {
-    blockSize: "480px",
+    get blockSize() {
+      return inlineBlockSize;
+    },
+    set blockSize(value: string) {
+      inlineBlockSize = value;
+    },
     setProperty: vi.fn(),
   } as unknown as CSSStyleDeclaration;
+  let visibleHeight = 480;
   const connected = { value: true };
   const container = {
-    getBoundingClientRect: () => domRect({ height: 480, left: 0, top: 0, width: 1_024 }),
+    getBoundingClientRect: () => domRect({ height: visibleHeight, left: 0, top: 0, width: 1_024 }),
     get isConnected() {
       return connected.value;
     },
@@ -200,6 +220,12 @@ function createFixture() {
       if (entry === undefined) throw new Error("No frame is pending.");
       frames.delete(entry[0]);
       entry[1](time);
+    },
+    setInlineBlockSize: (value: string) => {
+      inlineBlockSize = value;
+    },
+    setVisibleHeight: (height: number) => {
+      visibleHeight = height;
     },
     onSettled,
     style,

@@ -62,7 +62,11 @@ export class TransitionScrollStability {
     this.#settlementFrames = 0;
     this.#userControlled = false;
     this.#root.classList.add(LAYOUT_TRANSITION_CLASS);
+    const previousOwner = this.#owner;
     this.#synchronizeOwner();
+    if (this.#owner !== undefined && this.#owner === previousOwner) {
+      this.#captureReference(this.#owner);
+    }
     this.#scheduleFrame();
   }
 

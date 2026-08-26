@@ -85,6 +85,23 @@ describe("transition scroll stability", () => {
     expect(fixture.root.classList.contains(LAYOUT_TRANSITION_CLASS)).toBe(false);
     fixture.stability.dispose();
   });
+
+  it("recaptures the viewport anchor when a transition restarts during settlement", () => {
+    const fixture = createFixture();
+    fixture.owner.scrollTop = 1_400;
+    const releaseUnlock = fixture.stability.begin();
+
+    releaseUnlock();
+    fixture.shiftRootBy(24);
+    const expectedTop = fixture.root.getBoundingClientRect().top;
+    const releaseLock = fixture.stability.begin();
+    fixture.flushFrame();
+
+    expect(fixture.owner.scrollTop).toBe(1_400);
+    expect(fixture.root.getBoundingClientRect().top).toBe(expectedTop);
+    releaseLock();
+    fixture.stability.dispose();
+  });
 });
 
 function createFixture() {

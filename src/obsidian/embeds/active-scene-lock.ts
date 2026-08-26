@@ -123,6 +123,7 @@ class LockLayoutTransition implements LockedFitTransition {
     this.#ownerWindow = ownerWindow;
     this.#startTime = ownerWindow.performance.now();
     this.#target = target;
+    options.container.style.blockSize = `${String(target.oldBlockSize)}px`;
     options.container.setCssProps({ transition: "none" });
   }
 
