@@ -50,6 +50,10 @@ class FrameHarness {
     return this.#callbacks.size;
   }
 
+  public get now(): number {
+    return this.#time;
+  }
+
   public flushOne(): void {
     const entry = this.#callbacks.entries().next().value as
       readonly [number, FrameRequestCallback] | undefined;
@@ -265,6 +269,52 @@ describe("active editor navigation geometry and lifecycle", () => {
     expect(harness.setCamera).not.toHaveBeenCalled();
   });
 });
+
+describe("active editor touch pan momentum", () => {
+  it("continues a released horizontal touch flick in the shared camera frame", () => {
+    const harness = createZoomedHarness();
+    const before = harness.navigation.cameraX;
+
+    releaseFlick(harness);
+
+    expect(harness.navigation.cameraX).toBeLessThan(before);
+    expect(harness.frames.pending).toBe(1);
+  });
+
+  it("stops when the horizontal camera reaches its bound", () => {
+    const harness = createZoomedHarness();
+    harness.navigation.finish();
+    harness.navigation.pan(-10_000);
+    harness.frames.flushOne();
+    harness.navigation.finish();
+    const atBound = harness.navigation.cameraX;
+
+    releaseFlick(harness);
+
+    expect(harness.navigation.cameraX).toBe(atBound);
+    expect(harness.frames.pending).toBe(0);
+  });
+});
+
+function recordFlick(navigation: ActiveEditorNavigation, now: number): void {
+  navigation.recordTouchPan(-12, now - 32);
+  navigation.recordTouchPan(-12, now - 16);
+  navigation.recordTouchPan(-12, now);
+}
+
+function releaseFlick(harness: NavigationHarness): void {
+  const now = harness.frames.now;
+  recordFlick(harness.navigation, now);
+  harness.navigation.releaseTouchPan(now);
+  harness.frames.flushOne();
+}
+
+function createZoomedHarness(): NavigationHarness {
+  const harness = createHarness();
+  harness.navigation.updatePinch({ x: 500, y: 200 }, 2);
+  harness.frames.flushAll();
+  return harness;
+}
 
 describe("active editor measured layout", () => {
   it("preserves magnification and remeasures after zoom interrupts height motion", () => {

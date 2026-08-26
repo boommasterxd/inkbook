@@ -245,6 +245,23 @@ describe("active editor pointer-anchored keyboard navigation", () => {
     const pageAfterResize = harness.navigation.pagePointFromScreen(lastScreenPointer);
     expectKeyboardZoomAnchor(pageAfterResize.x);
   });
+
+  it("applies transition camera state without rewriting native scroll", () => {
+    const harness = createHarness();
+    const scrollTop = harness.owner.scrollTop;
+    harness.sequence.length = 0;
+
+    expect(
+      harness.navigation.applyResize({
+        cameraX: -120,
+        fitZoom: 1,
+        zoom: 1.2,
+      }),
+    ).toBe(true);
+
+    expect(harness.owner.scrollTop).toBe(scrollTop);
+    expect(harness.sequence).toEqual(["camera-write"]);
+  });
 });
 
 describe("active editor gesture geometry and view transfer", () => {

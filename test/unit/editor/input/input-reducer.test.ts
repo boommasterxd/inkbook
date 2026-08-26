@@ -301,7 +301,7 @@ describe("touch state transitions", () => {
 });
 
 describe("touch navigation and finger drawing", () => {
-  it("routes dominant horizontal touch to page pan only above fit zoom", () => {
+  it("reserves dominant horizontal touch for page pan at every zoom", () => {
     const zoomed = createInputState({ zoom: 2, fitZoom: 1 });
     const pending = apply(zoomed, pointerDown({ pointerType: "touch" }));
     const panned = apply(pending.state, pointerMove({ pointerType: "touch", x: 21, y: 22 }));
@@ -316,7 +316,11 @@ describe("touch navigation and finger drawing", () => {
       pointerDown({ pointerType: "touch" }),
     );
     const scrolled = apply(fitPending.state, pointerMove({ pointerType: "touch", x: 21, y: 22 }));
-    expect(inputPhase(scrolled.state)).toBe("note-scroll");
+    expect(inputPhase(scrolled.state)).toBe("page-pan");
+    expect(scrolled.effects).toEqual([
+      { type: "cancel-long-press", pointerId: 1 },
+      { type: "pan-page", screenDeltaX: 11 },
+    ]);
   });
 
   it.each([

@@ -44,6 +44,7 @@ describe("active scene lock layout", () => {
       expect.objectContaining({ fitZoom: expectedFit, zoom: expectedFit }),
     );
     expect(fixture.frames.size).toBe(0);
+    expect(fixture.onSettled).toHaveBeenCalledOnce();
     transition.finish();
     expect(fixture.applyResize).toHaveBeenCalledTimes(2);
   });
@@ -76,6 +77,7 @@ describe("active scene lock layout", () => {
     expect(fixture.frames.size).toBe(0);
     expect(fixture.style.blockSize).toBe("480px");
     expect(fixture.applyResize).not.toHaveBeenCalled();
+    expect(fixture.onSettled).toHaveBeenCalledOnce();
   });
 
   it("stops animation work after the container is detached", () => {
@@ -89,7 +91,7 @@ describe("active scene lock layout", () => {
     expect(fixture.frames.size).toBe(0);
   });
 
-  it("restores the active camera and native scroll anchor in one commit", () => {
+  it("restores the active camera without competing with scroll stabilization", () => {
     const fixture = createFixture();
     const blockSizeDuringResize: string[] = [];
     fixture.applyResize.mockImplementation(() => {
@@ -112,7 +114,7 @@ describe("active scene lock layout", () => {
     expect(fixture.applyResize).toHaveBeenCalledWith(
       expect.objectContaining({ fitZoom: 1_000 / PAGE_WIDTH, zoom: 1 }),
     );
-    expect(fixture.applyResize.mock.calls[0]?.[0].scrollTop).not.toBe(400);
+    expect(fixture.applyResize.mock.calls[0]?.[0].scrollTop).toBeUndefined();
   });
 });
 
@@ -168,6 +170,7 @@ function createFixture() {
     style,
   } as unknown as HTMLElement;
   const applyResize = vi.fn<(update: SceneLayoutUpdate) => boolean>(() => true);
+  const onSettled = vi.fn();
   const anchor = {
     anchorViewportY: 300,
     embedTopInScrollContent: 200,
@@ -187,6 +190,7 @@ function createFixture() {
       container,
       maximumBottom,
       oldViewState: { cameraX: -100, zoom: 1 },
+      onSettled,
       page,
       reducedMotion,
       restoreViewState: vi.fn(() => true),
@@ -197,6 +201,7 @@ function createFixture() {
       frames.delete(entry[0]);
       entry[1](time);
     },
+    onSettled,
     style,
   };
 }

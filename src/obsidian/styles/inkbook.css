@@ -135,6 +135,10 @@
   scrollbar-gutter: stable;
 }
 
+.inkbook-scroll-anchor-suppressed {
+  overflow-anchor: none;
+}
+
 .inkbook-root .inkbook-locked-preview {
   appearance: none;
   background: transparent;

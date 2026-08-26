@@ -5,13 +5,7 @@ import type { SvgSceneRenderer } from "../../../rendering/scene/index";
 import type { InkbookEditorChromeProps } from "../../../rendering/ui/editor-chrome";
 import type { ToolbarAction, ToolbarLayoutStage, ToolbarState } from "../../../rendering/ui/index";
 import type { ContextMenuAction } from "../../menus/index";
-import {
-  browserScrollListeners,
-  browserScrollMetrics,
-  createAnimationFrameScheduler,
-  PenScrollGuard,
-  type BrowserScrollElement,
-} from "../../scrolling/index";
+import * as Scrolling from "../../scrolling/index";
 import type { EditableDocumentModel } from "../vault-document-session";
 import type { ActiveEditorActions } from "./controller-actions";
 import type { ActiveEditorControllerOptions } from "./controller-types";
@@ -20,10 +14,7 @@ import { ActiveEditorBackgroundSession } from "./background-session";
 import { createChromeCallbacks, createChromeProps, overflowMenuState } from "./controller-chrome";
 import { applyInputAction } from "./controller-dispatch";
 import type { ActiveEditorMenuController } from "./controller-menu";
-import {
-  createActiveEditorInteractions,
-  createControllerNavigation,
-} from "./controller-interactions";
+import * as ControllerInteractions from "./controller-interactions";
 import { createToolbarState, isShapeTool, isTool } from "./controller-helpers";
 import { createActiveEditorPreview } from "./controller-previews";
 import type { ActiveEditorHistory } from "./history";
@@ -38,6 +29,7 @@ import type { ActiveEditorResizeAnchor, ActiveEditorResizeUpdate } from "./layou
 import type { SynchronousClipboardData } from "./clipboard-reader";
 import { ActiveEditorKeyboardController } from "./controller-keyboard";
 import { ActiveEditorPointerController } from "./controller-pointer";
+import { isTouchInteraction, touchInteractionOwnsPointer } from "./controller-touch";
 import { createActiveEditorSelectionEdgeDrag } from "./controller-selection-edge";
 import { ActiveEditorAvailability } from "./controller-availability";
 import { ActiveEditorChromeState } from "./controller-chrome-state";
@@ -65,12 +57,12 @@ export class ActiveEditorController {
   readonly #onLock: () => void;
   readonly #onStateChanged: () => void;
   readonly #ownerWindow: Window;
-  readonly #penGuard: PenScrollGuard<BrowserScrollElement>;
+  readonly #penGuard: Scrolling.PenScrollGuard<Scrolling.BrowserScrollElement>;
   readonly #renderIcon: ActiveEditorControllerOptions["renderIcon"];
   readonly #renderer: SvgSceneRenderer;
   readonly #sceneStore: ElementSceneStore;
   readonly #sliceBudgetMs: () => number;
-  #scrollOwner: BrowserScrollElement;
+  #scrollOwner: Scrolling.BrowserScrollElement;
   readonly #styles: ActiveEditorStyleSession;
   readonly #toolbarAction: InkbookEditorChromeProps["onToolbarAction"] = (action) =>
     this.handleToolbarAction(action);
@@ -133,12 +125,12 @@ export class ActiveEditorController {
       deviceFingerDrawingEnabled: options.deviceSettings.fingerDrawingEnabled,
     });
     if (isShapeTool(options.startupTool)) this.#chromeState.selectShape(options.startupTool);
-    this.#penGuard = new PenScrollGuard({
-      listeners: browserScrollListeners,
-      metrics: browserScrollMetrics,
-      scheduler: createAnimationFrameScheduler(ownerWindow),
+    this.#penGuard = new Scrolling.PenScrollGuard({
+      listeners: Scrolling.browserScrollListeners,
+      metrics: Scrolling.browserScrollMetrics,
+      scheduler: Scrolling.createAnimationFrameScheduler(ownerWindow),
     });
-    this.#navigation = createControllerNavigation({
+    this.#navigation = ControllerInteractions.createControllerNavigation({
       controller: options,
       getInput: () => this.#input,
       renderSelection: () => this.#handles.renderSelection(),
@@ -153,7 +145,7 @@ export class ActiveEditorController {
       ownerWindow,
       scrollOwner: () => this.#scrollOwner,
     });
-    const interactions = createActiveEditorInteractions({
+    const interactions = ControllerInteractions.createActiveEditorInteractions({
       controller: options,
       dispatchMove: (pointer) => this.#dispatch({ type: "pointer-move", ...pointer }),
       history: this.#history,
@@ -230,6 +222,20 @@ export class ActiveEditorController {
   readonly handlePointerMove = (event: PointerEvent): void =>
     this.#pointer.handlePointerMove(event);
   readonly handlePointerUp = (event: PointerEvent): void => this.#pointer.handlePointerUp(event);
+  public preparePrimaryTouchStart(): void {
+    this.#navigation.cancelTouchPanMomentum();
+    if (isTouchInteraction(this.#input.interaction)) this.#dispatch({ type: "reset" });
+  }
+  public recoverInterruptedTouch(): void {
+    this.preparePrimaryTouchStart();
+    this.#captures.releaseAll();
+    this.#penGuard.stop();
+  }
+  public recoverTouchTerminal(pointerId: number): void {
+    if (touchInteractionOwnsPointer(this.#input.interaction, pointerId)) {
+      this.#pointer.cancelPointer(pointerId);
+    }
+  }
   public handleToolbarAction(action: ToolbarAction): void {
     if (!this.#availability.acceptsInput) return;
     if (isTool(action)) {
@@ -250,7 +256,7 @@ export class ActiveEditorController {
       this.#actions.execute(action);
   }
   readonly handleLostPointerCapture = (event: PointerEvent) =>
-    this.#pointer.handleLostPointerCapture(event);
+    this.#captures.runIfOwned(event.pointerId, () => this.#pointer.handleLostPointerCapture(event));
   public handleWheel(event: WheelEvent): void {
     if (!this.#availability.acceptsInput) return;
     if (this.#navigation.updateWheel(event)) event.preventDefault();
@@ -288,7 +294,7 @@ export class ActiveEditorController {
   public restoreViewState(state: ActiveEditorViewState): boolean {
     return this.#navigation.restoreViewState(state);
   }
-  public transferScrollOwner(scrollOwner: BrowserScrollElement): boolean {
+  public transferScrollOwner(scrollOwner: Scrolling.BrowserScrollElement): boolean {
     if (scrollOwner === this.#scrollOwner) return false;
     this.#penGuard.stop();
     if (!this.#navigation.transferScrollOwner(scrollOwner)) return false;
@@ -463,9 +469,7 @@ export class ActiveEditorController {
       this.#navigation,
     );
   }
-  #releasePointer(pointerId: number): void {
-    this.#captures.release(pointerId);
-  }
+  readonly #releasePointer = (pointerId: number): void => this.#captures.release(pointerId);
   #resetForDisable(): void {
     this.#dispatch({ type: "reset" });
     const handlePointerId = this.#handles.activePointerId;

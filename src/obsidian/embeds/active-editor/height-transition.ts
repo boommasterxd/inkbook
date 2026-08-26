@@ -26,6 +26,7 @@ type TransitionPhase =
  * geometries in the same painted frame.
  */
 export class ActiveHeightTransition {
+  readonly #beginScrollStability: (() => () => void) | undefined;
   readonly #container: HTMLElement;
   #frame: number | undefined;
   #finishOnSceneCommit = false;
@@ -33,10 +34,16 @@ export class ActiveHeightTransition {
   #phase: TransitionPhase | undefined;
   #request: ActiveHeightTransitionRequest | undefined;
   #renderedHeight = 0;
+  #releaseScrollStability: (() => void) | undefined;
   #startedAt = 0;
   #surfaceTargetApplied = false;
 
-  public constructor(container: HTMLElement, ownerWindow: Window) {
+  public constructor(
+    container: HTMLElement,
+    ownerWindow: Window,
+    beginScrollStability?: () => () => void,
+  ) {
+    this.#beginScrollStability = beginScrollStability;
     this.#container = container;
     this.#ownerWindow = ownerWindow;
   }
@@ -47,6 +54,7 @@ export class ActiveHeightTransition {
 
   public begin(request: ActiveHeightTransitionRequest): void {
     this.cancel();
+    this.#releaseScrollStability = this.#beginScrollStability?.();
     this.#request = request;
     this.#renderedHeight = request.currentRenderedHeight;
     this.#phase = request.sceneCommitPending() ? "waiting-for-scene" : "waiting-for-paint";
@@ -173,6 +181,8 @@ export class ActiveHeightTransition {
   }
 
   #clear(): void {
+    const releaseScrollStability = this.#releaseScrollStability;
+    this.#releaseScrollStability = undefined;
     this.#request = undefined;
     this.#phase = undefined;
     this.#finishOnSceneCommit = false;
@@ -181,6 +191,7 @@ export class ActiveHeightTransition {
     this.#surfaceTargetApplied = false;
     this.#container.classList.remove(TRANSITION_CLASS);
     this.#container.style.removeProperty(ENVELOPE_PROPERTY);
+    releaseScrollStability?.();
   }
 }
 

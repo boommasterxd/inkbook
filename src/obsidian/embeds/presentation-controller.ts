@@ -13,6 +13,7 @@ import type {
   PresentationAttachmentInput,
   PresentationSessionPort,
 } from "./presentation-port";
+import { LAYOUT_TRANSITION_CLASS } from "./transition-scroll-stability";
 
 const LEASES_BY_DOCUMENT = new WeakMap<Document, ScrollbarLeaseRegistry<HTMLElement>>();
 
@@ -52,9 +53,11 @@ export class PresentationController {
   #measurementFrame: number | undefined;
   #mounted = false;
   #observer: ResizeObserver | undefined;
+  #hostMeasureDeferred = false;
   readonly #owningWindow: Window;
   readonly #previewLifecycle: PresentationPreviewLifecycle | undefined;
   readonly #scroll: PresentationScrollLifecycle<HTMLElement, PresentationMeasurement>;
+  readonly #transitionObserver: MutationObserver | undefined;
 
   constructor(
     attachment: PresentationAttachmentInput,
@@ -122,6 +125,15 @@ export class PresentationController {
       applyColorScheme(attachment.root, nextScheme);
       if (previousScheme !== undefined) this.#previewLifecycle?.refresh?.();
     });
+    const mutationObserverConstructor = owningWindow.MutationObserver;
+    this.#transitionObserver =
+      mutationObserverConstructor === undefined
+        ? undefined
+        : new mutationObserverConstructor(() => this.#flushDeferredHostMeasure());
+    this.#transitionObserver?.observe(attachment.root, {
+      attributeFilter: ["class"],
+      attributes: true,
+    });
   }
 
   mount(): void {
@@ -139,7 +151,7 @@ export class PresentationController {
       this.#frame = undefined;
       if (!this.#mounted || !this.#scroll.mount()) return;
       this.#observer = new owningWindow.ResizeObserver(() => {
-        this.#previewLifecycle?.requestHostMeasure?.();
+        this.#requestHostMeasure();
         this.#scroll.transferAfterLayoutChange();
         this.#scheduleSettledMeasurement();
       });
@@ -200,10 +212,32 @@ export class PresentationController {
 
   readonly #handleOwningWindowResize = (): void => {
     if (!this.#mounted) return;
-    this.#previewLifecycle?.requestHostMeasure?.();
+    this.#requestHostMeasure();
     this.#scroll.transferAfterLayoutChange();
     this.#scheduleSettledMeasurement();
   };
+
+  #requestHostMeasure(): void {
+    if (
+      this.#transitionObserver !== undefined &&
+      this.#attachment.root.classList.contains(LAYOUT_TRANSITION_CLASS)
+    ) {
+      this.#hostMeasureDeferred = true;
+      return;
+    }
+    this.#previewLifecycle?.requestHostMeasure?.();
+  }
+
+  #flushDeferredHostMeasure(): void {
+    if (
+      !this.#hostMeasureDeferred ||
+      this.#attachment.root.classList.contains(LAYOUT_TRANSITION_CLASS)
+    ) {
+      return;
+    }
+    this.#hostMeasureDeferred = false;
+    this.#previewLifecycle?.requestHostMeasure?.();
+  }
 
   dispose(): void {
     this.#disposeScheme?.();
@@ -224,9 +258,11 @@ export class PresentationController {
       this.#measurementFrame = undefined;
       this.#observer?.disconnect();
       this.#observer = undefined;
+      this.#hostMeasureDeferred = false;
       this.#scroll.unload();
       this.#sessions.detach(this.#attachment);
     }
+    this.#transitionObserver?.disconnect();
   }
 }
 

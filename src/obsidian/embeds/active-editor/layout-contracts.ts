@@ -4,6 +4,7 @@ import type { ToolbarLayoutStage } from "../../../rendering/ui/index";
 import type { ActiveEditorResizeAnchor, ActiveEditorResizeUpdate } from "./layout-resize";
 
 export interface ActiveEditorLayoutOptions {
+  readonly beginScrollStability?: () => () => void;
   readonly chromeHost: HTMLElement;
   readonly container: HTMLElement;
   readonly onLayout: (layout: ToolbarLayoutStage) => void;

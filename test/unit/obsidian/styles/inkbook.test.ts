@@ -367,11 +367,12 @@ describe("Inkbook editor overlays", () => {
     expect(media).toContain("--inkbook-motion-standard: 0ms");
   });
 
-  it("leaves the scrollbar lease as the only global Inkbook selector", () => {
+  it("limits global Inkbook selectors to exact scroll-owner lifecycle classes", () => {
     const selectors = topLevelSelectors(stylesheet);
 
     expect(selectors.filter((selector) => !selector.startsWith(".inkbook-root"))).toEqual([
       ".inkbook-scrollbar-stable",
+      ".inkbook-scroll-anchor-suppressed",
     ]);
   });
 });

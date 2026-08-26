@@ -238,8 +238,7 @@ function movePendingTouch(
     return updateCurrent(state, interaction, action, []);
   }
   const horizontal = Math.abs(total.x) >= HORIZONTAL_GESTURE_RATIO * Math.abs(total.y);
-  const aboveFit = state.zoom > state.fitZoom;
-  const phase = horizontal && aboveFit ? "page-pan" : "note-scroll";
+  const phase = horizontal ? "page-pan" : "note-scroll";
   const movement = movementEffect(phase, delta(interaction.current, action));
   const changed: InputInteraction =
     phase === "page-pan"

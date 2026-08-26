@@ -90,14 +90,70 @@ describe("active editor pointer controller", () => {
     expect(releasePointer).toHaveBeenCalledWith(7);
     expect(finishHandlePointer).toHaveBeenCalledOnce();
   });
+
+  it("stops a claimed horizontal touch pan before it reaches Obsidian", () => {
+    const controller = horizontalPanController();
+    const preventDefault = vi.fn();
+    const stopPropagation = vi.fn();
+    const event = pointerEvent("touch", { preventDefault, stopPropagation });
+
+    controller.handlePointerMove(event);
+
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(stopPropagation).toHaveBeenCalledOnce();
+  });
+});
+
+describe("active editor pointer momentum", () => {
+  it("records touch pan velocity and releases it into momentum", () => {
+    let input = { ...createInputState({ fitZoom: 1, zoom: 2 }), interaction: pagePanInteraction() };
+    const navigation = navigationPort();
+    const controller = horizontalPanController({
+      coalescedDispatch: () => {
+        input = {
+          ...input,
+          interaction: { ...pagePanInteraction(), current: { x: 32, y: 30 } },
+        };
+        return true;
+      },
+      getInput: () => input,
+      navigation: navigation.value,
+    });
+
+    controller.handlePointerMove(pointerEvent("touch", { timeStamp: 24 }));
+    controller.handlePointerUp(pointerEvent("touch", { timeStamp: 32 }));
+
+    expect(navigation.recordTouchPan).toHaveBeenCalledWith(12, 24);
+    expect(navigation.releaseTouchPan).toHaveBeenCalledWith(32);
+  });
+});
+
+describe("active editor pointer recovery", () => {
+  it("releases a stale captured pointer during terminal recovery", () => {
+    const releasePointer = vi.fn();
+    const dispatch = vi.fn();
+    const controller = horizontalPanController({ dispatch, releasePointer });
+
+    controller.cancelPointer(7);
+
+    expect(dispatch).toHaveBeenCalledWith({ pointerId: 7, type: "pointer-cancel" });
+    expect(releasePointer).toHaveBeenCalledWith(7);
+  });
 });
 
 function navigationPort() {
   const begin = vi.fn(() => true);
+  const cancelTouchPanMomentum = vi.fn();
+  const recordTouchPan = vi.fn();
+  const releaseTouchPan = vi.fn();
   return {
     begin,
+    cancelTouchPanMomentum,
+    recordTouchPan,
+    releaseTouchPan,
     value: {
       beginGestureGeometry: begin,
+      cancelTouchPanMomentum,
       pageSample: (sample: { readonly x: number; readonly y: number }) => ({
         ...sample,
         x: sample.x + 100,
@@ -110,8 +166,60 @@ function navigationPort() {
         x: 20,
         y: 30,
       }),
+      recordTouchPan,
+      releaseTouchPan,
       zoom: 2,
     } as unknown as ActiveEditorNavigation,
+  };
+}
+
+function horizontalPanController(overrides?: {
+  readonly coalescedDispatch?: (event: PointerEvent) => boolean;
+  readonly dispatch?: (action: unknown) => void;
+  readonly getInput?: () => ReturnType<typeof createInputState> & {
+    readonly interaction: ReturnType<typeof pagePanInteraction>;
+  };
+  readonly navigation?: ActiveEditorNavigation;
+  readonly releasePointer?: (pointerId: number) => void;
+}): ActiveEditorPointerController {
+  const input = createInputState({ zoom: 2, fitZoom: 1 });
+  return new ActiveEditorPointerController({
+    beginHandlePointer: vi.fn(),
+    capturePointer: vi.fn(),
+    coalesced: {
+      dispatch: vi.fn(overrides?.coalescedDispatch ?? (() => true)),
+    } as unknown as CoalescedPointerInput,
+    dispatch: overrides?.dispatch ?? vi.fn(),
+    finishHandlePointer: vi.fn(),
+    getInput: overrides?.getInput ?? (() => ({ ...input, interaction: pagePanInteraction() })),
+    handles: handlesPort(false),
+    interruptForInput: vi.fn(),
+    isEnabled: () => true,
+    menus: menuPort(),
+    navigation: overrides?.navigation ?? navigationPort().value,
+    ownerWindow: { navigator: { platform: "Linux" } } as unknown as Window,
+    renderer: rendererPort(),
+    releasePointer: overrides?.releasePointer ?? vi.fn(),
+    sceneStore: { hit: vi.fn(() => null) } as unknown as ElementSceneStore,
+    selection: () => new Set(),
+    setLastPointer: vi.fn(),
+  });
+}
+
+function pagePanInteraction() {
+  return {
+    current: { x: 20, y: 30 },
+    longPressScheduled: false,
+    penRole: "normal" as const,
+    phase: "page-pan" as const,
+    pointerId: 7,
+    pointerType: "touch" as const,
+    previewStarted: false,
+    previousTool: "draw" as const,
+    shift: false,
+    start: { x: 10, y: 30 },
+    temporaryEraser: false,
+    tool: "draw" as const,
   };
 }
 
@@ -141,7 +249,10 @@ function rendererPort(): SvgSceneRenderer {
   } as unknown as SvgSceneRenderer;
 }
 
-function pointerEvent(pointerType = "mouse"): PointerEvent {
+function pointerEvent(
+  pointerType = "mouse",
+  overrides: Partial<Pick<PointerEvent, "preventDefault" | "stopPropagation" | "timeStamp">> = {},
+): PointerEvent {
   return {
     button: 0,
     buttons: 1,
@@ -150,7 +261,9 @@ function pointerEvent(pointerType = "mouse"): PointerEvent {
     metaKey: false,
     pointerId: 7,
     pointerType,
-    preventDefault: vi.fn(),
+    preventDefault: overrides.preventDefault ?? vi.fn(),
+    stopPropagation: overrides.stopPropagation ?? vi.fn(),
     shiftKey: false,
+    timeStamp: overrides.timeStamp ?? 16,
   } as unknown as PointerEvent;
 }

@@ -68,13 +68,15 @@ At width fit, both limits are exactly 0, so `camera.x` MUST be 0 and the full pa
 
 Vertical panning in the handwriting embed does not use `camera.y`. Vertical movement remains controlled by the native Obsidian scroller. This means that a normal mouse-wheel gesture continues to scroll the note.
 
-When zoomed in, horizontal navigation is possible using:
+Horizontal navigation uses:
 
 - a horizontal trackpad gesture
 - `Shift` plus mouse wheel
 - a predominantly horizontal one-finger gesture
 
-A one-finger gesture is horizontal when `abs(deltaX) >= 1.25 × abs(deltaY)` and vertical otherwise. A vertical gesture continues to scroll the Obsidian note.
+A one-finger gesture is horizontal when `abs(deltaX) >= 1.25 × abs(deltaY)` and vertical otherwise. Inkbook contains every canvas touch start and move before Obsidian's pane and drawer gesture handlers can latch it. At width fit the horizontal camera remains clamped at `0`; above fit the gesture visibly pans the page. A vertical gesture forwards its delta to the resolved native Obsidian scroll owner instead of introducing a nested canvas scroller. Terminal pointer and touch events remain visible to host cleanup. A next-task fallback releases captured touch state only after the complete terminal event has had an opportunity to commit, while interruption and a later primary contact still recover genuinely stale state.
+
+Releasing a horizontal one-finger page pan above width fit starts bounded kinetic motion from the recent 120-millisecond screen-space movement window only when release speed reaches 100 pixels per second. Initial speed is capped at 4,000 pixels per second, velocity is multiplied by `0.92^(elapsedMs / (1000 / 60))`, and motion stops below 15 pixels per second. The elapsed-time formula keeps the same feel from 60 through 240 Hz. Momentum advances inside the existing coalesced camera animation frame, creates no second rendering loop, and stops immediately at a horizontal camera bound, on new pointer, wheel, keyboard-zoom, or pinch input, on resize or scroll-owner transfer, on lock or disposal, and after a frame interruption longer than 100 milliseconds. It never adds vertical momentum: Obsidian remains the sole vertical scroll owner.
 
 For an anchor at local screen coordinates `(anchorX, anchorY)`, horizontal anchoring uses:
 
@@ -117,7 +119,7 @@ The imperative scene renderer updates the camera transform, background grid, sel
 
 A locked preview always displays the full page width.
 
-When a zoomed-in embed is locked, zoom and horizontal position begin returning to width fit while height changes to the locked target over 240 milliseconds.
+When a zoomed-in embed is locked, zoom and horizontal position begin returning to width fit while height changes to the locked target over 240 milliseconds. Lock, unlock, and content-driven height transitions suppress browser scroll anchoring on the resolved Obsidian scroll owner and retain the embed root's pre-transition viewport Y position. The bounded hold samples that single visual anchor once per animation frame and writes `scrollTop` only when host anchoring actually introduces drift. A host `scroll` event is corrected synchronously before the next paint, including bottom-pinning during locked-to-editor growth. Explicit wheel, touch-scroll, or scroll-key input transfers control to the user immediately.
 
 After the exact saved preview is ready, it crossfades independently over 120 milliseconds as defined in [Quality and Testing](quality-and-testing.md). When reduced motion is enabled, the final camera, height, and preview state apply together without interpolation.
 

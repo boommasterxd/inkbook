@@ -18,6 +18,7 @@ interface LockedFitLayoutOptions {
   readonly container: HTMLElement;
   readonly maximumBottom: number | undefined;
   readonly oldViewState: ActiveEditorViewState;
+  readonly onSettled?: () => void;
   readonly page: PageV1;
   readonly reducedMotion: boolean;
   readonly restoreViewState: (state: ActiveEditorViewState) => boolean;
@@ -62,7 +63,7 @@ interface SceneLayoutAnchor {
 export interface SceneLayoutUpdate {
   readonly cameraX: number;
   readonly fitZoom: number;
-  readonly scrollTop: number;
+  readonly scrollTop?: number;
   readonly zoom: number;
 }
 
@@ -191,6 +192,7 @@ class LockLayoutTransition implements LockedFitTransition {
     if (activeTransitions.get(this.#options.container) === this) {
       activeTransitions.delete(this.#options.container);
     }
+    this.#options.onSettled?.();
   }
 }
 
@@ -227,7 +229,6 @@ function resolveAnchoredLayout(
   return {
     cameraX: anchored.camera.x,
     fitZoom,
-    scrollTop: anchored.scrollTop,
     zoom: anchored.camera.zoom,
   };
 }

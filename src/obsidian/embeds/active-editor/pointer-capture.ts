@@ -17,9 +17,17 @@ export class ActivePointerCaptureOwner {
     this.#captured.add(pointerId);
   }
 
+  public owns(pointerId: number): boolean {
+    return this.#captured.has(pointerId);
+  }
+
+  public runIfOwned(pointerId: number, callback: () => void): void {
+    if (this.owns(pointerId)) callback();
+  }
+
   public release(pointerId: number): void {
-    if (this.#surface.hasPointerCapture(pointerId)) this.#surface.releasePointerCapture(pointerId);
     this.#captured.delete(pointerId);
+    if (this.#surface.hasPointerCapture(pointerId)) this.#surface.releasePointerCapture(pointerId);
   }
 
   public releaseAll(): void {

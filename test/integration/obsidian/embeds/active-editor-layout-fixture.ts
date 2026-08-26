@@ -102,6 +102,8 @@ export function layoutHarness(motion: "full" | "reduced" | "system" = "full", ho
   const onLayout = vi.fn();
   const onResize = vi.fn<(update: ActiveEditorResizeUpdate) => void>();
   const onZoom = vi.fn();
+  const releaseScrollStability = vi.fn();
+  const beginScrollStability = vi.fn(() => releaseScrollStability);
   let maximumBottom: number | undefined;
   let pageAvailable = true;
   const readPage = vi.fn(() => {
@@ -109,6 +111,7 @@ export function layoutHarness(motion: "full" | "reduced" | "system" = "full", ho
     return page();
   });
   const layout = new ActiveEditorLayout({
+    beginScrollStability,
     chromeHost: { querySelector: () => null } as unknown as HTMLElement,
     container,
     onLayout,
@@ -130,6 +133,7 @@ export function layoutHarness(motion: "full" | "reduced" | "system" = "full", ho
     storeMaximumBottom: () => maximumBottom,
   });
   return {
+    beginScrollStability,
     classList,
     invalidateLayout,
     layout,
@@ -137,6 +141,7 @@ export function layoutHarness(motion: "full" | "reduced" | "system" = "full", ho
     onResize,
     onZoom,
     rect,
+    releaseScrollStability,
     setMaximumBottom: (value: number | undefined) => {
       maximumBottom = value;
     },
