@@ -140,7 +140,11 @@ describe("active editor layout motion", () => {
     const sizes = pageTransitionSizes(test.rect.height);
 
     exerciseGrowth(test, sizes);
+    expect(test.beginScrollStability).toHaveBeenCalledOnce();
+    expect(test.releaseScrollStability).toHaveBeenCalledOnce();
     exerciseShrink(test, sizes);
+    expect(test.beginScrollStability).toHaveBeenCalledTimes(2);
+    expect(test.releaseScrollStability).toHaveBeenCalledTimes(2);
     expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(false);
     expect(test.styleProperties.has("--inkbook-page-height-envelope-block-size")).toBe(false);
     test.layout.dispose();
@@ -239,7 +243,7 @@ describe("active editor layout motion preferences", () => {
     test.layout.dispose();
   });
 
-  it("commits height, camera, overlay, and native-scroll anchoring in one synchronous update", () => {
+  it("commits reduced-motion height without redundant camera or scroll writes", () => {
     const test = harness("reduced");
     test.layout.chromeMounted();
     test.work.flushFrames();
@@ -248,13 +252,7 @@ describe("active editor layout motion preferences", () => {
 
     test.layout.setSelectionBottomEdge(true);
 
-    expect(test.onResize).toHaveBeenCalledOnce();
-    expect(test.onResize).toHaveBeenCalledWith({
-      cameraX: -400,
-      fitZoom: 1_000 / PAGE_WIDTH,
-      scrollTop: 500,
-      zoom: 1_000 / PAGE_WIDTH,
-    });
+    expect(test.onResize).not.toHaveBeenCalled();
     expect(test.invalidateLayout.mock.calls.length).toBeGreaterThan(0);
     test.layout.dispose();
   });

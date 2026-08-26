@@ -5,13 +5,7 @@ import type { SvgSceneRenderer } from "../../../rendering/scene/index";
 import type { InkbookEditorChromeProps } from "../../../rendering/ui/editor-chrome";
 import type { ToolbarAction, ToolbarLayoutStage, ToolbarState } from "../../../rendering/ui/index";
 import type { ContextMenuAction } from "../../menus/index";
-import {
-  browserScrollListeners,
-  browserScrollMetrics,
-  createAnimationFrameScheduler,
-  PenScrollGuard,
-  type BrowserScrollElement,
-} from "../../scrolling/index";
+import * as Scrolling from "../../scrolling/index";
 import type { EditableDocumentModel } from "../vault-document-session";
 import type { ActiveEditorActions } from "./controller-actions";
 import type { ActiveEditorControllerOptions } from "./controller-types";
@@ -20,10 +14,7 @@ import { ActiveEditorBackgroundSession } from "./background-session";
 import { createChromeCallbacks, createChromeProps, overflowMenuState } from "./controller-chrome";
 import { applyInputAction } from "./controller-dispatch";
 import type { ActiveEditorMenuController } from "./controller-menu";
-import {
-  createActiveEditorInteractions,
-  createControllerNavigation,
-} from "./controller-interactions";
+import * as ControllerInteractions from "./controller-interactions";
 import { createToolbarState, isShapeTool, isTool } from "./controller-helpers";
 import { createActiveEditorPreview } from "./controller-previews";
 import type { ActiveEditorHistory } from "./history";
@@ -38,6 +29,8 @@ import type { ActiveEditorResizeAnchor, ActiveEditorResizeUpdate } from "./layou
 import type { SynchronousClipboardData } from "./clipboard-reader";
 import { ActiveEditorKeyboardController } from "./controller-keyboard";
 import { ActiveEditorPointerController } from "./controller-pointer";
+import * as ControllerTouch from "./controller-touch";
+import { ActiveEditorTouchMode, createActiveEditorTouchMode } from "./controller-touch-mode";
 import { createActiveEditorSelectionEdgeDrag } from "./controller-selection-edge";
 import { ActiveEditorAvailability } from "./controller-availability";
 import { ActiveEditorChromeState } from "./controller-chrome-state";
@@ -65,20 +58,19 @@ export class ActiveEditorController {
   readonly #onLock: () => void;
   readonly #onStateChanged: () => void;
   readonly #ownerWindow: Window;
-  readonly #penGuard: PenScrollGuard<BrowserScrollElement>;
+  readonly #penGuard: Scrolling.PenScrollGuard<Scrolling.BrowserScrollElement>;
   readonly #renderIcon: ActiveEditorControllerOptions["renderIcon"];
   readonly #renderer: SvgSceneRenderer;
   readonly #sceneStore: ElementSceneStore;
   readonly #sliceBudgetMs: () => number;
-  #scrollOwner: BrowserScrollElement;
+  #scrollOwner: Scrolling.BrowserScrollElement;
   readonly #styles: ActiveEditorStyleSession;
   readonly #toolbarAction: InkbookEditorChromeProps["onToolbarAction"] = (action) =>
     this.handleToolbarAction(action);
   readonly #selectionEdgeDrag: ActiveEditorControllerOptions["selectionEdgeDrag"];
   readonly #navigation: ActiveEditorNavigation;
   #selection: ReadonlySet<string> = new Set();
-  #toolbarFingerDrawing = false;
-  #fingerDrawingAvailable: boolean;
+  readonly #touchMode: ActiveEditorTouchMode;
   #leftHanded: boolean;
   #lastSessionPointer: EditorInput.PointerSample | null = null;
   #lastSessionScreenPointer: EditorInput.PointerSample | null = null;
@@ -126,19 +118,19 @@ export class ActiveEditorController {
       selection: () => this.#selection,
       store: this.#model.store,
     });
-    this.#fingerDrawingAvailable = options.deviceSettings.fingerDrawingEnabled;
+    this.#touchMode = createActiveEditorTouchMode(options);
     this.#leftHanded = options.deviceSettings.leftHandedToolbar;
     this.#input = EditorInput.createInputState({
       activeTool: options.startupTool,
       deviceFingerDrawingEnabled: options.deviceSettings.fingerDrawingEnabled,
     });
     if (isShapeTool(options.startupTool)) this.#chromeState.selectShape(options.startupTool);
-    this.#penGuard = new PenScrollGuard({
-      listeners: browserScrollListeners,
-      metrics: browserScrollMetrics,
-      scheduler: createAnimationFrameScheduler(ownerWindow),
+    this.#penGuard = new Scrolling.PenScrollGuard({
+      listeners: Scrolling.browserScrollListeners,
+      metrics: Scrolling.browserScrollMetrics,
+      scheduler: Scrolling.createAnimationFrameScheduler(ownerWindow),
     });
-    this.#navigation = createControllerNavigation({
+    this.#navigation = ControllerInteractions.createControllerNavigation({
       controller: options,
       getInput: () => this.#input,
       renderSelection: () => this.#handles.renderSelection(),
@@ -153,7 +145,7 @@ export class ActiveEditorController {
       ownerWindow,
       scrollOwner: () => this.#scrollOwner,
     });
-    const interactions = createActiveEditorInteractions({
+    const interactions = ControllerInteractions.createActiveEditorInteractions({
       controller: options,
       dispatchMove: (pointer) => this.#dispatch({ type: "pointer-move", ...pointer }),
       history: this.#history,
@@ -230,6 +222,24 @@ export class ActiveEditorController {
   readonly handlePointerMove = (event: PointerEvent): void =>
     this.#pointer.handlePointerMove(event);
   readonly handlePointerUp = (event: PointerEvent): void => this.#pointer.handlePointerUp(event);
+  public preparePrimaryTouchStart(): void {
+    this.#navigation.cancelPanMomentum();
+    if (ControllerTouch.isTouchInteraction(this.#input.interaction))
+      this.#dispatch({ type: "reset" });
+  }
+  public blocksNativeTouchScrolling(): boolean {
+    return ControllerTouch.touchInteractionBlocksNativeScroll(this.#input.interaction);
+  }
+  public recoverInterruptedTouch(): void {
+    this.preparePrimaryTouchStart();
+    this.#captures.releaseAll();
+    this.#penGuard.stop();
+  }
+  public recoverTouchTerminal(pointerId: number): void {
+    if (ControllerTouch.touchInteractionOwnsPointer(this.#input.interaction, pointerId)) {
+      this.#pointer.cancelPointer(pointerId);
+    }
+  }
   public handleToolbarAction(action: ToolbarAction): void {
     if (!this.#availability.acceptsInput) return;
     if (isTool(action)) {
@@ -250,7 +260,7 @@ export class ActiveEditorController {
       this.#actions.execute(action);
   }
   readonly handleLostPointerCapture = (event: PointerEvent) =>
-    this.#pointer.handleLostPointerCapture(event);
+    this.#captures.runIfOwned(event.pointerId, () => this.#pointer.handleLostPointerCapture(event));
   public handleWheel(event: WheelEvent): void {
     if (!this.#availability.acceptsInput) return;
     if (this.#navigation.updateWheel(event)) event.preventDefault();
@@ -288,7 +298,7 @@ export class ActiveEditorController {
   public restoreViewState(state: ActiveEditorViewState): boolean {
     return this.#navigation.restoreViewState(state);
   }
-  public transferScrollOwner(scrollOwner: BrowserScrollElement): boolean {
+  public transferScrollOwner(scrollOwner: Scrolling.BrowserScrollElement): boolean {
     if (scrollOwner === this.#scrollOwner) return false;
     this.#penGuard.stop();
     if (!this.#navigation.transferScrollOwner(scrollOwner)) return false;
@@ -297,9 +307,9 @@ export class ActiveEditorController {
   }
   public updateDeviceSettings(settings: ActiveEditorControllerOptions["deviceSettings"]): void {
     const changed =
-      settings.fingerDrawingEnabled !== this.#fingerDrawingAvailable ||
+      settings.fingerDrawingEnabled !== this.#touchMode.available ||
       settings.leftHandedToolbar !== this.#leftHanded;
-    this.#fingerDrawingAvailable = settings.fingerDrawingEnabled;
+    this.#touchMode.updateAvailable(settings.fingerDrawingEnabled);
     this.#leftHanded = settings.leftHandedToolbar;
     this.#input = EditorInput.reduceInput(this.#input, {
       type: "configure",
@@ -313,8 +323,8 @@ export class ActiveEditorController {
       canRedo: this.#availability.acceptsInput && this.#history.canRedo,
       canUndo: this.#availability.acceptsInput && this.#history.canUndo,
       canPaste: this.#actions.canPaste,
-      fingerDrawingEnabled: this.#toolbarFingerDrawing,
-      fingerDrawingAvailable: this.#fingerDrawingAvailable,
+      fingerDrawingEnabled: this.#touchMode.enabled,
+      fingerDrawingAvailable: this.#touchMode.available,
       hasSelection: this.#selection.size > 0,
       openFlyout: this.#chromeState.openFlyout,
     });
@@ -388,16 +398,17 @@ export class ActiveEditorController {
           source,
           source === "keyboard" ? position : this.#navigation.pagePointFromScreen(position),
         ),
-      panPage: (screenDeltaX) => this.#navigation.pan(screenDeltaX),
+      panPage: (screenDeltaX) => this.#navigation.pan(ControllerTouch.touchPanDelta(screenDeltaX)),
       releasePointer: (pointerId) => this.#releasePointer(pointerId),
       restoreTemporaryTool: () => this.#onStateChanged(),
-      revertNavigation: () => this.#navigation.revert(),
+      revertNavigation: (kind) =>
+        kind === "page-pan" ? this.#navigation.revert() : this.#navigation.finish(),
       revertPinch: () => this.#navigation.revert(),
       scheduleLongPress: (pointerId, delayMs) =>
         this.#longPress.schedule(pointerId, delayMs, () =>
           this.#dispatch({ type: "long-press", pointerId }),
         ),
-      scrollNote: (_screenDeltaX, screenDeltaY) => this.#navigation.scroll(screenDeltaY),
+      scrollNote: () => undefined,
       selectElement: (elementId, mode) =>
         this.#setSelection(selectElement(this.#selection, elementId, mode)),
       updatePinch: (anchor, factor) => this.#navigation.updatePinchScreen(anchor, factor),
@@ -463,9 +474,7 @@ export class ActiveEditorController {
       this.#navigation,
     );
   }
-  #releasePointer(pointerId: number): void {
-    this.#captures.release(pointerId);
-  }
+  readonly #releasePointer = (pointerId: number): void => this.#captures.release(pointerId);
   #resetForDisable(): void {
     this.#dispatch({ type: "reset" });
     const handlePointerId = this.#handles.activePointerId;
@@ -485,12 +494,7 @@ export class ActiveEditorController {
     this.#onStateChanged();
   }
   #toggleFingerDrawing(): void {
-    this.#toolbarFingerDrawing = !this.#toolbarFingerDrawing;
-    this.#input = EditorInput.reduceInput(this.#input, {
-      type: "configure",
-      deviceFingerDrawingEnabled: this.#fingerDrawingAvailable,
-      toolbarFingerDrawingEnabled: this.#toolbarFingerDrawing,
-    }).state;
+    this.#input = this.#touchMode.toggle(this.#input);
     this.#onStateChanged();
   }
 }

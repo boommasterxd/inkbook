@@ -47,9 +47,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation profile`, () 
   it("keeps coalesced horizontal pan and native vertical scroll within budget", async ({
     annotate,
   }) => {
-    const harness = createNavigationHarness();
-    expect(harness.navigation.restoreViewState({ cameraX: -100, zoom: 1 })).toBe(true);
-    harness.resetWrites();
+    const harness = createPanningHarness();
     const durations = measureInteractionFrames((frame) => {
       const delta = frame % 2 === 0 ? 3 : -3;
       harness.navigation.pan(delta);
@@ -65,20 +63,72 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation profile`, () 
     await annotate(interactionProfileAnnotation("pan and native scroll", p99), "performance");
     harness.navigation.dispose();
   });
+
+  it("keeps horizontal trackpad handoff and momentum within budget", async ({ annotate }) => {
+    const harness = createPanningHarness();
+    let claimedEvents = 0;
+    const durations = measureInteractionFrames((frame) => {
+      const phase = frame % 4;
+      if (phase < 3) {
+        const direction = Math.floor(frame / 4) % 2 === 0 ? 1 : -1;
+        if (
+          harness.navigation.updateWheel({
+            clientX: 500,
+            clientY: 300,
+            ctrlKey: false,
+            deltaMode: 0,
+            deltaX: direction * 6,
+            deltaY: 1,
+            metaKey: false,
+            shiftKey: false,
+          })
+        ) {
+          claimedEvents += 1;
+        }
+      }
+      harness.frames.flush();
+    });
+
+    const p99 = interactionP99(durations);
+    expect(claimedEvents).toBe((INTERACTION_REFRESH_PROFILE.sampleCount / 4) * 3);
+    expect(harness.cameraWrites).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
+    expect(harness.frames.maxPending).toBe(1);
+    expect(harness.scrollWrites).toBe(0);
+    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    await annotate(interactionProfileAnnotation("trackpad pan handoff", p99), "performance");
+    harness.navigation.dispose();
+  });
+
+  it("keeps horizontal touch momentum within budget", async ({ annotate }) => {
+    const harness = createPanningHarness();
+    const durations = measureInteractionFrames((frame) => {
+      if (harness.frames.pending === 0) startFlick(harness, frame % 2 === 0 ? 1 : -1);
+      harness.frames.flush();
+    });
+
+    const p99 = interactionP99(durations);
+    expect(harness.cameraWrites).toBeGreaterThan(0);
+    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    await annotate(interactionProfileAnnotation("touch pan momentum", p99), "performance");
+    harness.navigation.dispose();
+  });
 });
 
 class FrameQueue {
   readonly #callbacks = new Map<number, FrameRequestCallback>();
   #handle = 0;
-  #time = 0;
+  #maxPending = 0;
+  #time = 1_000;
 
   public readonly window = {
     cancelAnimationFrame: (handle: number) => this.#callbacks.delete(handle),
     innerHeight: 800,
     innerWidth: 1_200,
+    performance: { now: () => this.#time },
     requestAnimationFrame: (callback: FrameRequestCallback) => {
       this.#handle += 1;
       this.#callbacks.set(this.#handle, callback);
+      this.#maxPending = Math.max(this.#maxPending, this.#callbacks.size);
       return this.#handle;
     },
   };
@@ -91,6 +141,34 @@ class FrameQueue {
     this.#time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
     entry[1](this.#time);
   }
+
+  public get now(): number {
+    return this.#time;
+  }
+
+  public get maxPending(): number {
+    return this.#maxPending;
+  }
+
+  public get pending(): number {
+    return this.#callbacks.size;
+  }
+}
+
+function startFlick(harness: ReturnType<typeof createNavigationHarness>, direction: number): void {
+  const now = harness.frames.now;
+  const step = INTERACTION_REFRESH_PROFILE.frameDurationMs;
+  harness.navigation.recordTouchPan(direction * 8, now - step * 2);
+  harness.navigation.recordTouchPan(direction * 8, now - step);
+  harness.navigation.recordTouchPan(direction * 8, now);
+  harness.navigation.releaseTouchPan(now);
+}
+
+function createPanningHarness(): ReturnType<typeof createNavigationHarness> {
+  const harness = createNavigationHarness();
+  expect(harness.navigation.restoreViewState({ cameraX: -100, zoom: 1 })).toBe(true);
+  harness.resetWrites();
+  return harness;
 }
 
 function createNavigationHarness() {

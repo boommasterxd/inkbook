@@ -15,6 +15,7 @@ const activeTransitions = new WeakMap<HTMLElement, LockedFitTransition>();
 interface LockedFitLayoutOptions {
   readonly anchor: SceneLayoutAnchor | undefined;
   readonly applyResize: (update: SceneLayoutUpdate) => boolean;
+  readonly beginScrollStability?: (minimumRangeReserve: number) => () => void;
   readonly container: HTMLElement;
   readonly maximumBottom: number | undefined;
   readonly oldViewState: ActiveEditorViewState;
@@ -28,10 +29,14 @@ export interface LockedFitTransition {
   finish(): void;
   /** Stops pending animation work without applying the locked target. */
   cancel(): void;
+  /** Releases viewport stabilization after the editor-to-preview handoff. */
+  releaseViewportStability(): void;
 }
 
 export function applyLockedFitLayout(options: LockedFitLayoutOptions): LockedFitTransition {
-  activeTransitions.get(options.container)?.cancel();
+  const previous = activeTransitions.get(options.container);
+  previous?.cancel();
+  previous?.releaseViewportStability();
   const measurement = measureElementBox(options.container);
   const width = Math.max(1, measurement.contentBox.width);
   const fitZoom = width / PAGE_WIDTH;
@@ -40,10 +45,14 @@ export function applyLockedFitLayout(options: LockedFitLayoutOptions): LockedFit
     fitZoom,
     lockedHeight,
     oldBlockSize: Math.max(0, measurement.borderBox.height),
+    verticalInsets: Math.max(0, measurement.borderBox.height - measurement.contentBox.height),
     width,
   });
   activeTransitions.set(options.container, transition);
   transition.start();
+  transition.retainViewportStability(
+    options.beginScrollStability?.(minimumLockRangeReserve(options.anchor, transition.target)),
+  );
   return transition;
 }
 
@@ -62,7 +71,7 @@ interface SceneLayoutAnchor {
 export interface SceneLayoutUpdate {
   readonly cameraX: number;
   readonly fitZoom: number;
-  readonly scrollTop: number;
+  readonly scrollTop?: number;
   readonly zoom: number;
 }
 
@@ -104,6 +113,7 @@ interface LockTarget {
   readonly fitZoom: number;
   readonly lockedHeight: number;
   readonly oldBlockSize: number;
+  readonly verticalInsets: number;
   readonly width: number;
 }
 
@@ -113,6 +123,7 @@ class LockLayoutTransition implements LockedFitTransition {
   readonly #startTime: number;
   readonly #target: LockTarget;
   #frame: number | undefined;
+  #releaseViewportStability: (() => void) | undefined;
   #settled = false;
 
   public constructor(options: LockedFitLayoutOptions, target: LockTarget) {
@@ -122,7 +133,12 @@ class LockLayoutTransition implements LockedFitTransition {
     this.#ownerWindow = ownerWindow;
     this.#startTime = ownerWindow.performance.now();
     this.#target = target;
+    options.container.style.blockSize = `${String(target.oldBlockSize)}px`;
     options.container.setCssProps({ transition: "none" });
+  }
+
+  public get target(): LockTarget {
+    return this.#target;
   }
 
   public start(): void {
@@ -140,6 +156,16 @@ class LockLayoutTransition implements LockedFitTransition {
     if (this.#settled) return;
     this.#cancelFrame();
     this.#settle();
+  }
+
+  public releaseViewportStability(): void {
+    const release = this.#releaseViewportStability;
+    this.#releaseViewportStability = undefined;
+    release?.();
+  }
+
+  public retainViewportStability(release: (() => void) | undefined): void {
+    this.#releaseViewportStability = release;
   }
 
   readonly #tick = (time: number): void => {
@@ -162,7 +188,7 @@ class LockLayoutTransition implements LockedFitTransition {
     };
     const blockSize = interpolate(
       this.#target.oldBlockSize,
-      this.#target.lockedHeight * this.#target.fitZoom,
+      this.#target.lockedHeight * this.#target.fitZoom + this.#target.verticalInsets,
       eased,
     );
     const anchored = resolveAnchoredLayout(
@@ -192,6 +218,17 @@ class LockLayoutTransition implements LockedFitTransition {
       activeTransitions.delete(this.#options.container);
     }
   }
+}
+
+function minimumLockRangeReserve(
+  anchor: SceneLayoutAnchor | undefined,
+  target: LockTarget,
+): number {
+  if (anchor === undefined || Math.abs(anchor.oldScrollTop - anchor.scrollBounds.max) > 0.5) {
+    return 0;
+  }
+  const targetBlockSize = target.lockedHeight * target.fitZoom + target.verticalInsets;
+  return Math.max(0, target.oldBlockSize - targetBlockSize);
 }
 
 function resolveAnchoredLayout(
@@ -227,7 +264,6 @@ function resolveAnchoredLayout(
   return {
     cameraX: anchored.camera.x,
     fitZoom,
-    scrollTop: anchored.scrollTop,
     zoom: anchored.camera.zoom,
   };
 }

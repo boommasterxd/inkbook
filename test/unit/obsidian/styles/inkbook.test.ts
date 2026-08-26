@@ -116,6 +116,13 @@ describe("Inkbook toolbar motion styles", () => {
 });
 
 describe("Inkbook editor chrome styles", () => {
+  it("leaves native vertical touch panning enabled on the canvas input surface", () => {
+    const inputSurface = declarationsFor(".inkbook-root .inkbook-canvas-input");
+
+    expect(inputSurface).toContain("touch-action: pan-y");
+    expect(inputSurface).not.toContain("touch-action: none");
+  });
+
   it("overlays a zero-height sticky toolbar without moving the active background", () => {
     const activeRoot = declarationsFor(
       '.inkbook-root[data-inkbook-state="active"],\n.inkbook-root[data-inkbook-state="locking"]',
@@ -127,6 +134,7 @@ describe("Inkbook editor chrome styles", () => {
       '.inkbook-root.inkbook-embed-root[contenteditable="false"][data-inkbook-scheme][data-inkbook-state]',
     );
     const editorChrome = declarationsFor(".inkbook-root .inkbook-editor-chrome");
+    const hiddenEditorChrome = declarationsFor(".inkbook-root .inkbook-editor-chrome[hidden]");
     const scene = declarationsFor(".inkbook-root .inkbook-scene");
     const transitioningScene = declarationsFor(
       ".inkbook-root .inkbook-background-container.inkbook-page-height-transitioning > .inkbook-scene",
@@ -149,6 +157,7 @@ describe("Inkbook editor chrome styles", () => {
     expect(embedRoot).toContain("overflow: visible");
     expect(livePreviewRoot).toContain("contain: none !important");
     expect(editorChrome).not.toContain("padding-block-start");
+    expect(hiddenEditorChrome).toContain("display: none !important");
     expect(chromeHost).toContain("position: sticky");
     expect(chromeHost).toContain("block-size: 0");
     expect(chromeHost).toContain("var(--inkbook-toolbar-overlay-block-size)");
@@ -367,11 +376,12 @@ describe("Inkbook editor overlays", () => {
     expect(media).toContain("--inkbook-motion-standard: 0ms");
   });
 
-  it("leaves the scrollbar lease as the only global Inkbook selector", () => {
+  it("limits global Inkbook selectors to exact scroll-owner lifecycle classes", () => {
     const selectors = topLevelSelectors(stylesheet);
 
     expect(selectors.filter((selector) => !selector.startsWith(".inkbook-root"))).toEqual([
       ".inkbook-scrollbar-stable",
+      ".inkbook-scroll-anchor-suppressed",
     ]);
   });
 });

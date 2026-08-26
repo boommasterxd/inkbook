@@ -2,6 +2,7 @@ import type { AttachmentIdentity } from "../../editor/session/session-state";
 import type { ColorSchemeBroadcaster } from "../theme/color-scheme";
 import type { InkbookDocumentRecognitionPort } from "./document-recognition";
 import type { PresentationLifecycleRegistry } from "./presentation-lifecycle-registry";
+import type { PresentationScrollRangeReserve } from "./transition-scroll-stability";
 
 export interface ResolvedInkbookDocument {
   readonly documentId: string;
@@ -38,6 +39,7 @@ export interface PresentationAttachment {
   readonly documentId: string;
   readonly embedReference: PresentationEmbedReference;
   readonly root: HTMLElement;
+  readonly scrollRangeReserve?: PresentationScrollRangeReserve;
   readonly preview?: HTMLElement;
   readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
   readonly setPreviewSource?: (source: string) => Promise<void>;
@@ -50,12 +52,15 @@ export function presentationAttachmentKey(attachment: AttachmentIdentity): strin
 
 export type PresentationAttachmentInput = Omit<
   PresentationAttachment,
-  "preview" | "scrollOwner" | "setPreviewAspectRatio" | "setPreviewSource"
+  "preview" | "scrollOwner" | "scrollRangeReserve" | "setPreviewAspectRatio" | "setPreviewSource"
 >;
 
 export function presentationPreviewOptions(
   attachment: PresentationAttachment,
-): Pick<PresentationAttachment, "preview" | "setPreviewAspectRatio" | "setPreviewSource"> {
+): Pick<
+  PresentationAttachment,
+  "preview" | "scrollRangeReserve" | "setPreviewAspectRatio" | "setPreviewSource"
+> {
   return {
     ...(attachment.preview === undefined ? {} : { preview: attachment.preview }),
     ...(attachment.setPreviewAspectRatio === undefined
@@ -64,6 +69,9 @@ export function presentationPreviewOptions(
     ...(attachment.setPreviewSource === undefined
       ? {}
       : { setPreviewSource: attachment.setPreviewSource }),
+    ...(attachment.scrollRangeReserve === undefined
+      ? {}
+      : { scrollRangeReserve: attachment.scrollRangeReserve }),
   };
 }
 

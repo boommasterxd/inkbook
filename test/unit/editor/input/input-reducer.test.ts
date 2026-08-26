@@ -234,31 +234,6 @@ describe("temporary tools and pointer priority", () => {
 });
 
 describe("touch state transitions", () => {
-  it("selects an element under touch under every tool and moves only past 6 px", () => {
-    const started = apply(
-      createInputState({ activeTool: "eraser" }),
-      pointerDown({
-        pointerType: "touch",
-        target: { elementId: "stroke-a", isSelected: false },
-      }),
-    );
-    expect(inputPhase(started.state)).toBe("element-move");
-    expect(effectTypes(started.effects)).toEqual([
-      "capture-pointer",
-      "select-element",
-      "schedule-long-press",
-    ]);
-
-    const atThreshold = apply(started.state, pointerMove({ pointerType: "touch", x: 16, y: 20 }));
-    expect(atThreshold.effects).toEqual([]);
-    const moved = apply(atThreshold.state, pointerMove({ pointerType: "touch", x: 16.01, y: 20 }));
-    expect(effectTypes(moved.effects)).toEqual(["cancel-long-press", "begin-preview"]);
-    expect(apply(moved.state, { type: "pointer-up", pointerId: 1 }).effects[0]).toEqual({
-      type: "commit-preview",
-      kind: "element-move",
-    });
-  });
-
   it("opens an annotation long press only within 6 px and consumes its eventual release", () => {
     const started = apply(
       createInputState(),
@@ -281,7 +256,7 @@ describe("touch state transitions", () => {
     expect(released.effects).toEqual([]);
   });
 
-  it("keeps empty touch pending through 10 px and opens its long press", () => {
+  it("keeps a motionless empty touch pending and opens its long press", () => {
     const started = apply(createInputState(), pointerDown({ pointerType: "touch" }));
     expect(inputPhase(started.state)).toBe("touch-pending");
     expect(started.effects[started.effects.length - 1]).toEqual({
@@ -289,7 +264,7 @@ describe("touch state transitions", () => {
       pointerId: 1,
       delayMs: 500,
     });
-    const moved = apply(started.state, pointerMove({ pointerType: "touch", x: 16, y: 28 }));
+    const moved = apply(started.state, pointerMove({ pointerType: "touch", x: 12, y: 23 }));
     expect(inputPhase(moved.state)).toBe("touch-pending");
     const opened = apply(moved.state, { type: "long-press", pointerId: 1 });
     expect(effectTypes(opened.effects)).toEqual([
@@ -301,7 +276,7 @@ describe("touch state transitions", () => {
 });
 
 describe("touch navigation and finger drawing", () => {
-  it("routes dominant horizontal touch to page pan only above fit zoom", () => {
+  it("reserves dominant horizontal touch for page pan at every zoom", () => {
     const zoomed = createInputState({ zoom: 2, fitZoom: 1 });
     const pending = apply(zoomed, pointerDown({ pointerType: "touch" }));
     const panned = apply(pending.state, pointerMove({ pointerType: "touch", x: 21, y: 22 }));
@@ -316,7 +291,11 @@ describe("touch navigation and finger drawing", () => {
       pointerDown({ pointerType: "touch" }),
     );
     const scrolled = apply(fitPending.state, pointerMove({ pointerType: "touch", x: 21, y: 22 }));
-    expect(inputPhase(scrolled.state)).toBe("note-scroll");
+    expect(inputPhase(scrolled.state)).toBe("page-pan");
+    expect(scrolled.effects).toEqual([
+      { type: "cancel-long-press", pointerId: 1 },
+      { type: "pan-page", screenDeltaX: 11 },
+    ]);
   });
 
   it.each([

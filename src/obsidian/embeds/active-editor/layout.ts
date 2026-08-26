@@ -25,12 +25,6 @@ export type { ActiveEditorLayoutOptions } from "./layout-contracts";
 
 interface HeightFrameRead {
   readonly renderedHeight: number;
-  readonly resize:
-    | {
-        readonly anchor: ActiveEditorResizeAnchor;
-        readonly fitZoom: number;
-      }
-    | undefined;
 }
 
 export class ActiveEditorLayout {
@@ -62,7 +56,11 @@ export class ActiveEditorLayout {
     const ownerWindow = options.root.ownerDocument.defaultView;
     if (ownerWindow === null) throw new Error("The active editor requires an owning window.");
     this.#ownerWindow = ownerWindow;
-    this.#heightTransition = new ActiveHeightTransition(this.#container, ownerWindow);
+    this.#heightTransition = new ActiveHeightTransition(
+      this.#container,
+      ownerWindow,
+      options.beginScrollStability,
+    );
     this.#motion = new ActiveEditorMotion(
       ownerWindow,
       motionPreference(options.root.dataset?.inkbookMotion),
@@ -306,7 +304,7 @@ export class ActiveEditorLayout {
     if (!update.animate) {
       this.#heightTransition.cancel();
       this.#options.renderer.setPage(page, update.height);
-      this.#writeHeightFrame(update.height, zoom, frameRead);
+      this.#writeHeightFrame(update.height, zoom);
       this.#completeHeightTransition(false);
       return;
     }
@@ -318,12 +316,7 @@ export class ActiveEditorLayout {
     this.#options.renderer.setPage(page, preparationHeight);
     this.#heightTransition.begin({
       applyFrame: (renderedHeight) =>
-        this.#writeHeightFrame(
-          renderedHeight / zoom,
-          zoom,
-          frameRead,
-          growing ? "coverage" : "clip",
-        ),
+        this.#writeHeightFrame(renderedHeight / zoom, zoom, growing ? "coverage" : "clip"),
       applySurfaceTarget: () => this.#options.renderer.setPage(this.#options.page(), update.height),
       currentRenderedHeight,
       onComplete: () => this.#completeHeightTransition(!this.#motion.reduced),
@@ -355,7 +348,7 @@ export class ActiveEditorLayout {
     if (completed === undefined) this.#pageLayout.cancelTransitions(pageHeight);
     this.#options.renderer.setPage(this.#options.page(), pageHeight);
     if (applyFrame && completed !== undefined) {
-      this.#writeHeightFrame(pageHeight, zoom, this.#readHeightFrame());
+      this.#writeHeightFrame(pageHeight, zoom);
     }
     return pageHeight;
   }
@@ -370,41 +363,17 @@ export class ActiveEditorLayout {
   #readHeightFrame(): HeightFrameRead | undefined {
     const renderedHeight = Math.max(0, this.#container.getBoundingClientRect().height);
     if (!Number.isFinite(renderedHeight)) return undefined;
-    const fitZoom = this.#fitZoom;
-    const anchor = this.#options.readResizeAnchor?.();
-    if (fitZoom === undefined || anchor === undefined || this.#options.onResize === undefined) {
-      return { renderedHeight, resize: undefined };
-    }
-    return {
-      renderedHeight,
-      resize: { anchor, fitZoom },
-    };
+    return { renderedHeight };
   }
 
   #writeHeightFrame(
     pageHeight: number,
     zoom: number,
-    read: HeightFrameRead | undefined,
     invalidation: "complete" | "coverage" | "clip" = "complete",
   ): void {
     const renderedHeight = pageHeight * zoom;
     this.#container.style.blockSize = `${String(renderedHeight)}px`;
     this.#options.renderer.invalidateLayout(invalidation);
-    const resize = read?.resize;
-    if (read === undefined || resize === undefined) return;
-    const projectedMaximum = Math.max(
-      resize.anchor.scrollBounds.min,
-      resize.anchor.scrollBounds.max + renderedHeight - read.renderedHeight,
-    );
-    this.#options.onResize?.({
-      cameraX: resize.anchor.oldCameraX,
-      fitZoom: resize.fitZoom,
-      scrollTop: Math.max(
-        resize.anchor.scrollBounds.min,
-        Math.min(projectedMaximum, resize.anchor.oldScrollTop),
-      ),
-      zoom,
-    });
   }
 
   #resolvedZoom(fitZoom: number): number {

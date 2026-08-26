@@ -24,6 +24,7 @@ export function interactionBase(
     pointerType: action.pointerType,
     penRole: penRole(action),
     start: point(action),
+    ...(validTimestamp(action.timestamp) ? { startedAt: action.timestamp } : {}),
     current: point(action),
     previewStarted: false,
     longPressScheduled: false,
@@ -220,6 +221,10 @@ export function isFinitePoint(value: InputPoint): boolean {
 
 export function validPositive(value: number | undefined): value is number {
   return value !== undefined && Number.isFinite(value) && value > 0;
+}
+
+function validTimestamp(value: number | undefined): value is number {
+  return value !== undefined && Number.isFinite(value) && value >= 0;
 }
 
 export function appendIds(

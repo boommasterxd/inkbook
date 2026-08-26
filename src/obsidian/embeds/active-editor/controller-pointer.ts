@@ -15,6 +15,7 @@ import type { ActiveEditorHandleInteraction } from "./handle-interaction";
 import type { ActiveEditorMenuController } from "./controller-menu";
 import type { ActiveEditorNavigation } from "./navigation";
 import type { ElementSceneStore } from "./scene-store";
+import { touchInteractionBlocksNativeScroll, touchPanDelta } from "./controller-touch";
 
 export interface ActiveEditorPointerOptions {
   readonly coalesced: CoalescedPointerInput;
@@ -73,17 +74,27 @@ export class ActiveEditorPointerController {
   }
 
   public handlePointerCancel(event: PointerEvent): void {
-    if (!this.#options.isEnabled()) return;
-    if (this.#options.handles.cancel(event.pointerId)) {
-      this.#releasePointer(event.pointerId);
+    this.cancelPointer(event.pointerId);
+  }
+
+  public cancelPointer(pointerId: number): void {
+    this.#options.navigation.cancelPanMomentum();
+    if (!this.#options.isEnabled()) {
+      this.#releasePointer(pointerId);
+      return;
+    }
+    if (this.#options.handles.cancel(pointerId)) {
+      this.#releasePointer(pointerId);
       this.#options.finishHandlePointer();
       return;
     }
-    this.#options.dispatch({ type: "pointer-cancel", pointerId: event.pointerId });
+    this.#options.dispatch({ type: "pointer-cancel", pointerId });
+    this.#releasePointer(pointerId);
   }
 
   public handlePointerDown(event: PointerEvent): void {
     if (!this.#options.isEnabled()) return;
+    this.#options.navigation.cancelPanMomentum();
     this.#options.renderer.interruptMotionForPointerDown();
     const classification = classifyPointerDown({
       button: event.button,
@@ -128,24 +139,32 @@ export class ActiveEditorPointerController {
           isPlatformContextClick: classification.isPlatformContextClick,
           penRole: classification.penRole,
           shift: event.shiftKey,
+          timestamp: event.timeStamp,
           ...(target === undefined ? {} : { target }),
         }),
     );
-    if (this.#options.getInput().interaction !== undefined) event.preventDefault();
+    if (claimsPointerGesture(event, this.#options.getInput().interaction)) event.preventDefault();
   }
 
   public handlePointerMove(event: PointerEvent): void {
     const pointer = this.#pointerOrCancel(event);
     if (pointer === undefined) return;
+    const previous = this.#options.getInput().interaction;
     if (this.#options.handles.pointerMove(this.#options.navigation.pageSample(pointer))) {
       event.preventDefault();
       return;
     }
     if (!this.#options.coalesced.dispatch(event)) this.handlePointerCancel(event);
-    if (this.#options.getInput().interaction !== undefined) event.preventDefault();
+    const interaction = this.#options.getInput().interaction;
+    this.#recordTouchPan(event, previous);
+    if (claimsPointerGesture(event, interaction)) event.preventDefault();
+    if (event.pointerType === "touch" && interaction?.phase === "page-pan") {
+      event.stopPropagation();
+    }
   }
 
   public handlePointerUp(event: PointerEvent): void {
+    const previous = this.#options.getInput().interaction;
     const pointer = this.#pointerOrCancel(event);
     if (pointer === undefined) return;
     if (this.#options.handles.pointerMove(this.#options.navigation.pageSample(pointer))) {
@@ -155,16 +174,26 @@ export class ActiveEditorPointerController {
       event.preventDefault();
       return;
     }
+    const blocksHostGesture =
+      event.pointerType === "touch" && this.#options.getInput().interaction?.phase === "page-pan";
     if (!this.#options.coalesced.dispatch(event)) {
       this.handlePointerCancel(event);
       return;
     }
-    this.#options.dispatch({ type: "pointer-up", pointerId: event.pointerId });
-    event.preventDefault();
+    this.#recordTouchPan(event, previous);
+    this.#options.dispatch({
+      type: "pointer-up",
+      pointerId: event.pointerId,
+      timestamp: event.timeStamp,
+    });
+    if (blocksHostGesture) this.#options.navigation.releaseTouchPan(event.timeStamp);
+    if (claimsPointerGesture(event, previous)) event.preventDefault();
+    if (blocksHostGesture) event.stopPropagation();
   }
 
   public handleLostPointerCapture(event: PointerEvent): void {
     if (!this.#options.isEnabled()) return;
+    this.#options.navigation.cancelPanMomentum();
     this.#options.releasePointer(event.pointerId);
     if (this.#options.handles.cancel(event.pointerId)) {
       this.#options.finishHandlePointer();
@@ -184,7 +213,34 @@ export class ActiveEditorPointerController {
     return undefined;
   }
 
+  #recordTouchPan(event: PointerEvent, previous: InputState["interaction"]): void {
+    const current = this.#options.getInput().interaction;
+    if (
+      event.pointerType !== "touch" ||
+      current?.phase !== "page-pan" ||
+      previous === undefined ||
+      previous.phase === "pinch" ||
+      previous.pointerId !== event.pointerId
+    ) {
+      return;
+    }
+    this.#options.navigation.recordTouchPan(
+      touchPanDelta(current.current.x - previous.current.x),
+      event.timeStamp,
+    );
+  }
+
   #releasePointer(pointerId: number): void {
     this.#options.releasePointer(pointerId);
   }
+}
+
+function claimsPointerGesture(
+  event: PointerEvent,
+  interaction: InputState["interaction"],
+): boolean {
+  return (
+    interaction !== undefined &&
+    (event.pointerType !== "touch" || touchInteractionBlocksNativeScroll(interaction))
+  );
 }

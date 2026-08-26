@@ -36,7 +36,6 @@ class InkbookPlugin extends Plugin {
 
 interface CapturedSceneOptions {
   readonly deviceSettings: InkbookDeviceSettingsV1;
-  readonly initialViewState?: ActiveEditorViewState;
   readonly model: EditableDocumentModel;
   readonly onLock: () => void;
   readonly root: HTMLElement;
@@ -405,7 +404,7 @@ describe("plugin workspace realm integration", () => {
 });
 
 describe("plugin workspace activation serialization", () => {
-  it("retains zoom across a CodeMirror widget remount and clears it on lock", async () => {
+  it("starts a remounted CodeMirror widget at width fit", async () => {
     scenes.readiness = Promise.resolve(true);
     scenes.records.length = 0;
     const harness = createPluginHarness();
@@ -423,23 +422,22 @@ describe("plugin workspace activation serialization", () => {
     runtime.mount(first);
     runtime.activate(first);
     await vi.waitFor(() => expect(scenes.records).toHaveLength(1));
-    const retained = { cameraX: -240, zoom: 1.75 };
     const firstScene = scenes.records[0];
     if (firstScene === undefined) throw new Error("Expected the first scene.");
-    firstScene.viewState = retained;
+    firstScene.viewState = { cameraX: -240, zoom: 1.75 };
 
     runtime.detach(first);
     const remounted = livePreviewAttachment(2);
     runtime.mount(remounted);
     runtime.activate(remounted);
     await vi.waitFor(() => expect(scenes.records).toHaveLength(2));
-    expect(scenes.records[1]?.options.initialViewState).toEqual(retained);
+    expect(scenes.records[1]?.options.root).toBe(remounted.root);
 
     scenes.records[1]?.options.onLock();
     await vi.waitFor(() => expect(scenes.records[1]?.finishLock).toHaveBeenCalledOnce());
     runtime.activate(remounted);
     await vi.waitFor(() => expect(scenes.records).toHaveLength(3));
-    expect(scenes.records[2]?.options.initialViewState).toBeUndefined();
+    expect(scenes.records[2]?.options.root).toBe(remounted.root);
     runtime.dispose();
   });
 

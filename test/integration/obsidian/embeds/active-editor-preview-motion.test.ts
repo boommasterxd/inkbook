@@ -24,6 +24,7 @@ class FakeMediaQueryList {
 }
 
 interface HandoffFixture {
+  readonly beginScrollStability: ReturnType<typeof vi.fn>;
   readonly container: HTMLElement;
   readonly handoff: ActiveScenePreviewHandoff;
   readonly media: FakeMediaQueryList;
@@ -36,12 +37,14 @@ interface HandoffFixture {
   readonly setTimeoutSpy: ReturnType<typeof vi.fn>;
   readonly timerPending: () => boolean;
   readonly completed: () => void;
+  readonly releaseScrollStability: ReturnType<typeof vi.fn>;
 }
 
 function createFixture(
   motion: "full" | "reduced" | "system",
   systemReduced = false,
   setPreviewAspectRatio?: (aspectRatio: number) => void,
+  initialScrollStability = false,
 ): HandoffFixture {
   const media = new FakeMediaQueryList(systemReduced);
   let timer: (() => void) | undefined;
@@ -103,11 +106,16 @@ function createFixture(
     style: previewStyle,
   } as unknown as HTMLImageElement;
   const completed = vi.fn<() => void>();
+  const releaseScrollStability = vi.fn();
+  const beginScrollStability = vi.fn(() => releaseScrollStability);
   return {
+    beginScrollStability,
     completed,
     container,
     handoff: new ActiveScenePreviewHandoff({
+      beginScrollStability,
       container,
+      ...(initialScrollStability ? { initialScrollStabilityRelease: releaseScrollStability } : {}),
       motion,
       preview,
       root,
@@ -115,6 +123,7 @@ function createFixture(
     }),
     media,
     preview,
+    releaseScrollStability,
     rootClasses,
     framePending: () => frame !== undefined,
     runTimer: () => timer?.(),
@@ -155,6 +164,7 @@ describe("active editor unlock preview motion", () => {
 
     fixture.runFrame();
     expect(fixture.rootClasses.contains("inkbook-active-transitioning")).toBe(true);
+    expect(fixture.beginScrollStability).toHaveBeenCalledOnce();
     expect(fixture.preview.hidden).toBe(true);
     expect(fixture.completed).toHaveBeenCalledOnce();
 
@@ -167,6 +177,7 @@ describe("active editor unlock preview motion", () => {
     expect(fixture.container.style.getPropertyValue("--inkbook-locked-container-block-size")).toBe(
       "",
     );
+    expect(fixture.releaseScrollStability).toHaveBeenCalledOnce();
   });
 
   it("applies reduced motion immediately after the stable measurement", () => {
@@ -212,6 +223,22 @@ describe("active editor unlock preview motion", () => {
     expect(fixture.preview.hidden).toBe(false);
     fixture.runTimer();
     expect(fixture.rootClasses.contains("inkbook-active-ready")).toBe(false);
+  });
+});
+
+describe("active editor pre-mount scroll stability", () => {
+  it("retains a lease acquired before editor DOM preparation", () => {
+    const fixture = createFixture("full", false, undefined, true);
+    fixture.setActiveBlockSize("240px");
+
+    fixture.handoff.ready();
+    fixture.runFrame();
+    fixture.runFrame();
+
+    expect(fixture.beginScrollStability).not.toHaveBeenCalled();
+    expect(fixture.releaseScrollStability).not.toHaveBeenCalled();
+    fixture.runTimer();
+    expect(fixture.releaseScrollStability).toHaveBeenCalledOnce();
   });
 });
 
