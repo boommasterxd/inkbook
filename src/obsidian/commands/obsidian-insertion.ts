@@ -11,13 +11,12 @@ import {
   EmptyLineInsertionController,
   type EmptyLineInsertionNotifications,
 } from "./empty-line-insertion";
-import type { PlacementFallbackNoticePort } from "./command-ports";
+import type { PlacementFallbackFeedbackPort } from "./command-ports";
 import { validateDocumentOutput } from "./document-output-validation";
 import {
   activeMarkdownOwnerWindow,
   createObsidianCommandVaultPorts,
   notifyPlacementFallback,
-  ObsidianPlacementFallbackNoticeAdapter,
 } from "./obsidian-host";
 
 function snapshotBackground(settings: InkbookSettingsStore): BackgroundV1 {
@@ -60,7 +59,7 @@ export function createObsidianInsertionController(
   app: App,
   settings: InkbookSettingsStore,
   notifications: EmptyLineInsertionNotifications,
-  placementNotices: PlacementFallbackNoticePort = new ObsidianPlacementFallbackNoticeAdapter(),
+  placementFeedback: PlacementFallbackFeedbackPort,
 ): EmptyLineInsertionController {
   const { files, links, managedFiles, placement } = createObsidianCommandVaultPorts(
     app,
@@ -75,7 +74,7 @@ export function createObsidianInsertionController(
           new Date(),
           { fill: (bytes) => fillRandomBytes(app, bytes) },
         );
-        notifyPlacementFallback(resolved.fallback, placementNotices);
+        notifyPlacementFallback(resolved.fallback, placementFeedback);
         const serialized = serializeInkbookDocument(emptySnapshot(settings));
         if (!serialized.ok) throw new Error(serialized.error.message);
         return { content: serialized.value.svg, path: resolved.path };

@@ -427,7 +427,7 @@ export class ActiveEditorController {
       lastScreenPointer: () => this.#lastSessionScreenPointer,
       navigation: this.#navigation,
       ownerDocument: this.#ownerWindow.document,
-      onNotice: options.onNotice,
+      onFeedback: options.onFeedback,
       onPendingChanged: (pending) => this.#availability.setPending(pending),
       openKeyboardMenu: (position) =>
         this.#dispatch({ type: "context-menu", source: "keyboard", ...position }),

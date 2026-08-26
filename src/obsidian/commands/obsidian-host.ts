@@ -1,4 +1,4 @@
-import { MarkdownView, normalizePath, Notice, TFile, TFolder, type App } from "obsidian";
+import { MarkdownView, normalizePath, TFile, TFolder, type App } from "obsidian";
 
 import {
   type CreationPathResult,
@@ -7,28 +7,15 @@ import {
   ObsidianManagedFileAdapter,
   ObsidianVaultFileAdapter,
 } from "../vault";
-import type { PlacementFallbackNoticePort } from "./command-ports";
-
-const PLACEMENT_FALLBACK_MESSAGES = {
-  "attachment-folder-unavailable":
-    "Inkbook could not use Obsidian's attachment folder. Using this note's folder instead.",
-  "custom-folder-unavailable":
-    "Inkbook could not use the configured custom folder. Using this note's folder instead.",
-} as const;
-
-export class ObsidianPlacementFallbackNoticeAdapter implements PlacementFallbackNoticePort {
-  show(message: string): void {
-    new Notice(message);
-  }
-}
+import type { PlacementFallbackFeedbackPort } from "./command-ports";
 
 export function notifyPlacementFallback(
   fallback: CreationPathResult["fallback"],
-  notices: PlacementFallbackNoticePort,
+  feedback: PlacementFallbackFeedbackPort,
 ): void {
   if (fallback === null) return;
   try {
-    notices.show(PLACEMENT_FALLBACK_MESSAGES[fallback]);
+    feedback.show(fallback);
   } catch {
     return;
   }

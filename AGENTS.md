@@ -85,6 +85,7 @@ Detailed rendering, cache, scheduling, memory, and latency contracts are canonic
 
 - Use Unit and focused Integration tests only. End-to-end and smoke suites are explicitly excluded.
 - Add deterministic regression coverage for every relevant behavior change. Across executable source, maintain at least 85 percent lines, statements, and functions plus at least 80 percent branches.
+- Add performance tests for every new performance critical part or changes on performance crtical parts. Use the performance class table below.
 - Enforce hard CI maxima of 100 function lines, 500 file lines, cyclomatic complexity 20, cognitive complexity 25, 6 parameters, and nesting depth 4. Review large or complex units for clear responsibilities and readability without treating an additional arbitrary numeric threshold as a defect.
 - Documentation-only changes require a complete content review, working relative links, balanced Markdown code fences, and a synchronized Documentation Index. Do not add parser, snapshot, or string-comparison tests solely for documentation prose.
 - The exhaustive performance manifest must classify every benchmark into exactly one class. A new benchmark fails the Unit gate until classified.

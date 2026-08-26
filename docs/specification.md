@@ -57,13 +57,13 @@ The complete host API, lifecycle, UI, and Community directory contract is define
 
 The implementation uses five responsibility areas:
 
-| Area          | Responsibility                                                                                                                | May depend on                                     |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `domain`      | Elements, geometry, commands, history, bounds, spatial index, schemas, and pure calculations                                  | Nothing outside `domain`                          |
-| `editor`      | Tool state, pointer arbitration, selection, gesture transactions, session state, and autosave scheduling                      | `domain`                                          |
-| `rendering`   | React application chrome plus an imperative SVG scene renderer for committed nodes, previews, animation, and viewport culling | `domain`, read-only editor state                  |
-| `persistence` | SVG serialization, snapshot validation, migrations, atomic vault writes, clipboard codec, and document worker                 | `domain`, injected Obsidian adapter interfaces    |
-| `obsidian`    | Plugin lifecycle, Markdown embed widgets, CodeMirror integration, settings UI, commands, notices, and vault adapters          | All other areas through their public entry points |
+| Area          | Responsibility                                                                                                                 | May depend on                                     |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- |
+| `domain`      | Elements, geometry, commands, history, bounds, spatial index, schemas, and pure calculations                                   | Nothing outside `domain`                          |
+| `editor`      | Tool state, pointer arbitration, selection, gesture transactions, session state, and autosave scheduling                       | `domain`                                          |
+| `rendering`   | React application chrome plus an imperative SVG scene renderer for committed nodes, previews, animation, and viewport culling  | `domain`, read-only editor state                  |
+| `persistence` | SVG serialization, snapshot validation, migrations, atomic vault writes, clipboard codec, and document worker                  | `domain`, injected Obsidian adapter interfaces    |
+| `obsidian`    | Plugin lifecycle, Markdown embed widgets, CodeMirror integration, settings UI, commands, feedback surfaces, and vault adapters | All other areas through their public entry points |
 
 ### Source Topology and Module Boundaries
 
@@ -242,7 +242,7 @@ Obsidian remains the sole vertical scroll owner. As soon as a Reading-view or Li
 - Worker identity is purpose-specific: `workerEpoch` identifies an executor, `exportGeneration` orders only replaceable SVG export results, one admitted `activeSaveOperation` remains non-replaceable through read-back, and unlock plus clipboard jobs use their own operation IDs. A newer export may replace only `preparedSuccessor`, never an active save. An unrelated worker request and a queued timer invalidate neither.
 - Existing SVG saves MUST use worker-validated uncached `Vault.read()` preflight followed by `Vault.process()` with a synchronous exact-base and current-editor-revision check. New SVG files use `Vault.create()`. Direct `Vault.adapter` and `FileSystemAdapter` access are forbidden.
 - Each persistence read checks the public `TFile` identity and `{ path, ctime, mtime, size }` before and after the full host read, serializes reads and writes per normalized path, and rejects changed or oversized bytes. Obsidian exposes no public bounded, ranged, streaming, or abortable Vault read, so a raced external growth may be transiently materialized by the host before postflight rejection. Inkbook neither accepts those bytes nor bypasses the public mobile-compatible API to claim a hard pre-materialization limit.
-- A failed write leaves the document dirty, retains the last valid file, reports a retryable notice, and retries on the next save trigger or explicit Lock.
+- A failed write leaves the document dirty, retains the last valid file, reports retryable attached feedback, and retries on the next save trigger or explicit Lock.
 - After an indeterminate write outcome, suspend autosave until the file is read through `Vault` and classified. If the executor failed after writing began, a new-epoch `verificationOperationId` remains bound to the immutable old `{ saveOperationId, revision, outputHash }` proof. If the file contains that revision and its validated bytes match the proof, confirm it and advance the vault base without writing again. If it still matches the previously confirmed base, retry is permitted. Any other result is an external conflict. Dirty state never clears from a write promise alone, and confirmation of an older revision never clears a newer dirty revision or releases its detached-save lease.
 - Lock and coordinator-driven different-document replacement MUST await the current session's pending save and read-back confirmation. Widget detachment during this operation transfers dirty or saving persistence work to the coordinator's detached-save lease instead of cancelling it. Only plugin unload invalidates the session identity, worker epoch, purpose-specific operations, and unfinished work; it cannot guarantee completion of asynchronous persistence. Managed renames use `FileManager.renameFile()`.
 - If an external modification arrives while the document is clean, reload it. If it arrives while dirty, suspend autosave and offer `Reload external version` or `Save local copy`. Never overwrite silently.
@@ -251,13 +251,13 @@ Obsidian remains the sole vertical scroll owner. As soon as a Reading-view or Li
 
 ## File Creation and References
 
-- New files resolve [File Placement](settings.md#file-placement): `obsidian-attachment-folder` uses `FileManager.getAvailablePathForAttachment()`, `note-folder` uses the current note folder, and `custom-vault-folder` uses a validated path normalized by `normalizePath()`. Any unavailable or invalid destination falls back to the note folder and shows a notice.
+- New files resolve [File Placement](settings.md#file-placement): `obsidian-attachment-folder` uses `FileManager.getAvailablePathForAttachment()`, `note-folder` uses the current note folder, and `custom-vault-folder` uses a validated path normalized by `normalizePath()`. Any unavailable or invalid destination falls back to the note folder and shows shared view- or window-level feedback.
 - Names use `inkbook-YYYYMMDD-HHmmss-<six-lowercase-hex>.svg` and retry with a new suffix on collision.
 - Markdown embed text prefixes `!inkbook` to the complete result of `FileManager.generateMarkdownLink(file, sourcePath)` for the created SVG. This produces `!inkbook[[path.svg]]` or `!inkbook[label](path.svg)`, neither of which is native image syntax. Empty alias or subpath arguments MUST NOT be supplied because the host's preferred link format owns the link delimiters.
 - Duplicate creates and validates the new file before replacing the pasted Markdown path.
 - Reference lookup uses `MetadataCache.getFirstLinkpathDest()` and `MetadataCache.resolvedLinks` after metadata resolution. It never scans or reparses every Markdown file.
 - Recoverable deletion uses `FileManager.trashFile()` and never `Vault.delete()`.
-- An uncertain reference scan, failed write, failed Markdown edit, or failed trash operation MUST preserve the SVG and show a notice.
+- An uncertain reference scan, failed write, failed Markdown edit, or failed trash operation MUST preserve the SVG and show context-routed Inkbook feedback as defined in [Embed UI](embed-ui.md).
 
 ## Security and Privacy
 

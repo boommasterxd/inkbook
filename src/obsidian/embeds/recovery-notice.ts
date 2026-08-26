@@ -1,4 +1,10 @@
-import { setIcon } from "obsidian";
+import { feedbackContent, type InkbookFeedbackCode } from "../feedback/feedback-catalog";
+import {
+  createFeedbackIconButton,
+  createFeedbackSurface,
+  setFeedbackPending,
+} from "../feedback/feedback-surface";
+import { createPresentationFeedbackPositionLifecycle } from "../feedback/presentation-feedback-position";
 
 export interface HeadlessRecoveryActions {
   reloadExternal(): Promise<boolean>;
@@ -16,6 +22,11 @@ export interface AttachedRecoveryActions {
   saveLocalCopy(): Promise<boolean>;
 }
 
+export interface AttachedRecoveryPanel {
+  readonly element: HTMLElement;
+  close(): void;
+}
+
 export interface LoadRecoveryActions {
   discard(): boolean;
   retry(): void;
@@ -25,22 +36,17 @@ export function showLoadRecoveryPanel(
   root: HTMLElement,
   actions: LoadRecoveryActions,
   onClosed: () => void,
-): HTMLElement {
-  const panel = root.createDiv({ cls: "inkbook-recovery" });
-  panel.setAttribute("role", "alert");
-  panel.setAttribute("aria-label", "Load failed");
-  panel.createSpan({ cls: "inkbook-recovery-message", text: "Could not load drawing" });
-  const actionGroup = panel.createDiv({ cls: "inkbook-recovery-actions" });
-  const retry = createRecoveryIconButton(actionGroup, "Retry load", "rotate-ccw");
-  const discard = createRecoveryIconButton(actionGroup, "Discard load attempt", "x");
+  code: Extract<InkbookFeedbackCode, "drawing-load-failed" | "editor-start-failed">,
+): AttachedRecoveryPanel {
+  const surface = createFeedbackSurface(root, feedbackContent(code));
+  const panel = createAttachedPanel(root, surface.element, onClosed);
+  const retry = createFeedbackIconButton(surface.actionGroup, "retry-open");
+  const discard = createFeedbackIconButton(surface.actionGroup, "keep-preview");
   retry.addEventListener("click", () => {
-    panel.remove();
-    onClosed();
+    panel.close();
     actions.retry();
   });
-  discard.addEventListener("click", () =>
-    runAttachedAction(panel, () => actions.discard(), onClosed),
-  );
+  discard.addEventListener("click", () => runAttachedAction(panel, () => actions.discard()));
   return panel;
 }
 
@@ -48,27 +54,21 @@ export function showAttachedRecoveryPanel(
   root: HTMLElement,
   actions: AttachedRecoveryActions,
   onClosed: () => void,
-): HTMLElement {
-  const panel = root.createDiv({ cls: "inkbook-recovery" });
-  panel.setAttribute("role", "alert");
-  panel.setAttribute("aria-label", "Save failed");
-  const message = panel.createDiv({ cls: "inkbook-recovery-message" });
-  message.textContent = "Could not save changes";
-  const actionGroup = panel.createDiv({ cls: "inkbook-recovery-actions" });
-  const retry = createRecoveryIconButton(actionGroup, "Retry save", "rotate-ccw");
-  const saveCopy = createRecoveryIconButton(actionGroup, "Save copy", "copy-plus");
-  const cancel = createRecoveryIconButton(actionGroup, "Continue editing", "pencil");
-  retry.addEventListener("click", () => runAttachedAction(panel, () => actions.retry(), onClosed));
+): AttachedRecoveryPanel {
+  const surface = createFeedbackSurface(root, feedbackContent("changes-save-failed"));
+  const panel = createAttachedPanel(root, surface.element, onClosed);
+  const retry = createFeedbackIconButton(surface.actionGroup, "retry-save");
+  const saveCopy = createFeedbackIconButton(surface.actionGroup, "save-copy");
+  const cancel = createFeedbackIconButton(surface.actionGroup, "continue-editing");
+  retry.addEventListener("click", () => runAttachedAction(panel, () => actions.retry()));
   saveCopy.addEventListener("click", () => {
-    setPending(panel, true);
+    setPending(panel.element, true);
     void actions
       .saveLocalCopy()
-      .then((confirmed) => finishAttachedAction(panel, confirmed, onClosed))
-      .catch(() => setPending(panel, false));
+      .then((confirmed) => finishAttachedAction(panel, confirmed))
+      .catch(() => setPending(panel.element, false));
   });
-  cancel.addEventListener("click", () =>
-    runAttachedAction(panel, () => actions.cancel(), onClosed),
-  );
+  cancel.addEventListener("click", () => runAttachedAction(panel, () => actions.cancel()));
   return panel;
 }
 
@@ -86,13 +86,14 @@ export function showHeadlessRecoveryNotice(
   let dialog: HTMLElement | undefined = overlay.createDiv({
     cls: "inkbook-headless-recovery-dialog",
   });
-  const closeButton = createRecoveryIconButton(dialog, "Close recovery dialog", "x");
-  const title = dialog.createEl("h2", { text: "Inkbook could not save this drawing" });
-  dialog.createEl("p", { text: "Unsaved changes remain available for recovery." });
-  const actionsElement = dialog.createDiv({ cls: "inkbook-recovery-actions" });
-  const retry = createRecoveryIconButton(actionsElement, "Retry", "rotate-ccw");
-  const reload = createRecoveryIconButton(actionsElement, "Reload external version", "refresh-cw");
-  const saveCopy = createRecoveryIconButton(actionsElement, "Save local copy", "copy-plus");
+  const closeButton = createFeedbackIconButton(dialog, "close-recovery");
+  closeButton.classList.add("inkbook-headless-recovery-close");
+  const surface = createFeedbackSurface(dialog, feedbackContent("changes-save-failed"));
+  surface.element.classList.add("inkbook-feedback-headless");
+  const title = surface.title;
+  const retry = createFeedbackIconButton(surface.actionGroup, "retry-save");
+  const reload = createFeedbackIconButton(surface.actionGroup, "reload-external");
+  const saveCopy = createFeedbackIconButton(surface.actionGroup, "save-copy");
   const focusable = [closeButton, retry, reload, saveCopy];
   const listeners: Array<readonly [EventTarget, string, EventListener]> = [];
   title.id = "inkbook-headless-recovery-title";
@@ -159,27 +160,6 @@ export function showHeadlessRecoveryNotice(
   return { close };
 }
 
-function recoveryButton(container: HTMLElement, text: string, label?: string): HTMLButtonElement {
-  const button = container.createEl("button", { text });
-  button.type = "button";
-  button.textContent = text;
-  if (label !== undefined) button.setAttribute("aria-label", label);
-  return button;
-}
-
-function createRecoveryIconButton(
-  container: HTMLElement,
-  label: string,
-  icon: string,
-): HTMLButtonElement {
-  const button = recoveryButton(container, "", label);
-  button.setAttribute("class", "inkbook-recovery-icon-button");
-  button.setAttribute("title", label);
-  const iconElement = button.createSpan({ cls: "inkbook-recovery-action-icon" });
-  setIcon(iconElement, icon);
-  return button;
-}
-
 function trapRecoveryFocus(
   event: KeyboardEvent,
   activeElement: Element | null,
@@ -209,27 +189,42 @@ async function runRecoveryAction(
 }
 
 function setPending(message: HTMLElement, pending: boolean): void {
-  const buttons = message.getElementsByTagName("button");
-  for (let index = 0; index < buttons.length; index += 1) {
-    const button = buttons.item(index);
-    if (button !== null) button.disabled = pending;
-  }
+  setFeedbackPending(message, pending);
 }
 
-function runAttachedAction(panel: HTMLElement, action: () => boolean, onClosed: () => void): void {
-  setPending(panel, true);
+function createAttachedPanel(
+  root: HTMLElement,
+  element: HTMLElement,
+  onClosed: () => void,
+): AttachedRecoveryPanel {
+  element.classList.add("inkbook-feedback-presentation");
+  const positioning = createPresentationFeedbackPositionLifecycle(element, root);
+  let closed = false;
+  return {
+    close: () => {
+      if (closed) return;
+      closed = true;
+      positioning.dispose();
+      element.remove();
+      onClosed();
+    },
+    element,
+  };
+}
+
+function runAttachedAction(panel: AttachedRecoveryPanel, action: () => boolean): void {
+  setPending(panel.element, true);
   try {
-    finishAttachedAction(panel, action(), onClosed);
+    finishAttachedAction(panel, action());
   } catch {
-    setPending(panel, false);
+    setPending(panel.element, false);
   }
 }
 
-function finishAttachedAction(panel: HTMLElement, confirmed: boolean, onClosed: () => void): void {
+function finishAttachedAction(panel: AttachedRecoveryPanel, confirmed: boolean): void {
   if (!confirmed) {
-    setPending(panel, false);
+    setPending(panel.element, false);
     return;
   }
-  panel.remove();
-  onClosed();
+  panel.close();
 }

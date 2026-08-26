@@ -1,5 +1,3 @@
-import { Notice } from "obsidian";
-
 import type { ActiveInkbookScene } from "./active-scene";
 
 interface SceneMount {
@@ -25,8 +23,5 @@ export function observeActiveSceneReadiness(options: {
       options.scene.dispose();
       options.mounted.scene = undefined;
       options.onFailure();
-      new Notice(
-        "Inkbook could not load the editor interface. The static preview remains available; check content security settings or update Obsidian, then select the embed to retry.",
-      );
     });
 }

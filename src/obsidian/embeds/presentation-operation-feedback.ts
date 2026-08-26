@@ -1,5 +1,10 @@
 import { setIcon } from "obsidian";
 
+import {
+  createPresentationFeedbackPositionLifecycle,
+  type PresentationFeedbackPositionLifecycle,
+} from "../feedback";
+
 export const PRESENTATION_LOADING_FEEDBACK_DELAY_MS = 1_200;
 export const PRESENTATION_SAVING_FEEDBACK_DELAY_MS = 150;
 
@@ -15,6 +20,7 @@ export class PresentationOperationFeedback {
   #activeToken = 0;
   #disposed = false;
   #indicator: HTMLElement | undefined;
+  #positioning: PresentationFeedbackPositionLifecycle | undefined;
   readonly #ownerWindow: Window;
   readonly #root: HTMLElement;
   #timer: number | undefined;
@@ -68,11 +74,18 @@ export class PresentationOperationFeedback {
     icon.setAttribute("aria-hidden", "true");
     setIcon(icon, "loader-circle");
     this.#indicator = indicator;
+    this.#positioning = createPresentationFeedbackPositionLifecycle(
+      indicator,
+      this.#root,
+      "center",
+    );
   }
 
   #clearCurrent(): void {
     if (this.#timer !== undefined) this.#ownerWindow.clearTimeout(this.#timer);
     this.#timer = undefined;
+    this.#positioning?.dispose();
+    this.#positioning = undefined;
     this.#indicator?.remove();
     this.#indicator = undefined;
   }

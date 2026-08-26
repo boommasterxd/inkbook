@@ -1,4 +1,4 @@
-import { Notice, Plugin, TFile, Tasks, type MarkdownRenderChild } from "obsidian";
+import { Plugin, TFile, Tasks, type MarkdownRenderChild } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -15,6 +15,7 @@ import { ObsidianWorkspaceRuntime } from "../../../src/obsidian/embeds/workspace
 import type { PresentationAttachment } from "../../../src/obsidian/embeds/presentation-port";
 import type { ActiveEditorViewState } from "../../../src/obsidian/embeds/active-editor/navigation";
 import type { ObsidianEmbedActions } from "../../../src/obsidian/commands";
+import { InkbookFeedbackManager } from "../../../src/obsidian/feedback";
 import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
 import {
   DocumentWorkerRuntime,
@@ -365,12 +366,6 @@ describe("plugin workspace realm integration", () => {
       rejectReadiness = reject;
     });
     scenes.records.length = 0;
-    const notices = (
-      Notice as unknown as {
-        readonly instances: Array<{ readonly message: string | DocumentFragment }>;
-      }
-    ).instances;
-    const noticeCount = notices.length;
     const harness = createPluginHarness();
     await harness.plugin.onload();
     const presentation = await mountReadingEmbed(harness.plugin);
@@ -384,20 +379,18 @@ describe("plugin workspace realm integration", () => {
 
     expect(scenes.records[0]?.dispose).toHaveBeenCalledOnce();
     expect(presentation.preview.hidden).toBe(false);
-    const recoveryPanel = presentation.root.getElementsByClassName("inkbook-recovery").item(0);
+    const recoveryPanel = presentation.root.getElementsByClassName("inkbook-feedback").item(0);
     const pendingFeedback = presentation.root
       .getElementsByClassName("inkbook-operation-feedback")
       .item(0);
     const recoveryButtons = recoveryPanel?.getElementsByTagName("button");
-    expect(recoveryPanel?.attributes.get("aria-label")).toBe("Load failed");
+    expect(recoveryPanel?.attributes.get("role")).toBe("alert");
     expect(pendingFeedback).toBeNull();
     expect(recoveryButtons?.length).toBe(2);
-    expect(recoveryButtons?.item(0)?.attributes.get("aria-label")).toBe("Retry load");
+    expect(recoveryButtons?.item(0)?.attributes.get("aria-label")).toBe("Retry opening drawing");
     expect(recoveryButtons?.item(0)?.children[0]?.attributes.get("data-icon")).toBe("rotate-ccw");
-    expect(recoveryButtons?.item(1)?.attributes.get("aria-label")).toBe("Discard load attempt");
+    expect(recoveryButtons?.item(1)?.attributes.get("aria-label")).toBe("Keep saved preview");
     expect(recoveryButtons?.item(1)?.children[0]?.attributes.get("data-icon")).toBe("x");
-    expect(notices).toHaveLength(noticeCount + 1);
-    expect(notices[notices.length - 1]?.message).toContain("select the embed to retry");
     presentation.child.unload();
     harness.plugin.onunload();
   });
@@ -416,7 +409,11 @@ describe("plugin workspace activation serialization", () => {
       new ColorSchemeBroadcaster({ getColorScheme: () => "light" }),
       () => harness.settings,
       {} as ObsidianEmbedActions,
-      () => ownerWindow,
+      {
+        fallbackOwnerWindow: () => ownerWindow,
+        manager: new InkbookFeedbackManager(),
+        view: () => undefined,
+      },
     );
     const first = livePreviewAttachment(1);
     runtime.mount(first);

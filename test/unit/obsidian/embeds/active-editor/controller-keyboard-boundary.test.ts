@@ -228,7 +228,7 @@ function createHarness() {
     onCopyEmbed: vi.fn(),
     onDeleteEmbed: vi.fn(),
     onLock: vi.fn(),
-    onNotice: vi.fn(),
+    onFeedback: vi.fn(),
     onPageChanged: vi.fn(),
     onStateChanged: vi.fn(),
     renderIcon: vi.fn(),

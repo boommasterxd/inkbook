@@ -6,6 +6,7 @@ import type { SynchronousClipboardData } from "./clipboard-reader";
 import { PaneDocumentHistoryAdapter, type UnifiedHistoryDirection } from "./document-history";
 import type { ActiveEditorHistory } from "./history";
 import type { ActiveEditorNavigation } from "./navigation";
+import type { InkbookFeedbackCode } from "../../feedback";
 
 export interface ActiveEditorKeyboardOptions {
   readonly activeElement: () => Element | null;
@@ -16,7 +17,7 @@ export interface ActiveEditorKeyboardOptions {
   readonly history: ActiveEditorHistory;
   readonly navigation: ActiveEditorNavigation;
   readonly ownerDocument: Document;
-  readonly onNotice: (message: string) => void;
+  readonly onFeedback: (code: InkbookFeedbackCode) => void;
   readonly onPendingChanged: (pending: boolean) => void;
   readonly openKeyboardMenu: (position: InputPoint) => void;
   readonly lastScreenPointer: () => InputPoint | null;
@@ -123,12 +124,16 @@ export class ActiveEditorKeyboardController {
   #handleUnifiedHistory(direction: UnifiedHistoryDirection): boolean {
     const outcome = this.#paneHistory.handleShortcut(direction, false);
     if (outcome.status === "lock-notice") {
-      this.#options.onNotice(outcome.message);
+      this.#options.onFeedback("history-lock-required");
       return true;
     }
     if (outcome.status !== "canvas") return false;
     this.#options.onPendingChanged(true);
-    void outcome.completion.finally(() => this.#options.onPendingChanged(false));
+    void outcome.completion
+      .then((result) => {
+        if (result.status === "failed") this.#options.onFeedback("history-change-failed");
+      })
+      .finally(() => this.#options.onPendingChanged(false));
     return true;
   }
 }

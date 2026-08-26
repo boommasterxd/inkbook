@@ -6,6 +6,7 @@ import type {
 import type { SvgSceneRenderer } from "../../../rendering/scene/index";
 import type { MenuFactoryPort } from "../../menus/index";
 import type { BrowserScrollElement } from "../../scrolling/index";
+import type { InkbookFeedbackCode } from "../../feedback";
 import type { EditableDocumentModel } from "../vault-document-session";
 import type { ElementSceneStore } from "./scene-store";
 import type { ActiveEditorZoomLayoutUpdate } from "./navigation";
@@ -24,7 +25,7 @@ export interface ActiveEditorControllerOptions {
   readonly menuFactory: MenuFactoryPort;
   readonly model: EditableDocumentModel;
   readonly onLock: () => void;
-  readonly onNotice: (message: string) => void;
+  readonly onFeedback: (code: InkbookFeedbackCode) => void;
   readonly onCopyEmbed: () => void;
   readonly onDeleteEmbed: () => void;
   readonly onPageChanged: () => void;

@@ -65,7 +65,7 @@ function actionFixture(
 ) {
   let selection: ReadonlySet<string> = new Set([selectedId]);
   const history = new ActiveEditorHistory(model);
-  const onNotice = vi.fn();
+  const onFeedback = vi.fn();
   const setSelection = vi.fn((next: ReadonlySet<string>) => {
     selection = next;
   });
@@ -78,7 +78,7 @@ function actionFixture(
     model,
     onCopyEmbed: vi.fn(),
     onDeleteEmbed: vi.fn(),
-    onNotice,
+    onFeedback,
     onPasteCommitted: vi.fn(),
     onPendingChanged: vi.fn(),
     onStateChanged: vi.fn(),
@@ -91,7 +91,7 @@ function actionFixture(
     actions,
     commit,
     history,
-    onNotice,
+    onFeedback,
     pending,
     prepare,
     replaceSelection: (next: ReadonlySet<string>) => {
@@ -103,7 +103,7 @@ function actionFixture(
   };
 }
 
-describe("active editor Cut notices", () => {
+describe("active editor Cut feedback", () => {
   it("reports a stale Cut without changing the replacement selection or copied payload", async () => {
     const fixture = cutFixture();
     const replacementSelection = new Set(["replacement-selection"]);
@@ -113,9 +113,7 @@ describe("active editor Cut notices", () => {
     fixture.replaceSelection(replacementSelection);
     fixture.pending.complete();
     await vi.waitFor(() =>
-      expect(fixture.onNotice).toHaveBeenCalledWith(
-        "Copy succeeded, but Cut was cancelled because the selection changed.",
-      ),
+      expect(fixture.onFeedback).toHaveBeenCalledWith("cut-selection-changed"),
     );
 
     expect(fixture.write).toHaveBeenCalledOnce();
@@ -127,7 +125,7 @@ describe("active editor Cut notices", () => {
     fixture.actions.dispose();
   });
 
-  it("commits a current Cut without showing the stale-operation Notice", async () => {
+  it("commits a current Cut without showing stale-operation feedback", async () => {
     const fixture = cutFixture();
 
     fixture.actions.execute("cut");
@@ -136,10 +134,24 @@ describe("active editor Cut notices", () => {
     await vi.waitFor(() => expect(fixture.commit).toHaveBeenCalledOnce());
 
     expect(fixture.write).toHaveBeenCalledOnce();
-    expect(fixture.onNotice).not.toHaveBeenCalled();
+    expect(fixture.onFeedback).not.toHaveBeenCalled();
     expect(fixture.setSelection).toHaveBeenCalledWith(new Set());
     expect(fixture.selection()).toEqual(new Set());
     expect(fixture.history.commandCount).toBe(1);
+    fixture.actions.dispose();
+  });
+
+  it("reports the in-session fallback when the system clipboard rejects Copy", async () => {
+    const fixture = cutFixture();
+    fixture.write.mockRejectedValueOnce(new Error("permission denied"));
+
+    fixture.actions.execute("copy");
+    await vi.waitFor(() =>
+      expect(fixture.onFeedback).toHaveBeenCalledWith("clipboard-copy-fallback"),
+    );
+
+    expect(fixture.selection().size).toBe(1);
+    expect(fixture.actions.canPaste).toBe(true);
     fixture.actions.dispose();
   });
 });

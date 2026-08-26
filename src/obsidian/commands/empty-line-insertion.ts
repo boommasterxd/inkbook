@@ -37,9 +37,17 @@ export interface CompletedEmptyLineInsertion {
 }
 
 export interface EmptyLineInsertionNotifications {
-  failed(message: string, error: unknown): void;
+  failed(code: EmptyLineInsertionFailureCode, error: unknown): void;
   inserted(insertion: CompletedEmptyLineInsertion): void;
 }
+
+type EmptyLineInsertionFailureCode =
+  | "insertion-cleanup-failed"
+  | "insertion-failed"
+  | "insertion-note-changed-cleaned"
+  | "insertion-undo-edit-failed"
+  | "insertion-undo-file-kept"
+  | "insertion-undo-note-changed";
 
 interface EmptyLineInsertionDependencies {
   readonly documents: InsertionDocumentFactoryPort;
@@ -50,25 +58,23 @@ interface EmptyLineInsertionDependencies {
 }
 
 const BACKTICK_FENCE_OPEN = /^ {0,3}(`{3,})[^`]*$/u;
-const INSERT_FAILED_NOTICE = "Inkbook could not insert the handwriting embed.";
-
 class InsertionActionError extends Error {
-  readonly notice: string;
+  readonly feedbackCode: EmptyLineInsertionFailureCode;
 
-  constructor(message: string, notice: string) {
+  constructor(message: string, feedbackCode: EmptyLineInsertionFailureCode) {
     super(message);
     this.name = "InsertionActionError";
-    this.notice = notice;
+    this.feedbackCode = feedbackCode;
   }
 }
 
 function notifyFailure(
   notifications: EmptyLineInsertionNotifications,
-  message: string,
+  code: EmptyLineInsertionFailureCode,
   error: unknown,
 ): void {
   try {
-    notifications.failed(message, error);
+    notifications.failed(code, error);
   } catch {
     // A host notification failure must not create an unhandled action rejection.
   }
@@ -145,17 +151,13 @@ class EmptyLineInsertionHandle implements CompletedEmptyLineInsertion {
         replacement: "",
       });
     } catch (error: unknown) {
-      notifyFailure(
-        this.#notifications,
-        "Inkbook could not undo the insertion because the note could not be edited. The handwriting file was preserved.",
-        error,
-      );
+      notifyFailure(this.#notifications, "insertion-undo-edit-failed", error);
       return false;
     }
     if (!removed) {
       notifyFailure(
         this.#notifications,
-        "Inkbook could not undo the insertion because the note changed. The handwriting file was preserved.",
+        "insertion-undo-note-changed",
         new Error("The inserted Markdown embed is no longer unchanged."),
       );
       return false;
@@ -165,11 +167,7 @@ class EmptyLineInsertionHandle implements CompletedEmptyLineInsertion {
       await this.#trash.trash(this.filePath);
       return true;
     } catch (error: unknown) {
-      notifyFailure(
-        this.#notifications,
-        "Inkbook removed the embed but could not move the handwriting file to trash. The file was preserved.",
-        error,
-      );
+      notifyFailure(this.#notifications, "insertion-undo-file-kept", error);
       return false;
     }
   }
@@ -207,7 +205,7 @@ export class EmptyLineInsertionController {
       .catch((error: unknown) => {
         notifyFailure(
           this.#dependencies.notifications,
-          error instanceof InsertionActionError ? error.notice : INSERT_FAILED_NOTICE,
+          error instanceof InsertionActionError ? error.feedbackCode : "insertion-failed",
           error,
         );
       })
@@ -241,7 +239,7 @@ export class EmptyLineInsertionController {
       if (!inserted) {
         throw new InsertionActionError(
           "The target Markdown line changed before insertion.",
-          "Inkbook could not edit the note, so the new handwriting file was moved to trash.",
+          "insertion-note-changed-cleaned",
         );
       }
       return new EmptyLineInsertionHandle(
@@ -258,7 +256,7 @@ export class EmptyLineInsertionController {
       } catch {
         throw new InsertionActionError(
           "The created handwriting file could not be moved to trash.",
-          "Inkbook could not finish inserting the handwriting embed or move the created file to trash. The file may require manual cleanup.",
+          "insertion-cleanup-failed",
         );
       }
       throw error;
