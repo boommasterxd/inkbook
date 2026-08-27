@@ -355,24 +355,25 @@ occupiedBottom = page.margin when elements is empty,
 occupiedRows = ceil(max(0, occupiedBottom - page.margin) / layoutStep)
 activeWritableBottom = page.margin
   + (occupiedRows + page.activeBufferLines) × layoutStep
-lockedWritableBottom = page.margin
-  + (occupiedRows + 1) × layoutStep
+lockedStep = layoutStep when elements is empty or background.type is none,
+             otherwise background.spacing
+lockedOccupiedRows = ceil(max(0, occupiedBottom - page.margin) / lockedStep)
+lockedWritableBottom = page.margin + 3 × layoutStep when elements is empty,
+                       otherwise page.margin + (lockedOccupiedRows + 1) × lockedStep
 activeHeight = activeWritableBottom + page.margin
 lockedHeight = lockedWritableBottom + page.margin
 ```
 
-These heights always end on a complete writing row. Background type and spacing are absent from the formula, so changing None, Lines, Dots, Squares, or S/M/L/XL cannot resize unchanged content. A non-empty locked page ends after exactly one complete writing row beyond the row containing the lowest element. An empty file keeps the 2.5-writing-line minimum rounded upward to a complete writing row in both states. The complete rectangular page, including its top, right, bottom, and left margins, is writable. Guides use one fixed inner frame while committed bounds may occupy a margin. Content entering the bottom margin grows the writing-row-aligned writable extent and retains a complete margin below it.
+Active height always ends on a complete 100-unit writing row and remains independent of background type and spacing. A non-empty patterned locked page ends after exactly one complete pattern row beyond the pattern row containing the lowest element. A non-empty locked page without a visible pattern uses one complete 100-unit writing row beyond the occupied writing row. An empty file keeps the 2.5-writing-line minimum rounded upward to a complete 100-unit writing row in both states. The complete rectangular page, including its top, right, bottom, and left margins, is writable. Guides use one fixed inner frame while committed bounds may occupy a margin. Content entering the bottom margin grows the writing-row-aligned active extent and retains a complete margin below it.
 
-Version 1 files produced by earlier Inkbook builds may contain either the background-spacing-aligned locked height or the older exact height derived from `lockedBufferLines × bufferUnit`. The loader accepts only those exact historical derivations or the current writing-row derivation and verifies all static paths against the supplied height. A historical-height unlock schedules one full canonical export without requiring a content edit; Lock flushes that rewrite if it has not completed. The replacement retains the document revision, uses the normal expected-base and read-back verification path, and requires no migration backup because the snapshot schema version is unchanged. Arbitrary heights remain invalid.
-
-Earlier version 1 files may also contain the preceding inset, top-anchored, or vertically centered background guide geometries. The loader accepts only a complete deterministic historical background fragment derived from the validated snapshot and supplied supported height; element paths and every other envelope component remain subject to the normal exact checks. A successful historical-background unlock marks the document for the same verified canonical rewrite without changing its revision. Unknown, partially modified, or mixed historical geometry remains invalid.
+The loader accepts only the exact current writing-row-derived height and verifies all static paths against that height. Arbitrary heights and noncanonical background geometry remain invalid.
 
 Runtime height changes only after committed geometry or page commands:
 
 - On activation, set the current height to `activeHeight`.
 - Grow to the recomputed `activeHeight` when `occupiedBottom` enters the final `bufferUnit` of the current writable extent.
 - Shrink to the recomputed `activeHeight` when it is at least one `bufferUnit` below the current height.
-- A background type or spacing command never changes height. Other page settings adopt the recomputed height only when they participate in the writing-row formula.
+- A background type or spacing command never changes active height. It updates the derived locked target and the next persisted SVG envelope. Other page settings adopt the recomputed height only when they participate in the corresponding formula.
 - Lock always targets the exact recomputed `lockedHeight`; unlock always targets the exact recomputed `activeHeight`.
 - Selection edge-drag is the only pre-commit exception: when the pointer enters the final 24 CSS pixels at the container bottom, extend the transient writable bottom by exactly one `bufferUnit`. Do not extend again until the 180-millisecond transition completes and the pointer remains in that edge zone. This session-only extension changes no snapshot, revision, or history.
 - Selection release commits geometry and transitions to the recomputed `activeHeight`. Cancellation transitions to the height that existed before the gesture. No other pointer sample changes a height target.

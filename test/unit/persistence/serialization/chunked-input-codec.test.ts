@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { FILE_SCHEMA_LIMITS, type InkSnapshotV1 } from "../../../../src/domain/schema/public";
+import { FILE_SCHEMA_LIMITS } from "../../../../src/domain/schema/public";
 import { jsonContainerBudget } from "../../../../src/domain/schema/validation-internals";
 import {
   ChunkedInkbookInputParser,
@@ -11,19 +11,12 @@ import {
   rewriteDocumentMetadata,
 } from "../../../fixtures/persistence/metadata-rewrite";
 import {
-  serializeLegacyCenteredBackgroundDocument,
-  serializeLegacyLockedHeightDocument,
-  serializePreviousInsetBackgroundDocument,
-  serializePreviousTopAnchoredBackgroundDocument,
-} from "../../../fixtures/persistence/legacy-locked-height";
-import {
   parseInkbookDocument,
   serializeInkbookDocument,
 } from "../../../../src/persistence/serialization/public";
 import {
   appendMetadataProperty,
   createAllElementSnapshot,
-  createDottedRectangleSnapshot,
   createSnapshot,
   wideMetadataArrayProperty,
 } from "./fixtures";
@@ -52,65 +45,6 @@ async function expectSnapshotMetadataPrefixAccepted(
   expect((await parser.write(prefix)).ok).toBe(true);
   return prefix.byteLength;
 }
-
-describe("chunked historical background input", () => {
-  it("hands the validated background to runtime adoption before rewriting", async () => {
-    const source = createDottedRectangleSnapshot(400);
-    source.page.background = { spacing: 100, type: "squares" };
-    const input = serializePreviousTopAnchoredBackgroundDocument(source);
-    const adopted: InkSnapshotV1[] = [];
-    const parser = new ChunkedInkbookInputParser({
-      inputSliceBytes: 37,
-      onValidatedSnapshot: (snapshot) => {
-        adopted.push(snapshot);
-      },
-    });
-
-    await parser.write(new TextEncoder().encode(input));
-    const result = await parser.finish();
-
-    expect(result).toMatchObject({
-      ok: true,
-      value: {
-        requiresCanonicalRewrite: true,
-        snapshot: { page: { background: { spacing: 100, type: "squares" } } },
-      },
-    });
-    expect(adopted).toHaveLength(1);
-    expect(adopted[0]?.page.background).toEqual({ spacing: 100, type: "squares" });
-  });
-
-  it("matches synchronous loading for the previous inset background and height", async () => {
-    await expectChunkedInputToMatchSynchronous(
-      serializePreviousInsetBackgroundDocument(createDottedRectangleSnapshot(400)),
-      { inputSliceBytes: 37, pathBatchSize: 2 },
-    );
-  });
-
-  it("matches synchronous loading for the previous top-anchored background", async () => {
-    await expectChunkedInputToMatchSynchronous(
-      serializePreviousTopAnchoredBackgroundDocument(createDottedRectangleSnapshot(400)),
-      { inputSliceBytes: 37, pathBatchSize: 2 },
-    );
-  });
-
-  it("matches synchronous loading for a legacy centered background", async () => {
-    await expectChunkedInputToMatchSynchronous(
-      serializeLegacyCenteredBackgroundDocument(createDottedRectangleSnapshot(400)),
-      { inputSliceBytes: 37, pathBatchSize: 2 },
-    );
-  });
-
-  it("matches synchronous loading for a legacy locked height", async () => {
-    const snapshot = createDottedRectangleSnapshot(400);
-    snapshot.page.lockedBufferLines = 3;
-
-    await expectChunkedInputToMatchSynchronous(serializeLegacyLockedHeightDocument(snapshot), {
-      inputSliceBytes: 37,
-      pathBatchSize: 2,
-    });
-  });
-});
 
 describe("chunked Inkbook input", () => {
   it("matches the synchronous codec across byte boundaries", async () => {

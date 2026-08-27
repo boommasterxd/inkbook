@@ -8,12 +8,6 @@ import {
   rewriteDocumentMetadata,
 } from "../../../fixtures/persistence/metadata-rewrite";
 import {
-  serializeLegacyCenteredBackgroundDocument,
-  serializeLegacyLockedHeightDocument,
-  serializePreviousInsetBackgroundDocument,
-  serializePreviousTopAnchoredBackgroundDocument,
-} from "../../../fixtures/persistence/legacy-locked-height";
-import {
   parseInkbookDocument,
   serializeInkbookDocument,
   sha256Hex,
@@ -99,6 +93,20 @@ describe("Inkbook background serialization", () => {
     expect(result.value.svg).toContain("M24.3 324.3L2024.3 324.3");
     expect(result.value.svg).toContain("M24.3 24.3L24.3 324.3");
     expect(result.value.svg).toContain("M2024.3 24.3L2024.3 324.3");
+  });
+
+  it("serializes exactly one trailing pattern row below occupied content", () => {
+    const snapshot = createDottedRectangleSnapshot(400);
+    snapshot.page.background = { spacing: 25, type: "lines" };
+
+    const result = serializeInkbookDocument(snapshot);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.lockedHeight).toBeCloseTo(573.6);
+    expect(result.value.svg).toContain("M24.3 549.3L2024.3 549.3");
+    expect(result.value.svg).not.toContain("M24.3 574.3L2024.3 574.3");
+    expect(validateSafeSvg(result.value.svg)).not.toBeNull();
   });
 
   it("loads version-one files written before scale-independent guide styling", () => {
@@ -224,56 +232,6 @@ describe("SVG numeric precision", () => {
 });
 
 describe("Inkbook document parsing", () => {
-  it("loads the previous inset background and height and requires a canonical rewrite", () => {
-    const previous = serializePreviousInsetBackgroundDocument(createDottedRectangleSnapshot(400));
-
-    expect(parseInkbookDocument(previous)).toMatchObject({
-      ok: true,
-      value: { requiresCanonicalRewrite: true },
-    });
-  });
-
-  it("loads the previous top-anchored background and requires a canonical rewrite", () => {
-    const previous = serializePreviousTopAnchoredBackgroundDocument(
-      createDottedRectangleSnapshot(400),
-    );
-
-    expect(parseInkbookDocument(previous)).toMatchObject({
-      ok: true,
-      value: { requiresCanonicalRewrite: true },
-    });
-  });
-
-  it("loads the exact legacy centered background and requires a canonical rewrite", () => {
-    const legacy = serializeLegacyCenteredBackgroundDocument(createDottedRectangleSnapshot(400));
-
-    const parsed = parseInkbookDocument(legacy);
-
-    expect(parsed).toMatchObject({
-      ok: true,
-      value: { requiresCanonicalRewrite: true },
-    });
-    const tampered = legacy.replace("M24.3 24.3L", "M24.3 25.3L");
-    expect(parseInkbookDocument(tampered)).toMatchObject({
-      error: { code: "static-path-mismatch" },
-      ok: false,
-    });
-  });
-
-  it("loads a canonical legacy locked height and rewrites it on the next save", () => {
-    const snapshot = createDottedRectangleSnapshot(400);
-    snapshot.page.lockedBufferLines = 3;
-    const legacy = serializeLegacyLockedHeightDocument(snapshot);
-
-    const parsed = parseInkbookDocument(legacy);
-
-    expect(parsed.ok, JSON.stringify(parsed)).toBe(true);
-    if (!parsed.ok) return;
-    const rewritten = serializeInkbookDocument(parsed.value.snapshot);
-    expect(rewritten.ok).toBe(true);
-    if (rewritten.ok) expect(rewritten.value.lockedHeight).toBeLessThan(parsed.value.lockedHeight);
-  });
-
   it("round-trips UTF-8 bytes and verifies revision, height, and hash", () => {
     const serialized = serializeInkbookDocument(createAllElementSnapshot());
     expect(serialized.ok).toBe(true);

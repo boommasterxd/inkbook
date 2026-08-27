@@ -1,8 +1,4 @@
-import {
-  backgroundGuideLayout,
-  centeredGuideAxis,
-  topAnchoredGuideAxis,
-} from "../../domain/geometry/public";
+import { backgroundGuideLayout } from "../../domain/geometry/public";
 import type { BackgroundV1, PageV1 } from "../../domain/schema/public";
 import { PAGE_MARGIN, PAGE_WIDTH } from "../../domain/schema/public";
 import { serializeSvgNumber } from "../documents/svg-number";
@@ -63,44 +59,13 @@ export class BackgroundFragmentCache {
 }
 
 export function serializeBackgroundPaths(background: BackgroundV1, lockedHeight: number): string[] {
-  return serializeBackgroundPathsWithAlignment(background, lockedHeight, "canonical");
-}
-
-export function serializePreviousTopAnchoredBackgroundPaths(
-  background: BackgroundV1,
-  lockedHeight: number,
-): string[] {
-  return serializeBackgroundPathsWithAlignment(background, lockedHeight, "previous-top-anchored");
-}
-
-export function serializePreviousInsetBackgroundPaths(
-  background: BackgroundV1,
-  lockedHeight: number,
-): string[] {
-  return serializeBackgroundPathsWithAlignment(background, lockedHeight, "previous-inset");
-}
-
-export function serializeLegacyCenteredBackgroundPaths(
-  background: BackgroundV1,
-  lockedHeight: number,
-): string[] {
-  return serializeBackgroundPathsWithAlignment(background, lockedHeight, "centered");
-}
-
-type BackgroundAlignment = "canonical" | "centered" | "previous-inset" | "previous-top-anchored";
-
-function serializeBackgroundPathsWithAlignment(
-  background: BackgroundV1,
-  lockedHeight: number,
-  alignment: BackgroundAlignment,
-): string[] {
   const page = serializePage(lockedHeight);
   if (background.type === "none") return [page];
 
   const guidePaths =
     background.type === "dots"
-      ? dotPaths(background, lockedHeight, alignment)
-      : gridPaths(background, lockedHeight, alignment);
+      ? dotPaths(background, lockedHeight)
+      : gridPaths(background, lockedHeight);
   const attributes = guideAttributes(background.type);
   return [page, ...guidePaths.map((path) => serializePath(path, attributes))];
 }
@@ -162,11 +127,10 @@ function axisStatistics(
 function gridPaths(
   background: Extract<BackgroundV1, { type: "lines" | "squares" }>,
   lockedHeight: number,
-  alignment: BackgroundAlignment,
 ): string[] {
   const paths = new GuidePathChunks();
   const { type } = background;
-  const extent = guideExtent(background, lockedHeight, alignment);
+  const extent = guideExtent(background, lockedHeight);
   for (let index = 0; index < extent.yCount; index += 1) {
     const y = axisPoint(extent.startY, extent.endY, extent.yStep, index, extent.yCount);
     paths.push(lineSubpath(extent.startX, y, extent.endX, y));
@@ -183,10 +147,9 @@ function gridPaths(
 function dotPaths(
   background: Extract<BackgroundV1, { type: "dots" }>,
   lockedHeight: number,
-  alignment: BackgroundAlignment,
 ): string[] {
   const paths = new GuidePathChunks();
-  const extent = guideExtent(background, lockedHeight, alignment);
+  const extent = guideExtent(background, lockedHeight);
   for (let yIndex = 0; yIndex < extent.yCount; yIndex += 1) {
     const y = axisPoint(extent.startY, extent.endY, extent.yStep, yIndex, extent.yCount);
     for (let xIndex = 0; xIndex < extent.xCount; xIndex += 1) {
@@ -219,61 +182,10 @@ interface GuideExtent {
   readonly yStep: number;
 }
 
-function guideExtentForType(
-  type: Exclude<BackgroundV1["type"], "none">,
-  spacing: number,
-  lockedHeight: number,
-  alignment: Exclude<BackgroundAlignment, "canonical">,
-): GuideExtent {
-  const writableHeight = Math.max(0, lockedHeight - 2 * PAGE_MARGIN);
-  const centeredVertical = centeredGuideAxis(PAGE_MARGIN, writableHeight, spacing);
-  const vertical =
-    alignment === "centered"
-      ? {
-          count: centeredVertical.intervalCount + 1,
-          end: centeredVertical.end,
-          start: centeredVertical.start,
-        }
-      : previousTopAnchoredAxis(PAGE_MARGIN, writableHeight, spacing);
-  const coverageStartY = alignment === "centered" ? vertical.start : PAGE_MARGIN;
-  if (type === "lines") {
-    return {
-      coverageStartY,
-      endX: PAGE_WIDTH - PAGE_MARGIN,
-      endY: vertical.end,
-      startX: PAGE_MARGIN,
-      startY: vertical.start,
-      xCount: 0,
-      xStep: spacing,
-      yCount: vertical.count,
-      yStep: spacing,
-    };
-  }
-  const horizontal = centeredGuideAxis(PAGE_MARGIN, PAGE_WIDTH - 2 * PAGE_MARGIN, spacing);
-  return {
-    coverageStartY,
-    endX: horizontal.end,
-    endY: vertical.end,
-    startX: horizontal.start,
-    startY: vertical.start,
-    xCount: horizontal.intervalCount + 1,
-    xStep: spacing,
-    yCount: vertical.count,
-    yStep: spacing,
-  };
-}
-
 function guideExtent(
   background: Exclude<BackgroundV1, { type: "none" }>,
   lockedHeight: number,
-  alignment: BackgroundAlignment = "canonical",
 ): GuideExtent {
-  if (alignment === "previous-inset") {
-    return previousInsetGuideExtent(background, lockedHeight);
-  }
-  if (alignment !== "canonical") {
-    return guideExtentForType(background.type, background.spacing, lockedHeight, alignment);
-  }
   const layout = backgroundGuideLayout({
     background,
     innerWidth: PAGE_WIDTH - 2 * PAGE_MARGIN,
@@ -290,79 +202,6 @@ function guideExtent(
     xStep: layout.horizontalSpacing,
     yCount: layout.verticalPointCount,
     yStep: layout.verticalSpacing,
-  };
-}
-
-function previousInsetGuideExtent(
-  background: Exclude<BackgroundV1, { type: "none" }>,
-  lockedHeight: number,
-): GuideExtent {
-  const writableHeight = Math.max(0, lockedHeight - 2 * PAGE_MARGIN);
-  const horizontal = centeredGuideAxis(
-    PAGE_MARGIN,
-    PAGE_WIDTH - 2 * PAGE_MARGIN,
-    background.spacing,
-  );
-  const vertical = topAnchoredGuideAxis(PAGE_MARGIN, writableHeight, background.spacing);
-  if (background.type === "squares") {
-    return {
-      coverageStartY: vertical.start,
-      endX: horizontal.end,
-      endY: vertical.end,
-      startX: horizontal.start,
-      startY: vertical.start,
-      xCount: horizontal.intervalCount + 1,
-      xStep: background.spacing,
-      yCount: vertical.intervalCount + 1,
-      yStep: background.spacing,
-    };
-  }
-  const insetVertical = previousInsetAxis(vertical, background.spacing);
-  if (background.type === "lines") {
-    return {
-      coverageStartY: insetVertical.start,
-      endX: PAGE_WIDTH - PAGE_MARGIN,
-      endY: insetVertical.end,
-      startX: PAGE_MARGIN,
-      startY: insetVertical.start,
-      xCount: 0,
-      xStep: background.spacing,
-      yCount: insetVertical.count,
-      yStep: background.spacing,
-    };
-  }
-  const insetHorizontal = previousInsetAxis(horizontal, background.spacing);
-  return {
-    coverageStartY: insetVertical.start,
-    endX: insetHorizontal.end,
-    endY: insetVertical.end,
-    startX: insetHorizontal.start,
-    startY: insetVertical.start,
-    xCount: insetHorizontal.count,
-    xStep: background.spacing,
-    yCount: insetVertical.count,
-    yStep: background.spacing,
-  };
-}
-
-function previousInsetAxis(axis: ReturnType<typeof topAnchoredGuideAxis>, spacing: number) {
-  if (axis.intervalCount < 2) {
-    const center = (axis.start + axis.end) / 2;
-    return { count: 0, end: center, start: center };
-  }
-  return {
-    count: axis.intervalCount - 1,
-    end: axis.end - spacing,
-    start: axis.start + spacing,
-  };
-}
-
-function previousTopAnchoredAxis(start: number, length: number, spacing: number) {
-  const count = Math.max(0, Math.floor(length / spacing));
-  return {
-    count,
-    end: start + count * spacing,
-    start: start + spacing,
   };
 }
 

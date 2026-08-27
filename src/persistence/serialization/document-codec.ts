@@ -15,7 +15,7 @@ import { validateCurrentMetadataIntegrity } from "./canonical-metadata";
 import { canonicalSnapshot } from "./canonical-snapshot";
 import { migrateAndValidateDocumentSnapshot } from "./document-migration";
 import { assertJsonContainerWidths } from "./json-container-width";
-import { isCanonicalLockedHeight, isSupportedLockedHeight } from "./locked-height-compatibility";
+import { isCanonicalLockedHeight } from "./locked-height";
 import { serializeElementPaths } from "./path-markup";
 import { SHA256_DOCUMENT_HASHER, type DocumentHashPort } from "./sha256";
 import { verifyStaticPathIntegrity } from "./static-path-integrity";
@@ -113,14 +113,14 @@ export function parseInkbookDocument(
     return failure("revision-mismatch", "Root and snapshot revisions do not match.");
   }
   const maximumBottom = migrated.value.derivations.maximumBottom;
-  if (!isSupportedLockedHeight(sourceSnapshot.page, maximumBottom, safe.lockedHeight)) {
+  if (!isCanonicalLockedHeight(sourceSnapshot.page, maximumBottom, safe.lockedHeight)) {
     return failure(
       "locked-height-mismatch",
       "The SVG viewBox height is not the derived locked height.",
     );
   }
   const staticIntegrity = verifyStaticPathIntegrity(decoded.value.svg, safe, sourceSnapshot);
-  if (staticIntegrity === null) {
+  if (!staticIntegrity) {
     return failure(
       "static-path-mismatch",
       "Static SVG paths do not match the canonical snapshot rendering.",
@@ -132,10 +132,7 @@ export function parseInkbookDocument(
       derivations: migrated.value.derivations,
       hash: hasher.hash(decoded.value.hashInput),
       lockedHeight: safe.lockedHeight,
-      requiresCanonicalRewrite:
-        safe.requiresCanonicalRewrite ||
-        staticIntegrity.requiresCanonicalRewrite ||
-        !isCanonicalLockedHeight(sourceSnapshot.page, maximumBottom, safe.lockedHeight),
+      requiresCanonicalRewrite: safe.requiresCanonicalRewrite,
       snapshot: sourceSnapshot,
       sourceVersion: migrated.value.sourceVersion,
     },

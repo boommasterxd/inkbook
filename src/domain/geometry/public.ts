@@ -31,12 +31,7 @@ export {
   nodeSize,
   outlineDashPattern,
 } from "./element-path";
-export {
-  alignPageHeightToWritingLine,
-  deriveLegacyLockedHeight,
-  derivePageExtent,
-  derivePreviousBackgroundAlignedLockedHeight,
-} from "./page-extent";
+export { alignPageHeightToWritingLine, derivePageExtent } from "./page-extent";
 export { translateElementGeometry } from "./translation";
 export {
   PAGE_WIDTH,

@@ -7,7 +7,6 @@ import {
   serializeInkbookDocument,
 } from "../../../../src/persistence/serialization/public";
 import type { DocumentRuntimePort } from "../../../../src/persistence/worker/runtime/public";
-import { serializeLegacyLockedHeightDocument } from "../../../fixtures/persistence/legacy-locked-height";
 
 import {
   createVaultSessionFactory,
@@ -21,21 +20,9 @@ import {
 function migrationHarness(options: {
   readonly createRuntime?: (sessionId: string, workerEpoch: number) => Promise<DocumentRuntimePort>;
   readonly failBackup?: boolean;
-  readonly legacyLockedHeight?: boolean;
   readonly legacyTheme?: boolean;
 }) {
-  const sourceSnapshot = options.legacyLockedHeight
-    ? {
-        ...emptySnapshot(),
-        elements: [rectangle()],
-        page: { ...emptySnapshot().page, lockedBufferLines: 3 },
-      }
-    : undefined;
-  const original = options.legacyTheme
-    ? legacyThemeDocument()
-    : sourceSnapshot === undefined
-      ? versionZeroDocumentFromSnapshot()
-      : documentBytes(serializeLegacyLockedHeightDocument(sourceSnapshot));
+  const original = options.legacyTheme ? legacyThemeDocument() : versionZeroDocumentFromSnapshot();
   let content = original.svg;
   const file = new TestTFile("drawings/ink.svg", original.bytes.byteLength);
   const copies = new Map<string, { file: TFile; text: string }>();
@@ -104,24 +91,6 @@ describe("vault document migration persistence", () => {
       ok: true,
       value: { requiresCanonicalRewrite: false, snapshot: { revision: 7 } },
     });
-    expect(harness.process).toHaveBeenCalledOnce();
-    expect(harness.copies.size).toBe(0);
-  });
-
-  it("rewrites a legacy locked height on lock without requiring a content edit", async () => {
-    const harness = migrationHarness({ legacyLockedHeight: true });
-    const original = parseInkbookDocument(harness.original.svg);
-    expect(original.ok).toBe(true);
-
-    await unlockAndLockWithoutEdit(harness);
-
-    const rewritten = parseInkbookDocument(harness.content());
-    expect(rewritten.ok).toBe(true);
-    if (original.ok && rewritten.ok) {
-      expect(original.value.requiresCanonicalRewrite).toBe(true);
-      expect(rewritten.value.requiresCanonicalRewrite).toBe(false);
-    }
-    expect(harness.content()).not.toBe(harness.original.svg);
     expect(harness.process).toHaveBeenCalledOnce();
     expect(harness.copies.size).toBe(0);
   });

@@ -99,7 +99,7 @@ describe("page extent bounds", () => {
     );
   });
 
-  it("derives active and locked heights on background-independent writing rows", () => {
+  it("keeps active height on writing rows and an empty locked page at its shared minimum", () => {
     const page: PageV1 = {
       innerWidth: 2000,
       margin: 24.3,
@@ -131,10 +131,12 @@ describe("page extent bounds", () => {
       activeHeight: 348.6,
       lockedHeight: 348.6,
     });
-    expect(derivePageExtent(page, page.margin + 40).lockedHeight).toBe(248.6);
+    expect(derivePageExtent(page, page.margin + 40).lockedHeight).toBe(148.6);
   });
+});
 
-  it("keeps exactly one complete writing row after occupied content when locked", () => {
+describe("locked page extent bounds", () => {
+  it("keeps exactly one complete pattern row after occupied content when locked", () => {
     const page: PageV1 = {
       innerWidth: 2000,
       margin: 24.3,
@@ -146,10 +148,10 @@ describe("page extent bounds", () => {
     const extent = derivePageExtent(page, page.margin + 61);
 
     expect(extent.occupiedRows).toBe(1);
-    expect(extent.lockedHeight).toBeCloseTo(248.6);
+    expect(extent.lockedHeight).toBeCloseTo(198.6);
   });
 
-  it("keeps both page heights invariant across every background type and spacing", () => {
+  it("keeps active height invariant while aligning locked height to each pattern", () => {
     const extents = EVERY_BACKGROUND.map((background) =>
       derivePageExtent(
         {
@@ -164,6 +166,38 @@ describe("page extent bounds", () => {
     );
 
     expect(new Set(extents.map(({ activeHeight }) => activeHeight))).toEqual(new Set([748.6]));
-    expect(new Set(extents.map(({ lockedHeight }) => lockedHeight))).toEqual(new Set([548.6]));
+    expect(new Set(extents.map(({ lockedHeight }) => lockedHeight))).toEqual(
+      new Set([423.6, 448.6, 548.6]),
+    );
+  });
+
+  it.each([25, 33.333333333333336, 50, 100] as const)(
+    "keeps one complete %d-unit pattern row below the occupied row",
+    (spacing) => {
+      const page: PageV1 = {
+        activeBufferLines: 3,
+        background: { spacing, type: "squares" },
+        innerWidth: 2_000,
+        lockedBufferLines: 1,
+        margin: 24.3,
+      };
+      const maximumBottom = page.margin + 61;
+      const occupiedPatternRows = Math.ceil((maximumBottom - page.margin) / spacing);
+      const expectedLockedHeight = 2 * page.margin + (occupiedPatternRows + 1) * spacing;
+
+      expect(derivePageExtent(page, maximumBottom).lockedHeight).toBeCloseTo(expectedLockedHeight);
+    },
+  );
+
+  it("keeps one writing row below occupied content when no pattern is visible", () => {
+    const page: PageV1 = {
+      activeBufferLines: 3,
+      background: { type: "none" },
+      innerWidth: 2_000,
+      lockedBufferLines: 1,
+      margin: 24.3,
+    };
+
+    expect(derivePageExtent(page, page.margin + 61).lockedHeight).toBeCloseTo(248.6);
   });
 });

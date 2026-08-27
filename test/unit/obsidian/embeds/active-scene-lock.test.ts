@@ -12,7 +12,7 @@ import { domRect } from "../../../fixtures/obsidian/active-editor";
 
 const page: PageV1 = {
   activeBufferLines: 3,
-  background: { spacing: 100, type: "lines" },
+  background: { spacing: 25, type: "lines" },
   innerWidth: 2_000,
   lockedBufferLines: 1,
   margin: 24.3,
@@ -174,7 +174,7 @@ describe("active scene overlapping lock layout", () => {
 });
 
 describe("active scene occupied lock extent", () => {
-  it("keeps the last pattern row plus one complete row", () => {
+  it("keeps the occupied pattern row plus one complete trailing pattern row", () => {
     const fixture = createFixture();
     const maximumBottom = page.margin + 101;
     const transition = applyLockedFitLayout(fixture.options(true, maximumBottom));
@@ -185,6 +185,7 @@ describe("active scene occupied lock extent", () => {
     expect(Number.parseFloat(fixture.style.blockSize)).toBeCloseTo(
       derivePageExtent(page, maximumBottom).lockedHeight * expectedFit + FIXTURE_VERTICAL_INSETS,
     );
+    expect(derivePageExtent(page, maximumBottom).lockedHeight).toBeCloseTo(198.6);
   });
 });
 

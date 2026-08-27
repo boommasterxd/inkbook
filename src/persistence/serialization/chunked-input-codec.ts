@@ -22,7 +22,7 @@ import {
   type ChunkedInputCheckpoint,
 } from "./chunked-input-types";
 import { combineInputBytes, positiveInputInteger } from "./chunked-input-utils";
-import { isCanonicalLockedHeight, isSupportedLockedHeight } from "./locked-height-compatibility";
+import { isCanonicalLockedHeight } from "./locked-height";
 import { ChunkedSha256 } from "./chunked-output-sha256";
 import {
   migrateAndValidateDocumentSnapshotSteps,
@@ -155,14 +155,7 @@ export class ChunkedInkbookInputParser {
           derivations: this.#migrated.derivations,
           hash: this.#completeHash(),
           lockedHeight: this.#prelude.lockedHeight,
-          requiresCanonicalRewrite:
-            this.#prelude.requiresCanonicalRewrite ||
-            this.#staticMatcher.requiresCanonicalRewrite ||
-            !isCanonicalLockedHeight(
-              this.#migrated.snapshot.page,
-              this.#migrated.derivations.maximumBottom,
-              this.#prelude.lockedHeight,
-            ),
+          requiresCanonicalRewrite: this.#prelude.requiresCanonicalRewrite,
           snapshot: this.#runtimeSnapshot,
           sourceVersion: this.#migrated.sourceVersion,
         },
@@ -364,7 +357,7 @@ export class ChunkedInkbookInputParser {
       return failure("revision-mismatch", "Root and snapshot revisions do not match.");
     }
     const maximumBottom = migrated.derivations.maximumBottom;
-    if (!isSupportedLockedHeight(snapshot.page, maximumBottom, prelude.lockedHeight)) {
+    if (!isCanonicalLockedHeight(snapshot.page, maximumBottom, prelude.lockedHeight)) {
       return failure(
         "locked-height-mismatch",
         "The SVG viewBox height is not the derived locked height.",

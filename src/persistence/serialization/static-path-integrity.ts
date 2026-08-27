@@ -1,15 +1,9 @@
 import { deriveRenderBands } from "../../domain/commands/render-bands";
-import type { BackgroundV1, InkElementV1, InkSnapshotV1 } from "../../domain/schema/public";
+import type { InkElementV1, InkSnapshotV1 } from "../../domain/schema/public";
 import type { SafeSvgGroupRange, SafeSvgValidation } from "../documents/safe-svg-validator";
 import { MAXIMUM_TOTAL_PATH_DATA_BYTES } from "../documents/svg-output-limits";
 
-import {
-  backgroundFitsStaticLimit,
-  serializeBackgroundPaths,
-  serializeLegacyCenteredBackgroundPaths,
-  serializePreviousInsetBackgroundPaths,
-  serializePreviousTopAnchoredBackgroundPaths,
-} from "./background";
+import { backgroundFitsStaticLimit, serializeBackgroundPaths } from "./background";
 import { serializeElementPaths } from "./path-markup";
 
 const DEFAULT_FRAGMENTS_PER_STEP = 128;
@@ -22,12 +16,8 @@ export function verifyStaticPathIntegrity(
   svg: string,
   safe: SafeSvgValidation,
   snapshot: InkSnapshotV1,
-): StaticPathIntegrityResult | null {
+): boolean {
   return completeVerification(verifyStaticPathIntegritySteps(svg, safe, snapshot));
-}
-
-export interface StaticPathIntegrityResult {
-  readonly requiresCanonicalRewrite: boolean;
 }
 
 /** Compares canonical derived path fragments without copying the supplied SVG group contents. */
@@ -36,9 +26,9 @@ function* verifyStaticPathIntegritySteps(
   safe: SafeSvgValidation,
   snapshot: InkSnapshotV1,
   options: StaticPathIntegrityStepOptions = {},
-): Generator<void, StaticPathIntegrityResult | null> {
+): Generator<void, boolean> {
   const fragmentsPerStep = options.fragmentsPerStep ?? DEFAULT_FRAGMENTS_PER_STEP;
-  if (!Number.isSafeInteger(fragmentsPerStep) || fragmentsPerStep < 1) return null;
+  if (!Number.isSafeInteger(fragmentsPerStep) || fragmentsPerStep < 1) return false;
   if (
     !backgroundFitsStaticLimit(
       snapshot.page.background,
@@ -46,56 +36,20 @@ function* verifyStaticPathIntegritySteps(
       MAXIMUM_TOTAL_PATH_DATA_BYTES,
     )
   ) {
-    return null;
+    return false;
   }
-
-  const currentBackground = yield* verifyGroupFragments(
-    svg,
-    safe.groups.background,
-    serializeBackgroundPaths(snapshot.page.background, safe.lockedHeight),
-    fragmentsPerStep,
-  );
-  const historicalBackground =
-    !currentBackground && snapshot.page.background.type !== "none"
-      ? yield* verifyHistoricalBackground(
-          svg,
-          safe.groups.background,
-          snapshot.page.background,
-          safe.lockedHeight,
-          fragmentsPerStep,
-        )
-      : false;
-  if (!currentBackground && !historicalBackground) return null;
 
   const bands = deriveRenderBands(snapshot.elements);
   const groups: readonly [SafeSvgGroupRange, Iterable<string>][] = [
+    [safe.groups.background, serializeBackgroundPaths(snapshot.page.background, safe.lockedHeight)],
     [safe.groups.highlights, elementPathFragments(bands.highlight)],
     [safe.groups.content, elementPathFragments(bands.content)],
   ];
 
   for (const [range, fragments] of groups) {
-    if (!(yield* verifyGroupFragments(svg, range, fragments, fragmentsPerStep))) return null;
+    if (!(yield* verifyGroupFragments(svg, range, fragments, fragmentsPerStep))) return false;
   }
-  return { requiresCanonicalRewrite: !currentBackground };
-}
-
-function* verifyHistoricalBackground(
-  svg: string,
-  range: SafeSvgGroupRange,
-  background: Exclude<BackgroundV1, { type: "none" }>,
-  lockedHeight: number,
-  fragmentsPerStep: number,
-): Generator<void, boolean> {
-  const serializers = [
-    serializePreviousInsetBackgroundPaths,
-    serializePreviousTopAnchoredBackgroundPaths,
-    serializeLegacyCenteredBackgroundPaths,
-  ] as const;
-  for (const serialize of serializers) {
-    const fragments = serialize(background, lockedHeight);
-    if (yield* verifyGroupFragments(svg, range, fragments, fragmentsPerStep)) return true;
-  }
-  return false;
+  return true;
 }
 
 function* verifyGroupFragments(
@@ -135,9 +89,7 @@ function validRange(range: SafeSvgGroupRange, inputLength: number): boolean {
   );
 }
 
-function completeVerification(
-  steps: Generator<void, StaticPathIntegrityResult | null>,
-): StaticPathIntegrityResult | null {
+function completeVerification(steps: Generator<void, boolean>): boolean {
   let step = steps.next();
   while (!step.done) step = steps.next();
   return step.value;
