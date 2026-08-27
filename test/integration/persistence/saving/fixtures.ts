@@ -11,6 +11,10 @@ export class AutosaveDocumentFixture implements AutosaveDocumentSource {
     this.value = { ...this.value, elements: [rectangle(x)], revision };
   }
 
+  commitPage(revision: number, page: InkSnapshotV1["page"]): void {
+    this.value = { ...this.value, page, revision };
+  }
+
   currentRevision(): number {
     return this.value.revision;
   }

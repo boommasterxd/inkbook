@@ -1,6 +1,6 @@
 import type { FileManager, Vault } from "obsidian";
 
-import type { InkbookDeviceSettingsV1, InkbookSettingsV2 } from "../../domain/settings/types";
+import type { InkbookDeviceSettingsV1, InkbookSettingsV3 } from "../../domain/settings/types";
 import type { PresentationLifecyclePort } from "../../editor/session/session-port";
 import { WorkspaceEditorCoordinator } from "../../editor/session/workspace-editor-coordinator";
 import type { AttachmentIdentity } from "../../editor/session/session-state";
@@ -52,7 +52,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly #sessions: VaultDocumentSessionFactory;
   readonly #settings: () => {
     readonly device: InkbookDeviceSettingsV1;
-    readonly vault: InkbookSettingsV2;
+    readonly vault: InkbookSettingsV3;
   };
 
   constructor(
@@ -61,7 +61,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     scheme: ColorSchemeBroadcaster,
     settings: () => {
       readonly device: InkbookDeviceSettingsV1;
-      readonly vault: InkbookSettingsV2;
+      readonly vault: InkbookSettingsV3;
     },
     embedActions: ObsidianEmbedActions,
     host: WorkspaceFeedbackHost,
@@ -285,7 +285,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     for (const mounted of this.#mounted.values()) mounted.scene?.updateDeviceSettings(settings);
   }
 
-  updateVaultSettings(settings: InkbookSettingsV2): void {
+  updateVaultSettings(settings: InkbookSettingsV3): void {
     if (this.#disposed) return;
     this.refreshRateProfiles.setPreference(settings.refreshRatePreference);
   }

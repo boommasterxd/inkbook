@@ -5,7 +5,7 @@ import type {
   StrokeElementV1,
   StrokeStyleV1,
 } from "../../domain/schema/public";
-import { sameBackground, SceneBackgroundCache } from "./background-cache";
+import { SceneBackgroundCache } from "./background-cache";
 import { DEFAULT_CAMERA, DEFAULT_FRAME_BUDGET_MS } from "./constants";
 import { SceneContentRenderer } from "./content-renderer";
 import { SceneElementPreviewController } from "./element-preview-controller";
@@ -27,7 +27,6 @@ import { SceneResourcePolicy, visibilityPageBounds } from "./scene-resource-poli
 import {
   browserScheduler,
   sameViewport,
-  SceneLayoutInvalidationState,
   validateFrameBudget,
   validateCamera,
   validateNonNegativeDuration,
@@ -50,7 +49,6 @@ import { SceneTransformPreviewController } from "./transform-preview-controller"
 import { SceneVisibilityState } from "./visibility-state";
 export class SvgSceneRenderer {
   #backgroundDirty = true;
-  #backgroundTransitionPending = false;
   readonly #backgroundCache = new SceneBackgroundCache();
   #camera: SceneCamera = DEFAULT_CAMERA;
   readonly #content: SceneContentRenderer;
@@ -64,7 +62,6 @@ export class SvgSceneRenderer {
   readonly #deltas: SceneDeltaCoordinator;
   readonly #instrumentation: MutableSceneInstrumentation = createInstrumentation();
   #layoutDirty = true;
-  readonly #layoutInvalidation = new SceneLayoutInvalidationState();
   readonly #liveStroke: SceneLiveStrokeRenderer;
   readonly #motion: SceneMotionController;
   #orderVisibilityDirty = false;
@@ -185,11 +182,12 @@ export class SvgSceneRenderer {
   public setCamera(camera: SceneCamera): void {
     validateCamera(camera);
     if (camera.x === this.#camera.x && camera.zoom === this.#camera.zoom) return;
+    const zoomChanged = camera.zoom !== this.#camera.zoom;
     this.#camera = camera;
     this.#frameWriter.setCamera(camera);
     this.#transformPreviews.setContext(camera, this.#viewport);
     this.invalidateVisibility();
-    this.#backgroundDirty = true;
+    if (zoomChanged) this.#backgroundDirty = true;
     this.schedule();
   }
   public setViewport(viewport: SceneViewport): void {
@@ -198,15 +196,12 @@ export class SvgSceneRenderer {
     this.#viewport = viewport;
     this.#transformPreviews.setContext(this.#camera, viewport);
     this.#layoutDirty = false;
-    this.#layoutInvalidation.reset();
     this.invalidateVisibility();
-    this.#backgroundDirty = true;
     this.schedule();
   }
-  public invalidateLayout(mode: "complete" | "coverage" | "clip" = "complete"): void {
+  public invalidateLayout(): void {
     this.assertActive();
     this.#layoutDirty = true;
-    this.#layoutInvalidation.add(mode);
     this.schedule();
   }
   public setPage(page: PageV1, height = this.#pageHeight): void {
@@ -215,9 +210,6 @@ export class SvgSceneRenderer {
       throw new RangeError("Page height must be finite and positive.");
     }
     if (page === this.#page && height === this.#pageHeight) return;
-    if (!sameBackground(page, this.#page) && this.#frameWriter.hasBackground) {
-      this.#backgroundTransitionPending = true;
-    }
     this.#page = page;
     this.#pageHeight = height;
     this.#backgroundDirty = true;
@@ -428,14 +420,7 @@ export class SvgSceneRenderer {
         backgroundDeferred = true;
         this.#instrumentation.backgroundBudgetDeferrals += 1;
       } else {
-        if (this.#backgroundTransitionPending) this.#motion.beginBackgroundTransition();
-        this.#backgroundTransitionPending = false;
-        this.#frameWriter.writeBackground(
-          this.#page,
-          this.#pageHeight,
-          this.#viewport,
-          this.#camera.zoom,
-        );
+        this.#frameWriter.writeBackground(this.#page, this.#pageHeight, this.#camera.zoom);
         this.#backgroundDirty = false;
       }
     }
@@ -455,13 +440,10 @@ export class SvgSceneRenderer {
     const viewport = this.#options.layout.readViewport();
     this.#instrumentation.layoutReads += 1;
     validateViewport(viewport);
-    const previousViewport = this.#viewport;
-    const refreshBackground = this.#layoutInvalidation.consume(previousViewport, viewport);
-    if (!sameViewport(previousViewport, viewport)) {
+    if (!sameViewport(this.#viewport, viewport)) {
       this.#viewport = viewport;
       this.#transformPreviews.setContext(this.#camera, viewport);
       this.invalidateVisibility();
-      if (refreshBackground) this.#backgroundDirty = true;
     }
     this.#layoutDirty = false;
   }

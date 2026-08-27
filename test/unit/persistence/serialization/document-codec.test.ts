@@ -7,7 +7,12 @@ import {
   CURRENT_METADATA_REWRITES,
   rewriteDocumentMetadata,
 } from "../../../fixtures/persistence/metadata-rewrite";
-import { serializeLegacyLockedHeightDocument } from "../../../fixtures/persistence/legacy-locked-height";
+import {
+  serializeLegacyCenteredBackgroundDocument,
+  serializeLegacyLockedHeightDocument,
+  serializePreviousInsetBackgroundDocument,
+  serializePreviousTopAnchoredBackgroundDocument,
+} from "../../../fixtures/persistence/legacy-locked-height";
 import {
   parseInkbookDocument,
   serializeInkbookDocument,
@@ -67,12 +72,14 @@ describe("Inkbook document serialization", () => {
     expect(result.value.svg).not.toContain('stroke="none"');
     expect(validateSafeSvg(result.value.svg)).not.toBeNull();
   });
+});
 
+describe("Inkbook background serialization", () => {
   it.each([
     { type: "none" as const },
     { type: "lines" as const, spacing: 50 as const },
-    { type: "dots" as const, spacing: 80 as const },
-    { type: "squares" as const, spacing: 80 as const },
+    { type: "dots" as const, spacing: 100 as const },
+    { type: "squares" as const, spacing: 100 as const },
   ])("serializes the $type background into a safe page", (background) => {
     const snapshot = createSnapshot();
     snapshot.page.background = background;
@@ -83,14 +90,15 @@ describe("Inkbook document serialization", () => {
     if (result.ok) expect(validateSafeSvg(result.value.svg)).not.toBeNull();
   });
 
-  it("centers complete square cells in the standalone SVG", () => {
+  it("keeps the square frame fixed and writes all four outer boundaries", () => {
     const result = serializeSquareBackground();
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.svg).toContain("M34.3 24.3L2014.3 24.3");
-    expect(result.value.svg).toContain("M34.3 24.3L34.3");
-    expect(result.value.svg).not.toContain("M24.3 24.3L2024.3 24.3");
+    expect(result.value.svg).toContain("M24.3 24.3L2024.3 24.3");
+    expect(result.value.svg).toContain("M24.3 324.3L2024.3 324.3");
+    expect(result.value.svg).toContain("M24.3 24.3L24.3 324.3");
+    expect(result.value.svg).toContain("M2024.3 24.3L2024.3 324.3");
   });
 
   it("loads version-one files written before scale-independent guide styling", () => {
@@ -110,7 +118,7 @@ describe("Inkbook document serialization", () => {
       ok: true,
       value: {
         requiresCanonicalRewrite: true,
-        snapshot: { page: { background: { type: "squares", spacing: 60 } } },
+        snapshot: { page: { background: { type: "squares", spacing: 50 } } },
       },
     });
   });
@@ -124,7 +132,7 @@ describe("Inkbook document serialization boundaries", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(validateSafeSvg(result.value.svg)).toMatchObject({ paths: 5 });
+    expect(validateSafeSvg(result.value.svg)).toMatchObject({ paths: 4 });
   });
 
   it("rejects an invalid snapshot before constructing static paths", () => {
@@ -216,6 +224,42 @@ describe("SVG numeric precision", () => {
 });
 
 describe("Inkbook document parsing", () => {
+  it("loads the previous inset background and height and requires a canonical rewrite", () => {
+    const previous = serializePreviousInsetBackgroundDocument(createDottedRectangleSnapshot(400));
+
+    expect(parseInkbookDocument(previous)).toMatchObject({
+      ok: true,
+      value: { requiresCanonicalRewrite: true },
+    });
+  });
+
+  it("loads the previous top-anchored background and requires a canonical rewrite", () => {
+    const previous = serializePreviousTopAnchoredBackgroundDocument(
+      createDottedRectangleSnapshot(400),
+    );
+
+    expect(parseInkbookDocument(previous)).toMatchObject({
+      ok: true,
+      value: { requiresCanonicalRewrite: true },
+    });
+  });
+
+  it("loads the exact legacy centered background and requires a canonical rewrite", () => {
+    const legacy = serializeLegacyCenteredBackgroundDocument(createDottedRectangleSnapshot(400));
+
+    const parsed = parseInkbookDocument(legacy);
+
+    expect(parsed).toMatchObject({
+      ok: true,
+      value: { requiresCanonicalRewrite: true },
+    });
+    const tampered = legacy.replace("M24.3 24.3L", "M24.3 25.3L");
+    expect(parseInkbookDocument(tampered)).toMatchObject({
+      error: { code: "static-path-mismatch" },
+      ok: false,
+    });
+  });
+
   it("loads a canonical legacy locked height and rewrites it on the next save", () => {
     const snapshot = createDottedRectangleSnapshot(400);
     snapshot.page.lockedBufferLines = 3;
@@ -378,6 +422,6 @@ function toVersionZeroDocument(svg: string): string {
 
 function serializeSquareBackground() {
   const snapshot = createSnapshot();
-  snapshot.page.background = { type: "squares", spacing: 60 };
+  snapshot.page.background = { type: "squares", spacing: 50 };
   return serializeInkbookDocument(snapshot);
 }

@@ -11,8 +11,8 @@ The following rules apply:
 - Only one ink embed can be active at a time.
 - When another embed is opened, the plugin saves and locks the previously active embed.
 - The locked preview and active scene occupy the same lifecycle-owned inline block. Unlocking never appends a second editor before or after that block.
-- An empty locked preview contains at least 2.5 writing lines, rounded up to the next complete background step, plus the writable SVG margins. Obsidian's generic button height MUST NOT override this intrinsic preview height.
-- A non-empty patterned locked preview contains the complete row holding the lowest annotation, exactly one further complete pattern row, and the writable bottom margin. It never retains the active writing buffer or a legacy locked-buffer multiplier.
+- An empty locked preview contains at least 2.5 writing lines, rounded up to the next complete writing row, plus the writable SVG margins. Obsidian's generic button height MUST NOT override this intrinsic preview height.
+- A non-empty locked preview contains the complete writing row holding the lowest annotation, exactly one further writing row, and the writable bottom margin. It never depends on background type or spacing and never retains the active writing buffer or a legacy locked-buffer multiplier.
 - The existing preview remains visible until the in-place editor has fully loaded and has been measured correctly.
 - Activation starts immediately without waiting for a delay threshold. If activation has not completed after 1,200 milliseconds, one icon-only `Loading drawing` status appears at the center of the embed's currently visible native-scroll intersection. This long-load threshold keeps ordinary worker startup and validation visually quiet because the complete locked preview already remains visible. The delayed status is shown even when validation has not yet produced a trustworthy `activeHeight`: the presentation remains at its exact locked height instead of guessing a target, while the status provides continuous feedback for a genuinely slow activation. As soon as the validated editor chrome can mount, its toolbar follows the normal overlay entrance while the status remains until the scene is measured, painted, and ready for input. A faster activation never mounts the status.
 - After the active scene has been measured, the same block grows from the serialized `lockedHeight` to the derived `activeHeight` over 240 milliseconds. Its top edge, width, root, and document position remain anchored; no second editor is inserted and toolbar chrome contributes no block height. This duration is never an activation delay: the ready state, input, focus, toolbar, and completion of loading feedback are released when the prepared representation swap and height transition start. The remaining transition time only retains the temporary clip geometry until cleanup.
@@ -37,7 +37,7 @@ The active editor consists of:
 - a temporary live stroke
 - selection and cursor overlays
 
-The border, rounded background container, toolbar, focus treatment, flyouts, and menus use Obsidian variables from the active host theme. The document graphic inside the container uses Inkbook's fixed, self-contained light and dark palette so the saved SVG and active scene remain identical outside Obsidian. The palette and scheme lifecycle are defined in [Standalone SVG Envelope and Theme Rendering](svg-envelope.md).
+The border, rounded background container, toolbar, focus treatment, and menus use Obsidian variables from the active host theme. The document graphic inside the container uses Inkbook's fixed, self-contained light and dark palette so the saved SVG and active scene remain identical outside Obsidian. The palette and scheme lifecycle are defined in [Standalone SVG Envelope and Theme Rendering](svg-envelope.md).
 
 Its appearance:
 
@@ -56,12 +56,12 @@ The normative DOM layer hierarchy is:
 2. A zero-height sticky host is the first child of the active editor. The toolbar is an absolutely positioned overlay lifted above that host and therefore contributes no layout height.
 3. The background container owns the border, background, radius, and clipping.
 4. The SVG committed-content bands and decorative overlays are inside the clipped background container and use `pointer-events: none`.
-5. One transparent, focusable canvas input surface is above that content, below toolbar and flyouts, and owns canvas pointer, wheel, context-menu, and keyboard events.
-6. Flyouts are portalled within the owning embed's document so they are not clipped by the background container and remain correct in pop-out windows.
+5. One transparent, focusable canvas input surface is above that content, below the toolbar and host menus, and owns canvas pointer, wheel, context-menu, and keyboard events.
+6. Obsidian mounts menus in the owning document so they are not clipped by the background container and remain correct in pop-out windows.
 
 Activation preserves the root, top-edge anchor, measured width, presentation attachment, and active editor identity while intentionally animating the block from `lockedHeight` to `activeHeight`. The toolbar overlays the note immediately above the page, including Markdown already painted there, and does not move that content or reduce, cover, or pad the SVG page. The embed root explicitly preserves visible overflow and disables host-imposed paint containment so the upward toolbar overhang remains painted and hit-testable; paint containment remains scoped to the page surface below it. A stroke commit, autosave, SVG resource refresh, theme change, or asynchronous document reclassification MUST NOT detach, remount, move, or lock the active editor.
 
-The embed uses its own final background-container content-box width after the resolved note scroller's native right-hand scrollbar gutter has been stabilized. It respects note padding, readable-line width, lists, callouts, and other nested constraints; it never adopts the full scroller width. No Inkbook layer, including the toolbar, input surface, flyout, focus treatment, or background container, extends over the owner client edge or scrollbar gutter. Pointer contact does not add or remove any layout-affecting UI. The host-scroll ownership, edge clamp, and platform-specific native overlay behavior are defined in [Obsidian Integration](obsidian-integration.md#native-scroll-owner-and-scrollbar-stability).
+The embed uses its own final background-container content-box width after the resolved note scroller's native right-hand scrollbar gutter has been stabilized. It respects note padding, readable-line width, lists, callouts, and other nested constraints; it never adopts the full scroller width. No Inkbook layer, including the toolbar, input surface, focus treatment, or background container, extends over the owner client edge or scrollbar gutter. Pointer contact does not add or remove any layout-affecting UI. The host-scroll ownership, edge clamp, and platform-specific native overlay behavior are defined in [Obsidian Integration](obsidian-integration.md#native-scroll-owner-and-scrollbar-stability).
 
 ## Toolbar Layout
 
@@ -102,7 +102,7 @@ Context-sensitive actions appear as separate circular controls to the right of t
 
 Copy, Cut, and Delete only appear when there is an active selection. Paste only appears when a valid ink clipboard payload is known. Undo and Redo remain visible at stable positions for the complete active-editor lifetime; each is disabled, removed from sequential and roving keyboard focus, and visually muted when its corresponding action is unavailable. Appearing or disappearing context controls MUST NOT move the primary track away from the exact editor center.
 
-The overflow menu opens directly below the three-dot trigger and never at the canvas center. Its Background item has an icon and opens a separate icon-labelled side submenu on pointer hover, keyboard focus, or explicit activation without resizing or repositioning the anchored parent menu. The submenu exposes None, Lines, Dots, Squares, and the applicable spacing choices. Because Obsidian's public native `Menu` API has no submenu contract, this toolbar overflow uses the same owner-document React portal and bounded positioning lifecycle as the other editor flyouts; canvas context menus remain native Obsidian menus.
+The overflow menu opens through Obsidian `Menu` horizontally centered below the three-dot trigger and never at the canvas center. Its icon-labelled Background item always previews the active None, Lines, Dots, or Squares pattern and opens an explicit drill-in menu after click, touch activation, Enter, or Space. The drill-in begins with an icon-labelled Back action and exposes the same four choices without a redundant Background heading. Lines, Dots, and Squares preview their actual repeating pattern; Squares uses one three-by-three grid with shared, square-cornered cell boundaries rather than separate rounded tiles. When the chosen background has guides, a native separator precedes one full-width four-stop S/M/L/XL range control without a nested card surface. It never depends on hover or a pointer crossing a gap. Obsidian owns the desktop menu surface and its mobile bottom-sheet presentation.
 
 The overflow and selection context menus expose a non-interactive Arrange label followed by Bring forward, Send backward, Bring to front, and Send to back as four flat actions. Native canvas context menus do not emulate submenus with private APIs or React. Disabled boundary actions remain visible in the menu so their layer behavior is discoverable. These actions do not consume four permanent toolbar slots.
 
@@ -123,7 +123,7 @@ Canvas menus use Obsidian's native menu component, never a React-rendered SVG ov
 | Send to back         | `chevrons-down`   |
 | Erase all            | `eraser`          |
 
-Arrange calls `setIsLabel(true)` and has no click handler. Delete, Erase all, and Delete embed use the host warning presentation so both icon and text are red. Cut remains a normal action because it is clipboard-preserving and undoable. Copy, Cut, Paste, and Delete form one editing section when applicable; Arrange actions form the next section; Copy embed is document-level; Erase all and Delete embed form the final destructive section. Separators appear only between those sections. Menu items use sentence case, expose their visible title as the accessible name, and retain visible disabled Arrange boundary actions.
+Arrange calls `setIsLabel(true)` and has no click handler. Delete and Delete embed use the host danger presentation so both icon and text are red. Erase all retains its confirmation but uses an orange custom eraser icon and title because it clears recoverable canvas content without deleting the embed. Cut remains a normal action because it is clipboard-preserving and undoable. Copy, Cut, and Paste form the clipboard section, Delete has its own destructive selection boundary, Arrange actions form the next section, Copy embed is document-level, and Erase all plus Delete embed form the final destructive section. Separators appear only between those sections. Menu items use sentence case, expose their visible title as the accessible name, and retain visible disabled Arrange boundary actions.
 
 The native menu owns arrow-key navigation and `Escape`. After it closes, focus returns to the control that opened it or to the canvas input surface. Mouse, touch, keyboard placement, target selection, and action availability are normative in [Features](features.md#canvas-context-menus).
 
@@ -160,24 +160,25 @@ The pre-measurement state is Wide. The editor keeps the chrome hidden during its
 
 The left-handed setting changes input behavior without breaking the continuous toolbar order or its fit calculation.
 
-Toolbar, flyout, selection, container-height, and preview transitions follow [Quality, Performance, Animation, and Testing](quality-and-testing.md). Reduced motion preserves every final state without interpolation.
+Toolbar, selection, container-height, and preview transitions follow [Quality, Performance, Animation, and Testing](quality-and-testing.md). Obsidian owns menu and mobile-sheet motion. Reduced motion preserves every final state without interpolation.
 
-## Flyouts
+## Adaptive Native Menus
 
-Background, Shape Picker, and Style open flyouts. Active Shape is a drawing-tool control and never doubles as the picker trigger.
+Overflow, Background, Shape Picker, Style, and canvas context actions use Obsidian `Menu`. Active Shape is a drawing-tool control and never doubles as the picker trigger.
 
 The following rules apply:
 
-- Only one flyout can be open at a time.
-- A click or drawing action on the canvas closes the flyout.
-- `Escape` closes the flyout.
-- Flyouts are clamped to the visible boundary of the Obsidian area.
-- On narrow embeds, they are shifted so that they are not clipped.
-- The flyouts appear above the finger-input overlay and therefore remain operable.
-- Flyouts use one compact panel surface with a clear heading, grouped fields, 44-pixel choice targets, visible selection borders, and host-theme focus rings.
-- The Style flyout represents colors as labelled swatches, widths and dash styles as line previews, Boolean values as switches, and structural values as compact labelled controls. Labels remain available to assistive technology even when the visual choice is primarily graphical.
+- Only one Inkbook menu is open per presentation.
+- A click or drawing action on the canvas, tool change, lock, detach, or unload closes it.
+- Obsidian owns Escape, arrow-key navigation, viewport clamping, and mobile bottom-sheet behavior.
+- Desktop toolbar menus use an Inkbook-controlled width, the real trigger rectangle, the owning `Document`, `setParentElement()`, and `showAtPosition()` so they remain horizontally centered six pixels below the invoking button and clamp inside the owning viewport, including pop-out windows.
+- Every standard menu entry and non-interactive group label has an icon. Checked choices use `setChecked()`, actual deletion uses `setWarning(true)`, and content clearing uses the distinct orange caution presentation.
+- Shape entries are ordered as line tools, geometric shapes, and structures, with native separators but no redundant group headings. The active arrow glyph independently represents all five start and end nodes: None, Arrow, Triangle, Diamond, and Circle. The coordinate-system glyph represents either two or three axes according to its 2D or 3D default. The table glyph shows only its internal header divider and central two-column divider, without an outer frame.
+- Style uses one public `DocumentFragment` title inside the Obsidian DOM menu without a redundant menu heading. Its rounded grouped controls use the same compact visual inset on all four sides, 44-pixel targets, host-theme focus rings, labelled color swatches without an artificial inner ring, five evenly sized vertical XS-through-XL pen- and outline-width choices with deliberately distinct inset previews and rounded stroke caps, dash and endpoint previews, a Pressure sensitivity switch in the same row as its label, a column stepper, and sliders that fill the complete flexible row space up to their compact value fields. Every choice button has exactly one neutral host border without a native inset ring or outer button shadow; selection recolors that same border with the accent instead of adding another ring. A bold S-shaped calligraphic stroke that visibly varies from thin to thick represents pressure-sensitive width, while four equally sized points with increasing alpha represent every opacity control. Opacity sliders display percentages while the model remains normalized from zero to one. Interactive fragments stop Obsidian's menu-level mouse-down cancellation before it reaches native inputs, so range dragging and number editing remain native while the menu stays open. Slider movement updates its local value continuously and commits one style change on `change` rather than on every pointer sample. Inkbook never overrides the outer menu surface, border, or radius, which remain native Obsidian presentation.
+- Drill-in and Back navigation close the current native menu and create its replacement in a cancellable microtask. The replacement therefore exists before the next browser paint, so page annotations never flash through between menu levels.
+- Labels remain available to assistive technology when the visual choice is primarily graphical. Focus returns without scrolling to the trigger or canvas when the final menu closes.
 
-Menus and portals use the document that owns the embed. Static UI styling is scoped beneath the Inkbook root in `styles.css` and uses Obsidian CSS variables. The concrete host API and pop-out requirements are defined in [Obsidian Integration](obsidian-integration.md).
+Menus use the document that owns the embed. Static custom control styling uses owned `inkbook-menu-*` classes in `styles.css` and Obsidian CSS variables without private host DOM fields or selectors. The concrete host API and pop-out requirements are defined in [Obsidian Integration](obsidian-integration.md).
 
 ## Related Documentation
 

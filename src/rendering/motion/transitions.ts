@@ -23,12 +23,10 @@ export const EASING_TOKENS = Object.freeze({
 export const TRANSITION_DURATIONS = Object.freeze({
   toolbarEnterExit: MOTION_TOKENS.toolbar,
   toolActiveState: MOTION_TOKENS.fast,
-  flyoutOpenClose: MOTION_TOKENS.standard,
   selectionHandlesEnterExit: MOTION_TOKENS.fast,
   eraserPendingRemoval: MOTION_TOKENS.erase,
   committedEntrance: MOTION_TOKENS.fast,
   commandRemovalExit: MOTION_TOKENS.fast,
-  backgroundChange: MOTION_TOKENS.standard,
   styleChange: MOTION_TOKENS.fast,
   lockedToActiveHeight: MOTION_TOKENS.layout,
   activeToLockedHeight: MOTION_TOKENS.layout,

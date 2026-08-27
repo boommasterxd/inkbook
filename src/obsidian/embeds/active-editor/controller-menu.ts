@@ -1,6 +1,10 @@
 import {
+  EditorToolbarMenuSession,
   openContextMenu,
   type ContextMenuSession,
+  type EditorToolbarMenuHandlers,
+  type EditorToolbarMenuId,
+  type EditorToolbarMenuState,
   type FocusTargetPort,
   type MenuFactoryPort,
 } from "../../menus/index";
@@ -88,11 +92,21 @@ export interface ActiveEditorMenuControllerOptions {
   readonly visibleSelectionCenter?: () => InputPoint | null;
 }
 
+interface ToolbarMenuConfiguration {
+  readonly getState: () => EditorToolbarMenuState;
+  readonly handlers: EditorToolbarMenuHandlers;
+  readonly onOpenChange: (id: Exclude<EditorToolbarMenuId, "background"> | null) => void;
+  readonly renderIcon: (element: HTMLElement, icon: string) => void;
+}
+
 export class ActiveEditorMenuController {
   readonly #options: ActiveEditorMenuControllerOptions;
   #event: MouseEvent | undefined;
   #openGeneration = 0;
   #session: ContextMenuSession | undefined;
+  #toolbarSession: EditorToolbarMenuSession | undefined;
+  #toolbarMenuId: Exclude<EditorToolbarMenuId, "background"> | undefined;
+  #toolbarOptions: ToolbarMenuConfiguration | undefined;
 
   public constructor(options: ActiveEditorMenuControllerOptions) {
     this.#options = options;
@@ -102,6 +116,66 @@ export class ActiveEditorMenuController {
     this.#openGeneration += 1;
     this.#session?.close();
     this.#session = undefined;
+    this.#toolbarSession?.close();
+    this.#toolbarSession = undefined;
+  }
+
+  public closeToolbar(): void {
+    const session = this.#toolbarSession;
+    this.#toolbarSession = undefined;
+    this.#toolbarMenuId = undefined;
+    session?.close();
+    this.#toolbarOptions?.onOpenChange(null);
+  }
+
+  public configureToolbar(options: ToolbarMenuConfiguration): void {
+    this.#toolbarOptions = options;
+  }
+
+  public toggleToolbar(
+    id: Exclude<EditorToolbarMenuId, "background">,
+    anchor: HTMLButtonElement | undefined,
+  ): void {
+    if (this.#toolbarMenuId === id) {
+      this.closeToolbar();
+      return;
+    }
+    const options = this.#toolbarOptions;
+    if (anchor === undefined || options === undefined) return;
+    this.openToolbar({ ...options, anchor, id, onClosed: () => options.onOpenChange(null) });
+    this.#toolbarMenuId = id;
+    options.onOpenChange(id);
+  }
+
+  public openToolbar(options: {
+    readonly anchor: HTMLElement;
+    readonly getState: () => EditorToolbarMenuState;
+    readonly handlers: EditorToolbarMenuHandlers;
+    readonly id: Exclude<EditorToolbarMenuId, "background">;
+    readonly onClosed: () => void;
+    readonly renderIcon: (element: HTMLElement, icon: string) => void;
+  }): void {
+    this.#session?.close();
+    this.#session = undefined;
+    this.closeToolbar();
+    const ownerWindow = this.#options.ownerDocument.defaultView;
+    if (ownerWindow === null) return;
+    this.#toolbarSession = new EditorToolbarMenuSession({
+      anchor: options.anchor,
+      canvasInputSurface: this.#options.inputSurface,
+      factory: this.#options.factory,
+      getState: options.getState,
+      handlers: options.handlers,
+      initialMenu: options.id,
+      onClosed: () => {
+        this.#toolbarSession = undefined;
+        this.#toolbarMenuId = undefined;
+        options.onClosed();
+      },
+      ownerDocument: this.#options.ownerDocument,
+      ownerWindow,
+      renderIcon: options.renderIcon,
+    });
   }
 
   public dispatchFromEvent(event: MouseEvent | undefined, dispatch: () => void): void {

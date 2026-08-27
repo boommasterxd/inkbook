@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+// @vitest-environment happy-dom
+
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   openContextMenu,
@@ -9,15 +11,20 @@ import {
   type MenuItemPort,
   type MenuPort,
 } from "../../../../src/obsidian/menus";
+import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
+
+beforeEach(installObsidianDomHelpers);
 
 interface RecordedItem {
   readonly calls: string[];
   readonly click: (() => void) | undefined;
+  readonly fragment?: DocumentFragment;
 }
 
 class FakeItem implements MenuItemPort {
   public readonly calls: string[] = [];
   public click: (() => void) | undefined;
+  public fragment: DocumentFragment | undefined;
 
   public setTitle(title: string): this {
     this.calls.push(`title:${title}`);
@@ -26,6 +33,12 @@ class FakeItem implements MenuItemPort {
 
   public setIcon(icon: string): this {
     this.calls.push(`icon:${icon}`);
+    return this;
+  }
+
+  public setTitleFragment(fragment: DocumentFragment): this {
+    this.fragment = fragment;
+    this.calls.push(`title:${fragment.textContent ?? ""}`);
     return this;
   }
 
@@ -60,7 +73,11 @@ class FakeMenu implements MenuPort {
   public addItem(configure: (item: MenuItemPort) => void): this {
     const item = new FakeItem();
     configure(item);
-    this.entries.push({ calls: item.calls, click: item.click });
+    this.entries.push({
+      calls: item.calls,
+      click: item.click,
+      ...(item.fragment === undefined ? {} : { fragment: item.fragment }),
+    });
     return this;
   }
 
@@ -121,7 +138,7 @@ function titles(menu: FakeMenu): string[] {
 describe("context menu population", () => {
   it("populates the selection and canvas sections in the contract order", () => {
     const menu = new FakeMenu();
-    populateContextMenu(menu, state(), handlers());
+    populateContextMenu(menu, document, state(), handlers());
 
     expect(titles(menu)).toEqual([
       "Copy",
@@ -137,7 +154,7 @@ describe("context menu population", () => {
       "Erase all",
       "Delete embed",
     ]);
-    expect(menu.entries.filter((entry) => entry === "separator")).toHaveLength(3);
+    expect(menu.entries.filter((entry) => entry === "separator")).toHaveLength(4);
     for (const entry of menu.entries) {
       if (entry === "separator" || entry.calls.includes("label:true")) continue;
       expect(entry.calls.some((call) => call.startsWith("icon:"))).toBe(true);
@@ -148,6 +165,7 @@ describe("context menu population", () => {
     const menu = new FakeMenu();
     populateContextMenu(
       menu,
+      document,
       state({
         canBringForward: false,
         canSendBackward: false,
@@ -175,18 +193,28 @@ describe("context menu population", () => {
     ]);
   });
 
-  it("omits Paste without a valid payload and marks destructive actions as warnings", () => {
+  it("uses orange caution for clearing and red warning for actual deletion", () => {
     const menu = new FakeMenu();
-    populateContextMenu(menu, state({ hasSelection: false, canPaste: false }), handlers());
+    populateContextMenu(
+      menu,
+      document,
+      state({ hasSelection: false, canPaste: false }),
+      handlers(),
+    );
 
     expect(titles(menu)).toEqual(["Copy embed", "Erase all", "Delete embed"]);
-    for (const title of ["Erase all", "Delete embed"]) {
-      const item = menu.entries.find(
-        (entry): entry is RecordedItem =>
-          entry !== "separator" && entry.calls.includes(`title:${title}`),
-      );
-      expect(item?.calls).toContain("warning:true");
-    }
+    const erase = menu.entries.find(
+      (entry): entry is RecordedItem =>
+        entry !== "separator" && entry.calls.includes("title:Erase all"),
+    );
+    expect(erase?.calls).toContain("icon:inkbook-eraser-caution");
+    expect(erase?.calls).not.toContain("warning:true");
+    expect(erase?.fragment?.querySelector(".inkbook-menu-title-content-caution")).not.toBeNull();
+    const remove = menu.entries.find(
+      (entry): entry is RecordedItem =>
+        entry !== "separator" && entry.calls.includes("title:Delete embed"),
+    );
+    expect(remove?.calls).toContain("warning:true");
   });
 });
 
@@ -197,7 +225,7 @@ describe("context menu lifecycle", () => {
       create: () => menu,
       forEvent: () => menu,
     };
-    const ownerDocument = {} as Document;
+    const ownerDocument = document;
     const canvas = { ownerDocument, isConnected: true, focus: vi.fn() };
     const control = { ownerDocument, isConnected: true, focus: vi.fn() };
     const session = openContextMenu(
@@ -229,7 +257,7 @@ describe("context menu lifecycle", () => {
       create,
       forEvent,
     };
-    const ownerDocument = {} as Document;
+    const ownerDocument = document;
     const canvas = { ownerDocument, isConnected: true, focus: vi.fn() };
     const control = { ownerDocument, isConnected: false, focus: vi.fn() };
     const session = openContextMenu(

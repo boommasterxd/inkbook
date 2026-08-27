@@ -2,6 +2,8 @@ export type { InkbookEditorChromeProps } from "./editor-chrome";
 export type {
   BackgroundSpacing,
   BackgroundType,
+  EditorMenuCallbacks,
+  OverflowMenuState,
   ShapeId,
   StyleChoiceOption,
   StyleControl,

@@ -15,7 +15,7 @@ import { validateCurrentMetadataIntegrity } from "./canonical-metadata";
 import { canonicalSnapshot } from "./canonical-snapshot";
 import { migrateAndValidateDocumentSnapshot } from "./document-migration";
 import { assertJsonContainerWidths } from "./json-container-width";
-import { isSupportedLockedHeight } from "./locked-height-compatibility";
+import { isCanonicalLockedHeight, isSupportedLockedHeight } from "./locked-height-compatibility";
 import { serializeElementPaths } from "./path-markup";
 import { SHA256_DOCUMENT_HASHER, type DocumentHashPort } from "./sha256";
 import { verifyStaticPathIntegrity } from "./static-path-integrity";
@@ -108,18 +108,19 @@ export function parseInkbookDocument(
     migrated.value,
   );
   if (!metadataIntegrity.ok) return metadataIntegrity;
-  const snapshot = migrated.value.snapshot;
-  if (snapshot.revision !== safe.revision) {
+  const sourceSnapshot = migrated.value.snapshot;
+  if (sourceSnapshot.revision !== safe.revision) {
     return failure("revision-mismatch", "Root and snapshot revisions do not match.");
   }
   const maximumBottom = migrated.value.derivations.maximumBottom;
-  if (!isSupportedLockedHeight(snapshot.page, maximumBottom, safe.lockedHeight)) {
+  if (!isSupportedLockedHeight(sourceSnapshot.page, maximumBottom, safe.lockedHeight)) {
     return failure(
       "locked-height-mismatch",
       "The SVG viewBox height is not the derived locked height.",
     );
   }
-  if (!verifyStaticPathIntegrity(decoded.value.svg, safe, snapshot)) {
+  const staticIntegrity = verifyStaticPathIntegrity(decoded.value.svg, safe, sourceSnapshot);
+  if (staticIntegrity === null) {
     return failure(
       "static-path-mismatch",
       "Static SVG paths do not match the canonical snapshot rendering.",
@@ -131,8 +132,11 @@ export function parseInkbookDocument(
       derivations: migrated.value.derivations,
       hash: hasher.hash(decoded.value.hashInput),
       lockedHeight: safe.lockedHeight,
-      requiresCanonicalRewrite: safe.requiresCanonicalRewrite,
-      snapshot,
+      requiresCanonicalRewrite:
+        safe.requiresCanonicalRewrite ||
+        staticIntegrity.requiresCanonicalRewrite ||
+        !isCanonicalLockedHeight(sourceSnapshot.page, maximumBottom, safe.lockedHeight),
+      snapshot: sourceSnapshot,
       sourceVersion: migrated.value.sourceVersion,
     },
   };

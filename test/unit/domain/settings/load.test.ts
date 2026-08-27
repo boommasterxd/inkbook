@@ -5,7 +5,7 @@ import {
   createBuiltInSettings,
   loadDeviceSettings,
   loadSettings,
-  migrateVaultSettingsToV2,
+  migrateVaultSettingsToV3,
 } from "../../../../src/domain/settings";
 
 describe("vault settings loading", () => {
@@ -15,7 +15,6 @@ describe("vault settings loading", () => {
     input.toolDefaults.highlighter.opacity = 1;
     input.toolDefaults.eraser.radius = 64;
     input.toolDefaults.table.columns = 12;
-    input.pageDefaults.writingLineHeight = 200;
     input.pageDefaults.activeBufferLines = 8;
     input.pageDefaults.lockedBufferLines = 0;
     input.filePlacement = { mode: "custom-vault-folder", folder: " Notes//Inkbook " };
@@ -27,7 +26,6 @@ describe("vault settings loading", () => {
     expect(result.value.toolDefaults.pen).not.toBe(input.toolDefaults.pen);
     expect(result.value.toolDefaults.eraser.radius).toBe(64);
     expect(result.value.pageDefaults).toMatchObject({
-      writingLineHeight: 200,
       activeBufferLines: 8,
       lockedBufferLines: 0,
     });
@@ -40,13 +38,11 @@ describe("vault settings loading", () => {
   it("accepts integer numeric values between UI steps", () => {
     const input = createBuiltInSettings();
     input.toolDefaults.eraser.radius = 9;
-    input.pageDefaults.writingLineHeight = 55;
 
     const result = loadSettings(input);
 
     expect(result.diagnostics).toEqual([]);
     expect(result.value.toolDefaults.eraser.radius).toBe(9);
-    expect(result.value.pageDefaults.writingLineHeight).toBe(55);
   });
 
   it("replaces only invalid nested fields and records their paths", () => {
@@ -137,16 +133,13 @@ describe("vault settings structural validation", () => {
     const input = createBuiltInSettings() as unknown as Record<string, unknown>;
     const toolDefaults = input.toolDefaults as Record<string, unknown>;
     const pen = toolDefaults.pen as Record<string, unknown>;
-    const pageDefaults = input.pageDefaults as Record<string, unknown>;
     pen.width = 9;
     pen.opacity = 0.25;
-    pageDefaults.writingLineHeight = 49;
 
     const result = loadSettings(input);
 
     expect(result.value.toolDefaults.pen.width).toBe(8);
     expect(result.value.toolDefaults.pen.opacity).toBe(0.25);
-    expect(result.value.pageDefaults.writingLineHeight).toBe(100);
   });
 
   it("invalidates a containing object with unknown or missing properties", () => {
@@ -170,24 +163,53 @@ describe("vault settings structural validation", () => {
       diagnostics: [{ code: "settings.invalid-root", path: "$" }],
     });
 
-    const result = loadSettings({ version: 3 });
+    const result = loadSettings({ version: 4 });
     expect(result.value).toEqual(createBuiltInSettings());
     expect(result.diagnostics).toEqual([{ code: "settings.unsupported-version", path: "version" }]);
   });
 });
 
-describe("vault settings version two migration", () => {
+describe("vault settings version three migration", () => {
   it("does not mutate versioned input", () => {
     const input = createBuiltInSettings();
-    const migrated = migrateVaultSettingsToV2(input);
+    const migrated = migrateVaultSettingsToV3(input);
 
     expect(migrated).toEqual({ value: input, diagnostics: [] });
     expect(migrated.value).toBe(input);
   });
 
-  it("migrates version-one vault settings to automatic refresh-rate detection", () => {
+  it("migrates version-two spacing labels to the shared absolute size series", () => {
     const current = createBuiltInSettings();
-    const input = { ...current, version: 1 } as Record<string, unknown>;
+    const input = {
+      ...current,
+      version: 2,
+      pageDefaults: {
+        ...current.pageDefaults,
+        backgroundSpacing: { lines: 150, dots: 20, squares: 80 },
+      },
+    };
+
+    const result = loadSettings(input);
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.value.pageDefaults.backgroundSpacing).toEqual({
+      lines: 50,
+      dots: 25,
+      squares: 100,
+    });
+    expect(input.pageDefaults.backgroundSpacing).toEqual({ lines: 150, dots: 20, squares: 80 });
+  });
+
+  it("migrates version-one vault settings and adds automatic refresh-rate detection", () => {
+    const current = createBuiltInSettings();
+    const input = {
+      ...current,
+      version: 1,
+      pageDefaults: {
+        ...current.pageDefaults,
+        backgroundSpacing: { lines: 50, dots: 20, squares: 20 },
+      },
+    } as Record<string, unknown>;
     delete input.refreshRatePreference;
 
     const result = loadSettings(input);

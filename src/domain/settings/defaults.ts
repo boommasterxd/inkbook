@@ -3,7 +3,7 @@ import {
   OUTLINE_ONLY_TOOLS,
   type ColorV1,
   type InkbookDeviceSettingsV1,
-  type InkbookSettingsV2,
+  type InkbookSettingsV3,
   type OutlineDefaultsV1,
   type ShapeDefaultsV1,
   type ToolDefaultsV1,
@@ -66,15 +66,14 @@ function toolDefaults(): ToolDefaultsV1 {
   };
 }
 
-export function createBuiltInSettings(): InkbookSettingsV2 {
+export function createBuiltInSettings(): InkbookSettingsV3 {
   return {
-    version: 2,
+    version: 3,
     startupTool: "draw",
     toolDefaults: toolDefaults(),
     pageDefaults: {
       backgroundType: "squares",
-      backgroundSpacing: { lines: 100, dots: 40, squares: 40 },
-      writingLineHeight: 100,
+      backgroundSpacing: { lines: 25, dots: 25, squares: 25 },
       activeBufferLines: 3,
       lockedBufferLines: 1,
     },

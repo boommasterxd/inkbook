@@ -1,4 +1,4 @@
-import type { BackgroundTypeV1, InkbookSettingsV2, StartupToolV1, ToolDefaultsV1 } from "./types";
+import type { BackgroundTypeV1, InkbookSettingsV3, StartupToolV1, ToolDefaultsV1 } from "./types";
 import { CANONICAL_LOCKED_BUFFER_LINES } from "../schema/public";
 
 interface SettingsValue<T> {
@@ -23,15 +23,14 @@ export interface NewFilePageSettings {
     | { readonly type: "none" }
     | {
         readonly type: Exclude<BackgroundTypeV1, "none">;
-        readonly spacing: 20 | 40 | 50 | 60 | 80 | 100 | 150 | 200;
+        readonly spacing: 25 | 33.333333333333336 | 50 | 100;
       };
-  readonly writingLineHeight: number;
   readonly activeBufferLines: number;
   readonly lockedBufferLines: number;
 }
 
 export function initializeEditorSettingsSession(
-  settings: InkbookSettingsV2,
+  settings: InkbookSettingsV3,
 ): EditorSettingsSession {
   return {
     currentTool: settings.startupTool,
@@ -52,7 +51,7 @@ export function resolveSettingPrecedence<T>(
   return builtIn;
 }
 
-export function createPageSettings(settings: InkbookSettingsV2): NewFilePageSettings {
+export function createPageSettings(settings: InkbookSettingsV3): NewFilePageSettings {
   const defaults = settings.pageDefaults;
   const type = defaults.backgroundType;
   const background =
@@ -61,7 +60,6 @@ export function createPageSettings(settings: InkbookSettingsV2): NewFilePageSett
       : ({ type, spacing: defaults.backgroundSpacing[type] } as const);
   return {
     background,
-    writingLineHeight: defaults.writingLineHeight,
     activeBufferLines: defaults.activeBufferLines,
     lockedBufferLines: CANONICAL_LOCKED_BUFFER_LINES,
   };

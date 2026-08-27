@@ -1,4 +1,8 @@
-import { centeredGuideAxis } from "../../domain/geometry/public";
+import {
+  backgroundGuideLayout,
+  centeredGuideAxis,
+  topAnchoredGuideAxis,
+} from "../../domain/geometry/public";
 import type { BackgroundV1, PageV1 } from "../../domain/schema/public";
 import { PAGE_MARGIN, PAGE_WIDTH } from "../../domain/schema/public";
 import { serializeSvgNumber } from "../documents/svg-number";
@@ -59,13 +63,44 @@ export class BackgroundFragmentCache {
 }
 
 export function serializeBackgroundPaths(background: BackgroundV1, lockedHeight: number): string[] {
+  return serializeBackgroundPathsWithAlignment(background, lockedHeight, "canonical");
+}
+
+export function serializePreviousTopAnchoredBackgroundPaths(
+  background: BackgroundV1,
+  lockedHeight: number,
+): string[] {
+  return serializeBackgroundPathsWithAlignment(background, lockedHeight, "previous-top-anchored");
+}
+
+export function serializePreviousInsetBackgroundPaths(
+  background: BackgroundV1,
+  lockedHeight: number,
+): string[] {
+  return serializeBackgroundPathsWithAlignment(background, lockedHeight, "previous-inset");
+}
+
+export function serializeLegacyCenteredBackgroundPaths(
+  background: BackgroundV1,
+  lockedHeight: number,
+): string[] {
+  return serializeBackgroundPathsWithAlignment(background, lockedHeight, "centered");
+}
+
+type BackgroundAlignment = "canonical" | "centered" | "previous-inset" | "previous-top-anchored";
+
+function serializeBackgroundPathsWithAlignment(
+  background: BackgroundV1,
+  lockedHeight: number,
+  alignment: BackgroundAlignment,
+): string[] {
   const page = serializePage(lockedHeight);
   if (background.type === "none") return [page];
 
   const guidePaths =
     background.type === "dots"
-      ? dotPaths(background.spacing, lockedHeight)
-      : gridPaths(background.type, background.spacing, lockedHeight);
+      ? dotPaths(background, lockedHeight, alignment)
+      : gridPaths(background, lockedHeight, alignment);
   const attributes = guideAttributes(background.type);
   return [page, ...guidePaths.map((path) => serializePath(path, attributes))];
 }
@@ -91,9 +126,9 @@ function backgroundCommandStatistics(
   background: Exclude<BackgroundV1, { type: "none" }>,
   lockedHeight: number,
 ): { readonly bytes: number; readonly subpaths: number } {
-  const extent = guideExtent(background.type, background.spacing, lockedHeight);
-  const xs = axisStatistics(extent.startX, extent.endX, background.spacing);
-  const ys = axisStatistics(extent.startY, extent.endY, background.spacing);
+  const extent = guideExtent(background, lockedHeight);
+  const xs = axisStatistics(extent.startX, extent.endX, extent.xStep, extent.xCount);
+  const ys = axisStatistics(extent.startY, extent.endY, extent.yStep, extent.yCount);
   if (background.type === "dots") {
     return {
       bytes: ys.count * (4 * xs.count + 2 * xs.serializedBytes) + 2 * xs.count * ys.serializedBytes,
@@ -103,7 +138,7 @@ function backgroundCommandStatistics(
   const fixedHorizontalBytes = number(extent.startX).length + number(extent.endX).length + 4;
   const horizontalBytes = ys.count * fixedHorizontalBytes + 2 * ys.serializedBytes;
   if (background.type === "lines") return { bytes: horizontalBytes, subpaths: ys.count };
-  const fixedVerticalBytes = number(extent.startY).length + number(extent.endY).length + 4;
+  const fixedVerticalBytes = number(extent.coverageStartY).length + number(extent.endY).length + 4;
   return {
     bytes: horizontalBytes + xs.count * fixedVerticalBytes + 2 * xs.serializedBytes,
     subpaths: ys.count + xs.count,
@@ -114,72 +149,220 @@ function axisStatistics(
   start: number,
   end: number,
   spacing: number,
+  count: number,
 ): { readonly count: number; readonly serializedBytes: number } {
-  let count = 0;
   let serializedBytes = 0;
-  for (let value = start; value <= end; value += spacing) {
-    count += 1;
+  for (let index = 0; index < count; index += 1) {
+    const value = axisPoint(start, end, spacing, index, count);
     serializedBytes += number(value).length;
   }
   return { count, serializedBytes };
 }
 
-function gridPaths(type: "lines" | "squares", spacing: number, lockedHeight: number): string[] {
+function gridPaths(
+  background: Extract<BackgroundV1, { type: "lines" | "squares" }>,
+  lockedHeight: number,
+  alignment: BackgroundAlignment,
+): string[] {
   const paths = new GuidePathChunks();
-  const extent = guideExtent(type, spacing, lockedHeight);
-  for (let y = extent.startY; y <= extent.endY; y += spacing) {
+  const { type } = background;
+  const extent = guideExtent(background, lockedHeight, alignment);
+  for (let index = 0; index < extent.yCount; index += 1) {
+    const y = axisPoint(extent.startY, extent.endY, extent.yStep, index, extent.yCount);
     paths.push(lineSubpath(extent.startX, y, extent.endX, y));
   }
   if (type === "squares") {
-    for (let x = extent.startX; x <= extent.endX; x += spacing) {
-      paths.push(lineSubpath(x, extent.startY, x, extent.endY));
+    for (let index = 0; index < extent.xCount; index += 1) {
+      const x = axisPoint(extent.startX, extent.endX, extent.xStep, index, extent.xCount);
+      paths.push(lineSubpath(x, extent.coverageStartY, x, extent.endY));
     }
   }
   return paths.finish();
 }
 
-function dotPaths(spacing: number, lockedHeight: number): string[] {
+function dotPaths(
+  background: Extract<BackgroundV1, { type: "dots" }>,
+  lockedHeight: number,
+  alignment: BackgroundAlignment,
+): string[] {
   const paths = new GuidePathChunks();
-  const extent = guideExtent("dots", spacing, lockedHeight);
-  for (let y = extent.startY; y <= extent.endY; y += spacing) {
-    for (let x = extent.startX; x <= extent.endX; x += spacing) {
+  const extent = guideExtent(background, lockedHeight, alignment);
+  for (let yIndex = 0; yIndex < extent.yCount; yIndex += 1) {
+    const y = axisPoint(extent.startY, extent.endY, extent.yStep, yIndex, extent.yCount);
+    for (let xIndex = 0; xIndex < extent.xCount; xIndex += 1) {
+      const x = axisPoint(extent.startX, extent.endX, extent.xStep, xIndex, extent.xCount);
       paths.push(lineSubpath(x, y, x, y));
     }
   }
   return paths.finish();
 }
 
+function axisPoint(
+  start: number,
+  end: number,
+  spacing: number,
+  index: number,
+  count: number,
+): number {
+  return index === count - 1 ? end : start + index * spacing;
+}
+
 interface GuideExtent {
+  readonly coverageStartY: number;
   readonly endX: number;
   readonly endY: number;
   readonly startX: number;
   readonly startY: number;
+  readonly xCount: number;
+  readonly xStep: number;
+  readonly yCount: number;
+  readonly yStep: number;
 }
 
-function guideExtent(
+function guideExtentForType(
   type: Exclude<BackgroundV1["type"], "none">,
   spacing: number,
   lockedHeight: number,
+  alignment: Exclude<BackgroundAlignment, "canonical">,
 ): GuideExtent {
-  const vertical = centeredGuideAxis(
-    PAGE_MARGIN,
-    Math.max(0, lockedHeight - 2 * PAGE_MARGIN),
-    spacing,
-  );
+  const writableHeight = Math.max(0, lockedHeight - 2 * PAGE_MARGIN);
+  const centeredVertical = centeredGuideAxis(PAGE_MARGIN, writableHeight, spacing);
+  const vertical =
+    alignment === "centered"
+      ? {
+          count: centeredVertical.intervalCount + 1,
+          end: centeredVertical.end,
+          start: centeredVertical.start,
+        }
+      : previousTopAnchoredAxis(PAGE_MARGIN, writableHeight, spacing);
+  const coverageStartY = alignment === "centered" ? vertical.start : PAGE_MARGIN;
   if (type === "lines") {
     return {
+      coverageStartY,
       endX: PAGE_WIDTH - PAGE_MARGIN,
       endY: vertical.end,
       startX: PAGE_MARGIN,
       startY: vertical.start,
+      xCount: 0,
+      xStep: spacing,
+      yCount: vertical.count,
+      yStep: spacing,
     };
   }
   const horizontal = centeredGuideAxis(PAGE_MARGIN, PAGE_WIDTH - 2 * PAGE_MARGIN, spacing);
   return {
+    coverageStartY,
     endX: horizontal.end,
     endY: vertical.end,
     startX: horizontal.start,
     startY: vertical.start,
+    xCount: horizontal.intervalCount + 1,
+    xStep: spacing,
+    yCount: vertical.count,
+    yStep: spacing,
+  };
+}
+
+function guideExtent(
+  background: Exclude<BackgroundV1, { type: "none" }>,
+  lockedHeight: number,
+  alignment: BackgroundAlignment = "canonical",
+): GuideExtent {
+  if (alignment === "previous-inset") {
+    return previousInsetGuideExtent(background, lockedHeight);
+  }
+  if (alignment !== "canonical") {
+    return guideExtentForType(background.type, background.spacing, lockedHeight, alignment);
+  }
+  const layout = backgroundGuideLayout({
+    background,
+    innerWidth: PAGE_WIDTH - 2 * PAGE_MARGIN,
+    margin: PAGE_MARGIN,
+    pageHeight: lockedHeight,
+  });
+  return {
+    coverageStartY: layout.top,
+    endX: layout.right,
+    endY: layout.bottom,
+    startX: layout.left,
+    startY: layout.top,
+    xCount: layout.horizontalPointCount,
+    xStep: layout.horizontalSpacing,
+    yCount: layout.verticalPointCount,
+    yStep: layout.verticalSpacing,
+  };
+}
+
+function previousInsetGuideExtent(
+  background: Exclude<BackgroundV1, { type: "none" }>,
+  lockedHeight: number,
+): GuideExtent {
+  const writableHeight = Math.max(0, lockedHeight - 2 * PAGE_MARGIN);
+  const horizontal = centeredGuideAxis(
+    PAGE_MARGIN,
+    PAGE_WIDTH - 2 * PAGE_MARGIN,
+    background.spacing,
+  );
+  const vertical = topAnchoredGuideAxis(PAGE_MARGIN, writableHeight, background.spacing);
+  if (background.type === "squares") {
+    return {
+      coverageStartY: vertical.start,
+      endX: horizontal.end,
+      endY: vertical.end,
+      startX: horizontal.start,
+      startY: vertical.start,
+      xCount: horizontal.intervalCount + 1,
+      xStep: background.spacing,
+      yCount: vertical.intervalCount + 1,
+      yStep: background.spacing,
+    };
+  }
+  const insetVertical = previousInsetAxis(vertical, background.spacing);
+  if (background.type === "lines") {
+    return {
+      coverageStartY: insetVertical.start,
+      endX: PAGE_WIDTH - PAGE_MARGIN,
+      endY: insetVertical.end,
+      startX: PAGE_MARGIN,
+      startY: insetVertical.start,
+      xCount: 0,
+      xStep: background.spacing,
+      yCount: insetVertical.count,
+      yStep: background.spacing,
+    };
+  }
+  const insetHorizontal = previousInsetAxis(horizontal, background.spacing);
+  return {
+    coverageStartY: insetVertical.start,
+    endX: insetHorizontal.end,
+    endY: insetVertical.end,
+    startX: insetHorizontal.start,
+    startY: insetVertical.start,
+    xCount: insetHorizontal.count,
+    xStep: background.spacing,
+    yCount: insetVertical.count,
+    yStep: background.spacing,
+  };
+}
+
+function previousInsetAxis(axis: ReturnType<typeof topAnchoredGuideAxis>, spacing: number) {
+  if (axis.intervalCount < 2) {
+    const center = (axis.start + axis.end) / 2;
+    return { count: 0, end: center, start: center };
+  }
+  return {
+    count: axis.intervalCount - 1,
+    end: axis.end - spacing,
+    start: axis.start + spacing,
+  };
+}
+
+function previousTopAnchoredAxis(start: number, length: number, spacing: number) {
+  const count = Math.max(0, Math.floor(length / spacing));
+  return {
+    count,
+    end: start + count * spacing,
+    start: start + spacing,
   };
 }
 

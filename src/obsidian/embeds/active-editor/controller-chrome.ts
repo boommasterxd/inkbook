@@ -1,17 +1,19 @@
-import type { PageV1 } from "../../../domain/schema/public";
 import type { EditorTool } from "../../../editor/input/index";
 import type {
+  EditorMenuCallbacks,
   InkbookEditorChromeProps,
+  OverflowMenuState,
   ShapeId,
   ToolbarLayoutStage,
   ToolbarState,
-  StyleControl,
 } from "../../../rendering/ui/index";
 import type { ActiveEditorBackgroundSession } from "./background-session";
 import type { ActiveEditorActions } from "./controller-actions";
 import type { ActiveEditorChromeState } from "./controller-chrome-state";
-import { backgroundState } from "./controller-helpers";
 import type { ActiveEditorStyleSession } from "./style-session";
+import type { EditableDocumentModel } from "../vault-document-session";
+import type { ActiveEditorMenuController } from "./controller-menu";
+import { backgroundState } from "./controller-helpers";
 
 type ActiveEditorChromeDependencies = readonly [
   actions: ActiveEditorActions,
@@ -28,11 +30,17 @@ type ActiveEditorChromeHandlers = readonly [
 export function createChromeCallbacks(
   [actions, background, chromeState, styles]: ActiveEditorChromeDependencies,
   [activeTool, configureTool]: ActiveEditorChromeHandlers,
-): InkbookEditorChromeProps["callbacks"] {
-  return {
+  [menus, model, selectionSize, renderIcon]: readonly [
+    ActiveEditorMenuController,
+    EditableDocumentModel,
+    () => number,
+    InkbookEditorChromeProps["renderIcon"],
+  ],
+): EditorMenuCallbacks {
+  const callbacks: EditorMenuCallbacks = {
     onBackgroundSpacingChange: (spacing) => background.changeSpacing(spacing),
+    onBackgroundSpacingPreview: (spacing) => background.previewSpacing(spacing),
     onBackgroundTypeChange: (type) => background.changeType(type),
-    onFlyoutClose: () => chromeState.setFlyout(null),
     onOverflowAction: (action) => {
       chromeState.setFlyout(null);
       if (actions.isAvailable(action)) actions.execute(action);
@@ -40,51 +48,102 @@ export function createChromeCallbacks(
     onShapeChange: (shape) => configureTool(chromeState.selectShape(shape)),
     onStyleChange: (id, value) => styles.apply(activeTool(), id, value),
   };
+  configureActiveEditorToolbarMenus(
+    [menus, actions, chromeState, styles, model],
+    [activeTool, selectionSize, callbacks, renderIcon],
+  );
+  return callbacks;
 }
 
-export interface ActiveEditorChromeOptions {
-  readonly canvasInput: HTMLElement;
-  readonly callbacks: InkbookEditorChromeProps["callbacks"];
+interface ActiveEditorChromeOptions {
   readonly layout: ToolbarLayoutStage;
   readonly leftHanded: boolean;
   readonly onToolbarAction: InkbookEditorChromeProps["onToolbarAction"];
   readonly ownerDocument: Document;
-  readonly overflowMenu: InkbookEditorChromeProps["overflowMenu"];
-  readonly page: PageV1;
   readonly renderIcon: InkbookEditorChromeProps["renderIcon"];
   readonly selectedShape: ShapeId;
+  readonly shapeIcon: InkbookEditorChromeProps["shapeIcon"];
   readonly style: {
-    readonly controls: readonly StyleControl[];
     readonly icon: InkbookEditorChromeProps["styleIcon"];
   };
   readonly toolbarState: ToolbarState;
 }
 
-export function createChromeProps(options: ActiveEditorChromeOptions): InkbookEditorChromeProps {
+function createChromeProps(options: ActiveEditorChromeOptions): InkbookEditorChromeProps {
   return {
-    background: backgroundState(options.page),
-    callbacks: options.callbacks,
-    canvasInput: options.canvasInput,
     layout: options.layout,
     leftHanded: options.leftHanded,
     onToolbarAction: options.onToolbarAction,
     ownerDocument: options.ownerDocument,
-    overflowMenu: options.overflowMenu,
     renderIcon: options.renderIcon,
     selectedShape: options.selectedShape,
-    styleControls: options.style.controls,
+    shapeIcon: options.shapeIcon,
     styleIcon: options.style.icon,
     toolbarState: options.toolbarState,
   };
 }
 
-export function overflowMenuState(
-  actions: ActiveEditorActions,
-  hasSelection: boolean,
-): InkbookEditorChromeProps["overflowMenu"] {
+export function createActiveEditorChromeProps(
+  [chromeState, styles]: readonly [ActiveEditorChromeState, ActiveEditorStyleSession],
+  [activeTool, leftHanded, onToolbarAction, ownerDocument, renderIcon, toolbarState]: readonly [
+    EditorTool,
+    boolean,
+    InkbookEditorChromeProps["onToolbarAction"],
+    Document,
+    InkbookEditorChromeProps["renderIcon"],
+    ToolbarState,
+  ],
+): InkbookEditorChromeProps {
+  const style = styles.presentation(activeTool);
+  return createChromeProps({
+    layout: chromeState.layout,
+    leftHanded,
+    onToolbarAction,
+    ownerDocument,
+    renderIcon,
+    selectedShape: chromeState.selectedShape,
+    shapeIcon: style.shapeIcon,
+    style,
+    toolbarState,
+  });
+}
+
+function overflowMenuState(actions: ActiveEditorActions, hasSelection: boolean): OverflowMenuState {
   return {
     arrange: actions.arrangeAvailability(),
     canEraseAll: actions.isAvailable("erase-all"),
     hasSelection,
   };
+}
+
+function configureActiveEditorToolbarMenus(
+  [menus, actions, chromeState, styles, model]: readonly [
+    ActiveEditorMenuController,
+    ActiveEditorActions,
+    ActiveEditorChromeState,
+    ActiveEditorStyleSession,
+    EditableDocumentModel,
+  ],
+  [activeTool, selectionSize, callbacks, renderIcon]: readonly [
+    () => EditorTool,
+    () => number,
+    EditorMenuCallbacks,
+    InkbookEditorChromeProps["renderIcon"],
+  ],
+): void {
+  menus.configureToolbar({
+    getState: () => {
+      const style = styles.presentation(activeTool());
+      return {
+        background: backgroundState(model.page),
+        overflow: overflowMenuState(actions, selectionSize() > 0),
+        selectedShape: chromeState.selectedShape,
+        shapeIcon: style.shapeIcon,
+        styleControls: style.controls,
+      };
+    },
+    handlers: callbacks,
+    onOpenChange: (id) => chromeState.setFlyout(id),
+    renderIcon,
+  });
 }

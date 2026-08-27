@@ -146,14 +146,18 @@ describe("active editor revision capacity", () => {
     expect(history.canRedo).toBe(true);
 
     const onPageChanged = vi.fn();
+    const onPagePreview = vi.fn();
     const onStateChanged = vi.fn();
     const background = new ActiveEditorBackgroundSession({
-      backgroundSpacing: () => ({ dots: 40, lines: 100, squares: 40 }),
+      backgroundSpacing: () => ({ dots: 25, lines: 25, squares: 25 }),
       history,
       model,
       onPageChanged,
+      onPagePreviewFinish: vi.fn(),
+      onPagePreview,
       onStateChanged,
     });
+    background.previewSpacing("xl");
     background.changeType("dots");
     expect(
       history.reorder({ content: [rectangle().id], highlight: [] }, { content: [], highlight: [] }),
@@ -166,6 +170,7 @@ describe("active editor revision capacity", () => {
     ).toBe(false);
     expect(model.page).toEqual(emptySnapshot().page);
     expect(onPageChanged).not.toHaveBeenCalled();
+    expect(onPagePreview).not.toHaveBeenCalled();
     expect(onStateChanged).not.toHaveBeenCalled();
     expect(history.commandCount).toBe(1);
   });

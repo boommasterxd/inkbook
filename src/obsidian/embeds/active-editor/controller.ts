@@ -11,7 +11,7 @@ import type { ActiveEditorActions } from "./controller-actions";
 import type { ActiveEditorControllerOptions } from "./controller-types";
 import type { CoalescedPointerInput } from "./coalesced-input";
 import { ActiveEditorBackgroundSession } from "./background-session";
-import { createChromeCallbacks, createChromeProps, overflowMenuState } from "./controller-chrome";
+import { createActiveEditorChromeProps, createChromeCallbacks } from "./controller-chrome";
 import { applyInputAction } from "./controller-dispatch";
 import type { ActiveEditorMenuController } from "./controller-menu";
 import * as ControllerInteractions from "./controller-interactions";
@@ -41,7 +41,6 @@ export class ActiveEditorController {
   readonly #background: ActiveEditorBackgroundSession;
   readonly #captures: ActivePointerCaptureOwner;
   readonly #chromeState: ActiveEditorChromeState;
-  readonly #chromeCallbacks: InkbookEditorChromeProps["callbacks"];
   readonly #coalesced: CoalescedPointerInput;
   readonly #gestures: GestureController;
   readonly #handles: ActiveEditorHandleInteraction;
@@ -65,8 +64,8 @@ export class ActiveEditorController {
   readonly #sliceBudgetMs: () => number;
   #scrollOwner: Scrolling.BrowserScrollElement;
   readonly #styles: ActiveEditorStyleSession;
-  readonly #toolbarAction: InkbookEditorChromeProps["onToolbarAction"] = (action) =>
-    this.handleToolbarAction(action);
+  readonly #toolbarAction: InkbookEditorChromeProps["onToolbarAction"] = (action, trigger) =>
+    this.handleToolbarAction(action, trigger);
   readonly #selectionEdgeDrag: ActiveEditorControllerOptions["selectionEdgeDrag"];
   readonly #navigation: ActiveEditorNavigation;
   #selection: ReadonlySet<string> = new Set();
@@ -74,6 +73,12 @@ export class ActiveEditorController {
   #leftHanded: boolean;
   #lastSessionPointer: EditorInput.PointerSample | null = null;
   #lastSessionScreenPointer: EditorInput.PointerSample | null = null;
+  readonly #resetForDisable = (): void =>
+    ControllerInteractions.resetActiveEditorForDisable(
+      [this.#chromeState, this.#menus, this.#handles, this.#captures, this.#gestures],
+      [this.#model, this.#navigation, this.#penGuard],
+      [() => this.#dispatch({ type: "reset" }), (pointerId) => this.#captures.release(pointerId)],
+    );
   public constructor(options: ActiveEditorControllerOptions) {
     this.#model = options.model;
     this.#interruptLayoutForInput = options.interruptLayoutForInput;
@@ -91,11 +96,9 @@ export class ActiveEditorController {
     this.#sliceBudgetMs = options.sliceBudgetMs ?? (() => 8);
     this.#scrollOwner = options.scrollOwner;
     this.#availability = new ActiveEditorAvailability({
-      onDisabled: () => this.#resetForDisable(),
+      onDisabled: this.#resetForDisable,
       onStateChanged: this.#onStateChanged,
-      setInputInert: (inert) => {
-        this.#renderer.inputSurface.inert = inert;
-      },
+      setInputInert: (inert) => (this.#renderer.inputSurface.inert = inert),
     });
     this.#history = options.history;
     this.#historyTraversal = new ActiveEditorHistoryTraversal({
@@ -108,6 +111,8 @@ export class ActiveEditorController {
       history: this.#history,
       model: this.#model,
       onPageChanged: options.onPageChanged,
+      onPagePreviewFinish: options.onPagePreviewFinish,
+      onPagePreview: options.onPagePreview,
       onStateChanged: this.#onStateChanged,
     });
     this.#styles = new ActiveEditorStyleSession({
@@ -167,26 +172,24 @@ export class ActiveEditorController {
     this.#keyboard = this.#createKeyboardController(options);
     this.#pointer = this.#createPointerController(ownerWindow);
     this.#gestures = this.#createGestureController();
-    this.#chromeCallbacks = createChromeCallbacks(
+    createChromeCallbacks(
       [this.#actions, this.#background, this.#chromeState, this.#styles],
       [() => this.#input.activeTool, (tool) => this.#configureTool(tool)],
+      [this.#menus, this.#model, () => this.#selection.size, this.#renderIcon],
     );
   }
   public chromeProps() {
-    return createChromeProps({
-      canvasInput: this.#renderer.inputSurface,
-      callbacks: this.#chromeCallbacks,
-      layout: this.#chromeState.layout,
-      leftHanded: this.#leftHanded,
-      onToolbarAction: this.#toolbarAction,
-      ownerDocument: this.#ownerWindow.document,
-      overflowMenu: overflowMenuState(this.#actions, this.#selection.size > 0),
-      page: this.#model.page,
-      renderIcon: this.#renderIcon,
-      selectedShape: this.#chromeState.selectedShape,
-      style: this.#styles.presentation(this.#input.activeTool),
-      toolbarState: this.toolbarState(),
-    });
+    return createActiveEditorChromeProps(
+      [this.#chromeState, this.#styles],
+      [
+        this.#input.activeTool,
+        this.#leftHanded,
+        this.#toolbarAction,
+        this.#ownerWindow.document,
+        this.#renderIcon,
+        this.toolbarState(),
+      ],
+    );
   }
   public dispose(): void {
     this.#availability.setEnabled(false);
@@ -240,7 +243,7 @@ export class ActiveEditorController {
       this.#pointer.cancelPointer(pointerId);
     }
   }
-  public handleToolbarAction(action: ToolbarAction): void {
+  public handleToolbarAction(action: ToolbarAction, trigger?: HTMLButtonElement): void {
     if (!this.#availability.acceptsInput) return;
     if (isTool(action)) {
       this.#configureTool(this.#chromeState.activateTool(action));
@@ -249,9 +252,8 @@ export class ActiveEditorController {
     if (action === "undo") this.#historyTraversal.undo();
     else if (action === "redo") this.#historyTraversal.redo();
     else if (action === "lock") this.#onLock();
-    else if (action === "shape-picker") this.#chromeState.toggleFlyout("shape");
-    else if (action === "background" || action === "overflow" || action === "style")
-      this.#chromeState.toggleFlyout(action);
+    else if (action === "shape-picker" || action === "overflow" || action === "style")
+      this.#menus.toggleToolbar(action === "shape-picker" ? "shape" : action, trigger);
     else if (action === "finger-drawing") this.#toggleFingerDrawing();
     else if (
       (action === "delete" || action === "copy" || action === "cut" || action === "paste") &&
@@ -330,7 +332,7 @@ export class ActiveEditorController {
     });
   }
   #beginPreview(start: GesturePreviewStart) {
-    this.#chromeState.closeFlyout();
+    if (this.#chromeState.closeFlyout()) this.#menus.closeToolbar();
     const pageStart = { ...start, pointer: this.#navigation.pageSample(start.pointer) };
     return this.#coalesced.wrapProjected(
       createActiveEditorPreview(pageStart, {
@@ -366,6 +368,7 @@ export class ActiveEditorController {
       activeTool: tool,
     }).state;
     const closedFlyout = this.#chromeState.closeFlyout();
+    if (closedFlyout) this.#menus.closeToolbar();
     if (changed && !closedFlyout) this.#onStateChanged();
   }
   #cancelActiveGesture(): boolean {
@@ -375,7 +378,7 @@ export class ActiveEditorController {
     }
     const pointerId = this.#handles.activePointerId;
     if (pointerId === undefined || !this.#handles.cancel(pointerId)) return false;
-    this.#releasePointer(pointerId);
+    this.#captures.release(pointerId);
     this.#navigation.finish();
     this.#penGuard.stop();
     return true;
@@ -383,6 +386,7 @@ export class ActiveEditorController {
   #interruptForInput(): void {
     this.#interruptLayoutForInput();
     this.#chromeState.closeFlyout();
+    this.#menus.closeToolbar();
   }
   #createGestureController(): GestureController {
     return new GestureController({
@@ -399,7 +403,7 @@ export class ActiveEditorController {
           source === "keyboard" ? position : this.#navigation.pagePointFromScreen(position),
         ),
       panPage: (screenDeltaX) => this.#navigation.pan(ControllerTouch.touchPanDelta(screenDeltaX)),
-      releasePointer: (pointerId) => this.#releasePointer(pointerId),
+      releasePointer: (pointerId) => this.#captures.release(pointerId),
       restoreTemporaryTool: () => this.#onStateChanged(),
       revertNavigation: (kind) =>
         kind === "page-pan" ? this.#navigation.revert() : this.#navigation.finish(),
@@ -422,7 +426,11 @@ export class ActiveEditorController {
       actions: this.#actions,
       cancelGesture: () => this.#cancelActiveGesture(),
       clearSelection: () => this.#setSelection(new Set()),
-      closeFlyout: () => this.#chromeState.closeFlyout(),
+      closeFlyout: () => {
+        const closed = this.#chromeState.closeFlyout();
+        if (closed) this.#menus.closeToolbar();
+        return closed;
+      },
       history: this.#history,
       lastScreenPointer: () => this.#lastSessionScreenPointer,
       navigation: this.#navigation,
@@ -455,7 +463,7 @@ export class ActiveEditorController {
       navigation: this.#navigation,
       ownerWindow,
       renderer: this.#renderer,
-      releasePointer: (pointerId) => this.#releasePointer(pointerId),
+      releasePointer: (pointerId) => this.#captures.release(pointerId),
       sceneStore: this.#sceneStore,
       selection: () => this.#selection,
       setLastPointer: (page, screen) => {
@@ -473,19 +481,6 @@ export class ActiveEditorController {
       this.#penGuard,
       this.#navigation,
     );
-  }
-  readonly #releasePointer = (pointerId: number): void => this.#captures.release(pointerId);
-  #resetForDisable(): void {
-    this.#dispatch({ type: "reset" });
-    const handlePointerId = this.#handles.activePointerId;
-    if (handlePointerId !== undefined && this.#handles.cancel(handlePointerId)) {
-      this.#releasePointer(handlePointerId);
-      this.#navigation.finish();
-    }
-    this.#captures.releaseAll();
-    this.#gestures.cancelActivePreview();
-    this.#model.setGestureActive(false);
-    this.#penGuard.stop();
   }
   #setSelection(selection: ReadonlySet<string>): void {
     if (selection === this.#selection) return;

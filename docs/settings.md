@@ -3,7 +3,7 @@
 ## Principles
 
 - Settings expose stable user preferences, not internal performance tuning.
-- Every value available in a tool's Style flyout MUST have a configurable default for that tool.
+- Every value available in a tool's Style menu MUST have a configurable default for that tool.
 - Changing a default affects newly created elements only. It never rewrites existing elements.
 - Settings UI rejects invalid values and does not persist them. On load, an invalid persisted field falls back to its documented built-in default; the loader does not silently clamp it. Versioned migrations may explicitly map a formerly valid numeric value into a new range.
 - Settings migrations are pure and versioned separately from the document format.
@@ -12,12 +12,12 @@
 
 Settings have four scopes:
 
-| Scope            | Storage                | Examples                                                                  |
-| ---------------- | ---------------------- | ------------------------------------------------------------------------- |
-| Vault            | Obsidian plugin data   | Tool defaults, page defaults, file placement, display refresh-rate mode   |
-| Device and vault | Obsidian local storage | Finger drawing, pen-tap insertion, handedness, motion preference          |
-| File             | Editable SVG snapshot  | Current background type and spacing, element styles                       |
-| Session          | Memory only            | Current tool, current flyout values, finger toggle, zoom, camera position |
+| Scope            | Storage                | Examples                                                                |
+| ---------------- | ---------------------- | ----------------------------------------------------------------------- |
+| Vault            | Obsidian plugin data   | Tool defaults, page defaults, file placement, display refresh-rate mode |
+| Device and vault | Obsidian local storage | Finger drawing, pen-tap insertion, handedness, motion preference        |
+| File             | Editable SVG snapshot  | Current background type and spacing, element styles                     |
+| Session          | Memory only            | Current tool, current menu values, finger toggle, zoom, camera position |
 
 Vault settings use `Plugin.loadData()` and `Plugin.saveData()`. Device settings use `App.loadLocalStorage("inkbook:device-settings:v1")` and `App.saveLocalStorage(...)`. They are local to the current device and vault and contain preferences only, never vault paths, note content, clipboard data, or ink data.
 
@@ -33,11 +33,11 @@ On editor activation, session tool values are initialized from vault defaults. S
 ## Settings Root
 
 ```ts
-interface InkbookSettingsV2 {
-  version: 2;
+interface InkbookSettingsV3 {
+  version: 3;
   startupTool: StartupToolV1;
   toolDefaults: ToolDefaultsV1;
-  pageDefaults: PageDefaultsV1;
+  pageDefaults: PageDefaultsV3;
   filePlacement: FilePlacementV1;
   refreshRatePreference: "auto" | 60 | 90 | 120 | 144 | 240;
 }
@@ -70,7 +70,7 @@ interface InkbookDeviceSettingsV1 {
 
 The built-in startup tool is `draw`.
 
-Version 1 vault settings migrate to version 2 by adding `refreshRatePreference: "auto"`; every existing tool, page, and placement value is preserved. The device-settings schema remains version 1.
+Version 1 vault settings first migrate to version 2 by adding `refreshRatePreference: "auto"`. Version 1 and 2 vault settings then migrate to version 3 by mapping each former S/M/L/XL background value to the same ordinal position in the shared 25, 100 / 3, 50, and 100 page-unit series. The obsolete configurable writing-line height is discarded; current files always use the fixed 100-unit layout step. Tool, placement, buffer-count, and refresh-rate values otherwise remain unchanged. The device-settings schema remains version 1.
 
 ## Display Refresh Rate
 
@@ -118,7 +118,7 @@ Built-in values:
 - opacity: 1
 - pressure enabled: true
 
-Pressure sensitivity is shown in the pen Style flyout and in Settings. Smoothing remains an implementation constant in version 1 to avoid exposing a low-level performance control.
+Pressure sensitivity is shown in the pen Style menu and in Settings. Smoothing remains an implementation constant in version 1 to avoid exposing a low-level performance control.
 
 ## Highlighter Defaults
 
@@ -147,7 +147,7 @@ Every shape type has its own persisted default entry, even when several entries 
 ```ts
 interface OutlineDefaultsV1 {
   outlineColor: ColorV1;
-  outlineWidth: 2 | 4 | 8 | 12;
+  outlineWidth: 1 | 2 | 4 | 8 | 12;
   outlineStyle: "solid" | "dashed" | "dotted";
   outlineOpacity: number;
 }
@@ -200,19 +200,18 @@ interface EraserDefaultsV1 {
 - valid range: 8 through 64 screen pixels
 - adjustment step: 4 pixels
 
-The eraser radius is available in the Eraser Style flyout and Settings. It is screen-relative and therefore visually stable while zooming.
+The eraser radius is available in the Eraser Style menu and Settings. It is screen-relative and therefore visually stable while zooming.
 
 ## Page Defaults
 
 ```ts
-interface PageDefaultsV1 {
+interface PageDefaultsV3 {
   backgroundType: "none" | "lines" | "dots" | "squares";
   backgroundSpacing: {
-    lines: 50 | 100 | 150 | 200;
-    dots: 20 | 40 | 60 | 80;
-    squares: 20 | 40 | 60 | 80;
+    lines: 25 | 33.333333333333336 | 50 | 100;
+    dots: 25 | 33.333333333333336 | 50 | 100;
+    squares: 25 | 33.333333333333336 | 50 | 100;
   };
-  writingLineHeight: number;
   activeBufferLines: number;
   lockedBufferLines: 1;
 }
@@ -221,37 +220,34 @@ interface PageDefaultsV1 {
 Built-in values:
 
 - background type: Squares
-- Lines spacing: M, 100 page units
-- Dots spacing: M, 40 page units
-- Squares spacing: M, 40 page units
-- writing line height: 100 page units
+- Lines spacing: S, 25 page units
+- Dots spacing: S, 25 page units
+- Squares spacing: S, 25 page units
 - active buffer lines: 3
 - locked compatibility value: 1
 
 Validation:
 
-- writing line height: integer from 50 through 200 page units, step 10
 - active buffer lines: integer from 1 through 8, step 1
 - locked compatibility value: current writers use 1; the loader still accepts legacy integers from 0 through 8
 
-The selected background type and all three spacing defaults are independent. A new file copies the selected type, that type's spacing, writing-line height, and active buffer count into its `PageV1`, then writes the canonical locked compatibility value `1`. Locked trailing space is fixed by the page-extent contract and is not exposed as a setting. Switching an existing file to another background type copies that type's current vault spacing into the file through one undoable background command. Later vault-setting changes never mutate existing files.
+The selected background type and all three spacing defaults are independent. A new file copies the selected type, that type's absolute spacing, and the active buffer count into its `PageV1`, then writes the fixed 100-unit layout step and canonical locked value `1`. Locked trailing space and the layout-step size are fixed by the page-extent contract and are not exposed as settings. Switching an existing file to another background type copies that type's current vault spacing into the file through one undoable background command. Later vault-setting changes never mutate existing files.
 
 ## Validation Matrix
 
 All numeric ranges are inclusive.
 
-| Field                         | Accepted values                        |  UI step |
-| ----------------------------- | -------------------------------------- | -------: |
-| Pen or highlighter opacity    | finite number from 0 through 1         |     0.05 |
-| Shape outline or fill opacity | finite number from 0 through 1         |     0.05 |
-| Pen or highlighter width      | the listed discrete width values       | Discrete |
-| Shape outline width           | the listed discrete width values       | Discrete |
-| Eraser radius                 | integer from 8 through 64 CSS pixels   |        4 |
-| Table columns                 | integer from 1 through 12              |        1 |
-| Writing-line height           | integer from 50 through 200 page units |       10 |
-| Display refresh rate          | auto, 60, 90, 120, 144, or 240         | Discrete |
-| Active buffer lines           | integer from 1 through 8               |        1 |
-| Enumerations and colors       | exactly one documented value           | Discrete |
+| Field                         | Accepted values                      |  UI step |
+| ----------------------------- | ------------------------------------ | -------: |
+| Pen or highlighter opacity    | finite number from 0 through 1       |     0.05 |
+| Shape outline or fill opacity | finite number from 0 through 1       |     0.05 |
+| Pen or highlighter width      | the listed discrete width values     | Discrete |
+| Shape outline width           | the listed discrete width values     | Discrete |
+| Eraser radius                 | integer from 8 through 64 CSS pixels |        4 |
+| Table columns                 | integer from 1 through 12            |        1 |
+| Display refresh rate          | auto, 60, 90, 120, 144, or 240       | Discrete |
+| Active buffer lines           | integer from 1 through 8             |        1 |
+| Enumerations and colors       | exactly one documented value         | Discrete |
 
 Unknown object properties, missing required properties, invalid enum values, non-finite numbers, and values outside these ranges make the containing persisted settings field invalid. The loader replaces only that field with its built-in default, records a non-content diagnostic code, and continues loading the other valid fields.
 

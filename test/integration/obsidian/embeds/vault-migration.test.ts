@@ -25,7 +25,11 @@ function migrationHarness(options: {
   readonly legacyTheme?: boolean;
 }) {
   const sourceSnapshot = options.legacyLockedHeight
-    ? { ...emptySnapshot(), elements: [rectangle()] }
+    ? {
+        ...emptySnapshot(),
+        elements: [rectangle()],
+        page: { ...emptySnapshot().page, lockedBufferLines: 3 },
+      }
     : undefined;
   const original = options.legacyTheme
     ? legacyThemeDocument()
@@ -114,8 +118,10 @@ describe("vault document migration persistence", () => {
     const rewritten = parseInkbookDocument(harness.content());
     expect(rewritten.ok).toBe(true);
     if (original.ok && rewritten.ok) {
-      expect(rewritten.value.lockedHeight).toBeLessThan(original.value.lockedHeight);
+      expect(original.value.requiresCanonicalRewrite).toBe(true);
+      expect(rewritten.value.requiresCanonicalRewrite).toBe(false);
     }
+    expect(harness.content()).not.toBe(harness.original.svg);
     expect(harness.process).toHaveBeenCalledOnce();
     expect(harness.copies.size).toBe(0);
   });

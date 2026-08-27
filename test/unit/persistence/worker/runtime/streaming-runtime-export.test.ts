@@ -42,13 +42,13 @@ function dottedRectangleDocument(y: number): InkSnapshotV1 {
         y,
       },
     ],
-    page: { ...snapshot().page, background: { type: "dots", spacing: 20 } },
+    page: { ...snapshot().page, background: { type: "dots", spacing: 25 } },
   };
 }
 
 describe("production streaming runtime export limits", () => {
   it("measures generated background path data without retaining another copy", () => {
-    const background = { type: "dots" as const, spacing: 20 as const };
+    const background = { type: "dots" as const, spacing: 25 as const };
     const lockedHeight = 2_048.6;
     const markup = serializeBackgroundPaths(background, lockedHeight).join("");
 
@@ -67,9 +67,9 @@ describe("production streaming runtime export limits", () => {
     expect(overLimit.usedBytes).toBe(0);
   });
 
-  it("rejects a 350,000-unit dotted document before adopting invalid output", async () => {
-    const document = dottedRectangleDocument(350_000);
-    const extent = derivePageExtent(document.page, 350_100);
+  it("rejects a 550,000-unit dotted document before adopting invalid output", async () => {
+    const document = dottedRectangleDocument(550_000);
+    const extent = derivePageExtent(document.page, 550_100);
     expect(
       backgroundFitsStaticLimit(
         document.page.background,

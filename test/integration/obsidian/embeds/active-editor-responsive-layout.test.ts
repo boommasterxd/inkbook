@@ -209,10 +209,9 @@ function responsiveOwnerWindow(options: {
 function page(): PageV1 {
   return {
     activeBufferLines: 3,
-    background: { type: "squares", spacing: 40 },
+    background: { type: "squares", spacing: 50 },
     innerWidth: 2000,
     lockedBufferLines: 1,
     margin: 24.3,
-    writingLineHeight: 100,
   };
 }

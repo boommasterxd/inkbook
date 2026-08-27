@@ -32,6 +32,7 @@ import {
   type StyleControl,
   type ToolbarStyleIconState,
 } from "../../../rendering/ui/index";
+import type { ActiveShapeIconState } from "../../../rendering/ui/icon-ids";
 
 const COLOR_LABELS = [
   "Theme text color",
@@ -61,7 +62,7 @@ const PEN_WIDTH_OPTIONS: readonly StyleChoiceOption[] = PEN_WIDTHS.map((width, i
 }));
 
 const OUTLINE_WIDTH_OPTIONS: readonly StyleChoiceOption[] = OUTLINE_WIDTHS.map((width, index) => ({
-  label: ["S", "M", "L", "XL"][index] ?? String(width),
+  label: ["XS", "S", "M", "L", "XL"][index] ?? String(width),
   value: String(width),
 }));
 
@@ -114,6 +115,14 @@ export function createActiveEditorStyleIcon(
     fillOpacity: summary.fill?.fillOpacity ?? 0,
     outlineColor: summary.style.outlineColor,
     outlineStyle: summary.style.outlineStyle,
+  };
+}
+
+export function createActiveShapeIcon(defaults: ToolDefaultsV1): ActiveShapeIconState {
+  return {
+    arrowStart: defaults.arrow.startNode,
+    arrowEnd: defaults.arrow.endNode,
+    coordinateDimension: defaults.coordinateSystem.dimension,
   };
 }
 

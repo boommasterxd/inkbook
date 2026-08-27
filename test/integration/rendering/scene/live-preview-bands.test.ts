@@ -25,7 +25,6 @@ const page: PageV1 = {
   innerWidth: 2000,
   lockedBufferLines: 1,
   margin: 24.3,
-  writingLineHeight: 100,
 };
 
 function setup(): { renderer: SvgSceneRenderer; scheduler: FakeScheduler } {
@@ -69,10 +68,10 @@ function sceneGroups(renderer: SvgSceneRenderer) {
   const camera = fakeNode(renderer.svg).nodes[1]!;
   return {
     camera,
-    contentGroup: camera.nodes[3]!,
-    highlightGroup: camera.nodes[2]!,
-    liveGroup: camera.nodes[4]!,
-    liveStrokeGroup: camera.nodes[5]!,
+    contentGroup: camera.nodes[4]!,
+    highlightGroup: camera.nodes[3]!,
+    liveGroup: camera.nodes[5]!,
+    liveStrokeGroup: camera.nodes[6]!,
   };
 }
 

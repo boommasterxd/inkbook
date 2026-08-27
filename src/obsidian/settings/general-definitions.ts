@@ -3,7 +3,6 @@ import type { SettingDefinition, SettingDefinitionGroup, SettingDefinitionPage }
 import {
   BACKGROUND_TYPES,
   LINE_SPACINGS,
-  PATTERN_SPACINGS,
   REFRESH_RATE_PREFERENCES,
   STARTUP_TOOLS,
   validateCustomVaultFolderPath,
@@ -14,8 +13,9 @@ import { dropdown, resetAction, sentenceCaseLabel, slider } from "./definition-h
 
 const createLabels = (values: readonly string[]): Record<string, string> =>
   Object.fromEntries(values.map((value) => [value, sentenceCaseLabel(value)]));
-const numberLabels = (values: readonly number[]): Record<string, string> =>
-  Object.fromEntries(values.map((value) => [String(value), String(value)]));
+const backgroundSizeLabels = Object.fromEntries(
+  LINE_SPACINGS.map((value, index) => [String(value), ["S", "M", "L", "XL"][index]!]),
+);
 
 function backgroundPage(): SettingDefinitionPage<SettingsControlKey> {
   return {
@@ -33,19 +33,19 @@ function backgroundPage(): SettingDefinitionPage<SettingsControlKey> {
         "pageDefaults.backgroundSpacing.lines",
         "Line spacing",
         "Choose the line spacing copied into new files.",
-        numberLabels(LINE_SPACINGS),
+        backgroundSizeLabels,
       ),
       dropdown(
         "pageDefaults.backgroundSpacing.dots",
         "Dot spacing",
         "Choose the dot spacing copied into new files.",
-        numberLabels(PATTERN_SPACINGS),
+        backgroundSizeLabels,
       ),
       dropdown(
         "pageDefaults.backgroundSpacing.squares",
         "Square spacing",
         "Choose the square spacing copied into new files.",
-        numberLabels(PATTERN_SPACINGS),
+        backgroundSizeLabels,
       ),
     ],
   };
@@ -57,14 +57,6 @@ function pageBufferPage(): SettingDefinitionPage<SettingsControlKey> {
     name: "Page buffer",
     desc: "Configure page dimensions copied into newly created files.",
     items: [
-      slider(
-        "pageDefaults.writingLineHeight",
-        "Writing line height",
-        "Set the writing line height in new files.",
-        50,
-        200,
-        10,
-      ),
       slider(
         "pageDefaults.activeBufferLines",
         "Active buffer lines",

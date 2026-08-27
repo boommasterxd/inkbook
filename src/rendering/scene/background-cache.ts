@@ -1,21 +1,26 @@
-import type { BackgroundV1, PageV1 } from "../../domain/schema/public";
-import { centeredGuideAxis, roundCanonical } from "../../domain/geometry/public";
+import { backgroundGuideLayout, roundCanonical } from "../../domain/geometry/public";
+import type { BackgroundV1 } from "../../domain/schema/public";
 
 export interface BackgroundGeometryRequest {
   readonly background: BackgroundV1;
   readonly innerWidth: number;
   readonly margin: number;
-  readonly visibleBottom: number;
-  readonly visibleTop: number;
-  readonly writableBottom: number;
+  readonly pageHeight: number;
+}
+
+export interface BackgroundPatternBounds {
+  readonly bottom: number;
+  readonly left: number;
+  readonly right: number;
+  readonly top: number;
 }
 
 export interface BackgroundGeometryResult {
   readonly d: string;
-  readonly firstVisibleIndex: number;
+  readonly edgeD: string;
   readonly hit: boolean;
-  readonly lastVisibleIndex: number;
-  readonly paint: "direct" | "none" | "pattern";
+  readonly paint: "none" | "pattern";
+  readonly patternBounds: BackgroundPatternBounds | null;
   readonly patternX: number;
   readonly patternY: number;
 }
@@ -24,8 +29,10 @@ interface BackgroundCacheEntry extends BackgroundGeometryResult {
   readonly key: string;
 }
 
-const MAXIMUM_DIRECT_GUIDE_SEGMENTS = 2_048;
-
+/**
+ * Caches the single canonical background coverage rectangle. Pattern tiles own
+ * repetition, so geometry never depends on viewport culling or guide counts.
+ */
 export class SceneBackgroundCache {
   #builds = 0;
   #entry: BackgroundCacheEntry | undefined;
@@ -41,74 +48,50 @@ export class SceneBackgroundCache {
 
   public resolve(request: BackgroundGeometryRequest): BackgroundGeometryResult {
     if (request.background.type === "none") return this.resolveNone(request);
-    const spacing = request.background.spacing;
-    const viewportHeight = Math.max(0, request.visibleBottom - request.visibleTop);
-    const writableBottom = Math.max(request.margin, request.writableBottom);
-    const horizontal = centeredGuideAxis(request.margin, request.innerWidth, spacing);
-    const vertical = centeredGuideAxis(request.margin, writableBottom - request.margin, spacing);
-    const maximumIndex = vertical.intervalCount;
-    const firstVisibleIndex = Math.min(
-      maximumIndex,
-      Math.max(0, Math.floor((request.visibleTop - viewportHeight - vertical.start) / spacing)),
-    );
-    const lastVisibleIndex = Math.min(
-      maximumIndex,
-      Math.max(
-        firstVisibleIndex,
-        Math.ceil((request.visibleBottom + viewportHeight - vertical.start) / spacing),
-      ),
-    );
+    const layout = backgroundGuideLayout({
+      background: request.background,
+      innerWidth: request.innerWidth,
+      margin: request.margin,
+      pageHeight: request.pageHeight,
+    });
     const key = [
       request.background.type,
-      spacing,
+      request.background.spacing,
       request.innerWidth,
       request.margin,
-      writableBottom,
-      horizontal.start,
-      horizontal.end,
-      vertical.start,
-      vertical.end,
-      firstVisibleIndex,
-      lastVisibleIndex,
+      request.pageHeight,
+      layout.left,
+      layout.right,
+      layout.top,
+      layout.bottom,
     ].join(":");
     if (this.#entry?.key === key) {
       this.#hits += 1;
       return { ...this.#entry, hit: true };
     }
-
-    const visibleRows = lastVisibleIndex - firstVisibleIndex + 1;
-    const directSegments =
-      visibleRows + (request.background.type === "squares" ? horizontal.intervalCount + 1 : 0);
-    const paint =
-      request.background.type !== "dots" && directSegments <= MAXIMUM_DIRECT_GUIDE_SEGMENTS
-        ? "direct"
-        : "pattern";
-    const d = buildBackgroundPath(
-      paint,
-      spacing,
-      request.background.type === "squares",
-      {
-        bottom: vertical.end,
-        left: request.background.type === "lines" ? request.margin : horizontal.start,
-        right:
-          request.background.type === "lines"
-            ? request.margin + request.innerWidth
-            : horizontal.end,
-        top: vertical.start,
-      },
-      firstVisibleIndex,
-      lastVisibleIndex,
-    );
+    const hasGuides =
+      request.background.type === "lines"
+        ? layout.verticalPointCount > 0
+        : layout.horizontalPointCount > 0 && layout.verticalPointCount > 0;
+    const patternBounds =
+      hasGuides && layout.right > layout.left && layout.bottom > layout.top
+        ? {
+            bottom: layout.bottom,
+            left: layout.left,
+            right: layout.right,
+            top: layout.top,
+          }
+        : null;
     this.#builds += 1;
     this.#entry = {
-      d,
-      firstVisibleIndex,
+      d: patternBounds === null ? "" : patternCoveragePath(patternBounds),
+      edgeD: patternBounds === null ? "" : terminalEdgePath(request.background, layout),
       hit: false,
       key,
-      lastVisibleIndex,
-      paint,
-      patternX: horizontal.start,
-      patternY: vertical.start,
+      paint: "pattern",
+      patternBounds,
+      patternX: layout.left,
+      patternY: layout.top,
     };
     return this.#entry;
   }
@@ -123,7 +106,7 @@ export class SceneBackgroundCache {
   }
 
   private resolveNone(request: BackgroundGeometryRequest): BackgroundGeometryResult {
-    const key = `none:${request.innerWidth}:0:0`;
+    const key = `none:${String(request.innerWidth)}:${String(request.margin)}:${String(request.pageHeight)}`;
     if (this.#entry?.key === key) {
       this.#hits += 1;
       return { ...this.#entry, hit: true };
@@ -131,11 +114,11 @@ export class SceneBackgroundCache {
     this.#builds += 1;
     this.#entry = {
       d: "",
-      firstVisibleIndex: 0,
+      edgeD: "",
       hit: false,
       key,
-      lastVisibleIndex: 0,
       paint: "none",
+      patternBounds: null,
       patternX: request.margin,
       patternY: request.margin,
     };
@@ -143,48 +126,79 @@ export class SceneBackgroundCache {
   }
 }
 
-interface BackgroundCoverageBounds {
-  readonly bottom: number;
-  readonly left: number;
-  readonly right: number;
-  readonly top: number;
+function terminalEdgePath(
+  background: Exclude<BackgroundV1, { type: "none" }>,
+  layout: ReturnType<typeof backgroundGuideLayout>,
+): string {
+  const terminalX = hasTerminalGuide(layout.horizontal, layout.horizontalSpacing);
+  const terminalY = hasTerminalGuide(layout.vertical, layout.verticalSpacing);
+  if (background.type === "lines") {
+    return terminalY
+      ? `M ${canonical(layout.left)} ${canonical(layout.bottom)} H ${canonical(layout.right)}`
+      : "";
+  }
+  if (background.type === "squares") {
+    const parts: string[] = [];
+    if (terminalX) {
+      parts.push(
+        `M ${canonical(layout.right)} ${canonical(layout.top)} V ${canonical(layout.bottom)}`,
+      );
+    }
+    if (terminalY) {
+      parts.push(
+        `M ${canonical(layout.left)} ${canonical(layout.bottom)} H ${canonical(layout.right)}`,
+      );
+    }
+    return parts.join(" ");
+  }
+  return terminalDotPath(layout, terminalX, terminalY);
 }
 
-function buildBackgroundPath(
-  paint: "direct" | "pattern",
-  spacing: number,
-  includeVertical: boolean,
-  bounds: BackgroundCoverageBounds,
-  firstIndex: number,
-  lastIndex: number,
+function terminalDotPath(
+  layout: ReturnType<typeof backgroundGuideLayout>,
+  terminalX: boolean,
+  terminalY: boolean,
 ): string {
-  const top = canonical(bounds.top + firstIndex * spacing);
-  const lastGuide = canonical(Math.min(bounds.bottom, bounds.top + lastIndex * spacing));
-  if (paint === "direct") {
-    const guides: string[] = [];
-    for (let index = firstIndex; index <= lastIndex; index += 1) {
-      const y = canonical(Math.min(bounds.bottom, bounds.top + index * spacing));
-      guides.push(`M ${canonical(bounds.left)} ${y} L ${canonical(bounds.right)} ${y}`);
-    }
-    if (includeVertical) {
-      for (let x = bounds.left; x <= bounds.right; x += spacing) {
-        guides.push(`M ${canonical(x)} ${top} L ${canonical(x)} ${lastGuide}`);
-      }
-    }
-    return guides.join(" ");
+  const parts: string[] = [];
+  if (terminalX) {
+    const periodicBottom = periodicEnd(layout.vertical, layout.verticalSpacing);
+    parts.push(
+      `M ${canonical(layout.right)} ${canonical(layout.top)} V ${canonical(periodicBottom)}`,
+    );
+    if (terminalY) parts.push(pointSubpath(layout.right, layout.bottom));
   }
-  const bottom = canonical(Math.min(bounds.bottom, bounds.top + (lastIndex + 1) * spacing));
-  return `M ${canonical(bounds.left)} ${top} H ${canonical(bounds.right)} V ${bottom} H ${canonical(bounds.left)} Z`;
+  if (terminalY) {
+    const periodicRight = periodicEnd(layout.horizontal, layout.horizontalSpacing);
+    parts.push(
+      `M ${canonical(layout.left)} ${canonical(layout.bottom)} H ${canonical(periodicRight)}`,
+    );
+  }
+  return parts.join(" ");
+}
+
+function hasTerminalGuide(
+  axis: { end: number; intervalCount: number; start: number },
+  spacing: number,
+) {
+  return roundCanonical(axis.start + axis.intervalCount * spacing) !== axis.end;
+}
+
+function periodicEnd(axis: { intervalCount: number; start: number }, spacing: number): number {
+  return roundCanonical(axis.start + axis.intervalCount * spacing);
+}
+
+function pointSubpath(x: number, y: number): string {
+  return `M ${canonical(x)} ${canonical(y)} L ${canonical(x)} ${canonical(y)}`;
+}
+
+export function patternCoveragePath(bounds: BackgroundPatternBounds, inset = 0): string {
+  return (
+    `M ${canonical(bounds.left - inset)} ${canonical(bounds.top - inset)} ` +
+    `H ${canonical(bounds.right + inset)} V ${canonical(bounds.bottom + inset)} ` +
+    `H ${canonical(bounds.left - inset)} Z`
+  );
 }
 
 function canonical(value: number): string {
   return String(roundCanonical(value));
-}
-
-export function sameBackground(left: PageV1, right: PageV1): boolean {
-  return (
-    left.background.type === right.background.type &&
-    (left.background.type === "none" ||
-      (right.background.type !== "none" && left.background.spacing === right.background.spacing))
-  );
 }

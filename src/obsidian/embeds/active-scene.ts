@@ -121,6 +121,8 @@ export class ActiveInkbookScene {
       onCopyEmbed: options.onCopyEmbed,
       onDeleteEmbed: options.onDeleteEmbed,
       onPageChanged: () => this.#layout.pageChanged(),
+      onPagePreviewFinish: (committed) => this.#layout.finishPagePreview(committed),
+      onPagePreview: (page) => this.#layout.previewPage(page),
       onStateChanged: () => this.#updateChrome(),
       renderIcon: (element, icon) => setIcon(element, icon),
       renderer: this.#renderer,

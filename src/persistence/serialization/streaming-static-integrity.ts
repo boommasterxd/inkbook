@@ -1,7 +1,12 @@
 import { deriveRenderBands } from "../../domain/commands/render-bands";
 import type { InkElementV1, InkSnapshotV1 } from "../../domain/schema/public";
 
-import { serializeBackgroundPaths } from "./background";
+import {
+  serializeBackgroundPaths,
+  serializeLegacyCenteredBackgroundPaths,
+  serializePreviousInsetBackgroundPaths,
+  serializePreviousTopAnchoredBackgroundPaths,
+} from "./background";
 import { serializeElementPaths } from "./path-markup";
 
 interface ExpectedToken {
@@ -14,33 +19,78 @@ interface ExpectedToken {
  * Only inter-group whitespace accepted by the safe envelope is ignored.
  */
 export class StreamingStaticIntegrityMatcher {
-  readonly #tokens: Iterator<ExpectedToken>;
-  #current: ExpectedToken | null = null;
+  #candidates: StaticTokenCandidate[];
   #failure: "invalid-svg" | "static-path-mismatch" = "static-path-mismatch";
-  #finished = false;
-  #offset = 0;
 
   public constructor(snapshot: InkSnapshotV1, lockedHeight: number) {
-    this.#tokens = staticTokens(snapshot, lockedHeight)[Symbol.iterator]();
+    this.#candidates = [
+      new StaticTokenCandidate(staticTokens(snapshot, lockedHeight, "canonical"), false),
+    ];
+    if (snapshot.page.background.type !== "none") {
+      this.#candidates.push(
+        new StaticTokenCandidate(staticTokens(snapshot, lockedHeight, "previous-inset"), true),
+        new StaticTokenCandidate(
+          staticTokens(snapshot, lockedHeight, "previous-top-anchored"),
+          true,
+        ),
+        new StaticTokenCandidate(staticTokens(snapshot, lockedHeight, "centered"), true),
+      );
+    }
   }
 
   public get failure(): "invalid-svg" | "static-path-mismatch" {
     return this.#failure;
   }
 
+  public get requiresCanonicalRewrite(): boolean {
+    return (
+      this.#candidates.length > 0 &&
+      this.#candidates.every((candidate) => candidate.legacyBackground)
+    );
+  }
+
   public write(input: string): boolean {
     for (const character of input) {
-      if (!this.#consume(character)) return false;
+      const rejected: StaticTokenCandidate[] = [];
+      this.#candidates = this.#candidates.filter((candidate) => {
+        const accepted = candidate.consume(character);
+        if (!accepted) rejected.push(candidate);
+        return accepted;
+      });
+      if (this.#candidates.length === 0) {
+        if (rejected.some((candidate) => candidate.failure === "invalid-svg")) {
+          this.#failure = "invalid-svg";
+        }
+        return false;
+      }
     }
     return true;
   }
 
   public finish(): boolean {
-    this.#advancePastEmptyTokens();
-    return this.#finished;
+    this.#candidates = this.#candidates.filter((candidate) => candidate.finish());
+    return this.#candidates.length > 0;
+  }
+}
+
+class StaticTokenCandidate {
+  readonly legacyBackground: boolean;
+  readonly #tokens: Iterator<ExpectedToken>;
+  #current: ExpectedToken | null = null;
+  #failure: "invalid-svg" | "static-path-mismatch" = "static-path-mismatch";
+  #finished = false;
+  #offset = 0;
+
+  public constructor(tokens: Iterable<ExpectedToken>, legacyBackground: boolean) {
+    this.#tokens = tokens[Symbol.iterator]();
+    this.legacyBackground = legacyBackground;
   }
 
-  #consume(character: string): boolean {
+  public get failure(): "invalid-svg" | "static-path-mismatch" {
+    return this.#failure;
+  }
+
+  public consume(character: string): boolean {
     this.#advancePastEmptyTokens();
     if (this.#finished) return isWhitespace(character);
     const current = this.#current!;
@@ -53,6 +103,11 @@ export class StreamingStaticIntegrityMatcher {
     }
     this.#offset += 1;
     return true;
+  }
+
+  public finish(): boolean {
+    this.#advancePastEmptyTokens();
+    return this.#finished;
   }
 
   #advancePastEmptyTokens(): void {
@@ -70,10 +125,22 @@ export class StreamingStaticIntegrityMatcher {
   }
 }
 
-function* staticTokens(snapshot: InkSnapshotV1, lockedHeight: number): Iterable<ExpectedToken> {
+function* staticTokens(
+  snapshot: InkSnapshotV1,
+  lockedHeight: number,
+  backgroundAlignment: "canonical" | "centered" | "previous-inset" | "previous-top-anchored",
+): Iterable<ExpectedToken> {
   const bands = deriveRenderBands(snapshot.elements);
   yield { allowLeadingWhitespace: true, text: '<g id="inkbook-background">' };
-  for (const fragment of serializeBackgroundPaths(snapshot.page.background, lockedHeight)) {
+  const backgroundPaths =
+    backgroundAlignment === "canonical"
+      ? serializeBackgroundPaths(snapshot.page.background, lockedHeight)
+      : backgroundAlignment === "previous-inset"
+        ? serializePreviousInsetBackgroundPaths(snapshot.page.background, lockedHeight)
+        : backgroundAlignment === "previous-top-anchored"
+          ? serializePreviousTopAnchoredBackgroundPaths(snapshot.page.background, lockedHeight)
+          : serializeLegacyCenteredBackgroundPaths(snapshot.page.background, lockedHeight);
+  for (const fragment of backgroundPaths) {
     yield { text: fragment };
   }
   yield { text: "</g>" };

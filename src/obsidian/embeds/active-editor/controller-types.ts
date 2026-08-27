@@ -8,6 +8,7 @@ import type { MenuFactoryPort } from "../../menus/index";
 import type { BrowserScrollElement } from "../../scrolling/index";
 import type { InkbookFeedbackCode } from "../../feedback";
 import type { EditableDocumentModel } from "../vault-document-session";
+import type { PageV1 } from "../../../domain/schema/public";
 import type { ElementSceneStore } from "./scene-store";
 import type { ActiveEditorZoomLayoutUpdate } from "./navigation";
 import type { BackgroundSpacingDefaults } from "./controller-helpers";
@@ -29,6 +30,8 @@ export interface ActiveEditorControllerOptions {
   readonly onCopyEmbed: () => void;
   readonly onDeleteEmbed: () => void;
   readonly onPageChanged: () => void;
+  readonly onPagePreviewFinish: (committed: boolean) => void;
+  readonly onPagePreview: (page: PageV1) => void;
   readonly onStateChanged: () => void;
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
   readonly renderer: SvgSceneRenderer;

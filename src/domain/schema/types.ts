@@ -10,16 +10,15 @@ export interface PageV1 {
   innerWidth: 2000;
   margin: 24.3;
   background: BackgroundV1;
-  writingLineHeight: number;
   activeBufferLines: number;
   lockedBufferLines: number;
 }
 
 export type BackgroundV1 =
   | { type: "none" }
-  | { type: "lines"; spacing: 50 | 100 | 150 | 200 }
-  | { type: "dots"; spacing: 20 | 40 | 60 | 80 }
-  | { type: "squares"; spacing: 20 | 40 | 60 | 80 };
+  | { type: "lines"; spacing: 25 | 33.333333333333336 | 50 | 100 }
+  | { type: "dots"; spacing: 25 | 33.333333333333336 | 50 | 100 }
+  | { type: "squares"; spacing: 25 | 33.333333333333336 | 50 | 100 };
 
 export interface PointV1 {
   x: number;
@@ -47,7 +46,7 @@ export interface StrokeStyleV1 {
 
 export interface OutlineStyleV1 {
   outlineColor: ColorV1;
-  outlineWidth: 2 | 4 | 8 | 12;
+  outlineWidth: 1 | 2 | 4 | 8 | 12;
   outlineOpacity: number;
   outlineStyle: "solid" | "dashed" | "dotted";
 }

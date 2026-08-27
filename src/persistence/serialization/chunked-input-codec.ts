@@ -16,8 +16,13 @@ import {
   ChunkedJsonParseError,
   parseChunkedJson,
 } from "./chunked-json-parser";
+import {
+  ChunkedInputCancelledError,
+  type ChunkedInkbookInputOptions,
+  type ChunkedInputCheckpoint,
+} from "./chunked-input-types";
 import { combineInputBytes, positiveInputInteger } from "./chunked-input-utils";
-import { isSupportedLockedHeight } from "./locked-height-compatibility";
+import { isCanonicalLockedHeight, isSupportedLockedHeight } from "./locked-height-compatibility";
 import { ChunkedSha256 } from "./chunked-output-sha256";
 import {
   migrateAndValidateDocumentSnapshotSteps,
@@ -41,30 +46,10 @@ const JSON_STRING_SCRATCH_CHARACTERS = 16 * 1024;
 const MAXIMUM_PREFIX_CHARACTERS = 64 * 1024;
 const METADATA_INPUT_CODE_UNITS_PER_STEP = 16 * 1024;
 
-export type ChunkedInputCheckpoint = () => Promise<void>;
-
 const IMMEDIATE_CHUNKED_INPUT_CHECKPOINT: ChunkedInputCheckpoint = () => Promise.resolve();
 
-export interface ChunkedInkbookInputOptions {
-  readonly checkpoint?: ChunkedInputCheckpoint;
-  readonly hasher?: DocumentHashPort;
-  readonly inputSliceBytes?: number;
-  readonly onValidatedSnapshot?: (
-    snapshot: InkSnapshotV1,
-    derivations: SnapshotValidationDerivations,
-  ) => Promise<void> | void;
-  readonly pathBatchSize?: number;
-  readonly signal?: AbortSignal;
-}
-
-export class ChunkedInputCancelledError extends Error {
-  public readonly code = "input-cancelled";
-
-  public constructor() {
-    super("Chunked document input was cancelled.");
-    this.name = "ChunkedInputCancelledError";
-  }
-}
+export { ChunkedInputCancelledError };
+export type { ChunkedInkbookInputOptions, ChunkedInputCheckpoint };
 
 /** Incrementally decodes bounded input and drives safe-SVG and snapshot validation steps. */
 export class ChunkedInkbookInputParser {
@@ -89,6 +74,7 @@ export class ChunkedInkbookInputParser {
   #maximumStaticChunkCharacters = 0;
   #prefix = "";
   #prelude: SafeSvgPrelude | null = null;
+  #runtimeSnapshot: InkSnapshotV1 | null = null;
   #state: "cancelled" | "collecting" | "finishing" | "finished" = "collecting";
   #staticMatcher: StreamingStaticIntegrityMatcher | null = null;
   #streamPhase: "metadata" | "prefix" | "static" = "prefix";
@@ -156,6 +142,7 @@ export class ChunkedInkbookInputParser {
         this.#staticMatcher === null ||
         !this.#staticMatcher.finish() ||
         this.#migrated === null ||
+        this.#runtimeSnapshot === null ||
         this.#prelude === null
       ) {
         return failure("invalid-svg", "Document does not satisfy the safe SVG envelope.");
@@ -168,8 +155,15 @@ export class ChunkedInkbookInputParser {
           derivations: this.#migrated.derivations,
           hash: this.#completeHash(),
           lockedHeight: this.#prelude.lockedHeight,
-          requiresCanonicalRewrite: this.#prelude.requiresCanonicalRewrite,
-          snapshot: this.#migrated.snapshot,
+          requiresCanonicalRewrite:
+            this.#prelude.requiresCanonicalRewrite ||
+            this.#staticMatcher.requiresCanonicalRewrite ||
+            !isCanonicalLockedHeight(
+              this.#migrated.snapshot.page,
+              this.#migrated.derivations.maximumBottom,
+              this.#prelude.lockedHeight,
+            ),
+          snapshot: this.#runtimeSnapshot,
           sourceVersion: this.#migrated.sourceVersion,
         },
       };
@@ -387,6 +381,7 @@ export class ChunkedInkbookInputParser {
     }
     this.#migrated = migrated;
     this.#staticMatcher = new StreamingStaticIntegrityMatcher(snapshot, prelude.lockedHeight);
+    this.#runtimeSnapshot = snapshot;
     this.#streamPhase = "static";
     await this.#onValidatedSnapshot?.(snapshot, migrated.derivations);
     this.#throwIfCancelled();

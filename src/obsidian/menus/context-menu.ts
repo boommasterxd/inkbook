@@ -5,6 +5,8 @@ import type {
   MenuPort,
   MenuPosition,
 } from "./menu-ports";
+import { CAUTION_ERASER_ICON_ID } from "../../rendering/ui/icon-ids";
+import { createMenuTitleContent } from "./menu-title-content";
 
 const CONTEXT_MENU_ICONS = {
   copy: "copy",
@@ -16,7 +18,7 @@ const CONTEXT_MENU_ICONS = {
   sendBackward: "arrow-down",
   bringToFront: "chevrons-up",
   sendToBack: "chevrons-down",
-  eraseAll: "eraser",
+  eraseAll: CAUTION_ERASER_ICON_ID,
 } as const;
 
 export type ContextMenuAction =
@@ -82,13 +84,21 @@ export interface ContextMenuSession {
 
 function configureItem(
   menu: MenuPort,
+  ownerDocument: Document,
   title: string,
   icon: string,
   callback: () => void,
-  options: { readonly disabled?: boolean; readonly warning?: boolean } = {},
+  options: {
+    readonly caution?: boolean;
+    readonly disabled?: boolean;
+    readonly warning?: boolean;
+  } = {},
 ): void {
   menu.addItem((item) => {
-    item.setTitle(title).setIcon(icon);
+    if (options.caution === true) {
+      item.setTitleFragment?.(createMenuTitleContent(ownerDocument, title, { caution: true }));
+    } else item.setTitle(title);
+    item.setIcon(icon);
     if (options.disabled === true) item.setDisabled(true);
     if (options.warning === true) item.setWarning(true);
     if (options.disabled !== true) item.onClick(() => callback());
@@ -103,50 +113,80 @@ function configureArrangeLabel(menu: MenuPort): void {
 
 function configureSelectionItems(
   menu: MenuPort,
+  ownerDocument: Document,
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
 ): void {
-  configureItem(menu, "Copy", CONTEXT_MENU_ICONS.copy, handlers.copy);
-  configureItem(menu, "Cut", CONTEXT_MENU_ICONS.cut, handlers.cut);
-  if (state.canPaste) configureItem(menu, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
-  configureItem(menu, "Delete", CONTEXT_MENU_ICONS.delete, handlers.delete, { warning: true });
+  configureItem(menu, ownerDocument, "Copy", CONTEXT_MENU_ICONS.copy, handlers.copy);
+  configureItem(menu, ownerDocument, "Cut", CONTEXT_MENU_ICONS.cut, handlers.cut);
+  if (state.canPaste)
+    configureItem(menu, ownerDocument, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
+  menu.addSeparator();
+  configureItem(menu, ownerDocument, "Delete", CONTEXT_MENU_ICONS.delete, handlers.delete, {
+    warning: true,
+  });
   menu.addSeparator();
   configureArrangeLabel(menu);
-  configureItem(menu, "Bring forward", CONTEXT_MENU_ICONS.bringForward, handlers.bringForward, {
-    disabled: !state.canBringForward,
-  });
-  configureItem(menu, "Send backward", CONTEXT_MENU_ICONS.sendBackward, handlers.sendBackward, {
-    disabled: !state.canSendBackward,
-  });
-  configureItem(menu, "Bring to front", CONTEXT_MENU_ICONS.bringToFront, handlers.bringToFront, {
-    disabled: !state.canBringToFront,
-  });
-  configureItem(menu, "Send to back", CONTEXT_MENU_ICONS.sendToBack, handlers.sendToBack, {
-    disabled: !state.canSendToBack,
-  });
+  configureItem(
+    menu,
+    ownerDocument,
+    "Bring forward",
+    CONTEXT_MENU_ICONS.bringForward,
+    handlers.bringForward,
+    { disabled: !state.canBringForward },
+  );
+  configureItem(
+    menu,
+    ownerDocument,
+    "Send backward",
+    CONTEXT_MENU_ICONS.sendBackward,
+    handlers.sendBackward,
+    { disabled: !state.canSendBackward },
+  );
+  configureItem(
+    menu,
+    ownerDocument,
+    "Bring to front",
+    CONTEXT_MENU_ICONS.bringToFront,
+    handlers.bringToFront,
+    { disabled: !state.canBringToFront },
+  );
+  configureItem(
+    menu,
+    ownerDocument,
+    "Send to back",
+    CONTEXT_MENU_ICONS.sendToBack,
+    handlers.sendToBack,
+    { disabled: !state.canSendToBack },
+  );
 }
 
 function configureCanvasItems(
   menu: MenuPort,
+  ownerDocument: Document,
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
 ): void {
   if (!state.hasSelection && state.canPaste) {
-    configureItem(menu, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
+    configureItem(menu, ownerDocument, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
     menu.addSeparator();
   }
-  configureItem(menu, "Copy embed", CONTEXT_MENU_ICONS.copy, handlers.copyEmbed, {
+  configureItem(menu, ownerDocument, "Copy embed", CONTEXT_MENU_ICONS.copy, handlers.copyEmbed, {
     disabled: state.canCopyEmbed === false,
   });
   menu.addSeparator();
-  configureItem(menu, "Erase all", CONTEXT_MENU_ICONS.eraseAll, handlers.eraseAll, {
+  configureItem(menu, ownerDocument, "Erase all", CONTEXT_MENU_ICONS.eraseAll, handlers.eraseAll, {
+    caution: true,
     disabled: state.canEraseAll === false,
-    warning: true,
   });
-  configureItem(menu, "Delete embed", CONTEXT_MENU_ICONS.delete, handlers.deleteEmbed, {
-    disabled: state.canDeleteEmbed === false,
-    warning: true,
-  });
+  configureItem(
+    menu,
+    ownerDocument,
+    "Delete embed",
+    CONTEXT_MENU_ICONS.delete,
+    handlers.deleteEmbed,
+    { disabled: state.canDeleteEmbed === false, warning: true },
+  );
 }
 
 /**
@@ -155,14 +195,15 @@ function configureCanvasItems(
  */
 export function populateContextMenu(
   menu: MenuPort,
+  ownerDocument: Document,
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
 ): void {
   if (state.hasSelection) {
-    configureSelectionItems(menu, state, handlers);
+    configureSelectionItems(menu, ownerDocument, state, handlers);
     menu.addSeparator();
   }
-  configureCanvasItems(menu, state, handlers);
+  configureCanvasItems(menu, ownerDocument, state, handlers);
 }
 
 function canFocus(
@@ -177,7 +218,7 @@ function focusAfterClose(invocation: ContextMenuInvocation): void {
   const target = canFocus(invocation.returnFocus, invocation.ownerDocument)
     ? invocation.returnFocus
     : invocation.canvasInputSurface;
-  if (canFocus(target, invocation.ownerDocument)) target.focus();
+  if (canFocus(target, invocation.ownerDocument)) target.focus({ preventScroll: true });
 }
 
 /**
@@ -198,7 +239,7 @@ export function openContextMenu(
     focusReturned = true;
     focusAfterClose(invocation);
   });
-  populateContextMenu(menu, state, handlers);
+  populateContextMenu(menu, invocation.ownerDocument, state, handlers);
   if (invocation.type === "position") {
     menu.showAtPosition(invocation.position, invocation.ownerDocument);
   }

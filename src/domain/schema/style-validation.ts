@@ -12,7 +12,7 @@ import {
 } from "./validation-internals";
 
 const STROKE_WIDTHS = [2, 4, 8, 14, 22] as const;
-const OUTLINE_WIDTHS = [2, 4, 8, 12] as const;
+const OUTLINE_WIDTHS = [1, 2, 4, 8, 12] as const;
 const OUTLINE_STYLES = ["solid", "dashed", "dotted"] as const;
 
 export function isColorV1(value: unknown): value is ColorV1 {

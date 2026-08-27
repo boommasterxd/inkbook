@@ -37,6 +37,7 @@ function render(
       onAction={vi.fn()}
       renderIcon={vi.fn()}
       selectedShape="rectangle"
+      shapeIcon={{ arrowEnd: "arrow", arrowStart: "none", coordinateDimension: "2d" }}
       state={{ ...state, ...overrides }}
       styleIcon={styleIcon}
     />,
@@ -74,8 +75,7 @@ describe("Inkbook toolbar", () => {
       /inkbook-toolbar-rail[\s\S]*inkbook-toolbar-wide[\s\S]*inkbook-toolbar-context-actions/u,
     );
     expect(markup).toMatch(/aria-expanded="true"[^>]*aria-label="Style"/u);
-    expect(markup).toContain('aria-controls="inkbook-style-flyout"');
-    expect(markup).toContain('aria-haspopup="dialog"');
+    expect(markup).toContain('aria-haspopup="menu"');
     expect(markup.indexOf('class="inkbook-toolbar inkbook-toolbar-wide"')).toBeLessThan(
       markup.indexOf("inkbook-toolbar-context-actions"),
     );

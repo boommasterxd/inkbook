@@ -12,7 +12,7 @@ import {
   PEN_TAP_INSERTIONS,
   createBuiltInDeviceSettings,
   createBuiltInSettings,
-  type InkbookSettingsV2,
+  type InkbookSettingsV3,
 } from "../../domain/settings";
 import { DEFAULT_REFRESH_RATE, type RefreshRateProfileStatus } from "../performance";
 import { SettingsControlValues, type SettingsControlKey } from "./control-values";
@@ -25,9 +25,9 @@ export interface CustomFolderPort {
   createFolder(path: string): Promise<void>;
 }
 
-function cloneDefaults<K extends keyof InkbookSettingsV2["toolDefaults"]>(
+function cloneDefaults<K extends keyof InkbookSettingsV3["toolDefaults"]>(
   key: K,
-): InkbookSettingsV2["toolDefaults"][K] {
+): InkbookSettingsV3["toolDefaults"][K] {
   return structuredClone(createBuiltInSettings().toolDefaults[key]);
 }
 
@@ -118,7 +118,7 @@ export class InkbookSettingTab extends PluginSettingTab {
       .then(() => this.update());
   }
 
-  private resetToolGroup<K extends keyof InkbookSettingsV2["toolDefaults"]>(key: K): void {
+  private resetToolGroup<K extends keyof InkbookSettingsV3["toolDefaults"]>(key: K): void {
     void this.store
       .updateVaultSettings((settings) => {
         settings.toolDefaults[key] = cloneDefaults(key);

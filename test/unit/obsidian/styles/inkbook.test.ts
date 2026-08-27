@@ -5,7 +5,7 @@ const stylesheet = [
   readStylesheet("src/obsidian/styles/inkbook.css"),
   readStylesheet("src/obsidian/styles/feedback.css"),
   readStylesheet("src/obsidian/styles/editor-toolbar.css"),
-  readStylesheet("src/obsidian/styles/editor-flyouts.css"),
+  readStylesheet("src/obsidian/styles/editor-menus.css"),
 ].join("\n");
 const motionStylesheet = readStylesheet("src/obsidian/styles/motion.css");
 const toolbarMotionStylesheet = readStylesheet("src/obsidian/styles/editor-toolbar-motion.css");
@@ -13,7 +13,6 @@ const toolbarMotionStylesheet = readStylesheet("src/obsidian/styles/editor-toolb
 describe("Inkbook host styles", () => {
   it("anchors presentation feedback without layout participation", () => {
     const feedback = declarationsFor(".inkbook-root .inkbook-feedback-presentation");
-
     expect(feedback).toContain("position: absolute");
     expect(feedback).toContain("pointer-events: auto");
     expect(feedback).toContain("translate: -50% 0");
@@ -375,25 +374,44 @@ describe("Inkbook editor overlays", () => {
 
   it("reserves modal space for the separate recovery close action", () => {
     const headless = declarationsFor(".inkbook-root .inkbook-feedback-headless");
-
     expect(headless).toContain("padding-inline-end: 52px");
   });
 
-  it("keeps the background submenu beside the anchored overflow menu", () => {
-    const menu = declarationsFor('.inkbook-root .inkbook-flyout[role="menu"]');
-    const submenu = declarationsFor(
-      ".inkbook-root .inkbook-overflow-background-region > .inkbook-overflow-submenu",
+  it("keeps native style-menu controls rounded, compact, and touch operable", () => {
+    const controls = declarationsFor(".inkbook-menu-controls");
+    const field = declarationsFor(".inkbook-menu-control");
+    const choice = declarationsFor(
+      ".inkbook-menu-controls .inkbook-menu-choice,\n.inkbook-menu-controls .inkbook-menu-stepper-button",
     );
-
-    expect(menu).toContain("overflow: visible");
-    expect(submenu).toContain("inset-inline-end: calc(100% + 8px)");
-    expect(submenu).toContain("position: absolute");
+    const spacing = declarationsFor(".inkbook-menu-spacing-control");
+    const spacingSlider = declarationsFor(
+      ".inkbook-menu-spacing-control > .inkbook-menu-spacing-slider",
+    );
+    const styleSlider = declarationsFor(".inkbook-menu-slider-row > .inkbook-menu-slider");
+    const widthPreview = declarationsFor(".inkbook-menu-width-choice .inkbook-menu-line-preview");
+    expect(controls).toContain("inline-size: min(336px, calc(100vw - 32px))");
+    expect(controls).toContain("margin-inline-start: -9px");
+    expect(controls).toContain("padding: 3px 0");
+    expect(field).toContain("border-radius: calc(var(--radius-l) + 2px)");
+    expect(choice).toContain("min-block-size: 44px");
+    expect(choice).toContain("min-inline-size: 44px");
+    expect(choice).toContain("border: 1px solid var(--background-modifier-border)");
+    expect(choice).toContain("box-shadow: none");
+    expect(spacing).toContain("inline-size: calc(100% + 8px)");
+    expect(spacing).toContain("margin-inline-start: -8px");
+    expect(spacing).not.toContain("background:");
+    expect(spacing).not.toContain("border:");
+    expect(spacing).not.toContain("border-radius:");
+    expect(spacingSlider).toContain("inline-size: 100%");
+    expect(styleSlider).toContain("inline-size: 100%");
+    expect(widthPreview).toContain("background: currentcolor");
+    expect(widthPreview).toContain("border: 0");
+    expect(widthPreview).toContain("border-radius: 999px");
   });
 
   it("reduces toolbar and active-state motion to zero", () => {
     const reduced = declarationsFor('.inkbook-root[data-inkbook-motion="reduced"]');
     const media = blockFor("@media (prefers-reduced-motion: reduce)", motionStylesheet);
-
     expect(reduced).toContain("--inkbook-motion-fast: 0ms");
     expect(reduced).toContain("--inkbook-motion-standard: 0ms");
     expect(media).toContain("--inkbook-motion-fast: 0ms");
@@ -402,11 +420,12 @@ describe("Inkbook editor overlays", () => {
 
   it("limits global Inkbook selectors to exact scroll-owner lifecycle classes", () => {
     const selectors = topLevelSelectors(stylesheet);
-
-    expect(selectors.filter((selector) => !selector.startsWith(".inkbook-root"))).toEqual([
-      ".inkbook-scrollbar-stable",
-      ".inkbook-scroll-anchor-suppressed",
-    ]);
+    expect(
+      selectors.filter(
+        (selector) =>
+          !selector.startsWith(".inkbook-root") && !selector.startsWith(".inkbook-menu-"),
+      ),
+    ).toEqual([".inkbook-scrollbar-stable", ".inkbook-scroll-anchor-suppressed"]);
   });
 });
 

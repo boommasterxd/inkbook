@@ -1,0 +1,355 @@
+.inkbook-menu-controls {
+  box-sizing: border-box;
+  color: var(--text-normal);
+  display: grid;
+  gap: 8px;
+  inline-size: min(336px, calc(100vw - 32px));
+  margin-inline-start: -9px;
+  padding: 3px 0;
+}
+
+.inkbook-menu-control {
+  background: color-mix(in srgb, var(--background-secondary) 78%, transparent);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: calc(var(--radius-l) + 2px);
+  display: grid;
+  gap: 8px;
+  min-inline-size: 0;
+  padding: 9px;
+}
+
+.inkbook-menu-title-content {
+  display: block;
+  min-inline-size: var(--inkbook-menu-title-min-width, 0);
+}
+
+.inkbook-menu-title-content-caution {
+  color: var(--color-orange);
+}
+
+.inkbook-menu-control-header {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-medium);
+  gap: 7px;
+  min-block-size: 20px;
+  padding-inline: 2px;
+}
+
+.inkbook-menu-control-icon,
+.inkbook-menu-control-icon svg {
+  block-size: 16px;
+  flex: 0 0 16px;
+  inline-size: 16px;
+}
+
+.inkbook-menu-control-body {
+  min-inline-size: 0;
+}
+
+.inkbook-menu-choice-grid {
+  display: grid;
+  gap: 5px;
+  grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
+}
+
+.inkbook-menu-color-grid {
+  grid-template-columns: repeat(5, 44px);
+  justify-content: space-between;
+}
+
+.inkbook-menu-width-grid {
+  grid-template-columns: repeat(5, minmax(44px, 1fr));
+}
+
+.inkbook-menu-controls .inkbook-menu-choice,
+.inkbook-menu-controls .inkbook-menu-stepper-button {
+  align-items: center;
+  appearance: none;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  box-shadow: none;
+  color: var(--text-normal);
+  display: inline-flex;
+  font-size: var(--font-ui-smaller);
+  gap: 6px;
+  justify-content: center;
+  margin: 0;
+  min-block-size: 44px;
+  min-inline-size: 44px;
+  padding: 6px 8px;
+}
+
+.inkbook-menu-choice:hover,
+.inkbook-menu-stepper-button:hover {
+  background: var(--background-modifier-hover);
+}
+
+.inkbook-menu-choice[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--interactive-accent) 15%, var(--background-primary));
+  border-color: color-mix(in srgb, var(--interactive-accent) 74%, transparent);
+  color: var(--interactive-accent);
+}
+
+.inkbook-menu-choice-preview {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.inkbook-menu-color-swatch {
+  background: var(--inkbook-menu-color);
+  border: 1px solid var(--background-modifier-border-hover);
+  border-radius: 999px;
+  block-size: 24px;
+  inline-size: 24px;
+}
+
+.inkbook-menu-color-swatch[data-empty="true"] {
+  background:
+    linear-gradient(135deg, transparent 46%, var(--text-error) 47% 53%, transparent 54%),
+    var(--background-primary);
+}
+
+.inkbook-menu-line-preview {
+  border-block-start: var(--inkbook-menu-line-width, 2px) var(--inkbook-menu-line-style, solid)
+    currentcolor;
+  inline-size: 28px;
+}
+
+.inkbook-menu-width-choice {
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px 4px;
+}
+
+.inkbook-menu-width-choice .inkbook-menu-line-preview {
+  background: currentcolor;
+  block-size: var(--inkbook-menu-line-width, 2px);
+  border: 0;
+  border-radius: 999px;
+  inline-size: min(22px, calc(100% - 8px));
+}
+
+.inkbook-menu-option-icon,
+.inkbook-menu-option-icon svg {
+  block-size: 22px;
+  inline-size: 22px;
+}
+
+.inkbook-menu-slider-row {
+  align-items: center;
+  display: grid;
+  gap: 7px;
+  grid-template-columns: minmax(100px, 1fr) 54px auto;
+}
+
+.inkbook-menu-slider {
+  accent-color: var(--interactive-accent);
+  block-size: 28px;
+  margin: 0;
+  min-inline-size: 0;
+}
+
+.inkbook-menu-slider-row > .inkbook-menu-slider {
+  inline-size: 100%;
+}
+
+.inkbook-menu-value {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  block-size: 36px;
+  box-sizing: border-box;
+  color: var(--text-normal);
+  inline-size: 54px;
+  padding-inline: 7px;
+  text-align: end;
+}
+
+.inkbook-menu-value-suffix {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  min-inline-size: 10px;
+}
+
+.inkbook-menu-stepper {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 44px 1fr 44px;
+}
+
+.inkbook-menu-stepper output {
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.inkbook-menu-stepper-button svg {
+  block-size: 18px;
+  inline-size: 18px;
+}
+
+.inkbook-menu-switch {
+  align-items: center;
+  cursor: pointer;
+  display: inline-flex;
+  min-block-size: 36px;
+}
+
+.inkbook-menu-toggle-row {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  min-block-size: 44px;
+}
+
+.inkbook-menu-toggle-heading {
+  align-items: center;
+  color: var(--text-muted);
+  display: inline-flex;
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-medium);
+  gap: 7px;
+  min-inline-size: 0;
+}
+
+.inkbook-menu-spacing-control {
+  box-sizing: border-box;
+  display: grid;
+  gap: 2px;
+  inline-size: calc(100% + 8px);
+  margin-inline-start: -8px;
+  padding: 4px 0 1px;
+}
+
+.inkbook-menu-spacing-header {
+  align-items: center;
+  color: var(--text-muted);
+  display: grid;
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-medium);
+  gap: 7px;
+  grid-template-columns: 16px 1fr auto;
+}
+
+.inkbook-menu-spacing-output {
+  color: var(--text-normal);
+  font-variant-numeric: tabular-nums;
+}
+
+.inkbook-menu-spacing-slider {
+  accent-color: var(--interactive-accent);
+  block-size: 44px;
+  inline-size: 100%;
+  margin: 0;
+  min-inline-size: 0;
+}
+
+.inkbook-menu-spacing-control > .inkbook-menu-spacing-slider {
+  background-clip: content-box;
+  block-size: 44px;
+  box-sizing: border-box;
+  inline-size: 100%;
+  padding-block: 20px;
+}
+
+.inkbook-menu-spacing-labels {
+  color: var(--text-faint);
+  display: flex;
+  font-size: var(--font-ui-smaller);
+  justify-content: space-between;
+  padding-inline: calc(var(--slider-thumb-width, 18px) / 2);
+  text-align: center;
+}
+
+.inkbook-menu-spacing-labels > span {
+  display: flex;
+  inline-size: 0;
+  justify-content: center;
+}
+
+.inkbook-menu-switch input {
+  block-size: 1px;
+  clip-path: inset(50%);
+  inline-size: 1px;
+  overflow: hidden;
+  position: absolute;
+}
+
+.inkbook-menu-switch-track {
+  background: var(--background-modifier-border-hover);
+  border-radius: 999px;
+  block-size: 26px;
+  display: block;
+  inline-size: 46px;
+  padding: 3px;
+  transition: background-color var(--inkbook-motion-fast) var(--inkbook-motion-easing);
+}
+
+.inkbook-menu-switch-track::before {
+  background: var(--background-primary);
+  border-radius: 999px;
+  block-size: 20px;
+  box-shadow: var(--shadow-s);
+  content: "";
+  display: block;
+  inline-size: 20px;
+  transition: translate var(--inkbook-motion-fast) var(--inkbook-motion-easing);
+}
+
+.inkbook-menu-switch input:checked + .inkbook-menu-switch-track {
+  background: var(--interactive-accent);
+}
+
+.inkbook-menu-switch input:checked + .inkbook-menu-switch-track::before {
+  translate: 20px 0;
+}
+
+.inkbook-menu-switch input:focus-visible + .inkbook-menu-switch-track {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.inkbook-menu-choice:focus-visible,
+.inkbook-menu-stepper-button:focus-visible,
+.inkbook-menu-spacing-slider:focus-visible,
+.inkbook-menu-controls input:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.inkbook-menu-empty {
+  color: var(--text-muted);
+  margin: 0;
+  padding: 8px 10px;
+}
+
+.inkbook-menu-visually-hidden {
+  block-size: 1px;
+  clip-path: inset(50%);
+  inline-size: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+}
+
+@media (width <= 420px) {
+  .inkbook-menu-controls {
+    inline-size: min(336px, calc(100vw - 16px));
+  }
+
+  .inkbook-menu-color-grid {
+    grid-template-columns: repeat(5, minmax(40px, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inkbook-menu-switch-track,
+  .inkbook-menu-switch-track::before {
+    transition: none;
+  }
+}

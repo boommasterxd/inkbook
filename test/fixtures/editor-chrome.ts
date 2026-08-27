@@ -4,32 +4,12 @@ const noop = (): void => undefined;
 
 export function createEditorChromeProps(ownerDocument: Document): InkbookEditorChromeProps {
   return {
-    background: { spacing: null, type: "none" },
-    callbacks: {
-      onBackgroundSpacingChange: noop,
-      onBackgroundTypeChange: noop,
-      onFlyoutClose: noop,
-      onOverflowAction: noop,
-      onShapeChange: noop,
-      onStyleChange: noop,
-    },
-    canvasInput: null,
     layout: "wide",
     onToolbarAction: noop,
     ownerDocument,
-    overflowMenu: {
-      arrange: {
-        "bring-forward": false,
-        "bring-to-front": false,
-        "send-backward": false,
-        "send-to-back": false,
-      },
-      canEraseAll: false,
-      hasSelection: false,
-    },
     renderIcon: noop,
     selectedShape: "line",
-    styleControls: [],
+    shapeIcon: { arrowEnd: "arrow", arrowStart: "none", coordinateDimension: "2d" },
     styleIcon: { fillColor: null, fillOpacity: 0, outlineColor: null, outlineStyle: "solid" },
     toolbarState: {
       activeTool: "draw",

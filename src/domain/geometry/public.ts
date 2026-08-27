@@ -5,7 +5,12 @@ export {
   semanticAnchors,
 } from "./anchors";
 export { boundsIntersect, calculateElementBounds, effectiveStrokeWidth } from "./bounds";
-export { centeredGuideAxis } from "./background-guides";
+export {
+  backgroundGuideLayout,
+  centeredGuideAxis,
+  topAnchoredGuideAxis,
+  type BackgroundGuideLayoutRequest,
+} from "./background-guides";
 export {
   changeCoordinateSystemDimension,
   changeTableColumns,
@@ -26,7 +31,12 @@ export {
   nodeSize,
   outlineDashPattern,
 } from "./element-path";
-export { deriveLegacyLockedHeight, derivePageExtent } from "./page-extent";
+export {
+  alignPageHeightToWritingLine,
+  deriveLegacyLockedHeight,
+  derivePageExtent,
+  derivePreviousBackgroundAlignedLockedHeight,
+} from "./page-extent";
 export { translateElementGeometry } from "./translation";
 export {
   PAGE_WIDTH,

@@ -16,7 +16,6 @@ const page: PageV1 = {
   innerWidth: 2_000,
   lockedBufferLines: 1,
   margin: 24.3,
-  writingLineHeight: 100,
 };
 const FIXTURE_VERTICAL_INSETS = 24;
 

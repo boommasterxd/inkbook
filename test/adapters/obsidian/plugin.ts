@@ -306,11 +306,15 @@ export class PluginSettingTab extends Component {
 }
 
 export class MenuItem {
-  setTitle(_title: string): this {
+  setTitle(_title: string | DocumentFragment): this {
     return this;
   }
 
   setIcon(_icon: string): this {
+    return this;
+  }
+
+  setChecked(_checked: boolean | null): this {
     return this;
   }
 
@@ -342,6 +346,14 @@ export class Menu extends Component {
   }
 
   addSeparator(): this {
+    return this;
+  }
+
+  setUseNativeMenu(_useNativeMenu: boolean): this {
+    return this;
+  }
+
+  setParentElement(_element: HTMLElement): this {
     return this;
   }
 

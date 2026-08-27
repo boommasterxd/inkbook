@@ -23,21 +23,20 @@ interface PageV1 {
   innerWidth: 2000;
   margin: 24.3;
   background: BackgroundV1;
-  writingLineHeight: number;
   activeBufferLines: number;
   lockedBufferLines: number;
 }
 
 type BackgroundV1 =
   | { type: "none" }
-  | { type: "lines"; spacing: 50 | 100 | 150 | 200 }
-  | { type: "dots"; spacing: 20 | 40 | 60 | 80 }
-  | { type: "squares"; spacing: 20 | 40 | 60 | 80 };
+  | { type: "lines"; spacing: 25 | 33.333333333333336 | 50 | 100 }
+  | { type: "dots"; spacing: 25 | 33.333333333333336 | 50 | 100 }
+  | { type: "squares"; spacing: 25 | 33.333333333333336 | 50 | 100 };
 ```
 
 The 2,000-unit width is the patterned writing area. The 24.3-unit margin surrounds it on every side and is writable. The total SVG width is therefore exactly 2,048.6 page units.
 
-Page values are copied from vault defaults when the file is created. Background changes are file commands. Later vault-default changes never alter this `PageV1` implicitly. `writingLineHeight` is an integer from 50 through 200 and `activeBufferLines` is an integer from 1 through 8. `lockedBufferLines` remains an integer from 0 through 8 so existing version 1 metadata remains readable, but current writers emit `1` and current layout does not use the legacy value as a writing-line multiplier.
+Page values are copied from vault defaults when the file is created. Background changes are file commands. Later vault-default changes never alter this `PageV1` implicitly. Current writers use the shared absolute 25, 100 / 3, 50, and 100 page-unit series for every patterned background. The serialized IEEE-754 value for 100 / 3 is `33.333333333333336`; layout treats it as exactly three intervals per canonical 100-unit row. The fixed 100-unit layout step is an implementation and format invariant rather than redundant per-file state. `activeBufferLines` is an integer from 1 through 8, and current writers emit the canonical locked value `1`.
 
 Element coordinates use the outer SVG's top-left corner as `(0, 0)`. Positive `x` points right and positive `y` points down. Elements may extend into the margin but MUST remain within the enforced numeric limits.
 
@@ -70,7 +69,7 @@ interface StrokeStyleV1 {
 
 interface OutlineStyleV1 {
   outlineColor: ColorV1;
-  outlineWidth: 2 | 4 | 8 | 12;
+  outlineWidth: 1 | 2 | 4 | 8 | 12;
   outlineOpacity: number;
   outlineStyle: "solid" | "dashed" | "dotted";
 }
@@ -349,31 +348,31 @@ All bounds remain subject to canonical coordinate, element, spatial-index member
 The file does not persist editor or preview height as independent state. Both are derived from validated elements and the per-file `PageV1`.
 
 ```text
-backgroundStep = background spacing, or 1 for None
-bufferUnit = ceil(page.writingLineHeight / backgroundStep) × backgroundStep
+layoutStep = 100
+bufferUnit = layoutStep
 occupiedBottom = page.margin when elements is empty,
                  otherwise max(page.margin, maximum element bounds maxY)
-occupiedRows = ceil(max(0, occupiedBottom - page.margin) / backgroundStep)
+occupiedRows = ceil(max(0, occupiedBottom - page.margin) / layoutStep)
 activeWritableBottom = page.margin
-  + (occupiedRows + page.activeBufferLines × bufferUnit / backgroundStep) × backgroundStep
+  + (occupiedRows + page.activeBufferLines) × layoutStep
 lockedWritableBottom = page.margin
-  + (occupiedRows + lockedTrailingRows) × backgroundStep
-lockedTrailingRows = 1 for Lines, Dots, or Squares,
-                     bufferUnit / backgroundStep for None
+  + (occupiedRows + 1) × layoutStep
 activeHeight = activeWritableBottom + page.margin
 lockedHeight = lockedWritableBottom + page.margin
 ```
 
-The background phase starts at `page.margin`, so these heights always end on a complete background step. An active buffer line means one background-aligned `bufferUnit`, not the raw writing-line height. For a non-empty patterned page, the locked height ends after exactly one complete pattern row beyond the row containing the lowest element. A page with no pattern retains one aligned writing buffer instead. Completing the background cell that contains the last element is content normalization, not the trailing row. An empty file keeps the 2.5-writing-line minimum in both states. The complete rectangular page, including its unpatterned top, right, bottom, and left margins, is writable. Guides are clipped to the inner patterned extent, while committed bounds may occupy a margin. Content entering the bottom margin grows the aligned writable extent and retains a complete margin below it.
+These heights always end on a complete writing row. Background type and spacing are absent from the formula, so changing None, Lines, Dots, Squares, or S/M/L/XL cannot resize unchanged content. A non-empty locked page ends after exactly one complete writing row beyond the row containing the lowest element. An empty file keeps the 2.5-writing-line minimum rounded upward to a complete writing row in both states. The complete rectangular page, including its top, right, bottom, and left margins, is writable. Guides use one fixed inner frame while committed bounds may occupy a margin. Content entering the bottom margin grows the writing-row-aligned writable extent and retains a complete margin below it.
 
-Version 1 files produced by earlier Inkbook builds may contain the previous exact locked height derived from `lockedBufferLines × bufferUnit`. The loader accepts only that exact legacy derivation or the current exact derivation and verifies all static paths against the supplied height. A legacy-height unlock schedules one full canonical export without requiring a content edit; Lock flushes that rewrite if it has not completed. The replacement retains the document revision, uses the normal expected-base and read-back verification path, and requires no migration backup because the snapshot schema version is unchanged. Arbitrary heights remain invalid.
+Version 1 files produced by earlier Inkbook builds may contain either the background-spacing-aligned locked height or the older exact height derived from `lockedBufferLines × bufferUnit`. The loader accepts only those exact historical derivations or the current writing-row derivation and verifies all static paths against the supplied height. A historical-height unlock schedules one full canonical export without requiring a content edit; Lock flushes that rewrite if it has not completed. The replacement retains the document revision, uses the normal expected-base and read-back verification path, and requires no migration backup because the snapshot schema version is unchanged. Arbitrary heights remain invalid.
+
+Earlier version 1 files may also contain the preceding inset, top-anchored, or vertically centered background guide geometries. The loader accepts only a complete deterministic historical background fragment derived from the validated snapshot and supplied supported height; element paths and every other envelope component remain subject to the normal exact checks. A successful historical-background unlock marks the document for the same verified canonical rewrite without changing its revision. Unknown, partially modified, or mixed historical geometry remains invalid.
 
 Runtime height changes only after committed geometry or page commands:
 
 - On activation, set the current height to `activeHeight`.
 - Grow to the recomputed `activeHeight` when `occupiedBottom` enters the final `bufferUnit` of the current writable extent.
 - Shrink to the recomputed `activeHeight` when it is at least one `bufferUnit` below the current height.
-- A background or per-file page-setting command always adopts the recomputed height.
+- A background type or spacing command never changes height. Other page settings adopt the recomputed height only when they participate in the writing-row formula.
 - Lock always targets the exact recomputed `lockedHeight`; unlock always targets the exact recomputed `activeHeight`.
 - Selection edge-drag is the only pre-commit exception: when the pointer enters the final 24 CSS pixels at the container bottom, extend the transient writable bottom by exactly one `bufferUnit`. Do not extend again until the 180-millisecond transition completes and the pointer remains in that edge zone. This session-only extension changes no snapshot, revision, or history.
 - Selection release commits geometry and transitions to the recomputed `activeHeight`. Cancellation transitions to the height that existed before the gesture. No other pointer sample changes a height target.

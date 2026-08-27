@@ -60,6 +60,33 @@ describe("active editor Style controls", () => {
     expect(controlIds("select")).toEqual([]);
   });
 
+  it("offers the complete XS through XL width scale for strokes and outlines", () => {
+    const defaults = createBuiltInSettings().toolDefaults;
+    const stroke = createActiveEditorStyleControls({ defaults, selection: [], tool: "draw" });
+    const outline = createActiveEditorStyleControls({
+      defaults,
+      selection: [],
+      tool: "rectangle",
+    });
+
+    const strokeControl = stroke.find(({ id }) => id === "stroke-width");
+    expect(strokeControl).toMatchObject({ kind: "choice" });
+    if (strokeControl?.kind !== "choice") throw new TypeError("Expected a stroke-width choice.");
+    expect(strokeControl.options.map(({ label }) => label)).toEqual(["XS", "S", "M", "L", "XL"]);
+    expect(strokeControl.options.map(({ value }) => value)).toEqual(["2", "4", "8", "14", "22"]);
+    expect(outline.find(({ id }) => id === "outline-width")).toMatchObject({
+      options: [
+        { label: "XS", value: "1" },
+        { label: "S", value: "2" },
+        { label: "M", value: "4" },
+        { label: "L", value: "8" },
+        { label: "XL", value: "12" },
+      ],
+    });
+  });
+});
+
+describe("active editor Style icon and selection controls", () => {
   it("derives the toolbar palette from the active tool defaults", () => {
     const defaults = createBuiltInSettings().toolDefaults;
     defaults.pen.color = { type: "rgba", value: "#EF4444FF" };

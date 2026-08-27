@@ -171,7 +171,6 @@ function documentModel(
       innerWidth: 2_000,
       lockedBufferLines: 1,
       margin: 24.3,
-      writingLineHeight: 100,
     },
     planClipboardPaste,
     prepareElementMutation: vi.fn(async () => ({ status: "noop" as const, token: null })),

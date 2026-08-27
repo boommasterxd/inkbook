@@ -2,7 +2,7 @@
 @import url("./feedback.css");
 @import url("./editor-toolbar.css");
 @import url("./editor-toolbar-motion.css");
-@import url("./editor-flyouts.css");
+@import url("./editor-menus.css");
 
 .inkbook-root {
   --inkbook-page-surface: #f6f6f6;

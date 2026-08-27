@@ -3,7 +3,7 @@ import {
   loadSettings,
   type ColorV1,
   type InkbookDeviceSettingsV1,
-  type InkbookSettingsV2,
+  type InkbookSettingsV3,
 } from "../../domain/settings";
 import { InkbookSettingsStore } from "./storage";
 
@@ -12,12 +12,12 @@ type VaultControlKey =
   | "refreshRatePreference"
   | "filePlacement.mode"
   | "filePlacement.folder"
-  | `pageDefaults.${"backgroundType" | "writingLineHeight" | "activeBufferLines" | "lockedBufferLines"}`
+  | `pageDefaults.${"backgroundType" | "activeBufferLines" | "lockedBufferLines"}`
   | `pageDefaults.backgroundSpacing.${"lines" | "dots" | "squares"}`
   | `toolDefaults.pen.${"color" | "width" | "opacity" | "pressureEnabled"}`
   | `toolDefaults.${"highlighter" | "straightHighlighter"}.${"color" | "width" | "opacity"}`
   | "toolDefaults.eraser.radius"
-  | `toolDefaults.shapes.${keyof InkbookSettingsV2["toolDefaults"]["shapes"]}.${
+  | `toolDefaults.shapes.${keyof InkbookSettingsV3["toolDefaults"]["shapes"]}.${
       | "outlineColor"
       | "outlineWidth"
       | "outlineStyle"
@@ -51,7 +51,6 @@ const NUMERIC_KEY_SUFFIXES = [
   ".outlineWidth",
   ".radius",
   ".columns",
-  ".writingLineHeight",
   ".activeBufferLines",
   ".lockedBufferLines",
   ".lines",

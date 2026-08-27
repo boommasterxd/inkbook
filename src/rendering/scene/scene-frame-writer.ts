@@ -16,7 +16,6 @@ import type {
   LivePathState,
   MutableSceneInstrumentation,
   SceneCamera,
-  SceneViewport,
 } from "./types";
 
 export class SceneFrameWriter {
@@ -24,6 +23,8 @@ export class SceneFrameWriter {
   #appliedLivePath: AppliedLivePath = emptyAppliedLivePath();
   #appliedOverlayD = "";
   #appliedScheme: DocumentScheme | undefined;
+  #backgroundD = "";
+  #backgroundEdgeD = "";
   #backgroundKey: string | undefined;
   #camera: SceneCamera = { x: 0, zoom: 1 };
   #cameraDirty = true;
@@ -46,10 +47,6 @@ export class SceneFrameWriter {
     this.#dom = dom;
     this.#backgroundCache = backgroundCache;
     this.#instrumentation = instrumentation;
-  }
-
-  public get hasBackground(): boolean {
-    return this.#backgroundKey !== undefined;
   }
 
   public setCamera(camera: SceneCamera): void {
@@ -111,22 +108,23 @@ export class SceneFrameWriter {
     previews.write();
   }
 
-  public writeBackground(
-    page: PageV1,
-    pageHeight: number,
-    viewport: SceneViewport,
-    zoom: number,
-  ): void {
+  public writeBackground(page: PageV1, pageHeight: number, zoom: number): void {
     const applied = writeBackground({
-      applied: { key: this.#backgroundKey, pageHeight: this.#pageHeight },
+      applied: {
+        d: this.#backgroundD,
+        edgeD: this.#backgroundEdgeD,
+        key: this.#backgroundKey,
+        pageHeight: this.#pageHeight,
+      },
       cache: this.#backgroundCache,
       dom: this.#dom,
       instrumentation: this.#instrumentation,
       page,
       pageHeight,
-      viewport,
       zoom,
     });
+    this.#backgroundD = applied.d;
+    this.#backgroundEdgeD = applied.edgeD;
     this.#backgroundKey = applied.key;
     this.#pageHeight = applied.pageHeight;
   }

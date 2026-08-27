@@ -4,13 +4,36 @@ import { derivePageExtent, PAGE_WIDTH } from "../../../../src/domain/geometry/pu
 import { layoutHarness as harness, page } from "./active-editor-layout-fixture";
 
 describe("active editor layout integration", () => {
-  it("requests coverage refresh when the observed presentation reveals more canvas", () => {
+  it("refreshes page paint when the background changes without changing page height", () => {
+    const test = harness("full");
+    const dots = { ...page(), background: { spacing: 50 as const, type: "dots" as const } };
+    test.setDocumentPage(dots);
+    test.layout.chromeMounted();
+    test.work.flushFrames();
+    test.setPage.mockClear();
+    const squares = {
+      ...dots,
+      background: { spacing: 50 as const, type: "squares" as const },
+    };
+
+    test.setDocumentPage(squares);
+    test.layout.pageChanged();
+
+    expect(test.setPage).toHaveBeenCalledWith(
+      squares,
+      derivePageExtent(squares, null).activeHeight,
+    );
+    test.work.flushFrames();
+    test.layout.dispose();
+  });
+
+  it("requests one viewport layout refresh when the presentation size changes", () => {
     const test = harness("full");
     test.invalidateLayout.mockClear();
 
     test.triggerResize();
 
-    expect(test.invalidateLayout).toHaveBeenCalledWith("coverage");
+    expect(test.invalidateLayout).toHaveBeenCalledWith();
     test.layout.dispose();
   });
 
@@ -167,7 +190,7 @@ describe("active editor layout motion", () => {
     test.layout.contentChanged();
     test.work.flushFrame();
 
-    expect(test.setPage).toHaveBeenCalledWith(page(), grownPageHeight);
+    expect(test.rendererPageHeight()).toBeCloseTo(grownPageHeight);
     expect(test.setPage).not.toHaveBeenCalledWith(page(), test.rect.height / zoom);
     test.layout.dispose();
   });
@@ -350,8 +373,7 @@ function exerciseGrowth(
   expect(test.rect.height).toBeLessThan(sizes.grownPageHeight * sizes.zoom);
   test.work.flushFrames();
   expect(test.rect.height).toBeCloseTo(sizes.grownPageHeight * sizes.zoom);
-  expect(test.invalidateLayout).toHaveBeenCalledWith("coverage");
-  expect(test.invalidateLayout).not.toHaveBeenCalledWith("clip");
+  expect(test.invalidateLayout).toHaveBeenCalledWith();
 }
 
 function exerciseShrink(
@@ -363,7 +385,7 @@ function exerciseShrink(
   test.setMaximumBottom(undefined);
   test.layout.contentChanged();
   test.work.flushFrame();
-  expect(test.setPage).toHaveBeenLastCalledWith(page(), sizes.grownPageHeight);
+  expect(test.rendererPageHeight()).toBeCloseTo(sizes.grownPageHeight);
   expect(test.rect.height).toBeCloseTo(sizes.grownPageHeight * sizes.zoom);
   test.work.flushFrame();
   expect(test.rect.height).toBeCloseTo(sizes.grownPageHeight * sizes.zoom);
@@ -378,7 +400,7 @@ function exerciseShrink(
   test.layout.sceneCommitted();
   expect(test.rect.height).toBeCloseTo(sizes.initialHeight);
   expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(false);
-  expect(test.invalidateLayout).toHaveBeenCalledWith("clip");
+  expect(test.invalidateLayout).toHaveBeenCalledWith();
 }
 
 function runningHeightTransition(motion: "full" | "system") {

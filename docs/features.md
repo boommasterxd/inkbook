@@ -11,25 +11,20 @@ Four backgrounds are available for handwriting:
 
 Background types are mutually exclusive. A file displays exactly one of None, Lines, Dots, or Squares.
 
-Line spacing:
+Shared spacing for Lines, Dots, and Squares:
 
-- S: 50
-- M: 100
-- L: 150
-- XL: 200
-
-Grid spacing for dots and squares:
-
-- S: 20
-- M: 40
-- L: 60
-- XL: 80
+- S: 25
+- M: 100 / 3 (approximately 33.333)
+- L: 50
+- XL: 100
 
 When switching to a different background type, the file adopts the configured vault default for that type. If the same type is selected again, the spacing already stored in the file is retained.
 
+The Background drill-in menu presents one shared absolute S/M/L/XL range: 25, 100 / 3, 50, and 100 page units. A named size has the same physical dimensions in every file and never depends on page-buffer settings. Lines, Dots, and Squares use these exact values without a type-specific multiplier. Moving the thumb immediately previews only the guide density without mutating the document, changing the SVG envelope, or starting a height transition. Releasing or otherwise committing the control adopts the preview with exactly one undoable spacing change and schedules persistence. Changing among None, Lines, Dots, and Squares is height-invariant for the same content and page settings.
+
 The current background selection is stored for each handwriting file.
 
-The page height always ends on a complete background line or grid cell. The bottom margin therefore does not cut off partial lines or squares. Square and dot backgrounds fit the greatest whole number of spacing intervals inside the writable width and height, omit every partial remainder, and split unused space equally across the opposite sides. The active editor explicitly closes the last visible square at the right and bottom edges instead of relying on the half-open boundary of an SVG pattern tile. The active editor and standalone SVG therefore show the same centered full-cell geometry without open or clipped cells at the top, right, bottom, or left edge.
+The page height always ends on a complete writing row and never depends on the background type or spacing. One canonical inner page frame runs exactly from each fixed page margin to its opposite margin in both the active editor and standalone SVG. Squares place exact-spacing internal guides from the top-left origin and always close the right and bottom frame edges. Dots occupy exactly the same intersections as the corresponding square grid. Lines retain only the horizontal guides from the same spacing series. If a frame dimension is not divisible by the selected spacing, only the final interval is shorter; the frame and page never resize. Pattern coverage extends by half a screen-space guide width, so terminal guides and dots are never clipped.
 
 ## Automatic Page Expansion
 
@@ -51,18 +46,18 @@ All elements are taken into account for the calculation:
 - tables
 - moved selections
 
-The plugin uses the conservative shared element bounds to calculate an occupied extent, aligns it to the current background step, and then adds configured background-aligned buffer units:
+The plugin uses the conservative shared element bounds to calculate an occupied extent, aligns it to the fixed background-independent 100-unit layout step, and then adds configured buffer rows:
 
 ```
 aligned occupied extent
-+ writingBufferLines × backgroundAlignedWritingUnit
++ activeBufferLines × 100
 ```
 
-With a lined background, the alignment step is the current line spacing. With a grid, it is the grid cell size. The buffer unit is the smallest whole number of background steps that is at least the file's writing-line height. This preserves complete background cells for every valid combination.
+The alignment step and buffer unit are both fixed at 100 page units. Background selection, S/M/L/XL, and buffer-count changes therefore cannot alter the physical size of a pattern.
 
 The page is not remeasured after every pointer sample. After a committed geometry change, it grows when less than one writing line of active buffer remains and restores the configured buffer in one 180-millisecond height transition. The sole pre-commit exception is the bounded one-buffer-unit extension while a selection remains in the bottom-edge drag zone; its exact threshold, cancellation, and commit rules are defined in [File Format and Geometry](file-format.md).
 
-When content is deleted, the active embed can shrink again. The active editor defaults to three empty writing lines below content. A non-empty locked preview ends after the complete pattern row containing the lowest annotation plus exactly one additional complete pattern row. A page without a pattern retains one aligned writing buffer, while an empty page keeps the shared 2.5-writing-line minimum. The active per-file buffer remains configurable; locked trailing space is fixed so preview height follows content consistently. Unlock and Lock animate between these derived heights over 240 milliseconds. The page includes writable unpatterned margins on all four sides; writing into the bottom margin triggers aligned growth that restores the complete margin below the occupied extent.
+When content is deleted, the active embed can shrink again. The active editor defaults to three empty writing lines below content. A non-empty locked preview ends after the writing row containing the lowest annotation plus exactly one additional writing row, regardless of its background. An empty page keeps the shared 2.5-writing-line minimum rounded up to a complete writing row. The active per-file buffer remains configurable; locked trailing space is fixed so preview height follows content consistently. Unlock and Lock animate between these derived heights over 240 milliseconds. The page includes writable margins on all four sides; writing into the bottom margin triggers writing-row-aligned growth that restores the complete margin below the occupied extent.
 
 The exact active, locked, empty-page, and background-snapping equations are defined in [File Format and Geometry](file-format.md).
 

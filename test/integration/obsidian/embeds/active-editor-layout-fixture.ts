@@ -63,7 +63,6 @@ export function page(): PageV1 {
     innerWidth: 2000,
     lockedBufferLines: 1,
     margin: 24.3,
-    writingLineHeight: 100,
   };
 }
 
@@ -106,9 +105,10 @@ export function layoutHarness(motion: "full" | "reduced" | "system" = "full", ho
   const beginScrollStability = vi.fn(() => releaseScrollStability);
   let maximumBottom: number | undefined;
   let pageAvailable = true;
+  let documentPage = page();
   const readPage = vi.fn(() => {
     if (!pageAvailable) throw new Error("The document page is unavailable.");
-    return page();
+    return documentPage;
   });
   const layout = new ActiveEditorLayout({
     beginScrollStability,
@@ -142,8 +142,12 @@ export function layoutHarness(motion: "full" | "reduced" | "system" = "full", ho
     onZoom,
     rect,
     releaseScrollStability,
+    rendererPageHeight: () => rendererPageHeight,
     setMaximumBottom: (value: number | undefined) => {
       maximumBottom = value;
+    },
+    setDocumentPage: (value: PageV1) => {
+      documentPage = value;
     },
     setPage,
     setPageAvailable: (available: boolean) => {
