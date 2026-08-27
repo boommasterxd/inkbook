@@ -1,7 +1,10 @@
 import { menuDomWindow } from "./menu-dom";
 
+let nextMotionMarkerId = 0;
+
 export interface MenuTitleContentOptions {
   readonly caution?: boolean;
+  readonly motionMarker?: boolean;
   readonly minWidth?: number;
 }
 
@@ -14,6 +17,13 @@ export function createMenuTitleContent(
   const fragment = win.createFragment();
   const text = win.createSpan({ cls: "inkbook-menu-title-content", text: title });
   if (options.caution === true) text.classList.add("inkbook-menu-title-content-caution");
+  if (options.motionMarker === true) {
+    nextMotionMarkerId += 1;
+    text.classList.add(
+      "inkbook-menu-motion-marker",
+      `inkbook-menu-motion-id-${String(nextMotionMarkerId)}`,
+    );
+  }
   if (options.minWidth !== undefined) {
     text.style.setProperty("--inkbook-menu-title-min-width", `${String(options.minWidth)}px`);
   }

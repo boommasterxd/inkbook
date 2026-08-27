@@ -3,9 +3,10 @@
   color: var(--text-normal);
   display: grid;
   gap: 8px;
-  inline-size: min(336px, calc(100vw - 32px));
-  margin-inline-start: -9px;
-  padding: 3px 0;
+  inline-size: calc(100% + 24px);
+  margin: -4px -8px -4px -16px;
+  min-inline-size: 0;
+  padding: 0;
 }
 
 .inkbook-menu-control {
@@ -143,7 +144,7 @@
   align-items: center;
   display: grid;
   gap: 7px;
-  grid-template-columns: minmax(100px, 1fr) 54px auto;
+  grid-template-columns: minmax(100px, 1fr) 70px;
 }
 
 .inkbook-menu-slider {
@@ -157,22 +158,54 @@
   inline-size: 100%;
 }
 
-.inkbook-menu-value {
+.inkbook-menu-value-field {
+  align-items: center;
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-m);
   block-size: 36px;
   box-sizing: border-box;
-  color: var(--text-normal);
-  inline-size: 54px;
+  display: flex;
+  inline-size: 70px;
+  justify-content: center;
   padding-inline: 7px;
+}
+
+.inkbook-menu-value-content {
+  align-items: center;
+  display: inline-flex;
+  gap: 4px;
+  max-inline-size: 100%;
+}
+
+.inkbook-menu-controls .inkbook-menu-value-field .inkbook-menu-value {
+  appearance: textfield;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  block-size: 100%;
+  box-shadow: none;
+  color: var(--text-normal);
+  inline-size: var(--inkbook-menu-value-width);
+  min-inline-size: 0;
+  padding: 0;
   text-align: end;
+}
+
+.inkbook-menu-value-field:focus-within {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
 }
 
 .inkbook-menu-value-suffix {
   color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-  min-inline-size: 10px;
+  font-size: var(--font-ui-small);
+  line-height: normal;
+  pointer-events: none;
+}
+
+.inkbook-menu-value-suffix:empty {
+  display: none;
 }
 
 .inkbook-menu-stepper {
@@ -221,9 +254,9 @@
   box-sizing: border-box;
   display: grid;
   gap: 2px;
-  inline-size: calc(100% + 8px);
-  margin-inline-start: -8px;
-  padding: 4px 0 1px;
+  inline-size: calc(100% + 24px);
+  margin: -4px -8px -4px -16px;
+  padding: 0;
 }
 
 .inkbook-menu-spacing-header {
@@ -241,35 +274,51 @@
   font-variant-numeric: tabular-nums;
 }
 
-.inkbook-menu-spacing-slider {
+.inkbook-menu-spacing-slider-row {
+  align-items: center;
+  display: flex;
+  min-block-size: 28px;
+}
+
+.inkbook-menu-spacing-control .inkbook-menu-spacing-slider {
   accent-color: var(--interactive-accent);
-  block-size: 44px;
   inline-size: 100%;
   margin: 0;
   min-inline-size: 0;
 }
 
-.inkbook-menu-spacing-control > .inkbook-menu-spacing-slider {
-  background-clip: content-box;
-  block-size: 44px;
-  box-sizing: border-box;
-  inline-size: 100%;
-  padding-block: 20px;
-}
-
 .inkbook-menu-spacing-labels {
+  block-size: 1em;
   color: var(--text-faint);
-  display: flex;
   font-size: var(--font-ui-smaller);
-  justify-content: space-between;
-  padding-inline: calc(var(--slider-thumb-width, 18px) / 2);
+  margin-inline: calc(var(--slider-thumb-width, 18px) / 2);
+  overflow: visible;
+  position: relative;
   text-align: center;
 }
 
 .inkbook-menu-spacing-labels > span {
-  display: flex;
-  inline-size: 0;
-  justify-content: center;
+  inline-size: max-content;
+  inset-block-start: 0;
+  position: absolute;
+  translate: -50% 0;
+  white-space: nowrap;
+}
+
+.inkbook-menu-spacing-labels > span:nth-child(1) {
+  inset-inline-start: 0;
+}
+
+.inkbook-menu-spacing-labels > span:nth-child(2) {
+  inset-inline-start: calc(100% / 3);
+}
+
+.inkbook-menu-spacing-labels > span:nth-child(3) {
+  inset-inline-start: calc(200% / 3);
+}
+
+.inkbook-menu-spacing-labels > span:nth-child(4) {
+  inset-inline-start: 100%;
 }
 
 .inkbook-menu-switch input {
@@ -322,6 +371,10 @@
   outline-offset: 2px;
 }
 
+.inkbook-menu-controls .inkbook-menu-value-field .inkbook-menu-value:focus-visible {
+  outline: none;
+}
+
 .inkbook-menu-empty {
   color: var(--text-muted);
   margin: 0;
@@ -338,12 +391,77 @@
 }
 
 @media (width <= 420px) {
-  .inkbook-menu-controls {
-    inline-size: min(336px, calc(100vw - 16px));
-  }
-
   .inkbook-menu-color-grid {
     grid-template-columns: repeat(5, minmax(40px, 1fr));
+  }
+}
+
+@media (width > 600px) and (hover: hover) and (pointer: fine) {
+  .inkbook-menu-controls {
+    inline-size: 351px;
+  }
+
+  .menu.inkbook-menu-motion-cards {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  .menu.inkbook-menu-motion-cards .menu-scroll {
+    overflow: visible;
+  }
+
+  .menu.inkbook-menu-motion-cards .inkbook-menu-control {
+    background: var(--background-secondary);
+    box-shadow: var(--shadow-s);
+  }
+
+  .menu.inkbook-menu-motion-surface.inkbook-menu-presence-entering {
+    animation: inkbook-toolbar-context-control-enter var(--inkbook-menu-motion-duration) ease-out
+      both;
+    transform-origin: center;
+  }
+
+  .menu.inkbook-menu-motion-surface.inkbook-menu-presence-exiting {
+    animation: inkbook-toolbar-context-control-exit var(--inkbook-menu-motion-duration) ease-in both;
+    transform-origin: center;
+  }
+
+  .menu.inkbook-menu-motion-surface.inkbook-menu-presence-morphing {
+    animation: inkbook-menu-surface-morph var(--inkbook-menu-motion-duration) ease-out both;
+    transform-origin: center;
+  }
+
+  .menu.inkbook-menu-motion-cards.inkbook-menu-presence-entering .inkbook-menu-control {
+    animation: inkbook-toolbar-context-control-enter var(--inkbook-menu-motion-duration) ease-out
+      both;
+    animation-delay: var(--inkbook-menu-card-delay, 0ms);
+    transform-origin: center;
+  }
+
+  .menu.inkbook-menu-motion-cards.inkbook-menu-presence-exiting .inkbook-menu-control {
+    animation: inkbook-toolbar-context-control-exit var(--inkbook-menu-motion-duration) ease-in both;
+    animation-delay: var(--inkbook-menu-card-exit-delay, 0ms);
+    transform-origin: center;
+  }
+
+  .menu.inkbook-menu-exit-clone {
+    pointer-events: none;
+  }
+}
+
+@keyframes inkbook-menu-surface-morph {
+  from {
+    opacity: 0;
+    scale: var(--inkbook-menu-morph-scale-x) var(--inkbook-menu-morph-scale-y);
+    translate: var(--inkbook-menu-morph-translate-x) var(--inkbook-menu-morph-translate-y);
+  }
+
+  to {
+    opacity: 1;
+    scale: 1;
+    translate: 0;
   }
 }
 

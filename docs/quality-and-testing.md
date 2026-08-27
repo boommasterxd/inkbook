@@ -173,25 +173,28 @@ Durations are milliseconds. Element and chrome motion shares one default curve. 
 
 Every user-visible state change animates unless listed as immediate or reduced motion is active.
 
-| Transition                                           |   Duration | Properties                                                   |
-| ---------------------------------------------------- | ---------: | ------------------------------------------------------------ |
-| Complete primary toolbar pill enter or exit          |     300 ms | fixed-position scale between 0 and 1                         |
-| Tool active state                                    |     120 ms | shared indicator translate, foreground color                 |
-| Adaptive menu open or close                          | Host-owned | Obsidian desktop menu or native mobile bottom sheet          |
-| Selection handles enter or exit                      |     120 ms | opacity, scale                                               |
-| Eraser pending-removal feedback                      |     160 ms | opacity                                                      |
-| Committed shape or pasted-element entrance           |     120 ms | opacity, scale from 0.96 to 1                                |
-| Delete, Cut, or command-removal exit                 |     120 ms | retained visual tombstone opacity, scale to 0.96             |
-| Background type or spacing change                    |       0 ms | atomic pattern and coverage replacement                      |
-| Color, opacity, width, fill, or outline-style change |     120 ms | supported property interpolation or old/new path crossfade   |
-| Locked to active height                              |     240 ms | container height with native scroll position preserved       |
-| Active to locked height                              |     240 ms | container height with native scroll position preserved       |
-| Unlock preview-to-editor representation swap         |       0 ms | atomic visibility after editor readiness                     |
-| Lock editor-to-preview representation swap           |       0 ms | atomic visibility after exact preview paint                  |
-| Automatic page growth or shrink                      |     180 ms | container height with native scroll position preserved       |
-| Conditional toolbar control enter or exit            |     300 ms | fixed-surface scale, 50 ms left-to-right stagger             |
-| Arrange result                                       |     120 ms | old/new path opacity crossfade where overlap changes visibly |
-| Snap candidate marker enter or exit                  |     120 ms | opacity, scale                                               |
+| Transition                                           | Duration | Properties                                                   |
+| ---------------------------------------------------- | -------: | ------------------------------------------------------------ |
+| Complete primary toolbar pill enter or exit          |   300 ms | fixed-position scale between 0 and 1                         |
+| Tool active state                                    |   120 ms | shared indicator translate, foreground color                 |
+| Adaptive menu surface open or close                  |   300 ms | wide-desktop fixed-surface scale; host-owned mobile sheet    |
+| Style menu card open or close                        |   300 ms | wide-desktop scale, top-to-bottom entry, reverse exit        |
+| Overflow and Background menu replacement             |   300 ms | wide-desktop translate and two-axis scale from prior bounds  |
+| Operational feedback open or close                   |   300 ms | fixed-surface scale between 0 and 1                          |
+| Selection handles enter or exit                      |   120 ms | opacity, scale                                               |
+| Eraser pending-removal feedback                      |   160 ms | opacity                                                      |
+| Committed shape or pasted-element entrance           |   120 ms | opacity, scale from 0.96 to 1                                |
+| Delete, Cut, or command-removal exit                 |   120 ms | retained visual tombstone opacity, scale to 0.96             |
+| Background type or spacing change                    |     0 ms | atomic pattern and coverage replacement                      |
+| Color, opacity, width, fill, or outline-style change |   120 ms | supported property interpolation or old/new path crossfade   |
+| Locked to active height                              |   240 ms | container height with native scroll position preserved       |
+| Active to locked height                              |   240 ms | container height with native scroll position preserved       |
+| Unlock preview-to-editor representation swap         |     0 ms | atomic visibility after editor readiness                     |
+| Lock editor-to-preview representation swap           |     0 ms | atomic visibility after exact preview paint                  |
+| Automatic page growth or shrink                      |   180 ms | container height with native scroll position preserved       |
+| Conditional toolbar control enter or exit            |   300 ms | fixed scale, left-to-right entry, right-to-left exit         |
+| Arrange result                                       |   120 ms | old/new path opacity crossfade where overlap changes visibly |
+| Snap candidate marker enter or exit                  |   120 ms | opacity, scale                                               |
 
 Implementation rules:
 
@@ -201,7 +204,9 @@ Implementation rules:
 - One persistent outer shell owned by the presentation root draws the background, border, radius, restrained shadow, and clipping edge throughout locked, unlocking, active, and locking states. The preview and editor are borderless inner layers and never make that shell transparent. Native button shadows are suppressed, so hover never changes the embed depth.
 - Unlock keeps the locked preview visible above the mounted editor until the editor is measured and painted once at its final scene height behind the locked clip. The block-size transition is armed during that preparation frame and uses an immediate-start ease-out curve, so the atomic inner-layer exchange and target-size write do not spend the first visible animation frame installing transition state. The inner layers exchange visibility atomically when the 240-millisecond container growth starts. Ready state, input, focus, toolbar availability, and loading-feedback completion are released in that same start frame rather than waiting for the animation duration; the completion timer only removes the hidden preview and temporary clip geometry. Lock prepares the exact preview below the disabled editor, gives it one complete paint opportunity, then atomically exchanges the inner layers before unmounting the editor. Neither direction contains a frame with both representations hidden or detached.
 - Lock disables input immediately and runs the 240-millisecond width-fit and height transition concurrently with saving and the 300-millisecond whole-pill toolbar exit. If saving or the decorative toolbar exit takes longer, the disabled editor waits at locked geometry; persistence itself is never delayed by chrome motion. The exact saved preview is adopted only after validation, layout, the toolbar exit, and a paint opportunity. The representation swap itself has zero duration and never modifies shell opacity.
-- Context controls use their 50-millisecond stagger when selection or clipboard state makes them appear or disappear. Completed exits retain non-interactive fixed layout slots until the final staggered exit completes, then the complete exit batch is removed atomically without moving an exit that is still visible. A complete editor lock instead starts every still-visible context-control exit with the whole-pill exit so the presentation can detach after their shared 300-millisecond duration without truncation.
+- Context controls use their 50-millisecond stagger from left to right when selection or clipboard state makes them appear and from right to left when they disappear. Completed exits retain non-interactive fixed layout slots until the final staggered exit completes, then the complete exit batch is removed atomically without moving an exit that is still visible. A complete editor lock instead starts every still-visible context-control exit with the whole-pill exit so the presentation can detach after their shared 300-millisecond duration without truncation.
+- Wide-desktop Inkbook menus use an owned public-fragment marker to bind toolbar-scale motion to only their nearest native menu surface. Surface exits and staggered Style-card exits use inaccessible, non-interactive visual tombstones because Obsidian removes native menu state synchronously. Overflow and Background replacements morph from the previous bounds without delaying focus, state changes, or the paint-contiguous drill-in. Narrow, coarse-pointer, and hoverless layouts create no menu motion state or tombstone and leave the native bottom sheet unchanged.
+- Operational feedback uses the same 300-millisecond scale entrance and reverse exit. An exiting message becomes inert and inaccessible immediately, retains only its visual surface until the motion completes, and is removed immediately during replacement, presentation disposal, or plugin unload.
 - Automatic page growth starts only after a committed geometry change, except for the bounded one-buffer-unit selection edge-drag extension. That exception may retarget only after the preceding 180-millisecond height transition completes, never on every pointer sample.
 - A new input gesture immediately completes or cancels any automatic height or tool animation that would delay handling, closes an open adaptive menu, applies the correct final layout, releases or rebases transition scroll stabilization, and then handles the gesture in the same frame.
 - Live ink paths, eraser sweeps, and selection transform previews update immediately and are never tweened behind the pointer.

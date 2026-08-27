@@ -9,9 +9,12 @@ import {
   createPresentationFeedbackPositionLifecycle,
   type PresentationFeedbackPositionLifecycle,
 } from "./presentation-feedback-position";
+import { effectiveTransitionDuration } from "../runtime/effective-motion";
+
+type FeedbackCloseMode = "animated" | "immediate";
 
 export interface InkbookFeedbackHandle {
-  close(): void;
+  close(mode?: FeedbackCloseMode): void;
 }
 
 export interface InkbookFeedbackRequest {
@@ -39,7 +42,7 @@ export class InkbookFeedbackManager {
     request: InkbookFeedbackRequest,
   ): InkbookFeedbackHandle {
     const previous = this.#presentations.get(root);
-    previous?.close();
+    previous?.close("immediate");
     const active = this.#show(
       root,
       "presentation",
@@ -59,7 +62,7 @@ export class InkbookFeedbackManager {
     request: InkbookFeedbackRequest,
   ): InkbookFeedbackHandle {
     const ownerDocument = ownerWindow.document;
-    this.#windows.get(ownerDocument)?.close();
+    this.#windows.get(ownerDocument)?.close("immediate");
     const host = ownerDocument.body.createDiv({
       cls: `inkbook-root inkbook-feedback-host inkbook-feedback-host-${view === undefined ? "window" : "view"}`,
     });
@@ -76,7 +79,7 @@ export class InkbookFeedbackManager {
   public dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
-    for (const feedback of [...this.#active]) feedback.close();
+    for (const feedback of [...this.#active]) feedback.close("immediate");
   }
 
   #show(
@@ -91,17 +94,39 @@ export class InkbookFeedbackManager {
     if (ownerWindow === null) return undefined;
     const surface = createFeedbackSurface(container, feedbackContent(request.code));
     surface.element.classList.add(`inkbook-feedback-${placement}`);
-    let closed = false;
+    let presence: "open" | "exiting" | "closed" = "open";
     let timeout: number | undefined;
+    let exitTimeout: number | undefined;
     let lifecycle: PresentationFeedbackPositionLifecycle | undefined;
-    const close = (): void => {
-      if (closed) return;
-      closed = true;
+    const finish = (): void => {
+      if (presence === "closed") return;
+      presence = "closed";
       if (timeout !== undefined) ownerWindow.clearTimeout(timeout);
+      if (exitTimeout !== undefined) ownerWindow.clearTimeout(exitTimeout);
       lifecycle?.dispose();
       surface.element.remove();
       this.#active.delete(active);
       onClosed();
+    };
+    const close = (mode: FeedbackCloseMode = "animated"): void => {
+      if (presence === "closed") return;
+      if (mode === "immediate") {
+        finish();
+        return;
+      }
+      if (presence === "exiting") return;
+      presence = "exiting";
+      if (timeout !== undefined) ownerWindow.clearTimeout(timeout);
+      surface.element.dataset.inkbookFeedbackPresence = "exiting";
+      surface.element.setAttribute("aria-hidden", "true");
+      surface.element.inert = true;
+      const durationMs = effectiveTransitionDuration(
+        surface.element,
+        ownerWindow,
+        "conditionalToolbarControl",
+      );
+      if (durationMs === 0) finish();
+      else exitTimeout = ownerWindow.setTimeout(finish, durationMs);
     };
     const active: ActiveFeedback = { close, element: surface.element };
     this.#active.add(active);

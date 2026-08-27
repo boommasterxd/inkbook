@@ -55,6 +55,33 @@ describe("Inkbook feedback manager", () => {
       "Paste stopped because the drawing changed.",
     );
   });
+
+  it("keeps a closed message as an inaccessible exit surface until toolbar motion completes", () => {
+    const root = new FakePresentationElement();
+    const ownerWindow = root.ownerDocument.defaultView;
+    if (ownerWindow === null) throw new Error("Missing owner window.");
+    const scheduled: Array<() => void> = [];
+    (ownerWindow as unknown as { setTimeout(callback: () => void): number }).setTimeout = (
+      callback,
+    ) => {
+      scheduled.push(callback);
+      return 1;
+    };
+    const manager = new InkbookFeedbackManager();
+    const handle = manager.showInPresentation(root as unknown as HTMLElement, {
+      actions: [{ id: "dismiss", run: () => true }],
+      code: "clipboard-paste-read-failed",
+    });
+
+    handle.close();
+
+    const feedback = root.getElementsByClassName("inkbook-feedback").item(0);
+    expect(feedback?.dataset.inkbookFeedbackPresence).toBe("exiting");
+    expect(feedback?.attributes.get("aria-hidden")).toBe("true");
+    expect(root.getElementsByClassName("inkbook-feedback").length).toBe(1);
+    scheduled[0]?.();
+    expect(root.getElementsByClassName("inkbook-feedback").length).toBe(0);
+  });
 });
 
 describe("Inkbook feedback routing and cleanup", () => {

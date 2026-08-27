@@ -60,7 +60,9 @@ export function createBackgroundSpacingContent(
     options.onChange(SPACINGS[index]);
   });
   updateLocalValue();
-  root.append(header, range, labels);
+  const sliderRow = win.createDiv({ cls: "inkbook-menu-spacing-slider-row" });
+  sliderRow.append(range);
+  root.append(header, sliderRow, labels);
   fragment.append(root);
   return fragment;
 }

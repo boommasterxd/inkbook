@@ -1,5 +1,5 @@
 .inkbook-root .inkbook-feedback {
-  animation: inkbook-feedback-in var(--inkbook-motion-fast) var(--inkbook-motion-easing);
+  animation: inkbook-toolbar-context-control-enter var(--inkbook-motion-toolbar) ease-out both;
   align-items: center;
   background: color-mix(in srgb, var(--background-primary) 96%, transparent);
   border: 1px solid var(--background-modifier-border-hover);
@@ -14,16 +14,9 @@
   z-index: var(--layer-menu);
 }
 
-@keyframes inkbook-feedback-in {
-  from {
-    opacity: 0;
-    scale: 0.96;
-  }
-
-  to {
-    opacity: 1;
-    scale: 1;
-  }
+.inkbook-root .inkbook-feedback[data-inkbook-feedback-presence="exiting"] {
+  animation: inkbook-toolbar-context-control-exit var(--inkbook-motion-toolbar) ease-in both;
+  pointer-events: none;
 }
 
 .inkbook-root .inkbook-feedback-presentation {

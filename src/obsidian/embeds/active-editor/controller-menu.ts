@@ -114,9 +114,9 @@ export class ActiveEditorMenuController {
 
   public dispose(): void {
     this.#openGeneration += 1;
-    this.#session?.close();
+    this.#session?.close("immediate");
     this.#session = undefined;
-    this.#toolbarSession?.close();
+    this.#toolbarSession?.close("immediate");
     this.#toolbarSession = undefined;
   }
 

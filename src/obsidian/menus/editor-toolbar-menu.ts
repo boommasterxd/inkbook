@@ -13,6 +13,11 @@ import {
   CAUTION_ERASER_ICON_ID,
 } from "../../rendering/ui/icon-ids";
 import { createBackgroundSpacingContent } from "./background-spacing-content";
+import {
+  createDesktopMenuMotion,
+  type MenuMotionBounds,
+  type MenuMotionHandle,
+} from "./menu-motion";
 import { createMenuTitleContent } from "./menu-title-content";
 import { createStyleMenuContent } from "./style-menu-content";
 import type { FocusTargetPort, MenuFactoryPort, MenuItemPort, MenuPort } from "./menu-ports";
@@ -69,6 +74,7 @@ export class EditorToolbarMenuSession {
   readonly #options: EditorToolbarMenuOptions;
   #closed = false;
   #menu: MenuPort | undefined;
+  #motion: MenuMotionHandle | undefined;
   #navigationGeneration = 0;
 
   public constructor(options: EditorToolbarMenuOptions) {
@@ -76,43 +82,62 @@ export class EditorToolbarMenuSession {
     this.#show(options.initialMenu);
   }
 
-  public close(): void {
+  public close(mode: "animated" | "immediate" = "animated"): void {
     if (this.#closed) return;
     this.#closed = true;
     this.#navigationGeneration += 1;
     const menu = this.#menu;
     this.#menu = undefined;
+    if (mode === "immediate") this.#motion?.cancel();
     menu?.close();
+    this.#motion = undefined;
     this.#finish();
   }
 
-  #show(id: EditorToolbarMenuId): void {
+  #show(id: EditorToolbarMenuId, previousBounds?: MenuMotionBounds): void {
     if (this.#closed) return;
     const menu = this.#options.factory.create();
+    let motion: MenuMotionHandle | undefined;
     this.#menu = menu;
     menu.onHide(() => {
+      motion?.exit();
       if (this.#menu !== menu) return;
       this.#menu = undefined;
+      this.#motion = undefined;
       this.#closed = true;
       this.#finish();
     });
-    populateToolbarMenu(menu, id, this.#options, (next) => this.#navigate(next));
+    const marker = populateToolbarMenu(menu, id, this.#options, (next) => this.#navigate(next));
     menu.setParentElement?.(this.#options.anchor);
     menu.showAtPosition(
       menuPositionBelow(this.#options.anchor, id, this.#options.ownerDocument),
       this.#options.ownerDocument,
     );
+    if (marker !== undefined) {
+      motion = createDesktopMenuMotion({
+        kind: id === "style" ? "cards" : "surface",
+        marker,
+        motionSource: this.#options.anchor,
+        ownerWindow: this.#options.ownerWindow,
+        ...(previousBounds === undefined ? {} : { previousBounds }),
+      });
+    }
+    this.#motion = motion;
   }
 
   #navigate(id: EditorToolbarMenuId): void {
     if (this.#closed) return;
     const previous = this.#menu;
+    const previousMotion = this.#motion;
+    const previousBounds = previousMotion?.bounds;
     this.#menu = undefined;
+    this.#motion = undefined;
+    previousMotion?.exit();
     previous?.close();
     const generation = ++this.#navigationGeneration;
     this.#options.ownerWindow.queueMicrotask(() => {
       if (generation !== this.#navigationGeneration || this.#closed) return;
-      this.#show(id);
+      this.#show(id, previousBounds);
     });
   }
 
@@ -149,12 +174,12 @@ export function populateToolbarMenu(
   id: EditorToolbarMenuId,
   options: EditorToolbarMenuOptions,
   navigate: (id: EditorToolbarMenuId) => void,
-): void {
+): HTMLElement | undefined {
   const state = options.getState();
-  if (id === "overflow") populateOverflow(menu, state, options, navigate);
-  else if (id === "background") populateBackground(menu, state.background, options, navigate);
-  else if (id === "shape") populateShapes(menu, state, options);
-  else populateStyle(menu, state.styleControls, options);
+  if (id === "overflow") return populateOverflow(menu, state, options, navigate);
+  if (id === "background") return populateBackground(menu, state.background, options, navigate);
+  if (id === "shape") return populateShapes(menu, state, options);
+  return populateStyle(menu, state.styleControls, options);
 }
 
 function populateOverflow(
@@ -162,15 +187,16 @@ function populateOverflow(
   state: EditorToolbarMenuState,
   options: EditorToolbarMenuOptions,
   navigate: (id: EditorToolbarMenuId) => void,
-): void {
+): HTMLElement | undefined {
   const handlers = options.handlers;
-  addAction(
+  const marker = addAction(
     menu,
     "Background",
     BACKGROUND_ICONS[state.background.type],
     () => navigate("background"),
     {
       minTitleWidth: COMPACT_MENU_TITLE_WIDTH,
+      motionMarker: true,
       ownerDocument: options.ownerDocument,
     },
   );
@@ -225,6 +251,7 @@ function populateOverflow(
   addAction(menu, "Delete embed", "trash-2", () => handlers.onOverflowAction("delete-embed"), {
     warning: true,
   });
+  return marker;
 }
 
 function populateBackground(
@@ -232,10 +259,11 @@ function populateBackground(
   state: BackgroundMenuState,
   options: EditorToolbarMenuOptions,
   navigate: (id: EditorToolbarMenuId) => void,
-): void {
+): HTMLElement | undefined {
   const handlers = options.handlers;
-  addAction(menu, "Back", "arrow-left", () => navigate("overflow"), {
+  const marker = addAction(menu, "Back", "arrow-left", () => navigate("overflow"), {
     minTitleWidth: COMPACT_MENU_TITLE_WIDTH,
+    motionMarker: true,
     ownerDocument: options.ownerDocument,
   });
   menu.addSeparator();
@@ -257,9 +285,10 @@ function populateBackground(
       { checked: state.type === type },
     );
   }
-  if (state.type === "none") return;
+  if (state.type === "none") return marker;
   menu.addSeparator();
   menu.addItem((item) => {
+    item.setIsLabel(true);
     item.setTitleFragment?.(
       createBackgroundSpacingContent({
         onChange: handlers.onBackgroundSpacingChange,
@@ -270,45 +299,55 @@ function populateBackground(
       }),
     );
   });
+  return marker;
 }
 
 function populateShapes(
   menu: MenuPort,
   state: EditorToolbarMenuState,
   options: EditorToolbarMenuOptions,
-): void {
+): HTMLElement | undefined {
   const handlers = options.handlers;
   let group: (typeof SHAPES)[number][2] | undefined;
+  let marker: HTMLElement | undefined;
   for (const [shape, title, nextGroup] of SHAPES) {
     if (group !== undefined && nextGroup !== group) menu.addSeparator();
     group = nextGroup;
-    addAction(
+    const itemMarker = addAction(
       menu,
       title,
       activeShapeIconId(shape, state.shapeIcon),
       () => handlers.onShapeChange(shape),
       {
         checked: state.selectedShape === shape,
+        ...(marker === undefined
+          ? { motionMarker: true, ownerDocument: options.ownerDocument }
+          : {}),
       },
     );
+    marker ??= itemMarker;
   }
+  return marker;
 }
 
 function populateStyle(
   menu: MenuPort,
   controls: readonly StyleControl[],
   options: EditorToolbarMenuOptions,
-): void {
-  menu.addItem((item) => {
-    item.setTitleFragment?.(
-      createStyleMenuContent({
-        controls,
-        onChange: options.handlers.onStyleChange,
-        ownerDocument: options.ownerDocument,
-        renderIcon: options.renderIcon,
-      }),
-    );
+): HTMLElement {
+  const content = createStyleMenuContent({
+    controls,
+    onChange: options.handlers.onStyleChange,
+    ownerDocument: options.ownerDocument,
+    renderIcon: options.renderIcon,
   });
+  const marker = content.querySelector<HTMLElement>(".inkbook-menu-controls");
+  if (marker === null) throw new Error("The Style menu requires its owned control root.");
+  menu.addItem((item) => {
+    item.setIsLabel(true);
+    item.setTitleFragment?.(content);
+  });
+  return marker;
 }
 
 function addAction(
@@ -321,20 +360,30 @@ function addAction(
     readonly checked?: boolean;
     readonly disabled?: boolean;
     readonly minTitleWidth?: number;
+    readonly motionMarker?: boolean;
     readonly ownerDocument?: Document;
     readonly warning?: boolean;
   } = {},
-): void {
+): HTMLElement | undefined {
+  let marker: HTMLElement | undefined;
   menu.addItem((item) => {
-    if (state.caution === true || state.minTitleWidth !== undefined) {
+    if (
+      state.caution === true ||
+      state.minTitleWidth !== undefined ||
+      state.motionMarker === true
+    ) {
       if (state.ownerDocument === undefined)
         throw new Error("Custom menu titles require an owning document.");
-      item.setTitleFragment?.(
-        createMenuTitleContent(state.ownerDocument, title, {
+      if (item.setTitleFragment === undefined) item.setTitle(title);
+      else {
+        const content = createMenuTitleContent(state.ownerDocument, title, {
           ...(state.caution === undefined ? {} : { caution: state.caution }),
           ...(state.minTitleWidth === undefined ? {} : { minWidth: state.minTitleWidth }),
-        }),
-      );
+          ...(state.motionMarker === undefined ? {} : { motionMarker: state.motionMarker }),
+        });
+        marker = content.querySelector<HTMLElement>(".inkbook-menu-motion-marker") ?? undefined;
+        item.setTitleFragment(content);
+      }
     } else item.setTitle(title);
     item.setIcon(icon);
     if (state.checked !== undefined) item.setChecked?.(state.checked);
@@ -342,6 +391,7 @@ function addAction(
     if (state.warning === true) item.setWarning(true);
     if (state.disabled !== true) item.onClick(onClick);
   });
+  return marker;
 }
 
 function addLabel(
@@ -352,8 +402,12 @@ function addLabel(
   ownerDocument?: Document,
 ): void {
   menu.addItem((item: MenuItemPort) => {
-    if (minTitleWidth !== undefined && ownerDocument !== undefined) {
-      item.setTitleFragment?.(
+    if (
+      minTitleWidth !== undefined &&
+      ownerDocument !== undefined &&
+      item.setTitleFragment !== undefined
+    ) {
+      item.setTitleFragment(
         createMenuTitleContent(ownerDocument, title, { minWidth: minTitleWidth }),
       );
     } else item.setTitle(title);

@@ -177,12 +177,14 @@ function createSlider(
   const percent = control.id.includes("opacity");
   const scale = percent ? 100 : 1;
   const range = body.createEl("input");
-  const value = body.createEl("input");
+  const valueField = body.createEl("label", { cls: "inkbook-menu-value-field" });
+  const valueContent = valueField.createSpan({ cls: "inkbook-menu-value-content" });
+  const value = valueContent.createEl("input");
   range.className = "inkbook-menu-slider";
   range.type = "range";
   range.min = String(control.min * scale);
   range.max = String(control.max * scale);
-  range.step = String(control.step * scale);
+  range.step = percent ? "1" : String(control.step * scale);
   range.value = String((control.value ?? control.min) * scale);
   range.setAttribute("aria-label", control.label);
   if (control.mixed === true) range.setAttribute("aria-valuetext", "Mixed");
@@ -194,7 +196,11 @@ function createSlider(
   value.value = control.value === null ? "" : formatNumber(control.value * scale);
   value.placeholder = control.mixed === true ? "Mixed" : "";
   value.setAttribute("aria-label", percent ? `${control.label} percent` : control.label);
-  const suffix = body.createSpan({ cls: "inkbook-menu-value-suffix", text: percent ? "%" : "" });
+  value.style.setProperty(
+    "--inkbook-menu-value-width",
+    `${String(valueCharacterWidth(control, scale, value.placeholder))}ch`,
+  );
+  valueContent.createSpan({ cls: "inkbook-menu-value-suffix", text: percent ? "%" : "" });
   range.addEventListener("input", () => {
     value.value = formatNumber(range.valueAsNumber);
     range.removeAttribute("aria-valuetext");
@@ -202,16 +208,42 @@ function createSlider(
   range.addEventListener("change", () => {
     options.onChange(control.id, range.valueAsNumber / scale);
   });
+  value.addEventListener("input", () => {
+    const next = valueInRange(value, range);
+    if (next === undefined) return;
+    range.value = String(next);
+    range.removeAttribute("aria-valuetext");
+  });
   value.addEventListener("change", () => {
-    const next = clamp(value.valueAsNumber, Number(range.min), Number(range.max));
-    if (!Number.isFinite(next)) return;
+    const next = valueInRange(value, range);
+    if (next === undefined) {
+      value.value = formatNumber(range.valueAsNumber);
+      return;
+    }
     value.value = formatNumber(next);
     range.value = String(next);
     range.removeAttribute("aria-valuetext");
     options.onChange(control.id, next / scale);
   });
-  body.append(range, value, suffix);
+  body.append(range, valueField);
   return field;
+}
+
+function valueInRange(value: HTMLInputElement, range: HTMLInputElement): number | undefined {
+  if (!Number.isFinite(value.valueAsNumber)) return undefined;
+  return clamp(value.valueAsNumber, Number(range.min), Number(range.max));
+}
+
+function valueCharacterWidth(
+  control: Extract<StyleControl, { readonly kind: "number" }>,
+  scale: number,
+  placeholder: string,
+): number {
+  return Math.max(
+    formatNumber(control.min * scale).length,
+    formatNumber(control.max * scale).length,
+    placeholder.length,
+  );
 }
 
 function createStepper(

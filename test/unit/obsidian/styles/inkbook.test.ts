@@ -385,20 +385,22 @@ describe("Inkbook editor overlays", () => {
     );
     const spacing = declarationsFor(".inkbook-menu-spacing-control");
     const spacingSlider = declarationsFor(
-      ".inkbook-menu-spacing-control > .inkbook-menu-spacing-slider",
+      ".inkbook-menu-spacing-control .inkbook-menu-spacing-slider",
     );
     const styleSlider = declarationsFor(".inkbook-menu-slider-row > .inkbook-menu-slider");
     const widthPreview = declarationsFor(".inkbook-menu-width-choice .inkbook-menu-line-preview");
-    expect(controls).toContain("inline-size: min(336px, calc(100vw - 32px))");
-    expect(controls).toContain("margin-inline-start: -9px");
-    expect(controls).toContain("padding: 3px 0");
+    expect(controls).toContain("inline-size: calc(100% + 24px)");
+    expect(controls).toContain("margin: -4px -8px -4px -16px");
+    expect(controls).toContain("min-inline-size: 0");
+    expect(controls).toContain("padding: 0");
     expect(field).toContain("border-radius: calc(var(--radius-l) + 2px)");
     expect(choice).toContain("min-block-size: 44px");
     expect(choice).toContain("min-inline-size: 44px");
     expect(choice).toContain("border: 1px solid var(--background-modifier-border)");
     expect(choice).toContain("box-shadow: none");
-    expect(spacing).toContain("inline-size: calc(100% + 8px)");
-    expect(spacing).toContain("margin-inline-start: -8px");
+    expect(spacing).toContain("inline-size: calc(100% + 24px)");
+    expect(spacing).toContain("margin: -4px -8px -4px -16px");
+    expect(spacing).toContain("padding: 0");
     expect(spacing).not.toContain("background:");
     expect(spacing).not.toContain("border:");
     expect(spacing).not.toContain("border-radius:");

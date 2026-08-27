@@ -11,7 +11,7 @@ import {
   type MenuItemPort,
   type MenuPort,
 } from "../../../../src/obsidian/menus";
-import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
+import { createHtmlElement, installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 
 beforeEach(installObsidianDomHelpers);
 
@@ -155,6 +155,8 @@ describe("context menu population", () => {
       "Delete embed",
     ]);
     expect(menu.entries.filter((entry) => entry === "separator")).toHaveLength(4);
+    const first = menu.entries.find((entry): entry is RecordedItem => entry !== "separator");
+    expect(first?.fragment?.querySelector(".inkbook-menu-motion-marker")).not.toBeNull();
     for (const entry of menu.entries) {
       if (entry === "separator" || entry.calls.includes("label:true")) continue;
       expect(entry.calls.some((call) => call.startsWith("icon:"))).toBe(true);
@@ -219,6 +221,46 @@ describe("context menu population", () => {
 });
 
 describe("context menu lifecycle", () => {
+  it("binds desktop motion after Menu.forEvent mounts its native surface", () => {
+    vi.spyOn(window, "matchMedia").mockReturnValue({ matches: true } as MediaQueryList);
+    let frame: FrameRequestCallback | undefined;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frame = callback;
+      return 1;
+    });
+    const menu = new FakeMenu();
+    const root = createHtmlElement("div");
+    root.className = "inkbook-root";
+    root.dataset.inkbookMotion = "full";
+    const canvas = createHtmlElement("button");
+    root.append(canvas);
+    document.body.append(root);
+    const session = openContextMenu(
+      { create: () => menu, forEvent: () => menu },
+      {
+        type: "event",
+        ownerDocument: document,
+        event: new MouseEvent("contextmenu"),
+        canvasInputSurface: canvas,
+      },
+      state({ hasSelection: false }),
+      handlers(),
+    );
+    const first = menu.entries.find((entry): entry is RecordedItem => entry !== "separator");
+    const surface = createHtmlElement("div");
+    surface.className = "menu";
+    surface.append(first!.fragment!.cloneNode(true));
+    document.body.append(surface);
+
+    expect(frame).toBeDefined();
+    frame!(0);
+
+    expect(surface.classList.contains("inkbook-menu-motion-surface")).toBe(true);
+    session.close("immediate");
+    root.remove();
+    surface.remove();
+  });
+
   it("uses the owning document for positioned menus and returns focus once", () => {
     const menu = new FakeMenu();
     const factory: MenuFactoryPort = {

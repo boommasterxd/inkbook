@@ -48,6 +48,9 @@ describe("adaptive editor toolbar menus", () => {
       "Delete embed",
     ]);
     expect(action(menu, "Background").icon).toBe(BACKGROUND_SQUARES_ICON_ID);
+    expect(
+      action(menu, "Background").fragment?.querySelector(".inkbook-menu-motion-marker"),
+    ).not.toBeNull();
     action(menu, "Background").click?.();
     expect(navigate).toHaveBeenCalledWith("background");
     for (const entry of menu.entries) {
@@ -84,18 +87,23 @@ describe("adaptive background menu", () => {
 
     expect(titles(menu)).toEqual(["Back", "None", "Lines", "Dots", "Squares"]);
     expect(action(menu, "Squares").icon).toBe(BACKGROUND_SQUARES_ICON_ID);
+    expect(
+      action(menu, "Back").fragment?.querySelector(".inkbook-menu-motion-marker"),
+    ).not.toBeNull();
     expect(action(menu, "Squares").checked).toBe(true);
     action(menu, "Back").click?.();
     expect(navigate).toHaveBeenCalledWith("overflow");
     action(menu, "Lines").click?.();
     expect(handlers.onBackgroundTypeChange).toHaveBeenCalledWith("lines");
     expect(navigate).toHaveBeenCalledWith("background");
-    const spacing = menu.entries.find(
+    const spacingItem = menu.entries.find(
       (entry): entry is RecordedItem =>
         entry !== "separator" &&
         entry.fragment?.querySelector('input[type="range"]') !== null &&
         entry.fragment?.querySelector('input[type="range"]') !== undefined,
-    )?.fragment;
+    );
+    expect(spacingItem?.label).toBe(true);
+    const spacing = spacingItem?.fragment;
     const range = spacing?.querySelector<HTMLInputElement>('input[type="range"]');
     expect(range?.value).toBe("1");
     expect(range?.getAttribute("aria-valuetext")).toBe("Medium");
@@ -159,6 +167,9 @@ describe("adaptive shape menu", () => {
     populateToolbarMenu(menu, "shape", configured, vi.fn());
 
     expect(action(menu, "Arrow").checked).toBe(true);
+    expect(
+      action(menu, "Line").fragment?.querySelector(".inkbook-menu-motion-marker"),
+    ).not.toBeNull();
     expect(action(menu, "Arrow").icon).toBe(
       activeShapeIconId("arrow", configured.getState().shapeIcon),
     );
@@ -237,13 +248,21 @@ describe("adaptive style menu", () => {
     const range = fragment?.querySelector<HTMLInputElement>('input[type="range"]');
     const value = fragment?.querySelector<HTMLInputElement>('input[type="number"]');
     expect(range?.value).toBe("65");
-    expect(range?.step).toBe("5");
+    expect(range?.step).toBe("1");
     const mouseDown = vi.fn();
     fragment?.addEventListener("mousedown", mouseDown);
     range!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
     expect(mouseDown).not.toHaveBeenCalled();
     expect(value?.value).toBe("65");
     expect(value?.getAttribute("aria-label")).toBe("Opacity percent");
+    const valueField = value?.closest(".inkbook-menu-value-field");
+    expect(valueField?.querySelector(".inkbook-menu-value-suffix")?.textContent).toBe("%");
+    value!.value = "72";
+    value!.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(range?.value).toBe("72");
+    expect(configured.handlers.onStyleChange).not.toHaveBeenCalled();
+    value!.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(configured.handlers.onStyleChange).toHaveBeenCalledWith("opacity", 0.72);
     for (const id of ["opacity", "outline-opacity", "fill-opacity"]) {
       expect(
         fragment?.querySelector(`[data-control="${id}"] [data-icon]`)?.getAttribute("data-icon"),
@@ -284,8 +303,10 @@ describe("adaptive pen style menu", () => {
     populateToolbarMenu(menu, "style", configured, vi.fn());
     const fragment = menu.entries.find(
       (entry): entry is RecordedItem => entry !== "separator" && entry.fragment !== undefined,
-    )?.fragment;
-    const widthButtons = [...(fragment?.querySelectorAll(".inkbook-menu-width-choice") ?? [])];
+    );
+    expect(fragment?.label).toBe(true);
+    const content = fragment?.fragment;
+    const widthButtons = [...(content?.querySelectorAll(".inkbook-menu-width-choice") ?? [])];
     expect(widthButtons).toHaveLength(5);
     expect(widthButtons.map((button) => button.getAttribute("aria-label"))).toEqual([
       "XS",
@@ -302,7 +323,7 @@ describe("adaptive pen style menu", () => {
       ),
     ).toEqual(["1px", "2.5px", "4px", "6px", "8px"]);
 
-    const toggle = fragment?.querySelector<HTMLElement>(
+    const toggle = content?.querySelector<HTMLElement>(
       '[data-control="pressure-enabled"].inkbook-menu-toggle-row',
     );
     expect(toggle?.querySelector(".inkbook-menu-toggle-heading")?.textContent).toContain(

@@ -6,6 +6,7 @@ import type {
   MenuPosition,
 } from "./menu-ports";
 import { CAUTION_ERASER_ICON_ID } from "../../rendering/ui/icon-ids";
+import { createDesktopMenuMotion, type MenuMotionHandle } from "./menu-motion";
 import { createMenuTitleContent } from "./menu-title-content";
 
 const CONTEXT_MENU_ICONS = {
@@ -79,7 +80,7 @@ interface PositionMenuInvocation extends ContextMenuInvocationBase {
 export type ContextMenuInvocation = EventMenuInvocation | PositionMenuInvocation;
 
 export interface ContextMenuSession {
-  close(): void;
+  close(mode?: "animated" | "immediate"): void;
 }
 
 function configureItem(
@@ -91,18 +92,29 @@ function configureItem(
   options: {
     readonly caution?: boolean;
     readonly disabled?: boolean;
+    readonly motionMarker?: boolean;
     readonly warning?: boolean;
   } = {},
-): void {
+): HTMLElement | undefined {
+  let marker: HTMLElement | undefined;
   menu.addItem((item) => {
-    if (options.caution === true) {
-      item.setTitleFragment?.(createMenuTitleContent(ownerDocument, title, { caution: true }));
+    if (
+      (options.caution === true || options.motionMarker === true) &&
+      item.setTitleFragment !== undefined
+    ) {
+      const content = createMenuTitleContent(ownerDocument, title, {
+        ...(options.caution === undefined ? {} : { caution: options.caution }),
+        ...(options.motionMarker === undefined ? {} : { motionMarker: options.motionMarker }),
+      });
+      marker = content.querySelector<HTMLElement>(".inkbook-menu-motion-marker") ?? undefined;
+      item.setTitleFragment(content);
     } else item.setTitle(title);
     item.setIcon(icon);
     if (options.disabled === true) item.setDisabled(true);
     if (options.warning === true) item.setWarning(true);
     if (options.disabled !== true) item.onClick(() => callback());
   });
+  return marker;
 }
 
 function configureArrangeLabel(menu: MenuPort): void {
@@ -116,8 +128,17 @@ function configureSelectionItems(
   ownerDocument: Document,
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
-): void {
-  configureItem(menu, ownerDocument, "Copy", CONTEXT_MENU_ICONS.copy, handlers.copy);
+): HTMLElement | undefined {
+  const marker = configureItem(
+    menu,
+    ownerDocument,
+    "Copy",
+    CONTEXT_MENU_ICONS.copy,
+    handlers.copy,
+    {
+      motionMarker: true,
+    },
+  );
   configureItem(menu, ownerDocument, "Cut", CONTEXT_MENU_ICONS.cut, handlers.cut);
   if (state.canPaste)
     configureItem(menu, ownerDocument, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
@@ -159,6 +180,7 @@ function configureSelectionItems(
     handlers.sendToBack,
     { disabled: !state.canSendToBack },
   );
+  return marker;
 }
 
 function configureCanvasItems(
@@ -166,14 +188,27 @@ function configureCanvasItems(
   ownerDocument: Document,
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
-): void {
+  addMotionMarker: boolean,
+): HTMLElement | undefined {
+  let marker: HTMLElement | undefined;
   if (!state.hasSelection && state.canPaste) {
-    configureItem(menu, ownerDocument, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
+    marker = configureItem(menu, ownerDocument, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste, {
+      ...(addMotionMarker ? { motionMarker: true } : {}),
+    });
     menu.addSeparator();
   }
-  configureItem(menu, ownerDocument, "Copy embed", CONTEXT_MENU_ICONS.copy, handlers.copyEmbed, {
-    disabled: state.canCopyEmbed === false,
-  });
+  const copyMarker = configureItem(
+    menu,
+    ownerDocument,
+    "Copy embed",
+    CONTEXT_MENU_ICONS.copy,
+    handlers.copyEmbed,
+    {
+      disabled: state.canCopyEmbed === false,
+      ...(addMotionMarker ? { motionMarker: true } : {}),
+    },
+  );
+  marker ??= copyMarker;
   menu.addSeparator();
   configureItem(menu, ownerDocument, "Erase all", CONTEXT_MENU_ICONS.eraseAll, handlers.eraseAll, {
     caution: true,
@@ -187,6 +222,7 @@ function configureCanvasItems(
     handlers.deleteEmbed,
     { disabled: state.canDeleteEmbed === false, warning: true },
   );
+  return marker;
 }
 
 /**
@@ -198,12 +234,21 @@ export function populateContextMenu(
   ownerDocument: Document,
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
-): void {
+): HTMLElement | undefined {
+  let marker: HTMLElement | undefined;
   if (state.hasSelection) {
-    configureSelectionItems(menu, ownerDocument, state, handlers);
+    marker = configureSelectionItems(menu, ownerDocument, state, handlers);
     menu.addSeparator();
   }
-  configureCanvasItems(menu, ownerDocument, state, handlers);
+  const canvasMarker = configureCanvasItems(
+    menu,
+    ownerDocument,
+    state,
+    handlers,
+    marker === undefined,
+  );
+  marker ??= canvasMarker;
+  return marker;
 }
 
 function canFocus(
@@ -234,20 +279,64 @@ export function openContextMenu(
   const menu = invocation.type === "event" ? factory.forEvent(invocation.event) : factory.create();
   let closed = false;
   let focusReturned = false;
+  let motion: MenuMotionHandle | undefined;
+  let motionAttachFrame: number | undefined;
   menu.onHide(() => {
+    if (motionAttachFrame !== undefined) {
+      invocation.ownerDocument.defaultView?.cancelAnimationFrame(motionAttachFrame);
+      motionAttachFrame = undefined;
+    }
+    motion?.exit();
     if (focusReturned) return;
     focusReturned = true;
     focusAfterClose(invocation);
   });
-  populateContextMenu(menu, invocation.ownerDocument, state, handlers);
+  const marker = populateContextMenu(menu, invocation.ownerDocument, state, handlers);
   if (invocation.type === "position") {
     menu.showAtPosition(invocation.position, invocation.ownerDocument);
   }
+  const attachMotion = (): void => {
+    if (motion !== undefined || marker === undefined) return;
+    const motionSource = focusTargetElement(
+      invocation.canvasInputSurface,
+      invocation.ownerDocument,
+    );
+    if (motionSource === undefined) return;
+    motion = createDesktopMenuMotion({
+      kind: "surface",
+      marker,
+      motionSource,
+      ownerWindow: motionSource.ownerDocument.defaultView!,
+    });
+  };
+  attachMotion();
+  if (invocation.type === "event" && motion === undefined) {
+    const ownerWindow = invocation.ownerDocument.defaultView;
+    motionAttachFrame = ownerWindow?.requestAnimationFrame(() => {
+      motionAttachFrame = undefined;
+      attachMotion();
+    });
+  }
   return {
-    close: () => {
+    close: (mode = "animated") => {
       if (closed) return;
       closed = true;
+      if (mode === "immediate") motion?.cancel();
       menu.close();
     },
   };
+}
+
+function focusTargetElement(
+  target: FocusTargetPort,
+  ownerDocument: Document,
+): HTMLElement | undefined {
+  const candidate = target as Partial<HTMLElement>;
+  if (
+    target.ownerDocument !== ownerDocument ||
+    typeof candidate.getBoundingClientRect !== "function" ||
+    candidate.classList === undefined
+  )
+    return undefined;
+  return target as HTMLElement;
 }
