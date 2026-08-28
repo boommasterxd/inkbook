@@ -45,10 +45,6 @@ const WIDTH_PREVIEW_PIXELS: Readonly<Record<string, number>> = {
 export function createStyleMenuContent(options: StyleMenuContentOptions): DocumentFragment {
   const fragment = menuDomWindow(options.ownerDocument, "style menu").createFragment();
   const root = fragment.createDiv({ cls: "inkbook-menu-controls" });
-  root.addEventListener("click", stopPropagation);
-  // Obsidian's Menu cancels bubbling mouse downs, which suppresses native input interaction.
-  root.addEventListener("mousedown", stopPropagation);
-  root.addEventListener("pointerdown", stopPropagation);
   if (options.controls.length === 0) {
     const empty = root.createEl("p", {
       cls: "inkbook-menu-empty",
@@ -332,8 +328,4 @@ function formatNumber(value: number): string {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
-}
-
-function stopPropagation(event: Event): void {
-  event.stopPropagation();
 }

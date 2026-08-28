@@ -1,6 +1,7 @@
+import type { Keymap } from "obsidian";
+
 import type {
   BackgroundMenuState,
-  BackgroundType,
   EditorMenuCallbacks,
   OverflowMenuState,
   ShapeId,
@@ -8,19 +9,13 @@ import type {
 } from "../../rendering/ui/flyout-types";
 import {
   activeShapeIconId,
-  BACKGROUND_SQUARES_ICON_ID,
   type ActiveShapeIconState,
   CAUTION_ERASER_ICON_ID,
 } from "../../rendering/ui/icon-ids";
-import { createBackgroundSpacingContent } from "./background-spacing-content";
-import {
-  createDesktopMenuMotion,
-  type MenuMotionBounds,
-  type MenuMotionHandle,
-} from "./menu-motion";
-import { createMenuTitleContent } from "./menu-title-content";
+import { AdaptivePanelSession, type AdaptivePanelContentLifecycle } from "./adaptive-panel";
+import { backgroundIconId, createBackgroundMenuContent } from "./background-menu-content";
 import { createStyleMenuContent } from "./style-menu-content";
-import type { FocusTargetPort, MenuFactoryPort, MenuItemPort, MenuPort } from "./menu-ports";
+import type { FocusTargetPort, MenuFactoryPort, MenuPort } from "./menu-ports";
 
 export type EditorToolbarMenuId = "overflow" | "background" | "shape" | "style";
 
@@ -41,6 +36,7 @@ export interface EditorToolbarMenuOptions {
   readonly getState: () => EditorToolbarMenuState;
   readonly handlers: EditorToolbarMenuHandlers;
   readonly initialMenu: Exclude<EditorToolbarMenuId, "background">;
+  readonly keymap?: Pick<Keymap, "popScope" | "pushScope">;
   readonly onClosed: () => void;
   readonly ownerDocument: Document;
   readonly ownerWindow: Window;
@@ -60,22 +56,12 @@ const SHAPES: readonly (readonly [ShapeId, string, "lines" | "shapes" | "structu
   ["table", "Table", "structures"],
 ];
 
-const COMPACT_MENU_WIDTH = 199;
-const COMPACT_MENU_TITLE_WIDTH = 145;
-const STYLE_MENU_WIDTH = 364;
-const BACKGROUND_ICONS: Readonly<Record<BackgroundType, string>> = {
-  dots: "grip",
-  lines: "align-justify",
-  none: "ban",
-  squares: BACKGROUND_SQUARES_ICON_ID,
-};
-
 export class EditorToolbarMenuSession {
-  readonly #options: EditorToolbarMenuOptions;
   #closed = false;
   #menu: MenuPort | undefined;
-  #motion: MenuMotionHandle | undefined;
   #navigationGeneration = 0;
+  readonly #options: EditorToolbarMenuOptions;
+  #panel: AdaptivePanelSession | undefined;
 
   public constructor(options: EditorToolbarMenuOptions) {
     this.#options = options;
@@ -87,58 +73,11 @@ export class EditorToolbarMenuSession {
     this.#closed = true;
     this.#navigationGeneration += 1;
     const menu = this.#menu;
+    const panel = this.#panel;
     this.#menu = undefined;
-    if (mode === "immediate") this.#motion?.cancel();
     menu?.close();
-    this.#motion = undefined;
-    this.#finish();
-  }
-
-  #show(id: EditorToolbarMenuId, previousBounds?: MenuMotionBounds): void {
-    if (this.#closed) return;
-    const menu = this.#options.factory.create();
-    let motion: MenuMotionHandle | undefined;
-    this.#menu = menu;
-    menu.onHide(() => {
-      motion?.exit();
-      if (this.#menu !== menu) return;
-      this.#menu = undefined;
-      this.#motion = undefined;
-      this.#closed = true;
-      this.#finish();
-    });
-    const marker = populateToolbarMenu(menu, id, this.#options, (next) => this.#navigate(next));
-    menu.setParentElement?.(this.#options.anchor);
-    menu.showAtPosition(
-      menuPositionBelow(this.#options.anchor, id, this.#options.ownerDocument),
-      this.#options.ownerDocument,
-    );
-    if (marker !== undefined) {
-      motion = createDesktopMenuMotion({
-        kind: id === "style" ? "cards" : "surface",
-        marker,
-        motionSource: this.#options.anchor,
-        ownerWindow: this.#options.ownerWindow,
-        ...(previousBounds === undefined ? {} : { previousBounds }),
-      });
-    }
-    this.#motion = motion;
-  }
-
-  #navigate(id: EditorToolbarMenuId): void {
-    if (this.#closed) return;
-    const previous = this.#menu;
-    const previousMotion = this.#motion;
-    const previousBounds = previousMotion?.bounds;
-    this.#menu = undefined;
-    this.#motion = undefined;
-    previousMotion?.exit();
-    previous?.close();
-    const generation = ++this.#navigationGeneration;
-    this.#options.ownerWindow.queueMicrotask(() => {
-      if (generation !== this.#navigationGeneration || this.#closed) return;
-      this.#show(id, previousBounds);
-    });
+    panel?.close(mode);
+    if (panel === undefined) this.#finish();
   }
 
   #finish(): void {
@@ -150,36 +89,109 @@ export class EditorToolbarMenuSession {
     }
     this.#options.onClosed();
   }
+
+  #navigate(id: EditorToolbarMenuId): void {
+    if (this.#closed) return;
+    const previousMenu = this.#menu;
+    const previousPanel = this.#panel;
+    this.#menu = undefined;
+    this.#panel = undefined;
+    previousMenu?.close();
+    previousPanel?.close("handoff");
+    const generation = ++this.#navigationGeneration;
+    this.#options.ownerWindow.queueMicrotask(() => {
+      if (generation !== this.#navigationGeneration || this.#closed) return;
+      this.#show(id);
+    });
+  }
+
+  #show(id: EditorToolbarMenuId): void {
+    if (this.#closed) return;
+    if (id === "background" || id === "style") {
+      this.#showPanel(id);
+      return;
+    }
+    this.#showNativeMenu(id);
+  }
+
+  #showNativeMenu(id: "overflow" | "shape"): void {
+    const menu = this.#options.factory.create();
+    this.#menu = menu;
+    menu.onHide(() => {
+      if (this.#menu !== menu) return;
+      this.#menu = undefined;
+      this.#closed = true;
+      this.#finish();
+    });
+    populateNativeToolbarMenu(menu, id, this.#options, (next) => this.#navigate(next));
+    menu.setParentElement?.(this.#options.anchor);
+    menu.showAtPosition(menuPositionBelow(this.#options.anchor), this.#options.ownerDocument);
+  }
+
+  #showPanel(id: "background" | "style"): void {
+    let panel: AdaptivePanelSession;
+    panel = new AdaptivePanelSession({
+      anchor: this.#options.anchor,
+      canvasInputSurface: this.#options.canvasInputSurface,
+      createContent: (lifecycle) => this.#createPanelContent(id, lifecycle),
+      ...(this.#options.keymap === undefined ? {} : { keymap: this.#options.keymap }),
+      kind: id,
+      label: id === "style" ? "Style" : "Background",
+      ...(id === "background" ? { onBack: () => this.#navigate("overflow") } : {}),
+      onClosed: () => {
+        if (this.#panel !== panel) return;
+        this.#panel = undefined;
+        this.#closed = true;
+        this.#options.onClosed();
+      },
+      ownerDocument: this.#options.ownerDocument,
+      ownerWindow: this.#options.ownerWindow,
+      renderIcon: this.#options.renderIcon,
+    });
+    this.#panel = panel;
+  }
+
+  #createPanelContent(
+    id: "background" | "style",
+    lifecycle: AdaptivePanelContentLifecycle,
+  ): DocumentFragment {
+    const state = this.#options.getState();
+    if (id === "style") {
+      return createStyleMenuContent({
+        controls: state.styleControls,
+        onChange: this.#options.handlers.onStyleChange,
+        ownerDocument: this.#options.ownerDocument,
+        renderIcon: this.#options.renderIcon,
+      });
+    }
+    return createBackgroundMenuContent({
+      getState: () => this.#options.getState().background,
+      initialState: state.background,
+      onBeforeLayoutChange: () => lifecycle.prepareLayoutChange(),
+      onLayoutChange: () => lifecycle.requestLayout(),
+      onSpacingChange: this.#options.handlers.onBackgroundSpacingChange,
+      onSpacingPreview: this.#options.handlers.onBackgroundSpacingPreview,
+      onTypeChange: this.#options.handlers.onBackgroundTypeChange,
+      ownerDocument: this.#options.ownerDocument,
+      renderIcon: this.#options.renderIcon,
+    });
+  }
 }
 
-export function menuPositionBelow(
-  anchor: HTMLElement,
-  id: EditorToolbarMenuId,
-  ownerDocument: Document,
-) {
+export function menuPositionBelow(anchor: HTMLElement) {
   const bounds = anchor.getBoundingClientRect();
-  const requestedWidth = id === "style" ? STYLE_MENU_WIDTH : COMPACT_MENU_WIDTH;
-  const viewportWidth =
-    ownerDocument.documentElement.clientWidth ||
-    ownerDocument.defaultView?.innerWidth ||
-    requestedWidth;
-  const width = Math.min(requestedWidth, viewportWidth);
-  const centeredX = bounds.left + bounds.width / 2 - width / 2;
-  const x = Math.min(Math.max(0, centeredX), Math.max(0, viewportWidth - width));
-  return { overlap: true, width, x, y: bounds.bottom + 6 };
+  return { overlap: true, x: bounds.left, y: bounds.bottom + 2 };
 }
 
-export function populateToolbarMenu(
+export function populateNativeToolbarMenu(
   menu: MenuPort,
-  id: EditorToolbarMenuId,
+  id: "overflow" | "shape",
   options: EditorToolbarMenuOptions,
   navigate: (id: EditorToolbarMenuId) => void,
-): HTMLElement | undefined {
+): void {
   const state = options.getState();
-  if (id === "overflow") return populateOverflow(menu, state, options, navigate);
-  if (id === "background") return populateBackground(menu, state.background, options, navigate);
-  if (id === "shape") return populateShapes(menu, state, options);
-  return populateStyle(menu, state.styleControls, options);
+  if (id === "overflow") populateOverflow(menu, state, options, navigate);
+  else populateShapes(menu, state, options);
 }
 
 function populateOverflow(
@@ -187,22 +199,13 @@ function populateOverflow(
   state: EditorToolbarMenuState,
   options: EditorToolbarMenuOptions,
   navigate: (id: EditorToolbarMenuId) => void,
-): HTMLElement | undefined {
+): void {
   const handlers = options.handlers;
-  const marker = addAction(
-    menu,
-    "Background",
-    BACKGROUND_ICONS[state.background.type],
-    () => navigate("background"),
-    {
-      minTitleWidth: COMPACT_MENU_TITLE_WIDTH,
-      motionMarker: true,
-      ownerDocument: options.ownerDocument,
-    },
+  addAction(menu, "Background", backgroundIconId(state.background.type), () =>
+    navigate("background"),
   );
   if (state.overflow.hasSelection) {
     menu.addSeparator();
-    addLabel(menu, "Arrange", "layers");
     addAction(menu, "Bring forward", "arrow-up", () => handlers.onOverflowAction("bring-forward"), {
       disabled: !state.overflow.arrange["bring-forward"],
     });
@@ -243,111 +246,31 @@ function populateOverflow(
     CAUTION_ERASER_ICON_ID,
     () => handlers.onOverflowAction("erase-all"),
     {
-      caution: true,
       disabled: !state.overflow.canEraseAll,
-      ownerDocument: options.ownerDocument,
     },
   );
   addAction(menu, "Delete embed", "trash-2", () => handlers.onOverflowAction("delete-embed"), {
     warning: true,
   });
-  return marker;
-}
-
-function populateBackground(
-  menu: MenuPort,
-  state: BackgroundMenuState,
-  options: EditorToolbarMenuOptions,
-  navigate: (id: EditorToolbarMenuId) => void,
-): HTMLElement | undefined {
-  const handlers = options.handlers;
-  const marker = addAction(menu, "Back", "arrow-left", () => navigate("overflow"), {
-    minTitleWidth: COMPACT_MENU_TITLE_WIDTH,
-    motionMarker: true,
-    ownerDocument: options.ownerDocument,
-  });
-  menu.addSeparator();
-  const types: readonly (readonly [BackgroundType, string, string])[] = [
-    ["none", "None", BACKGROUND_ICONS.none],
-    ["lines", "Lines", BACKGROUND_ICONS.lines],
-    ["dots", "Dots", BACKGROUND_ICONS.dots],
-    ["squares", "Squares", BACKGROUND_ICONS.squares],
-  ];
-  for (const [type, title, icon] of types) {
-    addAction(
-      menu,
-      title,
-      icon,
-      () => {
-        handlers.onBackgroundTypeChange(type);
-        if (type !== "none") navigate("background");
-      },
-      { checked: state.type === type },
-    );
-  }
-  if (state.type === "none") return marker;
-  menu.addSeparator();
-  menu.addItem((item) => {
-    item.setIsLabel(true);
-    item.setTitleFragment?.(
-      createBackgroundSpacingContent({
-        onChange: handlers.onBackgroundSpacingChange,
-        onPreview: handlers.onBackgroundSpacingPreview,
-        ownerDocument: options.ownerDocument,
-        renderIcon: options.renderIcon,
-        spacing: state.spacing ?? "m",
-      }),
-    );
-  });
-  return marker;
 }
 
 function populateShapes(
   menu: MenuPort,
   state: EditorToolbarMenuState,
   options: EditorToolbarMenuOptions,
-): HTMLElement | undefined {
-  const handlers = options.handlers;
+): void {
   let group: (typeof SHAPES)[number][2] | undefined;
-  let marker: HTMLElement | undefined;
   for (const [shape, title, nextGroup] of SHAPES) {
     if (group !== undefined && nextGroup !== group) menu.addSeparator();
     group = nextGroup;
-    const itemMarker = addAction(
+    addAction(
       menu,
       title,
       activeShapeIconId(shape, state.shapeIcon),
-      () => handlers.onShapeChange(shape),
-      {
-        checked: state.selectedShape === shape,
-        ...(marker === undefined
-          ? { motionMarker: true, ownerDocument: options.ownerDocument }
-          : {}),
-      },
+      () => options.handlers.onShapeChange(shape),
+      { checked: state.selectedShape === shape },
     );
-    marker ??= itemMarker;
   }
-  return marker;
-}
-
-function populateStyle(
-  menu: MenuPort,
-  controls: readonly StyleControl[],
-  options: EditorToolbarMenuOptions,
-): HTMLElement {
-  const content = createStyleMenuContent({
-    controls,
-    onChange: options.handlers.onStyleChange,
-    ownerDocument: options.ownerDocument,
-    renderIcon: options.renderIcon,
-  });
-  const marker = content.querySelector<HTMLElement>(".inkbook-menu-controls");
-  if (marker === null) throw new Error("The Style menu requires its owned control root.");
-  menu.addItem((item) => {
-    item.setIsLabel(true);
-    item.setTitleFragment?.(content);
-  });
-  return marker;
 }
 
 function addAction(
@@ -356,61 +279,16 @@ function addAction(
   icon: string,
   onClick: () => void,
   state: {
-    readonly caution?: boolean;
     readonly checked?: boolean;
     readonly disabled?: boolean;
-    readonly minTitleWidth?: number;
-    readonly motionMarker?: boolean;
-    readonly ownerDocument?: Document;
     readonly warning?: boolean;
   } = {},
-): HTMLElement | undefined {
-  let marker: HTMLElement | undefined;
+): void {
   menu.addItem((item) => {
-    if (
-      state.caution === true ||
-      state.minTitleWidth !== undefined ||
-      state.motionMarker === true
-    ) {
-      if (state.ownerDocument === undefined)
-        throw new Error("Custom menu titles require an owning document.");
-      if (item.setTitleFragment === undefined) item.setTitle(title);
-      else {
-        const content = createMenuTitleContent(state.ownerDocument, title, {
-          ...(state.caution === undefined ? {} : { caution: state.caution }),
-          ...(state.minTitleWidth === undefined ? {} : { minWidth: state.minTitleWidth }),
-          ...(state.motionMarker === undefined ? {} : { motionMarker: state.motionMarker }),
-        });
-        marker = content.querySelector<HTMLElement>(".inkbook-menu-motion-marker") ?? undefined;
-        item.setTitleFragment(content);
-      }
-    } else item.setTitle(title);
-    item.setIcon(icon);
+    item.setTitle(title).setIcon(icon);
     if (state.checked !== undefined) item.setChecked?.(state.checked);
     if (state.disabled === true) item.setDisabled(true);
     if (state.warning === true) item.setWarning(true);
     if (state.disabled !== true) item.onClick(onClick);
-  });
-  return marker;
-}
-
-function addLabel(
-  menu: MenuPort,
-  title: string,
-  icon: string,
-  minTitleWidth?: number,
-  ownerDocument?: Document,
-): void {
-  menu.addItem((item: MenuItemPort) => {
-    if (
-      minTitleWidth !== undefined &&
-      ownerDocument !== undefined &&
-      item.setTitleFragment !== undefined
-    ) {
-      item.setTitleFragment(
-        createMenuTitleContent(ownerDocument, title, { minWidth: minTitleWidth }),
-      );
-    } else item.setTitle(title);
-    item.setIcon(icon).setIsLabel(true);
   });
 }

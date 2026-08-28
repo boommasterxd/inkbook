@@ -1,0 +1,253 @@
+.inkbook-menu-background-options {
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-inline-size: 0;
+  padding: 4px 4px 12px;
+}
+
+.inkbook-menu-background-choices {
+  display: grid;
+  gap: 0;
+}
+
+.inkbook-menu-background-options .inkbook-menu-background-choice {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-s);
+  block-size: auto;
+  box-shadow: none;
+  color: var(--text-normal);
+  display: grid;
+  font-size: var(--font-ui-small);
+  gap: var(--size-4-2);
+  grid-template-columns: var(--icon-s) minmax(0, 1fr) var(--icon-s);
+  inline-size: 100%;
+  margin: 0;
+  min-block-size: 44px;
+  padding: 6px 8px;
+  text-align: start;
+}
+
+.inkbook-menu-background-options .inkbook-menu-background-choice:hover {
+  background: var(--background-modifier-hover);
+}
+
+.inkbook-menu-background-choice-icon,
+.inkbook-menu-background-choice-icon svg,
+.inkbook-menu-background-choice-check,
+.inkbook-menu-background-choice-check svg {
+  block-size: var(--icon-s);
+  inline-size: var(--icon-s);
+}
+
+.inkbook-menu-background-choice-check[hidden] {
+  display: block !important;
+  visibility: hidden;
+}
+
+.inkbook-menu-background-spacing:not(:empty) {
+  margin-block-start: 4px;
+}
+
+.inkbook-menu-background-separator {
+  border-block-start: 1px solid var(--background-modifier-border);
+  margin-inline: 8px;
+}
+
+.inkbook-menu-spacing-control {
+  box-sizing: border-box;
+  display: grid;
+  gap: 2px;
+  inline-size: 100%;
+  margin: 0;
+  padding: 10px;
+}
+
+.inkbook-menu-spacing-header {
+  align-items: center;
+  color: var(--text-muted);
+  display: grid;
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-medium);
+  gap: 7px;
+  grid-template-columns: 16px 1fr auto;
+}
+
+.inkbook-menu-spacing-output {
+  color: var(--text-normal);
+  font-variant-numeric: tabular-nums;
+}
+
+.inkbook-menu-spacing-slider-row {
+  align-items: center;
+  display: flex;
+  min-block-size: 28px;
+}
+
+.inkbook-menu-spacing-control .inkbook-menu-spacing-slider {
+  accent-color: var(--interactive-accent);
+  inline-size: 100%;
+  margin: 0;
+  min-inline-size: 0;
+}
+
+.inkbook-menu-spacing-labels {
+  block-size: 1em;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  margin-inline: calc(var(--slider-thumb-width, 18px) / 2);
+  overflow: visible;
+  position: relative;
+  text-align: center;
+}
+
+.inkbook-menu-spacing-labels > span {
+  inline-size: max-content;
+  inset-block-start: 0;
+  position: absolute;
+  translate: -50% 0;
+  white-space: nowrap;
+}
+
+.inkbook-menu-spacing-labels > span:nth-child(1) {
+  inset-inline-start: 0;
+}
+
+.inkbook-menu-spacing-labels > span:nth-child(2) {
+  inset-inline-start: calc(100% / 3);
+}
+
+.inkbook-menu-spacing-labels > span:nth-child(3) {
+  inset-inline-start: calc(200% / 3);
+}
+
+.inkbook-menu-spacing-labels > span:nth-child(4) {
+  inset-inline-start: 100%;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="wide"][data-mobile="true"]
+  .inkbook-menu-background-choice,
+.inkbook-adaptive-panel-layer[data-platform="wide"][data-mobile="true"]
+  .inkbook-adaptive-panel-back {
+  font-size: var(--font-ui-medium);
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-background-options {
+  inline-size: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-background-choices {
+  background: transparent;
+  border-radius: 0;
+  overflow: visible;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"]
+  .inkbook-menu-background-options
+  .inkbook-menu-background-choice {
+  background: var(--interactive-normal);
+  border-radius: 0;
+  font-size: var(--font-ui-medium);
+  line-height: unset;
+  min-block-size: 0;
+  padding: var(--size-4-3) var(--size-4-4);
+  position: relative;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-background-choice:first-child {
+  border-start-start-radius: var(--touch-radius-xxs);
+  border-start-end-radius: var(--touch-radius-xxs);
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-background-choice:last-child {
+  border-end-start-radius: var(--touch-radius-xxs);
+  border-end-end-radius: var(--touch-radius-xxs);
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-background-choice:only-child {
+  border-radius: var(--touch-radius-xl);
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"]
+  .inkbook-menu-background-choice:not(:last-child)::after {
+  background-color: var(--menu-divider-color);
+  block-size: var(--menu-divider-width);
+  content: "";
+  display: block;
+  inset-block-end: 0;
+  inset-inline-start: var(--size-4-4);
+  inline-size: calc(100% - var(--size-4-8));
+  pointer-events: none;
+  position: absolute;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-background-choice:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+  z-index: 1;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"]
+  .inkbook-menu-background-options
+  .inkbook-menu-background-choice:hover {
+  background: var(--interactive-normal);
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"]
+  .inkbook-menu-background-options
+  .inkbook-menu-background-choice:active {
+  background: var(--interactive-hover);
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-background-spacing:not(:empty) {
+  background: var(--interactive-normal);
+  border-radius: var(--touch-radius-xxs);
+  margin-block-start: calc(var(--size-4-2) * 2);
+  overflow: hidden;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-spacing-control {
+  padding: var(--size-4-3) var(--size-4-4);
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-background-separator {
+  display: none;
+}
+
+@media (width > 600px) {
+  .inkbook-adaptive-panel-layer[data-platform="wide"]
+    .inkbook-adaptive-panel[data-kind="background"]
+    .inkbook-adaptive-panel-scroll {
+    padding-inline: 0;
+    scrollbar-gutter: auto;
+  }
+
+  .inkbook-adaptive-panel-layer[data-platform="wide"]
+    .inkbook-adaptive-panel[data-kind="background"]
+    .inkbook-adaptive-panel-header {
+    margin-inline: 0;
+  }
+
+  .inkbook-adaptive-panel-layer[data-platform="wide"] .inkbook-menu-background-choices {
+    margin-inline: var(--menu-padding);
+  }
+
+  .inkbook-adaptive-panel-layer[data-platform="wide"] .inkbook-menu-background-options {
+    inline-size: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  .inkbook-adaptive-panel-layer[data-platform="wide"] .inkbook-menu-background-choice {
+    min-block-size: 0;
+    padding: var(--size-4-1) var(--size-4-2);
+  }
+
+  .inkbook-adaptive-panel-layer[data-platform="wide"] .inkbook-menu-background-separator {
+    margin-inline: 0;
+  }
+}

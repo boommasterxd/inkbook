@@ -251,8 +251,10 @@ export class ActiveEditorController {
     }
     if (action === "undo") this.#historyTraversal.undo();
     else if (action === "redo") this.#historyTraversal.redo();
-    else if (action === "lock") this.#onLock();
-    else if (action === "shape-picker" || action === "overflow" || action === "style")
+    else if (action === "lock") {
+      this.#menus.closeToolbar();
+      this.#onLock();
+    } else if (action === "shape-picker" || action === "overflow" || action === "style")
       this.#menus.toggleToolbar(action === "shape-picker" ? "shape" : action, trigger);
     else if (action === "finger-drawing") this.#toggleFingerDrawing();
     else if (

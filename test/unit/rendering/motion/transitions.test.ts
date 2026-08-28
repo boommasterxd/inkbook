@@ -20,6 +20,7 @@ describe("motion tokens", () => {
   it("exposes the documented duration and easing tokens", () => {
     expect(MOTION_TOKENS).toEqual({
       fast: 120,
+      menu: 220,
       toolbar: 300,
       standard: 180,
       erase: 160,
@@ -32,6 +33,7 @@ describe("motion tokens", () => {
 
   it("maps every documented transition to its contract duration", () => {
     expect(TRANSITION_DURATIONS).toEqual({
+      adaptiveMenu: 220,
       toolbarEnterExit: 300,
       toolActiveState: 120,
       selectionHandlesEnterExit: 120,

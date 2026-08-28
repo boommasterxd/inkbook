@@ -158,11 +158,10 @@ When a selection exists, the menu begins with:
 2. Cut
 3. Delete
 4. a separator
-5. Arrange, as a non-interactive label
-6. Bring forward
-7. Send backward
-8. Bring to front
-9. Send to back
+5. Bring forward
+6. Send backward
+7. Bring to front
+8. Send to back
 
 The canvas section follows after a separator:
 
@@ -171,7 +170,7 @@ The canvas section follows after a separator:
 3. Erase all
 4. Delete embed
 
-Without a selection, the selection section is omitted. The four Arrange actions are flat entries beneath a labelled row because the public Obsidian `MenuItem` API exposes no submenu contract. Disabled boundary actions remain visible. Delete removes only the selected annotations with one undoable canvas command. Erase all and Delete embed retain their confirmation behavior. Exact icons, destructive styling, focus behavior, and host API usage are defined in [Embed UI](embed-ui.md#context-menu-presentation) and [Obsidian Integration](obsidian-integration.md#commands-menus-icons-and-styling).
+Without a selection, the selection section is omitted. The four Arrange actions are flat entries because the public Obsidian `MenuItem` API exposes no submenu contract. Disabled boundary actions remain visible. Delete removes only the selected annotations with one undoable canvas command. Erase all and Delete embed retain their confirmation behavior. Exact icons, destructive styling, focus behavior, and host API usage are defined in [Embed UI](embed-ui.md#context-menu-presentation) and [Obsidian Integration](obsidian-integration.md#commands-menus-icons-and-styling).
 
 ## Copying the Entire Embed
 

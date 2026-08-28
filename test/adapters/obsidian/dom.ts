@@ -5,6 +5,12 @@ export function createHtmlElement<K extends keyof HTMLElementTagNameMap>(
 }
 
 export function installObsidianDomHelpers(): void {
+  const elementPrototype = window.HTMLElement.prototype as HTMLElement & {
+    setCssProps(properties: Record<string, string>): void;
+  };
+  elementPrototype.setCssProps = function (properties): void {
+    for (const [name, value] of Object.entries(properties)) this.style.setProperty(name, value);
+  };
   const nodePrototype = window.Node.prototype as Node & {
     createDiv: (options?: { readonly cls?: string }) => HTMLDivElement;
     createEl: <K extends keyof HTMLElementTagNameMap>(

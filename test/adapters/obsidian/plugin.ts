@@ -1,5 +1,7 @@
 import { StateField } from "@codemirror/state";
 
+export { Keymap, Scope } from "./keymap";
+
 export interface TestEditorInfo {
   readonly editor?: Editor;
   readonly file: { readonly path: string } | null;

@@ -2,7 +2,9 @@
 @import url("./feedback.css");
 @import url("./editor-toolbar.css");
 @import url("./editor-toolbar-motion.css");
+@import url("./adaptive-panel.css");
 @import url("./editor-menus.css");
+@import url("./background-menu.css");
 
 .inkbook-root {
   --inkbook-page-surface: #f6f6f6;
@@ -232,6 +234,32 @@
 .inkbook-root .inkbook-locked-preview:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: -2px;
+}
+
+.inkbook-root .inkbook-locked-preview-android {
+  -webkit-tap-highlight-color: transparent;
+  min-block-size: 0;
+  min-inline-size: 0;
+  touch-action: manipulation;
+}
+
+.inkbook-root .inkbook-locked-preview-android:hover,
+.inkbook-root .inkbook-locked-preview-android:active,
+.inkbook-root .inkbook-locked-preview-android:focus {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  filter: none;
+  transform: none;
+}
+
+.inkbook-root .inkbook-locked-preview-android:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.inkbook-root .inkbook-locked-preview-android::before,
+.inkbook-root .inkbook-locked-preview-android::after {
+  content: none;
 }
 
 .inkbook-root .inkbook-background-container.inkbook-page-height-transitioning > .inkbook-scene {

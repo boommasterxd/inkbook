@@ -114,6 +114,7 @@ export class ActiveInkbookScene {
       deviceSettings: options.deviceSettings,
       history: options.history,
       interruptLayoutForInput: () => this.#layout.interruptForInput(),
+      ...(options.keymap === undefined ? {} : { keymap: options.keymap }),
       menuFactory: options.menuFactory ?? obsidianMenuFactory,
       model: options.model,
       onLock: options.onLock,

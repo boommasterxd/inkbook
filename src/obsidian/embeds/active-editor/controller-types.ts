@@ -14,6 +14,7 @@ import type { ActiveEditorZoomLayoutUpdate } from "./navigation";
 import type { BackgroundSpacingDefaults } from "./controller-helpers";
 import type { SelectionEdgeDragPort } from "./selection-preview";
 import type { ActiveEditorHistory } from "./history";
+import type { Keymap } from "obsidian";
 
 export interface ActiveEditorControllerOptions {
   readonly container: HTMLElement;
@@ -22,6 +23,7 @@ export interface ActiveEditorControllerOptions {
   readonly defaults: ToolDefaultsV1;
   readonly deviceSettings: InkbookDeviceSettingsV1;
   readonly interruptLayoutForInput: () => void;
+  readonly keymap?: Pick<Keymap, "popScope" | "pushScope">;
   readonly history: ActiveEditorHistory;
   readonly menuFactory: MenuFactoryPort;
   readonly model: EditableDocumentModel;

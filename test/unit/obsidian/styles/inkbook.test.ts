@@ -6,6 +6,8 @@ const stylesheet = [
   readStylesheet("src/obsidian/styles/feedback.css"),
   readStylesheet("src/obsidian/styles/editor-toolbar.css"),
   readStylesheet("src/obsidian/styles/editor-menus.css"),
+  readStylesheet("src/obsidian/styles/background-menu.css"),
+  readStylesheet("src/obsidian/styles/adaptive-panel.css"),
 ].join("\n");
 const motionStylesheet = readStylesheet("src/obsidian/styles/motion.css");
 const toolbarMotionStylesheet = readStylesheet("src/obsidian/styles/editor-toolbar-motion.css");
@@ -79,6 +81,7 @@ describe("Inkbook host styles", () => {
   it("draws locked-preview keyboard focus entirely inside the stabilized owner width", () => {
     const focus = declarationsFor(".inkbook-root .inkbook-locked-preview:focus-visible");
     const preview = declarationsFor(".inkbook-root .inkbook-locked-preview");
+    const android = declarationsFor(".inkbook-root .inkbook-locked-preview-android");
     const image = declarationsFor(".inkbook-root .inkbook-locked-preview-media");
     const svg = declarationsFor(".inkbook-root .inkbook-locked-preview-svg");
 
@@ -91,6 +94,9 @@ describe("Inkbook host styles", () => {
     expect(preview).toContain("transform: none");
     expect(preview).toContain("transition: none");
     expect(preview).toContain("contain: layout paint");
+    expect(android).toContain("-webkit-tap-highlight-color: transparent");
+    expect(android).toContain("min-block-size: 0");
+    expect(android).toContain("min-inline-size: 0");
     expect(image).toContain("aspect-ratio: var(--inkbook-preview-aspect-ratio)");
     expect(image).toContain("pointer-events: none");
     expect(svg).toContain("block-size: 100%");
@@ -377,7 +383,7 @@ describe("Inkbook editor overlays", () => {
     expect(headless).toContain("padding-inline-end: 52px");
   });
 
-  it("keeps native style-menu controls rounded, compact, and touch operable", () => {
+  it("keeps owned Style controls compact and visually unified", () => {
     const controls = declarationsFor(".inkbook-menu-controls");
     const field = declarationsFor(".inkbook-menu-control");
     const choice = declarationsFor(
@@ -389,18 +395,19 @@ describe("Inkbook editor overlays", () => {
     );
     const styleSlider = declarationsFor(".inkbook-menu-slider-row > .inkbook-menu-slider");
     const widthPreview = declarationsFor(".inkbook-menu-width-choice .inkbook-menu-line-preview");
-    expect(controls).toContain("inline-size: calc(100% + 24px)");
-    expect(controls).toContain("margin: -4px -8px -4px -16px");
+    expect(controls).toContain("inline-size: 100%");
+    expect(controls).toContain("margin: 0");
     expect(controls).toContain("min-inline-size: 0");
     expect(controls).toContain("padding: 0");
-    expect(field).toContain("border-radius: calc(var(--radius-l) + 2px)");
-    expect(choice).toContain("min-block-size: 44px");
-    expect(choice).toContain("min-inline-size: 44px");
+    expect(field).toContain("background: transparent");
+    expect(field).toContain("border-radius: 0");
+    expect(choice).toContain("min-block-size: 36px");
+    expect(choice).toContain("min-inline-size: 36px");
     expect(choice).toContain("border: 1px solid var(--background-modifier-border)");
     expect(choice).toContain("box-shadow: none");
-    expect(spacing).toContain("inline-size: calc(100% + 24px)");
-    expect(spacing).toContain("margin: -4px -8px -4px -16px");
-    expect(spacing).toContain("padding: 0");
+    expect(spacing).toContain("inline-size: 100%");
+    expect(spacing).toContain("margin: 0");
+    expect(spacing).toContain("padding: 10px");
     expect(spacing).not.toContain("background:");
     expect(spacing).not.toContain("border:");
     expect(spacing).not.toContain("border-radius:");
@@ -425,7 +432,9 @@ describe("Inkbook editor overlays", () => {
     expect(
       selectors.filter(
         (selector) =>
-          !selector.startsWith(".inkbook-root") && !selector.startsWith(".inkbook-menu-"),
+          !selector.startsWith(".inkbook-root") &&
+          !selector.startsWith(".inkbook-menu-") &&
+          !selector.startsWith(".inkbook-adaptive-panel"),
       ),
     ).toEqual([".inkbook-scrollbar-stable", ".inkbook-scroll-anchor-suppressed"]);
   });

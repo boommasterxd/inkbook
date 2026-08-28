@@ -1,25 +1,16 @@
-import type {
-  FocusTargetPort,
-  MenuFactoryPort,
-  MenuItemPort,
-  MenuPort,
-  MenuPosition,
-} from "./menu-ports";
 import { CAUTION_ERASER_ICON_ID } from "../../rendering/ui/icon-ids";
-import { createDesktopMenuMotion, type MenuMotionHandle } from "./menu-motion";
-import { createMenuTitleContent } from "./menu-title-content";
+import type { FocusTargetPort, MenuFactoryPort, MenuPort, MenuPosition } from "./menu-ports";
 
 const CONTEXT_MENU_ICONS = {
+  bringForward: "arrow-up",
+  bringToFront: "chevrons-up",
   copy: "copy",
   cut: "scissors",
-  paste: "clipboard-paste",
   delete: "trash-2",
-  arrange: "layers",
-  bringForward: "arrow-up",
-  sendBackward: "arrow-down",
-  bringToFront: "chevrons-up",
-  sendToBack: "chevrons-down",
   eraseAll: CAUTION_ERASER_ICON_ID,
+  paste: "clipboard-paste",
+  sendBackward: "arrow-down",
+  sendToBack: "chevrons-down",
 } as const;
 
 export type ContextMenuAction =
@@ -85,170 +76,84 @@ export interface ContextMenuSession {
 
 function configureItem(
   menu: MenuPort,
-  ownerDocument: Document,
   title: string,
   icon: string,
   callback: () => void,
   options: {
-    readonly caution?: boolean;
     readonly disabled?: boolean;
-    readonly motionMarker?: boolean;
     readonly warning?: boolean;
   } = {},
-): HTMLElement | undefined {
-  let marker: HTMLElement | undefined;
+): void {
   menu.addItem((item) => {
-    if (
-      (options.caution === true || options.motionMarker === true) &&
-      item.setTitleFragment !== undefined
-    ) {
-      const content = createMenuTitleContent(ownerDocument, title, {
-        ...(options.caution === undefined ? {} : { caution: options.caution }),
-        ...(options.motionMarker === undefined ? {} : { motionMarker: options.motionMarker }),
-      });
-      marker = content.querySelector<HTMLElement>(".inkbook-menu-motion-marker") ?? undefined;
-      item.setTitleFragment(content);
-    } else item.setTitle(title);
-    item.setIcon(icon);
+    item.setTitle(title).setIcon(icon);
     if (options.disabled === true) item.setDisabled(true);
     if (options.warning === true) item.setWarning(true);
-    if (options.disabled !== true) item.onClick(() => callback());
-  });
-  return marker;
-}
-
-function configureArrangeLabel(menu: MenuPort): void {
-  menu.addItem((item: MenuItemPort) => {
-    item.setTitle("Arrange").setIcon(CONTEXT_MENU_ICONS.arrange).setIsLabel(true);
+    if (options.disabled !== true) item.onClick(callback);
   });
 }
 
 function configureSelectionItems(
   menu: MenuPort,
-  ownerDocument: Document,
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
-): HTMLElement | undefined {
-  const marker = configureItem(
-    menu,
-    ownerDocument,
-    "Copy",
-    CONTEXT_MENU_ICONS.copy,
-    handlers.copy,
-    {
-      motionMarker: true,
-    },
-  );
-  configureItem(menu, ownerDocument, "Cut", CONTEXT_MENU_ICONS.cut, handlers.cut);
-  if (state.canPaste)
-    configureItem(menu, ownerDocument, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
+): void {
+  configureItem(menu, "Copy", CONTEXT_MENU_ICONS.copy, handlers.copy);
+  configureItem(menu, "Cut", CONTEXT_MENU_ICONS.cut, handlers.cut);
+  if (state.canPaste) configureItem(menu, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
   menu.addSeparator();
-  configureItem(menu, ownerDocument, "Delete", CONTEXT_MENU_ICONS.delete, handlers.delete, {
-    warning: true,
+  configureItem(menu, "Delete", CONTEXT_MENU_ICONS.delete, handlers.delete, { warning: true });
+  menu.addSeparator();
+  configureItem(menu, "Bring forward", CONTEXT_MENU_ICONS.bringForward, handlers.bringForward, {
+    disabled: !state.canBringForward,
   });
-  menu.addSeparator();
-  configureArrangeLabel(menu);
-  configureItem(
-    menu,
-    ownerDocument,
-    "Bring forward",
-    CONTEXT_MENU_ICONS.bringForward,
-    handlers.bringForward,
-    { disabled: !state.canBringForward },
-  );
-  configureItem(
-    menu,
-    ownerDocument,
-    "Send backward",
-    CONTEXT_MENU_ICONS.sendBackward,
-    handlers.sendBackward,
-    { disabled: !state.canSendBackward },
-  );
-  configureItem(
-    menu,
-    ownerDocument,
-    "Bring to front",
-    CONTEXT_MENU_ICONS.bringToFront,
-    handlers.bringToFront,
-    { disabled: !state.canBringToFront },
-  );
-  configureItem(
-    menu,
-    ownerDocument,
-    "Send to back",
-    CONTEXT_MENU_ICONS.sendToBack,
-    handlers.sendToBack,
-    { disabled: !state.canSendToBack },
-  );
-  return marker;
+  configureItem(menu, "Send backward", CONTEXT_MENU_ICONS.sendBackward, handlers.sendBackward, {
+    disabled: !state.canSendBackward,
+  });
+  configureItem(menu, "Bring to front", CONTEXT_MENU_ICONS.bringToFront, handlers.bringToFront, {
+    disabled: !state.canBringToFront,
+  });
+  configureItem(menu, "Send to back", CONTEXT_MENU_ICONS.sendToBack, handlers.sendToBack, {
+    disabled: !state.canSendToBack,
+  });
 }
 
 function configureCanvasItems(
   menu: MenuPort,
-  ownerDocument: Document,
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
-  addMotionMarker: boolean,
-): HTMLElement | undefined {
-  let marker: HTMLElement | undefined;
+): void {
   if (!state.hasSelection && state.canPaste) {
-    marker = configureItem(menu, ownerDocument, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste, {
-      ...(addMotionMarker ? { motionMarker: true } : {}),
-    });
+    configureItem(menu, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
     menu.addSeparator();
   }
-  const copyMarker = configureItem(
-    menu,
-    ownerDocument,
-    "Copy embed",
-    CONTEXT_MENU_ICONS.copy,
-    handlers.copyEmbed,
-    {
-      disabled: state.canCopyEmbed === false,
-      ...(addMotionMarker ? { motionMarker: true } : {}),
-    },
-  );
-  marker ??= copyMarker;
+  configureItem(menu, "Copy embed", CONTEXT_MENU_ICONS.copy, handlers.copyEmbed, {
+    disabled: state.canCopyEmbed === false,
+  });
   menu.addSeparator();
-  configureItem(menu, ownerDocument, "Erase all", CONTEXT_MENU_ICONS.eraseAll, handlers.eraseAll, {
-    caution: true,
+  configureItem(menu, "Erase all", CONTEXT_MENU_ICONS.eraseAll, handlers.eraseAll, {
     disabled: state.canEraseAll === false,
   });
-  configureItem(
-    menu,
-    ownerDocument,
-    "Delete embed",
-    CONTEXT_MENU_ICONS.delete,
-    handlers.deleteEmbed,
-    { disabled: state.canDeleteEmbed === false, warning: true },
-  );
-  return marker;
+  configureItem(menu, "Delete embed", CONTEXT_MENU_ICONS.delete, handlers.deleteEmbed, {
+    disabled: state.canDeleteEmbed === false,
+    warning: true,
+  });
 }
 
 /**
- * Adds the complete context menu in the contract's stable order. The native
- * menu remains responsible for keyboard navigation and Escape handling.
+ * Adds the complete context menu in the contract's stable order. Obsidian owns
+ * presentation, keyboard navigation, dismissal, and mobile bottom sheets.
  */
 export function populateContextMenu(
   menu: MenuPort,
-  ownerDocument: Document,
+  _ownerDocument: Document,
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
-): HTMLElement | undefined {
-  let marker: HTMLElement | undefined;
+): void {
   if (state.hasSelection) {
-    marker = configureSelectionItems(menu, ownerDocument, state, handlers);
+    configureSelectionItems(menu, state, handlers);
     menu.addSeparator();
   }
-  const canvasMarker = configureCanvasItems(
-    menu,
-    ownerDocument,
-    state,
-    handlers,
-    marker === undefined,
-  );
-  marker ??= canvasMarker;
-  return marker;
+  configureCanvasItems(menu, state, handlers);
 }
 
 function canFocus(
@@ -279,64 +184,20 @@ export function openContextMenu(
   const menu = invocation.type === "event" ? factory.forEvent(invocation.event) : factory.create();
   let closed = false;
   let focusReturned = false;
-  let motion: MenuMotionHandle | undefined;
-  let motionAttachFrame: number | undefined;
   menu.onHide(() => {
-    if (motionAttachFrame !== undefined) {
-      invocation.ownerDocument.defaultView?.cancelAnimationFrame(motionAttachFrame);
-      motionAttachFrame = undefined;
-    }
-    motion?.exit();
     if (focusReturned) return;
     focusReturned = true;
     focusAfterClose(invocation);
   });
-  const marker = populateContextMenu(menu, invocation.ownerDocument, state, handlers);
+  populateContextMenu(menu, invocation.ownerDocument, state, handlers);
   if (invocation.type === "position") {
     menu.showAtPosition(invocation.position, invocation.ownerDocument);
   }
-  const attachMotion = (): void => {
-    if (motion !== undefined || marker === undefined) return;
-    const motionSource = focusTargetElement(
-      invocation.canvasInputSurface,
-      invocation.ownerDocument,
-    );
-    if (motionSource === undefined) return;
-    motion = createDesktopMenuMotion({
-      kind: "surface",
-      marker,
-      motionSource,
-      ownerWindow: motionSource.ownerDocument.defaultView!,
-    });
-  };
-  attachMotion();
-  if (invocation.type === "event" && motion === undefined) {
-    const ownerWindow = invocation.ownerDocument.defaultView;
-    motionAttachFrame = ownerWindow?.requestAnimationFrame(() => {
-      motionAttachFrame = undefined;
-      attachMotion();
-    });
-  }
   return {
-    close: (mode = "animated") => {
+    close: () => {
       if (closed) return;
       closed = true;
-      if (mode === "immediate") motion?.cancel();
       menu.close();
     },
   };
-}
-
-function focusTargetElement(
-  target: FocusTargetPort,
-  ownerDocument: Document,
-): HTMLElement | undefined {
-  const candidate = target as Partial<HTMLElement>;
-  if (
-    target.ownerDocument !== ownerDocument ||
-    typeof candidate.getBoundingClientRect !== "function" ||
-    candidate.classList === undefined
-  )
-    return undefined;
-  return target as HTMLElement;
 }

@@ -78,6 +78,7 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
       actions,
       factory: controller.menuFactory,
       inputSurface: controller.renderer.inputSurface,
+      ...(controller.keymap === undefined ? {} : { keymap: controller.keymap }),
       ownerDocument: controller.container.ownerDocument,
       selectionSize: () => options.selection().size,
       storeSize: () => controller.model.store.size,

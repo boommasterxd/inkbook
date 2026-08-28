@@ -13,7 +13,9 @@ import {
 } from "../../../../src/obsidian/menus";
 import { createHtmlElement, installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 
-beforeEach(installObsidianDomHelpers);
+beforeEach(() => {
+  installObsidianDomHelpers();
+});
 
 interface RecordedItem {
   readonly calls: string[];
@@ -145,7 +147,6 @@ describe("context menu population", () => {
       "Cut",
       "Paste",
       "Delete",
-      "Arrange",
       "Bring forward",
       "Send backward",
       "Bring to front",
@@ -155,8 +156,9 @@ describe("context menu population", () => {
       "Delete embed",
     ]);
     expect(menu.entries.filter((entry) => entry === "separator")).toHaveLength(4);
-    const first = menu.entries.find((entry): entry is RecordedItem => entry !== "separator");
-    expect(first?.fragment?.querySelector(".inkbook-menu-motion-marker")).not.toBeNull();
+    expect(
+      menu.entries.every((entry) => entry === "separator" || entry.fragment === undefined),
+    ).toBe(true);
     for (const entry of menu.entries) {
       if (entry === "separator" || entry.calls.includes("label:true")) continue;
       expect(entry.calls.some((call) => call.startsWith("icon:"))).toBe(true);
@@ -177,11 +179,9 @@ describe("context menu population", () => {
       handlers(),
     );
 
-    const arrange = menu.entries.find(
-      (entry): entry is RecordedItem =>
-        entry !== "separator" && entry.calls.includes("title:Arrange"),
-    );
-    expect(arrange?.calls).toEqual(["title:Arrange", "icon:layers", "label:true"]);
+    expect(
+      menu.entries.some((entry) => entry !== "separator" && entry.calls.includes("label:true")),
+    ).toBe(false);
     expect(
       menu.entries
         .filter((entry): entry is RecordedItem => entry !== "separator")
@@ -211,7 +211,7 @@ describe("context menu population", () => {
     );
     expect(erase?.calls).toContain("icon:inkbook-eraser-caution");
     expect(erase?.calls).not.toContain("warning:true");
-    expect(erase?.fragment?.querySelector(".inkbook-menu-title-content-caution")).not.toBeNull();
+    expect(erase?.fragment).toBeUndefined();
     const remove = menu.entries.find(
       (entry): entry is RecordedItem =>
         entry !== "separator" && entry.calls.includes("title:Delete embed"),
@@ -221,20 +221,10 @@ describe("context menu population", () => {
 });
 
 describe("context menu lifecycle", () => {
-  it("binds desktop motion after Menu.forEvent mounts its native surface", () => {
-    vi.spyOn(window, "matchMedia").mockReturnValue({ matches: true } as MediaQueryList);
-    let frame: FrameRequestCallback | undefined;
-    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
-      frame = callback;
-      return 1;
-    });
+  it("does not schedule Inkbook motion or mutate the native menu surface", () => {
+    const requestFrame = vi.spyOn(window, "requestAnimationFrame");
     const menu = new FakeMenu();
-    const root = createHtmlElement("div");
-    root.className = "inkbook-root";
-    root.dataset.inkbookMotion = "full";
     const canvas = createHtmlElement("button");
-    root.append(canvas);
-    document.body.append(root);
     const session = openContextMenu(
       { create: () => menu, forEvent: () => menu },
       {
@@ -246,18 +236,14 @@ describe("context menu lifecycle", () => {
       state({ hasSelection: false }),
       handlers(),
     );
-    const first = menu.entries.find((entry): entry is RecordedItem => entry !== "separator");
     const surface = createHtmlElement("div");
     surface.className = "menu";
-    surface.append(first!.fragment!.cloneNode(true));
     document.body.append(surface);
 
-    expect(frame).toBeDefined();
-    frame!(0);
-
-    expect(surface.classList.contains("inkbook-menu-motion-surface")).toBe(true);
+    expect(requestFrame).not.toHaveBeenCalled();
+    expect(surface.className).toBe("menu");
+    expect(surface.getAttribute("style")).toBeNull();
     session.close("immediate");
-    root.remove();
     surface.remove();
   });
 

@@ -8,6 +8,7 @@
 
 export const MOTION_TOKENS = Object.freeze({
   fast: 120,
+  menu: 220,
   toolbar: 300,
   standard: 180,
   erase: 160,
@@ -21,6 +22,7 @@ export const EASING_TOKENS = Object.freeze({
 } as const);
 
 export const TRANSITION_DURATIONS = Object.freeze({
+  adaptiveMenu: MOTION_TOKENS.menu,
   toolbarEnterExit: MOTION_TOKENS.toolbar,
   toolActiveState: MOTION_TOKENS.fast,
   selectionHandlesEnterExit: MOTION_TOKENS.fast,

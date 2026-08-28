@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Platform } from "obsidian";
 
 import {
   EditorToolbarMenuSession,
   menuPositionBelow,
-  populateToolbarMenu,
+  populateNativeToolbarMenu,
   type MenuFactoryPort,
 } from "../../../../src/obsidian/menus";
 import {
@@ -20,25 +21,27 @@ import {
   FakeEditorToolbarMenu as FakeMenu,
   menuAction as action,
   menuTitles as titles,
-  type RecordedMenuItem as RecordedItem,
 } from "../../../adapters/obsidian/editor-toolbar-menu";
 
-afterEach(() => {
-  vi.useRealTimers();
-  document.body.replaceChildren();
+beforeEach(() => {
+  installObsidianDomHelpers();
+  Platform.isPhone = false;
 });
 
-beforeEach(installObsidianDomHelpers);
+afterEach(() => {
+  Platform.isPhone = false;
+  document.body.replaceChildren();
+  vi.restoreAllMocks();
+});
 
-describe("adaptive editor toolbar menus", () => {
-  it("groups overflow actions, gives every entry an icon, and drills into Background", () => {
+describe("native editor toolbar menus", () => {
+  it("keeps Overflow entirely native while drilling into Background", () => {
     const menu = new FakeMenu();
     const navigate = vi.fn();
-    populateToolbarMenu(menu, "overflow", options(), navigate);
+    populateNativeToolbarMenu(menu, "overflow", options(), navigate);
 
     expect(titles(menu)).toEqual([
       "Background",
-      "Arrange",
       "Bring forward",
       "Send backward",
       "Bring to front",
@@ -48,113 +51,16 @@ describe("adaptive editor toolbar menus", () => {
       "Delete embed",
     ]);
     expect(action(menu, "Background").icon).toBe(BACKGROUND_SQUARES_ICON_ID);
+    expect(action(menu, "Erase all").fragment).toBeUndefined();
+    expect(action(menu, "Delete embed").warning).toBe(true);
     expect(
-      action(menu, "Background").fragment?.querySelector(".inkbook-menu-motion-marker"),
-    ).not.toBeNull();
+      menu.entries.every((entry) => entry === "separator" || entry.fragment === undefined),
+    ).toBe(true);
     action(menu, "Background").click?.();
     expect(navigate).toHaveBeenCalledWith("background");
-    for (const entry of menu.entries) {
-      if (entry !== "separator") expect(entry.icon).toBeTruthy();
-    }
-    expect(action(menu, "Erase all").warning).toBeUndefined();
-    expect(action(menu, "Erase all").icon).toBe("inkbook-eraser-caution");
-    expect(
-      action(menu, "Erase all").fragment?.querySelector(".inkbook-menu-title-content-caution"),
-    ).not.toBeNull();
-    expect(action(menu, "Delete embed").warning).toBe(true);
   });
 
-  it.each([
-    ["none", null, "ban"],
-    ["lines", "m", "align-justify"],
-    ["dots", "m", "grip"],
-    ["squares", "m", BACKGROUND_SQUARES_ICON_ID],
-  ] as const)("shows the active %s pattern on the Background entry", (type, spacing, icon) => {
-    const menu = new FakeMenu();
-    populateToolbarMenu(menu, "overflow", options({ background: { spacing, type } }), vi.fn());
-
-    expect(action(menu, "Background").icon).toBe(icon);
-  });
-});
-
-describe("adaptive background menu", () => {
-  it("exposes reachable Background choices and maps the four-step spacing slider", () => {
-    const menu = new FakeMenu();
-    const navigate = vi.fn();
-    const configured = options();
-    const handlers = configured.handlers;
-    populateToolbarMenu(menu, "background", configured, navigate);
-
-    expect(titles(menu)).toEqual(["Back", "None", "Lines", "Dots", "Squares"]);
-    expect(action(menu, "Squares").icon).toBe(BACKGROUND_SQUARES_ICON_ID);
-    expect(
-      action(menu, "Back").fragment?.querySelector(".inkbook-menu-motion-marker"),
-    ).not.toBeNull();
-    expect(action(menu, "Squares").checked).toBe(true);
-    action(menu, "Back").click?.();
-    expect(navigate).toHaveBeenCalledWith("overflow");
-    action(menu, "Lines").click?.();
-    expect(handlers.onBackgroundTypeChange).toHaveBeenCalledWith("lines");
-    expect(navigate).toHaveBeenCalledWith("background");
-    const spacingItem = menu.entries.find(
-      (entry): entry is RecordedItem =>
-        entry !== "separator" &&
-        entry.fragment?.querySelector('input[type="range"]') !== null &&
-        entry.fragment?.querySelector('input[type="range"]') !== undefined,
-    );
-    expect(spacingItem?.label).toBe(true);
-    const spacing = spacingItem?.fragment;
-    const range = spacing?.querySelector<HTMLInputElement>('input[type="range"]');
-    expect(range?.value).toBe("1");
-    expect(range?.getAttribute("aria-valuetext")).toBe("Medium");
-    const pointerDown = vi.fn();
-    const mouseDown = vi.fn();
-    const click = vi.fn();
-    spacing?.addEventListener("pointerdown", pointerDown);
-    spacing?.addEventListener("mousedown", mouseDown);
-    spacing?.addEventListener("click", click);
-    range!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-    range!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-    range!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(pointerDown).toHaveBeenCalledOnce();
-    expect(mouseDown).not.toHaveBeenCalled();
-    expect(click).not.toHaveBeenCalled();
-    range!.value = "3";
-    range!.dispatchEvent(new Event("input", { bubbles: true }));
-    expect(handlers.onBackgroundSpacingChange).not.toHaveBeenCalled();
-    expect(handlers.onBackgroundSpacingPreview).toHaveBeenCalledOnce();
-    expect(handlers.onBackgroundSpacingPreview).toHaveBeenCalledWith("xl");
-    expect(spacing?.querySelector("output")?.textContent).toBe("XL");
-    range!.dispatchEvent(new Event("change", { bubbles: true }));
-    expect(handlers.onBackgroundSpacingChange).toHaveBeenCalledOnce();
-    expect(handlers.onBackgroundSpacingChange).toHaveBeenCalledWith("xl");
-  });
-
-  it("omits the spacing slider for a background without guides", () => {
-    const menu = new FakeMenu();
-    populateToolbarMenu(
-      menu,
-      "background",
-      options({ background: { spacing: null, type: "none" } }),
-      vi.fn(),
-    );
-
-    expect(
-      menu.entries.some((entry) => entry !== "separator" && entry.fragment !== undefined),
-    ).toBe(true);
-    expect(
-      menu.entries.some(
-        (entry) =>
-          entry !== "separator" &&
-          entry.fragment?.querySelector('input[type="range"]') !== null &&
-          entry.fragment?.querySelector('input[type="range"]') !== undefined,
-      ),
-    ).toBe(false);
-  });
-});
-
-describe("adaptive shape menu", () => {
-  it("shows checked shape entries with dynamic arrow endpoints and coordinate axes", () => {
+  it("keeps Shape native with host-owned checked and separator states", () => {
     const menu = new FakeMenu();
     const configured = options({
       selectedShape: "arrow",
@@ -164,41 +70,36 @@ describe("adaptive shape menu", () => {
         coordinateDimension: "3d",
       },
     });
-    populateToolbarMenu(menu, "shape", configured, vi.fn());
+    populateNativeToolbarMenu(menu, "shape", configured, vi.fn());
 
     expect(action(menu, "Arrow").checked).toBe(true);
-    expect(
-      action(menu, "Line").fragment?.querySelector(".inkbook-menu-motion-marker"),
-    ).not.toBeNull();
     expect(action(menu, "Arrow").icon).toBe(
       activeShapeIconId("arrow", configured.getState().shapeIcon),
     );
     expect(action(menu, "Coordinate system").icon).toBe(
       activeShapeIconId("coordinate-system", configured.getState().shapeIcon),
     );
-    expect(titles(menu)).toEqual([
-      "Line",
-      "Arrow",
-      "Rectangle",
-      "Ellipse",
-      "Triangle",
-      "Octagon",
-      "Parallelogram",
-      "Diamond",
-      "Coordinate system",
-      "Table",
-    ]);
     expect(menu.entries.filter((entry) => entry === "separator")).toHaveLength(2);
-    for (const entry of menu.entries) {
-      if (entry !== "separator") expect(entry.icon).toBeTruthy();
-    }
+    expect(
+      menu.entries.every((entry) => entry === "separator" || entry.fragment === undefined),
+    ).toBe(true);
+  });
+
+  it("uses native placement without forcing custom width or phone padding", () => {
+    const anchor = createHtmlElement("button");
+    anchor.getBoundingClientRect = () =>
+      ({ bottom: 148, height: 44, left: 320, right: 364, top: 104, width: 44 }) as DOMRect;
+
+    expect(menuPositionBelow(anchor)).toEqual({ overlap: true, x: 320, y: 150 });
+    Platform.isPhone = true;
+    expect(menuPositionBelow(anchor)).toEqual({ overlap: true, x: 320, y: 150 });
   });
 });
 
-describe("adaptive style menu", () => {
-  it("renders compact interactive style controls with opacity slider and percentage field", () => {
-    const menu = new FakeMenu();
-    const configured = options({
+describe("Style AdaptivePanel", () => {
+  it("opens without an Obsidian Menu and keeps number input and slider synchronized", () => {
+    const menus: FakeMenu[] = [];
+    const configured = connectedOptions({
       styleControls: [
         {
           id: "opacity",
@@ -210,89 +111,6 @@ describe("adaptive style menu", () => {
           value: 0.65,
         },
         {
-          id: "outline-opacity",
-          kind: "number",
-          label: "Outline opacity",
-          max: 1,
-          min: 0,
-          step: 0.05,
-          value: 0.8,
-        },
-        {
-          id: "fill-opacity",
-          kind: "number",
-          label: "Fill opacity",
-          max: 1,
-          min: 0,
-          step: 0.05,
-          value: 0.4,
-        },
-        {
-          id: "outline-style",
-          kind: "choice",
-          label: "Outline style",
-          options: [
-            { label: "Solid", value: "solid" },
-            { label: "Dashed", value: "dashed" },
-          ],
-          value: "dashed",
-        },
-      ],
-    });
-    populateToolbarMenu(menu, "style", configured, vi.fn());
-    expect(titles(menu)).not.toContain("Style");
-    const fragment = menu.entries.find(
-      (entry): entry is RecordedItem => entry !== "separator" && entry.fragment !== undefined,
-    )?.fragment;
-    expect(fragment).toBeDefined();
-    const range = fragment?.querySelector<HTMLInputElement>('input[type="range"]');
-    const value = fragment?.querySelector<HTMLInputElement>('input[type="number"]');
-    expect(range?.value).toBe("65");
-    expect(range?.step).toBe("1");
-    const mouseDown = vi.fn();
-    fragment?.addEventListener("mousedown", mouseDown);
-    range!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-    expect(mouseDown).not.toHaveBeenCalled();
-    expect(value?.value).toBe("65");
-    expect(value?.getAttribute("aria-label")).toBe("Opacity percent");
-    const valueField = value?.closest(".inkbook-menu-value-field");
-    expect(valueField?.querySelector(".inkbook-menu-value-suffix")?.textContent).toBe("%");
-    value!.value = "72";
-    value!.dispatchEvent(new Event("input", { bubbles: true }));
-    expect(range?.value).toBe("72");
-    expect(configured.handlers.onStyleChange).not.toHaveBeenCalled();
-    value!.dispatchEvent(new Event("change", { bubbles: true }));
-    expect(configured.handlers.onStyleChange).toHaveBeenCalledWith("opacity", 0.72);
-    for (const id of ["opacity", "outline-opacity", "fill-opacity"]) {
-      expect(
-        fragment?.querySelector(`[data-control="${id}"] [data-icon]`)?.getAttribute("data-icon"),
-      ).toBe(OPACITY_ICON_ID);
-    }
-    expect(fragment?.querySelector('[aria-label="Dashed"]')?.getAttribute("aria-pressed")).toBe(
-      "true",
-    );
-  });
-});
-
-describe("adaptive pen style menu", () => {
-  it("keeps five pen widths distinct and aligns pressure with its label", () => {
-    const menu = new FakeMenu();
-    const configured = options({
-      styleControls: [
-        {
-          id: "stroke-width",
-          kind: "choice",
-          label: "Width",
-          options: [
-            { label: "XS", value: "2" },
-            { label: "S", value: "4" },
-            { label: "M", value: "8" },
-            { label: "L", value: "14" },
-            { label: "XL", value: "22" },
-          ],
-          value: "8",
-        },
-        {
           checked: true,
           id: "pressure-enabled",
           kind: "toggle",
@@ -300,93 +118,132 @@ describe("adaptive pen style menu", () => {
         },
       ],
     });
-    populateToolbarMenu(menu, "style", configured, vi.fn());
-    const fragment = menu.entries.find(
-      (entry): entry is RecordedItem => entry !== "separator" && entry.fragment !== undefined,
-    );
-    expect(fragment?.label).toBe(true);
-    const content = fragment?.fragment;
-    const widthButtons = [...(content?.querySelectorAll(".inkbook-menu-width-choice") ?? [])];
-    expect(widthButtons).toHaveLength(5);
-    expect(widthButtons.map((button) => button.getAttribute("aria-label"))).toEqual([
-      "XS",
-      "S",
-      "M",
-      "L",
-      "XL",
-    ]);
-    expect(
-      widthButtons.map((button) =>
-        button
-          .querySelector<HTMLElement>(".inkbook-menu-line-preview")
-          ?.style.getPropertyValue("--inkbook-menu-line-width"),
-      ),
-    ).toEqual(["1px", "2.5px", "4px", "6px", "8px"]);
+    const session = new EditorToolbarMenuSession({
+      ...configured,
+      factory: recordingFactory(menus),
+      initialMenu: "style",
+    });
 
-    const toggle = content?.querySelector<HTMLElement>(
-      '[data-control="pressure-enabled"].inkbook-menu-toggle-row',
-    );
-    expect(toggle?.querySelector(".inkbook-menu-toggle-heading")?.textContent).toContain(
-      "Pressure sensitivity",
-    );
-    expect(toggle?.querySelector("[data-icon]")?.getAttribute("data-icon")).toBe(
-      PRESSURE_SENSITIVITY_ICON_ID,
-    );
-    const input = toggle?.querySelector<HTMLInputElement>('input[type="checkbox"]');
-    expect(input?.checked).toBe(true);
-    input!.checked = false;
-    input!.dispatchEvent(new Event("change", { bubbles: true }));
-    expect(configured.handlers.onStyleChange).toHaveBeenCalledWith("pressure-enabled", false);
+    expect(menus).toHaveLength(0);
+    const panel = document.querySelector<HTMLElement>('.inkbook-adaptive-panel[data-kind="style"]');
+    const range = panel?.querySelector<HTMLInputElement>('input[type="range"]');
+    const value = panel?.querySelector<HTMLInputElement>('input[type="number"]');
+    expect(range?.value).toBe("65");
+    expect(value?.value).toBe("65");
+    expect(value?.getAttribute("aria-label")).toBe("Opacity percent");
+    expect(panel?.querySelector(".inkbook-menu-value-suffix")?.textContent).toBe("%");
+    expect(
+      panel?.querySelector('[data-control="opacity"] [data-icon]')?.getAttribute("data-icon"),
+    ).toBe(OPACITY_ICON_ID);
+    expect(
+      panel
+        ?.querySelector('[data-control="pressure-enabled"] [data-icon]')
+        ?.getAttribute("data-icon"),
+    ).toBe(PRESSURE_SENSITIVITY_ICON_ID);
+
+    value!.value = "72";
+    value!.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(range?.value).toBe("72");
+    value!.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(configured.handlers.onStyleChange).toHaveBeenCalledWith("opacity", 0.72);
+    session.close("immediate");
   });
 });
 
-describe("adaptive toolbar menu lifecycle", () => {
-  it("keeps drill-in and Back navigation within one paint-contiguous live session", async () => {
+describe("Background AdaptivePanel navigation", () => {
+  it("moves from native Overflow into one owned panel and returns to native Overflow", async () => {
     const menus: FakeMenu[] = [];
     const factory = recordingFactory(menus);
-    const configured = options();
-    new EditorToolbarMenuSession({ ...configured, factory, initialMenu: "overflow" });
+    const base = connectedOptions();
+    let background = base.getState().background;
+    const configured = {
+      ...base,
+      factory,
+      getState: () => ({ ...base.getState(), background }),
+      handlers: {
+        ...base.handlers,
+        onBackgroundTypeChange: vi.fn((type: typeof background.type) => {
+          background = type === "none" ? { spacing: null, type } : { spacing: "l", type };
+        }),
+      },
+      initialMenu: "overflow" as const,
+    };
+    const session = new EditorToolbarMenuSession(configured);
 
     action(menus[0]!, "Background").click?.();
+    await Promise.resolve();
     expect(menus).toHaveLength(1);
+    const panel = document.querySelector<HTMLElement>(
+      '.inkbook-adaptive-panel[data-kind="background"]',
+    );
+    expect(panel).not.toBeNull();
+    expect(
+      panel?.querySelector('[data-background-type="squares"]')?.getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    panel?.querySelector<HTMLButtonElement>('[data-background-type="lines"]')?.click();
+    expect(configured.handlers.onBackgroundTypeChange).toHaveBeenCalledWith("lines");
+    expect(panel?.querySelector<HTMLInputElement>('input[type="range"]')?.value).toBe("2");
+    expect(
+      document.querySelector('.inkbook-adaptive-panel[data-kind="background"]'),
+    ).not.toBeNull();
+
+    panel?.querySelector<HTMLButtonElement>(".inkbook-adaptive-panel-back")?.click();
     await Promise.resolve();
-    expect(titles(menus[1]!)).toContain("Back");
-    action(menus[1]!, "Back").click?.();
+    expect(document.querySelector(".inkbook-adaptive-panel")).toBeNull();
     expect(menus).toHaveLength(2);
-    await Promise.resolve();
-    expect(titles(menus[2]!)).toContain("Background");
+    expect(titles(menus[1]!)).toContain("Background");
     expect(configured.onClosed).not.toHaveBeenCalled();
+    session.close("immediate");
   });
 
-  it("centers each desktop menu below its trigger and returns focus without scrolling", () => {
-    vi.useFakeTimers();
-    const anchor = createHtmlElement("button");
-    document.body.append(anchor);
-    anchor.getBoundingClientRect = () =>
-      ({ bottom: 148, height: 44, left: 320, right: 364, top: 104, width: 44 }) as DOMRect;
-    const focus = vi.spyOn(anchor, "focus");
+  it("keeps spacing preview and commit inside the open panel", async () => {
     const menus: FakeMenu[] = [];
-    const factory = recordingFactory(menus);
-    new EditorToolbarMenuSession({ ...options(), anchor, factory, initialMenu: "overflow" });
+    const configured = connectedOptions();
+    const session = new EditorToolbarMenuSession({
+      ...configured,
+      factory: recordingFactory(menus),
+      initialMenu: "overflow",
+    });
+    action(menus[0]!, "Background").click?.();
+    await Promise.resolve();
+    const range = document.querySelector<HTMLInputElement>(
+      '.inkbook-adaptive-panel[data-kind="background"] input[type="range"]',
+    );
+    range!.value = "3";
+    range!.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(configured.handlers.onBackgroundSpacingPreview).toHaveBeenCalledWith("xl");
+    expect(configured.handlers.onBackgroundSpacingChange).not.toHaveBeenCalled();
+    range!.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(configured.handlers.onBackgroundSpacingChange).toHaveBeenCalledWith("xl");
+    expect(document.querySelector(".inkbook-adaptive-panel")).not.toBeNull();
+    session.close("immediate");
+  });
 
-    expect(menus[0]?.parent).toBe(anchor);
-    expect(menus[0]?.positions).toEqual([{ overlap: true, width: 199, x: 242.5, y: 154 }]);
-    expect(menuPositionBelow(anchor, "overflow", document)).toEqual({
-      overlap: true,
-      width: 199,
-      x: 242.5,
-      y: 154,
-    });
-    expect(menuPositionBelow(anchor, "style", document)).toEqual({
-      overlap: true,
-      width: 364,
-      x: 160,
-      y: 154,
-    });
-    menus[0]?.hide();
-    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+  it("uses the same panel foundation as a phone bottom sheet", () => {
+    Platform.isPhone = true;
+    const configured = connectedOptions();
+    const session = new EditorToolbarMenuSession({ ...configured, initialMenu: "style" });
+
+    expect(
+      document.querySelector(".inkbook-adaptive-panel-layer")?.getAttribute("data-platform"),
+    ).toBe("phone");
+    expect(document.querySelector(".inkbook-adaptive-panel")?.getAttribute("aria-modal")).toBe(
+      "true",
+    );
+    session.close("immediate");
   });
 });
+
+function connectedOptions(overrides = {}) {
+  const configured = options(overrides);
+  const root = createHtmlElement("div");
+  root.className = "inkbook-root";
+  root.dataset.inkbookMotion = "reduced";
+  root.append(configured.anchor, configured.canvasInputSurface as HTMLElement);
+  document.body.append(root);
+  return configured;
+}
 
 function recordingFactory(menus: FakeMenu[]): MenuFactoryPort {
   return {

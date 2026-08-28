@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createBuiltInDeviceSettings,
@@ -17,6 +17,11 @@ import type { MenuItemPort, MenuPort, MenuPosition } from "../../../../../src/ob
 import type { BrowserScrollElement } from "../../../../../src/obsidian/scrolling/index";
 import { INKBOOK_CLIPBOARD_WEB_MIME } from "../../../../../src/persistence/clipboard/public";
 import type { SvgSceneRenderer } from "../../../../../src/rendering/scene/index";
+import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
+
+beforeEach(() => {
+  installObsidianDomHelpers();
+});
 
 describe("active editor keyboard DOM boundary", () => {
   it("consumes hover zoom from the owning document without canvas focus", () => {
@@ -180,13 +185,30 @@ describe("active editor native paste DOM boundary", () => {
     expect(harness.menu.positions).toEqual([
       {
         ownerDocument: document,
-        position: { overlap: true, width: 199, x: 242.5, y: 150 },
+        position: { overlap: true, x: 320, y: 146 },
       },
     ]);
     harness.menu.close();
     expect(harness.controller.chromeProps().toolbarState.openFlyout).toBeNull();
     expect(document.activeElement).toBe(trigger);
 
+    harness.dispose();
+  });
+
+  it("removes an owned Style panel before opening a native toolbar menu", () => {
+    const harness = createHarness();
+    const styleTrigger = createButton();
+    const overflowTrigger = createButton();
+    document.body.append(styleTrigger, overflowTrigger);
+
+    harness.controller.handleToolbarAction("style", styleTrigger);
+    expect(document.querySelector('.inkbook-adaptive-panel[data-kind="style"]')).not.toBeNull();
+
+    harness.controller.handleToolbarAction("overflow", overflowTrigger);
+
+    expect(document.querySelector(".inkbook-adaptive-panel")).toBeNull();
+    expect(harness.menu.positions).toHaveLength(1);
+    expect(harness.controller.chromeProps().toolbarState.openFlyout).toBe("overflow");
     harness.dispose();
   });
 
@@ -354,6 +376,7 @@ function documentModel(store: ElementStore): EditableDocumentModel {
 
 function rendererPort(inputSurface: HTMLDivElement) {
   return {
+    clearLiveStroke: vi.fn(),
     clearElementPreviews: vi.fn(),
     clearPreviewTransforms: vi.fn(),
     flushCameraAndOverlayFrame: vi.fn<() => void>(),
@@ -367,6 +390,8 @@ function rendererPort(inputSurface: HTMLDivElement) {
     setSelectionOverlayPath: vi.fn<(path: string | null) => void>(),
     setSnapMarkerPath: vi.fn(),
     suppressMotionForNextDelta: vi.fn(),
+    revertLiveStroke: vi.fn(),
+    updateLiveStroke: vi.fn(),
   };
 }
 

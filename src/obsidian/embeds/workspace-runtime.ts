@@ -1,4 +1,4 @@
-import type { FileManager, Vault } from "obsidian";
+import type { FileManager, Keymap, Vault } from "obsidian";
 
 import type { InkbookDeviceSettingsV1, InkbookSettingsV3 } from "../../domain/settings/types";
 import type { PresentationLifecyclePort } from "../../editor/session/session-port";
@@ -37,6 +37,11 @@ import type { PresentationOperationFeedbackHandle } from "./presentation-operati
 import { WorkspaceRefreshProfiles } from "./workspace-refresh-profiles";
 import { WorkspaceFeedbackRouter, type WorkspaceFeedbackHost } from "./workspace-feedback-router";
 
+interface WorkspaceRuntimeSettings {
+  readonly device: InkbookDeviceSettingsV1;
+  readonly vault: InkbookSettingsV3;
+}
+
 export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly #coordinator: WorkspaceEditorCoordinator;
   #disposed = false;
@@ -45,24 +50,19 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly #feedback: WorkspaceFeedbackRouter;
   #headlessRecovery: HeadlessRecoveryNotice | undefined;
   readonly #lifecycle: WorkspaceRuntimeLifecycle;
+  readonly #keymap: Pick<Keymap, "popScope" | "pushScope"> | undefined;
   readonly #ownerWindows = new OwnerWindowRegistry();
   readonly #mounted = new Map<string, WorkspaceMountedPresentation>();
   readonly refreshRateProfiles: WorkspaceRefreshProfiles;
   readonly #scheme: ColorSchemeBroadcaster;
   readonly #sessions: VaultDocumentSessionFactory;
-  readonly #settings: () => {
-    readonly device: InkbookDeviceSettingsV1;
-    readonly vault: InkbookSettingsV3;
-  };
+  readonly #settings: () => WorkspaceRuntimeSettings;
 
   constructor(
     vault: Vault,
     fileManager: FileManager,
     scheme: ColorSchemeBroadcaster,
-    settings: () => {
-      readonly device: InkbookDeviceSettingsV1;
-      readonly vault: InkbookSettingsV3;
-    },
+    settings: () => WorkspaceRuntimeSettings,
     embedActions: ObsidianEmbedActions,
     host: WorkspaceFeedbackHost,
   ) {
@@ -71,6 +71,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     this.#feedback = new WorkspaceFeedbackRouter(host.manager, host.view, (documentId) =>
       this.#owningWindow(documentId),
     );
+    this.#keymap = host.keymap;
     this.#scheme = scheme;
     this.#settings = settings;
     this.refreshRateProfiles = new WorkspaceRefreshProfiles(settings().vault.refreshRatePreference);
@@ -186,6 +187,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
           defaults: settings.vault.toolDefaults,
           deviceSettings: settings.device,
           history: editorContext.history,
+          ...(this.#keymap === undefined ? {} : { keymap: this.#keymap }),
           model: editorContext.model,
           onLock: () => this.lockActivePresentation(),
           onFeedback: (code) => this.#feedback.showInPresentation(attachment.root, code),

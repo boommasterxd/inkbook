@@ -1,0 +1,226 @@
+.inkbook-adaptive-panel-layer {
+  block-size: var(--inkbook-adaptive-panel-viewport-height, 100vh);
+  inline-size: var(--inkbook-adaptive-panel-viewport-width, 100vw);
+  inset-block-start: var(--inkbook-adaptive-panel-viewport-top, 0);
+  inset-inline-start: var(--inkbook-adaptive-panel-viewport-left, 0);
+  pointer-events: none;
+  position: fixed;
+  z-index: var(--layer-menu);
+}
+
+.inkbook-adaptive-panel-backdrop {
+  display: none;
+}
+
+.inkbook-adaptive-panel {
+  backdrop-filter: var(--menu-backdrop-filter);
+  background: var(--menu-background);
+  border: var(--menu-border-width) solid var(--menu-border-color);
+  border-radius: var(--menu-radius);
+  box-shadow: var(--menu-shadow);
+  box-sizing: border-box;
+  color: var(--text-normal);
+  corner-shape: var(--menu-corner-shape);
+  max-block-size: calc(var(--inkbook-adaptive-panel-viewport-height, 100vh) - 16px);
+  overflow: hidden;
+  pointer-events: auto;
+  position: fixed;
+}
+
+.inkbook-adaptive-panel[data-state="closing"] {
+  pointer-events: none;
+}
+
+.inkbook-adaptive-panel-layer[data-mobile="true"] .inkbook-adaptive-panel {
+  background: color-mix(in srgb, var(--menu-background) var(--blur-opacity-m), transparent);
+  border: none;
+}
+
+.inkbook-adaptive-panel[data-kind="background"] {
+  inline-size: min(199px, calc(100vw - 16px));
+}
+
+.inkbook-adaptive-panel[data-kind="style"] {
+  inline-size: min(340px, calc(100vw - 16px));
+}
+
+.inkbook-adaptive-panel-scroll {
+  max-block-size: calc(var(--inkbook-adaptive-panel-viewport-height, 100vh) - 16px);
+  overflow: hidden;
+  overscroll-behavior: contain;
+  padding: var(--menu-padding);
+  scrollbar-gutter: stable;
+  scrollbar-width: none;
+  transition: block-size var(--inkbook-adaptive-panel-duration)
+    var(--inkbook-motion-easing, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.inkbook-adaptive-panel[data-state="open"] .inkbook-adaptive-panel-scroll {
+  overflow-y: auto;
+}
+
+.inkbook-adaptive-panel-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.inkbook-adaptive-panel-header {
+  border-block-end: var(--border-width) solid var(--background-modifier-border);
+  margin: 0 calc(var(--menu-padding) * -1) var(--menu-padding);
+  padding: 0 var(--menu-padding) var(--menu-padding);
+}
+
+.inkbook-adaptive-panel-back {
+  align-items: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-s);
+  box-shadow: none;
+  color: var(--text-normal);
+  display: flex;
+  font-size: var(--font-ui-small);
+  gap: var(--size-4-2);
+  inline-size: 100%;
+  justify-content: start;
+  line-height: normal;
+  margin: 0;
+  min-block-size: 0;
+  outline: none;
+  padding: var(--size-4-1) var(--size-4-2);
+}
+
+.inkbook-adaptive-panel-back:hover,
+.inkbook-adaptive-panel-back:focus-visible {
+  background: var(--interactive-hover);
+  box-shadow: none;
+}
+
+.inkbook-adaptive-panel-back-icon,
+.inkbook-adaptive-panel-back-icon svg {
+  block-size: var(--icon-s);
+  inline-size: var(--icon-s);
+}
+
+.inkbook-adaptive-panel-drag-region,
+.inkbook-adaptive-panel-grabber {
+  display: none;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"] {
+  pointer-events: auto;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel-backdrop {
+  background: color-mix(in srgb, var(--menu-background) 45%, transparent);
+  display: block;
+  inset: 0;
+  position: absolute;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"]
+  .inkbook-adaptive-panel-backdrop[data-state="closing"] {
+  animation: inkbook-adaptive-panel-backdrop-exit var(--inkbook-adaptive-panel-duration) ease-in
+    both;
+  pointer-events: none;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel {
+  border: none;
+  border-radius: var(--touch-radius-s) var(--touch-radius-s) 0 0;
+  inset-block: auto 0;
+  inset-inline: var(--safe-area-inset-left) var(--safe-area-inset-right);
+  inline-size: auto;
+  max-block-size: 60%;
+  position: absolute;
+  translate: 0 var(--inkbook-adaptive-panel-drag, 0);
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel[data-state="opening"],
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel[data-state="open"] {
+  animation: inkbook-adaptive-panel-sheet-enter var(--inkbook-adaptive-panel-duration) ease-out both;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel[data-state="closing"] {
+  animation: inkbook-adaptive-panel-sheet-exit var(--inkbook-adaptive-panel-duration) ease-in both;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel-drag-region {
+  block-size: 16px;
+  display: flow-root;
+  touch-action: none;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel-grabber {
+  background: var(--text-faint);
+  border-radius: var(--radius-xl);
+  block-size: var(--size-4-1);
+  display: block;
+  inline-size: 15%;
+  margin: var(--size-4-2) auto var(--size-4-1);
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel-scroll {
+  max-block-size: calc(var(--inkbook-adaptive-panel-viewport-height, 100vh) * 0.6 - 16px);
+  padding: var(--size-4-2) var(--size-4-4) var(--safe-area-inset-bottom);
+  scrollbar-gutter: auto;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel-header {
+  background: var(--interactive-normal);
+  border: 0;
+  border-radius: var(--touch-radius-xl);
+  margin: 0 0 var(--size-4-4);
+  padding: 0;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel-back {
+  border-radius: var(--touch-radius-xl);
+  font-size: var(--font-ui-medium);
+  padding: var(--size-4-3) var(--size-4-4);
+}
+
+.inkbook-adaptive-panel-layer[data-platform="wide"]
+  .inkbook-adaptive-panel
+  .inkbook-adaptive-panel-back {
+  block-size: auto;
+  min-block-size: 0;
+  padding: var(--size-4-1) var(--size-4-2);
+}
+
+@keyframes inkbook-adaptive-panel-sheet-enter {
+  from {
+    translate: 0 100%;
+  }
+
+  to {
+    translate: 0 var(--inkbook-adaptive-panel-drag, 0);
+  }
+}
+
+@keyframes inkbook-adaptive-panel-sheet-exit {
+  from {
+    translate: 0 var(--inkbook-adaptive-panel-drag, 0);
+  }
+
+  to {
+    translate: 0 100%;
+  }
+}
+
+@keyframes inkbook-adaptive-panel-backdrop-exit {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inkbook-adaptive-panel,
+  .inkbook-adaptive-panel-backdrop {
+    animation: none !important;
+    transition: none !important;
+  }
+}

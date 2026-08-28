@@ -12,6 +12,7 @@ import type { ArrangeAction } from "../../../domain/commands/arrange";
 import type { InputPoint } from "../../../editor/input/index";
 import type { SvgSceneRenderer } from "../../../rendering/scene/index";
 import type { ActiveEditorActions } from "./controller-actions";
+import type { Keymap } from "obsidian";
 
 interface ActiveEditorMenuOptions {
   readonly event?: MouseEvent;
@@ -85,6 +86,7 @@ export interface ActiveEditorMenuControllerOptions {
   readonly actions: ActiveEditorActions;
   readonly factory: MenuFactoryPort;
   readonly inputSurface: SvgSceneRenderer["inputSurface"];
+  readonly keymap?: Pick<Keymap, "popScope" | "pushScope">;
   readonly ownerDocument: Document;
   readonly selectionSize: () => number;
   readonly storeSize: () => number;
@@ -120,11 +122,11 @@ export class ActiveEditorMenuController {
     this.#toolbarSession = undefined;
   }
 
-  public closeToolbar(): void {
+  public closeToolbar(mode: "animated" | "immediate" = "animated"): void {
     const session = this.#toolbarSession;
     this.#toolbarSession = undefined;
     this.#toolbarMenuId = undefined;
-    session?.close();
+    session?.close(mode);
     this.#toolbarOptions?.onOpenChange(null);
   }
 
@@ -157,17 +159,20 @@ export class ActiveEditorMenuController {
   }): void {
     this.#session?.close();
     this.#session = undefined;
-    this.closeToolbar();
+    this.closeToolbar("immediate");
     const ownerWindow = this.#options.ownerDocument.defaultView;
     if (ownerWindow === null) return;
-    this.#toolbarSession = new EditorToolbarMenuSession({
+    let session: EditorToolbarMenuSession;
+    session = new EditorToolbarMenuSession({
       anchor: options.anchor,
       canvasInputSurface: this.#options.inputSurface,
       factory: this.#options.factory,
       getState: options.getState,
       handlers: options.handlers,
       initialMenu: options.id,
+      ...(this.#options.keymap === undefined ? {} : { keymap: this.#options.keymap }),
       onClosed: () => {
+        if (this.#toolbarSession !== session) return;
         this.#toolbarSession = undefined;
         this.#toolbarMenuId = undefined;
         options.onClosed();
@@ -176,6 +181,7 @@ export class ActiveEditorMenuController {
       ownerWindow,
       renderIcon: options.renderIcon,
     });
+    this.#toolbarSession = session;
   }
 
   public dispatchFromEvent(event: MouseEvent | undefined, dispatch: () => void): void {
