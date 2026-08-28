@@ -1,6 +1,18 @@
 export type ToolId =
   "select" | "eraser" | "draw" | "highlighter" | "straight-highlighter" | "shape";
 
+export type ShapeId =
+  | "line"
+  | "arrow"
+  | "rectangle"
+  | "ellipse"
+  | "triangle"
+  | "octagon"
+  | "parallelogram"
+  | "diamond"
+  | "coordinate-system"
+  | "table";
+
 export type ToolbarAction =
   | "finger-drawing"
   | "background"

@@ -297,12 +297,14 @@ describe("context menu lifecycle", () => {
     const ownerDocument = document;
     const canvas = { ownerDocument, isConnected: true, focus: vi.fn() };
     const control = { ownerDocument, isConnected: true, focus: vi.fn() };
+    const onClosed = vi.fn();
     const session = openContextMenu(
       factory,
       {
         type: "position",
         ownerDocument,
         position: { x: 12, y: 24 },
+        onClosed,
         returnFocus: control,
         canvasInputSurface: canvas,
       },
@@ -315,6 +317,9 @@ describe("context menu lifecycle", () => {
     session.close();
     expect(control.focus).toHaveBeenCalledTimes(1);
     expect(canvas.focus).not.toHaveBeenCalled();
+    expect(onClosed).toHaveBeenCalledOnce();
+    menu.hideCallback?.();
+    expect(onClosed).toHaveBeenCalledOnce();
   });
 
   it("uses Menu.forEvent for pointer menus and falls back to the canvas when control is detached", () => {

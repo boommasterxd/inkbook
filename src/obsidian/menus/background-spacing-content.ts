@@ -1,4 +1,4 @@
-import type { BackgroundSpacing } from "../../rendering/ui/flyout-types";
+import type { BackgroundSpacing } from "./editor-menu-types";
 import { menuDomWindow } from "./menu-dom";
 
 export interface BackgroundSpacingContentOptions {

@@ -1,3 +1,5 @@
+import type { ShapeId } from "../../rendering/ui/toolbar-types";
+
 export type BackgroundType = "none" | "lines" | "dots" | "squares";
 export type BackgroundSpacing = "s" | "m" | "l" | "xl";
 
@@ -5,18 +7,6 @@ export interface BackgroundMenuState {
   readonly spacing: BackgroundSpacing | null;
   readonly type: BackgroundType;
 }
-
-export type ShapeId =
-  | "line"
-  | "arrow"
-  | "rectangle"
-  | "ellipse"
-  | "triangle"
-  | "octagon"
-  | "parallelogram"
-  | "diamond"
-  | "coordinate-system"
-  | "table";
 
 export interface StyleChoiceOption {
   readonly label: string;

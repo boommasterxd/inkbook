@@ -1,4 +1,4 @@
-import type { StyleChoiceOption, StyleControl } from "../../rendering/ui/index";
+import type { StyleChoiceOption, StyleControl } from "./editor-menu-types";
 import {
   arrowShapeIconId,
   coordinateSystemIconId,

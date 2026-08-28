@@ -1,4 +1,4 @@
-import type { ShapeId } from "./flyout-types";
+import type { ShapeId } from "./toolbar-types";
 import type { ArrowNodeV1 } from "../../domain/schema/public";
 
 export const STRAIGHT_HIGHLIGHTER_ICON_ID = "inkbook-straight-highlighter";

@@ -1,14 +1,8 @@
 import type { PageV1 } from "../../../domain/schema/public";
 import type { InkbookSettingsV3 } from "../../../domain/settings/types";
 import type { EditorTool, PointerSample } from "../../../editor/input/index";
-import type {
-  BackgroundSpacing,
-  BackgroundType,
-  ToolbarAction,
-  ToolId,
-  ShapeId,
-  ToolbarState,
-} from "../../../rendering/ui/index";
+import type { BackgroundSpacing, BackgroundType } from "../../menus/editor-menu-types";
+import type { ToolbarAction, ToolId, ShapeId, ToolbarState } from "../../../rendering/ui/index";
 
 const SPACING_VALUES = {
   lines: { s: 25, m: 33.333333333333336, l: 50, xl: 100 },

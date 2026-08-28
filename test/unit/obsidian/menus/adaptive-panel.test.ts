@@ -107,11 +107,24 @@ describe("AdaptivePanelSession wide positioning", () => {
 });
 
 describe("AdaptivePanelSession wide keyboard behavior", () => {
+  it("moves initial focus to the first interactive control", () => {
+    const frames = mockAnimationFrames();
+    const style = createFixture("style");
+    frames.shift()?.(0);
+    expect(document.activeElement).toBe(style.control);
+    style.session.close("immediate");
+    const background = createFixture("background", { onBack: vi.fn() });
+    frames.shift()?.(16);
+    expect(document.activeElement).toBe(
+      document.querySelector<HTMLElement>(".inkbook-adaptive-panel-back"),
+    );
+    background.session.close("immediate");
+  });
+
   it("renders Back as a keyboard-operable menu entry instead of a host button", () => {
     const onBack = vi.fn();
     const fixture = createFixture("background", { onBack });
     const back = document.querySelector<HTMLElement>(".inkbook-adaptive-panel-back");
-
     expect(back?.tagName).toBe("DIV");
     expect(back?.getAttribute("role")).toBe("button");
     expect(back?.tabIndex).toBe(0);
@@ -127,7 +140,6 @@ describe("AdaptivePanelSession wide keyboard behavior", () => {
     second.textContent = "Second";
     document.querySelector(".inkbook-adaptive-panel-content")?.append(second);
     fixture.control.focus();
-
     document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Tab" }));
     expect(document.activeElement).toBe(second);
     fixture.anchor.remove();
@@ -137,19 +149,32 @@ describe("AdaptivePanelSession wide keyboard behavior", () => {
 });
 
 describe("AdaptivePanelSession phone lifecycle", () => {
+  it("does not reposition or measure content for internal sheet scrolling", () => {
+    Platform.isPhone = true;
+    const frames = mockAnimationFrames();
+    const fixture = createFixture("style");
+    frames.shift()?.(0);
+    const scroll = document.querySelector<HTMLElement>(".inkbook-adaptive-panel-scroll");
+    scroll?.dispatchEvent(new Event("scroll", { bubbles: true }));
+    expect(frames).toHaveLength(0);
+    const outside = createHtmlElement("div");
+    document.body.append(outside);
+    outside.dispatchEvent(new Event("scroll", { bubbles: true }));
+    expect(frames).toHaveLength(1);
+    fixture.session.close("immediate");
+  });
+
   it("renders a phone bottom sheet and dismisses a downward swipe from its content", () => {
     Platform.isPhone = true;
     const fixture = createFixture("background");
     const layer = document.querySelector<HTMLElement>(".inkbook-adaptive-panel-layer");
     const surface = document.querySelector<HTMLElement>(".inkbook-adaptive-panel");
-
     expect(layer?.dataset.platform).toBe("phone");
     expect(surface?.getAttribute("aria-modal")).toBe("true");
     expect(surface?.dataset.scrollPosition).toBe("top");
     fixture.control.dispatchEvent(pointer("pointerdown", 10, 7, 0));
     surface?.dispatchEvent(pointer("pointermove", 120, 7, 100));
     surface?.dispatchEvent(pointer("pointerup", 0, 7, 120));
-
     expect(document.querySelector(".inkbook-adaptive-panel")).toBeNull();
     expect(fixture.onClosed).toHaveBeenCalledOnce();
   });
@@ -207,16 +232,20 @@ describe("AdaptivePanelSession phone lifecycle", () => {
 
 describe("AdaptivePanelSession phone swipe behavior", () => {
   it("tracks a content swipe, cancels a reversed drag, and suppresses its trailing click", () => {
+    const frames = mockAnimationFrames();
     Platform.isPhone = true;
     const shortSwipe = createFixture("background");
+    frames.shift()?.(0);
     const shortSurface = document.querySelector<HTMLElement>(".inkbook-adaptive-panel");
     const activate = vi.fn();
     shortSwipe.control.addEventListener("click", activate);
 
     shortSwipe.control.dispatchEvent(pointer("pointerdown", 10, 7, 0));
     shortSurface?.dispatchEvent(pointer("pointermove", 60, 7, 100));
+    frames.shift()?.(100);
     expect(shortSurface?.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("50px");
     shortSurface?.dispatchEvent(pointer("pointermove", 5, 7, 150));
+    frames.shift()?.(150);
     expect(shortSurface?.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("0px");
     shortSurface?.dispatchEvent(pointer("pointerup", 5, 7, 200));
     shortSwipe.control.click();
@@ -228,11 +257,13 @@ describe("AdaptivePanelSession phone swipe behavior", () => {
     shortSwipe.session.close("immediate");
 
     const cancelledSwipe = createFixture("background");
+    frames.shift()?.(200);
     const cancelledSurface = document.querySelector<HTMLElement>(".inkbook-adaptive-panel");
     const cancelledGrabber = document.querySelector<HTMLElement>(".inkbook-adaptive-panel-grabber");
 
     cancelledGrabber?.dispatchEvent(pointer("pointerdown", 10, 8, 0));
     cancelledSurface?.dispatchEvent(pointer("pointermove", 90, 8, 100));
+    frames.shift()?.(300);
     cancelledSurface?.dispatchEvent(pointer("pointercancel", 90, 8, 120));
 
     expect(document.querySelector(".inkbook-adaptive-panel")).not.toBeNull();
@@ -277,11 +308,9 @@ describe("AdaptivePanelSession phone swipe behavior", () => {
     frames.shift()?.(0);
     const surface = document.querySelector<HTMLElement>(".inkbook-adaptive-panel");
     const backdrop = document.querySelector<HTMLElement>(".inkbook-adaptive-panel-backdrop");
-
     fixture.control.dispatchEvent(pointer("pointerdown", 10, 9, 0));
     surface?.dispatchEvent(pointer("pointermove", 50, 9, 100));
     surface?.dispatchEvent(pointer("pointerup", 50, 9, 300));
-
     expect(surface?.dataset.swipeState).toBe("settling");
     expect(backdrop?.dataset.swipeState).toBe("settling");
     expect(surface?.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("40px");
@@ -448,11 +477,21 @@ function mockWidePanelGeometry(viewportWidth: number): void {
 
 function mockAnimationFrames(): FrameRequestCallback[] {
   const frames: FrameRequestCallback[] = [];
+  const callbacks = new Map<number, FrameRequestCallback>();
+  let handle = 0;
   vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+    handle += 1;
+    callbacks.set(handle, callback);
     frames.push(callback);
-    return frames.length;
+    return handle;
   });
-  vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
+  vi.spyOn(window, "cancelAnimationFrame").mockImplementation((cancelledHandle) => {
+    const callback = callbacks.get(cancelledHandle);
+    callbacks.delete(cancelledHandle);
+    if (callback === undefined) return;
+    const index = frames.indexOf(callback);
+    if (index >= 0) frames.splice(index, 1);
+  });
   return frames;
 }
 

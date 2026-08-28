@@ -212,17 +212,7 @@ The coordinate-system dimensionality and table column-count controls apply both 
 
 Changing the column count of a selected table preserves that table's current column width. Adding a column extends the table by one column width on its local right side, while removing a column removes the local rightmost column and shrinks the total width by one column width. Height, header height, rotation, and line width remain unchanged. The rendered local left edge stays fixed, including for a rotated table.
 
-Colors:
-
-- Theme text color
-- red
-- orange
-- yellow
-- green
-- cyan
-- blue
-- violet
-- pink
+Colors use the canonical built-in palette defined in [Settings](settings.md#color-values), including Theme text color and Gray. The list and serialized values are maintained only in that document.
 
 When elements are selected, the menu edits the selection instead of the current tool. For a mixed selection, it only shows properties that apply to all selected elements. One accepted structural change is one atomic undo step and changes neither session tool values nor vault defaults. Choosing the existing value is a no-op with no revision or history entry.
 

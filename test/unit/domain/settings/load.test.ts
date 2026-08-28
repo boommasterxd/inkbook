@@ -5,7 +5,6 @@ import {
   createBuiltInSettings,
   loadDeviceSettings,
   loadSettings,
-  migrateVaultSettingsToV3,
 } from "../../../../src/domain/settings";
 
 describe("vault settings loading", () => {
@@ -169,54 +168,14 @@ describe("vault settings structural validation", () => {
   });
 });
 
-describe("vault settings version three migration", () => {
-  it("does not mutate versioned input", () => {
-    const input = createBuiltInSettings();
-    const migrated = migrateVaultSettingsToV3(input);
-
-    expect(migrated).toEqual({ value: input, diagnostics: [] });
-    expect(migrated.value).toBe(input);
-  });
-
-  it("migrates version-two spacing labels to the shared absolute size series", () => {
-    const current = createBuiltInSettings();
-    const input = {
-      ...current,
-      version: 2,
-      pageDefaults: {
-        ...current.pageDefaults,
-        backgroundSpacing: { lines: 150, dots: 20, squares: 80 },
-      },
-    };
+describe("vault settings current-version validation", () => {
+  it.each([1, 2])("rejects unsupported pre-release version %j without migration", (version) => {
+    const input = { ...createBuiltInSettings(), version };
 
     const result = loadSettings(input);
 
-    expect(result.diagnostics).toEqual([]);
-    expect(result.value.pageDefaults.backgroundSpacing).toEqual({
-      lines: 50,
-      dots: 25,
-      squares: 100,
-    });
-    expect(input.pageDefaults.backgroundSpacing).toEqual({ lines: 150, dots: 20, squares: 80 });
-  });
-
-  it("migrates version-one vault settings and adds automatic refresh-rate detection", () => {
-    const current = createBuiltInSettings();
-    const input = {
-      ...current,
-      version: 1,
-      pageDefaults: {
-        ...current.pageDefaults,
-        backgroundSpacing: { lines: 50, dots: 20, squares: 20 },
-      },
-    } as Record<string, unknown>;
-    delete input.refreshRatePreference;
-
-    const result = loadSettings(input);
-
-    expect(result.diagnostics).toEqual([]);
-    expect(result.value).toEqual(current);
-    expect(input).not.toHaveProperty("refreshRatePreference");
+    expect(result.value).toEqual(createBuiltInSettings());
+    expect(result.diagnostics).toEqual([{ code: "settings.unsupported-version", path: "version" }]);
   });
 
   it.each(["fast", 75, 360, null])("rejects invalid refresh-rate preference %j", (value) => {

@@ -5,8 +5,8 @@
 - Settings expose stable user preferences, not internal performance tuning.
 - Every value available in a tool's Style menu MUST have a configurable default for that tool.
 - Changing a default affects newly created elements only. It never rewrites existing elements.
-- Settings UI rejects invalid values and does not persist them. On load, an invalid persisted field falls back to its documented built-in default; the loader does not silently clamp it. Versioned migrations may explicitly map a formerly valid numeric value into a new range.
-- Settings migrations are pure and versioned separately from the document format.
+- Settings UI rejects invalid values and does not persist them. On load, an invalid persisted field falls back to its documented built-in default; the loader does not silently clamp it.
+- The vault settings schema is version 3 for the first release. Because no earlier version was released in production, older or unknown settings versions are unsupported and fall back to built-in defaults; no settings migration is performed. Device-local settings use their independent version 1 schema.
 
 ## Scope and Precedence
 
@@ -70,7 +70,7 @@ interface InkbookDeviceSettingsV1 {
 
 The built-in startup tool is `draw`.
 
-Version 1 vault settings first migrate to version 2 by adding `refreshRatePreference: "auto"`. Version 1 and 2 vault settings then migrate to version 3 by mapping each former S/M/L/XL background value to the same ordinal position in the shared 25, 100 / 3, 50, and 100 page-unit series. The obsolete configurable writing-line height is discarded; current files always use the fixed 100-unit layout step. Tool, placement, buffer-count, and refresh-rate values otherwise remain unchanged. The device-settings schema remains version 1.
+Version 3 is the first released vault-settings schema. It stores absolute background spacing in the shared 25, 100 / 3, 50, and 100 page-unit series and the fixed 100-unit layout step. There are no production legacy settings to migrate, so version 1, version 2, and unknown vault settings are rejected as unsupported rather than transformed. The device-settings schema remains version 1.
 
 ## Display Refresh Rate
 

@@ -1,6 +1,5 @@
-import type { ShapeId } from "./flyout-types";
 import type { ToolbarLayoutStage } from "./toolbar-layout";
-import type { ToolbarAction, ToolbarState } from "./toolbar-types";
+import type { ShapeId, ToolbarAction, ToolbarState } from "./toolbar-types";
 import type { ToolbarStyleIconState } from "./style-icon";
 import type { ActiveShapeIconState } from "./icon-ids";
 

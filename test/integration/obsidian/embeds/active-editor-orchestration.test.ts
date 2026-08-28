@@ -82,6 +82,26 @@ describe("active editor Clipboard discovery", () => {
 });
 
 describe("active editor context-menu scaling", () => {
+  it("releases a native menu session as soon as the host hides it", async () => {
+    const model = documentModel(vi.fn(async () => null));
+    const actions = activeActions(
+      model,
+      new ElementSceneStore(model.store),
+      clipboardWindowWithEmptyRead(),
+      vi.fn(),
+    );
+    const menu = new RecordedMenu();
+    const menus = menuController(actions, menu, 0);
+
+    menus.open({ x: 1, y: 2 });
+    await vi.waitFor(() => expect(menu.shown).toBe(true));
+    menu.hide();
+    menus.dispose();
+
+    expect(menu.close).not.toHaveBeenCalled();
+    actions.dispose();
+  });
+
   it("materializes each 10k render band only once for one availability pass", async () => {
     const ids = Array.from({ length: 10_000 }, (_, index) => `element-${index}`);
     const materializeBandOrder = vi.fn((band: "content" | "highlight") =>
@@ -227,6 +247,8 @@ function clipboardWindowWithEmptyRead(): Window {
 class RecordedMenu implements MenuPort {
   public readonly titles: string[] = [];
   public shown = false;
+  readonly close = vi.fn(() => this.#onHide?.());
+  #onHide: (() => void) | undefined;
 
   public addItem(configure: (item: MenuItemPort) => void): MenuPort {
     configure(chainableItem(this.titles));
@@ -237,9 +259,13 @@ class RecordedMenu implements MenuPort {
     return this;
   }
 
-  public close(): void {}
+  public hide(): void {
+    this.#onHide?.();
+  }
 
-  public onHide(): void {}
+  public onHide(callback: () => void): void {
+    this.#onHide = callback;
+  }
 
   public showAtPosition(): MenuPort {
     this.shown = true;

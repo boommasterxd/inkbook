@@ -26,13 +26,10 @@ import {
   type StrokeSelectionStyleSummary,
   type StyleChange,
 } from "../../../editor/tools/public";
-import {
-  createStructuralStyleControls,
-  type StyleChoiceOption,
-  type StyleControl,
-  type ToolbarStyleIconState,
-} from "../../../rendering/ui/index";
+import type { ToolbarStyleIconState } from "../../../rendering/ui/index";
 import type { ActiveShapeIconState } from "../../../rendering/ui/icon-ids";
+import type { StyleChoiceOption, StyleControl } from "../../menus/editor-menu-types";
+import { createStructuralStyleControls } from "../../menus/structural-style-controls";
 
 const COLOR_LABELS = [
   "Theme text color",

@@ -14,6 +14,7 @@ interface PhoneSheetSwipeOptions {
 interface SwipeGesture {
   distance: number;
   dragging: boolean;
+  height: number;
   readonly pointerId: number;
   readonly startTime: number;
   readonly startX: number;
@@ -24,7 +25,10 @@ interface SwipeGesture {
 export class PhoneSheetSwipeController {
   #clickTimer: number | undefined;
   #clickTarget: Element | undefined;
+  #dragFrame: number | undefined;
   #gesture: SwipeGesture | undefined;
+  #pendingDragDistance: number | undefined;
+  #pendingDragHeight: number | undefined;
   readonly #options: PhoneSheetSwipeOptions;
   #resetFrame: number | undefined;
   #resetTimer: number | undefined;
@@ -74,6 +78,7 @@ export class PhoneSheetSwipeController {
     this.#gesture = {
       distance: 0,
       dragging: false,
+      height: 0,
       pointerId: event.pointerId,
       startTime: event.timeStamp,
       startX: event.clientX,
@@ -91,7 +96,7 @@ export class PhoneSheetSwipeController {
     if (!gesture.dragging && !this.#claimDownwardGesture(event, deltaX, deltaY)) return;
     event.preventDefault();
     gesture.distance = Math.max(0, deltaY);
-    this.#renderDrag(gesture.distance);
+    this.#renderDrag(gesture.distance, gesture.height);
   };
 
   public handlePointerUp = (event: PointerEvent): void => {
@@ -103,7 +108,7 @@ export class PhoneSheetSwipeController {
     this.#suppressFollowingClick(gesture.target);
     const distance = gesture.distance;
     const elapsed = Math.max(1, event.timeStamp - gesture.startTime);
-    const height = this.#options.surface.getBoundingClientRect().height;
+    const height = gesture.height;
     const threshold = height > 0 ? height * DISMISS_DISTANCE_RATIO : Infinity;
     if (distance >= threshold || distance / elapsed >= DISMISS_VELOCITY_PX_PER_MS) {
       this.#options.close();
@@ -115,20 +120,25 @@ export class PhoneSheetSwipeController {
   public prepareClose(): void {
     this.#gesture = undefined;
     this.#cancelResetWork();
+    this.#cancelDragFrame();
     delete this.#options.surface.dataset.swipeState;
     delete this.#options.backdrop.dataset.swipeState;
   }
 
   public syncScrollPosition = (): void => {
-    this.#options.surface.dataset.scrollPosition =
-      this.#options.scroll.scrollTop > 0 ? "away" : "top";
+    const position = this.#options.scroll.scrollTop > 0 ? "away" : "top";
+    if (this.#options.surface.dataset.scrollPosition !== position) {
+      this.#options.surface.dataset.scrollPosition = position;
+    }
   };
 
   #beginDrag(event: PointerEvent): void {
     const gesture = this.#gesture;
     if (gesture === undefined || gesture.dragging) return;
     gesture.dragging = true;
+    gesture.height = this.#options.surface.getBoundingClientRect().height;
     this.#cancelResetWork();
+    this.#cancelDragFrame();
     this.#options.surface.dataset.swipeState = "dragging";
     this.#options.backdrop.dataset.swipeState = "dragging";
     event.preventDefault();
@@ -153,15 +163,30 @@ export class PhoneSheetSwipeController {
     this.#clickTimer = undefined;
   }
 
-  #renderDrag(distance: number): void {
+  #renderDrag(distance: number, height: number): void {
+    this.#pendingDragDistance = distance;
+    this.#pendingDragHeight = height;
+    if (this.#dragFrame !== undefined) return;
+    this.#dragFrame = this.#options.ownerWindow.requestAnimationFrame(() => {
+      this.#dragFrame = undefined;
+      const pendingDistance = this.#pendingDragDistance;
+      const pendingHeight = this.#pendingDragHeight;
+      this.#pendingDragDistance = undefined;
+      this.#pendingDragHeight = undefined;
+      if (pendingDistance === undefined || pendingHeight === undefined) return;
+      this.#applyDrag(pendingDistance, pendingHeight);
+    });
+  }
+
+  #applyDrag(distance: number, height: number): void {
     this.#options.surface.style.setProperty(
       "--inkbook-adaptive-panel-drag",
       `${String(distance)}px`,
     );
-    const height = Math.max(1, this.#options.surface.getBoundingClientRect().height);
+    const effectiveHeight = Math.max(1, height);
     this.#options.backdrop.style.setProperty(
       "--inkbook-adaptive-panel-backdrop-opacity",
-      String(1 - Math.min(1, distance / height)),
+      String(1 - Math.min(1, distance / effectiveHeight)),
     );
   }
 
@@ -170,6 +195,7 @@ export class PhoneSheetSwipeController {
       this.#resetPresentation();
       return;
     }
+    this.#flushPendingDrag();
     this.#options.surface.dataset.swipeState = "settling";
     this.#options.backdrop.dataset.swipeState = "settling";
     this.#resetFrame = this.#options.ownerWindow.requestAnimationFrame(() => {
@@ -205,8 +231,30 @@ export class PhoneSheetSwipeController {
     }
   }
 
+  #cancelDragFrame(): void {
+    if (this.#dragFrame !== undefined) {
+      this.#options.ownerWindow.cancelAnimationFrame(this.#dragFrame);
+      this.#dragFrame = undefined;
+    }
+    this.#pendingDragDistance = undefined;
+    this.#pendingDragHeight = undefined;
+  }
+
+  #flushPendingDrag(): void {
+    if (this.#dragFrame !== undefined) {
+      this.#options.ownerWindow.cancelAnimationFrame(this.#dragFrame);
+      this.#dragFrame = undefined;
+    }
+    const distance = this.#pendingDragDistance;
+    const height = this.#pendingDragHeight;
+    this.#pendingDragDistance = undefined;
+    this.#pendingDragHeight = undefined;
+    if (distance !== undefined && height !== undefined) this.#applyDrag(distance, height);
+  }
+
   #resetPresentation(): void {
     this.#cancelResetWork();
+    this.#cancelDragFrame();
     delete this.#options.surface.dataset.swipeState;
     delete this.#options.backdrop.dataset.swipeState;
     this.#options.surface.style.removeProperty("--inkbook-adaptive-panel-drag");

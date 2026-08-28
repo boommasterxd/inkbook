@@ -15,9 +15,9 @@ The following rules apply:
 - A non-empty patterned locked preview contains the complete pattern row holding the lowest annotation, exactly one further pattern row, and the writable bottom margin. A preview without a visible pattern uses one trailing 100-unit writing row. It never retains the active writing buffer or a persisted locked-buffer multiplier.
 - The existing preview remains visible until the in-place editor has fully loaded and has been measured correctly.
 - Activation starts immediately without waiting for a delay threshold. If activation has not completed after 1,200 milliseconds, one icon-only `Loading drawing` status appears at the center of the embed's currently visible native-scroll intersection. This long-load threshold keeps ordinary worker startup and validation visually quiet because the complete locked preview already remains visible. The delayed status is shown even when validation has not yet produced a trustworthy `activeHeight`: the presentation remains at its exact locked height instead of guessing a target, while the status provides continuous feedback for a genuinely slow activation. As soon as the validated editor chrome can mount, its toolbar follows the normal overlay entrance while the status remains until the scene is measured, painted, and ready for input. A faster activation never mounts the status.
-- After the active scene has been measured, the same block grows from the serialized `lockedHeight` to the derived `activeHeight` over 240 milliseconds. Its top edge, width, root, and document position remain anchored; no second editor is inserted and toolbar chrome contributes no block height. This duration is never an activation delay: the ready state, input, focus, toolbar, and completion of loading feedback are released when the prepared representation swap and height transition start. The remaining transition time only retains the temporary clip geometry until cleanup.
+- After the active scene has been measured and painted behind the locked preview, the same block grows from the serialized `lockedHeight` to the derived `activeHeight` over 240 milliseconds. Its top edge, width, root, and document position remain anchored; no second editor is inserted and toolbar chrome contributes no block height. The prepared editor remains covered for the complete height transition, then exchanges with the preview atomically in the final transition frame. Ready state, input, focus, toolbar, and completion of loading feedback are released with that exchange, so no incomplete editor or annotation content can flash. The completion step then removes the old preview and temporary clip geometry.
 - One persistent outer shell owned by the embed root draws the page surface, border, dynamic radius, and clipping edge in both states. Neither the locked preview nor the active editor owns a visible duplicate shell.
-- Before the first growth frame, the active SVG scene is laid out once at its final `activeHeight`, remains top-anchored at that fixed block size for one complete painted frame, and stays unchanged while only the rounded background container grows and clips progressively more of it. Its physical and logical block-start inset, transform origin, and page-space origin remain at the container's top edge; it is never vertically centered. The prepared active editor and old preview exchange visibility atomically when growth starts. This representation swap never changes shell opacity, background, border, or radius. The old preview remains lifecycle-owned but hidden until the transition completes and input is enabled. There is no frame in which both inner presentations are hidden or detached.
+- Before the first growth frame, the active SVG scene is laid out once at its final `activeHeight`, remains top-anchored at that fixed block size for one complete painted frame behind the locked preview, and stays unchanged while only the rounded background container grows and clips progressively more of it. Its physical and logical block-start inset, transform origin, and page-space origin remain at the container's top edge; it is never vertically centered. The prepared active editor and old preview exchange visibility atomically when growth completes. This representation swap never changes shell opacity, background, border, or radius. The old preview remains visible and lifecycle-owned throughout the transition, then is hidden and removed after Ready, input, focus, and toolbar are released. There is no frame in which both inner presentations are hidden or detached.
 - Automatic page growth may occur later when committed content leaves less than one aligned writable line.
 - With reduced motion, measurement is still awaited, then target height and preview/editor visibility are applied without interpolation.
 
@@ -86,7 +86,7 @@ The tools are located in the center:
 
 The Straight Highlighter control uses the same marker silhouette as Highlighter with two short, evenly spaced ruler marks inside the body instead of a generic line symbol. Inkbook registers this custom icon through Obsidian's public `addIcon()` API and removes it on plugin deactivation through `removeIcon()`.
 
-The Style control retains the canonical 19-pixel Palette geometry instead of swapping among stored icon assets. Its SVG attributes update from the active tool defaults: the glyph outline uses the tool color, line-cap-safe dash patterns distinguish solid, dashed, and dotted outlines, and a closed shape fills the palette body with its fill color and exact fill opacity. The four palette wells stay solid and use the outline color. The SVG node and button remain mounted while these attributes change, and Theme text color resolves through the owning toolbar's current host color in every window.
+The Style control retains the canonical 19-pixel Palette geometry instead of swapping among stored icon assets. Its SVG attributes update from the active tool defaults: the glyph outline uses the tool color, line-cap-safe dash patterns distinguish solid, dashed, and dotted outlines, and a closed shape fills the palette body with its fill color and exact fill opacity. The four palette wells stay solid and use the outline color. The SVG node and button remain mounted while these attributes change, and Theme text color resolves through the owning toolbar's current host color in every window. Because Style opens the lifecycle-owned adaptive panel, its trigger exposes `aria-haspopup="dialog"`; native Overflow, Shape, and context-menu triggers expose `aria-haspopup="menu"`.
 
 The end of the primary track contains:
 
@@ -110,19 +110,19 @@ The overflow and selection context menus expose Bring forward, Send backward, Br
 
 Canvas menus use Obsidian's native menu component, never a React-rendered SVG overlay. Every actionable entry has a built-in Lucide icon:
 
-| Action               | Icon              |
-| -------------------- | ----------------- |
-| Copy, Copy embed     | `copy`            |
-| Cut                  | `scissors`        |
-| Paste                | `clipboard-paste` |
-| Delete, Delete embed | `trash-2`         |
-| Bring forward        | `arrow-up`        |
-| Send backward        | `arrow-down`      |
-| Bring to front       | `chevrons-up`     |
-| Send to back         | `chevrons-down`   |
-| Erase all            | `eraser`          |
+| Action               | Icon                     |
+| -------------------- | ------------------------ |
+| Copy, Copy embed     | `copy`                   |
+| Cut                  | `scissors`               |
+| Paste                | `clipboard-paste`        |
+| Delete, Delete embed | `trash-2`                |
+| Bring forward        | `arrow-up`               |
+| Send backward        | `arrow-down`             |
+| Bring to front       | `chevrons-up`            |
+| Send to back         | `chevrons-down`          |
+| Erase all            | `inkbook-eraser-caution` |
 
-Delete and Delete embed use the host danger presentation so both icon and text are red. Erase all retains its confirmation and uses the same orange caution color for its custom eraser icon and public native-menu title fragment. Cut remains a normal action because it is clipboard-preserving and undoable. Copy, Cut, and Paste form the clipboard section, Delete has its own destructive selection boundary, Arrange actions form the next section, Copy embed is document-level, and Erase all plus Delete embed form the final destructive section. Separators appear only between those sections. Phone bottom spacing remains host-rendered; Inkbook supplies one menu-padding minimum only when the reported safe-area inset is smaller and never adds to an existing inset. Menu items use sentence case, expose their visible title as the accessible name, and retain visible disabled Arrange boundary actions.
+Delete and Delete embed use the host danger presentation so both icon and text are red. Erase all retains its confirmation and uses the `inkbook-eraser-caution` custom icon and public native-menu title fragment with the same orange caution color. Cut remains a normal action because it is clipboard-preserving and undoable. Copy, Cut, and Paste form the clipboard section, Delete has its own destructive selection boundary, Arrange actions form the next section, Copy embed is document-level, and Erase all plus Delete embed form the final destructive section. Separators appear only between those sections. Phone bottom spacing remains host-rendered; the reference-counted menu lease temporarily replaces a smaller `--safe-area-inset-bottom` token on the owning document body with the `--size-4-4` minimum because the last mobile menu item otherwise has no spacing, then restores the exact prior value and priority on final close. Equal or larger insets are untouched, and this is the only host-wide style exception. Menu items use sentence case, expose their visible title as the accessible name, and retain visible disabled Arrange boundary actions.
 
 The native menu owns arrow-key navigation and `Escape`. After it closes, focus returns to the control that opened it or to the canvas input surface. Mouse, touch, keyboard placement, target selection, and action availability are normative in [Features](features.md#canvas-context-menus).
 

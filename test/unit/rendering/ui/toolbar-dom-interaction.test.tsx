@@ -260,6 +260,7 @@ describe("mounted Inkbook shape controls", () => {
     expect(mounted.button("shape").getAttribute("aria-label")).toBe("Shape: Rectangle");
     expect(mounted.button("shape").hasAttribute("aria-haspopup")).toBe(false);
     expect(mounted.button("shape-picker").getAttribute("aria-haspopup")).toBe("menu");
+    expect(mounted.button("style").getAttribute("aria-haspopup")).toBe("dialog");
 
     mounted.update(completeState, "triangle");
     expect(

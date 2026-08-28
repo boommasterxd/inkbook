@@ -1,8 +1,4 @@
-import type {
-  BackgroundMenuState,
-  BackgroundSpacing,
-  BackgroundType,
-} from "../../rendering/ui/flyout-types";
+import type { BackgroundMenuState, BackgroundSpacing, BackgroundType } from "./editor-menu-types";
 import { BACKGROUND_SQUARES_ICON_ID } from "../../rendering/ui/icon-ids";
 import { createBackgroundSpacingContent } from "./background-spacing-content";
 import { menuDomWindow } from "./menu-dom";

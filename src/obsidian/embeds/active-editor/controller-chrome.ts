@@ -1,12 +1,11 @@
 import type { EditorTool } from "../../../editor/input/index";
 import type {
-  EditorMenuCallbacks,
   InkbookEditorChromeProps,
-  OverflowMenuState,
   ShapeId,
   ToolbarLayoutStage,
   ToolbarState,
 } from "../../../rendering/ui/index";
+import type { EditorMenuCallbacks, OverflowMenuState } from "../../menus/editor-menu-types";
 import type { ActiveEditorBackgroundSession } from "./background-session";
 import type { ActiveEditorActions } from "./controller-actions";
 import type { ActiveEditorChromeState } from "./controller-chrome-state";

@@ -37,6 +37,7 @@ export class AdaptivePanelSession extends Component {
   readonly #content: HTMLElement;
   readonly #durationMs: number;
   #layoutFrame: number | undefined;
+  #layoutRequested = false;
   #layoutStartHeight: number | undefined;
   #layoutTimer: number | undefined;
   readonly #layer: HTMLElement;
@@ -137,7 +138,7 @@ export class AdaptivePanelSession extends Component {
       this.#openFrame = undefined;
       if (this.#closed) return;
       this.#surface.dataset.state = "open";
-      this.#surface.focus({ preventScroll: true });
+      (this.#focusableElements()[0] ?? this.#surface).focus({ preventScroll: true });
       if (this.#durationMs === 0) {
         delete this.#surface.dataset.presence;
         return;
@@ -156,12 +157,24 @@ export class AdaptivePanelSession extends Component {
   }
 
   public requestLayout(): void {
+    this.#layoutRequested = true;
+    this.#scheduleLayout();
+  }
+
+  #requestPosition(): void {
+    this.#scheduleLayout();
+  }
+
+  #scheduleLayout(): void {
     if (this.#closed || this.#layoutFrame !== undefined) return;
     this.#layoutFrame = this.#options.ownerWindow.requestAnimationFrame(() => {
       this.#layoutFrame = undefined;
-      const startHeight = this.#layoutStartHeight;
-      this.#layoutStartHeight = undefined;
-      this.#animateContentHeight(startHeight);
+      if (this.#layoutRequested) {
+        this.#layoutRequested = false;
+        const startHeight = this.#layoutStartHeight;
+        this.#layoutStartHeight = undefined;
+        this.#animateContentHeight(startHeight);
+      }
       this.#position();
     });
   }
@@ -206,6 +219,7 @@ export class AdaptivePanelSession extends Component {
       this.#layoutTimer = undefined;
     }
     this.#layoutStartHeight = undefined;
+    this.#layoutRequested = false;
   }
 
   #createGrabber(): void {
@@ -358,9 +372,14 @@ export class AdaptivePanelSession extends Component {
   }
 
   #registerViewportEvents(): void {
-    const reposition = (): void => this.requestLayout();
+    const reposition = (): void => this.#requestPosition();
+    const repositionForDocumentScroll = (event: Event): void => {
+      const target = event.target;
+      if (isNode(target) && this.#surface.contains(target)) return;
+      this.#requestPosition();
+    };
     this.registerDomEvent(this.#options.ownerWindow, "resize", reposition);
-    this.registerDomEvent(this.#options.ownerDocument, "scroll", reposition, true);
+    this.registerDomEvent(this.#options.ownerDocument, "scroll", repositionForDocumentScroll, true);
     const visualViewport = this.#options.ownerWindow.visualViewport;
     if (visualViewport === undefined || visualViewport === null) return;
     visualViewport.addEventListener("resize", reposition);

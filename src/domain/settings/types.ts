@@ -88,18 +88,6 @@ export interface ToolDefaultsV1 {
   table: { columns: number };
 }
 
-interface LegacyPageDefaultsV1 {
-  backgroundType: BackgroundTypeV1;
-  backgroundSpacing: {
-    lines: 50 | 100 | 150 | 200;
-    dots: 20 | 40 | 60 | 80;
-    squares: 20 | 40 | 60 | 80;
-  };
-  writingLineHeight: number;
-  activeBufferLines: number;
-  lockedBufferLines: number;
-}
-
 interface PageDefaultsV3 {
   backgroundType: BackgroundTypeV1;
   backgroundSpacing: {
@@ -116,24 +104,7 @@ export type FilePlacementV1 =
   | { mode: "note-folder" }
   | { mode: "custom-vault-folder"; folder: string };
 
-export interface InkbookSettingsV1 {
-  version: 1;
-  startupTool: StartupToolV1;
-  toolDefaults: ToolDefaultsV1;
-  pageDefaults: LegacyPageDefaultsV1;
-  filePlacement: FilePlacementV1;
-}
-
 export type RefreshRatePreferenceV2 = (typeof REFRESH_RATE_PREFERENCES)[number];
-
-export interface InkbookSettingsV2 {
-  version: 2;
-  startupTool: StartupToolV1;
-  toolDefaults: ToolDefaultsV1;
-  pageDefaults: LegacyPageDefaultsV1;
-  filePlacement: FilePlacementV1;
-  refreshRatePreference: RefreshRatePreferenceV2;
-}
 
 export interface InkbookSettingsV3 {
   version: 3;

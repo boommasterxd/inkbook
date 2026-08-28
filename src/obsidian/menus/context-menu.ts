@@ -57,6 +57,7 @@ export interface ContextMenuHandlers {
 
 interface ContextMenuInvocationBase {
   readonly ownerDocument: Document;
+  readonly onClosed?: () => void;
   readonly returnFocus?: FocusTargetPort;
   readonly canvasInputSurface: FocusTargetPort;
 }
@@ -223,12 +224,13 @@ export function openContextMenu(
     : () => undefined;
   const menu = invocation.type === "event" ? factory.forEvent(invocation.event) : factory.create();
   let closed = false;
-  let focusReturned = false;
+  let closing = false;
   menu.onHide(() => {
+    if (closed) return;
+    closed = true;
     releaseSafeArea();
-    if (focusReturned) return;
-    focusReturned = true;
     focusAfterClose(invocation);
+    invocation.onClosed?.();
   });
   populateContextMenu(menu, invocation.ownerDocument, state, handlers);
   if (invocation.type === "position") {
@@ -236,8 +238,8 @@ export function openContextMenu(
   }
   return {
     close: () => {
-      if (closed) return;
-      closed = true;
+      if (closed || closing) return;
+      closing = true;
       menu.close();
     },
   };

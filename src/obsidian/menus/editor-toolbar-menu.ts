@@ -4,9 +4,9 @@ import type {
   BackgroundMenuState,
   EditorMenuCallbacks,
   OverflowMenuState,
-  ShapeId,
   StyleControl,
-} from "../../rendering/ui/flyout-types";
+} from "./editor-menu-types";
+import type { ShapeId } from "../../rendering/ui/toolbar-types";
 import {
   activeShapeIconId,
   type ActiveShapeIconState,

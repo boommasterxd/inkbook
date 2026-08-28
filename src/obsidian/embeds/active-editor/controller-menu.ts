@@ -31,6 +31,7 @@ interface ActiveEditorMenuOptions {
   readonly onEraseAll: () => void;
   readonly onCopyEmbed: () => void;
   readonly onDeleteEmbed: () => void;
+  readonly onClosed: () => void;
   readonly onArrange: (action: ArrangeAction) => void;
   readonly onPaste: () => void;
 }
@@ -42,6 +43,7 @@ function openActiveEditorMenu(options: ActiveEditorMenuOptions): ContextMenuSess
           type: "position" as const,
           canvasInputSurface: options.inputSurface,
           ownerDocument: options.ownerDocument,
+          onClosed: options.onClosed,
           position: options.position,
           ...(options.returnFocus === undefined ? {} : { returnFocus: options.returnFocus }),
         }
@@ -50,6 +52,7 @@ function openActiveEditorMenu(options: ActiveEditorMenuOptions): ContextMenuSess
           canvasInputSurface: options.inputSurface,
           event: options.event,
           ownerDocument: options.ownerDocument,
+          onClosed: options.onClosed,
           ...(options.returnFocus === undefined ? {} : { returnFocus: options.returnFocus }),
         };
   return openContextMenu(
@@ -220,7 +223,8 @@ export class ActiveEditorMenuController {
   ): void {
     if (generation !== this.#openGeneration) return;
     const actions = this.#options.actions;
-    this.#session = openActiveEditorMenu({
+    let session: ContextMenuSession;
+    session = openActiveEditorMenu({
       arrangeAvailability: actions.arrangeAvailability(),
       canEraseAll: this.#options.storeSize() > 0,
       canPaste: actions.canPaste,
@@ -234,11 +238,15 @@ export class ActiveEditorMenuController {
       onCut: () => actions.execute("cut"),
       onDelete: () => actions.execute("delete"),
       onDeleteEmbed: () => actions.execute("delete-embed"),
+      onClosed: () => {
+        if (this.#session === session) this.#session = undefined;
+      },
       onEraseAll: () => actions.execute("erase-all"),
       onPaste: () => actions.execute("paste", { kind: "context-menu", invocationPoint: position }),
       ownerDocument: this.#options.ownerDocument,
       position: this.#options.toScreenPoint(position),
       ...(returnFocus === undefined ? {} : { returnFocus }),
     });
+    this.#session = session;
   }
 }

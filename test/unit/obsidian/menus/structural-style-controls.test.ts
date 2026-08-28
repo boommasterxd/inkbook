@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createStructuralStyleControls } from "../../../../src/rendering/ui/structural-style-controls";
+import { createStructuralStyleControls } from "../../../../src/obsidian/menus/structural-style-controls";
 
 describe("structural style controls", () => {
   it("describes operable coordinate dimension and table column controls", () => {

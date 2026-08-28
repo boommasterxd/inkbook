@@ -8,7 +8,7 @@ import type {
   ToolbarState,
   ToolId,
 } from "./toolbar-types";
-import type { ShapeId } from "./flyout-types";
+import type { ShapeId } from "./toolbar-types";
 import { nextToolbarIndex, resolveToolbarFocusRecovery } from "./toolbar-focus";
 import {
   activeShapeIconId,
@@ -91,7 +91,7 @@ function IconButton(props: IconButtonProps) {
   return (
     <button
       aria-expanded={props.expanded}
-      aria-haspopup={flyout === null ? undefined : "menu"}
+      aria-haspopup={flyout === null ? undefined : popupRoleForAction(props.definition.action)}
       aria-label={props.definition.label}
       aria-pressed={props.pressed}
       aria-hidden={props.presence === "exiting" ? "true" : undefined}
@@ -153,6 +153,10 @@ function flyoutForAction(action: ToolbarAction): FlyoutId | null {
       ? "shape"
       : action
     : null;
+}
+
+function popupRoleForAction(action: ToolbarAction): "dialog" | "menu" {
+  return action === "background" || action === "style" ? "dialog" : "menu";
 }
 
 function isToolId(action: ToolbarAction): action is ToolId {

@@ -1,5 +1,4 @@
 import { createBuiltInDeviceSettings, createBuiltInSettings } from "./defaults";
-import { migrateSettingsToV1, migrateVaultSettingsToV3 } from "./migrations";
 import { validateCustomVaultFolderPath } from "./path";
 import {
   BACKGROUND_TYPES,
@@ -139,16 +138,17 @@ function prepareSettingsRoot<T>(
   fallback: T,
   keys: readonly string[],
   version: number,
-  migrate: (value: unknown) => SettingsLoadResult<unknown>,
 ): PreparedSettingsRoot<T> {
-  const migrated = migrate(input);
-  const diagnostics = [...migrated.diagnostics];
-  if (diagnostics.length > 0) return { valid: false, result: { value: fallback, diagnostics } };
-  if (!hasExactKeys(migrated.value, keys) || migrated.value.version !== version) {
+  const diagnostics: SettingsDiagnostic[] = [];
+  if (isRecord(input) && "version" in input && input.version !== version) {
+    diagnostics.push({ code: "settings.unsupported-version", path: "version" });
+    return { valid: false, result: { value: fallback, diagnostics } };
+  }
+  if (!hasExactKeys(input, keys) || input.version !== version) {
     diagnostics.push({ code: "settings.invalid-root", path: "$" });
     return { valid: false, result: { value: fallback, diagnostics } };
   }
-  return { valid: true, value: migrated.value, diagnostics };
+  return { valid: true, value: input, diagnostics };
 }
 
 export function loadSettings(input: unknown): SettingsLoadResult<InkbookSettingsV3> {
@@ -165,7 +165,6 @@ export function loadSettings(input: unknown): SettingsLoadResult<InkbookSettings
       "refreshRatePreference",
     ],
     3,
-    migrateVaultSettingsToV3,
   );
   if (!prepared.valid) return prepared.result;
   const { value, diagnostics } = prepared;
@@ -204,7 +203,6 @@ export function loadDeviceSettings(input: unknown): SettingsLoadResult<InkbookDe
     fallback,
     ["version", "fingerDrawingEnabled", "penTapInsertion", "leftHandedToolbar", "motion"],
     1,
-    migrateSettingsToV1,
   );
   if (!prepared.valid) return prepared.result;
   const { value, diagnostics } = prepared;

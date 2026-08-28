@@ -1,5 +1,5 @@
 import type { PageV1 } from "../../../domain/schema/public";
-import type { BackgroundSpacing, BackgroundType } from "../../../rendering/ui/index";
+import type { BackgroundSpacing, BackgroundType } from "../../menus/editor-menu-types";
 import type { EditableDocumentModel } from "../vault-document-session";
 import {
   pageWithBackgroundSpacing,
