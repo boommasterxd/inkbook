@@ -103,8 +103,8 @@
   pointer-events: none;
 }
 
-.inkbook-root.inkbook-active-transitioning .inkbook-preview-handoff,
-.inkbook-root.inkbook-active-preparing .inkbook-preview-handoff {
+.inkbook-root.inkbook-embed-root.inkbook-active-transitioning .inkbook-preview-handoff,
+.inkbook-root.inkbook-embed-root.inkbook-active-preparing .inkbook-preview-handoff {
   inset-block-start: 0;
   inset-inline: 0;
   position: absolute;
@@ -151,7 +151,7 @@
   position: absolute;
 }
 
-.inkbook-root .inkbook-locked-preview {
+.inkbook-root.inkbook-embed-root .inkbook-locked-preview {
   appearance: none;
   background: transparent;
   block-size: auto;
@@ -272,6 +272,11 @@
   inline-size: 100%;
   position: relative;
   z-index: 1;
+}
+
+.inkbook-root.inkbook-active-preparing .inkbook-editor-chrome,
+.inkbook-root.inkbook-active-transitioning .inkbook-editor-chrome {
+  visibility: hidden;
 }
 
 .inkbook-root .inkbook-editor-chrome[hidden] {

@@ -80,7 +80,7 @@ describe("Inkbook host styles", () => {
 
   it("draws locked-preview keyboard focus entirely inside the stabilized owner width", () => {
     const focus = declarationsFor(".inkbook-root .inkbook-locked-preview:focus-visible");
-    const preview = declarationsFor(".inkbook-root .inkbook-locked-preview");
+    const preview = declarationsFor(".inkbook-root.inkbook-embed-root .inkbook-locked-preview");
     const android = declarationsFor(".inkbook-root .inkbook-locked-preview-android");
     const image = declarationsFor(".inkbook-root .inkbook-locked-preview-media");
     const svg = declarationsFor(".inkbook-root .inkbook-locked-preview-svg");
@@ -89,6 +89,8 @@ describe("Inkbook host styles", () => {
     expect(focus).toContain("outline-offset: -2px");
     expect(preview).toContain("inline-size: 100%");
     expect(preview).toContain("block-size: auto");
+    expect(preview).toContain("padding: 0");
+    expect(preview).toContain("border-radius: var(--inkbook-shell-radius)");
     expect(preview).toContain("box-shadow: none");
     expect(preview).toContain("overflow: clip");
     expect(preview).toContain("transform: none");
@@ -149,6 +151,9 @@ describe("Inkbook editor chrome styles", () => {
     );
     const editorChrome = declarationsFor(".inkbook-root .inkbook-editor-chrome");
     const hiddenEditorChrome = declarationsFor(".inkbook-root .inkbook-editor-chrome[hidden]");
+    const heldUnlockEditor = declarationsFor(
+      ".inkbook-root.inkbook-active-preparing .inkbook-editor-chrome,\n.inkbook-root.inkbook-active-transitioning .inkbook-editor-chrome",
+    );
     const scene = declarationsFor(".inkbook-root .inkbook-scene");
     const transitioningScene = declarationsFor(
       ".inkbook-root .inkbook-background-container.inkbook-page-height-transitioning > .inkbook-scene",
@@ -164,7 +169,6 @@ describe("Inkbook editor chrome styles", () => {
       ".inkbook-root.inkbook-active-preparing .inkbook-background-container,\n.inkbook-root.inkbook-active-transitioning .inkbook-background-container",
     );
     const presentationShell = declarationsFor(".inkbook-root.inkbook-embed-root::before");
-
     expect(activeRoot).toContain("z-index: var(--layer-popover)");
     expect(background).not.toContain("margin-block-start");
     expect(embedRoot).toContain("contain: none !important");
@@ -172,6 +176,7 @@ describe("Inkbook editor chrome styles", () => {
     expect(livePreviewRoot).toContain("contain: none !important");
     expect(editorChrome).not.toContain("padding-block-start");
     expect(hiddenEditorChrome).toContain("display: none !important");
+    expect(heldUnlockEditor).toContain("visibility: hidden");
     expect(chromeHost).toContain("position: sticky");
     expect(chromeHost).toContain("block-size: 0");
     expect(chromeHost).toContain("var(--inkbook-toolbar-overlay-block-size)");
@@ -205,7 +210,7 @@ describe("Inkbook responsive toolbar styles", () => {
   it("keeps the main toolbar centered while context actions sit beside it", () => {
     const root = declarationsFor(".inkbook-root");
     const darkRoot = declarationsFor('.inkbook-root[data-inkbook-scheme="dark"]');
-    const preview = declarationsFor(".inkbook-root .inkbook-locked-preview");
+    const preview = declarationsFor(".inkbook-root.inkbook-embed-root .inkbook-locked-preview");
     const background = declarationsFor(".inkbook-root .inkbook-background-container");
     const composition = declarationsFor(".inkbook-root .inkbook-toolbar-composition");
     const shell = declarationsFor(".inkbook-root .inkbook-toolbar-shell");
@@ -320,7 +325,7 @@ describe("Inkbook editor handoff styles", () => {
     const handoff = declarationsFor(".inkbook-root .inkbook-preview-handoff");
     const hiddenHandoff = declarationsFor(".inkbook-root .inkbook-preview-handoff[hidden]");
     const preview = declarationsFor(
-      ".inkbook-root.inkbook-active-transitioning .inkbook-preview-handoff,\n.inkbook-root.inkbook-active-preparing .inkbook-preview-handoff",
+      ".inkbook-root.inkbook-embed-root.inkbook-active-transitioning .inkbook-preview-handoff,\n.inkbook-root.inkbook-embed-root.inkbook-active-preparing .inkbook-preview-handoff",
     );
 
     expect(shell).toContain("background: var(--inkbook-page-surface)");

@@ -347,19 +347,17 @@
   min-block-size: 44px;
 }
 
-.inkbook-adaptive-panel-layer[data-platform="wide"][data-mobile="false"] .inkbook-menu-control {
+.inkbook-adaptive-panel-layer[data-platform="wide"] .inkbook-menu-control {
   padding-inline: var(--size-4-2);
 }
 
-.inkbook-adaptive-panel-layer[data-platform="wide"][data-mobile="false"]
+.inkbook-adaptive-panel-layer[data-platform="wide"]
   [data-kind="style"]
   .inkbook-adaptive-panel-scroll {
   padding-block: 0;
 }
 
-.inkbook-adaptive-panel-layer[data-platform="wide"][data-mobile="false"]
-  .inkbook-menu-control
-  + .inkbook-menu-control {
+.inkbook-adaptive-panel-layer[data-platform="wide"] .inkbook-menu-control + .inkbook-menu-control {
   padding-inline: calc(var(--menu-padding) + var(--size-4-2));
 }
 
@@ -376,23 +374,19 @@
   padding: var(--size-4-1) var(--size-4-2);
 }
 
-.inkbook-adaptive-panel-layer[data-platform="wide"][data-mobile="false"]
-  [data-kind="style"]
-  .inkbook-menu-width-grid {
+.inkbook-adaptive-panel-layer[data-platform="wide"] [data-kind="style"] .inkbook-menu-width-grid {
   grid-template-columns: repeat(5, 36px);
   justify-content: space-between;
 }
 
-.inkbook-adaptive-panel-layer[data-platform="wide"][data-mobile="false"]
-  [data-kind="style"]
-  .inkbook-menu-width-choice {
+.inkbook-adaptive-panel-layer[data-platform="wide"] [data-kind="style"] .inkbook-menu-width-choice {
   align-content: center;
   display: grid;
   gap: 3px;
   grid-template-rows: 8px 12px;
 }
 
-.inkbook-adaptive-panel-layer[data-platform="wide"][data-mobile="false"]
+.inkbook-adaptive-panel-layer[data-platform="wide"]
   [data-kind="style"]
   :where(.inkbook-menu-width-choice)
   .inkbook-menu-line-preview {
@@ -400,7 +394,7 @@
   place-self: center;
 }
 
-.inkbook-adaptive-panel-layer[data-platform="wide"][data-mobile="false"]
+.inkbook-adaptive-panel-layer[data-platform="wide"]
   [data-kind="style"]
   :where(.inkbook-menu-width-choice)
   .inkbook-menu-choice-label {

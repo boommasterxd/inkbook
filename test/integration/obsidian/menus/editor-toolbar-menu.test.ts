@@ -19,6 +19,7 @@ import { createHtmlElement, installObsidianDomHelpers } from "../../../adapters/
 import {
   createEditorToolbarMenuOptions as options,
   FakeEditorToolbarMenu as FakeMenu,
+  installNativeMenuMeasurementStyles,
   menuAction as action,
   menuTitles as titles,
 } from "../../../adapters/obsidian/editor-toolbar-menu";
@@ -27,6 +28,7 @@ beforeEach(() => {
   installObsidianDomHelpers();
   Platform.isMobile = false;
   Platform.isPhone = false;
+  installNativeMenuMeasurementStyles();
 });
 
 afterEach(() => {
@@ -92,14 +94,28 @@ describe("native editor toolbar menus", () => {
     anchor.getBoundingClientRect = () =>
       ({ bottom: 148, height: 44, left: 320, right: 364, top: 104, width: 44 }) as DOMRect;
 
+    expect(menuPositionBelow(anchor, "overflow", ["Delete embed"])).toEqual({
+      overlap: true,
+      width: 44,
+      x: 270,
+      y: 150,
+    });
     expect(menuPositionBelow(anchor, "overflow")).toEqual({
       overlap: true,
       width: 44,
-      x: 267,
+      x: 320,
       y: 150,
     });
     expect(menuPositionBelow(anchor, "shape")).toEqual({ overlap: true, x: 320, y: 150 });
     Platform.isMobile = true;
+    document.body.setCssProps({ "--icon-s": "18px" });
+    expect(menuPositionBelow(anchor, "overflow", ["Delete embed"])).toEqual({
+      overlap: true,
+      width: 44,
+      x: 265,
+      y: 148,
+    });
+    expect(menuPositionBelow(anchor, "shape")).toEqual({ overlap: true, x: 320, y: 148 });
     Platform.isPhone = true;
     expect(menuPositionBelow(anchor, "overflow")).toEqual({ overlap: true, x: 320, y: 150 });
   });

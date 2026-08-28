@@ -256,13 +256,11 @@
     margin-inline: 0;
   }
 
-  .inkbook-adaptive-panel-layer[data-platform="wide"][data-mobile="false"]
-    .inkbook-menu-spacing-control {
+  .inkbook-adaptive-panel-layer[data-platform="wide"] .inkbook-menu-spacing-control {
     padding-inline: calc(var(--menu-padding) + var(--size-4-2));
   }
 
-  .inkbook-adaptive-panel-layer[data-platform="wide"][data-mobile="false"]
-    .inkbook-menu-spacing-output {
+  .inkbook-adaptive-panel-layer[data-platform="wide"] .inkbook-menu-spacing-output {
     align-items: center;
     block-size: var(--icon-s);
     display: inline-flex;

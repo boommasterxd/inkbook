@@ -20,6 +20,22 @@ export interface RecordedMenuItem {
   warning?: boolean;
 }
 
+export function installNativeMenuMeasurementStyles(): void {
+  document.body.setCssProps({
+    "--font-ui-medium": "16px",
+    "--font-ui-small": "13px",
+    "--icon-s": "16px",
+    "--menu-border-width": "1px",
+    "--menu-padding": "6px",
+    "--size-4-2": "8px",
+  });
+  const context = {
+    font: "",
+    measureText: () => ({ width: context.font.includes("16px") ? 100 : 90 }),
+  } as unknown as CanvasRenderingContext2D;
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context);
+}
+
 class FakeMenuItem implements MenuItemPort {
   public constructor(private readonly record: RecordedMenuItem) {}
 

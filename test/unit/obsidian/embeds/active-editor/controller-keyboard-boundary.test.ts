@@ -18,9 +18,11 @@ import type { BrowserScrollElement } from "../../../../../src/obsidian/scrolling
 import { INKBOOK_CLIPBOARD_WEB_MIME } from "../../../../../src/persistence/clipboard/public";
 import type { SvgSceneRenderer } from "../../../../../src/rendering/scene/index";
 import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
+import { installNativeMenuMeasurementStyles } from "../../../../adapters/obsidian/editor-toolbar-menu";
 
 beforeEach(() => {
   installObsidianDomHelpers();
+  installNativeMenuMeasurementStyles();
 });
 
 describe("active editor keyboard DOM boundary", () => {
@@ -185,7 +187,7 @@ describe("active editor native paste DOM boundary", () => {
     expect(harness.menu.positions).toEqual([
       {
         ownerDocument: document,
-        position: { overlap: true, width: 44, x: 267, y: 146 },
+        position: { overlap: true, width: 44, x: 270, y: 146 },
       },
     ]);
     harness.menu.close();
