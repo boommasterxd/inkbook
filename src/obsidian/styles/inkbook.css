@@ -274,11 +274,6 @@
   z-index: 1;
 }
 
-.inkbook-root.inkbook-active-preparing .inkbook-editor-chrome,
-.inkbook-root.inkbook-active-transitioning .inkbook-editor-chrome {
-  visibility: hidden;
-}
-
 .inkbook-root .inkbook-editor-chrome[hidden] {
   display: none !important;
 }
@@ -304,6 +299,15 @@
   pointer-events: auto;
   position: absolute;
   touch-action: pan-y;
+}
+
+.inkbook-root.inkbook-active-preparing .inkbook-editor-chrome-host,
+.inkbook-root.inkbook-active-preparing .inkbook-canvas-input,
+.inkbook-root.inkbook-active-preparing .inkbook-scene-foreground,
+.inkbook-root.inkbook-active-transitioning .inkbook-editor-chrome-host,
+.inkbook-root.inkbook-active-transitioning .inkbook-canvas-input,
+.inkbook-root.inkbook-active-transitioning .inkbook-scene-foreground {
+  visibility: hidden;
 }
 
 .inkbook-root .inkbook-scene-overlays path {

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Platform } from "obsidian";
 
 import {
   openContextMenu,
@@ -15,6 +16,7 @@ import { createHtmlElement, installObsidianDomHelpers } from "../../../adapters/
 
 beforeEach(() => {
   installObsidianDomHelpers();
+  Platform.isPhone = false;
 });
 
 interface RecordedItem {
@@ -137,6 +139,20 @@ function titles(menu: FakeMenu): string[] {
     .map((entry) => entry.calls.find((call) => call.startsWith("title:"))?.slice(6) ?? "");
 }
 
+function openPositionedMenu(menu: FakeMenu): ReturnType<typeof openContextMenu> {
+  return openContextMenu(
+    { create: () => menu, forEvent: () => menu },
+    {
+      type: "position",
+      ownerDocument: document,
+      position: { x: 20, y: 30 },
+      canvasInputSurface: createHtmlElement("button"),
+    },
+    state({ hasSelection: false }),
+    handlers(),
+  );
+}
+
 describe("context menu population", () => {
   it("populates the selection and canvas sections in the contract order", () => {
     const menu = new FakeMenu();
@@ -157,8 +173,12 @@ describe("context menu population", () => {
     ]);
     expect(menu.entries.filter((entry) => entry === "separator")).toHaveLength(4);
     expect(
-      menu.entries.every((entry) => entry === "separator" || entry.fragment === undefined),
-    ).toBe(true);
+      menu.entries
+        .filter(
+          (entry): entry is RecordedItem => entry !== "separator" && entry.fragment !== undefined,
+        )
+        .map((entry) => entry.fragment?.textContent),
+    ).toEqual(["Erase all"]);
     for (const entry of menu.entries) {
       if (entry === "separator" || entry.calls.includes("label:true")) continue;
       expect(entry.calls.some((call) => call.startsWith("icon:"))).toBe(true);
@@ -211,12 +231,33 @@ describe("context menu population", () => {
     );
     expect(erase?.calls).toContain("icon:inkbook-eraser-caution");
     expect(erase?.calls).not.toContain("warning:true");
-    expect(erase?.fragment).toBeUndefined();
+    expect(
+      erase?.fragment?.querySelector('.inkbook-menu-title-content[data-tone="caution"]')
+        ?.textContent,
+    ).toBe("Erase all");
     const remove = menu.entries.find(
       (entry): entry is RecordedItem =>
         entry !== "separator" && entry.calls.includes("title:Delete embed"),
     );
     expect(remove?.calls).toContain("warning:true");
+  });
+});
+
+describe("phone context menu spacing", () => {
+  it("uses a minimum safe area without adding to an existing phone inset", () => {
+    Platform.isPhone = true;
+    document.body.setCssProps({ "--safe-area-inset-bottom": "0px", "--size-4-4": "16px" });
+    const menu = new FakeMenu();
+    const session = openPositionedMenu(menu);
+    expect(document.body.style.getPropertyValue("--safe-area-inset-bottom")).toBe("16px");
+    session.close();
+    expect(document.body.style.getPropertyValue("--safe-area-inset-bottom")).toBe("0px");
+
+    document.body.setCssProps({ "--safe-area-inset-bottom": "34px" });
+    const insetMenu = new FakeMenu();
+    const insetSession = openPositionedMenu(insetMenu);
+    expect(document.body.style.getPropertyValue("--safe-area-inset-bottom")).toBe("34px");
+    insetSession.close();
   });
 });
 

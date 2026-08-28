@@ -9,6 +9,10 @@
   padding: 0;
 }
 
+.inkbook-menu-title-content[data-tone="caution"] {
+  color: var(--color-orange);
+}
+
 .inkbook-menu-control {
   background: transparent;
   border: 0;

@@ -55,10 +55,17 @@ describe("native editor toolbar menus", () => {
       "Delete embed",
     ]);
     expect(action(menu, "Background").icon).toBe(BACKGROUND_SQUARES_ICON_ID);
-    expect(action(menu, "Erase all").fragment).toBeUndefined();
+    expect(
+      action(menu, "Erase all").fragment?.querySelector(
+        '.inkbook-menu-title-content[data-tone="caution"]',
+      )?.textContent,
+    ).toBe("Erase all");
     expect(action(menu, "Delete embed").warning).toBe(true);
     expect(
-      menu.entries.every((entry) => entry === "separator" || entry.fragment === undefined),
+      menu.entries.every(
+        (entry) =>
+          entry === "separator" || entry.title === "Erase all" || entry.fragment === undefined,
+      ),
     ).toBe(true);
     action(menu, "Background").click?.();
     expect(navigate).toHaveBeenCalledWith("background");
@@ -89,7 +96,7 @@ describe("native editor toolbar menus", () => {
     ).toBe(true);
   });
 
-  it("uses native placement without forcing custom width or phone padding", () => {
+  it("uses native placement without forcing a custom width", () => {
     const anchor = createHtmlElement("button");
     anchor.getBoundingClientRect = () =>
       ({ bottom: 148, height: 44, left: 320, right: 364, top: 104, width: 44 }) as DOMRect;
@@ -118,6 +125,25 @@ describe("native editor toolbar menus", () => {
     expect(menuPositionBelow(anchor, "shape")).toEqual({ overlap: true, x: 320, y: 148 });
     Platform.isPhone = true;
     expect(menuPositionBelow(anchor, "overflow")).toEqual({ overlap: true, x: 320, y: 150 });
+  });
+});
+
+describe("phone native toolbar menu spacing", () => {
+  it("uses and releases a minimum safe area without changing native menu entries", () => {
+    Platform.isPhone = true;
+    document.body.setCssProps({ "--safe-area-inset-bottom": "0px", "--size-4-4": "16px" });
+    const menus: FakeMenu[] = [];
+    const configured = connectedOptions();
+    new EditorToolbarMenuSession({
+      ...configured,
+      factory: recordingFactory(menus),
+      initialMenu: "overflow",
+    });
+
+    expect(document.body.style.getPropertyValue("--safe-area-inset-bottom")).toBe("16px");
+    expect(titles(menus[0]!)).not.toContain("");
+    menus[0]?.hide();
+    expect(document.body.style.getPropertyValue("--safe-area-inset-bottom")).toBe("0px");
   });
 });
 

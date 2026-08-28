@@ -1,4 +1,7 @@
+import { Platform } from "obsidian";
+
 import { CAUTION_ERASER_ICON_ID } from "../../rendering/ui/icon-ids";
+import { acquireNativeMenuSafeAreaFallback, setMenuItemTitle } from "./menu-dom";
 import type { FocusTargetPort, MenuFactoryPort, MenuPort, MenuPosition } from "./menu-ports";
 
 const CONTEXT_MENU_ICONS = {
@@ -76,16 +79,19 @@ export interface ContextMenuSession {
 
 function configureItem(
   menu: MenuPort,
+  ownerDocument: Document,
   title: string,
   icon: string,
   callback: () => void,
   options: {
+    readonly caution?: boolean;
     readonly disabled?: boolean;
     readonly warning?: boolean;
   } = {},
 ): void {
   menu.addItem((item) => {
-    item.setTitle(title).setIcon(icon);
+    setMenuItemTitle(item, ownerDocument, title, options.caution === true);
+    item.setIcon(icon);
     if (options.disabled === true) item.setDisabled(true);
     if (options.warning === true) item.setWarning(true);
     if (options.disabled !== true) item.onClick(callback);
@@ -94,49 +100,80 @@ function configureItem(
 
 function configureSelectionItems(
   menu: MenuPort,
+  ownerDocument: Document,
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
 ): void {
-  configureItem(menu, "Copy", CONTEXT_MENU_ICONS.copy, handlers.copy);
-  configureItem(menu, "Cut", CONTEXT_MENU_ICONS.cut, handlers.cut);
-  if (state.canPaste) configureItem(menu, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
+  configureItem(menu, ownerDocument, "Copy", CONTEXT_MENU_ICONS.copy, handlers.copy);
+  configureItem(menu, ownerDocument, "Cut", CONTEXT_MENU_ICONS.cut, handlers.cut);
+  if (state.canPaste) {
+    configureItem(menu, ownerDocument, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
+  }
   menu.addSeparator();
-  configureItem(menu, "Delete", CONTEXT_MENU_ICONS.delete, handlers.delete, { warning: true });
+  configureItem(menu, ownerDocument, "Delete", CONTEXT_MENU_ICONS.delete, handlers.delete, {
+    warning: true,
+  });
   menu.addSeparator();
-  configureItem(menu, "Bring forward", CONTEXT_MENU_ICONS.bringForward, handlers.bringForward, {
-    disabled: !state.canBringForward,
-  });
-  configureItem(menu, "Send backward", CONTEXT_MENU_ICONS.sendBackward, handlers.sendBackward, {
-    disabled: !state.canSendBackward,
-  });
-  configureItem(menu, "Bring to front", CONTEXT_MENU_ICONS.bringToFront, handlers.bringToFront, {
-    disabled: !state.canBringToFront,
-  });
-  configureItem(menu, "Send to back", CONTEXT_MENU_ICONS.sendToBack, handlers.sendToBack, {
-    disabled: !state.canSendToBack,
-  });
+  configureItem(
+    menu,
+    ownerDocument,
+    "Bring forward",
+    CONTEXT_MENU_ICONS.bringForward,
+    handlers.bringForward,
+    { disabled: !state.canBringForward },
+  );
+  configureItem(
+    menu,
+    ownerDocument,
+    "Send backward",
+    CONTEXT_MENU_ICONS.sendBackward,
+    handlers.sendBackward,
+    { disabled: !state.canSendBackward },
+  );
+  configureItem(
+    menu,
+    ownerDocument,
+    "Bring to front",
+    CONTEXT_MENU_ICONS.bringToFront,
+    handlers.bringToFront,
+    { disabled: !state.canBringToFront },
+  );
+  configureItem(
+    menu,
+    ownerDocument,
+    "Send to back",
+    CONTEXT_MENU_ICONS.sendToBack,
+    handlers.sendToBack,
+    { disabled: !state.canSendToBack },
+  );
 }
 
 function configureCanvasItems(
   menu: MenuPort,
+  ownerDocument: Document,
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
 ): void {
   if (!state.hasSelection && state.canPaste) {
-    configureItem(menu, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
+    configureItem(menu, ownerDocument, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
     menu.addSeparator();
   }
-  configureItem(menu, "Copy embed", CONTEXT_MENU_ICONS.copy, handlers.copyEmbed, {
+  configureItem(menu, ownerDocument, "Copy embed", CONTEXT_MENU_ICONS.copy, handlers.copyEmbed, {
     disabled: state.canCopyEmbed === false,
   });
   menu.addSeparator();
-  configureItem(menu, "Erase all", CONTEXT_MENU_ICONS.eraseAll, handlers.eraseAll, {
+  configureItem(menu, ownerDocument, "Erase all", CONTEXT_MENU_ICONS.eraseAll, handlers.eraseAll, {
+    caution: true,
     disabled: state.canEraseAll === false,
   });
-  configureItem(menu, "Delete embed", CONTEXT_MENU_ICONS.delete, handlers.deleteEmbed, {
-    disabled: state.canDeleteEmbed === false,
-    warning: true,
-  });
+  configureItem(
+    menu,
+    ownerDocument,
+    "Delete embed",
+    CONTEXT_MENU_ICONS.delete,
+    handlers.deleteEmbed,
+    { disabled: state.canDeleteEmbed === false, warning: true },
+  );
 }
 
 /**
@@ -145,15 +182,15 @@ function configureCanvasItems(
  */
 export function populateContextMenu(
   menu: MenuPort,
-  _ownerDocument: Document,
+  ownerDocument: Document,
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
 ): void {
   if (state.hasSelection) {
-    configureSelectionItems(menu, state, handlers);
+    configureSelectionItems(menu, ownerDocument, state, handlers);
     menu.addSeparator();
   }
-  configureCanvasItems(menu, state, handlers);
+  configureCanvasItems(menu, ownerDocument, state, handlers);
 }
 
 function canFocus(
@@ -181,10 +218,14 @@ export function openContextMenu(
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
 ): ContextMenuSession {
+  const releaseSafeArea = Platform.isPhone
+    ? acquireNativeMenuSafeAreaFallback(invocation.ownerDocument)
+    : () => undefined;
   const menu = invocation.type === "event" ? factory.forEvent(invocation.event) : factory.create();
   let closed = false;
   let focusReturned = false;
   menu.onHide(() => {
+    releaseSafeArea();
     if (focusReturned) return;
     focusReturned = true;
     focusAfterClose(invocation);

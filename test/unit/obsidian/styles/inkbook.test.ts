@@ -151,8 +151,8 @@ describe("Inkbook editor chrome styles", () => {
     );
     const editorChrome = declarationsFor(".inkbook-root .inkbook-editor-chrome");
     const hiddenEditorChrome = declarationsFor(".inkbook-root .inkbook-editor-chrome[hidden]");
-    const heldUnlockEditor = declarationsFor(
-      ".inkbook-root.inkbook-active-preparing .inkbook-editor-chrome,\n.inkbook-root.inkbook-active-transitioning .inkbook-editor-chrome",
+    const heldUnlockForeground = declarationsFor(
+      ".inkbook-root.inkbook-active-preparing .inkbook-editor-chrome-host,\n.inkbook-root.inkbook-active-preparing .inkbook-canvas-input,\n.inkbook-root.inkbook-active-preparing .inkbook-scene-foreground,\n.inkbook-root.inkbook-active-transitioning .inkbook-editor-chrome-host,\n.inkbook-root.inkbook-active-transitioning .inkbook-canvas-input,\n.inkbook-root.inkbook-active-transitioning .inkbook-scene-foreground",
     );
     const scene = declarationsFor(".inkbook-root .inkbook-scene");
     const transitioningScene = declarationsFor(
@@ -176,7 +176,7 @@ describe("Inkbook editor chrome styles", () => {
     expect(livePreviewRoot).toContain("contain: none !important");
     expect(editorChrome).not.toContain("padding-block-start");
     expect(hiddenEditorChrome).toContain("display: none !important");
-    expect(heldUnlockEditor).toContain("visibility: hidden");
+    expect(heldUnlockForeground).toContain("visibility: hidden");
     expect(chromeHost).toContain("position: sticky");
     expect(chromeHost).toContain("block-size: 0");
     expect(chromeHost).toContain("var(--inkbook-toolbar-overlay-block-size)");

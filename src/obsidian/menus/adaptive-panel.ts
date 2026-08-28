@@ -3,12 +3,11 @@ import { Component, Platform, Scope, type Keymap } from "obsidian";
 import { effectiveTransitionDuration } from "../runtime/effective-motion";
 import { menuDomWindow } from "./menu-dom";
 import type { FocusTargetPort } from "./menu-ports";
+import { PhoneSheetSwipeController } from "./phone-sheet-swipe";
 
 const DESKTOP_GAP_PX = 4;
 const TABLET_GAP_PX = 2;
 const DESKTOP_VIEWPORT_INSET_PX = 8;
-const PHONE_SWIPE_VELOCITY_PX_PER_MS = 0.45;
-const PHONE_SWIPE_DISTANCE_RATIO = 0.5;
 
 export type AdaptivePanelCloseMode = "animated" | "handoff" | "immediate";
 type AdaptivePanelKind = "background" | "style";
@@ -32,12 +31,6 @@ export interface AdaptivePanelOptions {
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
 }
 
-interface SwipeState {
-  readonly pointerId: number;
-  readonly startTime: number;
-  readonly startY: number;
-}
-
 export class AdaptivePanelSession extends Component {
   readonly #backdrop: HTMLElement;
   #closed = false;
@@ -48,14 +41,15 @@ export class AdaptivePanelSession extends Component {
   #layoutTimer: number | undefined;
   readonly #layer: HTMLElement;
   readonly #options: AdaptivePanelOptions;
+  readonly #phoneSwipe: PhoneSheetSwipeController | undefined;
   #openFrame: number | undefined;
+  #presenceTimer: number | undefined;
   #removeTimer: number | undefined;
   #returnedFocus = false;
   #restoreFocus = true;
   readonly #scope: Scope;
   readonly #scroll: HTMLElement;
   readonly #surface: HTMLElement;
-  #swipe: SwipeState | undefined;
 
   public constructor(options: AdaptivePanelOptions) {
     super();
@@ -72,6 +66,7 @@ export class AdaptivePanelSession extends Component {
     this.#backdrop = this.#layer.createDiv({ cls: "inkbook-adaptive-panel-backdrop" });
     this.#surface = this.#layer.createEl("section", { cls: "inkbook-adaptive-panel" });
     this.#surface.dataset.kind = options.kind;
+    this.#surface.dataset.presence = "entering";
     this.#surface.dataset.state = "opening";
     this.#surface.setAttribute("aria-label", options.label);
     this.#surface.setAttribute("role", "dialog");
@@ -92,6 +87,16 @@ export class AdaptivePanelSession extends Component {
       }),
     );
     this.#layer.append(this.#backdrop, this.#surface);
+    this.#phoneSwipe = Platform.isPhone
+      ? new PhoneSheetSwipeController({
+          backdrop: this.#backdrop,
+          close: () => this.close(),
+          durationMs: this.#durationMs,
+          ownerWindow: options.ownerWindow,
+          scroll: this.#scroll,
+          surface: this.#surface,
+        })
+      : undefined;
     this.#scope = this.#createScope();
     options.ownerDocument.body.append(this.#layer);
     this.load();
@@ -100,6 +105,8 @@ export class AdaptivePanelSession extends Component {
   public close(mode: AdaptivePanelCloseMode = "animated"): void {
     if (this.#closed) return;
     this.#closed = true;
+    delete this.#surface.dataset.presence;
+    this.#phoneSwipe?.prepareClose();
     this.#restoreFocus = mode !== "handoff";
     if (mode !== "animated" || this.#durationMs === 0 || !Platform.isPhone) {
       this.#finishClose();
@@ -131,6 +138,14 @@ export class AdaptivePanelSession extends Component {
       if (this.#closed) return;
       this.#surface.dataset.state = "open";
       this.#surface.focus({ preventScroll: true });
+      if (this.#durationMs === 0) {
+        delete this.#surface.dataset.presence;
+        return;
+      }
+      this.#presenceTimer = this.#options.ownerWindow.setTimeout(() => {
+        this.#presenceTimer = undefined;
+        delete this.#surface.dataset.presence;
+      }, this.#durationMs);
     });
   }
 
@@ -181,6 +196,10 @@ export class AdaptivePanelSession extends Component {
     if (this.#removeTimer !== undefined) {
       this.#options.ownerWindow.clearTimeout(this.#removeTimer);
       this.#removeTimer = undefined;
+    }
+    if (this.#presenceTimer !== undefined) {
+      this.#options.ownerWindow.clearTimeout(this.#presenceTimer);
+      this.#presenceTimer = undefined;
     }
     if (this.#layoutTimer !== undefined) {
       this.#options.ownerWindow.clearTimeout(this.#layoutTimer);
@@ -258,57 +277,6 @@ export class AdaptivePanelSession extends Component {
     this.close();
   };
 
-  #handlePointerDown = (event: PointerEvent): void => {
-    if (!Platform.isPhone || event.pointerType === "mouse") return;
-    const target = event.target;
-    if (!isElement(target)) return;
-    if (!target.closest(".inkbook-adaptive-panel-drag-region")) return;
-    event.preventDefault();
-    this.#swipe = {
-      pointerId: event.pointerId,
-      startTime: event.timeStamp,
-      startY: event.clientY,
-    };
-    this.#surface.setPointerCapture?.(event.pointerId);
-  };
-
-  #handlePointerMove = (event: PointerEvent): void => {
-    if (this.#swipe?.pointerId !== event.pointerId) return;
-    const distance = Math.max(0, event.clientY - this.#swipe.startY);
-    this.#surface.style.setProperty("--inkbook-adaptive-panel-drag", `${String(distance)}px`);
-    const panelHeight = Math.max(1, this.#surface.getBoundingClientRect().height);
-    this.#backdrop.style.opacity = String(1 - Math.min(1, distance / panelHeight));
-  };
-
-  #handlePointerUp = (event: PointerEvent): void => {
-    const swipe = this.#swipe;
-    if (swipe?.pointerId !== event.pointerId) return;
-    this.#swipe = undefined;
-    const distance = Math.max(0, event.clientY - swipe.startY);
-    const elapsed = Math.max(1, event.timeStamp - swipe.startTime);
-    this.#releasePointerCapture(event.pointerId);
-    const panelHeight = this.#surface.getBoundingClientRect().height;
-    const threshold = panelHeight > 0 ? panelHeight * PHONE_SWIPE_DISTANCE_RATIO : Infinity;
-    if (distance >= threshold || distance / elapsed >= PHONE_SWIPE_VELOCITY_PX_PER_MS) {
-      this.close();
-      return;
-    }
-    this.#resetSwipePresentation();
-  };
-
-  #handlePointerCancel = (event: PointerEvent): void => {
-    if (this.#swipe?.pointerId !== event.pointerId) return;
-    this.#swipe = undefined;
-    this.#releasePointerCapture(event.pointerId);
-    this.#resetSwipePresentation();
-  };
-
-  #handleLostPointerCapture = (event: PointerEvent): void => {
-    if (this.#swipe?.pointerId !== event.pointerId) return;
-    this.#swipe = undefined;
-    this.#resetSwipePresentation();
-  };
-
   #focusableElements(): HTMLElement[] {
     return [...this.#surface.querySelectorAll<HTMLElement>(focusableSelector())].filter(
       (element) => !element.hasAttribute("disabled") && element.tabIndex !== -1,
@@ -378,11 +346,15 @@ export class AdaptivePanelSession extends Component {
       this.#handleOutsidePointer,
       true,
     );
-    this.registerDomEvent(this.#surface, "pointerdown", this.#handlePointerDown);
-    this.registerDomEvent(this.#surface, "pointermove", this.#handlePointerMove);
-    this.registerDomEvent(this.#surface, "pointerup", this.#handlePointerUp);
-    this.registerDomEvent(this.#surface, "pointercancel", this.#handlePointerCancel);
-    this.registerDomEvent(this.#surface, "lostpointercapture", this.#handleLostPointerCapture);
+    const swipe = this.#phoneSwipe;
+    if (swipe === undefined) return;
+    this.registerDomEvent(this.#surface, "pointerdown", swipe.handlePointerDown);
+    this.registerDomEvent(this.#surface, "pointermove", swipe.handlePointerMove);
+    this.registerDomEvent(this.#surface, "pointerup", swipe.handlePointerUp);
+    this.registerDomEvent(this.#surface, "pointercancel", swipe.handlePointerCancel);
+    this.registerDomEvent(this.#surface, "lostpointercapture", swipe.handleLostPointerCapture);
+    this.registerDomEvent(this.#scroll, "scroll", swipe.syncScrollPosition);
+    this.register(() => swipe.dispose());
   }
 
   #registerViewportEvents(): void {
@@ -408,16 +380,6 @@ export class AdaptivePanelSession extends Component {
       return;
     }
     this.#options.canvasInputSurface.focus({ preventScroll: true });
-  }
-
-  #releasePointerCapture(pointerId: number): void {
-    if (!this.#surface.hasPointerCapture?.(pointerId)) return;
-    this.#surface.releasePointerCapture(pointerId);
-  }
-
-  #resetSwipePresentation(): void {
-    this.#surface.style.removeProperty("--inkbook-adaptive-panel-drag");
-    this.#backdrop.style.removeProperty("opacity");
   }
 
   #visualViewport(): {
@@ -454,8 +416,4 @@ function focusableSelector(): string {
 
 function isNode(target: EventTarget | null): target is Node {
   return target !== null && "nodeType" in target;
-}
-
-function isElement(target: EventTarget | null): target is Element {
-  return isNode(target) && "closest" in target;
 }

@@ -69,19 +69,29 @@ describe("AdaptivePanel styling boundary", () => {
     expect(panel).toContain("border: none");
     expect(panel).toContain("border-radius: var(--touch-radius-s) var(--touch-radius-s) 0 0");
     expect(panel).toContain("position: absolute");
+    expect(panel).toContain("touch-action: pan-down");
     expect(panel).toContain(
       "inset-inline: var(--safe-area-inset-left) var(--safe-area-inset-right)",
     );
     expect(scroll).toContain("var(--inkbook-adaptive-panel-viewport-height, 100vh) * 0.6");
-    expect(scroll).toContain("var(--safe-area-inset-bottom)");
+    expect(scroll).toContain("max(var(--safe-area-inset-bottom), var(--size-4-4))");
+    expect(scroll).toContain("touch-action: pan-down");
     expect(grabber).toContain("background: var(--text-faint)");
     expect(grabber).toContain("inline-size: 15%");
     expect(grabber).toContain("margin: var(--size-4-2) auto var(--size-4-1)");
     expect(dragRegion).toContain("touch-action: none");
+    expect(stylesheet).toContain('data-scroll-position="away"');
+    expect(stylesheet).toContain('data-presence="entering"');
+    expect(stylesheet).toContain('data-swipe-state="settling"');
+    expect(stylesheet).not.toContain('data-state="open"] {\n  animation');
+    expect(stylesheet).toContain("transition-duration: var(--inkbook-adaptive-panel-duration)");
+    expect(stylesheet).toContain("transition-property: translate");
     expect(stylesheet).toContain("animation: inkbook-adaptive-panel-sheet-enter");
     expect(stylesheet).toContain("animation: inkbook-adaptive-panel-sheet-exit");
   });
+});
 
+describe("AdaptivePanel wide styling", () => {
   it("matches native static wide menus and mobile blur without card staggering", () => {
     const stylePanel = declarationsFor('.inkbook-adaptive-panel[data-kind="style"]');
     const mobilePanel = declarationsFor(
@@ -104,6 +114,7 @@ describe("AdaptivePanel styling boundary", () => {
 
 describe("AdaptivePanel content styles", () => {
   it("keeps Style controls touch-operable and synchronized fields visually unified", () => {
+    const cautionTitle = declarationsFor('.inkbook-menu-title-content[data-tone="caution"]');
     const choice = declarationsFor(
       ".inkbook-menu-controls .inkbook-menu-choice,\n.inkbook-menu-controls .inkbook-menu-stepper-button",
     );
@@ -141,6 +152,7 @@ describe("AdaptivePanel content styles", () => {
     );
 
     expect(choice).toContain("min-block-size: 36px");
+    expect(cautionTitle).toContain("color: var(--color-orange)");
     expect(choice).toContain("min-inline-size: 36px");
     expect(phoneChoice).toContain("min-block-size: 44px");
     expect(section).toContain("background: transparent");

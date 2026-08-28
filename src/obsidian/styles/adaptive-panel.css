@@ -116,6 +116,7 @@
   background: color-mix(in srgb, var(--menu-background) 45%, transparent);
   display: block;
   inset: 0;
+  opacity: var(--inkbook-adaptive-panel-backdrop-opacity, 1);
   position: absolute;
 }
 
@@ -135,16 +136,56 @@
   max-inline-size: none;
   max-block-size: 60%;
   position: absolute;
+  touch-action: pan-down;
   translate: 0 var(--inkbook-adaptive-panel-drag, 0);
 }
 
-.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel[data-state="opening"],
-.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel[data-state="open"] {
+.inkbook-adaptive-panel-layer[data-platform="phone"]
+  .inkbook-adaptive-panel[data-scroll-position="away"] {
+  touch-action: pan-y;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"]
+  .inkbook-adaptive-panel[data-presence="entering"] {
   animation: inkbook-adaptive-panel-sheet-enter var(--inkbook-adaptive-panel-duration) ease-out both;
 }
 
 .inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel[data-state="closing"] {
   animation: inkbook-adaptive-panel-sheet-exit var(--inkbook-adaptive-panel-duration) ease-in both;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"]
+  .inkbook-adaptive-panel[data-swipe-state="dragging"],
+.inkbook-adaptive-panel-layer[data-platform="phone"]
+  .inkbook-adaptive-panel[data-swipe-state="settling"] {
+  animation: none;
+  will-change: translate;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"]
+  :is(
+    .inkbook-adaptive-panel[data-swipe-state="settling"],
+    .inkbook-adaptive-panel-backdrop[data-swipe-state="settling"]
+  ) {
+  transition-duration: var(--inkbook-adaptive-panel-duration);
+  transition-timing-function: var(--inkbook-motion-easing, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"]
+  .inkbook-adaptive-panel[data-swipe-state="settling"] {
+  transition-property: translate;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"]
+  .inkbook-adaptive-panel-backdrop[data-swipe-state="dragging"],
+.inkbook-adaptive-panel-layer[data-platform="phone"]
+  .inkbook-adaptive-panel-backdrop[data-swipe-state="settling"] {
+  will-change: opacity;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"]
+  .inkbook-adaptive-panel-backdrop[data-swipe-state="settling"] {
+  transition-property: opacity;
 }
 
 .inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel-drag-region {
@@ -164,8 +205,15 @@
 
 .inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel-scroll {
   max-block-size: calc(var(--inkbook-adaptive-panel-viewport-height, 100vh) * 0.6 - 16px);
-  padding: var(--size-4-2) var(--size-4-4) var(--safe-area-inset-bottom);
+  padding: var(--size-4-2) var(--size-4-4) max(var(--safe-area-inset-bottom), var(--size-4-4));
   scrollbar-gutter: auto;
+  touch-action: pan-down;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"]
+  .inkbook-adaptive-panel[data-scroll-position="away"]
+  .inkbook-adaptive-panel-scroll {
+  touch-action: pan-y;
 }
 
 .inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel-header {
@@ -212,7 +260,7 @@
 
 @keyframes inkbook-adaptive-panel-backdrop-exit {
   from {
-    opacity: 1;
+    opacity: var(--inkbook-adaptive-panel-backdrop-opacity, 1);
   }
 
   to {

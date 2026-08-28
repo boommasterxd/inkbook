@@ -14,6 +14,7 @@ import {
 } from "../../rendering/ui/icon-ids";
 import { AdaptivePanelSession, type AdaptivePanelContentLifecycle } from "./adaptive-panel";
 import { backgroundIconId, createBackgroundMenuContent } from "./background-menu-content";
+import { acquireNativeMenuSafeAreaFallback, setMenuItemTitle } from "./menu-dom";
 import { createStyleMenuContent } from "./style-menu-content";
 import type { FocusTargetPort, MenuFactoryPort, MenuPort } from "./menu-ports";
 
@@ -122,9 +123,13 @@ export class EditorToolbarMenuSession {
   }
 
   #showNativeMenu(id: "overflow" | "shape"): void {
+    const releaseSafeArea = Platform.isPhone
+      ? acquireNativeMenuSafeAreaFallback(this.#options.ownerDocument)
+      : () => undefined;
     const menu = this.#options.factory.create();
     this.#menu = menu;
     menu.onHide(() => {
+      releaseSafeArea();
       if (this.#menu !== menu) return;
       this.#menu = undefined;
       this.#closed = true;
@@ -260,16 +265,26 @@ function populateOverflow(
   navigate: (id: EditorToolbarMenuId) => void,
 ): void {
   const handlers = options.handlers;
-  addAction(menu, "Background", backgroundIconId(state.background.type), () =>
-    navigate("background"),
+  addAction(
+    menu,
+    options.ownerDocument,
+    "Background",
+    backgroundIconId(state.background.type),
+    () => navigate("background"),
   );
   if (state.overflow.hasSelection) {
     menu.addSeparator();
-    addAction(menu, "Bring forward", "arrow-up", () => handlers.onOverflowAction("bring-forward"), {
-      disabled: !state.overflow.arrange["bring-forward"],
-    });
     addAction(
       menu,
+      options.ownerDocument,
+      "Bring forward",
+      "arrow-up",
+      () => handlers.onOverflowAction("bring-forward"),
+      { disabled: !state.overflow.arrange["bring-forward"] },
+    );
+    addAction(
+      menu,
+      options.ownerDocument,
       "Send backward",
       "arrow-down",
       () => handlers.onOverflowAction("send-backward"),
@@ -279,6 +294,7 @@ function populateOverflow(
     );
     addAction(
       menu,
+      options.ownerDocument,
       "Bring to front",
       "chevrons-up",
       () => handlers.onOverflowAction("bring-to-front"),
@@ -288,6 +304,7 @@ function populateOverflow(
     );
     addAction(
       menu,
+      options.ownerDocument,
       "Send to back",
       "chevrons-down",
       () => handlers.onOverflowAction("send-to-back"),
@@ -297,20 +314,29 @@ function populateOverflow(
     );
   }
   menu.addSeparator();
-  addAction(menu, "Copy embed", "copy", () => handlers.onOverflowAction("copy-embed"));
+  addAction(menu, options.ownerDocument, "Copy embed", "copy", () =>
+    handlers.onOverflowAction("copy-embed"),
+  );
   menu.addSeparator();
   addAction(
     menu,
+    options.ownerDocument,
     "Erase all",
     CAUTION_ERASER_ICON_ID,
     () => handlers.onOverflowAction("erase-all"),
     {
+      caution: true,
       disabled: !state.overflow.canEraseAll,
     },
   );
-  addAction(menu, "Delete embed", "trash-2", () => handlers.onOverflowAction("delete-embed"), {
-    warning: true,
-  });
+  addAction(
+    menu,
+    options.ownerDocument,
+    "Delete embed",
+    "trash-2",
+    () => handlers.onOverflowAction("delete-embed"),
+    { warning: true },
+  );
 }
 
 function populateShapes(
@@ -324,6 +350,7 @@ function populateShapes(
     group = nextGroup;
     addAction(
       menu,
+      options.ownerDocument,
       title,
       activeShapeIconId(shape, state.shapeIcon),
       () => options.handlers.onShapeChange(shape),
@@ -334,17 +361,20 @@ function populateShapes(
 
 function addAction(
   menu: MenuPort,
+  ownerDocument: Document,
   title: string,
   icon: string,
   onClick: () => void,
   state: {
+    readonly caution?: boolean;
     readonly checked?: boolean;
     readonly disabled?: boolean;
     readonly warning?: boolean;
   } = {},
 ): void {
   menu.addItem((item) => {
-    item.setTitle(title).setIcon(icon);
+    setMenuItemTitle(item, ownerDocument, title, state.caution === true);
+    item.setIcon(icon);
     if (state.checked !== undefined) item.setChecked?.(state.checked);
     if (state.disabled === true) item.setDisabled(true);
     if (state.warning === true) item.setWarning(true);
