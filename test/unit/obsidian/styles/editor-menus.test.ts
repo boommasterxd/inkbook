@@ -18,6 +18,7 @@ describe("AdaptivePanel styling boundary", () => {
     expect(panel).toContain("border-radius: var(--menu-radius)");
     expect(panel).toContain("box-shadow: var(--menu-shadow)");
     expect(panel).toContain("backdrop-filter: var(--menu-backdrop-filter)");
+    expect(panel).toContain("outline: none");
     expect(scroll).toContain("padding: var(--menu-padding)");
     expect(scroll).toContain("overflow: hidden");
     expect(scroll).toContain("overscroll-behavior: contain");
@@ -64,6 +65,7 @@ describe("AdaptivePanel styling boundary", () => {
 
     expect(panel).toContain("max-block-size: 60%");
     expect(panel).toContain("inline-size: auto");
+    expect(panel).toContain("max-inline-size: none");
     expect(panel).toContain("border: none");
     expect(panel).toContain("border-radius: var(--touch-radius-s) var(--touch-radius-s) 0 0");
     expect(panel).toContain("position: absolute");
@@ -81,9 +83,15 @@ describe("AdaptivePanel styling boundary", () => {
   });
 
   it("matches native static wide menus and mobile blur without card staggering", () => {
+    const stylePanel = declarationsFor('.inkbook-adaptive-panel[data-kind="style"]');
     const mobilePanel = declarationsFor(
       '.inkbook-adaptive-panel-layer[data-mobile="true"] .inkbook-adaptive-panel',
     );
+
+    expect(stylePanel).toContain("inline-size: max-content");
+    expect(stylePanel).toContain("max-inline-size: calc(100vw - 16px)");
+    expect(stylesheet).not.toContain("inline-size: min(300px");
+    expect(stylesheet).not.toContain("inline-size: min(340px");
     expect(mobilePanel).toContain("var(--blur-opacity-m)");
     expect(mobilePanel).toContain("border: none");
     expect(stylesheet).not.toContain("inkbook-adaptive-panel-enter");
@@ -119,6 +127,18 @@ describe("AdaptivePanel content styles", () => {
     const desktopFollowingSection = declarationsFor(
       '.inkbook-adaptive-panel-layer[data-platform="wide"][data-mobile="false"]\n  .inkbook-menu-control\n  + .inkbook-menu-control',
     );
+    const desktopScroll = declarationsFor(
+      '.inkbook-adaptive-panel-layer[data-platform="wide"][data-mobile="false"]\n  [data-kind="style"]\n  .inkbook-adaptive-panel-scroll',
+    );
+    const desktopWidthGrid = declarationsFor(
+      '.inkbook-adaptive-panel-layer[data-platform="wide"][data-mobile="false"]\n  [data-kind="style"]\n  .inkbook-menu-width-grid',
+    );
+    const desktopWidthChoice = declarationsFor(
+      '.inkbook-adaptive-panel-layer[data-platform="wide"][data-mobile="false"]\n  [data-kind="style"]\n  .inkbook-menu-width-choice',
+    );
+    const desktopWidthPreview = declarationsFor(
+      '.inkbook-adaptive-panel-layer[data-platform="wide"][data-mobile="false"]\n  [data-kind="style"]\n  :where(.inkbook-menu-width-choice)\n  .inkbook-menu-line-preview',
+    );
 
     expect(choice).toContain("min-block-size: 36px");
     expect(choice).toContain("min-inline-size: 36px");
@@ -134,6 +154,12 @@ describe("AdaptivePanel content styles", () => {
     expect(desktopFollowingSection).toContain(
       "padding-inline: calc(var(--menu-padding) + var(--size-4-2))",
     );
+    expect(desktopScroll).toContain("padding-block: 0");
+    expect(desktopWidthGrid).toContain("grid-template-columns: repeat(5, 36px)");
+    expect(desktopWidthGrid).toContain("justify-content: space-between");
+    expect(desktopWidthChoice).toContain("grid-template-rows: 8px 12px");
+    expect(desktopWidthPreview).toContain("inline-size: 22px");
+    expect(desktopWidthPreview).toContain("place-self: center");
     expect(valueField).toContain("display: flex");
     expect(valueField).toContain("justify-content: center");
     expect(value).toContain("inline-size: var(--inkbook-menu-value-width)");
@@ -159,7 +185,9 @@ describe("AdaptivePanel content styles", () => {
     expect(divider).toContain("block-size: var(--menu-divider-width)");
     expect(spacing).toContain("border-radius: var(--touch-radius-xxs)");
   });
+});
 
+describe("AdaptivePanel Background content styles", () => {
   it("lets the wide Background separator use the full panel content width", () => {
     const scroll = declarationsFor(
       '.inkbook-adaptive-panel-layer[data-platform="wide"]\n    .inkbook-adaptive-panel[data-kind="background"]\n    .inkbook-adaptive-panel-scroll',
@@ -167,19 +195,32 @@ describe("AdaptivePanel content styles", () => {
     const choices = declarationsFor(
       '.inkbook-adaptive-panel-layer[data-platform="wide"] .inkbook-menu-background-choices',
     );
+    const choice = declarationsFor(
+      '.inkbook-adaptive-panel-layer[data-platform="wide"] .inkbook-menu-background-choice,\n.inkbook-adaptive-panel-layer[data-platform="wide"] .inkbook-adaptive-panel-back',
+    );
     const separator = declarationsFor(
       '.inkbook-adaptive-panel-layer[data-platform="wide"] .inkbook-menu-background-separator',
     );
     const back = declarationsFor(
       '.inkbook-adaptive-panel-layer[data-platform="wide"]\n  .inkbook-adaptive-panel\n  .inkbook-adaptive-panel-back',
     );
+    const desktopSpacing = declarationsFor(
+      '.inkbook-adaptive-panel-layer[data-platform="wide"][data-mobile="false"]\n    .inkbook-menu-spacing-control',
+    );
+    const desktopOutput = declarationsFor(
+      '.inkbook-adaptive-panel-layer[data-platform="wide"][data-mobile="false"]\n    .inkbook-menu-spacing-output',
+    );
 
     expect(scroll).toContain("padding-inline: 0");
     expect(scroll).toContain("scrollbar-gutter: auto");
     expect(choices).toContain("margin-inline: var(--menu-padding)");
+    expect(choice).toContain("line-height: var(--line-height-tight)");
     expect(separator).toContain("margin-inline: 0");
     expect(back).toContain("block-size: auto");
     expect(back).toContain("padding: var(--size-4-1) var(--size-4-2)");
+    expect(desktopSpacing).toContain("padding-inline: calc(var(--menu-padding) + var(--size-4-2))");
+    expect(desktopOutput).toContain("block-size: var(--icon-s)");
+    expect(desktopOutput).toContain("display: inline-flex");
   });
 });
 

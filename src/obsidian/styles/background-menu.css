@@ -127,6 +127,11 @@
   inset-inline-start: 100%;
 }
 
+.inkbook-adaptive-panel-layer[data-platform="wide"] .inkbook-menu-background-choice,
+.inkbook-adaptive-panel-layer[data-platform="wide"] .inkbook-adaptive-panel-back {
+  line-height: var(--line-height-tight);
+}
+
 .inkbook-adaptive-panel-layer[data-platform="wide"][data-mobile="true"]
   .inkbook-menu-background-choice,
 .inkbook-adaptive-panel-layer[data-platform="wide"][data-mobile="true"]
@@ -249,5 +254,18 @@
 
   .inkbook-adaptive-panel-layer[data-platform="wide"] .inkbook-menu-background-separator {
     margin-inline: 0;
+  }
+
+  .inkbook-adaptive-panel-layer[data-platform="wide"][data-mobile="false"]
+    .inkbook-menu-spacing-control {
+    padding-inline: calc(var(--menu-padding) + var(--size-4-2));
+  }
+
+  .inkbook-adaptive-panel-layer[data-platform="wide"][data-mobile="false"]
+    .inkbook-menu-spacing-output {
+    align-items: center;
+    block-size: var(--icon-s);
+    display: inline-flex;
+    line-height: 1;
   }
 }

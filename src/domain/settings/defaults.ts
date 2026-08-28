@@ -18,6 +18,7 @@ const CYAN_COLOR: ColorV1 = Object.freeze({ type: "rgba", value: "#06B6D4FF" });
 const BLUE_COLOR: ColorV1 = Object.freeze({ type: "rgba", value: "#3B82F6FF" });
 const VIOLET_COLOR: ColorV1 = Object.freeze({ type: "rgba", value: "#8B5CF6FF" });
 const PINK_COLOR: ColorV1 = Object.freeze({ type: "rgba", value: "#EC4899FF" });
+const GRAY_COLOR: ColorV1 = Object.freeze({ type: "rgba", value: "#6B7280FF" });
 
 export const BUILT_IN_COLORS = Object.freeze([
   THEME_TEXT_COLOR,
@@ -29,6 +30,7 @@ export const BUILT_IN_COLORS = Object.freeze([
   BLUE_COLOR,
   VIOLET_COLOR,
   PINK_COLOR,
+  GRAY_COLOR,
 ]);
 
 function outlineDefaults(): OutlineDefaultsV1 {

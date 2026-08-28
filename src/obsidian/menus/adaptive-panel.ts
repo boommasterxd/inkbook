@@ -4,7 +4,8 @@ import { effectiveTransitionDuration } from "../runtime/effective-motion";
 import { menuDomWindow } from "./menu-dom";
 import type { FocusTargetPort } from "./menu-ports";
 
-const DESKTOP_GAP_PX = 2;
+const DESKTOP_GAP_PX = 4;
+const TABLET_GAP_PX = 2;
 const DESKTOP_VIEWPORT_INSET_PX = 8;
 const PHONE_SWIPE_VELOCITY_PX_PER_MS = 0.45;
 const PHONE_SWIPE_DISTANCE_RATIO = 0.5;
@@ -74,6 +75,7 @@ export class AdaptivePanelSession extends Component {
     this.#surface.dataset.state = "opening";
     this.#surface.setAttribute("aria-label", options.label);
     this.#surface.setAttribute("role", "dialog");
+    this.#surface.tabIndex = -1;
     if (Platform.isPhone) this.#surface.setAttribute("aria-modal", "true");
     this.#surface.style.setProperty(
       "--inkbook-adaptive-panel-duration",
@@ -128,7 +130,7 @@ export class AdaptivePanelSession extends Component {
       this.#openFrame = undefined;
       if (this.#closed) return;
       this.#surface.dataset.state = "open";
-      this.#focusFirstControl();
+      this.#surface.focus({ preventScroll: true });
     });
   }
 
@@ -197,13 +199,20 @@ export class AdaptivePanelSession extends Component {
   #createHeader(): void {
     if (this.#options.onBack === undefined) return;
     const header = this.#scroll.createDiv({ cls: "inkbook-adaptive-panel-header" });
-    const back = header.createEl("button", { cls: "inkbook-adaptive-panel-back" });
-    back.type = "button";
+    const back = header.createDiv({ cls: "inkbook-adaptive-panel-back" });
+    back.tabIndex = 0;
+    back.setAttribute("role", "button");
     back.setAttribute("aria-label", "Back to more options");
     const icon = back.createSpan({ cls: "inkbook-adaptive-panel-back-icon" });
     this.#options.renderIcon(icon, "arrow-left");
     back.createSpan({ text: "Back" });
-    back.addEventListener("click", () => this.#options.onBack?.());
+    const activate = (): void => this.#options.onBack?.();
+    back.addEventListener("click", activate);
+    back.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      activate();
+    });
   }
 
   #createScope(): Scope {
@@ -221,11 +230,6 @@ export class AdaptivePanelSession extends Component {
     this.#layer.remove();
     if (this.#restoreFocus) this.#returnFocus();
     this.#options.onClosed();
-  }
-
-  #focusFirstControl(): void {
-    const first = this.#surface.querySelector<HTMLElement>(focusableSelector());
-    first?.focus({ preventScroll: true });
   }
 
   #handleKeyDown = (event: KeyboardEvent): void => {
@@ -355,8 +359,9 @@ export class AdaptivePanelSession extends Component {
       viewport.left + DESKTOP_VIEWPORT_INSET_PX,
       maxLeft,
     );
-    const below = anchor.bottom + DESKTOP_GAP_PX;
-    const above = anchor.top - DESKTOP_GAP_PX - panel.height;
+    const panelGap = Platform.isMobile ? TABLET_GAP_PX : DESKTOP_GAP_PX;
+    const below = anchor.bottom + panelGap;
+    const above = anchor.top - panelGap - panel.height;
     const top =
       below + panel.height <= viewport.top + viewport.height - DESKTOP_VIEWPORT_INSET_PX
         ? below

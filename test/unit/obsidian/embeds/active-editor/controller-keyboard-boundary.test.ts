@@ -185,7 +185,7 @@ describe("active editor native paste DOM boundary", () => {
     expect(harness.menu.positions).toEqual([
       {
         ownerDocument: document,
-        position: { overlap: true, x: 320, y: 146 },
+        position: { overlap: true, width: 44, x: 267, y: 146 },
       },
     ]);
     harness.menu.close();

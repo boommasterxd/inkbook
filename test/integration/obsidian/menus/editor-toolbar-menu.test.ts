@@ -25,10 +25,12 @@ import {
 
 beforeEach(() => {
   installObsidianDomHelpers();
+  Platform.isMobile = false;
   Platform.isPhone = false;
 });
 
 afterEach(() => {
+  Platform.isMobile = false;
   Platform.isPhone = false;
   document.body.replaceChildren();
   vi.restoreAllMocks();
@@ -90,9 +92,16 @@ describe("native editor toolbar menus", () => {
     anchor.getBoundingClientRect = () =>
       ({ bottom: 148, height: 44, left: 320, right: 364, top: 104, width: 44 }) as DOMRect;
 
-    expect(menuPositionBelow(anchor)).toEqual({ overlap: true, x: 320, y: 150 });
+    expect(menuPositionBelow(anchor, "overflow")).toEqual({
+      overlap: true,
+      width: 44,
+      x: 267,
+      y: 150,
+    });
+    expect(menuPositionBelow(anchor, "shape")).toEqual({ overlap: true, x: 320, y: 150 });
+    Platform.isMobile = true;
     Platform.isPhone = true;
-    expect(menuPositionBelow(anchor)).toEqual({ overlap: true, x: 320, y: 150 });
+    expect(menuPositionBelow(anchor, "overflow")).toEqual({ overlap: true, x: 320, y: 150 });
   });
 });
 
@@ -188,7 +197,7 @@ describe("Background AdaptivePanel navigation", () => {
       document.querySelector('.inkbook-adaptive-panel[data-kind="background"]'),
     ).not.toBeNull();
 
-    panel?.querySelector<HTMLButtonElement>(".inkbook-adaptive-panel-back")?.click();
+    panel?.querySelector<HTMLElement>(".inkbook-adaptive-panel-back")?.click();
     await Promise.resolve();
     expect(document.querySelector(".inkbook-adaptive-panel")).toBeNull();
     expect(menus).toHaveLength(2);

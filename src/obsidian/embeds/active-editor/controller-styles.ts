@@ -44,6 +44,7 @@ const COLOR_LABELS = [
   "Blue",
   "Violet",
   "Pink",
+  "Gray",
 ] as const;
 
 const COLOR_OPTIONS: readonly StyleChoiceOption[] = BUILT_IN_COLORS.map((color, index) => ({

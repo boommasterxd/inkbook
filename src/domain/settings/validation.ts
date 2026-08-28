@@ -25,6 +25,7 @@ const RGBA_COLORS = new Set([
   "#3B82F6FF",
   "#8B5CF6FF",
   "#EC4899FF",
+  "#6B7280FF",
 ]);
 
 export function isRecord(value: unknown): value is UnknownRecord {

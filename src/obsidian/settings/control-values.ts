@@ -43,6 +43,7 @@ const COLOR_VALUES = new Map<string, ColorV1 | null>([
     "#3B82F6FF",
     "#8B5CF6FF",
     "#EC4899FF",
+    "#6B7280FF",
   ].map((value) => [value, { type: "rgba", value } as ColorV1] as const),
 ]);
 

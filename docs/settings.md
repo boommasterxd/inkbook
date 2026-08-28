@@ -95,6 +95,7 @@ The built-in palette uses these exact snapshot values:
 | Blue             | `#3B82F6FF`                |
 | Violet           | `#8B5CF6FF`                |
 | Pink             | `#EC4899FF`                |
+| Gray             | `#6B7280FF`                |
 
 Custom colors are not part of the first release. Opacity remains a separate normalized value.
 

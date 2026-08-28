@@ -73,6 +73,7 @@ describe("settings defaults", () => {
       { type: "rgba", value: "#3B82F6FF" },
       { type: "rgba", value: "#8B5CF6FF" },
       { type: "rgba", value: "#EC4899FF" },
+      { type: "rgba", value: "#6B7280FF" },
     ]);
     expect(createBuiltInDeviceSettings()).toEqual({
       version: 1,

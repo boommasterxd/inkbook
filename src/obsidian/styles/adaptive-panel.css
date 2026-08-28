@@ -22,6 +22,7 @@
   color: var(--text-normal);
   corner-shape: var(--menu-corner-shape);
   max-block-size: calc(var(--inkbook-adaptive-panel-viewport-height, 100vh) - 16px);
+  outline: none;
   overflow: hidden;
   pointer-events: auto;
   position: fixed;
@@ -41,7 +42,8 @@
 }
 
 .inkbook-adaptive-panel[data-kind="style"] {
-  inline-size: min(340px, calc(100vw - 16px));
+  inline-size: max-content;
+  max-inline-size: calc(100vw - 16px);
 }
 
 .inkbook-adaptive-panel-scroll {
@@ -130,6 +132,7 @@
   inset-block: auto 0;
   inset-inline: var(--safe-area-inset-left) var(--safe-area-inset-right);
   inline-size: auto;
+  max-inline-size: none;
   max-block-size: 60%;
   position: absolute;
   translate: 0 var(--inkbook-adaptive-panel-drag, 0);

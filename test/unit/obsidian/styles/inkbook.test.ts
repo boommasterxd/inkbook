@@ -232,7 +232,7 @@ describe("Inkbook responsive toolbar styles", () => {
     expect(preview).toContain("border: 1px solid transparent");
     expect(background).toContain("background: transparent");
     expect(background).toContain("border: 1px solid transparent");
-    expect(composition).toContain("--inkbook-toolbar-surface: var(--inkbook-page-surface)");
+    expect(composition).toContain("--inkbook-toolbar-surface: var(--menu-background)");
     expect(main).toContain("margin-inline: auto");
     expect(composition).toContain("background: transparent");
     expect(composition).toContain("block-size: 50px");
@@ -265,6 +265,7 @@ describe("Inkbook responsive toolbar styles", () => {
     expect(context).toContain("position: absolute");
     expect(sharedSurface).toContain("border-radius: 999px");
     expect(sharedSurface).toContain("background: var(--inkbook-toolbar-surface)");
+    expect(sharedSurface).toContain("border: 1px solid var(--menu-border-color)");
     expect(sharedSurface).toContain("box-shadow: none");
     expect(contextButton).toContain("inline-size: 48px");
   });

@@ -1,4 +1,4 @@
-import type { Keymap } from "obsidian";
+import { Platform, type Keymap } from "obsidian";
 
 import type {
   BackgroundMenuState,
@@ -55,6 +55,7 @@ const SHAPES: readonly (readonly [ShapeId, string, "lines" | "shapes" | "structu
   ["coordinate-system", "Coordinate system", "structures"],
   ["table", "Table", "structures"],
 ];
+const DESKTOP_OVERFLOW_REFERENCE_WIDTH_PX = 150;
 
 export class EditorToolbarMenuSession {
   #closed = false;
@@ -125,7 +126,7 @@ export class EditorToolbarMenuSession {
     });
     populateNativeToolbarMenu(menu, id, this.#options, (next) => this.#navigate(next));
     menu.setParentElement?.(this.#options.anchor);
-    menu.showAtPosition(menuPositionBelow(this.#options.anchor), this.#options.ownerDocument);
+    menu.showAtPosition(menuPositionBelow(this.#options.anchor, id), this.#options.ownerDocument);
   }
 
   #showPanel(id: "background" | "style"): void {
@@ -178,9 +179,17 @@ export class EditorToolbarMenuSession {
   }
 }
 
-export function menuPositionBelow(anchor: HTMLElement) {
+export function menuPositionBelow(anchor: HTMLElement, id: "overflow" | "shape") {
   const bounds = anchor.getBoundingClientRect();
-  return { overlap: true, x: bounds.left, y: bounds.bottom + 2 };
+  if (id !== "overflow" || Platform.isMobile) {
+    return { overlap: true, x: bounds.left, y: bounds.bottom + 2 };
+  }
+  return {
+    overlap: true,
+    width: bounds.width,
+    x: bounds.left + (bounds.width - DESKTOP_OVERFLOW_REFERENCE_WIDTH_PX) / 2,
+    y: bounds.bottom + 2,
+  };
 }
 
 export function populateNativeToolbarMenu(

@@ -74,22 +74,50 @@ describe("AdaptivePanelSession wide lifecycle", () => {
     expect(document.querySelector(".inkbook-adaptive-panel")).toBeNull();
     expect(escaped.onClosed).toHaveBeenCalledOnce();
   });
+});
 
+describe("AdaptivePanelSession wide positioning", () => {
   it("anchors below the trigger, clamps inline, and flips above near the viewport edge", () => {
-    vi.spyOn(window, "innerWidth", "get").mockReturnValue(500);
-    vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
-      this: HTMLElement,
-    ) {
-      if (this.classList.contains("inkbook-adaptive-panel")) return rect(0, 0, 199, 300);
-      return rect(0, 0, 0, 0);
-    });
+    mockWidePanelGeometry(500);
 
     const fixture = createFixture("background", { anchorRect: rect(470, 700, 44, 44) });
     const surface = document.querySelector<HTMLElement>(".inkbook-adaptive-panel");
 
     expect(surface?.style.insetInlineStart).toBe("293px");
-    expect(surface?.style.insetBlockStart).toBe("398px");
+    expect(surface?.style.insetBlockStart).toBe("396px");
+    fixture.session.close("immediate");
+  });
+
+  it("matches the native visible desktop gap while retaining tablet placement", () => {
+    mockWidePanelGeometry(1000);
+
+    const desktop = createFixture("background", { anchorRect: rect(300, 100, 44, 44) });
+    expect(
+      document.querySelector<HTMLElement>(".inkbook-adaptive-panel")?.style.insetBlockStart,
+    ).toBe("148px");
+    desktop.session.close("immediate");
+
+    Platform.isMobile = true;
+    const tablet = createFixture("background", { anchorRect: rect(300, 100, 44, 44) });
+    expect(
+      document.querySelector<HTMLElement>(".inkbook-adaptive-panel")?.style.insetBlockStart,
+    ).toBe("146px");
+    tablet.session.close("immediate");
+  });
+});
+
+describe("AdaptivePanelSession wide keyboard behavior", () => {
+  it("renders Back as a keyboard-operable menu entry instead of a host button", () => {
+    const onBack = vi.fn();
+    const fixture = createFixture("background", { onBack });
+    const back = document.querySelector<HTMLElement>(".inkbook-adaptive-panel-back");
+
+    expect(back?.tagName).toBe("DIV");
+    expect(back?.getAttribute("role")).toBe("button");
+    expect(back?.tabIndex).toBe(0);
+    back?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }));
+    back?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: " " }));
+    expect(onBack).toHaveBeenCalledTimes(2);
     fixture.session.close("immediate");
   });
 
@@ -286,6 +314,7 @@ function createFixture(
     readonly anchorRect?: DOMRect;
     readonly createContent?: (lifecycle: AdaptivePanelContentLifecycle) => DocumentFragment;
     readonly motion?: "full" | "reduced";
+    readonly onBack?: () => void;
   } = {},
 ) {
   const root = createHtmlElement("div");
@@ -322,6 +351,7 @@ function createFixture(
     keymap,
     kind,
     label: kind === "style" ? "Style" : "Background",
+    ...(options.onBack === undefined ? {} : { onBack: options.onBack }),
     onClosed,
     ownerDocument: document,
     ownerWindow: window,
@@ -344,6 +374,17 @@ function pointer(
   });
   Object.defineProperty(event, "timeStamp", { configurable: true, value: timeStamp });
   return event;
+}
+
+function mockWidePanelGeometry(viewportWidth: number): void {
+  vi.spyOn(window, "innerWidth", "get").mockReturnValue(viewportWidth);
+  vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    if (this.classList.contains("inkbook-adaptive-panel")) return rect(0, 0, 199, 300);
+    return rect(0, 0, 0, 0);
+  });
 }
 
 function rect(left: number, top: number, width: number, height: number): DOMRect {
