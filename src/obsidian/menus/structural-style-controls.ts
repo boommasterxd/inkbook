@@ -1,4 +1,4 @@
-import type { StyleControl } from "./flyout-types";
+import type { StyleControl } from "./editor-menu-types";
 
 export interface StructuralStyleState {
   readonly coordinateDimension?: "2d" | "3d" | null;

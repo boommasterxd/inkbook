@@ -25,7 +25,6 @@ const PAGE: PageV1 = {
   innerWidth: 2000,
   lockedBufferLines: 1,
   margin: 24.3,
-  writingLineHeight: 100,
 };
 
 describe("visible render mount complexity", () => {
@@ -57,8 +56,8 @@ describe("visible render mount complexity", () => {
     expect(renderer.mountedCount).toBe(STROKES);
     expect(renderer.mountedIds("highlight")).toEqual(fixture.highlightIds);
     expect(renderer.mountedIds("content")).toEqual(fixture.contentIds);
-    expect(cameraGroup.nodes[2]?.nodes).toHaveLength(fixture.highlightIds.length);
-    expect(cameraGroup.nodes[3]?.nodes).toHaveLength(fixture.contentIds.length);
+    expect(cameraGroup.nodes[3]?.nodes).toHaveLength(fixture.highlightIds.length);
+    expect(cameraGroup.nodes[4]?.nodes).toHaveLength(fixture.contentIds.length);
     expect(instrumentation).toMatchObject({
       domEntrants: STROKES,
       domFragmentRuns: 2,

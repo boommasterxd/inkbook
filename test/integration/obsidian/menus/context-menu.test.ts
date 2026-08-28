@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+// @vitest-environment happy-dom
+
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Platform } from "obsidian";
 
 import {
   openContextMenu,
@@ -9,15 +12,23 @@ import {
   type MenuItemPort,
   type MenuPort,
 } from "../../../../src/obsidian/menus";
+import { createHtmlElement, installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
+
+beforeEach(() => {
+  installObsidianDomHelpers();
+  Platform.isPhone = false;
+});
 
 interface RecordedItem {
   readonly calls: string[];
   readonly click: (() => void) | undefined;
+  readonly fragment?: DocumentFragment;
 }
 
 class FakeItem implements MenuItemPort {
   public readonly calls: string[] = [];
   public click: (() => void) | undefined;
+  public fragment: DocumentFragment | undefined;
 
   public setTitle(title: string): this {
     this.calls.push(`title:${title}`);
@@ -26,6 +37,12 @@ class FakeItem implements MenuItemPort {
 
   public setIcon(icon: string): this {
     this.calls.push(`icon:${icon}`);
+    return this;
+  }
+
+  public setTitleFragment(fragment: DocumentFragment): this {
+    this.fragment = fragment;
+    this.calls.push(`title:${fragment.textContent ?? ""}`);
     return this;
   }
 
@@ -60,7 +77,11 @@ class FakeMenu implements MenuPort {
   public addItem(configure: (item: MenuItemPort) => void): this {
     const item = new FakeItem();
     configure(item);
-    this.entries.push({ calls: item.calls, click: item.click });
+    this.entries.push({
+      calls: item.calls,
+      click: item.click,
+      ...(item.fragment === undefined ? {} : { fragment: item.fragment }),
+    });
     return this;
   }
 
@@ -118,17 +139,30 @@ function titles(menu: FakeMenu): string[] {
     .map((entry) => entry.calls.find((call) => call.startsWith("title:"))?.slice(6) ?? "");
 }
 
+function openPositionedMenu(menu: FakeMenu): ReturnType<typeof openContextMenu> {
+  return openContextMenu(
+    { create: () => menu, forEvent: () => menu },
+    {
+      type: "position",
+      ownerDocument: document,
+      position: { x: 20, y: 30 },
+      canvasInputSurface: createHtmlElement("button"),
+    },
+    state({ hasSelection: false }),
+    handlers(),
+  );
+}
+
 describe("context menu population", () => {
   it("populates the selection and canvas sections in the contract order", () => {
     const menu = new FakeMenu();
-    populateContextMenu(menu, state(), handlers());
+    populateContextMenu(menu, document, state(), handlers());
 
     expect(titles(menu)).toEqual([
       "Copy",
       "Cut",
       "Paste",
       "Delete",
-      "Arrange",
       "Bring forward",
       "Send backward",
       "Bring to front",
@@ -137,7 +171,14 @@ describe("context menu population", () => {
       "Erase all",
       "Delete embed",
     ]);
-    expect(menu.entries.filter((entry) => entry === "separator")).toHaveLength(3);
+    expect(menu.entries.filter((entry) => entry === "separator")).toHaveLength(4);
+    expect(
+      menu.entries
+        .filter(
+          (entry): entry is RecordedItem => entry !== "separator" && entry.fragment !== undefined,
+        )
+        .map((entry) => entry.fragment?.textContent),
+    ).toEqual(["Erase all"]);
     for (const entry of menu.entries) {
       if (entry === "separator" || entry.calls.includes("label:true")) continue;
       expect(entry.calls.some((call) => call.startsWith("icon:"))).toBe(true);
@@ -148,6 +189,7 @@ describe("context menu population", () => {
     const menu = new FakeMenu();
     populateContextMenu(
       menu,
+      document,
       state({
         canBringForward: false,
         canSendBackward: false,
@@ -157,11 +199,9 @@ describe("context menu population", () => {
       handlers(),
     );
 
-    const arrange = menu.entries.find(
-      (entry): entry is RecordedItem =>
-        entry !== "separator" && entry.calls.includes("title:Arrange"),
-    );
-    expect(arrange?.calls).toEqual(["title:Arrange", "icon:layers", "label:true"]);
+    expect(
+      menu.entries.some((entry) => entry !== "separator" && entry.calls.includes("label:true")),
+    ).toBe(false);
     expect(
       menu.entries
         .filter((entry): entry is RecordedItem => entry !== "separator")
@@ -175,37 +215,96 @@ describe("context menu population", () => {
     ]);
   });
 
-  it("omits Paste without a valid payload and marks destructive actions as warnings", () => {
+  it("uses orange caution for clearing and red warning for actual deletion", () => {
     const menu = new FakeMenu();
-    populateContextMenu(menu, state({ hasSelection: false, canPaste: false }), handlers());
+    populateContextMenu(
+      menu,
+      document,
+      state({ hasSelection: false, canPaste: false }),
+      handlers(),
+    );
 
     expect(titles(menu)).toEqual(["Copy embed", "Erase all", "Delete embed"]);
-    for (const title of ["Erase all", "Delete embed"]) {
-      const item = menu.entries.find(
-        (entry): entry is RecordedItem =>
-          entry !== "separator" && entry.calls.includes(`title:${title}`),
-      );
-      expect(item?.calls).toContain("warning:true");
-    }
+    const erase = menu.entries.find(
+      (entry): entry is RecordedItem =>
+        entry !== "separator" && entry.calls.includes("title:Erase all"),
+    );
+    expect(erase?.calls).toContain("icon:inkbook-eraser-caution");
+    expect(erase?.calls).not.toContain("warning:true");
+    expect(
+      erase?.fragment?.querySelector('.inkbook-menu-title-content[data-tone="caution"]')
+        ?.textContent,
+    ).toBe("Erase all");
+    const remove = menu.entries.find(
+      (entry): entry is RecordedItem =>
+        entry !== "separator" && entry.calls.includes("title:Delete embed"),
+    );
+    expect(remove?.calls).toContain("warning:true");
+  });
+});
+
+describe("phone context menu spacing", () => {
+  it("uses a minimum safe area without adding to an existing phone inset", () => {
+    Platform.isPhone = true;
+    document.body.setCssProps({ "--safe-area-inset-bottom": "0px", "--size-4-4": "16px" });
+    const menu = new FakeMenu();
+    const session = openPositionedMenu(menu);
+    expect(document.body.style.getPropertyValue("--safe-area-inset-bottom")).toBe("16px");
+    session.close();
+    expect(document.body.style.getPropertyValue("--safe-area-inset-bottom")).toBe("0px");
+
+    document.body.setCssProps({ "--safe-area-inset-bottom": "34px" });
+    const insetMenu = new FakeMenu();
+    const insetSession = openPositionedMenu(insetMenu);
+    expect(document.body.style.getPropertyValue("--safe-area-inset-bottom")).toBe("34px");
+    insetSession.close();
   });
 });
 
 describe("context menu lifecycle", () => {
+  it("does not schedule Inkbook motion or mutate the native menu surface", () => {
+    const requestFrame = vi.spyOn(window, "requestAnimationFrame");
+    const menu = new FakeMenu();
+    const canvas = createHtmlElement("button");
+    const session = openContextMenu(
+      { create: () => menu, forEvent: () => menu },
+      {
+        type: "event",
+        ownerDocument: document,
+        event: new MouseEvent("contextmenu"),
+        canvasInputSurface: canvas,
+      },
+      state({ hasSelection: false }),
+      handlers(),
+    );
+    const surface = createHtmlElement("div");
+    surface.className = "menu";
+    document.body.append(surface);
+
+    expect(requestFrame).not.toHaveBeenCalled();
+    expect(surface.className).toBe("menu");
+    expect(surface.getAttribute("style")).toBeNull();
+    session.close("immediate");
+    surface.remove();
+  });
+
   it("uses the owning document for positioned menus and returns focus once", () => {
     const menu = new FakeMenu();
     const factory: MenuFactoryPort = {
       create: () => menu,
       forEvent: () => menu,
     };
-    const ownerDocument = {} as Document;
+    const ownerDocument = document;
     const canvas = { ownerDocument, isConnected: true, focus: vi.fn() };
     const control = { ownerDocument, isConnected: true, focus: vi.fn() };
+    const onClosed = vi.fn();
     const session = openContextMenu(
       factory,
       {
         type: "position",
         ownerDocument,
         position: { x: 12, y: 24 },
+        onClosed,
         returnFocus: control,
         canvasInputSurface: canvas,
       },
@@ -218,6 +317,9 @@ describe("context menu lifecycle", () => {
     session.close();
     expect(control.focus).toHaveBeenCalledTimes(1);
     expect(canvas.focus).not.toHaveBeenCalled();
+    expect(onClosed).toHaveBeenCalledOnce();
+    menu.hideCallback?.();
+    expect(onClosed).toHaveBeenCalledOnce();
   });
 
   it("uses Menu.forEvent for pointer menus and falls back to the canvas when control is detached", () => {
@@ -229,7 +331,7 @@ describe("context menu lifecycle", () => {
       create,
       forEvent,
     };
-    const ownerDocument = {} as Document;
+    const ownerDocument = document;
     const canvas = { ownerDocument, isConnected: true, focus: vi.fn() };
     const control = { ownerDocument, isConnected: false, focus: vi.fn() };
     const session = openContextMenu(

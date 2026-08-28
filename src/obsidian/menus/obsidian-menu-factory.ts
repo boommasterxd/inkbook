@@ -18,8 +18,18 @@ class ObsidianMenuItemPort implements MenuItemPort {
     return this;
   }
 
+  public setTitleFragment(title: DocumentFragment): this {
+    this.#item.setTitle(title);
+    return this;
+  }
+
   public setIcon(icon: string): this {
     this.#item.setIcon(icon);
+    return this;
+  }
+
+  public setChecked(checked: boolean | null): this {
+    this.#item.setChecked(checked);
     return this;
   }
 
@@ -63,6 +73,11 @@ class ObsidianMenuPort implements MenuPort {
     return this;
   }
 
+  public setParentElement(element: HTMLElement): this {
+    this.#menu.setParentElement(element);
+    return this;
+  }
+
   public showAtPosition(position: MenuPosition, ownerDocument: Document): this {
     this.#menu.showAtPosition(position, ownerDocument);
     return this;
@@ -79,7 +94,7 @@ class ObsidianMenuPort implements MenuPort {
 
 class ObsidianMenuFactory implements MenuFactoryPort {
   public create(): MenuPort {
-    return new ObsidianMenuPort(new Menu());
+    return new ObsidianMenuPort(new Menu().setUseNativeMenu(false));
   }
 
   public forEvent(event: MouseEvent | PointerEvent): MenuPort {

@@ -1,5 +1,5 @@
 import {
-  validateInkSnapshotV1,
+  validateRuntimeInkSnapshotV1,
   type InkElementV1,
   type InkSnapshotV1,
 } from "../../domain/schema/public";
@@ -178,10 +178,14 @@ export function commitVaultPage(options: {
 }): void {
   if (options.store === undefined || options.autosave === undefined) return;
   const revision = options.revision + 1;
-  const validation = validateInkSnapshotV1(
+  const validation = validateRuntimeInkSnapshotV1(
     options.store.materializeSnapshot({ page: options.page, revision }),
   );
-  if (!validation.ok) throw new RangeError("Page update is invalid.");
+  if (!validation.ok) {
+    throw new RangeError(
+      `Page update is invalid (${validation.error.code} at ${validation.error.path}).`,
+    );
+  }
   options.commit({ page: validation.value.page, revision });
   options.autosave.recordCommit({ modelRevision: revision, page: validation.value.page });
 }

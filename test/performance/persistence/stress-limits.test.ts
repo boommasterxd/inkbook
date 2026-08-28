@@ -8,11 +8,11 @@ import { serializeInkbookDocument } from "../../../src/persistence/serialization
 import { createStressLimitFixture, STRESS_POINTS, STRESS_STROKES } from "./fixtures";
 import { measure } from "./metrics";
 
-const EXPECTED_METADATA_BYTES = 23_776_586;
+const EXPECTED_METADATA_BYTES = 23_776_562;
 const EXPECTED_STATIC_MARKUP_BYTES = 41_996_104;
-const EXPECTED_TOTAL_BYTES = 65_772_754;
-const EXPECTED_BYTES_PER_STROKE_POINT = 32.886_377;
-const EXPECTED_HASH = "2edee0ec8df340c8d7421ba8bffbaab1edbe0593df60eb95b299df3de0862449";
+const EXPECTED_TOTAL_BYTES = 65_772_730;
+const EXPECTED_BYTES_PER_STROKE_POINT = 32.886_365;
+const EXPECTED_HASH = "e64374f68bc396504b7ad86b554d43352ba8838b2265e39025d7d8c44c648d37";
 
 describe("combined persistence stress limits", () => {
   it("validates exactly 15,000 strokes and 2,000,000 points at the schema limits", async ({

@@ -32,12 +32,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz React chrome profile`, (
     const durations = measureInteractionFrames(() => {
       mounted.update({
         ...initial,
-        background: { ...initial.background },
-        overflowMenu: {
-          ...initial.overflowMenu,
-          arrange: { ...initial.overflowMenu.arrange },
-        },
-        styleControls: [...initial.styleControls],
+        shapeIcon: { ...initial.shapeIcon },
         styleIcon: { ...initial.styleIcon },
         toolbarState: { ...initial.toolbarState },
       });

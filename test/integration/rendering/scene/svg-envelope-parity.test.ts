@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { deriveRenderBands } from "../../../../src/domain/commands/render-bands";
-import { calculateElementBounds, centeredGuideAxis } from "../../../../src/domain/geometry/public";
+import {
+  backgroundGuideLayout,
+  calculateElementBounds,
+} from "../../../../src/domain/geometry/public";
 import type {
   BackgroundV1,
   InkElementV1,
@@ -11,7 +14,11 @@ import { PORTABLE_PALETTE_V1 } from "../../../../src/domain/schema/public";
 import { validateSafeSvg } from "../../../../src/persistence/documents/safe-svg-validator";
 import { serializeSvgNumber } from "../../../../src/persistence/documents/svg-number";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
-import { SvgSceneRenderer, type SceneElementRecord } from "../../../../src/rendering/scene";
+import {
+  SceneBackgroundCache,
+  SvgSceneRenderer,
+  type SceneElementRecord,
+} from "../../../../src/rendering/scene";
 import type { InkbookColorScheme } from "../../../../src/obsidian/theme/color-scheme";
 import { createAllElementSnapshot, uuid } from "../../../unit/persistence/serialization/fixtures";
 import {
@@ -35,9 +42,9 @@ interface Segment {
 const BACKGROUNDS: readonly BackgroundV1[] = [
   { type: "none" },
   { spacing: 100, type: "lines" },
-  { spacing: 80, type: "dots" },
-  { spacing: 80, type: "squares" },
-  { spacing: 60, type: "squares" },
+  { spacing: 100, type: "dots" },
+  { spacing: 100, type: "squares" },
+  { spacing: 50, type: "squares" },
 ];
 
 describe("active and standalone SVG graphic parity", () => {
@@ -75,6 +82,30 @@ describe("active and standalone SVG graphic parity", () => {
     "matches the active $type background pattern to standalone guide geometry",
     verifyBackgroundParity,
   );
+
+  it("uses the square guide palette for every patterned background", () => {
+    for (const scheme of ["light", "dark"] as const) {
+      const resolved = BACKGROUNDS.filter(
+        (background): background is Exclude<BackgroundV1, { type: "none" }> =>
+          background.type !== "none",
+      ).map((background) => {
+        const snapshot = representativeSnapshot();
+        snapshot.page.background = background;
+        const { standalone } = serializeValidatedSnapshot(snapshot);
+        const scene = renderScene(snapshot, standalone.lockedHeight, scheme);
+        const active = activeBackground(scene.renderer);
+        const guide = styleValue(scene.renderer, "--inkbook-guide");
+        const fallback = active.patternPath.get("stroke");
+        scene.renderer.destroy();
+        return { fallback, guide };
+      });
+
+      expect(resolved.every(({ guide }) => guide === PORTABLE_PALETTE_V1[scheme].guide)).toBe(true);
+      expect(resolved.every(({ fallback }) => fallback === PORTABLE_PALETTE_V1.light.guide)).toBe(
+        true,
+      );
+    }
+  });
 });
 
 function verifyBackgroundParity(background: BackgroundV1): void {
@@ -122,43 +153,42 @@ function verifyPatternedBackground(
   saved: Attributes[],
   savedSegments: Segment[],
 ): void {
-  const vertical = centeredGuideAxis(
-    snapshot.page.margin,
-    lockedHeight - 2 * snapshot.page.margin,
-    background.spacing,
-  );
-  const horizontal = centeredGuideAxis(
-    snapshot.page.margin,
-    snapshot.page.innerWidth,
-    background.spacing,
-  );
-  const left = background.type === "lines" ? snapshot.page.margin : horizontal.start;
-  const right =
-    background.type === "lines" ? snapshot.page.margin + snapshot.page.innerWidth : horizontal.end;
+  const layout = backgroundGuideLayout({
+    background,
+    innerWidth: snapshot.page.innerWidth,
+    margin: snapshot.page.margin,
+    pageHeight: lockedHeight,
+  });
   const inset = background.type === "dots" ? 1 : 0.5;
-  if (background.type !== "dots") {
-    expect(active.coverage.get("fill")).toBe("none");
-    expect(active.coverage.get("class")).toBe("inkbook-theme-guide");
-    expect(active.coverage.get("stroke-width")).toBe("1");
-    expect(active.coverage.get("vector-effect")).toBe("non-scaling-stroke");
-    expect(pathSegments(active.coverage.get("d") ?? "")).toEqual(savedSegments);
-    expect(active.patternPath.get("d")).toBe("");
-    return;
-  }
   expect(active.coverage.get("d")).toBe(
-    `M ${serializeSvgNumber(left)} ${serializeSvgNumber(vertical.start)} ` +
-      `H ${serializeSvgNumber(right)} V ${serializeSvgNumber(vertical.end)} ` +
-      `H ${serializeSvgNumber(left)} Z`,
+    `M ${serializeSvgNumber(layout.left - inset)} ${serializeSvgNumber(layout.top - inset)} ` +
+      `H ${serializeSvgNumber(layout.right + inset)} ` +
+      `V ${serializeSvgNumber(layout.bottom + inset)} ` +
+      `H ${serializeSvgNumber(layout.left - inset)} Z`,
   );
-  expect(active.pattern.get("x")).toBe(serializeSvgNumber(horizontal.start - inset));
-  expect(active.pattern.get("y")).toBe(serializeSvgNumber(vertical.start - inset));
+  expect(active.coverage.get("fill")).toMatch(/^url\(#inkbook-background-pattern-/u);
+  expect(active.pattern.get("x")).toBe(
+    serializeSvgNumber(layout.left - (background.type === "lines" ? 0 : inset)),
+  );
+  expect(active.pattern.get("y")).toBe(serializeSvgNumber(layout.top - inset));
   expect(active.pattern.get("width")).toBe(String(background.spacing));
   expect(active.pattern.get("height")).toBe(String(background.spacing));
   expect(active.patternPath.get("class")).toBe("inkbook-theme-guide");
+  expect(active.patternPath.get("stroke")).toBe(PORTABLE_PALETTE_V1.light.guide);
   expect(active.patternPath.has("vector-effect")).toBe(false);
-  expect(Number(active.patternPath.get("stroke-width"))).toBe(2);
+  expect(Number(active.patternPath.get("stroke-width"))).toBe(background.type === "dots" ? 2 : 1);
+  const cached = new SceneBackgroundCache().resolve({
+    background,
+    innerWidth: snapshot.page.innerWidth,
+    margin: snapshot.page.margin,
+    pageHeight: lockedHeight,
+  });
+  expect(active.edge.get("d") ?? "").toBe(cached.edgeD);
+  expect(active.edge.get("stroke-dasharray") ?? null).toBe(
+    background.type === "dots" ? `0 ${String(background.spacing)}` : null,
+  );
   expect(saved.slice(1).every((path) => !path.has("vector-effect"))).toBe(true);
-  expect(activePatternSegments(active, background, lockedHeight, inset)).toEqual(savedSegments);
+  expect(activePatternSegments(background, layout)).toEqual(savedSegments);
 }
 
 function serializeValidatedSnapshot(snapshot: InkSnapshotV1) {
@@ -289,13 +319,14 @@ function activeBandPaths(renderer: SvgSceneRenderer): {
 } {
   const camera = sceneCamera(renderer);
   return {
-    content: childAttributes(camera.nodes[3]),
-    highlight: childAttributes(camera.nodes[2]),
+    content: childAttributes(camera.nodes[4]),
+    highlight: childAttributes(camera.nodes[3]),
   };
 }
 
 function activeBackground(renderer: SvgSceneRenderer): {
   readonly coverage: Attributes;
+  readonly edge: Attributes;
   readonly page: Attributes;
   readonly pattern: Attributes;
   readonly patternPath: Attributes;
@@ -306,6 +337,7 @@ function activeBackground(renderer: SvgSceneRenderer): {
   const pattern = requiredNode(definitions.nodes[0], "pattern");
   return {
     coverage: requiredNode(camera.nodes[1], "path").attributes,
+    edge: requiredNode(camera.nodes[2], "path").attributes,
     page: requiredNode(camera.nodes[0], "path").attributes,
     pattern: pattern.attributes,
     patternPath: requiredNode(pattern.nodes[0], "path").attributes,
@@ -396,32 +428,52 @@ function pathSegments(path: string): Segment[] {
 }
 
 function activePatternSegments(
-  active: ReturnType<typeof activeBackground>,
   background: Exclude<BackgroundV1, { type: "none" }>,
-  lockedHeight: number,
-  inset: number,
+  layout: ReturnType<typeof backgroundGuideLayout>,
 ): Segment[] {
-  const startX = Number(active.pattern.get("x")) + (background.type === "lines" ? 0 : inset);
-  const startY = Number(active.pattern.get("y")) + inset;
-  const spacing = Number(active.pattern.get("width"));
-  const endX = 2048.6 - startX;
-  const endY = lockedHeight - startY;
   const segments: Segment[] = [];
-  for (let y = startY; y <= endY; y += spacing) {
+  for (let yIndex = 0; yIndex < layout.verticalPointCount; yIndex += 1) {
+    const y = guidePoint(
+      layout.vertical,
+      layout.verticalSpacing,
+      yIndex,
+      layout.verticalPointCount,
+    );
     if (background.type === "dots") {
-      for (let x = startX; x <= endX; x += spacing) {
+      for (let xIndex = 0; xIndex < layout.horizontalPointCount; xIndex += 1) {
+        const x = guidePoint(
+          layout.horizontal,
+          layout.horizontalSpacing,
+          xIndex,
+          layout.horizontalPointCount,
+        );
         segments.push(segment(x, y, x, y));
       }
     } else {
-      segments.push(segment(startX, y, endX, y));
+      segments.push(segment(layout.left, y, layout.right, y));
     }
   }
   if (background.type === "squares") {
-    for (let x = startX; x <= endX; x += spacing) {
-      segments.push(segment(x, startY, x, endY));
+    for (let xIndex = 0; xIndex < layout.horizontalPointCount; xIndex += 1) {
+      const x = guidePoint(
+        layout.horizontal,
+        layout.horizontalSpacing,
+        xIndex,
+        layout.horizontalPointCount,
+      );
+      segments.push(segment(x, layout.top, x, layout.bottom));
     }
   }
   return segments;
+}
+
+function guidePoint(
+  axis: { readonly end: number; readonly start: number },
+  spacing: number,
+  index: number,
+  count: number,
+): number {
+  return index === count - 1 ? axis.end : axis.start + index * spacing;
 }
 
 function segment(x1: number, y1: number, x2: number, y2: number): Segment {

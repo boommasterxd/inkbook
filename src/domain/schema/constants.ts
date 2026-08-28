@@ -3,6 +3,7 @@ export const INKBOOK_VERSION = 1 as const;
 export const PAGE_INNER_WIDTH = 2000 as const;
 export const PAGE_MARGIN = 24.3 as const;
 export const PAGE_WIDTH = 2048.6 as const;
+export const PAGE_LAYOUT_STEP = 100 as const;
 export const CANONICAL_LOCKED_BUFFER_LINES = 1 as const;
 
 export const MAX_JSON_DEPTH = 16 as const;

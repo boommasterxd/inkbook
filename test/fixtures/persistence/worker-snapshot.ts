@@ -33,7 +33,6 @@ export function createWorkerSnapshot(elements: InkElementV1[], revision = 0): In
       innerWidth: 2000,
       lockedBufferLines: 1,
       margin: 24.3,
-      writingLineHeight: 100,
     },
     revision,
     version: 1,

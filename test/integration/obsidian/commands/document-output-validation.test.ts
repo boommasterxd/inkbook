@@ -29,7 +29,6 @@ function validDocument(): string {
       innerWidth: 2000,
       lockedBufferLines: settings.pageDefaults.lockedBufferLines,
       margin: 24.3,
-      writingLineHeight: settings.pageDefaults.writingLineHeight,
     },
     revision: 0,
     version: 1,

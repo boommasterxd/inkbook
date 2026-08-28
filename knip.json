@@ -1,12 +1,13 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
-    "src/main.ts",
-    "src/obsidian/plugin-runtime-entry.ts",
-    "src/rendering/ui/editor-chrome-entry.ts",
+    "src/main.ts!",
+    "src/obsidian/plugin-runtime-entry.ts!",
+    "src/persistence/worker/runtime/document-worker-entry.ts!",
+    "src/rendering/ui/editor-chrome-entry.ts!",
     "scripts/*.mjs"
   ],
-  "project": ["src/**/*.{ts,tsx}", "test/**/*.{ts,tsx}", "scripts/*.mjs"],
+  "project": ["src/**/*.{ts,tsx}!", "test/**/*.{ts,tsx}", "scripts/*.mjs"],
   "vitest": {
     "config": ["vitest.config.ts"],
     "entry": ["test/{unit,integration,performance}/**/*.test.{ts,tsx}"]

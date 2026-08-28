@@ -1,5 +1,5 @@
 import type { PageV1 } from "../../domain/schema/public";
-import type { SceneBackgroundCache } from "./background-cache";
+import { patternCoveragePath, type SceneBackgroundCache } from "./background-cache";
 import { SVG_NAMESPACE } from "./constants";
 import {
   PRESENTATION_ATTRIBUTES,
@@ -12,7 +12,6 @@ import type {
   LivePathState,
   MutableSceneInstrumentation,
   SceneCamera,
-  SceneViewport,
 } from "./types";
 
 interface AppliedLivePathPart {
@@ -153,31 +152,43 @@ export function writeScheme(
 }
 
 interface BackgroundWriteOptions {
-  readonly applied: { readonly key: string | undefined; readonly pageHeight: number | undefined };
+  readonly applied: {
+    readonly d: string;
+    readonly edgeD: string;
+    readonly key: string | undefined;
+    readonly pageHeight: number | undefined;
+  };
   readonly cache: SceneBackgroundCache;
   readonly dom: SceneDom;
   readonly instrumentation: MutableSceneInstrumentation;
   readonly page: PageV1;
   readonly pageHeight: number;
-  readonly viewport: SceneViewport;
   readonly zoom: number;
 }
 
 export function writeBackground(options: BackgroundWriteOptions): {
+  readonly d: string;
+  readonly edgeD: string;
   readonly key: string;
   readonly pageHeight: number;
 } {
-  const { applied, cache, dom, instrumentation, page, pageHeight, viewport, zoom } = options;
+  const { applied, cache, dom, instrumentation, page, pageHeight, zoom } = options;
   const result = cache.resolve({
     background: page.background,
     innerWidth: page.innerWidth,
     margin: page.margin,
-    visibleBottom: (viewport.top + viewport.height) / zoom,
-    visibleTop: viewport.top / zoom,
-    writableBottom: pageHeight - page.margin,
+    pageHeight,
   });
-  if (!result.hit) {
-    dom.backgroundPath.setAttribute("d", result.d);
+  const d =
+    result.patternBounds !== null
+      ? patternCoveragePath(result.patternBounds, patternCoverageInset(page, zoom))
+      : result.d;
+  if (d !== applied.d) {
+    dom.backgroundPath.setAttribute("d", d);
+    instrumentation.attributeWrites += 1;
+  }
+  if (result.edgeD !== applied.edgeD) {
+    dom.backgroundEdgePath.setAttribute("d", result.edgeD);
     instrumentation.attributeWrites += 1;
   }
   if (pageHeight !== applied.pageHeight) {
@@ -189,12 +200,18 @@ export function writeBackground(options: BackgroundWriteOptions): {
     dom.setBackgroundPaint(page.background, result.paint, result.patternX, result.patternY, zoom);
     instrumentation.attributeWrites += 2;
   }
-  return { key, pageHeight };
+  return { d, edgeD: result.edgeD, key, pageHeight };
+}
+
+function patternCoverageInset(page: PageV1, zoom: number): number {
+  if (page.background.type === "none") return 0;
+  const strokeWidth = page.background.type === "dots" ? 2 : 1;
+  return strokeWidth / (2 * zoom);
 }
 
 function backgroundPaintKey(
   page: PageV1,
-  paint: "direct" | "none" | "pattern",
+  paint: "none" | "pattern",
   patternX: number,
   patternY: number,
   zoom: number,

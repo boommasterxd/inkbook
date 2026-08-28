@@ -17,8 +17,8 @@ const ACTIVE_THEME_STYLESHEET =
   "[data-inkbook-motion]{transform-box:fill-box;transform-origin:center}";
 
 export class SceneDom {
+  public readonly backgroundEdgePath: SVGPathElement;
   public readonly backgroundPath: SVGPathElement;
-  public readonly backgroundOutgoingPath: SVGPathElement;
   public readonly cameraGroup: SVGGElement;
   public readonly contentGroup: SVGGElement;
   public readonly highlightGroup: SVGGElement;
@@ -36,9 +36,6 @@ export class SceneDom {
   readonly #backgroundPattern: SVGPatternElement;
   readonly #backgroundPatternPath: SVGPathElement;
   readonly #backgroundPatternId: string;
-  readonly #outgoingBackgroundPattern: SVGPatternElement;
-  readonly #outgoingBackgroundPatternPath: SVGPathElement;
-  readonly #outgoingBackgroundPatternId: string;
   #livePathBand: RenderBand = "content";
   #liveStrokeBand: RenderBand = "content";
   readonly #listeners: { name: InputEventName; listener: EventListener }[] = [];
@@ -49,14 +46,11 @@ export class SceneDom {
     this.cameraGroup = this.createSvg("g");
     this.pageSurface = this.createSvg("path");
     this.backgroundPath = this.createSvg("path");
-    this.backgroundOutgoingPath = this.createSvg("path");
+    this.backgroundEdgePath = this.createSvg("path");
     this.#backgroundPattern = this.createSvg("pattern");
     this.#backgroundPatternPath = this.createSvg("path");
-    this.#outgoingBackgroundPattern = this.createSvg("pattern");
-    this.#outgoingBackgroundPatternPath = this.createSvg("path");
     nextBackgroundPatternId += 1;
     this.#backgroundPatternId = `inkbook-background-pattern-${String(nextBackgroundPatternId)}`;
-    this.#outgoingBackgroundPatternId = `${this.#backgroundPatternId}-outgoing`;
     this.highlightGroup = this.createSvg("g");
     this.contentGroup = this.createSvg("g");
     this.motionGroup = this.createSvg("g");
@@ -80,28 +74,28 @@ export class SceneDom {
     this.pageSurface.setAttribute("fill", PORTABLE_PALETTE_V1.light.page);
     this.backgroundPath.setAttribute("fill", "none");
     this.backgroundPath.setAttribute("pointer-events", "none");
-    this.backgroundOutgoingPath.setAttribute("pointer-events", "none");
+    this.backgroundEdgePath.setAttribute("class", "inkbook-theme-guide");
+    this.backgroundEdgePath.setAttribute("fill", "none");
+    this.backgroundEdgePath.setAttribute("pointer-events", "none");
     this.#backgroundPattern.setAttribute("id", this.#backgroundPatternId);
     this.#backgroundPattern.setAttribute("patternUnits", "userSpaceOnUse");
     this.#backgroundPatternPath.setAttribute("class", "inkbook-theme-guide");
     this.#backgroundPatternPath.setAttribute("fill", "none");
+    this.#backgroundPatternPath.setAttribute("stroke", PORTABLE_PALETTE_V1.light.guide);
     this.#backgroundPattern.append(this.#backgroundPatternPath);
-    this.#outgoingBackgroundPattern.setAttribute("id", this.#outgoingBackgroundPatternId);
-    this.#outgoingBackgroundPattern.setAttribute("patternUnits", "userSpaceOnUse");
-    this.#outgoingBackgroundPatternPath.setAttribute("class", "inkbook-theme-guide");
-    this.#outgoingBackgroundPatternPath.setAttribute("fill", "none");
-    this.#outgoingBackgroundPattern.append(this.#outgoingBackgroundPatternPath);
     this.highlightGroup.setAttribute("pointer-events", "none");
-    this.highlightGroup.setAttribute("class", "inkbook-scene-highlights");
+    this.highlightGroup.setAttribute("class", "inkbook-scene-highlights inkbook-scene-foreground");
     this.contentGroup.setAttribute("pointer-events", "none");
-    this.contentGroup.setAttribute("class", "inkbook-scene-content");
+    this.contentGroup.setAttribute("class", "inkbook-scene-content inkbook-scene-foreground");
     this.motionGroup.setAttribute("aria-hidden", "true");
-    this.motionGroup.setAttribute("class", "inkbook-scene-motion");
+    this.motionGroup.setAttribute("class", "inkbook-scene-motion inkbook-scene-foreground");
     this.motionGroup.setAttribute("pointer-events", "none");
+    this.liveGroup.setAttribute("class", "inkbook-scene-foreground");
     this.liveGroup.setAttribute("pointer-events", "none");
+    this.liveStrokeGroup.setAttribute("class", "inkbook-scene-foreground");
     this.liveStrokeGroup.setAttribute("pointer-events", "none");
     overlayGroup.setAttribute("pointer-events", "none");
-    overlayGroup.setAttribute("class", "inkbook-scene-overlays");
+    overlayGroup.setAttribute("class", "inkbook-scene-overlays inkbook-scene-foreground");
     this.livePath.setAttribute("pointer-events", "none");
     this.overlayPath.setAttribute("pointer-events", "none");
     this.selectionOverlayPath.setAttribute("pointer-events", "none");
@@ -111,17 +105,17 @@ export class SceneDom {
     this.cameraGroup.append(
       this.pageSurface,
       this.backgroundPath,
+      this.backgroundEdgePath,
       this.highlightGroup,
       this.contentGroup,
       this.liveGroup,
       this.liveStrokeGroup,
-      this.backgroundOutgoingPath,
       this.motionGroup,
     );
     this.liveGroup.append(this.livePath);
     overlayGroup.append(this.overlayPath, this.selectionOverlayPath, this.snapMarkerPath);
     const defs = this.createSvg("defs");
-    defs.append(this.#backgroundPattern, this.#outgoingBackgroundPattern);
+    defs.append(this.#backgroundPattern);
     this.svg.append(themeStyle, this.cameraGroup, overlayGroup, defs);
 
     this.inputSurface.tabIndex = 0;
@@ -155,7 +149,7 @@ export class SceneDom {
     } else if (kind === "path" && this.#liveStrokeBand === "content") {
       this.cameraGroup.insertBefore(group, this.liveStrokeGroup);
     } else {
-      this.cameraGroup.insertBefore(group, this.backgroundOutgoingPath);
+      this.cameraGroup.insertBefore(group, this.motionGroup);
     }
     if (kind === "path") this.#livePathBand = band;
     else this.#liveStrokeBand = band;
@@ -183,20 +177,13 @@ export class SceneDom {
 
   public setBackgroundPaint(
     background: BackgroundV1,
-    paint: "direct" | "none" | "pattern",
+    paint: "none" | "pattern",
     patternX: number,
     patternY: number,
     zoom: number,
   ): void {
     if (paint === "none" || background.type === "none") {
       this.backgroundPath.setAttribute("fill", "none");
-      this.setDirectGuide(false);
-      this.#backgroundPatternPath.setAttribute("d", "");
-      return;
-    }
-    if (paint === "direct") {
-      this.backgroundPath.setAttribute("fill", "none");
-      this.setDirectGuide(true);
       this.#backgroundPatternPath.setAttribute("d", "");
       return;
     }
@@ -217,44 +204,20 @@ export class SceneDom {
       "stroke-width",
       String(roundCanonical(strokeWidth / zoom)),
     );
-    this.setDirectGuide(false);
-    this.backgroundPath.setAttribute("fill", `url(#${this.#backgroundPatternId})`);
-  }
-
-  public captureBackground(): void {
-    this.cameraGroup.insertBefore(this.backgroundOutgoingPath, this.backgroundPath);
-    copyAttributes(this.#backgroundPattern, this.#outgoingBackgroundPattern, [
-      "x",
-      "y",
-      "width",
-      "height",
-    ]);
-    copyAttributes(this.#backgroundPatternPath, this.#outgoingBackgroundPatternPath, [
-      "d",
+    this.backgroundEdgePath.setAttribute(
       "stroke-linecap",
-      "stroke-width",
-    ]);
-    copyAttributes(this.backgroundPath, this.backgroundOutgoingPath, [
-      "class",
-      "stroke",
-      "stroke-width",
-      "vector-effect",
-    ]);
-    this.backgroundOutgoingPath.setAttribute("d", this.backgroundPath.getAttribute("d") ?? "");
-    this.backgroundOutgoingPath.setAttribute(
-      "fill",
-      this.backgroundPath.getAttribute("fill") === "none"
-        ? "none"
-        : `url(#${this.#outgoingBackgroundPatternId})`,
+      background.type === "dots" ? "round" : "butt",
     );
-  }
-
-  public clearCapturedBackground(): void {
-    this.backgroundOutgoingPath.setAttribute("d", "");
-    this.backgroundOutgoingPath.setAttribute("fill", "none");
-    this.backgroundOutgoingPath.style.removeProperty("opacity");
-    this.backgroundPath.style.removeProperty("opacity");
-    this.cameraGroup.append(this.backgroundOutgoingPath);
+    this.backgroundEdgePath.setAttribute(
+      "stroke-width",
+      String(roundCanonical(strokeWidth / zoom)),
+    );
+    if (background.type === "dots") {
+      this.backgroundEdgePath.setAttribute("stroke-dasharray", `0 ${spacing}`);
+    } else {
+      this.backgroundEdgePath.removeAttribute("stroke-dasharray");
+    }
+    this.backgroundPath.setAttribute("fill", `url(#${this.#backgroundPatternId})`);
   }
 
   public release(): void {
@@ -270,19 +233,6 @@ export class SceneDom {
     return this.ownerDocument.createElementNS(SVG_NAMESPACE, name);
   }
 
-  private setDirectGuide(enabled: boolean): void {
-    if (!enabled) {
-      for (const attribute of ["class", "stroke", "stroke-width", "vector-effect"]) {
-        this.backgroundPath.removeAttribute(attribute);
-      }
-      return;
-    }
-    this.backgroundPath.setAttribute("class", "inkbook-theme-guide");
-    this.backgroundPath.setAttribute("stroke", PORTABLE_PALETTE_V1.light.guide);
-    this.backgroundPath.setAttribute("stroke-width", "1");
-    this.backgroundPath.setAttribute("vector-effect", "non-scaling-stroke");
-  }
-
   private attachHandlers(handlers: SceneInputHandlers): void {
     for (const name of Object.keys(handlers) as InputEventName[]) {
       const handler = handlers[name];
@@ -291,14 +241,6 @@ export class SceneDom {
       this.inputSurface.addEventListener(name, listener);
       this.#listeners.push({ listener, name });
     }
-  }
-}
-
-function copyAttributes(source: Element, target: Element, names: readonly string[]): void {
-  for (const name of names) {
-    const value = source.getAttribute(name);
-    if (value === null) target.removeAttribute(name);
-    else target.setAttribute(name, value);
   }
 }
 

@@ -16,7 +16,7 @@
     "build": "node scripts/build.mjs",
     "ci": "npm run ci:quality && npm run benchmark",
     "ci:quality": "npm run format:check && npm run lint && npm run lint:styles && npm run lint:layout && npm run architecture && npm run typecheck && npm run typecheck:worker && npm run test:coverage && npm run duplication && npm run dead-code && npm run audit && npm run build && npm run package:verify",
-    "dead-code": "knip",
+    "dead-code": "node scripts/run-dead-code-checks.mjs",
     "dev": "node scripts/build.mjs --watch",
     "duplication": "jscpd",
     "format": "prettier --write .",

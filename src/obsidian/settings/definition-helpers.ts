@@ -12,6 +12,7 @@ export const COLOR_OPTIONS = {
   "#3B82F6FF": "Blue",
   "#8B5CF6FF": "Violet",
   "#EC4899FF": "Pink",
+  "#6B7280FF": "Gray",
 } as const;
 
 export function sentenceCaseLabel(value: string): string {

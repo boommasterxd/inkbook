@@ -1,18 +1,12 @@
 import type { PageV1 } from "../../../domain/schema/public";
-import type { InkbookSettingsV2 } from "../../../domain/settings/types";
+import type { InkbookSettingsV3 } from "../../../domain/settings/types";
 import type { EditorTool, PointerSample } from "../../../editor/input/index";
-import type {
-  BackgroundSpacing,
-  BackgroundType,
-  ToolbarAction,
-  ToolId,
-  ShapeId,
-  ToolbarState,
-} from "../../../rendering/ui/index";
+import type { BackgroundSpacing, BackgroundType } from "../../menus/editor-menu-types";
+import type { ToolbarAction, ToolId, ShapeId, ToolbarState } from "../../../rendering/ui/index";
 
 const SPACING_VALUES = {
-  lines: { s: 50, m: 100, l: 150, xl: 200 },
-  pattern: { s: 20, m: 40, l: 60, xl: 80 },
+  lines: { s: 25, m: 33.333333333333336, l: 50, xl: 100 },
+  pattern: { s: 25, m: 33.333333333333336, l: 50, xl: 100 },
 } as const;
 
 export function isTool(action: ToolbarAction): action is ToolId {
@@ -75,7 +69,7 @@ export function backgroundState(page: PageV1): {
   return { spacing, type: page.background.type };
 }
 
-export type BackgroundSpacingDefaults = InkbookSettingsV2["pageDefaults"]["backgroundSpacing"];
+export type BackgroundSpacingDefaults = InkbookSettingsV3["pageDefaults"]["backgroundSpacing"];
 
 function backgroundForType(
   type: BackgroundType,

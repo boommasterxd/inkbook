@@ -65,7 +65,6 @@ export const page = (): PageV1 => ({
   innerWidth: 2000,
   margin: 24.3,
   background: { type: "none" },
-  writingLineHeight: 100,
   activeBufferLines: 3,
   lockedBufferLines: 0,
 });

@@ -1,8 +1,10 @@
 import { TFile } from "obsidian";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { InkSnapshotV1 } from "../../../../src/domain/schema/public";
 import { loadVaultDocument } from "../../../../src/obsidian/embeds/vault-document-loader";
+import { commitVaultPage } from "../../../../src/obsidian/embeds/vault-document-model";
+import type { AutosaveCoordinator } from "../../../../src/persistence/saving/autosave/public";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import { DocumentWorkerRuntime } from "../../../../src/persistence/worker/runtime/public";
 import {
@@ -18,7 +20,9 @@ function strokeSnapshot(): InkSnapshotV1 {
 
 describe("vault runtime hydration", () => {
   it("adopts the worker-owned stroke buffer into the store without a back-copy", async () => {
-    const serialized = serializeInkbookDocument(strokeSnapshot());
+    const source = strokeSnapshot();
+    source.page.background = { spacing: 50, type: "dots" };
+    const serialized = serializeInkbookDocument(source);
     if (!serialized.ok) throw new Error(serialized.error.message);
     const bytes = new TextEncoder().encode(serialized.value.svg);
     const file = new TestTFile("drawings/ink.svg", bytes.byteLength);
@@ -50,9 +54,10 @@ describe("vault runtime hydration", () => {
       },
       workerEpoch: 1,
     });
+    if (loaded === undefined) throw new Error("Expected a hydrated runtime document.");
 
-    const snapshotElement = loaded?.snapshot.elements[0];
-    const storedElement = loaded?.store.get(snapshotElement?.id ?? "")?.element;
+    const snapshotElement = loaded.snapshot.elements[0];
+    const storedElement = loaded.store.get(snapshotElement?.id ?? "")?.element;
     expect(snapshotElement?.kind).toBe("stroke");
     expect(storedElement?.kind).toBe("stroke");
     if (snapshotElement?.kind !== "stroke" || storedElement?.kind !== "stroke") {
@@ -61,6 +66,35 @@ describe("vault runtime hydration", () => {
     expect(snapshotElement.points).toBeInstanceOf(Float64Array);
     expect(storedElement.points).toBe(snapshotElement.points);
     expect(Array.from(storedElement.points)).toEqual([10, 10, 0.5, 20, 20, 1]);
+
+    const committed = vi.fn();
+    const recordCommit = vi.fn();
+    expect(() =>
+      commitVaultPage({
+        autosave: { recordCommit } as unknown as AutosaveCoordinator,
+        commit: committed,
+        page: {
+          ...loaded.snapshot.page,
+          background: { spacing: 50, type: "squares" },
+        },
+        revision: loaded.snapshot.revision,
+        store: loaded.store,
+      }),
+    ).not.toThrow();
+    expect(committed).toHaveBeenCalledWith({
+      page: {
+        ...loaded.snapshot.page,
+        background: { spacing: 50, type: "squares" },
+      },
+      revision: loaded.snapshot.revision + 1,
+    });
+    expect(recordCommit).toHaveBeenCalledWith({
+      modelRevision: loaded.snapshot.revision + 1,
+      page: {
+        ...loaded.snapshot.page,
+        background: { spacing: 50, type: "squares" },
+      },
+    });
     runtime.terminate();
   });
 });

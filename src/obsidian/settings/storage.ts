@@ -4,7 +4,7 @@ import {
   loadDeviceSettings,
   loadSettings,
   type InkbookDeviceSettingsV1,
-  type InkbookSettingsV2,
+  type InkbookSettingsV3,
   type SettingsDiagnostic,
 } from "../../domain/settings";
 
@@ -12,7 +12,7 @@ export const DEVICE_SETTINGS_STORAGE_KEY = "inkbook:device-settings:v1";
 
 export interface VaultSettingsPort {
   loadData(): Promise<unknown>;
-  saveData(data: InkbookSettingsV2): Promise<void>;
+  saveData(data: InkbookSettingsV3): Promise<void>;
 }
 
 export interface DeviceSettingsPort {
@@ -26,7 +26,7 @@ export interface LoadedSettingsDiagnostics {
 }
 
 export type DeviceSettingsListener = (settings: Readonly<InkbookDeviceSettingsV1>) => void;
-export type VaultSettingsListener = (settings: Readonly<InkbookSettingsV2>) => void;
+export type VaultSettingsListener = (settings: Readonly<InkbookSettingsV3>) => void;
 
 function deviceSettingsEqual(
   left: InkbookDeviceSettingsV1,
@@ -62,7 +62,7 @@ export class InkbookSettingsStore {
     return { vault: vaultResult.diagnostics, device: deviceResult.diagnostics };
   }
 
-  public getVaultSettings(): InkbookSettingsV2 {
+  public getVaultSettings(): InkbookSettingsV3 {
     return structuredClone(this.vaultSettings);
   }
 
@@ -84,7 +84,7 @@ export class InkbookSettingsStore {
     };
   }
 
-  public async replaceVaultSettings(value: InkbookSettingsV2): Promise<void> {
+  public async replaceVaultSettings(value: InkbookSettingsV3): Promise<void> {
     await this.enqueueVaultWrite(() => value);
   }
 
@@ -96,7 +96,7 @@ export class InkbookSettingsStore {
   }
 
   public async updateVaultSettings(
-    update: (settings: InkbookSettingsV2) => InkbookSettingsV2,
+    update: (settings: InkbookSettingsV3) => InkbookSettingsV3,
   ): Promise<void> {
     await this.enqueueVaultWrite(update);
   }
@@ -115,7 +115,7 @@ export class InkbookSettingsStore {
   }
 
   private async enqueueVaultWrite(
-    update: (settings: InkbookSettingsV2) => InkbookSettingsV2,
+    update: (settings: InkbookSettingsV3) => InkbookSettingsV3,
   ): Promise<void> {
     const operation = this.vaultWrites.then(async () => {
       const candidate = update(structuredClone(this.vaultSettings));

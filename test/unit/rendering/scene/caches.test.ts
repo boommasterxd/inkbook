@@ -33,23 +33,19 @@ describe("scene caches", () => {
 });
 
 describe("scene background cache", () => {
-  it("reuses background geometry for unchanged aligned indices", () => {
+  it("reuses the full-surface pattern geometry for an unchanged page", () => {
     const cache = new SceneBackgroundCache();
     const first = cache.resolve({
-      background: { spacing: 20, type: "squares" },
+      background: { spacing: 25, type: "squares" },
       innerWidth: 2000,
       margin: 24.3,
-      visibleBottom: 300,
-      visibleTop: 100,
-      writableBottom: 1_024.3,
+      pageHeight: 1_048.6,
     });
     const second = cache.resolve({
-      background: { spacing: 20, type: "squares" },
+      background: { spacing: 25, type: "squares" },
       innerWidth: 2000,
       margin: 24.3,
-      visibleBottom: 301,
-      visibleTop: 101,
-      writableBottom: 1_024.3,
+      pageHeight: 1_048.6,
     });
 
     expect(first.hit).toBe(false);
@@ -61,57 +57,94 @@ describe("scene background cache", () => {
   it("keeps tall dotted background geometry bounded", () => {
     const cache = new SceneBackgroundCache();
     const result = cache.resolve({
-      background: { spacing: 20, type: "dots" },
+      background: { spacing: 25, type: "dots" },
       innerWidth: 2000,
       margin: 24.3,
-      visibleBottom: 900_000,
-      visibleTop: 0,
-      writableBottom: 900_024.3,
+      pageHeight: 900_048.6,
     });
 
     expect(result.d.length).toBeLessThan(200);
     expect(result.d.match(/M /g)).toHaveLength(1);
+    expect(result.edgeD.length).toBeLessThan(200);
     expect(cache.builds).toBe(1);
   });
 
-  it("keeps the patterned coverage inside the writable SVG margins", () => {
+  it("closes a non-divisible dotted bottom edge with bounded terminal geometry", () => {
+    const result = new SceneBackgroundCache().resolve({
+      background: { spacing: 50, type: "dots" },
+      innerWidth: 2_000,
+      margin: 24.3,
+      pageHeight: 358.6,
+    });
+
+    expect(result.patternBounds).toEqual({
+      bottom: 334.3,
+      left: 24.3,
+      right: 2_024.3,
+      top: 24.3,
+    });
+    expect(result.edgeD).toBe("M 24.3 334.3 H 2024.3");
+    expect(result.edgeD.length).toBeLessThan(200);
+  });
+
+  it("keeps ruled coverage on the same fixed page frame", () => {
     const cache = new SceneBackgroundCache();
     const result = cache.resolve({
       background: { spacing: 100, type: "lines" },
       innerWidth: 2000,
       margin: 24.3,
-      visibleBottom: 500,
-      visibleTop: 0,
-      writableBottom: 324.3,
+      pageHeight: 448.6,
     });
 
-    expect(result.d).toBe(
-      "M 24.3 24.3 L 2024.3 24.3 M 24.3 124.3 L 2024.3 124.3 " +
-        "M 24.3 224.3 L 2024.3 224.3 M 24.3 324.3 L 2024.3 324.3",
-    );
-    expect(result.lastVisibleIndex).toBe(3);
-    expect(result.paint).toBe("direct");
+    expect(result.patternBounds).toEqual({
+      bottom: 424.3,
+      left: 24.3,
+      right: 2_024.3,
+      top: 24.3,
+    });
+    expect(result.d).toBe("M 24.3 24.3 H 2024.3 V 424.3 H 24.3 Z");
+    expect(result.paint).toBe("pattern");
   });
 });
 
 describe("scene square background cache", () => {
-  it("centers complete square cells instead of clipping a remainder at either side", () => {
+  it("covers every square-grid boundary with one constant-size path", () => {
     const cache = new SceneBackgroundCache();
     const result = cache.resolve({
-      background: { spacing: 60, type: "squares" },
-      innerWidth: 2000,
+      background: { spacing: 50, type: "squares" },
+      innerWidth: 2_000,
       margin: 24.3,
-      visibleBottom: 500,
-      visibleTop: 0,
-      writableBottom: 324.3,
+      pageHeight: 348.6,
     });
 
-    expect(result.patternX).toBe(34.3);
+    expect(result.patternX).toBe(24.3);
     expect(result.patternY).toBe(24.3);
-    expect(result.paint).toBe("direct");
-    expect(result.d.match(/M /gu)).toHaveLength(40);
-    expect(result.d).toContain("M 34.3 24.3 L 2014.3 24.3");
-    expect(result.d).toContain("M 2014.3 24.3 L 2014.3 324.3");
+    expect(result.patternBounds).toEqual({
+      bottom: 324.3,
+      left: 24.3,
+      right: 2_024.3,
+      top: 24.3,
+    });
+    expect(result.paint).toBe("pattern");
+    expect(result.d).toBe("M 24.3 24.3 H 2024.3 V 324.3 H 24.3 Z");
+    expect(result.edgeD).toBe("");
+  });
+
+  it("needs no terminal edge for the exact M subdivisions", () => {
+    const result = new SceneBackgroundCache().resolve({
+      background: { spacing: 33.333333333333336, type: "squares" },
+      innerWidth: 2_000,
+      margin: 24.3,
+      pageHeight: 348.6,
+    });
+
+    expect(result.edgeD).toBe("");
+    expect(result.patternBounds).toEqual({
+      bottom: 324.3,
+      left: 24.3,
+      right: 2_024.3,
+      top: 24.3,
+    });
   });
 
   it("collapses placeholder-height coverage instead of inverting the top margin", () => {
@@ -120,23 +153,19 @@ describe("scene square background cache", () => {
       background: { spacing: 100, type: "lines" },
       innerWidth: 2000,
       margin: 24.3,
-      visibleBottom: 1,
-      visibleTop: 0,
-      writableBottom: -23.3,
+      pageHeight: 1,
     });
 
-    expect(result.d).toBe("M 24.3 24.3 L 2024.3 24.3");
+    expect(result.d).toBe("");
   });
 
-  it("falls back to one bounded pattern coverage path for pathological guide counts", () => {
+  it("uses the same bounded pattern path for every guide count", () => {
     const cache = new SceneBackgroundCache();
     const result = cache.resolve({
-      background: { spacing: 20, type: "squares" },
+      background: { spacing: 25, type: "squares" },
       innerWidth: 2000,
       margin: 24.3,
-      visibleBottom: 900_000,
-      visibleTop: 0,
-      writableBottom: 900_024.3,
+      pageHeight: 900_048.6,
     });
 
     expect(result.paint).toBe("pattern");

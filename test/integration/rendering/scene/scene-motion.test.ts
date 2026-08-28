@@ -19,7 +19,6 @@ const PAGE: PageV1 = {
   innerWidth: 2000,
   lockedBufferLines: 1,
   margin: 24.3,
-  writingLineHeight: 100,
 };
 
 describe("imperative canvas motion", () => {
@@ -235,7 +234,7 @@ describe("connected preview commit handoff", () => {
 });
 
 describe("canvas crossfades and overlays", () => {
-  it("crossfades paint, order, and background changes with the shared easing timeline", () => {
+  it("crossfades paint and order while replacing backgrounds atomically", () => {
     const { renderer, scheduler, store } = setup();
     scheduler.runAll();
     const previous = store.records.get("a")!;
@@ -265,14 +264,15 @@ describe("canvas crossfades and overlays", () => {
     scheduler.runAll();
     expect(renderer.instrumentation().motionCrossfades).toBe(2);
 
-    renderer.setPage({ ...PAGE, background: { spacing: 20, type: "dots" } }, 500);
+    renderer.setPage({ ...PAGE, background: { spacing: 25, type: "dots" } }, 500);
     scheduler.time = 300;
     scheduler.runNext();
     const camera = fakeNode(renderer.svg).nodes[1]!;
     const currentBackground = camera.nodes.find(({ attributes }) =>
       attributes.get("fill")?.startsWith("url(#inkbook-background-pattern-"),
     );
-    expect(currentBackground?.style.opacity).toBe("0");
+    expect(currentBackground?.style.opacity).toBeUndefined();
+    expect(renderer.instrumentation().motionCrossfades).toBe(2);
     scheduler.time = 480;
     scheduler.runAll();
     expect(currentBackground?.style.opacity).toBeUndefined();
@@ -377,7 +377,7 @@ function setup(reducedMotion = false): {
 }
 
 function contentPath(renderer: SvgSceneRenderer, index: number): FakeNode {
-  return fakeNode(renderer.svg).nodes[1]!.nodes[3]!.nodes[index]!;
+  return fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes[index]!;
 }
 
 function motionGroup(renderer: SvgSceneRenderer): FakeNode {

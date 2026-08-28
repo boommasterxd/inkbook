@@ -147,7 +147,7 @@ When released, the editor automatically switches back to the previous tool.
 
 ## Style
 
-Style is not a standalone drawing tool, but a context-sensitive flyout.
+Style is not a standalone drawing tool, but a context-sensitive adaptive Obsidian menu.
 
 The toolbar Style control uses the canonical Palette glyph and continuously previews the active tool defaults. Its glyph outline uses the current pen, highlighter, line, arrow, or shape color. Pen and highlighter glyphs remain solid and unfilled. Line, arrow, and shape glyphs reproduce the active `solid`, `dashed`, or `dotted` outline style. A closed shape additionally fills the palette body with its current fill color at the configured fill opacity; no-fill shapes leave the body transparent. Select and Eraser use the neutral host icon color because they have no paint color. The four canonical palette wells retain the same solid outline color and geometry regardless of the outer dash style or fill.
 
@@ -156,6 +156,8 @@ The following options are available for the pen and the highlighters:
 - color
 - width
 - opacity
+
+Opacity is presented as a rounded slider with a compact percentage field. Dragging updates the local percentage display continuously and commits the bounded normalized value when the interaction changes, avoiding one history or render update per pointer sample.
 
 Pen widths:
 
@@ -178,6 +180,7 @@ The following options are available for shapes:
 
 Shape widths:
 
+- XS: 1
 - S: 2
 - M: 4
 - L: 8
@@ -193,9 +196,13 @@ Arrows only:
 
 - start and end nodes: None, Arrow, Triangle, Diamond, or Circle
 
+The active Arrow tool icon renders the configured start and end node independently. Every combination of the five node types is representable without changing the shared line body.
+
 Coordinate systems only:
 
 - dimensionality: 2D or 3D
+
+The active Coordinate System tool icon renders two axes for 2D and three axes for 3D.
 
 Tables only:
 
@@ -205,19 +212,9 @@ The coordinate-system dimensionality and table column-count controls apply both 
 
 Changing the column count of a selected table preserves that table's current column width. Adding a column extends the table by one column width on its local right side, while removing a column removes the local rightmost column and shrinks the total width by one column width. Height, header height, rotation, and line width remain unchanged. The rendered local left edge stays fixed, including for a rotated table.
 
-Colors:
+Colors use the canonical built-in palette defined in [Settings](settings.md#color-values), including Theme text color and Gray. The list and serialized values are maintained only in that document.
 
-- Theme text color
-- red
-- orange
-- yellow
-- green
-- cyan
-- blue
-- violet
-- pink
-
-When elements are selected, the flyout edits the selection instead of the current tool. For a mixed selection, it only shows properties that apply to all selected elements. One accepted structural change is one atomic undo step and changes neither session tool values nor vault defaults. Choosing the existing value is a no-op with no revision or history entry.
+When elements are selected, the menu edits the selection instead of the current tool. For a mixed selection, it only shows properties that apply to all selected elements. One accepted structural change is one atomic undo step and changes neither session tool values nor vault defaults. Choosing the existing value is a no-op with no revision or history entry.
 
 Exact geometry, hit tolerances, bounds, node sizing, and serialization are defined in [File Format and Geometry](file-format.md). Built-in and user-configurable defaults are defined in [Settings](settings.md).
 

@@ -29,6 +29,18 @@ describe("drag preview path writer", () => {
     const applied = writeLivePath(dom, instrumentation, state, emptyAppliedLivePath());
     const liveGroup = fakeNode(dom.liveGroup);
 
+    expect(fakeNode(dom.highlightGroup).attributes.get("class")).toContain(
+      "inkbook-scene-foreground",
+    );
+    expect(fakeNode(dom.contentGroup).attributes.get("class")).toContain(
+      "inkbook-scene-foreground",
+    );
+    expect(fakeNode(dom.motionGroup).attributes.get("class")).toContain("inkbook-scene-foreground");
+    expect(liveGroup.attributes.get("class")).toBe("inkbook-scene-foreground");
+    expect(fakeNode(dom.liveStrokeGroup).attributes.get("class")).toBe("inkbook-scene-foreground");
+    expect(fakeNode(dom.svg).nodes[2]?.attributes.get("class")).toContain(
+      "inkbook-scene-foreground",
+    );
     expect(liveGroup.nodes).toHaveLength(2);
     expect(liveGroup.nodes[0]?.attributes.get("stroke")).toBe("#112233FF");
     expect(liveGroup.nodes[1]?.attributes.get("fill")).toBe("#112233FF");

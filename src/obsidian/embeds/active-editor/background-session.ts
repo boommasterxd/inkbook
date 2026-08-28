@@ -1,4 +1,5 @@
-import type { BackgroundSpacing, BackgroundType } from "../../../rendering/ui/index";
+import type { PageV1 } from "../../../domain/schema/public";
+import type { BackgroundSpacing, BackgroundType } from "../../menus/editor-menu-types";
 import type { EditableDocumentModel } from "../vault-document-session";
 import {
   pageWithBackgroundSpacing,
@@ -12,6 +13,8 @@ export interface ActiveEditorBackgroundSessionOptions {
   readonly history: ActiveEditorHistory;
   readonly model: EditableDocumentModel;
   readonly onPageChanged: () => void;
+  readonly onPagePreviewFinish: (committed: boolean) => void;
+  readonly onPagePreview: (page: PageV1) => void;
   readonly onStateChanged: () => void;
 }
 
@@ -26,7 +29,15 @@ export class ActiveEditorBackgroundSession {
     const page = this.#options.model.page;
     const replacement = pageWithBackgroundSpacing(page, spacing);
     if (replacement === null) return;
-    if (this.#options.history.updatePage(page, replacement)) this.#changed();
+    const committed = this.#options.history.updatePage(page, replacement);
+    this.#options.onPagePreviewFinish(committed);
+    if (committed) this.#changed();
+  }
+
+  public previewSpacing(spacing: BackgroundSpacing): void {
+    if (this.#options.model.mutationAvailability === "revision-exhausted") return;
+    const page = this.#options.model.page;
+    this.#options.onPagePreview(pageWithBackgroundSpacing(page, spacing) ?? page);
   }
 
   public changeType(type: BackgroundType): void {

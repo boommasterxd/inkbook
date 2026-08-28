@@ -20,6 +20,7 @@ describe("motion tokens", () => {
   it("exposes the documented duration and easing tokens", () => {
     expect(MOTION_TOKENS).toEqual({
       fast: 120,
+      menu: 220,
       toolbar: 300,
       standard: 180,
       erase: 160,
@@ -32,14 +33,13 @@ describe("motion tokens", () => {
 
   it("maps every documented transition to its contract duration", () => {
     expect(TRANSITION_DURATIONS).toEqual({
+      adaptiveMenu: 220,
       toolbarEnterExit: 300,
       toolActiveState: 120,
-      flyoutOpenClose: 180,
       selectionHandlesEnterExit: 120,
       eraserPendingRemoval: 160,
       committedEntrance: 120,
       commandRemovalExit: 120,
-      backgroundChange: 180,
       styleChange: 120,
       lockedToActiveHeight: 240,
       activeToLockedHeight: 240,
@@ -63,7 +63,7 @@ describe("motion tokens", () => {
     expect(isReducedMotion("system", true)).toBe(true);
     expect(getMotionDuration(180, false)).toBe(180);
     expect(getMotionDuration(180, true)).toBe(0);
-    expect(getTransitionDuration("backgroundChange", true)).toBe(0);
+    expect(getTransitionDuration("styleChange", true)).toBe(0);
   });
 });
 

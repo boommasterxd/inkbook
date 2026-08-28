@@ -68,6 +68,8 @@ describe("active editor background and history sessions", () => {
   it("commits background changes, skips unavailable spacing, and supports Undo", () => {
     let page = PAGE;
     const onPageChanged = vi.fn();
+    const onPagePreviewFinish = vi.fn();
+    const onPagePreview = vi.fn();
     const onStateChanged = vi.fn();
     const model = {
       get page() {
@@ -86,15 +88,24 @@ describe("active editor background and history sessions", () => {
       history,
       model,
       onPageChanged,
+      onPagePreviewFinish,
+      onPagePreview,
       onStateChanged,
     });
 
+    session.previewSpacing("xl");
+    expect(onPagePreview).toHaveBeenCalledWith(
+      expect.objectContaining({ background: { type: "lines", spacing: 100 } }),
+    );
+    expect(page.background).toEqual({ type: "lines", spacing: 50 });
+    expect(history.commandCount).toBe(0);
     session.changeSpacing("xl");
-    expect(page.background).toEqual({ type: "lines", spacing: 200 });
+    expect(onPagePreviewFinish).toHaveBeenCalledWith(true);
+    expect(page.background).toEqual({ type: "lines", spacing: 100 });
     session.changeType("squares");
-    expect(page.background).toEqual({ type: "squares", spacing: 40 });
+    expect(page.background).toEqual({ type: "squares", spacing: 25 });
     expect(history.undo()).toBe(true);
-    expect(page.background).toEqual({ type: "lines", spacing: 200 });
+    expect(page.background).toEqual({ type: "lines", spacing: 100 });
 
     session.changeType("none");
     session.changeSpacing("s");
@@ -249,21 +260,28 @@ describe("active editor host normalization", () => {
     expect(normalizePointerType("pen")).toBe("pen");
     expect(normalizePointerType("touch")).toBe("touch");
     expect(normalizePointerType("unknown")).toBe("mouse");
-    expect(backgroundState(PAGE)).toEqual({ spacing: "s", type: "lines" });
+    expect(backgroundState(PAGE)).toEqual({ spacing: "l", type: "lines" });
     expect(backgroundState({ ...PAGE, background: { type: "none" } })).toEqual({
       spacing: null,
       type: "none",
     });
     expect(pageWithBackgroundSpacing(PAGE, "l")?.background).toEqual({
-      spacing: 150,
+      spacing: 50,
       type: "lines",
     });
-    const defaults = { lines: 150, dots: 60, squares: 80 } as const;
+    const defaults = { lines: 50, dots: 50, squares: 100 } as const;
     const squares = pageWithBackgroundType(PAGE, "squares", defaults);
-    expect(squares.background).toEqual({ spacing: 80, type: "squares" });
+    expect(squares.background).toEqual({ spacing: 100, type: "squares" });
+    expect(
+      pageWithBackgroundType(
+        { ...PAGE, background: { spacing: 50, type: "dots" } },
+        "squares",
+        defaults,
+      ).background,
+    ).toEqual({ spacing: 100, type: "squares" });
     expect(pageWithBackgroundType(PAGE, "lines", defaults)).toBe(PAGE);
     expect(pageWithBackgroundSpacing(squares, "xl")?.background).toEqual({
-      spacing: 80,
+      spacing: 100,
       type: "squares",
     });
     expect(pageWithBackgroundSpacing({ ...PAGE, background: { type: "none" } }, "m")).toBeNull();

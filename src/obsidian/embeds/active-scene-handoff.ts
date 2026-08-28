@@ -131,11 +131,9 @@ export class ActiveScenePreviewHandoff {
 
   #startUnlockTransition(activeBlockSize: string): void {
     this.#releaseScrollStability ??= this.#beginScrollStability?.();
-    if (this.#preview !== undefined) this.#preview.hidden = true;
     this.#root.classList.remove("inkbook-active-preparing");
     this.#root.classList.add("inkbook-active-transitioning");
     this.#container.style.blockSize = activeBlockSize;
-    this.#notifyReady();
     this.#timer = this.#ownerWindow.setTimeout(
       () => this.#complete(),
       TRANSITION_DURATIONS.lockedToActiveHeight,

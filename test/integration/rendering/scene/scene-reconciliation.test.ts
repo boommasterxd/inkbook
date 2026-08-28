@@ -21,7 +21,6 @@ const PAGE: PageV1 = {
   innerWidth: 2000,
   lockedBufferLines: 1,
   margin: 24.3,
-  writingLineHeight: 100,
 };
 
 class AdvancingScheduler extends FakeScheduler {
@@ -47,7 +46,7 @@ describe("resumable scene reconciliation", () => {
   it("keeps background geometry frozen while a larger scene is clipped", () => {
     const scheduler = new FakeScheduler();
     const store = new FakeSceneStore();
-    const squarePage: PageV1 = { ...PAGE, background: { spacing: 40, type: "squares" } };
+    const squarePage: PageV1 = { ...PAGE, background: { spacing: 50, type: "squares" } };
     let viewport: SceneViewport = { height: 400, left: 0, top: 0, width: 100 };
     const renderer = createRenderer(store, scheduler, {
       page: squarePage,
@@ -60,7 +59,7 @@ describe("resumable scene reconciliation", () => {
     renderer.resetInstrumentation();
 
     viewport = { ...viewport, height: 100 };
-    renderer.invalidateLayout("clip");
+    renderer.invalidateLayout();
     scheduler.runAll();
 
     expect(background.attributes.get("d")).toBe(completeGeometry);
@@ -69,10 +68,10 @@ describe("resumable scene reconciliation", () => {
     viewport = { ...viewport, height: 60 };
     renderer.invalidateLayout();
     scheduler.runAll();
-    expect(renderer.instrumentation().backgroundBuilds).toBe(1);
+    expect(renderer.instrumentation().backgroundBuilds).toBe(0);
   });
 
-  it("extends bounded background coverage as a large page becomes visible", verifyGrowthCoverage);
+  it("keeps full background geometry independent of the visible viewport", verifyGrowthCoverage);
 
   it("reuses a cell-range candidate union while exact bounds change within those cells", () => {
     const scheduler = new FakeScheduler();
@@ -236,7 +235,7 @@ describe("scene reconciliation frame priority", () => {
       scheduler,
       store,
     });
-    renderer.setPage({ ...PAGE, background: { spacing: 20, type: "dots" } }, 500);
+    renderer.setPage({ ...PAGE, background: { spacing: 25, type: "dots" } }, 500);
 
     scheduler.runNext();
 
@@ -307,7 +306,7 @@ describe("resumable scene reconciliation after invalidation", () => {
     scheduler.runAll();
 
     const expected = [promotedId, ...originalOrder.slice(1, -1), demotedId];
-    const contentGroup = fakeNode(renderer.svg).nodes[1]!.nodes[3]!;
+    const contentGroup = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
     expect(renderer.mountedIds("content")).toEqual(expected);
     expect(contentGroup.nodes.map((node) => node.attributes.get("d"))).toEqual(
       expected.map((id) => buildElementPathParts(store.records.get(id)!.element)[0]!.d),
@@ -359,7 +358,7 @@ describe("pending scene state replacement", () => {
     scheduler.runNext();
     expect(renderer.mountedCount).toBe(ids.length);
     expect(renderer.mountedIds("content")).toEqual(committedOrder);
-    const contentGroup = fakeNode(renderer.svg).nodes[1]!.nodes[3]!;
+    const contentGroup = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
     expect(contentGroup.nodes).toHaveLength(ids.length);
     scheduler.runAll();
     expect(renderer.mountedCount).toBe(0);
@@ -457,7 +456,7 @@ function createRenderer(
 function verifyGrowthCoverage(): void {
   const scheduler = new FakeScheduler();
   const store = new FakeSceneStore();
-  const squarePage: PageV1 = { ...PAGE, background: { spacing: 40, type: "squares" } };
+  const squarePage: PageV1 = { ...PAGE, background: { spacing: 50, type: "squares" } };
   let viewport: SceneViewport = { height: 100, left: 0, top: 0, width: 100 };
   const renderer = createRenderer(store, scheduler, {
     page: squarePage,
@@ -470,18 +469,18 @@ function verifyGrowthCoverage(): void {
   renderer.resetInstrumentation();
 
   viewport = { ...viewport, height: 60 };
-  renderer.invalidateLayout("coverage");
+  renderer.invalidateLayout();
   scheduler.runAll();
   expect(background.attributes.get("d")).toBe(initialGeometry);
   expect(renderer.instrumentation().backgroundBuilds).toBe(0);
 
   viewport = { ...viewport, height: 800 };
-  renderer.invalidateLayout("coverage");
-  renderer.invalidateLayout("clip");
+  renderer.invalidateLayout();
+  renderer.invalidateLayout();
   scheduler.runAll();
 
-  expect(background.attributes.get("d")).not.toBe(initialGeometry);
-  expect(renderer.instrumentation().backgroundBuilds).toBe(1);
+  expect(background.attributes.get("d")).toBe(initialGeometry);
+  expect(renderer.instrumentation().backgroundBuilds).toBe(0);
 }
 
 function populateRectangles(store: FakeSceneStore, count: number): string[] {

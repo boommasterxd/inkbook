@@ -27,7 +27,6 @@ const page: PageV1 = {
   innerWidth: 2000,
   lockedBufferLines: 1,
   margin: 24.3,
-  writingLineHeight: 100,
 };
 
 function highlighter(): SceneElementRecord {
@@ -131,7 +130,7 @@ function setupTransformPreview(
   scheduler.runAll();
   renderer.setPreviewTransform(ids, "translate(5 0)", 1);
   scheduler.runAll();
-  return { content: fakeNode(renderer.svg).nodes[1]!.nodes[3]!, renderer, scheduler };
+  return { content: fakeNode(renderer.svg).nodes[1]!.nodes[4]!, renderer, scheduler };
 }
 
 describe("imperative SVG scene renderer", () => {
@@ -240,7 +239,7 @@ describe("live stroke scene handoff", () => {
       input: { pressureSource: "pen", zoom: 1 },
       style,
     });
-    const liveGroup = fakeNode(renderer.svg).nodes[1]!.nodes[5]!;
+    const liveGroup = fakeNode(renderer.svg).nodes[1]!.nodes[6]!;
     let firstChunkNode: FakeNode | undefined;
     let latestPreview = builder.append({ pressure: 0.5, time: 0, x: 0, y: 0 });
     renderer.updateLiveStroke(latestPreview, style, "pen");
@@ -328,7 +327,7 @@ describe("scene DOM ownership", () => {
     const { container, renderer, scheduler } = setup();
     scheduler.runAll();
 
-    renderer.setPage({ ...page, background: { spacing: 20, type: "dots" } }, 900_000);
+    renderer.setPage({ ...page, background: { spacing: 25, type: "dots" } }, 900_000);
     scheduler.runAll();
 
     const camera = container.nodes[0]!.nodes[1]!;
@@ -338,14 +337,14 @@ describe("scene DOM ownership", () => {
     const pattern = container.nodes[0]!.nodes[3]!.nodes[0]!;
     const patternPath = pattern.nodes[0]!;
     expect(patternPath.attributes.get("d")).toBe("M 1 1 L 1 1");
-    renderer.setPage({ ...page, background: { spacing: 20, type: "squares" } }, 500);
+    renderer.setPage({ ...page, background: { spacing: 25, type: "squares" } }, 500);
     renderer.setCamera({ x: 0, zoom: 0.25 });
     scheduler.runAll();
-
-    expect(background.attributes.get("fill")).toBe("none");
-    expect(background.attributes.get("vector-effect")).toBe("non-scaling-stroke");
-    expect(background.attributes.get("d")?.match(/M /gu)?.length).toBeGreaterThan(20);
-    expect(patternPath.attributes.get("d")).toBe("");
+    expect(background.attributes.get("fill")).toMatch(/^url\(#inkbook-background-pattern-/u);
+    expect(background.attributes.has("vector-effect")).toBe(false);
+    expect(background.attributes.get("d")?.match(/M /gu)).toHaveLength(1);
+    expect(patternPath.attributes.get("d")).toBe("M 0 2 H 25 M 2 0 V 25");
+    expect(patternPath.attributes.get("stroke-width")).toBe("4");
   });
 });
 
@@ -353,7 +352,7 @@ describe("mounted scene updates", () => {
   it("applies element fades and exact geometry previews directly to mounted paths", () => {
     const { renderer, scheduler, store } = setup();
     scheduler.runAll();
-    const contentPath = fakeNode(renderer.svg).nodes[1]!.nodes[3]!.nodes[0]!;
+    const contentPath = fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes[0]!;
     const originalD = contentPath.attributes.get("d");
     const element = store.records.get("a")!.element as BoxShapeElementV1;
 
@@ -457,7 +456,7 @@ describe("dense scene reconciliation", () => {
 
     scheduler.runNext();
     expect(renderer.mountedCount).toBe(0);
-    expect(fakeNode(renderer.svg).nodes[1]!.nodes[3]!.nodes).toHaveLength(0);
+    expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(0);
     expect(renderer.instrumentation().geometryBuilds).toBeGreaterThan(0);
     expect(renderer.instrumentation().geometryBuilds).toBeLessThan(expected.length);
     renderer.promoteVisible(expected[0]!);

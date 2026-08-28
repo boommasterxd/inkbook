@@ -1,24 +1,12 @@
-import type { FlyoutId } from "./toolbar-types";
+import type { ShapeId } from "../../rendering/ui/toolbar-types";
 
 export type BackgroundType = "none" | "lines" | "dots" | "squares";
 export type BackgroundSpacing = "s" | "m" | "l" | "xl";
 
-export interface BackgroundFlyoutState {
+export interface BackgroundMenuState {
   readonly spacing: BackgroundSpacing | null;
   readonly type: BackgroundType;
 }
-
-export type ShapeId =
-  | "line"
-  | "arrow"
-  | "rectangle"
-  | "ellipse"
-  | "triangle"
-  | "octagon"
-  | "parallelogram"
-  | "diamond"
-  | "coordinate-system"
-  | "table";
 
 export interface StyleChoiceOption {
   readonly label: string;
@@ -54,16 +42,16 @@ interface StyleNumberControl {
 
 export type StyleControl = StyleChoiceControl | StyleNumberControl | StyleToggleControl;
 
-export interface EditorFlyoutCallbacks {
+export interface EditorMenuCallbacks {
   readonly onBackgroundSpacingChange: (spacing: BackgroundSpacing) => void;
+  readonly onBackgroundSpacingPreview: (spacing: BackgroundSpacing) => void;
   readonly onBackgroundTypeChange: (type: BackgroundType) => void;
-  readonly onFlyoutClose: (flyout: FlyoutId) => void;
   readonly onOverflowAction: (action: OverflowMenuAction) => void;
   readonly onShapeChange: (shape: ShapeId) => void;
   readonly onStyleChange: (controlId: string, value: boolean | number | string) => void;
 }
 
-export type OverflowMenuAction =
+type OverflowMenuAction =
   | "bring-forward"
   | "bring-to-front"
   | "copy-embed"

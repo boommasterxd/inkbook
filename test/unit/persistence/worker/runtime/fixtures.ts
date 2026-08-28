@@ -64,7 +64,6 @@ export function snapshot(revision = 0, x = 100): InkSnapshotV1 {
       innerWidth: 2000,
       lockedBufferLines: 1,
       margin: 24.3,
-      writingLineHeight: 100,
     },
     revision,
     version: 1,

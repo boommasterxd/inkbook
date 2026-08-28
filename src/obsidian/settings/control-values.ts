@@ -3,7 +3,7 @@ import {
   loadSettings,
   type ColorV1,
   type InkbookDeviceSettingsV1,
-  type InkbookSettingsV2,
+  type InkbookSettingsV3,
 } from "../../domain/settings";
 import { InkbookSettingsStore } from "./storage";
 
@@ -12,12 +12,12 @@ type VaultControlKey =
   | "refreshRatePreference"
   | "filePlacement.mode"
   | "filePlacement.folder"
-  | `pageDefaults.${"backgroundType" | "writingLineHeight" | "activeBufferLines" | "lockedBufferLines"}`
+  | `pageDefaults.${"backgroundType" | "activeBufferLines" | "lockedBufferLines"}`
   | `pageDefaults.backgroundSpacing.${"lines" | "dots" | "squares"}`
   | `toolDefaults.pen.${"color" | "width" | "opacity" | "pressureEnabled"}`
   | `toolDefaults.${"highlighter" | "straightHighlighter"}.${"color" | "width" | "opacity"}`
   | "toolDefaults.eraser.radius"
-  | `toolDefaults.shapes.${keyof InkbookSettingsV2["toolDefaults"]["shapes"]}.${
+  | `toolDefaults.shapes.${keyof InkbookSettingsV3["toolDefaults"]["shapes"]}.${
       | "outlineColor"
       | "outlineWidth"
       | "outlineStyle"
@@ -43,6 +43,7 @@ const COLOR_VALUES = new Map<string, ColorV1 | null>([
     "#3B82F6FF",
     "#8B5CF6FF",
     "#EC4899FF",
+    "#6B7280FF",
   ].map((value) => [value, { type: "rgba", value } as ColorV1] as const),
 ]);
 
@@ -51,7 +52,6 @@ const NUMERIC_KEY_SUFFIXES = [
   ".outlineWidth",
   ".radius",
   ".columns",
-  ".writingLineHeight",
   ".activeBufferLines",
   ".lockedBufferLines",
   ".lines",

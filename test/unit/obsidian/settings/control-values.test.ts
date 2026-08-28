@@ -49,12 +49,12 @@ describe("SettingsControlValues", () => {
 
   it("reads and writes nested vault values without flattened state", async () => {
     await values.set("toolDefaults.pen.width", "14");
-    await values.set("toolDefaults.pen.color", "#3B82F6FF");
+    await values.set("toolDefaults.pen.color", "#6B7280FF");
 
     expect(values.get("toolDefaults.pen.width")).toBe(14);
     expect(vault.saved.toolDefaults.pen).toMatchObject({
       width: 14,
-      color: { type: "rgba", value: "#3B82F6FF" },
+      color: { type: "rgba", value: "#6B7280FF" },
     });
   });
 

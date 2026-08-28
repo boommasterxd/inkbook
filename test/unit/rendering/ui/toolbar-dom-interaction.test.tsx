@@ -5,12 +5,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  InkbookEditorChrome,
-  type InkbookEditorChromeProps,
-} from "../../../../src/rendering/ui/editor-chrome";
-import {
+  arrowShapeIconId,
   SHAPE_ICON_IDS,
   STRAIGHT_HIGHLIGHTER_ICON_ID,
+  type ActiveShapeIconState,
 } from "../../../../src/rendering/ui/icon-ids";
 import { InkbookToolbar } from "../../../../src/rendering/ui/toolbar";
 import type { ToolbarStyleIconState } from "../../../../src/rendering/ui/style-icon";
@@ -32,6 +30,12 @@ const defaultStyleIcon: ToolbarStyleIconState = {
   fillOpacity: 0,
   outlineColor: { type: "rgba", value: "#EF4444FF" },
   outlineStyle: "solid",
+};
+
+const defaultShapeIcon = {
+  arrowEnd: "arrow" as const,
+  arrowStart: "none" as const,
+  coordinateDimension: "2d" as const,
 };
 
 const reactEnvironment = window as Window & {
@@ -255,15 +259,33 @@ describe("mounted Inkbook shape controls", () => {
     ).toBe(SHAPE_ICON_IDS.rectangle);
     expect(mounted.button("shape").getAttribute("aria-label")).toBe("Shape: Rectangle");
     expect(mounted.button("shape").hasAttribute("aria-haspopup")).toBe(false);
-    expect(mounted.button("shape-picker").getAttribute("aria-controls")).toBe(
-      "inkbook-shape-flyout",
-    );
+    expect(mounted.button("shape-picker").getAttribute("aria-haspopup")).toBe("menu");
+    expect(mounted.button("style").getAttribute("aria-haspopup")).toBe("dialog");
 
     mounted.update(completeState, "triangle");
     expect(
       requiredElement<HTMLElement>(mounted.button("shape"), ".inkbook-toolbar-icon").dataset.icon,
     ).toBe(SHAPE_ICON_IDS.triangle);
     expect(mounted.button("shape").getAttribute("aria-label")).toBe("Shape: Triangle");
+    mounted.unmount();
+  });
+
+  it("renders every start and end node combination in the active arrow icon", () => {
+    const mounted = mountToolbar(completeState);
+    const nodes = ["none", "arrow", "triangle", "diamond", "circle"] as const;
+    for (const arrowStart of nodes) {
+      for (const arrowEnd of nodes) {
+        mounted.update(completeState, "arrow", defaultStyleIcon, {
+          arrowEnd,
+          arrowStart,
+          coordinateDimension: "2d",
+        });
+        expect(
+          requiredElement<HTMLElement>(mounted.button("shape"), ".inkbook-toolbar-icon").dataset
+            .icon,
+        ).toBe(arrowShapeIconId(arrowStart, arrowEnd));
+      }
+    }
     mounted.unmount();
   });
 });
@@ -287,67 +309,16 @@ describe("mounted Inkbook history controls", () => {
   });
 });
 
-describe("mounted Inkbook flyout focus", () => {
-  it("closes on Escape, consumes the key, and restores trigger focus", () => {
-    const onFlyoutClose = vi.fn();
-    const mounted = mountChrome(chromeProps(null, onFlyoutClose));
-    mounted.update(chromeProps("shape", onFlyoutClose));
-    const dialog = requiredDialog();
-    const choice = requiredElement<HTMLButtonElement>(dialog, "button");
-    focus(choice);
-
-    const escape = key(document, "Escape");
-
-    expect(escape.defaultPrevented).toBe(true);
-    expect(onFlyoutClose).toHaveBeenCalledWith("shape");
-    expect(document.activeElement).toBe(mounted.button("shape-picker"));
-    expect(mounted.button("shape-picker").getAttribute("aria-expanded")).toBe("true");
-    expect(mounted.button("shape-picker").getAttribute("aria-controls")).toBe(
-      "inkbook-shape-flyout",
-    );
-    mounted.unmount();
-  });
-
-  it("keeps a controlled closing flyout mounted and restores focus after its exit", () => {
-    const mounted = mountChrome(chromeProps(null));
-    mounted.update(chromeProps("shape"));
-    const dialog = requiredDialog();
-    focus(requiredElement<HTMLButtonElement>(dialog, "button"));
-
-    mounted.update(chromeProps(null));
-    expect(dialog.dataset.state).toBe("closing");
-    expect(document.body.contains(dialog)).toBe(true);
-
-    act(() => {
-      dialog.dispatchEvent(
-        new AnimationEvent("animationend", {
-          animationName: "inkbook-flyout-exit",
-          bubbles: true,
-        }),
-      );
-    });
-
-    expect(document.activeElement).toBe(mounted.button("shape-picker"));
-    expect(document.body.contains(dialog)).toBe(false);
-    mounted.unmount();
-  });
-});
-
 interface MountedToolbar {
   readonly button: (action: ToolbarAction) => HTMLButtonElement;
   readonly container: HTMLDivElement;
   readonly unmount: () => void;
   readonly update: (
     state: ToolbarState,
-    selectedShape?: "rectangle" | "triangle",
+    selectedShape?: "arrow" | "rectangle" | "triangle",
     styleIcon?: ToolbarStyleIconState,
+    shapeIcon?: ActiveShapeIconState,
   ) => void;
-}
-
-interface MountedChrome {
-  readonly button: (action: ToolbarAction) => HTMLButtonElement;
-  readonly unmount: () => void;
-  readonly update: (props: InkbookEditorChromeProps) => void;
 }
 
 function mountToolbar(
@@ -358,8 +329,9 @@ function mountToolbar(
   const root = createRoot(container);
   const render = (
     state: ToolbarState,
-    selectedShape: "rectangle" | "triangle" = "rectangle",
+    selectedShape: "arrow" | "rectangle" | "triangle" = "rectangle",
     styleIcon: ToolbarStyleIconState = defaultStyleIcon,
+    shapeIcon: ActiveShapeIconState = defaultShapeIcon,
   ): void => {
     act(() => {
       root.render(
@@ -368,6 +340,7 @@ function mountToolbar(
           onAction={vi.fn()}
           renderIcon={(element, icon) => element.setAttribute("data-icon", icon)}
           selectedShape={selectedShape}
+          shapeIcon={shapeIcon}
           state={state}
           styleIcon={styleIcon}
         />,
@@ -390,57 +363,6 @@ function setButtonMetrics(button: HTMLButtonElement, offsetLeft: number): void {
   });
 }
 
-function mountChrome(initialProps: InkbookEditorChromeProps): MountedChrome {
-  const container = document.body.createDiv();
-  container.className = "inkbook-root";
-  const root = createRoot(container);
-  const render = (props: InkbookEditorChromeProps): void => {
-    act(() => root.render(<InkbookEditorChrome {...props} />));
-  };
-  render(initialProps);
-  return {
-    button: (action) => requiredButton(container, action),
-    unmount: () => unmount(root),
-    update: render,
-  };
-}
-
-function chromeProps(
-  openFlyout: ToolbarState["openFlyout"],
-  onFlyoutClose = vi.fn(),
-): InkbookEditorChromeProps {
-  return {
-    background: { spacing: "m", type: "lines" },
-    callbacks: {
-      onBackgroundSpacingChange: vi.fn(),
-      onBackgroundTypeChange: vi.fn(),
-      onFlyoutClose,
-      onOverflowAction: vi.fn(),
-      onShapeChange: vi.fn(),
-      onStyleChange: vi.fn(),
-    },
-    canvasInput: document.body.createDiv(),
-    layout: "wide",
-    onToolbarAction: vi.fn(),
-    ownerDocument: document,
-    overflowMenu: {
-      arrange: {
-        "bring-forward": false,
-        "bring-to-front": false,
-        "send-backward": false,
-        "send-to-back": false,
-      },
-      canEraseAll: false,
-      hasSelection: false,
-    },
-    renderIcon: (element, icon) => element.setAttribute("data-icon", icon),
-    selectedShape: "rectangle",
-    styleControls: [],
-    styleIcon: { fillColor: null, fillOpacity: 0, outlineColor: null, outlineStyle: "solid" },
-    toolbarState: { ...completeState, openFlyout },
-  };
-}
-
 function installCreateDiv(): void {
   document.body.createDiv = (options) => {
     const element = document.createElementNS(
@@ -453,12 +375,6 @@ function installCreateDiv(): void {
     document.body.append(element);
     return element;
   };
-}
-
-function requiredDialog(): HTMLDivElement {
-  const dialog = document.body.querySelector<HTMLDivElement>(".inkbook-flyout[role='dialog']");
-  if (dialog === null) throw new Error("Expected a mounted flyout dialog");
-  return dialog;
 }
 
 function requiredElement<T extends Element>(container: Element, selector: string): T {

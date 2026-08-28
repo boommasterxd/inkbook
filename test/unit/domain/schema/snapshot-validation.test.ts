@@ -28,10 +28,9 @@ describe("InkSnapshotV1 validation", () => {
   it("accepts page and revision boundary values", () => {
     const document = snapshot();
     document.revision = Number.MAX_SAFE_INTEGER;
-    document.page.writingLineHeight = 50;
     document.page.activeBufferLines = 8;
     document.page.lockedBufferLines = 0;
-    document.page.background = { type: "dots", spacing: 80 };
+    document.page.background = { type: "dots", spacing: 100 };
     expect(validateInkSnapshotV1(document).ok).toBe(true);
   });
 
@@ -52,9 +51,9 @@ describe("InkSnapshotV1 validation", () => {
       "invalid-literal",
     ],
     [
-      "writing height",
+      "obsolete writing height",
       { ...snapshot(), page: { ...snapshot().page, writingLineHeight: 201 } },
-      "invalid-range",
+      "unknown-property",
     ],
     [
       "active buffer",

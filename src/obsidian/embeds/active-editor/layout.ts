@@ -1,5 +1,5 @@
-import { PAGE_WIDTH } from "../../../domain/geometry/public";
-import type { PointV1 } from "../../../domain/schema/public";
+import { alignPageHeightToWritingLine, PAGE_WIDTH } from "../../../domain/geometry/public";
+import type { PageV1, PointV1 } from "../../../domain/schema/public";
 import {
   calculateZoomLimits,
   createStableWidthState,
@@ -41,6 +41,7 @@ export class ActiveEditorLayout {
   #forcePageHeight = false;
   #frame: number | undefined;
   #layoutStage: ToolbarLayoutStage | undefined;
+  #previewPage: PageV1 | undefined;
   #chromeLayoutKey: string | undefined;
   #ready = false;
   #readyFrame: number | undefined;
@@ -72,7 +73,7 @@ export class ActiveEditorLayout {
         ? undefined
         : new observerConstructor(() => {
             this.#toolbarLayoutDirty = true;
-            this.#options.renderer.invalidateLayout("coverage");
+            this.#options.renderer.invalidateLayout();
             this.scheduleMeasurement();
           });
     this.#observer?.observe(options.root);
@@ -141,13 +142,42 @@ export class ActiveEditorLayout {
     this.#applyHeightUpdate(update);
   }
 
+  public finishPagePreview(committed: boolean): void {
+    if (this.#previewPage === undefined) return;
+    this.#previewPage = undefined;
+    if (committed) return;
+    this.#cancelHeightTransitionAtBoundary(false);
+    this.#applyPreviewHeight(this.#options.page());
+  }
+
   public interruptForInput(): void {
     if (this.#cancelHeightTransitionAtBoundary(true) !== undefined) this.scheduleMeasurement();
   }
 
   public pageChanged(): void {
     this.#forcePageHeight = true;
+    const preparationHeight = this.#scenePreparationHeight();
+    if (preparationHeight !== undefined) {
+      this.#options.renderer.setPage(this.#options.page(), preparationHeight);
+    }
     this.scheduleMeasurement();
+  }
+
+  public previewPage(page: PageV1): void {
+    this.#cancelHeightTransitionAtBoundary(false);
+    this.#previewPage = page;
+    this.#applyPreviewHeight(page);
+  }
+
+  #applyPreviewHeight(page: PageV1): void {
+    const update = this.#pageLayout.committed(page, this.#options.storeMaximumBottom(), true);
+    if (update === undefined) {
+      const height = this.#scenePreparationHeight();
+      if (height === undefined) this.#options.renderer.setPage(page);
+      else this.#options.renderer.setPage(page, height);
+      return;
+    }
+    this.#applyHeightUpdate(update, page);
   }
 
   public resume(): void {
@@ -292,11 +322,10 @@ export class ActiveEditorLayout {
     this.#options.renderer.invalidateLayout();
   }
 
-  #applyHeightUpdate(update: PageHeightUpdate | undefined): void {
+  #applyHeightUpdate(update: PageHeightUpdate | undefined, page = this.#renderPage()): void {
     if (update === undefined) return;
     const zoom = this.#zoom;
     const frameRead = zoom === undefined ? undefined : this.#readHeightFrame();
-    const page = this.#options.page();
     if (zoom === undefined) {
       this.#options.renderer.setPage(page, update.height);
       return;
@@ -309,15 +338,16 @@ export class ActiveEditorLayout {
       return;
     }
     const currentRenderedHeight = frameRead?.renderedHeight ?? update.height * zoom;
-    const currentPageHeight = this.#pageLayout.settledHeight ?? currentRenderedHeight / zoom;
     const targetRenderedHeight = update.height * zoom;
-    const growing = update.height >= currentPageHeight;
-    const preparationHeight = growing ? update.height : currentPageHeight;
+    const currentPageHeight = currentRenderedHeight / zoom;
+    const preparationHeight = alignPageHeightToWritingLine(
+      page,
+      Math.max(update.height, currentPageHeight),
+    );
     this.#options.renderer.setPage(page, preparationHeight);
     this.#heightTransition.begin({
-      applyFrame: (renderedHeight) =>
-        this.#writeHeightFrame(renderedHeight / zoom, zoom, growing ? "coverage" : "clip"),
-      applySurfaceTarget: () => this.#options.renderer.setPage(this.#options.page(), update.height),
+      applyFrame: (renderedHeight) => this.#writeHeightFrame(renderedHeight / zoom, zoom),
+      applySurfaceTarget: () => this.#options.renderer.setPage(this.#renderPage(), update.height),
       currentRenderedHeight,
       onComplete: () => this.#completeHeightTransition(!this.#motion.reduced),
       sceneCommitPending: () => this.#options.renderer.hasPendingSceneCommit,
@@ -326,9 +356,17 @@ export class ActiveEditorLayout {
     if (this.#motion.reduced) this.#heightTransition.finishImmediately();
   }
 
+  #scenePreparationHeight(): number | undefined {
+    const height = this.#pageLayout.height;
+    const settledHeight = this.#pageLayout.settledHeight;
+    if (height === undefined) return settledHeight;
+    if (settledHeight === undefined) return height;
+    return Math.max(height, settledHeight);
+  }
+
   #completeHeightTransition(continueSelectionExtension = true): void {
     const next = this.#pageLayout.transitionCompleted(
-      this.#options.page(),
+      this.#renderPage(),
       continueSelectionExtension,
     );
     this.#applyHeightUpdate(next);
@@ -346,11 +384,15 @@ export class ActiveEditorLayout {
     const completed = cancelled.settleToTarget ? this.#pageLayout.completeTransitions() : undefined;
     const pageHeight = completed?.height ?? currentPageHeight;
     if (completed === undefined) this.#pageLayout.cancelTransitions(pageHeight);
-    this.#options.renderer.setPage(this.#options.page(), pageHeight);
+    this.#options.renderer.setPage(this.#renderPage(), pageHeight);
     if (applyFrame && completed !== undefined) {
       this.#writeHeightFrame(pageHeight, zoom);
     }
     return pageHeight;
+  }
+
+  #renderPage(): PageV1 {
+    return this.#previewPage ?? this.#options.page();
   }
 
   #writeBlockSize(pageHeight: number | undefined, zoom: number): void {
@@ -366,14 +408,10 @@ export class ActiveEditorLayout {
     return { renderedHeight };
   }
 
-  #writeHeightFrame(
-    pageHeight: number,
-    zoom: number,
-    invalidation: "complete" | "coverage" | "clip" = "complete",
-  ): void {
+  #writeHeightFrame(pageHeight: number, zoom: number): void {
     const renderedHeight = pageHeight * zoom;
     this.#container.style.blockSize = `${String(renderedHeight)}px`;
-    this.#options.renderer.invalidateLayout(invalidation);
+    this.#options.renderer.invalidateLayout();
   }
 
   #resolvedZoom(fitZoom: number): number {

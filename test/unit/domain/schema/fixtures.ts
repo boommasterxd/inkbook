@@ -153,7 +153,6 @@ export function snapshot(elements: InkElementV1[] = []): InkSnapshotV1 {
       innerWidth: 2000,
       margin: 24.3,
       background: { type: "lines", spacing: 50 },
-      writingLineHeight: 100,
       activeBufferLines: 3,
       lockedBufferLines: 1,
     },

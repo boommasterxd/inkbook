@@ -26,12 +26,10 @@ import {
   type StrokeSelectionStyleSummary,
   type StyleChange,
 } from "../../../editor/tools/public";
-import {
-  createStructuralStyleControls,
-  type StyleChoiceOption,
-  type StyleControl,
-  type ToolbarStyleIconState,
-} from "../../../rendering/ui/index";
+import type { ToolbarStyleIconState } from "../../../rendering/ui/index";
+import type { ActiveShapeIconState } from "../../../rendering/ui/icon-ids";
+import type { StyleChoiceOption, StyleControl } from "../../menus/editor-menu-types";
+import { createStructuralStyleControls } from "../../menus/structural-style-controls";
 
 const COLOR_LABELS = [
   "Theme text color",
@@ -43,6 +41,7 @@ const COLOR_LABELS = [
   "Blue",
   "Violet",
   "Pink",
+  "Gray",
 ] as const;
 
 const COLOR_OPTIONS: readonly StyleChoiceOption[] = BUILT_IN_COLORS.map((color, index) => ({
@@ -61,7 +60,7 @@ const PEN_WIDTH_OPTIONS: readonly StyleChoiceOption[] = PEN_WIDTHS.map((width, i
 }));
 
 const OUTLINE_WIDTH_OPTIONS: readonly StyleChoiceOption[] = OUTLINE_WIDTHS.map((width, index) => ({
-  label: ["S", "M", "L", "XL"][index] ?? String(width),
+  label: ["XS", "S", "M", "L", "XL"][index] ?? String(width),
   value: String(width),
 }));
 
@@ -114,6 +113,14 @@ export function createActiveEditorStyleIcon(
     fillOpacity: summary.fill?.fillOpacity ?? 0,
     outlineColor: summary.style.outlineColor,
     outlineStyle: summary.style.outlineStyle,
+  };
+}
+
+export function createActiveShapeIcon(defaults: ToolDefaultsV1): ActiveShapeIconState {
+  return {
+    arrowStart: defaults.arrow.startNode,
+    arrowEnd: defaults.arrow.endNode,
+    coordinateDimension: defaults.coordinateSystem.dimension,
   };
 }
 

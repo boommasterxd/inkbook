@@ -27,12 +27,11 @@ export const CLOSED_SHAPE_TOOLS = [
 
 export const OUTLINE_ONLY_TOOLS = ["line", "arrow", "coordinate-system", "table"] as const;
 export const PEN_WIDTHS = [2, 4, 8, 14, 22] as const;
-export const OUTLINE_WIDTHS = [2, 4, 8, 12] as const;
+export const OUTLINE_WIDTHS = [1, 2, 4, 8, 12] as const;
 export const OUTLINE_STYLES = ["solid", "dashed", "dotted"] as const;
 export const ARROW_NODES = ["none", "arrow", "triangle", "diamond", "circle"] as const;
 export const BACKGROUND_TYPES = ["none", "lines", "dots", "squares"] as const;
-export const LINE_SPACINGS = [50, 100, 150, 200] as const;
-export const PATTERN_SPACINGS = [20, 40, 60, 80] as const;
+export const LINE_SPACINGS = [25, 33.333333333333336, 50, 100] as const;
 export const PEN_TAP_INSERTIONS = ["off", "handwriting"] as const;
 export const MOTION_PREFERENCES = ["system", "full", "reduced"] as const;
 export const REFRESH_RATE_PREFERENCES = ["auto", 60, 90, 120, 144, 240] as const;
@@ -89,14 +88,13 @@ export interface ToolDefaultsV1 {
   table: { columns: number };
 }
 
-interface PageDefaultsV1 {
+interface PageDefaultsV3 {
   backgroundType: BackgroundTypeV1;
   backgroundSpacing: {
     lines: (typeof LINE_SPACINGS)[number];
-    dots: (typeof PATTERN_SPACINGS)[number];
-    squares: (typeof PATTERN_SPACINGS)[number];
+    dots: (typeof LINE_SPACINGS)[number];
+    squares: (typeof LINE_SPACINGS)[number];
   };
-  writingLineHeight: number;
   activeBufferLines: number;
   lockedBufferLines: number;
 }
@@ -106,21 +104,13 @@ export type FilePlacementV1 =
   | { mode: "note-folder" }
   | { mode: "custom-vault-folder"; folder: string };
 
-export interface InkbookSettingsV1 {
-  version: 1;
-  startupTool: StartupToolV1;
-  toolDefaults: ToolDefaultsV1;
-  pageDefaults: PageDefaultsV1;
-  filePlacement: FilePlacementV1;
-}
-
 export type RefreshRatePreferenceV2 = (typeof REFRESH_RATE_PREFERENCES)[number];
 
-export interface InkbookSettingsV2 {
-  version: 2;
+export interface InkbookSettingsV3 {
+  version: 3;
   startupTool: StartupToolV1;
   toolDefaults: ToolDefaultsV1;
-  pageDefaults: PageDefaultsV1;
+  pageDefaults: PageDefaultsV3;
   filePlacement: FilePlacementV1;
   refreshRatePreference: RefreshRatePreferenceV2;
 }

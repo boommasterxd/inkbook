@@ -1,7 +1,10 @@
+import type { Keymap } from "obsidian";
+
 import { InkbookFeedbackManager, type InkbookFeedbackCode } from "../feedback";
 
 export interface WorkspaceFeedbackHost {
   readonly fallbackOwnerWindow: () => Window | undefined;
+  readonly keymap?: Pick<Keymap, "popScope" | "pushScope">;
   readonly manager: InkbookFeedbackManager;
   readonly view: () => HTMLElement | undefined;
 }

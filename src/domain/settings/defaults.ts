@@ -3,7 +3,7 @@ import {
   OUTLINE_ONLY_TOOLS,
   type ColorV1,
   type InkbookDeviceSettingsV1,
-  type InkbookSettingsV2,
+  type InkbookSettingsV3,
   type OutlineDefaultsV1,
   type ShapeDefaultsV1,
   type ToolDefaultsV1,
@@ -18,6 +18,7 @@ const CYAN_COLOR: ColorV1 = Object.freeze({ type: "rgba", value: "#06B6D4FF" });
 const BLUE_COLOR: ColorV1 = Object.freeze({ type: "rgba", value: "#3B82F6FF" });
 const VIOLET_COLOR: ColorV1 = Object.freeze({ type: "rgba", value: "#8B5CF6FF" });
 const PINK_COLOR: ColorV1 = Object.freeze({ type: "rgba", value: "#EC4899FF" });
+const GRAY_COLOR: ColorV1 = Object.freeze({ type: "rgba", value: "#6B7280FF" });
 
 export const BUILT_IN_COLORS = Object.freeze([
   THEME_TEXT_COLOR,
@@ -29,6 +30,7 @@ export const BUILT_IN_COLORS = Object.freeze([
   BLUE_COLOR,
   VIOLET_COLOR,
   PINK_COLOR,
+  GRAY_COLOR,
 ]);
 
 function outlineDefaults(): OutlineDefaultsV1 {
@@ -66,15 +68,14 @@ function toolDefaults(): ToolDefaultsV1 {
   };
 }
 
-export function createBuiltInSettings(): InkbookSettingsV2 {
+export function createBuiltInSettings(): InkbookSettingsV3 {
   return {
-    version: 2,
+    version: 3,
     startupTool: "draw",
     toolDefaults: toolDefaults(),
     pageDefaults: {
       backgroundType: "squares",
-      backgroundSpacing: { lines: 100, dots: 40, squares: 40 },
-      writingLineHeight: 100,
+      backgroundSpacing: { lines: 25, dots: 25, squares: 25 },
       activeBufferLines: 3,
       lockedBufferLines: 1,
     },

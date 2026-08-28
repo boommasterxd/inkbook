@@ -47,21 +47,31 @@ function* verifyStaticPathIntegritySteps(
   ];
 
   for (const [range, fragments] of groups) {
-    if (!validRange(range, svg.length)) return false;
-    let cursor = range.start;
-    let fragmentsSinceStep = 0;
-    for (const fragment of fragments) {
-      if (cursor + fragment.length > range.end || !svg.startsWith(fragment, cursor)) return false;
-      cursor += fragment.length;
-      fragmentsSinceStep += 1;
-      if (fragmentsSinceStep === fragmentsPerStep) {
-        fragmentsSinceStep = 0;
-        yield;
-      }
-    }
-    if (cursor !== range.end) return false;
-    if (fragmentsSinceStep > 0) yield;
+    if (!(yield* verifyGroupFragments(svg, range, fragments, fragmentsPerStep))) return false;
   }
+  return true;
+}
+
+function* verifyGroupFragments(
+  svg: string,
+  range: SafeSvgGroupRange,
+  fragments: Iterable<string>,
+  fragmentsPerStep: number,
+): Generator<void, boolean> {
+  if (!validRange(range, svg.length)) return false;
+  let cursor = range.start;
+  let fragmentsSinceStep = 0;
+  for (const fragment of fragments) {
+    if (cursor + fragment.length > range.end || !svg.startsWith(fragment, cursor)) return false;
+    cursor += fragment.length;
+    fragmentsSinceStep += 1;
+    if (fragmentsSinceStep === fragmentsPerStep) {
+      fragmentsSinceStep = 0;
+      yield;
+    }
+  }
+  if (cursor !== range.end) return false;
+  if (fragmentsSinceStep > 0) yield;
   return true;
 }
 

@@ -9,7 +9,7 @@ This SVG file contains two things:
 
 The note references this file through the explicit non-image `!inkbook` Markdown contract. Inkbook displays the saved SVG through its own locked preview, while opening the SVG file in an external viewer still produces the complete portable static graphic. When the embed is unlocked, the plugin also loads the embedded ink data and opens the interactive editor.
 
-The patterned writing area has a fixed width of 2,000 page units. A writable but unpatterned margin of 24.3 page units surrounds it on every side, so the total SVG width is exactly 2,048.6 page units. Page height is derived from content bounds, the selected background, and the active or locked trailing space. With no elements, both states contain at least 2.5 writing lines rounded up to the next complete background step, followed by the bottom margin; this aligned minimum prevents an empty embed from collapsing into a narrow strip. With content, the locked state ends after the occupied pattern row plus exactly one additional complete pattern row.
+The patterned writing area has a fixed width of 2,000 page units. A writable margin of 24.3 page units surrounds it on every side, so the total SVG width is exactly 2,048.6 page units. Active page height derives from content bounds, the fixed 100-unit writing row, and the configured active trailing row count. With no elements, both states contain at least 2.5 writing rows rounded up to the next complete 100-unit row, followed by the bottom margin. With content, a patterned locked page ends after the pattern row containing the lowest annotation plus exactly one additional pattern row. A locked page with no visible pattern uses one additional 100-unit writing row.
 
 ## Related Documentation
 
