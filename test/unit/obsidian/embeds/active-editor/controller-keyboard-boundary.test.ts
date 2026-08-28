@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createBuiltInDeviceSettings,
@@ -17,6 +17,13 @@ import type { MenuItemPort, MenuPort, MenuPosition } from "../../../../../src/ob
 import type { BrowserScrollElement } from "../../../../../src/obsidian/scrolling/index";
 import { INKBOOK_CLIPBOARD_WEB_MIME } from "../../../../../src/persistence/clipboard/public";
 import type { SvgSceneRenderer } from "../../../../../src/rendering/scene/index";
+import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
+import { installNativeMenuMeasurementStyles } from "../../../../adapters/obsidian/editor-toolbar-menu";
+
+beforeEach(() => {
+  installObsidianDomHelpers();
+  installNativeMenuMeasurementStyles();
+});
 
 describe("active editor keyboard DOM boundary", () => {
   it("consumes hover zoom from the owning document without canvas focus", () => {
@@ -84,8 +91,10 @@ describe("active editor keyboard DOM boundary", () => {
 
   it("consumes Escape only while it closes the highest-priority active state", () => {
     const harness = createHarness();
-    harness.controller.handleToolbarAction("background");
-    expect(harness.controller.chromeProps().toolbarState.openFlyout).toBe("background");
+    const trigger = createButton();
+    document.body.append(trigger);
+    harness.controller.handleToolbarAction("overflow", trigger);
+    expect(harness.controller.chromeProps().toolbarState.openFlyout).toBe("overflow");
 
     expect(harness.key("Escape").defaultPrevented).toBe(true);
     expect(harness.controller.chromeProps().toolbarState.openFlyout).toBeNull();
@@ -120,7 +129,6 @@ describe("active editor chrome callback boundary", () => {
     const first = harness.controller.chromeProps();
     const second = harness.controller.chromeProps();
 
-    expect(second.callbacks).toBe(first.callbacks);
     expect(second.onToolbarAction).toBe(first.onToolbarAction);
     harness.dispose();
   });
@@ -167,13 +175,42 @@ describe("active editor native paste DOM boundary", () => {
     harness.dispose();
   });
 
-  it("opens the controlled overflow flyout without invoking a native menu", () => {
+  it("opens the native overflow menu below its toolbar trigger", () => {
     const harness = createHarness();
+    const trigger = createButton();
+    document.body.append(trigger);
+    trigger.getBoundingClientRect = () =>
+      ({ bottom: 144, height: 44, left: 320, right: 364, top: 100, width: 44 }) as DOMRect;
 
-    harness.controller.handleToolbarAction("overflow");
+    harness.controller.handleToolbarAction("overflow", trigger);
     expect(harness.controller.chromeProps().toolbarState.openFlyout).toBe("overflow");
-    expect(harness.menu.positions).toHaveLength(0);
+    expect(harness.menu.positions).toEqual([
+      {
+        ownerDocument: document,
+        position: { overlap: true, width: 44, x: 270, y: 146 },
+      },
+    ]);
+    harness.menu.close();
+    expect(harness.controller.chromeProps().toolbarState.openFlyout).toBeNull();
+    expect(document.activeElement).toBe(trigger);
 
+    harness.dispose();
+  });
+
+  it("removes an owned Style panel before opening a native toolbar menu", () => {
+    const harness = createHarness();
+    const styleTrigger = createButton();
+    const overflowTrigger = createButton();
+    document.body.append(styleTrigger, overflowTrigger);
+
+    harness.controller.handleToolbarAction("style", styleTrigger);
+    expect(document.querySelector('.inkbook-adaptive-panel[data-kind="style"]')).not.toBeNull();
+
+    harness.controller.handleToolbarAction("overflow", overflowTrigger);
+
+    expect(document.querySelector(".inkbook-adaptive-panel")).toBeNull();
+    expect(harness.menu.positions).toHaveLength(1);
+    expect(harness.controller.chromeProps().toolbarState.openFlyout).toBe("overflow");
     harness.dispose();
   });
 
@@ -217,7 +254,7 @@ function createHarness() {
   const model = documentModel(store);
   const controller = new ActiveEditorController({
     applyZoomLayout: vi.fn(),
-    backgroundSpacing: () => ({ dots: 40, lines: 100, squares: 40 }),
+    backgroundSpacing: () => ({ dots: 25, lines: 25, squares: 25 }),
     container,
     defaults: createBuiltInSettings().toolDefaults,
     deviceSettings: createBuiltInDeviceSettings(),
@@ -230,6 +267,8 @@ function createHarness() {
     onLock: vi.fn(),
     onFeedback: vi.fn(),
     onPageChanged: vi.fn(),
+    onPagePreviewFinish: vi.fn(),
+    onPagePreview: vi.fn(),
     onStateChanged: vi.fn(),
     renderIcon: vi.fn(),
     renderer: renderer as unknown as SvgSceneRenderer,
@@ -297,6 +336,10 @@ function createDiv(): HTMLDivElement {
   return element;
 }
 
+function createButton(): HTMLButtonElement {
+  return document.createElementNS("http://www.w3.org/1999/xhtml", "button") as HTMLButtonElement;
+}
+
 function documentModel(store: ElementStore): EditableDocumentModel {
   return {
     mutationAvailability: "available",
@@ -321,7 +364,6 @@ function documentModel(store: ElementStore): EditableDocumentModel {
       innerWidth: 2_000,
       lockedBufferLines: 1,
       margin: 24.3,
-      writingLineHeight: 100,
     },
     planClipboardPaste: vi.fn(async () => null),
     prepareElementMutation: vi.fn(async () => ({ status: "cancelled" as const, token: null })),
@@ -336,6 +378,7 @@ function documentModel(store: ElementStore): EditableDocumentModel {
 
 function rendererPort(inputSurface: HTMLDivElement) {
   return {
+    clearLiveStroke: vi.fn(),
     clearElementPreviews: vi.fn(),
     clearPreviewTransforms: vi.fn(),
     flushCameraAndOverlayFrame: vi.fn<() => void>(),
@@ -349,6 +392,8 @@ function rendererPort(inputSurface: HTMLDivElement) {
     setSelectionOverlayPath: vi.fn<(path: string | null) => void>(),
     setSnapMarkerPath: vi.fn(),
     suppressMotionForNextDelta: vi.fn(),
+    revertLiveStroke: vi.fn(),
+    updateLiveStroke: vi.fn(),
   };
 }
 

@@ -1,4 +1,4 @@
-import { centeredGuideAxis } from "../../domain/geometry/public";
+import { backgroundGuideLayout } from "../../domain/geometry/public";
 import type { BackgroundV1, PageV1 } from "../../domain/schema/public";
 import { PAGE_MARGIN, PAGE_WIDTH } from "../../domain/schema/public";
 import { serializeSvgNumber } from "../documents/svg-number";
@@ -64,8 +64,8 @@ export function serializeBackgroundPaths(background: BackgroundV1, lockedHeight:
 
   const guidePaths =
     background.type === "dots"
-      ? dotPaths(background.spacing, lockedHeight)
-      : gridPaths(background.type, background.spacing, lockedHeight);
+      ? dotPaths(background, lockedHeight)
+      : gridPaths(background, lockedHeight);
   const attributes = guideAttributes(background.type);
   return [page, ...guidePaths.map((path) => serializePath(path, attributes))];
 }
@@ -91,9 +91,9 @@ function backgroundCommandStatistics(
   background: Exclude<BackgroundV1, { type: "none" }>,
   lockedHeight: number,
 ): { readonly bytes: number; readonly subpaths: number } {
-  const extent = guideExtent(background.type, background.spacing, lockedHeight);
-  const xs = axisStatistics(extent.startX, extent.endX, background.spacing);
-  const ys = axisStatistics(extent.startY, extent.endY, background.spacing);
+  const extent = guideExtent(background, lockedHeight);
+  const xs = axisStatistics(extent.startX, extent.endX, extent.xStep, extent.xCount);
+  const ys = axisStatistics(extent.startY, extent.endY, extent.yStep, extent.yCount);
   if (background.type === "dots") {
     return {
       bytes: ys.count * (4 * xs.count + 2 * xs.serializedBytes) + 2 * xs.count * ys.serializedBytes,
@@ -103,7 +103,7 @@ function backgroundCommandStatistics(
   const fixedHorizontalBytes = number(extent.startX).length + number(extent.endX).length + 4;
   const horizontalBytes = ys.count * fixedHorizontalBytes + 2 * ys.serializedBytes;
   if (background.type === "lines") return { bytes: horizontalBytes, subpaths: ys.count };
-  const fixedVerticalBytes = number(extent.startY).length + number(extent.endY).length + 4;
+  const fixedVerticalBytes = number(extent.coverageStartY).length + number(extent.endY).length + 4;
   return {
     bytes: horizontalBytes + xs.count * fixedVerticalBytes + 2 * xs.serializedBytes,
     subpaths: ys.count + xs.count,
@@ -114,72 +114,94 @@ function axisStatistics(
   start: number,
   end: number,
   spacing: number,
+  count: number,
 ): { readonly count: number; readonly serializedBytes: number } {
-  let count = 0;
   let serializedBytes = 0;
-  for (let value = start; value <= end; value += spacing) {
-    count += 1;
+  for (let index = 0; index < count; index += 1) {
+    const value = axisPoint(start, end, spacing, index, count);
     serializedBytes += number(value).length;
   }
   return { count, serializedBytes };
 }
 
-function gridPaths(type: "lines" | "squares", spacing: number, lockedHeight: number): string[] {
+function gridPaths(
+  background: Extract<BackgroundV1, { type: "lines" | "squares" }>,
+  lockedHeight: number,
+): string[] {
   const paths = new GuidePathChunks();
-  const extent = guideExtent(type, spacing, lockedHeight);
-  for (let y = extent.startY; y <= extent.endY; y += spacing) {
+  const { type } = background;
+  const extent = guideExtent(background, lockedHeight);
+  for (let index = 0; index < extent.yCount; index += 1) {
+    const y = axisPoint(extent.startY, extent.endY, extent.yStep, index, extent.yCount);
     paths.push(lineSubpath(extent.startX, y, extent.endX, y));
   }
   if (type === "squares") {
-    for (let x = extent.startX; x <= extent.endX; x += spacing) {
-      paths.push(lineSubpath(x, extent.startY, x, extent.endY));
+    for (let index = 0; index < extent.xCount; index += 1) {
+      const x = axisPoint(extent.startX, extent.endX, extent.xStep, index, extent.xCount);
+      paths.push(lineSubpath(x, extent.coverageStartY, x, extent.endY));
     }
   }
   return paths.finish();
 }
 
-function dotPaths(spacing: number, lockedHeight: number): string[] {
+function dotPaths(
+  background: Extract<BackgroundV1, { type: "dots" }>,
+  lockedHeight: number,
+): string[] {
   const paths = new GuidePathChunks();
-  const extent = guideExtent("dots", spacing, lockedHeight);
-  for (let y = extent.startY; y <= extent.endY; y += spacing) {
-    for (let x = extent.startX; x <= extent.endX; x += spacing) {
+  const extent = guideExtent(background, lockedHeight);
+  for (let yIndex = 0; yIndex < extent.yCount; yIndex += 1) {
+    const y = axisPoint(extent.startY, extent.endY, extent.yStep, yIndex, extent.yCount);
+    for (let xIndex = 0; xIndex < extent.xCount; xIndex += 1) {
+      const x = axisPoint(extent.startX, extent.endX, extent.xStep, xIndex, extent.xCount);
       paths.push(lineSubpath(x, y, x, y));
     }
   }
   return paths.finish();
 }
 
+function axisPoint(
+  start: number,
+  end: number,
+  spacing: number,
+  index: number,
+  count: number,
+): number {
+  return index === count - 1 ? end : start + index * spacing;
+}
+
 interface GuideExtent {
+  readonly coverageStartY: number;
   readonly endX: number;
   readonly endY: number;
   readonly startX: number;
   readonly startY: number;
+  readonly xCount: number;
+  readonly xStep: number;
+  readonly yCount: number;
+  readonly yStep: number;
 }
 
 function guideExtent(
-  type: Exclude<BackgroundV1["type"], "none">,
-  spacing: number,
+  background: Exclude<BackgroundV1, { type: "none" }>,
   lockedHeight: number,
 ): GuideExtent {
-  const vertical = centeredGuideAxis(
-    PAGE_MARGIN,
-    Math.max(0, lockedHeight - 2 * PAGE_MARGIN),
-    spacing,
-  );
-  if (type === "lines") {
-    return {
-      endX: PAGE_WIDTH - PAGE_MARGIN,
-      endY: vertical.end,
-      startX: PAGE_MARGIN,
-      startY: vertical.start,
-    };
-  }
-  const horizontal = centeredGuideAxis(PAGE_MARGIN, PAGE_WIDTH - 2 * PAGE_MARGIN, spacing);
+  const layout = backgroundGuideLayout({
+    background,
+    innerWidth: PAGE_WIDTH - 2 * PAGE_MARGIN,
+    margin: PAGE_MARGIN,
+    pageHeight: lockedHeight,
+  });
   return {
-    endX: horizontal.end,
-    endY: vertical.end,
-    startX: horizontal.start,
-    startY: vertical.start,
+    coverageStartY: layout.top,
+    endX: layout.right,
+    endY: layout.bottom,
+    startX: layout.left,
+    startY: layout.top,
+    xCount: layout.horizontalPointCount,
+    xStep: layout.horizontalSpacing,
+    yCount: layout.verticalPointCount,
+    yStep: layout.verticalSpacing,
   };
 }
 

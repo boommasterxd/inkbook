@@ -105,6 +105,9 @@ export function resolvePresenceButtons(
 ): readonly PresentToolbarButton[] {
   const visibleActions = new Set(visibleButtons.map((button) => button.action));
   const previous = new Map(previousButtons.map((button) => [button.definition.action, button]));
+  const exitingCount = definitions.filter(
+    (definition) => !visibleActions.has(definition.action) && previous.has(definition.action),
+  ).length;
   const result: PresentToolbarButton[] = [];
   let enteringOrder = 0;
   let exitingOrder = 0;
@@ -120,7 +123,12 @@ export function resolvePresenceButtons(
       continue;
     }
     if (previousButton !== undefined) {
-      result.push({ definition, presence: "exiting", presenceOrder: exitingOrder++ });
+      result.push({
+        definition,
+        presence: "exiting",
+        presenceOrder: exitingCount - exitingOrder - 1,
+      });
+      exitingOrder += 1;
     }
   }
   return result;

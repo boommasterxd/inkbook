@@ -2,7 +2,9 @@
 @import url("./feedback.css");
 @import url("./editor-toolbar.css");
 @import url("./editor-toolbar-motion.css");
-@import url("./editor-flyouts.css");
+@import url("./adaptive-panel.css");
+@import url("./editor-menus.css");
+@import url("./background-menu.css");
 
 .inkbook-root {
   --inkbook-page-surface: #f6f6f6;
@@ -101,8 +103,8 @@
   pointer-events: none;
 }
 
-.inkbook-root.inkbook-active-transitioning .inkbook-preview-handoff,
-.inkbook-root.inkbook-active-preparing .inkbook-preview-handoff {
+.inkbook-root.inkbook-embed-root.inkbook-active-transitioning .inkbook-preview-handoff,
+.inkbook-root.inkbook-embed-root.inkbook-active-preparing .inkbook-preview-handoff {
   inset-block-start: 0;
   inset-inline: 0;
   position: absolute;
@@ -149,7 +151,7 @@
   position: absolute;
 }
 
-.inkbook-root .inkbook-locked-preview {
+.inkbook-root.inkbook-embed-root .inkbook-locked-preview {
   appearance: none;
   background: transparent;
   block-size: auto;
@@ -234,6 +236,32 @@
   outline-offset: -2px;
 }
 
+.inkbook-root .inkbook-locked-preview-android {
+  -webkit-tap-highlight-color: transparent;
+  min-block-size: 0;
+  min-inline-size: 0;
+  touch-action: manipulation;
+}
+
+.inkbook-root .inkbook-locked-preview-android:hover,
+.inkbook-root .inkbook-locked-preview-android:active,
+.inkbook-root .inkbook-locked-preview-android:focus {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  filter: none;
+  transform: none;
+}
+
+.inkbook-root .inkbook-locked-preview-android:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.inkbook-root .inkbook-locked-preview-android::before,
+.inkbook-root .inkbook-locked-preview-android::after {
+  content: none;
+}
+
 .inkbook-root .inkbook-background-container.inkbook-page-height-transitioning > .inkbook-scene {
   block-size: calc(var(--inkbook-page-height-envelope-block-size) - 2px);
   inset-block: 0 auto;
@@ -271,6 +299,15 @@
   pointer-events: auto;
   position: absolute;
   touch-action: pan-y;
+}
+
+.inkbook-root.inkbook-active-preparing .inkbook-editor-chrome-host,
+.inkbook-root.inkbook-active-preparing .inkbook-canvas-input,
+.inkbook-root.inkbook-active-preparing .inkbook-scene-foreground,
+.inkbook-root.inkbook-active-transitioning .inkbook-editor-chrome-host,
+.inkbook-root.inkbook-active-transitioning .inkbook-canvas-input,
+.inkbook-root.inkbook-active-transitioning .inkbook-scene-foreground {
+  visibility: hidden;
 }
 
 .inkbook-root .inkbook-scene-overlays path {

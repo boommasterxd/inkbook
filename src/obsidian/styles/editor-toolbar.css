@@ -1,5 +1,5 @@
 .inkbook-root .inkbook-toolbar-composition {
-  --inkbook-toolbar-surface: var(--inkbook-page-surface);
+  --inkbook-toolbar-surface: var(--menu-background);
 
   background: transparent;
   block-size: 50px;
@@ -170,7 +170,7 @@
 .inkbook-root .inkbook-toolbar,
 .inkbook-root .inkbook-toolbar-context-button {
   background: var(--inkbook-toolbar-surface);
-  border: 1px solid var(--background-modifier-border);
+  border: 1px solid var(--menu-border-color);
   border-radius: 999px;
   block-size: 48px;
   box-sizing: border-box;

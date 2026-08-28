@@ -19,7 +19,6 @@ const PAGE: PageV1 = {
   innerWidth: 2_000,
   lockedBufferLines: 1,
   margin: 24.3,
-  writingLineHeight: 100,
 };
 
 it("remounts a batch after retaining more than 2,048 paths without geometry rebuilds", async ({
@@ -67,7 +66,7 @@ it("counts exact paint writes and reuses background geometry across repaint work
   const store = new FakeSceneStore();
   const initial = fakeRectangleRecord("painted", 0, 10);
   store.records.set(initial.id, initial);
-  const linedPage: PageV1 = { ...PAGE, background: { spacing: 20, type: "squares" } };
+  const linedPage: PageV1 = { ...PAGE, background: { spacing: 25, type: "squares" } };
   const renderer = new SvgSceneRenderer({
     container: asElement(new FakeNode(document, "div")),
     layout: { readViewport: () => ({ height: 100, left: 0, top: 0, width: 100 }) },
@@ -122,6 +121,44 @@ it("counts exact paint writes and reuses background geometry across repaint work
   });
   await annotate(
     "renderer writes: changedPaint=1, unchangedPaint=0, backgroundCacheHits=1, themeBuilds=0",
+    "performance",
+  );
+});
+
+it("builds a height-invariant spacing preview once and reuses its final geometry", async ({
+  annotate,
+}) => {
+  const scheduler = new FakeScheduler();
+  const renderer = new SvgSceneRenderer({
+    container: asElement(new FakeNode(new FakeDocument(), "div")),
+    layout: { readViewport: () => ({ height: 900, left: 0, top: 0, width: 1_000 }) },
+    page: { ...PAGE, background: { spacing: 25, type: "squares" } },
+    scheduler,
+    store: new FakeSceneStore(),
+  });
+  scheduler.runAll();
+
+  const medium: PageV1 = { ...PAGE, background: { spacing: 50, type: "squares" } };
+  renderer.resetInstrumentation();
+  renderer.setPage(medium, 2_688.6);
+  scheduler.runAll();
+  expect(renderer.instrumentation()).toMatchObject({
+    backgroundBuilds: 1,
+    contentAttributeWrites: 0,
+    contentGeometryWrites: 0,
+  });
+
+  renderer.resetInstrumentation();
+  renderer.setPage({ ...medium }, 2_688.6);
+  scheduler.runAll();
+  expect(renderer.instrumentation()).toMatchObject({
+    backgroundBuilds: 0,
+    backgroundCacheHits: 1,
+    contentAttributeWrites: 0,
+    contentGeometryWrites: 0,
+  });
+  await annotate(
+    "height-invariant spacing preview=1 background build, final commit=0 builds, content writes=0",
     "performance",
   );
 });

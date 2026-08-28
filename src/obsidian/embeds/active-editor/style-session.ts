@@ -2,12 +2,15 @@ import type { ToolDefaultsV1 } from "../../../domain/settings/types";
 import type { InkElementV1 } from "../../../domain/schema/public";
 import type { ElementStore } from "../../../domain/store/public";
 import type { EditorTool } from "../../../editor/input/index";
-import type { StyleControl, ToolbarStyleIconState } from "../../../rendering/ui/index";
+import type { ToolbarStyleIconState } from "../../../rendering/ui/index";
+import type { ActiveShapeIconState } from "../../../rendering/ui/icon-ids";
+import type { StyleControl } from "../../menus/editor-menu-types";
 
 import { selectedElements } from "./controller-elements";
 import {
   createActiveEditorStyleControls,
   createActiveEditorStyleIcon,
+  createActiveShapeIcon,
   createSelectionStyleReplacement,
   updateSessionToolDefaults,
 } from "./controller-styles";
@@ -47,6 +50,7 @@ export class ActiveEditorStyleSession {
   public presentation(tool: EditorTool): {
     readonly controls: readonly StyleControl[];
     readonly icon: ToolbarStyleIconState;
+    readonly shapeIcon: ActiveShapeIconState;
   } {
     return {
       controls: createActiveEditorStyleControls({
@@ -55,6 +59,7 @@ export class ActiveEditorStyleSession {
         tool,
       }),
       icon: createActiveEditorStyleIcon(this.#defaults, tool),
+      shapeIcon: createActiveShapeIcon(this.#defaults),
     };
   }
 

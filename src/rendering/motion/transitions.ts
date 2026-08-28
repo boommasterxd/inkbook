@@ -8,6 +8,7 @@
 
 export const MOTION_TOKENS = Object.freeze({
   fast: 120,
+  menu: 220,
   toolbar: 300,
   standard: 180,
   erase: 160,
@@ -21,14 +22,13 @@ export const EASING_TOKENS = Object.freeze({
 } as const);
 
 export const TRANSITION_DURATIONS = Object.freeze({
+  adaptiveMenu: MOTION_TOKENS.menu,
   toolbarEnterExit: MOTION_TOKENS.toolbar,
   toolActiveState: MOTION_TOKENS.fast,
-  flyoutOpenClose: MOTION_TOKENS.standard,
   selectionHandlesEnterExit: MOTION_TOKENS.fast,
   eraserPendingRemoval: MOTION_TOKENS.erase,
   committedEntrance: MOTION_TOKENS.fast,
   commandRemovalExit: MOTION_TOKENS.fast,
-  backgroundChange: MOTION_TOKENS.standard,
   styleChange: MOTION_TOKENS.fast,
   lockedToActiveHeight: MOTION_TOKENS.layout,
   activeToLockedHeight: MOTION_TOKENS.layout,

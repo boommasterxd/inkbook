@@ -43,12 +43,11 @@ describe("settings scope and session behavior", () => {
   it("copies only the selected background spacing into a new page", () => {
     const settings = createBuiltInSettings();
     settings.pageDefaults.backgroundType = "lines";
-    settings.pageDefaults.backgroundSpacing.lines = 150;
-    settings.pageDefaults.backgroundSpacing.dots = 80;
+    settings.pageDefaults.backgroundSpacing.lines = 50;
+    settings.pageDefaults.backgroundSpacing.dots = 100;
 
     expect(createPageSettings(settings)).toEqual({
-      background: { type: "lines", spacing: 150 },
-      writingLineHeight: 100,
+      background: { type: "lines", spacing: 50 },
       activeBufferLines: 3,
       lockedBufferLines: 1,
     });

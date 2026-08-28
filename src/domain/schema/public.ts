@@ -25,6 +25,7 @@ export type {
   StrokeStyleV1,
   TableElementV1,
 } from "./types";
+export { CANONICAL_BACKGROUND_SPACINGS } from "./background";
 export {
   canonicalizeGeometryNumber,
   canonicalizeRotation,
@@ -54,6 +55,7 @@ export {
   validateInkConnectionRelationsV1,
   validateInkPageV1,
   validateInkSnapshotV1,
+  validateRuntimeInkSnapshotV1,
 } from "./snapshot-validation";
 export type {
   ElementValidationDerivation,

@@ -8,9 +8,14 @@ import type {
   ToolbarState,
   ToolId,
 } from "./toolbar-types";
-import type { ShapeId } from "./flyout-types";
+import type { ShapeId } from "./toolbar-types";
 import { nextToolbarIndex, resolveToolbarFocusRecovery } from "./toolbar-focus";
-import { SHAPE_ICON_IDS, STRAIGHT_HIGHLIGHTER_ICON_ID } from "./icon-ids";
+import {
+  activeShapeIconId,
+  SHAPE_ICON_IDS,
+  STRAIGHT_HIGHLIGHTER_ICON_ID,
+  type ActiveShapeIconState,
+} from "./icon-ids";
 import { ToolbarStyleIcon, type ToolbarStyleIconState } from "./style-icon";
 import { type ToolbarButtonPresence, useToolbarButtonPresence } from "./toolbar-presence";
 
@@ -61,7 +66,7 @@ interface IconButtonProps {
   readonly definition: ToolbarButtonDefinition;
   readonly disabled: boolean;
   readonly expanded: boolean | undefined;
-  readonly onAction: (action: ToolbarAction) => void;
+  readonly onAction: (action: ToolbarAction, trigger: HTMLButtonElement) => void;
   readonly onPresenceComplete: (action: ToolbarAction) => void;
   readonly presence: ToolbarButtonPresence;
   readonly presenceOrder: number;
@@ -85,9 +90,8 @@ function IconButton(props: IconButtonProps) {
 
   return (
     <button
-      aria-controls={flyout === null ? undefined : `inkbook-${flyout}-flyout`}
       aria-expanded={props.expanded}
-      aria-haspopup={flyout === null ? undefined : flyout === "overflow" ? "menu" : "dialog"}
+      aria-haspopup={flyout === null ? undefined : popupRoleForAction(props.definition.action)}
       aria-label={props.definition.label}
       aria-pressed={props.pressed}
       aria-hidden={props.presence === "exiting" ? "true" : undefined}
@@ -102,7 +106,7 @@ function IconButton(props: IconButtonProps) {
           props.onPresenceComplete(props.definition.action);
         }
       }}
-      onClick={() => props.onAction(props.definition.action)}
+      onClick={(event) => props.onAction(props.definition.action, event.currentTarget)}
       ref={(element) => props.registerButton?.(props.definition.action, element)}
       tabIndex={props.tabIndex}
       title={props.definition.label}
@@ -151,6 +155,10 @@ function flyoutForAction(action: ToolbarAction): FlyoutId | null {
     : null;
 }
 
+function popupRoleForAction(action: ToolbarAction): "dialog" | "menu" {
+  return action === "background" || action === "style" ? "dialog" : "menu";
+}
+
 function isToolId(action: ToolbarAction): action is ToolId {
   return (
     action === "select" ||
@@ -169,7 +177,7 @@ interface ToolbarGroupProps {
   readonly className: string;
   readonly fallbackFocus?: (() => void) | undefined;
   readonly label: string;
-  readonly onAction: (action: ToolbarAction) => void;
+  readonly onAction: (action: ToolbarAction, trigger: HTMLButtonElement) => void;
   readonly registerButton?: IconButtonProps["registerButton"] | undefined;
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
   readonly state: ToolbarState;
@@ -330,10 +338,11 @@ export interface InkbookToolbarProps {
   readonly compositionRef?: Ref<HTMLDivElement> | undefined;
   readonly layout: "wide" | "scrollable";
   readonly leftHanded?: boolean | undefined;
-  readonly onAction: (action: ToolbarAction) => void;
+  readonly onAction: (action: ToolbarAction, trigger: HTMLButtonElement) => void;
   readonly registerButton?: IconButtonProps["registerButton"] | undefined;
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
   readonly selectedShape: ShapeId;
+  readonly shapeIcon: ActiveShapeIconState;
   readonly state: ToolbarState;
   readonly styleIcon: ToolbarStyleIconState;
   readonly toolbarRef?: Ref<HTMLDivElement> | undefined;
@@ -365,7 +374,7 @@ export function InkbookToolbar(props: InkbookToolbarProps) {
         <div className={className} ref={props.toolbarRef}>
           <ToolbarGroup
             activeToolIndicator
-            buttons={primaryButtonsForShape(props.selectedShape)}
+            buttons={primaryButtonsForShape(props.selectedShape, props.shapeIcon)}
             className="inkbook-toolbar-track"
             label="Tools and actions"
             onAction={props.onAction}
@@ -396,12 +405,19 @@ export function InkbookToolbar(props: InkbookToolbarProps) {
   );
 }
 
-function primaryButtonsForShape(shape: ShapeId): readonly ToolbarButtonDefinition[] {
+function primaryButtonsForShape(
+  shape: ShapeId,
+  iconState: ActiveShapeIconState,
+): readonly ToolbarButtonDefinition[] {
   return [
     ...LEFT_BUTTONS,
     ...TOOL_BUTTONS.map((button) =>
       button.action === "shape"
-        ? { ...button, icon: SHAPE_ICON_IDS[shape], label: `Shape: ${shapeLabel(shape)}` }
+        ? {
+            ...button,
+            icon: activeShapeIconId(shape, iconState),
+            label: `Shape: ${shapeLabel(shape)}`,
+          }
         : button,
     ),
     ...RIGHT_BUTTONS,

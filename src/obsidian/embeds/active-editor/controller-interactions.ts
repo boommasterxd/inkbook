@@ -10,6 +10,9 @@ import { ActiveEditorMenuController } from "./controller-menu";
 import { ActiveEditorNavigation, type ActiveEditorNavigationOptions } from "./navigation";
 import { PreparedElementHistory } from "./prepared-element-history";
 import { visibleSelectionCenter } from "./controller-elements";
+import type { ActiveEditorChromeState } from "./controller-chrome-state";
+import type { ActivePointerCaptureOwner } from "./pointer-capture";
+import type { GestureController } from "../../../editor/gestures/public";
 
 export interface ActiveEditorInteractionsOptions {
   readonly controller: ActiveEditorControllerOptions;
@@ -75,6 +78,7 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
       actions,
       factory: controller.menuFactory,
       inputSurface: controller.renderer.inputSurface,
+      ...(controller.keymap === undefined ? {} : { keymap: controller.keymap }),
       ownerDocument: controller.container.ownerDocument,
       selectionSize: () => options.selection().size,
       storeSize: () => controller.model.store.size,
@@ -110,4 +114,32 @@ export function createControllerNavigation(options: {
     scrollOwner: options.scrollOwner,
     setInput: options.setInput,
   });
+}
+
+export function resetActiveEditorForDisable(
+  [chrome, menus, handles, captures, gestures]: readonly [
+    ActiveEditorChromeState,
+    ActiveEditorMenuController,
+    ActiveEditorHandleInteraction,
+    ActivePointerCaptureOwner,
+    GestureController,
+  ],
+  [model, navigation, penGuard]: readonly [
+    { setGestureActive(active: boolean): void },
+    ActiveEditorNavigation,
+    { stop(): void },
+  ],
+  [dispatchReset, releasePointer]: readonly [() => void, (pointerId: number) => void],
+): void {
+  if (chrome.closeFlyout()) menus.closeToolbar();
+  dispatchReset();
+  const handlePointerId = handles.activePointerId;
+  if (handlePointerId !== undefined && handles.cancel(handlePointerId)) {
+    releasePointer(handlePointerId);
+    navigation.finish();
+  }
+  captures.releaseAll();
+  gestures.cancelActivePreview();
+  model.setGestureActive(false);
+  penGuard.stop();
 }

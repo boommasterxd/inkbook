@@ -167,7 +167,7 @@ describe("paste record planning", () => {
 });
 
 describe("paste document limits", () => {
-  it("rejects placement whose background-aligned active height exceeds the document limit", () => {
+  it("rejects placement whose writing-row-aligned active height exceeds the document limit", () => {
     const ids = [NEW_RECTANGLE_ID, NEW_ARROW_ID];
     const result = planPaste({
       decoded: decodedFixture(),

@@ -1,7 +1,4 @@
-import {
-  resolveVisibleOwnerBoundary,
-  type FlyoutBoundary,
-} from "../../rendering/ui/flyout-position";
+import { resolveVisibleOwnerBoundary, type VisibleOwnerBoundary } from "./visible-owner-boundary";
 
 interface FeedbackRect {
   readonly bottom: number;
@@ -25,7 +22,7 @@ export type PresentationFeedbackVerticalAnchor = "bottom" | "center";
 
 export function resolvePresentationFeedbackPosition(
   presentation: FeedbackRect,
-  boundary: FlyoutBoundary,
+  boundary: VisibleOwnerBoundary,
 ): PresentationFeedbackPosition {
   const left = Math.max(presentation.left, boundary.left);
   const right = Math.min(presentation.right, boundary.right);
@@ -85,7 +82,7 @@ function applyPosition(
   surface: HTMLElement,
   position: PresentationFeedbackPosition,
   presentation: FeedbackRect,
-  boundary: FlyoutBoundary,
+  boundary: VisibleOwnerBoundary,
   verticalAnchor: PresentationFeedbackVerticalAnchor,
 ): void {
   if (verticalAnchor === "center") {

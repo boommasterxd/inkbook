@@ -29,6 +29,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/domain/overflow-capacity-performance.test.ts",
     "test/performance/editor/connected-translation-preview.test.ts",
     "test/performance/editor/page-height-mutation.test.ts",
+    "test/performance/obsidian/phone-sheet-swipe-performance.test.ts",
     "test/performance/persistence/autosave-backpressure.test.ts",
     "test/performance/persistence/clipboard.test.ts",
     "test/performance/persistence/incremental-validation-capacity.test.ts",

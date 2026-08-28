@@ -138,15 +138,7 @@ describe("incremental serializer relation validation", () => {
       serializer.applyDelta({
         baseModelRevision: snapshot.revision,
         modelRevision: snapshot.revision + 1,
-        page: { ...snapshot.page, writingLineHeight: 49 },
-      }),
-    ).toMatchObject({ error: { code: "snapshot-invalid" }, ok: false });
-    expect(serializer.instrumentation.fullValidationRuns).toBe(initialFullRuns);
-    expect(
-      serializer.applyDelta({
-        baseModelRevision: snapshot.revision,
-        modelRevision: snapshot.revision + 1,
-        page: { ...snapshot.page, writingLineHeight: 60 },
+        page: { ...snapshot.page, activeBufferLines: snapshot.page.activeBufferLines + 1 },
       }),
     ).toEqual({ ok: true, value: undefined });
     expect(serializer.instrumentation.fullValidationRuns).toBe(initialFullRuns);

@@ -15,7 +15,9 @@ export interface MenuPosition {
 
 export interface MenuItemPort {
   setTitle(title: string): MenuItemPort;
+  setTitleFragment?(title: DocumentFragment): MenuItemPort;
   setIcon(icon: string): MenuItemPort;
+  setChecked?(checked: boolean | null): MenuItemPort;
   setDisabled(disabled: boolean): MenuItemPort;
   setWarning(isWarning: boolean): MenuItemPort;
   setIsLabel(isLabel: boolean): MenuItemPort;
@@ -25,6 +27,7 @@ export interface MenuItemPort {
 export interface MenuPort {
   addItem(configure: (item: MenuItemPort) => void): MenuPort;
   addSeparator(): MenuPort;
+  setParentElement?(element: HTMLElement): MenuPort;
   showAtPosition(position: MenuPosition, ownerDocument: Document): MenuPort;
   onHide(callback: () => void): void;
   close(): void;
@@ -38,5 +41,5 @@ export interface MenuFactoryPort {
 export interface FocusTargetPort {
   readonly isConnected?: boolean;
   readonly ownerDocument?: Document;
-  focus(): void;
+  focus(options?: FocusOptions): void;
 }

@@ -164,20 +164,12 @@ function assertPage(value: unknown, path: string): asserts value is PageV1 {
   assertRecord(value, path);
   assertExactKeys(
     value,
-    [
-      "innerWidth",
-      "margin",
-      "background",
-      "writingLineHeight",
-      "activeBufferLines",
-      "lockedBufferLines",
-    ],
+    ["innerWidth", "margin", "background", "activeBufferLines", "lockedBufferLines"],
     path,
   );
   assertLiteral(value.innerWidth, PAGE_INNER_WIDTH, `${path}.innerWidth`);
   assertLiteral(value.margin, PAGE_MARGIN, `${path}.margin`);
   assertBackground(value.background, `${path}.background`);
-  assertIntegerRange(value.writingLineHeight, 50, 200, `${path}.writingLineHeight`);
   assertIntegerRange(value.activeBufferLines, 1, 8, `${path}.activeBufferLines`);
   assertIntegerRange(value.lockedBufferLines, 0, 8, `${path}.lockedBufferLines`);
 }
@@ -189,12 +181,8 @@ function assertBackground(value: unknown, path: string): asserts value is Backgr
     return;
   }
   assertExactKeys(value, ["type", "spacing"], path);
-  if (value.type === "lines") {
-    assertOneOf(value.spacing, [50, 100, 150, 200] as const, `${path}.spacing`);
-    return;
-  }
-  if (value.type === "dots" || value.type === "squares") {
-    assertOneOf(value.spacing, [20, 40, 60, 80] as const, `${path}.spacing`);
+  if (value.type === "lines" || value.type === "dots" || value.type === "squares") {
+    assertOneOf(value.spacing, [25, 33.333333333333336, 50, 100] as const, `${path}.spacing`);
     return;
   }
   fail("invalid-literal", `${path}.type`, "Unsupported background type.");

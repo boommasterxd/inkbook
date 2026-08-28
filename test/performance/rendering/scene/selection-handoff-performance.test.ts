@@ -24,7 +24,6 @@ const PAGE: PageV1 = {
   innerWidth: 2_000,
   lockedBufferLines: 1,
   margin: 24.3,
-  writingLineHeight: 100,
 };
 
 describe("selection preview handoff performance", () => {
@@ -119,7 +118,7 @@ describe("selection preview handoff performance", () => {
 });
 
 function transformedContentCount(renderer: SvgSceneRenderer): number {
-  const content = fakeNode(renderer.svg).nodes[1]!.nodes[3]!;
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
   return content.nodes.filter(({ attributes }) => attributes.has("transform")).length;
 }
 

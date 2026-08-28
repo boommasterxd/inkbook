@@ -1,3 +1,5 @@
+import { Platform } from "obsidian";
+
 import { createPreviewSvg, loadValidatedPreviewSvg } from "./safe-preview-svg";
 
 export interface InkbookLockedPreviewDescriptor {
@@ -16,6 +18,7 @@ export function createInkbookLockedPreview(
   button: HTMLButtonElement,
   descriptor: InkbookLockedPreviewDescriptor,
 ): InkbookLockedPreviewSurface {
+  if (Platform.isAndroidApp) button.classList.add("inkbook-locked-preview-android");
   const element = button.createDiv({ cls: "inkbook-locked-preview-media" });
   element.setAttribute("aria-hidden", "true");
   const owningWindow = button.ownerDocument.defaultView;

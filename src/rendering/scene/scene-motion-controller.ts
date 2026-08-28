@@ -28,7 +28,6 @@ export class SceneMotionController {
   readonly #entryByElementId = new Map<string, number>();
   readonly #instrumentation: MutableSceneInstrumentation;
   readonly #pendingEntrances = new Set<string>();
-  #backgroundStart: number | undefined | null = null;
   #nextId = 0;
   #nextSuppressionToken = 0;
   #pendingSuppression: PendingSuppression | undefined;
@@ -112,13 +111,6 @@ export class SceneMotionController {
     return this.#instrumentation.motionCacheBytes;
   }
 
-  public beginBackgroundTransition(): void {
-    if (this.#reducedMotion || this.#resourceConstrained) return;
-    this.#dom.captureBackground();
-    this.#backgroundStart = undefined;
-    this.#instrumentation.motionCrossfades += 1;
-  }
-
   public setReducedMotion(reduced: boolean): void {
     if (reduced === this.#reducedMotion) return;
     this.#reducedMotion = reduced;
@@ -176,7 +168,6 @@ export class SceneMotionController {
       effectiveTime,
     );
     this.#snapMotion = this.writeOverlay(this.#dom.snapMarkerPath, this.#snapMotion, effectiveTime);
-    this.writeBackground(effectiveTime);
     const pending = this.hasPending();
     if (!pending) this.#lastFrameTime = undefined;
     return pending;
@@ -370,22 +361,6 @@ export class SceneMotionController {
     return undefined;
   }
 
-  private writeBackground(frameTime: number): void {
-    if (this.#backgroundStart === null) return;
-    this.#backgroundStart ??= frameTime;
-    const raw = Math.min(
-      1,
-      (frameTime - this.#backgroundStart) / TRANSITION_DURATIONS.backgroundChange,
-    );
-    const progress = standardMotionProgress(raw);
-    this.#dom.backgroundOutgoingPath.style.setProperty("opacity", String(1 - progress));
-    this.#dom.backgroundPath.style.setProperty("opacity", String(progress));
-    if (raw >= 1) {
-      this.#dom.clearCapturedBackground();
-      this.#backgroundStart = null;
-    }
-  }
-
   private finishAll(releasing: boolean): void {
     for (const entry of this.#entries.values()) this.finishEntry(entry, releasing);
     this.#entryByElementId.clear();
@@ -393,9 +368,7 @@ export class SceneMotionController {
     this.finishOverlay(this.#dom.snapMarkerPath, this.#snapMotion);
     this.#selectionMotion = undefined;
     this.#snapMotion = undefined;
-    this.#backgroundStart = null;
     this.#lastFrameTime = undefined;
-    this.#dom.clearCapturedBackground();
     this.refreshCacheSize();
   }
 
@@ -408,8 +381,7 @@ export class SceneMotionController {
     return (
       this.#entries.size > 0 ||
       this.#selectionMotion !== undefined ||
-      this.#snapMotion !== undefined ||
-      this.#backgroundStart !== null
+      this.#snapMotion !== undefined
     );
   }
 

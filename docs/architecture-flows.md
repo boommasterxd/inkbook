@@ -48,7 +48,7 @@ flowchart LR
   editor --> noteScroller
 ```
 
-The presentation owner releases its own DOM, React root, portals, listeners, observers, timers, pointer capture, and animation frames. The coordinator owns only the authoritative session, worker, activation records, and any bounded detached-save or recovery lease. React renders controls and coarse state, never ink elements or the pointer-to-frame render path.
+The presentation owner releases its own DOM, React root, adaptive menu sessions, listeners, observers, timers, pointer capture, and animation frames. The coordinator owns only the authoritative session, worker, activation records, and any bounded detached-save or recovery lease. React renders controls and coarse state, never ink elements or the pointer-to-frame render path.
 
 ## Document Session Lifecycle
 
@@ -237,9 +237,9 @@ flowchart TD
   applied --> preparedContent["Prepare changed content attributes or child order"]
 
   backgroundGate -->|No| reuseBackground["No background calculation or write"]
-  backgroundGate -->|Yes| backgroundCache{"Aligned background cache key changed?"}
+  backgroundGate -->|Yes| backgroundCache{"Full-page background cache key changed?"}
   backgroundCache -->|No| reuseBackground
-  backgroundCache -->|Yes| rebuildBackground["Prepare one regenerated bounded compound path"]
+  backgroundCache -->|Yes| rebuildBackground["Prepare one bounded pattern coverage path"]
 
   sceneValues --> prepared["Join prepared domain results"]
   reuseContent --> prepared
@@ -257,7 +257,7 @@ flowchart TD
 
 The ordinary frame cost follows reusable spatial-index candidates, mounted visible elements, and the classified published delta, rather than all 10,000 stored strokes. A refresh mounts the viewport plus 80 screen pixels of overscan. That envelope is retained while the current viewport plus a 40-screen-pixel safety reserve remains inside it, so small camera movements perform neither classification nor sorting and never omit visible content. A later refresh reuses the sorted bands when membership and order remain unchanged. The renderer mutates only entering, exiting, changed, or affected reordered nodes and attributes. Large or unusually dense viewports reconcile every exact visible element through a persistent band-and-rank cursor. Each slice uses the frame's absolute deadline plus fixed point and geometry budgets, admits at least one element for progress, and reuses the unchanged viewport query while the last complete frame remains visible.
 
-All layout reads happen before pure calculations and DOM writes, so the frame does not alternate between layout measurement and mutation. Path and anchor entries are valid only for the same element ID and geometry version. The recently unmounted main-thread path LRU is capped at 4,096 entries and 32 MiB, and the target-anchor LRU at 4,096 targets and 8 MiB, with the active-document memory ceiling taking precedence. Background guides use bounded SVG pattern tiles aligned to the visible range and regenerate only when their geometry key changes. Transform previews use SVG transforms, and visible connected endpoints follow their target during the same frame. Canonical paths, bounds, spatial-index cells, and endpoint records update once on commit.
+All layout reads happen before pure calculations and DOM writes, so the frame does not alternate between layout measurement and mutation. Path and anchor entries are valid only for the same element ID and geometry version. The recently unmounted main-thread path LRU is capped at 4,096 entries and 32 MiB, and the target-anchor LRU at 4,096 targets and 8 MiB, with the active-document memory ceiling taking precedence. Background guides use one bounded full-page SVG pattern coverage path plus an optional terminal-edge path, both derived from the same fixed frame and canonical axes as standalone export. They regenerate only when page or pattern geometry changes, never for viewport clipping or camera pan. Transform previews use SVG transforms, and visible connected endpoints follow their target during the same frame. Canonical paths, bounds, spatial-index cells, and endpoint records update once on commit.
 
 React receives at most one coarse notification after a consistent committed transaction or discrete UI transition. Pointer samples, preview geometry, camera changes, culling, snapping, connection propagation, and animation-frame work stay entirely in the imperative renderer. This prevents the 10,000-stroke scene from producing component renders or virtual-tree work on the hot path.
 
@@ -266,13 +266,13 @@ React receives at most one coarse notification after a consistent committed tran
 ```mermaid
 flowchart TD
   delta["Committed content delta"] --> extent["Derive aligned target height from maximum-bottom index"]
-  extent --> direction{"Grow or shrink?"}
-  direction -->|Grow| targetScene["Set larger renderer page height"]
+  extent --> envelope["Align max of visible and target heights to the fixed 100-unit layout step"]
+  envelope --> direction{"Grow or shrink?"}
+  direction -->|Grow| targetScene["Set complete aligned renderer envelope"]
   targetScene --> sceneCommit["Wait for complete renderer commit"]
   sceneCommit --> paint["Keep committed scene behind current clip for one paint opportunity"]
   paint --> grow["Animate outer container and scroll compensation for 180 ms"]
-  grow --> extend["Coverage-aware layout read extends background before newly revealed writable space"]
-  extend --> growComplete{"Container reached target?"}
+  grow --> growComplete{"Container reached target?"}
   growComplete -->|No| grow
   growComplete -->|Yes| release["Release pinned envelope"]
   direction -->|Shrink| retain["Retain larger renderer page height"]
@@ -288,7 +288,7 @@ flowchart TD
 
 Unlock uses one persistent presentation-root shell with a 240-millisecond block-size transition. That shell continuously owns the page surface, border, radius, and clipping edge. The active scene is fully measured and painted behind the locked inner preview before the two borderless representations exchange visibility atomically in one frame. Lock prepares and paints the exact persisted preview below the disabled editor, then performs the same zero-duration inner-layer exchange before removing the editor. Neither direction animates shell opacity or replaces the shell.
 
-Every observed presentation-size change enters the same coverage-aware renderer path. Unlock, automatic growth, window resize, zoom layout, toolbar reflow, and host layout changes extend only the bounded end of the top-anchored background path when they expose additional writable space. Existing guide positions and the pattern origin stay fixed. Automatic shrink retains the larger top-anchored background geometry for the complete clip transition. Intermediate shrink viewport reads may update visible element membership, but they cannot regenerate or realign the background. The smaller background and exact outer target height become paintable together only after the final scene commit.
+Unlock, automatic growth, and shrink prepare one scene envelope that is never shorter than the currently visible canvas. Active targets align to 100-unit writing rows; non-empty patterned locked targets align to the committed pattern row. The pattern spans the complete envelope before growth begins. Intermediate viewport reads may update visible element membership, but they cannot regenerate or realign the background. Automatic shrink retains the larger geometry for the complete clip transition. The smaller background and exact outer target height become paintable together only after the final scene commit. Background type and spacing previews do not enter the active-height flow; their committed value determines the next locked target.
 
 ## Document Worker Boundary and Queue
 

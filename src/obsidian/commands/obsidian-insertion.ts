@@ -44,7 +44,6 @@ function emptySnapshot(settings: InkbookSettingsStore): InkSnapshotV1 {
       innerWidth: 2000,
       lockedBufferLines: CANONICAL_LOCKED_BUFFER_LINES,
       margin: 24.3,
-      writingLineHeight: page.writingLineHeight,
     },
     revision: 0,
     version: 1,

@@ -39,7 +39,6 @@ export function canonicalPage(page: PageV1): PageV1 {
     innerWidth: 2000,
     margin: 24.3,
     background,
-    writingLineHeight: page.writingLineHeight,
     activeBufferLines: page.activeBufferLines,
     lockedBufferLines: page.lockedBufferLines,
   };

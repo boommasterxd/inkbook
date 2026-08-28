@@ -16,8 +16,7 @@ describe("document codec integration", () => {
       page: {
         innerWidth: 2000,
         margin: 24.3,
-        background: { type: "squares", spacing: 40 },
-        writingLineHeight: 100,
+        background: { type: "squares", spacing: 25 },
         activeBufferLines: 3,
         lockedBufferLines: 1,
       },

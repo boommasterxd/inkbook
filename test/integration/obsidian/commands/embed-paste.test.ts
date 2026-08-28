@@ -402,7 +402,6 @@ function createCompositionHarness(
       innerWidth: 2000,
       lockedBufferLines: 1,
       margin: 24.3,
-      writingLineHeight: 100,
     },
     revision: 0,
     version: 1,

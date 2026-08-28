@@ -165,6 +165,7 @@ function createWorkspaceRuntime(
     {
       fallbackOwnerWindow: () =>
         plugin.app.workspace.containerEl.ownerDocument.defaultView ?? undefined,
+      keymap: plugin.app.keymap,
       manager: feedback,
       view: () => plugin.app.workspace.getActiveViewOfType(MarkdownView)?.containerEl,
     },

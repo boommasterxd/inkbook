@@ -1,22 +1,19 @@
-import type {
-  FocusTargetPort,
-  MenuFactoryPort,
-  MenuItemPort,
-  MenuPort,
-  MenuPosition,
-} from "./menu-ports";
+import { Platform } from "obsidian";
+
+import { CAUTION_ERASER_ICON_ID } from "../../rendering/ui/icon-ids";
+import { acquireNativeMenuSafeAreaFallback, setMenuItemTitle } from "./menu-dom";
+import type { FocusTargetPort, MenuFactoryPort, MenuPort, MenuPosition } from "./menu-ports";
 
 const CONTEXT_MENU_ICONS = {
+  bringForward: "arrow-up",
+  bringToFront: "chevrons-up",
   copy: "copy",
   cut: "scissors",
-  paste: "clipboard-paste",
   delete: "trash-2",
-  arrange: "layers",
-  bringForward: "arrow-up",
+  eraseAll: CAUTION_ERASER_ICON_ID,
+  paste: "clipboard-paste",
   sendBackward: "arrow-down",
-  bringToFront: "chevrons-up",
   sendToBack: "chevrons-down",
-  eraseAll: "eraser",
 } as const;
 
 export type ContextMenuAction =
@@ -60,6 +57,7 @@ export interface ContextMenuHandlers {
 
 interface ContextMenuInvocationBase {
   readonly ownerDocument: Document;
+  readonly onClosed?: () => void;
   readonly returnFocus?: FocusTargetPort;
   readonly canvasInputSurface: FocusTargetPort;
 }
@@ -77,92 +75,123 @@ interface PositionMenuInvocation extends ContextMenuInvocationBase {
 export type ContextMenuInvocation = EventMenuInvocation | PositionMenuInvocation;
 
 export interface ContextMenuSession {
-  close(): void;
+  close(mode?: "animated" | "immediate"): void;
 }
 
 function configureItem(
   menu: MenuPort,
+  ownerDocument: Document,
   title: string,
   icon: string,
   callback: () => void,
-  options: { readonly disabled?: boolean; readonly warning?: boolean } = {},
+  options: {
+    readonly caution?: boolean;
+    readonly disabled?: boolean;
+    readonly warning?: boolean;
+  } = {},
 ): void {
   menu.addItem((item) => {
-    item.setTitle(title).setIcon(icon);
+    setMenuItemTitle(item, ownerDocument, title, options.caution === true);
+    item.setIcon(icon);
     if (options.disabled === true) item.setDisabled(true);
     if (options.warning === true) item.setWarning(true);
-    if (options.disabled !== true) item.onClick(() => callback());
-  });
-}
-
-function configureArrangeLabel(menu: MenuPort): void {
-  menu.addItem((item: MenuItemPort) => {
-    item.setTitle("Arrange").setIcon(CONTEXT_MENU_ICONS.arrange).setIsLabel(true);
+    if (options.disabled !== true) item.onClick(callback);
   });
 }
 
 function configureSelectionItems(
   menu: MenuPort,
+  ownerDocument: Document,
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
 ): void {
-  configureItem(menu, "Copy", CONTEXT_MENU_ICONS.copy, handlers.copy);
-  configureItem(menu, "Cut", CONTEXT_MENU_ICONS.cut, handlers.cut);
-  if (state.canPaste) configureItem(menu, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
-  configureItem(menu, "Delete", CONTEXT_MENU_ICONS.delete, handlers.delete, { warning: true });
+  configureItem(menu, ownerDocument, "Copy", CONTEXT_MENU_ICONS.copy, handlers.copy);
+  configureItem(menu, ownerDocument, "Cut", CONTEXT_MENU_ICONS.cut, handlers.cut);
+  if (state.canPaste) {
+    configureItem(menu, ownerDocument, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
+  }
   menu.addSeparator();
-  configureArrangeLabel(menu);
-  configureItem(menu, "Bring forward", CONTEXT_MENU_ICONS.bringForward, handlers.bringForward, {
-    disabled: !state.canBringForward,
+  configureItem(menu, ownerDocument, "Delete", CONTEXT_MENU_ICONS.delete, handlers.delete, {
+    warning: true,
   });
-  configureItem(menu, "Send backward", CONTEXT_MENU_ICONS.sendBackward, handlers.sendBackward, {
-    disabled: !state.canSendBackward,
-  });
-  configureItem(menu, "Bring to front", CONTEXT_MENU_ICONS.bringToFront, handlers.bringToFront, {
-    disabled: !state.canBringToFront,
-  });
-  configureItem(menu, "Send to back", CONTEXT_MENU_ICONS.sendToBack, handlers.sendToBack, {
-    disabled: !state.canSendToBack,
-  });
+  menu.addSeparator();
+  configureItem(
+    menu,
+    ownerDocument,
+    "Bring forward",
+    CONTEXT_MENU_ICONS.bringForward,
+    handlers.bringForward,
+    { disabled: !state.canBringForward },
+  );
+  configureItem(
+    menu,
+    ownerDocument,
+    "Send backward",
+    CONTEXT_MENU_ICONS.sendBackward,
+    handlers.sendBackward,
+    { disabled: !state.canSendBackward },
+  );
+  configureItem(
+    menu,
+    ownerDocument,
+    "Bring to front",
+    CONTEXT_MENU_ICONS.bringToFront,
+    handlers.bringToFront,
+    { disabled: !state.canBringToFront },
+  );
+  configureItem(
+    menu,
+    ownerDocument,
+    "Send to back",
+    CONTEXT_MENU_ICONS.sendToBack,
+    handlers.sendToBack,
+    { disabled: !state.canSendToBack },
+  );
 }
 
 function configureCanvasItems(
   menu: MenuPort,
+  ownerDocument: Document,
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
 ): void {
   if (!state.hasSelection && state.canPaste) {
-    configureItem(menu, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
+    configureItem(menu, ownerDocument, "Paste", CONTEXT_MENU_ICONS.paste, handlers.paste);
     menu.addSeparator();
   }
-  configureItem(menu, "Copy embed", CONTEXT_MENU_ICONS.copy, handlers.copyEmbed, {
+  configureItem(menu, ownerDocument, "Copy embed", CONTEXT_MENU_ICONS.copy, handlers.copyEmbed, {
     disabled: state.canCopyEmbed === false,
   });
   menu.addSeparator();
-  configureItem(menu, "Erase all", CONTEXT_MENU_ICONS.eraseAll, handlers.eraseAll, {
+  configureItem(menu, ownerDocument, "Erase all", CONTEXT_MENU_ICONS.eraseAll, handlers.eraseAll, {
+    caution: true,
     disabled: state.canEraseAll === false,
-    warning: true,
   });
-  configureItem(menu, "Delete embed", CONTEXT_MENU_ICONS.delete, handlers.deleteEmbed, {
-    disabled: state.canDeleteEmbed === false,
-    warning: true,
-  });
+  configureItem(
+    menu,
+    ownerDocument,
+    "Delete embed",
+    CONTEXT_MENU_ICONS.delete,
+    handlers.deleteEmbed,
+    { disabled: state.canDeleteEmbed === false, warning: true },
+  );
 }
 
 /**
- * Adds the complete context menu in the contract's stable order. The native
- * menu remains responsible for keyboard navigation and Escape handling.
+ * Adds the complete context menu in the contract's stable order. Obsidian owns
+ * presentation, keyboard navigation, dismissal, and mobile bottom sheets.
  */
 export function populateContextMenu(
   menu: MenuPort,
+  ownerDocument: Document,
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
 ): void {
   if (state.hasSelection) {
-    configureSelectionItems(menu, state, handlers);
+    configureSelectionItems(menu, ownerDocument, state, handlers);
     menu.addSeparator();
   }
-  configureCanvasItems(menu, state, handlers);
+  configureCanvasItems(menu, ownerDocument, state, handlers);
 }
 
 function canFocus(
@@ -177,7 +206,7 @@ function focusAfterClose(invocation: ContextMenuInvocation): void {
   const target = canFocus(invocation.returnFocus, invocation.ownerDocument)
     ? invocation.returnFocus
     : invocation.canvasInputSurface;
-  if (canFocus(target, invocation.ownerDocument)) target.focus();
+  if (canFocus(target, invocation.ownerDocument)) target.focus({ preventScroll: true });
 }
 
 /**
@@ -190,22 +219,27 @@ export function openContextMenu(
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
 ): ContextMenuSession {
+  const releaseSafeArea = Platform.isPhone
+    ? acquireNativeMenuSafeAreaFallback(invocation.ownerDocument)
+    : () => undefined;
   const menu = invocation.type === "event" ? factory.forEvent(invocation.event) : factory.create();
   let closed = false;
-  let focusReturned = false;
+  let closing = false;
   menu.onHide(() => {
-    if (focusReturned) return;
-    focusReturned = true;
+    if (closed) return;
+    closed = true;
+    releaseSafeArea();
     focusAfterClose(invocation);
+    invocation.onClosed?.();
   });
-  populateContextMenu(menu, state, handlers);
+  populateContextMenu(menu, invocation.ownerDocument, state, handlers);
   if (invocation.type === "position") {
     menu.showAtPosition(invocation.position, invocation.ownerDocument);
   }
   return {
     close: () => {
-      if (closed) return;
-      closed = true;
+      if (closed || closing) return;
+      closing = true;
       menu.close();
     },
   };

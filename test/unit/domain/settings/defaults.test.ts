@@ -13,16 +13,15 @@ describe("settings defaults", () => {
     const settings = createBuiltInSettings();
 
     expect(settings).toMatchObject({
-      version: 2,
+      version: 3,
       startupTool: "draw",
       refreshRatePreference: "auto",
     });
     expect(settings.pageDefaults).toEqual({
       activeBufferLines: 3,
-      backgroundSpacing: { dots: 40, lines: 100, squares: 40 },
+      backgroundSpacing: { dots: 25, lines: 25, squares: 25 },
       backgroundType: "squares",
       lockedBufferLines: 1,
-      writingLineHeight: 100,
     });
     expect(settings.filePlacement).toEqual({ mode: "obsidian-attachment-folder" });
     expect(settings.toolDefaults.pen).toEqual({
@@ -74,6 +73,7 @@ describe("settings defaults", () => {
       { type: "rgba", value: "#3B82F6FF" },
       { type: "rgba", value: "#8B5CF6FF" },
       { type: "rgba", value: "#EC4899FF" },
+      { type: "rgba", value: "#6B7280FF" },
     ]);
     expect(createBuiltInDeviceSettings()).toEqual({
       version: 1,
