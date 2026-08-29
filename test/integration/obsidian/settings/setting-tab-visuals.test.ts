@@ -41,6 +41,8 @@ describe("InkbookSettingTab tool disclosures", () => {
       ".inkbook-settings-tool-trigger",
     );
     const linePanel = requiredElement<HTMLElement>(line.container, ".inkbook-settings-tool-panel");
+    vi.spyOn(rectanglePanel, "getBoundingClientRect").mockReturnValue(elementRect(240));
+    vi.spyOn(linePanel, "getBoundingClientRect").mockReturnValue(elementRect(180));
 
     expect(rectangleTrigger.firstElementChild).toMatchObject({
       className: "inkbook-settings-tool-title",
@@ -54,21 +56,82 @@ describe("InkbookSettingTab tool disclosures", () => {
     expect(rectangleTrigger.getAttribute("aria-expanded")).toBe("false");
     expect(rectangleTrigger.classList.contains("inkbook-settings-tool-trigger-touch")).toBe(false);
     expect(rectanglePanel.hidden).toBe(true);
+    expect(rectanglePanel.inert).toBe(true);
 
     rectangleTrigger.click();
     expect(rectangleTrigger.getAttribute("aria-expanded")).toBe("true");
     expect(rectanglePanel.hidden).toBe(false);
+    expect(rectanglePanel.inert).toBe(false);
+    expect(rectanglePanel.dataset.resizing).toBe("true");
+    expect(rectanglePanel.style.blockSize).toBe("240px");
     expect(lineTrigger.getAttribute("aria-expanded")).toBe("false");
     expect(linePanel.hidden).toBe(true);
+    finishBlockSizeTransition(rectanglePanel);
+    expect(rectanglePanel.dataset.resizing).toBeUndefined();
+    expect(rectanglePanel.style.blockSize).toBe("");
 
     lineTrigger.click();
+    finishBlockSizeTransition(linePanel);
     expect(rectanglePanel.hidden).toBe(false);
     expect(linePanel.hidden).toBe(false);
     rectangleTrigger.click();
+    expect(rectanglePanel.hidden).toBe(false);
+    expect(rectanglePanel.inert).toBe(true);
+    expect(rectanglePanel.dataset.resizing).toBe("true");
+    expect(rectanglePanel.style.blockSize).toBe("0px");
+    finishBlockSizeTransition(rectanglePanel);
     expect(rectanglePanel.hidden).toBe(true);
+    expect(rectanglePanel.dataset.resizing).toBeUndefined();
+    expect(rectanglePanel.style.blockSize).toBe("");
     expect(linePanel.hidden).toBe(false);
     rectangle.cleanup();
     line.cleanup();
+  });
+});
+
+describe("InkbookSettingTab tool disclosure motion preferences", () => {
+  it("honors reduced and full device motion preferences", () => {
+    const matchMedia = vi
+      .spyOn(window, "matchMedia")
+      .mockReturnValue({ matches: true } as MediaQueryList);
+    const reducedStore = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());
+    reducedStore.updateDeviceSettings((settings) => ({ ...settings, motion: "reduced" }));
+    const rendered = renderTool(createTab(reducedStore), "Drawing tools", "Pen");
+    const trigger = requiredElement<HTMLButtonElement>(
+      rendered.container,
+      ".inkbook-settings-tool-trigger",
+    );
+    const panel = requiredElement<HTMLElement>(rendered.container, ".inkbook-settings-tool-panel");
+    const measure = vi.spyOn(panel, "getBoundingClientRect");
+
+    trigger.click();
+    expect(panel.hidden).toBe(false);
+    expect(panel.inert).toBe(false);
+    expect(panel.dataset.resizing).toBeUndefined();
+    expect(panel.style.blockSize).toBe("");
+    trigger.click();
+    expect(panel.hidden).toBe(true);
+    expect(panel.inert).toBe(true);
+    expect(measure).not.toHaveBeenCalled();
+
+    rendered.cleanup();
+    const fullStore = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());
+    fullStore.updateDeviceSettings((settings) => ({ ...settings, motion: "full" }));
+    const animated = renderTool(createTab(fullStore), "Drawing tools", "Pen");
+    const animatedPanel = requiredElement<HTMLElement>(
+      animated.container,
+      ".inkbook-settings-tool-panel",
+    );
+    vi.spyOn(animatedPanel, "getBoundingClientRect").mockReturnValue(elementRect(240));
+    requiredElement<HTMLButtonElement>(
+      animated.container,
+      ".inkbook-settings-tool-trigger",
+    ).click();
+    expect(animatedPanel.dataset.resizing).toBe("true");
+    expect(animatedPanel.style.blockSize).toBe("240px");
+    finishBlockSizeTransition(animatedPanel);
+    animated.cleanup();
+    matchMedia.mockRestore();
   });
 });
 

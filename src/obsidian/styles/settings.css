@@ -78,8 +78,15 @@
   rotate: 90deg;
 }
 
-.inkbook-settings-tool-panel {
+.inkbook-settings-tool-panel-content {
   padding: 0 var(--size-4-5) var(--size-4-3);
+}
+
+.inkbook-settings-tool-panel[data-resizing="true"] {
+  box-sizing: border-box;
+  overflow: hidden;
+  transition: block-size 180ms var(--inkbook-motion-easing);
+  will-change: block-size;
 }
 
 .inkbook-settings-tool-panel[hidden] {
