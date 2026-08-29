@@ -1,6 +1,9 @@
 import {
   CLOSED_SHAPE_TOOLS,
+  LINE_SPACINGS,
+  OUTLINE_WIDTHS,
   OUTLINE_ONLY_TOOLS,
+  PEN_WIDTHS,
   type ColorV1,
   type InkbookDeviceSettingsV1,
   type InkbookSettingsV3,
@@ -36,7 +39,7 @@ export const BUILT_IN_COLORS = Object.freeze([
 function outlineDefaults(): OutlineDefaultsV1 {
   return {
     outlineColor: { type: "theme-text" },
-    outlineWidth: 4,
+    outlineWidth: OUTLINE_WIDTHS[1],
     outlineStyle: "solid",
     outlineOpacity: 1,
   };
@@ -53,18 +56,27 @@ function toolDefaults(): ToolDefaultsV1 {
   ]) as ToolDefaultsV1["shapes"];
 
   return {
-    pen: { color: { type: "theme-text" }, width: 8, opacity: 1, pressureEnabled: true },
-    highlighter: { color: { type: "rgba", value: "#EAB308FF" }, width: 8, opacity: 0.4 },
-    straightHighlighter: {
+    pen: {
+      color: { type: "theme-text" },
+      width: PEN_WIDTHS[1],
+      opacity: 1,
+      pressureEnabled: true,
+    },
+    highlighter: {
       color: { type: "rgba", value: "#EAB308FF" },
-      width: 8,
+      width: PEN_WIDTHS[2],
       opacity: 0.4,
     },
-    eraser: { radius: 24 },
+    straightHighlighter: {
+      color: { type: "rgba", value: "#EAB308FF" },
+      width: PEN_WIDTHS[2],
+      opacity: 0.4,
+    },
+    eraser: { radius: 20 },
     shapes,
     arrow: { startNode: "none", endNode: "arrow" },
     coordinateSystem: { dimension: "2d" },
-    table: { columns: 3 },
+    table: { columns: 2 },
   };
 }
 
@@ -75,7 +87,11 @@ export function createBuiltInSettings(): InkbookSettingsV3 {
     toolDefaults: toolDefaults(),
     pageDefaults: {
       backgroundType: "squares",
-      backgroundSpacing: { lines: 25, dots: 25, squares: 25 },
+      backgroundSpacing: {
+        lines: LINE_SPACINGS[2],
+        dots: LINE_SPACINGS[1],
+        squares: LINE_SPACINGS[1],
+      },
       activeBufferLines: 3,
       lockedBufferLines: 1,
     },

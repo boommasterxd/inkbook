@@ -284,7 +284,7 @@ describe("active editor ordinary selection move", () => {
     if (movedFirst?.kind !== "rectangle" || movedSecond?.kind !== "rectangle") {
       throw new TypeError("Expected rectangle replacements.");
     }
-    expect(calculateElementBounds(movedFirst)).toMatchObject({ minX: -602, minY: -502 });
+    expect(calculateElementBounds(movedFirst)).toMatchObject({ minX: -601, minY: -501 });
     expect({ x: movedSecond.x - movedFirst.x, y: movedSecond.y - movedFirst.y }).toEqual({
       x: 400,
       y: 250,

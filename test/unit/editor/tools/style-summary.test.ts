@@ -35,7 +35,7 @@ describe("Style summaries", () => {
     expect(summarizeSelectionStyle([pen, { ...pen, id: "other" }])).toMatchObject({
       kind: "stroke",
       color: { type: "theme-text" },
-      width: 8,
+      width: 4,
       opacity: 1,
       pressureEnabled: true,
     });
@@ -70,7 +70,7 @@ describe("Style summaries", () => {
       structural: { kind: "coordinate-system", dimension: "2d" },
     });
     expect(summarizeSelectionStyle([shape("table")])).toMatchObject({
-      structural: { kind: "table", columns: 3 },
+      structural: { kind: "table", columns: 2 },
     });
     expect(summarizeSelectionStyle([shape("table"), shape("line")])).toMatchObject({
       structural: null,
@@ -80,7 +80,7 @@ describe("Style summaries", () => {
   it("summarizes active creation tool values without exposing unavailable controls", () => {
     const values = createBuiltInSettings().toolDefaults;
     expect(summarizeActiveToolStyle(values, "select")).toBeNull();
-    expect(summarizeActiveToolStyle(values, "eraser")).toEqual({ kind: "eraser", radius: 24 });
+    expect(summarizeActiveToolStyle(values, "eraser")).toEqual({ kind: "eraser", radius: 20 });
     expect(summarizeActiveToolStyle(values, "draw")).toMatchObject({
       kind: "stroke",
       pressureEnabled: true,
@@ -95,7 +95,7 @@ describe("Style summaries", () => {
       arrowNodes: { start: "none", end: "arrow" },
     });
     expect(summarizeActiveToolStyle(values, "table")).toMatchObject({
-      structural: { kind: "table", columns: 3 },
+      structural: { kind: "table", columns: 2 },
     });
   });
 

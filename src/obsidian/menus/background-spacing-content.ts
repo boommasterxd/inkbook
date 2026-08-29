@@ -2,6 +2,7 @@ import type { BackgroundSpacing } from "./editor-menu-types";
 import { menuDomWindow } from "./menu-dom";
 
 export interface BackgroundSpacingContentOptions {
+  readonly describedBy?: string;
   readonly ownerDocument: Document;
   readonly spacing: BackgroundSpacing;
   readonly onChange: (spacing: BackgroundSpacing) => void;
@@ -37,6 +38,8 @@ export function createBackgroundSpacingContent(
   range.step = "1";
   range.value = String(SPACINGS.indexOf(options.spacing));
   range.setAttribute("aria-label", "Background spacing");
+  if (options.describedBy !== undefined)
+    range.setAttribute("aria-describedby", options.describedBy);
 
   const labels = win.createDiv({ cls: "inkbook-menu-spacing-labels" });
   for (const label of SPACING_SHORT_LABELS) {

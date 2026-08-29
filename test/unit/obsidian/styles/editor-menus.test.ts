@@ -118,6 +118,12 @@ describe("AdaptivePanel content styles", () => {
     const choice = declarationsFor(
       ".inkbook-menu-controls .inkbook-menu-choice,\n.inkbook-menu-controls .inkbook-menu-stepper-button",
     );
+    const pressedStepper = declarationsFor(
+      ".inkbook-menu-choice:hover,\n.inkbook-menu-stepper-button:active,\n.inkbook-menu-stepper-button.inkbook-menu-stepper-button-pressed",
+    );
+    const releasedTouchStepper = declarationsFor(
+      ".inkbook-menu-stepper-button-touch.mobile-tap:not(:active, .inkbook-menu-stepper-button-pressed)",
+    );
     const valueField = declarationsFor(".inkbook-menu-value-field");
     const value = declarationsFor(
       ".inkbook-menu-controls .inkbook-menu-value-field .inkbook-menu-value",
@@ -154,6 +160,14 @@ describe("AdaptivePanel content styles", () => {
     expect(choice).toContain("min-block-size: 36px");
     expect(cautionTitle).toContain("color: var(--color-orange)");
     expect(choice).toContain("min-inline-size: 36px");
+    expect(stylesheet).toContain(
+      ".inkbook-menu-stepper-button {\n  touch-action: manipulation;\n  -webkit-tap-highlight-color: transparent;",
+    );
+    expect(pressedStepper).toContain("background: var(--background-modifier-hover)");
+    expect(releasedTouchStepper).toContain("background: var(--background-primary)");
+    expect(stylesheet).toContain(
+      "@media (hover: hover) and (pointer: fine) {\n  .inkbook-menu-stepper-button:not(.inkbook-menu-stepper-button-touch):hover",
+    );
     expect(phoneChoice).toContain("min-block-size: 44px");
     expect(section).toContain("background: transparent");
     expect(section).toContain("border-radius: 0");

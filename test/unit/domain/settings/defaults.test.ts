@@ -19,14 +19,14 @@ describe("settings defaults", () => {
     });
     expect(settings.pageDefaults).toEqual({
       activeBufferLines: 3,
-      backgroundSpacing: { dots: 25, lines: 25, squares: 25 },
+      backgroundSpacing: { dots: 100 / 3, lines: 50, squares: 100 / 3 },
       backgroundType: "squares",
       lockedBufferLines: 1,
     });
     expect(settings.filePlacement).toEqual({ mode: "obsidian-attachment-folder" });
     expect(settings.toolDefaults.pen).toEqual({
       color: { type: "theme-text" },
-      width: 8,
+      width: 4,
       opacity: 1,
       pressureEnabled: true,
     });
@@ -36,17 +36,24 @@ describe("settings defaults", () => {
       opacity: 0.4,
     });
     expect(settings.toolDefaults.straightHighlighter).toEqual(settings.toolDefaults.highlighter);
-    expect(settings.toolDefaults.eraser.radius).toBe(24);
+    expect(settings.toolDefaults.eraser.radius).toBe(20);
     expect(settings.toolDefaults.arrow).toEqual({ startNode: "none", endNode: "arrow" });
     expect(settings.toolDefaults.coordinateSystem.dimension).toBe("2d");
-    expect(settings.toolDefaults.table.columns).toBe(3);
+    expect(settings.toolDefaults.table.columns).toBe(2);
   });
 
   it("creates an independent default entry for every shape", () => {
     const shapes = createBuiltInSettings().toolDefaults.shapes;
 
     for (const tool of CLOSED_SHAPE_TOOLS) {
-      expect(shapes[tool]).toMatchObject({ fillColor: null, fillOpacity: 0.15 });
+      expect(shapes[tool]).toMatchObject({
+        fillColor: null,
+        fillOpacity: 0.15,
+        outlineColor: { type: "theme-text" },
+        outlineOpacity: 1,
+        outlineStyle: "solid",
+        outlineWidth: 2,
+      });
     }
     for (const tool of OUTLINE_ONLY_TOOLS) {
       expect(shapes[tool]).not.toHaveProperty("fillColor");
