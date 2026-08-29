@@ -32,6 +32,8 @@ interface BackgroundRenderContext {
   readonly ownerDocument: Document;
   readonly state: {
     readonly latestCommits: Map<SettingsControlKey, number>;
+    finishLayout?: () => void;
+    layoutStartHeight?: number;
     menu: BackgroundMenuState;
   };
   readonly values: PageDefaultsValues;
@@ -91,6 +93,8 @@ function renderBackgroundMenu(context: BackgroundRenderContext): void {
       controlDescriptionId: context.descriptionId,
       getState: () => context.state.menu,
       initialState: context.state.menu,
+      onBeforeLayoutChange: () => beginBackgroundLayoutChange(context),
+      onLayoutChange: () => animateBackgroundLayoutChange(context),
       onSpacingChange: (spacing) => changeBackgroundSpacing(context, spacing),
       onSpacingPreview: (spacing) => {
         context.state.menu = { ...context.state.menu, spacing };
@@ -100,6 +104,54 @@ function renderBackgroundMenu(context: BackgroundRenderContext): void {
       renderIcon: (element, icon) => setIcon(element, icon),
     }),
   );
+}
+
+function beginBackgroundLayoutChange(context: BackgroundRenderContext): void {
+  if (!context.content.hasChildNodes() || prefersReducedMotion(context.ownerDocument)) return;
+  const currentHeight = context.content.getBoundingClientRect().height;
+  context.state.finishLayout?.();
+  context.state.layoutStartHeight = currentHeight;
+}
+
+function animateBackgroundLayoutChange(context: BackgroundRenderContext): void {
+  const startHeight = context.state.layoutStartHeight;
+  delete context.state.layoutStartHeight;
+  if (startHeight === undefined) return;
+  const targetHeight = context.content.getBoundingClientRect().height;
+  if (Math.abs(targetHeight - startHeight) < 0.5) return;
+
+  const content = context.content;
+  const win = context.ownerDocument.defaultView;
+  if (win === null) return;
+  content.dataset.resizing = "true";
+  content.style.blockSize = `${String(startHeight)}px`;
+  void content.offsetHeight;
+  content.style.blockSize = `${String(targetHeight)}px`;
+
+  let timeout: number | undefined;
+  const finish = (): void => {
+    content.removeEventListener("transitionend", onTransitionEnd);
+    content.removeEventListener("transitioncancel", finish);
+    if (timeout !== undefined) win.clearTimeout(timeout);
+    delete content.dataset.resizing;
+    content.style.removeProperty("block-size");
+    if (context.state.finishLayout === finish) delete context.state.finishLayout;
+  };
+  const onTransitionEnd = (event: TransitionEvent): void => {
+    if (
+      event.target === content &&
+      (event.propertyName === "block-size" || event.propertyName === "height")
+    )
+      finish();
+  };
+  context.state.finishLayout = finish;
+  content.addEventListener("transitionend", onTransitionEnd);
+  content.addEventListener("transitioncancel", finish);
+  timeout = win.setTimeout(finish, 300);
+}
+
+function prefersReducedMotion(ownerDocument: Document): boolean {
+  return ownerDocument.defaultView?.matchMedia("(prefers-reduced-motion: reduce)").matches ?? false;
 }
 
 function changeBackgroundSpacing(

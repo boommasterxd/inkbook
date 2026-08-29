@@ -14,6 +14,7 @@ import {
   requiredElement,
   requiredRender,
   renders,
+  setPlatformMobile,
   VaultAdapter,
 } from "./setting-tab-fixture";
 
@@ -51,6 +52,7 @@ describe("InkbookSettingTab tool disclosures", () => {
     );
     expect(rectangleTrigger.getAttribute("aria-controls")).toBe(rectanglePanel.id);
     expect(rectangleTrigger.getAttribute("aria-expanded")).toBe("false");
+    expect(rectangleTrigger.classList.contains("inkbook-settings-tool-trigger-touch")).toBe(false);
     expect(rectanglePanel.hidden).toBe(true);
 
     rectangleTrigger.click();
@@ -67,6 +69,24 @@ describe("InkbookSettingTab tool disclosures", () => {
     expect(linePanel.hidden).toBe(false);
     rectangle.cleanup();
     line.cleanup();
+  });
+});
+
+describe("InkbookSettingTab mobile tool disclosures", () => {
+  it("marks mobile triggers so host tap feedback cannot remain highlighted", () => {
+    setPlatformMobile(true);
+    const tab = createTab(new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter()));
+    const pen = renderTool(tab, "Drawing tools", "Pen");
+    try {
+      expect(
+        requiredElement(pen.container, ".inkbook-settings-tool-trigger").classList.contains(
+          "inkbook-settings-tool-trigger-touch",
+        ),
+      ).toBe(true);
+    } finally {
+      pen.cleanup();
+      setPlatformMobile(false);
+    }
   });
 });
 
@@ -188,11 +208,8 @@ describe("InkbookSettingTab settings validation", () => {
 describe("InkbookSettingTab page defaults", () => {
   it("renders recognizable background choices and a synchronized page-buffer input pair", async () => {
     const tab = createTab(new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter()));
-    const group = groups(tab).find((candidate) => candidate.heading === "Page defaults");
-    if (group === undefined) throw new Error("Missing Page defaults group.");
-    const definitions = renders(group);
-    const background = renderDefinition(requiredRender(definitions, "Background"));
-    const buffer = renderDefinition(requiredRender(definitions, "Page buffer"));
+    const background = renderPageDefault(tab, "Background");
+    const buffer = renderPageDefault(tab, "Page buffer");
 
     const backgroundChoices = background.container.querySelectorAll<HTMLButtonElement>(
       ".inkbook-menu-background-choice",
@@ -228,9 +245,7 @@ describe("InkbookSettingTab page defaults", () => {
     const vault = new VaultAdapter();
     vault.failure = new Error("Save failed");
     const tab = createTab(new InkbookSettingsStore(vault, new DeviceAdapter()));
-    const group = groups(tab).find((candidate) => candidate.heading === "Page defaults");
-    if (group === undefined) throw new Error("Missing Page defaults group.");
-    const background = renderDefinition(requiredRender(renders(group), "Background"));
+    const background = renderPageDefault(tab, "Background");
 
     background.container
       .querySelector<HTMLButtonElement>("button[data-background-type='dots']")
@@ -250,3 +265,74 @@ describe("InkbookSettingTab page defaults", () => {
     background.cleanup();
   });
 });
+
+describe("InkbookSettingTab background layout motion", () => {
+  it("animates the spacing height when switching to and from none", () => {
+    const tab = createTab(new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter()));
+    const background = renderPageDefault(tab, "Background");
+    const content = requiredElement<HTMLElement>(
+      background.container,
+      ".inkbook-settings-background-content",
+    );
+    vi.spyOn(content, "getBoundingClientRect")
+      .mockReturnValueOnce(elementRect(340))
+      .mockReturnValueOnce(elementRect(220))
+      .mockReturnValueOnce(elementRect(220))
+      .mockReturnValueOnce(elementRect(340));
+
+    background.container
+      .querySelector<HTMLButtonElement>("button[data-background-type='none']")
+      ?.click();
+    expect(content.dataset.resizing).toBe("true");
+    expect(content.style.blockSize).toBe("220px");
+    finishBlockSizeTransition(content);
+    expect(content.dataset.resizing).toBeUndefined();
+    expect(content.style.blockSize).toBe("");
+
+    background.container
+      .querySelector<HTMLButtonElement>("button[data-background-type='lines']")
+      ?.click();
+    expect(content.dataset.resizing).toBe("true");
+    expect(content.style.blockSize).toBe("340px");
+    finishBlockSizeTransition(content);
+    expect(content.dataset.resizing).toBeUndefined();
+    expect(content.style.blockSize).toBe("");
+
+    const matchMedia = vi
+      .spyOn(window, "matchMedia")
+      .mockReturnValue({ matches: true } as MediaQueryList);
+    background.container
+      .querySelector<HTMLButtonElement>("button[data-background-type='none']")
+      ?.click();
+    expect(content.dataset.resizing).toBeUndefined();
+    expect(content.style.blockSize).toBe("");
+    matchMedia.mockRestore();
+    background.cleanup();
+  });
+});
+
+function elementRect(height: number): DOMRect {
+  return {
+    bottom: height,
+    height,
+    left: 0,
+    right: 100,
+    top: 0,
+    width: 100,
+    x: 0,
+    y: 0,
+    toJSON: () => ({}),
+  };
+}
+
+function renderPageDefault(tab: Parameters<typeof groups>[0], name: string) {
+  const group = groups(tab).find((candidate) => candidate.heading === "Page defaults");
+  if (group === undefined) throw new Error("Missing Page defaults group.");
+  return renderDefinition(requiredRender(renders(group), name));
+}
+
+function finishBlockSizeTransition(element: HTMLElement): void {
+  const event = new Event("transitionend") as TransitionEvent;
+  Object.defineProperty(event, "propertyName", { value: "block-size" });
+  element.dispatchEvent(event);
+}

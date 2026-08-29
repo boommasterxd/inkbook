@@ -3,7 +3,11 @@
   --inkbook-motion-easing: cubic-bezier(0.2, 0, 0, 1);
 }
 
-.inkbook-settings-tool-row.setting-item,
+.inkbook-settings-tool-group .inkbook-settings-tool-row.setting-item {
+  display: block;
+  padding-block: 0;
+}
+
 .inkbook-settings-visual-row.setting-item {
   display: block;
   padding-block: var(--size-4-2);
@@ -31,10 +35,23 @@
   min-block-size: 44px;
   padding: var(--size-4-2) var(--size-4-3);
   text-align: start;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.inkbook-settings-tool-section > .inkbook-settings-tool-trigger:hover {
+.inkbook-settings-tool-section > .inkbook-settings-tool-trigger:active {
   background: var(--background-modifier-hover);
+}
+
+.inkbook-settings-tool-section > .inkbook-settings-tool-trigger-touch.mobile-tap:not(:active) {
+  background: transparent;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .inkbook-settings-tool-section
+    > .inkbook-settings-tool-trigger:not(.inkbook-settings-tool-trigger-touch):hover {
+    background: var(--background-modifier-hover);
+  }
 }
 
 .inkbook-settings-tool-section > .inkbook-settings-tool-trigger:focus-visible {
@@ -134,6 +151,12 @@
   inline-size: 100%;
 }
 
+.inkbook-settings-background-content[data-resizing="true"] {
+  overflow: hidden;
+  transition: block-size 180ms cubic-bezier(0.2, 0, 0, 1);
+  will-change: block-size;
+}
+
 .inkbook-settings-background-content .inkbook-menu-background-options {
   padding: var(--size-4-2) 0 0;
 }
@@ -182,6 +205,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .inkbook-settings-background-content[data-resizing="true"],
   .inkbook-settings-tool-chevron {
     transition: none;
   }

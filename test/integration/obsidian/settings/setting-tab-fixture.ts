@@ -19,7 +19,10 @@ import {
   type VaultSettingsPort,
 } from "../../../../src/obsidian/settings/storage";
 
+const platform = vi.hoisted(() => ({ isMobile: false }));
+
 vi.mock("obsidian", () => ({
+  Platform: platform,
   PluginSettingTab: class {
     public updates = 0;
     public refreshes = 0;
@@ -107,6 +110,10 @@ export function createTab(
     undefined,
     refreshRateStatus,
   );
+}
+
+export function setPlatformMobile(isMobile: boolean): void {
+  platform.isMobile = isMobile;
 }
 
 export function renders(

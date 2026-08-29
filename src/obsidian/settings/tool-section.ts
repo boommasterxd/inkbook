@@ -1,4 +1,4 @@
-import { setIcon, type Setting, type SettingDefinitionRender } from "obsidian";
+import { Platform, setIcon, type Setting, type SettingDefinitionRender } from "obsidian";
 
 import type { StartupToolV1, ToolDefaultsV1 } from "../../domain/settings";
 import { createToolStyleControls } from "../menus/tool-style-controls";
@@ -38,6 +38,7 @@ function renderToolSection(
   setting.settingEl.classList.add("inkbook-settings-tool-row");
   const section = setting.settingEl.createEl("section", { cls: "inkbook-settings-tool-section" });
   const trigger = section.createEl("button", { cls: "inkbook-settings-tool-trigger" });
+  if (Platform.isMobile) trigger.classList.add("inkbook-settings-tool-trigger-touch");
   const panelId = `inkbook-settings-tool-${spec.tool}`;
   const descriptionId = `${panelId}-description`;
   trigger.type = "button";
