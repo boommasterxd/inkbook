@@ -12,9 +12,13 @@ describe("PresentationOperationFeedback", () => {
     const harness = createHarness();
     const operation = harness.feedback.begin("loading");
 
+    expect(PRESENTATION_LOADING_FEEDBACK_DELAY_MS).toBe(500);
     expect(harness.delay()).toBe(PRESENTATION_LOADING_FEEDBACK_DELAY_MS);
     expect(harness.indicator()).toBeNull();
     harness.runTimer();
+    expect(harness.indicator()).toBeNull();
+    expect(harness.pendingFrames()).toBe(1);
+    harness.runFrame();
 
     const indicator = harness.indicator();
     expect(indicator?.attributes.get("role")).toBe("status");
@@ -38,16 +42,40 @@ describe("PresentationOperationFeedback", () => {
 
     const stale = harness.feedback.begin("loading");
     const saving = harness.feedback.begin("saving");
+    expect(PRESENTATION_SAVING_FEEDBACK_DELAY_MS).toBe(150);
     expect(harness.delay()).toBe(PRESENTATION_SAVING_FEEDBACK_DELAY_MS);
     stale.finish();
     harness.runTimer();
     expect(harness.indicator()?.dataset.inkbookOperation).toBe("saving");
+    expect(harness.pendingFrames()).toBe(0);
 
     saving.finish();
     expect(harness.indicator()).toBeNull();
   });
 
-  it("disposes pending timers and visible feedback", () => {
+  it("cancels loading feedback between its delay and the next paint", () => {
+    const harness = createHarness();
+    const loading = harness.feedback.begin("loading");
+    harness.runTimer();
+    const finishedFrame = harness.pendingFrameHandles()[0];
+    expect(harness.pendingFrames()).toBe(1);
+
+    loading.finish();
+    expect(harness.pendingFrames()).toBe(0);
+    harness.runCapturedFrame(finishedFrame);
+    expect(harness.indicator()).toBeNull();
+
+    harness.feedback.begin("loading");
+    harness.runTimer();
+    const supersededFrame = harness.pendingFrameHandles()[0];
+    expect(harness.pendingFrames()).toBe(1);
+    harness.feedback.begin("saving");
+    expect(harness.pendingFrames()).toBe(0);
+    harness.runCapturedFrame(supersededFrame);
+    expect(harness.indicator()).toBeNull();
+  });
+
+  it("disposes pending timers, pending frames, and visible feedback", () => {
     const harness = createHarness();
     harness.feedback.begin("loading");
     harness.feedback.dispose();
@@ -59,20 +87,45 @@ describe("PresentationOperationFeedback", () => {
     harness.runTimer();
     expect(harness.indicator()).toBeNull();
   });
+
+  it("does not paint loading feedback after disposal", () => {
+    const harness = createHarness();
+    harness.feedback.begin("loading");
+    harness.runTimer();
+    const disposedFrame = harness.pendingFrameHandles()[0];
+    expect(harness.pendingFrames()).toBe(1);
+
+    harness.feedback.dispose();
+    expect(harness.pendingFrames()).toBe(0);
+    harness.runCapturedFrame(disposedFrame);
+    expect(harness.indicator()).toBeNull();
+  });
 });
 
 function createHarness() {
+  const frameCallbacks = new Map<number, FrameRequestCallback>();
+  const frames = new Map<number, FrameRequestCallback>();
   const timers = new Map<number, { readonly callback: () => void; readonly delay: number }>();
+  let nextFrame = 0;
   let nextTimer = 0;
   const root = new FakePresentationElement();
   const ownerWindow = root.ownerDocument.defaultView;
   if (ownerWindow === null) throw new Error("Missing owner window.");
   const mutableWindow = ownerWindow as unknown as {
+    cancelAnimationFrame: (handle: number) => void;
     clearTimeout: (handle: number | undefined) => void;
+    requestAnimationFrame: (callback: FrameRequestCallback) => number;
     setTimeout: (callback: () => void, delay: number) => number;
   };
+  mutableWindow.cancelAnimationFrame = vi.fn((handle: number) => frames.delete(handle));
   mutableWindow.clearTimeout = vi.fn((handle: number | undefined) => {
     if (handle !== undefined) timers.delete(handle);
+  });
+  mutableWindow.requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
+    const handle = ++nextFrame;
+    frames.set(handle, callback);
+    frameCallbacks.set(handle, callback);
+    return handle;
   });
   mutableWindow.setTimeout = vi.fn((callback: () => void, delay: number) => {
     const handle = ++nextTimer;
@@ -84,6 +137,18 @@ function createHarness() {
     delay: () => [...timers.values()][0]?.delay,
     feedback,
     indicator: () => root.getElementsByClassName("inkbook-operation-feedback").item(0),
+    pendingFrameHandles: () => [...frames.keys()],
+    pendingFrames: () => frames.size,
+    runCapturedFrame: (handle: number | undefined) => {
+      if (handle === undefined) throw new Error("Expected a captured animation frame.");
+      frameCallbacks.get(handle)?.(0);
+    },
+    runFrame: () => {
+      const next = frames.entries().next().value;
+      if (next === undefined) return;
+      frames.delete(next[0]);
+      next[1](0);
+    },
     runTimer: () => {
       const next = timers.entries().next().value;
       if (next === undefined) return;

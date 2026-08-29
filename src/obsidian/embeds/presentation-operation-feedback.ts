@@ -5,7 +5,7 @@ import {
   type PresentationFeedbackPositionLifecycle,
 } from "../feedback";
 
-export const PRESENTATION_LOADING_FEEDBACK_DELAY_MS = 1_200;
+export const PRESENTATION_LOADING_FEEDBACK_DELAY_MS = 500;
 export const PRESENTATION_SAVING_FEEDBACK_DELAY_MS = 150;
 
 export type PresentationOperationKind = "loading" | "saving";
@@ -19,6 +19,7 @@ const FINISHED_FEEDBACK = Object.freeze({ finish: (): void => undefined });
 export class PresentationOperationFeedback {
   #activeToken = 0;
   #disposed = false;
+  #frame: number | undefined;
   #indicator: HTMLElement | undefined;
   #positioning: PresentationFeedbackPositionLifecycle | undefined;
   readonly #ownerWindow: Window;
@@ -40,7 +41,16 @@ export class PresentationOperationFeedback {
     const token = ++this.#activeToken;
     this.#timer = this.#ownerWindow.setTimeout(() => {
       this.#timer = undefined;
-      if (!this.#disposed && token === this.#activeToken) this.#show(kind);
+      if (this.#disposed || token !== this.#activeToken) return;
+      if (kind === "saving") {
+        this.#show(kind);
+        return;
+      }
+      this.#frame = this.#ownerWindow.requestAnimationFrame(() => {
+        if (this.#disposed || token !== this.#activeToken) return;
+        this.#frame = undefined;
+        this.#show(kind);
+      });
     }, feedbackDelay(kind));
     return { finish: () => this.#finish(token) };
   }
@@ -84,6 +94,8 @@ export class PresentationOperationFeedback {
   #clearCurrent(): void {
     if (this.#timer !== undefined) this.#ownerWindow.clearTimeout(this.#timer);
     this.#timer = undefined;
+    if (this.#frame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#frame);
+    this.#frame = undefined;
     this.#positioning?.dispose();
     this.#positioning = undefined;
     this.#indicator?.remove();
