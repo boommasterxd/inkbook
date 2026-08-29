@@ -40,6 +40,14 @@
   padding-inline: 0;
 }
 
+.inkbook-menu-control-description {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-normal);
+  line-height: var(--line-height-tight);
+  margin: 0;
+}
+
 .inkbook-menu-control-icon,
 .inkbook-menu-control-icon svg {
   block-size: var(--icon-s);
@@ -248,6 +256,12 @@
   font-size: var(--font-ui-smaller);
   font-weight: var(--font-medium);
   gap: 7px;
+  min-inline-size: 0;
+}
+
+.inkbook-menu-toggle-copy {
+  display: grid;
+  gap: var(--size-4-1);
   min-inline-size: 0;
 }
 

@@ -16,10 +16,11 @@ import {
 } from "../../domain/settings";
 import { DEFAULT_REFRESH_RATE, type RefreshRateProfileStatus } from "../performance";
 import { SettingsControlValues, type SettingsControlKey } from "./control-values";
-import { dropdown, resetAction, slider, toggle } from "./definition-helpers";
+import { dropdown, resetAction, toggle } from "./definition-helpers";
 import { createLabels, generalGroup } from "./general-definitions";
+import { pageDefaultsGroup } from "./page-defaults";
 import { InkbookSettingsStore } from "./storage";
-import { highlighterItems, penItems, shapeSections, toolGroup } from "./tool-definitions";
+import { drawingToolsGroup, shapesAndStructuresGroup } from "./tool-definitions";
 
 export interface CustomFolderPort {
   createFolder(path: string): Promise<void>;
@@ -55,6 +56,14 @@ export class InkbookSettingTab extends PluginSettingTab {
   }
 
   public override getSettingDefinitions(): SettingDefinitionItem<SettingsControlKey>[] {
+    const pageValues = {
+      get: (key: SettingsControlKey) => this.controls.get(key),
+      set: (key: SettingsControlKey, value: unknown) => this.controls.set(key, value),
+    };
+    const toolValues = {
+      getDefaults: () => this.store.getVaultSettings().toolDefaults,
+      set: (key: SettingsControlKey, value: unknown) => this.controls.set(key, value),
+    };
     return [
       generalGroup({
         isCustomFolder: () => this.isCustomFolder(),
@@ -67,26 +76,9 @@ export class InkbookSettingTab extends PluginSettingTab {
           },
         reset: () => this.resetGeneral(),
       }),
-      toolGroup("Pen", penItems(), () => this.resetToolGroup("pen")),
-      toolGroup("Highlighter", highlighterItems(false), () => this.resetToolGroup("highlighter")),
-      toolGroup("Straight highlighter", highlighterItems(true), () =>
-        this.resetToolGroup("straightHighlighter"),
-      ),
-      this.shapesGroup(),
-      toolGroup(
-        "Eraser",
-        [
-          slider(
-            "toolDefaults.eraser.radius",
-            "Radius",
-            "Set the screen-relative radius for the eraser.",
-            8,
-            64,
-            4,
-          ),
-        ],
-        () => this.resetToolGroup("eraser"),
-      ),
+      pageDefaultsGroup(pageValues, () => this.resetPageDefaults()),
+      drawingToolsGroup(toolValues, () => this.resetDrawingTools()),
+      shapesAndStructuresGroup(toolValues, () => this.resetShapesAndStructures()),
       ...this.deviceGroups(),
       this.resetAllAction(),
     ];
@@ -112,45 +104,43 @@ export class InkbookSettingTab extends PluginSettingTab {
         ...settings,
         startupTool: defaults.startupTool,
         refreshRatePreference: defaults.refreshRatePreference,
-        pageDefaults: structuredClone(defaults.pageDefaults),
         filePlacement: structuredClone(defaults.filePlacement),
       }))
       .then(() => this.update());
   }
 
-  private resetToolGroup<K extends keyof InkbookSettingsV3["toolDefaults"]>(key: K): void {
+  private resetPageDefaults(): void {
+    const defaults = createBuiltInSettings();
+    void this.store
+      .updateVaultSettings((settings) => ({
+        ...settings,
+        pageDefaults: structuredClone(defaults.pageDefaults),
+      }))
+      .then(() => this.update());
+  }
+
+  private resetDrawingTools(): void {
     void this.store
       .updateVaultSettings((settings) => {
-        settings.toolDefaults[key] = cloneDefaults(key);
+        settings.toolDefaults.pen = cloneDefaults("pen");
+        settings.toolDefaults.highlighter = cloneDefaults("highlighter");
+        settings.toolDefaults.straightHighlighter = cloneDefaults("straightHighlighter");
+        settings.toolDefaults.eraser = cloneDefaults("eraser");
         return settings;
       })
       .then(() => this.update());
   }
 
-  private shapesGroup(): SettingDefinitionGroup<SettingsControlKey> {
-    return {
-      type: "group",
-      heading: "Shapes",
-      items: [
-        ...shapeSections({
-          get: (key) => this.controls.get(key),
-          set: async (key, value) => {
-            await this.controls.set(key, value);
-          },
-        }),
-        resetAction("Reset group to defaults", () => {
-          void this.store
-            .updateVaultSettings((settings) => {
-              settings.toolDefaults.shapes = cloneDefaults("shapes");
-              settings.toolDefaults.arrow = cloneDefaults("arrow");
-              settings.toolDefaults.coordinateSystem = cloneDefaults("coordinateSystem");
-              settings.toolDefaults.table = cloneDefaults("table");
-              return settings;
-            })
-            .then(() => this.update());
-        }),
-      ],
-    };
+  private resetShapesAndStructures(): void {
+    void this.store
+      .updateVaultSettings((settings) => {
+        settings.toolDefaults.shapes = cloneDefaults("shapes");
+        settings.toolDefaults.arrow = cloneDefaults("arrow");
+        settings.toolDefaults.coordinateSystem = cloneDefaults("coordinateSystem");
+        settings.toolDefaults.table = cloneDefaults("table");
+        return settings;
+      })
+      .then(() => this.update());
   }
 
   private deviceGroups(): SettingDefinitionGroup<SettingsControlKey>[] {

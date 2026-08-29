@@ -299,28 +299,55 @@ Custom folders:
 
 ## Settings UI
 
-Settings appear in this order:
+The settings tab uses these logical groups and this order:
 
-1. Unheaded general rows: startup tool, file placement, background, page buffer
-2. Pen
-3. Highlighter
-4. Straight highlighter
-5. Shapes, with one collapsible subsection per shape type
-6. Eraser
-7. Input: finger drawing and pen-tap insertion
-8. Interface: handedness and motion
+1. **General**: startup tool, display refresh-rate preference, and file placement. General rows are the first rows and remain unheaded in the rendered Obsidian settings tab as required by the host contract.
+2. **Page defaults**: background type, the independent Lines, Dots, and Squares spacing defaults, and the active buffer line count.
+3. **Drawing tools**: Pen, Highlighter, Straight highlighter, and Eraser. Each tool is one independently collapsible section.
+4. **Shapes and structures**: Line, Arrow, Rectangle, Ellipse, Triangle, Octagon, Parallelogram, Diamond, Coordinate system, and Table. Each tool is one independently collapsible section.
+5. **Input**: finger drawing and pen-tap insertion.
+6. **Interface**: handedness and motion.
 
-Requirements:
+The headings for Page defaults, Drawing tools, Shapes and structures, Input, and Interface use sentence case and omit the word `settings`. The General group has no visible heading, but remains a distinct logical group for definitions, validation, and reset behavior. Every tool default in the schema has exactly one corresponding section, including each shape type's separate persisted entry.
 
-- Every control has a visible label, concise description, and accessible name.
-- Invalid values show an inline error and are not persisted.
-- Each group provides `Reset group to defaults`.
-- A final `Reset all Inkbook settings` action requires confirmation.
-- Resetting settings does not modify existing files or elements.
-- Tool-default changes update the vault defaults immediately. An already active editor keeps every current per-tool session value, so its next elements remain predictable; locking and reopening the editor initializes new session values from the changed defaults. Page-default changes affect only files created afterward. Device-setting changes apply immediately when safe, while an active pointer gesture retains the input mode with which it began.
-- The tab uses `PluginSettingTab.getSettingDefinitions()`. Typed `getControlValue()` and `setControlValue()` adapters expose the nested settings object without duplicating it. Simple values use declarative controls, conditional rows use `visible`, and reset actions use declarative actions or a bounded render callback.
+### Collapsible tool sections
+
+Every section in Drawing tools and Shapes and structures is a keyboard-operable disclosure control. Its header contains the tool title on the left and a Lucide chevron on the right. The chevron is the only disclosure indicator: native `<details>` triangles and other leading disclosure markers are not used. The chevron points right when collapsed and down when expanded, and its state is exposed through `aria-expanded` and `aria-controls`. The section content has a stable, unique controlled ID, the title is the accessible name, and the visible focus ring remains on the header. Enter and Space toggle the section without changing a tool value. Sections are independent, so opening one does not close another; users may keep multiple tools open for comparison.
+
+### Menu-recognizable controls
+
+Settings MUST reuse the same typed option models, labels, ordering, selected-state treatment, previews, and control patterns as the corresponding Style and Background menus. A user must be able to recognize a setting from the menu without translating it to a different control. Shared control definitions prevent the two surfaces from acquiring different values or meanings.
+
+Settings inherit Obsidian's neutral `SettingGroup` surface and its host-owned radius rather than adding a nested surface or copying the enclosing border, radius, or panel treatment from an adaptive Style or Background menu. Native host dividers separate independent settings rows. Expanded tool content and the Background type-and-spacing composition use whitespace instead of additional nested separator lines. Menu recognition applies to the control content and interaction model. Visual choice collections use all available inline space and keep their canonical order: choices remain in one row when they fit and wrap without horizontal scrolling when the settings viewport is narrower.
+
+The following controls are visual choices rather than plain dropdowns:
+
+- Colors use the same labelled color swatches and selected state as Style, including Theme text color and the documented palette.
+- Outline style uses exactly three buttons, in the same order, with the same solid, dashed, and dotted line previews.
+- Pen, highlighter, and outline widths use five evenly sized XS-through-XL choices with real line-width previews. The stored width values remain those in the type definitions and validation matrix.
+- Fill uses the same No fill choice, color swatches, selected states, and fill-opacity treatment as Style. Fill is present only for closed shapes.
+- Arrow start and end nodes use the same None, Arrow, Triangle, Diamond, and Circle endpoint icons and independent start/end selections.
+- Coordinate-system dimension uses the same 2D and 3D axis icons.
+- Table columns use the same compact stepper and retain the valid range of 1 through 12.
+- Background type uses the same None, Lines, Dots, and Squares pattern choices and previews. Background spacing uses the same padded S/M/L/XL range with the absolute values documented above.
+
+Numeric settings that benefit from continuous adjustment use a slider paired with a directly editable text field, not a dropdown. This applies to opacity, eraser radius, and active buffer lines. The slider and field update each other live, preserve the documented numeric representation and units, and commit one setting change on `change`. Opacity remains a finite normalized value from 0 through 1 even when the field presents a percentage. The field rejects incomplete, non-finite, out-of-range, or otherwise invalid input without persisting it. Background spacing retains the menu's discrete S/M/L/XL slider and visible current-size output. The table stepper remains a discrete numeric control because its bounded integer range is best communicated through increment and decrement actions.
+
+Dropdowns are reserved for discrete values without a meaningful visual preview, such as startup tool, file placement, display refresh rate, pen-tap insertion, and motion. A dropdown MUST NOT replace a shared swatch, width preview, outline-style button group, endpoint or dimension icon group, pattern choice, slider-plus-field control, or table stepper merely for implementation convenience.
+
+All controls have a visible sentence-case label, one concise description, an accessible name, and a visible focus state. Choice controls expose their selected state to assistive technology. Touch targets are at least 44 CSS pixels in the phone settings layout. Multi-field forms use a modal with Save and Cancel only when one row cannot reasonably contain the fields.
+
+### Persistence, validation, and reset behavior
+
+- Invalid values show an inline error and are not persisted. The persisted-data loader repeats the same validation and falls back to the documented built-in default for an invalid field without silently clamping it.
+- Each logical group provides `Reset group to defaults`. A final `Reset all Inkbook settings` action requires confirmation. Resetting settings never modifies existing files or elements.
+- Tool-default changes update vault defaults immediately. An already active editor keeps every current per-tool session value, so its next elements remain predictable; locking and reopening the editor initializes new session values from the changed defaults. Page-default changes affect only files created afterward. Device-setting changes apply immediately when safe, while an active pointer gesture retains the input mode with which it began.
+- The tab uses `PluginSettingTab.getSettingDefinitions()`. Typed `getControlValue()` and `setControlValue()` adapters expose the nested settings object without duplicate flattened state. Simple values use declarative controls, conditional rows use `visible`, and reset actions use declarative actions or a bounded render callback.
 - `getSettingDefinitions()` performs no file access or expensive work. Declarative UI validation is repeated during persisted settings loading.
-- Visible text uses sentence case. General rows have no heading, later distinct sections use headings without the word `settings`, every row has one mutable control, and complex multi-field input moves to a modal.
+
+### Settings parity tests
+
+Parity tests MUST enumerate every configurable Style and Background menu value and assert that it has the matching settings default path, value domain, label, ordering, selected state, and recognizable control. They MUST cover the exact three outline-style buttons, all width previews, palette swatches, fill and opacity controls, endpoint and dimension icons, the table stepper, background choices, and S/M/L/XL spacing. Tests MUST also cover slider-and-field synchronization, invalid input rollback, inline errors, group and full reset, persistence failures, accessibility attributes for collapsible sections, and the unchanged vault/session semantics. A parity test fails when a menu option is added without a settings default or when either surface uses a divergent option list.
 
 ## Settings Deliberately Not Exposed
 

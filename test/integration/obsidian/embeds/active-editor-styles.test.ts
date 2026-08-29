@@ -9,6 +9,7 @@ import {
   createSelectionStyleReplacement,
   updateSessionToolDefaults,
 } from "../../../../src/obsidian/embeds/active-editor/controller-styles";
+import { OUTLINE_WIDTH_STYLE_OPTIONS } from "../../../../src/obsidian/menus/tool-style-controls";
 
 function identity(id: string) {
   return { createdAt: 0, id };
@@ -75,13 +76,7 @@ describe("active editor Style controls", () => {
     expect(strokeControl.options.map(({ label }) => label)).toEqual(["XS", "S", "M", "L", "XL"]);
     expect(strokeControl.options.map(({ value }) => value)).toEqual(["2", "4", "8", "14", "22"]);
     expect(outline.find(({ id }) => id === "outline-width")).toMatchObject({
-      options: [
-        { label: "XS", value: "1" },
-        { label: "S", value: "2" },
-        { label: "M", value: "4" },
-        { label: "L", value: "8" },
-        { label: "XL", value: "12" },
-      ],
+      options: OUTLINE_WIDTH_STYLE_OPTIONS,
     });
   });
 });
@@ -184,6 +179,14 @@ describe("active editor Style changes", () => {
     expect(() => updateSessionToolDefaults(sessionDefaults, "draw", "opacity", "invalid")).toThrow(
       TypeError,
     );
+  });
+
+  it("accepts the advertised XS outline width", () => {
+    const defaults = createBuiltInSettings().toolDefaults;
+    const updated = updateSessionToolDefaults(defaults, "rectangle", "outline-width", "1");
+
+    expect(updated.shapes.rectangle.outlineWidth).toBe(1);
+    expect(defaults.shapes.rectangle.outlineWidth).not.toBe(1);
   });
 
   it("marks mixed structural values and applies table column changes", () => {

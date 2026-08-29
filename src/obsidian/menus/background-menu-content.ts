@@ -11,6 +11,7 @@ const BACKGROUND_CHOICES: readonly (readonly [BackgroundType, string, string])[]
 ];
 
 export interface BackgroundMenuContentOptions {
+  readonly controlDescriptionId?: string;
   readonly getState: () => BackgroundMenuState;
   readonly initialState: BackgroundMenuState;
   readonly onBeforeLayoutChange?: () => void;
@@ -40,6 +41,9 @@ export function createBackgroundMenuContent(
     button.type = "button";
     button.dataset.backgroundType = type;
     button.setAttribute("aria-label", label);
+    if (options.controlDescriptionId !== undefined) {
+      button.setAttribute("aria-describedby", options.controlDescriptionId);
+    }
     const icon = win.createSpan({ cls: "inkbook-menu-background-choice-icon" });
     options.renderIcon(icon, iconId);
     const title = win.createSpan({ cls: "inkbook-menu-background-choice-title", text: label });
@@ -81,6 +85,9 @@ export function createBackgroundMenuContent(
         ownerDocument: options.ownerDocument,
         renderIcon: options.renderIcon,
         spacing: state.spacing ?? "m",
+        ...(options.controlDescriptionId === undefined
+          ? {}
+          : { describedBy: options.controlDescriptionId }),
       }),
     );
     options.onLayoutChange?.();
