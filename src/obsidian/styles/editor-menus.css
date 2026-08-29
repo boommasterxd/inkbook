@@ -74,6 +74,11 @@
   grid-template-columns: repeat(5, minmax(36px, 1fr));
 }
 
+.inkbook-menu-stepper-button {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
 .inkbook-menu-controls .inkbook-menu-choice,
 .inkbook-menu-controls .inkbook-menu-stepper-button {
   align-items: center;
@@ -93,9 +98,20 @@
   padding: var(--size-4-1) var(--size-4-2);
 }
 
+.inkbook-menu-stepper-button-touch.mobile-tap:not(:active, .inkbook-menu-stepper-button-pressed) {
+  background: var(--background-primary);
+}
+
 .inkbook-menu-choice:hover,
-.inkbook-menu-stepper-button:hover {
+.inkbook-menu-stepper-button:active,
+.inkbook-menu-stepper-button.inkbook-menu-stepper-button-pressed {
   background: var(--background-modifier-hover);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .inkbook-menu-stepper-button:not(.inkbook-menu-stepper-button-touch):hover {
+    background: var(--background-modifier-hover);
+  }
 }
 
 .inkbook-menu-choice[aria-pressed="true"] {

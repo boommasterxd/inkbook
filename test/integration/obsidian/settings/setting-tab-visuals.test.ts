@@ -73,18 +73,27 @@ describe("InkbookSettingTab tool disclosures", () => {
 });
 
 describe("InkbookSettingTab mobile tool disclosures", () => {
-  it("marks mobile triggers so host tap feedback cannot remain highlighted", () => {
+  it("marks mobile triggers and table steppers so host tap feedback cannot remain highlighted", () => {
     setPlatformMobile(true);
     const tab = createTab(new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter()));
     const pen = renderTool(tab, "Drawing tools", "Pen");
+    const table = renderTool(tab, "Shapes and structures", "Table");
     try {
       expect(
         requiredElement(pen.container, ".inkbook-settings-tool-trigger").classList.contains(
           "inkbook-settings-tool-trigger-touch",
         ),
       ).toBe(true);
+      const steppers = table.container.querySelectorAll(".inkbook-menu-stepper-button");
+      expect(steppers).toHaveLength(2);
+      expect(
+        [...steppers].every((stepper) =>
+          stepper.classList.contains("inkbook-menu-stepper-button-touch"),
+        ),
+      ).toBe(true);
     } finally {
       pen.cleanup();
+      table.cleanup();
       setPlatformMobile(false);
     }
   });

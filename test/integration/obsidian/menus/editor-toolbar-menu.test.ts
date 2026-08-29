@@ -148,6 +148,38 @@ describe("phone native toolbar menu spacing", () => {
 });
 
 describe("Style AdaptivePanel", () => {
+  it("marks mobile table steppers so host tap feedback clears after release", () => {
+    Platform.isMobile = true;
+    const configured = connectedOptions({
+      styleControls: [
+        {
+          id: "table-columns",
+          kind: "number",
+          label: "Columns",
+          max: 12,
+          min: 1,
+          step: 1,
+          value: 2,
+        },
+      ],
+    });
+    const session = new EditorToolbarMenuSession({ ...configured, initialMenu: "style" });
+
+    const steppers = document.querySelectorAll(".inkbook-menu-stepper-button");
+    expect(steppers).toHaveLength(2);
+    expect(
+      [...steppers].every((stepper) =>
+        stepper.classList.contains("inkbook-menu-stepper-button-touch"),
+      ),
+    ).toBe(true);
+    const decrement = steppers[0]!;
+    decrement.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    expect(decrement.classList).toContain("inkbook-menu-stepper-button-pressed");
+    decrement.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+    expect(decrement.classList).not.toContain("inkbook-menu-stepper-button-pressed");
+    session.close("immediate");
+  });
+
   it("opens without an Obsidian Menu and keeps number input and slider synchronized", () => {
     const menus: FakeMenu[] = [];
     const configured = connectedOptions({

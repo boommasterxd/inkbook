@@ -1,3 +1,5 @@
+import { Platform } from "obsidian";
+
 import type { StyleChoiceOption, StyleControl } from "./editor-menu-types";
 import {
   arrowShapeIconId,
@@ -291,9 +293,27 @@ function createStepperButton(
   const button = menuDomWindow(options.ownerDocument, "style menu").createEl("button");
   button.type = "button";
   button.className = "inkbook-menu-stepper-button";
+  addMobileStepperFeedback(button);
   button.setAttribute("aria-label", label);
   options.renderIcon(button, iconId);
   return button;
+}
+
+function addMobileStepperFeedback(button: HTMLButtonElement): void {
+  if (!Platform.isMobile) return;
+  button.classList.add("inkbook-menu-stepper-button-touch");
+  const clearPressed = (): void => {
+    button.classList.remove("inkbook-menu-stepper-button-pressed");
+  };
+  button.addEventListener("pointerdown", () => {
+    button.classList.add("inkbook-menu-stepper-button-pressed");
+  });
+  button.addEventListener("pointerup", clearPressed);
+  button.addEventListener("pointercancel", clearPressed);
+  button.addEventListener("pointerleave", clearPressed);
+  button.addEventListener("lostpointercapture", clearPressed);
+  button.addEventListener("click", clearPressed);
+  button.addEventListener("blur", clearPressed);
 }
 
 function createToggle(
