@@ -165,8 +165,8 @@ describe("active editor unlock preview motion", () => {
     fixture.runFrame();
     expect(fixture.rootClasses.contains("inkbook-active-transitioning")).toBe(true);
     expect(fixture.beginScrollStability).toHaveBeenCalledOnce();
-    expect(fixture.preview.hidden).toBe(false);
-    expect(fixture.completed).not.toHaveBeenCalled();
+    expect(fixture.preview.hidden).toBe(true);
+    expect(fixture.completed).toHaveBeenCalledOnce();
 
     expect(fixture.setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 240);
     fixture.runTimer();

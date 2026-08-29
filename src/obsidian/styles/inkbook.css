@@ -304,10 +304,7 @@
 
 .inkbook-root.inkbook-active-preparing .inkbook-editor-chrome-host,
 .inkbook-root.inkbook-active-preparing .inkbook-canvas-input,
-.inkbook-root.inkbook-active-preparing .inkbook-scene-foreground,
-.inkbook-root.inkbook-active-transitioning .inkbook-editor-chrome-host,
-.inkbook-root.inkbook-active-transitioning .inkbook-canvas-input,
-.inkbook-root.inkbook-active-transitioning .inkbook-scene-foreground {
+.inkbook-root.inkbook-active-preparing .inkbook-scene-foreground {
   visibility: hidden;
 }
 
