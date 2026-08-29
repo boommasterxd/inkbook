@@ -44,7 +44,7 @@ describe("selection paint Style changes", () => {
       defaults,
     });
     const selection = [line];
-    const result = applySelectionStyleChange(selection, { property: "outline-width", value: 4 });
+    const result = applySelectionStyleChange(selection, { property: "outline-width", value: 2 });
 
     expect(result).toEqual({ elements: selection, changed: false });
     expect(result.elements).toBe(selection);
@@ -255,10 +255,10 @@ describe("structural Style changes", () => {
 
     expect(changed).toMatchObject({
       columns: 4,
-      columnWidth: 100,
-      x: 50,
-      y: 150,
-      pivot: { x: 250, y: 250 },
+      columnWidth: 150,
+      x: -50,
+      y: 250,
+      pivot: { x: 250, y: 350 },
       rotation: 90,
     });
     expect(changed.height).toBe(table.height);
@@ -271,10 +271,10 @@ describe("structural Style changes", () => {
     const minimum = minimumResult.elements[0] as TableElementV1;
     expect(minimum).toMatchObject({
       columns: 1,
-      columnWidth: 100,
-      x: 200,
-      y: 0,
-      pivot: { x: 250, y: 100 },
+      columnWidth: 150,
+      x: 175,
+      y: 25,
+      pivot: { x: 250, y: 125 },
       rotation: 90,
     });
     expect(minimum.height).toBe(table.height);

@@ -115,7 +115,7 @@ interface PenDefaultsV1 {
 Built-in values:
 
 - color: Theme text color
-- width: 8
+- width: S, 4
 - opacity: 1
 - pressure enabled: true
 
@@ -162,7 +162,7 @@ interface ShapeDefaultsV1 extends OutlineDefaultsV1 {
 Built-in outline values for every shape:
 
 - outline color: Theme text color
-- outline width: 4
+- outline width: S, 2
 - outline style: solid
 - outline opacity: 1
 
@@ -184,7 +184,7 @@ Line defaults use none for both nodes. Node settings are not shown for other sha
 
 ### Table Defaults
 
-- columns: 3
+- columns: 2
 - valid range: 1 through 12
 - header height: 30 percent of initial height
 - no fill and no data-row separators; each table has exactly one horizontal header separator
@@ -197,7 +197,7 @@ interface EraserDefaultsV1 {
 }
 ```
 
-- built-in radius: 24 screen pixels
+- built-in radius: 20 screen pixels
 - valid range: 8 through 64 screen pixels
 - adjustment step: 4 pixels
 
@@ -221,9 +221,9 @@ interface PageDefaultsV3 {
 Built-in values:
 
 - background type: Squares
-- Lines spacing: S, 25 page units
-- Dots spacing: S, 25 page units
-- Squares spacing: S, 25 page units
+- Lines spacing: L, 50 page units
+- Dots spacing: M, 100 / 3 page units
+- Squares spacing: M, 100 / 3 page units
 - active buffer lines: 3
 - locked compatibility value: 1
 
@@ -312,7 +312,7 @@ The headings for Page defaults, Drawing tools, Shapes and structures, Input, and
 
 ### Collapsible tool sections
 
-Every section in Drawing tools and Shapes and structures is a keyboard-operable disclosure control. Its header contains the tool title on the left and a Lucide chevron on the right. The chevron is the only disclosure indicator: native `<details>` triangles and other leading disclosure markers are not used. The chevron points right when collapsed and down when expanded, and its state is exposed through `aria-expanded` and `aria-controls`. The section content has a stable, unique controlled ID, the title is the accessible name, and the visible focus ring remains on the header. Enter and Space toggle the section without changing a tool value. The pointer feedback fills the complete disclosure row between adjacent host dividers. Touch feedback is present only while the pointer is pressed and MUST NOT remain highlighted after release; hover feedback is limited to non-mobile platforms with a hover-capable fine pointer. Sections are independent, so opening one does not close another; users may keep multiple tools open for comparison.
+Every section in Drawing tools and Shapes and structures is a keyboard-operable disclosure control. Its header contains the tool title on the left and a Lucide chevron on the right. The chevron is the only disclosure indicator: native `<details>` triangles and other leading disclosure markers are not used. The chevron points right when collapsed and down when expanded, and its state is exposed through `aria-expanded` and `aria-controls`. The section content has a stable, unique controlled ID, the title is the accessible name, and the visible focus ring remains on the header. Enter and Space toggle the section without changing a tool value. Tool titles and expanded content use the same inline inset as native group actions, while the header provides comfortable vertical spacing around its title. Visual choices may wrap earlier on narrow phones rather than reducing this content inset. The pointer feedback fills the complete disclosure row between adjacent host dividers and follows the native card radius at an outer edge. Touch feedback is present only while the pointer is pressed and MUST NOT remain highlighted after release; hover feedback is limited to non-mobile platforms with a hover-capable fine pointer. Sections are independent, so opening one does not close another; users may keep multiple tools open for comparison.
 
 ### Menu-recognizable controls
 

@@ -154,7 +154,7 @@ describe("active editor Style changes", () => {
     });
     expect(first.style).toMatchObject({ outlineColor: { type: "theme-text" } });
     expect(
-      createSelectionStyleReplacement(replacement?.replacements ?? [], "outline-width", "4"),
+      createSelectionStyleReplacement(replacement?.replacements ?? [], "outline-width", "2"),
     ).toBeNull();
   });
 

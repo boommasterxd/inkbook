@@ -187,6 +187,11 @@ describe("InkbookSettingTab reset integration", () => {
 
     resetGroup(tab, undefined);
     await vi.waitFor(() => expect(tab.getControlValue("startupTool")).toBe(defaults.startupTool));
+    expect(store.getVaultSettings()).toMatchObject({
+      filePlacement: defaults.filePlacement,
+      refreshRatePreference: defaults.refreshRatePreference,
+      startupTool: defaults.startupTool,
+    });
     expect(tab.getControlValue("pageDefaults.activeBufferLines")).toBe(6);
     resetGroup(tab, "Page defaults");
     await vi.waitFor(() =>
@@ -194,22 +199,43 @@ describe("InkbookSettingTab reset integration", () => {
         defaults.pageDefaults.activeBufferLines,
       ),
     );
+    expect(store.getVaultSettings().pageDefaults).toEqual(defaults.pageDefaults);
     resetGroup(tab, "Drawing tools");
     await vi.waitFor(() =>
       expect(tab.getControlValue("toolDefaults.pen.width")).toBe(defaults.toolDefaults.pen.width),
     );
+    expect(store.getVaultSettings().toolDefaults).toMatchObject({
+      eraser: defaults.toolDefaults.eraser,
+      highlighter: defaults.toolDefaults.highlighter,
+      pen: defaults.toolDefaults.pen,
+      straightHighlighter: defaults.toolDefaults.straightHighlighter,
+    });
     resetGroup(tab, "Shapes and structures");
     await vi.waitFor(() =>
       expect(tab.getControlValue("toolDefaults.shapes.rectangle.outlineWidth")).toBe(
         defaults.toolDefaults.shapes.rectangle.outlineWidth,
       ),
     );
+    expect(store.getVaultSettings().toolDefaults).toMatchObject({
+      arrow: defaults.toolDefaults.arrow,
+      coordinateSystem: defaults.toolDefaults.coordinateSystem,
+      shapes: defaults.toolDefaults.shapes,
+      table: defaults.toolDefaults.table,
+    });
     resetGroup(tab, "Input");
     expect(tab.getControlValue("device.fingerDrawingEnabled")).toBe(
       deviceDefaults.fingerDrawingEnabled,
     );
+    expect(store.getDeviceSettings()).toMatchObject({
+      fingerDrawingEnabled: deviceDefaults.fingerDrawingEnabled,
+      penTapInsertion: deviceDefaults.penTapInsertion,
+    });
     resetGroup(tab, "Interface");
     expect(tab.getControlValue("device.leftHandedToolbar")).toBe(deviceDefaults.leftHandedToolbar);
+    expect(store.getDeviceSettings()).toMatchObject({
+      leftHandedToolbar: deviceDefaults.leftHandedToolbar,
+      motion: deviceDefaults.motion,
+    });
   });
 
   it("requires confirmation before resetting both scopes", async () => {
@@ -233,7 +259,7 @@ describe("InkbookSettingTab reset integration", () => {
 
     confirmMock.mockReturnValue(true);
     action.action(element, 0);
-    await vi.waitFor(() => expect(store.getVaultSettings().startupTool).toBe("draw"));
+    await vi.waitFor(() => expect(store.getVaultSettings()).toEqual(createBuiltInSettings()));
     expect(device.value).toEqual(createBuiltInDeviceSettings());
   });
 });

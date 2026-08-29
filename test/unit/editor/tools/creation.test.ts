@@ -21,7 +21,7 @@ describe("freehand and linear tool element creation", () => {
       tool: "pen",
       points: [10.123, 30.555, 0.7778, 20.988, 10.111, 0.2],
       pivot: { x: 15.556, y: 20.333 },
-      style: { width: 8, pressureEnabled: true, smoothing: 0.5 },
+      style: { width: 4, pressureEnabled: true, smoothing: 0.5 },
     });
     expect(validateInkElementV1(pen).ok).toBe(true);
   });
