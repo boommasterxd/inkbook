@@ -152,7 +152,7 @@ describe("Inkbook editor chrome styles", () => {
     const editorChrome = declarationsFor(".inkbook-root .inkbook-editor-chrome");
     const hiddenEditorChrome = declarationsFor(".inkbook-root .inkbook-editor-chrome[hidden]");
     const heldUnlockForeground = declarationsFor(
-      ".inkbook-root.inkbook-active-preparing .inkbook-editor-chrome-host,\n.inkbook-root.inkbook-active-preparing .inkbook-canvas-input,\n.inkbook-root.inkbook-active-preparing .inkbook-scene-foreground,\n.inkbook-root.inkbook-active-transitioning .inkbook-editor-chrome-host,\n.inkbook-root.inkbook-active-transitioning .inkbook-canvas-input,\n.inkbook-root.inkbook-active-transitioning .inkbook-scene-foreground",
+      ".inkbook-root.inkbook-active-preparing .inkbook-editor-chrome-host,\n.inkbook-root.inkbook-active-preparing .inkbook-canvas-input,\n.inkbook-root.inkbook-active-preparing .inkbook-scene-foreground",
     );
     const scene = declarationsFor(".inkbook-root .inkbook-scene");
     const transitioningScene = declarationsFor(
