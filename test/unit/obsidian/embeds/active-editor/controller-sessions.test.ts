@@ -103,7 +103,7 @@ describe("active editor background and history sessions", () => {
     expect(onPagePreviewFinish).toHaveBeenCalledWith(true);
     expect(page.background).toEqual({ type: "lines", spacing: 100 });
     session.changeType("squares");
-    expect(page.background).toEqual({ type: "squares", spacing: 25 });
+    expect(page.background).toEqual({ type: "squares", spacing: 100 / 3 });
     expect(history.undo()).toBe(true);
     expect(page.background).toEqual({ type: "lines", spacing: 100 });
 

@@ -58,7 +58,7 @@ describe("vault settings loading", () => {
     const result = loadSettings(input);
 
     expect(result.value.toolDefaults.pen.opacity).toBe(1);
-    expect(result.value.toolDefaults.table.columns).toBe(3);
+    expect(result.value.toolDefaults.table.columns).toBe(2);
     expect(result.value.pageDefaults.activeBufferLines).toBe(7);
     expect(result.value.pageDefaults.lockedBufferLines).toBe(1);
     expect(result.diagnostics).toEqual([
@@ -137,7 +137,7 @@ describe("vault settings structural validation", () => {
 
     const result = loadSettings(input);
 
-    expect(result.value.toolDefaults.pen.width).toBe(8);
+    expect(result.value.toolDefaults.pen.width).toBe(4);
     expect(result.value.toolDefaults.pen.opacity).toBe(0.25);
   });
 

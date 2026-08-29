@@ -1,3 +1,5 @@
+import { Platform } from "obsidian";
+
 import type { StyleChoiceOption, StyleControl } from "./editor-menu-types";
 import {
   arrowShapeIconId,
@@ -8,9 +10,12 @@ import {
 import { menuDomWindow } from "./menu-dom";
 
 export interface StyleMenuContentOptions {
+  readonly controlDescriptions?: Readonly<Record<string, string>>;
   readonly controls: readonly StyleControl[];
+  readonly numberInputMode?: "clamp" | "reject";
   readonly ownerDocument: Document;
   readonly onChange: (controlId: string, value: boolean | number | string) => void;
+  readonly onInvalidValue?: (controlId: string) => void;
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
 }
 
@@ -30,6 +35,7 @@ const CONTROL_ICONS: Readonly<Record<string, string>> = {
   "arrow-end-node": "move-right",
   "coordinate-dimension": "box",
   "table-columns": "columns-3",
+  "active-buffer-lines": "rows-3",
 };
 
 const WIDTH_PREVIEW_PIXELS: Readonly<Record<string, number>> = {
@@ -82,6 +88,10 @@ function createField(
   const label = header.createSpan();
   label.textContent =
     "mixed" in control && control.mixed === true ? `${control.label} · Mixed` : control.label;
+  const description = options.controlDescriptions?.[control.id];
+  if (description !== undefined) {
+    field.createEl("p", { cls: "inkbook-menu-control-description", text: description });
+  }
   const body = field.createDiv({ cls: "inkbook-menu-control-body" });
   return { field, body };
 }
@@ -205,15 +215,16 @@ function createSlider(
     options.onChange(control.id, range.valueAsNumber / scale);
   });
   value.addEventListener("input", () => {
-    const next = valueInRange(value, range);
+    const next = valueInRange(value, range, options.numberInputMode);
     if (next === undefined) return;
     range.value = String(next);
     range.removeAttribute("aria-valuetext");
   });
   value.addEventListener("change", () => {
-    const next = valueInRange(value, range);
+    const next = valueInRange(value, range, options.numberInputMode);
     if (next === undefined) {
       value.value = formatNumber(range.valueAsNumber);
+      options.onInvalidValue?.(control.id);
       return;
     }
     value.value = formatNumber(next);
@@ -225,8 +236,18 @@ function createSlider(
   return field;
 }
 
-function valueInRange(value: HTMLInputElement, range: HTMLInputElement): number | undefined {
+function valueInRange(
+  value: HTMLInputElement,
+  range: HTMLInputElement,
+  mode: StyleMenuContentOptions["numberInputMode"],
+): number | undefined {
   if (!Number.isFinite(value.valueAsNumber)) return undefined;
+  if (
+    mode === "reject" &&
+    (value.valueAsNumber < Number(range.min) || value.valueAsNumber > Number(range.max))
+  ) {
+    return undefined;
+  }
   return clamp(value.valueAsNumber, Number(range.min), Number(range.max));
 }
 
@@ -272,9 +293,27 @@ function createStepperButton(
   const button = menuDomWindow(options.ownerDocument, "style menu").createEl("button");
   button.type = "button";
   button.className = "inkbook-menu-stepper-button";
+  addMobileStepperFeedback(button);
   button.setAttribute("aria-label", label);
   options.renderIcon(button, iconId);
   return button;
+}
+
+function addMobileStepperFeedback(button: HTMLButtonElement): void {
+  if (!Platform.isMobile) return;
+  button.classList.add("inkbook-menu-stepper-button-touch");
+  const clearPressed = (): void => {
+    button.classList.remove("inkbook-menu-stepper-button-pressed");
+  };
+  button.addEventListener("pointerdown", () => {
+    button.classList.add("inkbook-menu-stepper-button-pressed");
+  });
+  button.addEventListener("pointerup", clearPressed);
+  button.addEventListener("pointercancel", clearPressed);
+  button.addEventListener("pointerleave", clearPressed);
+  button.addEventListener("lostpointercapture", clearPressed);
+  button.addEventListener("click", clearPressed);
+  button.addEventListener("blur", clearPressed);
 }
 
 function createToggle(
@@ -285,10 +324,15 @@ function createToggle(
     cls: "inkbook-menu-control inkbook-menu-toggle-row",
   });
   label.dataset.control = control.id;
-  const heading = label.createSpan({ cls: "inkbook-menu-toggle-heading" });
+  const copy = label.createSpan({ cls: "inkbook-menu-toggle-copy" });
+  const heading = copy.createSpan({ cls: "inkbook-menu-toggle-heading" });
   const icon = heading.createSpan({ cls: "inkbook-menu-control-icon" });
   options.renderIcon(icon, CONTROL_ICONS[control.id] ?? "settings-2");
   heading.createSpan({ text: control.label });
+  const description = options.controlDescriptions?.[control.id];
+  if (description !== undefined) {
+    copy.createSpan({ cls: "inkbook-menu-control-description", text: description });
+  }
   const switchControl = label.createSpan({ cls: "inkbook-menu-switch" });
   const input = switchControl.createEl("input");
   input.type = "checkbox";

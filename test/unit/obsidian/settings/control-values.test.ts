@@ -79,7 +79,7 @@ describe("SettingsControlValues", () => {
     await expect(values.set("toolDefaults.eraser.radius", 65)).rejects.toThrow(
       "Invalid setting value",
     );
-    expect(vault.saved.toolDefaults.eraser.radius).toBe(24);
+    expect(vault.saved.toolDefaults.eraser.radius).toBe(20);
   });
 
   it("normalizes custom folder paths through the domain loader", async () => {

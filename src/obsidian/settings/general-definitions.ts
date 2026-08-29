@@ -1,74 +1,16 @@
-import type { SettingDefinition, SettingDefinitionGroup, SettingDefinitionPage } from "obsidian";
+import type { SettingDefinition, SettingDefinitionGroup } from "obsidian";
 
 import {
-  BACKGROUND_TYPES,
-  LINE_SPACINGS,
   REFRESH_RATE_PREFERENCES,
   STARTUP_TOOLS,
   validateCustomVaultFolderPath,
 } from "../../domain/settings";
 import type { RefreshRateProfileStatus } from "../performance";
 import type { SettingsControlKey } from "./control-values";
-import { dropdown, resetAction, sentenceCaseLabel, slider } from "./definition-helpers";
+import { dropdown, resetAction, sentenceCaseLabel } from "./definition-helpers";
 
 const createLabels = (values: readonly string[]): Record<string, string> =>
   Object.fromEntries(values.map((value) => [value, sentenceCaseLabel(value)]));
-const backgroundSizeLabels = Object.fromEntries(
-  LINE_SPACINGS.map((value, index) => [String(value), ["S", "M", "L", "XL"][index]!]),
-);
-
-function backgroundPage(): SettingDefinitionPage<SettingsControlKey> {
-  return {
-    type: "page",
-    name: "Background",
-    desc: "Configure the background copied into newly created files.",
-    items: [
-      dropdown(
-        "pageDefaults.backgroundType",
-        "Background type",
-        "Choose the background for newly created files.",
-        createLabels(BACKGROUND_TYPES),
-      ),
-      dropdown(
-        "pageDefaults.backgroundSpacing.lines",
-        "Line spacing",
-        "Choose the line spacing copied into new files.",
-        backgroundSizeLabels,
-      ),
-      dropdown(
-        "pageDefaults.backgroundSpacing.dots",
-        "Dot spacing",
-        "Choose the dot spacing copied into new files.",
-        backgroundSizeLabels,
-      ),
-      dropdown(
-        "pageDefaults.backgroundSpacing.squares",
-        "Square spacing",
-        "Choose the square spacing copied into new files.",
-        backgroundSizeLabels,
-      ),
-    ],
-  };
-}
-
-function pageBufferPage(): SettingDefinitionPage<SettingsControlKey> {
-  return {
-    type: "page",
-    name: "Page buffer",
-    desc: "Configure page dimensions copied into newly created files.",
-    items: [
-      slider(
-        "pageDefaults.activeBufferLines",
-        "Active buffer lines",
-        "Set the active buffer in new files.",
-        1,
-        8,
-        1,
-      ),
-    ],
-  };
-}
-
 function customFolderDefinition(
   isCustomFolder: () => boolean,
 ): SettingDefinition<SettingsControlKey> {
@@ -138,8 +80,6 @@ export function generalGroup(
         visible: callbacks.canCreateFolder,
         action: callbacks.createFolder,
       },
-      backgroundPage(),
-      pageBufferPage(),
       resetAction("Reset group to defaults", callbacks.reset),
     ],
   };
