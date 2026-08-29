@@ -62,6 +62,7 @@ export class InkbookSettingTab extends PluginSettingTab {
     };
     const toolValues = {
       getDefaults: () => this.store.getVaultSettings().toolDefaults,
+      getMotion: () => this.store.getDeviceSettings().motion,
       set: (key: SettingsControlKey, value: unknown) => this.controls.set(key, value),
     };
     return [
