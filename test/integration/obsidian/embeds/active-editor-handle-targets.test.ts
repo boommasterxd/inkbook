@@ -125,6 +125,32 @@ describe("active editor selection handle targets", () => {
   );
 });
 
+describe("active editor selection interior handle arbitration", () => {
+  it("keeps the center of a small low-zoom selection available for touch move", () => {
+    const element = rectangle();
+    const bounds = calculateElementBounds(element);
+    const zoom = 0.15;
+    const center = {
+      pointerId: 24,
+      pointerType: "touch" as const,
+      x: (bounds.minX + bounds.maxX) / 2,
+      y: (bounds.minY + bounds.maxY) / 2,
+    };
+
+    expect(harness([element], zoom).interaction.pointerDown(center)).toBe(false);
+
+    const nearTopCenter = harness([element], zoom);
+    expect(
+      nearTopCenter.interaction.pointerDown({
+        ...center,
+        pointerId: 25,
+        y: bounds.minY + 8 / zoom,
+      }),
+    ).toBe(true);
+    nearTopCenter.interaction.cancel(25);
+  });
+});
+
 describe("active editor selection snap guides", () => {
   it("renders radial rotation and chord bend guides through the live overlay", () => {
     const shape = rectangle();

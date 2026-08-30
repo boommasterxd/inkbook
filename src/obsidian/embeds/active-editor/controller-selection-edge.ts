@@ -40,9 +40,13 @@ export class ActiveEditorSelectionEdgeDrag implements SelectionEdgeDragPort {
   }
 
   public finish(committed: boolean): void {
+    this.stop();
+    this.#layout.finish(committed);
+  }
+
+  public stop(): void {
     this.#scroller.finish();
     this.#onViewportChanged = undefined;
-    this.#layout.finish(committed);
   }
 
   public update(screenPointer: { readonly x: number; readonly y: number }): void {

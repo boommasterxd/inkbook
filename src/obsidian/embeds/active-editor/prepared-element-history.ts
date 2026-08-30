@@ -78,7 +78,11 @@ export class PreparedElementHistory {
     return true;
   }
 
-  public commitMove(elements: readonly InkElementV1[], delta: PointV1): boolean {
+  public commitMove(
+    elements: readonly InkElementV1[],
+    delta: PointV1,
+    onCompleted?: (committed: boolean) => void,
+  ): boolean {
     if (elements.length <= SYNCHRONOUS_SELECTION_LIMIT || this.#pending || this.#disposed) {
       return false;
     }
@@ -94,7 +98,7 @@ export class PreparedElementHistory {
       } finally {
         previewCommit.cancel();
       }
-    });
+    }, onCompleted);
     return true;
   }
 
@@ -139,11 +143,17 @@ export class PreparedElementHistory {
     return this.#model.commitPreparedElementReplacement(preparation.token) === "committed";
   }
 
-  #run(operation: (generation: number) => Promise<boolean>): void {
+  #run(
+    operation: (generation: number) => Promise<boolean>,
+    onCompleted?: (committed: boolean) => void,
+  ): void {
     const generation = ++this.#generation;
     this.#setPending(true);
     void operation(generation)
       .catch(() => false)
+      .then((committed) => {
+        if (!this.#disposed && generation === this.#generation) onCompleted?.(committed);
+      })
       .finally(() => {
         if (generation === this.#generation) this.#setPending(false);
       });

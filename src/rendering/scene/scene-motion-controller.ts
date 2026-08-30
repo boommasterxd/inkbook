@@ -53,6 +53,13 @@ export class SceneMotionController {
     immediateSuppressedIds?: readonly string[],
   ): number | undefined {
     const suppression = this.takeMatchingSuppression(changes);
+    if (
+      suppression !== undefined &&
+      this.#entries.size === 0 &&
+      this.#pendingEntrances.size === 0
+    ) {
+      return suppression.token;
+    }
     const immediateSuppression =
       immediateSuppressedIds === undefined || immediateSuppressedIds.length === 0
         ? undefined

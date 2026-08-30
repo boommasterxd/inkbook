@@ -52,7 +52,11 @@ export class CoalescedPointerInput {
     if (source === null) return false;
     const expected = this.#projectSample(event);
     if (expected === null) return false;
-    const pending = this.#validatedSamples(source.length === 0 ? [event] : source, expected);
+    const pending = this.#validatedSamples(
+      source.length === 0 ? [event] : source,
+      expected,
+      event.timeStamp,
+    );
     if (pending === null) return false;
     this.#pending = pending;
     const pointer = this.#pending[this.#pending.length - 1];
@@ -88,6 +92,7 @@ export class CoalescedPointerInput {
   #validatedSamples(
     source: readonly PointerEvent[],
     expected: PointerSample,
+    dispatchedTime: number,
   ): readonly CoalescedCreationSample[] | null {
     const samples: CoalescedCreationSample[] = [];
     let previousTime = Number.NEGATIVE_INFINITY;
@@ -114,6 +119,14 @@ export class CoalescedPointerInput {
         samples.push({ ...pointer, time: event.timeStamp });
         previousTime = event.timeStamp;
       }
+      if (!Number.isFinite(dispatchedTime) || dispatchedTime < 0 || dispatchedTime < previousTime) {
+        return null;
+      }
+      const dispatched = { ...expected, time: dispatchedTime };
+      if (!sameCreationSample(samples[samples.length - 1], dispatched)) {
+        if (samples.length === MAX_COALESCED_SAMPLES_PER_EVENT) samples.pop();
+        samples.push(dispatched);
+      }
     } catch {
       return null;
     }
@@ -128,6 +141,21 @@ export class CoalescedPointerInput {
       return null;
     }
   }
+}
+
+function sameCreationSample(
+  left: CoalescedCreationSample | undefined,
+  right: CoalescedCreationSample,
+): boolean {
+  return (
+    left !== undefined &&
+    left.pointerId === right.pointerId &&
+    left.pointerType === right.pointerType &&
+    left.x === right.x &&
+    left.y === right.y &&
+    left.pressure === right.pressure &&
+    left.time === right.time
+  );
 }
 
 function coalescedEvents(event: PointerEvent): readonly PointerEvent[] | null {

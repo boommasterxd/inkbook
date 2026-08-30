@@ -22,11 +22,11 @@ class Frames {
     return frame;
   };
 
-  flush(): void {
+  flush(timestamp = 0): void {
     const entry = this.callbacks.entries().next().value;
     if (entry === undefined) throw new Error("No frame is pending.");
     this.callbacks.delete(entry[0]);
-    entry[1](0);
+    entry[1](timestamp);
   }
 }
 
@@ -90,7 +90,28 @@ describe("selection edge auto-scroll", () => {
     expect(calls).toEqual(["refresh", "scroll"]);
     scroller.finish();
   });
+
+  it("keeps edge-scroll distance stable across refresh rates", () => {
+    expect(scrollDistanceOverOneSecond(60)).toBeCloseTo(scrollDistanceOverOneSecond(240), 8);
+  });
 });
+
+function scrollDistanceOverOneSecond(refreshRate: number): number {
+  const frames = new Frames();
+  let distance = 0;
+  const scroller = createScroller(frames, {
+    onScroll: ({ y }) => {
+      distance += y;
+    },
+  });
+  scroller.update({ x: 500, y: 490 });
+  frames.flush(0);
+  for (let frame = 1; frame <= refreshRate; frame += 1) {
+    frames.flush((frame * 1_000) / refreshRate);
+  }
+  scroller.finish();
+  return distance;
+}
 
 describe("active editor selection edge integration", () => {
   it("keeps pointer reprojection and native navigation in one drag session", () => {

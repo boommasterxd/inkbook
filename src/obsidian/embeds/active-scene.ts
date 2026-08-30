@@ -130,6 +130,7 @@ export class ActiveInkbookScene {
       sceneStore: this.#store,
       selectionMoveLayout: {
         begin: () => this.#layout.beginSelectionMove(),
+        currentHeight: () => this.#layout.currentPageHeight(),
         finish: (committed) => this.#layout.finishSelectionMove(committed),
         updateBottom: (maximumBottom) => this.#layout.updateSelectionMoveBottom(maximumBottom),
       },

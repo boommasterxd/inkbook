@@ -1,7 +1,6 @@
 import type { Bounds } from "../../domain/geometry/public";
 import type { ArrowNodeV1, InkElementV1 } from "../../domain/schema/public";
 import type { SceneCamera, SceneStorePort, SceneViewport } from "./types";
-import type { SceneVisibilityState } from "./visibility-state";
 
 const MAX_PREVIEW_PATHS = 256;
 
@@ -14,13 +13,11 @@ interface Candidate {
 export function selectViewportNearPreviewIds(
   ids: readonly string[],
   store: SceneStorePort,
-  visibility: SceneVisibilityState,
   viewport: SceneViewport | undefined,
   camera: SceneCamera,
 ): readonly string[] {
   const candidates: Candidate[] = [];
   for (const id of ids) {
-    if (!visibility.contains(id)) continue;
     const record = store.get(id);
     if (record === undefined) continue;
     candidates.push({

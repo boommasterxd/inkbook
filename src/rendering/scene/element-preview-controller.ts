@@ -11,6 +11,10 @@ export class SceneElementPreviewController {
     this.#content = content;
   }
 
+  public get values(): ReadonlyMap<string, InkElementV1> {
+    return this.#elements;
+  }
+
   public set(elements: readonly InkElementV1[], version: number): boolean {
     for (const id of this.#elements.keys()) this.#versions.set(id, -1);
     for (const element of elements) {

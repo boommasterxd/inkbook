@@ -86,7 +86,7 @@ export class SceneContentRenderer {
   }
 
   public markGeometry(id: string): void {
-    this.#geometryDirty.add(id);
+    if (this.#mounted.has(id)) this.#geometryDirty.add(id);
     this.#pathCache.invalidate(id);
   }
 
@@ -139,8 +139,9 @@ export class SceneContentRenderer {
     deadline: number,
     now: () => number,
     previewTransforms: ReadonlyMap<string, PreviewTransform>,
+    previewElements: ReadonlyMap<string, InkElementV1>,
   ): boolean {
-    const result = this.#reconciler.reconcile(deadline, now, previewTransforms);
+    const result = this.#reconciler.reconcile(deadline, now, previewTransforms, previewElements);
     if (result.committedVisibility !== undefined) {
       this.commitVisibility(result.committedVisibility);
       this.#newlyMountedIds = result.newlyMountedIds;

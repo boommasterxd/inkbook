@@ -12,6 +12,8 @@ import {
   layoutSelectionHandles,
   oppositeElementHandlePoint,
   selectionBounds,
+  selectionOverlayContainsPoint,
+  selectionOverlayGeometry,
   SelectionHandleSession,
   type SelectedElementGeometry,
   type SelectionHandle,
@@ -29,6 +31,7 @@ import { selectionOverlayFill, selectionOverlayPath } from "./selection-overlay-
 import { selectionSnapGuidePath } from "./snap-marker-path";
 
 const HANDLE_RADIUS_PIXELS = 13;
+const INTERIOR_HANDLE_RADIUS_PIXELS = 10;
 const PEN_HANDLE_RADIUS_PIXELS = 16;
 const TOUCH_HANDLE_RADIUS_PIXELS = 24;
 
@@ -124,7 +127,7 @@ export class ActiveEditorHandleInteraction {
       handles,
       pointer,
       this.#zoom(),
-      handleRadiusPixels(pointer.pointerType, this.#zoom()),
+      pointerHandleRadiusPixels(selected, pointer, this.#zoom()),
     );
     if (handle === null) return false;
     const elements = selected.map(({ element }) => element);
@@ -301,6 +304,50 @@ function handleRadiusPixels(pointerType: PointerSample["pointerType"], zoom: num
         ? PEN_HANDLE_RADIUS_PIXELS
         : HANDLE_RADIUS_PIXELS;
   return Math.min(28, Math.max(11, base / Math.sqrt(zoom)));
+}
+
+function pointerHandleRadiusPixels(
+  selected: readonly SelectedElementGeometry[],
+  pointer: PointerSample,
+  zoom: number,
+): number {
+  const radius = handleRadiusPixels(pointer.pointerType, zoom);
+  if (!selectionOverlayContainsPoint(selected, pointer)) return radius;
+  const outline = selectionOverlayGeometry(selected, zoom)?.outline;
+  if (
+    outline?.kind !== "polygon" ||
+    polygonEdgeDistance(pointer, outline.points) * zoom <= INTERIOR_HANDLE_RADIUS_PIXELS
+  ) {
+    return radius;
+  }
+  return Math.min(radius, INTERIOR_HANDLE_RADIUS_PIXELS);
+}
+
+function polygonEdgeDistance(point: PointV1, vertices: readonly PointV1[]): number {
+  let minimum = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < vertices.length; index += 1) {
+    const start = vertices[index];
+    const end = vertices[(index + 1) % vertices.length];
+    if (start === undefined || end === undefined) continue;
+    const deltaX = end.x - start.x;
+    const deltaY = end.y - start.y;
+    const lengthSquared = deltaX * deltaX + deltaY * deltaY;
+    const factor =
+      lengthSquared === 0
+        ? 0
+        : Math.max(
+            0,
+            Math.min(
+              1,
+              ((point.x - start.x) * deltaX + (point.y - start.y) * deltaY) / lengthSquared,
+            ),
+          );
+    minimum = Math.min(
+      minimum,
+      Math.hypot(point.x - (start.x + factor * deltaX), point.y - (start.y + factor * deltaY)),
+    );
+  }
+  return minimum;
 }
 
 function handleAction(

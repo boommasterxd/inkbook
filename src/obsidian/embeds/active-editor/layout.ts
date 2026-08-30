@@ -107,6 +107,10 @@ export class ActiveEditorLayout {
     this.#applyHeightUpdate(this.#pageLayout.beginSelectionMove());
   }
 
+  public currentPageHeight(): number | undefined {
+    return this.#pageLayout.height;
+  }
+
   public chromeMounted(): void {
     if (this.#chromeMounted) return;
     this.#chromeMounted = true;

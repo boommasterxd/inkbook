@@ -92,6 +92,17 @@ describe("active editor pointer controller", () => {
   });
 });
 
+describe("selection handle pointer cancellation", () => {
+  it("does not cancel a non-cancelable touch move owned by a selection handle", () => {
+    const preventDefault = vi.fn();
+    const controller = horizontalPanController({ handles: handlesPort(true) });
+
+    controller.handlePointerMove(pointerEvent("touch", { cancelable: false, preventDefault }));
+
+    expect(preventDefault).not.toHaveBeenCalled();
+  });
+});
+
 describe("active editor pointer gesture ownership", () => {
   it("stops a claimed horizontal touch pan before it reaches Obsidian", () => {
     const controller = horizontalPanController();
@@ -199,6 +210,7 @@ function horizontalPanController(overrides?: {
   readonly coalescedDispatch?: (event: PointerEvent) => boolean;
   readonly dispatch?: (action: unknown) => void;
   readonly getInput?: () => InputState;
+  readonly handles?: ActiveEditorHandleInteraction;
   readonly navigation?: ActiveEditorNavigation;
   readonly releasePointer?: (pointerId: number) => void;
 }): ActiveEditorPointerController {
@@ -212,7 +224,7 @@ function horizontalPanController(overrides?: {
     dispatch: overrides?.dispatch ?? vi.fn(),
     finishHandlePointer: vi.fn(),
     getInput: overrides?.getInput ?? (() => ({ ...input, interaction: pagePanInteraction() })),
-    handles: handlesPort(false),
+    handles: overrides?.handles ?? handlesPort(false),
     interruptForInput: vi.fn(),
     isEnabled: () => true,
     menus: menuPort(),
@@ -272,11 +284,14 @@ function rendererPort(): SvgSceneRenderer {
 
 function pointerEvent(
   pointerType = "mouse",
-  overrides: Partial<Pick<PointerEvent, "preventDefault" | "stopPropagation" | "timeStamp">> = {},
+  overrides: Partial<
+    Pick<PointerEvent, "cancelable" | "preventDefault" | "stopPropagation" | "timeStamp">
+  > = {},
 ): PointerEvent {
   return {
     button: 0,
     buttons: 1,
+    cancelable: overrides.cancelable ?? true,
     ctrlKey: false,
     isPrimary: true,
     metaKey: false,

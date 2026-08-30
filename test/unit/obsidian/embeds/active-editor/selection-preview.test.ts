@@ -46,12 +46,60 @@ function createEdgeDrag() {
   return {
     begin: vi.fn<() => void>(),
     finish: vi.fn<(committed: boolean) => void>(),
+    stop: vi.fn<() => void>(),
     update: vi.fn<(pointer: { readonly x: number; readonly y: number }) => void>(),
     updatePreviewBottom: vi.fn<(maximumBottom: number) => void>(),
   };
 }
 
 describe("selection move edge-drag integration", () => {
+  it("holds the page reservation until an accepted prepared move actually completes", () => {
+    const edgeDrag = createEdgeDrag();
+    let complete: ((committed: boolean) => void) | undefined;
+    const element = rectangle();
+    const store = new ElementStore([element]);
+    const sceneStore = new ElementSceneStore(store);
+    const preparedPreview = new MovePreview({
+      history: {} as ActiveEditorHistory,
+      pageToScreen: (point) => point,
+      preparedHistory: {
+        commitMove: (
+          _elements: unknown,
+          _delta: unknown,
+          onCompleted?: (committed: boolean) => void,
+        ) => {
+          complete = onCompleted;
+          return true;
+        },
+      } as unknown as PreparedElementHistory,
+      renderer: {
+        clearPreviewTransforms: vi.fn(),
+        setOverlayPath: vi.fn(),
+        setPreviewTransform: vi.fn(),
+        suppressMotionForNextDelta: vi.fn(),
+      },
+      sceneStore,
+      selection: () => new Set([element.id]),
+      selectionEdgeDrag: edgeDrag,
+      setSelection: vi.fn(),
+      start: {
+        additive: false,
+        kind: "element-move",
+        pointer: pointer(0, 0),
+        tool: "select",
+      },
+      store,
+    });
+    preparedPreview.update(pointer(10, 20));
+
+    expect(preparedPreview.commit()).toBe(true);
+    expect(edgeDrag.stop).toHaveBeenCalledOnce();
+    expect(edgeDrag.finish).not.toHaveBeenCalled();
+    complete?.(true);
+    expect(edgeDrag.finish).toHaveBeenCalledWith(true);
+    sceneStore.release();
+  });
+
   it("forwards screen-space movement and cancellation through the drag lifecycle", () => {
     const edgeDrag = createEdgeDrag();
     const preview = createPreview(edgeDrag);
@@ -83,6 +131,7 @@ describe("selection move edge-scroll projection", () => {
       }),
     };
     const setPreviewTransform = vi.fn();
+    const flushCameraAndOverlayFrame = vi.fn();
     const preview = new MovePreview({
       history: {} as ActiveEditorHistory,
       pageToScreen: (point) => point,
@@ -90,6 +139,7 @@ describe("selection move edge-scroll projection", () => {
       preparedHistory: {} as PreparedElementHistory,
       renderer: {
         clearPreviewTransforms: vi.fn(),
+        flushCameraAndOverlayFrame,
         setOverlayPath: vi.fn(),
         setPreviewTransform,
         suppressMotionForNextDelta: vi.fn(),
@@ -115,6 +165,7 @@ describe("selection move edge-scroll projection", () => {
     refreshViewport?.();
 
     expect(setPreviewTransform).toHaveBeenLastCalledWith([], "translate(20 70)", 2);
+    expect(flushCameraAndOverlayFrame).toHaveBeenCalledOnce();
     preview.revert();
   });
 });
@@ -126,6 +177,13 @@ describe("selection move edge-drag validation", () => {
     const edgeDrag = createEdgeDrag();
     const clearPreviewTransforms = vi.fn();
     const setSelectionOverlayPath = vi.fn();
+    const selected = new Set([element.id]);
+    const start = {
+      additive: false,
+      kind: "element-move" as const,
+      pointer: pointer(0, 0),
+      tool: "select" as const,
+    };
     const preview = new MovePreview({
       history: { replace: vi.fn() } as unknown as ActiveEditorHistory,
       pageToScreen: (point) => point,
@@ -140,15 +198,10 @@ describe("selection move edge-drag validation", () => {
         suppressMotionForNextDelta: vi.fn(),
       },
       sceneStore: {} as ElementSceneStore,
-      selection: () => new Set([element.id]),
+      selection: () => selected,
       selectionEdgeDrag: edgeDrag,
       setSelection: vi.fn(),
-      start: {
-        additive: false,
-        kind: "element-move",
-        pointer: pointer(0, 0),
-        tool: "select",
-      },
+      start,
       store,
     });
 
@@ -159,9 +212,7 @@ describe("selection move edge-drag validation", () => {
     expect(setSelectionOverlayPath).toHaveBeenLastCalledWith(expect.any(String), "accent");
     expect(edgeDrag.finish).toHaveBeenCalledWith(false);
   });
-});
 
-describe("selection move connected geometry", () => {
   it("snaps a moved free line endpoint to a shape and renders an offset target marker", () => {
     const target = rectangle();
     const line = {

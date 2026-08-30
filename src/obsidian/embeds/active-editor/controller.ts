@@ -138,6 +138,7 @@ export class ActiveEditorController {
     this.#navigation = ControllerInteractions.createControllerNavigation({
       controller: options,
       getInput: () => this.#input,
+      isSelectionMoveActive: () => this.#input.interaction?.phase === "element-move",
       renderSelection: () => this.#handles.renderSelection(),
       scrollOwner: this.#scrollOwner,
       setInput: (input) => {
@@ -254,8 +255,10 @@ export class ActiveEditorController {
       this.#onLock();
     } else if (action === "shape-picker" || action === "overflow" || action === "style")
       this.#menus.toggleToolbar(action === "shape-picker" ? "shape" : action, trigger);
-    else if (action === "finger-drawing") this.#toggleFingerDrawing();
-    else if (
+    else if (action === "finger-drawing") {
+      this.#input = this.#touchMode.toggle(this.#input);
+      this.#onStateChanged();
+    } else if (
       (action === "delete" || action === "copy" || action === "cut" || action === "paste") &&
       this.#actions.isAvailable(action)
     )
@@ -491,10 +494,6 @@ export class ActiveEditorController {
     this.#selection = selection;
     this.#input = { ...this.#input, hasSelection: selection.size > 0 };
     this.#handles.renderSelection();
-    this.#onStateChanged();
-  }
-  #toggleFingerDrawing(): void {
-    this.#input = this.#touchMode.toggle(this.#input);
     this.#onStateChanged();
   }
 }

@@ -28,6 +28,7 @@ import { snapMarkerPath } from "./snap-marker-path";
 interface SelectionPreviewRenderer {
   clearElementPreviews?(): void;
   clearPreviewTransforms(): void;
+  flushCameraAndOverlayFrame?(): void;
   setElementPreviews?(elements: readonly InkElementV1[], version: number): void;
   setOverlayPath(d: string | null): void;
   setSelectionOverlayPath?(d: string | null, fill?: "accent" | "none"): void;
@@ -39,6 +40,7 @@ interface SelectionPreviewRenderer {
 export interface SelectionEdgeDragPort {
   begin(onViewportChanged?: () => void): void;
   finish(committed: boolean): void;
+  stop(): void;
   update(screenPointer: PointV1): void;
   updatePreviewBottom(maximumBottom: number): void;
 }
@@ -87,7 +89,9 @@ export class LassoPreview implements GesturePreview {
     const area = this.#selectionArea();
     const next =
       area === null
-        ? previous
+        ? this.#options.start.additive || previous.size === 0
+          ? previous
+          : new Set<string>()
         : selectBySelectionAreaQuery(
             previous,
             area,
@@ -216,11 +220,16 @@ export class MovePreview implements GesturePreview {
     this.#assertActive();
     this.#finished = true;
     let committed = false;
+    let prepared = false;
     try {
       if (this.#current.x !== 0 || this.#current.y !== 0) {
-        committed =
+        prepared =
           this.#moveSnap === null &&
-          this.#options.preparedHistory.commitMove(this.#elements, this.#current);
+          this.#options.preparedHistory.commitMove(this.#elements, this.#current, (result) => {
+            if (!result) this.#renderSelectionOverlay(null);
+            this.#options.selectionEdgeDrag?.finish(result);
+          });
+        committed = prepared;
         if (!committed) {
           const plan = this.#options.store.planReplacements(this.#movedElements());
           if (plan !== null) {
@@ -236,7 +245,8 @@ export class MovePreview implements GesturePreview {
       this.#options.renderer.clearElementPreviews?.();
       this.#options.renderer.setSnapMarkerPath?.(null);
       this.#renderSelectionOverlay(committed ? this.#translationTransform() : null);
-      this.#options.selectionEdgeDrag?.finish(committed);
+      if (prepared) this.#options.selectionEdgeDrag?.stop();
+      else this.#options.selectionEdgeDrag?.finish(committed);
     }
     return committed;
   }
@@ -300,6 +310,7 @@ export class MovePreview implements GesturePreview {
     this.#lastPointer = pointer;
     const maximumBottom = this.#renderUpdate(pointer);
     this.#options.selectionEdgeDrag?.updatePreviewBottom(maximumBottom);
+    this.#options.renderer.flushCameraAndOverlayFrame?.();
   }
 
   #assertActive(): void {

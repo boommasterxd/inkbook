@@ -122,4 +122,15 @@ describe("selection move page-height policy", () => {
     expect(layout.finishSelectionMove(true, page, 525)).toBeUndefined();
     expect(layout.height).toBe(derivePageExtent(page, 525).activeHeight);
   });
+
+  it("keeps a preview reservation stable while the committed store still has its old extent", () => {
+    const layout = new ActivePageLayout();
+    layout.committed(page, undefined);
+    layout.beginSelectionMove();
+    const previewHeight = derivePageExtent(page, 925).activeHeight;
+    layout.previewSelectionMove(page, 925);
+
+    expect(layout.committed(page, undefined, true)).toBeUndefined();
+    expect(layout.height).toBe(previewHeight);
+  });
 });

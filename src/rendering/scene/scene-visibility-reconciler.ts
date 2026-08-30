@@ -1,4 +1,5 @@
 import type { RenderBand } from "../../domain/commands/render-bands";
+import type { InkElementV1 } from "../../domain/schema/public";
 import { MountSlice, mountCost, type MountYieldReason } from "./mount-slice";
 import {
   appendElementToFragment,
@@ -122,11 +123,12 @@ export class SceneVisibilityReconciler {
     deadline: number,
     now: () => number,
     previewTransforms: ReadonlyMap<string, PreviewTransform>,
+    previewElements: ReadonlyMap<string, InkElementV1>,
   ): ReconciliationResult {
     const pending = this.#pending;
     if (pending === undefined) return { newlyMountedIds: EMPTY_IDS, pending: false };
     const slice = new MountSlice(deadline, now);
-    let reason = this.scanExits(pending, slice);
+    let reason = this.scanExits(pending, slice, previewTransforms, previewElements);
     if (reason === undefined) {
       this.stagePromoted(pending, slice, previewTransforms);
       reason = this.stageBands(pending, slice, previewTransforms);
@@ -146,6 +148,8 @@ export class SceneVisibilityReconciler {
   private scanExits(
     pending: PendingReconciliation,
     slice: MountSlice,
+    previews: ReadonlyMap<string, PreviewTransform>,
+    previewElements: ReadonlyMap<string, InkElementV1>,
   ): MountYieldReason | undefined {
     while (true) {
       const reason = slice.blockingReason({ geometry: 1, strokePoints: 0 });
@@ -154,7 +158,11 @@ export class SceneVisibilityReconciler {
       if (next.done) return undefined;
       const [id] = next.value;
       slice.record({ geometry: 1, strokePoints: 0 });
-      if (!this.options.visibility.contains(id)) {
+      if (
+        !this.options.visibility.contains(id) &&
+        previews.get(id)?.transform == null &&
+        !previewElements.has(id)
+      ) {
         this.#exitCapacity = this.recordGrowth(this.#exitCapacity, pending.exitIds.length + 1);
         pending.exitIds.push(id);
       }

@@ -94,18 +94,24 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
 export function createControllerNavigation(options: {
   readonly controller: ActiveEditorControllerOptions;
   readonly getInput: ActiveEditorNavigationOptions["getInput"];
+  readonly isSelectionMoveActive: () => boolean;
   readonly renderSelection: () => void;
   readonly scrollOwner: ActiveEditorNavigationOptions["scrollOwner"];
   readonly setInput: ActiveEditorNavigationOptions["setInput"];
 }): ActiveEditorNavigation {
   const controller = options.controller;
+  let appliedZoom = options.getInput().zoom;
   return new ActiveEditorNavigation({
     activePageHeight: () =>
+      controller.selectionMoveLayout.currentHeight?.() ??
       derivePageExtent(controller.model.page, controller.model.store.getMaximumBottom() ?? null)
         .activeHeight,
     applyCamera: (camera) => {
       controller.renderer.setCamera(camera);
-      options.renderSelection();
+      if (camera.zoom !== appliedZoom || !options.isSelectionMoveActive()) {
+        options.renderSelection();
+      }
+      appliedZoom = camera.zoom;
       controller.renderer.flushCameraAndOverlayFrame();
     },
     applyZoomLayout: controller.applyZoomLayout,

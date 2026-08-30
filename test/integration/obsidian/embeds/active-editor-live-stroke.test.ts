@@ -82,6 +82,20 @@ describe("active editor live stroke limits", () => {
     expect(dispatchMove).toHaveBeenCalledWith(expect.objectContaining({ x: 4095, y: 4095 }));
   });
 
+  it("includes the dispatched pointer when the browser omits it from the coalesced list", () => {
+    const dispatchMove = vi.fn();
+    const input = coalescedHarness(dispatchMove);
+    const dispatched = {
+      ...pointerEvent(30, 40, 0.6, 2),
+      getCoalescedEvents: () => [pointerEvent(10, 20, 0.4, 1)],
+    } as PointerEvent;
+
+    expect(input.dispatch(dispatched)).toBe(true);
+    expect(dispatchMove).toHaveBeenCalledWith(
+      expect.objectContaining({ pressure: 0.6, time: 2, x: 30, y: 40 }),
+    );
+  });
+
   it.each([
     ["foreign pointer", [pointerEvent(10, 10, 0.5, 1), pointerEvent(20, 20, 0.5, 2, 2)]],
     [
@@ -194,8 +208,9 @@ function createCoalescedInput(
 }
 
 function coalescedEvent(samples: readonly PointerEvent[]): PointerEvent {
+  const dispatched = samples[samples.length - 1] ?? pointerEvent(0, 0, 0.5, 0);
   return {
-    ...pointerEvent(0, 0, 0.5, 0),
+    ...dispatched,
     getCoalescedEvents: () => samples,
   } as unknown as PointerEvent;
 }

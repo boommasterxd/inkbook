@@ -127,12 +127,12 @@ export class SvgSceneRenderer {
     this.#transformPreviews = new SceneTransformPreviewController(
       this.#content,
       options.store,
-      this.#visibility,
       this.#camera,
     );
     this.#previewCommits = new ScenePreviewCommitController(this.#motion, () => {
       this.#transformPreviews.clear();
       this.#elementPreviews.clear();
+      this.reconcileReleasedPreviewVisibility();
       this.schedule();
     });
     this.#deltas = new SceneDeltaCoordinator({
@@ -291,6 +291,7 @@ export class SvgSceneRenderer {
     this.assertActive();
     if (this.#previewCommits.requestClear()) return;
     this.#transformPreviews.clear();
+    this.reconcileReleasedPreviewVisibility();
     this.schedule();
   }
   public setElementFade(ids: readonly string[], durationMs: number): void {
@@ -313,6 +314,8 @@ export class SvgSceneRenderer {
     this.assertActive();
     if (this.#previewCommits.requestClear()) return;
     this.#elementPreviews.clear();
+    this.reconcileReleasedPreviewVisibility();
+    this.schedule();
   }
   public promoteVisible(id: string): void {
     this.assertActive();
@@ -388,6 +391,7 @@ export class SvgSceneRenderer {
       this.#content.materializePreviewGeometry(this.#transformPreviews.values);
       this.#transformPreviews.clear();
       this.#elementPreviews.clear();
+      this.reconcileReleasedPreviewVisibility();
     }
     this.prepareVisibility();
     this.#transformPreviews.refreshContext();
@@ -405,6 +409,7 @@ export class SvgSceneRenderer {
       deadline,
       () => this.#scheduler.now(),
       this.#transformPreviews.values,
+      this.#elementPreviews.values,
     );
     if (pendingVisibility) {
       this.schedule();
@@ -472,6 +477,11 @@ export class SvgSceneRenderer {
   private invalidateVisibility(): void {
     this.#visibilityDirty = true;
     this.#content.cancelPendingVisibility();
+  }
+
+  private reconcileReleasedPreviewVisibility(): void {
+    this.invalidateVisibility();
+    this.#content.replaceVisibility(this.#visibility.resortCurrent());
   }
   private refreshCacheInstrumentation(): void {
     refreshCacheInstrumentation(this.#instrumentation, this.#backgroundCache, this.#pathCache);

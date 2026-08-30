@@ -2,7 +2,6 @@ import type { SceneContentRenderer } from "./content-renderer";
 import { selectViewportNearPreviewIds } from "./preview-transform-selection";
 import type { PreviewTransform } from "./scene-visibility-reconciler";
 import type { PreviewStrokeWidth, SceneCamera, SceneStorePort, SceneViewport } from "./types";
-import type { SceneVisibilityState } from "./visibility-state";
 
 interface PreviewRequest {
   readonly strokeWidth: PreviewStrokeWidth;
@@ -15,7 +14,6 @@ export class SceneTransformPreviewController {
   readonly #dirty = new Set<string>();
   readonly #store: SceneStorePort;
   readonly #transforms = new Map<string, PreviewTransform>();
-  readonly #visibility: SceneVisibilityState;
   #camera: SceneCamera;
   #ids: readonly string[] = [];
   #contextDirty = false;
@@ -23,15 +21,9 @@ export class SceneTransformPreviewController {
   #source: readonly string[] | undefined;
   #viewport: SceneViewport | undefined;
 
-  public constructor(
-    content: SceneContentRenderer,
-    store: SceneStorePort,
-    visibility: SceneVisibilityState,
-    camera: SceneCamera,
-  ) {
+  public constructor(content: SceneContentRenderer, store: SceneStorePort, camera: SceneCamera) {
     this.#content = content;
     this.#store = store;
-    this.#visibility = visibility;
     this.#camera = camera;
   }
 
@@ -120,13 +112,7 @@ export class SceneTransformPreviewController {
       this.#transforms.set(id, { strokeWidthScale: null, transform: null, version });
       this.#dirty.add(id);
     }
-    this.#ids = selectViewportNearPreviewIds(
-      ids,
-      this.#store,
-      this.#visibility,
-      this.#viewport,
-      this.#camera,
-    );
+    this.#ids = selectViewportNearPreviewIds(ids, this.#store, this.#viewport, this.#camera);
     this.#source = ids;
   }
 

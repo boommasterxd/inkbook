@@ -21,6 +21,45 @@ const PAGE: PageV1 = {
   margin: 24.3,
 };
 
+describe("preview visibility leases", () => {
+  it("keeps a transformed preview mounted while its committed bounds are culled", () => {
+    const { renderer, scheduler, store } = setup();
+    store.records.clear();
+    store.records.set("moving", fakeRectangleRecord("moving", 0, 0, 1_000));
+    renderer.setViewport({ height: 100, left: 0, top: 1_000, width: 100 });
+    scheduler.runAll();
+
+    renderer.setPreviewTransform(["moving"], "translate(0 -1000)", 1);
+    renderer.setViewport({ height: 100, left: 0, top: 0, width: 100 });
+    scheduler.runAll();
+
+    expect(renderer.mountedCount).toBe(1);
+    expect(contentPath(renderer, 0).attributes.get("transform")).toBe("translate(0 -1000)");
+    renderer.clearPreviewTransforms();
+    scheduler.runAll();
+    expect(renderer.mountedCount).toBe(0);
+  });
+
+  it("keeps an exact connected-element preview mounted until it is cleared", () => {
+    const { renderer, scheduler, store } = setup();
+    const record = fakeRectangleRecord("exact", 0, 0, 1_000);
+    store.records.clear();
+    store.records.set(record.id, record);
+    renderer.setViewport({ height: 100, left: 0, top: 1_000, width: 100 });
+    scheduler.runAll();
+    const element = record.element as BoxShapeElementV1;
+
+    renderer.setElementPreviews([{ ...element, pivot: { x: element.pivot.x, y: 10 }, y: 0 }], 1);
+    renderer.setViewport({ height: 100, left: 0, top: 0, width: 100 });
+    scheduler.runAll();
+
+    expect(renderer.mountedCount).toBe(1);
+    renderer.clearElementPreviews();
+    scheduler.runAll();
+    expect(renderer.mountedCount).toBe(0);
+  });
+});
+
 describe("imperative canvas motion", () => {
   it("keeps a successfully erased element hidden until the scene commit removes it", () => {
     const { renderer, scheduler, store } = setup();

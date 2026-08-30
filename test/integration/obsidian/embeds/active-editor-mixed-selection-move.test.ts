@@ -91,6 +91,7 @@ describe("active editor rotated table move", () => {
         selectionEdgeDrag: {
           begin: vi.fn(),
           finish,
+          stop: vi.fn(),
           update: vi.fn(),
           updatePreviewBottom,
         },

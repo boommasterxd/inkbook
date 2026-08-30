@@ -40,6 +40,7 @@ export interface ActiveEditorControllerOptions {
   readonly sceneStore: ElementSceneStore;
   readonly selectionMoveLayout: {
     begin(): void;
+    currentHeight?(): number | undefined;
     finish(committed: boolean): void;
     updateBottom(maximumBottom: number): void;
   };

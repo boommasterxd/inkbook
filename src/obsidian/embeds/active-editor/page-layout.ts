@@ -30,6 +30,7 @@ export class ActivePageLayout {
     maximumBottom: number | undefined,
     force = false,
   ): PageHeightUpdate | undefined {
+    if (this.#selectionOriginalHeight !== undefined) return undefined;
     const extent = derivePageExtent(page, maximumBottom ?? null);
     if (this.#height === undefined) return this.#start(extent.activeHeight, false);
     const reference = this.height ?? extent.activeHeight;

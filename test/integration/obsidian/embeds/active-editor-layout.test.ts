@@ -166,7 +166,32 @@ describe("active editor layout sizing", () => {
     expect(test.beginScrollStability).not.toHaveBeenCalled();
     test.layout.dispose();
   });
+});
 
+describe("active editor selection-move layout", () => {
+  it("does not collapse a selection reservation during a resize-observer measurement", () => {
+    const test = harness();
+    test.layout.chromeMounted();
+    test.work.flushFrames();
+    const previewBottom = 925;
+
+    test.layout.beginSelectionMove();
+    test.layout.updateSelectionMoveBottom(previewBottom);
+    const reservedHeight = test.rect.height;
+    test.layout.contentChanged();
+    test.work.flushFrames();
+
+    expect(test.rect.height).toBeCloseTo(reservedHeight);
+    expect(test.layout.currentPageHeight()).toBe(
+      derivePageExtent(page(), previewBottom).activeHeight,
+    );
+    expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(false);
+    test.layout.finishSelectionMove(false);
+    test.layout.dispose();
+  });
+});
+
+describe("active editor layout sizing stability", () => {
   it("does not acquire scroll stability for repeated unchanged layout frames", () => {
     const test = harness("reduced");
     test.layout.chromeMounted();

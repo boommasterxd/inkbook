@@ -70,7 +70,7 @@ export class ActiveEditorPointerController {
         ...(target === undefined ? {} : { target }),
       }),
     );
-    event.preventDefault();
+    if (event.cancelable) event.preventDefault();
   }
 
   public handlePointerCancel(event: PointerEvent): void {
@@ -118,7 +118,7 @@ export class ActiveEditorPointerController {
     if (classification.handleEligible && this.#options.handles.pointerDown(pagePointer)) {
       this.#options.beginHandlePointer(pagePointer.pointerType);
       this.#options.capturePointer(event.pointerId);
-      event.preventDefault();
+      if (event.cancelable) event.preventDefault();
       return;
     }
     const target = selectionTargetAt(
@@ -144,7 +144,9 @@ export class ActiveEditorPointerController {
           ...(target === undefined ? {} : { target }),
         }),
     );
-    if (claimsPointerGesture(event, this.#options.getInput().interaction)) event.preventDefault();
+    if (event.cancelable && claimsPointerGesture(event, this.#options.getInput().interaction)) {
+      event.preventDefault();
+    }
   }
 
   public handlePointerMove(event: PointerEvent): void {
@@ -152,13 +154,13 @@ export class ActiveEditorPointerController {
     if (pointer === undefined) return;
     const previous = this.#options.getInput().interaction;
     if (this.#options.handles.pointerMove(this.#options.navigation.pageSample(pointer))) {
-      event.preventDefault();
+      if (event.cancelable) event.preventDefault();
       return;
     }
     if (!this.#options.coalesced.dispatch(event)) this.handlePointerCancel(event);
     const interaction = this.#options.getInput().interaction;
     this.#recordTouchPan(event, previous);
-    if (claimsPointerGesture(event, interaction)) event.preventDefault();
+    if (event.cancelable && claimsPointerGesture(event, interaction)) event.preventDefault();
     if (event.pointerType === "touch" && interaction?.phase === "page-pan") {
       event.stopPropagation();
     }
@@ -172,7 +174,7 @@ export class ActiveEditorPointerController {
       this.#options.handles.pointerUp(event.pointerId);
       this.#releasePointer(event.pointerId);
       this.#options.finishHandlePointer();
-      event.preventDefault();
+      if (event.cancelable) event.preventDefault();
       return;
     }
     const blocksHostGesture =
@@ -188,7 +190,7 @@ export class ActiveEditorPointerController {
       timestamp: event.timeStamp,
     });
     if (blocksHostGesture) this.#options.navigation.releaseTouchPan(event.timeStamp);
-    if (claimsPointerGesture(event, previous)) event.preventDefault();
+    if (event.cancelable && claimsPointerGesture(event, previous)) event.preventDefault();
     if (blocksHostGesture) event.stopPropagation();
   }
 

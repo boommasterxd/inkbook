@@ -69,7 +69,7 @@ class FrameHarness {
 }
 
 function createHarness(options?: {
-  readonly activePageHeight?: number;
+  readonly activePageHeight?: number | (() => number);
   readonly containerRect?: MutableRect;
   readonly ownerRect?: MutableRect;
   readonly ownerScrollHeight?: number;
@@ -111,7 +111,10 @@ function createHarness(options?: {
   const setCamera = vi.fn(() => sequence.push("camera"));
   const layoutUpdates: Array<{ readonly blockSize: number; readonly zoom: number }> = [];
   const navigation = new ActiveEditorNavigation({
-    activePageHeight: () => options?.activePageHeight ?? 2_000,
+    activePageHeight: () =>
+      typeof options?.activePageHeight === "function"
+        ? options.activePageHeight()
+        : (options?.activePageHeight ?? 2_000),
     applyZoomLayout: (update) => {
       sequence.push("layout");
       layoutUpdates.push(update);
@@ -193,6 +196,21 @@ describe("active editor navigation", () => {
 });
 
 describe("active editor navigation geometry and lifecycle", () => {
+  it("uses a live selection reservation when it projects native scroll bounds", () => {
+    let activePageHeight = 2_000;
+    const harness = createHarness({
+      activePageHeight: () => activePageHeight,
+      ownerScrollHeight: 1_500,
+      ownerScrollTop: 0,
+    });
+    activePageHeight = 8_000;
+
+    harness.navigation.scroll(-10_000);
+    harness.frames.flushOne();
+
+    expect(harness.owner.scrollTop).toBeGreaterThan(3_000);
+  });
+
   it("uses the visible embed and scroll-owner intersection for its center", () => {
     const harness = createHarness({
       containerRect: { height: 2_000, left: 100, top: -200, width: 1_000 },
