@@ -152,10 +152,15 @@ export class SceneContentRenderer {
     return this.#reconciler.promote(id);
   }
 
-  public applyPreviewTransform(id: string, transform: string | null, version: number): void {
+  public applyPreviewTransform(
+    id: string,
+    transform: string | null,
+    version: number,
+    strokeWidthScale: number | null,
+  ): void {
     const entry = this.#mounted.get(id);
     if (entry !== undefined) {
-      updatePreviewTransform(entry, transform, version, this.#instrumentation);
+      updatePreviewTransform(entry, transform, version, strokeWidthScale, this.#instrumentation);
     }
   }
 

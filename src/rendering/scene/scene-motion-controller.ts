@@ -135,7 +135,8 @@ export class SceneMotionController {
     }
   }
 
-  public setSelectionPath(path: string | null): void {
+  public setSelectionPath(path: string | null, fill: "accent" | "none"): void {
+    this.#dom.selectionOverlayPath.setAttribute("data-selection-fill", fill);
     this.#selectionMotion = this.setOverlay(
       this.#dom.selectionOverlayPath,
       path,
@@ -332,7 +333,21 @@ export class SceneMotionController {
   ): OverlayMotion | undefined {
     const next = path ?? "";
     const previous = node.getAttribute("d") ?? "";
-    if (next === previous && current === undefined) return undefined;
+    if (next === previous) {
+      if (next !== "" && current?.direction === "exit") {
+        writeMotionStyle(node, 1, 1);
+        return undefined;
+      }
+      return current;
+    }
+    if (next !== "" && previous !== "") {
+      node.setAttribute("d", next);
+      if (current?.direction === "exit") {
+        writeMotionStyle(node, 1, 1);
+        return undefined;
+      }
+      return current;
+    }
     if (this.#reducedMotion) {
       node.setAttribute("d", next);
       writeMotionStyle(node, 1, 1);

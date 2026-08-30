@@ -8,18 +8,24 @@ Available interactions:
 
 - With mouse input, click an element to select it while Select is active.
 - With touch input, complete a short stationary tap to select an element regardless of the active tool. Contact alone, pan, and note scroll do not change selection. A touch drag moves an annotation only when it was already selected before contact.
-- Drag from empty canvas while Select is active to draw a lasso area and select multiple elements. Lasso is not a separate toolbar tool.
+- Drag from empty canvas while Select is active to draw either an axis-aligned rectangle or a freeform lasso area. Lasso is not a separate toolbar tool.
 - Hold Shift to add more elements to the selection.
-- Move a selection.
+- Move an existing selection with mouse, pen, or touch regardless of the active tool. The selected overlay takes precedence over creation tools, while an explicit temporary eraser input remains destructive.
 - Scale a selection using its handles. Geometry changes, but line and outline widths remain unchanged.
 - Rotate a selection. The rotation value is stored.
 - Modify rectangles and ellipses using dedicated shape handles.
-- Edit lines and arrows using their endpoints.
-- Bend lines and arrows using a handle in the middle to create curves.
+- Edit lines and arrows using their start and end handles. A singly selected line or arrow has no box or rotation handle.
+- Bend lines and arrows using an always-present middle handle. A straight linear element places this handle at its canonical midpoint so dragging it can introduce a curve. A curved element places it at the visible quadratic midpoint rather than the off-curve control point, and dragging the handle keeps that visible curve point under the pointer for unrotated and rotated elements. Bringing the visible handle back within 5 screen pixels of the straight segment canonicalizes the bend to `null`, so a later endpoint edit cannot restore an invisible historical curve.
 
-When a selection is dragged to the edge of the visible area, the plugin automatically continues scrolling. If it reaches the bottom-edge threshold, the editor adds bounded transient page space as specified in [File Format and Geometry](file-format.md); commit or cancellation then restores the exact derived height.
+When Select is active without an element selection, its Style controls configure two independent session values. **Selection area** chooses Rectangle or Lasso through accessible icon buttons, and the Select toolbar icon mirrors the active choice. **Include elements** chooses Touched or Fully enclosed. An active element selection replaces these tool controls with only the style properties shared by all selected elements. Rectangle is the built-in area, and Touched is the built-in inclusion rule. Touched includes an element when any visible painted geometry intersects or lies within the area. Fully enclosed includes it only when all visible painted geometry, including stroke width and arrow nodes, lies within the area. The same inclusion rule applies to both area shapes. The freeform lasso retains at most 512 simplified pointer points and treats the resulting path as closed. Candidate lookup first queries the spatial index with the area bounds and never scans the complete element store. A filled box or group selection can be moved with mouse, pen, or touch from every point inside its highlighted overlay, including transparent gaps between selected geometry, even while another creation tool is active. A single line or arrow remains movable only from its visible centerline or handles.
 
-Every annotation retains its exact page-space geometry when it is created, moved, scaled, rotated, or edited. Portions beyond the fixed left, right, or top page edge are hidden by the active canvas and standalone SVG viewport, never translated back into view. Moving an annotation inward later reveals the preserved outside portion. Positive-y geometry continues to participate in automatic downward page growth.
+An eligible primary mouse or pen action outside the selected geometry and its handles clears the selection independently of the active tool before that tool continues. Claimed finger drawing clears at gesture start, before its creation preview begins. With finger drawing disabled, only a confirmed short empty-canvas tap clears the selection; contact that becomes note scroll, page pan, pinch, or long press preserves it. Context clicks also preserve the current selection.
+
+When a selection is dragged to the edge of the visible area, the plugin automatically continues scrolling within the existing canvas extent and reprojects the held viewport point after every applied scroll frame. A live move never changes page height, so native autoscroll, pointer projection, and height-transition scroll stabilization cannot compete. A successful move commit may then trigger the ordinary derived page growth from the final stored geometry; cancellation and no-op moves leave page height unchanged.
+
+Every annotation retains its exact page-space geometry when it is created, moved, scaled, rotated, or edited. A translated box or table derives its pivot from the canonical moved origin and unchanged canonical dimensions, preventing independent decimal rounding from invalidating an otherwise valid mixed-selection commit. Portions beyond the fixed left, right, or top page edge are hidden by the active canvas and standalone SVG viewport, never translated back into view. Moving an annotation inward later reveals the preserved outside portion. Positive-y geometry continues to participate in automatic downward page growth.
+
+Closed-shape and group selection polygons keep the translucent accent fill. A singly selected line or arrow remains unfilled. A move that would exceed the valid document coordinate range is rejected while preview, edge-drag, and pointer cleanup still complete normally.
 
 ## Arrange
 
@@ -214,7 +220,7 @@ Changing the column count of a selected table preserves that table's current col
 
 Colors use the canonical built-in palette defined in [Settings](settings.md#color-values), including Theme text color and Gray. The list and serialized values are maintained only in that document.
 
-When elements are selected, the menu edits the selection instead of the current tool. For a mixed selection, it only shows properties that apply to all selected elements. One accepted structural change is one atomic undo step and changes neither session tool values nor vault defaults. Choosing the existing value is a no-op with no revision or history entry.
+When elements are selected, the menu edits the selection instead of the current tool. Select area and inclusion controls remain unavailable until the selection is cleared. For a mixed selection, the menu only shows element properties that apply to all selected elements. One accepted structural change is one atomic undo step and changes neither session tool values nor vault defaults. Choosing the existing value is a no-op with no revision or history entry.
 
 Exact geometry, hit tolerances, bounds, node sizing, and serialization are defined in [File Format and Geometry](file-format.md). Built-in and user-configurable defaults are defined in [Settings](settings.md).
 

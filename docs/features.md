@@ -55,7 +55,7 @@ aligned occupied extent
 
 The alignment step and buffer unit are both fixed at 100 page units. Background selection, S/M/L/XL, and buffer-count changes therefore cannot alter the physical size of a pattern.
 
-The page is not remeasured after every pointer sample. After a committed geometry change, it grows when less than one writing line of active buffer remains and restores the configured buffer in one 180-millisecond height transition. The sole pre-commit exception is the bounded one-buffer-unit extension while a selection remains in the bottom-edge drag zone; its exact threshold, cancellation, and commit rules are defined in [File Format and Geometry](file-format.md).
+The page is not remeasured after every pointer sample. After a committed geometry change, it grows when less than one writing line of active buffer remains and restores the configured buffer in one 180-millisecond height transition. Selection move previews and their native autoscroll retain the existing canvas extent throughout the gesture. Only a successful commit can trigger ordinary growth from the final stored geometry; cancellation and no-op moves do not change page height.
 
 When content is deleted, the active embed can shrink again. The active editor defaults to three empty writing lines below content. A non-empty patterned locked preview ends after the pattern row containing the lowest annotation plus exactly one additional pattern row. A non-empty preview without a visible pattern uses one additional 100-unit writing row. An empty page keeps the shared 2.5-writing-line minimum rounded up to a complete 100-unit writing row. The active per-file buffer remains configurable; locked trailing space is fixed to one row of the selected locked alignment so preview height follows content consistently. Unlock and Lock animate between these derived heights over 240 milliseconds. The page includes writable margins on all four sides; writing into the bottom margin triggers writing-row-aligned active growth that restores the complete margin below the occupied extent.
 
@@ -102,8 +102,9 @@ Copy:
 
 - serializes the selection's geometry and style as JSON
 - removes the original IDs from the payload
-- writes a custom MIME format plus `text/plain`
+- writes the complete prefixed payload through the interoperable system `text/plain` format
 - additionally retains an in-session copy in case clipboard permissions are unavailable
+- does not let an unresolved best-effort system write block the validated in-session payload or the next clipboard action
 - preserves connections whose target is also selected through clipboard-local IDs; connections to unselected targets become free endpoints
 
 The MIME identifier, versioned payload schema, validation rules, and limits are defined in [File Format and Geometry](file-format.md).
@@ -134,11 +135,11 @@ Paste:
 Placement:
 
 - Toolbar Paste places the selection in the center of the visible canvas area.
-- Context-menu Paste places it at the right-click or long-press point.
+- Context-menu Paste places it exactly at the mouse, pen, or touch invocation point in page coordinates. It snapshots that point when the menu opens and applies no repeated-paste offset.
 - `Ctrl/Cmd+V` uses the last pointer position recorded inside the current active editor session. If none exists, it uses the center of the visible canvas.
-- Repeatedly pasting the same payload offsets each additional copy diagonally by 24 page units.
+- Repeated Toolbar or keyboard paste of the same payload offsets each additional copy diagonally by 24 page units.
 
-The shortcuts only take effect when the pointer is over the active editor and no text field is focused. Without a selection or valid ink payload, the normal Obsidian clipboard functions remain active.
+The shortcuts are captured through the active editor's owning document so they remain available after canvas or toolbar interaction. They only take effect when the pointer is over the active editor and no text field is focused. `Delete` uses the same scope, while `Backspace` remains native. Without a selection or valid ink payload, the normal Obsidian clipboard functions remain active. A copied payload whose system write failed remains authoritative in the in-session fallback, even if the platform returns an empty clipboard read.
 
 ## Canvas Context Menus
 
@@ -150,7 +151,7 @@ The canvas uses Obsidian's native `Menu` through the owning presentation documen
 
 The single transparent input surface converts the invocation point to page coordinates and resolves an annotation through the spatial index. A mouse right-click or touch long press on an unselected annotation selects only that annotation before opening the menu. Invoking it on an already selected annotation preserves the complete selection. Invoking it on empty canvas preserves the current selection. Selection caused by menu invocation is not a history entry and does not dirty the file.
 
-Moving beyond the long-press threshold, receiving a second touch, starting a pen gesture, losing the owning presentation, or cancelling the pointer prevents the touch menu from opening. A long press on an annotation always selects and opens the selection menu regardless of the active tool; it never starts that tool's gesture. The keyboard menu is positioned at the visible selection center, or at the visible canvas center when no selection exists. Mouse and touch menus use their invocation point, which also becomes the Context-menu Paste position.
+Moving beyond the long-press threshold, receiving a second touch, starting a pen gesture, losing the owning presentation, or cancelling the pointer prevents the touch menu from opening. A long press on an annotation always selects and opens the selection menu regardless of the active tool; it never starts that tool's gesture. The keyboard menu is positioned at the visible selection center, or at the visible canvas center when no selection exists. Mouse, pen, and touch menus snapshot their invocation point, which also becomes the exact Context-menu Paste position.
 
 When a selection exists, the menu begins with:
 
@@ -190,7 +191,7 @@ Duplicate creates and validates a new SVG file before replacing the file path in
 The following behavior applies by default:
 
 - A pen draws.
-- One finger scrolls the note, pans while zoomed, selects an annotation only after a confirmed short tap, moves only an annotation that was already selected before contact, or opens the context menu with the bounded long press defined above. Pan and scroll never select an annotation.
+- One finger scrolls the note, pans while zoomed, selects an annotation or clears an empty-canvas selection only after a confirmed short tap, moves only an annotation that was already selected before contact, or opens the context menu with the bounded long press defined above. Pan, scroll, pinch, and long press never change selection.
 - Two fingers zoom.
 - Finger drawing is disabled by default in the device-local setting for the current vault.
 

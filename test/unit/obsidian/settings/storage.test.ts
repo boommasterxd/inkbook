@@ -55,6 +55,27 @@ describe("InkbookSettingsStore", () => {
     expect(store.getDeviceSettings().motion).toBe("reduced");
   });
 
+  it("exposes migrated V3 vault settings as V4 runtime settings", async () => {
+    const current = createBuiltInSettings();
+    current.startupTool = "arrow";
+    const legacy = structuredClone(current) as unknown as Record<string, unknown>;
+    legacy.version = 3;
+    delete (legacy.toolDefaults as Record<string, unknown>).select;
+    const store = new InkbookSettingsStore(
+      new VaultFake(legacy),
+      new DeviceFake(createBuiltInDeviceSettings()),
+    );
+
+    const diagnostics = await store.load();
+
+    expect(diagnostics.vault).toEqual([]);
+    expect(store.getVaultSettings()).toMatchObject({
+      version: 4,
+      startupTool: "arrow",
+      toolDefaults: { select: { area: "rectangle", inclusion: "touched" } },
+    });
+  });
+
   it("uses field-level loader fallback and reports persisted-data diagnostics", async () => {
     const vaultValue = createBuiltInSettings() as unknown as Record<string, unknown>;
     vaultValue.startupTool = "invalid";

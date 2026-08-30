@@ -1,4 +1,4 @@
-import type { BackgroundTypeV1, InkbookSettingsV3, StartupToolV1, ToolDefaultsV1 } from "./types";
+import type { BackgroundTypeV1, InkbookSettingsV4, StartupToolV1, ToolDefaultsV1 } from "./types";
 import { CANONICAL_LOCKED_BUFFER_LINES } from "../schema/public";
 
 interface SettingsValue<T> {
@@ -30,7 +30,7 @@ export interface NewFilePageSettings {
 }
 
 export function initializeEditorSettingsSession(
-  settings: InkbookSettingsV3,
+  settings: InkbookSettingsV4,
 ): EditorSettingsSession {
   return {
     currentTool: settings.startupTool,
@@ -51,7 +51,7 @@ export function resolveSettingPrecedence<T>(
   return builtIn;
 }
 
-export function createPageSettings(settings: InkbookSettingsV3): NewFilePageSettings {
+export function createPageSettings(settings: InkbookSettingsV4): NewFilePageSettings {
   const defaults = settings.pageDefaults;
   const type = defaults.backgroundType;
   const background =

@@ -163,6 +163,37 @@ describe("InkbookSettingTab mobile tool disclosures", () => {
 });
 
 describe("InkbookSettingTab recognizable tool controls", () => {
+  it("renders and persists accessible Select choices", async () => {
+    const store = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());
+    const rendered = renderTool(createTab(store), "Drawing tools", "Select");
+    const area = control(rendered.container, "selection-area");
+    const inclusion = control(rendered.container, "selection-inclusion");
+    const rectangle = area.querySelector<HTMLButtonElement>("button[data-value='rectangle']");
+    const lasso = area.querySelector<HTMLButtonElement>("button[data-value='lasso']");
+    const enclosed = inclusion.querySelector<HTMLButtonElement>(
+      "button[data-value='fully-enclosed']",
+    );
+
+    expect(area.querySelectorAll("button")).toHaveLength(2);
+    expect(inclusion.querySelectorAll("button")).toHaveLength(2);
+    expect(rectangle?.getAttribute("aria-pressed")).toBe("true");
+    expect(lasso?.getAttribute("aria-label")).toBe("Lasso");
+    expectSelectionChoiceVisuals(area, inclusion);
+    lasso?.click();
+    enclosed?.click();
+    await vi.waitFor(() =>
+      expect(store.getVaultSettings().toolDefaults.select).toEqual({
+        area: "lasso",
+        inclusion: "fully-enclosed",
+      }),
+    );
+    expect(lasso?.getAttribute("aria-pressed")).toBe("true");
+    expect(rectangle?.getAttribute("aria-pressed")).toBe("false");
+    rendered.cleanup();
+  });
+});
+
+describe("InkbookSettingTab recognizable shape controls", () => {
   it("renders recognizable rectangle controls and persists a visual choice", async () => {
     const store = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());
     const rendered = renderTool(createTab(store), "Shapes and structures", "Rectangle");
@@ -234,6 +265,13 @@ describe("InkbookSettingTab recognizable tool controls", () => {
     eraser.cleanup();
   });
 });
+
+function expectSelectionChoiceVisuals(area: Element, inclusion: Element): void {
+  expect(area.querySelectorAll(".inkbook-menu-option-icon")).toHaveLength(2);
+  expect(area.querySelectorAll(".inkbook-menu-visually-hidden")).toHaveLength(2);
+  expect(area.querySelector(".inkbook-menu-selection-area-grid")).not.toBeNull();
+  expect(inclusion.querySelector(".inkbook-menu-selection-inclusion-grid")).not.toBeNull();
+}
 
 describe("InkbookSettingTab settings validation", () => {
   it("rejects invalid numeric input and recovers from a persistence failure", async () => {

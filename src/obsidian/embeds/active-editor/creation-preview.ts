@@ -22,6 +22,7 @@ import type { LivePathState } from "../../../rendering/scene/index";
 
 import type { CoalescedCreationSample } from "./coalesced-input";
 import type { ActiveEditorHistory } from "./history";
+import { snapMarkerPath } from "./snap-marker-path";
 
 export interface CreationPreviewRenderer {
   clearLiveStroke(): void;
@@ -212,7 +213,7 @@ export class CreationPreview implements GesturePreview {
     const points = [this.#startSnap?.point, this.#endSnap?.point].filter(
       (point): point is PointV1 => point !== undefined,
     );
-    const path = points.map((point) => snapMarker(this.#snap!.pageToScreen(point))).join(" ");
+    const path = points.map((point) => snapMarkerPath(this.#snap!.pageToScreen(point))).join(" ");
     this.#renderer.setSnapMarkerPath(path.length === 0 ? null : path);
   }
 
@@ -257,11 +258,6 @@ export class CreationPreview implements GesturePreview {
 
 function snapConnection(candidate: SnapCandidate | null): EndpointConnectionV1 | null {
   return candidate === null ? null : { anchor: candidate.anchor, targetId: candidate.targetId };
-}
-
-function snapMarker(point: PointV1): string {
-  const radius = 7.5;
-  return `M ${String(point.x - radius)} ${String(point.y)} L ${String(point.x + radius)} ${String(point.y)} M ${String(point.x)} ${String(point.y - radius)} L ${String(point.x)} ${String(point.y + radius)}`;
 }
 
 function supportsConnections(tool: GesturePreviewStart["tool"]): tool is "arrow" | "line" {

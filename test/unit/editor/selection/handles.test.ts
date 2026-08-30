@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { calculateElementBounds } from "../../../../src/domain/geometry/public";
+import {
+  calculateElementBounds,
+  rotatePointClockwise,
+} from "../../../../src/domain/geometry/public";
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import {
   findSelectionHandle,
@@ -54,6 +57,25 @@ describe("selection handle geometry", () => {
     ]);
     expect(handles[2]?.point).toEqual({ x: 250, y: 100 });
   });
+
+  it.each(["line", "arrow"] as const)(
+    "keeps the bend handle on the visible curved %s centerline",
+    (kind) => {
+      const element = {
+        ...connectedLine(),
+        bend: { x: 250, y: 20 },
+        kind,
+        pivot: { x: 250, y: 60 },
+        rotation: 30,
+      };
+      const handles = layoutSelectionHandles([selected(element)], { zoom: 1 });
+      const localCurvePoint = { x: 250, y: 60 };
+
+      expect(handles[2]?.point).toEqual(
+        rotatePointClockwise(localCurvePoint, element.pivot, element.rotation),
+      );
+    },
+  );
 
   it("hit-tests screen-sized handles independently of zoom", () => {
     const handle = { kind: "rotate" as const, point: { x: 100, y: 100 } };

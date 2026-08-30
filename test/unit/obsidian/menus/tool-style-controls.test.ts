@@ -52,7 +52,28 @@ describe("tool Style controls", () => {
         value: defaults.eraser.radius,
       },
     ]);
-    expect(createToolStyleControls(defaults, "select")).toEqual([]);
+    expect(createToolStyleControls(defaults, "select")).toEqual([
+      {
+        id: "selection-area",
+        kind: "choice",
+        label: "Selection area",
+        options: [
+          { label: "Rectangle", value: "rectangle" },
+          { label: "Lasso", value: "lasso" },
+        ],
+        value: "rectangle",
+      },
+      {
+        id: "selection-inclusion",
+        kind: "choice",
+        label: "Include elements",
+        options: [
+          { label: "Fully enclosed", value: "fully-enclosed" },
+          { label: "Touched", value: "touched" },
+        ],
+        value: "touched",
+      },
+    ]);
   });
 
   it("exports the canonical choice labels and values for reuse", () => {

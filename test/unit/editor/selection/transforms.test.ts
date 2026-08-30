@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type {
+  InkElementV1,
   LineElementV1,
   StrokeElementV1,
   TableElementV1,
@@ -87,6 +88,21 @@ function runtimeStroke(): StrokeElementV1 {
     },
     tool: "pen",
   };
+}
+
+function translationRoundingGeometry() {
+  return {
+    height: 429.471,
+    pivot: { x: 1099.695, y: 1022.904 },
+    x: 655.405,
+    y: 808.169,
+  };
+}
+
+function expectValidRoundingSensitiveTranslation(source: InkElementV1): void {
+  const moved = moveSelection([source], { x: -100, y: 40 })[0]!;
+  expect(moved.pivot).toEqual({ x: 999.694, y: 1062.905 });
+  expect(validateInkElementV1(moved).ok).toBe(true);
 }
 
 describe("selection transforms", () => {
@@ -178,6 +194,35 @@ describe("selection transform validation", () => {
     expect(() => moveSelection([stroke], { x: 0.001, y: 0 })).toThrow(RangeError);
   });
 
+  it("derives a translated table pivot from the canonical moved origin", () => {
+    const source: TableElementV1 = {
+      ...table(),
+      ...translationRoundingGeometry(),
+      columnWidth: 296.193,
+      columns: 3,
+      headerHeight: 128.841,
+      id: "00000000-0000-4000-8000-000000000008",
+    };
+
+    expectValidRoundingSensitiveTranslation(source);
+  });
+
+  it("derives a translated box pivot from the canonical moved origin", () => {
+    const source = {
+      createdAt: 4,
+      ...translationRoundingGeometry(),
+      id: "00000000-0000-4000-8000-000000000007",
+      kind: "rectangle" as const,
+      rotation: 0,
+      style: { ...style, fillColor: null, fillOpacity: 0 },
+      width: 888.579,
+    };
+
+    expectValidRoundingSensitiveTranslation(source);
+  });
+});
+
+describe("selection transform constraints", () => {
   it("scales structural geometry while preserving paint widths", () => {
     const scaled = scaleSelectionUniform([table()], { x: 0, y: 0 }, 2)[0] as TableElementV1;
     expect(scaled).toMatchObject({ columnWidth: 80, height: 160, headerHeight: 48 });

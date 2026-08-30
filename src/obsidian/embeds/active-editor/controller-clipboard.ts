@@ -18,16 +18,8 @@ import {
 import type { ActiveEditorHistory } from "./history";
 
 export type ClipboardControllerResult =
-  | {
-      readonly action: "copy" | "cut";
-      readonly kind: "copied";
-      readonly systemWriteSucceeded: boolean;
-    }
-  | {
-      readonly action: "cut";
-      readonly kind: "committed";
-      readonly systemWriteSucceeded: boolean;
-    }
+  | { readonly action: "copy" | "cut"; readonly kind: "copied" }
+  | { readonly action: "cut"; readonly kind: "committed" }
   | { readonly action: "paste"; readonly kind: "committed" }
   | {
       readonly action: "copy" | "cut" | "paste";
@@ -38,7 +30,8 @@ export type ClipboardControllerResult =
         | "empty-selection"
         | "encode-failed"
         | "invalid-payload"
-        | "stale-operation";
+        | "stale-operation"
+        | "system-write-failed";
     };
 
 export interface ActiveEditorClipboardOptions {
@@ -137,6 +130,7 @@ export class ActiveEditorClipboardController {
   #pasteAvailable = false;
   #repeatState: PasteRepeatState | undefined;
   #sessionPayload: ClipboardWritePayload | undefined;
+  #sessionPayloadFresherThanSystem = false;
 
   constructor(options: ActiveEditorClipboardOptions) {
     this.#adoptionGuard = new ClipboardAdoptionGuard(options.model.store);
@@ -186,6 +180,7 @@ export class ActiveEditorClipboardController {
       this.#setPasteAvailable(false);
       return false;
     }
+    this.#sessionPayloadFresherThanSystem = false;
     this.#setPasteAvailable(true);
     void this.#runExclusive("paste", (operation) => this.#paste(invocation, operation, candidates));
     return true;
@@ -205,7 +200,8 @@ export class ActiveEditorClipboardController {
       this.#setPasteAvailable(false);
       return this.#reportUnavailable("paste", "clipboard-read-failed");
     }
-    const plan = await this.#model.planClipboardPaste(candidates, invocation, this.#repeatState);
+    const previousRepeat = invocation.kind === "context-menu" ? undefined : this.#repeatState;
+    const plan = await this.#model.planClipboardPaste(candidates, invocation, previousRepeat);
     if (!this.#isOperationCurrent(operationGeneration)) {
       return this.#reportUnavailable("paste", "stale-operation");
     }
@@ -218,7 +214,7 @@ export class ActiveEditorClipboardController {
       return this.#reportUnavailable("paste", "stale-operation");
     }
     this.#registerApplied(applied);
-    this.#repeatState = plan.repeatState;
+    this.#repeatState = invocation.kind === "context-menu" ? undefined : plan.repeatState;
     this.#onSelectionChanged(new Set(plan.selectedIds));
     this.#onPasteCommitted?.(plan.activateTool);
     return this.#report({ action: "paste", kind: "committed" });
@@ -242,8 +238,9 @@ export class ActiveEditorClipboardController {
     } catch {
       return this.#reportUnavailable(action, "encode-failed");
     }
-    const systemWriteSucceeded = await write.systemWrite;
-    if (!cut) return this.#report({ action, kind: "copied", systemWriteSucceeded });
+    const payload = await write.payloadReady;
+    this.#observeSystemWrite(action, payload, write.systemWrite);
+    if (!cut) return this.#report({ action, kind: "copied" });
     if (
       !this.#isPresentationAttached() ||
       !this.#isOperationCurrent(operationGeneration) ||
@@ -258,7 +255,19 @@ export class ActiveEditorClipboardController {
       return this.#reportUnavailable(action, "stale-operation");
     }
     this.#onSelectionChanged(new Set());
-    return this.#report({ action: "cut", kind: "committed", systemWriteSucceeded });
+    return this.#report({ action: "cut", kind: "committed" });
+  }
+
+  #observeSystemWrite(
+    action: "copy" | "cut",
+    payload: ClipboardWritePayload,
+    systemWrite: Promise<boolean>,
+  ): void {
+    void systemWrite.then((succeeded) => {
+      if (this.#sessionPayload !== payload) return;
+      this.#sessionPayloadFresherThanSystem = !succeeded;
+      if (!succeeded) this.#reportUnavailable(action, "system-write-failed");
+    });
   }
 
   async #commitCut(
@@ -395,6 +404,7 @@ export class ActiveEditorClipboardController {
     return readClipboardCandidates(
       this.#ownerWindow.navigator.clipboard,
       this.#sessionPayload?.customText,
+      this.#sessionPayloadFresherThanSystem,
     );
   }
 
@@ -415,6 +425,7 @@ export class ActiveEditorClipboardController {
       createItem: (formats) => clipboardItem(this.#ownerWindow, formats),
       retainSessionPayload: (payload) => {
         this.#sessionPayload = payload;
+        this.#sessionPayloadFresherThanSystem = true;
         this.#setPasteAvailable(true);
       },
       write: (items) => this.#ownerWindow.navigator.clipboard.write([...items]),

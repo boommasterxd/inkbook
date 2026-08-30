@@ -19,6 +19,7 @@ export {
   createLinearGeometry,
   createTableGeometry,
   shapeVertices,
+  tableLineSegments,
 } from "./creation";
 export {
   arrowNodeGeometry,
@@ -36,6 +37,7 @@ export { translateElementGeometry } from "./translation";
 export {
   PAGE_WIDTH,
   canonicalPoint,
+  linearPivot,
   normalizeRotation,
   pointInPolygon,
   pointDistance,

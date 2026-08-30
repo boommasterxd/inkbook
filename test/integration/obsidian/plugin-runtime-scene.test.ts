@@ -5,7 +5,7 @@ import {
   createBuiltInDeviceSettings,
   createBuiltInSettings,
   type InkbookDeviceSettingsV1,
-  type InkbookSettingsV3,
+  type InkbookSettingsV4,
 } from "../../../src/domain/settings";
 import type { EditableDocumentModel } from "../../../src/obsidian/embeds/document-model-port";
 import type { InkbookColorScheme } from "../../../src/obsidian/theme/color-scheme";
@@ -41,7 +41,7 @@ interface CapturedSceneOptions {
   readonly onLock: () => void;
   readonly root: HTMLElement;
   readonly scheme: InkbookColorScheme;
-  readonly startupTool: InkbookSettingsV3["startupTool"];
+  readonly startupTool: InkbookSettingsV4["startupTool"];
 }
 
 interface TestPluginRegistration {
@@ -128,7 +128,7 @@ function serializedDocument(): { readonly bytes: Uint8Array; readonly svg: strin
 
 function customSettings(): {
   readonly device: InkbookDeviceSettingsV1;
-  readonly vault: InkbookSettingsV3;
+  readonly vault: InkbookSettingsV4;
 } {
   return {
     device: {

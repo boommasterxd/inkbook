@@ -1,6 +1,6 @@
 import type {
   InkbookDeviceSettingsV1,
-  InkbookSettingsV3,
+  InkbookSettingsV4,
   StartupToolV1,
   ToolDefaultsV1,
 } from "../../domain/settings/types";
@@ -14,7 +14,7 @@ import type { EditableDocumentModel } from "./vault-document-session";
 import type { PresentationScrollRangeReserve } from "./transition-scroll-stability";
 
 export interface ActiveInkbookSceneOptions {
-  readonly backgroundSpacing: () => InkbookSettingsV3["pageDefaults"]["backgroundSpacing"];
+  readonly backgroundSpacing: () => InkbookSettingsV4["pageDefaults"]["backgroundSpacing"];
   readonly defaults: ToolDefaultsV1;
   readonly deviceSettings: InkbookDeviceSettingsV1;
   readonly menuFactory?: MenuFactoryPort;

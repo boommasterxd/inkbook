@@ -66,7 +66,7 @@ export class ActiveEditorController {
   readonly #styles: ActiveEditorStyleSession;
   readonly #toolbarAction: InkbookEditorChromeProps["onToolbarAction"] = (action, trigger) =>
     this.handleToolbarAction(action, trigger);
-  readonly #selectionEdgeDrag: ActiveEditorControllerOptions["selectionEdgeDrag"];
+  readonly #selectionEdgeDrag: ReturnType<typeof createActiveEditorSelectionEdgeDrag>;
   readonly #navigation: ActiveEditorNavigation;
   #selection: ReadonlySet<string> = new Set();
   readonly #touchMode: ActiveEditorTouchMode;
@@ -145,7 +145,6 @@ export class ActiveEditorController {
       },
     });
     this.#selectionEdgeDrag = createActiveEditorSelectionEdgeDrag({
-      lifecycle: options.selectionEdgeDrag,
       navigation: this.#navigation,
       ownerWindow,
       scrollOwner: () => this.#scrollOwner,
@@ -209,30 +208,29 @@ export class ActiveEditorController {
   readonly handleContextMenu = (event: MouseEvent): void => this.#pointer.handleContextMenu(event);
   public handleKeyDown(event: KeyboardEvent): void {
     if (!this.#availability.acceptsInput) return;
-    if (this.#keyboard.handleKeyDown(event)) event.preventDefault();
+    if (this.#keyboard.handleKeyDown(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
   }
-  public handleHoverZoomKeyDown(event: KeyboardEvent): void {
-    if (!this.#availability.acceptsInput || event.defaultPrevented) return;
-    if (this.#keyboard.handleHoverZoom(event)) event.preventDefault();
-  }
+  public readonly handleDocumentKeyDown = (event: KeyboardEvent): boolean =>
+    this.#availability.acceptsInput && this.#keyboard.handleDocumentKeyDown(event);
   readonly handlePointerCancel = (event: PointerEvent) => this.#pointer.handlePointerCancel(event);
   public handlePointerBoundary(pointerOver: boolean): void {
     this.#keyboard.setPointerOver(pointerOver);
     if (pointerOver) void this.#actions.refreshPasteAvailability();
   }
-  readonly handlePointerDown = (event: PointerEvent): void =>
-    this.#pointer.handlePointerDown(event);
-  readonly handlePointerMove = (event: PointerEvent): void =>
-    this.#pointer.handlePointerMove(event);
+  readonly handlePointerDown = (event: PointerEvent) => this.#pointer.handlePointerDown(event);
+  readonly handlePointerMove = (event: PointerEvent) => this.#pointer.handlePointerMove(event);
   readonly handlePointerUp = (event: PointerEvent): void => this.#pointer.handlePointerUp(event);
   public preparePrimaryTouchStart(): void {
     this.#navigation.cancelPanMomentum();
     if (ControllerTouch.isTouchInteraction(this.#input.interaction))
       this.#dispatch({ type: "reset" });
   }
-  public blocksNativeTouchScrolling(): boolean {
-    return ControllerTouch.touchInteractionBlocksNativeScroll(this.#input.interaction);
-  }
+  public readonly blocksNativeTouchScrolling = (): boolean =>
+    this.#handles.activePointerType === "touch" ||
+    ControllerTouch.touchInteractionBlocksNativeScroll(this.#input.interaction);
   public recoverInterruptedTouch(): void {
     this.preparePrimaryTouchStart();
     this.#captures.releaseAll();
@@ -344,14 +342,13 @@ export class ActiveEditorController {
         ownerWindow: this.#ownerWindow,
         pageToScreen: (point) => this.#navigation.localPointFromPage(point),
         pageToViewport: (point) => this.#navigation.screenPoint(point),
+        viewportToPage: ({ x, y }) => this.#navigation.pagePoint({ clientX: x, clientY: y }),
         preparedHistory: this.#preparedHistory,
         renderer: this.#renderer,
         sceneStore: this.#sceneStore,
         sliceBudgetMs: this.#sliceBudgetMs,
         selection: () => this.#selection,
-        ...(this.#selectionEdgeDrag === undefined
-          ? {}
-          : { selectionEdgeDrag: this.#selectionEdgeDrag }),
+        selectionEdgeDrag: this.#selectionEdgeDrag,
         setSelection: (selection) => this.#setSelection(selection),
         zoom: () => this.#navigation.zoom,
       }),
@@ -475,7 +472,7 @@ export class ActiveEditorController {
     });
   }
   #dispatch(action: EditorInput.InputAction): void {
-    this.#input = applyInputAction(
+    const input = applyInputAction(
       this.#input,
       action,
       this.#gestures,
@@ -483,10 +480,13 @@ export class ActiveEditorController {
       this.#penGuard,
       this.#navigation,
     );
+    const hasSelection = this.#selection.size > 0;
+    this.#input = input.hasSelection === hasSelection ? input : { ...input, hasSelection };
   }
   #setSelection(selection: ReadonlySet<string>): void {
     if (selection === this.#selection) return;
     this.#selection = selection;
+    this.#input = { ...this.#input, hasSelection: selection.size > 0 };
     this.#handles.renderSelection();
     this.#onStateChanged();
   }

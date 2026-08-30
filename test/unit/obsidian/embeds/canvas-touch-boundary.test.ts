@@ -24,8 +24,27 @@ describe("canvas touch boundary", () => {
     const start = dispatchTouch(fixture.surface, "touchstart", [touch(1, 20, 20)]);
     const move = dispatchTouch(fixture.surface, "touchmove", [touch(1, 40, 22)]);
 
-    expect(start.defaultPrevented).toBe(false);
-    expect(move.defaultPrevented).toBe(false);
+    expect(start.defaultPrevented).toBe(true);
+    expect(move.defaultPrevented).toBe(true);
+    expect(fixture.hostStarts).not.toHaveBeenCalled();
+    expect(fixture.hostMoves).not.toHaveBeenCalled();
+    fixture.dispose();
+  });
+
+  it("cancels native scrolling after pointer arbitration claims the touch", () => {
+    let blockTouch = false;
+    const fixture = createFixture(() => blockTouch);
+    fixture.onTouchPointerStart.mockImplementation(() => {
+      blockTouch = true;
+    });
+
+    dispatchPointer(fixture.surface, "pointerdown", true, 4);
+    const start = dispatchTouch(fixture.surface, "touchstart", [touch(4, 20, 20)]);
+    const move = dispatchTouch(fixture.surface, "touchmove", [touch(4, 20, 40)]);
+
+    expect(start.defaultPrevented).toBe(true);
+    expect(move.defaultPrevented).toBe(true);
+    expect(fixture.hostPointerStarts).not.toHaveBeenCalled();
     expect(fixture.hostStarts).not.toHaveBeenCalled();
     expect(fixture.hostMoves).not.toHaveBeenCalled();
     fixture.dispose();
@@ -83,7 +102,7 @@ describe("canvas touch boundary", () => {
   });
 });
 
-function createFixture(blockTouch = false) {
+function createFixture(blockTouch: boolean | (() => boolean) = false) {
   const host = htmlDiv();
   const surface = htmlDiv();
   host.append(surface);
@@ -107,7 +126,7 @@ function createFixture(blockTouch = false) {
     onTouchPointerMove,
     onTouchPointerStart,
     onTouchTerminal,
-    shouldBlockTouchEvent: () => blockTouch,
+    shouldBlockTouchEvent: typeof blockTouch === "function" ? blockTouch : () => blockTouch,
   });
   return {
     dispose: () => {

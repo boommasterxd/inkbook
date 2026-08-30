@@ -27,6 +27,7 @@ import {
   previewKind,
   removeId,
   sample,
+  shouldClearSelectionForTouchPreview,
   unchangedEffects,
 } from "./input-reducer-operations";
 
@@ -55,23 +56,32 @@ function commitSingleInteraction(
   action: PointerExitAction,
 ): InputReduction {
   const effects = cleanupEffects(interaction);
+  let nextState = { ...state, interaction: undefined };
   const kind = previewKind(interaction);
   if (interaction.previewStarted && kind !== undefined) {
     effects.unshift({ type: "commit-preview", kind });
-  } else if (interaction.phase === "lasso" && !interaction.shift) {
+    if (state.hasSelection && shouldClearSelectionForTouchPreview(interaction)) {
+      effects.unshift({ type: "clear-selection" });
+      nextState = { ...nextState, hasSelection: false };
+    }
+  } else if (interaction.phase === "lasso" && !interaction.shift && state.hasSelection) {
     effects.unshift({ type: "clear-selection" });
+    nextState = { ...nextState, hasSelection: false };
   } else if (interaction.phase === "touch-pending" && isTouchTap(interaction, action)) {
-    effects.unshift(
-      interaction.target === undefined
-        ? { type: "clear-selection" }
-        : {
-            type: "select-element",
-            elementId: interaction.target.elementId,
-            mode: "preserve-or-replace",
-          },
-    );
+    if (interaction.target === undefined) {
+      if (state.hasSelection) {
+        effects.unshift({ type: "clear-selection" });
+        nextState = { ...nextState, hasSelection: false };
+      }
+    } else {
+      effects.unshift({
+        type: "select-element",
+        elementId: interaction.target.elementId,
+        mode: "preserve-or-replace",
+      });
+    }
   }
-  return { state: { ...state, interaction: undefined }, effects };
+  return { state: nextState, effects };
 }
 
 export function cancelInteraction(

@@ -1,4 +1,3 @@
-import { INKBOOK_CLIPBOARD_WEB_MIME } from "./constants";
 import type { ClipboardWritePayload } from "./types";
 
 export interface ClipboardWritePort<Item> {
@@ -8,7 +7,7 @@ export interface ClipboardWritePort<Item> {
 }
 
 export interface ClipboardWriteAttempt {
-  mode: "custom-and-plain" | "plain-only" | "unavailable";
+  mode: "plain-only" | "unavailable";
   payloadReady: Promise<ClipboardWritePayload>;
   systemWrite: Promise<boolean>;
 }
@@ -32,34 +31,19 @@ export const beginClipboardWriteDuringActivation = <Item>(
     port.retainSessionPayload(payload);
     return payload;
   });
-  const custom = retainedPayloadReady.then(({ customText }) => customText);
   const plain = retainedPayloadReady.then(({ plainText }) => plainText);
   try {
-    const item = port.createItem(
-      new Map([
-        [INKBOOK_CLIPBOARD_WEB_MIME, custom],
-        ["text/plain", plain],
-      ]),
-    );
+    const item = port.createItem(new Map([["text/plain", plain]]));
     return {
-      mode: "custom-and-plain",
+      mode: "plain-only",
       payloadReady: retainedPayloadReady,
       systemWrite: settledWrite(port, item),
     };
   } catch {
-    try {
-      const item = port.createItem(new Map([["text/plain", plain]]));
-      return {
-        mode: "plain-only",
-        payloadReady: retainedPayloadReady,
-        systemWrite: settledWrite(port, item),
-      };
-    } catch {
-      return {
-        mode: "unavailable",
-        payloadReady: retainedPayloadReady,
-        systemWrite: Promise.resolve(false),
-      };
-    }
+    return {
+      mode: "unavailable",
+      payloadReady: retainedPayloadReady,
+      systemWrite: Promise.resolve(false),
+    };
   }
 };

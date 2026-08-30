@@ -1,6 +1,10 @@
 import type { ArrangeAction } from "../../../domain/commands/arrange";
 import type { InkElementV1, PointV1 } from "../../../domain/schema/public";
 import type { InputPoint, PointerSample } from "../../../editor/input/index";
+import {
+  selectionOverlayContainsPoint,
+  type SelectedElementGeometry,
+} from "../../../editor/selection/public";
 import type { ElementSceneStore } from "./scene-store";
 
 export function selectedElements(
@@ -76,6 +80,22 @@ export function selectionTargetAt(
   pointerType: PointerSample["pointerType"],
   zoom: number,
 ): { readonly elementId: string; readonly isSelected: boolean } | undefined {
+  const selected = selectedGeometry(store, selection);
+  if (selectionOverlayContainsPoint(selected, point)) {
+    return { elementId: selected[0]!.element.id, isSelected: true };
+  }
   const elementId = store.hit(point, pointerType, zoom);
   return elementId === null ? undefined : { elementId, isSelected: selection.has(elementId) };
+}
+
+function selectedGeometry(
+  store: ElementSceneStore,
+  selection: ReadonlySet<string>,
+): SelectedElementGeometry[] {
+  const selected: SelectedElementGeometry[] = [];
+  for (const id of selection) {
+    const record = store.get(id);
+    if (record !== undefined) selected.push({ bounds: record.bounds, element: record.element });
+  }
+  return selected;
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { calculateElementBounds } from "../../../src/domain/geometry/public";
 import type {
   BoxShapeElementV1,
   InkElementV1,
@@ -8,17 +9,94 @@ import type {
 } from "../../../src/domain/schema/public";
 import { ElementStore } from "../../../src/domain/store/public";
 import type { TimeSlicedSelectionCommitPreparation } from "../../../src/editor/selection/handle-session";
-import { SelectionHandleSession } from "../../../src/editor/selection/public";
+import {
+  createLassoSelectionArea,
+  createRectangleSelectionArea,
+  SelectionHandleSession,
+  selectBySelectionAreaQuery,
+  selectionOverlayContainsPoint,
+  selectionOverlayGeometry,
+  type SelectionArea,
+  type SelectionAreaInclusion,
+} from "../../../src/editor/selection/public";
 import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
 
 import { MeasuredSliceScheduler, percentile } from "../domain/domain-scenarios";
 import { connectedLine } from "../../unit/domain/store/fixtures";
+import { indexedStroke } from "../../fixtures/editor/stroke";
 import { maximumStroke } from "./maximum-stroke-fixture";
 import { createPassThroughMoveSession } from "./selection-session-fixture";
 import { INTERACTION_REFRESH_PROFILE, interactionP99 } from "../interaction-refresh-profile";
 import { timingBudget } from "../timing-budget";
 
 describe("selection hot paths", () => {
+  it("classifies rectangle and bounded lasso candidates in a 10,000-stroke index", () => {
+    const elements = Array.from({ length: 10_000 }, (_, index) => indexedStroke(index));
+    const store = new ElementStore(elements);
+    const sceneStore = new ElementSceneStore(store);
+    const lasso = createLassoSelectionArea([
+      { x: 15, y: 15 },
+      { x: 1_015, y: 15 },
+      { x: 1_015, y: 115 },
+      { x: 15, y: 115 },
+    ]);
+    const rectangle = createRectangleSelectionArea({ x: 15, y: 15 }, { x: 1_015, y: 115 });
+    try {
+      selectInArea(store, sceneStore, lasso, "touched");
+      selectInArea(store, sceneStore, lasso, "fully-enclosed");
+      selectInArea(store, sceneStore, rectangle, "touched");
+      store.resetInstrumentation();
+      const touchedDurations = measureAreaSelection(store, sceneStore, lasso, "touched");
+      const enclosedDurations = measureAreaSelection(store, sceneStore, lasso, "fully-enclosed");
+      const rectangleDurations = measureAreaSelection(store, sceneStore, rectangle, "touched");
+
+      expect(interactionP99(touchedDurations)).toBeLessThanOrEqual(
+        timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+      );
+      expect(interactionP99(enclosedDurations)).toBeLessThanOrEqual(
+        timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+      );
+      expect(interactionP99(rectangleDurations)).toBeLessThanOrEqual(
+        timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+      );
+      expect(store.instrumentation.fullStoreScans).toBe(0);
+    } finally {
+      sceneStore.release();
+    }
+  });
+
+  it("keeps the 10,000-stroke group overlay within the interaction budget", () => {
+    const selected = Array.from({ length: 10_000 }, (_, index) => {
+      const element = indexedStroke(index);
+      return { bounds: calculateElementBounds(element), element };
+    });
+    selectionOverlayGeometry(selected, 1);
+    const durations = Array.from({ length: 120 }, () => {
+      const started = performance.now();
+      const geometry = selectionOverlayGeometry(selected, 1);
+      const duration = performance.now() - started;
+      expect(geometry?.outline.kind).toBe("polygon");
+      expect(geometry?.handles).toHaveLength(9);
+      return duration;
+    });
+    const center = { x: 1_000, y: 100 };
+    selectionOverlayContainsPoint(selected, center);
+    const hitDurations = Array.from({ length: 120 }, () => {
+      const started = performance.now();
+      expect(selectionOverlayContainsPoint(selected, center)).toBe(true);
+      return performance.now() - started;
+    });
+
+    expect(interactionP99(durations)).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
+    expect(interactionP99(hitDurations)).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
+  });
+});
+
+describe("selection commit hot paths", () => {
   it("routes 488 maximum strokes through the indexed hit path and bounded commit slices", async () => {
     const strokes = Array.from({ length: 488 }, (_, index) => maximumViewportStroke(index));
     const session = movedSession(strokes);
@@ -251,4 +329,37 @@ function outlineStyle() {
 
 function fixtureId(index: number): string {
   return `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
+}
+
+function measureAreaSelection(
+  store: ElementStore,
+  sceneStore: ElementSceneStore,
+  area: SelectionArea,
+  inclusion: SelectionAreaInclusion,
+): number[] {
+  return Array.from({ length: 120 }, () => {
+    const started = performance.now();
+    const selection = selectInArea(store, sceneStore, area, inclusion);
+    const duration = performance.now() - started;
+    expect(selection.size).toBe(1_000);
+    return duration;
+  });
+}
+
+function selectInArea(
+  store: ElementStore,
+  sceneStore: ElementSceneStore,
+  area: SelectionArea,
+  inclusion: SelectionAreaInclusion,
+): ReadonlySet<string> {
+  return selectBySelectionAreaQuery(new Set(), area, inclusion, false, (bounds, sink) =>
+    sceneStore.query(bounds, {
+      add: (id) => {
+        const record = store.get(id);
+        if (record !== undefined) {
+          sink.add(id, record.bounds, record.element as InkElementV1);
+        }
+      },
+    }),
+  );
 }

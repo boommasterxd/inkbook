@@ -88,7 +88,11 @@ describe("touch arbitration over an annotation", () => {
     });
 
     expect(moved.state.interaction?.phase).toBe("element-move");
-    expect(moved.effects.map(({ type }) => type)).toEqual(["cancel-long-press", "begin-preview"]);
+    expect(moved.effects.map(({ type }) => type)).toEqual([
+      "cancel-long-press",
+      "begin-preview",
+      "update-preview",
+    ]);
   });
 });
 

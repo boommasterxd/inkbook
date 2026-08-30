@@ -60,6 +60,7 @@ interface ActiveEditorChromeOptions {
   readonly onToolbarAction: InkbookEditorChromeProps["onToolbarAction"];
   readonly ownerDocument: Document;
   readonly renderIcon: InkbookEditorChromeProps["renderIcon"];
+  readonly selectionArea: InkbookEditorChromeProps["selectionArea"];
   readonly selectedShape: ShapeId;
   readonly shapeIcon: InkbookEditorChromeProps["shapeIcon"];
   readonly style: {
@@ -75,6 +76,7 @@ function createChromeProps(options: ActiveEditorChromeOptions): InkbookEditorChr
     onToolbarAction: options.onToolbarAction,
     ownerDocument: options.ownerDocument,
     renderIcon: options.renderIcon,
+    selectionArea: options.selectionArea,
     selectedShape: options.selectedShape,
     shapeIcon: options.shapeIcon,
     styleIcon: options.style.icon,
@@ -100,6 +102,7 @@ export function createActiveEditorChromeProps(
     onToolbarAction,
     ownerDocument,
     renderIcon,
+    selectionArea: style.selectionArea,
     selectedShape: chromeState.selectedShape,
     shapeIcon: style.shapeIcon,
     style,

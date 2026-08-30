@@ -1,5 +1,6 @@
 import {
   canonicalPoint,
+  linearPivot,
   normalizeRotation,
   pointDistance,
   rotatePointClockwise,
@@ -17,6 +18,7 @@ import type {
   StrokeElementV1,
 } from "../../domain/schema/public";
 import { MAX_ABSOLUTE_COORDINATE } from "../../domain/schema/public";
+import { normalizeLinearBend } from "./linear-bend";
 
 interface ScaleFactors {
   readonly x: number;
@@ -247,14 +249,18 @@ export function editLinearEndpoint(
   if (pointDistance(point, opposite) < 8) {
     throw new RangeError("Linear elements must remain at least 8 page units long.");
   }
+  const canonicalEndpoint = canonicalPoint(point);
+  const start = endpoint === "start" ? canonicalEndpoint : element.start;
+  const end = endpoint === "end" ? canonicalEndpoint : element.end;
+  if (element.kind === "straight-highlighter") {
+    return { ...element, [endpoint]: canonicalEndpoint, pivot: linearPivot(start, end, null) };
+  }
+  const bend = normalizeLinearBend(element.start, element.end, element.bend);
   const replacement: LinearElementV1 = {
     ...element,
-    [endpoint]: canonicalPoint(point),
-    pivot: linearPivot(
-      endpoint === "start" ? point : element.start,
-      endpoint === "end" ? point : element.end,
-      element.bend,
-    ),
+    [endpoint]: canonicalEndpoint,
+    bend,
+    pivot: linearPivot(start, end, bend),
   };
   if (element.kind === "line" || element.kind === "arrow") {
     return {
@@ -263,19 +269,6 @@ export function editLinearEndpoint(
     };
   }
   return replacement;
-}
-
-export function editLinearBend(element: InkElementV1, bend: PointV1 | null): InkElementV1 {
-  if (element.kind !== "line" && element.kind !== "arrow") {
-    throw new TypeError("Only lines and arrows support bend editing.");
-  }
-  if (bend !== null) assertFinitePoint(bend);
-  const canonicalBend = bend === null ? null : canonicalPoint(bend);
-  return {
-    ...element,
-    bend: canonicalBend,
-    pivot: linearPivot(element.start, element.end, canonicalBend),
-  };
 }
 
 function translateElement(element: InkElementV1, delta: PointV1): InkElementV1 {
@@ -339,11 +332,24 @@ function translateElement(element: InkElementV1, delta: PointV1): InkElementV1 {
           pivot: translate(element.pivot),
         };
   }
+  const x = roundCanonical(element.x + delta.x);
+  const y = roundCanonical(element.y + delta.y);
+  if (element.kind === "table") {
+    return {
+      ...element,
+      x,
+      y,
+      pivot: canonicalPoint({
+        x: x + (element.columns * element.columnWidth) / 2,
+        y: y + element.height / 2,
+      }),
+    };
+  }
   return {
     ...element,
-    x: roundCanonical(element.x + delta.x),
-    y: roundCanonical(element.y + delta.y),
-    pivot: translate(element.pivot),
+    x,
+    y,
+    pivot: canonicalPoint({ x: x + element.width / 2, y: y + element.height / 2 }),
   };
 }
 
@@ -473,16 +479,6 @@ function isLinear(element: InkElementV1): element is LinearElementV1 {
 function shouldTransformEndpoint(element: LinearElementV1, endpoint: "start" | "end"): boolean {
   if (element.kind === "straight-highlighter") return true;
   return endpoint === "start" ? element.startConnection === null : element.endConnection === null;
-}
-
-function linearPivot(start: PointV1, end: PointV1, bend: PointV1 | null): PointV1 {
-  const points = bend === null ? [start, end] : [start, bend, end];
-  const xs = points.map(({ x }) => x);
-  const ys = points.map(({ y }) => y);
-  return canonicalPoint({
-    x: (Math.min(...xs) + Math.max(...xs)) / 2,
-    y: (Math.min(...ys) + Math.max(...ys)) / 2,
-  });
 }
 
 function assertFinitePoint(point: PointV1): void {

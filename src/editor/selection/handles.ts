@@ -1,5 +1,6 @@
 import {
   calculateElementBounds,
+  quadraticPoint,
   rotatePointClockwise,
   unionBounds,
   type Bounds,
@@ -142,11 +143,15 @@ function linearHandles(
     { endpoint: "start", kind: "linear-endpoint", point: rotate(element.start) },
     { endpoint: "end", kind: "linear-endpoint", point: rotate(element.end) },
   ];
-  const bend = element.bend ?? {
+  const midpoint = {
     x: (element.start.x + element.end.x) / 2,
     y: (element.start.y + element.end.y) / 2,
   };
-  handles.push({ kind: "linear-bend", point: rotate(bend) });
+  const curvePoint =
+    element.bend === null
+      ? midpoint
+      : quadraticPoint(element.start, element.bend, element.end, 0.5);
+  handles.push({ kind: "linear-bend", point: rotate(curvePoint) });
   return handles;
 }
 

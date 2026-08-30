@@ -262,6 +262,7 @@ function rendererPort(): SvgSceneRenderer {
   return {
     interruptMotionForPointerDown: vi.fn(),
     inputSurface: {
+      focus: vi.fn(),
       hasPointerCapture: vi.fn(() => true),
       releasePointerCapture: vi.fn(),
       setPointerCapture: vi.fn(),

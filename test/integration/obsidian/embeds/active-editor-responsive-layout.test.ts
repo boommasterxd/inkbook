@@ -42,16 +42,16 @@ describe("active editor responsive layout", () => {
     fixture.layout.dispose();
   });
 
-  it("uses the complete context-action width when choosing a scrollable row", () => {
+  it("keeps a centered wide toolbar when context-action geometry changes", () => {
     const fixture = responsiveFixture();
     fixture.layout.chromeMounted();
     fixture.flushFrames();
 
     expect(fixture.onLayout).toHaveBeenLastCalledWith("wide");
-    fixture.setContextWidth(216);
+    fixture.triggerContextMutation();
     fixture.flushFrames();
 
-    expect(fixture.onLayout).toHaveBeenLastCalledWith("scrollable");
+    expect(fixture.onLayout).toHaveBeenLastCalledWith("wide");
     fixture.layout.dispose();
   });
 });
@@ -61,7 +61,6 @@ function responsiveFixture() {
   const observed = new Set<Element>();
   let frameTime = 0;
   const callbacks: ResponsiveCallbacks = {};
-  let contextWidth = 0;
   let toolbarReads = 0;
   let toolbarWidth = 554;
   const track = {
@@ -73,11 +72,6 @@ function responsiveFixture() {
   const toolbar = {
     querySelector: (selector: string) => (selector === ".inkbook-toolbar-track" ? track : null),
     scrollWidth: 570,
-  } as unknown as HTMLElement;
-  const context = {
-    get scrollWidth() {
-      return contextWidth;
-    },
   } as unknown as HTMLElement;
   const ownerWindow = responsiveOwnerWindow({ callbacks, frames, observed });
   const ownerDocument = { defaultView: ownerWindow } as unknown as Document;
@@ -101,12 +95,7 @@ function responsiveFixture() {
     style,
   } as unknown as HTMLElement;
   const chromeHost = {
-    querySelector: (selector: string) =>
-      selector === ".inkbook-toolbar"
-        ? toolbar
-        : selector === ".inkbook-toolbar-context-actions"
-          ? context
-          : null,
+    querySelector: (selector: string) => (selector === ".inkbook-toolbar" ? toolbar : null),
   } as unknown as HTMLElement;
   const onLayout = vi.fn();
   const layout = new ActiveEditorLayout({
@@ -140,8 +129,7 @@ function responsiveFixture() {
     observed,
     onLayout,
     root,
-    setContextWidth: (width: number) => {
-      contextWidth = width;
+    triggerContextMutation: () => {
       callbacks.mutation?.([], {} as MutationObserver);
     },
     setToolbarWidth: (width: number) => {

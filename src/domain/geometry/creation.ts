@@ -161,6 +161,43 @@ export function tableWidth(table: Pick<TableElementV1, "columns" | "columnWidth"
   return table.columns * table.columnWidth;
 }
 
+export function tableLineSegments(
+  table: Pick<TableElementV1, "columnWidth" | "columns" | "headerHeight" | "height" | "x" | "y">,
+): readonly (readonly [PointV1, PointV1])[] {
+  const right = table.x + tableWidth(table);
+  const bottom = table.y + table.height;
+  const segments: Array<readonly [PointV1, PointV1]> = [
+    [
+      { x: table.x, y: table.y },
+      { x: right, y: table.y },
+    ],
+    [
+      { x: right, y: table.y },
+      { x: right, y: bottom },
+    ],
+    [
+      { x: right, y: bottom },
+      { x: table.x, y: bottom },
+    ],
+    [
+      { x: table.x, y: bottom },
+      { x: table.x, y: table.y },
+    ],
+    [
+      { x: table.x, y: table.y + table.headerHeight },
+      { x: right, y: table.y + table.headerHeight },
+    ],
+  ];
+  for (let column = 1; column < table.columns; column += 1) {
+    const x = table.x + column * table.columnWidth;
+    segments.push([
+      { x, y: table.y },
+      { x, y: bottom },
+    ]);
+  }
+  return segments;
+}
+
 function signedMinimum(value: number, minimum: number, zeroDefault: number): number {
   if (value === 0) return zeroDefault;
   return Math.sign(value) * Math.max(Math.abs(value), minimum);

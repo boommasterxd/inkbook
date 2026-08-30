@@ -14,12 +14,15 @@ describe("settings scope and session behavior", () => {
     const settings = createBuiltInSettings();
     settings.startupTool = "eraser";
     settings.toolDefaults.pen.opacity = 0.5;
+    settings.toolDefaults.select.area = "lasso";
 
     const session = initializeEditorSettingsSession(settings);
     settings.toolDefaults.pen.opacity = 0.25;
+    settings.toolDefaults.select.area = "rectangle";
 
     expect(session).toMatchObject({ currentTool: "eraser", fingerDrawingEnabled: false });
     expect(session.toolValues.pen.opacity).toBe(0.5);
+    expect(session.toolValues.select.area).toBe("lasso");
   });
 
   it("resolves explicit, session, vault, and built-in values in order", () => {

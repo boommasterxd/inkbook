@@ -58,6 +58,18 @@ describe("SettingsControlValues", () => {
     });
   });
 
+  it("persists both Select choices in vault defaults", async () => {
+    await values.set("toolDefaults.select.area", "lasso");
+    await values.set("toolDefaults.select.inclusion", "fully-enclosed");
+
+    expect(values.get("toolDefaults.select.area")).toBe("lasso");
+    expect(values.get("toolDefaults.select.inclusion")).toBe("fully-enclosed");
+    expect(vault.saved.toolDefaults.select).toEqual({
+      area: "lasso",
+      inclusion: "fully-enclosed",
+    });
+  });
+
   it.each(["auto", "60", "90", "120", "144", "240"])(
     "persists refresh-rate preference %s in the vault scope",
     async (value) => {

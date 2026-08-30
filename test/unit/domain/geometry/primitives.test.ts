@@ -4,6 +4,7 @@ import { boundsFromPoints } from "../../../../src/domain/geometry/primitives";
 
 import {
   canonicalPoint,
+  linearPivot,
   normalizeRotation,
   pointInPolygon,
   quadraticBounds,
@@ -33,6 +34,14 @@ describe("canonical geometry primitives", () => {
     const rotated = rotatePointClockwise({ x: 20, y: 10 }, { x: 10, y: 10 }, 90);
     expect(rotated.x).toBeCloseTo(10);
     expect(rotated.y).toBeCloseTo(20);
+  });
+
+  it("derives canonical linear pivots from straight and bent bounds", () => {
+    expect(linearPivot({ x: 2, y: 4 }, { x: 10, y: 8 }, null)).toEqual({ x: 6, y: 6 });
+    expect(linearPivot({ x: 2, y: 4 }, { x: 10, y: 8 }, { x: 6.1234, y: 20.5678 })).toEqual({
+      x: 6,
+      y: 12.284,
+    });
   });
 
   it("classifies interior and exterior polygon points", () => {

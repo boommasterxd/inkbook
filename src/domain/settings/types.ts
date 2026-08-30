@@ -35,6 +35,8 @@ export const LINE_SPACINGS = [25, 33.333333333333336, 50, 100] as const;
 export const PEN_TAP_INSERTIONS = ["off", "handwriting"] as const;
 export const MOTION_PREFERENCES = ["system", "full", "reduced"] as const;
 export const REFRESH_RATE_PREFERENCES = ["auto", 60, 90, 120, 144, 240] as const;
+export const SELECTION_AREAS = ["rectangle", "lasso"] as const;
+export const SELECTION_INCLUSIONS = ["fully-enclosed", "touched"] as const;
 
 export type StartupToolV1 = (typeof STARTUP_TOOLS)[number];
 export type ClosedShapeToolV1 = (typeof CLOSED_SHAPE_TOOLS)[number];
@@ -44,6 +46,8 @@ type OutlineWidthV1 = (typeof OUTLINE_WIDTHS)[number];
 type OutlineStyleV1 = (typeof OUTLINE_STYLES)[number];
 type ArrowNodeV1 = (typeof ARROW_NODES)[number];
 export type BackgroundTypeV1 = (typeof BACKGROUND_TYPES)[number];
+export type SelectionAreaV1 = (typeof SELECTION_AREAS)[number];
+export type SelectionInclusionV1 = (typeof SELECTION_INCLUSIONS)[number];
 
 export type ColorV1 =
   { readonly type: "theme-text" } | { readonly type: "rgba"; readonly value: `#${string}` };
@@ -78,6 +82,7 @@ interface EraserDefaultsV1 {
 }
 
 export interface ToolDefaultsV1 {
+  select: { area: SelectionAreaV1; inclusion: SelectionInclusionV1 };
   pen: PenDefaultsV1;
   highlighter: HighlighterDefaultsV1;
   straightHighlighter: HighlighterDefaultsV1;
@@ -106,8 +111,8 @@ export type FilePlacementV1 =
 
 export type RefreshRatePreferenceV2 = (typeof REFRESH_RATE_PREFERENCES)[number];
 
-export interface InkbookSettingsV3 {
-  version: 3;
+export interface InkbookSettingsV4 {
+  version: 4;
   startupTool: StartupToolV1;
   toolDefaults: ToolDefaultsV1;
   pageDefaults: PageDefaultsV3;

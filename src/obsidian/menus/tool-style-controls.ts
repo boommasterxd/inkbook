@@ -66,6 +66,16 @@ export const ARROW_NODE_STYLE_OPTIONS: readonly StyleChoiceOption[] = ARROW_NODE
   value: node,
 }));
 
+const SELECTION_AREA_STYLE_OPTIONS: readonly StyleChoiceOption[] = [
+  { label: "Rectangle", value: "rectangle" },
+  { label: "Lasso", value: "lasso" },
+];
+
+const SELECTION_INCLUSION_STYLE_OPTIONS: readonly StyleChoiceOption[] = [
+  { label: "Fully enclosed", value: "fully-enclosed" },
+  { label: "Touched", value: "touched" },
+];
+
 export function createToolStyleControls(
   defaults: ToolDefaultsV1,
   tool: StartupToolV1,
@@ -75,11 +85,24 @@ export function createToolStyleControls(
 
 function controlsForSummary(summary: ActiveToolStyleSummary): readonly StyleControl[] {
   if (summary === null) return [];
+  if (summary.kind === "select") return selectControls(summary.values);
   if (summary.kind === "eraser") {
     return [numberControl("eraser-radius", "Eraser radius", summary.radius, 8, 64, 4)];
   }
   if (summary.kind === "stroke") return strokeControls(summary);
   return outlineControls(summary);
+}
+
+function selectControls(values: ToolDefaultsV1["select"]): readonly StyleControl[] {
+  return [
+    choiceControl("selection-area", "Selection area", values.area, SELECTION_AREA_STYLE_OPTIONS),
+    choiceControl(
+      "selection-inclusion",
+      "Include elements",
+      values.inclusion,
+      SELECTION_INCLUSION_STYLE_OPTIONS,
+    ),
+  ];
 }
 
 function strokeControls(

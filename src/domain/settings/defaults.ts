@@ -6,7 +6,7 @@ import {
   PEN_WIDTHS,
   type ColorV1,
   type InkbookDeviceSettingsV1,
-  type InkbookSettingsV3,
+  type InkbookSettingsV4,
   type OutlineDefaultsV1,
   type ShapeDefaultsV1,
   type ToolDefaultsV1,
@@ -56,6 +56,7 @@ function toolDefaults(): ToolDefaultsV1 {
   ]) as ToolDefaultsV1["shapes"];
 
   return {
+    select: { area: "rectangle", inclusion: "touched" },
     pen: {
       color: { type: "theme-text" },
       width: PEN_WIDTHS[1],
@@ -80,9 +81,9 @@ function toolDefaults(): ToolDefaultsV1 {
   };
 }
 
-export function createBuiltInSettings(): InkbookSettingsV3 {
+export function createBuiltInSettings(): InkbookSettingsV4 {
   return {
-    version: 3,
+    version: 4,
     startupTool: "draw",
     toolDefaults: toolDefaults(),
     pageDefaults: {

@@ -116,6 +116,19 @@ describe("InkbookSettingTab definitions", () => {
     expect(typeof customFolder?.visible === "function" && customFolder.visible()).toBe(true);
   });
 
+  it("places Select first in Drawing tools with both shared choice controls", () => {
+    const tab = createTab(new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter()));
+    const drawing = groups(tab).find((group) => group.heading === "Drawing tools");
+    const tools = drawing === undefined ? [] : renders(drawing);
+
+    expect(tools[0]?.name).toBe("Select");
+    expect(tools[0] === undefined ? [] : renderedLabels(tools[0])).toEqual([
+      "Select",
+      "Selection area",
+      "Include elements",
+    ]);
+  });
+
   it("shows the live automatic refresh-rate result in the selected option", () => {
     const store = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());
     const detectingTab = createTab(store, () => ({ kind: "detecting", refreshRate: 120 }));
@@ -181,6 +194,7 @@ describe("InkbookSettingTab reset integration", () => {
     await tab.setControlValue("startupTool", "arrow");
     await tab.setControlValue("pageDefaults.activeBufferLines", 6);
     await tab.setControlValue("toolDefaults.pen.width", 14);
+    await tab.setControlValue("toolDefaults.select.area", "lasso");
     await tab.setControlValue("toolDefaults.shapes.rectangle.outlineWidth", 8);
     await tab.setControlValue("device.fingerDrawingEnabled", !deviceDefaults.fingerDrawingEnabled);
     await tab.setControlValue("device.leftHandedToolbar", !deviceDefaults.leftHandedToolbar);
@@ -208,6 +222,7 @@ describe("InkbookSettingTab reset integration", () => {
       eraser: defaults.toolDefaults.eraser,
       highlighter: defaults.toolDefaults.highlighter,
       pen: defaults.toolDefaults.pen,
+      select: defaults.toolDefaults.select,
       straightHighlighter: defaults.toolDefaults.straightHighlighter,
     });
     resetGroup(tab, "Shapes and structures");

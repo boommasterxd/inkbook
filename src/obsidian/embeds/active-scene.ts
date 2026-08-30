@@ -129,12 +129,6 @@ export class ActiveInkbookScene {
       renderer: this.#renderer,
       sceneStore: this.#store,
       sliceBudgetMs: options.sliceBudgetMs,
-      selectionEdgeDrag: {
-        begin: () => this.#layout.beginSelectionEdgeDrag(),
-        finish: (outcome) => this.#layout.finishSelectionEdgeDrag(outcome),
-        setBottomEdge: (active) => this.#layout.setSelectionBottomEdge(active),
-        update: (pointer) => this.#layout.updateSelectionEdgeDrag(pointer),
-      },
       scrollOwner,
       startupTool: options.startupTool,
     });

@@ -37,6 +37,7 @@ import type {
   DocumentScheme,
   LivePathState,
   MutableSceneInstrumentation,
+  PreviewStrokeWidth,
   SceneCamera,
   SceneInstrumentationSnapshot,
   SceneLiveStrokePreview,
@@ -247,9 +248,9 @@ export class SvgSceneRenderer {
     if (!this.#frameWriter.setOverlayPath(d)) return;
     this.schedule();
   }
-  public setSelectionOverlayPath(d: string | null): void {
+  public setSelectionOverlayPath(d: string | null, fill: "accent" | "none" = "accent"): void {
     this.assertActive();
-    this.#motion.setSelectionPath(d);
+    this.#motion.setSelectionPath(d, fill);
     this.schedule();
   }
   public setSnapMarkerPath(d: string | null): void {
@@ -279,10 +280,11 @@ export class SvgSceneRenderer {
     ids: readonly string[],
     transform: string | null,
     version: number,
+    strokeWidth: PreviewStrokeWidth = "scale",
   ): void {
     this.assertActive();
     validatePreviewVersion(version, "Preview transform");
-    this.#transformPreviews.set(ids, transform, version);
+    this.#transformPreviews.set(ids, transform, version, strokeWidth);
     this.schedule();
   }
   public clearPreviewTransforms(): void {

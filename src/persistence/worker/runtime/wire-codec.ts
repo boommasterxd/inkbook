@@ -18,6 +18,7 @@ import {
   type RuntimeWireSliceOptions,
   unpackElements,
 } from "./element-wire-codec";
+import { copyElementsFromRuntime } from "./runtime-elements";
 import type {
   DecodeClipboardRuntimeSuccess,
   DocumentRuntimeRequest,
@@ -394,7 +395,8 @@ function encodePastePlanResult(
 function unpackPastePlan(result: ClipboardResult<PackedPastePlan>): ClipboardResult<PastePlan> {
   if (!result.ok) return result;
   assertClipboardElementWireLimits(result.value.elements);
-  return { ok: true, value: { ...result.value, elements: unpackElements(result.value.elements) } };
+  const elements = copyElementsFromRuntime(unpackElements(result.value.elements));
+  return { ok: true, value: { ...result.value, elements } };
 }
 
 export function encodeUnlockBatch(

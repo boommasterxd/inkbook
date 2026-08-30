@@ -2,10 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  createBuiltInDeviceSettings,
-  createBuiltInSettings,
-} from "../../../../../src/domain/settings";
+import * as Settings from "../../../../../src/domain/settings";
 import { ElementStore } from "../../../../../src/domain/store/public";
 import { createDragElement } from "../../../../../src/editor/tools/public";
 import { ActiveEditorController } from "../../../../../src/obsidian/embeds/active-editor/controller";
@@ -174,6 +171,20 @@ describe("active editor native paste DOM boundary", () => {
     expect(harness.key("c", { ctrlKey: true }).defaultPrevented).toBe(false);
     harness.dispose();
   });
+});
+
+describe("active editor document keyboard boundary", () => {
+  it("claims Selection shortcuts after canvas focus moves to a toolbar button", () => {
+    const harness = createHarness();
+    const toolbarButton = document.body.appendChild(createButton());
+    harness.selectElement();
+    harness.input.dispatchEvent(new PointerEvent("pointerenter"));
+    toolbarButton.focus();
+
+    expect(key(toolbarButton, "Delete", {}).defaultPrevented).toBe(true);
+    toolbarButton.remove();
+    harness.dispose();
+  });
 
   it("opens the native overflow menu below its toolbar trigger", () => {
     const harness = createHarness();
@@ -256,8 +267,8 @@ function createHarness() {
     applyZoomLayout: vi.fn(),
     backgroundSpacing: () => ({ dots: 25, lines: 25, squares: 25 }),
     container,
-    defaults: createBuiltInSettings().toolDefaults,
-    deviceSettings: createBuiltInDeviceSettings(),
+    defaults: Settings.createBuiltInSettings().toolDefaults,
+    deviceSettings: Settings.createBuiltInDeviceSettings(),
     history: new ActiveEditorHistory(model),
     interruptLayoutForInput: vi.fn(),
     menuFactory: { create: () => menu, forEvent: () => menu },
@@ -322,7 +333,7 @@ function primaryPointer(clientX = 50, clientY = 100): PointerEvent {
 
 function selectableElement() {
   return createDragElement({
-    defaults: createBuiltInSettings().toolDefaults,
+    defaults: Settings.createBuiltInSettings().toolDefaults,
     end: { x: 200, y: 200 },
     identity: { createdAt: 1, id: "00000000-0000-4000-8000-000000000001" },
     start: { x: 50, y: 50 },

@@ -66,7 +66,7 @@ export function beginPreview(
     type: "begin-preview",
     kind,
     tool: interaction.tool,
-    pointer: sample(pointer),
+    pointer: { ...sample(pointer), x: interaction.start.x, y: interaction.start.y },
     additive: interaction.phase === "lasso" && interaction.shift,
   };
 }
@@ -85,6 +85,16 @@ export function previewKind(
     case "touch-pending":
       return undefined;
   }
+}
+
+export function shouldClearSelectionForTouchPreview(
+  interaction: Exclude<InputInteraction, PinchInteraction>,
+): boolean {
+  return (
+    interaction.pointerType === "touch" &&
+    !interaction.shift &&
+    interaction.phase !== "element-move"
+  );
 }
 
 export function movementEffect(

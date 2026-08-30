@@ -1,5 +1,5 @@
 import { isAnchorTarget, resolveShapeAnchor } from "../geometry/anchors";
-import { canonicalPoint, pointDistance } from "../geometry/primitives";
+import { linearPivot, pointDistance } from "../geometry/primitives";
 import type { InkElementV1, LineElementV1, ArrowElementV1 } from "../schema/public";
 
 import { mutableElement } from "./immutability";
@@ -95,7 +95,7 @@ export function resolveConnections(
   if (pointDistance(resolved.start, resolved.end) < 8) {
     throw new RangeError("Connected linear elements must remain at least 8 page units long.");
   }
-  resolved.pivot = linearPivot(resolved);
+  resolved.pivot = linearPivot(resolved.start, resolved.end, resolved.bend);
   return resolved;
 }
 
@@ -171,22 +171,4 @@ function resolveConnectionAnchor(
     throw new RangeError("Connections must reference an existing eligible target.");
   }
   return resolveShapeAnchor(target, connection.anchor);
-}
-
-function linearPivot(element: ConnectableElement): { x: number; y: number } {
-  const points =
-    element.bend === null
-      ? [element.start, element.end]
-      : [element.start, element.bend, element.end];
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-  for (const point of points) {
-    minX = Math.min(minX, point.x);
-    maxX = Math.max(maxX, point.x);
-    minY = Math.min(minY, point.y);
-    maxY = Math.max(maxY, point.y);
-  }
-  return canonicalPoint({ x: (minX + maxX) / 2, y: (minY + maxY) / 2 });
 }

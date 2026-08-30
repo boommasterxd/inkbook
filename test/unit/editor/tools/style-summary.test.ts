@@ -79,7 +79,10 @@ describe("Style summaries", () => {
 
   it("summarizes active creation tool values without exposing unavailable controls", () => {
     const values = createBuiltInSettings().toolDefaults;
-    expect(summarizeActiveToolStyle(values, "select")).toBeNull();
+    expect(summarizeActiveToolStyle(values, "select")).toEqual({
+      kind: "select",
+      values: { area: "rectangle", inclusion: "touched" },
+    });
     expect(summarizeActiveToolStyle(values, "eraser")).toEqual({ kind: "eraser", radius: 20 });
     expect(summarizeActiveToolStyle(values, "draw")).toMatchObject({
       kind: "stroke",

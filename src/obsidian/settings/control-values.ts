@@ -3,7 +3,7 @@ import {
   loadSettings,
   type ColorV1,
   type InkbookDeviceSettingsV1,
-  type InkbookSettingsV3,
+  type InkbookSettingsV4,
 } from "../../domain/settings";
 import { InkbookSettingsStore } from "./storage";
 
@@ -14,10 +14,11 @@ type VaultControlKey =
   | "filePlacement.folder"
   | `pageDefaults.${"backgroundType" | "activeBufferLines" | "lockedBufferLines"}`
   | `pageDefaults.backgroundSpacing.${"lines" | "dots" | "squares"}`
+  | `toolDefaults.select.${"area" | "inclusion"}`
   | `toolDefaults.pen.${"color" | "width" | "opacity" | "pressureEnabled"}`
   | `toolDefaults.${"highlighter" | "straightHighlighter"}.${"color" | "width" | "opacity"}`
   | "toolDefaults.eraser.radius"
-  | `toolDefaults.shapes.${keyof InkbookSettingsV3["toolDefaults"]["shapes"]}.${
+  | `toolDefaults.shapes.${keyof InkbookSettingsV4["toolDefaults"]["shapes"]}.${
       | "outlineColor"
       | "outlineWidth"
       | "outlineStyle"

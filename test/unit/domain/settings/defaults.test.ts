@@ -13,7 +13,7 @@ describe("settings defaults", () => {
     const settings = createBuiltInSettings();
 
     expect(settings).toMatchObject({
-      version: 3,
+      version: 4,
       startupTool: "draw",
       refreshRatePreference: "auto",
     });
@@ -24,6 +24,7 @@ describe("settings defaults", () => {
       lockedBufferLines: 1,
     });
     expect(settings.filePlacement).toEqual({ mode: "obsidian-attachment-folder" });
+    expect(settings.toolDefaults.select).toEqual({ area: "rectangle", inclusion: "touched" });
     expect(settings.toolDefaults.pen).toEqual({
       color: { type: "theme-text" },
       width: 4,

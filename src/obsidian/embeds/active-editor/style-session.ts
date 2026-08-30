@@ -50,6 +50,7 @@ export class ActiveEditorStyleSession {
   public presentation(tool: EditorTool): {
     readonly controls: readonly StyleControl[];
     readonly icon: ToolbarStyleIconState;
+    readonly selectionArea: ToolDefaultsV1["select"]["area"];
     readonly shapeIcon: ActiveShapeIconState;
   } {
     return {
@@ -59,6 +60,7 @@ export class ActiveEditorStyleSession {
         tool,
       }),
       icon: createActiveEditorStyleIcon(this.#defaults, tool),
+      selectionArea: this.#defaults.select.area,
       shapeIcon: createActiveShapeIcon(this.#defaults),
     };
   }
@@ -66,6 +68,7 @@ export class ActiveEditorStyleSession {
   public apply(tool: EditorTool, id: string, value: boolean | number | string): void {
     const elements = selectedElements(this.#sceneStore, this.#selection());
     if (elements.length > 0) {
+      if (tool === "select" && (id === "selection-area" || id === "selection-inclusion")) return;
       const replacement = createSelectionStyleReplacement(elements, id, value);
       if (replacement !== null) {
         const complete = completeReplacement(replacement.replacements, this.#store);

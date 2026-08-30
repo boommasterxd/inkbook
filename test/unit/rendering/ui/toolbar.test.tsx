@@ -36,6 +36,7 @@ function render(
       layout="wide"
       onAction={vi.fn()}
       renderIcon={vi.fn()}
+      selectionArea="rectangle"
       selectedShape="rectangle"
       shapeIcon={{ arrowEnd: "arrow", arrowStart: "none", coordinateDimension: "2d" }}
       state={{ ...state, ...overrides }}
@@ -53,6 +54,7 @@ describe("Inkbook toolbar", () => {
     expect(markup).toContain('aria-pressed="true"');
     expect(markup.match(/inkbook-toolbar-active-indicator/gu)).toHaveLength(1);
     expect(markup).toContain('class="inkbook-toolbar-rail"');
+    expect(markup).toContain('aria-label="Select: Rectangle"');
   });
 
   it("keeps unavailable history controls disabled and omits contextual controls", () => {
@@ -79,6 +81,7 @@ describe("Inkbook toolbar", () => {
     expect(markup.indexOf('class="inkbook-toolbar inkbook-toolbar-wide"')).toBeLessThan(
       markup.indexOf("inkbook-toolbar-context-actions"),
     );
+    expect(markup.indexOf('aria-label="Paste"')).toBeLessThan(markup.indexOf('aria-label="Copy"'));
   });
 
   it("renders the current tool paint on the original palette geometry", () => {

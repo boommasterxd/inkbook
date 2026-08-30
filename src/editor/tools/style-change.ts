@@ -12,9 +12,16 @@ import {
   isRgbaColor,
   validateInkElementV1,
 } from "../../domain/schema/public";
-import type { StartupToolV1, ToolDefaultsV1 } from "../../domain/settings/types";
+import type {
+  SelectionAreaV1,
+  SelectionInclusionV1,
+  StartupToolV1,
+  ToolDefaultsV1,
+} from "../../domain/settings/types";
 
 export type StyleChange =
+  | { readonly property: "selection-area"; readonly value: SelectionAreaV1 }
+  | { readonly property: "selection-inclusion"; readonly value: SelectionInclusionV1 }
   | { readonly property: "color"; readonly value: ColorV1 }
   | { readonly property: "stroke-width"; readonly value: StrokeStyleV1["width"] }
   | { readonly property: "opacity"; readonly value: number }
@@ -113,6 +120,8 @@ function changeElement(element: InkElementV1, change: StyleChange): InkElementV1
       break;
     case "pressure-enabled":
     case "eraser-radius":
+    case "selection-area":
+    case "selection-inclusion":
       throw new RangeError(`${change.property} does not apply to an existing selection.`);
   }
   const validation = validateInkElementV1(result);
@@ -148,6 +157,8 @@ function assertSelectionCompatibility(
         return element.kind === "table";
       case "pressure-enabled":
       case "eraser-radius":
+      case "selection-area":
+      case "selection-inclusion":
         return false;
     }
   });
@@ -181,6 +192,9 @@ function assertToolCompatibility(tool: StartupToolV1, change: StyleChange): void
         return tool === "table";
       case "eraser-radius":
         return tool === "eraser";
+      case "selection-area":
+      case "selection-inclusion":
+        return tool === "select";
     }
   })();
   if (!compatible)
@@ -188,6 +202,14 @@ function assertToolCompatibility(tool: StartupToolV1, change: StyleChange): void
 }
 
 function changeToolValues(values: ToolDefaultsV1, tool: StartupToolV1, change: StyleChange): void {
+  if (change.property === "selection-area") {
+    values.select.area = change.value;
+    return;
+  }
+  if (change.property === "selection-inclusion") {
+    values.select.inclusion = change.value;
+    return;
+  }
   if (change.property === "eraser-radius") {
     values.eraser.radius = change.value;
     return;
@@ -302,6 +324,7 @@ function withStyle(element: InkElementV1, patch: object): InkElementV1 {
 }
 
 function elementValueMatches(element: InkElementV1, change: StyleChange): boolean {
+  if (isToolOnlyChange(change)) return false;
   const style = element.style as Partial<StrokeStyleV1 & ShapeStyleV1>;
   switch (change.property) {
     case "color":
@@ -330,10 +353,22 @@ function elementValueMatches(element: InkElementV1, change: StyleChange): boolea
       return element.kind === "coordinate-system" && element.dimension === change.value;
     case "table-columns":
       return element.kind === "table" && element.columns === change.value;
-    case "pressure-enabled":
-    case "eraser-radius":
-      return false;
   }
+}
+
+function isToolOnlyChange(change: StyleChange): change is Extract<
+  StyleChange,
+  {
+    readonly property:
+      "pressure-enabled" | "eraser-radius" | "selection-area" | "selection-inclusion";
+  }
+> {
+  return (
+    change.property === "pressure-enabled" ||
+    change.property === "eraser-radius" ||
+    change.property === "selection-area" ||
+    change.property === "selection-inclusion"
+  );
 }
 
 function toolValueMatches(
@@ -341,6 +376,8 @@ function toolValueMatches(
   tool: StartupToolV1,
   change: StyleChange,
 ): boolean {
+  if (change.property === "selection-area") return values.select.area === change.value;
+  if (change.property === "selection-inclusion") return values.select.inclusion === change.value;
   if (change.property === "eraser-radius") return values.eraser.radius === change.value;
   if (change.property === "coordinate-dimension")
     return values.coordinateSystem.dimension === change.value;

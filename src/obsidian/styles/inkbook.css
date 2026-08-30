@@ -314,6 +314,10 @@
   stroke-width: 1.5;
 }
 
+.inkbook-root .inkbook-scene-overlays .inkbook-selection-overlay[data-selection-fill="none"] {
+  fill: none;
+}
+
 .inkbook-root .inkbook-canvas-input:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: -2px;

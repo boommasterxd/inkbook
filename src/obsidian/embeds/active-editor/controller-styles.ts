@@ -63,7 +63,9 @@ export function createActiveEditorStyleIcon(
   tool: StartupToolV1,
 ): ToolbarStyleIconState {
   const summary = summarizeActiveToolStyle(defaults, tool);
-  if (summary === null || summary.kind === "eraser") return neutralStyleIcon();
+  if (summary === null || summary.kind === "eraser" || summary.kind === "select") {
+    return neutralStyleIcon();
+  }
   if (summary.kind === "stroke") {
     return {
       fillColor: null,
@@ -239,6 +241,10 @@ function mixedNumberControl(
 
 function styleChange(controlId: string, value: boolean | number | string): StyleChange {
   switch (controlId) {
+    case "selection-area":
+      return { property: controlId, value: parseSelectionArea(value) };
+    case "selection-inclusion":
+      return { property: controlId, value: parseSelectionInclusion(value) };
     case "color":
     case "outline-color":
       return { property: controlId, value: parseColor(value, false) };
@@ -267,6 +273,16 @@ function styleChange(controlId: string, value: boolean | number | string): Style
     default:
       throw new RangeError(`Unknown style control: ${controlId}.`);
   }
+}
+
+function parseSelectionArea(value: boolean | number | string): "rectangle" | "lasso" {
+  if (value === "rectangle" || value === "lasso") return value;
+  throw new RangeError("The selection area must be rectangle or lasso.");
+}
+
+function parseSelectionInclusion(value: boolean | number | string): "fully-enclosed" | "touched" {
+  if (value === "fully-enclosed" || value === "touched") return value;
+  throw new RangeError("Selection inclusion must be fully-enclosed or touched.");
 }
 
 function parseColor(value: boolean | number | string, nullable: false): ColorV1;

@@ -136,13 +136,15 @@ describe("active editor selection handles", () => {
       new Set([startId()]),
     );
     const bounds = calculateElementBounds(rectangle());
-    const start = { pointerId: 1, pointerType: "mouse" as const, x: bounds.maxX, y: bounds.maxY };
+    const start = { pointerId: 1, pointerType: "touch" as const, x: bounds.maxX, y: bounds.maxY };
 
     interaction.renderSelection();
     expect(interaction.pointerDown(start)).toBe(true);
+    expect(interaction.activePointerType).toBe("touch");
     expect(interaction.pointerMove({ ...start, x: start.x + 80, y: start.y + 40 })).toBe(true);
+    expect(overlays[overlays.length - 2]).toContain("M 99 99 L 382 99 L 382 282 L 99 282 Z");
     expect(interaction.pointerUp(start.pointerId)).toBe(true);
-
+    expect(interaction.activePointerType).toBeUndefined();
     const resized = store.get(startId())?.element;
     expect(resized?.kind).toBe("rectangle");
     if (resized?.kind !== "rectangle") throw new TypeError("Expected the resized rectangle.");
@@ -205,10 +207,15 @@ describe("active editor selection handles", () => {
     interaction.cancel(start.pointerId);
     expect(elementPreviews[elementPreviews.length - 1]).toEqual([]);
   });
+});
 
+describe("active editor generic selection transforms", () => {
   it("previews and commits non-uniform scaling in a rotated generic element frame", () => {
     const table = rotatedTable();
-    const { interaction, previewTransforms, store } = harness([table], new Set([table.id]));
+    const { interaction, overlays, previewTransforms, store } = harness(
+      [table],
+      new Set([table.id]),
+    );
     const start = { pointerId: 6, pointerType: "mouse" as const, x: 148, y: 252 };
 
     expect(interaction.pointerDown(start)).toBe(true);
@@ -216,6 +223,7 @@ describe("active editor selection handles", () => {
     expect(previewTransforms[previewTransforms.length - 1]).toBe(
       "translate(252 48) rotate(90) scale(1.5 2) rotate(-90) translate(-252 -48)",
     );
+    expect(overlays[overlays.length - 2]).toContain("M 252 48 L 252 354 L 44 354 L 44 48 Z");
     expect(interaction.pointerUp(start.pointerId)).toBe(true);
 
     expect(store.get(table.id)?.element).toMatchObject({
@@ -247,6 +255,9 @@ describe("active editor ordinary selection move", () => {
     preview.update({ pointerId: 4, pointerType: "mouse", x: 340, y: 270 });
 
     expectLatestLinePreview(fixture.elementPreviews, dependent.id, { x: 340, y: 270 });
+    expect(fixture.overlays[fixture.overlays.length - 1]).toContain(
+      "M 139 129 L 341 129 L 341 271 L 139 271 Z",
+    );
     expect(fixture.store.instrumentation).toMatchObject({
       fullStoreScans: 0,
       reverseDependencyVisits: 1,
@@ -297,6 +308,27 @@ describe("active editor ordinary selection move", () => {
 });
 
 describe("active editor large selection handles", () => {
+  it("keeps a transformed group box current when exact preview materialization is truncated", () => {
+    const target = rectangle();
+    const dependent = dependentLine();
+    const selectedElements = [
+      target,
+      ...Array.from({ length: 300 }, (_, index) => indexedStroke(index)),
+    ];
+    const selection = new Set(selectedElements.map(({ id }) => id));
+    const { elementPreviews, interaction, overlays } = harness(
+      [...selectedElements, dependent],
+      selection,
+    );
+    const start = { pointerId: 8, pointerType: "mouse" as const, x: 1011, y: 241 };
+
+    expect(interaction.pointerDown(start)).toBe(true);
+    expect(interaction.pointerMove({ ...start, x: 2003, y: 463 })).toBe(true);
+
+    expect(overlays[overlays.length - 2]).toContain("M 19 19 L 2003 19 L 2003 463 L 19 463 Z");
+    expectLatestLinePreview(elementPreviews, dependent.id, { x: 581, y: 461 });
+  });
+
   it("prepares a large mixed move in slices and keeps async undo and redo atomic", async () => {
     const shape = rectangle();
     const strokes = Array.from({ length: 1_000 }, (_, index) => indexedStroke(index));

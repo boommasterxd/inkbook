@@ -58,7 +58,7 @@ describe("active editor Style controls", () => {
     expect(controlIds("coordinate-system")).toContain("coordinate-dimension");
     expect(controlIds("table")).toContain("table-columns");
     expect(controlIds("eraser")).toEqual(["eraser-radius"]);
-    expect(controlIds("select")).toEqual([]);
+    expect(controlIds("select")).toEqual(["selection-area", "selection-inclusion"]);
   });
 
   it("offers the complete XS through XL width scale for strokes and outlines", () => {
@@ -180,7 +180,41 @@ describe("active editor Style changes", () => {
       TypeError,
     );
   });
+});
 
+describe("active editor Select Style changes", () => {
+  it("shows Select defaults only without a selection", () => {
+    const defaults = createBuiltInSettings().toolDefaults;
+    const updated = updateSessionToolDefaults(defaults, "select", "selection-area", "lasso");
+
+    expect(updated.select).toEqual({ area: "lasso", inclusion: "touched" });
+    expect(defaults.select.area).toBe("rectangle");
+    expect(() =>
+      updateSessionToolDefaults(updated, "select", "selection-inclusion", "crossing"),
+    ).toThrow(RangeError);
+
+    const controls = createActiveEditorStyleControls({
+      defaults: updated,
+      selection: [rectangle("123e4567-e89b-42d3-a456-426614174007")],
+      tool: "select",
+    });
+    expect(controls.map(({ id }) => id)).toEqual([
+      "outline-color",
+      "outline-width",
+      "outline-style",
+      "outline-opacity",
+      "fill-color",
+      "fill-opacity",
+    ]);
+    expect(
+      createActiveEditorStyleControls({ defaults: updated, selection: [], tool: "select" }).map(
+        ({ id }) => id,
+      ),
+    ).toEqual(["selection-area", "selection-inclusion"]);
+  });
+});
+
+describe("active editor Style changes for elements", () => {
   it("accepts the advertised XS outline width", () => {
     const defaults = createBuiltInSettings().toolDefaults;
     const updated = updateSessionToolDefaults(defaults, "rectangle", "outline-width", "1");

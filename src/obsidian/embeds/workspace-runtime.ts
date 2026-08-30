@@ -1,6 +1,6 @@
 import type { FileManager, Keymap, Vault } from "obsidian";
 
-import type { InkbookDeviceSettingsV1, InkbookSettingsV3 } from "../../domain/settings/types";
+import type { InkbookDeviceSettingsV1, InkbookSettingsV4 } from "../../domain/settings/types";
 import type { PresentationLifecyclePort } from "../../editor/session/session-port";
 import { WorkspaceEditorCoordinator } from "../../editor/session/workspace-editor-coordinator";
 import type { AttachmentIdentity } from "../../editor/session/session-state";
@@ -39,7 +39,7 @@ import { WorkspaceFeedbackRouter, type WorkspaceFeedbackHost } from "./workspace
 
 interface WorkspaceRuntimeSettings {
   readonly device: InkbookDeviceSettingsV1;
-  readonly vault: InkbookSettingsV3;
+  readonly vault: InkbookSettingsV4;
 }
 
 export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
@@ -287,7 +287,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     for (const mounted of this.#mounted.values()) mounted.scene?.updateDeviceSettings(settings);
   }
 
-  updateVaultSettings(settings: InkbookSettingsV3): void {
+  updateVaultSettings(settings: InkbookSettingsV4): void {
     if (this.#disposed) return;
     this.refreshRateProfiles.setPreference(settings.refreshRatePreference);
   }

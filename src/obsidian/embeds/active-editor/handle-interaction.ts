@@ -2,6 +2,8 @@ import { calculateElementBounds, type Bounds } from "../../../domain/geometry/pu
 import type { BoxAnchorV1, InkElementV1, PointV1 } from "../../../domain/schema/public";
 import type { PointerSample } from "../../../editor/input/index";
 import {
+  connectedSelectionTransformPreview,
+  exactConnectedSelectionIds,
   findSelectionHandle,
   layoutSelectionHandles,
   oppositeElementHandlePoint,
@@ -19,9 +21,10 @@ import { selectedElements } from "./controller-elements";
 import type { ActiveEditorHistory } from "./history";
 import type { PreparedElementHistory } from "./prepared-element-history";
 import type { ElementSceneStore } from "./scene-store";
+import { selectionOverlayFill, selectionOverlayPath } from "./selection-overlay-path";
+import { snapMarkerPath } from "./snap-marker-path";
 
 const HANDLE_RADIUS_PIXELS = 10;
-const HANDLE_DRAW_RADIUS_PIXELS = 5;
 
 export interface ActiveEditorHandleInteractionOptions {
   readonly history: ActiveEditorHistory;
@@ -38,9 +41,14 @@ export interface HandleInteractionRenderer {
   clearElementPreviews(): void;
   clearPreviewTransforms(): void;
   setElementPreviews(elements: readonly InkElementV1[], version: number): void;
-  setSelectionOverlayPath(d: string | null): void;
+  setSelectionOverlayPath(d: string | null, fill?: "accent" | "none"): void;
   setSnapMarkerPath(d: string | null): void;
-  setPreviewTransform(ids: readonly string[], transform: string | null, version: number): void;
+  setPreviewTransform(
+    ids: readonly string[],
+    transform: string | null,
+    version: number,
+    strokeWidth?: "preserve" | "scale",
+  ): void;
   suppressMotionForNextDelta(ids: readonly string[]): void;
 }
 
@@ -54,7 +62,13 @@ export class ActiveEditorHandleInteraction {
   readonly #selection: () => ReadonlySet<string>;
   readonly #zoom: () => number;
   #active:
-    { ids: readonly string[]; pointerId: number; session: SelectionHandleSession } | undefined;
+    | {
+        ids: readonly string[];
+        pointerId: number;
+        pointerType: PointerSample["pointerType"];
+        session: SelectionHandleSession;
+      }
+    | undefined;
   #version = 0;
 
   public constructor(options: ActiveEditorHandleInteractionOptions) {
@@ -70,6 +84,10 @@ export class ActiveEditorHandleInteraction {
 
   public get activePointerId(): number | undefined {
     return this.#active?.pointerId;
+  }
+
+  public get activePointerType(): PointerSample["pointerType"] | undefined {
+    return this.#active?.pointerType;
   }
 
   public cancel(pointerId?: number): boolean {
@@ -100,6 +118,7 @@ export class ActiveEditorHandleInteraction {
     this.#active = {
       ids: elements.map(({ id }) => id),
       pointerId: pointer.pointerId,
+      pointerType: pointer.pointerType,
       session: new SelectionHandleSession({
         action,
         elements,
@@ -123,8 +142,12 @@ export class ActiveEditorHandleInteraction {
     const active = this.#active;
     if (active === undefined || active.pointerId !== pointer.pointerId) return false;
     const preview = active.session.update(pointer);
-    this.#renderTransform(active.ids, preview.transform);
-    this.#renderPreview(preview);
+    const connected = this.#connectedPreview(preview);
+    this.#renderTransform(
+      active.ids.filter((id) => !connected.selectedPreviewIds.has(id)),
+      preview.transform,
+    );
+    this.#renderPreview(preview, connected);
     return true;
   }
 
@@ -155,35 +178,82 @@ export class ActiveEditorHandleInteraction {
     this.renderSelection();
   }
 
-  #renderPreview(preview: SelectionHandlePreview): void {
+  #renderPreview(
+    preview: SelectionHandlePreview,
+    connected: {
+      readonly elements: readonly InkElementV1[];
+      readonly selectedPreviewIds: ReadonlySet<string>;
+    },
+  ): void {
     const selection = this.#selection();
     const exact = preview.exactElements
       .filter(({ id }) => selection.has(id))
       .map((element) => ({ bounds: calculateElementBounds(element), element }));
-    const previewElements =
-      preview.transform === null
+    const exactOverlay =
+      preview.transform === null || connected.selectedPreviewIds.size > 0 ? exact : [];
+    const previewElements = preview.exactPreviewTruncated
+      ? connected.elements
+      : preview.transform === null
         ? preview.exactElements
-        : preview.exactElements.filter(({ id }) => !selection.has(id));
+        : preview.exactElements.filter(
+            ({ id }) => !selection.has(id) || connected.selectedPreviewIds.has(id),
+          );
     this.#version += 1;
     this.#renderer.setElementPreviews(previewElements, this.#version);
     this.#renderGeometry(
-      exact.length === 0 ? this.#selectedGeometry() : exact,
+      exactOverlay.length === 0 ? this.#selectedGeometry() : exactOverlay,
       preview.snapCandidate?.point ?? null,
+      exactOverlay.length === 0 ? preview.transform : null,
     );
   }
 
-  #renderGeometry(selected: readonly SelectedElementGeometry[], snap: PointV1 | null): void {
-    const bounds = selectionBounds(selected);
-    const handles = layoutSelectionHandles(selected, { zoom: this.#zoom() });
-    const parts = bounds === null ? [] : [screenRect(bounds, this.#pageToScreen)];
-    for (const handle of handles) parts.push(screenCircle(this.#pageToScreen(handle.point)));
-    this.#renderer.setSelectionOverlayPath(parts.length === 0 ? null : parts.join(" "));
-    this.#renderer.setSnapMarkerPath(snap === null ? null : screenSnap(this.#pageToScreen(snap)));
+  #connectedPreview(preview: SelectionHandlePreview): {
+    readonly elements: readonly InkElementV1[];
+    readonly selectedPreviewIds: ReadonlySet<string>;
+  } {
+    const selection = this.#selection();
+    if (preview.transform === null) return { elements: [], selectedPreviewIds: new Set() };
+    if (!preview.exactPreviewTruncated) {
+      return {
+        elements: [],
+        selectedPreviewIds: exactConnectedSelectionIds(preview.exactElements, selection),
+      };
+    }
+    const selected = this.#selectedGeometry().map(({ element }) => element);
+    return connectedSelectionTransformPreview(
+      this.#model.store,
+      selected,
+      selection,
+      preview.transform,
+    );
+  }
+
+  #renderGeometry(
+    selected: readonly SelectedElementGeometry[],
+    snap: PointV1 | null,
+    transform: SelectionPreviewTransform | null = null,
+  ): void {
+    this.#renderer.setSelectionOverlayPath(
+      selectionOverlayPath(selected, {
+        pageToScreen: this.#pageToScreen,
+        transform,
+        zoom: this.#zoom(),
+      }),
+      selectionOverlayFill(selected),
+    );
+    this.#renderer.setSnapMarkerPath(
+      snap === null ? null : snapMarkerPath(this.#pageToScreen(snap)),
+    );
   }
 
   #renderTransform(ids: readonly string[], transform: SelectionPreviewTransform | null): void {
     this.#version += 1;
-    this.#renderer.setPreviewTransform(ids, transformString(transform), this.#version);
+    this.#renderer.setPreviewTransform(
+      ids,
+      transformString(transform),
+      this.#version,
+      transform?.kind === "scale" ? "preserve" : "scale",
+    );
   }
 
   #selectedGeometry(): SelectedElementGeometry[] {
@@ -250,22 +320,6 @@ function transformString(transform: SelectionPreviewTransform | null): string | 
     return `rotate(${String(((current - start) * 180) / Math.PI)} ${String(transform.center.x)} ${String(transform.center.y)})`;
   }
   return `translate(${String(transform.anchor.x)} ${String(transform.anchor.y)}) rotate(${String(transform.rotation)}) scale(${String(transform.factors.x)} ${String(transform.factors.y)}) rotate(${String(-transform.rotation)}) translate(${String(-transform.anchor.x)} ${String(-transform.anchor.y)})`;
-}
-
-function screenRect(bounds: Bounds, project: (point: PointV1) => PointV1): string {
-  const topLeft = project({ x: bounds.minX, y: bounds.minY });
-  const bottomRight = project({ x: bounds.maxX, y: bounds.maxY });
-  return `M ${String(topLeft.x)} ${String(topLeft.y)} L ${String(bottomRight.x)} ${String(topLeft.y)} L ${String(bottomRight.x)} ${String(bottomRight.y)} L ${String(topLeft.x)} ${String(bottomRight.y)} Z`;
-}
-
-function screenCircle(point: PointV1): string {
-  const radius = HANDLE_DRAW_RADIUS_PIXELS;
-  return `M ${String(point.x - radius)} ${String(point.y)} a ${radius} ${radius} 0 1 0 ${radius * 2} 0 a ${radius} ${radius} 0 1 0 ${-radius * 2} 0`;
-}
-
-function screenSnap(point: PointV1): string {
-  const radius = HANDLE_DRAW_RADIUS_PIXELS * 1.5;
-  return `M ${String(point.x - radius)} ${String(point.y)} L ${String(point.x + radius)} ${String(point.y)} M ${String(point.x)} ${String(point.y - radius)} L ${String(point.x)} ${String(point.y + radius)}`;
 }
 
 function boundsCenter(bounds: Bounds): PointV1 {

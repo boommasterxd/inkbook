@@ -74,6 +74,7 @@ export interface ConfigureInputAction {
   readonly activeTool?: EditorTool;
   readonly deviceFingerDrawingEnabled?: boolean;
   readonly toolbarFingerDrawingEnabled?: boolean;
+  readonly hasSelection?: boolean;
   readonly zoom?: number;
   readonly fitZoom?: number;
 }
@@ -151,6 +152,7 @@ export interface InputState {
   readonly activeTool: EditorTool;
   readonly deviceFingerDrawingEnabled: boolean;
   readonly toolbarFingerDrawingEnabled: boolean;
+  readonly hasSelection: boolean;
   readonly zoom: number;
   readonly fitZoom: number;
   readonly interaction: InputInteraction | undefined;
@@ -230,6 +232,7 @@ export function createInputState(
       | "activeTool"
       | "deviceFingerDrawingEnabled"
       | "toolbarFingerDrawingEnabled"
+      | "hasSelection"
       | "zoom"
       | "fitZoom"
     >
@@ -239,6 +242,7 @@ export function createInputState(
     activeTool: overrides.activeTool ?? "draw",
     deviceFingerDrawingEnabled: overrides.deviceFingerDrawingEnabled ?? false,
     toolbarFingerDrawingEnabled: overrides.toolbarFingerDrawingEnabled ?? false,
+    hasSelection: overrides.hasSelection ?? false,
     zoom: overrides.zoom ?? 1,
     fitZoom: overrides.fitZoom ?? 1,
     interaction: undefined,

@@ -135,21 +135,18 @@ export function prepareVaultElementReplacement(options: {
 
 export function commitVaultElementReplacement(options: {
   readonly active: boolean;
-  readonly recordDelta: (delta: StoreDelta, elements: readonly InkElementV1[]) => void;
+  readonly recordDelta: (delta: StoreDelta) => void;
   readonly store: ElementStore | undefined;
   readonly token: PreparedElementReplacement;
 }): "cancelled" | "committed" | "noop" {
   if (options.store === undefined || !options.active) return "cancelled";
   const result = options.store.commitPreparedElementReplacement(options.token);
-  if (result.delta !== null) {
-    options.recordDelta(result.delta, changedElements(result.delta));
-  }
+  if (result.delta !== null) options.recordDelta(result.delta);
   return result.status;
 }
 
 export function recordVaultStoreDelta(options: {
   readonly autosave: AutosaveCoordinator | undefined;
-  readonly changedElements: readonly InkElementV1[];
   readonly delta: StoreDelta;
   readonly removedIds: readonly string[];
   readonly revision: number;
@@ -157,7 +154,7 @@ export function recordVaultStoreDelta(options: {
   if (options.autosave === undefined) return;
   options.autosave.recordCommit({
     changedElementDerivations: changedElementDerivations(options.delta),
-    changedElements: options.changedElements,
+    changedElements: changedElements(options.delta),
     dirtyBands: (Object.keys(options.delta.dirtyBands) as Array<"content" | "highlight">).filter(
       (band) => options.delta.dirtyBands[band],
     ),

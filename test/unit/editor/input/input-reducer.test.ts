@@ -6,25 +6,9 @@ import {
   type InputAction,
   type InputEffect,
   type InputState,
-  type PointerDownAction,
   type PointerMoveAction,
 } from "../../../../src/editor/input";
-function pointerDown(overrides: Partial<PointerDownAction> = {}): PointerDownAction {
-  return {
-    type: "pointer-down",
-    pointerId: 1,
-    pointerType: "mouse",
-    x: 10,
-    y: 20,
-    pressure: 0.5,
-    button: 0,
-    buttons: 1,
-    controlOrMeta: false,
-    shift: false,
-    isPlatformContextClick: false,
-    ...overrides,
-  };
-}
+import { pointerDown } from "../../../fixtures/editor/input-actions";
 function pointerMove(overrides: Partial<PointerMoveAction> = {}): PointerMoveAction {
   return {
     type: "pointer-move",
@@ -419,13 +403,11 @@ describe("selection and cancellation", () => {
   });
 
   it("clears selection on an empty Select click but preserves it for Shift", () => {
-    const state = createInputState({ activeTool: "select" });
+    const state = createInputState({ activeTool: "select", hasSelection: true });
     const click = apply(state, pointerDown());
     const released = apply(click.state, { type: "pointer-up", pointerId: 1 });
-    expect(released.effects).toEqual([
-      { type: "clear-selection" },
-      { type: "release-pointer", pointerId: 1 },
-    ]);
+    expect(click.effects).toContainEqual({ type: "clear-selection" });
+    expect(released.effects).toEqual([{ type: "release-pointer", pointerId: 1 }]);
 
     const additive = apply(state, pointerDown({ shift: true }));
     expect(apply(additive.state, { type: "pointer-up", pointerId: 1 }).effects).toEqual([

@@ -290,6 +290,27 @@ describe("structural Style changes", () => {
 });
 
 describe("active tool Style changes", () => {
+  it("updates Select area and inclusion defaults independently", () => {
+    const values = createBuiltInSettings().toolDefaults;
+    const area = applyToolStyleChange(values, "select", {
+      property: "selection-area",
+      value: "lasso",
+    });
+    const inclusion = applyToolStyleChange(area.toolValues, "select", {
+      property: "selection-inclusion",
+      value: "fully-enclosed",
+    });
+
+    expect(inclusion.toolValues.select).toEqual({
+      area: "lasso",
+      inclusion: "fully-enclosed",
+    });
+    expect(values.select).toEqual({ area: "rectangle", inclusion: "touched" });
+    expect(() =>
+      applySelectionStyleChange([], { property: "selection-area", value: "lasso" }),
+    ).toThrow(/non-empty selection/);
+  });
+
   it("updates active tool values independently from vault defaults", () => {
     const values = createBuiltInSettings().toolDefaults;
     const changed = applyToolStyleChange(values, "arrow", {

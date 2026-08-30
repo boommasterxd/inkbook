@@ -62,6 +62,8 @@ export interface SceneCamera {
   readonly zoom: number;
 }
 
+export type PreviewStrokeWidth = "preserve" | "scale";
+
 export type DocumentScheme = "dark" | "light";
 
 export interface SceneInputHandlers {

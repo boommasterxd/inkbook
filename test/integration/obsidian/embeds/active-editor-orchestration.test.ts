@@ -139,6 +139,7 @@ function activeActions(
   return new ActiveEditorActions({
     currentSelection: () => selection,
     history: new ActiveEditorHistory(model),
+    isAttached: () => true,
     isEnabled: () => true,
     lastSessionPointer: () => null,
     model,

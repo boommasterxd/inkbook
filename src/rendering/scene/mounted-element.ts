@@ -1,3 +1,4 @@
+import { roundCanonical } from "../../domain/geometry/public";
 import type { SvgPathPart } from "../../domain/geometry/element-path";
 import { SVG_NAMESPACE } from "./constants";
 import {
@@ -13,6 +14,7 @@ import { clearMotionStyle, writeMotionStyle } from "./motion-visual";
 interface MountedPath {
   appliedD: string;
   appliedPresentation: PathPresentation;
+  appliedPreviewStrokeWidthScale: number | null;
   appliedTransform: string | null;
   readonly node: SVGPathElement;
 }
@@ -109,16 +111,23 @@ export function updatePreviewTransform(
   entry: MountedSceneElement,
   transform: string | null,
   version: number,
+  strokeWidthScale: number | null,
   instrumentation: MutableSceneInstrumentation,
 ): void {
   if (
     entry.previewTransformVersion === version &&
-    entry.paths.every(({ appliedTransform }) => appliedTransform === transform)
+    entry.paths.every(
+      (path) =>
+        path.appliedTransform === transform &&
+        path.appliedPreviewStrokeWidthScale ===
+          (path.appliedPresentation["stroke-width"] === null ? null : strokeWidthScale),
+    )
   ) {
     return;
   }
   for (const path of entry.paths) {
     writeAttribute(path, "transform", transform, instrumentation, true);
+    writePreviewStrokeWidth(path, strokeWidthScale, instrumentation);
   }
   entry.previewTransformVersion = version;
 }
@@ -190,6 +199,7 @@ function createMountedPath(
   const mounted: MountedPath = {
     appliedD: "",
     appliedPresentation: presentation,
+    appliedPreviewStrokeWidthScale: null,
     appliedTransform: null,
     node,
   };
@@ -232,7 +242,45 @@ function writePresentation(
   instrumentation: MutableSceneInstrumentation,
 ): void {
   if (path.appliedPresentation[attribute] === value) return;
-  writeRaw(path.node, attribute, value, instrumentation, false);
+  const appliedValue =
+    attribute === "stroke-width" && path.appliedPreviewStrokeWidthScale !== null
+      ? scaledStrokeWidth(value, path.appliedPreviewStrokeWidthScale)
+      : value;
+  writeRaw(path.node, attribute, appliedValue, instrumentation, false);
+}
+
+function writePreviewStrokeWidth(
+  path: MountedPath,
+  scale: number | null,
+  instrumentation: MutableSceneInstrumentation,
+): void {
+  const strokeWidth = path.appliedPresentation["stroke-width"];
+  const appliedScale = strokeWidth === null ? null : scale;
+  if (path.appliedPreviewStrokeWidthScale === appliedScale) return;
+  if (appliedScale === null) {
+    if (path.appliedPreviewStrokeWidthScale !== null) {
+      writeRaw(path.node, "vector-effect", null, instrumentation, false);
+      if (strokeWidth !== null) {
+        writeRaw(path.node, "stroke-width", strokeWidth, instrumentation, false);
+      }
+    }
+  } else {
+    if (path.appliedPreviewStrokeWidthScale === null) {
+      writeRaw(path.node, "vector-effect", "non-scaling-stroke", instrumentation, false);
+    }
+    writeRaw(
+      path.node,
+      "stroke-width",
+      scaledStrokeWidth(strokeWidth, appliedScale),
+      instrumentation,
+      false,
+    );
+  }
+  path.appliedPreviewStrokeWidthScale = appliedScale;
+}
+
+function scaledStrokeWidth(value: string | null, scale: number): string | null {
+  return value === null ? null : String(roundCanonical(Number(value) * scale));
 }
 
 function writeAttribute(

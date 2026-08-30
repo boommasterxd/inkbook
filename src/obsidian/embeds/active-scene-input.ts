@@ -22,23 +22,38 @@ export function attachActiveSceneInputListeners(
   const pointerEnter = (): void => controller.handlePointerBoundary(true);
   const pointerLeave = (): void => controller.handlePointerBoundary(false);
   const ownerDocument = renderer.inputSurface.ownerDocument;
-  const hoverZoom = (event: KeyboardEvent): void => {
-    if (!isWithinSurface(renderer.inputSurface, event.target)) {
-      controller.handleHoverZoomKeyDown(event);
+  const documentKeyDown = (event: KeyboardEvent): void => {
+    if (
+      !isWithinSurface(renderer.inputSurface, event.target) &&
+      controller.handleDocumentKeyDown(event)
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
+  const documentPaste = (event: ClipboardEvent): void => {
+    if (
+      !isWithinSurface(renderer.inputSurface, event.target) &&
+      controller.handlePaste(event.clipboardData)
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
     }
   };
   renderer.inputSurface.addEventListener("lostpointercapture", lostCapture);
   renderer.inputSurface.addEventListener("paste", paste);
   renderer.inputSurface.addEventListener("pointerenter", pointerEnter);
   renderer.inputSurface.addEventListener("pointerleave", pointerLeave);
-  ownerDocument.addEventListener("keydown", hoverZoom);
+  ownerDocument.addEventListener("keydown", documentKeyDown, true);
+  ownerDocument.addEventListener("paste", documentPaste, true);
   return () => {
     touchBoundary.dispose();
     renderer.inputSurface.removeEventListener("lostpointercapture", lostCapture);
     renderer.inputSurface.removeEventListener("paste", paste);
     renderer.inputSurface.removeEventListener("pointerenter", pointerEnter);
     renderer.inputSurface.removeEventListener("pointerleave", pointerLeave);
-    ownerDocument.removeEventListener("keydown", hoverZoom);
+    ownerDocument.removeEventListener("keydown", documentKeyDown, true);
+    ownerDocument.removeEventListener("paste", documentPaste, true);
   };
 }
 

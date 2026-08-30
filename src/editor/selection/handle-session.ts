@@ -22,7 +22,6 @@ import type {
 import {
   editCoordinateAxis,
   editCoordinateOrigin,
-  editLinearBend,
   editLinearEndpoint,
   minimumUniformScaleForSelection,
   moveSelection,
@@ -35,6 +34,7 @@ import {
   scaleSelectionUniformAtLeast,
   type TransformSliceScheduler,
 } from "./transforms";
+import { editLinearBendFromCurvePoint } from "./linear-bend";
 import {
   exceedsExactPreviewWork,
   exceedsReplacementWork,
@@ -54,6 +54,7 @@ export type {
 
 const SYNCHRONOUS_SELECTION_LIMIT = 1_000;
 const SYNCHRONOUS_SELECTION_WORK_LIMIT = 16_384;
+const STRAIGHT_BEND_SNAP_PIXELS = 5;
 
 export class SelectionHandleSession {
   readonly #action: SelectionHandleAction;
@@ -278,7 +279,9 @@ export class SelectionHandleSession {
         candidate === null ? null : { anchor: candidate.anchor, targetId: candidate.targetId };
       return [editLinearEndpoint(element, action.endpoint, point, connection)];
     }
-    if (action.kind === "linear-bend") return [editLinearBend(element, pointer)];
+    if (action.kind === "linear-bend") {
+      return [editLinearBendFromCurvePoint(element, pointer, this.#straightBendTolerance())];
+    }
     if (element.kind !== "coordinate-system") {
       throw new TypeError("Coordinate handles require a coordinate system.");
     }
@@ -288,6 +291,11 @@ export class SelectionHandleSession {
         ? editCoordinateAxis(element, action.axisIndex, point)
         : editCoordinateOrigin(element, point),
     ];
+  }
+
+  #straightBendTolerance(): number {
+    const zoom = this.#snap?.zoom ?? 1;
+    return STRAIGHT_BEND_SNAP_PIXELS / (Number.isFinite(zoom) && zoom > 0 ? zoom : 1);
   }
 
   #scaleSingle(element: InkElementV1): InkElementV1 {

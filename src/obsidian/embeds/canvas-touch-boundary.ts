@@ -77,7 +77,9 @@ export class CanvasTouchBoundary {
   };
 
   readonly #handleTouchEvent = (event: TouchEvent): void => {
-    if (this.#options.shouldBlockTouchEvent()) stopHostPropagation(event);
+    if (!this.#options.shouldBlockTouchEvent()) return;
+    event.preventDefault();
+    stopHostPropagation(event);
   };
 
   readonly #handlePointerTerminal = (event: PointerEvent): void => {

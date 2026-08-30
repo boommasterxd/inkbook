@@ -130,8 +130,7 @@ export class ActiveEditorNavigation {
   }
 
   public pagePoint(event: Pick<MouseEvent, "clientX" | "clientY">): InputPoint {
-    const bounds =
-      this.#gestureLayout?.containerBounds ?? measureElementBox(this.#container).contentBox;
+    const bounds = measureElementBox(this.#container).contentBox;
     return {
       x: (event.clientX - bounds.left) / this.#zoom - this.#cameraX,
       y: (event.clientY - bounds.top) / this.#zoom,

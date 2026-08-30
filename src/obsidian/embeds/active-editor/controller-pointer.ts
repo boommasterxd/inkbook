@@ -94,6 +94,7 @@ export class ActiveEditorPointerController {
 
   public handlePointerDown(event: PointerEvent): void {
     if (!this.#options.isEnabled()) return;
+    this.#options.renderer.inputSurface.focus({ preventScroll: true });
     this.#options.navigation.cancelPanMomentum();
     this.#options.renderer.interruptMotionForPointerDown();
     const classification = classifyPointerDown({

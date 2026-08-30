@@ -66,6 +66,19 @@ function toolDefinitionsGroup(
 
 function drawingToolSpecs(): readonly ToolSectionSpec[] {
   return [
+    {
+      name: "Select",
+      description: "Configure how selection areas include existing elements.",
+      tool: "select",
+      controlDescriptions: {
+        "selection-area": "Choose a rectangular or freeform selection area.",
+        "selection-inclusion": "Choose whether selected elements must be enclosed or only touched.",
+      },
+      controlKeys: {
+        "selection-area": "toolDefaults.select.area",
+        "selection-inclusion": "toolDefaults.select.inclusion",
+      },
+    },
     strokeSpec({
       description: "Configure defaults for newly created pen strokes.",
       name: "Pen",

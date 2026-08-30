@@ -6,7 +6,7 @@
 - Every value available in a tool's Style menu MUST have a configurable default for that tool.
 - Changing a default affects newly created elements only. It never rewrites existing elements.
 - Settings UI rejects invalid values and does not persist them. On load, an invalid persisted field falls back to its documented built-in default; the loader does not silently clamp it.
-- The vault settings schema is version 3 for the first release. Because no earlier version was released in production, older or unknown settings versions are unsupported and fall back to built-in defaults; no settings migration is performed. Device-local settings use their independent version 1 schema.
+- The vault settings schema is version 4. A completely valid version 3 value is migrated by adding the built-in Select defaults while preserving every existing value. Versions 1, 2, and unknown versions remain unsupported and fall back to built-in defaults. Device-local settings use their independent version 1 schema.
 
 ## Scope and Precedence
 
@@ -33,8 +33,8 @@ On editor activation, session tool values are initialized from vault defaults. S
 ## Settings Root
 
 ```ts
-interface InkbookSettingsV3 {
-  version: 3;
+interface InkbookSettingsV4 {
+  version: 4;
   startupTool: StartupToolV1;
   toolDefaults: ToolDefaultsV1;
   pageDefaults: PageDefaultsV3;
@@ -43,6 +43,10 @@ interface InkbookSettingsV3 {
 }
 
 interface ToolDefaultsV1 {
+  select: {
+    area: "rectangle" | "lasso";
+    inclusion: "fully-enclosed" | "touched";
+  };
   pen: PenDefaultsV1;
   highlighter: HighlighterDefaultsV1;
   straightHighlighter: HighlighterDefaultsV1;
@@ -70,7 +74,16 @@ interface InkbookDeviceSettingsV1 {
 
 The built-in startup tool is `draw`.
 
-Version 3 is the first released vault-settings schema. It stores absolute background spacing in the shared 25, 100 / 3, 50, and 100 page-unit series and the fixed 100-unit layout step. There are no production legacy settings to migrate, so version 1, version 2, and unknown vault settings are rejected as unsupported rather than transformed. The device-settings schema remains version 1.
+Version 3 introduced the first released vault-settings schema with absolute background spacing in the shared 25, 100 / 3, 50, and 100 page-unit series and the fixed 100-unit layout step. Version 4 adds the two Select defaults. The loader migrates only a completely valid version 3 object, preserves every existing value, adds `select: { area: "rectangle", inclusion: "touched" }`, and returns canonical version 4. A malformed version 3 value is not partially migrated. Versions 1, 2, and unknown vault settings are rejected as unsupported rather than transformed. The device-settings schema remains version 1.
+
+## Select Defaults
+
+Select owns two independent session and vault defaults:
+
+- selection area: `rectangle` or `lasso`; built-in `rectangle`
+- inclusion: `fully-enclosed` or `touched`; built-in `touched`
+
+Rectangle uses the drag start and current pointer as opposite corners. Lasso records at most 512 simplified freeform pointer points and treats the resulting path as closed. Touched includes an element when any visible painted geometry intersects or lies within the area. Fully enclosed includes it only when all visible painted geometry, including stroke width and arrow nodes, lies within the area. These values affect selection behavior only, never existing elements or Inkbook files. The Style menu changes the active editor session, while Settings changes the vault default used by subsequently activated editors.
 
 ## Display Refresh Rate
 
@@ -248,6 +261,8 @@ All numeric ranges are inclusive.
 | Table columns                 | integer from 1 through 12            |        1 |
 | Display refresh rate          | auto, 60, 90, 120, 144, or 240       | Discrete |
 | Active buffer lines           | integer from 1 through 8             |        1 |
+| Selection area                | rectangle or lasso                   | Discrete |
+| Selection inclusion           | fully-enclosed or touched            | Discrete |
 | Enumerations and colors       | exactly one documented value         | Discrete |
 
 Unknown object properties, missing required properties, invalid enum values, non-finite numbers, and values outside these ranges make the containing persisted settings field invalid. The loader replaces only that field with its built-in default, records a non-content diagnostic code, and continues loading the other valid fields.
@@ -303,7 +318,7 @@ The settings tab uses these logical groups and this order:
 
 1. **General**: startup tool, display refresh-rate preference, and file placement. General rows are the first rows and remain unheaded in the rendered Obsidian settings tab as required by the host contract.
 2. **Page defaults**: background type, the independent Lines, Dots, and Squares spacing defaults, and the active buffer line count.
-3. **Drawing tools**: Pen, Highlighter, Straight highlighter, and Eraser. Each tool is one independently collapsible section.
+3. **Drawing tools**: Select, Pen, Highlighter, Straight highlighter, and Eraser. Each tool is one independently collapsible section.
 4. **Shapes and structures**: Line, Arrow, Rectangle, Ellipse, Triangle, Octagon, Parallelogram, Diamond, Coordinate system, and Table. Each tool is one independently collapsible section.
 5. **Input**: finger drawing and pen-tap insertion.
 6. **Interface**: handedness and motion.
@@ -322,6 +337,7 @@ Settings inherit Obsidian's neutral `SettingGroup` surface and its host-owned ra
 
 The following controls are visual choices rather than plain dropdowns:
 
+- Select area uses icon-only Rectangle and Lasso choices with accessible names. The Select toolbar icon follows the active area choice immediately. Select inclusion uses a two-column Fully enclosed and Touched choice row whose labels wrap inside their controls instead of overflowing a narrow adaptive panel. The two independent groups retain this order and expose the same labels, values, and selected state in Style and Settings.
 - Colors use the same labelled color swatches and selected state as Style, including Theme text color and the documented palette.
 - Outline style uses exactly three buttons, in the same order, with the same solid, dashed, and dotted line previews.
 - Pen, highlighter, and outline widths use five evenly sized XS-through-XL choices with real line-width previews. The stored width values remain those in the type definitions and validation matrix.
@@ -347,7 +363,7 @@ All controls have a visible sentence-case label, one concise description, an acc
 
 ### Settings parity tests
 
-Parity tests MUST enumerate every configurable Style and Background menu value and assert that it has the matching settings default path, value domain, label, ordering, selected state, and recognizable control. They MUST cover the exact three outline-style buttons, all width previews, palette swatches, fill and opacity controls, endpoint and dimension icons, the table stepper, background choices, and S/M/L/XL spacing. Tests MUST also cover slider-and-field synchronization, invalid input rollback, inline errors, group and full reset, persistence failures, accessibility attributes for collapsible sections, and the unchanged vault/session semantics. A parity test fails when a menu option is added without a settings default or when either surface uses a divergent option list.
+Parity tests MUST enumerate every configurable Style and Background menu value and assert that it has the matching settings default path, value domain, label, ordering, selected state, and recognizable control. They MUST cover both Select area choices, both inclusion choices, the exact three outline-style buttons, all width previews, palette swatches, fill and opacity controls, endpoint and dimension icons, the table stepper, background choices, and S/M/L/XL spacing. Tests MUST also cover version 3 migration, slider-and-field synchronization, invalid input rollback, inline errors, group and full reset, persistence failures, accessibility attributes for collapsible sections, and the unchanged vault/session semantics. A parity test fails when a menu option is added without a settings default or when either surface uses a divergent option list.
 
 ## Settings Deliberately Not Exposed
 

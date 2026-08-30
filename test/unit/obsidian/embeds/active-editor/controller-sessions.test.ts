@@ -210,7 +210,59 @@ describe("active editor timer and style sessions", () => {
     expect(stateChanged).toHaveBeenCalledTimes(3);
     unsubscribe();
   });
+});
 
+describe("active editor Select style session", () => {
+  it("publishes the active selection area for the toolbar icon", () => {
+    const store = new ElementStore();
+    const stateChanged = vi.fn();
+    const session = new ActiveEditorStyleSession({
+      defaults: createBuiltInSettings().toolDefaults,
+      history: new ActiveEditorHistory(historyModel()),
+      onStateChanged: stateChanged,
+      sceneStore: new ElementSceneStore(store),
+      selection: () => new Set(),
+      store,
+    });
+
+    expect(session.presentation("select").selectionArea).toBe("rectangle");
+    session.apply("select", "selection-area", "lasso");
+    expect(session.presentation("select").selectionArea).toBe("lasso");
+    expect(stateChanged).toHaveBeenCalledOnce();
+  });
+
+  it("shows only selected-element controls and ignores stale Select control changes", () => {
+    const element = rectangle();
+    const store = new ElementStore([element]);
+    const history = new ActiveEditorHistory(historyModel());
+    const stateChanged = vi.fn();
+    const session = new ActiveEditorStyleSession({
+      defaults: createBuiltInSettings().toolDefaults,
+      history,
+      onStateChanged: stateChanged,
+      sceneStore: new ElementSceneStore(store),
+      selection: () => new Set([element.id]),
+      store,
+    });
+
+    expect(session.presentation("select").controls.map(({ id }) => id)).toEqual([
+      "outline-color",
+      "outline-width",
+      "outline-style",
+      "outline-opacity",
+      "fill-color",
+      "fill-opacity",
+    ]);
+    session.apply("select", "selection-area", "lasso");
+
+    expect(session.defaults.select.area).toBe("rectangle");
+    expect(store.get(element.id)?.element).toEqual(element);
+    expect(history.commandCount).toBe(0);
+    expect(stateChanged).not.toHaveBeenCalled();
+  });
+});
+
+describe("active editor structural style session", () => {
   it("restores propagated connection detachments with the structural Style change", () => {
     const target = coordinateSystem();
     const line = axisConnectedLine();

@@ -11,6 +11,7 @@ export function sameEditorChromeProps(
     left.renderIcon === right.renderIcon &&
     left.layout === right.layout &&
     (left.leftHanded ?? false) === (right.leftHanded ?? false) &&
+    left.selectionArea === right.selectionArea &&
     left.selectedShape === right.selectedShape &&
     left.shapeIcon.arrowStart === right.shapeIcon.arrowStart &&
     left.shapeIcon.arrowEnd === right.shapeIcon.arrowEnd &&

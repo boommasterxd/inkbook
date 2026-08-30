@@ -285,9 +285,13 @@ describe("canvas crossfades and overlays", () => {
     const selection = overlayGroup.nodes[1]!;
     const snap = overlayGroup.nodes[2]!;
 
-    renderer.setSelectionOverlayPath("M 0 0 L 10 10");
+    expect(selection.attributes.get("class")).toBe("inkbook-selection-overlay");
+    expect(selection.attributes.get("data-selection-fill")).toBe("accent");
+
+    renderer.setSelectionOverlayPath("M 0 0 L 10 10", "none");
     renderer.setSnapMarkerPath("M 5 5 L 6 6");
     scheduler.runNext();
+    expect(selection.attributes.get("data-selection-fill")).toBe("none");
     expect(selection.style.opacity).toBe("0");
     expect(snap.style.opacity).toBe("0");
 
@@ -296,11 +300,35 @@ describe("canvas crossfades and overlays", () => {
     expect(snap.style.opacity).toBe("1");
     expect(renderer.instrumentation().motionInterruptions).toBe(1);
 
+    renderer.setSelectionOverlayPath("M 0 0 L 10 0 L 10 10 Z", "accent");
+    expect(selection.attributes.get("data-selection-fill")).toBe("accent");
+
     renderer.setSelectionOverlayPath(null);
     renderer.setSnapMarkerPath(null);
     renderer.interruptMotionForPointerDown();
     expect(selection.attributes.get("d")).toBe("");
     expect(snap.attributes.get("d")).toBe("");
+  });
+
+  it("keeps a moving selection overlay visible while replacing its non-empty path", () => {
+    const { renderer, scheduler } = setup();
+    scheduler.runAll();
+    const selection = fakeNode(renderer.svg).nodes[2]!.nodes[1]!;
+
+    renderer.setSelectionOverlayPath("M 0 0 L 10 0 L 10 10 Z");
+    scheduler.runNext();
+    scheduler.time = 60;
+    scheduler.runNext();
+    const visibleOpacity = selection.style.opacity;
+    expect(Number(visibleOpacity)).toBeGreaterThan(0);
+
+    renderer.setSelectionOverlayPath("M 20 30 L 30 30 L 30 40 Z");
+    expect(selection.attributes.get("d")).toBe("M 20 30 L 30 30 L 30 40 Z");
+    expect(selection.style.opacity).toBe(visibleOpacity);
+
+    renderer.setSelectionOverlayPath("M 40 50 L 50 50 L 50 60 Z");
+    expect(selection.attributes.get("d")).toBe("M 40 50 L 50 50 L 50 60 Z");
+    expect(selection.style.opacity).toBe(visibleOpacity);
   });
 });
 

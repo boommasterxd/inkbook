@@ -12,7 +12,6 @@ import type { PageV1 } from "../../../domain/schema/public";
 import type { ElementSceneStore } from "./scene-store";
 import type { ActiveEditorZoomLayoutUpdate } from "./navigation";
 import type { BackgroundSpacingDefaults } from "./controller-helpers";
-import type { SelectionEdgeDragPort } from "./selection-preview";
 import type { ActiveEditorHistory } from "./history";
 import type { Keymap } from "obsidian";
 
@@ -39,7 +38,6 @@ export interface ActiveEditorControllerOptions {
   readonly renderer: SvgSceneRenderer;
   readonly sliceBudgetMs?: () => number;
   readonly sceneStore: ElementSceneStore;
-  readonly selectionEdgeDrag?: SelectionEdgeDragPort;
   readonly scrollOwner: BrowserScrollElement;
   readonly startupTool: StartupToolV1;
 }

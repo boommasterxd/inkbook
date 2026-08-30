@@ -1,5 +1,5 @@
 import { alignPageHeightToWritingLine, PAGE_WIDTH } from "../../../domain/geometry/public";
-import type { PageV1, PointV1 } from "../../../domain/schema/public";
+import type { PageV1 } from "../../../domain/schema/public";
 import {
   calculateZoomLimits,
   createStableWidthState,
@@ -10,11 +10,7 @@ import type { ToolbarLayoutStage } from "../../../rendering/ui/index";
 import type { ActiveEditorLayoutOptions } from "./layout-contracts";
 import type { ActiveEditorZoomLayoutUpdate } from "./navigation";
 import { calculateActiveEditorResize, type ActiveEditorResizeAnchor } from "./layout-resize";
-import {
-  ActivePageLayout,
-  SELECTION_BOTTOM_EDGE_ZONE_PX,
-  type PageHeightUpdate,
-} from "./page-layout";
+import { ActivePageLayout, type PageHeightUpdate } from "./page-layout";
 import { measureToolbarLayout } from "./toolbar-measurement";
 import { ActiveEditorMotion, type ActiveEditorMotionPreference } from "./layout-motion";
 import { measureElementBox } from "./element-content-box";
@@ -100,10 +96,6 @@ export class ActiveEditorLayout {
     if (retainedPageHeight !== undefined) this.scheduleMeasurement();
   }
 
-  public beginSelectionEdgeDrag(): void {
-    this.#applyHeightUpdate(this.#pageLayout.beginSelection());
-  }
-
   public chromeChanged(layoutKey?: string): void {
     if (layoutKey !== undefined && layoutKey === this.#chromeLayoutKey) return;
     this.#chromeLayoutKey = layoutKey;
@@ -131,15 +123,6 @@ export class ActiveEditorLayout {
     this.#heightTransition.cancel();
     this.#frame = undefined;
     this.#readyFrame = undefined;
-  }
-
-  public finishSelectionEdgeDrag(outcome: "cancel" | "commit"): void {
-    const update = this.#pageLayout.finishSelection(
-      outcome,
-      this.#options.page(),
-      this.#options.storeMaximumBottom(),
-    );
-    this.#applyHeightUpdate(update);
   }
 
   public finishPagePreview(committed: boolean): void {
@@ -196,21 +179,8 @@ export class ActiveEditorLayout {
     this.#readyFrame = undefined;
   }
 
-  public setSelectionBottomEdge(active: boolean): void {
-    this.#applyHeightUpdate(
-      this.#pageLayout.updateSelectionBottomEdge(active, this.#options.page()),
-    );
-  }
-
   public updateMotion(preference: ActiveEditorMotionPreference): void {
     this.#motion.update(preference);
-  }
-
-  public updateSelectionEdgeDrag(screenPointer: PointV1): void {
-    const bottom = this.#container.getBoundingClientRect().bottom;
-    const active =
-      Number.isFinite(screenPointer.y) && screenPointer.y >= bottom - SELECTION_BOTTOM_EDGE_ZONE_PX;
-    this.setSelectionBottomEdge(active);
   }
 
   public sceneCommitted(): void {
@@ -334,7 +304,7 @@ export class ActiveEditorLayout {
       this.#heightTransition.cancel();
       this.#options.renderer.setPage(page, update.height);
       this.#writeHeightFrame(update.height, zoom);
-      this.#completeHeightTransition(false);
+      this.#completeHeightTransition();
       return;
     }
     const currentRenderedHeight = frameRead?.renderedHeight ?? update.height * zoom;
@@ -349,7 +319,7 @@ export class ActiveEditorLayout {
       applyFrame: (renderedHeight) => this.#writeHeightFrame(renderedHeight / zoom, zoom),
       applySurfaceTarget: () => this.#options.renderer.setPage(this.#renderPage(), update.height),
       currentRenderedHeight,
-      onComplete: () => this.#completeHeightTransition(!this.#motion.reduced),
+      onComplete: () => this.#completeHeightTransition(),
       sceneCommitPending: () => this.#options.renderer.hasPendingSceneCommit,
       targetRenderedHeight,
     });
@@ -364,11 +334,8 @@ export class ActiveEditorLayout {
     return Math.max(height, settledHeight);
   }
 
-  #completeHeightTransition(continueSelectionExtension = true): void {
-    const next = this.#pageLayout.transitionCompleted(
-      this.#renderPage(),
-      continueSelectionExtension,
-    );
+  #completeHeightTransition(): void {
+    const next = this.#pageLayout.transitionCompleted();
     this.#applyHeightUpdate(next);
   }
 

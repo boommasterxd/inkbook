@@ -52,11 +52,16 @@ export function readSynchronousClipboardCandidates(
 export async function readClipboardCandidates(
   clipboard: Clipboard | undefined,
   sessionText?: string,
+  preferSession = false,
 ): Promise<ClipboardCandidates | null> {
+  if (preferSession) return sessionCandidates(sessionText);
   if (clipboard === undefined) return sessionCandidates(sessionText);
   try {
     const candidates = await readCandidateBlobs(clipboard);
-    return await materializeCandidates(candidates);
+    const materialized = await materializeCandidates(candidates);
+    return materialized.customText === undefined && materialized.plainText === undefined
+      ? (sessionCandidates(sessionText) ?? materialized)
+      : materialized;
   } catch (error) {
     if (error instanceof ClipboardCandidateLimitError) return null;
     return sessionCandidates(sessionText);
@@ -97,9 +102,11 @@ async function materializeCandidates(
   let plainText: string | undefined;
   for (const candidate of candidates) {
     if (candidate.mime === INKBOOK_CLIPBOARD_WEB_MIME && customText === undefined) {
-      customText = await boundedBlobText(candidate.blob);
+      const text = await boundedBlobText(candidate.blob);
+      if (text !== "") customText = text;
     } else if (candidate.mime === "text/plain" && plainText === undefined) {
-      plainText = await boundedBlobText(candidate.blob);
+      const text = await boundedBlobText(candidate.blob);
+      if (text !== "") plainText = text;
     }
   }
   return {

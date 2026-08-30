@@ -26,24 +26,7 @@ import {
   packElements,
   unpackElements,
 } from "../../../../../src/persistence/worker/runtime/public";
-import { snapshot } from "./fixtures";
-
-const STROKE: StrokeElementV1 = {
-  createdAt: 2,
-  id: "00000000-0000-4000-8000-000000000002",
-  kind: "stroke",
-  pivot: { x: 20, y: 20 },
-  points: [10, 10, 0.5, 20, 20, 1],
-  rotation: 0,
-  style: {
-    color: { type: "theme-text" },
-    opacity: 1,
-    pressureEnabled: false,
-    smoothing: 0.5,
-    width: 2,
-  },
-  tool: "pen",
-};
+import { snapshot, STROKE } from "./fixtures";
 
 const clipboardIdentity = (operationId: number) => ({
   operationId,

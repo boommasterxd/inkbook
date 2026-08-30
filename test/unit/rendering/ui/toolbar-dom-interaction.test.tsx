@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import {
   arrowShapeIconId,
+  SELECTION_AREA_ICON_IDS,
   SHAPE_ICON_IDS,
   STRAIGHT_HIGHLIGHTER_ICON_ID,
   type ActiveShapeIconState,
@@ -112,9 +113,50 @@ describe("mounted Inkbook toolbar accessibility", () => {
     expect(icon.dataset.icon).toBe(STRAIGHT_HIGHLIGHTER_ICON_ID);
     mounted.unmount();
   });
+
+  it("updates the Select icon and accessible name with the active selection area", () => {
+    const mounted = mountToolbar(completeState);
+    const select = mounted.button("select");
+    const icon = requiredElement<HTMLElement>(select, ".inkbook-toolbar-icon");
+
+    expect(SELECTION_AREA_ICON_IDS.rectangle).toBe("square-mouse-pointer");
+    expect(icon.dataset.icon).toBe(SELECTION_AREA_ICON_IDS.rectangle);
+    expect(select.getAttribute("aria-label")).toBe("Select: Rectangle");
+
+    mounted.update(completeState, "rectangle", defaultStyleIcon, defaultShapeIcon, "lasso");
+
+    expect(mounted.button("select")).toBe(select);
+    expect(requiredElement(select, ".inkbook-toolbar-icon")).toBe(icon);
+    expect(SELECTION_AREA_ICON_IDS.lasso).toBe("lasso-select");
+    expect(icon.dataset.icon).toBe(SELECTION_AREA_ICON_IDS.lasso);
+    expect(select.getAttribute("aria-label")).toBe("Select: Lasso");
+    mounted.unmount();
+  });
 });
 
 describe("mounted Inkbook toolbar motion and responsiveness", () => {
+  it("animates remaining context controls from their previous X positions", () => {
+    const mounted = mountToolbar({ ...completeState, canPaste: false, hasSelection: false });
+    mounted.update({ ...completeState, canPaste: false });
+    const copy = mounted.button("copy");
+    const animate = vi.fn(() => ({ cancel: vi.fn() }) as unknown as Animation);
+    Object.defineProperties(copy, {
+      animate: { value: animate },
+      offsetLeft: {
+        get: () =>
+          mounted.container.querySelector("[data-inkbook-action='paste']") === null ? 0 : 56,
+      },
+    });
+
+    mounted.update(completeState);
+
+    expect(animate).toHaveBeenCalledWith(
+      [{ translate: "-56px 0" }, { translate: "0 0" }],
+      expect.objectContaining({ duration: 120 }),
+    );
+    mounted.unmount();
+  });
+
   it("staggers fixed-size contextual action pops without fading their surfaces", () => {
     const mounted = mountToolbar({
       ...completeState,
@@ -125,7 +167,7 @@ describe("mounted Inkbook toolbar motion and responsiveness", () => {
     mounted.update(completeState);
 
     expect(
-      ["copy", "cut", "paste", "delete"].map((action) => ({
+      ["paste", "copy", "cut", "delete"].map((action) => ({
         order: mounted.button(action as ToolbarAction).dataset.presenceOrder,
         presence: mounted.button(action as ToolbarAction).dataset.presence,
       })),
@@ -136,10 +178,10 @@ describe("mounted Inkbook toolbar motion and responsiveness", () => {
       { order: "3", presence: "entering" },
     ]);
     void act(() => {
-      mounted.button("copy").dispatchEvent(new Event("animationend", { bubbles: true }));
+      mounted.button("paste").dispatchEvent(new Event("animationend", { bubbles: true }));
     });
     expect(
-      ["cut", "paste", "delete"].map(
+      ["copy", "cut", "delete"].map(
         (action) => mounted.button(action as ToolbarAction).dataset.presenceOrder,
       ),
     ).toEqual(["1", "2", "3"]);
@@ -318,6 +360,7 @@ interface MountedToolbar {
     selectedShape?: "arrow" | "rectangle" | "triangle",
     styleIcon?: ToolbarStyleIconState,
     shapeIcon?: ActiveShapeIconState,
+    selectionArea?: "lasso" | "rectangle",
   ) => void;
 }
 
@@ -332,6 +375,7 @@ function mountToolbar(
     selectedShape: "arrow" | "rectangle" | "triangle" = "rectangle",
     styleIcon: ToolbarStyleIconState = defaultStyleIcon,
     shapeIcon: ActiveShapeIconState = defaultShapeIcon,
+    selectionArea: "lasso" | "rectangle" = "rectangle",
   ): void => {
     act(() => {
       root.render(
@@ -339,6 +383,7 @@ function mountToolbar(
           layout={layout}
           onAction={vi.fn()}
           renderIcon={(element, icon) => element.setAttribute("data-icon", icon)}
+          selectionArea={selectionArea}
           selectedShape={selectedShape}
           shapeIcon={shapeIcon}
           state={state}

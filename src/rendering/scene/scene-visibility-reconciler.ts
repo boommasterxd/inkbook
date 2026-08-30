@@ -14,6 +14,7 @@ import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } 
 import type { BandVisibility, SceneVisibilityState, VisibilityResult } from "./visibility-state";
 
 export interface PreviewTransform {
+  readonly strokeWidthScale: number | null;
   readonly transform: string | null;
   readonly version: number;
 }
@@ -255,6 +256,7 @@ export class SceneVisibilityReconciler {
         entry,
         preview.transform,
         preview.version,
+        preview.strokeWidthScale,
         this.options.instrumentation,
       );
     }

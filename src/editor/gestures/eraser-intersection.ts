@@ -1,5 +1,5 @@
 import { effectiveStrokeWidth } from "../../domain/geometry/bounds";
-import { shapeVertices, tableWidth } from "../../domain/geometry/creation";
+import { shapeVertices, tableLineSegments } from "../../domain/geometry/creation";
 import { pointInPolygon, quadraticPoint, rotatePointClockwise } from "../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 
@@ -105,7 +105,7 @@ class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
     }
     if (element.kind === "table") {
       this.#mode = "segments";
-      this.#segments = tableSegments(element);
+      this.#segments = tableLineSegments(element);
       this.#radius = outlineRadius;
       return;
     }
@@ -304,43 +304,6 @@ function ellipseTouches(
     pointInsideEllipse(start, center, innerRx, innerRy) &&
     pointInsideEllipse(end, center, innerRx, innerRy)
   );
-}
-
-function tableSegments(
-  table: Extract<InkElementV1, { kind: "table" }>,
-): readonly (readonly [PointV1, PointV1])[] {
-  const right = table.x + tableWidth(table);
-  const bottom = table.y + table.height;
-  const segments: Array<readonly [PointV1, PointV1]> = [
-    [
-      { x: table.x, y: table.y },
-      { x: right, y: table.y },
-    ],
-    [
-      { x: right, y: table.y },
-      { x: right, y: bottom },
-    ],
-    [
-      { x: right, y: bottom },
-      { x: table.x, y: bottom },
-    ],
-    [
-      { x: table.x, y: bottom },
-      { x: table.x, y: table.y },
-    ],
-    [
-      { x: table.x, y: table.y + table.headerHeight },
-      { x: right, y: table.y + table.headerHeight },
-    ],
-  ];
-  for (let column = 1; column < table.columns; column += 1) {
-    const x = table.x + column * table.columnWidth;
-    segments.push([
-      { x, y: table.y },
-      { x, y: bottom },
-    ]);
-  }
-  return segments;
 }
 
 function segmentIntersectsEllipse(

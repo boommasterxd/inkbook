@@ -65,6 +65,17 @@ export class ActiveEditorKeyboardController {
     return this.#handleClipboardShortcut(event);
   }
 
+  public handleDocumentKeyDown(event: KeyboardEvent): boolean {
+    if (isTextField(event.target, this.#options.activeElement())) return false;
+    if (this.handleHoverZoom(event)) return true;
+    if (!this.#pointerOver) return false;
+    if (isUnmodifiedDelete(event) && this.#options.actions.isAvailable("delete")) {
+      this.#options.actions.execute("delete");
+      return true;
+    }
+    return this.#handleClipboardShortcut(event);
+  }
+
   public handleHoverZoom(event: KeyboardEvent): boolean {
     if (
       event.view !== null &&

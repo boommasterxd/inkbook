@@ -145,6 +145,7 @@ describe("active editor keyboard controller", () => {
     expect(harness.controller.handleKeyDown(key("c", { ctrlKey: true }))).toBe(false);
     expect(harness.controller.handleKeyDown(key("v", { metaKey: true }))).toBe(false);
     expect(harness.controller.handleKeyDown(key("+", { ctrlKey: true }))).toBe(false);
+    expect(harness.controller.handleDocumentKeyDown(key("Delete"))).toBe(false);
     expect(harness.execute).not.toHaveBeenCalled();
     expect(harness.shortcutPaste).not.toHaveBeenCalled();
     expect(harness.updateKeyboard).not.toHaveBeenCalled();
@@ -165,12 +166,26 @@ describe("active editor keyboard controller", () => {
     expect(harness.controller.handleKeyDown(key("+", { ctrlKey: true, target: input }))).toBe(
       false,
     );
+    expect(harness.controller.handleDocumentKeyDown(key("Delete", { target: input }))).toBe(false);
     expect(harness.execute).not.toHaveBeenCalled();
     expect(harness.updateKeyboard).not.toHaveBeenCalled();
   });
 });
 
 describe("active editor keyboard owner-document boundary", () => {
+  it("routes selection shortcuts while the pointer remains over the canvas", () => {
+    const harness = keyboardHarness({ canPaste: true, selectionSize: 1 });
+    harness.isAvailable.mockReturnValue(true);
+
+    expect(harness.controller.handleDocumentKeyDown(key("c", { ctrlKey: true }))).toBe(true);
+    expect(harness.controller.handleDocumentKeyDown(key("Delete"))).toBe(true);
+    expect(harness.controller.handleDocumentKeyDown(key("v", { ctrlKey: true }))).toBe(true);
+    expect(harness.execute).toHaveBeenCalledWith("copy");
+    expect(harness.execute).toHaveBeenCalledWith("delete");
+    expect(harness.shortcutPaste).toHaveBeenCalledOnce();
+    expect(harness.controller.handleDocumentKeyDown(key("Backspace"))).toBe(false);
+  });
+
   it("rejects hover zoom from a different owning document", () => {
     const harness = keyboardHarness();
     harness.updateKeyboard.mockReturnValue(true);

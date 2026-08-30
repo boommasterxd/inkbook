@@ -42,6 +42,7 @@ export type SelectionStyleSummary =
   StrokeSelectionStyleSummary | OutlineSelectionStyleSummary | null;
 
 export type ActiveToolStyleSummary =
+  | { readonly kind: "select"; readonly values: ToolDefaultsV1["select"] }
   | { readonly kind: "eraser"; readonly radius: number }
   | {
       readonly kind: "stroke";
@@ -104,7 +105,7 @@ export function summarizeActiveToolStyle(
   toolValues: ToolDefaultsV1,
   tool: StartupToolV1,
 ): ActiveToolStyleSummary {
-  if (tool === "select") return null;
+  if (tool === "select") return { kind: "select", values: structuredClone(toolValues.select) };
   if (tool === "eraser") return { kind: "eraser", radius: toolValues.eraser.radius };
   if (tool === "draw") {
     return { kind: "stroke", ...structuredClone(toolValues.pen) };

@@ -52,6 +52,14 @@ export function midpoint(start: PointV1, end: PointV1): PointV1 {
   return { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
 }
 
+export function linearPivot(start: PointV1, end: PointV1, bend: PointV1 | null): PointV1 {
+  const bounds = boundsFromPoints(bend === null ? [start, end] : [start, bend, end]);
+  return canonicalPoint({
+    x: (bounds.minX + bounds.maxX) / 2,
+    y: (bounds.minY + bounds.maxY) / 2,
+  });
+}
+
 export function pointDistance(start: PointV1, end: PointV1): number {
   return Math.hypot(end.x - start.x, end.y - start.y);
 }

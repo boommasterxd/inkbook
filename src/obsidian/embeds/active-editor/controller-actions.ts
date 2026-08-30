@@ -18,6 +18,7 @@ import type { InkbookFeedbackCode } from "../../feedback";
 export interface ActiveEditorActionsOptions {
   readonly currentSelection: () => ReadonlySet<string>;
   readonly history: ActiveEditorHistory;
+  readonly isAttached: () => boolean;
   readonly isEnabled: () => boolean;
   readonly model: EditableDocumentModel;
   readonly onCopyEmbed: () => void;
@@ -75,7 +76,7 @@ export class ActiveEditorActions {
     this.#clipboard = new ActiveEditorClipboardController({
       currentSelection: options.currentSelection,
       history: options.history,
-      isPresentationAttached: options.isEnabled,
+      isPresentationAttached: options.isAttached,
       model: options.model,
       onPasteAvailabilityChanged: (available) => {
         if (!available) this.#externalPasteAvailable = false;
@@ -85,7 +86,7 @@ export class ActiveEditorActions {
       onPendingChanged: options.onPendingChanged,
       onResult: (result) => {
         const code = feedbackForClipboardResult(result);
-        if (code !== undefined && options.isEnabled()) this.#onFeedback?.(code);
+        if (code !== undefined && options.isAttached()) this.#onFeedback?.(code);
       },
       onSelectionChanged: options.setSelection,
       ownerWindow: options.ownerWindow,
@@ -255,12 +256,9 @@ export class ActiveEditorActions {
 function feedbackForClipboardResult(
   result: import("./controller-clipboard").ClipboardControllerResult,
 ): InkbookFeedbackCode | undefined {
-  if (result.kind === "copied" || result.kind === "committed") {
-    return "systemWriteSucceeded" in result && !result.systemWriteSucceeded
-      ? "clipboard-copy-fallback"
-      : undefined;
-  }
+  if (result.kind === "copied" || result.kind === "committed") return undefined;
   if (result.reason === "encode-failed") return "clipboard-copy-failed";
+  if (result.reason === "system-write-failed") return "clipboard-copy-fallback";
   if (result.reason === "clipboard-read-failed") return "clipboard-paste-read-failed";
   if (result.reason === "invalid-payload") return "clipboard-paste-invalid";
   if (result.reason === "stale-operation") {

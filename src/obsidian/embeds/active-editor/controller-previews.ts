@@ -17,6 +17,7 @@ export interface ActiveEditorPreviewOptions {
   readonly ownerWindow: Window;
   readonly pageToScreen: (point: PointV1) => PointV1;
   readonly pageToViewport?: (point: PointV1) => PointV1;
+  readonly viewportToPage?: (point: PointV1) => PointV1;
   readonly preparedHistory: PreparedElementHistory;
   readonly renderer: SvgSceneRenderer;
   readonly sceneStore: ElementSceneStore;
@@ -48,16 +49,19 @@ export function createActiveEditorPreview(
     history: options.history,
     pageToScreen: options.pageToScreen,
     ...(options.pageToViewport === undefined ? {} : { pageToViewport: options.pageToViewport }),
+    ...(options.viewportToPage === undefined ? {} : { viewportToPage: options.viewportToPage }),
     preparedHistory: options.preparedHistory,
     renderer: options.renderer,
     sceneStore: options.sceneStore,
     selection: options.selection,
+    selectionDefaults: structuredClone(options.defaults.select),
     ...(options.selectionEdgeDrag === undefined
       ? {}
       : { selectionEdgeDrag: options.selectionEdgeDrag }),
     setSelection: options.setSelection,
     start,
     store: options.model.store,
+    zoom: () => previewZoom(options),
   };
   if (start.kind === "lasso") {
     return new LassoPreview(selectionOptions);

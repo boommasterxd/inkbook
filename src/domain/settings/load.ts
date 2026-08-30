@@ -9,7 +9,7 @@ import {
   STARTUP_TOOLS,
   type FilePlacementV1,
   type InkbookDeviceSettingsV1,
-  type InkbookSettingsV3,
+  type InkbookSettingsV4,
   type SettingsDiagnostic,
   type SettingsLoadResult,
 } from "./types";
@@ -28,9 +28,9 @@ function invalid(diagnostics: SettingsDiagnostic[], path: string): void {
 
 function loadBackgroundSpacing(
   input: unknown,
-  fallback: InkbookSettingsV3["pageDefaults"]["backgroundSpacing"],
+  fallback: InkbookSettingsV4["pageDefaults"]["backgroundSpacing"],
   diagnostics: SettingsDiagnostic[],
-): InkbookSettingsV3["pageDefaults"]["backgroundSpacing"] {
+): InkbookSettingsV4["pageDefaults"]["backgroundSpacing"] {
   if (!hasExactKeys(input, ["lines", "dots", "squares"])) {
     invalid(diagnostics, "pageDefaults.backgroundSpacing");
     return structuredClone(fallback);
@@ -62,9 +62,9 @@ function loadBackgroundSpacing(
 
 function loadPageDefaults(
   input: unknown,
-  fallback: InkbookSettingsV3["pageDefaults"],
+  fallback: InkbookSettingsV4["pageDefaults"],
   diagnostics: SettingsDiagnostic[],
-): InkbookSettingsV3["pageDefaults"] {
+): InkbookSettingsV4["pageDefaults"] {
   const keys = ["backgroundType", "backgroundSpacing", "activeBufferLines", "lockedBufferLines"];
   if (!hasExactKeys(input, keys)) {
     invalid(diagnostics, "pageDefaults");
@@ -75,7 +75,7 @@ function loadPageDefaults(
     backgroundType: validOrDefault(
       input.backgroundType,
       fallback.backgroundType,
-      (value): value is InkbookSettingsV3["pageDefaults"]["backgroundType"] =>
+      (value): value is InkbookSettingsV4["pageDefaults"]["backgroundType"] =>
         isOneOf(value, BACKGROUND_TYPES),
       diagnostics,
       "pageDefaults.backgroundType",
@@ -151,32 +151,72 @@ function prepareSettingsRoot<T>(
   return { valid: true, value: input, diagnostics };
 }
 
-export function loadSettings(input: unknown): SettingsLoadResult<InkbookSettingsV3> {
+const VAULT_SETTINGS_KEYS = [
+  "version",
+  "startupTool",
+  "toolDefaults",
+  "pageDefaults",
+  "filePlacement",
+  "refreshRatePreference",
+] as const;
+
+function migrateV3Settings(
+  input: unknown,
+  fallback: InkbookSettingsV4,
+):
+  | { readonly kind: "input"; readonly migratedFromV3: boolean; readonly value: unknown }
+  | { readonly kind: "failure"; readonly result: SettingsLoadResult<InkbookSettingsV4> } {
+  if (!isRecord(input) || input.version !== 3) {
+    return { kind: "input", migratedFromV3: false, value: input };
+  }
+  if (!hasExactKeys(input, VAULT_SETTINGS_KEYS)) {
+    return {
+      kind: "failure",
+      result: {
+        value: fallback,
+        diagnostics: [{ code: "settings.invalid-root", path: "$" }],
+      },
+    };
+  }
+  const legacyDefaults = input.toolDefaults;
+  if (isRecord(legacyDefaults) && Object.prototype.hasOwnProperty.call(legacyDefaults, "select")) {
+    return {
+      kind: "failure",
+      result: {
+        value: fallback,
+        diagnostics: [{ code: "settings.invalid-field", path: "toolDefaults" }],
+      },
+    };
+  }
+  return {
+    kind: "input",
+    migratedFromV3: true,
+    value: {
+      ...input,
+      version: 4,
+      toolDefaults: isRecord(legacyDefaults)
+        ? { ...legacyDefaults, select: structuredClone(fallback.toolDefaults.select) }
+        : legacyDefaults,
+    },
+  };
+}
+
+export function loadSettings(input: unknown): SettingsLoadResult<InkbookSettingsV4> {
   const fallback = createBuiltInSettings();
-  const prepared = prepareSettingsRoot(
-    input,
-    fallback,
-    [
-      "version",
-      "startupTool",
-      "toolDefaults",
-      "pageDefaults",
-      "filePlacement",
-      "refreshRatePreference",
-    ],
-    3,
-  );
+  const migrated = migrateV3Settings(input, fallback);
+  if (migrated.kind === "failure") return migrated.result;
+  const prepared = prepareSettingsRoot(migrated.value, fallback, VAULT_SETTINGS_KEYS, 4);
   if (!prepared.valid) return prepared.result;
   const { value, diagnostics } = prepared;
 
   const placement = loadFilePlacement(value.filePlacement, fallback.filePlacement, diagnostics);
-  return {
+  const result: SettingsLoadResult<InkbookSettingsV4> = {
     value: {
-      version: 3,
+      version: 4,
       startupTool: validOrDefault(
         value.startupTool,
         fallback.startupTool,
-        (value): value is InkbookSettingsV3["startupTool"] => isOneOf(value, STARTUP_TOOLS),
+        (value): value is InkbookSettingsV4["startupTool"] => isOneOf(value, STARTUP_TOOLS),
         diagnostics,
         "startupTool",
       ),
@@ -186,7 +226,7 @@ export function loadSettings(input: unknown): SettingsLoadResult<InkbookSettings
       refreshRatePreference: validOrDefault(
         value.refreshRatePreference,
         fallback.refreshRatePreference,
-        (value): value is InkbookSettingsV3["refreshRatePreference"] =>
+        (value): value is InkbookSettingsV4["refreshRatePreference"] =>
           isOneOf(value, REFRESH_RATE_PREFERENCES),
         diagnostics,
         "refreshRatePreference",
@@ -194,6 +234,9 @@ export function loadSettings(input: unknown): SettingsLoadResult<InkbookSettings
     },
     diagnostics,
   };
+  return migrated.migratedFromV3 && diagnostics.length > 0
+    ? { value: fallback, diagnostics }
+    : result;
 }
 
 export function loadDeviceSettings(input: unknown): SettingsLoadResult<InkbookDeviceSettingsV1> {

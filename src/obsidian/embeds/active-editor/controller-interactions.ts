@@ -43,6 +43,7 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
   const actions = new ActiveEditorActions({
     currentSelection: options.selection,
     history: options.history,
+    isAttached: options.isAttached,
     isEnabled: options.isEnabled,
     model: controller.model,
     onCopyEmbed: controller.onCopyEmbed,

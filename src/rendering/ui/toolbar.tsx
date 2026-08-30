@@ -9,15 +9,18 @@ import type {
   ToolId,
 } from "./toolbar-types";
 import type { ShapeId } from "./toolbar-types";
+import type { SelectionAreaV1 } from "../../domain/settings/types";
 import { nextToolbarIndex, resolveToolbarFocusRecovery } from "./toolbar-focus";
 import {
   activeShapeIconId,
+  selectionAreaIconId,
   SHAPE_ICON_IDS,
   STRAIGHT_HIGHLIGHTER_ICON_ID,
   type ActiveShapeIconState,
 } from "./icon-ids";
 import { ToolbarStyleIcon, type ToolbarStyleIconState } from "./style-icon";
 import { type ToolbarButtonPresence, useToolbarButtonPresence } from "./toolbar-presence";
+import { type ToolbarButtonMap, useToolbarLayoutMotion } from "./toolbar-layout-motion";
 
 export { nextToolbarIndex, resolveToolbarFocusRecovery } from "./toolbar-focus";
 
@@ -48,9 +51,9 @@ const RIGHT_BUTTONS: readonly ToolbarButtonDefinition[] = [
 ];
 
 const CONTEXT_BUTTONS: readonly ToolbarButtonDefinition[] = [
+  { action: "paste", icon: "clipboard-paste", label: "Paste" },
   { action: "copy", icon: "copy", label: "Copy" },
   { action: "cut", icon: "scissors", label: "Cut" },
-  { action: "paste", icon: "clipboard-paste", label: "Paste" },
   { action: "delete", icon: "trash-2", label: "Delete" },
 ];
 
@@ -184,8 +187,6 @@ interface ToolbarGroupProps {
   readonly styleIcon: ToolbarStyleIconState;
 }
 
-type ToolbarButtonMap = Map<ToolbarAction, HTMLButtonElement>;
-
 function useToolbarFocusRecovery(
   enabledKey: string,
   enabledActions: readonly ToolbarAction[],
@@ -242,6 +243,10 @@ function ToolbarGroup(props: ToolbarGroupProps) {
   const buttonElements = useRef<ToolbarButtonMap>(new Map());
   const indicatorRef = useRef<HTMLSpanElement>(null);
   const groupRef = useRef<HTMLDivElement>(null);
+  const layoutKey = presentButtons
+    .map(({ definition, presence }) => `${definition.action}:${presence}`)
+    .join("\u0000");
+  useToolbarLayoutMotion(layoutKey, buttonElements);
   const safeIndex = Math.min(activeIndex, Math.max(enabledButtons.length - 1, 0));
   useToolbarFocusRecovery(
     enabledKey,
@@ -341,6 +346,7 @@ export interface InkbookToolbarProps {
   readonly onAction: (action: ToolbarAction, trigger: HTMLButtonElement) => void;
   readonly registerButton?: IconButtonProps["registerButton"] | undefined;
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
+  readonly selectionArea: SelectionAreaV1;
   readonly selectedShape: ShapeId;
   readonly shapeIcon: ActiveShapeIconState;
   readonly state: ToolbarState;
@@ -374,7 +380,11 @@ export function InkbookToolbar(props: InkbookToolbarProps) {
         <div className={className} ref={props.toolbarRef}>
           <ToolbarGroup
             activeToolIndicator
-            buttons={primaryButtonsForShape(props.selectedShape, props.shapeIcon)}
+            buttons={primaryButtonsForState(
+              props.selectedShape,
+              props.shapeIcon,
+              props.selectionArea,
+            )}
             className="inkbook-toolbar-track"
             label="Tools and actions"
             onAction={props.onAction}
@@ -405,23 +415,34 @@ export function InkbookToolbar(props: InkbookToolbarProps) {
   );
 }
 
-function primaryButtonsForShape(
+function primaryButtonsForState(
   shape: ShapeId,
   iconState: ActiveShapeIconState,
+  selectionArea: SelectionAreaV1,
 ): readonly ToolbarButtonDefinition[] {
   return [
     ...LEFT_BUTTONS,
     ...TOOL_BUTTONS.map((button) =>
-      button.action === "shape"
+      button.action === "select"
         ? {
             ...button,
-            icon: activeShapeIconId(shape, iconState),
-            label: `Shape: ${shapeLabel(shape)}`,
+            icon: selectionAreaIconId(selectionArea),
+            label: `Select: ${selectionAreaLabel(selectionArea)}`,
           }
-        : button,
+        : button.action === "shape"
+          ? {
+              ...button,
+              icon: activeShapeIconId(shape, iconState),
+              label: `Shape: ${shapeLabel(shape)}`,
+            }
+          : button,
     ),
     ...RIGHT_BUTTONS,
   ];
+}
+
+function selectionAreaLabel(area: SelectionAreaV1): string {
+  return area === "rectangle" ? "Rectangle" : "Lasso";
 }
 
 function shapeLabel(shape: ShapeId): string {

@@ -37,7 +37,7 @@ function types(effects: readonly InputEffect[]): string[] {
 describe("input exit cleanup", () => {
   it("cancels the empty-canvas timer on release or cancellation", () => {
     for (const type of ["pointer-up", "pointer-cancel", "lost-pointer-capture"] as const) {
-      const pending = apply(createInputState(), touchDown());
+      const pending = apply(createInputState({ hasSelection: true }), touchDown());
       const exited = apply(pending.state, { type, pointerId: 1 });
       expect(inputPhase(exited.state)).toBe("idle");
       expect(exited.effects).toEqual([

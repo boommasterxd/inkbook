@@ -223,6 +223,10 @@ export class ActiveEditorMenuController {
   ): void {
     if (generation !== this.#openGeneration) return;
     const actions = this.#options.actions;
+    const pasteInvocation = {
+      invocationPoint: { x: position.x, y: position.y },
+      kind: "context-menu" as const,
+    };
     let session: ContextMenuSession;
     session = openActiveEditorMenu({
       arrangeAvailability: actions.arrangeAvailability(),
@@ -242,7 +246,7 @@ export class ActiveEditorMenuController {
         if (this.#session === session) this.#session = undefined;
       },
       onEraseAll: () => actions.execute("erase-all"),
-      onPaste: () => actions.execute("paste", { kind: "context-menu", invocationPoint: position }),
+      onPaste: () => actions.execute("paste", pasteInvocation),
       ownerDocument: this.#options.ownerDocument,
       position: this.#options.toScreenPoint(position),
       ...(returnFocus === undefined ? {} : { returnFocus }),
