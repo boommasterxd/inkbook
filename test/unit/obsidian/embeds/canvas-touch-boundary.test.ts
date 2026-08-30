@@ -49,6 +49,21 @@ describe("canvas touch boundary", () => {
     expect(fixture.hostMoves).not.toHaveBeenCalled();
     fixture.dispose();
   });
+});
+
+describe("claimed canvas touch boundary", () => {
+  it("does not attempt to cancel a claimed touch event after native scrolling owns it", () => {
+    const fixture = createFixture(true);
+    const event = new Event("touchmove", { bubbles: true, cancelable: false });
+    const preventDefault = vi.spyOn(event, "preventDefault");
+
+    fixture.surface.dispatchEvent(event);
+
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+    expect(fixture.hostMoves).not.toHaveBeenCalled();
+    fixture.dispose();
+  });
 
   it("lets terminal touch events reach host cleanup handlers", () => {
     const fixture = createFixture();

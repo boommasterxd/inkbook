@@ -105,6 +105,11 @@ describe("active editor selection edge integration", () => {
       ownerDocument: { scrollingElement: null },
     } as unknown as BrowserScrollElement;
     const drag = new ActiveEditorSelectionEdgeDrag({
+      layout: {
+        begin: vi.fn(),
+        finish: vi.fn(),
+        updateBottom: vi.fn(),
+      },
       navigation,
       ownerWindow: {
         cancelAnimationFrame: frames.cancel,
@@ -122,7 +127,7 @@ describe("active editor selection edge integration", () => {
     expect(refreshViewport).toHaveBeenCalledOnce();
     expect(pan.mock.calls[0]?.[0]).toBeLessThan(0);
     expect(scroll.mock.calls[0]?.[0]).toBeLessThan(0);
-    drag.finish();
+    drag.finish(false);
     expect(frames.callbacks.size).toBe(0);
   });
 });

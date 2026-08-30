@@ -1,6 +1,6 @@
 import type { PageV1 } from "../../../domain/schema/public";
 import type { InkbookSettingsV4 } from "../../../domain/settings/types";
-import type { EditorTool, PointerSample } from "../../../editor/input/index";
+import type { EditorTool, InputPoint, PointerSample } from "../../../editor/input/index";
 import type { BackgroundSpacing, BackgroundType } from "../../menus/editor-menu-types";
 import type { ToolbarAction, ToolId, ShapeId, ToolbarState } from "../../../rendering/ui/index";
 
@@ -41,6 +41,15 @@ function toolbarTool(tool: EditorTool): ToolId {
 
 export function normalizePointerType(pointerType: string): PointerSample["pointerType"] {
   return pointerType === "pen" || pointerType === "touch" ? pointerType : "mouse";
+}
+
+export function pointerSampleFromEvent(point: InputPoint, event: PointerEvent): PointerSample {
+  return {
+    ...point,
+    pointerId: event.pointerId,
+    pointerType: normalizePointerType(event.pointerType),
+    pressure: event.pressure,
+  };
 }
 
 interface NavigatorWithUserAgentData extends Navigator {

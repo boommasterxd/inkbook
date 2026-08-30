@@ -314,12 +314,11 @@ describe("touch navigation and finger drawing", () => {
     expect(effectTypes(started.effects)).toEqual(["capture-pointer", "begin-preview"]);
   });
 
-  it("uses Select as a thresholded additive lasso for enabled finger input", () => {
-    const state = createInputState({
-      activeTool: "select",
-      deviceFingerDrawingEnabled: true,
-      toolbarFingerDrawingEnabled: true,
-    });
+  it.each([
+    { deviceFingerDrawingEnabled: false, toolbarFingerDrawingEnabled: false },
+    { deviceFingerDrawingEnabled: true, toolbarFingerDrawingEnabled: true },
+  ])("uses Select as a thresholded additive touch area", (fingerSettings) => {
+    const state = createInputState({ activeTool: "select", ...fingerSettings });
     const started = apply(state, pointerDown({ pointerType: "touch", shift: true }));
     expect(inputPhase(started.state)).toBe("lasso");
     const moved = apply(started.state, pointerMove({ pointerType: "touch", x: 17, y: 20 }));

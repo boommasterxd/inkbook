@@ -38,6 +38,11 @@ export interface ActiveEditorControllerOptions {
   readonly renderer: SvgSceneRenderer;
   readonly sliceBudgetMs?: () => number;
   readonly sceneStore: ElementSceneStore;
+  readonly selectionMoveLayout: {
+    begin(): void;
+    finish(committed: boolean): void;
+    updateBottom(maximumBottom: number): void;
+  };
   readonly scrollOwner: BrowserScrollElement;
   readonly startupTool: StartupToolV1;
 }

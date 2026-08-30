@@ -15,6 +15,7 @@ import {
   moveSelectionTimeSliced,
   rotateSelection,
   scaleSelectionUniform,
+  uniformScaleFactorFromPointers,
 } from "../../../../src/editor/selection/public";
 import { hydrateRuntimeStroke } from "../../../fixtures/domain/runtime-stroke-store";
 
@@ -223,6 +224,26 @@ describe("selection transform validation", () => {
 });
 
 describe("selection transform constraints", () => {
+  it("ignores pointer motion perpendicular to a uniform resize handle direction", () => {
+    const anchor = { x: 100, y: 100 };
+    const start = { x: 700, y: 100 };
+
+    expect(uniformScaleFactorFromPointers(anchor, start, { x: 1_000, y: 100 })).toBe(1.5);
+    expect(uniformScaleFactorFromPointers(anchor, start, { x: 1_000, y: 480 })).toBe(1.5);
+    expect(uniformScaleFactorFromPointers(anchor, start, { x: 1_000, y: -280 })).toBe(1.5);
+  });
+
+  it("clamps a uniform resize after the pointer crosses its fixed anchor", () => {
+    const factor = uniformScaleFactorFromPointers(
+      { x: 100, y: 100 },
+      { x: 700, y: 100 },
+      { x: 50, y: 600 },
+      0.2,
+    );
+
+    expect(factor).toBe(0.2);
+  });
+
   it("scales structural geometry while preserving paint widths", () => {
     const scaled = scaleSelectionUniform([table()], { x: 0, y: 0 }, 2)[0] as TableElementV1;
     expect(scaled).toMatchObject({ columnWidth: 80, height: 160, headerHeight: 48 });

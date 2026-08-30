@@ -12,6 +12,7 @@ export {
   selectionAreaBounds,
 } from "./selection-area";
 export type { SelectionArea, SelectionAreaInclusion } from "./selection-area";
+export { LassoSelectionSession } from "./lasso-selection-session";
 export {
   connectedSelectionTransformPreview,
   exactConnectedSelectionIds,
@@ -19,6 +20,8 @@ export {
 export type { ConnectedSelectionPreview } from "./connection-preview";
 export { elementContainsPoint, findFrontmostHit, HitTestScratch } from "./hit-test";
 export { editLinearBend, editLinearBendFromCurvePoint } from "./linear-bend";
+export { moveSelectionWithSnap, resolveSelectionMoveSnap } from "./move-snap";
+export type { SelectionMoveSnap } from "./move-snap";
 export {
   editLinearEndpoint,
   moveSelection,
@@ -26,6 +29,7 @@ export {
   resizeBoxShape,
   rotateSelection,
   scaleSelectionUniform,
+  uniformScaleFactorFromPointers,
 } from "./transforms";
 export {
   findSelectionHandle,
@@ -45,4 +49,5 @@ export type {
   SelectionHandleAction,
   SelectionHandlePreview,
   SelectionPreviewTransform,
+  SelectionSnapGuide,
 } from "./handle-session";

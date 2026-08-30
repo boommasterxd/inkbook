@@ -103,6 +103,10 @@ export class ActiveEditorLayout {
     this.scheduleMeasurement();
   }
 
+  public beginSelectionMove(): void {
+    this.#applyHeightUpdate(this.#pageLayout.beginSelectionMove());
+  }
+
   public chromeMounted(): void {
     if (this.#chromeMounted) return;
     this.#chromeMounted = true;
@@ -131,6 +135,16 @@ export class ActiveEditorLayout {
     if (committed) return;
     this.#cancelHeightTransitionAtBoundary(false);
     this.#applyPreviewHeight(this.#options.page());
+  }
+
+  public finishSelectionMove(committed: boolean): void {
+    this.#applyHeightUpdate(
+      this.#pageLayout.finishSelectionMove(
+        committed,
+        this.#options.page(),
+        this.#options.storeMaximumBottom(),
+      ),
+    );
   }
 
   public interruptForInput(): void {
@@ -181,6 +195,12 @@ export class ActiveEditorLayout {
 
   public updateMotion(preference: ActiveEditorMotionPreference): void {
     this.#motion.update(preference);
+  }
+
+  public updateSelectionMoveBottom(maximumBottom: number): void {
+    this.#applyHeightUpdate(
+      this.#pageLayout.previewSelectionMove(this.#options.page(), maximumBottom),
+    );
   }
 
   public sceneCommitted(): void {

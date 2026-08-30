@@ -141,6 +141,32 @@ describe("active editor layout sizing", () => {
     test.layout.dispose();
   });
 
+  it("reserves selection-move extent without animation or scroll correction", () => {
+    const test = harness();
+    test.layout.chromeMounted();
+    test.work.flushFrames();
+    const originalHeight = test.rect.height;
+    const previewBottom = 925;
+
+    test.layout.beginSelectionMove();
+    test.layout.updateSelectionMoveBottom(previewBottom);
+
+    expect(test.rect.height).toBeCloseTo(
+      derivePageExtent(page(), previewBottom).activeHeight * (1_000 / PAGE_WIDTH),
+    );
+    expect(test.rect.height).toBeGreaterThan(originalHeight);
+    expect(test.beginScrollStability).not.toHaveBeenCalled();
+    expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(false);
+
+    test.setMaximumBottom(previewBottom);
+    test.layout.finishSelectionMove(true);
+    expect(test.rect.height).toBeCloseTo(
+      derivePageExtent(page(), previewBottom).activeHeight * (1_000 / PAGE_WIDTH),
+    );
+    expect(test.beginScrollStability).not.toHaveBeenCalled();
+    test.layout.dispose();
+  });
+
   it("does not acquire scroll stability for repeated unchanged layout frames", () => {
     const test = harness("reduced");
     test.layout.chromeMounted();

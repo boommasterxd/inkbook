@@ -1,10 +1,5 @@
-import { pointDistance, rotatePointClockwise } from "../../domain/geometry/public";
-import type {
-  BoxAnchorV1,
-  CoordinateSystemElementV1,
-  InkElementV1,
-  PointV1,
-} from "../../domain/schema/public";
+import { pointDistance } from "../../domain/geometry/public";
+import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 import {
   findSnapCandidate,
   SnapCandidateScratch,
@@ -16,9 +11,22 @@ import type {
   SelectionHandlePreview,
   SelectionHandleSessionOptions,
   SelectionPreviewTransform,
+  SelectionSnapGuide,
   SelectionSnapPorts,
   TimeSlicedSelectionCommitPreparation,
 } from "./handle-types";
+import {
+  HANDLE_SNAP_PIXELS,
+  selectionHandleSnapGuide,
+  selectionRotationDelta,
+  selectionSnapZoom,
+} from "./handle-snap-resolution";
+import {
+  activeScaleAxes,
+  canonicalHandlePoint,
+  clampEndpoint,
+  isBoxShape,
+} from "./handle-session-geometry";
 import {
   editCoordinateAxis,
   editCoordinateOrigin,
@@ -27,11 +35,11 @@ import {
   moveSelection,
   resizeBoxShape,
   rotateSelection,
-  rotationFromPointers,
   scaleElementFromPointers,
   scaleFactorsFromPointers,
   scaleSelectionFromPointers,
   scaleSelectionUniformAtLeast,
+  uniformScaleFactorFromPointers,
   type TransformSliceScheduler,
 } from "./transforms";
 import { editLinearBendFromCurvePoint } from "./linear-bend";
@@ -48,13 +56,13 @@ export type {
   SelectionHandlePreview,
   SelectionHandleSessionOptions,
   SelectionPreviewTransform,
+  SelectionSnapGuide,
   SelectionSnapPorts,
   TimeSlicedSelectionCommitPreparation,
 } from "./handle-types";
 
 const SYNCHRONOUS_SELECTION_LIMIT = 1_000;
 const SYNCHRONOUS_SELECTION_WORK_LIMIT = 16_384;
-const STRAIGHT_BEND_SNAP_PIXELS = 5;
 
 export class SelectionHandleSession {
   readonly #action: SelectionHandleAction;
@@ -149,6 +157,7 @@ export class SelectionHandleSession {
         exactElements: [],
         exactPreviewTruncated: true,
         snapCandidate: this.#snapCandidate,
+        snapGuide: this.#snapGuide(),
         transform,
       };
     }
@@ -159,6 +168,7 @@ export class SelectionHandleSession {
         exactElements: planned?.elements ?? [],
         exactPreviewTruncated: false,
         snapCandidate: this.#snapCandidate,
+        snapGuide: this.#snapGuide(),
         transform,
       };
     } catch (error: unknown) {
@@ -168,6 +178,7 @@ export class SelectionHandleSession {
         exactElements: [],
         exactPreviewTruncated: false,
         snapCandidate: null,
+        snapGuide: null,
         transform: null,
       };
     }
@@ -188,11 +199,10 @@ export class SelectionHandleSession {
               this.#minimumUniformScale,
             );
       case "rotate":
-        return rotationFromPointers(
+        return rotateSelection(
           this.#elements,
           this.#action.center,
-          this.#startPointer,
-          this.#currentPointer,
+          this.#rotationDeltaAt(this.#currentPointer),
         );
       default:
         return this.#replaceActionTarget();
@@ -224,11 +234,7 @@ export class SelectionHandleSession {
       return moveSelection([element], this.#translationAt(pointer))[0]!;
     }
     if (this.#action.kind === "rotate") {
-      return rotateSelection(
-        [element],
-        this.#action.center,
-        pointerRotation(this.#action.center, this.#startPointer, pointer),
-      )[0]!;
+      return rotateSelection([element], this.#action.center, this.#rotationDeltaAt(pointer))[0]!;
     }
     if (this.#action.kind === "scale") {
       return uniformFactor === undefined
@@ -249,9 +255,12 @@ export class SelectionHandleSession {
     pointer: PointV1,
   ): Promise<number | null | undefined> {
     if (this.#action.kind !== "scale" || this.#elements.length === 1) return undefined;
-    const startDistance = pointDistance(this.#action.anchor, this.#startPointer);
-    const factor =
-      startDistance === 0 ? 1 : pointDistance(this.#action.anchor, pointer) / startDistance;
+    const factor = uniformScaleFactorFromPointers(
+      this.#action.anchor,
+      this.#startPointer,
+      pointer,
+      this.#minimumUniformScale,
+    );
     if (this.#preparationCancelled(scheduler, generation)) return null;
     return Math.max(factor, this.#minimumUniformScale ?? 0);
   }
@@ -280,7 +289,13 @@ export class SelectionHandleSession {
       return [editLinearEndpoint(element, action.endpoint, point, connection)];
     }
     if (action.kind === "linear-bend") {
-      return [editLinearBendFromCurvePoint(element, pointer, this.#straightBendTolerance())];
+      return [
+        editLinearBendFromCurvePoint(
+          element,
+          pointer,
+          HANDLE_SNAP_PIXELS / selectionSnapZoom(this.#snap),
+        ),
+      ];
     }
     if (element.kind !== "coordinate-system") {
       throw new TypeError("Coordinate handles require a coordinate system.");
@@ -291,11 +306,6 @@ export class SelectionHandleSession {
         ? editCoordinateAxis(element, action.axisIndex, point)
         : editCoordinateOrigin(element, point),
     ];
-  }
-
-  #straightBendTolerance(): number {
-    const zoom = this.#snap?.zoom ?? 1;
-    return STRAIGHT_BEND_SNAP_PIXELS / (Number.isFinite(zoom) && zoom > 0 ? zoom : 1);
   }
 
   #scaleSingle(element: InkElementV1): InkElementV1 {
@@ -366,9 +376,8 @@ export class SelectionHandleSession {
     if (this.#action.kind === "rotate") {
       return {
         center: this.#action.center,
-        currentPointer: this.#currentPointer,
+        degrees: this.#rotationDeltaAt(this.#currentPointer),
         kind: "rotate",
-        startPointer: this.#startPointer,
       };
     }
     return null;
@@ -376,10 +385,12 @@ export class SelectionHandleSession {
 
   #uniformScaleFactor(pointer: PointV1): number {
     if (this.#action.kind !== "scale") throw new Error("Expected a scale action.");
-    const startDistance = pointDistance(this.#action.anchor, this.#startPointer);
-    const factor =
-      startDistance === 0 ? 1 : pointDistance(this.#action.anchor, pointer) / startDistance;
-    return Math.max(factor, this.#minimumUniformScale ?? 0);
+    return uniformScaleFactorFromPointers(
+      this.#action.anchor,
+      this.#startPointer,
+      pointer,
+      this.#minimumUniformScale,
+    );
   }
 
   #translation(): PointV1 {
@@ -391,6 +402,27 @@ export class SelectionHandleSession {
       x: pointer.x - this.#startPointer.x,
       y: pointer.y - this.#startPointer.y,
     };
+  }
+
+  #rotationDeltaAt(pointer: PointV1): number {
+    return selectionRotationDelta(
+      this.#action,
+      this.#elements,
+      this.#startPointer,
+      pointer,
+      this.#snap,
+    );
+  }
+
+  #snapGuide(): SelectionSnapGuide | null {
+    return selectionHandleSnapGuide(
+      this.#action,
+      this.#elements,
+      this.#startPointer,
+      this.#currentPointer,
+      this.#snapCandidate,
+      this.#snap,
+    );
   }
 
   #targetElement(id: string): InkElementV1 {
@@ -439,6 +471,7 @@ export class SelectionHandleSession {
       exactElements: [],
       exactPreviewTruncated: false,
       snapCandidate: null,
+      snapGuide: null,
       transform: null,
     };
   }
@@ -446,44 +479,6 @@ export class SelectionHandleSession {
   #assertActive(): void {
     if (this.#cancelled) throw new Error("A cancelled handle session cannot be used.");
   }
-}
-
-function activeScaleAxes(position: BoxAnchorV1): { readonly x: boolean; readonly y: boolean } {
-  return {
-    x: position.includes("left") || position.includes("right"),
-    y: position.startsWith("top") || position.startsWith("bottom"),
-  };
-}
-
-function pointerRotation(center: PointV1, start: PointV1, current: PointV1): number {
-  const startAngle = Math.atan2(start.y - center.y, start.x - center.x);
-  const currentAngle = Math.atan2(current.y - center.y, current.x - center.x);
-  return ((currentAngle - startAngle) * 180) / Math.PI;
-}
-
-function canonicalHandlePoint(element: CoordinateSystemElementV1, point: PointV1): PointV1 {
-  return rotatePointClockwise(point, element.pivot, -element.rotation);
-}
-
-function clampEndpoint(point: PointV1, opposite: PointV1): PointV1 {
-  const distance = pointDistance(point, opposite);
-  if (distance >= 8) return point;
-  if (distance === 0) return { x: opposite.x + 8, y: opposite.y };
-  return {
-    x: opposite.x + ((point.x - opposite.x) * 8) / distance,
-    y: opposite.y + ((point.y - opposite.y) * 8) / distance,
-  };
-}
-
-function isBoxShape(element: InkElementV1): element is Extract<InkElementV1, { width: number }> {
-  return (
-    element.kind === "rectangle" ||
-    element.kind === "ellipse" ||
-    element.kind === "triangle" ||
-    element.kind === "octagon" ||
-    element.kind === "parallelogram" ||
-    element.kind === "diamond"
-  );
 }
 
 function assertFinitePoint(point: PointV1): void {

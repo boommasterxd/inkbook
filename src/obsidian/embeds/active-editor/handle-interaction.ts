@@ -1,4 +1,8 @@
-import { calculateElementBounds, type Bounds } from "../../../domain/geometry/public";
+import {
+  calculateElementBounds,
+  rotatePointClockwise,
+  type Bounds,
+} from "../../../domain/geometry/public";
 import type { BoxAnchorV1, InkElementV1, PointV1 } from "../../../domain/schema/public";
 import type { PointerSample } from "../../../editor/input/index";
 import {
@@ -22,9 +26,11 @@ import type { ActiveEditorHistory } from "./history";
 import type { PreparedElementHistory } from "./prepared-element-history";
 import type { ElementSceneStore } from "./scene-store";
 import { selectionOverlayFill, selectionOverlayPath } from "./selection-overlay-path";
-import { snapMarkerPath } from "./snap-marker-path";
+import { selectionSnapGuidePath } from "./snap-marker-path";
 
-const HANDLE_RADIUS_PIXELS = 10;
+const HANDLE_RADIUS_PIXELS = 13;
+const PEN_HANDLE_RADIUS_PIXELS = 16;
+const TOUCH_HANDLE_RADIUS_PIXELS = 24;
 
 export interface ActiveEditorHandleInteractionOptions {
   readonly history: ActiveEditorHistory;
@@ -52,6 +58,16 @@ export interface HandleInteractionRenderer {
   suppressMotionForNextDelta(ids: readonly string[]): void;
 }
 
+interface ActiveHandleGesture {
+  readonly grabOffset: PointV1;
+  readonly ids: readonly string[];
+  readonly pointerId: number;
+  readonly pointerType: PointerSample["pointerType"];
+  readonly selected: readonly SelectedElementGeometry[];
+  readonly selectedIds: ReadonlySet<string>;
+  readonly session: SelectionHandleSession;
+}
+
 export class ActiveEditorHandleInteraction {
   readonly #history: ActiveEditorHistory;
   readonly #model: EditableDocumentModel;
@@ -61,14 +77,7 @@ export class ActiveEditorHandleInteraction {
   readonly #sceneStore: ElementSceneStore;
   readonly #selection: () => ReadonlySet<string>;
   readonly #zoom: () => number;
-  #active:
-    | {
-        ids: readonly string[];
-        pointerId: number;
-        pointerType: PointerSample["pointerType"];
-        session: SelectionHandleSession;
-      }
-    | undefined;
+  #active: ActiveHandleGesture | undefined;
   #version = 0;
 
   public constructor(options: ActiveEditorHandleInteractionOptions) {
@@ -111,14 +120,27 @@ export class ActiveEditorHandleInteraction {
     if (this.#active !== undefined) return false;
     const selected = this.#selectedGeometry();
     const handles = layoutSelectionHandles(selected, { zoom: this.#zoom() });
-    const handle = findSelectionHandle(handles, pointer, this.#zoom(), HANDLE_RADIUS_PIXELS);
+    const handle = findSelectionHandle(
+      handles,
+      pointer,
+      this.#zoom(),
+      handleRadiusPixels(pointer.pointerType, this.#zoom()),
+    );
     if (handle === null) return false;
     const elements = selected.map(({ element }) => element);
+    const selectedIds = new Set(elements.map(({ id }) => id));
     const action = handleAction(handle, selected);
+    const sessionStart = handleSessionStart(handle, selected);
     this.#active = {
       ids: elements.map(({ id }) => id),
+      grabOffset: {
+        x: pointer.x - sessionStart.x,
+        y: pointer.y - sessionStart.y,
+      },
       pointerId: pointer.pointerId,
       pointerType: pointer.pointerType,
+      selected,
+      selectedIds,
       session: new SelectionHandleSession({
         action,
         elements,
@@ -131,7 +153,7 @@ export class ActiveEditorHandleInteraction {
           },
           zoom: this.#zoom(),
         },
-        startPointer: pointer,
+        startPointer: sessionStart,
       }),
     };
     this.#model.setGestureActive(true);
@@ -141,13 +163,16 @@ export class ActiveEditorHandleInteraction {
   public pointerMove(pointer: PointerSample): boolean {
     const active = this.#active;
     if (active === undefined || active.pointerId !== pointer.pointerId) return false;
-    const preview = active.session.update(pointer);
-    const connected = this.#connectedPreview(preview);
+    const preview = active.session.update({
+      x: pointer.x - active.grabOffset.x,
+      y: pointer.y - active.grabOffset.y,
+    });
+    const connected = this.#connectedPreview(active, preview);
     this.#renderTransform(
       active.ids.filter((id) => !connected.selectedPreviewIds.has(id)),
       preview.transform,
     );
-    this.#renderPreview(preview, connected);
+    this.#renderPreview(active, preview, connected);
     return true;
   }
 
@@ -179,15 +204,15 @@ export class ActiveEditorHandleInteraction {
   }
 
   #renderPreview(
+    active: ActiveHandleGesture,
     preview: SelectionHandlePreview,
     connected: {
       readonly elements: readonly InkElementV1[];
       readonly selectedPreviewIds: ReadonlySet<string>;
     },
   ): void {
-    const selection = this.#selection();
     const exact = preview.exactElements
-      .filter(({ id }) => selection.has(id))
+      .filter(({ id }) => active.selectedIds.has(id))
       .map((element) => ({ bounds: calculateElementBounds(element), element }));
     const exactOverlay =
       preview.transform === null || connected.selectedPreviewIds.size > 0 ? exact : [];
@@ -196,41 +221,42 @@ export class ActiveEditorHandleInteraction {
       : preview.transform === null
         ? preview.exactElements
         : preview.exactElements.filter(
-            ({ id }) => !selection.has(id) || connected.selectedPreviewIds.has(id),
+            ({ id }) => !active.selectedIds.has(id) || connected.selectedPreviewIds.has(id),
           );
     this.#version += 1;
     this.#renderer.setElementPreviews(previewElements, this.#version);
     this.#renderGeometry(
-      exactOverlay.length === 0 ? this.#selectedGeometry() : exactOverlay,
-      preview.snapCandidate?.point ?? null,
+      exactOverlay.length === 0 ? active.selected : exactOverlay,
+      preview.snapGuide,
       exactOverlay.length === 0 ? preview.transform : null,
     );
   }
 
-  #connectedPreview(preview: SelectionHandlePreview): {
+  #connectedPreview(
+    active: ActiveHandleGesture,
+    preview: SelectionHandlePreview,
+  ): {
     readonly elements: readonly InkElementV1[];
     readonly selectedPreviewIds: ReadonlySet<string>;
   } {
-    const selection = this.#selection();
     if (preview.transform === null) return { elements: [], selectedPreviewIds: new Set() };
     if (!preview.exactPreviewTruncated) {
       return {
         elements: [],
-        selectedPreviewIds: exactConnectedSelectionIds(preview.exactElements, selection),
+        selectedPreviewIds: exactConnectedSelectionIds(preview.exactElements, active.selectedIds),
       };
     }
-    const selected = this.#selectedGeometry().map(({ element }) => element);
     return connectedSelectionTransformPreview(
       this.#model.store,
-      selected,
-      selection,
+      active.selected.map(({ element }) => element),
+      active.selectedIds,
       preview.transform,
     );
   }
 
   #renderGeometry(
     selected: readonly SelectedElementGeometry[],
-    snap: PointV1 | null,
+    snap: SelectionHandlePreview["snapGuide"],
     transform: SelectionPreviewTransform | null = null,
   ): void {
     this.#renderer.setSelectionOverlayPath(
@@ -242,7 +268,7 @@ export class ActiveEditorHandleInteraction {
       selectionOverlayFill(selected),
     );
     this.#renderer.setSnapMarkerPath(
-      snap === null ? null : snapMarkerPath(this.#pageToScreen(snap)),
+      snap === null ? null : selectionSnapGuidePath(snap, this.#pageToScreen),
     );
   }
 
@@ -265,6 +291,16 @@ export class ActiveEditorHandleInteraction {
     }
     return geometry;
   }
+}
+
+function handleRadiusPixels(pointerType: PointerSample["pointerType"], zoom: number): number {
+  const base =
+    pointerType === "touch"
+      ? TOUCH_HANDLE_RADIUS_PIXELS
+      : pointerType === "pen"
+        ? PEN_HANDLE_RADIUS_PIXELS
+        : HANDLE_RADIUS_PIXELS;
+  return Math.min(28, Math.max(11, base / Math.sqrt(zoom)));
 }
 
 function handleAction(
@@ -303,21 +339,37 @@ function handleAction(
   };
 }
 
+function handleSessionStart(
+  handle: SelectionHandle,
+  selected: readonly SelectedElementGeometry[],
+): PointV1 {
+  if (handle.kind !== "shape-resize") return handle.point;
+  const element = selected.length === 1 ? selected[0]?.element : undefined;
+  if (element?.kind !== "rectangle" && element?.kind !== "ellipse") {
+    throw new TypeError("A shape resize handle requires one closed shape.");
+  }
+  const local = {
+    x: handle.position.includes("left")
+      ? element.x
+      : handle.position.includes("right")
+        ? element.x + element.width
+        : element.x + element.width / 2,
+    y: handle.position.startsWith("top")
+      ? element.y
+      : handle.position.startsWith("bottom")
+        ? element.y + element.height
+        : element.y + element.height / 2,
+  };
+  return rotatePointClockwise(local, element.pivot, element.rotation);
+}
+
 function transformString(transform: SelectionPreviewTransform | null): string | null {
   if (transform === null) return null;
   if (transform.kind === "translate") {
     return `translate(${String(transform.delta.x)} ${String(transform.delta.y)})`;
   }
   if (transform.kind === "rotate") {
-    const start = Math.atan2(
-      transform.startPointer.y - transform.center.y,
-      transform.startPointer.x - transform.center.x,
-    );
-    const current = Math.atan2(
-      transform.currentPointer.y - transform.center.y,
-      transform.currentPointer.x - transform.center.x,
-    );
-    return `rotate(${String(((current - start) * 180) / Math.PI)} ${String(transform.center.x)} ${String(transform.center.y)})`;
+    return `rotate(${String(transform.degrees)} ${String(transform.center.x)} ${String(transform.center.y)})`;
   }
   return `translate(${String(transform.anchor.x)} ${String(transform.anchor.y)}) rotate(${String(transform.rotation)}) scale(${String(transform.factors.x)} ${String(transform.factors.y)}) rotate(${String(-transform.rotation)}) translate(${String(-transform.anchor.x)} ${String(-transform.anchor.y)})`;
 }

@@ -10,7 +10,9 @@ import {
 } from "../../../../src/obsidian/embeds/active-editor/creation-preview";
 import { EraserPreview } from "../../../../src/obsidian/embeds/active-editor/eraser-preview";
 import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";
+import type { PreparedElementHistory } from "../../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
+import { LassoPreview } from "../../../../src/obsidian/embeds/active-editor/selection-preview";
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
 import { encodeSelection } from "../../../../src/persistence/clipboard/public";
 import { createDragElement } from "../../../../src/editor/tools/public";
@@ -87,8 +89,7 @@ describe("active editor interaction composition", () => {
     const renderedDeltas: string[][] = [];
     document.store.subscribe((delta) => renderedDeltas.push(delta.changes.map(({ id }) => id)));
     const controller = new GestureController({
-      activateTemporaryEraser: vi.fn(),
-      beginPinch: vi.fn(),
+      ...passiveGesturePorts(),
       beginPreview: (start) =>
         new CreationPreview({
           defaults: createBuiltInSettings().toolDefaults,
@@ -102,20 +103,7 @@ describe("active editor interaction composition", () => {
           }),
           start,
         }),
-      cancelLongPress: vi.fn(),
-      capturePointer: vi.fn(),
       clearSelection: vi.fn(),
-      finishPinch: vi.fn(),
-      openContextMenu: vi.fn(),
-      panPage: vi.fn(),
-      releasePointer: vi.fn(),
-      restoreTemporaryTool: vi.fn(),
-      revertNavigation: vi.fn(),
-      revertPinch: vi.fn(),
-      scheduleLongPress: vi.fn(),
-      scrollNote: vi.fn(),
-      selectElement: vi.fn(),
-      updatePinch: vi.fn(),
     });
     let state = createInputState({ activeTool: "draw" });
     for (const action of [
@@ -150,6 +138,109 @@ describe("active editor interaction composition", () => {
     expect(document.store.size).toBe(1);
   });
 });
+
+describe("active editor selection area composition", () => {
+  it.each(["mouse", "pen", "touch"] as const)(
+    "selects through a complete %s area gesture even when finger drawing is disabled",
+    (pointerType) => {
+      const document = model();
+      const target = createDragElement({
+        defaults: createBuiltInSettings().toolDefaults,
+        end: { x: 300, y: 240 },
+        identity: { createdAt: 1, id: "00000000-0000-4000-8000-000000000021" },
+        start: { x: 100, y: 100 },
+        tool: "rectangle",
+      });
+      document.commitElement(target);
+      const sceneStore = new ElementSceneStore(document.store);
+      let selection: ReadonlySet<string> = new Set();
+      const controller = new GestureController({
+        ...passiveGesturePorts(),
+        beginPreview: (start) =>
+          new LassoPreview({
+            history: new ActiveEditorHistory(document),
+            pageToScreen: (point) => point,
+            preparedHistory: {} as PreparedElementHistory,
+            renderer: {
+              clearPreviewTransforms: vi.fn(),
+              setOverlayPath: vi.fn(),
+              setPreviewTransform: vi.fn(),
+              suppressMotionForNextDelta: vi.fn(),
+            },
+            sceneStore,
+            selection: () => selection,
+            selectionDefaults: { area: "lasso", inclusion: "fully-enclosed" },
+            setSelection: (next) => {
+              selection = next;
+            },
+            start,
+            store: document.store,
+          }),
+        clearSelection: () => {
+          selection = new Set();
+        },
+      });
+      let state = createInputState({ activeTool: "select" });
+      const points = [
+        { x: 50, y: 50 },
+        { x: 350, y: 50 },
+        { x: 350, y: 300 },
+        { x: 50, y: 300 },
+      ];
+      const down = points[0]!;
+      const actions = [
+        {
+          ...down,
+          button: 0,
+          buttons: 1,
+          controlOrMeta: false,
+          isPlatformContextClick: false,
+          pointerId: 9,
+          pointerType,
+          pressure: 0.5,
+          shift: false,
+          type: "pointer-down" as const,
+        },
+        ...points.slice(1).map((point) => ({
+          ...point,
+          pointerId: 9,
+          pointerType,
+          pressure: 0.5,
+          type: "pointer-move" as const,
+        })),
+        { pointerId: 9, type: "pointer-up" as const },
+      ];
+      for (const action of actions) {
+        const reduction = reduceInput(state, action);
+        state = reduction.state;
+        controller.apply(reduction);
+      }
+
+      expect(selection).toEqual(new Set([target.id]));
+      sceneStore.release();
+    },
+  );
+});
+
+function passiveGesturePorts() {
+  return {
+    activateTemporaryEraser: vi.fn(),
+    beginPinch: vi.fn(),
+    cancelLongPress: vi.fn(),
+    capturePointer: vi.fn(),
+    finishPinch: vi.fn(),
+    openContextMenu: vi.fn(),
+    panPage: vi.fn(),
+    releasePointer: vi.fn(),
+    restoreTemporaryTool: vi.fn(),
+    revertNavigation: vi.fn(),
+    revertPinch: vi.fn(),
+    scheduleLongPress: vi.fn(),
+    scrollNote: vi.fn(),
+    selectElement: vi.fn(),
+    updatePinch: vi.fn(),
+  };
+}
 
 describe("active editor eraser composition", () => {
   it("previews, cancels, and atomically removes complete eraser hits with undo", async () => {
@@ -242,7 +333,8 @@ describe("active editor creation snapping", () => {
     });
 
     preview.update({ pointerId: 1, pointerType: "mouse", x: 397, y: 102 });
-    expect(overlays[overlays.length - 1]).toContain("M 192.5 200");
+    expect(overlays[overlays.length - 1]).toContain("M 192 200");
+    expect(overlays[overlays.length - 1]).toContain("M 224 171");
     expect(preview.commit()).toBe(true);
     const line = document.store.get("00000000-0000-4000-8000-000000000013")?.element;
     expect(line?.kind).toBe("line");

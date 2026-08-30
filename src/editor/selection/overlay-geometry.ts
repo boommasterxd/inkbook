@@ -59,11 +59,7 @@ export function transformSelectionPoint(
     return canonicalPoint({ x: point.x + transform.delta.x, y: point.y + transform.delta.y });
   }
   if (transform.kind === "rotate") {
-    const start = pointerAngle(transform.startPointer, transform.center);
-    const current = pointerAngle(transform.currentPointer, transform.center);
-    return canonicalPoint(
-      rotatePointClockwise(point, transform.center, ((current - start) * 180) / Math.PI),
-    );
+    return canonicalPoint(rotatePointClockwise(point, transform.center, transform.degrees));
   }
   const local = rotatePointClockwise(point, transform.anchor, -transform.rotation);
   const scaled = {
@@ -128,8 +124,4 @@ function rectanglePoints(minX: number, minY: number, maxX: number, maxY: number)
     { x: maxX, y: maxY },
     { x: minX, y: maxY },
   ];
-}
-
-function pointerAngle(pointer: PointV1, center: PointV1): number {
-  return Math.atan2(pointer.y - center.y, pointer.x - center.x);
 }

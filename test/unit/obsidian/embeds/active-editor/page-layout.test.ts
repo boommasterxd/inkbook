@@ -94,3 +94,32 @@ describe("active page-height policy", () => {
     });
   });
 });
+
+describe("selection move page-height policy", () => {
+  it("reserves selection preview height immediately and restores it on cancellation", () => {
+    const layout = new ActivePageLayout();
+    const initialHeight = derivePageExtent(page, null).activeHeight;
+    layout.committed(page, undefined);
+
+    expect(layout.beginSelectionMove()).toBeUndefined();
+    expect(layout.previewSelectionMove(page, 525)).toEqual({
+      animate: false,
+      height: derivePageExtent(page, 525).activeHeight,
+    });
+    expect(layout.previewSelectionMove(page, 225)).toBeUndefined();
+    expect(layout.finishSelectionMove(false, page, undefined)).toEqual({
+      animate: true,
+      height: initialHeight,
+    });
+  });
+
+  it("retains the exact committed extent after a selection preview", () => {
+    const layout = new ActivePageLayout();
+    layout.committed(page, undefined);
+    layout.beginSelectionMove();
+    layout.previewSelectionMove(page, 525);
+
+    expect(layout.finishSelectionMove(true, page, 525)).toBeUndefined();
+    expect(layout.height).toBe(derivePageExtent(page, 525).activeHeight);
+  });
+});

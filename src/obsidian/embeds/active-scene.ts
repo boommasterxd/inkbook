@@ -128,6 +128,11 @@ export class ActiveInkbookScene {
       renderIcon: (element, icon) => setIcon(element, icon),
       renderer: this.#renderer,
       sceneStore: this.#store,
+      selectionMoveLayout: {
+        begin: () => this.#layout.beginSelectionMove(),
+        finish: (committed) => this.#layout.finishSelectionMove(committed),
+        updateBottom: (maximumBottom) => this.#layout.updateSelectionMoveBottom(maximumBottom),
+      },
       sliceBudgetMs: options.sliceBudgetMs,
       scrollOwner,
       startupTool: options.startupTool,

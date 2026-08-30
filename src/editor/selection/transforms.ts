@@ -132,12 +132,31 @@ export function scaleSelectionFromPointers(
   currentPointer: PointV1,
   minimum = minimumUniformScaleForSelection(elements),
 ): InkElementV1[] {
+  const factor = uniformScaleFactorFromPointers(anchor, startPointer, currentPointer, minimum);
+  return scaleSelectionUniformAtLeast(elements, anchor, factor, minimum);
+}
+
+export function uniformScaleFactorFromPointers(
+  anchor: PointV1,
+  startPointer: PointV1,
+  currentPointer: PointV1,
+  minimum = 0,
+): number {
   assertFinitePoint(anchor);
   assertFinitePoint(startPointer);
   assertFinitePoint(currentPointer);
-  const startDistance = pointDistance(anchor, startPointer);
-  const factor = startDistance === 0 ? 1 : pointDistance(anchor, currentPointer) / startDistance;
-  return scaleSelectionUniformAtLeast(elements, anchor, factor, minimum);
+  if (!Number.isFinite(minimum) || minimum < 0) {
+    throw new RangeError("Minimum scale must be finite and non-negative.");
+  }
+  const startX = startPointer.x - anchor.x;
+  const startY = startPointer.y - anchor.y;
+  const denominator = startX * startX + startY * startY;
+  const factor =
+    denominator === 0
+      ? 1
+      : ((currentPointer.x - anchor.x) * startX + (currentPointer.y - anchor.y) * startY) /
+        denominator;
+  return Math.max(factor, minimum);
 }
 
 export function resizeBoxShape(
@@ -221,20 +240,6 @@ export function rotateSelection(
     const translated = translateElement(element, canonicalPoint(movement));
     return { ...translated, rotation: normalizeRotation(element.rotation + degrees) };
   });
-}
-
-export function rotationFromPointers(
-  elements: readonly InkElementV1[],
-  center: PointV1,
-  startPointer: PointV1,
-  currentPointer: PointV1,
-): InkElementV1[] {
-  assertFinitePoint(center);
-  assertFinitePoint(startPointer);
-  assertFinitePoint(currentPointer);
-  const startAngle = Math.atan2(startPointer.y - center.y, startPointer.x - center.x);
-  const currentAngle = Math.atan2(currentPointer.y - center.y, currentPointer.x - center.x);
-  return rotateSelection(elements, center, ((currentAngle - startAngle) * 180) / Math.PI);
 }
 
 export function editLinearEndpoint(

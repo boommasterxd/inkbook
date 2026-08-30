@@ -1,37 +1,32 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { calculateElementBounds } from "../../../../src/domain/geometry/public";
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import { ElementStore, type ImmutableInkElement } from "../../../../src/domain/store/public";
-import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";
 import type { PreparedElementHistory } from "../../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import type { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import { MovePreview } from "../../../../src/obsidian/embeds/active-editor/selection-preview";
+import { reportedRotatedTable } from "../../../fixtures/editor/reported-rotated-table";
+import { createSynchronousActiveEditorHistory } from "../../../fixtures/obsidian/synchronous-active-editor-history";
 
 describe("active editor mixed selection move", () => {
   it("commits the reported table and stroke geometry atomically", () => {
     const table = reportedTable();
     const stroke = reportedStroke();
     const store = new ElementStore([table, stroke]);
-    const history = new ActiveEditorHistory({
-      commitBandOrder: vi.fn(),
-      commitElements: vi.fn(),
-      commitPage: vi.fn(),
-      removeElements: vi.fn(),
-      replaceElements: (elements) => {
-        store.replaceMany(elements);
-      },
-    });
+    const history = createSynchronousActiveEditorHistory(store);
     const selection = new Set([table.id, stroke.id]);
+    const renderer = {
+      clearPreviewTransforms: vi.fn(),
+      setOverlayPath: vi.fn(),
+      setPreviewTransform: vi.fn(),
+      suppressMotionForNextDelta: vi.fn(),
+    };
     const preview = new MovePreview({
       history,
-      pageToScreen: (point) => point,
       preparedHistory: { commitMove: vi.fn(() => false) } as unknown as PreparedElementHistory,
-      renderer: {
-        clearPreviewTransforms: vi.fn(),
-        setOverlayPath: vi.fn(),
-        setPreviewTransform: vi.fn(),
-        suppressMotionForNextDelta: vi.fn(),
-      },
+      renderer,
+      pageToScreen: (point) => point,
       sceneStore: {} as ElementSceneStore,
       selection: () => selection,
       setSelection: vi.fn(),
@@ -59,6 +54,88 @@ describe("active editor mixed selection move", () => {
     expect(history.undo()).toBe(true);
     expect(store.get(table.id)?.element).toMatchObject({ x: 655.405, y: 808.169 });
     expect(strokeStart(store.get(stroke.id)?.element)).toEqual([1797.778, 573.438, 0.5]);
+  });
+});
+
+describe("active editor rotated table move", () => {
+  it("commits the reported rotated table across rounding-sensitive destinations", () => {
+    const deltas = [
+      { x: -1_500.001, y: -2_500.001 },
+      { x: -713.255, y: -144.957 },
+      { x: -100.001, y: 40.001 },
+      { x: -0.001, y: -0.001 },
+      { x: 0.001, y: 0.001 },
+      { x: 99.999, y: 199.999 },
+      { x: 1_024.555, y: 2_048.555 },
+    ];
+
+    for (const delta of deltas) {
+      const table = reportedRotatedTable();
+      const store = new ElementStore([table]);
+      const history = createSynchronousActiveEditorHistory(store);
+      const finish = vi.fn();
+      const setPreviewTransform = vi.fn();
+      const setSelectionOverlayPath = vi.fn();
+      const updatePreviewBottom = vi.fn();
+      const preview = new MovePreview({
+        history,
+        preparedHistory: { commitMove: vi.fn(() => false) } as unknown as PreparedElementHistory,
+        renderer: {
+          clearPreviewTransforms: vi.fn(),
+          setOverlayPath: vi.fn(),
+          setPreviewTransform,
+          setSelectionOverlayPath,
+          suppressMotionForNextDelta: vi.fn(),
+        },
+        sceneStore: {} as ElementSceneStore,
+        selectionEdgeDrag: {
+          begin: vi.fn(),
+          finish,
+          update: vi.fn(),
+          updatePreviewBottom,
+        },
+        pageToScreen: (point) => point,
+        selection: () => new Set([table.id]),
+        setSelection: vi.fn(),
+        start: {
+          additive: false,
+          kind: "element-move",
+          pointer: pointer(900, 900),
+          tool: "select",
+        },
+        store,
+      });
+
+      const currentPointer = pointer(900 + delta.x, 900 + delta.y);
+      const previewDelta = { x: currentPointer.x - 900, y: currentPointer.y - 900 };
+      preview.update(currentPointer);
+
+      expect(setPreviewTransform).toHaveBeenLastCalledWith(
+        [table.id],
+        `translate(${String(previewDelta.x)} ${String(previewDelta.y)})`,
+        1,
+      );
+      expect(setSelectionOverlayPath).toHaveBeenLastCalledWith(
+        expect.stringContaining("M "),
+        "accent",
+      );
+      expect(updatePreviewBottom).toHaveBeenLastCalledWith(
+        calculateElementBounds(table).maxY + previewDelta.y,
+      );
+      expect(preview.commit(), JSON.stringify(delta)).toBe(true);
+      expect(finish).toHaveBeenLastCalledWith(true);
+      const x = Number((table.x + delta.x).toFixed(3));
+      const y = Number((table.y + delta.y).toFixed(3));
+      expect(store.get(table.id)?.element).toMatchObject({
+        pivot: {
+          x: Number((x + (table.columns * table.columnWidth) / 2).toFixed(3)),
+          y: Number((y + table.height / 2).toFixed(3)),
+        },
+        rotation: 89.51,
+        x,
+        y,
+      });
+    }
   });
 });
 

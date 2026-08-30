@@ -30,7 +30,6 @@ describe("active editor keyboard DOM boundary", () => {
     document.body.append(toolbarButton);
     harness.input.dispatchEvent(new PointerEvent("pointerenter"));
     toolbarButton.focus();
-
     const zoom = key(toolbarButton, "+", { ctrlKey: true });
     expect(zoom.defaultPrevented).toBe(true);
 
@@ -284,6 +283,7 @@ function createHarness() {
     renderIcon: vi.fn(),
     renderer: renderer as unknown as SvgSceneRenderer,
     sceneStore,
+    selectionMoveLayout: { begin: vi.fn(), finish: vi.fn(), updateBottom: vi.fn() },
     scrollOwner: owner,
     startupTool: "draw",
   });

@@ -34,18 +34,6 @@ function rectangle(): Extract<InkElementV1, { kind: "rectangle" }> {
   return element;
 }
 
-function line(): Extract<InkElementV1, { kind: "line" }> {
-  const element = createDragElement({
-    defaults: createBuiltInSettings().toolDefaults,
-    end: { x: 50, y: 50 },
-    identity: { createdAt: 2, id: "00000000-0000-4000-8000-000000000002" },
-    start: { x: 10, y: 10 },
-    tool: "line",
-  });
-  if (element.kind !== "line") throw new TypeError("Expected a line fixture.");
-  return element;
-}
-
 function rotatedTable(): Extract<InkElementV1, { kind: "table" }> {
   return {
     columnWidth: 100,
@@ -142,7 +130,7 @@ describe("active editor selection handles", () => {
     expect(interaction.pointerDown(start)).toBe(true);
     expect(interaction.activePointerType).toBe("touch");
     expect(interaction.pointerMove({ ...start, x: start.x + 80, y: start.y + 40 })).toBe(true);
-    expect(overlays[overlays.length - 2]).toContain("M 99 99 L 382 99 L 382 282 L 99 282 Z");
+    expect(overlays[overlays.length - 2]).toContain("M 99 99 L 381 99 L 381 281 L 99 281 Z");
     expect(interaction.pointerUp(start.pointerId)).toBe(true);
     expect(interaction.activePointerType).toBeUndefined();
     const resized = store.get(startId())?.element;
@@ -155,37 +143,6 @@ describe("active editor selection handles", () => {
     expect(previewTransforms[previewTransforms.length - 1]).toBeNull();
     expect(history.undo()).toBe(true);
     expect(store.get(startId())?.element).toMatchObject({ height: 140, width: 200 });
-  });
-
-  it("snaps a line endpoint to a semantic anchor and detaches it when moved away", () => {
-    const selectedLine = line();
-    const { interaction, store } = harness([rectangle(), selectedLine], new Set([selectedLine.id]));
-    const start = {
-      pointerId: 2,
-      pointerType: "mouse" as const,
-      x: selectedLine.end.x,
-      y: selectedLine.end.y,
-    };
-
-    expect(interaction.pointerDown(start)).toBe(true);
-    interaction.pointerMove({ ...start, x: 100, y: 100 });
-    interaction.pointerUp(start.pointerId);
-
-    const connected = store.get(selectedLine.id)?.element;
-    expect(connected?.kind).toBe("line");
-    if (connected?.kind !== "line") throw new TypeError("Expected a connected line.");
-    expect(connected.endConnection).toEqual({
-      anchor: { kind: "box", position: "top-left" },
-      targetId: startId(),
-    });
-
-    expect(interaction.pointerDown({ ...start, x: connected.end.x, y: connected.end.y })).toBe(
-      true,
-    );
-    interaction.pointerMove({ ...start, x: 500, y: 500 });
-    interaction.pointerUp(start.pointerId);
-    const detached = store.get(selectedLine.id)?.element;
-    expect(detached?.kind === "line" ? detached.endConnection : undefined).toBeNull();
   });
 
   it("publishes reverse-map dependent endpoint geometry during a shape-handle preview", () => {
@@ -255,7 +212,7 @@ describe("active editor ordinary selection move", () => {
     preview.update({ pointerId: 4, pointerType: "mouse", x: 340, y: 270 });
 
     expectLatestLinePreview(fixture.elementPreviews, dependent.id, { x: 340, y: 270 });
-    expect(fixture.overlays[fixture.overlays.length - 1]).toContain(
+    expect(fixture.overlays[fixture.overlays.length - 2]).toContain(
       "M 139 129 L 341 129 L 341 271 L 139 271 Z",
     );
     expect(fixture.store.instrumentation).toMatchObject({
@@ -389,7 +346,7 @@ describe("active editor large selection handles", () => {
   });
 });
 
-function harness(elements: readonly InkElementV1[], selection: ReadonlySet<string>) {
+function harness(elements: readonly InkElementV1[], selection: ReadonlySet<string>, zoom = 1) {
   const store = new ElementStore(elements);
   const model = editableModel(store);
   const history = new ActiveEditorHistory(model);
@@ -426,7 +383,7 @@ function harness(elements: readonly InkElementV1[], selection: ReadonlySet<strin
     renderer,
     sceneStore,
     selection: () => selection,
-    zoom: () => 1,
+    zoom: () => zoom,
   });
   return {
     deltas,

@@ -5,9 +5,11 @@ import type {
   InkSnapshotV1,
   LineElementV1,
 } from "../../../../src/domain/schema/public";
+import { moveSelection } from "../../../../src/editor/selection/public";
 import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
 import { parseInkbookDocument } from "../../../../src/persistence/serialization/public";
+import { reportedRotatedTable } from "../../../fixtures/editor/reported-rotated-table";
 import { emptySnapshot, operation, persistenceHarness, rectangle } from "./vault-session-fixtures";
 
 describe("vault-backed connected selection moves", () => {
@@ -46,6 +48,27 @@ describe("vault-backed connected selection moves", () => {
         startConnection: line.startConnection,
       }),
     ]);
+  });
+
+  it("persists the reported rotated table after a rounding-sensitive move", async () => {
+    const table = reportedRotatedTable();
+    const { content, factory, session } = persistenceHarness(snapshot([table]));
+    await session.unlock(operation());
+    const model = requireModel(factory);
+    const history = new ActiveEditorHistory(model);
+    const moved = moveSelection([table], { x: -713.255, y: -144.957 })[0];
+    if (moved?.kind !== "table") throw new Error("Expected a moved table.");
+
+    expect(history.replace([table], [moved])).toBe(true);
+    expect(model.store.get(table.id)?.element).toEqual(moved);
+    await expect(
+      session.lockLatest({ ...operation(), operationId: 2, workspaceToken: 2 }),
+    ).resolves.toMatchObject({ revision: 8, status: "confirmed" });
+
+    const persisted = parseInkbookDocument(content());
+    expect(persisted.ok).toBe(true);
+    if (!persisted.ok) throw new Error("Expected a persisted rotated table document.");
+    expect(persisted.value.snapshot.elements).toEqual([moved]);
   });
 });
 

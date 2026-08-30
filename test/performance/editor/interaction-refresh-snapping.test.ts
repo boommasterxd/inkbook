@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { ElementStore, resolveConnectedTranslationPreview } from "../../../src/domain/store/public";
+import { resolveSelectionMoveSnap } from "../../../src/editor/selection/public";
 import {
   findSnapCandidate,
   SnapCandidateScratch,
 } from "../../../src/editor/snapping/snap-candidate";
 import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
-import { rectangle } from "../../unit/domain/store/fixtures";
+import { connectedLine, rectangle } from "../../unit/domain/store/fixtures";
 import {
   INTERACTION_REFRESH_PROFILE,
   interactionP99,
@@ -23,11 +24,12 @@ const SNAP_TARGET_COUNT = 10_000;
 
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz snapping and connection profile`, () => {
   it("keeps indexed semantic-anchor lookup within budget", async ({ annotate }) => {
-    const targets = Array.from({ length: SNAP_TARGET_COUNT }, (_, index) => snapTarget(index));
-    const store = new ElementStore(targets);
-    const sceneStore = new ElementSceneStore(store);
-    const scratch = new SnapCandidateScratch();
-    warmSnapScratch(sceneStore, scratch, targets);
+    const { sceneStore, scratch, store, targets } = createSnapFixture();
+    warmLookup(
+      targets,
+      (target, frame) => findCandidate(sceneStore, scratch, target, frame),
+      "Snap-candidate",
+    );
     store.resetInstrumentation();
     const allocationsBefore = scratch.allocationCount;
     let matched = 0;
@@ -38,10 +40,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz snapping and connection 
     });
 
     const p99 = interactionP99(durations);
-    expect(matched).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
-    expect(scratch.allocationCount).toBe(allocationsBefore);
-    expect(store.instrumentation.fullStoreScans).toBe(0);
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expectSnapProfile({ allocationsBefore, matched, p99, scratch, store });
     await annotate(interactionProfileAnnotation("snap candidate lookup", p99), "performance");
     sceneStore.release();
   });
@@ -69,17 +68,62 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz snapping and connection 
     expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
     await annotate(interactionProfileAnnotation("connected endpoint preview", p99), "performance");
   });
+
+  it("keeps whole-line endpoint snapping within budget", async ({ annotate }) => {
+    const { sceneStore, scratch, store, targets } = createSnapFixture();
+    const moving = {
+      ...connectedLine(),
+      end: { x: 100, y: 0 },
+      pivot: { x: 50, y: 0 },
+      start: { x: 0, y: 0 },
+      startConnection: null,
+    };
+    const selectedIds = new Set([moving.id]);
+    let matched = 0;
+    warmLookup(
+      targets,
+      (target, frame) => findMoveSnap(sceneStore, scratch, moving, selectedIds, target, frame),
+      "Selection-move snap",
+    );
+    store.resetInstrumentation();
+    const allocationsBefore = scratch.allocationCount;
+
+    const durations = measureInteractionFrames((frame) => {
+      const target = targets[(frame * 17) % targets.length]!;
+      if (findMoveSnap(sceneStore, scratch, moving, selectedIds, target, frame) !== null)
+        matched += 1;
+    });
+
+    const p99 = interactionP99(durations);
+    expectSnapProfile({ allocationsBefore, matched, p99, scratch, store });
+    await annotate(
+      interactionProfileAnnotation("selection move endpoint snap", p99),
+      "performance",
+    );
+    sceneStore.release();
+  });
 });
 
-function warmSnapScratch(
-  sceneStore: ElementSceneStore,
-  scratch: SnapCandidateScratch,
+function createSnapFixture() {
+  const targets = Array.from({ length: SNAP_TARGET_COUNT }, (_, index) => snapTarget(index));
+  const store = new ElementStore(targets);
+  return {
+    sceneStore: new ElementSceneStore(store),
+    scratch: new SnapCandidateScratch(),
+    store,
+    targets,
+  };
+}
+
+function warmLookup(
   targets: readonly ReturnType<typeof rectangle>[],
+  lookup: (target: ReturnType<typeof rectangle>, frame: number) => unknown,
+  label: string,
 ): void {
   for (let frame = 0; frame < INTERACTION_REFRESH_PROFILE.sampleCount; frame += 1) {
     const target = targets[(frame * 17) % targets.length]!;
-    if (findCandidate(sceneStore, scratch, target, frame) === null) {
-      throw new Error("Snap-candidate warm-up did not find its target.");
+    if (lookup(target, frame) === null) {
+      throw new Error(`${label} warm-up did not find its target.`);
     }
   }
 }
@@ -98,10 +142,14 @@ function findCandidate(
   target: ReturnType<typeof rectangle>,
   frame: number,
 ) {
+  const pointer = {
+    x: target.x + (frame % 3) * 0.1,
+    y: target.y + (frame % 5) * 0.1,
+  };
   return findSnapCandidate(
     {
       current: null,
-      pointer: { x: target.x + (frame % 3) * 0.1, y: target.y + (frame % 5) * 0.1 },
+      pointer,
       pointerType: "pen",
       zoom: 1,
     },
@@ -109,4 +157,42 @@ function findCandidate(
     { get: (id) => sceneStore.getSnapTarget(id) },
     scratch,
   );
+}
+
+function findMoveSnap(
+  sceneStore: ElementSceneStore,
+  scratch: SnapCandidateScratch,
+  moving: ReturnType<typeof connectedLine>,
+  selectedIds: ReadonlySet<string>,
+  target: ReturnType<typeof rectangle>,
+  frame: number,
+) {
+  const rawDelta = {
+    x: target.x + (frame % 3) * 0.1,
+    y: target.y + (frame % 5) * 0.1,
+  };
+  return resolveSelectionMoveSnap({
+    current: null,
+    elements: [moving],
+    pointerType: "pen",
+    rawDelta,
+    scratch,
+    selectedIds,
+    spatial: sceneStore,
+    targets: { get: (id) => sceneStore.getSnapTarget(id) },
+    zoom: 1,
+  });
+}
+
+function expectSnapProfile(input: {
+  readonly allocationsBefore: number;
+  readonly matched: number;
+  readonly p99: number;
+  readonly scratch: SnapCandidateScratch;
+  readonly store: ElementStore;
+}): void {
+  expect(input.matched).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
+  expect(input.scratch.allocationCount).toBe(input.allocationsBefore);
+  expect(input.store.instrumentation.fullStoreScans).toBe(0);
+  expect(input.p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
 }

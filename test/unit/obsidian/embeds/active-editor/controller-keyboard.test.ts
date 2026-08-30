@@ -21,6 +21,7 @@ function keyboardHarness(
     readonly activeElement?: Element | null;
     readonly canPaste?: boolean;
     readonly lastScreenPointer?: InputPoint | null;
+    readonly navigationEnabled?: boolean;
     readonly pointerOver?: boolean;
     readonly selectionSize?: number;
     readonly history?: ActiveEditorHistory;
@@ -57,6 +58,7 @@ function keyboardHarness(
     history: options.history ?? history(),
     lastScreenPointer: () => options.lastScreenPointer ?? null,
     navigation,
+    navigationEnabled: () => options.navigationEnabled ?? true,
     ownerDocument,
     onFeedback,
     onPendingChanged: vi.fn(),
@@ -148,6 +150,13 @@ describe("active editor keyboard controller", () => {
     expect(harness.controller.handleDocumentKeyDown(key("Delete"))).toBe(false);
     expect(harness.execute).not.toHaveBeenCalled();
     expect(harness.shortcutPaste).not.toHaveBeenCalled();
+    expect(harness.updateKeyboard).not.toHaveBeenCalled();
+  });
+
+  it("claims but does not apply keyboard zoom during a stable geometry gesture", () => {
+    const harness = keyboardHarness({ navigationEnabled: false });
+
+    expect(harness.controller.handleKeyDown(key("+", { ctrlKey: true }))).toBe(true);
     expect(harness.updateKeyboard).not.toHaveBeenCalled();
   });
 

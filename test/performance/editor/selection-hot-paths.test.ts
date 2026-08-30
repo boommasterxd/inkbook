@@ -12,6 +12,7 @@ import type { TimeSlicedSelectionCommitPreparation } from "../../../src/editor/s
 import {
   createLassoSelectionArea,
   createRectangleSelectionArea,
+  LassoSelectionSession,
   SelectionHandleSession,
   selectBySelectionAreaQuery,
   selectionOverlayContainsPoint,
@@ -30,6 +31,26 @@ import { INTERACTION_REFRESH_PROFILE, interactionP99 } from "../interaction-refr
 import { timingBudget } from "../timing-budget";
 
 describe("selection hot paths", () => {
+  it("reduces a maximum coalesced lasso batch within one interaction budget", () => {
+    const samples = Array.from({ length: 4_096 }, (_, index) => ({
+      x: index * 2,
+      y: 40 + Math.sin(index / 12) * 24,
+    }));
+    new LassoSelectionSession({ x: 0, y: 40 }, 1).appendBatch(samples);
+    const durations = Array.from({ length: 120 }, () => {
+      const session = new LassoSelectionSession({ x: 0, y: 40 }, 1);
+      const started = performance.now();
+      session.appendBatch(samples);
+      const duration = performance.now() - started;
+      expect(session.points.length).toBeLessThanOrEqual(512);
+      return duration;
+    });
+
+    expect(interactionP99(durations)).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
+  });
+
   it("classifies rectangle and bounded lasso candidates in a 10,000-stroke index", () => {
     const elements = Array.from({ length: 10_000 }, (_, index) => indexedStroke(index));
     const store = new ElementStore(elements);

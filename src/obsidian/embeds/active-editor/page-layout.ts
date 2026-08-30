@@ -14,6 +14,7 @@ export interface PageHeightUpdate {
 export class ActivePageLayout {
   #height: number | undefined;
   #queuedHeight: number | undefined;
+  #selectionOriginalHeight: number | undefined;
   #transitionTarget: number | undefined;
 
   public get height(): number | undefined {
@@ -37,6 +38,44 @@ export class ActivePageLayout {
     const shouldShrink = extent.activeHeight <= reference - extent.bufferUnit;
     if (!force && !shouldGrow && !shouldShrink) return undefined;
     return this.#request(extent.activeHeight);
+  }
+
+  public beginSelectionMove(): PageHeightUpdate | undefined {
+    const height = this.height;
+    if (height === undefined) return undefined;
+    this.#selectionOriginalHeight = height;
+    if (this.#transitionTarget === undefined && this.#queuedHeight === undefined) return undefined;
+    this.#height = height;
+    this.#transitionTarget = undefined;
+    this.#queuedHeight = undefined;
+    return { animate: false, height };
+  }
+
+  public previewSelectionMove(page: PageV1, maximumBottom: number): PageHeightUpdate | undefined {
+    if (this.#selectionOriginalHeight === undefined || !Number.isFinite(maximumBottom)) {
+      return undefined;
+    }
+    const target = derivePageExtent(page, maximumBottom).activeHeight;
+    const height = this.height;
+    if (height !== undefined && target <= height) return undefined;
+    this.#height = target;
+    this.#transitionTarget = undefined;
+    this.#queuedHeight = undefined;
+    return { animate: false, height: target };
+  }
+
+  public finishSelectionMove(
+    committed: boolean,
+    page: PageV1,
+    maximumBottom: number | undefined,
+  ): PageHeightUpdate | undefined {
+    const originalHeight = this.#selectionOriginalHeight;
+    if (originalHeight === undefined) return undefined;
+    this.#selectionOriginalHeight = undefined;
+    const target = committed
+      ? derivePageExtent(page, maximumBottom ?? null).activeHeight
+      : originalHeight;
+    return this.#request(target);
   }
 
   public completeTransitions(): PageHeightUpdate | undefined {

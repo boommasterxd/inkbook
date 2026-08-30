@@ -9,8 +9,9 @@ import { calculateElementBounds } from "../../../../../src/domain/geometry/publi
 import { MAX_ABSOLUTE_COORDINATE } from "../../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../../src/domain/store/public";
 import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
-import type { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
+import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
 import type { PreparedElementHistory } from "../../../../../src/obsidian/embeds/active-editor/prepared-element-history";
+import { createSynchronousActiveEditorHistory } from "../../../../fixtures/obsidian/synchronous-active-editor-history";
 import { connectedLine, rectangle } from "../../../domain/store/fixtures";
 
 function createPreview(edgeDrag: SelectionEdgeDragPort) {
@@ -44,8 +45,9 @@ function createPreview(edgeDrag: SelectionEdgeDragPort) {
 function createEdgeDrag() {
   return {
     begin: vi.fn<() => void>(),
-    finish: vi.fn<() => void>(),
+    finish: vi.fn<(committed: boolean) => void>(),
     update: vi.fn<(pointer: { readonly x: number; readonly y: number }) => void>(),
+    updatePreviewBottom: vi.fn<(maximumBottom: number) => void>(),
   };
 }
 
@@ -58,7 +60,7 @@ describe("selection move edge-drag integration", () => {
     preview.update({ pointerId: 1, pointerType: "mouse", x: 20, y: 30 });
     expect(edgeDrag.update).toHaveBeenCalledWith({ x: 30, y: 50 });
     preview.revert();
-    expect(edgeDrag.finish).toHaveBeenCalledOnce();
+    expect(edgeDrag.finish).toHaveBeenCalledWith(false);
   });
 
   it("restores the exact committed height even when the move is a no-op", () => {
@@ -66,7 +68,7 @@ describe("selection move edge-drag integration", () => {
     const preview = createPreview(edgeDrag);
 
     expect(preview.commit()).toBe(false);
-    expect(edgeDrag.finish).toHaveBeenCalledOnce();
+    expect(edgeDrag.finish).toHaveBeenCalledWith(false);
   });
 });
 
@@ -155,7 +157,63 @@ describe("selection move edge-drag validation", () => {
     expect(preview.commit()).toBe(false);
     expect(clearPreviewTransforms).toHaveBeenCalledOnce();
     expect(setSelectionOverlayPath).toHaveBeenLastCalledWith(expect.any(String), "accent");
-    expect(edgeDrag.finish).toHaveBeenCalledOnce();
+    expect(edgeDrag.finish).toHaveBeenCalledWith(false);
+  });
+});
+
+describe("selection move connected geometry", () => {
+  it("snaps a moved free line endpoint to a shape and renders an offset target marker", () => {
+    const target = rectangle();
+    const line = {
+      ...connectedLine(target),
+      end: { x: 350, y: 50 },
+      pivot: { x: 200, y: 50 },
+      start: { x: 50, y: 50 },
+      startConnection: null,
+    };
+    const store = new ElementStore([target, line]);
+    const sceneStore = new ElementSceneStore(store);
+    const setPreviewTransform = vi.fn();
+    const setSnapMarkerPath = vi.fn();
+    const history = createSynchronousActiveEditorHistory(store);
+    const preview = new MovePreview({
+      history,
+      pageToScreen: (point) => point,
+      preparedHistory: { commitMove: vi.fn(() => false) } as unknown as PreparedElementHistory,
+      renderer: {
+        clearPreviewTransforms: vi.fn(),
+        setOverlayPath: vi.fn(),
+        setPreviewTransform,
+        setSnapMarkerPath,
+        suppressMotionForNextDelta: vi.fn(),
+      },
+      sceneStore,
+      selection: () => new Set([line.id]),
+      setSelection: vi.fn(),
+      start: {
+        additive: false,
+        kind: "element-move",
+        pointer: pointer(0, 0),
+        tool: "select",
+      },
+      store,
+    });
+
+    preview.update(pointer(47, 48));
+
+    expect(setPreviewTransform).toHaveBeenLastCalledWith([line.id], "translate(50 50)", 1);
+    expect(setSnapMarkerPath.mock.lastCall?.[0]).toContain("M 92 100 L 108 100");
+    expect(setSnapMarkerPath.mock.lastCall?.[0]).toContain("M 124 71");
+    expect(preview.commit()).toBe(true);
+    expect(store.get(line.id)?.element).toMatchObject({
+      start: { x: 100, y: 100 },
+      startConnection: {
+        anchor: { kind: "box", position: "top-left" },
+        targetId: target.id,
+      },
+    });
+    expect(setSnapMarkerPath).toHaveBeenLastCalledWith(null);
+    sceneStore.release();
   });
 });
 
@@ -177,7 +235,7 @@ describe("selection move connected geometry", () => {
       pageToScreen: (point) => point,
       preparedHistory: {} as PreparedElementHistory,
       renderer,
-      sceneStore: {} as ElementSceneStore,
+      sceneStore: new ElementSceneStore(store),
       selection: () => new Set([element.id]),
       setSelection: vi.fn(),
       start: {
@@ -217,7 +275,7 @@ describe("selection move connected geometry", () => {
         setSelectionOverlayPath,
         suppressMotionForNextDelta: vi.fn(),
       },
-      sceneStore: {} as ElementSceneStore,
+      sceneStore: new ElementSceneStore(store),
       selection: () => new Set([line.id]),
       setSelection: vi.fn(),
       start: {
@@ -261,15 +319,8 @@ describe("selection area preview", () => {
   });
 
   it("renders and commits a closed freeform lasso through the spatial query", () => {
-    const element = rectangle();
-    const bounds = calculateElementBounds(element);
-    const fixture = selectionAreaHarness({ area: "lasso", inclusion: "fully-enclosed" }, element, {
-      x: bounds.minX - 2,
-      y: bounds.minY - 2,
-    });
-    fixture.preview.update(pointer(bounds.maxX + 2, bounds.minY - 2));
-    fixture.preview.update(pointer(bounds.maxX + 2, bounds.maxY + 2));
-    fixture.preview.update(pointer(bounds.minX - 2, bounds.maxY + 2));
+    const { bounds, element, fixture } = enclosedLassoHarness();
+    encloseRectangle(fixture.preview, bounds);
 
     expect(fixture.overlay.mock.lastCall?.[0]).toContain(" Z");
     expect(fixture.preview.commit()).toBe(true);
@@ -277,14 +328,31 @@ describe("selection area preview", () => {
     fixture.release();
   });
 
+  it("commits additive selection against the gesture-start selection snapshot", () => {
+    const { bounds, element, fixture } = enclosedLassoHarness({
+      additive: true,
+      initialSelection: new Set(["selection-at-start"]),
+    });
+    encloseRectangle(fixture.preview, bounds);
+    fixture.replaceSelection(new Set(["late-selection-change"]));
+
+    expect(fixture.preview.commit()).toBe(true);
+    expect(fixture.selected()).toEqual(new Set(["selection-at-start", element.id]));
+    fixture.release();
+  });
+
   it("bounds a dense freeform pointer path and clears it on cancellation", () => {
     const fixture = selectionAreaHarness({ area: "lasso", inclusion: "touched" }, rectangle());
-    for (let index = 0; index < 900; index += 1) {
-      fixture.preview.update(pointer(index * 2, index % 2 === 0 ? 20 : 24));
-    }
+    fixture.preview.updateSamples(
+      Array.from({ length: 4_096 }, (_, index) => ({
+        ...pointer(index * 2, index % 2 === 0 ? 20 : 24),
+        time: index,
+      })),
+    );
 
     const path = fixture.overlay.mock.lastCall?.[0] ?? "";
     expect(path.match(/ L /gu)?.length ?? 0).toBeLessThan(512);
+    expect(fixture.overlay).toHaveBeenCalledTimes(2);
     fixture.preview.revert();
     expect(fixture.overlay).toHaveBeenLastCalledWith(null);
     fixture.release();
@@ -301,11 +369,15 @@ function selectionAreaHarness(
     x: calculateElementBounds(element).minX - 2,
     y: calculateElementBounds(element).minY - 2,
   },
+  configuration: {
+    readonly additive?: boolean;
+    readonly initialSelection?: ReadonlySet<string>;
+  } = {},
 ) {
   const store = new ElementStore([element]);
   const sceneStore = new ElementSceneStore(store);
   const overlay = vi.fn<(path: string | null) => void>();
-  let selection: ReadonlySet<string> = new Set();
+  let selection: ReadonlySet<string> = new Set(configuration.initialSelection);
   const preview = new LassoPreview({
     history: {} as ActiveEditorHistory,
     pageToScreen: (point) => point,
@@ -323,7 +395,7 @@ function selectionAreaHarness(
       selection = next;
     },
     start: {
-      additive: false,
+      additive: configuration.additive ?? false,
       kind: "lasso",
       pointer: pointer(start.x, start.y),
       tool: "select",
@@ -333,11 +405,45 @@ function selectionAreaHarness(
   return {
     overlay,
     preview,
+    replaceSelection: (next: ReadonlySet<string>) => {
+      selection = next;
+    },
     release: () => sceneStore.release(),
     selected: () => selection,
   };
 }
 
+function enclosedLassoHarness(
+  configuration: {
+    readonly additive?: boolean;
+    readonly initialSelection?: ReadonlySet<string>;
+  } = {},
+) {
+  const element = rectangle();
+  const bounds = calculateElementBounds(element);
+  return {
+    bounds,
+    element,
+    fixture: selectionAreaHarness(
+      { area: "lasso", inclusion: "fully-enclosed" },
+      element,
+      { x: bounds.minX - 2, y: bounds.minY - 2 },
+      configuration,
+    ),
+  };
+}
+
 function pointer(x: number, y: number) {
   return { pointerId: 10, pointerType: "mouse" as const, pressure: 0.5, x, y };
+}
+
+function encloseRectangle(
+  preview: LassoPreview,
+  bounds: ReturnType<typeof calculateElementBounds>,
+): void {
+  preview.updateSamples([
+    { ...pointer(bounds.maxX + 2, bounds.minY - 2), time: 1 },
+    { ...pointer(bounds.maxX + 2, bounds.maxY + 2), time: 2 },
+    { ...pointer(bounds.minX - 2, bounds.maxY + 2), time: 3 },
+  ]);
 }

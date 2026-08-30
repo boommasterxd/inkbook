@@ -98,9 +98,11 @@ export class SceneDom {
     overlayGroup.setAttribute("class", "inkbook-scene-overlays inkbook-scene-foreground");
     this.livePath.setAttribute("pointer-events", "none");
     this.overlayPath.setAttribute("pointer-events", "none");
+    this.overlayPath.setAttribute("fill-rule", "evenodd");
     this.selectionOverlayPath.setAttribute("class", "inkbook-selection-overlay");
     this.selectionOverlayPath.setAttribute("data-selection-fill", "accent");
     this.selectionOverlayPath.setAttribute("pointer-events", "none");
+    this.snapMarkerPath.setAttribute("class", "inkbook-snap-guide");
     this.snapMarkerPath.setAttribute("pointer-events", "none");
     themeStyle.textContent = ACTIVE_THEME_STYLESHEET;
 

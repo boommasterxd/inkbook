@@ -1,4 +1,5 @@
 import type { InputPoint } from "../../../editor/input/index";
+import { keyboardZoomFactor } from "../../../editor/zoom/index";
 import { shouldHandleClipboardShortcut } from "../../../persistence/clipboard/public";
 
 import type { ActiveEditorActions } from "./controller-actions";
@@ -16,6 +17,7 @@ export interface ActiveEditorKeyboardOptions {
   readonly closeFlyout: () => boolean;
   readonly history: ActiveEditorHistory;
   readonly navigation: ActiveEditorNavigation;
+  readonly navigationEnabled: () => boolean;
   readonly ownerDocument: Document;
   readonly onFeedback: (code: InkbookFeedbackCode) => void;
   readonly onPendingChanged: (pending: boolean) => void;
@@ -85,6 +87,8 @@ export class ActiveEditorKeyboardController {
       return false;
     if (!this.#pointerOver || isTextField(event.target, this.#options.activeElement()))
       return false;
+    if (keyboardZoomFactor(event) === undefined) return false;
+    if (!this.#options.navigationEnabled()) return true;
     return this.#options.navigation.updateKeyboard(event, this.#options.lastScreenPointer());
   }
 

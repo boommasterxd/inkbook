@@ -168,6 +168,9 @@ function startSinglePointer(state: InputState, action: PointerDownAction): Input
     capture.push(longPressEffect(action.pointerId));
     return withInteraction(inputState, interaction, capture);
   }
+  if (action.pointerType === "touch" && tool === "select") {
+    return withInteraction(inputState, { ...base, phase: "lasso" }, capture);
+  }
   if (action.pointerType === "touch" && !fingerDrawingEnabled(state)) {
     const interaction: InputInteraction = {
       ...base,

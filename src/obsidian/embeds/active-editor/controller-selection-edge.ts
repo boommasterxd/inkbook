@@ -5,16 +5,23 @@ import { SelectionEdgeAutoScroller, type SelectionEdgeViewport } from "./selecti
 import type { SelectionEdgeDragPort } from "./selection-preview";
 
 export interface ActiveEditorSelectionEdgeOptions {
+  readonly layout: {
+    begin(): void;
+    finish(committed: boolean): void;
+    updateBottom(maximumBottom: number): void;
+  };
   readonly navigation: ActiveEditorNavigation;
   readonly ownerWindow: Window;
   readonly scrollOwner: () => BrowserScrollElement;
 }
 
 export class ActiveEditorSelectionEdgeDrag implements SelectionEdgeDragPort {
+  readonly #layout: ActiveEditorSelectionEdgeOptions["layout"];
   readonly #scroller: SelectionEdgeAutoScroller;
   #onViewportChanged: (() => void) | undefined;
 
   public constructor(options: ActiveEditorSelectionEdgeOptions) {
+    this.#layout = options.layout;
     this.#scroller = new SelectionEdgeAutoScroller({
       cancelFrame: (handle) => options.ownerWindow.cancelAnimationFrame(handle),
       onFrame: () => this.#onViewportChanged?.(),
@@ -28,16 +35,22 @@ export class ActiveEditorSelectionEdgeDrag implements SelectionEdgeDragPort {
   }
 
   public begin(onViewportChanged?: () => void): void {
+    this.#layout.begin();
     this.#onViewportChanged = onViewportChanged;
   }
 
-  public finish(): void {
+  public finish(committed: boolean): void {
     this.#scroller.finish();
     this.#onViewportChanged = undefined;
+    this.#layout.finish(committed);
   }
 
   public update(screenPointer: { readonly x: number; readonly y: number }): void {
     this.#scroller.update(screenPointer);
+  }
+
+  public updatePreviewBottom(maximumBottom: number): void {
+    this.#layout.updateBottom(maximumBottom);
   }
 }
 

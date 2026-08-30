@@ -32,17 +32,31 @@ export type SelectionPreviewTransform =
     }
   | {
       readonly center: PointV1;
-      readonly currentPointer: PointV1;
+      readonly degrees: number;
       readonly kind: "rotate";
-      readonly startPointer: PointV1;
     };
 
 export interface SelectionHandlePreview {
   readonly exactElements: readonly InkElementV1[];
   readonly exactPreviewTruncated: boolean;
   readonly snapCandidate: SnapCandidate | null;
+  readonly snapGuide: SelectionSnapGuide | null;
   readonly transform: SelectionPreviewTransform | null;
 }
+
+export type SelectionSnapGuide =
+  | { readonly kind: "anchor"; readonly point: PointV1 }
+  | {
+      readonly center: PointV1;
+      readonly handle: PointV1;
+      readonly kind: "rotation";
+    }
+  | {
+      readonly curvePoint: PointV1;
+      readonly end: PointV1;
+      readonly kind: "bend";
+      readonly start: PointV1;
+    };
 
 export interface SelectionSnapPorts {
   readonly pointerType: SnapLookupInput["pointerType"];

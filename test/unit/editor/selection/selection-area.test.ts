@@ -83,6 +83,34 @@ describe("selection area creation", () => {
 });
 
 describe("selection area inclusion", () => {
+  it("uses even-odd inclusion for a lasso that loops around the same area twice", () => {
+    const area = createLassoSelectionArea([
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 },
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 },
+    ]);
+    const target = {
+      ...rectangle(),
+      height: 2,
+      pivot: { x: 5, y: 5 },
+      style: {
+        ...rectangle().style,
+        fillColor: { type: "rgba" as const, value: "#112233FF" as const },
+        fillOpacity: 1,
+      },
+      width: 2,
+      x: 4,
+      y: 4,
+    };
+
+    expect(elementMatchesSelectionArea(area, target, "touched")).toBe(false);
+  });
+
   it("distinguishes touched from fully enclosed using line width", () => {
     const target = simpleLine({ x: 10, y: 10 }, { x: 30, y: 10 }, 4);
     const touching = createRectangleSelectionArea({ x: 5, y: 5 }, { x: 35, y: 11 });

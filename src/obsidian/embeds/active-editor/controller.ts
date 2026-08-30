@@ -145,6 +145,7 @@ export class ActiveEditorController {
       },
     });
     this.#selectionEdgeDrag = createActiveEditorSelectionEdgeDrag({
+      layout: options.selectionMoveLayout,
       navigation: this.#navigation,
       ownerWindow,
       scrollOwner: () => this.#scrollOwner,
@@ -237,9 +238,8 @@ export class ActiveEditorController {
     this.#penGuard.stop();
   }
   public recoverTouchTerminal(pointerId: number): void {
-    if (ControllerTouch.touchInteractionOwnsPointer(this.#input.interaction, pointerId)) {
+    if (ControllerTouch.touchInteractionOwnsPointer(this.#input.interaction, pointerId))
       this.#pointer.cancelPointer(pointerId);
-    }
   }
   public handleToolbarAction(action: ToolbarAction, trigger?: HTMLButtonElement): void {
     if (!this.#availability.acceptsInput) return;
@@ -265,12 +265,15 @@ export class ActiveEditorController {
     this.#captures.runIfOwned(event.pointerId, () => this.#pointer.handleLostPointerCapture(event));
   public handleWheel(event: WheelEvent): void {
     if (!this.#availability.acceptsInput) return;
+    if (this.#hasStableGeometryGesture()) {
+      this.#navigation.cancelPanMomentum();
+      if (event.cancelable) event.preventDefault();
+      return;
+    }
     if (this.#navigation.updateWheel(event)) event.preventDefault();
   }
-  public handlePaste(data: SynchronousClipboardData | null): boolean {
-    if (!this.#availability.acceptsInput) return false;
-    return this.#keyboard.handlePaste(data);
-  }
+  public readonly handlePaste = (data: SynchronousClipboardData | null): boolean =>
+    this.#availability.acceptsInput && this.#keyboard.handlePaste(data);
   public readonly isActionAvailable = (action: ContextMenuAction): boolean =>
     this.#actions.isAvailable(action);
   public readonly executeAction = (action: ContextMenuAction): void =>
@@ -279,27 +282,21 @@ export class ActiveEditorController {
     this.#availability.setEnabled(enabled);
     if (enabled) void this.#actions.refreshPasteAvailability();
   }
-  public setLayout(layout: ToolbarLayoutStage): void {
+  public readonly setLayout = (layout: ToolbarLayoutStage): void =>
     this.#chromeState.setLayout(layout);
-  }
-  public setZoom(zoom: number): void {
-    this.#navigation.setZoom(zoom);
-  }
+  public readonly setZoom = (zoom: number): void => this.#navigation.setZoom(zoom);
   public applyResize(update: ActiveEditorResizeUpdate): boolean {
+    if (this.#hasStableGeometryGesture()) this.#cancelActiveGesture();
     return this.#navigation.applyResize(update);
   }
-  public getViewState(): ActiveEditorViewState {
-    return this.#navigation.getViewState();
-  }
-  public readResizeAnchor(): ActiveEditorResizeAnchor | undefined {
-    return this.#navigation.readResizeAnchor();
-  }
+  public readonly getViewState = (): ActiveEditorViewState => this.#navigation.getViewState();
+  public readonly readResizeAnchor = (): ActiveEditorResizeAnchor | undefined =>
+    this.#navigation.readResizeAnchor();
   public recordMarkdownHistory(): void {
     if (this.#availability.acceptsInput) this.#keyboard.recordMarkdownHistory();
   }
-  public restoreViewState(state: ActiveEditorViewState): boolean {
-    return this.#navigation.restoreViewState(state);
-  }
+  public readonly restoreViewState = (state: ActiveEditorViewState): boolean =>
+    this.#navigation.restoreViewState(state);
   public transferScrollOwner(scrollOwner: Scrolling.BrowserScrollElement): boolean {
     if (scrollOwner === this.#scrollOwner) return false;
     this.#penGuard.stop();
@@ -433,6 +430,7 @@ export class ActiveEditorController {
       history: this.#history,
       lastScreenPointer: () => this.#lastSessionScreenPointer,
       navigation: this.#navigation,
+      navigationEnabled: () => !this.#hasStableGeometryGesture(),
       ownerDocument: this.#ownerWindow.document,
       onFeedback: options.onFeedback,
       onPendingChanged: (pending) => this.#availability.setPending(pending),
@@ -440,6 +438,11 @@ export class ActiveEditorController {
         this.#dispatch({ type: "context-menu", source: "keyboard", ...position }),
       selectionSize: () => this.#selection.size,
     });
+  }
+  #hasStableGeometryGesture(): boolean {
+    return (
+      this.#handles.activePointerId !== undefined || this.#input.interaction?.phase === "lasso"
+    );
   }
   #createPointerController(ownerWindow: Window): ActiveEditorPointerController {
     return new ActiveEditorPointerController({
