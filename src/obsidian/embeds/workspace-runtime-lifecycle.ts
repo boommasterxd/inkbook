@@ -163,11 +163,6 @@ export class WorkspaceRuntimeLifecycle {
     if (this.#pendingExternalChanges.has(event.documentId)) {
       this.#confirmedHostWrites.add(event.documentId);
     }
-    for (const mounted of this.#options.presentations()) {
-      if (mounted.attachment.documentId === event.documentId) {
-        mounted.attachment.setPreviewAspectRatio?.(event.lockedAspectRatio);
-      }
-    }
     const hint = this.#insertionUndoHints.get(event.documentId);
     if (hint?.strokeCommitted === true) {
       this.#insertionUndoHints.delete(event.documentId);
@@ -251,7 +246,9 @@ export class WorkspaceRuntimeLifecycle {
     const source = withRevision(this.#options.vault.getResourcePath(file), cacheKey);
     for (const mounted of this.#options.presentations()) {
       if (mounted.attachment.documentId !== documentId) continue;
-      mounted.scene?.setPreviewSource(source);
+      if (mounted.scene === undefined) {
+        void mounted.attachment.setPreviewSource?.(source).catch(() => undefined);
+      } else mounted.scene.setPreviewSource(source);
       updatePreviewImages(mounted.attachment.root, source);
     }
   }

@@ -23,7 +23,7 @@ import { selectedElements } from "./controller-elements";
 import type { ActiveEditorHistory } from "./history";
 import type { PreparedElementHistory } from "./prepared-element-history";
 import type { ElementSceneStore } from "./scene-store";
-import { selectionOverlayFill, selectionOverlayPath } from "./selection-overlay-path";
+import { selectionOverlayFill, selectionOverlayPaths } from "./selection-overlay-path";
 import { selectionSnapGuidePath } from "./snap-marker-path";
 
 const HANDLE_RADIUS_PIXELS = 13;
@@ -33,6 +33,11 @@ const TOUCH_HANDLE_RADIUS_PIXELS = 24;
 
 export interface ActiveEditorHandleInteractionOptions {
   readonly history: ActiveEditorHistory;
+  readonly layout?: {
+    begin(): void;
+    finish(committed: boolean, previewMaximumBottom?: number): void;
+    updateBottom(maximumBottom: number): void;
+  };
   readonly model: EditableDocumentModel;
   readonly pageToScreen: (point: PointV1) => PointV1;
   readonly preparedHistory: PreparedElementHistory;
@@ -46,7 +51,11 @@ export interface HandleInteractionRenderer {
   clearElementPreviews(): void;
   clearPreviewTransforms(): void;
   setElementPreviews(elements: readonly InkElementV1[], version: number): void;
-  setSelectionOverlayPath(d: string | null, fill?: "accent" | "none"): void;
+  setSelectionOverlayPath(
+    d: string | null,
+    fill?: "accent" | "none",
+    handles?: string | null,
+  ): void;
   setSnapMarkerPath(d: string | null): void;
   setPreviewTransform(
     ids: readonly string[],
@@ -69,6 +78,7 @@ interface ActiveHandleGesture {
 
 export class ActiveEditorHandleInteraction {
   readonly #history: ActiveEditorHistory;
+  readonly #layout: ActiveEditorHandleInteractionOptions["layout"];
   readonly #model: EditableDocumentModel;
   readonly #pageToScreen: (point: PointV1) => PointV1;
   readonly #preparedHistory: PreparedElementHistory;
@@ -77,10 +87,12 @@ export class ActiveEditorHandleInteraction {
   readonly #selection: () => ReadonlySet<string>;
   readonly #zoom: () => number;
   #active: ActiveHandleGesture | undefined;
+  #previewMaximumBottom: number | undefined;
   #version = 0;
 
   public constructor(options: ActiveEditorHandleInteractionOptions) {
     this.#history = options.history;
+    this.#layout = options.layout;
     this.#model = options.model;
     this.#pageToScreen = options.pageToScreen;
     this.#preparedHistory = options.preparedHistory;
@@ -104,6 +116,7 @@ export class ActiveEditorHandleInteraction {
       return false;
     }
     active.session.cancel();
+    this.#layout?.finish(false);
     this.#finish();
     return true;
   }
@@ -145,6 +158,7 @@ export class ActiveEditorHandleInteraction {
         elements,
         planner: this.#model.store,
         snap: {
+          canConnect: (sourceId, targetId) => this.#sceneStore.canConnect(sourceId, targetId),
           pointerType: pointer.pointerType,
           spatial: { query: (bounds, sink) => this.#sceneStore.query(bounds, sink) },
           targets: {
@@ -156,6 +170,8 @@ export class ActiveEditorHandleInteraction {
       }),
     };
     this.#model.setGestureActive(true);
+    this.#previewMaximumBottom = undefined;
+    this.#layout?.begin();
     return true;
   }
 
@@ -167,6 +183,7 @@ export class ActiveEditorHandleInteraction {
       y: pointer.y - active.grabOffset.y,
     });
     const connected = this.#connectedPreview(active, preview);
+    this.#updatePreviewBottom(active, preview, connected.elements);
     this.#renderTransform(
       active.ids.filter((id) => !connected.selectedPreviewIds.has(id)),
       preview.transform,
@@ -182,8 +199,15 @@ export class ActiveEditorHandleInteraction {
     if (commit.status === "ready") {
       this.#renderer.suppressMotionForNextDelta(commit.previous.map(({ id }) => id));
       this.#history.replace(commit.previous, commit.replacements);
+      this.#layout?.finish(true, this.#previewMaximumBottom);
     } else if (commit.status === "time-sliced-required") {
-      this.#preparedHistory.commitHandle(active.session);
+      const previewMaximumBottom = this.#previewMaximumBottom;
+      const accepted = this.#preparedHistory.commitHandle(active.session, (committed) => {
+        this.#layout?.finish(committed, previewMaximumBottom);
+      });
+      if (!accepted) this.#layout?.finish(false);
+    } else {
+      this.#layout?.finish(false);
     }
     this.#finish();
     return true;
@@ -196,10 +220,48 @@ export class ActiveEditorHandleInteraction {
 
   #finish(): void {
     this.#active = undefined;
+    this.#previewMaximumBottom = undefined;
     this.#model.setGestureActive(false);
     this.#renderer.clearPreviewTransforms();
     this.#renderer.clearElementPreviews();
     this.renderSelection();
+  }
+
+  #updatePreviewBottom(
+    active: ActiveHandleGesture,
+    preview: SelectionHandlePreview,
+    connectedElements: readonly InkElementV1[],
+  ): void {
+    let maximumBottom = Number.NEGATIVE_INFINITY;
+    for (const element of preview.exactElements) {
+      maximumBottom = Math.max(maximumBottom, calculateElementBounds(element).maxY);
+    }
+    for (const element of connectedElements) {
+      maximumBottom = Math.max(maximumBottom, calculateElementBounds(element).maxY);
+    }
+    if (preview.transform !== null) {
+      const outline = selectionOverlayGeometry(
+        active.selected,
+        this.#zoom(),
+        preview.transform,
+      )?.outline;
+      if (outline?.kind === "linear") {
+        maximumBottom = Math.max(
+          maximumBottom,
+          outline.start.y,
+          outline.end.y,
+          outline.bend?.y ?? Number.NEGATIVE_INFINITY,
+        );
+      } else if (outline !== undefined) {
+        for (const point of outline.points) maximumBottom = Math.max(maximumBottom, point.y);
+      }
+    }
+    if (!Number.isFinite(maximumBottom)) return;
+    this.#previewMaximumBottom = Math.max(
+      this.#previewMaximumBottom ?? maximumBottom,
+      maximumBottom,
+    );
+    this.#layout?.updateBottom(this.#previewMaximumBottom);
   }
 
   #renderPreview(
@@ -258,13 +320,15 @@ export class ActiveEditorHandleInteraction {
     snap: SelectionHandlePreview["snapGuide"],
     transform: SelectionPreviewTransform | null = null,
   ): void {
+    const paths = selectionOverlayPaths(selected, {
+      pageToScreen: this.#pageToScreen,
+      transform,
+      zoom: this.#zoom(),
+    });
     this.#renderer.setSelectionOverlayPath(
-      selectionOverlayPath(selected, {
-        pageToScreen: this.#pageToScreen,
-        transform,
-        zoom: this.#zoom(),
-      }),
+      paths.outline,
       selectionOverlayFill(selected),
+      paths.handles,
     );
     this.#renderer.setSnapMarkerPath(
       snap === null ? null : selectionSnapGuidePath(snap, this.#pageToScreen),
@@ -363,11 +427,19 @@ function handleAction(
       ? { axisIndex: handle.axisIndex, elementId: only.id, kind: handle.kind }
       : { elementId: only.id, kind: handle.kind };
   }
+  if (handle.kind === "table-header" || handle.kind === "table-column") {
+    if (only === undefined) throw new Error("A table handle requires one selected element.");
+    return handle.kind === "table-column"
+      ? {
+          elementId: only.id,
+          kind: handle.kind,
+          separatorIndex: handle.separatorIndex,
+        }
+      : { elementId: only.id, kind: handle.kind };
+  }
   const bounds = selectionBounds(selected);
   if (bounds === null) throw new Error("Selection bounds are unavailable.");
-  if (handle.kind === "rotate") {
-    return { center: only?.pivot ?? boundsCenter(bounds), kind: handle.kind };
-  }
+  if (handle.kind === "rotate") return rotationHandleAction(only, bounds);
   return {
     anchor:
       only === undefined
@@ -375,6 +447,20 @@ function handleAction(
         : oppositeElementHandlePoint(only, handle.position),
     kind: handle.kind,
     position: handle.position,
+  };
+}
+
+function rotationHandleAction(
+  element: InkElementV1 | undefined,
+  bounds: Bounds,
+): Extract<SelectionHandleAction, { kind: "rotate" }> {
+  return {
+    center: element?.pivot ?? boundsCenter(bounds),
+    kind: "rotate",
+    opposite:
+      element === undefined
+        ? oppositePoint(bounds, "top-center")
+        : oppositeElementHandlePoint(element, "top-center"),
   };
 }
 

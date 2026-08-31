@@ -12,6 +12,7 @@ import {
 } from "../../../../src/editor/selection/public";
 import { connectedLine, rectangle } from "../../domain/store/fixtures";
 import { coordinateSystem } from "../../domain/store/fixtures";
+import { straightHighlighter } from "../../domain/schema/fixtures";
 
 function selected(element: InkElementV1) {
   return { bounds: calculateElementBounds(element), element };
@@ -56,6 +57,18 @@ describe("selection handle geometry", () => {
       "linear-bend",
     ]);
     expect(handles[2]?.point).toEqual({ x: 250, y: 100 });
+  });
+
+  it("exposes endpoint and bend handles for straight highlighters without box or rotate handles", () => {
+    const highlighter = straightHighlighter();
+    const handles = layoutSelectionHandles([selected(highlighter)], { zoom: 1 });
+
+    expect(handles.map(({ kind }) => kind)).toEqual([
+      "linear-endpoint",
+      "linear-endpoint",
+      "linear-bend",
+    ]);
+    expect(handles.some(({ kind }) => kind === "scale" || kind === "rotate")).toBe(false);
   });
 
   it.each(["line", "arrow"] as const)(

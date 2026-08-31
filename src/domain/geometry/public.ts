@@ -18,8 +18,11 @@ export {
   createCoordinateSystemGeometry,
   createLinearGeometry,
   createTableGeometry,
+  defaultTableHeaderHeight,
   shapeVertices,
+  tableColumnOffsets,
   tableLineSegments,
+  tableWidth,
 } from "./creation";
 export {
   arrowNodeGeometry,

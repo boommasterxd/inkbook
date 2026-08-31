@@ -233,7 +233,6 @@ function assertStraightHighlighter(
   assertLiteral(value.kind, "straight-highlighter", `${path}.kind`);
   assertBase(value, path, context);
   assertLinearGeometry(value, path, context);
-  assertLiteral(value.bend, null, `${path}.bend`);
   assertLiteral(value.startNode, "none", `${path}.startNode`);
   assertLiteral(value.endNode, "none", `${path}.endNode`);
   assertStrokeStyle(value.style, `${path}.style`);
@@ -295,6 +294,10 @@ function assertShapeAnchor(value: unknown, path: string): asserts value is Shape
     case "coordinate-origin":
       assertExactKeys(value, ["kind"], path);
       return;
+    case "linear-endpoint":
+      assertExactKeys(value, ["kind", "endpoint"], path);
+      assertOneOf(value.endpoint, ["start", "end"] as const, `${path}.endpoint`);
+      return;
     default:
       fail("invalid-anchor", `${path}.kind`, "Unsupported semantic anchor.");
   }
@@ -350,7 +353,17 @@ function assertCoordinateSystem(
 function assertTable(value: UnknownRecord, path: string, context: ValidationContext): void {
   assertExactKeys(
     value,
-    [...BASE_KEYS, "x", "y", "columnWidth", "height", "columns", "headerHeight", "style"],
+    [
+      ...BASE_KEYS,
+      "x",
+      "y",
+      "columnWidth",
+      ...(value.columnOffsets === undefined ? [] : ["columnOffsets"]),
+      "height",
+      "columns",
+      "headerHeight",
+      "style",
+    ],
     path,
   );
   assertLiteral(value.kind, "table", `${path}.kind`);
@@ -378,8 +391,58 @@ function assertTable(value: UnknownRecord, path: string, context: ValidationCont
   if (value.columns * value.columnWidth > context.limits.absoluteCoordinate) {
     fail("invalid-range", `${path}.columnWidth`, "Derived table width exceeds the numeric limit.");
   }
+  assertTableColumnOffsets(value, path, context);
   assertOutlineStyle(value.style, `${path}.style`);
   assertCenteredPivot(value, value.columns * value.columnWidth, `${path}.pivot`);
+}
+
+function assertTableColumnOffsets(
+  value: UnknownRecord,
+  path: string,
+  context: ValidationContext,
+): void {
+  const columns = value.columns;
+  const columnWidth = value.columnWidth;
+  assertIntegerRange(columns, 1, 12, `${path}.columns`);
+  assertGeometryNumber(columnWidth, `${path}.columnWidth`, context.limits.absoluteCoordinate);
+  const offsets = value.columnOffsets;
+  if (offsets === undefined) return;
+  if (!isUnknownArray(offsets) || offsets.length !== columns - 1) {
+    fail(
+      "invalid-range",
+      `${path}.columnOffsets`,
+      "Table column offsets must contain one entry per inner separator.",
+    );
+  }
+  const width = columns * columnWidth;
+  let previous = 0;
+  for (let index = 0; index < offsets.length; index += 1) {
+    const offset = offsets[index];
+    assertGeometryNumber(
+      offset,
+      `${path}.columnOffsets[${index}]`,
+      context.limits.absoluteCoordinate,
+    );
+    if (offset - previous < 40) {
+      fail(
+        "invalid-range",
+        `${path}.columnOffsets[${index}]`,
+        "Table columns must be at least 40 page units wide.",
+      );
+    }
+    previous = offset;
+  }
+  if (width - previous < 40) {
+    fail(
+      "invalid-range",
+      `${path}.columnOffsets`,
+      "Table columns must be at least 40 page units wide.",
+    );
+  }
+}
+
+function isUnknownArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
 }
 
 function assertCenteredPivot(value: UnknownRecord, width: number, path: string): void {

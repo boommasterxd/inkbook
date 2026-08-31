@@ -7,7 +7,7 @@ import {
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 
 import type { SelectedElementGeometry, SelectionHandle } from "./handles";
-import { layoutSelectionHandles, selectionBounds } from "./handles";
+import { layoutSelectionHandles, ROTATE_HANDLE_OFFSET_PIXELS, selectionBounds } from "./handles";
 import type { SelectionPreviewTransform } from "./handle-types";
 
 export type SelectionOutline =
@@ -34,12 +34,39 @@ export function selectionOverlayGeometry(
   const handles = layoutSelectionHandles(selected, { zoom });
   if (outline === null) return null;
   if (transform === null) return { handles, outline };
+  const transformedOutline = transformOutline(outline, transform);
   return {
-    handles: handles.map((handle) => ({
-      ...handle,
-      point: transformSelectionPoint(handle.point, transform),
-    })),
-    outline: transformOutline(outline, transform),
+    handles: handles.map((handle) =>
+      transformedHandle(handle, transform, transformedOutline, zoom),
+    ),
+    outline: transformedOutline,
+  };
+}
+
+function transformedHandle(
+  handle: SelectionHandle,
+  transform: SelectionPreviewTransform,
+  outline: SelectionOutline,
+  zoom: number,
+): SelectionHandle {
+  if (handle.kind !== "rotate" || transform.kind !== "scale" || outline.kind !== "polygon") {
+    return { ...handle, point: transformSelectionPoint(handle.point, transform) };
+  }
+  const [topLeft, topRight] = outline.points;
+  if (topLeft === undefined || topRight === undefined) {
+    return { ...handle, point: transformSelectionPoint(handle.point, transform) };
+  }
+  const delta = { x: topRight.x - topLeft.x, y: topRight.y - topLeft.y };
+  const length = Math.hypot(delta.x, delta.y);
+  if (length === 0) return { ...handle, point: transformSelectionPoint(handle.point, transform) };
+  const midpoint = { x: (topLeft.x + topRight.x) / 2, y: (topLeft.y + topRight.y) / 2 };
+  const offset = ROTATE_HANDLE_OFFSET_PIXELS / zoom;
+  return {
+    ...handle,
+    point: canonicalPoint({
+      x: midpoint.x + (delta.y * offset) / length,
+      y: midpoint.y - (delta.x * offset) / length,
+    }),
   };
 }
 
@@ -81,7 +108,11 @@ function selectionOutline(selected: readonly SelectedElementGeometry[]): Selecti
 }
 
 function singleElementOutline(element: InkElementV1): SelectionOutline {
-  if (element.kind === "line" || element.kind === "arrow") {
+  if (
+    element.kind === "line" ||
+    element.kind === "arrow" ||
+    element.kind === "straight-highlighter"
+  ) {
     const rotate = (point: PointV1) => rotatePointClockwise(point, element.pivot, element.rotation);
     return {
       bend: element.bend === null ? null : rotate(element.bend),

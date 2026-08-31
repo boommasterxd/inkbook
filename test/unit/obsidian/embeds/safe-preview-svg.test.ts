@@ -55,7 +55,7 @@ describe("safe locked-preview SVG validation", () => {
     const preview = createPreviewSvg(document, safeSvg);
 
     expect(preview.classList.contains("inkbook-locked-preview-svg")).toBe(true);
-    expect(preview.getAttribute("preserveAspectRatio")).toBe("none");
+    expect(preview.getAttribute("preserveAspectRatio")).toBe("xMidYMin meet");
     expect(preview.querySelector("metadata")).toBeNull();
     expect(preview.querySelector("style")).toBeNull();
     expect(preview.querySelectorAll("path").length).toBeGreaterThan(0);
@@ -122,7 +122,10 @@ describe("safe locked-preview SVG source loading", () => {
 
     await expect(
       loadValidatedPreviewSvg("app://vault/safe.svg", loaderWindow(body).window),
-    ).resolves.toBe(serialized.value.svg);
+    ).resolves.toEqual({
+      aspectRatio: 2_048.6 / serialized.value.lockedHeight,
+      safeSvg: serialized.value.svg,
+    });
     expect(body.arrayBuffer).toHaveBeenCalledOnce();
   });
 });

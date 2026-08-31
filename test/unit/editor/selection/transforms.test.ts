@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import type {
+  BoxShapeElementV1,
   InkElementV1,
   LineElementV1,
   StrokeElementV1,
   TableElementV1,
 } from "../../../../src/domain/schema/public";
+import { canonicalPoint } from "../../../../src/domain/geometry/public";
 import { validateInkElementV1 } from "../../../../src/domain/schema/public";
 import {
   editLinearBend,
@@ -68,6 +70,25 @@ function scalableTable(id: string, headerHeight: number): TableElementV1 {
     height: 200,
     id,
     pivot: { x: 150, y: 100 },
+  };
+}
+
+function fractionalBoxShape(): BoxShapeElementV1 {
+  const x = 100.001;
+  const y = 70.002;
+  const width = 101.003;
+  const height = 53.007;
+  return {
+    createdAt: 4,
+    height,
+    id: "00000000-0000-4000-8000-000000000009",
+    kind: "rectangle",
+    pivot: canonicalPoint({ x: x + width / 2, y: y + height / 2 }),
+    rotation: 90,
+    style: { ...style, fillColor: null, fillOpacity: 0 },
+    width,
+    x,
+    y,
   };
 }
 
@@ -266,6 +287,27 @@ describe("selection transform constraints", () => {
     const scaled = scaleSelectionUniform([source], { x: 100, y: 100 }, 1.255)[0]!;
 
     expect(scaled.pivot.y).toBe(150.202);
+    expect(validateInkElementV1(scaled).ok).toBe(true);
+  });
+
+  it("derives a resized box pivot from rounded canonical dimensions", () => {
+    const source = fractionalBoxShape();
+    const scaled = scaleSelectionUniform([source], { x: source.x, y: source.y }, 1.37)[0];
+    if (scaled?.kind !== "rectangle") throw new TypeError("Expected a rectangle replacement.");
+
+    expect(scaled).toMatchObject({
+      height: 72.62,
+      pivot: { x: 169.188, y: 106.312 },
+      width: 138.374,
+      x: 100.001,
+      y: 70.002,
+    });
+    expect(scaled.pivot).toEqual(
+      canonicalPoint({
+        x: scaled.x + scaled.width / 2,
+        y: scaled.y + scaled.height / 2,
+      }),
+    );
     expect(validateInkElementV1(scaled).ok).toBe(true);
   });
 

@@ -5,6 +5,7 @@ import type { InkElementV1 } from "../schema/public";
 import { validateInkElementV1 } from "../schema/public";
 
 import {
+  assertAcyclicConnections,
   assertResolvedConnections,
   isAnchorTarget,
   isConnectable,
@@ -92,13 +93,18 @@ async function prepareReplacementDraftsTimeSliced(
     yields += checkpoint;
   }
   const lookup = createLookup(drafts, ports.getRecord);
+  const connectionRoots: string[] = [];
   for (const [id, draft] of drafts) {
     if (cancelled(scheduler)) return "cancelled";
-    if (isConnectable(draft)) drafts.set(id, resolveConnections(draft, lookup));
+    if (isConnectable(draft)) {
+      drafts.set(id, resolveConnections(draft, lookup));
+      connectionRoots.push(id);
+    }
     const checkpoint = await yieldWhenRequested(scheduler);
     if (checkpoint === "cancelled") return checkpoint;
     yields += checkpoint;
   }
+  assertAcyclicConnections(connectionRoots, lookup);
   const propagation = await propagateTargetChangesTimeSliced(drafts, ports, scheduler);
   if (propagation === "cancelled") return propagation;
   yields += propagation;
@@ -112,9 +118,14 @@ function prepareDrafts(
   const drafts = new Map<string, InkElementV1>();
   for (const replacement of replacements) prepareDraft(drafts, replacement, getRecord);
   const lookup = createLookup(drafts, getRecord);
+  const connectionRoots: string[] = [];
   for (const [id, draft] of drafts) {
-    if (isConnectable(draft)) drafts.set(id, resolveConnections(draft, lookup));
+    if (isConnectable(draft)) {
+      drafts.set(id, resolveConnections(draft, lookup));
+      connectionRoots.push(id);
+    }
   }
+  assertAcyclicConnections(connectionRoots, lookup);
   return drafts;
 }
 
@@ -139,16 +150,14 @@ function propagateTargetChanges(
   ports: ReplacementPlannerPorts,
 ): void {
   const lookup = createLookup(drafts, ports.getRecord);
-  for (const [targetId, draft] of drafts) {
-    const current = ports.getRecord(targetId);
-    if (!isGeometryTargetChange(current.element, draft)) continue;
-    const references = ports.getReferences(targetId);
-    if (references === undefined) continue;
-    for (const reference of references) {
-      ports.onReverseVisit();
-      const source = drafts.get(reference.linearId) ?? ports.getRecord(reference.linearId).element;
-      drafts.set(reference.linearId, resolveConnections(source, lookup, "detach"));
-    }
+  const queue = [...drafts.keys()];
+  const queued = new Set(queue);
+  const state = { drafts, lookup, ports, queue, queued };
+  for (let index = 0; index < queue.length; index += 1) {
+    const targetId = queue[index]!;
+    queued.delete(targetId);
+    const references = changedTargetReferences(targetId, drafts, ports);
+    for (const reference of references) propagateReference(reference, state);
   }
 }
 
@@ -158,28 +167,59 @@ async function propagateTargetChangesTimeSliced(
   scheduler: StoreSliceScheduler,
 ): Promise<number | "cancelled"> {
   const lookup = createLookup(drafts, ports.getRecord);
+  const queue = [...drafts.keys()];
+  const queued = new Set(queue);
   let yields = 0;
-  for (const [targetId, draft] of drafts) {
+  for (let index = 0; index < queue.length; index += 1) {
+    const targetId = queue[index]!;
+    queued.delete(targetId);
     if (cancelled(scheduler)) return "cancelled";
-    const current = ports.getRecord(targetId);
-    if (isGeometryTargetChange(current.element, draft)) {
-      const references = ports.getReferences(targetId) ?? [];
-      for (const reference of references) {
-        if (cancelled(scheduler)) return "cancelled";
-        ports.onReverseVisit();
-        const source =
-          drafts.get(reference.linearId) ?? ports.getRecord(reference.linearId).element;
-        drafts.set(reference.linearId, resolveConnections(source, lookup, "detach"));
-        const checkpoint = await yieldWhenRequested(scheduler);
-        if (checkpoint === "cancelled") return checkpoint;
-        yields += checkpoint;
-      }
+    const references = changedTargetReferences(targetId, drafts, ports);
+    for (const reference of references) {
+      if (cancelled(scheduler)) return "cancelled";
+      propagateReference(reference, { drafts, lookup, ports, queue, queued });
+      const referenceCheckpoint = await yieldWhenRequested(scheduler);
+      if (referenceCheckpoint === "cancelled") return referenceCheckpoint;
+      yields += referenceCheckpoint;
     }
     const checkpoint = await yieldWhenRequested(scheduler);
     if (checkpoint === "cancelled") return checkpoint;
     yields += checkpoint;
   }
   return yields;
+}
+
+interface PropagationState {
+  readonly drafts: Map<string, InkElementV1>;
+  readonly lookup: (id: string) => ImmutableInkElement | InkElementV1 | undefined;
+  readonly ports: ReplacementPlannerPorts;
+  readonly queue: string[];
+  readonly queued: Set<string>;
+}
+
+function changedTargetReferences(
+  targetId: string,
+  drafts: ReadonlyMap<string, InkElementV1>,
+  ports: ReplacementPlannerPorts,
+): readonly EndpointReference[] {
+  const draft = drafts.get(targetId);
+  if (draft === undefined) return [];
+  const current = ports.getRecord(targetId);
+  return isGeometryTargetChange(current.element, draft)
+    ? (ports.getReferences(targetId) ?? [])
+    : [];
+}
+
+function propagateReference(reference: EndpointReference, state: PropagationState): void {
+  state.ports.onReverseVisit();
+  const source =
+    state.drafts.get(reference.linearId) ?? state.ports.getRecord(reference.linearId).element;
+  const resolved = resolveConnections(source, state.lookup, "detach");
+  if (elementsEqual(source, resolved)) return;
+  state.drafts.set(reference.linearId, resolved);
+  if (state.queued.has(reference.linearId)) return;
+  state.queue.push(reference.linearId);
+  state.queued.add(reference.linearId);
 }
 
 export function classifyReplacementDrafts(
@@ -272,7 +312,26 @@ function getOptionalRecord(
 }
 
 function isGeometryTargetChange(current: ImmutableInkElement, draft: InkElementV1): boolean {
+  if (current.kind === "table" && draft.kind === "table" && tableAnchorFrameEqual(current, draft)) {
+    return false;
+  }
   return isAnchorTarget(draft) && classifyReplacement(current, draft).includes("geometry");
+}
+
+function tableAnchorFrameEqual(
+  current: Extract<ImmutableInkElement, { kind: "table" }>,
+  draft: Extract<InkElementV1, { kind: "table" }>,
+): boolean {
+  return (
+    current.x === draft.x &&
+    current.y === draft.y &&
+    current.columnWidth === draft.columnWidth &&
+    current.columns === draft.columns &&
+    current.height === draft.height &&
+    current.rotation === draft.rotation &&
+    current.pivot.x === draft.pivot.x &&
+    current.pivot.y === draft.pivot.y
+  );
 }
 
 export function assertReplacementIdentity(

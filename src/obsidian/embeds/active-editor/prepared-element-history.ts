@@ -58,7 +58,10 @@ export class PreparedElementHistory {
     this.#setPending(false);
   }
 
-  public commitHandle(session: SelectionHandleSession): boolean {
+  public commitHandle(
+    session: SelectionHandleSession,
+    onCompleted?: (committed: boolean) => void,
+  ): boolean {
     if (this.#pending || this.#disposed) return false;
     const previewCommit = this.#motion.beginPreviewCommit();
     this.#run(async (generation) => {
@@ -74,7 +77,7 @@ export class PreparedElementHistory {
       } finally {
         previewCommit.cancel();
       }
-    });
+    }, onCompleted);
     return true;
   }
 

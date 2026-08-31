@@ -229,38 +229,48 @@ function* validateConnections(
   for (let index = 0; index < elements.length; index += 1) {
     const element = elements[index] as InkElementV1;
     if (element.kind === "line" || element.kind === "arrow") {
-      validateConnection(
-        element.startConnection,
-        element.start,
-        `${index}].startConnection`,
+      validateConnection({
         byId,
+        connection: element.startConnection,
         perTarget,
+        endpoint: element.start,
+        pathSuffix: `${index}].startConnection`,
+        sourceId: element.id,
         context,
-      );
-      validateConnection(
-        element.endConnection,
-        element.end,
-        `${index}].endConnection`,
+      });
+      validateConnection({
         byId,
+        connection: element.endConnection,
         perTarget,
+        endpoint: element.end,
+        pathSuffix: `${index}].endConnection`,
+        sourceId: element.id,
         context,
-      );
+      });
     }
     if ((index + 1) % 128 === 0) yield;
   }
+  validateConnectionCycles(elements, byId);
 }
 
-function validateConnection(
-  connection: EndpointConnectionV1 | null,
-  endpoint: PointV1,
-  pathSuffix: string,
-  byId: ReadonlyMap<string, InkElementV1>,
-  perTarget: Map<string, number>,
-  context: ValidationContext,
-): void {
+interface ConnectionValidationInput {
+  readonly byId: ReadonlyMap<string, InkElementV1>;
+  readonly connection: EndpointConnectionV1 | null;
+  readonly context: ValidationContext;
+  readonly endpoint: PointV1;
+  readonly pathSuffix: string;
+  readonly perTarget: Map<string, number>;
+  readonly sourceId: string;
+}
+
+function validateConnection(input: ConnectionValidationInput): void {
+  const { byId, connection, context, endpoint, pathSuffix, perTarget, sourceId } = input;
   if (connection === null) return;
   const path = `$.elements[${pathSuffix}`;
   const target = byId.get(connection.targetId);
+  if (connection.targetId === sourceId) {
+    fail("invalid-connection-target", `${path}.targetId`, "An element cannot connect to itself.");
+  }
   if (target === undefined || !isAnchorTarget(target)) {
     fail(
       "invalid-connection-target",
@@ -284,6 +294,46 @@ function validateConnection(
       "connection-position-mismatch",
       path,
       "Connected endpoint does not match its resolved anchor.",
+    );
+  }
+}
+
+function validateConnectionCycles(
+  elements: readonly InkElementV1[],
+  byId: ReadonlyMap<string, InkElementV1>,
+): void {
+  const dependencies = new Map<string, readonly string[]>();
+  const indegree = new Map<string, number>();
+  for (const element of elements) {
+    if (element.kind !== "line" && element.kind !== "arrow") continue;
+    indegree.set(element.id, 0);
+    const targets = [element.startConnection?.targetId, element.endConnection?.targetId].filter(
+      (id): id is string => {
+        const target = id === undefined ? undefined : byId.get(id);
+        return target?.kind === "line" || target?.kind === "arrow";
+      },
+    );
+    dependencies.set(element.id, targets);
+  }
+  for (const targets of dependencies.values()) {
+    for (const targetId of targets) indegree.set(targetId, (indegree.get(targetId) ?? 0) + 1);
+  }
+  const queue = [...indegree].filter(([, count]) => count === 0).map(([id]) => id);
+  let processed = 0;
+  for (let index = 0; index < queue.length; index += 1) {
+    const id = queue[index]!;
+    processed += 1;
+    for (const targetId of dependencies.get(id) ?? []) {
+      const remaining = (indegree.get(targetId) ?? 0) - 1;
+      indegree.set(targetId, remaining);
+      if (remaining === 0) queue.push(targetId);
+    }
+  }
+  if (processed !== indegree.size) {
+    fail(
+      "invalid-connection-target",
+      "$.elements",
+      "Linear endpoint connections must not form a cycle.",
     );
   }
 }

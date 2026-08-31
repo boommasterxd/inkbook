@@ -1,4 +1,4 @@
-import type { Vault } from "obsidian";
+import { TFile, type Vault } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import type { PresentationAttachment } from "../../../../src/obsidian/embeds/presentation-port";
@@ -55,7 +55,7 @@ describe("WorkspaceRuntimeLifecycle", () => {
     expect(harness.dismiss).toHaveBeenCalledOnce();
   });
 
-  it("updates every mounted preview to the confirmed locked aspect ratio", () => {
+  it("does not apply a live-store aspect ratio separately from the persisted source", () => {
     const setPreviewAspectRatio = vi.fn();
     const presentations = [
       {
@@ -75,9 +75,47 @@ describe("WorkspaceRuntimeLifecycle", () => {
       revision: 1,
     });
 
-    expect(setPreviewAspectRatio).toHaveBeenCalledWith(4);
+    expect(setPreviewAspectRatio).not.toHaveBeenCalled();
   });
 
+  it("refreshes the validated SVG source of an already locked presentation", () => {
+    const setPreviewSource = vi.fn(async () => undefined);
+    const file = new (TFile as unknown as new (path: string, size: number) => TFile)(
+      "drawings/ink.svg",
+      100,
+    );
+    const attachment = {
+      documentId: file.path,
+      root: { getElementsByTagName: () => ({ item: () => null, length: 0 }) },
+      setPreviewSource,
+    } as unknown as PresentationAttachment;
+    const lifecycle = new WorkspaceRuntimeLifecycle({
+      activate: vi.fn(),
+      fallbackWindow: () => undefined,
+      isDisposed: () => false,
+      notifyExternalChange: vi.fn(async () => "ignored" as const),
+      presentations: () => [{ attachment, scene: undefined }],
+      reloadPresentation: vi.fn(),
+      vault: {
+        getFileByPath: () => file,
+        getResourcePath: () => "app://vault/drawings/ink.svg",
+      } as unknown as Vault,
+    });
+
+    lifecycle.handlePersisted({
+      documentId: file.path,
+      lockedAspectRatio: 4,
+      outputHash: "hash",
+      revision: 2,
+    });
+
+    expect(setPreviewSource).toHaveBeenCalledWith(
+      "app://vault/drawings/ink.svg?inkbook-revision=2-hash",
+    );
+  });
+});
+
+describe("WorkspaceRuntimeLifecycle host synchronization", () => {
   it("coalesces a host modification and remounts a clean same-worker reload", async () => {
     const harness = createHarness();
     harness.lifecycle.handleVaultModification("drawings/ink.svg");

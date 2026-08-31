@@ -250,7 +250,7 @@ describe("SelectionHandleSession geometry boundaries", () => {
     const line = connectedLine(target);
     const store = new ElementStore([target, line]);
     const session = new SelectionHandleSession({
-      action: { center: target.pivot, kind: "rotate" },
+      action: { center: target.pivot, kind: "rotate", opposite: target.pivot },
       elements: [element(store, target.id)],
       planner: store,
       startPointer: { x: 300, y: 150 },

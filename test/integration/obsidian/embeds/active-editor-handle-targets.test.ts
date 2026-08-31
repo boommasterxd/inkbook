@@ -1,15 +1,26 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { calculateElementBounds } from "../../../../src/domain/geometry/public";
-import type { InkElementV1 } from "../../../../src/domain/schema/public";
+import {
+  calculateElementBounds,
+  rotatePointClockwise,
+} from "../../../../src/domain/geometry/public";
+import type { InkElementV1, PointV1 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
-import { layoutSelectionHandles } from "../../../../src/editor/selection/public";
+import {
+  editLinearBend,
+  layoutSelectionHandles,
+  oppositeElementHandlePoint,
+} from "../../../../src/editor/selection/public";
 import { ActiveEditorHandleInteraction } from "../../../../src/obsidian/embeds/active-editor/handle-interaction";
 import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";
 import type { PreparedElementHistory } from "../../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
-import { connectedLine, rectangle as storeRectangle } from "../../../unit/domain/store/fixtures";
+import {
+  connectedLine,
+  coordinateSystem,
+  rectangle as storeRectangle,
+} from "../../../unit/domain/store/fixtures";
 
 function rectangle(): Extract<InkElementV1, { kind: "rectangle" }> {
   const element = storeRectangle("00000000-0000-4000-8000-000000000001");
@@ -26,6 +37,57 @@ function line(): Extract<InkElementV1, { kind: "line" }> {
     startConnection: null,
   };
 }
+
+function parseGuideAxis(path: string | null | undefined): {
+  readonly end: PointV1;
+  readonly start: PointV1;
+} {
+  const match = path?.match(/^M ([\d.-]+) ([\d.-]+) L ([\d.-]+) ([\d.-]+)$/);
+  if (match === undefined || match === null) throw new TypeError("Expected one guide axis.");
+  return {
+    end: { x: Number(match[3]), y: Number(match[4]) },
+    start: { x: Number(match[1]), y: Number(match[2]) },
+  };
+}
+
+function distance(first: PointV1, second: PointV1): number {
+  return Math.hypot(first.x - second.x, first.y - second.y);
+}
+
+function pointLineDistance(
+  point: PointV1,
+  line: { readonly end: PointV1; readonly start: PointV1 },
+): number {
+  const delta = { x: line.end.x - line.start.x, y: line.end.y - line.start.y };
+  const length = Math.hypot(delta.x, delta.y);
+  if (length === 0) return distance(point, line.start);
+  return Math.abs(delta.x * (line.start.y - point.y) - delta.y * (line.start.x - point.x)) / length;
+}
+
+describe("active editor handle page extent", () => {
+  it("reserves preview height for handle geometry until commit", () => {
+    const element = rectangle();
+    const bounds = calculateElementBounds(element);
+    const fixture = harness([element], 1);
+    const pointer = {
+      pointerId: 18,
+      pointerType: "mouse" as const,
+      x: bounds.maxX,
+      y: bounds.maxY,
+    };
+
+    expect(fixture.interaction.pointerDown(pointer)).toBe(true);
+    expect(fixture.layout.begin).toHaveBeenCalledOnce();
+    expect(fixture.interaction.pointerMove({ ...pointer, y: pointer.y + 300 })).toBe(true);
+    expect(fixture.layout.updateBottom).toHaveBeenLastCalledWith(expect.any(Number));
+    const calls = fixture.layout.updateBottom.mock.calls;
+    const previewBottom = Number(calls[calls.length - 1]?.[0]);
+    expect(previewBottom).toBeGreaterThan(bounds.maxY);
+
+    expect(fixture.interaction.pointerUp(pointer.pointerId)).toBe(true);
+    expect(fixture.layout.finish).toHaveBeenCalledWith(true, previewBottom);
+  });
+});
 
 describe("active editor selection handle targets", () => {
   it("uses forgiving pointer targets that remain precise at high zoom", () => {
@@ -169,24 +231,50 @@ describe("active editor selection snap guides", () => {
       x: shape.pivot.x + 98,
       y: shape.pivot.y,
     });
-    const radius = Math.hypot(
-      rotateHandle.point.x - shape.pivot.x,
-      rotateHandle.point.y - shape.pivot.y,
-    );
-    expect(rotation.overlays[rotation.overlays.length - 1]).toContain(
-      `M ${String(shape.pivot.x - radius)} ${String(shape.pivot.y)} L ${String(shape.pivot.x + radius)} ${String(shape.pivot.y)}`,
-    );
-    expect(rotation.overlays[rotation.overlays.length - 1]).not.toContain(
-      `M ${String(shape.pivot.x + radius - 8)} ${String(shape.pivot.y)} L`,
-    );
+    expect(rotation.overlays[rotation.overlays.length - 1]).toBe("M 64 170 L 364 170");
     rotation.interaction.cancel(24);
 
     const linear = line();
     const bend = harness([linear], 1);
     bend.interaction.pointerDown({ pointerId: 25, pointerType: "touch", x: 30, y: 30 });
     bend.interaction.pointerMove({ pointerId: 25, pointerType: "touch", x: 32, y: 32 });
-    expect(bend.overlays[bend.overlays.length - 1]).toContain("M 10 10 L 50 50");
+    expect(bend.overlays[bend.overlays.length - 1]).toContain(
+      "M -35.25483399593904 -35.25483399593904 L 95.25483399593904 95.25483399593904",
+    );
     bend.interaction.cancel(25);
+  });
+
+  it("keeps a rotation guide on the bounding-box handle axis when the pivot is offset", () => {
+    const system = coordinateSystem();
+    const fixture = harness([system], 1);
+    const rotateHandle = layoutSelectionHandles(
+      [{ bounds: calculateElementBounds(system), element: system }],
+      { zoom: 1 },
+    ).find(({ kind }) => kind === "rotate");
+    if (rotateHandle === undefined) throw new TypeError("Expected a rotation handle.");
+    const pointerId = 29;
+
+    fixture.interaction.pointerDown({ ...rotateHandle.point, pointerId, pointerType: "mouse" });
+    const rotatedHandle = rotatePointClockwise(rotateHandle.point, system.pivot, 90);
+    fixture.interaction.pointerMove({ ...rotatedHandle, pointerId, pointerType: "mouse" });
+
+    const guide = parseGuideAxis(fixture.overlays[fixture.overlays.length - 1]);
+    const opposite = rotatePointClockwise(
+      oppositeElementHandlePoint(system, "top-center"),
+      system.pivot,
+      90,
+    );
+    const boxAnchor = rotatePointClockwise(
+      oppositeElementHandlePoint(system, "bottom-center"),
+      system.pivot,
+      90,
+    );
+    expect(distance(guide.start, opposite)).toBeCloseTo(64, 8);
+    expect(distance(guide.end, rotatedHandle)).toBeCloseTo(64, 8);
+    expect(pointLineDistance(boxAnchor, guide)).toBeCloseTo(0, 8);
+    expect(pointLineDistance(opposite, guide)).toBeCloseTo(0, 8);
+    expect(pointLineDistance(rotatedHandle, guide)).toBeCloseTo(0, 8);
+    fixture.interaction.cancel(pointerId);
   });
 
   it("renders an offset anchor marker and persists endpoint attachment and detachment", () => {
@@ -220,6 +308,41 @@ describe("active editor selection snap guides", () => {
   });
 });
 
+describe("active editor endpoint straightening", () => {
+  it("shows the endpoint chord only for a straight preview and removes bend on release", () => {
+    const curved = editLinearBend(line(), { x: 30, y: 40 });
+    if (curved.kind !== "line") throw new TypeError("Expected a curved line.");
+    const fixture = harness([curved], 1);
+    const start = {
+      pointerId: 27,
+      pointerType: "mouse" as const,
+      x: curved.end.x,
+      y: curved.end.y,
+    };
+
+    expect(fixture.interaction.pointerDown(start)).toBe(true);
+    expect(fixture.interaction.pointerMove({ ...start, x: 10, y: 90 })).toBe(true);
+    expect(fixture.overlays[fixture.overlays.length - 1]).toBeNull();
+
+    expect(fixture.interaction.pointerMove({ ...start, x: 50, y: 70 })).toBe(true);
+    expect(fixture.overlays[fixture.overlays.length - 1]).toBe(
+      "M -25.500812558414665 -43.251218837622 L 85.50081255841467 123.25121883762199",
+    );
+    expect(fixture.store.get(curved.id)?.element).toMatchObject({ bend: { x: 30, y: 40 } });
+
+    expect(fixture.interaction.pointerMove({ ...start, x: 50, y: 170 })).toBe(true);
+    expect(fixture.overlays[fixture.overlays.length - 1]).toBeNull();
+    expect(fixture.store.get(curved.id)?.element).toMatchObject({ bend: { x: 30, y: 40 } });
+
+    expect(fixture.interaction.pointerMove({ ...start, x: 50, y: 70 })).toBe(true);
+    expect(fixture.interaction.pointerUp(start.pointerId)).toBe(true);
+    expect(fixture.store.get(curved.id)?.element).toMatchObject({
+      bend: null,
+      end: { x: 50, y: 70 },
+    });
+  });
+});
+
 function harness(elements: readonly InkElementV1[], zoom: number) {
   const store = new ElementStore(elements);
   const model = {
@@ -233,9 +356,15 @@ function harness(elements: readonly InkElementV1[], zoom: number) {
     store,
   } as unknown as EditableDocumentModel;
   const overlays: Array<string | null> = [];
+  const layout = {
+    begin: vi.fn(),
+    finish: vi.fn(),
+    updateBottom: vi.fn(),
+  };
   const sceneStore = new ElementSceneStore(store);
   const interaction = new ActiveEditorHandleInteraction({
     history: new ActiveEditorHistory(model),
+    layout,
     model,
     pageToScreen: (point) => point,
     preparedHistory: {} as PreparedElementHistory,
@@ -252,5 +381,5 @@ function harness(elements: readonly InkElementV1[], zoom: number) {
     selection: () => new Set([elements[elements.length - 1]!.id]),
     zoom: () => zoom,
   });
-  return { interaction, overlays, store };
+  return { interaction, layout, overlays, store };
 }

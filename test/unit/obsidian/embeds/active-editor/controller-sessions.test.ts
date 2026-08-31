@@ -178,14 +178,17 @@ describe("active editor timer and style sessions", () => {
     const element = rectangle();
     store.create(element);
     const selected = new Set([element.id]);
+    const selectionGeometryChanged = vi.fn();
     const stateChanged = vi.fn();
+    const storeChanged = vi.fn();
     const history = new ActiveEditorHistory(
       historyModel({ replaceElements: (elements) => void store.replaceMany(elements) }),
     );
-    const unsubscribe = store.subscribe(() => void stateChanged());
+    const unsubscribe = store.subscribe(() => void storeChanged());
     const session = new ActiveEditorStyleSession({
       defaults: createBuiltInSettings().toolDefaults,
       history,
+      onSelectionGeometryChanged: selectionGeometryChanged,
       onStateChanged: stateChanged,
       sceneStore: new ElementSceneStore(store),
       selection: () => selected,
@@ -196,10 +199,13 @@ describe("active editor timer and style sessions", () => {
       true,
     );
     session.apply("draw", "outline-width", 8);
-    expect(stateChanged).toHaveBeenCalledTimes(1);
+    expect(selectionGeometryChanged).toHaveBeenCalledOnce();
+    expect(stateChanged).not.toHaveBeenCalled();
+    expect(storeChanged).toHaveBeenCalledTimes(1);
     expect(store.get(element.id)?.element.style).toMatchObject({ outlineWidth: 8 });
     expect(history.undo()).toBe(true);
-    expect(stateChanged).toHaveBeenCalledTimes(2);
+    expect(stateChanged).not.toHaveBeenCalled();
+    expect(storeChanged).toHaveBeenCalledTimes(2);
     expect(store.get(element.id)?.element.style).toMatchObject({ outlineWidth: 4 });
 
     selected.clear();
@@ -207,7 +213,7 @@ describe("active editor timer and style sessions", () => {
     expect(session.defaults.pen.opacity).toBe(0.6);
     session.apply("draw", "opacity", 0.6);
     expect(() => session.apply("draw", "unknown", 1)).toThrow(RangeError);
-    expect(stateChanged).toHaveBeenCalledTimes(3);
+    expect(stateChanged).toHaveBeenCalledOnce();
     unsubscribe();
   });
 });
@@ -219,6 +225,7 @@ describe("active editor Select style session", () => {
     const session = new ActiveEditorStyleSession({
       defaults: createBuiltInSettings().toolDefaults,
       history: new ActiveEditorHistory(historyModel()),
+      onSelectionGeometryChanged: vi.fn(),
       onStateChanged: stateChanged,
       sceneStore: new ElementSceneStore(store),
       selection: () => new Set(),
@@ -239,6 +246,7 @@ describe("active editor Select style session", () => {
     const session = new ActiveEditorStyleSession({
       defaults: createBuiltInSettings().toolDefaults,
       history,
+      onSelectionGeometryChanged: vi.fn(),
       onStateChanged: stateChanged,
       sceneStore: new ElementSceneStore(store),
       selection: () => new Set([element.id]),
@@ -273,6 +281,7 @@ describe("active editor structural style session", () => {
     const session = new ActiveEditorStyleSession({
       defaults: createBuiltInSettings().toolDefaults,
       history,
+      onSelectionGeometryChanged: vi.fn(),
       onStateChanged: vi.fn(),
       sceneStore: new ElementSceneStore(store),
       selection: () => new Set([target.id]),

@@ -1,5 +1,5 @@
 import { pointDistance, rotatePointClockwise } from "../../domain/geometry/public";
-import type { BoxAnchorV1, CoordinateSystemElementV1, PointV1 } from "../../domain/schema/public";
+import type { BoxAnchorV1, InkElementV1, PointV1 } from "../../domain/schema/public";
 
 export function activeScaleAxes(position: BoxAnchorV1): {
   readonly x: boolean;
@@ -11,7 +11,10 @@ export function activeScaleAxes(position: BoxAnchorV1): {
   };
 }
 
-export function canonicalHandlePoint(element: CoordinateSystemElementV1, point: PointV1): PointV1 {
+export function canonicalHandlePoint(
+  element: Pick<InkElementV1, "pivot" | "rotation">,
+  point: PointV1,
+): PointV1 {
   return rotatePointClockwise(point, element.pivot, -element.rotation);
 }
 

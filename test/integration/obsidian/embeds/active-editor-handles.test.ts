@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { calculateElementBounds } from "../../../../src/domain/geometry/public";
+import { calculateElementBounds, canonicalPoint } from "../../../../src/domain/geometry/public";
 import type { InkElementV1, PageV1, PointV1 } from "../../../../src/domain/schema/public";
 import { createBuiltInSettings } from "../../../../src/domain/settings/defaults";
 import { ElementStore } from "../../../../src/domain/store/public";
@@ -18,6 +18,7 @@ import { MovePreview } from "../../../../src/obsidian/embeds/active-editor/selec
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { elementMutationPorts } from "../../../fixtures/obsidian/element-mutation-ports";
+import { table as geometryTable } from "../../../unit/domain/geometry/fixtures";
 
 const PAGE: PageV1 = {
   activeBufferLines: 3,
@@ -40,14 +41,12 @@ function rectangle(): Extract<InkElementV1, { kind: "rectangle" }> {
 }
 
 function rotatedTable(): Extract<InkElementV1, { kind: "table" }> {
-  return {
+  return geometryTable({
     columnWidth: 100,
     columns: 2,
-    createdAt: 3,
     headerHeight: 24,
     height: 100,
     id: "00000000-0000-4000-8000-000000000004",
-    kind: "table",
     pivot: { x: 200, y: 150 },
     rotation: 90,
     style: {
@@ -58,7 +57,7 @@ function rotatedTable(): Extract<InkElementV1, { kind: "table" }> {
     },
     x: 100,
     y: 100,
-  };
+  });
 }
 
 function dependentLine(): Extract<InkElementV1, { kind: "line" }> {
@@ -123,36 +122,36 @@ function editableModel(store: ElementStore): EditableDocumentModel {
 }
 
 describe("active editor selection handles", () => {
-  it("drives a shape handle through preview, store commit, renderer delta, and undo", () => {
-    const fixture = harness([rectangle()], new Set([startId()]));
-    const { deltas, elementPreviews, history, interaction, overlays, previewTransforms, store } =
-      fixture;
-    const bounds = calculateElementBounds(rectangle());
+  it("commits fractional shape-handle frames once and restores the box with undo", () => {
+    const shape = rectangle();
+    const fixture = harness([shape], new Set([shape.id]));
+    const { deltas, history, interaction, previewTransforms, store } = fixture;
+    const bounds = calculateElementBounds(shape);
     const start = { pointerId: 1, pointerType: "touch" as const, x: bounds.maxX, y: bounds.maxY };
 
-    interaction.renderSelection();
     expect(interaction.pointerDown(start)).toBe(true);
-    expect(interaction.activePointerType).toBe("touch");
-    expect(interaction.pointerMove({ ...start, x: start.x + 40, y: start.y + 20 })).toBe(true);
-    expect(store.get(startId())?.element).toMatchObject({ height: 140, width: 200 });
-    expect(interaction.pointerMove({ ...start, x: start.x + 80, y: start.y + 40 })).toBe(true);
-    expect(previewTransforms.slice(-2).every((transform) => transform !== null)).toBe(true);
-    expect(elementPreviews.every((elements) => elements.every(({ id }) => id !== startId()))).toBe(
+    expect(interaction.pointerMove({ ...start, x: start.x + 40.125, y: start.y + 20.25 })).toBe(
       true,
     );
-    expect(overlays[overlays.length - 2]).toContain("M 99 99 L 381 99 L 381 281 L 99 281 Z");
+    expect(interaction.pointerMove({ ...start, x: start.x + 80.375, y: start.y + 40.5 })).toBe(
+      true,
+    );
+    expect(previewTransforms).toHaveLength(2);
+    expect(previewTransforms.every((transform) => transform !== null)).toBe(true);
+    expect(store.get(shape.id)?.element).toEqual(shape);
     expect(interaction.pointerUp(start.pointerId)).toBe(true);
-    expect(interaction.activePointerType).toBeUndefined();
-    const resized = store.get(startId())?.element;
-    expect(resized?.kind).toBe("rectangle");
+    expect(deltas).toEqual([[shape.id]]);
+    expect(history.commandCount).toBe(1);
+    const resized = store.get(shape.id)?.element;
     if (resized?.kind !== "rectangle") throw new TypeError("Expected the resized rectangle.");
-    expect(resized.width).toBeGreaterThan(200);
-    expect(resized.height).toBeGreaterThan(140);
-    expect(deltas).toEqual([[startId()]]);
-    expect(overlays.some((path) => path?.includes(" a 5 5 ") === true)).toBe(true);
-    expect(previewTransforms[previewTransforms.length - 1]).toBeNull();
+    expect(resized.pivot).toEqual(
+      canonicalPoint({
+        x: resized.x + resized.width / 2,
+        y: resized.y + resized.height / 2,
+      }),
+    );
     expect(history.undo()).toBe(true);
-    expect(store.get(startId())?.element).toMatchObject({ height: 140, width: 200 });
+    expect(store.get(shape.id)?.element).toEqual(shape);
   });
 
   it("publishes reverse-map dependent endpoint geometry during a shape-handle preview", () => {

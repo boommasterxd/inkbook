@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import type { StrokeElementV1, TableElementV1 } from "../../../../src/domain/schema/public";
+import { canonicalPoint, rotatePointClockwise } from "../../../../src/domain/geometry/public";
+import type {
+  BoxShapeElementV1,
+  StrokeElementV1,
+  TableElementV1,
+} from "../../../../src/domain/schema/public";
 import { validateInkElementV1 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { SelectionHandleSession } from "../../../../src/editor/selection/public";
@@ -24,6 +29,32 @@ function table(): TableElementV1 {
     },
     x: 100,
     y: 100,
+  };
+}
+
+function fractionalBoxShape(): BoxShapeElementV1 {
+  const x = 100.001;
+  const y = 70.002;
+  const width = 101.003;
+  const height = 53.007;
+  return {
+    createdAt: 2,
+    height,
+    id: "00000000-0000-4000-8000-000000000003",
+    kind: "rectangle",
+    pivot: canonicalPoint({ x: x + width / 2, y: y + height / 2 }),
+    rotation: 90,
+    style: {
+      fillColor: null,
+      fillOpacity: 0,
+      outlineColor: { type: "theme-text" },
+      outlineOpacity: 1,
+      outlineStyle: "solid",
+      outlineWidth: 4,
+    },
+    width,
+    x,
+    y,
   };
 }
 
@@ -128,5 +159,51 @@ describe("single-element generic handle scaling", () => {
       points: [-50, 50, 0.5, 150, 50, 0.5],
       rotation: 90,
     });
+  });
+});
+
+describe("fractional box handle scaling", () => {
+  it("keeps fractional rotated side-handle frames live and derives the box pivot canonically", () => {
+    const source = fractionalBoxShape();
+    const localAnchor = { x: source.x, y: source.pivot.y };
+    const localStart = { x: source.x + source.width, y: source.pivot.y };
+    const anchor = rotatePointClockwise(localAnchor, source.pivot, source.rotation);
+    const start = rotatePointClockwise(localStart, source.pivot, source.rotation);
+    const frames = [1.37, 1.372].map((factor) =>
+      rotatePointClockwise(
+        { x: source.x + source.width * factor, y: source.pivot.y },
+        source.pivot,
+        source.rotation,
+      ),
+    );
+    const session = new SelectionHandleSession({
+      action: { anchor, kind: "scale", position: "middle-right" },
+      elements: [source],
+      planner: new ElementStore([source]),
+      startPointer: start,
+    });
+
+    const previews = frames.map((pointer) => session.update(pointer));
+    expect(
+      previews.every(
+        ({ exactElements, transform }) => transform !== null && exactElements.length === 1,
+      ),
+    ).toBe(true);
+    expect(previews.map(({ exactElements }) => exactElements[0]?.pivot)).toEqual([
+      { x: 150.503, y: 115.191 },
+      { x: 150.503, y: 115.291 },
+    ]);
+
+    const commit = session.prepareCommit();
+    if (commit.status !== "ready") throw new Error("Expected a fractional box scale commit.");
+    const replacement = commit.replacements[0];
+    if (replacement?.kind !== "rectangle") throw new Error("Expected a rectangle replacement.");
+    expect(replacement.pivot).toEqual(
+      canonicalPoint({
+        x: replacement.x + replacement.width / 2,
+        y: replacement.y + replacement.height / 2,
+      }),
+    );
+    expect(validateInkElementV1(replacement).ok).toBe(true);
   });
 });

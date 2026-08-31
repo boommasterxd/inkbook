@@ -1,6 +1,5 @@
 import {
   canonicalPoint,
-  linearPivot,
   normalizeRotation,
   pointDistance,
   rotatePointClockwise,
@@ -9,22 +8,24 @@ import {
 import { markCanonicalStrokeReplacement } from "../../domain/elements/stroke-replacement-proof";
 import type {
   CoordinateSystemElementV1,
-  EndpointConnectionV1,
   InkElementV1,
   LinearElementV1,
   PointV1,
   StrokeElementV1,
 } from "../../domain/schema/public";
 import { MAX_ABSOLUTE_COORDINATE } from "../../domain/schema/public";
-import { normalizeLinearBend } from "./linear-bend";
+import { rotateLinearElement } from "./linear-transforms";
+import { isLinearElement } from "./linear-elements";
 import { rotatedScaleTranslation } from "./scale-frame";
+import { minimumTableColumnWidth, MINIMUM_TABLE_HEADER_HEIGHT } from "./table-transforms";
 
 interface ScaleFactors {
   readonly x: number;
   readonly y: number;
 }
 
-const MINIMUM_TABLE_HEADER_HEIGHT = 24;
+export { editLinearEndpoint, editLinearEndpointFromWorld } from "./linear-transforms";
+export { editTableColumn, editTableHeader } from "./table-transforms";
 
 export interface TransformSliceScheduler {
   readonly isCancelled?: () => boolean;
@@ -199,11 +200,19 @@ export function editCoordinateOrigin(
   point: PointV1,
 ): CoordinateSystemElementV1 {
   assertFinitePoint(point);
-  if (element.axes.some((axis) => pointDistance(point, axis) < 40)) {
+  const worldAxes = element.axes.map((axis) =>
+    rotatePointClockwise(axis, element.pivot, element.rotation),
+  );
+  if (worldAxes.some((axis) => pointDistance(point, axis) < 40)) {
     throw new RangeError("Coordinate axes must remain at least 40 page units long.");
   }
   const origin = canonicalPoint(point);
-  return { ...element, origin, pivot: origin };
+  const axes = worldAxes.map((axis) =>
+    canonicalPoint(rotatePointClockwise(axis, origin, -element.rotation)),
+  );
+  return element.dimension === "2d"
+    ? { ...element, axes: [axes[0]!, axes[1]!], origin, pivot: origin }
+    : { ...element, axes: [axes[0]!, axes[1]!, axes[2]!], origin, pivot: origin };
 }
 
 export function rotateSelection(
@@ -212,46 +221,16 @@ export function rotateSelection(
   degrees: number,
 ): InkElementV1[] {
   if (!Number.isFinite(degrees)) throw new RangeError("Rotation must be finite.");
+  const selectedIds = new Set(elements.map(({ id }) => id));
   return elements.map((element) => {
+    if (isLinearElement(element)) {
+      return rotateLinearElement(element, center, degrees, selectedIds);
+    }
     const rotatedPivot = canonicalPoint(rotatePointClockwise(element.pivot, center, degrees));
     const movement = { x: rotatedPivot.x - element.pivot.x, y: rotatedPivot.y - element.pivot.y };
     const translated = translateElement(element, canonicalPoint(movement));
     return { ...translated, rotation: normalizeRotation(element.rotation + degrees) };
   });
-}
-
-export function editLinearEndpoint(
-  element: InkElementV1,
-  endpoint: "start" | "end",
-  point: PointV1,
-  connection: EndpointConnectionV1 | null = null,
-): InkElementV1 {
-  if (!isLinear(element)) throw new TypeError("Endpoint editing requires a linear element.");
-  assertFinitePoint(point);
-  const opposite = endpoint === "start" ? element.end : element.start;
-  if (pointDistance(point, opposite) < 8) {
-    throw new RangeError("Linear elements must remain at least 8 page units long.");
-  }
-  const canonicalEndpoint = canonicalPoint(point);
-  const start = endpoint === "start" ? canonicalEndpoint : element.start;
-  const end = endpoint === "end" ? canonicalEndpoint : element.end;
-  if (element.kind === "straight-highlighter") {
-    return { ...element, [endpoint]: canonicalEndpoint, pivot: linearPivot(start, end, null) };
-  }
-  const bend = normalizeLinearBend(element.start, element.end, element.bend);
-  const replacement: LinearElementV1 = {
-    ...element,
-    [endpoint]: canonicalEndpoint,
-    bend,
-    pivot: linearPivot(start, end, bend),
-  };
-  if (element.kind === "line" || element.kind === "arrow") {
-    return {
-      ...replacement,
-      [endpoint === "start" ? "startConnection" : "endConnection"]: connection,
-    };
-  }
-  return replacement;
 }
 
 function translateElement(element: InkElementV1, delta: PointV1): InkElementV1 {
@@ -287,6 +266,7 @@ function translateElement(element: InkElementV1, delta: PointV1): InkElementV1 {
       ...element,
       start: translate(element.start),
       end: translate(element.end),
+      bend: element.bend === null ? null : translate(element.bend),
       pivot: translate(element.pivot),
     };
   }
@@ -375,6 +355,7 @@ function scaleElement(
       ...element,
       start: scale(element.start),
       end: scale(element.end),
+      bend: element.bend === null ? null : scale(element.bend),
       pivot: scale(element.pivot),
     };
   }
@@ -403,6 +384,13 @@ function scaleElement(
       x: topLeft.x,
       y: topLeft.y,
       columnWidth,
+      ...(element.columnOffsets === undefined
+        ? {}
+        : {
+            columnOffsets: element.columnOffsets.map((offset) =>
+              roundCanonical(offset * factors.x),
+            ),
+          }),
       height,
       headerHeight: roundCanonical(element.headerHeight * factors.y),
       pivot: canonicalPoint({
@@ -412,20 +400,22 @@ function scaleElement(
     };
   }
   const topLeft = scale({ x: element.x, y: element.y });
+  const width = roundCanonical(element.width * factors.x);
+  const height = roundCanonical(element.height * factors.y);
   return {
     ...element,
     x: topLeft.x,
     y: topLeft.y,
-    width: roundCanonical(element.width * factors.x),
-    height: roundCanonical(element.height * factors.y),
-    pivot: scale(element.pivot),
+    width,
+    height,
+    pivot: canonicalPoint({ x: topLeft.x + width / 2, y: topLeft.y + height / 2 }),
   };
 }
 
 function minimumUniformScale(element: InkElementV1): number {
   if (element.kind === "table") {
     return Math.max(
-      40 / element.columnWidth,
+      40 / minimumTableColumnWidth(element),
       80 / element.height,
       MINIMUM_TABLE_HEADER_HEIGHT / element.headerHeight,
     );
@@ -433,7 +423,7 @@ function minimumUniformScale(element: InkElementV1): number {
   if (element.kind === "coordinate-system") {
     return Math.max(...element.axes.map((axis) => 40 / pointDistance(element.origin, axis)));
   }
-  if (isLinear(element)) return 8 / pointDistance(element.start, element.end);
+  if (isLinearElement(element)) return 8 / pointDistance(element.start, element.end);
   if (element.kind === "stroke") return 0;
   return Math.max(1 / element.width, 1 / element.height);
 }
@@ -441,7 +431,7 @@ function minimumUniformScale(element: InkElementV1): number {
 function clampScaleFactors(element: InkElementV1, factors: ScaleFactors): ScaleFactors {
   if (element.kind === "table") {
     return {
-      x: Math.max(factors.x, 40 / element.columnWidth),
+      x: Math.max(factors.x, 40 / minimumTableColumnWidth(element)),
       y: Math.max(
         factors.y,
         80 / element.height,
@@ -449,7 +439,11 @@ function clampScaleFactors(element: InkElementV1, factors: ScaleFactors): ScaleF
       ),
     };
   }
-  if (element.kind !== "stroke" && !isLinear(element) && element.kind !== "coordinate-system") {
+  if (
+    element.kind !== "stroke" &&
+    !isLinearElement(element) &&
+    element.kind !== "coordinate-system"
+  ) {
     return {
       x: Math.max(factors.x, 1 / element.width),
       y: Math.max(factors.y, 1 / element.height),
@@ -457,12 +451,6 @@ function clampScaleFactors(element: InkElementV1, factors: ScaleFactors): ScaleF
   }
   const scaledMinimum = minimumUniformScale(element);
   return { x: Math.max(factors.x, scaledMinimum), y: Math.max(factors.y, scaledMinimum) };
-}
-
-function isLinear(element: InkElementV1): element is LinearElementV1 {
-  return (
-    element.kind === "line" || element.kind === "arrow" || element.kind === "straight-highlighter"
-  );
 }
 
 function shouldTransformEndpoint(element: LinearElementV1, endpoint: "start" | "end"): boolean {

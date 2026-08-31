@@ -165,7 +165,8 @@ type ShapeAnchorV1 =
   | { kind: "polygon-vertex"; index: number }
   | { kind: "polygon-edge-midpoint"; index: number }
   | { kind: "coordinate-origin" }
-  | { kind: "coordinate-axis-end"; index: number };
+  | { kind: "coordinate-axis-end"; index: number }
+  | { kind: "linear-endpoint"; endpoint: "start" | "end" };
 
 interface ConnectableLinearBaseV1 extends LinearBaseV1 {
   startConnection: EndpointConnectionV1 | null;
@@ -188,7 +189,6 @@ interface ArrowElementV1 extends ConnectableLinearBaseV1 {
 
 interface StraightHighlighterElementV1 extends LinearBaseV1 {
   kind: "straight-highlighter";
-  bend: null;
   startNode: "none";
   endNode: "none";
   style: StrokeStyleV1;
@@ -200,7 +200,7 @@ type ArrowNodeV1 = "none" | "arrow" | "triangle" | "diamond" | "circle";
 
 - `bend` is the control point of a quadratic Bézier curve.
 - Lines and arrows use `OutlineStyleV1`. Straight highlighters use `StrokeStyleV1`.
-- Straight highlighters always use `bend: null` and both nodes set to `none`.
+- Straight highlighters default to `bend: null` and both nodes set to `none`; their bend may be stored as a page-space quadratic control point after editing.
 - Straight-highlighter style always uses `pressureEnabled: false` and `smoothing: 0.5`.
 - Lines default to both nodes set to `none`.
 - Arrows default to `startNode: "none"` and `endNode: "arrow"`.
@@ -221,20 +221,21 @@ Filled nodes use the outline color and opacity. The line body ends at the node e
 
 ### Endpoint Connections
 
-An endpoint connection targets only a closed shape, coordinate system, or table. Strokes, highlighters, lines, and arrows are never targets, so connection cycles are impossible. Anchor validity is exact:
+An endpoint connection targets a closed shape, coordinate system, table, line, or arrow. Strokes and highlighters are never targets. Line and arrow targets expose their two endpoint anchors. A connection to the same linear element or any target that would create a directed connection cycle is invalid. Anchor validity is exact:
 
 - rectangle and table use every `box` position
 - ellipse uses `ellipse-cardinal` at 0, 90, 180, or 270 degrees
 - triangle, diamond, parallelogram, and octagon use each valid `polygon-vertex` and `polygon-edge-midpoint` index
 - coordinate systems use `coordinate-origin` and each current `coordinate-axis-end` index
+- lines and arrows use `linear-endpoint` with `endpoint` set to `start` or `end`
 
 `box` positions use the named corners and side midpoints of the unrotated bounds. Ellipse angles are clockwise in page coordinates: the user-facing points are 90 at the bottom, 180 at the left, 270 at the top, and 360 at the right; persisted 360 is canonicalized to 0. Polygon indices use the normalized vertex order defined below; edge midpoint `i` lies halfway from vertex `i` to vertex `(i + 1) mod vertexCount`. Coordinate-axis indices are zero-based positions in `axes`.
 
 The deterministic semantic anchor order is: `box` positions in their `BoxAnchorV1` declaration order; ellipse angles 0, 90, 180, 270; polygon vertices by ascending index before polygon edge midpoints by ascending index; coordinate origin before axis endpoints by ascending index. Equal-distance candidates compare frontmost render rank, target ID, then this anchor order.
 
-Resolve an anchor in the target's unrotated canonical geometry, then rotate it clockwise around the target pivot. `start` and `end` store the last successfully resolved page point and MUST equal the current resolved anchor within 0.001 page units while connected. A dangling target, incompatible anchor kind, invalid index, or mismatched resolved point makes a file invalid and read-only.
+Resolve an anchor in the target's unrotated canonical geometry, then rotate it clockwise around the target pivot. `start` and `end` store the last successfully resolved page point and MUST equal the current resolved anchor within 0.001 page units while connected. A dangling target, incompatible anchor kind, invalid index, cycle, or mismatched resolved point makes a file invalid and read-only.
 
-The store maintains a derived reverse map from target ID to `{ linearId, endpoint }` references. A target move, scale, rotation, shape-handle edit, axis edit, or table geometry edit resolves only its dependents, updates their endpoint coordinates, bounds, path caches, and spatial-index records, then commits the target and dependents atomically. The bend remains in page coordinates. During a live target gesture, visible dependent paths update in the same frame without tweening.
+The store maintains a derived reverse map from target ID to `{ linearId, endpoint }` references. A target move, scale, rotation, shape-handle edit, axis edit, or outer table geometry edit resolves only its dependents, updates their endpoint coordinates, bounds, path caches, and spatial-index records, then commits the target and dependents atomically. Header and inner separator edits do not change outer table anchors and therefore do not visit reverse dependencies. The bend remains in page coordinates. During a live target gesture, visible dependent paths update in the same frame without tweening.
 
 Bounds and geometry validation treat the target and all re-resolved dependents as one atomic candidate. Anchors and dependent bounds are recomputed from the exact proposed target transform. No target or dependent receives an edge correction. If any resulting line or arrow is shorter than 8 page units, or the complete candidate violates geometry, resource, or derived-height limits, the complete command is rejected. Connected linear geometry therefore never needs a zero-vector node-direction fallback.
 
@@ -301,20 +302,22 @@ interface TableElementV1 extends ElementBaseV1 {
   columns: number;
   headerHeight: number;
   style: OutlineStyleV1;
+  columnOffsets?: number[];
 }
 ```
 
-- A table is one atomic element made from one outer rectangle, equal-width vertical column separators, and one horizontal header separator.
+- A table is one atomic element made from one outer rectangle, vertical column separators, and one horizontal header separator. New tables start with equal-width columns; edited tables may retain explicit separator offsets.
 - It contains no row separators and no editable text.
 - Column count is an integer from 1 through 12 and defaults to 3.
 - `columnWidth` is canonical persisted geometry. Total table width is always derived as `columns * columnWidth` and is not stored separately. Minimum column width is 40 page units. Minimum total height is 80 page units.
+- `columnOffsets`, when present, contains exactly `columns - 1` strictly increasing local x positions for the inner vertical separators. Every adjacent segment, including both outer segments, is at least 40 page units. Its absence is the backward-compatible equal-column representation, where separators are derived from `columnWidth`.
 - Header height defaults to 30 percent of total height and is clamped to `24..height / 2`.
 - For table creation, let `sx = end.x >= start.x ? 1 : -1` and `sy = end.y >= start.y ? 1 : -1`. Canonicalize `columnWidth = max(abs(end.x - start.x) / columns, 40)` once, then derive `width = columns * columnWidth`. Set `height = max(abs(end.y - start.y), 80)`, `x = sx > 0 ? start.x : start.x - width`, and `y = sy > 0 ? start.y : start.y - height`. Crossing the start point therefore changes the expanding direction without producing negative dimensions. The derived width may differ from the raw drag width by the canonical rounding of one column, but every column remains exactly equal.
 - For a column-count edit from `columns` to `newColumns`, retain the canonical `columnWidth` unchanged and derive `oldWidth = columns * columnWidth` and `newWidth = newColumns * columnWidth`. Adding columns therefore extends the local right side, while removing columns removes local rightmost columns and shrinks the table. The command does not redistribute the retained columns across the old total width, and repeated count changes cannot accumulate column-width drift.
 - The rendered local left edge is the fixed anchor of a column-count edit. Let `R` rotate a vector clockwise by `rotation`, `oldPivot` be the pre-command pivot, and `deltaWidth = newWidth - oldWidth`. Calculate the unrounded candidate `newPivot = oldPivot + R({ x: deltaWidth / 2, y: 0 })`, `newX = newPivot.x - newWidth / 2`, and `newY = newPivot.y - height / 2`, then apply the normal canonical rounding once to the resulting stored coordinates. At zero rotation, `newX` equals the previous `x`. After canonicalization, each endpoint of the rendered left edge MUST remain within 0.003 page units of its immediately preceding position. This bound covers the worst-case independent three-decimal rounding of the pivot and bounds coordinates for one edit over the complete rotation range.
 - A column-count edit preserves `y` only at zero rotation and always preserves height, header height, rotation, style, outline width, and the persisted `columnWidth`. It validates the `1..12` range, the 40-page-unit minimum column width, finite numbers, canonical rounding, the per-edit fixed-edge tolerance, resource limits, derived height, and every connected dependent before commit. If the complete result is invalid, the command is rejected without changing the table, revision, or history.
 - When one command targets several selected tables, it applies the requested absolute column count independently while preserving each table's own persisted `columnWidth`. Changed tables and all affected line or arrow dependents commit atomically. A table already at the requested count remains unchanged; if every target is unchanged, the command is a no-op.
-- Scaling changes bounds, separators, `columnWidth`, and header height proportionally, never outline width.
+- Scaling changes bounds, separators, `columnWidth`, and header height proportionally, never outline width. Table header and inner separator edits preserve local offsets, snap the header to its default position or the columns to equal spacing, and reject any result with an adjacent segment below 40 page units.
 
 ## Transform Rules
 
@@ -324,7 +327,8 @@ interface TableElementV1 extends ElementBaseV1 {
 - Single-element scaling is performed in the element's unrotated local frame around the opposite handle `anchor`. Unrotate the start and current pointer by `-rotation` around the current pivot, compute `sx = (current.x - anchor.x) / (start.x - anchor.x)` and `sy = (current.y - anchor.y) / (start.y - anchor.y)`, and clamp each factor before it reaches zero so every documented minimum remains satisfied. Every canonical point becomes `anchor + (sx * (point.x - anchor.x), sy * (point.y - anchor.y))`; bounds and table fields are derived from those transformed corners. The pivot is recomputed from the result. Handle crossing never mirrors an element.
 - Multi-element scaling is uniform only. Let `anchor` be the opposite selection-bounds corner and `s = max(minimumScale, distance(anchor,currentPointer) / distance(anchor,startPointer))`, where `minimumScale` is the greatest per-element factor needed to retain every documented minimum. The session derives `minimumScale` once from the immutable gesture-start selection and reuses it for every preview and commit slice. Every geometry point and pivot becomes `anchor + s * (value - anchor)`. Bounds, table header height, and axis lengths scale by `s`; each element's rotation is unchanged.
 - Single-element rotation adds the gesture angle delta to `rotation`; geometry and pivot remain unchanged. Multi-element rotation uses the selection-bounds center `c`: each element's canonical geometry and pivot first move by `rotate(pivot - c, delta) + c - pivot`, then its normalized `rotation` increases by `delta`.
-- Endpoint, bend, axis, dedicated shape-handle, coordinate-system dimensionality, and table column-count edits update their named canonical fields directly and recompute the pivot where the element kind requires a bounds center. Editing a connected endpoint follows the connection rules above. Coordinate-system pivot always equals its origin. Structural edits use the kind-specific geometry rules above rather than a selection-scale transform.
+- Endpoint, bend, axis, dedicated shape-handle, coordinate-system dimensionality, and table column-count or separator edits update their named canonical fields directly and recompute the pivot where the element kind requires a bounds center. Editing a connected endpoint follows the connection rules above. Coordinate-system pivot always equals its origin. Structural edits use the kind-specific geometry rules above rather than a selection-scale transform.
+- Axis endpoint edits use an absolute 45-degree angular snap. Line and arrow creation and endpoint edits use an absolute 90-degree angular snap. Both use the active zoom to convert a 5 CSS-pixel screen threshold; semantic anchors take precedence.
 - Style widths, node sizes, and eraser radius never change through geometric scaling. Invalid or degenerate results are clamped before commit.
 
 ## Bounds
@@ -375,8 +379,8 @@ Runtime height changes only after committed geometry or page commands:
 - Shrink to the recomputed `activeHeight` when it is at least one `bufferUnit` below the current height.
 - A background type or spacing command never changes active height. It updates the derived locked target and the next persisted SVG envelope. Other page settings adopt the recomputed height only when they participate in the corresponding formula.
 - Lock always targets the exact recomputed `lockedHeight`; unlock always targets the exact recomputed `activeHeight`.
-- Selection move previews and selection autoscroll never change the canvas extent or start a height transition. Their viewport projection remains relative to one stable page geometry for the complete gesture.
-- A successful selection move commit participates in the ordinary committed-geometry rules above and transitions to the recomputed `activeHeight` when required. Cancellation and no-op moves leave the current height unchanged. No pointer sample changes a height target.
+- Selection move previews and selection autoscroll may coalesce only larger writing-row-aligned canvas targets through the bounded 180-millisecond transition. They never acquire passive scroll stabilization while the active input owns scrolling and never request a smaller preview target during the gesture.
+- A successful selection move commit retains the greater of the final rendered preview extent and the Store-derived extent. Cancellation transitions back to the captured original height, while a no-op that requested no larger preview leaves height unchanged. The final canvas height must never be smaller than committed geometry.
 - During any transition, a new target starts from the currently rendered height.
 
 ## Clipboard Format

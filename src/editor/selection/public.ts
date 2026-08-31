@@ -44,6 +44,7 @@ export {
 } from "./overlay-geometry";
 export type { SelectionOutline } from "./overlay-geometry";
 export { SelectionHandleSession } from "./handle-session";
+export { resolvePointAngleSnap } from "./angular-snap";
 export type {
   SelectionHandleAction,
   SelectionHandlePreview,

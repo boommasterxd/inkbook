@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ArrowElementV1, LineElementV1 } from "../../../../src/domain/schema/public";
 import {
   decodeCustomClipboardText,
   encodeSelection,
@@ -90,6 +91,30 @@ describe("clipboard codec", () => {
     expect(decoded.value.compactJson).toBe(encoded.value.compactJson);
     expect(decoded.value.payload).toEqual(encoded.value.payload);
   });
+
+  it("preserves connections to selected line and arrow endpoints", () => {
+    const [target, dependent] = linearSelection();
+    const encoded = encodeSelection([target, dependent], new Set([target.id, dependent.id]));
+
+    expect(encoded.ok).toBe(true);
+    if (!encoded.ok) return;
+    const body = encoded.value.payload.elements[1]?.element;
+    expect(body?.kind).toBe("arrow");
+    if (body?.kind === "arrow") {
+      expect(body.startConnection).toEqual({
+        anchor: { endpoint: "end", kind: "linear-endpoint" },
+        targetClipId: "0",
+      });
+    }
+    expect(decodeCustomClipboardText(encoded.value.customText)).toMatchObject({ ok: true });
+
+    const incompatible = structuredClone(encoded.value.payload);
+    const incompatibleBody = incompatible.elements[1]?.element;
+    if (incompatibleBody?.kind === "arrow" && incompatibleBody.startConnection !== null) {
+      incompatibleBody.startConnection.anchor = { kind: "box", position: "top-left" };
+    }
+    expect(validateClipboardPayload(incompatible).ok).toBe(false);
+  });
 });
 
 describe("clipboard validation", () => {
@@ -157,7 +182,9 @@ describe("clipboard validation", () => {
       error: { code: "invalid-schema" },
     });
   });
+});
 
+describe("clipboard aggregate validation", () => {
   it("enforces aggregate spatial-index cell memberships", () => {
     const payload = (count: number) => ({
       format: "inkbook-elements" as const,
@@ -175,4 +202,64 @@ describe("clipboard validation", () => {
     expect(rejected.error).toMatchObject({ code: "invalid-schema" });
     expect(rejected.error.message).toMatch(/spatial-index capacity/);
   });
+
+  it("rejects self-connections and cycles between clipboard linear elements", () => {
+    const [target] = linearSelection();
+    const self = encodePayload([target]);
+    const selfBody = self.elements[0]?.element;
+    if (selfBody?.kind !== "line") throw new Error("Expected a line clipboard body.");
+    selfBody.startConnection = {
+      targetClipId: "0",
+      anchor: { endpoint: "start", kind: "linear-endpoint" },
+    };
+    expect(validateClipboardPayload(self).ok).toBe(false);
+
+    const cycle = encodePayload(linearSelection());
+    const firstBody = cycle.elements[0]?.element;
+    const secondBody = cycle.elements[1]?.element;
+    if (firstBody?.kind !== "line" || secondBody?.kind !== "arrow") {
+      throw new Error("Expected line and arrow clipboard bodies.");
+    }
+    firstBody.endConnection = {
+      targetClipId: "1",
+      anchor: { endpoint: "start", kind: "linear-endpoint" },
+    };
+    secondBody.endConnection = {
+      targetClipId: "0",
+      anchor: { endpoint: "end", kind: "linear-endpoint" },
+    };
+    expect(validateClipboardPayload(cycle).ok).toBe(false);
+  });
 });
+
+function encodePayload(elements: readonly (LineElementV1 | ArrowElementV1)[]) {
+  const encoded = encodeSelection(elements, new Set(elements.map(({ id }) => id)));
+  if (!encoded.ok) throw new Error(encoded.error.message);
+  return encoded.value.payload;
+}
+
+function linearSelection(): [LineElementV1, ArrowElementV1] {
+  const target: LineElementV1 = {
+    ...arrow(),
+    end: { x: 200, y: 100 },
+    endNode: "none",
+    id: RECTANGLE_ID,
+    kind: "line",
+    pivot: { x: 150, y: 100 },
+    start: { x: 100, y: 100 },
+    startConnection: null,
+    startNode: "none",
+  };
+  const dependent: ArrowElementV1 = {
+    ...arrow(target.id),
+    end: { x: 300, y: 100 },
+    id: ARROW_ID,
+    pivot: { x: 250, y: 100 },
+    start: { x: 200, y: 100 },
+    startConnection: {
+      anchor: { endpoint: "end", kind: "linear-endpoint" },
+      targetId: target.id,
+    },
+  };
+  return [target, dependent];
+}

@@ -55,7 +55,7 @@ aligned occupied extent
 
 The alignment step and buffer unit are both fixed at 100 page units. Background selection, S/M/L/XL, and buffer-count changes therefore cannot alter the physical size of a pattern.
 
-The page is not remeasured after every pointer sample. After a committed geometry change, it grows when less than one writing line of active buffer remains and restores the configured buffer in one 180-millisecond height transition. Selection move previews and their native autoscroll retain the existing canvas extent throughout the gesture. Only a successful commit can trigger ordinary growth from the final stored geometry; cancellation and no-op moves do not change page height.
+The page is not remeasured after every pointer sample. After a committed geometry change, it grows when less than one writing line of active buffer remains and restores the configured buffer in one 180-millisecond height transition. Selection moves and geometry-handle gestures may request only a larger writing-row-aligned preview extent, and repeated pointer or autoscroll frames coalesce into the existing 180-millisecond transition without passive scroll stabilization. Cancellation returns to the captured original height. A successful commit retains at least the final rendered preview extent and the Store-derived extent, including through a time-sliced handle commit, so moved, resized, or structurally edited content cannot be clipped by a smaller post-gesture measurement.
 
 When content is deleted, the active embed can shrink again. The active editor defaults to three empty writing lines below content. A non-empty patterned locked preview ends after the pattern row containing the lowest annotation plus exactly one additional pattern row. A non-empty preview without a visible pattern uses one additional 100-unit writing row. An empty page keeps the shared 2.5-writing-line minimum rounded up to a complete 100-unit writing row. The active per-file buffer remains configurable; locked trailing space is fixed to one row of the selected locked alignment so preview height follows content consistently. Unlock and Lock animate between these derived heights over 240 milliseconds. The page includes writable margins on all four sides; writing into the bottom margin triggers writing-row-aligned active growth that restores the complete margin below the occupied extent.
 
@@ -247,7 +247,7 @@ The process:
 6. After the exact saved revision and its static preview are ready, the preview fades in while the editor fades out over an independent 120 milliseconds.
 7. The interactive editor is unmounted only after the crossfade completes.
 
-The save is awaited in full so that the new preview does not accidentally load the previous file state. A failed save keeps the disabled editor mounted with its dirty state and presents Retry, Save local copy, and Cancel actions. Cancel restores the prior active camera and active height without discarding data.
+The save is awaited in full so that the new preview does not accidentally load the previous file state. A validated saved SVG and the aspect ratio derived from those exact SVG bytes are mounted atomically, including when the presentation is already locked. A failed save keeps the disabled editor mounted with its dirty state and presents Retry, Save local copy, and Cancel actions. Cancel restores the prior active camera and active height without discarding data.
 
 ## Overflow Functions
 

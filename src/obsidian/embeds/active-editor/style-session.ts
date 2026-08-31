@@ -20,6 +20,7 @@ import type { ElementSceneStore } from "./scene-store";
 export interface ActiveEditorStyleSessionOptions {
   readonly defaults: ToolDefaultsV1;
   readonly history: ActiveEditorHistory;
+  readonly onSelectionGeometryChanged: () => void;
   readonly onStateChanged: () => void;
   readonly sceneStore: ElementSceneStore;
   readonly selection: () => ReadonlySet<string>;
@@ -29,6 +30,7 @@ export interface ActiveEditorStyleSessionOptions {
 export class ActiveEditorStyleSession {
   #defaults: ToolDefaultsV1;
   readonly #history: ActiveEditorHistory;
+  readonly #onSelectionGeometryChanged: () => void;
   readonly #onStateChanged: () => void;
   readonly #sceneStore: ElementSceneStore;
   readonly #selection: () => ReadonlySet<string>;
@@ -37,6 +39,7 @@ export class ActiveEditorStyleSession {
   public constructor(options: ActiveEditorStyleSessionOptions) {
     this.#defaults = structuredClone(options.defaults);
     this.#history = options.history;
+    this.#onSelectionGeometryChanged = options.onSelectionGeometryChanged;
     this.#onStateChanged = options.onStateChanged;
     this.#sceneStore = options.sceneStore;
     this.#selection = options.selection;
@@ -72,7 +75,8 @@ export class ActiveEditorStyleSession {
       const replacement = createSelectionStyleReplacement(elements, id, value);
       if (replacement !== null) {
         const complete = completeReplacement(replacement.replacements, this.#store);
-        if (complete !== null) this.#history.replace(complete.previous, complete.replacements);
+        if (complete !== null && this.#history.replace(complete.previous, complete.replacements))
+          this.#onSelectionGeometryChanged();
       }
       return;
     }

@@ -35,6 +35,7 @@ export class SceneMotionController {
   #resourceConstrained = false;
   #reducedMotion: boolean;
   #selectionMotion: OverlayMotion | undefined;
+  #selectionHandleMotion: OverlayMotion | undefined;
   public constructor(
     dom: SceneDom,
     content: SceneContentRenderer,
@@ -141,12 +142,21 @@ export class SceneMotionController {
     }
   }
 
-  public setSelectionPath(path: string | null, fill: "accent" | "none"): void {
+  public setSelectionPath(
+    path: string | null,
+    handlePath: string | null,
+    fill: "accent" | "none",
+  ): void {
     this.#dom.selectionOverlayPath.setAttribute("data-selection-fill", fill);
     this.#selectionMotion = this.setOverlay(
       this.#dom.selectionOverlayPath,
       path,
       this.#selectionMotion,
+    );
+    this.#selectionHandleMotion = this.setOverlay(
+      this.#dom.selectionHandlePath,
+      handlePath,
+      this.#selectionHandleMotion,
     );
   }
 
@@ -173,6 +183,11 @@ export class SceneMotionController {
     this.#selectionMotion = this.writeOverlay(
       this.#dom.selectionOverlayPath,
       this.#selectionMotion,
+      effectiveTime,
+    );
+    this.#selectionHandleMotion = this.writeOverlay(
+      this.#dom.selectionHandlePath,
+      this.#selectionHandleMotion,
       effectiveTime,
     );
     const pending = this.hasPending();
@@ -361,7 +376,7 @@ export class SceneMotionController {
     }
     if (next !== "") node.setAttribute("d", next);
     const direction = next === "" ? "exit" : "enter";
-    writeMotionStyle(node, direction === "enter" ? 0 : 1, direction === "enter" ? 0.96 : 1);
+    writeMotionStyle(node, direction === "enter" ? 0 : 1, 1);
     return { direction, startTime: undefined };
   }
 
@@ -375,7 +390,7 @@ export class SceneMotionController {
     const raw = Math.min(1, (frameTime - motion.startTime) / TRANSITION_DURATIONS.fallback);
     const progress = standardMotionProgress(raw);
     const visible = motion.direction === "enter" ? progress : 1 - progress;
-    writeMotionStyle(node, visible, 0.96 + visible * 0.04);
+    writeMotionStyle(node, visible, 1);
     if (raw < 1) return motion;
     if (motion.direction === "exit") node.setAttribute("d", "");
     writeMotionStyle(node, 1, 1);
@@ -386,7 +401,9 @@ export class SceneMotionController {
     for (const entry of this.#entries.values()) this.finishEntry(entry, releasing);
     this.#entryByElementId.clear();
     this.finishOverlay(this.#dom.selectionOverlayPath, this.#selectionMotion);
+    this.finishOverlay(this.#dom.selectionHandlePath, this.#selectionHandleMotion);
     this.#selectionMotion = undefined;
+    this.#selectionHandleMotion = undefined;
     this.#lastFrameTime = undefined;
     this.refreshCacheSize();
   }
@@ -397,7 +414,11 @@ export class SceneMotionController {
   }
 
   private hasPending(): boolean {
-    return this.#entries.size > 0 || this.#selectionMotion !== undefined;
+    return (
+      this.#entries.size > 0 ||
+      this.#selectionMotion !== undefined ||
+      this.#selectionHandleMotion !== undefined
+    );
   }
 
   private add(entry: MotionEntry): void {

@@ -67,6 +67,7 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
     }),
     handles: new ActiveEditorHandleInteraction({
       history: options.history,
+      layout: controller.selectionMoveLayout,
       model: controller.model,
       pageToScreen: (point) => options.navigation.localPointFromPage(point),
       preparedHistory,

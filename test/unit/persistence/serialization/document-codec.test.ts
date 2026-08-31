@@ -66,6 +66,40 @@ describe("Inkbook document serialization", () => {
     expect(result.value.svg).not.toContain('stroke="none"');
     expect(validateSafeSvg(result.value.svg)).not.toBeNull();
   });
+
+  it("round-trips custom table separators while preserving legacy equal columns", () => {
+    const custom = createAllElementSnapshot();
+    const customTable = custom.elements.find((element) => element.kind === "table");
+    expect(customTable?.kind).toBe("table");
+    if (customTable?.kind !== "table") return;
+    customTable.columnOffsets = [140, 250];
+
+    const serialized = serializeInkbookDocument(custom);
+
+    expect(serialized.ok).toBe(true);
+    if (!serialized.ok) return;
+    expect(
+      serialized.value.snapshot.elements.find((element) => element.kind === "table"),
+    ).toMatchObject({
+      columnOffsets: [140, 250],
+    });
+    expect(serialized.value.svg).toContain("M1260 400L1260 500");
+    expect(serialized.value.svg).toContain("M1370 400L1370 500");
+
+    const parsed = parseInkbookDocument(serialized.value.svg);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.value.snapshot.elements).toHaveLength(custom.elements.length);
+    expect(
+      parsed.value.snapshot.elements.find((element) => element.kind === "table"),
+    ).toMatchObject({
+      columnOffsets: [140, 250],
+    });
+
+    const legacy = serializeInkbookDocument(createAllElementSnapshot());
+    expect(legacy.ok).toBe(true);
+    if (legacy.ok) expect(legacy.value.svg).not.toContain('"columnOffsets"');
+  });
 });
 
 describe("Inkbook background serialization", () => {

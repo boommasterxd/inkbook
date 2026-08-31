@@ -14,6 +14,8 @@ import type { PreparedElementHistory } from "../../../../../src/obsidian/embeds/
 import { createSynchronousActiveEditorHistory } from "../../../../fixtures/obsidian/synchronous-active-editor-history";
 import { connectedLine, rectangle } from "../../../domain/store/fixtures";
 
+const selectedOverlayCall = [expect.any(String), "accent", expect.any(String)];
+
 function createPreview(edgeDrag: SelectionEdgeDragPort) {
   const store = { get: () => undefined } as unknown as ElementStore;
   return new MovePreview({
@@ -45,7 +47,7 @@ function createPreview(edgeDrag: SelectionEdgeDragPort) {
 function createEdgeDrag() {
   return {
     begin: vi.fn<() => void>(),
-    finish: vi.fn<(committed: boolean) => void>(),
+    finish: vi.fn<(committed: boolean, previewMaximumBottom?: number) => void>(),
     stop: vi.fn<() => void>(),
     update: vi.fn<(pointer: { readonly x: number; readonly y: number }) => void>(),
     updatePreviewBottom: vi.fn<(maximumBottom: number) => void>(),
@@ -96,7 +98,7 @@ describe("selection move edge-drag integration", () => {
     expect(edgeDrag.stop).toHaveBeenCalledOnce();
     expect(edgeDrag.finish).not.toHaveBeenCalled();
     complete?.(true);
-    expect(edgeDrag.finish).toHaveBeenCalledWith(true);
+    expect(edgeDrag.finish).toHaveBeenCalledWith(true, calculateElementBounds(element).maxY + 20);
     sceneStore.release();
   });
 
@@ -209,7 +211,7 @@ describe("selection move edge-drag validation", () => {
 
     expect(preview.commit()).toBe(false);
     expect(clearPreviewTransforms).toHaveBeenCalledOnce();
-    expect(setSelectionOverlayPath).toHaveBeenLastCalledWith(expect.any(String), "accent");
+    expect(setSelectionOverlayPath.mock.lastCall).toEqual(selectedOverlayCall);
     expect(edgeDrag.finish).toHaveBeenCalledWith(false);
   });
 
@@ -303,7 +305,7 @@ describe("selection move connected geometry", () => {
     expect(setSelectionOverlayPath.mock.lastCall?.[0]).toContain(
       "M 118 128 L 322 128 L 322 232 L 118 232 Z",
     );
-    expect(setSelectionOverlayPath).toHaveBeenLastCalledWith(expect.any(String), "accent");
+    expect(setSelectionOverlayPath.mock.lastCall).toEqual(selectedOverlayCall);
   });
 
   it("keeps a selected endpoint pinned to an unselected target during preview", () => {
@@ -483,9 +485,7 @@ function enclosedLassoHarness(
   };
 }
 
-function pointer(x: number, y: number) {
-  return { pointerId: 10, pointerType: "mouse" as const, pressure: 0.5, x, y };
-}
+const pointer = (x: number, y: number) => ({ pointerId: 10, pointerType: "mouse" as const, x, y });
 
 function encloseRectangle(
   preview: LassoPreview,

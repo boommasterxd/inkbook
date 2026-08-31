@@ -1,5 +1,6 @@
 import { isAnchorTarget, resolveShapeAnchor } from "../geometry/anchors";
 import { linearPivot, pointDistance } from "../geometry/primitives";
+import { hasReachableDependencyCycle } from "../schema/dependency-cycle";
 import type { InkElementV1, LineElementV1, ArrowElementV1 } from "../schema/public";
 
 import { mutableElement } from "./immutability";
@@ -108,6 +109,25 @@ export function assertResolvedConnections(
   assertEndpointResolved(element, "end", lookup);
 }
 
+export function assertAcyclicConnections(
+  roots: Iterable<string>,
+  lookup: (id: string) => ImmutableInkElement | InkElementV1 | undefined,
+): void {
+  if (hasReachableDependencyCycle(roots, (id) => connectionDependencies(id, lookup))) {
+    throw new RangeError("Linear endpoint connections must not form a cycle.");
+  }
+}
+
+function connectionDependencies(
+  id: string,
+  lookup: (id: string) => ImmutableInkElement | InkElementV1 | undefined,
+): readonly string[] {
+  const element = lookup(id);
+  return element === undefined || !isConnectable(element)
+    ? []
+    : connectionReferences(element).map(({ targetId }) => targetId);
+}
+
 function detachTargets(
   element: ImmutableInkElement,
   removedIds: ReadonlySet<string>,
@@ -133,6 +153,9 @@ function resolveEndpoint(
 ): void {
   const connection = endpoint === "start" ? element.startConnection : element.endConnection;
   if (connection === null) return;
+  if (connection.targetId === element.id) {
+    throw new RangeError("A linear element cannot connect to itself.");
+  }
   const point = resolveConnectionAnchor(connection, lookup);
   if (point === null) {
     if (invalidAnchor === "detach") {

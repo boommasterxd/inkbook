@@ -316,26 +316,33 @@ describe("canvas crossfades and overlays", () => {
     scheduler.runAll();
     expect(currentBackground?.style.opacity).toBeUndefined();
   });
+});
 
-  it("animates selection overlays while snap feedback updates immediately", () => {
+describe("selection overlay motion", () => {
+  it("animates handles with the selection while snap feedback updates immediately", () => {
     const { renderer, scheduler } = setup();
     scheduler.runAll();
     const overlayGroup = fakeNode(renderer.svg).nodes[2]!;
     const selection = overlayGroup.nodes[1]!;
-    const snap = overlayGroup.nodes[2]!;
+    const handles = overlayGroup.nodes[2]!;
+    const snap = overlayGroup.nodes[3]!;
 
     expect(selection.attributes.get("class")).toBe("inkbook-selection-overlay");
     expect(selection.attributes.get("data-selection-fill")).toBe("accent");
 
-    renderer.setSelectionOverlayPath("M 0 0 L 10 10", "none");
+    renderer.setSelectionOverlayPath("M 0 0 L 10 10", "none", "M 2 2 a 5 5 0 1 0 10 0");
     renderer.setSnapMarkerPath("M 5 5 L 6 6");
     scheduler.runNext();
     expect(selection.attributes.get("data-selection-fill")).toBe("none");
     expect(selection.style.opacity).toBe("0");
+    expect(selection.style.transform).toBe("scale(1)");
+    expect(handles.attributes.get("class")).toBe("inkbook-selection-handles");
+    expect(handles.style.opacity).toBe("0");
     expect(snap.style.opacity).toBe("1");
 
     renderer.interruptMotionForPointerDown();
     expect(selection.style.opacity).toBe("1");
+    expect(handles.style.opacity).toBe("1");
     expect(snap.style.opacity).toBe("1");
     expect(renderer.instrumentation().motionInterruptions).toBe(1);
 
@@ -347,6 +354,7 @@ describe("canvas crossfades and overlays", () => {
     expect(snap.attributes.get("d")).toBe("");
     renderer.interruptMotionForPointerDown();
     expect(selection.attributes.get("d")).toBe("");
+    expect(handles.attributes.get("d")).toBe("");
     expect(snap.attributes.get("d")).toBe("");
   });
 

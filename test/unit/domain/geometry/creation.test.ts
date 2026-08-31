@@ -65,7 +65,9 @@ describe("element geometry creation", () => {
     expect(changeCoordinateSystemDimension(threeDimensional, "3d")).toBe(threeDimensional);
     expect(changeCoordinateSystemDimension(threeDimensional, "2d").axes).toHaveLength(2);
   });
+});
 
+describe("table geometry creation", () => {
   it("creates tables with one canonical column width in every drag direction", () => {
     expect(createTableGeometry({ x: 200, y: 200 }, { x: 80, y: 100 }, 3)).toEqual({
       x: 80,
@@ -94,6 +96,23 @@ describe("element geometry creation", () => {
     expect(() => changeTableColumns(changed, 0)).toThrow(RangeError);
   });
 
+  it("retains custom separators across column-count changes and restores equal spacing", () => {
+    const custom = table({ columnOffsets: [60, 105] });
+
+    const expanded = changeTableColumns(custom, 4);
+    expect(expanded.columnOffsets).toEqual([60, 105, 150]);
+    expect(expanded.columns).toBe(4);
+
+    const reduced = changeTableColumns(expanded, 2);
+    expect(reduced.columnOffsets).toEqual([60]);
+    expect(reduced.columns).toBe(2);
+
+    const equal = changeTableColumns(table({ columnOffsets: [50, 100] }), 4);
+    expect(equal.columnOffsets).toBeUndefined();
+  });
+});
+
+describe("shape geometry creation", () => {
   it("uses the specified normalized polygon vertices", () => {
     expect(shapeVertices(rectangle({ kind: "triangle" }))).toEqual([
       { x: 50, y: 0 },

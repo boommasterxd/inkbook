@@ -1,4 +1,4 @@
-import { pointDistance } from "../../domain/geometry/public";
+import { pointDistance, rotatePointClockwise } from "../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 import {
   findSnapCandidate,
@@ -15,17 +15,9 @@ import type {
   SelectionSnapPorts,
   TimeSlicedSelectionCommitPreparation,
 } from "./handle-types";
+import { selectionHandleSnapGuide, selectionRotationDelta } from "./handle-snap-resolution";
+import { activeScaleAxes } from "./handle-session-geometry";
 import {
-  HANDLE_SNAP_PIXELS,
-  selectionHandleSnapGuide,
-  selectionRotationDelta,
-  selectionSnapZoom,
-} from "./handle-snap-resolution";
-import { activeScaleAxes, canonicalHandlePoint, clampEndpoint } from "./handle-session-geometry";
-import {
-  editCoordinateAxis,
-  editCoordinateOrigin,
-  editLinearEndpoint,
   minimumUniformScaleForSelection,
   moveSelection,
   rotateSelection,
@@ -36,7 +28,7 @@ import {
   uniformScaleFactorFromPointers,
   type TransformSliceScheduler,
 } from "./transforms";
-import { editLinearBendFromCurvePoint } from "./linear-bend";
+import { materializeTargetedHandle } from "./targeted-handle-action";
 import {
   exceedsExactPreviewWork,
   exceedsReplacementWork,
@@ -57,6 +49,8 @@ export type {
 
 const SYNCHRONOUS_SELECTION_LIMIT = 1_000;
 const SYNCHRONOUS_SELECTION_WORK_LIMIT = 16_384;
+const DEFAULT_REPLACEMENT_WORK = Object.freeze({ includeReverseDependencies: true });
+const TABLE_SEPARATOR_REPLACEMENT_WORK = Object.freeze({ includeReverseDependencies: false });
 
 export class SelectionHandleSession {
   readonly #action: SelectionHandleAction;
@@ -145,7 +139,7 @@ export class SelectionHandleSession {
   #createPreview(): SelectionHandlePreview {
     if (!this.#hasChanged()) return this.#emptyPreview();
     const transform = this.#previewTransform();
-    if (exceedsExactPreviewWork(this.#elements, this.#planner)) {
+    if (exceedsExactPreviewWork(this.#elements, this.#planner, this.#replacementWorkOptions())) {
       this.#valid = true;
       return {
         exactElements: [],
@@ -267,35 +261,19 @@ export class SelectionHandleSession {
     const action = this.#action;
     if (!("elementId" in action)) throw new Error("Expected a targeted handle action.");
     const element = this.#targetElement(action.elementId);
-    if (action.kind === "linear-endpoint") {
-      if (element.kind !== "line" && element.kind !== "arrow") {
-        throw new TypeError("Endpoint handles require a line or arrow.");
-      }
-      const opposite = action.endpoint === "start" ? element.end : element.start;
-      const candidate = this.#validEndpointCandidate(opposite);
-      const point = candidate?.point ?? clampEndpoint(pointer, opposite);
-      const connection =
-        candidate === null ? null : { anchor: candidate.anchor, targetId: candidate.targetId };
-      return [editLinearEndpoint(element, action.endpoint, point, connection)];
-    }
-    if (action.kind === "linear-bend") {
-      return [
-        editLinearBendFromCurvePoint(
-          element,
-          pointer,
-          HANDLE_SNAP_PIXELS / selectionSnapZoom(this.#snap),
-        ),
-      ];
-    }
-    if (element.kind !== "coordinate-system") {
-      throw new TypeError("Coordinate handles require a coordinate system.");
-    }
-    const point = canonicalHandlePoint(element, pointer);
-    return [
-      action.kind === "coordinate-axis"
-        ? editCoordinateAxis(element, action.axisIndex, point)
-        : editCoordinateOrigin(element, point),
-    ];
+    const candidate =
+      action.kind === "linear-endpoint"
+        ? this.#validEndpointCandidate(
+            rotatePointClockwise(
+              action.endpoint === "start"
+                ? assertLinearElement(element).end
+                : assertLinearElement(element).start,
+              element.pivot,
+              element.rotation,
+            ),
+          )
+        : null;
+    return [materializeTargetedHandle({ action, candidate, element, pointer, snap: this.#snap })];
   }
 
   #scaleSingle(element: InkElementV1): InkElementV1 {
@@ -318,6 +296,11 @@ export class SelectionHandleSession {
       this.#snapCandidate = null;
       return;
     }
+    const target = this.#targetElement(this.#action.elementId);
+    if (target.kind !== "line" && target.kind !== "arrow") {
+      this.#snapCandidate = null;
+      return;
+    }
     this.#snapCandidate = findSnapCandidate(
       {
         current: this.#snapCandidate,
@@ -326,7 +309,12 @@ export class SelectionHandleSession {
         zoom: this.#snap.zoom,
       },
       this.#snap.spatial,
-      this.#snap.targets,
+      {
+        get: (id) =>
+          id === target.id || !(this.#snap?.canConnect?.(target.id, id) ?? true)
+            ? null
+            : (this.#snap?.targets.get(id) ?? null),
+      },
       this.#snapScratch,
     );
   }
@@ -438,7 +426,14 @@ export class SelectionHandleSession {
       this.#planner,
       SYNCHRONOUS_SELECTION_LIMIT,
       SYNCHRONOUS_SELECTION_WORK_LIMIT,
+      this.#replacementWorkOptions(),
     );
+  }
+
+  #replacementWorkOptions(): { readonly includeReverseDependencies: boolean } {
+    return this.#action.kind === "table-header" || this.#action.kind === "table-column"
+      ? TABLE_SEPARATOR_REPLACEMENT_WORK
+      : DEFAULT_REPLACEMENT_WORK;
   }
 
   async #continuePreparation(
@@ -475,4 +470,17 @@ function assertFinitePoint(point: PointV1): void {
   if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
     throw new RangeError("Handle points must be finite.");
   }
+}
+
+function assertLinearElement(
+  element: InkElementV1,
+): Extract<InkElementV1, { kind: "arrow" | "line" | "straight-highlighter" }> {
+  if (
+    element.kind !== "line" &&
+    element.kind !== "arrow" &&
+    element.kind !== "straight-highlighter"
+  ) {
+    throw new TypeError("Endpoint handles require a linear drawing element.");
+  }
+  return element;
 }

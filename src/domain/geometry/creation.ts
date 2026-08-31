@@ -115,7 +115,7 @@ export function createTableGeometry(start: PointV1, end: PointV1, columns = 3): 
   const height = roundCanonical(Math.max(Math.abs(end.y - start.y), 80));
   const x = roundCanonical(end.x >= start.x ? start.x : start.x - width);
   const y = roundCanonical(end.y >= start.y ? start.y : start.y - height);
-  const headerHeight = roundCanonical(Math.max(24, Math.min(height * 0.3, height / 2)));
+  const headerHeight = defaultTableHeaderHeight(height);
   return {
     x,
     y,
@@ -136,9 +136,12 @@ export function changeTableColumns(table: TableElementV1, newColumns: number): T
   const candidatePivot = addPoints(table.pivot, pivotShift);
   const x = roundCanonical(candidatePivot.x - newWidth / 2);
   const y = roundCanonical(candidatePivot.y - table.height / 2);
+  const columnOffsets = changedTableColumnOffsets(table, newColumns);
+  const { columnOffsets: _columnOffsets, ...base } = table;
   return {
-    ...table,
+    ...base,
     columns: newColumns,
+    ...(columnOffsets === undefined ? {} : { columnOffsets }),
     x,
     y,
     pivot: canonicalPoint({ x: x + newWidth / 2, y: y + table.height / 2 }),
@@ -159,6 +162,21 @@ export function shapeVertices(
 
 export function tableWidth(table: Pick<TableElementV1, "columns" | "columnWidth">): number {
   return table.columns * table.columnWidth;
+}
+
+export function defaultTableHeaderHeight(height: number): number {
+  return roundCanonical(Math.max(24, Math.min(height * 0.3, height / 2)));
+}
+
+export function tableColumnOffsets(
+  table: Pick<TableElementV1, "columnOffsets" | "columnWidth" | "columns">,
+): readonly number[] {
+  return (
+    table.columnOffsets ??
+    Array.from({ length: Math.max(0, table.columns - 1) }, (_, index) =>
+      roundCanonical((index + 1) * table.columnWidth),
+    )
+  );
 }
 
 export function tableLineSegments(
@@ -188,14 +206,30 @@ export function tableLineSegments(
       { x: right, y: table.y + table.headerHeight },
     ],
   ];
-  for (let column = 1; column < table.columns; column += 1) {
-    const x = table.x + column * table.columnWidth;
+  for (const offset of tableColumnOffsets(table)) {
+    const x = table.x + offset;
     segments.push([
       { x, y: table.y },
       { x, y: bottom },
     ]);
   }
   return segments;
+}
+
+function changedTableColumnOffsets(
+  table: TableElementV1,
+  newColumns: number,
+): number[] | undefined {
+  if (table.columnOffsets === undefined) return undefined;
+  const offsets = tableColumnOffsets(table)
+    .filter((offset) => offset <= newColumns * table.columnWidth - 40)
+    .slice(0, Math.max(0, newColumns - 1));
+  for (let column = offsets.length + 1; column < newColumns; column += 1) {
+    offsets.push(roundCanonical(column * table.columnWidth));
+  }
+  return offsets.every((offset, index) => offset === (index + 1) * table.columnWidth)
+    ? undefined
+    : offsets;
 }
 
 function signedMinimum(value: number, minimum: number, zeroDefault: number): number {

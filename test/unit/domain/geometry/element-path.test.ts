@@ -1,4 +1,8 @@
-import type { ArrowElementV1, LineElementV1 } from "../../../../src/domain/schema/public";
+import type {
+  ArrowElementV1,
+  LineElementV1,
+  StraightHighlighterElementV1,
+} from "../../../../src/domain/schema/public";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -12,7 +16,7 @@ import {
   nodeSize,
   outlineDashPattern,
 } from "../../../../src/domain/geometry/public";
-import { coordinateSystem, outlineStyle, rectangle, table } from "./fixtures";
+import { coordinateSystem, outlineStyle, rectangle, strokeStyle, table } from "./fixtures";
 
 const linearBase = {
   id: "00000000-0000-4000-8000-000000000004",
@@ -41,10 +45,15 @@ describe("SVG element path construction", () => {
     const tablePath = buildTablePath(table());
     expect(tablePath.match(/M/g)).toHaveLength(4);
     expect(tablePath).toContain("Z");
+    const customTablePath = buildTablePath(table({ columnOffsets: [60, 105] }));
+    expect(customTablePath).toContain("M70 20L70 120");
+    expect(customTablePath).toContain("M115 20L115 120");
     const systemPath = buildCoordinateSystemPath(coordinateSystem());
     expect(systemPath.match(/M/g)).toHaveLength(4);
   });
+});
 
+describe("linear path construction", () => {
   it("constructs quadratic bodies and separates filled arrow nodes", () => {
     const arrow: ArrowElementV1 = {
       ...linearBase,
@@ -59,6 +68,24 @@ describe("SVG element path construction", () => {
     expect(parts[0]?.d).toContain("Q50 50 100 0");
     expect(parts[1]).toMatchObject({ paint: "fill" });
     expect(parts[1]?.d.endsWith("Z")).toBe(true);
+  });
+
+  it("renders a bent straight highlighter through the quadratic linear path", () => {
+    const highlighter: StraightHighlighterElementV1 = {
+      bend: { x: 50, y: 50 },
+      createdAt: 0,
+      end: { x: 100, y: 0 },
+      endNode: "none",
+      id: "highlighter",
+      kind: "straight-highlighter",
+      pivot: { x: 50, y: 0 },
+      rotation: 0,
+      start: { x: 0, y: 0 },
+      startNode: "none",
+      style: strokeStyle,
+    };
+
+    expect(buildLinearPathParts(highlighter)).toEqual([{ d: "M0 0Q50 50 100 0", paint: "stroke" }]);
   });
 
   it("falls back to the non-degenerate chord for degenerate quadratic endpoint tangents", () => {

@@ -7,7 +7,7 @@ import type {
   PointV1,
   TableElementV1,
 } from "../schema/types";
-import { shapeVertices, tableWidth } from "./creation";
+import { shapeVertices, tableColumnOffsets, tableWidth } from "./creation";
 import {
   addPoints,
   normalizedVector,
@@ -64,11 +64,11 @@ export function buildTablePath(table: TableElementV1): string {
       [topLeft, topRight, bottomRight, bottomLeft].map((point) => rotatedFor(table, point)),
     ),
   ];
-  for (let column = 1; column < table.columns; column += 1) {
+  for (const offset of tableColumnOffsets(table)) {
     commands.push(
       lineSubpath(
-        rotatedFor(table, { x: table.x + column * table.columnWidth, y: table.y }),
-        rotatedFor(table, { x: table.x + column * table.columnWidth, y: table.y + table.height }),
+        rotatedFor(table, { x: table.x + offset, y: table.y }),
+        rotatedFor(table, { x: table.x + offset, y: table.y + table.height }),
       ),
     );
   }

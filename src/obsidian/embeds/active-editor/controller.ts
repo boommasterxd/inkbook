@@ -90,9 +90,8 @@ export class ActiveEditorController {
     this.#ownerWindow = ownerWindow;
     this.#longPress = new ActiveEditorLongPressScheduler(ownerWindow);
     this.#renderIcon = options.renderIcon;
-    this.#renderer = options.renderer;
+    [this.#renderer, this.#sceneStore] = [options.renderer, options.sceneStore];
     this.#captures = new ActivePointerCaptureOwner(options.renderer.inputSurface);
-    this.#sceneStore = options.sceneStore;
     this.#sliceBudgetMs = options.sliceBudgetMs ?? (() => 8);
     this.#scrollOwner = options.scrollOwner;
     this.#availability = new ActiveEditorAvailability({
@@ -118,6 +117,7 @@ export class ActiveEditorController {
     this.#styles = new ActiveEditorStyleSession({
       defaults: options.defaults,
       history: this.#history,
+      onSelectionGeometryChanged: () => this.#handles.renderSelection(),
       onStateChanged: this.#onStateChanged,
       sceneStore: this.#sceneStore,
       selection: () => this.#selection,

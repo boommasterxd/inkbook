@@ -25,7 +25,6 @@ import { attachActiveSceneInputListeners } from "./active-scene-input";
 import type { ActiveSceneScrollBinding } from "./active-scene-scroll";
 import {
   applyLockedFitLayout,
-  lockedPageAspectRatio,
   LOCK_PRESENTATION_DURATION_MS,
   restoreActiveLayout,
   type LockedFitTransition,
@@ -131,7 +130,8 @@ export class ActiveInkbookScene {
       selectionMoveLayout: {
         begin: () => this.#layout.beginSelectionMove(),
         currentHeight: () => this.#layout.currentPageHeight(),
-        finish: (committed) => this.#layout.finishSelectionMove(committed),
+        finish: (committed, previewMaximumBottom) =>
+          this.#layout.finishSelectionMove(committed, previewMaximumBottom),
         updateBottom: (maximumBottom) => this.#layout.updateSelectionMoveBottom(maximumBottom),
       },
       sliceBudgetMs: options.sliceBudgetMs,
@@ -248,7 +248,6 @@ export class ActiveInkbookScene {
 
   public setPreviewSource(source: string): void {
     if (this.#disposed) return;
-    this.#refreshPreviewAspectRatio();
     this.#previewReady = this.#previewHandoff.setPreviewSource(source);
   }
 
@@ -313,7 +312,6 @@ export class ActiveInkbookScene {
     this.#lockGeneration += 1;
     this.#preLockBlockSize = this.#container.style.blockSize;
     this.#preLockViewState = this.#controller.getViewState();
-    this.#refreshPreviewAspectRatio();
     this.#lockLayoutTransition = applyLockedFitLayout({
       anchor: this.#controller.readResizeAnchor(),
       applyResize: (update) => this.#controller.applyResize(update),
@@ -386,12 +384,6 @@ export class ActiveInkbookScene {
 
   #storeMaximumBottom(): number | undefined {
     return this.#model.store.getMaximumBottom();
-  }
-
-  #refreshPreviewAspectRatio(): void {
-    this.#previewHandoff.setPreviewAspectRatio(
-      lockedPageAspectRatio(this.#controllerModelPage(), this.#storeMaximumBottom()),
-    );
   }
 
   #completePreviewHandoff(): void {

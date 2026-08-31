@@ -54,14 +54,6 @@ function translateLinear(
   element: LinearElementV1,
   translation: Readonly<PointV1>,
 ): LinearElementV1 {
-  if (element.kind === "straight-highlighter") {
-    return {
-      ...element,
-      end: translatePoint(element.end, translation),
-      pivot: translatePoint(element.pivot, translation),
-      start: translatePoint(element.start, translation),
-    };
-  }
   return {
     ...element,
     bend: element.bend === null ? null : translatePoint(element.bend, translation),

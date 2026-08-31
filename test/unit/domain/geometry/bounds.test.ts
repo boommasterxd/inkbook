@@ -1,4 +1,9 @@
-import type { ArrowElementV1, PageV1, StrokeElementV1 } from "../../../../src/domain/schema/public";
+import type {
+  ArrowElementV1,
+  PageV1,
+  StraightHighlighterElementV1,
+  StrokeElementV1,
+} from "../../../../src/domain/schema/public";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -70,6 +75,29 @@ describe("shared conservative element bounds", () => {
     };
     expect(effectiveStrokeWidth(highlighter)).toBe(20);
     expect(calculateElementBounds(highlighter)).toEqual({ minX: 0, minY: 0, maxX: 20, maxY: 20 });
+  });
+
+  it("includes a bent straight highlighter's quadratic extrema", () => {
+    const highlighter: StraightHighlighterElementV1 = {
+      id: "00000000-0000-4000-8000-000000000009",
+      createdAt: 0,
+      kind: "straight-highlighter",
+      start: { x: 0, y: 0 },
+      end: { x: 20, y: 0 },
+      bend: { x: 10, y: 20 },
+      rotation: 0,
+      pivot: { x: 10, y: 0 },
+      startNode: "none",
+      endNode: "none",
+      style: { ...strokeStyle, pressureEnabled: false },
+    };
+
+    expect(calculateElementBounds(highlighter)).toEqual({
+      minX: -10,
+      minY: -10,
+      maxX: 30,
+      maxY: 20,
+    });
   });
 
   it("detects bounds that touch at their edges", () => {

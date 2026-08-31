@@ -29,6 +29,7 @@ export class SceneDom {
   public readonly motionGroup: SVGGElement;
   public readonly overlayPath: SVGPathElement;
   public readonly selectionOverlayPath: SVGPathElement;
+  public readonly selectionHandlePath: SVGPathElement;
   public readonly snapMarkerPath: SVGPathElement;
   public readonly ownerDocument: Document;
   public readonly pageSurface: SVGPathElement;
@@ -60,6 +61,7 @@ export class SceneDom {
     const overlayGroup = this.createSvg("g");
     this.overlayPath = this.createSvg("path");
     this.selectionOverlayPath = this.createSvg("path");
+    this.selectionHandlePath = this.createSvg("path");
     this.snapMarkerPath = this.createSvg("path");
     const themeStyle = this.createSvg("style");
     this.inputSurface = this.ownerDocument.createElementNS(
@@ -101,7 +103,7 @@ export class SceneDom {
     this.overlayPath.setAttribute("fill-rule", "evenodd");
     this.selectionOverlayPath.setAttribute("class", "inkbook-selection-overlay");
     this.selectionOverlayPath.setAttribute("data-selection-fill", "accent");
-    this.selectionOverlayPath.setAttribute("pointer-events", "none");
+    this.selectionHandlePath.setAttribute("class", "inkbook-selection-handles");
     this.snapMarkerPath.setAttribute("class", "inkbook-snap-guide");
     this.snapMarkerPath.setAttribute("pointer-events", "none");
     themeStyle.textContent = ACTIVE_THEME_STYLESHEET;
@@ -117,7 +119,12 @@ export class SceneDom {
       this.motionGroup,
     );
     this.liveGroup.append(this.livePath);
-    overlayGroup.append(this.overlayPath, this.selectionOverlayPath, this.snapMarkerPath);
+    overlayGroup.append(
+      this.overlayPath,
+      this.selectionOverlayPath,
+      this.selectionHandlePath,
+      this.snapMarkerPath,
+    );
     const defs = this.createSvg("defs");
     defs.append(this.#backgroundPattern);
     this.svg.append(themeStyle, this.cameraGroup, overlayGroup, defs);

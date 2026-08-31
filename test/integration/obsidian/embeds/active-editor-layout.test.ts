@@ -141,7 +141,7 @@ describe("active editor layout sizing", () => {
     test.layout.dispose();
   });
 
-  it("reserves selection-move extent without animation or scroll correction", () => {
+  it("animates selection-move growth without fighting the active scroll gesture", () => {
     const test = harness();
     test.layout.chromeMounted();
     test.work.flushFrames();
@@ -151,6 +151,9 @@ describe("active editor layout sizing", () => {
     test.layout.beginSelectionMove();
     test.layout.updateSelectionMoveBottom(previewBottom);
 
+    expect(test.rect.height).toBeCloseTo(originalHeight);
+    expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(true);
+    test.work.flushFrames();
     expect(test.rect.height).toBeCloseTo(
       derivePageExtent(page(), previewBottom).activeHeight * (1_000 / PAGE_WIDTH),
     );
@@ -158,8 +161,7 @@ describe("active editor layout sizing", () => {
     expect(test.beginScrollStability).not.toHaveBeenCalled();
     expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(false);
 
-    test.setMaximumBottom(previewBottom);
-    test.layout.finishSelectionMove(true);
+    test.layout.finishSelectionMove(true, previewBottom);
     expect(test.rect.height).toBeCloseTo(
       derivePageExtent(page(), previewBottom).activeHeight * (1_000 / PAGE_WIDTH),
     );
@@ -177,6 +179,7 @@ describe("active editor selection-move layout", () => {
 
     test.layout.beginSelectionMove();
     test.layout.updateSelectionMoveBottom(previewBottom);
+    test.work.flushFrames();
     const reservedHeight = test.rect.height;
     test.layout.contentChanged();
     test.work.flushFrames();
@@ -255,7 +258,7 @@ describe("active editor pending-scene layout motion", () => {
     test.layout.chromeMounted();
     test.work.flushFrames();
     const initialHeight = test.rect.height;
-    const initialPageHeight = derivePageExtent(page(), null).activeHeight;
+    const requiredPageHeight = derivePageExtent(page(), 500).activeHeight;
     test.setScenePending(true);
     test.setMaximumBottom(500);
     test.layout.contentChanged();
@@ -264,7 +267,7 @@ describe("active editor pending-scene layout motion", () => {
     test.layout.interruptForInput();
 
     expect(test.rect.height).toBeCloseTo(initialHeight);
-    expect(test.setPage).toHaveBeenLastCalledWith(page(), initialPageHeight);
+    expect(test.setPage).toHaveBeenLastCalledWith(page(), requiredPageHeight);
     expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(false);
     expect(test.work.frames.size).toBe(1);
 
@@ -363,7 +366,7 @@ describe("active editor interrupted height motion", () => {
     expectSettledTransition(test, targetPageHeight, zoom);
   });
 
-  it("keeps deletion-driven shrinkage on an aligned page height when input interrupts it", () => {
+  it("keeps the larger safe surface until an interrupted deletion shrink is remeasured", () => {
     const test = harness("full");
     const initialPageHeight = derivePageExtent(page(), null).activeHeight;
     const grownPageHeight = derivePageExtent(page(), 500).activeHeight;
@@ -385,8 +388,8 @@ describe("active editor interrupted height motion", () => {
 
     test.layout.interruptForInput();
 
-    expect(test.setPage).toHaveBeenLastCalledWith(page(), initialPageHeight);
-    expect(test.rect.height).toBeCloseTo(initialPageHeight * zoom);
+    expect(test.setPage).toHaveBeenLastCalledWith(page(), grownPageHeight);
+    expect(test.rect.height).toBeCloseTo(grownPageHeight * zoom);
     expect(test.classList.contains("inkbook-page-height-transitioning")).toBe(false);
     test.layout.dispose();
   });

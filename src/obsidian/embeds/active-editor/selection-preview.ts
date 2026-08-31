@@ -22,7 +22,7 @@ import type { ActiveEditorHistory } from "./history";
 import type { PreparedElementHistory } from "./prepared-element-history";
 import type { ElementSceneStore } from "./scene-store";
 import type { CoalescedCreationSample } from "./coalesced-input";
-import { selectionOverlayFill, selectionOverlayPath } from "./selection-overlay-path";
+import { selectionOverlayFill, selectionOverlayPaths } from "./selection-overlay-path";
 import { snapMarkerPath } from "./snap-marker-path";
 
 interface SelectionPreviewRenderer {
@@ -31,7 +31,11 @@ interface SelectionPreviewRenderer {
   flushCameraAndOverlayFrame?(): void;
   setElementPreviews?(elements: readonly InkElementV1[], version: number): void;
   setOverlayPath(d: string | null): void;
-  setSelectionOverlayPath?(d: string | null, fill?: "accent" | "none"): void;
+  setSelectionOverlayPath?(
+    d: string | null,
+    fill?: "accent" | "none",
+    handles?: string | null,
+  ): void;
   setSnapMarkerPath?(d: string | null): void;
   setPreviewTransform(ids: readonly string[], transform: string | null, version: number): void;
   suppressMotionForNextDelta(ids: readonly string[]): void;
@@ -39,7 +43,7 @@ interface SelectionPreviewRenderer {
 
 export interface SelectionEdgeDragPort {
   begin(onViewportChanged?: () => void): void;
-  finish(committed: boolean): void;
+  finish(committed: boolean, previewMaximumBottom?: number): void;
   stop(): void;
   update(screenPointer: PointV1): void;
   updatePreviewBottom(maximumBottom: number): void;
@@ -186,6 +190,7 @@ export class MovePreview implements GesturePreview {
   #finished = false;
   #lastPointer: GesturePreviewStart["pointer"];
   #moveSnap: SelectionMoveSnap | null = null;
+  #previewMaximumBottomValue: number | undefined;
   #version = 0;
 
   public constructor(options: SelectionPreviewOptions) {
@@ -223,11 +228,13 @@ export class MovePreview implements GesturePreview {
     let prepared = false;
     try {
       if (this.#current.x !== 0 || this.#current.y !== 0) {
+        const previewMaximumBottom = this.#previewMaximumBottomValue;
         prepared =
           this.#moveSnap === null &&
           this.#options.preparedHistory.commitMove(this.#elements, this.#current, (result) => {
             if (!result) this.#renderSelectionOverlay(null);
-            this.#options.selectionEdgeDrag?.finish(result);
+            if (result) this.#options.selectionEdgeDrag?.finish(true, previewMaximumBottom);
+            else this.#options.selectionEdgeDrag?.finish(false);
           });
         committed = prepared;
         if (!committed) {
@@ -246,7 +253,11 @@ export class MovePreview implements GesturePreview {
       this.#options.renderer.setSnapMarkerPath?.(null);
       this.#renderSelectionOverlay(committed ? this.#translationTransform() : null);
       if (prepared) this.#options.selectionEdgeDrag?.stop();
-      else this.#options.selectionEdgeDrag?.finish(committed);
+      else {
+        if (committed) {
+          this.#options.selectionEdgeDrag?.finish(true, this.#previewMaximumBottomValue);
+        } else this.#options.selectionEdgeDrag?.finish(false);
+      }
     }
     return committed;
   }
@@ -293,7 +304,9 @@ export class MovePreview implements GesturePreview {
         ? null
         : snapMarkerPath(this.#options.pageToScreen(this.#moveSnap.candidate.point)),
     );
-    return this.#previewMaximumBottom(connected);
+    const maximumBottom = this.#previewMaximumBottom(connected);
+    this.#previewMaximumBottomValue = maximumBottom;
+    return maximumBottom;
   }
 
   #projectViewportPointer(
@@ -347,13 +360,16 @@ export class MovePreview implements GesturePreview {
       connected.selectedPreviewIds.has(this.#selectedGeometry[0]!.element.id)
         ? this.#connectedSelectionGeometry(connected.elements)
         : null;
+    const selected = exact ?? this.#selectedGeometry;
+    const paths = selectionOverlayPaths(selected, {
+      pageToScreen: this.#options.pageToScreen,
+      transform: exact === null ? transform : null,
+      zoom: this.#selectionZoom(),
+    });
     this.#options.renderer.setSelectionOverlayPath?.(
-      selectionOverlayPath(exact ?? this.#selectedGeometry, {
-        pageToScreen: this.#options.pageToScreen,
-        transform: exact === null ? transform : null,
-        zoom: this.#selectionZoom(),
-      }),
-      selectionOverlayFill(exact ?? this.#selectedGeometry),
+      paths.outline,
+      selectionOverlayFill(selected),
+      paths.handles,
     );
   }
 
@@ -394,6 +410,7 @@ export class MovePreview implements GesturePreview {
 
   #resolveMoveSnap(rawDelta: PointV1): SelectionMoveSnap | null {
     return resolveSelectionMoveSnap({
+      canConnect: (sourceId, targetId) => this.#options.sceneStore.canConnect(sourceId, targetId),
       current: this.#moveSnap,
       elements: this.#elements,
       pointerType: this.#options.start.pointer.pointerType,

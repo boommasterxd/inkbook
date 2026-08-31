@@ -18,11 +18,19 @@ export class ActivePageLayout {
   #transitionTarget: number | undefined;
 
   public get height(): number | undefined {
-    return this.#queuedHeight ?? this.#transitionTarget ?? this.#height;
+    return maximumHeight(this.#height, this.#transitionTarget, this.#queuedHeight);
   }
 
   public get settledHeight(): number | undefined {
     return this.#height;
+  }
+
+  public retainMinimumHeight(height: number): void {
+    if (!Number.isFinite(height)) return;
+    this.#height = retainedHeight(this.#height, height);
+    this.#queuedHeight = retainedHeight(this.#queuedHeight, height);
+    this.#selectionOriginalHeight = retainedHeight(this.#selectionOriginalHeight, height);
+    this.#transitionTarget = retainedHeight(this.#transitionTarget, height);
   }
 
   public committed(
@@ -59,10 +67,7 @@ export class ActivePageLayout {
     const target = derivePageExtent(page, maximumBottom).activeHeight;
     const height = this.height;
     if (height !== undefined && target <= height) return undefined;
-    this.#height = target;
-    this.#transitionTarget = undefined;
-    this.#queuedHeight = undefined;
-    return { animate: false, height: target };
+    return this.#request(target);
   }
 
   public finishSelectionMove(
@@ -124,4 +129,13 @@ export class ActivePageLayout {
     else this.#height = height;
     return { animate, height };
   }
+}
+
+function maximumHeight(...values: Array<number | undefined>): number | undefined {
+  const finite = values.filter((value): value is number => Number.isFinite(value));
+  return finite.length === 0 ? undefined : Math.max(...finite);
+}
+
+function retainedHeight(current: number | undefined, minimum: number): number | undefined {
+  return current === undefined ? undefined : Math.max(current, minimum);
 }

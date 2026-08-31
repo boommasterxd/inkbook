@@ -56,6 +56,18 @@ describe("UniformSpatialIndex page extent values", () => {
     expect(index.lastExtentStalePops).toBe(0);
     expect(index.extentHeapEntryCount).toBe(1);
   });
+
+  it("retains an equal replacement maximum after bubbling through lower entries", () => {
+    const index = new UniformSpatialIndex<string>();
+    index.insert("maximum", boundsAt(500));
+    index.insert("low", boundsAt(100));
+    index.insert("middle", boundsAt(200));
+
+    index.replace("maximum", boundsAt(500));
+
+    expect(index.getMaximumBottom()).toBe(500);
+    expect(index.lastExtentStalePops).toBe(1);
+  });
 });
 
 describe("UniformSpatialIndex page extent maintenance", () => {

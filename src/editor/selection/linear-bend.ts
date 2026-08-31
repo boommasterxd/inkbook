@@ -16,8 +16,8 @@ export interface LinearBendSnapGuide {
 }
 
 export function editLinearBend(element: InkElementV1, bend: PointV1 | null): InkElementV1 {
-  if (element.kind !== "line" && element.kind !== "arrow") {
-    throw new TypeError("Only lines and arrows support bend editing.");
+  if (!supportsBend(element)) {
+    throw new TypeError("Only linear drawing elements support bend editing.");
   }
   if (bend !== null) assertFinitePoint(bend);
   const canonicalBend = normalizeLinearBend(element.start, element.end, bend);
@@ -33,8 +33,8 @@ export function editLinearBendFromCurvePoint(
   curvePoint: PointV1,
   snapTolerance = DEFAULT_STRAIGHT_TOLERANCE,
 ): InkElementV1 {
-  if (element.kind !== "line" && element.kind !== "arrow") {
-    throw new TypeError("Only lines and arrows support bend editing.");
+  if (!supportsBend(element)) {
+    throw new TypeError("Only linear drawing elements support bend editing.");
   }
   assertFinitePoint(curvePoint);
   assertStraightTolerance(snapTolerance);
@@ -56,8 +56,8 @@ export function linearBendSnapGuide(
   curvePoint: PointV1,
   snapTolerance = DEFAULT_STRAIGHT_TOLERANCE,
 ): LinearBendSnapGuide | null {
-  if (element.kind !== "line" && element.kind !== "arrow") {
-    throw new TypeError("Only lines and arrows support bend editing.");
+  if (!supportsBend(element)) {
+    throw new TypeError("Only linear drawing elements support bend editing.");
   }
   assertFinitePoint(curvePoint);
   assertStraightTolerance(snapTolerance);
@@ -83,7 +83,7 @@ export function normalizeLinearBend(
 }
 
 function editLinearFromWorld(
-  element: Extract<InkElementV1, { kind: "arrow" | "line" }>,
+  element: Extract<InkElementV1, { kind: "arrow" | "line" | "straight-highlighter" }>,
   worldStart: PointV1,
   worldEnd: PointV1,
   worldControl: PointV1 | null,
@@ -106,6 +106,14 @@ function editLinearFromWorld(
     pivot,
     start: canonicalPoint(rotatePointClockwise(worldStart, pivot, -element.rotation)),
   };
+}
+
+function supportsBend(
+  element: InkElementV1,
+): element is Extract<InkElementV1, { kind: "arrow" | "line" | "straight-highlighter" }> {
+  return (
+    element.kind === "line" || element.kind === "arrow" || element.kind === "straight-highlighter"
+  );
 }
 
 function pointToSegmentDistance(point: PointV1, start: PointV1, end: PointV1): number {

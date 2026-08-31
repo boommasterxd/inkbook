@@ -9,6 +9,7 @@ interface ActiveHeightTransitionRequest {
   readonly currentRenderedHeight: number;
   readonly onComplete: () => void;
   readonly sceneCommitPending: () => boolean;
+  readonly stabilizeScroll?: boolean;
   readonly targetRenderedHeight: number;
 }
 
@@ -54,7 +55,8 @@ export class ActiveHeightTransition {
 
   public begin(request: ActiveHeightTransitionRequest): void {
     this.cancel();
-    this.#releaseScrollStability = this.#beginScrollStability?.();
+    this.#releaseScrollStability =
+      request.stabilizeScroll !== false ? this.#beginScrollStability?.() : undefined;
     this.#request = request;
     this.#renderedHeight = request.currentRenderedHeight;
     this.#phase = request.sceneCommitPending() ? "waiting-for-scene" : "waiting-for-paint";

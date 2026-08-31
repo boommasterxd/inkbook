@@ -41,7 +41,7 @@ export interface ActiveEditorControllerOptions {
   readonly selectionMoveLayout: {
     begin(): void;
     currentHeight?(): number | undefined;
-    finish(committed: boolean): void;
+    finish(committed: boolean, previewMaximumBottom?: number): void;
     updateBottom(maximumBottom: number): void;
   };
   readonly scrollOwner: BrowserScrollElement;

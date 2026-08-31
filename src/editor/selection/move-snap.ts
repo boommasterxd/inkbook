@@ -21,6 +21,7 @@ export interface SelectionMoveSnap {
 }
 
 interface SelectionMoveSnapInput {
+  readonly canConnect?: (sourceId: string, targetId: string) => boolean;
   readonly current: SelectionMoveSnap | null;
   readonly elements: readonly InkElementV1[];
   readonly pointerType: SnapPointerType;
@@ -54,7 +55,10 @@ export function resolveSelectionMoveSnap(input: SelectionMoveSnapInput): Selecti
         },
         input.spatial,
         {
-          get: (id) => (input.selectedIds.has(id) ? null : input.targets.get(id)),
+          get: (id) =>
+            input.selectedIds.has(id) || !(input.canConnect?.(element.id, id) ?? true)
+              ? null
+              : input.targets.get(id),
         },
         input.scratch,
       );

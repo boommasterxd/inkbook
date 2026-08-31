@@ -11,7 +11,7 @@ import type { SelectionReplacementPlanner } from "./selection-work-budget";
 export type SelectionHandleAction =
   | { readonly kind: "move" }
   | { readonly anchor: PointV1; readonly kind: "scale"; readonly position: BoxAnchorV1 }
-  | { readonly center: PointV1; readonly kind: "rotate" }
+  | { readonly center: PointV1; readonly kind: "rotate"; readonly opposite: PointV1 }
   | {
       readonly elementId: string;
       readonly endpoint: "start" | "end";
@@ -19,7 +19,13 @@ export type SelectionHandleAction =
     }
   | { readonly elementId: string; readonly kind: "linear-bend" }
   | { readonly axisIndex: number; readonly elementId: string; readonly kind: "coordinate-axis" }
-  | { readonly elementId: string; readonly kind: "coordinate-origin" };
+  | { readonly elementId: string; readonly kind: "coordinate-origin" }
+  | { readonly elementId: string; readonly kind: "table-header" }
+  | {
+      readonly elementId: string;
+      readonly kind: "table-column";
+      readonly separatorIndex: number;
+    };
 
 export type SelectionPreviewTransform =
   | { readonly delta: PointV1; readonly kind: "translate" }
@@ -46,9 +52,20 @@ export interface SelectionHandlePreview {
 export type SelectionSnapGuide =
   | { readonly kind: "anchor"; readonly point: PointV1 }
   | {
-      readonly center: PointV1;
+      readonly end: PointV1;
+      readonly kind: "angular";
+      readonly start: PointV1;
+    }
+  | {
+      readonly end: PointV1;
+      readonly handle: PointV1;
+      readonly kind: "separator";
+      readonly start: PointV1;
+    }
+  | {
       readonly handle: PointV1;
       readonly kind: "rotation";
+      readonly opposite: PointV1;
     }
   | {
       readonly alignment: "straight" | "symmetric";
@@ -59,6 +76,7 @@ export type SelectionSnapGuide =
     };
 
 export interface SelectionSnapPorts {
+  readonly canConnect?: (sourceId: string, targetId: string) => boolean;
   readonly pointerType: SnapLookupInput["pointerType"];
   readonly spatial: SpatialCandidateQuery;
   readonly targets: SnapTargetReader;

@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { quadraticPoint, rotatePointClockwise } from "../../../../src/domain/geometry/public";
-import type { ArrowElementV1, LineElementV1 } from "../../../../src/domain/schema/public";
+import type {
+  ArrowElementV1,
+  LineElementV1,
+  StraightHighlighterElementV1,
+} from "../../../../src/domain/schema/public";
 import { validateInkElementV1 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
 import {
@@ -9,6 +13,7 @@ import {
   editLinearEndpoint,
   SelectionHandleSession,
 } from "../../../../src/editor/selection/public";
+import { straightHighlighter } from "../../domain/schema/fixtures";
 
 const line = (): LineElementV1 => ({
   bend: null,
@@ -96,6 +101,24 @@ describe("linear bend handles", () => {
     const bent = preview.exactElements[0] as LineElementV1;
 
     expect(quadraticPoint(bent.start, bent.bend!, bent.end, 0.5)).toEqual({ x: 375, y: 200 });
+  });
+
+  it("edits a straight highlighter bend through its handle session", () => {
+    const source = straightHighlighter();
+    const session = new SelectionHandleSession({
+      action: { elementId: source.id, kind: "linear-bend" },
+      elements: [source],
+      planner: new ElementStore([source]),
+      startPointer: { x: 150, y: 200 },
+    });
+
+    const bent = session.update({ x: 150, y: 220 }).exactElements[0] as
+      StraightHighlighterElementV1 | undefined;
+
+    expect(bent?.kind).toBe("straight-highlighter");
+    expect(bent?.bend).toEqual({ x: 150, y: 240 });
+    expect(quadraticPoint(bent!.start, bent!.bend!, bent!.end, 0.5)).toEqual({ x: 150, y: 220 });
+    expect(validateInkElementV1(bent!).ok).toBe(true);
   });
 });
 

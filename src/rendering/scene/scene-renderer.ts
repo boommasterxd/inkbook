@@ -248,9 +248,13 @@ export class SvgSceneRenderer {
     if (!this.#frameWriter.setOverlayPath(d)) return;
     this.schedule();
   }
-  public setSelectionOverlayPath(d: string | null, fill: "accent" | "none" = "accent"): void {
+  public setSelectionOverlayPath(
+    d: string | null,
+    fill: "accent" | "none" = "accent",
+    handles: string | null = null,
+  ): void {
     this.assertActive();
-    this.#motion.setSelectionPath(d, fill);
+    this.#motion.setSelectionPath(d, handles, fill);
     this.schedule();
   }
   public setSnapMarkerPath(d: string | null): void {

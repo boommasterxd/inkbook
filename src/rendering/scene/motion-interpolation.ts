@@ -1,11 +1,9 @@
 import type {
-  ArrowElementV1,
   BoxShapeElementV1,
   CoordinateSystemElementV1,
   InkElementV1,
-  LineElementV1,
+  LinearElementV1,
   PointV1,
-  StraightHighlighterElementV1,
   StrokeElementV1,
   TableElementV1,
 } from "../../domain/schema/public";
@@ -20,13 +18,11 @@ export function interpolateElement(
     case "stroke":
       return from.kind === "stroke" ? interpolateStroke(from, to, progress) : to;
     case "line":
-      return from.kind === "line" ? interpolateConnectedLinear(from, to, progress) : to;
+      return from.kind === "line" ? interpolateLinear(from, to, progress) : to;
     case "arrow":
-      return from.kind === "arrow" ? interpolateConnectedLinear(from, to, progress) : to;
+      return from.kind === "arrow" ? interpolateLinear(from, to, progress) : to;
     case "straight-highlighter":
-      return from.kind === "straight-highlighter"
-        ? interpolateStraightHighlighter(from, to, progress)
-        : to;
+      return from.kind === "straight-highlighter" ? interpolateLinear(from, to, progress) : to;
     case "coordinate-system":
       return from.kind === "coordinate-system" ? interpolateAxes(from, to, progress) : to;
     case "table":
@@ -62,29 +58,12 @@ function interpolateStroke(
   };
 }
 
-function interpolateConnectedLinear<T extends LineElementV1 | ArrowElementV1>(
-  from: T,
-  to: T,
-  progress: number,
-): T {
+function interpolateLinear<T extends LinearElementV1>(from: T, to: T, progress: number): T {
   const fromBend = from.bend ?? midpoint(from.start, from.end);
   const toBend = to.bend ?? midpoint(to.start, to.end);
   return {
     ...base(from, to, progress),
     bend: from.bend === null && to.bend === null ? null : point(fromBend, toBend, progress),
-    end: point(from.end, to.end, progress),
-    start: point(from.start, to.start, progress),
-  };
-}
-
-function interpolateStraightHighlighter(
-  from: StraightHighlighterElementV1,
-  to: StraightHighlighterElementV1,
-  progress: number,
-): StraightHighlighterElementV1 {
-  return {
-    ...base(from, to, progress),
-    bend: null,
     end: point(from.end, to.end, progress),
     start: point(from.start, to.start, progress),
   };
@@ -143,10 +122,31 @@ function interpolateTable(
   return {
     ...base(from, to, progress),
     columnWidth: number(from.columnWidth, to.columnWidth, progress),
+    ...interpolatedColumnOffsets(from, to, progress),
     headerHeight: number(from.headerHeight, to.headerHeight, progress),
     height: number(from.height, to.height, progress),
     x: number(from.x, to.x, progress),
     y: number(from.y, to.y, progress),
+  };
+}
+
+function interpolatedColumnOffsets(
+  from: TableElementV1,
+  to: TableElementV1,
+  progress: number,
+): Pick<TableElementV1, "columnOffsets"> {
+  if (from.columnOffsets === undefined && to.columnOffsets === undefined) return {};
+  if (
+    from.columnOffsets === undefined ||
+    to.columnOffsets === undefined ||
+    from.columnOffsets.length !== to.columnOffsets.length
+  ) {
+    return to.columnOffsets === undefined ? {} : { columnOffsets: to.columnOffsets };
+  }
+  return {
+    columnOffsets: to.columnOffsets.map((value, index) =>
+      number(from.columnOffsets?.[index] ?? value, value, progress),
+    ),
   };
 }
 

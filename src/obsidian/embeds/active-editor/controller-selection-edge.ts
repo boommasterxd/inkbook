@@ -7,7 +7,7 @@ import type { SelectionEdgeDragPort } from "./selection-preview";
 export interface ActiveEditorSelectionEdgeOptions {
   readonly layout: {
     begin(): void;
-    finish(committed: boolean): void;
+    finish(committed: boolean, previewMaximumBottom?: number): void;
     updateBottom(maximumBottom: number): void;
   };
   readonly navigation: ActiveEditorNavigation;
@@ -39,9 +39,9 @@ export class ActiveEditorSelectionEdgeDrag implements SelectionEdgeDragPort {
     this.#onViewportChanged = onViewportChanged;
   }
 
-  public finish(committed: boolean): void {
+  public finish(committed: boolean, previewMaximumBottom?: number): void {
     this.stop();
-    this.#layout.finish(committed);
+    this.#layout.finish(committed, previewMaximumBottom);
   }
 
   public stop(): void {

@@ -2,6 +2,8 @@ import {
   calculateElementBounds,
   quadraticPoint,
   rotatePointClockwise,
+  tableColumnOffsets,
+  tableWidth,
   unionBounds,
   type Bounds,
 } from "../../domain/geometry/public";
@@ -18,6 +20,8 @@ const BOX_HANDLE_ORDER: readonly BoxAnchorV1[] = [
   "middle-left",
 ];
 
+export const ROTATE_HANDLE_OFFSET_PIXELS = 28;
+
 export type SelectionHandle =
   | { readonly kind: "scale"; readonly point: PointV1; readonly position: BoxAnchorV1 }
   | { readonly kind: "rotate"; readonly point: PointV1 }
@@ -28,7 +32,13 @@ export type SelectionHandle =
     }
   | { readonly kind: "linear-bend"; readonly point: PointV1 }
   | { readonly kind: "coordinate-origin"; readonly point: PointV1 }
-  | { readonly axisIndex: number; readonly kind: "coordinate-axis"; readonly point: PointV1 };
+  | { readonly axisIndex: number; readonly kind: "coordinate-axis"; readonly point: PointV1 }
+  | { readonly kind: "table-header"; readonly point: PointV1 }
+  | {
+      readonly kind: "table-column";
+      readonly point: PointV1;
+      readonly separatorIndex: number;
+    };
 
 export interface SelectedElementGeometry {
   readonly bounds: Bounds;
@@ -100,7 +110,11 @@ function singleElementHandles(
   element: InkElementV1,
   options: SelectionHandleLayoutOptions,
 ): SelectionHandle[] {
-  if (element.kind === "line" || element.kind === "arrow") {
+  if (
+    element.kind === "line" ||
+    element.kind === "arrow" ||
+    element.kind === "straight-highlighter"
+  ) {
     return linearHandles(element);
   }
   const bounds = calculateElementBounds({ ...element, rotation: 0 });
@@ -125,11 +139,28 @@ function singleElementHandles(
       });
     });
   }
+  if (element.kind === "table") {
+    const rotate = (point: PointV1) => rotatePointClockwise(point, element.pivot, element.rotation);
+    handles.push({
+      kind: "table-header",
+      point: rotate({
+        x: element.x + tableWidth(element) / 2,
+        y: element.y + element.headerHeight,
+      }),
+    });
+    tableColumnOffsets(element).forEach((offset, separatorIndex) => {
+      handles.push({
+        kind: "table-column",
+        point: rotate({ x: element.x + offset, y: element.y + element.height / 2 }),
+        separatorIndex,
+      });
+    });
+  }
   return handles;
 }
 
 function linearHandles(
-  element: Extract<InkElementV1, { kind: "line" | "arrow" }>,
+  element: Extract<InkElementV1, { kind: "arrow" | "line" | "straight-highlighter" }>,
 ): SelectionHandle[] {
   const rotate = (point: PointV1) => rotatePointClockwise(point, element.pivot, element.rotation);
   const handles: SelectionHandle[] = [
@@ -187,7 +218,7 @@ function oppositeBoxPosition(position: BoxAnchorV1): BoxAnchorV1 {
 function rotateHandle(
   bounds: Bounds,
   zoom: number,
-  offsetPixels = 28,
+  offsetPixels = ROTATE_HANDLE_OFFSET_PIXELS,
   element?: Pick<InkElementV1, "pivot" | "rotation">,
 ): Extract<SelectionHandle, { kind: "rotate" }> {
   if (!Number.isFinite(offsetPixels) || offsetPixels < 0) {

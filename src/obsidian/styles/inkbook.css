@@ -318,6 +318,11 @@
   fill: none;
 }
 
+.inkbook-root .inkbook-scene-overlays .inkbook-selection-handles {
+  fill: var(--interactive-accent);
+  stroke: var(--interactive-accent);
+}
+
 .inkbook-root .inkbook-scene-overlays .inkbook-snap-guide {
   fill: var(--inkbook-page-surface);
   filter: drop-shadow(0 1px 2px color-mix(in srgb, var(--background-primary) 70%, transparent));

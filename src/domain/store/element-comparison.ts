@@ -87,6 +87,7 @@ function tableGeometryEqual(
     left.x === right.x &&
     left.y === right.y &&
     left.columnWidth === right.columnWidth &&
+    valuesEqual(left.columnOffsets, right.columnOffsets) &&
     left.height === right.height &&
     left.columns === right.columns &&
     left.headerHeight === right.headerHeight

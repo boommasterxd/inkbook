@@ -32,7 +32,15 @@ describe("InkElementV1 validation", () => {
       axes: [...coordinateSystem().axes, { x: 300, y: 500 }],
     },
     table(),
+    { ...table(), columnOffsets: [40, 80] },
+    { ...table(), columns: 1, columnOffsets: [], pivot: { x: 120, y: 340 } },
   ])("accepts a valid $kind element", (element) => {
+    expect(validateInkElementV1(element).ok).toBe(true);
+  });
+
+  it("accepts a bent straight highlighter using the shared linear geometry", () => {
+    const element = { ...straightHighlighter(), bend: { x: 150, y: 180 } };
+
     expect(validateInkElementV1(element).ok).toBe(true);
   });
 
@@ -83,6 +91,15 @@ describe("InkElementV1 invalid input validation", () => {
     ],
     ["table column minimum", { ...table(), columnWidth: 39.999 }, "invalid-range"],
     ["table header maximum", { ...table(), headerHeight: 40.001 }, "invalid-range"],
+    ["table column offset count", { ...table(), columnOffsets: [40] }, "invalid-range"],
+    ["table column offset minimum", { ...table(), columnOffsets: [39, 80] }, "invalid-range"],
+    ["table column offset order", { ...table(), columnOffsets: [80, 40] }, "invalid-range"],
+    ["table final column minimum", { ...table(), columnOffsets: [40, 81] }, "invalid-range"],
+    [
+      "table noncanonical column offset",
+      { ...table(), columnOffsets: [40.0005, 80] },
+      "invalid-number",
+    ],
   ])("rejects %s", (_name, element, code) => {
     const result = validateInkElementV1(element);
     expect(result.ok).toBe(false);

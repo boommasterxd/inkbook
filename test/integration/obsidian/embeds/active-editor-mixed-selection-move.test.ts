@@ -1,13 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { calculateElementBounds } from "../../../../src/domain/geometry/public";
-import type { InkElementV1 } from "../../../../src/domain/schema/public";
+import {
+  calculateElementBounds,
+  derivePageExtent,
+  translateElementGeometry,
+} from "../../../../src/domain/geometry/public";
+import type { InkElementV1, PageV1 } from "../../../../src/domain/schema/public";
 import { ElementStore, type ImmutableInkElement } from "../../../../src/domain/store/public";
 import type { PreparedElementHistory } from "../../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import type { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import { MovePreview } from "../../../../src/obsidian/embeds/active-editor/selection-preview";
+import { ActivePageLayout } from "../../../../src/obsidian/embeds/active-editor/page-layout";
 import { reportedRotatedTable } from "../../../fixtures/editor/reported-rotated-table";
 import { createSynchronousActiveEditorHistory } from "../../../fixtures/obsidian/synchronous-active-editor-history";
+import { coordinateSystem } from "../../../unit/domain/geometry/fixtures";
 
 describe("active editor mixed selection move", () => {
   it("commits the reported table and stroke geometry atomically", () => {
@@ -74,57 +80,30 @@ describe("active editor rotated table move", () => {
       const store = new ElementStore([table]);
       const history = createSynchronousActiveEditorHistory(store);
       const finish = vi.fn();
-      const setPreviewTransform = vi.fn();
-      const setSelectionOverlayPath = vi.fn();
-      const updatePreviewBottom = vi.fn();
-      const preview = new MovePreview({
-        history,
-        preparedHistory: { commitMove: vi.fn(() => false) } as unknown as PreparedElementHistory,
-        renderer: {
-          clearPreviewTransforms: vi.fn(),
-          setOverlayPath: vi.fn(),
-          setPreviewTransform,
-          setSelectionOverlayPath,
-          suppressMotionForNextDelta: vi.fn(),
-        },
-        sceneStore: {} as ElementSceneStore,
-        selectionEdgeDrag: {
-          begin: vi.fn(),
-          finish,
-          stop: vi.fn(),
-          update: vi.fn(),
-          updatePreviewBottom,
-        },
-        pageToScreen: (point) => point,
-        selection: () => new Set([table.id]),
-        setSelection: vi.fn(),
-        start: {
-          additive: false,
-          kind: "element-move",
-          pointer: pointer(900, 900),
-          tool: "select",
-        },
-        store,
-      });
+      const fixture = tableMovePreview(store, table, history, finish);
 
       const currentPointer = pointer(900 + delta.x, 900 + delta.y);
       const previewDelta = { x: currentPointer.x - 900, y: currentPointer.y - 900 };
-      preview.update(currentPointer);
+      fixture.preview.update(currentPointer);
 
-      expect(setPreviewTransform).toHaveBeenLastCalledWith(
+      expect(fixture.setPreviewTransform).toHaveBeenLastCalledWith(
         [table.id],
         `translate(${String(previewDelta.x)} ${String(previewDelta.y)})`,
         1,
       );
-      expect(setSelectionOverlayPath).toHaveBeenLastCalledWith(
+      expect(fixture.setSelectionOverlayPath).toHaveBeenLastCalledWith(
         expect.stringContaining("M "),
         "accent",
+        expect.stringContaining(" a 5 5 "),
       );
-      expect(updatePreviewBottom).toHaveBeenLastCalledWith(
+      expect(fixture.updatePreviewBottom).toHaveBeenLastCalledWith(
         calculateElementBounds(table).maxY + previewDelta.y,
       );
-      expect(preview.commit(), JSON.stringify(delta)).toBe(true);
-      expect(finish).toHaveBeenLastCalledWith(true);
+      expect(fixture.preview.commit(), JSON.stringify(delta)).toBe(true);
+      expect(finish).toHaveBeenLastCalledWith(
+        true,
+        calculateElementBounds(table).maxY + previewDelta.y,
+      );
       const x = Number((table.x + delta.x).toFixed(3));
       const y = Number((table.y + delta.y).toFixed(3));
       expect(store.get(table.id)?.element).toMatchObject({
@@ -139,6 +118,94 @@ describe("active editor rotated table move", () => {
     }
   });
 });
+
+describe("active editor lower-page extent", () => {
+  it("retains the complete table and coordinate-system extent after a millimeter move", () => {
+    for (const coordinateOffset of [2_400, 3_900]) {
+      const table = reportedRotatedTable();
+      const system = translateElementGeometry(coordinateSystem(), { x: 600, y: coordinateOffset });
+      const store = new ElementStore([table, system]);
+      const history = createSynchronousActiveEditorHistory(store);
+      const policy = new ActivePageLayout();
+      policy.committed(layoutPage, store.getMaximumBottom());
+      policy.beginSelectionMove();
+      const finish = vi.fn((committed: boolean, previewBottom?: number) => {
+        const storeBottom = store.getMaximumBottom();
+        const bottom = committed
+          ? Math.max(
+              storeBottom ?? Number.NEGATIVE_INFINITY,
+              previewBottom ?? Number.NEGATIVE_INFINITY,
+            )
+          : storeBottom;
+        policy.finishSelectionMove(
+          committed,
+          layoutPage,
+          Number.isFinite(bottom) ? bottom : undefined,
+        );
+      });
+      const preview = tableMovePreview(store, table, history, finish).preview;
+
+      preview.update(pointer(900.001, 900.001));
+
+      expect(preview.commit()).toBe(true);
+      const requiredHeight = derivePageExtent(
+        layoutPage,
+        store.getMaximumBottom() ?? null,
+      ).activeHeight;
+      expect(policy.height).toBeGreaterThanOrEqual(requiredHeight);
+      expect(finish).toHaveBeenCalledOnce();
+    }
+  });
+});
+
+const layoutPage: PageV1 = {
+  activeBufferLines: 3,
+  background: { type: "lines", spacing: 100 },
+  innerWidth: 2_000,
+  lockedBufferLines: 1,
+  margin: 24.3,
+};
+
+function tableMovePreview(
+  store: ElementStore,
+  table: Extract<InkElementV1, { kind: "table" }>,
+  history: ReturnType<typeof createSynchronousActiveEditorHistory>,
+  finish: (committed: boolean, previewBottom?: number) => void,
+) {
+  const setPreviewTransform = vi.fn();
+  const setSelectionOverlayPath = vi.fn();
+  const updatePreviewBottom = vi.fn();
+  const preview = new MovePreview({
+    history,
+    preparedHistory: { commitMove: vi.fn(() => false) } as unknown as PreparedElementHistory,
+    renderer: {
+      clearPreviewTransforms: vi.fn(),
+      setOverlayPath: vi.fn(),
+      setPreviewTransform,
+      setSelectionOverlayPath,
+      suppressMotionForNextDelta: vi.fn(),
+    },
+    sceneStore: {} as ElementSceneStore,
+    selectionEdgeDrag: {
+      begin: vi.fn(),
+      finish,
+      stop: vi.fn(),
+      update: vi.fn(),
+      updatePreviewBottom,
+    },
+    pageToScreen: (point) => point,
+    selection: () => new Set([table.id]),
+    setSelection: vi.fn(),
+    start: {
+      additive: false,
+      kind: "element-move",
+      pointer: pointer(900, 900),
+      tool: "select",
+    },
+    store,
+  });
+  return { preview, setPreviewTransform, setSelectionOverlayPath, updatePreviewBottom };
+}
 
 function reportedTable(): Extract<InkElementV1, { kind: "table" }> {
   return {

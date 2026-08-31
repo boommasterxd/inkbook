@@ -1,6 +1,6 @@
 import type { RenderBand } from "../../domain/commands/render-bands";
 import { isStoredStroke } from "../../domain/elements/stroke-replacement-proof";
-import { shapeVertices, tableWidth } from "../../domain/geometry/creation";
+import { shapeVertices, tableColumnOffsets, tableWidth } from "../../domain/geometry/creation";
 import { effectiveStrokeWidth } from "../../domain/geometry/bounds";
 import { pointInPolygon, quadraticPoint, rotatePointClockwise } from "../../domain/geometry/public";
 import type { BoxShapeElementV1, InkElementV1, PointV1 } from "../../domain/schema/public";
@@ -158,8 +158,8 @@ function tableHit(
     point.x <= right + radius
   )
     return true;
-  for (let column = 1; column < element.columns; column += 1) {
-    const x = element.x + column * element.columnWidth;
+  for (const offset of tableColumnOffsets(element)) {
+    const x = element.x + offset;
     if (
       Math.abs(point.x - x) <= radius &&
       point.y >= element.y - radius &&

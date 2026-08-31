@@ -6,6 +6,7 @@ import {
   semanticAnchorOrder,
   semanticAnchors,
 } from "../../../../src/domain/geometry/public";
+import { arrow, line } from "../schema/fixtures";
 import { coordinateSystem, rectangle, table } from "./fixtures";
 
 describe("semantic anchor enumeration", () => {
@@ -70,6 +71,34 @@ describe("semantic anchor enumeration", () => {
     });
     expect(resolveShapeAnchor(system, { kind: "coordinate-axis-end", index: 3 })).toBeNull();
     expect(resolveShapeAnchor(system, { kind: "polygon-vertex", index: 0 })).toBeNull();
+  });
+
+  it("enumerates line and arrow endpoints as semantic anchors", () => {
+    const source = line();
+    const rotated = { ...arrow(), rotation: 90 };
+
+    expect(semanticAnchors(source)).toEqual([
+      {
+        anchor: { endpoint: "start", kind: "linear-endpoint" },
+        order: 0,
+        point: source.start,
+      },
+      {
+        anchor: { endpoint: "end", kind: "linear-endpoint" },
+        order: 1,
+        point: source.end,
+      },
+    ]);
+    expect(resolveShapeAnchor(rotated, { endpoint: "start", kind: "linear-endpoint" })).toEqual({
+      x: 250,
+      y: 100,
+    });
+    expect(resolveShapeAnchor(rotated, { endpoint: "end", kind: "linear-endpoint" })).toEqual({
+      x: 250,
+      y: 200,
+    });
+    expect(semanticAnchorOrder(source, { endpoint: "start", kind: "linear-endpoint" })).toBe(0);
+    expect(semanticAnchorOrder(source, { endpoint: "end", kind: "linear-endpoint" })).toBe(1);
   });
 });
 
@@ -142,6 +171,8 @@ describe("semantic anchor compatibility", () => {
       expect(isAnchorTarget({ kind })).toBe(true);
     }
     expect(isAnchorTarget({ kind: "stroke" })).toBe(false);
-    expect(isAnchorTarget({ kind: "line" })).toBe(false);
+    expect(isAnchorTarget({ kind: "straight-highlighter" })).toBe(false);
+    expect(isAnchorTarget({ kind: "line" })).toBe(true);
+    expect(isAnchorTarget({ kind: "arrow" })).toBe(true);
   });
 });

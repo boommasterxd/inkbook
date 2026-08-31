@@ -8,6 +8,7 @@ import {
   transformSelectionPoint,
 } from "../../../../src/editor/selection/public";
 import { connectedLine, rectangle } from "../../domain/store/fixtures";
+import { straightHighlighter } from "../../domain/schema/fixtures";
 
 function selected(element: InkElementV1) {
   return { bounds: calculateElementBounds(element), element };
@@ -57,6 +58,41 @@ describe("selection overlay geometry", () => {
     ]);
   });
 
+  it("uses a straight highlighter centerline and three editing handles", () => {
+    const highlighter = straightHighlighter();
+    const geometry = selectionOverlayGeometry([selected(highlighter)], 1);
+
+    expect(geometry?.outline).toEqual({
+      bend: null,
+      end: highlighter.end,
+      kind: "linear",
+      start: highlighter.start,
+    });
+    expect(geometry?.handles.map(({ kind }) => kind)).toEqual([
+      "linear-endpoint",
+      "linear-endpoint",
+      "linear-bend",
+    ]);
+  });
+
+  it("keeps a curved straight highlighter open while preserving its bend handle", () => {
+    const highlighter = { ...straightHighlighter(), bend: { x: 150, y: 160 } };
+    const geometry = selectionOverlayGeometry([selected(highlighter)], 1);
+
+    expect(geometry?.outline).toEqual({
+      bend: highlighter.bend,
+      end: highlighter.end,
+      kind: "linear",
+      start: highlighter.start,
+    });
+    expect(geometry?.handles[2]).toMatchObject({
+      kind: "linear-bend",
+      point: { x: 150, y: 180 },
+    });
+  });
+});
+
+describe("selection overlay hit testing and transforms", () => {
   it("hits filled box overlays but never invents an interior for one line or arrow", () => {
     const shape = { ...rectangle(), rotation: 90 };
     const line = connectedLine();
@@ -109,4 +145,31 @@ describe("selection overlay geometry", () => {
       ),
     ).toEqual({ x: 44, y: 354 });
   });
+
+  it.each([0.5, 1, 2])(
+    "keeps the rotate-handle gap at 28 screen pixels during scale previews at zoom %s",
+    (zoom) => {
+      const geometry = selectionOverlayGeometry([selected(rectangle())], zoom, {
+        anchor: { x: 98, y: 98 },
+        factors: { x: 2, y: 0.5 },
+        kind: "scale",
+        rotation: 0,
+      });
+      const outline = geometry?.outline;
+      const rotate = geometry?.handles.find(({ kind }) => kind === "rotate");
+      if (outline?.kind !== "polygon" || rotate?.kind !== "rotate") {
+        throw new Error("Expected a polygon with a rotate handle.");
+      }
+      const topLeft = outline.points[0]!;
+      const topRight = outline.points[1]!;
+      const topCenter = {
+        x: (topLeft.x + topRight.x) / 2,
+        y: (topLeft.y + topRight.y) / 2,
+      };
+
+      expect(Math.hypot(rotate.point.x - topCenter.x, rotate.point.y - topCenter.y) * zoom).toBe(
+        28,
+      );
+    },
+  );
 });

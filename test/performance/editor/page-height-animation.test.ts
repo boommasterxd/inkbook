@@ -17,7 +17,7 @@ describe("automatic page-height performance", () => {
   }) => {
     const harness = transitionHarness(INTERACTION_REFRESH_PROFILE.frameDurationMs);
     for (let transition = 0; transition < 500; transition += 1) {
-      harness.run(transition % 2 === 0 ? [480, 720] : [720, 480]);
+      harness.run(transition % 2 === 0 ? [480, 720] : [720, 480], transition % 4 < 2);
     }
 
     const p99 = pageHeightPercentile(harness.frameDurations, 0.99);
@@ -144,7 +144,7 @@ function transitionHarness(frameDurationMs: number) {
     get maximumFramesPerTransition() {
       return maximumFramesPerTransition;
     },
-    run: ([from, to]: readonly [number, number]) => {
+    run: ([from, to]: readonly [number, number], stabilizeScroll: boolean) => {
       let completed = false;
       transition.begin({
         applyFrame: () => undefined,
@@ -154,6 +154,7 @@ function transitionHarness(frameDurationMs: number) {
           completed = true;
         },
         sceneCommitPending: () => false,
+        stabilizeScroll,
         targetRenderedHeight: to,
       });
       let elapsed = 0;

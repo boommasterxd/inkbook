@@ -30,15 +30,16 @@ export function createInkbookLockedPreview(
   setAspectRatio(descriptor.aspectRatio);
   let currentSvg = descriptor.safeSvg;
   let sourceGeneration = 0;
-  const mount = (safeSvg: string): void => {
+  const mount = (safeSvg: string, aspectRatio?: number): void => {
+    if (aspectRatio !== undefined) setAspectRatio(aspectRatio);
     element.replaceChildren(createPreviewSvg(button.ownerDocument, safeSvg));
   };
   const setSource = async (nextSource: string): Promise<void> => {
     const generation = ++sourceGeneration;
-    const safeSvg = await loadValidatedPreviewSvg(nextSource, owningWindow);
+    const loaded = await loadValidatedPreviewSvg(nextSource, owningWindow);
     if (generation !== sourceGeneration) return;
-    currentSvg = safeSvg;
-    mount(safeSvg);
+    currentSvg = loaded.safeSvg;
+    mount(loaded.safeSvg, loaded.aspectRatio);
   };
   mount(currentSvg);
   return {
