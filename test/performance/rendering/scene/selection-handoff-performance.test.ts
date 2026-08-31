@@ -15,6 +15,7 @@ import {
 } from "../../../unit/rendering/scene/fakes";
 import { MeasuredSliceScheduler } from "../../domain/domain-scenarios";
 import { INTERACTION_REFRESH_PROFILE } from "../../interaction-refresh-profile";
+import { collectProfileGarbage } from "../../persistence/metrics";
 import { timingBudget } from "../../timing-budget";
 
 const ELEMENT_COUNT = 10_000;
@@ -86,6 +87,7 @@ describe("selection preview handoff performance", () => {
       renderer.clearPreviewTransforms();
       expect(handoff.arm(ids)).toBe(true);
       renderer.resetInstrumentation();
+      collectProfileGarbage();
       const startedAt = performance.now();
       const result = store.commitPreparedElementReplacement(prepared.token);
       const commitDuration = performance.now() - startedAt;
