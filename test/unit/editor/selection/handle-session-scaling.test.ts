@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { TableElementV1 } from "../../../../src/domain/schema/public";
+import type { StrokeElementV1, TableElementV1 } from "../../../../src/domain/schema/public";
 import { validateInkElementV1 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { SelectionHandleSession } from "../../../../src/editor/selection/public";
@@ -87,5 +87,46 @@ describe("single-element generic handle scaling", () => {
       y: 100,
     });
     expect(validateInkElementV1(commit.replacements[0]).ok).toBe(true);
+  });
+
+  it("keeps a rotated freehand stroke on the same preview axis after commit", () => {
+    const source: StrokeElementV1 = {
+      createdAt: 2,
+      id: "00000000-0000-4000-8000-000000000002",
+      kind: "stroke",
+      pivot: { x: 50, y: 0 },
+      points: [0, 0, 0.5, 100, 0, 0.5],
+      rotation: 90,
+      style: {
+        color: { type: "theme-text" },
+        opacity: 1,
+        pressureEnabled: true,
+        smoothing: 0.5,
+        width: 4,
+      },
+      tool: "pen",
+    };
+    const session = new SelectionHandleSession({
+      action: { anchor: { x: 50, y: -50 }, kind: "scale", position: "middle-right" },
+      elements: [source],
+      planner: new ElementStore([source]),
+      startPointer: { x: 50, y: 50 },
+    });
+
+    const preview = session.update({ x: 50, y: 150 });
+    expect(preview.transform).toEqual({
+      anchor: { x: 50, y: -50 },
+      factors: { x: 2, y: 1 },
+      kind: "scale",
+      rotation: 90,
+    });
+
+    const commit = session.prepareCommit();
+    if (commit.status !== "ready") throw new Error("Expected a rotated stroke scale commit.");
+    expect(commit.replacements[0]).toMatchObject({
+      pivot: { x: 50, y: 50 },
+      points: [-50, 50, 0.5, 150, 50, 0.5],
+      rotation: 90,
+    });
   });
 });

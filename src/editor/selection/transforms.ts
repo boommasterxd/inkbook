@@ -8,8 +8,6 @@ import {
 } from "../../domain/geometry/public";
 import { markCanonicalStrokeReplacement } from "../../domain/elements/stroke-replacement-proof";
 import type {
-  BoxAnchorV1,
-  BoxShapeElementV1,
   CoordinateSystemElementV1,
   EndpointConnectionV1,
   InkElementV1,
@@ -19,6 +17,7 @@ import type {
 } from "../../domain/schema/public";
 import { MAX_ABSOLUTE_COORDINATE } from "../../domain/schema/public";
 import { normalizeLinearBend } from "./linear-bend";
+import { rotatedScaleTranslation } from "./scale-frame";
 
 interface ScaleFactors {
   readonly x: number;
@@ -102,7 +101,18 @@ export function scaleElementFromPointers(
   axes: Readonly<{ x: boolean; y: boolean }> = { x: true, y: true },
 ): InkElementV1 {
   const transform = scaleFactorsFromPointers(element, anchor, startPointer, currentPointer, axes);
-  return scaleElement(element, transform.anchor, transform.factors);
+  return scaleElement(
+    element,
+    transform.anchor,
+    transform.factors,
+    rotatedScaleTranslation(
+      element.pivot,
+      anchor,
+      transform.anchor,
+      element.rotation,
+      transform.factors,
+    ),
+  );
 }
 
 export function scaleFactorsFromPointers(
@@ -157,38 +167,6 @@ export function uniformScaleFactorFromPointers(
       : ((currentPointer.x - anchor.x) * startX + (currentPointer.y - anchor.y) * startY) /
         denominator;
   return Math.max(factor, minimum);
-}
-
-export function resizeBoxShape(
-  element: BoxShapeElementV1,
-  handle: BoxAnchorV1,
-  pointer: PointV1,
-): BoxShapeElementV1 {
-  assertFinitePoint(pointer);
-  const localPointer = rotatePointClockwise(pointer, element.pivot, -element.rotation);
-  const horizontal = handle.includes("left")
-    ? "left"
-    : handle.includes("right")
-      ? "right"
-      : "center";
-  const vertical = handle.startsWith("top")
-    ? "top"
-    : handle.startsWith("bottom")
-      ? "bottom"
-      : "middle";
-  const anchor = {
-    x: horizontal === "left" ? element.x + element.width : element.x,
-    y: vertical === "top" ? element.y + element.height : element.y,
-  };
-  const handlePoint = {
-    x: horizontal === "left" ? element.x : element.x + element.width,
-    y: vertical === "top" ? element.y : element.y + element.height,
-  };
-  const factors = clampScaleFactors(element, {
-    x: horizontal === "center" ? 1 : (localPointer.x - anchor.x) / (handlePoint.x - anchor.x),
-    y: vertical === "middle" ? 1 : (localPointer.y - anchor.y) / (handlePoint.y - anchor.y),
-  });
-  return scaleElement(element, anchor, factors) as BoxShapeElementV1;
 }
 
 export function editCoordinateAxis(
@@ -371,18 +349,24 @@ function assertSupportedCoordinate(value: number): void {
   }
 }
 
-function scaleElement(element: InkElementV1, anchor: PointV1, factors: ScaleFactors): InkElementV1 {
+function scaleElement(
+  element: InkElementV1,
+  anchor: PointV1,
+  factors: ScaleFactors,
+  translation: PointV1 = { x: 0, y: 0 },
+): InkElementV1 {
   const scale = (point: PointV1): PointV1 =>
     canonicalPoint({
-      x: anchor.x + (point.x - anchor.x) * factors.x,
-      y: anchor.y + (point.y - anchor.y) * factors.y,
+      x: anchor.x + (point.x - anchor.x) * factors.x + translation.x,
+      y: anchor.y + (point.y - anchor.y) * factors.y + translation.y,
     });
   if (element.kind === "stroke") {
     const points = element.points.map((value, index) => {
       if (index % 3 === 2) return value;
       const origin = index % 3 === 0 ? anchor.x : anchor.y;
       const factor = index % 3 === 0 ? factors.x : factors.y;
-      return roundCanonical(origin + (value - origin) * factor);
+      const shift = index % 3 === 0 ? translation.x : translation.y;
+      return roundCanonical(origin + (value - origin) * factor + shift);
     });
     return { ...element, points, pivot: scale(element.pivot) };
   }
@@ -493,5 +477,6 @@ function assertFinitePoint(point: PointV1): void {
 
 function scaleRatio(anchor: number, start: number, current: number): number {
   const denominator = start - anchor;
-  return denominator === 0 ? 1 : (current - anchor) / denominator;
+  const tolerance = Number.EPSILON * Math.max(1, Math.abs(anchor), Math.abs(start)) * 16;
+  return Math.abs(denominator) <= tolerance ? 1 : (current - anchor) / denominator;
 }

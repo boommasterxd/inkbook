@@ -65,7 +65,9 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz editor gesture profile`,
     sceneStore.release();
   });
 
-  it("keeps move, scale, rotate, and shape-resize previews within budget", async ({ annotate }) => {
+  it("keeps move, group scale, rotate, and shape scale previews within budget", async ({
+    annotate,
+  }) => {
     const elements = interactionStrokes();
     const sessions = selectionSessions(elements);
     for (const profile of sessions) {
@@ -125,12 +127,12 @@ function selectionSessions(elements: readonly InkElementV1[]): readonly Selectio
       { x: 1_000, y: 500 },
     ),
     selectionProfile(
-      "shape resize preview",
+      "shape scale preview",
       [shape],
-      { elementId: shape.id, kind: "shape-resize", position: "bottom-right" },
+      { anchor: { x: 100, y: 100 }, kind: "scale", position: "bottom-right" },
       { x: 300, y: 200 },
       false,
-      false,
+      true,
     ),
   ];
 }

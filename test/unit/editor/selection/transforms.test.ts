@@ -10,7 +10,6 @@ import { validateInkElementV1 } from "../../../../src/domain/schema/public";
 import {
   editLinearBend,
   editLinearEndpoint,
-  resizeBoxShape,
   moveSelection,
   moveSelectionTimeSliced,
   rotateSelection,
@@ -294,23 +293,5 @@ describe("selection transform constraints", () => {
     expect(bent.bend).toEqual({ x: 5, y: 5 });
     const edited = editLinearEndpoint(bent, "start", { x: -8, y: 0 }) as LineElementV1;
     expect(edited.startConnection).toBeNull();
-  });
-
-  it("clamps a crossing box handle without mirroring geometry", () => {
-    const shape = {
-      id: "shape",
-      kind: "rectangle" as const,
-      createdAt: 3,
-      rotation: 0,
-      pivot: { x: 50, y: 50 },
-      x: 0,
-      y: 0,
-      width: 100,
-      height: 100,
-      style: { ...style, fillColor: null, fillOpacity: 0 },
-    };
-    const resized = resizeBoxShape(shape, "middle-right", { x: -20, y: 50 });
-    expect(resized.width).toBe(1);
-    expect(resized.x).toBe(0);
   });
 });

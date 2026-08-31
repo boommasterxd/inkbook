@@ -95,10 +95,8 @@ describe("active editor selection handle targets", () => {
     expect(fixture.interaction.pointerDown(pointer)).toBe(true);
     expect(fixture.interaction.pointerMove({ ...pointer, x: pointer.x + 1 })).toBe(true);
     expect(fixture.interaction.pointerUp(pointer.pointerId)).toBe(true);
-    expect(fixture.store.get(element.id)?.element).toMatchObject({
-      height: element.height,
-      width: element.width + 1,
-    });
+    expect(fixture.store.get(element.id)?.element).toMatchObject({ height: element.height });
+    expect(fixture.store.get(element.id)?.element).toHaveProperty("width", 200.98);
   });
 
   it.each(["rotate", "linear-bend"] as const)(
@@ -152,7 +150,7 @@ describe("active editor selection interior handle arbitration", () => {
 });
 
 describe("active editor selection snap guides", () => {
-  it("renders radial rotation and chord bend guides through the live overlay", () => {
+  it("renders a complete rotation axis and chord bend guides through the live overlay", () => {
     const shape = rectangle();
     const rotation = harness([shape], 1);
     const rotateHandle = layoutSelectionHandles(
@@ -176,7 +174,10 @@ describe("active editor selection snap guides", () => {
       rotateHandle.point.y - shape.pivot.y,
     );
     expect(rotation.overlays[rotation.overlays.length - 1]).toContain(
-      `M ${String(shape.pivot.x)} ${String(shape.pivot.y)} L ${String(shape.pivot.x + radius)} ${String(shape.pivot.y)}`,
+      `M ${String(shape.pivot.x - radius)} ${String(shape.pivot.y)} L ${String(shape.pivot.x + radius)} ${String(shape.pivot.y)}`,
+    );
+    expect(rotation.overlays[rotation.overlays.length - 1]).not.toContain(
+      `M ${String(shape.pivot.x + radius - 8)} ${String(shape.pivot.y)} L`,
     );
     rotation.interaction.cancel(24);
 
@@ -201,7 +202,7 @@ describe("active editor selection snap guides", () => {
     fixture.interaction.pointerDown(start);
     fixture.interaction.pointerMove({ ...start, x: 100, y: 100 });
     expect(fixture.overlays[fixture.overlays.length - 1]).toContain("M 92 100 L 108 100");
-    expect(fixture.overlays[fixture.overlays.length - 1]).toContain("M 124 71");
+    expect(fixture.overlays[fixture.overlays.length - 1]).not.toContain("Z");
     fixture.interaction.pointerUp(start.pointerId);
     const connected = fixture.store.get(selectedLine.id)?.element;
     expect(connected).toMatchObject({

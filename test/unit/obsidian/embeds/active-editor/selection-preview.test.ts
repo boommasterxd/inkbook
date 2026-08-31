@@ -253,8 +253,7 @@ describe("selection move edge-drag validation", () => {
     preview.update(pointer(47, 48));
 
     expect(setPreviewTransform).toHaveBeenLastCalledWith([line.id], "translate(50 50)", 1);
-    expect(setSnapMarkerPath.mock.lastCall?.[0]).toContain("M 92 100 L 108 100");
-    expect(setSnapMarkerPath.mock.lastCall?.[0]).toContain("M 124 71");
+    expect(setSnapMarkerPath).toHaveBeenLastCalledWith("M 92 100 L 108 100 M 100 92 L 100 108");
     expect(preview.commit()).toBe(true);
     expect(store.get(line.id)?.element).toMatchObject({
       start: { x: 100, y: 100 },

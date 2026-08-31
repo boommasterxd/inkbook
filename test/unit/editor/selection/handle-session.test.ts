@@ -180,7 +180,7 @@ describe("SelectionHandleSession", () => {
 });
 
 describe("SelectionHandleSession geometry boundaries", () => {
-  it("clamps endpoint length and shape-handle crossing at their geometry minima", () => {
+  it("clamps endpoint length and scale-handle crossing at their geometry minima", () => {
     const line = freeLine();
     const lineStore = new ElementStore([line]);
     const endpoint = new SelectionHandleSession({
@@ -200,7 +200,11 @@ describe("SelectionHandleSession geometry boundaries", () => {
     const shape = rectangle();
     const shapeStore = new ElementStore([shape]);
     const resize = new SelectionHandleSession({
-      action: { elementId: shape.id, kind: "shape-resize", position: "middle-right" },
+      action: {
+        anchor: { x: 100, y: 150 },
+        kind: "scale",
+        position: "middle-right",
+      },
       elements: [element(shapeStore, shape.id)],
       planner: shapeStore,
       startPointer: { x: 300, y: 150 },

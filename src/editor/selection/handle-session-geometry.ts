@@ -1,10 +1,5 @@
 import { pointDistance, rotatePointClockwise } from "../../domain/geometry/public";
-import type {
-  BoxAnchorV1,
-  CoordinateSystemElementV1,
-  InkElementV1,
-  PointV1,
-} from "../../domain/schema/public";
+import type { BoxAnchorV1, CoordinateSystemElementV1, PointV1 } from "../../domain/schema/public";
 
 export function activeScaleAxes(position: BoxAnchorV1): {
   readonly x: boolean;
@@ -28,17 +23,4 @@ export function clampEndpoint(point: PointV1, opposite: PointV1): PointV1 {
     x: opposite.x + ((point.x - opposite.x) * 8) / distance,
     y: opposite.y + ((point.y - opposite.y) * 8) / distance,
   };
-}
-
-export function isBoxShape(
-  element: InkElementV1,
-): element is Extract<InkElementV1, { width: number }> {
-  return (
-    element.kind === "rectangle" ||
-    element.kind === "ellipse" ||
-    element.kind === "triangle" ||
-    element.kind === "octagon" ||
-    element.kind === "parallelogram" ||
-    element.kind === "diamond"
-  );
 }

@@ -35,7 +35,6 @@ export class SceneMotionController {
   #resourceConstrained = false;
   #reducedMotion: boolean;
   #selectionMotion: OverlayMotion | undefined;
-  #snapMotion: OverlayMotion | undefined;
   public constructor(
     dom: SceneDom,
     content: SceneContentRenderer,
@@ -152,7 +151,8 @@ export class SceneMotionController {
   }
 
   public setSnapPath(path: string | null): void {
-    this.#snapMotion = this.setOverlay(this.#dom.snapMarkerPath, path, this.#snapMotion);
+    this.#dom.snapMarkerPath.setAttribute("d", path ?? "");
+    writeMotionStyle(this.#dom.snapMarkerPath, 1, 1);
   }
 
   public interruptForPointerDown(): void {
@@ -175,7 +175,6 @@ export class SceneMotionController {
       this.#selectionMotion,
       effectiveTime,
     );
-    this.#snapMotion = this.writeOverlay(this.#dom.snapMarkerPath, this.#snapMotion, effectiveTime);
     const pending = this.hasPending();
     if (!pending) this.#lastFrameTime = undefined;
     return pending;
@@ -387,9 +386,7 @@ export class SceneMotionController {
     for (const entry of this.#entries.values()) this.finishEntry(entry, releasing);
     this.#entryByElementId.clear();
     this.finishOverlay(this.#dom.selectionOverlayPath, this.#selectionMotion);
-    this.finishOverlay(this.#dom.snapMarkerPath, this.#snapMotion);
     this.#selectionMotion = undefined;
-    this.#snapMotion = undefined;
     this.#lastFrameTime = undefined;
     this.refreshCacheSize();
   }
@@ -400,11 +397,7 @@ export class SceneMotionController {
   }
 
   private hasPending(): boolean {
-    return (
-      this.#entries.size > 0 ||
-      this.#selectionMotion !== undefined ||
-      this.#snapMotion !== undefined
-    );
+    return this.#entries.size > 0 || this.#selectionMotion !== undefined;
   }
 
   private add(entry: MotionEntry): void {

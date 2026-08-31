@@ -9,6 +9,7 @@ import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 const DEFAULT_STRAIGHT_TOLERANCE = 0.001;
 
 export interface LinearBendSnapGuide {
+  readonly alignment: "straight" | "symmetric";
   readonly curvePoint: PointV1;
   readonly end: PointV1;
   readonly start: PointV1;
@@ -63,7 +64,7 @@ export function linearBendSnapGuide(
   const start = rotatePointClockwise(element.start, element.pivot, element.rotation);
   const end = rotatePointClockwise(element.end, element.pivot, element.rotation);
   const snap = resolveCurvePointSnap(curvePoint, start, end, snapTolerance);
-  return snap.kind === "none" ? null : { curvePoint: snap.point, end, start };
+  return snap.kind === "none" ? null : { alignment: snap.kind, curvePoint: snap.point, end, start };
 }
 
 export function normalizeLinearBend(

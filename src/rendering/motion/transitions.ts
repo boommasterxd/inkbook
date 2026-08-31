@@ -37,7 +37,6 @@ export const TRANSITION_DURATIONS = Object.freeze({
   overflowEdgeGradient: MOTION_TOKENS.fast,
   conditionalToolbarControl: MOTION_TOKENS.toolbar,
   arrangeResult: MOTION_TOKENS.fast,
-  snapCandidateMarker: MOTION_TOKENS.fast,
   fallback: MOTION_TOKENS.fast,
 } as const);
 

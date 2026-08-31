@@ -26,7 +26,6 @@ export {
   editLinearEndpoint,
   moveSelection,
   moveSelectionTimeSliced,
-  resizeBoxShape,
   rotateSelection,
   scaleSelectionUniform,
   uniformScaleFactorFromPointers,

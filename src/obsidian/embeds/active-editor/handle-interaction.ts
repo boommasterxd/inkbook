@@ -1,8 +1,4 @@
-import {
-  calculateElementBounds,
-  rotatePointClockwise,
-  type Bounds,
-} from "../../../domain/geometry/public";
+import { calculateElementBounds, type Bounds } from "../../../domain/geometry/public";
 import type { BoxAnchorV1, InkElementV1, PointV1 } from "../../../domain/schema/public";
 import type { PointerSample } from "../../../editor/input/index";
 import {
@@ -133,7 +129,7 @@ export class ActiveEditorHandleInteraction {
     const elements = selected.map(({ element }) => element);
     const selectedIds = new Set(elements.map(({ id }) => id));
     const action = handleAction(handle, selected);
-    const sessionStart = handleSessionStart(handle, selected);
+    const sessionStart = handleSessionStart(handle);
     this.#active = {
       ids: elements.map(({ id }) => id),
       grabOffset: {
@@ -355,10 +351,6 @@ function handleAction(
   selected: readonly SelectedElementGeometry[],
 ): SelectionHandleAction {
   const only = selected.length === 1 ? selected[0]?.element : undefined;
-  if (handle.kind === "shape-resize") {
-    if (only === undefined) throw new Error("A shape handle requires one selected element.");
-    return { elementId: only.id, kind: handle.kind, position: handle.position };
-  }
   if (handle.kind === "linear-endpoint" || handle.kind === "linear-bend") {
     if (only === undefined) throw new Error("A linear handle requires one selected element.");
     return handle.kind === "linear-endpoint"
@@ -386,28 +378,8 @@ function handleAction(
   };
 }
 
-function handleSessionStart(
-  handle: SelectionHandle,
-  selected: readonly SelectedElementGeometry[],
-): PointV1 {
-  if (handle.kind !== "shape-resize") return handle.point;
-  const element = selected.length === 1 ? selected[0]?.element : undefined;
-  if (element?.kind !== "rectangle" && element?.kind !== "ellipse") {
-    throw new TypeError("A shape resize handle requires one closed shape.");
-  }
-  const local = {
-    x: handle.position.includes("left")
-      ? element.x
-      : handle.position.includes("right")
-        ? element.x + element.width
-        : element.x + element.width / 2,
-    y: handle.position.startsWith("top")
-      ? element.y
-      : handle.position.startsWith("bottom")
-        ? element.y + element.height
-        : element.y + element.height / 2,
-  };
-  return rotatePointClockwise(local, element.pivot, element.rotation);
+function handleSessionStart(handle: SelectionHandle): PointV1 {
+  return handle.point;
 }
 
 function transformString(transform: SelectionPreviewTransform | null): string | null {

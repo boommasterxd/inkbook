@@ -317,7 +317,7 @@ describe("canvas crossfades and overlays", () => {
     expect(currentBackground?.style.opacity).toBeUndefined();
   });
 
-  it("animates selection and snap overlays and completes them on pointer interruption", () => {
+  it("animates selection overlays while snap feedback updates immediately", () => {
     const { renderer, scheduler } = setup();
     scheduler.runAll();
     const overlayGroup = fakeNode(renderer.svg).nodes[2]!;
@@ -332,7 +332,7 @@ describe("canvas crossfades and overlays", () => {
     scheduler.runNext();
     expect(selection.attributes.get("data-selection-fill")).toBe("none");
     expect(selection.style.opacity).toBe("0");
-    expect(snap.style.opacity).toBe("0");
+    expect(snap.style.opacity).toBe("1");
 
     renderer.interruptMotionForPointerDown();
     expect(selection.style.opacity).toBe("1");
@@ -344,6 +344,7 @@ describe("canvas crossfades and overlays", () => {
 
     renderer.setSelectionOverlayPath(null);
     renderer.setSnapMarkerPath(null);
+    expect(snap.attributes.get("d")).toBe("");
     renderer.interruptMotionForPointerDown();
     expect(selection.attributes.get("d")).toBe("");
     expect(snap.attributes.get("d")).toBe("");

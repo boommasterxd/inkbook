@@ -118,6 +118,7 @@ describe("linear bend snapping", () => {
 
       expect(curvePoint).toEqual({ x: 250, y: 150 });
       expect(session.preview.snapGuide).toEqual({
+        alignment: "symmetric",
         curvePoint: { x: 250, y: 150 },
         end: { x: 400, y: 100 },
         kind: "bend",
@@ -125,6 +126,27 @@ describe("linear bend snapping", () => {
       });
     },
   );
+
+  it("distinguishes a straight-line snap from symmetric bend alignment", () => {
+    const source = linear();
+    const session = new SelectionHandleSession({
+      action: { elementId: source.id, kind: "linear-bend" },
+      elements: [source],
+      planner: new ElementStore([source]),
+      snap: snapPorts(1),
+      startPointer: { x: 250, y: 100 },
+    });
+
+    session.update({ x: 250, y: 103 });
+
+    expect(session.preview.snapGuide).toEqual({
+      alignment: "straight",
+      curvePoint: { x: 250, y: 100 },
+      end: { x: 400, y: 100 },
+      kind: "bend",
+      start: { x: 100, y: 100 },
+    });
+  });
 
   it("narrows the symmetric bend snap range at higher zoom", () => {
     const source = linear();

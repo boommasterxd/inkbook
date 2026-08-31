@@ -21,19 +21,13 @@ import {
   selectionRotationDelta,
   selectionSnapZoom,
 } from "./handle-snap-resolution";
-import {
-  activeScaleAxes,
-  canonicalHandlePoint,
-  clampEndpoint,
-  isBoxShape,
-} from "./handle-session-geometry";
+import { activeScaleAxes, canonicalHandlePoint, clampEndpoint } from "./handle-session-geometry";
 import {
   editCoordinateAxis,
   editCoordinateOrigin,
   editLinearEndpoint,
   minimumUniformScaleForSelection,
   moveSelection,
-  resizeBoxShape,
   rotateSelection,
   scaleElementFromPointers,
   scaleFactorsFromPointers,
@@ -273,10 +267,6 @@ export class SelectionHandleSession {
     const action = this.#action;
     if (!("elementId" in action)) throw new Error("Expected a targeted handle action.");
     const element = this.#targetElement(action.elementId);
-    if (action.kind === "shape-resize") {
-      if (!isBoxShape(element)) throw new TypeError("Shape handles require a closed shape.");
-      return [resizeBoxShape(element, action.position, pointer)];
-    }
     if (action.kind === "linear-endpoint") {
       if (element.kind !== "line" && element.kind !== "arrow") {
         throw new TypeError("Endpoint handles require a line or arrow.");

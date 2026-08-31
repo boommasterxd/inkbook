@@ -18,7 +18,7 @@ function selected(element: InkElementV1) {
 }
 
 describe("selection handle geometry", () => {
-  it("lays out dedicated rotated rectangle handles and a screen-sized rotation handle", () => {
+  it("lays out rotated rectangle scale handles and a screen-sized rotation handle", () => {
     const shape = rectangle();
     shape.rotation = 90;
     const handles = layoutSelectionHandles([selected(shape)], {
@@ -26,9 +26,9 @@ describe("selection handle geometry", () => {
       zoom: 2,
     });
 
-    expect(handles.filter(({ kind }) => kind === "shape-resize")).toHaveLength(8);
-    expect(handles.find(({ kind }) => kind === "shape-resize")).toMatchObject({
-      kind: "shape-resize",
+    expect(handles.filter(({ kind }) => kind === "scale")).toHaveLength(8);
+    expect(handles.find(({ kind }) => kind === "scale")).toMatchObject({
+      kind: "scale",
       point: { x: 252, y: 48 },
       position: "top-left",
     });

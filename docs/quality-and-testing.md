@@ -197,7 +197,7 @@ Every user-visible state change animates unless listed as immediate or reduced m
 | Automatic page growth or shrink                      |     180 ms | container height with native scroll position preserved       |
 | Conditional toolbar control enter or exit            |     300 ms | fixed scale, left-to-right entry, right-to-left exit         |
 | Arrange result                                       |     120 ms | old/new path opacity crossfade where overlap changes visibly |
-| Snap candidate marker enter or exit                  |     120 ms | opacity, scale                                               |
+| Snap candidate feedback update                       |       0 ms | immediate path replacement or removal                        |
 
 Implementation rules:
 

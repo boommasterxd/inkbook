@@ -18,7 +18,6 @@ export type SelectionHandleAction =
       readonly kind: "linear-endpoint";
     }
   | { readonly elementId: string; readonly kind: "linear-bend" }
-  | { readonly elementId: string; readonly kind: "shape-resize"; readonly position: BoxAnchorV1 }
   | { readonly axisIndex: number; readonly elementId: string; readonly kind: "coordinate-axis" }
   | { readonly elementId: string; readonly kind: "coordinate-origin" };
 
@@ -52,6 +51,7 @@ export type SelectionSnapGuide =
       readonly kind: "rotation";
     }
   | {
+      readonly alignment: "straight" | "symmetric";
       readonly curvePoint: PointV1;
       readonly end: PointV1;
       readonly kind: "bend";

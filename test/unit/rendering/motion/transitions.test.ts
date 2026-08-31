@@ -48,7 +48,6 @@ describe("motion tokens", () => {
       overflowEdgeGradient: 120,
       conditionalToolbarControl: 300,
       arrangeResult: 120,
-      snapCandidateMarker: 120,
       fallback: 120,
     });
     expect(getTransitionDuration("lockedToActiveHeight")).toBe(240);

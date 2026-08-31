@@ -20,7 +20,6 @@ const BOX_HANDLE_ORDER: readonly BoxAnchorV1[] = [
 
 export type SelectionHandle =
   | { readonly kind: "scale"; readonly point: PointV1; readonly position: BoxAnchorV1 }
-  | { readonly kind: "shape-resize"; readonly point: PointV1; readonly position: BoxAnchorV1 }
   | { readonly kind: "rotate"; readonly point: PointV1 }
   | {
       readonly endpoint: "start" | "end";
@@ -94,10 +93,7 @@ function multiSelectionHandles(
 ): SelectionHandle[] {
   const bounds = selectionBounds(selected);
   if (bounds === null) return [];
-  return [
-    ...boxHandles(bounds, "scale"),
-    rotateHandle(bounds, options.zoom, options.rotateOffsetPixels),
-  ];
+  return [...boxHandles(bounds), rotateHandle(bounds, options.zoom, options.rotateOffsetPixels)];
 }
 
 function singleElementHandles(
@@ -108,10 +104,7 @@ function singleElementHandles(
     return linearHandles(element);
   }
   const bounds = calculateElementBounds({ ...element, rotation: 0 });
-  const points = boxHandles(
-    bounds,
-    element.kind === "rectangle" || element.kind === "ellipse" ? "shape-resize" : "scale",
-  ).map((handle) => ({
+  const points = boxHandles(bounds).map((handle) => ({
     ...handle,
     point: rotatePointClockwise(handle.point, element.pivot, element.rotation),
   }));
@@ -155,12 +148,9 @@ function linearHandles(
   return handles;
 }
 
-function boxHandles(
-  bounds: Bounds,
-  kind: "scale" | "shape-resize",
-): Array<Extract<SelectionHandle, { kind: "scale" | "shape-resize" }>> {
+function boxHandles(bounds: Bounds): Array<Extract<SelectionHandle, { kind: "scale" }>> {
   return BOX_HANDLE_ORDER.map((position) => ({
-    kind,
+    kind: "scale",
     point: boxPosition(bounds, position),
     position,
   }));

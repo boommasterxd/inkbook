@@ -5,6 +5,11 @@ import type { InkElementV1, PageV1, PointV1 } from "../../../../src/domain/schem
 import { createBuiltInSettings } from "../../../../src/domain/settings/defaults";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { createDragElement } from "../../../../src/editor/tools/public";
+import {
+  layoutSelectionHandles,
+  oppositeElementHandlePoint,
+  transformSelectionPoint,
+} from "../../../../src/editor/selection/public";
 import { ActiveEditorHandleInteraction } from "../../../../src/obsidian/embeds/active-editor/handle-interaction";
 import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";
 import { PreparedElementHistory } from "../../../../src/obsidian/embeds/active-editor/prepared-element-history";
@@ -119,17 +124,22 @@ function editableModel(store: ElementStore): EditableDocumentModel {
 
 describe("active editor selection handles", () => {
   it("drives a shape handle through preview, store commit, renderer delta, and undo", () => {
-    const { deltas, history, interaction, overlays, previewTransforms, store } = harness(
-      [rectangle()],
-      new Set([startId()]),
-    );
+    const fixture = harness([rectangle()], new Set([startId()]));
+    const { deltas, elementPreviews, history, interaction, overlays, previewTransforms, store } =
+      fixture;
     const bounds = calculateElementBounds(rectangle());
     const start = { pointerId: 1, pointerType: "touch" as const, x: bounds.maxX, y: bounds.maxY };
 
     interaction.renderSelection();
     expect(interaction.pointerDown(start)).toBe(true);
     expect(interaction.activePointerType).toBe("touch");
+    expect(interaction.pointerMove({ ...start, x: start.x + 40, y: start.y + 20 })).toBe(true);
+    expect(store.get(startId())?.element).toMatchObject({ height: 140, width: 200 });
     expect(interaction.pointerMove({ ...start, x: start.x + 80, y: start.y + 40 })).toBe(true);
+    expect(previewTransforms.slice(-2).every((transform) => transform !== null)).toBe(true);
+    expect(elementPreviews.every((elements) => elements.every(({ id }) => id !== startId()))).toBe(
+      true,
+    );
     expect(overlays[overlays.length - 2]).toContain("M 99 99 L 381 99 L 381 281 L 99 281 Z");
     expect(interaction.pointerUp(start.pointerId)).toBe(true);
     expect(interaction.activePointerType).toBeUndefined();
@@ -158,8 +168,7 @@ describe("active editor selection handles", () => {
 
     expect(interaction.pointerDown(start)).toBe(true);
     expect(interaction.pointerMove({ ...start, x: 380, y: 280 })).toBe(true);
-
-    expectLatestLinePreview(elementPreviews, dependent.id, { x: 380, y: 280 });
+    expectLatestLinePreview(elementPreviews, dependent.id, { x: 379.604, y: 279.719 });
 
     interaction.cancel(start.pointerId);
     expect(elementPreviews[elementPreviews.length - 1]).toEqual([]);
@@ -187,11 +196,45 @@ describe("active editor generic selection transforms", () => {
       columnWidth: 150,
       headerHeight: 48,
       height: 200,
-      pivot: { x: 251, y: 202 },
+      pivot: { x: 148, y: 201 },
       rotation: 90,
-      x: 101,
-      y: 102,
+      x: -2,
+      y: 101,
     });
+  });
+
+  it("commits a rotated freehand resize at the same pivot shown by its preview", () => {
+    const stroke: Extract<InkElementV1, { kind: "stroke" }> = {
+      ...indexedStroke(20),
+      pivot: { x: 160, y: 130 },
+      points: [100, 100, 0.5, 160, 130, 0.7, 220, 160, 0.5],
+      rotation: 37,
+      style: { ...indexedStroke(20).style, width: 8 },
+    };
+    const selected = [{ bounds: calculateElementBounds(stroke), element: stroke }];
+    const handle = layoutSelectionHandles(selected, { zoom: 1 }).find(
+      (candidate) => candidate.kind === "scale" && candidate.position === "bottom-right",
+    );
+    if (handle?.kind !== "scale") throw new TypeError("Expected a freehand scale handle.");
+    const anchor = oppositeElementHandlePoint(stroke, handle.position);
+    const current = {
+      x: anchor.x + (handle.point.x - anchor.x) * 1.5,
+      y: anchor.y + (handle.point.y - anchor.y) * 1.5,
+    };
+    const expectedPivot = transformSelectionPoint(stroke.pivot, {
+      anchor,
+      factors: { x: 1.5, y: 1.5 },
+      kind: "scale",
+      rotation: stroke.rotation,
+    });
+    const { interaction, store } = harness([stroke], new Set([stroke.id]));
+    const start = { ...handle.point, pointerId: 10, pointerType: "mouse" as const };
+
+    expect(interaction.pointerDown(start)).toBe(true);
+    expect(interaction.pointerMove({ ...start, ...current })).toBe(true);
+    expect(store.get(stroke.id)?.element.pivot).toEqual(stroke.pivot);
+    expect(interaction.pointerUp(start.pointerId)).toBe(true);
+    expect(store.get(stroke.id)?.element.pivot).toEqual(expectedPivot);
   });
 });
 
