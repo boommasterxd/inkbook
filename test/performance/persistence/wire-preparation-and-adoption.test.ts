@@ -56,7 +56,10 @@ describe("worker transfer preparation and result adoption", () => {
     output.fill(97);
     await measureUtf8Adoption(output);
     const measurements: SliceMeasurement[] = [];
-    for (let run = 0; run < 5; run += 1) measurements.push(await measureUtf8Adoption(output));
+    for (let run = 0; run < 5; run += 1) {
+      collectProfileGarbage();
+      measurements.push(await measureUtf8Adoption(output));
+    }
 
     const sliceDurations = measurements.map(({ maximumSliceMs }) => maximumSliceMs);
     await annotateDurations(annotate, "UTF-8 result adoption slices", sliceDurations);
