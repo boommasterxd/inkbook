@@ -35,15 +35,15 @@ describe("autosave backpressure", () => {
     document.commit();
     coordinator.recordCommit({ modelRevision: 1 });
     clock.advance(500);
-    await settle();
+    await settleUntil(() => executor.exportRequests.length === 1, "initial export dispatch");
     document.commit();
     coordinator.recordCommit({ modelRevision: 2 });
     executor.completeExport(0);
-    await settle();
+    await settleUntil(() => executor.acknowledgements.length === 1, "stale export acknowledgement");
 
     expect(executor.acknowledgements).toEqual([{ accepted: false, modelRevision: 1 }]);
     clock.advance(500);
-    await settle();
+    await settleUntil(() => executor.exportRequests.length === 2, "successor export dispatch");
     expect(executor.exportRequests[1]).toMatchObject({
       baseModelRevision: 1,
       modelRevision: 2,
@@ -92,12 +92,12 @@ async function runBackpressureSequence(): Promise<void> {
   document.commit();
   coordinator.recordCommit({ modelRevision: 1 });
   clock.advance(500);
-  await settle();
+  await settleUntil(() => executor.exportRequests.length === 1, "initial export dispatch");
   expect(executor.exportRequests).toHaveLength(1);
 
   clock.advance(300);
   executor.completeExport(0);
-  await settle();
+  await settleUntil(() => vault.processCalls === 1, "initial vault write");
   expect(vault.processCalls).toBe(1);
 
   for (let revision = 2; revision <= 5; revision += 1) {
@@ -107,19 +107,19 @@ async function runBackpressureSequence(): Promise<void> {
   }
   clock.advance(100);
   vault.completeWrite();
-  await settle();
+  await settleUntil(() => executor.exportRequests.length === 2, "coalesced successor export");
   expect(executor.exportRequests).toHaveLength(2);
   expect(executor.maximumActiveExports).toBe(1);
 
   clock.advance(300);
   executor.completeExport(1);
-  await settle();
+  await settleUntil(() => vault.processCalls === 2, "successor vault write");
   expect(vault.processCalls).toBe(2);
   expect(vault.maximumActiveWrites).toBe(1);
 
   clock.advance(300);
   vault.completeWrite();
-  await settle();
+  await settleUntil(() => !coordinator.dirty, "clean autosave state");
   expect(coordinator.dirty).toBe(false);
   expect(vault.revision).toBe(5);
   coordinator.dispose();
@@ -342,6 +342,10 @@ function readRevision(value: string | Uint8Array): number | null {
   return match === null ? null : Number(match[1]);
 }
 
-async function settle(): Promise<void> {
-  for (let index = 0; index < 32; index += 1) await Promise.resolve();
+async function settleUntil(condition: () => boolean, description: string): Promise<void> {
+  for (let index = 0; index < 1_024; index += 1) {
+    if (condition()) return;
+    await Promise.resolve();
+  }
+  throw new Error(`Autosave did not reach ${description}.`);
 }
