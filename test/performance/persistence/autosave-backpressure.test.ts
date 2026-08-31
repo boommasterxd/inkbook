@@ -15,6 +15,7 @@ import type {
   MetadataGuardedFileRead,
 } from "../../../src/persistence/saving/save-ports";
 import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
+import { yieldToMainThread } from "../../../src/persistence/scheduling/main-thread-yield";
 import type { ExportSuccess } from "../../../src/persistence/worker/protocol";
 import { createMinimalPersistenceFixture } from "./fixtures";
 import { annotateDurations, measureAsync, summarizeDurations } from "./metrics";
@@ -343,9 +344,9 @@ function readRevision(value: string | Uint8Array): number | null {
 }
 
 async function settleUntil(condition: () => boolean, description: string): Promise<void> {
-  for (let index = 0; index < 1_024; index += 1) {
+  for (let index = 0; index < 64; index += 1) {
     if (condition()) return;
-    await Promise.resolve();
+    await yieldToMainThread();
   }
   throw new Error(`Autosave did not reach ${description}.`);
 }

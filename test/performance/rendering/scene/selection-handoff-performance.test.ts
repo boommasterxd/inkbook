@@ -14,11 +14,12 @@ import {
   fakeNode,
 } from "../../../unit/rendering/scene/fakes";
 import { MeasuredSliceScheduler } from "../../domain/domain-scenarios";
-import { INTERACTION_REFRESH_PROFILE } from "../../interaction-refresh-profile";
+import { INTERACTION_REFRESH_PROFILE, interactionP99 } from "../../interaction-refresh-profile";
 import { collectProfileGarbage } from "../../persistence/metrics";
 import { timingBudget } from "../../timing-budget";
 
 const ELEMENT_COUNT = 10_000;
+const MEASURED_RUNS = 100;
 const PAGE: PageV1 = {
   activeBufferLines: 3,
   background: { type: "none" },
@@ -48,21 +49,18 @@ describe("selection preview handoff performance", () => {
     let subscriberDuration = 0;
     const unsubscribe = store.subscribe((delta) => {
       const startedAt = performance.now();
-      const affected = [];
-      for (const change of delta.changes) {
-        affected.push({
-          id: change.id,
-          domains: change.domains,
-          before: recordElement(change.before),
-          after: recordElement(change.after),
-        });
-      }
+      const affected = delta.changes.map((change) => ({
+        id: change.id,
+        domains: change.domains,
+        before: recordElement(change.before),
+        after: recordElement(change.after),
+      }));
       renderer.applyDelta({ affected });
       subscriberDuration = performance.now() - startedAt;
     });
     const commitDurations: number[] = [];
 
-    for (let run = 0; run < 6; run += 1) {
+    for (let run = 0; run <= MEASURED_RUNS; run += 1) {
       const current = ids.map((id) => store.get(id)?.element as InkElementV1);
       const distance = run % 2 === 0 ? 0.001 : -0.001;
       const preparationScheduler = new MeasuredSliceScheduler(2);
@@ -104,15 +102,17 @@ describe("selection preview handoff performance", () => {
 
     unsubscribe();
     renderer.destroy();
+    const subscriberP99 = interactionP99(subscriberDurations);
     const maximumSubscriberDuration = Math.max(...subscriberDurations);
     const maximumCommitDuration = Math.max(...commitDurations);
     await annotate(
-      `selection handoff: subscriberMax=${maximumSubscriberDuration.toFixed(3)} ms, ` +
+      `selection handoff: subscriberP99=${subscriberP99.toFixed(3)} ms, ` +
+        `subscriberMax=${maximumSubscriberDuration.toFixed(3)} ms, ` +
         `commitMax=${maximumCommitDuration.toFixed(3)} ms`,
       "performance",
     );
-    expect(subscriberDurations).toHaveLength(5);
-    expect(maximumSubscriberDuration).toBeLessThanOrEqual(
+    expect(subscriberDurations).toHaveLength(MEASURED_RUNS);
+    expect(subscriberP99).toBeLessThanOrEqual(
       timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
     );
     expect(maximumCommitDuration).toBeLessThanOrEqual(timingBudget(100));
