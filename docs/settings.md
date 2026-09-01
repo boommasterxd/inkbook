@@ -184,7 +184,7 @@ Every shape type has its own persisted default entry, even when several entries 
 ```ts
 interface OutlineDefaultsV1 {
   outlineColor: ColorV1;
-  outlineWidth: 1 | 2 | 4 | 8 | 12;
+  outlineWidth: 2 | 4 | 8 | 14 | 22;
   outlineStyle: "solid" | "dashed" | "dotted";
   outlineOpacity: number;
 }
@@ -198,7 +198,7 @@ interface ShapeDefaultsV1 extends OutlineDefaultsV1 {
 Built-in outline values for every shape:
 
 - outline color: Theme text color
-- outline width: S, 2
+- outline width: S, 4
 - outline style: solid
 - outline opacity: 1
 
@@ -222,7 +222,7 @@ Line defaults use none for both nodes. Node settings are not shown for other sha
 
 - columns: 2
 - valid range: 1 through 12
-- header height: 30 percent of initial height
+- header height: 25 percent of initial height, with a 24-page-unit minimum
 - no fill and no data-row separators; each table has exactly one horizontal header separator
 
 ## Eraser Defaults
@@ -311,6 +311,8 @@ Custom folders:
 - fall back to the note folder when unavailable
 
 ## Device Settings
+
+Finger drawing and pen-tap insertion use matching toggle controls. The pen-tap toggle maps the enabled state to the persisted `"handwriting"` mode and the disabled state to `"off"`; no select menu is shown for this binary preference.
 
 ### Finger Drawing
 

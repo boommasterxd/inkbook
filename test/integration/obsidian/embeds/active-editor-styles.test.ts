@@ -78,6 +78,13 @@ describe("active editor Style controls", () => {
     expect(outline.find(({ id }) => id === "outline-width")).toMatchObject({
       options: OUTLINE_WIDTH_STYLE_OPTIONS,
     });
+    expect(OUTLINE_WIDTH_STYLE_OPTIONS.map(({ value }) => value)).toEqual([
+      "2",
+      "4",
+      "8",
+      "14",
+      "22",
+    ]);
   });
 });
 
@@ -154,7 +161,7 @@ describe("active editor Style changes", () => {
     });
     expect(first.style).toMatchObject({ outlineColor: { type: "theme-text" } });
     expect(
-      createSelectionStyleReplacement(replacement?.replacements ?? [], "outline-width", "2"),
+      createSelectionStyleReplacement(replacement?.replacements ?? [], "outline-width", "4"),
     ).toBeNull();
   });
 
@@ -217,10 +224,10 @@ describe("active editor Select Style changes", () => {
 describe("active editor Style changes for elements", () => {
   it("accepts the advertised XS outline width", () => {
     const defaults = createBuiltInSettings().toolDefaults;
-    const updated = updateSessionToolDefaults(defaults, "rectangle", "outline-width", "1");
+    const updated = updateSessionToolDefaults(defaults, "rectangle", "outline-width", "2");
 
-    expect(updated.shapes.rectangle.outlineWidth).toBe(1);
-    expect(defaults.shapes.rectangle.outlineWidth).not.toBe(1);
+    expect(updated.shapes.rectangle.outlineWidth).toBe(2);
+    expect(defaults.shapes.rectangle.outlineWidth).not.toBe(2);
   });
 
   it("marks mixed structural values and applies table column changes", () => {

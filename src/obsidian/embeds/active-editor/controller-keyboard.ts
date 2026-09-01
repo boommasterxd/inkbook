@@ -129,7 +129,7 @@ export class ActiveEditorKeyboardController {
     if (
       !shouldHandleClipboardShortcut("paste", {
         hasSelection: this.#options.selectionSize() > 0,
-        hasValidInkPayload: this.#options.actions.canPaste,
+        hasValidInkPayload: this.#options.actions.hasValidatedPaste,
         pointerOverActiveEditor: this.#pointerOver,
         textFieldFocused: false,
       }) ||
@@ -166,7 +166,7 @@ export class ActiveEditorKeyboardController {
   #clipboardActionAvailable(action: "copy" | "cut"): boolean {
     return shouldHandleClipboardShortcut(action, {
       hasSelection: this.#options.selectionSize() > 0,
-      hasValidInkPayload: this.#options.actions.canPaste,
+      hasValidInkPayload: this.#options.actions.hasValidatedPaste,
       pointerOverActiveEditor: this.#pointerOver,
       textFieldFocused: false,
     });

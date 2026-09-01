@@ -40,7 +40,7 @@ describe("active editor table structure handles", () => {
     });
     previewTableDrag(fixture.interaction, standardStart, nearStandard);
     expect(latestTable(fixture.previews, table.id)).toMatchObject({ headerHeight: standard });
-    expect(fixture.overlays[fixture.overlays.length - 1]).toContain("M 220 -14 L 220 314");
+    expect(fixture.overlays[fixture.overlays.length - 1]).toContain("M 225 -14 L 225 314");
     expect(fixture.interaction.pointerUp(standardStart.pointerId)).toBe(true);
     expect(requireTable(fixture.store.get(table.id)?.element).headerHeight).toBe(standard);
   });

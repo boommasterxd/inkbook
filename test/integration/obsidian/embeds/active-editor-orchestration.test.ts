@@ -12,7 +12,7 @@ import type { MenuFactoryPort, MenuItemPort, MenuPort } from "../../../../src/ob
 import { createClipboardModelDefaults } from "./active-editor-clipboard-fixtures";
 
 describe("active editor Clipboard discovery", () => {
-  it("validates a fresh system Clipboard before exposing toolbar and context Paste", async () => {
+  it("exposes supported system Paste immediately and validates its current payload", async () => {
     const planClipboardPaste = vi.fn(async () => pastePlan());
     const model = documentModel(planClipboardPaste);
     const stateChanged = vi.fn();
@@ -23,10 +23,10 @@ describe("active editor Clipboard discovery", () => {
       stateChanged,
     );
 
-    expect(actions.canPaste).toBe(false);
+    expect(actions.canPaste).toBe(true);
     await expect(actions.refreshPasteAvailability()).resolves.toBe(true);
     expect(actions.canPaste).toBe(true);
-    expect(stateChanged).toHaveBeenCalledOnce();
+    expect(stateChanged).not.toHaveBeenCalled();
     expect(planClipboardPaste).toHaveBeenCalledWith(
       expect.objectContaining({ customText: "INKBOOK/1:{}" }),
       { kind: "toolbar", visibleCanvasCenter: { x: 100, y: 100 } },
@@ -40,7 +40,7 @@ describe("active editor Clipboard discovery", () => {
     actions.dispose();
   });
 
-  it("keeps Paste safely unavailable when system Clipboard permission fails", async () => {
+  it("keeps Paste retryable when a background Clipboard permission probe fails", async () => {
     const planClipboardPaste = vi.fn(async () => null);
     const model = documentModel(planClipboardPaste);
     const actions = activeActions(
@@ -50,8 +50,8 @@ describe("active editor Clipboard discovery", () => {
       vi.fn(),
     );
 
-    await expect(actions.refreshPasteAvailability()).resolves.toBe(false);
-    expect(actions.canPaste).toBe(false);
+    await expect(actions.refreshPasteAvailability()).resolves.toBe(true);
+    expect(actions.canPaste).toBe(true);
     expect(planClipboardPaste).not.toHaveBeenCalled();
     actions.dispose();
   });
@@ -75,7 +75,7 @@ describe("active editor Clipboard discovery", () => {
     actions.dispose();
     completeRead?.([]);
 
-    await expect(probe).resolves.toBe(false);
+    await expect(probe).resolves.toBe(true);
     expect(planClipboardPaste).not.toHaveBeenCalled();
     expect(stateChanged).not.toHaveBeenCalled();
   });

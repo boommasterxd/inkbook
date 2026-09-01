@@ -100,6 +100,16 @@ describe("SettingsControlValues", () => {
     expect(vault.saved).toEqual(createBuiltInSettings());
   });
 
+  it("maps the pen-tap insertion toggle onto the persisted device mode", async () => {
+    expect(values.get("device.penTapInsertionEnabled")).toBe(false);
+
+    await values.set("device.penTapInsertionEnabled", true);
+
+    expect(values.get("device.penTapInsertionEnabled")).toBe(true);
+    expect(device.saved.penTapInsertion).toBe("handwriting");
+    expect(vault.saved).toEqual(createBuiltInSettings());
+  });
+
   it("rejects invalid UI values without persisting them", async () => {
     await expect(values.set("toolDefaults.eraser.radius", 65)).rejects.toThrow(
       "Invalid setting value",

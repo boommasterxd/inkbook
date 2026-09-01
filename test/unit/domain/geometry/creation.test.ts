@@ -75,7 +75,7 @@ describe("table geometry creation", () => {
       columnWidth: 40,
       height: 100,
       columns: 3,
-      headerHeight: 30,
+      headerHeight: 25,
       pivot: { x: 140, y: 150 },
     });
     expect(() => createTableGeometry({ x: 0, y: 0 }, { x: 1, y: 1 }, 13)).toThrow(RangeError);

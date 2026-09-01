@@ -128,8 +128,7 @@ Paste:
 
 - generates new IDs for all elements
 - inserts all elements as one undo step
-- then automatically activates Select
-- selects the inserted elements
+- selects the inserted elements; Toolbar and keyboard Paste activate Select, while Context-menu Paste preserves the current creation tool so the menu-closing touch cannot become a lasso gesture
 - remaps every clipboard-local target ID to the corresponding new document ID
 
 Placement:
@@ -139,7 +138,7 @@ Placement:
 - `Ctrl/Cmd+V` uses the last pointer position recorded inside the current active editor session. If none exists, it uses the center of the visible canvas.
 - Repeated Toolbar or keyboard paste of the same payload offsets each additional copy diagonally by 24 page units.
 
-Canvas shortcuts are captured through the active editor's owning document so they remain available after canvas or toolbar interaction. Document-level capture requires the pointer over the active editor and no focused text field. `Delete` uses the same availability boundary, while `Backspace` remains native. Without a selection or valid ink payload, normal Obsidian clipboard behavior remains active. A copied payload whose system write failed remains authoritative in the in-session fallback, even if the platform returns an empty clipboard read. Configurable bindings, fixed Paste and history bindings, and command ownership are canonical in [Keyboard Shortcuts](keyboard-shortcuts.md).
+Canvas shortcuts are captured through the active editor's owning document so they remain available after canvas or toolbar interaction. Document-level capture requires the pointer over the active editor and no focused text field. `Delete` uses the same availability boundary, while `Backspace` remains native. Fixed keyboard Paste is claimed only after a probe or in-session copy has validated an Inkbook payload, so an unrelated native Paste remains available to Obsidian. On platforms that expose `Clipboard.read()`, toolbar and context-menu Paste remain visible even when a background permission probe fails; selecting the action starts the bounded read synchronously inside that fresh user activation. The native context menu itself opens synchronously and never waits for Clipboard permission. A copied payload whose system write failed remains authoritative in the in-session fallback, even if the platform returns an empty clipboard read. Configurable bindings, fixed Paste and history bindings, and command ownership are canonical in [Keyboard Shortcuts](keyboard-shortcuts.md).
 
 ## Canvas Context Menus
 
@@ -151,7 +150,7 @@ The canvas uses Obsidian's native `Menu` through the owning presentation documen
 
 The single transparent input surface converts the invocation point to page coordinates and resolves an annotation through the spatial index. A mouse right-click or touch long press on an unselected annotation selects only that annotation before opening the menu. Invoking it on an already selected annotation preserves the complete selection. Invoking it on empty canvas preserves the current selection. Selection caused by menu invocation is not a history entry and does not dirty the file.
 
-Moving beyond the long-press threshold, receiving a second touch, starting a pen gesture, losing the owning presentation, or cancelling the pointer prevents the touch menu from opening. A long press on an annotation always selects and opens the selection menu regardless of the active tool; it never starts that tool's gesture. The keyboard menu is positioned at the visible selection center, or at the visible canvas center when no selection exists. Mouse, pen, and touch menus snapshot their invocation point, which also becomes the exact Context-menu Paste position.
+Moving beyond the long-press threshold, receiving a second touch, starting a pen gesture, losing the owning presentation, or cancelling the pointer prevents the touch menu from opening. A long press on an annotation always selects and opens the selection menu regardless of the active tool; it never starts that tool's gesture. Dismissing a touch-opened menu does not restore focus through the disappearing menu onto the canvas. The keyboard menu is positioned at the visible selection center, or at the visible canvas center when no selection exists. Mouse, pen, and touch menus snapshot their invocation point, which also becomes the exact Context-menu Paste position.
 
 When a selection exists, the menu begins with:
 

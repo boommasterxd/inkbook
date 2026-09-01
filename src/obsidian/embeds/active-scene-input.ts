@@ -8,6 +8,10 @@ export function attachActiveSceneInputListeners(
   controller: ActiveEditorController,
 ): () => void {
   const touchBoundary = new CanvasTouchBoundary(renderer.inputSurface, {
+    onPenPointerCancel: (event) => controller.handlePointerCancel(event),
+    onPenPointerMove: (event) => controller.handlePointerMove(event),
+    onPenPointerStart: (event) => controller.handlePointerDown(event),
+    onPenPointerUp: (event) => controller.handlePointerUp(event),
     onPrimaryTouchStart: () => controller.preparePrimaryTouchStart(),
     onTouchInterrupted: () => controller.recoverInterruptedTouch(),
     onTouchPointerMove: (event) => controller.handlePointerMove(event),

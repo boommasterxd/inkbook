@@ -5,6 +5,38 @@ import { describe, expect, it, vi } from "vitest";
 import { CanvasTouchBoundary } from "../../../../src/obsidian/embeds/canvas-touch-boundary";
 
 describe("canvas touch boundary", () => {
+  it("owns the complete pen stream before Obsidian can scroll or swipe", () => {
+    const fixture = createFixture();
+    const blockedBeforeEditor: boolean[] = [];
+    fixture.onPenPointerStart.mockImplementation((event: PointerEvent) => {
+      blockedBeforeEditor.push(event.defaultPrevented);
+    });
+    fixture.onPenPointerMove.mockImplementation((event: PointerEvent) => {
+      blockedBeforeEditor.push(event.defaultPrevented);
+    });
+    fixture.onPenPointerUp.mockImplementation((event: PointerEvent) => {
+      blockedBeforeEditor.push(event.defaultPrevented);
+    });
+
+    const down = dispatchPointer(fixture.surface, "pointerdown", true, 7, "pen");
+    const move = dispatchPointer(fixture.surface, "pointermove", true, 7, "pen");
+    const up = dispatchPointer(fixture.surface, "pointerup", true, 7, "pen");
+
+    expect([down.defaultPrevented, move.defaultPrevented, up.defaultPrevented]).toEqual([
+      true,
+      true,
+      true,
+    ]);
+    expect(fixture.onPenPointerStart).toHaveBeenCalledWith(down);
+    expect(fixture.onPenPointerMove).toHaveBeenCalledWith(move);
+    expect(fixture.onPenPointerUp).toHaveBeenCalledWith(up);
+    expect(blockedBeforeEditor).toEqual([true, true, true]);
+    expect(fixture.hostPointerStarts).not.toHaveBeenCalled();
+    expect(fixture.hostPointerMoves).not.toHaveBeenCalled();
+    expect(fixture.hostPointerUps).not.toHaveBeenCalled();
+    fixture.dispose();
+  });
+
   it("lets unclaimed touch events reach host scrolling without cancelling them", () => {
     const fixture = createFixture();
 
@@ -126,6 +158,12 @@ function createFixture(blockTouch: boolean | (() => boolean) = false) {
   const hostMoves = vi.fn();
   const hostEnds = vi.fn();
   const hostPointerStarts = vi.fn();
+  const hostPointerMoves = vi.fn();
+  const hostPointerUps = vi.fn();
+  const onPenPointerCancel = vi.fn();
+  const onPenPointerMove = vi.fn();
+  const onPenPointerStart = vi.fn();
+  const onPenPointerUp = vi.fn();
   const onPrimaryTouchStart = vi.fn();
   const onTouchInterrupted = vi.fn();
   const onTouchPointerMove = vi.fn();
@@ -135,7 +173,13 @@ function createFixture(blockTouch: boolean | (() => boolean) = false) {
   host.addEventListener("touchmove", hostMoves);
   host.addEventListener("touchend", hostEnds);
   host.addEventListener("pointerdown", hostPointerStarts);
+  host.addEventListener("pointermove", hostPointerMoves);
+  host.addEventListener("pointerup", hostPointerUps);
   const boundary = new CanvasTouchBoundary(surface, {
+    onPenPointerCancel,
+    onPenPointerMove,
+    onPenPointerStart,
+    onPenPointerUp,
     onPrimaryTouchStart,
     onTouchInterrupted,
     onTouchPointerMove,
@@ -151,8 +195,14 @@ function createFixture(blockTouch: boolean | (() => boolean) = false) {
     hostEnds,
     hostMoves,
     hostPointerStarts,
+    hostPointerMoves,
+    hostPointerUps,
     hostStarts,
     onPrimaryTouchStart,
+    onPenPointerCancel,
+    onPenPointerMove,
+    onPenPointerStart,
+    onPenPointerUp,
     onTouchInterrupted,
     onTouchPointerMove,
     onTouchPointerStart,
@@ -166,12 +216,13 @@ function dispatchPointer(
   type: "pointerdown" | "pointermove" | "pointerup",
   isPrimary: boolean,
   pointerId: number,
+  pointerType: "pen" | "touch" = "touch",
 ): Event {
   const event = new Event(type, { bubbles: true, cancelable: true });
   Object.defineProperties(event, {
     isPrimary: { value: isPrimary },
     pointerId: { value: pointerId },
-    pointerType: { value: "touch" },
+    pointerType: { value: pointerType },
   });
   target.dispatchEvent(event);
   return event;

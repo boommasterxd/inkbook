@@ -44,7 +44,7 @@ describe("selection paint Style changes", () => {
       defaults,
     });
     const selection = [line];
-    const result = applySelectionStyleChange(selection, { property: "outline-width", value: 2 });
+    const result = applySelectionStyleChange(selection, { property: "outline-width", value: 4 });
 
     expect(result).toEqual({ elements: selection, changed: false });
     expect(result.elements).toBe(selection);

@@ -41,7 +41,7 @@ export interface ActiveEditorClipboardOptions {
   readonly model: EditableDocumentModel;
   readonly onPendingChanged: (pending: boolean) => void;
   readonly onPasteAvailabilityChanged?: (available: boolean) => void;
-  readonly onPasteCommitted?: (activeTool: "select") => void;
+  readonly onPasteCommitted?: (activeTool: "select", invocation: PasteInvocation) => void;
   readonly onResult: (result: ClipboardControllerResult) => void;
   readonly onSelectionChanged: (selection: ReadonlySet<string>) => void;
   readonly ownerWindow: Window;
@@ -122,7 +122,8 @@ export class ActiveEditorClipboardController {
   readonly #onResult: (result: ClipboardControllerResult) => void;
   readonly #onPendingChanged: (pending: boolean) => void;
   readonly #onPasteAvailabilityChanged: ((available: boolean) => void) | undefined;
-  readonly #onPasteCommitted: ((activeTool: "select") => void) | undefined;
+  readonly #onPasteCommitted:
+    ((activeTool: "select", invocation: PasteInvocation) => void) | undefined;
   readonly #onSelectionChanged: (selection: ReadonlySet<string>) => void;
   readonly #ownerWindow: Window;
   #operationGeneration = 0;
@@ -216,7 +217,7 @@ export class ActiveEditorClipboardController {
     this.#registerApplied(applied);
     this.#repeatState = invocation.kind === "context-menu" ? undefined : plan.repeatState;
     this.#onSelectionChanged(new Set(plan.selectedIds));
-    this.#onPasteCommitted?.(plan.activateTool);
+    this.#onPasteCommitted?.(plan.activateTool, invocation);
     return this.#report({ action: "paste", kind: "committed" });
   }
 

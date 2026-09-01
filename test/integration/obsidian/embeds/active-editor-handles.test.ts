@@ -27,7 +27,6 @@ const PAGE: PageV1 = {
   lockedBufferLines: 1,
   margin: 24.3,
 };
-
 function rectangle(): Extract<InkElementV1, { kind: "rectangle" }> {
   const element = createDragElement({
     defaults: createBuiltInSettings().toolDefaults,
@@ -167,7 +166,7 @@ describe("active editor selection handles", () => {
 
     expect(interaction.pointerDown(start)).toBe(true);
     expect(interaction.pointerMove({ ...start, x: 380, y: 280 })).toBe(true);
-    expectLatestLinePreview(elementPreviews, dependent.id, { x: 379.604, y: 279.719 });
+    expectLatestLinePreview(elementPreviews, dependent.id, { x: 379.215, y: 279.445 });
 
     interaction.cancel(start.pointerId);
     expect(elementPreviews[elementPreviews.length - 1]).toEqual([]);
@@ -255,7 +254,7 @@ describe("active editor ordinary selection move", () => {
 
     expectLatestLinePreview(fixture.elementPreviews, dependent.id, { x: 340, y: 270 });
     expect(fixture.overlays[fixture.overlays.length - 2]).toContain(
-      "M 139 129 L 341 129 L 341 271 L 139 271 Z",
+      "M 138 128 L 342 128 L 342 272 L 138 272 Z",
     );
     expect(fixture.store.instrumentation).toMatchObject({
       fullStoreScans: 0,
@@ -294,7 +293,7 @@ describe("active editor ordinary selection move", () => {
     if (movedFirst?.kind !== "rectangle" || movedSecond?.kind !== "rectangle") {
       throw new TypeError("Expected rectangle replacements.");
     }
-    expect(calculateElementBounds(movedFirst)).toMatchObject({ minX: -601, minY: -501 });
+    expect(calculateElementBounds(movedFirst)).toMatchObject({ minX: -602, minY: -502 });
     expect({ x: movedSecond.x - movedFirst.x, y: movedSecond.y - movedFirst.y }).toEqual({
       x: 400,
       y: 250,
@@ -324,8 +323,10 @@ describe("active editor large selection handles", () => {
     expect(interaction.pointerDown(start)).toBe(true);
     expect(interaction.pointerMove({ ...start, x: 2003, y: 463 })).toBe(true);
 
-    expect(overlays[overlays.length - 2]).toContain("M 19 19 L 2003 19 L 2003 463 L 19 463 Z");
-    expectLatestLinePreview(elementPreviews, dependent.id, { x: 581, y: 461 });
+    expect(overlays[overlays.length - 2]).toContain(
+      "M 19 19 L 2002.786 19 L 2002.786 464.952 L 19 464.952 Z",
+    );
+    expectLatestLinePreview(elementPreviews, dependent.id, { x: 580.939, y: 460.952 });
   });
 
   it("prepares a large mixed move in slices and keeps async undo and redo atomic", async () => {

@@ -160,6 +160,27 @@ describe("InkbookSettingTab definitions", () => {
   });
 });
 
+describe("InkbookSettingTab input definitions", () => {
+  it("presents pen-tap insertion as the same toggle control as finger drawing", () => {
+    const tab = createTab(new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter()));
+    const input = groups(tab).find((group) => group.heading === "Input");
+    const controls = input?.items?.filter((item) => "control" in item) ?? [];
+
+    expect(controls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          control: { key: "device.fingerDrawingEnabled", type: "toggle" },
+          name: "Finger drawing",
+        }),
+        expect.objectContaining({
+          control: { key: "device.penTapInsertionEnabled", type: "toggle" },
+          name: "Pen-tap insertion",
+        }),
+      ]),
+    );
+  });
+});
+
 describe("InkbookSettingTab snapping and refresh definitions", () => {
   it("exposes global and per-kind snapping controls", async () => {
     const store = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());

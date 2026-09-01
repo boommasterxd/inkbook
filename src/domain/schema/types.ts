@@ -46,7 +46,7 @@ export interface StrokeStyleV1 {
 
 export interface OutlineStyleV1 {
   outlineColor: ColorV1;
-  outlineWidth: 1 | 2 | 4 | 8 | 12;
+  outlineWidth: 1 | 2 | 4 | 8 | 12 | 14 | 22;
   outlineOpacity: number;
   outlineStyle: "solid" | "dashed" | "dotted";
 }

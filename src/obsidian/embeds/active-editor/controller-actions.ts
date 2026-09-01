@@ -50,6 +50,7 @@ export class ActiveEditorActions {
   readonly #setSelection: (selection: ReadonlySet<string>) => void;
   readonly #visibleCenter: () => { readonly x: number; readonly y: number };
   readonly #lastSessionPointer: () => { readonly x: number; readonly y: number } | null;
+  readonly #systemClipboardReadable: boolean;
   #externalPasteAvailable = false;
   #pasteProbe: Promise<boolean> | undefined;
   #pasteProbeGeneration = 0;
@@ -68,6 +69,8 @@ export class ActiveEditorActions {
     this.#setSelection = options.setSelection;
     this.#visibleCenter = options.visibleCenter;
     this.#lastSessionPointer = options.lastSessionPointer;
+    this.#systemClipboardReadable =
+      typeof options.ownerWindow.navigator.clipboard?.read === "function";
     this.#documentHistory = new ActiveDocumentHistory({
       history: options.history,
       model: options.model,
@@ -80,9 +83,11 @@ export class ActiveEditorActions {
       model: options.model,
       onPasteAvailabilityChanged: (available) => {
         if (!available) this.#externalPasteAvailable = false;
-        if (!this.#externalPasteAvailable || !available) options.onStateChanged();
+        options.onStateChanged();
       },
-      onPasteCommitted: () => options.onPasteCommitted(),
+      onPasteCommitted: (_activeTool, invocation) => {
+        if (invocation.kind !== "context-menu") options.onPasteCommitted();
+      },
       onPendingChanged: options.onPendingChanged,
       onResult: (result) => {
         const code = feedbackForClipboardResult(result);
@@ -94,6 +99,12 @@ export class ActiveEditorActions {
   }
 
   public get canPaste(): boolean {
+    return (
+      this.#clipboard.canPaste || this.#externalPasteAvailable || this.#systemClipboardReadable
+    );
+  }
+
+  public get hasValidatedPaste(): boolean {
     return this.#clipboard.canPaste || this.#externalPasteAvailable;
   }
 

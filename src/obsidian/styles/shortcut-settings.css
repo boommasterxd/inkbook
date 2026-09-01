@@ -205,6 +205,7 @@
 }
 
 .is-mobile .inkbook-shortcut-recorder {
+  background-color: var(--background-primary);
   min-block-size: 44px;
 }
 

@@ -17,15 +17,15 @@ const OUTLINE = {
   outlineColor: { type: "rgba" as const, value: "#EF4444FF" as const },
   outlineOpacity: 0.35,
   outlineStyle: "dashed" as const,
-  outlineWidth: 12 as const,
+  outlineWidth: 14 as const,
 };
 
 const SEMANTIC_ENDPOINT_TARGET_ID = "00000000-0000-4000-8000-000000000099";
 
 describe("drag creation preview presentation", () => {
   it.each([
-    ["line", "dashed", "48 36", "butt"],
-    ["coordinate-system", "dotted", "0 30", "round"],
+    ["line", "dashed", "56 42", "butt"],
+    ["coordinate-system", "dotted", "0 35", "round"],
     ["table", "solid", null, "butt"],
   ] as const)(
     "uses the active %s outline color, width, opacity, and %s style",
@@ -42,7 +42,7 @@ describe("drag creation preview presentation", () => {
         "stroke-dasharray": dash,
         "stroke-linecap": lineCap,
         "stroke-opacity": "0.35",
-        "stroke-width": "12",
+        "stroke-width": "14",
       });
     },
   );
@@ -62,9 +62,9 @@ describe("drag creation preview presentation", () => {
       fill: "#3B82F6FF",
       "fill-opacity": "0.25",
       stroke: "#EF4444FF",
-      "stroke-dasharray": "48 36",
+      "stroke-dasharray": "56 42",
       "stroke-opacity": "0.35",
-      "stroke-width": "12",
+      "stroke-width": "14",
     });
   });
 
@@ -79,7 +79,7 @@ describe("drag creation preview presentation", () => {
     expect(state.parts[0]?.presentation).toMatchObject({
       fill: "none",
       stroke: "#EF4444FF",
-      "stroke-width": "12",
+      "stroke-width": "14",
     });
     expect(state.parts[1]?.presentation).toMatchObject({
       fill: "#EF4444FF",

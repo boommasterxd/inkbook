@@ -9,7 +9,6 @@ import {
 
 import {
   MOTION_PREFERENCES,
-  PEN_TAP_INSERTIONS,
   createBuiltInDeviceSettings,
   createBuiltInSettings,
   type InkbookSettingsV4,
@@ -183,11 +182,10 @@ export class InkbookSettingTab extends PluginSettingTab {
           "Finger drawing",
           "Show the session-only finger drawing toggle in each embed.",
         ),
-        dropdown(
-          "device.penTapInsertion",
+        toggle(
+          "device.penTapInsertionEnabled",
           "Pen-tap insertion",
-          "Choose how a pen tap inserts an Inkbook embed.",
-          createLabels(PEN_TAP_INSERTIONS),
+          "Insert an Inkbook embed when tapping with a pen.",
         ),
         resetAction("Reset group to defaults", () => {
           this.store.updateDeviceSettings((settings) => ({

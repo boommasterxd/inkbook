@@ -24,6 +24,7 @@ function keyboardHarness(
   options: {
     readonly activeElement?: Element | null;
     readonly canPaste?: boolean;
+    readonly hasValidatedPaste?: boolean;
     readonly lastScreenPointer?: InputPoint | null;
     readonly navigationEnabled?: boolean;
     readonly pointerOver?: boolean;
@@ -42,6 +43,7 @@ function keyboardHarness(
   const pasteFromClipboardData = vi.fn(() => true);
   const actions = {
     canPaste: options.canPaste ?? false,
+    hasValidatedPaste: options.hasValidatedPaste ?? options.canPaste ?? false,
     execute,
     isAvailable,
     pasteFromClipboardData,
@@ -163,6 +165,14 @@ describe("active editor keyboard controller", () => {
 });
 
 describe("active editor clipboard keyboard controller", () => {
+  it("does not claim native Paste for an unvalidated capability-only payload", () => {
+    const harness = keyboardHarness({ canPaste: true, hasValidatedPaste: false });
+    harness.isAvailable.mockReturnValue(true);
+
+    expect(harness.controller.handleKeyDown(key("v", { ctrlKey: true }))).toBe(false);
+    expect(harness.shortcutPaste).not.toHaveBeenCalled();
+  });
+
   it("claims available Cut and Paste shortcuts for Control and Command input", () => {
     const harness = keyboardHarness({ canPaste: true, selectionSize: 1 });
     harness.isAvailable.mockImplementation(

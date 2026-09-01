@@ -165,7 +165,7 @@ export function tableWidth(table: Pick<TableElementV1, "columns" | "columnWidth"
 }
 
 export function defaultTableHeaderHeight(height: number): number {
-  return roundCanonical(Math.max(24, Math.min(height * 0.3, height / 2)));
+  return roundCanonical(Math.max(24, Math.min(height * 0.25, height / 2)));
 }
 
 export function tableColumnOffsets(

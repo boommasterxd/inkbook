@@ -27,7 +27,7 @@ export const CLOSED_SHAPE_TOOLS = [
 
 export const OUTLINE_ONLY_TOOLS = ["line", "arrow", "coordinate-system", "table"] as const;
 export const PEN_WIDTHS = [2, 4, 8, 14, 22] as const;
-export const OUTLINE_WIDTHS = [1, 2, 4, 8, 12] as const;
+export const OUTLINE_WIDTHS = [2, 4, 8, 14, 22] as const;
 export const OUTLINE_STYLES = ["solid", "dashed", "dotted"] as const;
 export const ARROW_NODES = ["none", "arrow", "triangle", "diamond", "circle"] as const;
 export const BACKGROUND_TYPES = ["none", "lines", "dots", "squares"] as const;

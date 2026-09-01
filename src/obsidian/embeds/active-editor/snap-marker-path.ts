@@ -1,11 +1,11 @@
 import type { PointV1 } from "../../../domain/schema/public";
 import type { SelectionSnapGuide } from "../../../editor/selection/public";
 
-const CONNECTION_SNAP_CROSS_RADIUS_PIXELS = 24;
-const SNAP_GUIDE_EXTENSION_PIXELS = 64;
+const CONNECTION_SNAP_CROSS_RADIUS_CSS_PIXELS = 24;
+const SNAP_GUIDE_EXTENSION_CSS_PIXELS = 64;
 
 export function snapMarkerPath(point: PointV1): string {
-  return crossPath(point, CONNECTION_SNAP_CROSS_RADIUS_PIXELS);
+  return crossPath(point, CONNECTION_SNAP_CROSS_RADIUS_CSS_PIXELS);
 }
 
 function crossPath(point: PointV1, radius: number): string {
@@ -60,8 +60,8 @@ function extendedSegmentPath(start: PointV1, end: PointV1): string {
   const length = Math.hypot(delta.x, delta.y);
   if (length === 0) return "";
   const extension = {
-    x: (delta.x * SNAP_GUIDE_EXTENSION_PIXELS) / length,
-    y: (delta.y * SNAP_GUIDE_EXTENSION_PIXELS) / length,
+    x: (delta.x * SNAP_GUIDE_EXTENSION_CSS_PIXELS) / length,
+    y: (delta.y * SNAP_GUIDE_EXTENSION_CSS_PIXELS) / length,
   };
   const from = { x: start.x - extension.x, y: start.y - extension.y };
   const to = { x: end.x + extension.x, y: end.y + extension.y };

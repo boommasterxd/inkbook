@@ -30,10 +30,12 @@ type VaultControlKey =
   | "toolDefaults.coordinateSystem.dimension"
   | "toolDefaults.table.columns";
 
-type DeviceControlKey = `device.${Exclude<
-  keyof InkbookDeviceSettingsV2,
-  "keyboardShortcuts" | "version"
->}`;
+type DeviceControlKey =
+  | `device.${Exclude<
+      keyof InkbookDeviceSettingsV2,
+      "keyboardShortcuts" | "penTapInsertion" | "version"
+    >}`
+  | "device.penTapInsertionEnabled";
 export type SettingsControlKey = VaultControlKey | DeviceControlKey;
 
 const COLOR_VALUES = new Map<string, ColorV1 | null>([
@@ -99,6 +101,9 @@ export class SettingsControlValues {
   public constructor(private readonly store: InkbookSettingsStore) {}
 
   public get(key: SettingsControlKey): unknown {
+    if (key === "device.penTapInsertionEnabled") {
+      return this.store.getDeviceSettings().penTapInsertion === "handwriting";
+    }
     const path = key.startsWith("device.") ? key.slice(7) : key;
     const root = key.startsWith("device.")
       ? this.store.getDeviceSettings()
@@ -115,7 +120,11 @@ export class SettingsControlValues {
   public async set(key: SettingsControlKey, value: unknown): Promise<void> {
     if (key.startsWith("device.")) {
       const candidate = structuredClone(this.store.getDeviceSettings());
-      setNested(candidate, key.slice(7), domainValue(key, value));
+      if (key === "device.penTapInsertionEnabled") {
+        candidate.penTapInsertion = value === true ? "handwriting" : "off";
+      } else {
+        setNested(candidate, key.slice(7), domainValue(key, value));
+      }
       const loaded = loadDeviceSettings(candidate);
       if (loaded.diagnostics.length > 0) throw new Error("Invalid setting value");
       this.store.replaceDeviceSettings(loaded.value);

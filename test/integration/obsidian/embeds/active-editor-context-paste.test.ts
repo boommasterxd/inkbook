@@ -5,7 +5,7 @@ import { ActiveEditorActions } from "../../../../src/obsidian/embeds/active-edit
 import { ActiveEditorClipboardController } from "../../../../src/obsidian/embeds/active-editor/controller-clipboard";
 import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";
 import { ActiveEditorMenuController } from "../../../../src/obsidian/embeds/active-editor/controller-menu";
-import type { MenuItemPort, MenuPort } from "../../../../src/obsidian/menus/index";
+import type { MenuFactoryPort, MenuItemPort, MenuPort } from "../../../../src/obsidian/menus/index";
 import {
   createClipboardDocumentModel,
   createEncodedClipboardFixture,
@@ -79,6 +79,29 @@ describe("active editor context paste", () => {
 });
 
 describe("active editor context Paste menu", () => {
+  it("opens synchronously without consuming user activation in a Clipboard probe", () => {
+    const refreshPasteAvailability = vi.fn(async () => false);
+    const create = vi.fn(() => clickableMenu(new Map()));
+    const actions = {
+      arrangeAvailability: () => ({
+        "bring-forward": false,
+        "bring-to-front": false,
+        "send-backward": false,
+        "send-to-back": false,
+      }),
+      canPaste: false,
+      execute: vi.fn(),
+      refreshPasteAvailability,
+    } as unknown as ActiveEditorActions;
+    const menus = createMenuController(actions, { create, forEvent: create });
+
+    menus.openFromSource("touch", { x: 10, y: 20 });
+
+    expect(create).toHaveBeenCalledOnce();
+    expect(refreshPasteAvailability).not.toHaveBeenCalled();
+    menus.dispose();
+  });
+
   it("snapshots the page point before a native menu callback runs", () => {
     const execute = vi.fn();
     const callbacks = new Map<string, () => void>();
@@ -94,14 +117,9 @@ describe("active editor context Paste menu", () => {
       execute,
       refreshPasteAvailability: vi.fn(async () => true),
     } as unknown as ActiveEditorActions;
-    const menus = new ActiveEditorMenuController({
-      actions,
-      factory: { create: () => menu, forEvent: () => menu },
-      inputSurface: { focus: vi.fn() } as unknown as HTMLDivElement,
-      ownerDocument: {} as Document,
-      selectionSize: () => 0,
-      storeSize: () => 0,
-      toScreenPoint: (point) => point,
+    const menus = createMenuController(actions, {
+      create: () => menu,
+      forEvent: () => menu,
     });
     const position = { x: 125, y: 225 };
 
@@ -117,6 +135,21 @@ describe("active editor context Paste menu", () => {
     menus.dispose();
   });
 });
+
+function createMenuController(
+  actions: ActiveEditorActions,
+  factory: MenuFactoryPort,
+): ActiveEditorMenuController {
+  return new ActiveEditorMenuController({
+    actions,
+    factory,
+    inputSurface: { focus: vi.fn() } as unknown as HTMLDivElement,
+    ownerDocument: {} as Document,
+    selectionSize: () => 0,
+    storeSize: () => 0,
+    toScreenPoint: (point) => point,
+  });
+}
 
 function clickableMenu(callbacks: Map<string, () => void>): MenuPort {
   const port: MenuPort = {

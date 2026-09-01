@@ -59,6 +59,7 @@ interface ContextMenuInvocationBase {
   readonly ownerDocument: Document;
   readonly onClosed?: () => void;
   readonly returnFocus?: FocusTargetPort;
+  readonly restoreFocus?: boolean;
   readonly canvasInputSurface: FocusTargetPort;
 }
 
@@ -203,6 +204,7 @@ function canFocus(
 }
 
 function focusAfterClose(invocation: ContextMenuInvocation): void {
+  if (invocation.restoreFocus === false) return;
   const target = canFocus(invocation.returnFocus, invocation.ownerDocument)
     ? invocation.returnFocus
     : invocation.canvasInputSurface;

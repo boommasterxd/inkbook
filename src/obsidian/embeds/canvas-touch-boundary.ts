@@ -1,4 +1,8 @@
 interface CanvasTouchBoundaryOptions {
+  readonly onPenPointerCancel: (event: PointerEvent) => void;
+  readonly onPenPointerMove: (event: PointerEvent) => void;
+  readonly onPenPointerStart: (event: PointerEvent) => void;
+  readonly onPenPointerUp: (event: PointerEvent) => void;
   readonly onPrimaryTouchStart: () => void;
   readonly onTouchInterrupted: () => void;
   readonly onTouchPointerMove: (event: PointerEvent) => void;
@@ -34,6 +38,14 @@ export class CanvasTouchBoundary {
       capture: true,
       passive: false,
     });
+    surface.addEventListener("pointerup", this.#handlePointerUp, {
+      capture: true,
+      passive: false,
+    });
+    surface.addEventListener("pointercancel", this.#handlePointerCancel, {
+      capture: true,
+      passive: false,
+    });
     surface.addEventListener("touchstart", this.#handleTouchEvent, {
       capture: true,
       passive: false,
@@ -53,6 +65,8 @@ export class CanvasTouchBoundary {
     this.#disposed = true;
     this.#surface.removeEventListener("pointerdown", this.#handlePointerStart, true);
     this.#surface.removeEventListener("pointermove", this.#handlePointerMove, true);
+    this.#surface.removeEventListener("pointerup", this.#handlePointerUp, true);
+    this.#surface.removeEventListener("pointercancel", this.#handlePointerCancel, true);
     this.#surface.removeEventListener("touchstart", this.#handleTouchEvent, true);
     this.#surface.removeEventListener("touchmove", this.#handleTouchEvent, true);
     this.#ownerWindow.removeEventListener("pointerup", this.#handlePointerTerminal, true);
@@ -64,6 +78,11 @@ export class CanvasTouchBoundary {
   }
 
   readonly #handlePointerStart = (event: PointerEvent): void => {
+    if (event.pointerType === "pen") {
+      blockPenPointerEvent(event);
+      this.#options.onPenPointerStart(event);
+      return;
+    }
     if (event.pointerType !== "touch") return;
     if (event.isPrimary) this.#options.onPrimaryTouchStart();
     this.#options.onTouchPointerStart(event);
@@ -71,9 +90,26 @@ export class CanvasTouchBoundary {
   };
 
   readonly #handlePointerMove = (event: PointerEvent): void => {
+    if (event.pointerType === "pen") {
+      blockPenPointerEvent(event);
+      this.#options.onPenPointerMove(event);
+      return;
+    }
     if (event.pointerType !== "touch") return;
     this.#options.onTouchPointerMove(event);
     stopHostPropagation(event);
+  };
+
+  readonly #handlePointerUp = (event: PointerEvent): void => {
+    if (event.pointerType !== "pen") return;
+    blockPenPointerEvent(event);
+    this.#options.onPenPointerUp(event);
+  };
+
+  readonly #handlePointerCancel = (event: PointerEvent): void => {
+    if (event.pointerType !== "pen") return;
+    blockPenPointerEvent(event);
+    this.#options.onPenPointerCancel(event);
   };
 
   readonly #handleTouchEvent = (event: TouchEvent): void => {
@@ -103,4 +139,9 @@ export class CanvasTouchBoundary {
 
 function stopHostPropagation(event: Event): void {
   event.stopPropagation();
+}
+
+function blockPenPointerEvent(event: PointerEvent): void {
+  if (event.cancelable) event.preventDefault();
+  stopHostPropagation(event);
 }

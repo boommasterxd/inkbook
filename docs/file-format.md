@@ -69,7 +69,7 @@ interface StrokeStyleV1 {
 
 interface OutlineStyleV1 {
   outlineColor: ColorV1;
-  outlineWidth: 1 | 2 | 4 | 8 | 12;
+  outlineWidth: 1 | 2 | 4 | 8 | 12 | 14 | 22;
   outlineOpacity: number;
   outlineStyle: "solid" | "dashed" | "dotted";
 }
@@ -92,6 +92,7 @@ Validation rules:
 - `createdAt` is a non-negative integer Unix timestamp in milliseconds.
 - RGBA colors use exactly `#RRGGBBAA`.
 - `theme-text` is preserved semantically and resolves through the versioned portable light and dark document palette in [Standalone SVG Envelope and Theme Rendering](svg-envelope.md). It never captures a transient Community-theme value.
+- Current editors create outline widths from the same `2, 4, 8, 14, 22` XS-through-XL scale as pen strokes. Readers continue to accept legacy outline widths `1` and `12` so existing version 1 documents retain their exact appearance.
 
 The `elements` array is partitioned into two fixed render bands. All highlighter and straight-highlighter elements appear first in back-to-front highlight order. Every other element follows in back-to-front content order. Writers MUST emit this partitioned order and readers reject an element in the highlight band after content has begun. This keeps every highlight below every content element without a separate persisted layer field.
 
@@ -311,7 +312,7 @@ interface TableElementV1 extends ElementBaseV1 {
 - Column count is an integer from 1 through 12 and defaults to 3.
 - `columnWidth` is canonical persisted geometry. Total table width is always derived as `columns * columnWidth` and is not stored separately. Minimum column width is 40 page units. Minimum total height is 80 page units.
 - `columnOffsets`, when present, contains exactly `columns - 1` nondecreasing local x positions in the inclusive range `0..columns * columnWidth`. Equal offsets and offsets on either logical outer edge are valid. Its absence is the equal-column representation, where separators are derived from `columnWidth`.
-- Header height defaults to 30 percent of total height with the creation default clamped to `24..height / 2`. Later separator editing accepts the inclusive logical range `0..height`.
+- Header height defaults to 25 percent of total height with the creation default clamped to `24..height / 2`. Later separator editing accepts the inclusive logical range `0..height`.
 - For table creation, let `sx = end.x >= start.x ? 1 : -1` and `sy = end.y >= start.y ? 1 : -1`. Canonicalize `columnWidth = max(abs(end.x - start.x) / columns, 40)` once, then derive `width = columns * columnWidth`. Set `height = max(abs(end.y - start.y), 80)`, `x = sx > 0 ? start.x : start.x - width`, and `y = sy > 0 ? start.y : start.y - height`. Crossing the start point therefore changes the expanding direction without producing negative dimensions. The derived width may differ from the raw drag width by the canonical rounding of one column, but every column remains exactly equal.
 - For a column-count edit from `columns` to `newColumns`, retain the canonical `columnWidth` unchanged and derive `oldWidth = columns * columnWidth` and `newWidth = newColumns * columnWidth`. Adding columns therefore extends the local right side, while removing columns removes local rightmost columns and shrinks the table. The command does not redistribute the retained columns across the old total width, and repeated count changes cannot accumulate column-width drift.
 - The rendered local left edge is the fixed anchor of a column-count edit. Let `R` rotate a vector clockwise by `rotation`, `oldPivot` be the pre-command pivot, and `deltaWidth = newWidth - oldWidth`. Calculate the unrounded candidate `newPivot = oldPivot + R({ x: deltaWidth / 2, y: 0 })`, `newX = newPivot.x - newWidth / 2`, and `newY = newPivot.y - height / 2`, then apply the normal canonical rounding once to the resulting stored coordinates. At zero rotation, `newX` equals the previous `x`. After canonicalization, each endpoint of the rendered left edge MUST remain within 0.003 page units of its immediately preceding position. This bound covers the worst-case independent three-decimal rounding of the pivot and bounds coordinates for one edit over the complete rotation range.

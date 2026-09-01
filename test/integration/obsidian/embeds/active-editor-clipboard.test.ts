@@ -114,7 +114,10 @@ describe("active editor clipboard bridge", () => {
       elements: pastePlan.elements,
     });
     expect(selection).toEqual(new Set(pastePlan.selectedIds));
-    expect(onPasteCommitted).toHaveBeenCalledWith("select");
+    expect(onPasteCommitted).toHaveBeenCalledWith("select", {
+      kind: "toolbar",
+      visibleCanvasCenter: { x: 400, y: 300 },
+    });
     expect(history.commandCount).toBe(2);
     await expect(history.undoAsync()).resolves.toBe(true);
     expect(pendingMutation).toEqual(pasteTransition.reverse);

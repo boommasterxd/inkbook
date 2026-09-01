@@ -27,6 +27,7 @@ import { selectionOverlayFill, selectionOverlayPaths } from "./selection-overlay
 import { selectionSnapGuidePath } from "./snap-marker-path";
 import { selectionHandleAction } from "./selection-handle-action";
 import { activeSnapFeatures } from "./snapping-settings";
+import { pressureStrokeScalePreview } from "./pressure-stroke-preview";
 
 const HANDLE_RADIUS_PIXELS = 13;
 const INTERIOR_HANDLE_RADIUS_PIXELS = 10;
@@ -79,6 +80,7 @@ interface ActiveHandleGesture {
   readonly ids: readonly string[];
   readonly pointerId: number;
   readonly pointerType: PointerSample["pointerType"];
+  readonly pressureStrokeIds: ReadonlySet<string>;
   readonly selected: readonly SelectedElementGeometry[];
   readonly frame: OrientedSelectionFrame | null;
   readonly selectedIds: ReadonlySet<string>;
@@ -174,6 +176,11 @@ export class ActiveEditorHandleInteraction {
       },
       pointerId: pointer.pointerId,
       pointerType: pointer.pointerType,
+      pressureStrokeIds: new Set(
+        elements
+          .filter((element) => element.kind === "stroke" && element.style.pressureEnabled)
+          .map(({ id }) => id),
+      ),
       selected,
       selectedIds,
       snapping,
@@ -219,12 +226,15 @@ export class ActiveEditorHandleInteraction {
       },
     );
     const connected = this.#connectedPreview(active, preview);
+    const pressure = pressureStrokeScalePreview(active.selected, active.pressureStrokeIds, preview);
     this.#updatePreviewBottom(active, preview, connected.elements);
     this.#renderTransform(
-      active.ids.filter((id) => !connected.selectedPreviewIds.has(id)),
+      active.ids.filter(
+        (id) => !connected.selectedPreviewIds.has(id) && !pressure.exactPreviewIds.has(id),
+      ),
       preview.transform,
     );
-    this.#renderPreview(active, preview, connected);
+    this.#renderPreview(active, preview, connected, pressure.elements);
     return true;
   }
 
@@ -319,19 +329,21 @@ export class ActiveEditorHandleInteraction {
       readonly elements: readonly InkElementV1[];
       readonly selectedPreviewIds: ReadonlySet<string>;
     },
+    pressureElements: readonly InkElementV1[],
   ): void {
     const exact = preview.exactElements
       .filter(({ id }) => active.selectedIds.has(id))
       .map((element) => ({ bounds: calculateElementBounds(element), element }));
     const exactOverlay =
       preview.transform === null || connected.selectedPreviewIds.size > 0 ? exact : [];
-    const previewElements = preview.exactPreviewTruncated
+    const basePreviewElements = preview.exactPreviewTruncated
       ? connected.elements
       : preview.transform === null
         ? preview.exactElements
         : preview.exactElements.filter(
             ({ id }) => !active.selectedIds.has(id) || connected.selectedPreviewIds.has(id),
           );
+    const previewElements = [...basePreviewElements, ...pressureElements];
     this.#version += 1;
     this.#renderer.setElementPreviews(previewElements, this.#version);
     this.#renderGeometry(

@@ -60,7 +60,7 @@ describe("settings defaults", () => {
         outlineColor: { type: "theme-text" },
         outlineOpacity: 1,
         outlineStyle: "solid",
-        outlineWidth: 2,
+        outlineWidth: 4,
       });
     }
     for (const tool of OUTLINE_ONLY_TOOLS) {

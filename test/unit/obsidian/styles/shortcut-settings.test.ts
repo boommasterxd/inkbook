@@ -5,6 +5,13 @@ const stylesheet = sys.readFile(sys.resolvePath("src/obsidian/styles/shortcut-se
 if (stylesheet === undefined) throw new Error("Unable to read the shortcut settings stylesheet.");
 
 describe("shortcut settings styles", () => {
+  it("retains the host input background for editable fields on mobile", () => {
+    expect(stylesheet).toContain(`.is-mobile .inkbook-shortcut-recorder {
+  background-color: var(--background-primary);
+  min-block-size: 44px;
+}`);
+  });
+
   it("stretches wrapped phone shortcut fields across their complete row", () => {
     const phoneStart = stylesheet.indexOf("@media (width <= 600px)");
     expect(phoneStart).toBeGreaterThanOrEqual(0);

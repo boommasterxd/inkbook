@@ -347,3 +347,26 @@ describe("context menu lifecycle", () => {
     expect(canvas.focus).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("touch context menu focus", () => {
+  it("does not focus through a dismissed touch menu onto the canvas", () => {
+    const menu = new FakeMenu();
+    const canvas = { ownerDocument: document, isConnected: true, focus: vi.fn() };
+    const session = openContextMenu(
+      { create: () => menu, forEvent: () => menu },
+      {
+        type: "position",
+        ownerDocument: document,
+        position: { x: 12, y: 24 },
+        restoreFocus: false,
+        canvasInputSurface: canvas,
+      },
+      state({ hasSelection: false }),
+      handlers(),
+    );
+
+    session.close();
+
+    expect(canvas.focus).not.toHaveBeenCalled();
+  });
+});
