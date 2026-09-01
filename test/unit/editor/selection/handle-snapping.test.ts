@@ -368,17 +368,24 @@ describe("coordinate axis angular snapping", () => {
 
 describe("coordinate origin angular snapping", () => {
   it.each(["2d", "3d"] as const)(
+    "exposes every %s axis guide that satisfies the snap rule at the snapped origin",
+    (dimension) => {
+      const system = coordinateSystemWithDimension(dimension);
+      const preview = coordinateOriginPreview(system, { x: 303, y: 300 });
+
+      expect(preview.snapGuide).toEqual({
+        additionalStarts: system.axes.slice(1),
+        end: { x: 303, y: 300 },
+        kind: "angular",
+        start: system.axes[0],
+      });
+    },
+  );
+
+  it.each(["2d", "3d"] as const)(
     "snaps a moved %s origin to 45-degree directions from every axis endpoint",
     (dimension) => {
-      const source = coordinateSystem();
-      const system =
-        dimension === "2d"
-          ? {
-              ...source,
-              axes: [source.axes[0], source.axes[1]] as [PointV1, PointV1],
-              dimension,
-            }
-          : source;
+      const system = coordinateSystemWithDimension(dimension);
       const preview = coordinateOriginPreview(system, { x: 503, y: 450 });
       const changed = preview.exactElements[0];
 
@@ -441,4 +448,15 @@ function coordinateOriginPreview(
     snap: snapPorts(zoom),
     startPointer: system.origin,
   }).update(pointer);
+}
+
+function coordinateSystemWithDimension(dimension: "2d" | "3d"): CoordinateSystemElementV1 {
+  const source = coordinateSystem();
+  return dimension === "2d"
+    ? {
+        ...source,
+        axes: [source.axes[0], source.axes[1]],
+        dimension,
+      }
+    : source;
 }

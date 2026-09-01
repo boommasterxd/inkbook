@@ -1,6 +1,6 @@
 import { setIcon } from "obsidian";
 
-import type { InkbookDeviceSettingsV1 } from "../../domain/settings/types";
+import type { InkbookDeviceSettingsV2 } from "../../domain/settings/types";
 import type { InkElementV1 } from "../../domain/schema/public";
 import type { StoreDelta } from "../../domain/store/public";
 import { SvgSceneRenderer, type SceneInputHandlers } from "../../rendering/scene/index";
@@ -162,6 +162,8 @@ export class ActiveInkbookScene {
       onFeedback: options.onFeedback,
       onCopyEmbed: options.onCopyEmbed,
       onDeleteEmbed: options.onDeleteEmbed,
+      onOpenSettings: options.onOpenSettings,
+      onOpenShortcuts: options.onOpenShortcuts,
       onPageChanged: () => this.#layout.pageChanged(),
       onPagePreviewFinish: (committed) => this.#layout.finishPagePreview(committed),
       onPagePreview: (page) => this.#layout.previewPage(page),
@@ -259,7 +261,7 @@ export class ActiveInkbookScene {
     this.#previewReady = this.#previewHandoff.setPreviewSource(source);
   }
 
-  public updateDeviceSettings(settings: InkbookDeviceSettingsV1): void {
+  public updateDeviceSettings(settings: InkbookDeviceSettingsV2): void {
     if (this.#disposed) return;
     this.#previewHandoff.updateMotion(settings.motion);
     this.#renderer.setReducedMotion(this.#previewHandoff.reducedMotion);

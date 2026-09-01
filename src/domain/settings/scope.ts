@@ -1,6 +1,7 @@
 export type SettingsScope = "vault" | "device-vault" | "file" | "session";
 
-export const DEVICE_SETTINGS_STORAGE_KEY = "inkbook:device-settings:v1";
+export const DEVICE_SETTINGS_STORAGE_KEY = "inkbook:device-settings:v2";
+export const LEGACY_DEVICE_SETTINGS_STORAGE_KEY = "inkbook:device-settings:v1";
 
 export const SETTINGS_SCOPE = Object.freeze({
   startupTool: "vault",
@@ -11,6 +12,7 @@ export const SETTINGS_SCOPE = Object.freeze({
   penTapInsertion: "device-vault",
   leftHandedToolbar: "device-vault",
   motion: "device-vault",
+  keyboardShortcuts: "device-vault",
   background: "file",
   elementStyles: "file",
   currentTool: "session",

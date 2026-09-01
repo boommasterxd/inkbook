@@ -63,6 +63,7 @@ export interface SelectionHandlePreview {
 export type SelectionSnapGuide =
   | { readonly kind: "anchor"; readonly point: PointV1 }
   | {
+      readonly additionalStarts?: readonly PointV1[];
       readonly end: PointV1;
       readonly kind: "angular";
       readonly start: PointV1;

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createBuiltInDeviceSettings,
+  createBuiltInKeyboardShortcuts,
   createBuiltInSettings,
   loadDeviceSettings,
   loadSettings,
@@ -314,7 +315,14 @@ describe("device settings loading", () => {
       motion: "reduced",
     };
 
-    expect(loadDeviceSettings(input)).toEqual({ value: input, diagnostics: [] });
+    expect(loadDeviceSettings(input)).toEqual({
+      value: {
+        ...input,
+        version: 2,
+        keyboardShortcuts: createBuiltInKeyboardShortcuts(),
+      },
+      diagnostics: [],
+    });
   });
 
   it("falls back field by field", () => {
@@ -327,11 +335,12 @@ describe("device settings loading", () => {
     const result = loadDeviceSettings(input);
 
     expect(result.value).toEqual({
-      version: 1,
+      version: 2,
       fingerDrawingEnabled: false,
       penTapInsertion: "off",
       leftHandedToolbar: true,
       motion: "system",
+      keyboardShortcuts: createBuiltInKeyboardShortcuts(),
     });
     expect(result.diagnostics.map((diagnostic) => diagnostic.path)).toEqual([
       "fingerDrawingEnabled",
@@ -347,5 +356,39 @@ describe("device settings loading", () => {
       value: createBuiltInDeviceSettings(),
       diagnostics: [{ code: "settings.invalid-root", path: "$" }],
     });
+  });
+
+  it("loads canonical custom shortcuts and preserves cleared actions", () => {
+    const input = createBuiltInDeviceSettings();
+    input.keyboardShortcuts = {
+      ...input.keyboardShortcuts,
+      copy: { key: "K", modifiers: ["shift", "mod"] },
+      cut: null,
+    };
+
+    const result = loadDeviceSettings(input);
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.value.keyboardShortcuts.copy).toEqual({
+      key: "k",
+      modifiers: ["mod", "shift"],
+    });
+    expect(result.value.keyboardShortcuts.cut).toBeNull();
+  });
+
+  it("rejects duplicate bindings without creating a second conflict", () => {
+    const input = createBuiltInDeviceSettings();
+    input.keyboardShortcuts = {
+      ...input.keyboardShortcuts,
+      copy: { key: "a", modifiers: ["mod"] },
+    };
+
+    const result = loadDeviceSettings(input);
+
+    expect(result.diagnostics).toContainEqual({
+      code: "settings.invalid-field",
+      path: "keyboardShortcuts.copy",
+    });
+    expect(result.value.keyboardShortcuts.copy).toEqual({ key: "c", modifiers: ["mod"] });
   });
 });

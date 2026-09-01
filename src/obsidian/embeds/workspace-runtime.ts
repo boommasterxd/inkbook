@@ -1,6 +1,6 @@
 import type { FileManager, Keymap, Vault } from "obsidian";
 
-import type { InkbookDeviceSettingsV1, InkbookSettingsV4 } from "../../domain/settings/types";
+import type { InkbookDeviceSettingsV2, InkbookSettingsV4 } from "../../domain/settings/types";
 import type { PresentationLifecyclePort } from "../../editor/session/session-port";
 import { WorkspaceEditorCoordinator } from "../../editor/session/workspace-editor-coordinator";
 import type { AttachmentIdentity } from "../../editor/session/session-state";
@@ -37,7 +37,7 @@ import { WorkspaceRefreshProfiles } from "./workspace-refresh-profiles";
 import { WorkspaceFeedbackRouter, type WorkspaceFeedbackHost } from "./workspace-feedback-router";
 
 interface WorkspaceRuntimeSettings {
-  readonly device: InkbookDeviceSettingsV1;
+  readonly device: InkbookDeviceSettingsV2;
   readonly vault: InkbookSettingsV4;
 }
 
@@ -52,6 +52,8 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly #keymap: Pick<Keymap, "popScope" | "pushScope"> | undefined;
   readonly #ownerWindows = new OwnerWindowRegistry();
   readonly #mounted = new Map<string, WorkspaceMountedPresentation>();
+  readonly #onOpenSettings: () => void;
+  readonly #onOpenShortcuts: () => void;
   readonly refreshRateProfiles: WorkspaceRefreshProfiles;
   readonly #scheme: ColorSchemeBroadcaster;
   readonly #sessions: VaultDocumentSessionFactory;
@@ -63,7 +65,10 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     scheme: ColorSchemeBroadcaster,
     settings: () => WorkspaceRuntimeSettings,
     embedActions: ObsidianEmbedActions,
-    host: WorkspaceFeedbackHost,
+    host: WorkspaceFeedbackHost & {
+      readonly onOpenSettings: () => void;
+      readonly onOpenShortcuts: () => void;
+    },
   ) {
     this.#embedActions = embedActions;
     this.#fallbackOwnerWindow = host.fallbackOwnerWindow;
@@ -71,6 +76,8 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       this.#owningWindow(documentId),
     );
     this.#keymap = host.keymap;
+    this.#onOpenSettings = host.onOpenSettings;
+    this.#onOpenShortcuts = host.onOpenShortcuts;
     this.#scheme = scheme;
     this.#settings = settings;
     this.refreshRateProfiles = new WorkspaceRefreshProfiles(settings().vault.refreshRatePreference);
@@ -193,6 +200,8 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
           keymap: this.#keymap,
           markFirstStroke: () => this.#lifecycle.markFirstStroke(attachment.documentId),
           onLock: () => this.lockActivePresentation(),
+          onOpenSettings: this.#onOpenSettings,
+          onOpenShortcuts: this.#onOpenShortcuts,
           scheme: initialScheme,
           showFeedback: (code) => this.#feedback.showInPresentation(attachment.root, code),
           sliceBudgetMs: () =>
@@ -260,7 +269,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
 
   readonly lockActivePresentation = (): boolean => this.#coordinator.requestLockCurrent();
 
-  updateDeviceSettings(settings: InkbookDeviceSettingsV1): void {
+  updateDeviceSettings(settings: InkbookDeviceSettingsV2): void {
     if (this.#disposed) return;
     for (const mounted of this.#mounted.values()) mounted.scene?.updateDeviceSettings(settings);
   }

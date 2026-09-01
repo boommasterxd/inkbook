@@ -2,7 +2,7 @@ import {
   loadDeviceSettings,
   loadSettings,
   type ColorV1,
-  type InkbookDeviceSettingsV1,
+  type InkbookDeviceSettingsV2,
   type InkbookSettingsV4,
 } from "../../domain/settings";
 import { InkbookSettingsStore } from "./storage";
@@ -30,7 +30,10 @@ type VaultControlKey =
   | "toolDefaults.coordinateSystem.dimension"
   | "toolDefaults.table.columns";
 
-type DeviceControlKey = `device.${Exclude<keyof InkbookDeviceSettingsV1, "version">}`;
+type DeviceControlKey = `device.${Exclude<
+  keyof InkbookDeviceSettingsV2,
+  "keyboardShortcuts" | "version"
+>}`;
 export type SettingsControlKey = VaultControlKey | DeviceControlKey;
 
 const COLOR_VALUES = new Map<string, ColorV1 | null>([

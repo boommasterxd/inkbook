@@ -1,6 +1,6 @@
 import type { Keymap } from "obsidian";
 
-import type { InkbookDeviceSettingsV1, InkbookSettingsV4 } from "../../domain/settings/types";
+import type { InkbookDeviceSettingsV2, InkbookSettingsV4 } from "../../domain/settings/types";
 import type { InkbookFeedbackCode } from "../feedback";
 import type { ObsidianEmbedActions } from "../commands";
 import { ActiveInkbookScene } from "./active-scene";
@@ -11,13 +11,15 @@ import { presentationPreviewOptions, type PresentationAttachment } from "./prese
 interface WorkspaceActiveSceneOptions {
   readonly attachment: PresentationAttachment;
   readonly backgroundSpacing: () => InkbookSettingsV4["pageDefaults"]["backgroundSpacing"];
-  readonly deviceSettings: InkbookDeviceSettingsV1;
+  readonly deviceSettings: InkbookDeviceSettingsV2;
   readonly editorContext: ActiveDocumentEditorContext;
   readonly embedActions: ObsidianEmbedActions;
   readonly isCurrent: (scene: ActiveInkbookScene) => boolean;
   readonly keymap: Pick<Keymap, "popScope" | "pushScope"> | undefined;
   readonly markFirstStroke: () => void;
   readonly onLock: () => void;
+  readonly onOpenSettings: () => void;
+  readonly onOpenShortcuts: () => void;
   readonly scheme: "dark" | "light";
   readonly showFeedback: (code: InkbookFeedbackCode) => void;
   readonly sliceBudgetMs: () => number;
@@ -55,6 +57,8 @@ export function createWorkspaceActiveScene(
       });
     },
     onFirstStrokeCommitted: options.markFirstStroke,
+    onOpenSettings: options.onOpenSettings,
+    onOpenShortcuts: options.onOpenShortcuts,
     root: attachment.root,
     scheme: options.scheme,
     scrollOwner: attachment.scrollOwner,

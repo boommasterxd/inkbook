@@ -1,5 +1,5 @@
 import type {
-  InkbookDeviceSettingsV1,
+  InkbookDeviceSettingsV2,
   SnappingSettingsV1,
   StartupToolV1,
   ToolDefaultsV1,
@@ -15,13 +15,14 @@ import type { ActiveEditorZoomLayoutUpdate } from "./navigation";
 import type { BackgroundSpacingDefaults } from "./controller-helpers";
 import type { ActiveEditorHistory } from "./history";
 import type { Keymap } from "obsidian";
+import type { EditorChromeOpenings } from "../editor-chrome-openings";
 
-export interface ActiveEditorControllerOptions {
+export interface ActiveEditorControllerOptions extends EditorChromeOpenings {
   readonly container: HTMLElement;
   readonly applyZoomLayout: (update: ActiveEditorZoomLayoutUpdate) => void;
   readonly backgroundSpacing: () => BackgroundSpacingDefaults;
   readonly defaults: ToolDefaultsV1;
-  readonly deviceSettings: InkbookDeviceSettingsV1;
+  readonly deviceSettings: InkbookDeviceSettingsV2;
   readonly interruptLayoutForInput: () => void;
   readonly keymap?: Pick<Keymap, "popScope" | "pushScope">;
   readonly history: ActiveEditorHistory;

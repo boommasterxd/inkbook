@@ -139,7 +139,7 @@ Placement:
 - `Ctrl/Cmd+V` uses the last pointer position recorded inside the current active editor session. If none exists, it uses the center of the visible canvas.
 - Repeated Toolbar or keyboard paste of the same payload offsets each additional copy diagonally by 24 page units.
 
-The shortcuts are captured through the active editor's owning document so they remain available after canvas or toolbar interaction. They only take effect when the pointer is over the active editor and no text field is focused. `Delete` uses the same scope, while `Backspace` remains native. Without a selection or valid ink payload, the normal Obsidian clipboard functions remain active. A copied payload whose system write failed remains authoritative in the in-session fallback, even if the platform returns an empty clipboard read.
+Canvas shortcuts are captured through the active editor's owning document so they remain available after canvas or toolbar interaction. Document-level capture requires the pointer over the active editor and no focused text field. `Delete` uses the same availability boundary, while `Backspace` remains native. Without a selection or valid ink payload, normal Obsidian clipboard behavior remains active. A copied payload whose system write failed remains authoritative in the in-session fallback, even if the platform returns an empty clipboard read. Configurable bindings, fixed Paste and history bindings, and command ownership are canonical in [Keyboard Shortcuts](keyboard-shortcuts.md).
 
 ## Canvas Context Menus
 
@@ -147,7 +147,7 @@ The canvas uses Obsidian's native `Menu` through the owning presentation documen
 
 - mouse or trackpad `contextmenu`
 - a one-finger long press lasting at least 500 milliseconds, with at most 6 screen pixels of movement when it begins on an annotation or 10 screen pixels on empty canvas
-- the keyboard Context Menu key or `Shift+F10` while the canvas input surface has focus
+- `Shift+F10` while the canvas input surface has focus
 
 The single transparent input surface converts the invocation point to page coordinates and resolves an annotation through the spatial index. A mouse right-click or touch long press on an unselected annotation selects only that annotation before opening the menu. Invoking it on an already selected annotation preserves the complete selection. Invoking it on empty canvas preserves the current selection. Selection caused by menu invocation is not a history entry and does not dirty the file.
 

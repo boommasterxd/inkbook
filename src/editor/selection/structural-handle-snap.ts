@@ -13,6 +13,7 @@ interface HandleSnapResult {
 }
 
 export interface CoordinateOriginSnapResult extends HandleSnapResult {
+  readonly additionalReferences: readonly PointV1[];
   readonly axisIndex: number | null;
   readonly reference: PointV1 | null;
 }
@@ -41,6 +42,7 @@ export function resolveCoordinateOriginSnap(
   zoom: number,
 ): CoordinateOriginSnapResult {
   let best: CoordinateOriginSnapResult = {
+    additionalReferences: [],
     axisIndex: null,
     point: pointer,
     reference: null,
@@ -60,9 +62,28 @@ export function resolveCoordinateOriginSnap(
     const distance = Math.hypot(result.point.x - pointer.x, result.point.y - pointer.y);
     if (distance >= bestDistance) return;
     bestDistance = distance;
-    best = { axisIndex, point: result.point, reference, snapped: true };
+    best = {
+      additionalReferences: [],
+      axisIndex,
+      point: result.point,
+      reference,
+      snapped: true,
+    };
   });
-  return best;
+  if (!best.snapped) return best;
+  const additionalReferences = element.axes.flatMap((axis, axisIndex) => {
+    if (axisIndex === best.axisIndex) return [];
+    const reference = rotatePointClockwise(axis, element.pivot, element.rotation);
+    const result = resolvePointAngleSnap({
+      origin: reference,
+      point: best.point,
+      snapPixels,
+      stepDegrees: 45,
+      zoom,
+    });
+    return result.snapped ? [reference] : [];
+  });
+  return { ...best, additionalReferences };
 }
 
 export function resolveTableHeaderSnap(

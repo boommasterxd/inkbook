@@ -5,12 +5,13 @@ import {
   OUTLINE_ONLY_TOOLS,
   PEN_WIDTHS,
   type ColorV1,
-  type InkbookDeviceSettingsV1,
+  type InkbookDeviceSettingsV2,
   type InkbookSettingsV4,
   type OutlineDefaultsV1,
   type ShapeDefaultsV1,
   type ToolDefaultsV1,
 } from "./types";
+import { createBuiltInKeyboardShortcuts } from "./keyboard-shortcuts";
 
 const THEME_TEXT_COLOR: ColorV1 = Object.freeze({ type: "theme-text" });
 const RED_COLOR: ColorV1 = Object.freeze({ type: "rgba", value: "#EF4444FF" });
@@ -108,12 +109,13 @@ export function createBuiltInSettings(): InkbookSettingsV4 {
   };
 }
 
-export function createBuiltInDeviceSettings(): InkbookDeviceSettingsV1 {
+export function createBuiltInDeviceSettings(): InkbookDeviceSettingsV2 {
   return {
-    version: 1,
+    version: 2,
     fingerDrawingEnabled: false,
     penTapInsertion: "off",
     leftHandedToolbar: false,
     motion: "system",
+    keyboardShortcuts: createBuiltInKeyboardShortcuts(),
   };
 }

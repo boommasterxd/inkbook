@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createBuiltInDeviceSettings,
   createBuiltInSettings,
-  type InkbookDeviceSettingsV1,
+  type InkbookDeviceSettingsV2,
   type InkbookSettingsV4,
 } from "../../../src/domain/settings";
 import type { EditableDocumentModel } from "../../../src/obsidian/embeds/document-model-port";
@@ -36,7 +36,7 @@ class InkbookPlugin extends Plugin {
 }
 
 interface CapturedSceneOptions {
-  readonly deviceSettings: InkbookDeviceSettingsV1;
+  readonly deviceSettings: InkbookDeviceSettingsV2;
   readonly model: EditableDocumentModel;
   readonly onLock: () => void;
   readonly root: HTMLElement;
@@ -127,7 +127,7 @@ function serializedDocument(): { readonly bytes: Uint8Array; readonly svg: strin
 }
 
 function customSettings(): {
-  readonly device: InkbookDeviceSettingsV1;
+  readonly device: InkbookDeviceSettingsV2;
   readonly vault: InkbookSettingsV4;
 } {
   return {
@@ -411,6 +411,8 @@ describe("plugin workspace activation serialization", () => {
       {
         fallbackOwnerWindow: () => ownerWindow,
         manager: new InkbookFeedbackManager(),
+        onOpenSettings: vi.fn(),
+        onOpenShortcuts: vi.fn(),
         view: () => undefined,
       },
     );

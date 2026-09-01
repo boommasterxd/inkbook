@@ -6,6 +6,7 @@
 @import url("./editor-menus.css");
 @import url("./background-menu.css");
 @import url("./settings.css");
+@import url("./shortcut-settings.css");
 
 .inkbook-root {
   --inkbook-page-surface: #f6f6f6;
@@ -87,11 +88,12 @@
 }
 
 .inkbook-root .inkbook-scene {
-  contain: layout paint;
+  contain: layout;
   display: block;
   inset-block: 0 auto;
   inset-inline: 0 auto;
   inline-size: 100%;
+  overflow: visible;
   position: absolute;
   transform-origin: top left;
   vertical-align: top;

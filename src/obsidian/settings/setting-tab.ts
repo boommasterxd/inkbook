@@ -2,9 +2,9 @@ import {
   PluginSettingTab,
   type App,
   type Plugin,
-  type SettingDefinitionAction,
   type SettingDefinitionGroup,
   type SettingDefinitionItem,
+  type SettingDefinitionRender,
 } from "obsidian";
 
 import {
@@ -16,10 +16,12 @@ import {
 } from "../../domain/settings";
 import { DEFAULT_REFRESH_RATE, type RefreshRateProfileStatus } from "../performance";
 import { SettingsControlValues, type SettingsControlKey } from "./control-values";
-import { dropdown, resetAction, toggle } from "./definition-helpers";
+import { dropdown, resetAction, settingsAction, toggle } from "./definition-helpers";
 import { createLabels, generalGroup } from "./general-definitions";
 import { pageDefaultsGroup } from "./page-defaults";
+import { createObsidianHotkeyAccess } from "./obsidian-hotkey-conflicts";
 import { snappingGroup } from "./snapping-definitions";
+import { shortcutGroup } from "./shortcut-definitions";
 import { InkbookSettingsStore } from "./storage";
 import { drawingToolsGroup, shapesAndStructuresGroup } from "./tool-definitions";
 
@@ -82,10 +84,13 @@ export class InkbookSettingTab extends PluginSettingTab {
       drawingToolsGroup(toolValues, () => this.resetDrawingTools()),
       shapesAndStructuresGroup(toolValues, () => this.resetShapesAndStructures()),
       snappingGroup({
-        isEnabled: () => this.store.getVaultSettings().snapping.enabled,
+        get: (key) => this.controls.get(key),
+        readMotion: () => this.store.getDeviceSettings().motion,
         reset: () => this.resetSnapping(),
+        set: (key, value) => this.controls.set(key, value),
       }),
       ...this.deviceGroups(),
+      shortcutGroup(this.store, createObsidianHotkeyAccess(this.app)),
       this.resetAllAction(),
     ];
   }
@@ -171,6 +176,7 @@ export class InkbookSettingTab extends PluginSettingTab {
     return {
       type: "group",
       heading: "Input",
+      cls: "inkbook-settings-input-group",
       items: [
         toggle(
           "device.fingerDrawingEnabled",
@@ -201,6 +207,7 @@ export class InkbookSettingTab extends PluginSettingTab {
     return {
       type: "group",
       heading: "Interface",
+      cls: "inkbook-settings-interface-group",
       items: [
         toggle(
           "device.leftHandedToolbar",
@@ -225,15 +232,16 @@ export class InkbookSettingTab extends PluginSettingTab {
     };
   }
 
-  private resetAllAction(): SettingDefinitionAction {
-    return {
-      name: "Reset all Inkbook settings",
-      desc: "Restore every built-in value without changing existing files or elements.",
-      action: (element) => {
+  private resetAllAction(): SettingDefinitionRender {
+    return settingsAction(
+      "Reset all Inkbook settings",
+      "Restore every built-in value without changing existing files or elements.",
+      "danger",
+      (element) => {
         if (element.ownerDocument.defaultView?.confirm("Reset all Inkbook settings?") === true) {
           void this.store.resetAll().then(() => this.update());
         }
       },
-    };
+    );
   }
 }

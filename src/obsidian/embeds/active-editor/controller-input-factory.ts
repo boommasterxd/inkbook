@@ -1,5 +1,6 @@
 import type { GestureController, GestureControllerPorts } from "../../../editor/gestures/public";
 import type { InputAction, PointerSample } from "../../../editor/input/index";
+import type { KeyboardShortcutSettingsV1 } from "../../../domain/settings/index";
 import { selectElement } from "../../../editor/selection/public";
 
 import type { ActiveEditorActions } from "./controller-actions";
@@ -28,6 +29,7 @@ interface ActiveEditorInputFactoryOptions {
   readonly dispatch: (action: InputAction) => void;
   readonly hasStableGeometryGesture: () => boolean;
   readonly history: ActiveEditorHistory;
+  readonly keyboardShortcuts: KeyboardShortcutSettingsV1;
   readonly lastScreenPointer: () => PointerSample | null;
   readonly longPress: ActiveEditorLongPressScheduler;
   readonly menus: ActiveEditorMenuController;
@@ -73,6 +75,7 @@ export function createActiveEditorInputControllers(
       closeFlyout,
       (position) => options.dispatch({ type: "context-menu", source: "keyboard", ...position }),
     ],
+    options.keyboardShortcuts,
   );
   const openContextMenu: GestureControllerPorts["openContextMenu"] = (source, position) =>
     options.menus.openFromSource(

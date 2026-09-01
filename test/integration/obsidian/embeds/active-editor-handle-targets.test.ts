@@ -290,7 +290,7 @@ describe("active editor selection snap guides", () => {
 
     fixture.interaction.pointerDown(start);
     fixture.interaction.pointerMove({ ...start, x: 100, y: 100 });
-    expect(fixture.overlays[fixture.overlays.length - 1]).toContain("M 92 100 L 108 100");
+    expect(fixture.overlays[fixture.overlays.length - 1]).toContain("M 76 100 L 124 100");
     expect(fixture.overlays[fixture.overlays.length - 1]).not.toContain("Z");
     fixture.interaction.pointerUp(start.pointerId);
     const connected = fixture.store.get(selectedLine.id)?.element;
@@ -347,6 +347,12 @@ describe("active editor multi-selection frame", () => {
     const previewPath = fixture.overlays[fixture.overlays.length - 2];
     expect(fixture.interaction.pointerUp(pointerId)).toBe(true);
 
+    expect(fixture.beginPreviewCommit).toHaveBeenCalledOnce();
+    expect(fixture.armPreviewCommit).toHaveBeenCalledWith([first.id, second.id]);
+    expect(fixture.cancelPreviewCommit).not.toHaveBeenCalled();
+    expect(fixture.armPreviewCommit.mock.invocationCallOrder[0]).toBeLessThan(
+      fixture.clearPreviewTransforms.mock.invocationCallOrder[0]!,
+    );
     expect(fixture.overlays[fixture.overlays.length - 2]).toBe(previewPath);
     expect(fixture.selectionFrames.current(selected)?.rotation).toBe(30);
     expect(fixture.history.undo()).toBe(true);
@@ -416,6 +422,10 @@ function harness(
   const sceneStore = new ElementSceneStore(store);
   const history = new ActiveEditorHistory(model);
   const selectionFrames = new SelectionFrameSession();
+  const armPreviewCommit = vi.fn(() => true);
+  const cancelPreviewCommit = vi.fn();
+  const beginPreviewCommit = vi.fn(() => ({ arm: armPreviewCommit, cancel: cancelPreviewCommit }));
+  const clearPreviewTransforms = vi.fn();
   const interaction = new ActiveEditorHandleInteraction({
     history,
     layout,
@@ -423,8 +433,9 @@ function harness(
     pageToScreen: (point) => point,
     preparedHistory: {} as PreparedElementHistory,
     renderer: {
+      beginPreviewCommit,
       clearElementPreviews: vi.fn(),
-      clearPreviewTransforms: vi.fn(),
+      clearPreviewTransforms,
       setElementPreviews: vi.fn(),
       setPreviewTransform: vi.fn(),
       setSelectionOverlayPath: (path) => overlays.push(path),
@@ -436,5 +447,16 @@ function harness(
     selectionFrames,
     zoom: () => zoom,
   });
-  return { history, interaction, layout, overlays, selectionFrames, store };
+  return {
+    armPreviewCommit,
+    beginPreviewCommit,
+    cancelPreviewCommit,
+    clearPreviewTransforms,
+    history,
+    interaction,
+    layout,
+    overlays,
+    selectionFrames,
+    store,
+  };
 }

@@ -1,6 +1,7 @@
 import { StateField } from "@codemirror/state";
 
 export { Keymap, Scope } from "./keymap";
+export { Modal, Setting, SettingGroup } from "./settings";
 
 export interface TestEditorInfo {
   readonly editor?: Editor;
@@ -15,6 +16,7 @@ export const Platform = {
   isDesktop: true,
   isDesktopApp: true,
   isIosApp: false,
+  isMacOS: false,
   isMobile: false,
   isMobileApp: false,
   isPhone: false,

@@ -57,9 +57,10 @@ describe("settings scope and session behavior", () => {
   });
 
   it("declares persistence scopes and the versioned device key", () => {
-    expect(DEVICE_SETTINGS_STORAGE_KEY).toBe("inkbook:device-settings:v1");
+    expect(DEVICE_SETTINGS_STORAGE_KEY).toBe("inkbook:device-settings:v2");
     expect(SETTINGS_SCOPE.toolDefaults).toBe("vault");
     expect(SETTINGS_SCOPE.motion).toBe("device-vault");
+    expect(SETTINGS_SCOPE.keyboardShortcuts).toBe("device-vault");
     expect(SETTINGS_SCOPE.background).toBe("file");
     expect(SETTINGS_SCOPE.zoom).toBe("session");
   });

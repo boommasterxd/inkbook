@@ -1,6 +1,23 @@
-.inkbook-settings-tool-group {
+.inkbook-settings-tool-group,
+.inkbook-snapping-group {
   --inkbook-motion-fast: 120ms;
   --inkbook-motion-easing: cubic-bezier(0.2, 0, 0, 1);
+}
+
+:is(
+    .inkbook-settings-general-group,
+    .inkbook-settings-page-group,
+    .inkbook-settings-tool-group,
+    .inkbook-snapping-group,
+    .inkbook-settings-input-group,
+    .inkbook-settings-interface-group,
+    .inkbook-shortcuts-group
+  )
+  :is(
+    .setting-item.mod-toggle > .setting-item-control,
+    .setting-item > .setting-item-control:has(> .dropdown)
+  ) {
+  align-self: center;
 }
 
 .inkbook-settings-tool-group .inkbook-settings-tool-row.setting-item {
@@ -11,6 +28,15 @@
 .inkbook-settings-visual-row.setting-item {
   display: block;
   padding-block: var(--size-4-2);
+}
+
+.setting-group .inkbook-snapping-dependent-row.setting-item {
+  display: block;
+  padding: 0;
+}
+
+.setting-group .inkbook-snapping-dependent-content.setting-item {
+  border-radius: 0;
 }
 
 .inkbook-settings-tool-section {
@@ -82,14 +108,16 @@
   padding: 0 var(--size-4-5) var(--size-4-3);
 }
 
-.inkbook-settings-tool-panel[data-resizing="true"] {
+.inkbook-settings-tool-panel[data-resizing="true"],
+.inkbook-snapping-dependent-row[data-resizing="true"] {
   box-sizing: border-box;
   overflow: hidden;
   transition: block-size 180ms var(--inkbook-motion-easing);
   will-change: block-size;
 }
 
-.inkbook-settings-tool-panel[hidden] {
+.inkbook-settings-tool-panel[hidden],
+.setting-group .inkbook-snapping-dependent-row[hidden] {
   display: none;
 }
 
@@ -100,6 +128,8 @@
 }
 
 .inkbook-settings-tool-controls .inkbook-menu-controls {
+  --inkbook-settings-width-choice-min: 44px;
+
   gap: var(--size-4-4);
 }
 
@@ -126,8 +156,7 @@
 }
 
 .inkbook-settings-tool-controls .inkbook-menu-width-grid {
-  grid-template-columns: repeat(5, minmax(44px, 72px));
-  justify-content: start;
+  grid-template-columns: repeat(5, minmax(var(--inkbook-settings-width-choice-min), 1fr));
 }
 
 .inkbook-settings-tool-controls .inkbook-menu-slider-row,
@@ -149,6 +178,14 @@
 
 .inkbook-settings-control-error[hidden] {
   display: none;
+}
+
+.setting-item.mod-action[data-inkbook-setting-action-tone="caution"] .setting-item-name {
+  color: var(--color-orange);
+}
+
+.setting-item.mod-action[data-inkbook-setting-action-tone="danger"] .setting-item-name {
+  color: var(--text-error);
 }
 
 .inkbook-settings-visual-info {
@@ -198,10 +235,6 @@
     grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
   }
 
-  .inkbook-settings-tool-controls .inkbook-menu-width-grid {
-    grid-template-columns: repeat(5, minmax(44px, 1fr));
-  }
-
   .inkbook-settings-tool-controls .inkbook-menu-slider-row,
   .inkbook-settings-inline-controls .inkbook-menu-slider-row {
     grid-template-columns: minmax(100px, 1fr) 68px;
@@ -210,6 +243,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .inkbook-settings-background-content[data-resizing="true"],
+  .inkbook-snapping-dependent-row[data-resizing="true"],
   .inkbook-settings-tool-chevron {
     transition: none;
   }

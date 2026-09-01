@@ -23,7 +23,7 @@ beforeAll(() => {
 });
 
 describe("InkbookSettingTab tool disclosures", () => {
-  it("renders a title and right-side chevron with accessible independent panels", () => {
+  it("renders a title and right-side chevron with accessible independent panels", async () => {
     const store = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());
     const tab = createTab(store);
     const rectangle = renderTool(tab, "Shapes and structures", "Rectangle");
@@ -63,7 +63,8 @@ describe("InkbookSettingTab tool disclosures", () => {
     expect(rectanglePanel.hidden).toBe(false);
     expect(rectanglePanel.inert).toBe(false);
     expect(rectanglePanel.dataset.resizing).toBe("true");
-    expect(rectanglePanel.style.blockSize).toBe("240px");
+    expect(rectanglePanel.style.blockSize).toBe("0px");
+    await vi.waitFor(() => expect(rectanglePanel.style.blockSize).toBe("240px"));
     expect(lineTrigger.getAttribute("aria-expanded")).toBe("false");
     expect(linePanel.hidden).toBe(true);
     finishBlockSizeTransition(rectanglePanel);
@@ -71,6 +72,7 @@ describe("InkbookSettingTab tool disclosures", () => {
     expect(rectanglePanel.style.blockSize).toBe("");
 
     lineTrigger.click();
+    await vi.waitFor(() => expect(linePanel.style.blockSize).toBe("180px"));
     finishBlockSizeTransition(linePanel);
     expect(rectanglePanel.hidden).toBe(false);
     expect(linePanel.hidden).toBe(false);
@@ -78,7 +80,8 @@ describe("InkbookSettingTab tool disclosures", () => {
     expect(rectanglePanel.hidden).toBe(false);
     expect(rectanglePanel.inert).toBe(true);
     expect(rectanglePanel.dataset.resizing).toBe("true");
-    expect(rectanglePanel.style.blockSize).toBe("0px");
+    expect(rectanglePanel.style.blockSize).toBe("240px");
+    await vi.waitFor(() => expect(rectanglePanel.style.blockSize).toBe("0px"));
     finishBlockSizeTransition(rectanglePanel);
     expect(rectanglePanel.hidden).toBe(true);
     expect(rectanglePanel.dataset.resizing).toBeUndefined();
@@ -90,7 +93,7 @@ describe("InkbookSettingTab tool disclosures", () => {
 });
 
 describe("InkbookSettingTab tool disclosure motion preferences", () => {
-  it("honors reduced and full device motion preferences", () => {
+  it("honors reduced and full device motion preferences", async () => {
     const matchMedia = vi
       .spyOn(window, "matchMedia")
       .mockReturnValue({ matches: true } as MediaQueryList);
@@ -128,7 +131,8 @@ describe("InkbookSettingTab tool disclosure motion preferences", () => {
       ".inkbook-settings-tool-trigger",
     ).click();
     expect(animatedPanel.dataset.resizing).toBe("true");
-    expect(animatedPanel.style.blockSize).toBe("240px");
+    expect(animatedPanel.style.blockSize).toBe("0px");
+    await vi.waitFor(() => expect(animatedPanel.style.blockSize).toBe("240px"));
     finishBlockSizeTransition(animatedPanel);
     animated.cleanup();
     matchMedia.mockRestore();
@@ -377,7 +381,7 @@ describe("InkbookSettingTab page defaults", () => {
 });
 
 describe("InkbookSettingTab background layout motion", () => {
-  it("animates the spacing height when switching to and from none", () => {
+  it("animates the spacing height when switching to and from none", async () => {
     const tab = createTab(new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter()));
     const background = renderPageDefault(tab, "Background");
     const content = requiredElement<HTMLElement>(
@@ -394,7 +398,8 @@ describe("InkbookSettingTab background layout motion", () => {
       .querySelector<HTMLButtonElement>("button[data-background-type='none']")
       ?.click();
     expect(content.dataset.resizing).toBe("true");
-    expect(content.style.blockSize).toBe("220px");
+    expect(content.style.blockSize).toBe("340px");
+    await vi.waitFor(() => expect(content.style.blockSize).toBe("220px"));
     finishBlockSizeTransition(content);
     expect(content.dataset.resizing).toBeUndefined();
     expect(content.style.blockSize).toBe("");
@@ -403,7 +408,8 @@ describe("InkbookSettingTab background layout motion", () => {
       .querySelector<HTMLButtonElement>("button[data-background-type='lines']")
       ?.click();
     expect(content.dataset.resizing).toBe("true");
-    expect(content.style.blockSize).toBe("340px");
+    expect(content.style.blockSize).toBe("220px");
+    await vi.waitFor(() => expect(content.style.blockSize).toBe("340px"));
     finishBlockSizeTransition(content);
     expect(content.dataset.resizing).toBeUndefined();
     expect(content.style.blockSize).toBe("");

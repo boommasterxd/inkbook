@@ -1,5 +1,9 @@
 import type { InputPoint } from "../../../editor/input/index";
-import { keyboardZoomFactor } from "../../../editor/zoom/index";
+import { resolveConfiguredShortcut } from "../../../editor/input/index";
+import {
+  createBuiltInKeyboardShortcuts,
+  type KeyboardShortcutSettingsV1,
+} from "../../../domain/settings/index";
 import { shouldHandleClipboardShortcut } from "../../../persistence/clipboard/public";
 
 import type { ActiveEditorActions } from "./controller-actions";
@@ -16,6 +20,7 @@ export interface ActiveEditorKeyboardOptions {
   readonly clearSelection: () => void;
   readonly closeFlyout: () => boolean;
   readonly history: ActiveEditorHistory;
+  readonly keyboardShortcuts?: KeyboardShortcutSettingsV1;
   readonly navigation: ActiveEditorNavigation;
   readonly navigationEnabled: () => boolean;
   readonly ownerDocument: Document;
@@ -30,11 +35,15 @@ export interface ActiveEditorKeyboardOptions {
 export class ActiveEditorKeyboardController {
   readonly #options: ActiveEditorKeyboardOptions;
   readonly #paneHistory: PaneDocumentHistoryAdapter;
+  #shortcuts: KeyboardShortcutSettingsV1;
   readonly #unsubscribeHistory: () => void;
   #pointerOver = false;
 
   public constructor(options: ActiveEditorKeyboardOptions) {
     this.#options = options;
+    this.#shortcuts = structuredClone(
+      options.keyboardShortcuts ?? createBuiltInKeyboardShortcuts(),
+    );
     this.#paneHistory = new PaneDocumentHistoryAdapter({
       redo: () => options.history.redoAsync(),
       undo: () => options.history.undoAsync(),
@@ -52,42 +61,37 @@ export class ActiveEditorKeyboardController {
   public handleKeyDown(event: KeyboardEvent): boolean {
     const textFieldFocused = isTextField(event.target, this.#options.activeElement());
     if (textFieldFocused) return false;
-    if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) {
+    if (event.key === "F10" && event.shiftKey) {
       this.#options.openKeyboardMenu(this.#options.navigation.visibleCenter());
       return true;
     }
-    if (this.handleHoverZoom(event)) return true;
-    if (isSelectAllShortcut(event)) {
-      this.#options.selectAll();
-      return true;
-    }
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+    if (isHistoryShortcut(event)) {
       return this.#handleUnifiedHistory(event.shiftKey ? "redo" : "undo");
     }
-    if (isUnmodifiedDelete(event) && this.#options.actions.isAvailable("delete")) {
-      this.#options.actions.execute("delete");
-      return true;
-    }
     if (event.key === "Escape") return this.#handleEscape();
-    return this.#handleClipboardShortcut(event);
+    return this.#handleConfiguredShortcut(event) || this.#handleFixedPasteShortcut(event);
   }
 
   public handleDocumentKeyDown(event: KeyboardEvent): boolean {
     if (isTextField(event.target, this.#options.activeElement())) return false;
-    if (this.handleHoverZoom(event)) return true;
     if (!this.#pointerOver) return false;
-    if (isSelectAllShortcut(event)) {
-      this.#options.selectAll();
-      return true;
+    if (isHistoryShortcut(event)) {
+      return this.#handleUnifiedHistory(event.shiftKey ? "redo" : "undo");
     }
-    if (isUnmodifiedDelete(event) && this.#options.actions.isAvailable("delete")) {
-      this.#options.actions.execute("delete");
-      return true;
-    }
-    return this.#handleClipboardShortcut(event);
+    return this.#handleConfiguredShortcut(event) || this.#handleFixedPasteShortcut(event);
   }
 
   public handleHoverZoom(event: KeyboardEvent): boolean {
+    const action = resolveConfiguredShortcut(event, this.#shortcuts);
+    if (action !== "zoom-in" && action !== "zoom-out") return false;
+    return this.#handleZoom(event, action === "zoom-in" ? 1 : -1);
+  }
+
+  public updateShortcuts(shortcuts: KeyboardShortcutSettingsV1): void {
+    this.#shortcuts = structuredClone(shortcuts);
+  }
+
+  #handleZoom(event: KeyboardEvent, step: -1 | 1): boolean {
     if (
       event.view !== null &&
       event.view !== undefined &&
@@ -96,9 +100,8 @@ export class ActiveEditorKeyboardController {
       return false;
     if (!this.#pointerOver || isTextField(event.target, this.#options.activeElement()))
       return false;
-    if (keyboardZoomFactor(event) === undefined) return false;
     if (!this.#options.navigationEnabled()) return true;
-    return this.#options.navigation.updateKeyboard(event, this.#options.lastScreenPointer());
+    return this.#options.navigation.updateKeyboardStep(step, this.#options.lastScreenPointer());
   }
 
   public handlePaste(data: SynchronousClipboardData | null): boolean {
@@ -114,27 +117,59 @@ export class ActiveEditorKeyboardController {
     this.#pointerOver = pointerOver;
   }
 
-  #handleClipboardShortcut(event: KeyboardEvent): boolean {
-    const action = (event.ctrlKey || event.metaKey) && event.key.toLowerCase();
-    const clipboardAction = action === "c" ? "copy" : action === "x" ? "cut" : "paste";
-    if (action !== "c" && action !== "x" && action !== "v") return false;
+  #handleFixedPasteShortcut(event: KeyboardEvent): boolean {
     if (
-      !shouldHandleClipboardShortcut(clipboardAction, {
+      !(event.ctrlKey || event.metaKey) ||
+      event.altKey ||
+      event.shiftKey ||
+      event.key.toLowerCase() !== "v"
+    ) {
+      return false;
+    }
+    if (
+      !shouldHandleClipboardShortcut("paste", {
         hasSelection: this.#options.selectionSize() > 0,
         hasValidInkPayload: this.#options.actions.canPaste,
         pointerOverActiveEditor: this.#pointerOver,
         textFieldFocused: false,
       }) ||
-      !this.#options.actions.isAvailable(clipboardAction)
+      !this.#options.actions.isAvailable("paste")
     ) {
       return false;
     }
-    if (clipboardAction === "paste") {
-      this.#options.actions.shortcutPaste();
+    this.#options.actions.shortcutPaste();
+    return true;
+  }
+
+  #handleConfiguredShortcut(event: KeyboardEvent): boolean {
+    const action = resolveConfiguredShortcut(event, this.#shortcuts);
+    if (action === undefined) return false;
+    if (action === "zoom-in" || action === "zoom-out") {
+      return this.#handleZoom(event, action === "zoom-in" ? 1 : -1);
+    }
+    if (action === "select-all") {
+      this.#options.selectAll();
       return true;
     }
-    this.#options.actions.execute(clipboardAction);
+    const canvasAction = action === "delete-selection" ? "delete" : action;
+    if (
+      (canvasAction === "copy" || canvasAction === "cut") &&
+      !this.#clipboardActionAvailable(canvasAction)
+    ) {
+      return false;
+    }
+    if (!this.#options.actions.isAvailable(canvasAction)) return false;
+    this.#options.actions.execute(canvasAction);
     return true;
+  }
+
+  #clipboardActionAvailable(action: "copy" | "cut"): boolean {
+    return shouldHandleClipboardShortcut(action, {
+      hasSelection: this.#options.selectionSize() > 0,
+      hasValidInkPayload: this.#options.actions.canPaste,
+      pointerOverActiveEditor: this.#pointerOver,
+      textFieldFocused: false,
+    });
   }
 
   #handleEscape(): boolean {
@@ -162,12 +197,8 @@ export class ActiveEditorKeyboardController {
   }
 }
 
-function isSelectAllShortcut(event: KeyboardEvent): boolean {
-  return (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a";
-}
-
-function isUnmodifiedDelete(event: KeyboardEvent): boolean {
-  return event.key === "Delete" && !event.altKey && !event.ctrlKey && !event.metaKey;
+function isHistoryShortcut(event: KeyboardEvent): boolean {
+  return (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "z";
 }
 
 function isTextField(target: EventTarget | null, activeElement: Element | null): boolean {

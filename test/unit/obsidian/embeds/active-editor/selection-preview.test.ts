@@ -11,6 +11,7 @@ import { ElementStore } from "../../../../../src/domain/store/public";
 import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
 import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
 import type { PreparedElementHistory } from "../../../../../src/obsidian/embeds/active-editor/prepared-element-history";
+import { createSynchronousActiveEditorHistory } from "../../../../fixtures/obsidian/synchronous-active-editor-history";
 import { connectedLine, rectangle } from "../../../domain/store/fixtures";
 
 const selectedOverlayCall = [expect.any(String), "accent", expect.any(String)];
@@ -172,6 +173,47 @@ describe("selection move edge-scroll projection", () => {
 });
 
 describe("selection move edge-drag validation", () => {
+  it("hands a synchronous move from preview to committed geometry atomically", () => {
+    const element = rectangle();
+    const store = new ElementStore([element]);
+    const sceneStore = new ElementSceneStore(store);
+    const arm = vi.fn(() => true);
+    const cancel = vi.fn();
+    const suppressMotionForNextDelta = vi.fn();
+    const preview = new MovePreview({
+      history: createSynchronousActiveEditorHistory(store),
+      pageToScreen: (point) => point,
+      preparedHistory: {
+        commitMove: vi.fn(() => false),
+      } as unknown as PreparedElementHistory,
+      renderer: {
+        beginPreviewCommit: vi.fn(() => ({ arm, cancel })),
+        clearPreviewTransforms: vi.fn(),
+        setOverlayPath: vi.fn(),
+        setPreviewTransform: vi.fn(),
+        suppressMotionForNextDelta,
+      },
+      sceneStore,
+      selection: () => new Set([element.id]),
+      setSelection: vi.fn(),
+      start: {
+        additive: false,
+        kind: "element-move",
+        pointer: pointer(0, 0),
+        tool: "select",
+      },
+      store,
+    });
+
+    preview.update(pointer(12, 18));
+
+    expect(preview.commit()).toBe(true);
+    expect(arm).toHaveBeenCalledWith([element.id]);
+    expect(cancel).not.toHaveBeenCalled();
+    expect(suppressMotionForNextDelta).not.toHaveBeenCalled();
+    sceneStore.release();
+  });
+
   it("rejects an out-of-range move and still completes preview cleanup", () => {
     const element = rectangle();
     const store = new ElementStore([element]);

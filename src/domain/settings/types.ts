@@ -37,6 +37,19 @@ export const MOTION_PREFERENCES = ["system", "full", "reduced"] as const;
 export const REFRESH_RATE_PREFERENCES = ["auto", 60, 90, 120, 144, 240] as const;
 export const SELECTION_AREAS = ["rectangle", "lasso"] as const;
 export const SELECTION_INCLUSIONS = ["fully-enclosed", "touched"] as const;
+export const CONFIGURABLE_SHORTCUT_ACTIONS = [
+  "select-all",
+  "copy",
+  "cut",
+  "delete-selection",
+  "zoom-in",
+  "zoom-out",
+  "bring-forward",
+  "send-backward",
+  "bring-to-front",
+  "send-to-back",
+] as const;
+export const SHORTCUT_MODIFIERS = ["mod", "ctrl", "meta", "shift", "alt"] as const;
 
 export type StartupToolV1 = (typeof STARTUP_TOOLS)[number];
 export type ClosedShapeToolV1 = (typeof CLOSED_SHAPE_TOOLS)[number];
@@ -48,6 +61,17 @@ type ArrowNodeV1 = (typeof ARROW_NODES)[number];
 export type BackgroundTypeV1 = (typeof BACKGROUND_TYPES)[number];
 export type SelectionAreaV1 = (typeof SELECTION_AREAS)[number];
 export type SelectionInclusionV1 = (typeof SELECTION_INCLUSIONS)[number];
+export type ConfigurableShortcutActionV1 = (typeof CONFIGURABLE_SHORTCUT_ACTIONS)[number];
+export type ShortcutModifierV1 = (typeof SHORTCUT_MODIFIERS)[number];
+
+export interface KeyboardShortcutBindingV1 {
+  readonly key: string;
+  readonly modifiers: readonly ShortcutModifierV1[];
+}
+
+export type KeyboardShortcutSettingsV1 = Readonly<
+  Record<ConfigurableShortcutActionV1, KeyboardShortcutBindingV1 | null>
+>;
 
 export type ColorV1 =
   { readonly type: "theme-text" } | { readonly type: "rgba"; readonly value: `#${string}` };
@@ -129,12 +153,13 @@ export interface InkbookSettingsV4 {
   refreshRatePreference: RefreshRatePreferenceV2;
 }
 
-export interface InkbookDeviceSettingsV1 {
-  version: 1;
+export interface InkbookDeviceSettingsV2 {
+  version: 2;
   fingerDrawingEnabled: boolean;
   penTapInsertion: (typeof PEN_TAP_INSERTIONS)[number];
   leftHandedToolbar: boolean;
   motion: (typeof MOTION_PREFERENCES)[number];
+  keyboardShortcuts: KeyboardShortcutSettingsV1;
 }
 
 export interface SettingsDiagnostic {

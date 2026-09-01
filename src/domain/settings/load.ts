@@ -1,15 +1,20 @@
 import { createBuiltInDeviceSettings, createBuiltInSettings } from "./defaults";
+import { canonicalShortcutBinding, shortcutBindingSignature } from "./keyboard-shortcuts";
 import { validateCustomVaultFolderPath } from "./path";
 import {
   BACKGROUND_TYPES,
+  CONFIGURABLE_SHORTCUT_ACTIONS,
   LINE_SPACINGS,
   MOTION_PREFERENCES,
   PEN_TAP_INSERTIONS,
   REFRESH_RATE_PREFERENCES,
+  SHORTCUT_MODIFIERS,
   STARTUP_TOOLS,
   type FilePlacementV1,
-  type InkbookDeviceSettingsV1,
+  type InkbookDeviceSettingsV2,
   type InkbookSettingsV4,
+  type KeyboardShortcutBindingV1,
+  type KeyboardShortcutSettingsV1,
   type SettingsDiagnostic,
   type SettingsLoadResult,
   type SnappingSettingsV1,
@@ -170,6 +175,67 @@ function loadSnapping(
   };
 }
 
+function loadKeyboardShortcutBinding(
+  input: unknown,
+  fallback: KeyboardShortcutBindingV1 | null,
+  diagnostics: SettingsDiagnostic[],
+  path: string,
+): KeyboardShortcutBindingV1 | null {
+  if (input === null) return null;
+  if (
+    !hasExactKeys(input, ["key", "modifiers"]) ||
+    typeof input.key !== "string" ||
+    input.key.length === 0 ||
+    input.key.length > 32 ||
+    !Array.isArray(input.modifiers) ||
+    input.modifiers.length > SHORTCUT_MODIFIERS.length ||
+    !input.modifiers.every((modifier) => isOneOf(modifier, SHORTCUT_MODIFIERS)) ||
+    new Set(input.modifiers).size !== input.modifiers.length
+  ) {
+    invalid(diagnostics, path);
+    return structuredClone(fallback);
+  }
+  return canonicalShortcutBinding({
+    key: input.key,
+    modifiers: input.modifiers,
+  });
+}
+
+function loadKeyboardShortcuts(
+  input: unknown,
+  fallback: KeyboardShortcutSettingsV1,
+  diagnostics: SettingsDiagnostic[],
+): KeyboardShortcutSettingsV1 {
+  if (!hasExactKeys(input, CONFIGURABLE_SHORTCUT_ACTIONS)) {
+    invalid(diagnostics, "keyboardShortcuts");
+    return structuredClone(fallback);
+  }
+  const result = {} as Record<
+    (typeof CONFIGURABLE_SHORTCUT_ACTIONS)[number],
+    KeyboardShortcutBindingV1 | null
+  >;
+  const signatures = new Set<string>();
+  for (const action of CONFIGURABLE_SHORTCUT_ACTIONS) {
+    const path = `keyboardShortcuts.${action}`;
+    const binding = loadKeyboardShortcutBinding(input[action], fallback[action], diagnostics, path);
+    if (binding !== null && signatures.has(shortcutBindingSignature(binding))) {
+      invalid(diagnostics, path);
+      const fallbackBinding = fallback[action];
+      result[action] =
+        fallbackBinding !== null && !signatures.has(shortcutBindingSignature(fallbackBinding))
+          ? structuredClone(fallbackBinding)
+          : null;
+      if (result[action] !== null) {
+        signatures.add(shortcutBindingSignature(result[action]));
+      }
+      continue;
+    }
+    result[action] = binding;
+    if (binding !== null) signatures.add(shortcutBindingSignature(binding));
+  }
+  return result;
+}
+
 type PreparedSettingsRoot<T> =
   | {
       readonly valid: true;
@@ -295,13 +361,33 @@ export function loadSettings(input: unknown): SettingsLoadResult<InkbookSettings
     : result;
 }
 
-export function loadDeviceSettings(input: unknown): SettingsLoadResult<InkbookDeviceSettingsV1> {
+const DEVICE_SETTINGS_V1_KEYS = [
+  "version",
+  "fingerDrawingEnabled",
+  "penTapInsertion",
+  "leftHandedToolbar",
+  "motion",
+] as const;
+
+const DEVICE_SETTINGS_V2_KEYS = [...DEVICE_SETTINGS_V1_KEYS, "keyboardShortcuts"] as const;
+
+function migrateDeviceSettingsV1(input: unknown, fallback: InkbookDeviceSettingsV2): unknown {
+  return isRecord(input) && input.version === 1 && hasExactKeys(input, DEVICE_SETTINGS_V1_KEYS)
+    ? {
+        ...input,
+        version: 2,
+        keyboardShortcuts: structuredClone(fallback.keyboardShortcuts),
+      }
+    : input;
+}
+
+export function loadDeviceSettings(input: unknown): SettingsLoadResult<InkbookDeviceSettingsV2> {
   const fallback = createBuiltInDeviceSettings();
   const prepared = prepareSettingsRoot(
-    input,
+    migrateDeviceSettingsV1(input, fallback),
     fallback,
-    ["version", "fingerDrawingEnabled", "penTapInsertion", "leftHandedToolbar", "motion"],
-    1,
+    DEVICE_SETTINGS_V2_KEYS,
+    2,
   );
   if (!prepared.valid) return prepared.result;
   const { value, diagnostics } = prepared;
@@ -309,7 +395,7 @@ export function loadDeviceSettings(input: unknown): SettingsLoadResult<InkbookDe
   const booleanValue = (value: unknown): value is boolean => typeof value === "boolean";
   return {
     value: {
-      version: 1,
+      version: 2,
       fingerDrawingEnabled: validOrDefault(
         value.fingerDrawingEnabled,
         fallback.fingerDrawingEnabled,
@@ -320,7 +406,7 @@ export function loadDeviceSettings(input: unknown): SettingsLoadResult<InkbookDe
       penTapInsertion: validOrDefault(
         value.penTapInsertion,
         fallback.penTapInsertion,
-        (value): value is InkbookDeviceSettingsV1["penTapInsertion"] =>
+        (value): value is InkbookDeviceSettingsV2["penTapInsertion"] =>
           isOneOf(value, PEN_TAP_INSERTIONS),
         diagnostics,
         "penTapInsertion",
@@ -335,9 +421,14 @@ export function loadDeviceSettings(input: unknown): SettingsLoadResult<InkbookDe
       motion: validOrDefault(
         value.motion,
         fallback.motion,
-        (value): value is InkbookDeviceSettingsV1["motion"] => isOneOf(value, MOTION_PREFERENCES),
+        (value): value is InkbookDeviceSettingsV2["motion"] => isOneOf(value, MOTION_PREFERENCES),
         diagnostics,
         "motion",
+      ),
+      keyboardShortcuts: loadKeyboardShortcuts(
+        value.keyboardShortcuts,
+        fallback.keyboardShortcuts,
+        diagnostics,
       ),
     },
     diagnostics,

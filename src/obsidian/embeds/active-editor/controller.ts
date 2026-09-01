@@ -2,7 +2,6 @@ import type { GestureController, GesturePreviewStart } from "../../../editor/ges
 import * as EditorInput from "../../../editor/input/index";
 import { SelectionFrameSession } from "../../../editor/selection/public";
 import type { SvgSceneRenderer } from "../../../rendering/scene/index";
-import type { InkbookEditorChromeProps } from "../../../rendering/ui/editor-chrome";
 import type { ToolbarAction, ToolbarLayoutStage, ToolbarState } from "../../../rendering/ui/index";
 import type { ContextMenuAction } from "../../menus/index";
 import * as Scrolling from "../../scrolling/index";
@@ -67,8 +66,7 @@ export class ActiveEditorController {
   #snappingInversion: { readonly inverted: boolean; readonly pointerId: number } | undefined;
   #scrollOwner: Scrolling.BrowserScrollElement;
   readonly #styles: ActiveEditorStyleSession;
-  readonly #toolbarAction: InkbookEditorChromeProps["onToolbarAction"] = (action, trigger) =>
-    this.handleToolbarAction(action, trigger);
+  readonly #toolbarAction = this.handleToolbarAction.bind(this);
   readonly #selectionEdgeDrag: ReturnType<typeof createActiveEditorSelectionEdgeDrag>;
   readonly #selectionFrames = new SelectionFrameSession(() => this.#handles.renderSelection());
   readonly #navigation: ActiveEditorNavigation;
@@ -180,7 +178,7 @@ export class ActiveEditorController {
     [this.#keyboard, this.#gestures] = this.#createInputControllers(options);
     this.#pointer = this.#createPointerController(ownerWindow);
     createChromeCallbacks(
-      [this.#actions, this.#background, this.#chromeState, this.#styles],
+      [this.#actions, this.#background, this.#chromeState, this.#styles, options],
       [() => this.#input.activeTool, (tool) => this.#configureTool(tool)],
       [this.#menus, this.#model, () => this.#selection.size, this.#renderIcon],
     );
@@ -319,6 +317,7 @@ export class ActiveEditorController {
       settings.leftHandedToolbar !== this.#leftHanded;
     this.#touchMode.updateAvailable(settings.fingerDrawingEnabled);
     this.#leftHanded = settings.leftHandedToolbar;
+    this.#keyboard.updateShortcuts(settings.keyboardShortcuts);
     this.#input = EditorInput.reduceInput(this.#input, {
       type: "configure",
       deviceFingerDrawingEnabled: settings.fingerDrawingEnabled,
@@ -419,6 +418,7 @@ export class ActiveEditorController {
       dispatch: (action) => this.#dispatch(action),
       hasStableGeometryGesture: () => this.#hasStableGeometryGesture(),
       history: this.#history,
+      keyboardShortcuts: options.deviceSettings.keyboardShortcuts,
       lastScreenPointer: () => this.#lastSessionScreenPointer,
       longPress: this.#longPress,
       menus: this.#menus,

@@ -143,7 +143,12 @@ function coordinateSnapGuide(
     zoom,
   );
   return result.snapped && result.reference !== null
-    ? { end: result.point, kind: "angular", start: result.reference }
+    ? {
+        additionalStarts: result.additionalReferences,
+        end: result.point,
+        kind: "angular",
+        start: result.reference,
+      }
     : null;
 }
 

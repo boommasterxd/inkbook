@@ -209,6 +209,7 @@ describe("preview commit handoff", () => {
     renderer.applyDelta({
       affected: [{ after, before, domains: ["geometry"], id: "a" }],
     });
+    renderer.clearPreviewTransforms();
     expect(path.attributes.get("transform")).toBe("translate(25 40)");
 
     scheduler.runAll();

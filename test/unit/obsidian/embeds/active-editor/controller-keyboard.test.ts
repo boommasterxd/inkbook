@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { InputPoint } from "../../../../../src/editor/input/index";
+import {
+  createBuiltInKeyboardShortcuts,
+  type KeyboardShortcutSettingsV1,
+} from "../../../../../src/domain/settings";
 import { ActiveEditorKeyboardController } from "../../../../../src/obsidian/embeds/active-editor/controller-keyboard";
 import type { ActiveEditorActions } from "../../../../../src/obsidian/embeds/active-editor/controller-actions";
 import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
@@ -25,11 +29,12 @@ function keyboardHarness(
     readonly pointerOver?: boolean;
     readonly selectionSize?: number;
     readonly history?: ActiveEditorHistory;
+    readonly keyboardShortcuts?: KeyboardShortcutSettingsV1;
   } = {},
 ) {
   const ownerDocument = {} as Document;
   const execute = vi.fn();
-  const updateKeyboard = vi.fn(() => false);
+  const updateKeyboardStep = vi.fn(() => false);
   const closeFlyout = vi.fn(() => false);
   const cancelGesture = vi.fn(() => false);
   const isAvailable = vi.fn((action: string) => action === "delete");
@@ -43,7 +48,7 @@ function keyboardHarness(
     shortcutPaste,
   } as unknown as ActiveEditorActions;
   const navigation = {
-    updateKeyboard,
+    updateKeyboardStep,
     visibleCenter: vi.fn(() => ({ x: 20, y: 30 })),
   } as unknown as ActiveEditorNavigation;
   const onFeedback = vi.fn();
@@ -57,6 +62,9 @@ function keyboardHarness(
     clearSelection,
     closeFlyout,
     history: options.history ?? history(),
+    ...(options.keyboardShortcuts === undefined
+      ? {}
+      : { keyboardShortcuts: options.keyboardShortcuts }),
     lastScreenPointer: () => options.lastScreenPointer ?? null,
     navigation,
     navigationEnabled: () => options.navigationEnabled ?? true,
@@ -81,7 +89,7 @@ function keyboardHarness(
     pasteFromClipboardData,
     isAvailable,
     shortcutPaste,
-    updateKeyboard,
+    updateKeyboardStep,
     ownerDocument,
   };
 }
@@ -90,14 +98,11 @@ describe("active editor keyboard controller", () => {
   it("routes navigation, menus, deletion, and selection cancellation without host leakage", () => {
     const lastScreenPointer = { x: 125, y: 275 };
     const harness = keyboardHarness({ lastScreenPointer, selectionSize: 1 });
-    harness.updateKeyboard.mockReturnValueOnce(true);
+    harness.updateKeyboardStep.mockReturnValueOnce(true);
 
     expect(harness.controller.handleKeyDown(key("+", { ctrlKey: true }))).toBe(true);
-    expect(harness.updateKeyboard).toHaveBeenCalledWith(
-      expect.objectContaining({ ctrlKey: true, key: "+" }),
-      lastScreenPointer,
-    );
-    expect(harness.controller.handleKeyDown(key("ContextMenu"))).toBe(true);
+    expect(harness.updateKeyboardStep).toHaveBeenCalledWith(1, lastScreenPointer);
+    expect(harness.controller.handleKeyDown(key("ContextMenu"))).toBe(false);
     expect(harness.controller.handleKeyDown(key("F10", { shiftKey: true }))).toBe(true);
     expect(harness.openKeyboardMenu).toHaveBeenCalledWith({ x: 20, y: 30 });
     expect(harness.controller.handleKeyDown(key("Delete"))).toBe(true);
@@ -137,6 +142,24 @@ describe("active editor keyboard controller", () => {
     expect(harness.controller.handleKeyDown(key("A", { metaKey: true }))).toBe(true);
     expect(harness.selectAll).toHaveBeenCalledTimes(2);
   });
+
+  it("uses live configurable bindings for canvas and arrange actions", () => {
+    const shortcuts = {
+      ...createBuiltInKeyboardShortcuts(),
+      "bring-forward": { key: "PageUp", modifiers: ["alt"] },
+      copy: { key: "k", modifiers: ["mod"] },
+    } satisfies KeyboardShortcutSettingsV1;
+    const harness = keyboardHarness({ keyboardShortcuts: shortcuts, selectionSize: 1 });
+    harness.isAvailable.mockImplementation(
+      (action: string) => action === "bring-forward" || action === "copy",
+    );
+
+    expect(harness.controller.handleKeyDown(key("c", { ctrlKey: true }))).toBe(false);
+    expect(harness.controller.handleKeyDown(key("k", { ctrlKey: true }))).toBe(true);
+    expect(harness.controller.handleKeyDown(key("PageUp", { altKey: true }))).toBe(true);
+    expect(harness.execute).toHaveBeenNthCalledWith(1, "copy");
+    expect(harness.execute).toHaveBeenNthCalledWith(2, "bring-forward");
+  });
 });
 
 describe("active editor clipboard keyboard controller", () => {
@@ -150,12 +173,15 @@ describe("active editor clipboard keyboard controller", () => {
     expect(harness.execute).toHaveBeenCalledWith("cut");
     expect(harness.controller.handleKeyDown(key("v", { ctrlKey: true }))).toBe(true);
     expect(harness.shortcutPaste).toHaveBeenCalledOnce();
+    expect(harness.controller.handleKeyDown(key("v", { ctrlKey: true, shiftKey: true }))).toBe(
+      false,
+    );
   });
 
   it("requires the pointer boundary for Clipboard and keyboard zoom shortcuts", () => {
     const harness = keyboardHarness({ canPaste: true, pointerOver: false, selectionSize: 1 });
     harness.isAvailable.mockReturnValue(true);
-    harness.updateKeyboard.mockReturnValue(true);
+    harness.updateKeyboardStep.mockReturnValue(true);
 
     expect(harness.controller.handleKeyDown(key("c", { ctrlKey: true }))).toBe(false);
     expect(harness.controller.handleKeyDown(key("v", { metaKey: true }))).toBe(false);
@@ -163,14 +189,14 @@ describe("active editor clipboard keyboard controller", () => {
     expect(harness.controller.handleDocumentKeyDown(key("Delete"))).toBe(false);
     expect(harness.execute).not.toHaveBeenCalled();
     expect(harness.shortcutPaste).not.toHaveBeenCalled();
-    expect(harness.updateKeyboard).not.toHaveBeenCalled();
+    expect(harness.updateKeyboardStep).not.toHaveBeenCalled();
   });
 
   it("claims but does not apply keyboard zoom during a stable geometry gesture", () => {
     const harness = keyboardHarness({ navigationEnabled: false });
 
     expect(harness.controller.handleKeyDown(key("+", { ctrlKey: true }))).toBe(true);
-    expect(harness.updateKeyboard).not.toHaveBeenCalled();
+    expect(harness.updateKeyboardStep).not.toHaveBeenCalled();
   });
 
   it("leaves text-field shortcuts untouched even while the pointer is over the editor", () => {
@@ -190,7 +216,7 @@ describe("active editor clipboard keyboard controller", () => {
     );
     expect(harness.controller.handleDocumentKeyDown(key("Delete", { target: input }))).toBe(false);
     expect(harness.execute).not.toHaveBeenCalled();
-    expect(harness.updateKeyboard).not.toHaveBeenCalled();
+    expect(harness.updateKeyboardStep).not.toHaveBeenCalled();
   });
 });
 
@@ -210,13 +236,13 @@ describe("active editor keyboard owner-document boundary", () => {
 
   it("rejects hover zoom from a different owning document", () => {
     const harness = keyboardHarness();
-    harness.updateKeyboard.mockReturnValue(true);
+    harness.updateKeyboardStep.mockReturnValue(true);
     const foreignView = { document: {} } as Window;
 
     expect(harness.controller.handleHoverZoom(key("+", { ctrlKey: true, view: foreignView }))).toBe(
       false,
     );
-    expect(harness.updateKeyboard).not.toHaveBeenCalled();
+    expect(harness.updateKeyboardStep).not.toHaveBeenCalled();
   });
 });
 

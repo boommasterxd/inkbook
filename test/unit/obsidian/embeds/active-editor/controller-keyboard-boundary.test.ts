@@ -33,10 +33,7 @@ describe("active editor keyboard DOM boundary", () => {
     const zoom = key(toolbarButton, "+", { ctrlKey: true });
     expect(zoom.defaultPrevented).toBe(true);
 
-    const editable = document.createElementNS(
-      "http://www.w3.org/1999/xhtml",
-      "input",
-    ) as HTMLInputElement;
+    const editable = window.createEl("input");
     document.body.append(editable);
     editable.focus();
     expect(key(editable, "+", { ctrlKey: true }).defaultPrevented).toBe(false);
@@ -274,6 +271,8 @@ function createHarness() {
     model,
     onCopyEmbed: vi.fn(),
     onDeleteEmbed: vi.fn(),
+    onOpenSettings: vi.fn(),
+    onOpenShortcuts: vi.fn(),
     onLock: vi.fn(),
     onFeedback: vi.fn(),
     onPageChanged: vi.fn(),

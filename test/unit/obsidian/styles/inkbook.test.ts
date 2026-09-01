@@ -339,17 +339,17 @@ describe("Inkbook editor handoff styles", () => {
     expect(preview).toContain("z-index: 2");
   });
 
-  it("clips a stable scene envelope during content-driven height motion", () => {
+  it("clips once at the stable outer envelope during content-driven height motion", () => {
     const scene = declarationsFor(".inkbook-root .inkbook-scene");
     const transitioningScene = declarationsFor(
       ".inkbook-root .inkbook-background-container.inkbook-page-height-transitioning > .inkbook-scene",
     );
 
-    expect(scene).toContain("contain: layout paint");
+    expect(scene).toContain("contain: layout");
+    expect(scene).toContain("overflow: visible");
     expect(transitioningScene).toContain(
       "block-size: calc(var(--inkbook-page-height-envelope-block-size) - 2px)",
     );
-    expect(transitioningScene).toContain("inset-block: 0 auto");
   });
 });
 

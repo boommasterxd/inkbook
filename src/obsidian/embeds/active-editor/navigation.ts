@@ -11,8 +11,8 @@ import {
   continuousWheelZoomFactor,
   createWheelZoomState,
   createZoomFrameState,
-  keyboardZoomFactor,
   renderedContainerHeight,
+  zoomFactorForSteps,
   zoomFrameHasPending,
   type WheelZoomState,
   type ZoomAnchor,
@@ -302,12 +302,11 @@ export class ActiveEditorNavigation {
     return true;
   }
 
-  public updateKeyboard(
-    event: Pick<KeyboardEvent, "altKey" | "ctrlKey" | "key" | "metaKey">,
-    lastScreenPointer: InputPoint | null,
-  ): boolean {
-    const factor = keyboardZoomFactor(event);
-    if (factor === undefined) return false;
+  public updateKeyboardStep(step: -1 | 1, lastScreenPointer: InputPoint | null): boolean {
+    return this.#queueKeyboardZoom(zoomFactorForSteps(step), lastScreenPointer);
+  }
+
+  #queueKeyboardZoom(factor: number, lastScreenPointer: InputPoint | null): boolean {
     this.cancelPanMomentum();
     const layout = this.#pendingLayout ?? readNavigationLayout(this.#container, this.#scrollOwner);
     const anchor =

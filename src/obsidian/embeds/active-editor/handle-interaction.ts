@@ -52,6 +52,10 @@ export interface ActiveEditorHandleInteractionOptions {
 }
 
 export interface HandleInteractionRenderer {
+  beginPreviewCommit?(): {
+    arm(ids: readonly string[]): boolean;
+    cancel(): void;
+  };
   clearElementPreviews(): void;
   clearPreviewTransforms(): void;
   setElementPreviews(elements: readonly InkElementV1[], version: number): void;
@@ -230,8 +234,13 @@ export class ActiveEditorHandleInteraction {
     const commit = active.session.prepareCommit();
     const effect = this.#selectionFrames.transition(active.frame, active.session.preview.transform);
     if (commit.status === "ready") {
-      this.#renderer.suppressMotionForNextDelta(commit.previous.map(({ id }) => id));
-      const committed = this.#history.replace(commit.previous, commit.replacements, effect);
+      const ids = commit.previous.map(({ id }) => id);
+      const previewCommit = this.#renderer.beginPreviewCommit?.();
+      if (previewCommit === undefined) this.#renderer.suppressMotionForNextDelta(ids);
+      const armed = previewCommit?.arm(ids) ?? true;
+      const committed =
+        armed && this.#history.replace(commit.previous, commit.replacements, effect);
+      if (!committed) previewCommit?.cancel();
       this.#layout?.finish(committed, this.#previewMaximumBottom);
     } else if (commit.status === "time-sliced-required") {
       const previewMaximumBottom = this.#previewMaximumBottom;

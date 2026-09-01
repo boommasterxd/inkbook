@@ -61,7 +61,7 @@ describe("selection move snapping settings", () => {
     preview.update(pointer(47, 48));
 
     expect(setPreviewTransform).toHaveBeenLastCalledWith([line.id], "translate(50 50)", 1);
-    expect(setSnapMarkerPath).toHaveBeenLastCalledWith("M 92 100 L 108 100 M 100 92 L 100 108");
+    expect(setSnapMarkerPath).toHaveBeenLastCalledWith("M 76 100 L 124 100 M 100 76 L 100 124");
     expect(preview.commit()).toBe(true);
     expect(store.get(line.id)?.element).toMatchObject({
       start: { x: 100, y: 100 },

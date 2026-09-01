@@ -1,4 +1,5 @@
 import type { InputPoint } from "../../../editor/input/index";
+import type { KeyboardShortcutSettingsV1 } from "../../../domain/settings/index";
 import type { InkbookFeedbackCode } from "../../feedback";
 
 import type { ActiveEditorActions } from "./controller-actions";
@@ -34,6 +35,7 @@ export function createActiveEditorKeyboardController(
   [lastScreenPointer, navigationEnabled]: KeyboardPointer,
   [clearSelection, selectAll, selectionSize]: KeyboardSelection,
   [activeElement, cancelGesture, closeFlyout, openKeyboardMenu]: KeyboardSession,
+  keyboardShortcuts: KeyboardShortcutSettingsV1,
 ): ActiveEditorKeyboardController {
   return new ActiveEditorKeyboardController({
     activeElement,
@@ -42,6 +44,7 @@ export function createActiveEditorKeyboardController(
     clearSelection,
     closeFlyout,
     history,
+    keyboardShortcuts,
     lastScreenPointer,
     navigation,
     navigationEnabled,

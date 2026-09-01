@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  DEVICE_SETTINGS_STORAGE_KEY,
   InkbookSettingsStore,
   type DeviceSettingsPort,
   type VaultSettingsPort,
 } from "../../../../src/obsidian/settings/storage";
 import {
+  DEVICE_SETTINGS_STORAGE_KEY,
   createBuiltInDeviceSettings,
   createBuiltInSettings,
 } from "../../../../src/domain/settings";
@@ -33,6 +33,20 @@ class DeviceFake implements DeviceSettingsPort {
   public loadLocalStorage(key: string): unknown {
     expect(key).toBe(DEVICE_SETTINGS_STORAGE_KEY);
     return this.loaded;
+  }
+
+  public saveLocalStorage(key: string, data: ReturnType<typeof createBuiltInDeviceSettings>): void {
+    this.saves.push({ key, data: structuredClone(data) });
+  }
+}
+
+class DeviceMapFake implements DeviceSettingsPort {
+  public readonly saves: { key: string; data: unknown }[] = [];
+
+  public constructor(private readonly values: Readonly<Record<string, unknown>>) {}
+
+  public loadLocalStorage(key: string): unknown {
+    return this.values[key];
   }
 
   public saveLocalStorage(key: string, data: ReturnType<typeof createBuiltInDeviceSettings>): void {
@@ -77,7 +91,35 @@ describe("InkbookSettingsStore", () => {
       toolDefaults: { select: { area: "rectangle", inclusion: "touched" } },
     });
   });
+});
 
+describe("InkbookSettingsStore device migration", () => {
+  it("migrates legacy device settings and persists the V2 result once", async () => {
+    const legacy = {
+      version: 1,
+      fingerDrawingEnabled: true,
+      leftHandedToolbar: true,
+      motion: "reduced",
+      penTapInsertion: "handwriting",
+    };
+    const device = new DeviceMapFake({ "inkbook:device-settings:v1": legacy });
+    const store = new InkbookSettingsStore(new VaultFake(createBuiltInSettings()), device);
+
+    const diagnostics = await store.load();
+
+    expect(diagnostics.device).toEqual([]);
+    expect(store.getDeviceSettings()).toEqual({
+      ...legacy,
+      version: 2,
+      keyboardShortcuts: createBuiltInDeviceSettings().keyboardShortcuts,
+    });
+    expect(device.saves).toEqual([
+      { key: DEVICE_SETTINGS_STORAGE_KEY, data: store.getDeviceSettings() },
+    ]);
+  });
+});
+
+describe("InkbookSettingsStore persistence", () => {
   it("uses field-level loader fallback and reports persisted-data diagnostics", async () => {
     const vaultValue = createBuiltInSettings() as unknown as Record<string, unknown>;
     vaultValue.startupTool = "invalid";

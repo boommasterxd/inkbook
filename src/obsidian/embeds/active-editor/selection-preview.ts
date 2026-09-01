@@ -18,6 +18,7 @@ import {
   type SelectionPreviewTransform,
   type OrientedSelectionFrame,
   type SelectionFrameSession,
+  type SelectionFrameHistoryEffect,
 } from "../../../editor/selection/public";
 
 import type { ActiveEditorHistory } from "./history";
@@ -28,6 +29,10 @@ import { selectionOverlayFill, selectionOverlayPaths } from "./selection-overlay
 import { snapMarkerPath } from "./snap-marker-path";
 
 interface SelectionPreviewRenderer {
+  beginPreviewCommit?(): {
+    arm(ids: readonly string[]): boolean;
+    cancel(): void;
+  };
   clearElementPreviews?(): void;
   clearPreviewTransforms(): void;
   flushCameraAndOverlayFrame?(): void;
@@ -252,13 +257,7 @@ export class MovePreview implements GesturePreview {
             effect,
           );
         committed = prepared;
-        if (!committed) {
-          const plan = this.#options.store.planReplacements(this.#movedElements());
-          if (plan !== null) {
-            this.#options.renderer.suppressMotionForNextDelta(this.#ids);
-            committed = this.#options.history.replace(this.#elements, plan.replacements, effect);
-          }
-        }
+        if (!committed) committed = this.#commitSynchronous(effect);
       }
     } catch (error: unknown) {
       if (!(error instanceof RangeError)) throw error;
@@ -275,6 +274,24 @@ export class MovePreview implements GesturePreview {
       }
     }
     return committed;
+  }
+
+  #commitSynchronous(effect: SelectionFrameHistoryEffect | undefined): boolean {
+    const plan = this.#options.store.planReplacements(this.#movedElements());
+    if (plan === null) return false;
+    const previewCommit = this.#options.renderer.beginPreviewCommit?.();
+    if (previewCommit === undefined) {
+      this.#options.renderer.suppressMotionForNextDelta(this.#ids);
+      return this.#options.history.replace(this.#elements, plan.replacements, effect);
+    }
+    let committed = false;
+    try {
+      if (!previewCommit.arm(this.#ids)) return false;
+      committed = this.#options.history.replace(this.#elements, plan.replacements, effect);
+      return committed;
+    } finally {
+      if (!committed) previewCommit.cancel();
+    }
   }
 
   public revert(): void {

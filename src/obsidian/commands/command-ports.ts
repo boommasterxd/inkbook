@@ -1,8 +1,6 @@
 import type { Command, Editor } from "obsidian";
 
-import type { ContextMenuAction } from "../menus";
-
-export type InkbookCommandAction = ContextMenuAction | "lock";
+export type InkbookCommandAction = "copy-embed" | "delete-embed" | "erase-all" | "lock";
 
 export interface CommandRegistrationPort {
   addCommand(command: Command): Command;
