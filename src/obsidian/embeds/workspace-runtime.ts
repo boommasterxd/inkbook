@@ -15,7 +15,6 @@ import {
 } from "./owner-window-registry";
 import {
   presentationAttachmentKey,
-  presentationPreviewOptions,
   type PresentationAttachment,
   type PresentationSessionPort,
 } from "./presentation-port";
@@ -28,7 +27,7 @@ import type {
 import { observeActiveSceneReadiness } from "./workspace-runtime-scene-readiness";
 import { ownsMarkdownEditorChange } from "./workspace-runtime-editor";
 import { createWorkspaceDocumentRuntimes } from "./workspace-runtime-workers";
-import { copyWorkspaceEmbed, deleteWorkspaceEmbed } from "./workspace-embed-actions";
+import { createWorkspaceActiveScene } from "./workspace-active-scene";
 import { showWorkspaceHeadlessRecovery } from "./workspace-recovery-actions";
 import { VaultDocumentSessionFactory } from "./vault-document-session-factory";
 import { showAttachedRecoveryPanel, type HeadlessRecoveryNotice } from "./recovery-notice";
@@ -182,44 +181,23 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
         mounted.disposeScheme?.();
         const initialScheme = attachment.root.dataset.inkbookScheme === "dark" ? "dark" : "light";
         const settings = this.#settings();
-        mounted.scene = new ActiveInkbookScene({
+        mounted.scene = createWorkspaceActiveScene({
+          attachment,
           backgroundSpacing: () => this.#settings().vault.pageDefaults.backgroundSpacing,
-          defaults: settings.vault.toolDefaults,
           deviceSettings: settings.device,
-          history: editorContext.history,
-          ...(this.#keymap === undefined ? {} : { keymap: this.#keymap }),
-          model: editorContext.model,
+          editorContext,
+          embedActions: this.#embedActions,
+          isCurrent: (scene) =>
+            this.#mounted.get(presentationAttachmentKey(attachment)) === mounted &&
+            mounted.scene === scene,
+          keymap: this.#keymap,
+          markFirstStroke: () => this.#lifecycle.markFirstStroke(attachment.documentId),
           onLock: () => this.lockActivePresentation(),
-          onFeedback: (code) => this.#feedback.showInPresentation(attachment.root, code),
-          onCopyEmbed: () =>
-            void copyWorkspaceEmbed(this.#embedActions, attachment.embedReference, {
-              show: (code) => this.#feedback.showInPresentation(attachment.root, code),
-            }),
-          onDeleteEmbed: () => {
-            const invokingScene = mounted.scene;
-            if (invokingScene === undefined) return;
-            void deleteWorkspaceEmbed({
-              actions: this.#embedActions,
-              isCurrent: () =>
-                this.#mounted.get(presentationAttachmentKey(attachment)) === mounted &&
-                mounted.scene === invokingScene,
-              reference: attachment.embedReference,
-              scene: invokingScene,
-              feedback: {
-                show: (code) => this.#feedback.showInPresentation(attachment.root, code),
-              },
-            });
-          },
-          onFirstStrokeCommitted: () => {
-            this.#lifecycle.markFirstStroke(attachment.documentId);
-          },
-          root: attachment.root,
+          scheme: initialScheme,
+          showFeedback: (code) => this.#feedback.showInPresentation(attachment.root, code),
           sliceBudgetMs: () =>
             this.refreshRateProfiles.sliceBudgetMs(attachment.root.ownerDocument.defaultView),
-          ...presentationPreviewOptions(attachment),
-          scheme: initialScheme,
-          scrollOwner: attachment.scrollOwner,
-          startupTool: settings.vault.startupTool,
+          vaultSettings: settings.vault,
         });
         const scene = mounted.scene;
         mounted.disposeScheme = this.#scheme.subscribe((scheme) =>
@@ -290,6 +268,9 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   updateVaultSettings(settings: InkbookSettingsV4): void {
     if (this.#disposed) return;
     this.refreshRateProfiles.setPreference(settings.refreshRatePreference);
+    for (const mounted of this.#mounted.values()) {
+      mounted.scene?.updateSnappingSettings(settings.snapping);
+    }
   }
 
   queueAutoActivation(

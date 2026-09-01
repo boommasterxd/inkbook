@@ -77,7 +77,7 @@ function commitSingleInteraction(
       effects.unshift({
         type: "select-element",
         elementId: interaction.target.elementId,
-        mode: "preserve-or-replace",
+        mode: interaction.controlOrMeta ? "add" : "replace",
       });
     }
   }
@@ -155,7 +155,7 @@ export function handleLongPress(state: InputState, action: LongPressAction): Inp
     effects.push({
       type: "select-element",
       elementId: interaction.target.elementId,
-      mode: "preserve-or-replace",
+      mode: interaction.controlOrMeta ? "add" : "replace",
     });
   }
   effects.push({

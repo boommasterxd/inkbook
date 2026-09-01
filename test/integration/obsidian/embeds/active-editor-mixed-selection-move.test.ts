@@ -7,6 +7,10 @@ import {
 } from "../../../../src/domain/geometry/public";
 import type { InkElementV1, PageV1 } from "../../../../src/domain/schema/public";
 import { ElementStore, type ImmutableInkElement } from "../../../../src/domain/store/public";
+import {
+  SelectionFrameSession,
+  transformSelectionFrame,
+} from "../../../../src/editor/selection/public";
 import type { PreparedElementHistory } from "../../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import type { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import { MovePreview } from "../../../../src/obsidian/embeds/active-editor/selection-preview";
@@ -17,33 +21,9 @@ import { coordinateSystem } from "../../../unit/domain/geometry/fixtures";
 
 describe("active editor mixed selection move", () => {
   it("commits the reported table and stroke geometry atomically", () => {
-    const table = reportedTable();
-    const stroke = reportedStroke();
-    const store = new ElementStore([table, stroke]);
-    const history = createSynchronousActiveEditorHistory(store);
-    const selection = new Set([table.id, stroke.id]);
-    const renderer = {
-      clearPreviewTransforms: vi.fn(),
-      setOverlayPath: vi.fn(),
-      setPreviewTransform: vi.fn(),
-      suppressMotionForNextDelta: vi.fn(),
-    };
-    const preview = new MovePreview({
-      history,
-      preparedHistory: { commitMove: vi.fn(() => false) } as unknown as PreparedElementHistory,
-      renderer,
-      pageToScreen: (point) => point,
-      sceneStore: {} as ElementSceneStore,
-      selection: () => selection,
-      setSelection: vi.fn(),
-      start: {
-        additive: false,
-        kind: "element-move",
-        pointer: pointer(900, 900),
-        tool: "select",
-      },
-      store,
-    });
+    const fixture = mixedMoveFixture();
+    const { history, store, stroke, table } = fixture;
+    const preview = mixedMovePreview(fixture);
 
     preview.update(pointer(800, 940));
 
@@ -60,6 +40,38 @@ describe("active editor mixed selection move", () => {
     expect(history.undo()).toBe(true);
     expect(store.get(table.id)?.element).toMatchObject({ x: 655.405, y: 808.169 });
     expect(strokeStart(store.get(stroke.id)?.element)).toEqual([1797.778, 573.438, 0.5]);
+  });
+});
+
+describe("active editor oriented multi-selection move", () => {
+  it("moves the retained frame with the elements and restores it through undo", () => {
+    const fixture = mixedMoveFixture();
+    const { history, stroke, table } = fixture;
+    const frames = new SelectionFrameSession();
+    const geometry = [table, stroke].map((element) => ({
+      bounds: calculateElementBounds(element),
+      element,
+    }));
+    const initial = frames.current(geometry)!;
+    const rotated = transformSelectionFrame(initial, {
+      center: { x: 1_300, y: 900 },
+      degrees: 30,
+      kind: "rotate",
+    });
+    frames
+      .transition(initial, { center: { x: 1_300, y: 900 }, degrees: 30, kind: "rotate" })
+      ?.apply();
+    const preview = mixedMovePreview(fixture, frames);
+
+    preview.update(pointer(925, 940));
+    expect(preview.commit()).toBe(true);
+    expect(frames.current(geometry)?.points[0]).toEqual({
+      x: rotated.points[0].x + 25,
+      y: rotated.points[0].y + 40,
+    });
+    expect(frames.current(geometry)?.rotation).toBe(30);
+    expect(history.undo()).toBe(true);
+    expect(frames.current(geometry)).toEqual(rotated);
   });
 });
 
@@ -165,6 +177,48 @@ const layoutPage: PageV1 = {
   lockedBufferLines: 1,
   margin: 24.3,
 };
+
+function mixedMoveFixture() {
+  const table = reportedTable();
+  const stroke = reportedStroke();
+  const store = new ElementStore([table, stroke]);
+  return {
+    history: createSynchronousActiveEditorHistory(store),
+    selection: new Set([table.id, stroke.id]),
+    store,
+    stroke,
+    table,
+  };
+}
+
+function mixedMovePreview(
+  fixture: ReturnType<typeof mixedMoveFixture>,
+  selectionFrames?: SelectionFrameSession,
+): MovePreview {
+  const renderer = {
+    setPreviewTransform: vi.fn(),
+    suppressMotionForNextDelta: vi.fn(),
+    clearPreviewTransforms: vi.fn(),
+    setOverlayPath: vi.fn(),
+  };
+  return new MovePreview({
+    history: fixture.history,
+    preparedHistory: { commitMove: vi.fn(() => false) } as unknown as PreparedElementHistory,
+    renderer,
+    sceneStore: {} as ElementSceneStore,
+    selection: () => fixture.selection,
+    ...(selectionFrames === undefined ? {} : { selectionFrames }),
+    setSelection: vi.fn(),
+    pageToScreen: (point) => point,
+    start: {
+      additive: false,
+      kind: "element-move",
+      pointer: pointer(900, 900),
+      tool: "select",
+    },
+    store: fixture.store,
+  });
+}
 
 function tableMovePreview(
   store: ElementStore,

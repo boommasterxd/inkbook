@@ -151,21 +151,22 @@ function tableHit(
   const right = element.x + tableWidth(element);
   const bottom = element.y + element.height;
   const radius = tolerance + element.style.outlineWidth / 2;
-  if (rectangleOutlineHit(point, element.x, element.y, right, bottom, radius)) return true;
   if (
     Math.abs(point.y - (element.y + element.headerHeight)) <= radius &&
     point.x >= element.x - radius &&
     point.x <= right + radius
-  )
+  ) {
     return true;
+  }
   for (const offset of tableColumnOffsets(element)) {
     const x = element.x + offset;
     if (
       Math.abs(point.x - x) <= radius &&
       point.y >= element.y - radius &&
       point.y <= bottom + radius
-    )
+    ) {
       return true;
+    }
   }
   return false;
 }
@@ -339,22 +340,6 @@ function ellipseHit(ellipse: BoxShapeElementV1, point: PointV1, radius: number):
   const edgeTolerance = radius / Math.max(1, Math.min(rx, ry));
   if (Math.abs(normalized - 1) <= edgeTolerance) return true;
   return ellipse.style.fillColor !== null && ellipse.style.fillOpacity > 0 && normalized < 1;
-}
-
-function rectangleOutlineHit(
-  point: PointV1,
-  left: number,
-  top: number,
-  right: number,
-  bottom: number,
-  radius: number,
-): boolean {
-  return (
-    segmentDistance(point, { x: left, y: top }, { x: right, y: top }) <= radius ||
-    segmentDistance(point, { x: right, y: top }, { x: right, y: bottom }) <= radius ||
-    segmentDistance(point, { x: right, y: bottom }, { x: left, y: bottom }) <= radius ||
-    segmentDistance(point, { x: left, y: bottom }, { x: left, y: top }) <= radius
-  );
 }
 
 function polygonOutlineHit(vertices: readonly PointV1[], point: PointV1, radius: number): boolean {

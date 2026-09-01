@@ -33,6 +33,8 @@ describe("InkElementV1 validation", () => {
     },
     table(),
     { ...table(), columnOffsets: [40, 80] },
+    { ...table(), columnOffsets: [0, 0], headerHeight: 0 },
+    { ...table(), columnOffsets: [120, 120], headerHeight: 80 },
     { ...table(), columns: 1, columnOffsets: [], pivot: { x: 120, y: 340 } },
   ])("accepts a valid $kind element", (element) => {
     expect(validateInkElementV1(element).ok).toBe(true);
@@ -90,11 +92,20 @@ describe("InkElementV1 invalid input validation", () => {
       "invalid-range",
     ],
     ["table column minimum", { ...table(), columnWidth: 39.999 }, "invalid-range"],
-    ["table header maximum", { ...table(), headerHeight: 40.001 }, "invalid-range"],
+    ["table header below outer bounds", { ...table(), headerHeight: -0.001 }, "invalid-range"],
+    ["table header above outer bounds", { ...table(), headerHeight: 80.001 }, "invalid-range"],
     ["table column offset count", { ...table(), columnOffsets: [40] }, "invalid-range"],
-    ["table column offset minimum", { ...table(), columnOffsets: [39, 80] }, "invalid-range"],
+    [
+      "table column offset below outer bounds",
+      { ...table(), columnOffsets: [-1, 80] },
+      "invalid-range",
+    ],
     ["table column offset order", { ...table(), columnOffsets: [80, 40] }, "invalid-range"],
-    ["table final column minimum", { ...table(), columnOffsets: [40, 81] }, "invalid-range"],
+    [
+      "table column offset above outer bounds",
+      { ...table(), columnOffsets: [40, 121] },
+      "invalid-range",
+    ],
     [
       "table noncanonical column offset",
       { ...table(), columnOffsets: [40.0005, 80] },
@@ -105,7 +116,9 @@ describe("InkElementV1 invalid input validation", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe(code);
   });
+});
 
+describe("InkElementV1 resource validation", () => {
   it("rejects malformed and excessive stroke arrays", () => {
     expect(validateInkElementV1({ ...stroke(), points: [] }).ok).toBe(false);
     expect(validateInkElementV1({ ...stroke(), points: [1, 2] }).ok).toBe(false);

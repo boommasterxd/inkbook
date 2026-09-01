@@ -144,7 +144,7 @@ function handlePointerDown(state: InputState, action: PointerDownAction): InputR
 }
 
 function startSinglePointer(state: InputState, action: PointerDownAction): InputReduction {
-  const temporaryEraser = usesTemporaryEraser(action);
+  const temporaryEraser = state.activeTool !== "select" && usesTemporaryEraser(action);
   const tool = temporaryEraser ? "eraser" : state.activeTool;
   const selectionCleared = shouldClearSelectionAtPointerDown(state, action, tool);
   const inputState = selectionCleared ? { ...state, hasSelection: false } : state;
@@ -245,7 +245,7 @@ function startElementMove(
     effects.push({
       type: "select-element",
       elementId,
-      mode: isTouch ? "preserve-or-replace" : base.shift ? "add" : "preserve-or-replace",
+      mode: base.controlOrMeta ? "add" : "replace",
     });
   }
   if (isTouch) {

@@ -11,6 +11,7 @@ interface SnappedRotationInput {
   readonly snapPixels: number;
   readonly startPointer: PointV1;
   readonly zoom: number;
+  readonly enabled?: boolean;
 }
 
 export interface RotationSnapResult {
@@ -23,7 +24,9 @@ export function resolveRotationSnap(input: SnappedRotationInput): RotationSnapRe
   const rawDelta = pointerRotation(input.center, input.startPointer, input.currentPointer);
   const radius = pointDistance(input.center, input.startPointer);
   const finalRotation = normalizeRotation(input.referenceRotation + rawDelta);
-  if (radius === 0) return { delta: rawDelta, snapped: false, targetRotation: finalRotation };
+  if (radius === 0 || input.enabled === false) {
+    return { delta: rawDelta, snapped: false, targetRotation: finalRotation };
+  }
   const targetRotation = Math.round(finalRotation / RIGHT_ANGLE_DEGREES) * RIGHT_ANGLE_DEGREES;
   const correction = normalizeRotation(targetRotation - finalRotation);
   const correctionPixels = Math.abs(correction) * DEGREES_TO_RADIANS * radius * input.zoom;

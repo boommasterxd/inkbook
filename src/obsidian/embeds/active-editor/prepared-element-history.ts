@@ -5,6 +5,7 @@ import {
 } from "../../../editor/selection/public";
 import type { TransformSliceScheduler } from "../../../editor/selection/transforms";
 import type { EditableDocumentModel } from "../vault-document-session";
+import type { SelectionFrameHistoryEffect } from "../../../editor/selection/public";
 
 import type { ActiveEditorHistory } from "./history";
 
@@ -61,6 +62,7 @@ export class PreparedElementHistory {
   public commitHandle(
     session: SelectionHandleSession,
     onCompleted?: (committed: boolean) => void,
+    effect?: SelectionFrameHistoryEffect,
   ): boolean {
     if (this.#pending || this.#disposed) return false;
     const previewCommit = this.#motion.beginPreviewCommit();
@@ -73,6 +75,7 @@ export class PreparedElementHistory {
           prepared.replacements,
           generation,
           previewCommit,
+          effect,
         );
       } finally {
         previewCommit.cancel();
@@ -85,6 +88,7 @@ export class PreparedElementHistory {
     elements: readonly InkElementV1[],
     delta: PointV1,
     onCompleted?: (committed: boolean) => void,
+    effect?: SelectionFrameHistoryEffect,
   ): boolean {
     if (elements.length <= SYNCHRONOUS_SELECTION_LIMIT || this.#pending || this.#disposed) {
       return false;
@@ -97,7 +101,13 @@ export class PreparedElementHistory {
         if (replacements === null) return false;
         const plan = await this.#model.store.planReplacementsTimeSliced(replacements, scheduler);
         if (plan === null || plan === "cancelled") return false;
-        return await this.#commitApplied(elements, plan.replacements, generation, previewCommit);
+        return await this.#commitApplied(
+          elements,
+          plan.replacements,
+          generation,
+          previewCommit,
+          effect,
+        );
       } finally {
         previewCommit.cancel();
       }
@@ -110,6 +120,7 @@ export class PreparedElementHistory {
     replacements: readonly InkElementV1[],
     generation: number,
     previewCommit: ReturnType<PreparedElementHistoryOptions["motion"]["beginPreviewCommit"]>,
+    effect?: SelectionFrameHistoryEffect,
   ): Promise<boolean> {
     const committed = await this.#replace(
       replacements,
@@ -119,10 +130,15 @@ export class PreparedElementHistory {
     );
     if (!committed) return false;
     await this.#yieldHostFrame();
-    this.#history.registerAppliedReplacement(previous, replacements, {
-      redo: () => this.#replace(replacements, this.#generation),
-      undo: () => this.#replace(previous, this.#generation),
-    });
+    this.#history.registerAppliedReplacement(
+      previous,
+      replacements,
+      {
+        redo: () => this.#replace(replacements, this.#generation),
+        undo: () => this.#replace(previous, this.#generation),
+      },
+      effect,
+    );
     return true;
   }
 

@@ -22,6 +22,7 @@ export interface ActiveEditorKeyboardOptions {
   readonly onFeedback: (code: InkbookFeedbackCode) => void;
   readonly onPendingChanged: (pending: boolean) => void;
   readonly openKeyboardMenu: (position: InputPoint) => void;
+  readonly selectAll: () => void;
   readonly lastScreenPointer: () => InputPoint | null;
   readonly selectionSize: () => number;
 }
@@ -56,6 +57,10 @@ export class ActiveEditorKeyboardController {
       return true;
     }
     if (this.handleHoverZoom(event)) return true;
+    if (isSelectAllShortcut(event)) {
+      this.#options.selectAll();
+      return true;
+    }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
       return this.#handleUnifiedHistory(event.shiftKey ? "redo" : "undo");
     }
@@ -71,6 +76,10 @@ export class ActiveEditorKeyboardController {
     if (isTextField(event.target, this.#options.activeElement())) return false;
     if (this.handleHoverZoom(event)) return true;
     if (!this.#pointerOver) return false;
+    if (isSelectAllShortcut(event)) {
+      this.#options.selectAll();
+      return true;
+    }
     if (isUnmodifiedDelete(event) && this.#options.actions.isAvailable("delete")) {
       this.#options.actions.execute("delete");
       return true;
@@ -151,6 +160,10 @@ export class ActiveEditorKeyboardController {
       .finally(() => this.#options.onPendingChanged(false));
     return true;
   }
+}
+
+function isSelectAllShortcut(event: KeyboardEvent): boolean {
+  return (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a";
 }
 
 function isUnmodifiedDelete(event: KeyboardEvent): boolean {

@@ -24,6 +24,13 @@ describe("settings defaults", () => {
       lockedBufferLines: 1,
     });
     expect(settings.filePlacement).toEqual({ mode: "obsidian-attachment-folder" });
+    expect(settings.snapping).toEqual({
+      enabled: true,
+      angles: true,
+      bends: true,
+      connections: true,
+      structures: true,
+    });
     expect(settings.toolDefaults.select).toEqual({ area: "rectangle", inclusion: "touched" });
     expect(settings.toolDefaults.pen).toEqual({
       color: { type: "theme-text" },

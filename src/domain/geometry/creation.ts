@@ -186,22 +186,6 @@ export function tableLineSegments(
   const bottom = table.y + table.height;
   const segments: Array<readonly [PointV1, PointV1]> = [
     [
-      { x: table.x, y: table.y },
-      { x: right, y: table.y },
-    ],
-    [
-      { x: right, y: table.y },
-      { x: right, y: bottom },
-    ],
-    [
-      { x: right, y: bottom },
-      { x: table.x, y: bottom },
-    ],
-    [
-      { x: table.x, y: bottom },
-      { x: table.x, y: table.y },
-    ],
-    [
       { x: table.x, y: table.y + table.headerHeight },
       { x: right, y: table.y + table.headerHeight },
     ],
@@ -222,7 +206,7 @@ function changedTableColumnOffsets(
 ): number[] | undefined {
   if (table.columnOffsets === undefined) return undefined;
   const offsets = tableColumnOffsets(table)
-    .filter((offset) => offset <= newColumns * table.columnWidth - 40)
+    .filter((offset) => offset <= newColumns * table.columnWidth)
     .slice(0, Math.max(0, newColumns - 1));
   for (let column = offsets.length + 1; column < newColumns; column += 1) {
     offsets.push(roundCanonical(column * table.columnWidth));

@@ -93,6 +93,14 @@ export interface ToolDefaultsV1 {
   table: { columns: number };
 }
 
+export interface SnappingSettingsV1 {
+  enabled: boolean;
+  angles: boolean;
+  bends: boolean;
+  connections: boolean;
+  structures: boolean;
+}
+
 interface PageDefaultsV3 {
   backgroundType: BackgroundTypeV1;
   backgroundSpacing: {
@@ -115,6 +123,7 @@ export interface InkbookSettingsV4 {
   version: 4;
   startupTool: StartupToolV1;
   toolDefaults: ToolDefaultsV1;
+  snapping: SnappingSettingsV1;
   pageDefaults: PageDefaultsV3;
   filePlacement: FilePlacementV1;
   refreshRatePreference: RefreshRatePreferenceV2;

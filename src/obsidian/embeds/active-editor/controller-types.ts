@@ -1,5 +1,6 @@
 import type {
   InkbookDeviceSettingsV1,
+  SnappingSettingsV1,
   StartupToolV1,
   ToolDefaultsV1,
 } from "../../../domain/settings/types";
@@ -45,5 +46,6 @@ export interface ActiveEditorControllerOptions {
     updateBottom(maximumBottom: number): void;
   };
   readonly scrollOwner: BrowserScrollElement;
+  readonly snapping: SnappingSettingsV1;
   readonly startupTool: StartupToolV1;
 }

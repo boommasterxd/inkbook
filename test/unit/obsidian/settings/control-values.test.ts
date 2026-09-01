@@ -70,6 +70,19 @@ describe("SettingsControlValues", () => {
     });
   });
 
+  it("persists global and per-kind snapping controls", async () => {
+    await values.set("snapping.enabled", false);
+    await values.set("snapping.connections", false);
+
+    expect(values.get("snapping.enabled")).toBe(false);
+    expect(values.get("snapping.connections")).toBe(false);
+    expect(vault.saved.snapping).toEqual({
+      ...createBuiltInSettings().snapping,
+      enabled: false,
+      connections: false,
+    });
+  });
+
   it.each(["auto", "60", "90", "120", "144", "240"])(
     "persists refresh-rate preference %s in the vault scope",
     async (value) => {

@@ -10,6 +10,7 @@ import {
   selectionSnapZoom,
 } from "./handle-snap-resolution";
 import { canonicalHandlePoint, clampEndpoint } from "./handle-session-geometry";
+import { selectionSnapFeatureEnabled } from "./snap-features";
 import type { SelectionHandleAction, SelectionSnapPorts } from "./handle-types";
 import {
   resolveCoordinateAxisSnap,
@@ -41,7 +42,9 @@ export function materializeTargetedHandle(input: TargetedHandleInput): InkElemen
     return editLinearBendFromCurvePoint(
       input.element,
       input.pointer,
-      HANDLE_SNAP_PIXELS / selectionSnapZoom(input.snap),
+      selectionSnapFeatureEnabled(input.snap, "bends")
+        ? HANDLE_SNAP_PIXELS / selectionSnapZoom(input.snap)
+        : 0,
     );
   }
   if (input.action.kind === "table-header" || input.action.kind === "table-column") {
@@ -68,14 +71,24 @@ function editLinearHandleEndpoint(input: TargetedHandleInput): InkElementV1 {
       : { anchor: candidate.anchor, targetId: candidate.targetId };
   return editLinearEndpointFromWorld(element, action.endpoint, point, {
     connection,
-    straightTolerance: HANDLE_SNAP_PIXELS / selectionSnapZoom(snap),
+    straightTolerance: selectionSnapFeatureEnabled(snap, "angles")
+      ? HANDLE_SNAP_PIXELS / selectionSnapZoom(snap)
+      : 0,
   });
 }
 
 function editTableHandle(input: TargetedHandleInput): InkElementV1 {
   const { action, element, pointer, snap } = input;
   if (element.kind !== "table") throw new TypeError("Table handles require a table.");
+  if (action.kind !== "table-header" && action.kind !== "table-column") {
+    throw new Error("Expected a table handle action.");
+  }
   const localPointer = canonicalHandlePoint(element, pointer);
+  if (!selectionSnapFeatureEnabled(snap, "structures")) {
+    return action.kind === "table-header"
+      ? editTableHeader(element, localPointer.y)
+      : editTableColumn(element, action.separatorIndex, localPointer.x);
+  }
   const tolerance = HANDLE_SNAP_PIXELS / selectionSnapZoom(snap);
   if (action.kind === "table-header") {
     return editTableHeader(
@@ -83,7 +96,6 @@ function editTableHandle(input: TargetedHandleInput): InkElementV1 {
       resolveTableHeaderSnap(element, localPointer, tolerance).point.y,
     );
   }
-  if (action.kind !== "table-column") throw new Error("Expected a table handle action.");
   const point = resolveTableColumnSnap(
     element,
     action.separatorIndex,
@@ -97,6 +109,11 @@ function editCoordinateHandle(input: TargetedHandleInput): InkElementV1 {
   const { action, element, pointer, snap } = input;
   if (element.kind !== "coordinate-system") {
     throw new TypeError("Coordinate handles require a coordinate system.");
+  }
+  if (!selectionSnapFeatureEnabled(snap, "angles")) {
+    return action.kind === "coordinate-axis"
+      ? editCoordinateAxis(element, action.axisIndex, canonicalHandlePoint(element, pointer))
+      : editCoordinateOrigin(element, pointer);
   }
   const worldPoint =
     action.kind === "coordinate-axis"

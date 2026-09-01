@@ -13,6 +13,9 @@ import { visibleSelectionCenter } from "./controller-elements";
 import type { ActiveEditorChromeState } from "./controller-chrome-state";
 import type { ActivePointerCaptureOwner } from "./pointer-capture";
 import type { GestureController } from "../../../editor/gestures/public";
+import type { SelectionFrameSession } from "../../../editor/selection/public";
+import { ActiveEditorBackgroundSession } from "./background-session";
+import { ActiveEditorHistoryTraversal } from "./history-traversal";
 
 export interface ActiveEditorInteractionsOptions {
   readonly controller: ActiveEditorControllerOptions;
@@ -26,7 +29,33 @@ export interface ActiveEditorInteractionsOptions {
   readonly ownerWindow: Window;
   readonly onPendingChanged: (pending: boolean) => void;
   readonly selection: () => ReadonlySet<string>;
+  readonly selectionFrames: SelectionFrameSession;
   readonly setSelection: (selection: ReadonlySet<string>) => void;
+  readonly snapping: () => ActiveEditorControllerOptions["snapping"];
+}
+
+export function createControllerHistorySessions(options: {
+  readonly controller: ActiveEditorControllerOptions;
+  readonly history: ActiveEditorHistory;
+  readonly onPendingChanged: (pending: boolean) => void;
+}): readonly [ActiveEditorBackgroundSession, ActiveEditorHistoryTraversal] {
+  const controller = options.controller;
+  return [
+    new ActiveEditorBackgroundSession({
+      backgroundSpacing: controller.backgroundSpacing,
+      history: options.history,
+      model: controller.model,
+      onPageChanged: controller.onPageChanged,
+      onPagePreviewFinish: controller.onPagePreviewFinish,
+      onPagePreview: controller.onPagePreview,
+      onStateChanged: controller.onStateChanged,
+    }),
+    new ActiveEditorHistoryTraversal({
+      history: options.history,
+      onPendingChanged: options.onPendingChanged,
+      onStateChanged: controller.onStateChanged,
+    }),
+  ];
 }
 
 export function createActiveEditorInteractions(options: ActiveEditorInteractionsOptions) {
@@ -73,7 +102,9 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
       preparedHistory,
       renderer: controller.renderer,
       sceneStore: controller.sceneStore,
+      selectionFrames: options.selectionFrames,
       selection: options.selection,
+      snapping: options.snapping,
       zoom: () => options.navigation.zoom,
     }),
     menus: new ActiveEditorMenuController({

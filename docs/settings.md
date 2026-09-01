@@ -6,7 +6,7 @@
 - Every value available in a tool's Style menu MUST have a configurable default for that tool.
 - Changing a default affects newly created elements only. It never rewrites existing elements.
 - Settings UI rejects invalid values and does not persist them. On load, an invalid persisted field falls back to its documented built-in default; the loader does not silently clamp it.
-- The vault settings schema is version 4. A completely valid version 3 value is migrated by adding the built-in Select defaults while preserving every existing value. Versions 1, 2, and unknown versions remain unsupported and fall back to built-in defaults. Device-local settings use their independent version 1 schema.
+- The vault settings schema is version 4. A completely valid version 3 value is migrated by adding the built-in Select and snapping defaults while preserving every existing value. A valid earlier version 4 value without snapping settings loads with built-in snapping defaults. Versions 1, 2, and unknown versions remain unsupported and fall back to built-in defaults. Device-local settings use their independent version 1 schema.
 
 ## Scope and Precedence
 
@@ -14,7 +14,7 @@ Settings have four scopes:
 
 | Scope            | Storage                | Examples                                                                |
 | ---------------- | ---------------------- | ----------------------------------------------------------------------- |
-| Vault            | Obsidian plugin data   | Tool defaults, page defaults, file placement, display refresh-rate mode |
+| Vault            | Obsidian plugin data   | Tool defaults, snapping, page defaults, placement, refresh-rate mode    |
 | Device and vault | Obsidian local storage | Finger drawing, pen-tap insertion, handedness, motion preference        |
 | File             | Editable SVG snapshot  | Current background type and spacing, element styles                     |
 | Session          | Memory only            | Current tool, current menu values, finger toggle, zoom, camera position |
@@ -37,6 +37,7 @@ interface InkbookSettingsV4 {
   version: 4;
   startupTool: StartupToolV1;
   toolDefaults: ToolDefaultsV1;
+  snapping: SnappingSettingsV1;
   pageDefaults: PageDefaultsV3;
   filePlacement: FilePlacementV1;
   refreshRatePreference: "auto" | 60 | 90 | 120 | 144 | 240;
@@ -57,6 +58,14 @@ interface ToolDefaultsV1 {
   table: { columns: number };
 }
 
+interface SnappingSettingsV1 {
+  enabled: boolean;
+  angles: boolean;
+  bends: boolean;
+  connections: boolean;
+  structures: boolean;
+}
+
 interface InkbookDeviceSettingsV1 {
   version: 1;
   fingerDrawingEnabled: boolean;
@@ -74,7 +83,7 @@ interface InkbookDeviceSettingsV1 {
 
 The built-in startup tool is `draw`.
 
-Version 3 introduced the first released vault-settings schema with absolute background spacing in the shared 25, 100 / 3, 50, and 100 page-unit series and the fixed 100-unit layout step. Version 4 adds the two Select defaults. The loader migrates only a completely valid version 3 object, preserves every existing value, adds `select: { area: "rectangle", inclusion: "touched" }`, and returns canonical version 4. A malformed version 3 value is not partially migrated. Versions 1, 2, and unknown vault settings are rejected as unsupported rather than transformed. The device-settings schema remains version 1.
+Version 3 introduced the first released vault-settings schema with absolute background spacing in the shared 25, 100 / 3, 50, and 100 page-unit series and the fixed 100-unit layout step. Version 4 adds the two Select defaults. The loader migrates only a completely valid version 3 object, preserves every existing value, adds `select: { area: "rectangle", inclusion: "touched" }` plus the built-in snapping settings, and returns canonical version 4. A valid version 4 object from before snapping settings existed receives those same defaults without a version change. A malformed version 3 value is not partially migrated. Versions 1, 2, and unknown vault settings are rejected as unsupported rather than transformed. The device-settings schema remains version 1.
 
 ## Select Defaults
 
@@ -84,6 +93,17 @@ Select owns two independent session and vault defaults:
 - inclusion: `fully-enclosed` or `touched`; built-in `touched`
 
 Rectangle uses the drag start and current pointer as opposite corners. Lasso records at most 512 simplified freeform pointer points and treats the resulting path as closed. Touched includes an element when any visible painted geometry intersects or lies within the area. Fully enclosed includes it only when all visible painted geometry, including stroke width and arrow nodes, lies within the area. These values affect selection behavior only, never existing elements or Inkbook files. The Style menu changes the active editor session, while Settings changes the vault default used by subsequently activated editors.
+
+## Snapping
+
+Snapping is a vault preference with one global switch and four independent behavior switches. All five built-in values are enabled:
+
+- Angle snapping covers selection rotation, horizontal or vertical line and arrow directions, and 45-degree coordinate-system axes.
+- Bend snapping covers straight and symmetric bend positions for lines and arrows.
+- Connection snapping covers line and arrow endpoints attaching to semantic shape anchors or other linear endpoints.
+- Structure snapping covers table separators returning to the default header or equal-column position.
+
+Disabling the global switch suppresses every snap without overwriting the four individual choices. Re-enabling it restores the previously configured combination. The individual controls are hidden while the global switch is off because they are temporarily inactive, but their values remain persisted. Holding Alt during a pointer gesture temporarily inverts only the global state for each subsequent pointer frame. Alt therefore suppresses all snapping while the global switch is enabled, or temporarily activates the persisted per-kind combination while the global switch is disabled. Releasing Alt restores the configured state, and the modifier never persists a settings change. These settings affect interaction behavior only and never rewrite existing elements or Inkbook files.
 
 ## Display Refresh Rate
 
@@ -263,6 +283,7 @@ All numeric ranges are inclusive.
 | Active buffer lines           | integer from 1 through 8             |        1 |
 | Selection area                | rectangle or lasso                   | Discrete |
 | Selection inclusion           | fully-enclosed or touched            | Discrete |
+| Snapping switches             | boolean                              | Discrete |
 | Enumerations and colors       | exactly one documented value         | Discrete |
 
 Unknown object properties, missing required properties, invalid enum values, non-finite numbers, and values outside these ranges make the containing persisted settings field invalid. The loader replaces only that field with its built-in default, records a non-content diagnostic code, and continues loading the other valid fields.
@@ -320,10 +341,11 @@ The settings tab uses these logical groups and this order:
 2. **Page defaults**: background type, the independent Lines, Dots, and Squares spacing defaults, and the active buffer line count.
 3. **Drawing tools**: Select, Pen, Highlighter, Straight highlighter, and Eraser. Each tool is one independently collapsible section.
 4. **Shapes and structures**: Line, Arrow, Rectangle, Ellipse, Triangle, Octagon, Parallelogram, Diamond, Coordinate system, and Table. Each tool is one independently collapsible section.
-5. **Input**: finger drawing and pen-tap insertion.
-6. **Interface**: handedness and motion.
+5. **Snapping**: global enable switch followed by Angle, Bend, Connection, and Structure switches.
+6. **Input**: finger drawing and pen-tap insertion.
+7. **Interface**: handedness and motion.
 
-The headings for Page defaults, Drawing tools, Shapes and structures, Input, and Interface use sentence case and omit the word `settings`. The General group has no visible heading, but remains a distinct logical group for definitions, validation, and reset behavior. Every tool default in the schema has exactly one corresponding section, including each shape type's separate persisted entry.
+The headings for Page defaults, Drawing tools, Shapes and structures, Snapping, Input, and Interface use sentence case and omit the word `settings`. The General group has no visible heading, but remains a distinct logical group for definitions, validation, and reset behavior. Every tool default in the schema has exactly one corresponding section, including each shape type's separate persisted entry.
 
 ### Collapsible tool sections
 

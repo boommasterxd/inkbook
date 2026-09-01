@@ -61,13 +61,47 @@ describe("selection deselection", () => {
     expect(released.state.hasSelection).toBe(false);
   });
 
-  it("preserves Select replacement semantics for an unselected element", () => {
+  it("replaces the selection when clicking an unselected element", () => {
     const started = reduceInput(
       createInputState({ activeTool: "select", hasSelection: true }),
       pointerDown({ target: { elementId: "shape-b", isSelected: false } }),
     );
     expect(effectTypes(started.effects)).toEqual(["capture-pointer", "select-element"]);
-    expect(started.effects).not.toContainEqual({ type: "clear-selection" });
+    expect(started.effects).toContainEqual({
+      type: "select-element",
+      elementId: "shape-b",
+      mode: "replace",
+    });
+  });
+
+  it("adds an unselected element for a Control or Command click", () => {
+    const started = reduceInput(
+      createInputState({ activeTool: "select", hasSelection: true }),
+      pointerDown({
+        controlOrMeta: true,
+        target: { elementId: "shape-b", isSelected: false },
+      }),
+    );
+    expect(started.effects).toContainEqual({
+      type: "select-element",
+      elementId: "shape-b",
+      mode: "add",
+    });
+  });
+
+  it("replaces the selection for a Shift click instead of treating Shift as additive", () => {
+    const started = reduceInput(
+      createInputState({ activeTool: "select", hasSelection: true }),
+      pointerDown({
+        shift: true,
+        target: { elementId: "shape-b", isSelected: false },
+      }),
+    );
+    expect(started.effects).toContainEqual({
+      type: "select-element",
+      elementId: "shape-b",
+      mode: "replace",
+    });
   });
 
   it("clears for a normal pen outside but preserves its selected target", () => {
@@ -166,7 +200,7 @@ describe("touch tap selection deselection", () => {
       {
         type: "select-element",
         elementId: "shape-b",
-        mode: "preserve-or-replace",
+        mode: "replace",
       },
     );
   });

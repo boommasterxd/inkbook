@@ -23,6 +23,7 @@ export function interactionBase(
     pointerId: action.pointerId,
     pointerType: action.pointerType,
     penRole: penRole(action),
+    controlOrMeta: action.controlOrMeta,
     start: point(action),
     ...(validTimestamp(action.timestamp) ? { startedAt: action.timestamp } : {}),
     current: point(action),

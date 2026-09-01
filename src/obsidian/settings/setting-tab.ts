@@ -19,6 +19,7 @@ import { SettingsControlValues, type SettingsControlKey } from "./control-values
 import { dropdown, resetAction, toggle } from "./definition-helpers";
 import { createLabels, generalGroup } from "./general-definitions";
 import { pageDefaultsGroup } from "./page-defaults";
+import { snappingGroup } from "./snapping-definitions";
 import { InkbookSettingsStore } from "./storage";
 import { drawingToolsGroup, shapesAndStructuresGroup } from "./tool-definitions";
 
@@ -80,6 +81,10 @@ export class InkbookSettingTab extends PluginSettingTab {
       pageDefaultsGroup(pageValues, () => this.resetPageDefaults()),
       drawingToolsGroup(toolValues, () => this.resetDrawingTools()),
       shapesAndStructuresGroup(toolValues, () => this.resetShapesAndStructures()),
+      snappingGroup({
+        isEnabled: () => this.store.getVaultSettings().snapping.enabled,
+        reset: () => this.resetSnapping(),
+      }),
       ...this.deviceGroups(),
       this.resetAllAction(),
     ];
@@ -142,6 +147,16 @@ export class InkbookSettingTab extends PluginSettingTab {
         settings.toolDefaults.table = cloneDefaults("table");
         return settings;
       })
+      .then(() => this.update());
+  }
+
+  private resetSnapping(): void {
+    const defaults = createBuiltInSettings();
+    void this.store
+      .updateVaultSettings((settings) => ({
+        ...settings,
+        snapping: structuredClone(defaults.snapping),
+      }))
       .then(() => this.update());
   }
 

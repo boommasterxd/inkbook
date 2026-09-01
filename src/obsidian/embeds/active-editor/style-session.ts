@@ -5,6 +5,10 @@ import type { EditorTool } from "../../../editor/input/index";
 import type { ToolbarStyleIconState } from "../../../rendering/ui/index";
 import type { ActiveShapeIconState } from "../../../rendering/ui/icon-ids";
 import type { StyleControl } from "../../menus/editor-menu-types";
+import type {
+  SelectedElementGeometry,
+  SelectionFrameSession,
+} from "../../../editor/selection/public";
 
 import { selectedElements } from "./controller-elements";
 import {
@@ -24,6 +28,7 @@ export interface ActiveEditorStyleSessionOptions {
   readonly onStateChanged: () => void;
   readonly sceneStore: ElementSceneStore;
   readonly selection: () => ReadonlySet<string>;
+  readonly selectionFrames?: SelectionFrameSession;
   readonly store: ElementStore;
 }
 
@@ -34,6 +39,7 @@ export class ActiveEditorStyleSession {
   readonly #onStateChanged: () => void;
   readonly #sceneStore: ElementSceneStore;
   readonly #selection: () => ReadonlySet<string>;
+  readonly #selectionFrames: SelectionFrameSession | undefined;
   readonly #store: ElementStore;
 
   public constructor(options: ActiveEditorStyleSessionOptions) {
@@ -43,6 +49,7 @@ export class ActiveEditorStyleSession {
     this.#onStateChanged = options.onStateChanged;
     this.#sceneStore = options.sceneStore;
     this.#selection = options.selection;
+    this.#selectionFrames = options.selectionFrames;
     this.#store = options.store;
   }
 
@@ -75,7 +82,13 @@ export class ActiveEditorStyleSession {
       const replacement = createSelectionStyleReplacement(elements, id, value);
       if (replacement !== null) {
         const complete = completeReplacement(replacement.replacements, this.#store);
-        if (complete !== null && this.#history.replace(complete.previous, complete.replacements))
+        const frame =
+          this.#selectionFrames?.current(selectedGeometry(elements, this.#store)) ?? null;
+        const effect = this.#selectionFrames?.rebase(frame, replacement.replacements);
+        if (
+          complete !== null &&
+          this.#history.replace(complete.previous, complete.replacements, effect)
+        )
           this.#onSelectionGeometryChanged();
       }
       return;
@@ -85,6 +98,18 @@ export class ActiveEditorStyleSession {
     this.#defaults = defaults;
     this.#onStateChanged();
   }
+}
+
+function selectedGeometry(
+  elements: readonly InkElementV1[],
+  store: ElementStore,
+): SelectedElementGeometry[] {
+  const geometry: SelectedElementGeometry[] = [];
+  for (const element of elements) {
+    const bounds = store.get(element.id)?.bounds;
+    if (bounds !== undefined) geometry.push({ bounds, element });
+  }
+  return geometry;
 }
 
 function completeReplacement(

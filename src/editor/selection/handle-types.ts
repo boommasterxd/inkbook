@@ -1,4 +1,5 @@
 import type { InkElementV1, PointV1, BoxAnchorV1 } from "../../domain/schema/public";
+import type { Bounds } from "../../domain/geometry/public";
 import type {
   SnapCandidate,
   SnapLookupInput,
@@ -8,10 +9,20 @@ import type {
 
 import type { SelectionReplacementPlanner } from "./selection-work-budget";
 
+export interface SelectedElementGeometry {
+  readonly bounds: Bounds;
+  readonly element: InkElementV1;
+}
+
 export type SelectionHandleAction =
   | { readonly kind: "move" }
   | { readonly anchor: PointV1; readonly kind: "scale"; readonly position: BoxAnchorV1 }
-  | { readonly center: PointV1; readonly kind: "rotate"; readonly opposite: PointV1 }
+  | {
+      readonly center: PointV1;
+      readonly kind: "rotate";
+      readonly opposite: PointV1;
+      readonly referenceRotation: number;
+    }
   | {
       readonly elementId: string;
       readonly endpoint: "start" | "end";
@@ -77,10 +88,18 @@ export type SelectionSnapGuide =
 
 export interface SelectionSnapPorts {
   readonly canConnect?: (sourceId: string, targetId: string) => boolean;
+  readonly features?: SelectionSnapFeatures;
   readonly pointerType: SnapLookupInput["pointerType"];
   readonly spatial: SpatialCandidateQuery;
   readonly targets: SnapTargetReader;
   readonly zoom: number;
+}
+
+export interface SelectionSnapFeatures {
+  readonly angles: boolean;
+  readonly bends: boolean;
+  readonly connections: boolean;
+  readonly structures: boolean;
 }
 
 export interface SelectionHandleSessionOptions {
@@ -89,6 +108,12 @@ export interface SelectionHandleSessionOptions {
   readonly planner: SelectionReplacementPlanner;
   readonly snap?: SelectionSnapPorts;
   readonly startPointer: PointV1;
+  readonly uniformScale?: boolean;
+}
+
+export interface SelectionHandleUpdateOptions {
+  readonly snapFeatures?: SelectionSnapFeatures;
+  readonly uniformScale?: boolean;
 }
 
 export type SelectionCommitPreparation =

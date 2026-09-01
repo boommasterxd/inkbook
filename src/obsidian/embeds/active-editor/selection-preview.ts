@@ -16,6 +16,8 @@ import {
   type SelectionMoveSnap,
   type SelectionArea,
   type SelectionPreviewTransform,
+  type OrientedSelectionFrame,
+  type SelectionFrameSession,
 } from "../../../editor/selection/public";
 
 import type { ActiveEditorHistory } from "./history";
@@ -59,6 +61,8 @@ export interface SelectionPreviewOptions {
   readonly sceneStore: ElementSceneStore;
   readonly selectionEdgeDrag?: SelectionEdgeDragPort;
   readonly selection: () => ReadonlySet<string>;
+  readonly selectionFrames?: SelectionFrameSession;
+  readonly connectionSnapping?: boolean | (() => boolean);
   readonly selectionDefaults?: ToolDefaultsV1["select"];
   readonly setSelection: (selection: ReadonlySet<string>) => void;
   readonly start: GesturePreviewStart;
@@ -184,6 +188,7 @@ export class MovePreview implements GesturePreview {
   readonly #options: SelectionPreviewOptions;
   readonly #selectedIds: ReadonlySet<string>;
   readonly #selectedGeometry: readonly SelectedElementGeometry[];
+  readonly #selectionFrame: OrientedSelectionFrame | null;
   readonly #snapScratch = new SnapCandidateScratch();
   #current = { x: 0, y: 0 };
   #currentViewport: PointV1 | undefined;
@@ -208,6 +213,7 @@ export class MovePreview implements GesturePreview {
     }
     this.#elements = elements;
     this.#selectedGeometry = selectedGeometry;
+    this.#selectionFrame = options.selectionFrames?.current(selectedGeometry) ?? null;
     this.#ids = this.#elements.map(({ id }) => id);
     this.#connectedTargetIds = this.#ids.filter((id) => {
       let connected = false;
@@ -229,19 +235,28 @@ export class MovePreview implements GesturePreview {
     try {
       if (this.#current.x !== 0 || this.#current.y !== 0) {
         const previewMaximumBottom = this.#previewMaximumBottomValue;
+        const effect = this.#options.selectionFrames?.transition(
+          this.#selectionFrame,
+          this.#translationTransform(),
+        );
         prepared =
           this.#moveSnap === null &&
-          this.#options.preparedHistory.commitMove(this.#elements, this.#current, (result) => {
-            if (!result) this.#renderSelectionOverlay(null);
-            if (result) this.#options.selectionEdgeDrag?.finish(true, previewMaximumBottom);
-            else this.#options.selectionEdgeDrag?.finish(false);
-          });
+          this.#options.preparedHistory.commitMove(
+            this.#elements,
+            this.#current,
+            (result) => {
+              if (!result) this.#renderSelectionOverlay(null);
+              if (result) this.#options.selectionEdgeDrag?.finish(true, previewMaximumBottom);
+              else this.#options.selectionEdgeDrag?.finish(false);
+            },
+            effect,
+          );
         committed = prepared;
         if (!committed) {
           const plan = this.#options.store.planReplacements(this.#movedElements());
           if (plan !== null) {
             this.#options.renderer.suppressMotionForNextDelta(this.#ids);
-            committed = this.#options.history.replace(this.#elements, plan.replacements);
+            committed = this.#options.history.replace(this.#elements, plan.replacements, effect);
           }
         }
       }
@@ -363,6 +378,7 @@ export class MovePreview implements GesturePreview {
     const selected = exact ?? this.#selectedGeometry;
     const paths = selectionOverlayPaths(selected, {
       pageToScreen: this.#options.pageToScreen,
+      frame: exact === null ? this.#selectionFrame : null,
       transform: exact === null ? transform : null,
       zoom: this.#selectionZoom(),
     });
@@ -409,6 +425,8 @@ export class MovePreview implements GesturePreview {
   }
 
   #resolveMoveSnap(rawDelta: PointV1): SelectionMoveSnap | null {
+    const configured = this.#options.connectionSnapping;
+    if (typeof configured === "function" ? !configured() : configured === false) return null;
     return resolveSelectionMoveSnap({
       canConnect: (sourceId, targetId) => this.#options.sceneStore.canConnect(sourceId, targetId),
       current: this.#moveSnap,

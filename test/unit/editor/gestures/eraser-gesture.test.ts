@@ -121,6 +121,7 @@ describe("eraser sweep", () => {
       y: 0,
     };
     expect(sweepTouchesElement({ x: 20, y: 15 }, { x: 20, y: 35 }, 1, table)).toBe(true);
+    expect(sweepTouchesElement({ x: 0, y: 15 }, { x: 0, y: 35 }, 1, table)).toBe(false);
   });
 });
 

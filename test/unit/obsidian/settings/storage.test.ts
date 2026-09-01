@@ -60,6 +60,7 @@ describe("InkbookSettingsStore", () => {
     current.startupTool = "arrow";
     const legacy = structuredClone(current) as unknown as Record<string, unknown>;
     legacy.version = 3;
+    delete legacy.snapping;
     delete (legacy.toolDefaults as Record<string, unknown>).select;
     const store = new InkbookSettingsStore(
       new VaultFake(legacy),
@@ -72,6 +73,7 @@ describe("InkbookSettingsStore", () => {
     expect(store.getVaultSettings()).toMatchObject({
       version: 4,
       startupTool: "arrow",
+      snapping: createBuiltInSettings().snapping,
       toolDefaults: { select: { area: "rectangle", inclusion: "touched" } },
     });
   });

@@ -92,6 +92,30 @@ describe("active editor pointer controller", () => {
   });
 });
 
+describe("active editor temporary snapping modifier", () => {
+  it("forwards Alt changes to handles and clears the override at gesture end", () => {
+    const pointerDown = vi.fn(() => true);
+    const pointerMove = vi.fn(() => true);
+    const handles = {
+      cancel: vi.fn(() => true),
+      pointerDown,
+      pointerMove,
+      pointerUp: vi.fn(() => true),
+    } as unknown as ActiveEditorHandleInteraction;
+    const setSnappingInverted = vi.fn();
+    const controller = horizontalPanController({ handles, setSnappingInverted });
+
+    controller.handlePointerDown(pointerEvent("mouse", { altKey: true }));
+    controller.handlePointerMove(pointerEvent("mouse", { altKey: false }));
+    controller.handlePointerUp(pointerEvent("mouse", { altKey: true }));
+
+    expect(pointerDown).toHaveBeenCalledWith(expect.anything(), false, true);
+    expect(pointerMove).toHaveBeenNthCalledWith(1, expect.anything(), false, false);
+    expect(pointerMove).toHaveBeenNthCalledWith(2, expect.anything(), false, true);
+    expect(setSnappingInverted).toHaveBeenLastCalledWith(7, null);
+  });
+});
+
 describe("selection handle pointer cancellation", () => {
   it("does not cancel a non-cancelable touch move owned by a selection handle", () => {
     const preventDefault = vi.fn();
@@ -213,6 +237,7 @@ function horizontalPanController(overrides?: {
   readonly handles?: ActiveEditorHandleInteraction;
   readonly navigation?: ActiveEditorNavigation;
   readonly releasePointer?: (pointerId: number) => void;
+  readonly setSnappingInverted?: (pointerId: number, inverted: boolean | null) => void;
 }): ActiveEditorPointerController {
   const input = createInputState({ zoom: 2, fitZoom: 1 });
   return new ActiveEditorPointerController({
@@ -235,6 +260,9 @@ function horizontalPanController(overrides?: {
     sceneStore: { hit: vi.fn(() => null) } as unknown as ElementSceneStore,
     selection: () => new Set(),
     setLastPointer: vi.fn(),
+    ...(overrides?.setSnappingInverted === undefined
+      ? {}
+      : { setSnappingInverted: overrides.setSnappingInverted }),
   });
 }
 
@@ -285,12 +313,13 @@ function rendererPort(): SvgSceneRenderer {
 function pointerEvent(
   pointerType = "mouse",
   overrides: Partial<
-    Pick<PointerEvent, "cancelable" | "preventDefault" | "stopPropagation" | "timeStamp">
+    Pick<PointerEvent, "altKey" | "cancelable" | "preventDefault" | "stopPropagation" | "timeStamp">
   > = {},
 ): PointerEvent {
   return {
     button: 0,
     buttons: 1,
+    altKey: overrides.altKey ?? false,
     cancelable: overrides.cancelable ?? true,
     ctrlKey: false,
     isPrimary: true,

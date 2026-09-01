@@ -237,10 +237,12 @@ describe("selection area element geometry", () => {
   it("matches table dividers and coordinate-system arrow nodes", () => {
     const targetTable = table();
     const dividerOnly = createRectangleSelectionArea({ x: 139, y: 320 }, { x: 141, y: 325 });
+    const outerEdgeOnly = createRectangleSelectionArea({ x: 99, y: 350 }, { x: 101, y: 355 });
     const system = coordinateSystem();
     const arrowNodeOnly = createRectangleSelectionArea({ x: 489, y: 405 }, { x: 493, y: 408 });
 
     expect(elementMatchesSelectionArea(dividerOnly, targetTable, "touched")).toBe(true);
+    expect(elementMatchesSelectionArea(outerEdgeOnly, targetTable, "touched")).toBe(false);
     expect(elementMatchesSelectionArea(arrowNodeOnly, system, "touched")).toBe(true);
   });
 

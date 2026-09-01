@@ -109,7 +109,7 @@ describe("touch tap classification", () => {
     expect(released.effects[0]).toEqual({
       type: "select-element",
       elementId: "stroke-a",
-      mode: "preserve-or-replace",
+      mode: "replace",
     });
   });
 

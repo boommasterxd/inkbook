@@ -36,18 +36,27 @@ export {
   oppositeElementHandlePoint,
   selectionBounds,
 } from "./handles";
-export type { SelectedElementGeometry, SelectionHandle } from "./handles";
+export type { SelectionHandle } from "./handles";
 export {
   selectionOverlayContainsPoint,
   selectionOverlayGeometry,
   transformSelectionPoint,
 } from "./overlay-geometry";
 export type { SelectionOutline } from "./overlay-geometry";
+export {
+  createSelectionFrame,
+  createSelectionFrameAtRotation,
+  SelectionFrameSession,
+  transformSelectionFrame,
+} from "./selection-frame";
+export type { OrientedSelectionFrame, SelectionFrameHistoryEffect } from "./selection-frame";
 export { SelectionHandleSession } from "./handle-session";
 export { resolvePointAngleSnap } from "./angular-snap";
 export type {
+  SelectedElementGeometry,
   SelectionHandleAction,
   SelectionHandlePreview,
   SelectionPreviewTransform,
+  SelectionSnapFeatures,
   SelectionSnapGuide,
-} from "./handle-session";
+} from "./handle-types";

@@ -66,6 +66,32 @@ function scaleTransform(
 }
 
 describe("single-element generic handle scaling", () => {
+  it("keeps a single selection proportional while Shift is held", () => {
+    const source = table();
+    const store = new ElementStore([source]);
+    const session = new SelectionHandleSession({
+      action: { anchor: { x: 100, y: 150 }, kind: "scale", position: "middle-right" },
+      elements: [source],
+      planner: store,
+      startPointer: { x: 300, y: 150 },
+      uniformScale: true,
+    });
+
+    const preview = session.update({ x: 500, y: 150 });
+    expect(preview.transform).toEqual(scaleTransform({ x: 100, y: 150 }, { x: 2, y: 2 }));
+
+    const commit = session.prepareCommit();
+    if (commit.status !== "ready") throw new Error("Expected a scale commit.");
+    expect(commit.replacements[0]).toMatchObject({
+      columnWidth: 200,
+      height: 200,
+      headerHeight: 48,
+      pivot: { x: 300, y: 150 },
+      x: 100,
+      y: 50,
+    });
+  });
+
   it("uses only the active side axis in both the live preview and commit", () => {
     const source = table();
     const store = new ElementStore([source]);
@@ -91,7 +117,7 @@ describe("single-element generic handle scaling", () => {
     });
   });
 
-  it("clamps vertical shrinking at the table header minimum in preview and commit", () => {
+  it("clamps vertical shrinking at the outer table minimum without constraining its header", () => {
     const source: TableElementV1 = {
       ...table(),
       headerHeight: 30,
@@ -107,19 +133,21 @@ describe("single-element generic handle scaling", () => {
     });
 
     const preview = session.update({ x: 200, y: 200 });
-    expect(preview.transform).toEqual(scaleTransform({ x: 200, y: 100 }, { x: 1, y: 0.8 }));
+    expect(preview.transform).toEqual(scaleTransform({ x: 200, y: 100 }, { x: 1, y: 0.5 }));
 
     const commit = session.prepareCommit();
     if (commit.status !== "ready") throw new Error("Expected a scale commit.");
     expect(commit.replacements[0]).toMatchObject({
-      headerHeight: 24,
-      height: 160,
-      pivot: { x: 200, y: 180 },
+      headerHeight: 15,
+      height: 100,
+      pivot: { x: 200, y: 150 },
       y: 100,
     });
     expect(validateInkElementV1(commit.replacements[0]).ok).toBe(true);
   });
+});
 
+describe("single-element rotated handle scaling", () => {
   it("keeps a rotated freehand stroke on the same preview axis after commit", () => {
     const source: StrokeElementV1 = {
       createdAt: 2,

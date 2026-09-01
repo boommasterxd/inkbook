@@ -92,6 +92,7 @@ interface SinglePointerInteraction {
   readonly pointerId: number;
   readonly pointerType: PointerSample["pointerType"];
   readonly penRole: "normal" | "eraser" | "side-button";
+  readonly controlOrMeta?: boolean;
   readonly start: InputPoint;
   readonly startedAt?: number;
   readonly current: InputPoint;

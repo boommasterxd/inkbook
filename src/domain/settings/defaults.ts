@@ -86,6 +86,13 @@ export function createBuiltInSettings(): InkbookSettingsV4 {
     version: 4,
     startupTool: "draw",
     toolDefaults: toolDefaults(),
+    snapping: {
+      enabled: true,
+      angles: true,
+      bends: true,
+      connections: true,
+      structures: true,
+    },
     pageDefaults: {
       backgroundType: "squares",
       backgroundSpacing: {

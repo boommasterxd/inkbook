@@ -381,11 +381,11 @@ function assertTable(value: UnknownRecord, path: string, context: ValidationCont
   if (value.columnWidth < 40 || value.height < 80) {
     fail("invalid-range", path, "Table dimensions are below their minimum.");
   }
-  if (value.headerHeight < 24 || value.headerHeight > value.height / 2) {
+  if (value.headerHeight < 0 || value.headerHeight > value.height) {
     fail(
       "invalid-range",
       `${path}.headerHeight`,
-      "Header height must be from 24 through half the table height.",
+      "Header height must stay within the outer table bounds.",
     );
   }
   if (value.columns * value.columnWidth > context.limits.absoluteCoordinate) {
@@ -423,21 +423,14 @@ function assertTableColumnOffsets(
       `${path}.columnOffsets[${index}]`,
       context.limits.absoluteCoordinate,
     );
-    if (offset - previous < 40) {
+    if (offset < previous || offset > width) {
       fail(
         "invalid-range",
         `${path}.columnOffsets[${index}]`,
-        "Table columns must be at least 40 page units wide.",
+        "Table column offsets must be non-decreasing and stay within the outer bounds.",
       );
     }
     previous = offset;
-  }
-  if (width - previous < 40) {
-    fail(
-      "invalid-range",
-      `${path}.columnOffsets`,
-      "Table columns must be at least 40 page units wide.",
-    );
   }
 }
 

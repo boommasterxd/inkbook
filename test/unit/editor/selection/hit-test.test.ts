@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { BoxShapeElementV1, StrokeElementV1 } from "../../../../src/domain/schema/public";
+import type {
+  BoxShapeElementV1,
+  StrokeElementV1,
+  TableElementV1,
+} from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { elementContainsPoint, findFrontmostHit } from "../../../../src/editor/selection/public";
 
@@ -45,6 +49,28 @@ function stroke(points: number[], id = "stroke"): StrokeElementV1 {
   };
 }
 
+function table(): TableElementV1 {
+  return {
+    columnWidth: 50,
+    columns: 3,
+    createdAt: 1,
+    headerHeight: 30,
+    height: 100,
+    id: "table",
+    kind: "table",
+    pivot: { x: 75, y: 50 },
+    rotation: 0,
+    style: {
+      outlineColor: { type: "theme-text" },
+      outlineOpacity: 1,
+      outlineStyle: "solid",
+      outlineWidth: 4,
+    },
+    x: 0,
+    y: 0,
+  };
+}
+
 function assertMutableStrokeUpdates(points: number[] | Float64Array): void {
   const element = stroke(points as unknown as number[]);
   expect(elementContainsPoint(element, { x: 50, y: 0 }, 1)).toBe(false);
@@ -58,6 +84,15 @@ describe("selection hit testing", () => {
     expect(elementContainsPoint(rectangle(0), { x: 50, y: 50 }, 8)).toBe(false);
     expect(elementContainsPoint(rectangle(1), { x: 50, y: 50 }, 8)).toBe(true);
     expect(elementContainsPoint(rectangle(0), { x: 1, y: 50 }, 8)).toBe(true);
+  });
+
+  it("hits table separators without treating the invisible outer bounds as a frame", () => {
+    const target = table();
+
+    expect(elementContainsPoint(target, { x: 50, y: 70 }, 1)).toBe(true);
+    expect(elementContainsPoint(target, { x: 25, y: 30 }, 1)).toBe(true);
+    expect(elementContainsPoint(target, { x: 0, y: 70 }, 1)).toBe(false);
+    expect(elementContainsPoint(target, { x: 150, y: 70 }, 1)).toBe(false);
   });
 
   it("selects the frontmost candidate and uses touch tolerance", () => {

@@ -3,6 +3,7 @@ import type { InkElementV1, PointV1 } from "../../../domain/schema/public";
 import type { InputPoint, PointerSample } from "../../../editor/input/index";
 import {
   selectionOverlayContainsPoint,
+  type SelectionFrameSession,
   type SelectedElementGeometry,
 } from "../../../editor/selection/public";
 import type { ElementSceneStore } from "./scene-store";
@@ -79,9 +80,10 @@ export function selectionTargetAt(
   point: InputPoint,
   pointerType: PointerSample["pointerType"],
   zoom: number,
+  selectionFrames?: SelectionFrameSession,
 ): { readonly elementId: string; readonly isSelected: boolean } | undefined {
   const selected = selectedGeometry(store, selection);
-  if (selectionOverlayContainsPoint(selected, point)) {
+  if (selectionOverlayContainsPoint(selected, point, selectionFrames?.current(selected) ?? null)) {
     return { elementId: selected[0]!.element.id, isSelected: true };
   }
   const elementId = store.hit(point, pointerType, zoom);

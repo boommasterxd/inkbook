@@ -1,4 +1,4 @@
-import type { ToolDefaultsV1 } from "../../../domain/settings/types";
+import type { SnappingSettingsV1, ToolDefaultsV1 } from "../../../domain/settings/types";
 import { screenPixelsToPageUnits, type GesturePreviewStart } from "../../../editor/gestures/public";
 import type { SvgSceneRenderer } from "../../../rendering/scene/index";
 import { CreationPreview } from "./creation-preview";
@@ -9,6 +9,8 @@ import { LassoPreview, MovePreview, type SelectionEdgeDragPort } from "./selecti
 import type { ElementSceneStore } from "./scene-store";
 import type { EditableDocumentModel } from "../vault-document-session";
 import type { PointV1 } from "../../../domain/schema/public";
+import type { SelectionFrameSession } from "../../../editor/selection/public";
+import { activeSnapFeatures } from "./snapping-settings";
 
 export interface ActiveEditorPreviewOptions {
   readonly defaults: ToolDefaultsV1;
@@ -23,8 +25,11 @@ export interface ActiveEditorPreviewOptions {
   readonly sceneStore: ElementSceneStore;
   readonly sliceBudgetMs: () => number;
   readonly selection: () => ReadonlySet<string>;
+  readonly selectionFrames: SelectionFrameSession;
   readonly selectionEdgeDrag?: SelectionEdgeDragPort;
   readonly setSelection: (selection: ReadonlySet<string>) => void;
+  readonly snapping?: SnappingSettingsV1;
+  readonly snappingInverted?: () => boolean;
   readonly zoom?: () => number;
 }
 
@@ -45,7 +50,10 @@ export function createActiveEditorPreview(
       start,
     });
   }
+  const snapFeatures = () =>
+    activeSnapFeatures(options.snapping, options.snappingInverted?.() ?? false);
   const selectionOptions = {
+    connectionSnapping: () => snapFeatures().connections,
     history: options.history,
     pageToScreen: options.pageToScreen,
     ...(options.pageToViewport === undefined ? {} : { pageToViewport: options.pageToViewport }),
@@ -54,6 +62,7 @@ export function createActiveEditorPreview(
     renderer: options.renderer,
     sceneStore: options.sceneStore,
     selection: options.selection,
+    selectionFrames: options.selectionFrames,
     selectionDefaults: structuredClone(options.defaults.select),
     ...(options.selectionEdgeDrag === undefined
       ? {}
@@ -76,6 +85,8 @@ export function createActiveEditorPreview(
     identity: { createdAt: Date.now(), id: options.ownerWindow.crypto.randomUUID() },
     renderer: options.renderer,
     snap: {
+      angles: () => snapFeatures().angles,
+      connections: () => snapFeatures().connections,
       pageToScreen: options.pageToScreen,
       spatial: { query: (bounds, sink) => options.sceneStore.query(bounds, sink) },
       targets: {

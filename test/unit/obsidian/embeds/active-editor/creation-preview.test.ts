@@ -111,6 +111,48 @@ describe("drag creation preview presentation", () => {
 });
 
 describe("drag creation preview snapping", () => {
+  it("keeps line direction free when angle snapping is disabled", () => {
+    const committed = commitLinearPreview("line", {
+      ...creationSnapPorts(1),
+      angles: false,
+    });
+
+    expect(committed).toMatchObject({ end: { x: 110, y: 24 }, kind: "line" });
+  });
+
+  it("does not attach new endpoints when connection snapping is disabled", () => {
+    const committed = commitLinearPreview("arrow", {
+      ...endpointSnapPorts(),
+      connections: false,
+    });
+
+    expect(committed).toMatchObject({ endConnection: null, kind: "arrow" });
+  });
+
+  it("applies a changed temporary snapping override on the next pointer frame", () => {
+    let snappingEnabled = true;
+    const { committed, preview, setSnapMarkerPath } = linearCreationPreview("arrow", {
+      ...endpointSnapPorts(),
+      angles: false,
+      connections: () => snappingEnabled,
+    });
+
+    preview.update({ pointerId: 1, pointerType: "mouse", x: 110, y: 24 });
+    expect(setSnapMarkerPath.mock.lastCall?.[0]).not.toBeNull();
+
+    snappingEnabled = false;
+    preview.update({ pointerId: 1, pointerType: "mouse", x: 110, y: 24 });
+    expect(setSnapMarkerPath).toHaveBeenLastCalledWith(null);
+
+    snappingEnabled = true;
+    preview.update({ pointerId: 1, pointerType: "mouse", x: 110, y: 24 });
+    preview.commit();
+    expect(committed[0]).toMatchObject({
+      endConnection: { targetId: SEMANTIC_ENDPOINT_TARGET_ID },
+      kind: "arrow",
+    });
+  });
+
   it.each(["line", "arrow"] as const)(
     "snaps a newly created %s to a right angle and renders its angular guide",
     (tool) => {

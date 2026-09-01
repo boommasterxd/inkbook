@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { calculateElementBounds } from "../../../../../src/domain/geometry/public";
 import { createBuiltInSettings } from "../../../../../src/domain/settings/defaults";
 import { ElementStore } from "../../../../../src/domain/store/public";
+import {
+  SelectionFrameSession,
+  transformSelectionFrame,
+} from "../../../../../src/editor/selection/public";
 import { eventPathHasClass } from "../../../../../src/obsidian/commands/event-path";
 import { ActiveEditorBackgroundSession } from "../../../../../src/obsidian/embeds/active-editor/background-session";
 import {
@@ -215,6 +220,49 @@ describe("active editor timer and style sessions", () => {
     expect(() => session.apply("draw", "unknown", 1)).toThrow(RangeError);
     expect(stateChanged).toHaveBeenCalledOnce();
     unsubscribe();
+  });
+});
+
+describe("active editor selection-frame style session", () => {
+  it("rebases a rotated multi-selection frame after a geometry-affecting style change", () => {
+    const first = rectangle();
+    const second = rectangle("00000000-0000-4000-8000-000000000099", 500, 300);
+    const store = new ElementStore([first, second]);
+    const selectedIds = new Set([first.id, second.id]);
+    const history = new ActiveEditorHistory(
+      historyModel({ replaceElements: (elements) => void store.replaceMany(elements) }),
+    );
+    const frames = new SelectionFrameSession();
+    const geometry = [first, second].map((element) => ({
+      bounds: calculateElementBounds(element),
+      element,
+    }));
+    const initial = frames.current(geometry)!;
+    const rotated = transformSelectionFrame(initial, {
+      center: { x: 400, y: 250 },
+      degrees: 30,
+      kind: "rotate",
+    });
+    frames
+      .transition(initial, { center: { x: 400, y: 250 }, degrees: 30, kind: "rotate" })
+      ?.apply();
+    const session = new ActiveEditorStyleSession({
+      defaults: createBuiltInSettings().toolDefaults,
+      history,
+      onSelectionGeometryChanged: vi.fn(),
+      onStateChanged: vi.fn(),
+      sceneStore: new ElementSceneStore(store),
+      selection: () => selectedIds,
+      selectionFrames: frames,
+      store,
+    });
+
+    session.apply("rectangle", "outline-width", 8);
+
+    expect(frames.current(geometry)?.rotation).toBe(30);
+    expect(frames.current(geometry)?.points).not.toEqual(rotated.points);
+    expect(history.undo()).toBe(true);
+    expect(frames.current(geometry)).toEqual(rotated);
   });
 });
 

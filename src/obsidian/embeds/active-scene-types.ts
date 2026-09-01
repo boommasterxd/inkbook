@@ -1,6 +1,7 @@
 import type {
   InkbookDeviceSettingsV1,
   InkbookSettingsV4,
+  SnappingSettingsV1,
   StartupToolV1,
   ToolDefaultsV1,
 } from "../../domain/settings/types";
@@ -34,5 +35,6 @@ export interface ActiveInkbookSceneOptions {
   readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
   readonly scheme: InkbookColorScheme;
   readonly scrollOwner?: () => BrowserScrollElement | null;
+  readonly snapping: SnappingSettingsV1;
   readonly startupTool: StartupToolV1;
 }

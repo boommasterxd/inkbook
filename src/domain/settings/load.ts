@@ -12,6 +12,7 @@ import {
   type InkbookSettingsV4,
   type SettingsDiagnostic,
   type SettingsLoadResult,
+  type SnappingSettingsV1,
 } from "./types";
 import {
   hasExactKeys,
@@ -125,6 +126,50 @@ function loadFilePlacement(
   return structuredClone(fallback);
 }
 
+function loadSnapping(
+  input: unknown,
+  fallback: SnappingSettingsV1,
+  diagnostics: SettingsDiagnostic[],
+): SnappingSettingsV1 {
+  const keys = ["enabled", "angles", "bends", "connections", "structures"];
+  if (!hasExactKeys(input, keys)) {
+    invalid(diagnostics, "snapping");
+    return structuredClone(fallback);
+  }
+  const booleanValue = (value: unknown): value is boolean => typeof value === "boolean";
+  return {
+    enabled: validOrDefault(
+      input.enabled,
+      fallback.enabled,
+      booleanValue,
+      diagnostics,
+      "snapping.enabled",
+    ),
+    angles: validOrDefault(
+      input.angles,
+      fallback.angles,
+      booleanValue,
+      diagnostics,
+      "snapping.angles",
+    ),
+    bends: validOrDefault(input.bends, fallback.bends, booleanValue, diagnostics, "snapping.bends"),
+    connections: validOrDefault(
+      input.connections,
+      fallback.connections,
+      booleanValue,
+      diagnostics,
+      "snapping.connections",
+    ),
+    structures: validOrDefault(
+      input.structures,
+      fallback.structures,
+      booleanValue,
+      diagnostics,
+      "snapping.structures",
+    ),
+  };
+}
+
 type PreparedSettingsRoot<T> =
   | {
       readonly valid: true;
@@ -155,10 +200,19 @@ const VAULT_SETTINGS_KEYS = [
   "version",
   "startupTool",
   "toolDefaults",
+  "snapping",
   "pageDefaults",
   "filePlacement",
   "refreshRatePreference",
 ] as const;
+
+const LEGACY_VAULT_SETTINGS_KEYS = VAULT_SETTINGS_KEYS.filter((key) => key !== "snapping");
+
+function addLegacySnappingDefaults(input: unknown, fallback: InkbookSettingsV4): unknown {
+  return isRecord(input) && input.version === 4 && hasExactKeys(input, LEGACY_VAULT_SETTINGS_KEYS)
+    ? { ...input, snapping: structuredClone(fallback.snapping) }
+    : input;
+}
 
 function migrateV3Settings(
   input: unknown,
@@ -169,7 +223,7 @@ function migrateV3Settings(
   if (!isRecord(input) || input.version !== 3) {
     return { kind: "input", migratedFromV3: false, value: input };
   }
-  if (!hasExactKeys(input, VAULT_SETTINGS_KEYS)) {
+  if (!hasExactKeys(input, LEGACY_VAULT_SETTINGS_KEYS)) {
     return {
       kind: "failure",
       result: {
@@ -194,6 +248,7 @@ function migrateV3Settings(
     value: {
       ...input,
       version: 4,
+      snapping: structuredClone(fallback.snapping),
       toolDefaults: isRecord(legacyDefaults)
         ? { ...legacyDefaults, select: structuredClone(fallback.toolDefaults.select) }
         : legacyDefaults,
@@ -203,7 +258,7 @@ function migrateV3Settings(
 
 export function loadSettings(input: unknown): SettingsLoadResult<InkbookSettingsV4> {
   const fallback = createBuiltInSettings();
-  const migrated = migrateV3Settings(input, fallback);
+  const migrated = migrateV3Settings(addLegacySnappingDefaults(input, fallback), fallback);
   if (migrated.kind === "failure") return migrated.result;
   const prepared = prepareSettingsRoot(migrated.value, fallback, VAULT_SETTINGS_KEYS, 4);
   if (!prepared.valid) return prepared.result;
@@ -221,6 +276,7 @@ export function loadSettings(input: unknown): SettingsLoadResult<InkbookSettings
         "startupTool",
       ),
       toolDefaults: loadToolDefaults(value.toolDefaults, fallback.toolDefaults, diagnostics),
+      snapping: loadSnapping(value.snapping, fallback.snapping, diagnostics),
       pageDefaults: loadPageDefaults(value.pageDefaults, fallback.pageDefaults, diagnostics),
       filePlacement: placement,
       refreshRatePreference: validOrDefault(

@@ -24,6 +24,15 @@ export function isShapeTool(tool: EditorTool): tool is ShapeId {
   return toolbarTool(tool) === "shape";
 }
 
+export function sameSelectionMembers(
+  left: ReadonlySet<string>,
+  right: ReadonlySet<string>,
+): boolean {
+  if (left.size !== right.size) return false;
+  for (const id of left) if (!right.has(id)) return false;
+  return true;
+}
+
 function toolbarTool(tool: EditorTool): ToolId {
   return tool === "line" ||
     tool === "arrow" ||

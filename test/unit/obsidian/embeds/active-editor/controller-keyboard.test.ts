@@ -49,6 +49,7 @@ function keyboardHarness(
   const onFeedback = vi.fn();
   const openKeyboardMenu = vi.fn();
   const clearSelection = vi.fn();
+  const selectAll = vi.fn();
   const controller = new ActiveEditorKeyboardController({
     activeElement: () => options.activeElement ?? null,
     actions,
@@ -63,6 +64,7 @@ function keyboardHarness(
     onFeedback,
     onPendingChanged: vi.fn(),
     openKeyboardMenu,
+    selectAll,
     selectionSize: () => options.selectionSize ?? 0,
   });
   controller.setPointerOver(options.pointerOver ?? true);
@@ -75,6 +77,7 @@ function keyboardHarness(
     navigation,
     onFeedback,
     openKeyboardMenu,
+    selectAll,
     pasteFromClipboardData,
     isAvailable,
     shortcutPaste,
@@ -127,6 +130,16 @@ describe("active editor keyboard controller", () => {
     expect(harness.controller.handleKeyDown(key("a"))).toBe(false);
   });
 
+  it("selects every element for Control+A and Command+A", () => {
+    const harness = keyboardHarness();
+
+    expect(harness.controller.handleKeyDown(key("a", { ctrlKey: true }))).toBe(true);
+    expect(harness.controller.handleKeyDown(key("A", { metaKey: true }))).toBe(true);
+    expect(harness.selectAll).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("active editor clipboard keyboard controller", () => {
   it("claims available Cut and Paste shortcuts for Control and Command input", () => {
     const harness = keyboardHarness({ canPaste: true, selectionSize: 1 });
     harness.isAvailable.mockImplementation(

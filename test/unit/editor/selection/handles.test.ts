@@ -7,12 +7,14 @@ import {
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import {
   findSelectionHandle,
+  createSelectionFrame,
   layoutSelectionHandles,
   selectionBounds,
+  transformSelectionFrame,
 } from "../../../../src/editor/selection/public";
 import { connectedLine, rectangle } from "../../domain/store/fixtures";
 import { coordinateSystem } from "../../domain/store/fixtures";
-import { straightHighlighter } from "../../domain/schema/fixtures";
+import { straightHighlighter, table } from "../../domain/schema/fixtures";
 
 function selected(element: InkElementV1) {
   return { bounds: calculateElementBounds(element), element };
@@ -46,7 +48,30 @@ describe("selection handle geometry", () => {
     expect(handles.filter(({ kind }) => kind === "scale")).toHaveLength(8);
     expect(handles.find(({ kind }) => kind === "rotate")?.point.y).toBe(70);
   });
+});
 
+describe("oriented multi-selection handle geometry", () => {
+  it("lays out multi-selection handles in the retained oriented frame", () => {
+    const first = selected(rectangle());
+    const second = selected(rectangle("00000000-0000-4000-8000-000000000099", 500, 300));
+    const frame = createSelectionFrame([first, second]);
+    if (frame === null) throw new Error("Expected a selection frame.");
+    const center = { x: 400, y: 250 };
+    const oriented = transformSelectionFrame(frame, {
+      center,
+      degrees: 30,
+      kind: "rotate",
+    });
+    const handles = layoutSelectionHandles([first, second], { frame: oriented, zoom: 1 });
+
+    expect(handles[0]?.point).toEqual(oriented.points[0]);
+    expect(handles[2]?.point).toEqual(oriented.points[1]);
+    expect(handles[4]?.point).toEqual(oriented.points[2]);
+    expect(handles[6]?.point).toEqual(oriented.points[3]);
+  });
+});
+
+describe("linear and structural selection handle geometry", () => {
   it("exposes endpoint and bend handles for lines without generic box handles", () => {
     const line = connectedLine();
     const handles = layoutSelectionHandles([selected(line)], { zoom: 1 });
@@ -103,4 +128,25 @@ describe("selection handle geometry", () => {
     expect(handles.filter(({ kind }) => kind === "coordinate-origin")).toHaveLength(1);
     expect(handles.filter(({ kind }) => kind === "coordinate-axis")).toHaveLength(3);
   });
+});
+
+describe("overlapping selection handles", () => {
+  it.each([0, 37])(
+    "prioritizes table separators over coincident outer scale handles at %s degrees",
+    (rotation) => {
+      const target = table();
+      target.headerHeight = 0;
+      target.columnOffsets = [0, 80];
+      target.rotation = rotation;
+      const handles = layoutSelectionHandles([selected(target)], { zoom: 1 });
+      const header = handles.find((handle) => handle.kind === "table-header");
+      const column = handles.find((handle) => handle.kind === "table-column");
+      if (header?.kind !== "table-header" || column?.kind !== "table-column") {
+        throw new TypeError("Expected table structure handles.");
+      }
+
+      expect(findSelectionHandle(handles, header.point, 1, 1)?.kind).toBe("table-header");
+      expect(findSelectionHandle(handles, column.point, 1, 1)?.kind).toBe("table-column");
+    },
+  );
 });

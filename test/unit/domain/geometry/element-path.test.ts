@@ -43,8 +43,9 @@ describe("SVG element path construction", () => {
 
   it("emits tables and coordinate systems as compound paths", () => {
     const tablePath = buildTablePath(table());
-    expect(tablePath.match(/M/g)).toHaveLength(4);
-    expect(tablePath).toContain("Z");
+    expect(tablePath.match(/M/g)).toHaveLength(3);
+    expect(tablePath).not.toContain("Z");
+    expect(tablePath).not.toContain("M10 20");
     const customTablePath = buildTablePath(table({ columnOffsets: [60, 105] }));
     expect(customTablePath).toContain("M70 20L70 120");
     expect(customTablePath).toContain("M115 20L115 120");

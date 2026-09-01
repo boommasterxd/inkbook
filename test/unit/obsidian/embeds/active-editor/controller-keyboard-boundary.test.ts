@@ -285,6 +285,7 @@ function createHarness() {
     sceneStore,
     selectionMoveLayout: { begin: vi.fn(), finish: vi.fn(), updateBottom: vi.fn() },
     scrollOwner: owner,
+    snapping: Settings.createBuiltInSettings().snapping,
     startupTool: "draw",
   });
   const removeInputListeners = attachActiveSceneInputListeners(
@@ -486,7 +487,6 @@ class RecordedMenu implements MenuPort {
     return this;
   }
 }
-
 function chainableItem(): MenuItemPort {
   const item: MenuItemPort = {
     onClick: () => item,

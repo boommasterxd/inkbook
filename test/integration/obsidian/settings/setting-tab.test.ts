@@ -85,6 +85,7 @@ describe("InkbookSettingTab definitions", () => {
       "Page defaults",
       "Drawing tools",
       "Shapes and structures",
+      "Snapping",
       "Input",
       "Interface",
     ]);
@@ -127,6 +128,29 @@ describe("InkbookSettingTab definitions", () => {
       "Selection area",
       "Include elements",
     ]);
+  });
+});
+
+describe("InkbookSettingTab snapping and refresh definitions", () => {
+  it("exposes global and per-kind snapping controls", async () => {
+    const store = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());
+    const tab = createTab(store);
+    const snapping = groups(tab).find((group) => group.heading === "Snapping");
+    const items = snapping?.items ?? [];
+
+    expect(items.map((item) => item.name)).toEqual([
+      "Enable snapping",
+      "Angle snapping",
+      "Bend snapping",
+      "Connection snapping",
+      "Structure snapping",
+      "Reset group to defaults",
+    ]);
+    const angles = items.find((item) => item.name === "Angle snapping");
+    expect(typeof angles?.visible === "function" && angles.visible()).toBe(true);
+    await tab.setControlValue("snapping.enabled", false);
+    expect(typeof angles?.visible === "function" && angles.visible()).toBe(false);
+    expect(store.getVaultSettings().snapping.angles).toBe(true);
   });
 
   it("shows the live automatic refresh-rate result in the selected option", () => {
@@ -196,6 +220,7 @@ describe("InkbookSettingTab reset integration", () => {
     await tab.setControlValue("toolDefaults.pen.width", 14);
     await tab.setControlValue("toolDefaults.select.area", "lasso");
     await tab.setControlValue("toolDefaults.shapes.rectangle.outlineWidth", 8);
+    await tab.setControlValue("snapping.angles", false);
     await tab.setControlValue("device.fingerDrawingEnabled", !deviceDefaults.fingerDrawingEnabled);
     await tab.setControlValue("device.leftHandedToolbar", !deviceDefaults.leftHandedToolbar);
 
@@ -225,6 +250,11 @@ describe("InkbookSettingTab reset integration", () => {
       select: defaults.toolDefaults.select,
       straightHighlighter: defaults.toolDefaults.straightHighlighter,
     });
+    resetGroup(tab, "Snapping");
+    await vi.waitFor(() =>
+      expect(tab.getControlValue("snapping.angles")).toBe(defaults.snapping.angles),
+    );
+    expect(store.getVaultSettings().snapping).toEqual(defaults.snapping);
     resetGroup(tab, "Shapes and structures");
     await vi.waitFor(() =>
       expect(tab.getControlValue("toolDefaults.shapes.rectangle.outlineWidth")).toBe(

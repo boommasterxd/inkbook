@@ -105,39 +105,7 @@ export class ActiveInkbookScene {
     );
     this.#memory.attach(this.#renderer);
     this.#renderer.setScheme(options.scheme);
-    this.#controller = controller = new ActiveEditorController({
-      applyZoomLayout: (update) => this.#layout.applyZoom(update),
-      backgroundSpacing: options.backgroundSpacing,
-      container: this.#container,
-      defaults: options.defaults,
-      deviceSettings: options.deviceSettings,
-      history: options.history,
-      interruptLayoutForInput: () => this.#layout.interruptForInput(),
-      ...(options.keymap === undefined ? {} : { keymap: options.keymap }),
-      menuFactory: options.menuFactory ?? obsidianMenuFactory,
-      model: options.model,
-      onLock: options.onLock,
-      onFeedback: options.onFeedback,
-      onCopyEmbed: options.onCopyEmbed,
-      onDeleteEmbed: options.onDeleteEmbed,
-      onPageChanged: () => this.#layout.pageChanged(),
-      onPagePreviewFinish: (committed) => this.#layout.finishPagePreview(committed),
-      onPagePreview: (page) => this.#layout.previewPage(page),
-      onStateChanged: () => this.#updateChrome(),
-      renderIcon: (element, icon) => setIcon(element, icon),
-      renderer: this.#renderer,
-      sceneStore: this.#store,
-      selectionMoveLayout: {
-        begin: () => this.#layout.beginSelectionMove(),
-        currentHeight: () => this.#layout.currentPageHeight(),
-        finish: (committed, previewMaximumBottom) =>
-          this.#layout.finishSelectionMove(committed, previewMaximumBottom),
-        updateBottom: (maximumBottom) => this.#layout.updateSelectionMoveBottom(maximumBottom),
-      },
-      sliceBudgetMs: options.sliceBudgetMs,
-      scrollOwner,
-      startupTool: options.startupTool,
-    });
+    this.#controller = controller = this.#createController(options, scrollOwner);
     scrollBinding = bindSceneScrollOwner(
       scrollOwner,
       ownerWindow,
@@ -173,6 +141,46 @@ export class ActiveInkbookScene {
     );
     this.#resolveReady = readiness.resolve;
     this.ready = readiness.ready;
+  }
+
+  #createController(
+    options: ActiveInkbookSceneOptions,
+    scrollOwner: BrowserScrollElement,
+  ): ActiveEditorController {
+    return new ActiveEditorController({
+      applyZoomLayout: (update) => this.#layout.applyZoom(update),
+      backgroundSpacing: options.backgroundSpacing,
+      container: this.#container,
+      defaults: options.defaults,
+      deviceSettings: options.deviceSettings,
+      history: options.history,
+      interruptLayoutForInput: () => this.#layout.interruptForInput(),
+      ...(options.keymap === undefined ? {} : { keymap: options.keymap }),
+      menuFactory: options.menuFactory ?? obsidianMenuFactory,
+      model: options.model,
+      onLock: options.onLock,
+      onFeedback: options.onFeedback,
+      onCopyEmbed: options.onCopyEmbed,
+      onDeleteEmbed: options.onDeleteEmbed,
+      onPageChanged: () => this.#layout.pageChanged(),
+      onPagePreviewFinish: (committed) => this.#layout.finishPagePreview(committed),
+      onPagePreview: (page) => this.#layout.previewPage(page),
+      onStateChanged: () => this.#updateChrome(),
+      renderIcon: (element, icon) => setIcon(element, icon),
+      renderer: this.#renderer,
+      sceneStore: this.#store,
+      selectionMoveLayout: {
+        begin: () => this.#layout.beginSelectionMove(),
+        currentHeight: () => this.#layout.currentPageHeight(),
+        finish: (committed, previewMaximumBottom) =>
+          this.#layout.finishSelectionMove(committed, previewMaximumBottom),
+        updateBottom: (maximumBottom) => this.#layout.updateSelectionMoveBottom(maximumBottom),
+      },
+      sliceBudgetMs: options.sliceBudgetMs,
+      scrollOwner,
+      snapping: options.snapping,
+      startupTool: options.startupTool,
+    });
   }
 
   public disableInput(): void {
@@ -259,6 +267,11 @@ export class ActiveInkbookScene {
     this.#layout.updateMotion(settings.motion);
     this.#controller.updateDeviceSettings(settings);
     this.#updateChrome();
+  }
+
+  public updateSnappingSettings(settings: ActiveInkbookSceneOptions["snapping"]): void {
+    if (this.#disposed) return;
+    this.#controller.updateSnappingSettings(settings);
   }
 
   #applyDelta(delta: StoreDelta): void {

@@ -8,12 +8,12 @@ describe("table line segments", () => {
     expect(tableColumnOffsets(table())).toEqual([50, 100]);
   });
 
-  it("uses persisted separator offsets without changing the outer frame", () => {
+  it("uses persisted separator offsets without emitting an outer frame", () => {
     const custom = table({ columnOffsets: [60, 105] });
 
     expect(tableColumnOffsets(custom)).toEqual([60, 105]);
     expect(tableLineSegments(custom)).toEqual([
-      ...frameAndHeaderSegments(),
+      headerSegment(),
       [
         { x: 70, y: 20 },
         { x: 70, y: 120 },
@@ -25,9 +25,9 @@ describe("table line segments", () => {
     ]);
   });
 
-  it("provides every local outline and divider segment", () => {
+  it("provides the header and every inner divider segment", () => {
     expect(tableLineSegments(table())).toEqual([
-      ...frameAndHeaderSegments(),
+      headerSegment(),
       [
         { x: 60, y: 20 },
         { x: 60, y: 120 },
@@ -40,27 +40,9 @@ describe("table line segments", () => {
   });
 });
 
-function frameAndHeaderSegments() {
+function headerSegment() {
   return [
-    [
-      { x: 10, y: 20 },
-      { x: 160, y: 20 },
-    ],
-    [
-      { x: 160, y: 20 },
-      { x: 160, y: 120 },
-    ],
-    [
-      { x: 160, y: 120 },
-      { x: 10, y: 120 },
-    ],
-    [
-      { x: 10, y: 120 },
-      { x: 10, y: 20 },
-    ],
-    [
-      { x: 10, y: 50 },
-      { x: 160, y: 50 },
-    ],
+    { x: 10, y: 50 },
+    { x: 160, y: 50 },
   ];
 }

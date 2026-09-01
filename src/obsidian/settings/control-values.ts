@@ -12,6 +12,7 @@ type VaultControlKey =
   | "refreshRatePreference"
   | "filePlacement.mode"
   | "filePlacement.folder"
+  | `snapping.${keyof InkbookSettingsV4["snapping"]}`
   | `pageDefaults.${"backgroundType" | "activeBufferLines" | "lockedBufferLines"}`
   | `pageDefaults.backgroundSpacing.${"lines" | "dots" | "squares"}`
   | `toolDefaults.select.${"area" | "inclusion"}`

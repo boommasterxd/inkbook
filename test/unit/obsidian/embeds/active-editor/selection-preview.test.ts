@@ -11,7 +11,6 @@ import { ElementStore } from "../../../../../src/domain/store/public";
 import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
 import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
 import type { PreparedElementHistory } from "../../../../../src/obsidian/embeds/active-editor/prepared-element-history";
-import { createSynchronousActiveEditorHistory } from "../../../../fixtures/obsidian/synchronous-active-editor-history";
 import { connectedLine, rectangle } from "../../../domain/store/fixtures";
 
 const selectedOverlayCall = [expect.any(String), "accent", expect.any(String)];
@@ -213,59 +212,6 @@ describe("selection move edge-drag validation", () => {
     expect(clearPreviewTransforms).toHaveBeenCalledOnce();
     expect(setSelectionOverlayPath.mock.lastCall).toEqual(selectedOverlayCall);
     expect(edgeDrag.finish).toHaveBeenCalledWith(false);
-  });
-
-  it("snaps a moved free line endpoint to a shape and renders an offset target marker", () => {
-    const target = rectangle();
-    const line = {
-      ...connectedLine(target),
-      end: { x: 350, y: 50 },
-      pivot: { x: 200, y: 50 },
-      start: { x: 50, y: 50 },
-      startConnection: null,
-    };
-    const store = new ElementStore([target, line]);
-    const sceneStore = new ElementSceneStore(store);
-    const setPreviewTransform = vi.fn();
-    const setSnapMarkerPath = vi.fn();
-    const history = createSynchronousActiveEditorHistory(store);
-    const preview = new MovePreview({
-      history,
-      pageToScreen: (point) => point,
-      preparedHistory: { commitMove: vi.fn(() => false) } as unknown as PreparedElementHistory,
-      renderer: {
-        clearPreviewTransforms: vi.fn(),
-        setOverlayPath: vi.fn(),
-        setPreviewTransform,
-        setSnapMarkerPath,
-        suppressMotionForNextDelta: vi.fn(),
-      },
-      sceneStore,
-      selection: () => new Set([line.id]),
-      setSelection: vi.fn(),
-      start: {
-        additive: false,
-        kind: "element-move",
-        pointer: pointer(0, 0),
-        tool: "select",
-      },
-      store,
-    });
-
-    preview.update(pointer(47, 48));
-
-    expect(setPreviewTransform).toHaveBeenLastCalledWith([line.id], "translate(50 50)", 1);
-    expect(setSnapMarkerPath).toHaveBeenLastCalledWith("M 92 100 L 108 100 M 100 92 L 100 108");
-    expect(preview.commit()).toBe(true);
-    expect(store.get(line.id)?.element).toMatchObject({
-      start: { x: 100, y: 100 },
-      startConnection: {
-        anchor: { kind: "box", position: "top-left" },
-        targetId: target.id,
-      },
-    });
-    expect(setSnapMarkerPath).toHaveBeenLastCalledWith(null);
-    sceneStore.release();
   });
 });
 

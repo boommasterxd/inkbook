@@ -311,7 +311,7 @@ describe("selection transform constraints", () => {
     expect(validateInkElementV1(scaled).ok).toBe(true);
   });
 
-  it("uses the strictest table header minimum during uniform group scaling", () => {
+  it("scales table headers proportionally while preserving outer geometry minimums", () => {
     const first = scalableTable("00000000-0000-4000-8000-000000000004", 30);
     const second = scalableTable("00000000-0000-4000-8000-000000000005", 40);
 
@@ -321,8 +321,8 @@ describe("selection transform constraints", () => {
       0.5,
     ) as [TableElementV1, TableElementV1];
 
-    expect(scaledFirst).toMatchObject({ columnWidth: 80, headerHeight: 24, height: 160 });
-    expect(scaledSecond).toMatchObject({ columnWidth: 80, headerHeight: 32, height: 160 });
+    expect(scaledFirst).toMatchObject({ columnWidth: 50, headerHeight: 15, height: 100 });
+    expect(scaledSecond).toMatchObject({ columnWidth: 50, headerHeight: 20, height: 100 });
     expect(validateInkElementV1(scaledFirst).ok).toBe(true);
     expect(validateInkElementV1(scaledSecond).ok).toBe(true);
   });

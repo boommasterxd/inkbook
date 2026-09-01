@@ -6,9 +6,12 @@ import {
 } from "../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 
-import type { SelectedElementGeometry, SelectionHandle } from "./handles";
+import type { SelectionHandle } from "./handles";
 import { layoutSelectionHandles, ROTATE_HANDLE_OFFSET_PIXELS, selectionBounds } from "./handles";
-import type { SelectionPreviewTransform } from "./handle-types";
+import type { SelectedElementGeometry, SelectionPreviewTransform } from "./handle-types";
+import { transformSelectionPoint, type OrientedSelectionFrame } from "./selection-frame";
+
+export { transformSelectionPoint } from "./selection-frame";
 
 export type SelectionOutline =
   | {
@@ -28,10 +31,11 @@ export function selectionOverlayGeometry(
   selected: readonly SelectedElementGeometry[],
   zoom: number,
   transform: SelectionPreviewTransform | null = null,
+  frame: OrientedSelectionFrame | null = null,
 ): SelectionOverlayGeometry | null {
   if (selected.length === 0) return null;
-  const outline = selectionOutline(selected);
-  const handles = layoutSelectionHandles(selected, { zoom });
+  const outline = selectionOutline(selected, frame);
+  const handles = layoutSelectionHandles(selected, { frame, zoom });
   if (outline === null) return null;
   if (transform === null) return { handles, outline };
   const transformedOutline = transformOutline(outline, transform);
@@ -73,31 +77,18 @@ function transformedHandle(
 export function selectionOverlayContainsPoint(
   selected: readonly SelectedElementGeometry[],
   point: PointV1,
+  frame: OrientedSelectionFrame | null = null,
 ): boolean {
-  const outline = selectionOutline(selected);
+  const outline = selectionOutline(selected, frame);
   return outline?.kind === "polygon" && pointInPolygon(point, outline.points);
 }
 
-export function transformSelectionPoint(
-  point: PointV1,
-  transform: SelectionPreviewTransform,
-): PointV1 {
-  if (transform.kind === "translate") {
-    return canonicalPoint({ x: point.x + transform.delta.x, y: point.y + transform.delta.y });
-  }
-  if (transform.kind === "rotate") {
-    return canonicalPoint(rotatePointClockwise(point, transform.center, transform.degrees));
-  }
-  const local = rotatePointClockwise(point, transform.anchor, -transform.rotation);
-  const scaled = {
-    x: transform.anchor.x + (local.x - transform.anchor.x) * transform.factors.x,
-    y: transform.anchor.y + (local.y - transform.anchor.y) * transform.factors.y,
-  };
-  return canonicalPoint(rotatePointClockwise(scaled, transform.anchor, transform.rotation));
-}
-
-function selectionOutline(selected: readonly SelectedElementGeometry[]): SelectionOutline | null {
+function selectionOutline(
+  selected: readonly SelectedElementGeometry[],
+  frame: OrientedSelectionFrame | null,
+): SelectionOutline | null {
   if (selected.length === 1) return singleElementOutline(selected[0]!.element);
+  if (frame !== null) return { kind: "polygon", points: frame.points };
   const bounds = selectionBounds(selected);
   return bounds === null
     ? null

@@ -8,6 +8,8 @@ import {
   type Bounds,
 } from "../../domain/geometry/public";
 import type { BoxAnchorV1, InkElementV1, PointV1 } from "../../domain/schema/public";
+import type { SelectedElementGeometry } from "./handle-types";
+import type { OrientedSelectionFrame } from "./selection-frame";
 
 const BOX_HANDLE_ORDER: readonly BoxAnchorV1[] = [
   "top-left",
@@ -21,6 +23,7 @@ const BOX_HANDLE_ORDER: readonly BoxAnchorV1[] = [
 ];
 
 export const ROTATE_HANDLE_OFFSET_PIXELS = 28;
+const HANDLE_OVERLAP_TOLERANCE_PIXELS = 0.01;
 
 export type SelectionHandle =
   | { readonly kind: "scale"; readonly point: PointV1; readonly position: BoxAnchorV1 }
@@ -40,12 +43,8 @@ export type SelectionHandle =
       readonly separatorIndex: number;
     };
 
-export interface SelectedElementGeometry {
-  readonly bounds: Bounds;
-  readonly element: InkElementV1;
-}
-
 export interface SelectionHandleLayoutOptions {
+  readonly frame?: OrientedSelectionFrame | null;
   readonly rotateOffsetPixels?: number;
   readonly zoom: number;
 }
@@ -89,7 +88,12 @@ export function findSelectionHandle(
   let bestDistance = Infinity;
   for (const handle of handles) {
     const distance = Math.hypot(pointer.x - handle.point.x, pointer.y - handle.point.y) * zoom;
-    if (distance <= radiusPixels && distance < bestDistance) {
+    if (
+      distance <= radiusPixels &&
+      (distance < bestDistance ||
+        (Math.abs(distance - bestDistance) <= HANDLE_OVERLAP_TOLERANCE_PIXELS &&
+          handlePriority(handle) > handlePriority(best)))
+    ) {
       best = handle;
       bestDistance = distance;
     }
@@ -97,13 +101,69 @@ export function findSelectionHandle(
   return best;
 }
 
+function handlePriority(handle: SelectionHandle | null): number {
+  return handle?.kind === "scale" || handle?.kind === "rotate" || handle === null ? 0 : 1;
+}
+
 function multiSelectionHandles(
   selected: readonly SelectedElementGeometry[],
   options: SelectionHandleLayoutOptions,
 ): SelectionHandle[] {
+  if (options.frame !== undefined && options.frame !== null) {
+    return orientedBoxHandles(options.frame.points, options.zoom, options.rotateOffsetPixels);
+  }
   const bounds = selectionBounds(selected);
   if (bounds === null) return [];
   return [...boxHandles(bounds), rotateHandle(bounds, options.zoom, options.rotateOffsetPixels)];
+}
+
+function orientedBoxHandles(
+  points: OrientedSelectionFrame["points"],
+  zoom: number,
+  offsetPixels = ROTATE_HANDLE_OFFSET_PIXELS,
+): SelectionHandle[] {
+  const [topLeft, topRight, bottomRight, bottomLeft] = points;
+  const midpoint = (start: PointV1, end: PointV1): PointV1 => ({
+    x: (start.x + end.x) / 2,
+    y: (start.y + end.y) / 2,
+  });
+  const positioned: ReadonlyArray<readonly [BoxAnchorV1, PointV1]> = [
+    ["top-left", topLeft],
+    ["top-center", midpoint(topLeft, topRight)],
+    ["top-right", topRight],
+    ["middle-right", midpoint(topRight, bottomRight)],
+    ["bottom-right", bottomRight],
+    ["bottom-center", midpoint(bottomRight, bottomLeft)],
+    ["bottom-left", bottomLeft],
+    ["middle-left", midpoint(bottomLeft, topLeft)],
+  ];
+  return [
+    ...positioned.map(([position, point]): SelectionHandle => ({ kind: "scale", point, position })),
+    orientedRotateHandle(topLeft, topRight, zoom, offsetPixels),
+  ];
+}
+
+function orientedRotateHandle(
+  topLeft: PointV1,
+  topRight: PointV1,
+  zoom: number,
+  offsetPixels: number,
+): Extract<SelectionHandle, { kind: "rotate" }> {
+  if (!Number.isFinite(offsetPixels) || offsetPixels < 0) {
+    throw new RangeError("Rotation-handle offset must be a non-negative finite number.");
+  }
+  const delta = { x: topRight.x - topLeft.x, y: topRight.y - topLeft.y };
+  const length = Math.hypot(delta.x, delta.y);
+  const midpoint = { x: (topLeft.x + topRight.x) / 2, y: (topLeft.y + topRight.y) / 2 };
+  if (length === 0) return { kind: "rotate", point: midpoint };
+  const offset = offsetPixels / zoom;
+  return {
+    kind: "rotate",
+    point: {
+      x: midpoint.x + (delta.y * offset) / length,
+      y: midpoint.y - (delta.x * offset) / length,
+    },
+  };
 }
 
 function singleElementHandles(

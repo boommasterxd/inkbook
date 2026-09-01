@@ -10,6 +10,7 @@ import {
   editLinearBend,
   layoutSelectionHandles,
   oppositeElementHandlePoint,
+  SelectionFrameSession,
 } from "../../../../src/editor/selection/public";
 import { ActiveEditorHandleInteraction } from "../../../../src/obsidian/embeds/active-editor/handle-interaction";
 import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";
@@ -308,6 +309,53 @@ describe("active editor selection snap guides", () => {
   });
 });
 
+describe("active editor multi-selection frame", () => {
+  it("keeps its rotated box after release and restores it through undo and redo", () => {
+    const first = rectangle();
+    const second = {
+      ...storeRectangle("00000000-0000-4000-8000-000000000099", 500, 350),
+      height: first.height,
+      pivot: { x: 600, y: 420 },
+    };
+    const selection = new Set([first.id, second.id]);
+    const fixture = harness([first, second], 1, selection);
+    const selected = [first, second].map((element) => ({
+      bounds: calculateElementBounds(element),
+      element,
+    }));
+    const initial = fixture.selectionFrames.current(selected)!;
+    const handle = layoutSelectionHandles(selected, { frame: initial, zoom: 1 }).find(
+      ({ kind }) => kind === "rotate",
+    );
+    if (handle?.kind !== "rotate") throw new Error("Expected a rotate handle.");
+    const center = {
+      x: (initial.points[0].x + initial.points[2].x) / 2,
+      y: (initial.points[0].y + initial.points[2].y) / 2,
+    };
+    const pointerId = 31;
+
+    expect(
+      fixture.interaction.pointerDown({ ...handle.point, pointerId, pointerType: "mouse" }),
+    ).toBe(true);
+    expect(
+      fixture.interaction.pointerMove({
+        ...rotatePointClockwise(handle.point, center, 30),
+        pointerId,
+        pointerType: "mouse",
+      }),
+    ).toBe(true);
+    const previewPath = fixture.overlays[fixture.overlays.length - 2];
+    expect(fixture.interaction.pointerUp(pointerId)).toBe(true);
+
+    expect(fixture.overlays[fixture.overlays.length - 2]).toBe(previewPath);
+    expect(fixture.selectionFrames.current(selected)?.rotation).toBe(30);
+    expect(fixture.history.undo()).toBe(true);
+    expect(fixture.selectionFrames.current(selected)).toEqual(initial);
+    expect(fixture.history.redo()).toBe(true);
+    expect(fixture.selectionFrames.current(selected)?.rotation).toBe(30);
+  });
+});
+
 describe("active editor endpoint straightening", () => {
   it("shows the endpoint chord only for a straight preview and removes bend on release", () => {
     const curved = editLinearBend(line(), { x: 30, y: 40 });
@@ -343,7 +391,11 @@ describe("active editor endpoint straightening", () => {
   });
 });
 
-function harness(elements: readonly InkElementV1[], zoom: number) {
+function harness(
+  elements: readonly InkElementV1[],
+  zoom: number,
+  selection: ReadonlySet<string> = new Set([elements[elements.length - 1]!.id]),
+) {
   const store = new ElementStore(elements);
   const model = {
     commitBandOrder: vi.fn(),
@@ -362,8 +414,10 @@ function harness(elements: readonly InkElementV1[], zoom: number) {
     updateBottom: vi.fn(),
   };
   const sceneStore = new ElementSceneStore(store);
+  const history = new ActiveEditorHistory(model);
+  const selectionFrames = new SelectionFrameSession();
   const interaction = new ActiveEditorHandleInteraction({
-    history: new ActiveEditorHistory(model),
+    history,
     layout,
     model,
     pageToScreen: (point) => point,
@@ -378,8 +432,9 @@ function harness(elements: readonly InkElementV1[], zoom: number) {
       suppressMotionForNextDelta: vi.fn(),
     },
     sceneStore,
-    selection: () => new Set([elements[elements.length - 1]!.id]),
+    selection: () => selection,
+    selectionFrames,
     zoom: () => zoom,
   });
-  return { interaction, layout, overlays, store };
+  return { history, interaction, layout, overlays, selectionFrames, store };
 }

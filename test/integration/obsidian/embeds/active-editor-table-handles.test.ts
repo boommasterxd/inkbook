@@ -75,6 +75,56 @@ describe("active editor table structure handles", () => {
   });
 });
 
+describe("active editor table boundary handles", () => {
+  it("commits header and column separators at the outer bounds", () => {
+    const initial = rotatedTable();
+    const headerFixture = tableHarness(initial);
+    const headerStart = pointer(tableHandle(initial, "table-header"), 15);
+    const belowBottom = worldPoint(initial, {
+      x: initial.x + (initial.columns * initial.columnWidth) / 2,
+      y: initial.y + initial.height + 50,
+    });
+
+    previewTableDrag(headerFixture.interaction, headerStart, belowBottom);
+    expect(latestTable(headerFixture.previews, initial.id).headerHeight).toBe(initial.height);
+    expect(headerFixture.interaction.pointerUp(headerStart.pointerId)).toBe(true);
+    expect(requireTable(headerFixture.store.get(initial.id)?.element).headerHeight).toBe(
+      initial.height,
+    );
+
+    const changed = requireTable(headerFixture.store.get(initial.id)?.element);
+    const columnFixture = tableHarness(changed);
+    const columnStart = pointer(tableHandle(changed, "table-column"), 16);
+    const beyondRight = worldPoint(changed, {
+      x: changed.x + changed.columns * changed.columnWidth + 50,
+      y: changed.y + changed.height / 2,
+    });
+    previewTableDrag(columnFixture.interaction, columnStart, beyondRight);
+    expect(latestTable(columnFixture.previews, changed.id).columnOffsets).toEqual([200]);
+    expect(columnFixture.interaction.pointerUp(columnStart.pointerId)).toBe(true);
+    expect(requireTable(columnFixture.store.get(changed.id)?.element).columnOffsets).toEqual([200]);
+  });
+
+  it("lets a separator cross its peers while storing sorted offsets", () => {
+    const table = {
+      ...rotatedTable(),
+      columns: 3,
+      pivot: { x: 250, y: 150 },
+    };
+    const fixture = tableHarness(table);
+    const start = pointer(tableHandle(table, "table-column"), 17);
+    const beyondRight = worldPoint(table, {
+      x: table.x + table.columns * table.columnWidth + 50,
+      y: table.y + table.height / 2,
+    });
+
+    previewTableDrag(fixture.interaction, start, beyondRight);
+    expect(latestTable(fixture.previews, table.id).columnOffsets).toEqual([200, 300]);
+    expect(fixture.interaction.pointerUp(start.pointerId)).toBe(true);
+    expect(requireTable(fixture.store.get(table.id)?.element).columnOffsets).toEqual([200, 300]);
+  });
+});
+
 function rotatedTable(): Extract<InkElementV1, { kind: "table" }> {
   const base = geometryTable();
   return {

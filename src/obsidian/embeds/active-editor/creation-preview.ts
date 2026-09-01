@@ -39,6 +39,8 @@ export interface CreationPreviewRenderer {
 }
 
 export interface CreationSnapPorts {
+  readonly angles?: boolean | (() => boolean);
+  readonly connections?: boolean | (() => boolean);
   readonly pageToScreen: (point: PointV1) => PointV1;
   readonly spatial: SpatialCandidateQuery;
   readonly targets: SnapTargetReader;
@@ -215,6 +217,7 @@ export class CreationPreview implements GesturePreview {
     if (this.#endSnap !== null || (tool !== "line" && tool !== "arrow")) {
       return this.#endSnap?.point ?? this.#current;
     }
+    if (!this.#snapFeatureEnabled("angles")) return this.#current;
     const result = resolvePointAngleSnap({
       origin: start,
       point: this.#current,
@@ -227,7 +230,10 @@ export class CreationPreview implements GesturePreview {
   }
 
   #renderSnapMarkers(): void {
-    if (this.#snap === undefined || !supportsConnections(this.#start.tool)) return;
+    if (this.#snap === undefined || !supportsConnections(this.#start.tool)) {
+      this.#renderer.setSnapMarkerPath(null);
+      return;
+    }
     const points = [this.#startSnap?.point, this.#endSnap?.point].filter(
       (point): point is PointV1 => point !== undefined,
     );
@@ -250,7 +256,16 @@ export class CreationPreview implements GesturePreview {
 
   #updateSnapCandidates(): void {
     const snap = this.#snap;
-    if (snap === undefined || !supportsConnections(this.#start.tool)) return;
+    if (
+      snap === undefined ||
+      !this.#snapFeatureEnabled("connections") ||
+      !supportsConnections(this.#start.tool)
+    ) {
+      this.#startSnap = null;
+      this.#endSnap = null;
+      this.#startSnapResolved = false;
+      return;
+    }
     if (!this.#startSnapResolved) {
       this.#startSnap = findSnapCandidate(
         {
@@ -279,6 +294,11 @@ export class CreationPreview implements GesturePreview {
     const start = this.#startSnap?.point ?? this.#start.pointer;
     this.#endSnap =
       candidate !== null && pointDistance(start, candidate.point) >= 8 ? candidate : null;
+  }
+
+  #snapFeatureEnabled(feature: "angles" | "connections"): boolean {
+    const configured = this.#snap?.[feature];
+    return typeof configured === "function" ? configured() : (configured ?? true);
   }
 
   #nextSampleTime(): number {

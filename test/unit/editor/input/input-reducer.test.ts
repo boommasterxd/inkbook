@@ -397,7 +397,7 @@ describe("selection and cancellation", () => {
     expect(select.effects[1]).toEqual({
       type: "select-element",
       elementId: "shape-a",
-      mode: "preserve-or-replace",
+      mode: "replace",
     });
   });
 

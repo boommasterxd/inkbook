@@ -10,6 +10,7 @@ import type {
   SelectionHandleAction,
   SelectionHandlePreview,
   SelectionHandleSessionOptions,
+  SelectionHandleUpdateOptions,
   SelectionPreviewTransform,
   SelectionSnapGuide,
   SelectionSnapPorts,
@@ -17,12 +18,14 @@ import type {
 } from "./handle-types";
 import { selectionHandleSnapGuide, selectionRotationDelta } from "./handle-snap-resolution";
 import { activeScaleAxes } from "./handle-session-geometry";
+import { assertFiniteHandlePoint, assertLinearHandleElement } from "./handle-session-validation";
+import { selectionScaleFactors } from "./selection-scale";
+import { selectionSnapFeatureEnabled } from "./snap-features";
 import {
   minimumUniformScaleForSelection,
   moveSelection,
   rotateSelection,
   scaleElementFromPointers,
-  scaleFactorsFromPointers,
   scaleSelectionFromPointers,
   scaleSelectionUniformAtLeast,
   uniformScaleFactorFromPointers,
@@ -59,17 +62,19 @@ export class SelectionHandleSession {
   readonly #minimumUniformScale: number | undefined;
   readonly #snapScratch = new SnapCandidateScratch();
   readonly #snap: SelectionSnapPorts | undefined;
+  #snapFeatures: SelectionSnapPorts["features"];
   readonly #startPointer: PointV1;
   #cancelled = false;
   #currentPointer: PointV1;
   #generation = 0;
   #preview: SelectionHandlePreview;
   #snapCandidate: SnapCandidate | null = null;
+  #uniformScale = false;
   #valid = true;
 
   public constructor(options: SelectionHandleSessionOptions) {
     if (options.elements.length === 0) throw new RangeError("A handle session needs a selection.");
-    assertFinitePoint(options.startPointer);
+    assertFiniteHandlePoint(options.startPointer);
     this.#action = options.action;
     this.#elements = options.elements;
     this.#planner = options.planner;
@@ -78,8 +83,10 @@ export class SelectionHandleSession {
         ? minimumUniformScaleForSelection(options.elements)
         : undefined;
     this.#snap = options.snap;
+    this.#snapFeatures = options.snap?.features;
     this.#startPointer = options.startPointer;
     this.#currentPointer = options.startPointer;
+    if (options.uniformScale !== undefined) this.#uniformScale = options.uniformScale;
     this.#assertActionTarget();
     this.#preview = this.#emptyPreview();
   }
@@ -95,10 +102,15 @@ export class SelectionHandleSession {
     this.#preview = this.#emptyPreview();
   }
 
-  public update(pointer: PointV1): SelectionHandlePreview {
+  public update(
+    pointer: PointV1,
+    options: SelectionHandleUpdateOptions = {},
+  ): SelectionHandlePreview {
     this.#assertActive();
-    assertFinitePoint(pointer);
+    assertFiniteHandlePoint(pointer);
     this.#currentPointer = pointer;
+    if (options.uniformScale !== undefined) this.#uniformScale = options.uniformScale;
+    if (options.snapFeatures !== undefined) this.#snapFeatures = options.snapFeatures;
     this.#generation += 1;
     this.#updateSnapCandidate();
     this.#preview = this.#createPreview();
@@ -178,7 +190,7 @@ export class SelectionHandleSession {
         return moveSelection(this.#elements, this.#translation());
       case "scale":
         return this.#elements.length === 1
-          ? [this.#scaleSingle(this.#elements[0]!)]
+          ? [this.#scaleSingleAt(this.#elements[0]!, this.#currentPointer)]
           : scaleSelectionFromPointers(
               this.#elements,
               this.#action.anchor,
@@ -266,22 +278,36 @@ export class SelectionHandleSession {
         ? this.#validEndpointCandidate(
             rotatePointClockwise(
               action.endpoint === "start"
-                ? assertLinearElement(element).end
-                : assertLinearElement(element).start,
+                ? assertLinearHandleElement(element).end
+                : assertLinearHandleElement(element).start,
               element.pivot,
               element.rotation,
             ),
           )
         : null;
-    return [materializeTargetedHandle({ action, candidate, element, pointer, snap: this.#snap })];
-  }
-
-  #scaleSingle(element: InkElementV1): InkElementV1 {
-    return this.#scaleSingleAt(element, this.#currentPointer);
+    return [
+      materializeTargetedHandle({
+        action,
+        candidate,
+        element,
+        pointer,
+        snap: this.#currentSnap(),
+      }),
+    ];
   }
 
   #scaleSingleAt(element: InkElementV1, pointer: PointV1): InkElementV1 {
     if (this.#action.kind !== "scale") throw new Error("Expected a scale action.");
+    if (this.#uniformScale) {
+      return scaleElementFromPointers(
+        element,
+        this.#action.anchor,
+        this.#startPointer,
+        pointer,
+        activeScaleAxes(this.#action.position),
+        true,
+      );
+    }
     return scaleElementFromPointers(
       element,
       this.#action.anchor,
@@ -292,7 +318,12 @@ export class SelectionHandleSession {
   }
 
   #updateSnapCandidate(): void {
-    if (this.#action.kind !== "linear-endpoint" || this.#snap === undefined) {
+    const snap = this.#currentSnap();
+    if (
+      this.#action.kind !== "linear-endpoint" ||
+      snap === undefined ||
+      !selectionSnapFeatureEnabled(snap, "connections")
+    ) {
       this.#snapCandidate = null;
       return;
     }
@@ -305,15 +336,15 @@ export class SelectionHandleSession {
       {
         current: this.#snapCandidate,
         pointer: this.#currentPointer,
-        pointerType: this.#snap.pointerType,
-        zoom: this.#snap.zoom,
+        pointerType: snap.pointerType,
+        zoom: snap.zoom,
       },
-      this.#snap.spatial,
+      snap.spatial,
       {
         get: (id) =>
-          id === target.id || !(this.#snap?.canConnect?.(target.id, id) ?? true)
+          id === target.id || !(snap.canConnect?.(target.id, id) ?? true)
             ? null
-            : (this.#snap?.targets.get(id) ?? null),
+            : (snap.targets.get(id) ?? null),
       },
       this.#snapScratch,
     );
@@ -329,12 +360,12 @@ export class SelectionHandleSession {
     if (this.#action.kind === "scale") {
       if (this.#elements.length === 1) {
         const element = this.#elements[0]!;
-        const { factors } = scaleFactorsFromPointers(
+        const { factors } = selectionScaleFactors(
           element,
-          this.#action.anchor,
+          this.#action,
           this.#startPointer,
           this.#currentPointer,
-          activeScaleAxes(this.#action.position),
+          this.#uniformScale,
         );
         return {
           anchor: this.#action.anchor,
@@ -343,7 +374,12 @@ export class SelectionHandleSession {
           rotation: element.rotation,
         };
       }
-      const factor = this.#uniformScaleFactor(this.#currentPointer);
+      const factor = uniformScaleFactorFromPointers(
+        this.#action.anchor,
+        this.#startPointer,
+        this.#currentPointer,
+        this.#minimumUniformScale,
+      );
       return {
         anchor: this.#action.anchor,
         factors: { x: factor, y: factor },
@@ -359,16 +395,6 @@ export class SelectionHandleSession {
       };
     }
     return null;
-  }
-
-  #uniformScaleFactor(pointer: PointV1): number {
-    if (this.#action.kind !== "scale") throw new Error("Expected a scale action.");
-    return uniformScaleFactorFromPointers(
-      this.#action.anchor,
-      this.#startPointer,
-      pointer,
-      this.#minimumUniformScale,
-    );
   }
 
   #translation(): PointV1 {
@@ -388,7 +414,7 @@ export class SelectionHandleSession {
       this.#elements,
       this.#startPointer,
       pointer,
-      this.#snap,
+      this.#currentSnap(),
     );
   }
 
@@ -399,8 +425,15 @@ export class SelectionHandleSession {
       this.#startPointer,
       this.#currentPointer,
       this.#snapCandidate,
-      this.#snap,
+      this.#currentSnap(),
     );
+  }
+
+  #currentSnap(): SelectionSnapPorts | undefined {
+    const snap = this.#snap;
+    if (snap === undefined) return undefined;
+    const { features: _features, ...base } = snap;
+    return this.#snapFeatures === undefined ? base : { ...base, features: this.#snapFeatures };
   }
 
   #targetElement(id: string): InkElementV1 {
@@ -464,23 +497,4 @@ export class SelectionHandleSession {
   #assertActive(): void {
     if (this.#cancelled) throw new Error("A cancelled handle session cannot be used.");
   }
-}
-
-function assertFinitePoint(point: PointV1): void {
-  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
-    throw new RangeError("Handle points must be finite.");
-  }
-}
-
-function assertLinearElement(
-  element: InkElementV1,
-): Extract<InkElementV1, { kind: "arrow" | "line" | "straight-highlighter" }> {
-  if (
-    element.kind !== "line" &&
-    element.kind !== "arrow" &&
-    element.kind !== "straight-highlighter"
-  ) {
-    throw new TypeError("Endpoint handles require a linear drawing element.");
-  }
-  return element;
 }

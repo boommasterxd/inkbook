@@ -110,6 +110,13 @@ describe("table geometry creation", () => {
     const equal = changeTableColumns(table({ columnOffsets: [50, 100] }), 4);
     expect(equal.columnOffsets).toBeUndefined();
   });
+
+  it("retains separators placed on outer bounds across compatible column-count changes", () => {
+    const boundary = table({ columnOffsets: [0, 150] });
+
+    expect(changeTableColumns(boundary, 4).columnOffsets).toEqual([0, 150, 150]);
+    expect(changeTableColumns(boundary, 2).columnOffsets).toEqual([0]);
+  });
 });
 
 describe("shape geometry creation", () => {

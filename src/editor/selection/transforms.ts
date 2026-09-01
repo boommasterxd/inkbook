@@ -17,7 +17,6 @@ import { MAX_ABSOLUTE_COORDINATE } from "../../domain/schema/public";
 import { rotateLinearElement } from "./linear-transforms";
 import { isLinearElement } from "./linear-elements";
 import { rotatedScaleTranslation } from "./scale-frame";
-import { minimumTableColumnWidth, MINIMUM_TABLE_HEADER_HEIGHT } from "./table-transforms";
 
 interface ScaleFactors {
   readonly x: number;
@@ -100,8 +99,17 @@ export function scaleElementFromPointers(
   startPointer: PointV1,
   currentPointer: PointV1,
   axes: Readonly<{ x: boolean; y: boolean }> = { x: true, y: true },
+  uniform = false,
 ): InkElementV1 {
-  const transform = scaleFactorsFromPointers(element, anchor, startPointer, currentPointer, axes);
+  const transform = uniform
+    ? uniformScaleFactorsFromPointers(
+        element,
+        rotatePointClockwise(anchor, element.pivot, -element.rotation),
+        rotatePointClockwise(startPointer, element.pivot, -element.rotation),
+        rotatePointClockwise(currentPointer, element.pivot, -element.rotation),
+        axes,
+      )
+    : scaleFactorsFromPointers(element, anchor, startPointer, currentPointer, axes);
   return scaleElement(
     element,
     transform.anchor,
@@ -134,6 +142,31 @@ export function scaleFactorsFromPointers(
     y: axes.y ? scaleRatio(localAnchor.y, localStart.y, localCurrent.y) : 1,
   };
   return { anchor: localAnchor, factors: clampScaleFactors(element, factors) };
+}
+
+export function uniformScaleFactorsFromPointers(
+  element: InkElementV1,
+  localAnchor: PointV1,
+  localStart: PointV1,
+  localCurrent: PointV1,
+  axes: Readonly<{ x: boolean; y: boolean }> = { x: true, y: true },
+): { readonly anchor: PointV1; readonly factors: ScaleFactors } {
+  assertFinitePoint(localAnchor);
+  assertFinitePoint(localStart);
+  assertFinitePoint(localCurrent);
+  const factor = uniformScaleFactorFromPointers(
+    localAnchor,
+    {
+      x: axes.x ? localStart.x : localAnchor.x,
+      y: axes.y ? localStart.y : localAnchor.y,
+    },
+    {
+      x: axes.x ? localCurrent.x : localAnchor.x,
+      y: axes.y ? localCurrent.y : localAnchor.y,
+    },
+    minimumUniformScale(element),
+  );
+  return { anchor: localAnchor, factors: { x: factor, y: factor } };
 }
 
 export function scaleSelectionFromPointers(
@@ -414,11 +447,7 @@ function scaleElement(
 
 function minimumUniformScale(element: InkElementV1): number {
   if (element.kind === "table") {
-    return Math.max(
-      40 / minimumTableColumnWidth(element),
-      80 / element.height,
-      MINIMUM_TABLE_HEADER_HEIGHT / element.headerHeight,
-    );
+    return Math.max(40 / element.columnWidth, 80 / element.height);
   }
   if (element.kind === "coordinate-system") {
     return Math.max(...element.axes.map((axis) => 40 / pointDistance(element.origin, axis)));
@@ -431,12 +460,8 @@ function minimumUniformScale(element: InkElementV1): number {
 function clampScaleFactors(element: InkElementV1, factors: ScaleFactors): ScaleFactors {
   if (element.kind === "table") {
     return {
-      x: Math.max(factors.x, 40 / minimumTableColumnWidth(element)),
-      y: Math.max(
-        factors.y,
-        80 / element.height,
-        MINIMUM_TABLE_HEADER_HEIGHT / element.headerHeight,
-      ),
+      x: Math.max(factors.x, 40 / element.columnWidth),
+      y: Math.max(factors.y, 80 / element.height),
     };
   }
   if (

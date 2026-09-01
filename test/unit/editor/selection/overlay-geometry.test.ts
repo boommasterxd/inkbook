@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { calculateElementBounds } from "../../../../src/domain/geometry/public";
+import {
+  calculateElementBounds,
+  rotatePointClockwise,
+} from "../../../../src/domain/geometry/public";
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import {
+  createSelectionFrame,
   selectionOverlayContainsPoint,
   selectionOverlayGeometry,
   transformSelectionPoint,
@@ -111,7 +115,33 @@ describe("selection overlay hit testing and transforms", () => {
       selectionOverlayContainsPoint([selected(left), selected(right)], { x: 400, y: 150 }),
     ).toBe(true);
   });
+});
 
+describe("oriented multi-selection overlay geometry", () => {
+  it("uses the retained oriented frame for group outlines and interior hit testing", () => {
+    const left = rectangle();
+    const right = { ...rectangle(), id: "right", pivot: { x: 600, y: 150 }, x: 500 };
+    const selectedElements = [selected(left), selected(right)];
+    const initial = createSelectionFrame(selectedElements);
+    if (initial === null) throw new Error("Expected a selection frame.");
+    const center = { x: 350, y: 150 };
+    const frame = {
+      points: initial.points.map((point) =>
+        rotatePointClockwise(point, center, 45),
+      ) as unknown as typeof initial.points,
+      rotation: 45,
+    };
+
+    expect(selectionOverlayGeometry(selectedElements, 1, null, frame)?.outline).toEqual({
+      kind: "polygon",
+      points: frame.points,
+    });
+    expect(selectionOverlayContainsPoint(selectedElements, center, frame)).toBe(true);
+    expect(selectionOverlayContainsPoint(selectedElements, { x: 50, y: 50 }, frame)).toBe(false);
+  });
+});
+
+describe("selection overlay transforms", () => {
   it("preserves a curved centerline and transforms its outline and handles together", () => {
     const line = { ...connectedLine(), bend: { x: 250, y: 50 } };
     const geometry = selectionOverlayGeometry([selected(line)], 1, {

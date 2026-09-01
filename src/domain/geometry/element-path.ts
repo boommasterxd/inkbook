@@ -7,7 +7,7 @@ import type {
   PointV1,
   TableElementV1,
 } from "../schema/types";
-import { shapeVertices, tableColumnOffsets, tableWidth } from "./creation";
+import { shapeVertices, tableLineSegments } from "./creation";
 import {
   addPoints,
   normalizedVector,
@@ -54,31 +54,9 @@ export function buildClosedShapePath(shape: BoxShapeElementV1): string {
 }
 
 export function buildTablePath(table: TableElementV1): string {
-  const width = tableWidth(table);
-  const topLeft = { x: table.x, y: table.y };
-  const topRight = { x: table.x + width, y: table.y };
-  const bottomRight = { x: table.x + width, y: table.y + table.height };
-  const bottomLeft = { x: table.x, y: table.y + table.height };
-  const commands = [
-    closedPolygonPath(
-      [topLeft, topRight, bottomRight, bottomLeft].map((point) => rotatedFor(table, point)),
-    ),
-  ];
-  for (const offset of tableColumnOffsets(table)) {
-    commands.push(
-      lineSubpath(
-        rotatedFor(table, { x: table.x + offset, y: table.y }),
-        rotatedFor(table, { x: table.x + offset, y: table.y + table.height }),
-      ),
-    );
-  }
-  commands.push(
-    lineSubpath(
-      rotatedFor(table, { x: table.x, y: table.y + table.headerHeight }),
-      rotatedFor(table, { x: table.x + width, y: table.y + table.headerHeight }),
-    ),
-  );
-  return commands.join("");
+  return tableLineSegments(table)
+    .map(([start, end]) => lineSubpath(rotatedFor(table, start), rotatedFor(table, end)))
+    .join("");
 }
 
 export function buildCoordinateSystemPath(system: CoordinateSystemElementV1): string {

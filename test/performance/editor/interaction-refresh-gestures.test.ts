@@ -146,6 +146,7 @@ function selectionSessions(elements: readonly InkElementV1[]): readonly Selectio
         center: { x: 500, y: 500 },
         kind: "rotate",
         opposite: { x: 0, y: 500 },
+        referenceRotation: 0,
       },
       { x: 1_000, y: 500 },
     ),

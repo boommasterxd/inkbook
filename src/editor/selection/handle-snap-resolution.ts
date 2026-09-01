@@ -9,6 +9,7 @@ import { isLinearElement, worldLinearEndpoint } from "./linear-elements";
 import { clampEndpoint } from "./handle-session-geometry";
 import { editLinearEndpointFromWorld } from "./linear-transforms";
 import { resolveRotationSnap } from "./rotation-snap";
+import { selectionSnapFeatureEnabled } from "./snap-features";
 import {
   resolveCoordinateAxisSnap,
   resolveCoordinateOriginSnap,
@@ -26,7 +27,7 @@ interface TargetedGuideContext {
 
 export function selectionRotationDelta(
   action: SelectionHandleAction,
-  elements: readonly InkElementV1[],
+  _elements: readonly InkElementV1[],
   startPointer: PointV1,
   currentPointer: PointV1,
   snap: SelectionSnapPorts | undefined,
@@ -35,10 +36,11 @@ export function selectionRotationDelta(
   return resolveRotationSnap({
     center: action.center,
     currentPointer,
-    referenceRotation: elements[0]!.rotation,
+    referenceRotation: action.referenceRotation,
     snapPixels: HANDLE_SNAP_PIXELS,
     startPointer,
     zoom: selectionSnapZoom(snap),
+    enabled: selectionSnapFeatureEnabled(snap, "angles"),
   }).delta;
 }
 
@@ -51,41 +53,57 @@ export function selectionHandleSnapGuide(
   snap: SelectionSnapPorts | undefined,
 ): SelectionSnapGuide | null {
   const context = { currentPointer, elements, snap };
-  if (action.kind === "linear-endpoint") {
-    if (candidate !== null) return { kind: "anchor", point: candidate.point };
-    const element = elements.find(({ id }) => id === action.elementId);
-    if (element === undefined || !isLinearElement(element)) return null;
-    const opposite = worldLinearEndpoint(element, action.endpoint === "start" ? "end" : "start");
-    const result = resolvePointAngleSnap({
-      origin: opposite,
-      point: currentPointer,
-      snapPixels: HANDLE_SNAP_PIXELS,
-      stepDegrees: 90,
-      zoom: selectionSnapZoom(snap),
-    });
-    const replacement = editLinearEndpointFromWorld(
-      element,
-      action.endpoint,
-      clampEndpoint(result.point, opposite),
-      { straightTolerance: HANDLE_SNAP_PIXELS / selectionSnapZoom(snap) },
-    );
-    if (element.bend === null ? !result.snapped : replacement.bend !== null) return null;
-    return {
-      end: replacement[action.endpoint],
-      kind: "angular",
-      start: replacement[action.endpoint === "start" ? "end" : "start"],
-    };
-  }
-  if (action.kind === "rotate") {
-    return rotationGuide(action, elements[0]!, startPointer, currentPointer, snap);
-  }
+  if (action.kind === "linear-endpoint") return linearEndpointGuide(action, context, candidate);
+  if (action.kind === "rotate") return rotationGuide(action, startPointer, currentPointer, snap);
   if (action.kind === "coordinate-axis" || action.kind === "coordinate-origin") {
-    return coordinateSnapGuide(action, context);
+    return selectionSnapFeatureEnabled(snap, "angles")
+      ? coordinateSnapGuide(action, context)
+      : null;
   }
   if (action.kind === "table-header" || action.kind === "table-column") {
-    return tableSnapGuide(action, context);
+    return selectionSnapFeatureEnabled(snap, "structures") ? tableSnapGuide(action, context) : null;
   }
-  if (action.kind !== "linear-bend") return null;
+  return action.kind === "linear-bend" && selectionSnapFeatureEnabled(snap, "bends")
+    ? bendSnapGuide(action, context)
+    : null;
+}
+
+function linearEndpointGuide(
+  action: Extract<SelectionHandleAction, { kind: "linear-endpoint" }>,
+  context: TargetedGuideContext,
+  candidate: SnapCandidate | null,
+): SelectionSnapGuide | null {
+  if (candidate !== null) return { kind: "anchor", point: candidate.point };
+  if (!selectionSnapFeatureEnabled(context.snap, "angles")) return null;
+  const element = context.elements.find(({ id }) => id === action.elementId);
+  if (element === undefined || !isLinearElement(element)) return null;
+  const opposite = worldLinearEndpoint(element, action.endpoint === "start" ? "end" : "start");
+  const result = resolvePointAngleSnap({
+    origin: opposite,
+    point: context.currentPointer,
+    snapPixels: HANDLE_SNAP_PIXELS,
+    stepDegrees: 90,
+    zoom: selectionSnapZoom(context.snap),
+  });
+  const replacement = editLinearEndpointFromWorld(
+    element,
+    action.endpoint,
+    clampEndpoint(result.point, opposite),
+    { straightTolerance: HANDLE_SNAP_PIXELS / selectionSnapZoom(context.snap) },
+  );
+  if (element.bend === null ? !result.snapped : replacement.bend !== null) return null;
+  return {
+    end: replacement[action.endpoint],
+    kind: "angular",
+    start: replacement[action.endpoint === "start" ? "end" : "start"],
+  };
+}
+
+function bendSnapGuide(
+  action: Extract<SelectionHandleAction, { kind: "linear-bend" }>,
+  context: TargetedGuideContext,
+): SelectionSnapGuide | null {
+  const { currentPointer, elements, snap } = context;
   const element = elements.find(({ id }) => id === action.elementId);
   if (element === undefined) throw new RangeError("The handle target is not selected.");
   const guide = linearBendSnapGuide(
@@ -177,6 +195,7 @@ export function linearEndpointSnapPoint(
 ): PointV1 {
   if (!isLinearElement(element)) throw new TypeError("Expected a linear drawing element.");
   if (candidate !== null) return candidate.point;
+  if (!selectionSnapFeatureEnabled(snap, "angles")) return pointer;
   const opposite = worldLinearEndpoint(element, endpoint === "start" ? "end" : "start");
   return resolvePointAngleSnap({
     origin: opposite,
@@ -194,7 +213,6 @@ export function selectionSnapZoom(snap: SelectionSnapPorts | undefined): number 
 
 function rotationGuide(
   action: Extract<SelectionHandleAction, { kind: "rotate" }>,
-  reference: InkElementV1,
   startPointer: PointV1,
   currentPointer: PointV1,
   snap: SelectionSnapPorts | undefined,
@@ -202,10 +220,11 @@ function rotationGuide(
   const result = resolveRotationSnap({
     center: action.center,
     currentPointer,
-    referenceRotation: reference.rotation,
+    referenceRotation: action.referenceRotation,
     snapPixels: HANDLE_SNAP_PIXELS,
     startPointer,
     zoom: selectionSnapZoom(snap),
+    enabled: selectionSnapFeatureEnabled(snap, "angles"),
   });
   return result.snapped
     ? {

@@ -104,6 +104,7 @@ function rotationPreview(element: BoxShapeElementV1, zoom: number): SelectionHan
       center: element.pivot,
       kind: "rotate",
       opposite: oppositeElementHandlePoint(element, "top-center"),
+      referenceRotation: element.rotation,
     },
     elements: [element],
     planner: store,
@@ -140,23 +141,32 @@ describe("selection rotation snapping", () => {
     expect(rotationPreview(source, 4).snapGuide).toBeNull();
   });
 
-  it("uses the first selected element as the deterministic group reference", () => {
+  it("uses the active group frame instead of an individual element as the snap reference", () => {
     const first = rotatedRectangle(10);
     const second = rotatedRectangle(-20, "00000000-0000-4000-8000-000000000088");
     const center = { x: 350, y: 150 };
     const store = new ElementStore([first, second]);
     const session = new SelectionHandleSession({
-      action: { center, kind: "rotate", opposite: { x: center.x - 100, y: center.y } },
+      action: {
+        center,
+        kind: "rotate",
+        opposite: { x: center.x - 100, y: center.y },
+        referenceRotation: 0,
+      },
       elements: [first, second],
       planner: store,
       snap: snapPorts(1),
       startPointer: rotationPointer(center, 100, 0),
     });
 
-    const preview = session.update(rotationPointer(center, 100, 78));
+    const preview = session.update(rotationPointer(center, 100, 88));
 
-    expect(preview.transform).toEqual({ center, degrees: 80, kind: "rotate" });
-    expect(preview.exactElements.map(({ rotation }) => rotation)).toEqual([90, 60]);
+    expect(preview.transform).toMatchObject({ center, kind: "rotate" });
+    expect(preview.transform?.kind === "rotate" ? preview.transform.degrees : null).toBeCloseTo(
+      90,
+      10,
+    );
+    expect(preview.exactElements.map(({ rotation }) => rotation)).toEqual([100, 70]);
   });
 });
 
