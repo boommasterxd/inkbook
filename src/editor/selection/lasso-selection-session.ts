@@ -1,3 +1,8 @@
+import {
+  assertFinitePoint,
+  pointDistance,
+  pointSegmentDistance,
+} from "../../domain/geometry/public";
 import type { PointV1 } from "../../domain/schema/public";
 
 import {
@@ -15,7 +20,7 @@ export class LassoSelectionSession {
   #simplificationPixels = INITIAL_SAMPLE_DISTANCE_PIXELS;
 
   public constructor(start: PointV1, zoom: number) {
-    assertFinitePoint(start);
+    assertFinitePoint(start, "Lasso points must contain finite coordinates.");
     if (!Number.isFinite(zoom) || zoom <= 0) {
       throw new RangeError("Lasso zoom must be positive and finite.");
     }
@@ -34,9 +39,9 @@ export class LassoSelectionSession {
   public appendBatch(points: readonly PointV1[]): boolean {
     let changed = false;
     for (const point of points) {
-      assertFinitePoint(point);
+      assertFinitePoint(point, "Lasso points must contain finite coordinates.");
       const previous = this.#points[this.#points.length - 1]!;
-      if (distance(previous, point) * this.#zoom < this.#simplificationPixels) continue;
+      if (pointDistance(previous, point) * this.#zoom < this.#simplificationPixels) continue;
       this.#points.push(copyPoint(point));
       changed = true;
       if (this.#points.length > MAX_LASSO_SELECTION_POINTS) this.#compact();
@@ -78,7 +83,7 @@ function simplifyPolyline(points: readonly PointV1[], tolerance: number): PointV
     let farthestIndex = -1;
     let farthestDistance = tolerance;
     for (let index = startIndex + 1; index < endIndex; index += 1) {
-      const candidateDistance = segmentDistance(points[index]!, start, end);
+      const candidateDistance = pointSegmentDistance(points[index]!, start, end);
       if (candidateDistance > farthestDistance) {
         farthestDistance = candidateDistance;
         farthestIndex = index;
@@ -91,31 +96,6 @@ function simplifyPolyline(points: readonly PointV1[], tolerance: number): PointV
   return points.filter((_, index) => keep[index] === 1).map(copyPoint);
 }
 
-function segmentDistance(point: PointV1, start: PointV1, end: PointV1): number {
-  const deltaX = end.x - start.x;
-  const deltaY = end.y - start.y;
-  const lengthSquared = deltaX * deltaX + deltaY * deltaY;
-  if (lengthSquared === 0) return distance(point, start);
-  const projection = Math.max(
-    0,
-    Math.min(1, ((point.x - start.x) * deltaX + (point.y - start.y) * deltaY) / lengthSquared),
-  );
-  return Math.hypot(
-    point.x - (start.x + projection * deltaX),
-    point.y - (start.y + projection * deltaY),
-  );
-}
-
-function distance(left: PointV1, right: PointV1): number {
-  return Math.hypot(right.x - left.x, right.y - left.y);
-}
-
 function copyPoint(point: PointV1): PointV1 {
   return { x: point.x, y: point.y };
-}
-
-function assertFinitePoint(point: PointV1): void {
-  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
-    throw new RangeError("Lasso points must contain finite coordinates.");
-  }
 }

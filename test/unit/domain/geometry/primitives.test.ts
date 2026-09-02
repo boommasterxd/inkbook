@@ -3,14 +3,18 @@ import type { PointV1 } from "../../../../src/domain/schema/public";
 import { boundsFromPoints } from "../../../../src/domain/geometry/primitives";
 
 import {
+  assertFinitePoint,
   canonicalPoint,
   linearPivot,
   normalizeRotation,
   pointInPolygon,
+  pointSegmentDistance,
   quadraticBounds,
   quadraticPoint,
   rotatePointClockwise,
   roundCanonical,
+  segmentDistanceSquared,
+  segmentsIntersect,
 } from "../../../../src/domain/geometry/public";
 
 describe("canonical geometry primitives", () => {
@@ -52,6 +56,32 @@ describe("canonical geometry primitives", () => {
     ];
     expect(pointInPolygon({ x: 5, y: 4 }, triangle)).toBe(true);
     expect(pointInPolygon({ x: 5, y: 11 }, triangle)).toBe(false);
+  });
+
+  it("measures points and their closest positions on finite segments", () => {
+    expect(pointSegmentDistance({ x: 2, y: 3 }, { x: 0, y: 0 }, { x: 4, y: 0 })).toBe(3);
+    expect(pointSegmentDistance({ x: 8, y: 3 }, { x: 0, y: 0 }, { x: 4, y: 0 })).toBe(5);
+    expect(pointSegmentDistance({ x: 3, y: 4 }, { x: 1, y: 1 }, { x: 1, y: 1 })).toBeCloseTo(
+      Math.sqrt(13),
+    );
+  });
+
+  it("measures disjoint and intersecting segment pairs", () => {
+    expect(
+      segmentDistanceSquared({ x: 0, y: 0 }, { x: 4, y: 4 }, { x: 0, y: 4 }, { x: 4, y: 0 }),
+    ).toBe(0);
+    expect(
+      segmentDistanceSquared({ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 4 }, { x: 5, y: 4 }),
+    ).toBe(17);
+    expect(segmentsIntersect({ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 0 }, { x: 4, y: 0 })).toBe(
+      true,
+    );
+  });
+
+  it("rejects non-finite points with caller-specific context", () => {
+    const assertion = () => assertFinitePoint({ x: Number.NaN, y: 0 }, "Invalid test point.");
+    expect(assertion).toThrow(RangeError);
+    expect(assertion).toThrow("Invalid test point.");
   });
 
   it("includes exact quadratic extrema in curve bounds", () => {

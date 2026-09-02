@@ -39,15 +39,20 @@ export { alignPageHeightToWritingLine, derivePageExtent } from "./page-extent";
 export { translateElementGeometry } from "./translation";
 export {
   PAGE_WIDTH,
+  assertFinitePoint,
+  boundsFromPoints,
   canonicalPoint,
   linearPivot,
   normalizeRotation,
-  pointInPolygon,
   pointDistance,
+  pointInPolygon,
+  pointSegmentDistance,
   quadraticBounds,
   quadraticPoint,
   rotatePointClockwise,
   roundCanonical,
+  segmentDistanceSquared,
+  segmentsIntersect,
   unionBounds,
   type Bounds,
 } from "./primitives";

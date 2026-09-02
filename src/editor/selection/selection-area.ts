@@ -1,5 +1,9 @@
-import { boundsIntersect, calculateElementBounds } from "../../domain/geometry/public";
-import { boundsFromPoints } from "../../domain/geometry/primitives";
+import {
+  assertFinitePoint,
+  boundsFromPoints,
+  boundsIntersect,
+  calculateElementBounds,
+} from "../../domain/geometry/public";
 import type { Bounds } from "../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 
@@ -23,8 +27,8 @@ export type SelectionArea =
 export const MAX_LASSO_SELECTION_POINTS = 512;
 
 export function createRectangleSelectionArea(start: PointV1, end: PointV1): SelectionArea {
-  assertFinitePoint(start);
-  assertFinitePoint(end);
+  assertSelectionAreaPoint(start);
+  assertSelectionAreaPoint(end);
   const bounds = Object.freeze(boundsFromPoints([start, end]));
   const points: readonly [PointV1, PointV1, PointV1, PointV1] = Object.freeze([
     frozenPoint(bounds.minX, bounds.minY),
@@ -42,7 +46,7 @@ export function createLassoSelectionArea(input: readonly PointV1[]): SelectionAr
     );
   }
   const points = input.map((point) => {
-    assertFinitePoint(point);
+    assertSelectionAreaPoint(point);
     return frozenPoint(point.x, point.y);
   });
   if (samePoint(points[0], points[points.length - 1])) points.pop();
@@ -98,10 +102,8 @@ function hasPositiveArea(area: SelectionArea): boolean {
   );
 }
 
-function assertFinitePoint(point: PointV1): void {
-  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
-    throw new RangeError("Selection-area points must contain finite coordinates.");
-  }
+function assertSelectionAreaPoint(point: PointV1): void {
+  assertFinitePoint(point, "Selection-area points must contain finite coordinates.");
 }
 
 function hasNonCollinearPoints(points: readonly PointV1[]): boolean {

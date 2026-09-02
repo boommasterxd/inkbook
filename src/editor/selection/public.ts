@@ -33,6 +33,7 @@ export {
 export {
   findSelectionHandle,
   layoutSelectionHandles,
+  oppositeBoxAnchor,
   oppositeElementHandlePoint,
   selectionBounds,
 } from "./handles";

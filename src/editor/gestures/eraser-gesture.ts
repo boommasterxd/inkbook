@@ -1,5 +1,5 @@
 import { calculateElementBounds } from "../../domain/geometry/bounds";
-import type { Bounds } from "../../domain/geometry/public";
+import { assertFinitePoint, type Bounds } from "../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 import {
   createSweptCapsuleCheck,
@@ -298,11 +298,6 @@ function boundsOverlap(left: Bounds, right: Bounds): boolean {
 }
 
 function finitePoint(point: PointV1): PointV1 {
-  assertFinitePoint(point);
+  assertFinitePoint(point, "Eraser points must be finite.");
   return { x: point.x, y: point.y };
-}
-
-function assertFinitePoint(point: PointV1): void {
-  if (!Number.isFinite(point.x) || !Number.isFinite(point.y))
-    throw new RangeError("Eraser points must be finite.");
 }

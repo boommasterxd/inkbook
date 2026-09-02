@@ -1,4 +1,5 @@
 import {
+  assertFinitePoint,
   canonicalPoint,
   normalizeRotation,
   pointDistance,
@@ -481,11 +482,6 @@ function clampScaleFactors(element: InkElementV1, factors: ScaleFactors): ScaleF
 function shouldTransformEndpoint(element: LinearElementV1, endpoint: "start" | "end"): boolean {
   if (element.kind === "straight-highlighter") return true;
   return endpoint === "start" ? element.startConnection === null : element.endConnection === null;
-}
-
-function assertFinitePoint(point: PointV1): void {
-  if (!Number.isFinite(point.x) || !Number.isFinite(point.y))
-    throw new RangeError("Points must be finite.");
 }
 
 function scaleRatio(anchor: number, start: number, current: number): number {

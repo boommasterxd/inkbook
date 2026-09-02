@@ -2,7 +2,12 @@ import type { RenderBand } from "../../domain/commands/render-bands";
 import { isStoredStroke } from "../../domain/elements/stroke-replacement-proof";
 import { shapeVertices, tableColumnOffsets, tableWidth } from "../../domain/geometry/creation";
 import { effectiveStrokeWidth } from "../../domain/geometry/bounds";
-import { pointInPolygon, quadraticPoint, rotatePointClockwise } from "../../domain/geometry/public";
+import {
+  pointInPolygon,
+  pointSegmentDistance,
+  quadraticPoint,
+  rotatePointClockwise,
+} from "../../domain/geometry/public";
 import type { BoxShapeElementV1, InkElementV1, PointV1 } from "../../domain/schema/public";
 
 export interface HitCandidate {
@@ -139,7 +144,8 @@ function coordinateSystemHit(
 ): boolean {
   return element.axes.some(
     (axis) =>
-      segmentDistance(point, element.origin, axis) <= tolerance + element.style.outlineWidth / 2,
+      pointSegmentDistance(point, element.origin, axis) <=
+      tolerance + element.style.outlineWidth / 2,
   );
 }
 
@@ -322,11 +328,11 @@ function hitLinear(
   point: PointV1,
   radius: number,
 ): boolean {
-  if (bend === null) return segmentDistance(point, start, end) <= radius;
+  if (bend === null) return pointSegmentDistance(point, start, end) <= radius;
   let previous = start;
   for (let step = 1; step <= 24; step += 1) {
     const current = quadraticPoint(start, bend, end, step / 24);
-    if (segmentDistance(point, previous, current) <= radius) return true;
+    if (pointSegmentDistance(point, previous, current) <= radius) return true;
     previous = current;
   }
   return false;
@@ -345,18 +351,6 @@ function ellipseHit(ellipse: BoxShapeElementV1, point: PointV1, radius: number):
 function polygonOutlineHit(vertices: readonly PointV1[], point: PointV1, radius: number): boolean {
   return vertices.some((vertex, index) => {
     const next = vertices[(index + 1) % vertices.length];
-    return next !== undefined && segmentDistance(point, vertex, next) <= radius;
+    return next !== undefined && pointSegmentDistance(point, vertex, next) <= radius;
   });
-}
-
-function segmentDistance(point: PointV1, start: PointV1, end: PointV1): number {
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  const squaredLength = dx * dx + dy * dy;
-  if (squaredLength === 0) return Math.hypot(point.x - start.x, point.y - start.y);
-  const ratio = Math.max(
-    0,
-    Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / squaredLength),
-  );
-  return Math.hypot(point.x - (start.x + ratio * dx), point.y - (start.y + ratio * dy));
 }

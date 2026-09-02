@@ -1,4 +1,8 @@
-import type { Bounds } from "../../domain/geometry/public";
+import {
+  segmentDistanceSquared,
+  segmentsIntersect,
+  type Bounds,
+} from "../../domain/geometry/public";
 import type { PointV1 } from "../../domain/schema/public";
 
 export interface AreaPolygon {
@@ -55,7 +59,7 @@ function capsuleEnclosedByPolygon(
   return !somePolygonEdge(
     polygon,
     (edgeStart, edgeEnd) =>
-      segmentDistanceSquared(capsule.start, capsule.end, edgeStart, edgeEnd) + EPSILON <
+      segmentDistanceSquared(capsule.start, capsule.end, edgeStart, edgeEnd, EPSILON) + EPSILON <
       requiredDistance,
   );
 }
@@ -108,6 +112,7 @@ function polygonEdgesTouch(left: readonly PointV1[], right: readonly PointV1[]):
           leftEnd,
           right[rightIndex]!,
           right[(rightIndex + 1) % right.length]!,
+          EPSILON,
         )
       ) {
         return true;
@@ -159,23 +164,6 @@ function pointInPolygonInclusive(point: PointV1, polygon: readonly PointV1[]): b
   return inside;
 }
 
-function segmentsIntersect(
-  leftStart: PointV1,
-  leftEnd: PointV1,
-  rightStart: PointV1,
-  rightEnd: PointV1,
-): boolean {
-  if (pointOnSegment(leftStart, rightStart, rightEnd)) return true;
-  if (pointOnSegment(leftEnd, rightStart, rightEnd)) return true;
-  if (pointOnSegment(rightStart, leftStart, leftEnd)) return true;
-  if (pointOnSegment(rightEnd, leftStart, leftEnd)) return true;
-  const first = cross(leftStart, leftEnd, rightStart);
-  const second = cross(leftStart, leftEnd, rightEnd);
-  const third = cross(rightStart, rightEnd, leftStart);
-  const fourth = cross(rightStart, rightEnd, leftEnd);
-  return first * second < 0 && third * fourth < 0;
-}
-
 function segmentIntersectionTime(
   start: PointV1,
   end: PointV1,
@@ -194,35 +182,6 @@ function segmentIntersectionTime(
     : null;
 }
 
-function segmentDistanceSquared(
-  leftStart: PointV1,
-  leftEnd: PointV1,
-  rightStart: PointV1,
-  rightEnd: PointV1,
-): number {
-  if (segmentsIntersect(leftStart, leftEnd, rightStart, rightEnd)) return 0;
-  return Math.min(
-    pointSegmentDistanceSquared(leftStart, rightStart, rightEnd),
-    pointSegmentDistanceSquared(leftEnd, rightStart, rightEnd),
-    pointSegmentDistanceSquared(rightStart, leftStart, leftEnd),
-    pointSegmentDistanceSquared(rightEnd, leftStart, leftEnd),
-  );
-}
-
-function pointSegmentDistanceSquared(point: PointV1, start: PointV1, end: PointV1): number {
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  const lengthSquared = dx * dx + dy * dy;
-  const ratio =
-    lengthSquared === 0
-      ? 0
-      : Math.max(
-          0,
-          Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared),
-        );
-  return squaredDistance(point, { x: start.x + ratio * dx, y: start.y + ratio * dy });
-}
-
 function pointOnSegment(point: PointV1, start: PointV1, end: PointV1): boolean {
   if (Math.abs(cross(start, end, point)) > EPSILON) return false;
   return (
@@ -239,10 +198,6 @@ function cross(start: PointV1, end: PointV1, point: PointV1): number {
 
 function pointAlong(start: PointV1, end: PointV1, time: number): PointV1 {
   return { x: start.x + (end.x - start.x) * time, y: start.y + (end.y - start.y) * time };
-}
-
-function squaredDistance(left: PointV1, right: PointV1): number {
-  return squared(left.x - right.x) + squared(left.y - right.y);
 }
 
 function squared(value: number): number {

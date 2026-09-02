@@ -21,6 +21,16 @@ const BOX_HANDLE_ORDER: readonly BoxAnchorV1[] = [
   "bottom-left",
   "middle-left",
 ];
+const OPPOSITE_BOX_ANCHORS: Readonly<Record<BoxAnchorV1, BoxAnchorV1>> = {
+  "top-left": "bottom-right",
+  "top-center": "bottom-center",
+  "top-right": "bottom-left",
+  "middle-right": "middle-left",
+  "bottom-right": "top-left",
+  "bottom-center": "top-center",
+  "bottom-left": "top-right",
+  "middle-left": "middle-right",
+};
 
 export const ROTATE_HANDLE_OFFSET_PIXELS = 28;
 const HANDLE_OVERLAP_TOLERANCE_PIXELS = 0.01;
@@ -59,8 +69,12 @@ export function selectionBounds(elements: readonly SelectedElementGeometry[]): B
 
 export function oppositeElementHandlePoint(element: InkElementV1, position: BoxAnchorV1): PointV1 {
   const bounds = calculateElementBounds({ ...element, rotation: 0 });
-  const point = boxPosition(bounds, oppositeBoxPosition(position));
+  const point = boxPosition(bounds, oppositeBoxAnchor(position));
   return rotatePointClockwise(point, element.pivot, element.rotation);
+}
+
+export function oppositeBoxAnchor(position: BoxAnchorV1): BoxAnchorV1 {
+  return OPPOSITE_BOX_ANCHORS[position];
 }
 
 export function layoutSelectionHandles(
@@ -259,20 +273,6 @@ function boxPosition(bounds: Bounds, position: BoxAnchorV1): PointV1 {
       ? bounds.maxY
       : (bounds.minY + bounds.maxY) / 2;
   return { x, y };
-}
-
-function oppositeBoxPosition(position: BoxAnchorV1): BoxAnchorV1 {
-  const opposite: Record<BoxAnchorV1, BoxAnchorV1> = {
-    "top-left": "bottom-right",
-    "top-center": "bottom-center",
-    "top-right": "bottom-left",
-    "middle-right": "middle-left",
-    "bottom-right": "top-left",
-    "bottom-center": "top-center",
-    "bottom-left": "top-right",
-    "middle-left": "middle-right",
-  };
-  return opposite[position];
 }
 
 function rotateHandle(

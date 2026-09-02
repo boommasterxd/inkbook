@@ -1,4 +1,5 @@
 import {
+  assertFinitePoint,
   canonicalPoint,
   linearPivot,
   pointDistance,
@@ -113,10 +114,4 @@ function connectionAt(
 ): EndpointConnectionV1 | null {
   if (element.kind === "straight-highlighter") return null;
   return endpoint === "start" ? element.startConnection : element.endConnection;
-}
-
-function assertFinitePoint(point: PointV1): void {
-  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
-    throw new RangeError("Points must be finite.");
-  }
 }

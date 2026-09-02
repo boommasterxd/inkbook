@@ -1,6 +1,8 @@
 import {
+  assertFinitePoint,
   canonicalPoint,
   linearPivot,
+  pointSegmentDistance,
   quadraticPoint,
   rotatePointClockwise,
 } from "../../domain/geometry/public";
@@ -77,7 +79,7 @@ export function normalizeLinearBend(
   assertFinitePoint(bend);
   assertStraightTolerance(straightTolerance);
   const curvePoint = quadraticPoint(start, bend, end, 0.5);
-  return pointToSegmentDistance(curvePoint, start, end) <= straightTolerance
+  return pointSegmentDistance(curvePoint, start, end) <= straightTolerance
     ? null
     : canonicalPoint(bend);
 }
@@ -116,16 +118,6 @@ function supportsBend(
   );
 }
 
-function pointToSegmentDistance(point: PointV1, start: PointV1, end: PointV1): number {
-  const deltaX = end.x - start.x;
-  const deltaY = end.y - start.y;
-  const lengthSquared = deltaX * deltaX + deltaY * deltaY;
-  if (lengthSquared === 0) return Math.hypot(point.x - start.x, point.y - start.y);
-  const projection = ((point.x - start.x) * deltaX + (point.y - start.y) * deltaY) / lengthSquared;
-  const time = Math.max(0, Math.min(1, projection));
-  return Math.hypot(point.x - (start.x + time * deltaX), point.y - (start.y + time * deltaY));
-}
-
 function snapCurvePointToMidline(
   point: PointV1,
   start: PointV1,
@@ -151,7 +143,7 @@ function resolveCurvePointSnap(
   end: PointV1,
   tolerance: number,
 ): { readonly kind: "none" | "straight" | "symmetric"; readonly point: PointV1 } {
-  if (pointToSegmentDistance(point, start, end) <= tolerance) {
+  if (pointSegmentDistance(point, start, end) <= tolerance) {
     return {
       kind: "straight",
       point: { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 },
@@ -166,11 +158,5 @@ function resolveCurvePointSnap(
 function assertStraightTolerance(value: number): void {
   if (!Number.isFinite(value) || value < 0) {
     throw new RangeError("Straight bend tolerance must be non-negative and finite.");
-  }
-}
-
-function assertFinitePoint(point: PointV1): void {
-  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
-    throw new RangeError("Point coordinates must be finite.");
   }
 }

@@ -2,6 +2,7 @@ import type { Bounds } from "../../../domain/geometry/public";
 import type { BoxAnchorV1, InkElementV1, PointV1 } from "../../../domain/schema/public";
 import {
   oppositeElementHandlePoint,
+  oppositeBoxAnchor,
   selectionBounds,
   type OrientedSelectionFrame,
   type SelectedElementGeometry,
@@ -43,7 +44,7 @@ export function selectionHandleAction(
   return {
     anchor:
       only === undefined
-        ? (framePoint(frame, oppositeBoxPosition(handle.position)) ??
+        ? (framePoint(frame, oppositeBoxAnchor(handle.position)) ??
           oppositePoint(bounds, handle.position))
         : oppositeElementHandlePoint(only, handle.position),
     kind: handle.kind,
@@ -94,20 +95,6 @@ function framePoint(
     "top-right": topRight,
   };
   return points[position];
-}
-
-function oppositeBoxPosition(position: BoxAnchorV1): BoxAnchorV1 {
-  const opposite: Record<BoxAnchorV1, BoxAnchorV1> = {
-    "bottom-center": "top-center",
-    "bottom-left": "top-right",
-    "bottom-right": "top-left",
-    "middle-left": "middle-right",
-    "middle-right": "middle-left",
-    "top-center": "bottom-center",
-    "top-left": "bottom-right",
-    "top-right": "bottom-left",
-  };
-  return opposite[position];
 }
 
 function boundsCenter(bounds: Bounds): PointV1 {

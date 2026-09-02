@@ -4,11 +4,12 @@ import {
   calculateElementBounds,
   rotatePointClockwise,
 } from "../../../../src/domain/geometry/public";
-import type { InkElementV1 } from "../../../../src/domain/schema/public";
+import type { BoxAnchorV1, InkElementV1 } from "../../../../src/domain/schema/public";
 import {
-  findSelectionHandle,
   createSelectionFrame,
+  findSelectionHandle,
   layoutSelectionHandles,
+  oppositeBoxAnchor,
   selectionBounds,
   transformSelectionFrame,
 } from "../../../../src/editor/selection/public";
@@ -21,6 +22,24 @@ function selected(element: InkElementV1) {
 }
 
 describe("selection handle geometry", () => {
+  it("maps every box anchor to one stable opposite anchor", () => {
+    const anchors: readonly BoxAnchorV1[] = [
+      "top-left",
+      "top-center",
+      "top-right",
+      "middle-right",
+      "bottom-right",
+      "bottom-center",
+      "bottom-left",
+      "middle-left",
+    ];
+    for (const anchor of anchors) {
+      expect(oppositeBoxAnchor(oppositeBoxAnchor(anchor))).toBe(anchor);
+    }
+    expect(oppositeBoxAnchor("top-left")).toBe("bottom-right");
+    expect(oppositeBoxAnchor("middle-left")).toBe("middle-right");
+  });
+
   it("lays out rotated rectangle scale handles and a screen-sized rotation handle", () => {
     const shape = rectangle();
     shape.rotation = 90;
