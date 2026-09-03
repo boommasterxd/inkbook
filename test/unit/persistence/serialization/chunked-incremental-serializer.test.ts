@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  ChunkedOutputCancelledError,
   IncrementalDocumentSerializer,
   serializeInkbookDocument,
 } from "../../../../src/persistence/serialization/public";
+import { ChunkedOutputCancelledError } from "../../../../src/persistence/serialization/chunked-output-assembler";
 import { createAllElementSnapshot } from "./fixtures";
 
 describe("chunked incremental document serialization", () => {

@@ -4,7 +4,6 @@ import { calculateElementBounds } from "../../../../../src/domain/geometry/publi
 import type { InkElementV1 } from "../../../../../src/domain/schema/public";
 import {
   selectionOverlayFill,
-  selectionOverlayPath,
   selectionOverlayPaths,
 } from "../../../../../src/obsidian/embeds/active-editor/selection-overlay-path";
 import { connectedLine, rectangle } from "../../../domain/store/fixtures";
@@ -13,6 +12,10 @@ import { straightHighlighter } from "../../../domain/schema/fixtures";
 
 function selected(element: InkElementV1) {
   return { bounds: calculateElementBounds(element), element };
+}
+
+function selectionOverlayPath(...args: Parameters<typeof selectionOverlayPaths>): string {
+  return selectionOverlayPaths(...args).outline ?? "";
 }
 
 describe("selection overlay path", () => {

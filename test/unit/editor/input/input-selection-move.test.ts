@@ -1,24 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import { createInputState, reduceInput } from "../../../../src/editor/input";
 import {
-  createInputState,
+  effectTypes,
   inputPhase,
-  reduceInput,
-  type InputEffect,
-  type PointerMoveAction,
-} from "../../../../src/editor/input";
-import { pointerDown } from "../../../fixtures/editor/input-actions";
-
-const pointerMove = (): PointerMoveAction => ({
-  type: "pointer-move",
-  pointerId: 1,
-  pointerType: "mouse",
-  x: 20,
-  y: 30,
-  pressure: 0.5,
-});
-
-const effectTypes = (effects: readonly InputEffect[]): string[] => effects.map(({ type }) => type);
+  pointerDown,
+  pointerMove,
+} from "../../../fixtures/editor/input-actions";
 
 describe("selection move threshold", () => {
   it("applies the complete pointer delta in the first threshold-crossing move frame", () => {

@@ -10,7 +10,6 @@ import type {
 import { ElementStore } from "../../../src/domain/store/public";
 import type { TimeSlicedSelectionCommitPreparation } from "../../../src/editor/selection/handle-session";
 import {
-  createLassoSelectionArea,
   createRectangleSelectionArea,
   LassoSelectionSession,
   SelectionHandleSession,
@@ -18,8 +17,11 @@ import {
   selectionOverlayContainsPoint,
   selectionOverlayGeometry,
   type SelectionArea,
-  type SelectionAreaInclusion,
 } from "../../../src/editor/selection/public";
+import {
+  createLassoSelectionArea,
+  type SelectionAreaInclusion,
+} from "../../../src/editor/selection/selection-area";
 import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
 
 import { MeasuredSliceScheduler, percentile } from "../domain/domain-scenarios";
@@ -112,6 +114,46 @@ describe("selection hot paths", () => {
       timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
     );
     expect(interactionP99(hitDurations)).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
+  });
+});
+
+describe("selection scale preview hot path", () => {
+  it("keeps a tight 10,000-stroke scale frame off the linear pointer path", () => {
+    const elements = Array.from({ length: 10_000 }, (_, index) => indexedStroke(index));
+    const bounds = elements.map(calculateElementBounds);
+    const minX = Math.min(...bounds.map(({ minX: value }) => value));
+    const minY = Math.min(...bounds.map(({ minY: value }) => value));
+    const maxX = Math.max(...bounds.map(({ maxX: value }) => value));
+    const maxY = Math.max(...bounds.map(({ maxY: value }) => value));
+    const store = new ElementStore(elements);
+    const started = performance.now();
+    const session = new SelectionHandleSession({
+      action: {
+        anchor: { x: minX, y: minY },
+        kind: "scale",
+        position: "bottom-right",
+        rotation: 0,
+      },
+      elements,
+      planner: store,
+      startPointer: { x: maxX, y: maxY },
+    });
+    const setupDuration = performance.now() - started;
+    const durations = Array.from({ length: 120 }, (_, frame) => {
+      const pointerStarted = performance.now();
+      const preview = session.update({ x: maxX + frame + 1, y: maxY + (frame + 1) / 2 });
+      const duration = performance.now() - pointerStarted;
+      expect(preview.previewFrame?.points[0]?.x).toBeCloseTo(minX, 3);
+      expect(preview.previewFrame?.points[0]?.y).toBeCloseTo(minY, 3);
+      return duration;
+    });
+
+    expect(setupDuration).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
+    );
+    expect(interactionP99(durations)).toBeLessThanOrEqual(
       timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
     );
   });

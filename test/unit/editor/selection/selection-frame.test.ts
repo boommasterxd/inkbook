@@ -5,8 +5,8 @@ import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import {
   createSelectionFrameAtRotation,
   SelectionFrameSession,
-  transformSelectionFrame,
 } from "../../../../src/editor/selection/public";
+import { transformSelectionFrame } from "../../../../src/editor/selection/selection-frame";
 import { rectangle } from "../../domain/store/fixtures";
 
 function selected(element: InkElementV1) {

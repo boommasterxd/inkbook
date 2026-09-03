@@ -6,11 +6,11 @@ import {
 } from "../../../../src/domain/geometry/public";
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import {
-  createSelectionFrame,
   selectionOverlayContainsPoint,
   selectionOverlayGeometry,
   transformSelectionPoint,
 } from "../../../../src/editor/selection/public";
+import { createSelectionFrame } from "../../../../src/editor/selection/selection-frame";
 import { connectedLine, rectangle } from "../../domain/store/fixtures";
 import { straightHighlighter } from "../../domain/schema/fixtures";
 

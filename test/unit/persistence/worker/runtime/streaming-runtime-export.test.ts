@@ -24,8 +24,8 @@ import { serializeRuntimeSnapshotToUtf8 } from "../../../../../src/persistence/s
 import {
   DocumentWorkerRuntime,
   GestureAwareSliceScheduler,
-  createProductionDocumentRuntime,
 } from "../../../../../src/persistence/worker/runtime/public";
+import { createProductionDocumentRuntime } from "../../../../../src/persistence/worker/runtime/production-document-runtime";
 import { rectangle, rectangleDocument, snapshot } from "./fixtures";
 
 const executor = { sessionId: "session-a", workerEpoch: 3 } as const;

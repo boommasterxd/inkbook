@@ -20,50 +20,140 @@ export interface ConnectedSelectionPreview {
   readonly selectedPreviewIds: ReadonlySet<string>;
 }
 
-export function connectedSelectionTransformPreview(
-  store: ElementStore,
-  selectedElements: readonly InkElementV1[],
-  selectedIds: ReadonlySet<string>,
-  transform: SelectionPreviewTransform,
-  connectedTargetIds: readonly string[] = selectedElements.map(({ id }) => id),
-): ConnectedSelectionPreview {
-  const previews = new Map<string, ConnectedLinear>();
-  const selectedPreviewIds = new Set<string>();
-  const transformedTargets = new Map<string, ConnectedLinear>();
-  for (const element of selectedElements) {
-    if (element.kind !== "line" && element.kind !== "arrow") continue;
-    const transformed = transformLinear(element, selectedIds, transform, true);
-    transformedTargets.set(element.id, transformed);
-    if (isConnectedLinear(element)) {
-      previews.set(element.id, transformed);
-      selectedPreviewIds.add(element.id);
-    }
+export class ConnectedSelectionPreviewSession {
+  readonly #dependents: readonly ConnectedLinear[];
+  readonly #selectedIds: ReadonlySet<string>;
+  readonly #selectedLinears: readonly ConnectedLinear[];
+  readonly #selectedPreviewIds: ReadonlySet<string>;
+  readonly #store: ElementStore;
+
+  public constructor(
+    store: ElementStore,
+    selectedElements: readonly InkElementV1[],
+    selectedIds: ReadonlySet<string>,
+  ) {
+    this.#store = store;
+    this.#selectedIds = selectedIds;
+    const plan = createConnectedPreviewPlan(store, selectedElements, selectedIds);
+    this.#dependents = plan.dependents;
+    this.#selectedLinears = plan.selectedLinears;
+    this.#selectedPreviewIds = plan.selectedPreviewIds;
   }
-  const queue = [...connectedTargetIds];
-  const queued = new Set(queue);
-  for (let index = 0; index < queue.length; index += 1) {
-    const targetId = queue[index]!;
-    queued.delete(targetId);
-    store.visitDependents(targetId, ({ linearId }) => {
-      if (selectedIds.has(linearId)) return;
-      const current = previews.get(linearId) ?? store.get(linearId)?.element;
-      if (current === undefined || (current.kind !== "line" && current.kind !== "arrow")) return;
-      const resolved = resolvePreviewConnections(current, {
+
+  public get selectedPreviewIds(): ReadonlySet<string> {
+    return this.#selectedPreviewIds;
+  }
+
+  public update(transform: SelectionPreviewTransform): ConnectedSelectionPreview {
+    const previews = new Map<string, ConnectedLinear>();
+    const transformedTargets = new Map<string, ConnectedLinear>();
+    for (const element of this.#selectedLinears) {
+      const transformed = transformLinear(element, this.#selectedIds, transform, true);
+      transformedTargets.set(element.id, transformed);
+      if (this.#selectedPreviewIds.has(element.id)) previews.set(element.id, transformed);
+    }
+    for (const element of this.#dependents) {
+      const resolved = resolvePreviewConnections(element, {
         previews,
-        selectedIds,
-        store,
+        selectedIds: this.#selectedIds,
+        store: this.#store,
         transform,
         transformedTargets,
       });
-      if (resolved === current) return;
-      previews.set(linearId, resolved);
-      if (!queued.has(linearId)) {
-        queue.push(linearId);
-        queued.add(linearId);
-      }
+      if (resolved !== element) previews.set(element.id, resolved);
+    }
+    return { elements: [...previews.values()], selectedPreviewIds: this.#selectedPreviewIds };
+  }
+}
+
+interface ConnectedPreviewPlan {
+  readonly dependents: readonly ConnectedLinear[];
+  readonly selectedLinears: readonly ConnectedLinear[];
+  readonly selectedPreviewIds: ReadonlySet<string>;
+}
+
+function createConnectedPreviewPlan(
+  store: ElementStore,
+  selectedElements: readonly InkElementV1[],
+  selectedIds: ReadonlySet<string>,
+): ConnectedPreviewPlan {
+  const selectedLinears = new Map<string, ConnectedLinear>();
+  const requiredSelectedIds = new Set<string>();
+  const selectedPreviewIds = new Set<string>();
+  for (const element of selectedElements) {
+    if (element.kind !== "line" && element.kind !== "arrow") continue;
+    selectedLinears.set(element.id, element);
+    if (!isConnectedLinear(element)) continue;
+    requiredSelectedIds.add(element.id);
+    selectedPreviewIds.add(element.id);
+  }
+  const dependents = reachableDependents(store, selectedIds, requiredSelectedIds, selectedLinears);
+  return {
+    dependents: topologicalDependents(dependents),
+    selectedLinears: [...requiredSelectedIds].flatMap((id) => {
+      const element = selectedLinears.get(id);
+      return element === undefined ? [] : [element];
+    }),
+    selectedPreviewIds,
+  };
+}
+
+function reachableDependents(
+  store: ElementStore,
+  selectedIds: ReadonlySet<string>,
+  requiredSelectedIds: Set<string>,
+  selectedLinears: ReadonlyMap<string, ConnectedLinear>,
+): Map<string, ConnectedLinear> {
+  const dependents = new Map<string, ConnectedLinear>();
+  const queue = [...selectedIds];
+  const visited = new Set(queue);
+  for (let index = 0; index < queue.length; index += 1) {
+    const targetId = queue[index]!;
+    store.visitDependents(targetId, ({ linearId }) => {
+      if (selectedIds.has(linearId)) return;
+      if (selectedLinears.has(targetId)) requiredSelectedIds.add(targetId);
+      const element = store.get(linearId)?.element;
+      if (element === undefined || (element.kind !== "line" && element.kind !== "arrow")) return;
+      dependents.set(element.id, element);
+      if (visited.has(element.id)) return;
+      visited.add(element.id);
+      queue.push(element.id);
     });
   }
-  return { elements: [...previews.values()], selectedPreviewIds };
+  return dependents;
+}
+
+function topologicalDependents(
+  dependents: ReadonlyMap<string, ConnectedLinear>,
+): readonly ConnectedLinear[] {
+  const indegrees = new Map<string, number>();
+  const downstream = new Map<string, string[]>();
+  for (const element of dependents.values()) {
+    indegrees.set(element.id, 0);
+    for (const connection of [element.startConnection, element.endConnection]) {
+      if (connection === null || !dependents.has(connection.targetId)) continue;
+      indegrees.set(element.id, (indegrees.get(element.id) ?? 0) + 1);
+      const targets = downstream.get(connection.targetId) ?? [];
+      targets.push(element.id);
+      downstream.set(connection.targetId, targets);
+    }
+  }
+  const queue = [...indegrees].filter(([, value]) => value === 0).map(([id]) => id);
+  const ordered: ConnectedLinear[] = [];
+  for (let index = 0; index < queue.length; index += 1) {
+    const id = queue[index]!;
+    const element = dependents.get(id);
+    if (element !== undefined) ordered.push(element);
+    for (const dependentId of downstream.get(id) ?? []) {
+      const remaining = (indegrees.get(dependentId) ?? 0) - 1;
+      indegrees.set(dependentId, remaining);
+      if (remaining === 0) queue.push(dependentId);
+    }
+  }
+  if (ordered.length !== dependents.size) {
+    throw new RangeError("Connected preview dependencies must remain acyclic.");
+  }
+  return ordered;
 }
 
 interface PreviewConnectionContext {
@@ -103,17 +193,6 @@ function previewAnchor(
   const point = resolveShapeAnchor(target, connection.anchor);
   if (point === null || !context.selectedIds.has(connection.targetId)) return null;
   return transformSelectionPoint(point, context.transform);
-}
-
-export function exactConnectedSelectionIds(
-  elements: readonly InkElementV1[],
-  selectedIds: ReadonlySet<string>,
-): ReadonlySet<string> {
-  const ids = new Set<string>();
-  for (const element of elements) {
-    if (selectedIds.has(element.id) && isConnectedLinear(element)) ids.add(element.id);
-  }
-  return ids;
 }
 
 function transformLinear(

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ElementStore } from "../../../../src/domain/store/public";
 import type { ClipboardCandidates, PastePlan } from "../../../../src/persistence/clipboard/public";
-import { INKBOOK_CLIPBOARD_WEB_MIME } from "../../../../src/persistence/clipboard/public";
+import { INKBOOK_CLIPBOARD_WEB_MIME } from "../../../../src/persistence/clipboard/constants";
 import { ActiveEditorActions } from "../../../../src/obsidian/embeds/active-editor/controller-actions";
 import { ActiveEditorMenuController } from "../../../../src/obsidian/embeds/active-editor/controller-menu";
 import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";

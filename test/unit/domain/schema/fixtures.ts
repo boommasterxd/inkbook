@@ -1,17 +1,17 @@
-import type {
-  ArrowElementV1,
-  BoxShapeElementV1,
-  CoordinateSystemElementV1,
-  InkElementV1,
-  InkSnapshotV1,
-  LineElementV1,
-  OutlineStyleV1,
-  ShapeStyleV1,
-  StraightHighlighterElementV1,
-  StrokeElementV1,
-  StrokeStyleV1,
-  TableElementV1,
+import {
+  type ArrowElementV1,
+  type BoxShapeElementV1,
+  type CoordinateSystemElementV1,
+  type InkElementV1,
+  type InkSnapshotV1,
+  type LineElementV1,
+  type OutlineStyleV1,
+  type ShapeStyleV1,
+  type StrokeElementV1,
+  type StrokeStyleV1,
+  type TableElementV1,
 } from "../../../../src/domain/schema/public";
+import { type StraightHighlighterElementV1 } from "../../../../src/domain/schema/types";
 
 export const outlineStyle: OutlineStyleV1 = {
   outlineColor: { type: "theme-text" },

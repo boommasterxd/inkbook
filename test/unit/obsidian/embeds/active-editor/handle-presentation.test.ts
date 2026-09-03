@@ -35,6 +35,7 @@ describe("selection handle presentation", () => {
     const preview: SelectionHandlePreview = {
       exactElements: resized,
       exactPreviewTruncated: false,
+      previewFrame: exactFrame,
       snapCandidate: null,
       snapGuide: null,
       transform: {

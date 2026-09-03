@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import { UniformSpatialIndex } from "../../../../src/domain/spatial";
 import {
   MAX_EXTENT_REBUILD_SLICE,
   MAX_STALE_EXTENT_POPS,
-  UniformSpatialIndex,
-} from "../../../../src/domain/spatial";
+} from "../../../../src/domain/spatial/uniform-spatial-index";
 
 function boundsAt(bottom: number) {
   return { maxX: 10, maxY: bottom, minX: 0, minY: bottom - 10 };

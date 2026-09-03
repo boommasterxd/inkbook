@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { ChunkedInputCancelledError } from "../../../../../src/persistence/serialization/chunked-input-codec";
+import { ChunkedInputCancelledError } from "../../../../../src/persistence/serialization/chunked-input-types";
 import { serializeInkbookDocument } from "../../../../../src/persistence/serialization/public";
 import { DocumentModelRuntime } from "../../../../../src/persistence/worker/runtime/document-model";
 import {
-  createProductionDocumentRuntime,
   DocumentWorkerRuntime,
   GestureAwareSliceScheduler,
 } from "../../../../../src/persistence/worker/runtime/public";
+import { createProductionDocumentRuntime } from "../../../../../src/persistence/worker/runtime/production-document-runtime";
 import type { DocumentRuntimePort } from "../../../../../src/persistence/worker/runtime/types";
 import { isDocumentRuntimeWireResult } from "../../../../../src/persistence/worker/runtime/wire-codec";
 

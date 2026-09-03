@@ -51,19 +51,6 @@ export function* scanJsonContainerWidths(
   }
 }
 
-export function assertJsonContainerWidths(
-  input: string,
-  options: Omit<JsonContainerScanOptions, "batchCharacters">,
-): void {
-  const steps = scanJsonContainerWidths(input, {
-    ...options,
-    batchCharacters: Math.max(1, input.length),
-  });
-  while (!steps.next().done) {
-    // The synchronous worker path completes the non-materializing scan in one bounded file pass.
-  }
-}
-
 function scanStructuralCharacter(
   character: string,
   position: number,

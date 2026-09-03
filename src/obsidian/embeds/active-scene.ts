@@ -38,8 +38,6 @@ import type { EditableDocumentModel } from "./vault-document-session";
 import type { ActiveInkbookSceneOptions } from "./active-scene-types";
 
 export { ActiveScenePreviewHandoff } from "./active-scene-handoff";
-export { readActiveSceneViewport } from "./active-scene-viewport";
-
 export class ActiveInkbookScene {
   readonly #chrome: PendingEditorChrome;
   readonly #chromeHost: HTMLDivElement;

@@ -424,7 +424,7 @@ export class SvgSceneRenderer {
     const mountedIds = this.#content.takeNewlyMountedIds();
     this.#motion.bindMountedEntrances(mountedIds);
     this.#motion.finishEntranceBatch();
-    this.#elementPreviews.applyMounted();
+    this.#elementPreviews.applyMounted(mountedIds);
     let backgroundDeferred = false;
     if (this.#backgroundDirty && this.#viewport !== undefined) {
       if (this.#scheduler.now() >= deadline) {

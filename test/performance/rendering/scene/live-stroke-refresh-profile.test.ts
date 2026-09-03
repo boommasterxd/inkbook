@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { StrokeStyleV1 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
-import { LiveStrokeBuilder } from "../../../../src/editor/tools/public";
+import { LiveStrokeBuilder } from "../../../../src/editor/tools/live-stroke";
 import {
   INTERACTION_REFRESH_PROFILE,
   interactionP99,

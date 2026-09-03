@@ -1,3 +1,4 @@
+import { parseInkbookDocumentForTest } from "../../../fixtures/persistence/parse-document";
 import { describe, expect, it } from "vitest";
 
 import type {
@@ -5,10 +6,10 @@ import type {
   InkSnapshotV1,
   LineElementV1,
 } from "../../../../src/domain/schema/public";
-import { moveSelection } from "../../../../src/editor/selection/public";
+import { moveSelection } from "../../../../src/editor/selection/transforms";
 import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
-import { parseInkbookDocument } from "../../../../src/persistence/serialization/public";
+
 import { reportedRotatedTable } from "../../../fixtures/editor/reported-rotated-table";
 import { emptySnapshot, operation, persistenceHarness, rectangle } from "./vault-session-fixtures";
 
@@ -34,7 +35,7 @@ describe("vault-backed connected selection moves", () => {
     await expect(
       session.lockLatest({ ...operation(), operationId: 2, workspaceToken: 2 }),
     ).resolves.toMatchObject({ revision: 10, status: "confirmed" });
-    const persisted = parseInkbookDocument(content());
+    const persisted = await parseInkbookDocumentForTest(content());
     expect(persisted.ok).toBe(true);
     if (!persisted.ok) throw new Error("Expected a persisted connected document.");
     expect(persisted.value.snapshot.elements).toEqual([
@@ -65,7 +66,7 @@ describe("vault-backed connected selection moves", () => {
       session.lockLatest({ ...operation(), operationId: 2, workspaceToken: 2 }),
     ).resolves.toMatchObject({ revision: 8, status: "confirmed" });
 
-    const persisted = parseInkbookDocument(content());
+    const persisted = await parseInkbookDocumentForTest(content());
     expect(persisted.ok).toBe(true);
     if (!persisted.ok) throw new Error("Expected a persisted rotated table document.");
     expect(persisted.value.snapshot.elements).toEqual([moved]);

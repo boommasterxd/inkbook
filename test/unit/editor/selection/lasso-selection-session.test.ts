@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  LassoSelectionSession,
-  MAX_LASSO_SELECTION_POINTS,
-} from "../../../../src/editor/selection/public";
+import { LassoSelectionSession } from "../../../../src/editor/selection/public";
+import { MAX_LASSO_SELECTION_POINTS } from "../../../../src/editor/selection/selection-area";
 
 describe("LassoSelectionSession", () => {
   it("processes dense batches within a bounded deterministic point budget", () => {

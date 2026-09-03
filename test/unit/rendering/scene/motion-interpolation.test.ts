@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import type {
-  ArrowElementV1,
-  BoxShapeElementV1,
-  CoordinateSystemElementV1,
-  StrokeElementV1,
-  TableElementV1,
-  LineElementV1,
-  StraightHighlighterElementV1,
+import {
+  type ArrowElementV1,
+  type BoxShapeElementV1,
+  type CoordinateSystemElementV1,
+  type StrokeElementV1,
+  type TableElementV1,
+  type LineElementV1,
 } from "../../../../src/domain/schema/public";
+import { type StraightHighlighterElementV1 } from "../../../../src/domain/schema/types";
 import {
   interpolateElement,
   standardMotionProgress,

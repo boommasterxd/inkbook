@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { BoxShapeElementV1, StrokeElementV1 } from "../../../../src/domain/schema/public";
+import { createSweptCapsuleCheck } from "../../../../src/editor/gestures/eraser-intersection";
 import {
   EraserSweep,
   MAX_RETAINED_ERASER_SWEEPS,
   screenPixelsToPageUnits,
-  sweepTouchesElement,
   type EraserQuerySink,
-} from "../../../../src/editor/gestures/public";
+} from "../../../../src/editor/gestures/eraser-gesture";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 
 const scheduler = {
@@ -15,6 +15,18 @@ const scheduler = {
   shouldYield: () => false,
   yieldControl: async () => undefined,
 };
+
+function sweepTouchesElement(
+  start: Readonly<{ x: number; y: number }>,
+  end: Readonly<{ x: number; y: number }>,
+  radius: number,
+  element: BoxShapeElementV1 | StrokeElementV1 | Parameters<typeof createSweptCapsuleCheck>[3],
+): boolean {
+  const check = createSweptCapsuleCheck(start, end, radius, element);
+  let progress = check.advance(Number.MAX_SAFE_INTEGER);
+  while (progress.result === null) progress = check.advance(Number.MAX_SAFE_INTEGER);
+  return progress.result;
+}
 
 function addIds(sink: EraserQuerySink, ids: readonly string[]): void {
   for (const id of ids) sink.add(id);

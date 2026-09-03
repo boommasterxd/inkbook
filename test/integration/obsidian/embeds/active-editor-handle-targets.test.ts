@@ -7,11 +7,11 @@ import {
 import type { InkElementV1, PointV1 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
 import {
-  editLinearBend,
   layoutSelectionHandles,
   oppositeElementHandlePoint,
   SelectionFrameSession,
 } from "../../../../src/editor/selection/public";
+import { editLinearBend } from "../../../../src/editor/selection/linear-bend";
 import { ActiveEditorHandleInteraction } from "../../../../src/obsidian/embeds/active-editor/handle-interaction";
 import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";
 import type { PreparedElementHistory } from "../../../../src/obsidian/embeds/active-editor/prepared-element-history";

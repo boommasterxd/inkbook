@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   beginClipboardWriteDuringActivation,
-  encodeSelection,
   type ClipboardWritePort,
   type ClipboardWritePayload,
-  type EncodedClipboard,
 } from "../../../../src/persistence/clipboard/public";
+import { encodeRuntimeSelection } from "../../../../src/persistence/clipboard/codec";
+import { type EncodedClipboard } from "../../../../src/persistence/clipboard/types";
 import { RECTANGLE_ID, rectangle } from "../../../unit/persistence/clipboard/fixtures";
 
 interface FakeItem {
@@ -13,7 +13,7 @@ interface FakeItem {
 }
 
 const encodedFixture = (): EncodedClipboard => {
-  const encoded = encodeSelection([rectangle()], new Set([RECTANGLE_ID]));
+  const encoded = encodeRuntimeSelection([rectangle()], new Set([RECTANGLE_ID]));
   if (!encoded.ok) throw new Error(encoded.error.message);
   return encoded.value;
 };

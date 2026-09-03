@@ -294,6 +294,8 @@ describe("selection move connected geometry", () => {
       "M 118 128 L 322 128 L 322 232 L 118 232 Z",
     );
     expect(setSelectionOverlayPath.mock.lastCall).toEqual(selectedOverlayCall);
+    preview.update(pointer(40, 60));
+    expect(setPreviewTransform.mock.calls[1]?.[0]).toBe(setPreviewTransform.mock.calls[0]?.[0]);
   });
 
   it("keeps a selected endpoint pinned to an unselected target during preview", () => {

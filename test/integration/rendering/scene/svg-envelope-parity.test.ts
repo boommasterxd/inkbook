@@ -14,11 +14,9 @@ import { PORTABLE_PALETTE_V1 } from "../../../../src/domain/schema/public";
 import { validateSafeSvg } from "../../../../src/persistence/documents/safe-svg-validator";
 import { serializeSvgNumber } from "../../../../src/persistence/documents/svg-number";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
-import {
-  SceneBackgroundCache,
-  SvgSceneRenderer,
-  type SceneElementRecord,
-} from "../../../../src/rendering/scene";
+import { SvgSceneRenderer } from "../../../../src/rendering/scene";
+import { SceneBackgroundCache } from "../../../../src/rendering/scene/background-cache";
+import { type SceneElementRecord } from "../../../../src/rendering/scene/types";
 import type { InkbookColorScheme } from "../../../../src/obsidian/theme/color-scheme";
 import { createAllElementSnapshot, uuid } from "../../../unit/persistence/serialization/fixtures";
 import {

@@ -1,11 +1,6 @@
-import { calculateElementBounds } from "../../domain/geometry/bounds";
 import { assertFinitePoint, type Bounds } from "../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
-import {
-  createSweptCapsuleCheck,
-  sweptCapsuleTouchesElement,
-  type SweptCapsuleCheck,
-} from "./eraser-intersection";
+import { createSweptCapsuleCheck, type SweptCapsuleCheck } from "./eraser-intersection";
 
 const ERASER_FADE_MS = 160;
 const EXACT_WORK_UNITS_PER_UPDATE = 12_288;
@@ -268,17 +263,6 @@ function finalizationWorkUnits(sliceBudgetMs: number): number {
   );
 }
 
-export function sweepTouchesElement(
-  start: PointV1,
-  end: PointV1,
-  radius: number,
-  element: InkElementV1,
-): boolean {
-  const bounds = calculateElementBounds(element);
-  if (!boundsOverlap(bounds, sweepBounds(start, end, radius))) return false;
-  return sweptCapsuleTouchesElement(start, end, radius, element);
-}
-
 function sweepBounds(start: PointV1, end: PointV1, radius: number): Bounds {
   return {
     minX: Math.min(start.x, end.x) - radius,
@@ -286,15 +270,6 @@ function sweepBounds(start: PointV1, end: PointV1, radius: number): Bounds {
     maxX: Math.max(start.x, end.x) + radius,
     maxY: Math.max(start.y, end.y) + radius,
   };
-}
-
-function boundsOverlap(left: Bounds, right: Bounds): boolean {
-  return (
-    left.minX <= right.maxX &&
-    left.maxX >= right.minX &&
-    left.minY <= right.maxY &&
-    left.maxY >= right.minY
-  );
 }
 
 function finitePoint(point: PointV1): PointV1 {

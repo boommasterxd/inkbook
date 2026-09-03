@@ -2,14 +2,16 @@ import type { StrokeElementV1 } from "../../../../src/domain/schema/public";
 import { describe, expect, it } from "vitest";
 
 import {
-  buildCenterline,
-  buildPressureOutline,
-  buildPressureOutlinePairs,
   buildStrokePath,
-  prepareStrokeSamples,
   rotatePointClockwise,
   smoothStrokeCenters,
 } from "../../../../src/domain/geometry/public";
+import { prepareExpectedStrokeSamples as prepareStrokeSamples } from "../../../fixtures/editor/stroke-sample-reference";
+import {
+  buildCenterline,
+  buildPressureOutline,
+  buildPressureOutlinePairs,
+} from "../../../../src/domain/geometry/stroke-path";
 import { strokeStyle } from "./fixtures";
 
 function stroke(overrides: Partial<StrokeElementV1> = {}): StrokeElementV1 {

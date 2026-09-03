@@ -168,10 +168,7 @@ function startSinglePointer(state: InputState, action: PointerDownAction): Input
     capture.push(longPressEffect(action.pointerId));
     return withInteraction(inputState, interaction, capture);
   }
-  if (action.pointerType === "touch" && tool === "select") {
-    return withInteraction(inputState, { ...base, phase: "lasso" }, capture);
-  }
-  if (action.pointerType === "touch" && !fingerDrawingEnabled(state)) {
+  if (action.pointerType === "touch" && (tool === "select" || !fingerDrawingEnabled(state))) {
     const interaction: InputInteraction = {
       ...base,
       phase: "touch-pending",
@@ -218,7 +215,9 @@ function shouldClearSelectionAtPointerDown(
   )
     return false;
   if (tool === "select" && action.target !== undefined) return false;
-  if (action.pointerType === "touch") return fingerDrawingEnabled(state);
+  if (action.pointerType === "touch") {
+    return tool !== "select" && fingerDrawingEnabled(state);
+  }
   return (
     action.button === 0 &&
     action.buttons === 1 &&

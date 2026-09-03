@@ -1,3 +1,4 @@
+import { parseInkbookDocumentForTest } from "../../../fixtures/persistence/parse-document";
 import type { TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
@@ -5,7 +6,7 @@ import { FILE_SCHEMA_LIMITS } from "../../../../src/domain/schema/public";
 import type { AppliedElementMutation, ElementMutation } from "../../../../src/domain/store/public";
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
 import type { PastePlan } from "../../../../src/persistence/clipboard/public";
-import { parseInkbookDocument } from "../../../../src/persistence/serialization/public";
+
 import {
   DocumentWorkerRuntime,
   type DocumentRuntimePort,
@@ -61,7 +62,7 @@ describe("vault-backed document session", () => {
     await vi.waitFor(() => expect(process).toHaveBeenCalledOnce());
     releaseProcess();
     await unload;
-    const parsed = parseInkbookDocument(content());
+    const parsed = await parseInkbookDocumentForTest(content());
     expect(parsed.ok && parsed.value.snapshot.revision).toBe(8);
   });
 
@@ -242,7 +243,7 @@ describe("vault-backed document save verification", () => {
     ).resolves.toMatchObject({ revision: 9, status: "confirmed" });
 
     expect(process).toHaveBeenCalledOnce();
-    const parsed = parseInkbookDocument(content());
+    const parsed = await parseInkbookDocumentForTest(content());
     expect(parsed.ok).toBe(true);
     if (parsed.ok) {
       expect(parsed.value.snapshot.revision).toBe(9);
@@ -373,7 +374,7 @@ describe("vault-backed recovery copies", () => {
     expect(process).not.toHaveBeenCalled();
     const saved = createdCopies.get("drawings/ink-recovered-1.svg")?.text;
     expect(saved).toBeDefined();
-    const parsed = parseInkbookDocument(saved ?? "");
+    const parsed = await parseInkbookDocumentForTest(saved ?? "");
     expect(parsed.ok && parsed.value.snapshot.elements).toEqual([rectangle()]);
   });
 

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createInputState, type InputState } from "../../../../src/editor/input/index";
-import { OUTER_PAGE_WIDTH } from "../../../../src/editor/zoom/index";
+import { OUTER_PAGE_WIDTH } from "../../../../src/editor/zoom/zoom";
 import {
   ActiveEditorNavigation,
   type ActiveEditorWheelInput,

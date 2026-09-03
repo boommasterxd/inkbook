@@ -48,13 +48,6 @@ export function selectionOverlayPaths(
   };
 }
 
-export function selectionOverlayPath(
-  selected: readonly SelectedElementGeometry[],
-  options: SelectionOverlayPathOptions,
-): string | null {
-  return selectionOverlayPaths(selected, options).outline;
-}
-
 function structuralEditPaths(
   selected: readonly SelectedElementGeometry[],
   options: SelectionOverlayPathOptions,

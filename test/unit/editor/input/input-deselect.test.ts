@@ -1,29 +1,13 @@
 import { describe, expect, it } from "vitest";
 
+import { STARTUP_TOOLS } from "../../../../src/domain/settings/types";
+import { createInputState, reduceInput } from "../../../../src/editor/input";
 import {
-  createInputState,
+  effectTypes,
   inputPhase,
-  reduceInput,
-  type InputEffect,
-  type PointerMoveAction,
-} from "../../../../src/editor/input";
-import { pointerDown } from "../../../fixtures/editor/input-actions";
-
-function pointerMove(overrides: Partial<PointerMoveAction> = {}): PointerMoveAction {
-  return {
-    type: "pointer-move",
-    pointerId: 1,
-    pointerType: "touch",
-    x: 10,
-    y: 20,
-    pressure: 0.5,
-    ...overrides,
-  };
-}
-
-function effectTypes(effects: readonly InputEffect[]): string[] {
-  return effects.map(({ type }) => type);
-}
+  pointerDown,
+  pointerMove,
+} from "../../../fixtures/editor/input-actions";
 
 describe("selection deselection", () => {
   it.each(["draw", "eraser", "line", "arrow", "rectangle"] as const)(
@@ -145,7 +129,7 @@ describe("touch selection deselection", () => {
       "begin-preview",
     ]);
 
-    const moved = reduceInput(started.state, pointerMove({ x: 20, y: 24 }));
+    const moved = reduceInput(started.state, pointerMove({ pointerType: "touch", x: 20, y: 24 }));
     expect(moved.state.hasSelection).toBe(false);
     expect(effectTypes(moved.effects)).toEqual(["update-preview"]);
 
@@ -164,7 +148,7 @@ describe("touch selection deselection", () => {
       }),
       pointerDown({ pointerType: "touch" }),
     );
-    const moved = reduceInput(first.state, pointerMove({ x: 20, y: 24 }));
+    const moved = reduceInput(first.state, pointerMove({ pointerType: "touch", x: 20, y: 24 }));
     const pinch = reduceInput(
       moved.state,
       pointerDown({ pointerId: 2, pointerType: "touch", x: 30 }),
@@ -180,30 +164,33 @@ describe("touch selection deselection", () => {
 });
 
 describe("touch tap selection deselection", () => {
-  it("keeps a universal unselected-element touch tap pending while finger drawing is enabled", () => {
-    const started = reduceInput(
-      createInputState({
-        activeTool: "draw",
-        hasSelection: true,
-        deviceFingerDrawingEnabled: true,
-        toolbarFingerDrawingEnabled: true,
-      }),
-      pointerDown({
-        pointerType: "touch",
-        target: { elementId: "shape-b", isSelected: false },
-      }),
-    );
+  it.each(STARTUP_TOOLS)(
+    "selects an unselected element by touch tap while %s is active",
+    (activeTool) => {
+      const started = reduceInput(
+        createInputState({
+          activeTool,
+          hasSelection: true,
+          deviceFingerDrawingEnabled: true,
+          toolbarFingerDrawingEnabled: true,
+        }),
+        pointerDown({
+          pointerType: "touch",
+          target: { elementId: "shape-b", isSelected: false },
+        }),
+      );
 
-    expect(inputPhase(started.state)).toBe("touch-pending");
-    expect(effectTypes(started.effects)).not.toContain("clear-selection");
-    expect(reduceInput(started.state, { type: "pointer-up", pointerId: 1 }).effects).toContainEqual(
-      {
+      expect(inputPhase(started.state)).toBe("touch-pending");
+      expect(effectTypes(started.effects)).not.toContain("clear-selection");
+      expect(
+        reduceInput(started.state, { type: "pointer-up", pointerId: 1 }).effects,
+      ).toContainEqual({
         type: "select-element",
         elementId: "shape-b",
         mode: "replace",
-      },
-    );
-  });
+      });
+    },
+  );
 
   it("waits for a confirmed empty touch tap before clearing selection", () => {
     const pending = reduceInput(
@@ -211,7 +198,7 @@ describe("touch tap selection deselection", () => {
       pointerDown({ pointerType: "touch", timestamp: 100 }),
     );
     expect(effectTypes(pending.effects)).toEqual(["capture-pointer", "schedule-long-press"]);
-    const moved = reduceInput(pending.state, pointerMove({ x: 10, y: 31 }));
+    const moved = reduceInput(pending.state, pointerMove({ pointerType: "touch", x: 10, y: 31 }));
     expect(effectTypes(moved.effects)).toEqual(["cancel-long-press", "scroll-note"]);
     const released = reduceInput(moved.state, {
       type: "pointer-up",

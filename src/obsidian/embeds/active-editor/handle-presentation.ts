@@ -136,11 +136,12 @@ export class SelectionHandlePresentation {
       uniquePreviewElements(basePreviewElements, scaleElements),
       this.#version,
     );
+    const previewFrame = exactOverlay.length === 0 ? preview.previewFrame : null;
     this.renderGeometry(
       exactOverlay.length === 0 ? context.selected : exactOverlay,
       preview.snapGuide,
-      exactOverlay.length === 0 ? preview.transform : null,
-      exactOverlay.length === 0 ? context.frame : exactFrame,
+      exactOverlay.length === 0 && previewFrame === null ? preview.transform : null,
+      exactOverlay.length === 0 ? (previewFrame ?? context.frame) : exactFrame,
     );
   }
 
@@ -161,8 +162,9 @@ export class SelectionHandlePresentation {
 function uniquePreviewElements(
   base: readonly InkElementV1[],
   scale: readonly InkElementV1[],
-): InkElementV1[] {
-  if (scale.length === 0) return [...base];
+): readonly InkElementV1[] {
+  if (scale.length === 0) return base;
+  if (base.length === 0) return scale;
   const scaleIds = new Set(scale.map(({ id }) => id));
   return [...base.filter(({ id }) => !scaleIds.has(id)), ...scale];
 }

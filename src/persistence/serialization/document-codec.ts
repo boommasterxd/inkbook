@@ -1,29 +1,18 @@
 import { deriveRenderBands } from "../../domain/commands/render-bands";
 import { derivePageExtent } from "../../domain/geometry/public";
 import type { InkSnapshotV1, ValidationError } from "../../domain/schema/public";
-import {
-  FILE_SCHEMA_LIMITS,
-  MAX_JSON_DEPTH,
-  validateInkSnapshotV1,
-} from "../../domain/schema/public";
-import { jsonContainerBudget } from "../../domain/schema/validation-internals";
-import { validateEditableSafeSvg, validateSafeSvg } from "../documents/safe-svg-validator";
+import { FILE_SCHEMA_LIMITS, validateInkSnapshotV1 } from "../../domain/schema/public";
+import { validateSafeSvg } from "../documents/safe-svg-validator";
 import { serializeSvgEnvelope } from "../documents/svg-envelope";
 import { serializeSvgNumber } from "../documents/svg-number";
 import { backgroundFitsStaticLimit, serializeBackgroundPaths } from "./background";
-import { validateCurrentMetadataIntegrity } from "./canonical-metadata";
 import { canonicalSnapshot } from "./canonical-snapshot";
-import { migrateAndValidateDocumentSnapshot } from "./document-migration";
-import { assertJsonContainerWidths } from "./json-container-width";
-import { isCanonicalLockedHeight } from "./locked-height";
 import { serializeElementPaths } from "./path-markup";
 import { SHA256_DOCUMENT_HASHER, type DocumentHashPort } from "./sha256";
-import { verifyStaticPathIntegrity } from "./static-path-integrity";
 import type {
   DocumentCodecError,
   DocumentCodecErrorCode,
   DocumentCodecResult,
-  ParsedInkbookDocument,
   SerializedInkbookDocument,
 } from "./types";
 
@@ -83,114 +72,8 @@ export function serializeInkbookDocument(
   };
 }
 
-export function parseInkbookDocument(
-  input: string | Uint8Array,
-  hasher: DocumentHashPort = SHA256_DOCUMENT_HASHER,
-): DocumentCodecResult<ParsedInkbookDocument> {
-  const decoded = decodeInput(input);
-  if (!decoded.ok) return decoded;
-  const safe = validateEditableSafeSvg(decoded.value.svg);
-  if (safe === null)
-    return failure("invalid-svg", "Document does not satisfy the safe SVG envelope.");
-
-  const migrated = parseAndValidateSnapshot(
-    safe.metadataText,
-    decoded.value.bytes,
-    safe.metadataBytes,
-  );
-  if (!migrated.ok) return migrated;
-  if (migrated.value.sourceVersion !== safe.version) {
-    return failure("migration-failed", "Root and snapshot source versions do not match.");
-  }
-  const metadataIntegrity = validateCurrentMetadataIntegrity(
-    safe.metadataText,
-    safe.snapshotHash,
-    migrated.value,
-  );
-  if (!metadataIntegrity.ok) return metadataIntegrity;
-  const sourceSnapshot = migrated.value.snapshot;
-  if (sourceSnapshot.revision !== safe.revision) {
-    return failure("revision-mismatch", "Root and snapshot revisions do not match.");
-  }
-  const maximumBottom = migrated.value.derivations.maximumBottom;
-  if (!isCanonicalLockedHeight(sourceSnapshot.page, maximumBottom, safe.lockedHeight)) {
-    return failure(
-      "locked-height-mismatch",
-      "The SVG viewBox height is not the derived locked height.",
-    );
-  }
-  const staticIntegrity = verifyStaticPathIntegrity(decoded.value.svg, safe, sourceSnapshot);
-  if (!staticIntegrity) {
-    return failure(
-      "static-path-mismatch",
-      "Static SVG paths do not match the canonical snapshot rendering.",
-    );
-  }
-  return {
-    ok: true,
-    value: {
-      derivations: migrated.value.derivations,
-      hash: hasher.hash(decoded.value.hashInput),
-      lockedHeight: safe.lockedHeight,
-      requiresCanonicalRewrite: safe.requiresCanonicalRewrite,
-      snapshot: sourceSnapshot,
-      sourceVersion: migrated.value.sourceVersion,
-    },
-  };
-}
-
-function parseAndValidateSnapshot(
-  metadataText: string,
-  totalInputBytes: number,
-  metadataBytes: number,
-): DocumentCodecResult<import("./document-migration").MigratedSnapshot> {
-  let parsed: unknown;
-  try {
-    assertJsonContainerWidths(metadataText, {
-      maximumContainerEntries: jsonContainerBudget(FILE_SCHEMA_LIMITS),
-      maximumDepth: MAX_JSON_DEPTH,
-    });
-    parsed = JSON.parse(metadataText);
-  } catch {
-    return failure("invalid-json", "Snapshot metadata is not valid JSON.");
-  }
-  return migrateAndValidateDocumentSnapshot(parsed, {
-    metadataBytes,
-    totalInputBytes,
-  });
-}
-
 function canonicalSvgNumber(value: number): number {
   return Number(serializeSvgNumber(value));
-}
-
-function decodeInput(input: string | Uint8Array): DocumentCodecResult<{
-  readonly bytes: number;
-  readonly hashInput: string | Uint8Array;
-  readonly svg: string;
-}> {
-  if (typeof input === "string") {
-    const bytes = encoder.encode(input).byteLength;
-    if (bytes > FILE_SCHEMA_LIMITS.totalInputBytes) {
-      return failure("invalid-svg", "Document exceeds the 64 MiB input limit.");
-    }
-    return { ok: true, value: { bytes, hashInput: input, svg: input } };
-  }
-  if (input.byteLength > FILE_SCHEMA_LIMITS.totalInputBytes) {
-    return failure("invalid-svg", "Document exceeds the 64 MiB input limit.");
-  }
-  try {
-    return {
-      ok: true,
-      value: {
-        bytes: input.byteLength,
-        hashInput: input,
-        svg: new TextDecoder("utf-8", { fatal: true }).decode(input),
-      },
-    };
-  } catch {
-    return failure("invalid-utf8", "Document bytes are not valid UTF-8.");
-  }
 }
 
 function failure<T>(

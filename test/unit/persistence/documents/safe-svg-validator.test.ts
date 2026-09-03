@@ -4,7 +4,6 @@ import type { InkSnapshotV1 } from "../../../../src/domain/schema/public";
 import {
   validateSafeSvg,
   validateSafeSvgSteps,
-  validateNewerVersionSafeSvg,
 } from "../../../../src/persistence/documents/safe-svg-validator";
 import { serializeSvgEnvelope } from "../../../../src/persistence/documents/svg-envelope";
 import { MAXIMUM_TOTAL_PATH_DATA_BYTES } from "../../../../src/persistence/documents/svg-output-limits";
@@ -75,6 +74,9 @@ function exhaustValidation(steps: ReturnType<typeof validateSafeSvgSteps>) {
   }
   return { result: step.value, yields };
 }
+
+const validateNewerVersionSafeSvg = (svg: string) =>
+  exhaustValidation(validateSafeSvgSteps(svg, { versionPolicy: "newer" })).result;
 
 function expectRejectedContentPaths(paths: readonly string[]): void {
   const svg = svgWithContentPaths(paths);

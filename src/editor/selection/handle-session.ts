@@ -147,21 +147,24 @@ export class SelectionHandleSession {
     if (!this.#hasChanged()) return this.#emptyPreview();
     if (exceedsExactPreviewWork(this.#elements, this.#planner, this.#replacementWorkOptions())) {
       this.#valid = true;
+      const transform = this.#previewTransform(true);
       return {
         exactElements: [],
         exactPreviewTruncated: true,
+        previewFrame: this.#previewFrame(),
         snapCandidate: this.#snapCandidate,
         snapGuide: this.#snapGuide(),
-        transform: this.#previewTransform(),
+        transform,
       };
     }
     try {
       const planned = this.#planner.planReplacements(this.#materializeDirect());
-      const transform = this.#previewTransform();
+      const transform = this.#previewTransform(false);
       this.#valid = planned !== null;
       return {
         exactElements: planned?.elements ?? [],
         exactPreviewTruncated: false,
+        previewFrame: this.#previewFrame(),
         snapCandidate: this.#snapCandidate,
         snapGuide: this.#snapGuide(),
         transform,
@@ -172,6 +175,7 @@ export class SelectionHandleSession {
       return {
         exactElements: [],
         exactPreviewTruncated: false,
+        previewFrame: null,
         snapCandidate: null,
         snapGuide: null,
         transform: null,
@@ -325,23 +329,29 @@ export class SelectionHandleSession {
     return candidate !== null && pointDistance(candidate.point, opposite) >= 8 ? candidate : null;
   }
 
-  #previewTransform(): SelectionPreviewTransform | null {
+  #previewTransform(approximateScaleFrame = false): SelectionPreviewTransform | null {
     if (this.#action.kind === "move") return { delta: this.#translation(), kind: "translate" };
     if (this.#action.kind === "scale") {
+      const scale = this.#requiredScale();
+      const factors = scale.previewFactors(
+        this.#currentPointer,
+        this.#uniformScale,
+        approximateScaleFrame,
+      );
       if (this.#elements.length === 1) {
         const element = this.#elements[0]!;
         return {
           anchor: this.#action.anchor,
-          delta: this.#requiredScale().previewDelta,
-          factors: this.#requiredScale().previewFactors(this.#currentPointer, this.#uniformScale),
+          delta: scale.previewDelta,
+          factors,
           kind: "scale",
           rotation: element.rotation,
         };
       }
       return {
         anchor: this.#action.anchor,
-        delta: this.#requiredScale().previewDelta,
-        factors: this.#requiredScale().previewFactors(this.#currentPointer, this.#uniformScale),
+        delta: scale.previewDelta,
+        factors,
         kind: "scale",
         rotation: this.#action.rotation,
       };
@@ -354,6 +364,10 @@ export class SelectionHandleSession {
       };
     }
     return null;
+  }
+
+  #previewFrame() {
+    return this.#action.kind === "scale" ? this.#requiredScale().previewFrame : null;
   }
 
   #translation(): PointV1 {
@@ -447,6 +461,7 @@ export class SelectionHandleSession {
     return {
       exactElements: [],
       exactPreviewTruncated: false,
+      previewFrame: null,
       snapCandidate: null,
       snapGuide: null,
       transform: null,

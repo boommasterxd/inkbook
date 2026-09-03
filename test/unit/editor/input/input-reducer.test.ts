@@ -1,32 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
   createInputState,
-  inputPhase,
   reduceInput,
   type InputAction,
-  type InputEffect,
   type InputState,
-  type PointerMoveAction,
 } from "../../../../src/editor/input";
-import { pointerDown } from "../../../fixtures/editor/input-actions";
-function pointerMove(overrides: Partial<PointerMoveAction> = {}): PointerMoveAction {
-  return {
-    type: "pointer-move",
-    pointerId: 1,
-    pointerType: "mouse",
-    x: 20,
-    y: 30,
-    pressure: 0.5,
-    ...overrides,
-  };
-}
+import {
+  effectTypes,
+  inputPhase,
+  pointerDown,
+  pointerMove,
+} from "../../../fixtures/editor/input-actions";
 
 function apply(state: InputState, action: InputAction) {
   return reduceInput(state, action);
-}
-
-function effectTypes(effects: readonly InputEffect[]): string[] {
-  return effects.map(({ type }) => type);
 }
 
 describe("input arbitration", () => {
@@ -317,17 +304,35 @@ describe("touch navigation and finger drawing", () => {
   it.each([
     { deviceFingerDrawingEnabled: false, toolbarFingerDrawingEnabled: false },
     { deviceFingerDrawingEnabled: true, toolbarFingerDrawingEnabled: true },
-  ])("uses Select as a thresholded additive touch area", (fingerSettings) => {
-    const state = createInputState({ activeTool: "select", ...fingerSettings });
-    const started = apply(state, pointerDown({ pointerType: "touch", shift: true }));
-    expect(inputPhase(started.state)).toBe("lasso");
-    const moved = apply(started.state, pointerMove({ pointerType: "touch", x: 17, y: 20 }));
-    expect(moved.effects[0]).toMatchObject({
-      type: "begin-preview",
-      kind: "lasso",
-      additive: true,
+  ])("reserves empty Select drags for touch navigation", (fingerSettings) => {
+    const state = createInputState({
+      activeTool: "select",
+      hasSelection: true,
+      ...fingerSettings,
     });
+    const started = apply(state, pointerDown({ pointerType: "touch", shift: true }));
+    expect(inputPhase(started.state)).toBe("touch-pending");
+    expect(started.state.hasSelection).toBe(true);
+    const moved = apply(started.state, pointerMove({ pointerType: "touch", x: 17, y: 20 }));
+    expect(inputPhase(moved.state)).toBe("page-pan");
+    expect(effectTypes(moved.effects)).toEqual(["cancel-long-press", "pan-page"]);
+    expect(effectTypes([...started.effects, ...moved.effects])).not.toContain("begin-preview");
   });
+
+  it.each(["mouse", "pen"] as const)(
+    "keeps Select area creation available to %s input",
+    (pointerType) => {
+      const state = createInputState({ activeTool: "select" });
+      const started = apply(state, pointerDown({ pointerType, shift: true }));
+      expect(inputPhase(started.state)).toBe("lasso");
+      const moved = apply(started.state, pointerMove({ pointerType, x: 17, y: 20 }));
+      expect(moved.effects[0]).toMatchObject({
+        type: "begin-preview",
+        kind: "lasso",
+        additive: true,
+      });
+    },
+  );
 });
 
 describe("multitouch pinch arbitration", () => {

@@ -1,21 +1,17 @@
-import type {
-  ArrowElementV1,
-  LineElementV1,
-  StraightHighlighterElementV1,
-} from "../../../../src/domain/schema/public";
+import { type ArrowElementV1, type LineElementV1 } from "../../../../src/domain/schema/public";
+import { type StraightHighlighterElementV1 } from "../../../../src/domain/schema/types";
 import { describe, expect, it } from "vitest";
 
+import { buildElementPathParts, outlineDashPattern } from "../../../../src/domain/geometry/public";
 import {
   arrowNodeGeometry,
   buildClosedShapePath,
   buildCoordinateSystemPath,
-  buildElementPathParts,
   buildLinearPathParts,
   buildTablePath,
   linearEndpointDirections,
   nodeSize,
-  outlineDashPattern,
-} from "../../../../src/domain/geometry/public";
+} from "../../../../src/domain/geometry/element-path";
 import { coordinateSystem, outlineStyle, rectangle, strokeStyle, table } from "./fixtures";
 
 const linearBase = {

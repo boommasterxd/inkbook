@@ -4,7 +4,8 @@ import type {
   CoordinateSystemElementV1,
   TableElementV1,
 } from "../../../../src/domain/schema/public";
-import { ElementStore, type ElementRecord } from "../../../../src/domain/store/public";
+import { ElementStore } from "../../../../src/domain/store/public";
+import { type ElementRecord } from "../../../../src/domain/store/types";
 
 import {
   axisConnectedLine,

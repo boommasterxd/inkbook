@@ -32,11 +32,6 @@ type PolygonAnchorTarget = Extract<
   { kind: "diamond" | "octagon" | "parallelogram" | "triangle" }
 >;
 
-export type AnchorTarget =
-  | BoxShapeElementV1
-  | CoordinateSystemElementV1
-  | Extract<LinearElementV1, { kind: "arrow" | "line" }>
-  | TableElementV1;
 export type AnchorTargetView =
   BoxAnchorTarget | CoordinateAnchorTarget | LinearAnchorTarget | TableAnchorTarget;
 
@@ -93,15 +88,6 @@ export function resolveShapeAnchor(
   const unrotated = resolveUnrotatedAnchor(target, anchor);
   if (unrotated === null) return null;
   return canonicalPoint(rotatePointClockwise(unrotated, target.pivot, target.rotation));
-}
-
-export function semanticAnchorOrder(
-  target: AnchorTargetView,
-  anchor: ShapeAnchorV1,
-): number | null {
-  const anchors = anchorIdentifiers(target);
-  const index = anchors.findIndex((candidate) => anchorsEqual(candidate, anchor));
-  return index < 0 ? null : index;
 }
 
 function anchorIdentifiers(target: AnchorTargetView): ShapeAnchorV1[] {
@@ -197,25 +183,4 @@ function resolveEllipseAnchor(ellipse: BoxAnchorTarget, angle: 0 | 90 | 180 | 27
   if (angle === 90) return { x: center.x, y: ellipse.y + ellipse.height };
   if (angle === 180) return { x: ellipse.x, y: center.y };
   return { x: center.x, y: ellipse.y };
-}
-
-function anchorsEqual(left: ShapeAnchorV1, right: ShapeAnchorV1): boolean {
-  if (left.kind !== right.kind) return false;
-  if (left.kind === "box" && right.kind === "box") return left.position === right.position;
-  if (left.kind === "ellipse-cardinal" && right.kind === "ellipse-cardinal") {
-    return left.angle === right.angle;
-  }
-  if (left.kind === "polygon-vertex" && right.kind === "polygon-vertex") {
-    return left.index === right.index;
-  }
-  if (left.kind === "polygon-edge-midpoint" && right.kind === "polygon-edge-midpoint") {
-    return left.index === right.index;
-  }
-  if (left.kind === "coordinate-axis-end" && right.kind === "coordinate-axis-end") {
-    return left.index === right.index;
-  }
-  if (left.kind === "linear-endpoint" && right.kind === "linear-endpoint") {
-    return left.endpoint === right.endpoint;
-  }
-  return left.kind === "coordinate-origin" && right.kind === "coordinate-origin";
 }

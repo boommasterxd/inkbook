@@ -1,13 +1,11 @@
+import { parseInkbookDocumentForTest } from "../../../fixtures/persistence/parse-document";
 import { describe, expect, it } from "vitest";
 
-import {
-  parseInkbookDocument,
-  serializeInkbookDocument,
-} from "../../../../src/persistence/serialization/public";
+import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snapshot";
 
 describe("standalone SVG viewport clipping", () => {
-  it("retains out-of-viewport geometry while clipping its rendered overflow", () => {
+  it("retains out-of-viewport geometry while clipping its rendered overflow", async () => {
     const snapshot = createWorkerSnapshot(
       [
         {
@@ -39,7 +37,7 @@ describe("standalone SVG viewport clipping", () => {
     if (!encoded.ok) return;
     expect(encoded.value.svg).toContain("svg{overflow:hidden}");
     expect(encoded.value.svg).toContain('d="M-100-50L2400-50');
-    expect(parseInkbookDocument(encoded.value.svg)).toMatchObject({
+    expect(await parseInkbookDocumentForTest(encoded.value.svg)).toMatchObject({
       ok: true,
       value: { snapshot },
     });

@@ -5,7 +5,7 @@ import {
   ChunkedJsonParseError,
   parseChunkedJson,
 } from "../../../../src/persistence/serialization/chunked-json-parser";
-import type { ChunkedJsonLimits } from "../../../../src/persistence/serialization/chunked-json-parser";
+import type { ChunkedJsonLimits } from "../../../../src/persistence/serialization/chunked-json-limits";
 import { BoundedJsonStringBuilder } from "../../../../src/persistence/serialization/bounded-json-string-builder";
 
 const GENEROUS_LIMITS = {

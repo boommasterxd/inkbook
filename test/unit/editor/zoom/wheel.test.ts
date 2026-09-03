@@ -1,27 +1,22 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  DEFAULT_WHEEL_LINE_HEIGHT,
-  DEFAULT_WHEEL_PAGE_HEIGHT,
-  MAX_FRAME_ZOOM_FACTOR,
   TRACKPAD_ZOOM_DELTA_LIMIT,
-  TRACKPAD_ZOOM_PIXELS_PER_STEP,
-  TRACKPAD_ZOOM_SENSITIVITY,
-  WHEEL_PIXELS_PER_STEP,
-  accumulateWheelDelta,
-  accumulateWheelSteps,
   accumulateZoomInput,
-  classifyOneFingerGesture,
   continuousWheelZoomFactor,
-  consumeWheelFrame,
   consumeZoomFrame,
-  createWheelZoomState,
   createZoomFrameState,
-  normalizeWheelDelta,
   normalizeWheelVector,
-  wheelHasPendingDelta,
   zoomFrameHasPending,
 } from "../../../../src/editor/zoom";
+import {
+  DEFAULT_WHEEL_LINE_HEIGHT,
+  DEFAULT_WHEEL_PAGE_HEIGHT,
+  TRACKPAD_ZOOM_PIXELS_PER_STEP,
+  TRACKPAD_ZOOM_SENSITIVITY,
+  normalizeWheelDelta,
+} from "../../../../src/editor/zoom/wheel";
+import { MAX_FRAME_ZOOM_FACTOR } from "../../../../src/editor/zoom/zoom";
 
 describe("wheel normalization", () => {
   it("normalizes pixel, line, and page deltas deterministically", () => {
@@ -36,12 +31,6 @@ describe("wheel normalization", () => {
     });
   });
 
-  it("routes one-finger movement with the specified tie boundary", () => {
-    expect(classifyOneFingerGesture(12.5, 10)).toBe("horizontal");
-    expect(classifyOneFingerGesture(-12.5, 10)).toBe("horizontal");
-    expect(classifyOneFingerGesture(12.49, 10)).toBe("vertical");
-  });
-
   it("turns small trackpad pixel deltas into continuous zoom factors", () => {
     expect(TRACKPAD_ZOOM_DELTA_LIMIT).toBe(16);
     expect(TRACKPAD_ZOOM_SENSITIVITY).toBe(2.5);
@@ -50,46 +39,6 @@ describe("wheel normalization", () => {
     expect(continuousWheelZoomFactor(4)).toBeCloseTo(1.08 ** -0.625);
     expect(continuousWheelZoomFactor(-TRACKPAD_ZOOM_PIXELS_PER_STEP)).toBeCloseTo(1.08);
     expect(continuousWheelZoomFactor(-50, { pixelsPerStep: 50 })).toBeCloseTo(1.08);
-  });
-});
-
-describe("pure wheel accumulation", () => {
-  it("emits exact signed steps without mutating the input state", () => {
-    const initial = createWheelZoomState();
-    const pending = accumulateWheelDelta(initial, -WHEEL_PIXELS_PER_STEP, 0);
-    const consumed = consumeWheelFrame(pending);
-    expect(initial).toEqual({ pendingSteps: 0 });
-    expect(consumed.frame).toEqual({ steps: 1, factor: 1.08, remainder: 0 });
-
-    const zoomOut = consumeWheelFrame(
-      accumulateWheelDelta(consumed.state, WHEEL_PIXELS_PER_STEP, 0),
-    );
-    expect(zoomOut.frame.factor).toBeCloseTo(1 / 1.08);
-  });
-
-  it("retains fractional deltas until they complete a step", () => {
-    const quarter = accumulateWheelDelta(createWheelZoomState(), -25, 0);
-    expect(wheelHasPendingDelta(quarter)).toBe(true);
-    expect(consumeWheelFrame(quarter).frame.factor).toBe(1);
-    const whole = accumulateWheelDelta(quarter, -75, 0);
-    expect(consumeWheelFrame(whole).frame).toEqual({
-      steps: 1,
-      factor: 1.08,
-      remainder: 0,
-    });
-    const customThreshold = accumulateWheelDelta(createWheelZoomState(), -50, 0, {
-      pixelsPerStep: 50,
-    });
-    expect(consumeWheelFrame(customThreshold).frame.steps).toBe(1);
-  });
-
-  it("limits each frame and carries excess steps forward", () => {
-    const pending = accumulateWheelSteps(createWheelZoomState(), 10);
-    const first = consumeWheelFrame(pending, MAX_FRAME_ZOOM_FACTOR);
-    expect(first.frame.steps).toBe(3);
-    expect(first.frame.factor).toBeCloseTo(1.08 ** 3);
-    expect(first.state.pendingSteps).toBe(7);
-    expect(consumeWheelFrame(first.state).frame.steps).toBe(3);
   });
 });
 

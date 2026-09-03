@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { findFrontmostHit } from "../../../../src/editor/selection/public";
+import { HitTestScratch } from "../../../../src/editor/selection/hit-test";
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import {
   MOUNT_SLICE_GEOMETRY_COST_BUDGET,
@@ -78,6 +78,7 @@ describe("dense viewport reconciliation acceptance", () => {
   it("resolves all 100 versioned hit points to their unique fixture paths", () => {
     const fixture = createDenseViewportFixture();
     const candidates = fixture.records.map(({ band, element, rank }) => ({ band, element, rank }));
+    const scratch = new HitTestScratch();
     const rankCounts = new Map<string, number>();
     for (const record of fixture.records) {
       const key = `${record.band}:${String(record.rank)}`;
@@ -90,7 +91,11 @@ describe("dense viewport reconciliation acceptance", () => {
     expect(new Set(fixture.expectedIds)).toHaveLength(2_500);
     expect([...rankCounts.values()].every((count) => count === 2)).toBe(true);
     for (const hit of fixture.hits) {
-      expect(findFrontmostHit(hit.point, "pen", 1, candidates)).toBe(hit.expectedId);
+      scratch.begin(hit.point, "pen", 1);
+      for (const candidate of candidates) {
+        scratch.consider(candidate.element.id, candidate.band, candidate.element, candidate.rank);
+      }
+      expect(scratch.finish()).toBe(hit.expectedId);
     }
   });
 });

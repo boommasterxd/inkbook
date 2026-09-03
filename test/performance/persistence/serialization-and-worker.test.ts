@@ -9,12 +9,10 @@ import { yieldToMainThread } from "../../../src/persistence/scheduling/main-thre
 import {
   IncrementalDocumentSerializer,
   serializeInkbookDocument,
-  sha256Hex,
 } from "../../../src/persistence/serialization/public";
-import {
-  DocumentWorkerRuntime,
-  createProductionDocumentRuntime,
-} from "../../../src/persistence/worker/runtime/public";
+import { sha256Hex } from "../../../src/persistence/serialization/sha256";
+import { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/public";
+import { createProductionDocumentRuntime } from "../../../src/persistence/worker/runtime/production-document-runtime";
 import type { DocumentRuntimeRequest } from "../../../src/persistence/worker/runtime/public";
 import { STANDARD_POINTS, createStandardPersistenceFixture, replaceFirstStroke } from "./fixtures";
 import {

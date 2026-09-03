@@ -1,35 +1,13 @@
-export {
-  lassoBounds,
-  selectByLasso,
-  selectBySelectionAreaQuery,
-  selectElement,
-} from "./selection-model";
-export {
-  createLassoSelectionArea,
-  createRectangleSelectionArea,
-  elementMatchesSelectionArea,
-  MAX_LASSO_SELECTION_POINTS,
-  selectionAreaBounds,
-} from "./selection-area";
-export type { SelectionArea, SelectionAreaInclusion } from "./selection-area";
+export { selectBySelectionAreaQuery, selectElement } from "./selection-model";
+export { createRectangleSelectionArea } from "./selection-area";
+export type { SelectionArea } from "./selection-area";
 export { LassoSelectionSession } from "./lasso-selection-session";
-export {
-  connectedSelectionTransformPreview,
-  exactConnectedSelectionIds,
-} from "./connection-preview";
+export { ConnectedSelectionPreviewSession } from "./connection-preview";
 export type { ConnectedSelectionPreview } from "./connection-preview";
-export { elementContainsPoint, findFrontmostHit, HitTestScratch } from "./hit-test";
-export { editLinearBend, editLinearBendFromCurvePoint } from "./linear-bend";
+export { HitTestScratch } from "./hit-test";
 export { moveSelectionWithSnap, resolveSelectionMoveSnap } from "./move-snap";
 export type { SelectionMoveSnap } from "./move-snap";
-export {
-  editLinearEndpoint,
-  moveSelection,
-  moveSelectionTimeSliced,
-  rotateSelection,
-  scaleSelectionUniform,
-  uniformScaleFactorFromPointers,
-} from "./transforms";
+export { moveSelectionTimeSliced } from "./transforms";
 export {
   findSelectionHandle,
   layoutSelectionHandles,
@@ -45,11 +23,9 @@ export {
 } from "./overlay-geometry";
 export type { SelectionOutline } from "./overlay-geometry";
 export {
-  createSelectionFrame,
   createSelectionFrameAtRotation,
   selectionFramePoint,
   SelectionFrameSession,
-  transformSelectionFrame,
 } from "./selection-frame";
 export type { OrientedSelectionFrame, SelectionFrameHistoryEffect } from "./selection-frame";
 export { SelectionHandleSession } from "./handle-session";

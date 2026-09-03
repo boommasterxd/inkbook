@@ -6,13 +6,15 @@ import {
 } from "../../../../src/domain/geometry/public";
 import type { BoxAnchorV1, InkElementV1 } from "../../../../src/domain/schema/public";
 import {
-  createSelectionFrame,
   findSelectionHandle,
   layoutSelectionHandles,
   oppositeBoxAnchor,
   selectionBounds,
-  transformSelectionFrame,
 } from "../../../../src/editor/selection/public";
+import {
+  createSelectionFrame,
+  transformSelectionFrame,
+} from "../../../../src/editor/selection/selection-frame";
 import { connectedLine, rectangle } from "../../domain/store/fixtures";
 import { coordinateSystem } from "../../domain/store/fixtures";
 import { straightHighlighter, table } from "../../domain/schema/fixtures";

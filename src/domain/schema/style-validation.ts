@@ -2,7 +2,6 @@ import type { ColorV1, OutlineStyleV1, ShapeStyleV1, StrokeStyleV1 } from "./typ
 import {
   assertBoolean,
   assertExactKeys,
-  assertJsonTree,
   assertLiteral,
   assertOneOf,
   assertRecord,
@@ -14,16 +13,6 @@ import {
 const STROKE_WIDTHS = [2, 4, 8, 14, 22] as const;
 const OUTLINE_WIDTHS = [1, 2, 4, 8, 12, 14, 22] as const;
 const OUTLINE_STYLES = ["solid", "dashed", "dotted"] as const;
-
-export function isColorV1(value: unknown): value is ColorV1 {
-  try {
-    assertJsonTree(value, 8);
-    assertColor(value, "$");
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 function assertColor(value: unknown, path: string): asserts value is ColorV1 {
   assertRecord(value, path);

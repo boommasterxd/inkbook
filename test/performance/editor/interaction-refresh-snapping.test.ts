@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { ElementStore, resolveConnectedTranslationPreview } from "../../../src/domain/store/public";
-import { resolveSelectionMoveSnap } from "../../../src/editor/selection/public";
+import { ElementStore } from "../../../src/domain/store/public";
+import {
+  ConnectedSelectionPreviewSession,
+  resolveSelectionMoveSnap,
+} from "../../../src/editor/selection/public";
 import {
   findSnapCandidate,
   SnapCandidateScratch,
@@ -47,23 +50,27 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz snapping and connection 
 
   it("keeps reverse-map connection previews within budget", async ({ annotate }) => {
     const { selectedIds, store, target } = createConnectedTranslationFixture();
-    resolveConnectedTranslationPreview(store, [target.id], selectedIds, { x: 1, y: 1 });
+    const session = new ConnectedSelectionPreviewSession(store, [target], selectedIds);
+    session.update({ delta: { x: 1, y: 1 }, kind: "translate" });
     store.resetInstrumentation();
     let previewCount = 0;
 
     const durations = measureInteractionFrames((frame) => {
-      const preview = resolveConnectedTranslationPreview(store, [target.id], selectedIds, {
-        x: 2 + Math.sin(frame / 20),
-        y: 2 + Math.cos(frame / 20),
+      const preview = session.update({
+        delta: {
+          x: 2 + Math.sin(frame / 20),
+          y: 2 + Math.cos(frame / 20),
+        },
+        kind: "translate",
       });
-      previewCount += preview.length;
+      previewCount += preview.elements.length;
     });
 
     const p99 = interactionP99(durations);
     expect(previewCount).toBe(CONNECTED_DEPENDENT_COUNT * INTERACTION_REFRESH_PROFILE.sampleCount);
     expect(store.instrumentation).toMatchObject({
       fullStoreScans: 0,
-      reverseDependencyVisits: CONNECTED_DEPENDENT_COUNT * INTERACTION_REFRESH_PROFILE.sampleCount,
+      reverseDependencyVisits: 0,
     });
     expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
     await annotate(interactionProfileAnnotation("connected endpoint preview", p99), "performance");

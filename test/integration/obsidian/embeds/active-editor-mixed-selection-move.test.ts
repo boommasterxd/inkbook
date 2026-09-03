@@ -6,11 +6,10 @@ import {
   translateElementGeometry,
 } from "../../../../src/domain/geometry/public";
 import type { InkElementV1, PageV1 } from "../../../../src/domain/schema/public";
-import { ElementStore, type ImmutableInkElement } from "../../../../src/domain/store/public";
-import {
-  SelectionFrameSession,
-  transformSelectionFrame,
-} from "../../../../src/editor/selection/public";
+import { ElementStore } from "../../../../src/domain/store/public";
+import { type ImmutableInkElement } from "../../../../src/domain/store/types";
+import { SelectionFrameSession } from "../../../../src/editor/selection/public";
+import { transformSelectionFrame } from "../../../../src/editor/selection/selection-frame";
 import type { PreparedElementHistory } from "../../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import type { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import { MovePreview } from "../../../../src/obsidian/embeds/active-editor/selection-preview";

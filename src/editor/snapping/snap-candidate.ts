@@ -180,7 +180,3 @@ export function findSnapCandidate(
   }
   return best;
 }
-
-export function snapRadius(pointerType: SnapPointerType): number {
-  return SNAP_RADIUS[pointerType];
-}

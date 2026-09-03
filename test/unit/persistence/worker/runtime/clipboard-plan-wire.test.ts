@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   decodeRuntimeResult,
   encodeRuntimeResult,
-} from "../../../../../src/persistence/worker/runtime/public";
+} from "../../../../../src/persistence/worker/runtime/wire-codec";
 import { STROKE } from "./fixtures";
 
 describe("clipboard paste-plan wire codec", () => {

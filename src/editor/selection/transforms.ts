@@ -24,7 +24,7 @@ export interface ScaleFactors {
   readonly y: number;
 }
 
-export { editLinearEndpoint, editLinearEndpointFromWorld } from "./linear-transforms";
+export { editLinearEndpointFromWorld } from "./linear-transforms";
 export { editTableColumn, editTableHeader } from "./table-transforms";
 
 export interface TransformSliceScheduler {
@@ -61,33 +61,6 @@ export async function moveSelectionTimeSliced(
     }
   }
   return (scheduler.isCancelled?.() ?? false) ? null : replacements;
-}
-
-export function scaleSelectionUniform(
-  elements: readonly InkElementV1[],
-  anchor: PointV1,
-  factor: number,
-): InkElementV1[] {
-  return scaleSelectionUniformAtLeast(
-    elements,
-    anchor,
-    factor,
-    minimumUniformScaleForSelection(elements),
-  );
-}
-
-function scaleSelectionUniformAtLeast(
-  elements: readonly InkElementV1[],
-  anchor: PointV1,
-  factor: number,
-  minimum: number,
-): InkElementV1[] {
-  if (!Number.isFinite(factor) || factor <= 0) throw new RangeError("Scale must be positive.");
-  if (!Number.isFinite(minimum) || minimum < 0) {
-    throw new RangeError("Minimum scale must be finite and non-negative.");
-  }
-  const clamped = Math.max(factor, minimum);
-  return elements.map((element) => scaleElement(element, anchor, { x: clamped, y: clamped }));
 }
 
 export function minimumUniformScaleForSelection(elements: readonly InkElementV1[]): number {

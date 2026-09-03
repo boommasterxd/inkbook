@@ -5,7 +5,7 @@ import { ElementStore, type AppliedElementMutation } from "../../../../src/domai
 import { createBuiltInSettings } from "../../../../src/domain/settings/defaults";
 import { createDragElement } from "../../../../src/editor/tools/public";
 import type { PastePlan } from "../../../../src/persistence/clipboard/public";
-import { INKBOOK_CLIPBOARD_WEB_MIME } from "../../../../src/persistence/clipboard/public";
+import { INKBOOK_CLIPBOARD_WEB_MIME } from "../../../../src/persistence/clipboard/constants";
 import { MAX_CLIPBOARD_ITEMS } from "../../../../src/obsidian/embeds/active-editor/clipboard-reader";
 import { ActiveEditorClipboardController } from "../../../../src/obsidian/embeds/active-editor/controller-clipboard";
 import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";

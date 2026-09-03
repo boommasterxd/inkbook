@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { FILE_SCHEMA_LIMITS } from "../../../../src/domain/schema/constants";
-import { sha256Hex } from "../../../../src/persistence/serialization/public";
+import { sha256Hex } from "../../../../src/persistence/serialization/sha256";
 import {
   AutosaveCoordinator,
   type AutosaveClock,

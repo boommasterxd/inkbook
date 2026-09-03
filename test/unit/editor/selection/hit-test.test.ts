@@ -6,7 +6,7 @@ import type {
   TableElementV1,
 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
-import { elementContainsPoint, findFrontmostHit } from "../../../../src/editor/selection/public";
+import { elementContainsPoint, HitTestScratch } from "../../../../src/editor/selection/hit-test";
 
 function rectangle(fillOpacity: number, id = "rectangle"): BoxShapeElementV1 {
   return {
@@ -100,8 +100,9 @@ describe("selection hit testing", () => {
       { band: "content" as const, element: rectangle(0, "back"), rank: 0 },
       { band: "content" as const, element: rectangle(0, "front"), rank: 1 },
     ];
-    expect(findFrontmostHit({ x: -12, y: 50 }, "touch", 1, candidates)).toBe("front");
-    expect(findFrontmostHit({ x: -12, y: 50 }, "mouse", 1, candidates)).toBeNull();
+    const scratch = new HitTestScratch();
+    expect(frontmostHit(scratch, { x: -12, y: 50 }, "touch", candidates)).toBe("front");
+    expect(frontmostHit(scratch, { x: -12, y: 50 }, "mouse", candidates)).toBeNull();
   });
 
   it("finds exact stroke hits across acceleration-block boundaries without bounds false hits", () => {
@@ -160,7 +161,7 @@ describe("selection hit testing", () => {
       { band: "content" as const, element: rectangle(1, "lower"), rank: 9 },
       { band: "content" as const, element: rectangle(1, "a"), rank: 10 },
     ];
-    expect(findFrontmostHit({ x: 50, y: 50 }, "mouse", 1, candidates)).toBe("a");
+    expect(frontmostHit(new HitTestScratch(), { x: 50, y: 50 }, "mouse", candidates)).toBe("a");
   });
 
   it("keeps content above highlight regardless of their band-local ranks", () => {
@@ -169,6 +170,25 @@ describe("selection hit testing", () => {
       { band: "content" as const, element: rectangle(1, "content"), rank: 0 },
     ];
 
-    expect(findFrontmostHit({ x: 50, y: 50 }, "mouse", 1, candidates)).toBe("content");
+    expect(frontmostHit(new HitTestScratch(), { x: 50, y: 50 }, "mouse", candidates)).toBe(
+      "content",
+    );
   });
 });
+
+function frontmostHit(
+  scratch: HitTestScratch,
+  point: Readonly<{ x: number; y: number }>,
+  pointerType: "mouse" | "pen" | "touch",
+  candidates: readonly {
+    readonly band: "content" | "highlight";
+    readonly element: BoxShapeElementV1;
+    readonly rank: number;
+  }[],
+): string | null {
+  scratch.begin(point, pointerType, 1);
+  for (const candidate of candidates) {
+    scratch.consider(candidate.element.id, candidate.band, candidate.element, candidate.rank);
+  }
+  return scratch.finish();
+}

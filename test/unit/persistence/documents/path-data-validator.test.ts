@@ -2,13 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   validateDashArray,
-  validatePathData,
   validatePathDataSteps,
 } from "../../../../src/persistence/documents/path-data-validator";
 import {
   createMaximumComplexityPath,
   MAXIMUM_PATH_BYTES,
 } from "../../../fixtures/persistence/safe-svg";
+
+const validatePathData = (path: string) => complete(validatePathDataSteps(path));
 
 describe("safe SVG path data validation", () => {
   it.each([

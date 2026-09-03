@@ -1,8 +1,10 @@
 import type { FileManager, MetadataCache, TFile } from "obsidian";
 
-import type { ReferenceKnowledge } from "../../persistence/documents/reference-decision";
 import { normalizeSourcePath, normalizeVaultPath, type PathNormalizer } from "./boundary";
 import type { ObsidianFileClasses, ObsidianVaultFileAdapter } from "./file-adapter";
+
+type ReferenceKnowledge =
+  { readonly state: "unresolved" } | { readonly state: "resolved"; readonly references: number };
 
 export interface MetadataResolutionPort {
   isResolved(): boolean;

@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { AutosaveCoordinator } from "../../../src/persistence/saving/autosave/public";
-import type {
-  AutosaveClock,
-  AutosaveDocumentSource,
-} from "../../../src/persistence/saving/autosave/public";
+import { type AutosaveClock } from "../../../src/persistence/saving/autosave/public";
+import { type AutosaveDocumentSource } from "../../../src/persistence/saving/autosave/types";
 import type {
   DocumentRuntimePort,
   DocumentRuntimeRequest,

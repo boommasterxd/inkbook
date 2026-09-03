@@ -1,41 +1,30 @@
 import { describe, expect, it } from "vitest";
 
-import { semanticAnchors, type AnchorTarget } from "../../../../src/domain/geometry/anchors";
+import { semanticAnchors, type AnchorTargetView } from "../../../../src/domain/geometry/anchors";
 import type { Bounds } from "../../../../src/domain/geometry/public";
-import type { ShapeStyleV1 } from "../../../../src/domain/schema/public";
 import {
   findSnapCandidate,
   SnapCandidateScratch,
   type SpatialCandidateSink,
-  snapRadius,
   type SnapCandidate,
 } from "../../../../src/editor/snapping/snap-candidate";
 
-const style: ShapeStyleV1 = {
-  outlineColor: { type: "theme-text" },
-  outlineWidth: 4,
-  outlineOpacity: 1,
-  outlineStyle: "solid",
-  fillColor: null,
-  fillOpacity: 0.15,
-};
+type TestTarget = AnchorTargetView & { readonly id: string };
 
-function rectangle(id: string): AnchorTarget {
+function rectangle(id: string): TestTarget {
   return {
     id,
     kind: "rectangle",
-    createdAt: 0,
     rotation: 0,
     pivot: { x: 50, y: 50 },
     x: 0,
     y: 0,
     width: 100,
     height: 100,
-    style,
   };
 }
 
-function harness(targets: readonly AnchorTarget[], ranks: Readonly<Record<string, number>>) {
+function harness(targets: readonly TestTarget[], ranks: Readonly<Record<string, number>>) {
   const map = new Map(targets.map((target) => [target.id, target]));
   const scratch = new SnapCandidateScratch();
   return {
@@ -57,9 +46,6 @@ function harness(targets: readonly AnchorTarget[], ranks: Readonly<Record<string
 
 describe("endpoint snapping", () => {
   it("uses input-specific screen radii independent of zoom", () => {
-    expect(snapRadius("mouse")).toBe(12);
-    expect(snapRadius("pen")).toBe(12);
-    expect(snapRadius("touch")).toBe(16);
     const fixture = harness([rectangle("a")], { a: 0 });
     expect(
       findSnapCandidate(

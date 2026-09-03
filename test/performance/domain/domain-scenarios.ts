@@ -1,7 +1,7 @@
 import type { InkElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
 import { ElementStore } from "../../../src/domain/store/public";
 import { moveSelectionTimeSliced } from "../../../src/editor/selection/transforms";
-import { LiveStrokeBuilder } from "../../../src/editor/tools/public";
+import { LiveStrokeBuilder } from "../../../src/editor/tools/live-stroke";
 import {
   ActiveEditorHistory,
   type ActiveEditorHistoryModel,

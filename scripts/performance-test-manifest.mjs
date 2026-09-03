@@ -27,7 +27,6 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/domain/anchor-cache-performance.test.ts",
     "test/performance/domain/arrange-performance.test.ts",
     "test/performance/domain/overflow-capacity-performance.test.ts",
-    "test/performance/editor/connected-translation-preview.test.ts",
     "test/performance/editor/page-height-mutation.test.ts",
     "test/performance/obsidian/phone-sheet-swipe-performance.test.ts",
     "test/performance/persistence/autosave-backpressure.test.ts",

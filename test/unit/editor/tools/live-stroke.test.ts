@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  buildStrokePath,
-  prepareStrokeSamples,
-  smoothStrokeCenters,
-} from "../../../../src/domain/geometry/public";
+import { buildStrokePath, smoothStrokeCenters } from "../../../../src/domain/geometry/public";
 import type { RawStrokeSample } from "../../../../src/domain/geometry/public";
 import type { StrokeStyleV1 } from "../../../../src/domain/schema/public";
 import {
@@ -15,6 +11,7 @@ import {
   LiveStrokeBuilder,
   type LiveStrokePreview,
 } from "../../../../src/editor/tools/live-stroke";
+import { prepareExpectedStrokeSamples as prepareStrokeSamples } from "../../../fixtures/editor/stroke-sample-reference";
 
 const penStyle: StrokeStyleV1 = {
   color: { type: "theme-text" },

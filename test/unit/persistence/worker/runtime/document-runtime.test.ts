@@ -1,9 +1,7 @@
+import { parseInkbookDocumentForTest } from "../../../../fixtures/persistence/parse-document";
 import { describe, expect, it } from "vitest";
 
-import {
-  parseInkbookDocument,
-  serializeInkbookDocument,
-} from "../../../../../src/persistence/serialization/public";
+import { serializeInkbookDocument } from "../../../../../src/persistence/serialization/public";
 import {
   CURRENT_METADATA_REWRITES,
   rewriteDocumentMetadata,
@@ -11,8 +9,8 @@ import {
 import {
   DocumentWorkerRuntime,
   GestureAwareSliceScheduler,
-  createProductionDocumentRuntime,
 } from "../../../../../src/persistence/worker/runtime/public";
+import { createProductionDocumentRuntime } from "../../../../../src/persistence/worker/runtime/production-document-runtime";
 import { DocumentModelRuntime } from "../../../../../src/persistence/worker/runtime/document-model";
 import {
   executor,
@@ -115,7 +113,7 @@ describe("document worker model operations", () => {
 
     expect(result.type).toBe("export-success");
     if (result.type !== "export-success") return;
-    const parsed = parseInkbookDocument(decodeOutput(result.output));
+    const parsed = await parseInkbookDocumentForTest(decodeOutput(result.output));
     expect(parsed.ok && parsed.value.snapshot).toMatchObject({
       revision: 1,
       elements: [{ id: rectangle().id, x: 180 }],
@@ -224,7 +222,7 @@ describe("document worker model synchronization", () => {
     });
     expect(exported.type).toBe("export-success");
     if (exported.type !== "export-success") return;
-    expect(parseInkbookDocument(decodeOutput(exported.output))).toMatchObject({
+    expect(await parseInkbookDocumentForTest(decodeOutput(exported.output))).toMatchObject({
       ok: true,
       value: { snapshot: { elements: [{ x: 220 }], revision: 1 } },
     });

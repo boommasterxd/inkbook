@@ -51,7 +51,6 @@ import {
   inspectTrustedSvgOutputSync,
 } from "../../scheduling/trusted-svg-output";
 
-export { packElements, unpackElements } from "./element-wire-codec";
 export type { RuntimeWireSliceOptions } from "./element-wire-codec";
 
 interface FullExportWireRequest extends Omit<

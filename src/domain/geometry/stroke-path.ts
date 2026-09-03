@@ -3,9 +3,7 @@ import {
   addPoints,
   midpoint,
   normalizedVector,
-  pointDistance,
   rotatePointClockwise,
-  roundCanonical,
   scalePoint,
   subtractPoints,
 } from "./primitives";
@@ -34,29 +32,6 @@ export interface OutlinePointPair {
   left: PointV1;
   right: PointV1;
   radius: number;
-}
-
-export function prepareStrokeSamples(
-  samples: readonly RawStrokeSample[],
-  options: StrokeInputOptions,
-): number[] {
-  if (!Number.isFinite(options.zoom) || options.zoom <= 0) {
-    throw new RangeError("Stroke zoom must be a positive finite number.");
-  }
-  if (samples.length === 0) throw new RangeError("A stroke requires at least one sample.");
-  const retained = retainStrokeSamples(samples, options.zoom, options.pressureSource);
-  const pressures =
-    options.pressureSource === "simulated"
-      ? simulatedPressures(retained, options.zoom)
-      : retained.map((sample) => Math.min(1, Math.max(0, sample.pressure)));
-  const result: number[] = [];
-  for (let index = 0; index < retained.length; index += 1) {
-    const sample = retained[index];
-    const pressure = pressures[index];
-    if (sample === undefined || pressure === undefined) continue;
-    result.push(roundCanonical(sample.x), roundCanonical(sample.y), roundCanonical(pressure, 4));
-  }
-  return result;
 }
 
 export function smoothStrokeCenters(samples: readonly number[]): StrokeCenter[] {
@@ -212,48 +187,6 @@ function buildClosedOutlinePath(pairs: readonly OutlinePointPair[]): string {
   ].join("");
 }
 
-function retainStrokeSamples(
-  samples: readonly RawStrokeSample[],
-  zoom: number,
-  pressureSource: StrokeInputOptions["pressureSource"],
-): RawStrokeSample[] {
-  for (const sample of samples) assertRawSample(sample, pressureSource);
-  if (samples.length === 1) return [samples[0]!];
-
-  const retained: RawStrokeSample[] = [samples[0]!];
-  for (let index = 1; index < samples.length - 1; index += 1) {
-    const sample = samples[index]!;
-    const tip = retained[retained.length - 1]!;
-    if (pointDistance(tip, sample) * zoom < 0.5 && retained.length > 1) {
-      retained[retained.length - 1] = sample;
-    } else {
-      retained.push(sample);
-    }
-  }
-
-  const finalSample = samples[samples.length - 1]!;
-  const tip = retained[retained.length - 1]!;
-  if (retained.length > 1 && pointDistance(tip, finalSample) * zoom < 0.5) {
-    retained[retained.length - 1] = finalSample;
-  } else {
-    retained.push(finalSample);
-  }
-  return retained;
-}
-
-function simulatedPressures(samples: readonly RawStrokeSample[], zoom: number): number[] {
-  const pressures = [0.5];
-  for (let index = 1; index < samples.length; index += 1) {
-    const previousSample = samples[index - 1]!;
-    const sample = samples[index]!;
-    const elapsed = Math.max(1, sample.time - previousSample.time);
-    const speed = (pointDistance(previousSample, sample) * zoom) / elapsed;
-    const target = Math.min(1, Math.max(0.25, 1 - speed / 1.5));
-    pressures.push(0.7 * pressures[index - 1]! + 0.3 * target);
-  }
-  return pressures;
-}
-
 export function buildPressureOutlinePairs(
   centers: readonly StrokeCenter[],
   width: number,
@@ -321,18 +254,6 @@ function appendMidpointPath(points: readonly PointV1[]): string {
 
 function halfWidth(width: number, pressure: number): number {
   return (width * (0.35 + 0.65 * Math.min(1, Math.max(0, pressure)))) / 2;
-}
-
-function assertRawSample(
-  sample: RawStrokeSample,
-  source: StrokeInputOptions["pressureSource"],
-): void {
-  if (![sample.x, sample.y, sample.time].every(Number.isFinite)) {
-    throw new RangeError("Stroke position and time must be finite.");
-  }
-  if (source === "pen" && !Number.isFinite(sample.pressure)) {
-    throw new RangeError("Pen pressure must be finite.");
-  }
 }
 
 function assertStrokeSamples(samples: readonly number[]): void {

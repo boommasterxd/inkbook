@@ -1,6 +1,6 @@
+import { parseInkbookDocumentForTest } from "../../../fixtures/persistence/parse-document";
 import { describe, expect, it } from "vitest";
 
-import { parseInkbookDocument } from "../../../../src/persistence/serialization/public";
 import { AutosaveCoordinator } from "../../../../src/persistence/saving/autosave/public";
 import type { MetadataGuardedFileRead } from "../../../../src/persistence/saving/save-ports";
 import { DocumentWorkerRuntime } from "../../../../src/persistence/worker/runtime/public";
@@ -26,7 +26,7 @@ describe("autosave page backgrounds", () => {
     harness.coordinator.recordCommit({ modelRevision: 2, page: squares });
     await expect(harness.coordinator.flush("retry")).resolves.toBe("clean");
 
-    expect(parseInkbookDocument(harness.vault.content)).toMatchObject({
+    expect(await parseInkbookDocumentForTest(harness.vault.content)).toMatchObject({
       ok: true,
       value: { snapshot: { page: squares, revision: 2 } },
     });

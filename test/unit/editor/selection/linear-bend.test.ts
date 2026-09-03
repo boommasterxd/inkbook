@@ -1,18 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { quadraticPoint, rotatePointClockwise } from "../../../../src/domain/geometry/public";
-import type {
-  ArrowElementV1,
-  LineElementV1,
-  StraightHighlighterElementV1,
-} from "../../../../src/domain/schema/public";
+import { type ArrowElementV1, type LineElementV1 } from "../../../../src/domain/schema/public";
+import { type StraightHighlighterElementV1 } from "../../../../src/domain/schema/types";
 import { validateInkElementV1 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
-import {
-  editLinearBendFromCurvePoint,
-  editLinearEndpoint,
-  SelectionHandleSession,
-} from "../../../../src/editor/selection/public";
+import { SelectionHandleSession } from "../../../../src/editor/selection/public";
+import { editLinearBendFromCurvePoint } from "../../../../src/editor/selection/linear-bend";
+import { editLinearEndpoint } from "../../../../src/editor/selection/linear-transforms";
 import { straightHighlighter } from "../../domain/schema/fixtures";
 
 const line = (): LineElementV1 => ({

@@ -420,7 +420,7 @@ CI MUST run:
 - Unit and Integration tests
 - the project-wide coverage thresholds above
 - `jscpd` with `minTokens: 50`
-- `knip`
+- `knip`, including a fatal production-only pass for unused files, exports, and types so source code reachable exclusively from tests cannot survive the gate; `ignoreExportsUsedInFile` keeps internally consumed module exports valid while still rejecting exports with no production caller
 - dependency security audit
 - production build and release-artifact verification
 - deterministic schema fixture and performance benchmark suites

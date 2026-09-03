@@ -262,7 +262,7 @@ describe("active editor ordinary selection move", () => {
     );
     expect(fixture.store.instrumentation).toMatchObject({
       fullStoreScans: 0,
-      reverseDependencyVisits: 1,
+      reverseDependencyVisits: 0,
     });
     preview.revert();
     expect(fixture.elementPreviews[fixture.elementPreviews.length - 1]).toEqual([]);
@@ -327,8 +327,10 @@ describe("active editor large selection handles", () => {
     expect(interaction.pointerDown(start)).toBe(true);
     expect(interaction.pointerMove({ ...start, x: 2003, y: 463 })).toBe(true);
 
-    expect(overlays[overlays.length - 2]).toContain("M 19 19 L 2003 19 L 2003 464 L 19 464 Z");
-    expectLatestLinePreview(elementPreviews, dependent.id, { x: 581, y: 460.009 });
+    expect(overlays[overlays.length - 2]).toContain(
+      "M 19 18.999515695067267 L 2001 18.999515695067267 L 2001 461.0129686098655 L 19 461.0129686098655 Z",
+    );
+    expectLatestLinePreview(elementPreviews, dependent.id, { x: 580, y: 459.013 });
   });
 
   it("prepares a large mixed move in slices and keeps async undo and redo atomic", async () => {

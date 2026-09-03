@@ -321,10 +321,6 @@ export function validateEditableSafeSvg(svg: string): SafeSvgValidation | null {
   return completeValidation(validateSafeSvgSteps(svg, { versionPolicy: "editable" }));
 }
 
-export function validateNewerVersionSafeSvg(svg: string): SafeSvgValidation | null {
-  return completeValidation(validateSafeSvgSteps(svg, { versionPolicy: "newer" }));
-}
-
 /** Validates the bounded root, stylesheet, and opening metadata tag without retaining static paths. */
 export function validateEditableSafeSvgPrelude(prefix: string): SafeSvgPrelude | null {
   const synthetic =

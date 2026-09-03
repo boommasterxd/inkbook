@@ -85,10 +85,6 @@ function validateCommandValues(command: PathCommand, values: readonly number[]):
   );
 }
 
-export function validatePathData(path: string): PathValidationResult | null {
-  return completeValidation(validatePathDataSteps(path));
-}
-
 /** Yields without accepting partial input whenever a path slice exhausts any configured budget. */
 export function* validatePathDataSteps(
   path: string,
@@ -255,14 +251,6 @@ class PathValidationMachine {
 
 function isPositiveSafeInteger(value: number): boolean {
   return Number.isSafeInteger(value) && value > 0;
-}
-
-function completeValidation(
-  steps: Generator<void, PathValidationResult | null>,
-): PathValidationResult | null {
-  let step = steps.next();
-  while (!step.done) step = steps.next();
-  return step.value;
 }
 
 export function validateDashArray(value: string): boolean {

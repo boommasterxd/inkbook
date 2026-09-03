@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { tableColumnOffsets, tableLineSegments } from "../../../../src/domain/geometry/public";
+import { tableColumnOffsets } from "../../../../src/domain/geometry/public";
+import { tableLineSegments } from "../../../../src/domain/geometry/creation";
 import { table } from "./fixtures";
 
 describe("table line segments", () => {

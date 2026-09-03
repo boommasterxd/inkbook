@@ -27,15 +27,6 @@ export type SnapshotMigrationResult =
       readonly sourceVersion?: number;
     };
 
-/** Runs only explicit, adjacent migrations and verifies the discriminator after every pure step. */
-export function migrateSnapshotSequentially(
-  input: unknown,
-  migrations: readonly SnapshotMigrationStep[],
-  currentVersion = CURRENT_INKBOOK_SNAPSHOT_VERSION,
-): SnapshotMigrationResult {
-  return completeMigration(migrateSnapshotSequentiallySteps(input, migrations, currentVersion));
-}
-
 /** Yields within incremental validation and after every complete migration step. */
 export function* migrateSnapshotSequentiallySteps(
   input: unknown,
@@ -130,12 +121,4 @@ function migrateVersionZero(value: unknown): unknown {
     throw new TypeError("Version 0 snapshot root must be an object.");
   }
   return { ...(value as Record<string, unknown>), version: 1 };
-}
-
-function completeMigration(
-  steps: Generator<void, SnapshotMigrationResult>,
-): SnapshotMigrationResult {
-  let step = steps.next();
-  while (!step.done) step = steps.next();
-  return step.value;
 }

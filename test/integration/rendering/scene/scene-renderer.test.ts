@@ -1,14 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type {
-  ArrowElementV1,
-  BoxShapeElementV1,
-  PageV1,
-  StrokeStyleV1,
-  StraightHighlighterElementV1,
+import {
+  type ArrowElementV1,
+  type BoxShapeElementV1,
+  type PageV1,
+  type StrokeStyleV1,
 } from "../../../../src/domain/schema/public";
+import { type StraightHighlighterElementV1 } from "../../../../src/domain/schema/types";
 import { LiveStrokeBuilder } from "../../../../src/editor/tools/live-stroke";
-import { SvgSceneRenderer, type SceneElementRecord } from "../../../../src/rendering/scene";
+import { SvgSceneRenderer } from "../../../../src/rendering/scene";
+import { type SceneElementRecord } from "../../../../src/rendering/scene/types";
 import {
   FakeDocument,
   FakeNode,
@@ -28,7 +29,6 @@ const page: PageV1 = {
   lockedBufferLines: 1,
   margin: 24.3,
 };
-
 function highlighter(): SceneElementRecord {
   const element: StraightHighlighterElementV1 = {
     bend: null,

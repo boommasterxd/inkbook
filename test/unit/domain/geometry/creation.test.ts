@@ -8,8 +8,8 @@ import {
   createLinearGeometry,
   createTableGeometry,
   resolveShapeAnchor,
-  shapeVertices,
 } from "../../../../src/domain/geometry/public";
+import { shapeVertices } from "../../../../src/domain/geometry/creation";
 import { coordinateSystem, rectangle, table } from "./fixtures";
 
 describe("element geometry creation", () => {

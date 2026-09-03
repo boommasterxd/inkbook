@@ -3,10 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { calculateElementBounds } from "../../../../../src/domain/geometry/public";
 import { createBuiltInSettings } from "../../../../../src/domain/settings/defaults";
 import { ElementStore } from "../../../../../src/domain/store/public";
-import {
-  SelectionFrameSession,
-  transformSelectionFrame,
-} from "../../../../../src/editor/selection/public";
+import { SelectionFrameSession } from "../../../../../src/editor/selection/public";
+import { transformSelectionFrame } from "../../../../../src/editor/selection/selection-frame";
 import { eventPathHasClass } from "../../../../../src/obsidian/commands/event-path";
 import { ActiveEditorBackgroundSession } from "../../../../../src/obsidian/embeds/active-editor/background-session";
 import {

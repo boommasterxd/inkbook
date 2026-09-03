@@ -2,11 +2,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  InkbookToolbar,
   nextToolbarIndex,
   resolveToolbarFocusRecovery,
-  resolveToolbarNavigationKey,
-} from "../../../../src/rendering/ui/toolbar";
+} from "../../../../src/rendering/ui/toolbar-focus";
+import { InkbookToolbar, resolveToolbarNavigationKey } from "../../../../src/rendering/ui/toolbar";
 import type { ToolbarState } from "../../../../src/rendering/ui/toolbar-types";
 import type { ToolbarStyleIconState } from "../../../../src/rendering/ui/style-icon";
 

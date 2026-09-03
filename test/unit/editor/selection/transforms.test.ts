@@ -9,16 +9,16 @@ import type {
 } from "../../../../src/domain/schema/public";
 import { canonicalPoint } from "../../../../src/domain/geometry/public";
 import { validateInkElementV1 } from "../../../../src/domain/schema/public";
+import { moveSelectionTimeSliced } from "../../../../src/editor/selection/public";
+import { editLinearBend } from "../../../../src/editor/selection/linear-bend";
+import { editLinearEndpoint } from "../../../../src/editor/selection/linear-transforms";
 import {
-  editLinearBend,
-  editLinearEndpoint,
   moveSelection,
-  moveSelectionTimeSliced,
   rotateSelection,
-  scaleSelectionUniform,
   uniformScaleFactorFromPointers,
-} from "../../../../src/editor/selection/public";
+} from "../../../../src/editor/selection/transforms";
 import { hydrateRuntimeStroke } from "../../../fixtures/domain/runtime-stroke-store";
+import { scaleSelectionUniformForTest as scaleSelectionUniform } from "../../../fixtures/editor/selection-transform-reference";
 
 const style = {
   outlineColor: { type: "theme-text" as const },

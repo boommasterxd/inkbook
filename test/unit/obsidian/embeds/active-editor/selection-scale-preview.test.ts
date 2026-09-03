@@ -2,11 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { calculateElementBounds } from "../../../../../src/domain/geometry/public";
 import type { InkElementV1 } from "../../../../../src/domain/schema/public";
-import { selectionScalePreview } from "../../../../../src/obsidian/embeds/active-editor/selection-scale-preview";
+import { SelectionScalePreviewPlan } from "../../../../../src/obsidian/embeds/active-editor/selection-scale-preview";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
 import { arrow, coordinateSystem, rectangle } from "../../../domain/schema/fixtures";
 
 const SCALE_PREVIEW_BASE = {
+  previewFrame: null,
   snapCandidate: null,
   snapGuide: null,
   transform: {
@@ -47,30 +48,31 @@ describe("selection scale preview", () => {
       element,
     }));
 
-    const result = selectionScalePreview(selected, {
+    const result = new SelectionScalePreviewPlan(selected).resolve({
       ...SCALE_PREVIEW_BASE,
       exactElements: exact,
       exactPreviewTruncated: false,
     });
 
     expect(result.elements).toEqual(exact.slice(0, 3));
-    expect(result.exactPreviewIds).toEqual(new Set([stroke.id, axes.id, directed.id]));
   });
 
   it("uses a non-scaling centerline fallback for a truncated pressure stroke", () => {
     const stroke = indexedStroke(1);
-    const result = selectionScalePreview(
-      [{ bounds: calculateElementBounds(stroke), element: stroke }],
-      {
-        ...SCALE_PREVIEW_BASE,
-        exactElements: [],
-        exactPreviewTruncated: true,
-      },
-    );
+    const plan = new SelectionScalePreviewPlan([
+      { bounds: calculateElementBounds(stroke), element: stroke },
+    ]);
+    const preview = {
+      ...SCALE_PREVIEW_BASE,
+      exactElements: [],
+      exactPreviewTruncated: true,
+    };
+    const result = plan.resolve(preview);
+    const repeated = plan.resolve(preview);
 
-    expect(result.exactPreviewIds.size).toBe(0);
     expect(result.elements).toEqual([
       { ...stroke, style: { ...stroke.style, pressureEnabled: false } },
     ]);
+    expect(repeated.elements).toBe(result.elements);
   });
 });

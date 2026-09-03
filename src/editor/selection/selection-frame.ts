@@ -8,13 +8,14 @@ import {
 } from "../../domain/geometry/public";
 import type { BoxAnchorV1, InkElementV1, PointV1 } from "../../domain/schema/public";
 
-import type { SelectedElementGeometry, SelectionPreviewTransform } from "./handle-types";
+import type {
+  SelectedElementGeometry,
+  SelectionPreviewFrame,
+  SelectionPreviewTransform,
+} from "./handle-types";
 import { rotateSelection } from "./transforms";
 
-export interface OrientedSelectionFrame {
-  readonly points: readonly [PointV1, PointV1, PointV1, PointV1];
-  readonly rotation: number;
-}
+export type OrientedSelectionFrame = SelectionPreviewFrame;
 
 export interface SelectionFrameHistoryEffect {
   apply(): void;
@@ -86,12 +87,31 @@ export function createSelectionFrameAtRotation(
     bounds = bounds === null ? current : unionBounds(bounds, current);
   }
   if (bounds === null) return null;
-  const points = framePoints(bounds);
+  return selectionFrameFromLocalBounds(bounds, rotation);
+}
+
+export function selectionFrameFromLocalBounds(
+  bounds: Bounds,
+  rotation: number,
+): OrientedSelectionFrame {
   return {
-    points: points.map((point) =>
+    points: framePoints(bounds).map((point) =>
       rotatePointClockwise(point, { x: 0, y: 0 }, rotation),
     ) as unknown as OrientedSelectionFrame["points"],
     rotation,
+  };
+}
+
+export function translateSelectionFrame(
+  frame: OrientedSelectionFrame,
+  delta: PointV1,
+): OrientedSelectionFrame {
+  return {
+    points: frame.points.map((point) => ({
+      x: point.x + delta.x,
+      y: point.y + delta.y,
+    })) as unknown as OrientedSelectionFrame["points"],
+    rotation: frame.rotation,
   };
 }
 

@@ -11,11 +11,11 @@ import type {
 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
 import {
-  editLinearBend,
   oppositeElementHandlePoint,
   SelectionHandleSession,
   type SelectionHandlePreview,
 } from "../../../../src/editor/selection/public";
+import { editLinearBend } from "../../../../src/editor/selection/linear-bend";
 import type { SelectionSnapPorts } from "../../../../src/editor/selection/handle-types";
 import { connectedLine, coordinateSystem, IDS, rectangle } from "../../domain/store/fixtures";
 import { straightHighlighter } from "../../domain/schema/fixtures";

@@ -15,7 +15,10 @@ import {
   createSelectionFrameAtRotation,
   selectionFrameElementAtRotation,
   selectionFramePoint,
+  translateSelectionFrame,
+  type OrientedSelectionFrame,
 } from "./selection-frame";
+import { SelectionScalePreviewFramePlan } from "./scale-preview-frame";
 import {
   clampScaleFactors,
   minimumUniformScaleForSelection,
@@ -39,8 +42,10 @@ export class SelectionScaleGesture {
   readonly #elements: readonly InkElementV1[];
   readonly #minimumFactors: ScaleFactors;
   readonly #minimumUniformFactor: number;
+  readonly #previewFramePlan: SelectionScalePreviewFramePlan;
   readonly #startPointer: PointV1;
   #previewDelta: PointV1 = { x: 0, y: 0 };
+  #previewFrame: OrientedSelectionFrame | null = null;
 
   public constructor(
     action: ScaleAction,
@@ -51,6 +56,7 @@ export class SelectionScaleGesture {
     this.#elements = elements;
     this.#minimumFactors = minimumScaleFactorsForSelection(elements, action.rotation);
     this.#minimumUniformFactor = minimumUniformScaleForSelection(elements);
+    this.#previewFramePlan = new SelectionScalePreviewFramePlan(elements, action.rotation);
     this.#startPointer = startPointer;
   }
 
@@ -93,20 +99,34 @@ export class SelectionScaleGesture {
       : this.#scaleInFrame(element, factors);
   }
 
-  public previewFactors(pointer: PointV1, uniform: boolean): ScaleFactors {
+  public previewFactors(
+    pointer: PointV1,
+    uniform: boolean,
+    updateApproximateFrame: boolean,
+  ): ScaleFactors {
     const factors = this.factorsAt(pointer, uniform);
-    if (factors !== undefined) return factors;
-    return selectionScaleFactors(
-      this.#elements[0]!,
-      this.#action,
-      this.#startPointer,
-      pointer,
-      uniform,
-    ).factors;
+    const resolved =
+      factors ??
+      selectionScaleFactors(this.#elements[0]!, this.#action, this.#startPointer, pointer, uniform)
+        .factors;
+    if (updateApproximateFrame) {
+      const preview = this.#previewFramePlan.resolve(
+        this.#action.anchor,
+        this.#action.position,
+        resolved,
+      );
+      this.#previewDelta = preview.delta;
+      this.#previewFrame = preview.frame;
+    }
+    return resolved;
   }
 
   public get previewDelta(): PointV1 {
     return this.#previewDelta;
+  }
+
+  public get previewFrame(): OrientedSelectionFrame | null {
+    return this.#previewFrame;
   }
 
   public stabilizeAnchor(elements: readonly InkElementV1[]): InkElementV1[] {
@@ -117,6 +137,7 @@ export class SelectionScaleGesture {
       x: this.#action.anchor.x - actual.x,
       y: this.#action.anchor.y - actual.y,
     });
+    this.#previewFrame = translateSelectionFrame(frame, this.#previewDelta);
     return moveSelection(elements, this.#previewDelta);
   }
 

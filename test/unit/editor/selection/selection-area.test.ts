@@ -9,13 +9,15 @@ import type {
   PointV1,
 } from "../../../../src/domain/schema/public";
 import {
-  createLassoSelectionArea,
   createRectangleSelectionArea,
+  selectBySelectionAreaQuery,
+} from "../../../../src/editor/selection/public";
+import {
+  createLassoSelectionArea,
   elementMatchesSelectionArea,
   MAX_LASSO_SELECTION_POINTS,
-  selectBySelectionAreaQuery,
   selectionAreaBounds,
-} from "../../../../src/editor/selection/public";
+} from "../../../../src/editor/selection/selection-area";
 import {
   arrow,
   coordinateSystem,

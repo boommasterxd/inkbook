@@ -12,7 +12,7 @@ import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-edi
 import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-model-port";
 import type { MenuItemPort, MenuPort, MenuPosition } from "../../../../../src/obsidian/menus/index";
 import type { BrowserScrollElement } from "../../../../../src/obsidian/scrolling/index";
-import { INKBOOK_CLIPBOARD_WEB_MIME } from "../../../../../src/persistence/clipboard/public";
+import { INKBOOK_CLIPBOARD_WEB_MIME } from "../../../../../src/persistence/clipboard/constants";
 import type { SvgSceneRenderer } from "../../../../../src/rendering/scene/index";
 import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
 import { installNativeMenuMeasurementStyles } from "../../../../adapters/obsidian/editor-toolbar-menu";

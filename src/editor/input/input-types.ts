@@ -9,17 +9,6 @@ export const TOUCH_TAP_MAX_MOVEMENT_PX = 6;
 
 export type EditorTool = StartupToolV1;
 
-export type InputPhase =
-  | "idle"
-  | "touch-pending"
-  | "note-scroll"
-  | "page-pan"
-  | "element-move"
-  | "lasso"
-  | "eraser-gesture"
-  | "tool-gesture"
-  | "pinch";
-
 export interface InputPoint {
   readonly x: number;
   readonly y: number;
@@ -249,8 +238,4 @@ export function createInputState(
     interaction: undefined,
     consumedPointerIds: [],
   };
-}
-
-export function inputPhase(state: InputState): InputPhase {
-  return state.interaction?.phase ?? "idle";
 }

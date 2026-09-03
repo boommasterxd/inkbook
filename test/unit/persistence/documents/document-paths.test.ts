@@ -3,13 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   createInkbookFilename,
   findAvailableInkbookPath,
-  localCopyPath,
   migrationBackupPath,
 } from "../../../../src/persistence/documents/file-naming";
-import {
-  decideEmbedDeletion,
-  mayDeleteManagedFile,
-} from "../../../../src/persistence/documents/reference-decision";
 import {
   joinVaultPath,
   parentVaultPath,
@@ -56,27 +51,8 @@ describe("vault document paths", () => {
     expect(result).toBe("attachments/inkbook-20260102-030405-010101.svg");
   });
 
-  it("derives bounded backup and local-copy names", () => {
+  it("derives bounded backup names", () => {
     const path = validateVaultPath("drawings/page.svg")!;
     expect(migrationBackupPath(path, 0)).toBe("drawings/page.backup-v0.svg");
-    expect(localCopyPath(path, "local-copy")).toBe("drawings/page-local-copy.svg");
-    expect(localCopyPath(path, "../escape")).toBeNull();
-  });
-});
-
-describe("reference-safe deletion", () => {
-  it("denies file deletion when metadata is unresolved or another reference exists", () => {
-    expect(decideEmbedDeletion({ state: "unresolved" }).mayOfferFileDeletion).toBe(false);
-    expect(decideEmbedDeletion({ state: "resolved", references: 2 }).mayOfferFileDeletion).toBe(
-      false,
-    );
-    expect(mayDeleteManagedFile({ state: "unresolved" }, true)).toBe(false);
-  });
-
-  it("requires confirmation for a known final reference", () => {
-    const knowledge = { state: "resolved", references: 1 } as const;
-    expect(decideEmbedDeletion(knowledge).mayOfferFileDeletion).toBe(true);
-    expect(mayDeleteManagedFile(knowledge, false)).toBe(false);
-    expect(mayDeleteManagedFile(knowledge, true)).toBe(true);
   });
 });

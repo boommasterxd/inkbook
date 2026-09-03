@@ -48,7 +48,6 @@ const METADATA_INPUT_CODE_UNITS_PER_STEP = 16 * 1024;
 
 const IMMEDIATE_CHUNKED_INPUT_CHECKPOINT: ChunkedInputCheckpoint = () => Promise.resolve();
 
-export { ChunkedInputCancelledError };
 export type { ChunkedInkbookInputOptions, ChunkedInputCheckpoint };
 
 /** Incrementally decodes bounded input and drives safe-SVG and snapshot validation steps. */

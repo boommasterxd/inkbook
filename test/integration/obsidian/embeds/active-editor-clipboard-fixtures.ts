@@ -1,6 +1,7 @@
 import { vi } from "vitest";
 
-import type { EncodedClipboard, PastePlan } from "../../../../src/persistence/clipboard/public";
+import { type PastePlan } from "../../../../src/persistence/clipboard/public";
+import { type EncodedClipboard } from "../../../../src/persistence/clipboard/types";
 import type { PreparedElementMutation } from "../../../../src/domain/store/public";
 import type { InkElementV1, PageV1 } from "../../../../src/domain/schema/public";
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";

@@ -8,17 +8,15 @@ const knipEntry = path.join(projectRoot, "node_modules", "knip", "bin", "knip.js
 const gate = runKnip([]);
 if (gate.status !== 0) process.exit(gate.status ?? 1);
 
-process.stdout.write(
-  "\nProduction-only dead-source report (informational, existing findings do not fail CI):\n",
-);
-runKnip([
+process.stdout.write("\nProduction-only dead-code gate:\n");
+const productionGate = runKnip([
   "--production",
   "--include",
   "files,exports,types",
-  "--no-exit-code",
   "--reporter",
   "compact",
 ]);
+if (productionGate.status !== 0) process.exit(productionGate.status ?? 1);
 
 function runKnip(arguments_) {
   const result = spawnSync(process.execPath, [knipEntry, ...arguments_], {

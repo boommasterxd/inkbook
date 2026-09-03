@@ -4,13 +4,11 @@ import {
   validateInkSnapshotV1,
   type StrokeElementV1,
 } from "../../../../../src/domain/schema/public";
-import { encodeSelection } from "../../../../../src/persistence/clipboard/public";
+import { encodeRuntimeSelection } from "../../../../../src/persistence/clipboard/codec";
 import { CLIPBOARD_LIMITS } from "../../../../../src/persistence/clipboard/constants";
 import { INKBOOK_CLIPBOARD_TEXT_PREFIX } from "../../../../../src/persistence/clipboard/constants";
-import {
-  serializeInkbookDocument,
-  sha256Hex,
-} from "../../../../../src/persistence/serialization/public";
+import { serializeInkbookDocument } from "../../../../../src/persistence/serialization/public";
+import { sha256Hex } from "../../../../../src/persistence/serialization/sha256";
 import {
   decodeRuntimeResultChunked,
   encodeRuntimeResultChunked,
@@ -23,9 +21,11 @@ import {
   encodeRuntimeRequestChunked,
   encodeRuntimeResult,
   encodeUnlockBatch,
+} from "../../../../../src/persistence/worker/runtime/wire-codec";
+import {
   packElements,
   unpackElements,
-} from "../../../../../src/persistence/worker/runtime/public";
+} from "../../../../../src/persistence/worker/runtime/element-wire-codec";
 import { snapshot, STROKE } from "./fixtures";
 
 const clipboardIdentity = (operationId: number) => ({
@@ -163,7 +163,7 @@ describe("document worker export wire scheduling", () => {
 
 describe("document worker clipboard wire codec", () => {
   it("transfers one canonical clipboard text and reconstructs write aliases", () => {
-    const selection = encodeSelection([STROKE], new Set([STROKE.id]));
+    const selection = encodeRuntimeSelection([STROKE], new Set([STROKE.id]));
     if (!selection.ok) throw new Error(selection.error.code);
     const encoded = encodeRuntimeResult({
       identity: clipboardIdentity(1),
@@ -193,7 +193,7 @@ describe("document worker clipboard wire codec", () => {
   });
 
   it("adopts transferred decoded stroke buffers without a back-copy", () => {
-    const selection = encodeSelection([STROKE], new Set([STROKE.id]));
+    const selection = encodeRuntimeSelection([STROKE], new Set([STROKE.id]));
     if (!selection.ok) throw new Error(selection.error.code);
     const encoded = encodeRuntimeResult({
       identity: clipboardIdentity(2),

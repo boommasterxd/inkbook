@@ -1,5 +1,3 @@
-import { boundsIntersect } from "../../domain/geometry/bounds";
-import { boundsFromPoints } from "../../domain/geometry/primitives";
 import type { Bounds } from "../../domain/geometry/public";
 import type { InkElementV1 } from "../../domain/schema/public";
 
@@ -24,19 +22,6 @@ export function selectElement(
   return setsEqual(selection, next) ? selection : next;
 }
 
-export function selectByLasso(
-  selection: ReadonlySet<string>,
-  lasso: Bounds,
-  candidates: Iterable<readonly [string, Bounds]>,
-  additive: boolean,
-): ReadonlySet<string> {
-  const next = additive ? new Set(selection) : new Set<string>();
-  for (const [id, bounds] of candidates) {
-    if (boundsIntersect(lasso, bounds)) next.add(id);
-  }
-  return setsEqual(selection, next) ? selection : next;
-}
-
 interface SelectionAreaCandidateSink {
   add(id: string, bounds: Bounds, element: InkElementV1): void;
 }
@@ -55,13 +40,6 @@ export function selectBySelectionAreaQuery(
     },
   });
   return setsEqual(selection, next) ? selection : next;
-}
-
-export function lassoBounds(
-  start: { readonly x: number; readonly y: number },
-  end: { readonly x: number; readonly y: number },
-): Bounds {
-  return boundsFromPoints([start, end]);
 }
 
 function singleton(id: string): ReadonlySet<string> {

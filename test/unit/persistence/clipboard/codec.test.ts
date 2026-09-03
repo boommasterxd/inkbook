@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { ArrowElementV1, LineElementV1 } from "../../../../src/domain/schema/public";
 import {
   decodeCustomClipboardText,
-  encodeSelection,
-  INKBOOK_CLIPBOARD_TEXT_PREFIX,
+  encodeRuntimeSelection,
   resolveClipboardPayload,
-  validateClipboardPayload,
-} from "../../../../src/persistence/clipboard/public";
+} from "../../../../src/persistence/clipboard/codec";
+import { INKBOOK_CLIPBOARD_TEXT_PREFIX } from "../../../../src/persistence/clipboard/constants";
+import { validateClipboardPayload } from "../../../../src/persistence/clipboard/validation";
 import {
   arrow,
   ARROW_ID,
@@ -19,7 +19,7 @@ import {
 
 describe("clipboard codec", () => {
   it("encodes identities as compact clip IDs and preserves internal connections", () => {
-    const encoded = encodeSelection(selectedElements(), new Set([RECTANGLE_ID, ARROW_ID]));
+    const encoded = encodeRuntimeSelection(selectedElements(), new Set([RECTANGLE_ID, ARROW_ID]));
 
     expect(encoded.ok).toBe(true);
     if (!encoded.ok) return;
@@ -38,7 +38,7 @@ describe("clipboard codec", () => {
 
   it("detaches connections to targets outside the exact selection", () => {
     const externalArrow = arrow(EXTERNAL_ID);
-    const encoded = encodeSelection([externalArrow], new Set([ARROW_ID]));
+    const encoded = encodeRuntimeSelection([externalArrow], new Set([ARROW_ID]));
 
     expect(encoded.ok).toBe(true);
     if (!encoded.ok) return;
@@ -48,7 +48,7 @@ describe("clipboard codec", () => {
   });
 
   it("rejects missing selection records without producing a partial payload", () => {
-    const encoded = encodeSelection([rectangle()], new Set([RECTANGLE_ID, ARROW_ID]));
+    const encoded = encodeRuntimeSelection([rectangle()], new Set([RECTANGLE_ID, ARROW_ID]));
 
     expect(encoded).toEqual({
       ok: false,
@@ -57,7 +57,7 @@ describe("clipboard codec", () => {
   });
 
   it("uses the first valid source in custom, plain, session priority order", () => {
-    const encoded = encodeSelection([rectangle()], new Set([RECTANGLE_ID]));
+    const encoded = encodeRuntimeSelection([rectangle()], new Set([RECTANGLE_ID]));
     expect(encoded.ok).toBe(true);
     if (!encoded.ok) return;
 
@@ -79,7 +79,7 @@ describe("clipboard codec", () => {
   });
 
   it("canonicalizes valid noncanonical JSON without changing the decoded payload", () => {
-    const encoded = encodeSelection([rectangle()], new Set([RECTANGLE_ID]));
+    const encoded = encodeRuntimeSelection([rectangle()], new Set([RECTANGLE_ID]));
     expect(encoded.ok).toBe(true);
     if (!encoded.ok) return;
     const noncanonical = JSON.stringify(encoded.value.payload, null, 2);
@@ -94,7 +94,7 @@ describe("clipboard codec", () => {
 
   it("preserves connections to selected line and arrow endpoints", () => {
     const [target, dependent] = linearSelection();
-    const encoded = encodeSelection([target, dependent], new Set([target.id, dependent.id]));
+    const encoded = encodeRuntimeSelection([target, dependent], new Set([target.id, dependent.id]));
 
     expect(encoded.ok).toBe(true);
     if (!encoded.ok) return;
@@ -119,7 +119,7 @@ describe("clipboard codec", () => {
 
 describe("clipboard validation", () => {
   it("rejects unknown properties, duplicate clip IDs, and dangling connections", () => {
-    const encoded = encodeSelection(selectedElements(), new Set([RECTANGLE_ID, ARROW_ID]));
+    const encoded = encodeRuntimeSelection(selectedElements(), new Set([RECTANGLE_ID, ARROW_ID]));
     expect(encoded.ok).toBe(true);
     if (!encoded.ok) return;
 
@@ -164,7 +164,7 @@ describe("clipboard validation", () => {
         smoothing: 0.5 as const,
       },
     };
-    const encoded = encodeSelection(
+    const encoded = encodeRuntimeSelection(
       [highlighter, rectangle()],
       new Set([highlighter.id, RECTANGLE_ID]),
     );
@@ -233,7 +233,7 @@ describe("clipboard aggregate validation", () => {
 });
 
 function encodePayload(elements: readonly (LineElementV1 | ArrowElementV1)[]) {
-  const encoded = encodeSelection(elements, new Set(elements.map(({ id }) => id)));
+  const encoded = encodeRuntimeSelection(elements, new Set(elements.map(({ id }) => id)));
   if (!encoded.ok) throw new Error(encoded.error.message);
   return encoded.value.payload;
 }

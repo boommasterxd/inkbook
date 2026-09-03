@@ -3,8 +3,7 @@ import type { InkElementV1, PointV1 } from "../../../domain/schema/public";
 import type { SnappingSettingsV1 } from "../../../domain/settings/types";
 import type { PointerSample } from "../../../editor/input/index";
 import {
-  connectedSelectionTransformPreview,
-  exactConnectedSelectionIds,
+  ConnectedSelectionPreviewSession,
   findSelectionHandle,
   layoutSelectionHandles,
   selectionOverlayGeometry,
@@ -24,7 +23,7 @@ import type { ElementSceneStore } from "./scene-store";
 import { selectionHandleAction } from "./selection-handle-action";
 import { activeSnapFeatures } from "./snapping-settings";
 import { commitPreviewReplacement } from "./preview-replacement-commit";
-import { selectionScalePreview } from "./selection-scale-preview";
+import { SelectionScalePreviewPlan } from "./selection-scale-preview";
 import {
   pointerHandleRadiusPixels,
   SelectionHandlePresentation,
@@ -52,13 +51,16 @@ export interface ActiveEditorHandleInteractionOptions {
 export type { HandleInteractionRenderer } from "./handle-presentation";
 
 interface ActiveHandleGesture {
+  readonly connectedPreview: ConnectedSelectionPreviewSession;
+  readonly connectedTransformIds: readonly string[];
   readonly grabOffset: PointV1;
-  readonly ids: readonly string[];
   readonly pointerId: number;
   readonly pointerType: PointerSample["pointerType"];
   readonly selected: readonly SelectedElementGeometry[];
   readonly frame: OrientedSelectionFrame | null;
   readonly selectedIds: ReadonlySet<string>;
+  readonly scalePreview: SelectionScalePreviewPlan;
+  readonly scaleTransformIds: readonly string[];
   readonly session: SelectionHandleSession;
   readonly snapping: SnappingSettingsV1 | undefined;
 }
@@ -143,8 +145,17 @@ export class ActiveEditorHandleInteraction {
     const configuredSnapping = this.#snapping();
     const snapping =
       configuredSnapping === undefined ? undefined : structuredClone(configuredSnapping);
+    const ids = elements.map(({ id }) => id);
+    const connectedPreview = new ConnectedSelectionPreviewSession(
+      this.#model.store,
+      elements,
+      selectedIds,
+    );
+    const scalePreview = new SelectionScalePreviewPlan(selected);
+    const connectedTransformIds = ids.filter((id) => !connectedPreview.selectedPreviewIds.has(id));
     this.#active = {
-      ids: elements.map(({ id }) => id),
+      connectedPreview,
+      connectedTransformIds,
       frame,
       grabOffset: {
         x: pointer.x - sessionStart.x,
@@ -154,6 +165,10 @@ export class ActiveEditorHandleInteraction {
       pointerType: pointer.pointerType,
       selected,
       selectedIds,
+      scalePreview,
+      scaleTransformIds: connectedTransformIds.filter(
+        (id) => !scalePreview.exactCandidateIds.has(id),
+      ),
       snapping,
       session: new SelectionHandleSession({
         action,
@@ -197,12 +212,12 @@ export class ActiveEditorHandleInteraction {
       },
     );
     const connected = this.#connectedPreview(active, preview);
-    const scale = selectionScalePreview(active.selected, preview);
+    const scale = active.scalePreview.resolve(preview);
     this.#updatePreviewBottom(active, preview, connected.elements);
     this.#presentation.renderTransform(
-      active.ids.filter(
-        (id) => !connected.selectedPreviewIds.has(id) && !scale.exactPreviewIds.has(id),
-      ),
+      preview.transform?.kind === "scale" && !preview.exactPreviewTruncated
+        ? active.scaleTransformIds
+        : active.connectedTransformIds,
       preview.transform,
     );
     this.#presentation.renderPreview(active, preview, connected, scale.elements);
@@ -278,11 +293,12 @@ export class ActiveEditorHandleInteraction {
       maximumBottom = Math.max(maximumBottom, calculateElementBounds(element).maxY);
     }
     if (preview.transform !== null) {
+      const frame = preview.previewFrame ?? active.frame;
       const outline = selectionOverlayGeometry(
         active.selected,
         this.#zoom(),
-        preview.transform,
-        active.frame,
+        preview.previewFrame === null ? preview.transform : null,
+        frame,
       )?.outline;
       if (outline?.kind === "linear") {
         maximumBottom = Math.max(
@@ -314,15 +330,10 @@ export class ActiveEditorHandleInteraction {
     if (!preview.exactPreviewTruncated) {
       return {
         elements: [],
-        selectedPreviewIds: exactConnectedSelectionIds(preview.exactElements, active.selectedIds),
+        selectedPreviewIds: active.connectedPreview.selectedPreviewIds,
       };
     }
-    return connectedSelectionTransformPreview(
-      this.#model.store,
-      active.selected.map(({ element }) => element),
-      active.selectedIds,
-      preview.transform,
-    );
+    return active.connectedPreview.update(preview.transform);
   }
 
   #selectedGeometry(): SelectedElementGeometry[] {

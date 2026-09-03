@@ -10,12 +10,6 @@ import {
 } from "../../domain/geometry/public";
 import type { BoxShapeElementV1, InkElementV1, PointV1 } from "../../domain/schema/public";
 
-export interface HitCandidate {
-  readonly band: RenderBand;
-  readonly element: InkElementV1;
-  readonly rank: number;
-}
-
 export class HitTestScratch {
   #active = false;
   #element: InkElementV1 | undefined;
@@ -78,20 +72,6 @@ interface StrokeHitIndex {
 
 function hitTolerancePixels(pointerType: "mouse" | "pen" | "touch"): number {
   return pointerType === "touch" ? 14 : 8;
-}
-
-export function findFrontmostHit(
-  point: PointV1,
-  pointerType: "mouse" | "pen" | "touch",
-  zoom: number,
-  candidates: Iterable<HitCandidate>,
-): string | null {
-  const scratch = new HitTestScratch();
-  scratch.begin(point, pointerType, zoom);
-  for (const candidate of candidates) {
-    scratch.consider(candidate.element.id, candidate.band, candidate.element, candidate.rank);
-  }
-  return scratch.finish();
 }
 
 export function elementContainsPoint(

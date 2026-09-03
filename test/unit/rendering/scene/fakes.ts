@@ -1,9 +1,8 @@
-import type {
-  SceneElementRecord,
-  SceneScheduler,
-  SceneStorePort,
-  SpatialQuerySink,
-} from "../../../../src/rendering/scene";
+import { type SceneStorePort, type SpatialQuerySink } from "../../../../src/rendering/scene";
+import {
+  type SceneElementRecord,
+  type SceneScheduler,
+} from "../../../../src/rendering/scene/types";
 import type { Bounds } from "../../../../src/domain/geometry/public";
 import type { BoxShapeElementV1 } from "../../../../src/domain/schema/public";
 

@@ -6,9 +6,8 @@ import { adoptUtf8Output } from "../../../src/persistence/scheduling/utf8-adopti
 import {
   encodeRuntimeRequestChunked,
   encodeRuntimeResult,
-} from "../../../src/persistence/worker/runtime/public";
+} from "../../../src/persistence/worker/runtime/wire-codec";
 import { decodeRuntimeResultChunked } from "../../../src/persistence/worker/runtime/wire-codec";
-import { EXPORT_OUTPUT_WIRE_FORMAT } from "../../../src/persistence/worker/runtime/export-output-wire";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 import { createStandardPersistenceFixture, STANDARD_STROKES } from "./fixtures";
 import {
@@ -87,7 +86,6 @@ describe("worker transfer preparation and result adoption", () => {
 
       await annotateDurations(annotate, `${profile} cloned string wire`, cloned);
       await annotateDurations(annotate, `${profile} transferred UTF-8 wire`, transferred);
-      expect(EXPORT_OUTPUT_WIRE_FORMAT).toBe("transferred-utf8");
       expect(summarizeDurations(transferred).p50).toBeLessThan(summarizeDurations(cloned).p50);
     }, 120_000);
   }

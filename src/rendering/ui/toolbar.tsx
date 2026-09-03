@@ -31,8 +31,6 @@ import {
 } from "./toolbar-layout-motion";
 import { ToolbarActionIcon } from "./toolbar-action-icon";
 
-export { nextToolbarIndex, resolveToolbarFocusRecovery } from "./toolbar-focus";
-
 const LEFT_BUTTONS: readonly ToolbarButtonDefinition[] = [
   { action: "finger-drawing", icon: "hand", label: "Finger drawing" },
   { action: "undo", icon: "undo-2", label: "Undo" },

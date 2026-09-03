@@ -1,19 +1,15 @@
+import { parseInkbookDocumentForTest } from "../../../fixtures/persistence/parse-document";
 import { describe, expect, it } from "vitest";
 
 import { FILE_SCHEMA_LIMITS } from "../../../../src/domain/schema/public";
 import { jsonContainerBudget } from "../../../../src/domain/schema/validation-internals";
-import {
-  ChunkedInkbookInputParser,
-  ChunkedInputCancelledError,
-} from "../../../../src/persistence/serialization/chunked-input-codec";
+import { ChunkedInkbookInputParser } from "../../../../src/persistence/serialization/chunked-input-codec";
+import { ChunkedInputCancelledError } from "../../../../src/persistence/serialization/chunked-input-types";
 import {
   CURRENT_METADATA_REWRITES,
   rewriteDocumentMetadata,
 } from "../../../fixtures/persistence/metadata-rewrite";
-import {
-  parseInkbookDocument,
-  serializeInkbookDocument,
-} from "../../../../src/persistence/serialization/public";
+import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import {
   appendMetadataProperty,
   createAllElementSnapshot,
@@ -29,7 +25,7 @@ async function expectChunkedInputToMatchSynchronous(
   const parser = new ChunkedInkbookInputParser(options);
   await parser.write(bytes);
 
-  expect(await parser.finish()).toEqual(parseInkbookDocument(bytes));
+  expect(await parser.finish()).toEqual(await parseInkbookDocumentForTest(bytes));
 }
 
 async function expectSnapshotMetadataPrefixAccepted(
@@ -58,7 +54,7 @@ describe("chunked Inkbook input", () => {
       expect((await parser.write(bytes.subarray(offset, offset + 23))).ok).toBe(true);
     }
 
-    expect(await parser.finish()).toEqual(parseInkbookDocument(bytes));
+    expect(await parser.finish()).toEqual(await parseInkbookDocumentForTest(bytes));
     expect(parser.maximumRetainedStaticInputCharacters).toBeLessThanOrEqual(47);
   });
 
@@ -103,7 +99,7 @@ describe("chunked Inkbook input", () => {
       const bytes = new TextEncoder().encode(input);
       const parser = new ChunkedInkbookInputParser();
       await parser.write(bytes);
-      expect(await parser.finish()).toEqual(parseInkbookDocument(bytes));
+      expect(await parser.finish()).toEqual(await parseInkbookDocumentForTest(bytes));
     }
   });
 
@@ -130,7 +126,7 @@ describe("chunked Inkbook metadata boundaries", () => {
       const input = rewriteDocumentMetadata(serialized.value.svg, mutate, updateHash);
 
       await expectChunkedInputToMatchSynchronous(input, { inputSliceBytes: 31 });
-      expect(parseInkbookDocument(input)).toMatchObject({
+      expect(await parseInkbookDocumentForTest(input)).toMatchObject({
         error: { code: expectedCode },
         ok: false,
       });
@@ -186,7 +182,25 @@ describe("chunked Inkbook metadata boundaries", () => {
       `"escapeDense":"${"\\n".repeat(256 * 1024)}"`,
     );
 
-    await expectChunkedInputToMatchSynchronous(input, { inputSliceBytes: 1024 });
+    let checkpoints = 0;
+    const parser = new ChunkedInkbookInputParser({
+      checkpoint: () => {
+        checkpoints += 1;
+        return Promise.resolve();
+      },
+      inputSliceBytes: 1024,
+    });
+
+    await parser.write(new TextEncoder().encode(input));
+
+    expect(await parser.finish()).toMatchObject({
+      error: {
+        code: "snapshot-invalid",
+        validationError: { code: "unknown-property", path: "$.escapeDense" },
+      },
+      ok: false,
+    });
+    expect(checkpoints).toBeGreaterThan(256);
   });
 });
 
@@ -198,7 +212,7 @@ describe("chunked Inkbook input boundaries", () => {
 
     const result = await parser.write(bytes);
 
-    expect(result).toEqual(parseInkbookDocument(bytes));
+    expect(result).toEqual(await parseInkbookDocumentForTest(bytes));
     expect(parser.bytesReceived).toBe(0);
   });
 

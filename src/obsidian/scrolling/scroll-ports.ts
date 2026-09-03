@@ -51,11 +51,6 @@ export const browserScrollMetrics: ScrollMetricsPort<BrowserScrollElement> = {
   },
 };
 
-export const browserScrollClasses: ScrollClassPort<BrowserScrollElement> = {
-  add: (element, className) => element.classList.add(className),
-  remove: (element, className) => element.classList.remove(className),
-};
-
 export const browserScrollListeners: ScrollListenerPort<BrowserScrollElement> = {
   listen: (element, listener) => {
     element.addEventListener("scroll", listener, { passive: true });

@@ -1,9 +1,9 @@
-import type {
-  ArrowElementV1,
-  PageV1,
-  StraightHighlighterElementV1,
-  StrokeElementV1,
+import {
+  type ArrowElementV1,
+  type PageV1,
+  type StrokeElementV1,
 } from "../../../../src/domain/schema/public";
+import { type StraightHighlighterElementV1 } from "../../../../src/domain/schema/types";
 import { describe, expect, it } from "vitest";
 
 import {

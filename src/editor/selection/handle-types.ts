@@ -61,9 +61,15 @@ export type SelectionPreviewTransform =
 export interface SelectionHandlePreview {
   readonly exactElements: readonly InkElementV1[];
   readonly exactPreviewTruncated: boolean;
+  readonly previewFrame: SelectionPreviewFrame | null;
   readonly snapCandidate: SnapCandidate | null;
   readonly snapGuide: SelectionSnapGuide | null;
   readonly transform: SelectionPreviewTransform | null;
+}
+
+export interface SelectionPreviewFrame {
+  readonly points: readonly [PointV1, PointV1, PointV1, PointV1];
+  readonly rotation: number;
 }
 
 export type SelectionSnapGuide =

@@ -14,7 +14,7 @@ import type { PreparedElementHistory } from "../../../../src/obsidian/embeds/act
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import { LassoPreview } from "../../../../src/obsidian/embeds/active-editor/selection-preview";
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
-import { encodeSelection } from "../../../../src/persistence/clipboard/public";
+import { encodeRuntimeSelection } from "../../../../src/persistence/clipboard/codec";
 import { createDragElement } from "../../../../src/editor/tools/public";
 import { elementMutationPorts } from "../../../fixtures/obsidian/element-mutation-ports";
 import { creationPreviewRenderer } from "../../../fixtures/obsidian/active-editor";
@@ -55,7 +55,7 @@ function model(): EditableDocumentModel {
     }),
     encodeClipboard: async (selectedIds) => {
       const elements = store.materializeSnapshot({ page: document.page, revision }).elements;
-      const encoded = encodeSelection(elements, selectedIds);
+      const encoded = encodeRuntimeSelection(elements, selectedIds);
       return encoded.ok ? encoded.value : null;
     },
     planClipboardPaste: async () => null,
@@ -140,9 +140,13 @@ describe("active editor interaction composition", () => {
 });
 
 describe("active editor selection area composition", () => {
-  it.each(["mouse", "pen", "touch"] as const)(
-    "selects through a complete %s area gesture even when finger drawing is disabled",
-    (pointerType) => {
+  it.each([
+    { createsArea: true, pointerType: "mouse" },
+    { createsArea: true, pointerType: "pen" },
+    { createsArea: false, pointerType: "touch" },
+  ] as const)(
+    "routes a complete $pointerType Select drag by pointer ownership",
+    ({ createsArea, pointerType }) => {
       const document = model();
       const target = createDragElement({
         defaults: createBuiltInSettings().toolDefaults,
@@ -216,7 +220,7 @@ describe("active editor selection area composition", () => {
         controller.apply(reduction);
       }
 
-      expect(selection).toEqual(new Set([target.id]));
+      expect(selection).toEqual(createsArea ? new Set([target.id]) : new Set());
       sceneStore.release();
     },
   );

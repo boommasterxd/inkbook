@@ -3,7 +3,7 @@ import type { InkElementV1, PointV1 } from "../../../domain/schema/public";
 import type { GesturePreview } from "../../../editor/gestures/public";
 import { SnapCandidateScratch } from "../../../editor/snapping/snap-candidate";
 import {
-  connectedSelectionTransformPreview,
+  ConnectedSelectionPreviewSession,
   moveSelectionWithSnap,
   resolveSelectionMoveSnap,
   type ConnectedSelectionPreview,
@@ -20,7 +20,7 @@ import type { SelectionPreviewOptions } from "./selection-preview-contracts";
 import { snapMarkerPath } from "./snap-marker-path";
 
 export class MovePreview implements GesturePreview {
-  readonly #connectedTargetIds: readonly string[];
+  readonly #connectedPreview: ConnectedSelectionPreviewSession;
   readonly #elements: readonly InkElementV1[];
   readonly #ids: readonly string[];
   readonly #options: SelectionPreviewOptions;
@@ -28,6 +28,7 @@ export class MovePreview implements GesturePreview {
   readonly #selectedGeometry: readonly SelectedElementGeometry[];
   readonly #selectionFrame: OrientedSelectionFrame | null;
   readonly #snapScratch = new SnapCandidateScratch();
+  readonly #transformIds: readonly string[];
   #current = { x: 0, y: 0 };
   #currentViewport: PointV1 | undefined;
   #finished = false;
@@ -52,13 +53,15 @@ export class MovePreview implements GesturePreview {
     this.#selectedGeometry = selectedGeometry;
     this.#selectionFrame = options.selectionFrames?.current(selectedGeometry) ?? null;
     this.#ids = this.#elements.map(({ id }) => id);
-    this.#connectedTargetIds = this.#ids.filter((id) => {
-      let connected = false;
-      options.store.visitDependents(id, () => {
-        connected = true;
-      });
-      return connected;
-    });
+    this.#connectedPreview = new ConnectedSelectionPreviewSession(
+      options.store,
+      this.#elements,
+      this.#selectedIds,
+    );
+    this.#transformIds =
+      options.renderer.setElementPreviews === undefined
+        ? this.#ids
+        : this.#ids.filter((id) => !this.#connectedPreview.selectedPreviewIds.has(id));
     this.#lastPointer = options.start.pointer;
     this.#currentViewport = (options.pageToViewport ?? options.pageToScreen)(options.start.pointer);
     options.selectionEdgeDrag?.begin(() => this.#refreshAfterViewportChange());
@@ -149,7 +152,7 @@ export class MovePreview implements GesturePreview {
     const transform = this.#translationTransform();
     const connected = this.#renderConnectedElements(transform);
     this.#options.renderer.setPreviewTransform(
-      this.#ids.filter((id) => !connected.selectedPreviewIds.has(id)),
+      this.#transformIds,
       `translate(${String(this.#current.x)} ${String(this.#current.y)})`,
       this.#version,
     );
@@ -190,13 +193,7 @@ export class MovePreview implements GesturePreview {
       return { elements: [], selectedPreviewIds: new Set() };
     }
     try {
-      const connected = connectedSelectionTransformPreview(
-        this.#options.store,
-        this.#elements,
-        this.#selectedIds,
-        transform,
-        this.#connectedTargetIds,
-      );
+      const connected = this.#connectedPreview.update(transform);
       this.#options.renderer.setElementPreviews(connected.elements, this.#version);
       return connected;
     } catch (error: unknown) {

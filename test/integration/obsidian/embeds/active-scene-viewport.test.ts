@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { readActiveSceneViewport } from "../../../../src/obsidian/embeds/active-scene";
+import { readActiveSceneViewport } from "../../../../src/obsidian/embeds/active-scene-viewport";
 import type { BrowserScrollElement } from "../../../../src/obsidian/scrolling";
 
 interface RectOptions {

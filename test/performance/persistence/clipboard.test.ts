@@ -2,9 +2,9 @@ import { expect, it } from "vitest";
 
 import {
   decodeCustomClipboardText,
-  encodeSelection,
-  planPaste,
-} from "../../../src/persistence/clipboard/public";
+  encodeRuntimeSelection,
+} from "../../../src/persistence/clipboard/codec";
+import { planPaste } from "../../../src/persistence/clipboard/operations";
 import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
 import { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/public";
 import { CLIPBOARD_ELEMENTS, CLIPBOARD_POINTS, createClipboardLimitFixture } from "./fixtures";
@@ -23,7 +23,7 @@ const MEASURED_RUNS = 5;
 it("encodes and decodes the maximum deterministic clipboard fixture", async ({ annotate }) => {
   const elements = createClipboardLimitFixture();
   const selectedIds = new Set(elements.map(({ id }) => id));
-  const warmupEncoded = encodeSelection(elements, selectedIds);
+  const warmupEncoded = encodeRuntimeSelection(elements, selectedIds);
   if (!warmupEncoded.ok) throw new Error(warmupEncoded.error.message);
   const canonicalText = warmupEncoded.value.customText;
   const warmupDecoded = decodeCustomClipboardText(canonicalText);
@@ -149,7 +149,7 @@ function runClipboardProfile(
   const encode: number[] = [];
   let byteLength = 0;
   for (let sample = 0; sample < CLIPBOARD_SAMPLES_PER_RUN; sample += 1) {
-    const encoded = measure(() => encodeSelection(elements, selectedIds));
+    const encoded = measure(() => encodeRuntimeSelection(elements, selectedIds));
     if (!encoded.value.ok) throw new Error(encoded.value.error.message);
     expect(encoded.value.value.payload.elements).toHaveLength(CLIPBOARD_ELEMENTS);
     expect(encoded.value.value.customText).toBe(canonicalText);

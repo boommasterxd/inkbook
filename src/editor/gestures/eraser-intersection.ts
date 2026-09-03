@@ -33,18 +33,6 @@ export function createSweptCapsuleCheck(
   return new ResumableSweptCapsuleCheck(pageStart, pageEnd, radius, element);
 }
 
-export function sweptCapsuleTouchesElement(
-  pageStart: PointV1,
-  pageEnd: PointV1,
-  radius: number,
-  element: InkElementV1,
-): boolean {
-  const check = createSweptCapsuleCheck(pageStart, pageEnd, radius, element);
-  let progress = check.advance(Number.MAX_SAFE_INTEGER);
-  while (progress.result === null) progress = check.advance(Number.MAX_SAFE_INTEGER);
-  return progress.result;
-}
-
 class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
   readonly #element: InkElementV1;
   readonly #localEnd: PointV1;

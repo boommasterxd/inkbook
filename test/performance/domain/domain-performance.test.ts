@@ -1,11 +1,9 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { StrokeCaptureBuffer } from "../../../src/domain/elements/public";
 import type { InkElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
 import { SpatialQueryScratch } from "../../../src/domain/spatial/index";
 import { ElementStore } from "../../../src/domain/store/public";
-import { findFrontmostHit } from "../../../src/editor/selection/hit-test";
-import { selectByLasso } from "../../../src/editor/selection/selection-model";
+import { HitTestScratch } from "../../../src/editor/selection/hit-test";
 import { moveSelectionTimeSliced } from "../../../src/editor/selection/transforms";
 import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
 import {
@@ -160,6 +158,7 @@ describe("normalized store and command costs", () => {
 describe("spatial queries, selection, and snapping", () => {
   it("reuses scratch allocations for 500 hit-test queries", () => {
     const scratch = new SpatialQueryScratch<string>();
+    const hitScratch = new HitTestScratch();
     const queryBounds = { maxX: 38, maxY: 38, minX: 22, minY: 22 };
     store.query(queryBounds, scratch);
     const warmAllocations = scratch.allocationCount;
@@ -168,7 +167,7 @@ describe("spatial queries, selection, and snapping", () => {
     for (let operation = 0; operation < 500; operation += 1) {
       const started = performance.now();
       store.query(queryBounds, scratch);
-      findFrontmostHit({ x: 30, y: 30 }, "pen", 1, hitCandidates(store, scratch));
+      findFrontmostHit(hitScratch, { x: 30, y: 30 }, "pen", 1, hitCandidates(store, scratch));
       durations.push(performance.now() - started);
     }
 
@@ -176,20 +175,6 @@ describe("spatial queries, selection, and snapping", () => {
     expect(p95).toBeLessThanOrEqual(timingBudget(8));
     expect(scratch.allocationCount).toBe(warmAllocations);
     expect(scratch.candidateVisitCount).toBeLessThan(10);
-  });
-
-  it("selects the complete indexed fixture once without copying element records", () => {
-    const scratch = new SpatialQueryScratch<string>();
-    const lasso = { maxX: 2048.6, maxY: 210_000, minX: 0, minY: 0 };
-    store.query(lasso, scratch);
-    const stableRecord = store.get(fixture.strokeIds[0] as string)!;
-    const started = performance.now();
-    const selection = selectByLasso(new Set(), lasso, lassoCandidates(store, scratch), false);
-    const duration = performance.now() - started;
-
-    expect(selection.size).toBe(11_000);
-    expect(duration).toBeLessThanOrEqual(timingBudget(12));
-    expect(store.get(fixture.strokeIds[0] as string)).toBe(stableRecord);
   });
 
   it("limits 500 snap lookups to spatially returned targets", () => {
@@ -350,28 +335,6 @@ describe("large selection commit cancellation", () => {
 });
 
 describe("maximum live-stroke primitives", () => {
-  it("grows the 4,096-sample capture buffer geometrically and publishes once", () => {
-    store.resetInstrumentation();
-    const capture = new StrokeCaptureBuffer(16);
-    for (let point = 0; point < 4096; point += 1) {
-      capture.append(point * 0.001, point * 0.001, 0.5);
-    }
-    const started = performance.now();
-    const published = capture.publish();
-    const publishDuration = performance.now() - started;
-
-    expect(published).toHaveLength(4096 * 3);
-    expect(publishDuration).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
-    expect(capture.instrumentation).toEqual({
-      appendedSamples: 4096,
-      bufferGrowths: 8,
-      copiedValues: 12_240,
-      publishedSamples: 4096,
-    });
-  });
-
   it("updates and hands off twenty maximum pressure strokes per measured run", () => {
     measureMaximumStrokeRun(20);
     const measuredRuns = Array.from({ length: 5 }, () => measureMaximumStrokeRun(20));
@@ -407,12 +370,22 @@ function* hitCandidates(storeValue: ElementStore, scratch: SpatialQueryScratch<s
   }
 }
 
-function* lassoCandidates(storeValue: ElementStore, scratch: SpatialQueryScratch<string>) {
-  for (let index = 0; index < scratch.count; index += 1) {
-    const id = scratch.at(index);
-    const record = storeValue.get(id);
-    if (record !== undefined) yield [id, record.bounds] as const;
+function findFrontmostHit(
+  scratch: HitTestScratch,
+  point: Readonly<{ x: number; y: number }>,
+  pointerType: "mouse" | "pen" | "touch",
+  zoom: number,
+  candidates: Iterable<{
+    readonly band: "content" | "highlight";
+    readonly element: InkElementV1;
+    readonly rank: number;
+  }>,
+): string | null {
+  scratch.begin(point, pointerType, zoom);
+  for (const candidate of candidates) {
+    scratch.consider(candidate.element.id, candidate.band, candidate.element, candidate.rank);
   }
+  return scratch.finish();
 }
 
 class StoreSpatialQuery implements SpatialCandidateQuery {

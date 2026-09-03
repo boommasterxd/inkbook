@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ElementStore } from "../../../../src/domain/store/public";
-import { connectedSelectionTransformPreview } from "../../../../src/editor/selection/public";
+import { ConnectedSelectionPreviewSession } from "../../../../src/editor/selection/public";
 import { connectedLine, rectangle } from "../../domain/store/fixtures";
 
 describe("connected selection transform preview", () => {
@@ -10,13 +10,16 @@ describe("connected selection transform preview", () => {
     const line = connectedLine(target);
     const store = new ElementStore([target, line]);
 
-    const preview = connectedSelectionTransformPreview(store, [target], new Set([target.id]), {
+    const session = new ConnectedSelectionPreviewSession(store, [target], new Set([target.id]));
+    store.resetInstrumentation();
+    const preview = session.update({
       delta: { x: 30, y: 40 },
       kind: "translate",
     });
 
     expect(preview.elements).toMatchObject([{ id: line.id, start: { x: 130, y: 140 } }]);
     expect(store.instrumentation.fullStoreScans).toBe(0);
+    expect(store.instrumentation.reverseDependencyVisits).toBe(0);
   });
 
   it("keeps a selected connected endpoint pinned when its target is not selected", () => {
@@ -26,7 +29,8 @@ describe("connected selection transform preview", () => {
     const store = new ElementStore([target, line, companion]);
     const selectedIds = new Set([line.id, companion.id]);
 
-    const preview = connectedSelectionTransformPreview(store, [line, companion], selectedIds, {
+    const session = new ConnectedSelectionPreviewSession(store, [line, companion], selectedIds);
+    const preview = session.update({
       delta: { x: 30, y: 40 },
       kind: "translate",
     });

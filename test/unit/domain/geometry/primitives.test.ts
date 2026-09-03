@@ -9,13 +9,13 @@ import {
   normalizeRotation,
   pointInPolygon,
   pointSegmentDistance,
-  quadraticBounds,
   quadraticPoint,
   rotatePointClockwise,
   roundCanonical,
   segmentDistanceSquared,
   segmentsIntersect,
 } from "../../../../src/domain/geometry/public";
+import { quadraticBounds } from "../../../../src/domain/geometry/primitives";
 
 describe("canonical geometry primitives", () => {
   it("rounds geometry and removes negative zero", () => {
