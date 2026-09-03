@@ -135,7 +135,12 @@ describe("connected selection compound viewport overflow", () => {
     });
     const store = new ElementStore([target, arrow]);
     const session = new SelectionHandleSession({
-      action: { anchor: { x: 1_800, y: 100 }, kind: "scale", position: "bottom-right" },
+      action: {
+        anchor: { x: 1_800, y: 100 },
+        kind: "scale",
+        position: "bottom-right",
+        rotation: 0,
+      },
       elements: [element(store, target.id)],
       planner: store,
       startPointer: { x: 2_000, y: 200 },
@@ -145,7 +150,7 @@ describe("connected selection compound viewport overflow", () => {
 
     expect(preview.exactElements).toHaveLength(2);
     const scaledTarget = preview.exactElements.find(({ id }) => id === target.id);
-    expect(scaledTarget).toMatchObject({ width: 245, x: target.x });
+    expect(scaledTarget).toMatchObject({ width: 245, x: target.x + 2 });
     if (scaledTarget?.kind !== "rectangle") throw new Error("Expected a rectangle target.");
   });
 

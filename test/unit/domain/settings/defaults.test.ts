@@ -31,7 +31,7 @@ describe("settings defaults", () => {
       connections: true,
       structures: true,
     });
-    expect(settings.toolDefaults.select).toEqual({ area: "rectangle", inclusion: "touched" });
+    expect(settings.toolDefaults.select).toEqual({ area: "lasso", inclusion: "touched" });
     expect(settings.toolDefaults.pen).toEqual({
       color: { type: "theme-text" },
       width: 4,
@@ -56,7 +56,7 @@ describe("settings defaults", () => {
     for (const tool of CLOSED_SHAPE_TOOLS) {
       expect(shapes[tool]).toMatchObject({
         fillColor: null,
-        fillOpacity: 0.15,
+        fillOpacity: 0.5,
         outlineColor: { type: "theme-text" },
         outlineOpacity: 1,
         outlineStyle: "solid",

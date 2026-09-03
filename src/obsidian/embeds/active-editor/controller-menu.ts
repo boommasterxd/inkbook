@@ -239,7 +239,7 @@ export class ActiveEditorMenuController {
     session = openActiveEditorMenu({
       arrangeAvailability: actions.arrangeAvailability(),
       canEraseAll: this.#options.storeSize() > 0,
-      canPaste: actions.canPaste,
+      canPaste: actions.canRequestPaste,
       ...(event === undefined ? {} : { event }),
       factory: this.#options.factory,
       hasSelection: this.#options.selectionSize() > 0,

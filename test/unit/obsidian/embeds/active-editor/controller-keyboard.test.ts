@@ -24,6 +24,8 @@ function keyboardHarness(
   options: {
     readonly activeElement?: Element | null;
     readonly canPaste?: boolean;
+    readonly canClaimPasteShortcut?: boolean;
+    readonly canRequestPaste?: boolean;
     readonly hasValidatedPaste?: boolean;
     readonly lastScreenPointer?: InputPoint | null;
     readonly navigationEnabled?: boolean;
@@ -43,6 +45,9 @@ function keyboardHarness(
   const pasteFromClipboardData = vi.fn(() => true);
   const actions = {
     canPaste: options.canPaste ?? false,
+    canClaimPasteShortcut:
+      options.canClaimPasteShortcut ?? options.canRequestPaste ?? options.canPaste ?? false,
+    canRequestPaste: options.canRequestPaste ?? options.canPaste ?? false,
     hasValidatedPaste: options.hasValidatedPaste ?? options.canPaste ?? false,
     execute,
     isAvailable,
@@ -165,12 +170,12 @@ describe("active editor keyboard controller", () => {
 });
 
 describe("active editor clipboard keyboard controller", () => {
-  it("does not claim native Paste for an unvalidated capability-only payload", () => {
-    const harness = keyboardHarness({ canPaste: true, hasValidatedPaste: false });
+  it("claims Paste through a readable system Clipboard before payload validation", () => {
+    const harness = keyboardHarness({ canRequestPaste: true, hasValidatedPaste: false });
     harness.isAvailable.mockReturnValue(true);
 
-    expect(harness.controller.handleKeyDown(key("v", { ctrlKey: true }))).toBe(false);
-    expect(harness.shortcutPaste).not.toHaveBeenCalled();
+    expect(harness.controller.handleKeyDown(key("v", { ctrlKey: true }))).toBe(true);
+    expect(harness.shortcutPaste).toHaveBeenCalledOnce();
   });
 
   it("claims available Cut and Paste shortcuts for Control and Command input", () => {
@@ -188,18 +193,25 @@ describe("active editor clipboard keyboard controller", () => {
     );
   });
 
-  it("requires the pointer boundary for Clipboard and keyboard zoom shortcuts", () => {
+  it("keeps direct canvas Clipboard shortcuts owned after Android touch hover ends", () => {
     const harness = keyboardHarness({ canPaste: true, pointerOver: false, selectionSize: 1 });
     harness.isAvailable.mockReturnValue(true);
     harness.updateKeyboardStep.mockReturnValue(true);
 
-    expect(harness.controller.handleKeyDown(key("c", { ctrlKey: true }))).toBe(false);
-    expect(harness.controller.handleKeyDown(key("v", { metaKey: true }))).toBe(false);
+    expect(harness.controller.handleKeyDown(key("c", { ctrlKey: true }))).toBe(true);
+    expect(harness.controller.handleKeyDown(key("v", { metaKey: true }))).toBe(true);
     expect(harness.controller.handleKeyDown(key("+", { ctrlKey: true }))).toBe(false);
     expect(harness.controller.handleDocumentKeyDown(key("Delete"))).toBe(false);
-    expect(harness.execute).not.toHaveBeenCalled();
-    expect(harness.shortcutPaste).not.toHaveBeenCalled();
+    expect(harness.execute).toHaveBeenCalledWith("copy");
+    expect(harness.shortcutPaste).toHaveBeenCalledOnce();
     expect(harness.updateKeyboardStep).not.toHaveBeenCalled();
+  });
+
+  it("claims a repeated Paste shortcut while the first Clipboard operation is pending", () => {
+    const harness = keyboardHarness({ canClaimPasteShortcut: true, canRequestPaste: false });
+
+    expect(harness.controller.handleKeyDown(key("v", { ctrlKey: true }))).toBe(true);
+    expect(harness.shortcutPaste).toHaveBeenCalledOnce();
   });
 
   it("claims but does not apply keyboard zoom during a stable geometry gesture", () => {
@@ -270,9 +282,10 @@ describe("active editor native paste and history keyboard handling", () => {
     const data = { getData: vi.fn(), types: [] };
 
     expect(outside.controller.handlePaste(data)).toBe(false);
+    expect(outside.controller.handlePaste(data, true)).toBe(true);
     expect(editing.controller.handlePaste(data)).toBe(false);
     expect(available.controller.handlePaste(data)).toBe(true);
-    expect(outside.pasteFromClipboardData).not.toHaveBeenCalled();
+    expect(outside.pasteFromClipboardData).toHaveBeenCalledOnce();
     expect(editing.pasteFromClipboardData).not.toHaveBeenCalled();
     expect(available.pasteFromClipboardData).toHaveBeenCalledWith(data);
   });

@@ -1,14 +1,24 @@
 import { describe, expect, it } from "vitest";
 
-import { canonicalPoint, rotatePointClockwise } from "../../../../src/domain/geometry/public";
+import {
+  calculateElementBounds,
+  canonicalPoint,
+  rotatePointClockwise,
+} from "../../../../src/domain/geometry/public";
 import type {
+  BoxAnchorV1,
   BoxShapeElementV1,
   StrokeElementV1,
   TableElementV1,
 } from "../../../../src/domain/schema/public";
 import { validateInkElementV1 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
-import { SelectionHandleSession } from "../../../../src/editor/selection/public";
+import {
+  createSelectionFrameAtRotation,
+  oppositeBoxAnchor,
+  selectionFramePoint,
+  SelectionHandleSession,
+} from "../../../../src/editor/selection/public";
 
 function table(): TableElementV1 {
   return {
@@ -30,6 +40,42 @@ function table(): TableElementV1 {
     x: 100,
     y: 100,
   };
+}
+
+function secondTable(): TableElementV1 {
+  return {
+    ...table(),
+    createdAt: 3,
+    id: "00000000-0000-4000-8000-000000000004",
+    pivot: { x: 500, y: 150 },
+    x: 400,
+  };
+}
+
+interface TableGroupScaleOptions {
+  readonly firstRotation?: number;
+  readonly frameRotation?: number;
+  readonly secondRotation?: number;
+  readonly uniformScale?: boolean;
+}
+
+function tableGroupScaleFixture(options: TableGroupScaleOptions = {}) {
+  const first = { ...table(), rotation: options.firstRotation ?? 0 };
+  const second = { ...secondTable(), rotation: options.secondRotation ?? 0 };
+  const elements = [first, second];
+  const frameRotation = options.frameRotation ?? 0;
+  const frame = createSelectionFrameAtRotation(elements, frameRotation);
+  if (frame === null) throw new Error("Expected a group selection frame.");
+  const anchor = selectionFramePoint(frame, "middle-left");
+  const startPointer = selectionFramePoint(frame, "middle-right");
+  const session = new SelectionHandleSession({
+    action: { anchor, kind: "scale", position: "middle-right", rotation: frameRotation },
+    elements,
+    planner: new ElementStore(elements),
+    startPointer,
+    ...(options.uniformScale === undefined ? {} : { uniformScale: options.uniformScale }),
+  });
+  return { first, frame, second, session, startPointer };
 }
 
 function fractionalBoxShape(): BoxShapeElementV1 {
@@ -61,16 +107,66 @@ function fractionalBoxShape(): BoxShapeElementV1 {
 function scaleTransform(
   anchor: { readonly x: number; readonly y: number },
   factors: { readonly x: number; readonly y: number },
+  delta: { readonly x: number; readonly y: number } = { x: 0, y: 0 },
 ) {
-  return { anchor, factors, kind: "scale" as const, rotation: 0 };
+  return { anchor, delta, factors, kind: "scale" as const, rotation: 0 };
 }
 
 describe("single-element generic handle scaling", () => {
+  it.each<BoxAnchorV1>([
+    "top-left",
+    "top-center",
+    "top-right",
+    "middle-right",
+    "bottom-right",
+    "bottom-center",
+    "bottom-left",
+    "middle-left",
+  ])("keeps the opposite %s anchor fixed in preview and commit", (position) => {
+    const source = table();
+    const frame = createSelectionFrameAtRotation([source], source.rotation);
+    if (frame === null) throw new Error("Expected a table selection frame.");
+    const anchor = selectionFramePoint(frame, oppositeBoxAnchor(position));
+    const startPointer = selectionFramePoint(frame, position);
+    const factors = {
+      x: position.includes("left") || position.includes("right") ? 1.4 : 1,
+      y: position.startsWith("top") || position.startsWith("bottom") ? 1.3 : 1,
+    };
+    const pointer = {
+      x: anchor.x + (startPointer.x - anchor.x) * factors.x,
+      y: anchor.y + (startPointer.y - anchor.y) * factors.y,
+    };
+    const session = new SelectionHandleSession({
+      action: { anchor, kind: "scale", position, rotation: source.rotation },
+      elements: [source],
+      planner: new ElementStore([source]),
+      startPointer,
+    });
+
+    const preview = session.update(pointer);
+    const previewFrame = createSelectionFrameAtRotation(preview.exactElements, source.rotation);
+    if (previewFrame === null) throw new Error("Expected an exact preview frame.");
+    expectFixedOppositeSide(frame, previewFrame, position);
+
+    const commit = session.prepareCommit();
+    if (commit.status !== "ready") throw new Error("Expected a table scale commit.");
+    const committedFrame = createSelectionFrameAtRotation(commit.replacements, source.rotation);
+    if (committedFrame === null) throw new Error("Expected a committed selection frame.");
+    expectFixedOppositeSide(frame, committedFrame, position);
+  });
+});
+
+describe("single-element generic scale behavior", () => {
   it("keeps a single selection proportional while Shift is held", () => {
     const source = table();
     const store = new ElementStore([source]);
     const session = new SelectionHandleSession({
-      action: { anchor: { x: 100, y: 150 }, kind: "scale", position: "middle-right" },
+      action: {
+        anchor: { x: 100, y: 150 },
+        kind: "scale",
+        position: "middle-right",
+        rotation: 0,
+      },
       elements: [source],
       planner: store,
       startPointer: { x: 300, y: 150 },
@@ -78,7 +174,9 @@ describe("single-element generic handle scaling", () => {
     });
 
     const preview = session.update({ x: 500, y: 150 });
-    expect(preview.transform).toEqual(scaleTransform({ x: 100, y: 150 }, { x: 2, y: 2 }));
+    expect(preview.transform).toEqual(
+      scaleTransform({ x: 100, y: 150 }, { x: 2, y: 2 }, { x: 2, y: 0 }),
+    );
 
     const commit = session.prepareCommit();
     if (commit.status !== "ready") throw new Error("Expected a scale commit.");
@@ -86,8 +184,8 @@ describe("single-element generic handle scaling", () => {
       columnWidth: 200,
       height: 200,
       headerHeight: 48,
-      pivot: { x: 300, y: 150 },
-      x: 100,
+      pivot: { x: 302, y: 150 },
+      x: 102,
       y: 50,
     });
   });
@@ -96,14 +194,21 @@ describe("single-element generic handle scaling", () => {
     const source = table();
     const store = new ElementStore([source]);
     const session = new SelectionHandleSession({
-      action: { anchor: { x: 98, y: 150 }, kind: "scale", position: "middle-right" },
+      action: {
+        anchor: { x: 98, y: 150 },
+        kind: "scale",
+        position: "middle-right",
+        rotation: 0,
+      },
       elements: [source],
       planner: store,
       startPointer: { x: 302, y: 150 },
     });
 
     const preview = session.update({ x: 404, y: 230 });
-    expect(preview.transform).toEqual(scaleTransform({ x: 98, y: 150 }, { x: 1.5, y: 1 }));
+    expect(preview.transform).toEqual(
+      scaleTransform({ x: 98, y: 150 }, { x: 1.5, y: 1 }, { x: -1, y: 0 }),
+    );
 
     const commit = session.prepareCommit();
     if (commit.status !== "ready") throw new Error("Expected a scale commit.");
@@ -111,12 +216,14 @@ describe("single-element generic handle scaling", () => {
       columnWidth: 150,
       headerHeight: 24,
       height: 100,
-      pivot: { x: 251, y: 150 },
-      x: 101,
+      pivot: { x: 250, y: 150 },
+      x: 100,
       y: 100,
     });
   });
+});
 
+describe("single-element table scale boundaries", () => {
   it("clamps vertical shrinking at the outer table minimum without constraining its header", () => {
     const source: TableElementV1 = {
       ...table(),
@@ -126,24 +233,87 @@ describe("single-element generic handle scaling", () => {
     };
     const store = new ElementStore([source]);
     const session = new SelectionHandleSession({
-      action: { anchor: { x: 200, y: 100 }, kind: "scale", position: "bottom-center" },
+      action: {
+        anchor: { x: 200, y: 100 },
+        kind: "scale",
+        position: "bottom-center",
+        rotation: 0,
+      },
       elements: [source],
       planner: store,
       startPointer: { x: 200, y: 300 },
     });
 
     const preview = session.update({ x: 200, y: 200 });
-    expect(preview.transform).toEqual(scaleTransform({ x: 200, y: 100 }, { x: 1, y: 0.5 }));
+    expect(preview.transform).toEqual(
+      scaleTransform({ x: 200, y: 100 }, { x: 1, y: 0.5 }, { x: 0, y: 2 }),
+    );
 
     const commit = session.prepareCommit();
     if (commit.status !== "ready") throw new Error("Expected a scale commit.");
     expect(commit.replacements[0]).toMatchObject({
       headerHeight: 15,
       height: 100,
-      pivot: { x: 200, y: 150 },
-      y: 100,
+      pivot: { x: 200, y: 152 },
+      y: 102,
     });
     expect(validateInkElementV1(commit.replacements[0]).ok).toBe(true);
+  });
+});
+
+describe("multi-element handle scaling", () => {
+  it("uses a retained rotated group frame for side-handle scaling", () => {
+    const { frame, session, startPointer } = tableGroupScaleFixture({
+      firstRotation: 37,
+      frameRotation: 37,
+      secondRotation: 37,
+    });
+    const frameAxis = {
+      x: frame.points[1].x - frame.points[0].x,
+      y: frame.points[1].y - frame.points[0].y,
+    };
+    const axisLength = Math.hypot(frameAxis.x, frameAxis.y);
+    const pointer = {
+      x: startPointer.x + (frameAxis.x * 120) / axisLength,
+      y: startPointer.y + (frameAxis.y * 120) / axisLength,
+    };
+
+    session.update(pointer);
+    const { frame: committedFrame } = committedScaleFrame(session, 37);
+    for (const index of [0, 3]) {
+      expect(committedFrame.points[index]?.x).toBeCloseTo(frame.points[index]!.x, 2);
+      expect(committedFrame.points[index]?.y).toBeCloseTo(frame.points[index]!.y, 2);
+    }
+  });
+
+  it.each([0, 90])(
+    "scales elements rotated by %s degrees along only the dragged selection-frame axis",
+    (secondRotation) => {
+      const { first, frame, second, session, startPointer } = tableGroupScaleFixture({
+        secondRotation,
+      });
+      const preview = session.update({ x: startPointer.x + 150, y: startPointer.y + 90 });
+      expect(preview.transform).toMatchObject({ factors: { y: 1 } });
+      const { commit, frame: committedFrame } = committedScaleFrame(session, 0);
+
+      expectFixedOppositeSide(frame, committedFrame, "middle-right");
+      expect(commit.replacements[0]).toMatchObject({ height: first.height });
+      expect(calculateElementBounds(commit.replacements[1]!).maxX).toBeGreaterThan(
+        calculateElementBounds(second).maxX,
+      );
+    },
+  );
+
+  it("preserves the group aspect ratio only while Shift is held", () => {
+    const { first, session, startPointer } = tableGroupScaleFixture({ uniformScale: true });
+
+    const preview = session.update({ x: startPointer.x + 150, y: startPointer.y + 90 });
+    if (preview.transform?.kind !== "scale") throw new Error("Expected a scale preview.");
+    expect(preview.transform.factors.x).toBe(preview.transform.factors.y);
+    const commit = session.prepareCommit();
+    if (commit.status !== "ready") throw new Error("Expected a uniform group scale commit.");
+    if (commit.replacements[0]?.kind !== "table") throw new Error("Expected a table.");
+    expect(commit.replacements[0].height).toBeGreaterThan(first.height);
   });
 });
 
@@ -166,7 +336,12 @@ describe("single-element rotated handle scaling", () => {
       tool: "pen",
     };
     const session = new SelectionHandleSession({
-      action: { anchor: { x: 50, y: -50 }, kind: "scale", position: "middle-right" },
+      action: {
+        anchor: { x: 50, y: -50 },
+        kind: "scale",
+        position: "middle-right",
+        rotation: 90,
+      },
       elements: [source],
       planner: new ElementStore([source]),
       startPointer: { x: 50, y: 50 },
@@ -175,6 +350,7 @@ describe("single-element rotated handle scaling", () => {
     const preview = session.update({ x: 50, y: 150 });
     expect(preview.transform).toEqual({
       anchor: { x: 50, y: -50 },
+      delta: { x: 0, y: 2 },
       factors: { x: 2, y: 1 },
       kind: "scale",
       rotation: 90,
@@ -183,8 +359,8 @@ describe("single-element rotated handle scaling", () => {
     const commit = session.prepareCommit();
     if (commit.status !== "ready") throw new Error("Expected a rotated stroke scale commit.");
     expect(commit.replacements[0]).toMatchObject({
-      pivot: { x: 50, y: 50 },
-      points: [-50, 50, 0.5, 150, 50, 0.5],
+      pivot: { x: 50, y: 52 },
+      points: [-50, 52, 0.5, 150, 52, 0.5],
       rotation: 90,
     });
   });
@@ -205,7 +381,7 @@ describe("fractional box handle scaling", () => {
       ),
     );
     const session = new SelectionHandleSession({
-      action: { anchor, kind: "scale", position: "middle-right" },
+      action: { anchor, kind: "scale", position: "middle-right", rotation: source.rotation },
       elements: [source],
       planner: new ElementStore([source]),
       startPointer: start,
@@ -218,8 +394,8 @@ describe("fractional box handle scaling", () => {
       ),
     ).toBe(true);
     expect(previews.map(({ exactElements }) => exactElements[0]?.pivot)).toEqual([
-      { x: 150.503, y: 115.191 },
-      { x: 150.503, y: 115.291 },
+      { x: 150.502, y: 117.191 },
+      { x: 150.503, y: 117.293 },
     ]);
 
     const commit = session.prepareCommit();
@@ -235,3 +411,32 @@ describe("fractional box handle scaling", () => {
     expect(validateInkElementV1(replacement).ok).toBe(true);
   });
 });
+
+function expectFixedOppositeSide(
+  before: NonNullable<ReturnType<typeof createSelectionFrameAtRotation>>,
+  after: NonNullable<ReturnType<typeof createSelectionFrameAtRotation>>,
+  position: BoxAnchorV1,
+): void {
+  const fixedPointIndexes: Partial<Record<BoxAnchorV1, readonly number[]>> = {
+    "bottom-center": [0, 1],
+    "middle-left": [1, 2],
+    "middle-right": [0, 3],
+    "top-center": [2, 3],
+  };
+  const indexes = fixedPointIndexes[position];
+  if (indexes === undefined) {
+    expect(selectionFramePoint(after, oppositeBoxAnchor(position))).toEqual(
+      selectionFramePoint(before, oppositeBoxAnchor(position)),
+    );
+    return;
+  }
+  for (const index of indexes) expect(after.points[index]).toEqual(before.points[index]);
+}
+
+function committedScaleFrame(session: SelectionHandleSession, rotation: number) {
+  const commit = session.prepareCommit();
+  if (commit.status !== "ready") throw new Error("Expected a group scale commit.");
+  const frame = createSelectionFrameAtRotation(commit.replacements, rotation);
+  if (frame === null) throw new Error("Expected a committed group frame.");
+  return { commit, frame };
+}

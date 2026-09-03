@@ -63,7 +63,7 @@ describe("vault settings V3 migration", () => {
       version: 4,
       toolDefaults: {
         ...legacyToolDefaults,
-        select: { area: "rectangle", inclusion: "touched" },
+        select: { area: "lasso", inclusion: "touched" },
       },
     });
   });
@@ -297,7 +297,7 @@ describe("vault settings current-version validation", () => {
 
     const result = loadSettings(input);
 
-    expect(result.value.toolDefaults.select).toEqual({ area: "rectangle", inclusion: "touched" });
+    expect(result.value.toolDefaults.select).toEqual({ area: "lasso", inclusion: "touched" });
     expect(result.diagnostics).toContainEqual({
       code: "settings.invalid-field",
       path: "toolDefaults.select",

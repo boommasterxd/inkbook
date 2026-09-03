@@ -37,11 +37,13 @@ describe("active editor clipboard input boundaries", () => {
     harness.controller.dispose();
   });
 
-  it("preflights aggregate bytes across items before materializing any candidate", async () => {
-    const materializers = Array.from({ length: 3 }, () => vi.fn(async () => "unreachable"));
-    const items = materializers.map((text) =>
-      candidateItem(INKBOOK_CLIPBOARD_WEB_MIME, { size: 6 * 1024 * 1024, text }),
-    );
+  it("inspects only the first Clipboard item", async () => {
+    const ordinaryText = vi.fn(async () => "ordinary text");
+    const laterInkbookText = vi.fn(async () => '{"format":"inkbook-elements"}');
+    const items = [
+      candidateItem("text/plain", { size: 13, text: ordinaryText }),
+      candidateItem(INKBOOK_CLIPBOARD_WEB_MIME, { size: 29, text: laterInkbookText }),
+    ];
     const harness = createHarness(
       new ElementStore([rectangle()]),
       items,
@@ -49,11 +51,15 @@ describe("active editor clipboard input boundaries", () => {
     );
 
     await expect(harness.controller.paste(toolbarPaste())).resolves.toMatchObject({
-      kind: "unavailable",
+      kind: "committed",
     });
-    for (const materialize of materializers) expect(materialize).not.toHaveBeenCalled();
-    expect(harness.plan).not.toHaveBeenCalled();
-    expect(harness.prepare).not.toHaveBeenCalled();
+    expect(ordinaryText).toHaveBeenCalledOnce();
+    expect(laterInkbookText).not.toHaveBeenCalled();
+    expect(harness.plan).toHaveBeenCalledWith(
+      { plainText: "ordinary text" },
+      toolbarPaste(),
+      undefined,
+    );
     harness.controller.dispose();
   });
 
@@ -126,7 +132,7 @@ describe("active editor clipboard collection limits", () => {
 });
 
 describe("active editor native paste boundary", () => {
-  it("preserves native paste for unsupported clipboard data", () => {
+  it("claims unsupported Clipboard data and reports the shared invalid-payload result", () => {
     const harness = createHarness(new ElementStore([rectangle()]), [], vi.fn());
 
     expect(
@@ -134,9 +140,14 @@ describe("active editor native paste boundary", () => {
         { getData: () => "ordinary text", types: ["text/plain"] },
         shortcutPaste(),
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(harness.controller.canPaste).toBe(false);
     expect(harness.plan).not.toHaveBeenCalled();
+    expect(harness.onResult).toHaveBeenCalledWith({
+      action: "paste",
+      kind: "unavailable",
+      reason: "invalid-payload",
+    });
   });
 
   it("passes the last valid pointer placement with supported synchronous data", async () => {
@@ -168,22 +179,24 @@ function createHarness(
   }));
   const commit = vi.fn(() => appliedMutation());
   const model = createModel(store, plan, prepare, commit);
+  const onResult = vi.fn();
   return {
     commit,
-    controller: createController(model, clipboardWindow(items, readText, read)),
+    controller: createController(model, clipboardWindow(items, readText, read), onResult),
+    onResult,
     plan,
     prepare,
   };
 }
 
-function createController(model: EditableDocumentModel, ownerWindow: Window) {
+function createController(model: EditableDocumentModel, ownerWindow: Window, onResult = vi.fn()) {
   return new ActiveEditorClipboardController({
     currentSelection: () => new Set(),
     history: new ActiveEditorHistory(model),
     isPresentationAttached: () => true,
     model,
     onPendingChanged: vi.fn(),
-    onResult: vi.fn(),
+    onResult,
     onSelectionChanged: vi.fn(),
     ownerWindow,
   });

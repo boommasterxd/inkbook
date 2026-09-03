@@ -47,7 +47,7 @@ function outlineDefaults(): OutlineDefaultsV1 {
 }
 
 function shapeDefaults(): ShapeDefaultsV1 {
-  return { ...outlineDefaults(), fillColor: null, fillOpacity: 0.15 };
+  return { ...outlineDefaults(), fillColor: null, fillOpacity: 0.5 };
 }
 
 function toolDefaults(): ToolDefaultsV1 {
@@ -57,7 +57,7 @@ function toolDefaults(): ToolDefaultsV1 {
   ]) as ToolDefaultsV1["shapes"];
 
   return {
-    select: { area: "rectangle", inclusion: "touched" },
+    select: { area: "lasso", inclusion: "touched" },
     pen: {
       color: { type: "theme-text" },
       width: PEN_WIDTHS[1],

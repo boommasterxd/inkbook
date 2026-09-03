@@ -280,9 +280,9 @@ describe("active editor Select style session", () => {
       store,
     });
 
-    expect(session.presentation("select").selectionArea).toBe("rectangle");
-    session.apply("select", "selection-area", "lasso");
     expect(session.presentation("select").selectionArea).toBe("lasso");
+    session.apply("select", "selection-area", "rectangle");
+    expect(session.presentation("select").selectionArea).toBe("rectangle");
     expect(stateChanged).toHaveBeenCalledOnce();
   });
 
@@ -309,9 +309,9 @@ describe("active editor Select style session", () => {
       "fill-color",
       "fill-opacity",
     ]);
-    session.apply("select", "selection-area", "lasso");
+    session.apply("select", "selection-area", "rectangle");
 
-    expect(session.defaults.select.area).toBe("rectangle");
+    expect(session.defaults.select.area).toBe("lasso");
     expect(store.get(element.id)?.element).toEqual(element);
     expect(history.commandCount).toBe(0);
     expect(stateChanged).not.toHaveBeenCalled();
@@ -404,8 +404,14 @@ describe("active editor host normalization", () => {
         fingerDrawingEnabled: false,
         hasSelection: true,
         openFlyout: "style",
+        pasteVisible: true,
       }),
-    ).toMatchObject({ activeTool: "shape", canPaste: true, openFlyout: "style" });
+    ).toMatchObject({
+      activeTool: "shape",
+      canPaste: true,
+      openFlyout: "style",
+      pasteVisible: true,
+    });
   });
 
   it("uses user-agent data and composed event paths without assuming DOM nodes", () => {

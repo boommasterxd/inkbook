@@ -304,6 +304,10 @@
   touch-action: pan-y;
 }
 
+.inkbook-root .inkbook-canvas-input[data-inkbook-pen-input] {
+  touch-action: none !important;
+}
+
 .inkbook-root.inkbook-active-preparing .inkbook-editor-chrome-host,
 .inkbook-root.inkbook-active-preparing .inkbook-canvas-input,
 .inkbook-root.inkbook-active-preparing .inkbook-scene-foreground {

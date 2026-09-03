@@ -90,6 +90,7 @@ describe("active editor context Paste menu", () => {
         "send-to-back": false,
       }),
       canPaste: false,
+      canRequestPaste: true,
       execute: vi.fn(),
       refreshPasteAvailability,
     } as unknown as ActiveEditorActions;
@@ -114,6 +115,7 @@ describe("active editor context Paste menu", () => {
         "send-to-back": false,
       }),
       canPaste: true,
+      canRequestPaste: true,
       execute,
       refreshPasteAvailability: vi.fn(async () => true),
     } as unknown as ActiveEditorActions;

@@ -19,7 +19,7 @@ import { rotateLinearElement } from "./linear-transforms";
 import { isLinearElement } from "./linear-elements";
 import { rotatedScaleTranslation } from "./scale-frame";
 
-interface ScaleFactors {
+export interface ScaleFactors {
   readonly x: number;
   readonly y: number;
 }
@@ -76,7 +76,7 @@ export function scaleSelectionUniform(
   );
 }
 
-export function scaleSelectionUniformAtLeast(
+function scaleSelectionUniformAtLeast(
   elements: readonly InkElementV1[],
   anchor: PointV1,
   factor: number,
@@ -168,17 +168,6 @@ export function uniformScaleFactorsFromPointers(
     minimumUniformScale(element),
   );
   return { anchor: localAnchor, factors: { x: factor, y: factor } };
-}
-
-export function scaleSelectionFromPointers(
-  elements: readonly InkElementV1[],
-  anchor: PointV1,
-  startPointer: PointV1,
-  currentPointer: PointV1,
-  minimum = minimumUniformScaleForSelection(elements),
-): InkElementV1[] {
-  const factor = uniformScaleFactorFromPointers(anchor, startPointer, currentPointer, minimum);
-  return scaleSelectionUniformAtLeast(elements, anchor, factor, minimum);
 }
 
 export function uniformScaleFactorFromPointers(
@@ -363,7 +352,7 @@ function assertSupportedCoordinate(value: number): void {
   }
 }
 
-function scaleElement(
+export function scaleElement(
   element: InkElementV1,
   anchor: PointV1,
   factors: ScaleFactors,
@@ -458,7 +447,7 @@ function minimumUniformScale(element: InkElementV1): number {
   return Math.max(1 / element.width, 1 / element.height);
 }
 
-function clampScaleFactors(element: InkElementV1, factors: ScaleFactors): ScaleFactors {
+export function clampScaleFactors(element: InkElementV1, factors: ScaleFactors): ScaleFactors {
   if (element.kind === "table") {
     return {
       x: Math.max(factors.x, 40 / element.columnWidth),
@@ -484,7 +473,7 @@ function shouldTransformEndpoint(element: LinearElementV1, endpoint: "start" | "
   return endpoint === "start" ? element.startConnection === null : element.endConnection === null;
 }
 
-function scaleRatio(anchor: number, start: number, current: number): number {
+export function scaleRatio(anchor: number, start: number, current: number): number {
   const denominator = start - anchor;
   const tolerance = Number.EPSILON * Math.max(1, Math.abs(anchor), Math.abs(start)) * 16;
   return Math.abs(denominator) <= tolerance ? 1 : (current - anchor) / denominator;

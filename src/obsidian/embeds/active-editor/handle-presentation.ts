@@ -2,6 +2,7 @@ import { calculateElementBounds, pointSegmentDistance } from "../../../domain/ge
 import type { InkElementV1, PointV1 } from "../../../domain/schema/public";
 import type { PointerSample } from "../../../editor/input/index";
 import {
+  createSelectionFrameAtRotation,
   selectionOverlayContainsPoint,
   selectionOverlayGeometry,
   type OrientedSelectionFrame,
@@ -105,13 +106,24 @@ export class SelectionHandlePresentation {
     context: HandlePreviewContext,
     preview: SelectionHandlePreview,
     connected: ConnectedHandlePreview,
-    pressureElements: readonly InkElementV1[],
+    scaleElements: readonly InkElementV1[],
   ): void {
     const exact = preview.exactElements
       .filter(({ id }) => context.selectedIds.has(id))
       .map((element) => ({ bounds: calculateElementBounds(element), element }));
     const exactOverlay =
-      preview.transform === null || connected.selectedPreviewIds.size > 0 ? exact : [];
+      preview.transform === null ||
+      preview.transform?.kind === "scale" ||
+      connected.selectedPreviewIds.size > 0
+        ? exact
+        : [];
+    const exactFrame =
+      exactOverlay.length > 1
+        ? createSelectionFrameAtRotation(
+            exactOverlay.map(({ element }) => element),
+            context.frame?.rotation ?? 0,
+          )
+        : null;
     const basePreviewElements = preview.exactPreviewTruncated
       ? connected.elements
       : preview.transform === null
@@ -120,12 +132,15 @@ export class SelectionHandlePresentation {
             ({ id }) => !context.selectedIds.has(id) || connected.selectedPreviewIds.has(id),
           );
     this.#version += 1;
-    this.#renderer.setElementPreviews([...basePreviewElements, ...pressureElements], this.#version);
+    this.#renderer.setElementPreviews(
+      uniquePreviewElements(basePreviewElements, scaleElements),
+      this.#version,
+    );
     this.renderGeometry(
       exactOverlay.length === 0 ? context.selected : exactOverlay,
       preview.snapGuide,
       exactOverlay.length === 0 ? preview.transform : null,
-      exactOverlay.length === 0 ? context.frame : null,
+      exactOverlay.length === 0 ? context.frame : exactFrame,
     );
   }
 
@@ -141,6 +156,15 @@ export class SelectionHandlePresentation {
       transform?.kind === "scale" ? "preserve" : "scale",
     );
   }
+}
+
+function uniquePreviewElements(
+  base: readonly InkElementV1[],
+  scale: readonly InkElementV1[],
+): InkElementV1[] {
+  if (scale.length === 0) return [...base];
+  const scaleIds = new Set(scale.map(({ id }) => id));
+  return [...base.filter(({ id }) => !scaleIds.has(id)), ...scale];
 }
 
 export function pointerHandleRadiusPixels(
@@ -190,5 +214,5 @@ function transformString(transform: SelectionPreviewTransform | null): string | 
   if (transform.kind === "rotate") {
     return `rotate(${String(transform.degrees)} ${String(transform.center.x)} ${String(transform.center.y)})`;
   }
-  return `translate(${String(transform.anchor.x)} ${String(transform.anchor.y)}) rotate(${String(transform.rotation)}) scale(${String(transform.factors.x)} ${String(transform.factors.y)}) rotate(${String(-transform.rotation)}) translate(${String(-transform.anchor.x)} ${String(-transform.anchor.y)})`;
+  return `translate(${String(transform.delta.x)} ${String(transform.delta.y)}) translate(${String(transform.anchor.x)} ${String(transform.anchor.y)}) rotate(${String(transform.rotation)}) scale(${String(transform.factors.x)} ${String(transform.factors.y)}) rotate(${String(-transform.rotation)}) translate(${String(-transform.anchor.x)} ${String(-transform.anchor.y)})`;
 }

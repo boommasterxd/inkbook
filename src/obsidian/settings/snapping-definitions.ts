@@ -104,19 +104,10 @@ function renderDependentToggle(
       .setValue(callbacks.get(key) === true)
       .onChange((value) => void callbacks.set(key, value)),
   );
-  wrapDependentContent(row);
   const motion = new SettingsPanelMotion(row, callbacks.readMotion);
   dependentMotions.add(motion);
   return () => {
     dependentMotions.delete(motion);
     motion.dispose();
   };
-}
-
-function wrapDependentContent(row: HTMLElement): void {
-  const children = [...row.childNodes];
-  const content = row.createDiv({
-    cls: "setting-item mod-toggle inkbook-snapping-dependent-content",
-  });
-  content.append(...children);
 }

@@ -268,8 +268,9 @@ describe("InkbookSettingTab reset integration", () => {
     await tab.setControlValue("startupTool", "arrow");
     await tab.setControlValue("pageDefaults.activeBufferLines", 6);
     await tab.setControlValue("toolDefaults.pen.width", 14);
-    await tab.setControlValue("toolDefaults.select.area", "lasso");
+    await tab.setControlValue("toolDefaults.select.area", "rectangle");
     await tab.setControlValue("toolDefaults.shapes.rectangle.outlineWidth", 8);
+    await tab.setControlValue("toolDefaults.shapes.rectangle.fillOpacity", 0.1);
     await tab.setControlValue("snapping.angles", false);
     await tab.setControlValue("device.fingerDrawingEnabled", !deviceDefaults.fingerDrawingEnabled);
     await tab.setControlValue("device.leftHandedToolbar", !deviceDefaults.leftHandedToolbar);
@@ -300,6 +301,7 @@ describe("InkbookSettingTab reset integration", () => {
       select: defaults.toolDefaults.select,
       straightHighlighter: defaults.toolDefaults.straightHighlighter,
     });
+    expect(tab.getControlValue("toolDefaults.select.area")).toBe("lasso");
     resetGroup(tab, "Snapping");
     await vi.waitFor(() =>
       expect(tab.getControlValue("snapping.angles")).toBe(defaults.snapping.angles),
@@ -317,6 +319,7 @@ describe("InkbookSettingTab reset integration", () => {
       shapes: defaults.toolDefaults.shapes,
       table: defaults.toolDefaults.table,
     });
+    expect(tab.getControlValue("toolDefaults.shapes.rectangle.fillOpacity")).toBe(0.5);
     resetGroup(tab, "Input");
     expect(tab.getControlValue("device.fingerDrawingEnabled")).toBe(
       deviceDefaults.fingerDrawingEnabled,

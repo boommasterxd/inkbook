@@ -30,6 +30,7 @@ export type ClipboardControllerResult =
         | "empty-selection"
         | "encode-failed"
         | "invalid-payload"
+        | "paste-failed"
         | "stale-operation"
         | "system-write-failed";
     };
@@ -151,8 +152,20 @@ export class ActiveEditorClipboardController {
     return !this.#pending && this.#pasteAvailable;
   }
 
+  get hasPastePayload(): boolean {
+    return this.#pasteAvailable;
+  }
+
   get canCopyOrCut(): boolean {
     return !this.#pending;
+  }
+
+  get pending(): boolean {
+    return this.#pending;
+  }
+
+  setProbedPasteAvailable(available: boolean): void {
+    if (available || !this.#sessionPayloadFresherThanSystem) this.#setPasteAvailable(available);
   }
 
   dispose(): void {
@@ -179,7 +192,8 @@ export class ActiveEditorClipboardController {
     const candidates = readSynchronousClipboardCandidates(data);
     if (candidates === null) {
       this.#setPasteAvailable(false);
-      return false;
+      this.#reportUnavailable("paste", this.#pending ? "busy" : "invalid-payload");
+      return true;
     }
     this.#sessionPayloadFresherThanSystem = false;
     this.#setPasteAvailable(true);
@@ -216,6 +230,7 @@ export class ActiveEditorClipboardController {
     }
     this.#registerApplied(applied);
     this.#repeatState = invocation.kind === "context-menu" ? undefined : plan.repeatState;
+    this.#setPasteAvailable(true);
     this.#onSelectionChanged(new Set(plan.selectedIds));
     this.#onPasteCommitted?.(plan.activateTool, invocation);
     return this.#report({ action: "paste", kind: "committed" });
@@ -361,10 +376,14 @@ export class ActiveEditorClipboardController {
     this.#pending = true;
     const generation = this.#beginOperation();
     this.#onPendingChanged(true);
-    return operation(generation).finally(() => {
-      this.#pending = false;
-      this.#onPendingChanged(false);
-    });
+    return operation(generation)
+      .catch(() =>
+        this.#reportUnavailable(action, action === "paste" ? "paste-failed" : "encode-failed"),
+      )
+      .finally(() => {
+        this.#pending = false;
+        this.#onPendingChanged(false);
+      });
   }
 
   #isOperationCurrent(operationGeneration: number): boolean {

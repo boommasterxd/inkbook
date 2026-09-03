@@ -60,7 +60,8 @@ describe("Inkbook settings modal", () => {
       "Structure snapping",
     ].map((name) => required<HTMLElement>(`[data-setting-name="${name}"]`));
     for (const row of dependentRows) {
-      expect(row.querySelector(":scope > .inkbook-snapping-dependent-content")).toBeTruthy();
+      expect(row.querySelector(".setting-item")).toBeNull();
+      expect(row.querySelector('input[type="checkbox"]')).toBeTruthy();
       vi.spyOn(row, "getBoundingClientRect").mockReturnValue(rectWithHeight(56));
     }
     const enabledRow = required<HTMLElement>('[data-setting-name="Enable snapping"]');
@@ -78,6 +79,44 @@ describe("Inkbook settings modal", () => {
       expect(row.inert).toBe(true);
     }
     expect(store.getVaultSettings().snapping.angles).toBe(true);
+    controller.dispose();
+  });
+});
+
+describe("Inkbook settings modal scroll preservation", () => {
+  it("keeps the settings scroll position when ordinary controls change", async () => {
+    const { controller, store } = openSettingsModalWithFullMotion();
+    const modalContent = required<HTMLElement>(".inkbook-settings-modal > div");
+    const body = required<HTMLElement>(".inkbook-settings-modal-body");
+    const row = required<HTMLElement>('[data-setting-name="Left-handed toolbar"]');
+    const toggle = requiredWithin<HTMLInputElement>(row, 'input[type="checkbox"]');
+    modalContent.scrollTop = 640;
+
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event("change", { bubbles: true }));
+
+    await vi.waitFor(() => expect(store.getDeviceSettings().leftHandedToolbar).toBe(true));
+    expect(modalContent.scrollTop).toBe(640);
+    expect(required<HTMLElement>(".inkbook-settings-modal-body")).toBe(body);
+    expect(required<HTMLElement>('[data-setting-name="Left-handed toolbar"]')).toBe(row);
+    controller.dispose();
+  });
+
+  it("preserves scroll while rerendering structurally conditional settings", async () => {
+    const { controller, store } = openSettingsModalWithFullMotion();
+    const modalContent = required<HTMLElement>(".inkbook-settings-modal > div");
+    const row = required<HTMLElement>('[data-setting-name="File placement"]');
+    const dropdown = requiredWithin<HTMLSelectElement>(row, "select");
+    modalContent.scrollTop = 320;
+
+    dropdown.value = "custom-vault-folder";
+    dropdown.dispatchEvent(new Event("change", { bubbles: true }));
+
+    await vi.waitFor(() =>
+      expect(store.getVaultSettings().filePlacement.mode).toBe("custom-vault-folder"),
+    );
+    expect(required<HTMLElement>('[data-setting-name="Custom vault folder"]')).toBeTruthy();
+    expect(modalContent.scrollTop).toBe(320);
     controller.dispose();
   });
 });

@@ -168,6 +168,7 @@ describe("selection overlay transforms", () => {
         { x: 148, y: 252 },
         {
           anchor: { x: 252, y: 48 },
+          delta: { x: 0, y: 0 },
           factors: { x: 1.5, y: 2 },
           kind: "scale",
           rotation: 90,
@@ -181,6 +182,7 @@ describe("selection overlay transforms", () => {
     (zoom) => {
       const geometry = selectionOverlayGeometry([selected(rectangle())], zoom, {
         anchor: { x: 98, y: 98 },
+        delta: { x: 0, y: 0 },
         factors: { x: 2, y: 0.5 },
         kind: "scale",
         rotation: 0,

@@ -138,7 +138,7 @@ Placement:
 - `Ctrl/Cmd+V` uses the last pointer position recorded inside the current active editor session. If none exists, it uses the center of the visible canvas.
 - Repeated Toolbar or keyboard paste of the same payload offsets each additional copy diagonally by 24 page units.
 
-Canvas shortcuts are captured through the active editor's owning document so they remain available after canvas or toolbar interaction. Document-level capture requires the pointer over the active editor and no focused text field. `Delete` uses the same availability boundary, while `Backspace` remains native. Fixed keyboard Paste is claimed only after a probe or in-session copy has validated an Inkbook payload, so an unrelated native Paste remains available to Obsidian. On platforms that expose `Clipboard.read()`, toolbar and context-menu Paste remain visible even when a background permission probe fails; selecting the action starts the bounded read synchronously inside that fresh user activation. The native context menu itself opens synchronously and never waits for Clipboard permission. A copied payload whose system write failed remains authoritative in the in-session fallback, even if the platform returns an empty clipboard read. Configurable bindings, fixed Paste and history bindings, and command ownership are canonical in [Keyboard Shortcuts](keyboard-shortcuts.md).
+Canvas shortcuts are captured through the active editor's owning document so they remain available after canvas or toolbar interaction. Document-level capture requires the pointer over the complete active embed, including its toolbar, and no focused text field. A key or native Paste event targeted directly at the focused input surface remains owned after a touch pointer leaves its Android hover boundary. Clipboard work temporarily makes that surface inert, but restores its focus after completion when focus did not move to another control, so an immediate repeated shortcut remains canvas-owned without hover. `Delete` uses the same availability boundary, while `Backspace` remains native. On platforms that expose `Clipboard.read()`, fixed keyboard Paste is claimed inside that boundary and performs the same bounded validation and feedback as toolbar and context-menu Paste. Platforms without that API use the synchronous native Paste event instead. Invalid data, permission or read failure, unexpected decoding or commit failure, stale document state, and overlapping Clipboard work each produce explicit feedback; a claimed trigger never silently does nothing or shows a success animation before the corresponding operation succeeds. The toolbar Paste control appears only after the first system Clipboard item or the in-session fallback has validated as Inkbook data and remains visually stable during overlapping Clipboard work. The context-menu action remains retryable when `Clipboard.read()` exists even if a background permission probe failed, and its native menu opens synchronously without waiting for that probe. A copied payload whose system write failed remains authoritative in the in-session fallback, even if the platform returns an empty clipboard read. Configurable bindings, fixed Paste and history bindings, and command ownership are canonical in [Keyboard Shortcuts](keyboard-shortcuts.md).
 
 ## Canvas Context Menus
 
@@ -156,21 +156,22 @@ When a selection exists, the menu begins with:
 
 1. Copy
 2. Cut
-3. Delete
+3. Paste, when a validated payload or a user-activated system Clipboard read is available
 4. a separator
-5. Bring forward
-6. Send backward
-7. Bring to front
-8. Send to back
+5. Delete
+6. a separator
+7. Bring forward
+8. Send backward
+9. Bring to front
+10. Send to back
 
 The canvas section follows after a separator:
 
-1. Paste, only when a valid ink clipboard payload is available
-2. Copy embed
-3. Erase all
-4. Delete embed
+1. Copy embed
+2. Erase all
+3. Delete embed
 
-Without a selection, the selection section is omitted. The four Arrange actions are flat entries because the public Obsidian `MenuItem` API exposes no submenu contract. Disabled boundary actions remain visible. Delete removes only the selected annotations with one undoable canvas command. Erase all and Delete embed retain their confirmation behavior. Exact icons, destructive styling, focus behavior, and host API usage are defined in [Embed UI](embed-ui.md#context-menu-presentation) and [Obsidian Integration](obsidian-integration.md#commands-menus-icons-and-styling).
+Without a selection, the selection section is omitted and Paste precedes the canvas section when a validated payload or a user-activated system Clipboard read is available. The four Arrange actions are flat entries because the public Obsidian `MenuItem` API exposes no submenu contract. Disabled boundary actions remain visible. Delete removes only the selected annotations with one undoable canvas command. Erase all and Delete embed retain their confirmation behavior. Exact icons, destructive styling, focus behavior, and host API usage are defined in [Embed UI](embed-ui.md#context-menu-presentation) and [Obsidian Integration](obsidian-integration.md#commands-menus-icons-and-styling).
 
 ## Copying the Entire Embed
 

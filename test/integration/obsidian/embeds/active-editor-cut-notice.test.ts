@@ -120,7 +120,51 @@ async function commitRemoval(
   expect(fixture.history.commandCount).toBe(1);
 }
 
+describe("active editor Clipboard busy feedback", () => {
+  it("reports repeated input instead of silently dropping it", async () => {
+    const fixture = cutFixture();
+
+    fixture.actions.execute("cut");
+    fixture.actions.execute("copy");
+    expect(fixture.actions.pasteFromClipboardData(null)).toBe(true);
+
+    expect(fixture.onFeedback.mock.calls).toEqual([
+      ["clipboard-operation-busy"],
+      ["clipboard-operation-busy"],
+    ]);
+    await vi.waitFor(() => expect(fixture.prepare).toHaveBeenCalledOnce());
+    fixture.pending.complete();
+    await vi.waitFor(() => expect(fixture.commit).toHaveBeenCalledOnce());
+    fixture.actions.dispose();
+  });
+});
+
 describe("active editor Cut feedback", () => {
+  it("publishes and refreshes one transient toolbar confirmation for every successful Copy", async () => {
+    const fixture = cutFixture();
+
+    fixture.actions.execute("copy");
+    await vi.waitFor(() => {
+      expect(fixture.actions.actionConfirmation).toMatchObject({
+        action: "copy",
+        sequence: 1,
+      });
+      expect(fixture.actions.pasteVisible).toBe(true);
+      expect(fixture.actions.isAvailable("copy")).toBe(true);
+    });
+    fixture.actions.execute("copy");
+    expect(fixture.actions.pasteVisible).toBe(true);
+    expect(fixture.actions.canPaste).toBe(false);
+    await vi.waitFor(() =>
+      expect(fixture.actions.actionConfirmation).toMatchObject({
+        action: "copy",
+        sequence: 2,
+      }),
+    );
+
+    fixture.actions.dispose();
+  });
+
   it("deletes the current selection as one history command", async () => {
     const fixture = cutFixture();
 
@@ -157,6 +201,7 @@ describe("active editor Cut feedback", () => {
     await commitRemoval(fixture, "cut");
 
     expect(fixture.write).toHaveBeenCalledOnce();
+    expect(fixture.actions.actionConfirmation).toMatchObject({ action: "cut" });
     expect(fixture.onFeedback).not.toHaveBeenCalled();
     fixture.actions.dispose();
   });

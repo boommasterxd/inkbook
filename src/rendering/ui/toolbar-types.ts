@@ -28,10 +28,20 @@ export type ToolbarAction =
   | "lock"
   | "overflow";
 
+type ConfirmableToolbarAction = Extract<ToolbarAction, "copy" | "cut" | "paste">;
+
+export interface ToolbarActionConfirmation {
+  readonly action: ConfirmableToolbarAction;
+  readonly sequence: number;
+}
+
+export const TOOLBAR_ACTION_CONFIRMATION_MS = 900;
+
 export type FlyoutId = "background" | "overflow" | "shape" | "style";
 
 export interface ToolbarState {
   readonly activeTool: ToolId;
+  readonly actionConfirmation?: ToolbarActionConfirmation | null;
   readonly canPaste: boolean;
   readonly canRedo: boolean;
   readonly canUndo: boolean;
@@ -39,6 +49,7 @@ export interface ToolbarState {
   readonly fingerDrawingEnabled: boolean;
   readonly hasSelection: boolean;
   readonly openFlyout: FlyoutId | null;
+  readonly pasteVisible: boolean;
 }
 
 export interface ToolbarButtonDefinition {

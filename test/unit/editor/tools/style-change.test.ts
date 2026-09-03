@@ -294,7 +294,7 @@ describe("active tool Style changes", () => {
     const values = createBuiltInSettings().toolDefaults;
     const area = applyToolStyleChange(values, "select", {
       property: "selection-area",
-      value: "lasso",
+      value: "rectangle",
     });
     const inclusion = applyToolStyleChange(area.toolValues, "select", {
       property: "selection-inclusion",
@@ -302,10 +302,10 @@ describe("active tool Style changes", () => {
     });
 
     expect(inclusion.toolValues.select).toEqual({
-      area: "lasso",
+      area: "rectangle",
       inclusion: "fully-enclosed",
     });
-    expect(values.select).toEqual({ area: "rectangle", inclusion: "touched" });
+    expect(values.select).toEqual({ area: "lasso", inclusion: "touched" });
     expect(() =>
       applySelectionStyleChange([], { property: "selection-area", value: "lasso" }),
     ).toThrow(/non-empty selection/);
@@ -451,7 +451,7 @@ describe("active tool compatibility", () => {
     expect(
       applyToolStyleChange(values, "rectangle", {
         property: "fill-opacity",
-        value: 0.15,
+        value: 0.5,
       }),
     ).toEqual({ toolValues: values, changed: false });
     expect(() =>

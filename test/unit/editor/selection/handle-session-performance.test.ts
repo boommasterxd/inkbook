@@ -9,12 +9,17 @@ function replacementPlan(replacements: readonly InkElementV1[]) {
 }
 
 describe("SelectionHandleSession performance contracts", () => {
-  it("reuses the gesture-start scale minimum during time-sliced pointer commits", async () => {
+  it("time-slices materialization, fixed-anchor measurement, and correction", async () => {
     const shapes = Array.from({ length: 1_001 }, (_, index) =>
       rectangle(`00000000-0000-4000-8001-${index.toString().padStart(12, "0")}`, index * 250, 0),
     );
     const session = new SelectionHandleSession({
-      action: { anchor: { x: 0, y: 0 }, kind: "scale", position: "bottom-right" },
+      action: {
+        anchor: { x: 0, y: 0 },
+        kind: "scale",
+        position: "bottom-right",
+        rotation: 0,
+      },
       elements: shapes,
       planner: {
         countReverseDependencies: () => 0,
@@ -34,6 +39,9 @@ describe("SelectionHandleSession performance contracts", () => {
       yieldControl: recordYield,
     });
 
-    expect({ status: prepared.status, yields }).toEqual({ status: "ready", yields: shapes.length });
+    expect({ status: prepared.status, yields }).toEqual({
+      status: "ready",
+      yields: shapes.length * 3,
+    });
   });
 });

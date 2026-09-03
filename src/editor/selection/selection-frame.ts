@@ -6,7 +6,7 @@ import {
   unionBounds,
   type Bounds,
 } from "../../domain/geometry/public";
-import type { InkElementV1, PointV1 } from "../../domain/schema/public";
+import type { BoxAnchorV1, InkElementV1, PointV1 } from "../../domain/schema/public";
 
 import type { SelectedElementGeometry, SelectionPreviewTransform } from "./handle-types";
 import { rotateSelection } from "./transforms";
@@ -79,10 +79,9 @@ export function createSelectionFrameAtRotation(
   elements: readonly InkElementV1[],
   rotation: number,
 ): OrientedSelectionFrame | null {
-  const rigid = elements.map(withoutExternalConnections);
-  const local = rotation === 0 ? rigid : rotateSelection(rigid, { x: 0, y: 0 }, -rotation);
   let bounds: Bounds | null = null;
-  for (const element of local) {
+  for (const source of elements) {
+    const element = selectionFrameElementAtRotation(source, rotation);
     const current = calculateElementBounds(element);
     bounds = bounds === null ? current : unionBounds(bounds, current);
   }
@@ -96,10 +95,15 @@ export function createSelectionFrameAtRotation(
   };
 }
 
-function withoutExternalConnections(element: InkElementV1): InkElementV1 {
-  return element.kind === "line" || element.kind === "arrow"
-    ? { ...element, endConnection: null, startConnection: null }
-    : element;
+export function selectionFrameElementAtRotation(
+  element: InkElementV1,
+  rotation: number,
+): InkElementV1 {
+  const rigid =
+    element.kind === "line" || element.kind === "arrow"
+      ? { ...element, endConnection: null, startConnection: null }
+      : element;
+  return rotation === 0 ? rigid : rotateSelection([rigid], { x: 0, y: 0 }, -rotation)[0]!;
 }
 
 export function createSelectionFrame(
@@ -114,6 +118,25 @@ export function createSelectionFrame(
     points: framePoints(bounds),
     rotation: 0,
   };
+}
+
+export function selectionFramePoint(frame: OrientedSelectionFrame, position: BoxAnchorV1): PointV1 {
+  const [topLeft, topRight, bottomRight, bottomLeft] = frame.points;
+  const midpoint = (start: PointV1, end: PointV1): PointV1 => ({
+    x: (start.x + end.x) / 2,
+    y: (start.y + end.y) / 2,
+  });
+  const points: Readonly<Record<BoxAnchorV1, PointV1>> = {
+    "bottom-center": midpoint(bottomRight, bottomLeft),
+    "bottom-left": bottomLeft,
+    "bottom-right": bottomRight,
+    "middle-left": midpoint(bottomLeft, topLeft),
+    "middle-right": midpoint(topRight, bottomRight),
+    "top-center": midpoint(topLeft, topRight),
+    "top-left": topLeft,
+    "top-right": topRight,
+  };
+  return points[position];
 }
 
 function framePoints(bounds: Bounds): OrientedSelectionFrame["points"] {
@@ -155,5 +178,6 @@ export function transformSelectionPoint(
     x: transform.anchor.x + (local.x - transform.anchor.x) * transform.factors.x,
     y: transform.anchor.y + (local.y - transform.anchor.y) * transform.factors.y,
   };
-  return canonicalPoint(rotatePointClockwise(scaled, transform.anchor, transform.rotation));
+  const world = rotatePointClockwise(scaled, transform.anchor, transform.rotation);
+  return canonicalPoint({ x: world.x + transform.delta.x, y: world.y + transform.delta.y });
 }

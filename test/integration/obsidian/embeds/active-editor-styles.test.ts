@@ -192,10 +192,10 @@ describe("active editor Style changes", () => {
 describe("active editor Select Style changes", () => {
   it("shows Select defaults only without a selection", () => {
     const defaults = createBuiltInSettings().toolDefaults;
-    const updated = updateSessionToolDefaults(defaults, "select", "selection-area", "lasso");
+    const updated = updateSessionToolDefaults(defaults, "select", "selection-area", "rectangle");
 
-    expect(updated.select).toEqual({ area: "lasso", inclusion: "touched" });
-    expect(defaults.select.area).toBe("rectangle");
+    expect(updated.select).toEqual({ area: "rectangle", inclusion: "touched" });
+    expect(defaults.select.area).toBe("lasso");
     expect(() =>
       updateSessionToolDefaults(updated, "select", "selection-inclusion", "crossing"),
     ).toThrow(RangeError);

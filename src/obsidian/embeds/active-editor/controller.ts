@@ -24,8 +24,8 @@ import { ActiveEditorStyleSession } from "./style-session";
 import type { ActiveEditorBackgroundSession } from "./background-session";
 import { ActiveEditorLongPressScheduler } from "./long-press";
 import type { PreparedElementHistory } from "./prepared-element-history";
-import type { ActiveEditorResizeAnchor, ActiveEditorResizeUpdate } from "./layout";
-import type { SynchronousClipboardData } from "./clipboard-reader";
+import type { ActiveEditorResizeUpdate } from "./layout";
+import type { SynchronousClipboardData as ClipboardData } from "./clipboard-reader";
 import type { ActiveEditorKeyboardController } from "./controller-keyboard";
 import { createActiveEditorInputControllers } from "./controller-input-factory";
 import { ActiveEditorPointerController } from "./controller-pointer";
@@ -102,9 +102,9 @@ export class ActiveEditorController {
     ];
     this.#snapping = structuredClone(options.snapping);
     this.#availability = new ActiveEditorAvailability({
+      inputSurface: this.#renderer.inputSurface,
       onDisabled: this.#resetForDisable,
       onStateChanged: this.#onStateChanged,
-      setInputInert: (inert) => (this.#renderer.inputSurface.inert = inert),
     });
     this.#history = options.history;
     [this.#background, this.#historyTraversal] =
@@ -213,11 +213,12 @@ export class ActiveEditorController {
   }
   readonly handleContextMenu = (event: MouseEvent): void => this.#pointer.handleContextMenu(event);
   public handleKeyDown(event: KeyboardEvent): void {
-    if (!this.#availability.acceptsInput) return;
-    if (this.#keyboard.handleKeyDown(event)) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
+    const handled = this.#availability.acceptsInput
+      ? this.#keyboard.handleKeyDown(event)
+      : this.#keyboard.handlePendingClipboardKeyDown(event);
+    if (!handled) return;
+    event.preventDefault();
+    event.stopPropagation();
   }
   public readonly handleDocumentKeyDown = (event: KeyboardEvent): boolean =>
     this.#availability.acceptsInput && this.#keyboard.handleDocumentKeyDown(event);
@@ -247,6 +248,7 @@ export class ActiveEditorController {
       this.#pointer.cancelPointer(pointerId);
   }
   public handleToolbarAction(action: ToolbarAction, trigger?: HTMLButtonElement): void {
+    if (Helpers.isClipboardAction(action)) return this.#actions.execute(action);
     if (!this.#availability.acceptsInput) return;
     if (Helpers.isTool(action)) {
       this.#configureTool(this.#chromeState.activateTool(action));
@@ -262,10 +264,7 @@ export class ActiveEditorController {
     else if (action === "finger-drawing") {
       this.#input = this.#touchMode.toggle(this.#input);
       this.#onStateChanged();
-    } else if (
-      (action === "delete" || action === "copy" || action === "cut" || action === "paste") &&
-      this.#actions.isAvailable(action)
-    )
+    } else if (action === "delete" && this.#actions.isAvailable(action))
       this.#actions.execute(action);
   }
   readonly handleLostPointerCapture = (event: PointerEvent) =>
@@ -279,8 +278,8 @@ export class ActiveEditorController {
     }
     if (this.#navigation.updateWheel(event)) event.preventDefault();
   }
-  public readonly handlePaste = (data: SynchronousClipboardData | null): boolean =>
-    this.#availability.acceptsInput && this.#keyboard.handlePaste(data);
+  public readonly handlePaste = (data: ClipboardData | null, surfaceOwned = false): boolean =>
+    this.#keyboard.handlePaste(data, surfaceOwned);
   public readonly isActionAvailable = (action: ContextMenuAction): boolean =>
     this.#actions.isAvailable(action);
   public readonly executeAction = (action: ContextMenuAction): void =>
@@ -297,8 +296,7 @@ export class ActiveEditorController {
     return this.#navigation.applyResize(update);
   }
   public readonly getViewState = (): ActiveEditorViewState => this.#navigation.getViewState();
-  public readonly readResizeAnchor = (): ActiveEditorResizeAnchor | undefined =>
-    this.#navigation.readResizeAnchor();
+  public readonly readResizeAnchor = () => this.#navigation.readResizeAnchor();
   public recordMarkdownHistory(): void {
     if (this.#availability.acceptsInput) this.#keyboard.recordMarkdownHistory();
   }
@@ -329,14 +327,16 @@ export class ActiveEditorController {
   }
   public toolbarState(): ToolbarState {
     return Helpers.createToolbarState({
+      actionConfirmation: this.#actions.actionConfirmation,
       activeTool: this.#input.activeTool,
       canRedo: this.#availability.acceptsInput && this.#history.canRedo,
       canUndo: this.#availability.acceptsInput && this.#history.canUndo,
-      canPaste: this.#actions.canPaste,
+      canPaste: this.#availability.acceptsInput && this.#actions.canPaste,
       fingerDrawingEnabled: this.#touchMode.enabled,
       fingerDrawingAvailable: this.#touchMode.available,
       hasSelection: this.#selection.size > 0,
       openFlyout: this.#chromeState.openFlyout,
+      pasteVisible: this.#actions.pasteVisible,
     });
   }
   #beginPreview(start: GesturePreviewStart) {

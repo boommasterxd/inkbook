@@ -180,19 +180,20 @@ describe("InkbookSettingTab recognizable tool controls", () => {
 
     expect(area.querySelectorAll("button")).toHaveLength(2);
     expect(inclusion.querySelectorAll("button")).toHaveLength(2);
-    expect(rectangle?.getAttribute("aria-pressed")).toBe("true");
+    expect(rectangle?.getAttribute("aria-pressed")).toBe("false");
     expect(lasso?.getAttribute("aria-label")).toBe("Lasso");
+    expect(lasso?.getAttribute("aria-pressed")).toBe("true");
     expectSelectionChoiceVisuals(area, inclusion);
-    lasso?.click();
+    rectangle?.click();
     enclosed?.click();
     await vi.waitFor(() =>
       expect(store.getVaultSettings().toolDefaults.select).toEqual({
-        area: "lasso",
+        area: "rectangle",
         inclusion: "fully-enclosed",
       }),
     );
-    expect(lasso?.getAttribute("aria-pressed")).toBe("true");
-    expect(rectangle?.getAttribute("aria-pressed")).toBe("false");
+    expect(lasso?.getAttribute("aria-pressed")).toBe("false");
+    expect(rectangle?.getAttribute("aria-pressed")).toBe("true");
     rendered.cleanup();
   });
 });

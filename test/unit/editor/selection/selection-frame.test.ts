@@ -73,6 +73,7 @@ describe("multi-selection frame geometry", () => {
     });
     const scaled = transformSelectionFrame(moved, {
       anchor: moved.points[0],
+      delta: { x: 0, y: 0 },
       factors: { x: 1.5, y: 1.5 },
       kind: "scale",
       rotation: moved.rotation,

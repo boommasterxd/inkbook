@@ -24,7 +24,9 @@ const completeState: ToolbarState = {
   fingerDrawingEnabled: false,
   hasSelection: true,
   openFlyout: null,
+  pasteVisible: true,
 };
+const noPasteState: ToolbarState = { ...completeState, canPaste: false, pasteVisible: false };
 
 const defaultStyleIcon: ToolbarStyleIconState = {
   fillColor: null,
@@ -134,10 +136,40 @@ describe("mounted Inkbook toolbar accessibility", () => {
   });
 });
 
+describe("mounted Inkbook toolbar action confirmation", () => {
+  it("switches a confirmed context action to a check without replacing its button", () => {
+    const mounted = mountToolbar(completeState);
+    const copy = mounted.button("copy");
+    const defaultIcon = requiredElement<HTMLElement>(copy, ".inkbook-toolbar-action-icon-default");
+
+    mounted.update({
+      ...completeState,
+      actionConfirmation: { action: "copy", sequence: 1 },
+    });
+
+    const icon = requiredElement<HTMLElement>(copy, ".inkbook-toolbar-action-icon");
+    expect(mounted.button("copy")).toBe(copy);
+    expect(icon.dataset.confirmed).toBe("true");
+    expect(
+      requiredElement<HTMLElement>(copy, ".inkbook-toolbar-action-icon-default").dataset.icon,
+    ).toBe("copy");
+    expect(
+      requiredElement<HTMLElement>(copy, ".inkbook-toolbar-action-icon-confirmation").dataset.icon,
+    ).toBe("check");
+    expect(requiredElement(copy, ".inkbook-toolbar-action-icon-default")).not.toBe(defaultIcon);
+
+    mounted.update({ ...completeState, actionConfirmation: null });
+    expect(
+      requiredElement<HTMLElement>(copy, ".inkbook-toolbar-action-icon").dataset.confirmed,
+    ).toBeUndefined();
+    mounted.unmount();
+  });
+});
+
 describe("mounted Inkbook toolbar motion and responsiveness", () => {
   it("animates remaining context controls from their previous X positions", () => {
-    const mounted = mountToolbar({ ...completeState, canPaste: false, hasSelection: false });
-    mounted.update({ ...completeState, canPaste: false });
+    const mounted = mountToolbar({ ...noPasteState, hasSelection: false });
+    mounted.update(noPasteState);
     const copy = mounted.button("copy");
     const animate = vi.fn(() => ({ cancel: vi.fn() }) as unknown as Animation);
     Object.defineProperties(copy, {
@@ -158,11 +190,7 @@ describe("mounted Inkbook toolbar motion and responsiveness", () => {
   });
 
   it("staggers fixed-size contextual action pops without fading their surfaces", () => {
-    const mounted = mountToolbar({
-      ...completeState,
-      canPaste: false,
-      hasSelection: false,
-    });
+    const mounted = mountToolbar({ ...noPasteState, hasSelection: false });
 
     mounted.update(completeState);
 
@@ -237,13 +265,13 @@ describe("mounted Inkbook toolbar motion and responsiveness", () => {
 
 describe("mounted Inkbook toolbar focus recovery", () => {
   it("keeps every exit slot until the staggered batch completes, then removes it atomically", () => {
-    const mounted = mountToolbar({ ...completeState, canPaste: false });
+    const mounted = mountToolbar(noPasteState);
     const copy = mounted.button("copy");
     const cut = mounted.button("cut");
     const deleteButton = mounted.button("delete");
     focus(cut);
 
-    mounted.update({ ...completeState, canPaste: false, hasSelection: false });
+    mounted.update({ ...noPasteState, hasSelection: false });
 
     expect(document.activeElement).toBe(mounted.button("overflow"));
     expect(mounted.button("overflow").tabIndex).toBe(0);

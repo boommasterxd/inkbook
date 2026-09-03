@@ -16,7 +16,12 @@ export interface SelectedElementGeometry {
 
 export type SelectionHandleAction =
   | { readonly kind: "move" }
-  | { readonly anchor: PointV1; readonly kind: "scale"; readonly position: BoxAnchorV1 }
+  | {
+      readonly anchor: PointV1;
+      readonly kind: "scale";
+      readonly position: BoxAnchorV1;
+      readonly rotation: number;
+    }
   | {
       readonly center: PointV1;
       readonly kind: "rotate";
@@ -42,6 +47,7 @@ export type SelectionPreviewTransform =
   | { readonly delta: PointV1; readonly kind: "translate" }
   | {
       readonly anchor: PointV1;
+      readonly delta: PointV1;
       readonly factors: { readonly x: number; readonly y: number };
       readonly kind: "scale";
       readonly rotation: number;

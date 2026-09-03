@@ -88,7 +88,7 @@ describe("InkbookSettingsStore", () => {
       version: 4,
       startupTool: "arrow",
       snapping: createBuiltInSettings().snapping,
-      toolDefaults: { select: { area: "rectangle", inclusion: "touched" } },
+      toolDefaults: { select: { area: "lasso", inclusion: "touched" } },
     });
   });
 });

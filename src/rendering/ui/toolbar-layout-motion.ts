@@ -48,6 +48,36 @@ export function useToolbarLayoutMotion(
   );
 }
 
+export function useToolbarElementLayoutMotion(
+  layoutKey: string | undefined,
+  elementRef: { readonly current: HTMLElement | null },
+): void {
+  const previousLeft = useRef<number | null>(null);
+  const animation = useRef<Animation | null>(null);
+  useLayoutEffect(() => {
+    if (layoutKey === undefined) return;
+    const element = elementRef.current;
+    if (element === null) return;
+    const next = element.getBoundingClientRect().left;
+    const previous = previousLeft.current;
+    previousLeft.current = next;
+    if (previous === null || previous === next || typeof element.animate !== "function") return;
+    animation.current?.cancel();
+    const duration = toolbarLayoutDuration(element);
+    if (duration === 0) return;
+    animation.current = element.animate(
+      [{ translate: `${String(previous - next)}px 0` }, { translate: "0 0" }],
+      { duration, easing: EASING_TOKENS.standard },
+    );
+  }, [layoutKey]);
+  useEffect(
+    () => () => {
+      animation.current?.cancel();
+    },
+    [],
+  );
+}
+
 function toolbarLayoutDuration(element: HTMLElement): number {
   const root = element.closest<HTMLElement>(".inkbook-root");
   const preference = motionPreference(root?.dataset.inkbookMotion);

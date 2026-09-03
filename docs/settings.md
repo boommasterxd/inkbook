@@ -84,13 +84,13 @@ interface InkbookDeviceSettingsV2 {
 
 The built-in startup tool is `draw`.
 
-Version 3 introduced the first released vault-settings schema with absolute background spacing in the shared 25, 100 / 3, 50, and 100 page-unit series and the fixed 100-unit layout step. Version 4 adds the two Select defaults. The loader migrates only a completely valid version 3 object, preserves every existing value, adds `select: { area: "rectangle", inclusion: "touched" }` plus the built-in snapping settings, and returns canonical version 4. A valid version 4 object from before snapping settings existed receives those same defaults without a version change. A malformed version 3 value is not partially migrated. Versions 1, 2, and unknown vault settings are rejected as unsupported rather than transformed. Device-settings version 2 adds the configurable keyboard map. A valid version 1 value is migrated without changing its earlier preferences. Exact bindings, ownership, and conflict rules are canonical in [Keyboard Shortcuts](keyboard-shortcuts.md).
+Version 3 introduced the first released vault-settings schema with absolute background spacing in the shared 25, 100 / 3, 50, and 100 page-unit series and the fixed 100-unit layout step. Version 4 adds the two Select defaults. The loader migrates only a completely valid version 3 object, preserves every existing value, adds `select: { area: "lasso", inclusion: "touched" }` plus the built-in snapping settings, and returns canonical version 4. A valid version 4 object from before snapping settings existed receives those same defaults without a version change. A malformed version 3 value is not partially migrated. Versions 1, 2, and unknown vault settings are rejected as unsupported rather than transformed. Device-settings version 2 adds the configurable keyboard map. A valid version 1 value is migrated without changing its earlier preferences. Exact bindings, ownership, and conflict rules are canonical in [Keyboard Shortcuts](keyboard-shortcuts.md).
 
 ## Select Defaults
 
 Select owns two independent session and vault defaults:
 
-- selection area: `rectangle` or `lasso`; built-in `rectangle`
+- selection area: `rectangle` or `lasso`; built-in `lasso`
 - inclusion: `fully-enclosed` or `touched`; built-in `touched`
 
 Rectangle uses the drag start and current pointer as opposite corners. Lasso records at most 512 simplified freeform pointer points and treats the resulting path as closed. Touched includes an element when any visible painted geometry intersects or lies within the area. Fully enclosed includes it only when all visible painted geometry, including stroke width and arrow nodes, lies within the area. These values affect selection behavior only, never existing elements or Inkbook files. The Style menu changes the active editor session, while Settings changes the vault default used by subsequently activated editors.
@@ -202,7 +202,7 @@ Built-in outline values for every shape:
 - outline style: solid
 - outline opacity: 1
 
-Built-in fill values for every closed shape are `fillColor: null` and `fillOpacity: 0.15`. Fill controls and fields exist only for rectangle, ellipse, triangle, octagon, parallelogram, and diamond. A null fill always renders with zero effective fill opacity. Line, arrow, coordinate-system, and table defaults cannot store fill fields.
+Built-in fill values for every closed shape are `fillColor: null` and `fillOpacity: 0.5`. Fill controls and fields exist only for rectangle, ellipse, triangle, octagon, parallelogram, and diamond. A null fill always renders with zero effective fill opacity. Line, arrow, coordinate-system, and table defaults cannot store fill fields.
 
 ### Arrow Defaults
 
@@ -368,7 +368,7 @@ Every section in Drawing tools and Shapes and structures is a keyboard-operable 
 
 Settings MUST reuse the same typed option models, labels, ordering, selected-state treatment, previews, and control patterns as the corresponding Style and Background menus. A user must be able to recognize a setting from the menu without translating it to a different control. Shared control definitions prevent the two surfaces from acquiring different values or meanings.
 
-Settings inherit Obsidian's neutral `SettingGroup` surface and its host-owned radius rather than adding a nested surface or copying the enclosing border, radius, or panel treatment from an adaptive Style or Background menu. Native host dividers separate independent settings rows. Expanded tool content and the Background type-and-spacing composition use whitespace instead of additional nested separator lines. Changing Background between None and a patterned type animates the bounded content-height change while the Spacing control leaves or enters; reduced motion applies the final height immediately. Menu recognition applies to the control content and interaction model. Visual choice collections use all available inline space and keep their canonical order: choices remain in one row when they fit and wrap without horizontal scrolling when the settings viewport is narrower.
+Settings inherit Obsidian's neutral `SettingGroup` surface and its host-owned radius rather than adding a nested surface or copying the enclosing border, radius, or panel treatment from an adaptive Style or Background menu. Native host dividers separate independent settings rows. Expanded tool content and the Background type-and-spacing composition use whitespace instead of additional nested separator lines. Changing Background between None and a patterned type animates the bounded content-height change while the Spacing control leaves or enters; reduced motion applies the final height immediately. Menu recognition applies to the control content and interaction model. Visual choice collections use all available inline space and keep their canonical order: choices remain in one row when they fit and wrap without horizontal scrolling when the settings viewport is narrower. A control commit updates its mounted row in place and preserves the settings scroll position. A setting whose value changes conditional row structure may rebuild that structure, but it restores the exact preceding scroll position before returning control to the user.
 
 The following controls are visual choices rather than plain dropdowns:
 

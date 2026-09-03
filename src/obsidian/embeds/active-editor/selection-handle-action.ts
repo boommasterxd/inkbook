@@ -3,6 +3,7 @@ import type { BoxAnchorV1, InkElementV1, PointV1 } from "../../../domain/schema/
 import {
   oppositeElementHandlePoint,
   oppositeBoxAnchor,
+  selectionFramePoint,
   selectionBounds,
   type OrientedSelectionFrame,
   type SelectedElementGeometry,
@@ -41,14 +42,25 @@ export function selectionHandleAction(
   const bounds = selectionBounds(selected);
   if (bounds === null) throw new Error("Selection bounds are unavailable.");
   if (handle.kind === "rotate") return rotationHandleAction(only, bounds, frame);
+  return scaleHandleAction(handle, only, bounds, frame);
+}
+
+function scaleHandleAction(
+  handle: Extract<SelectionHandle, { kind: "scale" }>,
+  element: InkElementV1 | undefined,
+  bounds: Bounds,
+  frame: OrientedSelectionFrame | null,
+): Extract<SelectionHandleAction, { kind: "scale" }> {
   return {
     anchor:
-      only === undefined
-        ? (framePoint(frame, oppositeBoxAnchor(handle.position)) ??
-          oppositePoint(bounds, handle.position))
-        : oppositeElementHandlePoint(only, handle.position),
+      element === undefined
+        ? frame === null
+          ? oppositePoint(bounds, handle.position)
+          : selectionFramePoint(frame, oppositeBoxAnchor(handle.position))
+        : oppositeElementHandlePoint(element, handle.position),
     kind: handle.kind,
     position: handle.position,
+    rotation: element?.rotation ?? frame?.rotation ?? 0,
   };
 }
 
@@ -62,7 +74,9 @@ function rotationHandleAction(
     kind: "rotate",
     opposite:
       element === undefined
-        ? (framePoint(frame, "bottom-center") ?? oppositePoint(bounds, "top-center"))
+        ? frame === null
+          ? oppositePoint(bounds, "top-center")
+          : selectionFramePoint(frame, "bottom-center")
         : oppositeElementHandlePoint(element, "top-center"),
     referenceRotation: element?.rotation ?? frame?.rotation ?? 0,
   };
@@ -72,29 +86,6 @@ function frameCenter(frame: OrientedSelectionFrame | null): PointV1 | undefined 
   if (frame === null) return undefined;
   const [topLeft, , bottomRight] = frame.points;
   return { x: (topLeft.x + bottomRight.x) / 2, y: (topLeft.y + bottomRight.y) / 2 };
-}
-
-function framePoint(
-  frame: OrientedSelectionFrame | null,
-  position: BoxAnchorV1,
-): PointV1 | undefined {
-  if (frame === null) return undefined;
-  const [topLeft, topRight, bottomRight, bottomLeft] = frame.points;
-  const midpoint = (start: PointV1, end: PointV1) => ({
-    x: (start.x + end.x) / 2,
-    y: (start.y + end.y) / 2,
-  });
-  const points: Record<BoxAnchorV1, PointV1> = {
-    "bottom-center": midpoint(bottomRight, bottomLeft),
-    "bottom-left": bottomLeft,
-    "bottom-right": bottomRight,
-    "middle-left": midpoint(bottomLeft, topLeft),
-    "middle-right": midpoint(topRight, bottomRight),
-    "top-center": midpoint(topLeft, topRight),
-    "top-left": topLeft,
-    "top-right": topRight,
-  };
-  return points[position];
 }
 
 function boundsCenter(bounds: Bounds): PointV1 {

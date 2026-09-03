@@ -17,18 +17,13 @@ import type {
   TimeSlicedSelectionCommitPreparation,
 } from "./handle-types";
 import { selectionHandleSnapGuide, selectionRotationDelta } from "./handle-snap-resolution";
-import { activeScaleAxes } from "./handle-session-geometry";
 import { assertFiniteHandlePoint, assertLinearHandleElement } from "./handle-session-validation";
-import { selectionScaleFactors } from "./selection-scale";
+import { SelectionScaleGesture } from "./selection-scale";
 import { selectionSnapFeatureEnabled } from "./snap-features";
 import {
-  minimumUniformScaleForSelection,
   moveSelection,
   rotateSelection,
-  scaleElementFromPointers,
-  scaleSelectionFromPointers,
-  scaleSelectionUniformAtLeast,
-  uniformScaleFactorFromPointers,
+  type ScaleFactors,
   type TransformSliceScheduler,
 } from "./transforms";
 import { materializeTargetedHandle } from "./targeted-handle-action";
@@ -59,7 +54,7 @@ export class SelectionHandleSession {
   readonly #action: SelectionHandleAction;
   readonly #elements: readonly InkElementV1[];
   readonly #planner: SelectionReplacementPlanner;
-  readonly #minimumUniformScale: number | undefined;
+  readonly #scale: SelectionScaleGesture | undefined;
   readonly #snapScratch = new SnapCandidateScratch();
   readonly #snap: SelectionSnapPorts | undefined;
   #snapFeatures: SelectionSnapPorts["features"];
@@ -78,9 +73,9 @@ export class SelectionHandleSession {
     this.#action = options.action;
     this.#elements = options.elements;
     this.#planner = options.planner;
-    this.#minimumUniformScale =
-      options.action.kind === "scale" && options.elements.length > 1
-        ? minimumUniformScaleForSelection(options.elements)
+    this.#scale =
+      options.action.kind === "scale"
+        ? new SelectionScaleGesture(options.action, options.elements, options.startPointer)
         : undefined;
     this.#snap = options.snap;
     this.#snapFeatures = options.snap?.features;
@@ -150,7 +145,6 @@ export class SelectionHandleSession {
 
   #createPreview(): SelectionHandlePreview {
     if (!this.#hasChanged()) return this.#emptyPreview();
-    const transform = this.#previewTransform();
     if (exceedsExactPreviewWork(this.#elements, this.#planner, this.#replacementWorkOptions())) {
       this.#valid = true;
       return {
@@ -158,11 +152,12 @@ export class SelectionHandleSession {
         exactPreviewTruncated: true,
         snapCandidate: this.#snapCandidate,
         snapGuide: this.#snapGuide(),
-        transform,
+        transform: this.#previewTransform(),
       };
     }
     try {
       const planned = this.#planner.planReplacements(this.#materializeDirect());
+      const transform = this.#previewTransform();
       this.#valid = planned !== null;
       return {
         exactElements: planned?.elements ?? [],
@@ -189,15 +184,7 @@ export class SelectionHandleSession {
       case "move":
         return moveSelection(this.#elements, this.#translation());
       case "scale":
-        return this.#elements.length === 1
-          ? [this.#scaleSingleAt(this.#elements[0]!, this.#currentPointer)]
-          : scaleSelectionFromPointers(
-              this.#elements,
-              this.#action.anchor,
-              this.#startPointer,
-              this.#currentPointer,
-              this.#minimumUniformScale,
-            );
+        return this.#requiredScale().materialize(this.#currentPointer, this.#uniformScale);
       case "rotate":
         return rotateSelection(
           this.#elements,
@@ -214,20 +201,26 @@ export class SelectionHandleSession {
     generation: number,
     pointer: PointV1,
   ): Promise<InkElementV1[] | null> {
-    const uniformFactor = await this.#timeSlicedUniformFactor(scheduler, generation, pointer);
-    if (uniformFactor === null) return null;
+    const scaleFactors = await this.#timeSlicedScaleFactors(scheduler, generation, pointer);
+    if (scaleFactors === null) return null;
     const replacements: InkElementV1[] = [];
     for (const element of this.#elements) {
       if (this.#preparationCancelled(scheduler, generation)) return null;
-      replacements.push(this.#materializeOne(element, uniformFactor, pointer));
+      replacements.push(this.#materializeOne(element, scaleFactors, pointer));
       if (!(await this.#continuePreparation(scheduler, generation))) return null;
     }
-    return this.#preparationCancelled(scheduler, generation) ? null : replacements;
+    if (this.#preparationCancelled(scheduler, generation)) return null;
+    if (this.#action.kind !== "scale") return replacements;
+    return this.#requiredScale().stabilizeAnchorTimeSliced(replacements, {
+      isCancelled: () => this.#preparationCancelled(scheduler, generation),
+      shouldYield: scheduler.shouldYield,
+      yieldControl: scheduler.yieldControl,
+    });
   }
 
   #materializeOne(
     element: InkElementV1,
-    uniformFactor: number | undefined,
+    scaleFactors: ScaleFactors | undefined,
     pointer: PointV1,
   ): InkElementV1 {
     if (this.#action.kind === "move") {
@@ -237,32 +230,25 @@ export class SelectionHandleSession {
       return rotateSelection([element], this.#action.center, this.#rotationDeltaAt(pointer))[0]!;
     }
     if (this.#action.kind === "scale") {
-      return uniformFactor === undefined
-        ? this.#scaleSingleAt(element, pointer)
-        : scaleSelectionUniformAtLeast(
-            [element],
-            this.#action.anchor,
-            uniformFactor,
-            this.#minimumUniformScale ?? 0,
-          )[0]!;
+      return this.#requiredScale().materializeOne(
+        element,
+        pointer,
+        this.#uniformScale,
+        scaleFactors,
+      );
     }
     return this.#replaceActionTargetAt(pointer)[0]!;
   }
 
-  async #timeSlicedUniformFactor(
+  async #timeSlicedScaleFactors(
     scheduler: TransformSliceScheduler,
     generation: number,
     pointer: PointV1,
-  ): Promise<number | null | undefined> {
+  ): Promise<ScaleFactors | null | undefined> {
     if (this.#action.kind !== "scale" || this.#elements.length === 1) return undefined;
-    const factor = uniformScaleFactorFromPointers(
-      this.#action.anchor,
-      this.#startPointer,
-      pointer,
-      this.#minimumUniformScale,
-    );
+    const factors = this.#requiredScale().factorsAt(pointer, this.#uniformScale);
     if (this.#preparationCancelled(scheduler, generation)) return null;
-    return Math.max(factor, this.#minimumUniformScale ?? 0);
+    return factors;
   }
 
   #replaceActionTarget(): InkElementV1[] {
@@ -296,25 +282,9 @@ export class SelectionHandleSession {
     ];
   }
 
-  #scaleSingleAt(element: InkElementV1, pointer: PointV1): InkElementV1 {
-    if (this.#action.kind !== "scale") throw new Error("Expected a scale action.");
-    if (this.#uniformScale) {
-      return scaleElementFromPointers(
-        element,
-        this.#action.anchor,
-        this.#startPointer,
-        pointer,
-        activeScaleAxes(this.#action.position),
-        true,
-      );
-    }
-    return scaleElementFromPointers(
-      element,
-      this.#action.anchor,
-      this.#startPointer,
-      pointer,
-      activeScaleAxes(this.#action.position),
-    );
+  #requiredScale(): SelectionScaleGesture {
+    if (this.#scale === undefined) throw new Error("Expected a scale action.");
+    return this.#scale;
   }
 
   #updateSnapCandidate(): void {
@@ -360,31 +330,20 @@ export class SelectionHandleSession {
     if (this.#action.kind === "scale") {
       if (this.#elements.length === 1) {
         const element = this.#elements[0]!;
-        const { factors } = selectionScaleFactors(
-          element,
-          this.#action,
-          this.#startPointer,
-          this.#currentPointer,
-          this.#uniformScale,
-        );
         return {
           anchor: this.#action.anchor,
-          factors,
+          delta: this.#requiredScale().previewDelta,
+          factors: this.#requiredScale().previewFactors(this.#currentPointer, this.#uniformScale),
           kind: "scale",
           rotation: element.rotation,
         };
       }
-      const factor = uniformScaleFactorFromPointers(
-        this.#action.anchor,
-        this.#startPointer,
-        this.#currentPointer,
-        this.#minimumUniformScale,
-      );
       return {
         anchor: this.#action.anchor,
-        factors: { x: factor, y: factor },
+        delta: this.#requiredScale().previewDelta,
+        factors: this.#requiredScale().previewFactors(this.#currentPointer, this.#uniformScale),
         kind: "scale",
-        rotation: 0,
+        rotation: this.#action.rotation,
       };
     }
     if (this.#action.kind === "rotate") {

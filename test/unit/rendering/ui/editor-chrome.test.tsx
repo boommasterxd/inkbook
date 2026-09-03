@@ -34,6 +34,7 @@ describe("Inkbook editor chrome", () => {
           fingerDrawingEnabled: false,
           hasSelection: false,
           openFlyout: null,
+          pasteVisible: false,
         }}
       />,
     );

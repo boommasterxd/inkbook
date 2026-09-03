@@ -23,8 +23,8 @@ import type { PreparedElementHistory } from "./prepared-element-history";
 import type { ElementSceneStore } from "./scene-store";
 import { selectionHandleAction } from "./selection-handle-action";
 import { activeSnapFeatures } from "./snapping-settings";
-import { pressureStrokeScalePreview } from "./pressure-stroke-preview";
 import { commitPreviewReplacement } from "./preview-replacement-commit";
+import { selectionScalePreview } from "./selection-scale-preview";
 import {
   pointerHandleRadiusPixels,
   SelectionHandlePresentation,
@@ -56,7 +56,6 @@ interface ActiveHandleGesture {
   readonly ids: readonly string[];
   readonly pointerId: number;
   readonly pointerType: PointerSample["pointerType"];
-  readonly pressureStrokeIds: ReadonlySet<string>;
   readonly selected: readonly SelectedElementGeometry[];
   readonly frame: OrientedSelectionFrame | null;
   readonly selectedIds: ReadonlySet<string>;
@@ -153,11 +152,6 @@ export class ActiveEditorHandleInteraction {
       },
       pointerId: pointer.pointerId,
       pointerType: pointer.pointerType,
-      pressureStrokeIds: new Set(
-        elements
-          .filter((element) => element.kind === "stroke" && element.style.pressureEnabled)
-          .map(({ id }) => id),
-      ),
       selected,
       selectedIds,
       snapping,
@@ -203,15 +197,15 @@ export class ActiveEditorHandleInteraction {
       },
     );
     const connected = this.#connectedPreview(active, preview);
-    const pressure = pressureStrokeScalePreview(active.selected, active.pressureStrokeIds, preview);
+    const scale = selectionScalePreview(active.selected, preview);
     this.#updatePreviewBottom(active, preview, connected.elements);
     this.#presentation.renderTransform(
       active.ids.filter(
-        (id) => !connected.selectedPreviewIds.has(id) && !pressure.exactPreviewIds.has(id),
+        (id) => !connected.selectedPreviewIds.has(id) && !scale.exactPreviewIds.has(id),
       ),
       preview.transform,
     );
-    this.#presentation.renderPreview(active, preview, connected, pressure.elements);
+    this.#presentation.renderPreview(active, preview, connected, scale.elements);
     return true;
   }
 
@@ -219,10 +213,16 @@ export class ActiveEditorHandleInteraction {
     const active = this.#active;
     if (active === undefined || active.pointerId !== pointerId) return false;
     const commit = active.session.prepareCommit();
-    const effect = this.#selectionFrames.transition(active.frame, active.session.preview.transform);
+    const frameEffect = (replacements: readonly InkElementV1[]) =>
+      active.session.preview.transform?.kind === "scale"
+        ? this.#selectionFrames.rebase(
+            active.frame,
+            replacements.filter(({ id }) => active.selectedIds.has(id)),
+          )
+        : this.#selectionFrames.transition(active.frame, active.session.preview.transform);
     if (commit.status === "ready") {
       const committed = commitPreviewReplacement({
-        effect,
+        effect: frameEffect(commit.replacements),
         history: this.#history,
         motion: this.#renderer,
         previous: commit.previous,
@@ -236,7 +236,7 @@ export class ActiveEditorHandleInteraction {
         (committed) => {
           this.#layout?.finish(committed, previewMaximumBottom);
         },
-        effect,
+        frameEffect,
       );
       if (!accepted) this.#layout?.finish(false);
     } else {

@@ -95,18 +95,18 @@ describe("active editor keyboard DOM boundary", () => {
     harness.dispose();
   });
 
-  it("preserves native Clipboard and Delete behavior when no canvas action is available", () => {
+  it("preserves native Copy and Delete while claiming direct canvas Paste for feedback", () => {
     const harness = createHarness();
 
     expect(harness.key("c", { ctrlKey: true }).defaultPrevented).toBe(false);
     expect(harness.key("x", { metaKey: true }).defaultPrevented).toBe(false);
-    expect(harness.key("v", { ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(harness.key("v", { ctrlKey: true }).defaultPrevented).toBe(true);
     expect(harness.key("Delete").defaultPrevented).toBe(false);
-    expect(harness.paste(["text/html"], () => "<p>native</p>").defaultPrevented).toBe(false);
+    expect(harness.paste(["text/html"], () => "<p>native</p>").defaultPrevented).toBe(true);
     expect(
       harness.paste([INKBOOK_CLIPBOARD_WEB_MIME], () => '{"format":"inkbook-elements"}')
         .defaultPrevented,
-    ).toBe(false);
+    ).toBe(true);
     harness.controller.handlePointerBoundary(true);
     expect(
       harness.paste([INKBOOK_CLIPBOARD_WEB_MIME], () => '{"format":"inkbook-elements"}')
@@ -156,15 +156,15 @@ describe("active editor native paste DOM boundary", () => {
     harness.dispose();
   });
 
-  it("claims Canvas Clipboard shortcuts only between pointer enter and leave", () => {
+  it("keeps a focused canvas Clipboard shortcut claimed after touch hover ends", () => {
     const harness = createHarness();
     harness.selectElement();
 
-    expect(harness.key("c", { ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(harness.key("c", { ctrlKey: true }).defaultPrevented).toBe(true);
     harness.controller.handlePointerBoundary(true);
     expect(harness.key("c", { ctrlKey: true }).defaultPrevented).toBe(true);
     harness.controller.handlePointerBoundary(false);
-    expect(harness.key("c", { ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(harness.key("c", { ctrlKey: true }).defaultPrevented).toBe(true);
     harness.dispose();
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { ElementStore } from "../../../../src/domain/store/public";
-import type { PastePlan } from "../../../../src/persistence/clipboard/public";
+import type { ClipboardCandidates, PastePlan } from "../../../../src/persistence/clipboard/public";
 import { INKBOOK_CLIPBOARD_WEB_MIME } from "../../../../src/persistence/clipboard/public";
 import { ActiveEditorActions } from "../../../../src/obsidian/embeds/active-editor/controller-actions";
 import { ActiveEditorMenuController } from "../../../../src/obsidian/embeds/active-editor/controller-menu";
@@ -12,7 +12,7 @@ import type { MenuFactoryPort, MenuItemPort, MenuPort } from "../../../../src/ob
 import { createClipboardModelDefaults } from "./active-editor-clipboard-fixtures";
 
 describe("active editor Clipboard discovery", () => {
-  it("exposes supported system Paste immediately and validates its current payload", async () => {
+  it("exposes toolbar Paste only after validating the first system Clipboard item", async () => {
     const planClipboardPaste = vi.fn(async () => pastePlan());
     const model = documentModel(planClipboardPaste);
     const stateChanged = vi.fn();
@@ -23,24 +23,44 @@ describe("active editor Clipboard discovery", () => {
       stateChanged,
     );
 
-    expect(actions.canPaste).toBe(true);
+    expect(actions.canPaste).toBe(false);
     await expect(actions.refreshPasteAvailability()).resolves.toBe(true);
     expect(actions.canPaste).toBe(true);
-    expect(stateChanged).not.toHaveBeenCalled();
+    expect(stateChanged).toHaveBeenCalledOnce();
     expect(planClipboardPaste).toHaveBeenCalledWith(
       expect.objectContaining({ customText: "INKBOOK/1:{}" }),
       { kind: "toolbar", visibleCanvasCenter: { x: 100, y: 100 } },
     );
 
-    const menu = new RecordedMenu();
-    const menus = menuController(actions, menu, 0);
-    menus.open({ x: 1, y: 2 });
-    expect(menu.titles).toContain("Paste");
-    menus.dispose();
+    expect(contextMenuTitles(actions)).toContain("Paste");
     actions.dispose();
   });
 
-  it("keeps Paste retryable when a background Clipboard permission probe fails", async () => {
+  it("ignores Inkbook data after a non-Inkbook first Clipboard item", async () => {
+    const firstText = vi.fn(async () => "ordinary text");
+    const secondText = vi.fn(async () => "INKBOOK/1:{}");
+    const planClipboardPaste = vi.fn(async (candidates: ClipboardCandidates) =>
+      candidates.customText === undefined ? null : pastePlan(),
+    );
+    const model = documentModel(planClipboardPaste);
+    const actions = activeActions(
+      model,
+      new ElementSceneStore(model.store),
+      clipboardWindow(async () => [
+        clipboardItem("text/plain", firstText),
+        clipboardItem(INKBOOK_CLIPBOARD_WEB_MIME, secondText),
+      ]),
+      vi.fn(),
+    );
+
+    await expect(actions.refreshPasteAvailability()).resolves.toBe(false);
+    expect(actions.canPaste).toBe(false);
+    expect(firstText).toHaveBeenCalledOnce();
+    expect(secondText).not.toHaveBeenCalled();
+    actions.dispose();
+  });
+
+  it("keeps context-menu Paste retryable without exposing the toolbar button after a failed probe", async () => {
     const planClipboardPaste = vi.fn(async () => null);
     const model = documentModel(planClipboardPaste);
     const actions = activeActions(
@@ -50,9 +70,12 @@ describe("active editor Clipboard discovery", () => {
       vi.fn(),
     );
 
-    await expect(actions.refreshPasteAvailability()).resolves.toBe(true);
-    expect(actions.canPaste).toBe(true);
+    await expect(actions.refreshPasteAvailability()).resolves.toBe(false);
+    expect(actions.canPaste).toBe(false);
+    expect(actions.canRequestPaste).toBe(true);
     expect(planClipboardPaste).not.toHaveBeenCalled();
+
+    expect(contextMenuTitles(actions)).toContain("Paste");
     actions.dispose();
   });
 
@@ -75,9 +98,106 @@ describe("active editor Clipboard discovery", () => {
     actions.dispose();
     completeRead?.([]);
 
-    await expect(probe).resolves.toBe(true);
+    await expect(probe).resolves.toBe(false);
     expect(planClipboardPaste).not.toHaveBeenCalled();
     expect(stateChanged).not.toHaveBeenCalled();
+  });
+});
+
+describe("active editor Clipboard action feedback", () => {
+  it("reports the same invalid Clipboard feedback for shortcut, context-menu, and native Paste", async () => {
+    const model = documentModel(vi.fn(async () => null));
+    const onFeedback = vi.fn();
+    const actions = activeActions(
+      model,
+      new ElementSceneStore(model.store),
+      clipboardWindowWithRead("ordinary text", "text/plain"),
+      vi.fn(),
+      new Set(),
+      onFeedback,
+    );
+
+    actions.shortcutPaste();
+    await vi.waitFor(() => {
+      expect(onFeedback).toHaveBeenCalledTimes(1);
+      expect(actions.canRequestPaste).toBe(true);
+    });
+    actions.execute("paste", {
+      invocationPoint: { x: 20, y: 30 },
+      kind: "context-menu",
+    });
+    await vi.waitFor(() => {
+      expect(onFeedback).toHaveBeenCalledTimes(2);
+      expect(actions.canRequestPaste).toBe(true);
+    });
+    expect(
+      actions.pasteFromClipboardData({
+        getData: () => "ordinary text",
+        types: ["text/plain"],
+      }),
+    ).toBe(true);
+
+    expect(onFeedback).toHaveBeenCalledTimes(3);
+    expect(onFeedback.mock.calls).toEqual([
+      ["clipboard-paste-invalid"],
+      ["clipboard-paste-invalid"],
+      ["clipboard-paste-invalid"],
+    ]);
+    actions.dispose();
+  });
+
+  it("reports invalid Clipboard feedback when a previously visible toolbar Paste becomes stale", async () => {
+    let readCount = 0;
+    const model = documentModel(
+      vi.fn(async (candidates: ClipboardCandidates) =>
+        candidates.customText === undefined ? null : pastePlan(),
+      ),
+    );
+    const onFeedback = vi.fn();
+    const actions = activeActions(
+      model,
+      new ElementSceneStore(model.store),
+      clipboardWindow(async () => {
+        readCount += 1;
+        return [
+          readCount === 1
+            ? clipboardItem(INKBOOK_CLIPBOARD_WEB_MIME, async () => "INKBOOK/1:{}")
+            : clipboardItem("text/plain", async () => "ordinary text"),
+        ];
+      }),
+      vi.fn(),
+      new Set(),
+      onFeedback,
+    );
+
+    await expect(actions.refreshPasteAvailability()).resolves.toBe(true);
+    expect(actions.canPaste).toBe(true);
+    actions.execute("paste");
+
+    await vi.waitFor(() => expect(onFeedback).toHaveBeenCalledWith("clipboard-paste-invalid"));
+    expect(actions.canPaste).toBe(false);
+    actions.dispose();
+  });
+
+  it("reports an unexpected Paste pipeline failure without a false success animation", async () => {
+    const model = documentModel(
+      vi.fn(async () => Promise.reject(new Error("worker paste failed"))),
+    );
+    const onFeedback = vi.fn();
+    const actions = activeActions(
+      model,
+      new ElementSceneStore(model.store),
+      clipboardWindowWithRead("INKBOOK/1:{}"),
+      vi.fn(),
+      new Set(),
+      onFeedback,
+    );
+
+    actions.shortcutPaste();
+
+    await vi.waitFor(() => expect(onFeedback).toHaveBeenCalledWith("clipboard-paste-failed"));
+    expect(actions.actionConfirmation).toBeNull();
+    actions.dispose();
   });
 });
 
@@ -135,6 +255,7 @@ function activeActions(
   ownerWindow: Window,
   onStateChanged: () => void,
   selection: ReadonlySet<string> = new Set(),
+  onFeedback?: (code: import("../../../../src/obsidian/feedback").InkbookFeedbackCode) => void,
 ): ActiveEditorActions {
   return new ActiveEditorActions({
     currentSelection: () => selection,
@@ -145,6 +266,7 @@ function activeActions(
     model,
     onCopyEmbed: vi.fn(),
     onDeleteEmbed: vi.fn(),
+    ...(onFeedback === undefined ? {} : { onFeedback }),
     onPasteCommitted: vi.fn(),
     onPendingChanged: vi.fn(),
     onStateChanged,
@@ -170,6 +292,14 @@ function menuController(
     storeSize: () => storeSize,
     toScreenPoint: (point) => point,
   });
+}
+
+function contextMenuTitles(actions: ActiveEditorActions): readonly string[] {
+  const menu = new RecordedMenu();
+  const menus = menuController(actions, menu, 0);
+  menus.open({ x: 1, y: 2 });
+  menus.dispose();
+  return menu.titles;
 }
 
 function documentModel(
@@ -227,12 +357,18 @@ function clipboardWindow(read: Clipboard["read"]): Window {
   } as unknown as Window;
 }
 
-function clipboardWindowWithRead(customText: string): Window {
-  const item = {
-    getType: async (mime: string) => new Blob([customText], { type: mime }),
-    types: [INKBOOK_CLIPBOARD_WEB_MIME],
-  };
-  return clipboardWindow(async () => [item as unknown as ClipboardItem]);
+function clipboardWindowWithRead(text: string, mime: string = INKBOOK_CLIPBOARD_WEB_MIME): Window {
+  return clipboardWindow(async () => [clipboardItem(mime, async () => text)]);
+}
+
+function clipboardItem(mime: string, text: () => Promise<string>): ClipboardItem {
+  return {
+    getType: async (requestedMime: string) => {
+      if (requestedMime !== mime) throw new TypeError("Unexpected Clipboard MIME type.");
+      return new Blob([await text()], { type: mime });
+    },
+    types: [mime],
+  } as unknown as ClipboardItem;
 }
 
 function clipboardWindowWithRejectedRead(): Window {

@@ -116,7 +116,11 @@ export class ActiveInkbookScene {
     this.#removeViewportListeners = () => scrollBinding?.dispose();
     this.#controller.setEnabled(false);
     this.#chrome = beginEditorChromeMount(this.#chromeHost, this.#controller.chromeProps());
-    this.#removeInputListeners = attachActiveSceneInputListeners(this.#renderer, this.#controller);
+    this.#removeInputListeners = attachActiveSceneInputListeners(
+      this.#renderer,
+      this.#controller,
+      this.#root,
+    );
     this.#layout = new ActiveEditorLayout({
       beginScrollStability: () => this.#transitionScrollStability.begin(),
       chromeHost: this.#chromeHost,

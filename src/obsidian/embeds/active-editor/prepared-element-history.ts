@@ -25,6 +25,10 @@ export interface PreparedElementHistoryOptions {
   readonly sliceBudgetMs?: () => number;
 }
 
+type SelectionFrameEffectFactory = (
+  replacements: readonly InkElementV1[],
+) => SelectionFrameHistoryEffect | undefined;
+
 export class PreparedElementHistory {
   readonly #history: ActiveEditorHistory;
   readonly #isAttached: () => boolean;
@@ -62,7 +66,7 @@ export class PreparedElementHistory {
   public commitHandle(
     session: SelectionHandleSession,
     onCompleted?: (committed: boolean) => void,
-    effect?: SelectionFrameHistoryEffect,
+    frameEffect?: SelectionFrameEffectFactory,
   ): boolean {
     if (this.#pending || this.#disposed) return false;
     const previewCommit = this.#motion.beginPreviewCommit();
@@ -70,6 +74,7 @@ export class PreparedElementHistory {
       try {
         const prepared = await session.prepareCommitTimeSliced(this.#scheduler(generation));
         if (prepared.status !== "ready") return false;
+        const effect = frameEffect?.(prepared.replacements);
         return await this.#commitApplied(
           prepared.previous,
           prepared.replacements,

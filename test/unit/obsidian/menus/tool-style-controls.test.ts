@@ -61,7 +61,7 @@ describe("tool Style controls", () => {
           { label: "Rectangle", value: "rectangle" },
           { label: "Lasso", value: "lasso" },
         ],
-        value: "rectangle",
+        value: "lasso",
       },
       {
         id: "selection-inclusion",

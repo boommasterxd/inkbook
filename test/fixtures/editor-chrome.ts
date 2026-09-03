@@ -21,6 +21,7 @@ export function createEditorChromeProps(ownerDocument: Document): InkbookEditorC
       fingerDrawingEnabled: false,
       hasSelection: false,
       openFlyout: null,
+      pasteVisible: false,
     },
   };
 }

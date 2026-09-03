@@ -2,7 +2,7 @@
 
 ## Ownership and Scope
 
-Inkbook separates canvas-local keyboard bindings from Obsidian commands. A canvas-local binding is handled by the active editor only when no text input, text area, select control, or content-editable element owns the event. Document-level handling additionally requires the pointer to remain over that active editor. Clipboard actions are claimed only when their canvas action is available, so unavailable Inkbook actions do not suppress native Obsidian clipboard behavior.
+Inkbook separates canvas-local keyboard bindings from Obsidian commands. A canvas-local binding is handled by the active editor only when no text input, text area, select control, or content-editable element owns the event. A key or native Paste event dispatched directly to the focused canvas remains canvas-owned after Android touch hover ends; document-level handling outside that surface additionally requires the pointer to remain over the complete active embed, including its toolbar. Clipboard work restores canvas focus after its temporary inert interval unless the user moved focus elsewhere, preserving immediate repeated shortcuts without pointer hover. Copy and Cut are claimed only when a selection exists. Paste is claimed when the platform can perform a bounded system Clipboard read, a validated in-session payload exists, or another claimed Clipboard operation is still pending; on older platforms, the native Paste event provides the synchronous payload instead. Every claimed trigger uses the same success animation and explicit invalid, permission, pipeline-failure, or busy feedback instead of failing silently.
 
 `Mod` means `Cmd` on macOS and `Ctrl` on other platforms. Configurable bindings are local to one device and vault. They are not written into an Inkbook SVG and do not synchronize through plugin data.
 
@@ -11,8 +11,8 @@ Inkbook separates canvas-local keyboard bindings from Obsidian commands. A canva
 | Action           | Built-in binding      | Availability                                               |
 | ---------------- | --------------------- | ---------------------------------------------------------- |
 | Select all       | `Mod+A`               | An active Inkbook editor exists                            |
-| Copy selection   | `Mod+C`               | A selection exists and the pointer is over the editor      |
-| Cut selection    | `Mod+X`               | A selection exists and the pointer is over the editor      |
+| Copy selection   | `Mod+C`               | A selection exists and the canvas owns the key event       |
+| Cut selection    | `Mod+X`               | A selection exists and the canvas owns the key event       |
 | Delete selection | `Delete`              | A selection exists                                         |
 | Zoom in          | `Mod++`               | Navigation is available and the pointer is over the editor |
 | Zoom out         | `Mod+-`               | Navigation is available and the pointer is over the editor |

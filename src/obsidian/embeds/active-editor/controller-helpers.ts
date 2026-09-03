@@ -20,6 +20,10 @@ export function isTool(action: ToolbarAction): action is ToolId {
   );
 }
 
+export function isClipboardAction(action: string): action is "copy" | "cut" | "paste" {
+  return action === "copy" || action === "cut" || action === "paste";
+}
+
 export function isShapeTool(tool: EditorTool): tool is ShapeId {
   return toolbarTool(tool) === "shape";
 }
@@ -118,6 +122,7 @@ export function pageWithBackgroundType(
 }
 
 export function createToolbarState(options: {
+  actionConfirmation?: ToolbarState["actionConfirmation"];
   activeTool: EditorTool;
   canPaste: boolean;
   canRedo: boolean;
@@ -126,8 +131,10 @@ export function createToolbarState(options: {
   fingerDrawingAvailable: boolean;
   hasSelection: boolean;
   openFlyout: ToolbarState["openFlyout"];
+  pasteVisible: boolean;
 }): ToolbarState {
   return {
+    actionConfirmation: options.actionConfirmation ?? null,
     activeTool: toolbarTool(options.activeTool),
     canPaste: options.canPaste,
     canRedo: options.canRedo,
@@ -136,5 +143,6 @@ export function createToolbarState(options: {
     fingerDrawingEnabled: options.fingerDrawingEnabled,
     hasSelection: options.hasSelection,
     openFlyout: options.openFlyout,
+    pasteVisible: options.pasteVisible,
   };
 }

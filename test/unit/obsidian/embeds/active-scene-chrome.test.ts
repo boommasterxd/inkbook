@@ -41,6 +41,7 @@ describe("active scene chrome updates", () => {
         canPaste: false,
         fingerDrawingAvailable: true,
         hasSelection: false,
+        pasteVisible: true,
       },
     };
     const chrome = { update: vi.fn() };
@@ -50,6 +51,9 @@ describe("active scene chrome updates", () => {
     updateActiveSceneChrome(chrome as never, controller as never, layout);
 
     expect(chrome.update).toHaveBeenCalledWith(props);
-    expect(layout.chromeChanged).toHaveBeenCalledWith("wide:right:finger:no-selection:no-paste");
+    expect(layout.chromeChanged).toHaveBeenCalledWith("wide:right:finger:no-selection:paste");
+    props.toolbarState.canPaste = true;
+    updateActiveSceneChrome(chrome as never, controller as never, layout);
+    expect(layout.chromeChanged).toHaveBeenLastCalledWith("wide:right:finger:no-selection:paste");
   });
 });

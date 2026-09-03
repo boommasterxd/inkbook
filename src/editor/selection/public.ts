@@ -47,6 +47,7 @@ export type { SelectionOutline } from "./overlay-geometry";
 export {
   createSelectionFrame,
   createSelectionFrameAtRotation,
+  selectionFramePoint,
   SelectionFrameSession,
   transformSelectionFrame,
 } from "./selection-frame";

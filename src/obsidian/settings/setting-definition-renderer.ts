@@ -13,11 +13,11 @@ import { bindSettingsAction } from "./settings-row";
 export class SettingDefinitionRenderer {
   readonly #cleanups: (() => void)[] = [];
   readonly #host: Pick<SettingTab, "getControlValue" | "setControlValue">;
-  readonly #onChanged: () => void;
+  readonly #onChanged: (key: string | undefined) => void;
 
   public constructor(
     host: Pick<SettingTab, "getControlValue" | "setControlValue">,
-    onChanged: () => void,
+    onChanged: (key: string | undefined) => void,
   ) {
     this.#host = host;
     this.#onChanged = onChanged;
@@ -77,7 +77,7 @@ export class SettingDefinitionRenderer {
     const element = setting.settingEl;
     const activate = (): void => {
       definition.action?.(element, index);
-      this.#onChanged();
+      this.#onChanged(undefined);
     };
     this.#cleanups.push(bindSettingsAction(element, activate));
   }
@@ -114,7 +114,7 @@ export class SettingDefinitionRenderer {
 
   async #commit(key: string, value: unknown): Promise<void> {
     await this.#host.setControlValue(key, value);
-    this.#onChanged();
+    this.#onChanged(key);
   }
 }
 

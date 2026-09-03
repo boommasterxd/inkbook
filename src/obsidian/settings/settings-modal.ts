@@ -9,6 +9,8 @@ import { createObsidianHotkeyAccess } from "./obsidian-hotkey-conflicts";
 
 export type InkbookSettingsView = "settings" | "shortcuts";
 
+const STRUCTURAL_SETTING_KEYS = new Set(["filePlacement.mode"]);
+
 export class InkbookSettingsModalController {
   readonly #app: App;
   #modal: InkbookSettingsModal | undefined;
@@ -86,9 +88,17 @@ class InkbookSettingsModal extends Modal {
       });
       return;
     }
-    const rerender = () => this.#render();
-    this.#definitionRenderer = new SettingDefinitionRenderer(this.#settingTab, rerender);
+    const rerenderIfRequired = (key: string | undefined): void => {
+      if (key === undefined || STRUCTURAL_SETTING_KEYS.has(key)) this.#renderPreservingScroll();
+    };
+    this.#definitionRenderer = new SettingDefinitionRenderer(this.#settingTab, rerenderIfRequired);
     this.#definitionRenderer.render(body, this.#settingTab.getSettingDefinitions());
+  }
+
+  #renderPreservingScroll(): void {
+    const scrollTop = this.contentEl.scrollTop;
+    this.#render();
+    this.contentEl.scrollTop = scrollTop;
   }
 
   #disposeContent(): void {

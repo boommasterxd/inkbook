@@ -5,6 +5,7 @@ import {
   InkbookToolbar,
   nextToolbarIndex,
   resolveToolbarFocusRecovery,
+  resolveToolbarNavigationKey,
 } from "../../../../src/rendering/ui/toolbar";
 import type { ToolbarState } from "../../../../src/rendering/ui/toolbar-types";
 import type { ToolbarStyleIconState } from "../../../../src/rendering/ui/style-icon";
@@ -18,6 +19,7 @@ const state: ToolbarState = {
   fingerDrawingEnabled: false,
   hasSelection: false,
   openFlyout: null,
+  pasteVisible: false,
 };
 
 const DEFAULT_STYLE_ICON: ToolbarStyleIconState = {
@@ -30,10 +32,12 @@ const DEFAULT_STYLE_ICON: ToolbarStyleIconState = {
 function render(
   overrides: Partial<ToolbarState> = {},
   styleIcon: ToolbarStyleIconState = DEFAULT_STYLE_ICON,
+  leftHanded = false,
 ): string {
   return renderToStaticMarkup(
     <InkbookToolbar
       layout="wide"
+      leftHanded={leftHanded}
       onAction={vi.fn()}
       renderIcon={vi.fn()}
       selectionArea="rectangle"
@@ -67,7 +71,12 @@ describe("Inkbook toolbar", () => {
   });
 
   it("exposes selection, clipboard and flyout state", () => {
-    const markup = render({ canPaste: true, hasSelection: true, openFlyout: "style" });
+    const markup = render({
+      canPaste: true,
+      hasSelection: true,
+      openFlyout: "style",
+      pasteVisible: true,
+    });
     expect(markup).toContain('aria-label="Copy"');
     expect(markup).toContain('aria-label="Cut"');
     expect(markup).toContain('aria-label="Delete"');
@@ -116,6 +125,8 @@ describe("Inkbook toolbar", () => {
     expect(nextToolbarIndex("End", 0, 4)).toBe(3);
     expect(nextToolbarIndex("Escape", 0, 4)).toBeNull();
     expect(nextToolbarIndex("ArrowRight", 0, 0)).toBeNull();
+    expect(resolveToolbarNavigationKey("ArrowLeft", true)).toBe("ArrowRight");
+    expect(resolveToolbarNavigationKey("ArrowRight", false)).toBe("ArrowRight");
   });
 
   it("recovers focus to the nearest remaining control when a conditional control disappears", () => {
@@ -131,5 +142,19 @@ describe("Inkbook toolbar", () => {
     ).toBe("lock");
     expect(resolveToolbarFocusRecovery(["undo", "redo"], ["undo"], "redo")).toBe("undo");
     expect(resolveToolbarFocusRecovery(["undo"], [], "undo")).toBeNull();
+  });
+});
+
+describe("Inkbook toolbar handedness", () => {
+  it("marks the complete toolbar composition for mirrored context placement", () => {
+    const markup = render(
+      { canPaste: false, hasSelection: true, pasteVisible: true },
+      DEFAULT_STYLE_ICON,
+      true,
+    );
+
+    expect(markup).toContain("inkbook-toolbar-composition-left-handed");
+    expect(markup).toContain("inkbook-toolbar-left-handed");
+    expect(markup).not.toMatch(/aria-label="Paste"[^>]*disabled=""/u);
   });
 });

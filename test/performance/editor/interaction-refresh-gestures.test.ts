@@ -136,7 +136,7 @@ function selectionSessions(elements: readonly InkElementV1[]): readonly Selectio
     selectionProfile(
       "selection scale preview",
       elements,
-      { anchor: { x: 0, y: 0 }, kind: "scale", position: "bottom-right" },
+      { anchor: { x: 0, y: 0 }, kind: "scale", position: "bottom-right", rotation: 0 },
       { x: 1_000, y: 1_000 },
     ),
     selectionProfile(
@@ -153,7 +153,7 @@ function selectionSessions(elements: readonly InkElementV1[]): readonly Selectio
     selectionProfile(
       "shape scale preview",
       [shape],
-      { anchor: { x: 100, y: 100 }, kind: "scale", position: "bottom-right" },
+      { anchor: { x: 100, y: 100 }, kind: "scale", position: "bottom-right", rotation: 0 },
       { x: 300, y: 200 },
       false,
       true,

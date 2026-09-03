@@ -69,7 +69,9 @@ export class ActiveEditorKeyboardController {
       return this.#handleUnifiedHistory(event.shiftKey ? "redo" : "undo");
     }
     if (event.key === "Escape") return this.#handleEscape();
-    return this.#handleConfiguredShortcut(event) || this.#handleFixedPasteShortcut(event);
+    return (
+      this.#handleConfiguredShortcut(event, true) || this.#handleFixedPasteShortcut(event, true)
+    );
   }
 
   public handleDocumentKeyDown(event: KeyboardEvent): boolean {
@@ -78,7 +80,20 @@ export class ActiveEditorKeyboardController {
     if (isHistoryShortcut(event)) {
       return this.#handleUnifiedHistory(event.shiftKey ? "redo" : "undo");
     }
-    return this.#handleConfiguredShortcut(event) || this.#handleFixedPasteShortcut(event);
+    return (
+      this.#handleConfiguredShortcut(event, false) || this.#handleFixedPasteShortcut(event, false)
+    );
+  }
+
+  public handlePendingClipboardKeyDown(event: KeyboardEvent): boolean {
+    if (isTextField(event.target, this.#options.activeElement())) return false;
+    const action = resolveConfiguredShortcut(event, this.#shortcuts);
+    if (action === "copy" || action === "cut") {
+      if (!this.#clipboardActionAvailable(action, true)) return false;
+      this.#options.actions.execute(action);
+      return true;
+    }
+    return this.#handleFixedPasteShortcut(event, true);
   }
 
   public handleHoverZoom(event: KeyboardEvent): boolean {
@@ -104,8 +119,9 @@ export class ActiveEditorKeyboardController {
     return this.#options.navigation.updateKeyboardStep(step, this.#options.lastScreenPointer());
   }
 
-  public handlePaste(data: SynchronousClipboardData | null): boolean {
-    if (!this.#pointerOver || isTextField(null, this.#options.activeElement())) return false;
+  public handlePaste(data: SynchronousClipboardData | null, surfaceOwned = false): boolean {
+    if ((!surfaceOwned && !this.#pointerOver) || isTextField(null, this.#options.activeElement()))
+      return false;
     return this.#options.actions.pasteFromClipboardData(data);
   }
 
@@ -117,7 +133,7 @@ export class ActiveEditorKeyboardController {
     this.#pointerOver = pointerOver;
   }
 
-  #handleFixedPasteShortcut(event: KeyboardEvent): boolean {
+  #handleFixedPasteShortcut(event: KeyboardEvent, surfaceOwned: boolean): boolean {
     if (
       !(event.ctrlKey || event.metaKey) ||
       event.altKey ||
@@ -126,22 +142,13 @@ export class ActiveEditorKeyboardController {
     ) {
       return false;
     }
-    if (
-      !shouldHandleClipboardShortcut("paste", {
-        hasSelection: this.#options.selectionSize() > 0,
-        hasValidInkPayload: this.#options.actions.hasValidatedPaste,
-        pointerOverActiveEditor: this.#pointerOver,
-        textFieldFocused: false,
-      }) ||
-      !this.#options.actions.isAvailable("paste")
-    ) {
+    if ((!surfaceOwned && !this.#pointerOver) || !this.#options.actions.canClaimPasteShortcut)
       return false;
-    }
     this.#options.actions.shortcutPaste();
     return true;
   }
 
-  #handleConfiguredShortcut(event: KeyboardEvent): boolean {
+  #handleConfiguredShortcut(event: KeyboardEvent, surfaceOwned: boolean): boolean {
     const action = resolveConfiguredShortcut(event, this.#shortcuts);
     if (action === undefined) return false;
     if (action === "zoom-in" || action === "zoom-out") {
@@ -154,20 +161,25 @@ export class ActiveEditorKeyboardController {
     const canvasAction = action === "delete-selection" ? "delete" : action;
     if (
       (canvasAction === "copy" || canvasAction === "cut") &&
-      !this.#clipboardActionAvailable(canvasAction)
+      !this.#clipboardActionAvailable(canvasAction, surfaceOwned)
     ) {
       return false;
     }
-    if (!this.#options.actions.isAvailable(canvasAction)) return false;
+    if (
+      canvasAction !== "copy" &&
+      canvasAction !== "cut" &&
+      !this.#options.actions.isAvailable(canvasAction)
+    )
+      return false;
     this.#options.actions.execute(canvasAction);
     return true;
   }
 
-  #clipboardActionAvailable(action: "copy" | "cut"): boolean {
+  #clipboardActionAvailable(action: "copy" | "cut", surfaceOwned: boolean): boolean {
     return shouldHandleClipboardShortcut(action, {
       hasSelection: this.#options.selectionSize() > 0,
       hasValidInkPayload: this.#options.actions.hasValidatedPaste,
-      pointerOverActiveEditor: this.#pointerOver,
+      pointerOverActiveEditor: surfaceOwned || this.#pointerOver,
       textFieldFocused: false,
     });
   }

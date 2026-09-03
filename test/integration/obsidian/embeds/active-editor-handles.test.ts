@@ -8,7 +8,6 @@ import { createDragElement } from "../../../../src/editor/tools/public";
 import {
   layoutSelectionHandles,
   oppositeElementHandlePoint,
-  transformSelectionPoint,
 } from "../../../../src/editor/selection/public";
 import { ActiveEditorHandleInteraction } from "../../../../src/obsidian/embeds/active-editor/handle-interaction";
 import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";
@@ -18,6 +17,7 @@ import { MovePreview } from "../../../../src/obsidian/embeds/active-editor/selec
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { elementMutationPorts } from "../../../fixtures/obsidian/element-mutation-ports";
+import { expectLatestLinePreview } from "../../../fixtures/obsidian/selection-preview-assertions";
 import { table as geometryTable } from "../../../unit/domain/geometry/fixtures";
 
 const PAGE: PageV1 = {
@@ -124,7 +124,7 @@ describe("active editor selection handles", () => {
   it("commits fractional shape-handle frames once and restores the box with undo", () => {
     const shape = rectangle();
     const fixture = harness([shape], new Set([shape.id]));
-    const { deltas, history, interaction, previewTransforms, store } = fixture;
+    const { deltas, history, interaction, overlays, previewTransforms, store } = fixture;
     const bounds = calculateElementBounds(shape);
     const start = { pointerId: 1, pointerType: "touch" as const, x: bounds.maxX, y: bounds.maxY };
 
@@ -137,8 +137,10 @@ describe("active editor selection handles", () => {
     );
     expect(previewTransforms).toHaveLength(2);
     expect(previewTransforms.every((transform) => transform !== null)).toBe(true);
+    const previewOverlay = overlays[overlays.length - 2];
     expect(store.get(shape.id)?.element).toEqual(shape);
     expect(interaction.pointerUp(start.pointerId)).toBe(true);
+    expect(overlays[overlays.length - 2]).toBe(previewOverlay);
     expect(deltas).toEqual([[shape.id]]);
     expect(history.commandCount).toBe(1);
     const resized = store.get(shape.id)?.element;
@@ -166,7 +168,7 @@ describe("active editor selection handles", () => {
 
     expect(interaction.pointerDown(start)).toBe(true);
     expect(interaction.pointerMove({ ...start, x: 380, y: 280 })).toBe(true);
-    expectLatestLinePreview(elementPreviews, dependent.id, { x: 379.215, y: 279.445 });
+    expectLatestLinePreview(elementPreviews, dependent.id, { x: 378.431, y: 278.889 });
 
     interaction.cancel(start.pointerId);
     expect(elementPreviews[elementPreviews.length - 1]).toEqual([]);
@@ -185,19 +187,23 @@ describe("active editor generic selection transforms", () => {
     expect(interaction.pointerDown(start)).toBe(true);
     expect(interaction.pointerMove({ ...start, x: 44, y: 354 })).toBe(true);
     expect(previewTransforms[previewTransforms.length - 1]).toBe(
-      "translate(252 48) rotate(90) scale(1.5 2) rotate(-90) translate(-252 -48)",
+      "translate(2 -1) translate(252 48) rotate(90) scale(1.5 2) rotate(-90) translate(-252 -48)",
     );
-    expect(overlays[overlays.length - 2]).toContain("M 252 48 L 252 354 L 44 354 L 44 48 Z");
+    const previewOverlay = overlays[overlays.length - 2];
+    expect(previewOverlay).toContain(
+      "M 252 48 L 252 352 L 48.000000000000014 352 L 47.999999999999986 48 Z",
+    );
     expect(interaction.pointerUp(start.pointerId)).toBe(true);
+    expect(overlays[overlays.length - 2]).toBe(previewOverlay);
 
     expect(store.get(table.id)?.element).toMatchObject({
       columnWidth: 150,
       headerHeight: 48,
       height: 200,
-      pivot: { x: 148, y: 201 },
+      pivot: { x: 150, y: 200 },
       rotation: 90,
-      x: -2,
-      y: 101,
+      x: 0,
+      y: 100,
     });
   });
 
@@ -219,20 +225,18 @@ describe("active editor generic selection transforms", () => {
       x: anchor.x + (handle.point.x - anchor.x) * 1.5,
       y: anchor.y + (handle.point.y - anchor.y) * 1.5,
     };
-    const expectedPivot = transformSelectionPoint(stroke.pivot, {
-      anchor,
-      factors: { x: 1.5, y: 1.5 },
-      kind: "scale",
-      rotation: stroke.rotation,
-    });
-    const { interaction, store } = harness([stroke], new Set([stroke.id]));
+    const { elementPreviews, interaction, store } = harness([stroke], new Set([stroke.id]));
     const start = { ...handle.point, pointerId: 10, pointerType: "mouse" as const };
 
     expect(interaction.pointerDown(start)).toBe(true);
     expect(interaction.pointerMove({ ...start, ...current })).toBe(true);
+    const previewStroke = elementPreviews[elementPreviews.length - 1]?.find(
+      ({ id }) => id === stroke.id,
+    );
+    if (previewStroke?.kind !== "stroke") throw new TypeError("Expected a stroke preview.");
     expect(store.get(stroke.id)?.element.pivot).toEqual(stroke.pivot);
     expect(interaction.pointerUp(start.pointerId)).toBe(true);
-    expect(store.get(stroke.id)?.element.pivot).toEqual(expectedPivot);
+    expect(store.get(stroke.id)?.element.pivot).toEqual(previewStroke.pivot);
   });
 });
 
@@ -323,10 +327,8 @@ describe("active editor large selection handles", () => {
     expect(interaction.pointerDown(start)).toBe(true);
     expect(interaction.pointerMove({ ...start, x: 2003, y: 463 })).toBe(true);
 
-    expect(overlays[overlays.length - 2]).toContain(
-      "M 19 19 L 2002.786 19 L 2002.786 464.952 L 19 464.952 Z",
-    );
-    expectLatestLinePreview(elementPreviews, dependent.id, { x: 580.939, y: 460.952 });
+    expect(overlays[overlays.length - 2]).toContain("M 19 19 L 2003 19 L 2003 464 L 19 464 Z");
+    expectLatestLinePreview(elementPreviews, dependent.id, { x: 581, y: 460.009 });
   });
 
   it("prepares a large mixed move in slices and keeps async undo and redo atomic", async () => {
@@ -441,18 +443,6 @@ function harness(elements: readonly InkElementV1[], selection: ReadonlySet<strin
     sceneStore,
     store,
   };
-}
-
-function expectLatestLinePreview(
-  previews: readonly (readonly InkElementV1[])[],
-  id: string,
-  expectedStart: PointV1,
-): void {
-  const current = previews[previews.length - 1] ?? [];
-  const dependent = current.find((element) => element.id === id);
-  expect(dependent?.kind).toBe("line");
-  if (dependent?.kind !== "line") throw new TypeError("Expected a line preview.");
-  expect(dependent.start).toEqual(expectedStart);
 }
 
 function movePreview(

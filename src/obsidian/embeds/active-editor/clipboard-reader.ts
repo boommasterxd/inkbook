@@ -58,10 +58,7 @@ export async function readClipboardCandidates(
   if (clipboard === undefined) return sessionCandidates(sessionText);
   try {
     const candidates = await readCandidateBlobs(clipboard);
-    const materialized = await materializeCandidates(candidates);
-    return materialized.customText === undefined && materialized.plainText === undefined
-      ? (sessionCandidates(sessionText) ?? materialized)
-      : materialized;
+    return materializeCandidates(candidates);
   } catch (error) {
     if (error instanceof ClipboardCandidateLimitError) return null;
     return sessionCandidates(sessionText);
@@ -74,23 +71,21 @@ async function readCandidateBlobs(clipboard: Clipboard): Promise<readonly Candid
   if (items.length > MAX_CLIPBOARD_ITEMS) {
     throw new ClipboardCandidateLimitError("Clipboard item count exceeds its limit.");
   }
+  const item = items[0];
+  if (item === undefined) return [];
   const candidates: CandidateBlob[] = [];
   let aggregateBytes = 0;
-  for (const item of items) {
-    for (const mime of SUPPORTED_MIME_TYPES) {
-      if (!item.types.includes(mime)) continue;
-      const blob = await item.getType(mime);
-      if (!Number.isSafeInteger(blob.size) || blob.size > CLIPBOARD_LIMITS.totalInputBytes) {
-        throw new ClipboardCandidateLimitError("A clipboard candidate exceeds its byte limit.");
-      }
-      aggregateBytes += blob.size;
-      if (aggregateBytes > MAX_CANDIDATE_BLOB_BYTES) {
-        throw new ClipboardCandidateLimitError(
-          "Aggregate clipboard candidates exceed their limit.",
-        );
-      }
-      candidates.push({ blob, mime });
+  for (const mime of SUPPORTED_MIME_TYPES) {
+    if (!item.types.includes(mime)) continue;
+    const blob = await item.getType(mime);
+    if (!Number.isSafeInteger(blob.size) || blob.size > CLIPBOARD_LIMITS.totalInputBytes) {
+      throw new ClipboardCandidateLimitError("A clipboard candidate exceeds its byte limit.");
     }
+    aggregateBytes += blob.size;
+    if (aggregateBytes > MAX_CANDIDATE_BLOB_BYTES) {
+      throw new ClipboardCandidateLimitError("Aggregate clipboard candidates exceed their limit.");
+    }
+    candidates.push({ blob, mime });
   }
   return candidates;
 }

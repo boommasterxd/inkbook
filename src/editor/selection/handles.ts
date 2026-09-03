@@ -9,7 +9,7 @@ import {
 } from "../../domain/geometry/public";
 import type { BoxAnchorV1, InkElementV1, PointV1 } from "../../domain/schema/public";
 import type { SelectedElementGeometry } from "./handle-types";
-import type { OrientedSelectionFrame } from "./selection-frame";
+import { selectionFramePoint, type OrientedSelectionFrame } from "./selection-frame";
 
 const BOX_HANDLE_ORDER: readonly BoxAnchorV1[] = [
   "top-left",
@@ -136,21 +136,11 @@ function orientedBoxHandles(
   zoom: number,
   offsetPixels = ROTATE_HANDLE_OFFSET_PIXELS,
 ): SelectionHandle[] {
-  const [topLeft, topRight, bottomRight, bottomLeft] = points;
-  const midpoint = (start: PointV1, end: PointV1): PointV1 => ({
-    x: (start.x + end.x) / 2,
-    y: (start.y + end.y) / 2,
-  });
-  const positioned: ReadonlyArray<readonly [BoxAnchorV1, PointV1]> = [
-    ["top-left", topLeft],
-    ["top-center", midpoint(topLeft, topRight)],
-    ["top-right", topRight],
-    ["middle-right", midpoint(topRight, bottomRight)],
-    ["bottom-right", bottomRight],
-    ["bottom-center", midpoint(bottomRight, bottomLeft)],
-    ["bottom-left", bottomLeft],
-    ["middle-left", midpoint(bottomLeft, topLeft)],
-  ];
+  const frame = { points, rotation: 0 } satisfies OrientedSelectionFrame;
+  const positioned: ReadonlyArray<readonly [BoxAnchorV1, PointV1]> = BOX_HANDLE_ORDER.map(
+    (position) => [position, selectionFramePoint(frame, position)],
+  );
+  const [topLeft, topRight] = points;
   return [
     ...positioned.map(([position, point]): SelectionHandle => ({ kind: "scale", point, position })),
     orientedRotateHandle(topLeft, topRight, zoom, offsetPixels),
