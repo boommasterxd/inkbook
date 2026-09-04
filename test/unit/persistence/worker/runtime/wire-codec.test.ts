@@ -7,7 +7,10 @@ import {
 import { encodeRuntimeSelection } from "../../../../../src/persistence/clipboard/codec";
 import { CLIPBOARD_LIMITS } from "../../../../../src/persistence/clipboard/constants";
 import { INKBOOK_CLIPBOARD_TEXT_PREFIX } from "../../../../../src/persistence/clipboard/constants";
-import { serializeInkbookDocument } from "../../../../../src/persistence/serialization/public";
+import {
+  deriveDocumentIntegrityManifest,
+  serializeInkbookDocument,
+} from "../../../../../src/persistence/serialization/public";
 import { sha256Hex } from "../../../../../src/persistence/serialization/sha256";
 import {
   decodeRuntimeResultChunked,
@@ -112,15 +115,7 @@ describe("document worker wire codec", () => {
 
     const serialized = serializeInkbookDocument(snapshot());
     if (!serialized.ok) throw new Error(serialized.error.code);
-    const result = encodeRuntimeResult({
-      exportGeneration: 4,
-      modelRevision: 0,
-      output: serialized.value.svg,
-      outputHash: serialized.value.hash,
-      sessionId: "session-a",
-      type: "export-success",
-      workerEpoch: 2,
-    });
+    const result = encodeRuntimeResult(exportSuccess(serialized.value));
     expect(result.transfer).toHaveLength(1);
     const decoded = decodeRuntimeResult(result.value);
     expect(decoded.type).toBe("export-success");
@@ -135,23 +130,12 @@ describe("document worker export wire scheduling", () => {
     const serialized = serializeInkbookDocument(snapshot());
     if (!serialized.ok) throw new Error(serialized.error.code);
     let checkpoints = 0;
-    const encoded = await encodeRuntimeResultChunked(
-      {
-        exportGeneration: 4,
-        modelRevision: 0,
-        output: serialized.value.svg,
-        outputHash: serialized.value.hash,
-        sessionId: "session-a",
-        type: "export-success",
-        workerEpoch: 2,
+    const encoded = await encodeRuntimeResultChunked(exportSuccess(serialized.value), {
+      checkpoint: async () => {
+        checkpoints += 1;
       },
-      {
-        checkpoint: async () => {
-          checkpoints += 1;
-        },
-        signal: new AbortController().signal,
-      },
-    );
+      signal: new AbortController().signal,
+    });
 
     expect(checkpoints).toBe(1);
     expect(encoded.value.type).toBe("export-success-wire");
@@ -160,6 +144,21 @@ describe("document worker export wire scheduling", () => {
     expect(decodeRuntimeResult(encoded.value)).toMatchObject({ type: "export-success" });
   });
 });
+
+function exportSuccess(
+  serialized: Extract<ReturnType<typeof serializeInkbookDocument>, { readonly ok: true }>["value"],
+) {
+  return {
+    exportGeneration: 4,
+    integrityManifest: deriveDocumentIntegrityManifest(serialized.snapshot),
+    modelRevision: 0,
+    output: serialized.svg,
+    outputHash: serialized.hash,
+    sessionId: "session-a",
+    type: "export-success" as const,
+    workerEpoch: 2,
+  };
+}
 
 describe("document worker clipboard wire codec", () => {
   it("transfers one canonical clipboard text and reconstructs write aliases", () => {
@@ -302,6 +301,7 @@ describe("document worker untrusted result adoption", () => {
     const unsafe = new TextEncoder().encode("<svg/>");
     const result = {
       exportGeneration: 1,
+      integrityManifest: deriveDocumentIntegrityManifest(snapshot()),
       modelRevision: 0,
       output: unsafe,
       outputHash: sha256Hex(unsafe),
@@ -310,6 +310,12 @@ describe("document worker untrusted result adoption", () => {
       workerEpoch: 2,
     };
     expect(() => decodeRuntimeResult(result)).toThrow("safe Inkbook SVG");
+    expect(() =>
+      decodeRuntimeResult({
+        ...result,
+        integrityManifest: { ...result.integrityManifest, orderedIdDigest: "invalid" },
+      }),
+    ).toThrow("wire protocol");
 
     const serialized = serializeInkbookDocument(snapshot());
     if (!serialized.ok) throw new Error(serialized.error.code);

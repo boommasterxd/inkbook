@@ -22,7 +22,7 @@ export type SelectionOutline =
     }
   | { readonly kind: "polygon"; readonly points: readonly PointV1[] };
 
-interface SelectionOverlayGeometry {
+export interface SelectionOverlayGeometry {
   readonly handles: readonly SelectionHandle[];
   readonly outline: SelectionOutline;
 }

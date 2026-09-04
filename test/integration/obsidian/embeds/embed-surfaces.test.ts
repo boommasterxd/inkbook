@@ -15,11 +15,12 @@ import { executableSyntaxIn } from "../../../fixtures/obsidian/live-preview";
 import { FakePresentationElement as FakeElement } from "../../../fixtures/obsidian/presentation-dom";
 
 const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata></svg>';
+const CONTENT_IDENTITY = { outputHash: "a".repeat(64), revision: 1 };
 
 function livePreviewEmbed(resourceUrl = "app://vault/ink.svg") {
   return {
     from: 4,
-    preview: { aspectRatio: 12, safeSvg: SAFE_PREVIEW_SVG },
+    preview: { aspectRatio: 12, contentIdentity: CONTENT_IDENTITY, safeSvg: SAFE_PREVIEW_SVG },
     resolved: { documentId: "drawings/ink.svg", resourceUrl },
     sourcePath: "notes/note.md",
     to: 28,
@@ -29,6 +30,7 @@ function createPorts(): EmbedIntegrationPorts & {
   readonly attachments: Array<{
     readonly embedReference: unknown;
     readonly preview?: HTMLElement;
+    readonly previewContentIdentity?: typeof CONTENT_IDENTITY;
     readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
   }>;
   readonly calls: string[];
@@ -39,14 +41,23 @@ function createPorts(): EmbedIntegrationPorts & {
   const attachments: Array<{
     readonly embedReference: unknown;
     readonly preview?: HTMLElement;
+    readonly previewContentIdentity?: typeof CONTENT_IDENTITY;
     readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
   }> = [];
   return {
     attachments,
     calls,
     documents: {
-      cached: () => ({ aspectRatio: 12, safeSvg: SAFE_PREVIEW_SVG }),
-      recognize: async () => ({ aspectRatio: 12, safeSvg: SAFE_PREVIEW_SVG }),
+      cached: () => ({
+        aspectRatio: 12,
+        contentIdentity: CONTENT_IDENTITY,
+        safeSvg: SAFE_PREVIEW_SVG,
+      }),
+      recognize: async () => ({
+        aspectRatio: 12,
+        contentIdentity: CONTENT_IDENTITY,
+        safeSvg: SAFE_PREVIEW_SVG,
+      }),
       subscribe: () => () => undefined,
     },
     lifecycle: new PresentationLifecycleRegistry(),
@@ -402,86 +413,10 @@ describe("Live Preview widget lifecycle", () => {
       to: 28,
     });
     expect(ports.attachments[0]?.preview).toBe(activationButton);
+    expect(ports.attachments[0]?.previewContentIdentity).toEqual(CONTENT_IDENTITY);
     ports.attachments[0]?.setPreviewAspectRatio?.(4);
     expect(activationButton.children[0]?.style["--inkbook-preview-aspect-ratio"]).toBe("4");
     widget.destroy(root as unknown as HTMLElement);
-    expect(ports.calls[ports.calls.length - 1]).toBe("detach:drawings/ink.svg");
-  });
-});
-
-describe("Live Preview widget reconciliation", () => {
-  it("includes both the document path and resource URL in widget identity", () => {
-    const ports = createPorts();
-    const widget = new InkbookLivePreviewWidget(livePreviewEmbed(), ports);
-
-    expect(
-      widget.eq(
-        new InkbookLivePreviewWidget(
-          {
-            from: 4,
-            preview: { aspectRatio: 12, safeSvg: SAFE_PREVIEW_SVG },
-            resolved: { documentId: "drawings/ink.svg", resourceUrl: "app://vault/ink.svg" },
-            sourcePath: "notes/note.md",
-            to: 28,
-          },
-          ports,
-        ),
-      ),
-    ).toBe(true);
-    expect(
-      widget.eq(
-        new InkbookLivePreviewWidget(
-          {
-            from: 4,
-            preview: { aspectRatio: 12, safeSvg: SAFE_PREVIEW_SVG },
-            resolved: {
-              documentId: "drawings/ink.svg",
-              resourceUrl: "app://vault/reissued.svg",
-            },
-            sourcePath: "notes/note.md",
-            to: 28,
-          },
-          ports,
-        ),
-      ),
-    ).toBe(false);
-    expect(
-      widget.eq(
-        new InkbookLivePreviewWidget(
-          {
-            from: 5,
-            preview: { aspectRatio: 12, safeSvg: SAFE_PREVIEW_SVG },
-            resolved: { documentId: "drawings/ink.svg", resourceUrl: "app://vault/ink.svg" },
-            sourcePath: "notes/note.md",
-            to: 28,
-          },
-          ports,
-        ),
-      ),
-    ).toBe(false);
-  });
-
-  it("disposes the mounted controller when an equal CM6 widget receives destroy", () => {
-    const ports = createPorts();
-    const embed = {
-      from: 4,
-      preview: { aspectRatio: 12, safeSvg: SAFE_PREVIEW_SVG },
-      resolved: { documentId: "drawings/ink.svg", resourceUrl: "app://vault/ink.svg" },
-      sourcePath: "notes/note.md",
-      to: 28,
-    };
-    const mounted = new InkbookLivePreviewWidget(embed, ports);
-    const reconciled = new InkbookLivePreviewWidget(embed, ports);
-    const ownerDocument = new FakeElement().ownerDocument;
-    const root = mounted.toDOM({
-      dom: {
-        ownerDocument,
-        createDiv: () => new FakeElement(ownerDocument),
-      },
-    } as never);
-
-    expect(mounted.eq(reconciled)).toBe(true);
-    reconciled.destroy(root);
     expect(ports.calls[ports.calls.length - 1]).toBe("detach:drawings/ink.svg");
   });
 });

@@ -14,6 +14,7 @@ import { ActiveEditorHandleInteraction } from "../../../../src/obsidian/embeds/a
 import type { PreparedElementHistory } from "../../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
+import { immediateFrameScheduler } from "../../../fixtures/obsidian/immediate-frame-scheduler";
 import { createSynchronousActiveEditorHistory } from "../../../fixtures/obsidian/synchronous-active-editor-history";
 import { table as geometryTable } from "../../../unit/domain/geometry/fixtures";
 
@@ -157,6 +158,7 @@ function tableHarness(
     store,
   } as unknown as EditableDocumentModel;
   const interaction = new ActiveEditorHandleInteraction({
+    frameScheduler: immediateFrameScheduler(),
     history,
     model,
     pageToScreen: (point) => point,
@@ -164,6 +166,7 @@ function tableHarness(
     renderer: {
       clearElementPreviews: () => previews.push([]),
       clearPreviewTransforms: vi.fn(),
+      flushPointerFeedbackFrame: vi.fn(),
       setElementPreviews: (elements: readonly InkElementV1[]) => previews.push([...elements]),
       setSelectionOverlayPath: (path: string | null) => overlays.push(path),
       setSnapMarkerPath: (path: string | null) => overlays.push(path),

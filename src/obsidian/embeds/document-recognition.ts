@@ -1,7 +1,7 @@
 import { TFile, type Vault } from "obsidian";
 
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
-import { validatePreviewSvg } from "./safe-preview-svg";
+import { inspectPreviewSvg, type LoadedPreviewSvg } from "./safe-preview-svg";
 
 const MAXIMUM_RECOGNITION_CACHE_ENTRIES = 256;
 const MAXIMUM_RECOGNITION_MARKUP_CODE_UNITS = 32 * 1024 * 1024;
@@ -13,8 +13,7 @@ interface RecognitionEntry {
   readonly value: InkbookDocumentRecognition | undefined;
 }
 
-export type InkbookDocumentRecognition =
-  false | { readonly aspectRatio: number; readonly safeSvg: string };
+export type InkbookDocumentRecognition = false | LoadedPreviewSvg;
 
 export interface InkbookDocumentRecognitionPort {
   cached(documentId: string): InkbookDocumentRecognition | undefined;
@@ -113,10 +112,10 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
       if (current !== file || fileSignature(current) !== signature) return false;
       const descriptor = recognizeCanonicalInkbookRoot(content);
       if (descriptor === false) return false;
-      const safeSvg = await validatePreviewSvg(content);
+      const preview = await inspectPreviewSvg(content);
       const confirmed = this.#resolveFile(file.path);
-      return safeSvg !== null && confirmed === file && fileSignature(confirmed) === signature
-        ? { ...descriptor, safeSvg }
+      return preview !== null && confirmed === file && fileSignature(confirmed) === signature
+        ? { ...preview, aspectRatio: descriptor.aspectRatio }
         : false;
     } catch {
       return false;

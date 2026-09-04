@@ -17,6 +17,7 @@ import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-edit
 import type { PreparedElementHistory } from "../../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
+import { immediateFrameScheduler } from "../../../fixtures/obsidian/immediate-frame-scheduler";
 import {
   connectedLine,
   coordinateSystem,
@@ -427,6 +428,7 @@ function harness(
   const beginPreviewCommit = vi.fn(() => ({ arm: armPreviewCommit, cancel: cancelPreviewCommit }));
   const clearPreviewTransforms = vi.fn();
   const interaction = new ActiveEditorHandleInteraction({
+    frameScheduler: immediateFrameScheduler(),
     history,
     layout,
     model,
@@ -436,6 +438,7 @@ function harness(
       beginPreviewCommit,
       clearElementPreviews: vi.fn(),
       clearPreviewTransforms,
+      flushPointerFeedbackFrame: vi.fn(),
       setElementPreviews: vi.fn(),
       setPreviewTransform: vi.fn(),
       setSelectionOverlayPath: (path) => overlays.push(path),

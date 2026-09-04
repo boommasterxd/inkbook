@@ -15,7 +15,7 @@ interface SelectionPreviewRenderer {
   };
   clearElementPreviews?(): void;
   clearPreviewTransforms(): void;
-  flushCameraAndOverlayFrame?(): void;
+  flushPointerFeedbackFrame?(): void;
   setElementPreviews?(elements: readonly InkElementV1[], version: number): void;
   setOverlayPath(d: string | null): void;
   setSelectionOverlayPath?(

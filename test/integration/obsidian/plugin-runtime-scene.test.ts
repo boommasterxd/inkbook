@@ -154,7 +154,8 @@ function createPluginHarness() {
   const app = {
     fileManager: {},
     isDarkMode: () => dark,
-    loadLocalStorage: () => settings.device,
+    loadLocalStorage: (key: string) =>
+      key === "inkbook:device-settings:v2" ? settings.device : undefined,
     metadataCache: {
       getFirstLinkpathDest: (linkpath: string) => (linkpath === "drawings/ink.svg" ? file : null),
       on: () => ({ detach: vi.fn() }),

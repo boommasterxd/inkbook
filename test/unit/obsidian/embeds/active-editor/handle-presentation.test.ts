@@ -84,6 +84,7 @@ function rendererPort(
   return {
     clearElementPreviews: vi.fn(),
     clearPreviewTransforms: vi.fn(),
+    flushPointerFeedbackFrame: vi.fn(),
     setElementPreviews: vi.fn(),
     setPreviewTransform: vi.fn(),
     setSelectionOverlayPath,

@@ -1,4 +1,5 @@
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
+import type { PersistedDocumentIdentity } from "../../editor/session/session-port";
 import { inspectTrustedSvgOutput } from "../../persistence/scheduling/trusted-svg-output";
 
 const METADATA_OPEN = "<metadata";
@@ -6,15 +7,31 @@ const METADATA_CLOSE = "</metadata>";
 
 export interface LoadedPreviewSvg {
   readonly aspectRatio: number;
+  readonly contentIdentity: PreviewContentIdentity;
   readonly safeSvg: string;
 }
 
-export async function validatePreviewSvg(source: string | Uint8Array): Promise<string | null> {
+export type PreviewContentIdentity = PersistedDocumentIdentity;
+
+export function samePreviewContentIdentity(
+  left: PreviewContentIdentity,
+  right: PreviewContentIdentity,
+): boolean {
+  return left.revision === right.revision && left.outputHash === right.outputHash;
+}
+
+export async function inspectPreviewSvg(
+  source: string | Uint8Array,
+): Promise<LoadedPreviewSvg | null> {
   try {
     const trusted = await inspectTrustedSvgOutput(source, undefined, {
       versionPolicy: "editable",
     });
-    return trusted.content;
+    return {
+      aspectRatio: 2_048.6 / trusted.lockedHeight,
+      contentIdentity: { outputHash: trusted.outputHash, revision: trusted.revision },
+      safeSvg: trusted.content,
+    };
   } catch {
     return null;
   }
@@ -34,13 +51,11 @@ export async function loadValidatedPreviewSvg(
   if (bytes.byteLength > FILE_SCHEMA_LIMITS.totalInputBytes) {
     throw new Error("The Inkbook preview source exceeds the file limit.");
   }
-  let trusted;
-  try {
-    trusted = await inspectTrustedSvgOutput(bytes, undefined, { versionPolicy: "editable" });
-  } catch {
+  const trusted = await inspectPreviewSvg(bytes);
+  if (trusted === null) {
     throw new Error("The Inkbook preview source is not safe SVG.");
   }
-  return { aspectRatio: 2_048.6 / trusted.lockedHeight, safeSvg: trusted.content };
+  return trusted;
 }
 
 export function createPreviewSvg(ownerDocument: Document, safeSvg: string): SVGSVGElement {

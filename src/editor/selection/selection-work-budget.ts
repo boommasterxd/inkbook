@@ -22,18 +22,29 @@ interface SelectionReplacementSliceScheduler {
 
 const EXACT_PREVIEW_ELEMENT_LIMIT = 256;
 const EXACT_PREVIEW_WORK_LIMIT = 16_384;
+const EXACT_PRESSURE_PREVIEW_POINT_LIMIT = 256;
 
 export function exceedsExactPreviewWork(
   elements: readonly InkElementV1[],
   planner: SelectionReplacementPlanner,
   options: ReplacementWorkOptions = {},
 ): boolean {
+  if (hasLongPressureStroke(elements)) return true;
   return exceedsReplacementWork(
     elements,
     planner,
     EXACT_PREVIEW_ELEMENT_LIMIT,
     EXACT_PREVIEW_WORK_LIMIT,
     options,
+  );
+}
+
+function hasLongPressureStroke(elements: readonly InkElementV1[]): boolean {
+  return elements.some(
+    (element) =>
+      element.kind === "stroke" &&
+      element.style.pressureEnabled &&
+      element.points.length / 3 > EXACT_PRESSURE_PREVIEW_POINT_LIMIT,
   );
 }
 

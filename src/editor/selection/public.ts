@@ -21,7 +21,7 @@ export {
   selectionOverlayGeometry,
   transformSelectionPoint,
 } from "./overlay-geometry";
-export type { SelectionOutline } from "./overlay-geometry";
+export type { SelectionOutline, SelectionOverlayGeometry } from "./overlay-geometry";
 export {
   createSelectionFrameAtRotation,
   selectionFramePoint,

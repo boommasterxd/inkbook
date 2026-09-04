@@ -1,4 +1,3 @@
-import { calculateElementBounds } from "../../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../../domain/schema/public";
 import type { SnappingSettingsV1 } from "../../../domain/settings/types";
 import type { PointerSample } from "../../../editor/input/index";
@@ -6,7 +5,6 @@ import {
   ConnectedSelectionPreviewSession,
   findSelectionHandle,
   layoutSelectionHandles,
-  selectionOverlayGeometry,
   SelectionFrameSession,
   SelectionHandleSession,
   type SelectedElementGeometry,
@@ -31,6 +29,7 @@ import {
 } from "./handle-presentation";
 
 export interface ActiveEditorHandleInteractionOptions {
+  readonly frameScheduler: HandleFrameScheduler;
   readonly history: ActiveEditorHistory;
   readonly layout?: {
     begin(): void;
@@ -50,6 +49,17 @@ export interface ActiveEditorHandleInteractionOptions {
 
 export type { HandleInteractionRenderer } from "./handle-presentation";
 
+export interface HandleFrameScheduler {
+  cancelAnimationFrame(handle: number): void;
+  requestAnimationFrame(callback: FrameRequestCallback): number;
+}
+
+interface PendingHandleSample {
+  readonly pointer: PointerSample;
+  readonly snappingInverted: boolean;
+  readonly uniformScale: boolean;
+}
+
 interface ActiveHandleGesture {
   readonly connectedPreview: ConnectedSelectionPreviewSession;
   readonly connectedTransformIds: readonly string[];
@@ -66,6 +76,7 @@ interface ActiveHandleGesture {
 }
 
 export class ActiveEditorHandleInteraction {
+  readonly #frameScheduler: HandleFrameScheduler;
   readonly #history: ActiveEditorHistory;
   readonly #layout: ActiveEditorHandleInteractionOptions["layout"];
   readonly #model: EditableDocumentModel;
@@ -78,9 +89,12 @@ export class ActiveEditorHandleInteraction {
   readonly #snapping: () => SnappingSettingsV1 | undefined;
   readonly #zoom: () => number;
   #active: ActiveHandleGesture | undefined;
+  #frameHandle: number | undefined;
+  #pendingSample: PendingHandleSample | undefined;
   #previewMaximumBottom: number | undefined;
 
   public constructor(options: ActiveEditorHandleInteractionOptions) {
+    this.#frameScheduler = options.frameScheduler;
     this.#history = options.history;
     this.#layout = options.layout;
     this.#model = options.model;
@@ -111,6 +125,7 @@ export class ActiveEditorHandleInteraction {
     if (active === undefined || (pointerId !== undefined && active.pointerId !== pointerId)) {
       return false;
     }
+    this.#discardPendingSample();
     active.session.cancel();
     this.#layout?.finish(false);
     this.#finish();
@@ -201,6 +216,16 @@ export class ActiveEditorHandleInteraction {
   ): boolean {
     const active = this.#active;
     if (active === undefined || active.pointerId !== pointer.pointerId) return false;
+    this.#pendingSample = { pointer, snappingInverted, uniformScale };
+    this.#schedulePointerFrame(active);
+    return true;
+  }
+
+  #applyPendingSample(active: ActiveHandleGesture): void {
+    const sample = this.#pendingSample;
+    if (sample === undefined || this.#active !== active) return;
+    this.#pendingSample = undefined;
+    const { pointer, snappingInverted, uniformScale } = sample;
     const preview = active.session.update(
       {
         x: pointer.x - active.grabOffset.x,
@@ -213,20 +238,23 @@ export class ActiveEditorHandleInteraction {
     );
     const connected = this.#connectedPreview(active, preview);
     const scale = active.scalePreview.resolve(preview);
-    this.#updatePreviewBottom(active, preview, connected.elements);
     this.#presentation.renderTransform(
       preview.transform?.kind === "scale" && !preview.exactPreviewTruncated
         ? active.scaleTransformIds
         : active.connectedTransformIds,
       preview.transform,
     );
-    this.#presentation.renderPreview(active, preview, connected, scale.elements);
-    return true;
+    this.#updatePreviewBottom(
+      this.#presentation.renderPreview(active, preview, connected, scale.elements),
+    );
+    this.#renderer.flushPointerFeedbackFrame();
   }
 
   public pointerUp(pointerId: number): boolean {
     const active = this.#active;
     if (active === undefined || active.pointerId !== pointerId) return false;
+    this.#cancelPointerFrame();
+    this.#applyPendingSample(active);
     const commit = active.session.prepareCommit();
     const frameEffect = (replacements: readonly InkElementV1[]) =>
       active.session.preview.transform?.kind === "scale"
@@ -273,6 +301,7 @@ export class ActiveEditorHandleInteraction {
   }
 
   #finish(): void {
+    this.#discardPendingSample();
     this.#active = undefined;
     this.#previewMaximumBottom = undefined;
     this.#model.setGestureActive(false);
@@ -280,38 +309,31 @@ export class ActiveEditorHandleInteraction {
     this.renderSelection();
   }
 
-  #updatePreviewBottom(
-    active: ActiveHandleGesture,
-    preview: SelectionHandlePreview,
-    connectedElements: readonly InkElementV1[],
-  ): void {
-    let maximumBottom = Number.NEGATIVE_INFINITY;
-    for (const element of preview.exactElements) {
-      maximumBottom = Math.max(maximumBottom, calculateElementBounds(element).maxY);
-    }
-    for (const element of connectedElements) {
-      maximumBottom = Math.max(maximumBottom, calculateElementBounds(element).maxY);
-    }
-    if (preview.transform !== null) {
-      const frame = preview.previewFrame ?? active.frame;
-      const outline = selectionOverlayGeometry(
-        active.selected,
-        this.#zoom(),
-        preview.previewFrame === null ? preview.transform : null,
-        frame,
-      )?.outline;
-      if (outline?.kind === "linear") {
-        maximumBottom = Math.max(
-          maximumBottom,
-          outline.start.y,
-          outline.end.y,
-          outline.bend?.y ?? Number.NEGATIVE_INFINITY,
-        );
-      } else if (outline !== undefined) {
-        for (const point of outline.points) maximumBottom = Math.max(maximumBottom, point.y);
-      }
-    }
-    if (!Number.isFinite(maximumBottom)) return;
+  #schedulePointerFrame(active: ActiveHandleGesture): void {
+    if (this.#frameHandle !== undefined) return;
+    let completedSynchronously = false;
+    let handle = 0;
+    handle = this.#frameScheduler.requestAnimationFrame(() => {
+      completedSynchronously = true;
+      if (this.#frameHandle === handle) this.#frameHandle = undefined;
+      if (this.#active === active) this.#applyPendingSample(active);
+    });
+    if (!completedSynchronously) this.#frameHandle = handle;
+  }
+
+  #discardPendingSample(): void {
+    this.#cancelPointerFrame();
+    this.#pendingSample = undefined;
+  }
+
+  #cancelPointerFrame(): void {
+    if (this.#frameHandle === undefined) return;
+    this.#frameScheduler.cancelAnimationFrame(this.#frameHandle);
+    this.#frameHandle = undefined;
+  }
+
+  #updatePreviewBottom(maximumBottom: number | undefined): void {
+    if (maximumBottom === undefined) return;
     this.#previewMaximumBottom = Math.max(
       this.#previewMaximumBottom ?? maximumBottom,
       maximumBottom,

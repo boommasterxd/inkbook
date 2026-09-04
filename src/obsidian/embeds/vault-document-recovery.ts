@@ -14,6 +14,11 @@ import type {
   DocumentRuntimeResult,
 } from "../../persistence/worker/runtime/public";
 import { inspectTrustedSvgOutput } from "../../persistence/scheduling/trusted-svg-output";
+import type { TrustedDocumentHeadPort } from "../storage/trusted-document-head-ledger";
+import {
+  deriveDocumentIntegrityManifest,
+  sameDocumentIntegrityManifest,
+} from "../../persistence/serialization/public";
 
 export interface RecoveryCompletionOptions {
   readonly replaceMarkdownTarget?: (
@@ -32,6 +37,7 @@ export interface VaultDocumentPersistedEvent {
 
 export interface VaultDocumentSessionHooks {
   readonly persisted?: (event: VaultDocumentPersistedEvent) => void;
+  readonly trustedHeads?: TrustedDocumentHeadPort;
 }
 
 export type SessionExternalChangeOutcome = ExternalChangeOutcome | "reloaded" | "reload-failed";
@@ -130,7 +136,11 @@ export async function saveRecoveryCopy(options: SaveRecoveryCopyOptions): Promis
   try {
     const exported = await exportRecovery(options);
     if (exported === null) return failed(options.operation);
-    const output = (await inspectTrustedSvgOutput(exported.output, exported.outputHash)).content;
+    const trusted = await inspectTrustedSvgOutput(exported.output, exported.outputHash);
+    if (trusted.snapshotHash !== exported.integrityManifest.contentDigest) {
+      return failed(options.operation);
+    }
+    const output = trusted.content;
     const readBack = await options.files.createAndReadBack(
       path,
       output,
@@ -165,7 +175,11 @@ async function exportRecovery(
     result.exportGeneration === 1 &&
     result.modelRevision === options.operation.baseRevision &&
     result.sessionId === options.operation.sessionId &&
-    result.workerEpoch === options.workerEpoch
+    result.workerEpoch === options.workerEpoch &&
+    sameDocumentIntegrityManifest(
+      result.integrityManifest,
+      deriveDocumentIntegrityManifest(options.snapshot),
+    )
     ? result
     : null;
 }

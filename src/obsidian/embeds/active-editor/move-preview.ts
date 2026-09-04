@@ -181,7 +181,7 @@ export class MovePreview implements GesturePreview {
     this.#lastPointer = pointer;
     const maximumBottom = this.#renderUpdate(pointer);
     this.#options.selectionEdgeDrag?.updatePreviewBottom(maximumBottom);
-    this.#options.renderer.flushCameraAndOverlayFrame?.();
+    this.#options.renderer.flushPointerFeedbackFrame?.();
   }
 
   #assertActive(): void {

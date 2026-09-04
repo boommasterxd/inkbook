@@ -55,6 +55,7 @@ export async function serializeRuntimeSnapshotToUtf8(
       lockedHeight: value.lockedHeight,
       metadataBytes: value.metadataBytes,
       snapshot,
+      snapshotHash: value.metadataHash,
       svg: assembled.output,
       totalBytes: assembled.totalBytes,
     },

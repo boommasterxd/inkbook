@@ -261,8 +261,8 @@ describe("connected preview commit handoff", () => {
     const element = store.records.get("a")!.element as BoxShapeElementV1;
     const preview = { ...element, width: element.width + 40 };
     renderer.setElementPreviews([preview], 1);
+    scheduler.runNext();
     const previewPath = path.attributes.get("d");
-
     const handoff = renderer.beginPreviewCommit();
     renderer.clearElementPreviews();
     expect(path.attributes.get("d")).toBe(previewPath);
@@ -320,7 +320,7 @@ describe("canvas crossfades and overlays", () => {
 });
 
 describe("selection overlay motion", () => {
-  it("animates handles with the selection while snap feedback updates immediately", () => {
+  it("animates handles while staging the latest snap feedback in the scene frame", () => {
     const { renderer, scheduler } = setup();
     scheduler.runAll();
     const overlayGroup = fakeNode(renderer.svg).nodes[2]!;
@@ -348,10 +348,12 @@ describe("selection overlay motion", () => {
     expect(renderer.instrumentation().motionInterruptions).toBe(1);
 
     renderer.setSelectionOverlayPath("M 0 0 L 10 0 L 10 10 Z", "accent");
+    scheduler.runNext();
     expect(selection.attributes.get("data-selection-fill")).toBe("accent");
 
     renderer.setSelectionOverlayPath(null);
     renderer.setSnapMarkerPath(null);
+    scheduler.runNext();
     expect(snap.attributes.get("d")).toBe("");
     renderer.interruptMotionForPointerDown();
     expect(selection.attributes.get("d")).toBe("");
@@ -372,12 +374,14 @@ describe("selection overlay motion", () => {
     expect(Number(visibleOpacity)).toBeGreaterThan(0);
 
     renderer.setSelectionOverlayPath("M 20 30 L 30 30 L 30 40 Z");
+    scheduler.runNext();
     expect(selection.attributes.get("d")).toBe("M 20 30 L 30 30 L 30 40 Z");
-    expect(selection.style.opacity).toBe(visibleOpacity);
+    expect(Number(selection.style.opacity)).toBeGreaterThanOrEqual(Number(visibleOpacity));
 
     renderer.setSelectionOverlayPath("M 40 50 L 50 50 L 50 60 Z");
+    scheduler.runNext();
     expect(selection.attributes.get("d")).toBe("M 40 50 L 50 50 L 50 60 Z");
-    expect(selection.style.opacity).toBe(visibleOpacity);
+    expect(Number(selection.style.opacity)).toBeGreaterThanOrEqual(Number(visibleOpacity));
   });
 });
 

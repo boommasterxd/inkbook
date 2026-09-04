@@ -6,6 +6,7 @@ import { FILE_SCHEMA_LIMITS } from "../../../../src/domain/schema/public";
 import type { AppliedElementMutation, ElementMutation } from "../../../../src/domain/store/public";
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
 import type { PastePlan } from "../../../../src/persistence/clipboard/public";
+import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 
 import {
   DocumentWorkerRuntime,
@@ -15,6 +16,7 @@ import {
   documentFromSnapshot,
   emptySnapshot,
   createVaultSessionFactory,
+  createReadOnlyVaultSession,
   operation,
   persistenceHarness,
   recoveryCopyVaultHarness,
@@ -48,6 +50,29 @@ describe("vault-backed document session", () => {
     expect(factory.getDocumentModel("session-1")?.page).toEqual(emptySnapshot().page);
     expect(readBinary).toHaveBeenCalledWith(file);
     session.dispose();
+    expect(factory.getDocumentModel("session-1")).toBeUndefined();
+  });
+
+  it("does not adopt a fully valid file that changed after the visible preview", async () => {
+    const snapshot = emptySnapshot();
+    const serialized = serializeInkbookDocument(snapshot);
+    if (!serialized.ok) throw new Error("The test SVG could not be serialized.");
+    const bytes = new TextEncoder().encode(serialized.value.svg);
+    const file = new TestTFile("drawings/ink.svg", bytes.byteLength);
+    const { factory, session } = sessionHarness(file, async () => bytes.buffer.slice(0));
+
+    await expect(
+      session.unlock({
+        ...operation(),
+        expectedSourceIdentity: { outputHash: "a".repeat(64), revision: snapshot.revision - 1 },
+      }),
+    ).resolves.toMatchObject({
+      actualSourceIdentity: {
+        outputHash: serialized.value.hash,
+        revision: snapshot.revision,
+      },
+      status: "source-changed",
+    });
     expect(factory.getDocumentModel("session-1")).toBeUndefined();
   });
 
@@ -112,16 +137,11 @@ describe("vault-backed document session", () => {
 
 describe("vault-backed document executors", () => {
   it("switches once to the fallback executor when worker construction fails", async () => {
-    const { bytes } = documentFromSnapshot();
-    const file = new TestTFile("drawings/ink.svg", bytes.byteLength);
+    const document = documentFromSnapshot();
     const create = vi.fn(async (): Promise<DocumentRuntimePort> => {
       throw new Error("CSP blocked worker construction");
     });
-    const factory = createVaultSessionFactory(
-      { getFileByPath: () => file, readBinary: async () => bytes.buffer.slice(0) },
-      create,
-    );
-    const session = factory.create({ documentId: file.path, sessionId: "session-1" });
+    const { session } = createReadOnlyVaultSession(document, create);
 
     await expect(session.unlock(operation())).resolves.toMatchObject({
       status: "active",

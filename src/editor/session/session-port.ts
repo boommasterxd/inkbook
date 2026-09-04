@@ -5,7 +5,13 @@ export interface SessionIdentity {
   readonly sessionId: string;
 }
 
+export interface PersistedDocumentIdentity {
+  readonly outputHash: string;
+  readonly revision: number;
+}
+
 export interface SessionOperationIdentity extends SessionIdentity {
+  readonly expectedSourceIdentity?: PersistedDocumentIdentity;
   readonly operationId: number;
   readonly workerEpoch: number;
   readonly workspaceToken: number;
@@ -24,9 +30,12 @@ export interface DocumentSessionSnapshot extends SessionIdentity {
   readonly workerEpoch: number;
 }
 
-export interface UnlockResult extends SessionOperationIdentity {
-  readonly status: "active" | "load-error";
-}
+export type UnlockResult =
+  | (SessionOperationIdentity & { readonly status: "active" | "load-error" })
+  | (SessionOperationIdentity & {
+      readonly actualSourceIdentity: PersistedDocumentIdentity;
+      readonly status: "source-changed";
+    });
 
 export interface SaveResult extends SessionOperationIdentity {
   readonly revision: number;

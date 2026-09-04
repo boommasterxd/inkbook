@@ -95,6 +95,7 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
       project: (event) => options.navigation.screenPointer(event),
     }),
     handles: new ActiveEditorHandleInteraction({
+      frameScheduler: options.ownerWindow,
       history: options.history,
       layout: controller.selectionMoveLayout,
       model: controller.model,
@@ -144,7 +145,7 @@ export function createControllerNavigation(options: {
         options.renderSelection();
       }
       appliedZoom = camera.zoom;
-      controller.renderer.flushCameraAndOverlayFrame();
+      controller.renderer.flushPointerFeedbackFrame();
     },
     applyZoomLayout: controller.applyZoomLayout,
     container: controller.container,

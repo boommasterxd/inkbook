@@ -133,7 +133,7 @@ describe("selection move edge-scroll projection", () => {
       }),
     };
     const setPreviewTransform = vi.fn();
-    const flushCameraAndOverlayFrame = vi.fn();
+    const flushPointerFeedbackFrame = vi.fn();
     const preview = new MovePreview({
       history: {} as ActiveEditorHistory,
       pageToScreen: (point) => point,
@@ -141,7 +141,7 @@ describe("selection move edge-scroll projection", () => {
       preparedHistory: {} as PreparedElementHistory,
       renderer: {
         clearPreviewTransforms: vi.fn(),
-        flushCameraAndOverlayFrame,
+        flushPointerFeedbackFrame,
         setOverlayPath: vi.fn(),
         setPreviewTransform,
         suppressMotionForNextDelta: vi.fn(),
@@ -167,7 +167,7 @@ describe("selection move edge-scroll projection", () => {
     refreshViewport?.();
 
     expect(setPreviewTransform).toHaveBeenLastCalledWith([], "translate(20 70)", 2);
-    expect(flushCameraAndOverlayFrame).toHaveBeenCalledOnce();
+    expect(flushPointerFeedbackFrame).toHaveBeenCalledOnce();
     preview.revert();
   });
 });

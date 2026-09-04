@@ -224,7 +224,7 @@ describe("active editor document keyboard boundary", () => {
   it("reprojects screen-space selection geometry before each camera flush", () => {
     const harness = createHarness();
     harness.selectElement();
-    const { setSelectionOverlayPath: setSelectionPath, flushCameraAndOverlayFrame: flush } =
+    const { setSelectionOverlayPath: setSelectionPath, flushPointerFeedbackFrame: flush } =
       harness.renderer;
     const initialPath = setSelectionPath.mock.lastCall?.[0];
     const order: string[] = [];
@@ -392,7 +392,7 @@ function rendererPort(inputSurface: HTMLDivElement) {
     clearLiveStroke: vi.fn(),
     clearElementPreviews: vi.fn(),
     clearPreviewTransforms: vi.fn(),
-    flushCameraAndOverlayFrame: vi.fn<() => void>(),
+    flushPointerFeedbackFrame: vi.fn<() => void>(),
     inputSurface,
     interruptMotionForPointerDown: vi.fn(),
     setCamera: vi.fn(),

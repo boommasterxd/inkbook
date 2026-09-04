@@ -142,7 +142,7 @@ export class SceneMotionController {
     }
   }
 
-  public setSelectionPath(
+  public applySelectionPath(
     path: string | null,
     handlePath: string | null,
     fill: "accent" | "none",
@@ -160,7 +160,7 @@ export class SceneMotionController {
     );
   }
 
-  public setSnapPath(path: string | null): void {
+  public applySnapPath(path: string | null): void {
     this.#dom.snapMarkerPath.setAttribute("d", path ?? "");
     writeMotionStyle(this.#dom.snapMarkerPath, 1, 1);
   }

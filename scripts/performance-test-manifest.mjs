@@ -5,6 +5,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/editor/eraser-finalization-refresh-profile.test.ts",
     "test/performance/editor/page-height-animation.test.ts",
     "test/performance/obsidian/active-editor-navigation-refresh-profile.test.ts",
+    "test/performance/obsidian/selection-resize-frame-pipeline.test.ts",
     "test/performance/persistence/worker-fallback.test.ts",
     "test/performance/rendering/scene/interaction-refresh-reconciliation.test.ts",
     "test/performance/rendering/scene/live-stroke-refresh-profile.test.ts",

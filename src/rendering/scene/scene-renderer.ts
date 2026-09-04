@@ -254,12 +254,12 @@ export class SvgSceneRenderer {
     handles: string | null = null,
   ): void {
     this.assertActive();
-    this.#motion.setSelectionPath(d, handles, fill);
+    this.#frameWriter.setSelectionPath(d, handles, fill);
     this.schedule();
   }
   public setSnapMarkerPath(d: string | null): void {
     this.assertActive();
-    this.#motion.setSnapPath(d);
+    this.#frameWriter.setSnapPath(d);
     this.schedule();
   }
   public suppressMotionForNextDelta(ids: readonly string[]): void {
@@ -276,9 +276,13 @@ export class SvgSceneRenderer {
     this.#motion.setReducedMotion(reduced);
     this.schedule();
   }
-  public flushCameraAndOverlayFrame(): void {
+  public flushPointerFeedbackFrame(): void {
     this.assertActive();
-    this.#frameWriter.writePointerFeedback(this.#transformPreviews);
+    this.#frameWriter.writePointerFeedback(
+      this.#transformPreviews,
+      this.#elementPreviews,
+      this.#motion,
+    );
   }
   public setPreviewTransform(
     ids: readonly string[],
@@ -399,7 +403,7 @@ export class SvgSceneRenderer {
     }
     this.prepareVisibility();
     this.#transformPreviews.refreshContext();
-    this.#frameWriter.writePointerFeedback(this.#transformPreviews);
+    this.flushPointerFeedbackFrame();
     const pendingMountedChanges = this.#content.writeMountedChanges(deadline, () =>
       this.#scheduler.now(),
     );

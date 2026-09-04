@@ -170,6 +170,13 @@ function createRuntime(
     }),
     embedActions,
     {
+      deviceStorage: {
+        loadLocalStorage: (key) => {
+          const stored: unknown = plugin.app.loadLocalStorage(key);
+          return stored;
+        },
+        saveLocalStorage: (key, data) => plugin.app.saveLocalStorage(key, data),
+      },
       fallbackOwnerWindow: () =>
         plugin.app.workspace.containerEl.ownerDocument.defaultView ?? undefined,
       keymap: plugin.app.keymap,

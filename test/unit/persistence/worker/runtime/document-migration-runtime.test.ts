@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { ChunkedInputCancelledError } from "../../../../../src/persistence/serialization/chunked-input-types";
-import { serializeInkbookDocument } from "../../../../../src/persistence/serialization/public";
+import {
+  deriveDocumentIntegrityManifest,
+  serializeInkbookDocument,
+} from "../../../../../src/persistence/serialization/public";
 import { DocumentModelRuntime } from "../../../../../src/persistence/worker/runtime/document-model";
 import {
   DocumentWorkerRuntime,
@@ -63,6 +66,7 @@ describe("document runtime migration", () => {
   it("requires a bounded source version on worker unlock results", () => {
     expect(
       isDocumentRuntimeWireResult({
+        integrityManifest: deriveDocumentIntegrityManifest(snapshot()),
         lockedHeight: 348.6,
         requiresCanonicalRewrite: false,
         sourceVersion: 0,
@@ -72,6 +76,7 @@ describe("document runtime migration", () => {
     expect(isDocumentRuntimeWireResult({ sourceVersion: 0, type: "unlock-success" })).toBe(false);
     expect(
       isDocumentRuntimeWireResult({
+        integrityManifest: deriveDocumentIntegrityManifest(snapshot()),
         lockedHeight: 348.6,
         requiresCanonicalRewrite: false,
         sourceVersion: 2,
@@ -79,7 +84,6 @@ describe("document runtime migration", () => {
       }),
     ).toBe(false);
   });
-
   it("adopts only the fully migrated version in worker and fallback paths", async () => {
     const input = versionZeroDocument();
     const direct = await new DocumentModelRuntime().unlock(input);

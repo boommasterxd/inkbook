@@ -10,6 +10,8 @@ import {
   writeScheme,
 } from "./frame-writes";
 import type { SceneDom } from "./scene-dom";
+import type { SceneElementPreviewController } from "./element-preview-controller";
+import type { SceneMotionController } from "./scene-motion-controller";
 import type { SceneTransformPreviewController } from "./transform-preview-controller";
 import type {
   DocumentScheme,
@@ -36,6 +38,14 @@ export class SceneFrameWriter {
   #overlayDirty = false;
   #overlayPath = "";
   #pageHeight: number | undefined;
+  #pendingSelection:
+    | {
+        readonly fill: "accent" | "none";
+        readonly handles: string | null;
+        readonly path: string | null;
+      }
+    | undefined;
+  #pendingSnapPath: string | null | undefined;
   #scheme: DocumentScheme = "light";
   #themeDirty = true;
 
@@ -67,12 +77,28 @@ export class SceneFrameWriter {
     return true;
   }
 
+  public setSelectionPath(
+    path: string | null,
+    handles: string | null,
+    fill: "accent" | "none",
+  ): void {
+    this.#pendingSelection = { fill, handles, path };
+  }
+
+  public setSnapPath(path: string | null): void {
+    this.#pendingSnapPath = path;
+  }
+
   public setScheme(scheme: DocumentScheme): void {
     this.#scheme = scheme;
     this.#themeDirty = true;
   }
 
-  public writePointerFeedback(previews: SceneTransformPreviewController): void {
+  public writePointerFeedback(
+    transforms: SceneTransformPreviewController,
+    elements: SceneElementPreviewController,
+    motion: SceneMotionController,
+  ): void {
     if (this.#liveDirty) {
       this.#appliedLivePath = writeLivePath(
         this.#dom,
@@ -105,7 +131,18 @@ export class SceneFrameWriter {
       this.#appliedScheme = this.#scheme;
     }
     this.#themeDirty = false;
-    previews.write();
+    elements.write();
+    transforms.write();
+    const selection = this.#pendingSelection;
+    if (selection !== undefined) {
+      this.#pendingSelection = undefined;
+      motion.applySelectionPath(selection.path, selection.handles, selection.fill);
+    }
+    if (this.#pendingSnapPath !== undefined) {
+      const snap = this.#pendingSnapPath;
+      this.#pendingSnapPath = undefined;
+      motion.applySnapPath(snap);
+    }
   }
 
   public writeBackground(page: PageV1, pageHeight: number, zoom: number): void {

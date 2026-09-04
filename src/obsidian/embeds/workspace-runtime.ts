@@ -19,10 +19,11 @@ import {
   type PresentationSessionPort,
 } from "./presentation-port";
 import { WorkspaceRuntimeLifecycle } from "./workspace-runtime-lifecycle";
-import { showWorkspaceLoadRecovery } from "./workspace-load-recovery";
-import type {
-  WorkspaceLoadFeedbackCode,
-  WorkspaceMountedPresentation,
+import {
+  handleWorkspaceActivationFailure,
+  showWorkspaceLoadRecovery,
+  type WorkspaceLoadFeedbackCode,
+  type WorkspaceMountedPresentation,
 } from "./workspace-load-recovery";
 import { observeActiveSceneReadiness } from "./workspace-runtime-scene-readiness";
 import { ownsMarkdownEditorChange } from "./workspace-runtime-editor";
@@ -35,7 +36,10 @@ import { PresentationOperationFeedback } from "./presentation-operation-feedback
 import type { PresentationOperationFeedbackHandle } from "./presentation-operation-feedback";
 import { WorkspaceRefreshProfiles } from "./workspace-refresh-profiles";
 import { WorkspaceFeedbackRouter, type WorkspaceFeedbackHost } from "./workspace-feedback-router";
-
+import {
+  TrustedDocumentHeadLedger,
+  type DeviceLocalStoragePort,
+} from "../storage/trusted-document-head-ledger";
 interface WorkspaceRuntimeSettings {
   readonly device: InkbookDeviceSettingsV2;
   readonly vault: InkbookSettingsV4;
@@ -66,10 +70,15 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     settings: () => WorkspaceRuntimeSettings,
     embedActions: ObsidianEmbedActions,
     host: WorkspaceFeedbackHost & {
+      readonly deviceStorage?: DeviceLocalStoragePort;
       readonly onOpenSettings: () => void;
       readonly onOpenShortcuts: () => void;
     },
   ) {
+    const trustedHeads =
+      host.deviceStorage === undefined
+        ? undefined
+        : new TrustedDocumentHeadLedger(host.deviceStorage);
     this.#embedActions = embedActions;
     this.#fallbackOwnerWindow = host.fallbackOwnerWindow;
     this.#feedback = new WorkspaceFeedbackRouter(host.manager, host.view, (documentId) =>
@@ -101,6 +110,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       }),
       {
         persisted: (event) => this.#lifecycle.handlePersisted(event),
+        ...(trustedHeads === undefined ? {} : { trustedHeads }),
       },
     );
     const presentations: PresentationLifecyclePort = {
@@ -166,10 +176,14 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     void handle.outcome
       .then((outcome) => {
         if (outcome.kind !== "activated") {
-          this.#lifecycle.failAutoActivation(attachment, autoActivationAttempt);
-          const state = outcome.kind === "load-error" ? "load-error" : "locked";
-          this.#setState(attachment, state, loadFeedback);
-          if (outcome.kind === "load-error") this.#showLoadError(mounted);
+          handleWorkspaceActivationFailure(outcome, {
+            failAutoActivation: () =>
+              this.#lifecycle.failAutoActivation(attachment, autoActivationAttempt),
+            refreshPreview: (identity) =>
+              this.#lifecycle.refreshPersistedPreview(attachment.documentId, identity),
+            setState: (state) => this.#setState(attachment, state, loadFeedback),
+            showLoadError: (code) => this.#showLoadError(mounted, code),
+          });
           return;
         }
         if (outcome.phase !== "active") {
@@ -266,14 +280,11 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     if (action === "lock") return this.hasActivePresentation();
     return this.#activeScene()?.isActionAvailable(action) ?? false;
   }
-
   readonly lockActivePresentation = (): boolean => this.#coordinator.requestLockCurrent();
-
   updateDeviceSettings(settings: InkbookDeviceSettingsV2): void {
     if (this.#disposed) return;
     for (const mounted of this.#mounted.values()) mounted.scene?.updateDeviceSettings(settings);
   }
-
   updateVaultSettings(settings: InkbookSettingsV4): void {
     if (this.#disposed) return;
     this.refreshRateProfiles.setPreference(settings.refreshRatePreference);
@@ -290,7 +301,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   ): void {
     this.#lifecycle.queueAutoActivation(documentId, ownerWindow, onTimeout, dismissUndoHint);
   }
-
   readonly abortAutoActivation = (documentId: string): void =>
     this.#lifecycle.abortAutoActivation(documentId);
 

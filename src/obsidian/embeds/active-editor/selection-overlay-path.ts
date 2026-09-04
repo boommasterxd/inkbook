@@ -10,6 +10,7 @@ import {
   type SelectedElementGeometry,
   type OrientedSelectionFrame,
   type SelectionOutline,
+  type SelectionOverlayGeometry,
   type SelectionPreviewTransform,
 } from "../../../editor/selection/public";
 
@@ -30,13 +31,17 @@ export interface SelectionOverlayPaths {
 export function selectionOverlayPaths(
   selected: readonly SelectedElementGeometry[],
   options: SelectionOverlayPathOptions,
+  prepared?: SelectionOverlayGeometry | null,
 ): SelectionOverlayPaths {
-  const geometry = selectionOverlayGeometry(
-    selected,
-    options.zoom,
-    options.transform ?? null,
-    options.frame ?? null,
-  );
+  const geometry =
+    prepared === undefined
+      ? selectionOverlayGeometry(
+          selected,
+          options.zoom,
+          options.transform ?? null,
+          options.frame ?? null,
+        )
+      : prepared;
   if (geometry === null) return { handles: null, outline: null };
   const outlineParts = [outlinePath(geometry.outline, options.pageToScreen)];
   outlineParts.push(...structuralEditPaths(selected, options));

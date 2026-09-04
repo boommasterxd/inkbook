@@ -50,6 +50,7 @@ import {
   inspectTrustedSvgOutput,
   inspectTrustedSvgOutputSync,
 } from "../../scheduling/trusted-svg-output";
+import { isDocumentIntegrityManifest } from "../../serialization/document-integrity-manifest";
 
 export type { RuntimeWireSliceOptions } from "./element-wire-codec";
 
@@ -434,6 +435,7 @@ export function isDocumentRuntimeWireResult(value: unknown): value is DocumentRu
       typeof value.lockedHeight === "number" &&
       Number.isFinite(value.lockedHeight) &&
       value.lockedHeight > 0 &&
+      isDocumentIntegrityManifest(value.integrityManifest) &&
       typeof value.requiresCanonicalRewrite === "boolean" &&
       typeof value.sourceVersion === "number" &&
       Number.isSafeInteger(value.sourceVersion) &&
@@ -443,6 +445,7 @@ export function isDocumentRuntimeWireResult(value: unknown): value is DocumentRu
   }
   if (value.type !== "export-success-wire") return true;
   return (
+    isDocumentIntegrityManifest(value.integrityManifest) &&
     value.output instanceof Uint8Array &&
     value.output.buffer instanceof ArrayBuffer &&
     value.output.byteOffset === 0 &&

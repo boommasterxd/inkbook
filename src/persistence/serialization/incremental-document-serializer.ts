@@ -235,19 +235,15 @@ export class IncrementalDocumentSerializer {
     );
     const metadataBytes = metadataBudget.usedBytes;
     const totalBytes = outputBudget.usedBytes;
+    const snapshot = snapshotValue(revision, page, assembly.value.elements);
     return {
       ok: true,
       value: {
         hash: hasher.hash(svg),
         lockedHeight,
         metadataBytes,
-        snapshot: {
-          format: "inkbook",
-          version: 1,
-          revision,
-          page,
-          elements: assembly.value.elements,
-        },
+        snapshot,
+        snapshotHash: metadataHash,
         svg,
         totalBytes,
       },
@@ -296,13 +292,15 @@ export class IncrementalDocumentSerializer {
       if (error instanceof ChunkedOutputLimitError) return this.#outputLimitExceeded();
       throw error;
     }
+    const snapshot = snapshotValue(revision, page, assembly.value.elements);
     return {
       ok: true,
       value: {
         hash: assembled.hash,
         lockedHeight,
         metadataBytes,
-        snapshot: snapshotValue(revision, page, assembly.value.elements),
+        snapshot,
+        snapshotHash: metadataHash,
         svg: assembled.output,
         totalBytes: assembled.totalBytes,
       },

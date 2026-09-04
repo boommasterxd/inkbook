@@ -45,7 +45,7 @@ export function serializeInkbookDocument(
     content: bands.content.flatMap(serializeElementPaths),
   });
   const staticValidation = validateSafeSvg(svg);
-  if (staticValidation === null) {
+  if (staticValidation === null || staticValidation.snapshotHash === null) {
     return failure(
       "static-output-limit-exceeded",
       "Generated SVG does not satisfy the static markup contract.",
@@ -66,6 +66,7 @@ export function serializeInkbookDocument(
       lockedHeight,
       metadataBytes,
       snapshot,
+      snapshotHash: staticValidation.snapshotHash,
       svg,
       totalBytes,
     },

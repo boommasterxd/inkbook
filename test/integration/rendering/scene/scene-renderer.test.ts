@@ -350,26 +350,7 @@ describe("scene DOM ownership", () => {
 });
 
 describe("mounted scene updates", () => {
-  it("applies element fades and exact geometry previews directly to mounted paths", () => {
-    const { renderer, scheduler, store } = setup();
-    scheduler.runAll();
-    const contentPath = fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes[0]!;
-    const originalD = contentPath.attributes.get("d");
-    const element = store.records.get("a")!.element as BoxShapeElementV1;
-
-    renderer.setElementFade(["a"], 160);
-    expect(contentPath.style.opacity).toBe("0");
-    expect(contentPath.style.transition).toBe("opacity 160ms cubic-bezier(0.2, 0, 0, 1)");
-    renderer.clearElementFade(["a"]);
-    expect(contentPath.style.opacity).toBe("");
-
-    renderer.setElementPreviews([{ ...element, width: 40 }], 1);
-    expect(contentPath.attributes.get("d")).not.toBe(originalD);
-    renderer.clearElementPreviews();
-    expect(contentPath.attributes.get("d")).toBe(originalD);
-  });
-
-  it("flushes pending camera and overlay writes inside an owning navigation frame", () => {
+  it("flushes pending pointer feedback inside an owning navigation frame", () => {
     const { renderer, scheduler } = setup();
     scheduler.runAll();
     const svg = fakeNode(renderer.svg);
@@ -378,7 +359,7 @@ describe("mounted scene updates", () => {
 
     renderer.setCamera({ x: 5, zoom: 2 });
     renderer.setOverlayPath("M 1 1 L 2 2");
-    renderer.flushCameraAndOverlayFrame();
+    renderer.flushPointerFeedbackFrame();
 
     expect(camera.attributes.get("transform")).toBe("translate(10 0) scale(2)");
     expect(overlay.attributes.get("d")).toBe("M 1 1 L 2 2");

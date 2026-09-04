@@ -17,6 +17,7 @@ import { MovePreview } from "../../../../src/obsidian/embeds/active-editor/selec
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { elementMutationPorts } from "../../../fixtures/obsidian/element-mutation-ports";
+import { immediateFrameScheduler } from "../../../fixtures/obsidian/immediate-frame-scheduler";
 import { expectLatestLinePreview } from "../../../fixtures/obsidian/selection-preview-assertions";
 import { table as geometryTable } from "../../../unit/domain/geometry/fixtures";
 
@@ -414,6 +415,7 @@ function harness(elements: readonly InkElementV1[], selection: ReadonlySet<strin
   const renderer = {
     clearElementPreviews: () => elementPreviews.push([]),
     clearPreviewTransforms: () => previewTransforms.push(null),
+    flushPointerFeedbackFrame: vi.fn(),
     setElementPreviews: (elements: readonly InkElementV1[]) => elementPreviews.push([...elements]),
     setOverlayPath: vi.fn(),
     setSelectionOverlayPath: (path: string | null) => overlays.push(path),
@@ -423,6 +425,7 @@ function harness(elements: readonly InkElementV1[], selection: ReadonlySet<strin
     suppressMotionForNextDelta: vi.fn(),
   };
   const interaction = new ActiveEditorHandleInteraction({
+    frameScheduler: immediateFrameScheduler(),
     history,
     model,
     pageToScreen: (point) => point,

@@ -4,10 +4,12 @@ import type { PresentationOperationFeedbackHandle } from "./presentation-operati
 import { showLoadRecoveryPanel } from "./recovery-notice";
 import type { AttachedRecoveryPanel } from "./recovery-notice";
 import type { InkbookFeedbackCode } from "../feedback";
+import type { ActivationOutcome } from "../../editor/session/workspace-editor-coordinator-types";
+import type { PersistedDocumentIdentity } from "../../editor/session/session-port";
 
 export type WorkspaceLoadFeedbackCode = Extract<
   InkbookFeedbackCode,
-  "drawing-load-failed" | "editor-start-failed"
+  "drawing-load-failed" | "drawing-version-changed" | "editor-start-failed"
 >;
 
 export interface WorkspaceMountedPresentation {
@@ -18,6 +20,27 @@ export interface WorkspaceMountedPresentation {
   recovery: AttachedRecoveryPanel | undefined;
   savingFeedback: PresentationOperationFeedbackHandle | undefined;
   scene: ActiveInkbookScene | undefined;
+}
+
+export function handleWorkspaceActivationFailure(
+  outcome: Exclude<ActivationOutcome, { readonly kind: "activated" }>,
+  options: {
+    readonly failAutoActivation: () => void;
+    readonly refreshPreview: (identity: PersistedDocumentIdentity) => void;
+    readonly setState: (state: "load-error" | "locked") => void;
+    readonly showLoadError: (code: WorkspaceLoadFeedbackCode) => void;
+  },
+): void {
+  options.failAutoActivation();
+  const code =
+    outcome.kind === "source-changed"
+      ? "drawing-version-changed"
+      : outcome.kind === "load-error"
+        ? "drawing-load-failed"
+        : undefined;
+  options.setState(code === undefined ? "locked" : "load-error");
+  if (outcome.kind === "source-changed") options.refreshPreview(outcome.actualSourceIdentity);
+  if (code !== undefined) options.showLoadError(code);
 }
 
 export function showWorkspaceLoadRecovery(options: {

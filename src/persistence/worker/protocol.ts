@@ -1,4 +1,5 @@
 import type { ElementValidationDerivation } from "../../domain/schema/public";
+import type { DocumentIntegrityManifest } from "../serialization/document-integrity-manifest";
 
 export type SessionId = string;
 export type ElementId = string;
@@ -55,6 +56,7 @@ export type ExportRequest<TElement, TPage, TSnapshot> =
   FullExportRequest<TSnapshot> | IncrementalExportRequest<TElement, TPage>;
 
 export interface ExportSuccess extends ExportIdentity {
+  readonly integrityManifest: DocumentIntegrityManifest;
   readonly output: string | Uint8Array;
   readonly outputHash: string;
   readonly type: "export-success";

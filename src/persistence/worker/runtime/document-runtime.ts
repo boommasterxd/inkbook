@@ -173,6 +173,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       const { snapshot } = unlocked;
       return {
         identity: request.identity,
+        integrityManifest: unlocked.integrityManifest,
         lockedHeight: unlocked.lockedHeight,
         outputHash: unlocked.outputHash,
         requiresCanonicalRewrite: unlocked.requiresCanonicalRewrite,
@@ -227,6 +228,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       this.#unacknowledgedExports.set(exportIdentityKey(request), request);
       return {
         exportGeneration: request.exportGeneration,
+        integrityManifest: result.integrityManifest,
         modelRevision: request.modelRevision,
         output: result.output,
         outputHash: result.hash,

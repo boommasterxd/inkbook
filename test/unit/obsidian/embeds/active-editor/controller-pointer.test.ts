@@ -125,6 +125,24 @@ describe("selection handle pointer cancellation", () => {
 
     expect(preventDefault).not.toHaveBeenCalled();
   });
+
+  it("routes lost pointer capture through handle cancellation and pointer cleanup", () => {
+    const cancel = vi.fn(() => true);
+    const handles = { ...handlesPort(true), cancel } as unknown as ActiveEditorHandleInteraction;
+    const releasePointer = vi.fn();
+    const finishHandlePointer = vi.fn();
+    const controller = horizontalPanController({
+      finishHandlePointer,
+      handles,
+      releasePointer,
+    });
+
+    controller.handleLostPointerCapture(pointerEvent());
+
+    expect(cancel).toHaveBeenCalledWith(7);
+    expect(releasePointer).toHaveBeenCalledWith(7);
+    expect(finishHandlePointer).toHaveBeenCalledOnce();
+  });
 });
 
 describe("active editor pointer gesture ownership", () => {
@@ -233,6 +251,7 @@ function navigationPort() {
 function horizontalPanController(overrides?: {
   readonly coalescedDispatch?: (event: PointerEvent) => boolean;
   readonly dispatch?: (action: unknown) => void;
+  readonly finishHandlePointer?: () => void;
   readonly getInput?: () => InputState;
   readonly handles?: ActiveEditorHandleInteraction;
   readonly navigation?: ActiveEditorNavigation;
@@ -247,7 +266,7 @@ function horizontalPanController(overrides?: {
       dispatch: vi.fn(overrides?.coalescedDispatch ?? (() => true)),
     } as unknown as CoalescedPointerInput,
     dispatch: overrides?.dispatch ?? vi.fn(),
-    finishHandlePointer: vi.fn(),
+    finishHandlePointer: overrides?.finishHandlePointer ?? vi.fn(),
     getInput: overrides?.getInput ?? (() => ({ ...input, interaction: pagePanInteraction() })),
     handles: overrides?.handles ?? handlesPort(false),
     interruptForInput: vi.fn(),

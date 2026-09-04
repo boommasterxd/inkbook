@@ -9,6 +9,7 @@ export type InkbookFeedbackCode =
   | "clipboard-paste-stale"
   | "cut-selection-changed"
   | "drawing-load-failed"
+  | "drawing-version-changed"
   | "editor-activation-delayed"
   | "editor-start-failed"
   | "embed-copy-clipboard-unavailable"
@@ -90,6 +91,11 @@ const FEEDBACK: Readonly<Record<InkbookFeedbackCode, InkbookFeedbackContent>> = 
     detail: "The saved preview is still available.",
     severity: "error",
     title: "The drawing couldn't be opened.",
+  },
+  "drawing-version-changed": {
+    detail: "The saved preview was refreshed. Review it before trying again.",
+    severity: "warning",
+    title: "The drawing changed before it opened.",
   },
   "editor-activation-delayed": {
     detail: "The drawing was inserted. Try opening the editor again.",

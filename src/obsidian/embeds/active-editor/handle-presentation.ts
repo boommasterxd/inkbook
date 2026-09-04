@@ -8,6 +8,7 @@ import {
   type OrientedSelectionFrame,
   type SelectedElementGeometry,
   type SelectionHandlePreview,
+  type SelectionOutline,
   type SelectionPreviewTransform,
 } from "../../../editor/selection/public";
 
@@ -26,6 +27,7 @@ export interface HandleInteractionRenderer {
   };
   clearElementPreviews(): void;
   clearPreviewTransforms(): void;
+  flushPointerFeedbackFrame(): void;
   setElementPreviews(elements: readonly InkElementV1[], version: number): void;
   setSelectionOverlayPath(
     d: string | null,
@@ -85,13 +87,18 @@ export class SelectionHandlePresentation {
     snap: SelectionHandlePreview["snapGuide"],
     transform: SelectionPreviewTransform | null = null,
     frame: OrientedSelectionFrame | null = null,
-  ): void {
-    const paths = selectionOverlayPaths(selected, {
-      pageToScreen: this.#pageToScreen,
-      frame,
-      transform,
-      zoom: this.#zoom(),
-    });
+  ): SelectionOutline | null {
+    const geometry = selectionOverlayGeometry(selected, this.#zoom(), transform, frame);
+    const paths = selectionOverlayPaths(
+      selected,
+      {
+        pageToScreen: this.#pageToScreen,
+        frame,
+        transform,
+        zoom: this.#zoom(),
+      },
+      geometry,
+    );
     this.#renderer.setSelectionOverlayPath(
       paths.outline,
       selectionOverlayFill(selected),
@@ -100,6 +107,7 @@ export class SelectionHandlePresentation {
     this.#renderer.setSnapMarkerPath(
       snap === null ? null : selectionSnapGuidePath(snap, this.#pageToScreen),
     );
+    return geometry?.outline ?? null;
   }
 
   public renderPreview(
@@ -107,10 +115,12 @@ export class SelectionHandlePresentation {
     preview: SelectionHandlePreview,
     connected: ConnectedHandlePreview,
     scaleElements: readonly InkElementV1[],
-  ): void {
-    const exact = preview.exactElements
-      .filter(({ id }) => context.selectedIds.has(id))
-      .map((element) => ({ bounds: calculateElementBounds(element), element }));
+  ): number | undefined {
+    const exactGeometry = preview.exactElements.map((element) => ({
+      bounds: calculateElementBounds(element),
+      element,
+    }));
+    const exact = exactGeometry.filter(({ element }) => context.selectedIds.has(element.id));
     const exactOverlay =
       preview.transform === null ||
       preview.transform?.kind === "scale" ||
@@ -118,12 +128,14 @@ export class SelectionHandlePresentation {
         ? exact
         : [];
     const exactFrame =
-      exactOverlay.length > 1
-        ? createSelectionFrameAtRotation(
-            exactOverlay.map(({ element }) => element),
-            context.frame?.rotation ?? 0,
-          )
-        : null;
+      preview.transform?.kind === "scale" && preview.previewFrame !== null
+        ? preview.previewFrame
+        : exactOverlay.length > 1
+          ? createSelectionFrameAtRotation(
+              exactOverlay.map(({ element }) => element),
+              context.frame?.rotation ?? 0,
+            )
+          : null;
     const basePreviewElements = preview.exactPreviewTruncated
       ? connected.elements
       : preview.transform === null
@@ -137,12 +149,13 @@ export class SelectionHandlePresentation {
       this.#version,
     );
     const previewFrame = exactOverlay.length === 0 ? preview.previewFrame : null;
-    this.renderGeometry(
+    const outline = this.renderGeometry(
       exactOverlay.length === 0 ? context.selected : exactOverlay,
       preview.snapGuide,
       exactOverlay.length === 0 && previewFrame === null ? preview.transform : null,
       exactOverlay.length === 0 ? (previewFrame ?? context.frame) : exactFrame,
     );
+    return previewMaximumBottom(exactGeometry, connected.elements, outline);
   }
 
   public renderTransform(
@@ -157,6 +170,24 @@ export class SelectionHandlePresentation {
       transform?.kind === "scale" ? "preserve" : "scale",
     );
   }
+}
+
+function previewMaximumBottom(
+  exact: readonly SelectedElementGeometry[],
+  connected: readonly InkElementV1[],
+  outline: SelectionOutline | null,
+): number | undefined {
+  let maximum = Number.NEGATIVE_INFINITY;
+  for (const { bounds } of exact) maximum = Math.max(maximum, bounds.maxY);
+  for (const element of connected) {
+    maximum = Math.max(maximum, calculateElementBounds(element).maxY);
+  }
+  if (outline?.kind === "linear") {
+    maximum = Math.max(maximum, outline.start.y, outline.end.y, outline.bend?.y ?? maximum);
+  } else if (outline !== null) {
+    for (const point of outline.points) maximum = Math.max(maximum, point.y);
+  }
+  return Number.isFinite(maximum) ? maximum : undefined;
 }
 
 function uniquePreviewElements(

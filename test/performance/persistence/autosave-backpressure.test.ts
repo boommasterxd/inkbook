@@ -12,7 +12,10 @@ import type {
   ExistingFilePort,
   MetadataGuardedFileRead,
 } from "../../../src/persistence/saving/save-ports";
-import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
+import {
+  deriveDocumentIntegrityManifest,
+  serializeInkbookDocument,
+} from "../../../src/persistence/serialization/public";
 import { yieldToMainThread } from "../../../src/persistence/scheduling/main-thread-yield";
 import type { ExportSuccess } from "../../../src/persistence/worker/protocol";
 import { createMinimalPersistenceFixture } from "./fixtures";
@@ -238,6 +241,9 @@ class ControlledExecutor implements DocumentRuntimePort {
     if (request === undefined || pending === undefined) throw new Error("Missing export request.");
     pending.resolve({
       exportGeneration: request.exportGeneration,
+      integrityManifest: deriveDocumentIntegrityManifest(
+        createMinimalPersistenceFixture(request.modelRevision),
+      ),
       modelRevision: request.modelRevision,
       output: output(request.modelRevision),
       outputHash: hash(request.modelRevision),

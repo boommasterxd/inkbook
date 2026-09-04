@@ -22,13 +22,22 @@ export function adoptUnlockResult(request: UnlockAdoption): "done" | "release" {
   const activation = request.current.activation;
   request.current.activation = undefined;
   if (activation === undefined || !request.activationIsCurrent(activation)) return "release";
-  if (request.result.status === "load-error") {
+  if (request.result.status !== "active") {
     request.current.state = transitionSession(request.current.state, "load-failed");
-    activation.resolve({
-      kind: "load-error",
-      sessionId: request.result.sessionId,
-      token: activation.token,
-    });
+    activation.resolve(
+      request.result.status === "source-changed"
+        ? {
+            actualSourceIdentity: request.result.actualSourceIdentity,
+            kind: "source-changed",
+            sessionId: request.result.sessionId,
+            token: activation.token,
+          }
+        : {
+            kind: "load-error",
+            sessionId: request.result.sessionId,
+            token: activation.token,
+          },
+    );
     return "done";
   }
   request.current.state = transitionSession(request.current.state, "unlock-succeeded");

@@ -13,6 +13,8 @@ import type {
   PresentationAttachmentInput,
   PresentationSessionPort,
 } from "./presentation-port";
+import type { InkbookLockedPreviewDescriptor } from "./locked-preview";
+import type { PreviewContentIdentity } from "./safe-preview-svg";
 import {
   LAYOUT_TRANSITION_CLASS,
   PresentationScrollRangeReserve,
@@ -27,12 +29,18 @@ interface PresentationMeasurement {
 }
 
 export interface PresentationPreviewLifecycle {
+  readonly contentIdentity?: PreviewContentIdentity;
   readonly element: HTMLElement;
   readonly refresh?: () => void;
   readonly requestHostMeasure?: () => void;
+  readonly setDescriptor?: (descriptor: InkbookLockedPreviewDescriptor) => void;
   readonly setAspectRatio?: (aspectRatio: number) => void;
-  readonly setSource?: (source: string) => Promise<void>;
+  readonly setSource?: (source: string) => Promise<PreviewContentIdentity | undefined>;
 }
+
+type MutablePresentationAttachment = Omit<PresentationAttachment, "previewContentIdentity"> & {
+  previewContentIdentity?: PreviewContentIdentity;
+};
 
 function leasesFor(document: Document): ScrollbarLeaseRegistry<HTMLElement> {
   const current = LEASES_BY_DOCUMENT.get(document);
@@ -46,7 +54,7 @@ function leasesFor(document: Document): ScrollbarLeaseRegistry<HTMLElement> {
 }
 
 export class PresentationController {
-  readonly #attachment: PresentationAttachment;
+  readonly #attachment: MutablePresentationAttachment;
   readonly #sessions: PresentationSessionPort;
   #disposeScheme: (() => void) | undefined;
   #frame: number | undefined;
@@ -77,8 +85,11 @@ export class PresentationController {
     this.#previewLifecycle = previewLifecycle;
     let lifecycle: PresentationScrollLifecycle<HTMLElement, PresentationMeasurement> | undefined;
     this.#scrollRangeReserve = new PresentationScrollRangeReserve(() => lifecycle?.owner ?? null);
-    this.#attachment = {
+    const resolvedAttachment: MutablePresentationAttachment = {
       ...attachment,
+      ...(previewLifecycle?.contentIdentity === undefined
+        ? {}
+        : { previewContentIdentity: previewLifecycle.contentIdentity }),
       ...(previewLifecycle === undefined
         ? {}
         : {
@@ -88,11 +99,19 @@ export class PresentationController {
               : { setPreviewAspectRatio: previewLifecycle.setAspectRatio }),
             ...(previewLifecycle.setSource === undefined
               ? {}
-              : { setPreviewSource: previewLifecycle.setSource }),
+              : {
+                  setPreviewSource: async (source: string) => {
+                    const identity = await previewLifecycle.setSource?.(source);
+                    if (identity !== undefined) {
+                      resolvedAttachment.previewContentIdentity = identity;
+                    }
+                  },
+                }),
           }),
       scrollRangeReserve: this.#scrollRangeReserve,
       scrollOwner: () => lifecycle?.owner ?? null,
     };
+    this.#attachment = resolvedAttachment;
     this.#scroll = lifecycle = new PresentationScrollLifecycle<
       HTMLElement,
       PresentationMeasurement
@@ -172,6 +191,11 @@ export class PresentationController {
       return;
     }
     this.#sessions.activate(this.#attachment);
+  }
+
+  updatePreview(descriptor: InkbookLockedPreviewDescriptor): void {
+    this.#previewLifecycle?.setDescriptor?.(descriptor);
+    this.#attachment.previewContentIdentity = descriptor.contentIdentity;
   }
 
   public get scrollOwner(): HTMLElement | null {

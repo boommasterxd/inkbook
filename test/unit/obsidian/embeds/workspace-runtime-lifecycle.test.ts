@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { PresentationAttachment } from "../../../../src/obsidian/embeds/presentation-port";
 import { WorkspaceRuntimeLifecycle } from "../../../../src/obsidian/embeds/workspace-runtime-lifecycle";
+import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
+import { createSnapshot } from "../../persistence/serialization/fixtures";
 
 function createHarness(
   presentations: Array<{
@@ -10,6 +12,7 @@ function createHarness(
     readonly scene: undefined;
   }> = [],
   queueAutoActivation = true,
+  vault: Vault = { getFileByPath: () => null } as unknown as Vault,
 ) {
   const dismiss = vi.fn();
   const notifyExternalChange = vi.fn(async () => "reloaded" as const);
@@ -29,7 +32,7 @@ function createHarness(
     notifyExternalChange,
     presentations: () => presentations,
     reloadPresentation,
-    vault: { getFileByPath: () => null } as unknown as Vault,
+    vault,
   });
   if (queueAutoActivation) {
     lifecycle.queueAutoActivation("drawings/ink.svg", ownerWindow, vi.fn(), dismiss);
@@ -122,29 +125,73 @@ describe("WorkspaceRuntimeLifecycle host synchronization", () => {
     harness.lifecycle.handleVaultModification("drawings/ink.svg");
 
     harness.timers[1]?.();
-    await Promise.resolve();
+    await vi.waitFor(() => expect(harness.reloadPresentation).toHaveBeenCalledOnce());
 
     expect(harness.notifyExternalChange).toHaveBeenCalledOnce();
     expect(harness.reloadPresentation).toHaveBeenCalledWith("drawings/ink.svg");
   });
 
   it("ignores a Vault modification confirmed by the persisted read-back hook", async () => {
-    const harness = createHarness();
+    const persisted = serializedDocument(1);
+    const harness = createHarness([], true, persisted.vault);
     harness.lifecycle.handleVaultModification("drawings/ink.svg");
     harness.lifecycle.handlePersisted({
       documentId: "drawings/ink.svg",
       lockedAspectRatio: 4,
-      outputHash: "hash",
+      outputHash: persisted.hash,
       revision: 1,
     });
 
     harness.timers[1]?.();
+    await vi.waitFor(() => expect(persisted.read).toHaveBeenCalledOnce());
+    await Promise.resolve();
     await Promise.resolve();
 
     expect(harness.notifyExternalChange).not.toHaveBeenCalled();
     expect(harness.reloadPresentation).not.toHaveBeenCalled();
   });
+
+  it("does not suppress a different persisted identity in the same coalescing window", async () => {
+    const ownWrite = serializedDocument(1);
+    const externalWrite = serializedDocument(2);
+    ownWrite.read.mockResolvedValue(externalWrite.content);
+    const harness = createHarness([], true, ownWrite.vault);
+    harness.lifecycle.handleVaultModification("drawings/ink.svg");
+    harness.lifecycle.handlePersisted({
+      documentId: "drawings/ink.svg",
+      lockedAspectRatio: 4,
+      outputHash: ownWrite.hash,
+      revision: 1,
+    });
+
+    harness.timers[1]?.();
+    await vi.waitFor(() => expect(harness.notifyExternalChange).toHaveBeenCalledOnce());
+
+    expect(harness.reloadPresentation).toHaveBeenCalledWith("drawings/ink.svg");
+  });
 });
+
+function serializedDocument(revision: number) {
+  const serialized = serializeInkbookDocument({ ...createSnapshot(), revision });
+  if (!serialized.ok) throw new Error("The test SVG could not be serialized.");
+  const content = serialized.value.svg;
+  const file = new (TFile as unknown as new (path: string, size: number) => TFile)(
+    "drawings/ink.svg",
+    new TextEncoder().encode(content).byteLength,
+  );
+  const read = vi.fn(async () => content);
+  return {
+    content,
+    file,
+    hash: serialized.value.hash,
+    read,
+    vault: {
+      getFileByPath: () => file,
+      getResourcePath: () => "app://vault/drawings/ink.svg",
+      read,
+    } as unknown as Vault,
+  };
+}
 
 describe("WorkspaceRuntimeLifecycle autoactivation", () => {
   it("retains autoactivation through its timeout and completes only the matching ready attempt", () => {
