@@ -14,6 +14,7 @@ import {
 } from "../../../src/editor/selection/public";
 import { ActiveEditorHandleInteraction } from "../../../src/obsidian/embeds/active-editor/handle-interaction";
 import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
+import { MovePreview } from "../../../src/obsidian/embeds/active-editor/move-preview";
 import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
 import type { EditableDocumentModel } from "../../../src/obsidian/embeds/document-model-port";
 import { SvgSceneRenderer } from "../../../src/rendering/scene";
@@ -44,12 +45,36 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz selection resize frame p
     const profiles = [
       ["mixed exact resize", mixedExactElements()],
       ["long pressure fallback resize", longPressureElements()],
+      ["variable pressure bands resize", variablePressureElements()],
+      ["40 long pressure strokes resize", pressureBandSelection()],
       ["10,000-element fallback resize", fallbackElements()],
     ] as const;
     for (const [name, elements] of profiles) {
       const result = measurePipeline(elements);
       expect(result.layoutUpdates).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
       expect(result.pageGrowths).toBeGreaterThan(0);
+      expect(result.firstFrameMs).toBeLessThanOrEqual(
+        timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
+      );
+      expect(result.p99).toBeLessThanOrEqual(
+        timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+      );
+      await annotate(interactionProfileAnnotation(name, result.p99), "performance");
+      await annotate(
+        `${name}: first preview frame=${result.firstFrameMs.toFixed(3)} ms`,
+        "performance",
+      );
+    }
+  });
+
+  it("keeps coalesced S Pen selection moves within budget", async ({ annotate }) => {
+    const profiles = [
+      ["mixed connected S Pen move", longPressureElements()],
+      ["10,000-stroke S Pen move", fallbackElements()],
+    ] as const;
+    for (const [name, elements] of profiles) {
+      const result = measureMovePipeline(elements);
+      expect(result.layoutUpdates).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
       expect(result.p99).toBeLessThanOrEqual(
         timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
       );
@@ -57,6 +82,61 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz selection resize frame p
     }
   });
 });
+
+function measureMovePipeline(elements: readonly InkElementV1[]) {
+  const fixture = createPipeline(
+    elements,
+    derivePageExtent(PAGE, maximumBottom(elements)).activeHeight,
+  );
+  const ports = interactionPorts(fixture, elements);
+  let layoutUpdates = 0;
+  const preview = new MovePreview({
+    frameScheduler: fixture.scheduler,
+    ...ports,
+    preparedHistory: {} as never,
+    renderer: fixture.renderer,
+    selectionEdgeDrag: {
+      begin: () => undefined,
+      finish: () => undefined,
+      stop: () => undefined,
+      update: () => undefined,
+      updatePreviewBottom: () => {
+        layoutUpdates += 1;
+      },
+    },
+    setSelection: () => undefined,
+    start: {
+      additive: false,
+      kind: "element-move",
+      pointer: { pointerId: 2, pointerType: "pen", pressure: 0.5, x: 100, y: 100 },
+      tool: "select",
+    },
+    store: fixture.store,
+    zoom: () => 1,
+  });
+  fixture.renderer.resetInstrumentation();
+  const durations = measureInteractionFrames((frame) => {
+    for (let sample = 0; sample < RAW_SAMPLES_PER_FRAME; sample += 1) {
+      const progress = frame * RAW_SAMPLES_PER_FRAME + sample + 1;
+      preview.updateSamples([
+        {
+          pointerId: 2,
+          pointerType: "pen",
+          pressure: 0.5,
+          x: 100 + progress * 0.05,
+          y: 100 + progress * 0.1,
+        },
+      ]);
+    }
+    if (fixture.scheduler.pendingCount !== 1) throw new Error("Expected one move frame.");
+    fixture.scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
+    fixture.scheduler.runAll();
+  });
+  preview.revert();
+  fixture.renderer.destroy();
+  fixture.sceneStore.release();
+  return { layoutUpdates, p99: interactionP99(durations) };
+}
 
 function measurePipeline(elements: readonly InkElementV1[]) {
   let pageHeight = derivePageExtent(PAGE, maximumBottom(elements)).activeHeight;
@@ -85,7 +165,12 @@ function measurePipeline(elements: readonly InkElementV1[]) {
   interaction.dispose();
   fixture.renderer.destroy();
   fixture.sceneStore.release();
-  return { layoutUpdates, p99: interactionP99(durations), pageGrowths };
+  return {
+    firstFrameMs: durations[0]!,
+    layoutUpdates,
+    p99: interactionP99(durations),
+    pageGrowths,
+  };
 }
 
 function createPipeline(elements: readonly InkElementV1[], pageHeight: number) {
@@ -111,22 +196,32 @@ function createInteraction(
   elements: readonly InkElementV1[],
   updateBottom: (maximumBottom: number) => void,
 ): ActiveEditorHandleInteraction {
+  const ports = interactionPorts(fixture, elements);
+  return new ActiveEditorHandleInteraction({
+    frameScheduler: fixture.scheduler,
+    layout: { begin: () => undefined, finish: () => undefined, updateBottom },
+    ...ports,
+    preparedHistory: {} as never,
+    renderer: fixture.renderer,
+    zoom: () => 1,
+  });
+}
+
+function interactionPorts(
+  fixture: ReturnType<typeof createPipeline>,
+  elements: readonly InkElementV1[],
+) {
   const model = {
     setGestureActive: () => undefined,
     store: fixture.store,
   } as unknown as EditableDocumentModel;
-  return new ActiveEditorHandleInteraction({
-    frameScheduler: fixture.scheduler,
+  return {
     history: new ActiveEditorHistory(model),
-    layout: { begin: () => undefined, finish: () => undefined, updateBottom },
     model,
-    pageToScreen: (point) => point,
-    preparedHistory: {} as never,
-    renderer: fixture.renderer,
+    pageToScreen: (point: PointV1) => point,
     sceneStore: fixture.sceneStore,
     selection: () => new Set(elements.map(({ id }) => id)),
-    zoom: () => 1,
-  });
+  };
 }
 
 function resizeHandle(elements: readonly InkElementV1[]): PointV1 {
@@ -162,6 +257,32 @@ function mixedExactElements(): readonly InkElementV1[] {
 
 function longPressureElements(): readonly InkElementV1[] {
   return mixedElements(maximumStroke(0));
+}
+
+function variablePressureElements(): readonly InkElementV1[] {
+  const stroke = maximumStroke(0);
+  return mixedElements({
+    ...stroke,
+    points: stroke.points.map((value, index) =>
+      index % 3 === 2 ? Math.round((Math.sin(index / 60) + 1) * 5_000) / 10_000 : value,
+    ),
+  });
+}
+
+function pressureBandSelection(): readonly InkElementV1[] {
+  return Array.from({ length: 40 }, (_, index) => {
+    const x = 20 + (index % 8) * 12;
+    const y = 20 + Math.floor(index / 8) * 12;
+    return {
+      ...indexedStroke(index),
+      pivot: { x: x + 1.495, y },
+      points: Array.from({ length: 300 }, (_, sample) => [
+        Math.round((x + sample * 0.01) * 1_000) / 1_000,
+        y,
+        Math.round((Math.floor(sample / 20) / 14) * 10_000) / 10_000,
+      ]).flat(),
+    };
+  });
 }
 
 function mixedElements(stroke: StrokeElementV1): readonly InkElementV1[] {

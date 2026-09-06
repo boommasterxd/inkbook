@@ -167,7 +167,7 @@ describe("selection move edge-scroll projection", () => {
     refreshViewport?.();
 
     expect(setPreviewTransform).toHaveBeenLastCalledWith([], "translate(20 70)", 2);
-    expect(flushPointerFeedbackFrame).toHaveBeenCalledOnce();
+    expect(flushPointerFeedbackFrame).toHaveBeenCalledTimes(2);
     preview.revert();
   });
 });
@@ -340,6 +340,16 @@ describe("selection move connected geometry", () => {
 });
 
 describe("selection area preview", () => {
+  it.each([
+    ["lasso", "preserve"],
+    ["rectangle", "latest"],
+  ] as const)("uses %s samples in %s mode", (area, mode) => {
+    const fixture = selectionAreaHarness({ area, inclusion: "touched" }, rectangle());
+
+    expect(fixture.preview.frameSampleMode).toBe(mode);
+    fixture.release();
+  });
+
   it("applies touched and fully-enclosed independently to a rectangle area", () => {
     const element = rectangle();
     const bounds = calculateElementBounds(element);

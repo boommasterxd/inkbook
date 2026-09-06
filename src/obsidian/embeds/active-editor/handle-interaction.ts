@@ -245,7 +245,13 @@ export class ActiveEditorHandleInteraction {
       preview.transform,
     );
     this.#updatePreviewBottom(
-      this.#presentation.renderPreview(active, preview, connected, scale.elements),
+      this.#presentation.renderPreview(
+        active,
+        preview,
+        connected,
+        scale.elements,
+        scale.pressurePreviewIds,
+      ),
     );
     this.#renderer.flushPointerFeedbackFrame();
   }

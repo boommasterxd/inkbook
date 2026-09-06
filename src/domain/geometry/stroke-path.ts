@@ -252,8 +252,12 @@ function appendMidpointPath(points: readonly PointV1[]): string {
   return commands.join("");
 }
 
+export function pressureWidthFactor(pressure: number): number {
+  return 0.35 + 0.65 * Math.min(1, Math.max(0, pressure));
+}
+
 function halfWidth(width: number, pressure: number): number {
-  return (width * (0.35 + 0.65 * Math.min(1, Math.max(0, pressure)))) / 2;
+  return (width * pressureWidthFactor(pressure)) / 2;
 }
 
 function assertStrokeSamples(samples: readonly number[]): void {

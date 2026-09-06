@@ -109,6 +109,24 @@ describe("live stroke builder", () => {
     expect(commit.instrumentation.tailBuilds).toBe(4096);
     expect(firstChunk).toBeDefined();
   });
+
+  it("retains every batched input sample while rebuilding the live tail once", () => {
+    const builder = new LiveStrokeBuilder({
+      input: { pressureSource: "pen", zoom: 1 },
+      style: penStyle,
+    });
+    const samples = Array.from({ length: 48 }, (_, index) => sample(index));
+
+    const preview = builder.appendBatch(samples);
+    const commit = builder.finish();
+
+    expect(commit.points).toEqual(
+      prepareStrokeSamples(samples, { pressureSource: "pen", zoom: 1 }),
+    );
+    expect(commit.instrumentation.appendedInputSamples).toBe(samples.length);
+    expect(commit.instrumentation.tailBuilds).toBe(1);
+    expectExactPreview(preview, commit.points, penStyle);
+  });
 });
 
 describe("live stroke preview geometry", () => {

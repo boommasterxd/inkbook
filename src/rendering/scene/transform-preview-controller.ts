@@ -31,6 +31,10 @@ export class SceneTransformPreviewController {
     return this.#transforms;
   }
 
+  public get activeIds(): readonly string[] {
+    return this.#ids;
+  }
+
   public setContext(camera: SceneCamera, viewport: SceneViewport | undefined): void {
     this.#camera = camera;
     this.#viewport = viewport;

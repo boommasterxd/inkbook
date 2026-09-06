@@ -22,23 +22,28 @@ import { snapMarkerPath } from "./snap-marker-path";
 export class MovePreview implements GesturePreview {
   readonly #connectedPreview: ConnectedSelectionPreviewSession;
   readonly #elements: readonly InkElementV1[];
+  readonly #frameScheduler: SelectionPreviewOptions["frameScheduler"];
   readonly #ids: readonly string[];
   readonly #options: SelectionPreviewOptions;
   readonly #selectedIds: ReadonlySet<string>;
   readonly #selectedGeometry: readonly SelectedElementGeometry[];
+  readonly #selectedMaximumBottom: number;
   readonly #selectionFrame: OrientedSelectionFrame | null;
   readonly #snapScratch = new SnapCandidateScratch();
   readonly #transformIds: readonly string[];
   #current = { x: 0, y: 0 };
   #currentViewport: PointV1 | undefined;
   #finished = false;
+  #frameHandle: number | undefined;
   #lastPointer: SelectionPreviewOptions["start"]["pointer"];
   #moveSnap: SelectionMoveSnap | null = null;
   #previewMaximumBottomValue: number | undefined;
+  #pendingPointer: SelectionPreviewOptions["start"]["pointer"] | undefined;
   #version = 0;
 
   public constructor(options: SelectionPreviewOptions) {
     this.#options = options;
+    this.#frameScheduler = options.frameScheduler;
     this.#selectedIds = options.selection();
     const elements: InkElementV1[] = [];
     const selectedGeometry: SelectedElementGeometry[] = [];
@@ -51,6 +56,10 @@ export class MovePreview implements GesturePreview {
     }
     this.#elements = elements;
     this.#selectedGeometry = selectedGeometry;
+    this.#selectedMaximumBottom = selectedGeometry.reduce(
+      (maximum, selected) => Math.max(maximum, selected.bounds.maxY),
+      Number.NEGATIVE_INFINITY,
+    );
     this.#selectionFrame = options.selectionFrames?.current(selectedGeometry) ?? null;
     this.#ids = this.#elements.map(({ id }) => id);
     this.#connectedPreview = new ConnectedSelectionPreviewSession(
@@ -69,6 +78,7 @@ export class MovePreview implements GesturePreview {
 
   public commit(): boolean {
     this.#assertActive();
+    this.#flushPendingPointer();
     this.#finished = true;
     let committed = false;
     let prepared = false;
@@ -110,6 +120,7 @@ export class MovePreview implements GesturePreview {
 
   public revert(): void {
     if (this.#finished) return;
+    this.#discardPendingPointer();
     this.#finished = true;
     this.#options.renderer.clearPreviewTransforms();
     this.#options.renderer.clearElementPreviews?.();
@@ -122,11 +133,13 @@ export class MovePreview implements GesturePreview {
     this.#assertActive();
     const viewport = (this.#options.pageToViewport ?? this.#options.pageToScreen)(pointer);
     this.#currentViewport = viewport;
-    const current = this.#projectViewportPointer(pointer, viewport);
-    this.#lastPointer = current;
-    const maximumBottom = this.#renderUpdate(current);
-    this.#options.selectionEdgeDrag?.updatePreviewBottom(maximumBottom);
-    this.#options.selectionEdgeDrag?.update(viewport);
+    this.#pendingPointer = pointer;
+    this.#schedulePointerFrame();
+  }
+
+  public updateSamples(samples: readonly SelectionPreviewOptions["start"]["pointer"][]): void {
+    const latest = samples[samples.length - 1];
+    if (latest !== undefined) this.update(latest);
   }
 
   #commitSynchronous(effect: SelectionFrameHistoryEffect | undefined): boolean {
@@ -177,7 +190,9 @@ export class MovePreview implements GesturePreview {
 
   #refreshAfterViewportChange(): void {
     if (this.#finished || this.#currentViewport === undefined) return;
-    const pointer = this.#projectViewportPointer(this.#lastPointer, this.#currentViewport);
+    const source = this.#pendingPointer ?? this.#lastPointer;
+    this.#discardPendingPointer();
+    const pointer = this.#projectViewportPointer(source, this.#currentViewport);
     this.#lastPointer = pointer;
     const maximumBottom = this.#renderUpdate(pointer);
     this.#options.selectionEdgeDrag?.updatePreviewBottom(maximumBottom);
@@ -247,10 +262,7 @@ export class MovePreview implements GesturePreview {
   }
 
   #previewMaximumBottom(connected: ConnectedSelectionPreview): number {
-    let maximumBottom = Number.NEGATIVE_INFINITY;
-    for (const selected of this.#selectedGeometry) {
-      maximumBottom = Math.max(maximumBottom, selected.bounds.maxY + this.#current.y);
-    }
+    let maximumBottom = this.#selectedMaximumBottom + this.#current.y;
     for (const element of connected.elements) {
       maximumBottom = Math.max(maximumBottom, calculateElementBounds(element).maxY);
     }
@@ -280,5 +292,51 @@ export class MovePreview implements GesturePreview {
 
   #translationTransform(): SelectionPreviewTransform {
     return { delta: this.#current, kind: "translate" };
+  }
+
+  #schedulePointerFrame(): void {
+    const scheduler = this.#frameScheduler;
+    if (scheduler === undefined) {
+      this.#applyPendingPointer();
+      return;
+    }
+    if (this.#frameHandle !== undefined) return;
+    let completedSynchronously = false;
+    let handle = 0;
+    handle = scheduler.requestAnimationFrame(() => {
+      completedSynchronously = true;
+      if (this.#frameHandle === handle) this.#frameHandle = undefined;
+      this.#applyPendingPointer();
+    });
+    if (!completedSynchronously) this.#frameHandle = handle;
+  }
+
+  #applyPendingPointer(): void {
+    const pointer = this.#pendingPointer;
+    const viewport = this.#currentViewport;
+    if (pointer === undefined || viewport === undefined || this.#finished) return;
+    this.#pendingPointer = undefined;
+    const current = this.#projectViewportPointer(pointer, viewport);
+    this.#lastPointer = current;
+    const maximumBottom = this.#renderUpdate(current);
+    this.#options.selectionEdgeDrag?.updatePreviewBottom(maximumBottom);
+    this.#options.selectionEdgeDrag?.update(viewport);
+    this.#options.renderer.flushPointerFeedbackFrame?.();
+  }
+
+  #flushPendingPointer(): void {
+    this.#cancelPointerFrame();
+    this.#applyPendingPointer();
+  }
+
+  #discardPendingPointer(): void {
+    this.#cancelPointerFrame();
+    this.#pendingPointer = undefined;
+  }
+
+  #cancelPointerFrame(): void {
+    if (this.#frameHandle === undefined) return;
+    this.#frameScheduler?.cancelAnimationFrame(this.#frameHandle);
+    this.#frameHandle = undefined;
   }
 }

@@ -36,6 +36,11 @@ export interface SelectionEdgeDragPort {
   updatePreviewBottom(maximumBottom: number): void;
 }
 
+export interface SelectionPreviewFrameScheduler {
+  cancelAnimationFrame(handle: number): void;
+  requestAnimationFrame(callback: FrameRequestCallback): number;
+}
+
 export interface SelectionPreviewOptions {
   readonly history: ActiveEditorHistory;
   readonly pageToScreen: (point: PointV1) => PointV1;
@@ -48,6 +53,7 @@ export interface SelectionPreviewOptions {
   readonly selection: () => ReadonlySet<string>;
   readonly selectionFrames?: SelectionFrameSession;
   readonly connectionSnapping?: boolean | (() => boolean);
+  readonly frameScheduler?: SelectionPreviewFrameScheduler;
   readonly selectionDefaults?: ToolDefaultsV1["select"];
   readonly setSelection: (selection: ReadonlySet<string>) => void;
   readonly start: GesturePreviewStart;

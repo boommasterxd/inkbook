@@ -193,6 +193,34 @@ describe("ellipse eraser intersection", () => {
 });
 
 describe("resumable eraser work", () => {
+  it("publishes one incremental feedback update for an input batch", () => {
+    const addedBatches: string[][] = [];
+    const addCandidateFade = vi.fn((ids: readonly string[]) => addedBatches.push([...ids]));
+    let query = 0;
+    const sweep = new EraserSweep(
+      { x: 0, y: 50 },
+      4,
+      {
+        getElement: () => rectangle,
+        query: (_bounds, sink) => sink.add(`candidate-${String(query++)}`),
+      },
+      { addCandidateFade, clearCandidateFade: vi.fn(), setCandidateFade: vi.fn() },
+    );
+    addCandidateFade.mockClear();
+
+    expect(
+      sweep.updateBatch([
+        { x: 30, y: 50 },
+        { x: 60, y: 50 },
+        { x: 90, y: 50 },
+      ]),
+    ).toBe("accepted");
+
+    expect(addCandidateFade).toHaveBeenCalledOnce();
+    expect(addedBatches[0]?.length).toBeGreaterThan(0);
+    sweep.revert();
+  });
+
   it("retains exact work for a later sweep while an earlier check is paused", async () => {
     const stroke = createLongStroke("paused-stroke", 20_000);
     let queryCount = 0;

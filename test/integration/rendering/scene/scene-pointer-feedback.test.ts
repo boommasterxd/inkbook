@@ -76,14 +76,12 @@ describe("scene pointer-feedback staging", () => {
 });
 
 describe("pressure preview staging", () => {
-  it("renders a long-pressure fallback as a non-scaling centerline", () => {
+  it.each([0.5, 1, 2])("preserves thin and thick pressure regions at zoom %s", (zoom) => {
     const stroke = longPressureStroke();
-    const { renderer, store } = setup(strokeRecord(stroke));
-    const contentPath = fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes[0]!;
-    const committedOutline = contentPath.attributes.get("d");
-    expect(contentPath.attributes.get("fill")).not.toBe("none");
-    expect(contentPath.attributes.get("stroke")).toBe("none");
-
+    const { renderer, store } = setup([strokeRecord(stroke)]);
+    renderer.setCamera({ x: 0, zoom });
+    const content = contentGroup(renderer);
+    const committedOutline = content.nodes[0]!.attributes.get("d");
     const plan = new SelectionScalePreviewPlan([
       { bounds: calculateElementBounds(stroke), element: stroke },
     ]);
@@ -101,33 +99,53 @@ describe("pressure preview staging", () => {
         rotation: 0,
       },
     });
-    renderer.setElementPreviews(preview.elements, 1);
+    renderer.setElementPreviews(preview.elements, 1, preview.pressurePreviewIds);
     renderer.setPreviewTransform([stroke.id], "scale(3 0.5)", 1, "preserve");
     renderer.flushPointerFeedbackFrame();
 
-    expect(contentPath.attributes.get("d")).not.toBe(committedOutline);
-    expect(contentPath.attributes.get("fill")).toBe("none");
-    expect(contentPath.attributes.get("stroke")).not.toBe("none");
-    expect(contentPath.attributes.get("stroke-width")).toBe("2");
-    expect(contentPath.attributes.get("transform")).toBe("scale(3 0.5)");
-    expect(contentPath.attributes.get("vector-effect")).toBe("non-scaling-stroke");
+    expect(content.nodes).toHaveLength(1);
+    expect(content.nodes[0]!.tagName).toBe("g");
+    const paths = pressurePaths(renderer);
+    expect(paths.length).toBeGreaterThan(1);
+    expect(paths.length).toBeLessThanOrEqual(16);
+    const widths = paths.map((path) => Number(path.attributes.get("stroke-width")));
+    expect(Math.min(...widths)).toBeCloseTo(0.7 * zoom, 3);
+    expect(Math.max(...widths)).toBeCloseTo(2 * zoom, 3);
+    const thin = paths[widths.indexOf(Math.min(...widths))]!;
+    expect(thin.attributes.get("d")).toContain("M10 20");
+    for (const path of paths) {
+      expect(path.attributes.get("fill")).toBe("none");
+      expect(path.attributes.get("stroke")).not.toBe("none");
+      expect(content.nodes[0]!.attributes.get("transform")).toBe("scale(3 0.5)");
+      expect(path.attributes.get("vector-effect")).toBe("non-scaling-stroke");
+    }
+    const geometry = paths.map((path) => path.attributes.get("d"));
+    renderer.setElementPreviews(preview.elements, 2, preview.pressurePreviewIds);
+    renderer.setPreviewTransform([stroke.id], "scale(0.5 3)", 2, "preserve");
+    renderer.flushPointerFeedbackFrame();
+    expect(pressurePaths(renderer)).toEqual(paths);
+    expect(paths.map((path) => path.attributes.get("d"))).toEqual(geometry);
+    expect(paths.map((path) => Number(path.attributes.get("stroke-width")))).toEqual(widths);
 
     renderer.clearElementPreviews();
     renderer.clearPreviewTransforms();
     renderer.flushPointerFeedbackFrame();
-    expectPressureOutline(contentPath, committedOutline);
+    expect(content.nodes).toHaveLength(1);
+    expectPressureOutline(content.nodes[0]!, committedOutline);
     expect(store.records.get(stroke.id)?.element).toBe(stroke);
   });
+});
 
-  it("atomically hands a pressure centerline fallback to the exact committed outline", () => {
+describe("pressure preview topology", () => {
+  it("atomically hands pressure bands to the exact committed outline", () => {
     const stroke = longPressureStroke();
-    const { renderer, scheduler, store } = setup(strokeRecord(stroke));
-    const contentPath = fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes[0]!;
-    const fallback = { ...stroke, style: { ...stroke.style, pressureEnabled: false } };
-    renderer.setElementPreviews([fallback], 1);
+    const { renderer, scheduler, store } = setup([strokeRecord(stroke)]);
+    renderer.setElementPreviews([stroke], 1, new Set([stroke.id]));
     renderer.setPreviewTransform([stroke.id], "scale(3 0.5)", 1, "preserve");
     renderer.flushPointerFeedbackFrame();
-    const fallbackD = contentPath.attributes.get("d");
+    const content = contentGroup(renderer);
+    const roots = [...content.nodes];
+    expect(pressurePaths(renderer).length).toBeGreaterThan(1);
 
     const handoff = renderer.beginPreviewCommit();
     expect(handoff.arm([stroke.id])).toBe(true);
@@ -137,30 +155,104 @@ describe("pressure preview staging", () => {
       geometryVersion: 2,
     });
     renderer.applyDelta({
-      affected: [
-        {
-          after: replacement,
-          before: stroke,
-          domains: ["geometry"],
-          id: stroke.id,
-        },
-      ],
+      affected: [{ after: replacement, before: stroke, domains: ["geometry"], id: stroke.id }],
     });
     renderer.clearElementPreviews();
     renderer.clearPreviewTransforms();
 
-    expect(contentPath.attributes.get("d")).toBe(fallbackD);
-    expect(contentPath.attributes.get("vector-effect")).toBe("non-scaling-stroke");
+    expect(content.nodes).toEqual(roots);
     scheduler.runAll();
-    expectPressureOutline(contentPath, buildElementPathParts(replacement)[0]?.d);
+    expect(content.nodes).toHaveLength(1);
+    expectPressureOutline(content.nodes[0]!, buildElementPathParts(replacement)[0]?.d);
+  });
+
+  it.each([false, true])(
+    "retains late-mount zoom compensation with varying pressure %s",
+    (varying) => {
+      const original = longPressureStroke();
+      const stroke = varying
+        ? original
+        : {
+            ...original,
+            points: original.points.map((value, index) => (index % 3 === 2 ? 0.5 : value)),
+          };
+      const { renderer } = setup([strokeRecord(stroke)]);
+      renderer.setCamera({ x: 0, zoom: 0.5 });
+      renderer.setPreviewTransform([stroke.id], "scale(2 0.5)", 1, "preserve");
+      renderer.flushPointerFeedbackFrame();
+      renderer.setElementPreviews([stroke], 2, new Set([stroke.id]));
+      renderer.flushPointerFeedbackFrame();
+      const paths = pressurePaths(renderer);
+      expect(paths.length).toBe(varying ? 4 : 1);
+      expect(Math.min(...paths.map((path) => Number(path.attributes.get("stroke-width"))))).toBe(
+        varying ? 0.35 : 0.675,
+      );
+      for (const path of paths) {
+        expect(contentGroup(renderer).nodes[0]!.attributes.get("transform")).toBe("scale(2 0.5)");
+        expect(path.attributes.get("vector-effect")).toBe("non-scaling-stroke");
+      }
+    },
+  );
+});
+
+describe("pressure preview root budget", () => {
+  it.each([40, 300])("keeps %s pressure strokes within the shared transform budget", (count) => {
+    const strokes = Array.from({ length: count }, (_, index) => ({
+      ...longPressureStroke(),
+      id: `pressure-${String(index)}`,
+      points: Array.from({ length: 48 }, (_, sample) => [
+        10 + sample * 0.1,
+        20,
+        Math.floor(sample / 3) / 15,
+      ]).flat(),
+    }));
+    const ids = strokes.map(({ id }) => id);
+    const pressureIds = new Set(ids);
+    const { renderer } = setup(strokes.map(strokeRecord));
+    renderer.setElementPreviews(strokes, 1, pressureIds);
+    renderer.setPreviewTransform(ids, "scale(2 0.5)", 1, "preserve");
+    renderer.flushPointerFeedbackFrame();
+    const content = contentGroup(renderer);
+    const groups = content.nodes.filter(({ tagName }) => tagName === "g");
+    expect(groups).toHaveLength(Math.min(count, 256));
+    expect(content.nodes).toHaveLength(count);
+    for (const group of groups) {
+      expect(group.nodes).toHaveLength(16);
+      expect(group.attributes.get("transform")).toBe("scale(2 0.5)");
+    }
+    const paths = pressurePaths(renderer);
+    const geometry = paths.map((path) => path.attributes.get("d"));
+    renderer.resetInstrumentation();
+    renderer.setElementPreviews(strokes, 2, pressureIds);
+    renderer.setPreviewTransform(ids, "scale(0.5 2)", 2, "preserve");
+    renderer.flushPointerFeedbackFrame();
+    expect(pressurePaths(renderer)).toEqual(paths);
+    expect(paths.map((path) => path.attributes.get("d"))).toEqual(geometry);
+    expect(renderer.instrumentation().contentGeometryWrites).toBe(groups.length);
+    renderer.clearElementPreviews();
+    renderer.clearPreviewTransforms();
+    renderer.flushPointerFeedbackFrame();
+    expect(content.nodes).toHaveLength(count);
+    expect(content.nodes.every(({ tagName }) => tagName === "path")).toBe(true);
+    renderer.destroy();
   });
 });
 
-function setup(record = fakeRectangleRecord("a", 0, 10)) {
+function contentGroup(renderer: SvgSceneRenderer): FakeNode {
+  return fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+}
+
+function pressurePaths(renderer: SvgSceneRenderer): FakeNode[] {
+  return contentGroup(renderer).nodes.flatMap((node) =>
+    node.tagName === "g" ? node.nodes : [node],
+  );
+}
+
+function setup(records: readonly SceneElementRecord[] = [fakeRectangleRecord("a", 0, 10)]) {
   const document = new FakeDocument();
   const scheduler = new FakeScheduler();
   const store = new FakeSceneStore();
-  store.records.set(record.id, record);
+  for (const record of records) store.records.set(record.id, record);
   const layout = { readViewport: () => ({ height: 100, left: 0, top: 0, width: 100 }) };
   const container = asElement(new FakeNode(document, "div"));
   const renderer = new SvgSceneRenderer({
@@ -190,8 +282,8 @@ function rectanglePreviewFixture() {
 function longPressureStroke(): StrokeElementV1 {
   const points = Array.from({ length: 513 }, (_, index) => [
     10 + index * 0.1,
-    20 + (index % 3),
-    0.25 + (index % 4) * 0.2,
+    20,
+    index < 256 ? 0 : 1,
   ]).flat();
   return {
     createdAt: 0,

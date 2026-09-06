@@ -54,6 +54,7 @@ export function createActiveEditorPreview(
     activeSnapFeatures(options.snapping, options.snappingInverted?.() ?? false);
   const selectionOptions = {
     connectionSnapping: () => snapFeatures().connections,
+    frameScheduler: options.ownerWindow,
     history: options.history,
     pageToScreen: options.pageToScreen,
     ...(options.pageToViewport === undefined ? {} : { pageToViewport: options.pageToViewport }),

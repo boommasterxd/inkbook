@@ -22,6 +22,7 @@ import {
 import { timingBudget } from "../timing-budget";
 
 const ELEMENT_COUNT = 10_000;
+const RAW_ERASER_SAMPLES_PER_FRAME = 8;
 const PLANNER: SelectionReplacementPlanner = {
   countReverseDependencies: () => 0,
   planReplacements: (replacements) => ({ elements: replacements, replacements }),
@@ -52,8 +53,10 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz editor gesture profile`,
 
     let rejectedUpdates = 0;
     const durations = measureInteractionFrames((frame) => {
-      const point = eraserPoint(frame);
-      if (eraser.update(point) !== "accepted") rejectedUpdates += 1;
+      const points = Array.from({ length: RAW_ERASER_SAMPLES_PER_FRAME }, (_, sample) =>
+        eraserPoint(frame * RAW_ERASER_SAMPLES_PER_FRAME + sample),
+      );
+      if (eraser.updateBatch(points) !== "accepted") rejectedUpdates += 1;
     });
 
     const p99 = interactionP99(durations);

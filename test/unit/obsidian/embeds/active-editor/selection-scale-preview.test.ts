@@ -57,7 +57,7 @@ describe("selection scale preview", () => {
     expect(result.elements).toEqual(exact.slice(0, 3));
   });
 
-  it("uses a non-scaling centerline fallback for a truncated pressure stroke", () => {
+  it("retains local pressure data and stable fallback identities for a truncated stroke", () => {
     const stroke = indexedStroke(1);
     const plan = new SelectionScalePreviewPlan([
       { bounds: calculateElementBounds(stroke), element: stroke },
@@ -70,9 +70,10 @@ describe("selection scale preview", () => {
     const result = plan.resolve(preview);
     const repeated = plan.resolve(preview);
 
-    expect(result.elements).toEqual([
-      { ...stroke, style: { ...stroke.style, pressureEnabled: false } },
-    ]);
+    expect(result.elements).toEqual([stroke]);
+    expect(result.elements[0]).toBe(stroke);
+    expect(result.pressurePreviewIds).toEqual(new Set([stroke.id]));
+    expect(repeated.pressurePreviewIds).toBe(result.pressurePreviewIds);
     expect(repeated.elements).toBe(result.elements);
   });
 });

@@ -1,6 +1,7 @@
 import type { RenderBand } from "../../domain/commands/render-bands";
 import { buildElementPathParts } from "../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../domain/schema/public";
+import { buildPressurePreviewPathParts } from "./pressure-preview-path";
 import {
   updateMountedGeometry,
   updateMountedElementPreview,
@@ -165,14 +166,19 @@ export class SceneContentRenderer {
     }
   }
 
-  public applyElementPreview(element: InkElementV1): boolean {
+  public applyElementPreview(element: InkElementV1, pressurePreview = false): boolean {
     const entry = this.#mounted.get(element.id);
     const record = this.#store.get(element.id);
     if (entry === undefined || record === undefined) return false;
-    updateMountedElementPreview(entry, record, element, buildElementPathParts(element), {
+    const parts =
+      pressurePreview && element.kind === "stroke"
+        ? buildPressurePreviewPathParts(element)
+        : buildElementPathParts(element);
+    updateMountedElementPreview(entry, record, element, parts, {
       instrumentation: this.#instrumentation,
       ownerDocument: this.#dom.ownerDocument,
       parent: this.#dom.group(entry.band),
+      pressurePreview,
     });
     return true;
   }

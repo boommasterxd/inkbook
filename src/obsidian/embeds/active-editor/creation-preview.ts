@@ -21,7 +21,7 @@ import { createDragElement, createFreehandElement } from "../../../editor/tools/
 import { pathPresentation } from "../../../rendering/scene/element-presentation";
 import type { LivePathState } from "../../../rendering/scene/index";
 
-import type { CoalescedCreationSample } from "./coalesced-input";
+import type { CoalescedCreationSample, CoalescedFrameSampleMode } from "./coalesced-input";
 import type { ActiveEditorHistory } from "./history";
 import { selectionSnapGuidePath, snapMarkerPath } from "./snap-marker-path";
 
@@ -75,6 +75,10 @@ export class CreationPreview implements GesturePreview {
   #sampleTime = 0;
   #startSnap: SnapCandidate | null = null;
   #startSnapResolved = false;
+
+  public get frameSampleMode(): CoalescedFrameSampleMode {
+    return this.#stroke === null ? "latest" : "preserve";
+  }
 
   public constructor(options: CreationPreviewOptions) {
     this.#defaults = options.defaults;
@@ -132,10 +136,20 @@ export class CreationPreview implements GesturePreview {
 
   public updateSamples(samples: readonly CoalescedCreationSample[]): void {
     this.#assertActive();
-    if (samples.length === 0) return;
-    for (const sample of samples) {
-      this.#current = sample;
-      this.#appendSample(sample, sample.time);
+    const current = samples[samples.length - 1];
+    if (current === undefined) return;
+    this.#current = current;
+    if (this.#stroke === null) this.#sampleTime = Math.max(this.#sampleTime, current.time);
+    else {
+      this.#stroke.appendBatch(
+        samples.map((sample) => ({
+          pressure: inputPressure(sample.pressure, this.#strokePressureSource),
+          time: sample.time,
+          x: sample.x,
+          y: sample.y,
+        })),
+      );
+      this.#sampleTime = Math.max(this.#sampleTime, current.time);
     }
     this.#updateSnapCandidates();
     this.#render();

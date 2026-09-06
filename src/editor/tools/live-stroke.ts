@@ -80,16 +80,23 @@ export class LiveStrokeBuilder {
   }
 
   append(sample: RawStrokeSample): LiveStrokePreview {
+    return this.appendBatch([sample]);
+  }
+
+  appendBatch(samples: readonly RawStrokeSample[]): LiveStrokePreview {
     if (this.finished) throw new Error("A finished live stroke cannot accept samples.");
-    this.assertSample(sample);
-    this.appendedInputSamples += 1;
-    if (this.shouldReplaceTip(sample) || this.retainedSamples === MAX_SAMPLES) {
-      this.replaceTip(sample);
-      this.replacedTipSamples += 1;
-    } else {
-      this.pushSample(sample);
+    if (samples.length === 0) return this.preview();
+    for (const sample of samples) {
+      this.assertSample(sample);
+      this.appendedInputSamples += 1;
+      if (this.shouldReplaceTip(sample) || this.retainedSamples === MAX_SAMPLES) {
+        this.replaceTip(sample);
+        this.replacedTipSamples += 1;
+      } else {
+        this.pushSample(sample);
+      }
+      this.finalizeStablePrefix();
     }
-    this.finalizeStablePrefix();
     this.rebuildTail();
     return this.preview();
   }

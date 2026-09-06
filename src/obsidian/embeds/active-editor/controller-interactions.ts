@@ -91,6 +91,7 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
     actions,
     coalesced: new CoalescedPointerInput({
       dispatchMove: options.dispatchMove,
+      frameScheduler: options.ownerWindow,
       now: () => options.ownerWindow.performance.now(),
       project: (event) => options.navigation.screenPointer(event),
     }),

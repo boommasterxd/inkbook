@@ -42,7 +42,7 @@ describe("scene preview controller regressions", () => {
 
     controller.set(elements, 1);
     controller.set(elements, 2);
-    controller.write();
+    controller.write([]);
     controller.applyMounted([record.id, "unrelated"]);
 
     expect(applyElementPreview).toHaveBeenCalledTimes(2);
@@ -64,9 +64,9 @@ describe("scene preview controller regressions", () => {
     controller.set(latest, 2);
     expect(applyElementPreview).not.toHaveBeenCalled();
 
-    controller.write();
+    controller.write([]);
     expect(applyElementPreview).toHaveBeenCalledOnce();
-    expect(applyElementPreview).toHaveBeenCalledWith(latest[0]);
+    expect(applyElementPreview).toHaveBeenCalledWith(latest[0], false);
   });
 
   it("does not rebuild an unchanged stable fallback mixed with a changing preview", () => {
@@ -81,11 +81,11 @@ describe("scene preview controller regressions", () => {
     } as unknown as SceneContentRenderer);
 
     controller.set([stable, changing], 1);
-    controller.write();
+    controller.write([]);
     controller.set([stable, { ...changing, width: 80 }], 2);
-    controller.write();
+    controller.write([]);
 
     expect(applyElementPreview).toHaveBeenCalledTimes(3);
-    expect(applyElementPreview).toHaveBeenLastCalledWith({ ...changing, width: 80 });
+    expect(applyElementPreview).toHaveBeenLastCalledWith({ ...changing, width: 80 }, false);
   });
 });

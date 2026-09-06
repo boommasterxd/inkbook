@@ -11,7 +11,8 @@ import {
 import { timingBudget } from "../../timing-budget";
 import { createInteractionRenderer } from "./interaction-refresh-profile-fixture";
 
-const LIVE_SAMPLE_COUNT = 3_600;
+const LIVE_FRAME_COUNT = 450;
+const SAMPLES_PER_FRAME = 8;
 const PEN_STYLE: StrokeStyleV1 = {
   color: { type: "theme-text" },
   opacity: 1,
@@ -32,9 +33,13 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz live-stroke profile`, ()
     });
     const durations: number[] = [];
 
-    for (let sample = 0; sample < LIVE_SAMPLE_COUNT; sample += 1) {
+    for (let frame = 0; frame < LIVE_FRAME_COUNT; frame += 1) {
       const startedAt = performance.now();
-      const preview = builder.append(liveSample(sample));
+      const preview = builder.appendBatch(
+        Array.from({ length: SAMPLES_PER_FRAME }, (_, sample) =>
+          liveSample(frame * SAMPLES_PER_FRAME + sample),
+        ),
+      );
       renderer.updateLiveStroke(preview, PEN_STYLE, "pen");
       durations.push(performance.now() - startedAt);
     }
@@ -43,7 +48,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz live-stroke profile`, ()
     expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
     expect(renderer.instrumentation()).toMatchObject({
       liveMaximumTailNodes: 1,
-      livePreviewUpdates: LIVE_SAMPLE_COUNT,
+      livePreviewUpdates: LIVE_FRAME_COUNT,
       liveTailNodesCreated: 1,
     });
     await annotate(interactionProfileAnnotation("live stroke", p99), "performance");

@@ -218,6 +218,22 @@ describe("freehand creation preview presentation", () => {
   });
 });
 
+describe("creation preview frame sample policy", () => {
+  it.each([
+    ["draw", "preserve"],
+    ["highlighter", "preserve"],
+    ["line", "latest"],
+    ["straight-highlighter", "latest"],
+    ["rectangle", "latest"],
+    ["coordinate-system", "latest"],
+    ["table", "latest"],
+  ] as const)("uses %s samples in %s mode", (tool, mode) => {
+    const preview = createPreview(styledDefaults(), tool, {});
+
+    expect(preview.frameSampleMode).toBe(mode);
+  });
+});
+
 function styledDefaults(): ToolDefaultsV1 {
   return structuredClone(createBuiltInSettings().toolDefaults);
 }

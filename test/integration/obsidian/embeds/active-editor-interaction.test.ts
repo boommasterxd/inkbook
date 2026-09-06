@@ -286,6 +286,7 @@ describe("active editor eraser composition", () => {
       },
     };
     const cancelled = new EraserPreview(options);
+    expect(cancelled.frameSampleMode).toBe("preserve");
     expect(fades).toEqual([{ durationMs: 160, ids: [element.id] }]);
     cancelled.revert();
     expect(cleared).toContainEqual([element.id]);

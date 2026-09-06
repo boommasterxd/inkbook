@@ -7,7 +7,7 @@ import {
   type SelectionArea,
 } from "../../../editor/selection/public";
 
-import type { CoalescedCreationSample } from "./coalesced-input";
+import type { CoalescedCreationSample, CoalescedFrameSampleMode } from "./coalesced-input";
 import type { SelectionPreviewOptions } from "./selection-preview-contracts";
 
 export class LassoPreview implements GesturePreview {
@@ -17,6 +17,10 @@ export class LassoPreview implements GesturePreview {
   readonly #startSelection: ReadonlySet<string>;
   #current: PointV1;
   #finished = false;
+
+  public get frameSampleMode(): CoalescedFrameSampleMode {
+    return this.#selectionDefaults.area === "lasso" ? "preserve" : "latest";
+  }
 
   public constructor(options: SelectionPreviewOptions) {
     this.#options = options;
@@ -72,9 +76,8 @@ export class LassoPreview implements GesturePreview {
 
   public updateSamples(samples: readonly CoalescedCreationSample[]): void {
     this.#assertActive();
-    const current = samples[samples.length - 1];
-    if (current === undefined) return;
-    this.#current = current;
+    if (samples.length === 0) return;
+    this.#current = samples[samples.length - 1]!;
     if (this.#selectionDefaults.area === "lasso") this.#lasso.appendBatch(samples);
     this.#render();
   }

@@ -3,7 +3,7 @@ import type { GesturePreviewStart } from "../../../editor/gestures/public";
 import { isValidPointerSample, type PointerSample } from "../../../editor/input/index";
 import { MAX_STROKE_POINTS } from "../../../domain/schema/public";
 
-const MAX_COALESCED_SAMPLES_PER_EVENT = MAX_STROKE_POINTS;
+const MAX_COALESCED_SAMPLES = MAX_STROKE_POINTS;
 
 export type CoalescedCreationSample = GesturePreviewStart["pointer"] & {
   readonly time: number;
@@ -11,6 +11,17 @@ export type CoalescedCreationSample = GesturePreviewStart["pointer"] & {
 
 interface CoalescedGesturePreview extends GesturePreview {
   updateSamples(samples: readonly CoalescedCreationSample[]): void;
+}
+
+export type CoalescedFrameSampleMode = "latest" | "preserve";
+
+export interface CoalescedFramePreview extends CoalescedGesturePreview {
+  readonly frameSampleMode: CoalescedFrameSampleMode;
+}
+
+export interface CoalescedFrameScheduler {
+  cancelAnimationFrame(handle: number): void;
+  requestAnimationFrame(callback: FrameRequestCallback): number;
 }
 
 function updateGesturePreview(
@@ -31,18 +42,21 @@ function isCoalescedGesturePreview(preview: GesturePreview): preview is Coalesce
 
 export interface CoalescedPointerInputOptions {
   readonly dispatchMove: (pointer: PointerSample) => void;
+  readonly frameScheduler?: CoalescedFrameScheduler;
   readonly now: () => number;
   readonly project: (event: PointerEvent) => PointerSample;
 }
 
 export class CoalescedPointerInput {
   readonly #dispatchMove: (pointer: PointerSample) => void;
+  readonly #frameScheduler: CoalescedFrameScheduler | undefined;
   readonly #now: () => number;
   #pending: readonly CoalescedCreationSample[] | undefined;
   readonly #project: (event: PointerEvent) => PointerSample;
 
   public constructor(options: CoalescedPointerInputOptions) {
     this.#dispatchMove = options.dispatchMove;
+    this.#frameScheduler = options.frameScheduler;
     this.#now = options.now;
     this.#project = options.project;
   }
@@ -76,15 +90,23 @@ export class CoalescedPointerInput {
     preview: GesturePreview,
     project: (sample: CoalescedCreationSample) => CoalescedCreationSample,
   ): GesturePreview {
+    const frame = isCoalescedFramePreview(preview)
+      ? new CoalescedPreviewFrame(preview, project, this.#frameScheduler)
+      : null;
     return {
-      commit: () => preview.commit(),
-      revert: () => preview.revert(),
+      commit: () => {
+        frame?.flush();
+        return preview.commit();
+      },
+      revert: () => {
+        frame?.discard();
+        preview.revert();
+      },
       update: (pointer) => {
         const samples = this.#pending;
-        updateGesturePreview(
-          preview,
-          (samples ?? [{ ...pointer, time: this.#now() }]).map(project),
-        );
+        const incoming = samples ?? [{ ...pointer, time: this.#now() }];
+        if (frame === null) updateGesturePreview(preview, incoming.map(project));
+        else frame.update(incoming);
       },
     };
   }
@@ -124,7 +146,7 @@ export class CoalescedPointerInput {
       }
       const dispatched = { ...expected, time: dispatchedTime };
       if (!sameCreationSample(samples[samples.length - 1], dispatched)) {
-        if (samples.length === MAX_COALESCED_SAMPLES_PER_EVENT) samples.pop();
+        if (samples.length === MAX_COALESCED_SAMPLES) samples.pop();
         samples.push(dispatched);
       }
     } catch {
@@ -141,6 +163,91 @@ export class CoalescedPointerInput {
       return null;
     }
   }
+}
+
+class CoalescedPreviewFrame {
+  readonly #preview: CoalescedFramePreview;
+  readonly #project: (sample: CoalescedCreationSample) => CoalescedCreationSample;
+  readonly #scheduler: CoalescedFrameScheduler | undefined;
+  #frameHandle: number | undefined;
+  #pending: readonly CoalescedCreationSample[] = [];
+
+  public constructor(
+    preview: CoalescedFramePreview,
+    project: (sample: CoalescedCreationSample) => CoalescedCreationSample,
+    scheduler: CoalescedFrameScheduler | undefined,
+  ) {
+    this.#preview = preview;
+    this.#project = project;
+    this.#scheduler = scheduler;
+  }
+
+  public update(samples: readonly CoalescedCreationSample[]): void {
+    if (samples.length === 0) return;
+    this.#pending =
+      this.#preview.frameSampleMode === "latest"
+        ? [samples[samples.length - 1]!]
+        : mergeFrameSamples(this.#pending, samples);
+    if (this.#scheduler === undefined) {
+      this.flush();
+      return;
+    }
+    if (this.#frameHandle !== undefined) return;
+    let completedSynchronously = false;
+    let handle = 0;
+    handle = this.#scheduler.requestAnimationFrame(() => {
+      completedSynchronously = true;
+      if (this.#frameHandle === handle) this.#frameHandle = undefined;
+      this.#publish();
+    });
+    if (!completedSynchronously) this.#frameHandle = handle;
+  }
+
+  public flush(): void {
+    this.#cancelFrame();
+    this.#publish();
+  }
+
+  public discard(): void {
+    this.#cancelFrame();
+    this.#pending = [];
+  }
+
+  #cancelFrame(): void {
+    if (this.#frameHandle === undefined) return;
+    this.#scheduler?.cancelAnimationFrame(this.#frameHandle);
+    this.#frameHandle = undefined;
+  }
+
+  #publish(): void {
+    const samples = this.#pending;
+    if (samples.length === 0) return;
+    this.#pending = [];
+    this.#preview.updateSamples(samples.map(this.#project));
+  }
+}
+
+function isCoalescedFramePreview(preview: GesturePreview): preview is CoalescedFramePreview {
+  return (
+    isCoalescedGesturePreview(preview) &&
+    "frameSampleMode" in preview &&
+    (preview.frameSampleMode === "latest" || preview.frameSampleMode === "preserve")
+  );
+}
+
+function mergeFrameSamples(
+  current: readonly CoalescedCreationSample[],
+  incoming: readonly CoalescedCreationSample[],
+): readonly CoalescedCreationSample[] {
+  const merged = [...current, ...incoming];
+  if (merged.length <= MAX_COALESCED_SAMPLES) return merged;
+  const compacted: CoalescedCreationSample[] = [];
+  const lastIndex = merged.length - 1;
+  for (let index = 0; index < MAX_COALESCED_SAMPLES; index += 1) {
+    const sourceIndex = Math.round((index * lastIndex) / (MAX_COALESCED_SAMPLES - 1));
+    compacted.push(merged[sourceIndex]!);
+  }
+  return compacted;
 }
 
 function sameCreationSample(
@@ -162,7 +269,7 @@ function coalescedEvents(event: PointerEvent): readonly PointerEvent[] | null {
   if (typeof event.getCoalescedEvents !== "function") return [];
   try {
     const samples: unknown = event.getCoalescedEvents();
-    return Array.isArray(samples) && samples.length <= MAX_COALESCED_SAMPLES_PER_EVENT
+    return Array.isArray(samples) && samples.length <= MAX_COALESCED_SAMPLES
       ? (samples as PointerEvent[])
       : null;
   } catch {

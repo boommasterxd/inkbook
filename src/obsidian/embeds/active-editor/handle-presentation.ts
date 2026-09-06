@@ -28,7 +28,11 @@ export interface HandleInteractionRenderer {
   clearElementPreviews(): void;
   clearPreviewTransforms(): void;
   flushPointerFeedbackFrame(): void;
-  setElementPreviews(elements: readonly InkElementV1[], version: number): void;
+  setElementPreviews(
+    elements: readonly InkElementV1[],
+    version: number,
+    pressurePreviewIds?: ReadonlySet<string>,
+  ): void;
   setSelectionOverlayPath(
     d: string | null,
     fill?: "accent" | "none",
@@ -115,6 +119,7 @@ export class SelectionHandlePresentation {
     preview: SelectionHandlePreview,
     connected: ConnectedHandlePreview,
     scaleElements: readonly InkElementV1[],
+    pressurePreviewIds?: ReadonlySet<string>,
   ): number | undefined {
     const exactGeometry = preview.exactElements.map((element) => ({
       bounds: calculateElementBounds(element),
@@ -147,6 +152,7 @@ export class SelectionHandlePresentation {
     this.#renderer.setElementPreviews(
       uniquePreviewElements(basePreviewElements, scaleElements),
       this.#version,
+      pressurePreviewIds,
     );
     const previewFrame = exactOverlay.length === 0 ? preview.previewFrame : null;
     const outline = this.renderGeometry(

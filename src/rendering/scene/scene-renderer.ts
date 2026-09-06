@@ -48,6 +48,7 @@ import type {
 } from "./types";
 import { SceneTransformPreviewController } from "./transform-preview-controller";
 import { SceneVisibilityState } from "./visibility-state";
+type Ids = ReadonlySet<string>;
 export class SvgSceneRenderer {
   #backgroundDirty = true;
   readonly #backgroundCache = new SceneBackgroundCache();
@@ -313,10 +314,10 @@ export class SvgSceneRenderer {
     const activeIds = this.#deltas.removeFades(ids);
     this.#content.setElementFade(activeIds, null);
   }
-  public setElementPreviews(elements: readonly InkElementV1[], version: number): void {
+  public setElementPreviews(items: readonly InkElementV1[], frame: number, pressure?: Ids): void {
     this.assertActive();
-    validatePreviewVersion(version, "Element preview");
-    if (this.#elementPreviews.set(elements, version)) this.schedule();
+    validatePreviewVersion(frame, "Element preview");
+    if (this.#elementPreviews.set(items, frame, pressure)) this.schedule();
   }
   public clearElementPreviews(): void {
     this.assertActive();
@@ -486,7 +487,6 @@ export class SvgSceneRenderer {
     this.#visibilityDirty = true;
     this.#content.cancelPendingVisibility();
   }
-
   private reconcileReleasedPreviewVisibility(): void {
     this.invalidateVisibility();
     this.#content.replaceVisibility(this.#visibility.resortCurrent());
