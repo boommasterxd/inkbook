@@ -1,0 +1,86 @@
+import type { InkElementV1 } from "../../domain/schema/public";
+import type { SceneContentRenderer } from "./content-renderer";
+import { SceneElementPreviewController } from "./element-preview-controller";
+import { ProgressiveElementPreview } from "./progressive-element-preview";
+import { selectViewportNearPreviewIds } from "./preview-transform-selection";
+import type { SceneCamera, SceneStorePort, SceneViewport } from "./types";
+
+/** Owns synchronous and progressive previews under the same commit/cancel lifetime. */
+export class SceneElementPreviews {
+  public readonly immediate: SceneElementPreviewController;
+  public readonly progressive: ProgressiveElementPreview;
+  readonly #store: SceneStorePort;
+  #request: Parameters<ProgressiveElementPreview["set"]>[0] | undefined;
+  #selection:
+    | {
+        readonly camera: SceneCamera;
+        readonly ids: readonly string[];
+        readonly selected: readonly string[];
+        readonly viewport: SceneViewport | undefined;
+      }
+    | undefined;
+
+  public constructor(content: SceneContentRenderer, store: SceneStorePort) {
+    this.#store = store;
+    this.immediate = new SceneElementPreviewController(content);
+    this.progressive = new ProgressiveElementPreview(content);
+  }
+
+  public selectProgressiveIds(
+    ids: readonly string[],
+    viewport: SceneViewport | undefined,
+    camera: SceneCamera,
+  ): readonly string[] {
+    const previous = this.#selection;
+    if (previous?.ids === ids && previous.viewport === viewport && previous.camera === camera) {
+      return previous.selected;
+    }
+    const selected = selectViewportNearPreviewIds(ids, this.#store, viewport, camera);
+    this.#selection = { camera, ids, selected, viewport };
+    return selected;
+  }
+
+  public setProgressive(
+    request: Parameters<ProgressiveElementPreview["set"]>[0],
+    viewport: SceneViewport | undefined,
+    camera: SceneCamera,
+  ): void {
+    this.#request = request;
+    this.refreshProgressiveContext(viewport, camera);
+  }
+
+  public refreshProgressiveContext(viewport: SceneViewport | undefined, camera: SceneCamera): void {
+    const request = this.#request;
+    if (request === undefined) return;
+    const ids = this.selectProgressiveIds(request.ids, viewport, camera);
+    this.progressive.set({ ...request, ids });
+  }
+
+  public clearProgressive(): void {
+    this.#request = undefined;
+    this.#selection = undefined;
+    this.progressive.clear();
+  }
+
+  public get values(): ReadonlyMap<string, InkElementV1> {
+    if (this.progressive.values.size === 0) return this.immediate.values;
+    return new Map([...this.immediate.values, ...this.progressive.values]);
+  }
+
+  public clear(): void {
+    this.immediate.clear();
+    this.clearProgressive();
+  }
+
+  public release(): void {
+    this.#request = undefined;
+    this.#selection = undefined;
+    this.immediate.release();
+    this.progressive.release();
+  }
+
+  public applyMounted(ids: readonly string[]): void {
+    this.immediate.applyMounted(ids);
+    this.progressive.applyMounted(ids);
+  }
+}

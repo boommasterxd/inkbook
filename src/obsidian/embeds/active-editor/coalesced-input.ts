@@ -61,7 +61,8 @@ export class CoalescedPointerInput {
     this.#project = options.project;
   }
 
-  public dispatch(event: PointerEvent): boolean {
+  /** Terminal pen drawing filters noncontact release samples after validating the complete batch. */
+  public dispatch(event: PointerEvent, penContactOnly = false): boolean {
     const source = coalescedEvents(event);
     if (source === null) return false;
     const expected = this.#projectSample(event);
@@ -69,7 +70,8 @@ export class CoalescedPointerInput {
     const pending = this.#validatedSamples(
       source.length === 0 ? [event] : source,
       expected,
-      event.timeStamp,
+      event,
+      penContactOnly,
     );
     if (pending === null) return false;
     this.#pending = pending;
@@ -79,7 +81,7 @@ export class CoalescedPointerInput {
     } finally {
       this.#pending = undefined;
     }
-    return pointer !== undefined;
+    return pointer !== undefined || penContactOnly;
   }
 
   public wrap(preview: GesturePreview): GesturePreview {
@@ -114,8 +116,10 @@ export class CoalescedPointerInput {
   #validatedSamples(
     source: readonly PointerEvent[],
     expected: PointerSample,
-    dispatchedTime: number,
+    dispatchedEvent: PointerEvent,
+    penContactOnly: boolean,
   ): readonly CoalescedCreationSample[] | null {
+    const dispatchedTime = dispatchedEvent.timeStamp;
     const samples: CoalescedCreationSample[] = [];
     let previousTime = Number.NEGATIVE_INFINITY;
     try {
@@ -138,14 +142,19 @@ export class CoalescedPointerInput {
         ) {
           return null;
         }
-        samples.push({ ...pointer, time: event.timeStamp });
+        if (!penContactOnly || hasPenContact(event)) {
+          samples.push({ ...pointer, time: event.timeStamp });
+        }
         previousTime = event.timeStamp;
       }
       if (!Number.isFinite(dispatchedTime) || dispatchedTime < 0 || dispatchedTime < previousTime) {
         return null;
       }
       const dispatched = { ...expected, time: dispatchedTime };
-      if (!sameCreationSample(samples[samples.length - 1], dispatched)) {
+      if (
+        (!penContactOnly || hasPenContact(dispatchedEvent)) &&
+        !sameCreationSample(samples[samples.length - 1], dispatched)
+      ) {
         if (samples.length === MAX_COALESCED_SAMPLES) samples.pop();
         samples.push(dispatched);
       }
@@ -275,4 +284,8 @@ function coalescedEvents(event: PointerEvent): readonly PointerEvent[] | null {
   } catch {
     return null;
   }
+}
+
+function hasPenContact(event: PointerEvent): boolean {
+  return event.pressure > 0 || (event.buttons & 1) !== 0;
 }

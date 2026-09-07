@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import {
+  serializeElementPaths,
+  serializeLegacyPressurePath,
+} from "../../../src/persistence/serialization/path-markup";
 import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
 import { StreamingStaticIntegrityMatcher } from "../../../src/persistence/serialization/streaming-static-integrity";
 import { createStandardPersistenceFixture } from "./fixtures";
@@ -20,11 +24,23 @@ describe("pressure-cap static integrity performance", () => {
     const current = serialized.value.svg.slice(
       serialized.value.svg.indexOf('<g id="inkbook-background">'),
     );
-    const legacy = current.replaceAll(/(A[\d.]+ [\d.]+ 0 0 )0/gu, "$11");
+    const oldPaths = snapshot.elements
+      .map((element) =>
+        element.kind === "stroke" && element.style.pressureEnabled
+          ? serializeLegacyPressurePath(element)
+          : serializeElementPaths(element).join(""),
+      )
+      .join("");
+    const old = current.replace(
+      /(<g id="inkbook-content">)[\s\S]*(<\/g><\/svg>)$/u,
+      `$1${oldPaths}$2`,
+    );
+    const legacy = old.replaceAll(/(A[\d.]+ [\d.]+ 0 0 )0/gu, "$11");
     expect(legacy).not.toBe(current);
 
     for (const [name, input] of [
       ["current", current],
+      ["old", old],
       ["legacy", legacy],
     ] as const) {
       const durations: number[] = [];
@@ -37,7 +53,7 @@ describe("pressure-cap static integrity performance", () => {
           for (let offset = 0; offset < input.length; offset += 16 * 1024) {
             if (!matcher.write(input.slice(offset, offset + 16 * 1024))) return false;
           }
-          return matcher.finish() && matcher.requiresCanonicalRewrite === (name === "legacy");
+          return matcher.finish() && matcher.requiresCanonicalRewrite === (name !== "current");
         });
         expect(measured.value).toBe(true);
         if (run > 0) durations.push(measured.durationMs);

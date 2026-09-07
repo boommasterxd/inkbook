@@ -1,5 +1,6 @@
 import {
   buildElementPathParts,
+  buildLegacyPressureOutlinePath,
   effectiveStrokeWidth,
   outlineDashPattern,
 } from "../../domain/geometry/public";
@@ -8,6 +9,7 @@ import type {
   InkElementV1,
   OutlineStyleV1,
   ShapeStyleV1,
+  StrokeElementV1,
 } from "../../domain/schema/public";
 import { serializeSvgNumber, serializeSvgOpacity } from "../documents/svg-number";
 import { DOCUMENT_PALETTE, type ThemeClass } from "../documents/svg-theme";
@@ -32,6 +34,10 @@ export function serializeElementPaths(element: InkElementV1): string[] {
     }
     return serializeOutlinePart(element.style, part.d, part.paint);
   });
+}
+
+export function serializeLegacyPressurePath(element: StrokeElementV1): string {
+  return serializeStrokePart(element, buildLegacyPressureOutlinePath(element), "fill");
 }
 
 export function serializePath(d: string, attributes: PathAttributes): string {

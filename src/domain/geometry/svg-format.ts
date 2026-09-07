@@ -44,9 +44,9 @@ export function cubicTo(first: PointV1, second: PointV1, end: PointV1): string {
   );
 }
 
-export function arcTo(radius: number, sweep: 0 | 1, end: PointV1): string {
+export function arcTo(radius: number, sweep: 0 | 1, end: PointV1, large: 0 | 1 = 0): string {
   const value = svgNumber(radius);
-  return `A${value} ${value} 0 0 ${sweep}${followingNumber(end.x)}${followingNumber(end.y)}`;
+  return `A${value} ${value} 0 ${large} ${sweep}${followingNumber(end.x)}${followingNumber(end.y)}`;
 }
 
 function followingNumber(value: number): string {

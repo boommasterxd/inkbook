@@ -44,10 +44,15 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz selection resize frame p
   it("keeps pointer-to-scene resize frames within budget", async ({ annotate }) => {
     const profiles = [
       ["mixed exact resize", mixedExactElements()],
-      ["long pressure fallback resize", longPressureElements()],
-      ["variable pressure bands resize", variablePressureElements()],
+      ["long pressure progressive resize", longPressureElements()],
+      ["4096-sample non-pressure resize", mixedElements(nonPressureStroke(0))],
+      [
+        "20,480-sample non-pressure progressive resize",
+        Array.from({ length: 5 }, (_, index) => nonPressureStroke(index)),
+      ],
+      ["variable pressure progressive resize", variablePressureElements()],
       ["40 long pressure strokes resize", pressureBandSelection()],
-      ["10,000-element fallback resize", fallbackElements()],
+      ["10,000-element progressive resize", fallbackElements()],
     ] as const;
     for (const [name, elements] of profiles) {
       const result = measurePipeline(elements);
@@ -128,9 +133,9 @@ function measureMovePipeline(elements: readonly InkElementV1[]) {
         },
       ]);
     }
-    if (fixture.scheduler.pendingCount !== 1) throw new Error("Expected one move frame.");
+    expect(fixture.scheduler.pendingCount).toBeLessThanOrEqual(2);
     fixture.scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
-    fixture.scheduler.runAll();
+    fixture.scheduler.runFrame();
   });
   preview.revert();
   fixture.renderer.destroy();
@@ -158,9 +163,9 @@ function measurePipeline(elements: readonly InkElementV1[]) {
     for (let sample = 0; sample < RAW_SAMPLES_PER_FRAME; sample += 1) {
       interaction.pointerMove(pointerAt(start, frame, sample));
     }
-    if (fixture.scheduler.pendingCount !== 1) throw new Error("Expected one handle frame.");
+    expect(fixture.scheduler.pendingCount).toBeLessThanOrEqual(2);
     fixture.scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
-    fixture.scheduler.runAll();
+    fixture.scheduler.runFrame();
   });
   interaction.dispose();
   fixture.renderer.destroy();
@@ -312,4 +317,9 @@ function maximumBottom(elements: readonly InkElementV1[]): number | null {
     maximum = Math.max(maximum, calculateElementBounds(element).maxY);
   }
   return Number.isFinite(maximum) ? maximum : null;
+}
+
+function nonPressureStroke(index: number): StrokeElementV1 {
+  const stroke = maximumStroke(index);
+  return { ...stroke, style: { ...stroke.style, pressureEnabled: false } };
 }

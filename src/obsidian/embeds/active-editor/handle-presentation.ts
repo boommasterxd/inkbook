@@ -27,11 +27,13 @@ export interface HandleInteractionRenderer {
   };
   clearElementPreviews(): void;
   clearPreviewTransforms(): void;
+  clearProgressiveElementPreviews?(): void;
   flushPointerFeedbackFrame(): void;
-  setElementPreviews(
-    elements: readonly InkElementV1[],
+  setElementPreviews(elements: readonly InkElementV1[], version: number): void;
+  setProgressiveElementPreviews?(
+    ids: readonly string[],
+    materialize: (id: string) => InkElementV1 | undefined,
     version: number,
-    pressurePreviewIds?: ReadonlySet<string>,
   ): void;
   setSelectionOverlayPath(
     d: string | null,
@@ -119,7 +121,6 @@ export class SelectionHandlePresentation {
     preview: SelectionHandlePreview,
     connected: ConnectedHandlePreview,
     scaleElements: readonly InkElementV1[],
-    pressurePreviewIds?: ReadonlySet<string>,
   ): number | undefined {
     const exactGeometry = preview.exactElements.map((element) => ({
       bounds: calculateElementBounds(element),
@@ -152,7 +153,6 @@ export class SelectionHandlePresentation {
     this.#renderer.setElementPreviews(
       uniquePreviewElements(basePreviewElements, scaleElements),
       this.#version,
-      pressurePreviewIds,
     );
     const previewFrame = exactOverlay.length === 0 ? preview.previewFrame : null;
     const outline = this.renderGeometry(
@@ -162,6 +162,14 @@ export class SelectionHandlePresentation {
       exactOverlay.length === 0 ? (previewFrame ?? context.frame) : exactFrame,
     );
     return previewMaximumBottom(exactGeometry, connected.elements, outline);
+  }
+
+  public renderProgressive(
+    ids: readonly string[],
+    materialize: (id: string) => InkElementV1 | undefined,
+  ): void {
+    this.#version += 1;
+    this.#renderer.setProgressiveElementPreviews?.(ids, materialize, this.#version);
   }
 
   public renderTransform(

@@ -90,6 +90,18 @@ export class SelectionHandleSession {
     return this.#preview;
   }
 
+  public createScalePreviewMaterializer(): ((element: InkElementV1) => InkElementV1) | undefined {
+    const scale = this.#scale;
+    const transform = this.#preview.transform;
+    if (scale === undefined || transform?.kind !== "scale") return undefined;
+    const pointer = this.#currentPointer;
+    const uniform = this.#uniformScale;
+    const factors = scale.factorsAt(pointer, uniform);
+    const delta = transform.delta;
+    return (element) =>
+      moveSelection([scale.materializeOne(element, pointer, uniform, factors)], delta)[0]!;
+  }
+
   public cancel(): void {
     this.#cancelled = true;
     this.#generation += 1;

@@ -1,4 +1,4 @@
-import { buildStrokePath, roundCanonical, smoothStrokeCenters } from "../../domain/geometry/public";
+import { roundCanonical, smoothStrokeCenters } from "../../domain/geometry/public";
 import {
   buildCenterlineSlice,
   buildPressureOutlineSlice,
@@ -111,7 +111,7 @@ export class LiveStrokeBuilder {
     if (this.retainedSamples === 0) throw new RangeError("A stroke requires at least one sample.");
     this.finished = true;
     const points = this.canonicalPoints;
-    const geometry = this.buildCommitGeometry(points);
+    const geometry = this.buildCommitGeometry();
     this.commitBuilds += 1;
     return { points, geometry, instrumentation: this.instrumentation() };
   }
@@ -181,7 +181,7 @@ export class LiveStrokeBuilder {
           contextStart,
           nextFinalized + BOUNDARY_SAMPLES,
           this.finalizedSamples === 0 ? null : this.finalizedSamples - 1,
-          nextFinalized,
+          this.options.style.pressureEnabled ? nextFinalized - 1 : nextFinalized,
         ),
       }),
     );
@@ -212,25 +212,9 @@ export class LiveStrokeBuilder {
     this.maximumTailSamples = Math.max(this.maximumTailSamples, sampleCount);
   }
 
-  private buildGeometry(points: number[]): StrokePathGeometry {
-    return buildStrokePath({
-      id: "00000000-0000-4000-8000-000000000000",
-      createdAt: 0,
-      kind: "stroke",
-      tool: this.options.style.pressureEnabled ? "pen" : "highlighter",
-      points,
-      rotation: 0,
-      pivot: { x: 0, y: 0 },
-      style: this.options.style,
-    });
-  }
-
-  private buildCommitGeometry(points: number[]): StrokePathGeometry {
+  private buildCommitGeometry(): StrokePathGeometry {
     if (this.tail === null) throw new RangeError("A live stroke requires at least one sample.");
     if (this.chunks.length === 0) return this.tail.geometry;
-    if (this.options.style.pressureEnabled && !usesDirectPressureOutline(points)) {
-      return this.buildGeometry(points);
-    }
     return this.options.style.pressureEnabled
       ? combinePressureGeometry(this.chunks, this.tail)
       : combineCenterlineGeometry(this.chunks, this.tail);
@@ -318,36 +302,12 @@ function combinePressureGeometry(
   chunks: readonly LiveStrokeChunk[],
   tail: LiveStrokePreview["tail"],
 ): StrokePathGeometry {
-  // Pressure slices also contain temporary boundary connectors. Reordering their
-  // two sides without those connectors avoids rebuilding every outline pair.
-  const paths = new Array<string>(chunks.length * 2 + 1);
-  for (let index = 0; index < chunks.length; index += 1) {
-    const d = chunks[index]!.geometry.d;
-    const firstQuadratic = requireCommand(d, "Q");
-    const endConnector = requireCommand(d, "L", firstQuadratic);
-    paths[index] =
-      index === 0
-        ? d.slice(0, endConnector)
-        : d.slice(requireCommand(d, "Q", firstQuadratic + 1), endConnector);
-  }
-
-  const tailPath = tail.geometry.d;
-  const tailFirstQuadratic = requireCommand(tailPath, "Q");
-  paths[chunks.length] = tailPath.slice(
-    requireCommand(tailPath, "Q", tailFirstQuadratic + 1),
-    tailPath.lastIndexOf("L"),
-  );
-
-  for (let index = chunks.length - 1; index >= 0; index -= 1) {
-    const d = chunks[index]!.geometry.d;
-    const firstQuadratic = requireCommand(d, "Q");
-    const endConnector = requireCommand(d, "L", firstQuadratic);
-    const firstReverseQuadratic = requireCommand(d, "Q", endConnector);
-    const reverseStart = requireCommand(d, "Q", firstReverseQuadratic + 1);
-    const reverseEnd = index === 0 ? d.length : d.lastIndexOf("L");
-    paths[chunks.length * 2 - index] = d.slice(reverseStart, reverseEnd);
-  }
-  return { d: paths.join(""), paint: "fill" };
+  // Swept pieces already overlap at their round joins; concatenate the same
+  // partition used by the canonical builder without parsing SVG commands.
+  return {
+    d: [...chunks.map((chunk) => chunk.geometry.d), tail.geometry.d].join(""),
+    paint: "fill",
+  };
 }
 
 function afterOverlappingQuadratic(d: string): string {
@@ -359,33 +319,4 @@ function requireCommand(d: string, command: "L" | "Q", fromIndex = 0): number {
   const index = d.indexOf(command, fromIndex);
   if (index < 0) throw new Error(`Live stroke geometry is missing the ${command} command.`);
   return index;
-}
-
-function usesDirectPressureOutline(points: readonly number[]): boolean {
-  const pointCount = points.length / 3;
-  let previous = smoothedPointAt(points, 0, pointCount);
-  for (let index = 0; index < pointCount; index += 1) {
-    const center = index === 0 ? previous : smoothedPointAt(points, index, pointCount);
-    if (index > 0 && center.x === previous.x && center.y === previous.y) return false;
-    const next = smoothedPointAt(points, Math.min(pointCount - 1, index + 1), pointCount);
-    const tangentLength = Math.hypot(next.x - previous.x, next.y - previous.y);
-    if (tangentLength === 0 || !Number.isFinite(tangentLength)) return false;
-    previous = center;
-  }
-  return true;
-}
-
-function smoothedPointAt(
-  points: readonly number[],
-  index: number,
-  pointCount: number,
-): { readonly x: number; readonly y: number } {
-  const offset = index * 3;
-  if (index === 0 || index === pointCount - 1) {
-    return { x: points[offset]!, y: points[offset + 1]! };
-  }
-  return {
-    x: points[offset - 3]! * 0.25 + points[offset]! * 0.5 + points[offset + 3]! * 0.25,
-    y: points[offset - 2]! * 0.25 + points[offset + 1]! * 0.5 + points[offset + 4]! * 0.25,
-  };
 }

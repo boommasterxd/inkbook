@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { calculateElementBounds } from "../../../../src/domain/geometry/public";
+import {
+  buildElementPathParts,
+  calculateElementBounds,
+} from "../../../../src/domain/geometry/public";
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import { mutableElement } from "../../../../src/domain/store/immutability";
 import { ElementStore } from "../../../../src/domain/store/public";
@@ -14,8 +17,97 @@ import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/document-model-port";
 import { ManualFrameScheduler } from "../../../fixtures/obsidian/manual-frame-scheduler";
 import { rectangle } from "../../../unit/domain/store/fixtures";
+import { maximumStroke } from "../../../performance/editor/maximum-stroke-fixture";
+import { indexedStroke } from "../../../fixtures/editor/stroke";
+
+describe("active editor large mixed resize routing", () => {
+  it("uses a single progressive candidate list for pressure and fixed-width strokes", () => {
+    const elements = Array.from({ length: 513 }, (_, index) => {
+      const stroke = indexedStroke(index);
+      return { ...stroke, style: { ...stroke.style, pressureEnabled: index % 2 === 0 } };
+    });
+    const fixture = harness(elements[0]!, elements.slice(1));
+    const bounds = elements.map(calculateElementBounds);
+    const start = pointer(
+      Math.max(...bounds.map((box) => box.maxX)),
+      Math.max(...bounds.map((box) => box.maxY)),
+      21,
+    );
+    expect(fixture.interaction.pointerDown(start)).toBe(true);
+    fixture.interaction.pointerMove({ ...start, x: start.x + 100, y: start.y + 30 });
+    fixture.scheduler.runNext();
+
+    expect(fixture.renderer.setPreviewTransform.mock.lastCall?.[0]).toEqual([]);
+    const [ids, materialize] = fixture.renderer.setProgressiveElementPreviews.mock.lastCall!;
+    expect(ids).toEqual(elements.map(({ id }) => id));
+    expect(materialize(elements[0]!.id)?.style).toEqual(elements[0]!.style);
+    expect(materialize(elements[1]!.id)?.style).toEqual(elements[1]!.style);
+    fixture.interaction.cancel(start.pointerId);
+  });
+});
+
+describe("active editor rotated shape resize parity", () => {
+  it.each(["ellipse", "rectangle"] as const)(
+    "uses canonical %s geometry throughout a nonuniform group resize and commit",
+    (kind) => {
+      const target = { ...rectangle(), kind, rotation: 15 };
+      const other = rectangle("00000000-0000-4000-8000-000000000099", 500, 350);
+      const fixture = harness(target, [other]);
+      const bounds = [target, other].map(calculateElementBounds);
+      const start = pointer(
+        Math.max(...bounds.map((box) => box.maxX)),
+        Math.max(...bounds.map((box) => box.maxY)),
+        20,
+      );
+      expect(fixture.interaction.pointerDown(start)).toBe(true);
+      fixture.interaction.pointerMove({ ...start, x: start.x + 140, y: start.y + 20 });
+      fixture.scheduler.runNext();
+      const elements = fixture.renderer.setElementPreviews.mock.lastCall?.[0] ?? [];
+      const preview = elements.find(({ id }) => id === target.id);
+      expect(preview).toBeDefined();
+      expect(fixture.renderer.setPreviewTransform.mock.lastCall?.[0]).toEqual([]);
+
+      fixture.interaction.pointerUp(start.pointerId);
+      const committed = fixture.store.get(target.id)?.element;
+      expect(preview).toEqual(committed);
+      expect(buildElementPathParts(preview!)).toEqual(
+        buildElementPathParts(mutableElement(committed!)),
+      );
+    },
+  );
+});
 
 describe("active editor handle frames", () => {
+  it("queues canonical long-stroke resize snapshots and clears them when returning to the start", () => {
+    const stroke = maximumStroke(0);
+    const fixture = harness(stroke);
+    const bounds = calculateElementBounds(stroke);
+    const start = pointer(bounds.maxX, bounds.maxY, 19);
+    expect(fixture.interaction.pointerDown(start)).toBe(true);
+    fixture.interaction.pointerMove({ ...start, x: start.x + 100, y: start.y + 20 });
+    expect(fixture.renderer.setProgressiveElementPreviews).not.toHaveBeenCalled();
+    fixture.scheduler.runNext();
+    const [ids, materialize] = fixture.renderer.setProgressiveElementPreviews.mock.calls[0]!;
+    expect(ids).toEqual([stroke.id]);
+    expect(fixture.renderer.setPreviewTransform).toHaveBeenLastCalledWith(
+      [],
+      expect.any(String),
+      expect.any(Number),
+      "preserve",
+    );
+    const captured = materialize(stroke.id);
+    expect(captured).not.toEqual(stroke);
+    expect(captured?.style).toEqual(stroke.style);
+
+    fixture.interaction.pointerMove(start);
+    fixture.scheduler.runNext();
+    expect(fixture.renderer.clearProgressiveElementPreviews).toHaveBeenCalledOnce();
+    expect(materialize(stroke.id)).toEqual(captured);
+    fixture.interaction.cancel(start.pointerId);
+    expect(fixture.renderer.clearElementPreviews).toHaveBeenCalled();
+    expect(fixture.store.get(stroke.id)?.element).toEqual(stroke);
+  });
+
   it("coalesces pointer bursts and flushes the latest sample before pointer-up commit", () => {
     const shape = rectangle();
     const fixture = harness(shape);
@@ -69,8 +161,9 @@ describe("active editor handle frames", () => {
   });
 });
 
-function harness(shape: ReturnType<typeof rectangle>) {
-  const store = new ElementStore([shape]);
+function harness(shape: InkElementV1, others: readonly InkElementV1[] = []) {
+  const elements = [shape, ...others];
+  const store = new ElementStore(elements);
   const model = {
     mutationAvailability: "available",
     replaceElements: (elements: readonly InkElementV1[]) => store.replaceMany(elements),
@@ -88,19 +181,24 @@ function harness(shape: ReturnType<typeof rectangle>) {
     preparedHistory: {} as PreparedElementHistory,
     renderer,
     sceneStore: new ElementSceneStore(store),
-    selection: () => new Set([shape.id]),
+    selection: () => new Set(elements.map(({ id }) => id)),
     zoom: () => 1,
   });
-  return { interaction, previewTransforms, scheduler, store };
+  return { interaction, previewTransforms, renderer, scheduler, store };
 }
 
-function rendererPort(previewTransforms: Array<string | null>): HandleInteractionRenderer {
+function rendererPort(previewTransforms: Array<string | null>) {
   return {
     clearElementPreviews: vi.fn(),
     clearPreviewTransforms: () => previewTransforms.push(null),
+    clearProgressiveElementPreviews: vi.fn(),
     flushPointerFeedbackFrame: vi.fn(),
-    setElementPreviews: vi.fn(),
-    setPreviewTransform: (_ids, transform) => previewTransforms.push(transform),
+    setElementPreviews: vi.fn<HandleInteractionRenderer["setElementPreviews"]>(),
+    setPreviewTransform: vi.fn<HandleInteractionRenderer["setPreviewTransform"]>(
+      (_ids, transform) => previewTransforms.push(transform),
+    ),
+    setProgressiveElementPreviews:
+      vi.fn<NonNullable<HandleInteractionRenderer["setProgressiveElementPreviews"]>>(),
     setSelectionOverlayPath: vi.fn(),
     setSnapMarkerPath: vi.fn(),
     suppressMotionForNextDelta: vi.fn(),

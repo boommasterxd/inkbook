@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
-import { SelectionHandleSession } from "../../../../src/editor/selection/public";
+import {
+  createSelectionFrameAtRotation,
+  selectionFramePoint,
+  SelectionHandleSession,
+} from "../../../../src/editor/selection/public";
+import { arrow, coordinateSystem } from "../../domain/schema/fixtures";
 import { rectangle } from "../../domain/store/fixtures";
 import { maximumStroke } from "../../../performance/editor/maximum-stroke-fixture";
 
@@ -10,7 +15,7 @@ function replacementPlan(replacements: readonly InkElementV1[]) {
 }
 
 describe("SelectionHandleSession performance contracts", () => {
-  it("selects one stable transform fallback for a long pressure-stroke resize", () => {
+  it("defers a long pressure-stroke resize to canonical per-element materialization", () => {
     const stroke = maximumStroke(0);
     const session = pressureSession(stroke);
 
@@ -30,14 +35,67 @@ describe("SelectionHandleSession performance contracts", () => {
     expect(replacement.points).not.toEqual(stroke.points);
   });
 
+  it("captures immutable canonical resize snapshots while newer pointer samples arrive", () => {
+    const stroke = maximumStroke(0);
+    const session = pressureSession(stroke);
+    expect(session.createScalePreviewMaterializer()).toBeUndefined();
+    session.update({ x: 5_000, y: 150 });
+    const materialize = session.createScalePreviewMaterializer()!;
+    const expected = materialize(stroke);
+    const commit = session.prepareCommit();
+    if (commit.status !== "ready") throw new TypeError("Expected an exact pressure commit.");
+    expect(expected).toEqual(commit.replacements[0]);
+
+    session.update({ x: 6_000, y: 180 }, { uniformScale: true });
+    expect(materialize(stroke)).toEqual(expected);
+    expect(session.createScalePreviewMaterializer()!(stroke)).not.toEqual(expected);
+    session.cancel();
+    expect(session.createScalePreviewMaterializer()).toBeUndefined();
+  });
+
+  it("materializes pressure strokes and fixed-size nodes consistently inside a rotated group", () => {
+    const elements = [maximumStroke(0), arrow(), coordinateSystem()];
+    const frame = createSelectionFrameAtRotation(elements, 30)!;
+    const startPointer = selectionFramePoint(frame, "bottom-right");
+    const session = new SelectionHandleSession({
+      action: {
+        anchor: selectionFramePoint(frame, "top-left"),
+        kind: "scale",
+        position: "bottom-right",
+        rotation: 30,
+      },
+      elements,
+      planner: {
+        countReverseDependencies: () => 0,
+        planReplacements: replacementPlan,
+        planReplacementsTimeSliced: async (replacements) => replacementPlan(replacements),
+      },
+      startPointer,
+    });
+    session.update({ x: startPointer.x + 100, y: startPointer.y + 100 });
+    const materialize = session.createScalePreviewMaterializer()!;
+    const previewElements = elements.map(materialize);
+    const committed = session.prepareCommit();
+    if (committed.status !== "ready") throw new TypeError("Expected a bounded commit.");
+    expect(previewElements).toEqual(committed.replacements);
+  });
+});
+
+describe("SelectionHandleSession work budgets", () => {
   it.each([
-    { pointCount: 256, truncated: false },
-    { pointCount: 257, truncated: true },
+    { pointCount: 256, pressureEnabled: true, truncated: false },
+    { pointCount: 257, pressureEnabled: true, truncated: true },
+    { pointCount: 256, pressureEnabled: false, truncated: false },
+    { pointCount: 257, pressureEnabled: false, truncated: true },
   ])(
-    "applies the pressure preview boundary at $pointCount samples",
-    ({ pointCount, truncated }) => {
+    "applies the preview boundary at $pointCount samples with pressure $pressureEnabled",
+    ({ pointCount, pressureEnabled, truncated }) => {
       const source = maximumStroke(0);
-      const stroke = { ...source, points: source.points.slice(0, pointCount * 3) };
+      const stroke = {
+        ...source,
+        points: source.points.slice(0, pointCount * 3),
+        style: { ...source.style, pressureEnabled },
+      };
       const preview = pressureSession(stroke).update({ x: pointCount + 100, y: 150 });
 
       expect(preview.exactPreviewTruncated).toBe(truncated);

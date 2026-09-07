@@ -74,7 +74,7 @@ export class SceneLiveStrokeRenderer {
       throw new RangeError("Live stroke handoffs must have unique, document-bounded IDs.");
     }
     const group = this.#ownerDocument.createElementNS(SVG_NAMESPACE, "g");
-    group.setAttribute("opacity", String(this.#style.opacity));
+    group.setAttribute("opacity", String(groupedStrokeStyle(this.#style).opacity));
     group.setAttribute("pointer-events", "none");
     for (const node of this.#chunkNodes) group.append(node);
     if (this.#tailNode !== undefined) group.append(this.#tailNode);
@@ -163,9 +163,10 @@ export class SceneLiveStrokeRenderer {
     }
     this.#style = style;
     this.#tool = tool;
-    this.#group.setAttribute("opacity", String(style.opacity));
+    const groupedStyle = groupedStrokeStyle(style);
+    this.#group.setAttribute("opacity", String(groupedStyle.opacity));
     this.#instrumentation.attributeWrites += 1;
-    this.#presentation = withoutPerPathOpacity(liveStrokePresentation(style, paint, tool));
+    this.#presentation = withoutPerPathOpacity(liveStrokePresentation(groupedStyle, paint, tool));
   }
 
   private assertAppendOnly(preview: SceneLiveStrokePreview): void {
@@ -254,5 +255,15 @@ function withoutPerPathOpacity(presentation: PathPresentation): PathPresentation
     ...presentation,
     "fill-opacity": null,
     "stroke-opacity": null,
+  };
+}
+
+function groupedStrokeStyle(style: StrokeStyleV1): StrokeStyleV1 {
+  if (style.color.type === "theme-text") return style;
+  const alpha = Number.parseInt(style.color.value.slice(7), 16) / 255;
+  return {
+    ...style,
+    color: { type: "rgba", value: `#${style.color.value.slice(1, 7)}FF` },
+    opacity: style.opacity * alpha,
   };
 }

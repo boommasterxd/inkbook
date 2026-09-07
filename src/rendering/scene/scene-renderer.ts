@@ -8,7 +8,7 @@ import type {
 import { SceneBackgroundCache } from "./background-cache";
 import { DEFAULT_CAMERA, DEFAULT_FRAME_BUDGET_MS } from "./constants";
 import { SceneContentRenderer } from "./content-renderer";
-import { SceneElementPreviewController } from "./element-preview-controller";
+import { SceneElementPreviews } from "./scene-element-previews";
 import { SceneFrameWriter } from "./scene-frame-writer";
 import {
   createInstrumentation,
@@ -23,7 +23,8 @@ import { SceneCommitCoordinator } from "./scene-commit-coordinator";
 import { SceneDeltaCoordinator } from "./scene-delta-coordinator";
 import { SceneLiveStrokeRenderer } from "./live-stroke-renderer";
 import { SceneMotionController } from "./scene-motion-controller";
-import { SceneResourcePolicy, visibilityPageBounds } from "./scene-resource-policy";
+import { SceneResourcePolicy } from "./scene-resource-policy";
+import { SceneVisibilityCoordinator } from "./scene-visibility-coordinator";
 import {
   browserScheduler,
   sameViewport,
@@ -48,7 +49,6 @@ import type {
 } from "./types";
 import { SceneTransformPreviewController } from "./transform-preview-controller";
 import { SceneVisibilityState } from "./visibility-state";
-type Ids = ReadonlySet<string>;
 export class SvgSceneRenderer {
   #backgroundDirty = true;
   readonly #backgroundCache = new SceneBackgroundCache();
@@ -66,17 +66,16 @@ export class SvgSceneRenderer {
   #layoutDirty = true;
   readonly #liveStroke: SceneLiveStrokeRenderer;
   readonly #motion: SceneMotionController;
-  #orderVisibilityDirty = false;
   #page: PageV1;
   #pageHeight = 1;
   readonly #previewCommits: ScenePreviewCommitController;
   readonly #resourcePolicy: SceneResourcePolicy;
   readonly #pathCache = new ScenePathCache();
-  readonly #elementPreviews: SceneElementPreviewController;
+  readonly #elementPreviews: SceneElementPreviews;
   readonly #transformPreviews: SceneTransformPreviewController;
   readonly #scheduler: SceneScheduler;
   #viewport: SceneViewport | undefined;
-  #visibilityDirty = true;
+  readonly #visibilityCoordinator: SceneVisibilityCoordinator;
   readonly #visibility: SceneVisibilityState;
   readonly #options: SceneRendererOptions;
   public constructor(options: SceneRendererOptions) {
@@ -121,10 +120,16 @@ export class SvgSceneRenderer {
       this.#pathCache,
       this.#motion,
       options.onResourceUsageChanged ?? (() => undefined),
+      () => this.#elementPreviews.progressive.memoryUsage(),
+    );
+    this.#visibilityCoordinator = new SceneVisibilityCoordinator(
+      this.#content,
+      this.#visibility,
+      this.#resourcePolicy,
     );
     this.#sceneCommits = new SceneCommitCoordinator(options.onSceneCommitted);
     this.#sceneCommits.markPending();
-    this.#elementPreviews = new SceneElementPreviewController(this.#content);
+    this.#elementPreviews = new SceneElementPreviews(this.#content, options.store);
     this.#transformPreviews = new SceneTransformPreviewController(
       this.#content,
       options.store,
@@ -133,7 +138,7 @@ export class SvgSceneRenderer {
     this.#previewCommits = new ScenePreviewCommitController(this.#motion, () => {
       this.#transformPreviews.clear();
       this.#elementPreviews.clear();
-      this.reconcileReleasedPreviewVisibility();
+      this.#visibilityCoordinator.releasePreviews();
       this.schedule();
     });
     this.#deltas = new SceneDeltaCoordinator({
@@ -142,10 +147,8 @@ export class SvgSceneRenderer {
       previews: this.#previewCommits,
       routing: {
         content: this.#content,
-        invalidateVisibility: () => this.invalidateVisibility(),
-        markOrderVisibilityDirty: () => {
-          this.#orderVisibilityDirty = true;
-        },
+        invalidateVisibility: () => this.#visibilityCoordinator.invalidate(),
+        markOrderVisibilityDirty: () => this.#visibilityCoordinator.invalidateOrder(),
         pathCache: this.#pathCache,
         store: this.#options.store,
         visibility: this.#visibility,
@@ -189,7 +192,8 @@ export class SvgSceneRenderer {
     this.#camera = camera;
     this.#frameWriter.setCamera(camera);
     this.#transformPreviews.setContext(camera, this.#viewport);
-    this.invalidateVisibility();
+    this.#elementPreviews.refreshProgressiveContext(this.#viewport, camera);
+    this.#visibilityCoordinator.invalidate();
     if (zoomChanged) this.#backgroundDirty = true;
     this.schedule();
   }
@@ -198,8 +202,9 @@ export class SvgSceneRenderer {
     if (sameViewport(this.#viewport, viewport)) return;
     this.#viewport = viewport;
     this.#transformPreviews.setContext(this.#camera, viewport);
+    this.#elementPreviews.refreshProgressiveContext(viewport, this.#camera);
     this.#layoutDirty = false;
-    this.invalidateVisibility();
+    this.#visibilityCoordinator.invalidate();
     this.schedule();
   }
   public invalidateLayout(): void {
@@ -283,7 +288,7 @@ export class SvgSceneRenderer {
     this.assertActive();
     this.#frameWriter.writePointerFeedback(
       this.#transformPreviews,
-      this.#elementPreviews,
+      this.#elementPreviews.immediate,
       this.#motion,
     );
   }
@@ -302,7 +307,7 @@ export class SvgSceneRenderer {
     this.assertActive();
     if (this.#previewCommits.requestClear()) return;
     this.#transformPreviews.clear();
-    this.reconcileReleasedPreviewVisibility();
+    this.#visibilityCoordinator.releasePreviews();
     this.schedule();
   }
   public setElementFade(ids: readonly string[], durationMs: number): void {
@@ -316,16 +321,35 @@ export class SvgSceneRenderer {
     const activeIds = this.#deltas.removeFades(ids);
     this.#content.setElementFade(activeIds, null);
   }
-  public setElementPreviews(items: readonly InkElementV1[], frame: number, pressure?: Ids): void {
+  public setElementPreviews(items: readonly InkElementV1[], frame: number): void {
     this.assertActive();
     validatePreviewVersion(frame, "Element preview");
-    if (this.#elementPreviews.set(items, frame, pressure)) this.schedule();
+    if (this.#elementPreviews.immediate.set(items, frame)) this.schedule();
+  }
+  public setProgressiveElementPreviews(
+    ids: readonly string[],
+    materialize: (id: string) => InkElementV1 | undefined,
+    version: number,
+  ): void {
+    this.assertActive();
+    validatePreviewVersion(version, "Progressive element preview");
+    this.#elementPreviews.setProgressive(
+      { ids, materialize, version },
+      this.#viewport,
+      this.#camera,
+    );
+    this.schedule();
+  }
+  public clearProgressiveElementPreviews(): void {
+    this.assertActive();
+    this.#elementPreviews.clearProgressive();
+    this.schedule();
   }
   public clearElementPreviews(): void {
     this.assertActive();
     if (this.#previewCommits.requestClear()) return;
     this.#elementPreviews.clear();
-    this.reconcileReleasedPreviewVisibility();
+    this.#visibilityCoordinator.releasePreviews();
     this.schedule();
   }
   public promoteVisible(id: string): void {
@@ -353,7 +377,7 @@ export class SvgSceneRenderer {
       this.#scheduler.cancelAnimationFrame(this.#frameHandle);
       this.#frameHandle = undefined;
     }
-    this.invalidateVisibility();
+    this.#visibilityCoordinator.invalidate();
     this.schedule();
   }
   public destroy(): void {
@@ -402,9 +426,9 @@ export class SvgSceneRenderer {
       this.#content.materializePreviewGeometry(this.#transformPreviews.values);
       this.#transformPreviews.clear();
       this.#elementPreviews.clear();
-      this.reconcileReleasedPreviewVisibility();
+      this.#visibilityCoordinator.releasePreviews();
     }
-    this.prepareVisibility();
+    this.#visibilityCoordinator.prepare(this.#viewport, this.#camera);
     this.#transformPreviews.refreshContext();
     this.flushPointerFeedbackFrame();
     const pendingVisibility =
@@ -428,6 +452,9 @@ export class SvgSceneRenderer {
     this.#motion.bindMountedEntrances(mountedIds);
     this.#motion.finishEntranceBatch();
     this.#elementPreviews.applyMounted(mountedIds);
+    const pendingPreview = this.#elementPreviews.progressive.write(deadline, () =>
+      this.#scheduler.now(),
+    );
     let backgroundDeferred = false;
     if (this.#backgroundDirty && this.#viewport !== undefined) {
       if (this.#scheduler.now() >= deadline) {
@@ -441,7 +468,7 @@ export class SvgSceneRenderer {
     if (!backgroundDeferred) this.#sceneCommits.completeFrame();
     const pendingMotion = this.#motion.write(startedAt);
     const overBudget = this.#scheduler.now() >= deadline;
-    if (backgroundDeferred || pendingMotion || overBudget) this.schedule();
+    if (backgroundDeferred || pendingPreview || pendingMotion || overBudget) this.schedule();
     if (overBudget) {
       this.refreshCacheInstrumentation();
       return;
@@ -457,37 +484,10 @@ export class SvgSceneRenderer {
     if (!sameViewport(this.#viewport, viewport)) {
       this.#viewport = viewport;
       this.#transformPreviews.setContext(this.#camera, viewport);
-      this.invalidateVisibility();
+      this.#elementPreviews.refreshProgressiveContext(viewport, this.#camera);
+      this.#visibilityCoordinator.invalidate();
     }
     this.#layoutDirty = false;
-  }
-  private prepareVisibility(): void {
-    if (this.#viewport === undefined) return;
-    if (!this.#visibilityDirty) {
-      if (this.#orderVisibilityDirty) {
-        this.#orderVisibilityDirty = false;
-        const visibility = this.#visibility.resortCurrent();
-        this.#content.replaceVisibility(visibility);
-        this.#resourcePolicy.updateVisibility(visibility);
-      }
-      return;
-    }
-    const { envelope, retained } = visibilityPageBounds(this.#viewport, this.#camera);
-    this.#visibilityDirty = false;
-    this.#orderVisibilityDirty = false;
-    const result = this.#visibility.query(envelope, retained);
-    if (!result.changed) return;
-    const { visibility } = result;
-    this.#content.replaceVisibility(visibility);
-    this.#resourcePolicy.updateVisibility(visibility);
-  }
-  private invalidateVisibility(): void {
-    this.#visibilityDirty = true;
-    this.#content.cancelPendingVisibility();
-  }
-  private reconcileReleasedPreviewVisibility(): void {
-    this.invalidateVisibility();
-    this.#content.replaceVisibility(this.#visibility.resortCurrent());
   }
   private refreshCacheInstrumentation(): void {
     refreshCacheInstrumentation(this.#instrumentation, this.#backgroundCache, this.#pathCache);

@@ -7,7 +7,9 @@ import {
   scalePoint,
   subtractPoints,
 } from "./primitives";
-import { arcTo, lineTo, moveTo, quadraticTo } from "./svg-format";
+import { lineTo, moveTo, quadraticTo } from "./svg-format";
+import { buildPressureSweep, pressureWidthFactor } from "./pressure-sweep";
+export { pressureWidthFactor } from "./pressure-sweep";
 
 export interface RawStrokeSample extends PointV1 {
   pressure: number;
@@ -54,60 +56,24 @@ export function smoothStrokeCenters(samples: readonly number[]): StrokeCenter[] 
   });
 }
 
+export function transformedStrokeCenters(stroke: StrokeElementV1): StrokeCenter[] {
+  const smoothed = smoothStrokeCenters(stroke.points);
+  return stroke.rotation === 0
+    ? smoothed
+    : smoothed.map((center) => ({
+        ...rotatePointClockwise(center, stroke.pivot, stroke.rotation),
+        pressure: center.pressure,
+      }));
+}
+
 export function buildStrokePath(stroke: StrokeElementV1): StrokePathGeometry {
   if (!stroke.style.pressureEnabled && stroke.rotation === 0) {
     return { d: buildUnrotatedCenterline(stroke.points), paint: "stroke" };
   }
-  if (stroke.style.pressureEnabled && stroke.rotation === 0) {
-    const direct = buildUnrotatedPressureOutline(stroke.points, stroke.style.width);
-    if (direct !== null) return { d: direct, paint: "fill" };
-  }
-  const smoothed = smoothStrokeCenters(stroke.points);
-  const centers =
-    stroke.rotation === 0
-      ? smoothed
-      : smoothed.map((center) => ({
-          ...rotatePointClockwise(center, stroke.pivot, stroke.rotation),
-          pressure: center.pressure,
-        }));
+  const centers = transformedStrokeCenters(stroke);
   return stroke.style.pressureEnabled
     ? { d: buildPressureOutline(centers, stroke.style.width), paint: "fill" }
     : { d: buildCenterline(centers), paint: "stroke" };
-}
-
-function buildUnrotatedPressureOutline(samples: readonly number[], width: number): string | null {
-  assertStrokeSamples(samples);
-  const pointCount = samples.length / 3;
-  const centers = Array.from({ length: pointCount }, (_, index) =>
-    strokeCenterAt(samples, index, pointCount),
-  );
-  if (pointCount === 1) return buildPressureOutline(centers, width);
-  const pairs = buildDirectOutlinePairs(centers, width);
-  if (pairs === null) return null;
-  return buildClosedOutlinePath(pairs);
-}
-
-function buildDirectOutlinePairs(
-  centers: readonly StrokeCenter[],
-  width: number,
-): OutlinePointPair[] | null {
-  const pairs = new Array<OutlinePointPair>(centers.length);
-  for (let index = 0; index < centers.length; index += 1) {
-    const center = centers[index]!;
-    const previous = centers[Math.max(0, index - 1)]!;
-    const next = centers[Math.min(centers.length - 1, index + 1)]!;
-    if (index > 0 && center.x === previous.x && center.y === previous.y) return null;
-    const tangent = normalizedVector(subtractPoints(next, previous));
-    if (tangent === null) return null;
-    const radius = halfWidth(width, center.pressure);
-    const offset = scalePoint({ x: -tangent.y, y: tangent.x }, radius);
-    pairs[index] = {
-      left: addPoints(center, offset),
-      radius,
-      right: subtractPoints(center, offset),
-    };
-  }
-  return pairs;
 }
 
 function buildUnrotatedCenterline(samples: readonly number[]): string {
@@ -160,31 +126,7 @@ export function buildCenterline(centers: readonly PointV1[]): string {
 }
 
 export function buildPressureOutline(centers: readonly StrokeCenter[], width: number): string {
-  const first = centers[0];
-  if (first === undefined) throw new RangeError("A pressure outline requires at least one point.");
-  if (centers.length === 1) {
-    const radius = halfWidth(width, first.pressure);
-    const left = { x: first.x - radius, y: first.y };
-    const right = { x: first.x + radius, y: first.y };
-    return `${moveTo(left)}${arcTo(radius, 1, right)}${arcTo(radius, 1, left)}Z`;
-  }
-
-  const pairs = buildPressureOutlinePairs(centers, width);
-  return buildClosedOutlinePath(pairs);
-}
-
-function buildClosedOutlinePath(pairs: readonly OutlinePointPair[]): string {
-  const left = pairs.map((pair) => pair.left);
-  const right = pairs.map((pair) => pair.right).reverse();
-  const endPair = pairs[pairs.length - 1]!;
-  const startPair = pairs[0]!;
-  return [
-    buildOpenMidpointPath(left),
-    arcTo(endPair.radius, 0, endPair.right),
-    appendMidpointPath(right),
-    arcTo(startPair.radius, 0, startPair.left),
-    "Z",
-  ].join("");
+  return buildPressureSweep(centers, width);
 }
 
 export function buildPressureOutlinePairs(
@@ -235,25 +177,6 @@ function tangentAt(centers: readonly StrokeCenter[], index: number): PointV1 | n
     normalizedVector(subtractPoints(centers[index]!, previous)) ??
     normalizedVector(subtractPoints(next, centers[index]!))
   );
-}
-
-function buildOpenMidpointPath(points: readonly PointV1[]): string {
-  return `${moveTo(points[0]!)}${appendMidpointPath(points)}`;
-}
-
-function appendMidpointPath(points: readonly PointV1[]): string {
-  if (points.length === 1) return "";
-  if (points.length === 2) return lineTo(points[1]!);
-  const commands = [lineTo(midpoint(points[0]!, points[1]!))];
-  for (let index = 1; index < points.length - 1; index += 1) {
-    commands.push(quadraticTo(points[index]!, midpoint(points[index]!, points[index + 1]!)));
-  }
-  commands.push(lineTo(points[points.length - 1]!));
-  return commands.join("");
-}
-
-export function pressureWidthFactor(pressure: number): number {
-  return 0.35 + 0.65 * Math.min(1, Math.max(0, pressure));
 }
 
 function halfWidth(width: number, pressure: number): number {

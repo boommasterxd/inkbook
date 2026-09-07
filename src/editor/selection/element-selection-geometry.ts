@@ -7,7 +7,12 @@ import {
   type ArrowNodeGeometry,
 } from "../../domain/geometry/element-path";
 import { quadraticPoint, rotatePointClockwise } from "../../domain/geometry/public";
-import { buildPressureOutlinePairs, smoothStrokeCenters } from "../../domain/geometry/stroke-path";
+import {
+  pressureSweepHull,
+  pressureWidthFactor,
+  visitPressureSweep,
+} from "../../domain/geometry/pressure-sweep";
+import { smoothStrokeCenters } from "../../domain/geometry/stroke-path";
 import type {
   BoxShapeElementV1,
   InkElementV1,
@@ -45,10 +50,14 @@ function visitStroke(
   visitor: SelectionPrimitiveVisitor,
 ): boolean {
   if (stroke.style.opacity <= 0) return true;
-  const centers = smoothStrokeCenters(stroke.points).map((center) => ({
-    ...rotatedFor(stroke, center),
-    pressure: center.pressure,
-  }));
+  const smoothed = smoothStrokeCenters(stroke.points);
+  const centers =
+    stroke.rotation === 0
+      ? smoothed
+      : smoothed.map((center) => ({
+          ...rotatedFor(stroke, center),
+          pressure: center.pressure,
+        }));
   if (!stroke.style.pressureEnabled) {
     return visitPolyline(centers, effectiveStrokeWidth(stroke) / 2, false, visitor);
   }
@@ -60,24 +69,19 @@ function visitPressureStroke(
   centers: readonly (PointV1 & { readonly pressure: number })[],
   visitor: SelectionPrimitiveVisitor,
 ): boolean {
-  if (centers.length === 1) {
-    return visitor(disk(centers[0]!, pressureRadius(stroke, centers[0]!.pressure)));
-  }
-  const pairs = buildPressureOutlinePairs(centers, stroke.style.width);
-  if (!visitor(disk(centers[0]!, pairs[0]!.radius))) return false;
-  for (let index = 1; index < pairs.length; index += 1) {
-    const previous = pairs[index - 1]!;
-    const current = pairs[index]!;
-    if (
-      !visitor({
-        kind: "polygon",
-        points: [previous.left, current.left, current.right, previous.right],
-      })
-    ) {
-      return false;
+  return !visitPressureSweep(centers, stroke.style.width, (start, end) => {
+    const startRadius = pressureRadius(stroke, start.pressure);
+    const endRadius = pressureRadius(stroke, end.pressure);
+    const points = pressureSweepHull(start, end, startRadius, endRadius);
+    if (points === null) {
+      return !visitor(startRadius >= endRadius ? disk(start, startRadius) : disk(end, endRadius));
     }
-  }
-  return visitor(disk(centers[centers.length - 1]!, pairs[pairs.length - 1]!.radius));
+    return (
+      !visitor(disk(start, startRadius)) ||
+      !visitor(disk(end, endRadius)) ||
+      !visitor({ kind: "polygon", points })
+    );
+  });
 }
 
 function visitLinear(linear: LinearElementV1, visitor: SelectionPrimitiveVisitor): boolean {
@@ -225,8 +229,7 @@ function visitPolyline(
 }
 
 function pressureRadius(stroke: StrokeElementV1, pressure: number): number {
-  const boundedPressure = Math.min(1, Math.max(0, pressure));
-  return (stroke.style.width * (0.35 + 0.65 * boundedPressure)) / 2;
+  return (stroke.style.width * pressureWidthFactor(pressure)) / 2;
 }
 
 function rotatedFor(element: Pick<InkElementV1, "pivot" | "rotation">, point: PointV1): PointV1 {

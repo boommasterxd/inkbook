@@ -19,14 +19,7 @@ interface MountedPath {
   readonly node: SVGPathElement;
 }
 
-interface MountedPreviewGroup {
-  opacity: string | null;
-  readonly node: SVGGElement;
-  transform: string | null;
-}
-
 interface TopologyUpdateOptions {
-  readonly groupOpacity: number | null;
   readonly instrumentation: MutableSceneInstrumentation;
   readonly ownerDocument: Document;
   readonly parent: SVGGElement;
@@ -39,7 +32,6 @@ export interface MountedSceneElement {
   paintVersion: number;
   readonly paths: MountedPath[];
   pathParts: readonly SvgPathPart[];
-  previewGroup: MountedPreviewGroup | null;
   previewStrokeWidthScale: number | null;
   previewTransformVersion: number;
   rank: number;
@@ -61,7 +53,6 @@ export function createMountedElement(
     paintVersion: record.paintVersion,
     paths,
     pathParts: parts,
-    previewGroup: null,
     previewStrokeWidthScale: null,
     previewTransformVersion: 0,
     rank: record.rank,
@@ -72,18 +63,10 @@ export function appendElementToFragment(
   entry: MountedSceneElement,
   fragment: DocumentFragment,
 ): void {
-  if (entry.previewGroup !== null) {
-    fragment.append(entry.previewGroup.node);
-    return;
-  }
   for (const path of entry.paths) fragment.append(path.node);
 }
 
 export function removeMountedElement(entry: MountedSceneElement): void {
-  if (entry.previewGroup !== null) {
-    entry.previewGroup.node.remove();
-    return;
-  }
   for (const path of entry.paths) path.node.remove();
 }
 
@@ -95,9 +78,8 @@ export function updateMountedGeometry(
   parent: SVGGElement,
   instrumentation: MutableSceneInstrumentation,
 ): void {
-  if (entry.paths.length !== parts.length || entry.previewGroup !== null) {
+  if (entry.paths.length !== parts.length) {
     replacePathTopology(entry, record, parts, {
-      groupOpacity: null,
       instrumentation,
       ownerDocument,
       parent,
@@ -133,7 +115,6 @@ export function updateMountedPaint(
     }
     path.appliedPresentation = presentation;
   }
-  updatePressureGroupPresentation(entry, record.element, instrumentation);
   entry.paintVersion = record.paintVersion;
   entry.rank = record.rank;
 }
@@ -145,22 +126,7 @@ export function updatePreviewTransform(
   strokeWidthScale: number | null,
   instrumentation: MutableSceneInstrumentation,
 ): void {
-  const previousStrokeWidthScale = entry.previewStrokeWidthScale;
   entry.previewStrokeWidthScale = strokeWidthScale;
-  const group = entry.previewGroup;
-  if (group !== null) {
-    if (group.transform !== transform) {
-      writeRaw(group.node, "transform", transform, instrumentation, true);
-      group.transform = transform;
-    }
-    if (previousStrokeWidthScale !== strokeWidthScale) {
-      for (const path of entry.paths) {
-        writePreviewStrokeWidth(path, strokeWidthScale, instrumentation);
-      }
-    }
-    entry.previewTransformVersion = version;
-    return;
-  }
   if (
     entry.previewTransformVersion === version &&
     entry.paths.every(
@@ -183,12 +149,11 @@ export function updateMountedElementPreview(
   entry: MountedSceneElement,
   record: SceneElementRecord,
   previewElement: SceneElementRecord["element"],
-  parts: readonly (SvgPathPart & { readonly strokeWidth?: number })[],
+  parts: readonly SvgPathPart[],
   options: {
     readonly instrumentation: MutableSceneInstrumentation;
     readonly ownerDocument: Document;
     readonly parent: SVGGElement;
-    readonly pressurePreview?: boolean;
   },
 ): void {
   const original = {
@@ -197,15 +162,7 @@ export function updateMountedElementPreview(
     pathParts: entry.pathParts,
     rank: entry.rank,
   };
-  const groupOpacity =
-    options.pressurePreview === true && parts.length > 1 && previewElement.kind === "stroke"
-      ? previewElement.style.opacity
-      : null;
-  updateMountedPreviewGeometry(entry, { ...record, element: previewElement }, parts, {
-    ...options,
-    groupOpacity,
-  });
-  applyPreviewStrokeWidthOverrides(entry, parts, options.instrumentation);
+  updateMountedPreviewGeometry(entry, { ...record, element: previewElement }, parts, options);
   entry.geometryVersion = original.geometryVersion;
   entry.paintVersion = original.paintVersion;
   entry.pathParts = original.pathParts;
@@ -218,8 +175,7 @@ function updateMountedPreviewGeometry(
   parts: readonly SvgPathPart[],
   options: TopologyUpdateOptions,
 ): void {
-  const grouped = options.groupOpacity !== null;
-  if (entry.paths.length !== parts.length || (entry.previewGroup !== null) !== grouped) {
+  if (entry.paths.length !== parts.length) {
     replacePathTopology(entry, record, parts, options);
     return;
   }
@@ -231,22 +187,6 @@ function updateMountedPreviewGeometry(
     }
   }
   updateMountedPaint(entry, record, parts, options.instrumentation);
-}
-
-function applyPreviewStrokeWidthOverrides(
-  entry: MountedSceneElement,
-  parts: readonly (SvgPathPart & { readonly strokeWidth?: number })[],
-  instrumentation: MutableSceneInstrumentation,
-): void {
-  for (let index = 0; index < entry.paths.length; index += 1) {
-    const path = entry.paths[index]!;
-    const strokeWidth = parts[index]?.strokeWidth;
-    if (strokeWidth === undefined || path.appliedPresentation["stroke-width"] === null) continue;
-    const value = String(roundCanonical(strokeWidth));
-    writePresentation(path, "stroke-width", value, instrumentation);
-    path.appliedPresentation = { ...path.appliedPresentation, "stroke-width": value };
-    writePreviewStrokeWidth(path, entry.previewStrokeWidthScale, instrumentation);
-  }
 }
 
 export function setMountedElementFade(entry: MountedSceneElement, durationMs: number | null): void {
@@ -269,7 +209,6 @@ export function setMountedElementMotion(
 }
 
 export function firstPath(entry: MountedSceneElement): SVGElement {
-  if (entry.previewGroup !== null) return entry.previewGroup.node;
   const path = entry.paths[0];
   if (path === undefined) throw new Error("A mounted element must own at least one path.");
   return path.node;
@@ -304,26 +243,17 @@ function replacePathTopology(
   parts: readonly SvgPathPart[],
   options: TopologyUpdateOptions,
 ): void {
-  const transform = entry.previewGroup?.transform ?? entry.paths[0]?.appliedTransform ?? null;
+  const transform = entry.paths[0]?.appliedTransform ?? null;
   const strokeWidthScale = entry.previewStrokeWidthScale;
   const reference = firstPath(entry);
   const fragment = createFragment(options.ownerDocument);
   const paths = parts.map((part) =>
     createMountedPath(options.ownerDocument, record, part, options.instrumentation),
   );
-  const group = createPreviewGroup(options.ownerDocument, options.groupOpacity);
-  if (group === null) {
-    for (const path of paths) fragment.append(path.node);
-  } else {
-    for (const path of paths) group.node.append(path.node);
-    fragment.append(group.node);
-  }
+  for (const path of paths) fragment.append(path.node);
   options.parent.insertBefore(fragment, reference);
-  if (entry.previewGroup === null) {
-    for (const path of entry.paths) path.node.remove();
-  } else entry.previewGroup.node.remove();
+  for (const path of entry.paths) path.node.remove();
   entry.paths.splice(0, entry.paths.length, ...paths);
-  entry.previewGroup = group;
   entry.previewStrokeWidthScale = null;
   updatePreviewTransform(
     entry,
@@ -332,44 +262,6 @@ function replacePathTopology(
     strokeWidthScale,
     options.instrumentation,
   );
-  updatePressureGroupPresentation(entry, record.element, options.instrumentation);
-}
-
-function createPreviewGroup(
-  ownerDocument: Document,
-  opacity: number | null,
-): MountedPreviewGroup | null {
-  if (opacity === null) return null;
-  return {
-    node: ownerDocument.createElementNS(SVG_NAMESPACE, "g"),
-    opacity: null,
-    transform: null,
-  };
-}
-
-function updatePressureGroupPresentation(
-  entry: MountedSceneElement,
-  element: SceneElementRecord["element"],
-  instrumentation: MutableSceneInstrumentation,
-): void {
-  const group = entry.previewGroup;
-  if (group === null || element.kind !== "stroke") return;
-  const color = element.style.color;
-  const alpha = color.type === "rgba" ? Number.parseInt(color.value.slice(7), 16) / 255 : 1;
-  const opacity = String(element.style.opacity * alpha);
-  if (group.opacity !== opacity) {
-    writeRaw(group.node, "opacity", opacity, instrumentation, false);
-    group.opacity = opacity;
-  }
-  for (const path of entry.paths) {
-    writePresentation(path, "stroke-opacity", "1", instrumentation);
-    if (color.type === "rgba") {
-      const stroke = `${color.value.slice(0, 7)}FF`;
-      writePresentation(path, "stroke", stroke, instrumentation);
-      path.appliedPresentation = { ...path.appliedPresentation, stroke };
-    }
-    path.appliedPresentation = { ...path.appliedPresentation, "stroke-opacity": "1" };
-  }
 }
 
 function createFragment(ownerDocument: Document): DocumentFragment {
@@ -384,10 +276,14 @@ function writePresentation(
   instrumentation: MutableSceneInstrumentation,
 ): void {
   if (path.appliedPresentation[attribute] === value) return;
-  const appliedValue =
-    attribute === "stroke-width" && path.appliedPreviewStrokeWidthScale !== null
-      ? scaledStrokeWidth(value, path.appliedPreviewStrokeWidthScale)
-      : value;
+  let appliedValue = value;
+  if (path.appliedPreviewStrokeWidthScale !== null) {
+    if (attribute === "stroke-width") {
+      appliedValue = scaledStrokeWidth(value, path.appliedPreviewStrokeWidthScale);
+    } else if (attribute === "stroke-dasharray") {
+      appliedValue = scaledDashPattern(value, path.appliedPreviewStrokeWidthScale);
+    }
+  }
   writeRaw(path.node, attribute, appliedValue, instrumentation, false);
 }
 
@@ -418,7 +314,26 @@ function writePreviewStrokeWidth(
       false,
     );
   }
+  const dash = path.appliedPresentation["stroke-dasharray"];
+  if (dash !== null) {
+    writeRaw(
+      path.node,
+      "stroke-dasharray",
+      scaledDashPattern(dash, appliedScale ?? 1),
+      instrumentation,
+      false,
+    );
+  }
   path.appliedPreviewStrokeWidthScale = appliedScale;
+}
+
+function scaledDashPattern(value: string | null, scale: number): string | null {
+  return value === null
+    ? null
+    : value
+        .split(" ")
+        .map((part) => scaledStrokeWidth(part, scale))
+        .join(" ");
 }
 
 function scaledStrokeWidth(value: string | null, scale: number): string | null {

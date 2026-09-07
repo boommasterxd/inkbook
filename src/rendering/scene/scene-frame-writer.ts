@@ -131,7 +131,7 @@ export class SceneFrameWriter {
       this.#appliedScheme = this.#scheme;
     }
     this.#themeDirty = false;
-    elements.write(transforms.activeIds);
+    elements.write();
     transforms.write();
     const selection = this.#pendingSelection;
     if (selection !== undefined) {

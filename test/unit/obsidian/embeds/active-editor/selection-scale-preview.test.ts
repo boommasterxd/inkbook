@@ -54,26 +54,33 @@ describe("selection scale preview", () => {
       exactPreviewTruncated: false,
     });
 
-    expect(result.elements).toEqual(exact.slice(0, 3));
+    expect(result.elements).toEqual(exact);
   });
 
-  it("retains local pressure data and stable fallback identities for a truncated stroke", () => {
+  it("defers truncated scale geometry without creating an alternate pressure representation", () => {
     const stroke = indexedStroke(1);
-    const plan = new SelectionScalePreviewPlan([
-      { bounds: calculateElementBounds(stroke), element: stroke },
-    ]);
+    const plain = { ...indexedStroke(2), style: { ...stroke.style, pressureEnabled: false } };
+    const axes = coordinateSystem();
+    const directed = arrow();
+    const box = rectangle();
+    const plan = new SelectionScalePreviewPlan(
+      [stroke, axes, directed, box, plain].map((element) => ({
+        bounds: calculateElementBounds(element),
+        element,
+      })),
+    );
     const preview = {
       ...SCALE_PREVIEW_BASE,
       exactElements: [],
       exactPreviewTruncated: true,
     };
-    const result = plan.resolve(preview);
-    const repeated = plan.resolve(preview);
 
-    expect(result.elements).toEqual([stroke]);
-    expect(result.elements[0]).toBe(stroke);
-    expect(result.pressurePreviewIds).toEqual(new Set([stroke.id]));
-    expect(repeated.pressurePreviewIds).toBe(result.pressurePreviewIds);
-    expect(repeated.elements).toBe(result.elements);
+    expect(plan.resolve(preview).elements).toEqual([]);
+    expect(plan.progressiveIds).toEqual([stroke.id, axes.id, directed.id, box.id, plain.id]);
+    const materialize = plan.materializer((element) => ({ ...element, rotation: 30 }));
+    expect(materialize(stroke.id)).toEqual({ ...stroke, rotation: 30 });
+    expect(materialize(box.id)).toEqual({ ...box, rotation: 30 });
+    expect(materialize(plain.id)).toEqual({ ...plain, rotation: 30 });
+    expect(materialize("unknown")).toBeUndefined();
   });
 });

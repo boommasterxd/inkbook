@@ -185,6 +185,20 @@ describe("selection area inclusion", () => {
 });
 
 describe("selection area element geometry", () => {
+  it("includes interior pressure bulges even when the pen remains at one position", () => {
+    const target = {
+      ...stroke(),
+      points: [20, 20, 0, 20, 20, 1, 20, 20, 0],
+      pivot: { x: 20, y: 20 },
+      style: { ...stroke().style, pressureEnabled: true, width: 8 as const },
+    };
+    const bulge = createRectangleSelectionArea({ x: 22.8, y: 19.9 }, { x: 23, y: 20.1 });
+    const narrow = createRectangleSelectionArea({ x: 18, y: 16 }, { x: 22, y: 24 });
+
+    expect(elementMatchesSelectionArea(bulge, target, "touched")).toBe(true);
+    expect(elementMatchesSelectionArea(narrow, target, "fully-enclosed")).toBe(false);
+  });
+
   it("matches curved line geometry at the bend instead of only its chord", () => {
     const target: LineElementV1 = {
       ...simpleLine({ x: 10, y: 20 }, { x: 50, y: 20 }, 2),

@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { buildStrokePath } from "../../../../src/domain/geometry/stroke-path";
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import { createBuiltInSettings } from "../../../../src/domain/settings/defaults";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { CreationPreview } from "../../../../src/obsidian/embeds/active-editor/creation-preview";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
+import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snapshot";
 import { activeEditorStoreHistory } from "../../../fixtures/obsidian/active-editor";
 import {
   FakeDocument,
@@ -22,13 +24,7 @@ function setup() {
   const renderer = new SvgSceneRenderer({
     container: asElement(new FakeNode(document, "div")),
     layout: { readViewport: () => ({ height: 100, left: 0, top: 0, width: 100 }) },
-    page: {
-      activeBufferLines: 3,
-      background: { type: "none" },
-      innerWidth: 2000,
-      lockedBufferLines: 1,
-      margin: 24.3,
-    },
+    page: createWorkerSnapshot([]).page,
     scheduler,
     store: new ElementSceneStore(store),
   });
@@ -43,9 +39,11 @@ function setup() {
     }),
   );
   const history = activeEditorStoreHistory(store);
+  const defaults = createBuiltInSettings().toolDefaults;
+  defaults.pen.width = 22;
   const create = (index: number, tool: "draw" | "highlighter" = "draw") => {
     const preview = new CreationPreview({
-      defaults: createBuiltInSettings().toolDefaults,
+      defaults,
       history,
       identity: {
         createdAt: index,
@@ -147,6 +145,44 @@ describe("freehand commit handoff", () => {
     });
     expect(() => next.commit()).toThrow("commit failed");
     expect(nextTail.parent).toBeUndefined();
+    renderer.destroy();
+  });
+});
+
+describe("canonical pressure handoff", () => {
+  it("keeps dense pressure ink identical through live handoff and selection rematerialization", () => {
+    const { create, renderer, scheduler, store } = setup();
+    const preview = create(1);
+    for (let index = 0; index < 90; index += 1) {
+      preview.update({
+        pointerId: 1,
+        pointerType: "pen",
+        pressure: 0.3 + (index % 7) / 10,
+        x: 20 + index * 0.4,
+        y: 40 + Math.sin(index / 2) * 20,
+      });
+    }
+    const live = paths(fakeNode(renderer.svg))
+      .filter((node) => node.attributes.get("fill-rule") === "nonzero")
+      .map((node) => node.attributes.get("d"))
+      .join("");
+    expect(preview.commit()).toBe(true);
+    const element = store.get("00000000-0000-4000-8000-000000000001")!.element;
+    if (element.kind !== "stroke") throw new Error("Expected committed pressure stroke.");
+    const wireElement = { ...element, points: [...element.points] };
+    const canonical = buildStrokePath(wireElement).d;
+    expect(live).toBe(canonical);
+    scheduler.runAll();
+    const committed = paths(fakeNode(renderer.svg)).find(
+      (node) => node.attributes.get("fill-rule") === "nonzero",
+    )!;
+    expect(committed.attributes.get("d")).toBe(canonical);
+    renderer.setElementPreviews([wireElement], 1);
+    scheduler.runAll();
+    expect(committed.attributes.get("d")).toBe(canonical);
+    renderer.clearElementPreviews();
+    scheduler.runAll();
+    expect(committed.attributes.get("d")).toBe(canonical);
     renderer.destroy();
   });
 });

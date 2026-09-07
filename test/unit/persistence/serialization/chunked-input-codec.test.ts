@@ -299,6 +299,22 @@ describe("chunked migration cancellation", () => {
 });
 
 describe("chunked Inkbook scheduling boundaries", () => {
+  it.each([1024, 256 * 1024])(
+    "rejects a prefix above 64 KiB with %i-byte slices",
+    async (inputSliceBytes) => {
+      const parser = new ChunkedInkbookInputParser({ inputSliceBytes });
+      const oversized = new TextEncoder().encode(" ".repeat(64 * 1024 + 1));
+
+      expect(await parser.write(oversized)).toMatchObject({
+        ok: false,
+        error: {
+          code: "invalid-svg",
+          message: "Document SVG prefix exceeds its bounded envelope.",
+        },
+      });
+    },
+  );
+
   it("does not misclassify scheduler failures as malformed UTF-8", async () => {
     const schedulerFailure = new Error("scheduler failed");
     const parser = new ChunkedInkbookInputParser({

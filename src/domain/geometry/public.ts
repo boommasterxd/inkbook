@@ -1,3 +1,4 @@
+export { buildLegacyPressureOutlinePath } from "./legacy-pressure-outline";
 export { isAnchorTarget, resolveShapeAnchor } from "./anchors";
 export { boundsIntersect, calculateElementBounds, effectiveStrokeWidth } from "./bounds";
 export { backgroundGuideLayout } from "./background-guides";
@@ -34,7 +35,6 @@ export {
   type Bounds,
 } from "./primitives";
 export {
-  buildStrokePath,
   smoothStrokeCenters,
   type RawStrokeSample,
   type StrokeInputOptions,

@@ -2,11 +2,11 @@ import { deriveRenderBands } from "../../domain/commands/render-bands";
 import type { InkElementV1, InkSnapshotV1 } from "../../domain/schema/public";
 
 import { serializeBackgroundPaths } from "./background";
-import { serializeElementPaths } from "./path-markup";
+import { serializeElementPaths, serializeLegacyPressurePath } from "./path-markup";
 
 interface ExpectedToken {
   readonly allowLeadingWhitespace?: boolean;
-  readonly legacyCapOffsets?: readonly number[];
+  readonly legacyTexts?: () => readonly string[];
   readonly text: string;
 }
 
@@ -20,11 +20,11 @@ export class StreamingStaticIntegrityMatcher {
   #failure: "invalid-svg" | "static-path-mismatch" = "static-path-mismatch";
   #finished = false;
   #offset = 0;
-  #legacyCap: boolean | null = null;
+  #legacyTexts: string[] | null = null;
   #requiresCanonicalRewrite = false;
 
-  public constructor(snapshot: InkSnapshotV1, lockedHeight: number, allowLegacyCaps = true) {
-    this.#tokens = staticTokens(snapshot, lockedHeight, allowLegacyCaps)[Symbol.iterator]();
+  public constructor(snapshot: InkSnapshotV1, lockedHeight: number, allowLegacyPressure = true) {
+    this.#tokens = staticTokens(snapshot, lockedHeight, allowLegacyPressure)[Symbol.iterator]();
   }
 
   public get requiresCanonicalRewrite(): boolean {
@@ -54,9 +54,7 @@ export class StreamingStaticIntegrityMatcher {
     if (this.#offset === 0 && current.allowLeadingWhitespace === true && isWhitespace(character)) {
       return true;
     }
-    const matches = current.legacyCapOffsets?.includes(this.#offset)
-      ? this.#matchesCap(character)
-      : current.text[this.#offset] === character;
+    const matches = this.#matchesCharacter(current, character);
     if (!matches) {
       if (current.text.startsWith("</") && this.#offset <= 1) this.#failure = "invalid-svg";
       return false;
@@ -65,20 +63,27 @@ export class StreamingStaticIntegrityMatcher {
     return true;
   }
 
-  #matchesCap(character: string): boolean {
-    if (character !== "0" && character !== "1") return false;
-    const legacy = character === "1";
-    if (this.#legacyCap !== null && this.#legacyCap !== legacy) return false;
-    this.#legacyCap = legacy;
-    this.#requiresCanonicalRewrite ||= legacy;
-    return true;
+  #matchesCharacter(current: ExpectedToken, character: string): boolean {
+    if (this.#legacyTexts === null && current.text[this.#offset] === character) return true;
+    const candidates =
+      this.#legacyTexts ??
+      current
+        .legacyTexts?.()
+        .filter((text) => text.startsWith(current.text.slice(0, this.#offset))) ??
+      [];
+    for (let index = candidates.length - 1; index >= 0; index -= 1) {
+      if (candidates[index]![this.#offset] !== character) candidates.splice(index, 1);
+    }
+    this.#legacyTexts = candidates;
+    return candidates.length > 0;
   }
 
   #advancePastEmptyTokens(): void {
-    while (this.#current === null || this.#offset === this.#current.text.length) {
+    while (this.#current === null || this.#offset === this.#currentTextLength()) {
+      this.#requiresCanonicalRewrite ||= this.#legacyTexts !== null;
       const next = this.#tokens.next();
       this.#offset = 0;
-      this.#legacyCap = null;
+      this.#legacyTexts = null;
       if (next.done) {
         this.#current = null;
         this.#finished = true;
@@ -88,12 +93,16 @@ export class StreamingStaticIntegrityMatcher {
       if (next.value.text.length > 0) return;
     }
   }
+
+  #currentTextLength(): number {
+    return this.#legacyTexts?.[0]?.length ?? this.#current!.text.length;
+  }
 }
 
 function* staticTokens(
   snapshot: InkSnapshotV1,
   lockedHeight: number,
-  allowLegacyCaps: boolean,
+  allowLegacyPressure: boolean,
 ): Iterable<ExpectedToken> {
   const bands = deriveRenderBands(snapshot.elements);
   yield { allowLeadingWhitespace: true, text: '<g id="inkbook-background">' };
@@ -102,38 +111,35 @@ function* staticTokens(
   }
   yield { text: "</g>" };
   yield { allowLeadingWhitespace: true, text: '<g id="inkbook-highlights">' };
-  yield* elementTokens(bands.highlight, allowLegacyCaps);
+  yield* elementTokens(bands.highlight, allowLegacyPressure);
   yield { text: "</g>" };
   yield { allowLeadingWhitespace: true, text: '<g id="inkbook-content">' };
-  yield* elementTokens(bands.content, allowLegacyCaps);
+  yield* elementTokens(bands.content, allowLegacyPressure);
   yield { text: "</g>" };
   yield { allowLeadingWhitespace: true, text: "</svg>" };
 }
 
 function* elementTokens(
   elements: readonly InkElementV1[],
-  allowLegacyCaps: boolean,
+  allowLegacyPressure: boolean,
 ): Iterable<ExpectedToken> {
   for (const element of elements) {
-    const legacyCaps =
-      allowLegacyCaps &&
+    const legacyPressure =
+      allowLegacyPressure &&
       element.kind === "stroke" &&
       element.tool === "pen" &&
-      element.style.pressureEnabled &&
-      element.points.length > 3;
+      element.style.pressureEnabled;
     for (const fragment of serializeElementPaths(element)) {
-      yield legacyCaps
-        ? { text: fragment, legacyCapOffsets: capSweepOffsets(fragment) }
+      yield legacyPressure
+        ? { text: fragment, legacyTexts: () => legacyPressurePaths(element) }
         : { text: fragment };
     }
   }
 }
 
-function capSweepOffsets(fragment: string): number[] {
-  return Array.from(
-    fragment.matchAll(/A[\d.]+ [\d.]+ 0 0 0/gu),
-    (match) => match.index + match[0].length - 1,
-  );
+function legacyPressurePaths(element: Extract<InkElementV1, { kind: "stroke" }>): string[] {
+  const oldOutline = serializeLegacyPressurePath(element);
+  return [oldOutline, oldOutline.replaceAll(/(A[\d.]+ [\d.]+ 0 0 )0/gu, "$11")];
 }
 
 function isWhitespace(character: string): boolean {

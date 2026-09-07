@@ -1,13 +1,10 @@
 import type { StrokeElementV1 } from "../../../../src/domain/schema/public";
 import { describe, expect, it } from "vitest";
 
-import {
-  buildStrokePath,
-  rotatePointClockwise,
-  smoothStrokeCenters,
-} from "../../../../src/domain/geometry/public";
+import { rotatePointClockwise, smoothStrokeCenters } from "../../../../src/domain/geometry/public";
 import { prepareExpectedStrokeSamples as prepareStrokeSamples } from "../../../fixtures/editor/stroke-sample-reference";
 import {
+  buildStrokePath,
   buildCenterline,
   buildPressureOutline,
   buildPressureOutlinePairs,
@@ -149,7 +146,7 @@ describe("stroke path fast-path parity", () => {
 
   it("builds closed pressure outlines with round caps and stable repeated-point tangents", () => {
     const single = buildPressureOutline([{ x: 10, y: 10, pressure: 1 }], 8);
-    expect(single).toBe("M6 10A4 4 0 0 1 14 10A4 4 0 0 1 6 10Z");
+    expect(single).toBe("M6 10A4 4 0 0 0 14 10A4 4 0 0 0 6 10Z");
     const repeated = buildPressureOutline(
       [
         { x: 0, y: 0, pressure: 0.5 },
@@ -158,7 +155,7 @@ describe("stroke path fast-path parity", () => {
       ],
       8,
     );
-    expect(repeated).toContain("Q");
+    expect(repeated).toContain("A");
     expect(repeated.endsWith("Z")).toBe(true);
   });
 });

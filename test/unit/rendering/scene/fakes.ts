@@ -140,6 +140,16 @@ export class FakeScheduler implements SceneScheduler {
     next[1](this.time);
   }
 
+  public runFrame(): void {
+    const handles = [...this.#callbacks.keys()];
+    for (const handle of handles) {
+      const callback = this.#callbacks.get(handle);
+      if (callback === undefined) continue;
+      this.#callbacks.delete(handle);
+      callback(this.time);
+    }
+  }
+
   public runAll(limit = 100): void {
     let frames = 0;
     while (this.#callbacks.size > 0) {

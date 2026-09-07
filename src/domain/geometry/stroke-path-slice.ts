@@ -1,12 +1,7 @@
+import { buildPressureSweep } from "./pressure-sweep";
 import { midpoint } from "./primitives";
-import { arcTo, lineTo, moveTo, quadraticTo } from "./svg-format";
-import {
-  buildCenterline,
-  buildPressureOutline,
-  buildPressureOutlinePairs,
-  type StrokeCenter,
-  type StrokePathGeometry,
-} from "./stroke-path";
+import { lineTo, moveTo, quadraticTo } from "./svg-format";
+import { buildCenterline, type StrokeCenter, type StrokePathGeometry } from "./stroke-path";
 
 export interface StrokePathSlice {
   readonly firstBoundary: number | null;
@@ -31,22 +26,7 @@ export function buildPressureOutlineSlice(
   slice: StrokePathSlice,
 ): StrokePathGeometry {
   assertSlice(centers, slice);
-  if (isCompleteSlice(slice)) {
-    return { d: buildPressureOutline(centers, width), paint: "fill" };
-  }
-  const pairs = buildPressureOutlinePairs(centers, width);
-
-  const left = pairs.map(({ left }) => left);
-  const right = pairs.map(({ right }) => right).reverse();
-  const commands = [
-    moveTo(slice.firstBoundary === null ? left[0]! : boundary(left, slice.firstBoundary)),
-  ];
-  appendForwardSide(commands, left, slice);
-  appendEndConnector(commands, pairs, right, slice.lastBoundary);
-  appendForwardSide(commands, right, reverseSlice(slice, pairs.length));
-  appendStartConnector(commands, pairs, left, slice.firstBoundary);
-  commands.push("Z");
-  return { d: commands.join(""), paint: "fill" };
+  return { d: buildPressureSweep(centers, width, slice), paint: "fill" };
 }
 
 function isCompleteSlice(slice: StrokePathSlice): boolean {
@@ -67,41 +47,6 @@ function appendForwardSide(
     commands.push(quadraticTo(points[nextControl]!, boundary(points, nextControl)));
   }
   if (lastBoundary === null) commands.push(lineTo(points[points.length - 1]!));
-}
-
-function appendEndConnector(
-  commands: string[],
-  pairs: ReturnType<typeof buildPressureOutlinePairs>,
-  reversedRight: readonly { readonly x: number; readonly y: number }[],
-  lastBoundary: number | null,
-): void {
-  if (lastBoundary === null) {
-    const end = pairs[pairs.length - 1]!;
-    commands.push(arcTo(end.radius, 0, end.right));
-    return;
-  }
-  commands.push(lineTo(boundary(reversedRight, pairs.length - 2 - lastBoundary)));
-}
-
-function appendStartConnector(
-  commands: string[],
-  pairs: ReturnType<typeof buildPressureOutlinePairs>,
-  left: readonly { readonly x: number; readonly y: number }[],
-  firstBoundary: number | null,
-): void {
-  if (firstBoundary === null) {
-    const start = pairs[0]!;
-    commands.push(arcTo(start.radius, 0, start.left));
-    return;
-  }
-  commands.push(lineTo(boundary(left, firstBoundary)));
-}
-
-function reverseSlice(slice: StrokePathSlice, pointCount: number): StrokePathSlice {
-  return {
-    firstBoundary: slice.lastBoundary === null ? null : pointCount - 2 - slice.lastBoundary,
-    lastBoundary: slice.firstBoundary === null ? null : pointCount - 2 - slice.firstBoundary,
-  };
 }
 
 function boundary(

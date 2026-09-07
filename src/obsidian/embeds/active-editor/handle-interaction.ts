@@ -49,6 +49,8 @@ export interface ActiveEditorHandleInteractionOptions {
 
 export type { HandleInteractionRenderer } from "./handle-presentation";
 
+const NO_SCALE_TRANSFORM_IDS: readonly string[] = [];
+
 export interface HandleFrameScheduler {
   cancelAnimationFrame(handle: number): void;
   requestAnimationFrame(callback: FrameRequestCallback): number;
@@ -70,7 +72,6 @@ interface ActiveHandleGesture {
   readonly frame: OrientedSelectionFrame | null;
   readonly selectedIds: ReadonlySet<string>;
   readonly scalePreview: SelectionScalePreviewPlan;
-  readonly scaleTransformIds: readonly string[];
   readonly session: SelectionHandleSession;
   readonly snapping: SnappingSettingsV1 | undefined;
 }
@@ -181,9 +182,6 @@ export class ActiveEditorHandleInteraction {
       selected,
       selectedIds,
       scalePreview,
-      scaleTransformIds: connectedTransformIds.filter(
-        (id) => !scalePreview.exactCandidateIds.has(id),
-      ),
       snapping,
       session: new SelectionHandleSession({
         action,
@@ -238,21 +236,25 @@ export class ActiveEditorHandleInteraction {
     );
     const connected = this.#connectedPreview(active, preview);
     const scale = active.scalePreview.resolve(preview);
+    if (!preview.exactPreviewTruncated || preview.transform?.kind !== "scale") {
+      this.#renderer.clearProgressiveElementPreviews?.();
+    }
     this.#presentation.renderTransform(
-      preview.transform?.kind === "scale" && !preview.exactPreviewTruncated
-        ? active.scaleTransformIds
-        : active.connectedTransformIds,
+      preview.transform?.kind === "scale" ? NO_SCALE_TRANSFORM_IDS : active.connectedTransformIds,
       preview.transform,
     );
     this.#updatePreviewBottom(
-      this.#presentation.renderPreview(
-        active,
-        preview,
-        connected,
-        scale.elements,
-        scale.pressurePreviewIds,
-      ),
+      this.#presentation.renderPreview(active, preview, connected, scale.elements),
     );
+    if (preview.exactPreviewTruncated && preview.transform?.kind === "scale") {
+      const materialize = active.session.createScalePreviewMaterializer();
+      if (materialize !== undefined) {
+        this.#presentation.renderProgressive(
+          active.scalePreview.progressiveIds,
+          active.scalePreview.materializer(materialize),
+        );
+      }
+    }
     this.#renderer.flushPointerFeedbackFrame();
   }
 

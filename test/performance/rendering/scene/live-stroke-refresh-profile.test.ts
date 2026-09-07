@@ -31,38 +31,43 @@ const PEN_STYLE: StrokeStyleV1 = {
 };
 
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz live-stroke profile`, () => {
-  it("keeps live pressure-stroke updates within the main-thread p99 budget", async ({
-    annotate,
-  }) => {
-    const { renderer, scheduler } = createInteractionRenderer(new ElementStore());
-    scheduler.runAll();
-    const builder = new LiveStrokeBuilder({
-      input: { pressureSource: "pen", zoom: 1 },
-      style: PEN_STYLE,
-    });
-    const durations: number[] = [];
+  it.for(["smooth", "dense zigzag"] as const)(
+    "keeps %s live pressure-stroke updates within the main-thread p99 budget",
+    async (shape, { annotate }) => {
+      const { renderer, scheduler } = createInteractionRenderer(new ElementStore());
+      scheduler.runAll();
+      const style: StrokeStyleV1 = {
+        ...PEN_STYLE,
+        width: shape === "dense zigzag" ? 22 : PEN_STYLE.width,
+      };
+      const builder = new LiveStrokeBuilder({
+        input: { pressureSource: "pen", zoom: 1 },
+        style,
+      });
+      const durations: number[] = [];
 
-    for (let frame = 0; frame < LIVE_FRAME_COUNT; frame += 1) {
-      const startedAt = performance.now();
-      const preview = builder.appendBatch(
-        Array.from({ length: SAMPLES_PER_FRAME }, (_, sample) =>
-          liveSample(frame * SAMPLES_PER_FRAME + sample),
-        ),
-      );
-      renderer.updateLiveStroke(preview, PEN_STYLE, "pen");
-      durations.push(performance.now() - startedAt);
-    }
+      for (let frame = 0; frame < LIVE_FRAME_COUNT; frame += 1) {
+        const startedAt = performance.now();
+        const preview = builder.appendBatch(
+          Array.from({ length: SAMPLES_PER_FRAME }, (_, sample) =>
+            liveSample(frame * SAMPLES_PER_FRAME + sample, shape === "dense zigzag"),
+          ),
+        );
+        renderer.updateLiveStroke(preview, style, "pen");
+        durations.push(performance.now() - startedAt);
+      }
 
-    const p99 = interactionP99(durations);
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
-    expect(renderer.instrumentation()).toMatchObject({
-      liveMaximumTailNodes: 1,
-      livePreviewUpdates: LIVE_FRAME_COUNT,
-      liveTailNodesCreated: 1,
-    });
-    await annotate(interactionProfileAnnotation("live stroke", p99), "performance");
-    renderer.destroy();
-  });
+      const p99 = interactionP99(durations);
+      expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+      expect(renderer.instrumentation()).toMatchObject({
+        liveMaximumTailNodes: 1,
+        livePreviewUpdates: LIVE_FRAME_COUNT,
+        liveTailNodesCreated: 1,
+      });
+      await annotate(interactionProfileAnnotation(`${shape} live stroke`, p99), "performance");
+      renderer.destroy();
+    },
+  );
 
   it.for(["pen", "mouse"] as const)(
     "keeps coalesced %s ink at the latest tip in the next frame with 10,000 stored strokes",
@@ -81,9 +86,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz live-stroke profile`, ()
         durations.push(performance.now() - startedAt);
         expect(pending).toBe(1);
         expect(scheduler.pendingCount).toBe(0);
-        const tip = pressureTip(tail);
-        expect(tip.x).toBeCloseTo(samples[7]!.clientX, 3);
-        expect(tip.y).toBeCloseTo(samples[7]!.clientY, 3);
+        expectPressureTip(tail, samples[7]!);
       }
       const p99 = interactionP99(durations);
       expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
@@ -125,12 +128,12 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz live-stroke profile`, ()
   });
 });
 
-function liveSample(index: number) {
+function liveSample(index: number, dense = false) {
   return {
     pressure: 0.35 + (index % 11) * 0.05,
     time: index * INTERACTION_REFRESH_PROFILE.frameDurationMs,
     x: index * 0.75,
-    y: 50 + Math.sin(index / 20) * 25,
+    y: 50 + Math.sin(index / (dense ? 1 : 20)) * 25,
   };
 }
 
@@ -191,10 +194,17 @@ function coalescedEvent(samples: readonly PointerEvent[]): PointerEvent {
   return { ...samples[samples.length - 1]!, getCoalescedEvents: () => samples } as PointerEvent;
 }
 
-function pressureTip(tail: FakeNode): { x: number; y: number } {
-  const [forward, cap] = tail.attributes.get("d")!.split("A");
+function expectPressureTip(tail: FakeNode, sample: PointerEvent): void {
+  const pieces = tail.attributes.get("d")!.split("M");
+  const lastPiece = pieces[pieces.length - 1]!;
+  const [forward, cap] = lastPiece.split("A");
   const numbers = /-?\d+(?:\.\d+)?/g;
   const side = forward!.match(numbers)!.map(Number);
   const arc = cap!.match(numbers)!.map(Number);
-  return { x: (side[side.length - 2]! + arc[5]!) / 2, y: (side[side.length - 1]! + arc[6]!) / 2 };
+  for (const [x, y] of [
+    [side[side.length - 2]!, side[side.length - 1]!],
+    [arc[5]!, arc[6]!],
+  ]) {
+    expect(Math.hypot(x! - sample.clientX, y! - sample.clientY)).toBeCloseTo(arc[0]!, 2);
+  }
 }

@@ -470,7 +470,8 @@ function amplifyNearLimitSnapshot(
         points[target + 1] = element.points[index + 1]!;
         points[target + 2] = element.points[index + 2]!;
         points[target + 3] = element.points[index]!;
-        points[target + 4] = element.points[index + 1]!;
+        // Distinct turns retain real swept area; repeated points coalesce losslessly.
+        points[target + 4] = element.points[index + 1]! + (index % 6 === 0 ? 1 : -1);
         points[target + 5] = element.points[index + 2]!;
       }
       return { ...element, points };

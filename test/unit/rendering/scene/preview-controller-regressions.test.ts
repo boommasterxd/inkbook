@@ -2,10 +2,68 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { SceneContentRenderer } from "../../../../src/rendering/scene/content-renderer";
 import { SceneElementPreviewController } from "../../../../src/rendering/scene/element-preview-controller";
+import { SceneElementPreviews } from "../../../../src/rendering/scene/scene-element-previews";
 import { SceneTransformPreviewController } from "../../../../src/rendering/scene/transform-preview-controller";
 import type { SceneStorePort } from "../../../../src/rendering/scene/types";
 
 import { fakeRectangleRecord } from "./fakes";
+
+describe("progressive scene preview candidate selection", () => {
+  it("refreshes bounded progressive candidates on viewport changes and stops after clear", () => {
+    const records = Array.from({ length: 257 }, (_, index) =>
+      fakeRectangleRecord(String(index), index, index * 10),
+    );
+    const previews = new SceneElementPreviews(
+      {
+        promoteVisible: vi.fn(),
+      } as unknown as SceneContentRenderer,
+      {
+        get: (id) => records[Number(id)],
+        query: vi.fn(),
+      },
+    );
+    const set = vi.spyOn(previews.progressive, "set");
+    const materialize = vi.fn();
+    const viewport = { height: 100, left: 0, top: 0, width: 100 };
+    previews.setProgressive(
+      { ids: records.map(({ id }) => id), materialize, version: 1 },
+      viewport,
+      {
+        x: 0,
+        zoom: 1,
+      },
+    );
+    expect(set.mock.lastCall?.[0].ids).not.toContain("256");
+    previews.refreshProgressiveContext(viewport, { x: -2560, zoom: 1 });
+    expect(set.mock.lastCall?.[0].ids).toContain("256");
+    expect(set.mock.lastCall?.[0].ids).toHaveLength(256);
+    expect(materialize).not.toHaveBeenCalled();
+    previews.clearProgressive();
+    previews.refreshProgressiveContext(viewport, { x: 0, zoom: 1 });
+    expect(set).toHaveBeenCalledTimes(2);
+  });
+
+  it("reuses progressive viewport candidates until the selection or camera context changes", () => {
+    const record = fakeRectangleRecord("shape", 0, 10);
+    const get = vi.fn(() => record);
+    const previews = new SceneElementPreviews({} as SceneContentRenderer, {
+      get,
+      query: vi.fn(),
+    });
+    const ids = [record.id];
+    const camera = { x: 0, zoom: 1 };
+    const selected = previews.selectProgressiveIds(ids, undefined, camera);
+    expect(previews.selectProgressiveIds(ids, undefined, camera)).toBe(selected);
+    expect(get).toHaveBeenCalledOnce();
+
+    const moved = { x: 20, zoom: 1 };
+    previews.selectProgressiveIds(ids, undefined, moved);
+    expect(get).toHaveBeenCalledTimes(2);
+    previews.release();
+    previews.selectProgressiveIds(ids, undefined, moved);
+    expect(get).toHaveBeenCalledTimes(3);
+  });
+});
 
 describe("scene preview controller regressions", () => {
   it("does not rebuild a stable transform selection on every pointer frame", () => {
@@ -42,7 +100,7 @@ describe("scene preview controller regressions", () => {
 
     controller.set(elements, 1);
     controller.set(elements, 2);
-    controller.write([]);
+    controller.write();
     controller.applyMounted([record.id, "unrelated"]);
 
     expect(applyElementPreview).toHaveBeenCalledTimes(2);
@@ -64,12 +122,12 @@ describe("scene preview controller regressions", () => {
     controller.set(latest, 2);
     expect(applyElementPreview).not.toHaveBeenCalled();
 
-    controller.write([]);
+    controller.write();
     expect(applyElementPreview).toHaveBeenCalledOnce();
-    expect(applyElementPreview).toHaveBeenCalledWith(latest[0], false);
+    expect(applyElementPreview).toHaveBeenCalledWith(latest[0]);
   });
 
-  it("does not rebuild an unchanged stable fallback mixed with a changing preview", () => {
+  it("does not rebuild an unchanged canonical element mixed with a changing preview", () => {
     const stable = fakeRectangleRecord("stable", 0, 10).element;
     const changing = fakeRectangleRecord("changing", 1, 40).element;
     if (changing.kind !== "rectangle") throw new TypeError("Expected a rectangle.");
@@ -81,11 +139,11 @@ describe("scene preview controller regressions", () => {
     } as unknown as SceneContentRenderer);
 
     controller.set([stable, changing], 1);
-    controller.write([]);
+    controller.write();
     controller.set([stable, { ...changing, width: 80 }], 2);
-    controller.write([]);
+    controller.write();
 
     expect(applyElementPreview).toHaveBeenCalledTimes(3);
-    expect(applyElementPreview).toHaveBeenLastCalledWith({ ...changing, width: 80 }, false);
+    expect(applyElementPreview).toHaveBeenLastCalledWith({ ...changing, width: 80 });
   });
 });

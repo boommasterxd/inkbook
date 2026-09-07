@@ -6,54 +6,36 @@ import type {
 
 export interface SelectionScalePreview {
   readonly elements: readonly InkElementV1[];
-  readonly pressurePreviewIds?: ReadonlySet<string>;
 }
 
 const EMPTY_PREVIEW: SelectionScalePreview = { elements: [] };
 
 export class SelectionScalePreviewPlan {
-  readonly #exactCandidateIds: ReadonlySet<string>;
-  readonly #fallbackElements: readonly InkElementV1[];
-  readonly #pressurePreviewIds: ReadonlySet<string>;
+  readonly #elements: ReadonlyMap<string, InkElementV1>;
+  public readonly progressiveIds: readonly string[];
 
   public constructor(selected: readonly SelectedElementGeometry[]) {
-    const exactCandidateIds = new Set<string>();
-    const fallbackElements: InkElementV1[] = [];
-    const pressurePreviewIds = new Set<string>();
+    const elements = new Map<string, InkElementV1>();
     for (const { element } of selected) {
-      if (requiresExactScaleGeometry(element)) exactCandidateIds.add(element.id);
-      if (element.kind === "stroke" && element.style.pressureEnabled) {
-        fallbackElements.push(element);
-        pressurePreviewIds.add(element.id);
-      }
+      elements.set(element.id, element);
     }
-    this.#exactCandidateIds = exactCandidateIds;
-    this.#fallbackElements = fallbackElements;
-    this.#pressurePreviewIds = pressurePreviewIds;
-  }
-
-  public get exactCandidateIds(): ReadonlySet<string> {
-    return this.#exactCandidateIds;
+    this.#elements = elements;
+    this.progressiveIds = [...elements.keys()];
   }
 
   public resolve(preview: SelectionHandlePreview): SelectionScalePreview {
-    if (preview.transform?.kind !== "scale") return EMPTY_PREVIEW;
-    if (preview.exactPreviewTruncated) {
-      return {
-        elements: this.#fallbackElements,
-        pressurePreviewIds: this.#pressurePreviewIds,
-      };
-    }
+    if (preview.transform?.kind !== "scale" || preview.exactPreviewTruncated) return EMPTY_PREVIEW;
     return {
-      elements: preview.exactElements.filter(({ id }) => this.#exactCandidateIds.has(id)),
+      elements: preview.exactElements.filter(({ id }) => this.#elements.has(id)),
     };
   }
-}
 
-function requiresExactScaleGeometry(element: InkElementV1): boolean {
-  return (
-    element.kind === "coordinate-system" ||
-    element.kind === "arrow" ||
-    (element.kind === "stroke" && element.style.pressureEnabled)
-  );
+  public materializer(
+    transform: (element: InkElementV1) => InkElementV1,
+  ): (id: string) => InkElementV1 | undefined {
+    return (id) => {
+      const element = this.#elements.get(id);
+      return element === undefined ? undefined : transform(element);
+    };
+  }
 }

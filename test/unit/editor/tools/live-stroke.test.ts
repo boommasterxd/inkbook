@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildStrokePath, smoothStrokeCenters } from "../../../../src/domain/geometry/public";
+import { buildStrokePath, smoothStrokeCenters } from "../../../../src/domain/geometry/stroke-path";
 import type { RawStrokeSample } from "../../../../src/domain/geometry/public";
 import type { StrokeStyleV1 } from "../../../../src/domain/schema/public";
 import {
@@ -47,7 +47,7 @@ function expectExactPreview(
   for (const chunk of preview.finalizedChunks) {
     const slice = {
       firstBoundary: chunk.firstSample === 0 ? null : chunk.firstSample - 1,
-      lastBoundary: chunk.firstSample + chunk.sampleCount,
+      lastBoundary: chunk.firstSample + chunk.sampleCount - (style.pressureEnabled ? 1 : 0),
     };
     expect(chunk.geometry).toEqual(expectedSlice(centers, style, slice));
   }
@@ -193,18 +193,19 @@ describe("live stroke preview geometry", () => {
     expectExactPreview(preview, prepareStrokeSamples([...raw, replacement], input), penStyle);
   });
 
-  it("keeps pressure caps at the real stroke ends and never creates a chunk-boundary cap", () => {
+  it("retains exactly the same swept pieces across live chunk boundaries and commit", () => {
     const input = { pressureSource: "pen" as const, zoom: 1 };
     const builder = new LiveStrokeBuilder({ input, style: penStyle });
     let preview = builder.append(sample(0));
     for (let index = 1; index < 80; index += 1) preview = builder.append(sample(index));
 
-    expect(preview.finalizedChunks).toHaveLength(8);
-    expect(preview.finalizedChunks[0]!.geometry.d.match(/A/g)).toHaveLength(1);
-    for (const chunk of preview.finalizedChunks.slice(1)) {
-      expect(chunk.geometry.d).not.toContain("A");
-    }
-    expect(preview.tail.geometry.d.match(/A/g)).toHaveLength(1);
+    const paths = [
+      ...preview.finalizedChunks.map((chunk) => chunk.geometry.d),
+      preview.tail.geometry.d,
+    ];
+    const commit = builder.finish();
+    expect(paths.join("")).toBe(commit.geometry.d);
+    expect(commit.geometry).toEqual(onePassPath(commit.points, penStyle));
   });
 
   it("falls back to exact one-pass pressure geometry for repeated smoothed centers", () => {

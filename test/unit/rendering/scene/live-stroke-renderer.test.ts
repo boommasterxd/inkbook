@@ -84,6 +84,29 @@ describe("incremental live stroke renderer", () => {
     expect(() => renderer.commit("disposed", target)).toThrow("disposed");
   });
 
+  it.each(["pen", "highlighter"] as const)(
+    "composites %s color alpha once across live chunks and handoff",
+    (tool) => {
+      const { document, group, renderer } = setupRenderer();
+      const style: StrokeStyleV1 = {
+        ...(tool === "pen" ? penStyle : highlighterStyle),
+        color: { type: "rgba", value: "#12345680" },
+      };
+      const paint = tool === "pen" ? "fill" : "stroke";
+      renderer.update(preview([chunk("M0 0L2 2Z", paint)], "M1 1L3 3Z", paint), style, tool);
+      const opacity = String((style.opacity * 128) / 255);
+      expect(group.attributes.get("opacity")).toBe(opacity);
+      for (const path of group.nodes) {
+        expect(path.attributes.get(paint)).toBe("#123456FF");
+        expect(path.attributes.has(`${paint}-opacity`)).toBe(false);
+      }
+      const parent = new FakeNode(document, "g");
+      renderer.commit("alpha", () => parent as unknown as SVGGElement);
+      expect(parent.nodes[0]!.attributes.get("opacity")).toBe(opacity);
+      renderer.dispose();
+    },
+  );
+
   it("retains finalized chunk nodes and updates one bounded tail node", () => {
     const { document, group, instrumentation, renderer } = setupRenderer();
     const firstChunk = chunk("M 0 0 Z", "fill");

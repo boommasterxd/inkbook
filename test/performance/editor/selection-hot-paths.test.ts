@@ -20,6 +20,7 @@ import {
 } from "../../../src/editor/selection/public";
 import {
   createLassoSelectionArea,
+  elementMatchesSelectionArea,
   type SelectionAreaInclusion,
 } from "../../../src/editor/selection/selection-area";
 import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
@@ -31,6 +32,27 @@ import { maximumStroke } from "./maximum-stroke-fixture";
 import { createPassThroughMoveSession } from "./selection-session-fixture";
 import { INTERACTION_REFRESH_PROFILE, interactionP99 } from "../interaction-refresh-profile";
 import { timingBudget } from "../timing-budget";
+
+describe("pressure selection hot path", () => {
+  it("stops pressure sweep selection at the first visible segment of a maximum stroke", () => {
+    const target = maximumStroke(0);
+    const area = createRectangleSelectionArea({ x: -1, y: 99 }, { x: 1, y: 101 });
+    for (let index = 0; index < 20; index += 1) {
+      elementMatchesSelectionArea(area, target, "touched");
+    }
+    const durations = Array.from({ length: 120 }, () => {
+      const started = performance.now();
+      const selected = elementMatchesSelectionArea(area, target, "touched");
+      const duration = performance.now() - started;
+      expect(selected).toBe(true);
+      return duration;
+    });
+
+    expect(interactionP99(durations)).toBeLessThanOrEqual(
+      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    );
+  });
+});
 
 describe("selection hot paths", () => {
   it("reduces a maximum coalesced lasso batch within one interaction budget", () => {

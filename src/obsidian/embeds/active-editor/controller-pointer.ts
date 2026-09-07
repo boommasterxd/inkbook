@@ -211,7 +211,12 @@ export class ActiveEditorPointerController {
     }
     const blocksHostGesture =
       event.pointerType === "touch" && this.#options.getInput().interaction?.phase === "page-pan";
-    if (!this.#options.coalesced.dispatch(event)) {
+    const penContactOnly =
+      previous?.phase === "tool-gesture" &&
+      previous.tool === "draw" &&
+      previous.pointerId === event.pointerId &&
+      event.pointerType === "pen";
+    if (!this.#options.coalesced.dispatch(event, penContactOnly)) {
       this.handlePointerCancel(event);
       return;
     }

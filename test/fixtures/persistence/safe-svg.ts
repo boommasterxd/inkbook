@@ -1,7 +1,7 @@
 import type { InkSnapshotV1 } from "../../../src/domain/schema/public";
 import { serializeSvgEnvelope } from "../../../src/persistence/documents/svg-envelope";
 
-export const MAXIMUM_PATH_BYTES = 1024 * 1024;
+export const MAXIMUM_PATH_BYTES = 8 * 1024 * 1024;
 
 const snapshot: InkSnapshotV1 = {
   elements: [],
@@ -18,7 +18,7 @@ const snapshot: InkSnapshotV1 = {
 };
 
 export function createMaximumComplexityPath(): string {
-  return `M 0 0${" L 1 1".repeat(19_999)}`.padEnd(MAXIMUM_PATH_BYTES, " ");
+  return `M 0 0${" L 1 1".repeat(199_999)}`.padEnd(MAXIMUM_PATH_BYTES, " ");
 }
 
 export function createMaximumComplexitySvg(): string {
