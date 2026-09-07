@@ -121,14 +121,7 @@ function runTestFile(testFile, refreshRate) {
     let stderr = "";
     const child = spawn(
       process.execPath,
-      [
-        "--expose-gc",
-        vitestEntry,
-        "run",
-        relativeTestFile,
-        "--reporter=json",
-        "--fileParallelism=false",
-      ],
+      ["--expose-gc", vitestEntry, "run", relativeTestFile, "--fileParallelism=false"],
       {
         cwd: projectRoot,
         env: { ...process.env, INKBOOK_PERFORMANCE_REFRESH_RATE: String(refreshRate) },
