@@ -1,4 +1,8 @@
-import type { StrokeElementV1, StrokeStyleV1 } from "../../domain/schema/public";
+import {
+  FILE_SCHEMA_LIMITS,
+  type StrokeElementV1,
+  type StrokeStyleV1,
+} from "../../domain/schema/public";
 import { SVG_NAMESPACE } from "./constants";
 import {
   liveStrokePresentation,
@@ -14,6 +18,7 @@ import type {
 const MAX_LIVE_STROKE_CHUNKS = 4096;
 
 export class SceneLiveStrokeRenderer {
+  readonly #committed = new Map<string, { group: SVGGElement; chunks: number; tail: boolean }>();
   readonly #chunkNodes: SVGPathElement[] = [];
   #disposed = false;
   readonly #group: SVGGElement;
@@ -62,6 +67,38 @@ export class SceneLiveStrokeRenderer {
     this.#instrumentation.liveMaximumTailNodes = 1;
   }
 
+  public commit(id: string, parent: (band: "content" | "highlight") => SVGGElement): void {
+    this.assertActive();
+    if (this.#style === undefined) return;
+    if (this.#committed.has(id) || this.#committed.size >= FILE_SCHEMA_LIMITS.elements) {
+      throw new RangeError("Live stroke handoffs must have unique, document-bounded IDs.");
+    }
+    const group = this.#ownerDocument.createElementNS(SVG_NAMESPACE, "g");
+    group.setAttribute("opacity", String(this.#style.opacity));
+    group.setAttribute("pointer-events", "none");
+    for (const node of this.#chunkNodes) group.append(node);
+    if (this.#tailNode !== undefined) group.append(this.#tailNode);
+    parent(this.#tool === "highlighter" ? "highlight" : "content").append(group);
+    this.#committed.set(id, {
+      group,
+      chunks: this.#chunkNodes.length,
+      tail: this.#tailNode !== undefined,
+    });
+    this.#chunkNodes.length = 0;
+    this.#tailNode = undefined;
+    this.resetStrokeState();
+  }
+
+  public settleCommits(isComplete: (id: string) => boolean): void {
+    for (const [id, entry] of this.#committed) {
+      if (!isComplete(id)) continue;
+      entry.group.remove();
+      this.#instrumentation.liveChunkNodesRemoved += entry.chunks;
+      this.#instrumentation.liveTailNodesRemoved += Number(entry.tail);
+      this.#committed.delete(id);
+    }
+  }
+
   public clear(): void {
     this.removeAllNodes();
     this.resetStrokeState();
@@ -74,6 +111,7 @@ export class SceneLiveStrokeRenderer {
   public dispose(): void {
     if (this.#disposed) return;
     this.clear();
+    this.settleCommits(() => true);
     this.#disposed = true;
   }
 

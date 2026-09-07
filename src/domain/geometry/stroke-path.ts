@@ -180,9 +180,9 @@ function buildClosedOutlinePath(pairs: readonly OutlinePointPair[]): string {
   const startPair = pairs[0]!;
   return [
     buildOpenMidpointPath(left),
-    arcTo(endPair.radius, 1, endPair.right),
+    arcTo(endPair.radius, 0, endPair.right),
     appendMidpointPath(right),
-    arcTo(startPair.radius, 1, startPair.left),
+    arcTo(startPair.radius, 0, startPair.left),
     "Z",
   ].join("");
 }

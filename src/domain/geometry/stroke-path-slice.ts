@@ -77,7 +77,7 @@ function appendEndConnector(
 ): void {
   if (lastBoundary === null) {
     const end = pairs[pairs.length - 1]!;
-    commands.push(arcTo(end.radius, 1, end.right));
+    commands.push(arcTo(end.radius, 0, end.right));
     return;
   }
   commands.push(lineTo(boundary(reversedRight, pairs.length - 2 - lastBoundary)));
@@ -91,7 +91,7 @@ function appendStartConnector(
 ): void {
   if (firstBoundary === null) {
     const start = pairs[0]!;
-    commands.push(arcTo(start.radius, 1, start.left));
+    commands.push(arcTo(start.radius, 0, start.left));
     return;
   }
   commands.push(lineTo(boundary(left, firstBoundary)));

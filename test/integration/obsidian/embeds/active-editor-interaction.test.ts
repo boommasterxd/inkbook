@@ -97,7 +97,7 @@ describe("active editor interaction composition", () => {
           identity: { createdAt: 1, id: "00000000-0000-4000-8000-000000000001" },
           renderer: creationPreviewRenderer({
             clearLiveStroke: () => livePaths.push(null),
-            revertLiveStroke: () => livePaths.push(null),
+            commitLiveStroke: () => livePaths.push(null),
             setLivePath: (path) => livePaths.push(path?.parts.map(({ d }) => d).join(" ") ?? null),
             updateLiveStroke: (preview) => livePaths.push(preview.tail.geometry.d),
           }),

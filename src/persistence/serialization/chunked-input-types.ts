@@ -4,6 +4,7 @@ import type { DocumentHashPort } from "./sha256";
 export type ChunkedInputCheckpoint = () => Promise<void>;
 
 export interface ChunkedInkbookInputOptions {
+  readonly allowLegacyPressureCaps?: boolean;
   readonly checkpoint?: ChunkedInputCheckpoint;
   readonly hasher?: DocumentHashPort;
   readonly inputSliceBytes?: number;

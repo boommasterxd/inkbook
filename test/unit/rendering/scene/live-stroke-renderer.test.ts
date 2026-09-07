@@ -57,6 +57,33 @@ function setupRenderer(): {
 }
 
 describe("incremental live stroke renderer", () => {
+  it("transfers chunk identity and group opacity while isolating the next gesture", () => {
+    const { document, group, instrumentation, renderer } = setupRenderer();
+    const parent = new FakeNode(document, "g");
+    const target = () => parent as unknown as SVGGElement;
+    renderer.commit("empty", target);
+    expect(parent.nodes).toHaveLength(0);
+    renderer.update(preview([chunk("M 0 0 Z", "fill")], "M 1 1 Z", "fill"), penStyle, "pen");
+    const chunkNode = group.nodes[0];
+    const tailNode = group.nodes[1];
+    renderer.commit("first", target);
+    const retained = parent.nodes[0]!;
+    expect(retained.nodes).toEqual([chunkNode, tailNode]);
+    expect(retained.attributes.get("opacity")).toBe("0.7");
+    expect(group.nodes).toHaveLength(0);
+    renderer.update(preview([], "M 2 2", "stroke"), highlighterStyle, "highlighter");
+    expect(() => renderer.commit("first", target)).toThrow("unique");
+    renderer.clear();
+    renderer.settleCommits(() => false);
+    expect(retained.parent).toBe(parent);
+    renderer.settleCommits(() => true);
+    expect(retained.parent).toBeUndefined();
+    expect(instrumentation.liveChunkNodesRemoved).toBe(1);
+    expect(instrumentation.liveTailNodesRemoved).toBe(2);
+    renderer.dispose();
+    expect(() => renderer.commit("disposed", target)).toThrow("disposed");
+  });
+
   it("retains finalized chunk nodes and updates one bounded tail node", () => {
     const { document, group, instrumentation, renderer } = setupRenderer();
     const firstChunk = chunk("M 0 0 Z", "fill");

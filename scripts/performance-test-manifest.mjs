@@ -34,6 +34,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/persistence/clipboard.test.ts",
     "test/performance/persistence/incremental-validation-capacity.test.ts",
     "test/performance/persistence/memory-and-cache.test.ts",
+    "test/performance/persistence/pressure-cap-integrity.test.ts",
     "test/performance/persistence/serialization-and-worker.test.ts",
     "test/performance/persistence/stress-limits.test.ts",
     "test/performance/rendering/scene/dense-viewport-reconciliation.test.ts",

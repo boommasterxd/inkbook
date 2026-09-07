@@ -390,6 +390,7 @@ function documentModel(store: ElementStore): EditableDocumentModel {
 function rendererPort(inputSurface: HTMLDivElement) {
   return {
     clearLiveStroke: vi.fn(),
+    commitLiveStroke: vi.fn(),
     clearElementPreviews: vi.fn(),
     clearPreviewTransforms: vi.fn(),
     flushPointerFeedbackFrame: vi.fn<() => void>(),
@@ -403,7 +404,6 @@ function rendererPort(inputSurface: HTMLDivElement) {
     setSelectionOverlayPath: vi.fn<(path: string | null) => void>(),
     setSnapMarkerPath: vi.fn(),
     suppressMotionForNextDelta: vi.fn(),
-    revertLiveStroke: vi.fn(),
     updateLiveStroke: vi.fn(),
   };
 }

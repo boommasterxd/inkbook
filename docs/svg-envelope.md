@@ -112,6 +112,8 @@ Safe-preview attribute values are validated before any replacement SVG DOM is cr
 
 The streaming validator counts UTF-8 bytes, paths, commands, and numeric tokens without constructing SVG nodes or browser path objects. Crossing any limit, malformed or non-finite input, or a value outside its range makes the replacement preview ineligible and leaves the file noninteractive. Canonical files produced from a validated snapshot MUST satisfy both snapshot and static-markup limits.
 
+Editable loading also accepts the exact previous pressure-pen outline for strokes with multiple samples: both endpoint semicircles may use the former inward `sweep=1` instead of the corrected outward `sweep=0`. Both flags must agree within each path, and every other path character must match the canonical snapshot-derived output. Single-point circles and other elements have no such exception. Loading marks this legacy form for a canonical rewrite through the verified save flow; newly persisted-output verification accepts only corrected caps.
+
 ## Theme Changes in Obsidian
 
 The plugin registers the public workspace `css-change` event and reads the current scheme through `App.isDarkMode()`. Each mounted presentation remembers its applied scheme. A changed scheme performs exactly one presentation-root palette or `color-scheme` update and queues one paint invalidation through the existing animation-frame coalescer.

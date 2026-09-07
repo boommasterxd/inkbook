@@ -166,6 +166,7 @@ export class SvgSceneRenderer {
   public applyDelta(delta: SceneStoreDelta): void {
     this.assertActive();
     this.#deltas.apply(delta);
+    this.#liveStroke.settleCommits((id) => this.#options.store.get(id) === undefined);
   }
   public get hasPendingSceneCommit(): boolean {
     return this.#sceneCommits.pending;
@@ -236,13 +237,14 @@ export class SvgSceneRenderer {
     this.assertActive();
     this.#liveStroke.update(preview, style, tool);
   }
+  public commitLiveStroke(id: string): void {
+    this.assertActive();
+    this.#liveStroke.commit(id, (band) => this.#dom.group(band));
+    this.schedule();
+  }
   public clearLiveStroke(): void {
     this.assertActive();
     this.#liveStroke.clear();
-  }
-  public revertLiveStroke(): void {
-    this.assertActive();
-    this.#liveStroke.revert();
   }
   public setOverlayPath(d: string | null): void {
     this.assertActive();
@@ -405,27 +407,23 @@ export class SvgSceneRenderer {
     this.prepareVisibility();
     this.#transformPreviews.refreshContext();
     this.flushPointerFeedbackFrame();
-    const pendingMountedChanges = this.#content.writeMountedChanges(deadline, () =>
-      this.#scheduler.now(),
-    );
-    if (pendingMountedChanges) {
-      this.schedule();
-      this.refreshCacheInstrumentation();
-      this.#resourcePolicy.notifyUsageChanged();
-      return;
-    }
-    const pendingVisibility = this.#content.reconcileVisibility(
-      deadline,
-      () => this.#scheduler.now(),
-      this.#transformPreviews.values,
-      this.#elementPreviews.values,
-    );
+    const pendingVisibility =
+      this.#content.writeMountedChanges(deadline, () => this.#scheduler.now()) ||
+      this.#content.reconcileVisibility(
+        deadline,
+        () => this.#scheduler.now(),
+        this.#transformPreviews.values,
+        this.#elementPreviews.values,
+      );
     if (pendingVisibility) {
       this.schedule();
       this.refreshCacheInstrumentation();
       this.#resourcePolicy.notifyUsageChanged();
       return;
     }
+    this.#liveStroke.settleCommits(
+      (id) => this.#content.hasMounted(id) || !this.#visibility.contains(id),
+    );
     const mountedIds = this.#content.takeNewlyMountedIds();
     this.#motion.bindMountedEntrances(mountedIds);
     this.#motion.finishEntranceBatch();

@@ -2,7 +2,7 @@
 
 ## Authority
 
-The editable snapshot is the semantic source of truth only inside a fully canonical envelope. SVG drawing elements are a derived static representation, but they protect externally edited or damaged files from silent replacement: if validated snapshot data and canonical static SVG paths disagree, Inkbook keeps the file static and read-only and does not rewrite it. This is the stricter safe-envelope rule used to resolve any apparent conflict between snapshot authority and external-viewer fidelity.
+The editable snapshot is the semantic source of truth only inside a fully canonical envelope. SVG drawing elements are a derived static representation, but they protect externally edited or damaged files from silent replacement: if validated snapshot data and canonical static SVG paths disagree, Inkbook keeps the file static and read-only and does not rewrite it. Only the explicitly bounded [legacy envelope compatibility forms](svg-envelope.md#strict-static-markup-allowlist) are accepted for a canonical rewrite. This is the stricter safe-envelope rule used to resolve any apparent conflict between snapshot authority and external-viewer fidelity.
 
 ## SVG Envelope
 

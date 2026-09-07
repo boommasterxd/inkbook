@@ -27,7 +27,7 @@ import { selectionSnapGuidePath, snapMarkerPath } from "./snap-marker-path";
 
 export interface CreationPreviewRenderer {
   clearLiveStroke(): void;
-  revertLiveStroke(): void;
+  commitLiveStroke(id: string): void;
   setLivePath(path: LivePathState | null): void;
   setSnapMarkerPath(d: string | null): void;
   suppressMotionForNextDelta(ids: readonly string[]): void;
@@ -118,8 +118,15 @@ export class CreationPreview implements GesturePreview {
     this.#renderer.setSnapMarkerPath(null);
     this.#renderer.suppressMotionForNextDelta([element.id]);
     if (this.#stroke === null) this.#renderer.setLivePath(null);
-    else this.#renderer.clearLiveStroke();
-    return this.#history.create([element]);
+    try {
+      const committed = this.#history.create([element]);
+      if (this.#stroke !== null && committed) this.#renderer.commitLiveStroke(element.id);
+      else if (this.#stroke !== null) this.#renderer.clearLiveStroke();
+      return committed;
+    } catch (error) {
+      if (this.#stroke !== null) this.#renderer.clearLiveStroke();
+      throw error;
+    }
   }
 
   public revert(): void {
@@ -127,7 +134,7 @@ export class CreationPreview implements GesturePreview {
     this.#finished = true;
     this.#renderer.setSnapMarkerPath(null);
     if (this.#stroke === null) this.#renderer.setLivePath(null);
-    else this.#renderer.revertLiveStroke();
+    else this.#renderer.clearLiveStroke();
   }
 
   public update(pointer: GesturePreviewStart["pointer"]): void {

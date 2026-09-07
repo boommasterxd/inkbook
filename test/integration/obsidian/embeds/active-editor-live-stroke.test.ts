@@ -13,7 +13,7 @@ import { ManualFrameScheduler } from "../../../fixtures/obsidian/manual-frame-sc
 
 describe("active editor live stroke preview", () => {
   it("consumes coalesced samples and commits the incremental stroke", () => {
-    const { clearLiveStroke, input, preview, store, updateLiveStroke } = createLiveStrokeHarness(
+    const { commitLiveStroke, input, preview, store, updateLiveStroke } = createLiveStrokeHarness(
       "00000000-0000-4000-8000-000000000001",
     );
     input.dispatch(
@@ -27,7 +27,7 @@ describe("active editor live stroke preview", () => {
     expect(preview.commit()).toBe(true);
     expect(store.size).toBe(1);
     expect(store.get("00000000-0000-4000-8000-000000000001")?.element.kind).toBe("stroke");
-    expect(clearLiveStroke).toHaveBeenCalledOnce();
+    expect(commitLiveStroke).toHaveBeenCalledOnce();
   });
 
   it("uses real pen pressure and simulated mouse pressure", () => {
@@ -165,14 +165,14 @@ describe("active editor live stroke limits", () => {
 function createLiveStrokeHarness(identity: string, frameScheduler?: ManualFrameScheduler) {
   const store = new ElementStore();
   const history = activeEditorStoreHistory(store);
-  const clearLiveStroke = vi.fn();
+  const commitLiveStroke = vi.fn();
   const updateLiveStroke = vi.fn();
   const preview = new CreationPreview({
     defaults: createBuiltInSettings().toolDefaults,
     history,
     identity: { createdAt: 1, id: identity },
     renderer: creationPreviewRenderer({
-      clearLiveStroke,
+      commitLiveStroke,
       updateLiveStroke,
     }),
     start: {
@@ -185,7 +185,7 @@ function createLiveStrokeHarness(identity: string, frameScheduler?: ManualFrameS
   let routed: GesturePreview = preview;
   const input = createCoalescedInput((pointer) => routed.update(pointer), frameScheduler);
   routed = input.wrap(preview);
-  return { clearLiveStroke, input, preview, routed, store, updateLiveStroke };
+  return { commitLiveStroke, input, preview, routed, store, updateLiveStroke };
 }
 
 function createPressurePreview(identity: string, pointerType: "mouse" | "pen") {

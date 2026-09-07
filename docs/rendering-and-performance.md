@@ -35,6 +35,8 @@ The process:
 5. `pointerup` creates an `AddStrokeCommand`.
 6. The same stroke is then rendered through the regular element store.
 
+A successful freehand commit transfers the existing live nodes into an element-ID-owned handoff group without cloning or clearing them. The group retains its render band and group opacity until the corresponding committed node mounts in the same synchronous scene write. Budget-deferred frames preserve the handoff; subsequent gestures and cancellation affect only the new live stroke. Removal, completed culling, and scene disposal release pending handoffs. IDs are unique and bounded by the document element limit, and each handoff inherits the bounded live chunk count. Direct creation never receives entrance motion.
+
 The live preview and saved stroke use the same path builder. This prevents them from differing because of two separate rendering methods.
 
 The live builder MUST NOT rebuild the complete path for every sample. Each finalized preview chunk contains at most 256 retained samples. The mutable tail contains at most 16 retained samples, including four read-only boundary samples that preserve smoothing and tangent context but are not emitted twice. A new sample rebuilds only that tail and its boundary segment; it never reconstructs an older finalized segment. The renderer retains one tail `path` node for the complete gesture and updates only its `d` attribute; newly finalized chunk nodes are inserted before that stable tail. On commit, the chunks and tail produce exactly the same geometry as a one-pass build from the stored samples. Live input uses a geometrically growing numeric buffer and copies its samples exactly once into the committed immutable record.
