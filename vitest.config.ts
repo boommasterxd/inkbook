@@ -32,6 +32,9 @@ export default defineConfig({
       "test/performance/**/*.test.{ts,tsx}",
     ],
     passWithNoTests: false,
+    reporters: process.env["INKBOOK_PERFORMANCE_REFRESH_RATE"]
+      ? [["json", { stdout: true }]]
+      : ["default"],
     root: projectRoot,
   },
 });
