@@ -134,6 +134,7 @@ interface StrokeElementV1 extends ElementBaseV1 {
 - A single-point stroke renders as a round dot using its effective width.
 - Pen pressure comes from hardware when available and from the deterministic simulated-pressure function otherwise.
 - Highlighter strokes set `pressureEnabled` to `false`.
+- Pressure is retained in the editable samples. The continuous-pressure filled path and its once-composited opacity group are derived output under the [standalone SVG contract](svg-envelope.md#strict-static-markup-allowlist); the representation adds no snapshot fields.
 - Point coordinates are canonical page-space geometry. A committed move updates them directly; only a gesture preview uses a temporary transform.
 
 ### Lines, Arrows, and Straight Highlighters

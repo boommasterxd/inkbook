@@ -144,6 +144,7 @@ function setup(pointerType: PointerSample["pointerType"] = "pen", tool: EditorTo
     getInput: () => ({ ...createInputState(), interaction }),
     handles: {
       pointerMove: () => false,
+      pointerUp: () => false,
       cancel: () => false,
     } as unknown as ActiveEditorPointerOptions["handles"],
     navigation: {

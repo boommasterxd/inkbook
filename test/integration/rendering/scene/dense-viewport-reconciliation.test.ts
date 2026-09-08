@@ -168,7 +168,9 @@ function expectExactOrder(
 ): void {
   const camera = fakeNode(renderer.svg).nodes[1]!;
   const renderedIds = [camera.nodes[3]!, camera.nodes[4]!].flatMap(({ nodes }) =>
-    nodes.map(({ attributes }) => idByPath.get(attributes.get("d") ?? "")),
+    nodes.map((node) =>
+      idByPath.get((node.tagName === "g" ? node.nodes[0]! : node).attributes.get("d") ?? ""),
+    ),
   );
   expect(renderer.mountedIds("highlight")).toEqual(highlightIds);
   expect(renderer.mountedIds("content")).toEqual(contentIds);

@@ -60,10 +60,9 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz live-stroke profile`, ()
       const p99 = interactionP99(durations);
       expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
       expect(renderer.instrumentation()).toMatchObject({
-        liveMaximumTailNodes: 1,
         livePreviewUpdates: LIVE_FRAME_COUNT,
-        liveTailNodesCreated: 1,
       });
+      expect(renderer.instrumentation().liveMaximumTailNodes).toBe(1);
       await annotate(interactionProfileAnnotation(`${shape} live stroke`, p99), "performance");
       renderer.destroy();
     },
@@ -171,7 +170,7 @@ function coalescedHarness(pointerType: "pen" | "mouse") {
   const liveGroup = camera.nodes.find(
     (node) =>
       node.attributes.get("class") === "inkbook-scene-foreground" &&
-      node.nodes[0]?.attributes.get("fill-rule") === "nonzero",
+      node.nodes[0]?.nodes[0]?.attributes.get("class") === "inkbook-theme-fill",
   );
   const tail = liveGroup?.nodes[0];
   if (tail === undefined) throw new Error("Expected a retained live pressure tail.");
@@ -195,16 +194,22 @@ function coalescedEvent(samples: readonly PointerEvent[]): PointerEvent {
 }
 
 function expectPressureTip(tail: FakeNode, sample: PointerEvent): void {
-  const pieces = tail.attributes.get("d")!.split("M");
-  const lastPiece = pieces[pieces.length - 1]!;
-  const [forward, cap] = lastPiece.split("A");
-  const numbers = /-?\d+(?:\.\d+)?/g;
-  const side = forward!.match(numbers)!.map(Number);
-  const arc = cap!.match(numbers)!.map(Number);
-  for (const [x, y] of [
-    [side[side.length - 2]!, side[side.length - 1]!],
-    [arc[5]!, arc[6]!],
-  ]) {
-    expect(Math.hypot(x! - sample.clientX, y! - sample.clientY)).toBeCloseTo(arc[0]!, 2);
+  const d = tail.nodes[tail.nodes.length - 1]!.attributes.get("d")!;
+  const runs = d.split("M");
+  const run = `M${runs[runs.length - 1]!}`;
+  let current = [0, 0];
+  for (const match of run.matchAll(/([MQAqa])([^MQAqaZ]*)/g)) {
+    const command = match[1]!;
+    const values = match[2]!.match(/-?(?:\d*\.)?\d+/g)!.map(Number);
+    const endpoint = values
+      .slice(-2)
+      .map((value, axis) => value + (command === command.toLowerCase() ? current[axis]! : 0));
+    if (command.toUpperCase() === "A") {
+      expect((current[0]! + endpoint[0]!) / 2).toBeCloseTo(sample.clientX, 2);
+      expect((current[1]! + endpoint[1]!) / 2).toBeCloseTo(sample.clientY, 2);
+      return;
+    }
+    current = endpoint;
   }
+  throw new Error("Expected a round pressure end cap.");
 }

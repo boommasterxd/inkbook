@@ -83,13 +83,13 @@ describe("SelectionHandleSession performance contracts", () => {
 
 describe("SelectionHandleSession work budgets", () => {
   it.each([
-    { pointCount: 256, pressureEnabled: true, truncated: false },
-    { pointCount: 257, pressureEnabled: true, truncated: true },
-    { pointCount: 256, pressureEnabled: false, truncated: false },
-    { pointCount: 257, pressureEnabled: false, truncated: true },
+    { pointCount: 256, pressureEnabled: true },
+    { pointCount: 257, pressureEnabled: true },
+    { pointCount: 256, pressureEnabled: false },
+    { pointCount: 257, pressureEnabled: false },
   ])(
-    "applies the preview boundary at $pointCount samples with pressure $pressureEnabled",
-    ({ pointCount, pressureEnabled, truncated }) => {
+    "defers stroke materialization at $pointCount samples with pressure $pressureEnabled",
+    ({ pointCount, pressureEnabled }) => {
       const source = maximumStroke(0);
       const stroke = {
         ...source,
@@ -98,8 +98,8 @@ describe("SelectionHandleSession work budgets", () => {
       };
       const preview = pressureSession(stroke).update({ x: pointCount + 100, y: 150 });
 
-      expect(preview.exactPreviewTruncated).toBe(truncated);
-      expect(preview.exactElements).toHaveLength(truncated ? 0 : 1);
+      expect(preview.exactPreviewTruncated).toBe(true);
+      expect(preview.exactElements).toHaveLength(0);
     },
   );
 

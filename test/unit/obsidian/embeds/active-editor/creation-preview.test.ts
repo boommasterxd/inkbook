@@ -212,7 +212,7 @@ describe("freehand creation preview presentation", () => {
 
     const call = updateLiveStroke.mock.lastCall;
     if (call === undefined) throw new Error("Expected a live stroke update.");
-    expect(call[0].tail.geometry.paint).toBe("stroke");
+    expect(call[0].tail.geometry).toEqual([expect.objectContaining({ paint: "stroke" })]);
     expect(call[1].pressureEnabled).toBe(false);
     expect(call[2]).toBe(tool);
   });

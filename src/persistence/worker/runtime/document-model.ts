@@ -176,7 +176,7 @@ export class DocumentModelRuntime {
     input: string | Uint8Array,
     sliceContext?: RuntimeSliceContext,
   ): Promise<{ readonly outputHash: string; readonly revision: number } | null> {
-    const parsed = await parseRuntimeInput(input, sliceContext, undefined, false);
+    const parsed = await parseRuntimeInput(input, sliceContext);
     return parsed.ok
       ? { outputHash: parsed.value.hash, revision: parsed.value.snapshot.revision }
       : null;
@@ -456,12 +456,10 @@ async function parseRuntimeInput(
     snapshot: InkSnapshotV1,
     derivations: SnapshotValidationDerivations,
   ) => Promise<void> | void,
-  allowLegacyPressureCaps = true,
 ) {
   const inputSliceBytes = context?.workProfile?.inputByteLimit ?? 256 * 1024;
   const inputWriteChunk = context?.workProfile?.inputByteLimit ?? 16 * 1024;
   const parser = new ChunkedInkbookInputParser({
-    allowLegacyPressureCaps,
     ...(context === undefined ? {} : { checkpoint: context.checkpoint, signal: context.signal }),
     inputSliceBytes,
     ...(onValidatedSnapshot === undefined ? {} : { onValidatedSnapshot }),

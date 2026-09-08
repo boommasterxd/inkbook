@@ -83,7 +83,8 @@ describe("mixed element scale commit renderer parity", () => {
       const committed = elements.map(({ id }) => store.get(id)!.element as InkElementV1);
       expect(committed).not.toEqual(elements);
       const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
-      expect(content.nodes.map((node) => node.attributes.get("d"))).toEqual(
+      const paths = content.nodes.flatMap((node) => (node.nodes.length > 0 ? node.nodes : [node]));
+      expect(paths.map((node) => node.attributes.get("d"))).toEqual(
         committed.flatMap(buildElementPathParts).map(({ d }) => d),
       );
       expect(content.nodes.every((node) => !node.attributes.has("transform"))).toBe(true);

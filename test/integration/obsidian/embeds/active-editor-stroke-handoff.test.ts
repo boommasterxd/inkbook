@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { buildStrokePath } from "../../../../src/domain/geometry/stroke-path";
+import { buildStrokePathParts } from "../../../../src/domain/geometry/stroke-path";
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import { createBuiltInSettings } from "../../../../src/domain/settings/defaults";
 import { ElementStore } from "../../../../src/domain/store/public";
@@ -72,7 +72,8 @@ function liveTail(renderer: SvgSceneRenderer): FakeNode {
   const nodes = paths(fakeNode(renderer.svg));
   const tail = nodes.find(
     (node) =>
-      node.attributes.get("fill-rule") === "nonzero" && !node.attributes.has("data-element-id"),
+      node.attributes.get("class") === "inkbook-theme-fill" &&
+      !node.attributes.has("data-element-id"),
   );
   if (tail === undefined) throw new Error("Expected live pressure ink.");
   return tail;
@@ -162,27 +163,28 @@ describe("canonical pressure handoff", () => {
         y: 40 + Math.sin(index / 2) * 20,
       });
     }
-    const live = paths(fakeNode(renderer.svg))
-      .filter((node) => node.attributes.get("fill-rule") === "nonzero")
-      .map((node) => node.attributes.get("d"))
-      .join("");
+    const live = pressurePath(renderer);
     expect(preview.commit()).toBe(true);
     const element = store.get("00000000-0000-4000-8000-000000000001")!.element;
     if (element.kind !== "stroke") throw new Error("Expected committed pressure stroke.");
     const wireElement = { ...element, points: [...element.points] };
-    const canonical = buildStrokePath(wireElement).d;
-    expect(live).toBe(canonical);
+    const canonical = buildStrokePathParts(wireElement)[0]!.d;
+    expect(live).toEqual(canonical);
     scheduler.runAll();
-    const committed = paths(fakeNode(renderer.svg)).find(
-      (node) => node.attributes.get("fill-rule") === "nonzero",
-    )!;
-    expect(committed.attributes.get("d")).toBe(canonical);
+    expect(pressurePath(renderer)).toEqual(canonical);
     renderer.setElementPreviews([wireElement], 1);
     scheduler.runAll();
-    expect(committed.attributes.get("d")).toBe(canonical);
+    expect(pressurePath(renderer)).toEqual(canonical);
     renderer.clearElementPreviews();
     scheduler.runAll();
-    expect(committed.attributes.get("d")).toBe(canonical);
+    expect(pressurePath(renderer)).toEqual(canonical);
     renderer.destroy();
   });
 });
+
+function pressurePath(renderer: SvgSceneRenderer): string {
+  return paths(fakeNode(renderer.svg))
+    .filter((node) => node.attributes.get("class") === "inkbook-theme-fill")
+    .map((node) => node.attributes.get("d") ?? "")
+    .join("");
+}

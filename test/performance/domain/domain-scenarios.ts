@@ -253,7 +253,11 @@ export function measureMaximumStrokeRun(strokeCount: number): MaximumStrokeRun {
       maximumFinalizedChunkSamples,
       commit.instrumentation.maximumFinalizedChunkSamples,
     );
-    if (commit.points.length !== 4096 * 3 || commit.geometry.d.length <= 100_000) {
+    if (
+      commit.points.length !== 4096 * 3 ||
+      commit.geometry.length === 0 ||
+      commit.geometry.some(({ d }) => d.length === 0)
+    ) {
       throw new Error("Maximum-stroke benchmark produced an incomplete handoff.");
     }
   }

@@ -290,24 +290,20 @@ function combineCenterlineGeometry(
   // Preview slices overlap one quadratic at stable boundaries to hide seams.
   // Removing only that overlap reconstructs the exact one-pass centerline.
   const paths = new Array<string>(chunks.length + 1);
-  paths[0] = chunks[0]!.geometry.d;
+  paths[0] = chunks[0]!.geometry[0]!.d;
   for (let index = 1; index < chunks.length; index += 1) {
-    paths[index] = afterOverlappingQuadratic(chunks[index]!.geometry.d);
+    paths[index] = afterOverlappingQuadratic(chunks[index]!.geometry[0]!.d);
   }
-  paths[chunks.length] = afterOverlappingQuadratic(tail.geometry.d);
-  return { d: paths.join(""), paint: "stroke" };
+  paths[chunks.length] = afterOverlappingQuadratic(tail.geometry[0]!.d);
+  return [{ d: paths.join(""), paint: "stroke" }];
 }
 
 function combinePressureGeometry(
   chunks: readonly LiveStrokeChunk[],
   tail: LiveStrokePreview["tail"],
 ): StrokePathGeometry {
-  // Swept pieces already overlap at their round joins; concatenate the same
-  // partition used by the canonical builder without parsing SVG commands.
-  return {
-    d: [...chunks.map((chunk) => chunk.geometry.d), tail.geometry.d].join(""),
-    paint: "fill",
-  };
+  const d = [...chunks, tail].map((chunk) => chunk.geometry[0]!.d).join("");
+  return [{ d, paint: "fill" }];
 }
 
 function afterOverlappingQuadratic(d: string): string {

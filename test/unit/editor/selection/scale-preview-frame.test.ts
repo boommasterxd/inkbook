@@ -16,6 +16,21 @@ describe("selection scale preview frame", () => {
     expect(scaled.frame.points[0]).toEqual({ x: -11, y: -11 });
     expect(scaled.frame.points[2]).toEqual({ x: 2001, y: 2001 });
   });
+  it("keeps the dragged edge under its target when the extremal element changes", () => {
+    const plan = new SelectionScalePreviewFramePlan(
+      [rectangle("wide-path", 100, 2), rectangle("wide-paint", 99, 22)],
+      0,
+    );
+    const factors = plan.factorsForPointer(
+      { x: 121, y: 121 },
+      { x: 1990, y: 1990 },
+      { x: 0, y: 0 },
+      false,
+    );
+    const resized = plan.resolve({ x: -11, y: -11 }, "bottom-right", factors);
+    expect(resized.frame.points[2].x).toBeCloseTo(2100, 5);
+    expect(resized.frame.points[2].y).toBeCloseTo(2100, 5);
+  });
 });
 
 function rectangle(id: string, size: number, outlineWidth: 2 | 22): BoxShapeElementV1 {

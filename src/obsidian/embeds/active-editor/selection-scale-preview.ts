@@ -26,7 +26,9 @@ export class SelectionScalePreviewPlan {
   public resolve(preview: SelectionHandlePreview): SelectionScalePreview {
     if (preview.transform?.kind !== "scale" || preview.exactPreviewTruncated) return EMPTY_PREVIEW;
     return {
-      elements: preview.exactElements.filter(({ id }) => this.#elements.has(id)),
+      elements: preview.exactElements.filter(
+        (element) => element.kind !== "stroke" && this.#elements.has(element.id),
+      ),
     };
   }
 

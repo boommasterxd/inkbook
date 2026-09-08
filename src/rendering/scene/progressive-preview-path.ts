@@ -33,25 +33,26 @@ export class ProgressivePreviewPath {
   }
 
   public step(): boolean {
+    if (this.#parts !== undefined) return true;
     const element = this.#element;
     const centers = this.#centers;
     if (centers === undefined || element.kind !== "stroke") {
       this.#parts = buildElementPathParts(element);
       return true;
     }
-    // Boundaries coincide with the canonical sweep's coalescing boundaries (8n + 3).
+    // Each slice owns at most 64 canonical midpoint curves.
     const next = this.#boundary === null ? 59 : this.#boundary + 64;
     const lastBoundary = next >= centers.length - 2 ? null : next;
     const slice = { firstBoundary: this.#boundary, lastBoundary };
-    const part = element.style.pressureEnabled
+    const parts = element.style.pressureEnabled
       ? buildPressureOutlineSlice(centers, element.style.width, slice)
       : buildCenterlineSlice(centers, slice);
-    // Centerline slices continue one open path; only the first slice owns its move.
-    const d =
+    const part = parts[0]!;
+    this.#chunks.push(
       part.paint === "stroke" && this.#boundary !== null
         ? part.d.replace(/^M[^A-Z]*/u, "")
-        : part.d;
-    this.#chunks.push(d);
+        : part.d,
+    );
     this.#boundary = lastBoundary;
     if (lastBoundary !== null) return false;
     this.#parts = [{ d: this.#chunks.join(""), paint: part.paint }];

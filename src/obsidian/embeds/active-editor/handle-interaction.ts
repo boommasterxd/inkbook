@@ -236,7 +236,7 @@ export class ActiveEditorHandleInteraction {
     );
     const connected = this.#connectedPreview(active, preview);
     const scale = active.scalePreview.resolve(preview);
-    if (!preview.exactPreviewTruncated || preview.transform?.kind !== "scale") {
+    if (preview.transform?.kind !== "scale") {
       this.#renderer.clearProgressiveElementPreviews?.();
     }
     this.#presentation.renderTransform(
@@ -246,12 +246,13 @@ export class ActiveEditorHandleInteraction {
     this.#updatePreviewBottom(
       this.#presentation.renderPreview(active, preview, connected, scale.elements),
     );
-    if (preview.exactPreviewTruncated && preview.transform?.kind === "scale") {
+    if (preview.transform?.kind === "scale") {
       const materialize = active.session.createScalePreviewMaterializer();
       if (materialize !== undefined) {
         this.#presentation.renderProgressive(
           active.scalePreview.progressiveIds,
           active.scalePreview.materializer(materialize),
+          preview.transform,
         );
       }
     }

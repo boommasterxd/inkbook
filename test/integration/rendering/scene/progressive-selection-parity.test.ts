@@ -55,7 +55,7 @@ function shifted(element: InkElementV1): InkElementV1 {
 describe("progressive selection canonical scene parity", () => {
   it("keeps complete canonical pressure and arrow geometry through asynchronous resize and cancellation", () => {
     const { renderer, scheduler, elements, content } = setup();
-    const original = content.nodes.map((node) => new Map(node.attributes));
+    const original = content.nodes.flatMap(paintedPaths).map((node) => new Map(node.attributes));
     const replacements = elements.map(shifted);
     const originalMemory = renderer.memoryUsage().pathCacheBytes;
     renderer.setProgressiveElementPreviews(
@@ -63,25 +63,31 @@ describe("progressive selection canonical scene parity", () => {
       (id) => replacements.find((element) => element.id === id),
       1,
     );
-    // An incomplete pressure sweep must retain the existing complete path.
+    // An incomplete canonical rebuild retains the existing complete pressure outline.
     scheduler.runNext();
-    expect(content.nodes[0]!.attributes.get("d")).toBe(original[0]!.get("d"));
-    scheduler.runAll();
-    expect(content.nodes.map((node) => node.attributes.get("d"))).toEqual(
+    expect(paintedPaths(content.nodes[0]!)[0]!.attributes.get("d")).toBe(original[0]!.get("d"));
+    let remainingFrames = 0;
+    while (scheduler.pendingCount > 0 && remainingFrames < 20) {
+      scheduler.runFrame();
+      remainingFrames += 1;
+    }
+    expect(scheduler.pendingCount).toBe(0);
+    expect(remainingFrames).toBeGreaterThanOrEqual(16);
+    expect(content.nodes.flatMap(paintedPaths).map((node) => node.attributes.get("d"))).toEqual(
       replacements.flatMap(buildElementPathParts).map(({ d }) => d),
     );
     expect(content.nodes.every((node) => !node.attributes.has("transform"))).toBe(true);
     expect(renderer.memoryUsage().pathCacheBytes).toBeGreaterThan(originalMemory);
     renderer.clearElementPreviews();
     scheduler.runAll();
-    expect(content.nodes.map((node) => node.attributes)).toEqual(original);
+    expect(content.nodes.flatMap(paintedPaths).map((node) => node.attributes)).toEqual(original);
     expect(renderer.memoryUsage().pathCacheBytes).toBe(originalMemory);
     renderer.destroy();
   });
 
   it("cancels pending canonical work before a cleared selection can reappear", () => {
     const { renderer, scheduler, elements, content } = setup();
-    const original = content.nodes.map((node) => new Map(node.attributes));
+    const original = content.nodes.flatMap(paintedPaths).map((node) => new Map(node.attributes));
     renderer.setProgressiveElementPreviews(
       elements.map(({ id }) => id),
       (id) => elements.find((element) => element.id === id),
@@ -90,7 +96,11 @@ describe("progressive selection canonical scene parity", () => {
     scheduler.runNext();
     renderer.clearProgressiveElementPreviews();
     scheduler.runAll();
-    expect(content.nodes.map((node) => node.attributes)).toEqual(original);
+    expect(content.nodes.flatMap(paintedPaths).map((node) => node.attributes)).toEqual(original);
     renderer.destroy();
   });
 });
+
+function paintedPaths(node: ReturnType<typeof fakeNode>): readonly ReturnType<typeof fakeNode>[] {
+  return node.tagName === "g" ? node.nodes : [node];
+}

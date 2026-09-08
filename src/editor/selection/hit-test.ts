@@ -1,3 +1,4 @@
+import { pressureStrokeContainsPoint } from "./pressure-hit-test";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import { isStoredStroke } from "../../domain/elements/stroke-replacement-proof";
 import { shapeVertices, tableColumnOffsets, tableWidth } from "../../domain/geometry/creation";
@@ -81,8 +82,11 @@ export function elementContainsPoint(
 ): boolean {
   if (!Number.isFinite(tolerance) || tolerance < 0) return false;
   const point = rotatePointClockwise(pagePoint, element.pivot, -element.rotation);
-  if (element.kind === "stroke")
-    return hitStroke(element, point, tolerance + effectiveStrokeWidth(element) / 2);
+  if (element.kind === "stroke") {
+    return element.style.pressureEnabled
+      ? pressureStrokeContainsPoint(element, point, tolerance)
+      : hitStroke(element, point, tolerance + effectiveStrokeWidth(element) / 2);
+  }
   if (
     element.kind === "line" ||
     element.kind === "arrow" ||

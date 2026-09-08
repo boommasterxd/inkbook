@@ -195,20 +195,7 @@ export class ActiveEditorPointerController {
     const previous = this.#options.getInput().interaction;
     const pointer = this.#pointerOrCancel(event);
     if (pointer === undefined) return;
-    if (
-      this.#options.handles.pointerMove(
-        this.#options.navigation.pageSample(pointer),
-        event.shiftKey,
-        event.altKey === true,
-      )
-    ) {
-      this.#options.handles.pointerUp(event.pointerId);
-      this.#releasePointer(event.pointerId);
-      this.#options.finishHandlePointer();
-      this.#setSnappingInverted(event.pointerId, null);
-      if (event.cancelable) event.preventDefault();
-      return;
-    }
+    if (this.#finishHandleRelease(event, pointer)) return;
     const blocksHostGesture =
       event.pointerType === "touch" && this.#options.getInput().interaction?.phase === "page-pan";
     const penContactOnly =
@@ -242,6 +229,30 @@ export class ActiveEditorPointerController {
       return;
     }
     this.#options.dispatch({ type: "lost-pointer-capture", pointerId: event.pointerId });
+  }
+
+  #finishHandleRelease(event: PointerEvent, pointer: PointerSample): boolean {
+    // A pen release may already contain hover coordinates. Finish from the queued contact frame.
+    const noncontactPen =
+      event.pointerType === "pen" && event.pressure === 0 && event.buttons === 0;
+    const handleFinished = noncontactPen && this.#options.handles.pointerUp(event.pointerId);
+    if (
+      handleFinished ||
+      (!noncontactPen &&
+        this.#options.handles.pointerMove(
+          this.#options.navigation.pageSample(pointer),
+          event.shiftKey,
+          event.altKey === true,
+        ))
+    ) {
+      if (!handleFinished) this.#options.handles.pointerUp(event.pointerId);
+      this.#releasePointer(event.pointerId);
+      this.#options.finishHandlePointer();
+      this.#setSnappingInverted(event.pointerId, null);
+      if (event.cancelable) event.preventDefault();
+      return true;
+    }
+    return false;
   }
 
   #pointerOrCancel(event: PointerEvent): PointerSample | undefined {

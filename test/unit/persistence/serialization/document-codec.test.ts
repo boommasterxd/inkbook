@@ -37,7 +37,7 @@ describe("Inkbook document serialization", () => {
     expect(first.value.svg).toContain('class="inkbook-theme-stroke-fill"');
     expect(first.value.svg).toContain('stroke-dasharray="16 12"');
     expect(first.value.svg).toContain('stroke-dasharray="0 10"');
-    expect(first.value.svg).toContain('fill-opacity="0.75"');
+    expect(first.value.svg).toContain('<g opacity="0.75">');
     expect(first.value.svg).toContain('stroke-opacity="0.8"');
     expect(validateSafeSvg(first.value.svg)).not.toBeNull();
   });
@@ -256,7 +256,7 @@ describe("SVG numeric precision", () => {
 
     expect(serialized.ok).toBe(true);
     if (!serialized.ok) return;
-    expect(serialized.value.svg).toContain('fill-opacity="0.1234"');
+    expect(serialized.value.svg).toContain('<g opacity="0.1234">');
     expect(serialized.value.svg).toContain('"opacity":0.1234');
     expect(await parseInkbookDocumentForTest(serialized.value.svg)).toMatchObject({ ok: true });
   });

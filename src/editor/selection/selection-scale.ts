@@ -8,6 +8,7 @@ import {
 } from "../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 
+import { rotatedScaleTranslation } from "./scale-frame";
 import { activeScaleAxes } from "./handle-session-geometry";
 import type { SelectionHandleAction } from "./handle-types";
 import { oppositeBoxAnchor } from "./handles";
@@ -18,6 +19,7 @@ import {
   translateSelectionFrame,
   type OrientedSelectionFrame,
 } from "./selection-frame";
+import { SelectionScalePreviewProjection } from "./scale-preview-projection";
 import { SelectionScalePreviewFramePlan } from "./scale-preview-frame";
 import {
   clampScaleFactors,
@@ -26,11 +28,6 @@ import {
   moveSelectionTimeSliced,
   rotateSelection,
   scaleElement,
-  scaleElementFromPointers,
-  scaleFactorsFromPointers,
-  scaleRatio,
-  uniformScaleFactorFromPointers,
-  uniformScaleFactorsFromPointers,
   type ScaleFactors,
   type TransformSliceScheduler,
 } from "./transforms";
@@ -42,6 +39,7 @@ export class SelectionScaleGesture {
   readonly #elements: readonly InkElementV1[];
   readonly #minimumFactors: ScaleFactors;
   readonly #minimumUniformFactor: number;
+  readonly #previewProjection: SelectionScalePreviewProjection;
   readonly #previewFramePlan: SelectionScalePreviewFramePlan;
   readonly #startPointer: PointV1;
   #previewDelta: PointV1 = { x: 0, y: 0 };
@@ -57,32 +55,33 @@ export class SelectionScaleGesture {
     this.#minimumFactors = minimumScaleFactorsForSelection(elements, action.rotation);
     this.#minimumUniformFactor = minimumUniformScaleForSelection(elements);
     this.#previewFramePlan = new SelectionScalePreviewFramePlan(elements, action.rotation);
+    this.#previewProjection = new SelectionScalePreviewProjection(
+      elements,
+      action.rotation,
+      this.#previewFramePlan,
+    );
     this.#startPointer = startPointer;
   }
 
-  public factorsAt(pointer: PointV1, uniform: boolean): ScaleFactors | undefined {
-    if (this.#elements.length === 1) return undefined;
-    if (uniform) {
-      const factor = uniformScaleFactorFromPointers(
-        this.#action.anchor,
-        this.#startPointer,
-        pointer,
-        this.#minimumUniformFactor,
-      );
-      return { x: factor, y: factor };
-    }
-    return scaleFrameFactorsFromPointers(
-      this.#action,
-      this.#startPointer,
-      pointer,
-      this.#minimumFactors,
+  public factorsAt(pointer: PointV1, uniform: boolean): ScaleFactors {
+    const anchor = this.#action.anchor;
+    const start = rotatePointClockwise(this.#startPointer, anchor, -this.#action.rotation);
+    const current = rotatePointClockwise(pointer, anchor, -this.#action.rotation);
+    const axes = activeScaleAxes(this.#action.position);
+    return this.#previewFramePlan.factorsForPointer(
+      { x: axes.x ? start.x - anchor.x : 0, y: axes.y ? start.y - anchor.y : 0 },
+      { x: axes.x ? current.x - start.x : 0, y: axes.y ? current.y - start.y : 0 },
+      uniform
+        ? { x: this.#minimumUniformFactor, y: this.#minimumUniformFactor }
+        : this.#minimumFactors,
+      uniform,
     );
   }
 
   public materialize(pointer: PointV1, uniform: boolean): InkElementV1[] {
     const factors = this.factorsAt(pointer, uniform);
     const replacements =
-      factors === undefined
+      this.#elements.length === 1
         ? [this.#scaleSingle(this.#elements[0]!, pointer, uniform)]
         : this.#elements.map((element) => this.#scaleInFrame(element, factors));
     return this.stabilizeAnchor(replacements);
@@ -94,7 +93,7 @@ export class SelectionScaleGesture {
     uniform: boolean,
     factors: ScaleFactors | undefined,
   ): InkElementV1 {
-    return factors === undefined
+    return this.#elements.length === 1 || factors === undefined
       ? this.#scaleSingle(element, pointer, uniform)
       : this.#scaleInFrame(element, factors);
   }
@@ -105,20 +104,15 @@ export class SelectionScaleGesture {
     updateApproximateFrame: boolean,
   ): ScaleFactors {
     const factors = this.factorsAt(pointer, uniform);
-    const resolved =
-      factors ??
-      selectionScaleFactors(this.#elements[0]!, this.#action, this.#startPointer, pointer, uniform)
-        .factors;
     if (updateApproximateFrame) {
-      const preview = this.#previewFramePlan.resolve(
-        this.#action.anchor,
-        this.#action.position,
-        resolved,
+      const preview = this.#previewProjection.resolve(
+        { anchor: this.#action.anchor, position: this.#action.position, factors },
+        (element, values) => this.#scaleInFrame(element, values),
       );
       this.#previewDelta = preview.delta;
       this.#previewFrame = preview.frame;
     }
-    return resolved;
+    return factors;
   }
 
   public get previewDelta(): PointV1 {
@@ -179,13 +173,19 @@ export class SelectionScaleGesture {
   }
 
   #scaleSingle(element: InkElementV1, pointer: PointV1, uniform: boolean): InkElementV1 {
-    return scaleElementFromPointers(
+    const anchor = rotatePointClockwise(this.#action.anchor, element.pivot, -element.rotation);
+    const factors = this.factorsAt(pointer, uniform);
+    return scaleElement(
       element,
-      this.#action.anchor,
-      this.#startPointer,
-      pointer,
-      activeScaleAxes(this.#action.position),
-      uniform,
+      anchor,
+      factors,
+      rotatedScaleTranslation(
+        element.pivot,
+        this.#action.anchor,
+        anchor,
+        element.rotation,
+        factors,
+      ),
     );
   }
 }
@@ -241,25 +241,6 @@ function flattenPointGeometryRotation(element: InkElementV1): InkElementV1 {
       };
 }
 
-function selectionScaleFactors(
-  element: InkElementV1,
-  action: Extract<SelectionHandleAction, { kind: "scale" }>,
-  startPointer: PointV1,
-  currentPointer: PointV1,
-  uniform: boolean,
-) {
-  const axes = activeScaleAxes(action.position);
-  if (!uniform)
-    return scaleFactorsFromPointers(element, action.anchor, startPointer, currentPointer, axes);
-  return uniformScaleFactorsFromPointers(
-    element,
-    rotatePointClockwise(action.anchor, element.pivot, -element.rotation),
-    rotatePointClockwise(startPointer, element.pivot, -element.rotation),
-    rotatePointClockwise(currentPointer, element.pivot, -element.rotation),
-    axes,
-  );
-}
-
 function minimumScaleFactorsForSelection(
   elements: readonly InkElementV1[],
   frameRotation: number,
@@ -297,21 +278,6 @@ function quarterTurnLocalFactors(rotation: number, factors: ScaleFactors): Scale
   const quarterTurns = Math.round(normalized / 90);
   if (Math.abs(normalized - quarterTurns * 90) > 0.001) return null;
   return quarterTurns % 2 === 0 ? factors : { x: factors.y, y: factors.x };
-}
-
-function scaleFrameFactorsFromPointers(
-  action: ScaleAction,
-  startPointer: PointV1,
-  currentPointer: PointV1,
-  minimum: ScaleFactors,
-): ScaleFactors {
-  const localStart = rotatePointClockwise(startPointer, action.anchor, -action.rotation);
-  const localCurrent = rotatePointClockwise(currentPointer, action.anchor, -action.rotation);
-  const axes = activeScaleAxes(action.position);
-  return {
-    x: axes.x ? Math.max(scaleRatio(action.anchor.x, localStart.x, localCurrent.x), minimum.x) : 1,
-    y: axes.y ? Math.max(scaleRatio(action.anchor.y, localStart.y, localCurrent.y), minimum.y) : 1,
-  };
 }
 
 function boundsPoint(bounds: Bounds, position: ReturnType<typeof oppositeBoxAnchor>): PointV1 {

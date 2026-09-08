@@ -160,7 +160,7 @@ describe("active editor selection handle targets", () => {
     expect(fixture.interaction.pointerMove({ ...pointer, x: pointer.x + 1 })).toBe(true);
     expect(fixture.interaction.pointerUp(pointer.pointerId)).toBe(true);
     expect(fixture.store.get(element.id)?.element).toMatchObject({ height: element.height });
-    expect(fixture.store.get(element.id)?.element).toHaveProperty("width", 200.98);
+    expect(fixture.store.get(element.id)?.element).toHaveProperty("width", element.width + 1);
   });
 
   it.each(["rotate", "linear-bend"] as const)(

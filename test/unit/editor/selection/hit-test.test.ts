@@ -113,9 +113,10 @@ describe("selection hit testing", () => {
     Object.freeze(points);
     const element = stroke(points);
 
-    expect(elementContainsPoint(element, { x: 63.5, y: 50 }, 1)).toBe(true);
+    expect(elementContainsPoint(element, { x: 64, y: 56.25 }, 1)).toBe(true);
     expect(elementContainsPoint(element, { x: 30, y: 50 }, 1)).toBe(false);
-    expect(elementContainsPoint(element, { x: 63.5, y: 50 }, 1)).toBe(true);
+    expect(elementContainsPoint(element, { x: 64, y: 50 }, 1)).toBe(false);
+    expect(elementContainsPoint(element, { x: 64, y: 56.25 }, 1)).toBe(true);
   });
 
   it("does not reuse cached geometry for mutable stroke samples", () => {

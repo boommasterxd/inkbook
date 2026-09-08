@@ -6,10 +6,10 @@ const MAXIMUM_FAST_ABSOLUTE_VALUE = MAX_ABSOLUTE_COORDINATE * 2;
 const ROUNDING_SCALE = 1_000;
 
 function svgNumber(value: number): string {
-  return String(fastCanonicalGeometryNumber(value));
+  return String(canonicalGeometryNumber(value));
 }
 
-function fastCanonicalGeometryNumber(value: number): number {
+export function canonicalGeometryNumber(value: number): number {
   if (!Number.isFinite(value) || Math.abs(value) > MAXIMUM_FAST_ABSOLUTE_VALUE) {
     return roundCanonical(value);
   }

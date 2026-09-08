@@ -52,6 +52,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz selection resize frame p
       ],
       ["variable pressure progressive resize", variablePressureElements()],
       ["40 long pressure strokes resize", pressureBandSelection()],
+      ["255 canonical shapes with a long pressure stroke", mixedShapeFeedbackElements()],
       ["10,000-element progressive resize", fallbackElements()],
     ] as const;
     for (const [name, elements] of profiles) {
@@ -61,7 +62,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz selection resize frame p
       expect(result.firstFrameMs).toBeLessThanOrEqual(
         timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
       );
-      expect(result.p99).toBeLessThanOrEqual(
+      expect(result.p99, name).toBeLessThanOrEqual(
         timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
       );
       await annotate(interactionProfileAnnotation(name, result.p99), "performance");
@@ -160,12 +161,14 @@ function measurePipeline(elements: readonly InkElementV1[]) {
   interaction.pointerDown({ ...start, pointerId: 1, pointerType: "mouse", pressure: 0 });
   fixture.renderer.resetInstrumentation();
   const durations = measureInteractionFrames((frame) => {
+    const before = fixture.renderer.instrumentation().contentGeometryWrites;
     for (let sample = 0; sample < RAW_SAMPLES_PER_FRAME; sample += 1) {
       interaction.pointerMove(pointerAt(start, frame, sample));
     }
     expect(fixture.scheduler.pendingCount).toBeLessThanOrEqual(2);
     fixture.scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
     fixture.scheduler.runFrame();
+    expect(fixture.renderer.instrumentation().contentGeometryWrites).toBeGreaterThan(before);
   });
   interaction.dispose();
   fixture.renderer.destroy();
@@ -322,4 +325,14 @@ function maximumBottom(elements: readonly InkElementV1[]): number | null {
 function nonPressureStroke(index: number): StrokeElementV1 {
   const stroke = maximumStroke(index);
   return { ...stroke, style: { ...stroke.style, pressureEnabled: false } };
+}
+
+function mixedShapeFeedbackElements(): readonly InkElementV1[] {
+  return [
+    ...Array.from({ length: 255 }, (_, index) => ({
+      ...rectangle(`40000000-0000-4000-8000-${String(index).padStart(12, "0")}`, 20, 20),
+      rotation: 37,
+    })),
+    maximumStroke(0),
+  ];
 }

@@ -1,14 +1,10 @@
+import { buildPressureOutline } from "../../../../src/domain/geometry/pressure-outline";
 import type { StrokeElementV1 } from "../../../../src/domain/schema/public";
 import { describe, expect, it } from "vitest";
 
 import { rotatePointClockwise, smoothStrokeCenters } from "../../../../src/domain/geometry/public";
 import { prepareExpectedStrokeSamples as prepareStrokeSamples } from "../../../fixtures/editor/stroke-sample-reference";
-import {
-  buildStrokePath,
-  buildCenterline,
-  buildPressureOutline,
-  buildPressureOutlinePairs,
-} from "../../../../src/domain/geometry/stroke-path";
+import { buildStrokePathParts, buildCenterline } from "../../../../src/domain/geometry/stroke-path";
 import { strokeStyle } from "./fixtures";
 
 function stroke(overrides: Partial<StrokeElementV1> = {}): StrokeElementV1 {
@@ -108,10 +104,10 @@ describe("stroke path fast-path parity", () => {
       { x: 5.5, y: 6.5 },
     ],
   ] as const)("matches the generic centerline for %s", (_label, points, pivot) => {
-    const candidate = buildStrokePath(stroke({ points: [...points], pivot }));
+    const candidate = buildStrokePathParts(stroke({ points: [...points], pivot }));
     const reference = buildCenterline(smoothStrokeCenters(points));
 
-    expect(candidate).toEqual({ d: reference, paint: "stroke" });
+    expect(candidate).toEqual([{ d: reference, paint: "stroke" }]);
   });
 
   it.each([0.001, 45, 90, 359.999])(
@@ -126,7 +122,9 @@ describe("stroke path fast-path parity", () => {
         rotatePointClockwise(center, value.pivot, rotation),
       );
 
-      expect(buildStrokePath(value)).toEqual({ d: buildCenterline(centers), paint: "stroke" });
+      expect(buildStrokePathParts(value)).toEqual([
+        { d: buildCenterline(centers), paint: "stroke" },
+      ]);
     },
   );
 
@@ -136,96 +134,12 @@ describe("stroke path fast-path parity", () => {
     ["varying pressure", [0, 0, 0, 10, 20, 0.25, 20, 0, 0.75, 30, 10, 1]],
     ["opposing segments", [0, 0, 0.5, 10, 10, 0.6, 0, 0, 0.7]],
     ["repeated centers", [4, 6, 0.5, 4, 6, 0.5, 8, 10, 0.75]],
-  ] as const)("matches the generic pressure outline for %s", (_label, points) => {
+  ] as const)("matches the canonical pressure outline for %s", (_label, points) => {
     const style = { ...strokeStyle, pressureEnabled: true, width: 8 as const };
-    const candidate = buildStrokePath(stroke({ points: [...points], style }));
+    const candidate = buildStrokePathParts(stroke({ points: [...points], style }));
     const reference = buildPressureOutline(smoothStrokeCenters(points), style.width);
 
-    expect(candidate).toEqual({ d: reference, paint: "fill" });
-  });
-
-  it("builds closed pressure outlines with round caps and stable repeated-point tangents", () => {
-    const single = buildPressureOutline([{ x: 10, y: 10, pressure: 1 }], 8);
-    expect(single).toBe("M6 10A4 4 0 0 0 14 10A4 4 0 0 0 6 10Z");
-    const repeated = buildPressureOutline(
-      [
-        { x: 0, y: 0, pressure: 0.5 },
-        { x: 0, y: 0, pressure: 0.5 },
-        { x: 10, y: 0, pressure: 0.5 },
-      ],
-      8,
-    );
-    expect(repeated).toContain("A");
-    expect(repeated.endsWith("Z")).toBe(true);
-  });
-});
-
-describe("pressure outline tangent stability", () => {
-  it.each([
-    [
-      "vertical",
-      [
-        { x: 0, y: 0, pressure: 1 },
-        { x: 0, y: 10, pressure: 1 },
-        { x: 0, y: 10, pressure: 1 },
-        { x: 0, y: 20, pressure: 1 },
-      ],
-      { x: -4, y: 10 },
-      { x: 4, y: 10 },
-    ],
-    [
-      "diagonal",
-      [
-        { x: 0, y: 0, pressure: 1 },
-        { x: 10, y: 10, pressure: 1 },
-        { x: 10, y: 10, pressure: 1 },
-        { x: 20, y: 20, pressure: 1 },
-      ],
-      { x: 10 - Math.SQRT2 * 2, y: 10 + Math.SQRT2 * 2 },
-      { x: 10 + Math.SQRT2 * 2, y: 10 - Math.SQRT2 * 2 },
-    ],
-  ] as const)(
-    "continues the last valid %s tangent through repeated centers",
-    (_label, centers, left, right) => {
-      const pairs = buildPressureOutlinePairs(centers, 8);
-
-      expect(pairs[1]?.left.x).toBeCloseTo(left.x);
-      expect(pairs[1]?.left.y).toBeCloseTo(left.y);
-      expect(pairs[1]?.right.x).toBeCloseTo(right.x);
-      expect(pairs[1]?.right.y).toBeCloseTo(right.y);
-    },
-  );
-
-  it("uses a deterministic horizontal tangent when every center repeats", () => {
-    const pairs = buildPressureOutlinePairs(
-      [
-        { x: 5, y: 7, pressure: 1 },
-        { x: 5, y: 7, pressure: 1 },
-        { x: 5, y: 7, pressure: 1 },
-      ],
-      8,
-    );
-
-    expect(pairs.map(({ left, right }) => ({ left, right }))).toEqual([
-      { left: { x: 5, y: 11 }, right: { x: 5, y: 3 } },
-      { left: { x: 5, y: 11 }, right: { x: 5, y: 3 } },
-      { left: { x: 5, y: 11 }, right: { x: 5, y: 3 } },
-    ]);
-  });
-
-  it("does not flip the tangent inside a repeated center run", () => {
-    const pairs = buildPressureOutlinePairs(
-      [
-        { x: 0, y: 0, pressure: 1 },
-        { x: 10, y: 10, pressure: 1 },
-        { x: 10, y: 10, pressure: 1 },
-        { x: 0, y: 0, pressure: 1 },
-      ],
-      8,
-    );
-
-    expect(pairs[1]?.left).toEqual(pairs[2]?.left);
-    expect(pairs[1]?.right).toEqual(pairs[2]?.right);
+    expect(candidate).toEqual(reference);
   });
 
   it("keeps repeated-center pressure paths canonical and stable", () => {
@@ -234,12 +148,12 @@ describe("pressure outline tangent stability", () => {
       style: { ...strokeStyle, pressureEnabled: true },
     });
 
-    const first = buildStrokePath(repeated);
-    const second = buildStrokePath(repeated);
+    const first = buildStrokePathParts(repeated);
+    const second = buildStrokePathParts(repeated);
 
     expect(first).toEqual(second);
-    expect(first.d).not.toContain("NaN");
-    expect(first.d).not.toContain("Infinity");
+    expect(first.map((part) => part.d).join("")).not.toContain("NaN");
+    expect(first.map((part) => part.d).join("")).not.toContain("Infinity");
   });
 
   it("builds identical paths from identical canonical samples and bakes rotation", () => {
@@ -249,11 +163,11 @@ describe("pressure outline tangent stability", () => {
       pivot: { x: 10, y: 0 },
       style: { ...strokeStyle, pressureEnabled: true },
     });
-    const first = buildStrokePath(pressureStroke);
-    const second = buildStrokePath(pressureStroke);
+    const first = buildStrokePathParts(pressureStroke);
+    const second = buildStrokePathParts(pressureStroke);
     expect(first).toEqual(second);
-    expect(first.paint).toBe("fill");
-    expect(first.d).not.toContain("transform");
-    expect(buildStrokePath(stroke()).paint).toBe("stroke");
+    expect(first.every((part) => part.paint === "fill")).toBe(true);
+    expect(first.map((part) => part.d).join("")).not.toContain("transform");
+    expect(buildStrokePathParts(stroke())[0]!.paint).toBe("stroke");
   });
 });

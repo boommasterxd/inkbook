@@ -16,13 +16,11 @@ import {
   scalePoint,
   subtractPoints,
 } from "./primitives";
-import { buildStrokePath } from "./stroke-path";
+import { buildStrokePathParts } from "./stroke-path";
 import { arcTo, cubicTo, lineTo, moveTo, quadraticTo } from "./svg-format";
 
-export interface SvgPathPart {
-  d: string;
-  paint: "fill" | "fill-and-stroke" | "stroke";
-}
+import type { SvgPathPart } from "./svg-path-part";
+export type { SvgPathPart } from "./svg-path-part";
 
 export type ArrowNodeGeometry =
   | { kind: "none" }
@@ -33,7 +31,7 @@ export type ArrowNodeGeometry =
 const ELLIPSE_KAPPA = 0.552_284_749_831;
 
 export function buildElementPathParts(element: InkElementV1): SvgPathPart[] {
-  if (element.kind === "stroke") return [buildStrokePath(element)];
+  if (element.kind === "stroke") return buildStrokePathParts(element);
   if (element.kind === "coordinate-system")
     return [{ d: buildCoordinateSystemPath(element), paint: "stroke" }];
   if (element.kind === "table") return [{ d: buildTablePath(element), paint: "stroke" }];

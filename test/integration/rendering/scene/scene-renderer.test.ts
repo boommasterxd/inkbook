@@ -239,7 +239,8 @@ describe("live stroke scene handoff", () => {
       input: { pressureSource: "pen", zoom: 1 },
       style,
     });
-    const liveGroup = fakeNode(renderer.svg).nodes[1]!.nodes[6]!;
+    const liveLayer = fakeNode(renderer.svg).nodes[1]!.nodes[6]!;
+    const liveGroup = liveLayer.nodes[0]!;
     let firstChunkNode: FakeNode | undefined;
     let latestPreview = builder.append({ pressure: 0.5, time: 0, x: 0, y: 0 });
     renderer.updateLiveStroke(latestPreview, style, "pen");
@@ -262,12 +263,14 @@ describe("live stroke scene handoff", () => {
     expect(scheduler.pendingCount).toBe(0);
     expect(builderStatistics.maximumFinalizedChunkSamples).toBeLessThanOrEqual(16);
     expect(builderStatistics.maximumTailSamples).toBeLessThanOrEqual(16);
+    expect(liveLayer.nodes).toEqual([liveGroup]);
     expect(liveGroup.nodes).toHaveLength(latestPreview.finalizedChunks.length + 1);
     expect(liveGroup.nodes[0]).toBe(firstChunkNode);
     expect(liveGroup.nodes[liveGroup.nodes.length - 1]?.attributes.get("d")).toBe(
-      latestPreview.tail.geometry.d,
+      latestPreview.tail.geometry[0]?.d,
     );
     expect(liveGroup.nodes[0]?.attributes.get("fill")).toBe("#112233FF");
+    expect(liveGroup.nodes[0]?.attributes.get("stroke")).toBe("none");
     expect(liveGroup.attributes.get("opacity")).toBe("0.8");
     expect(liveGroup.nodes[0]?.attributes.has("fill-opacity")).toBe(false);
     expect(statistics).toMatchObject({

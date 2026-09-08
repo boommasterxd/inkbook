@@ -20,7 +20,7 @@ const SCALE_PREVIEW_BASE = {
 };
 
 describe("selection scale preview", () => {
-  it("uses exact scaled pressure and fixed-node geometry without a second SVG transform", () => {
+  it("keeps fixed-node geometry separate from affine stroke transforms", () => {
     const stroke = indexedStroke(1);
     const axes = coordinateSystem();
     if (axes.dimension !== "2d") throw new TypeError("Expected 2D coordinate-system fixture.");
@@ -54,7 +54,7 @@ describe("selection scale preview", () => {
       exactPreviewTruncated: false,
     });
 
-    expect(result.elements).toEqual(exact);
+    expect(result.elements).toEqual([exactAxes, exactDirected, exactBox]);
   });
 
   it("defers truncated scale geometry without creating an alternate pressure representation", () => {

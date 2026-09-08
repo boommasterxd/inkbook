@@ -147,6 +147,8 @@ describe("single-element generic handle scaling", () => {
     const previewFrame = createSelectionFrameAtRotation(preview.exactElements, source.rotation);
     if (previewFrame === null) throw new Error("Expected an exact preview frame.");
     expectFixedOppositeSide(frame, previewFrame, position);
+    expect(selectionFramePoint(previewFrame, position).x).toBeCloseTo(pointer.x, 2);
+    expect(selectionFramePoint(previewFrame, position).y).toBeCloseTo(pointer.y, 2);
 
     const commit = session.prepareCommit();
     if (commit.status !== "ready") throw new Error("Expected a table scale commit.");
@@ -207,16 +209,16 @@ describe("single-element generic scale behavior", () => {
 
     const preview = session.update({ x: 404, y: 230 });
     expect(preview.transform).toEqual(
-      scaleTransform({ x: 98, y: 150 }, { x: 1.5, y: 1 }, { x: -1, y: 0 }),
+      scaleTransform({ x: 98, y: 150 }, { x: 1.51, y: 1 }, { x: -1.02, y: 0 }),
     );
 
     const commit = session.prepareCommit();
     if (commit.status !== "ready") throw new Error("Expected a scale commit.");
     expect(commit.replacements[0]).toMatchObject({
-      columnWidth: 150,
+      columnWidth: 151,
       headerHeight: 24,
       height: 100,
-      pivot: { x: 250, y: 150 },
+      pivot: { x: 251, y: 150 },
       x: 100,
       y: 100,
     });

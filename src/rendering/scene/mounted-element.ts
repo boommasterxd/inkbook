@@ -1,3 +1,4 @@
+import { normalizeStrokePaint } from "../../domain/geometry/pressure-paint";
 import { roundCanonical } from "../../domain/geometry/public";
 import type { SvgPathPart } from "../../domain/geometry/element-path";
 import { SVG_NAMESPACE } from "./constants";
@@ -27,6 +28,9 @@ interface TopologyUpdateOptions {
 
 export interface MountedSceneElement {
   band: SceneElementRecord["band"];
+  group: SVGGElement | null;
+  groupOpacity: number;
+  appliedPreviewTransform: string | null;
   geometryVersion: number;
   readonly id: string;
   paintVersion: number;
@@ -46,8 +50,12 @@ export function createMountedElement(
   const paths = parts.map((part) =>
     createMountedPath(ownerDocument, record, part, instrumentation),
   );
+  const group = createPressureGroup(ownerDocument, record, paths, instrumentation);
   return {
     band: record.band,
+    group,
+    groupOpacity: pressureGroupOpacity(record),
+    appliedPreviewTransform: null,
     geometryVersion: record.geometryVersion,
     id: record.id,
     paintVersion: record.paintVersion,
@@ -63,11 +71,13 @@ export function appendElementToFragment(
   entry: MountedSceneElement,
   fragment: DocumentFragment,
 ): void {
-  for (const path of entry.paths) fragment.append(path.node);
+  if (entry.group !== null) fragment.append(entry.group);
+  else for (const path of entry.paths) fragment.append(path.node);
 }
 
 export function removeMountedElement(entry: MountedSceneElement): void {
-  for (const path of entry.paths) path.node.remove();
+  if (entry.group !== null) entry.group.remove();
+  else for (const path of entry.paths) path.node.remove();
 }
 
 export function updateMountedGeometry(
@@ -78,7 +88,7 @@ export function updateMountedGeometry(
   parent: SVGGElement,
   instrumentation: MutableSceneInstrumentation,
 ): void {
-  if (entry.paths.length !== parts.length) {
+  if (entry.paths.length !== parts.length || (entry.group !== null) !== isPressureStroke(record)) {
     replacePathTopology(entry, record, parts, {
       instrumentation,
       ownerDocument,
@@ -105,6 +115,11 @@ export function updateMountedPaint(
   parts: readonly SvgPathPart[],
   instrumentation: MutableSceneInstrumentation,
 ): void {
+  const opacity = pressureGroupOpacity(record);
+  if (entry.group !== null && entry.groupOpacity !== opacity) {
+    writeRaw(entry.group, "opacity", String(opacity), instrumentation, false);
+    entry.groupOpacity = opacity;
+  }
   for (let index = 0; index < parts.length; index += 1) {
     const part = parts[index];
     const path = entry.paths[index];
@@ -126,6 +141,20 @@ export function updatePreviewTransform(
   strokeWidthScale: number | null,
   instrumentation: MutableSceneInstrumentation,
 ): void {
+  if (entry.group !== null) {
+    if (entry.appliedPreviewTransform !== transform) {
+      writeRaw(entry.group, "transform", transform, instrumentation, true);
+      entry.appliedPreviewTransform = transform;
+    }
+    if (entry.previewStrokeWidthScale !== strokeWidthScale) {
+      for (const path of entry.paths)
+        writePreviewStrokeWidth(path, strokeWidthScale, instrumentation);
+    }
+    entry.previewStrokeWidthScale = strokeWidthScale;
+    entry.previewTransformVersion = version;
+    return;
+  }
+  entry.appliedPreviewTransform = transform;
   entry.previewStrokeWidthScale = strokeWidthScale;
   if (
     entry.previewTransformVersion === version &&
@@ -175,7 +204,7 @@ function updateMountedPreviewGeometry(
   parts: readonly SvgPathPart[],
   options: TopologyUpdateOptions,
 ): void {
-  if (entry.paths.length !== parts.length) {
+  if (entry.paths.length !== parts.length || (entry.group !== null) !== isPressureStroke(record)) {
     replacePathTopology(entry, record, parts, options);
     return;
   }
@@ -190,10 +219,11 @@ function updateMountedPreviewGeometry(
 }
 
 export function setMountedElementFade(entry: MountedSceneElement, durationMs: number | null): void {
-  for (const path of entry.paths) {
-    path.node.style.transition =
+  const nodes = entry.group === null ? entry.paths.map((path) => path.node) : [entry.group];
+  for (const node of nodes) {
+    node.style.transition =
       durationMs === null ? "" : `opacity ${String(durationMs)}ms ${EASING_TOKENS.standard}`;
-    path.node.style.opacity = durationMs === null ? "" : "0";
+    node.style.opacity = durationMs === null ? "" : "0";
   }
 }
 
@@ -202,13 +232,15 @@ export function setMountedElementMotion(
   opacity: number | null,
   scale = 1,
 ): void {
-  for (const path of entry.paths) {
-    if (opacity === null) clearMotionStyle(path.node);
-    else writeMotionStyle(path.node, opacity, scale);
+  const nodes = entry.group === null ? entry.paths.map((path) => path.node) : [entry.group];
+  for (const node of nodes) {
+    if (opacity === null) clearMotionStyle(node);
+    else writeMotionStyle(node, opacity * entry.groupOpacity, scale);
   }
 }
 
 export function firstPath(entry: MountedSceneElement): SVGElement {
+  if (entry.group !== null) return entry.group;
   const path = entry.paths[0];
   if (path === undefined) throw new Error("A mounted element must own at least one path.");
   return path.node;
@@ -243,16 +275,21 @@ function replacePathTopology(
   parts: readonly SvgPathPart[],
   options: TopologyUpdateOptions,
 ): void {
-  const transform = entry.paths[0]?.appliedTransform ?? null;
+  const transform = entry.appliedPreviewTransform;
   const strokeWidthScale = entry.previewStrokeWidthScale;
   const reference = firstPath(entry);
   const fragment = createFragment(options.ownerDocument);
   const paths = parts.map((part) =>
     createMountedPath(options.ownerDocument, record, part, options.instrumentation),
   );
-  for (const path of paths) fragment.append(path.node);
+  const group = createPressureGroup(options.ownerDocument, record, paths, options.instrumentation);
+  if (group === null) for (const path of paths) fragment.append(path.node);
+  else fragment.append(group);
   options.parent.insertBefore(fragment, reference);
-  for (const path of entry.paths) path.node.remove();
+  removeMountedElement(entry);
+  entry.group = group;
+  entry.groupOpacity = pressureGroupOpacity(record);
+  entry.appliedPreviewTransform = null;
   entry.paths.splice(0, entry.paths.length, ...paths);
   entry.previewStrokeWidthScale = null;
   updatePreviewTransform(
@@ -262,6 +299,29 @@ function replacePathTopology(
     strokeWidthScale,
     options.instrumentation,
   );
+}
+
+function isPressureStroke(record: SceneElementRecord): boolean {
+  return record.element.kind === "stroke" && record.element.style.pressureEnabled;
+}
+
+function pressureGroupOpacity(record: SceneElementRecord): number {
+  return isPressureStroke(record) && record.element.kind === "stroke"
+    ? normalizeStrokePaint(record.element.style).opacity
+    : 1;
+}
+
+function createPressureGroup(
+  ownerDocument: Document,
+  record: SceneElementRecord,
+  paths: readonly MountedPath[],
+  instrumentation: MutableSceneInstrumentation,
+): SVGGElement | null {
+  if (!isPressureStroke(record)) return null;
+  const group = ownerDocument.createElementNS(SVG_NAMESPACE, "g");
+  writeRaw(group, "opacity", String(pressureGroupOpacity(record)), instrumentation, false);
+  for (const path of paths) group.append(path.node);
+  return group;
 }
 
 function createFragment(ownerDocument: Document): DocumentFragment {

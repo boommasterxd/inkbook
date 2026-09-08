@@ -7,11 +7,8 @@ import {
   type ArrowNodeGeometry,
 } from "../../domain/geometry/element-path";
 import { quadraticPoint, rotatePointClockwise } from "../../domain/geometry/public";
-import {
-  pressureSweepHull,
-  pressureWidthFactor,
-  visitPressureSweep,
-} from "../../domain/geometry/pressure-sweep";
+import { visitPressureOutline } from "../../domain/geometry/pressure-outline";
+import { visitPressureSelectionPrimitives } from "./pressure-selection-primitives";
 import { smoothStrokeCenters } from "../../domain/geometry/stroke-path";
 import type {
   BoxShapeElementV1,
@@ -69,19 +66,11 @@ function visitPressureStroke(
   centers: readonly (PointV1 & { readonly pressure: number })[],
   visitor: SelectionPrimitiveVisitor,
 ): boolean {
-  return !visitPressureSweep(centers, stroke.style.width, (start, end) => {
-    const startRadius = pressureRadius(stroke, start.pressure);
-    const endRadius = pressureRadius(stroke, end.pressure);
-    const points = pressureSweepHull(start, end, startRadius, endRadius);
-    if (points === null) {
-      return !visitor(startRadius >= endRadius ? disk(start, startRadius) : disk(end, endRadius));
-    }
-    return (
-      !visitor(disk(start, startRadius)) ||
-      !visitor(disk(end, endRadius)) ||
-      !visitor({ kind: "polygon", points })
-    );
-  });
+  return !visitPressureOutline(
+    centers,
+    stroke.style.width,
+    (piece) => !visitPressureSelectionPrimitives(piece, visitor),
+  );
 }
 
 function visitLinear(linear: LinearElementV1, visitor: SelectionPrimitiveVisitor): boolean {
@@ -226,10 +215,6 @@ function visitPolyline(
     }
   }
   return true;
-}
-
-function pressureRadius(stroke: StrokeElementV1, pressure: number): number {
-  return (stroke.style.width * pressureWidthFactor(pressure)) / 2;
 }
 
 function rotatedFor(element: Pick<InkElementV1, "pivot" | "rotation">, point: PointV1): PointV1 {

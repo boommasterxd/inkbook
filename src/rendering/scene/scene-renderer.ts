@@ -8,6 +8,7 @@ import type {
 import { SceneBackgroundCache } from "./background-cache";
 import { DEFAULT_CAMERA, DEFAULT_FRAME_BUDGET_MS } from "./constants";
 import { SceneContentRenderer } from "./content-renderer";
+import type { ProgressivePreviewTransform } from "./progressive-element-preview";
 import { SceneElementPreviews } from "./scene-element-previews";
 import { SceneFrameWriter } from "./scene-frame-writer";
 import {
@@ -288,7 +289,7 @@ export class SvgSceneRenderer {
     this.assertActive();
     this.#frameWriter.writePointerFeedback(
       this.#transformPreviews,
-      this.#elementPreviews.immediate,
+      this.#elementPreviews,
       this.#motion,
     );
   }
@@ -330,11 +331,12 @@ export class SvgSceneRenderer {
     ids: readonly string[],
     materialize: (id: string) => InkElementV1 | undefined,
     version: number,
+    feedback?: ProgressivePreviewTransform,
   ): void {
     this.assertActive();
     validatePreviewVersion(version, "Progressive element preview");
     this.#elementPreviews.setProgressive(
-      { ids, materialize, version },
+      { feedback, ids, materialize, version },
       this.#viewport,
       this.#camera,
     );

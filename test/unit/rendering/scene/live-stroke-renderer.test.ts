@@ -27,7 +27,7 @@ const highlighterStyle: StrokeStyleV1 = {
 };
 
 function chunk(d: string, paint: "fill" | "stroke"): SceneLiveStrokeChunk {
-  return Object.freeze({ geometry: { d, paint } });
+  return Object.freeze({ geometry: [{ d, paint }] });
 }
 
 function preview(
@@ -35,7 +35,7 @@ function preview(
   tailD: string,
   paint: "fill" | "stroke",
 ): SceneLiveStrokePreview {
-  return { finalizedChunks, tail: Object.freeze({ geometry: { d: tailD, paint } }) };
+  return { finalizedChunks, tail: Object.freeze({ geometry: [{ d: tailD, paint }] }) };
 }
 
 function setupRenderer(): {
@@ -53,7 +53,7 @@ function setupRenderer(): {
     () => undefined,
     instrumentation,
   );
-  return { document, group, instrumentation, renderer };
+  return { document, group: group.nodes[0]!, instrumentation, renderer };
 }
 
 describe("incremental live stroke renderer", () => {
@@ -70,7 +70,7 @@ describe("incremental live stroke renderer", () => {
     const retained = parent.nodes[0]!;
     expect(retained.nodes).toEqual([chunkNode, tailNode]);
     expect(retained.attributes.get("opacity")).toBe("0.7");
-    expect(group.nodes).toHaveLength(0);
+    expect(group.nodes).toHaveLength(2);
     renderer.update(preview([], "M 2 2", "stroke"), highlighterStyle, "highlighter");
     expect(() => renderer.commit("first", target)).toThrow("unique");
     renderer.clear();
@@ -94,7 +94,8 @@ describe("incremental live stroke renderer", () => {
       };
       const paint = tool === "pen" ? "fill" : "stroke";
       renderer.update(preview([chunk("M0 0L2 2Z", paint)], "M1 1L3 3Z", paint), style, tool);
-      const opacity = String((style.opacity * 128) / 255);
+      const alpha = (style.opacity * 128) / 255;
+      const opacity = String(style.pressureEnabled ? Math.round(alpha * 10000) / 10000 : alpha);
       expect(group.attributes.get("opacity")).toBe(opacity);
       for (const path of group.nodes) {
         expect(path.attributes.get(paint)).toBe("#123456FF");
@@ -128,7 +129,6 @@ describe("incremental live stroke renderer", () => {
     expect(Object.fromEntries(stableChunkNode?.attributes ?? [])).toMatchObject({
       class: "inkbook-theme-fill",
       fill: "#222222FF",
-      "fill-rule": "nonzero",
       stroke: "none",
     });
     expect(stableChunkNode?.attributes.has("fill-opacity")).toBe(false);
@@ -190,6 +190,51 @@ describe("live stroke lifecycle and validation", () => {
     );
   });
 
+  it("updates the continuous pressure tail immediately without changing finalized geometry", () => {
+    const { group, instrumentation, renderer } = setupRenderer();
+    const geometry = [{ d: "M0 0L1 2L2 0Z", paint: "fill" as const }];
+    const immutable = Object.freeze({ geometry });
+    renderer.update({ finalizedChunks: [immutable], tail: { geometry } }, penStyle, "pen");
+    const prefix = group.nodes[0]!;
+    const prefixPaint = new Map(prefix.attributes);
+    const tail = group.nodes[1]!;
+    for (let frame = 0; frame < 40; frame += 1) {
+      const parts = [{ ...geometry[0]!, d: `M${frame} 0L${frame + 1} 2L${frame + 2} 0Z` }];
+      renderer.update({ finalizedChunks: [immutable], tail: { geometry: parts } }, penStyle, "pen");
+      expect(group.nodes).toEqual([prefix, tail]);
+      expect(prefix.attributes).toEqual(prefixPaint);
+      expect(tail.attributes.get("d")).toBe(parts[0]!.d);
+      expect(tail.attributes.has("fill-opacity")).toBe(false);
+    }
+    expect(instrumentation.liveMaximumTailNodes).toBe(1);
+    expect(instrumentation.liveTailNodesCreated).toBe(1);
+    expect(group.attributes.get("opacity")).toBe("0.7");
+    renderer.dispose();
+  });
+
+  it("rejects empty, oversized, and inconsistent path batches", () => {
+    const { renderer } = setupRenderer();
+    const part = { d: "M0 0L1 1", paint: "fill" as const };
+    for (const geometry of [[], Array.from({ length: 2 }, () => part)]) {
+      expect(() =>
+        renderer.update({ finalizedChunks: [], tail: { geometry } }, penStyle, "pen"),
+      ).toThrow("exactly one");
+    }
+    expect(() =>
+      renderer.update(
+        {
+          finalizedChunks: Array.from({ length: 513 }, () => chunk("M0 0", "stroke")),
+          tail: { geometry: [part] },
+        },
+        penStyle,
+        "pen",
+      ),
+    ).toThrow("512");
+    renderer.dispose();
+  });
+});
+
+describe("live stroke prefix validation", () => {
   it("rejects changed finalized prefixes and inconsistent paint", () => {
     const { renderer } = setupRenderer();
     const firstChunk = chunk("M 0 0 Z", "fill");

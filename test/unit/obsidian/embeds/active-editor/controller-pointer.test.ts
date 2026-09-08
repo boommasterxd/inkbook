@@ -93,6 +93,34 @@ describe("active editor pointer controller", () => {
 });
 
 describe("active editor temporary snapping modifier", () => {
+  it.each([
+    ["pen", 0, 0, false],
+    ["pen", 0.2, 0, true],
+    ["pen", 0, 1, true],
+    ["mouse", 0, 0, true],
+    ["touch", 0, 0, true],
+  ] as const)(
+    "finishes %s handles at the last contact when pressure=%s buttons=%s",
+    (pointerType, pressure, buttons, acceptsReleasePosition) => {
+      const pointerMove = vi.fn(() => true);
+      const pointerUp = vi.fn(() => true);
+      const finishHandlePointer = vi.fn();
+      const releasePointer = vi.fn();
+      const controller = horizontalPanController({
+        finishHandlePointer,
+        releasePointer,
+        handles: { pointerMove, pointerUp } as unknown as ActiveEditorHandleInteraction,
+      });
+      controller.handlePointerUp(
+        Object.assign(pointerEvent(pointerType), { pressure, buttons, clientX: 400, clientY: 500 }),
+      );
+      expect(pointerMove).toHaveBeenCalledTimes(acceptsReleasePosition ? 1 : 0);
+      expect(pointerUp).toHaveBeenCalledExactlyOnceWith(7);
+      expect(finishHandlePointer).toHaveBeenCalledOnce();
+      expect(releasePointer).toHaveBeenCalledExactlyOnceWith(7);
+    },
+  );
+
   it("forwards Alt changes to handles and clears the override at gesture end", () => {
     const pointerDown = vi.fn(() => true);
     const pointerMove = vi.fn(() => true);

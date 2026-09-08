@@ -17,7 +17,6 @@ import type {
 import { MAX_ABSOLUTE_COORDINATE } from "../../domain/schema/public";
 import { rotateLinearElement } from "./linear-transforms";
 import { isLinearElement } from "./linear-elements";
-import { rotatedScaleTranslation } from "./scale-frame";
 
 export interface ScaleFactors {
   readonly x: number;
@@ -65,82 +64,6 @@ export async function moveSelectionTimeSliced(
 
 export function minimumUniformScaleForSelection(elements: readonly InkElementV1[]): number {
   return elements.reduce((value, element) => Math.max(value, minimumUniformScale(element)), 0);
-}
-
-export function scaleElementFromPointers(
-  element: InkElementV1,
-  anchor: PointV1,
-  startPointer: PointV1,
-  currentPointer: PointV1,
-  axes: Readonly<{ x: boolean; y: boolean }> = { x: true, y: true },
-  uniform = false,
-): InkElementV1 {
-  const transform = uniform
-    ? uniformScaleFactorsFromPointers(
-        element,
-        rotatePointClockwise(anchor, element.pivot, -element.rotation),
-        rotatePointClockwise(startPointer, element.pivot, -element.rotation),
-        rotatePointClockwise(currentPointer, element.pivot, -element.rotation),
-        axes,
-      )
-    : scaleFactorsFromPointers(element, anchor, startPointer, currentPointer, axes);
-  return scaleElement(
-    element,
-    transform.anchor,
-    transform.factors,
-    rotatedScaleTranslation(
-      element.pivot,
-      anchor,
-      transform.anchor,
-      element.rotation,
-      transform.factors,
-    ),
-  );
-}
-
-export function scaleFactorsFromPointers(
-  element: InkElementV1,
-  anchor: PointV1,
-  startPointer: PointV1,
-  currentPointer: PointV1,
-  axes: Readonly<{ x: boolean; y: boolean }> = { x: true, y: true },
-): { readonly anchor: PointV1; readonly factors: ScaleFactors } {
-  assertFinitePoint(anchor);
-  assertFinitePoint(startPointer);
-  assertFinitePoint(currentPointer);
-  const localAnchor = rotatePointClockwise(anchor, element.pivot, -element.rotation);
-  const localStart = rotatePointClockwise(startPointer, element.pivot, -element.rotation);
-  const localCurrent = rotatePointClockwise(currentPointer, element.pivot, -element.rotation);
-  const factors: ScaleFactors = {
-    x: axes.x ? scaleRatio(localAnchor.x, localStart.x, localCurrent.x) : 1,
-    y: axes.y ? scaleRatio(localAnchor.y, localStart.y, localCurrent.y) : 1,
-  };
-  return { anchor: localAnchor, factors: clampScaleFactors(element, factors) };
-}
-
-export function uniformScaleFactorsFromPointers(
-  element: InkElementV1,
-  localAnchor: PointV1,
-  localStart: PointV1,
-  localCurrent: PointV1,
-  axes: Readonly<{ x: boolean; y: boolean }> = { x: true, y: true },
-): { readonly anchor: PointV1; readonly factors: ScaleFactors } {
-  assertFinitePoint(localAnchor);
-  assertFinitePoint(localStart);
-  assertFinitePoint(localCurrent);
-  const factor = uniformScaleFactorFromPointers(
-    localAnchor,
-    {
-      x: axes.x ? localStart.x : localAnchor.x,
-      y: axes.y ? localStart.y : localAnchor.y,
-    },
-    {
-      x: axes.x ? localCurrent.x : localAnchor.x,
-      y: axes.y ? localCurrent.y : localAnchor.y,
-    },
-    minimumUniformScale(element),
-  );
-  return { anchor: localAnchor, factors: { x: factor, y: factor } };
 }
 
 export function uniformScaleFactorFromPointers(
@@ -444,10 +367,4 @@ export function clampScaleFactors(element: InkElementV1, factors: ScaleFactors):
 function shouldTransformEndpoint(element: LinearElementV1, endpoint: "start" | "end"): boolean {
   if (element.kind === "straight-highlighter") return true;
   return endpoint === "start" ? element.startConnection === null : element.endConnection === null;
-}
-
-export function scaleRatio(anchor: number, start: number, current: number): number {
-  const denominator = start - anchor;
-  const tolerance = Number.EPSILON * Math.max(1, Math.abs(anchor), Math.abs(start)) * 16;
-  return Math.abs(denominator) <= tolerance ? 1 : (current - anchor) / denominator;
 }

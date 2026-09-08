@@ -87,7 +87,8 @@ describe("active editor handle frames", () => {
     fixture.interaction.pointerMove({ ...start, x: start.x + 100, y: start.y + 20 });
     expect(fixture.renderer.setProgressiveElementPreviews).not.toHaveBeenCalled();
     fixture.scheduler.runNext();
-    const [ids, materialize] = fixture.renderer.setProgressiveElementPreviews.mock.calls[0]!;
+    const [ids, materialize, , feedback] =
+      fixture.renderer.setProgressiveElementPreviews.mock.calls[0]!;
     expect(ids).toEqual([stroke.id]);
     expect(fixture.renderer.setPreviewTransform).toHaveBeenLastCalledWith(
       [],
@@ -98,6 +99,17 @@ describe("active editor handle frames", () => {
     const captured = materialize(stroke.id);
     expect(captured).not.toEqual(stroke);
     expect(captured?.style).toEqual(stroke.style);
+
+    // Pointer feedback must keep advancing while the first canonical path is pending.
+    for (let frame = 1; frame <= 12; frame += 1) {
+      fixture.interaction.pointerMove({ ...start, x: start.x + 100 + frame * 5, y: start.y + 20 });
+      fixture.scheduler.runNext();
+      const latest = fixture.renderer.setProgressiveElementPreviews.mock.lastCall?.[3];
+      expect(latest).toBeDefined();
+      expect(latest?.transform).not.toEqual(feedback?.transform);
+      expect(latest?.inverse).not.toEqual(feedback?.inverse);
+      expect(materialize(stroke.id)).toEqual(captured);
+    }
 
     fixture.interaction.pointerMove(start);
     fixture.scheduler.runNext();

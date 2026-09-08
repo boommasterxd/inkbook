@@ -26,6 +26,7 @@ import {
 import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
 
 import { MeasuredSliceScheduler, percentile } from "../domain/domain-scenarios";
+import { rectangle } from "../../unit/domain/schema/fixtures";
 import { connectedLine } from "../../unit/domain/store/fixtures";
 import { indexedStroke } from "../../fixtures/editor/stroke";
 import { maximumStroke } from "./maximum-stroke-fixture";
@@ -143,7 +144,13 @@ describe("selection hot paths", () => {
 
 describe("selection scale preview hot path", () => {
   it("keeps a tight 10,000-stroke scale frame off the linear pointer path", () => {
-    const elements = Array.from({ length: 10_000 }, (_, index) => indexedStroke(index));
+    const elements = [
+      ...Array.from({ length: 10_000 }, (_, index) => indexedStroke(index)),
+      ...Array.from({ length: 256 }, (_, index) => ({
+        ...rectangle(20_001 + index),
+        rotation: 37,
+      })),
+    ];
     const bounds = elements.map(calculateElementBounds);
     const minX = Math.min(...bounds.map(({ minX: value }) => value));
     const minY = Math.min(...bounds.map(({ minY: value }) => value));
@@ -169,6 +176,8 @@ describe("selection scale preview hot path", () => {
       const duration = performance.now() - pointerStarted;
       expect(preview.previewFrame?.points[0]?.x).toBeCloseTo(minX, 3);
       expect(preview.previewFrame?.points[0]?.y).toBeCloseTo(minY, 3);
+      expect(preview.previewFrame?.points[2]?.x).toBeCloseTo(maxX + frame + 1, 3);
+      expect(preview.previewFrame?.points[2]?.y).toBeCloseTo(maxY + (frame + 1) / 2, 3);
       return duration;
     });
 

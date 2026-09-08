@@ -1,15 +1,8 @@
+import type { SvgPathPart } from "./svg-path-part";
+import { buildPressureOutline } from "./pressure-outline";
 import type { PointV1, StrokeElementV1 } from "../schema/types";
-import {
-  addPoints,
-  midpoint,
-  normalizedVector,
-  rotatePointClockwise,
-  scalePoint,
-  subtractPoints,
-} from "./primitives";
+import { midpoint, rotatePointClockwise } from "./primitives";
 import { lineTo, moveTo, quadraticTo } from "./svg-format";
-import { buildPressureSweep, pressureWidthFactor } from "./pressure-sweep";
-export { pressureWidthFactor } from "./pressure-sweep";
 
 export interface RawStrokeSample extends PointV1 {
   pressure: number;
@@ -21,19 +14,10 @@ export interface StrokeInputOptions {
   zoom: number;
 }
 
-export interface StrokePathGeometry {
-  d: string;
-  paint: "fill" | "stroke";
-}
+export type StrokePathGeometry = readonly SvgPathPart[];
 
 export interface StrokeCenter extends PointV1 {
   pressure: number;
-}
-
-export interface OutlinePointPair {
-  left: PointV1;
-  right: PointV1;
-  radius: number;
 }
 
 export function smoothStrokeCenters(samples: readonly number[]): StrokeCenter[] {
@@ -66,14 +50,14 @@ export function transformedStrokeCenters(stroke: StrokeElementV1): StrokeCenter[
       }));
 }
 
-export function buildStrokePath(stroke: StrokeElementV1): StrokePathGeometry {
+export function buildStrokePathParts(stroke: StrokeElementV1): SvgPathPart[] {
   if (!stroke.style.pressureEnabled && stroke.rotation === 0) {
-    return { d: buildUnrotatedCenterline(stroke.points), paint: "stroke" };
+    return [{ d: buildUnrotatedCenterline(stroke.points), paint: "stroke" }];
   }
   const centers = transformedStrokeCenters(stroke);
   return stroke.style.pressureEnabled
-    ? { d: buildPressureOutline(centers, stroke.style.width), paint: "fill" }
-    : { d: buildCenterline(centers), paint: "stroke" };
+    ? buildPressureOutline(centers, stroke.style.width)
+    : [{ d: buildCenterline(centers), paint: "stroke" }];
 }
 
 function buildUnrotatedCenterline(samples: readonly number[]): string {
@@ -123,64 +107,6 @@ export function buildCenterline(centers: readonly PointV1[]): string {
   }
   commands.push(lineTo(centers[centers.length - 1]!));
   return commands.join("");
-}
-
-export function buildPressureOutline(centers: readonly StrokeCenter[], width: number): string {
-  return buildPressureSweep(centers, width);
-}
-
-export function buildPressureOutlinePairs(
-  centers: readonly StrokeCenter[],
-  width: number,
-): OutlinePointPair[] {
-  const tangents = strokeTangents(centers);
-  return centers.map((center, index) => {
-    const tangent = tangents[index] as PointV1;
-    const perpendicular = { x: -tangent.y, y: tangent.x };
-    const radius = halfWidth(width, center.pressure);
-    const offset = scalePoint(perpendicular, radius);
-    return { left: addPoints(center, offset), right: subtractPoints(center, offset), radius };
-  });
-}
-
-function strokeTangents(centers: readonly StrokeCenter[]): PointV1[] {
-  const tangents = new Array<PointV1 | undefined>(centers.length);
-  let lastValid: PointV1 | undefined;
-  for (let index = 0; index < centers.length; index += 1) {
-    const tangent = isRepeatedCenter(centers, index) ? null : tangentAt(centers, index);
-    if (tangent !== null) lastValid = tangent;
-    tangents[index] = lastValid;
-  }
-
-  let nextValid: PointV1 | undefined;
-  for (let index = centers.length - 1; index >= 0; index -= 1) {
-    const tangent = isRepeatedCenter(centers, index) ? null : tangentAt(centers, index);
-    if (tangent !== null) nextValid = tangent;
-    if (tangents[index] === undefined) tangents[index] = nextValid;
-    if (tangents[index] === undefined) tangents[index] = { x: 1, y: 0 };
-  }
-  return tangents as PointV1[];
-}
-
-function isRepeatedCenter(centers: readonly StrokeCenter[], index: number): boolean {
-  if (index === 0) return false;
-  const current = centers[index]!;
-  const previous = centers[index - 1]!;
-  return current.x === previous.x && current.y === previous.y;
-}
-
-function tangentAt(centers: readonly StrokeCenter[], index: number): PointV1 | null {
-  const previous = centers[Math.max(0, index - 1)]!;
-  const next = centers[Math.min(centers.length - 1, index + 1)]!;
-  return (
-    normalizedVector(subtractPoints(next, previous)) ??
-    normalizedVector(subtractPoints(centers[index]!, previous)) ??
-    normalizedVector(subtractPoints(next, centers[index]!))
-  );
-}
-
-function halfWidth(width: number, pressure: number): number {
-  return (width * pressureWidthFactor(pressure)) / 2;
 }
 
 function assertStrokeSamples(samples: readonly number[]): void {

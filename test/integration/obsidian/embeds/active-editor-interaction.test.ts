@@ -99,7 +99,8 @@ describe("active editor interaction composition", () => {
             clearLiveStroke: () => livePaths.push(null),
             commitLiveStroke: () => livePaths.push(null),
             setLivePath: (path) => livePaths.push(path?.parts.map(({ d }) => d).join(" ") ?? null),
-            updateLiveStroke: (preview) => livePaths.push(preview.tail.geometry.d),
+            updateLiveStroke: (preview) =>
+              livePaths.push(preview.tail.geometry.map(({ d }) => d).join(" ")),
           }),
           start,
         }),

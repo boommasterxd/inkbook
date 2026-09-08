@@ -53,8 +53,23 @@ export class SceneElementPreviews {
     const request = this.#request;
     if (request === undefined) return;
     const ids = this.selectProgressiveIds(request.ids, viewport, camera);
-    this.progressive.set({ ...request, ids });
+    this.progressive.set({
+      ...request,
+      ids,
+      isImmediate: this.#isImmediate,
+      affineElement: request.feedback === undefined ? undefined : this.#affineElement,
+    });
   }
+
+  readonly #affineElement = (id: string): InkElementV1 | undefined => {
+    const element = this.#store.get(id)?.element;
+    return element?.kind === "stroke" && !element.style.pressureEnabled ? element : undefined;
+  };
+
+  readonly #isImmediate = (id: string): boolean => {
+    const element = this.#store.get(id)?.element;
+    return element !== undefined && element.kind !== "stroke";
+  };
 
   public clearProgressive(): void {
     this.#request = undefined;

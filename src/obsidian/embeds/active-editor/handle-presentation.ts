@@ -1,6 +1,7 @@
 import { calculateElementBounds, pointSegmentDistance } from "../../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../../domain/schema/public";
 import type { PointerSample } from "../../../editor/input/index";
+import type { ProgressivePreviewTransform } from "../../../rendering/scene/progressive-element-preview";
 import {
   createSelectionFrameAtRotation,
   selectionOverlayContainsPoint,
@@ -34,6 +35,7 @@ export interface HandleInteractionRenderer {
     ids: readonly string[],
     materialize: (id: string) => InkElementV1 | undefined,
     version: number,
+    feedback?: ProgressivePreviewTransform,
   ): void;
   setSelectionOverlayPath(
     d: string | null,
@@ -167,9 +169,18 @@ export class SelectionHandlePresentation {
   public renderProgressive(
     ids: readonly string[],
     materialize: (id: string) => InkElementV1 | undefined,
+    transform: Extract<SelectionPreviewTransform, { kind: "scale" }>,
   ): void {
     this.#version += 1;
-    this.#renderer.setProgressiveElementPreviews?.(ids, materialize, this.#version);
+    const inverse = transformString({
+      ...transform,
+      delta: { x: 0, y: 0 },
+      factors: { x: 1 / transform.factors.x, y: 1 / transform.factors.y },
+    });
+    this.#renderer.setProgressiveElementPreviews?.(ids, materialize, this.#version, {
+      transform: transformString(transform)!,
+      inverse: `${inverse} translate(${String(-transform.delta.x)} ${String(-transform.delta.y)})`,
+    });
   }
 
   public renderTransform(

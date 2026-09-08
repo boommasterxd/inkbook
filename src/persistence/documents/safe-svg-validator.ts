@@ -1,3 +1,5 @@
+import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
+import { hasExactAttributes, parseOpeningTag, skipWhitespace } from "./svg-tag";
 import { validateDashArray, validatePathDataSteps } from "./path-data-validator";
 import {
   CANONICAL_THEME_STYLESHEET,
@@ -17,7 +19,6 @@ const MAXIMUM_PATHS = 60_004;
 const MAXIMUM_TOTAL_COMMANDS = 8_000_000;
 const DEFAULT_PATHS_PER_STEP = 128;
 const RGBA = /^#[0-9A-F]{8}$/u;
-const ATTRIBUTE_NAME = /^[A-Za-z][A-Za-z0-9-]*$/u;
 const PATH_ATTRIBUTES = new Set([
   "class",
   "d",
@@ -31,12 +32,6 @@ const PATH_ATTRIBUTES = new Set([
   "stroke-opacity",
   "stroke-width",
 ]);
-interface ParsedTag {
-  readonly attributes: ReadonlyMap<string, string>;
-  readonly name: string;
-  readonly next: number;
-  readonly selfClosing: boolean;
-}
 
 interface SafeSvgPrefix {
   readonly cursor: number;
@@ -79,89 +74,6 @@ export type SafeSvgPrelude = Readonly<
 interface SafeSvgMetadata {
   readonly metadataBytes: number;
   readonly metadataText: string;
-}
-
-function isWhitespace(character: string): boolean {
-  return character === " " || character === "\t" || character === "\r" || character === "\n";
-}
-
-function skipWhitespace(input: string, start: number): number {
-  let cursor = start;
-  while (cursor < input.length && isWhitespace(input[cursor]!)) {
-    cursor += 1;
-  }
-  return cursor;
-}
-
-function parseQuotedValue(input: string, start: number): { next: number; value: string } | null {
-  if (input[start] !== '"') {
-    return null;
-  }
-  const end = input.indexOf('"', start + 1);
-  if (end < 0) {
-    return null;
-  }
-  const value = input.slice(start + 1, end);
-  return value.includes("<") || value.includes("&") ? null : { next: end + 1, value };
-}
-
-function parseOpeningTag(input: string, start: number): ParsedTag | null {
-  if (input[start] !== "<" || input[start + 1] === "/") {
-    return null;
-  }
-  let cursor = start + 1;
-  const nameStart = cursor;
-  while (cursor < input.length && /[A-Za-z0-9-]/u.test(input[cursor]!)) {
-    cursor += 1;
-  }
-  const name = input.slice(nameStart, cursor);
-  if (!ATTRIBUTE_NAME.test(name)) {
-    return null;
-  }
-  const attributes = new Map<string, string>();
-  while (cursor < input.length) {
-    const beforeWhitespace = cursor;
-    cursor = skipWhitespace(input, cursor);
-    if (input.startsWith("/>", cursor)) {
-      return { attributes, name, next: cursor + 2, selfClosing: true };
-    }
-    if (input[cursor] === ">") {
-      return { attributes, name, next: cursor + 1, selfClosing: false };
-    }
-    if (cursor === beforeWhitespace) {
-      return null;
-    }
-    const attributeStart = cursor;
-    while (cursor < input.length && /[A-Za-z0-9-]/u.test(input[cursor]!)) {
-      cursor += 1;
-    }
-    const attribute = input.slice(attributeStart, cursor);
-    if (!ATTRIBUTE_NAME.test(attribute) || attributes.has(attribute)) {
-      return null;
-    }
-    cursor = skipWhitespace(input, cursor);
-    if (input[cursor] !== "=") {
-      return null;
-    }
-    cursor = skipWhitespace(input, cursor + 1);
-    const quoted = parseQuotedValue(input, cursor);
-    if (quoted === null) {
-      return null;
-    }
-    attributes.set(attribute, quoted.value);
-    cursor = quoted.next;
-  }
-  return null;
-}
-
-function hasExactAttributes(
-  attributes: ReadonlyMap<string, string>,
-  expected: Readonly<Record<string, string>>,
-): boolean {
-  return (
-    attributes.size === Object.keys(expected).length &&
-    Object.entries(expected).every(([key, value]) => attributes.get(key) === value)
-  );
 }
 
 function validatePaint(value: string | undefined): boolean {
@@ -262,28 +174,79 @@ function expectTextElement(
   return end < 0 ? null : { next: end + closing.length, text: input.slice(tag.next, end) };
 }
 
+interface SvgTotals {
+  commands: number;
+  groups: number;
+  pathBytes: number;
+  paths: number;
+}
+
+function validPressureGroup(
+  tag: NonNullable<ReturnType<typeof parseOpeningTag>>,
+  id: string,
+  pressurePaths: number | null,
+  totals: SvgTotals,
+): boolean {
+  if (
+    id === "inkbook-background" ||
+    pressurePaths !== null ||
+    tag.selfClosing ||
+    tag.attributes.size !== 1 ||
+    parseCanonicalSvgOpacity(tag.attributes.get("opacity")) === null
+  )
+    return false;
+  totals.groups += 1;
+  return totals.groups <= FILE_SCHEMA_LIMITS.elements;
+}
+
+function accountPath(totals: SvgTotals, commands: number, pathData: string): boolean {
+  totals.paths += 1;
+  totals.commands += commands;
+  totals.pathBytes += pathData.length;
+  return (
+    totals.paths <= MAXIMUM_PATHS &&
+    totals.commands <= MAXIMUM_TOTAL_COMMANDS &&
+    totals.pathBytes <= MAXIMUM_TOTAL_PATH_DATA_BYTES
+  );
+}
+
+function isBandGroup(tag: ReturnType<typeof parseOpeningTag>, id: string): boolean {
+  return (
+    tag !== null &&
+    tag.name === "g" &&
+    !tag.selfClosing &&
+    hasExactAttributes(tag.attributes, { id })
+  );
+}
+
 function* parsePathGroupSteps(
   input: string,
   start: number,
   id: string,
-  totals: { commands: number; pathBytes: number; paths: number },
+  totals: SvgTotals,
   pathsPerStep: number,
   deadlineExceeded?: () => boolean,
 ): Generator<void, { readonly next: number; readonly range: SafeSvgGroupRange } | null> {
   const group = parseOpeningTag(input, start);
-  if (
-    group === null ||
-    group.name !== "g" ||
-    group.selfClosing ||
-    !hasExactAttributes(group.attributes, { id })
-  ) {
-    return null;
-  }
-  const contentStart = group.next;
+  if (!isBandGroup(group, id)) return null;
+  const contentStart = group!.next;
   let cursor = skipWhitespace(input, contentStart);
   let pathsSinceStep = 0;
-  while (!input.startsWith("</g>", cursor)) {
+  let pressurePaths: number | null = null;
+  while (pressurePaths !== null || !input.startsWith("</g>", cursor)) {
+    if (pressurePaths !== null && input.startsWith("</g>", cursor)) {
+      if (pressurePaths === 0) return null;
+      pressurePaths = null;
+      cursor = skipWhitespace(input, cursor + 4);
+      continue;
+    }
     const path = parseOpeningTag(input, cursor);
+    if (path?.name === "g") {
+      if (!validPressureGroup(path, id, pressurePaths, totals)) return null;
+      pressurePaths = 0;
+      cursor = skipWhitespace(input, path.next);
+      continue;
+    }
     if (path === null || path.name !== "path" || !path.selfClosing) {
       return null;
     }
@@ -292,16 +255,8 @@ function* parsePathGroupSteps(
     if (commands === null) {
       return null;
     }
-    totals.paths += 1;
-    totals.commands += commands;
-    totals.pathBytes += pathData.length;
-    if (
-      totals.paths > MAXIMUM_PATHS ||
-      totals.commands > MAXIMUM_TOTAL_COMMANDS ||
-      totals.pathBytes > MAXIMUM_TOTAL_PATH_DATA_BYTES
-    ) {
-      return null;
-    }
+    if (pressurePaths !== null && ++pressurePaths > 1) return null;
+    if (!accountPath(totals, commands, pathData)) return null;
     cursor = skipWhitespace(input, path.next);
     pathsSinceStep += 1;
     if (pathsSinceStep === pathsPerStep) {
@@ -367,7 +322,7 @@ export function* validateSafeSvgSteps(
   const metadata = yield* validateSafeSvgMetadataSteps(prefix.metadataText);
   if (metadata === null) return null;
   let cursor = prefix.cursor;
-  const totals = { commands: 0, pathBytes: 0, paths: 0 };
+  const totals = { commands: 0, groups: 0, pathBytes: 0, paths: 0 };
   const groups = {} as Record<keyof SafeSvgGroupRanges, SafeSvgGroupRange>;
   for (const group of ["inkbook-background", "inkbook-highlights", "inkbook-content"]) {
     const parsedGroup = yield* parsePathGroupSteps(

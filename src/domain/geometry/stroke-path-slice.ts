@@ -1,4 +1,4 @@
-import { buildPressureSweep } from "./pressure-sweep";
+import { buildPressureOutline } from "./pressure-outline";
 import { midpoint } from "./primitives";
 import { lineTo, moveTo, quadraticTo } from "./svg-format";
 import { buildCenterline, type StrokeCenter, type StrokePathGeometry } from "./stroke-path";
@@ -13,11 +13,11 @@ export function buildCenterlineSlice(
   slice: StrokePathSlice,
 ): StrokePathGeometry {
   assertSlice(centers, slice);
-  if (isCompleteSlice(slice)) return { d: buildCenterline(centers), paint: "stroke" };
+  if (isCompleteSlice(slice)) return [{ d: buildCenterline(centers), paint: "stroke" }];
   const start = slice.firstBoundary;
   const commands = [moveTo(start === null ? centers[0]! : boundary(centers, start))];
   appendForwardSide(commands, centers, slice);
-  return { d: commands.join(""), paint: "stroke" };
+  return [{ d: commands.join(""), paint: "stroke" }];
 }
 
 export function buildPressureOutlineSlice(
@@ -26,7 +26,7 @@ export function buildPressureOutlineSlice(
   slice: StrokePathSlice,
 ): StrokePathGeometry {
   assertSlice(centers, slice);
-  return { d: buildPressureSweep(centers, width, slice), paint: "fill" };
+  return buildPressureOutline(centers, width, slice);
 }
 
 function isCompleteSlice(slice: StrokePathSlice): boolean {

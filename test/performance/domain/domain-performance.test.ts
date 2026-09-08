@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { InkElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
 import { SpatialQueryScratch } from "../../../src/domain/spatial/index";
 import { ElementStore } from "../../../src/domain/store/public";
-import { HitTestScratch } from "../../../src/editor/selection/hit-test";
+import { elementContainsPoint, HitTestScratch } from "../../../src/editor/selection/hit-test";
 import { moveSelectionTimeSliced } from "../../../src/editor/selection/transforms";
 import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
 import {
@@ -163,11 +163,23 @@ describe("spatial queries, selection, and snapping", () => {
     store.query(queryBounds, scratch);
     const warmAllocations = scratch.allocationCount;
     const durations: number[] = [];
+    const maximumPressureStroke: StrokeElementV1 = {
+      ...requireStroke(store, fixture.strokeIds[0]!),
+      points: Array.from({ length: 4096 }, (_, index) => [index * 4, 0, index % 2]).flat(),
+      pivot: { x: 0, y: 0 },
+      rotation: 0,
+      style: { ...requireStroke(store, fixture.strokeIds[0]!).style, pressureEnabled: true },
+    };
+    Object.freeze(maximumPressureStroke.points);
+    elementContainsPoint(maximumPressureStroke, { x: 8000, y: 0 }, 0);
 
     for (let operation = 0; operation < 500; operation += 1) {
       const started = performance.now();
       store.query(queryBounds, scratch);
       findFrontmostHit(hitScratch, { x: 30, y: 30 }, "pen", 1, hitCandidates(store, scratch));
+      expect(elementContainsPoint(maximumPressureStroke, { x: operation * 28, y: 0 }, 0)).toBe(
+        true,
+      );
       durations.push(performance.now() - started);
     }
 

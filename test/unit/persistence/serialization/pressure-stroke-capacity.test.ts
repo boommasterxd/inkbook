@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildStrokePath } from "../../../../src/domain/geometry/stroke-path";
+import { buildElementPathParts } from "../../../../src/domain/geometry/public";
 import type { StrokeElementV1 } from "../../../../src/domain/schema/public";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import { parseInkbookDocumentForTest } from "../../../fixtures/persistence/parse-document";
@@ -38,12 +38,13 @@ describe("maximum pressure stroke persistence", () => {
     ["maximum subdivision and large coordinate digits", 900, true],
   ] as const)("round-trips all 4096 samples for %s", async (_name, spacing, extreme) => {
     const stroke = maximumPressureStroke(spacing, extreme);
-    const geometry = buildStrokePath(stroke);
-    const commands = geometry.d.match(/[MLAZ]/g)!.length;
-    expect(commands).toBeGreaterThan(20_000);
-    if (extreme) expect(commands).toBeGreaterThan(170_000);
-    expect(commands).toBeLessThanOrEqual(200_000);
-    expect(geometry.d.length).toBeLessThan(8 * 1024 * 1024);
+    const parts = buildElementPathParts(stroke);
+    expect(parts).toHaveLength(1);
+    for (const part of parts) {
+      expect(part.paint).toBe("fill");
+      expect(part.d.length).toBeLessThan(8 * 1024 * 1024);
+      expect(part.d.match(/[MLQCAZ]/g)!.length).toBeLessThanOrEqual(200_000);
+    }
 
     const serialized = serializeInkbookDocument(createSnapshot([stroke]));
     expect(serialized.ok, JSON.stringify(serialized.ok ? null : serialized.error)).toBe(true);

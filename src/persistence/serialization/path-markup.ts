@@ -1,6 +1,6 @@
+import { normalizeStrokePaint } from "../../domain/geometry/pressure-paint";
 import {
   buildElementPathParts,
-  buildLegacyPressureOutlinePath,
   effectiveStrokeWidth,
   outlineDashPattern,
 } from "../../domain/geometry/public";
@@ -9,7 +9,6 @@ import type {
   InkElementV1,
   OutlineStyleV1,
   ShapeStyleV1,
-  StrokeElementV1,
 } from "../../domain/schema/public";
 import { serializeSvgNumber, serializeSvgOpacity } from "../documents/svg-number";
 import { DOCUMENT_PALETTE, type ThemeClass } from "../documents/svg-theme";
@@ -19,6 +18,12 @@ type PathAttributes = Readonly<Record<string, AttributeValue | undefined>>;
 
 export function serializeElementPaths(element: InkElementV1): string[] {
   const parts = buildElementPathParts(element);
+  if (element.kind === "stroke" && element.style.pressureEnabled) {
+    const paint = normalizeStrokePaint(element.style);
+    const opaque = { ...element, style: { ...element.style, color: paint.color, opacity: 1 } };
+    const paths = parts.map((part) => serializeStrokePart(opaque, part.d, "fill"));
+    return [`<g opacity="${serializeSvgOpacity(paint.opacity)}">${paths.join("")}</g>`];
+  }
   return parts.map((part) => {
     if (element.kind === "stroke" || element.kind === "straight-highlighter") {
       if (part.paint === "fill-and-stroke") {
@@ -34,10 +39,6 @@ export function serializeElementPaths(element: InkElementV1): string[] {
     }
     return serializeOutlinePart(element.style, part.d, part.paint);
   });
-}
-
-export function serializeLegacyPressurePath(element: StrokeElementV1): string {
-  return serializeStrokePart(element, buildLegacyPressureOutlinePath(element), "fill");
 }
 
 export function serializePath(d: string, attributes: PathAttributes): string {

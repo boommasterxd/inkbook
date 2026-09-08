@@ -10,7 +10,7 @@ import {
   writeScheme,
 } from "./frame-writes";
 import type { SceneDom } from "./scene-dom";
-import type { SceneElementPreviewController } from "./element-preview-controller";
+import type { SceneElementPreviews } from "./scene-element-previews";
 import type { SceneMotionController } from "./scene-motion-controller";
 import type { SceneTransformPreviewController } from "./transform-preview-controller";
 import type {
@@ -96,7 +96,7 @@ export class SceneFrameWriter {
 
   public writePointerFeedback(
     transforms: SceneTransformPreviewController,
-    elements: SceneElementPreviewController,
+    elements: SceneElementPreviews,
     motion: SceneMotionController,
   ): void {
     if (this.#liveDirty) {
@@ -131,8 +131,9 @@ export class SceneFrameWriter {
       this.#appliedScheme = this.#scheme;
     }
     this.#themeDirty = false;
-    elements.write();
+    elements.immediate.write();
     transforms.write();
+    elements.progressive.writeFeedback(this.#camera.zoom);
     const selection = this.#pendingSelection;
     if (selection !== undefined) {
       this.#pendingSelection = undefined;

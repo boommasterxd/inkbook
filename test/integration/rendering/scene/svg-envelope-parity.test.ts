@@ -347,7 +347,14 @@ function sceneCamera(renderer: SvgSceneRenderer): FakeNode {
 }
 
 function childAttributes(node: FakeNode | undefined): Attributes[] {
-  return requiredNode(node, "g").nodes.map((child) => requiredNode(child, "path").attributes);
+  return requiredNode(node, "g").nodes.flatMap((child) => {
+    if (child.tagName === "path") return [child.attributes];
+    return requiredNode(child, "g").nodes.map((path) => {
+      const attributes = new Map(requiredNode(path, "path").attributes);
+      attributes.set("opacity", child.attributes.get("opacity") ?? "1");
+      return attributes;
+    });
+  });
 }
 
 function requiredNode(node: FakeNode | undefined, tagName: string): FakeNode {
@@ -359,13 +366,15 @@ function requiredNode(node: FakeNode | undefined, tagName: string): FakeNode {
 
 function parsePathMarkup(markup: string): Attributes[] {
   const paths: Attributes[] = [];
-  const pathPattern = /<path ([^>]+)\/>/gu;
-  for (const match of markup.matchAll(pathPattern)) {
-    const attributes = new Map<string, string>();
-    for (const attribute of match[1]!.matchAll(/([a-z-]+)="([^"]*)"/gu)) {
-      attributes.set(attribute[1]!, attribute[2]!);
-    }
-    paths.push(attributes);
+  let groupOpacity = "1";
+  for (const match of markup.matchAll(/<(path|g) ([^>]+)>|<\/g>/gu)) {
+    const attributes = new Map(
+      [...(match[2] ?? "").matchAll(/([a-z-]+)="([^"]*)"/gu)].map(
+        (attribute) => [attribute[1]!, attribute[2]!] as const,
+      ),
+    );
+    if (match[1] !== "path") groupOpacity = attributes.get("opacity") ?? "1";
+    else paths.push(new Map([...attributes, ["opacity", groupOpacity]]));
   }
   return paths;
 }
@@ -374,6 +383,7 @@ function semanticPath(attributes: Attributes, scheme: InkbookColorScheme): objec
   const className = attributes.get("class") ?? null;
   return {
     className,
+    opacity: attributes.get("opacity") ?? "1",
     d: pathTokens(attributes.get("d") ?? ""),
     fill: resolvedPaint(attributes.get("fill") ?? "#000000FF", className, "fill", scheme),
     fillOpacity: attributes.get("fill-opacity") ?? "1",

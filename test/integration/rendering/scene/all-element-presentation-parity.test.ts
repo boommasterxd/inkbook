@@ -33,7 +33,7 @@ describe("canonical presentation across every element type", () => {
       const paintedGroup = camera.nodes[band === "highlight" ? 3 : 4]!;
       const liveGroup = camera.nodes[5]!;
       const retainedNodes = [...paintedGroup.nodes];
-      const committed = retainedNodes.map(paintedAttributes);
+      const committed = retainedNodes.flatMap(paintedPaths).map(paintedAttributes);
       const parts = buildElementPathParts(element);
 
       renderer.setLivePath({
@@ -54,7 +54,7 @@ describe("canonical presentation across every element type", () => {
         selection.renderGeometry(geometry, null);
         scheduler.runAll();
         expect(paintedGroup.nodes).toEqual(retainedNodes);
-        expect(paintedGroup.nodes.map(paintedAttributes)).toEqual(committed);
+        expect(paintedGroup.nodes.flatMap(paintedPaths).map(paintedAttributes)).toEqual(committed);
       }
       for (const transform of [
         { kind: "translate" as const, delta: { x: 23, y: -17 } },
@@ -65,18 +65,22 @@ describe("canonical presentation across every element type", () => {
           transform,
         );
         scheduler.runAll();
-        expect(paintedGroup.nodes.map(paintedAttributes)).toEqual(committed);
+        expect(paintedGroup.nodes.flatMap(paintedPaths).map(paintedAttributes)).toEqual(committed);
         expect(paintedGroup.nodes.every((node) => node.attributes.has("transform"))).toBe(true);
       }
       selection.dispose();
       scheduler.runAll();
       expect(paintedGroup.nodes).toEqual(retainedNodes);
-      expect(paintedGroup.nodes.map(paintedAttributes)).toEqual(committed);
+      expect(paintedGroup.nodes.flatMap(paintedPaths).map(paintedAttributes)).toEqual(committed);
       expect(paintedGroup.nodes.every((node) => !node.attributes.has("transform"))).toBe(true);
       renderer.destroy();
     },
   );
 });
+
+function paintedPaths(node: FakeNode): readonly FakeNode[] {
+  return node.tagName === "g" ? node.nodes : [node];
+}
 
 function paintedAttributes(node: FakeNode): ReadonlyMap<string, string | null> {
   return new Map(

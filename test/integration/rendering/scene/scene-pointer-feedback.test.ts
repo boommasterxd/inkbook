@@ -80,17 +80,16 @@ describe("canonical pressure preview staging", () => {
     const { renderer, scheduler, store } = setup([strokeRecord(stroke)]);
     renderer.setCamera({ x: 0, zoom });
     const content = contentGroup(renderer);
-    const committedOutline = content.nodes[0]!.attributes.get("d");
+    const committedOutline = paintedGeometry(content.nodes[0]!);
     const replacement = scaledStroke(stroke, 3, 0.5);
     renderer.setProgressiveElementPreviews([stroke.id], () => replacement, 1);
     renderer.flushPointerFeedbackFrame();
-    expect(content.nodes[0]!.attributes.get("d")).toBe(committedOutline);
+    expect(paintedGeometry(content.nodes[0]!)).toBe(committedOutline);
     scheduler.runAll();
-    expect(content.nodes).toHaveLength(1);
-    expectPressureOutline(content.nodes[0]!, buildElementPathParts(replacement)[0]?.d);
+    expectCanonicalPressure(content, replacement);
     renderer.clearElementPreviews();
     scheduler.runAll();
-    expectPressureOutline(content.nodes[0]!, committedOutline);
+    expectPressureGroup(content.nodes[0]!, committedOutline);
     expect(store.records.get(stroke.id)?.element).toBe(stroke);
     renderer.destroy();
   });
@@ -102,7 +101,7 @@ describe("canonical pressure preview staging", () => {
     renderer.setProgressiveElementPreviews([stroke.id], () => replacement, 1);
     scheduler.runAll();
     const content = contentGroup(renderer);
-    const previewD = content.nodes[0]!.attributes.get("d");
+    const previewD = paintedGeometry(content.nodes[0]!);
     const handoff = renderer.beginPreviewCommit();
     expect(handoff.arm([stroke.id])).toBe(true);
     store.records.set(stroke.id, { ...strokeRecord(replacement), geometryVersion: 2 });
@@ -111,10 +110,9 @@ describe("canonical pressure preview staging", () => {
     });
     renderer.clearElementPreviews();
     renderer.clearPreviewTransforms();
-    expect(content.nodes[0]!.attributes.get("d")).toBe(previewD);
+    expect(paintedGeometry(content.nodes[0]!)).toBe(previewD);
     scheduler.runAll();
-    expect(content.nodes).toHaveLength(1);
-    expectPressureOutline(content.nodes[0]!, buildElementPathParts(replacement)[0]?.d);
+    expectCanonicalPressure(content, replacement);
     renderer.destroy();
   });
 
@@ -130,7 +128,7 @@ describe("canonical pressure preview staging", () => {
       const originals = new Map(strokes.map((stroke) => [stroke.id, stroke]));
       const { renderer, scheduler } = setup(strokes.map(strokeRecord));
       const ids = strokes.map(({ id }) => id);
-      const originalsD = contentGroup(renderer).nodes.map((node) => node.attributes.get("d"));
+      const originalsD = contentGroup(renderer).nodes.map(paintedGeometry);
       let materialized = 0;
       renderer.setProgressiveElementPreviews(
         ids,
@@ -144,19 +142,19 @@ describe("canonical pressure preview staging", () => {
       expect(materialized).toBe(Math.min(count, 256));
       expect(
         contentGroup(renderer).nodes.filter(
-          (node, index) => node.attributes.get("d") !== originalsD[index],
+          (node, index) => paintedGeometry(node) !== originalsD[index],
         ),
       ).toHaveLength(Math.min(count, 256));
       expect(contentGroup(renderer).nodes.every((node) => !node.attributes.has("transform"))).toBe(
         true,
       );
       expect(contentGroup(renderer).nodes).toHaveLength(count);
-      expect(contentGroup(renderer).nodes.every(({ tagName }) => tagName === "path")).toBe(true);
+      expect(
+        contentGroup(renderer).nodes.every(({ tagName }) => tagName === "path" || tagName === "g"),
+      ).toBe(true);
       renderer.clearElementPreviews();
       scheduler.runAll();
-      expect(contentGroup(renderer).nodes.map((node) => node.attributes.get("d"))).toEqual(
-        originalsD,
-      );
+      expect(contentGroup(renderer).nodes.map(paintedGeometry)).toEqual(originalsD);
       renderer.destroy();
     },
   );
@@ -245,10 +243,33 @@ function scaledStroke(stroke: StrokeElementV1, scaleX: number, scaleY: number): 
   };
 }
 
-function expectPressureOutline(path: FakeNode, expectedD: string | undefined): void {
-  expect(path.attributes.get("d")).toBe(expectedD);
-  expect(path.attributes.get("fill")).not.toBe("none");
-  expect(path.attributes.get("stroke")).toBe("none");
-  expect(path.attributes.has("transform")).toBe(false);
-  expect(path.attributes.has("vector-effect")).toBe(false);
+function paintedGeometry(node: FakeNode): string {
+  return (node.tagName === "g" ? node.nodes : [node])
+    .map((path) => path.attributes.get("d") ?? "")
+    .join(" ");
+}
+
+function expectPressureGroup(group: FakeNode, expectedD: string | undefined): void {
+  expect(group.tagName).toBe("g");
+  expect(paintedGeometry(group)).toBe(expectedD);
+  expect(group.nodes).toHaveLength(1);
+  for (const path of group.nodes) {
+    expect(path.tagName).toBe("path");
+    expect(path.attributes.get("fill")).not.toBe("none");
+    expect(path.attributes.get("stroke")).toBe("none");
+    expect(path.attributes.get("fill-rule")).toBe("nonzero");
+    expect(path.attributes.has("stroke-width")).toBe(false);
+    expect(path.attributes.has("transform")).toBe(false);
+    expect(path.attributes.has("vector-effect")).toBe(false);
+  }
+}
+
+function expectCanonicalPressure(content: FakeNode, stroke: StrokeElementV1): void {
+  expect(content.nodes).toHaveLength(1);
+  expectPressureGroup(
+    content.nodes[0]!,
+    buildElementPathParts(stroke)
+      .map(({ d }) => d)
+      .join(" "),
+  );
 }

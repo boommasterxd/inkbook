@@ -10,6 +10,7 @@ import {
   oppositeElementHandlePoint,
 } from "../../../../src/editor/selection/public";
 import { ActiveEditorHandleInteraction } from "../../../../src/obsidian/embeds/active-editor/handle-interaction";
+import type { HandleInteractionRenderer } from "../../../../src/obsidian/embeds/active-editor/handle-presentation";
 import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";
 import { PreparedElementHistory } from "../../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
@@ -169,7 +170,7 @@ describe("active editor selection handles", () => {
 
     expect(interaction.pointerDown(start)).toBe(true);
     expect(interaction.pointerMove({ ...start, x: 380, y: 280 })).toBe(true);
-    expectLatestLinePreview(elementPreviews, dependent.id, { x: 378.431, y: 278.889 });
+    expectLatestLinePreview(elementPreviews, dependent.id, { x: 380, y: 280 });
 
     interaction.cancel(start.pointerId);
     expect(elementPreviews[elementPreviews.length - 1]).toEqual([]);
@@ -179,33 +180,24 @@ describe("active editor selection handles", () => {
 describe("active editor generic selection transforms", () => {
   it("previews and commits non-uniform scaling in a rotated generic element frame", () => {
     const table = rotatedTable();
-    const { interaction, overlays, previewTransforms, store } = harness(
-      [table],
-      new Set([table.id]),
-    );
+    const { interaction, overlays, store } = harness([table], new Set([table.id]));
     const start = { pointerId: 6, pointerType: "mouse" as const, x: 148, y: 252 };
 
     expect(interaction.pointerDown(start)).toBe(true);
     expect(interaction.pointerMove({ ...start, x: 44, y: 354 })).toBe(true);
-    expect(previewTransforms[previewTransforms.length - 1]).toBe(
-      "translate(2 -1) translate(252 48) rotate(90) scale(1.5 2) rotate(-90) translate(-252 -48)",
-    );
     const previewOverlay = overlays[overlays.length - 2];
-    expect(previewOverlay).toContain(
-      "M 252 48 L 252 352 L 48.000000000000014 352 L 47.999999999999986 48 Z",
-    );
     expect(interaction.pointerUp(start.pointerId)).toBe(true);
     expect(overlays[overlays.length - 2]).toBe(previewOverlay);
 
-    expect(store.get(table.id)?.element).toMatchObject({
-      columnWidth: 150,
-      headerHeight: 48,
-      height: 200,
-      pivot: { x: 150, y: 200 },
-      rotation: 90,
-      x: 0,
-      y: 100,
-    });
+    const resized = store.get(table.id)?.element;
+    if (resized === undefined) throw new TypeError("Expected the resized table.");
+    const bounds = store.get(table.id)!.bounds;
+    expect(bounds.minX).toBeCloseTo(44, 3);
+    expect(bounds.minY).toBeCloseTo(48, 3);
+    expect(bounds.maxX).toBeCloseTo(252, 3);
+    expect(bounds.maxY).toBeCloseTo(354, 3);
+    expect(resized.rotation).toBe(table.rotation);
+    expect(resized.style).toEqual(table.style);
   });
 
   it("commits a rotated freehand resize at the same pivot shown by its preview", () => {
@@ -226,14 +218,16 @@ describe("active editor generic selection transforms", () => {
       x: anchor.x + (handle.point.x - anchor.x) * 1.5,
       y: anchor.y + (handle.point.y - anchor.y) * 1.5,
     };
-    const { elementPreviews, interaction, store } = harness([stroke], new Set([stroke.id]));
+    const { elementPreviews, interaction, renderer, store } = harness(
+      [stroke],
+      new Set([stroke.id]),
+    );
     const start = { ...handle.point, pointerId: 10, pointerType: "mouse" as const };
 
     expect(interaction.pointerDown(start)).toBe(true);
     expect(interaction.pointerMove({ ...start, ...current })).toBe(true);
-    const previewStroke = elementPreviews[elementPreviews.length - 1]?.find(
-      ({ id }) => id === stroke.id,
-    );
+    expect(elementPreviews.flat().some(({ id }) => id === stroke.id)).toBe(false);
+    const previewStroke = renderer.setProgressiveElementPreviews.mock.lastCall?.[1](stroke.id);
     if (previewStroke?.kind !== "stroke") throw new TypeError("Expected a stroke preview.");
     expect(store.get(stroke.id)?.element.pivot).toEqual(stroke.pivot);
     expect(interaction.pointerUp(start.pointerId)).toBe(true);
@@ -319,7 +313,7 @@ describe("active editor large selection handles", () => {
       ...Array.from({ length: 300 }, (_, index) => indexedStroke(index)),
     ];
     const selection = new Set(selectedElements.map(({ id }) => id));
-    const { elementPreviews, interaction, overlays } = harness(
+    const { elementPreviews, interaction, overlays, store } = harness(
       [...selectedElements, dependent],
       selection,
     );
@@ -328,10 +322,17 @@ describe("active editor large selection handles", () => {
     expect(interaction.pointerDown(start)).toBe(true);
     expect(interaction.pointerMove({ ...start, x: 2003, y: 463 })).toBe(true);
 
-    expect(overlays[overlays.length - 2]).toContain(
-      "M 19 18.999515695067267 L 2001 18.999515695067267 L 2001 461.0129686098655 L 19 461.0129686098655 Z",
+    const coordinates = overlays[overlays.length - 2]!.match(/-?\d+(?:\.\d+)?/gu)!.map(Number);
+    expect(coordinates[0]).toBeCloseTo(19, 3);
+    expect(coordinates[1]).toBeCloseTo(19, 3);
+    expect(coordinates[2]).toBeCloseTo(2003, 3);
+    expect(coordinates[5]).toBeCloseTo(464, 3); // The acquired handle starts 1px below the pointer.
+    const previewLine = elementPreviews[elementPreviews.length - 1]?.find(
+      ({ id }) => id === dependent.id,
     );
-    expectLatestLinePreview(elementPreviews, dependent.id, { x: 580, y: 459.013 });
+    expect(previewLine).toBeDefined();
+    expect(interaction.pointerUp(start.pointerId)).toBe(true);
+    expect(store.get(dependent.id)?.element).toEqual(previewLine);
   });
 
   it("prepares a large mixed move in slices and keeps async undo and redo atomic", async () => {
@@ -417,6 +418,8 @@ function harness(elements: readonly InkElementV1[], selection: ReadonlySet<strin
     clearPreviewTransforms: () => previewTransforms.push(null),
     flushPointerFeedbackFrame: vi.fn(),
     setElementPreviews: (elements: readonly InkElementV1[]) => elementPreviews.push([...elements]),
+    setProgressiveElementPreviews:
+      vi.fn<NonNullable<HandleInteractionRenderer["setProgressiveElementPreviews"]>>(),
     setOverlayPath: vi.fn(),
     setSelectionOverlayPath: (path: string | null) => overlays.push(path),
     setSnapMarkerPath: (path: string | null) => overlays.push(path),

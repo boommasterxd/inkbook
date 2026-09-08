@@ -51,6 +51,7 @@ const DEFAULT_REPLACEMENT_WORK = Object.freeze({ includeReverseDependencies: tru
 const TABLE_SEPARATOR_REPLACEMENT_WORK = Object.freeze({ includeReverseDependencies: false });
 
 export class SelectionHandleSession {
+  readonly #affineScalePreview: boolean;
   readonly #action: SelectionHandleAction;
   readonly #elements: readonly InkElementV1[];
   readonly #planner: SelectionReplacementPlanner;
@@ -70,6 +71,8 @@ export class SelectionHandleSession {
   public constructor(options: SelectionHandleSessionOptions) {
     if (options.elements.length === 0) throw new RangeError("A handle session needs a selection.");
     assertFiniteHandlePoint(options.startPointer);
+    this.#affineScalePreview =
+      options.action.kind === "scale" && options.elements.some(({ kind }) => kind === "stroke");
     this.#action = options.action;
     this.#elements = options.elements;
     this.#planner = options.planner;
@@ -130,9 +133,14 @@ export class SelectionHandleSession {
     if (this.#requiresTimeSlicedCommit()) {
       return { status: "time-sliced-required" };
     }
-    const plan = this.#planner.planReplacements(this.#materializeDirect());
-    if (plan === null) return { status: "noop" };
-    return { previous: this.#elements, replacements: plan.replacements, status: "ready" };
+    try {
+      const plan = this.#planner.planReplacements(this.#materializeDirect());
+      if (plan === null) return { status: "noop" };
+      return { previous: this.#elements, replacements: plan.replacements, status: "ready" };
+    } catch (error: unknown) {
+      if (this.#affineScalePreview && error instanceof RangeError) return { status: "noop" };
+      throw error;
+    }
   }
 
   public async prepareCommitTimeSliced(
@@ -157,7 +165,10 @@ export class SelectionHandleSession {
 
   #createPreview(): SelectionHandlePreview {
     if (!this.#hasChanged()) return this.#emptyPreview();
-    if (exceedsExactPreviewWork(this.#elements, this.#planner, this.#replacementWorkOptions())) {
+    if (
+      this.#affineScalePreview ||
+      exceedsExactPreviewWork(this.#elements, this.#planner, this.#replacementWorkOptions())
+    ) {
       this.#valid = true;
       const transform = this.#previewTransform(true);
       return {

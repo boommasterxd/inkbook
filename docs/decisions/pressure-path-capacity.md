@@ -4,16 +4,22 @@ Status: Accepted
 
 ## Context
 
-Pressure strokes use consistently wound swept subpaths so tight reversals and self-overlaps remain filled. A single SVG path applies opacity once across those subpaths. Splitting them into separately painted paths would darken overlaps for translucent strokes and require additional envelope grouping semantics.
-
-The former per-path allowance rejected valid strokes near the existing 4,096-sample limit. The sweep approximates each interior quadratic with at most eight hulls and adds at most two endpoint hulls. Each hull uses at most six SVG commands, giving `(4,094 * 8 + 2) * 6 = 196,524` commands. Bounded canonical coordinates and radii keep the corresponding path below 6 MiB.
+The original swept pressure geometry produced large paths, and selection feedback remained visibly delayed. Banded centerlines reduced path complexity but visibly stepped the pressure profile. Pressure rendering must preserve smooth width variation, compact geometry, and responsive live feedback.
 
 ## Decision
 
-Retain one painted path per pressure stroke and raise only the per-path byte and command allowances to the values in the [static-markup allowlist](../svg-envelope.md#strict-static-markup-allowlist). The byte allowance includes headroom above the derived maximum. Preserve the aggregate path-byte, command, path-count, file, snapshot, element, and point limits.
+Represent each pressure stroke with one filled path of compact continuous-pressure ribbons inside one opacity group. Preserve the editable sample and style schema without pressure-band quantization. Canonical geometry and interaction scheduling are defined in [Rendering and Performance](../rendering-and-performance.md); exact paint, group grammar, and resource limits are defined in the [static-markup allowlist](../svg-envelope.md#strict-static-markup-allowlist).
+
+Retain the 60,004-path document allowance: three paths for each of 20,000 possible elements plus four background-path slots. Pressure groups each contain exactly one direct path, with at most 20,000 groups across the two paint bands. Preserve all per-path, aggregate path-byte, command, file, snapshot, element, and point limits. Reject nested, empty, or multi-path opacity groups and unlisted group attributes.
+
+Apply the product of style opacity and RGBA alpha once at the group, rounded to four decimal places. The child path uses opaque fill; Theme text uses the canonical fill class. The active scene and export share this paint normalization.
+
+There are no deployed pressure files requiring compatibility. Discarded pre-release pressure representations have no reconstruction or migration fallback; validated snapshots produce only the current continuous-pressure path and group.
 
 ## Consequences
 
-The validator can retain a larger individual path while total document admission remains bounded by the existing aggregate limits. Parsing continues to yield in bounded byte and command batches, including within a single path; the larger allowance must not turn one stroke into an uninterrupted validation task.
+Small pressure changes continue to affect the path instead of snapping between width levels. The scene retains one filled path per committed stroke. Compact geometry and bounded live construction reduce the path work needed for writing and selection feedback; pressure samples remain available in editable metadata.
 
-Regression coverage exercises 4,096-sample strokes with tight reversals, wide turns, and extreme coordinates. Boundary tests reject paths exceeding either per-path limit and documents exceeding aggregate limits. The existing maximum-complexity validation benchmark uses the expanded per-path boundary and retains its main-thread slice budget.
+Canonical pressure paths use equivalent relative quadratics and arcs when shorter, reducing repeated large absolute coordinates without changing the contour. Static inspection resolves these coordinates in integer thousandths, checks absolute bounds, and still yields within path and byte batches. Aggregate limits remain authoritative even when the element count or path count separately fits. A document that exceeds any aggregate limit is not admitted.
+
+Regression coverage round-trips 4,096-sample strokes with tight reversals, wide turns, and extreme coordinates. Group tests exercise 20,000 single-path groups, shared group-count limits across paint bands, invalid nesting and extra paths, and exact opacity and paint. The canonical integrity benchmark verifies 10,000 pressure groups within the existing unlock budget.

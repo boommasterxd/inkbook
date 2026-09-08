@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { buildStrokePath, smoothStrokeCenters } from "../../../../src/domain/geometry/stroke-path";
+import {
+  buildStrokePathParts,
+  smoothStrokeCenters,
+} from "../../../../src/domain/geometry/stroke-path";
 import type { RawStrokeSample } from "../../../../src/domain/geometry/public";
 import type { StrokeStyleV1 } from "../../../../src/domain/schema/public";
 import {
@@ -25,8 +28,11 @@ function sample(index: number): RawStrokeSample {
   return { x: index, y: Math.sin(index / 20) * 30, pressure: (index % 100) / 100, time: index };
 }
 
-function onePassPath(points: number[], style: StrokeStyleV1): ReturnType<typeof buildStrokePath> {
-  return buildStrokePath({
+function onePassPath(
+  points: number[],
+  style: StrokeStyleV1,
+): ReturnType<typeof buildStrokePathParts> {
+  return buildStrokePathParts({
     id: "00000000-0000-4000-8000-000000000000",
     createdAt: 0,
     kind: "stroke",
@@ -151,8 +157,8 @@ describe("live stroke preview geometry", () => {
       ),
       { ...penStyle, pressureEnabled: false },
     );
-    expect(preview.tail.geometry.d).toMatch(/^M11\.5(?:\D|$)/);
-    expect(preview.tail.geometry.d).toContain("Q12 ");
+    expect(preview.tail.geometry[0]!.d).toMatch(/^M11\.5(?:\D|$)/);
+    expect(preview.tail.geometry[0]!.d).toContain("Q12 ");
   });
 
   it.each([
@@ -192,23 +198,26 @@ describe("live stroke preview geometry", () => {
     expect(preview.finalizedChunks).toEqual(prefix);
     expectExactPreview(preview, prepareStrokeSamples([...raw, replacement], input), penStyle);
   });
+});
 
-  it("retains exactly the same swept pieces across live chunk boundaries and commit", () => {
+describe("live stroke commit continuity", () => {
+  it("retains identical pressure-band fragments across live chunk boundaries and commit", () => {
     const input = { pressureSource: "pen" as const, zoom: 1 };
     const builder = new LiveStrokeBuilder({ input, style: penStyle });
     let preview = builder.append(sample(0));
     for (let index = 1; index < 80; index += 1) preview = builder.append(sample(index));
 
-    const paths = [
-      ...preview.finalizedChunks.map((chunk) => chunk.geometry.d),
-      preview.tail.geometry.d,
+    const parts = [
+      ...preview.finalizedChunks.flatMap((chunk) => chunk.geometry),
+      ...preview.tail.geometry,
     ];
     const commit = builder.finish();
-    expect(paths.join("")).toBe(commit.geometry.d);
+    expect(commit.geometry).toHaveLength(1);
+    expect(parts.map((part) => part.d).join("")).toBe(commit.geometry[0]!.d);
     expect(commit.geometry).toEqual(onePassPath(commit.points, penStyle));
   });
 
-  it("falls back to exact one-pass pressure geometry for repeated smoothed centers", () => {
+  it("retains exact one-pass pressure geometry for repeated smoothed centers", () => {
     const builder = new LiveStrokeBuilder({
       input: { pressureSource: "pen", zoom: 1 },
       style: penStyle,

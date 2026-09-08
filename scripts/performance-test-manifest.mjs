@@ -13,6 +13,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
   budgetOnly: Object.freeze([
     "test/performance/domain/domain-performance.test.ts",
     "test/performance/domain/incremental-replacement-performance.test.ts",
+    "test/performance/domain/pressure-outline-performance.test.ts",
     "test/performance/editor/editor-hot-paths.test.ts",
     "test/performance/editor/eraser-hot-paths.test.ts",
     "test/performance/editor/interaction-refresh-gestures.test.ts",
@@ -34,7 +35,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/persistence/clipboard.test.ts",
     "test/performance/persistence/incremental-validation-capacity.test.ts",
     "test/performance/persistence/memory-and-cache.test.ts",
-    "test/performance/persistence/pressure-cap-integrity.test.ts",
+    "test/performance/persistence/pressure-group-integrity.test.ts",
     "test/performance/persistence/serialization-and-worker.test.ts",
     "test/performance/persistence/stress-limits.test.ts",
     "test/performance/rendering/scene/dense-viewport-reconciliation.test.ts",

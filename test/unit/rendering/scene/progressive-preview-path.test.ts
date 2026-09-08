@@ -7,7 +7,7 @@ import { indexedStroke } from "../../../fixtures/editor/stroke";
 
 describe("progressive canonical preview geometry", () => {
   it.each([1, 2, 3, 59, 60, 61, 64, 127, 4096])(
-    "matches the committed swept path for %i pressure samples at every slice boundary",
+    "matches the committed continuous pressure outline for %i pressure samples at every slice boundary",
     (count) => {
       const element = {
         ...indexedStroke(1),
@@ -75,4 +75,14 @@ it("releases smoothed centers and partial strings after completing canonical geo
     /* Build without retaining completed intermediates. */
   }
   expect(job.memoryUsage()).toBe(job.parts!.reduce((bytes, part) => bytes + part.d.length * 2, 0));
+});
+
+it("keeps completed path identity when stepped again", () => {
+  const job = new ProgressivePreviewPath(indexedStroke(1));
+  while (!job.step()) {
+    /* Complete all geometry slices. */
+  }
+  const parts = job.parts;
+  expect(job.step()).toBe(true);
+  expect(job.parts).toBe(parts);
 });
