@@ -39,8 +39,9 @@ export async function serializeRuntimeSnapshotToUtf8(
   snapshot: InkSnapshotV1,
   options: ChunkedOutputAssemblyOptions,
   resolveFragment: RuntimeElementFragmentResolver,
+  backgroundCache = new BackgroundFragmentCache(),
 ): Promise<DocumentCodecResult<SerializedInkbookDocument<Uint8Array<ArrayBuffer>>>> {
-  const prepared = await prepareRuntimeExport(snapshot, options, resolveFragment);
+  const prepared = await prepareRuntimeExport(snapshot, options, resolveFragment, backgroundCache);
   if (!prepared.ok) return prepared;
   const value = prepared.value;
   const assembled = await assembleAndHashChunkedUtf8Output(
@@ -55,6 +56,7 @@ export async function serializeRuntimeSnapshotToUtf8(
       lockedHeight: value.lockedHeight,
       metadataBytes: value.metadataBytes,
       snapshot,
+      snapshotHash: value.metadataHash,
       svg: assembled.output,
       totalBytes: assembled.totalBytes,
     },
@@ -65,6 +67,7 @@ async function prepareRuntimeExport(
   snapshot: InkSnapshotV1,
   options: ChunkedOutputAssemblyOptions,
   resolveFragment: RuntimeElementFragmentResolver,
+  backgroundCache: BackgroundFragmentCache,
 ): Promise<DocumentCodecResult<PreparedRuntimeExport>> {
   const metadataPrefix = snapshotMetadataPrefix(snapshot.revision, snapshot.page);
   const canonicalPrefix = canonicalMetadataPrefix(snapshot.revision, snapshot.page);
@@ -89,7 +92,7 @@ async function prepareRuntimeExport(
     const separatorBytes = index === 0 ? 0 : 1;
     canonicalMetadataBytes += fragment.canonicalMetadataBytes + separatorBytes;
     if (
-      !metadataBudget.tryReserve(encodedByteLength(fragment.metadata) + separatorBytes) ||
+      !metadataBudget.tryReserve(fragment.metadataBytes + separatorBytes) ||
       !outputBudget.tryReserve(fragment.bytes + separatorBytes) ||
       !pathDataBudget.tryReserve(fragment.pathDataBytes)
     ) {
@@ -106,7 +109,7 @@ async function prepareRuntimeExport(
   ) {
     return limitFailure();
   }
-  const background = new BackgroundFragmentCache().resolve(
+  const background = backgroundCache.resolve(
     snapshot.page,
     lockedHeight,
     FILE_SCHEMA_LIMITS.totalInputBytes,

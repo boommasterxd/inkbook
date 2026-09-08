@@ -5,8 +5,6 @@ import { JsonContainerScanError, scanJsonContainerWidths } from "./json-containe
 
 const DEFAULT_BATCH_CHARACTERS = 64 * 1024;
 
-export type { ChunkedJsonLimits } from "./chunked-json-limits";
-
 export interface ChunkedJsonParseOptions {
   readonly batchCharacters?: number;
   readonly checkpoint?: () => Promise<void>;

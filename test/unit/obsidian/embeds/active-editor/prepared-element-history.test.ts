@@ -59,14 +59,16 @@ describe("prepared selection preview lifecycle", () => {
     } as unknown as EditableDocumentModel;
     const motion = motionPort();
     const prepared = createPreparedHistory(model, motion, () => true, []);
+    const onCompleted = vi.fn();
 
-    expect(prepared.commitMove(largeSelection(), { x: 3, y: 4 })).toBe(true);
+    expect(prepared.commitMove(largeSelection(), { x: 3, y: 4 }, onCompleted)).toBe(true);
     await vi.waitFor(() => expect(motion.cancel).toHaveBeenCalledOnce());
 
     expect(motion.arm).toHaveBeenCalledOnce();
     expect(motion.arm.mock.calls[0]?.[0]).toHaveLength(1_001);
     expect(pageBounds.plan).toHaveBeenCalledOnce();
     expect(commitPreparedElementReplacement).toHaveBeenCalledWith(PREPARED_TOKEN);
+    expect(onCompleted).toHaveBeenCalledWith(false);
   });
 });
 

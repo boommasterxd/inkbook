@@ -1,3 +1,4 @@
+import { normalizeStrokePaint } from "../../domain/geometry/pressure-paint";
 import { buildElementPathParts } from "../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../domain/schema/public";
 import { PRESENTATION_ATTRIBUTES, pathPresentation } from "./element-presentation";
@@ -5,6 +6,7 @@ import { SVG_NAMESPACE } from "./constants";
 
 export interface MotionVisual {
   readonly bytes: number;
+  readonly targets: readonly { node: SVGElement; opacity: number }[];
   readonly nodes: readonly SVGPathElement[];
 }
 
@@ -16,12 +18,29 @@ export function createMotionVisual(
   remainingBytes: number,
 ): MotionVisual {
   const nodes: SVGPathElement[] = [];
+  const targets: { node: SVGElement; opacity: number }[] = [];
   let bytes = 0;
   for (const element of elements) {
-    for (const part of buildElementPathParts(element)) {
+    const parts = buildElementPathParts(element);
+    const grouped = element.kind === "stroke" && element.style.pressureEnabled;
+    const groupBytes = parts.reduce((total, part) => total + part.d.length * 2, 0);
+    if (
+      grouped &&
+      (nodes.length + parts.length > remainingPaths || bytes + groupBytes > remainingBytes)
+    ) {
+      return { bytes, nodes, targets };
+    }
+    const group = grouped ? ownerDocument.createElementNS(SVG_NAMESPACE, "g") : null;
+    if (group !== null && element.kind === "stroke") {
+      const opacity = normalizeStrokePaint(element.style).opacity;
+      group.setAttribute("opacity", String(opacity));
+      parent.append(group);
+      targets.push({ node: group, opacity });
+    }
+    for (const part of parts) {
       const pathBytes = part.d.length * 2;
       if (nodes.length >= remainingPaths || bytes + pathBytes > remainingBytes) {
-        return { bytes, nodes };
+        return { bytes, nodes, targets };
       }
       const node = ownerDocument.createElementNS(SVG_NAMESPACE, "path");
       node.setAttribute("d", part.d);
@@ -32,29 +51,31 @@ export function createMotionVisual(
         const value = presentation[attribute];
         if (value !== null) node.setAttribute(attribute, value);
       }
-      parent.append(node);
+      (group ?? parent).append(node);
+      if (group === null) targets.push({ node, opacity: 1 });
       nodes.push(node);
       bytes += pathBytes;
     }
   }
-  return { bytes, nodes };
+  return { bytes, nodes, targets };
 }
 
 export function removeMotionVisual(visual: MotionVisual): void {
-  for (const node of visual.nodes) node.remove();
+  for (const target of visual.targets) target.node.remove();
 }
 
 export function writeMotionVisual(visual: MotionVisual, opacity: number, scale: number): void {
-  for (const node of visual.nodes) writeMotionStyle(node, opacity, scale);
+  for (const target of visual.targets)
+    writeMotionStyle(target.node, opacity * target.opacity, scale);
 }
 
-export function writeMotionStyle(node: SVGPathElement, opacity: number, scale: number): void {
+export function writeMotionStyle(node: SVGElement, opacity: number, scale: number): void {
   node.style.setProperty("opacity", format(opacity));
   node.style.setProperty("transform", `scale(${format(scale)})`);
   node.setAttribute("data-inkbook-motion", "");
 }
 
-export function clearMotionStyle(node: SVGPathElement): void {
+export function clearMotionStyle(node: SVGElement): void {
   node.style.removeProperty("opacity");
   node.style.removeProperty("transform");
   node.removeAttribute("data-inkbook-motion");

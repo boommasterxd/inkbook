@@ -8,8 +8,8 @@ import {
   createLinearGeometry,
   createTableGeometry,
   resolveShapeAnchor,
-  shapeVertices,
 } from "../../../../src/domain/geometry/public";
+import { shapeVertices } from "../../../../src/domain/geometry/creation";
 import { coordinateSystem, rectangle, table } from "./fixtures";
 
 describe("element geometry creation", () => {
@@ -65,7 +65,9 @@ describe("element geometry creation", () => {
     expect(changeCoordinateSystemDimension(threeDimensional, "3d")).toBe(threeDimensional);
     expect(changeCoordinateSystemDimension(threeDimensional, "2d").axes).toHaveLength(2);
   });
+});
 
+describe("table geometry creation", () => {
   it("creates tables with one canonical column width in every drag direction", () => {
     expect(createTableGeometry({ x: 200, y: 200 }, { x: 80, y: 100 }, 3)).toEqual({
       x: 80,
@@ -73,7 +75,7 @@ describe("element geometry creation", () => {
       columnWidth: 40,
       height: 100,
       columns: 3,
-      headerHeight: 30,
+      headerHeight: 25,
       pivot: { x: 140, y: 150 },
     });
     expect(() => createTableGeometry({ x: 0, y: 0 }, { x: 1, y: 1 }, 13)).toThrow(RangeError);
@@ -94,6 +96,30 @@ describe("element geometry creation", () => {
     expect(() => changeTableColumns(changed, 0)).toThrow(RangeError);
   });
 
+  it("retains custom separators across column-count changes and restores equal spacing", () => {
+    const custom = table({ columnOffsets: [60, 105] });
+
+    const expanded = changeTableColumns(custom, 4);
+    expect(expanded.columnOffsets).toEqual([60, 105, 150]);
+    expect(expanded.columns).toBe(4);
+
+    const reduced = changeTableColumns(expanded, 2);
+    expect(reduced.columnOffsets).toEqual([60]);
+    expect(reduced.columns).toBe(2);
+
+    const equal = changeTableColumns(table({ columnOffsets: [50, 100] }), 4);
+    expect(equal.columnOffsets).toBeUndefined();
+  });
+
+  it("retains separators placed on outer bounds across compatible column-count changes", () => {
+    const boundary = table({ columnOffsets: [0, 150] });
+
+    expect(changeTableColumns(boundary, 4).columnOffsets).toEqual([0, 150, 150]);
+    expect(changeTableColumns(boundary, 2).columnOffsets).toEqual([0]);
+  });
+});
+
+describe("shape geometry creation", () => {
   it("uses the specified normalized polygon vertices", () => {
     expect(shapeVertices(rectangle({ kind: "triangle" }))).toEqual([
       { x: 50, y: 0 },

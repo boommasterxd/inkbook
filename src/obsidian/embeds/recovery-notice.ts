@@ -36,7 +36,10 @@ export function showLoadRecoveryPanel(
   root: HTMLElement,
   actions: LoadRecoveryActions,
   onClosed: () => void,
-  code: Extract<InkbookFeedbackCode, "drawing-load-failed" | "editor-start-failed">,
+  code: Extract<
+    InkbookFeedbackCode,
+    "drawing-load-failed" | "drawing-version-changed" | "editor-start-failed"
+  >,
 ): AttachedRecoveryPanel {
   const surface = createFeedbackSurface(root, feedbackContent(code));
   const panel = createAttachedPanel(root, surface.element, onClosed);

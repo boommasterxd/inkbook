@@ -47,6 +47,8 @@ export interface EditorMenuCallbacks {
   readonly onBackgroundSpacingPreview: (spacing: BackgroundSpacing) => void;
   readonly onBackgroundTypeChange: (type: BackgroundType) => void;
   readonly onOverflowAction: (action: OverflowMenuAction) => void;
+  readonly onOpenSettings: () => void;
+  readonly onOpenShortcuts: () => void;
   readonly onShapeChange: (shape: ShapeId) => void;
   readonly onStyleChange: (controlId: string, value: boolean | number | string) => void;
 }

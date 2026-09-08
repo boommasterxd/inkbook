@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import { UniformSpatialIndex } from "../../../../src/domain/spatial";
 import {
   MAX_EXTENT_REBUILD_SLICE,
   MAX_STALE_EXTENT_POPS,
-  UniformSpatialIndex,
-} from "../../../../src/domain/spatial";
+} from "../../../../src/domain/spatial/uniform-spatial-index";
 
 function boundsAt(bottom: number) {
   return { maxX: 10, maxY: bottom, minX: 0, minY: bottom - 10 };
@@ -55,6 +55,18 @@ describe("UniformSpatialIndex page extent values", () => {
     expect(index.getMaximumBottom()).toBe(100);
     expect(index.lastExtentStalePops).toBe(0);
     expect(index.extentHeapEntryCount).toBe(1);
+  });
+
+  it("retains an equal replacement maximum after bubbling through lower entries", () => {
+    const index = new UniformSpatialIndex<string>();
+    index.insert("maximum", boundsAt(500));
+    index.insert("low", boundsAt(100));
+    index.insert("middle", boundsAt(200));
+
+    index.replace("maximum", boundsAt(500));
+
+    expect(index.getMaximumBottom()).toBe(500);
+    expect(index.lastExtentStalePops).toBe(1);
   });
 });
 

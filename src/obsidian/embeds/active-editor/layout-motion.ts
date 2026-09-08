@@ -1,6 +1,6 @@
-import type { InkbookDeviceSettingsV1 } from "../../../domain/settings/types";
+import type { InkbookDeviceSettingsV2 } from "../../../domain/settings/types";
 
-export type ActiveEditorMotionPreference = InkbookDeviceSettingsV1["motion"];
+export type ActiveEditorMotionPreference = InkbookDeviceSettingsV2["motion"];
 
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 

@@ -5,21 +5,26 @@ import { SelectionEdgeAutoScroller, type SelectionEdgeViewport } from "./selecti
 import type { SelectionEdgeDragPort } from "./selection-preview";
 
 export interface ActiveEditorSelectionEdgeOptions {
-  readonly lifecycle: SelectionEdgeDragPort;
+  readonly layout: {
+    begin(): void;
+    finish(committed: boolean, previewMaximumBottom?: number): void;
+    updateBottom(maximumBottom: number): void;
+  };
   readonly navigation: ActiveEditorNavigation;
   readonly ownerWindow: Window;
   readonly scrollOwner: () => BrowserScrollElement;
 }
 
 export class ActiveEditorSelectionEdgeDrag implements SelectionEdgeDragPort {
-  readonly #lifecycle: SelectionEdgeDragPort;
+  readonly #layout: ActiveEditorSelectionEdgeOptions["layout"];
   readonly #scroller: SelectionEdgeAutoScroller;
+  #onViewportChanged: (() => void) | undefined;
 
   public constructor(options: ActiveEditorSelectionEdgeOptions) {
-    this.#lifecycle = options.lifecycle;
+    this.#layout = options.layout;
     this.#scroller = new SelectionEdgeAutoScroller({
       cancelFrame: (handle) => options.ownerWindow.cancelAnimationFrame(handle),
-      onBottomEdge: (active) => this.#lifecycle.setBottomEdge(active),
+      onFrame: () => this.#onViewportChanged?.(),
       onScroll: ({ x, y }) => {
         if (x !== 0) options.navigation.pan(-x);
         if (y !== 0) options.navigation.scroll(-y);
@@ -29,33 +34,34 @@ export class ActiveEditorSelectionEdgeDrag implements SelectionEdgeDragPort {
     });
   }
 
-  public begin(): void {
-    this.#lifecycle.begin();
+  public begin(onViewportChanged?: () => void): void {
+    this.#layout.begin();
+    this.#onViewportChanged = onViewportChanged;
   }
 
-  public finish(outcome: "cancel" | "commit"): void {
+  public finish(committed: boolean, previewMaximumBottom?: number): void {
+    this.stop();
+    this.#layout.finish(committed, previewMaximumBottom);
+  }
+
+  public stop(): void {
     this.#scroller.finish();
-    this.#lifecycle.finish(outcome);
-  }
-
-  public setBottomEdge(active: boolean): void {
-    this.#lifecycle.setBottomEdge(active);
+    this.#onViewportChanged = undefined;
   }
 
   public update(screenPointer: { readonly x: number; readonly y: number }): void {
-    this.#lifecycle.update(screenPointer);
     this.#scroller.update(screenPointer);
+  }
+
+  public updatePreviewBottom(maximumBottom: number): void {
+    this.#layout.updateBottom(maximumBottom);
   }
 }
 
 export function createActiveEditorSelectionEdgeDrag(
-  options: Omit<ActiveEditorSelectionEdgeOptions, "lifecycle"> & {
-    readonly lifecycle: SelectionEdgeDragPort | undefined;
-  },
-): ActiveEditorSelectionEdgeDrag | undefined {
-  return options.lifecycle === undefined
-    ? undefined
-    : new ActiveEditorSelectionEdgeDrag({ ...options, lifecycle: options.lifecycle });
+  options: ActiveEditorSelectionEdgeOptions,
+): ActiveEditorSelectionEdgeDrag {
+  return new ActiveEditorSelectionEdgeDrag(options);
 }
 
 function readSelectionViewport(

@@ -7,6 +7,7 @@ import {
   type ShapeAnchorV1,
 } from "../../domain/schema/public";
 import { validateRuntimeInkElementV1 } from "../../domain/schema/element-validation";
+import { hasReachableDependencyCycle } from "../../domain/schema/dependency-cycle";
 import {
   calculateElementBounds,
   isAnchorTarget,
@@ -100,6 +101,9 @@ const polygonVertices = (kind: string): number => {
 };
 
 const isCompatibleAnchor = (target: ClipboardElementBodyV1, anchor: ShapeAnchorV1): boolean => {
+  if (target.kind === "line" || target.kind === "arrow") {
+    return anchor.kind === "linear-endpoint";
+  }
   if (target.kind === "rectangle" || target.kind === "table") return anchor.kind === "box";
   if (target.kind === "ellipse") return anchor.kind === "ellipse-cardinal";
   const vertices = polygonVertices(target.kind);
@@ -208,6 +212,9 @@ const validateConnections = (
 const validateAggregateLimits = (
   entries: readonly ValidatedEntry[],
 ): ClipboardResult<readonly ElementBounds[]> => {
+  if (hasClipboardConnectionCycle(entries)) {
+    return failure("Clipboard linear endpoint connections must not contain self-links or cycles.");
+  }
   const counts: AggregateCounts = {
     strokes: 0,
     points: 0,
@@ -240,6 +247,25 @@ const validateAggregateLimits = (
     return failure("Clipboard spatial-index capacity limits are exceeded.");
   }
   return { ok: true, value: bounds };
+};
+
+const hasClipboardConnectionCycle = (entries: readonly ValidatedEntry[]): boolean => {
+  const bodies = new Map(entries.map(({ clipId, body }) => [clipId, body]));
+  const roots = entries
+    .filter(({ body }) => body.kind === "line" || body.kind === "arrow")
+    .map(({ clipId }) => clipId);
+  return hasReachableDependencyCycle(roots, (id) => clipboardConnectionDependencies(id, bodies));
+};
+
+const clipboardConnectionDependencies = (
+  id: string,
+  bodies: ReadonlyMap<string, ClipboardElementBodyV1>,
+): readonly string[] => {
+  const body = bodies.get(id);
+  if (body?.kind !== "line" && body?.kind !== "arrow") return [];
+  return [body.startConnection?.targetClipId, body.endConnection?.targetClipId].filter(
+    (targetId): targetId is string => targetId !== undefined,
+  );
 };
 
 const hasValidRenderBandOrder = (entries: readonly ValidatedEntry[]): boolean => {

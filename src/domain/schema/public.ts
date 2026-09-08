@@ -19,21 +19,16 @@ export type {
   PointV1,
   ShapeAnchorV1,
   ShapeStyleV1,
-  StraightHighlighterElementV1,
   StrokeElementV1,
   StrokeSamplesV1,
   StrokeStyleV1,
   TableElementV1,
 } from "./types";
-export { CANONICAL_BACKGROUND_SPACINGS } from "./background";
 export {
   canonicalizeGeometryNumber,
-  canonicalizeRotation,
   canonicalizeUnitIntervalNumber,
   isCanonicalGeometryNumber,
-  isCanonicalRotation,
   isCanonicalUnitIntervalNumber,
-  isLowercaseUuidV4,
   isRgbaColor,
 } from "./canonical";
 export {
@@ -50,7 +45,6 @@ export {
 } from "./constants";
 export { validateInkElementV1 } from "./element-validation";
 export { validatedElementDerivationBounds } from "./derivation-validation";
-export { isColorV1 } from "./style-validation";
 export {
   validateInkConnectionRelationsV1,
   validateInkPageV1,

@@ -48,7 +48,6 @@ const METADATA_INPUT_CODE_UNITS_PER_STEP = 16 * 1024;
 
 const IMMEDIATE_CHUNKED_INPUT_CHECKPOINT: ChunkedInputCheckpoint = () => Promise.resolve();
 
-export { ChunkedInputCancelledError };
 export type { ChunkedInkbookInputOptions, ChunkedInputCheckpoint };
 
 /** Incrementally decodes bounded input and drives safe-SVG and snapshot validation steps. */
@@ -268,22 +267,23 @@ export class ChunkedInkbookInputParser {
   }
 
   async #consumePrefix(input: string): Promise<DocumentCodecResult<undefined>> {
-    this.#prefix += input;
-    if (this.#prefix.length > MAXIMUM_PREFIX_CHARACTERS) {
-      return failure("invalid-svg", "Document SVG prefix exceeds its bounded envelope.");
-    }
+    const prefixCapacity = MAXIMUM_PREFIX_CHARACTERS - this.#prefix.length;
+    this.#prefix += input.slice(0, prefixCapacity);
     let candidateEnd = this.#prefix.indexOf(">");
     while (candidateEnd >= 0) {
       const candidate = this.#prefix.slice(0, candidateEnd + 1);
       const prelude = validateEditableSafeSvgPrelude(candidate);
       if (prelude !== null) {
-        const remaining = this.#prefix.slice(candidateEnd + 1);
+        const remaining = this.#prefix.slice(candidateEnd + 1) + input.slice(prefixCapacity);
         this.#prefix = "";
         this.#prelude = prelude;
         this.#streamPhase = "metadata";
         return this.#consumeMetadata(remaining);
       }
       candidateEnd = this.#prefix.indexOf(">", candidateEnd + 1);
+    }
+    if (input.length > prefixCapacity) {
+      return failure("invalid-svg", "Document SVG prefix exceeds its bounded envelope.");
     }
     return { ok: true, value: undefined };
   }

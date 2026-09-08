@@ -8,6 +8,7 @@ import type {
 } from "../../../domain/schema/public";
 import type { ToolDefaultsV1 } from "../../../domain/settings/types";
 import type { GesturePreview, GesturePreviewStart } from "../../../editor/gestures/public";
+import { resolvePointAngleSnap } from "../../../editor/selection/public";
 import {
   findSnapCandidate,
   SnapCandidateScratch,
@@ -20,12 +21,13 @@ import { createDragElement, createFreehandElement } from "../../../editor/tools/
 import { pathPresentation } from "../../../rendering/scene/element-presentation";
 import type { LivePathState } from "../../../rendering/scene/index";
 
-import type { CoalescedCreationSample } from "./coalesced-input";
+import type { CoalescedCreationSample, CoalescedFrameSampleMode } from "./coalesced-input";
 import type { ActiveEditorHistory } from "./history";
+import { selectionSnapGuidePath, snapMarkerPath } from "./snap-marker-path";
 
 export interface CreationPreviewRenderer {
   clearLiveStroke(): void;
-  revertLiveStroke(): void;
+  commitLiveStroke(id: string): void;
   setLivePath(path: LivePathState | null): void;
   setSnapMarkerPath(d: string | null): void;
   suppressMotionForNextDelta(ids: readonly string[]): void;
@@ -37,6 +39,8 @@ export interface CreationPreviewRenderer {
 }
 
 export interface CreationSnapPorts {
+  readonly angles?: boolean | (() => boolean);
+  readonly connections?: boolean | (() => boolean);
   readonly pageToScreen: (point: PointV1) => PointV1;
   readonly spatial: SpatialCandidateQuery;
   readonly targets: SnapTargetReader;
@@ -65,11 +69,16 @@ export class CreationPreview implements GesturePreview {
   readonly #strokeStyle: StrokeStyleV1 | null;
   readonly #start: GesturePreviewStart;
   #current: GesturePreviewStart["pointer"];
+  #endAngleSnap: PointV1 | null = null;
   #endSnap: SnapCandidate | null = null;
   #finished = false;
   #sampleTime = 0;
   #startSnap: SnapCandidate | null = null;
   #startSnapResolved = false;
+
+  public get frameSampleMode(): CoalescedFrameSampleMode {
+    return this.#stroke === null ? "latest" : "preserve";
+  }
 
   public constructor(options: CreationPreviewOptions) {
     this.#defaults = options.defaults;
@@ -109,8 +118,15 @@ export class CreationPreview implements GesturePreview {
     this.#renderer.setSnapMarkerPath(null);
     this.#renderer.suppressMotionForNextDelta([element.id]);
     if (this.#stroke === null) this.#renderer.setLivePath(null);
-    else this.#renderer.clearLiveStroke();
-    return this.#history.create([element]);
+    try {
+      const committed = this.#history.create([element]);
+      if (this.#stroke !== null && committed) this.#renderer.commitLiveStroke(element.id);
+      else if (this.#stroke !== null) this.#renderer.clearLiveStroke();
+      return committed;
+    } catch (error) {
+      if (this.#stroke !== null) this.#renderer.clearLiveStroke();
+      throw error;
+    }
   }
 
   public revert(): void {
@@ -118,7 +134,7 @@ export class CreationPreview implements GesturePreview {
     this.#finished = true;
     this.#renderer.setSnapMarkerPath(null);
     if (this.#stroke === null) this.#renderer.setLivePath(null);
-    else this.#renderer.revertLiveStroke();
+    else this.#renderer.clearLiveStroke();
   }
 
   public update(pointer: GesturePreviewStart["pointer"]): void {
@@ -127,10 +143,20 @@ export class CreationPreview implements GesturePreview {
 
   public updateSamples(samples: readonly CoalescedCreationSample[]): void {
     this.#assertActive();
-    if (samples.length === 0) return;
-    for (const sample of samples) {
-      this.#current = sample;
-      this.#appendSample(sample, sample.time);
+    const current = samples[samples.length - 1];
+    if (current === undefined) return;
+    this.#current = current;
+    if (this.#stroke === null) this.#sampleTime = Math.max(this.#sampleTime, current.time);
+    else {
+      this.#stroke.appendBatch(
+        samples.map((sample) => ({
+          pressure: inputPressure(sample.pressure, this.#strokePressureSource),
+          time: sample.time,
+          x: sample.x,
+          y: sample.y,
+        })),
+      );
+      this.#sampleTime = Math.max(this.#sampleTime, current.time);
     }
     this.#updateSnapCandidates();
     this.#render();
@@ -195,7 +221,7 @@ export class CreationPreview implements GesturePreview {
       throw new TypeError(`${tool} is not a drag creation tool.`);
     }
     const start = this.#startSnap?.point ?? this.#start.pointer;
-    const end = minimumLinearEnd(start, this.#endSnap?.point ?? this.#current, tool);
+    const end = minimumLinearEnd(start, this.#dragEnd(start, tool), tool);
     return createDragElement({
       defaults: this.#defaults,
       end,
@@ -207,18 +233,60 @@ export class CreationPreview implements GesturePreview {
     });
   }
 
+  #dragEnd(start: PointV1, tool: GesturePreviewStart["tool"]): PointV1 {
+    this.#endAngleSnap = null;
+    if (this.#endSnap !== null || (tool !== "line" && tool !== "arrow")) {
+      return this.#endSnap?.point ?? this.#current;
+    }
+    if (!this.#snapFeatureEnabled("angles")) return this.#current;
+    const result = resolvePointAngleSnap({
+      origin: start,
+      point: this.#current,
+      snapPixels: 5,
+      stepDegrees: 90,
+      zoom: this.#snap?.zoom ?? 1,
+    });
+    if (result.snapped) this.#endAngleSnap = result.point;
+    return result.point;
+  }
+
   #renderSnapMarkers(): void {
-    if (this.#snap === undefined || !supportsConnections(this.#start.tool)) return;
+    if (this.#snap === undefined || !supportsConnections(this.#start.tool)) {
+      this.#renderer.setSnapMarkerPath(null);
+      return;
+    }
     const points = [this.#startSnap?.point, this.#endSnap?.point].filter(
       (point): point is PointV1 => point !== undefined,
     );
-    const path = points.map((point) => snapMarker(this.#snap!.pageToScreen(point))).join(" ");
+    const markers = points.map((point) => snapMarkerPath(this.#snap!.pageToScreen(point)));
+    if (this.#endAngleSnap !== null && this.#endSnap === null) {
+      markers.push(
+        selectionSnapGuidePath(
+          {
+            end: this.#endAngleSnap,
+            kind: "angular",
+            start: this.#startSnap?.point ?? this.#start.pointer,
+          },
+          this.#snap.pageToScreen,
+        ),
+      );
+    }
+    const path = markers.join(" ");
     this.#renderer.setSnapMarkerPath(path.length === 0 ? null : path);
   }
 
   #updateSnapCandidates(): void {
     const snap = this.#snap;
-    if (snap === undefined || !supportsConnections(this.#start.tool)) return;
+    if (
+      snap === undefined ||
+      !this.#snapFeatureEnabled("connections") ||
+      !supportsConnections(this.#start.tool)
+    ) {
+      this.#startSnap = null;
+      this.#endSnap = null;
+      this.#startSnapResolved = false;
+      return;
+    }
     if (!this.#startSnapResolved) {
       this.#startSnap = findSnapCandidate(
         {
@@ -249,6 +317,11 @@ export class CreationPreview implements GesturePreview {
       candidate !== null && pointDistance(start, candidate.point) >= 8 ? candidate : null;
   }
 
+  #snapFeatureEnabled(feature: "angles" | "connections"): boolean {
+    const configured = this.#snap?.[feature];
+    return typeof configured === "function" ? configured() : (configured ?? true);
+  }
+
   #nextSampleTime(): number {
     this.#sampleTime += 1;
     return this.#sampleTime;
@@ -257,11 +330,6 @@ export class CreationPreview implements GesturePreview {
 
 function snapConnection(candidate: SnapCandidate | null): EndpointConnectionV1 | null {
   return candidate === null ? null : { anchor: candidate.anchor, targetId: candidate.targetId };
-}
-
-function snapMarker(point: PointV1): string {
-  const radius = 7.5;
-  return `M ${String(point.x - radius)} ${String(point.y)} L ${String(point.x + radius)} ${String(point.y)} M ${String(point.x)} ${String(point.y - radius)} L ${String(point.x)} ${String(point.y + radius)}`;
 }
 
 function supportsConnections(tool: GesturePreviewStart["tool"]): tool is "arrow" | "line" {

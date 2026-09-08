@@ -5,6 +5,8 @@ import {
   OUTLINE_STYLES,
   OUTLINE_WIDTHS,
   PEN_WIDTHS,
+  SELECTION_AREAS,
+  SELECTION_INCLUSIONS,
   type ColorV1,
   type HighlighterDefaultsV1,
   type OutlineDefaultsV1,
@@ -284,6 +286,7 @@ export function loadToolDefaults(
   diagnostics: SettingsDiagnostic[],
 ): ToolDefaultsV1 {
   const keys = [
+    "select",
     "pen",
     "highlighter",
     "straightHighlighter",
@@ -298,6 +301,16 @@ export function loadToolDefaults(
     return structuredClone(fallback);
   }
   return {
+    select: validOrDefault(
+      input.select,
+      fallback.select,
+      (value): value is ToolDefaultsV1["select"] =>
+        hasExactKeys(value, ["area", "inclusion"]) &&
+        isOneOf(value.area, SELECTION_AREAS) &&
+        isOneOf(value.inclusion, SELECTION_INCLUSIONS),
+      diagnostics,
+      "toolDefaults.select",
+    ),
     pen: loadPen(input.pen, fallback.pen, diagnostics),
     highlighter: loadHighlighter(
       input.highlighter,

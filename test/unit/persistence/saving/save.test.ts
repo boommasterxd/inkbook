@@ -9,10 +9,8 @@ import {
 import { saveNewFile } from "../../../../src/persistence/saving/save-new";
 import { scanCanonicalRevisionPrefix } from "../../../../src/persistence/saving/revision-scan";
 import { FILE_SCHEMA_LIMITS } from "../../../../src/domain/schema/constants";
-import {
-  serializeInkbookDocument,
-  sha256Hex,
-} from "../../../../src/persistence/serialization/public";
+import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
+import { sha256Hex } from "../../../../src/persistence/serialization/sha256";
 import { rectangle, snapshot } from "../worker/runtime/fixtures";
 
 function serialized(revision: number, x: number) {

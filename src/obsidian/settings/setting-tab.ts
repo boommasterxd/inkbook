@@ -2,23 +2,25 @@ import {
   PluginSettingTab,
   type App,
   type Plugin,
-  type SettingDefinitionAction,
   type SettingDefinitionGroup,
   type SettingDefinitionItem,
+  type SettingDefinitionRender,
 } from "obsidian";
 
 import {
   MOTION_PREFERENCES,
-  PEN_TAP_INSERTIONS,
   createBuiltInDeviceSettings,
   createBuiltInSettings,
-  type InkbookSettingsV3,
+  type InkbookSettingsV4,
 } from "../../domain/settings";
 import { DEFAULT_REFRESH_RATE, type RefreshRateProfileStatus } from "../performance";
 import { SettingsControlValues, type SettingsControlKey } from "./control-values";
-import { dropdown, resetAction, toggle } from "./definition-helpers";
+import { dropdown, resetAction, settingsAction, toggle } from "./definition-helpers";
 import { createLabels, generalGroup } from "./general-definitions";
 import { pageDefaultsGroup } from "./page-defaults";
+import { createObsidianHotkeyAccess } from "./obsidian-hotkey-conflicts";
+import { snappingGroup } from "./snapping-definitions";
+import { shortcutGroup } from "./shortcut-definitions";
 import { InkbookSettingsStore } from "./storage";
 import { drawingToolsGroup, shapesAndStructuresGroup } from "./tool-definitions";
 
@@ -26,9 +28,9 @@ export interface CustomFolderPort {
   createFolder(path: string): Promise<void>;
 }
 
-function cloneDefaults<K extends keyof InkbookSettingsV3["toolDefaults"]>(
+function cloneDefaults<K extends keyof InkbookSettingsV4["toolDefaults"]>(
   key: K,
-): InkbookSettingsV3["toolDefaults"][K] {
+): InkbookSettingsV4["toolDefaults"][K] {
   return structuredClone(createBuiltInSettings().toolDefaults[key]);
 }
 
@@ -80,7 +82,14 @@ export class InkbookSettingTab extends PluginSettingTab {
       pageDefaultsGroup(pageValues, () => this.resetPageDefaults()),
       drawingToolsGroup(toolValues, () => this.resetDrawingTools()),
       shapesAndStructuresGroup(toolValues, () => this.resetShapesAndStructures()),
+      snappingGroup({
+        get: (key) => this.controls.get(key),
+        readMotion: () => this.store.getDeviceSettings().motion,
+        reset: () => this.resetSnapping(),
+        set: (key, value) => this.controls.set(key, value),
+      }),
       ...this.deviceGroups(),
+      shortcutGroup(this.store, createObsidianHotkeyAccess(this.app)),
       this.resetAllAction(),
     ];
   }
@@ -123,6 +132,7 @@ export class InkbookSettingTab extends PluginSettingTab {
   private resetDrawingTools(): void {
     void this.store
       .updateVaultSettings((settings) => {
+        settings.toolDefaults.select = cloneDefaults("select");
         settings.toolDefaults.pen = cloneDefaults("pen");
         settings.toolDefaults.highlighter = cloneDefaults("highlighter");
         settings.toolDefaults.straightHighlighter = cloneDefaults("straightHighlighter");
@@ -144,6 +154,16 @@ export class InkbookSettingTab extends PluginSettingTab {
       .then(() => this.update());
   }
 
+  private resetSnapping(): void {
+    const defaults = createBuiltInSettings();
+    void this.store
+      .updateVaultSettings((settings) => ({
+        ...settings,
+        snapping: structuredClone(defaults.snapping),
+      }))
+      .then(() => this.update());
+  }
+
   private deviceGroups(): SettingDefinitionGroup<SettingsControlKey>[] {
     const defaults = createBuiltInDeviceSettings();
     return [this.inputGroup(defaults), this.interfaceGroup(defaults)];
@@ -155,17 +175,17 @@ export class InkbookSettingTab extends PluginSettingTab {
     return {
       type: "group",
       heading: "Input",
+      cls: "inkbook-settings-input-group",
       items: [
         toggle(
           "device.fingerDrawingEnabled",
           "Finger drawing",
           "Show the session-only finger drawing toggle in each embed.",
         ),
-        dropdown(
-          "device.penTapInsertion",
+        toggle(
+          "device.penTapInsertionEnabled",
           "Pen-tap insertion",
-          "Choose how a pen tap inserts an Inkbook embed.",
-          createLabels(PEN_TAP_INSERTIONS),
+          "Insert an Inkbook embed when tapping with a pen.",
         ),
         resetAction("Reset group to defaults", () => {
           this.store.updateDeviceSettings((settings) => ({
@@ -185,6 +205,7 @@ export class InkbookSettingTab extends PluginSettingTab {
     return {
       type: "group",
       heading: "Interface",
+      cls: "inkbook-settings-interface-group",
       items: [
         toggle(
           "device.leftHandedToolbar",
@@ -209,15 +230,16 @@ export class InkbookSettingTab extends PluginSettingTab {
     };
   }
 
-  private resetAllAction(): SettingDefinitionAction {
-    return {
-      name: "Reset all Inkbook settings",
-      desc: "Restore every built-in value without changing existing files or elements.",
-      action: (element) => {
+  private resetAllAction(): SettingDefinitionRender {
+    return settingsAction(
+      "Reset all Inkbook settings",
+      "Restore every built-in value without changing existing files or elements.",
+      "danger",
+      (element) => {
         if (element.ownerDocument.defaultView?.confirm("Reset all Inkbook settings?") === true) {
           void this.store.resetAll().then(() => this.update());
         }
       },
-    };
+    );
   }
 }

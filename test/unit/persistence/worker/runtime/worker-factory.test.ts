@@ -5,10 +5,8 @@ vi.mock("../../../../../src/persistence/worker/runtime/worker-source", () => ({
     "<Ah!!!!!9-SOx5;6=n}85SXsqn,*>3h^H>}Exb9V{|jvA7Y:d=.UqU,ZbU-W<0z#{mr4#O5Q(g)*!!!!",
 }));
 
-import {
-  createDocumentRuntime,
-  type WorkerWindow,
-} from "../../../../../src/persistence/worker/runtime/public";
+import { createDocumentRuntime } from "../../../../../src/persistence/worker/runtime/public";
+import { type WorkerWindow } from "../../../../../src/persistence/worker/runtime/worker-factory";
 import { TestWorkerEndpoint } from "../../../../fixtures/persistence/worker-endpoint";
 
 class FakeWorker extends TestWorkerEndpoint {

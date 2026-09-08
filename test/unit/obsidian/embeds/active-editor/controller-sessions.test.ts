@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { calculateElementBounds } from "../../../../../src/domain/geometry/public";
 import { createBuiltInSettings } from "../../../../../src/domain/settings/defaults";
 import { ElementStore } from "../../../../../src/domain/store/public";
+import { SelectionFrameSession } from "../../../../../src/editor/selection/public";
+import { transformSelectionFrame } from "../../../../../src/editor/selection/selection-frame";
 import { eventPathHasClass } from "../../../../../src/obsidian/commands/event-path";
 import { ActiveEditorBackgroundSession } from "../../../../../src/obsidian/embeds/active-editor/background-session";
 import {
@@ -178,14 +181,17 @@ describe("active editor timer and style sessions", () => {
     const element = rectangle();
     store.create(element);
     const selected = new Set([element.id]);
+    const selectionGeometryChanged = vi.fn();
     const stateChanged = vi.fn();
+    const storeChanged = vi.fn();
     const history = new ActiveEditorHistory(
       historyModel({ replaceElements: (elements) => void store.replaceMany(elements) }),
     );
-    const unsubscribe = store.subscribe(() => void stateChanged());
+    const unsubscribe = store.subscribe(() => void storeChanged());
     const session = new ActiveEditorStyleSession({
       defaults: createBuiltInSettings().toolDefaults,
       history,
+      onSelectionGeometryChanged: selectionGeometryChanged,
       onStateChanged: stateChanged,
       sceneStore: new ElementSceneStore(store),
       selection: () => selected,
@@ -196,10 +202,13 @@ describe("active editor timer and style sessions", () => {
       true,
     );
     session.apply("draw", "outline-width", 8);
-    expect(stateChanged).toHaveBeenCalledTimes(1);
+    expect(selectionGeometryChanged).toHaveBeenCalledOnce();
+    expect(stateChanged).not.toHaveBeenCalled();
+    expect(storeChanged).toHaveBeenCalledTimes(1);
     expect(store.get(element.id)?.element.style).toMatchObject({ outlineWidth: 8 });
     expect(history.undo()).toBe(true);
-    expect(stateChanged).toHaveBeenCalledTimes(2);
+    expect(stateChanged).not.toHaveBeenCalled();
+    expect(storeChanged).toHaveBeenCalledTimes(2);
     expect(store.get(element.id)?.element.style).toMatchObject({ outlineWidth: 4 });
 
     selected.clear();
@@ -207,10 +216,107 @@ describe("active editor timer and style sessions", () => {
     expect(session.defaults.pen.opacity).toBe(0.6);
     session.apply("draw", "opacity", 0.6);
     expect(() => session.apply("draw", "unknown", 1)).toThrow(RangeError);
-    expect(stateChanged).toHaveBeenCalledTimes(3);
+    expect(stateChanged).toHaveBeenCalledOnce();
     unsubscribe();
   });
+});
 
+describe("active editor selection-frame style session", () => {
+  it("rebases a rotated multi-selection frame after a geometry-affecting style change", () => {
+    const first = rectangle();
+    const second = rectangle("00000000-0000-4000-8000-000000000099", 500, 300);
+    const store = new ElementStore([first, second]);
+    const selectedIds = new Set([first.id, second.id]);
+    const history = new ActiveEditorHistory(
+      historyModel({ replaceElements: (elements) => void store.replaceMany(elements) }),
+    );
+    const frames = new SelectionFrameSession();
+    const geometry = [first, second].map((element) => ({
+      bounds: calculateElementBounds(element),
+      element,
+    }));
+    const initial = frames.current(geometry)!;
+    const rotated = transformSelectionFrame(initial, {
+      center: { x: 400, y: 250 },
+      degrees: 30,
+      kind: "rotate",
+    });
+    frames
+      .transition(initial, { center: { x: 400, y: 250 }, degrees: 30, kind: "rotate" })
+      ?.apply();
+    const session = new ActiveEditorStyleSession({
+      defaults: createBuiltInSettings().toolDefaults,
+      history,
+      onSelectionGeometryChanged: vi.fn(),
+      onStateChanged: vi.fn(),
+      sceneStore: new ElementSceneStore(store),
+      selection: () => selectedIds,
+      selectionFrames: frames,
+      store,
+    });
+
+    session.apply("rectangle", "outline-width", 8);
+
+    expect(frames.current(geometry)?.rotation).toBe(30);
+    expect(frames.current(geometry)?.points).not.toEqual(rotated.points);
+    expect(history.undo()).toBe(true);
+    expect(frames.current(geometry)).toEqual(rotated);
+  });
+});
+
+describe("active editor Select style session", () => {
+  it("publishes the active selection area for the toolbar icon", () => {
+    const store = new ElementStore();
+    const stateChanged = vi.fn();
+    const session = new ActiveEditorStyleSession({
+      defaults: createBuiltInSettings().toolDefaults,
+      history: new ActiveEditorHistory(historyModel()),
+      onSelectionGeometryChanged: vi.fn(),
+      onStateChanged: stateChanged,
+      sceneStore: new ElementSceneStore(store),
+      selection: () => new Set(),
+      store,
+    });
+
+    expect(session.presentation("select").selectionArea).toBe("lasso");
+    session.apply("select", "selection-area", "rectangle");
+    expect(session.presentation("select").selectionArea).toBe("rectangle");
+    expect(stateChanged).toHaveBeenCalledOnce();
+  });
+
+  it("shows only selected-element controls and ignores stale Select control changes", () => {
+    const element = rectangle();
+    const store = new ElementStore([element]);
+    const history = new ActiveEditorHistory(historyModel());
+    const stateChanged = vi.fn();
+    const session = new ActiveEditorStyleSession({
+      defaults: createBuiltInSettings().toolDefaults,
+      history,
+      onSelectionGeometryChanged: vi.fn(),
+      onStateChanged: stateChanged,
+      sceneStore: new ElementSceneStore(store),
+      selection: () => new Set([element.id]),
+      store,
+    });
+
+    expect(session.presentation("select").controls.map(({ id }) => id)).toEqual([
+      "outline-color",
+      "outline-width",
+      "outline-style",
+      "outline-opacity",
+      "fill-color",
+      "fill-opacity",
+    ]);
+    session.apply("select", "selection-area", "rectangle");
+
+    expect(session.defaults.select.area).toBe("lasso");
+    expect(store.get(element.id)?.element).toEqual(element);
+    expect(history.commandCount).toBe(0);
+    expect(stateChanged).not.toHaveBeenCalled();
+  });
+});
+
+describe("active editor structural style session", () => {
   it("restores propagated connection detachments with the structural Style change", () => {
     const target = coordinateSystem();
     const line = axisConnectedLine();
@@ -221,6 +327,7 @@ describe("active editor timer and style sessions", () => {
     const session = new ActiveEditorStyleSession({
       defaults: createBuiltInSettings().toolDefaults,
       history,
+      onSelectionGeometryChanged: vi.fn(),
       onStateChanged: vi.fn(),
       sceneStore: new ElementSceneStore(store),
       selection: () => new Set([target.id]),
@@ -295,8 +402,14 @@ describe("active editor host normalization", () => {
         fingerDrawingEnabled: false,
         hasSelection: true,
         openFlyout: "style",
+        pasteVisible: true,
       }),
-    ).toMatchObject({ activeTool: "shape", canPaste: true, openFlyout: "style" });
+    ).toMatchObject({
+      activeTool: "shape",
+      canPaste: true,
+      openFlyout: "style",
+      pasteVisible: true,
+    });
   });
 
   it("uses user-agent data and composed event paths without assuming DOM nodes", () => {

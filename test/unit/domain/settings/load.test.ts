@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createBuiltInDeviceSettings,
+  createBuiltInKeyboardShortcuts,
   createBuiltInSettings,
   loadDeviceSettings,
   loadSettings,
@@ -43,7 +44,67 @@ describe("vault settings loading", () => {
     expect(result.diagnostics).toEqual([]);
     expect(result.value.toolDefaults.eraser.radius).toBe(9);
   });
+});
 
+describe("vault settings V3 migration", () => {
+  it("migrates valid V3 settings without changing existing values", () => {
+    const current = createBuiltInSettings();
+    current.startupTool = "arrow";
+    current.toolDefaults.pen.opacity = 0.35;
+    const { select: _select, ...legacyToolDefaults } = current.toolDefaults;
+    const { snapping: _snapping, ...legacyCurrent } = current;
+    const legacy = { ...legacyCurrent, version: 3, toolDefaults: legacyToolDefaults };
+
+    const result = loadSettings(legacy);
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.value).toEqual({
+      ...current,
+      version: 4,
+      toolDefaults: {
+        ...legacyToolDefaults,
+        select: { area: "lasso", inclusion: "touched" },
+      },
+    });
+  });
+
+  it("rejects malformed V3 settings without partially migrating valid fields", () => {
+    const current = createBuiltInSettings();
+    current.startupTool = "arrow";
+    const { select: _select, ...legacyToolDefaults } = current.toolDefaults;
+    const { snapping: _snapping, ...legacyCurrent } = current;
+    const legacy = {
+      ...legacyCurrent,
+      version: 3,
+      toolDefaults: {
+        ...legacyToolDefaults,
+        pen: { ...legacyToolDefaults.pen, opacity: Number.NaN },
+      },
+    };
+
+    const result = loadSettings(legacy);
+
+    expect(result.value).toEqual(createBuiltInSettings());
+    expect(result.diagnostics).toContainEqual({
+      code: "settings.invalid-field",
+      path: "toolDefaults.pen.opacity",
+    });
+  });
+
+  it("rejects V3 tool defaults containing fields outside the legacy schema", () => {
+    const current = structuredClone(createBuiltInSettings());
+    const { snapping: _snapping, ...legacySettings } = current;
+    const legacy = legacySettings as unknown as Record<string, unknown>;
+    legacy.version = 3;
+
+    const result = loadSettings(legacy);
+
+    expect(result.value).toEqual(createBuiltInSettings());
+    expect(result.diagnostics).toEqual([{ code: "settings.invalid-field", path: "toolDefaults" }]);
+  });
+});
+
+describe("vault settings field loading", () => {
   it("replaces only invalid nested fields and records their paths", () => {
     const input = createBuiltInSettings() as unknown as Record<string, unknown>;
     const toolDefaults = input.toolDefaults as Record<string, unknown>;
@@ -162,13 +223,48 @@ describe("vault settings structural validation", () => {
       diagnostics: [{ code: "settings.invalid-root", path: "$" }],
     });
 
-    const result = loadSettings({ version: 4 });
+    const result = loadSettings({ version: 5 });
     expect(result.value).toEqual(createBuiltInSettings());
     expect(result.diagnostics).toEqual([{ code: "settings.unsupported-version", path: "version" }]);
   });
 });
 
 describe("vault settings current-version validation", () => {
+  it("adds safe snapping defaults to legacy V4 settings without a version bump", () => {
+    const current = createBuiltInSettings();
+    const { snapping: _snapping, ...legacy } = current;
+
+    const result = loadSettings(legacy);
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.value).toEqual(current);
+  });
+
+  it("falls back only invalid snapping fields and rejects unknown snapping properties", () => {
+    const input = createBuiltInSettings() as unknown as Record<string, unknown>;
+    const snapping = input.snapping as Record<string, unknown>;
+    snapping.enabled = false;
+    snapping.angles = "sometimes";
+
+    const fieldResult = loadSettings(input);
+
+    expect(fieldResult.value.snapping).toEqual({
+      ...createBuiltInSettings().snapping,
+      enabled: false,
+    });
+    expect(fieldResult.diagnostics).toEqual([
+      { code: "settings.invalid-field", path: "snapping.angles" },
+    ]);
+
+    const unknown = createBuiltInSettings() as unknown as Record<string, unknown>;
+    (unknown.snapping as Record<string, unknown>).grid = true;
+    const objectResult = loadSettings(unknown);
+    expect(objectResult.value.snapping).toEqual(createBuiltInSettings().snapping);
+    expect(objectResult.diagnostics).toEqual([
+      { code: "settings.invalid-field", path: "snapping" },
+    ]);
+  });
+
   it.each([1, 2])("rejects unsupported pre-release version %j without migration", (version) => {
     const input = { ...createBuiltInSettings(), version };
 
@@ -189,6 +285,24 @@ describe("vault settings current-version validation", () => {
       path: "refreshRatePreference",
     });
   });
+
+  it.each([
+    ["area", "ellipse"],
+    ["inclusion", "crossing"],
+  ])("rejects invalid Select %s values", (property, value) => {
+    const input = createBuiltInSettings() as unknown as Record<string, unknown>;
+    const toolDefaults = input.toolDefaults as Record<string, unknown>;
+    const select = toolDefaults.select as Record<string, unknown>;
+    select[property] = value;
+
+    const result = loadSettings(input);
+
+    expect(result.value.toolDefaults.select).toEqual({ area: "lasso", inclusion: "touched" });
+    expect(result.diagnostics).toContainEqual({
+      code: "settings.invalid-field",
+      path: "toolDefaults.select",
+    });
+  });
 });
 
 describe("device settings loading", () => {
@@ -201,7 +315,14 @@ describe("device settings loading", () => {
       motion: "reduced",
     };
 
-    expect(loadDeviceSettings(input)).toEqual({ value: input, diagnostics: [] });
+    expect(loadDeviceSettings(input)).toEqual({
+      value: {
+        ...input,
+        version: 2,
+        keyboardShortcuts: createBuiltInKeyboardShortcuts(),
+      },
+      diagnostics: [],
+    });
   });
 
   it("falls back field by field", () => {
@@ -214,11 +335,12 @@ describe("device settings loading", () => {
     const result = loadDeviceSettings(input);
 
     expect(result.value).toEqual({
-      version: 1,
+      version: 2,
       fingerDrawingEnabled: false,
       penTapInsertion: "off",
       leftHandedToolbar: true,
       motion: "system",
+      keyboardShortcuts: createBuiltInKeyboardShortcuts(),
     });
     expect(result.diagnostics.map((diagnostic) => diagnostic.path)).toEqual([
       "fingerDrawingEnabled",
@@ -234,5 +356,39 @@ describe("device settings loading", () => {
       value: createBuiltInDeviceSettings(),
       diagnostics: [{ code: "settings.invalid-root", path: "$" }],
     });
+  });
+
+  it("loads canonical custom shortcuts and preserves cleared actions", () => {
+    const input = createBuiltInDeviceSettings();
+    input.keyboardShortcuts = {
+      ...input.keyboardShortcuts,
+      copy: { key: "K", modifiers: ["shift", "mod"] },
+      cut: null,
+    };
+
+    const result = loadDeviceSettings(input);
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.value.keyboardShortcuts.copy).toEqual({
+      key: "k",
+      modifiers: ["mod", "shift"],
+    });
+    expect(result.value.keyboardShortcuts.cut).toBeNull();
+  });
+
+  it("rejects duplicate bindings without creating a second conflict", () => {
+    const input = createBuiltInDeviceSettings();
+    input.keyboardShortcuts = {
+      ...input.keyboardShortcuts,
+      copy: { key: "a", modifiers: ["mod"] },
+    };
+
+    const result = loadDeviceSettings(input);
+
+    expect(result.diagnostics).toContainEqual({
+      code: "settings.invalid-field",
+      path: "keyboardShortcuts.copy",
+    });
+    expect(result.value.keyboardShortcuts.copy).toEqual({ key: "c", modifiers: ["mod"] });
   });
 });

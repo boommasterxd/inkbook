@@ -1,8 +1,9 @@
 import { vi } from "vitest";
 
-import type { EncodedClipboard } from "../../../../src/persistence/clipboard/public";
+import { type PastePlan } from "../../../../src/persistence/clipboard/public";
+import { type EncodedClipboard } from "../../../../src/persistence/clipboard/types";
 import type { PreparedElementMutation } from "../../../../src/domain/store/public";
-import type { PageV1 } from "../../../../src/domain/schema/public";
+import type { InkElementV1, PageV1 } from "../../../../src/domain/schema/public";
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
 
 export function createEncodedClipboardFixture(): EncodedClipboard {
@@ -88,4 +89,22 @@ export function createDeferredPreparation(): {
 
 export function createPreparedToken(): PreparedElementMutation {
   return Object.freeze({}) as PreparedElementMutation;
+}
+
+export function createPastePlan(element: InkElementV1): PastePlan {
+  const pasted = {
+    ...structuredClone(element),
+    id: "00000000-0000-4000-8000-000000000999",
+  };
+  return {
+    activateTool: "select",
+    commandTimestamp: 1,
+    contentIds: [pasted.id],
+    elements: [pasted],
+    highlightIds: [],
+    insertAtBandFront: true,
+    repeatState: { fingerprint: "fixture", pasteCount: 1 },
+    selectedIds: [pasted.id],
+    translation: { x: 0, y: 0 },
+  };
 }

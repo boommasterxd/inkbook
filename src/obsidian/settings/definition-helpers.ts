@@ -1,6 +1,7 @@
-import type { SettingDefinition, SettingDefinitionAction } from "obsidian";
+import type { SettingDefinition, SettingDefinitionRender } from "obsidian";
 
 import type { SettingsControlKey } from "./control-values";
+import { bindSettingsAction, type InkbookSettingActionTone } from "./settings-row";
 
 export function sentenceCaseLabel(value: string): string {
   const words = value.replaceAll("-", " ");
@@ -24,10 +25,25 @@ export function toggle(
   return { name, desc, control: { type: "toggle", key } };
 }
 
-export function resetAction(name: string, action: () => void): SettingDefinitionAction {
+export function settingsAction(
+  name: string,
+  desc: string,
+  tone: InkbookSettingActionTone,
+  activate: (element: HTMLElement) => void,
+): SettingDefinitionRender {
   return {
     name,
-    desc: "Restore the built-in values without changing existing files or elements.",
-    action,
+    desc,
+    render: (setting) =>
+      bindSettingsAction(setting.settingEl, () => activate(setting.settingEl), tone),
   };
+}
+
+export function resetAction(name: string, activate: () => void): SettingDefinitionRender {
+  return settingsAction(
+    name,
+    "Restore the built-in values without changing existing files or elements.",
+    "caution",
+    activate,
+  );
 }

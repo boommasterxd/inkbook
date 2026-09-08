@@ -9,10 +9,11 @@ import {
   activeEditorStoreHistory,
   creationPreviewRenderer,
 } from "../../../fixtures/obsidian/active-editor";
+import { ManualFrameScheduler } from "../../../fixtures/obsidian/manual-frame-scheduler";
 
 describe("active editor live stroke preview", () => {
   it("consumes coalesced samples and commits the incremental stroke", () => {
-    const { clearLiveStroke, input, preview, store, updateLiveStroke } = createLiveStrokeHarness(
+    const { commitLiveStroke, input, preview, store, updateLiveStroke } = createLiveStrokeHarness(
       "00000000-0000-4000-8000-000000000001",
     );
     input.dispatch(
@@ -26,7 +27,7 @@ describe("active editor live stroke preview", () => {
     expect(preview.commit()).toBe(true);
     expect(store.size).toBe(1);
     expect(store.get("00000000-0000-4000-8000-000000000001")?.element.kind).toBe("stroke");
-    expect(clearLiveStroke).toHaveBeenCalledOnce();
+    expect(commitLiveStroke).toHaveBeenCalledOnce();
   });
 
   it("uses real pen pressure and simulated mouse pressure", () => {
@@ -48,6 +49,26 @@ describe("active editor live stroke preview", () => {
     const mouseElement = mouse.store.get("00000000-0000-4000-8000-000000000022")?.element;
     expect(mouseElement?.kind === "stroke" ? mouseElement.points[2] : undefined).toBe(0.5);
     expect(mouseElement?.kind === "stroke" ? mouseElement.points[5] : undefined).toBe(0.425);
+  });
+
+  it("preserves coalesced pen geometry while rendering once per animation frame", () => {
+    const scheduler = new ManualFrameScheduler();
+    const { input, routed, store, updateLiveStroke } = createLiveStrokeHarness(
+      "00000000-0000-4000-8000-000000000023",
+      scheduler,
+    );
+
+    input.dispatch(coalescedEvent([pointerEvent(20, 20, 0.6, 1), pointerEvent(30, 30, 0.7, 2)]));
+    input.dispatch(coalescedEvent([pointerEvent(40, 40, 0.8, 3), pointerEvent(50, 50, 0.9, 4)]));
+
+    expect(updateLiveStroke).toHaveBeenCalledOnce();
+    expect(scheduler.pendingCount).toBe(1);
+    scheduler.runNext();
+    expect(updateLiveStroke).toHaveBeenCalledTimes(2);
+    expect(routed.commit()).toBe(true);
+    const element = store.get("00000000-0000-4000-8000-000000000023")?.element;
+    expect(element?.kind === "stroke" ? element.points : []).toHaveLength(15);
+    expect(element?.kind === "stroke" ? element.points.slice(-3) : []).toEqual([50, 50, 0.9]);
   });
 });
 
@@ -80,6 +101,20 @@ describe("active editor live stroke limits", () => {
     expect(input.dispatch(coalescedEvent(samples))).toBe(true);
     expect(dispatchMove).toHaveBeenCalledOnce();
     expect(dispatchMove).toHaveBeenCalledWith(expect.objectContaining({ x: 4095, y: 4095 }));
+  });
+
+  it("includes the dispatched pointer when the browser omits it from the coalesced list", () => {
+    const dispatchMove = vi.fn();
+    const input = coalescedHarness(dispatchMove);
+    const dispatched = {
+      ...pointerEvent(30, 40, 0.6, 2),
+      getCoalescedEvents: () => [pointerEvent(10, 20, 0.4, 1)],
+    } as PointerEvent;
+
+    expect(input.dispatch(dispatched)).toBe(true);
+    expect(dispatchMove).toHaveBeenCalledWith(
+      expect.objectContaining({ pressure: 0.6, time: 2, x: 30, y: 40 }),
+    );
   });
 
   it.each([
@@ -127,17 +162,17 @@ describe("active editor live stroke limits", () => {
   });
 });
 
-function createLiveStrokeHarness(identity: string) {
+function createLiveStrokeHarness(identity: string, frameScheduler?: ManualFrameScheduler) {
   const store = new ElementStore();
   const history = activeEditorStoreHistory(store);
-  const clearLiveStroke = vi.fn();
+  const commitLiveStroke = vi.fn();
   const updateLiveStroke = vi.fn();
   const preview = new CreationPreview({
     defaults: createBuiltInSettings().toolDefaults,
     history,
     identity: { createdAt: 1, id: identity },
     renderer: creationPreviewRenderer({
-      clearLiveStroke,
+      commitLiveStroke,
       updateLiveStroke,
     }),
     start: {
@@ -148,9 +183,9 @@ function createLiveStrokeHarness(identity: string) {
     },
   });
   let routed: GesturePreview = preview;
-  const input = createCoalescedInput((pointer) => routed.update(pointer));
+  const input = createCoalescedInput((pointer) => routed.update(pointer), frameScheduler);
   routed = input.wrap(preview);
-  return { clearLiveStroke, input, preview, store, updateLiveStroke };
+  return { commitLiveStroke, input, preview, routed, store, updateLiveStroke };
 }
 
 function createPressurePreview(identity: string, pointerType: "mouse" | "pen") {
@@ -179,9 +214,11 @@ function coalescedHarness(
 
 function createCoalescedInput(
   dispatchMove: (pointer: Parameters<GesturePreview["update"]>[0]) => void,
+  frameScheduler?: ManualFrameScheduler,
 ) {
   return new CoalescedPointerInput({
     dispatchMove,
+    ...(frameScheduler === undefined ? {} : { frameScheduler }),
     now: () => 4,
     project: (event) => ({
       pointerId: event.pointerId,
@@ -194,8 +231,9 @@ function createCoalescedInput(
 }
 
 function coalescedEvent(samples: readonly PointerEvent[]): PointerEvent {
+  const dispatched = samples[samples.length - 1] ?? pointerEvent(0, 0, 0.5, 0);
   return {
-    ...pointerEvent(0, 0, 0.5, 0),
+    ...dispatched,
     getCoalescedEvents: () => samples,
   } as unknown as PointerEvent;
 }

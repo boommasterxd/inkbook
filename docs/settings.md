@@ -6,7 +6,7 @@
 - Every value available in a tool's Style menu MUST have a configurable default for that tool.
 - Changing a default affects newly created elements only. It never rewrites existing elements.
 - Settings UI rejects invalid values and does not persist them. On load, an invalid persisted field falls back to its documented built-in default; the loader does not silently clamp it.
-- The vault settings schema is version 3 for the first release. Because no earlier version was released in production, older or unknown settings versions are unsupported and fall back to built-in defaults; no settings migration is performed. Device-local settings use their independent version 1 schema.
+- The vault settings schema is version 4. A completely valid version 3 value is migrated by adding the built-in Select and snapping defaults while preserving every existing value. A valid earlier version 4 value without snapping settings loads with built-in snapping defaults. Versions 1, 2, and unknown versions remain unsupported and fall back to built-in defaults. Device-local settings use their independent version 2 schema and migrate valid version 1 values.
 
 ## Scope and Precedence
 
@@ -14,12 +14,12 @@ Settings have four scopes:
 
 | Scope            | Storage                | Examples                                                                |
 | ---------------- | ---------------------- | ----------------------------------------------------------------------- |
-| Vault            | Obsidian plugin data   | Tool defaults, page defaults, file placement, display refresh-rate mode |
-| Device and vault | Obsidian local storage | Finger drawing, pen-tap insertion, handedness, motion preference        |
+| Vault            | Obsidian plugin data   | Tool defaults, snapping, page defaults, placement, refresh-rate mode    |
+| Device and vault | Obsidian local storage | Finger drawing, pen-tap insertion, handedness, motion, canvas shortcuts |
 | File             | Editable SVG snapshot  | Current background type and spacing, element styles                     |
 | Session          | Memory only            | Current tool, current menu values, finger toggle, zoom, camera position |
 
-Vault settings use `Plugin.loadData()` and `Plugin.saveData()`. Device settings use `App.loadLocalStorage("inkbook:device-settings:v1")` and `App.saveLocalStorage(...)`. They are local to the current device and vault and contain preferences only, never vault paths, note content, clipboard data, or ink data.
+Vault settings use `Plugin.loadData()` and `Plugin.saveData()`. Device settings use `App.loadLocalStorage("inkbook:device-settings:v2")` and `App.saveLocalStorage(...)`. They are local to the current device and vault and contain preferences only, never vault paths, note content, clipboard data, or ink data.
 
 Precedence from highest to lowest:
 
@@ -33,16 +33,21 @@ On editor activation, session tool values are initialized from vault defaults. S
 ## Settings Root
 
 ```ts
-interface InkbookSettingsV3 {
-  version: 3;
+interface InkbookSettingsV4 {
+  version: 4;
   startupTool: StartupToolV1;
   toolDefaults: ToolDefaultsV1;
+  snapping: SnappingSettingsV1;
   pageDefaults: PageDefaultsV3;
   filePlacement: FilePlacementV1;
   refreshRatePreference: "auto" | 60 | 90 | 120 | 144 | 240;
 }
 
 interface ToolDefaultsV1 {
+  select: {
+    area: "rectangle" | "lasso";
+    inclusion: "fully-enclosed" | "touched";
+  };
   pen: PenDefaultsV1;
   highlighter: HighlighterDefaultsV1;
   straightHighlighter: HighlighterDefaultsV1;
@@ -53,12 +58,21 @@ interface ToolDefaultsV1 {
   table: { columns: number };
 }
 
-interface InkbookDeviceSettingsV1 {
-  version: 1;
+interface SnappingSettingsV1 {
+  enabled: boolean;
+  angles: boolean;
+  bends: boolean;
+  connections: boolean;
+  structures: boolean;
+}
+
+interface InkbookDeviceSettingsV2 {
+  version: 2;
   fingerDrawingEnabled: boolean;
   penTapInsertion: "off" | "handwriting";
   leftHandedToolbar: boolean;
   motion: "system" | "full" | "reduced";
+  keyboardShortcuts: KeyboardShortcutSettingsV1;
 }
 ```
 
@@ -70,7 +84,29 @@ interface InkbookDeviceSettingsV1 {
 
 The built-in startup tool is `draw`.
 
-Version 3 is the first released vault-settings schema. It stores absolute background spacing in the shared 25, 100 / 3, 50, and 100 page-unit series and the fixed 100-unit layout step. There are no production legacy settings to migrate, so version 1, version 2, and unknown vault settings are rejected as unsupported rather than transformed. The device-settings schema remains version 1.
+Version 3 introduced the first released vault-settings schema with absolute background spacing in the shared 25, 100 / 3, 50, and 100 page-unit series and the fixed 100-unit layout step. Version 4 adds the two Select defaults. The loader migrates only a completely valid version 3 object, preserves every existing value, adds `select: { area: "lasso", inclusion: "touched" }` plus the built-in snapping settings, and returns canonical version 4. A valid version 4 object from before snapping settings existed receives those same defaults without a version change. A malformed version 3 value is not partially migrated. Versions 1, 2, and unknown vault settings are rejected as unsupported rather than transformed. Device-settings version 2 adds the configurable keyboard map. A valid version 1 value is migrated without changing its earlier preferences. Exact bindings, ownership, and conflict rules are canonical in [Keyboard Shortcuts](keyboard-shortcuts.md).
+
+## Select Defaults
+
+Select owns two independent session and vault defaults:
+
+- selection area: `rectangle` or `lasso`; built-in `lasso`
+- inclusion: `fully-enclosed` or `touched`; built-in `touched`
+
+Rectangle uses the drag start and current pointer as opposite corners. Lasso records at most 512 simplified freeform pointer points and treats the resulting path as closed. Touched includes an element when any visible painted geometry intersects or lies within the area. Fully enclosed includes it only when all visible painted geometry, including stroke width and arrow nodes, lies within the area. These values affect selection behavior only, never existing elements or Inkbook files. The Style menu changes the active editor session, while Settings changes the vault default used by subsequently activated editors.
+
+## Snapping
+
+Snapping is a vault preference with one global switch and four independent behavior switches. All five built-in values are enabled:
+
+- Angle snapping covers selection rotation, horizontal or vertical line and arrow directions, and 45-degree coordinate-system axes.
+- Bend snapping covers straight and symmetric bend positions for lines and arrows.
+- Connection snapping covers line and arrow endpoints attaching to semantic shape anchors or other linear endpoints.
+- Structure snapping covers table separators returning to the default header or equal-column position.
+
+Disabling the global switch suppresses every snap without overwriting the four individual choices. Re-enabling it restores the previously configured combination. The individual controls are hidden while the global switch is off because they are temporarily inactive, but their values remain persisted. Holding Alt during a pointer gesture temporarily inverts only the global state for each subsequent pointer frame. Alt therefore suppresses all snapping while the global switch is enabled, or temporarily activates the persisted per-kind combination while the global switch is disabled. Releasing Alt restores the configured state, and the modifier never persists a settings change. These settings affect interaction behavior only and never rewrite existing elements or Inkbook files.
+
+The four dependent controls enter and leave through the same measured block-size motion contract as settings disclosures. They become inert while closing and settle on the native hidden state. Full and system motion animate the change unless the operating system requests reduced motion; Inkbook's reduced-motion preference applies the final state immediately.
 
 ## Display Refresh Rate
 
@@ -148,7 +184,7 @@ Every shape type has its own persisted default entry, even when several entries 
 ```ts
 interface OutlineDefaultsV1 {
   outlineColor: ColorV1;
-  outlineWidth: 1 | 2 | 4 | 8 | 12;
+  outlineWidth: 2 | 4 | 8 | 14 | 22;
   outlineStyle: "solid" | "dashed" | "dotted";
   outlineOpacity: number;
 }
@@ -162,11 +198,11 @@ interface ShapeDefaultsV1 extends OutlineDefaultsV1 {
 Built-in outline values for every shape:
 
 - outline color: Theme text color
-- outline width: S, 2
+- outline width: S, 4
 - outline style: solid
 - outline opacity: 1
 
-Built-in fill values for every closed shape are `fillColor: null` and `fillOpacity: 0.15`. Fill controls and fields exist only for rectangle, ellipse, triangle, octagon, parallelogram, and diamond. A null fill always renders with zero effective fill opacity. Line, arrow, coordinate-system, and table defaults cannot store fill fields.
+Built-in fill values for every closed shape are `fillColor: null` and `fillOpacity: 0.5`. Fill controls and fields exist only for rectangle, ellipse, triangle, octagon, parallelogram, and diamond. A null fill always renders with zero effective fill opacity. Line, arrow, coordinate-system, and table defaults cannot store fill fields.
 
 ### Arrow Defaults
 
@@ -186,7 +222,7 @@ Line defaults use none for both nodes. Node settings are not shown for other sha
 
 - columns: 2
 - valid range: 1 through 12
-- header height: 30 percent of initial height
+- header height: 25 percent of initial height, with a 24-page-unit minimum
 - no fill and no data-row separators; each table has exactly one horizontal header separator
 
 ## Eraser Defaults
@@ -248,6 +284,9 @@ All numeric ranges are inclusive.
 | Table columns                 | integer from 1 through 12            |        1 |
 | Display refresh rate          | auto, 60, 90, 120, 144, or 240       | Discrete |
 | Active buffer lines           | integer from 1 through 8             |        1 |
+| Selection area                | rectangle or lasso                   | Discrete |
+| Selection inclusion           | fully-enclosed or touched            | Discrete |
+| Snapping switches             | boolean                              | Discrete |
 | Enumerations and colors       | exactly one documented value         | Discrete |
 
 Unknown object properties, missing required properties, invalid enum values, non-finite numbers, and values outside these ranges make the containing persisted settings field invalid. The loader replaces only that field with its built-in default, records a non-content diagnostic code, and continues loading the other valid fields.
@@ -273,6 +312,8 @@ Custom folders:
 
 ## Device Settings
 
+Finger drawing and pen-tap insertion use matching toggle controls. The pen-tap toggle maps the enabled state to the persisted `"handwriting"` mode and the disabled state to `"off"`; no select menu is shown for this binary preference.
+
 ### Finger Drawing
 
 - device-and-vault-local default: disabled
@@ -297,18 +338,27 @@ Custom folders:
 - full enables all specified transitions
 - reduced removes non-essential interpolation while preserving immediate state changes, focus movement, feedback, and final geometry
 
+### Keyboard Shortcuts
+
+- configurable canvas bindings are stored per device and vault
+- the settings recorder supports reassignment, clearing, per-action reset, and full reset
+- fixed system bindings and Obsidian commands are reference-only
+- exact defaults, event ownership, and current Obsidian-command conflict rejection are defined in [Keyboard Shortcuts](keyboard-shortcuts.md)
+
 ## Settings UI
 
 The settings tab uses these logical groups and this order:
 
 1. **General**: startup tool, display refresh-rate preference, and file placement. General rows are the first rows and remain unheaded in the rendered Obsidian settings tab as required by the host contract.
 2. **Page defaults**: background type, the independent Lines, Dots, and Squares spacing defaults, and the active buffer line count.
-3. **Drawing tools**: Pen, Highlighter, Straight highlighter, and Eraser. Each tool is one independently collapsible section.
+3. **Drawing tools**: Select, Pen, Highlighter, Straight highlighter, and Eraser. Each tool is one independently collapsible section.
 4. **Shapes and structures**: Line, Arrow, Rectangle, Ellipse, Triangle, Octagon, Parallelogram, Diamond, Coordinate system, and Table. Each tool is one independently collapsible section.
-5. **Input**: finger drawing and pen-tap insertion.
-6. **Interface**: handedness and motion.
+5. **Snapping**: global enable switch followed by Angle, Bend, Connection, and Structure switches.
+6. **Input**: finger drawing and pen-tap insertion.
+7. **Interface**: handedness and motion.
+8. **Shortcuts**: configurable device-local canvas bindings plus fixed system, gesture-modifier, and Obsidian-command references.
 
-The headings for Page defaults, Drawing tools, Shapes and structures, Input, and Interface use sentence case and omit the word `settings`. The General group has no visible heading, but remains a distinct logical group for definitions, validation, and reset behavior. Every tool default in the schema has exactly one corresponding section, including each shape type's separate persisted entry.
+The headings for Page defaults, Drawing tools, Shapes and structures, Snapping, Input, Interface, and Shortcuts use sentence case and omit the word `settings`. The General group has no visible heading, but remains a distinct logical group for definitions, validation, and reset behavior. Every tool default in the schema has exactly one corresponding section, including each shape type's separate persisted entry.
 
 ### Collapsible tool sections
 
@@ -318,10 +368,11 @@ Every section in Drawing tools and Shapes and structures is a keyboard-operable 
 
 Settings MUST reuse the same typed option models, labels, ordering, selected-state treatment, previews, and control patterns as the corresponding Style and Background menus. A user must be able to recognize a setting from the menu without translating it to a different control. Shared control definitions prevent the two surfaces from acquiring different values or meanings.
 
-Settings inherit Obsidian's neutral `SettingGroup` surface and its host-owned radius rather than adding a nested surface or copying the enclosing border, radius, or panel treatment from an adaptive Style or Background menu. Native host dividers separate independent settings rows. Expanded tool content and the Background type-and-spacing composition use whitespace instead of additional nested separator lines. Changing Background between None and a patterned type animates the bounded content-height change while the Spacing control leaves or enters; reduced motion applies the final height immediately. Menu recognition applies to the control content and interaction model. Visual choice collections use all available inline space and keep their canonical order: choices remain in one row when they fit and wrap without horizontal scrolling when the settings viewport is narrower.
+Settings inherit Obsidian's neutral `SettingGroup` surface and its host-owned radius rather than adding a nested surface or copying the enclosing border, radius, or panel treatment from an adaptive Style or Background menu. Native host dividers separate independent settings rows. Expanded tool content and the Background type-and-spacing composition use whitespace instead of additional nested separator lines. Changing Background between None and a patterned type animates the bounded content-height change while the Spacing control leaves or enters; reduced motion applies the final height immediately. Menu recognition applies to the control content and interaction model. Visual choice collections use all available inline space and keep their canonical order: choices remain in one row when they fit and wrap without horizontal scrolling when the settings viewport is narrower. A control commit updates its mounted row in place and preserves the settings scroll position. A setting whose value changes conditional row structure may rebuild that structure, but it restores the exact preceding scroll position before returning control to the user.
 
 The following controls are visual choices rather than plain dropdowns:
 
+- Select area uses icon-only Rectangle and Lasso choices with accessible names. The Select toolbar icon follows the active area choice immediately. Select inclusion uses a two-column Fully enclosed and Touched choice row whose labels wrap inside their controls instead of overflowing a narrow adaptive panel. The two independent groups retain this order and expose the same labels, values, and selected state in Style and Settings.
 - Colors use the same labelled color swatches and selected state as Style, including Theme text color and the documented palette.
 - Outline style uses exactly three buttons, in the same order, with the same solid, dashed, and dotted line previews.
 - Pen, highlighter, and outline widths use five evenly sized XS-through-XL choices with real line-width previews. The stored width values remain those in the type definitions and validation matrix.
@@ -340,14 +391,14 @@ All controls have a visible sentence-case label, one concise description, an acc
 ### Persistence, validation, and reset behavior
 
 - Invalid values show an inline error and are not persisted. The persisted-data loader repeats the same validation and falls back to the documented built-in default for an invalid field without silently clamping it.
-- Each logical group provides `Reset group to defaults`. A final `Reset all Inkbook settings` action requires confirmation. Resetting settings never modifies existing files or elements.
+- Each logical group provides a caution-toned `Reset group to defaults` action at its actual group end. The Shortcuts group presents four initially collapsed disclosures using the same native setting surface, typography, inline inset, bounded dividers, outer radius, and measured disclosure motion as tool sections, followed by its group reset. Expanded shortcut and reference entries use native setting-item name, description, and control structure. The expanded Canvas shortcuts disclosure provides per-action Reset and Clear controls. A final danger-toned `Reset all Inkbook settings` action requires confirmation. Resetting settings never modifies existing files or elements.
 - Tool-default changes update vault defaults immediately. An already active editor keeps every current per-tool session value, so its next elements remain predictable; locking and reopening the editor initializes new session values from the changed defaults. Page-default changes affect only files created afterward. Device-setting changes apply immediately when safe, while an active pointer gesture retains the input mode with which it began.
 - The tab uses `PluginSettingTab.getSettingDefinitions()`. Typed `getControlValue()` and `setControlValue()` adapters expose the nested settings object without duplicate flattened state. Simple values use declarative controls, conditional rows use `visible`, and reset actions use declarative actions or a bounded render callback.
 - `getSettingDefinitions()` performs no file access or expensive work. Declarative UI validation is repeated during persisted settings loading.
 
 ### Settings parity tests
 
-Parity tests MUST enumerate every configurable Style and Background menu value and assert that it has the matching settings default path, value domain, label, ordering, selected state, and recognizable control. They MUST cover the exact three outline-style buttons, all width previews, palette swatches, fill and opacity controls, endpoint and dimension icons, the table stepper, background choices, and S/M/L/XL spacing. Tests MUST also cover slider-and-field synchronization, invalid input rollback, inline errors, group and full reset, persistence failures, accessibility attributes for collapsible sections, and the unchanged vault/session semantics. A parity test fails when a menu option is added without a settings default or when either surface uses a divergent option list.
+Parity tests MUST enumerate every configurable Style and Background menu value and assert that it has the matching settings default path, value domain, label, ordering, selected state, and recognizable control. They MUST cover both Select area choices, both inclusion choices, the exact three outline-style buttons, all width previews, palette swatches, fill and opacity controls, endpoint and dimension icons, the table stepper, background choices, and S/M/L/XL spacing. Tests MUST also cover version 3 vault migration, version 1 device migration, shortcut canonicalization, Inkbook conflicts, current Obsidian default and custom conflicts, custom removal of a host default, malformed private hotkey-state fallback, slider-and-field synchronization, invalid input rollback, inline errors, group and full reset, persistence failures, accessibility attributes for collapsible sections, and the unchanged vault/session semantics. A parity test fails when a menu option is added without a settings default or when either surface uses a divergent option list.
 
 ## Settings Deliberately Not Exposed
 
@@ -359,5 +410,6 @@ Autosave delays, culling margin, spatial-index size, cache size, worker threshol
 - [File format](file-format.md)
 - [Editor tools](editor-tools.md)
 - [Features](features.md)
+- [Keyboard shortcuts](keyboard-shortcuts.md)
 - [Quality and testing](quality-and-testing.md)
 - [Obsidian integration](obsidian-integration.md)

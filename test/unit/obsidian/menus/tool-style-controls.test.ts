@@ -52,7 +52,28 @@ describe("tool Style controls", () => {
         value: defaults.eraser.radius,
       },
     ]);
-    expect(createToolStyleControls(defaults, "select")).toEqual([]);
+    expect(createToolStyleControls(defaults, "select")).toEqual([
+      {
+        id: "selection-area",
+        kind: "choice",
+        label: "Selection area",
+        options: [
+          { label: "Rectangle", value: "rectangle" },
+          { label: "Lasso", value: "lasso" },
+        ],
+        value: "lasso",
+      },
+      {
+        id: "selection-inclusion",
+        kind: "choice",
+        label: "Include elements",
+        options: [
+          { label: "Fully enclosed", value: "fully-enclosed" },
+          { label: "Touched", value: "touched" },
+        ],
+        value: "touched",
+      },
+    ]);
   });
 
   it("exports the canonical choice labels and values for reuse", () => {
@@ -63,13 +84,7 @@ describe("tool Style controls", () => {
       { label: "L", value: "14" },
       { label: "XL", value: "22" },
     ]);
-    expect(OUTLINE_WIDTH_STYLE_OPTIONS).toEqual([
-      { label: "XS", value: "1" },
-      { label: "S", value: "2" },
-      { label: "M", value: "4" },
-      { label: "L", value: "8" },
-      { label: "XL", value: "12" },
-    ]);
+    expect(OUTLINE_WIDTH_STYLE_OPTIONS).toEqual(PEN_WIDTH_STYLE_OPTIONS);
     expect(OUTLINE_STYLE_OPTIONS.map(({ value }) => value)).toEqual(["solid", "dashed", "dotted"]);
     expect(ARROW_NODE_STYLE_OPTIONS.map(({ value }) => value)).toEqual([
       "none",

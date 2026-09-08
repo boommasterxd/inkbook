@@ -1,21 +1,24 @@
 import { describe, expect, it } from "vitest";
 
 import type {
+  BoxShapeElementV1,
+  InkElementV1,
   LineElementV1,
   StrokeElementV1,
   TableElementV1,
 } from "../../../../src/domain/schema/public";
+import { canonicalPoint } from "../../../../src/domain/geometry/public";
 import { validateInkElementV1 } from "../../../../src/domain/schema/public";
+import { moveSelectionTimeSliced } from "../../../../src/editor/selection/public";
+import { editLinearBend } from "../../../../src/editor/selection/linear-bend";
+import { editLinearEndpoint } from "../../../../src/editor/selection/linear-transforms";
 import {
-  editLinearBend,
-  editLinearEndpoint,
-  resizeBoxShape,
   moveSelection,
-  moveSelectionTimeSliced,
   rotateSelection,
-  scaleSelectionUniform,
-} from "../../../../src/editor/selection/public";
+  uniformScaleFactorFromPointers,
+} from "../../../../src/editor/selection/transforms";
 import { hydrateRuntimeStroke } from "../../../fixtures/domain/runtime-stroke-store";
+import { scaleSelectionUniformForTest as scaleSelectionUniform } from "../../../fixtures/editor/selection-transform-reference";
 
 const style = {
   outlineColor: { type: "theme-text" as const },
@@ -70,6 +73,25 @@ function scalableTable(id: string, headerHeight: number): TableElementV1 {
   };
 }
 
+function fractionalBoxShape(): BoxShapeElementV1 {
+  const x = 100.001;
+  const y = 70.002;
+  const width = 101.003;
+  const height = 53.007;
+  return {
+    createdAt: 4,
+    height,
+    id: "00000000-0000-4000-8000-000000000009",
+    kind: "rectangle",
+    pivot: canonicalPoint({ x: x + width / 2, y: y + height / 2 }),
+    rotation: 90,
+    style: { ...style, fillColor: null, fillOpacity: 0 },
+    width,
+    x,
+    y,
+  };
+}
+
 function runtimeStroke(): StrokeElementV1 {
   return {
     createdAt: 3,
@@ -87,6 +109,21 @@ function runtimeStroke(): StrokeElementV1 {
     },
     tool: "pen",
   };
+}
+
+function translationRoundingGeometry() {
+  return {
+    height: 429.471,
+    pivot: { x: 1099.695, y: 1022.904 },
+    x: 655.405,
+    y: 808.169,
+  };
+}
+
+function expectValidRoundingSensitiveTranslation(source: InkElementV1): void {
+  const moved = moveSelection([source], { x: -100, y: 40 })[0]!;
+  expect(moved.pivot).toEqual({ x: 999.694, y: 1062.905 });
+  expect(validateInkElementV1(moved).ok).toBe(true);
 }
 
 describe("selection transforms", () => {
@@ -178,6 +215,55 @@ describe("selection transform validation", () => {
     expect(() => moveSelection([stroke], { x: 0.001, y: 0 })).toThrow(RangeError);
   });
 
+  it("derives a translated table pivot from the canonical moved origin", () => {
+    const source: TableElementV1 = {
+      ...table(),
+      ...translationRoundingGeometry(),
+      columnWidth: 296.193,
+      columns: 3,
+      headerHeight: 128.841,
+      id: "00000000-0000-4000-8000-000000000008",
+    };
+
+    expectValidRoundingSensitiveTranslation(source);
+  });
+
+  it("derives a translated box pivot from the canonical moved origin", () => {
+    const source = {
+      createdAt: 4,
+      ...translationRoundingGeometry(),
+      id: "00000000-0000-4000-8000-000000000007",
+      kind: "rectangle" as const,
+      rotation: 0,
+      style: { ...style, fillColor: null, fillOpacity: 0 },
+      width: 888.579,
+    };
+
+    expectValidRoundingSensitiveTranslation(source);
+  });
+});
+
+describe("selection transform constraints", () => {
+  it("ignores pointer motion perpendicular to a uniform resize handle direction", () => {
+    const anchor = { x: 100, y: 100 };
+    const start = { x: 700, y: 100 };
+
+    expect(uniformScaleFactorFromPointers(anchor, start, { x: 1_000, y: 100 })).toBe(1.5);
+    expect(uniformScaleFactorFromPointers(anchor, start, { x: 1_000, y: 480 })).toBe(1.5);
+    expect(uniformScaleFactorFromPointers(anchor, start, { x: 1_000, y: -280 })).toBe(1.5);
+  });
+
+  it("clamps a uniform resize after the pointer crosses its fixed anchor", () => {
+    const factor = uniformScaleFactorFromPointers(
+      { x: 100, y: 100 },
+      { x: 700, y: 100 },
+      { x: 50, y: 600 },
+      0.2,
+    );
+
+    expect(factor).toBe(0.2);
+  });
+
   it("scales structural geometry while preserving paint widths", () => {
     const scaled = scaleSelectionUniform([table()], { x: 0, y: 0 }, 2)[0] as TableElementV1;
     expect(scaled).toMatchObject({ columnWidth: 80, height: 160, headerHeight: 48 });
@@ -204,7 +290,28 @@ describe("selection transform validation", () => {
     expect(validateInkElementV1(scaled).ok).toBe(true);
   });
 
-  it("uses the strictest table header minimum during uniform group scaling", () => {
+  it("derives a resized box pivot from rounded canonical dimensions", () => {
+    const source = fractionalBoxShape();
+    const scaled = scaleSelectionUniform([source], { x: source.x, y: source.y }, 1.37)[0];
+    if (scaled?.kind !== "rectangle") throw new TypeError("Expected a rectangle replacement.");
+
+    expect(scaled).toMatchObject({
+      height: 72.62,
+      pivot: { x: 169.188, y: 106.312 },
+      width: 138.374,
+      x: 100.001,
+      y: 70.002,
+    });
+    expect(scaled.pivot).toEqual(
+      canonicalPoint({
+        x: scaled.x + scaled.width / 2,
+        y: scaled.y + scaled.height / 2,
+      }),
+    );
+    expect(validateInkElementV1(scaled).ok).toBe(true);
+  });
+
+  it("scales table headers proportionally while preserving outer geometry minimums", () => {
     const first = scalableTable("00000000-0000-4000-8000-000000000004", 30);
     const second = scalableTable("00000000-0000-4000-8000-000000000005", 40);
 
@@ -214,8 +321,8 @@ describe("selection transform validation", () => {
       0.5,
     ) as [TableElementV1, TableElementV1];
 
-    expect(scaledFirst).toMatchObject({ columnWidth: 80, headerHeight: 24, height: 160 });
-    expect(scaledSecond).toMatchObject({ columnWidth: 80, headerHeight: 32, height: 160 });
+    expect(scaledFirst).toMatchObject({ columnWidth: 50, headerHeight: 15, height: 100 });
+    expect(scaledSecond).toMatchObject({ columnWidth: 50, headerHeight: 20, height: 100 });
     expect(validateInkElementV1(scaledFirst).ok).toBe(true);
     expect(validateInkElementV1(scaledSecond).ok).toBe(true);
   });
@@ -228,23 +335,5 @@ describe("selection transform validation", () => {
     expect(bent.bend).toEqual({ x: 5, y: 5 });
     const edited = editLinearEndpoint(bent, "start", { x: -8, y: 0 }) as LineElementV1;
     expect(edited.startConnection).toBeNull();
-  });
-
-  it("clamps a crossing box handle without mirroring geometry", () => {
-    const shape = {
-      id: "shape",
-      kind: "rectangle" as const,
-      createdAt: 3,
-      rotation: 0,
-      pivot: { x: 50, y: 50 },
-      x: 0,
-      y: 0,
-      width: 100,
-      height: 100,
-      style: { ...style, fillColor: null, fillOpacity: 0 },
-    };
-    const resized = resizeBoxShape(shape, "middle-right", { x: -20, y: 50 });
-    expect(resized.width).toBe(1);
-    expect(resized.x).toBe(0);
   });
 });

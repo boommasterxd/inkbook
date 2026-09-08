@@ -1,3 +1,4 @@
+import { parseInkbookDocumentForTest } from "../../../fixtures/persistence/parse-document";
 import { describe, expect, it, vi } from "vitest";
 
 import { ActiveEditorBackgroundSession } from "../../../../src/obsidian/embeds/active-editor/background-session";
@@ -5,7 +6,7 @@ import { ActiveDocumentHistory } from "../../../../src/obsidian/embeds/active-ed
 import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";
 import { DocumentRevisionExhaustedError } from "../../../../src/obsidian/embeds/document-model-port";
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
-import { parseInkbookDocument } from "../../../../src/persistence/serialization/public";
+
 import { emptySnapshot, operation, persistenceHarness, rectangle } from "./vault-session-fixtures";
 
 function requireModel(
@@ -16,8 +17,8 @@ function requireModel(
   return model;
 }
 
-function expectPersistedSnapshot(content: string) {
-  const parsed = parseInkbookDocument(content);
+async function expectPersistedSnapshot(content: string) {
+  const parsed = await parseInkbookDocumentForTest(content);
   expect(parsed.ok).toBe(true);
   if (!parsed.ok) throw new Error("Expected a persisted Inkbook document.");
   return parsed.value.snapshot;
@@ -116,7 +117,7 @@ describe("active editor revision capacity", () => {
       session.lockLatest({ ...operation(), operationId: 2, workspaceToken: 2 }),
     ).resolves.toMatchObject({ revision: Number.MAX_SAFE_INTEGER, status: "confirmed" });
     expect(process).toHaveBeenCalledOnce();
-    expect(expectPersistedSnapshot(content())).toMatchObject({
+    expect(await expectPersistedSnapshot(content())).toMatchObject({
       elements: [rectangle()],
       revision: Number.MAX_SAFE_INTEGER,
     });

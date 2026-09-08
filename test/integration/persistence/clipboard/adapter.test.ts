@@ -1,12 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   beginClipboardWriteDuringActivation,
-  encodeSelection,
-  INKBOOK_CLIPBOARD_WEB_MIME,
   type ClipboardWritePort,
   type ClipboardWritePayload,
-  type EncodedClipboard,
 } from "../../../../src/persistence/clipboard/public";
+import { encodeRuntimeSelection } from "../../../../src/persistence/clipboard/codec";
+import { type EncodedClipboard } from "../../../../src/persistence/clipboard/types";
 import { RECTANGLE_ID, rectangle } from "../../../unit/persistence/clipboard/fixtures";
 
 interface FakeItem {
@@ -14,13 +13,13 @@ interface FakeItem {
 }
 
 const encodedFixture = (): EncodedClipboard => {
-  const encoded = encodeSelection([rectangle()], new Set([RECTANGLE_ID]));
+  const encoded = encodeRuntimeSelection([rectangle()], new Set([RECTANGLE_ID]));
   if (!encoded.ok) throw new Error(encoded.error.message);
   return encoded.value;
 };
 
 describe("clipboard write adapter plan", () => {
-  it("constructs and starts a custom-format write before worker data resolves", async () => {
+  it("starts one plain-text system write before worker data resolves", async () => {
     let resolvePayload: ((payload: EncodedClipboard) => void) | undefined;
     const pendingPayload = new Promise<EncodedClipboard>((resolve) => {
       resolvePayload = resolve;
@@ -40,44 +39,39 @@ describe("clipboard write adapter plan", () => {
 
     const attempt = beginClipboardWriteDuringActivation(port, pendingPayload);
 
-    expect(attempt.mode).toBe("custom-and-plain");
+    expect(attempt.mode).toBe("plain-only");
     expect(createItem).toHaveBeenCalledTimes(1);
     expect(write).toHaveBeenCalledTimes(1);
-    expect([...(createdItem?.formats.keys() ?? [])]).toEqual([
-      INKBOOK_CLIPBOARD_WEB_MIME,
-      "text/plain",
-    ]);
+    expect([...(createdItem?.formats.keys() ?? [])]).toEqual(["text/plain"]);
     expect(retained).toEqual([]);
 
-    resolvePayload!(encodedFixture());
+    const payload = encodedFixture();
+    resolvePayload!(payload);
     await expect(attempt.systemWrite).resolves.toBe(true);
     await attempt.payloadReady;
     expect(retained).toHaveLength(1);
+    await expect(createdItem?.formats.get("text/plain")).resolves.toBe(payload.plainText);
   });
 
-  it("falls back synchronously to plain text when custom item construction throws", async () => {
+  it("retains the session payload when plain item construction is unavailable", async () => {
     const payload = encodedFixture();
-    let construction = 0;
-    const writes: FakeItem[] = [];
+    const retained: ClipboardWritePayload[] = [];
+    const write = vi.fn(async () => undefined);
     const port: ClipboardWritePort<FakeItem> = {
-      createItem: (formats) => {
-        construction += 1;
-        if (construction === 1) throw new Error("custom format rejected");
-        return { formats };
+      createItem: () => {
+        throw new Error("ClipboardItem unavailable");
       },
-      write: async (items) => {
-        writes.push(...items);
-      },
-      retainSessionPayload: () => undefined,
+      write,
+      retainSessionPayload: (value) => retained.push(value),
     };
 
     const attempt = beginClipboardWriteDuringActivation(port, Promise.resolve(payload));
 
-    expect(attempt.mode).toBe("plain-only");
-    expect(construction).toBe(2);
-    expect(writes).toHaveLength(1);
-    expect([...writes[0]!.formats.keys()]).toEqual(["text/plain"]);
-    await expect(attempt.systemWrite).resolves.toBe(true);
+    expect(attempt.mode).toBe("unavailable");
+    await expect(attempt.systemWrite).resolves.toBe(false);
+    await attempt.payloadReady;
+    expect(write).not.toHaveBeenCalled();
+    expect(retained).toEqual([payload]);
   });
 
   it("retains the session payload and does not retry after an asynchronous write rejection", async () => {
@@ -99,5 +93,23 @@ describe("clipboard write adapter plan", () => {
     await attempt.payloadReady;
     expect(writes).toBe(1);
     expect(retained).toEqual([payload]);
+  });
+
+  it("normalizes a synchronous system write exception to a failed attempt", async () => {
+    const payload = encodedFixture();
+    const retainSessionPayload = vi.fn();
+    const port: ClipboardWritePort<FakeItem> = {
+      createItem: (formats) => ({ formats }),
+      write: () => {
+        throw new DOMException("permission denied", "NotAllowedError");
+      },
+      retainSessionPayload,
+    };
+
+    const attempt = beginClipboardWriteDuringActivation(port, Promise.resolve(payload));
+
+    await expect(attempt.systemWrite).resolves.toBe(false);
+    await attempt.payloadReady;
+    expect(retainSessionPayload).toHaveBeenCalledWith(payload);
   });
 });

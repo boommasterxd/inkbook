@@ -7,6 +7,7 @@ const state = {
   activeTool: "draw" as const,
   deviceFingerDrawingEnabled: false,
   toolbarFingerDrawingEnabled: false,
+  hasSelection: false,
   zoom: 1,
   fitZoom: 1,
   interaction: undefined,

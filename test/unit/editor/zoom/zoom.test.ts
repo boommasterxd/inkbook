@@ -1,25 +1,24 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  OUTER_PAGE_WIDTH,
-  anchoredCameraX,
-  anchoredScrollTop,
   applyAnchoredZoom,
   applyResize,
   calculateFitZoom,
   calculateZoomLimits,
-  cameraXBounds,
-  clamp,
   clampCameraX,
   clampScrollTop,
-  clampZoom,
-  displayedPercent,
   renderedContainerHeight,
-  resizeZoom,
-  scrollBoundsForHeight,
-  zoomBySteps,
   zoomFactorForSteps,
 } from "../../../../src/editor/zoom";
+import {
+  OUTER_PAGE_WIDTH,
+  anchoredCameraX,
+  anchoredScrollTop,
+  cameraXBounds,
+  clamp,
+  clampZoom,
+  resizeZoom,
+} from "../../../../src/editor/zoom/zoom";
 
 describe("width-fit zoom", () => {
   it("uses the outer page width including both margins", () => {
@@ -39,7 +38,6 @@ describe("width-fit zoom", () => {
     expect(limits).toEqual({ minZoom: 0.5, maxZoom: 5 });
     expect(clampZoom(0.1, limits)).toBe(0.5);
     expect(clampZoom(8, limits)).toBe(5);
-    expect(displayedPercent(1, 0.5)).toBe(200);
     expect(renderedContainerHeight(1200, 0.5)).toBe(600);
   });
 
@@ -51,8 +49,8 @@ describe("width-fit zoom", () => {
   it("applies exact whole keyboard or wheel steps within the zoom limits", () => {
     expect(zoomFactorForSteps(1)).toBe(1.08);
     expect(zoomFactorForSteps(-1)).toBeCloseTo(1 / 1.08);
-    expect(zoomBySteps(1, 1, { minZoom: 0.5, maxZoom: 5 })).toBe(1.08);
-    expect(zoomBySteps(5, 1, { minZoom: 0.5, maxZoom: 5 })).toBe(5);
+    expect(clampZoom(zoomFactorForSteps(1), { minZoom: 0.5, maxZoom: 5 })).toBe(1.08);
+    expect(clampZoom(5 * zoomFactorForSteps(1), { minZoom: 0.5, maxZoom: 5 })).toBe(5);
     expect(() => zoomFactorForSteps(0.5)).toThrow(RangeError);
   });
 });
@@ -81,7 +79,7 @@ describe("camera and scroll clamps", () => {
   });
 
   it("clamps native scroll bounds after a new height is known", () => {
-    const bounds = scrollBoundsForHeight(1200, 500);
+    const bounds = { min: 0, max: 700 };
     expect(bounds).toEqual({ min: 0, max: 700 });
     expect(clampScrollTop(-1, bounds)).toBe(0);
     expect(clampScrollTop(900, bounds)).toBe(700);

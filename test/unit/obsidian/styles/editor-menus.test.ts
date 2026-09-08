@@ -150,13 +150,6 @@ describe("AdaptivePanel content styles", () => {
     const wideWidthGrid = declarationsFor(
       '.inkbook-adaptive-panel-layer[data-platform="wide"] [data-kind="style"] .inkbook-menu-width-grid',
     );
-    const wideWidthChoice = declarationsFor(
-      '.inkbook-adaptive-panel-layer[data-platform="wide"] [data-kind="style"] .inkbook-menu-width-choice',
-    );
-    const wideWidthPreview = declarationsFor(
-      '.inkbook-adaptive-panel-layer[data-platform="wide"]\n  [data-kind="style"]\n  :where(.inkbook-menu-width-choice)\n  .inkbook-menu-line-preview',
-    );
-
     expect(choice).toContain("min-block-size: 36px");
     expect(cautionTitle).toContain("color: var(--color-orange)");
     expect(choice).toContain("min-inline-size: 36px");
@@ -183,14 +176,35 @@ describe("AdaptivePanel content styles", () => {
     expect(wideScroll).toContain("padding-block: 0");
     expect(wideWidthGrid).toContain("grid-template-columns: repeat(5, 36px)");
     expect(wideWidthGrid).toContain("justify-content: space-between");
-    expect(wideWidthChoice).toContain("grid-template-rows: 8px 12px");
-    expect(wideWidthPreview).toContain("inline-size: 22px");
-    expect(wideWidthPreview).toContain("place-self: center");
     expect(valueField).toContain("display: flex");
     expect(valueField).toContain("justify-content: center");
     expect(value).toContain("inline-size: var(--inkbook-menu-value-width)");
     expect(value).toContain("background: transparent");
     expect(suffix).toContain("line-height: normal");
+  });
+});
+
+describe("AdaptivePanel choice content styles", () => {
+  it("centers width previews and labels as one natural-height content block", () => {
+    const choice = declarationsFor(
+      ".inkbook-menu-controls .inkbook-menu-choice,\n.inkbook-menu-controls .inkbook-menu-stepper-button",
+    );
+    const widthChoice = declarationsFor(".inkbook-menu-width-choice");
+    const wideWidthChoice = declarationsFor(
+      '.inkbook-adaptive-panel-layer[data-platform="wide"] [data-kind="style"] .inkbook-menu-width-choice',
+    );
+    const wideWidthPreview = declarationsFor(
+      '.inkbook-adaptive-panel-layer[data-platform="wide"]\n  [data-kind="style"]\n  :where(.inkbook-menu-width-choice)\n  .inkbook-menu-line-preview',
+    );
+
+    expect(choice).toContain("align-items: center");
+    expect(choice).toContain("justify-content: center");
+    expect(widthChoice).toContain("flex-direction: column");
+    expect(wideWidthChoice).toContain("gap: 3px");
+    expect(wideWidthChoice).not.toContain("display: grid");
+    expect(wideWidthChoice).not.toContain("grid-template-rows");
+    expect(wideWidthPreview).toContain("inline-size: 22px");
+    expect(wideWidthPreview).toContain("flex: 0 0 auto");
   });
 
   it("groups phone Background choices with native divider and interaction tokens", () => {

@@ -52,11 +52,13 @@ export function readSynchronousClipboardCandidates(
 export async function readClipboardCandidates(
   clipboard: Clipboard | undefined,
   sessionText?: string,
+  preferSession = false,
 ): Promise<ClipboardCandidates | null> {
+  if (preferSession) return sessionCandidates(sessionText);
   if (clipboard === undefined) return sessionCandidates(sessionText);
   try {
     const candidates = await readCandidateBlobs(clipboard);
-    return await materializeCandidates(candidates);
+    return materializeCandidates(candidates);
   } catch (error) {
     if (error instanceof ClipboardCandidateLimitError) return null;
     return sessionCandidates(sessionText);
@@ -69,23 +71,21 @@ async function readCandidateBlobs(clipboard: Clipboard): Promise<readonly Candid
   if (items.length > MAX_CLIPBOARD_ITEMS) {
     throw new ClipboardCandidateLimitError("Clipboard item count exceeds its limit.");
   }
+  const item = items[0];
+  if (item === undefined) return [];
   const candidates: CandidateBlob[] = [];
   let aggregateBytes = 0;
-  for (const item of items) {
-    for (const mime of SUPPORTED_MIME_TYPES) {
-      if (!item.types.includes(mime)) continue;
-      const blob = await item.getType(mime);
-      if (!Number.isSafeInteger(blob.size) || blob.size > CLIPBOARD_LIMITS.totalInputBytes) {
-        throw new ClipboardCandidateLimitError("A clipboard candidate exceeds its byte limit.");
-      }
-      aggregateBytes += blob.size;
-      if (aggregateBytes > MAX_CANDIDATE_BLOB_BYTES) {
-        throw new ClipboardCandidateLimitError(
-          "Aggregate clipboard candidates exceed their limit.",
-        );
-      }
-      candidates.push({ blob, mime });
+  for (const mime of SUPPORTED_MIME_TYPES) {
+    if (!item.types.includes(mime)) continue;
+    const blob = await item.getType(mime);
+    if (!Number.isSafeInteger(blob.size) || blob.size > CLIPBOARD_LIMITS.totalInputBytes) {
+      throw new ClipboardCandidateLimitError("A clipboard candidate exceeds its byte limit.");
     }
+    aggregateBytes += blob.size;
+    if (aggregateBytes > MAX_CANDIDATE_BLOB_BYTES) {
+      throw new ClipboardCandidateLimitError("Aggregate clipboard candidates exceed their limit.");
+    }
+    candidates.push({ blob, mime });
   }
   return candidates;
 }
@@ -97,9 +97,11 @@ async function materializeCandidates(
   let plainText: string | undefined;
   for (const candidate of candidates) {
     if (candidate.mime === INKBOOK_CLIPBOARD_WEB_MIME && customText === undefined) {
-      customText = await boundedBlobText(candidate.blob);
+      const text = await boundedBlobText(candidate.blob);
+      if (text !== "") customText = text;
     } else if (candidate.mime === "text/plain" && plainText === undefined) {
-      plainText = await boundedBlobText(candidate.blob);
+      const text = await boundedBlobText(candidate.blob);
+      if (text !== "") plainText = text;
     }
   }
   return {

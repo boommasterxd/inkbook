@@ -52,8 +52,71 @@ export function midpoint(start: PointV1, end: PointV1): PointV1 {
   return { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
 }
 
+export function linearPivot(start: PointV1, end: PointV1, bend: PointV1 | null): PointV1 {
+  const bounds = boundsFromPoints(bend === null ? [start, end] : [start, bend, end]);
+  return canonicalPoint({
+    x: (bounds.minX + bounds.maxX) / 2,
+    y: (bounds.minY + bounds.maxY) / 2,
+  });
+}
+
+export function assertFinitePoint(
+  point: PointV1,
+  message = "Point coordinates must be finite.",
+): void {
+  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+    throw new RangeError(message);
+  }
+}
+
 export function pointDistance(start: PointV1, end: PointV1): number {
   return Math.hypot(end.x - start.x, end.y - start.y);
+}
+
+function pointDistanceSquared(start: PointV1, end: PointV1): number {
+  const deltaX = end.x - start.x;
+  const deltaY = end.y - start.y;
+  return deltaX * deltaX + deltaY * deltaY;
+}
+
+export function pointSegmentDistance(point: PointV1, start: PointV1, end: PointV1): number {
+  return Math.sqrt(pointSegmentDistanceSquared(point, start, end));
+}
+
+function pointSegmentDistanceSquared(point: PointV1, start: PointV1, end: PointV1): number {
+  const deltaX = end.x - start.x;
+  const deltaY = end.y - start.y;
+  const lengthSquared = deltaX * deltaX + deltaY * deltaY;
+  const projection =
+    lengthSquared === 0
+      ? 0
+      : Math.max(
+          0,
+          Math.min(
+            1,
+            ((point.x - start.x) * deltaX + (point.y - start.y) * deltaY) / lengthSquared,
+          ),
+        );
+  return pointDistanceSquared(point, {
+    x: start.x + projection * deltaX,
+    y: start.y + projection * deltaY,
+  });
+}
+
+export function segmentDistanceSquared(
+  leftStart: PointV1,
+  leftEnd: PointV1,
+  rightStart: PointV1,
+  rightEnd: PointV1,
+  intersectionTolerance = 0,
+): number {
+  if (segmentsIntersect(leftStart, leftEnd, rightStart, rightEnd, intersectionTolerance)) return 0;
+  return Math.min(
+    pointSegmentDistanceSquared(leftStart, rightStart, rightEnd),
+    pointSegmentDistanceSquared(leftEnd, rightStart, rightEnd),
+    pointSegmentDistanceSquared(rightStart, leftStart, leftEnd),
+    pointSegmentDistanceSquared(rightEnd, leftStart, leftEnd),
+  );
 }
 
 export function pointInPolygon(point: PointV1, vertices: readonly PointV1[]): boolean {
@@ -165,4 +228,43 @@ function addQuadraticExtremum(
   if (denominator === 0) return;
   const time = (start[axis] - control[axis]) / denominator;
   if (time > 0 && time < 1) points.push(quadraticPoint(start, control, end, time));
+}
+
+export function segmentsIntersect(
+  leftStart: PointV1,
+  leftEnd: PointV1,
+  rightStart: PointV1,
+  rightEnd: PointV1,
+  tolerance = 0,
+): boolean {
+  const first = crossProduct(leftStart, leftEnd, rightStart);
+  const second = crossProduct(leftStart, leftEnd, rightEnd);
+  const third = crossProduct(rightStart, rightEnd, leftStart);
+  const fourth = crossProduct(rightStart, rightEnd, leftEnd);
+  if (Math.abs(first) <= tolerance && pointOnSegment(rightStart, leftStart, leftEnd, tolerance)) {
+    return true;
+  }
+  if (Math.abs(second) <= tolerance && pointOnSegment(rightEnd, leftStart, leftEnd, tolerance)) {
+    return true;
+  }
+  if (Math.abs(third) <= tolerance && pointOnSegment(leftStart, rightStart, rightEnd, tolerance)) {
+    return true;
+  }
+  if (Math.abs(fourth) <= tolerance && pointOnSegment(leftEnd, rightStart, rightEnd, tolerance)) {
+    return true;
+  }
+  return first * second < 0 && third * fourth < 0;
+}
+
+function pointOnSegment(point: PointV1, start: PointV1, end: PointV1, tolerance: number): boolean {
+  return (
+    point.x >= Math.min(start.x, end.x) - tolerance &&
+    point.x <= Math.max(start.x, end.x) + tolerance &&
+    point.y >= Math.min(start.y, end.y) - tolerance &&
+    point.y <= Math.max(start.y, end.y) + tolerance
+  );
+}
+
+function crossProduct(start: PointV1, end: PointV1, point: PointV1): number {
+  return (end.x - start.x) * (point.y - start.y) - (end.y - start.y) * (point.x - start.x);
 }

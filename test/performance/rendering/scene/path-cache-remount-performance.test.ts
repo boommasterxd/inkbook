@@ -1,7 +1,8 @@
 import { expect, it } from "vitest";
 
 import type { PageV1 } from "../../../../src/domain/schema/public";
-import { SvgSceneRenderer, type SceneElementRecord } from "../../../../src/rendering/scene";
+import { SvgSceneRenderer } from "../../../../src/rendering/scene";
+import { type SceneElementRecord } from "../../../../src/rendering/scene/types";
 import {
   FakeDocument,
   FakeNode,

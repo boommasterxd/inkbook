@@ -14,18 +14,14 @@ import {
 import { measureSpatialCapacity, type SpatialBounds } from "../../domain/spatial/index";
 import { DOCUMENT_LIMITS, REPEATED_PASTE_OFFSET } from "./constants";
 import type {
-  ClipboardOperationIdentity,
   ClipboardResult,
   ClipboardShortcutAction,
   ClipboardShortcutContext,
-  CurrentClipboardState,
-  CutGuard,
   DecodedClipboard,
   ElementBounds,
   PastePlan,
   PasteInvocation,
   PasteRepeatState,
-  VersionedSelectionRecord,
 } from "./types";
 import { getValidatedClipboardBounds } from "./validation";
 
@@ -39,14 +35,6 @@ export interface PlanPasteOptions {
   commandTimestamp: number;
   createId: () => string;
   previousRepeat?: PasteRepeatState;
-}
-
-export interface ValidatePasteAdoptionOptions {
-  plan: PastePlan;
-  resultIdentity: ClipboardOperationIdentity;
-  current: ClipboardOperationIdentity;
-  currentElements: readonly InkElementV1[];
-  page: PageV1;
 }
 
 export const resolvePasteTarget = (invocation: PasteInvocation): PointV1 => {
@@ -335,72 +323,3 @@ export const planPaste = (options: PlanPasteOptions): ClipboardResult<PastePlan>
     },
   };
 };
-
-const sameIdentity = (
-  left: ClipboardOperationIdentity,
-  right: ClipboardOperationIdentity,
-): boolean =>
-  left.sessionId === right.sessionId &&
-  left.workerEpoch === right.workerEpoch &&
-  left.clipboardOperationId === right.clipboardOperationId &&
-  left.basisRevision === right.basisRevision;
-
-const sameSelection = (
-  left: readonly VersionedSelectionRecord[],
-  right: readonly VersionedSelectionRecord[],
-): boolean => {
-  if (left.length !== right.length) return false;
-  const current = new Map(right.map((record) => [record.id, record]));
-  return left.every((record) => {
-    const candidate = current.get(record.id);
-    return (
-      candidate !== undefined &&
-      candidate.geometryVersion === record.geometryVersion &&
-      candidate.paintVersion === record.paintVersion
-    );
-  });
-};
-
-export const isCurrentPasteResult = (
-  resultIdentity: ClipboardOperationIdentity,
-  current: ClipboardOperationIdentity,
-): boolean => sameIdentity(resultIdentity, current);
-
-export const classifyPasteResult = (
-  resultIdentity: ClipboardOperationIdentity,
-  current: ClipboardOperationIdentity,
-  userActionPending: boolean,
-): "adopt" | "recompute" | "discard" => {
-  if (sameIdentity(resultIdentity, current)) return "adopt";
-  return userActionPending ? "recompute" : "discard";
-};
-
-export const validatePasteAdoption = (
-  options: ValidatePasteAdoptionOptions,
-): ClipboardResult<void> => {
-  if (!sameIdentity(options.resultIdentity, options.current)) {
-    return {
-      ok: false,
-      error: {
-        code: "stale-operation",
-        message: "Paste result no longer matches the active document revision.",
-      },
-    };
-  }
-  const currentIds = new Set(options.currentElements.map(({ id }) => id));
-  if (options.plan.elements.some(({ id }) => currentIds.has(id))) {
-    return {
-      ok: false,
-      error: {
-        code: "invalid-schema",
-        message: "Paste result collides with a current document ID.",
-      },
-    };
-  }
-  return countDocumentLimits(options.currentElements, options.plan.elements, options.page);
-};
-
-export const isCurrentCut = (guard: CutGuard, current: CurrentClipboardState): boolean =>
-  current.presentationAttached &&
-  sameIdentity(guard, current) &&
-  sameSelection(guard.selectedRecords, current.selectedRecords);

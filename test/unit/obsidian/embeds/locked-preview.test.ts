@@ -8,6 +8,7 @@ import { createInkbookLockedPreview } from "../../../../src/obsidian/embeds/lock
 import { createHtmlElement, installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 
 const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata></svg>';
+const CONTENT_IDENTITY = { outputHash: "a".repeat(64), revision: 1 };
 
 beforeEach(() => {
   installObsidianDomHelpers();
@@ -22,11 +23,19 @@ describe("locked preview platform treatment", () => {
   it("marks only Android activation buttons for host tap-surface neutralization", () => {
     Platform.isAndroidApp = true;
     const androidButton = createHtmlElement("button");
-    createInkbookLockedPreview(androidButton, { aspectRatio: 1, safeSvg: SAFE_PREVIEW_SVG });
+    createInkbookLockedPreview(androidButton, {
+      aspectRatio: 1,
+      contentIdentity: CONTENT_IDENTITY,
+      safeSvg: SAFE_PREVIEW_SVG,
+    });
 
     Platform.isAndroidApp = false;
     const desktopButton = createHtmlElement("button");
-    createInkbookLockedPreview(desktopButton, { aspectRatio: 1, safeSvg: SAFE_PREVIEW_SVG });
+    createInkbookLockedPreview(desktopButton, {
+      aspectRatio: 1,
+      contentIdentity: CONTENT_IDENTITY,
+      safeSvg: SAFE_PREVIEW_SVG,
+    });
 
     expect(androidButton.classList.contains("inkbook-locked-preview-android")).toBe(true);
     expect(desktopButton.classList.contains("inkbook-locked-preview-android")).toBe(false);

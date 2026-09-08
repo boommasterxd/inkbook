@@ -1,15 +1,15 @@
+import { pressureStrokeContainsPoint } from "./pressure-hit-test";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import { isStoredStroke } from "../../domain/elements/stroke-replacement-proof";
-import { shapeVertices, tableWidth } from "../../domain/geometry/creation";
+import { shapeVertices, tableColumnOffsets, tableWidth } from "../../domain/geometry/creation";
 import { effectiveStrokeWidth } from "../../domain/geometry/bounds";
-import { pointInPolygon, quadraticPoint, rotatePointClockwise } from "../../domain/geometry/public";
+import {
+  pointInPolygon,
+  pointSegmentDistance,
+  quadraticPoint,
+  rotatePointClockwise,
+} from "../../domain/geometry/public";
 import type { BoxShapeElementV1, InkElementV1, PointV1 } from "../../domain/schema/public";
-
-export interface HitCandidate {
-  readonly band: RenderBand;
-  readonly element: InkElementV1;
-  readonly rank: number;
-}
 
 export class HitTestScratch {
   #active = false;
@@ -75,20 +75,6 @@ function hitTolerancePixels(pointerType: "mouse" | "pen" | "touch"): number {
   return pointerType === "touch" ? 14 : 8;
 }
 
-export function findFrontmostHit(
-  point: PointV1,
-  pointerType: "mouse" | "pen" | "touch",
-  zoom: number,
-  candidates: Iterable<HitCandidate>,
-): string | null {
-  const scratch = new HitTestScratch();
-  scratch.begin(point, pointerType, zoom);
-  for (const candidate of candidates) {
-    scratch.consider(candidate.element.id, candidate.band, candidate.element, candidate.rank);
-  }
-  return scratch.finish();
-}
-
 export function elementContainsPoint(
   element: InkElementV1,
   pagePoint: PointV1,
@@ -96,8 +82,11 @@ export function elementContainsPoint(
 ): boolean {
   if (!Number.isFinite(tolerance) || tolerance < 0) return false;
   const point = rotatePointClockwise(pagePoint, element.pivot, -element.rotation);
-  if (element.kind === "stroke")
-    return hitStroke(element, point, tolerance + effectiveStrokeWidth(element) / 2);
+  if (element.kind === "stroke") {
+    return element.style.pressureEnabled
+      ? pressureStrokeContainsPoint(element, point, tolerance)
+      : hitStroke(element, point, tolerance + effectiveStrokeWidth(element) / 2);
+  }
   if (
     element.kind === "line" ||
     element.kind === "arrow" ||
@@ -139,7 +128,8 @@ function coordinateSystemHit(
 ): boolean {
   return element.axes.some(
     (axis) =>
-      segmentDistance(point, element.origin, axis) <= tolerance + element.style.outlineWidth / 2,
+      pointSegmentDistance(point, element.origin, axis) <=
+      tolerance + element.style.outlineWidth / 2,
   );
 }
 
@@ -151,21 +141,22 @@ function tableHit(
   const right = element.x + tableWidth(element);
   const bottom = element.y + element.height;
   const radius = tolerance + element.style.outlineWidth / 2;
-  if (rectangleOutlineHit(point, element.x, element.y, right, bottom, radius)) return true;
   if (
     Math.abs(point.y - (element.y + element.headerHeight)) <= radius &&
     point.x >= element.x - radius &&
     point.x <= right + radius
-  )
+  ) {
     return true;
-  for (let column = 1; column < element.columns; column += 1) {
-    const x = element.x + column * element.columnWidth;
+  }
+  for (const offset of tableColumnOffsets(element)) {
+    const x = element.x + offset;
     if (
       Math.abs(point.x - x) <= radius &&
       point.y >= element.y - radius &&
       point.y <= bottom + radius
-    )
+    ) {
       return true;
+    }
   }
   return false;
 }
@@ -321,11 +312,11 @@ function hitLinear(
   point: PointV1,
   radius: number,
 ): boolean {
-  if (bend === null) return segmentDistance(point, start, end) <= radius;
+  if (bend === null) return pointSegmentDistance(point, start, end) <= radius;
   let previous = start;
   for (let step = 1; step <= 24; step += 1) {
     const current = quadraticPoint(start, bend, end, step / 24);
-    if (segmentDistance(point, previous, current) <= radius) return true;
+    if (pointSegmentDistance(point, previous, current) <= radius) return true;
     previous = current;
   }
   return false;
@@ -341,37 +332,9 @@ function ellipseHit(ellipse: BoxShapeElementV1, point: PointV1, radius: number):
   return ellipse.style.fillColor !== null && ellipse.style.fillOpacity > 0 && normalized < 1;
 }
 
-function rectangleOutlineHit(
-  point: PointV1,
-  left: number,
-  top: number,
-  right: number,
-  bottom: number,
-  radius: number,
-): boolean {
-  return (
-    segmentDistance(point, { x: left, y: top }, { x: right, y: top }) <= radius ||
-    segmentDistance(point, { x: right, y: top }, { x: right, y: bottom }) <= radius ||
-    segmentDistance(point, { x: right, y: bottom }, { x: left, y: bottom }) <= radius ||
-    segmentDistance(point, { x: left, y: bottom }, { x: left, y: top }) <= radius
-  );
-}
-
 function polygonOutlineHit(vertices: readonly PointV1[], point: PointV1, radius: number): boolean {
   return vertices.some((vertex, index) => {
     const next = vertices[(index + 1) % vertices.length];
-    return next !== undefined && segmentDistance(point, vertex, next) <= radius;
+    return next !== undefined && pointSegmentDistance(point, vertex, next) <= radius;
   });
-}
-
-function segmentDistance(point: PointV1, start: PointV1, end: PointV1): number {
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  const squaredLength = dx * dx + dy * dy;
-  if (squaredLength === 0) return Math.hypot(point.x - start.x, point.y - start.y);
-  const ratio = Math.max(
-    0,
-    Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / squaredLength),
-  );
-  return Math.hypot(point.x - (start.x + ratio * dx), point.y - (start.y + ratio * dy));
 }

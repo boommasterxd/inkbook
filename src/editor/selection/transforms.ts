@@ -1,4 +1,5 @@
 import {
+  assertFinitePoint,
   canonicalPoint,
   normalizeRotation,
   pointDistance,
@@ -7,23 +8,23 @@ import {
 } from "../../domain/geometry/public";
 import { markCanonicalStrokeReplacement } from "../../domain/elements/stroke-replacement-proof";
 import type {
-  BoxAnchorV1,
-  BoxShapeElementV1,
   CoordinateSystemElementV1,
-  EndpointConnectionV1,
   InkElementV1,
   LinearElementV1,
   PointV1,
   StrokeElementV1,
 } from "../../domain/schema/public";
 import { MAX_ABSOLUTE_COORDINATE } from "../../domain/schema/public";
+import { rotateLinearElement } from "./linear-transforms";
+import { isLinearElement } from "./linear-elements";
 
-interface ScaleFactors {
+export interface ScaleFactors {
   readonly x: number;
   readonly y: number;
 }
 
-const MINIMUM_TABLE_HEADER_HEIGHT = 24;
+export { editLinearEndpointFromWorld } from "./linear-transforms";
+export { editTableColumn, editTableHeader } from "./table-transforms";
 
 export interface TransformSliceScheduler {
   readonly isCancelled?: () => boolean;
@@ -61,113 +62,31 @@ export async function moveSelectionTimeSliced(
   return (scheduler.isCancelled?.() ?? false) ? null : replacements;
 }
 
-export function scaleSelectionUniform(
-  elements: readonly InkElementV1[],
-  anchor: PointV1,
-  factor: number,
-): InkElementV1[] {
-  return scaleSelectionUniformAtLeast(
-    elements,
-    anchor,
-    factor,
-    minimumUniformScaleForSelection(elements),
-  );
-}
-
-export function scaleSelectionUniformAtLeast(
-  elements: readonly InkElementV1[],
-  anchor: PointV1,
-  factor: number,
-  minimum: number,
-): InkElementV1[] {
-  if (!Number.isFinite(factor) || factor <= 0) throw new RangeError("Scale must be positive.");
-  if (!Number.isFinite(minimum) || minimum < 0) {
-    throw new RangeError("Minimum scale must be finite and non-negative.");
-  }
-  const clamped = Math.max(factor, minimum);
-  return elements.map((element) => scaleElement(element, anchor, { x: clamped, y: clamped }));
-}
-
 export function minimumUniformScaleForSelection(elements: readonly InkElementV1[]): number {
   return elements.reduce((value, element) => Math.max(value, minimumUniformScale(element)), 0);
 }
 
-export function scaleElementFromPointers(
-  element: InkElementV1,
+export function uniformScaleFactorFromPointers(
   anchor: PointV1,
   startPointer: PointV1,
   currentPointer: PointV1,
-  axes: Readonly<{ x: boolean; y: boolean }> = { x: true, y: true },
-): InkElementV1 {
-  const transform = scaleFactorsFromPointers(element, anchor, startPointer, currentPointer, axes);
-  return scaleElement(element, transform.anchor, transform.factors);
-}
-
-export function scaleFactorsFromPointers(
-  element: InkElementV1,
-  anchor: PointV1,
-  startPointer: PointV1,
-  currentPointer: PointV1,
-  axes: Readonly<{ x: boolean; y: boolean }> = { x: true, y: true },
-): { readonly anchor: PointV1; readonly factors: ScaleFactors } {
+  minimum = 0,
+): number {
   assertFinitePoint(anchor);
   assertFinitePoint(startPointer);
   assertFinitePoint(currentPointer);
-  const localAnchor = rotatePointClockwise(anchor, element.pivot, -element.rotation);
-  const localStart = rotatePointClockwise(startPointer, element.pivot, -element.rotation);
-  const localCurrent = rotatePointClockwise(currentPointer, element.pivot, -element.rotation);
-  const factors: ScaleFactors = {
-    x: axes.x ? scaleRatio(localAnchor.x, localStart.x, localCurrent.x) : 1,
-    y: axes.y ? scaleRatio(localAnchor.y, localStart.y, localCurrent.y) : 1,
-  };
-  return { anchor: localAnchor, factors: clampScaleFactors(element, factors) };
-}
-
-export function scaleSelectionFromPointers(
-  elements: readonly InkElementV1[],
-  anchor: PointV1,
-  startPointer: PointV1,
-  currentPointer: PointV1,
-  minimum = minimumUniformScaleForSelection(elements),
-): InkElementV1[] {
-  assertFinitePoint(anchor);
-  assertFinitePoint(startPointer);
-  assertFinitePoint(currentPointer);
-  const startDistance = pointDistance(anchor, startPointer);
-  const factor = startDistance === 0 ? 1 : pointDistance(anchor, currentPointer) / startDistance;
-  return scaleSelectionUniformAtLeast(elements, anchor, factor, minimum);
-}
-
-export function resizeBoxShape(
-  element: BoxShapeElementV1,
-  handle: BoxAnchorV1,
-  pointer: PointV1,
-): BoxShapeElementV1 {
-  assertFinitePoint(pointer);
-  const localPointer = rotatePointClockwise(pointer, element.pivot, -element.rotation);
-  const horizontal = handle.includes("left")
-    ? "left"
-    : handle.includes("right")
-      ? "right"
-      : "center";
-  const vertical = handle.startsWith("top")
-    ? "top"
-    : handle.startsWith("bottom")
-      ? "bottom"
-      : "middle";
-  const anchor = {
-    x: horizontal === "left" ? element.x + element.width : element.x,
-    y: vertical === "top" ? element.y + element.height : element.y,
-  };
-  const handlePoint = {
-    x: horizontal === "left" ? element.x : element.x + element.width,
-    y: vertical === "top" ? element.y : element.y + element.height,
-  };
-  const factors = clampScaleFactors(element, {
-    x: horizontal === "center" ? 1 : (localPointer.x - anchor.x) / (handlePoint.x - anchor.x),
-    y: vertical === "middle" ? 1 : (localPointer.y - anchor.y) / (handlePoint.y - anchor.y),
-  });
-  return scaleElement(element, anchor, factors) as BoxShapeElementV1;
+  if (!Number.isFinite(minimum) || minimum < 0) {
+    throw new RangeError("Minimum scale must be finite and non-negative.");
+  }
+  const startX = startPointer.x - anchor.x;
+  const startY = startPointer.y - anchor.y;
+  const denominator = startX * startX + startY * startY;
+  const factor =
+    denominator === 0
+      ? 1
+      : ((currentPointer.x - anchor.x) * startX + (currentPointer.y - anchor.y) * startY) /
+        denominator;
+  return Math.max(factor, minimum);
 }
 
 export function editCoordinateAxis(
@@ -200,11 +119,19 @@ export function editCoordinateOrigin(
   point: PointV1,
 ): CoordinateSystemElementV1 {
   assertFinitePoint(point);
-  if (element.axes.some((axis) => pointDistance(point, axis) < 40)) {
+  const worldAxes = element.axes.map((axis) =>
+    rotatePointClockwise(axis, element.pivot, element.rotation),
+  );
+  if (worldAxes.some((axis) => pointDistance(point, axis) < 40)) {
     throw new RangeError("Coordinate axes must remain at least 40 page units long.");
   }
   const origin = canonicalPoint(point);
-  return { ...element, origin, pivot: origin };
+  const axes = worldAxes.map((axis) =>
+    canonicalPoint(rotatePointClockwise(axis, origin, -element.rotation)),
+  );
+  return element.dimension === "2d"
+    ? { ...element, axes: [axes[0]!, axes[1]!], origin, pivot: origin }
+    : { ...element, axes: [axes[0]!, axes[1]!, axes[2]!], origin, pivot: origin };
 }
 
 export function rotateSelection(
@@ -213,69 +140,16 @@ export function rotateSelection(
   degrees: number,
 ): InkElementV1[] {
   if (!Number.isFinite(degrees)) throw new RangeError("Rotation must be finite.");
+  const selectedIds = new Set(elements.map(({ id }) => id));
   return elements.map((element) => {
+    if (isLinearElement(element)) {
+      return rotateLinearElement(element, center, degrees, selectedIds);
+    }
     const rotatedPivot = canonicalPoint(rotatePointClockwise(element.pivot, center, degrees));
     const movement = { x: rotatedPivot.x - element.pivot.x, y: rotatedPivot.y - element.pivot.y };
     const translated = translateElement(element, canonicalPoint(movement));
     return { ...translated, rotation: normalizeRotation(element.rotation + degrees) };
   });
-}
-
-export function rotationFromPointers(
-  elements: readonly InkElementV1[],
-  center: PointV1,
-  startPointer: PointV1,
-  currentPointer: PointV1,
-): InkElementV1[] {
-  assertFinitePoint(center);
-  assertFinitePoint(startPointer);
-  assertFinitePoint(currentPointer);
-  const startAngle = Math.atan2(startPointer.y - center.y, startPointer.x - center.x);
-  const currentAngle = Math.atan2(currentPointer.y - center.y, currentPointer.x - center.x);
-  return rotateSelection(elements, center, ((currentAngle - startAngle) * 180) / Math.PI);
-}
-
-export function editLinearEndpoint(
-  element: InkElementV1,
-  endpoint: "start" | "end",
-  point: PointV1,
-  connection: EndpointConnectionV1 | null = null,
-): InkElementV1 {
-  if (!isLinear(element)) throw new TypeError("Endpoint editing requires a linear element.");
-  assertFinitePoint(point);
-  const opposite = endpoint === "start" ? element.end : element.start;
-  if (pointDistance(point, opposite) < 8) {
-    throw new RangeError("Linear elements must remain at least 8 page units long.");
-  }
-  const replacement: LinearElementV1 = {
-    ...element,
-    [endpoint]: canonicalPoint(point),
-    pivot: linearPivot(
-      endpoint === "start" ? point : element.start,
-      endpoint === "end" ? point : element.end,
-      element.bend,
-    ),
-  };
-  if (element.kind === "line" || element.kind === "arrow") {
-    return {
-      ...replacement,
-      [endpoint === "start" ? "startConnection" : "endConnection"]: connection,
-    };
-  }
-  return replacement;
-}
-
-export function editLinearBend(element: InkElementV1, bend: PointV1 | null): InkElementV1 {
-  if (element.kind !== "line" && element.kind !== "arrow") {
-    throw new TypeError("Only lines and arrows support bend editing.");
-  }
-  if (bend !== null) assertFinitePoint(bend);
-  const canonicalBend = bend === null ? null : canonicalPoint(bend);
-  return {
-    ...element,
-    bend: canonicalBend,
-    pivot: linearPivot(element.start, element.end, canonicalBend),
-  };
 }
 
 function translateElement(element: InkElementV1, delta: PointV1): InkElementV1 {
@@ -311,6 +185,7 @@ function translateElement(element: InkElementV1, delta: PointV1): InkElementV1 {
       ...element,
       start: translate(element.start),
       end: translate(element.end),
+      bend: element.bend === null ? null : translate(element.bend),
       pivot: translate(element.pivot),
     };
   }
@@ -339,11 +214,24 @@ function translateElement(element: InkElementV1, delta: PointV1): InkElementV1 {
           pivot: translate(element.pivot),
         };
   }
+  const x = roundCanonical(element.x + delta.x);
+  const y = roundCanonical(element.y + delta.y);
+  if (element.kind === "table") {
+    return {
+      ...element,
+      x,
+      y,
+      pivot: canonicalPoint({
+        x: x + (element.columns * element.columnWidth) / 2,
+        y: y + element.height / 2,
+      }),
+    };
+  }
   return {
     ...element,
-    x: roundCanonical(element.x + delta.x),
-    y: roundCanonical(element.y + delta.y),
-    pivot: translate(element.pivot),
+    x,
+    y,
+    pivot: canonicalPoint({ x: x + element.width / 2, y: y + element.height / 2 }),
   };
 }
 
@@ -360,18 +248,24 @@ function assertSupportedCoordinate(value: number): void {
   }
 }
 
-function scaleElement(element: InkElementV1, anchor: PointV1, factors: ScaleFactors): InkElementV1 {
+export function scaleElement(
+  element: InkElementV1,
+  anchor: PointV1,
+  factors: ScaleFactors,
+  translation: PointV1 = { x: 0, y: 0 },
+): InkElementV1 {
   const scale = (point: PointV1): PointV1 =>
     canonicalPoint({
-      x: anchor.x + (point.x - anchor.x) * factors.x,
-      y: anchor.y + (point.y - anchor.y) * factors.y,
+      x: anchor.x + (point.x - anchor.x) * factors.x + translation.x,
+      y: anchor.y + (point.y - anchor.y) * factors.y + translation.y,
     });
   if (element.kind === "stroke") {
     const points = element.points.map((value, index) => {
       if (index % 3 === 2) return value;
       const origin = index % 3 === 0 ? anchor.x : anchor.y;
       const factor = index % 3 === 0 ? factors.x : factors.y;
-      return roundCanonical(origin + (value - origin) * factor);
+      const shift = index % 3 === 0 ? translation.x : translation.y;
+      return roundCanonical(origin + (value - origin) * factor + shift);
     });
     return { ...element, points, pivot: scale(element.pivot) };
   }
@@ -380,6 +274,7 @@ function scaleElement(element: InkElementV1, anchor: PointV1, factors: ScaleFact
       ...element,
       start: scale(element.start),
       end: scale(element.end),
+      bend: element.bend === null ? null : scale(element.bend),
       pivot: scale(element.pivot),
     };
   }
@@ -408,6 +303,13 @@ function scaleElement(element: InkElementV1, anchor: PointV1, factors: ScaleFact
       x: topLeft.x,
       y: topLeft.y,
       columnWidth,
+      ...(element.columnOffsets === undefined
+        ? {}
+        : {
+            columnOffsets: element.columnOffsets.map((offset) =>
+              roundCanonical(offset * factors.x),
+            ),
+          }),
       height,
       headerHeight: roundCanonical(element.headerHeight * factors.y),
       pivot: canonicalPoint({
@@ -417,44 +319,42 @@ function scaleElement(element: InkElementV1, anchor: PointV1, factors: ScaleFact
     };
   }
   const topLeft = scale({ x: element.x, y: element.y });
+  const width = roundCanonical(element.width * factors.x);
+  const height = roundCanonical(element.height * factors.y);
   return {
     ...element,
     x: topLeft.x,
     y: topLeft.y,
-    width: roundCanonical(element.width * factors.x),
-    height: roundCanonical(element.height * factors.y),
-    pivot: scale(element.pivot),
+    width,
+    height,
+    pivot: canonicalPoint({ x: topLeft.x + width / 2, y: topLeft.y + height / 2 }),
   };
 }
 
 function minimumUniformScale(element: InkElementV1): number {
   if (element.kind === "table") {
-    return Math.max(
-      40 / element.columnWidth,
-      80 / element.height,
-      MINIMUM_TABLE_HEADER_HEIGHT / element.headerHeight,
-    );
+    return Math.max(40 / element.columnWidth, 80 / element.height);
   }
   if (element.kind === "coordinate-system") {
     return Math.max(...element.axes.map((axis) => 40 / pointDistance(element.origin, axis)));
   }
-  if (isLinear(element)) return 8 / pointDistance(element.start, element.end);
+  if (isLinearElement(element)) return 8 / pointDistance(element.start, element.end);
   if (element.kind === "stroke") return 0;
   return Math.max(1 / element.width, 1 / element.height);
 }
 
-function clampScaleFactors(element: InkElementV1, factors: ScaleFactors): ScaleFactors {
+export function clampScaleFactors(element: InkElementV1, factors: ScaleFactors): ScaleFactors {
   if (element.kind === "table") {
     return {
       x: Math.max(factors.x, 40 / element.columnWidth),
-      y: Math.max(
-        factors.y,
-        80 / element.height,
-        MINIMUM_TABLE_HEADER_HEIGHT / element.headerHeight,
-      ),
+      y: Math.max(factors.y, 80 / element.height),
     };
   }
-  if (element.kind !== "stroke" && !isLinear(element) && element.kind !== "coordinate-system") {
+  if (
+    element.kind !== "stroke" &&
+    !isLinearElement(element) &&
+    element.kind !== "coordinate-system"
+  ) {
     return {
       x: Math.max(factors.x, 1 / element.width),
       y: Math.max(factors.y, 1 / element.height),
@@ -464,33 +364,7 @@ function clampScaleFactors(element: InkElementV1, factors: ScaleFactors): ScaleF
   return { x: Math.max(factors.x, scaledMinimum), y: Math.max(factors.y, scaledMinimum) };
 }
 
-function isLinear(element: InkElementV1): element is LinearElementV1 {
-  return (
-    element.kind === "line" || element.kind === "arrow" || element.kind === "straight-highlighter"
-  );
-}
-
 function shouldTransformEndpoint(element: LinearElementV1, endpoint: "start" | "end"): boolean {
   if (element.kind === "straight-highlighter") return true;
   return endpoint === "start" ? element.startConnection === null : element.endConnection === null;
-}
-
-function linearPivot(start: PointV1, end: PointV1, bend: PointV1 | null): PointV1 {
-  const points = bend === null ? [start, end] : [start, bend, end];
-  const xs = points.map(({ x }) => x);
-  const ys = points.map(({ y }) => y);
-  return canonicalPoint({
-    x: (Math.min(...xs) + Math.max(...xs)) / 2,
-    y: (Math.min(...ys) + Math.max(...ys)) / 2,
-  });
-}
-
-function assertFinitePoint(point: PointV1): void {
-  if (!Number.isFinite(point.x) || !Number.isFinite(point.y))
-    throw new RangeError("Points must be finite.");
-}
-
-function scaleRatio(anchor: number, start: number, current: number): number {
-  const denominator = start - anchor;
-  return denominator === 0 ? 1 : (current - anchor) / denominator;
 }

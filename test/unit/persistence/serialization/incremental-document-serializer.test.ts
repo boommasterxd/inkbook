@@ -5,7 +5,10 @@ import {
   IncrementalDocumentSerializer,
   serializeInkbookDocument,
 } from "../../../../src/persistence/serialization/public";
-import { packElements, unpackElements } from "../../../../src/persistence/worker/runtime/public";
+import {
+  packElements,
+  unpackElements,
+} from "../../../../src/persistence/worker/runtime/element-wire-codec";
 import {
   createAllElementSnapshot,
   createDottedRectangleSnapshot,

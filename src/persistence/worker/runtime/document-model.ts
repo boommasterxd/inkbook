@@ -12,8 +12,11 @@ import type {
 } from "../../clipboard/types";
 import {
   ChunkedInkbookInputParser,
+  deriveDocumentIntegrityManifest,
+  deriveDocumentIntegrityManifestFromContentDigest,
   IncrementalDocumentSerializer,
 } from "../../serialization/public";
+import type { DocumentIntegrityManifest } from "../../serialization/document-integrity-manifest";
 import { decodeClipboardChunked, encodeRuntimeSelectionChunked } from "./fallback-clipboard-codec";
 import {
   copyElementsToRuntime,
@@ -27,11 +30,13 @@ export type ModelExportResult =
   | { readonly code: string; readonly ok: false; readonly retryable: boolean }
   | {
       readonly hash: string;
+      readonly integrityManifest: DocumentIntegrityManifest;
       readonly ok: true;
       readonly output: string | Uint8Array;
     };
 
 export interface ModelUnlockResult {
+  readonly integrityManifest: DocumentIntegrityManifest;
   readonly lockedHeight: number;
   readonly outputHash: string;
   readonly requiresCanonicalRewrite: boolean;
@@ -158,6 +163,7 @@ export class DocumentModelRuntime {
     const snapshot = this.#snapshot;
     if (snapshot === null) throw new RuntimeModelError("snapshot-invalid", false);
     return {
+      integrityManifest: deriveDocumentIntegrityManifest(snapshot),
       lockedHeight: parsed.value.lockedHeight,
       outputHash: parsed.value.hash,
       requiresCanonicalRewrite: parsed.value.requiresCanonicalRewrite,
@@ -204,16 +210,25 @@ export class DocumentModelRuntime {
       const modelUpdated = this.#now();
       if (!update.ok) return failure(update.error.code, true);
       const serialized = await this.#serializeRuntimeChunked(sliceContext);
+      if (!serialized.ok) return failure(serialized.error.code, true);
+      const integrityManifest = deriveDocumentIntegrityManifestFromContentDigest(
+        serialized.value.snapshot,
+        serialized.value.snapshotHash,
+      );
       const finished = this.#now();
       this.#lastExportPhases = Object.freeze({
         modelUpdateMs: modelUpdated - started,
         serializationMs: finished - modelUpdated,
         totalMs: finished - started,
       });
-      if (!serialized.ok) return failure(serialized.error.code, true);
       this.#snapshot = serialized.value.snapshot;
       this.#resetPrewarmState();
-      return { hash: serialized.value.hash, ok: true, output: serialized.value.svg };
+      return {
+        hash: serialized.value.hash,
+        integrityManifest,
+        ok: true,
+        output: serialized.value.svg,
+      };
     } catch (error) {
       return failure(error instanceof RuntimeModelError ? error.code : "runtime-failure", false);
     }

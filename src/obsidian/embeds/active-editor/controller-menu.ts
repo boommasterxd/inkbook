@@ -21,6 +21,7 @@ interface ActiveEditorMenuOptions {
   readonly ownerDocument: Document;
   readonly position: InputPoint;
   readonly returnFocus?: FocusTargetPort;
+  readonly restoreFocus: boolean;
   readonly canEraseAll: boolean;
   readonly canPaste: boolean;
   readonly arrangeAvailability: Readonly<Record<ArrangeAction, boolean>>;
@@ -45,6 +46,7 @@ function openActiveEditorMenu(options: ActiveEditorMenuOptions): ContextMenuSess
           ownerDocument: options.ownerDocument,
           onClosed: options.onClosed,
           position: options.position,
+          restoreFocus: options.restoreFocus,
           ...(options.returnFocus === undefined ? {} : { returnFocus: options.returnFocus }),
         }
       : {
@@ -53,6 +55,7 @@ function openActiveEditorMenu(options: ActiveEditorMenuOptions): ContextMenuSess
           event: options.event,
           ownerDocument: options.ownerDocument,
           onClosed: options.onClosed,
+          restoreFocus: options.restoreFocus,
           ...(options.returnFocus === undefined ? {} : { returnFocus: options.returnFocus }),
         };
   return openContextMenu(
@@ -200,34 +203,43 @@ export class ActiveEditorMenuController {
   public openFromSource(source: "keyboard" | "pointer" | "touch", position: InputPoint): void {
     const resolvedPosition =
       source === "keyboard" ? (this.#options.visibleSelectionCenter?.() ?? position) : position;
-    this.open(resolvedPosition, source === "pointer" ? this.#event : undefined);
+    this.open(
+      resolvedPosition,
+      source === "pointer" ? this.#event : undefined,
+      undefined,
+      source !== "touch",
+    );
   }
 
-  public open(position: InputPoint, event?: MouseEvent, returnFocus?: FocusTargetPort): void {
+  public open(
+    position: InputPoint,
+    event?: MouseEvent,
+    returnFocus?: FocusTargetPort,
+    restoreFocus = true,
+  ): void {
     this.dispose();
     const generation = this.#openGeneration;
-    if (this.#options.actions.canPaste) {
-      this.#openNow(position, event, returnFocus, generation);
-      return;
-    }
-    void this.#options.actions.refreshPasteAvailability().then(() => {
-      this.#openNow(position, event, returnFocus, generation);
-    });
+    this.#openNow(position, event, returnFocus, restoreFocus, generation);
   }
 
   #openNow(
     position: InputPoint,
     event: MouseEvent | undefined,
     returnFocus: FocusTargetPort | undefined,
+    restoreFocus: boolean,
     generation: number,
   ): void {
     if (generation !== this.#openGeneration) return;
     const actions = this.#options.actions;
+    const pasteInvocation = {
+      invocationPoint: { x: position.x, y: position.y },
+      kind: "context-menu" as const,
+    };
     let session: ContextMenuSession;
     session = openActiveEditorMenu({
       arrangeAvailability: actions.arrangeAvailability(),
       canEraseAll: this.#options.storeSize() > 0,
-      canPaste: actions.canPaste,
+      canPaste: actions.canRequestPaste,
       ...(event === undefined ? {} : { event }),
       factory: this.#options.factory,
       hasSelection: this.#options.selectionSize() > 0,
@@ -242,9 +254,10 @@ export class ActiveEditorMenuController {
         if (this.#session === session) this.#session = undefined;
       },
       onEraseAll: () => actions.execute("erase-all"),
-      onPaste: () => actions.execute("paste", { kind: "context-menu", invocationPoint: position }),
+      onPaste: () => actions.execute("paste", pasteInvocation),
       ownerDocument: this.#options.ownerDocument,
       position: this.#options.toScreenPoint(position),
+      restoreFocus,
       ...(returnFocus === undefined ? {} : { returnFocus }),
     });
     this.#session = session;

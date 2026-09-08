@@ -11,7 +11,6 @@ export const DEFAULT_WHEEL_PAGE_HEIGHT = 800;
 export const TRACKPAD_ZOOM_DELTA_LIMIT = 16;
 export const TRACKPAD_ZOOM_SENSITIVITY = 2.5;
 export const TRACKPAD_ZOOM_PIXELS_PER_STEP = TRACKPAD_ZOOM_DELTA_LIMIT / TRACKPAD_ZOOM_SENSITIVITY;
-export const WHEEL_PIXELS_PER_STEP = 100;
 
 export type WheelDeltaMode = 0 | 1 | 2;
 
@@ -94,31 +93,8 @@ export function normalizeWheelVector(
   };
 }
 
-export function classifyOneFingerGesture(
-  deltaX: number,
-  deltaY: number,
-): "horizontal" | "vertical" {
-  requireFinite(deltaX, "deltaX");
-  requireFinite(deltaY, "deltaY");
-  return Math.abs(deltaX) >= 1.25 * Math.abs(deltaY) ? "horizontal" : "vertical";
-}
-
 export function createWheelZoomState(): WheelZoomState {
   return { pendingSteps: 0 };
-}
-
-export function accumulateWheelDelta(
-  state: WheelZoomState,
-  delta: number,
-  deltaMode: WheelDeltaMode,
-  options: WheelNormalization = {},
-): WheelZoomState {
-  const normalizedDelta = normalizeWheelDelta(delta, deltaMode, options);
-  const pixelsPerStep = requirePositive(
-    options.pixelsPerStep ?? WHEEL_PIXELS_PER_STEP,
-    "pixelsPerStep",
-  );
-  return accumulateWheelSteps(state, -normalizedDelta / pixelsPerStep);
 }
 
 /** Converts a pixel-based modifier-wheel delta into a continuous trackpad zoom factor. */
@@ -134,10 +110,6 @@ export function continuousWheelZoomFactor(delta: number, options: WheelNormaliza
 export function accumulateWheelSteps(state: WheelZoomState, steps: number): WheelZoomState {
   requireFinite(steps, "steps");
   return { pendingSteps: requireFinite(state.pendingSteps + steps, "pendingSteps") };
-}
-
-export function wheelHasPendingDelta(state: WheelZoomState): boolean {
-  return state.pendingSteps !== 0;
 }
 
 export function consumeWheelFrame(

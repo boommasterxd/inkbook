@@ -126,13 +126,15 @@ function animateBackgroundLayoutChange(context: BackgroundRenderContext): void {
   content.dataset.resizing = "true";
   content.style.blockSize = `${String(startHeight)}px`;
   void content.offsetHeight;
-  content.style.blockSize = `${String(targetHeight)}px`;
 
+  let frame: number | undefined;
   let timeout: number | undefined;
   const finish = (): void => {
     content.removeEventListener("transitionend", onTransitionEnd);
     content.removeEventListener("transitioncancel", finish);
+    if (frame !== undefined) win.cancelAnimationFrame(frame);
     if (timeout !== undefined) win.clearTimeout(timeout);
+    frame = undefined;
     delete content.dataset.resizing;
     content.style.removeProperty("block-size");
     if (context.state.finishLayout === finish) delete context.state.finishLayout;
@@ -147,7 +149,11 @@ function animateBackgroundLayoutChange(context: BackgroundRenderContext): void {
   context.state.finishLayout = finish;
   content.addEventListener("transitionend", onTransitionEnd);
   content.addEventListener("transitioncancel", finish);
-  timeout = win.setTimeout(finish, 300);
+  frame = win.requestAnimationFrame(() => {
+    frame = undefined;
+    content.style.blockSize = `${String(targetHeight)}px`;
+    timeout = win.setTimeout(finish, 300);
+  });
 }
 
 function prefersReducedMotion(ownerDocument: Document): boolean {

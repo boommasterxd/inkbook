@@ -75,10 +75,18 @@ describe("Inkbook document recognition", () => {
 
     await expect(recognition.recognize(file.path)).resolves.toMatchObject({
       aspectRatio: 2048.6 / serialized.value.lockedHeight,
+      contentIdentity: {
+        outputHash: serialized.value.hash,
+        revision: serialized.value.snapshot.revision,
+      },
       safeSvg: serialized.value.svg,
     });
     expect(recognition.cached(file.path)).toMatchObject({
       aspectRatio: 2048.6 / serialized.value.lockedHeight,
+      contentIdentity: {
+        outputHash: serialized.value.hash,
+        revision: serialized.value.snapshot.revision,
+      },
       safeSvg: serialized.value.svg,
     });
     recognition.invalidate(file.path);

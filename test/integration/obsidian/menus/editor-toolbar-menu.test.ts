@@ -39,10 +39,11 @@ afterEach(() => {
 });
 
 describe("native editor toolbar menus", () => {
-  it("keeps Overflow entirely native while drilling into Background", () => {
+  it("keeps Overflow entirely native while drilling into Background", async () => {
     const menu = new FakeMenu();
     const navigate = vi.fn();
-    populateNativeToolbarMenu(menu, "overflow", options(), navigate);
+    const configured = options();
+    populateNativeToolbarMenu(menu, "overflow", configured, navigate);
 
     expect(titles(menu)).toEqual([
       "Background",
@@ -51,6 +52,8 @@ describe("native editor toolbar menus", () => {
       "Bring to front",
       "Send to back",
       "Copy embed",
+      "Settings",
+      "Keyboard shortcuts",
       "Erase all",
       "Delete embed",
     ]);
@@ -61,6 +64,11 @@ describe("native editor toolbar menus", () => {
       )?.textContent,
     ).toBe("Erase all");
     expect(action(menu, "Delete embed").warning).toBe(true);
+    action(menu, "Settings").click?.();
+    action(menu, "Keyboard shortcuts").click?.();
+    await Promise.resolve();
+    expect(configured.handlers.onOpenSettings).toHaveBeenCalledOnce();
+    expect(configured.handlers.onOpenShortcuts).toHaveBeenCalledOnce();
     expect(
       menu.entries.every(
         (entry) =>

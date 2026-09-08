@@ -11,7 +11,7 @@ export function pushBottom<Id>(heap: BottomHeapEntry<Id>[], entry: BottomHeapEnt
   while (index > 0) {
     const parentIndex = Math.floor((index - 1) / 2);
     const parent = heap[parentIndex];
-    if (parent === undefined || parent.bottom >= entry.bottom) return;
+    if (parent === undefined || parent.bottom >= entry.bottom) break;
     heap[index] = parent;
     index = parentIndex;
   }

@@ -1,0 +1,254 @@
+import { setIcon } from "obsidian";
+
+import {
+  CONFIGURABLE_SHORTCUT_ACTIONS,
+  createBuiltInKeyboardShortcuts,
+  shortcutConflict,
+  type ConfigurableShortcutActionV1,
+  type KeyboardShortcutBindingV1,
+} from "../../domain/settings/index";
+import { captureShortcutBinding } from "../../editor/input/index";
+import type { ObsidianHotkeyAccess } from "./obsidian-hotkey-conflicts";
+import { bindSettingsAction, createSettingsRow } from "./settings-row";
+import { CONFIGURABLE_SHORTCUT_REFERENCE } from "./shortcut-catalog";
+import { renderShortcutBinding } from "./shortcut-key-display";
+import type { InkbookSettingsStore } from "./storage";
+
+export class ShortcutRecordingView {
+  readonly #container: HTMLElement;
+  readonly #hostHotkeys: ObsidianHotkeyAccess;
+  readonly #renderView: () => void;
+  readonly #store: InkbookSettingsStore;
+  #recordingAction: ConfigurableShortcutActionV1 | undefined;
+  #recordingCleanup: (() => void) | undefined;
+
+  public constructor(
+    container: HTMLElement,
+    store: InkbookSettingsStore,
+    hostHotkeys: ObsidianHotkeyAccess,
+    renderView: () => void,
+  ) {
+    this.#container = container;
+    this.#store = store;
+    this.#hostHotkeys = hostHotkeys;
+    this.#renderView = renderView;
+  }
+
+  public prepareRender(): void {
+    this.#removeRecordingCapture();
+  }
+
+  public dispose(): void {
+    this.#removeRecordingCapture();
+  }
+
+  public renderActions(container: HTMLElement): void {
+    for (const action of CONFIGURABLE_SHORTCUT_ACTIONS) this.#renderAction(container, action);
+  }
+
+  public renderGroupResetAction(container: HTMLElement): void {
+    const { info, row: reset } = createSettingsRow(container, {
+      className: "inkbook-shortcuts-group-reset",
+      description: "Restore the built-in bindings without changing existing files or elements.",
+      name: "Reset group to defaults",
+    });
+    const status = info.createDiv({ cls: "inkbook-shortcut-status" });
+    status.setAttribute("aria-live", "polite");
+    bindSettingsAction(reset, () => this.#resetGroup(status), "caution");
+  }
+
+  #renderAction(container: HTMLElement, action: ConfigurableShortcutActionV1): void {
+    const binding = this.#store.getDeviceSettings().keyboardShortcuts[action];
+    const reference = CONFIGURABLE_SHORTCUT_REFERENCE[action];
+    const {
+      control: controls,
+      info,
+      row,
+    } = createSettingsRow(container, {
+      className: "inkbook-shortcut-row",
+      description: reference.description,
+      name: reference.label,
+    });
+    controls.classList.add("inkbook-shortcut-controls");
+    const status = info.createDiv({ cls: "inkbook-shortcut-status" });
+    status.setAttribute("aria-live", "polite");
+    const recorder = controls.createEl("button", { cls: "inkbook-shortcut-recorder" });
+    recorder.type = "button";
+    recorder.dataset.shortcutAction = action;
+    recorder.setAttribute("aria-label", `Change shortcut for ${reference.label}`);
+    recorder.setAttribute("aria-pressed", "false");
+    renderShortcutBinding(recorder, binding);
+    if (this.#recordingAction === action) {
+      beginRecording(recorder, status);
+      this.#installRecordingCapture(action, status);
+    }
+    recorder.addEventListener("click", () => {
+      this.#recordingAction = action;
+      this.#renderView();
+      this.#focusRecorder(action);
+    });
+    controls.append(
+      iconButton(row.ownerDocument, "rotate-ccw", `Reset ${reference.label}`, () =>
+        this.#reset(action, status),
+      ),
+      iconButton(row.ownerDocument, "x", `Clear ${reference.label}`, () => this.#clear(action)),
+    );
+  }
+
+  #capture(event: KeyboardEvent, action: ConfigurableShortcutActionV1, status: HTMLElement): void {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (event.key === "Escape") {
+      this.#recordingAction = undefined;
+      this.#renderView();
+      this.#focusRecorder(action);
+      return;
+    }
+    const capture = captureShortcutBinding(event);
+    if (capture.kind === "ignored") return;
+    if (capture.kind === "reserved") {
+      showStatus(status, "That key is reserved for system or accessibility behavior.", true);
+      return;
+    }
+    const conflict = this.#conflict(action, capture.binding);
+    if (conflict !== undefined) {
+      showStatus(
+        status,
+        `Already assigned to ${CONFIGURABLE_SHORTCUT_REFERENCE[conflict].label}.`,
+        true,
+      );
+      return;
+    }
+    if (this.#showHostConflict(capture.binding, status)) return;
+    this.#recordingAction = undefined;
+    this.#store.updateDeviceSettings((settings) => ({
+      ...settings,
+      keyboardShortcuts: { ...settings.keyboardShortcuts, [action]: capture.binding },
+    }));
+    this.#focusRecorder(action);
+  }
+
+  #reset(action: ConfigurableShortcutActionV1, status: HTMLElement): void {
+    const binding = createBuiltInKeyboardShortcuts()[action];
+    const conflict = binding === null ? undefined : this.#conflict(action, binding);
+    if (conflict !== undefined) {
+      showStatus(
+        status,
+        `The default is already assigned to ${CONFIGURABLE_SHORTCUT_REFERENCE[conflict].label}.`,
+        true,
+      );
+      return;
+    }
+    if (binding !== null && this.#showHostConflict(binding, status)) return;
+    this.#recordingAction = undefined;
+    this.#store.updateDeviceSettings((settings) => ({
+      ...settings,
+      keyboardShortcuts: { ...settings.keyboardShortcuts, [action]: binding },
+    }));
+    this.#focusRecorder(action);
+  }
+
+  #clear(action: ConfigurableShortcutActionV1): void {
+    this.#recordingAction = undefined;
+    this.#store.updateDeviceSettings((settings) => ({
+      ...settings,
+      keyboardShortcuts: { ...settings.keyboardShortcuts, [action]: null },
+    }));
+    this.#focusRecorder(action);
+  }
+
+  #resetGroup(status: HTMLElement): void {
+    const defaults = createBuiltInKeyboardShortcuts();
+    const conflict = this.#defaultHostConflict(defaults);
+    if (conflict !== undefined) {
+      showStatus(
+        status,
+        `Cannot reset ${CONFIGURABLE_SHORTCUT_REFERENCE[conflict.action].label}: already assigned to Obsidian command “${conflict.commandId}”.`,
+        true,
+      );
+      return;
+    }
+    this.#recordingAction = undefined;
+    this.#store.updateDeviceSettings((settings) => ({
+      ...settings,
+      keyboardShortcuts: defaults,
+    }));
+    this.#container.querySelector<HTMLElement>(".inkbook-shortcuts-group-reset")?.focus();
+  }
+
+  #conflict(
+    action: ConfigurableShortcutActionV1,
+    binding: KeyboardShortcutBindingV1,
+  ): ConfigurableShortcutActionV1 | undefined {
+    return shortcutConflict(this.#store.getDeviceSettings().keyboardShortcuts, action, binding);
+  }
+
+  #showHostConflict(binding: KeyboardShortcutBindingV1, status: HTMLElement): boolean {
+    const conflict = this.#hostHotkeys.findConflict(binding);
+    if (conflict === undefined) return false;
+    showStatus(status, `Already assigned to Obsidian command “${conflict}”.`, true);
+    return true;
+  }
+
+  #defaultHostConflict(
+    defaults: ReturnType<typeof createBuiltInKeyboardShortcuts>,
+  ): { readonly action: ConfigurableShortcutActionV1; readonly commandId: string } | undefined {
+    for (const action of CONFIGURABLE_SHORTCUT_ACTIONS) {
+      const binding = defaults[action];
+      if (binding === null) continue;
+      const commandId = this.#hostHotkeys.findConflict(binding);
+      if (commandId !== undefined) return { action, commandId };
+    }
+    return undefined;
+  }
+
+  #installRecordingCapture(action: ConfigurableShortcutActionV1, status: HTMLElement): void {
+    const ownerWindow = this.#container.ownerDocument.defaultView;
+    if (ownerWindow === null) return;
+    const listener = (event: KeyboardEvent): void => this.#capture(event, action, status);
+    ownerWindow.addEventListener("keydown", listener, { capture: true });
+    this.#recordingCleanup = () =>
+      ownerWindow.removeEventListener("keydown", listener, { capture: true });
+  }
+
+  #removeRecordingCapture(): void {
+    this.#recordingCleanup?.();
+    this.#recordingCleanup = undefined;
+  }
+
+  #focusRecorder(action: ConfigurableShortcutActionV1): void {
+    this.#container
+      .querySelector<HTMLButtonElement>(`[data-shortcut-action="${action}"]`)
+      ?.focus({ preventScroll: true });
+  }
+}
+
+function beginRecording(button: HTMLButtonElement, status: HTMLElement): void {
+  button.dataset.recording = "true";
+  button.setAttribute("aria-pressed", "true");
+  button.replaceChildren(button.ownerDocument.createTextNode("Press shortcut…"));
+  showStatus(status, "Press a shortcut, or Escape to cancel.", false);
+}
+
+function iconButton(
+  ownerDocument: Document,
+  icon: string,
+  label: string,
+  onClick: () => void,
+): HTMLButtonElement {
+  const ownerWindow = ownerDocument.defaultView;
+  if (ownerWindow === null) throw new Error("Shortcut controls require an owning window.");
+  const button = ownerWindow.createEl("button");
+  button.type = "button";
+  button.className = "clickable-icon inkbook-shortcut-icon-button";
+  button.setAttribute("aria-label", label);
+  button.setAttribute("data-tooltip-position", "top");
+  setIcon(button, icon);
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function showStatus(status: HTMLElement, message: string, error: boolean): void {
+  status.textContent = message;
+  status.classList.toggle("is-error", error);
+}

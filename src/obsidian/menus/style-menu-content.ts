@@ -6,6 +6,7 @@ import {
   coordinateSystemIconId,
   OPACITY_ICON_ID,
   PRESSURE_SENSITIVITY_ICON_ID,
+  selectionAreaIconId,
 } from "../../rendering/ui/icon-ids";
 import { menuDomWindow } from "./menu-dom";
 
@@ -104,6 +105,10 @@ function createChoices(
   body.classList.add("inkbook-menu-choice-grid");
   if (control.id.endsWith("color")) body.classList.add("inkbook-menu-color-grid");
   if (control.id.endsWith("width")) body.classList.add("inkbook-menu-width-grid");
+  if (control.id === "selection-area") body.classList.add("inkbook-menu-selection-area-grid");
+  if (control.id === "selection-inclusion") {
+    body.classList.add("inkbook-menu-selection-inclusion-grid");
+  }
   for (const option of control.options) {
     body.append(createChoiceButton(options, control, option));
   }
@@ -350,6 +355,8 @@ function choiceIconId(controlId: string, value: string): string | null {
     return arrowShapeIconId("none", value as Parameters<typeof arrowShapeIconId>[1]);
   if (controlId === "coordinate-dimension" && (value === "2d" || value === "3d"))
     return coordinateSystemIconId(value);
+  if (controlId === "selection-area" && (value === "rectangle" || value === "lasso"))
+    return selectionAreaIconId(value);
   return null;
 }
 
@@ -358,7 +365,8 @@ function isVisualOnlyChoice(controlId: string): boolean {
     controlId.endsWith("color") ||
     controlId === "outline-style" ||
     controlId.startsWith("arrow-") ||
-    controlId === "coordinate-dimension"
+    controlId === "coordinate-dimension" ||
+    controlId === "selection-area"
   );
 }
 

@@ -1,12 +1,8 @@
 import type { InkSnapshotV1, SnapshotValidationDerivations } from "../../domain/schema/public";
-import {
-  validateInkSnapshotV1,
-  validateInkSnapshotV1Steps,
-} from "../../domain/schema/snapshot-validation";
+import { validateInkSnapshotV1Steps } from "../../domain/schema/snapshot-validation";
 
 import {
   createDocumentSnapshotMigrations,
-  migrateSnapshotSequentially,
   migrateSnapshotSequentiallySteps,
 } from "./snapshot-migration";
 import type { DocumentCodecResult } from "./types";
@@ -20,33 +16,6 @@ export interface MigratedSnapshot {
   readonly derivations: SnapshotValidationDerivations;
   readonly snapshot: InkSnapshotV1;
   readonly sourceVersion: number;
-}
-
-export function migrateAndValidateDocumentSnapshot(
-  value: unknown,
-  options: MigrationValidationOptions,
-): DocumentCodecResult<MigratedSnapshot> {
-  const migrated = migrateSnapshotSequentially(value, createDocumentSnapshotMigrations(options));
-  if (!migrated.ok) return migrationFailure();
-  const validation = validateInkSnapshotV1(migrated.value, options);
-  if (!validation.ok) {
-    return {
-      error: {
-        code: "snapshot-invalid",
-        message: "Snapshot validation failed after migration.",
-        validationError: validation.error,
-      },
-      ok: false,
-    };
-  }
-  return {
-    ok: true,
-    value: {
-      derivations: validation.derivations,
-      snapshot: validation.value,
-      sourceVersion: migrated.sourceVersion,
-    },
-  };
 }
 
 export function* migrateAndValidateDocumentSnapshotSteps(

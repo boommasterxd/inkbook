@@ -23,6 +23,7 @@ import type { InkbookDocumentRecognition } from "./document-recognition";
 import { createInkbookLockedPreview } from "./locked-preview";
 import { PresentationController } from "./presentation-controller";
 import type { EmbedIntegrationPorts, ResolvedInkbookDocument } from "./presentation-port";
+import { samePreviewContentIdentity } from "./safe-preview-svg";
 
 let nextLivePreviewAttachmentId = 0;
 const documentRecognitionChanged = StateEffect.define<string>();
@@ -275,7 +276,11 @@ export class InkbookLivePreviewWidget extends WidgetType {
       this.#embed.to === other.#embed.to &&
       this.#embed.sourcePath === other.#embed.sourcePath &&
       this.#embed.resolved.documentId === other.#embed.resolved.documentId &&
-      this.#embed.resolved.resourceUrl === other.#embed.resolved.resourceUrl
+      this.#embed.resolved.resourceUrl === other.#embed.resolved.resourceUrl &&
+      samePreviewContentIdentity(
+        this.#embed.preview.contentIdentity,
+        other.#embed.preview.contentIdentity,
+      )
     );
   }
 
@@ -309,9 +314,11 @@ export class InkbookLivePreviewWidget extends WidgetType {
       this.#ports.sessions,
       this.#ports.scheme,
       {
+        contentIdentity: this.#embed.preview.contentIdentity,
         element: preview.element,
         refresh: preview.refresh,
         requestHostMeasure: () => view.requestMeasure(),
+        setDescriptor: preview.setDescriptor,
         setAspectRatio: preview.setAspectRatio,
         setSource: preview.setSource,
       },

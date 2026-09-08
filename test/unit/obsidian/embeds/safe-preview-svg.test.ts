@@ -6,8 +6,8 @@ import { FILE_SCHEMA_LIMITS } from "../../../../src/domain/schema/public";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import {
   createPreviewSvg,
+  inspectPreviewSvg,
   loadValidatedPreviewSvg,
-  validatePreviewSvg,
 } from "../../../../src/obsidian/embeds/safe-preview-svg";
 import { createSnapshot } from "../../persistence/serialization/fixtures";
 
@@ -49,13 +49,13 @@ describe("safe locked-preview SVG validation", () => {
     expect(serialized.ok).toBe(true);
     if (!serialized.ok) return;
 
-    const safeSvg = await validatePreviewSvg(serialized.value.svg);
+    const safeSvg = (await inspectPreviewSvg(serialized.value.svg))?.safeSvg ?? null;
     expect(safeSvg).toBe(serialized.value.svg);
     if (safeSvg === null) return;
     const preview = createPreviewSvg(document, safeSvg);
 
     expect(preview.classList.contains("inkbook-locked-preview-svg")).toBe(true);
-    expect(preview.getAttribute("preserveAspectRatio")).toBe("none");
+    expect(preview.getAttribute("preserveAspectRatio")).toBe("xMidYMin meet");
     expect(preview.querySelector("metadata")).toBeNull();
     expect(preview.querySelector("style")).toBeNull();
     expect(preview.querySelectorAll("path").length).toBeGreaterThan(0);
@@ -70,7 +70,7 @@ describe("safe locked-preview SVG validation", () => {
       '<script>bad()</script><g id="inkbook-content">',
     );
 
-    await expect(validatePreviewSvg(unsafe)).resolves.toBeNull();
+    await expect(inspectPreviewSvg(unsafe)).resolves.toBeNull();
   });
 });
 
@@ -122,7 +122,14 @@ describe("safe locked-preview SVG source loading", () => {
 
     await expect(
       loadValidatedPreviewSvg("app://vault/safe.svg", loaderWindow(body).window),
-    ).resolves.toBe(serialized.value.svg);
+    ).resolves.toEqual({
+      aspectRatio: 2_048.6 / serialized.value.lockedHeight,
+      contentIdentity: {
+        outputHash: serialized.value.hash,
+        revision: serialized.value.snapshot.revision,
+      },
+      safeSvg: serialized.value.svg,
+    });
     expect(body.arrayBuffer).toHaveBeenCalledOnce();
   });
 });

@@ -2,10 +2,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  InkbookToolbar,
   nextToolbarIndex,
   resolveToolbarFocusRecovery,
-} from "../../../../src/rendering/ui/toolbar";
+} from "../../../../src/rendering/ui/toolbar-focus";
+import { InkbookToolbar, resolveToolbarNavigationKey } from "../../../../src/rendering/ui/toolbar";
 import type { ToolbarState } from "../../../../src/rendering/ui/toolbar-types";
 import type { ToolbarStyleIconState } from "../../../../src/rendering/ui/style-icon";
 
@@ -18,6 +18,7 @@ const state: ToolbarState = {
   fingerDrawingEnabled: false,
   hasSelection: false,
   openFlyout: null,
+  pasteVisible: false,
 };
 
 const DEFAULT_STYLE_ICON: ToolbarStyleIconState = {
@@ -30,12 +31,15 @@ const DEFAULT_STYLE_ICON: ToolbarStyleIconState = {
 function render(
   overrides: Partial<ToolbarState> = {},
   styleIcon: ToolbarStyleIconState = DEFAULT_STYLE_ICON,
+  leftHanded = false,
 ): string {
   return renderToStaticMarkup(
     <InkbookToolbar
       layout="wide"
+      leftHanded={leftHanded}
       onAction={vi.fn()}
       renderIcon={vi.fn()}
+      selectionArea="rectangle"
       selectedShape="rectangle"
       shapeIcon={{ arrowEnd: "arrow", arrowStart: "none", coordinateDimension: "2d" }}
       state={{ ...state, ...overrides }}
@@ -53,6 +57,7 @@ describe("Inkbook toolbar", () => {
     expect(markup).toContain('aria-pressed="true"');
     expect(markup.match(/inkbook-toolbar-active-indicator/gu)).toHaveLength(1);
     expect(markup).toContain('class="inkbook-toolbar-rail"');
+    expect(markup).toContain('aria-label="Select: Rectangle"');
   });
 
   it("keeps unavailable history controls disabled and omits contextual controls", () => {
@@ -65,7 +70,12 @@ describe("Inkbook toolbar", () => {
   });
 
   it("exposes selection, clipboard and flyout state", () => {
-    const markup = render({ canPaste: true, hasSelection: true, openFlyout: "style" });
+    const markup = render({
+      canPaste: true,
+      hasSelection: true,
+      openFlyout: "style",
+      pasteVisible: true,
+    });
     expect(markup).toContain('aria-label="Copy"');
     expect(markup).toContain('aria-label="Cut"');
     expect(markup).toContain('aria-label="Delete"');
@@ -79,6 +89,7 @@ describe("Inkbook toolbar", () => {
     expect(markup.indexOf('class="inkbook-toolbar inkbook-toolbar-wide"')).toBeLessThan(
       markup.indexOf("inkbook-toolbar-context-actions"),
     );
+    expect(markup.indexOf('aria-label="Paste"')).toBeLessThan(markup.indexOf('aria-label="Copy"'));
   });
 
   it("renders the current tool paint on the original palette geometry", () => {
@@ -113,6 +124,8 @@ describe("Inkbook toolbar", () => {
     expect(nextToolbarIndex("End", 0, 4)).toBe(3);
     expect(nextToolbarIndex("Escape", 0, 4)).toBeNull();
     expect(nextToolbarIndex("ArrowRight", 0, 0)).toBeNull();
+    expect(resolveToolbarNavigationKey("ArrowLeft", true)).toBe("ArrowRight");
+    expect(resolveToolbarNavigationKey("ArrowRight", false)).toBe("ArrowRight");
   });
 
   it("recovers focus to the nearest remaining control when a conditional control disappears", () => {
@@ -128,5 +141,19 @@ describe("Inkbook toolbar", () => {
     ).toBe("lock");
     expect(resolveToolbarFocusRecovery(["undo", "redo"], ["undo"], "redo")).toBe("undo");
     expect(resolveToolbarFocusRecovery(["undo"], [], "undo")).toBeNull();
+  });
+});
+
+describe("Inkbook toolbar handedness", () => {
+  it("marks the complete toolbar composition for mirrored context placement", () => {
+    const markup = render(
+      { canPaste: false, hasSelection: true, pasteVisible: true },
+      DEFAULT_STYLE_ICON,
+      true,
+    );
+
+    expect(markup).toContain("inkbook-toolbar-composition-left-handed");
+    expect(markup).toContain("inkbook-toolbar-left-handed");
+    expect(markup).not.toMatch(/aria-label="Paste"[^>]*disabled=""/u);
   });
 });

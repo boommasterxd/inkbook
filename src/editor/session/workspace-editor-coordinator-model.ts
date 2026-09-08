@@ -1,6 +1,7 @@
 import type {
   DocumentSessionPort,
   DocumentSessionSnapshot,
+  PersistedDocumentIdentity,
   RecoveryOperationIdentity,
   RecoveryResult,
   SaveResult,
@@ -80,10 +81,15 @@ export class AttachmentRegistry {
 export class SessionOperationTracker {
   #operationId = 0;
 
-  create(current: CurrentSession, workspaceToken: number): SessionOperationIdentity {
+  create(
+    current: CurrentSession,
+    workspaceToken: number,
+    expectedSourceIdentity?: PersistedDocumentIdentity,
+  ): SessionOperationIdentity {
     const snapshot = current.port.getSnapshot();
     return {
       documentId: snapshot.documentId,
+      ...(expectedSourceIdentity === undefined ? {} : { expectedSourceIdentity }),
       operationId: ++this.#operationId,
       sessionId: snapshot.sessionId,
       workerEpoch: snapshot.workerEpoch,
@@ -348,10 +354,24 @@ function sameOperationLineage(
 ): boolean {
   return (
     left.documentId === right.documentId &&
+    sameOptionalSourceIdentity(left.expectedSourceIdentity, right.expectedSourceIdentity) &&
     left.operationId === right.operationId &&
     left.sessionId === right.sessionId &&
     right.workerEpoch >= left.workerEpoch &&
     left.workspaceToken === right.workspaceToken
+  );
+}
+
+function sameOptionalSourceIdentity(
+  left: PersistedDocumentIdentity | undefined,
+  right: PersistedDocumentIdentity | undefined,
+): boolean {
+  return (
+    left === right ||
+    (left !== undefined &&
+      right !== undefined &&
+      left.revision === right.revision &&
+      left.outputHash === right.outputHash)
   );
 }
 

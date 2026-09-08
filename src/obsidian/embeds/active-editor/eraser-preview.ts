@@ -11,6 +11,7 @@ import type { EditableDocumentModel } from "../vault-document-session";
 import { EraserFrameScheduler } from "./eraser-scheduler";
 import type { ActiveEditorHistory } from "./history";
 import type { ElementSceneStore } from "./scene-store";
+import type { CoalescedCreationSample, CoalescedFrameSampleMode } from "./coalesced-input";
 
 interface EraserPreviewRenderer {
   clearElementFade(ids: readonly string[]): void;
@@ -39,6 +40,8 @@ export class EraserPreview implements GesturePreview {
   #finished = false;
   #generation = 0;
   #scheduler: EraserFrameScheduler | null = null;
+
+  public readonly frameSampleMode: CoalescedFrameSampleMode = "preserve";
 
   public constructor(options: EraserPreviewOptions) {
     this.#history = options.history;
@@ -89,8 +92,12 @@ export class EraserPreview implements GesturePreview {
   }
 
   public update(pointer: GesturePreviewStart["pointer"]): void {
+    this.updateSamples([{ ...pointer, time: 0 }]);
+  }
+
+  public updateSamples(samples: readonly CoalescedCreationSample[]): void {
     this.#assertActive();
-    if (this.#sweep.update(pointer) === "cancelled") this.#cancelled = true;
+    if (this.#sweep.updateBatch(samples) === "cancelled") this.#cancelled = true;
   }
 
   async #remove(

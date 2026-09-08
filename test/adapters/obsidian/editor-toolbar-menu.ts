@@ -156,6 +156,8 @@ export function createEditorToolbarMenuOptions(
       onBackgroundSpacingPreview: vi.fn(),
       onBackgroundTypeChange: vi.fn(),
       onOverflowAction: vi.fn(),
+      onOpenSettings: vi.fn(),
+      onOpenShortcuts: vi.fn(),
       onShapeChange: vi.fn(),
       onStyleChange: vi.fn(),
     },

@@ -2,11 +2,14 @@ export type InkbookFeedbackCode =
   | "changes-save-failed"
   | "clipboard-copy-fallback"
   | "clipboard-copy-failed"
+  | "clipboard-operation-busy"
+  | "clipboard-paste-failed"
   | "clipboard-paste-invalid"
   | "clipboard-paste-read-failed"
   | "clipboard-paste-stale"
   | "cut-selection-changed"
   | "drawing-load-failed"
+  | "drawing-version-changed"
   | "editor-activation-delayed"
   | "editor-start-failed"
   | "embed-copy-clipboard-unavailable"
@@ -54,6 +57,16 @@ const FEEDBACK: Readonly<Record<InkbookFeedbackCode, InkbookFeedbackContent>> = 
     severity: "error",
     title: "The elements couldn't be copied.",
   },
+  "clipboard-operation-busy": {
+    detail: "Wait a moment and try again.",
+    severity: "warning",
+    title: "Another clipboard action is still running.",
+  },
+  "clipboard-paste-failed": {
+    detail: "Nothing was changed. Try again.",
+    severity: "error",
+    title: "The elements couldn't be pasted.",
+  },
   "clipboard-paste-invalid": {
     detail: "Copy Inkbook elements and try again.",
     severity: "info",
@@ -78,6 +91,11 @@ const FEEDBACK: Readonly<Record<InkbookFeedbackCode, InkbookFeedbackContent>> = 
     detail: "The saved preview is still available.",
     severity: "error",
     title: "The drawing couldn't be opened.",
+  },
+  "drawing-version-changed": {
+    detail: "The saved preview was refreshed. Review it before trying again.",
+    severity: "warning",
+    title: "The drawing changed before it opened.",
   },
   "editor-activation-delayed": {
     detail: "The drawing was inserted. Try opening the editor again.",

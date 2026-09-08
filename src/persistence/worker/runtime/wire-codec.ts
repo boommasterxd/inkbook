@@ -18,6 +18,7 @@ import {
   type RuntimeWireSliceOptions,
   unpackElements,
 } from "./element-wire-codec";
+import { copyElementsFromRuntime } from "./runtime-elements";
 import type {
   DecodeClipboardRuntimeSuccess,
   DocumentRuntimeRequest,
@@ -49,8 +50,8 @@ import {
   inspectTrustedSvgOutput,
   inspectTrustedSvgOutputSync,
 } from "../../scheduling/trusted-svg-output";
+import { isDocumentIntegrityManifest } from "../../serialization/document-integrity-manifest";
 
-export { packElements, unpackElements } from "./element-wire-codec";
 export type { RuntimeWireSliceOptions } from "./element-wire-codec";
 
 interface FullExportWireRequest extends Omit<
@@ -394,7 +395,8 @@ function encodePastePlanResult(
 function unpackPastePlan(result: ClipboardResult<PackedPastePlan>): ClipboardResult<PastePlan> {
   if (!result.ok) return result;
   assertClipboardElementWireLimits(result.value.elements);
-  return { ok: true, value: { ...result.value, elements: unpackElements(result.value.elements) } };
+  const elements = copyElementsFromRuntime(unpackElements(result.value.elements));
+  return { ok: true, value: { ...result.value, elements } };
 }
 
 export function encodeUnlockBatch(
@@ -433,6 +435,7 @@ export function isDocumentRuntimeWireResult(value: unknown): value is DocumentRu
       typeof value.lockedHeight === "number" &&
       Number.isFinite(value.lockedHeight) &&
       value.lockedHeight > 0 &&
+      isDocumentIntegrityManifest(value.integrityManifest) &&
       typeof value.requiresCanonicalRewrite === "boolean" &&
       typeof value.sourceVersion === "number" &&
       Number.isSafeInteger(value.sourceVersion) &&
@@ -442,6 +445,7 @@ export function isDocumentRuntimeWireResult(value: unknown): value is DocumentRu
   }
   if (value.type !== "export-success-wire") return true;
   return (
+    isDocumentIntegrityManifest(value.integrityManifest) &&
     value.output instanceof Uint8Array &&
     value.output.buffer instanceof ArrayBuffer &&
     value.output.byteOffset === 0 &&

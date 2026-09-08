@@ -9,6 +9,7 @@ import type { InkbookDocumentRecognition } from "./document-recognition";
 import { createInkbookLockedPreview } from "./locked-preview";
 import { PresentationController } from "./presentation-controller";
 import type { EmbedIntegrationPorts, ResolvedInkbookDocument } from "./presentation-port";
+import { samePreviewContentIdentity } from "./safe-preview-svg";
 
 let nextReadingAttachmentId = 0;
 
@@ -59,9 +60,14 @@ function recognizeReadingViewCandidate(
 class InkbookReadingRenderChild extends MarkdownRenderChild {
   readonly #button: HTMLButtonElement;
   readonly #controller: PresentationController;
+  readonly #documentId: string;
   readonly #nativeHost: HTMLElement;
   readonly #root: HTMLDivElement;
   readonly #lifecycle: EmbedIntegrationPorts["lifecycle"];
+  readonly #ports: EmbedIntegrationPorts;
+  #previewIdentity: Exclude<InkbookDocumentRecognition, false>["contentIdentity"];
+  #recognitionGeneration = 0;
+  #releaseRecognition: (() => void) | undefined;
   #releaseLifecycle: (() => void) | undefined;
 
   constructor(
@@ -79,8 +85,11 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
     const preview = createInkbookLockedPreview(button, previewDescriptor);
     super(root);
     this.#button = button;
+    this.#documentId = candidate.resolved.documentId;
     this.#nativeHost = candidate.host;
     this.#lifecycle = ports.lifecycle;
+    this.#ports = ports;
+    this.#previewIdentity = previewDescriptor.contentIdentity;
     this.#root = root;
     const attachmentId = `reading-${++nextReadingAttachmentId}`;
     this.#controller = new PresentationController(
@@ -102,8 +111,10 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
       ports.sessions,
       ports.scheme,
       {
+        contentIdentity: previewDescriptor.contentIdentity,
         element: preview.element,
         refresh: preview.refresh,
+        setDescriptor: preview.setDescriptor,
         setAspectRatio: preview.setAspectRatio,
         setSource: preview.setSource,
       },
@@ -116,6 +127,9 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
     });
     if (this.#releaseLifecycle === undefined) return;
     this.#controller.mount();
+    this.#releaseRecognition = this.#ports.documents.subscribe((documentId) => {
+      if (documentId === this.#documentId) void this.#refreshRecognition();
+    });
     this.registerDomEvent(this.#button, "click", (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -124,10 +138,35 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
   }
 
   override onunload(): void {
+    this.#recognitionGeneration += 1;
+    this.#releaseRecognition?.();
+    this.#releaseRecognition = undefined;
     this.#releaseLifecycle?.();
     this.#releaseLifecycle = undefined;
     this.#controller.dispose();
     if (this.#root.isConnected) this.#root.replaceWith(this.#nativeHost);
+  }
+
+  async #refreshRecognition(): Promise<void> {
+    const generation = ++this.#recognitionGeneration;
+    const documentId = this.#documentId;
+    const recognized = await this.#ports.documents.recognize(documentId);
+    if (generation !== this.#recognitionGeneration) return;
+    const current = this.#ports.documents.cached(documentId);
+    if (recognized === false) {
+      if (current === false) this.unload();
+      return;
+    }
+    if (
+      current === undefined ||
+      current === false ||
+      !samePreviewContentIdentity(current.contentIdentity, recognized.contentIdentity)
+    ) {
+      return;
+    }
+    if (samePreviewContentIdentity(this.#previewIdentity, recognized.contentIdentity)) return;
+    this.#previewIdentity = recognized.contentIdentity;
+    this.#controller.updatePreview(recognized);
   }
 }
 
@@ -146,7 +185,15 @@ export function createReadingViewPostProcessor(
     if (cached !== undefined && cached !== false) return attach(cached);
     if (cached === false) return;
     return ports.documents.recognize(initial.resolved.documentId).then((recognized) => {
-      if (recognized !== false) attach(recognized);
+      if (recognized === false) return;
+      const current = ports.documents.cached(initial.resolved.documentId);
+      if (
+        current !== undefined &&
+        current !== false &&
+        samePreviewContentIdentity(current.contentIdentity, recognized.contentIdentity)
+      ) {
+        attach(recognized);
+      }
     });
   };
 }

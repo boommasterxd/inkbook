@@ -21,9 +21,9 @@ An Inkbook file is UTF-8 XML with this required order:
      data-inkbook-snapshot-sha256="{lowercase SHA-256 of decoded compact JSON}">
   <style id="inkbook-theme">{canonical theme stylesheet}</style>
   <metadata id="inkbook-snapshot" data-encoding="json">{escaped compact JSON}</metadata>
-  <g id="inkbook-background" />
-  <g id="inkbook-highlights" />
-  <g id="inkbook-content" />
+  <g id="inkbook-background"></g>
+  <g id="inkbook-highlights"></g>
+  <g id="inkbook-content"></g>
 </svg>
 ```
 
@@ -34,7 +34,7 @@ Additional envelope rules:
 - Metadata is the exact canonical compact JSON serialization escaped as XML text. Loading streams its XML character data through the bounded `StreamingSvgMetadataParser`, decodes only the permitted XML entities, and parses the decoded text with the synchronous bounded structural-scan plus native parser or the bounded chunked parser, without creating an SVG DOM. Current-version loading rejects whitespace, noncanonical property order, duplicate keys, or any other decoded text that differs from canonical reserialization of the validated snapshot.
 - `data-inkbook-snapshot-sha256` is the lowercase SHA-256 of the decoded canonical metadata text. Current-version loading requires an exact hash match in both synchronous and streaming paths. This consistency binding detects uncoordinated metadata rewriting, including changes to fields that do not affect locked static geometry; it does not establish origin or authenticity.
 - `viewBox` is authoritative; `width` and `height` MAY be omitted.
-- Opacity output uses at most four decimal places so every canonical snapshot opacity remains exact. All other numeric SVG output uses at most three decimal places. Numeric output removes insignificant trailing zeros.
+- Opacity output uses at most four decimal places. Pressure-stroke groups apply `round(style.opacity * colorAlpha, 4)` once; Theme text has alpha 1, and explicit RGBA uses its byte alpha divided by 255. Their child paths use opaque RGB paint without child opacity. Other paths retain their canonical snapshot opacity and RGBA paint separately. All other numeric SVG output uses at most three decimal places. Numeric output removes insignificant trailing zeros.
 - `data-inkbook-revision` is the canonical unsigned decimal snapshot revision. A root and snapshot mismatch is invalid.
 - Scripts, event-handler attributes, `foreignObject`, animation elements, external URLs, external stylesheets, remote fonts, and non-vault resources are forbidden.
 - Static output MUST remain viewable without Inkbook and MUST NOT depend on Obsidian CSS variables.
@@ -97,6 +97,7 @@ Generated static markup uses only `svg`, `style`, `metadata`, `g`, and `path`. T
 
 - the documented root attributes, including a lowercase 64-character SHA-256 token for current-version metadata; editable loading subsequently verifies that token against the canonical decoded metadata
 - `id` and `data-encoding` only where shown
+- one additional `<g opacity="…">` level under Highlights or Content, containing exactly one direct self-closing path; Background has only direct paths, and nested, empty, self-closing, or additionally attributed opacity groups are invalid
 - `d`, `fill`, `fill-opacity`, `fill-rule`, `stroke`, `stroke-width`, `stroke-opacity`, `stroke-linecap`, `stroke-linejoin`, `stroke-dasharray`, and one allowlisted `class` on paths
 - exact `#RRGGBBAA`, `none`, or the canonical theme-class override for paint
 
@@ -107,10 +108,14 @@ Safe-preview attribute values are validated before any replacement SVG DOM is cr
 - Paint is `none`, exact `#RRGGBBAA`, or the effect of the one allowlisted theme class.
 - Opacity is a finite canonical decimal from 0 through 1 with at most four fractional digits. Stroke width and every dash value are finite canonical decimals from 0 through 256 with at most three fractional digits; a dash array has at most eight values and cannot be all zero.
 - Fill rule is exactly `nonzero` or `evenodd`, line cap is `butt`, `round`, or `square`, and line join is `miter`, `round`, or `bevel`. Absent optional attributes use SVG defaults and no other token is accepted.
-- Path data uses only uppercase `M`, `L`, `Q`, `C`, `A`, and `Z`, ASCII separators and signs, and finite non-exponent decimal numbers with at most three fractional digits. Command arity and subpath closure are validated. Arc radii are greater than zero and at most 1,000,000 page units, arc rotation is exactly zero, and large-arc and sweep flags are each exactly `0` or `1`. Every endpoint, coordinate, and control point is within the absolute 1,000,000-page-unit limit, and no trailing token is accepted.
-- One path contains at most 1 MiB of `d` text and 20,000 commands. One file contains at most 60,004 paths, 48 MiB of combined `d` text, and 8,000,000 path commands, in addition to the lower total-file, snapshot, element, and point limits in [File Format](file-format.md#limits).
+- Path data uses only absolute `M`, `L`, `Q`, `C`, `A`, and `Z`, relative `q` and `a`, ASCII separators and signs, and finite non-exponent decimal numbers with at most three fractional digits. Command arity and subpath closure are validated. Arc radii are greater than zero and at most 1,000,000 page units, arc rotation is exactly zero, and large-arc and sweep flags are each exactly `0` or `1`. Every numeric coordinate token and resolved endpoint or control point is within the absolute 1,000,000-page-unit limit. Within relative `q` and `a` commands, nonzero fractions below one may omit the leading zero, as permitted by the [SVG path grammar](https://www.w3.org/TR/SVG/paths.html#PathDataBNF); precision and value limits are unchanged. Relative coordinates accumulate in integer thousandths for validation; a close command restores the subpath start. No trailing token is accepted.
+- One path contains at most 8 MiB of `d` text and 200,000 commands. One file contains at most 60,004 paths and 20,000 opacity groups across both paint bands, 48 MiB of combined `d` text, and 8,000,000 path commands, in addition to the lower total-file, snapshot, element, and point limits in [File Format](file-format.md#limits). The [pressure-path capacity decision](decisions/pressure-path-capacity.md) explains the bounded pressure-path representation and capacity.
 
-The streaming validator counts UTF-8 bytes, paths, commands, and numeric tokens without constructing SVG nodes or browser path objects. Crossing any limit, malformed or non-finite input, or a value outside its range makes the replacement preview ineligible and leaves the file noninteractive. Canonical files produced from a validated snapshot MUST satisfy both snapshot and static-markup limits.
+The streaming validator counts UTF-8 bytes, opacity groups, paths, commands, and numeric tokens without constructing SVG nodes or browser path objects. Crossing any limit, malformed or non-finite input, or a value outside its range makes the replacement preview ineligible and leaves the file noninteractive. Canonical files produced from a validated snapshot MUST satisfy both snapshot and static-markup limits.
+
+Each pressure stroke serializes as one opacity group containing one filled path built from compact continuous-pressure ribbons. Pressure is not quantized into width bands. The same domain geometry and normalized paint drive the active scene and standalone export; see [the canonical pressure geometry](editor-tools.md). Group opacity applies the style and explicit RGBA alpha once. Non-pressure strokes remain direct centerline paths.
+
+Editable loading incrementally compares the complete static markup against canonical fragments reconstructed from the validated snapshot. Changed pressure widths, group opacity, colors, path order, or geometry are invalid. Discarded pre-release pressure representations, including banded centerlines, have no compatibility or migration path; both loading and persisted-output verification require current canonical pressure groups.
 
 ## Theme Changes in Obsidian
 

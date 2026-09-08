@@ -1,26 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { calculateElementBounds } from "../../../../src/domain/geometry/public";
+import { shouldHandleClipboardShortcut } from "../../../../src/persistence/clipboard/public";
 import {
-  classifyPasteResult,
-  encodeSelection,
-  isCurrentCut,
-  isCurrentPasteResult,
-  planPaste,
-  resolvePasteTarget,
+  encodeRuntimeSelection,
   resolveClipboardPayload,
-  type ClipboardOperationIdentity,
-  type CurrentClipboardState,
-  type CutGuard,
-  shouldHandleClipboardShortcut,
-  validatePasteAdoption,
-} from "../../../../src/persistence/clipboard/public";
+} from "../../../../src/persistence/clipboard/codec";
+import { planPaste, resolvePasteTarget } from "../../../../src/persistence/clipboard/operations";
 import { ARROW_ID, page, RECTANGLE_ID, selectedElements, spatialRectangle } from "./fixtures";
 
 const NEW_RECTANGLE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const NEW_ARROW_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
 const decodedFixture = () => {
-  const encoded = encodeSelection(selectedElements(), new Set([RECTANGLE_ID, ARROW_ID]));
+  const encoded = encodeRuntimeSelection(selectedElements(), new Set([RECTANGLE_ID, ARROW_ID]));
   if (!encoded.ok) throw new Error(encoded.error.message);
   const decoded = resolveClipboardPayload({ customText: encoded.value.customText });
   if (!decoded.ok) throw new Error(decoded.error.message);
@@ -181,15 +173,11 @@ describe("paste document limits", () => {
     expect(result).toMatchObject({ ok: false, error: { code: "limit-exceeded" } });
   });
 
-  it("rechecks aggregate spatial capacity during planning and adoption", () => {
+  it("rechecks aggregate spatial capacity during planning", () => {
     const currentElements = [
       ...Array.from({ length: 1_092 }, (_, index) => spatialRectangle(index)),
       spatialRectangle(1_092, 100),
     ];
-    const plan = planCenteredPaste();
-    expect(plan.ok).toBe(true);
-    if (!plan.ok) return;
-
     const ids = ["cccccccc-cccc-4ccc-8ccc-cccccccccccc", "dddddddd-dddd-4ddd-8ddd-dddddddddddd"];
     const rejectedPlan = planPaste({
       decoded: decodedFixture(),
@@ -204,95 +192,5 @@ describe("paste document limits", () => {
       expect(rejectedPlan.error).toMatchObject({ code: "limit-exceeded" });
       expect(rejectedPlan.error.message).toMatch(/spatial-index capacity/);
     }
-
-    const identity: ClipboardOperationIdentity = {
-      sessionId: "session-a",
-      workerEpoch: 2,
-      clipboardOperationId: "clipboard-capacity",
-      basisRevision: 12,
-    };
-    const rejectedAdoption = validatePasteAdoption({
-      plan: plan.value,
-      resultIdentity: identity,
-      current: identity,
-      currentElements,
-      page: page(),
-    });
-    expect(rejectedAdoption.ok).toBe(false);
-    if (!rejectedAdoption.ok) {
-      expect(rejectedAdoption.error).toMatchObject({ code: "limit-exceeded" });
-      expect(rejectedAdoption.error.message).toMatch(/spatial-index capacity/);
-    }
-  });
-});
-
-describe("stale clipboard guards", () => {
-  const identity: ClipboardOperationIdentity = {
-    sessionId: "session-a",
-    workerEpoch: 2,
-    clipboardOperationId: "clipboard-7",
-    basisRevision: 12,
-  };
-  const records = [
-    { id: RECTANGLE_ID, geometryVersion: 3, paintVersion: 4 },
-    { id: ARROW_ID, geometryVersion: 5, paintVersion: 6 },
-  ];
-
-  it("accepts only matching Paste identity values", () => {
-    expect(isCurrentPasteResult(identity, { ...identity })).toBe(true);
-    expect(isCurrentPasteResult(identity, { ...identity, basisRevision: 13 })).toBe(false);
-    expect(classifyPasteResult(identity, { ...identity, basisRevision: 13 }, true)).toBe(
-      "recompute",
-    );
-    expect(classifyPasteResult(identity, { ...identity, basisRevision: 13 }, false)).toBe(
-      "discard",
-    );
-  });
-
-  it("rechecks Paste identity and current document IDs before adoption", () => {
-    const plan = planCenteredPaste();
-    expect(plan.ok).toBe(true);
-    if (!plan.ok) return;
-    expect(
-      validatePasteAdoption({
-        plan: plan.value,
-        resultIdentity: identity,
-        current: identity,
-        currentElements: [],
-        page: page(),
-      }),
-    ).toEqual({
-      ok: true,
-      value: undefined,
-    });
-    expect(
-      validatePasteAdoption({
-        plan: plan.value,
-        resultIdentity: identity,
-        current: identity,
-        currentElements: [plan.value.elements[0]!],
-        page: page(),
-      }),
-    ).toMatchObject({
-      ok: false,
-      error: { code: "invalid-schema" },
-    });
-  });
-
-  it("accepts Cut only while identity, exact selection versions, and attachment remain current", () => {
-    const guard: CutGuard = { ...identity, selectedRecords: records };
-    const current: CurrentClipboardState = {
-      ...identity,
-      presentationAttached: true,
-      selectedRecords: [...records].reverse(),
-    };
-    expect(isCurrentCut(guard, current)).toBe(true);
-    expect(
-      isCurrentCut(guard, {
-        ...current,
-        selectedRecords: [{ ...records[0]!, geometryVersion: 99 }, records[1]!],
-      }),
-    ).toBe(false);
-    expect(isCurrentCut(guard, { ...current, presentationAttached: false })).toBe(false);
   });
 });

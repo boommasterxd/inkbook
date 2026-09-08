@@ -27,7 +27,7 @@ import {
 } from "./element-fragments";
 import { ElementFragmentCache } from "./element-fragment-cache";
 import { prepareDocumentDelta, validateDocumentDelta } from "./incremental-document-delta";
-import { encodedByteLength, type EncodedByteBudget } from "./encoded-byte-budget";
+import type { EncodedByteBudget } from "./encoded-byte-budget";
 import * as incrementalValidation from "./incremental-validation";
 import type {
   Background,
@@ -235,19 +235,15 @@ export class IncrementalDocumentSerializer {
     );
     const metadataBytes = metadataBudget.usedBytes;
     const totalBytes = outputBudget.usedBytes;
+    const snapshot = snapshotValue(revision, page, assembly.value.elements);
     return {
       ok: true,
       value: {
         hash: hasher.hash(svg),
         lockedHeight,
         metadataBytes,
-        snapshot: {
-          format: "inkbook",
-          version: 1,
-          revision,
-          page,
-          elements: assembly.value.elements,
-        },
+        snapshot,
+        snapshotHash: metadataHash,
         svg,
         totalBytes,
       },
@@ -296,13 +292,15 @@ export class IncrementalDocumentSerializer {
       if (error instanceof ChunkedOutputLimitError) return this.#outputLimitExceeded();
       throw error;
     }
+    const snapshot = snapshotValue(revision, page, assembly.value.elements);
     return {
       ok: true,
       value: {
         hash: assembled.hash,
         lockedHeight,
         metadataBytes,
-        snapshot: snapshotValue(revision, page, assembly.value.elements),
+        snapshot,
+        snapshotHash: metadataHash,
         svg: assembled.output,
         totalBytes: assembled.totalBytes,
       },
@@ -317,8 +315,11 @@ export class IncrementalDocumentSerializer {
         codecFailure("invalid-delta", "Serializer has no initialized document model."),
       );
     }
-    return serializeRuntimeSnapshotToUtf8(snapshot, options, (element) =>
-      this.#fragmentsFor(element),
+    return serializeRuntimeSnapshotToUtf8(
+      snapshot,
+      options,
+      (element) => this.#fragmentsFor(element),
+      this.#backgroundCache,
     );
   }
   #resolveBackground(page: PageV1, maximumBottom: number | null): DocumentCodecResult<Background> {
@@ -379,11 +380,9 @@ export class IncrementalDocumentSerializer {
       for (const id of this.#orders[band]) {
         const element = this.#elements.get(id)!;
         const elementFragments = this.#fragmentsFor(element);
-        const separatorBytes = metadata.length === 0 ? 0 : encodedByteLength(",");
+        const separatorBytes = metadata.length === 0 ? 0 : 1;
         if (
-          !metadataBudget.tryReserve(
-            encodedByteLength(elementFragments.metadata) + separatorBytes,
-          ) ||
+          !metadataBudget.tryReserve(elementFragments.metadataBytes + separatorBytes) ||
           !outputBudget.tryReserve(elementFragments.bytes + separatorBytes)
         ) {
           return this.#outputLimitExceeded();

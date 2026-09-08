@@ -6,6 +6,7 @@ import type {
   ShapeAnchorV1,
   TableElementV1,
   InkElementV1,
+  LinearElementV1,
 } from "../schema/types";
 import { shapeVertices, tableWidth } from "./creation";
 import { canonicalPoint, midpoint, rotatePointClockwise } from "./primitives";
@@ -23,8 +24,16 @@ type CoordinateAnchorTarget = AnchorTransform &
 type TableAnchorTarget = AnchorTransform &
   Pick<TableElementV1, "columns" | "columnWidth" | "height" | "kind" | "x" | "y">;
 
-export type AnchorTarget = BoxShapeElementV1 | CoordinateSystemElementV1 | TableElementV1;
-export type AnchorTargetView = BoxAnchorTarget | CoordinateAnchorTarget | TableAnchorTarget;
+type LinearAnchorTarget = AnchorTransform &
+  Pick<Extract<LinearElementV1, { kind: "arrow" | "line" }>, "end" | "kind" | "start">;
+
+type PolygonAnchorTarget = Extract<
+  BoxShapeElementV1,
+  { kind: "diamond" | "octagon" | "parallelogram" | "triangle" }
+>;
+
+export type AnchorTargetView =
+  BoxAnchorTarget | CoordinateAnchorTarget | LinearAnchorTarget | TableAnchorTarget;
 
 export interface ResolvedShapeAnchor {
   anchor: ShapeAnchorV1;
@@ -43,6 +52,8 @@ export function isAnchorTarget<Element extends Pick<InkElementV1, "kind">>(
     element.kind === "parallelogram" ||
     element.kind === "diamond" ||
     element.kind === "coordinate-system" ||
+    element.kind === "line" ||
+    element.kind === "arrow" ||
     element.kind === "table"
   );
 }
@@ -79,16 +90,13 @@ export function resolveShapeAnchor(
   return canonicalPoint(rotatePointClockwise(unrotated, target.pivot, target.rotation));
 }
 
-export function semanticAnchorOrder(
-  target: AnchorTargetView,
-  anchor: ShapeAnchorV1,
-): number | null {
-  const anchors = anchorIdentifiers(target);
-  const index = anchors.findIndex((candidate) => anchorsEqual(candidate, anchor));
-  return index < 0 ? null : index;
-}
-
 function anchorIdentifiers(target: AnchorTargetView): ShapeAnchorV1[] {
+  if (target.kind === "line" || target.kind === "arrow") {
+    return [
+      { endpoint: "start", kind: "linear-endpoint" },
+      { endpoint: "end", kind: "linear-endpoint" },
+    ];
+  }
   if (target.kind === "rectangle" || target.kind === "table") {
     return BOX_POSITIONS.map((position) => ({ kind: "box", position }));
   }
@@ -101,7 +109,7 @@ function anchorIdentifiers(target: AnchorTargetView): ShapeAnchorV1[] {
       ...target.axes.map((_, index): ShapeAnchorV1 => ({ kind: "coordinate-axis-end", index })),
     ];
   }
-
+  if (!isPolygonAnchorTarget(target)) return [];
   const vertices = shapeVertices(target);
   return [
     ...vertices.map((_, index): ShapeAnchorV1 => ({ kind: "polygon-vertex", index })),
@@ -110,6 +118,9 @@ function anchorIdentifiers(target: AnchorTargetView): ShapeAnchorV1[] {
 }
 
 function resolveUnrotatedAnchor(target: AnchorTargetView, anchor: ShapeAnchorV1): PointV1 | null {
+  if (anchor.kind === "linear-endpoint") {
+    return target.kind === "line" || target.kind === "arrow" ? target[anchor.endpoint] : null;
+  }
   if (anchor.kind === "coordinate-origin") {
     return target.kind === "coordinate-system" ? target.origin : null;
   }
@@ -123,8 +134,7 @@ function resolveUnrotatedAnchor(target: AnchorTargetView, anchor: ShapeAnchorV1)
   if (anchor.kind === "ellipse-cardinal") {
     return target.kind === "ellipse" ? resolveEllipseAnchor(target, anchor.angle) : null;
   }
-  if (target.kind === "coordinate-system" || target.kind === "table") return null;
-  if (target.kind === "rectangle" || target.kind === "ellipse") return null;
+  if (!isPolygonAnchorTarget(target)) return null;
 
   const vertices = shapeVertices(target);
   const vertex = vertices[anchor.index];
@@ -132,6 +142,15 @@ function resolveUnrotatedAnchor(target: AnchorTargetView, anchor: ShapeAnchorV1)
   if (anchor.kind === "polygon-vertex") return vertex;
   const next = vertices[(anchor.index + 1) % vertices.length];
   return next === undefined ? null : midpoint(vertex, next);
+}
+
+function isPolygonAnchorTarget(target: AnchorTargetView): target is PolygonAnchorTarget {
+  return (
+    target.kind === "triangle" ||
+    target.kind === "octagon" ||
+    target.kind === "parallelogram" ||
+    target.kind === "diamond"
+  );
 }
 
 function resolveBoxAnchor(
@@ -164,22 +183,4 @@ function resolveEllipseAnchor(ellipse: BoxAnchorTarget, angle: 0 | 90 | 180 | 27
   if (angle === 90) return { x: center.x, y: ellipse.y + ellipse.height };
   if (angle === 180) return { x: ellipse.x, y: center.y };
   return { x: center.x, y: ellipse.y };
-}
-
-function anchorsEqual(left: ShapeAnchorV1, right: ShapeAnchorV1): boolean {
-  if (left.kind !== right.kind) return false;
-  if (left.kind === "box" && right.kind === "box") return left.position === right.position;
-  if (left.kind === "ellipse-cardinal" && right.kind === "ellipse-cardinal") {
-    return left.angle === right.angle;
-  }
-  if (left.kind === "polygon-vertex" && right.kind === "polygon-vertex") {
-    return left.index === right.index;
-  }
-  if (left.kind === "polygon-edge-midpoint" && right.kind === "polygon-edge-midpoint") {
-    return left.index === right.index;
-  }
-  if (left.kind === "coordinate-axis-end" && right.kind === "coordinate-axis-end") {
-    return left.index === right.index;
-  }
-  return left.kind === "coordinate-origin" && right.kind === "coordinate-origin";
 }

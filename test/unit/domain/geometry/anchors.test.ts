@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  isAnchorTarget,
-  resolveShapeAnchor,
-  semanticAnchorOrder,
-  semanticAnchors,
-} from "../../../../src/domain/geometry/public";
+import { isAnchorTarget, resolveShapeAnchor } from "../../../../src/domain/geometry/public";
+import { semanticAnchors } from "../../../../src/domain/geometry/anchors";
+import { arrow, line } from "../schema/fixtures";
 import { coordinateSystem, rectangle, table } from "./fixtures";
 
 describe("semantic anchor enumeration", () => {
@@ -71,37 +68,31 @@ describe("semantic anchor enumeration", () => {
     expect(resolveShapeAnchor(system, { kind: "coordinate-axis-end", index: 3 })).toBeNull();
     expect(resolveShapeAnchor(system, { kind: "polygon-vertex", index: 0 })).toBeNull();
   });
-});
 
-describe("semantic anchor ordering", () => {
-  it("returns deterministic order only for valid compatible anchors", () => {
-    const diamond = rectangle({ kind: "diamond" });
-    expect(semanticAnchorOrder(diamond, { kind: "polygon-edge-midpoint", index: 2 })).toBe(6);
-    expect(semanticAnchorOrder(diamond, { kind: "box", position: "top-left" })).toBeNull();
-  });
+  it("enumerates line and arrow endpoints as semantic anchors", () => {
+    const source = line();
+    const rotated = { ...arrow(), rotation: 90 };
 
-  it("compares every semantic anchor identity by its category and payload", () => {
-    const box = rectangle();
-    expect(semanticAnchorOrder(box, { kind: "box", position: "top-left" })).toBe(0);
-    expect(semanticAnchorOrder(box, { kind: "box", position: "middle-left" })).toBe(7);
-    expect(semanticAnchorOrder(box, { kind: "box", position: "bottom-right" })).toBe(4);
-
-    const ellipse = rectangle({ kind: "ellipse" });
-    expect(semanticAnchorOrder(ellipse, { kind: "ellipse-cardinal", angle: 0 })).toBe(0);
-    expect(semanticAnchorOrder(ellipse, { kind: "ellipse-cardinal", angle: 180 })).toBe(2);
-    expect(semanticAnchorOrder(ellipse, { kind: "ellipse-cardinal", angle: 270 })).toBe(3);
-
-    const polygon = rectangle({ kind: "diamond" });
-    expect(semanticAnchorOrder(polygon, { kind: "polygon-vertex", index: 0 })).toBe(0);
-    expect(semanticAnchorOrder(polygon, { kind: "polygon-vertex", index: 3 })).toBe(3);
-    expect(semanticAnchorOrder(polygon, { kind: "polygon-edge-midpoint", index: 0 })).toBe(4);
-    expect(semanticAnchorOrder(polygon, { kind: "polygon-edge-midpoint", index: 3 })).toBe(7);
-
-    const system = coordinateSystem("3d");
-    expect(semanticAnchorOrder(system, { kind: "coordinate-origin" })).toBe(0);
-    expect(semanticAnchorOrder(system, { kind: "coordinate-axis-end", index: 0 })).toBe(1);
-    expect(semanticAnchorOrder(system, { kind: "coordinate-axis-end", index: 2 })).toBe(3);
-    expect(semanticAnchorOrder(system, { kind: "coordinate-axis-end", index: 5 })).toBeNull();
+    expect(semanticAnchors(source)).toEqual([
+      {
+        anchor: { endpoint: "start", kind: "linear-endpoint" },
+        order: 0,
+        point: source.start,
+      },
+      {
+        anchor: { endpoint: "end", kind: "linear-endpoint" },
+        order: 1,
+        point: source.end,
+      },
+    ]);
+    expect(resolveShapeAnchor(rotated, { endpoint: "start", kind: "linear-endpoint" })).toEqual({
+      x: 250,
+      y: 100,
+    });
+    expect(resolveShapeAnchor(rotated, { endpoint: "end", kind: "linear-endpoint" })).toEqual({
+      x: 250,
+      y: 200,
+    });
   });
 });
 
@@ -142,6 +133,8 @@ describe("semantic anchor compatibility", () => {
       expect(isAnchorTarget({ kind })).toBe(true);
     }
     expect(isAnchorTarget({ kind: "stroke" })).toBe(false);
-    expect(isAnchorTarget({ kind: "line" })).toBe(false);
+    expect(isAnchorTarget({ kind: "straight-highlighter" })).toBe(false);
+    expect(isAnchorTarget({ kind: "line" })).toBe(true);
+    expect(isAnchorTarget({ kind: "arrow" })).toBe(true);
   });
 });

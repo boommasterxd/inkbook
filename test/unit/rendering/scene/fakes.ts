@@ -1,9 +1,8 @@
-import type {
-  SceneElementRecord,
-  SceneScheduler,
-  SceneStorePort,
-  SpatialQuerySink,
-} from "../../../../src/rendering/scene";
+import { type SceneStorePort, type SpatialQuerySink } from "../../../../src/rendering/scene";
+import {
+  type SceneElementRecord,
+  type SceneScheduler,
+} from "../../../../src/rendering/scene/types";
 import type { Bounds } from "../../../../src/domain/geometry/public";
 import type { BoxShapeElementV1 } from "../../../../src/domain/schema/public";
 
@@ -139,6 +138,16 @@ export class FakeScheduler implements SceneScheduler {
     if (next === undefined) throw new Error("No frame is pending.");
     this.#callbacks.delete(next[0]);
     next[1](this.time);
+  }
+
+  public runFrame(): void {
+    const handles = [...this.#callbacks.keys()];
+    for (const handle of handles) {
+      const callback = this.#callbacks.get(handle);
+      if (callback === undefined) continue;
+      this.#callbacks.delete(handle);
+      callback(this.time);
+    }
   }
 
   public runAll(limit = 100): void {

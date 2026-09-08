@@ -7,14 +7,14 @@ import { changedElementDerivations } from "../../../src/obsidian/embeds/vault-do
 import { saveExistingFile } from "../../../src/persistence/saving/save-existing";
 import { yieldToMainThread } from "../../../src/persistence/scheduling/main-thread-yield";
 import {
+  deriveDocumentIntegrityManifest,
+  deriveDocumentIntegrityManifestAsync,
   IncrementalDocumentSerializer,
   serializeInkbookDocument,
-  sha256Hex,
 } from "../../../src/persistence/serialization/public";
-import {
-  DocumentWorkerRuntime,
-  createProductionDocumentRuntime,
-} from "../../../src/persistence/worker/runtime/public";
+import { sha256Hex } from "../../../src/persistence/serialization/sha256";
+import { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/public";
+import { createProductionDocumentRuntime } from "../../../src/persistence/worker/runtime/production-document-runtime";
 import type { DocumentRuntimeRequest } from "../../../src/persistence/worker/runtime/public";
 import { STANDARD_POINTS, createStandardPersistenceFixture, replaceFirstStroke } from "./fixtures";
 import {
@@ -106,6 +106,32 @@ describe("persistence serialization performance", () => {
     }
     await annotateDurations(annotate, "Vault.process exact-base callback", callbackDurations);
     expectProfileBudget(callbackDurations, 8);
+  }, 120_000);
+
+  it("slices receiver-side integrity derivation within the autosave frame budget", async ({
+    annotate,
+  }) => {
+    const slices: number[] = [];
+    let sliceStarted = performance.now();
+    const measured = await measureAsync(() =>
+      deriveDocumentIntegrityManifestAsync(snapshot, {
+        checkpoint: async () => {
+          slices.push(performance.now() - sliceStarted);
+          await yieldToMainThread();
+          sliceStarted = performance.now();
+        },
+      }),
+    );
+    slices.push(performance.now() - sliceStarted);
+
+    expect(measured.value).toEqual(deriveDocumentIntegrityManifest(snapshot));
+    await annotateDurations(annotate, "receiver integrity slice", slices);
+    await annotate(
+      `receiver integrity total=${measured.durationMs.toFixed(1)}ms, slices=${slices.length}`,
+      "performance",
+    );
+    expectProfileBudget(slices, 8);
+    expectProfileBudget([measured.durationMs], 750);
   }, 120_000);
 });
 
@@ -444,7 +470,8 @@ function amplifyNearLimitSnapshot(
         points[target + 1] = element.points[index + 1]!;
         points[target + 2] = element.points[index + 2]!;
         points[target + 3] = element.points[index]!;
-        points[target + 4] = element.points[index + 1]!;
+        // Distinct turns amplify actual output geometry rather than redundant metadata.
+        points[target + 4] = element.points[index + 1]! + (index % 6 === 0 ? 1 : -1);
         points[target + 5] = element.points[index + 2]!;
       }
       return { ...element, points };

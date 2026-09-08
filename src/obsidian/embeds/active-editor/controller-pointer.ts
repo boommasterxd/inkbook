@@ -15,6 +15,7 @@ import type { ActiveEditorHandleInteraction } from "./handle-interaction";
 import type { ActiveEditorMenuController } from "./controller-menu";
 import type { ActiveEditorNavigation } from "./navigation";
 import type { ElementSceneStore } from "./scene-store";
+import type { SelectionFrameSession } from "../../../editor/selection/public";
 import { touchInteractionBlocksNativeScroll, touchPanDelta } from "./controller-touch";
 
 export interface ActiveEditorPointerOptions {
@@ -34,7 +35,9 @@ export interface ActiveEditorPointerOptions {
   readonly releasePointer: (pointerId: number) => void;
   readonly sceneStore: ElementSceneStore;
   readonly selection: () => ReadonlySet<string>;
+  readonly selectionFrames?: SelectionFrameSession;
   readonly setLastPointer: (page: PointerSample, screen: PointerSample) => void;
+  readonly setSnappingInverted?: (pointerId: number, inverted: boolean | null) => void;
 }
 
 export class ActiveEditorPointerController {
@@ -61,6 +64,7 @@ export class ActiveEditorPointerController {
       point,
       "mouse",
       this.#options.navigation.zoom,
+      this.#options.selectionFrames,
     );
     this.#options.menus.dispatchFromEvent(event, () =>
       this.#options.dispatch({
@@ -70,7 +74,7 @@ export class ActiveEditorPointerController {
         ...(target === undefined ? {} : { target }),
       }),
     );
-    event.preventDefault();
+    if (event.cancelable) event.preventDefault();
   }
 
   public handlePointerCancel(event: PointerEvent): void {
@@ -79,6 +83,7 @@ export class ActiveEditorPointerController {
 
   public cancelPointer(pointerId: number): void {
     this.#options.navigation.cancelPanMomentum();
+    this.#setSnappingInverted(pointerId, null);
     if (!this.#options.isEnabled()) {
       this.#releasePointer(pointerId);
       return;
@@ -94,6 +99,8 @@ export class ActiveEditorPointerController {
 
   public handlePointerDown(event: PointerEvent): void {
     if (!this.#options.isEnabled()) return;
+    this.#setSnappingInverted(event.pointerId, event.altKey === true);
+    this.#options.renderer.inputSurface.focus({ preventScroll: true });
     this.#options.navigation.cancelPanMomentum();
     this.#options.renderer.interruptMotionForPointerDown();
     const classification = classifyPointerDown({
@@ -106,18 +113,25 @@ export class ActiveEditorPointerController {
       pointerType: normalizePointerType(event.pointerType),
     });
     this.#options.interruptForInput();
-    if (!this.#options.navigation.beginGestureGeometry()) return;
+    if (!this.#options.navigation.beginGestureGeometry()) {
+      this.#setSnappingInverted(event.pointerId, null);
+      return;
+    }
     const pointer = this.#options.navigation.screenPointer(event);
     if (!isValidPointerSample(pointer)) {
       this.#options.navigation.finish();
+      this.#setSnappingInverted(event.pointerId, null);
       return;
     }
     const pagePointer = this.#options.navigation.pageSample(pointer);
     this.#options.setLastPointer(pagePointer, pointer);
-    if (classification.handleEligible && this.#options.handles.pointerDown(pagePointer)) {
+    if (
+      classification.handleEligible &&
+      this.#options.handles.pointerDown(pagePointer, event.shiftKey, event.altKey === true)
+    ) {
       this.#options.beginHandlePointer(pagePointer.pointerType);
       this.#options.capturePointer(event.pointerId);
-      event.preventDefault();
+      if (event.cancelable) event.preventDefault();
       return;
     }
     const target = selectionTargetAt(
@@ -126,6 +140,7 @@ export class ActiveEditorPointerController {
       pagePointer,
       pointer.pointerType,
       this.#options.navigation.zoom,
+      this.#options.selectionFrames,
     );
     this.#options.menus.dispatchFromEvent(
       classification.isPlatformContextClick ? event : undefined,
@@ -143,40 +158,52 @@ export class ActiveEditorPointerController {
           ...(target === undefined ? {} : { target }),
         }),
     );
-    if (claimsPointerGesture(event, this.#options.getInput().interaction)) event.preventDefault();
+    if (!interactionOwnsPointer(this.#options.getInput().interaction, event.pointerId)) {
+      this.#setSnappingInverted(event.pointerId, null);
+    }
+    if (event.cancelable && claimsPointerGesture(event, this.#options.getInput().interaction)) {
+      event.preventDefault();
+    }
   }
 
   public handlePointerMove(event: PointerEvent): void {
     const pointer = this.#pointerOrCancel(event);
     if (pointer === undefined) return;
+    this.#setSnappingInverted(event.pointerId, event.altKey === true);
     const previous = this.#options.getInput().interaction;
-    if (this.#options.handles.pointerMove(this.#options.navigation.pageSample(pointer))) {
-      event.preventDefault();
+    if (
+      this.#options.handles.pointerMove(
+        this.#options.navigation.pageSample(pointer),
+        event.shiftKey,
+        event.altKey === true,
+      )
+    ) {
+      if (event.cancelable) event.preventDefault();
       return;
     }
     if (!this.#options.coalesced.dispatch(event)) this.handlePointerCancel(event);
     const interaction = this.#options.getInput().interaction;
     this.#recordTouchPan(event, previous);
-    if (claimsPointerGesture(event, interaction)) event.preventDefault();
+    if (event.cancelable && claimsPointerGesture(event, interaction)) event.preventDefault();
     if (event.pointerType === "touch" && interaction?.phase === "page-pan") {
       event.stopPropagation();
     }
   }
 
   public handlePointerUp(event: PointerEvent): void {
+    this.#setSnappingInverted(event.pointerId, event.altKey === true);
     const previous = this.#options.getInput().interaction;
     const pointer = this.#pointerOrCancel(event);
     if (pointer === undefined) return;
-    if (this.#options.handles.pointerMove(this.#options.navigation.pageSample(pointer))) {
-      this.#options.handles.pointerUp(event.pointerId);
-      this.#releasePointer(event.pointerId);
-      this.#options.finishHandlePointer();
-      event.preventDefault();
-      return;
-    }
+    if (this.#finishHandleRelease(event, pointer)) return;
     const blocksHostGesture =
       event.pointerType === "touch" && this.#options.getInput().interaction?.phase === "page-pan";
-    if (!this.#options.coalesced.dispatch(event)) {
+    const penContactOnly =
+      previous?.phase === "tool-gesture" &&
+      previous.tool === "draw" &&
+      previous.pointerId === event.pointerId &&
+      event.pointerType === "pen";
+    if (!this.#options.coalesced.dispatch(event, penContactOnly)) {
       this.handlePointerCancel(event);
       return;
     }
@@ -187,12 +214,14 @@ export class ActiveEditorPointerController {
       timestamp: event.timeStamp,
     });
     if (blocksHostGesture) this.#options.navigation.releaseTouchPan(event.timeStamp);
-    if (claimsPointerGesture(event, previous)) event.preventDefault();
+    if (event.cancelable && claimsPointerGesture(event, previous)) event.preventDefault();
     if (blocksHostGesture) event.stopPropagation();
+    this.#setSnappingInverted(event.pointerId, null);
   }
 
   public handleLostPointerCapture(event: PointerEvent): void {
     if (!this.#options.isEnabled()) return;
+    this.#setSnappingInverted(event.pointerId, null);
     this.#options.navigation.cancelPanMomentum();
     this.#options.releasePointer(event.pointerId);
     if (this.#options.handles.cancel(event.pointerId)) {
@@ -200,6 +229,30 @@ export class ActiveEditorPointerController {
       return;
     }
     this.#options.dispatch({ type: "lost-pointer-capture", pointerId: event.pointerId });
+  }
+
+  #finishHandleRelease(event: PointerEvent, pointer: PointerSample): boolean {
+    // A pen release may already contain hover coordinates. Finish from the queued contact frame.
+    const noncontactPen =
+      event.pointerType === "pen" && event.pressure === 0 && event.buttons === 0;
+    const handleFinished = noncontactPen && this.#options.handles.pointerUp(event.pointerId);
+    if (
+      handleFinished ||
+      (!noncontactPen &&
+        this.#options.handles.pointerMove(
+          this.#options.navigation.pageSample(pointer),
+          event.shiftKey,
+          event.altKey === true,
+        ))
+    ) {
+      if (!handleFinished) this.#options.handles.pointerUp(event.pointerId);
+      this.#releasePointer(event.pointerId);
+      this.#options.finishHandlePointer();
+      this.#setSnappingInverted(event.pointerId, null);
+      if (event.cancelable) event.preventDefault();
+      return true;
+    }
+    return false;
   }
 
   #pointerOrCancel(event: PointerEvent): PointerSample | undefined {
@@ -233,6 +286,20 @@ export class ActiveEditorPointerController {
   #releasePointer(pointerId: number): void {
     this.#options.releasePointer(pointerId);
   }
+
+  #setSnappingInverted(pointerId: number, inverted: boolean | null): void {
+    this.#options.setSnappingInverted?.(pointerId, inverted);
+  }
+}
+
+function interactionOwnsPointer(
+  interaction: InputState["interaction"],
+  pointerId: number,
+): boolean {
+  if (interaction === undefined) return false;
+  return interaction.phase === "pinch"
+    ? interaction.pointers.some((pointer) => pointer.pointerId === pointerId)
+    : interaction.pointerId === pointerId;
 }
 
 function claimsPointerGesture(

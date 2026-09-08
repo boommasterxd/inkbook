@@ -1,13 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  arrangeElements,
-  arrangeRenderBand,
-  type ArrangeAction,
-  type IdentifiedRenderBandElement,
-} from "../../../../src/domain/commands/arrange";
+import { arrangeRenderBand, type ArrangeAction } from "../../../../src/domain/commands/arrange";
+import type { RenderBandElement } from "../../../../src/domain/commands/render-bands";
 
-type TestElement = IdentifiedRenderBandElement;
+type TestElement = RenderBandElement & { readonly id: string };
 
 function ids(elements: readonly TestElement[]): string[] {
   return elements.map(({ id }) => id);
@@ -15,10 +11,6 @@ function ids(elements: readonly TestElement[]): string[] {
 
 function content(id: string): TestElement {
   return { id, kind: "rectangle" };
-}
-
-function highlight(id: string): TestElement {
-  return { id, kind: "stroke", tool: "highlighter" };
 }
 
 describe("arrangeRenderBand", () => {
@@ -70,32 +62,5 @@ describe("arrangeRenderBand", () => {
     expect(front.elements).toBe(band);
     expect(back.elements).toBe(band);
     expect(empty.elements).toBe(band);
-  });
-});
-
-describe("arrangeElements", () => {
-  it("arranges a mixed selection independently inside both fixed bands", () => {
-    const elements = [
-      highlight("H1"),
-      highlight("H2"),
-      highlight("H3"),
-      content("C1"),
-      content("C2"),
-      content("C3"),
-    ];
-
-    const result = arrangeElements(elements, new Set(["H1", "C2"]), "bring-forward");
-
-    expect(ids(result.elements)).toEqual(["H2", "H1", "H3", "C1", "C3", "C2"]);
-    expect(result.changed).toBe(true);
-  });
-
-  it("does not allow either band to cross the fixed render boundary", () => {
-    const elements = [highlight("H1"), content("C1")];
-
-    const result = arrangeElements(elements, new Set(["H1", "C1"]), "bring-to-front");
-
-    expect(result.changed).toBe(false);
-    expect(result.elements).toBe(elements);
   });
 });

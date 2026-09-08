@@ -11,6 +11,7 @@ export function sameEditorChromeProps(
     left.renderIcon === right.renderIcon &&
     left.layout === right.layout &&
     (left.leftHanded ?? false) === (right.leftHanded ?? false) &&
+    left.selectionArea === right.selectionArea &&
     left.selectedShape === right.selectedShape &&
     left.shapeIcon.arrowStart === right.shapeIcon.arrowStart &&
     left.shapeIcon.arrowEnd === right.shapeIcon.arrowEnd &&
@@ -27,7 +28,7 @@ export function editorChromeLayoutKey(props: InkbookEditorChromeProps): string {
     props.leftHanded === true ? "left" : "right",
     state.fingerDrawingAvailable ? "finger" : "no-finger",
     state.hasSelection ? "selection" : "no-selection",
-    state.canPaste ? "paste" : "no-paste",
+    state.pasteVisible ? "paste" : "no-paste",
   ].join(":");
 }
 
@@ -39,13 +40,16 @@ function sameToolbarState(
   const b = right.toolbarState;
   return (
     a.activeTool === b.activeTool &&
+    a.actionConfirmation?.action === b.actionConfirmation?.action &&
+    a.actionConfirmation?.sequence === b.actionConfirmation?.sequence &&
     a.canPaste === b.canPaste &&
     a.canRedo === b.canRedo &&
     a.canUndo === b.canUndo &&
     a.fingerDrawingAvailable === b.fingerDrawingAvailable &&
     a.fingerDrawingEnabled === b.fingerDrawingEnabled &&
     a.hasSelection === b.hasSelection &&
-    a.openFlyout === b.openFlyout
+    a.openFlyout === b.openFlyout &&
+    a.pasteVisible === b.pasteVisible
   );
 }
 

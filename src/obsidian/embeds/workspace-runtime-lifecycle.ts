@@ -1,6 +1,8 @@
 import { TFile, type Vault } from "obsidian";
 
+import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
 import type { ExternalChangeOutcome } from "../../editor/session/session-port";
+import { inspectTrustedSvgOutput } from "../../persistence/scheduling/trusted-svg-output";
 import type { ActiveInkbookScene } from "./active-scene";
 import { isLiveOwnerWindow } from "./owner-window-registry";
 import { presentationAttachmentKey, type PresentationAttachment } from "./presentation-port";
@@ -37,6 +39,15 @@ interface InsertionUndoHint {
   strokeCommitted: boolean;
 }
 
+interface PendingVaultModification {
+  generation: number;
+}
+
+interface PersistedIdentity {
+  readonly outputHash: string;
+  readonly revision: number;
+}
+
 export interface WindowTimeoutHandle {
   readonly handle: number;
   readonly ownerWindow: WeakRef<Window>;
@@ -57,11 +68,11 @@ export function isWindowTimeoutHandle(value: unknown): value is WindowTimeoutHan
 }
 
 export class WorkspaceRuntimeLifecycle {
-  readonly #confirmedHostWrites = new Set<string>();
+  readonly #confirmedHostWrites = new Map<string, Set<string>>();
   readonly #insertionUndoHints = new Map<string, InsertionUndoHint>();
   readonly #options: WorkspaceRuntimeLifecycleOptions;
   #pendingAutoActivation: PendingAutoActivation | undefined;
-  readonly #pendingExternalChanges = new Set<string>();
+  readonly #pendingExternalChanges = new Map<string, PendingVaultModification>();
 
   public constructor(options: WorkspaceRuntimeLifecycleOptions) {
     this.#options = options;
@@ -150,23 +161,23 @@ export class WorkspaceRuntimeLifecycle {
   }
 
   public handleVaultModification(documentId: string): void {
-    if (this.#options.isDisposed() || this.#pendingExternalChanges.has(documentId)) return;
-    this.#pendingExternalChanges.add(documentId);
-    const run = (): void => this.#processVaultModification(documentId);
-    const ownerWindow = this.#options.fallbackWindow();
-    if (ownerWindow === undefined) run();
-    else ownerWindow.setTimeout(run, 0);
+    if (this.#options.isDisposed()) return;
+    const pending = this.#pendingExternalChanges.get(documentId);
+    if (pending !== undefined) {
+      pending.generation += 1;
+      return;
+    }
+    const created = { generation: 1 };
+    this.#pendingExternalChanges.set(documentId, created);
+    this.#scheduleVaultModification(documentId, created);
   }
 
   public handlePersisted(event: VaultDocumentPersistedEvent): void {
     if (this.#options.isDisposed()) return;
     if (this.#pendingExternalChanges.has(event.documentId)) {
-      this.#confirmedHostWrites.add(event.documentId);
-    }
-    for (const mounted of this.#options.presentations()) {
-      if (mounted.attachment.documentId === event.documentId) {
-        mounted.attachment.setPreviewAspectRatio?.(event.lockedAspectRatio);
-      }
+      const confirmations = this.#confirmedHostWrites.get(event.documentId) ?? new Set<string>();
+      confirmations.add(persistedIdentityKey(event));
+      this.#confirmedHostWrites.set(event.documentId, confirmations);
     }
     const hint = this.#insertionUndoHints.get(event.documentId);
     if (hint?.strokeCommitted === true) {
@@ -182,6 +193,10 @@ export class WorkspaceRuntimeLifecycle {
     const source = this.#options.vault.getResourcePath(file);
     presentation.scene?.setPreviewSource(source);
     updatePreviewImages(presentation.attachment.root, source);
+  }
+
+  public refreshPersistedPreview(documentId: string, identity: PersistedIdentity): void {
+    this.#refreshPreviews(documentId, persistedIdentityKey(identity));
   }
 
   public dispose(): void {
@@ -235,14 +250,58 @@ export class WorkspaceRuntimeLifecycle {
     );
   }
 
-  #processVaultModification(documentId: string): void {
+  async #processVaultModification(
+    documentId: string,
+    pending: PendingVaultModification,
+  ): Promise<void> {
+    const generation = pending.generation;
+    const persisted = await this.#readPersistedIdentity(documentId);
+    if (this.#options.isDisposed() || this.#pendingExternalChanges.get(documentId) !== pending) {
+      return;
+    }
+    if (pending.generation !== generation) {
+      this.#scheduleVaultModification(documentId, pending);
+      return;
+    }
     this.#pendingExternalChanges.delete(documentId);
-    if (this.#options.isDisposed() || this.#confirmedHostWrites.delete(documentId)) return;
+    const confirmations = this.#confirmedHostWrites.get(documentId);
+    this.#confirmedHostWrites.delete(documentId);
+    if (persisted !== undefined && confirmations?.has(persistedIdentityKey(persisted)) === true) {
+      return;
+    }
     void this.#options.notifyExternalChange(documentId).then((outcome) => {
       if (outcome === "reloaded" && !this.#options.isDisposed()) {
         this.#options.reloadPresentation(documentId);
       }
     });
+  }
+
+  async #readPersistedIdentity(documentId: string): Promise<PersistedIdentity | undefined> {
+    const file = this.#options.vault.getFileByPath(documentId);
+    if (!(file instanceof TFile)) return undefined;
+    if (file.stat.size < 0 || file.stat.size > FILE_SCHEMA_LIMITS.totalInputBytes) return undefined;
+    const before = fileSignature(file);
+    try {
+      const content = await this.#options.vault.read(file);
+      if (!sameVaultFile(this.#options.vault, documentId, file, before)) return undefined;
+      const inspected = await inspectTrustedSvgOutput(content, undefined, {
+        versionPolicy: "editable",
+      });
+      return sameVaultFile(this.#options.vault, documentId, file, before)
+        ? { outputHash: inspected.outputHash, revision: inspected.revision }
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  #scheduleVaultModification(documentId: string, pending: PendingVaultModification): void {
+    const run = (): void => {
+      void this.#processVaultModification(documentId, pending);
+    };
+    const ownerWindow = this.#options.fallbackWindow();
+    if (ownerWindow === undefined) run();
+    else ownerWindow.setTimeout(run, 0);
   }
 
   #refreshPreviews(documentId: string, cacheKey: string): void {
@@ -251,7 +310,9 @@ export class WorkspaceRuntimeLifecycle {
     const source = withRevision(this.#options.vault.getResourcePath(file), cacheKey);
     for (const mounted of this.#options.presentations()) {
       if (mounted.attachment.documentId !== documentId) continue;
-      mounted.scene?.setPreviewSource(source);
+      if (mounted.scene === undefined) {
+        void mounted.attachment.setPreviewSource?.(source).catch(() => undefined);
+      } else mounted.scene.setPreviewSource(source);
       updatePreviewImages(mounted.attachment.root, source);
     }
   }
@@ -280,6 +341,19 @@ export class WorkspaceRuntimeLifecycle {
     pending.frame = undefined;
     pending.frameWindow = undefined;
   }
+}
+
+function fileSignature(file: TFile): string {
+  return `${String(file.stat.ctime)}:${String(file.stat.mtime)}:${String(file.stat.size)}`;
+}
+
+function sameVaultFile(vault: Vault, documentId: string, file: TFile, signature: string): boolean {
+  const current = vault.getFileByPath(documentId);
+  return current === file && fileSignature(file) === signature;
+}
+
+function persistedIdentityKey(identity: PersistedIdentity): string {
+  return `${String(identity.revision)}:${identity.outputHash}`;
 }
 
 function createPendingAutoActivation(

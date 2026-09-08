@@ -2,10 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  createBuiltInDeviceSettings,
-  createBuiltInSettings,
-} from "../../../../../src/domain/settings";
+import * as Settings from "../../../../../src/domain/settings";
 import { ElementStore } from "../../../../../src/domain/store/public";
 import { createDragElement } from "../../../../../src/editor/tools/public";
 import { ActiveEditorController } from "../../../../../src/obsidian/embeds/active-editor/controller";
@@ -15,7 +12,7 @@ import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-edi
 import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/document-model-port";
 import type { MenuItemPort, MenuPort, MenuPosition } from "../../../../../src/obsidian/menus/index";
 import type { BrowserScrollElement } from "../../../../../src/obsidian/scrolling/index";
-import { INKBOOK_CLIPBOARD_WEB_MIME } from "../../../../../src/persistence/clipboard/public";
+import { INKBOOK_CLIPBOARD_WEB_MIME } from "../../../../../src/persistence/clipboard/constants";
 import type { SvgSceneRenderer } from "../../../../../src/rendering/scene/index";
 import { installObsidianDomHelpers } from "../../../../adapters/obsidian/dom";
 import { installNativeMenuMeasurementStyles } from "../../../../adapters/obsidian/editor-toolbar-menu";
@@ -33,14 +30,10 @@ describe("active editor keyboard DOM boundary", () => {
     document.body.append(toolbarButton);
     harness.input.dispatchEvent(new PointerEvent("pointerenter"));
     toolbarButton.focus();
-
     const zoom = key(toolbarButton, "+", { ctrlKey: true });
     expect(zoom.defaultPrevented).toBe(true);
 
-    const editable = document.createElementNS(
-      "http://www.w3.org/1999/xhtml",
-      "input",
-    ) as HTMLInputElement;
+    const editable = window.createEl("input");
     document.body.append(editable);
     editable.focus();
     expect(key(editable, "+", { ctrlKey: true }).defaultPrevented).toBe(false);
@@ -102,18 +95,18 @@ describe("active editor keyboard DOM boundary", () => {
     harness.dispose();
   });
 
-  it("preserves native Clipboard and Delete behavior when no canvas action is available", () => {
+  it("preserves native Copy and Delete while claiming direct canvas Paste for feedback", () => {
     const harness = createHarness();
 
     expect(harness.key("c", { ctrlKey: true }).defaultPrevented).toBe(false);
     expect(harness.key("x", { metaKey: true }).defaultPrevented).toBe(false);
-    expect(harness.key("v", { ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(harness.key("v", { ctrlKey: true }).defaultPrevented).toBe(true);
     expect(harness.key("Delete").defaultPrevented).toBe(false);
-    expect(harness.paste(["text/html"], () => "<p>native</p>").defaultPrevented).toBe(false);
+    expect(harness.paste(["text/html"], () => "<p>native</p>").defaultPrevented).toBe(true);
     expect(
       harness.paste([INKBOOK_CLIPBOARD_WEB_MIME], () => '{"format":"inkbook-elements"}')
         .defaultPrevented,
-    ).toBe(false);
+    ).toBe(true);
     harness.controller.handlePointerBoundary(true);
     expect(
       harness.paste([INKBOOK_CLIPBOARD_WEB_MIME], () => '{"format":"inkbook-elements"}')
@@ -163,15 +156,29 @@ describe("active editor native paste DOM boundary", () => {
     harness.dispose();
   });
 
-  it("claims Canvas Clipboard shortcuts only between pointer enter and leave", () => {
+  it("keeps a focused canvas Clipboard shortcut claimed after touch hover ends", () => {
     const harness = createHarness();
     harness.selectElement();
 
-    expect(harness.key("c", { ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(harness.key("c", { ctrlKey: true }).defaultPrevented).toBe(true);
     harness.controller.handlePointerBoundary(true);
     expect(harness.key("c", { ctrlKey: true }).defaultPrevented).toBe(true);
     harness.controller.handlePointerBoundary(false);
-    expect(harness.key("c", { ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(harness.key("c", { ctrlKey: true }).defaultPrevented).toBe(true);
+    harness.dispose();
+  });
+});
+
+describe("active editor document keyboard boundary", () => {
+  it("claims Selection shortcuts after canvas focus moves to a toolbar button", () => {
+    const harness = createHarness();
+    const toolbarButton = document.body.appendChild(createButton());
+    harness.selectElement();
+    harness.input.dispatchEvent(new PointerEvent("pointerenter"));
+    toolbarButton.focus();
+
+    expect(key(toolbarButton, "Delete", {}).defaultPrevented).toBe(true);
+    toolbarButton.remove();
     harness.dispose();
   });
 
@@ -217,7 +224,7 @@ describe("active editor native paste DOM boundary", () => {
   it("reprojects screen-space selection geometry before each camera flush", () => {
     const harness = createHarness();
     harness.selectElement();
-    const { setSelectionOverlayPath: setSelectionPath, flushCameraAndOverlayFrame: flush } =
+    const { setSelectionOverlayPath: setSelectionPath, flushPointerFeedbackFrame: flush } =
       harness.renderer;
     const initialPath = setSelectionPath.mock.lastCall?.[0];
     const order: string[] = [];
@@ -256,14 +263,16 @@ function createHarness() {
     applyZoomLayout: vi.fn(),
     backgroundSpacing: () => ({ dots: 25, lines: 25, squares: 25 }),
     container,
-    defaults: createBuiltInSettings().toolDefaults,
-    deviceSettings: createBuiltInDeviceSettings(),
+    defaults: Settings.createBuiltInSettings().toolDefaults,
+    deviceSettings: Settings.createBuiltInDeviceSettings(),
     history: new ActiveEditorHistory(model),
     interruptLayoutForInput: vi.fn(),
     menuFactory: { create: () => menu, forEvent: () => menu },
     model,
     onCopyEmbed: vi.fn(),
     onDeleteEmbed: vi.fn(),
+    onOpenSettings: vi.fn(),
+    onOpenShortcuts: vi.fn(),
     onLock: vi.fn(),
     onFeedback: vi.fn(),
     onPageChanged: vi.fn(),
@@ -273,7 +282,9 @@ function createHarness() {
     renderIcon: vi.fn(),
     renderer: renderer as unknown as SvgSceneRenderer,
     sceneStore,
+    selectionMoveLayout: { begin: vi.fn(), finish: vi.fn(), updateBottom: vi.fn() },
     scrollOwner: owner,
+    snapping: Settings.createBuiltInSettings().snapping,
     startupTool: "draw",
   });
   const removeInputListeners = attachActiveSceneInputListeners(
@@ -322,7 +333,7 @@ function primaryPointer(clientX = 50, clientY = 100): PointerEvent {
 
 function selectableElement() {
   return createDragElement({
-    defaults: createBuiltInSettings().toolDefaults,
+    defaults: Settings.createBuiltInSettings().toolDefaults,
     end: { x: 200, y: 200 },
     identity: { createdAt: 1, id: "00000000-0000-4000-8000-000000000001" },
     start: { x: 50, y: 50 },
@@ -379,9 +390,10 @@ function documentModel(store: ElementStore): EditableDocumentModel {
 function rendererPort(inputSurface: HTMLDivElement) {
   return {
     clearLiveStroke: vi.fn(),
+    commitLiveStroke: vi.fn(),
     clearElementPreviews: vi.fn(),
     clearPreviewTransforms: vi.fn(),
-    flushCameraAndOverlayFrame: vi.fn<() => void>(),
+    flushPointerFeedbackFrame: vi.fn<() => void>(),
     inputSurface,
     interruptMotionForPointerDown: vi.fn(),
     setCamera: vi.fn(),
@@ -392,7 +404,6 @@ function rendererPort(inputSurface: HTMLDivElement) {
     setSelectionOverlayPath: vi.fn<(path: string | null) => void>(),
     setSnapMarkerPath: vi.fn(),
     suppressMotionForNextDelta: vi.fn(),
-    revertLiveStroke: vi.fn(),
     updateLiveStroke: vi.fn(),
   };
 }
@@ -475,7 +486,6 @@ class RecordedMenu implements MenuPort {
     return this;
   }
 }
-
 function chainableItem(): MenuItemPort {
   const item: MenuItemPort = {
     onClick: () => item,

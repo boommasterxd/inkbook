@@ -29,8 +29,29 @@ export class StreamingStaticIntegrityMatcher {
   }
 
   public write(input: string): boolean {
-    for (const character of input) {
-      if (!this.#consume(character)) return false;
+    let cursor = 0;
+    while (cursor < input.length) {
+      this.#advancePastEmptyTokens();
+      if (this.#finished) return /^[ \t\r\n]*$/u.test(input.slice(cursor));
+      const current = this.#current!;
+      if (
+        this.#offset === 0 &&
+        current.allowLeadingWhitespace === true &&
+        isWhitespace(input[cursor]!)
+      ) {
+        cursor += 1;
+        continue;
+      }
+      const length = Math.min(input.length - cursor, current.text.length - this.#offset);
+      if (
+        input.slice(cursor, cursor + length) !==
+        current.text.slice(this.#offset, this.#offset + length)
+      ) {
+        this.#classifyMismatch(input, cursor, length);
+        return false;
+      }
+      this.#offset += length;
+      cursor += length;
     }
     return true;
   }
@@ -40,19 +61,16 @@ export class StreamingStaticIntegrityMatcher {
     return this.#finished;
   }
 
-  #consume(character: string): boolean {
-    this.#advancePastEmptyTokens();
-    if (this.#finished) return isWhitespace(character);
-    const current = this.#current!;
-    if (this.#offset === 0 && current.allowLeadingWhitespace === true && isWhitespace(character)) {
-      return true;
+  #classifyMismatch(input: string, cursor: number, length: number): void {
+    const text = this.#current!.text;
+    if (!text.startsWith("</") || this.#offset > 1) return;
+    const prefixLength = Math.min(length, 2 - this.#offset);
+    if (
+      input.slice(cursor, cursor + prefixLength) !==
+      text.slice(this.#offset, this.#offset + prefixLength)
+    ) {
+      this.#failure = "invalid-svg";
     }
-    if (current.text[this.#offset] !== character) {
-      if (current.text.startsWith("</") && this.#offset <= 1) this.#failure = "invalid-svg";
-      return false;
-    }
-    this.#offset += 1;
-    return true;
   }
 
   #advancePastEmptyTokens(): void {

@@ -1,15 +1,13 @@
 import { nextSafeCounter } from "../../worker/identity";
-import type {
-  ExportSuccess,
-  PurposeOperationIdentity,
-  VaultBase,
-  VerifiedPersistedOutput,
-} from "../../worker/protocol";
+import type { ExportSuccess, PurposeOperationIdentity, VaultBase } from "../../worker/protocol";
 import type { DocumentRuntimeResult, ModelSyncRuntimeRequest } from "../../worker/runtime/public";
-import { SaveError } from "../save-errors";
 import { readExistingFileWithinLimit } from "../bounded-file-read";
 import type { PreparedSave } from "../save-existing";
-import { inspectTrustedSvgOutput } from "../../scheduling/trusted-svg-output";
+import {
+  AutosaveExportIntegrity,
+  inspectIntegrityBoundExport,
+  type ExportIntegrityDecision,
+} from "./export-integrity";
 import type {
   AutosaveCoordinatorOptions,
   ActiveAutosave,
@@ -28,7 +26,6 @@ import {
   type ConcreteExportRequest,
 } from "./export-request";
 import { persistPreparedOutput, resolveAutosaveExpectedBase } from "./save-operation";
-import { sameVaultBase } from "./verification";
 import { createTerminalVaultPort } from "./terminal-vault-port";
 import { AutosavePersistedOutputVerifier } from "./persisted-output-verifier";
 import { notifyConfirmedPersistence } from "./confirmed-persistence";
@@ -36,6 +33,9 @@ import { AutosaveWorkerModelState } from "./worker-model-state";
 import { isAutosaveSuspended, terminalAutosaveOutcome } from "./status";
 import { ACTIVE_GESTURE_RETRY_MS, AUTOSAVE_DELAY_MS, AutosaveTimer } from "./timer";
 import { assertAutosaveInitialState } from "./coordinator-validation";
+import { inspectAutosaveExternalChange } from "./external-change";
+import { inspectIndeterminateSave } from "./indeterminate-save";
+import { classifyAutosaveFailure } from "./save-failure";
 
 export class AutosaveCoordinator {
   readonly #beforeExistingWrite;
@@ -50,6 +50,7 @@ export class AutosaveCoordinator {
   #exportInFlight: ConcreteExportRequest | null = null;
   #fallbackUsed = false;
   #forced = false;
+  readonly #integrity = new AutosaveExportIntegrity();
   #modelSyncInFlight: ModelSyncRuntimeRequest | null = null;
   readonly #observer;
   readonly #path;
@@ -178,11 +179,20 @@ export class AutosaveCoordinator {
   }
   public async retryVerification(): Promise<FlushOutcome> {
     if (this.#disposed) return terminalAutosaveOutcome(this.dirty, this.#status);
-    if (this.#status !== "verification-required" || this.#save === null) {
+    const active = this.#save;
+    if (this.#status !== "verification-required" || active === null) {
       return terminalAutosaveOutcome(this.dirty, this.#status);
     }
     try {
-      await this.#verifyIndeterminateSave();
+      const inspected = await inspectIndeterminateSave({
+        activeOutputHash: active.proof.outputHash,
+        activeRevision: active.proof.revision,
+        previousBase: active.previousBase,
+        read: () => readExistingFileWithinLimit(this.#terminalVault, this.#path),
+        stopped: () => this.#disposed,
+        verify: (content) => this.#verifier.verify(content, "verification"),
+      });
+      this.#adoptIndeterminateSaveInspection(inspected);
     } catch {
       this.#setStatus("executor-failed");
     }
@@ -191,46 +201,31 @@ export class AutosaveCoordinator {
   }
   public async notifyExternalChange(): Promise<ExternalChangeOutcome> {
     if (this.#disposed) return "conflict";
-    const expectedRevision = this.#document.currentRevision();
-    let content: string;
-    try {
-      content = await readExistingFileWithinLimit(this.#terminalVault, this.#path);
-    } catch (error) {
-      if (this.#disposed) return "conflict";
-      throw error;
-    }
-    if (this.#disposed) return "conflict";
-    let persisted: VerifiedPersistedOutput;
-    try {
-      persisted = await this.#verifier.verify(content, "preflight");
-    } catch (error) {
-      if (this.#disposed) return "conflict";
-      throw error;
-    }
-    if (this.#disposed) return "conflict";
-    if (
-      sameVaultBase(persisted, this.#confirmedBase) ||
-      (this.#save !== null &&
-        sameVaultBase(persisted, {
-          outputHash: this.#save.proof.outputHash,
-          revision: this.#save.proof.revision,
-          type: "confirmed",
-        }))
-    ) {
-      return "unchanged";
-    }
-    if (
-      persisted.type === "unreadable" ||
-      this.#document.currentRevision() !== expectedRevision ||
-      this.dirty
-    ) {
+    const inspected = await inspectAutosaveExternalChange({
+      activeSaveBase: () =>
+        this.#save === null
+          ? undefined
+          : {
+              outputHash: this.#save.proof.outputHash,
+              revision: this.#save.proof.revision,
+              type: "confirmed",
+            },
+      confirmedBase: this.#confirmedBase,
+      currentRevision: () => this.#document.currentRevision(),
+      dirty: () => this.dirty,
+      read: () => readExistingFileWithinLimit(this.#terminalVault, this.#path),
+      stopped: () => this.#disposed,
+      verify: (content) => this.#verifier.verify(content, "preflight"),
+    });
+    if (inspected.outcome === "conflict") {
       this.#setStatus("conflict");
       this.#resolveWaiters();
-      return "conflict";
     }
-    this.#confirmedBase = persisted;
-    this.#confirmedContent = null;
-    return "reload-required";
+    if (inspected.outcome === "reload-required") {
+      this.#confirmedBase = inspected.confirmedBase;
+      this.#confirmedContent = null;
+    }
+    return inspected.outcome;
   }
   public dispose(mode: "preserve-executor" | "terminal" = "terminal"): void {
     if (
@@ -284,17 +279,17 @@ export class AutosaveCoordinator {
     this.#exportInFlight = request;
     this.#setStatus("saving");
     void this.#executor.execute(request).then(
-      (result) => this.#adoptExport(request, result),
+      (result) => void this.#adoptExport(request, result),
       () => this.#recoverExecutor(request),
     );
   }
-  #adoptExport(request: ConcreteExportRequest, result: DocumentRuntimeResult): void {
+  async #adoptExport(request: ConcreteExportRequest, result: DocumentRuntimeResult): Promise<void> {
     if (this.#disposed || this.#exportInFlight !== request) {
       if (result.type === "export-success") this.#executor.acknowledgeExport?.(result, false);
       return;
     }
-    this.#exportInFlight = null;
     if (result.type !== "export-success" || !matchesExportResult(request, result)) {
+      this.#exportInFlight = null;
       if (result.type === "export-success") this.#executor.acknowledgeExport?.(result, false);
       if (result.type === "export-failure" && matchesExportResult(request, result))
         this.#requireFullSnapshot();
@@ -302,12 +297,50 @@ export class AutosaveCoordinator {
       this.#resolveWaiters();
       return;
     }
-    this.#workerModel.acknowledgeExport(result.modelRevision);
     if (result.modelRevision !== this.#document.currentRevision()) {
+      this.#exportInFlight = null;
+      this.#workerModel.acknowledgeExport(result.modelRevision);
       this.#executor.acknowledgeExport?.(result, false);
       if (this.#forced) this.#kick();
       return;
     }
+    const integrity = await this.#integrity.verify(
+      () => this.#document.snapshot(),
+      result.integrityManifest,
+    );
+    this.#adoptExportIntegrity(request, result, integrity);
+  }
+  #adoptExportIntegrity(
+    request: ConcreteExportRequest,
+    result: ExportSuccess,
+    integrity: ExportIntegrityDecision,
+  ): void {
+    if (this.#disposed || this.#exportInFlight !== request) {
+      this.#executor.acknowledgeExport?.(result, false);
+      return;
+    }
+    this.#exportInFlight = null;
+    if (result.modelRevision !== this.#document.currentRevision()) {
+      this.#workerModel.acknowledgeExport(result.modelRevision);
+      this.#executor.acknowledgeExport?.(result, false);
+      if (this.#forced) this.#kick();
+      return;
+    }
+    if (integrity !== "match") {
+      this.#executor.acknowledgeExport?.(result, false);
+      this.#prepared = null;
+      if (integrity === "retry-full") {
+        this.#requireFullSnapshot();
+        this.#setStatus("debouncing");
+        this.#kick();
+      } else {
+        this.#switchToFallback();
+        this.#setStatus("executor-failed");
+        this.#resolveWaiters();
+      }
+      return;
+    }
+    this.#workerModel.acknowledgeExport(result.modelRevision);
     this.#executor.acknowledgeExport?.(result, true);
     this.#prepared = result;
     this.#startPreparedSave();
@@ -342,11 +375,9 @@ export class AutosaveCoordinator {
     if (result === null) throw new Error("Active save output was already released.");
     let outputTrusted = false;
     try {
-      const trusted = await inspectTrustedSvgOutput(result.output, result.outputHash);
+      const trusted = await inspectIntegrityBoundExport(result);
       active.result = null;
       if (this.#disposed) return;
-      if (trusted.revision !== result.modelRevision)
-        throw new TypeError("Export revision mismatch.");
       outputTrusted = true;
       const prepared: Omit<PreparedSave, "expectedBase"> = {
         output: trusted.content,
@@ -373,22 +404,16 @@ export class AutosaveCoordinator {
         },
       });
       if (this.#disposed) return;
-      this.#confirmedBase = {
+      this.#confirmSavedOutput({
         outputHash: confirmed.outputHash,
         revision: confirmed.revision,
         type: "confirmed",
-      };
-      this.#confirmedContent = null;
-      this.#canonicalRewritePending = false;
-      this.#save = null;
-      notifyConfirmedPersistence(this.#observer, this.#path, this.#confirmedBase);
-      this.#executor.requestPrewarm?.();
-      this.#setStatus(this.dirty ? "debouncing" : "clean");
+      });
       this.#resolveWaiters();
     } catch (error) {
       active.result = null;
       if (!this.#disposed) {
-        if (outputTrusted) await this.#handleSaveFailure(error);
+        if (outputTrusted) this.#handleSaveFailure(error);
         else this.#handleUntrustedExport(active);
       }
     } finally {
@@ -401,56 +426,35 @@ export class AutosaveCoordinator {
     this.#requireFullSnapshot();
     if (this.#switchToFallback()) this.#setStatus("debouncing");
   }
-  async #handleSaveFailure(error: unknown): Promise<void> {
-    if (error instanceof SaveError && error.code === "stale-editor-revision") {
-      this.#save = null;
-      this.#setStatus("debouncing");
-      return;
-    }
-    if (error instanceof SaveError && error.code === "external-conflict") {
-      this.#save = null;
-      this.#setStatus("conflict");
-      this.#resolveWaiters();
-      return;
-    }
-    this.#setStatus("verification-required");
-    this.#resolveWaiters();
+  #handleSaveFailure(error: unknown): void {
+    const status = classifyAutosaveFailure(error);
+    if (status !== "verification-required") this.#save = null;
+    this.#setStatus(status);
+    if (status !== "debouncing") this.#resolveWaiters();
   }
-  async #verifyIndeterminateSave(): Promise<void> {
-    if (this.#disposed) return;
-    const active = this.#save;
-    if (active === null) return;
-    let content: string;
-    try {
-      content = await readExistingFileWithinLimit(this.#terminalVault, this.#path);
-    } catch {
-      return;
-    }
-    if (this.#disposed) return;
-    const persisted = await this.#verifier.verify(content, "verification");
-    if (this.#disposed) return;
-    const expected: VaultBase = {
-      outputHash: active.proof.outputHash,
-      revision: active.proof.revision,
-      type: "confirmed",
-    };
-    if (sameVaultBase(persisted, expected)) {
-      this.#confirmedBase = expected;
-      this.#confirmedContent = null;
-      this.#canonicalRewritePending = false;
-      this.#save = null;
-      notifyConfirmedPersistence(this.#observer, this.#path, expected);
-      this.#executor.requestPrewarm?.();
-      this.#setStatus(this.dirty ? "debouncing" : "clean");
-    } else if (sameVaultBase(persisted, active.previousBase)) {
+  #adoptIndeterminateSaveInspection(
+    inspected: Awaited<ReturnType<typeof inspectIndeterminateSave>>,
+  ): void {
+    if (inspected?.outcome === "confirmed") {
+      this.#confirmSavedOutput(inspected.confirmedBase);
+    } else if (inspected?.outcome === "retryable-error") {
       this.#save = null;
       this.#requireFullSnapshot();
       this.#setStatus("retryable-error");
-    } else if (persisted.type !== "unreadable") {
+    } else if (inspected?.outcome === "conflict") {
       this.#save = null;
       this.#setStatus("conflict");
     }
     this.#resolveWaiters();
+  }
+  #confirmSavedOutput(base: Extract<VaultBase, { type: "confirmed" }>): void {
+    this.#confirmedBase = base;
+    this.#confirmedContent = null;
+    this.#canonicalRewritePending = false;
+    this.#save = null;
+    notifyConfirmedPersistence(this.#observer, this.#path, base);
+    this.#executor.requestPrewarm?.();
+    this.#setStatus(this.dirty ? "debouncing" : "clean");
   }
   #recoverExecutor(request: ConcreteExportRequest): void {
     if (this.#disposed || this.#exportInFlight !== request) return;

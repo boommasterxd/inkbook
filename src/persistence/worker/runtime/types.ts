@@ -13,6 +13,7 @@ import type {
   PastePlan,
   PasteRepeatState,
 } from "../../clipboard/types";
+import type { DocumentIntegrityManifest } from "../../serialization/document-integrity-manifest";
 import type {
   ExportIdentity,
   ExportRequest,
@@ -94,6 +95,7 @@ export type DocumentRuntimeRequest =
 
 interface UnlockRuntimeSuccess {
   readonly identity: PurposeOperationIdentity;
+  readonly integrityManifest: DocumentIntegrityManifest;
   readonly lockedHeight: number;
   readonly outputHash: string;
   readonly requiresCanonicalRewrite: boolean;

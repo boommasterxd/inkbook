@@ -38,6 +38,12 @@ export function copyElementsToRuntime(elements: readonly InkElementV1[]): Runtim
   });
 }
 
+export function copyElementsFromRuntime(elements: readonly InkElementV1[]): InkElementV1[] {
+  return elements.map((element) =>
+    element.kind === "stroke" ? { ...element, points: Array.from(element.points) } : element,
+  );
+}
+
 export function hasRuntimeStrokeSamples(snapshot: InkSnapshotV1): boolean {
   return snapshot.elements.some(
     (element) => element.kind === "stroke" && element.points instanceof Float64Array,

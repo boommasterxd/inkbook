@@ -47,9 +47,11 @@ export class ScenePreviewCommitController {
   }
 
   public requestClear(): boolean {
-    if (this.#active === undefined) return false;
-    this.#active.clearRequested = true;
-    return true;
+    if (this.#active !== undefined) {
+      this.#active.clearRequested = true;
+      return true;
+    }
+    return this.#committed;
   }
 
   public release(): void {

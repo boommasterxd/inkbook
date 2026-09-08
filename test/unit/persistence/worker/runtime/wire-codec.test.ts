@@ -4,13 +4,14 @@ import {
   validateInkSnapshotV1,
   type StrokeElementV1,
 } from "../../../../../src/domain/schema/public";
-import { encodeSelection } from "../../../../../src/persistence/clipboard/public";
+import { encodeRuntimeSelection } from "../../../../../src/persistence/clipboard/codec";
 import { CLIPBOARD_LIMITS } from "../../../../../src/persistence/clipboard/constants";
 import { INKBOOK_CLIPBOARD_TEXT_PREFIX } from "../../../../../src/persistence/clipboard/constants";
 import {
+  deriveDocumentIntegrityManifest,
   serializeInkbookDocument,
-  sha256Hex,
 } from "../../../../../src/persistence/serialization/public";
+import { sha256Hex } from "../../../../../src/persistence/serialization/sha256";
 import {
   decodeRuntimeResultChunked,
   encodeRuntimeResultChunked,
@@ -23,27 +24,12 @@ import {
   encodeRuntimeRequestChunked,
   encodeRuntimeResult,
   encodeUnlockBatch,
+} from "../../../../../src/persistence/worker/runtime/wire-codec";
+import {
   packElements,
   unpackElements,
-} from "../../../../../src/persistence/worker/runtime/public";
-import { snapshot } from "./fixtures";
-
-const STROKE: StrokeElementV1 = {
-  createdAt: 2,
-  id: "00000000-0000-4000-8000-000000000002",
-  kind: "stroke",
-  pivot: { x: 20, y: 20 },
-  points: [10, 10, 0.5, 20, 20, 1],
-  rotation: 0,
-  style: {
-    color: { type: "theme-text" },
-    opacity: 1,
-    pressureEnabled: false,
-    smoothing: 0.5,
-    width: 2,
-  },
-  tool: "pen",
-};
+} from "../../../../../src/persistence/worker/runtime/element-wire-codec";
+import { snapshot, STROKE } from "./fixtures";
 
 const clipboardIdentity = (operationId: number) => ({
   operationId,
@@ -129,15 +115,7 @@ describe("document worker wire codec", () => {
 
     const serialized = serializeInkbookDocument(snapshot());
     if (!serialized.ok) throw new Error(serialized.error.code);
-    const result = encodeRuntimeResult({
-      exportGeneration: 4,
-      modelRevision: 0,
-      output: serialized.value.svg,
-      outputHash: serialized.value.hash,
-      sessionId: "session-a",
-      type: "export-success",
-      workerEpoch: 2,
-    });
+    const result = encodeRuntimeResult(exportSuccess(serialized.value));
     expect(result.transfer).toHaveLength(1);
     const decoded = decodeRuntimeResult(result.value);
     expect(decoded.type).toBe("export-success");
@@ -152,23 +130,12 @@ describe("document worker export wire scheduling", () => {
     const serialized = serializeInkbookDocument(snapshot());
     if (!serialized.ok) throw new Error(serialized.error.code);
     let checkpoints = 0;
-    const encoded = await encodeRuntimeResultChunked(
-      {
-        exportGeneration: 4,
-        modelRevision: 0,
-        output: serialized.value.svg,
-        outputHash: serialized.value.hash,
-        sessionId: "session-a",
-        type: "export-success",
-        workerEpoch: 2,
+    const encoded = await encodeRuntimeResultChunked(exportSuccess(serialized.value), {
+      checkpoint: async () => {
+        checkpoints += 1;
       },
-      {
-        checkpoint: async () => {
-          checkpoints += 1;
-        },
-        signal: new AbortController().signal,
-      },
-    );
+      signal: new AbortController().signal,
+    });
 
     expect(checkpoints).toBe(1);
     expect(encoded.value.type).toBe("export-success-wire");
@@ -178,9 +145,24 @@ describe("document worker export wire scheduling", () => {
   });
 });
 
+function exportSuccess(
+  serialized: Extract<ReturnType<typeof serializeInkbookDocument>, { readonly ok: true }>["value"],
+) {
+  return {
+    exportGeneration: 4,
+    integrityManifest: deriveDocumentIntegrityManifest(serialized.snapshot),
+    modelRevision: 0,
+    output: serialized.svg,
+    outputHash: serialized.hash,
+    sessionId: "session-a",
+    type: "export-success" as const,
+    workerEpoch: 2,
+  };
+}
+
 describe("document worker clipboard wire codec", () => {
   it("transfers one canonical clipboard text and reconstructs write aliases", () => {
-    const selection = encodeSelection([STROKE], new Set([STROKE.id]));
+    const selection = encodeRuntimeSelection([STROKE], new Set([STROKE.id]));
     if (!selection.ok) throw new Error(selection.error.code);
     const encoded = encodeRuntimeResult({
       identity: clipboardIdentity(1),
@@ -210,7 +192,7 @@ describe("document worker clipboard wire codec", () => {
   });
 
   it("adopts transferred decoded stroke buffers without a back-copy", () => {
-    const selection = encodeSelection([STROKE], new Set([STROKE.id]));
+    const selection = encodeRuntimeSelection([STROKE], new Set([STROKE.id]));
     if (!selection.ok) throw new Error(selection.error.code);
     const encoded = encodeRuntimeResult({
       identity: clipboardIdentity(2),
@@ -319,6 +301,7 @@ describe("document worker untrusted result adoption", () => {
     const unsafe = new TextEncoder().encode("<svg/>");
     const result = {
       exportGeneration: 1,
+      integrityManifest: deriveDocumentIntegrityManifest(snapshot()),
       modelRevision: 0,
       output: unsafe,
       outputHash: sha256Hex(unsafe),
@@ -327,6 +310,12 @@ describe("document worker untrusted result adoption", () => {
       workerEpoch: 2,
     };
     expect(() => decodeRuntimeResult(result)).toThrow("safe Inkbook SVG");
+    expect(() =>
+      decodeRuntimeResult({
+        ...result,
+        integrityManifest: { ...result.integrityManifest, orderedIdDigest: "invalid" },
+      }),
+    ).toThrow("wire protocol");
 
     const serialized = serializeInkbookDocument(snapshot());
     if (!serialized.ok) throw new Error(serialized.error.code);

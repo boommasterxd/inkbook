@@ -1,6 +1,6 @@
 import type { FileManager, Keymap, Vault } from "obsidian";
 
-import type { InkbookDeviceSettingsV1, InkbookSettingsV3 } from "../../domain/settings/types";
+import type { InkbookDeviceSettingsV2, InkbookSettingsV4 } from "../../domain/settings/types";
 import type { PresentationLifecyclePort } from "../../editor/session/session-port";
 import { WorkspaceEditorCoordinator } from "../../editor/session/workspace-editor-coordinator";
 import type { AttachmentIdentity } from "../../editor/session/session-state";
@@ -15,20 +15,20 @@ import {
 } from "./owner-window-registry";
 import {
   presentationAttachmentKey,
-  presentationPreviewOptions,
   type PresentationAttachment,
   type PresentationSessionPort,
 } from "./presentation-port";
 import { WorkspaceRuntimeLifecycle } from "./workspace-runtime-lifecycle";
-import { showWorkspaceLoadRecovery } from "./workspace-load-recovery";
-import type {
-  WorkspaceLoadFeedbackCode,
-  WorkspaceMountedPresentation,
+import {
+  handleWorkspaceActivationFailure,
+  showWorkspaceLoadRecovery,
+  type WorkspaceLoadFeedbackCode,
+  type WorkspaceMountedPresentation,
 } from "./workspace-load-recovery";
 import { observeActiveSceneReadiness } from "./workspace-runtime-scene-readiness";
 import { ownsMarkdownEditorChange } from "./workspace-runtime-editor";
 import { createWorkspaceDocumentRuntimes } from "./workspace-runtime-workers";
-import { copyWorkspaceEmbed, deleteWorkspaceEmbed } from "./workspace-embed-actions";
+import { createWorkspaceActiveScene } from "./workspace-active-scene";
 import { showWorkspaceHeadlessRecovery } from "./workspace-recovery-actions";
 import { VaultDocumentSessionFactory } from "./vault-document-session-factory";
 import { showAttachedRecoveryPanel, type HeadlessRecoveryNotice } from "./recovery-notice";
@@ -36,10 +36,13 @@ import { PresentationOperationFeedback } from "./presentation-operation-feedback
 import type { PresentationOperationFeedbackHandle } from "./presentation-operation-feedback";
 import { WorkspaceRefreshProfiles } from "./workspace-refresh-profiles";
 import { WorkspaceFeedbackRouter, type WorkspaceFeedbackHost } from "./workspace-feedback-router";
-
+import {
+  TrustedDocumentHeadLedger,
+  type DeviceLocalStoragePort,
+} from "../storage/trusted-document-head-ledger";
 interface WorkspaceRuntimeSettings {
-  readonly device: InkbookDeviceSettingsV1;
-  readonly vault: InkbookSettingsV3;
+  readonly device: InkbookDeviceSettingsV2;
+  readonly vault: InkbookSettingsV4;
 }
 
 export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
@@ -53,6 +56,8 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly #keymap: Pick<Keymap, "popScope" | "pushScope"> | undefined;
   readonly #ownerWindows = new OwnerWindowRegistry();
   readonly #mounted = new Map<string, WorkspaceMountedPresentation>();
+  readonly #onOpenSettings: () => void;
+  readonly #onOpenShortcuts: () => void;
   readonly refreshRateProfiles: WorkspaceRefreshProfiles;
   readonly #scheme: ColorSchemeBroadcaster;
   readonly #sessions: VaultDocumentSessionFactory;
@@ -64,14 +69,24 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     scheme: ColorSchemeBroadcaster,
     settings: () => WorkspaceRuntimeSettings,
     embedActions: ObsidianEmbedActions,
-    host: WorkspaceFeedbackHost,
+    host: WorkspaceFeedbackHost & {
+      readonly deviceStorage?: DeviceLocalStoragePort;
+      readonly onOpenSettings: () => void;
+      readonly onOpenShortcuts: () => void;
+    },
   ) {
+    const trustedHeads =
+      host.deviceStorage === undefined
+        ? undefined
+        : new TrustedDocumentHeadLedger(host.deviceStorage);
     this.#embedActions = embedActions;
     this.#fallbackOwnerWindow = host.fallbackOwnerWindow;
     this.#feedback = new WorkspaceFeedbackRouter(host.manager, host.view, (documentId) =>
       this.#owningWindow(documentId),
     );
     this.#keymap = host.keymap;
+    this.#onOpenSettings = host.onOpenSettings;
+    this.#onOpenShortcuts = host.onOpenShortcuts;
     this.#scheme = scheme;
     this.#settings = settings;
     this.refreshRateProfiles = new WorkspaceRefreshProfiles(settings().vault.refreshRatePreference);
@@ -95,6 +110,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       }),
       {
         persisted: (event) => this.#lifecycle.handlePersisted(event),
+        ...(trustedHeads === undefined ? {} : { trustedHeads }),
       },
     );
     const presentations: PresentationLifecyclePort = {
@@ -160,10 +176,14 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     void handle.outcome
       .then((outcome) => {
         if (outcome.kind !== "activated") {
-          this.#lifecycle.failAutoActivation(attachment, autoActivationAttempt);
-          const state = outcome.kind === "load-error" ? "load-error" : "locked";
-          this.#setState(attachment, state, loadFeedback);
-          if (outcome.kind === "load-error") this.#showLoadError(mounted);
+          handleWorkspaceActivationFailure(outcome, {
+            failAutoActivation: () =>
+              this.#lifecycle.failAutoActivation(attachment, autoActivationAttempt),
+            refreshPreview: (identity) =>
+              this.#lifecycle.refreshPersistedPreview(attachment.documentId, identity),
+            setState: (state) => this.#setState(attachment, state, loadFeedback),
+            showLoadError: (code) => this.#showLoadError(mounted, code),
+          });
           return;
         }
         if (outcome.phase !== "active") {
@@ -182,44 +202,25 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
         mounted.disposeScheme?.();
         const initialScheme = attachment.root.dataset.inkbookScheme === "dark" ? "dark" : "light";
         const settings = this.#settings();
-        mounted.scene = new ActiveInkbookScene({
+        mounted.scene = createWorkspaceActiveScene({
+          attachment,
           backgroundSpacing: () => this.#settings().vault.pageDefaults.backgroundSpacing,
-          defaults: settings.vault.toolDefaults,
           deviceSettings: settings.device,
-          history: editorContext.history,
-          ...(this.#keymap === undefined ? {} : { keymap: this.#keymap }),
-          model: editorContext.model,
+          editorContext,
+          embedActions: this.#embedActions,
+          isCurrent: (scene) =>
+            this.#mounted.get(presentationAttachmentKey(attachment)) === mounted &&
+            mounted.scene === scene,
+          keymap: this.#keymap,
+          markFirstStroke: () => this.#lifecycle.markFirstStroke(attachment.documentId),
           onLock: () => this.lockActivePresentation(),
-          onFeedback: (code) => this.#feedback.showInPresentation(attachment.root, code),
-          onCopyEmbed: () =>
-            void copyWorkspaceEmbed(this.#embedActions, attachment.embedReference, {
-              show: (code) => this.#feedback.showInPresentation(attachment.root, code),
-            }),
-          onDeleteEmbed: () => {
-            const invokingScene = mounted.scene;
-            if (invokingScene === undefined) return;
-            void deleteWorkspaceEmbed({
-              actions: this.#embedActions,
-              isCurrent: () =>
-                this.#mounted.get(presentationAttachmentKey(attachment)) === mounted &&
-                mounted.scene === invokingScene,
-              reference: attachment.embedReference,
-              scene: invokingScene,
-              feedback: {
-                show: (code) => this.#feedback.showInPresentation(attachment.root, code),
-              },
-            });
-          },
-          onFirstStrokeCommitted: () => {
-            this.#lifecycle.markFirstStroke(attachment.documentId);
-          },
-          root: attachment.root,
+          onOpenSettings: this.#onOpenSettings,
+          onOpenShortcuts: this.#onOpenShortcuts,
+          scheme: initialScheme,
+          showFeedback: (code) => this.#feedback.showInPresentation(attachment.root, code),
           sliceBudgetMs: () =>
             this.refreshRateProfiles.sliceBudgetMs(attachment.root.ownerDocument.defaultView),
-          ...presentationPreviewOptions(attachment),
-          scheme: initialScheme,
-          scrollOwner: attachment.scrollOwner,
-          startupTool: settings.vault.startupTool,
+          vaultSettings: settings.vault,
         });
         const scene = mounted.scene;
         mounted.disposeScheme = this.#scheme.subscribe((scheme) =>
@@ -279,17 +280,17 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     if (action === "lock") return this.hasActivePresentation();
     return this.#activeScene()?.isActionAvailable(action) ?? false;
   }
-
   readonly lockActivePresentation = (): boolean => this.#coordinator.requestLockCurrent();
-
-  updateDeviceSettings(settings: InkbookDeviceSettingsV1): void {
+  updateDeviceSettings(settings: InkbookDeviceSettingsV2): void {
     if (this.#disposed) return;
     for (const mounted of this.#mounted.values()) mounted.scene?.updateDeviceSettings(settings);
   }
-
-  updateVaultSettings(settings: InkbookSettingsV3): void {
+  updateVaultSettings(settings: InkbookSettingsV4): void {
     if (this.#disposed) return;
     this.refreshRateProfiles.setPreference(settings.refreshRatePreference);
+    for (const mounted of this.#mounted.values()) {
+      mounted.scene?.updateSnappingSettings(settings.snapping);
+    }
   }
 
   queueAutoActivation(
@@ -300,7 +301,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   ): void {
     this.#lifecycle.queueAutoActivation(documentId, ownerWindow, onTimeout, dismissUndoHint);
   }
-
   readonly abortAutoActivation = (documentId: string): void =>
     this.#lifecycle.abortAutoActivation(documentId);
 

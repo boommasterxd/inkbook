@@ -1,6 +1,6 @@
 import { setIcon } from "obsidian";
 
-import type { InkbookDeviceSettingsV1 } from "../../domain/settings/types";
+import type { InkbookDeviceSettingsV2 } from "../../domain/settings/types";
 import type { InkElementV1 } from "../../domain/schema/public";
 import type { StoreDelta } from "../../domain/store/public";
 import { SvgSceneRenderer, type SceneInputHandlers } from "../../rendering/scene/index";
@@ -25,7 +25,6 @@ import { attachActiveSceneInputListeners } from "./active-scene-input";
 import type { ActiveSceneScrollBinding } from "./active-scene-scroll";
 import {
   applyLockedFitLayout,
-  lockedPageAspectRatio,
   LOCK_PRESENTATION_DURATION_MS,
   restoreActiveLayout,
   type LockedFitTransition,
@@ -39,8 +38,6 @@ import type { EditableDocumentModel } from "./vault-document-session";
 import type { ActiveInkbookSceneOptions } from "./active-scene-types";
 
 export { ActiveScenePreviewHandoff } from "./active-scene-handoff";
-export { readActiveSceneViewport } from "./active-scene-viewport";
-
 export class ActiveInkbookScene {
   readonly #chrome: PendingEditorChrome;
   readonly #chromeHost: HTMLDivElement;
@@ -106,38 +103,7 @@ export class ActiveInkbookScene {
     );
     this.#memory.attach(this.#renderer);
     this.#renderer.setScheme(options.scheme);
-    this.#controller = controller = new ActiveEditorController({
-      applyZoomLayout: (update) => this.#layout.applyZoom(update),
-      backgroundSpacing: options.backgroundSpacing,
-      container: this.#container,
-      defaults: options.defaults,
-      deviceSettings: options.deviceSettings,
-      history: options.history,
-      interruptLayoutForInput: () => this.#layout.interruptForInput(),
-      ...(options.keymap === undefined ? {} : { keymap: options.keymap }),
-      menuFactory: options.menuFactory ?? obsidianMenuFactory,
-      model: options.model,
-      onLock: options.onLock,
-      onFeedback: options.onFeedback,
-      onCopyEmbed: options.onCopyEmbed,
-      onDeleteEmbed: options.onDeleteEmbed,
-      onPageChanged: () => this.#layout.pageChanged(),
-      onPagePreviewFinish: (committed) => this.#layout.finishPagePreview(committed),
-      onPagePreview: (page) => this.#layout.previewPage(page),
-      onStateChanged: () => this.#updateChrome(),
-      renderIcon: (element, icon) => setIcon(element, icon),
-      renderer: this.#renderer,
-      sceneStore: this.#store,
-      sliceBudgetMs: options.sliceBudgetMs,
-      selectionEdgeDrag: {
-        begin: () => this.#layout.beginSelectionEdgeDrag(),
-        finish: (outcome) => this.#layout.finishSelectionEdgeDrag(outcome),
-        setBottomEdge: (active) => this.#layout.setSelectionBottomEdge(active),
-        update: (pointer) => this.#layout.updateSelectionEdgeDrag(pointer),
-      },
-      scrollOwner,
-      startupTool: options.startupTool,
-    });
+    this.#controller = controller = this.#createController(options, scrollOwner);
     scrollBinding = bindSceneScrollOwner(
       scrollOwner,
       ownerWindow,
@@ -148,7 +114,11 @@ export class ActiveInkbookScene {
     this.#removeViewportListeners = () => scrollBinding?.dispose();
     this.#controller.setEnabled(false);
     this.#chrome = beginEditorChromeMount(this.#chromeHost, this.#controller.chromeProps());
-    this.#removeInputListeners = attachActiveSceneInputListeners(this.#renderer, this.#controller);
+    this.#removeInputListeners = attachActiveSceneInputListeners(
+      this.#renderer,
+      this.#controller,
+      this.#root,
+    );
     this.#layout = new ActiveEditorLayout({
       beginScrollStability: () => this.#transitionScrollStability.begin(),
       chromeHost: this.#chromeHost,
@@ -173,6 +143,48 @@ export class ActiveInkbookScene {
     );
     this.#resolveReady = readiness.resolve;
     this.ready = readiness.ready;
+  }
+
+  #createController(
+    options: ActiveInkbookSceneOptions,
+    scrollOwner: BrowserScrollElement,
+  ): ActiveEditorController {
+    return new ActiveEditorController({
+      applyZoomLayout: (update) => this.#layout.applyZoom(update),
+      backgroundSpacing: options.backgroundSpacing,
+      container: this.#container,
+      defaults: options.defaults,
+      deviceSettings: options.deviceSettings,
+      history: options.history,
+      interruptLayoutForInput: () => this.#layout.interruptForInput(),
+      ...(options.keymap === undefined ? {} : { keymap: options.keymap }),
+      menuFactory: options.menuFactory ?? obsidianMenuFactory,
+      model: options.model,
+      onLock: options.onLock,
+      onFeedback: options.onFeedback,
+      onCopyEmbed: options.onCopyEmbed,
+      onDeleteEmbed: options.onDeleteEmbed,
+      onOpenSettings: options.onOpenSettings,
+      onOpenShortcuts: options.onOpenShortcuts,
+      onPageChanged: () => this.#layout.pageChanged(),
+      onPagePreviewFinish: (committed) => this.#layout.finishPagePreview(committed),
+      onPagePreview: (page) => this.#layout.previewPage(page),
+      onStateChanged: () => this.#updateChrome(),
+      renderIcon: (element, icon) => setIcon(element, icon),
+      renderer: this.#renderer,
+      sceneStore: this.#store,
+      selectionMoveLayout: {
+        begin: () => this.#layout.beginSelectionMove(),
+        currentHeight: () => this.#layout.currentPageHeight(),
+        finish: (committed, previewMaximumBottom) =>
+          this.#layout.finishSelectionMove(committed, previewMaximumBottom),
+        updateBottom: (maximumBottom) => this.#layout.updateSelectionMoveBottom(maximumBottom),
+      },
+      sliceBudgetMs: options.sliceBudgetMs,
+      scrollOwner,
+      snapping: options.snapping,
+      startupTool: options.startupTool,
+    });
   }
 
   public disableInput(): void {
@@ -248,11 +260,10 @@ export class ActiveInkbookScene {
 
   public setPreviewSource(source: string): void {
     if (this.#disposed) return;
-    this.#refreshPreviewAspectRatio();
     this.#previewReady = this.#previewHandoff.setPreviewSource(source);
   }
 
-  public updateDeviceSettings(settings: InkbookDeviceSettingsV1): void {
+  public updateDeviceSettings(settings: InkbookDeviceSettingsV2): void {
     if (this.#disposed) return;
     this.#previewHandoff.updateMotion(settings.motion);
     this.#renderer.setReducedMotion(this.#previewHandoff.reducedMotion);
@@ -260,6 +271,11 @@ export class ActiveInkbookScene {
     this.#layout.updateMotion(settings.motion);
     this.#controller.updateDeviceSettings(settings);
     this.#updateChrome();
+  }
+
+  public updateSnappingSettings(settings: ActiveInkbookSceneOptions["snapping"]): void {
+    if (this.#disposed) return;
+    this.#controller.updateSnappingSettings(settings);
   }
 
   #applyDelta(delta: StoreDelta): void {
@@ -313,7 +329,6 @@ export class ActiveInkbookScene {
     this.#lockGeneration += 1;
     this.#preLockBlockSize = this.#container.style.blockSize;
     this.#preLockViewState = this.#controller.getViewState();
-    this.#refreshPreviewAspectRatio();
     this.#lockLayoutTransition = applyLockedFitLayout({
       anchor: this.#controller.readResizeAnchor(),
       applyResize: (update) => this.#controller.applyResize(update),
@@ -386,12 +401,6 @@ export class ActiveInkbookScene {
 
   #storeMaximumBottom(): number | undefined {
     return this.#model.store.getMaximumBottom();
-  }
-
-  #refreshPreviewAspectRatio(): void {
-    this.#previewHandoff.setPreviewAspectRatio(
-      lockedPageAspectRatio(this.#controllerModelPage(), this.#storeMaximumBottom()),
-    );
   }
 
   #completePreviewHandoff(): void {

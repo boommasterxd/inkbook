@@ -33,6 +33,8 @@ This guarantees a non-empty range with at least five-times relative magnificatio
 
 ## Zoom Input
 
+The exact keyboard binding is device-local and configurable. Its built-in value and keyboard-layout aliases are defined in [Keyboard Shortcuts](keyboard-shortcuts.md); the zoom factor and anchor behavior below remain unchanged when the binding changes.
+
 The following controls work in the active handwriting embed:
 
 - `Ctrl` or `Cmd` plus mouse wheel

@@ -1,15 +1,37 @@
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
+import type { PersistedDocumentIdentity } from "../../editor/session/session-port";
 import { inspectTrustedSvgOutput } from "../../persistence/scheduling/trusted-svg-output";
 
 const METADATA_OPEN = "<metadata";
 const METADATA_CLOSE = "</metadata>";
 
-export async function validatePreviewSvg(source: string | Uint8Array): Promise<string | null> {
+export interface LoadedPreviewSvg {
+  readonly aspectRatio: number;
+  readonly contentIdentity: PreviewContentIdentity;
+  readonly safeSvg: string;
+}
+
+export type PreviewContentIdentity = PersistedDocumentIdentity;
+
+export function samePreviewContentIdentity(
+  left: PreviewContentIdentity,
+  right: PreviewContentIdentity,
+): boolean {
+  return left.revision === right.revision && left.outputHash === right.outputHash;
+}
+
+export async function inspectPreviewSvg(
+  source: string | Uint8Array,
+): Promise<LoadedPreviewSvg | null> {
   try {
     const trusted = await inspectTrustedSvgOutput(source, undefined, {
       versionPolicy: "editable",
     });
-    return trusted.content;
+    return {
+      aspectRatio: 2_048.6 / trusted.lockedHeight,
+      contentIdentity: { outputHash: trusted.outputHash, revision: trusted.revision },
+      safeSvg: trusted.content,
+    };
   } catch {
     return null;
   }
@@ -18,7 +40,7 @@ export async function validatePreviewSvg(source: string | Uint8Array): Promise<s
 export async function loadValidatedPreviewSvg(
   source: string,
   owningWindow: Window,
-): Promise<string> {
+): Promise<LoadedPreviewSvg> {
   const response = await owningWindow.fetch(source);
   if (!response.ok) throw new Error("The Inkbook preview source could not be loaded.");
   const declaredBytes = Number(response.headers.get("content-length"));
@@ -29,9 +51,11 @@ export async function loadValidatedPreviewSvg(
   if (bytes.byteLength > FILE_SCHEMA_LIMITS.totalInputBytes) {
     throw new Error("The Inkbook preview source exceeds the file limit.");
   }
-  const safeSvg = await validatePreviewSvg(bytes);
-  if (safeSvg === null) throw new Error("The Inkbook preview source is not safe SVG.");
-  return safeSvg;
+  const trusted = await inspectPreviewSvg(bytes);
+  if (trusted === null) {
+    throw new Error("The Inkbook preview source is not safe SVG.");
+  }
+  return trusted;
 }
 
 export function createPreviewSvg(ownerDocument: Document, safeSvg: string): SVGSVGElement {
@@ -49,7 +73,7 @@ export function createPreviewSvg(ownerDocument: Document, safeSvg: string): SVGS
   svg.setAttribute("aria-hidden", "true");
   svg.setAttribute("focusable", "false");
   svg.setAttribute("height", "100%");
-  svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("preserveAspectRatio", "xMidYMin meet");
   svg.setAttribute("width", "100%");
   return svg;
 }

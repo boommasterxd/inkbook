@@ -34,4 +34,23 @@ describe("trusted SVG output validation slices", () => {
     ).rejects.toMatchObject({ name: "AbortError" });
     expect(checkpoints).toBe(4);
   });
+
+  it("honors cancellation while inspecting markup after string hashing completes", async () => {
+    const output = createMaximumComplexitySvg();
+    const chunkBytes = 64 * 1024;
+    const firstInspectionCheckpoint = Math.ceil(output.length / chunkBytes) + 1;
+    const controller = new AbortController();
+    let checkpoints = 0;
+    await expect(
+      inspectTrustedSvgOutput(output, undefined, {
+        chunkBytes,
+        checkpoint: async () => {
+          checkpoints += 1;
+          if (checkpoints === firstInspectionCheckpoint) controller.abort();
+        },
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(checkpoints).toBe(firstInspectionCheckpoint);
+  });
 });

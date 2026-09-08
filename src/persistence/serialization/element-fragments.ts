@@ -14,6 +14,7 @@ export interface ElementFragments {
   readonly canonicalMetadataUtf8: Uint8Array<ArrayBuffer>;
   readonly element: InkElementV1;
   readonly metadata: string;
+  readonly metadataBytes: number;
   readonly pathDataBytes: number;
   readonly retainedBytes: number;
   readonly svg: string;
@@ -50,9 +51,10 @@ function elementFragments(
   pathDataBytes: number,
   bottom: number,
 ): ElementFragments {
-  const canonicalMetadataBytes = encodedByteLength(canonicalMetadata);
   const canonicalMetadataUtf8 = new TextEncoder().encode(canonicalMetadata);
-  const bytes = encodedByteLength(metadata) + encodedByteLength(svg);
+  const canonicalMetadataBytes = canonicalMetadataUtf8.byteLength;
+  const metadataBytes = encodedByteLength(metadata);
+  const bytes = metadataBytes + encodedByteLength(svg);
   return {
     bottom,
     bytes,
@@ -61,6 +63,7 @@ function elementFragments(
     canonicalMetadataUtf8,
     element,
     metadata,
+    metadataBytes,
     pathDataBytes,
     retainedBytes:
       bytes +

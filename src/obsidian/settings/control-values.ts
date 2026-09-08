@@ -2,8 +2,8 @@ import {
   loadDeviceSettings,
   loadSettings,
   type ColorV1,
-  type InkbookDeviceSettingsV1,
-  type InkbookSettingsV3,
+  type InkbookDeviceSettingsV2,
+  type InkbookSettingsV4,
 } from "../../domain/settings";
 import { InkbookSettingsStore } from "./storage";
 
@@ -12,12 +12,14 @@ type VaultControlKey =
   | "refreshRatePreference"
   | "filePlacement.mode"
   | "filePlacement.folder"
+  | `snapping.${keyof InkbookSettingsV4["snapping"]}`
   | `pageDefaults.${"backgroundType" | "activeBufferLines" | "lockedBufferLines"}`
   | `pageDefaults.backgroundSpacing.${"lines" | "dots" | "squares"}`
+  | `toolDefaults.select.${"area" | "inclusion"}`
   | `toolDefaults.pen.${"color" | "width" | "opacity" | "pressureEnabled"}`
   | `toolDefaults.${"highlighter" | "straightHighlighter"}.${"color" | "width" | "opacity"}`
   | "toolDefaults.eraser.radius"
-  | `toolDefaults.shapes.${keyof InkbookSettingsV3["toolDefaults"]["shapes"]}.${
+  | `toolDefaults.shapes.${keyof InkbookSettingsV4["toolDefaults"]["shapes"]}.${
       | "outlineColor"
       | "outlineWidth"
       | "outlineStyle"
@@ -28,7 +30,12 @@ type VaultControlKey =
   | "toolDefaults.coordinateSystem.dimension"
   | "toolDefaults.table.columns";
 
-type DeviceControlKey = `device.${Exclude<keyof InkbookDeviceSettingsV1, "version">}`;
+type DeviceControlKey =
+  | `device.${Exclude<
+      keyof InkbookDeviceSettingsV2,
+      "keyboardShortcuts" | "penTapInsertion" | "version"
+    >}`
+  | "device.penTapInsertionEnabled";
 export type SettingsControlKey = VaultControlKey | DeviceControlKey;
 
 const COLOR_VALUES = new Map<string, ColorV1 | null>([
@@ -94,6 +101,9 @@ export class SettingsControlValues {
   public constructor(private readonly store: InkbookSettingsStore) {}
 
   public get(key: SettingsControlKey): unknown {
+    if (key === "device.penTapInsertionEnabled") {
+      return this.store.getDeviceSettings().penTapInsertion === "handwriting";
+    }
     const path = key.startsWith("device.") ? key.slice(7) : key;
     const root = key.startsWith("device.")
       ? this.store.getDeviceSettings()
@@ -110,7 +120,11 @@ export class SettingsControlValues {
   public async set(key: SettingsControlKey, value: unknown): Promise<void> {
     if (key.startsWith("device.")) {
       const candidate = structuredClone(this.store.getDeviceSettings());
-      setNested(candidate, key.slice(7), domainValue(key, value));
+      if (key === "device.penTapInsertionEnabled") {
+        candidate.penTapInsertion = value === true ? "handwriting" : "off";
+      } else {
+        setNested(candidate, key.slice(7), domainValue(key, value));
+      }
       const loaded = loadDeviceSettings(candidate);
       if (loaded.diagnostics.length > 0) throw new Error("Invalid setting value");
       this.store.replaceDeviceSettings(loaded.value);

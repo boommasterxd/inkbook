@@ -60,6 +60,30 @@ export function documentFromSnapshot(snapshot: InkSnapshotV1 = emptySnapshot()):
   return { bytes: new TextEncoder().encode(serialized.value.svg), svg: serialized.value.svg };
 }
 
+export function readOnlyDocumentVault(document: ReturnType<typeof documentFromSnapshot>) {
+  const file = new TestTFile("drawings/ink.svg", document.bytes.byteLength);
+  return {
+    file,
+    vault: {
+      getFileByPath: () => file,
+      readBinary: async () => document.bytes.buffer.slice(0),
+    },
+  };
+}
+
+export function createReadOnlyVaultSession(
+  document: ReturnType<typeof documentFromSnapshot>,
+  create?: (sessionId: string, workerEpoch: number) => Promise<DocumentRuntimePort>,
+) {
+  const { file, vault } = readOnlyDocumentVault(document);
+  const factory = createVaultSessionFactory(vault, create);
+  return {
+    factory,
+    file,
+    session: factory.create({ documentId: file.path, sessionId: "session-1" }),
+  };
+}
+
 export function versionZeroDocumentFromSnapshot(snapshot: InkSnapshotV1 = emptySnapshot()): {
   readonly bytes: Uint8Array;
   readonly svg: string;
@@ -149,7 +173,10 @@ export function createVaultSessionFactory(
   );
 }
 
-export function persistenceHarness(snapshot = emptySnapshot()) {
+export function persistenceHarness(
+  snapshot = emptySnapshot(),
+  hooks: VaultDocumentSessionHooks = {},
+) {
   let document = documentFromSnapshot(snapshot);
   let content = document.svg;
   let corruptCopyRead = false;
@@ -167,7 +194,12 @@ export function persistenceHarness(snapshot = emptySnapshot()) {
     getContent: () => content,
     readCopy: (copy) => (corruptCopyRead ? "invalid-svg" : copy.text),
   });
-  const factory = createVaultSessionFactory({ ...copyHarness.vault, process });
+  const factory = createVaultSessionFactory(
+    { ...copyHarness.vault, process },
+    undefined,
+    undefined,
+    hooks,
+  );
   return {
     content: () => content,
     createdCopies: copyHarness.createdCopies,

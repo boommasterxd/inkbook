@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { AutosaveCoordinator } from "../../../../src/persistence/saving/autosave/public";
+import { deriveDocumentIntegrityManifest } from "../../../../src/persistence/serialization/public";
 import type { MetadataGuardedFileRead } from "../../../../src/persistence/saving/save-ports";
 import {
   DocumentWorkerRuntime,
@@ -137,6 +138,7 @@ describe("AutosaveCoordinator terminal export disposal", () => {
     coordinator.dispose();
     resolveExport?.({
       exportGeneration: pending.exportGeneration,
+      integrityManifest: deriveDocumentIntegrityManifest(documentSource.value),
       modelRevision: pending.modelRevision,
       output: output.svg,
       outputHash: output.hash,

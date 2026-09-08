@@ -12,5 +12,8 @@ export function elementMutationPayloadBytes(element: InkElementV1 | ImmutableInk
   const structuralBytes = 256 + element.id.length * 2;
   if (element.kind === "stroke") return structuralBytes + element.points.length * 8;
   if (element.kind === "coordinate-system") return structuralBytes + element.axes.length * 16;
+  if (element.kind === "table") {
+    return structuralBytes + (element.columnOffsets?.length ?? 0) * 8;
+  }
   return structuralBytes;
 }

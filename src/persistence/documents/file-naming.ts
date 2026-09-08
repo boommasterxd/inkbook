@@ -57,11 +57,3 @@ export function migrationBackupPath(
   const base = path.toLowerCase().endsWith(".svg") ? path.slice(0, -4) : path;
   return `${base}${suffix}` as ValidatedVaultPath;
 }
-
-export function localCopyPath(path: ValidatedVaultPath, suffix: string): ValidatedVaultPath | null {
-  if (!/^[a-z0-9-]+$/u.test(suffix)) {
-    return null;
-  }
-  const base = path.toLowerCase().endsWith(".svg") ? path.slice(0, -4) : path;
-  return `${base}-${suffix}.svg` as ValidatedVaultPath;
-}

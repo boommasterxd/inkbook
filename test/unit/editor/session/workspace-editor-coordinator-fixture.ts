@@ -107,12 +107,25 @@ export class FakeSession implements DocumentSessionPort {
     return pending.promise;
   }
 
-  completeUnlock(status: UnlockResult["status"] = "active"): void {
+  completeUnlock(status: "active" | "load-error" = "active"): void {
     const pending = this.unlocks[this.unlocks.length - 1];
     if (pending === undefined) {
       throw new Error("No unlock is pending");
     }
     pending.deferred.resolve({ ...pending.operation, status });
+  }
+
+  completeSourceChanged(actualSourceIdentity: {
+    readonly outputHash: string;
+    readonly revision: number;
+  }): void {
+    const pending = this.unlocks[this.unlocks.length - 1];
+    if (pending === undefined) throw new Error("No unlock is pending");
+    pending.deferred.resolve({
+      ...pending.operation,
+      actualSourceIdentity,
+      status: "source-changed",
+    });
   }
 
   completeSave(status: SaveResult["status"] = "confirmed"): void {

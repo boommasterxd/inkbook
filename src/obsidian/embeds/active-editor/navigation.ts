@@ -11,15 +11,15 @@ import {
   continuousWheelZoomFactor,
   createWheelZoomState,
   createZoomFrameState,
-  keyboardZoomFactor,
   renderedContainerHeight,
+  zoomFactorForSteps,
   zoomFrameHasPending,
   type WheelZoomState,
   type ZoomAnchor,
   type ZoomFrameState,
 } from "../../../editor/zoom/index";
 import { browserScrollMetrics, type BrowserScrollElement } from "../../scrolling/index";
-import { normalizePointerType } from "./controller-helpers";
+import { pointerSampleFromEvent } from "./controller-helpers";
 import { measureElementBox } from "./element-content-box";
 import {
   localScreenPointAnchor,
@@ -118,9 +118,10 @@ export class ActiveEditorNavigation {
     this.#origin = undefined;
   }
 
-  public getViewState(): ActiveEditorViewState {
-    return { cameraX: this.#cameraX, zoom: this.#zoom };
-  }
+  public readonly getViewState = (): ActiveEditorViewState => ({
+    cameraX: this.#cameraX,
+    zoom: this.#zoom,
+  });
 
   public beginGestureGeometry(): boolean {
     this.cancelPanMomentum();
@@ -130,8 +131,7 @@ export class ActiveEditorNavigation {
   }
 
   public pagePoint(event: Pick<MouseEvent, "clientX" | "clientY">): InputPoint {
-    const bounds =
-      this.#gestureLayout?.containerBounds ?? measureElementBox(this.#container).contentBox;
+    const bounds = measureElementBox(this.#container).contentBox;
     return {
       x: (event.clientX - bounds.left) / this.#zoom - this.#cameraX,
       y: (event.clientY - bounds.top) / this.#zoom,
@@ -145,24 +145,19 @@ export class ActiveEditorNavigation {
   }
 
   public pointer(event: PointerEvent): PointerSample {
-    return {
-      ...this.pagePoint(event),
-      pointerId: event.pointerId,
-      pointerType: normalizePointerType(event.pointerType),
-      pressure: event.pressure,
-    };
+    return pointerSampleFromEvent(this.pagePoint(event), event);
   }
 
   public screenPointer(event: PointerEvent): PointerSample {
     const bounds =
       this.#gestureLayout?.containerBounds ?? measureElementBox(this.#container).contentBox;
-    return {
-      x: event.clientX - bounds.left,
-      y: event.clientY - bounds.top,
-      pointerId: event.pointerId,
-      pointerType: normalizePointerType(event.pointerType),
-      pressure: event.pressure,
-    };
+    return pointerSampleFromEvent(
+      {
+        x: event.clientX - bounds.left,
+        y: event.clientY - bounds.top,
+      },
+      event,
+    );
   }
 
   public pageSample(sample: PointerSample): PointerSample {
@@ -202,7 +197,10 @@ export class ActiveEditorNavigation {
   public revert(): void {
     this.cancelPanMomentum();
     const origin = this.#origin;
-    if (origin === undefined) return;
+    if (origin === undefined) {
+      this.#gestureLayout = undefined;
+      return;
+    }
     this.#cancelPendingFrame();
     this.#cameraX = origin.cameraX;
     browserScrollMetrics.setScrollTop(this.#scrollOwner, origin.scrollTop);
@@ -304,12 +302,11 @@ export class ActiveEditorNavigation {
     return true;
   }
 
-  public updateKeyboard(
-    event: Pick<KeyboardEvent, "altKey" | "ctrlKey" | "key" | "metaKey">,
-    lastScreenPointer: InputPoint | null,
-  ): boolean {
-    const factor = keyboardZoomFactor(event);
-    if (factor === undefined) return false;
+  public updateKeyboardStep(step: -1 | 1, lastScreenPointer: InputPoint | null): boolean {
+    return this.#queueKeyboardZoom(zoomFactorForSteps(step), lastScreenPointer);
+  }
+
+  #queueKeyboardZoom(factor: number, lastScreenPointer: InputPoint | null): boolean {
     this.cancelPanMomentum();
     const layout = this.#pendingLayout ?? readNavigationLayout(this.#container, this.#scrollOwner);
     const anchor =

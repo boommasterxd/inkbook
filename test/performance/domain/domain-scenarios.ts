@@ -1,7 +1,7 @@
 import type { InkElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
 import { ElementStore } from "../../../src/domain/store/public";
 import { moveSelectionTimeSliced } from "../../../src/editor/selection/transforms";
-import { LiveStrokeBuilder } from "../../../src/editor/tools/public";
+import { LiveStrokeBuilder } from "../../../src/editor/tools/live-stroke";
 import {
   ActiveEditorHistory,
   type ActiveEditorHistoryModel,
@@ -253,7 +253,11 @@ export function measureMaximumStrokeRun(strokeCount: number): MaximumStrokeRun {
       maximumFinalizedChunkSamples,
       commit.instrumentation.maximumFinalizedChunkSamples,
     );
-    if (commit.points.length !== 4096 * 3 || commit.geometry.d.length <= 100_000) {
+    if (
+      commit.points.length !== 4096 * 3 ||
+      commit.geometry.length === 0 ||
+      commit.geometry.some(({ d }) => d.length === 0)
+    ) {
       throw new Error("Maximum-stroke benchmark produced an incomplete handoff.");
     }
   }

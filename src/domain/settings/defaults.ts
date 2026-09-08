@@ -5,12 +5,13 @@ import {
   OUTLINE_ONLY_TOOLS,
   PEN_WIDTHS,
   type ColorV1,
-  type InkbookDeviceSettingsV1,
-  type InkbookSettingsV3,
+  type InkbookDeviceSettingsV2,
+  type InkbookSettingsV4,
   type OutlineDefaultsV1,
   type ShapeDefaultsV1,
   type ToolDefaultsV1,
 } from "./types";
+import { createBuiltInKeyboardShortcuts } from "./keyboard-shortcuts";
 
 const THEME_TEXT_COLOR: ColorV1 = Object.freeze({ type: "theme-text" });
 const RED_COLOR: ColorV1 = Object.freeze({ type: "rgba", value: "#EF4444FF" });
@@ -46,7 +47,7 @@ function outlineDefaults(): OutlineDefaultsV1 {
 }
 
 function shapeDefaults(): ShapeDefaultsV1 {
-  return { ...outlineDefaults(), fillColor: null, fillOpacity: 0.15 };
+  return { ...outlineDefaults(), fillColor: null, fillOpacity: 0.5 };
 }
 
 function toolDefaults(): ToolDefaultsV1 {
@@ -56,6 +57,7 @@ function toolDefaults(): ToolDefaultsV1 {
   ]) as ToolDefaultsV1["shapes"];
 
   return {
+    select: { area: "lasso", inclusion: "touched" },
     pen: {
       color: { type: "theme-text" },
       width: PEN_WIDTHS[1],
@@ -80,11 +82,18 @@ function toolDefaults(): ToolDefaultsV1 {
   };
 }
 
-export function createBuiltInSettings(): InkbookSettingsV3 {
+export function createBuiltInSettings(): InkbookSettingsV4 {
   return {
-    version: 3,
+    version: 4,
     startupTool: "draw",
     toolDefaults: toolDefaults(),
+    snapping: {
+      enabled: true,
+      angles: true,
+      bends: true,
+      connections: true,
+      structures: true,
+    },
     pageDefaults: {
       backgroundType: "squares",
       backgroundSpacing: {
@@ -100,12 +109,13 @@ export function createBuiltInSettings(): InkbookSettingsV3 {
   };
 }
 
-export function createBuiltInDeviceSettings(): InkbookDeviceSettingsV1 {
+export function createBuiltInDeviceSettings(): InkbookDeviceSettingsV2 {
   return {
-    version: 1,
+    version: 2,
     fingerDrawingEnabled: false,
     penTapInsertion: "off",
     leftHandedToolbar: false,
     motion: "system",
+    keyboardShortcuts: createBuiltInKeyboardShortcuts(),
   };
 }

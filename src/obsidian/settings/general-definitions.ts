@@ -45,6 +45,7 @@ export function generalGroup(
 ): SettingDefinitionGroup<SettingsControlKey> {
   return {
     type: "group",
+    cls: "inkbook-settings-general-group",
     items: [
       dropdown(
         "startupTool",

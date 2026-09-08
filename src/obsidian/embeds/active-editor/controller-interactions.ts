@@ -13,6 +13,9 @@ import { visibleSelectionCenter } from "./controller-elements";
 import type { ActiveEditorChromeState } from "./controller-chrome-state";
 import type { ActivePointerCaptureOwner } from "./pointer-capture";
 import type { GestureController } from "../../../editor/gestures/public";
+import type { SelectionFrameSession } from "../../../editor/selection/public";
+import { ActiveEditorBackgroundSession } from "./background-session";
+import { ActiveEditorHistoryTraversal } from "./history-traversal";
 
 export interface ActiveEditorInteractionsOptions {
   readonly controller: ActiveEditorControllerOptions;
@@ -26,7 +29,33 @@ export interface ActiveEditorInteractionsOptions {
   readonly ownerWindow: Window;
   readonly onPendingChanged: (pending: boolean) => void;
   readonly selection: () => ReadonlySet<string>;
+  readonly selectionFrames: SelectionFrameSession;
   readonly setSelection: (selection: ReadonlySet<string>) => void;
+  readonly snapping: () => ActiveEditorControllerOptions["snapping"];
+}
+
+export function createControllerHistorySessions(options: {
+  readonly controller: ActiveEditorControllerOptions;
+  readonly history: ActiveEditorHistory;
+  readonly onPendingChanged: (pending: boolean) => void;
+}): readonly [ActiveEditorBackgroundSession, ActiveEditorHistoryTraversal] {
+  const controller = options.controller;
+  return [
+    new ActiveEditorBackgroundSession({
+      backgroundSpacing: controller.backgroundSpacing,
+      history: options.history,
+      model: controller.model,
+      onPageChanged: controller.onPageChanged,
+      onPagePreviewFinish: controller.onPagePreviewFinish,
+      onPagePreview: controller.onPagePreview,
+      onStateChanged: controller.onStateChanged,
+    }),
+    new ActiveEditorHistoryTraversal({
+      history: options.history,
+      onPendingChanged: options.onPendingChanged,
+      onStateChanged: controller.onStateChanged,
+    }),
+  ];
 }
 
 export function createActiveEditorInteractions(options: ActiveEditorInteractionsOptions) {
@@ -43,6 +72,7 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
   const actions = new ActiveEditorActions({
     currentSelection: options.selection,
     history: options.history,
+    isAttached: options.isAttached,
     isEnabled: options.isEnabled,
     model: controller.model,
     onCopyEmbed: controller.onCopyEmbed,
@@ -61,17 +91,22 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
     actions,
     coalesced: new CoalescedPointerInput({
       dispatchMove: options.dispatchMove,
+      frameScheduler: options.ownerWindow,
       now: () => options.ownerWindow.performance.now(),
       project: (event) => options.navigation.screenPointer(event),
     }),
     handles: new ActiveEditorHandleInteraction({
+      frameScheduler: options.ownerWindow,
       history: options.history,
+      layout: controller.selectionMoveLayout,
       model: controller.model,
       pageToScreen: (point) => options.navigation.localPointFromPage(point),
       preparedHistory,
       renderer: controller.renderer,
       sceneStore: controller.sceneStore,
+      selectionFrames: options.selectionFrames,
       selection: options.selection,
+      snapping: options.snapping,
       zoom: () => options.navigation.zoom,
     }),
     menus: new ActiveEditorMenuController({
@@ -93,19 +128,25 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
 export function createControllerNavigation(options: {
   readonly controller: ActiveEditorControllerOptions;
   readonly getInput: ActiveEditorNavigationOptions["getInput"];
+  readonly isSelectionMoveActive: () => boolean;
   readonly renderSelection: () => void;
   readonly scrollOwner: ActiveEditorNavigationOptions["scrollOwner"];
   readonly setInput: ActiveEditorNavigationOptions["setInput"];
 }): ActiveEditorNavigation {
   const controller = options.controller;
+  let appliedZoom = options.getInput().zoom;
   return new ActiveEditorNavigation({
     activePageHeight: () =>
+      controller.selectionMoveLayout.currentHeight?.() ??
       derivePageExtent(controller.model.page, controller.model.store.getMaximumBottom() ?? null)
         .activeHeight,
     applyCamera: (camera) => {
       controller.renderer.setCamera(camera);
-      options.renderSelection();
-      controller.renderer.flushCameraAndOverlayFrame();
+      if (camera.zoom !== appliedZoom || !options.isSelectionMoveActive()) {
+        options.renderSelection();
+      }
+      appliedZoom = camera.zoom;
+      controller.renderer.flushPointerFeedbackFrame();
     },
     applyZoomLayout: controller.applyZoomLayout,
     container: controller.container,

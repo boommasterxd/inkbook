@@ -1,10 +1,16 @@
 import { arrangeRenderBand, type ArrangeAction } from "../../../domain/commands/arrange";
 import type { PasteInvocation } from "../../../persistence/clipboard/public";
+import {
+  TOOLBAR_ACTION_CONFIRMATION_MS,
+  type ToolbarActionConfirmation,
+} from "../../../rendering/ui/toolbar-types";
+import type { InkbookFeedbackCode } from "../../feedback";
 import type { ContextMenuAction } from "../../menus/index";
 import type { EditableDocumentModel } from "../vault-document-session";
 
 import { ActiveEditorClipboardController } from "./controller-clipboard";
 import { readClipboardCandidates, type SynchronousClipboardData } from "./clipboard-reader";
+import { isClipboardAction } from "./controller-helpers";
 import {
   arrangeSelectionAvailability,
   canArrangeSelection,
@@ -13,11 +19,11 @@ import {
 import { ActiveDocumentHistory } from "./document-history";
 import type { ActiveEditorHistory } from "./history";
 import type { ElementSceneStore } from "./scene-store";
-import type { InkbookFeedbackCode } from "../../feedback";
 
 export interface ActiveEditorActionsOptions {
   readonly currentSelection: () => ReadonlySet<string>;
   readonly history: ActiveEditorHistory;
+  readonly isAttached: () => boolean;
   readonly isEnabled: () => boolean;
   readonly model: EditableDocumentModel;
   readonly onCopyEmbed: () => void;
@@ -49,7 +55,10 @@ export class ActiveEditorActions {
   readonly #setSelection: (selection: ReadonlySet<string>) => void;
   readonly #visibleCenter: () => { readonly x: number; readonly y: number };
   readonly #lastSessionPointer: () => { readonly x: number; readonly y: number } | null;
-  #externalPasteAvailable = false;
+  readonly #systemClipboardReadable: boolean;
+  #actionConfirmation: ToolbarActionConfirmation | null = null;
+  #confirmationSequence = 0;
+  #confirmationTimer: number | undefined;
   #pasteProbe: Promise<boolean> | undefined;
   #pasteProbeGeneration = 0;
 
@@ -67,6 +76,8 @@ export class ActiveEditorActions {
     this.#setSelection = options.setSelection;
     this.#visibleCenter = options.visibleCenter;
     this.#lastSessionPointer = options.lastSessionPointer;
+    this.#systemClipboardReadable =
+      typeof options.ownerWindow.navigator.clipboard?.read === "function";
     this.#documentHistory = new ActiveDocumentHistory({
       history: options.history,
       model: options.model,
@@ -75,17 +86,19 @@ export class ActiveEditorActions {
     this.#clipboard = new ActiveEditorClipboardController({
       currentSelection: options.currentSelection,
       history: options.history,
-      isPresentationAttached: options.isEnabled,
+      isPresentationAttached: options.isAttached,
       model: options.model,
-      onPasteAvailabilityChanged: (available) => {
-        if (!available) this.#externalPasteAvailable = false;
-        if (!this.#externalPasteAvailable || !available) options.onStateChanged();
+      onPasteAvailabilityChanged: () => options.onStateChanged(),
+      onPasteCommitted: (_activeTool, invocation) => {
+        if (invocation.kind !== "context-menu") options.onPasteCommitted();
       },
-      onPasteCommitted: () => options.onPasteCommitted(),
       onPendingChanged: options.onPendingChanged,
       onResult: (result) => {
+        if (result.kind === "copied" || result.kind === "committed") {
+          this.#confirmClipboardAction(result.action);
+        }
         const code = feedbackForClipboardResult(result);
-        if (code !== undefined && options.isEnabled()) this.#onFeedback?.(code);
+        if (code !== undefined && options.isAttached()) this.#onFeedback?.(code);
       },
       onSelectionChanged: options.setSelection,
       ownerWindow: options.ownerWindow,
@@ -93,11 +106,39 @@ export class ActiveEditorActions {
   }
 
   public get canPaste(): boolean {
-    return this.#clipboard.canPaste || this.#externalPasteAvailable;
+    return this.#clipboard.canCopyOrCut && this.#clipboard.canPaste;
+  }
+
+  public get canRequestPaste(): boolean {
+    return (
+      this.#isEnabled() &&
+      !this.#documentHistory.pending &&
+      this.#clipboard.canCopyOrCut &&
+      (this.canPaste || this.#systemClipboardReadable)
+    );
+  }
+
+  public get canClaimPasteShortcut(): boolean {
+    return (
+      this.#systemClipboardReadable || this.#clipboard.hasPastePayload || this.#clipboard.pending
+    );
+  }
+
+  public get pasteVisible(): boolean {
+    return this.#clipboard.hasPastePayload;
+  }
+
+  public get actionConfirmation(): ToolbarActionConfirmation | null {
+    return this.#actionConfirmation;
+  }
+
+  public get hasValidatedPaste(): boolean {
+    return this.#clipboard.hasPastePayload;
   }
 
   public dispose(): void {
     this.#pasteProbeGeneration += 1;
+    this.#clearConfirmationTimer();
     this.#clipboard.dispose();
     this.#documentHistory.dispose();
   }
@@ -122,14 +163,15 @@ export class ActiveEditorActions {
   }
 
   public execute(action: ContextMenuAction, invocation?: PasteInvocation): void {
-    if (!this.isAvailable(action)) throw new Error(`Inkbook action is unavailable: ${action}`);
-    const selection = this.#currentSelection();
-    if (action === "copy") void this.#clipboard.copy(selection);
-    else if (action === "cut") void this.#clipboard.cut(selection);
-    else if (action === "delete") void this.#deleteSelection();
-    else if (action === "paste") {
-      this.#paste(invocation ?? this.#toolbarPaste());
-    } else if (isArrangeAction(action)) this.#arrange(action);
+    if (isClipboardAction(action)) {
+      this.#executeClipboard(action, invocation);
+      return;
+    }
+    if (!this.isAvailable(action)) {
+      throw new Error(`Inkbook action is unavailable: ${action}`);
+    }
+    if (action === "delete") void this.#deleteSelection();
+    else if (isArrangeAction(action)) this.#arrange(action);
     else if (action === "erase-all") void this.#eraseAll();
     else if (action === "copy-embed") this.#onCopyEmbed();
     else if (action === "delete-embed") this.#onDeleteEmbed();
@@ -150,7 +192,7 @@ export class ActiveEditorActions {
 
   public shortcutPaste(): void {
     const center = this.#visibleCenter();
-    this.#paste({
+    this.execute("paste", {
       kind: "shortcut",
       lastSessionPointer: this.#lastSessionPointer(),
       visibleCanvasCenter: center,
@@ -158,14 +200,31 @@ export class ActiveEditorActions {
   }
 
   public pasteFromClipboardData(data: SynchronousClipboardData | null): boolean {
+    if (!this.#isEnabled() || this.#documentHistory.pending) {
+      this.#onFeedback?.("clipboard-operation-busy");
+      return true;
+    }
     this.#invalidatePasteProbe();
     const accepted = this.#clipboard.pasteFromClipboardData(data, {
       kind: "shortcut",
       lastSessionPointer: this.#lastSessionPointer(),
       visibleCanvasCenter: this.#visibleCenter(),
     });
-    if (!accepted) this.#setExternalPasteAvailable(false);
     return accepted;
+  }
+
+  #executeClipboard(
+    action: "copy" | "cut" | "paste",
+    invocation: PasteInvocation | undefined,
+  ): void {
+    if (!this.#isEnabled() || this.#documentHistory.pending) {
+      this.#onFeedback?.("clipboard-operation-busy");
+      return;
+    }
+    const selection = this.#currentSelection();
+    if (action === "copy") void this.#clipboard.copy(selection);
+    else if (action === "cut") void this.#clipboard.cut(selection);
+    else this.#paste(invocation ?? this.#toolbarPaste());
   }
 
   #arrange(action: ArrangeAction): void {
@@ -193,7 +252,7 @@ export class ActiveEditorActions {
       return this.canPaste;
     }
     if (generation !== this.#pasteProbeGeneration || !this.#isEnabled()) return this.canPaste;
-    this.#setExternalPasteAvailable(valid);
+    this.#clipboard.setProbedPasteAvailable(valid);
     return this.canPaste;
   }
 
@@ -211,15 +270,32 @@ export class ActiveEditorActions {
         result.kind === "unavailable" &&
         (result.reason === "clipboard-read-failed" || result.reason === "invalid-payload")
       ) {
-        this.#setExternalPasteAvailable(false);
+        this.#clipboard.setProbedPasteAvailable(false);
       }
     });
   }
 
-  #setExternalPasteAvailable(available: boolean): void {
-    const availableBefore = this.canPaste;
-    this.#externalPasteAvailable = available;
-    if (availableBefore !== this.canPaste) this.#onStateChanged();
+  #confirmClipboardAction(action: "copy" | "cut" | "paste"): void {
+    this.#clearConfirmationTimer();
+    this.#confirmationSequence =
+      this.#confirmationSequence === Number.MAX_SAFE_INTEGER ? 1 : this.#confirmationSequence + 1;
+    const sequence = this.#confirmationSequence;
+    this.#actionConfirmation = { action, sequence };
+    this.#onStateChanged();
+    const schedule = this.#ownerWindow.setTimeout?.bind(this.#ownerWindow);
+    if (schedule === undefined) return;
+    this.#confirmationTimer = schedule(() => {
+      if (this.#actionConfirmation?.sequence !== sequence) return;
+      this.#actionConfirmation = null;
+      this.#confirmationTimer = undefined;
+      this.#onStateChanged();
+    }, TOOLBAR_ACTION_CONFIRMATION_MS);
+  }
+
+  #clearConfirmationTimer(): void {
+    if (this.#confirmationTimer === undefined) return;
+    this.#ownerWindow.clearTimeout?.(this.#confirmationTimer);
+    this.#confirmationTimer = undefined;
   }
 
   async #deleteSelection(): Promise<void> {
@@ -255,14 +331,14 @@ export class ActiveEditorActions {
 function feedbackForClipboardResult(
   result: import("./controller-clipboard").ClipboardControllerResult,
 ): InkbookFeedbackCode | undefined {
-  if (result.kind === "copied" || result.kind === "committed") {
-    return "systemWriteSucceeded" in result && !result.systemWriteSucceeded
-      ? "clipboard-copy-fallback"
-      : undefined;
-  }
+  if (result.kind === "copied" || result.kind === "committed") return undefined;
+  if (result.reason === "busy") return "clipboard-operation-busy";
+  if (result.reason === "empty-selection") return "clipboard-copy-failed";
   if (result.reason === "encode-failed") return "clipboard-copy-failed";
+  if (result.reason === "system-write-failed") return "clipboard-copy-fallback";
   if (result.reason === "clipboard-read-failed") return "clipboard-paste-read-failed";
   if (result.reason === "invalid-payload") return "clipboard-paste-invalid";
+  if (result.reason === "paste-failed") return "clipboard-paste-failed";
   if (result.reason === "stale-operation") {
     if (result.action === "cut") return "cut-selection-changed";
     return result.action === "paste" ? "clipboard-paste-stale" : "clipboard-copy-failed";

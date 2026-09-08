@@ -16,8 +16,10 @@ const MAIN_THREAD_SLICE_MS = 4;
 
 export interface TrustedSvgOutput {
   readonly content: string;
+  readonly lockedHeight: number;
   readonly outputHash: string;
   readonly revision: number;
+  readonly snapshotHash: string | null;
   readonly totalBytes: number;
 }
 
@@ -173,7 +175,12 @@ async function validateSafeSvgIncrementally(
 }
 
 function trustedOutput(inspected: InspectedOutput, safe: SafeSvgValidation): TrustedSvgOutput {
-  return { ...inspected, revision: safe.revision };
+  return {
+    ...inspected,
+    lockedHeight: safe.lockedHeight,
+    revision: safe.revision,
+    snapshotHash: safe.snapshotHash,
+  };
 }
 
 function assertOwnedBytes(output: Uint8Array): void {

@@ -5,6 +5,7 @@ import {
 } from "../../../editor/selection/public";
 import type { TransformSliceScheduler } from "../../../editor/selection/transforms";
 import type { EditableDocumentModel } from "../vault-document-session";
+import type { SelectionFrameHistoryEffect } from "../../../editor/selection/public";
 
 import type { ActiveEditorHistory } from "./history";
 
@@ -23,6 +24,10 @@ export interface PreparedElementHistoryOptions {
   readonly ownerWindow: Window;
   readonly sliceBudgetMs?: () => number;
 }
+
+type SelectionFrameEffectFactory = (
+  replacements: readonly InkElementV1[],
+) => SelectionFrameHistoryEffect | undefined;
 
 export class PreparedElementHistory {
   readonly #history: ActiveEditorHistory;
@@ -58,27 +63,38 @@ export class PreparedElementHistory {
     this.#setPending(false);
   }
 
-  public commitHandle(session: SelectionHandleSession): boolean {
+  public commitHandle(
+    session: SelectionHandleSession,
+    onCompleted?: (committed: boolean) => void,
+    frameEffect?: SelectionFrameEffectFactory,
+  ): boolean {
     if (this.#pending || this.#disposed) return false;
     const previewCommit = this.#motion.beginPreviewCommit();
     this.#run(async (generation) => {
       try {
         const prepared = await session.prepareCommitTimeSliced(this.#scheduler(generation));
         if (prepared.status !== "ready") return false;
+        const effect = frameEffect?.(prepared.replacements);
         return await this.#commitApplied(
           prepared.previous,
           prepared.replacements,
           generation,
           previewCommit,
+          effect,
         );
       } finally {
         previewCommit.cancel();
       }
-    });
+    }, onCompleted);
     return true;
   }
 
-  public commitMove(elements: readonly InkElementV1[], delta: PointV1): boolean {
+  public commitMove(
+    elements: readonly InkElementV1[],
+    delta: PointV1,
+    onCompleted?: (committed: boolean) => void,
+    effect?: SelectionFrameHistoryEffect,
+  ): boolean {
     if (elements.length <= SYNCHRONOUS_SELECTION_LIMIT || this.#pending || this.#disposed) {
       return false;
     }
@@ -90,11 +106,17 @@ export class PreparedElementHistory {
         if (replacements === null) return false;
         const plan = await this.#model.store.planReplacementsTimeSliced(replacements, scheduler);
         if (plan === null || plan === "cancelled") return false;
-        return await this.#commitApplied(elements, plan.replacements, generation, previewCommit);
+        return await this.#commitApplied(
+          elements,
+          plan.replacements,
+          generation,
+          previewCommit,
+          effect,
+        );
       } finally {
         previewCommit.cancel();
       }
-    });
+    }, onCompleted);
     return true;
   }
 
@@ -103,6 +125,7 @@ export class PreparedElementHistory {
     replacements: readonly InkElementV1[],
     generation: number,
     previewCommit: ReturnType<PreparedElementHistoryOptions["motion"]["beginPreviewCommit"]>,
+    effect?: SelectionFrameHistoryEffect,
   ): Promise<boolean> {
     const committed = await this.#replace(
       replacements,
@@ -112,10 +135,15 @@ export class PreparedElementHistory {
     );
     if (!committed) return false;
     await this.#yieldHostFrame();
-    this.#history.registerAppliedReplacement(previous, replacements, {
-      redo: () => this.#replace(replacements, this.#generation),
-      undo: () => this.#replace(previous, this.#generation),
-    });
+    this.#history.registerAppliedReplacement(
+      previous,
+      replacements,
+      {
+        redo: () => this.#replace(replacements, this.#generation),
+        undo: () => this.#replace(previous, this.#generation),
+      },
+      effect,
+    );
     return true;
   }
 
@@ -139,11 +167,17 @@ export class PreparedElementHistory {
     return this.#model.commitPreparedElementReplacement(preparation.token) === "committed";
   }
 
-  #run(operation: (generation: number) => Promise<boolean>): void {
+  #run(
+    operation: (generation: number) => Promise<boolean>,
+    onCompleted?: (committed: boolean) => void,
+  ): void {
     const generation = ++this.#generation;
     this.#setPending(true);
     void operation(generation)
       .catch(() => false)
+      .then((committed) => {
+        if (!this.#disposed && generation === this.#generation) onCompleted?.(committed);
+      })
       .finally(() => {
         if (generation === this.#generation) this.#setPending(false);
       });
