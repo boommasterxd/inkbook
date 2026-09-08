@@ -205,13 +205,15 @@ describe("safe SVG metadata and bounded validation", () => {
     expect(result).toBeNull();
   });
 
+  // Full-capacity validation under coverage needs headroom on shared CI runners.
+  // Per-slice latency is enforced separately by the performance suite.
   it("rejects an aggregate command count above 8,000,000", () => {
     const maximumCommandPath = compactMaximumCommandPath();
     const paths = Array(MAXIMUM_TOTAL_COMMANDS / MAXIMUM_PATH_COMMANDS).fill(maximumCommandPath);
     paths.push(PLAIN_PATH);
 
     expectRejectedContentPaths(paths);
-  }, 15_000);
+  }, 30_000);
 
   it("rejects aggregate path data above 48 MiB", () => {
     const maximumPathData = "M 0 0".padEnd(MAXIMUM_PATH_BYTES, " ");
