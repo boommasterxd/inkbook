@@ -298,6 +298,7 @@ function oversizedFragment(
     canonicalMetadataUtf8: textEncoder.encode(metadata),
     element,
     metadata,
+    metadataBytes: metadata.length,
     pathDataBytes: 0,
     retainedBytes: metadata.length + svg.length,
     svg,

@@ -11,6 +11,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/rendering/scene/live-stroke-refresh-profile.test.ts",
   ]),
   budgetOnly: Object.freeze([
+    "test/performance/domain/canonical-rounding-performance.test.ts",
     "test/performance/domain/domain-performance.test.ts",
     "test/performance/domain/incremental-replacement-performance.test.ts",
     "test/performance/domain/pressure-outline-performance.test.ts",
@@ -19,6 +20,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/editor/interaction-refresh-gestures.test.ts",
     "test/performance/editor/interaction-refresh-snapping.test.ts",
     "test/performance/editor/selection-hot-paths.test.ts",
+    "test/performance/editor/selection-scale-rotation-performance.test.ts",
     "test/performance/persistence/safe-svg-validation.test.ts",
     "test/performance/persistence/wire-preparation-and-adoption.test.ts",
     "test/performance/rendering/scene/interaction-refresh-profile.test.ts",
@@ -36,6 +38,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/persistence/incremental-validation-capacity.test.ts",
     "test/performance/persistence/memory-and-cache.test.ts",
     "test/performance/persistence/pressure-group-integrity.test.ts",
+    "test/performance/persistence/runtime-export-cache.test.ts",
     "test/performance/persistence/serialization-and-worker.test.ts",
     "test/performance/persistence/stress-limits.test.ts",
     "test/performance/rendering/scene/dense-viewport-reconciliation.test.ts",

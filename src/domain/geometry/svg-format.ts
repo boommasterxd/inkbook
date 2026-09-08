@@ -1,24 +1,10 @@
-import { MAX_ABSOLUTE_COORDINATE } from "../schema/constants";
+import { canonicalizeGeometryNumber as canonicalGeometryNumber } from "../schema/canonical";
 import type { PointV1 } from "../schema/types";
-import { roundCanonical } from "./primitives";
 
-const MAXIMUM_FAST_ABSOLUTE_VALUE = MAX_ABSOLUTE_COORDINATE * 2;
-const ROUNDING_SCALE = 1_000;
+export { canonicalGeometryNumber };
 
 function svgNumber(value: number): string {
   return String(canonicalGeometryNumber(value));
-}
-
-export function canonicalGeometryNumber(value: number): number {
-  if (!Number.isFinite(value) || Math.abs(value) > MAXIMUM_FAST_ABSOLUTE_VALUE) {
-    return roundCanonical(value);
-  }
-  const scaled = value * ROUNDING_SCALE;
-  const fraction = Math.abs(scaled - Math.trunc(scaled));
-  const multiplicationError = Number.EPSILON * Math.max(1, Math.abs(scaled)) * 2;
-  if (Math.abs(fraction - 0.5) <= multiplicationError) return roundCanonical(value);
-  const rounded = Math.round(scaled) / ROUNDING_SCALE;
-  return Object.is(rounded, -0) ? 0 : rounded;
 }
 
 export function moveTo(point: PointV1): string {

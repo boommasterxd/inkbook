@@ -204,15 +204,13 @@ function flattenPointGeometryRotation(element: InkElementV1): InkElementV1 {
   const rotate = (point: PointV1): PointV1 =>
     canonicalPoint(rotatePointClockwise(point, element.pivot, element.rotation));
   if (element.kind === "stroke") {
-    return {
-      ...element,
-      points: element.points.map((value, index, points) => {
-        if (index % 3 === 2) return value;
-        if (index % 3 === 1) return rotate({ x: points[index - 1]!, y: value }).y;
-        return rotate({ x: value, y: points[index + 1]! }).x;
-      }),
-      rotation: 0,
-    };
+    const points = element.points.slice();
+    for (let index = 0; index < points.length; index += 3) {
+      const rotated = rotate({ x: points[index]!, y: points[index + 1]! });
+      points[index] = rotated.x;
+      points[index + 1] = rotated.y;
+    }
+    return { ...element, points, rotation: 0 };
   }
   if (
     element.kind === "line" ||

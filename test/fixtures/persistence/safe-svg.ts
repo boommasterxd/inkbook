@@ -1,4 +1,5 @@
 import type { InkSnapshotV1 } from "../../../src/domain/schema/public";
+import type { validateSafeSvgSteps } from "../../../src/persistence/documents/safe-svg-validator";
 import { serializeSvgEnvelope } from "../../../src/persistence/documents/svg-envelope";
 
 export const MAXIMUM_PATH_BYTES = 8 * 1024 * 1024;
@@ -27,4 +28,14 @@ export function createMaximumComplexitySvg(): string {
     content: [`<path d="${createMaximumComplexityPath()}" fill="none" stroke="#112233FF"/>`],
     highlights: [],
   });
+}
+
+export function exhaustValidation(steps: ReturnType<typeof validateSafeSvgSteps>) {
+  let yields = 0;
+  let step = steps.next();
+  while (!step.done) {
+    yields += 1;
+    step = steps.next();
+  }
+  return { result: step.value, yields };
 }

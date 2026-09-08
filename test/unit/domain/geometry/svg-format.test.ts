@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { roundCanonical } from "../../../../src/domain/geometry/public";
 import {
   arcTo,
   canonicalGeometryNumber,
@@ -36,7 +35,7 @@ describe("SVG number formatting", () => {
     Number.MAX_VALUE,
   ])("matches canonical reference formatting for boundary value %s", (value) => {
     expect(moveTo({ x: value, y: value })).toBe(referenceMove(value, value));
-    expect(canonicalGeometryNumber(value)).toBe(roundCanonical(value));
+    expect(canonicalGeometryNumber(value)).toBe(Number(referenceNumber(value)));
   });
 
   it("matches the canonical reference across a large deterministic value set", () => {
@@ -65,5 +64,5 @@ function referenceMove(x: number, y: number): string {
 }
 
 function referenceNumber(value: number): string {
-  return String(roundCanonical(value));
+  return String(Number(value.toFixed(3)));
 }

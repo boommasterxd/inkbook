@@ -36,6 +36,32 @@ describe("bounded canonical pressure geometry", () => {
     await annotate(`Canonical 16-sample pressure geometry p99=${p99.toFixed(3)} ms`, "performance");
   });
 
+  it("keeps 64 canonical resize curves within the frame budget at varying scales", async ({
+    annotate,
+  }) => {
+    const source = Array.from({ length: 70 }, (_, index) => sample(index));
+    const durations: number[] = [];
+    let minimumCommands = Infinity;
+    for (let run = 0; run < 600; run += 1) {
+      const scaleX = 0.35 + (run % 173) * 0.0137;
+      const scaleY = 0.61 + (run % 137) * 0.0193;
+      const started = performance.now();
+      const centers = source.map((point) => ({
+        x: 123456.789 + point.x * scaleX,
+        y: -98765.432 + point.y * scaleY,
+        pressure: point.pressure,
+      }));
+      const parts = buildPressureOutline(centers, 22, { firstBoundary: 3, lastBoundary: 67 });
+      durations.push(performance.now() - started);
+      minimumCommands = Math.min(minimumCommands, parts[0]!.d.match(/[Qq]/g)!.length);
+      expect(parts).toHaveLength(1);
+    }
+    const p99 = interactionP99(durations);
+    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expect(minimumCommands).toBeGreaterThanOrEqual(128);
+    await annotate(`Canonical 64-curve resize geometry p99=${p99.toFixed(3)} ms`, "performance");
+  });
+
   it("keeps 4096-point live writing bounded while preserving every pressure transition", async ({
     annotate,
   }) => {

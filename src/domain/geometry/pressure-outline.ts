@@ -33,6 +33,10 @@ type StripPiece = Extract<PressureOutlinePiece, { kind: "strip" }>;
 const COMPLETE_SLICE: PressureSlice = { firstBoundary: null, lastBoundary: null };
 const MAXIMUM_TANGENT_SINE = 0.25;
 const DEGENERATE_LENGTH = 1e-9;
+// The canonical precision has exactly 1000 fractional spellings; this table is bounded.
+const FRACTION_TEXT = Array.from({ length: 1000 }, (_, fraction) =>
+  fraction === 0 ? "" : `.${String(fraction).padStart(3, "0").replace(/0+$/, "")}`,
+);
 
 /** Same-winding monotone ribbons keep continuous pressure and additive self-overlap. */
 export function buildPressureOutline(
@@ -142,55 +146,55 @@ function compactQuadratic(control: PointV1, end: PointV1, current: PointV1): str
   const endY = Math.round(end.y * 1000);
   const currentX = Math.round(current.x * 1000);
   const currentY = Math.round(current.y * 1000);
-  const relativeControl = { x: controlX - currentX, y: controlY - currentY };
-  const relativeEnd = { x: endX - currentX, y: endY - currentY };
+  const relativeControlX = controlX - currentX;
+  const relativeControlY = controlY - currentY;
+  const relativeEndX = endX - currentX;
+  const relativeEndY = endY - currentY;
   const absoluteLength =
     positionLength(controlX, controlY, true) + positionLength(endX, endY, false);
   const relativeLength =
-    positionLength(relativeControl.x, relativeControl.y, true, true) +
-    positionLength(relativeEnd.x, relativeEnd.y, false, true);
-  return boundedThousandths(relativeControl) &&
-    boundedThousandths(relativeEnd) &&
+    positionLength(relativeControlX, relativeControlY, true, true) +
+    positionLength(relativeEndX, relativeEndY, false, true);
+  return boundedThousandths(relativeControlX, relativeControlY) &&
+    boundedThousandths(relativeEndX, relativeEndY) &&
     relativeLength < absoluteLength
-    ? quadraticCommand("q", relativeControl, relativeEnd, 1000)
-    : quadraticCommand("Q", control, end, 1);
+    ? quadraticCommand("q", relativeControlX, relativeControlY, relativeEndX, relativeEndY)
+    : quadraticCommand("Q", controlX, controlY, endX, endY);
 }
 
 function compactArc(radius: number, current: PointV1, end: PointV1): string {
   if (!boundedCoordinates(current) || !boundedCoordinates(end)) return arcTo(radius, 0, end);
   const endX = Math.round(end.x * 1000);
   const endY = Math.round(end.y * 1000);
-  const relative = {
-    x: endX - Math.round(current.x * 1000),
-    y: endY - Math.round(current.y * 1000),
-  };
+  const relativeX = endX - Math.round(current.x * 1000);
+  const relativeY = endY - Math.round(current.y * 1000);
   const useRelative =
-    boundedThousandths(relative) &&
-    positionLength(relative.x, relative.y, false, true) < positionLength(endX, endY, false);
-  const endpoint = useRelative ? relative : end;
-  const divisor = useRelative ? 1000 : 1;
-  return `${useRelative ? "a" : "A"}${radius} ${radius} 0 0 0${followingCanonical(endpoint.x / divisor, useRelative)}${followingCanonical(endpoint.y / divisor, useRelative)}`;
+    boundedThousandths(relativeX, relativeY) &&
+    positionLength(relativeX, relativeY, false, true) < positionLength(endX, endY, false);
+  return `${useRelative ? "a" : "A"}${radius} ${radius} 0 0 0${followingCanonical(useRelative ? relativeX : endX, useRelative)}${followingCanonical(useRelative ? relativeY : endY, useRelative)}`;
 }
 
 function quadraticCommand(
   command: "Q" | "q",
-  control: PointV1,
-  end: PointV1,
-  divisor: number,
+  controlX: number,
+  controlY: number,
+  endX: number,
+  endY: number,
 ): string {
   const compact = command === "q";
-  return `${command}${canonicalText(control.x / divisor, compact)}${followingCanonical(control.y / divisor, compact)}${followingCanonical(end.x / divisor, compact)}${followingCanonical(end.y / divisor, compact)}`;
+  return `${command}${canonicalText(controlX, compact)}${followingCanonical(controlY, compact)}${followingCanonical(endX, compact)}${followingCanonical(endY, compact)}`;
 }
 
-function canonicalText(value: number, compact: boolean): string {
-  const text = String(value);
-  if (!compact || value === 0 || Math.abs(value) >= 1) return text;
-  return value < 0 ? `-${text.slice(2)}` : text.slice(1);
+function canonicalText(thousandths: number, compact: boolean): string {
+  const absolute = Math.abs(thousandths);
+  const integer = Math.floor(absolute / 1000);
+  const whole = compact && absolute > 0 && integer === 0 ? "" : String(integer);
+  return `${thousandths < 0 ? "-" : ""}${whole}${FRACTION_TEXT[absolute % 1000]!}`;
 }
 
-function followingCanonical(value: number, compact = false): string {
-  const text = canonicalText(value, compact);
-  return value < 0 ? text : ` ${text}`;
+function followingCanonical(thousandths: number, compact: boolean): string {
+  const text = canonicalText(thousandths, compact);
+  return thousandths < 0 ? text : ` ${text}`;
 }
 
 function positionLength(x: number, y: number, initial: boolean, compact = false): number {
@@ -233,8 +237,8 @@ function boundedCoordinates(point: PointV1): boolean {
   return Math.abs(point.x) <= 1_000_000 && Math.abs(point.y) <= 1_000_000;
 }
 
-function boundedThousandths(point: PointV1): boolean {
-  return Math.abs(point.x) <= 1_000_000_000 && Math.abs(point.y) <= 1_000_000_000;
+function boundedThousandths(x: number, y: number): boolean {
+  return Math.abs(x) <= 1_000_000_000 && Math.abs(y) <= 1_000_000_000;
 }
 
 function outlinePiece(curve: PressureCurve, width: number): PressureOutlinePiece {

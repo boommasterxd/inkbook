@@ -1,5 +1,7 @@
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const RGBA_PATTERN = /^#[0-9A-F]{8}$/;
+const MAXIMUM_FAST_ABSOLUTE_VALUE = 2_000_000;
+const ROUNDING_SCALE = 1_000;
 
 function canonicalizeDecimal(value: number, decimals: number): number {
   const rounded = Number(value.toFixed(decimals));
@@ -10,7 +12,15 @@ export function canonicalizeGeometryNumber(value: number): number {
   if (!Number.isFinite(value)) {
     throw new RangeError("Geometry values must be finite.");
   }
-  return canonicalizeDecimal(value, 3);
+  if (Math.abs(value) > MAXIMUM_FAST_ABSOLUTE_VALUE) return canonicalizeDecimal(value, 3);
+  const scaled = value * ROUNDING_SCALE;
+  const fraction = Math.abs(scaled - Math.trunc(scaled));
+  const multiplicationError = Number.EPSILON * Math.max(1, Math.abs(scaled)) * 2;
+  // Multiplication can hide which side of a decimal tie the original double is on.
+  // Preserve toFixed semantics near those ties, including negative half values.
+  if (Math.abs(fraction - 0.5) <= multiplicationError) return canonicalizeDecimal(value, 3);
+  const rounded = Math.round(scaled) / ROUNDING_SCALE;
+  return Object.is(rounded, -0) ? 0 : rounded;
 }
 
 export function canonicalizeUnitIntervalNumber(value: number): number {

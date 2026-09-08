@@ -23,21 +23,11 @@ export interface StrokeCenter extends PointV1 {
 export function smoothStrokeCenters(samples: readonly number[]): StrokeCenter[] {
   assertStrokeSamples(samples);
   const centers: StrokeCenter[] = [];
-  for (let index = 0; index < samples.length; index += 3) {
-    centers.push({ x: samples[index]!, y: samples[index + 1]!, pressure: samples[index + 2]! });
+  const pointCount = samples.length / 3;
+  for (let index = 0; index < pointCount; index += 1) {
+    centers.push(strokeCenterAt(samples, index, pointCount));
   }
-  if (centers.length < 3) return centers;
-
-  return centers.map((center, index) => {
-    if (index === 0 || index === centers.length - 1) return center;
-    const previous = centers[index - 1]!;
-    const next = centers[index + 1]!;
-    return {
-      x: 0.25 * previous.x + 0.5 * center.x + 0.25 * next.x,
-      y: 0.25 * previous.y + 0.5 * center.y + 0.25 * next.y,
-      pressure: center.pressure,
-    };
-  });
+  return centers;
 }
 
 export function transformedStrokeCenters(stroke: StrokeElementV1): StrokeCenter[] {

@@ -13,6 +13,7 @@ import {
 } from "../../../../src/persistence/documents/svg-theme";
 import {
   createMaximumComplexityPath,
+  exhaustValidation,
   MAXIMUM_PATH_BYTES,
 } from "../../../fixtures/persistence/safe-svg";
 
@@ -63,16 +64,6 @@ function svgWithContentPaths(paths: readonly string[]): string {
 function compactMaximumCommandPath(): string {
   const pathData = `M 0 0${" Z M 0 0".repeat(MAXIMUM_PATH_COMMANDS / 2 - 1)} Z`;
   return `<path d="${pathData}" fill="none"/>`;
-}
-
-function exhaustValidation(steps: ReturnType<typeof validateSafeSvgSteps>) {
-  let yields = 0;
-  let step = steps.next();
-  while (!step.done) {
-    yields += 1;
-    step = steps.next();
-  }
-  return { result: step.value, yields };
 }
 
 const validateNewerVersionSafeSvg = (svg: string) =>

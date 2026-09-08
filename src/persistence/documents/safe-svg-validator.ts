@@ -18,6 +18,7 @@ const MAXIMUM_METADATA_BYTES = 60 * 1024 * 1024;
 const MAXIMUM_PATHS = 60_004;
 const MAXIMUM_TOTAL_COMMANDS = 8_000_000;
 const DEFAULT_PATHS_PER_STEP = 128;
+const MARKUP_CODE_UNITS_PER_STEP = 256 * 1024;
 const RGBA = /^#[0-9A-F]{8}$/u;
 const PATH_ATTRIBUTES = new Set([
   "class",
@@ -311,9 +312,10 @@ export function* validateSafeSvgSteps(
 ): Generator<void, SafeSvgValidation | null> {
   const inputBytes = options.totalInputBytes ?? new TextEncoder().encode(svg).byteLength;
   const pathsPerStep = options.pathsPerStep ?? DEFAULT_PATHS_PER_STEP;
-  if (isInvalidStepInput(svg, inputBytes, pathsPerStep)) {
+  if (isInvalidStepInput(inputBytes, pathsPerStep)) {
     return null;
   }
+  if (yield* hasUnsupportedMarkupSteps(svg)) return null;
   const versionPolicy = options.versionPolicy ?? "current";
   const prefix = parseSafeSvgPrefix(svg, versionPolicy);
   if (prefix === null) {
@@ -357,15 +359,24 @@ export function* validateSafeSvgSteps(
   };
 }
 
-function isInvalidStepInput(svg: string, inputBytes: number, pathsPerStep: number): boolean {
+function isInvalidStepInput(inputBytes: number, pathsPerStep: number): boolean {
   return (
     !Number.isSafeInteger(inputBytes) ||
     inputBytes < 0 ||
     !Number.isSafeInteger(pathsPerStep) ||
     pathsPerStep < 1 ||
-    inputBytes > MAXIMUM_FILE_BYTES ||
-    /<!|<\?/u.test(svg)
+    inputBytes > MAXIMUM_FILE_BYTES
   );
+}
+
+function* hasUnsupportedMarkupSteps(svg: string): Generator<void, boolean> {
+  for (let start = 0; start < svg.length; start += MARKUP_CODE_UNITS_PER_STEP) {
+    const end = Math.min(start + MARKUP_CODE_UNITS_PER_STEP, svg.length);
+    // One overlapping code unit keeps declarations split across slices rejectable.
+    if (/<!|<\?/u.test(svg.slice(start, end + 1))) return true;
+    if (end < svg.length) yield;
+  }
+  return false;
 }
 
 function parseSafeSvgPrefix(
