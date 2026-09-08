@@ -6,6 +6,7 @@
 @import url("./editor-menus.css");
 @import url("./background-menu.css");
 @import url("./settings.css");
+@import url("./shortcut-settings.css");
 
 .inkbook-root {
   --inkbook-page-surface: #f6f6f6;
@@ -87,11 +88,12 @@
 }
 
 .inkbook-root .inkbook-scene {
-  contain: layout paint;
+  contain: layout;
   display: block;
   inset-block: 0 auto;
   inset-inline: 0 auto;
   inline-size: 100%;
+  overflow: visible;
   position: absolute;
   transform-origin: top left;
   vertical-align: top;
@@ -302,6 +304,10 @@
   touch-action: pan-y;
 }
 
+.inkbook-root .inkbook-canvas-input[data-inkbook-pen-input] {
+  touch-action: none !important;
+}
+
 .inkbook-root.inkbook-active-preparing .inkbook-editor-chrome-host,
 .inkbook-root.inkbook-active-preparing .inkbook-canvas-input,
 .inkbook-root.inkbook-active-preparing .inkbook-scene-foreground {
@@ -312,6 +318,24 @@
   fill: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
   stroke: var(--interactive-accent);
   stroke-width: 1.5;
+}
+
+.inkbook-root .inkbook-scene-overlays .inkbook-selection-overlay[data-selection-fill="none"] {
+  fill: none;
+}
+
+.inkbook-root .inkbook-scene-overlays .inkbook-selection-handles {
+  fill: var(--interactive-accent);
+  stroke: var(--interactive-accent);
+}
+
+.inkbook-root .inkbook-scene-overlays .inkbook-snap-guide {
+  fill: var(--inkbook-page-surface);
+  filter: drop-shadow(0 1px 2px color-mix(in srgb, var(--background-primary) 70%, transparent));
+  stroke: color-mix(in srgb, var(--interactive-accent) 82%, var(--text-normal));
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.5;
 }
 
 .inkbook-root .inkbook-canvas-input:focus-visible {

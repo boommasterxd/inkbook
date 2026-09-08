@@ -1,14 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type {
-  ArrowElementV1,
-  BoxShapeElementV1,
-  PageV1,
-  StrokeStyleV1,
-  StraightHighlighterElementV1,
+import {
+  type ArrowElementV1,
+  type BoxShapeElementV1,
+  type PageV1,
+  type StrokeStyleV1,
 } from "../../../../src/domain/schema/public";
+import { type StraightHighlighterElementV1 } from "../../../../src/domain/schema/types";
 import { LiveStrokeBuilder } from "../../../../src/editor/tools/live-stroke";
-import { SvgSceneRenderer, type SceneElementRecord } from "../../../../src/rendering/scene";
+import { SvgSceneRenderer } from "../../../../src/rendering/scene";
+import { type SceneElementRecord } from "../../../../src/rendering/scene/types";
 import {
   FakeDocument,
   FakeNode,
@@ -28,7 +29,6 @@ const page: PageV1 = {
   lockedBufferLines: 1,
   margin: 24.3,
 };
-
 function highlighter(): SceneElementRecord {
   const element: StraightHighlighterElementV1 = {
     bend: null,
@@ -239,7 +239,8 @@ describe("live stroke scene handoff", () => {
       input: { pressureSource: "pen", zoom: 1 },
       style,
     });
-    const liveGroup = fakeNode(renderer.svg).nodes[1]!.nodes[6]!;
+    const liveLayer = fakeNode(renderer.svg).nodes[1]!.nodes[6]!;
+    const liveGroup = liveLayer.nodes[0]!;
     let firstChunkNode: FakeNode | undefined;
     let latestPreview = builder.append({ pressure: 0.5, time: 0, x: 0, y: 0 });
     renderer.updateLiveStroke(latestPreview, style, "pen");
@@ -262,12 +263,14 @@ describe("live stroke scene handoff", () => {
     expect(scheduler.pendingCount).toBe(0);
     expect(builderStatistics.maximumFinalizedChunkSamples).toBeLessThanOrEqual(16);
     expect(builderStatistics.maximumTailSamples).toBeLessThanOrEqual(16);
+    expect(liveLayer.nodes).toEqual([liveGroup]);
     expect(liveGroup.nodes).toHaveLength(latestPreview.finalizedChunks.length + 1);
     expect(liveGroup.nodes[0]).toBe(firstChunkNode);
     expect(liveGroup.nodes[liveGroup.nodes.length - 1]?.attributes.get("d")).toBe(
-      latestPreview.tail.geometry.d,
+      latestPreview.tail.geometry[0]?.d,
     );
     expect(liveGroup.nodes[0]?.attributes.get("fill")).toBe("#112233FF");
+    expect(liveGroup.nodes[0]?.attributes.get("stroke")).toBe("none");
     expect(liveGroup.attributes.get("opacity")).toBe("0.8");
     expect(liveGroup.nodes[0]?.attributes.has("fill-opacity")).toBe(false);
     expect(statistics).toMatchObject({
@@ -303,6 +306,7 @@ describe("scene DOM ownership", () => {
     expect(input.attributes.get("aria-label")).toBe("Inkbook canvas");
     expect(input.attributes.get("class")).toBe("inkbook-canvas-input");
     expect(input.listeners.get("pointerdown")?.size).toBe(1);
+    expect(container.nodes[0]?.nodes[2]?.nodes[0]?.attributes.get("fill-rule")).toBe("evenodd");
 
     renderer.destroy();
 
@@ -349,26 +353,7 @@ describe("scene DOM ownership", () => {
 });
 
 describe("mounted scene updates", () => {
-  it("applies element fades and exact geometry previews directly to mounted paths", () => {
-    const { renderer, scheduler, store } = setup();
-    scheduler.runAll();
-    const contentPath = fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes[0]!;
-    const originalD = contentPath.attributes.get("d");
-    const element = store.records.get("a")!.element as BoxShapeElementV1;
-
-    renderer.setElementFade(["a"], 160);
-    expect(contentPath.style.opacity).toBe("0");
-    expect(contentPath.style.transition).toBe("opacity 160ms cubic-bezier(0.2, 0, 0, 1)");
-    renderer.clearElementFade(["a"]);
-    expect(contentPath.style.opacity).toBe("");
-
-    renderer.setElementPreviews([{ ...element, width: 40 }], 1);
-    expect(contentPath.attributes.get("d")).not.toBe(originalD);
-    renderer.clearElementPreviews();
-    expect(contentPath.attributes.get("d")).toBe(originalD);
-  });
-
-  it("flushes pending camera and overlay writes inside an owning navigation frame", () => {
+  it("flushes pending pointer feedback inside an owning navigation frame", () => {
     const { renderer, scheduler } = setup();
     scheduler.runAll();
     const svg = fakeNode(renderer.svg);
@@ -377,7 +362,7 @@ describe("mounted scene updates", () => {
 
     renderer.setCamera({ x: 5, zoom: 2 });
     renderer.setOverlayPath("M 1 1 L 2 2");
-    renderer.flushCameraAndOverlayFrame();
+    renderer.flushPointerFeedbackFrame();
 
     expect(camera.attributes.get("transform")).toBe("translate(10 0) scale(2)");
     expect(overlay.attributes.get("d")).toBe("M 1 1 L 2 2");

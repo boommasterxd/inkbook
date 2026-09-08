@@ -15,14 +15,6 @@ interface ContextualCommandDefinition {
 
 const CONTEXTUAL_COMMANDS: readonly ContextualCommandDefinition[] = [
   { action: "lock", id: "lock-active-embed", name: "Lock active handwriting embed" },
-  { action: "copy", id: "copy-selection", name: "Copy selected annotations" },
-  { action: "cut", id: "cut-selection", name: "Cut selected annotations" },
-  { action: "delete", id: "delete-selection", name: "Delete selected annotations" },
-  { action: "bring-forward", id: "bring-forward", name: "Bring selection forward" },
-  { action: "send-backward", id: "send-backward", name: "Send selection backward" },
-  { action: "bring-to-front", id: "bring-to-front", name: "Bring selection to front" },
-  { action: "send-to-back", id: "send-to-back", name: "Send selection to back" },
-  { action: "paste", id: "paste", name: "Paste annotations" },
   { action: "copy-embed", id: "copy-embed", name: "Copy active embed" },
   { action: "erase-all", id: "erase-all", name: "Erase all annotations" },
   { action: "delete-embed", id: "delete-embed", name: "Delete active embed" },

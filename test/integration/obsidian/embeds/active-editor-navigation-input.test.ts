@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createInputState, type InputState } from "../../../../src/editor/input/index";
-import { OUTER_PAGE_WIDTH } from "../../../../src/editor/zoom/index";
+import { OUTER_PAGE_WIDTH } from "../../../../src/editor/zoom/zoom";
 import {
   ActiveEditorNavigation,
   type ActiveEditorWheelInput,
@@ -121,23 +121,7 @@ describe("active editor keyboard and wheel navigation", () => {
     const anchorViewportY = 100 + pointer.y;
     const embedTopInScrollContent = oldScrollTop + 100;
 
-    expect(
-      harness.navigation.updateKeyboard(
-        {
-          altKey: false,
-          ctrlKey: true,
-          key: "+",
-          metaKey: false,
-        },
-        pointer,
-      ),
-    ).toBe(true);
-    expect(
-      harness.navigation.updateKeyboard(
-        { altKey: false, ctrlKey: true, key: "0", metaKey: false },
-        pointer,
-      ),
-    ).toBe(false);
+    expect(harness.navigation.updateKeyboardStep(1, pointer)).toBe(true);
     harness.frames.flush();
 
     expect(harness.navigation.zoom).toBeCloseTo((1_000 / OUTER_PAGE_WIDTH) * 1.08);
@@ -163,10 +147,7 @@ describe("active editor navigation input ordering", () => {
     const keyboardPointer = { x: 400, y: 200 };
     const keyboardPage = keyboardLast.navigation.pagePointFromScreen(keyboardPointer);
     const keyboardAnchorViewportY = 100 + keyboardPointer.y;
-    keyboardLast.navigation.updateKeyboard(
-      { altKey: false, ctrlKey: true, key: "+", metaKey: false },
-      keyboardPointer,
-    );
+    keyboardLast.navigation.updateKeyboardStep(1, keyboardPointer);
     keyboardLast.frames.flush();
 
     expect(keyboardLast.navigation.pagePointFromScreen(keyboardPointer).x).toBeCloseTo(
@@ -182,10 +163,7 @@ describe("active editor navigation input ordering", () => {
     const wheelClient = { x: 800, y: 350 };
     const wheelPageX = (wheelClient.x - 20) / oldZoom;
     const wheelPageY = (wheelLast.owner.scrollTop + wheelClient.y - 300) / oldZoom;
-    wheelLast.navigation.updateKeyboard(
-      { altKey: false, ctrlKey: true, key: "+", metaKey: false },
-      { x: 200, y: 200 },
-    );
+    wheelLast.navigation.updateKeyboardStep(1, { x: 200, y: 200 });
     wheelLast.navigation.updateWheel({
       clientX: wheelClient.x,
       clientY: wheelClient.y,
@@ -267,10 +245,7 @@ describe("active editor pointer-anchored keyboard navigation", () => {
     harness.frames.flush();
     harness.navigation.finish();
     const expectKeyboardZoomAnchor = (expectedPageX: number) => {
-      harness.navigation.updateKeyboard(
-        { altKey: false, ctrlKey: true, key: "+", metaKey: false },
-        lastScreenPointer,
-      );
+      harness.navigation.updateKeyboardStep(1, lastScreenPointer);
       harness.frames.flush();
       expect(harness.navigation.pagePointFromScreen(lastScreenPointer).x).toBeCloseTo(
         expectedPageX,

@@ -10,17 +10,34 @@ import type { EmbedIntegrationPorts } from "../../../../src/obsidian/embeds/pres
 import { configureTestEditorState } from "../../../adapters/obsidian/plugin";
 
 const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata></svg>';
+const CONTENT_IDENTITY = { outputHash: "a".repeat(64), revision: 1 };
 
 interface RecognitionControl {
   notify: ((documentId: string) => void) | undefined;
-  value: false | { readonly aspectRatio: number; readonly safeSvg: string } | undefined;
+  value:
+    | false
+    | {
+        readonly aspectRatio: number;
+        readonly contentIdentity: typeof CONTENT_IDENTITY;
+        readonly safeSvg: string;
+      }
+    | undefined;
 }
 
 function integrationPorts(control?: RecognitionControl): EmbedIntegrationPorts {
   return {
     documents: {
-      cached: () => control?.value ?? { aspectRatio: 4, safeSvg: SAFE_PREVIEW_SVG },
-      recognize: async () => ({ aspectRatio: 4, safeSvg: SAFE_PREVIEW_SVG }),
+      cached: () =>
+        control?.value ?? {
+          aspectRatio: 4,
+          contentIdentity: CONTENT_IDENTITY,
+          safeSvg: SAFE_PREVIEW_SVG,
+        },
+      recognize: async () => ({
+        aspectRatio: 4,
+        contentIdentity: CONTENT_IDENTITY,
+        safeSvg: SAFE_PREVIEW_SVG,
+      }),
       subscribe: (listener: (documentId: string) => void) => {
         if (control !== undefined) control.notify = listener;
         return () => {
@@ -74,7 +91,11 @@ describe("Live Preview block-decoration source", () => {
   it("retains the mounted block while a saved SVG is being reclassified", () => {
     const control: RecognitionControl = {
       notify: undefined,
-      value: { aspectRatio: 4, safeSvg: SAFE_PREVIEW_SVG },
+      value: {
+        aspectRatio: 4,
+        contentIdentity: CONTENT_IDENTITY,
+        safeSvg: SAFE_PREVIEW_SVG,
+      },
     };
     configureTestEditorState({
       file: { path: "notes/note.md" },

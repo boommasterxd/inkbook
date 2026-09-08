@@ -5,6 +5,7 @@ import {
   InkbookEditorChrome,
   registerToolbarResize,
 } from "../../../../src/rendering/ui/editor-chrome";
+import { toolbarMainHalfWidth } from "../../../../src/rendering/ui/toolbar-layout";
 
 describe("Inkbook editor chrome", () => {
   it("renders toolbar chrome without scene, canvas, or custom menu content", () => {
@@ -15,6 +16,7 @@ describe("Inkbook editor chrome", () => {
         onToolbarAction={vi.fn()}
         ownerDocument={{} as Document}
         renderIcon={vi.fn()}
+        selectionArea="lasso"
         selectedShape="rectangle"
         shapeIcon={{ arrowEnd: "arrow", arrowStart: "none", coordinateDimension: "2d" }}
         styleIcon={{
@@ -32,6 +34,7 @@ describe("Inkbook editor chrome", () => {
           fingerDrawingEnabled: false,
           hasSelection: false,
           openFlyout: null,
+          pasteVisible: false,
         }}
       />,
     );
@@ -39,6 +42,7 @@ describe("Inkbook editor chrome", () => {
     expect(markup).toContain("inkbook-toolbar-shell");
     expect(markup).toContain("inkbook-toolbar-scrollable");
     expect(markup).toContain("inkbook-toolbar-left-handed");
+    expect(markup).toContain('aria-label="Select: Lasso"');
     expect(markup).not.toContain("inkbook-flyout");
     expect(markup).not.toContain("inkbook-scene");
     expect(markup).not.toContain("inkbook-canvas-input");
@@ -55,6 +59,18 @@ describe("Inkbook editor chrome", () => {
     expect(onResize).toHaveBeenCalledOnce();
     dispose();
     expect(observer.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it("anchors context actions to transform-independent primary layout width", () => {
+    const transformedVisualBounds = vi.fn(() => ({ width: 120 }));
+    const toolbar = {
+      getBoundingClientRect: transformedVisualBounds,
+      offsetWidth: 556,
+      scrollWidth: 556,
+    } as unknown as HTMLElement;
+
+    expect(toolbarMainHalfWidth(toolbar)).toBe(278);
+    expect(transformedVisualBounds).not.toHaveBeenCalled();
   });
 });
 

@@ -9,6 +9,7 @@ export interface SerializedInkbookDocument<TOutput extends string | Uint8Array =
   readonly lockedHeight: number;
   readonly metadataBytes: number;
   readonly snapshot: InkSnapshotV1;
+  readonly snapshotHash: string;
   readonly svg: TOutput;
   readonly totalBytes: number;
 }

@@ -27,40 +27,6 @@ export interface BackgroundGuideLayoutRequest {
   readonly pageHeight: number;
 }
 
-export function centeredGuideAxis(
-  availableStart: number,
-  availableLength: number,
-  spacing: number,
-): GuideAxis {
-  return guideAxis(availableStart, availableLength, spacing, "centered");
-}
-
-export function topAnchoredGuideAxis(
-  availableStart: number,
-  availableLength: number,
-  spacing: number,
-): GuideAxis {
-  return guideAxis(availableStart, availableLength, spacing, "start");
-}
-
-function guideAxis(
-  availableStart: number,
-  availableLength: number,
-  spacing: number,
-  alignment: "centered" | "start",
-): GuideAxis {
-  const boundedLength = roundCanonical(Math.max(0, availableLength));
-  const intervalCount = completeIntervalCount(boundedLength, spacing);
-  const coveredLength = intervalCount * spacing;
-  const offset = alignment === "centered" ? (boundedLength - coveredLength) / 2 : 0;
-  const start = roundCanonical(availableStart + offset);
-  return {
-    end: roundCanonical(start + coveredLength),
-    intervalCount,
-    start,
-  };
-}
-
 export function backgroundGuideLayout(
   request: BackgroundGuideLayoutRequest,
 ): BackgroundGuideLayout {

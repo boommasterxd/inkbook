@@ -33,7 +33,7 @@ describe("active page-height policy", () => {
     const layout = new ActivePageLayout();
     layout.committed(page, undefined);
     layout.committed(page, 225);
-    layout.transitionCompleted(page);
+    layout.transitionCompleted();
     expect(layout.committed(page, 224)).toEqual({
       animate: true,
       height: derivePageExtent(page, 224).activeHeight,
@@ -49,11 +49,10 @@ describe("active page-height policy", () => {
     });
     expect(layout.committed(page, 525)).toBeUndefined();
 
-    expect(layout.transitionCompleted(page)).toEqual({
-      animate: true,
-      height: derivePageExtent(page, 525).activeHeight,
-    });
-    expect(layout.transitionCompleted(page)).toBeUndefined();
+    const finalTransition = layout.transitionCompleted();
+    expect(finalTransition?.animate).toBe(true);
+    expect(finalTransition?.height).toBe(derivePageExtent(page, 525).activeHeight);
+    expect(layout.transitionCompleted()).toBeUndefined();
     expect(layout.height).toBe(derivePageExtent(page, 525).activeHeight);
   });
 
@@ -67,7 +66,21 @@ describe("active page-height policy", () => {
       animate: false,
       height: derivePageExtent(page, 525).activeHeight,
     });
-    expect(layout.transitionCompleted(page)).toBeUndefined();
+    expect(layout.transitionCompleted()).toBeUndefined();
+  });
+
+  it("keeps the larger required surface while a smaller target is queued", () => {
+    const layout = new ActivePageLayout();
+    layout.committed(page, undefined);
+    const larger = derivePageExtent(page, 525).activeHeight;
+    layout.committed(page, 525);
+
+    expect(layout.committed(page, 125)).toBeUndefined();
+    expect(layout.height).toBe(larger);
+    expect(layout.transitionCompleted()).toEqual({
+      animate: true,
+      height: derivePageExtent(page, 125).activeHeight,
+    });
   });
 
   it("adopts the visible height when an input or lifecycle change cancels motion", () => {
@@ -79,40 +92,92 @@ describe("active page-height policy", () => {
     layout.cancelTransitions(400);
 
     expect(layout.height).toBe(400);
-    expect(layout.transitionCompleted(page)).toBeUndefined();
+    expect(layout.transitionCompleted()).toBeUndefined();
   });
-});
 
-describe("active page-height selection policy", () => {
-  it("extends one buffer per completed bottom-edge transition and restores on cancel", () => {
+  it("changes height only after the committed content extent changes", () => {
     const layout = new ActivePageLayout();
     const initialHeight = derivePageExtent(page, null).activeHeight;
-    layout.committed(page, undefined);
-    layout.beginSelection();
+    expect(layout.committed(page, undefined)).toEqual({ animate: false, height: initialHeight });
+    expect(layout.committed(page, undefined)).toBeUndefined();
 
-    expect(layout.updateSelectionBottomEdge(true, page)).toEqual({
-      animate: true,
-      height: initialHeight + 100,
-    });
-    expect(layout.updateSelectionBottomEdge(true, page)).toBeUndefined();
-    expect(layout.transitionCompleted(page)).toEqual({
-      animate: true,
-      height: initialHeight + 200,
-    });
-    expect(layout.finishSelection("cancel", page, undefined)).toBeUndefined();
-    expect(layout.transitionCompleted(page)).toEqual({ animate: true, height: initialHeight });
-  });
-
-  it("restores the exact derived committed height after a transient extension", () => {
-    const layout = new ActivePageLayout();
-    layout.committed(page, undefined);
-    layout.beginSelection();
-    layout.updateSelectionBottomEdge(true, page);
-
-    expect(layout.finishSelection("commit", page, 225)).toBeUndefined();
-    expect(layout.transitionCompleted(page)).toEqual({
+    expect(layout.committed(page, 225)).toEqual({
       animate: true,
       height: derivePageExtent(page, 225).activeHeight,
     });
+  });
+});
+
+describe("active page-height safety", () => {
+  it("never lets a queued shrink fall below the latest committed content extent", () => {
+    const layout = new ActivePageLayout();
+    layout.committed(page, undefined);
+    const requiredHeight = derivePageExtent(page, 925).activeHeight;
+    layout.committed(page, 925);
+    layout.committed(page, 125);
+
+    layout.retainMinimumHeight(requiredHeight);
+
+    expect(layout.height).toBe(requiredHeight);
+    expect(layout.transitionCompleted()).toBeUndefined();
+    expect(layout.height).toBe(requiredHeight);
+  });
+});
+
+describe("selection move page-height policy", () => {
+  it("animates selection preview growth and restores it on cancellation", () => {
+    const layout = new ActivePageLayout();
+    const initialHeight = derivePageExtent(page, null).activeHeight;
+    layout.committed(page, undefined);
+
+    expect(layout.beginSelectionMove()).toBeUndefined();
+    expect(layout.previewSelectionMove(page, 525)).toEqual({
+      animate: true,
+      height: derivePageExtent(page, 525).activeHeight,
+    });
+    expect(layout.previewSelectionMove(page, 225)).toBeUndefined();
+    expect(layout.finishSelectionMove(false, page, undefined)).toBeUndefined();
+    expect(layout.transitionCompleted()).toEqual({
+      animate: true,
+      height: initialHeight,
+    });
+    expect(layout.transitionCompleted()).toBeUndefined();
+  });
+
+  it("retains the exact committed extent after a selection preview", () => {
+    const layout = new ActivePageLayout();
+    layout.committed(page, undefined);
+    layout.beginSelectionMove();
+    layout.previewSelectionMove(page, 525);
+
+    expect(layout.finishSelectionMove(true, page, 525)).toBeUndefined();
+    expect(layout.height).toBe(derivePageExtent(page, 525).activeHeight);
+  });
+
+  it("keeps a preview reservation stable while the committed store still has its old extent", () => {
+    const layout = new ActivePageLayout();
+    layout.committed(page, undefined);
+    layout.beginSelectionMove();
+    const previewHeight = derivePageExtent(page, 925).activeHeight;
+    layout.previewSelectionMove(page, 925);
+
+    expect(layout.committed(page, undefined, true)).toBeUndefined();
+    expect(layout.height).toBe(previewHeight);
+  });
+
+  it("uses the final preview extent after a larger drag overshoot", () => {
+    const layout = new ActivePageLayout();
+    layout.committed(page, undefined);
+    layout.beginSelectionMove();
+    layout.previewSelectionMove(page, 925);
+    layout.previewSelectionMove(page, 525);
+
+    expect(layout.finishSelectionMove(true, page, 525)).toBeUndefined();
+    expect(layout.transitionCompleted()).toEqual({
+      animate: true,
+      height: derivePageExtent(page, 525).activeHeight,
+    });
+    expect(layout.transitionCompleted()).toBeUndefined();
+    expect(layout.height).toBe(derivePageExtent(page, 525).activeHeight);
   });
 });

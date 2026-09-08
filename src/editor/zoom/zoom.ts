@@ -115,18 +115,6 @@ export function zoomFactorForSteps(steps: number): number {
   return requirePositive(ZOOM_STEP_FACTOR ** steps, "zoomFactor");
 }
 
-/** Applies whole 1.08 zoom steps and clamps the result to the current limits. */
-export function zoomBySteps(currentZoom: number, steps: number, limits: ZoomLimits): number {
-  requirePositive(currentZoom, "currentZoom");
-  return clampZoom(currentZoom * zoomFactorForSteps(steps), limits);
-}
-
-export function displayedPercent(cameraZoom: number, fitZoom: number): number {
-  requirePositive(cameraZoom, "cameraZoom");
-  requirePositive(fitZoom, "fitZoom");
-  return (cameraZoom / fitZoom) * 100;
-}
-
 export function renderedContainerHeight(derivedPageHeight: number, zoom: number): number {
   requireNonNegative(derivedPageHeight, "derivedPageHeight");
   requirePositive(zoom, "zoom");
@@ -185,22 +173,6 @@ export function anchoredCameraX(
   const pageX = anchorX / oldZoom - oldCameraX;
   const candidateCameraX = anchorX / newZoom - pageX;
   return clampCameraX(candidateCameraX, containerWidth, newZoom, outerPageWidth);
-}
-
-/** Calculates the native scroll interval after a new rendered height is set. */
-export function scrollBoundsForHeight(
-  renderedHeight: number,
-  viewportHeight: number,
-  minScrollTop = 0,
-): ScrollBounds {
-  requireNonNegative(renderedHeight, "renderedHeight");
-  requireNonNegative(viewportHeight, "viewportHeight");
-  requireFinite(minScrollTop, "minScrollTop");
-
-  return {
-    min: minScrollTop,
-    max: Math.max(minScrollTop, minScrollTop + renderedHeight - viewportHeight),
-  };
 }
 
 /**

@@ -2,16 +2,17 @@ import { describe, expect, it } from "vitest";
 
 import {
   canonicalizeGeometryNumber,
-  canonicalizeRotation,
   canonicalizeUnitIntervalNumber,
   isCanonicalGeometryNumber,
-  isCanonicalRotation,
   isCanonicalUnitIntervalNumber,
-  isColorV1,
-  isLowercaseUuidV4,
   isRgbaColor,
   PORTABLE_PALETTE_V1,
 } from "../../../../src/domain/schema/public";
+import {
+  canonicalizeRotation,
+  isCanonicalRotation,
+  isLowercaseUuidV4,
+} from "../../../../src/domain/schema/canonical";
 
 describe("schema canonical values", () => {
   it("canonicalizes geometry, unit values, rotation, and negative zero", () => {
@@ -56,13 +57,6 @@ describe("schema canonical values", () => {
     expect(isRgbaColor("#AABBCCDD")).toBe(true);
     expect(isRgbaColor("#aabbccdd")).toBe(false);
     expect(isRgbaColor("#AABBCC")).toBe(false);
-  });
-
-  it("validates semantic color objects with exact properties", () => {
-    expect(isColorV1({ type: "theme-text" })).toBe(true);
-    expect(isColorV1({ type: "rgba", value: "#AABBCCDD" })).toBe(true);
-    expect(isColorV1({ type: "theme-text", value: "#AABBCCDD" })).toBe(false);
-    expect(isColorV1({ type: "rgba", value: "#AABBCC" })).toBe(false);
   });
 
   it("exposes the fixed portable palette", () => {

@@ -1,17 +1,24 @@
 import { Platform } from "obsidian";
 
-import { createPreviewSvg, loadValidatedPreviewSvg } from "./safe-preview-svg";
+import {
+  createPreviewSvg,
+  loadValidatedPreviewSvg,
+  samePreviewContentIdentity,
+  type PreviewContentIdentity,
+} from "./safe-preview-svg";
 
 export interface InkbookLockedPreviewDescriptor {
   readonly aspectRatio: number;
+  readonly contentIdentity: PreviewContentIdentity;
   readonly safeSvg: string;
 }
 
 export interface InkbookLockedPreviewSurface {
   readonly element: HTMLButtonElement;
   readonly refresh: () => void;
+  readonly setDescriptor: (descriptor: InkbookLockedPreviewDescriptor) => void;
   readonly setAspectRatio: (aspectRatio: number) => void;
-  readonly setSource: (source: string) => Promise<void>;
+  readonly setSource: (source: string) => Promise<PreviewContentIdentity | undefined>;
 }
 
 export function createInkbookLockedPreview(
@@ -28,24 +35,37 @@ export function createInkbookLockedPreview(
     element.setCssProps({ "--inkbook-preview-aspect-ratio": String(aspectRatio) });
   };
   setAspectRatio(descriptor.aspectRatio);
-  let currentSvg = descriptor.safeSvg;
+  let currentDescriptor = descriptor;
   let sourceGeneration = 0;
-  const mount = (safeSvg: string): void => {
+  const mount = (safeSvg: string, aspectRatio?: number): void => {
+    if (aspectRatio !== undefined) setAspectRatio(aspectRatio);
     element.replaceChildren(createPreviewSvg(button.ownerDocument, safeSvg));
   };
-  const setSource = async (nextSource: string): Promise<void> => {
-    const generation = ++sourceGeneration;
-    const safeSvg = await loadValidatedPreviewSvg(nextSource, owningWindow);
-    if (generation !== sourceGeneration) return;
-    currentSvg = safeSvg;
-    mount(safeSvg);
+  const setDescriptor = (nextDescriptor: InkbookLockedPreviewDescriptor): void => {
+    if (
+      samePreviewContentIdentity(currentDescriptor.contentIdentity, nextDescriptor.contentIdentity)
+    ) {
+      return;
+    }
+    sourceGeneration += 1;
+    currentDescriptor = nextDescriptor;
+    mount(nextDescriptor.safeSvg, nextDescriptor.aspectRatio);
   };
-  mount(currentSvg);
+  const setSource = async (nextSource: string): Promise<PreviewContentIdentity | undefined> => {
+    const generation = ++sourceGeneration;
+    const loaded = await loadValidatedPreviewSvg(nextSource, owningWindow);
+    if (generation !== sourceGeneration) return undefined;
+    currentDescriptor = loaded;
+    mount(loaded.safeSvg, loaded.aspectRatio);
+    return loaded.contentIdentity;
+  };
+  mount(currentDescriptor.safeSvg);
   return {
     element: button,
     refresh: () => {
-      mount(currentSvg);
+      mount(currentDescriptor.safeSvg);
     },
+    setDescriptor,
     setAspectRatio,
     setSource,
   };

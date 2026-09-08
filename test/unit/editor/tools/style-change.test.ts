@@ -44,7 +44,7 @@ describe("selection paint Style changes", () => {
       defaults,
     });
     const selection = [line];
-    const result = applySelectionStyleChange(selection, { property: "outline-width", value: 2 });
+    const result = applySelectionStyleChange(selection, { property: "outline-width", value: 4 });
 
     expect(result).toEqual({ elements: selection, changed: false });
     expect(result.elements).toBe(selection);
@@ -290,6 +290,27 @@ describe("structural Style changes", () => {
 });
 
 describe("active tool Style changes", () => {
+  it("updates Select area and inclusion defaults independently", () => {
+    const values = createBuiltInSettings().toolDefaults;
+    const area = applyToolStyleChange(values, "select", {
+      property: "selection-area",
+      value: "rectangle",
+    });
+    const inclusion = applyToolStyleChange(area.toolValues, "select", {
+      property: "selection-inclusion",
+      value: "fully-enclosed",
+    });
+
+    expect(inclusion.toolValues.select).toEqual({
+      area: "rectangle",
+      inclusion: "fully-enclosed",
+    });
+    expect(values.select).toEqual({ area: "lasso", inclusion: "touched" });
+    expect(() =>
+      applySelectionStyleChange([], { property: "selection-area", value: "lasso" }),
+    ).toThrow(/non-empty selection/);
+  });
+
   it("updates active tool values independently from vault defaults", () => {
     const values = createBuiltInSettings().toolDefaults;
     const changed = applyToolStyleChange(values, "arrow", {
@@ -430,7 +451,7 @@ describe("active tool compatibility", () => {
     expect(
       applyToolStyleChange(values, "rectangle", {
         property: "fill-opacity",
-        value: 0.15,
+        value: 0.5,
       }),
     ).toEqual({ toolValues: values, changed: false });
     expect(() =>

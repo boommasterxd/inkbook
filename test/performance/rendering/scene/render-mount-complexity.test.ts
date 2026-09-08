@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { PageV1, StrokeElementV1 } from "../../../../src/domain/schema/public";
-import { SvgSceneRenderer, type SceneElementRecord } from "../../../../src/rendering/scene";
+import { SvgSceneRenderer } from "../../../../src/rendering/scene";
+import { type SceneElementRecord } from "../../../../src/rendering/scene/types";
 import {
   MOUNT_SLICE_GEOMETRY_COST_BUDGET,
   MOUNT_SLICE_STROKE_POINT_BUDGET,

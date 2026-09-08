@@ -13,7 +13,7 @@ describe("settings defaults", () => {
     const settings = createBuiltInSettings();
 
     expect(settings).toMatchObject({
-      version: 3,
+      version: 4,
       startupTool: "draw",
       refreshRatePreference: "auto",
     });
@@ -24,6 +24,14 @@ describe("settings defaults", () => {
       lockedBufferLines: 1,
     });
     expect(settings.filePlacement).toEqual({ mode: "obsidian-attachment-folder" });
+    expect(settings.snapping).toEqual({
+      enabled: true,
+      angles: true,
+      bends: true,
+      connections: true,
+      structures: true,
+    });
+    expect(settings.toolDefaults.select).toEqual({ area: "lasso", inclusion: "touched" });
     expect(settings.toolDefaults.pen).toEqual({
       color: { type: "theme-text" },
       width: 4,
@@ -48,11 +56,11 @@ describe("settings defaults", () => {
     for (const tool of CLOSED_SHAPE_TOOLS) {
       expect(shapes[tool]).toMatchObject({
         fillColor: null,
-        fillOpacity: 0.15,
+        fillOpacity: 0.5,
         outlineColor: { type: "theme-text" },
         outlineOpacity: 1,
         outlineStyle: "solid",
-        outlineWidth: 2,
+        outlineWidth: 4,
       });
     }
     for (const tool of OUTLINE_ONLY_TOOLS) {
@@ -68,8 +76,10 @@ describe("settings defaults", () => {
 
     expect(createBuiltInSettings().toolDefaults.pen.opacity).toBe(1);
   });
+});
 
-  it("exposes the exact built-in palette and device defaults", () => {
+describe("settings palette and device defaults", () => {
+  it("exposes the exact built-in palette", () => {
     expect(BUILT_IN_COLORS).toEqual([
       { type: "theme-text" },
       { type: "rgba", value: "#EF4444FF" },
@@ -82,12 +92,27 @@ describe("settings defaults", () => {
       { type: "rgba", value: "#EC4899FF" },
       { type: "rgba", value: "#6B7280FF" },
     ]);
+  });
+
+  it("exposes the exact device defaults", () => {
     expect(createBuiltInDeviceSettings()).toEqual({
-      version: 1,
+      version: 2,
       fingerDrawingEnabled: false,
       penTapInsertion: "off",
       leftHandedToolbar: false,
       motion: "system",
+      keyboardShortcuts: {
+        "select-all": { key: "a", modifiers: ["mod"] },
+        copy: { key: "c", modifiers: ["mod"] },
+        cut: { key: "x", modifiers: ["mod"] },
+        "delete-selection": { key: "Delete", modifiers: [] },
+        "zoom-in": { key: "+", modifiers: ["mod"] },
+        "zoom-out": { key: "-", modifiers: ["mod"] },
+        "bring-forward": { key: "ArrowUp", modifiers: ["mod"] },
+        "send-backward": { key: "ArrowDown", modifiers: ["mod"] },
+        "bring-to-front": { key: "ArrowUp", modifiers: ["mod", "shift"] },
+        "send-to-back": { key: "ArrowDown", modifiers: ["mod", "shift"] },
+      },
     });
   });
 });

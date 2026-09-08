@@ -1,5 +1,9 @@
-import { alignPageHeightToWritingLine, PAGE_WIDTH } from "../../../domain/geometry/public";
-import type { PageV1, PointV1 } from "../../../domain/schema/public";
+import {
+  alignPageHeightToWritingLine,
+  derivePageExtent,
+  PAGE_WIDTH,
+} from "../../../domain/geometry/public";
+import type { PageV1 } from "../../../domain/schema/public";
 import {
   calculateZoomLimits,
   createStableWidthState,
@@ -10,11 +14,7 @@ import type { ToolbarLayoutStage } from "../../../rendering/ui/index";
 import type { ActiveEditorLayoutOptions } from "./layout-contracts";
 import type { ActiveEditorZoomLayoutUpdate } from "./navigation";
 import { calculateActiveEditorResize, type ActiveEditorResizeAnchor } from "./layout-resize";
-import {
-  ActivePageLayout,
-  SELECTION_BOTTOM_EDGE_ZONE_PX,
-  type PageHeightUpdate,
-} from "./page-layout";
+import { ActivePageLayout, type PageHeightUpdate } from "./page-layout";
 import { measureToolbarLayout } from "./toolbar-measurement";
 import { ActiveEditorMotion, type ActiveEditorMotionPreference } from "./layout-motion";
 import { measureElementBox } from "./element-content-box";
@@ -47,6 +47,7 @@ export class ActiveEditorLayout {
   #readyFrame: number | undefined;
   #stableWidth: StableWidthState = createStableWidthState();
   #suspended = false;
+  #selectionMoveActive = false;
   #toolbar: HTMLElement | undefined;
   #toolbarLayoutDirty = true;
   #zoom: number | undefined;
@@ -92,6 +93,7 @@ export class ActiveEditorLayout {
 
   public applyZoom(update: ActiveEditorZoomLayoutUpdate): void {
     const retainedPageHeight = this.#cancelHeightTransitionAtBoundary(false);
+    this.#retainCommittedExtent();
     this.#zoom = update.zoom;
     const blockSize =
       retainedPageHeight === undefined ? update.blockSize : retainedPageHeight * update.zoom;
@@ -100,15 +102,20 @@ export class ActiveEditorLayout {
     if (retainedPageHeight !== undefined) this.scheduleMeasurement();
   }
 
-  public beginSelectionEdgeDrag(): void {
-    this.#applyHeightUpdate(this.#pageLayout.beginSelection());
-  }
-
   public chromeChanged(layoutKey?: string): void {
     if (layoutKey !== undefined && layoutKey === this.#chromeLayoutKey) return;
     this.#chromeLayoutKey = layoutKey;
     this.#toolbarLayoutDirty = true;
     this.scheduleMeasurement();
+  }
+
+  public beginSelectionMove(): void {
+    this.#selectionMoveActive = true;
+    this.#applyHeightUpdate(this.#pageLayout.beginSelectionMove());
+  }
+
+  public currentPageHeight(): number | undefined {
+    return this.#pageLayout.height;
   }
 
   public chromeMounted(): void {
@@ -133,21 +140,23 @@ export class ActiveEditorLayout {
     this.#readyFrame = undefined;
   }
 
-  public finishSelectionEdgeDrag(outcome: "cancel" | "commit"): void {
-    const update = this.#pageLayout.finishSelection(
-      outcome,
-      this.#options.page(),
-      this.#options.storeMaximumBottom(),
-    );
-    this.#applyHeightUpdate(update);
-  }
-
   public finishPagePreview(committed: boolean): void {
     if (this.#previewPage === undefined) return;
     this.#previewPage = undefined;
     if (committed) return;
     this.#cancelHeightTransitionAtBoundary(false);
     this.#applyPreviewHeight(this.#options.page());
+  }
+
+  public finishSelectionMove(committed: boolean, previewMaximumBottom?: number): void {
+    this.#selectionMoveActive = false;
+    const storeMaximumBottom = this.#options.storeMaximumBottom();
+    const maximumBottom = committed
+      ? maximumFiniteBottom(storeMaximumBottom, previewMaximumBottom)
+      : storeMaximumBottom;
+    this.#applyHeightUpdate(
+      this.#pageLayout.finishSelectionMove(committed, this.#options.page(), maximumBottom),
+    );
   }
 
   public interruptForInput(): void {
@@ -196,21 +205,14 @@ export class ActiveEditorLayout {
     this.#readyFrame = undefined;
   }
 
-  public setSelectionBottomEdge(active: boolean): void {
-    this.#applyHeightUpdate(
-      this.#pageLayout.updateSelectionBottomEdge(active, this.#options.page()),
-    );
-  }
-
   public updateMotion(preference: ActiveEditorMotionPreference): void {
     this.#motion.update(preference);
   }
 
-  public updateSelectionEdgeDrag(screenPointer: PointV1): void {
-    const bottom = this.#container.getBoundingClientRect().bottom;
-    const active =
-      Number.isFinite(screenPointer.y) && screenPointer.y >= bottom - SELECTION_BOTTOM_EDGE_ZONE_PX;
-    this.setSelectionBottomEdge(active);
+  public updateSelectionMoveBottom(maximumBottom: number): void {
+    this.#applyHeightUpdate(
+      this.#pageLayout.previewSelectionMove(this.#options.page(), maximumBottom),
+    );
   }
 
   public sceneCommitted(): void {
@@ -324,33 +326,41 @@ export class ActiveEditorLayout {
 
   #applyHeightUpdate(update: PageHeightUpdate | undefined, page = this.#renderPage()): void {
     if (update === undefined) return;
+    const minimumHeight = this.#requiredContentHeight(page);
+    this.#pageLayout.retainMinimumHeight(minimumHeight);
+    const targetHeight = Math.max(update.height, minimumHeight);
     const zoom = this.#zoom;
     const frameRead = zoom === undefined ? undefined : this.#readHeightFrame();
     if (zoom === undefined) {
-      this.#options.renderer.setPage(page, update.height);
+      this.#options.renderer.setPage(page, targetHeight);
       return;
     }
     if (!update.animate) {
       this.#heightTransition.cancel();
-      this.#options.renderer.setPage(page, update.height);
-      this.#writeHeightFrame(update.height, zoom);
-      this.#completeHeightTransition(false);
+      this.#options.renderer.setPage(page, targetHeight);
+      this.#writeHeightFrame(targetHeight, zoom);
+      this.#completeHeightTransition();
       return;
     }
-    const currentRenderedHeight = frameRead?.renderedHeight ?? update.height * zoom;
-    const targetRenderedHeight = update.height * zoom;
+    const currentRenderedHeight = frameRead?.renderedHeight ?? targetHeight * zoom;
+    const targetRenderedHeight = targetHeight * zoom;
     const currentPageHeight = currentRenderedHeight / zoom;
     const preparationHeight = alignPageHeightToWritingLine(
       page,
-      Math.max(update.height, currentPageHeight),
+      Math.max(targetHeight, currentPageHeight),
     );
     this.#options.renderer.setPage(page, preparationHeight);
     this.#heightTransition.begin({
       applyFrame: (renderedHeight) => this.#writeHeightFrame(renderedHeight / zoom, zoom),
-      applySurfaceTarget: () => this.#options.renderer.setPage(this.#renderPage(), update.height),
+      applySurfaceTarget: () =>
+        this.#options.renderer.setPage(
+          this.#renderPage(),
+          Math.max(targetHeight, this.#requiredContentHeight()),
+        ),
       currentRenderedHeight,
-      onComplete: () => this.#completeHeightTransition(!this.#motion.reduced),
+      onComplete: () => this.#completeHeightTransition(),
       sceneCommitPending: () => this.#options.renderer.hasPendingSceneCommit,
+      stabilizeScroll: !this.#selectionMoveActive,
       targetRenderedHeight,
     });
     if (this.#motion.reduced) this.#heightTransition.finishImmediately();
@@ -364,11 +374,8 @@ export class ActiveEditorLayout {
     return Math.max(height, settledHeight);
   }
 
-  #completeHeightTransition(continueSelectionExtension = true): void {
-    const next = this.#pageLayout.transitionCompleted(
-      this.#renderPage(),
-      continueSelectionExtension,
-    );
+  #completeHeightTransition(): void {
+    const next = this.#pageLayout.transitionCompleted();
     this.#applyHeightUpdate(next);
   }
 
@@ -382,13 +389,22 @@ export class ActiveEditorLayout {
     if (cancelled === undefined || zoom === undefined || zoom <= 0) return undefined;
     const currentPageHeight = cancelled.renderedHeight / zoom;
     const completed = cancelled.settleToTarget ? this.#pageLayout.completeTransitions() : undefined;
-    const pageHeight = completed?.height ?? currentPageHeight;
-    if (completed === undefined) this.#pageLayout.cancelTransitions(pageHeight);
-    this.#options.renderer.setPage(this.#renderPage(), pageHeight);
+    const committedHeight = deriveActiveHeight(
+      this.#options.page(),
+      this.#options.storeMaximumBottom(),
+    );
+    const safeHeight = Math.max(
+      completed?.height ?? currentPageHeight,
+      this.#pageLayout.height ?? 0,
+      committedHeight,
+    );
+    const retainedHeight = completed?.height ?? currentPageHeight;
+    if (completed === undefined) this.#pageLayout.cancelTransitions(retainedHeight);
+    this.#options.renderer.setPage(this.#renderPage(), safeHeight);
     if (applyFrame && completed !== undefined) {
-      this.#writeHeightFrame(pageHeight, zoom);
+      this.#writeHeightFrame(safeHeight, zoom);
     }
-    return pageHeight;
+    return safeHeight;
   }
 
   #renderPage(): PageV1 {
@@ -397,7 +413,8 @@ export class ActiveEditorLayout {
 
   #writeBlockSize(pageHeight: number | undefined, zoom: number): void {
     if (pageHeight !== undefined) {
-      this.#container.style.blockSize = `${String(pageHeight * zoom)}px`;
+      const safeHeight = Math.max(pageHeight, this.#requiredContentHeight());
+      this.#container.style.blockSize = `${String(safeHeight * zoom)}px`;
     }
     this.#options.renderer.invalidateLayout();
   }
@@ -412,6 +429,14 @@ export class ActiveEditorLayout {
     const renderedHeight = pageHeight * zoom;
     this.#container.style.blockSize = `${String(renderedHeight)}px`;
     this.#options.renderer.invalidateLayout();
+  }
+
+  #requiredContentHeight(page = this.#renderPage()): number {
+    return deriveActiveHeight(page, this.#options.storeMaximumBottom());
+  }
+
+  #retainCommittedExtent(): void {
+    this.#pageLayout.retainMinimumHeight(this.#requiredContentHeight());
   }
 
   #resolvedZoom(fitZoom: number): number {
@@ -445,6 +470,18 @@ export class ActiveEditorLayout {
       this.#options.onReady();
     });
   }
+}
+
+function maximumFiniteBottom(
+  first: number | undefined,
+  second: number | undefined,
+): number | undefined {
+  const values = [first, second].filter((value): value is number => Number.isFinite(value));
+  return values.length === 0 ? undefined : Math.max(...values);
+}
+
+function deriveActiveHeight(page: PageV1, maximumBottom: number | undefined): number {
+  return derivePageExtent(page, maximumBottom ?? null).activeHeight;
 }
 
 function motionPreference(value: string | undefined): ActiveEditorMotionPreference {

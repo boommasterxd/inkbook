@@ -9,17 +9,6 @@ export const TOUCH_TAP_MAX_MOVEMENT_PX = 6;
 
 export type EditorTool = StartupToolV1;
 
-export type InputPhase =
-  | "idle"
-  | "touch-pending"
-  | "note-scroll"
-  | "page-pan"
-  | "element-move"
-  | "lasso"
-  | "eraser-gesture"
-  | "tool-gesture"
-  | "pinch";
-
 export interface InputPoint {
   readonly x: number;
   readonly y: number;
@@ -74,6 +63,7 @@ export interface ConfigureInputAction {
   readonly activeTool?: EditorTool;
   readonly deviceFingerDrawingEnabled?: boolean;
   readonly toolbarFingerDrawingEnabled?: boolean;
+  readonly hasSelection?: boolean;
   readonly zoom?: number;
   readonly fitZoom?: number;
 }
@@ -91,6 +81,7 @@ interface SinglePointerInteraction {
   readonly pointerId: number;
   readonly pointerType: PointerSample["pointerType"];
   readonly penRole: "normal" | "eraser" | "side-button";
+  readonly controlOrMeta?: boolean;
   readonly start: InputPoint;
   readonly startedAt?: number;
   readonly current: InputPoint;
@@ -151,6 +142,7 @@ export interface InputState {
   readonly activeTool: EditorTool;
   readonly deviceFingerDrawingEnabled: boolean;
   readonly toolbarFingerDrawingEnabled: boolean;
+  readonly hasSelection: boolean;
   readonly zoom: number;
   readonly fitZoom: number;
   readonly interaction: InputInteraction | undefined;
@@ -230,6 +222,7 @@ export function createInputState(
       | "activeTool"
       | "deviceFingerDrawingEnabled"
       | "toolbarFingerDrawingEnabled"
+      | "hasSelection"
       | "zoom"
       | "fitZoom"
     >
@@ -239,13 +232,10 @@ export function createInputState(
     activeTool: overrides.activeTool ?? "draw",
     deviceFingerDrawingEnabled: overrides.deviceFingerDrawingEnabled ?? false,
     toolbarFingerDrawingEnabled: overrides.toolbarFingerDrawingEnabled ?? false,
+    hasSelection: overrides.hasSelection ?? false,
     zoom: overrides.zoom ?? 1,
     fitZoom: overrides.fitZoom ?? 1,
     interaction: undefined,
     consumedPointerIds: [],
   };
-}
-
-export function inputPhase(state: InputState): InputPhase {
-  return state.interaction?.phase ?? "idle";
 }

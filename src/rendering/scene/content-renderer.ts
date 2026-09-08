@@ -1,5 +1,5 @@
 import type { RenderBand } from "../../domain/commands/render-bands";
-import { buildElementPathParts } from "../../domain/geometry/element-path";
+import { buildElementPathParts, type SvgPathPart } from "../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../domain/schema/public";
 import {
   updateMountedGeometry,
@@ -86,7 +86,7 @@ export class SceneContentRenderer {
   }
 
   public markGeometry(id: string): void {
-    this.#geometryDirty.add(id);
+    if (this.#mounted.has(id)) this.#geometryDirty.add(id);
     this.#pathCache.invalidate(id);
   }
 
@@ -139,8 +139,9 @@ export class SceneContentRenderer {
     deadline: number,
     now: () => number,
     previewTransforms: ReadonlyMap<string, PreviewTransform>,
+    previewElements: ReadonlyMap<string, InkElementV1>,
   ): boolean {
-    const result = this.#reconciler.reconcile(deadline, now, previewTransforms);
+    const result = this.#reconciler.reconcile(deadline, now, previewTransforms, previewElements);
     if (result.committedVisibility !== undefined) {
       this.commitVisibility(result.committedVisibility);
       this.#newlyMountedIds = result.newlyMountedIds;
@@ -152,18 +153,30 @@ export class SceneContentRenderer {
     return this.#reconciler.promote(id);
   }
 
-  public applyPreviewTransform(id: string, transform: string | null, version: number): void {
+  public applyPreviewTransform(
+    id: string,
+    transform: string | null,
+    version: number,
+    strokeWidthScale: number | null,
+  ): void {
     const entry = this.#mounted.get(id);
     if (entry !== undefined) {
-      updatePreviewTransform(entry, transform, version, this.#instrumentation);
+      updatePreviewTransform(entry, transform, version, strokeWidthScale, this.#instrumentation);
     }
   }
 
   public applyElementPreview(element: InkElementV1): boolean {
+    return this.applyCanonicalElementPreview(element, buildElementPathParts(element));
+  }
+
+  public applyCanonicalElementPreview(
+    element: InkElementV1,
+    parts: readonly SvgPathPart[],
+  ): boolean {
     const entry = this.#mounted.get(element.id);
     const record = this.#store.get(element.id);
     if (entry === undefined || record === undefined) return false;
-    updateMountedElementPreview(entry, record, element, buildElementPathParts(element), {
+    updateMountedElementPreview(entry, record, element, parts, {
       instrumentation: this.#instrumentation,
       ownerDocument: this.#dom.ownerDocument,
       parent: this.#dom.group(entry.band),

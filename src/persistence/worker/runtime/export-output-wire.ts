@@ -2,8 +2,6 @@ import type { ExportSuccess } from "../protocol";
 import type { RuntimeWireSliceOptions } from "./element-wire-codec";
 import { exclusiveTransferBytes } from "./transferable-bytes";
 
-export const EXPORT_OUTPUT_WIRE_FORMAT = "transferred-utf8" as const;
-
 export interface ExportSuccessWireResult extends Omit<ExportSuccess, "output" | "type"> {
   readonly output: Uint8Array<ArrayBuffer>;
   readonly type: "export-success-wire";

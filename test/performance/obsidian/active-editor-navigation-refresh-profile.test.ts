@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createInputState, type InputState } from "../../../src/editor/input/index";
-import { OUTER_PAGE_WIDTH } from "../../../src/editor/zoom/index";
+import { OUTER_PAGE_WIDTH } from "../../../src/editor/zoom/zoom";
 import { ActiveEditorNavigation } from "../../../src/obsidian/embeds/active-editor/navigation";
 import type { BrowserScrollElement } from "../../../src/obsidian/scrolling/index";
 import type { SvgSceneRenderer } from "../../../src/rendering/scene/index";

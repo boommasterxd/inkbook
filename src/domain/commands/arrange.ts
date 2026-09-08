@@ -1,10 +1,4 @@
-import type { InkElementV1 } from "../schema/types";
-
-import { deriveRenderBands, type RenderBandElement } from "./render-bands";
-
 export type ArrangeAction = "bring-forward" | "send-backward" | "bring-to-front" | "send-to-back";
-
-export type IdentifiedRenderBandElement = RenderBandElement & Pick<InkElementV1, "id">;
 
 export interface ArrangeResult<T> {
   readonly elements: readonly T[];
@@ -81,18 +75,4 @@ export function arrangeRenderBand<T>(
 
   const changed = hasOrderChanged(elements, arranged);
   return { elements: changed ? arranged : elements, changed };
-}
-
-export function arrangeElements<T extends IdentifiedRenderBandElement>(
-  elements: readonly T[],
-  selectedIds: ReadonlySet<string>,
-  action: ArrangeAction,
-): ArrangeResult<T> {
-  const bands = deriveRenderBands(elements);
-  const selected = (element: T): boolean => selectedIds.has(element.id);
-  const highlight = arrangeRenderBand(bands.highlight, selected, action);
-  const content = arrangeRenderBand(bands.content, selected, action);
-
-  if (!highlight.changed && !content.changed) return { elements, changed: false };
-  return { elements: [...highlight.elements, ...content.elements], changed: true };
 }

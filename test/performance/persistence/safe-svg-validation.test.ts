@@ -24,7 +24,7 @@ describe("safe SVG validation performance", () => {
       maximumSlices,
     );
     expectProfileBudget(maximumSlices, MAIN_THREAD_BUDGET_MS);
-    expect(runs.every(({ checkpoints }) => checkpoints > 70)).toBe(true);
+    expect(runs.every(({ checkpoints }) => checkpoints > 700)).toBe(true);
     expect(
       runs.every(({ checkpoints, syntheticInputSamples }) => syntheticInputSamples === checkpoints),
     ).toBe(true);

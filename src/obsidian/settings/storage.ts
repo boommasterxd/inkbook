@@ -1,23 +1,23 @@
 import {
   createBuiltInDeviceSettings,
   createBuiltInSettings,
+  DEVICE_SETTINGS_STORAGE_KEY,
+  LEGACY_DEVICE_SETTINGS_STORAGE_KEY,
   loadDeviceSettings,
   loadSettings,
-  type InkbookDeviceSettingsV1,
-  type InkbookSettingsV3,
+  type InkbookDeviceSettingsV2,
+  type InkbookSettingsV4,
   type SettingsDiagnostic,
 } from "../../domain/settings";
 
-export const DEVICE_SETTINGS_STORAGE_KEY = "inkbook:device-settings:v1";
-
 export interface VaultSettingsPort {
   loadData(): Promise<unknown>;
-  saveData(data: InkbookSettingsV3): Promise<void>;
+  saveData(data: InkbookSettingsV4): Promise<void>;
 }
 
 export interface DeviceSettingsPort {
   loadLocalStorage(key: string): unknown;
-  saveLocalStorage(key: string, data: InkbookDeviceSettingsV1): void;
+  saveLocalStorage(key: string, data: InkbookDeviceSettingsV2): void;
 }
 
 export interface LoadedSettingsDiagnostics {
@@ -25,18 +25,19 @@ export interface LoadedSettingsDiagnostics {
   readonly device: readonly SettingsDiagnostic[];
 }
 
-export type DeviceSettingsListener = (settings: Readonly<InkbookDeviceSettingsV1>) => void;
-export type VaultSettingsListener = (settings: Readonly<InkbookSettingsV3>) => void;
+export type DeviceSettingsListener = (settings: Readonly<InkbookDeviceSettingsV2>) => void;
+export type VaultSettingsListener = (settings: Readonly<InkbookSettingsV4>) => void;
 
 function deviceSettingsEqual(
-  left: InkbookDeviceSettingsV1,
-  right: InkbookDeviceSettingsV1,
+  left: InkbookDeviceSettingsV2,
+  right: InkbookDeviceSettingsV2,
 ): boolean {
   return (
     left.fingerDrawingEnabled === right.fingerDrawingEnabled &&
     left.penTapInsertion === right.penTapInsertion &&
     left.leftHandedToolbar === right.leftHandedToolbar &&
-    left.motion === right.motion
+    left.motion === right.motion &&
+    JSON.stringify(left.keyboardShortcuts) === JSON.stringify(right.keyboardShortcuts)
   );
 }
 
@@ -54,19 +55,29 @@ export class InkbookSettingsStore {
 
   public async load(): Promise<LoadedSettingsDiagnostics> {
     const vaultResult = loadSettings(await this.vaultPort.loadData());
-    const deviceResult = loadDeviceSettings(
-      this.devicePort.loadLocalStorage(DEVICE_SETTINGS_STORAGE_KEY),
-    );
+    const storedDevice = this.devicePort.loadLocalStorage(DEVICE_SETTINGS_STORAGE_KEY);
+    const legacyDevice =
+      storedDevice === null || storedDevice === undefined
+        ? this.devicePort.loadLocalStorage(LEGACY_DEVICE_SETTINGS_STORAGE_KEY)
+        : undefined;
+    const deviceResult = loadDeviceSettings(storedDevice ?? legacyDevice);
     this.vaultSettings = vaultResult.value;
     this.setDeviceSettings(deviceResult.value);
+    if (
+      (storedDevice === null || storedDevice === undefined) &&
+      legacyDevice !== null &&
+      legacyDevice !== undefined
+    ) {
+      this.devicePort.saveLocalStorage(DEVICE_SETTINGS_STORAGE_KEY, deviceResult.value);
+    }
     return { vault: vaultResult.diagnostics, device: deviceResult.diagnostics };
   }
 
-  public getVaultSettings(): InkbookSettingsV3 {
+  public getVaultSettings(): InkbookSettingsV4 {
     return structuredClone(this.vaultSettings);
   }
 
-  public getDeviceSettings(): InkbookDeviceSettingsV1 {
+  public getDeviceSettings(): InkbookDeviceSettingsV2 {
     return structuredClone(this.deviceSettings);
   }
 
@@ -84,11 +95,11 @@ export class InkbookSettingsStore {
     };
   }
 
-  public async replaceVaultSettings(value: InkbookSettingsV3): Promise<void> {
+  public async replaceVaultSettings(value: InkbookSettingsV4): Promise<void> {
     await this.enqueueVaultWrite(() => value);
   }
 
-  public replaceDeviceSettings(value: InkbookDeviceSettingsV1): void {
+  public replaceDeviceSettings(value: InkbookDeviceSettingsV2): void {
     const result = loadDeviceSettings(value);
     if (result.diagnostics.length > 0) throw new Error("Invalid device settings");
     this.devicePort.saveLocalStorage(DEVICE_SETTINGS_STORAGE_KEY, result.value);
@@ -96,13 +107,13 @@ export class InkbookSettingsStore {
   }
 
   public async updateVaultSettings(
-    update: (settings: InkbookSettingsV3) => InkbookSettingsV3,
+    update: (settings: InkbookSettingsV4) => InkbookSettingsV4,
   ): Promise<void> {
     await this.enqueueVaultWrite(update);
   }
 
   public updateDeviceSettings(
-    update: (settings: InkbookDeviceSettingsV1) => InkbookDeviceSettingsV1,
+    update: (settings: InkbookDeviceSettingsV2) => InkbookDeviceSettingsV2,
   ): void {
     this.replaceDeviceSettings(update(structuredClone(this.deviceSettings)));
   }
@@ -115,7 +126,7 @@ export class InkbookSettingsStore {
   }
 
   private async enqueueVaultWrite(
-    update: (settings: InkbookSettingsV3) => InkbookSettingsV3,
+    update: (settings: InkbookSettingsV4) => InkbookSettingsV4,
   ): Promise<void> {
     const operation = this.vaultWrites.then(async () => {
       const candidate = update(structuredClone(this.vaultSettings));
@@ -131,7 +142,7 @@ export class InkbookSettingsStore {
     await operation;
   }
 
-  private setDeviceSettings(settings: InkbookDeviceSettingsV1): void {
+  private setDeviceSettings(settings: InkbookDeviceSettingsV2): void {
     if (deviceSettingsEqual(this.deviceSettings, settings)) return;
     this.deviceSettings = structuredClone(settings);
     for (const listener of [...this.deviceSettingsListeners]) {

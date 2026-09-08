@@ -1,11 +1,6 @@
-import { calculateElementBounds } from "../../domain/geometry/bounds";
-import type { Bounds } from "../../domain/geometry/public";
+import { assertFinitePoint, type Bounds } from "../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
-import {
-  createSweptCapsuleCheck,
-  sweptCapsuleTouchesElement,
-  type SweptCapsuleCheck,
-} from "./eraser-intersection";
+import { createSweptCapsuleCheck, type SweptCapsuleCheck } from "./eraser-intersection";
 
 const ERASER_FADE_MS = 160;
 const EXACT_WORK_UNITS_PER_UPDATE = 12_288;
@@ -87,6 +82,7 @@ export class EraserSweep {
     this.#sliceBudgetMs = sliceBudgetMs;
     this.#pendingSweeps.push({ end: this.#previous, start: this.#previous });
     this.#processUpdatePending();
+    this.#publishUpdateAdded();
   }
 
   public get candidateCount(): number {
@@ -106,26 +102,28 @@ export class EraserSweep {
   }
 
   public update(pointValue: PointV1): EraserUpdateResult {
+    return this.updateBatch([pointValue]);
+  }
+
+  public updateBatch(points: readonly PointV1[]): EraserUpdateResult {
     if (this.#state === "cancelled") return "cancelled";
     if (this.#state !== "active") throw new Error("A finalized eraser sweep cannot be updated.");
-    assertFinitePoint(pointValue);
-    if (pointValue.x === this.#previous.x && pointValue.y === this.#previous.y) {
-      this.#processUpdatePending();
-      return "accepted";
+    for (const pointValue of points) {
+      assertFinitePoint(pointValue);
+      if (pointValue.x === this.#previous.x && pointValue.y === this.#previous.y) continue;
+      const point = { x: pointValue.x, y: pointValue.y };
+      if (this.retainedSweepCount >= MAX_RETAINED_ERASER_SWEEPS) {
+        this.#processUpdatePending();
+      }
+      if (this.retainedSweepCount >= MAX_RETAINED_ERASER_SWEEPS) {
+        this.revert();
+        return "cancelled";
+      }
+      this.#pendingSweeps.push({ end: point, start: this.#previous });
+      this.#previous = point;
     }
-    const point = { x: pointValue.x, y: pointValue.y };
-    let processed = false;
-    if (this.retainedSweepCount >= MAX_RETAINED_ERASER_SWEEPS) {
-      this.#processUpdatePending();
-      processed = true;
-    }
-    if (this.retainedSweepCount >= MAX_RETAINED_ERASER_SWEEPS) {
-      this.revert();
-      return "cancelled";
-    }
-    this.#pendingSweeps.push({ end: point, start: this.#previous });
-    this.#previous = point;
-    if (!processed) this.#processUpdatePending();
+    this.#processUpdatePending();
+    this.#publishUpdateAdded();
     return "accepted";
   }
 
@@ -184,6 +182,10 @@ export class EraserSweep {
       this.#processPending(Math.min(remaining, UPDATE_CHECKPOINT_WORK_UNITS), added);
       if (performance.now() >= deadline) break;
     }
+  }
+
+  #publishUpdateAdded(): void {
+    const added = this.#updateAdded;
     this.#publishAdded(added);
     added.length = 0;
   }
@@ -268,17 +270,6 @@ function finalizationWorkUnits(sliceBudgetMs: number): number {
   );
 }
 
-export function sweepTouchesElement(
-  start: PointV1,
-  end: PointV1,
-  radius: number,
-  element: InkElementV1,
-): boolean {
-  const bounds = calculateElementBounds(element);
-  if (!boundsOverlap(bounds, sweepBounds(start, end, radius))) return false;
-  return sweptCapsuleTouchesElement(start, end, radius, element);
-}
-
 function sweepBounds(start: PointV1, end: PointV1, radius: number): Bounds {
   return {
     minX: Math.min(start.x, end.x) - radius,
@@ -288,21 +279,7 @@ function sweepBounds(start: PointV1, end: PointV1, radius: number): Bounds {
   };
 }
 
-function boundsOverlap(left: Bounds, right: Bounds): boolean {
-  return (
-    left.minX <= right.maxX &&
-    left.maxX >= right.minX &&
-    left.minY <= right.maxY &&
-    left.maxY >= right.minY
-  );
-}
-
 function finitePoint(point: PointV1): PointV1 {
-  assertFinitePoint(point);
+  assertFinitePoint(point, "Eraser points must be finite.");
   return { x: point.x, y: point.y };
-}
-
-function assertFinitePoint(point: PointV1): void {
-  if (!Number.isFinite(point.x) || !Number.isFinite(point.y))
-    throw new RangeError("Eraser points must be finite.");
 }

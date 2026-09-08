@@ -1,49 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  isCurrentExecutor,
-  PurposeIdentityRegistry,
-} from "../../../../src/persistence/worker/identity";
 import { WorkerJobQueue } from "../../../../src/persistence/worker/job-queue";
 import type { WorkerJob, WorkerJobKind } from "../../../../src/persistence/worker/protocol";
 
 const job = (id: string, kind: WorkerJobKind): WorkerJob<string> => ({ id, kind, payload: id });
-
-describe("purpose-specific worker identities", () => {
-  it("keeps operation counters and currentness separate by purpose", () => {
-    const registry = new PurposeIdentityRegistry("session-a", 4);
-    const firstClipboard = registry.begin("clipboard");
-    const verification = registry.begin("verification");
-    const secondClipboard = registry.begin("clipboard");
-
-    expect(firstClipboard.operationId).toBe(1);
-    expect(verification.operationId).toBe(1);
-    expect(secondClipboard.operationId).toBe(2);
-    expect(registry.isCurrent(firstClipboard)).toBe(false);
-    expect(registry.isCurrent(secondClipboard)).toBe(true);
-    expect(registry.isCurrent(verification)).toBe(true);
-  });
-
-  it("invalidates all old purpose IDs only when the executor epoch changes", () => {
-    const registry = new PurposeIdentityRegistry("session-a", 2);
-    const operation = registry.begin("unlock");
-
-    expect(registry.finish({ ...operation, sessionId: "another-session" })).toBe(false);
-    expect(registry.isCurrent(operation)).toBe(true);
-
-    const executor = registry.invalidateExecutor();
-    expect(executor).toEqual({ sessionId: "session-a", workerEpoch: 3 });
-    expect(registry.isCurrent(operation)).toBe(false);
-    expect(isCurrentExecutor(executor, operation)).toBe(false);
-  });
-
-  it("rejects invalid identity seeds and counter overflow", () => {
-    expect(() => new PurposeIdentityRegistry("", 0)).toThrow(RangeError);
-    expect(() => new PurposeIdentityRegistry("session", -1)).toThrow(RangeError);
-    const registry = new PurposeIdentityRegistry("session", Number.MAX_SAFE_INTEGER);
-    expect(() => registry.invalidateExecutor()).toThrow(RangeError);
-  });
-});
 
 describe("bounded non-preemptive worker queue", () => {
   it("does not preempt an active job and then starts pending work by priority", () => {

@@ -40,14 +40,6 @@ describe("Inkbook command registry", () => {
 
     expect(host.commands.map(({ id }) => id)).toEqual([
       "lock-active-embed",
-      "copy-selection",
-      "cut-selection",
-      "delete-selection",
-      "bring-forward",
-      "send-backward",
-      "bring-to-front",
-      "send-to-back",
-      "paste",
       "copy-embed",
       "erase-all",
       "delete-embed",
@@ -58,7 +50,7 @@ describe("Inkbook command registry", () => {
 
   it("hides unavailable canvas actions and executes available actions only outside checking", () => {
     const host = new CommandHost();
-    const available = new Set<InkbookCommandAction>(["bring-forward"]);
+    const available = new Set<InkbookCommandAction>(["copy-embed"]);
     const execute = vi.fn();
     registerInkbookCommands(
       host,
@@ -66,14 +58,14 @@ describe("Inkbook command registry", () => {
       { canInsert: () => false, request: () => false },
     );
 
-    const bringForward = findCommand(host, "bring-forward");
-    const sendBackward = findCommand(host, "send-backward");
-    expect(bringForward.checkCallback?.(true)).toBe(true);
+    const copyEmbed = findCommand(host, "copy-embed");
+    const eraseAll = findCommand(host, "erase-all");
+    expect(copyEmbed.checkCallback?.(true)).toBe(true);
     expect(execute).not.toHaveBeenCalled();
-    expect(bringForward.checkCallback?.(false)).toBe(true);
-    expect(execute).toHaveBeenCalledWith("bring-forward");
-    expect(sendBackward.checkCallback?.(true)).toBe(false);
-    expect(sendBackward.checkCallback?.(false)).toBe(false);
+    expect(copyEmbed.checkCallback?.(false)).toBe(true);
+    expect(execute).toHaveBeenCalledWith("copy-embed");
+    expect(eraseAll.checkCallback?.(true)).toBe(false);
+    expect(eraseAll.checkCallback?.(false)).toBe(false);
     expect(execute).toHaveBeenCalledTimes(1);
   });
 

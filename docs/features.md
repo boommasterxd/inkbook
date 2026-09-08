@@ -55,7 +55,7 @@ aligned occupied extent
 
 The alignment step and buffer unit are both fixed at 100 page units. Background selection, S/M/L/XL, and buffer-count changes therefore cannot alter the physical size of a pattern.
 
-The page is not remeasured after every pointer sample. After a committed geometry change, it grows when less than one writing line of active buffer remains and restores the configured buffer in one 180-millisecond height transition. The sole pre-commit exception is the bounded one-buffer-unit extension while a selection remains in the bottom-edge drag zone; its exact threshold, cancellation, and commit rules are defined in [File Format and Geometry](file-format.md).
+The page is not remeasured after every pointer sample. After a committed geometry change, it grows when less than one writing line of active buffer remains and restores the configured buffer in one 180-millisecond height transition. Selection moves and geometry-handle gestures may request only a larger writing-row-aligned preview extent, and repeated pointer or autoscroll frames coalesce into the existing 180-millisecond transition without passive scroll stabilization. Cancellation returns to the captured original height. A successful commit retains at least the final rendered preview extent and the Store-derived extent, including through a time-sliced handle commit, so moved, resized, or structurally edited content cannot be clipped by a smaller post-gesture measurement.
 
 When content is deleted, the active embed can shrink again. The active editor defaults to three empty writing lines below content. A non-empty patterned locked preview ends after the pattern row containing the lowest annotation plus exactly one additional pattern row. A non-empty preview without a visible pattern uses one additional 100-unit writing row. An empty page keeps the shared 2.5-writing-line minimum rounded up to a complete 100-unit writing row. The active per-file buffer remains configurable; locked trailing space is fixed to one row of the selected locked alignment so preview height follows content consistently. Unlock and Lock animate between these derived heights over 240 milliseconds. The page includes writable margins on all four sides; writing into the bottom margin triggers writing-row-aligned active growth that restores the complete margin below the occupied extent.
 
@@ -102,8 +102,9 @@ Copy:
 
 - serializes the selection's geometry and style as JSON
 - removes the original IDs from the payload
-- writes a custom MIME format plus `text/plain`
+- writes the complete prefixed payload through the interoperable system `text/plain` format
 - additionally retains an in-session copy in case clipboard permissions are unavailable
+- does not let an unresolved best-effort system write block the validated in-session payload or the next clipboard action
 - preserves connections whose target is also selected through clipboard-local IDs; connections to unselected targets become free endpoints
 
 The MIME identifier, versioned payload schema, validation rules, and limits are defined in [File Format and Geometry](file-format.md).
@@ -127,18 +128,17 @@ Paste:
 
 - generates new IDs for all elements
 - inserts all elements as one undo step
-- then automatically activates Select
-- selects the inserted elements
+- selects the inserted elements; Toolbar and keyboard Paste activate Select, while Context-menu Paste preserves the current creation tool so the menu-closing touch cannot become a lasso gesture
 - remaps every clipboard-local target ID to the corresponding new document ID
 
 Placement:
 
 - Toolbar Paste places the selection in the center of the visible canvas area.
-- Context-menu Paste places it at the right-click or long-press point.
+- Context-menu Paste places it exactly at the mouse, pen, or touch invocation point in page coordinates. It snapshots that point when the menu opens and applies no repeated-paste offset.
 - `Ctrl/Cmd+V` uses the last pointer position recorded inside the current active editor session. If none exists, it uses the center of the visible canvas.
-- Repeatedly pasting the same payload offsets each additional copy diagonally by 24 page units.
+- Repeated Toolbar or keyboard paste of the same payload offsets each additional copy diagonally by 24 page units.
 
-The shortcuts only take effect when the pointer is over the active editor and no text field is focused. Without a selection or valid ink payload, the normal Obsidian clipboard functions remain active.
+Canvas shortcuts are captured through the active editor's owning document so they remain available after canvas or toolbar interaction. Document-level capture requires the pointer over the complete active embed, including its toolbar, and no focused text field. A key or native Paste event targeted directly at the focused input surface remains owned after a touch pointer leaves its Android hover boundary. Clipboard work temporarily makes that surface inert, but restores its focus after completion when focus did not move to another control, so an immediate repeated shortcut remains canvas-owned without hover. `Delete` uses the same availability boundary, while `Backspace` remains native. On platforms that expose `Clipboard.read()`, fixed keyboard Paste is claimed inside that boundary and performs the same bounded validation and feedback as toolbar and context-menu Paste. Platforms without that API use the synchronous native Paste event instead. Invalid data, permission or read failure, unexpected decoding or commit failure, stale document state, and overlapping Clipboard work each produce explicit feedback; a claimed trigger never silently does nothing or shows a success animation before the corresponding operation succeeds. The toolbar Paste control appears only after the first system Clipboard item or the in-session fallback has validated as Inkbook data and remains visually stable during overlapping Clipboard work. The context-menu action remains retryable when `Clipboard.read()` exists even if a background permission probe failed, and its native menu opens synchronously without waiting for that probe. A copied payload whose system write failed remains authoritative in the in-session fallback, even if the platform returns an empty clipboard read. Configurable bindings, fixed Paste and history bindings, and command ownership are canonical in [Keyboard Shortcuts](keyboard-shortcuts.md).
 
 ## Canvas Context Menus
 
@@ -146,31 +146,32 @@ The canvas uses Obsidian's native `Menu` through the owning presentation documen
 
 - mouse or trackpad `contextmenu`
 - a one-finger long press lasting at least 500 milliseconds, with at most 6 screen pixels of movement when it begins on an annotation or 10 screen pixels on empty canvas
-- the keyboard Context Menu key or `Shift+F10` while the canvas input surface has focus
+- `Shift+F10` while the canvas input surface has focus
 
 The single transparent input surface converts the invocation point to page coordinates and resolves an annotation through the spatial index. A mouse right-click or touch long press on an unselected annotation selects only that annotation before opening the menu. Invoking it on an already selected annotation preserves the complete selection. Invoking it on empty canvas preserves the current selection. Selection caused by menu invocation is not a history entry and does not dirty the file.
 
-Moving beyond the long-press threshold, receiving a second touch, starting a pen gesture, losing the owning presentation, or cancelling the pointer prevents the touch menu from opening. A long press on an annotation always selects and opens the selection menu regardless of the active tool; it never starts that tool's gesture. The keyboard menu is positioned at the visible selection center, or at the visible canvas center when no selection exists. Mouse and touch menus use their invocation point, which also becomes the Context-menu Paste position.
+Moving beyond the long-press threshold, receiving a second touch, starting a pen gesture, losing the owning presentation, or cancelling the pointer prevents the touch menu from opening. A long press on an annotation always selects and opens the selection menu regardless of the active tool; it never starts that tool's gesture. Dismissing a touch-opened menu does not restore focus through the disappearing menu onto the canvas. The keyboard menu is positioned at the visible selection center, or at the visible canvas center when no selection exists. Mouse, pen, and touch menus snapshot their invocation point, which also becomes the exact Context-menu Paste position.
 
 When a selection exists, the menu begins with:
 
 1. Copy
 2. Cut
-3. Delete
+3. Paste, when a validated payload or a user-activated system Clipboard read is available
 4. a separator
-5. Bring forward
-6. Send backward
-7. Bring to front
-8. Send to back
+5. Delete
+6. a separator
+7. Bring forward
+8. Send backward
+9. Bring to front
+10. Send to back
 
 The canvas section follows after a separator:
 
-1. Paste, only when a valid ink clipboard payload is available
-2. Copy embed
-3. Erase all
-4. Delete embed
+1. Copy embed
+2. Erase all
+3. Delete embed
 
-Without a selection, the selection section is omitted. The four Arrange actions are flat entries because the public Obsidian `MenuItem` API exposes no submenu contract. Disabled boundary actions remain visible. Delete removes only the selected annotations with one undoable canvas command. Erase all and Delete embed retain their confirmation behavior. Exact icons, destructive styling, focus behavior, and host API usage are defined in [Embed UI](embed-ui.md#context-menu-presentation) and [Obsidian Integration](obsidian-integration.md#commands-menus-icons-and-styling).
+Without a selection, the selection section is omitted and Paste precedes the canvas section when a validated payload or a user-activated system Clipboard read is available. The four Arrange actions are flat entries because the public Obsidian `MenuItem` API exposes no submenu contract. Disabled boundary actions remain visible. Delete removes only the selected annotations with one undoable canvas command. Erase all and Delete embed retain their confirmation behavior. Exact icons, destructive styling, focus behavior, and host API usage are defined in [Embed UI](embed-ui.md#context-menu-presentation) and [Obsidian Integration](obsidian-integration.md#commands-menus-icons-and-styling).
 
 ## Copying the Entire Embed
 
@@ -190,7 +191,7 @@ Duplicate creates and validates a new SVG file before replacing the file path in
 The following behavior applies by default:
 
 - A pen draws.
-- One finger scrolls the note, pans while zoomed, selects an annotation only after a confirmed short tap, moves only an annotation that was already selected before contact, or opens the context menu with the bounded long press defined above. Pan and scroll never select an annotation.
+- One finger scrolls the note, pans while zoomed, selects an annotation or clears an empty-canvas selection only after a confirmed short tap, moves only an annotation that was already selected before contact, or opens the context menu with the bounded long press defined above. Pan, scroll, pinch, and long press never change selection.
 - Two fingers zoom.
 - Finger drawing is disabled by default in the device-local setting for the current vault.
 
@@ -246,7 +247,7 @@ The process:
 6. After the exact saved revision and its static preview are ready, the preview fades in while the editor fades out over an independent 120 milliseconds.
 7. The interactive editor is unmounted only after the crossfade completes.
 
-The save is awaited in full so that the new preview does not accidentally load the previous file state. A failed save keeps the disabled editor mounted with its dirty state and presents Retry, Save local copy, and Cancel actions. Cancel restores the prior active camera and active height without discarding data.
+The save is awaited in full so that the new preview does not accidentally load the previous file state. A validated saved SVG and the aspect ratio derived from those exact SVG bytes are mounted atomically, including when the presentation is already locked. A failed save keeps the disabled editor mounted with its dirty state and presents Retry, Save local copy, and Cancel actions. Cancel restores the prior active camera and active height without discarding data.
 
 ## Overflow Functions
 

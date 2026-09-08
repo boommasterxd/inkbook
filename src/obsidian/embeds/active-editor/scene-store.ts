@@ -51,6 +51,22 @@ export class ElementSceneStore implements SceneStorePort, ActiveDocumentMemorySt
         };
   }
 
+  public canConnect(sourceId: string, targetId: string): boolean {
+    const pending = [targetId];
+    const visited = new Set<string>();
+    while (pending.length > 0) {
+      const id = pending.pop()!;
+      if (id === sourceId) return false;
+      if (visited.has(id)) continue;
+      visited.add(id);
+      const target = this.#store.get(id)?.element;
+      if (target?.kind !== "line" && target?.kind !== "arrow") continue;
+      if (target.startConnection !== null) pending.push(target.startConnection.targetId);
+      if (target.endConnection !== null) pending.push(target.endConnection.targetId);
+    }
+    return true;
+  }
+
   public memoryUsage(): ReturnType<ActiveDocumentMemoryStorePort["memoryUsage"]> {
     return this.#store.activeDocumentMemoryUsage();
   }

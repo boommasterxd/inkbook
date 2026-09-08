@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { CoordinateSystemElementV1 } from "../../../../src/domain/schema/public";
-import { ElementStore, type ElementRecord } from "../../../../src/domain/store/public";
+import type {
+  CoordinateSystemElementV1,
+  TableElementV1,
+} from "../../../../src/domain/schema/public";
+import { ElementStore } from "../../../../src/domain/store/public";
+import { type ElementRecord } from "../../../../src/domain/store/types";
 
 import {
   axisConnectedLine,
@@ -108,6 +112,103 @@ describe("ElementStore connection transactions", () => {
     expect(committedLine.start).toEqual({ x: 200, y: 400 });
     expect(delta?.changes.find(({ id }) => id === line.id)?.domains).toEqual(["connection"]);
     expect(references).toEqual([]);
+  });
+});
+
+describe("ElementStore table separator transactions", () => {
+  it("updates internal separators without visiting unchanged outer-anchor dependents", () => {
+    const box = rectangle();
+    const table: TableElementV1 = {
+      columnWidth: 100,
+      columns: 2,
+      createdAt: box.createdAt,
+      headerHeight: 30,
+      height: box.height,
+      id: box.id,
+      kind: "table",
+      pivot: box.pivot,
+      rotation: box.rotation,
+      style: {
+        outlineColor: box.style.outlineColor,
+        outlineOpacity: box.style.outlineOpacity,
+        outlineStyle: box.style.outlineStyle,
+        outlineWidth: box.style.outlineWidth,
+      },
+      x: box.x,
+      y: box.y,
+    };
+    const line = connectedLine(box);
+    const store = new ElementStore([table, line]);
+    const lineRecord = store.get(line.id);
+    store.resetInstrumentation();
+
+    const delta = store.replace(table.id, {
+      ...table,
+      columnOffsets: [120],
+      headerHeight: 40,
+    });
+
+    expect(delta?.changes.map(({ id }) => id)).toEqual([table.id]);
+    expect(store.get(line.id)).toBe(lineRecord);
+    expect(store.instrumentation.reverseDependencyVisits).toBe(0);
+  });
+});
+
+describe("ElementStore linear endpoint propagation", () => {
+  it("propagates a target move through connected linear endpoint dependents", () => {
+    const target = rectangle();
+    const first = connectedLine(target);
+    const second = {
+      ...connectedLine(target),
+      end: { x: 500, y: 100 },
+      id: "00000000-0000-4000-8000-000000000010",
+      pivot: { x: 300, y: 100 },
+      start: { ...first.start },
+      startConnection: {
+        anchor: { endpoint: "start" as const, kind: "linear-endpoint" as const },
+        targetId: first.id,
+      },
+    };
+    const store = new ElementStore([target, first, second]);
+
+    const delta = store.replace(target.id, rectangle(target.id, 150, 120));
+
+    expect(store.get(first.id)?.element).toMatchObject({ start: { x: 150, y: 120 } });
+    expect(store.get(second.id)?.element).toMatchObject({ start: { x: 150, y: 120 } });
+    expect(delta?.changes.map(({ id }) => id)).toEqual([target.id, first.id, second.id]);
+  });
+
+  it("rejects a replacement that would create a cycle between linear elements", () => {
+    const first = { ...connectedLine(), startConnection: null };
+    const second = {
+      ...first,
+      id: "00000000-0000-4000-8000-000000000010",
+    };
+    const store = new ElementStore([first, second]);
+
+    const firstReplacement = {
+      ...first,
+      startConnection: {
+        anchor: { endpoint: "start" as const, kind: "linear-endpoint" as const },
+        targetId: second.id,
+      },
+    };
+    const secondReplacement = {
+      ...second,
+      startConnection: {
+        anchor: { endpoint: "start" as const, kind: "linear-endpoint" as const },
+        targetId: first.id,
+      },
+    };
+
+    expect(() => store.replaceMany([firstReplacement, secondReplacement])).toThrow(RangeError);
+    const firstAfter = store.get(first.id)?.element;
+    const secondAfter = store.get(second.id)?.element;
+    expect(firstAfter?.kind).toBe("line");
+    expect(secondAfter?.kind).toBe("line");
+    if (firstAfter?.kind !== "line" || secondAfter?.kind !== "line") return;
+    expect(firstAfter.startConnection).toBeNull();
+    expect(secondAfter.startConnection).toBeNull();
   });
 });
 

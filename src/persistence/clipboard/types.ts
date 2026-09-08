@@ -78,24 +78,8 @@ export interface PastePlan {
   repeatState: PasteRepeatState;
 }
 
-export interface ClipboardOperationIdentity {
-  sessionId: string;
-  workerEpoch: number;
-  clipboardOperationId: string;
-  basisRevision: number;
-}
-
 export interface VersionedSelectionRecord {
   id: string;
   geometryVersion: number;
   paintVersion: number;
-}
-
-export interface CutGuard extends ClipboardOperationIdentity {
-  selectedRecords: readonly VersionedSelectionRecord[];
-}
-
-export interface CurrentClipboardState extends ClipboardOperationIdentity {
-  presentationAttached: boolean;
-  selectedRecords: readonly VersionedSelectionRecord[];
 }

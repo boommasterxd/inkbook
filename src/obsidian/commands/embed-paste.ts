@@ -235,19 +235,3 @@ export class EmbedPasteController {
  * then prevent the default event. It may resolve the public Obsidian `Editor` and source path at
  * that host boundary before starting `paste`; the controller deliberately receives no EditorView.
  */
-export interface EmbedPasteExtensionBoundary {
-  handleClipboardPaste(request: EmbedPasteRequest): boolean;
-}
-
-export function createEmbedPasteExtensionBoundary(
-  controller: EmbedPasteController,
-  report: (outcome: EmbedPasteOutcome) => void,
-): EmbedPasteExtensionBoundary {
-  return {
-    handleClipboardPaste: (request) => {
-      if (!controller.canHandle(request)) return false;
-      void controller.paste(request).then(report);
-      return true;
-    },
-  };
-}

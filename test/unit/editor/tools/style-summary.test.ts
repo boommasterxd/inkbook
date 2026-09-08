@@ -50,7 +50,7 @@ describe("Style summaries", () => {
   it("shows only properties shared by an outline selection", () => {
     expect(summarizeSelectionStyle([shape("rectangle")])).toMatchObject({
       kind: "outline",
-      fill: { color: null, opacity: 0.15 },
+      fill: { color: null, opacity: 0.5 },
       arrowNodes: null,
       structural: null,
     });
@@ -79,7 +79,10 @@ describe("Style summaries", () => {
 
   it("summarizes active creation tool values without exposing unavailable controls", () => {
     const values = createBuiltInSettings().toolDefaults;
-    expect(summarizeActiveToolStyle(values, "select")).toBeNull();
+    expect(summarizeActiveToolStyle(values, "select")).toEqual({
+      kind: "select",
+      values: { area: "lasso", inclusion: "touched" },
+    });
     expect(summarizeActiveToolStyle(values, "eraser")).toEqual({ kind: "eraser", radius: 20 });
     expect(summarizeActiveToolStyle(values, "draw")).toMatchObject({
       kind: "stroke",

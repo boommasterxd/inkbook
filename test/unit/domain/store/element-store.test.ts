@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { getCanonicalStrokeReplacementProof } from "../../../../src/domain/elements/stroke-replacement-proof";
 import type { InkElementV1, StrokeElementV1 } from "../../../../src/domain/schema/public";
 import { MAX_SPATIAL_MEMBERSHIPS, SpatialQueryScratch } from "../../../../src/domain/spatial/index";
-import { ElementStore, type ImmutableInkElement } from "../../../../src/domain/store/public";
+import { ElementStore } from "../../../../src/domain/store/public";
+import { type ImmutableInkElement } from "../../../../src/domain/store/types";
 import { moveSelectionTimeSliced } from "../../../../src/editor/selection/public";
 
 import { connectedLine, highlighter, IDS, mixedElement, PAGE, rectangle } from "./fixtures";

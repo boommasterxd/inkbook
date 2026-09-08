@@ -15,6 +15,10 @@ import type { ExistingFilePort, NewFilePort } from "../../persistence/saving/sav
 import type { RecoveryFilePort } from "./vault-document-recovery";
 import type { MigrationBackupPort } from "../../persistence/documents/migration-backup";
 import { serializeSvgNumber } from "../../persistence/documents/svg-number";
+import {
+  deriveDocumentIntegrityManifest,
+  sameDocumentIntegrityManifest,
+} from "../../persistence/serialization/public";
 
 interface VaultUnlockFilePort {
   readBinaryForUnlock(path: string, maximumBytes: number): Promise<UnlockFile>;
@@ -205,6 +209,7 @@ export async function loadVaultDocument(
     if (
       options.cancelled() ||
       result.type !== "unlock-success" ||
+      !matchesUnlockIdentity(result, options) ||
       result.snapshot.batchCount !== nextBatchIndex ||
       result.snapshot.elementCount !== elements.length
     ) {
@@ -220,6 +225,16 @@ export async function loadVaultDocument(
       revision: result.snapshot.revision,
       version: result.snapshot.version,
     };
+    const receivedManifest = deriveDocumentIntegrityManifest(snapshot);
+    const storeManifest = deriveDocumentIntegrityManifest(
+      store.materializeSnapshot({ page: snapshot.page, revision: snapshot.revision }),
+    );
+    if (
+      !sameDocumentIntegrityManifest(result.integrityManifest, receivedManifest) ||
+      !sameDocumentIntegrityManifest(receivedManifest, storeManifest)
+    ) {
+      throw new Error("The unlock snapshot, batches, and finalized store diverged.");
+    }
     return {
       outputHash: result.outputHash,
       requiresCanonicalRewrite:
@@ -238,6 +253,18 @@ export async function loadVaultDocument(
     builder.cancel();
     throw error;
   }
+}
+
+function matchesUnlockIdentity(
+  result: Extract<Awaited<ReturnType<DocumentRuntimePort["execute"]>>, { type: "unlock-success" }>,
+  options: VaultDocumentLoaderOptions,
+): boolean {
+  return (
+    result.identity.operationId === options.operation.operationId &&
+    result.identity.purpose === options.purpose &&
+    result.identity.sessionId === options.operation.sessionId &&
+    result.identity.workerEpoch === options.workerEpoch
+  );
 }
 
 async function readVaultBytes(

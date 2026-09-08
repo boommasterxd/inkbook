@@ -1,14 +1,25 @@
-import type {
-  ColorV1,
-  EndpointConnectionV1,
-  InkElementV1,
-  InkSnapshotV1,
-  OutlineStyleV1,
-  PageV1,
-  ShapeAnchorV1,
-  ShapeStyleV1,
-  StrokeStyleV1,
+import {
+  canonicalizeGeometryNumber,
+  type ColorV1,
+  type EndpointConnectionV1,
+  type InkElementV1,
+  type InkSnapshotV1,
+  type OutlineStyleV1,
+  type PageV1,
+  type PointV1,
+  type ShapeAnchorV1,
+  type ShapeStyleV1,
+  type StrokeStyleV1,
+  type TableElementV1,
 } from "../../domain/schema/public";
+
+interface CanonicalElementBase {
+  readonly createdAt: number;
+  readonly id: string;
+  readonly kind: InkElementV1["kind"];
+  readonly pivot: PointV1;
+  readonly rotation: number;
+}
 
 export function canonicalSnapshot(
   snapshot: InkSnapshotV1,
@@ -91,7 +102,7 @@ export function canonicalElement(
       kind: "straight-highlighter",
       start: canonicalPoint(element.start),
       end: canonicalPoint(element.end),
-      bend: null,
+      bend: element.bend === null ? null : canonicalPoint(element.bend),
       startNode: "none",
       endNode: "none",
       style: canonicalStrokeStyle(element.style),
@@ -118,17 +129,7 @@ export function canonicalElement(
         };
   }
   if (element.kind === "table") {
-    return {
-      ...base,
-      kind: "table",
-      x: element.x,
-      y: element.y,
-      columnWidth: element.columnWidth,
-      height: element.height,
-      columns: element.columns,
-      headerHeight: element.headerHeight,
-      style: canonicalOutlineStyle(element.style),
-    };
+    return canonicalTable(element, base);
   }
   return {
     ...base,
@@ -138,6 +139,25 @@ export function canonicalElement(
     width: element.width,
     height: element.height,
     style: canonicalShapeStyle(element.style),
+  };
+}
+
+function canonicalTable(element: TableElementV1, base: CanonicalElementBase): TableElementV1 {
+  return {
+    ...base,
+    kind: "table",
+    x: element.x,
+    y: element.y,
+    columnWidth: element.columnWidth,
+    ...(element.columnOffsets === undefined
+      ? {}
+      : {
+          columnOffsets: element.columnOffsets.map((offset) => canonicalizeGeometryNumber(offset)),
+        }),
+    height: element.height,
+    columns: element.columns,
+    headerHeight: element.headerHeight,
+    style: canonicalOutlineStyle(element.style),
   };
 }
 
@@ -204,5 +224,8 @@ function canonicalAnchor(anchor: ShapeAnchorV1): ShapeAnchorV1 {
     return { kind: "ellipse-cardinal", angle: anchor.angle };
   }
   if (anchor.kind === "coordinate-origin") return { kind: "coordinate-origin" };
+  if (anchor.kind === "linear-endpoint") {
+    return { endpoint: anchor.endpoint, kind: "linear-endpoint" };
+  }
   return { kind: anchor.kind, index: anchor.index };
 }

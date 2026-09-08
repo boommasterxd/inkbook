@@ -12,6 +12,7 @@ import {
 import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
 import { indexedStroke } from "../../fixtures/editor/stroke";
 import { rectangle } from "../../unit/domain/store/fixtures";
+import { coordinateSystem, table } from "../../unit/domain/geometry/fixtures";
 import {
   INTERACTION_REFRESH_PROFILE,
   interactionP99,
@@ -21,6 +22,7 @@ import {
 import { timingBudget } from "../timing-budget";
 
 const ELEMENT_COUNT = 10_000;
+const RAW_ERASER_SAMPLES_PER_FRAME = 8;
 const PLANNER: SelectionReplacementPlanner = {
   countReverseDependencies: () => 0,
   planReplacements: (replacements) => ({ elements: replacements, replacements }),
@@ -51,8 +53,10 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz editor gesture profile`,
 
     let rejectedUpdates = 0;
     const durations = measureInteractionFrames((frame) => {
-      const point = eraserPoint(frame);
-      if (eraser.update(point) !== "accepted") rejectedUpdates += 1;
+      const points = Array.from({ length: RAW_ERASER_SAMPLES_PER_FRAME }, (_, sample) =>
+        eraserPoint(frame * RAW_ERASER_SAMPLES_PER_FRAME + sample),
+      );
+      if (eraser.updateBatch(points) !== "accepted") rejectedUpdates += 1;
     });
 
     const p99 = interactionP99(durations);
@@ -65,7 +69,9 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz editor gesture profile`,
     sceneStore.release();
   });
 
-  it("keeps move, scale, rotate, and shape-resize previews within budget", async ({ annotate }) => {
+  it("keeps move, group scale, rotate, and shape scale previews within budget", async ({
+    annotate,
+  }) => {
     const elements = interactionStrokes();
     const sessions = selectionSessions(elements);
     for (const profile of sessions) {
@@ -81,6 +87,24 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz editor gesture profile`,
         expect(preview?.exactElements).toHaveLength(1);
       }
       expect(preview?.exactPreviewTruncated).toBe(profile.truncated);
+      expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+      await annotate(interactionProfileAnnotation(profile.name, p99), "performance");
+    }
+  });
+
+  it("keeps linear, coordinate-axis, and table-divider handle drags within budget", async ({
+    annotate,
+  }) => {
+    const profiles = targetedHandleProfiles();
+    for (const profile of profiles) {
+      let snappedFrames = 0;
+      const durations = measureInteractionFrames((frame) => {
+        const preview = profile.session.update(profile.pointer(frame));
+        if (preview.snapGuide?.kind === profile.snapGuideKind) snappedFrames += 1;
+        expect(preview.exactElements).toHaveLength(1);
+      });
+      const p99 = interactionP99(durations);
+      expect(snappedFrames, profile.name).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
       expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
       await annotate(interactionProfileAnnotation(profile.name, p99), "performance");
     }
@@ -115,23 +139,104 @@ function selectionSessions(elements: readonly InkElementV1[]): readonly Selectio
     selectionProfile(
       "selection scale preview",
       elements,
-      { anchor: { x: 0, y: 0 }, kind: "scale", position: "bottom-right" },
+      { anchor: { x: 0, y: 0 }, kind: "scale", position: "bottom-right", rotation: 0 },
       { x: 1_000, y: 1_000 },
     ),
     selectionProfile(
       "selection rotate preview",
       elements,
-      { center: { x: 500, y: 500 }, kind: "rotate" },
+      {
+        center: { x: 500, y: 500 },
+        kind: "rotate",
+        opposite: { x: 0, y: 500 },
+        referenceRotation: 0,
+      },
       { x: 1_000, y: 500 },
     ),
     selectionProfile(
-      "shape resize preview",
+      "shape scale preview",
       [shape],
-      { elementId: shape.id, kind: "shape-resize", position: "bottom-right" },
+      { anchor: { x: 100, y: 100 }, kind: "scale", position: "bottom-right", rotation: 0 },
       { x: 300, y: 200 },
       false,
-      false,
+      true,
     ),
+  ];
+}
+
+interface TargetedHandleProfile {
+  readonly name: string;
+  readonly pointer: (frame: number) => PointV1;
+  readonly session: SelectionHandleSession;
+  readonly snapGuideKind: "angular" | "separator";
+}
+
+function targetedHandleProfiles(): readonly TargetedHandleProfile[] {
+  const line = {
+    bend: null,
+    createdAt: 1,
+    end: { x: 400, y: 100 },
+    endConnection: null,
+    endNode: "none" as const,
+    id: "20000000-0000-4000-8000-000000000011",
+    kind: "line" as const,
+    pivot: { x: 250, y: 100 },
+    rotation: 0,
+    start: { x: 100, y: 100 },
+    startConnection: null,
+    startNode: "none" as const,
+    style: {
+      outlineColor: { type: "theme-text" as const },
+      outlineOpacity: 1,
+      outlineStyle: "solid" as const,
+      outlineWidth: 2 as const,
+    },
+  };
+  const coordinate = coordinateSystem();
+  const tableElement = table();
+  return [
+    {
+      name: "linear endpoint angular snap",
+      pointer: (frame) => ({
+        x: 420 + Math.sin(frame / 20),
+        y: 100 + Math.cos(frame / 20),
+      }),
+      session: new SelectionHandleSession({
+        action: { elementId: line.id, endpoint: "end", kind: "linear-endpoint" },
+        elements: [line],
+        planner: PLANNER,
+        startPointer: line.end,
+      }),
+      snapGuideKind: "angular",
+    },
+    {
+      name: "coordinate-axis angular snap",
+      pointer: (frame) => ({
+        x: 200 + Math.sin(frame / 20),
+        y: 100 + Math.cos(frame / 20),
+      }),
+      session: new SelectionHandleSession({
+        action: { axisIndex: 0, elementId: coordinate.id, kind: "coordinate-axis" },
+        elements: [coordinate],
+        planner: PLANNER,
+        startPointer: coordinate.axes[0],
+      }),
+      snapGuideKind: "angular",
+    },
+    {
+      name: "table divider drag",
+      pointer: (frame) => ({
+        x: 60 + Math.sin(frame / 20),
+        y: 70 + Math.cos(frame / 20),
+      }),
+      session: new SelectionHandleSession({
+        action: { elementId: tableElement.id, kind: "table-column", separatorIndex: 0 },
+        elements: [tableElement],
+        planner: PLANNER,
+        startPointer: { x: 60, y: 70 },
+      }),
+      snapGuideKind: "separator",
+    },
   ];
 }
 

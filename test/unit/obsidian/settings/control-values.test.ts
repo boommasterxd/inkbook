@@ -58,6 +58,31 @@ describe("SettingsControlValues", () => {
     });
   });
 
+  it("persists both Select choices in vault defaults", async () => {
+    await values.set("toolDefaults.select.area", "lasso");
+    await values.set("toolDefaults.select.inclusion", "fully-enclosed");
+
+    expect(values.get("toolDefaults.select.area")).toBe("lasso");
+    expect(values.get("toolDefaults.select.inclusion")).toBe("fully-enclosed");
+    expect(vault.saved.toolDefaults.select).toEqual({
+      area: "lasso",
+      inclusion: "fully-enclosed",
+    });
+  });
+
+  it("persists global and per-kind snapping controls", async () => {
+    await values.set("snapping.enabled", false);
+    await values.set("snapping.connections", false);
+
+    expect(values.get("snapping.enabled")).toBe(false);
+    expect(values.get("snapping.connections")).toBe(false);
+    expect(vault.saved.snapping).toEqual({
+      ...createBuiltInSettings().snapping,
+      enabled: false,
+      connections: false,
+    });
+  });
+
   it.each(["auto", "60", "90", "120", "144", "240"])(
     "persists refresh-rate preference %s in the vault scope",
     async (value) => {
@@ -72,6 +97,16 @@ describe("SettingsControlValues", () => {
     await values.set("device.motion", "reduced");
 
     expect(device.saved.motion).toBe("reduced");
+    expect(vault.saved).toEqual(createBuiltInSettings());
+  });
+
+  it("maps the pen-tap insertion toggle onto the persisted device mode", async () => {
+    expect(values.get("device.penTapInsertionEnabled")).toBe(false);
+
+    await values.set("device.penTapInsertionEnabled", true);
+
+    expect(values.get("device.penTapInsertionEnabled")).toBe(true);
+    expect(device.saved.penTapInsertion).toBe("handwriting");
     expect(vault.saved).toEqual(createBuiltInSettings());
   });
 

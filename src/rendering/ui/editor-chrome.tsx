@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useRef } from "react";
 
 import { InkbookToolbar } from "./toolbar";
+import { toolbarMainHalfWidth } from "./toolbar-layout";
 import { editorChromeLayoutKey } from "./editor-chrome-snapshot";
 import type { InkbookEditorChromeProps } from "./editor-chrome-types";
 
@@ -16,7 +17,7 @@ export function InkbookEditorChrome(props: InkbookEditorChromeProps) {
     if (main === null) return;
     shell.current?.style.setProperty(
       "--inkbook-toolbar-main-half",
-      `${String(main.getBoundingClientRect().width / 2)}px`,
+      `${String(toolbarMainHalfWidth(main))}px`,
     );
   }, []);
 
@@ -36,6 +37,7 @@ export function InkbookEditorChrome(props: InkbookEditorChromeProps) {
         leftHanded={props.leftHanded}
         onAction={props.onToolbarAction}
         renderIcon={props.renderIcon}
+        selectionArea={props.selectionArea}
         selectedShape={props.selectedShape}
         shapeIcon={props.shapeIcon}
         state={props.toolbarState}

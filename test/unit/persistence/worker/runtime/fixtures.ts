@@ -1,4 +1,8 @@
-import type { BoxShapeElementV1, InkSnapshotV1 } from "../../../../../src/domain/schema/public";
+import type {
+  BoxShapeElementV1,
+  InkSnapshotV1,
+  StrokeElementV1,
+} from "../../../../../src/domain/schema/public";
 import { serializeInkbookDocument } from "../../../../../src/persistence/serialization/public";
 import { DocumentWorkerRuntime } from "../../../../../src/persistence/worker/runtime/public";
 
@@ -8,6 +12,22 @@ export const unlockIdentity = {
   ...executor,
   operationId: 1,
   purpose: "unlock" as const,
+};
+export const STROKE: StrokeElementV1 = {
+  createdAt: 2,
+  id: "00000000-0000-4000-8000-000000000002",
+  kind: "stroke",
+  pivot: { x: 20, y: 20 },
+  points: [10, 10, 0.5, 20, 20, 1],
+  rotation: 0,
+  style: {
+    color: { type: "theme-text" },
+    opacity: 1,
+    pressureEnabled: false,
+    smoothing: 0.5,
+    width: 2,
+  },
+  tool: "pen",
 };
 
 export async function unlockedRuntime(): Promise<DocumentWorkerRuntime> {

@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  browserScrollClasses,
   browserScrollListeners,
   browserScrollMetrics,
   createAnimationFrameScheduler,
@@ -38,11 +37,8 @@ describe("browser scroll ports", () => {
     expect(port.getOverflowY(asBrowserElement({}))).toBe("visible");
   });
 
-  it("adapts metrics and marker classes", () => {
-    const add = vi.fn();
-    const remove = vi.fn();
+  it("adapts scroll metrics", () => {
     const element = asBrowserElement({
-      classList: { add, remove },
       clientHeight: 100,
       scrollHeight: 240,
       scrollTop: 25,
@@ -53,10 +49,6 @@ describe("browser scroll ports", () => {
     expect(browserScrollMetrics.getScrollTop(element)).toBe(25);
     browserScrollMetrics.setScrollTop(element, 50);
     expect(element.scrollTop).toBe(50);
-    browserScrollClasses.add(element, "stable");
-    browserScrollClasses.remove(element, "stable");
-    expect(add).toHaveBeenCalledWith("stable");
-    expect(remove).toHaveBeenCalledWith("stable");
   });
 
   it("owns passive scroll listeners and animation frames through the supplied window", () => {

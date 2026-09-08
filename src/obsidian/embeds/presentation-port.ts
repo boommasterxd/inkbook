@@ -2,6 +2,7 @@ import type { AttachmentIdentity } from "../../editor/session/session-state";
 import type { ColorSchemeBroadcaster } from "../theme/color-scheme";
 import type { InkbookDocumentRecognitionPort } from "./document-recognition";
 import type { PresentationLifecycleRegistry } from "./presentation-lifecycle-registry";
+import type { PreviewContentIdentity } from "./safe-preview-svg";
 import type { PresentationScrollRangeReserve } from "./transition-scroll-stability";
 
 export interface ResolvedInkbookDocument {
@@ -38,6 +39,7 @@ export interface PresentationAttachment {
   readonly attachmentId: string;
   readonly documentId: string;
   readonly embedReference: PresentationEmbedReference;
+  readonly previewContentIdentity?: PreviewContentIdentity;
   readonly root: HTMLElement;
   readonly scrollRangeReserve?: PresentationScrollRangeReserve;
   readonly preview?: HTMLElement;
@@ -52,7 +54,12 @@ export function presentationAttachmentKey(attachment: AttachmentIdentity): strin
 
 export type PresentationAttachmentInput = Omit<
   PresentationAttachment,
-  "preview" | "scrollOwner" | "scrollRangeReserve" | "setPreviewAspectRatio" | "setPreviewSource"
+  | "preview"
+  | "previewContentIdentity"
+  | "scrollOwner"
+  | "scrollRangeReserve"
+  | "setPreviewAspectRatio"
+  | "setPreviewSource"
 >;
 
 export function presentationPreviewOptions(

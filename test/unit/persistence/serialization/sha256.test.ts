@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { sha256Hex } from "../../../../src/persistence/serialization/public";
+import { sha256Hex } from "../../../../src/persistence/serialization/sha256";
 
 describe("document hashing", () => {
   it.each([

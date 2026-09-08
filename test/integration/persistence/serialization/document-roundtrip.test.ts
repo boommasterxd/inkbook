@@ -1,14 +1,12 @@
+import { parseInkbookDocumentForTest } from "../../../fixtures/persistence/parse-document";
 import { describe, expect, it } from "vitest";
 
 import type { InkSnapshotV1 } from "../../../../src/domain/schema/public";
 import { validateSafeSvg } from "../../../../src/persistence/documents/safe-svg-validator";
-import {
-  parseInkbookDocument,
-  serializeInkbookDocument,
-} from "../../../../src/persistence/serialization/public";
+import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 
 describe("document codec integration", () => {
-  it("keeps render-band order, portable paint, and metadata through standalone SVG", () => {
+  it("keeps render-band order, portable paint, and metadata through standalone SVG", async () => {
     const snapshot: InkSnapshotV1 = {
       format: "inkbook",
       version: 1,
@@ -63,7 +61,7 @@ describe("document codec integration", () => {
     expect(encoded.ok).toBe(true);
     if (!encoded.ok) return;
     const safe = validateSafeSvg(encoded.value.svg);
-    const parsed = parseInkbookDocument(encoded.value.svg);
+    const parsed = await parseInkbookDocumentForTest(encoded.value.svg);
 
     expect(safe).toMatchObject({ revision: 42 });
     expect(parsed).toMatchObject({ ok: true, value: { snapshot } });

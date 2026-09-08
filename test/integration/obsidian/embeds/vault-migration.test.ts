@@ -1,11 +1,9 @@
+import { parseInkbookDocumentForTest } from "../../../fixtures/persistence/parse-document";
 import type { TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import { CANONICAL_THEME_STYLESHEET } from "../../../../src/persistence/documents/svg-theme";
-import {
-  parseInkbookDocument,
-  serializeInkbookDocument,
-} from "../../../../src/persistence/serialization/public";
+import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import type { DocumentRuntimePort } from "../../../../src/persistence/worker/runtime/public";
 
 import {
@@ -87,7 +85,7 @@ describe("vault document migration persistence", () => {
 
     expect(harness.content()).toContain(CANONICAL_THEME_STYLESHEET);
     expect(harness.content()).not.toContain("shape-rendering:crispEdges");
-    expect(parseInkbookDocument(harness.content())).toMatchObject({
+    expect(await parseInkbookDocumentForTest(harness.content())).toMatchObject({
       ok: true,
       value: { requiresCanonicalRewrite: false, snapshot: { revision: 7 } },
     });
@@ -105,7 +103,7 @@ describe("vault document migration persistence", () => {
     });
     expect(harness.copies.get("drawings/ink.backup-v0.svg")?.text).toBe(harness.original.svg);
     expect(harness.process).toHaveBeenCalledOnce();
-    expect(parseInkbookDocument(harness.content())).toMatchObject({
+    expect(await parseInkbookDocumentForTest(harness.content())).toMatchObject({
       ok: true,
       value: { snapshot: { version: 1 }, sourceVersion: 1 },
     });

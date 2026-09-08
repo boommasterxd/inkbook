@@ -21,6 +21,45 @@ const PAGE: PageV1 = {
   margin: 24.3,
 };
 
+describe("preview visibility leases", () => {
+  it("keeps a transformed preview mounted while its committed bounds are culled", () => {
+    const { renderer, scheduler, store } = setup();
+    store.records.clear();
+    store.records.set("moving", fakeRectangleRecord("moving", 0, 0, 1_000));
+    renderer.setViewport({ height: 100, left: 0, top: 1_000, width: 100 });
+    scheduler.runAll();
+
+    renderer.setPreviewTransform(["moving"], "translate(0 -1000)", 1);
+    renderer.setViewport({ height: 100, left: 0, top: 0, width: 100 });
+    scheduler.runAll();
+
+    expect(renderer.mountedCount).toBe(1);
+    expect(contentPath(renderer, 0).attributes.get("transform")).toBe("translate(0 -1000)");
+    renderer.clearPreviewTransforms();
+    scheduler.runAll();
+    expect(renderer.mountedCount).toBe(0);
+  });
+
+  it("keeps an exact connected-element preview mounted until it is cleared", () => {
+    const { renderer, scheduler, store } = setup();
+    const record = fakeRectangleRecord("exact", 0, 0, 1_000);
+    store.records.clear();
+    store.records.set(record.id, record);
+    renderer.setViewport({ height: 100, left: 0, top: 1_000, width: 100 });
+    scheduler.runAll();
+    const element = record.element as BoxShapeElementV1;
+
+    renderer.setElementPreviews([{ ...element, pivot: { x: element.pivot.x, y: 10 }, y: 0 }], 1);
+    renderer.setViewport({ height: 100, left: 0, top: 0, width: 100 });
+    scheduler.runAll();
+
+    expect(renderer.mountedCount).toBe(1);
+    renderer.clearElementPreviews();
+    scheduler.runAll();
+    expect(renderer.mountedCount).toBe(0);
+  });
+});
+
 describe("imperative canvas motion", () => {
   it("keeps a successfully erased element hidden until the scene commit removes it", () => {
     const { renderer, scheduler, store } = setup();
@@ -170,6 +209,7 @@ describe("preview commit handoff", () => {
     renderer.applyDelta({
       affected: [{ after, before, domains: ["geometry"], id: "a" }],
     });
+    renderer.clearPreviewTransforms();
     expect(path.attributes.get("transform")).toBe("translate(25 40)");
 
     scheduler.runAll();
@@ -221,8 +261,8 @@ describe("connected preview commit handoff", () => {
     const element = store.records.get("a")!.element as BoxShapeElementV1;
     const preview = { ...element, width: element.width + 40 };
     renderer.setElementPreviews([preview], 1);
+    scheduler.runNext();
     const previewPath = path.attributes.get("d");
-
     const handoff = renderer.beginPreviewCommit();
     renderer.clearElementPreviews();
     expect(path.attributes.get("d")).toBe(previewPath);
@@ -277,30 +317,71 @@ describe("canvas crossfades and overlays", () => {
     scheduler.runAll();
     expect(currentBackground?.style.opacity).toBeUndefined();
   });
+});
 
-  it("animates selection and snap overlays and completes them on pointer interruption", () => {
+describe("selection overlay motion", () => {
+  it("animates handles while staging the latest snap feedback in the scene frame", () => {
     const { renderer, scheduler } = setup();
     scheduler.runAll();
     const overlayGroup = fakeNode(renderer.svg).nodes[2]!;
     const selection = overlayGroup.nodes[1]!;
-    const snap = overlayGroup.nodes[2]!;
+    const handles = overlayGroup.nodes[2]!;
+    const snap = overlayGroup.nodes[3]!;
 
-    renderer.setSelectionOverlayPath("M 0 0 L 10 10");
+    expect(selection.attributes.get("class")).toBe("inkbook-selection-overlay");
+    expect(selection.attributes.get("data-selection-fill")).toBe("accent");
+
+    renderer.setSelectionOverlayPath("M 0 0 L 10 10", "none", "M 2 2 a 5 5 0 1 0 10 0");
     renderer.setSnapMarkerPath("M 5 5 L 6 6");
     scheduler.runNext();
+    expect(selection.attributes.get("data-selection-fill")).toBe("none");
     expect(selection.style.opacity).toBe("0");
-    expect(snap.style.opacity).toBe("0");
+    expect(selection.style.transform).toBe("scale(1)");
+    expect(handles.attributes.get("class")).toBe("inkbook-selection-handles");
+    expect(handles.style.opacity).toBe("0");
+    expect(snap.style.opacity).toBe("1");
 
     renderer.interruptMotionForPointerDown();
     expect(selection.style.opacity).toBe("1");
+    expect(handles.style.opacity).toBe("1");
     expect(snap.style.opacity).toBe("1");
     expect(renderer.instrumentation().motionInterruptions).toBe(1);
 
+    renderer.setSelectionOverlayPath("M 0 0 L 10 0 L 10 10 Z", "accent");
+    scheduler.runNext();
+    expect(selection.attributes.get("data-selection-fill")).toBe("accent");
+
     renderer.setSelectionOverlayPath(null);
     renderer.setSnapMarkerPath(null);
+    scheduler.runNext();
+    expect(snap.attributes.get("d")).toBe("");
     renderer.interruptMotionForPointerDown();
     expect(selection.attributes.get("d")).toBe("");
+    expect(handles.attributes.get("d")).toBe("");
     expect(snap.attributes.get("d")).toBe("");
+  });
+
+  it("keeps a moving selection overlay visible while replacing its non-empty path", () => {
+    const { renderer, scheduler } = setup();
+    scheduler.runAll();
+    const selection = fakeNode(renderer.svg).nodes[2]!.nodes[1]!;
+
+    renderer.setSelectionOverlayPath("M 0 0 L 10 0 L 10 10 Z");
+    scheduler.runNext();
+    scheduler.time = 60;
+    scheduler.runNext();
+    const visibleOpacity = selection.style.opacity;
+    expect(Number(visibleOpacity)).toBeGreaterThan(0);
+
+    renderer.setSelectionOverlayPath("M 20 30 L 30 30 L 30 40 Z");
+    scheduler.runNext();
+    expect(selection.attributes.get("d")).toBe("M 20 30 L 30 30 L 30 40 Z");
+    expect(Number(selection.style.opacity)).toBeGreaterThanOrEqual(Number(visibleOpacity));
+
+    renderer.setSelectionOverlayPath("M 40 50 L 50 50 L 50 60 Z");
+    scheduler.runNext();
+    expect(selection.attributes.get("d")).toBe("M 40 50 L 50 50 L 50 60 Z");
+    expect(Number(selection.style.opacity)).toBeGreaterThanOrEqual(Number(visibleOpacity));
   });
 });
 

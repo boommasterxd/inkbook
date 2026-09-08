@@ -1,17 +1,19 @@
 import { parseCanonicalSvgDecimal } from "./svg-number";
 
-const MAXIMUM_PATH_BYTES = 1024 * 1024;
-const MAXIMUM_PATH_COMMANDS = 20_000;
+const MAXIMUM_PATH_BYTES = 8 * 1024 * 1024;
+const MAXIMUM_PATH_COMMANDS = 200_000;
 const MAXIMUM_COORDINATE = 1_000_000;
 const DEFAULT_BYTES_PER_STEP = 16 * 1024;
 const DEFAULT_COMMANDS_PER_STEP = 256;
 const DEADLINE_CHECK_BYTES = 256;
 const COMMAND_ARITY = {
   A: 7,
+  a: 7,
   C: 6,
   L: 2,
   M: 2,
   Q: 4,
+  q: 4,
   Z: 0,
 } as const;
 
@@ -35,6 +37,7 @@ function isSeparator(character: string): boolean {
 function readNumber(
   path: string,
   offset: number,
+  allowCompactFraction: boolean,
 ): { readonly next: number; readonly value: number } | null {
   let cursor = offset;
   if (path[cursor] === "-") cursor += 1;
@@ -49,7 +52,7 @@ function readNumber(
       cursor += 1;
       if (cursor - integerStart > 7) return null;
     }
-  } else {
+  } else if (first !== "." || !allowCompactFraction) {
     return null;
   }
   if (path[cursor] === ".") {
@@ -62,7 +65,7 @@ function readNumber(
   const value = Number(token);
   return Number.isFinite(value) &&
     Math.abs(value) <= MAXIMUM_COORDINATE &&
-    serializeCanonicalDecimal(value) === token
+    serializeCanonicalDecimal(value) === normalizeFractionToken(token)
     ? { next: cursor, value }
     : null;
 }
@@ -72,7 +75,7 @@ function isDigit(character: string | undefined): boolean {
 }
 
 function validateCommandValues(command: PathCommand, values: readonly number[]): boolean {
-  if (command !== "A") return true;
+  if (command !== "A" && command !== "a") return true;
   const [radiusX, radiusY, rotation, largeArc, sweep] = values;
   return (
     radiusX !== undefined &&
@@ -83,10 +86,6 @@ function validateCommandValues(command: PathCommand, values: readonly number[]):
     (largeArc === 0 || largeArc === 1) &&
     (sweep === 0 || sweep === 1)
   );
-}
-
-export function validatePathData(path: string): PathValidationResult | null {
-  return completeValidation(validatePathDataSteps(path));
 }
 
 /** Yields without accepting partial input whenever a path slice exhausts any configured budget. */
@@ -131,6 +130,10 @@ class PathValidationMachine {
   #numericTokens = 0;
   #phase: PathPhase = "command-separators";
   #subpathOpen = false;
+  #currentX = 0;
+  #currentY = 0;
+  #subpathX = 0;
+  #subpathY = 0;
 
   public constructor(
     path: string,
@@ -172,7 +175,9 @@ class PathValidationMachine {
 
   #advanceSeparators(): AdvanceResult {
     const character = this.#path[this.#cursor];
-    if (character === undefined) return "continue";
+    if (character === undefined) {
+      return this.#phase === "command-separators" ? "continue" : "invalid";
+    }
     if (!isSeparator(character) && character !== ",") {
       this.#phase = this.#phase === "command-separators" ? "command" : "value";
       return "continue";
@@ -201,7 +206,11 @@ class PathValidationMachine {
   }
 
   #advanceValue(): AdvanceResult {
-    const token = readNumber(this.#path, this.#cursor);
+    const token = readNumber(
+      this.#path,
+      this.#cursor,
+      this.#activeCommand === "q" || this.#activeCommand === "a",
+    );
     if (token === null) return "invalid";
     this.#values.push(token.value);
     this.#numericTokens += 1;
@@ -220,11 +229,39 @@ class PathValidationMachine {
     if (command === "M") this.#subpathOpen = true;
     else if (!this.#subpathOpen) return "invalid";
     if (command === "Z") this.#subpathOpen = false;
+    if (!this.#updatePosition(command)) return "invalid";
     this.#activeCommand = undefined;
     this.#values.length = 0;
     this.#commaSeen = false;
     this.#phase = "command-separators";
     return "continue";
+  }
+
+  #updatePosition(command: PathCommand): boolean {
+    if (command === "Z") {
+      this.#currentX = this.#subpathX;
+      this.#currentY = this.#subpathY;
+      return true;
+    }
+    const values = this.#values;
+    const relative = command === "q" || command === "a";
+    const firstCoordinate = command === "a" ? 5 : 0;
+    if (relative) {
+      for (let index = firstCoordinate; index < values.length; index += 2) {
+        if (
+          Math.abs(this.#currentX + coordinateUnits(values[index]!)) > MAXIMUM_COORDINATE * 1000 ||
+          Math.abs(this.#currentY + coordinateUnits(values[index + 1]!)) > MAXIMUM_COORDINATE * 1000
+        )
+          return false;
+      }
+    }
+    this.#currentX = (relative ? this.#currentX : 0) + coordinateUnits(values[values.length - 2]!);
+    this.#currentY = (relative ? this.#currentY : 0) + coordinateUnits(values[values.length - 1]!);
+    if (command === "M") {
+      this.#subpathX = this.#currentX;
+      this.#subpathY = this.#currentY;
+    }
+    return true;
   }
 
   #consume(bytes: number): boolean {
@@ -257,14 +294,6 @@ function isPositiveSafeInteger(value: number): boolean {
   return Number.isSafeInteger(value) && value > 0;
 }
 
-function completeValidation(
-  steps: Generator<void, PathValidationResult | null>,
-): PathValidationResult | null {
-  let step = steps.next();
-  while (!step.done) step = steps.next();
-  return step.value;
-}
-
 export function validateDashArray(value: string): boolean {
   const tokens = value.trim().split(/[ ,]+/u);
   if (tokens.length === 0 || tokens.length > 8 || tokens.some((token) => token.length === 0)) {
@@ -276,4 +305,14 @@ export function validateDashArray(value: string): boolean {
 
 function serializeCanonicalDecimal(value: number): string {
   return Object.is(value, -0) ? "0" : value.toString();
+}
+
+/** Integer thousandths keep chained relative coordinates exact at the boundary. */
+function coordinateUnits(value: number): number {
+  return Math.round(value * 1000);
+}
+
+function normalizeFractionToken(token: string): string {
+  if (token.startsWith(".")) return `0${token}`;
+  return token.startsWith("-.") ? `-0${token.slice(1)}` : token;
 }

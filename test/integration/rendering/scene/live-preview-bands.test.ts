@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { buildElementPathParts } from "../../../../src/domain/geometry/public";
-import type {
-  PageV1,
-  StrokeStyleV1,
-  StraightHighlighterElementV1,
-} from "../../../../src/domain/schema/public";
+import { type PageV1, type StrokeStyleV1 } from "../../../../src/domain/schema/public";
+import { type StraightHighlighterElementV1 } from "../../../../src/domain/schema/types";
 import { LiveStrokeBuilder } from "../../../../src/editor/tools/live-stroke";
 import { pathPresentation } from "../../../../src/rendering/scene/element-presentation";
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";

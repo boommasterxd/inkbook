@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, Ref, RefObject } from "react";
 
 import type {
@@ -9,17 +9,27 @@ import type {
   ToolId,
 } from "./toolbar-types";
 import type { ShapeId } from "./toolbar-types";
+import type { SelectionAreaV1 } from "../../domain/settings/types";
 import { nextToolbarIndex, resolveToolbarFocusRecovery } from "./toolbar-focus";
 import {
   activeShapeIconId,
+  selectionAreaIconId,
   SHAPE_ICON_IDS,
   STRAIGHT_HIGHLIGHTER_ICON_ID,
   type ActiveShapeIconState,
 } from "./icon-ids";
 import { ToolbarStyleIcon, type ToolbarStyleIconState } from "./style-icon";
-import { type ToolbarButtonPresence, useToolbarButtonPresence } from "./toolbar-presence";
-
-export { nextToolbarIndex, resolveToolbarFocusRecovery } from "./toolbar-focus";
+import {
+  type PresentToolbarButton,
+  type ToolbarButtonPresence,
+  useToolbarButtonPresence,
+} from "./toolbar-presence";
+import {
+  type ToolbarButtonMap,
+  useToolbarElementLayoutMotion,
+  useToolbarLayoutMotion,
+} from "./toolbar-layout-motion";
+import { ToolbarActionIcon } from "./toolbar-action-icon";
 
 const LEFT_BUTTONS: readonly ToolbarButtonDefinition[] = [
   { action: "finger-drawing", icon: "hand", label: "Finger drawing" },
@@ -48,9 +58,9 @@ const RIGHT_BUTTONS: readonly ToolbarButtonDefinition[] = [
 ];
 
 const CONTEXT_BUTTONS: readonly ToolbarButtonDefinition[] = [
+  { action: "paste", icon: "clipboard-paste", label: "Paste" },
   { action: "copy", icon: "copy", label: "Copy" },
   { action: "cut", icon: "scissors", label: "Cut" },
-  { action: "paste", icon: "clipboard-paste", label: "Paste" },
   { action: "delete", icon: "trash-2", label: "Delete" },
 ];
 
@@ -63,6 +73,7 @@ const TOOLBAR_BUTTONS: readonly ToolbarButtonDefinition[] = [
 
 interface IconButtonProps {
   readonly buttonClassName?: string | undefined;
+  readonly confirmation: ToolbarState["actionConfirmation"];
   readonly definition: ToolbarButtonDefinition;
   readonly disabled: boolean;
   readonly expanded: boolean | undefined;
@@ -79,14 +90,7 @@ interface IconButtonProps {
 }
 
 function IconButton(props: IconButtonProps) {
-  const iconRef = useRef<HTMLSpanElement>(null);
   const flyout = flyoutForAction(props.definition.action);
-
-  useEffect(() => {
-    if (props.definition.action !== "style" && iconRef.current !== null) {
-      props.renderIcon(iconRef.current, props.definition.icon);
-    }
-  }, [props.definition.action, props.definition.icon, props.renderIcon]);
 
   return (
     <button
@@ -115,7 +119,11 @@ function IconButton(props: IconButtonProps) {
       {props.definition.action === "style" ? (
         <ToolbarStyleIcon state={props.styleIcon} />
       ) : (
-        <span aria-hidden="true" className="inkbook-toolbar-icon" ref={iconRef} />
+        <ToolbarActionIcon
+          confirmation={props.confirmation}
+          definition={props.definition}
+          renderIcon={props.renderIcon}
+        />
       )}
     </button>
   );
@@ -124,7 +132,7 @@ function IconButton(props: IconButtonProps) {
 function buttonVisible(action: ToolbarAction, state: ToolbarState): boolean {
   if (action === "finger-drawing") return state.fingerDrawingAvailable;
   if (action === "copy" || action === "cut" || action === "delete") return state.hasSelection;
-  if (action === "paste") return state.canPaste;
+  if (action === "paste") return state.pasteVisible;
   return true;
 }
 
@@ -177,14 +185,14 @@ interface ToolbarGroupProps {
   readonly className: string;
   readonly fallbackFocus?: (() => void) | undefined;
   readonly label: string;
+  readonly layoutMotionKey?: string | undefined;
   readonly onAction: (action: ToolbarAction, trigger: HTMLButtonElement) => void;
   readonly registerButton?: IconButtonProps["registerButton"] | undefined;
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
+  readonly reverseNavigation?: boolean | undefined;
   readonly state: ToolbarState;
   readonly styleIcon: ToolbarStyleIconState;
 }
-
-type ToolbarButtonMap = Map<ToolbarAction, HTMLButtonElement>;
 
 function useToolbarFocusRecovery(
   enabledKey: string,
@@ -242,6 +250,9 @@ function ToolbarGroup(props: ToolbarGroupProps) {
   const buttonElements = useRef<ToolbarButtonMap>(new Map());
   const indicatorRef = useRef<HTMLSpanElement>(null);
   const groupRef = useRef<HTMLDivElement>(null);
+  const layoutKey = toolbarGroupLayoutKey(props.layoutMotionKey, presentButtons);
+  useToolbarLayoutMotion(layoutKey, buttonElements);
+  useToolbarElementLayoutMotion(props.layoutMotionKey, groupRef);
   const safeIndex = Math.min(activeIndex, Math.max(enabledButtons.length - 1, 0));
   useToolbarFocusRecovery(
     enabledKey,
@@ -259,7 +270,11 @@ function ToolbarGroup(props: ToolbarGroupProps) {
     );
   });
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
-    const nextIndex = nextToolbarIndex(event.key, safeIndex, enabledButtons.length);
+    const nextIndex = nextToolbarIndex(
+      resolveToolbarNavigationKey(event.key, props.reverseNavigation === true),
+      safeIndex,
+      enabledButtons.length,
+    );
     if (nextIndex === null) return;
     event.preventDefault();
     setActiveIndex(nextIndex);
@@ -290,6 +305,7 @@ function ToolbarGroup(props: ToolbarGroupProps) {
         return (
           <IconButton
             buttonClassName={props.buttonClassName}
+            confirmation={props.state.actionConfirmation}
             definition={button}
             disabled={disabled}
             expanded={expandedState(button.action, props.state)}
@@ -312,6 +328,16 @@ function ToolbarGroup(props: ToolbarGroupProps) {
       })}
     </div>
   );
+}
+
+function toolbarGroupLayoutKey(
+  motionKey: string | undefined,
+  buttons: readonly PresentToolbarButton[],
+): string {
+  return [
+    motionKey,
+    ...buttons.map(({ definition, presence }) => `${definition.action}:${presence}`),
+  ].join("\u0000");
 }
 
 function positionActiveToolIndicator(
@@ -341,6 +367,7 @@ export interface InkbookToolbarProps {
   readonly onAction: (action: ToolbarAction, trigger: HTMLButtonElement) => void;
   readonly registerButton?: IconButtonProps["registerButton"] | undefined;
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
+  readonly selectionArea: SelectionAreaV1;
   readonly selectedShape: ShapeId;
   readonly shapeIcon: ActiveShapeIconState;
   readonly state: ToolbarState;
@@ -350,7 +377,11 @@ export interface InkbookToolbarProps {
 
 export function InkbookToolbar(props: InkbookToolbarProps) {
   const primaryButtons = useRef(new Map<ToolbarAction, HTMLButtonElement>());
-  const focusOverflow = useCallback(() => primaryButtons.current.get("overflow")?.focus(), []);
+  const focusContextNeighbor = useCallback(() => {
+    const buttons = [...primaryButtons.current.values()];
+    if (!props.leftHanded) buttons.reverse();
+    buttons.find((button) => !button.disabled)?.focus();
+  }, [props.leftHanded]);
   const className = [
     "inkbook-toolbar",
     `inkbook-toolbar-${props.layout}`,
@@ -361,7 +392,10 @@ export function InkbookToolbar(props: InkbookToolbarProps) {
   const compositionClassName = [
     "inkbook-toolbar-composition",
     `inkbook-toolbar-composition-${props.layout}`,
-  ].join(" ");
+    props.leftHanded ? "inkbook-toolbar-composition-left-handed" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <div
@@ -374,7 +408,11 @@ export function InkbookToolbar(props: InkbookToolbarProps) {
         <div className={className} ref={props.toolbarRef}>
           <ToolbarGroup
             activeToolIndicator
-            buttons={primaryButtonsForShape(props.selectedShape, props.shapeIcon)}
+            buttons={primaryButtonsForState(
+              props.selectedShape,
+              props.shapeIcon,
+              props.selectionArea,
+            )}
             className="inkbook-toolbar-track"
             label="Tools and actions"
             onAction={props.onAction}
@@ -392,11 +430,13 @@ export function InkbookToolbar(props: InkbookToolbarProps) {
           buttonClassName="inkbook-toolbar-context-button"
           buttons={CONTEXT_BUTTONS}
           className="inkbook-toolbar-context-actions"
-          fallbackFocus={focusOverflow}
+          fallbackFocus={focusContextNeighbor}
           label="Editing actions"
+          layoutMotionKey={props.leftHanded ? "left" : "right"}
           onAction={props.onAction}
           registerButton={props.registerButton}
           renderIcon={props.renderIcon}
+          reverseNavigation={props.leftHanded}
           state={props.state}
           styleIcon={props.styleIcon}
         />
@@ -405,23 +445,41 @@ export function InkbookToolbar(props: InkbookToolbarProps) {
   );
 }
 
-function primaryButtonsForShape(
+export function resolveToolbarNavigationKey(key: string, reversed: boolean): string {
+  if (!reversed) return key;
+  if (key === "ArrowLeft") return "ArrowRight";
+  if (key === "ArrowRight") return "ArrowLeft";
+  return key;
+}
+
+function primaryButtonsForState(
   shape: ShapeId,
   iconState: ActiveShapeIconState,
+  selectionArea: SelectionAreaV1,
 ): readonly ToolbarButtonDefinition[] {
   return [
     ...LEFT_BUTTONS,
     ...TOOL_BUTTONS.map((button) =>
-      button.action === "shape"
+      button.action === "select"
         ? {
             ...button,
-            icon: activeShapeIconId(shape, iconState),
-            label: `Shape: ${shapeLabel(shape)}`,
+            icon: selectionAreaIconId(selectionArea),
+            label: `Select: ${selectionAreaLabel(selectionArea)}`,
           }
-        : button,
+        : button.action === "shape"
+          ? {
+              ...button,
+              icon: activeShapeIconId(shape, iconState),
+              label: `Shape: ${shapeLabel(shape)}`,
+            }
+          : button,
     ),
     ...RIGHT_BUTTONS,
   ];
+}
+
+function selectionAreaLabel(area: SelectionAreaV1): string {
+  return area === "rectangle" ? "Rectangle" : "Lasso";
 }
 
 function shapeLabel(shape: ShapeId): string {

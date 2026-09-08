@@ -8,6 +8,7 @@ export function createEditorChromeProps(ownerDocument: Document): InkbookEditorC
     onToolbarAction: noop,
     ownerDocument,
     renderIcon: noop,
+    selectionArea: "rectangle",
     selectedShape: "line",
     shapeIcon: { arrowEnd: "arrow", arrowStart: "none", coordinateDimension: "2d" },
     styleIcon: { fillColor: null, fillOpacity: 0, outlineColor: null, outlineStyle: "solid" },
@@ -20,6 +21,7 @@ export function createEditorChromeProps(ownerDocument: Document): InkbookEditorC
       fingerDrawingEnabled: false,
       hasSelection: false,
       openFlyout: null,
+      pasteVisible: false,
     },
   };
 }

@@ -1,11 +1,25 @@
 import { describe, expect, it } from "vitest";
 
-import { migrateSnapshotSequentially } from "../../../../src/persistence/serialization/public";
-import { migrateSnapshotSequentiallySteps } from "../../../../src/persistence/serialization/snapshot-migration";
+import {
+  migrateSnapshotSequentiallySteps,
+  type SnapshotMigrationResult,
+  type SnapshotMigrationStep,
+} from "../../../../src/persistence/serialization/snapshot-migration";
+
+function migrateSnapshotSequentiallyForTest(
+  input: unknown,
+  migrations: readonly SnapshotMigrationStep[],
+  currentVersion = 1,
+): SnapshotMigrationResult {
+  const steps = migrateSnapshotSequentiallySteps(input, migrations, currentVersion);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
+}
 
 describe("snapshot migration sequencing", () => {
   it("runs adjacent pure migrations and verifies every resulting version", () => {
-    const result = migrateSnapshotSequentially(
+    const result = migrateSnapshotSequentiallyForTest(
       { format: "inkbook", version: 0, value: "old" },
       [
         {
@@ -33,13 +47,13 @@ describe("snapshot migration sequencing", () => {
   });
 
   it("rejects gaps, malformed outputs, and newer versions without partial success", () => {
-    expect(migrateSnapshotSequentially({ format: "inkbook", version: 0 }, [], 1)).toEqual({
+    expect(migrateSnapshotSequentiallyForTest({ format: "inkbook", version: 0 }, [], 1)).toEqual({
       code: "unsupported-version",
       ok: false,
       sourceVersion: 0,
     });
     expect(
-      migrateSnapshotSequentially(
+      migrateSnapshotSequentiallyForTest(
         { format: "inkbook", version: 0 },
         [
           {
@@ -52,7 +66,7 @@ describe("snapshot migration sequencing", () => {
         1,
       ),
     ).toEqual({ code: "invalid-migration", ok: false, sourceVersion: 0 });
-    expect(migrateSnapshotSequentially({ format: "inkbook", version: 2 }, [], 1)).toEqual({
+    expect(migrateSnapshotSequentiallyForTest({ format: "inkbook", version: 2 }, [], 1)).toEqual({
       code: "unsupported-version",
       ok: false,
       sourceVersion: 2,
@@ -61,7 +75,7 @@ describe("snapshot migration sequencing", () => {
 
   it("rejects an invalid intermediate result before running the next step", () => {
     let secondStepRan = false;
-    const result = migrateSnapshotSequentially(
+    const result = migrateSnapshotSequentiallyForTest(
       { format: "inkbook", version: 0 },
       [
         {

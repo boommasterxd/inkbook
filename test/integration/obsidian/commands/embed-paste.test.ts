@@ -6,7 +6,6 @@ import {
   EmbedPasteController,
   MAKE_DUPLICATE,
   OwnerWindowEmbedPasteChoice,
-  createEmbedPasteExtensionBoundary,
   isCopiedEmbedPaste,
   createObsidianEmbedPasteController,
 } from "../../../../src/obsidian/commands";
@@ -231,21 +230,6 @@ describe("copied Inkbook embed duplication", () => {
     });
     expect(test.trash).not.toHaveBeenCalled();
     expect(editor.content).toBe("");
-  });
-
-  it("defines a synchronous extension boundary that prevents only recognized paste events", async () => {
-    const editor = new FakeEditor();
-    const test = harness("reference");
-    const report = vi.fn();
-    const boundary = createEmbedPasteExtensionBoundary(test.controller, report);
-
-    expect(boundary.handleClipboardPaste(request(editor))).toBe(true);
-    expect(boundary.handleClipboardPaste(request(editor, { clipboardText: "ordinary text" }))).toBe(
-      false,
-    );
-    await vi.waitFor(() =>
-      expect(report).toHaveBeenCalledWith({ kind: "inserted", mode: "reference" }),
-    );
   });
 });
 

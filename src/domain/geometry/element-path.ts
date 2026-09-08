@@ -7,7 +7,7 @@ import type {
   PointV1,
   TableElementV1,
 } from "../schema/types";
-import { shapeVertices, tableWidth } from "./creation";
+import { shapeVertices, tableLineSegments } from "./creation";
 import {
   addPoints,
   normalizedVector,
@@ -16,13 +16,11 @@ import {
   scalePoint,
   subtractPoints,
 } from "./primitives";
-import { buildStrokePath } from "./stroke-path";
+import { buildStrokePathParts } from "./stroke-path";
 import { arcTo, cubicTo, lineTo, moveTo, quadraticTo } from "./svg-format";
 
-export interface SvgPathPart {
-  d: string;
-  paint: "fill" | "fill-and-stroke" | "stroke";
-}
+import type { SvgPathPart } from "./svg-path-part";
+export type { SvgPathPart } from "./svg-path-part";
 
 export type ArrowNodeGeometry =
   | { kind: "none" }
@@ -33,7 +31,7 @@ export type ArrowNodeGeometry =
 const ELLIPSE_KAPPA = 0.552_284_749_831;
 
 export function buildElementPathParts(element: InkElementV1): SvgPathPart[] {
-  if (element.kind === "stroke") return [buildStrokePath(element)];
+  if (element.kind === "stroke") return buildStrokePathParts(element);
   if (element.kind === "coordinate-system")
     return [{ d: buildCoordinateSystemPath(element), paint: "stroke" }];
   if (element.kind === "table") return [{ d: buildTablePath(element), paint: "stroke" }];
@@ -54,31 +52,9 @@ export function buildClosedShapePath(shape: BoxShapeElementV1): string {
 }
 
 export function buildTablePath(table: TableElementV1): string {
-  const width = tableWidth(table);
-  const topLeft = { x: table.x, y: table.y };
-  const topRight = { x: table.x + width, y: table.y };
-  const bottomRight = { x: table.x + width, y: table.y + table.height };
-  const bottomLeft = { x: table.x, y: table.y + table.height };
-  const commands = [
-    closedPolygonPath(
-      [topLeft, topRight, bottomRight, bottomLeft].map((point) => rotatedFor(table, point)),
-    ),
-  ];
-  for (let column = 1; column < table.columns; column += 1) {
-    commands.push(
-      lineSubpath(
-        rotatedFor(table, { x: table.x + column * table.columnWidth, y: table.y }),
-        rotatedFor(table, { x: table.x + column * table.columnWidth, y: table.y + table.height }),
-      ),
-    );
-  }
-  commands.push(
-    lineSubpath(
-      rotatedFor(table, { x: table.x, y: table.y + table.headerHeight }),
-      rotatedFor(table, { x: table.x + width, y: table.y + table.headerHeight }),
-    ),
-  );
-  return commands.join("");
+  return tableLineSegments(table)
+    .map(([start, end]) => lineSubpath(rotatedFor(table, start), rotatedFor(table, end)))
+    .join("");
 }
 
 export function buildCoordinateSystemPath(system: CoordinateSystemElementV1): string {

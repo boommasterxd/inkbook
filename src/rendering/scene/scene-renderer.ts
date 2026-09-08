@@ -8,7 +8,8 @@ import type {
 import { SceneBackgroundCache } from "./background-cache";
 import { DEFAULT_CAMERA, DEFAULT_FRAME_BUDGET_MS } from "./constants";
 import { SceneContentRenderer } from "./content-renderer";
-import { SceneElementPreviewController } from "./element-preview-controller";
+import type { ProgressivePreviewTransform } from "./progressive-element-preview";
+import { SceneElementPreviews } from "./scene-element-previews";
 import { SceneFrameWriter } from "./scene-frame-writer";
 import {
   createInstrumentation,
@@ -23,7 +24,8 @@ import { SceneCommitCoordinator } from "./scene-commit-coordinator";
 import { SceneDeltaCoordinator } from "./scene-delta-coordinator";
 import { SceneLiveStrokeRenderer } from "./live-stroke-renderer";
 import { SceneMotionController } from "./scene-motion-controller";
-import { SceneResourcePolicy, visibilityPageBounds } from "./scene-resource-policy";
+import { SceneResourcePolicy } from "./scene-resource-policy";
+import { SceneVisibilityCoordinator } from "./scene-visibility-coordinator";
 import {
   browserScheduler,
   sameViewport,
@@ -37,6 +39,7 @@ import type {
   DocumentScheme,
   LivePathState,
   MutableSceneInstrumentation,
+  PreviewStrokeWidth,
   SceneCamera,
   SceneInstrumentationSnapshot,
   SceneLiveStrokePreview,
@@ -64,17 +67,16 @@ export class SvgSceneRenderer {
   #layoutDirty = true;
   readonly #liveStroke: SceneLiveStrokeRenderer;
   readonly #motion: SceneMotionController;
-  #orderVisibilityDirty = false;
   #page: PageV1;
   #pageHeight = 1;
   readonly #previewCommits: ScenePreviewCommitController;
   readonly #resourcePolicy: SceneResourcePolicy;
   readonly #pathCache = new ScenePathCache();
-  readonly #elementPreviews: SceneElementPreviewController;
+  readonly #elementPreviews: SceneElementPreviews;
   readonly #transformPreviews: SceneTransformPreviewController;
   readonly #scheduler: SceneScheduler;
   #viewport: SceneViewport | undefined;
-  #visibilityDirty = true;
+  readonly #visibilityCoordinator: SceneVisibilityCoordinator;
   readonly #visibility: SceneVisibilityState;
   readonly #options: SceneRendererOptions;
   public constructor(options: SceneRendererOptions) {
@@ -119,19 +121,25 @@ export class SvgSceneRenderer {
       this.#pathCache,
       this.#motion,
       options.onResourceUsageChanged ?? (() => undefined),
+      () => this.#elementPreviews.progressive.memoryUsage(),
+    );
+    this.#visibilityCoordinator = new SceneVisibilityCoordinator(
+      this.#content,
+      this.#visibility,
+      this.#resourcePolicy,
     );
     this.#sceneCommits = new SceneCommitCoordinator(options.onSceneCommitted);
     this.#sceneCommits.markPending();
-    this.#elementPreviews = new SceneElementPreviewController(this.#content);
+    this.#elementPreviews = new SceneElementPreviews(this.#content, options.store);
     this.#transformPreviews = new SceneTransformPreviewController(
       this.#content,
       options.store,
-      this.#visibility,
       this.#camera,
     );
     this.#previewCommits = new ScenePreviewCommitController(this.#motion, () => {
       this.#transformPreviews.clear();
       this.#elementPreviews.clear();
+      this.#visibilityCoordinator.releasePreviews();
       this.schedule();
     });
     this.#deltas = new SceneDeltaCoordinator({
@@ -140,10 +148,8 @@ export class SvgSceneRenderer {
       previews: this.#previewCommits,
       routing: {
         content: this.#content,
-        invalidateVisibility: () => this.invalidateVisibility(),
-        markOrderVisibilityDirty: () => {
-          this.#orderVisibilityDirty = true;
-        },
+        invalidateVisibility: () => this.#visibilityCoordinator.invalidate(),
+        markOrderVisibilityDirty: () => this.#visibilityCoordinator.invalidateOrder(),
         pathCache: this.#pathCache,
         store: this.#options.store,
         visibility: this.#visibility,
@@ -164,6 +170,7 @@ export class SvgSceneRenderer {
   public applyDelta(delta: SceneStoreDelta): void {
     this.assertActive();
     this.#deltas.apply(delta);
+    this.#liveStroke.settleCommits((id) => this.#options.store.get(id) === undefined);
   }
   public get hasPendingSceneCommit(): boolean {
     return this.#sceneCommits.pending;
@@ -186,7 +193,8 @@ export class SvgSceneRenderer {
     this.#camera = camera;
     this.#frameWriter.setCamera(camera);
     this.#transformPreviews.setContext(camera, this.#viewport);
-    this.invalidateVisibility();
+    this.#elementPreviews.refreshProgressiveContext(this.#viewport, camera);
+    this.#visibilityCoordinator.invalidate();
     if (zoomChanged) this.#backgroundDirty = true;
     this.schedule();
   }
@@ -195,8 +203,9 @@ export class SvgSceneRenderer {
     if (sameViewport(this.#viewport, viewport)) return;
     this.#viewport = viewport;
     this.#transformPreviews.setContext(this.#camera, viewport);
+    this.#elementPreviews.refreshProgressiveContext(viewport, this.#camera);
     this.#layoutDirty = false;
-    this.invalidateVisibility();
+    this.#visibilityCoordinator.invalidate();
     this.schedule();
   }
   public invalidateLayout(): void {
@@ -234,27 +243,32 @@ export class SvgSceneRenderer {
     this.assertActive();
     this.#liveStroke.update(preview, style, tool);
   }
+  public commitLiveStroke(id: string): void {
+    this.assertActive();
+    this.#liveStroke.commit(id, (band) => this.#dom.group(band));
+    this.schedule();
+  }
   public clearLiveStroke(): void {
     this.assertActive();
     this.#liveStroke.clear();
-  }
-  public revertLiveStroke(): void {
-    this.assertActive();
-    this.#liveStroke.revert();
   }
   public setOverlayPath(d: string | null): void {
     this.assertActive();
     if (!this.#frameWriter.setOverlayPath(d)) return;
     this.schedule();
   }
-  public setSelectionOverlayPath(d: string | null): void {
+  public setSelectionOverlayPath(
+    d: string | null,
+    fill: "accent" | "none" = "accent",
+    handles: string | null = null,
+  ): void {
     this.assertActive();
-    this.#motion.setSelectionPath(d);
+    this.#frameWriter.setSelectionPath(d, handles, fill);
     this.schedule();
   }
   public setSnapMarkerPath(d: string | null): void {
     this.assertActive();
-    this.#motion.setSnapPath(d);
+    this.#frameWriter.setSnapPath(d);
     this.schedule();
   }
   public suppressMotionForNextDelta(ids: readonly string[]): void {
@@ -271,24 +285,30 @@ export class SvgSceneRenderer {
     this.#motion.setReducedMotion(reduced);
     this.schedule();
   }
-  public flushCameraAndOverlayFrame(): void {
+  public flushPointerFeedbackFrame(): void {
     this.assertActive();
-    this.#frameWriter.writePointerFeedback(this.#transformPreviews);
+    this.#frameWriter.writePointerFeedback(
+      this.#transformPreviews,
+      this.#elementPreviews,
+      this.#motion,
+    );
   }
   public setPreviewTransform(
     ids: readonly string[],
     transform: string | null,
     version: number,
+    strokeWidth: PreviewStrokeWidth = "scale",
   ): void {
     this.assertActive();
     validatePreviewVersion(version, "Preview transform");
-    this.#transformPreviews.set(ids, transform, version);
+    this.#transformPreviews.set(ids, transform, version, strokeWidth);
     this.schedule();
   }
   public clearPreviewTransforms(): void {
     this.assertActive();
     if (this.#previewCommits.requestClear()) return;
     this.#transformPreviews.clear();
+    this.#visibilityCoordinator.releasePreviews();
     this.schedule();
   }
   public setElementFade(ids: readonly string[], durationMs: number): void {
@@ -302,15 +322,37 @@ export class SvgSceneRenderer {
     const activeIds = this.#deltas.removeFades(ids);
     this.#content.setElementFade(activeIds, null);
   }
-  public setElementPreviews(elements: readonly InkElementV1[], version: number): void {
+  public setElementPreviews(items: readonly InkElementV1[], frame: number): void {
     this.assertActive();
-    validatePreviewVersion(version, "Element preview");
-    if (this.#elementPreviews.set(elements, version)) this.schedule();
+    validatePreviewVersion(frame, "Element preview");
+    if (this.#elementPreviews.immediate.set(items, frame)) this.schedule();
+  }
+  public setProgressiveElementPreviews(
+    ids: readonly string[],
+    materialize: (id: string) => InkElementV1 | undefined,
+    version: number,
+    feedback?: ProgressivePreviewTransform,
+  ): void {
+    this.assertActive();
+    validatePreviewVersion(version, "Progressive element preview");
+    this.#elementPreviews.setProgressive(
+      { feedback, ids, materialize, version },
+      this.#viewport,
+      this.#camera,
+    );
+    this.schedule();
+  }
+  public clearProgressiveElementPreviews(): void {
+    this.assertActive();
+    this.#elementPreviews.clearProgressive();
+    this.schedule();
   }
   public clearElementPreviews(): void {
     this.assertActive();
     if (this.#previewCommits.requestClear()) return;
     this.#elementPreviews.clear();
+    this.#visibilityCoordinator.releasePreviews();
+    this.schedule();
   }
   public promoteVisible(id: string): void {
     this.assertActive();
@@ -337,7 +379,7 @@ export class SvgSceneRenderer {
       this.#scheduler.cancelAnimationFrame(this.#frameHandle);
       this.#frameHandle = undefined;
     }
-    this.invalidateVisibility();
+    this.#visibilityCoordinator.invalidate();
     this.schedule();
   }
   public destroy(): void {
@@ -386,34 +428,35 @@ export class SvgSceneRenderer {
       this.#content.materializePreviewGeometry(this.#transformPreviews.values);
       this.#transformPreviews.clear();
       this.#elementPreviews.clear();
+      this.#visibilityCoordinator.releasePreviews();
     }
-    this.prepareVisibility();
+    this.#visibilityCoordinator.prepare(this.#viewport, this.#camera);
     this.#transformPreviews.refreshContext();
-    this.#frameWriter.writePointerFeedback(this.#transformPreviews);
-    const pendingMountedChanges = this.#content.writeMountedChanges(deadline, () =>
-      this.#scheduler.now(),
-    );
-    if (pendingMountedChanges) {
-      this.schedule();
-      this.refreshCacheInstrumentation();
-      this.#resourcePolicy.notifyUsageChanged();
-      return;
-    }
-    const pendingVisibility = this.#content.reconcileVisibility(
-      deadline,
-      () => this.#scheduler.now(),
-      this.#transformPreviews.values,
-    );
+    this.flushPointerFeedbackFrame();
+    const pendingVisibility =
+      this.#content.writeMountedChanges(deadline, () => this.#scheduler.now()) ||
+      this.#content.reconcileVisibility(
+        deadline,
+        () => this.#scheduler.now(),
+        this.#transformPreviews.values,
+        this.#elementPreviews.values,
+      );
     if (pendingVisibility) {
       this.schedule();
       this.refreshCacheInstrumentation();
       this.#resourcePolicy.notifyUsageChanged();
       return;
     }
+    this.#liveStroke.settleCommits(
+      (id) => this.#content.hasMounted(id) || !this.#visibility.contains(id),
+    );
     const mountedIds = this.#content.takeNewlyMountedIds();
     this.#motion.bindMountedEntrances(mountedIds);
     this.#motion.finishEntranceBatch();
-    this.#elementPreviews.applyMounted();
+    this.#elementPreviews.applyMounted(mountedIds);
+    const pendingPreview = this.#elementPreviews.progressive.write(deadline, () =>
+      this.#scheduler.now(),
+    );
     let backgroundDeferred = false;
     if (this.#backgroundDirty && this.#viewport !== undefined) {
       if (this.#scheduler.now() >= deadline) {
@@ -427,7 +470,7 @@ export class SvgSceneRenderer {
     if (!backgroundDeferred) this.#sceneCommits.completeFrame();
     const pendingMotion = this.#motion.write(startedAt);
     const overBudget = this.#scheduler.now() >= deadline;
-    if (backgroundDeferred || pendingMotion || overBudget) this.schedule();
+    if (backgroundDeferred || pendingPreview || pendingMotion || overBudget) this.schedule();
     if (overBudget) {
       this.refreshCacheInstrumentation();
       return;
@@ -443,33 +486,10 @@ export class SvgSceneRenderer {
     if (!sameViewport(this.#viewport, viewport)) {
       this.#viewport = viewport;
       this.#transformPreviews.setContext(this.#camera, viewport);
-      this.invalidateVisibility();
+      this.#elementPreviews.refreshProgressiveContext(viewport, this.#camera);
+      this.#visibilityCoordinator.invalidate();
     }
     this.#layoutDirty = false;
-  }
-  private prepareVisibility(): void {
-    if (this.#viewport === undefined) return;
-    if (!this.#visibilityDirty) {
-      if (this.#orderVisibilityDirty) {
-        this.#orderVisibilityDirty = false;
-        const visibility = this.#visibility.resortCurrent();
-        this.#content.replaceVisibility(visibility);
-        this.#resourcePolicy.updateVisibility(visibility);
-      }
-      return;
-    }
-    const { envelope, retained } = visibilityPageBounds(this.#viewport, this.#camera);
-    this.#visibilityDirty = false;
-    this.#orderVisibilityDirty = false;
-    const result = this.#visibility.query(envelope, retained);
-    if (!result.changed) return;
-    const { visibility } = result;
-    this.#content.replaceVisibility(visibility);
-    this.#resourcePolicy.updateVisibility(visibility);
-  }
-  private invalidateVisibility(): void {
-    this.#visibilityDirty = true;
-    this.#content.cancelPendingVisibility();
   }
   private refreshCacheInstrumentation(): void {
     refreshCacheInstrumentation(this.#instrumentation, this.#backgroundCache, this.#pathCache);

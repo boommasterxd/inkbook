@@ -1,6 +1,6 @@
 import type { InkSnapshotV1 } from "../../../../src/domain/schema/public";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
-import type { AutosaveDocumentSource } from "../../../../src/persistence/saving/autosave/public";
+import { type AutosaveDocumentSource } from "../../../../src/persistence/saving/autosave/types";
 import { rectangle, snapshot } from "../../../unit/persistence/worker/runtime/fixtures";
 
 export class AutosaveDocumentFixture implements AutosaveDocumentSource {

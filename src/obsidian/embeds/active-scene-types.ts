@@ -1,6 +1,7 @@
 import type {
-  InkbookDeviceSettingsV1,
-  InkbookSettingsV3,
+  InkbookDeviceSettingsV2,
+  InkbookSettingsV4,
+  SnappingSettingsV1,
   StartupToolV1,
   ToolDefaultsV1,
 } from "../../domain/settings/types";
@@ -12,11 +13,12 @@ import type { ActiveEditorHistory } from "./active-editor/history";
 import type { Keymap } from "obsidian";
 import type { EditableDocumentModel } from "./vault-document-session";
 import type { PresentationScrollRangeReserve } from "./transition-scroll-stability";
+import type { EditorChromeOpenings } from "./editor-chrome-openings";
 
-export interface ActiveInkbookSceneOptions {
-  readonly backgroundSpacing: () => InkbookSettingsV3["pageDefaults"]["backgroundSpacing"];
+export interface ActiveInkbookSceneOptions extends EditorChromeOpenings {
+  readonly backgroundSpacing: () => InkbookSettingsV4["pageDefaults"]["backgroundSpacing"];
   readonly defaults: ToolDefaultsV1;
-  readonly deviceSettings: InkbookDeviceSettingsV1;
+  readonly deviceSettings: InkbookDeviceSettingsV2;
   readonly menuFactory?: MenuFactoryPort;
   readonly history: ActiveEditorHistory;
   readonly keymap?: Pick<Keymap, "popScope" | "pushScope">;
@@ -34,5 +36,6 @@ export interface ActiveInkbookSceneOptions {
   readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
   readonly scheme: InkbookColorScheme;
   readonly scrollOwner?: () => BrowserScrollElement | null;
+  readonly snapping: SnappingSettingsV1;
   readonly startupTool: StartupToolV1;
 }

@@ -29,7 +29,11 @@ import {
 } from "./embeds";
 import { registerInkbookIcons } from "./icons/inkbook-icons";
 import { InkbookFeedbackManager, type InkbookFeedbackCode } from "./feedback";
-import { InkbookSettingsStore, InkbookSettingTab } from "./settings";
+import {
+  InkbookSettingsModalController,
+  InkbookSettingsStore,
+  InkbookSettingTab,
+} from "./settings";
 import { ColorSchemeBroadcaster } from "./theme/color-scheme";
 import { ObsidianVaultFolderAdapter } from "./vault";
 
@@ -44,6 +48,7 @@ export async function activateInkbookPlugin(
   let active = true;
   let runtimeForSettings: ObsidianWorkspaceRuntime | undefined;
   const settingTab = addSettingsTab(plugin, settings, () => runtimeForSettings);
+  const settingsModal = new InkbookSettingsModalController(plugin.app, settingTab, settings);
   const scheme = new ColorSchemeBroadcaster({
     getColorScheme: () => (plugin.app.isDarkMode() ? "dark" : "light"),
   });
@@ -60,7 +65,7 @@ export async function activateInkbookPlugin(
     }),
   );
   const embedActions = createObsidianEmbedActions(plugin.app, () => metadataResolved);
-  const runtime = createWorkspaceRuntime(plugin, settings, scheme, embedActions, feedback);
+  const runtime = createRuntime(plugin, settings, scheme, embedActions, feedback, settingsModal);
   runtimeForSettings = runtime;
   plugin.register(runtime.refreshRateProfiles.subscribe(() => settingTab.update()));
   registerSettingsSubscriptions(plugin, settings, runtime);
@@ -122,6 +127,7 @@ export async function activateInkbookPlugin(
     documentRecognition.dispose();
     runtime.dispose();
     feedback.dispose();
+    settingsModal.dispose();
     scheme.clear();
     unregisterIcons();
   };
@@ -146,12 +152,13 @@ function addSettingsTab(
   return settingTab;
 }
 
-function createWorkspaceRuntime(
+function createRuntime(
   plugin: Plugin,
   settings: InkbookSettingsStore,
   scheme: ColorSchemeBroadcaster,
   embedActions: ReturnType<typeof createObsidianEmbedActions>,
   feedback: InkbookFeedbackManager,
+  settingsModal: InkbookSettingsModalController,
 ): ObsidianWorkspaceRuntime {
   return new ObsidianWorkspaceRuntime(
     plugin.app.vault,
@@ -163,10 +170,19 @@ function createWorkspaceRuntime(
     }),
     embedActions,
     {
+      deviceStorage: {
+        loadLocalStorage: (key) => {
+          const stored: unknown = plugin.app.loadLocalStorage(key);
+          return stored;
+        },
+        saveLocalStorage: (key, data) => plugin.app.saveLocalStorage(key, data),
+      },
       fallbackOwnerWindow: () =>
         plugin.app.workspace.containerEl.ownerDocument.defaultView ?? undefined,
       keymap: plugin.app.keymap,
       manager: feedback,
+      onOpenSettings: () => settingsModal.open("settings"),
+      onOpenShortcuts: () => settingsModal.open("shortcuts"),
       view: () => plugin.app.workspace.getActiveViewOfType(MarkdownView)?.containerEl,
     },
   );

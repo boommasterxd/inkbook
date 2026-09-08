@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type {
-  ArrowElementV1,
-  LineElementV1,
-  StraightHighlighterElementV1,
-} from "../../../../src/domain/schema/public";
+import { type ArrowElementV1, type LineElementV1 } from "../../../../src/domain/schema/public";
+import { type StraightHighlighterElementV1 } from "../../../../src/domain/schema/types";
 import { translateElementGeometry } from "../../../../src/domain/geometry/public";
 import { coordinateSystem, rectangle } from "./fixtures";
 

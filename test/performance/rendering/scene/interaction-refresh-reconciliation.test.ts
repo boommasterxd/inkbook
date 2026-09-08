@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { boundsIntersect } from "../../../../src/domain/geometry/public";
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
-import { moveSelection } from "../../../../src/editor/selection/public";
+import { moveSelection } from "../../../../src/editor/selection/transforms";
 import { visibilityPageBounds } from "../../../../src/rendering/scene/scene-resource-policy";
 import type { SceneCamera, SceneViewport } from "../../../../src/rendering/scene/types";
 import {

@@ -20,17 +20,18 @@ export class SceneResourcePolicy implements ActiveDocumentMemoryScenePort {
     private readonly pathCache: ScenePathCache,
     private readonly motion: SceneMotionController,
     private readonly onUsageChanged: () => void,
+    private readonly previewMemoryUsage: () => number = () => 0,
   ) {}
 
   public memoryUsage(): ReturnType<ActiveDocumentMemoryScenePort["memoryUsage"]> {
     return {
       motionCacheBytes: this.motion.cacheMemoryUsage(),
-      pathCacheBytes: this.pathCache.cacheMemoryUsage(),
+      pathCacheBytes: this.pathCache.cacheMemoryUsage() + this.previewMemoryUsage(),
     };
   }
 
   public notifyUsageChanged(): void {
-    const pathBytes = this.pathCache.cacheMemoryUsage();
+    const pathBytes = this.pathCache.cacheMemoryUsage() + this.previewMemoryUsage();
     const motionBytes = this.motion.cacheMemoryUsage();
     if (pathBytes === this.#lastPathCacheBytes && motionBytes === this.#lastMotionCacheBytes)
       return;

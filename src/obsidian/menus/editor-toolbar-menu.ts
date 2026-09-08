@@ -56,7 +56,14 @@ const SHAPES: readonly (readonly [ShapeId, string, "lines" | "shapes" | "structu
   ["coordinate-system", "Coordinate system", "structures"],
   ["table", "Table", "structures"],
 ];
-const OVERFLOW_BASE_TITLES = ["Background", "Copy embed", "Erase all", "Delete embed"] as const;
+const OVERFLOW_BASE_TITLES = [
+  "Background",
+  "Copy embed",
+  "Settings",
+  "Keyboard shortcuts",
+  "Erase all",
+  "Delete embed",
+] as const;
 const OVERFLOW_SELECTION_TITLES = [
   "Bring forward",
   "Send backward",
@@ -316,6 +323,13 @@ function populateOverflow(
   menu.addSeparator();
   addAction(menu, options.ownerDocument, "Copy embed", "copy", () =>
     handlers.onOverflowAction("copy-embed"),
+  );
+  menu.addSeparator();
+  addAction(menu, options.ownerDocument, "Settings", "settings", () =>
+    options.ownerWindow.queueMicrotask(handlers.onOpenSettings),
+  );
+  addAction(menu, options.ownerDocument, "Keyboard shortcuts", "keyboard", () =>
+    options.ownerWindow.queueMicrotask(handlers.onOpenShortcuts),
   );
   menu.addSeparator();
   addAction(

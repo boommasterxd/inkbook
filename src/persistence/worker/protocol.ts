@@ -1,4 +1,5 @@
 import type { ElementValidationDerivation } from "../../domain/schema/public";
+import type { DocumentIntegrityManifest } from "../serialization/document-integrity-manifest";
 
 export type SessionId = string;
 export type ElementId = string;
@@ -55,6 +56,7 @@ export type ExportRequest<TElement, TPage, TSnapshot> =
   FullExportRequest<TSnapshot> | IncrementalExportRequest<TElement, TPage>;
 
 export interface ExportSuccess extends ExportIdentity {
+  readonly integrityManifest: DocumentIntegrityManifest;
   readonly output: string | Uint8Array;
   readonly outputHash: string;
   readonly type: "export-success";
@@ -80,23 +82,6 @@ export interface WorkerJob<TPayload> {
   readonly payload: TPayload;
 }
 
-export type PreparedSuccessor = ExportSuccess;
-
-type SaveWritePhase = "preflight" | "read-back" | "writing";
-
-export interface SaveOperationIdentity {
-  readonly saveOperationId: SaveOperationId;
-  readonly sessionId: SessionId;
-}
-
-export interface ActiveSaveOperation extends SaveOperationIdentity {
-  readonly output: string | Uint8Array;
-  readonly outputHash: string;
-  readonly revision: DocumentRevision;
-  readonly workerEpoch: WorkerEpoch;
-  readonly writePhase: SaveWritePhase;
-}
-
 export interface ActiveSaveProof {
   readonly outputHash: string;
   readonly revision: DocumentRevision;
@@ -111,13 +96,4 @@ export type VaultBase =
       readonly type: "confirmed";
     };
 
-export interface VerificationRecovery {
-  readonly identity: PurposeOperationIdentity;
-  readonly previousBase: VaultBase;
-  readonly proof: ActiveSaveProof;
-}
-
 export type VerifiedPersistedOutput = VaultBase | { readonly type: "unreadable" };
-
-export type VerificationClassification =
-  "confirmed" | "conflict" | "retry-verification" | "retry-write" | "stale";

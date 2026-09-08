@@ -2,13 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   createInputState,
-  inputPhase,
   reduceInput,
   type InputAction,
-  type InputEffect,
   type InputState,
-  type PointerDownAction,
 } from "../../../../src/editor/input";
+import { type InputEffect, type PointerDownAction } from "../../../../src/editor/input/input-types";
+import { inputPhase } from "../../../fixtures/editor/input-actions";
 
 function touchDown(overrides: Partial<PointerDownAction> = {}): PointerDownAction {
   return {
@@ -37,7 +36,7 @@ function types(effects: readonly InputEffect[]): string[] {
 describe("input exit cleanup", () => {
   it("cancels the empty-canvas timer on release or cancellation", () => {
     for (const type of ["pointer-up", "pointer-cancel", "lost-pointer-capture"] as const) {
-      const pending = apply(createInputState(), touchDown());
+      const pending = apply(createInputState({ hasSelection: true }), touchDown());
       const exited = apply(pending.state, { type, pointerId: 1 });
       expect(inputPhase(exited.state)).toBe("idle");
       expect(exited.effects).toEqual([
@@ -94,19 +93,19 @@ describe("input exit cleanup", () => {
 });
 
 describe("preview cancellation", () => {
-  it("cancels a lasso preview without committing selection geometry", () => {
+  it("cancels a pen lasso preview without committing selection geometry", () => {
     const lasso = apply(
       createInputState({
         activeTool: "select",
         deviceFingerDrawingEnabled: true,
         toolbarFingerDrawingEnabled: true,
       }),
-      touchDown(),
+      touchDown({ pointerType: "pen" }),
     );
     const preview = apply(lasso.state, {
       type: "pointer-move",
       pointerId: 1,
-      pointerType: "touch",
+      pointerType: "pen",
       x: 7,
       y: 0,
     });

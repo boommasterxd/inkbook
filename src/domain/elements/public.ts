@@ -1,7 +1,1 @@
-export {
-  assertStrokeSamplesV1,
-  cloneRuntimeStrokeSamples,
-  copyRuntimeStrokeSamplesToWire,
-  copyStrokeSamplesToRuntime,
-  StrokeCaptureBuffer,
-} from "./stroke-samples";
+export { assertStrokeSamplesV1, copyStrokeSamplesToRuntime } from "./stroke-samples";

@@ -7,10 +7,8 @@ export function measureToolbarLayout(
   const toolbar = chromeHost.querySelector<HTMLElement>(".inkbook-toolbar");
   if (toolbar === null) return "scrollable";
   const track = toolbar.querySelector<HTMLElement>(".inkbook-toolbar-track");
-  const context = chromeHost.querySelector<HTMLElement>(".inkbook-toolbar-context-actions");
   return resolveToolbarLayout({
     availableWidth: Math.max(0, availableWidth),
     contentWidth: track?.scrollWidth ?? toolbar.scrollWidth,
-    contextWidth: context?.scrollWidth ?? 0,
   });
 }

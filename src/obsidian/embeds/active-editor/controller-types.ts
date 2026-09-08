@@ -1,5 +1,6 @@
 import type {
-  InkbookDeviceSettingsV1,
+  InkbookDeviceSettingsV2,
+  SnappingSettingsV1,
   StartupToolV1,
   ToolDefaultsV1,
 } from "../../../domain/settings/types";
@@ -12,16 +13,16 @@ import type { PageV1 } from "../../../domain/schema/public";
 import type { ElementSceneStore } from "./scene-store";
 import type { ActiveEditorZoomLayoutUpdate } from "./navigation";
 import type { BackgroundSpacingDefaults } from "./controller-helpers";
-import type { SelectionEdgeDragPort } from "./selection-preview";
 import type { ActiveEditorHistory } from "./history";
 import type { Keymap } from "obsidian";
+import type { EditorChromeOpenings } from "../editor-chrome-openings";
 
-export interface ActiveEditorControllerOptions {
+export interface ActiveEditorControllerOptions extends EditorChromeOpenings {
   readonly container: HTMLElement;
   readonly applyZoomLayout: (update: ActiveEditorZoomLayoutUpdate) => void;
   readonly backgroundSpacing: () => BackgroundSpacingDefaults;
   readonly defaults: ToolDefaultsV1;
-  readonly deviceSettings: InkbookDeviceSettingsV1;
+  readonly deviceSettings: InkbookDeviceSettingsV2;
   readonly interruptLayoutForInput: () => void;
   readonly keymap?: Pick<Keymap, "popScope" | "pushScope">;
   readonly history: ActiveEditorHistory;
@@ -39,7 +40,13 @@ export interface ActiveEditorControllerOptions {
   readonly renderer: SvgSceneRenderer;
   readonly sliceBudgetMs?: () => number;
   readonly sceneStore: ElementSceneStore;
-  readonly selectionEdgeDrag?: SelectionEdgeDragPort;
+  readonly selectionMoveLayout: {
+    begin(): void;
+    currentHeight?(): number | undefined;
+    finish(committed: boolean, previewMaximumBottom?: number): void;
+    updateBottom(maximumBottom: number): void;
+  };
   readonly scrollOwner: BrowserScrollElement;
+  readonly snapping: SnappingSettingsV1;
   readonly startupTool: StartupToolV1;
 }

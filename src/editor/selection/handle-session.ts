@@ -1,10 +1,5 @@
 import { pointDistance, rotatePointClockwise } from "../../domain/geometry/public";
-import type {
-  BoxAnchorV1,
-  CoordinateSystemElementV1,
-  InkElementV1,
-  PointV1,
-} from "../../domain/schema/public";
+import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 import {
   findSnapCandidate,
   SnapCandidateScratch,
@@ -15,26 +10,23 @@ import type {
   SelectionHandleAction,
   SelectionHandlePreview,
   SelectionHandleSessionOptions,
+  SelectionHandleUpdateOptions,
   SelectionPreviewTransform,
+  SelectionSnapGuide,
   SelectionSnapPorts,
   TimeSlicedSelectionCommitPreparation,
 } from "./handle-types";
+import { selectionHandleSnapGuide, selectionRotationDelta } from "./handle-snap-resolution";
+import { assertFiniteHandlePoint, assertLinearHandleElement } from "./handle-session-validation";
+import { SelectionScaleGesture } from "./selection-scale";
+import { selectionSnapFeatureEnabled } from "./snap-features";
 import {
-  editCoordinateAxis,
-  editCoordinateOrigin,
-  editLinearBend,
-  editLinearEndpoint,
-  minimumUniformScaleForSelection,
   moveSelection,
-  resizeBoxShape,
   rotateSelection,
-  rotationFromPointers,
-  scaleElementFromPointers,
-  scaleFactorsFromPointers,
-  scaleSelectionFromPointers,
-  scaleSelectionUniformAtLeast,
+  type ScaleFactors,
   type TransformSliceScheduler,
 } from "./transforms";
+import { materializeTargetedHandle } from "./targeted-handle-action";
 import {
   exceedsExactPreviewWork,
   exceedsReplacementWork,
@@ -48,47 +40,69 @@ export type {
   SelectionHandlePreview,
   SelectionHandleSessionOptions,
   SelectionPreviewTransform,
+  SelectionSnapGuide,
   SelectionSnapPorts,
   TimeSlicedSelectionCommitPreparation,
 } from "./handle-types";
 
 const SYNCHRONOUS_SELECTION_LIMIT = 1_000;
 const SYNCHRONOUS_SELECTION_WORK_LIMIT = 16_384;
+const DEFAULT_REPLACEMENT_WORK = Object.freeze({ includeReverseDependencies: true });
+const TABLE_SEPARATOR_REPLACEMENT_WORK = Object.freeze({ includeReverseDependencies: false });
 
 export class SelectionHandleSession {
+  readonly #affineScalePreview: boolean;
   readonly #action: SelectionHandleAction;
   readonly #elements: readonly InkElementV1[];
   readonly #planner: SelectionReplacementPlanner;
-  readonly #minimumUniformScale: number | undefined;
+  readonly #scale: SelectionScaleGesture | undefined;
   readonly #snapScratch = new SnapCandidateScratch();
   readonly #snap: SelectionSnapPorts | undefined;
+  #snapFeatures: SelectionSnapPorts["features"];
   readonly #startPointer: PointV1;
   #cancelled = false;
   #currentPointer: PointV1;
   #generation = 0;
   #preview: SelectionHandlePreview;
   #snapCandidate: SnapCandidate | null = null;
+  #uniformScale = false;
   #valid = true;
 
   public constructor(options: SelectionHandleSessionOptions) {
     if (options.elements.length === 0) throw new RangeError("A handle session needs a selection.");
-    assertFinitePoint(options.startPointer);
+    assertFiniteHandlePoint(options.startPointer);
+    this.#affineScalePreview =
+      options.action.kind === "scale" && options.elements.some(({ kind }) => kind === "stroke");
     this.#action = options.action;
     this.#elements = options.elements;
     this.#planner = options.planner;
-    this.#minimumUniformScale =
-      options.action.kind === "scale" && options.elements.length > 1
-        ? minimumUniformScaleForSelection(options.elements)
+    this.#scale =
+      options.action.kind === "scale"
+        ? new SelectionScaleGesture(options.action, options.elements, options.startPointer)
         : undefined;
     this.#snap = options.snap;
+    this.#snapFeatures = options.snap?.features;
     this.#startPointer = options.startPointer;
     this.#currentPointer = options.startPointer;
+    if (options.uniformScale !== undefined) this.#uniformScale = options.uniformScale;
     this.#assertActionTarget();
     this.#preview = this.#emptyPreview();
   }
 
   public get preview(): SelectionHandlePreview {
     return this.#preview;
+  }
+
+  public createScalePreviewMaterializer(): ((element: InkElementV1) => InkElementV1) | undefined {
+    const scale = this.#scale;
+    const transform = this.#preview.transform;
+    if (scale === undefined || transform?.kind !== "scale") return undefined;
+    const pointer = this.#currentPointer;
+    const uniform = this.#uniformScale;
+    const factors = scale.factorsAt(pointer, uniform);
+    const delta = transform.delta;
+    return (element) =>
+      moveSelection([scale.materializeOne(element, pointer, uniform, factors)], delta)[0]!;
   }
 
   public cancel(): void {
@@ -98,10 +112,15 @@ export class SelectionHandleSession {
     this.#preview = this.#emptyPreview();
   }
 
-  public update(pointer: PointV1): SelectionHandlePreview {
+  public update(
+    pointer: PointV1,
+    options: SelectionHandleUpdateOptions = {},
+  ): SelectionHandlePreview {
     this.#assertActive();
-    assertFinitePoint(pointer);
+    assertFiniteHandlePoint(pointer);
     this.#currentPointer = pointer;
+    if (options.uniformScale !== undefined) this.#uniformScale = options.uniformScale;
+    if (options.snapFeatures !== undefined) this.#snapFeatures = options.snapFeatures;
     this.#generation += 1;
     this.#updateSnapCandidate();
     this.#preview = this.#createPreview();
@@ -114,9 +133,14 @@ export class SelectionHandleSession {
     if (this.#requiresTimeSlicedCommit()) {
       return { status: "time-sliced-required" };
     }
-    const plan = this.#planner.planReplacements(this.#materializeDirect());
-    if (plan === null) return { status: "noop" };
-    return { previous: this.#elements, replacements: plan.replacements, status: "ready" };
+    try {
+      const plan = this.#planner.planReplacements(this.#materializeDirect());
+      if (plan === null) return { status: "noop" };
+      return { previous: this.#elements, replacements: plan.replacements, status: "ready" };
+    } catch (error: unknown) {
+      if (this.#affineScalePreview && error instanceof RangeError) return { status: "noop" };
+      throw error;
+    }
   }
 
   public async prepareCommitTimeSliced(
@@ -141,23 +165,31 @@ export class SelectionHandleSession {
 
   #createPreview(): SelectionHandlePreview {
     if (!this.#hasChanged()) return this.#emptyPreview();
-    const transform = this.#previewTransform();
-    if (exceedsExactPreviewWork(this.#elements, this.#planner)) {
+    if (
+      this.#affineScalePreview ||
+      exceedsExactPreviewWork(this.#elements, this.#planner, this.#replacementWorkOptions())
+    ) {
       this.#valid = true;
+      const transform = this.#previewTransform(true);
       return {
         exactElements: [],
         exactPreviewTruncated: true,
+        previewFrame: this.#previewFrame(),
         snapCandidate: this.#snapCandidate,
+        snapGuide: this.#snapGuide(),
         transform,
       };
     }
     try {
       const planned = this.#planner.planReplacements(this.#materializeDirect());
+      const transform = this.#previewTransform(false);
       this.#valid = planned !== null;
       return {
         exactElements: planned?.elements ?? [],
         exactPreviewTruncated: false,
+        previewFrame: this.#previewFrame(),
         snapCandidate: this.#snapCandidate,
+        snapGuide: this.#snapGuide(),
         transform,
       };
     } catch (error: unknown) {
@@ -166,7 +198,9 @@ export class SelectionHandleSession {
       return {
         exactElements: [],
         exactPreviewTruncated: false,
+        previewFrame: null,
         snapCandidate: null,
+        snapGuide: null,
         transform: null,
       };
     }
@@ -177,21 +211,12 @@ export class SelectionHandleSession {
       case "move":
         return moveSelection(this.#elements, this.#translation());
       case "scale":
-        return this.#elements.length === 1
-          ? [this.#scaleSingle(this.#elements[0]!)]
-          : scaleSelectionFromPointers(
-              this.#elements,
-              this.#action.anchor,
-              this.#startPointer,
-              this.#currentPointer,
-              this.#minimumUniformScale,
-            );
+        return this.#requiredScale().materialize(this.#currentPointer, this.#uniformScale);
       case "rotate":
-        return rotationFromPointers(
+        return rotateSelection(
           this.#elements,
           this.#action.center,
-          this.#startPointer,
-          this.#currentPointer,
+          this.#rotationDeltaAt(this.#currentPointer),
         );
       default:
         return this.#replaceActionTarget();
@@ -203,56 +228,54 @@ export class SelectionHandleSession {
     generation: number,
     pointer: PointV1,
   ): Promise<InkElementV1[] | null> {
-    const uniformFactor = await this.#timeSlicedUniformFactor(scheduler, generation, pointer);
-    if (uniformFactor === null) return null;
+    const scaleFactors = await this.#timeSlicedScaleFactors(scheduler, generation, pointer);
+    if (scaleFactors === null) return null;
     const replacements: InkElementV1[] = [];
     for (const element of this.#elements) {
       if (this.#preparationCancelled(scheduler, generation)) return null;
-      replacements.push(this.#materializeOne(element, uniformFactor, pointer));
+      replacements.push(this.#materializeOne(element, scaleFactors, pointer));
       if (!(await this.#continuePreparation(scheduler, generation))) return null;
     }
-    return this.#preparationCancelled(scheduler, generation) ? null : replacements;
+    if (this.#preparationCancelled(scheduler, generation)) return null;
+    if (this.#action.kind !== "scale") return replacements;
+    return this.#requiredScale().stabilizeAnchorTimeSliced(replacements, {
+      isCancelled: () => this.#preparationCancelled(scheduler, generation),
+      shouldYield: scheduler.shouldYield,
+      yieldControl: scheduler.yieldControl,
+    });
   }
 
   #materializeOne(
     element: InkElementV1,
-    uniformFactor: number | undefined,
+    scaleFactors: ScaleFactors | undefined,
     pointer: PointV1,
   ): InkElementV1 {
     if (this.#action.kind === "move") {
       return moveSelection([element], this.#translationAt(pointer))[0]!;
     }
     if (this.#action.kind === "rotate") {
-      return rotateSelection(
-        [element],
-        this.#action.center,
-        pointerRotation(this.#action.center, this.#startPointer, pointer),
-      )[0]!;
+      return rotateSelection([element], this.#action.center, this.#rotationDeltaAt(pointer))[0]!;
     }
     if (this.#action.kind === "scale") {
-      return uniformFactor === undefined
-        ? this.#scaleSingleAt(element, pointer)
-        : scaleSelectionUniformAtLeast(
-            [element],
-            this.#action.anchor,
-            uniformFactor,
-            this.#minimumUniformScale ?? 0,
-          )[0]!;
+      return this.#requiredScale().materializeOne(
+        element,
+        pointer,
+        this.#uniformScale,
+        scaleFactors,
+      );
     }
     return this.#replaceActionTargetAt(pointer)[0]!;
   }
 
-  async #timeSlicedUniformFactor(
+  async #timeSlicedScaleFactors(
     scheduler: TransformSliceScheduler,
     generation: number,
     pointer: PointV1,
-  ): Promise<number | null | undefined> {
+  ): Promise<ScaleFactors | null | undefined> {
     if (this.#action.kind !== "scale" || this.#elements.length === 1) return undefined;
-    const startDistance = pointDistance(this.#action.anchor, this.#startPointer);
-    const factor =
-      startDistance === 0 ? 1 : pointDistance(this.#action.anchor, pointer) / startDistance;
+    const factors = this.#requiredScale().factorsAt(pointer, this.#uniformScale);
     if (this.#preparationCancelled(scheduler, generation)) return null;
-    return Math.max(factor, this.#minimumUniformScale ?? 0);
+    return factors;
   }
 
   #replaceActionTarget(): InkElementV1[] {
@@ -263,50 +286,46 @@ export class SelectionHandleSession {
     const action = this.#action;
     if (!("elementId" in action)) throw new Error("Expected a targeted handle action.");
     const element = this.#targetElement(action.elementId);
-    if (action.kind === "shape-resize") {
-      if (!isBoxShape(element)) throw new TypeError("Shape handles require a closed shape.");
-      return [resizeBoxShape(element, action.position, pointer)];
-    }
-    if (action.kind === "linear-endpoint") {
-      if (element.kind !== "line" && element.kind !== "arrow") {
-        throw new TypeError("Endpoint handles require a line or arrow.");
-      }
-      const opposite = action.endpoint === "start" ? element.end : element.start;
-      const candidate = this.#validEndpointCandidate(opposite);
-      const point = candidate?.point ?? clampEndpoint(pointer, opposite);
-      const connection =
-        candidate === null ? null : { anchor: candidate.anchor, targetId: candidate.targetId };
-      return [editLinearEndpoint(element, action.endpoint, point, connection)];
-    }
-    if (action.kind === "linear-bend") return [editLinearBend(element, pointer)];
-    if (element.kind !== "coordinate-system") {
-      throw new TypeError("Coordinate handles require a coordinate system.");
-    }
-    const point = canonicalHandlePoint(element, pointer);
+    const candidate =
+      action.kind === "linear-endpoint"
+        ? this.#validEndpointCandidate(
+            rotatePointClockwise(
+              action.endpoint === "start"
+                ? assertLinearHandleElement(element).end
+                : assertLinearHandleElement(element).start,
+              element.pivot,
+              element.rotation,
+            ),
+          )
+        : null;
     return [
-      action.kind === "coordinate-axis"
-        ? editCoordinateAxis(element, action.axisIndex, point)
-        : editCoordinateOrigin(element, point),
+      materializeTargetedHandle({
+        action,
+        candidate,
+        element,
+        pointer,
+        snap: this.#currentSnap(),
+      }),
     ];
   }
 
-  #scaleSingle(element: InkElementV1): InkElementV1 {
-    return this.#scaleSingleAt(element, this.#currentPointer);
-  }
-
-  #scaleSingleAt(element: InkElementV1, pointer: PointV1): InkElementV1 {
-    if (this.#action.kind !== "scale") throw new Error("Expected a scale action.");
-    return scaleElementFromPointers(
-      element,
-      this.#action.anchor,
-      this.#startPointer,
-      pointer,
-      activeScaleAxes(this.#action.position),
-    );
+  #requiredScale(): SelectionScaleGesture {
+    if (this.#scale === undefined) throw new Error("Expected a scale action.");
+    return this.#scale;
   }
 
   #updateSnapCandidate(): void {
-    if (this.#action.kind !== "linear-endpoint" || this.#snap === undefined) {
+    const snap = this.#currentSnap();
+    if (
+      this.#action.kind !== "linear-endpoint" ||
+      snap === undefined ||
+      !selectionSnapFeatureEnabled(snap, "connections")
+    ) {
+      this.#snapCandidate = null;
+      return;
+    }
+    const target = this.#targetElement(this.#action.elementId);
+    if (target.kind !== "line" && target.kind !== "arrow") {
       this.#snapCandidate = null;
       return;
     }
@@ -314,11 +333,16 @@ export class SelectionHandleSession {
       {
         current: this.#snapCandidate,
         pointer: this.#currentPointer,
-        pointerType: this.#snap.pointerType,
-        zoom: this.#snap.zoom,
+        pointerType: snap.pointerType,
+        zoom: snap.zoom,
       },
-      this.#snap.spatial,
-      this.#snap.targets,
+      snap.spatial,
+      {
+        get: (id) =>
+          id === target.id || !(snap.canConnect?.(target.id, id) ?? true)
+            ? null
+            : (snap.targets.get(id) ?? null),
+      },
       this.#snapScratch,
     );
   }
@@ -328,50 +352,45 @@ export class SelectionHandleSession {
     return candidate !== null && pointDistance(candidate.point, opposite) >= 8 ? candidate : null;
   }
 
-  #previewTransform(): SelectionPreviewTransform | null {
+  #previewTransform(approximateScaleFrame = false): SelectionPreviewTransform | null {
     if (this.#action.kind === "move") return { delta: this.#translation(), kind: "translate" };
     if (this.#action.kind === "scale") {
+      const scale = this.#requiredScale();
+      const factors = scale.previewFactors(
+        this.#currentPointer,
+        this.#uniformScale,
+        approximateScaleFrame,
+      );
       if (this.#elements.length === 1) {
         const element = this.#elements[0]!;
-        const { factors } = scaleFactorsFromPointers(
-          element,
-          this.#action.anchor,
-          this.#startPointer,
-          this.#currentPointer,
-          activeScaleAxes(this.#action.position),
-        );
         return {
           anchor: this.#action.anchor,
+          delta: scale.previewDelta,
           factors,
           kind: "scale",
           rotation: element.rotation,
         };
       }
-      const factor = this.#uniformScaleFactor(this.#currentPointer);
       return {
         anchor: this.#action.anchor,
-        factors: { x: factor, y: factor },
+        delta: scale.previewDelta,
+        factors,
         kind: "scale",
-        rotation: 0,
+        rotation: this.#action.rotation,
       };
     }
     if (this.#action.kind === "rotate") {
       return {
         center: this.#action.center,
-        currentPointer: this.#currentPointer,
+        degrees: this.#rotationDeltaAt(this.#currentPointer),
         kind: "rotate",
-        startPointer: this.#startPointer,
       };
     }
     return null;
   }
 
-  #uniformScaleFactor(pointer: PointV1): number {
-    if (this.#action.kind !== "scale") throw new Error("Expected a scale action.");
-    const startDistance = pointDistance(this.#action.anchor, this.#startPointer);
-    const factor =
-      startDistance === 0 ? 1 : pointDistance(this.#action.anchor, pointer) / startDistance;
-    return Math.max(factor, this.#minimumUniformScale ?? 0);
+  #previewFrame() {
+    return this.#action.kind === "scale" ? this.#requiredScale().previewFrame : null;
   }
 
   #translation(): PointV1 {
@@ -383,6 +402,34 @@ export class SelectionHandleSession {
       x: pointer.x - this.#startPointer.x,
       y: pointer.y - this.#startPointer.y,
     };
+  }
+
+  #rotationDeltaAt(pointer: PointV1): number {
+    return selectionRotationDelta(
+      this.#action,
+      this.#elements,
+      this.#startPointer,
+      pointer,
+      this.#currentSnap(),
+    );
+  }
+
+  #snapGuide(): SelectionSnapGuide | null {
+    return selectionHandleSnapGuide(
+      this.#action,
+      this.#elements,
+      this.#startPointer,
+      this.#currentPointer,
+      this.#snapCandidate,
+      this.#currentSnap(),
+    );
+  }
+
+  #currentSnap(): SelectionSnapPorts | undefined {
+    const snap = this.#snap;
+    if (snap === undefined) return undefined;
+    const { features: _features, ...base } = snap;
+    return this.#snapFeatures === undefined ? base : { ...base, features: this.#snapFeatures };
   }
 
   #targetElement(id: string): InkElementV1 {
@@ -408,7 +455,14 @@ export class SelectionHandleSession {
       this.#planner,
       SYNCHRONOUS_SELECTION_LIMIT,
       SYNCHRONOUS_SELECTION_WORK_LIMIT,
+      this.#replacementWorkOptions(),
     );
+  }
+
+  #replacementWorkOptions(): { readonly includeReverseDependencies: boolean } {
+    return this.#action.kind === "table-header" || this.#action.kind === "table-column"
+      ? TABLE_SEPARATOR_REPLACEMENT_WORK
+      : DEFAULT_REPLACEMENT_WORK;
   }
 
   async #continuePreparation(
@@ -430,56 +484,14 @@ export class SelectionHandleSession {
     return {
       exactElements: [],
       exactPreviewTruncated: false,
+      previewFrame: null,
       snapCandidate: null,
+      snapGuide: null,
       transform: null,
     };
   }
 
   #assertActive(): void {
     if (this.#cancelled) throw new Error("A cancelled handle session cannot be used.");
-  }
-}
-
-function activeScaleAxes(position: BoxAnchorV1): { readonly x: boolean; readonly y: boolean } {
-  return {
-    x: position.includes("left") || position.includes("right"),
-    y: position.startsWith("top") || position.startsWith("bottom"),
-  };
-}
-
-function pointerRotation(center: PointV1, start: PointV1, current: PointV1): number {
-  const startAngle = Math.atan2(start.y - center.y, start.x - center.x);
-  const currentAngle = Math.atan2(current.y - center.y, current.x - center.x);
-  return ((currentAngle - startAngle) * 180) / Math.PI;
-}
-
-function canonicalHandlePoint(element: CoordinateSystemElementV1, point: PointV1): PointV1 {
-  return rotatePointClockwise(point, element.pivot, -element.rotation);
-}
-
-function clampEndpoint(point: PointV1, opposite: PointV1): PointV1 {
-  const distance = pointDistance(point, opposite);
-  if (distance >= 8) return point;
-  if (distance === 0) return { x: opposite.x + 8, y: opposite.y };
-  return {
-    x: opposite.x + ((point.x - opposite.x) * 8) / distance,
-    y: opposite.y + ((point.y - opposite.y) * 8) / distance,
-  };
-}
-
-function isBoxShape(element: InkElementV1): element is Extract<InkElementV1, { width: number }> {
-  return (
-    element.kind === "rectangle" ||
-    element.kind === "ellipse" ||
-    element.kind === "triangle" ||
-    element.kind === "octagon" ||
-    element.kind === "parallelogram" ||
-    element.kind === "diamond"
-  );
-}
-
-function assertFinitePoint(point: PointV1): void {
-  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
-    throw new RangeError("Handle points must be finite.");
   }
 }

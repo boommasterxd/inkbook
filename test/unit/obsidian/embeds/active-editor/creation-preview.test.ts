@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createBuiltInSettings } from "../../../../../src/domain/settings/defaults";
+import type { InkElementV1 } from "../../../../../src/domain/schema/public";
 import type { ToolDefaultsV1 } from "../../../../../src/domain/settings/types";
 import type { EditorTool } from "../../../../../src/editor/input";
 import {
   CreationPreview,
+  type CreationSnapPorts,
   type CreationPreviewRenderer,
 } from "../../../../../src/obsidian/embeds/active-editor/creation-preview";
 import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
@@ -15,13 +17,15 @@ const OUTLINE = {
   outlineColor: { type: "rgba" as const, value: "#EF4444FF" as const },
   outlineOpacity: 0.35,
   outlineStyle: "dashed" as const,
-  outlineWidth: 12 as const,
+  outlineWidth: 14 as const,
 };
+
+const SEMANTIC_ENDPOINT_TARGET_ID = "00000000-0000-4000-8000-000000000099";
 
 describe("drag creation preview presentation", () => {
   it.each([
-    ["line", "dashed", "48 36", "butt"],
-    ["coordinate-system", "dotted", "0 30", "round"],
+    ["line", "dashed", "56 42", "butt"],
+    ["coordinate-system", "dotted", "0 35", "round"],
     ["table", "solid", null, "butt"],
   ] as const)(
     "uses the active %s outline color, width, opacity, and %s style",
@@ -38,7 +42,7 @@ describe("drag creation preview presentation", () => {
         "stroke-dasharray": dash,
         "stroke-linecap": lineCap,
         "stroke-opacity": "0.35",
-        "stroke-width": "12",
+        "stroke-width": "14",
       });
     },
   );
@@ -58,9 +62,9 @@ describe("drag creation preview presentation", () => {
       fill: "#3B82F6FF",
       "fill-opacity": "0.25",
       stroke: "#EF4444FF",
-      "stroke-dasharray": "48 36",
+      "stroke-dasharray": "56 42",
       "stroke-opacity": "0.35",
-      "stroke-width": "12",
+      "stroke-width": "14",
     });
   });
 
@@ -75,7 +79,7 @@ describe("drag creation preview presentation", () => {
     expect(state.parts[0]?.presentation).toMatchObject({
       fill: "none",
       stroke: "#EF4444FF",
-      "stroke-width": "12",
+      "stroke-width": "14",
     });
     expect(state.parts[1]?.presentation).toMatchObject({
       fill: "#EF4444FF",
@@ -106,6 +110,95 @@ describe("drag creation preview presentation", () => {
   });
 });
 
+describe("drag creation preview snapping", () => {
+  it("keeps line direction free when angle snapping is disabled", () => {
+    const committed = commitLinearPreview("line", {
+      ...creationSnapPorts(1),
+      angles: false,
+    });
+
+    expect(committed).toMatchObject({ end: { x: 110, y: 24 }, kind: "line" });
+  });
+
+  it("does not attach new endpoints when connection snapping is disabled", () => {
+    const committed = commitLinearPreview("arrow", {
+      ...endpointSnapPorts(),
+      connections: false,
+    });
+
+    expect(committed).toMatchObject({ endConnection: null, kind: "arrow" });
+  });
+
+  it("applies a changed temporary snapping override on the next pointer frame", () => {
+    let snappingEnabled = true;
+    const { committed, preview, setSnapMarkerPath } = linearCreationPreview("arrow", {
+      ...endpointSnapPorts(),
+      angles: false,
+      connections: () => snappingEnabled,
+    });
+
+    preview.update({ pointerId: 1, pointerType: "mouse", x: 110, y: 24 });
+    expect(setSnapMarkerPath.mock.lastCall?.[0]).not.toBeNull();
+
+    snappingEnabled = false;
+    preview.update({ pointerId: 1, pointerType: "mouse", x: 110, y: 24 });
+    expect(setSnapMarkerPath).toHaveBeenLastCalledWith(null);
+
+    snappingEnabled = true;
+    preview.update({ pointerId: 1, pointerType: "mouse", x: 110, y: 24 });
+    preview.commit();
+    expect(committed[0]).toMatchObject({
+      endConnection: { targetId: SEMANTIC_ENDPOINT_TARGET_ID },
+      kind: "arrow",
+    });
+  });
+
+  it.each(["line", "arrow"] as const)(
+    "snaps a newly created %s to a right angle and renders its angular guide",
+    (tool) => {
+      const { committed, preview, setSnapMarkerPath } = linearCreationPreview(
+        tool,
+        creationSnapPorts(1),
+      );
+
+      preview.update({ pointerId: 1, pointerType: "mouse", x: 110, y: 24 });
+
+      expect(setSnapMarkerPath.mock.lastCall?.[0]).toContain("M -54 20 L 174.07999999999998 20");
+      preview.commit();
+      expect(committed[0]).toMatchObject({
+        end: { x: 110.08, y: 20 },
+        kind: tool,
+        start: { x: 10, y: 20 },
+      });
+    },
+  );
+
+  it.each(["line", "arrow"] as const)(
+    "keeps a newly created %s free at higher zoom when it is outside the angular snap range",
+    (tool) => {
+      const committed = commitLinearPreview(tool, creationSnapPorts(4));
+
+      expect(committed).toMatchObject({ end: { x: 110, y: 24 }, kind: tool });
+    },
+  );
+
+  it.each(["line", "arrow"] as const)(
+    "prioritizes a semantic endpoint anchor over the angular snap when creating an %s",
+    (tool) => {
+      const committed = commitLinearPreview(tool, endpointSnapPorts());
+
+      expect(committed).toMatchObject({
+        end: { x: 110, y: 24 },
+        endConnection: {
+          anchor: { endpoint: "end", kind: "linear-endpoint" },
+          targetId: SEMANTIC_ENDPOINT_TARGET_ID,
+        },
+        kind: tool,
+      });
+    },
+  );
+});
+
 describe("freehand creation preview presentation", () => {
   it.each([
     ["pen", "draw"],
@@ -119,9 +212,25 @@ describe("freehand creation preview presentation", () => {
 
     const call = updateLiveStroke.mock.lastCall;
     if (call === undefined) throw new Error("Expected a live stroke update.");
-    expect(call[0].tail.geometry.paint).toBe("stroke");
+    expect(call[0].tail.geometry).toEqual([expect.objectContaining({ paint: "stroke" })]);
     expect(call[1].pressureEnabled).toBe(false);
     expect(call[2]).toBe(tool);
+  });
+});
+
+describe("creation preview frame sample policy", () => {
+  it.each([
+    ["draw", "preserve"],
+    ["highlighter", "preserve"],
+    ["line", "latest"],
+    ["straight-highlighter", "latest"],
+    ["rectangle", "latest"],
+    ["coordinate-system", "latest"],
+    ["table", "latest"],
+  ] as const)("uses %s samples in %s mode", (tool, mode) => {
+    const preview = createPreview(styledDefaults(), tool, {});
+
+    expect(preview.frameSampleMode).toBe(mode);
   });
 });
 
@@ -133,18 +242,23 @@ function createPreview(
   defaults: ToolDefaultsV1,
   tool: EditorTool,
   renderer: Partial<CreationPreviewRenderer>,
+  options: {
+    readonly commitElements?: (elements: readonly InkElementV1[]) => void;
+    readonly snap?: CreationSnapPorts;
+  } = {},
 ): CreationPreview {
   return new CreationPreview({
     defaults,
     history: new ActiveEditorHistory({
       commitBandOrder: vi.fn(),
-      commitElements: vi.fn(),
+      commitElements: options.commitElements ?? vi.fn(),
       commitPage: vi.fn(),
       removeElements: vi.fn(),
       replaceElements: vi.fn(),
     }),
     identity: { createdAt: 1, id: "00000000-0000-4000-8000-000000000001" },
     renderer: creationPreviewRenderer(renderer),
+    ...(options.snap === undefined ? {} : { snap: options.snap }),
     start: {
       additive: false,
       kind: "tool-gesture",
@@ -152,6 +266,62 @@ function createPreview(
       tool,
     },
   });
+}
+
+function linearCreationPreview(tool: "arrow" | "line", snap: CreationSnapPorts) {
+  const committed: InkElementV1[] = [];
+  const setSnapMarkerPath = vi.fn<(path: string | null) => void>();
+  const preview = createPreview(
+    styledDefaults(),
+    tool,
+    { setSnapMarkerPath },
+    {
+      commitElements: (elements) => committed.push(...elements),
+      snap,
+    },
+  );
+  return { committed, preview, setSnapMarkerPath };
+}
+
+function commitLinearPreview(tool: "arrow" | "line", snap: CreationSnapPorts): InkElementV1 {
+  const { committed, preview } = linearCreationPreview(tool, snap);
+  preview.update({ pointerId: 1, pointerType: "mouse", x: 110, y: 24 });
+  preview.commit();
+  const element = committed[0];
+  if (element === undefined) throw new Error("Expected a committed linear element.");
+  return element;
+}
+
+function creationSnapPorts(zoom: number): CreationSnapPorts {
+  return {
+    pageToScreen: (point) => point,
+    spatial: { query: () => undefined },
+    targets: { get: () => null },
+    zoom,
+  };
+}
+
+function endpointSnapPorts(zoom = 1): CreationSnapPorts {
+  return {
+    pageToScreen: (point) => point,
+    spatial: { query: (_bounds, sink) => sink.add(SEMANTIC_ENDPOINT_TARGET_ID) },
+    targets: {
+      get: (id) =>
+        id === SEMANTIC_ENDPOINT_TARGET_ID
+          ? {
+              anchors: [
+                {
+                  anchor: { endpoint: "end", kind: "linear-endpoint" },
+                  order: 0,
+                  point: { x: 110, y: 24 },
+                },
+              ],
+              rank: 0,
+            }
+          : null,
+    },
+    zoom,
+  };
 }
 
 function renderPreview(tool: EditorTool, defaults: ToolDefaultsV1): LivePathState {

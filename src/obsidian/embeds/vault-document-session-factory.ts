@@ -25,7 +25,13 @@ export class VaultDocumentSessionFactory implements SessionFactory {
   ) {
     this.#fileManager = fileManager;
     this.#runtimes = runtimes;
-    this.#hooks = hooks;
+    this.#hooks = {
+      ...hooks,
+      persisted: (event) => {
+        hooks.trustedHeads?.recordConfirmed(event);
+        hooks.persisted?.(event);
+      },
+    };
     this.#files = new ObsidianVaultFileAdapter(
       vault,
       { file: TFile, folder: TFolder },

@@ -1,3 +1,4 @@
+import { normalizeStrokePaint } from "../../domain/geometry/pressure-paint";
 import {
   buildElementPathParts,
   effectiveStrokeWidth,
@@ -17,6 +18,12 @@ type PathAttributes = Readonly<Record<string, AttributeValue | undefined>>;
 
 export function serializeElementPaths(element: InkElementV1): string[] {
   const parts = buildElementPathParts(element);
+  if (element.kind === "stroke" && element.style.pressureEnabled) {
+    const paint = normalizeStrokePaint(element.style);
+    const opaque = { ...element, style: { ...element.style, color: paint.color, opacity: 1 } };
+    const paths = parts.map((part) => serializeStrokePart(opaque, part.d, "fill"));
+    return [`<g opacity="${serializeSvgOpacity(paint.opacity)}">${paths.join("")}</g>`];
+  }
   return parts.map((part) => {
     if (element.kind === "stroke" || element.kind === "straight-highlighter") {
       if (part.paint === "fill-and-stroke") {

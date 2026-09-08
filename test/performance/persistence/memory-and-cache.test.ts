@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import { mkdtemp, open, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { build } from "esbuild";
@@ -54,26 +57,40 @@ async function runIsolatedMemoryLifecycle(): Promise<MemoryResult> {
   });
   const source = bundled.outputFiles[0]?.text;
   if (source === undefined) throw new Error("Memory lifecycle runner was not bundled.");
-  return parseResult(await executeIsolatedNode(source));
+  const directory = await mkdtemp(join(tmpdir(), "inkbook-memory-lifecycle-"));
+  const output = join(directory, "result.json");
+  const runner = join(directory, "runner.mjs");
+  try {
+    await writeFile(runner, source, "utf8");
+    const outputFile = await open(output, "w");
+    try {
+      await executeIsolatedNode(runner, outputFile.fd);
+    } finally {
+      await outputFile.close();
+    }
+    return parseResult(await readFile(output, "utf8"));
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
 }
 
-function executeIsolatedNode(source: string): Promise<string> {
+function executeIsolatedNode(runner: string, outputDescriptor: number): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      ["--expose-gc", "--max-old-space-size=384", "--input-type=module"],
-      { stdio: ["pipe", "pipe", "pipe"] },
-    );
-    let stdout = "";
+    const child = spawn(process.execPath, ["--expose-gc", "--max-old-space-size=384", runner], {
+      stdio: ["ignore", outputDescriptor, "pipe"],
+    });
     let stderr = "";
-    child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
-    child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
+    const stderrStream = child.stderr;
+    if (stderrStream === null) {
+      reject(new Error("Memory lifecycle runner has no stderr stream."));
+      return;
+    }
+    stderrStream.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
     child.on("error", reject);
     child.on("close", (code) => {
-      if (code === 0) resolve(stdout);
+      if (code === 0) resolve();
       else reject(new Error(`Memory lifecycle runner failed (${code ?? "signal"}): ${stderr}`));
     });
-    child.stdin.end(source);
   });
 }
 

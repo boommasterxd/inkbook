@@ -8,13 +8,14 @@ import {
   takeImmutableElementOwnership,
 } from "../../../../src/domain/store/immutability";
 import { ElementStore } from "../../../../src/domain/store/public";
-import { rotateSelection, scaleSelectionUniform } from "../../../../src/editor/selection/public";
+import { rotateSelection } from "../../../../src/editor/selection/transforms";
 
 import {
   hydrateRuntimeStroke,
   runtimeStrokeHydrationFixture,
 } from "../../../fixtures/domain/runtime-stroke-store";
 import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snapshot";
+import { scaleSelectionUniformForTest as scaleSelectionUniform } from "../../../fixtures/editor/selection-transform-reference";
 import { highlighter, rectangle } from "./fixtures";
 
 describe("runtime element ownership", () => {

@@ -106,27 +106,21 @@ describe("plugin host registration", () => {
     expect(registrations.settingTabs).toHaveLength(1);
     expect(registrations.commands.map((command) => command.id)).toEqual([
       "lock-active-embed",
-      "copy-selection",
-      "cut-selection",
-      "delete-selection",
-      "bring-forward",
-      "send-backward",
-      "bring-to-front",
-      "send-to-back",
-      "paste",
       "copy-embed",
       "erase-all",
       "delete-embed",
       "insert-handwriting",
     ]);
-    expect(registrations.commands).toHaveLength(13);
+    expect(registrations.commands).toHaveLength(5);
     for (const command of registrations.commands) expect(command).not.toHaveProperty("hotkeys");
     expect(cssChange).toHaveBeenCalledTimes(0);
     expect([...metadataEvents.keys()]).toEqual(["changed", "resolved"]);
     expect(workspaceEvents.has("quit")).toBe(true);
     expect(workspaceEvents.has("editor-change")).toBe(false);
     expect(registrations.commands[0]?.checkCallback?.(true)).toBe(false);
-    const insertion = registrations.commands[12]?.editorCheckCallback;
+    const insertion = registrations.commands.find(
+      (command) => command.id === "insert-handwriting",
+    )?.editorCheckCallback;
     const editor = {
       getCursor: () => ({ ch: 0, line: 0 }),
       getLine: () => "",

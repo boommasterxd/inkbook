@@ -92,6 +92,87 @@ describe("active editor pointer controller", () => {
   });
 });
 
+describe("active editor temporary snapping modifier", () => {
+  it.each([
+    ["pen", 0, 0, false],
+    ["pen", 0.2, 0, true],
+    ["pen", 0, 1, true],
+    ["mouse", 0, 0, true],
+    ["touch", 0, 0, true],
+  ] as const)(
+    "finishes %s handles at the last contact when pressure=%s buttons=%s",
+    (pointerType, pressure, buttons, acceptsReleasePosition) => {
+      const pointerMove = vi.fn(() => true);
+      const pointerUp = vi.fn(() => true);
+      const finishHandlePointer = vi.fn();
+      const releasePointer = vi.fn();
+      const controller = horizontalPanController({
+        finishHandlePointer,
+        releasePointer,
+        handles: { pointerMove, pointerUp } as unknown as ActiveEditorHandleInteraction,
+      });
+      controller.handlePointerUp(
+        Object.assign(pointerEvent(pointerType), { pressure, buttons, clientX: 400, clientY: 500 }),
+      );
+      expect(pointerMove).toHaveBeenCalledTimes(acceptsReleasePosition ? 1 : 0);
+      expect(pointerUp).toHaveBeenCalledExactlyOnceWith(7);
+      expect(finishHandlePointer).toHaveBeenCalledOnce();
+      expect(releasePointer).toHaveBeenCalledExactlyOnceWith(7);
+    },
+  );
+
+  it("forwards Alt changes to handles and clears the override at gesture end", () => {
+    const pointerDown = vi.fn(() => true);
+    const pointerMove = vi.fn(() => true);
+    const handles = {
+      cancel: vi.fn(() => true),
+      pointerDown,
+      pointerMove,
+      pointerUp: vi.fn(() => true),
+    } as unknown as ActiveEditorHandleInteraction;
+    const setSnappingInverted = vi.fn();
+    const controller = horizontalPanController({ handles, setSnappingInverted });
+
+    controller.handlePointerDown(pointerEvent("mouse", { altKey: true }));
+    controller.handlePointerMove(pointerEvent("mouse", { altKey: false }));
+    controller.handlePointerUp(pointerEvent("mouse", { altKey: true }));
+
+    expect(pointerDown).toHaveBeenCalledWith(expect.anything(), false, true);
+    expect(pointerMove).toHaveBeenNthCalledWith(1, expect.anything(), false, false);
+    expect(pointerMove).toHaveBeenNthCalledWith(2, expect.anything(), false, true);
+    expect(setSnappingInverted).toHaveBeenLastCalledWith(7, null);
+  });
+});
+
+describe("selection handle pointer cancellation", () => {
+  it("does not cancel a non-cancelable touch move owned by a selection handle", () => {
+    const preventDefault = vi.fn();
+    const controller = horizontalPanController({ handles: handlesPort(true) });
+
+    controller.handlePointerMove(pointerEvent("touch", { cancelable: false, preventDefault }));
+
+    expect(preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("routes lost pointer capture through handle cancellation and pointer cleanup", () => {
+    const cancel = vi.fn(() => true);
+    const handles = { ...handlesPort(true), cancel } as unknown as ActiveEditorHandleInteraction;
+    const releasePointer = vi.fn();
+    const finishHandlePointer = vi.fn();
+    const controller = horizontalPanController({
+      finishHandlePointer,
+      handles,
+      releasePointer,
+    });
+
+    controller.handleLostPointerCapture(pointerEvent());
+
+    expect(cancel).toHaveBeenCalledWith(7);
+    expect(releasePointer).toHaveBeenCalledWith(7);
+    expect(finishHandlePointer).toHaveBeenCalledOnce();
+  });
+});
+
 describe("active editor pointer gesture ownership", () => {
   it("stops a claimed horizontal touch pan before it reaches Obsidian", () => {
     const controller = horizontalPanController();
@@ -198,9 +279,12 @@ function navigationPort() {
 function horizontalPanController(overrides?: {
   readonly coalescedDispatch?: (event: PointerEvent) => boolean;
   readonly dispatch?: (action: unknown) => void;
+  readonly finishHandlePointer?: () => void;
   readonly getInput?: () => InputState;
+  readonly handles?: ActiveEditorHandleInteraction;
   readonly navigation?: ActiveEditorNavigation;
   readonly releasePointer?: (pointerId: number) => void;
+  readonly setSnappingInverted?: (pointerId: number, inverted: boolean | null) => void;
 }): ActiveEditorPointerController {
   const input = createInputState({ zoom: 2, fitZoom: 1 });
   return new ActiveEditorPointerController({
@@ -210,9 +294,9 @@ function horizontalPanController(overrides?: {
       dispatch: vi.fn(overrides?.coalescedDispatch ?? (() => true)),
     } as unknown as CoalescedPointerInput,
     dispatch: overrides?.dispatch ?? vi.fn(),
-    finishHandlePointer: vi.fn(),
+    finishHandlePointer: overrides?.finishHandlePointer ?? vi.fn(),
     getInput: overrides?.getInput ?? (() => ({ ...input, interaction: pagePanInteraction() })),
-    handles: handlesPort(false),
+    handles: overrides?.handles ?? handlesPort(false),
     interruptForInput: vi.fn(),
     isEnabled: () => true,
     menus: menuPort(),
@@ -223,6 +307,9 @@ function horizontalPanController(overrides?: {
     sceneStore: { hit: vi.fn(() => null) } as unknown as ElementSceneStore,
     selection: () => new Set(),
     setLastPointer: vi.fn(),
+    ...(overrides?.setSnappingInverted === undefined
+      ? {}
+      : { setSnappingInverted: overrides.setSnappingInverted }),
   });
 }
 
@@ -262,6 +349,7 @@ function rendererPort(): SvgSceneRenderer {
   return {
     interruptMotionForPointerDown: vi.fn(),
     inputSurface: {
+      focus: vi.fn(),
       hasPointerCapture: vi.fn(() => true),
       releasePointerCapture: vi.fn(),
       setPointerCapture: vi.fn(),
@@ -271,11 +359,15 @@ function rendererPort(): SvgSceneRenderer {
 
 function pointerEvent(
   pointerType = "mouse",
-  overrides: Partial<Pick<PointerEvent, "preventDefault" | "stopPropagation" | "timeStamp">> = {},
+  overrides: Partial<
+    Pick<PointerEvent, "altKey" | "cancelable" | "preventDefault" | "stopPropagation" | "timeStamp">
+  > = {},
 ): PointerEvent {
   return {
     button: 0,
     buttons: 1,
+    altKey: overrides.altKey ?? false,
+    cancelable: overrides.cancelable ?? true,
     ctrlKey: false,
     isPrimary: true,
     metaKey: false,

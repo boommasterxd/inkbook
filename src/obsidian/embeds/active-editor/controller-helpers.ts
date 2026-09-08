@@ -1,6 +1,6 @@
 import type { PageV1 } from "../../../domain/schema/public";
-import type { InkbookSettingsV3 } from "../../../domain/settings/types";
-import type { EditorTool, PointerSample } from "../../../editor/input/index";
+import type { InkbookSettingsV4 } from "../../../domain/settings/types";
+import type { EditorTool, InputPoint, PointerSample } from "../../../editor/input/index";
 import type { BackgroundSpacing, BackgroundType } from "../../menus/editor-menu-types";
 import type { ToolbarAction, ToolId, ShapeId, ToolbarState } from "../../../rendering/ui/index";
 
@@ -20,8 +20,21 @@ export function isTool(action: ToolbarAction): action is ToolId {
   );
 }
 
+export function isClipboardAction(action: string): action is "copy" | "cut" | "paste" {
+  return action === "copy" || action === "cut" || action === "paste";
+}
+
 export function isShapeTool(tool: EditorTool): tool is ShapeId {
   return toolbarTool(tool) === "shape";
+}
+
+export function sameSelectionMembers(
+  left: ReadonlySet<string>,
+  right: ReadonlySet<string>,
+): boolean {
+  if (left.size !== right.size) return false;
+  for (const id of left) if (!right.has(id)) return false;
+  return true;
 }
 
 function toolbarTool(tool: EditorTool): ToolId {
@@ -41,6 +54,15 @@ function toolbarTool(tool: EditorTool): ToolId {
 
 export function normalizePointerType(pointerType: string): PointerSample["pointerType"] {
   return pointerType === "pen" || pointerType === "touch" ? pointerType : "mouse";
+}
+
+export function pointerSampleFromEvent(point: InputPoint, event: PointerEvent): PointerSample {
+  return {
+    ...point,
+    pointerId: event.pointerId,
+    pointerType: normalizePointerType(event.pointerType),
+    pressure: event.pressure,
+  };
 }
 
 interface NavigatorWithUserAgentData extends Navigator {
@@ -69,7 +91,7 @@ export function backgroundState(page: PageV1): {
   return { spacing, type: page.background.type };
 }
 
-export type BackgroundSpacingDefaults = InkbookSettingsV3["pageDefaults"]["backgroundSpacing"];
+export type BackgroundSpacingDefaults = InkbookSettingsV4["pageDefaults"]["backgroundSpacing"];
 
 function backgroundForType(
   type: BackgroundType,
@@ -100,6 +122,7 @@ export function pageWithBackgroundType(
 }
 
 export function createToolbarState(options: {
+  actionConfirmation?: ToolbarState["actionConfirmation"];
   activeTool: EditorTool;
   canPaste: boolean;
   canRedo: boolean;
@@ -108,8 +131,10 @@ export function createToolbarState(options: {
   fingerDrawingAvailable: boolean;
   hasSelection: boolean;
   openFlyout: ToolbarState["openFlyout"];
+  pasteVisible: boolean;
 }): ToolbarState {
   return {
+    actionConfirmation: options.actionConfirmation ?? null,
     activeTool: toolbarTool(options.activeTool),
     canPaste: options.canPaste,
     canRedo: options.canRedo,
@@ -118,5 +143,6 @@ export function createToolbarState(options: {
     fingerDrawingEnabled: options.fingerDrawingEnabled,
     hasSelection: options.hasSelection,
     openFlyout: options.openFlyout,
+    pasteVisible: options.pasteVisible,
   };
 }

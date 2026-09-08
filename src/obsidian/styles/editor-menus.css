@@ -74,6 +74,18 @@
   grid-template-columns: repeat(5, minmax(36px, 1fr));
 }
 
+.inkbook-menu-selection-area-grid,
+.inkbook-menu-selection-inclusion-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.inkbook-menu-selection-inclusion-grid .inkbook-menu-choice-label {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  text-align: center;
+  white-space: normal;
+}
+
 .inkbook-menu-stepper-button {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
@@ -414,25 +426,15 @@
 }
 
 .inkbook-adaptive-panel-layer[data-platform="wide"] [data-kind="style"] .inkbook-menu-width-choice {
-  align-content: center;
-  display: grid;
   gap: 3px;
-  grid-template-rows: 8px 12px;
 }
 
 .inkbook-adaptive-panel-layer[data-platform="wide"]
   [data-kind="style"]
   :where(.inkbook-menu-width-choice)
   .inkbook-menu-line-preview {
+  flex: 0 0 auto;
   inline-size: 22px;
-  place-self: center;
-}
-
-.inkbook-adaptive-panel-layer[data-platform="wide"]
-  [data-kind="style"]
-  :where(.inkbook-menu-width-choice)
-  .inkbook-menu-choice-label {
-  line-height: 12px;
 }
 
 @media (prefers-reduced-motion: reduce) {

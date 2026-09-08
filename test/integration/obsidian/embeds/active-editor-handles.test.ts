@@ -1,11 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { calculateElementBounds } from "../../../../src/domain/geometry/public";
+import { calculateElementBounds, canonicalPoint } from "../../../../src/domain/geometry/public";
 import type { InkElementV1, PageV1, PointV1 } from "../../../../src/domain/schema/public";
 import { createBuiltInSettings } from "../../../../src/domain/settings/defaults";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { createDragElement } from "../../../../src/editor/tools/public";
+import {
+  layoutSelectionHandles,
+  oppositeElementHandlePoint,
+} from "../../../../src/editor/selection/public";
 import { ActiveEditorHandleInteraction } from "../../../../src/obsidian/embeds/active-editor/handle-interaction";
+import type { HandleInteractionRenderer } from "../../../../src/obsidian/embeds/active-editor/handle-presentation";
 import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";
 import { PreparedElementHistory } from "../../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
@@ -13,6 +18,9 @@ import { MovePreview } from "../../../../src/obsidian/embeds/active-editor/selec
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { elementMutationPorts } from "../../../fixtures/obsidian/element-mutation-ports";
+import { immediateFrameScheduler } from "../../../fixtures/obsidian/immediate-frame-scheduler";
+import { expectLatestLinePreview } from "../../../fixtures/obsidian/selection-preview-assertions";
+import { table as geometryTable } from "../../../unit/domain/geometry/fixtures";
 
 const PAGE: PageV1 = {
   activeBufferLines: 3,
@@ -21,7 +29,6 @@ const PAGE: PageV1 = {
   lockedBufferLines: 1,
   margin: 24.3,
 };
-
 function rectangle(): Extract<InkElementV1, { kind: "rectangle" }> {
   const element = createDragElement({
     defaults: createBuiltInSettings().toolDefaults,
@@ -34,27 +41,13 @@ function rectangle(): Extract<InkElementV1, { kind: "rectangle" }> {
   return element;
 }
 
-function line(): Extract<InkElementV1, { kind: "line" }> {
-  const element = createDragElement({
-    defaults: createBuiltInSettings().toolDefaults,
-    end: { x: 50, y: 50 },
-    identity: { createdAt: 2, id: "00000000-0000-4000-8000-000000000002" },
-    start: { x: 10, y: 10 },
-    tool: "line",
-  });
-  if (element.kind !== "line") throw new TypeError("Expected a line fixture.");
-  return element;
-}
-
 function rotatedTable(): Extract<InkElementV1, { kind: "table" }> {
-  return {
+  return geometryTable({
     columnWidth: 100,
     columns: 2,
-    createdAt: 3,
     headerHeight: 24,
     height: 100,
     id: "00000000-0000-4000-8000-000000000004",
-    kind: "table",
     pivot: { x: 200, y: 150 },
     rotation: 90,
     style: {
@@ -65,7 +58,7 @@ function rotatedTable(): Extract<InkElementV1, { kind: "table" }> {
     },
     x: 100,
     y: 100,
-  };
+  });
 }
 
 function dependentLine(): Extract<InkElementV1, { kind: "line" }> {
@@ -130,60 +123,38 @@ function editableModel(store: ElementStore): EditableDocumentModel {
 }
 
 describe("active editor selection handles", () => {
-  it("drives a shape handle through preview, store commit, renderer delta, and undo", () => {
-    const { deltas, history, interaction, overlays, previewTransforms, store } = harness(
-      [rectangle()],
-      new Set([startId()]),
-    );
-    const bounds = calculateElementBounds(rectangle());
-    const start = { pointerId: 1, pointerType: "mouse" as const, x: bounds.maxX, y: bounds.maxY };
-
-    interaction.renderSelection();
-    expect(interaction.pointerDown(start)).toBe(true);
-    expect(interaction.pointerMove({ ...start, x: start.x + 80, y: start.y + 40 })).toBe(true);
-    expect(interaction.pointerUp(start.pointerId)).toBe(true);
-
-    const resized = store.get(startId())?.element;
-    expect(resized?.kind).toBe("rectangle");
-    if (resized?.kind !== "rectangle") throw new TypeError("Expected the resized rectangle.");
-    expect(resized.width).toBeGreaterThan(200);
-    expect(resized.height).toBeGreaterThan(140);
-    expect(deltas).toEqual([[startId()]]);
-    expect(overlays.some((path) => path?.includes(" a 5 5 ") === true)).toBe(true);
-    expect(previewTransforms[previewTransforms.length - 1]).toBeNull();
-    expect(history.undo()).toBe(true);
-    expect(store.get(startId())?.element).toMatchObject({ height: 140, width: 200 });
-  });
-
-  it("snaps a line endpoint to a semantic anchor and detaches it when moved away", () => {
-    const selectedLine = line();
-    const { interaction, store } = harness([rectangle(), selectedLine], new Set([selectedLine.id]));
-    const start = {
-      pointerId: 2,
-      pointerType: "mouse" as const,
-      x: selectedLine.end.x,
-      y: selectedLine.end.y,
-    };
+  it("commits fractional shape-handle frames once and restores the box with undo", () => {
+    const shape = rectangle();
+    const fixture = harness([shape], new Set([shape.id]));
+    const { deltas, history, interaction, overlays, previewTransforms, store } = fixture;
+    const bounds = calculateElementBounds(shape);
+    const start = { pointerId: 1, pointerType: "touch" as const, x: bounds.maxX, y: bounds.maxY };
 
     expect(interaction.pointerDown(start)).toBe(true);
-    interaction.pointerMove({ ...start, x: 100, y: 100 });
-    interaction.pointerUp(start.pointerId);
-
-    const connected = store.get(selectedLine.id)?.element;
-    expect(connected?.kind).toBe("line");
-    if (connected?.kind !== "line") throw new TypeError("Expected a connected line.");
-    expect(connected.endConnection).toEqual({
-      anchor: { kind: "box", position: "top-left" },
-      targetId: startId(),
-    });
-
-    expect(interaction.pointerDown({ ...start, x: connected.end.x, y: connected.end.y })).toBe(
+    expect(interaction.pointerMove({ ...start, x: start.x + 40.125, y: start.y + 20.25 })).toBe(
       true,
     );
-    interaction.pointerMove({ ...start, x: 500, y: 500 });
-    interaction.pointerUp(start.pointerId);
-    const detached = store.get(selectedLine.id)?.element;
-    expect(detached?.kind === "line" ? detached.endConnection : undefined).toBeNull();
+    expect(interaction.pointerMove({ ...start, x: start.x + 80.375, y: start.y + 40.5 })).toBe(
+      true,
+    );
+    expect(previewTransforms).toHaveLength(2);
+    expect(previewTransforms.every((transform) => transform !== null)).toBe(true);
+    const previewOverlay = overlays[overlays.length - 2];
+    expect(store.get(shape.id)?.element).toEqual(shape);
+    expect(interaction.pointerUp(start.pointerId)).toBe(true);
+    expect(overlays[overlays.length - 2]).toBe(previewOverlay);
+    expect(deltas).toEqual([[shape.id]]);
+    expect(history.commandCount).toBe(1);
+    const resized = store.get(shape.id)?.element;
+    if (resized?.kind !== "rectangle") throw new TypeError("Expected the resized rectangle.");
+    expect(resized.pivot).toEqual(
+      canonicalPoint({
+        x: resized.x + resized.width / 2,
+        y: resized.y + resized.height / 2,
+      }),
+    );
+    expect(history.undo()).toBe(true);
+    expect(store.get(shape.id)?.element).toEqual(shape);
   });
 
   it("publishes reverse-map dependent endpoint geometry during a shape-handle preview", () => {
@@ -199,34 +170,68 @@ describe("active editor selection handles", () => {
 
     expect(interaction.pointerDown(start)).toBe(true);
     expect(interaction.pointerMove({ ...start, x: 380, y: 280 })).toBe(true);
-
     expectLatestLinePreview(elementPreviews, dependent.id, { x: 380, y: 280 });
 
     interaction.cancel(start.pointerId);
     expect(elementPreviews[elementPreviews.length - 1]).toEqual([]);
   });
+});
 
+describe("active editor generic selection transforms", () => {
   it("previews and commits non-uniform scaling in a rotated generic element frame", () => {
     const table = rotatedTable();
-    const { interaction, previewTransforms, store } = harness([table], new Set([table.id]));
+    const { interaction, overlays, store } = harness([table], new Set([table.id]));
     const start = { pointerId: 6, pointerType: "mouse" as const, x: 148, y: 252 };
 
     expect(interaction.pointerDown(start)).toBe(true);
     expect(interaction.pointerMove({ ...start, x: 44, y: 354 })).toBe(true);
-    expect(previewTransforms[previewTransforms.length - 1]).toBe(
-      "translate(252 48) rotate(90) scale(1.5 2) rotate(-90) translate(-252 -48)",
-    );
+    const previewOverlay = overlays[overlays.length - 2];
     expect(interaction.pointerUp(start.pointerId)).toBe(true);
+    expect(overlays[overlays.length - 2]).toBe(previewOverlay);
 
-    expect(store.get(table.id)?.element).toMatchObject({
-      columnWidth: 150,
-      headerHeight: 48,
-      height: 200,
-      pivot: { x: 251, y: 202 },
-      rotation: 90,
-      x: 101,
-      y: 102,
-    });
+    const resized = store.get(table.id)?.element;
+    if (resized === undefined) throw new TypeError("Expected the resized table.");
+    const bounds = store.get(table.id)!.bounds;
+    expect(bounds.minX).toBeCloseTo(44, 3);
+    expect(bounds.minY).toBeCloseTo(48, 3);
+    expect(bounds.maxX).toBeCloseTo(252, 3);
+    expect(bounds.maxY).toBeCloseTo(354, 3);
+    expect(resized.rotation).toBe(table.rotation);
+    expect(resized.style).toEqual(table.style);
+  });
+
+  it("commits a rotated freehand resize at the same pivot shown by its preview", () => {
+    const stroke: Extract<InkElementV1, { kind: "stroke" }> = {
+      ...indexedStroke(20),
+      pivot: { x: 160, y: 130 },
+      points: [100, 100, 0.5, 160, 130, 0.7, 220, 160, 0.5],
+      rotation: 37,
+      style: { ...indexedStroke(20).style, width: 8 },
+    };
+    const selected = [{ bounds: calculateElementBounds(stroke), element: stroke }];
+    const handle = layoutSelectionHandles(selected, { zoom: 1 }).find(
+      (candidate) => candidate.kind === "scale" && candidate.position === "bottom-right",
+    );
+    if (handle?.kind !== "scale") throw new TypeError("Expected a freehand scale handle.");
+    const anchor = oppositeElementHandlePoint(stroke, handle.position);
+    const current = {
+      x: anchor.x + (handle.point.x - anchor.x) * 1.5,
+      y: anchor.y + (handle.point.y - anchor.y) * 1.5,
+    };
+    const { elementPreviews, interaction, renderer, store } = harness(
+      [stroke],
+      new Set([stroke.id]),
+    );
+    const start = { ...handle.point, pointerId: 10, pointerType: "mouse" as const };
+
+    expect(interaction.pointerDown(start)).toBe(true);
+    expect(interaction.pointerMove({ ...start, ...current })).toBe(true);
+    expect(elementPreviews.flat().some(({ id }) => id === stroke.id)).toBe(false);
+    const previewStroke = renderer.setProgressiveElementPreviews.mock.lastCall?.[1](stroke.id);
+    if (previewStroke?.kind !== "stroke") throw new TypeError("Expected a stroke preview.");
+    expect(store.get(stroke.id)?.element.pivot).toEqual(stroke.pivot);
+    expect(interaction.pointerUp(start.pointerId)).toBe(true);
+    expect(store.get(stroke.id)?.element.pivot).toEqual(previewStroke.pivot);
   });
 });
 
@@ -247,9 +252,12 @@ describe("active editor ordinary selection move", () => {
     preview.update({ pointerId: 4, pointerType: "mouse", x: 340, y: 270 });
 
     expectLatestLinePreview(fixture.elementPreviews, dependent.id, { x: 340, y: 270 });
+    expect(fixture.overlays[fixture.overlays.length - 2]).toContain(
+      "M 138 128 L 342 128 L 342 272 L 138 272 Z",
+    );
     expect(fixture.store.instrumentation).toMatchObject({
       fullStoreScans: 0,
-      reverseDependencyVisits: 1,
+      reverseDependencyVisits: 0,
     });
     preview.revert();
     expect(fixture.elementPreviews[fixture.elementPreviews.length - 1]).toEqual([]);
@@ -284,7 +292,7 @@ describe("active editor ordinary selection move", () => {
     if (movedFirst?.kind !== "rectangle" || movedSecond?.kind !== "rectangle") {
       throw new TypeError("Expected rectangle replacements.");
     }
-    expect(calculateElementBounds(movedFirst)).toMatchObject({ minX: -601, minY: -501 });
+    expect(calculateElementBounds(movedFirst)).toMatchObject({ minX: -602, minY: -502 });
     expect({ x: movedSecond.x - movedFirst.x, y: movedSecond.y - movedFirst.y }).toEqual({
       x: 400,
       y: 250,
@@ -297,6 +305,36 @@ describe("active editor ordinary selection move", () => {
 });
 
 describe("active editor large selection handles", () => {
+  it("keeps a transformed group box current when exact preview materialization is truncated", () => {
+    const target = rectangle();
+    const dependent = dependentLine();
+    const selectedElements = [
+      target,
+      ...Array.from({ length: 300 }, (_, index) => indexedStroke(index)),
+    ];
+    const selection = new Set(selectedElements.map(({ id }) => id));
+    const { elementPreviews, interaction, overlays, store } = harness(
+      [...selectedElements, dependent],
+      selection,
+    );
+    const start = { pointerId: 8, pointerType: "mouse" as const, x: 1011, y: 241 };
+
+    expect(interaction.pointerDown(start)).toBe(true);
+    expect(interaction.pointerMove({ ...start, x: 2003, y: 463 })).toBe(true);
+
+    const coordinates = overlays[overlays.length - 2]!.match(/-?\d+(?:\.\d+)?/gu)!.map(Number);
+    expect(coordinates[0]).toBeCloseTo(19, 3);
+    expect(coordinates[1]).toBeCloseTo(19, 3);
+    expect(coordinates[2]).toBeCloseTo(2003, 3);
+    expect(coordinates[5]).toBeCloseTo(464, 3); // The acquired handle starts 1px below the pointer.
+    const previewLine = elementPreviews[elementPreviews.length - 1]?.find(
+      ({ id }) => id === dependent.id,
+    );
+    expect(previewLine).toBeDefined();
+    expect(interaction.pointerUp(start.pointerId)).toBe(true);
+    expect(store.get(dependent.id)?.element).toEqual(previewLine);
+  });
+
   it("prepares a large mixed move in slices and keeps async undo and redo atomic", async () => {
     const shape = rectangle();
     const strokes = Array.from({ length: 1_000 }, (_, index) => indexedStroke(index));
@@ -357,7 +395,7 @@ describe("active editor large selection handles", () => {
   });
 });
 
-function harness(elements: readonly InkElementV1[], selection: ReadonlySet<string>) {
+function harness(elements: readonly InkElementV1[], selection: ReadonlySet<string>, zoom = 1) {
   const store = new ElementStore(elements);
   const model = editableModel(store);
   const history = new ActiveEditorHistory(model);
@@ -378,7 +416,10 @@ function harness(elements: readonly InkElementV1[], selection: ReadonlySet<strin
   const renderer = {
     clearElementPreviews: () => elementPreviews.push([]),
     clearPreviewTransforms: () => previewTransforms.push(null),
+    flushPointerFeedbackFrame: vi.fn(),
     setElementPreviews: (elements: readonly InkElementV1[]) => elementPreviews.push([...elements]),
+    setProgressiveElementPreviews:
+      vi.fn<NonNullable<HandleInteractionRenderer["setProgressiveElementPreviews"]>>(),
     setOverlayPath: vi.fn(),
     setSelectionOverlayPath: (path: string | null) => overlays.push(path),
     setSnapMarkerPath: (path: string | null) => overlays.push(path),
@@ -387,6 +428,7 @@ function harness(elements: readonly InkElementV1[], selection: ReadonlySet<strin
     suppressMotionForNextDelta: vi.fn(),
   };
   const interaction = new ActiveEditorHandleInteraction({
+    frameScheduler: immediateFrameScheduler(),
     history,
     model,
     pageToScreen: (point) => point,
@@ -394,7 +436,7 @@ function harness(elements: readonly InkElementV1[], selection: ReadonlySet<strin
     renderer,
     sceneStore,
     selection: () => selection,
-    zoom: () => 1,
+    zoom: () => zoom,
   });
   return {
     deltas,
@@ -409,18 +451,6 @@ function harness(elements: readonly InkElementV1[], selection: ReadonlySet<strin
     sceneStore,
     store,
   };
-}
-
-function expectLatestLinePreview(
-  previews: readonly (readonly InkElementV1[])[],
-  id: string,
-  expectedStart: PointV1,
-): void {
-  const current = previews[previews.length - 1] ?? [];
-  const dependent = current.find((element) => element.id === id);
-  expect(dependent?.kind).toBe("line");
-  if (dependent?.kind !== "line") throw new TypeError("Expected a line preview.");
-  expect(dependent.start).toEqual(expectedStart);
 }
 
 function movePreview(

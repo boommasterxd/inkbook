@@ -12,6 +12,7 @@ import type { ActiveEditorChromeState } from "./controller-chrome-state";
 import type { ActiveEditorStyleSession } from "./style-session";
 import type { EditableDocumentModel } from "../vault-document-session";
 import type { ActiveEditorMenuController } from "./controller-menu";
+import type { ActiveEditorControllerOptions } from "./controller-types";
 import { backgroundState } from "./controller-helpers";
 
 type ActiveEditorChromeDependencies = readonly [
@@ -19,6 +20,7 @@ type ActiveEditorChromeDependencies = readonly [
   background: ActiveEditorBackgroundSession,
   chromeState: ActiveEditorChromeState,
   styles: ActiveEditorStyleSession,
+  openings: Pick<ActiveEditorControllerOptions, "onOpenSettings" | "onOpenShortcuts">,
 ];
 
 type ActiveEditorChromeHandlers = readonly [
@@ -27,7 +29,7 @@ type ActiveEditorChromeHandlers = readonly [
 ];
 
 export function createChromeCallbacks(
-  [actions, background, chromeState, styles]: ActiveEditorChromeDependencies,
+  [actions, background, chromeState, styles, openings]: ActiveEditorChromeDependencies,
   [activeTool, configureTool]: ActiveEditorChromeHandlers,
   [menus, model, selectionSize, renderIcon]: readonly [
     ActiveEditorMenuController,
@@ -44,6 +46,8 @@ export function createChromeCallbacks(
       chromeState.setFlyout(null);
       if (actions.isAvailable(action)) actions.execute(action);
     },
+    onOpenSettings: openings.onOpenSettings,
+    onOpenShortcuts: openings.onOpenShortcuts,
     onShapeChange: (shape) => configureTool(chromeState.selectShape(shape)),
     onStyleChange: (id, value) => styles.apply(activeTool(), id, value),
   };
@@ -60,6 +64,7 @@ interface ActiveEditorChromeOptions {
   readonly onToolbarAction: InkbookEditorChromeProps["onToolbarAction"];
   readonly ownerDocument: Document;
   readonly renderIcon: InkbookEditorChromeProps["renderIcon"];
+  readonly selectionArea: InkbookEditorChromeProps["selectionArea"];
   readonly selectedShape: ShapeId;
   readonly shapeIcon: InkbookEditorChromeProps["shapeIcon"];
   readonly style: {
@@ -75,6 +80,7 @@ function createChromeProps(options: ActiveEditorChromeOptions): InkbookEditorChr
     onToolbarAction: options.onToolbarAction,
     ownerDocument: options.ownerDocument,
     renderIcon: options.renderIcon,
+    selectionArea: options.selectionArea,
     selectedShape: options.selectedShape,
     shapeIcon: options.shapeIcon,
     styleIcon: options.style.icon,
@@ -100,6 +106,7 @@ export function createActiveEditorChromeProps(
     onToolbarAction,
     ownerDocument,
     renderIcon,
+    selectionArea: style.selectionArea,
     selectedShape: chromeState.selectedShape,
     shapeIcon: style.shapeIcon,
     style,

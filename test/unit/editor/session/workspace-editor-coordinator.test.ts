@@ -39,6 +39,26 @@ describe("WorkspaceEditorCoordinator", () => {
 });
 
 describe("WorkspaceEditorCoordinator activation", () => {
+  it("binds unlock to the mounted preview identity and reports a changed source", async () => {
+    const harness = createHarness();
+    const previewContentIdentity = { outputHash: "a".repeat(64), revision: 7 };
+    const actualSourceIdentity = { outputHash: "b".repeat(64), revision: 8 };
+    const target = { ...documentA, previewContentIdentity };
+    harness.coordinator.mountAttachment(target);
+
+    const activation = harness.coordinator.requestActivation(target);
+    expect(harness.sessions[0]?.unlocks[0]?.operation.expectedSourceIdentity).toEqual(
+      previewContentIdentity,
+    );
+    harness.sessions[0]?.completeSourceChanged(actualSourceIdentity);
+
+    await expect(activation.outcome).resolves.toMatchObject({
+      actualSourceIdentity,
+      kind: "source-changed",
+    });
+    expect(harness.coordinator.getSnapshot().current?.phase).toBe("load-error");
+  });
+
   it("rejects unmounted requests and assigns monotonically increasing tokens", async () => {
     const harness = createHarness();
     const stale = harness.coordinator.requestActivation(documentA);

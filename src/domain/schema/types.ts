@@ -46,7 +46,7 @@ export interface StrokeStyleV1 {
 
 export interface OutlineStyleV1 {
   outlineColor: ColorV1;
-  outlineWidth: 1 | 2 | 4 | 8 | 12;
+  outlineWidth: 1 | 2 | 4 | 8 | 12 | 14 | 22;
   outlineOpacity: number;
   outlineStyle: "solid" | "dashed" | "dotted";
 }
@@ -90,7 +90,8 @@ export type ShapeAnchorV1 =
   | { kind: "polygon-vertex"; index: number }
   | { kind: "polygon-edge-midpoint"; index: number }
   | { kind: "coordinate-origin" }
-  | { kind: "coordinate-axis-end"; index: number };
+  | { kind: "coordinate-axis-end"; index: number }
+  | { kind: "linear-endpoint"; endpoint: "start" | "end" };
 
 interface ConnectableLinearBaseV1 extends LinearBaseV1 {
   startConnection: EndpointConnectionV1 | null;
@@ -115,7 +116,6 @@ export interface ArrowElementV1 extends ConnectableLinearBaseV1 {
 
 export interface StraightHighlighterElementV1 extends LinearBaseV1 {
   kind: "straight-highlighter";
-  bend: null;
   startNode: "none";
   endNode: "none";
   style: StrokeStyleV1;
@@ -155,6 +155,7 @@ export interface TableElementV1 extends ElementBaseV1 {
   x: number;
   y: number;
   columnWidth: number;
+  columnOffsets?: number[];
   height: number;
   columns: number;
   headerHeight: number;

@@ -2,6 +2,7 @@ import { AppliedCommandHistory } from "../../../domain/commands/history";
 import type { RenderBand } from "../../../domain/commands/render-bands";
 import type { InkElementV1, PageV1 } from "../../../domain/schema/public";
 import type { DocumentMutationAvailability } from "../document-model-port";
+import type { SelectionFrameHistoryEffect } from "../../../editor/selection/public";
 
 export type ActiveEditorBandOrder = Readonly<Record<RenderBand, readonly string[]>>;
 
@@ -78,14 +79,21 @@ export class ActiveEditorHistory {
   public replace(
     previous: readonly InkElementV1[],
     replacements: readonly InkElementV1[],
+    effect?: SelectionFrameHistoryEffect,
   ): boolean {
     if (previous.length === 0 || previous.length !== replacements.length) return false;
     return this.#execute({
-      apply: () => this.#model.replaceElements(replacements),
+      apply: () => {
+        this.#model.replaceElements(replacements);
+        effect?.apply();
+      },
       payloadBytes:
         estimateElementHistoryPayloadBytes(previous) +
         estimateElementHistoryPayloadBytes(replacements),
-      revert: () => this.#model.replaceElements(previous),
+      revert: () => {
+        this.#model.replaceElements(previous);
+        effect?.revert();
+      },
     });
   }
 
@@ -121,13 +129,24 @@ export class ActiveEditorHistory {
     previous: readonly InkElementV1[],
     replacements: readonly InkElementV1[],
     transition: Omit<AppliedAsyncHistoryTransition, "payloadBytes">,
+    effect?: SelectionFrameHistoryEffect,
   ): boolean {
     if (previous.length === 0 || previous.length !== replacements.length) return false;
+    effect?.apply();
     return this.registerApplied({
-      ...transition,
       payloadBytes:
         estimateElementHistoryPayloadBytes(previous) +
         estimateElementHistoryPayloadBytes(replacements),
+      redo: async () => {
+        const applied = await transition.redo();
+        if (applied) effect?.apply();
+        return applied;
+      },
+      undo: async () => {
+        const applied = await transition.undo();
+        if (applied) effect?.revert();
+        return applied;
+      },
     });
   }
 

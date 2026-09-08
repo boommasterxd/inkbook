@@ -4,8 +4,8 @@ import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import { createBuiltInSettings } from "../../../../src/domain/settings/defaults";
 import { ElementStore, type ElementMutation } from "../../../../src/domain/store/public";
 import { createDragElement } from "../../../../src/editor/tools/public";
-import type { EncodedClipboard, PastePlan } from "../../../../src/persistence/clipboard/public";
-import { INKBOOK_CLIPBOARD_WEB_MIME } from "../../../../src/persistence/clipboard/public";
+import { type PastePlan } from "../../../../src/persistence/clipboard/public";
+import { type EncodedClipboard } from "../../../../src/persistence/clipboard/types";
 import { ActiveEditorClipboardController } from "../../../../src/obsidian/embeds/active-editor/controller-clipboard";
 import { ActiveEditorActions } from "../../../../src/obsidian/embeds/active-editor/controller-actions";
 import { ActiveEditorMenuController } from "../../../../src/obsidian/embeds/active-editor/controller-menu";
@@ -17,6 +17,7 @@ import {
   createClipboardDocumentModel,
   createEncodedClipboardFixture,
   createDeferredPreparation,
+  createPastePlan,
   createPreparedToken,
 } from "./active-editor-clipboard-fixtures";
 
@@ -28,10 +29,16 @@ class FakeClipboardItem {
     this.formats = formats;
     this.types = Object.keys(formats);
   }
+
+  public async getType(type: string): Promise<Blob> {
+    const value = this.formats[type];
+    if (value === undefined) throw new DOMException("Type unavailable", "NotFoundError");
+    return value;
+  }
 }
 
 describe("active editor clipboard bridge", () => {
-  it("writes custom MIME, guards cut versions, retains session payload, and commits paste", async () => {
+  it("writes interoperable system text, guards cut versions, and pastes its readback", async () => {
     const selected = rectangle();
     const store = new ElementStore([selected]);
     const encoded = createEncodedClipboardFixture();
@@ -60,9 +67,7 @@ describe("active editor clipboard bridge", () => {
       ClipboardItem: FakeClipboardItem,
       navigator: {
         clipboard: {
-          read: async () => {
-            throw new Error("Clipboard read permission denied.");
-          },
+          read: async () => writes[writes.length - 1] ?? [],
           readText: async () => "",
           write: async (items: FakeClipboardItem[]) => void writes.push(items),
           writeText: vi.fn(async () => undefined),
@@ -72,6 +77,7 @@ describe("active editor clipboard bridge", () => {
     let selection: ReadonlySet<string> = new Set([selected.id]);
     const onPasteCommitted = vi.fn();
     const history = new ActiveEditorHistory(model);
+    const onResult = vi.fn();
     const controller = new ActiveEditorClipboardController({
       currentSelection: () => selection,
       history,
@@ -79,7 +85,7 @@ describe("active editor clipboard bridge", () => {
       model,
       onPendingChanged: vi.fn(),
       onPasteCommitted,
-      onResult: vi.fn(),
+      onResult,
       onSelectionChanged: (next) => {
         selection = next;
       },
@@ -87,7 +93,10 @@ describe("active editor clipboard bridge", () => {
     });
 
     await controller.cut(selection);
-    expect(writes[0]?.[0]?.types).toEqual([INKBOOK_CLIPBOARD_WEB_MIME, "text/plain"]);
+    expect(writes[0]?.[0]?.types).toEqual(["text/plain"]);
+    await expect(writes[0]?.[0]?.getType("text/plain").then((blob) => blob.text())).resolves.toBe(
+      encoded.plainText,
+    );
     expect(prepareElementMutation.mock.calls[0]?.[0]).toMatchObject({ removeIds: [selected.id] });
     expect(selection.size).toBe(0);
     expect(history.commandCount).toBe(1);
@@ -98,7 +107,7 @@ describe("active editor clipboard bridge", () => {
 
     await controller.paste({ kind: "toolbar", visibleCanvasCenter: { x: 400, y: 300 } });
     expect(planClipboardPaste).toHaveBeenCalledWith(
-      { sessionText: encoded.customText },
+      { plainText: encoded.plainText },
       { kind: "toolbar", visibleCanvasCenter: { x: 400, y: 300 } },
       undefined,
     );
@@ -106,7 +115,10 @@ describe("active editor clipboard bridge", () => {
       elements: pastePlan.elements,
     });
     expect(selection).toEqual(new Set(pastePlan.selectedIds));
-    expect(onPasteCommitted).toHaveBeenCalledWith("select");
+    expect(onPasteCommitted).toHaveBeenCalledWith("select", {
+      kind: "toolbar",
+      visibleCanvasCenter: { x: 400, y: 300 },
+    });
     expect(history.commandCount).toBe(2);
     await expect(history.undoAsync()).resolves.toBe(true);
     expect(pendingMutation).toEqual(pasteTransition.reverse);
@@ -117,18 +129,19 @@ describe("active editor clipboard bridge", () => {
 });
 
 describe("active editor clipboard activation boundary", () => {
-  it("does not retry a rejected activation-bound write after payload encoding", async () => {
+  it("does not let a hanging activation-bound write block in-session paste", async () => {
     const selected = rectangle();
+    const encoded = createEncodedClipboardFixture();
+    const planClipboardPaste = vi.fn(async () => null);
     const model = clipboardModel(
       new ElementStore([selected]),
       {
         commitPreparedElementMutation: vi.fn(() => appliedMutation("copy")),
-        planClipboardPaste: vi.fn(async () => null),
+        planClipboardPaste,
         prepareElementMutation: vi.fn(),
       },
-      createEncodedClipboardFixture(),
+      encoded,
     );
-    const writeText = vi.fn(async () => undefined);
     const ownerWindow = {
       Blob,
       ClipboardItem: FakeClipboardItem,
@@ -136,29 +149,33 @@ describe("active editor clipboard activation boundary", () => {
         clipboard: {
           read: async () => [],
           readText: async () => "",
-          write: async () => {
-            throw new Error("Transient permission loss");
-          },
-          writeText,
+          write: () => new Promise<void>(() => undefined),
+          writeText: vi.fn(async () => undefined),
         },
       },
     } as unknown as Window;
+    const onResult = vi.fn();
     const controller = new ActiveEditorClipboardController({
       currentSelection: () => new Set([selected.id]),
       history: new ActiveEditorHistory(model),
       isPresentationAttached: () => true,
       model,
       onPendingChanged: vi.fn(),
-      onResult: vi.fn(),
+      onResult,
       onSelectionChanged: vi.fn(),
       ownerWindow,
     });
 
-    await expect(controller.copy(new Set([selected.id]))).resolves.toMatchObject({
-      kind: "copied",
-      systemWriteSucceeded: false,
-    });
-    expect(writeText).not.toHaveBeenCalled();
+    const copy = controller.copy(new Set([selected.id]));
+    await expect(copy).resolves.toMatchObject({ kind: "copied" });
+    expect(onResult).toHaveBeenCalledOnce();
+    expect(onResult).toHaveBeenCalledWith(expect.objectContaining({ kind: "copied" }));
+    await controller.paste({ kind: "toolbar", visibleCanvasCenter: { x: 0, y: 0 } });
+    expect(planClipboardPaste).toHaveBeenCalledWith(
+      { sessionText: encoded.customText },
+      { kind: "toolbar", visibleCanvasCenter: { x: 0, y: 0 } },
+      undefined,
+    );
   });
 });
 
@@ -259,6 +276,7 @@ describe("active editor arrange and menu bridge", () => {
     const actions = new ActiveEditorActions({
       currentSelection: () => new Set([selectedId]),
       history,
+      isAttached: () => true,
       isEnabled: () => true,
       model,
       lastSessionPointer: () => null,
@@ -396,24 +414,6 @@ function appliedMutation(
     forward: { bands: { content: [id], highlight: [] } },
     payloadBytes: 1,
     reverse: { bands: { content: [], highlight: [id] } },
-  };
-}
-
-function createPastePlan(element: InkElementV1): PastePlan {
-  const pasted = {
-    ...structuredClone(element),
-    id: "00000000-0000-4000-8000-000000000999",
-  };
-  return {
-    activateTool: "select",
-    commandTimestamp: 1,
-    contentIds: [pasted.id],
-    elements: [pasted],
-    highlightIds: [],
-    insertAtBandFront: true,
-    repeatState: { fingerprint: "fixture", pasteCount: 1 },
-    selectedIds: [pasted.id],
-    translation: { x: 0, y: 0 },
   };
 }
 

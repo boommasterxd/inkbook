@@ -1,0 +1,250 @@
+.setting-group .inkbook-shortcuts-setting-row.setting-item {
+  display: block;
+  padding: 0;
+}
+
+.inkbook-shortcuts-view {
+  --inkbook-motion-fast: 120ms;
+  --inkbook-motion-easing: cubic-bezier(0.2, 0, 0, 1);
+
+  border-radius: inherit;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.inkbook-shortcut-section {
+  border-radius: 0;
+}
+
+.inkbook-shortcut-section + .inkbook-shortcut-section,
+.inkbook-shortcuts-group-reset {
+  position: relative;
+}
+
+.inkbook-shortcut-section + .inkbook-shortcut-section::before,
+.inkbook-shortcuts-group-reset::before {
+  border-block-start: var(--border-width) solid var(--background-modifier-border);
+  content: "";
+  inset-block-start: 0;
+  inset-inline: var(--size-4-5);
+  pointer-events: none;
+  position: absolute;
+  z-index: 1;
+}
+
+.inkbook-shortcut-section:first-child {
+  border-start-end-radius: inherit;
+  border-start-start-radius: inherit;
+}
+
+.inkbook-shortcut-section:last-child {
+  border-end-end-radius: inherit;
+  border-end-start-radius: inherit;
+}
+
+.inkbook-shortcut-section-content {
+  min-inline-size: 0;
+}
+
+.inkbook-shortcut-section-content > .inkbook-settings-tool-description {
+  margin-block-end: 0;
+}
+
+.inkbook-shortcut-section-content-canvas,
+.inkbook-shortcut-section-content-reference {
+  padding-block-end: 0;
+}
+
+.inkbook-shortcuts-list,
+.inkbook-shortcut-reference-list {
+  margin-inline: calc(-1 * var(--size-4-5));
+  min-inline-size: 0;
+}
+
+.inkbook-shortcuts-list > .setting-item:first-child,
+.inkbook-shortcut-reference-list > .setting-item:first-child {
+  padding-block-start: var(--size-4-4);
+}
+
+.inkbook-shortcut-row.setting-item,
+.inkbook-shortcut-reference-row.setting-item,
+.inkbook-shortcuts-group-reset.setting-item {
+  min-inline-size: 0;
+  padding-inline: var(--size-4-5);
+}
+
+.inkbook-shortcut-controls {
+  align-items: center;
+  display: flex;
+  gap: var(--size-4-1);
+  justify-content: end;
+  min-inline-size: 0;
+}
+
+.inkbook-shortcut-recorder {
+  align-items: center;
+  background: var(--background-primary);
+  border: var(--border-width) solid var(--background-modifier-border);
+  border-radius: var(--button-radius);
+  box-shadow: var(--input-shadow);
+  box-sizing: border-box;
+  color: var(--text-normal);
+  display: flex;
+  flex: 0 0 11rem;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
+  min-block-size: 34px;
+  inline-size: 11rem;
+  min-inline-size: 11rem;
+  padding: var(--size-4-1) var(--size-4-2);
+}
+
+.inkbook-shortcut-recorder:hover,
+.inkbook-shortcut-recorder[data-recording="true"] {
+  border-color: var(--interactive-accent);
+}
+
+.inkbook-shortcut-recorder-static:hover {
+  border-color: var(--background-modifier-border);
+}
+
+.inkbook-shortcut-recorder kbd {
+  background: var(--background-secondary);
+  border: var(--border-width) solid var(--background-modifier-border-hover);
+  border-block-end-width: 2px;
+  border-radius: 5px;
+  color: var(--text-normal);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  line-height: 1;
+  min-inline-size: 24px;
+  padding: 5px 7px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.inkbook-shortcut-unassigned {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.inkbook-shortcut-alternative {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.inkbook-shortcut-icon-button {
+  block-size: 32px;
+  flex: 0 0 auto;
+  inline-size: 32px;
+}
+
+.inkbook-shortcut-status {
+  color: var(--text-accent);
+  font-size: var(--font-ui-smaller);
+  min-block-size: 0;
+}
+
+.inkbook-shortcut-status:empty {
+  display: none;
+}
+
+.inkbook-shortcut-status.is-error {
+  color: var(--text-error);
+}
+
+.inkbook-shortcuts-group-reset {
+  border-end-end-radius: inherit;
+  border-end-start-radius: inherit;
+  border-start-end-radius: 0;
+  border-start-start-radius: 0;
+}
+
+.inkbook-shortcut-recorder:focus-visible,
+.inkbook-shortcut-icon-button:focus-visible,
+.inkbook-shortcuts-group-reset:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.inkbook-shortcuts-group-reset:focus-visible::after {
+  box-shadow: none;
+}
+
+.inkbook-settings-modal {
+  inline-size: min(760px, calc(100vw - 32px));
+  max-block-size: min(88vh, 900px);
+}
+
+.inkbook-settings-modal.modal .modal-close-button,
+.inkbook-settings-modal.modal .modal-header-button {
+  inset-block-start: var(--size-4-2);
+  inset-inline-end: var(--size-4-2);
+  right: var(--size-4-2);
+}
+
+.inkbook-settings-modal .modal-content {
+  inline-size: calc(100% + var(--scrollbar-width, 12px));
+  margin-inline-end: calc(-1 * var(--scrollbar-width, 12px));
+  min-inline-size: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.inkbook-settings-modal-body {
+  max-block-size: calc(min(88vh, 900px) - 66px);
+  min-inline-size: 0;
+  overflow: hidden scroll;
+  overscroll-behavior: contain;
+  padding-block-end: var(--size-4-3);
+}
+
+.inkbook-settings-modal-body > .setting-group:first-child {
+  margin-block-start: var(--size-4-3);
+}
+
+.is-mobile .inkbook-shortcut-recorder {
+  background-color: var(--background-primary);
+  min-block-size: 44px;
+}
+
+.is-mobile .inkbook-shortcut-icon-button {
+  block-size: 44px;
+  inline-size: 44px;
+}
+
+@media (width <= 600px) {
+  .inkbook-settings-modal {
+    inline-size: min(100%, calc(100vw - 16px));
+    max-block-size: calc(100dvh - 16px);
+  }
+
+  .inkbook-settings-modal-body {
+    max-block-size: calc(100dvh - 82px);
+  }
+
+  .inkbook-shortcut-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .inkbook-shortcut-readonly-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .inkbook-shortcut-controls {
+    justify-content: stretch;
+  }
+
+  .inkbook-shortcut-recorder {
+    flex: 1 1 auto;
+    inline-size: auto;
+    min-inline-size: 0;
+  }
+
+  .inkbook-shortcut-reference-row.setting-item {
+    align-items: center;
+  }
+}

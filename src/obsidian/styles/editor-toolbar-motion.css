@@ -60,3 +60,17 @@
       var(--inkbook-motion-toolbar-context-stagger)
   );
 }
+
+.inkbook-root
+  .inkbook-toolbar-action-icon[data-confirmed="true"]
+  .inkbook-toolbar-action-icon-default {
+  animation: inkbook-toolbar-action-icon-default var(--inkbook-toolbar-confirmation-duration)
+    var(--inkbook-motion-easing) both;
+}
+
+.inkbook-root
+  .inkbook-toolbar-action-icon[data-confirmed="true"]
+  .inkbook-toolbar-action-icon-confirmation {
+  animation: inkbook-toolbar-action-icon-confirmation var(--inkbook-toolbar-confirmation-duration)
+    var(--inkbook-motion-easing) both;
+}

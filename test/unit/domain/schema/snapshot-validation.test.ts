@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { FILE_SCHEMA_LIMITS, validateInkSnapshotV1 } from "../../../../src/domain/schema/public";
 import { validateInkSnapshotV1Steps } from "../../../../src/domain/schema/snapshot-validation";
-import { line, rectangle, snapshot, straightHighlighter, stroke, uuid } from "./fixtures";
+import { arrow, line, rectangle, snapshot, straightHighlighter, stroke, uuid } from "./fixtures";
 
 describe("InkSnapshotV1 validation", () => {
   it("accepts an empty snapshot and a connected, partitioned document", () => {
@@ -99,6 +99,46 @@ describe("InkSnapshotV1 relational and security validation", () => {
     expectValidationCode(snapshot([rectangle(), displaced]), "connection-position-mismatch");
   });
 
+  it("accepts line and arrow endpoint anchors and follows an acyclic chain", () => {
+    const target = line(4);
+    target.startConnection = null;
+    const dependent = arrow(5);
+    dependent.start = { ...target.end };
+    dependent.end = { x: 400, y: 150 };
+    dependent.pivot = { x: 350, y: 150 };
+    dependent.startConnection = {
+      targetId: target.id,
+      anchor: { kind: "linear-endpoint", endpoint: "end" },
+    };
+
+    const result = validateInkSnapshotV1(snapshot([target, dependent]));
+
+    expect(result).toMatchObject({ ok: true, statistics: { connectedEndpoints: 1 } });
+  });
+
+  it("rejects self-connections and cycles between linear elements", () => {
+    const self = line(4);
+    self.startConnection = {
+      targetId: self.id,
+      anchor: { kind: "linear-endpoint", endpoint: "start" },
+    };
+    expectValidationCode(snapshot([self]), "invalid-connection-target");
+
+    const first = line(4);
+    const second = line(5);
+    first.startConnection = {
+      targetId: second.id,
+      anchor: { kind: "linear-endpoint", endpoint: "start" },
+    };
+    second.startConnection = {
+      targetId: first.id,
+      anchor: { kind: "linear-endpoint", endpoint: "start" },
+    };
+    expectValidationCode(snapshot([first, second]), "invalid-connection-target");
+  });
+});
+
+describe("InkSnapshotV1 limits and security validation", () => {
   it("enforces connected-endpoint and per-target limits", () => {
     const first = line(4);
     const second = line(5);

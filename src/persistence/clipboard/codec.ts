@@ -118,12 +118,6 @@ const encodeSelectionInternal = (
   return validation.ok ? createEncoded(validation.value, true) : validation;
 };
 
-export const encodeSelection = (
-  elementsInRenderOrder: readonly InkElementV1[],
-  selectedIds: ReadonlySet<string>,
-): ClipboardResult<EncodedClipboard> =>
-  encodeSelectionInternal(elementsInRenderOrder, selectedIds, false);
-
 export const encodeRuntimeSelection = (
   elementsInRenderOrder: readonly InkElementV1[],
   selectedIds: ReadonlySet<string>,

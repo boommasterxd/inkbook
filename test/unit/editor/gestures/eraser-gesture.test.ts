@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { BoxShapeElementV1, StrokeElementV1 } from "../../../../src/domain/schema/public";
+import { createSweptCapsuleCheck } from "../../../../src/editor/gestures/eraser-intersection";
 import {
   EraserSweep,
   MAX_RETAINED_ERASER_SWEEPS,
   screenPixelsToPageUnits,
-  sweepTouchesElement,
   type EraserQuerySink,
-} from "../../../../src/editor/gestures/public";
+} from "../../../../src/editor/gestures/eraser-gesture";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 
 const scheduler = {
@@ -15,6 +15,18 @@ const scheduler = {
   shouldYield: () => false,
   yieldControl: async () => undefined,
 };
+
+function sweepTouchesElement(
+  start: Readonly<{ x: number; y: number }>,
+  end: Readonly<{ x: number; y: number }>,
+  radius: number,
+  element: BoxShapeElementV1 | StrokeElementV1 | Parameters<typeof createSweptCapsuleCheck>[3],
+): boolean {
+  const check = createSweptCapsuleCheck(start, end, radius, element);
+  let progress = check.advance(Number.MAX_SAFE_INTEGER);
+  while (progress.result === null) progress = check.advance(Number.MAX_SAFE_INTEGER);
+  return progress.result;
+}
 
 function addIds(sink: EraserQuerySink, ids: readonly string[]): void {
   for (const id of ids) sink.add(id);
@@ -121,6 +133,7 @@ describe("eraser sweep", () => {
       y: 0,
     };
     expect(sweepTouchesElement({ x: 20, y: 15 }, { x: 20, y: 35 }, 1, table)).toBe(true);
+    expect(sweepTouchesElement({ x: 0, y: 15 }, { x: 0, y: 35 }, 1, table)).toBe(false);
   });
 });
 
@@ -180,6 +193,34 @@ describe("ellipse eraser intersection", () => {
 });
 
 describe("resumable eraser work", () => {
+  it("publishes one incremental feedback update for an input batch", () => {
+    const addedBatches: string[][] = [];
+    const addCandidateFade = vi.fn((ids: readonly string[]) => addedBatches.push([...ids]));
+    let query = 0;
+    const sweep = new EraserSweep(
+      { x: 0, y: 50 },
+      4,
+      {
+        getElement: () => rectangle,
+        query: (_bounds, sink) => sink.add(`candidate-${String(query++)}`),
+      },
+      { addCandidateFade, clearCandidateFade: vi.fn(), setCandidateFade: vi.fn() },
+    );
+    addCandidateFade.mockClear();
+
+    expect(
+      sweep.updateBatch([
+        { x: 30, y: 50 },
+        { x: 60, y: 50 },
+        { x: 90, y: 50 },
+      ]),
+    ).toBe("accepted");
+
+    expect(addCandidateFade).toHaveBeenCalledOnce();
+    expect(addedBatches[0]?.length).toBeGreaterThan(0);
+    sweep.revert();
+  });
+
   it("retains exact work for a later sweep while an earlier check is paused", async () => {
     const stroke = createLongStroke("paused-stroke", 20_000);
     let queryCount = 0;

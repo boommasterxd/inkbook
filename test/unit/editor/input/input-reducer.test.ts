@@ -1,48 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
   createInputState,
-  inputPhase,
   reduceInput,
   type InputAction,
-  type InputEffect,
   type InputState,
-  type PointerDownAction,
-  type PointerMoveAction,
 } from "../../../../src/editor/input";
-function pointerDown(overrides: Partial<PointerDownAction> = {}): PointerDownAction {
-  return {
-    type: "pointer-down",
-    pointerId: 1,
-    pointerType: "mouse",
-    x: 10,
-    y: 20,
-    pressure: 0.5,
-    button: 0,
-    buttons: 1,
-    controlOrMeta: false,
-    shift: false,
-    isPlatformContextClick: false,
-    ...overrides,
-  };
-}
-function pointerMove(overrides: Partial<PointerMoveAction> = {}): PointerMoveAction {
-  return {
-    type: "pointer-move",
-    pointerId: 1,
-    pointerType: "mouse",
-    x: 20,
-    y: 30,
-    pressure: 0.5,
-    ...overrides,
-  };
-}
+import {
+  effectTypes,
+  inputPhase,
+  pointerDown,
+  pointerMove,
+} from "../../../fixtures/editor/input-actions";
 
 function apply(state: InputState, action: InputAction) {
   return reduceInput(state, action);
-}
-
-function effectTypes(effects: readonly InputEffect[]): string[] {
-  return effects.map(({ type }) => type);
 }
 
 describe("input arbitration", () => {
@@ -330,21 +301,38 @@ describe("touch navigation and finger drawing", () => {
     expect(effectTypes(started.effects)).toEqual(["capture-pointer", "begin-preview"]);
   });
 
-  it("uses Select as a thresholded additive lasso for enabled finger input", () => {
+  it.each([
+    { deviceFingerDrawingEnabled: false, toolbarFingerDrawingEnabled: false },
+    { deviceFingerDrawingEnabled: true, toolbarFingerDrawingEnabled: true },
+  ])("reserves empty Select drags for touch navigation", (fingerSettings) => {
     const state = createInputState({
       activeTool: "select",
-      deviceFingerDrawingEnabled: true,
-      toolbarFingerDrawingEnabled: true,
+      hasSelection: true,
+      ...fingerSettings,
     });
     const started = apply(state, pointerDown({ pointerType: "touch", shift: true }));
-    expect(inputPhase(started.state)).toBe("lasso");
+    expect(inputPhase(started.state)).toBe("touch-pending");
+    expect(started.state.hasSelection).toBe(true);
     const moved = apply(started.state, pointerMove({ pointerType: "touch", x: 17, y: 20 }));
-    expect(moved.effects[0]).toMatchObject({
-      type: "begin-preview",
-      kind: "lasso",
-      additive: true,
-    });
+    expect(inputPhase(moved.state)).toBe("page-pan");
+    expect(effectTypes(moved.effects)).toEqual(["cancel-long-press", "pan-page"]);
+    expect(effectTypes([...started.effects, ...moved.effects])).not.toContain("begin-preview");
   });
+
+  it.each(["mouse", "pen"] as const)(
+    "keeps Select area creation available to %s input",
+    (pointerType) => {
+      const state = createInputState({ activeTool: "select" });
+      const started = apply(state, pointerDown({ pointerType, shift: true }));
+      expect(inputPhase(started.state)).toBe("lasso");
+      const moved = apply(started.state, pointerMove({ pointerType, x: 17, y: 20 }));
+      expect(moved.effects[0]).toMatchObject({
+        type: "begin-preview",
+        kind: "lasso",
+        additive: true,
+      });
+    },
+  );
 });
 
 describe("multitouch pinch arbitration", () => {
@@ -414,18 +402,16 @@ describe("selection and cancellation", () => {
     expect(select.effects[1]).toEqual({
       type: "select-element",
       elementId: "shape-a",
-      mode: "preserve-or-replace",
+      mode: "replace",
     });
   });
 
   it("clears selection on an empty Select click but preserves it for Shift", () => {
-    const state = createInputState({ activeTool: "select" });
+    const state = createInputState({ activeTool: "select", hasSelection: true });
     const click = apply(state, pointerDown());
     const released = apply(click.state, { type: "pointer-up", pointerId: 1 });
-    expect(released.effects).toEqual([
-      { type: "clear-selection" },
-      { type: "release-pointer", pointerId: 1 },
-    ]);
+    expect(click.effects).toContainEqual({ type: "clear-selection" });
+    expect(released.effects).toEqual([{ type: "release-pointer", pointerId: 1 }]);
 
     const additive = apply(state, pointerDown({ shift: true }));
     expect(apply(additive.state, { type: "pointer-up", pointerId: 1 }).effects).toEqual([

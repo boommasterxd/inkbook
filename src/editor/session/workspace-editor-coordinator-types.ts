@@ -1,4 +1,5 @@
 import type {
+  PersistedDocumentIdentity,
   PresentationLifecyclePort,
   SessionFactory,
   WorkspaceSessionNotifications,
@@ -7,6 +8,7 @@ import type { AttachmentIdentity, SessionState } from "./session-state";
 
 export interface ActivationTarget extends AttachmentIdentity {
   readonly documentId: string;
+  readonly previewContentIdentity?: PersistedDocumentIdentity;
 }
 
 export type ActivationCancellationReason =
@@ -32,6 +34,12 @@ export type ActivationOutcome =
     }
   | {
       readonly kind: "load-error";
+      readonly sessionId: string;
+      readonly token: number;
+    }
+  | {
+      readonly actualSourceIdentity: PersistedDocumentIdentity;
+      readonly kind: "source-changed";
       readonly sessionId: string;
       readonly token: number;
     };

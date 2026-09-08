@@ -1,17 +1,23 @@
 import { createBuiltInDeviceSettings, createBuiltInSettings } from "./defaults";
+import { canonicalShortcutBinding, shortcutBindingSignature } from "./keyboard-shortcuts";
 import { validateCustomVaultFolderPath } from "./path";
 import {
   BACKGROUND_TYPES,
+  CONFIGURABLE_SHORTCUT_ACTIONS,
   LINE_SPACINGS,
   MOTION_PREFERENCES,
   PEN_TAP_INSERTIONS,
   REFRESH_RATE_PREFERENCES,
+  SHORTCUT_MODIFIERS,
   STARTUP_TOOLS,
   type FilePlacementV1,
-  type InkbookDeviceSettingsV1,
-  type InkbookSettingsV3,
+  type InkbookDeviceSettingsV2,
+  type InkbookSettingsV4,
+  type KeyboardShortcutBindingV1,
+  type KeyboardShortcutSettingsV1,
   type SettingsDiagnostic,
   type SettingsLoadResult,
+  type SnappingSettingsV1,
 } from "./types";
 import {
   hasExactKeys,
@@ -28,9 +34,9 @@ function invalid(diagnostics: SettingsDiagnostic[], path: string): void {
 
 function loadBackgroundSpacing(
   input: unknown,
-  fallback: InkbookSettingsV3["pageDefaults"]["backgroundSpacing"],
+  fallback: InkbookSettingsV4["pageDefaults"]["backgroundSpacing"],
   diagnostics: SettingsDiagnostic[],
-): InkbookSettingsV3["pageDefaults"]["backgroundSpacing"] {
+): InkbookSettingsV4["pageDefaults"]["backgroundSpacing"] {
   if (!hasExactKeys(input, ["lines", "dots", "squares"])) {
     invalid(diagnostics, "pageDefaults.backgroundSpacing");
     return structuredClone(fallback);
@@ -62,9 +68,9 @@ function loadBackgroundSpacing(
 
 function loadPageDefaults(
   input: unknown,
-  fallback: InkbookSettingsV3["pageDefaults"],
+  fallback: InkbookSettingsV4["pageDefaults"],
   diagnostics: SettingsDiagnostic[],
-): InkbookSettingsV3["pageDefaults"] {
+): InkbookSettingsV4["pageDefaults"] {
   const keys = ["backgroundType", "backgroundSpacing", "activeBufferLines", "lockedBufferLines"];
   if (!hasExactKeys(input, keys)) {
     invalid(diagnostics, "pageDefaults");
@@ -75,7 +81,7 @@ function loadPageDefaults(
     backgroundType: validOrDefault(
       input.backgroundType,
       fallback.backgroundType,
-      (value): value is InkbookSettingsV3["pageDefaults"]["backgroundType"] =>
+      (value): value is InkbookSettingsV4["pageDefaults"]["backgroundType"] =>
         isOneOf(value, BACKGROUND_TYPES),
       diagnostics,
       "pageDefaults.backgroundType",
@@ -125,6 +131,111 @@ function loadFilePlacement(
   return structuredClone(fallback);
 }
 
+function loadSnapping(
+  input: unknown,
+  fallback: SnappingSettingsV1,
+  diagnostics: SettingsDiagnostic[],
+): SnappingSettingsV1 {
+  const keys = ["enabled", "angles", "bends", "connections", "structures"];
+  if (!hasExactKeys(input, keys)) {
+    invalid(diagnostics, "snapping");
+    return structuredClone(fallback);
+  }
+  const booleanValue = (value: unknown): value is boolean => typeof value === "boolean";
+  return {
+    enabled: validOrDefault(
+      input.enabled,
+      fallback.enabled,
+      booleanValue,
+      diagnostics,
+      "snapping.enabled",
+    ),
+    angles: validOrDefault(
+      input.angles,
+      fallback.angles,
+      booleanValue,
+      diagnostics,
+      "snapping.angles",
+    ),
+    bends: validOrDefault(input.bends, fallback.bends, booleanValue, diagnostics, "snapping.bends"),
+    connections: validOrDefault(
+      input.connections,
+      fallback.connections,
+      booleanValue,
+      diagnostics,
+      "snapping.connections",
+    ),
+    structures: validOrDefault(
+      input.structures,
+      fallback.structures,
+      booleanValue,
+      diagnostics,
+      "snapping.structures",
+    ),
+  };
+}
+
+function loadKeyboardShortcutBinding(
+  input: unknown,
+  fallback: KeyboardShortcutBindingV1 | null,
+  diagnostics: SettingsDiagnostic[],
+  path: string,
+): KeyboardShortcutBindingV1 | null {
+  if (input === null) return null;
+  if (
+    !hasExactKeys(input, ["key", "modifiers"]) ||
+    typeof input.key !== "string" ||
+    input.key.length === 0 ||
+    input.key.length > 32 ||
+    !Array.isArray(input.modifiers) ||
+    input.modifiers.length > SHORTCUT_MODIFIERS.length ||
+    !input.modifiers.every((modifier) => isOneOf(modifier, SHORTCUT_MODIFIERS)) ||
+    new Set(input.modifiers).size !== input.modifiers.length
+  ) {
+    invalid(diagnostics, path);
+    return structuredClone(fallback);
+  }
+  return canonicalShortcutBinding({
+    key: input.key,
+    modifiers: input.modifiers,
+  });
+}
+
+function loadKeyboardShortcuts(
+  input: unknown,
+  fallback: KeyboardShortcutSettingsV1,
+  diagnostics: SettingsDiagnostic[],
+): KeyboardShortcutSettingsV1 {
+  if (!hasExactKeys(input, CONFIGURABLE_SHORTCUT_ACTIONS)) {
+    invalid(diagnostics, "keyboardShortcuts");
+    return structuredClone(fallback);
+  }
+  const result = {} as Record<
+    (typeof CONFIGURABLE_SHORTCUT_ACTIONS)[number],
+    KeyboardShortcutBindingV1 | null
+  >;
+  const signatures = new Set<string>();
+  for (const action of CONFIGURABLE_SHORTCUT_ACTIONS) {
+    const path = `keyboardShortcuts.${action}`;
+    const binding = loadKeyboardShortcutBinding(input[action], fallback[action], diagnostics, path);
+    if (binding !== null && signatures.has(shortcutBindingSignature(binding))) {
+      invalid(diagnostics, path);
+      const fallbackBinding = fallback[action];
+      result[action] =
+        fallbackBinding !== null && !signatures.has(shortcutBindingSignature(fallbackBinding))
+          ? structuredClone(fallbackBinding)
+          : null;
+      if (result[action] !== null) {
+        signatures.add(shortcutBindingSignature(result[action]));
+      }
+      continue;
+    }
+    result[action] = binding;
+    if (binding !== null) signatures.add(shortcutBindingSignature(binding));
+  }
+  return result;
+}
+
 type PreparedSettingsRoot<T> =
   | {
       readonly valid: true;
@@ -151,42 +262,93 @@ function prepareSettingsRoot<T>(
   return { valid: true, value: input, diagnostics };
 }
 
-export function loadSettings(input: unknown): SettingsLoadResult<InkbookSettingsV3> {
+const VAULT_SETTINGS_KEYS = [
+  "version",
+  "startupTool",
+  "toolDefaults",
+  "snapping",
+  "pageDefaults",
+  "filePlacement",
+  "refreshRatePreference",
+] as const;
+
+const LEGACY_VAULT_SETTINGS_KEYS = VAULT_SETTINGS_KEYS.filter((key) => key !== "snapping");
+
+function addLegacySnappingDefaults(input: unknown, fallback: InkbookSettingsV4): unknown {
+  return isRecord(input) && input.version === 4 && hasExactKeys(input, LEGACY_VAULT_SETTINGS_KEYS)
+    ? { ...input, snapping: structuredClone(fallback.snapping) }
+    : input;
+}
+
+function migrateV3Settings(
+  input: unknown,
+  fallback: InkbookSettingsV4,
+):
+  | { readonly kind: "input"; readonly migratedFromV3: boolean; readonly value: unknown }
+  | { readonly kind: "failure"; readonly result: SettingsLoadResult<InkbookSettingsV4> } {
+  if (!isRecord(input) || input.version !== 3) {
+    return { kind: "input", migratedFromV3: false, value: input };
+  }
+  if (!hasExactKeys(input, LEGACY_VAULT_SETTINGS_KEYS)) {
+    return {
+      kind: "failure",
+      result: {
+        value: fallback,
+        diagnostics: [{ code: "settings.invalid-root", path: "$" }],
+      },
+    };
+  }
+  const legacyDefaults = input.toolDefaults;
+  if (isRecord(legacyDefaults) && Object.prototype.hasOwnProperty.call(legacyDefaults, "select")) {
+    return {
+      kind: "failure",
+      result: {
+        value: fallback,
+        diagnostics: [{ code: "settings.invalid-field", path: "toolDefaults" }],
+      },
+    };
+  }
+  return {
+    kind: "input",
+    migratedFromV3: true,
+    value: {
+      ...input,
+      version: 4,
+      snapping: structuredClone(fallback.snapping),
+      toolDefaults: isRecord(legacyDefaults)
+        ? { ...legacyDefaults, select: structuredClone(fallback.toolDefaults.select) }
+        : legacyDefaults,
+    },
+  };
+}
+
+export function loadSettings(input: unknown): SettingsLoadResult<InkbookSettingsV4> {
   const fallback = createBuiltInSettings();
-  const prepared = prepareSettingsRoot(
-    input,
-    fallback,
-    [
-      "version",
-      "startupTool",
-      "toolDefaults",
-      "pageDefaults",
-      "filePlacement",
-      "refreshRatePreference",
-    ],
-    3,
-  );
+  const migrated = migrateV3Settings(addLegacySnappingDefaults(input, fallback), fallback);
+  if (migrated.kind === "failure") return migrated.result;
+  const prepared = prepareSettingsRoot(migrated.value, fallback, VAULT_SETTINGS_KEYS, 4);
   if (!prepared.valid) return prepared.result;
   const { value, diagnostics } = prepared;
 
   const placement = loadFilePlacement(value.filePlacement, fallback.filePlacement, diagnostics);
-  return {
+  const result: SettingsLoadResult<InkbookSettingsV4> = {
     value: {
-      version: 3,
+      version: 4,
       startupTool: validOrDefault(
         value.startupTool,
         fallback.startupTool,
-        (value): value is InkbookSettingsV3["startupTool"] => isOneOf(value, STARTUP_TOOLS),
+        (value): value is InkbookSettingsV4["startupTool"] => isOneOf(value, STARTUP_TOOLS),
         diagnostics,
         "startupTool",
       ),
       toolDefaults: loadToolDefaults(value.toolDefaults, fallback.toolDefaults, diagnostics),
+      snapping: loadSnapping(value.snapping, fallback.snapping, diagnostics),
       pageDefaults: loadPageDefaults(value.pageDefaults, fallback.pageDefaults, diagnostics),
       filePlacement: placement,
       refreshRatePreference: validOrDefault(
         value.refreshRatePreference,
         fallback.refreshRatePreference,
-        (value): value is InkbookSettingsV3["refreshRatePreference"] =>
+        (value): value is InkbookSettingsV4["refreshRatePreference"] =>
           isOneOf(value, REFRESH_RATE_PREFERENCES),
         diagnostics,
         "refreshRatePreference",
@@ -194,15 +356,38 @@ export function loadSettings(input: unknown): SettingsLoadResult<InkbookSettings
     },
     diagnostics,
   };
+  return migrated.migratedFromV3 && diagnostics.length > 0
+    ? { value: fallback, diagnostics }
+    : result;
 }
 
-export function loadDeviceSettings(input: unknown): SettingsLoadResult<InkbookDeviceSettingsV1> {
+const DEVICE_SETTINGS_V1_KEYS = [
+  "version",
+  "fingerDrawingEnabled",
+  "penTapInsertion",
+  "leftHandedToolbar",
+  "motion",
+] as const;
+
+const DEVICE_SETTINGS_V2_KEYS = [...DEVICE_SETTINGS_V1_KEYS, "keyboardShortcuts"] as const;
+
+function migrateDeviceSettingsV1(input: unknown, fallback: InkbookDeviceSettingsV2): unknown {
+  return isRecord(input) && input.version === 1 && hasExactKeys(input, DEVICE_SETTINGS_V1_KEYS)
+    ? {
+        ...input,
+        version: 2,
+        keyboardShortcuts: structuredClone(fallback.keyboardShortcuts),
+      }
+    : input;
+}
+
+export function loadDeviceSettings(input: unknown): SettingsLoadResult<InkbookDeviceSettingsV2> {
   const fallback = createBuiltInDeviceSettings();
   const prepared = prepareSettingsRoot(
-    input,
+    migrateDeviceSettingsV1(input, fallback),
     fallback,
-    ["version", "fingerDrawingEnabled", "penTapInsertion", "leftHandedToolbar", "motion"],
-    1,
+    DEVICE_SETTINGS_V2_KEYS,
+    2,
   );
   if (!prepared.valid) return prepared.result;
   const { value, diagnostics } = prepared;
@@ -210,7 +395,7 @@ export function loadDeviceSettings(input: unknown): SettingsLoadResult<InkbookDe
   const booleanValue = (value: unknown): value is boolean => typeof value === "boolean";
   return {
     value: {
-      version: 1,
+      version: 2,
       fingerDrawingEnabled: validOrDefault(
         value.fingerDrawingEnabled,
         fallback.fingerDrawingEnabled,
@@ -221,7 +406,7 @@ export function loadDeviceSettings(input: unknown): SettingsLoadResult<InkbookDe
       penTapInsertion: validOrDefault(
         value.penTapInsertion,
         fallback.penTapInsertion,
-        (value): value is InkbookDeviceSettingsV1["penTapInsertion"] =>
+        (value): value is InkbookDeviceSettingsV2["penTapInsertion"] =>
           isOneOf(value, PEN_TAP_INSERTIONS),
         diagnostics,
         "penTapInsertion",
@@ -236,9 +421,14 @@ export function loadDeviceSettings(input: unknown): SettingsLoadResult<InkbookDe
       motion: validOrDefault(
         value.motion,
         fallback.motion,
-        (value): value is InkbookDeviceSettingsV1["motion"] => isOneOf(value, MOTION_PREFERENCES),
+        (value): value is InkbookDeviceSettingsV2["motion"] => isOneOf(value, MOTION_PREFERENCES),
         diagnostics,
         "motion",
+      ),
+      keyboardShortcuts: loadKeyboardShortcuts(
+        value.keyboardShortcuts,
+        fallback.keyboardShortcuts,
+        diagnostics,
       ),
     },
     diagnostics,

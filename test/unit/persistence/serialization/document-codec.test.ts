@@ -1,3 +1,4 @@
+import { parseInkbookDocumentForTest } from "../../../fixtures/persistence/parse-document";
 import { describe, expect, it } from "vitest";
 
 import { FILE_SCHEMA_LIMITS, validateInkSnapshotV1 } from "../../../../src/domain/schema/public";
@@ -7,12 +8,8 @@ import {
   CURRENT_METADATA_REWRITES,
   rewriteDocumentMetadata,
 } from "../../../fixtures/persistence/metadata-rewrite";
-import {
-  parseInkbookDocument,
-  serializeInkbookDocument,
-  sha256Hex,
-  type DocumentHashPort,
-} from "../../../../src/persistence/serialization/public";
+import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
+import { sha256Hex, type DocumentHashPort } from "../../../../src/persistence/serialization/sha256";
 import { CANONICAL_THEME_STYLESHEET } from "../../../../src/persistence/documents/svg-theme";
 import {
   appendMetadataProperty,
@@ -40,7 +37,7 @@ describe("Inkbook document serialization", () => {
     expect(first.value.svg).toContain('class="inkbook-theme-stroke-fill"');
     expect(first.value.svg).toContain('stroke-dasharray="16 12"');
     expect(first.value.svg).toContain('stroke-dasharray="0 10"');
-    expect(first.value.svg).toContain('fill-opacity="0.75"');
+    expect(first.value.svg).toContain('<g opacity="0.75">');
     expect(first.value.svg).toContain('stroke-opacity="0.8"');
     expect(validateSafeSvg(first.value.svg)).not.toBeNull();
   });
@@ -65,6 +62,40 @@ describe("Inkbook document serialization", () => {
     expect(result.value.svg).not.toContain('fill-rule="nonzero"');
     expect(result.value.svg).not.toContain('stroke="none"');
     expect(validateSafeSvg(result.value.svg)).not.toBeNull();
+  });
+
+  it("round-trips custom table separators while preserving legacy equal columns", async () => {
+    const custom = createAllElementSnapshot();
+    const customTable = custom.elements.find((element) => element.kind === "table");
+    expect(customTable?.kind).toBe("table");
+    if (customTable?.kind !== "table") return;
+    customTable.columnOffsets = [140, 250];
+
+    const serialized = serializeInkbookDocument(custom);
+
+    expect(serialized.ok).toBe(true);
+    if (!serialized.ok) return;
+    expect(
+      serialized.value.snapshot.elements.find((element) => element.kind === "table"),
+    ).toMatchObject({
+      columnOffsets: [140, 250],
+    });
+    expect(serialized.value.svg).toContain("M1260 400L1260 500");
+    expect(serialized.value.svg).toContain("M1370 400L1370 500");
+
+    const parsed = await parseInkbookDocumentForTest(serialized.value.svg);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.value.snapshot.elements).toHaveLength(custom.elements.length);
+    expect(
+      parsed.value.snapshot.elements.find((element) => element.kind === "table"),
+    ).toMatchObject({
+      columnOffsets: [140, 250],
+    });
+
+    const legacy = serializeInkbookDocument(createAllElementSnapshot());
+    expect(legacy.ok).toBe(true);
+    if (legacy.ok) expect(legacy.value.svg).not.toContain('"columnOffsets"');
   });
 });
 
@@ -109,7 +140,7 @@ describe("Inkbook background serialization", () => {
     expect(validateSafeSvg(result.value.svg)).not.toBeNull();
   });
 
-  it("loads version-one files written before scale-independent guide styling", () => {
+  it("loads version-one files written before scale-independent guide styling", async () => {
     const result = serializeSquareBackground();
 
     expect(result.ok).toBe(true);
@@ -122,7 +153,7 @@ describe("Inkbook background serialization", () => {
 
     expect(previousFile).not.toBe(result.value.svg);
     expect(validateSafeSvg(previousFile)).not.toBeNull();
-    expect(parseInkbookDocument(previousFile)).toMatchObject({
+    expect(await parseInkbookDocumentForTest(previousFile)).toMatchObject({
       ok: true,
       value: {
         requiresCanonicalRewrite: true,
@@ -175,20 +206,20 @@ describe("Inkbook document serialization boundaries", () => {
 describe("Inkbook document parsing security boundaries", () => {
   it.each(CURRENT_METADATA_REWRITES)(
     "rejects noncanonical or unbound current metadata as $expectedCode",
-    ({ expectedCode, mutate, updateHash }) => {
+    async ({ expectedCode, mutate, updateHash }) => {
       const serialized = serializeInkbookDocument(createSnapshot());
       expect(serialized.ok).toBe(true);
       if (!serialized.ok) return;
       const rewritten = rewriteDocumentMetadata(serialized.value.svg, mutate, updateHash);
 
-      expect(parseInkbookDocument(rewritten)).toMatchObject({
+      expect(await parseInkbookDocumentForTest(rewritten)).toMatchObject({
         error: { code: expectedCode },
         ok: false,
       });
     },
   );
 
-  it("rejects metadata container width before native JSON materialization", () => {
+  it("rejects metadata container width before native JSON materialization", async () => {
     const serialized = serializeInkbookDocument(createSnapshot());
     expect(serialized.ok).toBe(true);
     if (!serialized.ok) return;
@@ -202,11 +233,11 @@ describe("Inkbook document parsing security boundaries", () => {
       wideMetadataArrayProperty(maximumEntries + 1),
     );
 
-    expect(parseInkbookDocument(atLimit)).toMatchObject({
+    expect(await parseInkbookDocumentForTest(atLimit)).toMatchObject({
       error: { code: "snapshot-invalid" },
       ok: false,
     });
-    expect(parseInkbookDocument(overLimit)).toMatchObject({
+    expect(await parseInkbookDocumentForTest(overLimit)).toMatchObject({
       error: { code: "invalid-json" },
       ok: false,
     });
@@ -214,7 +245,7 @@ describe("Inkbook document parsing security boundaries", () => {
 });
 
 describe("SVG numeric precision", () => {
-  it("preserves canonical four-decimal opacity in static presentation attributes", () => {
+  it("preserves canonical four-decimal opacity in static presentation attributes", async () => {
     const snapshot = createAllElementSnapshot();
     const stroke = snapshot.elements.find((element) => element.kind === "stroke");
     expect(stroke?.kind).toBe("stroke");
@@ -225,19 +256,21 @@ describe("SVG numeric precision", () => {
 
     expect(serialized.ok).toBe(true);
     if (!serialized.ok) return;
-    expect(serialized.value.svg).toContain('fill-opacity="0.1234"');
+    expect(serialized.value.svg).toContain('<g opacity="0.1234">');
     expect(serialized.value.svg).toContain('"opacity":0.1234');
-    expect(parseInkbookDocument(serialized.value.svg)).toMatchObject({ ok: true });
+    expect(await parseInkbookDocumentForTest(serialized.value.svg)).toMatchObject({ ok: true });
   });
 });
 
 describe("Inkbook document parsing", () => {
-  it("round-trips UTF-8 bytes and verifies revision, height, and hash", () => {
+  it("round-trips UTF-8 bytes and verifies revision, height, and hash", async () => {
     const serialized = serializeInkbookDocument(createAllElementSnapshot());
     expect(serialized.ok).toBe(true);
     if (!serialized.ok) return;
 
-    const parsed = parseInkbookDocument(new TextEncoder().encode(serialized.value.svg));
+    const parsed = await parseInkbookDocumentForTest(
+      new TextEncoder().encode(serialized.value.svg),
+    );
     const validation = validateInkSnapshotV1(serialized.value.snapshot);
     if (!validation.ok) throw new Error(validation.error.message);
 
@@ -256,13 +289,13 @@ describe("Inkbook document parsing", () => {
 });
 
 describe("Inkbook document migration", () => {
-  it("migrates a canonical version zero envelope before adopting its snapshot", () => {
+  it("migrates a canonical version zero envelope before adopting its snapshot", async () => {
     const serialized = serializeInkbookDocument(createAllElementSnapshot());
     expect(serialized.ok).toBe(true);
     if (!serialized.ok) return;
     const versionZero = toVersionZeroDocument(serialized.value.svg);
 
-    const parsed = parseInkbookDocument(versionZero);
+    const parsed = await parseInkbookDocumentForTest(versionZero);
 
     expect(parsed).toMatchObject({
       ok: true,
@@ -270,7 +303,7 @@ describe("Inkbook document migration", () => {
     });
   });
 
-  it("rejects a malformed version zero migration without adopting partial output", () => {
+  it("rejects a malformed version zero migration without adopting partial output", async () => {
     const serialized = serializeInkbookDocument(createSnapshot());
     expect(serialized.ok).toBe(true);
     if (!serialized.ok) return;
@@ -279,7 +312,7 @@ describe("Inkbook document migration", () => {
       '"activeBufferLines":0',
     );
 
-    expect(parseInkbookDocument(malformed)).toMatchObject({
+    expect(await parseInkbookDocumentForTest(malformed)).toMatchObject({
       error: { code: "migration-failed" },
       ok: false,
     });
@@ -287,14 +320,14 @@ describe("Inkbook document migration", () => {
 });
 
 describe("Inkbook document parsing failures", () => {
-  it("rejects safe derived-path drift instead of opening altered static geometry", () => {
+  it("rejects safe derived-path drift instead of opening altered static geometry", async () => {
     const serialized = serializeInkbookDocument(createAllElementSnapshot());
     expect(serialized.ok).toBe(true);
     if (!serialized.ok) return;
     const drifted = serialized.value.svg.replace("M100 150L300 150", "M101 150L301 150");
     expect(drifted).not.toBe(serialized.value.svg);
 
-    const parsed = parseInkbookDocument(drifted);
+    const parsed = await parseInkbookDocumentForTest(drifted);
 
     expect(parsed).toMatchObject({
       error: { code: "static-path-mismatch" },
@@ -302,7 +335,7 @@ describe("Inkbook document parsing failures", () => {
     });
   });
 
-  it("keeps a migrated document read-only when its static geometry differs", () => {
+  it("keeps a migrated document read-only when its static geometry differs", async () => {
     const serialized = serializeInkbookDocument(createAllElementSnapshot());
     expect(serialized.ok).toBe(true);
     if (!serialized.ok) return;
@@ -311,31 +344,31 @@ describe("Inkbook document parsing failures", () => {
       "M101 150L301 150",
     );
 
-    expect(parseInkbookDocument(drifted)).toMatchObject({
+    expect(await parseInkbookDocumentForTest(drifted)).toMatchObject({
       error: { code: "static-path-mismatch" },
       ok: false,
     });
   });
 
-  it("rejects revision and locked-height mismatches", () => {
+  it("rejects revision and locked-height mismatches", async () => {
     const serialized = serializeInkbookDocument(createSnapshot());
     expect(serialized.ok).toBe(true);
     if (!serialized.ok) return;
 
     expect(
-      parseInkbookDocument(
+      await parseInkbookDocumentForTest(
         serialized.value.svg.replace('data-inkbook-revision="7"', 'data-inkbook-revision="8"'),
       ),
     ).toMatchObject({ ok: false, error: { code: "revision-mismatch" } });
     expect(
-      parseInkbookDocument(
+      await parseInkbookDocumentForTest(
         serialized.value.svg.replace('viewBox="0 0 2048.6 348.6"', 'viewBox="0 0 2048.6 349.6"'),
       ),
     ).toMatchObject({ ok: false, error: { code: "locked-height-mismatch" } });
   });
 
-  it("rejects malformed UTF-8, JSON, and unsafe SVG markup", () => {
-    expect(parseInkbookDocument(new Uint8Array([0xc3, 0x28]))).toMatchObject({
+  it("rejects malformed UTF-8, JSON, and unsafe SVG markup", async () => {
+    expect(await parseInkbookDocumentForTest(new Uint8Array([0xc3, 0x28]))).toMatchObject({
       ok: false,
       error: { code: "invalid-utf8" },
     });
@@ -343,20 +376,22 @@ describe("Inkbook document parsing failures", () => {
     expect(serialized.ok).toBe(true);
     if (!serialized.ok) return;
     expect(
-      parseInkbookDocument(serialized.value.svg.replace('"format":"inkbook"', '"format":')),
+      await parseInkbookDocumentForTest(
+        serialized.value.svg.replace('"format":"inkbook"', '"format":'),
+      ),
     ).toMatchObject({
       ok: false,
       error: { code: "invalid-json" },
     });
     expect(
-      parseInkbookDocument(serialized.value.svg.replace("</svg>", "<script/></svg>")),
+      await parseInkbookDocumentForTest(serialized.value.svg.replace("</svg>", "<script/></svg>")),
     ).toMatchObject({
       ok: false,
       error: { code: "invalid-svg" },
     });
   });
 
-  it("hashes the exact persisted UTF-8 bytes, including a byte-order mark", () => {
+  it("hashes the exact persisted UTF-8 bytes, including a byte-order mark", async () => {
     const serialized = serializeInkbookDocument(createSnapshot());
     expect(serialized.ok).toBe(true);
     if (!serialized.ok) return;
@@ -365,7 +400,7 @@ describe("Inkbook document parsing failures", () => {
     bytesWithBom.set([0xef, 0xbb, 0xbf]);
     bytesWithBom.set(documentBytes, 3);
 
-    const parsed = parseInkbookDocument(bytesWithBom);
+    const parsed = await parseInkbookDocumentForTest(bytesWithBom);
 
     expect(parsed).toMatchObject({ ok: true, value: { hash: sha256Hex(bytesWithBom) } });
   });

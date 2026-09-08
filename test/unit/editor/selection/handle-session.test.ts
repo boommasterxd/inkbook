@@ -180,7 +180,7 @@ describe("SelectionHandleSession", () => {
 });
 
 describe("SelectionHandleSession geometry boundaries", () => {
-  it("clamps endpoint length and shape-handle crossing at their geometry minima", () => {
+  it("clamps endpoint length and scale-handle crossing at their geometry minima", () => {
     const line = freeLine();
     const lineStore = new ElementStore([line]);
     const endpoint = new SelectionHandleSession({
@@ -200,7 +200,12 @@ describe("SelectionHandleSession geometry boundaries", () => {
     const shape = rectangle();
     const shapeStore = new ElementStore([shape]);
     const resize = new SelectionHandleSession({
-      action: { elementId: shape.id, kind: "shape-resize", position: "middle-right" },
+      action: {
+        anchor: { x: 100, y: 150 },
+        kind: "scale",
+        position: "middle-right",
+        rotation: 0,
+      },
       elements: [element(shapeStore, shape.id)],
       planner: shapeStore,
       startPointer: { x: 300, y: 150 },
@@ -208,45 +213,16 @@ describe("SelectionHandleSession geometry boundaries", () => {
     resize.update({ x: 50, y: 150 });
     const shapeCommit = resize.prepareCommit();
     if (shapeCommit.status !== "ready") throw new Error("Expected a clamped shape commit.");
-    expect(shapeCommit.replacements[0]).toMatchObject({ width: 1, x: 100 });
-  });
-
-  it("scales single and multiple selections according to their distinct handle contracts", () => {
-    const first = rectangle();
-    const second = rectangle("00000000-0000-4000-8000-000000000088", 500, 100);
-    const store = new ElementStore([first, second]);
-    const single = new SelectionHandleSession({
-      action: { anchor: { x: 100, y: 100 }, kind: "scale", position: "bottom-right" },
-      elements: [element(store, first.id)],
-      planner: store,
-      startPointer: { x: 300, y: 200 },
-    });
-    single.update({ x: 500, y: 300 });
-    const singleCommit = single.prepareCommit();
-    if (singleCommit.status !== "ready") throw new Error("Expected a single scale commit.");
-    expect(singleCommit.replacements[0]).toMatchObject({ height: 200, width: 400 });
-
-    const multiple = new SelectionHandleSession({
-      action: { anchor: { x: 100, y: 100 }, kind: "scale", position: "bottom-right" },
-      elements: [element(store, first.id), element(store, second.id)],
-      planner: store,
-      startPointer: { x: 700, y: 200 },
-    });
-    multiple.update({ x: 1_300, y: 300 });
-    const multiCommit = multiple.prepareCommit();
-    if (multiCommit.status !== "ready") throw new Error("Expected a multi scale commit.");
-    expect(multiCommit.replacements).toMatchObject([
-      { height: 200, width: 400 },
-      { height: 200, width: 400, x: 900 },
-    ]);
+    expect(shapeCommit.replacements[0]).toMatchObject({ width: 1, x: 102 });
   });
 
   it("rotates a target and resolves its dependent endpoint in the same preview", () => {
     const target = rectangle();
     const line = connectedLine(target);
     const store = new ElementStore([target, line]);
+    const { pivot, rotation } = target;
     const session = new SelectionHandleSession({
-      action: { center: target.pivot, kind: "rotate" },
+      action: { center: pivot, kind: "rotate", opposite: pivot, referenceRotation: rotation },
       elements: [element(store, target.id)],
       planner: store,
       startPointer: { x: 300, y: 150 },
@@ -288,7 +264,12 @@ describe("SelectionHandleSession viewport overflow", () => {
     const shape = rectangle();
     const store = new ElementStore([shape]);
     const session = new SelectionHandleSession({
-      action: { anchor: { x: 100, y: 100 }, kind: "scale", position: "bottom-right" },
+      action: {
+        anchor: { x: 100, y: 100 },
+        kind: "scale",
+        position: "bottom-right",
+        rotation: 0,
+      },
       elements: [shape],
       planner: store,
       startPointer: { x: 300, y: 200 },

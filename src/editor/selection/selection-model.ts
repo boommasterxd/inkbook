@@ -1,5 +1,12 @@
-import { boundsIntersect } from "../../domain/geometry/bounds";
 import type { Bounds } from "../../domain/geometry/public";
+import type { InkElementV1 } from "../../domain/schema/public";
+
+import {
+  elementMatchesSelectionArea,
+  selectionAreaBounds,
+  type SelectionArea,
+  type SelectionAreaInclusion,
+} from "./selection-area";
 
 export type SelectionMode = "add" | "preserve-or-replace" | "replace";
 
@@ -15,48 +22,24 @@ export function selectElement(
   return setsEqual(selection, next) ? selection : next;
 }
 
-export function selectByLasso(
-  selection: ReadonlySet<string>,
-  lasso: Bounds,
-  candidates: Iterable<readonly [string, Bounds]>,
-  additive: boolean,
-): ReadonlySet<string> {
-  const next = additive ? new Set(selection) : new Set<string>();
-  for (const [id, bounds] of candidates) {
-    if (boundsIntersect(lasso, bounds)) next.add(id);
-  }
-  return setsEqual(selection, next) ? selection : next;
+interface SelectionAreaCandidateSink {
+  add(id: string, bounds: Bounds, element: InkElementV1): void;
 }
 
-export interface LassoCandidateSink {
-  add(id: string, bounds: Bounds): void;
-}
-
-export function selectByLassoQuery(
+export function selectBySelectionAreaQuery(
   selection: ReadonlySet<string>,
-  lasso: Bounds,
+  area: SelectionArea,
+  inclusion: SelectionAreaInclusion,
   additive: boolean,
-  query: (sink: LassoCandidateSink) => void,
+  query: (bounds: Bounds, sink: SelectionAreaCandidateSink) => void,
 ): ReadonlySet<string> {
   const next = additive ? new Set(selection) : new Set<string>();
-  query({
-    add: (id, bounds) => {
-      if (boundsIntersect(lasso, bounds)) next.add(id);
+  query(selectionAreaBounds(area), {
+    add: (id, bounds, element) => {
+      if (elementMatchesSelectionArea(area, element, inclusion, bounds)) next.add(id);
     },
   });
   return setsEqual(selection, next) ? selection : next;
-}
-
-export function lassoBounds(
-  start: { readonly x: number; readonly y: number },
-  end: { readonly x: number; readonly y: number },
-): Bounds {
-  return {
-    minX: Math.min(start.x, end.x),
-    minY: Math.min(start.y, end.y),
-    maxX: Math.max(start.x, end.x),
-    maxY: Math.max(start.y, end.y),
-  };
 }
 
 function singleton(id: string): ReadonlySet<string> {

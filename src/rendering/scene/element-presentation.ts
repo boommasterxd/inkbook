@@ -1,4 +1,5 @@
 import { effectiveStrokeWidth } from "../../domain/geometry/bounds";
+import { normalizeStrokePaint } from "../../domain/geometry/pressure-paint";
 import { outlineDashPattern, type SvgPathPart } from "../../domain/geometry/element-path";
 import type {
   ColorV1,
@@ -37,7 +38,11 @@ export const PRESENTATION_ATTRIBUTES: readonly PresentationAttribute[] = [
 
 export function pathPresentation(element: InkElementV1, part: SvgPathPart): PathPresentation {
   if (element.kind === "stroke" || element.kind === "straight-highlighter") {
-    return strokePresentation(element.style, part.paint, effectiveStrokeWidth(element));
+    const style =
+      element.kind === "stroke" && element.style.pressureEnabled
+        ? { ...element.style, color: normalizeStrokePaint(element.style).color, opacity: 1 }
+        : element.style;
+    return strokePresentation(style, part.paint, effectiveStrokeWidth(element));
   }
   return outlinePresentation(
     element.style,

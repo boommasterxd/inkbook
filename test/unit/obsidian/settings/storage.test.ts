@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  DEVICE_SETTINGS_STORAGE_KEY,
   InkbookSettingsStore,
   type DeviceSettingsPort,
   type VaultSettingsPort,
 } from "../../../../src/obsidian/settings/storage";
 import {
+  DEVICE_SETTINGS_STORAGE_KEY,
   createBuiltInDeviceSettings,
   createBuiltInSettings,
 } from "../../../../src/domain/settings";
@@ -40,6 +40,20 @@ class DeviceFake implements DeviceSettingsPort {
   }
 }
 
+class DeviceMapFake implements DeviceSettingsPort {
+  public readonly saves: { key: string; data: unknown }[] = [];
+
+  public constructor(private readonly values: Readonly<Record<string, unknown>>) {}
+
+  public loadLocalStorage(key: string): unknown {
+    return this.values[key];
+  }
+
+  public saveLocalStorage(key: string, data: ReturnType<typeof createBuiltInDeviceSettings>): void {
+    this.saves.push({ key, data: structuredClone(data) });
+  }
+}
+
 describe("InkbookSettingsStore", () => {
   it("loads vault and device settings through their documented boundaries", async () => {
     const vaultValue = createBuiltInSettings();
@@ -55,6 +69,57 @@ describe("InkbookSettingsStore", () => {
     expect(store.getDeviceSettings().motion).toBe("reduced");
   });
 
+  it("exposes migrated V3 vault settings as V4 runtime settings", async () => {
+    const current = createBuiltInSettings();
+    current.startupTool = "arrow";
+    const legacy = structuredClone(current) as unknown as Record<string, unknown>;
+    legacy.version = 3;
+    delete legacy.snapping;
+    delete (legacy.toolDefaults as Record<string, unknown>).select;
+    const store = new InkbookSettingsStore(
+      new VaultFake(legacy),
+      new DeviceFake(createBuiltInDeviceSettings()),
+    );
+
+    const diagnostics = await store.load();
+
+    expect(diagnostics.vault).toEqual([]);
+    expect(store.getVaultSettings()).toMatchObject({
+      version: 4,
+      startupTool: "arrow",
+      snapping: createBuiltInSettings().snapping,
+      toolDefaults: { select: { area: "lasso", inclusion: "touched" } },
+    });
+  });
+});
+
+describe("InkbookSettingsStore device migration", () => {
+  it("migrates legacy device settings and persists the V2 result once", async () => {
+    const legacy = {
+      version: 1,
+      fingerDrawingEnabled: true,
+      leftHandedToolbar: true,
+      motion: "reduced",
+      penTapInsertion: "handwriting",
+    };
+    const device = new DeviceMapFake({ "inkbook:device-settings:v1": legacy });
+    const store = new InkbookSettingsStore(new VaultFake(createBuiltInSettings()), device);
+
+    const diagnostics = await store.load();
+
+    expect(diagnostics.device).toEqual([]);
+    expect(store.getDeviceSettings()).toEqual({
+      ...legacy,
+      version: 2,
+      keyboardShortcuts: createBuiltInDeviceSettings().keyboardShortcuts,
+    });
+    expect(device.saves).toEqual([
+      { key: DEVICE_SETTINGS_STORAGE_KEY, data: store.getDeviceSettings() },
+    ]);
+  });
+});
+
+describe("InkbookSettingsStore persistence", () => {
   it("uses field-level loader fallback and reports persisted-data diagnostics", async () => {
     const vaultValue = createBuiltInSettings() as unknown as Record<string, unknown>;
     vaultValue.startupTool = "invalid";

@@ -1,7 +1,7 @@
-import type { InkbookDeviceSettingsV1 } from "../../domain/settings/types";
+import type { InkbookDeviceSettingsV2 } from "../../domain/settings/types";
 import { TRANSITION_DURATIONS } from "../../rendering/motion/transitions";
 
-type MotionPreference = InkbookDeviceSettingsV1["motion"];
+type MotionPreference = InkbookDeviceSettingsV2["motion"];
 
 const ACTIVE_SCENE_BLOCK_SIZE_PROPERTY = "--inkbook-active-scene-block-size";
 const LOCKED_CONTAINER_BLOCK_SIZE_PROPERTY = "--inkbook-locked-container-block-size";

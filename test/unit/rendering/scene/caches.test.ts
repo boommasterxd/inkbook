@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ArrowElementV1 } from "../../../../src/domain/schema/public";
-import { SceneBackgroundCache } from "../../../../src/rendering/scene";
+import { SceneBackgroundCache } from "../../../../src/rendering/scene/background-cache";
 import {
   PATH_CACHE_MAX_BYTES,
   PATH_CACHE_MAX_ENTRIES,

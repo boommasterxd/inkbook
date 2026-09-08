@@ -1,15 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { validateInkSnapshotV1 } from "../../../../src/domain/schema/public";
-import { encodeSelection } from "../../../../src/persistence/clipboard/public";
+import { encodeRuntimeSelection } from "../../../../src/persistence/clipboard/codec";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
+import { DocumentWorkerRuntime } from "../../../../src/persistence/worker/runtime/public";
+import { attachDocumentWorkerHost } from "../../../../src/persistence/worker/runtime/worker-host";
 import {
-  attachDocumentWorkerHost,
-  DocumentWorkerRuntime,
   encodeRuntimeRequest,
   encodeUnlockBatch,
-  WorkerDocumentRuntimePort,
-} from "../../../../src/persistence/worker/runtime/public";
+} from "../../../../src/persistence/worker/runtime/wire-codec";
+import { WorkerDocumentRuntimePort } from "../../../../src/persistence/worker/runtime/worker-bridge";
 import { TestWorkerEndpoint } from "../../../fixtures/persistence/worker-endpoint";
 import {
   createTestStroke,
@@ -470,7 +470,7 @@ describe("document worker clipboard bridge", () => {
     if (first.type !== "clipboard-encode-success" || !first.result.ok) {
       throw new Error("Clipboard encoding failed.");
     }
-    const expected = encodeSelection(document.elements, new Set([document.elements[0]!.id]));
+    const expected = encodeRuntimeSelection(document.elements, new Set([document.elements[0]!.id]));
     if (!expected.ok) throw new Error(expected.error.message);
     expect(first.result.value.customText).toBe(expected.value.customText);
     expect(Object.keys(first.result.value).sort()).toEqual([

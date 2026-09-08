@@ -35,7 +35,7 @@ export class SceneMotionController {
   #resourceConstrained = false;
   #reducedMotion: boolean;
   #selectionMotion: OverlayMotion | undefined;
-  #snapMotion: OverlayMotion | undefined;
+  #selectionHandleMotion: OverlayMotion | undefined;
   public constructor(
     dom: SceneDom,
     content: SceneContentRenderer,
@@ -53,6 +53,13 @@ export class SceneMotionController {
     immediateSuppressedIds?: readonly string[],
   ): number | undefined {
     const suppression = this.takeMatchingSuppression(changes);
+    if (
+      suppression !== undefined &&
+      this.#entries.size === 0 &&
+      this.#pendingEntrances.size === 0
+    ) {
+      return suppression.token;
+    }
     const immediateSuppression =
       immediateSuppressedIds === undefined || immediateSuppressedIds.length === 0
         ? undefined
@@ -135,16 +142,27 @@ export class SceneMotionController {
     }
   }
 
-  public setSelectionPath(path: string | null): void {
+  public applySelectionPath(
+    path: string | null,
+    handlePath: string | null,
+    fill: "accent" | "none",
+  ): void {
+    this.#dom.selectionOverlayPath.setAttribute("data-selection-fill", fill);
     this.#selectionMotion = this.setOverlay(
       this.#dom.selectionOverlayPath,
       path,
       this.#selectionMotion,
     );
+    this.#selectionHandleMotion = this.setOverlay(
+      this.#dom.selectionHandlePath,
+      handlePath,
+      this.#selectionHandleMotion,
+    );
   }
 
-  public setSnapPath(path: string | null): void {
-    this.#snapMotion = this.setOverlay(this.#dom.snapMarkerPath, path, this.#snapMotion);
+  public applySnapPath(path: string | null): void {
+    this.#dom.snapMarkerPath.setAttribute("d", path ?? "");
+    writeMotionStyle(this.#dom.snapMarkerPath, 1, 1);
   }
 
   public interruptForPointerDown(): void {
@@ -167,7 +185,11 @@ export class SceneMotionController {
       this.#selectionMotion,
       effectiveTime,
     );
-    this.#snapMotion = this.writeOverlay(this.#dom.snapMarkerPath, this.#snapMotion, effectiveTime);
+    this.#selectionHandleMotion = this.writeOverlay(
+      this.#dom.selectionHandlePath,
+      this.#selectionHandleMotion,
+      effectiveTime,
+    );
     const pending = this.hasPending();
     if (!pending) this.#lastFrameTime = undefined;
     return pending;
@@ -332,7 +354,21 @@ export class SceneMotionController {
   ): OverlayMotion | undefined {
     const next = path ?? "";
     const previous = node.getAttribute("d") ?? "";
-    if (next === previous && current === undefined) return undefined;
+    if (next === previous) {
+      if (next !== "" && current?.direction === "exit") {
+        writeMotionStyle(node, 1, 1);
+        return undefined;
+      }
+      return current;
+    }
+    if (next !== "" && previous !== "") {
+      node.setAttribute("d", next);
+      if (current?.direction === "exit") {
+        writeMotionStyle(node, 1, 1);
+        return undefined;
+      }
+      return current;
+    }
     if (this.#reducedMotion) {
       node.setAttribute("d", next);
       writeMotionStyle(node, 1, 1);
@@ -340,7 +376,7 @@ export class SceneMotionController {
     }
     if (next !== "") node.setAttribute("d", next);
     const direction = next === "" ? "exit" : "enter";
-    writeMotionStyle(node, direction === "enter" ? 0 : 1, direction === "enter" ? 0.96 : 1);
+    writeMotionStyle(node, direction === "enter" ? 0 : 1, 1);
     return { direction, startTime: undefined };
   }
 
@@ -354,7 +390,7 @@ export class SceneMotionController {
     const raw = Math.min(1, (frameTime - motion.startTime) / TRANSITION_DURATIONS.fallback);
     const progress = standardMotionProgress(raw);
     const visible = motion.direction === "enter" ? progress : 1 - progress;
-    writeMotionStyle(node, visible, 0.96 + visible * 0.04);
+    writeMotionStyle(node, visible, 1);
     if (raw < 1) return motion;
     if (motion.direction === "exit") node.setAttribute("d", "");
     writeMotionStyle(node, 1, 1);
@@ -365,9 +401,9 @@ export class SceneMotionController {
     for (const entry of this.#entries.values()) this.finishEntry(entry, releasing);
     this.#entryByElementId.clear();
     this.finishOverlay(this.#dom.selectionOverlayPath, this.#selectionMotion);
-    this.finishOverlay(this.#dom.snapMarkerPath, this.#snapMotion);
+    this.finishOverlay(this.#dom.selectionHandlePath, this.#selectionHandleMotion);
     this.#selectionMotion = undefined;
-    this.#snapMotion = undefined;
+    this.#selectionHandleMotion = undefined;
     this.#lastFrameTime = undefined;
     this.refreshCacheSize();
   }
@@ -381,7 +417,7 @@ export class SceneMotionController {
     return (
       this.#entries.size > 0 ||
       this.#selectionMotion !== undefined ||
-      this.#snapMotion !== undefined
+      this.#selectionHandleMotion !== undefined
     );
   }
 

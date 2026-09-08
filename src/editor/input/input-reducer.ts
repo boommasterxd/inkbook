@@ -86,6 +86,7 @@ function configure(state: InputState, action: ConfigureInputAction): InputReduct
       action.deviceFingerDrawingEnabled ?? state.deviceFingerDrawingEnabled,
     toolbarFingerDrawingEnabled:
       action.toolbarFingerDrawingEnabled ?? state.toolbarFingerDrawingEnabled,
+    hasSelection: action.hasSelection ?? state.hasSelection,
     zoom: validPositive(action.zoom) ? action.zoom : state.zoom,
     fitZoom: validPositive(action.fitZoom) ? action.fitZoom : state.fitZoom,
   };
@@ -143,17 +144,21 @@ function handlePointerDown(state: InputState, action: PointerDownAction): InputR
 }
 
 function startSinglePointer(state: InputState, action: PointerDownAction): InputReduction {
-  const temporaryEraser = usesTemporaryEraser(action);
+  const temporaryEraser = state.activeTool !== "select" && usesTemporaryEraser(action);
   const tool = temporaryEraser ? "eraser" : state.activeTool;
+  const selectionCleared = shouldClearSelectionAtPointerDown(state, action, tool);
+  const inputState = selectionCleared ? { ...state, hasSelection: false } : state;
   const base = interactionBase(action, tool, state.activeTool, temporaryEraser);
   const capture: InputEffect[] = [{ type: "capture-pointer", pointerId: action.pointerId }];
+  if (selectionCleared) capture.push({ type: "clear-selection" });
   if (temporaryEraser) {
     capture.push({ type: "activate-temporary-eraser", previousTool: state.activeTool });
   }
+  if (!temporaryEraser && action.target?.isSelected === true) {
+    const isTouch = action.pointerType === "touch";
+    return startElementMove(inputState, base, action.target.elementId, capture, isTouch, true);
+  }
   if (action.pointerType === "touch" && action.target !== undefined) {
-    if (action.target.isSelected) {
-      return startElementMove(state, base, action.target.elementId, capture, true, true);
-    }
     const interaction: TouchPendingInteraction = {
       ...base,
       phase: "touch-pending",
@@ -161,20 +166,20 @@ function startSinglePointer(state: InputState, action: PointerDownAction): Input
       target: action.target,
     };
     capture.push(longPressEffect(action.pointerId));
-    return withInteraction(state, interaction, capture);
+    return withInteraction(inputState, interaction, capture);
   }
-  if (action.pointerType === "touch" && !fingerDrawingEnabled(state)) {
+  if (action.pointerType === "touch" && (tool === "select" || !fingerDrawingEnabled(state))) {
     const interaction: InputInteraction = {
       ...base,
       phase: "touch-pending",
       longPressScheduled: true,
     };
     capture.push(longPressEffect(action.pointerId));
-    return withInteraction(state, interaction, capture);
+    return withInteraction(inputState, interaction, capture);
   }
   if (tool === "select" && action.target !== undefined) {
     return startElementMove(
-      state,
+      inputState,
       base,
       action.target.elementId,
       capture,
@@ -183,7 +188,7 @@ function startSinglePointer(state: InputState, action: PointerDownAction): Input
     );
   }
   if (tool === "select") {
-    return withInteraction(state, { ...base, phase: "lasso" }, capture);
+    return withInteraction(inputState, { ...base, phase: "lasso" }, capture);
   }
   const phase = tool === "eraser" ? "eraser-gesture" : "tool-gesture";
   const interaction: InputInteraction = { ...base, phase, previewStarted: true };
@@ -194,7 +199,31 @@ function startSinglePointer(state: InputState, action: PointerDownAction): Input
     pointer: sample(action),
     additive: false,
   });
-  return withInteraction(state, interaction, capture);
+  return withInteraction(inputState, interaction, capture);
+}
+
+function shouldClearSelectionAtPointerDown(
+  state: InputState,
+  action: PointerDownAction,
+  tool: InputState["activeTool"],
+): boolean {
+  if (
+    !state.hasSelection ||
+    (action.shift && tool === "select") ||
+    action.target?.isSelected === true ||
+    (action.pointerType === "touch" && action.target !== undefined)
+  )
+    return false;
+  if (tool === "select" && action.target !== undefined) return false;
+  if (action.pointerType === "touch") {
+    return tool !== "select" && fingerDrawingEnabled(state);
+  }
+  return (
+    action.button === 0 &&
+    action.buttons === 1 &&
+    !action.controlOrMeta &&
+    penRole(action) === "normal"
+  );
 }
 
 function startElementMove(
@@ -215,7 +244,7 @@ function startElementMove(
     effects.push({
       type: "select-element",
       elementId,
-      mode: isTouch ? "preserve-or-replace" : base.shift ? "add" : "preserve-or-replace",
+      mode: base.controlOrMeta ? "add" : "replace",
     });
   }
   if (isTouch) {
@@ -308,6 +337,7 @@ function movePreview(
   }
   if (!interaction.previewStarted) {
     effects.push(beginPreview(interaction, action));
+    effects.push({ type: "update-preview", kind, pointer: sample(action) });
   } else {
     effects.push({ type: "update-preview", kind, pointer: sample(action) });
   }

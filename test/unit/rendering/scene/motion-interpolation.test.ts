@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import type {
-  ArrowElementV1,
-  BoxShapeElementV1,
-  CoordinateSystemElementV1,
-  StrokeElementV1,
-  TableElementV1,
-  LineElementV1,
-  StraightHighlighterElementV1,
+import {
+  type ArrowElementV1,
+  type BoxShapeElementV1,
+  type CoordinateSystemElementV1,
+  type StrokeElementV1,
+  type TableElementV1,
+  type LineElementV1,
 } from "../../../../src/domain/schema/public";
+import { type StraightHighlighterElementV1 } from "../../../../src/domain/schema/types";
 import {
   interpolateElement,
   standardMotionProgress,
@@ -97,6 +97,9 @@ describe("scene motion linear elements", () => {
     );
     expect(current.kind === "straight-highlighter" && current.bend).toBe(null);
 
+    const curved = interpolateElement(highlighter, { ...highlighter, bend: { x: 70, y: 80 } }, 0.5);
+    expect(curved.kind === "straight-highlighter" && curved.bend).toEqual({ x: 60, y: 45 });
+
     const axes = coordinateSystem();
     const moved = interpolateElement(
       axes,
@@ -163,6 +166,23 @@ describe("scene motion shapes and tables", () => {
       x: 30,
       y: 40,
     });
+  });
+
+  it("interpolates custom table separators and keeps legacy equal columns compatible", () => {
+    const from = table({ columns: 3, columnOffsets: [45, 90] });
+    const to = {
+      ...from,
+      columnWidth: 60,
+      columnOffsets: [75, 120],
+    };
+    const current = interpolateElement(from, to, 0.5);
+
+    expect(current).toMatchObject({ columnWidth: 50, columnOffsets: [60, 105] });
+
+    const legacy = table();
+    const legacyTarget = { ...legacy, columnWidth: 80 };
+    const legacyCurrent = interpolateElement(legacy, legacyTarget, 0.5);
+    expect(legacyCurrent).not.toHaveProperty("columnOffsets");
   });
 });
 
@@ -231,7 +251,7 @@ function box(kind: BoxShapeElementV1["kind"]): BoxShapeElementV1 {
   };
 }
 
-function table(): TableElementV1 {
+function table(overrides: Partial<TableElementV1> = {}): TableElementV1 {
   return {
     columnWidth: 40,
     columns: 2,
@@ -245,6 +265,7 @@ function table(): TableElementV1 {
     style: OUTLINE_STYLE,
     x: 20,
     y: 20,
+    ...overrides,
   };
 }
 
