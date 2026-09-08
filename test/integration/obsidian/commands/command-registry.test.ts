@@ -46,6 +46,13 @@ describe("Inkbook command registry", () => {
       "insert-handwriting",
     ]);
     expect(host.commands.every((command) => command.hotkeys === undefined)).toBe(true);
+    expect(Object.fromEntries(host.commands.map(({ id, icon }) => [id, icon]))).toEqual({
+      "lock-active-embed": "lock",
+      "copy-embed": "copy",
+      "erase-all": "eraser",
+      "delete-embed": "trash-2",
+      "insert-handwriting": "signature",
+    });
   });
 
   it("hides unavailable canvas actions and executes available actions only outside checking", () => {

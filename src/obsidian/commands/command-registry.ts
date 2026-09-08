@@ -11,13 +11,14 @@ interface ContextualCommandDefinition {
   readonly action: InkbookCommandAction;
   readonly id: string;
   readonly name: string;
+  readonly icon: string;
 }
 
 const CONTEXTUAL_COMMANDS: readonly ContextualCommandDefinition[] = [
-  { action: "lock", id: "lock-active-embed", name: "Lock active handwriting embed" },
-  { action: "copy-embed", id: "copy-embed", name: "Copy active embed" },
-  { action: "erase-all", id: "erase-all", name: "Erase all annotations" },
-  { action: "delete-embed", id: "delete-embed", name: "Delete active embed" },
+  { action: "lock", id: "lock-active-embed", name: "Lock active handwriting embed", icon: "lock" },
+  { action: "copy-embed", id: "copy-embed", name: "Copy active embed", icon: "copy" },
+  { action: "erase-all", id: "erase-all", name: "Erase all annotations", icon: "eraser" },
+  { action: "delete-embed", id: "delete-embed", name: "Delete active embed", icon: "trash-2" },
 ];
 
 function contextualCommand(
@@ -27,6 +28,7 @@ function contextualCommand(
   return {
     id: definition.id,
     name: definition.name,
+    icon: definition.icon,
     checkCallback: (checking) => {
       if (!runtime.isAvailable(definition.action)) return false;
       if (!checking) runtime.execute(definition.action);
@@ -39,6 +41,7 @@ function insertionCommand(insertion: EditorInsertionCommandPort): Command {
   return {
     id: "insert-handwriting",
     name: "Insert handwriting embed",
+    icon: "signature",
     editorCheckCallback: (checking, editor, context) => {
       const sourcePath = context.file?.path;
       if (sourcePath === undefined || !insertion.canInsert(editor, sourcePath)) return false;
