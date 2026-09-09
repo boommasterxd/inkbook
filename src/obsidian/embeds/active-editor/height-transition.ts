@@ -139,7 +139,7 @@ export class ActiveHeightTransition {
         eased,
       );
       request.applyFrame(this.#renderedHeight);
-      this.#scheduleTick();
+      if (this.#request === request) this.#scheduleTick();
       return;
     }
     this.#prepareFinalSurface();

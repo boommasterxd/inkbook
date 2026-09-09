@@ -1,83 +1,19 @@
 import { syntaxTree, syntaxTreeAvailable } from "@codemirror/language";
-import {
-  Prec,
-  RangeSetBuilder,
-  StateEffect,
-  StateField,
-  type EditorState,
-  type Extension,
-} from "@codemirror/state";
-import {
-  Decoration,
-  type DecorationSet,
-  EditorView,
-  ViewPlugin,
-  type ViewUpdate,
-  WidgetType,
-} from "@codemirror/view";
+import { Prec, StateField, type EditorState, type Extension } from "@codemirror/state";
+import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { editorInfoField, editorLivePreviewField } from "obsidian";
 
-import { utf8ByteLengthWithinLimit } from "../../persistence/scheduling/utf8-byte-length";
-import { findMarkdownInkbookEmbeds, MARKDOWN_EMBED_LIMITS } from "./markdown-embed";
-import type { InkbookDocumentRecognition } from "./document-recognition";
-import { createInkbookLockedPreview } from "./locked-preview";
-import { PresentationController } from "./presentation-controller";
-import type { EmbedIntegrationPorts, ResolvedInkbookDocument } from "./presentation-port";
-import { samePreviewContentIdentity } from "./safe-preview-svg";
-
-let nextLivePreviewAttachmentId = 0;
-const documentRecognitionChanged = StateEffect.define<string>();
-
-export interface VisibleTextRange {
-  readonly from: number;
-  readonly to: number;
-}
-
-export interface VisibleEmbed {
-  readonly from: number;
-  readonly resolved: ResolvedInkbookDocument;
-  readonly sourcePath: string;
-  readonly to: number;
-}
-
-interface RecognizedVisibleEmbed extends VisibleEmbed {
-  readonly preview: Exclude<InkbookDocumentRecognition, false>;
-}
+import type { EmbedIntegrationPorts } from "./presentation-port";
+import { LivePreviewBlocks } from "./live-preview-blocks";
+import {
+  documentRecognitionChanged,
+  documentRecognitionUnavailable,
+} from "./live-preview-recognition-effects";
+import { LivePreviewEntrances } from "./live-preview-entrances";
 
 export interface LivePreviewContext {
   readonly enabled: boolean;
   readonly sourcePath: string | undefined;
-}
-
-interface ExecutableSyntaxRange {
-  readonly from: number;
-  readonly to: number;
-}
-
-export type ExecutableSyntaxIterator = (
-  range: VisibleTextRange,
-  visit: (syntax: ExecutableSyntaxRange) => void,
-) => boolean;
-
-interface BoundedVisibleTextRange extends VisibleTextRange {
-  readonly text: string;
-}
-
-export function findEmbedsInVisibleRanges(
-  readText: (from: number, to: number) => string,
-  ranges: readonly VisibleTextRange[],
-  sourcePath: string,
-  resolveDocument: EmbedIntegrationPorts["resolveDocument"],
-  iterateExecutableSyntax: ExecutableSyntaxIterator,
-): readonly VisibleEmbed[] {
-  const visibleText = readBoundedVisibleText(readText, ranges);
-  if (visibleText === null) return [];
-  const candidates = collectExecutableEmbeds(visibleText, iterateExecutableSyntax);
-  if (candidates === null) return [];
-  return candidates.flatMap(({ from, linkpath, to }) => {
-    const resolved = resolveDocument(linkpath, sourcePath);
-    return resolved === undefined ? [] : [{ from, resolved, sourcePath, to }];
-  });
 }
 
 const SUPPRESSED_EMBED_ANCESTORS = new Set([
@@ -109,84 +45,6 @@ function isExecutableEmbedState(state: EditorState, from: number, to: number): b
   return !suppressed;
 }
 
-function readBoundedVisibleText(
-  readText: (from: number, to: number) => string,
-  ranges: readonly VisibleTextRange[],
-): readonly BoundedVisibleTextRange[] | null {
-  const bounded: BoundedVisibleTextRange[] = [];
-  let remainingBytes = MARKDOWN_EMBED_LIMITS.inputBytes;
-  let previousTo = 0;
-  for (const range of ranges) {
-    if (
-      !Number.isSafeInteger(range.from) ||
-      !Number.isSafeInteger(range.to) ||
-      range.from < previousTo ||
-      range.to <= range.from
-    ) {
-      return null;
-    }
-    const text = readText(range.from, range.to);
-    if (text.length !== range.to - range.from) return null;
-    const bytes = utf8ByteLengthWithinLimit(text, remainingBytes);
-    if (bytes === null) return null;
-    bounded.push({ ...range, text });
-    remainingBytes -= bytes;
-    previousTo = range.to;
-  }
-  return bounded;
-}
-
-function collectExecutableEmbeds(
-  ranges: readonly BoundedVisibleTextRange[],
-  iterateExecutableSyntax: ExecutableSyntaxIterator,
-): readonly { readonly from: number; readonly linkpath: string; readonly to: number }[] | null {
-  const embeds: Array<{ readonly from: number; readonly linkpath: string; readonly to: number }> =
-    [];
-  let exceeded = false;
-  let invalidSyntaxOrder = false;
-  let previousSyntaxTo = 0;
-  for (const range of ranges) {
-    const executableRanges: ExecutableSyntaxRange[] = [];
-    const complete = iterateExecutableSyntax(range, (syntax) => {
-      if (
-        exceeded ||
-        invalidSyntaxOrder ||
-        !Number.isSafeInteger(syntax.from) ||
-        !Number.isSafeInteger(syntax.to) ||
-        syntax.from < range.from ||
-        syntax.to > range.to ||
-        syntax.to <= syntax.from
-      ) {
-        invalidSyntaxOrder = true;
-        return;
-      }
-      if (syntax.from < previousSyntaxTo) {
-        invalidSyntaxOrder = true;
-        return;
-      }
-      previousSyntaxTo = syntax.to;
-      executableRanges.push(syntax);
-    });
-    if (!complete) return null;
-    const parsed = findMarkdownInkbookEmbeds(range.text);
-    for (const embed of parsed) {
-      if (embeds.length >= MARKDOWN_EMBED_LIMITS.matches) {
-        exceeded = true;
-        break;
-      }
-      const from = range.from + embed.from;
-      const to = range.from + embed.to;
-      if (!executableRanges.some((syntax) => syntax.from === from && syntax.to === to)) continue;
-      embeds.push({
-        from,
-        linkpath: embed.linkpath,
-        to,
-      });
-    }
-  }
-  return exceeded || invalidSyntaxOrder ? null : embeds;
-}
-
 function livePreviewContext(view: EditorView): LivePreviewContext {
   return livePreviewStateContext(view.state);
 }
@@ -211,226 +69,89 @@ export function shouldRefreshLivePreview(
   );
 }
 
-function findVisibleEmbeds(
+function recognizeVisibleEmbeds(
   view: EditorView,
+  blocks: LivePreviewBlocks,
   ports: EmbedIntegrationPorts,
-): readonly RecognizedVisibleEmbed[] {
-  const context = livePreviewContext(view);
-  if (!context.enabled) {
-    return [];
-  }
-  const sourcePath = context.sourcePath;
-  if (sourcePath === undefined) {
-    return [];
-  }
-  const state = view.state;
-  const lastRange = view.visibleRanges[view.visibleRanges.length - 1];
-  let tree: ReturnType<typeof syntaxTree> | undefined;
-  let syntaxChecked = false;
-  const candidates = findEmbedsInVisibleRanges(
-    (from, to) => state.doc.sliceString(from, to),
-    view.visibleRanges,
-    sourcePath,
-    ports.resolveDocument,
-    (range, visit) => {
-      if (!syntaxChecked) {
-        syntaxChecked = true;
-        if (lastRange !== undefined && syntaxTreeAvailable(state, lastRange.to)) {
-          tree = syntaxTree(state);
-        }
-      }
-      if (tree === undefined) return false;
-      const visibleText = state.doc.sliceString(range.from, range.to);
-      for (const embed of findMarkdownInkbookEmbeds(visibleText)) {
-        const from = range.from + embed.from;
-        const to = range.from + embed.to;
-        if (isExecutableEmbedSyntax(view, from, to)) visit({ from, to });
-      }
-      return true;
-    },
-  );
-  return candidates.flatMap((candidate) => {
-    const documentId = candidate.resolved.documentId;
-    const recognized = ports.documents.cached(documentId);
-    if (recognized === undefined) void ports.documents.recognize(documentId);
-    return recognized === undefined || recognized === false
-      ? []
-      : [{ ...candidate, preview: recognized }];
+): void {
+  const pending = new Set<string>();
+  blocks.visitVisible(view.visibleRanges, (embed) => {
+    const documentId = embed.resolved.documentId;
+    if (
+      !pending.has(documentId) &&
+      ports.documents.cached(documentId) === undefined &&
+      isExecutableEmbedSyntax(view, embed.from, embed.to)
+    ) {
+      pending.add(documentId);
+      void ports.documents.recognize(documentId);
+    }
   });
-}
-
-export class InkbookLivePreviewWidget extends WidgetType {
-  readonly #embed: RecognizedVisibleEmbed;
-  readonly #ports: EmbedIntegrationPorts;
-
-  constructor(embed: RecognizedVisibleEmbed, ports: EmbedIntegrationPorts) {
-    super();
-    this.#embed = embed;
-    this.#ports = ports;
-  }
-
-  override eq(other: InkbookLivePreviewWidget): boolean {
-    return (
-      this.#ports === other.#ports &&
-      this.#embed.from === other.#embed.from &&
-      this.#embed.to === other.#embed.to &&
-      this.#embed.sourcePath === other.#embed.sourcePath &&
-      this.#embed.resolved.documentId === other.#embed.resolved.documentId &&
-      this.#embed.resolved.resourceUrl === other.#embed.resolved.resourceUrl &&
-      samePreviewContentIdentity(
-        this.#embed.preview.contentIdentity,
-        other.#embed.preview.contentIdentity,
-      )
-    );
-  }
-
-  override toDOM(view: EditorView): HTMLElement {
-    const root = view.dom.createDiv({
-      attr: { contenteditable: "false" },
-      cls: "inkbook-root inkbook-embed-root",
-    });
-    root.remove();
-    const button = root.createEl("button", {
-      attr: { "aria-label": "Edit handwriting", type: "button" },
-      cls: "inkbook-locked-preview",
-    });
-    const preview = createInkbookLockedPreview(button, this.#embed.preview);
-
-    const attachmentId = `live-preview-${++nextLivePreviewAttachmentId}`;
-    const controller = new PresentationController(
-      {
-        attachmentId,
-        attachmentGeneration: 1,
-        documentId: this.#embed.resolved.documentId,
-        embedReference: {
-          documentId: this.#embed.resolved.documentId,
-          from: this.#embed.from,
-          kind: "live-preview",
-          sourcePath: this.#embed.sourcePath,
-          to: this.#embed.to,
-        },
-        root,
-      },
-      this.#ports.sessions,
-      this.#ports.scheme,
-      {
-        contentIdentity: this.#embed.preview.contentIdentity,
-        element: preview.element,
-        refresh: preview.refresh,
-        requestHostMeasure: () => view.requestMeasure(),
-        setDescriptor: preview.setDescriptor,
-        setAspectRatio: preview.setAspectRatio,
-        setSource: preview.setSource,
-      },
-    );
-    controller.mount();
-    const activate = (event: MouseEvent): void => {
-      event.preventDefault();
-      event.stopPropagation();
-      controller.activate();
-    };
-    button.addEventListener("click", activate);
-    const releaseLifecycle = this.#ports.lifecycle.register(root, () => {
-      button.removeEventListener("click", activate);
-      controller.dispose();
-    });
-    if (releaseLifecycle === undefined) {
-      button.removeEventListener("click", activate);
-      controller.dispose();
-    }
-    return root;
-  }
-
-  override destroy(dom: HTMLElement): void {
-    this.#ports.lifecycle.dispose(dom);
-  }
-}
-
-function buildStateDecorations(state: EditorState, ports: EmbedIntegrationPorts): DecorationSet {
-  const context = livePreviewStateContext(state);
-  if (!context.enabled || context.sourcePath === undefined) return Decoration.none;
-  const text = state.doc.toString();
-  const builder = new RangeSetBuilder<Decoration>();
-  for (const embed of findMarkdownInkbookEmbeds(text)) {
-    const resolved = ports.resolveDocument(embed.linkpath, context.sourcePath);
-    if (resolved === undefined) continue;
-    const preview = ports.documents.cached(resolved.documentId);
-    if (preview === undefined || preview === false) continue;
-    builder.add(
-      embed.from,
-      embed.to,
-      Decoration.replace({
-        block: true,
-        widget: new InkbookLivePreviewWidget(
-          {
-            from: embed.from,
-            preview,
-            resolved,
-            sourcePath: context.sourcePath,
-            to: embed.to,
-          },
-          ports,
-        ),
-      }),
-    );
-  }
-  return builder.finish();
-}
-
-function changedRecognitionsArePending(
-  state: EditorState,
-  ports: EmbedIntegrationPorts,
-  changedDocumentIds: ReadonlySet<string>,
-): boolean {
-  const context = livePreviewStateContext(state);
-  if (!context.enabled || context.sourcePath === undefined) return false;
-  const relevantDocumentIds = new Set<string>();
-  for (const embed of findMarkdownInkbookEmbeds(state.doc.toString())) {
-    const resolved = ports.resolveDocument(embed.linkpath, context.sourcePath);
-    if (resolved !== undefined && changedDocumentIds.has(resolved.documentId)) {
-      relevantDocumentIds.add(resolved.documentId);
-    }
-  }
-  return (
-    relevantDocumentIds.size > 0 &&
-    [...relevantDocumentIds].every((documentId) => ports.documents.cached(documentId) === undefined)
-  );
 }
 
 export function createLivePreviewExtension(ports: EmbedIntegrationPorts): Extension {
-  const blockDecorations = StateField.define<DecorationSet>({
-    create: (state) => buildStateDecorations(state, ports),
+  const entrances = StateField.define<LivePreviewEntrances>({
+    create: (state) => new LivePreviewEntrances(livePreviewStateContext(state).sourcePath),
+    update: (value, transaction) =>
+      value.update(transaction.changes, livePreviewStateContext(transaction.state).sourcePath),
+  });
+  const blockDecorations = StateField.define<LivePreviewBlockState>({
+    create: (state) => ({
+      context: livePreviewStateContext(state),
+      blocks: LivePreviewBlocks.create(
+        state,
+        ports,
+        state.field(entrances),
+        livePreviewStateContext(state),
+      ),
+    }),
     provide: (field) => [
-      EditorView.decorations.from(field),
-      EditorView.atomicRanges.of((view) => view.state.field(field)),
+      EditorView.decorations.from(field, (value) => value.blocks.decorations),
+      EditorView.atomicRanges.of((view) => view.state.field(field).blocks.decorations),
     ],
-    update: (decorations, transaction) => {
-      const changedDocumentIds = new Set(
-        transaction.effects.flatMap((effect) =>
-          effect.is(documentRecognitionChanged) ? [effect.value] : [],
-        ),
-      );
-      const recognitionChanged = changedDocumentIds.size > 0;
-      const previousContext = livePreviewStateContext(transaction.startState);
+    update: (value, transaction) => {
+      const previousContext = value.context;
       const currentContext = livePreviewStateContext(transaction.state);
       if (
-        recognitionChanged &&
-        !transaction.docChanged &&
+        transaction.docChanged &&
         previousContext.enabled === currentContext.enabled &&
-        previousContext.sourcePath === currentContext.sourcePath &&
-        changedRecognitionsArePending(transaction.state, ports, changedDocumentIds)
+        previousContext.sourcePath === currentContext.sourcePath
       ) {
-        return decorations;
+        const blocks = value.blocks.mapPlainTextEdit(transaction);
+        if (blocks !== undefined) return { context: currentContext, blocks };
       }
-      return transaction.docChanged ||
-        recognitionChanged ||
+      if (
+        transaction.docChanged ||
         previousContext.enabled !== currentContext.enabled ||
         previousContext.sourcePath !== currentContext.sourcePath
-        ? buildStateDecorations(transaction.state, ports)
-        : decorations;
+      ) {
+        return {
+          context: currentContext,
+          blocks: LivePreviewBlocks.create(
+            transaction.state,
+            ports,
+            transaction.state.field(entrances),
+            currentContext,
+          ),
+        };
+      }
+      const changedDocumentIds = new Set(
+        transaction.effects.flatMap((effect) =>
+          effect.is(documentRecognitionChanged) ? [...effect.value] : [],
+        ),
+      );
+      const unavailableIds = new Set(
+        transaction.effects.flatMap((effect) =>
+          effect.is(documentRecognitionUnavailable) ? [effect.value] : [],
+        ),
+      );
+      const blocks = value.blocks
+        .suppressUnavailable(unavailableIds)
+        .refresh(changedDocumentIds, ports, transaction.state.field(entrances));
+      return blocks === value.blocks ? value : { context: currentContext, blocks };
     },
   });
   return Prec.highest([
+    entrances,
     blockDecorations,
     ViewPlugin.fromClass(
       class {
@@ -439,24 +160,15 @@ export function createLivePreviewExtension(ports: EmbedIntegrationPorts): Extens
 
         constructor(view: EditorView) {
           this.#context = livePreviewContext(view);
-          void findVisibleEmbeds(view, ports);
-          this.#releaseRecognition = ports.documents.subscribe((documentId) => {
-            view.dispatch({ effects: documentRecognitionChanged.of(documentId) });
-          });
+          recognizeVisibleEmbeds(view, view.state.field(blockDecorations).blocks, ports);
+          this.#releaseRecognition = subscribeRecognitions(view, ports, blockDecorations);
         }
 
         update(update: ViewUpdate): void {
           const context = livePreviewContext(update.view);
           const syntaxChanged = syntaxTree(update.startState) !== syntaxTree(update.state);
-          const recognitionChanged = update.transactions.some((transaction) =>
-            transaction.effects.some((effect) => effect.is(documentRecognitionChanged)),
-          );
-          if (
-            recognitionChanged ||
-            syntaxChanged ||
-            shouldRefreshLivePreview(update, this.#context, context)
-          ) {
-            void findVisibleEmbeds(update.view, ports);
+          if (syntaxChanged || shouldRefreshLivePreview(update, this.#context, context)) {
+            recognizeVisibleEmbeds(update.view, update.state.field(blockDecorations).blocks, ports);
           }
           this.#context = context;
         }
@@ -467,4 +179,50 @@ export function createLivePreviewExtension(ports: EmbedIntegrationPorts): Extens
       },
     ),
   ]);
+}
+
+interface LivePreviewBlockState {
+  readonly context: LivePreviewContext;
+  readonly blocks: LivePreviewBlocks;
+}
+
+function subscribeRecognitions(
+  view: EditorView,
+  ports: EmbedIntegrationPorts,
+  field: StateField<LivePreviewBlockState>,
+): () => void {
+  let disposed = false;
+  let scheduled = false;
+  let queuedBlocks = view.state.field(field).blocks;
+  const pending = new Set<string>();
+  const release = ports.documents.subscribe((documentId) => {
+    const ownerWindow = view.dom.ownerDocument.defaultView;
+    if (ownerWindow === null || !view.state.field(field).blocks.has(documentId)) return;
+    const blocks = view.state.field(field).blocks;
+    if (blocks !== queuedBlocks) {
+      for (const id of pending) if (!blocks.has(id)) pending.delete(id);
+      queuedBlocks = blocks;
+    }
+    pending.add(documentId);
+    if (scheduled) return;
+    scheduled = true;
+    ownerWindow.queueMicrotask(() => {
+      if (disposed) return;
+      const currentBlocks = view.state.field(field).blocks;
+      const changed = [...pending].filter((id) => currentBlocks.has(id));
+      pending.clear();
+      scheduled = false;
+      if (changed.length === 0) return;
+      view.dispatch({ effects: documentRecognitionChanged.of(changed) });
+      for (const id of changed) {
+        if (view.state.field(field).blocks.has(id) && ports.documents.cached(id) === undefined)
+          void ports.documents.recognize(id);
+      }
+    });
+  });
+  return () => {
+    disposed = true;
+    pending.clear();
+    release();
+  };
 }

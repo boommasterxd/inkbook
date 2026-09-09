@@ -3,9 +3,10 @@
 import { EditorState } from "@codemirror/state";
 import { EditorView, type DecorationSet } from "@codemirror/view";
 import { editorInfoField, editorLivePreviewField } from "obsidian";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createLivePreviewExtension } from "../../../../src/obsidian/embeds/live-preview";
+import { InkbookLoadingPreviewWidget } from "../../../../src/obsidian/embeds/live-preview-loading-widget";
 import type { EmbedIntegrationPorts } from "../../../../src/obsidian/embeds/presentation-port";
 import { configureTestEditorState } from "../../../adapters/obsidian/plugin";
 
@@ -25,14 +26,17 @@ interface RecognitionControl {
 }
 
 function integrationPorts(control?: RecognitionControl): EmbedIntegrationPorts {
+  const disposals = new Map<HTMLElement, () => void>();
   return {
     documents: {
       cached: () =>
-        control?.value ?? {
-          aspectRatio: 4,
-          contentIdentity: CONTENT_IDENTITY,
-          safeSvg: SAFE_PREVIEW_SVG,
-        },
+        control !== undefined
+          ? control.value
+          : {
+              aspectRatio: 4,
+              contentIdentity: CONTENT_IDENTITY,
+              safeSvg: SAFE_PREVIEW_SVG,
+            },
       recognize: async () => ({
         aspectRatio: 4,
         contentIdentity: CONTENT_IDENTITY,
@@ -45,7 +49,19 @@ function integrationPorts(control?: RecognitionControl): EmbedIntegrationPorts {
         };
       },
     },
-    lifecycle: { dispose: () => undefined, register: () => () => undefined },
+    lifecycle: {
+      dispose: (element: HTMLElement) => {
+        disposals.get(element)?.();
+        disposals.delete(element);
+      },
+      register: (element: HTMLElement, dispose: () => void) => {
+        disposals.set(element, dispose);
+        return () => {
+          disposals.get(element)?.();
+          disposals.delete(element);
+        };
+      },
+    },
     resolveDocument: () => ({
       documentId: "drawings/page.svg",
       resourceUrl: "app://vault/drawings/page.svg",
@@ -87,8 +103,78 @@ describe("Live Preview block-decoration source", () => {
     });
     expect(replacement).toEqual({ from: 0, to: state.doc.length });
   });
+});
 
-  it("retains the mounted block while a saved SVG is being reclassified", () => {
+describe("Live Preview pending recognition", () => {
+  beforeEach(() => installObsidianDomHelpers());
+  afterEach(() => removeObsidianDomHelpers());
+
+  it.each([true, false])(
+    "replaces pending Markdown immediately and resolves valid=%s",
+    async (valid) => {
+      const control: RecognitionControl = { notify: undefined, value: undefined };
+      const ports = integrationPorts(control);
+      const recognize = vi.spyOn(ports.documents, "recognize");
+      const { parent, view } = mountView(ports);
+      expect(parent.querySelector(".inkbook-loading-placeholder")).not.toBeNull();
+      expect(parent.querySelector("svg")).toBeNull();
+      expect(parent.textContent).not.toContain("!inkbook");
+      expect(recognize).not.toHaveBeenCalled();
+      await Promise.resolve();
+      expect(recognize).toHaveBeenCalledWith("drawings/page.svg");
+      control.value = valid
+        ? {
+            aspectRatio: 4,
+            contentIdentity: CONTENT_IDENTITY,
+            safeSvg: SAFE_PREVIEW_SVG,
+          }
+        : false;
+      control.notify?.("drawings/page.svg");
+      await Promise.resolve();
+      expect(parent.querySelector(".inkbook-loading-placeholder")).toBeNull();
+      if (valid) expect(parent.querySelector(".inkbook-locked-preview")).not.toBeNull();
+      else expect(parent.textContent).toContain("!inkbook[[drawings/page.svg]]");
+      view.destroy();
+      expect(control.notify).toBeUndefined();
+      parent.remove();
+    },
+  );
+});
+
+describe("Live Preview pending lifecycle", () => {
+  beforeEach(() => installObsidianDomHelpers());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    removeObsidianDomHelpers();
+  });
+
+  it("retains the animated pending height across remount and cancels owned frame work", async () => {
+    const ports = integrationPorts({ notify: undefined, value: undefined });
+    const recognize = vi.spyOn(ports.documents, "recognize");
+    const token = { presented: false, initialHeight: 0 };
+    const widget = new InkbookLoadingPreviewWidget("drawing.svg", ports, token);
+    const frame = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(12);
+    const cancel = vi.spyOn(window, "cancelAnimationFrame");
+    const view = { dom: document.body } as EditorView;
+    const first = widget.toDOM(view);
+    expect(token.initialHeight).toBe(0);
+    frame.mock.calls[0]?.[0](0);
+    frame.mock.calls[1]?.[0](90);
+    expect(token.initialHeight).toBe(24);
+    widget.destroy(first);
+    expect(cancel).toHaveBeenCalledWith(12);
+    expect(token.presented).toBe(false);
+    const second = widget.toDOM(view);
+    expect(token.initialHeight).toBe(24);
+    widget.destroy(second);
+    await Promise.resolve();
+    expect(recognize).not.toHaveBeenCalled();
+    expect(token.presented).toBe(false);
+    expect(widget.eq(new InkbookLoadingPreviewWidget("drawing.svg", ports, token))).toBe(true);
+    expect(widget.eq(new InkbookLoadingPreviewWidget("other.svg", ports, token))).toBe(false);
+  });
+
+  it("retains the mounted block while a saved SVG is being reclassified", async () => {
     const control: RecognitionControl = {
       notify: undefined,
       value: {
@@ -97,38 +183,76 @@ describe("Live Preview block-decoration source", () => {
         safeSvg: SAFE_PREVIEW_SVG,
       },
     };
-    configureTestEditorState({
-      file: { path: "notes/note.md" },
-      livePreview: true,
-    });
-    const parent = document.body.createDiv();
-    const view = new EditorView({
-      parent,
-      state: EditorState.create({
-        doc: "!inkbook[[drawings/page.svg]]",
-        extensions: [
-          editorInfoField,
-          editorLivePreviewField,
-          createLivePreviewExtension(integrationPorts(control)),
-        ],
-      }),
-    });
+    const { parent, view } = mountView(integrationPorts(control));
     const mounted = parent.querySelector(".inkbook-root");
     expect(mounted).not.toBeNull();
 
     control.value = undefined;
     control.notify?.("drawings/page.svg");
+    await Promise.resolve();
 
     expect(parent.querySelector(".inkbook-root")).toBe(mounted);
 
     control.value = false;
     control.notify?.("drawings/page.svg");
+    await Promise.resolve();
 
     expect(parent.querySelector(".inkbook-root")).toBeNull();
     view.destroy();
     parent.remove();
   });
+
+  it("coalesces relevant recognition notifications and ignores queued work after destruction", async () => {
+    const control: RecognitionControl = { notify: undefined, value: undefined };
+    const ports = integrationPorts(control);
+    const { parent, view } = mountView(ports);
+    const dispatch = vi.spyOn(view, "dispatch");
+    const resolve = vi.spyOn(ports, "resolveDocument");
+    control.notify?.("elsewhere.svg");
+    await Promise.resolve();
+    expect(dispatch).not.toHaveBeenCalled();
+    control.value = false;
+    control.notify?.("drawings/page.svg");
+    control.notify?.("drawings/page.svg");
+    expect(dispatch).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(resolve).not.toHaveBeenCalled();
+    expect(parent.querySelector(".inkbook-root")).toBeNull();
+    control.notify?.("drawings/page.svg");
+    view.destroy();
+    await Promise.resolve();
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(control.notify).toBeUndefined();
+    parent.remove();
+  });
+
+  it("drops queued recognition when its embed was removed before the batch flush", async () => {
+    const control: RecognitionControl = { notify: undefined, value: undefined };
+    const { parent, view } = mountView(integrationPorts(control));
+    control.notify?.("drawings/page.svg");
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: "Ordinary prose" } });
+    const dispatch = vi.spyOn(view, "dispatch");
+    await Promise.resolve();
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(parent.querySelector(".inkbook-root")).toBeNull();
+    view.destroy();
+    parent.remove();
+  });
 });
+
+function mountView(ports: EmbedIntegrationPorts) {
+  configureTestEditorState({ file: { path: "notes/note.md" }, livePreview: true });
+  const parent = document.body.createDiv();
+  const view = new EditorView({
+    parent,
+    state: EditorState.create({
+      doc: "!inkbook[[drawings/page.svg]]",
+      extensions: [editorInfoField, editorLivePreviewField, createLivePreviewExtension(ports)],
+    }),
+  });
+  return { parent, view };
+}
 
 function installObsidianDomHelpers(): void {
   Object.defineProperties(HTMLElement.prototype, {

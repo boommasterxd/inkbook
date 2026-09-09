@@ -1,4 +1,5 @@
 import { Plugin, TFile, Tasks, type MarkdownRenderChild } from "obsidian";
+import type { MarkdownSectionInformation } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -50,7 +51,7 @@ interface TestPluginRegistration {
       element: HTMLElement,
       context: {
         addChild(child: MarkdownRenderChild): void;
-        getSectionInfo(): { readonly text: string } | null;
+        getSectionInfo(): MarkdownSectionInformation | null;
         readonly sourcePath: string;
       },
     ) => Promise<unknown> | void
@@ -224,7 +225,7 @@ async function mountReadingEmbed(plugin: InkbookPlugin): Promise<{
       child = candidate;
       candidate.load();
     },
-    getSectionInfo: () => ({ text: "!inkbook[[drawings/ink.svg]]" }),
+    getSectionInfo: () => ({ lineStart: 0, lineEnd: 0, text: "!inkbook[[drawings/ink.svg]]" }),
     sourcePath: "notes/page.md",
   });
   if (child === undefined) throw new Error("Reading-view child was not mounted.");
@@ -274,7 +275,9 @@ async function createDirtyPresentationWithBlockedSave() {
 }
 
 function inkbookRoot(root: FakePresentationElement): FakePresentationElement {
-  const presentation = root.children.find((child) => child.classNames.has("inkbook-root"));
+  const presentation = root.children[0]?.children.find((child) =>
+    child.classNames.has("inkbook-root"),
+  );
   if (presentation === undefined) throw new Error("Missing Inkbook presentation root.");
   return presentation;
 }

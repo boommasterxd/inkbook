@@ -13,6 +13,7 @@ export interface ContextualCommandRuntimePort {
 
 export interface EditorInsertionCommandPort {
   canInsert(editor: Editor, sourcePath: string): boolean;
+  /** Validates the current target itself before accepting an insertion request. */
   request(editor: Editor, sourcePath: string): boolean;
 }
 

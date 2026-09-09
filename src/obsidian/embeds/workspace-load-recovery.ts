@@ -12,7 +12,15 @@ export type WorkspaceLoadFeedbackCode = Extract<
   "drawing-load-failed" | "drawing-version-changed" | "editor-start-failed"
 >;
 
+export interface WorkspaceActivation {
+  autoActivationAttempt: number | undefined;
+  readonly feedback: PresentationOperationFeedbackHandle | undefined;
+  readonly release: () => void;
+}
+
 export interface WorkspaceMountedPresentation {
+  activation?: WorkspaceActivation;
+  initialLoading?: { readonly feedback: PresentationOperationFeedbackHandle; presented: boolean };
   readonly attachment: PresentationAttachment;
   disposeScheme: (() => void) | undefined;
   readonly feedback: import("./presentation-operation-feedback").PresentationOperationFeedback;

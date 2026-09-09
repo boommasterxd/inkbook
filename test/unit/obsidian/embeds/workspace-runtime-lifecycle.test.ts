@@ -240,6 +240,25 @@ describe("WorkspaceRuntimeLifecycle autoactivation", () => {
     expect(harness.clearTimeout).toHaveBeenCalledWith(2);
   });
 
+  it.each(["abort", "replace", "dispose"])("releases reserved feedback on %s", (operation) => {
+    const harness = createAutoActivationHarness();
+    const { lifecycle, attachment } = harness;
+    expect(lifecycle.hasPendingAutoActivation(attachment)).toBe(false);
+    lifecycle.queueAutoActivation(attachment.documentId, harness.window, harness.onTimeout);
+    lifecycle.continueAutoActivation(attachment);
+    expect(lifecycle.hasPendingAutoActivation(attachment)).toBe(true);
+    expect(lifecycle.hasPendingAutoActivation({ ...attachment, attachmentGeneration: 2 })).toBe(
+      false,
+    );
+    if (operation === "abort") lifecycle.abortAutoActivation(attachment.documentId);
+    else if (operation === "replace")
+      lifecycle.queueAutoActivation("other.svg", harness.window, vi.fn());
+    else lifecycle.dispose();
+    expect(lifecycle.hasPendingAutoActivation(attachment)).toBe(false);
+    expect(harness.autoActivationCancelled).toHaveBeenCalledExactlyOnceWith("embed:1");
+    lifecycle.dispose();
+  });
+
   it("moves a detached attempt to another mounted attachment without accepting stale completion", () => {
     const harness = createAutoActivationHarness();
     const replacement = { ...harness.attachment, attachmentGeneration: 2 };
@@ -298,8 +317,10 @@ function createAutoActivationHarness() {
   const presentations: Array<{ attachment: PresentationAttachment; scene: undefined }> = [];
   const activate = vi.fn();
   const onTimeout = vi.fn<(retry: () => void) => void>();
+  const autoActivationCancelled = vi.fn();
   const lifecycle = new WorkspaceRuntimeLifecycle({
     activate,
+    autoActivationCancelled,
     fallbackWindow: () => ownerWindow,
     isDisposed: () => false,
     notifyExternalChange: vi.fn(async () => "ignored" as const),
@@ -309,6 +330,7 @@ function createAutoActivationHarness() {
   });
   return {
     activate,
+    autoActivationCancelled,
     attachment,
     cancelAnimationFrame,
     clearTimeout,

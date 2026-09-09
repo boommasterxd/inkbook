@@ -13,13 +13,21 @@ function testFile(path: string, size: number): TFile {
   return new Constructor(path, size);
 }
 
-function recognitionHarness(path: string, size: number, content: string) {
+function recognitionHarness(
+  path: string,
+  size: number,
+  content: string,
+  deferUntilLayoutReady = false,
+) {
   const file = testFile(path, size);
   const cachedRead = vi.fn(async () => content);
-  const recognition = new ObsidianInkbookDocumentRecognition({
-    cachedRead,
-    getFileByPath: (candidate: string) => (candidate === file.path ? file : null),
-  } as unknown as Vault);
+  const recognition = new ObsidianInkbookDocumentRecognition(
+    {
+      cachedRead,
+      getFileByPath: (candidate: string) => (candidate === file.path ? file : null),
+    } as unknown as Vault,
+    { deferUntilLayoutReady },
+  );
   const changed = vi.fn();
   recognition.subscribe(changed);
   return { cachedRead, changed, file, recognition };
@@ -92,5 +100,85 @@ describe("Inkbook document recognition", () => {
     recognition.invalidate(file.path);
     expect(recognition.cached(file.path)).toBeUndefined();
     expect(changed).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("layout-ready recognition gate", () => {
+  it("deduplicates pending classification without reading until layout is ready", async () => {
+    const serialized = serializeInkbookDocument(createSnapshot());
+    if (!serialized.ok) throw new Error("Invalid fixture");
+    const { cachedRead, changed, file, recognition } = recognitionHarness(
+      "ink.svg",
+      128,
+      serialized.value.svg,
+      true,
+    );
+    const pending = recognition.recognize(file.path);
+    expect(recognition.recognize(file.path)).toBe(pending);
+    await Promise.resolve();
+    expect(cachedRead).not.toHaveBeenCalled();
+    expect(changed).not.toHaveBeenCalled();
+    expect(recognition.cached(file.path)).toBeUndefined();
+    recognition.markLayoutReady();
+    recognition.markLayoutReady();
+    await expect(pending).resolves.toMatchObject({ safeSvg: serialized.value.svg });
+    expect(cachedRead).toHaveBeenCalledOnce();
+    expect(changed).toHaveBeenCalledOnce();
+    recognition.dispose();
+  });
+
+  it("settles pending work on disposal without reading or notifying", async () => {
+    const { cachedRead, changed, file, recognition } = recognitionHarness(
+      "ink.svg",
+      128,
+      "<svg></svg>",
+      true,
+    );
+    const pending = recognition.recognize(file.path);
+    recognition.dispose();
+    recognition.markLayoutReady();
+    await expect(pending).resolves.toBe(false);
+    await expect(recognition.recognize(file.path)).resolves.toBe(false);
+    expect(cachedRead).not.toHaveBeenCalled();
+    expect(changed).not.toHaveBeenCalled();
+  });
+
+  it("rejects a file changed while waiting without reading its obsolete signature", async () => {
+    const { cachedRead, file, recognition } = recognitionHarness(
+      "ink.svg",
+      128,
+      "<svg></svg>",
+      true,
+    );
+    const pending = recognition.recognize(file.path);
+    file.stat.mtime += 1;
+    recognition.markLayoutReady();
+    await expect(pending).resolves.toBe(false);
+    expect(cachedRead).not.toHaveBeenCalled();
+    expect(recognition.cached(file.path)).toBeUndefined();
+    await expect(recognition.recognize(file.path)).resolves.toBe(false);
+    expect(cachedRead).toHaveBeenCalledOnce();
+    recognition.dispose();
+  });
+
+  it("fails closed when a released read fails and cancels release-before-disposal work", async () => {
+    const { cachedRead, file, recognition } = recognitionHarness(
+      "ink.svg",
+      128,
+      "<svg></svg>",
+      true,
+    );
+    cachedRead.mockRejectedValueOnce(new Error("Read failed"));
+    const pending = recognition.recognize(file.path);
+    recognition.markLayoutReady();
+    await expect(pending).resolves.toBe(false);
+    expect(cachedRead).toHaveBeenCalledOnce();
+    const cancelled = recognitionHarness("other.svg", 128, "<svg></svg>", true);
+    const cancelledPending = cancelled.recognition.recognize(cancelled.file.path);
+    cancelled.recognition.markLayoutReady();
+    cancelled.recognition.dispose();
+    await expect(cancelledPending).resolves.toBe(false);
+    expect(cancelled.cachedRead).not.toHaveBeenCalled();
+    recognition.dispose();
   });
 });

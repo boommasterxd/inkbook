@@ -147,7 +147,7 @@ describe("Obsidian invoking embed identity", () => {
     });
 
     expect(result).toEqual({ fileDeleted: false, kind: "deleted" });
-    expect(harness.editor.value()).toBe(`\n${second}`);
+    expect(harness.editor.value()).toBe(second);
     expect(harness.trashFile).not.toHaveBeenCalled();
   });
 });
@@ -238,7 +238,7 @@ describe("Obsidian Reading-view embed actions", () => {
       fileDeleted: false,
       kind: "deleted",
     });
-    expect(harness.vaultText()).toBe(`${first}\n\nSecond\n`);
+    expect(harness.vaultText()).toBe(`${first}\n\nSecond`);
     expect(harness.editor.value()).toBe(`${first}\n\n${second}`);
     expect(harness.process).toHaveBeenCalledOnce();
   });

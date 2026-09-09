@@ -7,5 +7,6 @@ export * from "./embed-paste";
 export * from "./embed-paste-extension";
 export * from "./obsidian-insertion";
 export * from "./obsidian-embed-paste";
+export * from "./insertion-context-menu";
 export * from "./pen-tap-extension";
 export * from "./pen-tap-insertion";

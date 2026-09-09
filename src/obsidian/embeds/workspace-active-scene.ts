@@ -8,7 +8,7 @@ import type { ActiveDocumentEditorContext } from "./vault-document-session";
 import { copyWorkspaceEmbed, deleteWorkspaceEmbed } from "./workspace-embed-actions";
 import { presentationPreviewOptions, type PresentationAttachment } from "./presentation-port";
 
-interface WorkspaceActiveSceneOptions {
+export interface WorkspaceActiveSceneOptions {
   readonly attachment: PresentationAttachment;
   readonly backgroundSpacing: () => InkbookSettingsV4["pageDefaults"]["backgroundSpacing"];
   readonly deviceSettings: InkbookDeviceSettingsV2;

@@ -1,0 +1,127 @@
+import { type EditorView, WidgetType } from "@codemirror/view";
+
+import type { InkbookDocumentRecognition } from "./document-recognition";
+import { createInkbookLockedPreview } from "./locked-preview";
+import { PresentationController } from "./presentation-controller";
+import type { EmbedIntegrationPorts } from "./presentation-port";
+import { samePreviewContentIdentity } from "./safe-preview-svg";
+import type { PresentationEntranceState } from "./presentation-entrance";
+import type { ResolvedInkbookDocument } from "./presentation-port";
+
+export interface VisibleEmbed {
+  readonly from: number;
+  readonly resolved: ResolvedInkbookDocument;
+  readonly sourcePath: string;
+  readonly to: number;
+}
+
+let nextLivePreviewAttachmentId = 0;
+
+interface RecognizedVisibleEmbed extends VisibleEmbed {
+  readonly preview: Exclude<InkbookDocumentRecognition, false>;
+}
+
+export class InkbookLivePreviewWidget extends WidgetType {
+  readonly #embed: RecognizedVisibleEmbed;
+  readonly #ports: EmbedIntegrationPorts;
+  readonly #entranceState: PresentationEntranceState | undefined;
+
+  constructor(
+    embed: RecognizedVisibleEmbed,
+    ports: EmbedIntegrationPorts,
+    entranceState?: PresentationEntranceState,
+  ) {
+    super();
+    this.#embed = embed;
+    this.#ports = ports;
+    this.#entranceState = entranceState;
+  }
+
+  override eq(other: InkbookLivePreviewWidget): boolean {
+    return (
+      this.#ports === other.#ports &&
+      this.#entranceState === other.#entranceState &&
+      this.#embed.from === other.#embed.from &&
+      this.#embed.to === other.#embed.to &&
+      this.#embed.sourcePath === other.#embed.sourcePath &&
+      this.#embed.resolved.documentId === other.#embed.resolved.documentId &&
+      this.#embed.resolved.resourceUrl === other.#embed.resolved.resourceUrl &&
+      samePreviewContentIdentity(
+        this.#embed.preview.contentIdentity,
+        other.#embed.preview.contentIdentity,
+      )
+    );
+  }
+
+  withRange(from: number, to: number): InkbookLivePreviewWidget {
+    return from === this.#embed.from && to === this.#embed.to
+      ? this
+      : new InkbookLivePreviewWidget(
+          { ...this.#embed, from, to },
+          this.#ports,
+          this.#entranceState,
+        );
+  }
+
+  override toDOM(view: EditorView): HTMLElement {
+    const root = view.dom.createDiv({
+      attr: { contenteditable: "false" },
+      cls: "inkbook-root inkbook-embed-root",
+    });
+    root.remove();
+    const button = root.createEl("button", {
+      attr: { "aria-label": "Edit handwriting", type: "button" },
+      cls: "inkbook-locked-preview",
+    });
+    const preview = createInkbookLockedPreview(button, this.#embed.preview);
+
+    const attachmentId = `live-preview-${++nextLivePreviewAttachmentId}`;
+    const controller = new PresentationController(
+      {
+        attachmentId,
+        attachmentGeneration: 1,
+        documentId: this.#embed.resolved.documentId,
+        embedReference: {
+          documentId: this.#embed.resolved.documentId,
+          from: this.#embed.from,
+          kind: "live-preview",
+          sourcePath: this.#embed.sourcePath,
+          to: this.#embed.to,
+        },
+        root,
+      },
+      this.#ports.sessions,
+      this.#ports.scheme,
+      {
+        ...(this.#entranceState === undefined ? {} : { entranceState: this.#entranceState }),
+        contentIdentity: this.#embed.preview.contentIdentity,
+        element: preview.element,
+        refresh: preview.refresh,
+        requestHostMeasure: () => view.requestMeasure(),
+        setDescriptor: preview.setDescriptor,
+        setAspectRatio: preview.setAspectRatio,
+        setSource: preview.setSource,
+      },
+    );
+    controller.mount();
+    const activate = (event: MouseEvent): void => {
+      event.preventDefault();
+      event.stopPropagation();
+      controller.activate();
+    };
+    button.addEventListener("click", activate);
+    const releaseLifecycle = this.#ports.lifecycle.register(root, () => {
+      button.removeEventListener("click", activate);
+      controller.dispose();
+    });
+    if (releaseLifecycle === undefined) {
+      button.removeEventListener("click", activate);
+      controller.dispose();
+    }
+    return root;
+  }
+
+  override destroy(dom: HTMLElement): void {
+    this.#ports.lifecycle.dispose(dom);
+  }
+}

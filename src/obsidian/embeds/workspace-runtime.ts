@@ -25,14 +25,22 @@ import {
   type WorkspaceLoadFeedbackCode,
   type WorkspaceMountedPresentation,
 } from "./workspace-load-recovery";
-import { observeActiveSceneReadiness } from "./workspace-runtime-scene-readiness";
+import {
+  beginWorkspaceActivation,
+  isCurrentPresentationActivation,
+  mountWorkspaceActiveScene,
+} from "./workspace-runtime-scene-readiness";
 import { ownsMarkdownEditorChange } from "./workspace-runtime-editor";
 import { createWorkspaceDocumentRuntimes } from "./workspace-runtime-workers";
-import { createWorkspaceActiveScene } from "./workspace-active-scene";
 import { showWorkspaceHeadlessRecovery } from "./workspace-recovery-actions";
 import { VaultDocumentSessionFactory } from "./vault-document-session-factory";
 import { showAttachedRecoveryPanel, type HeadlessRecoveryNotice } from "./recovery-notice";
-import { PresentationOperationFeedback } from "./presentation-operation-feedback";
+import {
+  createWorkspaceMountedPresentation,
+  finishInitialWorkspaceLoading,
+  startInitialWorkspaceLoading,
+  updateWorkspaceMountedSettings,
+} from "./workspace-mounted-presentation";
 import type { PresentationOperationFeedbackHandle } from "./presentation-operation-feedback";
 import { WorkspaceRefreshProfiles } from "./workspace-refresh-profiles";
 import { WorkspaceFeedbackRouter, type WorkspaceFeedbackHost } from "./workspace-feedback-router";
@@ -44,7 +52,6 @@ interface WorkspaceRuntimeSettings {
   readonly device: InkbookDeviceSettingsV2;
   readonly vault: InkbookSettingsV4;
 }
-
 export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly #coordinator: WorkspaceEditorCoordinator;
   #disposed = false;
@@ -93,6 +100,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     this.refreshRateProfiles.observeDefault(this.#fallbackOwnerWindow());
     this.#lifecycle = new WorkspaceRuntimeLifecycle({
       activate: (attachment, attempt) => this.#activate(attachment, attempt),
+      autoActivationCancelled: (key) => finishInitialWorkspaceLoading(this.#mounted.get(key)),
       fallbackWindow: () => this.#fallbackWindow(),
       isDisposed: () => this.#disposed,
       notifyExternalChange: (documentId) => this.#coordinator.notifyExternalChange(documentId),
@@ -140,15 +148,9 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     if (this.#disposed) return;
     const key = presentationAttachmentKey(attachment);
     if (this.#mounted.has(key)) return;
-    this.#mounted.set(key, {
-      attachment,
-      disposeScheme: undefined,
-      feedback: new PresentationOperationFeedback(attachment.root),
-      loadError: undefined,
-      recovery: undefined,
-      savingFeedback: undefined,
-      scene: undefined,
-    });
+    const mounted = createWorkspaceMountedPresentation(attachment);
+    this.#mounted.set(key, mounted);
+    startInitialWorkspaceLoading(mounted, this.#lifecycle);
     this.#ownerWindows.observe(attachment.documentId, attachment.root.ownerDocument.defaultView);
     this.refreshRateProfiles.acquire(
       key,
@@ -160,25 +162,23 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     this.#lifecycle.continueAutoActivation(attachment);
   }
 
-  activate(attachment: PresentationAttachment): void {
-    this.#activate(attachment);
-  }
+  readonly activate = (attachment: PresentationAttachment): void => this.#activate(attachment);
 
   #activate(attachment: PresentationAttachment, autoActivationAttempt?: number): void {
     if (this.#disposed) return;
     const mounted = this.#mounted.get(presentationAttachmentKey(attachment));
     if (mounted === undefined) return;
-    mounted.loadError?.close();
-    mounted.loadError = undefined;
-    const loadFeedback = mounted.savingFeedback ? undefined : mounted.feedback.begin("loading");
+    const activation = beginWorkspaceActivation(mounted, autoActivationAttempt);
+    if (activation === undefined) return;
+    const loadFeedback = activation.feedback;
     this.#setState(attachment, "unlocking");
     const handle = this.#coordinator.requestActivation(attachment);
     void handle.outcome
-      .then((outcome) => {
+      .then(async (outcome) => {
         if (outcome.kind !== "activated") {
           handleWorkspaceActivationFailure(outcome, {
             failAutoActivation: () =>
-              this.#lifecycle.failAutoActivation(attachment, autoActivationAttempt),
+              this.#lifecycle.failAutoActivation(attachment, activation.autoActivationAttempt),
             refreshPreview: (identity) =>
               this.#lifecycle.refreshPersistedPreview(attachment.documentId, identity),
             setState: (state) => this.#setState(attachment, state, loadFeedback),
@@ -187,26 +187,30 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
           return;
         }
         if (outcome.phase !== "active") {
-          this.#lifecycle.failAutoActivation(attachment, autoActivationAttempt);
+          this.#lifecycle.failAutoActivation(attachment, activation.autoActivationAttempt);
           this.#setState(attachment, outcome.phase, loadFeedback);
           return;
         }
-        const editorContext = this.#sessions.getEditorContext(outcome.sessionId);
-        const current = this.#mounted.get(presentationAttachmentKey(attachment));
-        if (editorContext === undefined || current !== mounted) {
+        const presented =
+          attachment.whenPresented === undefined || (await attachment.whenPresented);
+        const context = this.#sessions.getEditorContext(outcome.sessionId);
+        const current = this.#mounted.get(presentationAttachmentKey(attachment))?.activation;
+        const stillActive = isCurrentPresentationActivation(
+          this.#coordinator.getSnapshot(),
+          attachment,
+          outcome.sessionId,
+        );
+        if (!presented || context === undefined || current !== activation || !stillActive) {
           loadFeedback?.finish();
-          this.#lifecycle.failAutoActivation(attachment, autoActivationAttempt);
+          this.#lifecycle.failAutoActivation(attachment, activation.autoActivationAttempt);
           return;
         }
-        mounted.scene?.dispose();
-        mounted.disposeScheme?.();
-        const initialScheme = attachment.root.dataset.inkbookScheme === "dark" ? "dark" : "light";
         const settings = this.#settings();
-        mounted.scene = createWorkspaceActiveScene({
+        await mountWorkspaceActiveScene({
           attachment,
           backgroundSpacing: () => this.#settings().vault.pageDefaults.backgroundSpacing,
           deviceSettings: settings.device,
-          editorContext,
+          editorContext: context,
           embedActions: this.#embedActions,
           isCurrent: (scene) =>
             this.#mounted.get(presentationAttachmentKey(attachment)) === mounted &&
@@ -216,38 +220,30 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
           onLock: () => this.lockActivePresentation(),
           onOpenSettings: this.#onOpenSettings,
           onOpenShortcuts: this.#onOpenShortcuts,
-          scheme: initialScheme,
+          scheme: attachment.root.dataset.inkbookScheme === "dark" ? "dark" : "light",
           showFeedback: (code) => this.#feedback.showInPresentation(attachment.root, code),
           sliceBudgetMs: () =>
             this.refreshRateProfiles.sliceBudgetMs(attachment.root.ownerDocument.defaultView),
           vaultSettings: settings.vault,
-        });
-        const scene = mounted.scene;
-        mounted.disposeScheme = this.#scheme.subscribe((scheme) =>
-          mounted.scene?.setScheme(scheme),
-        );
-        observeActiveSceneReadiness({
-          isCurrent: () =>
-            this.#mounted.get(presentationAttachmentKey(attachment)) === mounted &&
-            mounted.scene === scene,
+          colorScheme: this.#scheme,
           mounted,
           onFailure: () => {
             this.#setState(attachment, "load-error", loadFeedback);
             this.#showLoadError(mounted, "editor-start-failed");
-            this.#lifecycle.failAutoActivation(attachment, autoActivationAttempt);
+            this.#lifecycle.failAutoActivation(attachment, activation.autoActivationAttempt);
           },
           onReady: () => {
             this.#setState(attachment, "active", loadFeedback);
-            this.#lifecycle.completeAutoActivation(attachment, autoActivationAttempt);
+            this.#lifecycle.completeAutoActivation(attachment, activation.autoActivationAttempt);
           },
-          scene,
         });
       })
       .catch(() => {
         this.#setState(attachment, "load-error", loadFeedback);
         this.#showLoadError(mounted);
-        this.#lifecycle.failAutoActivation(attachment, autoActivationAttempt);
-      });
+        this.#lifecycle.failAutoActivation(attachment, activation.autoActivationAttempt);
+      })
+      .finally(activation.release);
   }
 
   detach(attachment: PresentationAttachment): void {
@@ -281,9 +277,10 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     return this.#activeScene()?.isActionAvailable(action) ?? false;
   }
   readonly lockActivePresentation = (): boolean => this.#coordinator.requestLockCurrent();
+  readonly getMotionPreference = () => this.#settings().device.motion;
   updateDeviceSettings(settings: InkbookDeviceSettingsV2): void {
     if (this.#disposed) return;
-    for (const mounted of this.#mounted.values()) mounted.scene?.updateDeviceSettings(settings);
+    updateWorkspaceMountedSettings(this.#mounted.values(), settings);
   }
   updateVaultSettings(settings: InkbookSettingsV4): void {
     if (this.#disposed) return;
@@ -325,6 +322,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     this.#coordinator.dispose({ preparePersistence: true });
     for (const mounted of this.#mounted.values()) {
       mounted.disposeScheme?.();
+      mounted.activation?.release();
       mounted.feedback.dispose();
       mounted.loadError?.close();
       mounted.recovery?.close();
@@ -346,11 +344,13 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   #releaseScene(attachment: AttachmentIdentity): void {
     const mounted = this.#mounted.get(presentationAttachmentKey(attachment));
     if (mounted === undefined) return;
+    mounted.activation?.release();
     this.#feedback.closePresentation(mounted.attachment.root);
     const current = this.#coordinator.getSnapshot().current;
     mounted.disposeScheme?.();
     mounted.disposeScheme = undefined;
     mounted.feedback.finish();
+    delete mounted.initialLoading;
     mounted.savingFeedback = undefined;
     mounted.recovery?.close();
     mounted.recovery = undefined;

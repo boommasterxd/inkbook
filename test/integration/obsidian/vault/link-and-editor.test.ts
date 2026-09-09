@@ -176,14 +176,15 @@ describe("Obsidian editor mutation boundary", () => {
     const getLine = vi.fn((line: number) => (line === 2 ? "" : "occupied"));
     const mutations = new ObsidianEditorMutationAdapter({
       getLine,
+      lineCount: () => 4,
       replaceRange,
     } as unknown as Editor);
 
-    expect(mutations.insertEmbedOnEmptyLine("!inkbook[[new.svg]]", 2)).toBe(true);
-    expect(mutations.insertEmbedOnEmptyLine("!inkbook[[new.svg]]", 3)).toBe(false);
+    expect(mutations.insertEmbedOnEmptyLine("!inkbook[[new.svg]]", 2)?.line).toBe(4);
+    expect(mutations.insertEmbedOnEmptyLine("!inkbook[[new.svg]]", 3)).toBeUndefined();
     expect(replaceRange).toHaveBeenCalledTimes(1);
     expect(replaceRange).toHaveBeenCalledWith(
-      "!inkbook[[new.svg]]",
+      "\n\n!inkbook[[new.svg]]\n",
       { ch: 0, line: 2 },
       { ch: 0, line: 2 },
     );

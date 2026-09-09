@@ -18,8 +18,8 @@ describe("performance test plan", () => {
     const classified = [...plan.invariant, ...plan.budgetOnly, ...plan.cadenceSensitive];
 
     expect(plan.invariant).toHaveLength(16);
-    expect(plan.budgetOnly).toHaveLength(15);
-    expect(plan.cadenceSensitive).toHaveLength(9);
+    expect(plan.budgetOnly).toHaveLength(18);
+    expect(plan.cadenceSensitive).toHaveLength(10);
     expect(new Set(classified).size).toBe(discovered.length);
     expect(classified.toSorted()).toEqual(discovered);
   });
