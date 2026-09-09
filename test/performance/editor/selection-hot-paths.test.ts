@@ -143,7 +143,9 @@ describe("selection hot paths", () => {
 });
 
 describe("selection scale preview hot path", () => {
-  it("keeps a tight 10,000-stroke scale frame off the linear pointer path", () => {
+  it("keeps a tight 10,000-stroke scale frame off the linear pointer path", async ({
+    annotate,
+  }) => {
     const elements = [
       ...Array.from({ length: 10_000 }, (_, index) => indexedStroke(index)),
       ...Array.from({ length: 256 }, (_, index) => ({
@@ -184,9 +186,12 @@ describe("selection scale preview hot path", () => {
     expect(setupDuration).toBeLessThanOrEqual(
       timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
     );
-    expect(interactionP99(durations)).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    const p99 = interactionP99(durations);
+    await annotate(
+      `10,000 strokes and 256 rotated boxes: scale preview p99=${p99.toFixed(3)} ms`,
+      "performance",
     );
+    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
   });
 });
 

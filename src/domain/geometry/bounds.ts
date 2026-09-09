@@ -27,7 +27,7 @@ import {
 export function calculateElementBounds(element: InkElementV1): Bounds {
   if (element.kind === "stroke") return strokeBounds(element);
   if (element.kind === "coordinate-system") return coordinateSystemBounds(element);
-  if (element.kind === "table") return tableBounds(element);
+  if (element.kind === "table") return rotatedBoxBounds(element);
   if (
     element.kind === "line" ||
     element.kind === "arrow" ||
@@ -117,19 +117,37 @@ function linearBounds(linear: LinearElementV1): Bounds {
 }
 
 function closedShapeBounds(shape: BoxShapeElementV1): Bounds {
-  const points =
-    shape.kind === "ellipse" || shape.kind === "rectangle"
-      ? rectangleCorners(shape.x, shape.y, shape.width, shape.height)
-      : shapeVertices(shape);
-  const rotated = points.map((point) => rotatedFor(shape, point));
+  if (shape.kind === "ellipse" || shape.kind === "rectangle") return rotatedBoxBounds(shape);
+  const rotated = shapeVertices(shape).map((point) => rotatedFor(shape, point));
   return expandBounds(boundsFromPoints(rotated), shape.style.outlineWidth / 2);
 }
 
-function tableBounds(table: TableElementV1): Bounds {
-  const points = rectangleCorners(table.x, table.y, tableWidth(table), table.height).map((point) =>
-    rotatedFor(table, point),
-  );
-  return expandBounds(boundsFromPoints(points), table.style.outlineWidth / 2);
+/** Preserves conservative corner bounds without allocating per-corner points and arrays. */
+function rotatedBoxBounds(box: BoxShapeElementV1 | TableElementV1): Bounds {
+  const width = box.kind === "table" ? tableWidth(box) : box.width;
+  const radians = (box.rotation * Math.PI) / 180;
+  const cosine = Math.cos(radians);
+  const sine = Math.sin(radians);
+  const left = box.x - box.pivot.x;
+  const right = box.x + width - box.pivot.x;
+  const top = box.y - box.pivot.y;
+  const bottom = box.y + box.height - box.pivot.y;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let corner = 0; corner < 4; corner += 1) {
+    const x = corner === 0 || corner === 3 ? left : right;
+    const y = corner < 2 ? top : bottom;
+    const rotatedX = box.pivot.x + (x * cosine - y * sine);
+    const rotatedY = box.pivot.y + (x * sine + y * cosine);
+    minX = Math.min(minX, rotatedX);
+    maxX = Math.max(maxX, rotatedX);
+    minY = Math.min(minY, rotatedY);
+    maxY = Math.max(maxY, rotatedY);
+  }
+  const radius = box.style.outlineWidth / 2;
+  return { minX: minX - radius, minY: minY - radius, maxX: maxX + radius, maxY: maxY + radius };
 }
 
 function coordinateSystemBounds(system: CoordinateSystemElementV1): Bounds {
@@ -169,13 +187,4 @@ function nodeBounds(node: ArrowNodeGeometry, fallback: PointV1): Bounds {
 
 function rotatedFor(element: Pick<InkElementV1, "pivot" | "rotation">, point: PointV1): PointV1 {
   return rotatePointClockwise(point, element.pivot, element.rotation);
-}
-
-function rectangleCorners(x: number, y: number, width: number, height: number): PointV1[] {
-  return [
-    { x, y },
-    { x: x + width, y },
-    { x: x + width, y: y + height },
-    { x, y: y + height },
-  ];
 }
