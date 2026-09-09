@@ -126,9 +126,13 @@ export async function removeResolvedEmbed(
 ): Promise<boolean> {
   if (reference.editor !== undefined) {
     try {
-      const from = reference.editor.offsetToPos(reference.match.from);
-      const to = reference.editor.offsetToPos(reference.match.to);
-      if (reference.editor.getRange(from, to) !== reference.match.markdown) return false;
+      if (reference.editor.getValue() !== reference.content) return false;
+      const range = embedRemovalRange(reference.content, reference.match);
+      const from = reference.editor.offsetToPos(range.from);
+      const to = reference.editor.offsetToPos(range.to);
+      if (reference.editor.getRange(from, to) !== reference.content.slice(range.from, range.to)) {
+        return false;
+      }
       reference.editor.replaceRange("", from, to);
       return true;
     } catch {
@@ -141,8 +145,9 @@ export async function removeResolvedEmbed(
   try {
     const processed = await ports.files.process(reference.filePath, (current) => {
       if (current !== reference.content) throw new Error("stale-reading-view-reference");
-      const range = resolvePresentationEmbedRange(current, presentation, ports.links);
-      if (range === undefined) throw new Error("unresolved-reading-view-reference");
+      const match = resolvePresentationEmbedRange(current, presentation, ports.links);
+      if (match === undefined) throw new Error("unresolved-reading-view-reference");
+      const range = embedRemovalRange(current, match);
       expectedOutput = `${current.slice(0, range.from)}${current.slice(range.to)}`;
       return expectedOutput;
     });
@@ -150,4 +155,25 @@ export async function removeResolvedEmbed(
   } catch {
     return false;
   }
+}
+
+function embedRemovalRange(content: string, match: ResolvedEmbedRange) {
+  let from = content.lastIndexOf("\n", match.from - 1) + 1;
+  const newline = content.indexOf("\n", match.to);
+  let to = newline < 0 ? content.length : newline;
+  if (from > 0) {
+    const previousFrom = from <= 1 ? 0 : content.lastIndexOf("\n", from - 2) + 1;
+    if (content.slice(previousFrom, from - 1).trim().length === 0) from = previousFrom;
+  }
+  if (to < content.length) {
+    const nextNewline = content.indexOf("\n", to + 1);
+    const nextTo = nextNewline < 0 ? content.length : nextNewline;
+    if (content.slice(to + 1, nextTo).trim().length === 0) to = nextTo;
+  }
+  if (to < content.length) to += 1;
+  else if (from > 0) {
+    from -= 1;
+    if (content[from - 1] === "\r") from -= 1;
+  }
+  return { from, to };
 }

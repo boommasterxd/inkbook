@@ -15,6 +15,7 @@ interface RuntimePresentation {
 
 interface WorkspaceRuntimeLifecycleOptions {
   readonly activate: (attachment: PresentationAttachment, attempt: number) => void;
+  readonly autoActivationCancelled?: (attachmentKey: string) => void;
   readonly fallbackWindow: () => Window | undefined;
   readonly isDisposed: () => boolean;
   readonly notifyExternalChange: (documentId: string) => Promise<ExternalChangeOutcome | "ignored">;
@@ -124,6 +125,10 @@ export class WorkspaceRuntimeLifecycle {
         this.#activatePending(pending, attachment, attempt),
       );
     });
+  }
+
+  public hasPendingAutoActivation(attachment: PresentationAttachment): boolean {
+    return this.#pendingAutoActivation?.attachmentKey === presentationAttachmentKey(attachment);
   }
 
   public completeAutoActivation(attachment: PresentationAttachment, attempt?: number): void {
@@ -322,6 +327,8 @@ export class WorkspaceRuntimeLifecycle {
     if (pending === undefined) return;
     this.#clearPendingHandles(pending);
     this.#pendingAutoActivation = undefined;
+    if (pending.attachmentKey !== undefined)
+      this.#options.autoActivationCancelled?.(pending.attachmentKey);
   }
 
   #clearPendingHandles(pending: PendingAutoActivation): void {

@@ -1,4 +1,4 @@
-import { TFile, type App, type Editor, type EditorPosition } from "obsidian";
+import { TFile, type App, type Editor, type MarkdownFileInfo } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import { createBuiltInSettings } from "../../../../src/domain/settings";
@@ -14,41 +14,10 @@ import {
 } from "../../../../src/obsidian/commands";
 import type { InkbookSettingsStore } from "../../../../src/obsidian/settings";
 
+import { FakeEditor, registerInsertion } from "./insertion-command-fixture";
+
 const TestTFile = TFile as unknown as new (path: string, size?: number) => TFile;
 type MemoryVaultFiles = Map<string, { readonly file: TFile; readonly text: string }>;
-
-class FakeEditor {
-  readonly lines: string[];
-  cursorLine: number;
-
-  constructor(lines: string[], cursorLine = 0) {
-    this.lines = lines;
-    this.cursorLine = cursorLine;
-  }
-
-  getCursor(): EditorPosition {
-    return { ch: 0, line: this.cursorLine };
-  }
-
-  getLine(line: number): string {
-    return this.lines[line] ?? "";
-  }
-
-  lineCount(): number {
-    return this.lines.length;
-  }
-
-  getRange(from: EditorPosition, to: EditorPosition): string {
-    if (from.line !== to.line) throw new Error("The fake supports single-line ranges only.");
-    return this.getLine(from.line).slice(from.ch, to.ch);
-  }
-
-  replaceRange(replacement: string, from: EditorPosition, to = from): void {
-    if (from.line !== to.line) throw new Error("The fake supports single-line ranges only.");
-    const current = this.getLine(from.line);
-    this.lines[from.line] = current.slice(0, from.ch) + replacement + current.slice(to.ch);
-  }
-}
 
 function createHarness(editor: FakeEditor) {
   const insertions: CompletedEmptyLineInsertion[] = [];
@@ -136,8 +105,13 @@ function createPenHarness(enabled = true) {
   const harness = createHarness(new FakeEditor([""]));
   return {
     harness,
-    pen: new PenTapInsertionController(harness.controller, () => enabled),
+    pen: new PenTapInsertionController(
+      harness.controller,
+      () => enabled,
+      registerInsertion(harness.controller),
+    ),
     target: {
+      context: { file: { path: "page.md" } } as MarkdownFileInfo,
       editor: harness.editor,
       insideInkWidget: false,
       line: 0,
@@ -198,32 +172,66 @@ describe("empty-line insertion", () => {
     await vi.waitFor(() => expect(harness.insertions).toHaveLength(1));
 
     expect(harness.create).toHaveBeenCalledWith("drawings/new.svg", "<svg />", expect.any(Number));
-    expect(fake.lines[1]).toBe("!inkbook[[../drawings/new.svg]]");
+    expect(fake.lines).toEqual(["before", "", "", "!inkbook[[../drawings/new.svg]]", "", "after"]);
+    expect(harness.insertions[0]?.line).toBe(3);
     expect(harness.trash).not.toHaveBeenCalled();
   });
 
-  it("trashes a created file and reports the failed edit when the target line changed", async () => {
-    let finishPreparation: ((value: { content: string; path: string }) => void) | undefined;
-    const prepare = new Promise<{ content: string; path: string }>((resolve) => {
-      finishPreparation = resolve;
-    });
-    const harness = createFailedInsertionHarness({
-      prepare: () => prepare,
-      verifyCreated: async () => true,
-    });
+  it.each([
+    { lines: [""], line: 0, expected: ["", "", "EMBED", ""] },
+    { lines: ["", "After"], line: 0, expected: ["", "", "EMBED", "", "After"] },
+    { lines: ["Before", ""], line: 1, expected: ["Before", "", "", "EMBED", ""] },
+    {
+      lines: ["Before", "", "", "", "", "After"],
+      line: 2,
+      expected: ["Before", "", "", "EMBED", "", "After"],
+    },
+    { lines: ["", "", "", "", ""], line: 3, expected: ["", "", "EMBED", ""] },
+  ])(
+    "normalizes spacing and restores the original note on undo: $lines",
+    async ({ lines, line, expected }) => {
+      const fake = new FakeEditor([...lines], line);
+      const harness = createHarness(fake);
+      expect(harness.controller.request(harness.editor, "page.md")).toBe(true);
+      await vi.waitFor(() => expect(harness.insertions).toHaveLength(1));
+      expect(fake.lines).toEqual(
+        expected.map((text) => (text === "EMBED" ? harness.insertions[0]?.embedMarkdown : text)),
+      );
+      expect(await harness.insertions[0]?.undo()).toBe(true);
+      expect(fake.lines).toEqual(lines);
+    },
+  );
 
-    expect(harness.controller.request(harness.editor, "page.md")).toBe(true);
-    harness.fakeEditor.lines[0] = "new text";
-    finishPreparation?.({ content: "<svg />", path: "new.svg" });
-    await vi.waitFor(() => expect(harness.trash).toHaveBeenCalledWith("new.svg"));
+  it.each([
+    { lines: [""], line: 0, changedLine: 0, text: "new text" },
+    { lines: ["before", ""], line: 1, changedLine: 0, text: "```ts" },
+    { lines: ["before", ""], line: 1, changedLine: 0, text: "---" },
+  ])(
+    "rechecks the target after preparation changes its context to $text",
+    async ({ lines, line, changedLine, text }) => {
+      let finishPreparation: ((value: { content: string; path: string }) => void) | undefined;
+      const prepare = new Promise<{ content: string; path: string }>((resolve) => {
+        finishPreparation = resolve;
+      });
+      const harness = createFailedInsertionHarness({
+        editor: new FakeEditor(lines, line),
+        prepare: () => prepare,
+        verifyCreated: async () => true,
+      });
 
-    expect(harness.fakeEditor.lines[0]).toBe("new text");
-    expect(harness.inserted).not.toHaveBeenCalled();
-    expect(harness.failed).toHaveBeenCalledWith(
-      "insertion-note-changed-cleaned",
-      expect.any(Error),
-    );
-  });
+      expect(harness.controller.request(harness.editor, "page.md")).toBe(true);
+      harness.fakeEditor.lines[changedLine] = text;
+      finishPreparation?.({ content: "<svg />", path: "new.svg" });
+      await vi.waitFor(() => expect(harness.trash).toHaveBeenCalledWith("new.svg"));
+
+      expect(harness.fakeEditor.lines[changedLine]).toBe(text);
+      expect(harness.inserted).not.toHaveBeenCalled();
+      expect(harness.failed).toHaveBeenCalledWith(
+        "insertion-note-changed-cleaned",
+        expect.any(Error),
+      );
+    },
+  );
 
   it("trashes the created file and inserts no Markdown when worker verification fails", async () => {
     const harness = createFailedInsertionHarness({
@@ -252,10 +260,10 @@ describe("empty-line insertion", () => {
 describe("empty-line insertion failure feedback", () => {
   it("preserves a user-modified embed when undo is stale", async () => {
     const harness = await insertIntoEmptyEditor();
-    harness.fakeEditor.lines[0] = "changed";
+    harness.fakeEditor.lines[2] = "changed";
 
     expect(await harness.insertions[0]?.undo()).toBe(false);
-    expect(harness.editor.getLine(0)).toBe("changed");
+    expect(harness.editor.getLine(2)).toBe("changed");
     expect(harness.trash).not.toHaveBeenCalled();
     expect(harness.failed).toHaveBeenCalledWith("insertion-undo-note-changed", expect.any(Error));
   });
@@ -317,7 +325,7 @@ describe("Obsidian empty-line insertion composition", () => {
     expect(failed).not.toHaveBeenCalled();
     expect(placementFeedback).not.toHaveBeenCalled();
     expect(path).toMatch(/^drawings\/inkbook-\d{8}-\d{6}-090909\.svg$/u);
-    expect(editor.lines[0]).toBe(`!inkbook[[${path}]]`);
+    expect(editor.lines[2]).toBe(`!inkbook[[${path}]]`);
     expect(files.get(path)?.text).toContain('data-inkbook-version="1"');
   });
 
@@ -340,7 +348,7 @@ describe("Obsidian empty-line insertion composition", () => {
     expect(test.failed).not.toHaveBeenCalled();
     expect(test.placementFeedback).toHaveBeenCalledWith(message);
     expect(test.getRandomValues).toHaveBeenCalled();
-    expect(test.editor.getLine(0)).toMatch(/^!inkbook\[\[notes\/inkbook-.*\.svg\]\]$/u);
+    expect(test.editor.getLine(2)).toMatch(/^!inkbook\[\[notes\/inkbook-.*\.svg\]\]$/u);
   });
 
   it("continues insertion when the placement feedback port throws", async () => {
@@ -354,7 +362,7 @@ describe("Obsidian empty-line insertion composition", () => {
     await requestAndAwaitInsertion(test);
 
     expect(test.failed).not.toHaveBeenCalled();
-    expect(test.editor.getLine(0)).toMatch(/^!inkbook\[\[notes\/inkbook-.*\.svg\]\]$/u);
+    expect(test.editor.getLine(2)).toMatch(/^!inkbook\[\[notes\/inkbook-.*\.svg\]\]$/u);
   });
 
   it("does not report regular note-folder placement", async () => {

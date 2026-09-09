@@ -1,6 +1,6 @@
 import type { Editor } from "obsidian";
 
-import { ObsidianEditorMutationAdapter } from "../vault";
+import { ObsidianEditorMutationAdapter, type InsertedEmbedMutation } from "../vault";
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/constants";
 
 interface PreparedInkbookDocument {
@@ -120,6 +120,7 @@ class EmptyLineInsertionHandle implements CompletedEmptyLineInsertion {
   readonly #editor: Editor;
   readonly #notifications: EmptyLineInsertionNotifications;
   readonly #trash: InsertionTrashPort;
+  readonly #mutation: InsertedEmbedMutation;
   #settled = false;
 
   constructor(
@@ -128,28 +129,24 @@ class EmptyLineInsertionHandle implements CompletedEmptyLineInsertion {
     trash: InsertionTrashPort,
     filePath: string,
     embedMarkdown: string,
-    line: number,
+    mutation: InsertedEmbedMutation,
   ) {
     this.#editor = editor;
     this.#notifications = notifications;
     this.#trash = trash;
     this.filePath = filePath;
     this.embedMarkdown = embedMarkdown;
-    this.line = line;
+    this.line = mutation.line;
+    this.#mutation = mutation;
   }
 
   async undo(): Promise<boolean> {
     if (this.#settled) return false;
     let removed: boolean;
     try {
-      removed = new ObsidianEditorMutationAdapter(this.#editor).replaceIfUnchanged({
-        expected: this.embedMarkdown,
-        range: {
-          from: { ch: 0, line: this.line },
-          to: { ch: this.embedMarkdown.length, line: this.line },
-        },
-        replacement: "",
-      });
+      removed = new ObsidianEditorMutationAdapter(this.#editor).replaceIfUnchanged(
+        this.#mutation.undo,
+      );
     } catch (error: unknown) {
       notifyFailure(this.#notifications, "insertion-undo-edit-failed", error);
       return false;
@@ -182,9 +179,7 @@ export class EmptyLineInsertionController {
   }
 
   canInsert(editor: Editor, sourcePath: string): boolean {
-    return (
-      !this.#busy && sourcePath.length > 0 && isEmptyInsertionLine(editor, editor.getCursor().line)
-    );
+    return this.canInsertAtLine(editor, sourcePath, editor.getCursor().line);
   }
 
   canInsertAtLine(editor: Editor, sourcePath: string, line: number): boolean {
@@ -232,10 +227,9 @@ export class EmptyLineInsertionController {
         throw new Error("The created Inkbook document did not pass worker verification.");
       }
       const embedMarkdown = this.#dependencies.links.generateEmbed(prepared.path, sourcePath);
-      const inserted = new ObsidianEditorMutationAdapter(editor).insertEmbedOnEmptyLine(
-        embedMarkdown,
-        line,
-      );
+      const inserted = isEmptyInsertionLine(editor, line)
+        ? new ObsidianEditorMutationAdapter(editor).insertEmbedOnEmptyLine(embedMarkdown, line)
+        : undefined;
       if (!inserted) {
         throw new InsertionActionError(
           "The target Markdown line changed before insertion.",
@@ -248,7 +242,7 @@ export class EmptyLineInsertionController {
         this.#dependencies.trash,
         prepared.path,
         embedMarkdown,
-        line,
+        inserted,
       );
     } catch (error: unknown) {
       try {

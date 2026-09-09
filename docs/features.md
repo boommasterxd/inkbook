@@ -224,12 +224,12 @@ A tap creates a new handwriting embed only when all of the following conditions 
 On success:
 
 1. The plugin creates a new handwriting SVG file.
-2. It inserts the custom `!inkbook` embed Markdown in a block-safe manner. The syntax references the SVG through a normal link but never creates a native Obsidian image embed.
+2. The registered **Insert handwriting embed** command inserts the custom `!inkbook` embed Markdown. It replaces the contiguous run of empty lines containing the target with exactly two empty lines above the embed and one below, adding missing lines and removing excess empty lines. This also applies at the start or end of a note. Non-empty neighboring lines remain unchanged. The syntax references the SVG through a normal link but never creates a native Obsidian image embed.
 3. The next mounted embed editor is activated automatically.
 4. After the widget is mounted and measured on two consecutive animation frames, the new embed opens in editing mode. If this does not happen within two seconds, insertion remains intact and retryable shared feedback is shown over the active view or owning window.
 5. Shared success feedback with an icon-only Undo action remains visible for five seconds.
 
-Undo removes both the Markdown embed and the newly created file. The file is deleted through `FileManager.trashFile()` and therefore follows the user's Obsidian trash preference.
+Undo restores the original empty-line run and removes the newly created file only if the inserted block and its spacing remain unchanged. The file is deleted through `FileManager.trashFile()` and therefore follows the user's Obsidian trash preference.
 
 As soon as the first stroke is saved, the Undo feedback disappears automatically. If the feedback merely expires, the empty embed remains.
 
@@ -260,6 +260,8 @@ The following functions are particularly relevant for the handwriting embed:
 Erase all first displays a confirmation and then removes all canvas elements through an undoable command.
 
 Delete embed checks whether the same SVG file is still referenced in other notes.
+
+After confirmation, deletion removes the complete embed line and at most one immediately adjacent blank line above and below it. Whitespace-only lines count as blank. Any additional blank lines and all neighboring content remain intact. The same rule applies in Live Preview and Reading view, including at the start or end of a note.
 
 - If there are other references, only this embed is removed.
 - If there are no other references, the user can choose whether to delete only the embed or also the SVG file.

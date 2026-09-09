@@ -1,3 +1,4 @@
+import type { MotionPreference } from "../../rendering/motion/transitions";
 import type { AttachmentIdentity } from "../../editor/session/session-state";
 import type { ColorSchemeBroadcaster } from "../theme/color-scheme";
 import type { InkbookDocumentRecognitionPort } from "./document-recognition";
@@ -41,6 +42,8 @@ export interface PresentationAttachment {
   readonly embedReference: PresentationEmbedReference;
   readonly previewContentIdentity?: PreviewContentIdentity;
   readonly root: HTMLElement;
+  readonly loadingStartedAt?: number;
+  readonly whenPresented?: Promise<boolean>;
   readonly scrollRangeReserve?: PresentationScrollRangeReserve;
   readonly preview?: HTMLElement;
   readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
@@ -54,6 +57,7 @@ export function presentationAttachmentKey(attachment: AttachmentIdentity): strin
 
 export type PresentationAttachmentInput = Omit<
   PresentationAttachment,
+  | "whenPresented"
   | "preview"
   | "previewContentIdentity"
   | "scrollOwner"
@@ -83,6 +87,7 @@ export function presentationPreviewOptions(
 }
 
 export interface PresentationSessionPort {
+  getMotionPreference?(): MotionPreference;
   activate(attachment: PresentationAttachment): void;
   detach(attachment: PresentationAttachment): void;
   mount(attachment: PresentationAttachment): void;

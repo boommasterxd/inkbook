@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { InkbookLivePreviewWidget } from "../../../../src/obsidian/embeds/live-preview";
+import { InkbookLivePreviewWidget } from "../../../../src/obsidian/embeds/live-preview-widget";
 import { PresentationLifecycleRegistry } from "../../../../src/obsidian/embeds/presentation-lifecycle-registry";
 import type { EmbedIntegrationPorts } from "../../../../src/obsidian/embeds/presentation-port";
 import { ColorSchemeBroadcaster } from "../../../../src/obsidian/theme/color-scheme";

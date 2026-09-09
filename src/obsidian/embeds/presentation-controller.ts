@@ -15,6 +15,7 @@ import type {
 } from "./presentation-port";
 import type { InkbookLockedPreviewDescriptor } from "./locked-preview";
 import type { PreviewContentIdentity } from "./safe-preview-svg";
+import { PresentationEntrance, type PresentationEntranceState } from "./presentation-entrance";
 import {
   LAYOUT_TRANSITION_CLASS,
   PresentationScrollRangeReserve,
@@ -31,6 +32,7 @@ interface PresentationMeasurement {
 export interface PresentationPreviewLifecycle {
   readonly contentIdentity?: PreviewContentIdentity;
   readonly element: HTMLElement;
+  readonly entranceState?: PresentationEntranceState;
   readonly refresh?: () => void;
   readonly requestHostMeasure?: () => void;
   readonly setDescriptor?: (descriptor: InkbookLockedPreviewDescriptor) => void;
@@ -56,6 +58,7 @@ function leasesFor(document: Document): ScrollbarLeaseRegistry<HTMLElement> {
 export class PresentationController {
   readonly #attachment: MutablePresentationAttachment;
   readonly #sessions: PresentationSessionPort;
+  readonly #entrance: PresentationEntrance | undefined;
   #disposeScheme: (() => void) | undefined;
   #frame: number | undefined;
   #activationPending = false;
@@ -83,10 +86,13 @@ export class PresentationController {
     if (owningWindow === null) throw new Error("The Inkbook presentation has no owning window.");
     this.#owningWindow = owningWindow;
     this.#previewLifecycle = previewLifecycle;
+    this.#entrance = this.#createEntrance(attachment.root, previewLifecycle);
     let lifecycle: PresentationScrollLifecycle<HTMLElement, PresentationMeasurement> | undefined;
     this.#scrollRangeReserve = new PresentationScrollRangeReserve(() => lifecycle?.owner ?? null);
     const resolvedAttachment: MutablePresentationAttachment = {
       ...attachment,
+      ...this.#consumeLoadingStart(previewLifecycle),
+      ...(this.#entrance === undefined ? {} : { whenPresented: this.#entrance.ready }),
       ...(previewLifecycle?.contentIdentity === undefined
         ? {}
         : { previewContentIdentity: previewLifecycle.contentIdentity }),
@@ -161,11 +167,31 @@ export class PresentationController {
     });
   }
 
+  #consumeLoadingStart(preview: PresentationPreviewLifecycle | undefined) {
+    const loadingStartedAt = preview?.entranceState?.loadingStartedAt;
+    if (preview?.entranceState !== undefined) delete preview.entranceState.loadingStartedAt;
+    return loadingStartedAt === undefined ? {} : { loadingStartedAt };
+  }
+
+  #createEntrance(root: HTMLElement, preview: PresentationPreviewLifecycle | undefined) {
+    root.dataset.inkbookMotion = this.#sessions.getMotionPreference?.() ?? "system";
+    if (preview === undefined) return undefined;
+    return new PresentationEntrance({
+      root,
+      preview: preview.element,
+      ownerWindow: this.#owningWindow,
+      motion: () => this.#sessions.getMotionPreference?.() ?? "system",
+      onPresented: () => this.#activateWhenReady(),
+      ...(preview.entranceState === undefined ? {} : { state: preview.entranceState }),
+    });
+  }
+
   mount(): void {
     if (this.#mounted) {
       return;
     }
     this.#mounted = true;
+    this.#entrance?.prepare();
     this.#owningWindow.addEventListener("resize", this.#handleOwningWindowResize, {
       passive: true,
     });
@@ -186,7 +212,7 @@ export class PresentationController {
 
   activate(): void {
     if (!this.#mounted) return;
-    if (!this.#measured) {
+    if (!this.#measured || this.#entrance?.pending === true) {
       this.#activationPending = true;
       return;
     }
@@ -222,7 +248,12 @@ export class PresentationController {
     }
     if (measurement.contentWidth <= 0) return;
     this.#measured = true;
-    if (this.#activationPending) {
+    this.#entrance?.measure();
+    this.#activateWhenReady();
+  }
+
+  #activateWhenReady(): void {
+    if (this.#mounted && this.#measured && !this.#entrance?.pending && this.#activationPending) {
       this.#activationPending = false;
       this.#sessions.activate(this.#attachment);
     }
@@ -270,6 +301,7 @@ export class PresentationController {
   }
 
   dispose(): void {
+    this.#entrance?.dispose();
     this.#disposeScheme?.();
     this.#disposeScheme = undefined;
     if (this.#mounted) {

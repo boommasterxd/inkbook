@@ -35,10 +35,18 @@ export class PresentationOperationFeedback {
     this.#root = root;
   }
 
-  public begin(kind: PresentationOperationKind): PresentationOperationFeedbackHandle {
+  public begin(
+    kind: PresentationOperationKind,
+    startedAt?: number,
+  ): PresentationOperationFeedbackHandle {
     if (this.#disposed) return FINISHED_FEEDBACK;
     this.#clearCurrent();
     const token = ++this.#activeToken;
+    const delay = this.#remainingDelay(kind, startedAt);
+    if (delay === 0) {
+      this.#show(kind);
+      return { finish: () => this.#finish(token) };
+    }
     this.#timer = this.#ownerWindow.setTimeout(() => {
       this.#timer = undefined;
       if (this.#disposed || token !== this.#activeToken) return;
@@ -51,7 +59,7 @@ export class PresentationOperationFeedback {
         this.#frame = undefined;
         this.#show(kind);
       });
-    }, feedbackDelay(kind));
+    }, delay);
     return { finish: () => this.#finish(token) };
   }
 
@@ -66,6 +74,15 @@ export class PresentationOperationFeedback {
     this.#disposed = true;
     this.#activeToken += 1;
     this.#clearCurrent();
+  }
+
+  #remainingDelay(kind: PresentationOperationKind, startedAt?: number): number {
+    const delay = feedbackDelay(kind);
+    if (kind !== "loading" || startedAt === undefined || !Number.isFinite(startedAt)) {
+      return delay;
+    }
+    const now = this.#ownerWindow.performance?.now() ?? performance.now();
+    return Math.max(0, delay - Math.max(0, now - startedAt));
   }
 
   #finish(token: number): void {
