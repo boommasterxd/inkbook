@@ -6,11 +6,19 @@ import { inspectPreviewSvg, type LoadedPreviewSvg } from "./safe-preview-svg";
 const MAXIMUM_RECOGNITION_CACHE_ENTRIES = 256;
 const MAXIMUM_RECOGNITION_MARKUP_CODE_UNITS = 32 * 1024 * 1024;
 const MAXIMUM_ROOT_TAG_CHARACTERS = 4096;
+const MAXIMUM_ACTIVE_READS = 4;
+const MAXIMUM_QUEUED_READS = 4096;
 
 interface RecognitionEntry {
-  readonly promise: Promise<InkbookDocumentRecognition> | undefined;
   readonly signature: string;
-  readonly value: InkbookDocumentRecognition | undefined;
+  readonly value: InkbookDocumentRecognition;
+}
+
+interface PendingRecognition {
+  readonly file: TFile;
+  readonly signature: string;
+  readonly promise: Promise<InkbookDocumentRecognition>;
+  readonly resolve: (value: InkbookDocumentRecognition) => void;
 }
 
 export type InkbookDocumentRecognition = false | LoadedPreviewSvg;
@@ -52,9 +60,21 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
   readonly #entries = new Map<string, RecognitionEntry>();
   readonly #listeners = new Set<(documentId: string) => void>();
   readonly #vault: Vault;
+  readonly #pending = new Map<string, PendingRecognition>();
+  readonly #queue = new Map<string, PendingRecognition>();
+  #activeReads = 0;
+  #markupCodeUnits = 0;
+  #layoutReady: boolean;
+  #disposed = false;
 
-  public constructor(vault: Vault) {
+  public constructor(vault: Vault, options: { readonly deferUntilLayoutReady?: boolean } = {}) {
     this.#vault = vault;
+    this.#layoutReady = options.deferUntilLayoutReady !== true;
+  }
+
+  public markLayoutReady(): void {
+    this.#layoutReady = true;
+    queueMicrotask(() => this.#drain());
   }
 
   public cached(documentId: string): InkbookDocumentRecognition | undefined {
@@ -73,18 +93,63 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     const current = this.#entries.get(documentId);
     if (current?.signature === signature) {
       this.#touch(documentId, current);
-      return current.promise ?? Promise.resolve(current.value ?? false);
+      return Promise.resolve(current.value);
     }
-    const promise = this.#readMarker(file, signature).then((value) => {
-      const pending = this.#entries.get(documentId);
-      if (pending?.promise !== promise) return value;
-      this.#entries.set(documentId, { promise: undefined, signature, value });
-      this.#notify(documentId);
-      return value;
+    const pending = this.#pending.get(documentId);
+    if (pending?.signature === signature) return pending.promise;
+    this.#cancelPending(documentId);
+    if (this.#queue.size >= MAXIMUM_QUEUED_READS) return Promise.resolve(false);
+    let resolve!: (value: InkbookDocumentRecognition) => void;
+    const promise = new Promise<InkbookDocumentRecognition>((settle) => {
+      resolve = settle;
     });
-    this.#entries.set(documentId, { promise, signature, value: undefined });
-    this.#evictOverflow();
+    const request = { file, signature, promise, resolve };
+    this.#pending.set(documentId, request);
+    this.#queue.set(documentId, request);
+    this.#drain();
     return promise;
+  }
+
+  #drain(): void {
+    if (this.#disposed || !this.#layoutReady) return;
+    while (this.#activeReads < MAXIMUM_ACTIVE_READS) {
+      const next = this.#queue.entries().next().value;
+      if (next === undefined) return;
+      const [documentId, request] = next;
+      this.#queue.delete(documentId);
+      this.#activeReads += 1;
+      void this.#readMarker(request.file, request.signature).then(
+        (value) => this.#complete(documentId, request, value),
+        () => this.#complete(documentId, request, false),
+      );
+    }
+  }
+
+  #complete(
+    documentId: string,
+    request: PendingRecognition,
+    value: InkbookDocumentRecognition,
+  ): void {
+    this.#activeReads -= 1;
+    if (this.#pending.get(documentId) === request) {
+      this.#pending.delete(documentId);
+      this.#deleteEntry(documentId);
+      this.#entries.set(documentId, { signature: request.signature, value });
+      this.#markupCodeUnits += value === false ? 0 : value.safeSvg.length;
+      this.#evictOverflow();
+      request.resolve(value);
+      this.#notify(documentId);
+    }
+    this.#drain();
+  }
+
+  #cancelPending(documentId: string): boolean {
+    const request = this.#pending.get(documentId);
+    if (request === undefined) return false;
+    this.#pending.delete(documentId);
+    this.#queue.delete(documentId);
+    request.resolve(false);
+    return true;
   }
 
   public subscribe(listener: (documentId: string) => void): () => void {
@@ -95,16 +160,21 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
   }
 
   public invalidate(documentId: string): void {
-    if (!this.#entries.delete(documentId)) return;
+    const pending = this.#cancelPending(documentId);
+    if (!this.#deleteEntry(documentId) && !pending) return;
     this.#notify(documentId);
   }
 
   public dispose(): void {
+    this.#disposed = true;
+    for (const documentId of this.#pending.keys()) this.#cancelPending(documentId);
+    this.#markupCodeUnits = 0;
     this.#entries.clear();
     this.#listeners.clear();
   }
 
   async #readMarker(file: TFile, signature: string): Promise<InkbookDocumentRecognition> {
+    if (this.#resolveFile(file.path) !== file || fileSignature(file) !== signature) return false;
     if (file.stat.size < 0 || file.stat.size > FILE_SCHEMA_LIMITS.totalInputBytes) return false;
     try {
       const content = await this.#vault.cachedRead(file);
@@ -123,6 +193,7 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
   }
 
   #resolveFile(documentId: string): TFile | undefined {
+    if (this.#disposed) return undefined;
     const file = this.#vault.getFileByPath(documentId);
     return file instanceof TFile && file.extension.toLowerCase() === "svg" ? file : undefined;
   }
@@ -135,24 +206,28 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
   #evictOverflow(): void {
     while (
       this.#entries.size > MAXIMUM_RECOGNITION_CACHE_ENTRIES ||
-      (this.#entries.size > 1 &&
-        this.#retainedMarkupCodeUnits() > MAXIMUM_RECOGNITION_MARKUP_CODE_UNITS)
+      (this.#entries.size > 1 && this.#markupCodeUnits > MAXIMUM_RECOGNITION_MARKUP_CODE_UNITS)
     ) {
-      const oldest = [...this.#entries].find(([, entry]) => entry.promise === undefined)?.[0];
+      const oldest = this.#entries.keys().next().value;
       if (oldest === undefined) return;
-      this.#entries.delete(oldest);
+      this.#deleteEntry(oldest);
     }
   }
 
-  #retainedMarkupCodeUnits(): number {
-    let total = 0;
-    for (const entry of this.#entries.values()) {
-      if (entry.value !== undefined && entry.value !== false) total += entry.value.safeSvg.length;
-    }
-    return total;
+  #deleteEntry(documentId: string): boolean {
+    const entry = this.#entries.get(documentId);
+    if (entry === undefined) return false;
+    this.#markupCodeUnits -= entry.value === false ? 0 : entry.value.safeSvg.length;
+    return this.#entries.delete(documentId);
   }
 
   #notify(documentId: string): void {
-    for (const listener of this.#listeners) listener(documentId);
+    for (const listener of this.#listeners) {
+      try {
+        listener(documentId);
+      } catch {
+        // A failed presentation must not block other subscribers or queued recognition.
+      }
+    }
   }
 }

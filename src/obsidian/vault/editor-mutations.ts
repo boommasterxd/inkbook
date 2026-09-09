@@ -6,6 +6,11 @@ export interface EditorReplacement {
   readonly replacement: string;
 }
 
+export interface InsertedEmbedMutation {
+  readonly line: number;
+  readonly undo: EditorReplacement;
+}
+
 function isEditorPosition(position: EditorPosition): boolean {
   return (
     Number.isSafeInteger(position.line) &&
@@ -48,7 +53,7 @@ export class ObsidianEditorMutationAdapter {
     this.#editor.replaceRange(text, position);
   }
 
-  insertEmbedOnEmptyLine(embedMarkdown: string, line: number): boolean {
+  insertEmbedOnEmptyLine(embedMarkdown: string, line: number): InsertedEmbedMutation | undefined {
     if (
       embedMarkdown.length === 0 ||
       embedMarkdown.includes("\n") ||
@@ -57,11 +62,23 @@ export class ObsidianEditorMutationAdapter {
     ) {
       throw new RangeError("Embed insertion is invalid");
     }
-    if (this.#editor.getLine(line) !== "") {
-      return false;
+    if (line >= this.#editor.lineCount() || this.#editor.getLine(line) !== "") {
+      return undefined;
     }
-    const position = { ch: 0, line };
-    this.#editor.replaceRange(embedMarkdown, position, position);
-    return true;
+    let first = line;
+    let last = line;
+    while (first > 0 && this.#editor.getLine(first - 1) === "") first -= 1;
+    while (last + 1 < this.#editor.lineCount() && this.#editor.getLine(last + 1) === "") last += 1;
+    const from = { ch: 0, line: first };
+    const replacement = `\n\n${embedMarkdown}\n`;
+    this.#editor.replaceRange(replacement, from, { ch: 0, line: last });
+    return {
+      line: first + 2,
+      undo: {
+        expected: replacement,
+        range: { from, to: { ch: 0, line: first + 3 } },
+        replacement: "\n".repeat(last - first),
+      },
+    };
   }
 }

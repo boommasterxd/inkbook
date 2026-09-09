@@ -6,6 +6,7 @@ import {
 
 import { findMarkdownInkbookEmbeds } from "./markdown-embed";
 import type { InkbookDocumentRecognition } from "./document-recognition";
+import { createLoadingPlaceholder, type LoadingPlaceholder } from "./loading-placeholder";
 import { createInkbookLockedPreview } from "./locked-preview";
 import { PresentationController } from "./presentation-controller";
 import type { EmbedIntegrationPorts, ResolvedInkbookDocument } from "./presentation-port";
@@ -30,6 +31,31 @@ function isInsideCode(element: HTMLElement): boolean {
   return element.closest("code, pre") !== null;
 }
 
+function readingSectionRange(section: ReadingViewCandidate["section"]) {
+  if (
+    !Number.isSafeInteger(section.lineStart) ||
+    section.lineStart < 0 ||
+    !Number.isSafeInteger(section.lineEnd) ||
+    section.lineEnd < section.lineStart
+  )
+    return undefined;
+  let from = 0;
+  for (let line = 0; line < section.lineStart; line += 1) {
+    const newline = section.text.indexOf("\n", from);
+    if (newline < 0) return undefined;
+    from = newline + 1;
+  }
+  let to = from;
+  for (let line = section.lineStart; line <= section.lineEnd; line += 1) {
+    const newline = section.text.indexOf("\n", to);
+    if (newline < 0)
+      return line === section.lineEnd ? { from, to: section.text.length } : undefined;
+    if (line === section.lineEnd) return { from, to: newline };
+    to = newline + 1;
+  }
+  return undefined;
+}
+
 function recognizeReadingViewCandidate(
   element: HTMLElement,
   context: MarkdownPostProcessorContext,
@@ -40,11 +66,15 @@ function recognizeReadingViewCandidate(
     return undefined;
   }
   if (isInsideCode(element)) return undefined;
-  const embeds = findMarkdownInkbookEmbeds(section.text);
+  const range = readingSectionRange(section);
+  if (range === undefined) return undefined;
+  const embeds = findMarkdownInkbookEmbeds(section.text).filter(
+    (embed) => embed.from >= range.from && embed.to <= range.to,
+  );
   if (embeds.length !== 1) return undefined;
   const embed = embeds[0];
   if (embed === undefined) return undefined;
-  if (section.text.trim() !== embed.markdown) return undefined;
+  if (section.text.slice(range.from, range.to).trim() !== embed.markdown) return undefined;
   const resolved = resolveDocument(embed.linkpath, context.sourcePath);
   if (resolved === undefined) return undefined;
   return {
@@ -62,6 +92,7 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
   readonly #controller: PresentationController;
   readonly #documentId: string;
   readonly #nativeHost: HTMLElement;
+  readonly #nativeChildren: readonly Node[];
   readonly #root: HTMLDivElement;
   readonly #lifecycle: EmbedIntegrationPorts["lifecycle"];
   readonly #ports: EmbedIntegrationPorts;
@@ -74,19 +105,25 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
     candidate: ReadingViewCandidate,
     previewDescriptor: Exclude<InkbookDocumentRecognition, false>,
     ports: EmbedIntegrationPorts,
+    pending?: {
+      readonly children: readonly Node[];
+      readonly height: number;
+      readonly startedAt: number;
+    },
   ) {
+    const nativeChildren = pending?.children ?? Array.from(candidate.host.childNodes);
     const root = candidate.host.createDiv({ cls: "inkbook-root inkbook-embed-root" });
-    root.remove();
-    candidate.host.replaceWith(root);
+    candidate.host.replaceChildren(root);
     const button = root.createEl("button", {
       attr: { "aria-label": "Edit handwriting", type: "button" },
       cls: "inkbook-locked-preview",
     });
     const preview = createInkbookLockedPreview(button, previewDescriptor);
-    super(root);
+    super(candidate.host);
     this.#button = button;
     this.#documentId = candidate.resolved.documentId;
     this.#nativeHost = candidate.host;
+    this.#nativeChildren = nativeChildren;
     this.#lifecycle = ports.lifecycle;
     this.#ports = ports;
     this.#previewIdentity = previewDescriptor.contentIdentity;
@@ -111,6 +148,15 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
       ports.sessions,
       ports.scheme,
       {
+        ...(pending === undefined
+          ? {}
+          : {
+              entranceState: {
+                presented: false,
+                initialHeight: pending.height,
+                loadingStartedAt: pending.startedAt,
+              },
+            }),
         contentIdentity: previewDescriptor.contentIdentity,
         element: preview.element,
         refresh: preview.refresh,
@@ -144,7 +190,9 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
     this.#releaseLifecycle?.();
     this.#releaseLifecycle = undefined;
     this.#controller.dispose();
-    if (this.#root.isConnected) this.#root.replaceWith(this.#nativeHost);
+    if (this.#root.parentNode === this.#nativeHost) {
+      this.#nativeHost.replaceChildren(...this.#nativeChildren);
+    }
   }
 
   async #refreshRecognition(): Promise<void> {
@@ -170,30 +218,93 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
   }
 }
 
+class PendingReadingRenderChild extends MarkdownRenderChild {
+  readonly children: readonly Node[];
+  readonly placeholder: HTMLElement;
+  readonly #loading: LoadingPlaceholder;
+  #disposed = false;
+  #releaseLifecycle: (() => void) | undefined;
+
+  constructor(
+    host: HTMLElement,
+    readonly ports: EmbedIntegrationPorts,
+  ) {
+    super(host);
+    this.children = Array.from(host.childNodes);
+    this.#loading = createLoadingPlaceholder(host, {
+      motion: ports.sessions.getMotionPreference?.() ?? "system",
+      scheme: ports.scheme,
+    });
+    this.placeholder = this.#loading.element;
+    host.replaceChildren(this.placeholder);
+  }
+
+  get current(): boolean {
+    return !this.#disposed && this.placeholder.parentNode === this.containerEl;
+  }
+
+  get loadingStartedAt(): number {
+    return this.#loading.startedAt;
+  }
+
+  get renderedHeight(): number {
+    return this.#loading.renderedHeight;
+  }
+
+  override onload(): void {
+    this.#releaseLifecycle = this.ports.lifecycle.register(this.placeholder, () => this.unload());
+    if (this.#releaseLifecycle === undefined) this.unload();
+  }
+
+  override onunload(): void {
+    if (this.current) this.containerEl.replaceChildren(...this.children);
+    this.#disposed = true;
+    this.#loading.dispose();
+    this.#releaseLifecycle?.();
+    this.#releaseLifecycle = undefined;
+  }
+}
+
 export function createReadingViewPostProcessor(
   ports: EmbedIntegrationPorts,
 ): MarkdownPostProcessor {
   return (element, context): Promise<void> | void => {
     const initial = recognizeReadingViewCandidate(element, context, ports.resolveDocument);
     if (initial === undefined) return;
-    const attach = (preview: Exclude<InkbookDocumentRecognition, false>): void => {
-      const candidate = recognizeReadingViewCandidate(element, context, ports.resolveDocument);
-      if (candidate?.resolved.documentId !== initial.resolved.documentId) return;
-      context.addChild(new InkbookReadingRenderChild(candidate, preview, ports));
-    };
     const cached = ports.documents.cached(initial.resolved.documentId);
-    if (cached !== undefined && cached !== false) return attach(cached);
+    if (cached !== undefined && cached !== false) {
+      context.addChild(new InkbookReadingRenderChild(initial, cached, ports));
+      return;
+    }
     if (cached === false) return;
-    return ports.documents.recognize(initial.resolved.documentId).then((recognized) => {
-      if (recognized === false) return;
-      const current = ports.documents.cached(initial.resolved.documentId);
-      if (
-        current !== undefined &&
-        current !== false &&
-        samePreviewContentIdentity(current.contentIdentity, recognized.contentIdentity)
-      ) {
-        attach(recognized);
-      }
-    });
+    const pending = new PendingReadingRenderChild(element, ports);
+    context.addChild(pending);
+    return ports.documents
+      .recognize(initial.resolved.documentId)
+      .then((recognized) => {
+        if (!pending.current || recognized === false) return;
+        const candidate = recognizeReadingViewCandidate(element, context, ports.resolveDocument);
+        const current = ports.documents.cached(initial.resolved.documentId);
+        if (
+          candidate?.resolved.documentId === initial.resolved.documentId &&
+          candidate.markdown === initial.markdown &&
+          candidate.sourcePath === initial.sourcePath &&
+          candidate.range.from === initial.range.from &&
+          candidate.range.to === initial.range.to &&
+          current !== undefined &&
+          current !== false &&
+          samePreviewContentIdentity(current.contentIdentity, recognized.contentIdentity)
+        ) {
+          context.addChild(
+            new InkbookReadingRenderChild(candidate, recognized, ports, {
+              children: pending.children,
+              height: pending.renderedHeight,
+              startedAt: pending.loadingStartedAt,
+            }),
+          );
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => pending.unload());
   };
 }

@@ -130,6 +130,10 @@
   opacity: 1;
 }
 
+.inkbook-root[data-inkbook-motion="reduced"] .inkbook-operation-feedback-icon {
+  animation: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .inkbook-root:not([data-inkbook-motion="full"]) {
     --inkbook-motion-toolbar-context-stagger: 0ms;

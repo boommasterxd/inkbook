@@ -1,9 +1,19 @@
-import { TFile, Tasks, type Editor, type MarkdownView } from "obsidian";
+import { EditorState } from "@codemirror/state";
+import { EditorView, type DecorationSet } from "@codemirror/view";
+import {
+  TFile,
+  Tasks,
+  editorInfoField,
+  editorLivePreviewField,
+  type Editor,
+  type MarkdownView,
+} from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import { activateInkbookPlugin } from "../../../src/obsidian/inkbook-plugin";
 import { STRAIGHT_HIGHLIGHTER_ICON_ID } from "../../../src/rendering/ui/icon-ids";
-import { testIconRegistry } from "../../adapters/obsidian/plugin";
+import { configureTestEditorState, testIconRegistry } from "../../adapters/obsidian/plugin";
+import { InkbookLoadingPreviewWidget } from "../../../src/obsidian/embeds/live-preview-loading-widget";
 import { TestPlugin } from "../../fixtures/obsidian/test-plugin";
 
 const TestTFile = TFile as unknown as new (path: string) => TFile;
@@ -72,6 +82,54 @@ function createApp() {
   };
 }
 
+describe("plugin startup placeholders", () => {
+  it.each([false, true])(
+    "shows a startup placeholder without early reads; unload=%s",
+    async (unload) => {
+      const { app, layoutReady } = createApp();
+      const file = new TestTFile("drawing.svg");
+      const cachedRead = vi.fn(async () => "<svg/>");
+      const plugin = new TestPlugin(
+        {
+          ...app,
+          metadataCache: { ...app.metadataCache, getFirstLinkpathDest: () => file },
+          vault: {
+            ...app.vault,
+            cachedRead,
+            getFileByPath: () => file,
+            getResourcePath: () => "app://drawing.svg",
+          },
+        } as never,
+        {} as never,
+      );
+      const deactivate = await activateInkbookPlugin(plugin);
+      configureTestEditorState({ file: { path: "note.md" }, livePreview: true });
+      const registrations = plugin as unknown as { editorExtensions: [] };
+      const state = EditorState.create({
+        doc: "!inkbook[[drawing.svg]]",
+        extensions: [editorInfoField, editorLivePreviewField, ...registrations.editorExtensions],
+      });
+      let widget: InkbookLoadingPreviewWidget | undefined;
+      (state.facet(EditorView.decorations)[0] as DecorationSet).between(
+        0,
+        state.doc.length,
+        (_from, _to, decoration) => {
+          widget = (decoration.spec as { widget: InkbookLoadingPreviewWidget }).widget;
+        },
+      );
+      expect(widget).toBeInstanceOf(InkbookLoadingPreviewWidget);
+      const recognition = widget!.ports.documents.recognize(file.path);
+      await Promise.resolve();
+      expect(cachedRead).not.toHaveBeenCalled();
+      if (unload) deactivate?.();
+      layoutReady();
+      await expect(recognition).resolves.toBe(false);
+      expect(cachedRead).toHaveBeenCalledTimes(unload ? 0 : 1);
+      if (!unload) deactivate?.();
+    },
+  );
+});
+
 describe("plugin host registration", () => {
   it("loads settings and registers both embed surfaces, settings, theme, and commands", async () => {
     const { app, cssChange, layoutReady, metadataEvents, vaultEvents, workspaceEvents } =
@@ -100,8 +158,8 @@ describe("plugin host registration", () => {
       readonly settingTabs: unknown[];
     };
 
-    expect(registrations.postProcessors).toHaveLength(0);
-    expect(registrations.editorExtensions).toHaveLength(0);
+    expect(registrations.postProcessors).toHaveLength(1);
+    expect(registrations.editorExtensions).toHaveLength(1);
     expect(vaultEvents.size).toBe(0);
     expect(registrations.settingTabs).toHaveLength(1);
     expect(registrations.commands.map((command) => command.id)).toEqual([
@@ -116,6 +174,7 @@ describe("plugin host registration", () => {
     expect(cssChange).toHaveBeenCalledTimes(0);
     expect([...metadataEvents.keys()]).toEqual(["changed", "resolved"]);
     expect(workspaceEvents.has("quit")).toBe(true);
+    expect(workspaceEvents.has("editor-menu")).toBe(true);
     expect(workspaceEvents.has("editor-change")).toBe(false);
     expect(registrations.commands[0]?.checkCallback?.(true)).toBe(false);
     const insertion = registrations.commands.find(
@@ -132,8 +191,8 @@ describe("plugin host registration", () => {
     expect(insertion?.(true, editor, context)).toBe(false);
     layoutReady();
     expect(registrations.postProcessors).toHaveLength(1);
-    expect(registrations.editorExtensions).toHaveLength(1);
-    expect(registrations.editorExtensions[0]).toHaveLength(3);
+    expect(registrations.editorExtensions).toHaveLength(2);
+    expect(registrations.editorExtensions[1]).toHaveLength(3);
     expect([...vaultEvents.keys()]).toEqual(["create", "modify"]);
     expect(workspaceEvents.has("editor-change")).toBe(true);
     expect(insertion?.(true, editor, context)).toBe(true);
@@ -147,7 +206,7 @@ describe("plugin host registration", () => {
     expect(testIconRegistry.has(STRAIGHT_HIGHLIGHTER_ICON_ID)).toBe(false);
   });
 
-  it("does not register layout-owned surfaces after deactivation", async () => {
+  it("does not start layout-owned input or vault work after deactivation", async () => {
     const { app, layoutReady, vaultEvents } = createApp();
     const plugin = new TestPlugin(app as never, {} as never);
     const deactivate = await activateInkbookPlugin(plugin);
@@ -159,8 +218,8 @@ describe("plugin host registration", () => {
       readonly editorExtensions: unknown[];
       readonly postProcessors: unknown[];
     };
-    expect(registrations.postProcessors).toHaveLength(0);
-    expect(registrations.editorExtensions).toHaveLength(0);
+    expect(registrations.postProcessors).toHaveLength(1);
+    expect(registrations.editorExtensions).toHaveLength(1);
     expect(vaultEvents.size).toBe(0);
   });
 });

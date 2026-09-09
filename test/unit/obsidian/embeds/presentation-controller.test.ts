@@ -6,6 +6,23 @@ import { ColorSchemeBroadcaster } from "../../../../src/obsidian/theme/color-sch
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
 
 describe("locked-preview scheme replacement", () => {
+  it("hands the initial loading timestamp to the attachment only once", () => {
+    const root = new FakePresentationElement();
+    const preview = root.createDiv();
+    const mount = vi.fn();
+    const entranceState = { presented: false, loadingStartedAt: 123 };
+    const controller = new PresentationController(
+      createPresentationAttachment(root, "loading-handoff"),
+      { activate: vi.fn(), detach: vi.fn(), mount },
+      new ColorSchemeBroadcaster({ getColorScheme: () => "light" }),
+      { element: preview as unknown as HTMLElement, entranceState },
+    );
+    controller.mount();
+    expect(mount).toHaveBeenCalledWith(expect.objectContaining({ loadingStartedAt: 123 }));
+    expect(entranceState).not.toHaveProperty("loadingStartedAt");
+    controller.dispose();
+  });
+
   it("refreshes a plugin-owned preview surface once per real scheme transition", () => {
     let dark = false;
     const scheme = new ColorSchemeBroadcaster({

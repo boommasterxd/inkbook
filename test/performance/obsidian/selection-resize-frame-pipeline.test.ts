@@ -41,22 +41,23 @@ const PAGE: PageV1 = {
 const RAW_SAMPLES_PER_FRAME = 4;
 
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz selection resize frame pipeline`, () => {
-  it("keeps pointer-to-scene resize frames within budget", async ({ annotate }) => {
-    const profiles = [
-      ["mixed exact resize", mixedExactElements()],
-      ["long pressure progressive resize", longPressureElements()],
-      ["4096-sample non-pressure resize", mixedElements(nonPressureStroke(0))],
-      [
-        "20,480-sample non-pressure progressive resize",
-        Array.from({ length: 5 }, (_, index) => nonPressureStroke(index)),
-      ],
-      ["variable pressure progressive resize", variablePressureElements()],
-      ["40 long pressure strokes resize", pressureBandSelection()],
-      ["255 canonical shapes with a long pressure stroke", mixedShapeFeedbackElements()],
-      ["10,000-element progressive resize", fallbackElements()],
-    ] as const;
-    for (const [name, elements] of profiles) {
-      const result = measurePipeline(elements);
+  // Each independent workload retains its own default test deadline and frame budget.
+  it.for([
+    ["mixed exact resize", mixedExactElements],
+    ["long pressure progressive resize", longPressureElements],
+    ["4096-sample non-pressure resize", () => mixedElements(nonPressureStroke(0))],
+    [
+      "20,480-sample non-pressure progressive resize",
+      () => Array.from({ length: 5 }, (_, index) => nonPressureStroke(index)),
+    ],
+    ["variable pressure progressive resize", variablePressureElements],
+    ["40 long pressure strokes resize", pressureBandSelection],
+    ["255 canonical shapes with a long pressure stroke", mixedShapeFeedbackElements],
+    ["10,000-element progressive resize", fallbackElements],
+  ] as const)(
+    "keeps %s pointer-to-scene frames within budget",
+    async ([name, createElements], { annotate }) => {
+      const result = measurePipeline(createElements());
       expect(result.layoutUpdates).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
       expect(result.pageGrowths).toBeGreaterThan(0);
       expect(result.firstFrameMs).toBeLessThanOrEqual(
@@ -70,8 +71,8 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz selection resize frame p
         `${name}: first preview frame=${result.firstFrameMs.toFixed(3)} ms`,
         "performance",
       );
-    }
-  });
+    },
+  );
 
   it("keeps coalesced S Pen selection moves within budget", async ({ annotate }) => {
     const profiles = [

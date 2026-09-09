@@ -1,93 +1,62 @@
+import { EditorState } from "@codemirror/state";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  findEmbedsInVisibleRanges,
-  MARKDOWN_EMBED_LIMITS,
-  type ExecutableSyntaxIterator,
-} from "../../../../src/obsidian/embeds";
-import { executableSyntaxIn } from "../../../fixtures/obsidian/live-preview";
+import { LivePreviewBlocks } from "../../../../src/obsidian/embeds/live-preview-blocks";
+import { LivePreviewEntrances } from "../../../../src/obsidian/embeds/live-preview-entrances";
+import type { VisibleEmbed } from "../../../../src/obsidian/embeds/live-preview-widget";
+import { MARKDOWN_EMBED_LIMITS } from "../../../../src/obsidian/embeds/markdown-embed";
+import type { EmbedIntegrationPorts } from "../../../../src/obsidian/embeds/presentation-port";
 
-const RESOLVED_DOCUMENT = {
-  documentId: "drawings/ink.svg",
-  resourceUrl: "app://vault/ink.svg",
-};
+function build(text: string) {
+  const resolveDocument = vi.fn((documentId: string) => ({
+    documentId,
+    resourceUrl: `app://${documentId}`,
+  }));
+  const ports = {
+    documents: { cached: () => undefined },
+    resolveDocument,
+  } as unknown as EmbedIntegrationPorts;
+  const blocks = LivePreviewBlocks.create(
+    EditorState.create({ doc: text }),
+    ports,
+    new LivePreviewEntrances("note.md"),
+    { enabled: true, sourcePath: "note.md" },
+  );
+  return { blocks, resolveDocument };
+}
 
-describe("Live Preview aggregate boundaries", () => {
-  it("fails closed when split visible ranges exceed the aggregate UTF-8 budget", () => {
-    const first = "a".repeat(MARKDOWN_EMBED_LIMITS.inputBytes / 2);
-    const second = `${"b".repeat(MARKDOWN_EMBED_LIMITS.inputBytes / 2 - 1)}é`;
-    const secondFrom = first.length + 1;
-    const resolveDocument = vi.fn(() => RESOLVED_DOCUMENT);
-    const iterateSyntax = vi.fn(() => true);
-
-    expect(
-      findEmbedsInVisibleRanges(
-        (from) => (from === 0 ? first : second),
-        [
-          { from: 0, to: first.length },
-          { from: secondFrom, to: secondFrom + second.length },
-        ],
-        "notes/note.md",
-        resolveDocument,
-        iterateSyntax,
-      ),
-    ).toEqual([]);
-    expect(iterateSyntax).not.toHaveBeenCalled();
+describe("Live Preview candidate boundaries", () => {
+  it("fails closed before link resolution when the note exceeds the UTF-8 budget", () => {
+    const text = `!inkbook[[a.svg]]\n${"é".repeat(MARKDOWN_EMBED_LIMITS.inputBytes / 2)}`;
+    const { blocks, resolveDocument } = build(text);
+    expect(blocks.decorations.size).toBe(0);
     expect(resolveDocument).not.toHaveBeenCalled();
   });
 
-  it("fails closed without resolving partial targets above the aggregate match limit", () => {
-    const embed = "!inkbook[[drawings/ink.svg]]";
-    const first = Array.from({ length: MARKDOWN_EMBED_LIMITS.matches / 2 }, () => embed).join("\n");
-    const second = Array.from({ length: MARKDOWN_EMBED_LIMITS.matches / 2 + 1 }, () => embed).join(
-      "\n",
+  it("fails closed without resolving partial targets above the match limit", () => {
+    const { blocks, resolveDocument } = build(
+      Array.from({ length: MARKDOWN_EMBED_LIMITS.matches + 1 }, () => "!inkbook[[a.svg]]").join(
+        "\n",
+      ),
     );
-    const text = `${first}\n${second}`;
-    const secondFrom = first.length + 1;
-    const resolveDocument = vi.fn(() => RESOLVED_DOCUMENT);
-
-    expect(
-      findEmbedsInVisibleRanges(
-        (from, to) => text.slice(from, to),
-        [
-          { from: 0, to: first.length },
-          { from: secondFrom, to: text.length },
-        ],
-        "notes/note.md",
-        resolveDocument,
-        executableSyntaxIn(text),
-      ),
-    ).toEqual([]);
+    expect(blocks.decorations.size).toBe(0);
     expect(resolveDocument).not.toHaveBeenCalled();
   });
 
-  it("keeps below-limit split ranges synchronized with the current syntax and document state", () => {
-    const first = "!inkbook[[drawings/ink.svg]]";
-    const second = "!inkbook[Handwriting](drawings/ink.svg)";
-    let text = `${first}\ngap\n${second}`;
-    const secondFrom = text.indexOf(second);
-    const ranges = [
-      { from: 0, to: first.length },
-      { from: secondFrom, to: text.length },
-    ];
-    const scan = (syntax: ExecutableSyntaxIterator) =>
-      findEmbedsInVisibleRanges(
-        (from, to) => text.slice(from, to),
-        ranges,
-        "notes/note.md",
-        () => RESOLVED_DOCUMENT,
-        syntax,
-      );
-
-    expect(scan(() => true)).toEqual([]);
-    expect(scan(executableSyntaxIn(text)).map(({ from, to }) => text.slice(from, to))).toEqual([
-      first,
+  it("visits only fully visible occurrences of both supported link syntaxes", () => {
+    const first = "!inkbook[[a.svg]]";
+    const second = "!inkbook[Handwriting](b.svg)";
+    const third = "!inkbook[[a.svg]]";
+    const text = `${first}\ngap\n${second}\ngap\n${third}`;
+    const { blocks } = build(text);
+    const visit = vi.fn<(embed: VisibleEmbed) => void>();
+    blocks.visitVisible([{ from: first.length + 1, to: text.length }], visit);
+    expect(visit.mock.calls.map(([embed]) => text.slice(embed.from, embed.to))).toEqual([
+      third,
       second,
     ]);
-
-    text = `${"x".repeat(first.length)}\ngap\n${second}`;
-    expect(scan(executableSyntaxIn(text)).map(({ from, to }) => text.slice(from, to))).toEqual([
-      second,
-    ]);
+    visit.mockClear();
+    blocks.visitVisible([{ from: 1, to: first.length }], visit);
+    expect(visit).not.toHaveBeenCalled();
   });
 });

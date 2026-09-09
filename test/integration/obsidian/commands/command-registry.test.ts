@@ -1,7 +1,8 @@
-import type { Command, Editor } from "obsidian";
+import { Menu, type MenuItem, type Command, type Editor } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  addInsertionContextMenuItem,
   registerInkbookCommands,
   type CommandRegistrationPort,
   type ContextualCommandRuntimePort,
@@ -93,6 +94,7 @@ describe("Inkbook command registry", () => {
     expect(request).not.toHaveBeenCalled();
     expect(command.editorCheckCallback?.(false, editor, context as never)).toBe(true);
     expect(canInsert).toHaveBeenCalledWith(editor, "notes/page.md");
+    expect(canInsert).toHaveBeenCalledOnce();
     expect(request).toHaveBeenCalledWith(editor, "notes/page.md");
     expect(command.checkCallback).toBeUndefined();
   });
@@ -109,5 +111,57 @@ describe("Inkbook command registry", () => {
     const command = findCommand(host, "insert-handwriting");
     expect(command.editorCheckCallback?.(true, {} as Editor, { file: null } as never)).toBe(false);
     expect(canInsert).not.toHaveBeenCalled();
+  });
+});
+
+describe("insertion context menu", () => {
+  it("uses the registered command name and callback, rechecking when selected", () => {
+    const host = new CommandHost();
+    const canInsert = vi.fn(() => true);
+    const request = vi.fn(() => true);
+    const command = registerInkbookCommands(
+      host,
+      { execute: vi.fn(), isAvailable: () => false },
+      { canInsert, request },
+    );
+    const check = vi.spyOn(command, "editorCheckCallback");
+    const menu = new Menu();
+    const item = {
+      setTitle: vi.fn().mockReturnThis(),
+      setIcon: vi.fn().mockReturnThis(),
+      onClick: vi.fn().mockReturnThis(),
+    } as unknown as MenuItem;
+    const title = vi.spyOn(item, "setTitle");
+    let click: (() => void) | undefined;
+    vi.spyOn(item, "onClick").mockImplementation((callback) => {
+      click = () => {
+        callback({} as MouseEvent);
+      };
+      return item;
+    });
+    const addItem = vi.spyOn(menu, "addItem").mockImplementation((callback) => {
+      callback(item);
+      return menu;
+    });
+    const setCursor = vi.fn();
+    const editor = {
+      getCursor: () => ({ line: 4, ch: 0 }),
+      setCursor,
+    } as unknown as Editor;
+    const context = { file: { path: "notes/page.md" } } as never;
+    addInsertionContextMenuItem(command, menu, editor, context);
+    expect(title).toHaveBeenCalledWith("Insert handwriting embed");
+    expect(check).toHaveBeenCalledWith(true, editor, context);
+    expect(request).not.toHaveBeenCalled();
+    click?.();
+    expect(check).toHaveBeenCalledWith(false, editor, context);
+    expect(setCursor).toHaveBeenCalledWith({ line: 4, ch: 0 });
+    expect(request).toHaveBeenCalledOnce();
+    canInsert.mockReturnValue(false);
+    request.mockReturnValue(false);
+    click?.();
+    expect(request).toHaveBeenCalledTimes(2);
+    addInsertionContextMenuItem(command, menu, editor, context);
+    expect(addItem).toHaveBeenCalledOnce();
   });
 });

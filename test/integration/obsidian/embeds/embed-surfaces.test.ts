@@ -1,17 +1,15 @@
+import { InkbookLivePreviewWidget } from "../../../../src/obsidian/embeds/live-preview-widget";
 import { describe, expect, it, vi } from "vitest";
 
 import {
   createReadingViewPostProcessor,
-  findEmbedsInVisibleRanges,
   findMarkdownInkbookEmbeds,
-  InkbookLivePreviewWidget,
   MARKDOWN_EMBED_LIMITS,
   PresentationLifecycleRegistry,
   shouldRefreshLivePreview,
   type EmbedIntegrationPorts,
 } from "../../../../src/obsidian/embeds";
 import { ColorSchemeBroadcaster } from "../../../../src/obsidian/theme/color-scheme";
-import { executableSyntaxIn } from "../../../fixtures/obsidian/live-preview";
 import { FakePresentationElement as FakeElement } from "../../../fixtures/obsidian/presentation-dom";
 
 const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata></svg>';
@@ -164,6 +162,8 @@ describe("Reading-view embed lifecycle", () => {
       {
         sourcePath: "notes/note.md",
         getSectionInfo: () => ({
+          lineEnd: 0,
+          lineStart: 0,
           text: "!inkbook[[drawings/ink.svg]] !inkbook[[drawings/ink.svg]]",
         }),
         addChild,
@@ -189,9 +189,9 @@ describe("Reading-view embed lifecycle", () => {
       {
         sourcePath: "notes/note.md",
         getSectionInfo: () => ({
-          lineEnd: 12,
-          lineStart: 12,
-          text: "!inkbook[[drawings/ink.svg]]",
+          lineEnd: 3,
+          lineStart: 3,
+          text: "Before\n\n\n!inkbook[[drawings/ink.svg]]\n\nAfter",
         }),
         addChild: (nextChild: { load(): void; unload(): void }) => {
           child = nextChild;
@@ -201,25 +201,25 @@ describe("Reading-view embed lifecycle", () => {
     );
 
     expect(ports.calls).toEqual(["mount:drawings/ink.svg"]);
-    const ownedRoot = section.children[0];
+    const ownedRoot = root.children[0];
     expect(ownedRoot?.tagName).toBe("DIV");
     expect(ownedRoot?.classNames).toContain("inkbook-root");
     expect(section.classNames).toContain("inkbook-scrollbar-stable");
     expect(ownedRoot?.style.colorScheme).toBe("light");
     const activationButton = requireOwnedPreview(ownedRoot ?? root, ownedRoot?.children[0]);
-    expect(root.isConnected).toBe(false);
-    expect(section.children).toHaveLength(1);
+    expect(root.isConnected).toBe(true);
+    expect(section.children).toEqual([root]);
     expect(ports.attachments[0]?.embedReference).toEqual({
       documentId: "drawings/ink.svg",
       kind: "reading-view",
       markdown: "!inkbook[[drawings/ink.svg]]",
       section: {
-        lineEnd: 12,
-        lineStart: 12,
-        text: "!inkbook[[drawings/ink.svg]]",
+        lineEnd: 3,
+        lineStart: 3,
+        text: "Before\n\n\n!inkbook[[drawings/ink.svg]]\n\nAfter",
       },
-      sectionFrom: 0,
-      sectionTo: 28,
+      sectionFrom: 9,
+      sectionTo: 37,
       sourcePath: "notes/note.md",
     });
     const bubbledActivation = vi.fn();
@@ -238,9 +238,48 @@ describe("Reading-view embed lifecycle", () => {
   });
 });
 
+function expectReadingSectionUnchanged(root: FakeElement, text: string): void {
+  const ports = createPorts();
+  const originalChildren = [...root.children];
+  const addChild = vi.fn();
+  void createReadingViewPostProcessor(ports)(
+    root as unknown as HTMLElement,
+    {
+      sourcePath: "notes/note.md",
+      getSectionInfo: () => ({ lineStart: 0, lineEnd: 0, text }),
+      addChild,
+    } as never,
+  );
+  expect(addChild).not.toHaveBeenCalled();
+  expect(root.children).toEqual(originalChildren);
+  expect(ports.calls).toEqual([]);
+}
+
 describe("Reading-view target correlation", () => {
-  it("fails closed when a Reading-view section contains other Markdown", () => {
+  it.each([
+    { lineStart: -1, lineEnd: 0, text: "!inkbook[[drawings/ink.svg]]" },
+    { lineStart: 0, lineEnd: -1, text: "!inkbook[[drawings/ink.svg]]" },
+    { lineStart: 1, lineEnd: 1, text: "!inkbook[[drawings/ink.svg]]" },
+    { lineStart: 0, lineEnd: 1, text: "!inkbook[[drawings/ink.svg]]" },
+    { lineStart: 1, lineEnd: 1, text: "```md\n!inkbook[[drawings/ink.svg]]\n```" },
+    { lineStart: 1, lineEnd: 1, text: "<!--\n!inkbook[[drawings/ink.svg]]\n-->" },
+    { lineStart: 0, lineEnd: 1, text: "Before\n!inkbook[[drawings/ink.svg]]" },
+  ])("rejects invalid section bounds or suppressed surrounding syntax: $text", (section) => {
     const ports = createPorts();
+    const addChild = vi.fn();
+    void createReadingViewPostProcessor(ports)(
+      new FakeElement() as unknown as HTMLElement,
+      {
+        sourcePath: "notes/note.md",
+        getSectionInfo: () => section,
+        addChild,
+      } as never,
+    );
+    expect(addChild).not.toHaveBeenCalled();
+    expect(ports.calls).toEqual([]);
+  });
+
+  it("fails closed when a Reading-view section contains other Markdown", () => {
     const root = new FakeElement();
     const unrelated = new FakeElement(root.ownerDocument, "img");
     unrelated.src = "app://vault/unrelated.png";
@@ -249,40 +288,15 @@ describe("Reading-view target correlation", () => {
     image.currentSrc = "app://vault/drawings/../ink.svg";
     root.append(unrelated);
     root.append(image);
-    const addChild = vi.fn();
-
-    void createReadingViewPostProcessor(ports)(
-      root as unknown as HTMLElement,
-      {
-        sourcePath: "notes/note.md",
-        getSectionInfo: () => ({ text: "![other](unrelated.png) !inkbook[[drawings/ink.svg]]" }),
-        addChild,
-      } as never,
-    );
-
-    expect(addChild).not.toHaveBeenCalled();
+    expectReadingSectionUnchanged(root, "![other](unrelated.png) !inkbook[[drawings/ink.svg]]");
   });
 
   it("requires a standalone recognized raw embed", () => {
-    const ports = createPorts();
     const root = new FakeElement();
     const image = new FakeElement(root.ownerDocument, "img");
     image.src = "app://vault/ink.svg";
     root.append(image);
-    const addChild = vi.fn();
-
-    void createReadingViewPostProcessor(ports)(
-      root as unknown as HTMLElement,
-      {
-        sourcePath: "notes/note.md",
-        getSectionInfo: () => ({
-          text: "Before !inkbook[[drawings/ink.svg]] after",
-        }),
-        addChild,
-      } as never,
-    );
-
-    expect(addChild).not.toHaveBeenCalled();
+    expectReadingSectionUnchanged(root, "Before !inkbook[[drawings/ink.svg]] after");
   });
 
   it("fails closed inside code", () => {
@@ -297,7 +311,7 @@ describe("Reading-view target correlation", () => {
       code as unknown as HTMLElement,
       {
         sourcePath: "notes/note.md",
-        getSectionInfo: () => ({ text: "!inkbook[[drawings/ink.svg]]" }),
+        getSectionInfo: () => ({ lineEnd: 0, lineStart: 0, text: "!inkbook[[drawings/ink.svg]]" }),
         addChild,
       } as never,
     );
@@ -307,61 +321,6 @@ describe("Reading-view target correlation", () => {
 });
 
 describe("Live Preview embed integration", () => {
-  it("creates candidates only inside visible ranges", () => {
-    const text = "!inkbook[[drawings/hidden.svg]]\ntext\n!inkbook[[drawings/ink.svg]]";
-    const visibleFrom = text.indexOf("!inkbook[[drawings/ink.svg]]");
-    const readText = vi.fn((from: number, to: number) => text.slice(from, to));
-    const resolved = findEmbedsInVisibleRanges(
-      readText,
-      [{ from: visibleFrom, to: text.length }],
-      "notes/note.md",
-      createPorts().resolveDocument,
-      executableSyntaxIn(text),
-    );
-
-    expect(resolved).toEqual([
-      {
-        from: visibleFrom,
-        sourcePath: "notes/note.md",
-        to: text.length,
-        resolved: { documentId: "drawings/ink.svg", resourceUrl: "app://vault/ink.svg" },
-      },
-    ]);
-    expect(readText).toHaveBeenCalledOnce();
-    expect(readText).toHaveBeenCalledWith(visibleFrom, text.length);
-  });
-
-  it("fails closed when visible embed syntax is missing or unknown", () => {
-    const text = "!inkbook[[drawings/ink.svg]]";
-    const resolveDocument = createPorts().resolveDocument;
-
-    expect(
-      findEmbedsInVisibleRanges(
-        (from, to) => text.slice(from, to),
-        [{ from: 0, to: text.length }],
-        "notes/note.md",
-        resolveDocument,
-        () => true,
-      ),
-    ).toEqual([]);
-  });
-
-  it("accepts executable Inkbook Wiki-link and Markdown-link syntax", () => {
-    const text = "!inkbook[[drawings/ink.svg]]\n!inkbook[Handwriting](drawings/ink.svg)";
-    const embeds = findEmbedsInVisibleRanges(
-      (from, to) => text.slice(from, to),
-      [{ from: 0, to: text.length }],
-      "notes/note.md",
-      createPorts().resolveDocument,
-      executableSyntaxIn(text),
-    );
-
-    expect(embeds.map(({ from, to }) => text.slice(from, to))).toEqual([
-      "!inkbook[[drawings/ink.svg]]",
-      "!inkbook[Handwriting](drawings/ink.svg)",
-    ]);
-  });
-
   it("ignores cursor-only transactions but refreshes content, viewport, and mode changes", () => {
     const context = { enabled: true, sourcePath: "notes/note.md" };
     expect(

@@ -39,6 +39,21 @@
   overflow: visible;
 }
 
+.inkbook-root.inkbook-loading-placeholder {
+  box-sizing: border-box;
+  display: block;
+  block-size: var(--inkbook-loading-block-size, 0);
+  overflow: clip;
+  margin: 0;
+  background: var(--inkbook-page-surface);
+  border-radius: var(--radius-m);
+}
+
+.inkbook-root.inkbook-embed-root.inkbook-presentation-entering {
+  block-size: var(--inkbook-presentation-block-size, 0);
+  overflow: clip;
+}
+
 .inkbook-root.inkbook-embed-root[contenteditable="false"][data-inkbook-scheme][data-inkbook-state] {
   contain: none !important;
 }
@@ -345,10 +360,6 @@
 
 .inkbook-root .inkbook-operation-feedback {
   align-items: center;
-  background: var(--inkbook-page-surface);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 50%;
-  box-shadow: var(--inkbook-surface-shadow);
   color: var(--text-muted);
   display: flex;
   block-size: 40px;
@@ -358,6 +369,14 @@
   position: absolute;
   translate: -50% -50%;
   z-index: var(--layer-menu);
+}
+
+.inkbook-root .inkbook-feedback-unmeasured {
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  max-inline-size: calc(100% - 24px);
+  pointer-events: none;
+  visibility: visible;
 }
 
 .inkbook-root .inkbook-operation-feedback-icon,

@@ -1,6 +1,7 @@
-import type { Editor } from "obsidian";
+import type { Editor, MarkdownFileInfo, MarkdownView } from "obsidian";
 
 import type { EmptyLineInsertionController } from "./empty-line-insertion";
+import type { InkbookInsertionCommand } from "./command-registry";
 
 export interface PenTapPointerSample {
   readonly button: number;
@@ -14,6 +15,7 @@ export interface PenTapPointerSample {
 
 export interface PenTapTarget {
   readonly editor: Editor;
+  readonly context: MarkdownView | MarkdownFileInfo;
   readonly insideInkWidget: boolean;
   readonly line: number;
   readonly sourcePath: string;
@@ -29,12 +31,18 @@ function isRegularPenTip(sample: PenTapPointerSample): boolean {
 }
 
 export class PenTapInsertionController {
-  readonly #insertion: EmptyLineInsertionController;
+  readonly #insertion: Pick<EmptyLineInsertionController, "canInsertAtLine">;
   readonly #isEnabled: () => boolean;
+  readonly #command: InkbookInsertionCommand;
   #pending: PendingPenTap | undefined;
 
-  constructor(insertion: EmptyLineInsertionController, isEnabled: () => boolean) {
+  constructor(
+    insertion: Pick<EmptyLineInsertionController, "canInsertAtLine">,
+    isEnabled: () => boolean,
+    command: InkbookInsertionCommand,
+  ) {
     this.#insertion = insertion;
+    this.#command = command;
     this.#isEnabled = isEnabled;
   }
 
@@ -71,10 +79,10 @@ export class PenTapInsertionController {
       sample.clientY - pending.sample.clientY,
     );
     if (duration < 0 || duration > 500 || movement > 10) return false;
-    return this.#insertion.requestAtLine(
-      pending.target.editor,
-      pending.target.sourcePath,
-      pending.target.line,
-    );
+    const { editor, sourcePath, line, context } = pending.target;
+    if (context.file?.path !== sourcePath) return false;
+    if (!this.#insertion.canInsertAtLine(editor, sourcePath, line)) return false;
+    editor.setCursor({ line, ch: 0 });
+    return this.#command.editorCheckCallback(false, editor, context);
   }
 }

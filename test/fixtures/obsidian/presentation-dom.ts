@@ -92,6 +92,7 @@ export class FakePresentationElement {
       },
     });
     const windowListeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
+    let frameTime = 0;
     const owningWindow = {
       addEventListener: (type: string, callback: EventListenerOrEventListenerObject) => {
         const listeners = windowListeners.get(type) ?? new Set();
@@ -122,7 +123,8 @@ export class FakePresentationElement {
       getComputedStyle: () => ({ overflowY: "visible" }),
       performance,
       requestAnimationFrame: (callback: FrameRequestCallback) => {
-        callback(0);
+        frameTime += 16;
+        callback(frameTime);
         return 1;
       },
       removeEventListener: (type: string, callback: EventListenerOrEventListenerObject) => {

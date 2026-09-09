@@ -27,8 +27,10 @@ function targetAtEvent(view: EditorView, event: PointerEvent): PenTapTarget | un
   const editor = info?.editor;
   const sourcePath = info?.file?.path;
   const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
-  if (editor === undefined || sourcePath === undefined || position === null) return undefined;
+  if (info === undefined || editor === undefined || sourcePath === undefined || position === null)
+    return undefined;
   return {
+    context: info,
     editor,
     insideInkWidget: isInsideInkbookWidget(event),
     line: view.state.doc.lineAt(position).number - 1,

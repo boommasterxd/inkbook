@@ -9,6 +9,8 @@ import {
 } from "obsidian";
 
 import {
+  createInsertionContextMenuExtension,
+  InsertionContextMenuController,
   createObsidianInsertionController,
   createObsidianEmbedActions,
   createObsidianEmbedPasteController,
@@ -18,6 +20,7 @@ import {
   registerInkbookCommands,
   type CompletedEmptyLineInsertion,
   type EmbedPasteOutcome,
+  type InkbookInsertionCommand,
 } from "./commands";
 import {
   createLivePreviewExtension,
@@ -80,9 +83,19 @@ export async function activateInkbookPlugin(
     },
     createPlacementFeedback(plugin, feedback),
   );
+  const insertionCommand = registerInkbookCommands(plugin, runtime, {
+    canInsert: (editor, sourcePath) => layoutReady && insertion.canInsert(editor, sourcePath),
+    request: (editor, sourcePath) => layoutReady && insertion.request(editor, sourcePath),
+  });
+  const insertionMenu = registerInsertionMenu(
+    plugin,
+    insertionCommand,
+    (editor, path, line) => layoutReady && insertion.canInsertAtLine(editor, path, line),
+  );
   const penTap = new PenTapInsertionController(
     insertion,
     () => layoutReady && settings.getDeviceSettings().penTapInsertion === "handwriting",
+    insertionCommand,
   );
   const embedPaste = createObsidianEmbedPasteController(
     plugin.app,
@@ -92,35 +105,25 @@ export async function activateInkbookPlugin(
 
   const lifecycle = new PresentationLifecycleRegistry();
   const { documentRecognition, ports } = createEmbedIntegration(plugin, lifecycle, scheme, runtime);
+  plugin.registerMarkdownPostProcessor(createReadingViewPostProcessor(ports));
+  plugin.registerEditorExtension(createLivePreviewExtension(ports));
   plugin.app.workspace.onLayoutReady(() => {
     if (!active || !isActive()) return;
     layoutReady = true;
     registerVaultLifecycle(plugin, runtime, documentRecognition);
     registerMarkdownHistory(plugin, runtime);
-    plugin.registerMarkdownPostProcessor(createReadingViewPostProcessor(ports));
+    documentRecognition.markLayoutReady();
     plugin.registerEditorExtension([
-      createLivePreviewExtension(ports),
       createPenTapInsertionExtension(penTap),
+      createInsertionContextMenuExtension(insertionMenu),
       createEmbedPasteExtension(embedPaste, (outcome) => {
         const code = feedbackForEmbedPaste(outcome);
         if (code !== undefined) showGlobalFeedback(plugin, feedback, code);
       }),
     ]);
   });
-  plugin.registerEvent(
-    plugin.app.workspace.on("quit", (tasks) => {
-      tasks.add(() => runtime.prepareForQuit());
-    }),
-  );
-  plugin.registerEvent(
-    plugin.app.workspace.on("css-change", () => {
-      scheme.refresh();
-    }),
-  );
-  registerInkbookCommands(plugin, runtime, {
-    canInsert: (editor, sourcePath) => layoutReady && insertion.canInsert(editor, sourcePath),
-    request: (editor, sourcePath) => layoutReady && insertion.request(editor, sourcePath),
-  });
+  registerWorkspaceLifecycle(plugin, runtime, scheme);
+
   return () => {
     active = false;
     lifecycle.disposeAll();
@@ -203,7 +206,9 @@ function createEmbedIntegration(
   scheme: ColorSchemeBroadcaster,
   runtime: ObsidianWorkspaceRuntime,
 ) {
-  const documentRecognition = new ObsidianInkbookDocumentRecognition(plugin.app.vault);
+  const documentRecognition = new ObsidianInkbookDocumentRecognition(plugin.app.vault, {
+    deferUntilLayoutReady: true,
+  });
   return {
     documentRecognition,
     ports: {
@@ -335,4 +340,36 @@ function resolveEditorPane(
   info: MarkdownView | MarkdownFileInfo,
 ): HTMLElement | undefined {
   return info instanceof MarkdownView && info.editor === editor ? info.containerEl : undefined;
+}
+
+function registerInsertionMenu(
+  plugin: Plugin,
+  insertionCommand: InkbookInsertionCommand,
+  canInsert: (editor: Editor, path: string, line: number) => boolean,
+): InsertionContextMenuController {
+  const controller = new InsertionContextMenuController(insertionCommand, canInsert);
+  plugin.register(() => controller.clear());
+  plugin.registerEvent(
+    plugin.app.workspace.on("editor-menu", (menu, editor, context) => {
+      controller.addItem(menu, editor, context);
+    }),
+  );
+  return controller;
+}
+
+function registerWorkspaceLifecycle(
+  plugin: Plugin,
+  runtime: ObsidianWorkspaceRuntime,
+  scheme: ColorSchemeBroadcaster,
+): void {
+  plugin.registerEvent(
+    plugin.app.workspace.on("quit", (tasks) => {
+      tasks.add(() => runtime.prepareForQuit());
+    }),
+  );
+  plugin.registerEvent(
+    plugin.app.workspace.on("css-change", () => {
+      scheme.refresh();
+    }),
+  );
 }

@@ -102,6 +102,63 @@ describe("PresentationOperationFeedback", () => {
   });
 });
 
+describe("PresentationOperationFeedback loading handoff", () => {
+  it("continues the original loading deadline before the next paint", () => {
+    const harness = createHarness();
+    const operation = harness.feedback.begin("loading", 700);
+    expect(harness.delay()).toBe(200);
+    harness.runTimer();
+    expect(harness.indicator()).toBeNull();
+    const frame = harness.pendingFrameHandles()[0];
+    operation.finish();
+    harness.runCapturedFrame(frame);
+    expect(harness.indicator()).toBeNull();
+  });
+
+  it.each([500, 400])("shows an elapsed loading deadline synchronously (%s)", (startedAt) => {
+    const harness = createHarness();
+    const stale = harness.feedback.begin("loading", startedAt);
+    expect(harness.delay()).toBeUndefined();
+    expect(harness.pendingFrames()).toBe(0);
+    expect(harness.indicator()?.dataset.inkbookOperation).toBe("loading");
+    const current = harness.feedback.begin("loading", startedAt);
+    stale.finish();
+    expect(harness.indicator()?.dataset.inkbookOperation).toBe("loading");
+    current.finish();
+    expect(harness.indicator()).toBeNull();
+  });
+
+  it("disposes immediately resumed feedback and rejects later starts", () => {
+    const harness = createHarness();
+    const operation = harness.feedback.begin("loading", 100);
+    harness.feedback.dispose();
+    operation.finish();
+    harness.feedback.begin("loading", 100).finish();
+    expect(harness.indicator()).toBeNull();
+    expect(harness.delay()).toBeUndefined();
+    expect(harness.pendingFrames()).toBe(0);
+  });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, 1100])(
+    "uses a fresh deadline for invalid or future timestamps (%s)",
+    (startedAt) => {
+      const harness = createHarness();
+      harness.feedback.begin("loading", startedAt);
+      expect(harness.delay()).toBe(500);
+      expect(harness.indicator()).toBeNull();
+    },
+  );
+
+  it("preserves the saving delay even with a previous start timestamp", () => {
+    const harness = createHarness();
+    harness.feedback.begin("saving", 100);
+    expect(harness.delay()).toBe(150);
+    expect(harness.indicator()).toBeNull();
+    harness.runTimer();
+    expect(harness.indicator()?.dataset.inkbookOperation).toBe("saving");
+  });
+});
+
 function createHarness() {
   const frameCallbacks = new Map<number, FrameRequestCallback>();
   const frames = new Map<number, FrameRequestCallback>();
@@ -112,11 +169,13 @@ function createHarness() {
   const ownerWindow = root.ownerDocument.defaultView;
   if (ownerWindow === null) throw new Error("Missing owner window.");
   const mutableWindow = ownerWindow as unknown as {
+    performance: { now: () => number };
     cancelAnimationFrame: (handle: number) => void;
     clearTimeout: (handle: number | undefined) => void;
     requestAnimationFrame: (callback: FrameRequestCallback) => number;
     setTimeout: (callback: () => void, delay: number) => number;
   };
+  mutableWindow.performance = { now: () => 1000 };
   mutableWindow.cancelAnimationFrame = vi.fn((handle: number) => frames.delete(handle));
   mutableWindow.clearTimeout = vi.fn((handle: number | undefined) => {
     if (handle !== undefined) timers.delete(handle);

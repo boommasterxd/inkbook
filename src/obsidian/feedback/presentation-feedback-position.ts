@@ -47,9 +47,16 @@ export function createPresentationFeedbackPositionLifecycle(
   const ownerWindow = ownerDocument.defaultView;
   if (ownerWindow === null) return { dispose: () => undefined };
   let active = true;
+  let measured = false;
   let frame: number | undefined;
   const reposition = (): void => {
     if (!active) return;
+    if (!measured && verticalAnchor === "center" && !presentation.isConnected) {
+      prepareUnmeasuredCenter(surface);
+      return;
+    }
+    measured = true;
+    surface.classList.remove("inkbook-feedback-unmeasured");
     const presentationBounds = presentation.getBoundingClientRect();
     const boundary = resolveVisibleOwnerBoundary(presentation, ownerDocument);
     const position = resolvePresentationFeedbackPosition(presentationBounds, boundary);
@@ -66,6 +73,7 @@ export function createPresentationFeedbackPositionLifecycle(
   ownerDocument.addEventListener("scroll", schedule, true);
   ownerWindow.addEventListener("resize", schedule, { passive: true });
   reposition();
+  if (!presentation.isConnected) schedule();
   return {
     dispose: () => {
       if (!active) return;
@@ -76,6 +84,11 @@ export function createPresentationFeedbackPositionLifecycle(
       ownerWindow.removeEventListener("resize", schedule);
     },
   };
+}
+
+/** A widget can be created detached and inserted before the next paint. */
+function prepareUnmeasuredCenter(surface: HTMLElement): void {
+  surface.classList.add("inkbook-feedback-unmeasured");
 }
 
 function applyPosition(
@@ -96,7 +109,6 @@ function applyPosition(
   }
   surface.style.insetInlineStart = `${String(position.left)}px`;
   surface.style.maxInlineSize = `${String(position.maxInlineSize)}px`;
-  surface.style.pointerEvents = position.visible ? "auto" : "none";
   surface.style.visibility = position.visible ? "visible" : "hidden";
 }
 
