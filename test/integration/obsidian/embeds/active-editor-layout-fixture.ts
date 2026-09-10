@@ -66,20 +66,22 @@ export function page(): PageV1 {
   };
 }
 
-export function layoutHarness(motion: "full" | "reduced" | "system" = "full", horizontalInset = 0) {
+export function layoutHarness(
+  motion: "full" | "reduced" | "system" = "full",
+  horizontalInset = 0,
+  blockInsets = 0,
+) {
   const work = new ScheduledWork();
-  const observers = installLayoutObservers(work.window, horizontalInset);
+  const observers = installLayoutObservers(work.window, horizontalInset, blockInsets);
   const rect = { height: 0, width: 1_000 };
   const styleProperties = new Map<string, string>();
-  const style = layoutStyle(rect, styleProperties);
   const ownerDocument = { defaultView: work.window };
   const classList = new FakeClassList();
   const container = {
     classList,
-    getBoundingClientRect: () =>
-      domRect({ height: rect.height, left: 0, top: 0, width: rect.width }),
+    getBoundingClientRect: () => domRect({ ...rect, left: 0, top: 0 }),
     ownerDocument,
-    style,
+    style: layoutStyle(rect, styleProperties),
   } as unknown as HTMLElement;
   const invalidateLayout = vi.fn();
   let scenePending = false;
@@ -123,7 +125,7 @@ export function layoutHarness(motion: "full" | "reduced" | "system" = "full", ho
       anchorViewportY: 250,
       embedTopInScrollContent: 200,
       oldCameraX: -400,
-      oldRenderedContainerHeight: rect.height,
+      oldRenderedContainerHeight: rect.height - blockInsets,
       oldScrollTop: 500,
       scrollBounds: { min: 0, max: 5_000 },
       viewportWidth: rect.width - horizontalInset,
@@ -165,11 +167,15 @@ export function layoutHarness(motion: "full" | "reduced" | "system" = "full", ho
   };
 }
 
-function installLayoutObservers(ownerWindow: ScheduledWork["window"], horizontalInset: number) {
+function installLayoutObservers(
+  ownerWindow: ScheduledWork["window"],
+  horizontalInset: number,
+  blockInsets: number,
+) {
   let chromeMutation: MutationCallback | undefined;
   let resize: ResizeObserverCallback | undefined;
   Object.assign(ownerWindow, {
-    getComputedStyle: () => computedStyle(horizontalInset),
+    getComputedStyle: () => computedStyle(horizontalInset, blockInsets),
     MutationObserver: class {
       public constructor(callback: MutationCallback) {
         chromeMutation = callback;
@@ -208,12 +214,12 @@ function layoutStyle(
   } as unknown as CSSStyleDeclaration;
 }
 
-function computedStyle(horizontalInset: number): Partial<CSSStyleDeclaration> {
+function computedStyle(horizontalInset: number, blockInsets: number): Partial<CSSStyleDeclaration> {
   return {
-    borderBottomWidth: "0px",
+    borderBottomWidth: `${String(blockInsets / 2)}px`,
     borderLeftWidth: horizontalInset > 0 ? "2px" : "0px",
     borderRightWidth: horizontalInset > 0 ? "2px" : "0px",
-    borderTopWidth: "0px",
+    borderTopWidth: `${String(blockInsets / 2)}px`,
     paddingBottom: "0px",
     paddingLeft: horizontalInset > 0 ? `${String(horizontalInset / 2 - 2)}px` : "0px",
     paddingRight: horizontalInset > 0 ? `${String(horizontalInset / 2 - 2)}px` : "0px",

@@ -182,7 +182,13 @@ function createNavigationHarness() {
     fitZoom: rect.width / OUTER_PAGE_WIDTH,
     zoom: rect.width / OUTER_PAGE_WIDTH,
   });
-  const ownerDocument = { defaultView: frames.window, scrollingElement: null };
+  const ownerDocument = {
+    defaultView: {
+      ...frames.window,
+      getComputedStyle: () => ({ borderTopWidth: "1px", borderBottomWidth: "1px" }),
+    },
+    scrollingElement: null,
+  };
   const owner = {
     clientHeight: 500,
     getBoundingClientRect: () => domRect({ height: 500, left: 0, top: 0, width: 1_000 }),
@@ -203,7 +209,7 @@ function createNavigationHarness() {
   const navigation = new ActiveEditorNavigation({
     activePageHeight: () => 2_000,
     applyZoomLayout: ({ blockSize }) => {
-      rect.height = blockSize;
+      rect.height = blockSize + 2;
       layoutWrites += 1;
     },
     container,

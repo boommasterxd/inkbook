@@ -31,6 +31,8 @@ renderedContainerHeight = derivedPageHeight × camera.zoom
 
 This guarantees a non-empty range with at least five-times relative magnification. In normal containers the absolute maximum remains 5 CSS pixels per page unit.
 
+`renderedContainerHeight` describes the page content height. The host adapter adds the container's block-axis borders when assigning its CSS border-box height and removes them before converting measured heights back to page units. Locked and active presentations therefore retain identical outer heights when their page heights are equal; the border never consumes writable page space.
+
 ## Zoom Input
 
 The exact keyboard binding is device-local and configurable. Its built-in value and keyboard-layout aliases are defined in [Keyboard Shortcuts](keyboard-shortcuts.md); the zoom factor and anchor behavior below remain unchanged when the binding changes.

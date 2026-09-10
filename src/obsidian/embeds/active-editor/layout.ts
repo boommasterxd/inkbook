@@ -36,6 +36,7 @@ export class ActiveEditorLayout {
   readonly #motion: ActiveEditorMotion;
   readonly #pageLayout = new ActivePageLayout();
   readonly #heightTransition: ActiveHeightTransition;
+  #blockInsets = 0;
   #chromeMounted = false;
   #fitZoom: number | undefined;
   #forcePageHeight = false;
@@ -97,7 +98,7 @@ export class ActiveEditorLayout {
     this.#zoom = update.zoom;
     const blockSize =
       retainedPageHeight === undefined ? update.blockSize : retainedPageHeight * update.zoom;
-    this.#container.style.blockSize = `${String(blockSize)}px`;
+    this.#container.style.blockSize = `${String(blockSize + this.#blockInsets)}px`;
     this.#options.renderer.invalidateLayout();
     if (retainedPageHeight !== undefined) this.scheduleMeasurement();
   }
@@ -244,7 +245,9 @@ export class ActiveEditorLayout {
   }
 
   private measure(): void {
-    const measuredWidth = measureElementBox(this.#container).contentBox.width;
+    const measurement = measureElementBox(this.#container);
+    this.#blockInsets = measurement.blockInsets;
+    const measuredWidth = measurement.contentBox.width;
     const reduction = observeStableWidth(this.#stableWidth, measuredWidth);
     this.#stableWidth = reduction.state;
     const acceptedWidth = this.#stableWidth.acceptedWidth;
@@ -312,7 +315,7 @@ export class ActiveEditorLayout {
       pageHeight,
       width,
     });
-    this.#container.style.blockSize = `${String(resized.renderedContainerHeight)}px`;
+    this.#container.style.blockSize = `${String(resized.renderedContainerHeight + this.#blockInsets)}px`;
     this.#options.onResize?.({
       cameraX: resized.cameraX,
       fitZoom: resized.fitZoom,
@@ -342,16 +345,18 @@ export class ActiveEditorLayout {
       this.#completeHeightTransition();
       return;
     }
-    const currentRenderedHeight = frameRead?.renderedHeight ?? targetHeight * zoom;
-    const targetRenderedHeight = targetHeight * zoom;
-    const currentPageHeight = currentRenderedHeight / zoom;
+    const currentRenderedHeight =
+      frameRead?.renderedHeight ?? targetHeight * zoom + this.#blockInsets;
+    const targetRenderedHeight = targetHeight * zoom + this.#blockInsets;
+    const currentPageHeight = (currentRenderedHeight - this.#blockInsets) / zoom;
     const preparationHeight = alignPageHeightToWritingLine(
       page,
       Math.max(targetHeight, currentPageHeight),
     );
     this.#options.renderer.setPage(page, preparationHeight);
     this.#heightTransition.begin({
-      applyFrame: (renderedHeight) => this.#writeHeightFrame(renderedHeight / zoom, zoom),
+      applyFrame: (renderedHeight) =>
+        this.#writeHeightFrame((renderedHeight - this.#blockInsets) / zoom, zoom),
       applySurfaceTarget: () =>
         this.#options.renderer.setPage(
           this.#renderPage(),
@@ -387,7 +392,7 @@ export class ActiveEditorLayout {
     const cancelled = this.#heightTransition.cancelAtCurrent();
     const zoom = this.#zoom;
     if (cancelled === undefined || zoom === undefined || zoom <= 0) return undefined;
-    const currentPageHeight = cancelled.renderedHeight / zoom;
+    const currentPageHeight = (cancelled.renderedHeight - this.#blockInsets) / zoom;
     const completed = cancelled.settleToTarget ? this.#pageLayout.completeTransitions() : undefined;
     const committedHeight = deriveActiveHeight(
       this.#options.page(),
@@ -414,7 +419,7 @@ export class ActiveEditorLayout {
   #writeBlockSize(pageHeight: number | undefined, zoom: number): void {
     if (pageHeight !== undefined) {
       const safeHeight = Math.max(pageHeight, this.#requiredContentHeight());
-      this.#container.style.blockSize = `${String(safeHeight * zoom)}px`;
+      this.#container.style.blockSize = `${String(safeHeight * zoom + this.#blockInsets)}px`;
     }
     this.#options.renderer.invalidateLayout();
   }
@@ -426,7 +431,7 @@ export class ActiveEditorLayout {
   }
 
   #writeHeightFrame(pageHeight: number, zoom: number): void {
-    const renderedHeight = pageHeight * zoom;
+    const renderedHeight = pageHeight * zoom + this.#blockInsets;
     this.#container.style.blockSize = `${String(renderedHeight)}px`;
     this.#options.renderer.invalidateLayout();
   }

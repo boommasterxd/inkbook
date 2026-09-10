@@ -9,6 +9,7 @@ export interface ElementContentBox {
 
 export interface ElementBoxMeasurement {
   readonly borderBox: DOMRect;
+  readonly blockInsets: number;
   readonly contentBox: ElementContentBox;
 }
 
@@ -25,6 +26,7 @@ export function measureElementBox(element: HTMLElement): ElementBoxMeasurement {
   const top = borderBox.top + topInset;
   return {
     borderBox,
+    blockInsets: topInset + bottomInset,
     contentBox: {
       bottom: top + height,
       height,
