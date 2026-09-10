@@ -3,6 +3,7 @@ import {
   type ColorSchemeBroadcaster,
   type InkbookColorScheme,
 } from "../theme/color-scheme";
+import { registerFocusNavigation } from "../runtime/focus-navigation";
 import {
   PresentationScrollLifecycle,
   resolveScrollOwner,
@@ -60,6 +61,7 @@ export class PresentationController {
   readonly #sessions: PresentationSessionPort;
   readonly #entrance: PresentationEntrance | undefined;
   #disposeScheme: (() => void) | undefined;
+  #disposeFocusNavigation: (() => void) | undefined;
   #frame: number | undefined;
   #activationPending = false;
   #appliedScheme: InkbookColorScheme | undefined;
@@ -191,6 +193,7 @@ export class PresentationController {
       return;
     }
     this.#mounted = true;
+    this.#disposeFocusNavigation = registerFocusNavigation(this.#attachment.root);
     this.#entrance?.prepare();
     this.#owningWindow.addEventListener("resize", this.#handleOwningWindowResize, {
       passive: true,
@@ -301,6 +304,8 @@ export class PresentationController {
   }
 
   dispose(): void {
+    this.#disposeFocusNavigation?.();
+    this.#disposeFocusNavigation = undefined;
     this.#entrance?.dispose();
     this.#disposeScheme?.();
     this.#disposeScheme = undefined;

@@ -27,7 +27,7 @@ describe("AdaptivePanel styling boundary", () => {
     expect(scroll).toContain("var(--inkbook-motion-easing, cubic-bezier(0.2, 0, 0, 1))");
     expect(
       declarationsFor(
-        ".inkbook-adaptive-panel-back:hover,\n.inkbook-adaptive-panel-back:focus-visible",
+        '.inkbook-adaptive-panel-back:hover,\n.inkbook-adaptive-panel-layer:where([data-inkbook-keyboard-navigation="true"])\n  .inkbook-adaptive-panel-back:focus',
       ),
     ).toContain("box-shadow: none");
     expect(

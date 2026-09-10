@@ -229,7 +229,8 @@
   text-align: end;
 }
 
-.inkbook-menu-value-field:focus-within {
+.inkbook-adaptive-panel-layer:where([data-inkbook-keyboard-navigation="true"])
+  .inkbook-menu-value-field:focus-within {
   outline: 2px solid var(--interactive-accent);
   outline-offset: 2px;
 }
@@ -330,15 +331,23 @@
   translate: 18px 0;
 }
 
-.inkbook-menu-switch input:focus-visible + .inkbook-menu-switch-track {
+.inkbook-adaptive-panel-layer:where([data-inkbook-keyboard-navigation="true"])
+  .inkbook-menu-switch
+  input:focus
+  + .inkbook-menu-switch-track {
   outline: 2px solid var(--interactive-accent);
   outline-offset: 2px;
 }
 
-.inkbook-menu-choice:focus-visible,
-.inkbook-menu-stepper-button:focus-visible,
-.inkbook-menu-spacing-slider:focus-visible,
-.inkbook-menu-controls input:focus-visible {
+.inkbook-adaptive-panel-layer:where([data-inkbook-keyboard-navigation="true"])
+  .inkbook-menu-choice:focus,
+.inkbook-adaptive-panel-layer:where([data-inkbook-keyboard-navigation="true"])
+  .inkbook-menu-stepper-button:focus,
+.inkbook-adaptive-panel-layer:where([data-inkbook-keyboard-navigation="true"])
+  .inkbook-menu-spacing-slider:focus,
+.inkbook-adaptive-panel-layer:where([data-inkbook-keyboard-navigation="true"])
+  .inkbook-menu-controls
+  input:focus {
   outline: 2px solid var(--interactive-accent);
   outline-offset: 2px;
 }
