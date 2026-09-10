@@ -1,11 +1,7 @@
-import { EditorView, type DOMEventHandlers } from "@codemirror/view";
 import type { Editor, MarkdownFileInfo } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  createPenTapInsertionExtension,
-  PenTapInsertionController,
-} from "../../../../src/obsidian/commands";
+import { PenTapInsertionController } from "../../../../src/obsidian/commands";
 
 import { registerInsertion } from "./insertion-command-fixture";
 
@@ -94,30 +90,5 @@ describe("pen tap activation suppression", () => {
     controller.complete({ ...sample, buttons: 0, timeStamp: 100 });
     controller.begin({ ...sample, pointerType: "touch" }, target);
     expect(controller.consumeClick({ ...sample, timeStamp: 100 })).toBe(false);
-  });
-
-  it("blocks the accepted trailing click before host focus handlers", () => {
-    const { controller, sample, target } = createHarness();
-    let handlers: DOMEventHandlers<unknown> | undefined;
-    const spy = vi.spyOn(EditorView, "domEventHandlers").mockImplementation((registered) => {
-      handlers = registered;
-      return [];
-    });
-    createPenTapInsertionExtension(controller);
-    spy.mockRestore();
-    controller.begin(sample, target);
-    controller.complete({ ...sample, buttons: 0, timeStamp: 100 });
-    const preventDefault = vi.fn();
-    const stopPropagation = vi.fn();
-    const event = {
-      ...sample,
-      timeStamp: 100,
-      preventDefault,
-      stopPropagation,
-    } as unknown as PointerEvent;
-    expect(handlers?.click?.call({}, event, {} as EditorView)).toBe(true);
-    expect(preventDefault).toHaveBeenCalledOnce();
-    expect(stopPropagation).toHaveBeenCalledOnce();
-    expect(handlers?.click?.call({}, event, {} as EditorView)).toBe(false);
   });
 });

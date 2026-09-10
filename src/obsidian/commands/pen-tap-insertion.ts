@@ -61,6 +61,9 @@ export class PenTapInsertionController {
     if (pointerId === undefined || this.#pending?.sample.pointerId === pointerId) {
       this.#pending = undefined;
     }
+    if (pointerId === undefined || this.#completed?.pointerId === pointerId) {
+      this.#completed = undefined;
+    }
   }
 
   consumeClick(sample: PenTapPointerSample): boolean {
