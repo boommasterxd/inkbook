@@ -70,6 +70,7 @@ class FrameHarness {
 
 function createHarness(options?: {
   readonly activePageHeight?: number | (() => number);
+  readonly blockInsets?: number;
   readonly containerRect?: MutableRect;
   readonly ownerRect?: MutableRect;
   readonly ownerScrollHeight?: number;
@@ -86,7 +87,13 @@ function createHarness(options?: {
   const ownerRect = options?.ownerRect ?? { height: 500, left: 0, top: 0, width: 1_000 };
   let scrollTop = options?.ownerScrollTop ?? 200;
   const documentPort: { defaultView: unknown; scrollingElement: unknown } = {
-    defaultView: frames.window,
+    defaultView: {
+      ...frames.window,
+      getComputedStyle: () => ({
+        borderTopWidth: `${String((options?.blockInsets ?? 0) / 2)}px`,
+        borderBottomWidth: `${String((options?.blockInsets ?? 0) / 2)}px`,
+      }),
+    },
     scrollingElement: null,
   };
   const owner = {
@@ -118,7 +125,7 @@ function createHarness(options?: {
     applyZoomLayout: (update) => {
       sequence.push("layout");
       layoutUpdates.push(update);
-      containerRect.height = update.blockSize;
+      containerRect.height = update.blockSize + (options?.blockInsets ?? 0);
     },
     container,
     getInput: () => input,
@@ -141,6 +148,12 @@ function createHarness(options?: {
 }
 
 describe("active editor navigation", () => {
+  it("excludes container borders from the page height used by resize anchors", () => {
+    const harness = createHarness({ blockInsets: 2 });
+    expect(harness.navigation.readResizeAnchor()?.oldRenderedContainerHeight).toBe(998);
+    harness.navigation.dispose();
+  });
+
   it("coalesces normalized wheel zoom into an anchored owner-window frame", () => {
     const harness = createHarness();
     const oldZoom = harness.navigation.zoom;
@@ -192,6 +205,17 @@ describe("active editor navigation", () => {
     harness.frames.flushAll();
 
     expect(harness.navigation.zoom).toBeCloseTo(fitZoom * 5);
+  });
+});
+
+describe("active editor navigation bordered scrolling", () => {
+  it("preserves the complete native scroll range with a bordered container", () => {
+    const harness = createHarness({ blockInsets: 2, ownerScrollTop: 0 });
+    harness.navigation.scroll(-10_000);
+    harness.frames.flushOne();
+    const pageHeight = 2_000 * harness.navigation.zoom;
+    expect(harness.owner.scrollTop).toBeCloseTo(4_000 - 500 + pageHeight - 998);
+    harness.navigation.dispose();
   });
 });
 
