@@ -37,6 +37,21 @@ describe("Live Preview widget content identity", () => {
     expect(widget.eq(new InkbookLivePreviewWidget({ ...embed(), from: 5 }, ports))).toBe(false);
   });
 
+  it("rejects updates for a different attachment or a disposed presentation", () => {
+    const ports = createPorts();
+    const mounted = new InkbookLivePreviewWidget(embed(), ports);
+    const root = mounted.toDOM({
+      dom: { createDiv: () => new FakePresentationElement() },
+    } as never);
+    const changed = new InkbookLivePreviewWidget({ ...embed(), from: 5 }, ports);
+    expect(changed.updateDOM(root)).toBe(false);
+    expect(new InkbookLivePreviewWidget(embed(), createPorts()).updateDOM(root)).toBe(false);
+    expect(ports.calls).toEqual([]);
+    mounted.destroy(root);
+    expect(mounted.updateDOM(root)).toBe(false);
+    expect(ports.calls).toEqual(["detach:drawings/ink.svg"]);
+  });
+
   it("disposes the mounted controller when an equal widget receives destroy", () => {
     const ports = createPorts();
     const mounted = new InkbookLivePreviewWidget(embed(), ports);
