@@ -7,6 +7,7 @@
 @import url("./background-menu.css");
 @import url("./settings.css");
 @import url("./shortcut-settings.css");
+@import url("./focus-navigation.css");
 
 .inkbook-root {
   --inkbook-page-surface: #f6f6f6;
@@ -249,9 +250,8 @@
   stroke: #dadadaff;
 }
 
-.inkbook-root .inkbook-locked-preview:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: -2px;
+.inkbook-root .inkbook-locked-preview:focus {
+  outline: none;
 }
 
 .inkbook-root .inkbook-locked-preview-android {
@@ -353,9 +353,8 @@
   stroke-width: 2.5;
 }
 
-.inkbook-root .inkbook-canvas-input:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: -2px;
+.inkbook-root .inkbook-canvas-input:focus {
+  outline: none;
 }
 
 .inkbook-root .inkbook-operation-feedback {

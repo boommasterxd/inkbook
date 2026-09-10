@@ -228,7 +228,7 @@
   background: color-mix(in srgb, var(--text-error) 12%, transparent);
 }
 
-.inkbook-root .inkbook-toolbar-button:focus-visible {
+.inkbook-root[data-inkbook-keyboard-navigation="true"] .inkbook-toolbar-button:focus {
   outline: 2px solid var(--interactive-accent);
   outline-offset: -4px;
 }

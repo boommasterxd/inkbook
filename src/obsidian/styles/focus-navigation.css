@@ -1,0 +1,22 @@
+.inkbook-root[data-inkbook-keyboard-navigation="false"] :focus,
+.inkbook-adaptive-panel-layer[data-inkbook-keyboard-navigation="false"] :focus,
+.inkbook-adaptive-panel-layer[data-inkbook-keyboard-navigation="false"]
+  .inkbook-menu-value-field:focus-within {
+  outline: none;
+}
+
+.inkbook-root:where(.inkbook-embed-root)[data-inkbook-keyboard-navigation="true"]:has(
+    .inkbook-locked-preview:focus
+  )::after,
+.inkbook-root:where(.inkbook-embed-root)[data-inkbook-keyboard-navigation="true"]:has(
+    .inkbook-canvas-input:focus
+  )::after {
+  border: 2px solid var(--interactive-accent);
+  border-radius: var(--inkbook-shell-radius);
+  box-sizing: border-box;
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 2;
+}

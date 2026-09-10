@@ -1,6 +1,7 @@
 import { Component, Platform, Scope, type Keymap } from "obsidian";
 
 import { effectiveTransitionDuration } from "../runtime/effective-motion";
+import { registerFocusNavigation } from "../runtime/focus-navigation";
 import { menuDomWindow } from "./menu-dom";
 import type { FocusTargetPort } from "./menu-ports";
 import { PhoneSheetSwipeController } from "./phone-sheet-swipe";
@@ -127,6 +128,12 @@ export class AdaptivePanelSession extends Component {
   }
 
   public override onload(): void {
+    this.register(
+      registerFocusNavigation(
+        this.#layer,
+        this.#options.anchor.closest('[data-inkbook-keyboard-navigation="true"]') !== null,
+      ),
+    );
     this.#registerEvents();
     this.#registerViewportEvents();
     this.#options.keymap?.pushScope(this.#scope);
