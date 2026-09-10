@@ -80,7 +80,7 @@ describe("mounted Inkbook toolbar accessibility", () => {
     mounted.unmount();
   });
 
-  it("gives every icon-only control a matching accessible name and tooltip", () => {
+  it("provides host tooltip labels without competing browser title tooltips", () => {
     const mounted = mountToolbar(completeState);
     const toolbar = mounted.container.querySelector<HTMLElement>("[role='toolbar']");
     const groups = mounted.container.querySelectorAll<HTMLElement>("[role='group']");
@@ -96,7 +96,7 @@ describe("mounted Inkbook toolbar accessibility", () => {
     for (const button of buttons) {
       const name = button.getAttribute("aria-label");
       expect(name).toBeTruthy();
-      expect(button.title).toBe(name);
+      expect(button.hasAttribute("title")).toBe(false);
       expect(button.querySelector(".inkbook-toolbar-icon")?.getAttribute("aria-hidden")).toBe(
         "true",
       );

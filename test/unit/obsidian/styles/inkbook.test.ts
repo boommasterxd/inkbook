@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 const stylesheet = [
   readStylesheet("src/obsidian/styles/inkbook.css"),
   readStylesheet("src/obsidian/styles/feedback.css"),
+  readStylesheet("src/obsidian/styles/focus-navigation.css"),
   readStylesheet("src/obsidian/styles/editor-toolbar.css"),
   readStylesheet("src/obsidian/styles/editor-menus.css"),
   readStylesheet("src/obsidian/styles/background-menu.css"),
@@ -79,14 +80,13 @@ describe("Inkbook host styles", () => {
   });
 
   it("draws locked-preview keyboard focus entirely inside the stabilized owner width", () => {
-    const focus = declarationsFor(".inkbook-root .inkbook-locked-preview:focus-visible");
+    const focus = declarationsFor(".inkbook-root .inkbook-locked-preview:focus");
     const preview = declarationsFor(".inkbook-root.inkbook-embed-root .inkbook-locked-preview");
     const android = declarationsFor(".inkbook-root .inkbook-locked-preview-android");
     const image = declarationsFor(".inkbook-root .inkbook-locked-preview-media");
     const svg = declarationsFor(".inkbook-root .inkbook-locked-preview-svg");
 
-    expect(focus).toContain("outline: 2px solid var(--interactive-accent)");
-    expect(focus).toContain("outline-offset: -2px");
+    expect(focus).toContain("outline: none");
     expect(preview).toContain("inline-size: 100%");
     expect(preview).toContain("block-size: auto");
     expect(preview).toContain("padding: 0");

@@ -113,7 +113,6 @@ function IconButton(props: IconButtonProps) {
       onClick={(event) => props.onAction(props.definition.action, event.currentTarget)}
       ref={(element) => props.registerButton?.(props.definition.action, element)}
       tabIndex={props.tabIndex}
-      title={props.definition.label}
       type="button"
     >
       {props.definition.action === "style" ? (

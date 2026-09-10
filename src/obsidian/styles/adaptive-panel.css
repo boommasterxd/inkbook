@@ -92,7 +92,8 @@
 }
 
 .inkbook-adaptive-panel-back:hover,
-.inkbook-adaptive-panel-back:focus-visible {
+.inkbook-adaptive-panel-layer:where([data-inkbook-keyboard-navigation="true"])
+  .inkbook-adaptive-panel-back:focus {
   background: var(--interactive-hover);
   box-shadow: none;
 }
