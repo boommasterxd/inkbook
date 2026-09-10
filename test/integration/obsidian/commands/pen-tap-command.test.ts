@@ -1,7 +1,11 @@
+import { EditorView, type DOMEventHandlers } from "@codemirror/view";
 import type { Editor, MarkdownFileInfo } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { PenTapInsertionController } from "../../../../src/obsidian/commands";
+import {
+  createPenTapInsertionExtension,
+  PenTapInsertionController,
+} from "../../../../src/obsidian/commands";
 
 import { registerInsertion } from "./insertion-command-fixture";
 
@@ -52,4 +56,68 @@ describe("pen tap command dispatch", () => {
       expect(check).not.toHaveBeenCalled();
     },
   );
+});
+
+describe("pen tap activation suppression", () => {
+  it("consumes only the trailing click of a successful insertion", () => {
+    const { controller, sample, target } = createHarness();
+    const released = { ...sample, buttons: 0, timeStamp: 100 };
+    expect(controller.consumeClick(released)).toBe(false);
+    controller.begin(sample, target);
+    controller.complete(released);
+    expect(controller.consumeClick(released)).toBe(true);
+    expect(controller.consumeClick(released)).toBe(false);
+  });
+
+  it.each([
+    { pointerType: "mouse" },
+    { pointerType: "touch" },
+    { pointerId: 2 },
+    { button: 2 },
+    { timeStamp: 99 },
+    { timeStamp: 601 },
+  ])("preserves unrelated activation %j", (overrides) => {
+    const { controller, sample, target } = createHarness();
+    controller.begin(sample, target);
+    controller.complete({ ...sample, buttons: 0, timeStamp: 100 });
+    expect(controller.consumeClick({ ...sample, timeStamp: 100, ...overrides })).toBe(false);
+  });
+
+  it("preserves clicks after rejected insertion and subsequent pointer input", () => {
+    const { controller, request, sample, target } = createHarness();
+    request.mockReturnValue(false);
+    controller.begin(sample, target);
+    controller.complete({ ...sample, buttons: 0, timeStamp: 100 });
+    expect(controller.consumeClick({ ...sample, timeStamp: 100 })).toBe(false);
+    request.mockReturnValue(true);
+    controller.begin(sample, target);
+    controller.complete({ ...sample, buttons: 0, timeStamp: 100 });
+    controller.begin({ ...sample, pointerType: "touch" }, target);
+    expect(controller.consumeClick({ ...sample, timeStamp: 100 })).toBe(false);
+  });
+
+  it("blocks the accepted trailing click before host focus handlers", () => {
+    const { controller, sample, target } = createHarness();
+    let handlers: DOMEventHandlers<unknown> | undefined;
+    const spy = vi.spyOn(EditorView, "domEventHandlers").mockImplementation((registered) => {
+      handlers = registered;
+      return [];
+    });
+    createPenTapInsertionExtension(controller);
+    spy.mockRestore();
+    controller.begin(sample, target);
+    controller.complete({ ...sample, buttons: 0, timeStamp: 100 });
+    const preventDefault = vi.fn();
+    const stopPropagation = vi.fn();
+    const event = {
+      ...sample,
+      timeStamp: 100,
+      preventDefault,
+      stopPropagation,
+    } as unknown as PointerEvent;
+    expect(handlers?.click?.call({}, event, {} as EditorView)).toBe(true);
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(stopPropagation).toHaveBeenCalledOnce();
+    expect(handlers?.click?.call({}, event, {} as EditorView)).toBe(false);
+  });
 });

@@ -221,6 +221,8 @@ A tap creates a new handwriting embed only when all of the following conditions 
 - Handwriting is enabled in the plugin settings
 - no other automatic insertion is already in progress
 
+An accepted pen tap consumes its trailing click before host editor activation, so mobile insertion does not briefly open the software keyboard. Unrelated mouse, touch, and keyboard activation retain their normal behavior.
+
 On success:
 
 1. The plugin creates a new handwriting SVG file.

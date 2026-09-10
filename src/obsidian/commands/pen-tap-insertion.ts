@@ -35,6 +35,7 @@ export class PenTapInsertionController {
   readonly #isEnabled: () => boolean;
   readonly #command: InkbookInsertionCommand;
   #pending: PendingPenTap | undefined;
+  #completed: PenTapPointerSample | undefined;
 
   constructor(
     insertion: Pick<EmptyLineInsertionController, "canInsertAtLine">,
@@ -48,6 +49,7 @@ export class PenTapInsertionController {
 
   begin(sample: PenTapPointerSample, target: PenTapTarget): boolean {
     this.#pending = undefined;
+    this.#completed = undefined;
     if (!this.#isEnabled() || target.insideInkWidget || !isRegularPenTip(sample)) return false;
     if (!this.#insertion.canInsertAtLine(target.editor, target.sourcePath, target.line))
       return false;
@@ -59,6 +61,20 @@ export class PenTapInsertionController {
     if (pointerId === undefined || this.#pending?.sample.pointerId === pointerId) {
       this.#pending = undefined;
     }
+  }
+
+  consumeClick(sample: PenTapPointerSample): boolean {
+    const completed = this.#completed;
+    this.#completed = undefined;
+    if (completed === undefined) return false;
+    const elapsed = sample.timeStamp - completed.timeStamp;
+    return (
+      sample.pointerType === "pen" &&
+      sample.pointerId === completed.pointerId &&
+      sample.button === 0 &&
+      elapsed >= 0 &&
+      elapsed <= 500
+    );
   }
 
   complete(sample: PenTapPointerSample): boolean {
@@ -83,6 +99,8 @@ export class PenTapInsertionController {
     if (context.file?.path !== sourcePath) return false;
     if (!this.#insertion.canInsertAtLine(editor, sourcePath, line)) return false;
     editor.setCursor({ line, ch: 0 });
-    return this.#command.editorCheckCallback(false, editor, context);
+    const inserted = this.#command.editorCheckCallback(false, editor, context);
+    if (inserted) this.#completed = sample;
+    return inserted;
   }
 }

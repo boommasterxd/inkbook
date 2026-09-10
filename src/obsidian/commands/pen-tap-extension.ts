@@ -40,6 +40,13 @@ function targetAtEvent(view: EditorView, event: PointerEvent): PenTapTarget | un
 
 export function createPenTapInsertionExtension(controller: PenTapInsertionController): Extension {
   return EditorView.domEventHandlers({
+    click: (event) => {
+      if (!controller.consumeClick(pointerSample(event))) return false;
+      // Cancel the separate activation event before it reaches the host editor.
+      event.preventDefault();
+      event.stopPropagation();
+      return true;
+    },
     pointercancel: (event) => {
       controller.cancel(event.pointerId);
       return false;
