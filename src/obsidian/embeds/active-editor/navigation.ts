@@ -252,7 +252,7 @@ export class ActiveEditorNavigation {
       anchorViewportY: (layout.ownerViewport.bottom - layout.ownerViewport.top) / 2,
       embedTopInScrollContent: layout.embedTopInScrollContent,
       oldCameraX: this.#cameraX,
-      oldRenderedContainerHeight: layout.containerBorderBounds.height,
+      oldRenderedContainerHeight: layout.containerBounds.height,
       oldScrollTop: layout.scrollTop,
       scrollBounds: readOwnerScrollBounds(this.#scrollOwner),
       viewportWidth: layout.containerWidth,

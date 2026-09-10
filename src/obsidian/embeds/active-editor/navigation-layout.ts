@@ -12,7 +12,6 @@ interface ViewportRect {
 }
 
 export interface NavigationLayoutRead {
-  readonly containerBorderBounds: DOMRect;
   readonly containerBounds: ElementContentBox;
   readonly containerWidth: number;
   readonly embedTopInScrollContent: number;
@@ -24,14 +23,12 @@ export function readNavigationLayout(
   container: HTMLElement,
   scrollOwner: BrowserScrollElement,
 ): NavigationLayoutRead | undefined {
-  const { borderBox: containerBorderBounds, contentBox: containerBounds } =
-    measureElementBox(container);
+  const { contentBox: containerBounds } = measureElementBox(container);
   if (!Number.isFinite(containerBounds.width) || containerBounds.width <= 0) return undefined;
   const ownerViewport = readOwnerViewport(scrollOwner);
   const scrollTop = browserScrollMetrics.getScrollTop(scrollOwner);
   return {
     containerBounds,
-    containerBorderBounds,
     containerWidth: containerBounds.width,
     embedTopInScrollContent: scrollTop + containerBounds.top - ownerViewport.top,
     ownerViewport,
