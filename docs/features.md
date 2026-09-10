@@ -221,6 +221,8 @@ A tap creates a new handwriting embed only when all of the following conditions 
 - Handwriting is enabled in the plugin settings
 - no other automatic insertion is already in progress
 
+Pen-tap detection runs in the capture phase on the public CodeMirror editor container, including its scroll padding. A tap in that padding resolves through CodeMirror coordinates to the final line and inserts only if that line is eligible; it never creates a missing empty line. Native scrollbars, gutters, and existing widgets remain outside this insertion boundary. Accepted pointer events and the trailing click are consumed before host focus activation, so mobile insertion does not briefly open the software keyboard. Unrelated mouse, touch, and keyboard activation retain their normal behavior.
+
 On success:
 
 1. The plugin creates a new handwriting SVG file.
