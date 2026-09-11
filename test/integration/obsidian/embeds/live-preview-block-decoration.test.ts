@@ -78,7 +78,48 @@ function integrationPorts(control?: RecognitionControl): EmbedIntegrationPorts {
 describe("Live Preview block-decoration source", () => {
   beforeEach(() => installObsidianDomHelpers());
 
-  afterEach(() => removeObsidianDomHelpers());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    removeObsidianDomHelpers();
+  });
+
+  it("preserves the active attachment through repeated autosave recognition updates", async () => {
+    const control: RecognitionControl = {
+      notify: undefined,
+      value: { aspectRatio: 4, contentIdentity: CONTENT_IDENTITY, safeSvg: SAFE_PREVIEW_SVG },
+    };
+    const ports = integrationPorts(control);
+    const mount = vi.spyOn(ports.sessions, "mount");
+    const detach = vi.spyOn(ports.sessions, "detach");
+    const { parent, view } = mountView(ports);
+    const attachment = mount.mock.calls[0]![0];
+    attachment.root.dataset.inkbookState = "active";
+    for (const revision of [2, 3]) {
+      control.value = undefined;
+      control.notify?.("drawings/page.svg");
+      await Promise.resolve();
+      control.value = {
+        aspectRatio: revision,
+        contentIdentity: { outputHash: String(revision).repeat(64), revision },
+        safeSvg: SAFE_PREVIEW_SVG,
+      };
+      control.notify?.("drawings/page.svg");
+      await Promise.resolve();
+      expect(parent.querySelector(".inkbook-root")).toBe(attachment.root);
+      expect(attachment.root.dataset.inkbookState).toBe("active");
+      expect(attachment.previewContentIdentity).toEqual(control.value.contentIdentity);
+      expect(
+        parent
+          .querySelector<HTMLElement>(".inkbook-locked-preview-media")
+          ?.style.getPropertyValue("--inkbook-preview-aspect-ratio"),
+      ).toBe(String(revision));
+    }
+    expect(mount).toHaveBeenCalledTimes(1);
+    expect(detach).not.toHaveBeenCalled();
+    view.destroy();
+    expect(detach).toHaveBeenCalledExactlyOnceWith(attachment);
+    parent.remove();
+  });
 
   it("provides layout-changing replacements directly from editor state", () => {
     configureTestEditorState({
