@@ -384,11 +384,6 @@ describe("Inkbook editor overlays", () => {
     expect(icon).toContain("inline-size: 18px");
   });
 
-  it("reserves modal space for the separate recovery close action", () => {
-    const headless = declarationsFor(".inkbook-root .inkbook-feedback-headless");
-    expect(headless).toContain("padding-inline-end: 52px");
-  });
-
   it("keeps owned Style controls compact and visually unified", () => {
     const controls = declarationsFor(".inkbook-menu-controls");
     const field = declarationsFor(".inkbook-menu-control");

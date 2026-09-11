@@ -153,6 +153,7 @@ export class ActiveInkbookScene {
       applyZoomLayout: (update) => this.#layout.applyZoom(update),
       backgroundSpacing: options.backgroundSpacing,
       container: this.#container,
+      confirmEraseAll: options.confirmEraseAll,
       defaults: options.defaults,
       deviceSettings: options.deviceSettings,
       history: options.history,

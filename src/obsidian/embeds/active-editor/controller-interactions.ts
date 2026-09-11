@@ -70,6 +70,7 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
     sliceBudgetMs: controller.sliceBudgetMs ?? (() => 8),
   });
   const actions = new ActiveEditorActions({
+    confirmEraseAll: controller.confirmEraseAll,
     currentSelection: options.selection,
     history: options.history,
     isAttached: options.isAttached,

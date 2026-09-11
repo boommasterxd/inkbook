@@ -1,5 +1,7 @@
 import type { App } from "obsidian";
 
+import { confirmInkbookAction } from "../dialogs/action-dialog";
+
 import { findMarkdownInkbookEmbeds, type MarkdownInkbookEmbed } from "../embeds/markdown-embed";
 import type { PresentationEmbedReference } from "../embeds/presentation-port";
 import type { ObsidianLinkAdapter } from "../vault/links";
@@ -59,11 +61,27 @@ function findMatchingReferences(
   });
 }
 
+function sameReference(
+  current: ResolvedEmbedActionReference,
+  original: ResolvedEmbedActionReference,
+): boolean {
+  return (
+    current.filePath === original.filePath &&
+    current.targetPath === original.targetPath &&
+    current.ownerWindow === original.ownerWindow &&
+    current.editor === original.editor &&
+    current.content === original.content &&
+    current.match.from === original.match.from
+  );
+}
+
 export class ObsidianEmbedActions {
   readonly #app: App;
   readonly #files: ObsidianVaultFileAdapter;
   readonly #links: ObsidianLinkAdapter;
   readonly #managedFiles: ObsidianManagedFileAdapter;
+  readonly #lifetime = new AbortController();
+  #deleting = false;
 
   constructor(ports: EmbedActionPorts) {
     this.#app = ports.app;
@@ -88,7 +106,22 @@ export class ObsidianEmbedActions {
     return { kind: "copied", markdown };
   }
 
+  public dispose(): void {
+    this.#lifetime.abort();
+  }
+
   async deleteEmbed(target: EmbedActionTarget): Promise<DeleteEmbedOutcome> {
+    if (this.#deleting || this.#lifetime.signal.aborted)
+      return { kind: "cancelled", stage: "embed" };
+    this.#deleting = true;
+    try {
+      return await this.#deleteEmbed(target);
+    } finally {
+      this.#deleting = false;
+    }
+  }
+
+  async #deleteEmbed(target: EmbedActionTarget): Promise<DeleteEmbedOutcome> {
     let reference = await this.#resolveReference(target);
     if ("kind" in reference) return reference;
 
@@ -98,15 +131,36 @@ export class ObsidianEmbedActions {
       return unavailable("metadata-unresolved");
     }
 
-    if (!reference.ownerWindow.confirm("Delete this handwriting embed?")) {
+    const original = reference;
+    if (
+      !(await confirmInkbookAction(this.#app, {
+        title: "Delete embed?",
+        description:
+          knowledge.references === 1
+            ? "Remove this embed from the note. The SVG file will be kept unless you choose to move it to trash next."
+            : "Remove this embed from the note. The shared SVG file will be kept.",
+        confirmLabel: "Delete embed",
+        destructive: true,
+        signal: this.#lifetime.signal,
+      }))
+    ) {
       return { kind: "cancelled", stage: "embed" };
     }
 
     const requestedFileDeletion =
       knowledge.references === 1 &&
-      reference.ownerWindow.confirm("Also move the unreferenced handwriting file to trash?");
+      (await confirmInkbookAction(this.#app, {
+        title: "Move SVG file to trash?",
+        description: `This is the last known reference to “${reference.targetPath}”. You can keep the file or move it to trash.`,
+        confirmLabel: "Move to trash",
+        cancelLabel: "Keep file",
+        destructive: true,
+        signal: this.#lifetime.signal,
+      }));
     reference = await this.#resolveReference(target);
     if ("kind" in reference) return reference;
+    if (this.#lifetime.signal.aborted) return { kind: "cancelled", stage: "file" };
+    if (!sameReference(reference, original)) return unavailable("editor-changed");
     const currentKnowledge = this.#referenceKnowledge(reference);
     if (currentKnowledge.state === "unresolved") return unavailable("metadata-unresolved");
     const deleteFile = currentKnowledge.references === 1 && requestedFileDeletion;

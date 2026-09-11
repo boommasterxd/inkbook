@@ -285,6 +285,7 @@ export class ActiveEditorController {
   public readonly executeAction = (action: ContextMenuAction): void =>
     this.#actions.execute(action);
   public setEnabled(enabled: boolean): void {
+    if (!enabled) this.#actions.cancelPendingConfirmation();
     this.#availability.setEnabled(enabled);
     if (enabled) void this.#actions.refreshPasteAvailability();
   }

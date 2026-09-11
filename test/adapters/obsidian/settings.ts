@@ -5,19 +5,31 @@ interface TestApp {
 export class Modal {
   readonly contentEl: HTMLElement;
   readonly modalEl: HTMLElement;
+  readonly #escape = (event: KeyboardEvent): void => {
+    if (event.key === "Escape") this.close();
+  };
 
   public constructor(readonly app: TestApp) {
     const ownerDocument = app.workspace.containerEl.ownerDocument;
     this.modalEl = createOwnedElement(ownerDocument, "div");
+    const close = this.modalEl.appendChild(createOwnedElement(ownerDocument, "button"));
+    close.className = "modal-close-button";
+    close.setAttribute("aria-label", "Close");
+    close.addEventListener("click", () => this.close());
+    this.modalEl.addEventListener("click", (event) => {
+      if (event.target === this.modalEl) this.close();
+    });
     this.contentEl = this.modalEl.appendChild(createOwnedElement(ownerDocument, "div"));
   }
 
   public open(): void {
     this.modalEl.ownerDocument.body.append(this.modalEl);
+    this.modalEl.ownerDocument.addEventListener("keydown", this.#escape);
     this.onOpen();
   }
 
   public close(): void {
+    this.modalEl.ownerDocument.removeEventListener("keydown", this.#escape);
     this.onClose();
     this.modalEl.remove();
   }

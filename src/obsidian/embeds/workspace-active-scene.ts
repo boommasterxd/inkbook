@@ -8,7 +8,13 @@ import type { ActiveDocumentEditorContext } from "./vault-document-session";
 import { copyWorkspaceEmbed, deleteWorkspaceEmbed } from "./workspace-embed-actions";
 import { presentationPreviewOptions, type PresentationAttachment } from "./presentation-port";
 
+export interface WorkspaceRuntimeSettings {
+  readonly device: InkbookDeviceSettingsV2;
+  readonly vault: InkbookSettingsV4;
+}
+
 export interface WorkspaceActiveSceneOptions {
+  readonly confirmEraseAll?: ((signal: AbortSignal) => Promise<boolean>) | undefined;
   readonly attachment: PresentationAttachment;
   readonly backgroundSpacing: () => InkbookSettingsV4["pageDefaults"]["backgroundSpacing"];
   readonly deviceSettings: InkbookDeviceSettingsV2;
@@ -33,6 +39,7 @@ export function createWorkspaceActiveScene(
   let scene: ActiveInkbookScene | undefined;
   scene = new ActiveInkbookScene({
     backgroundSpacing: options.backgroundSpacing,
+    confirmEraseAll: options.confirmEraseAll,
     defaults: options.vaultSettings.toolDefaults,
     deviceSettings: options.deviceSettings,
     history: options.editorContext.history,

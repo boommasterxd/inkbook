@@ -1,8 +1,11 @@
 import type { Keymap } from "obsidian";
+import type { HeadlessRecoveryActions, HeadlessRecoveryNotice } from "./recovery-notice";
 
 import { InkbookFeedbackManager, type InkbookFeedbackCode } from "../feedback";
 
 export interface WorkspaceFeedbackHost {
+  readonly confirmEraseAll?: (signal: AbortSignal) => Promise<boolean>;
+  readonly openRecovery?: (actions: HeadlessRecoveryActions) => HeadlessRecoveryNotice;
   readonly fallbackOwnerWindow: () => Window | undefined;
   readonly keymap?: Pick<Keymap, "popScope" | "pushScope">;
   readonly manager: InkbookFeedbackManager;

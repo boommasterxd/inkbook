@@ -1,4 +1,5 @@
 @import url("./motion.css");
+@import url("./action-dialog.css");
 @import url("./feedback.css");
 @import url("./editor-toolbar.css");
 @import url("./editor-toolbar-motion.css");
@@ -386,30 +387,4 @@
 
 .inkbook-root .inkbook-operation-feedback-icon {
   animation: inkbook-operation-spin 800ms linear infinite;
-}
-
-.inkbook-root.inkbook-recovery-overlay {
-  align-items: center;
-  background: var(--background-modifier-cover);
-  display: flex;
-  inset: 0;
-  justify-content: center;
-  position: fixed;
-  z-index: var(--layer-modal, 1000);
-}
-
-.inkbook-root .inkbook-headless-recovery-dialog {
-  background: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-l);
-  box-shadow: var(--shadow-l);
-  color: var(--text-normal);
-  max-inline-size: min(32rem, calc(100vi - 2rem));
-  padding: var(--size-4-5);
-  position: relative;
-}
-
-.inkbook-root .inkbook-headless-recovery-dialog button:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
 }

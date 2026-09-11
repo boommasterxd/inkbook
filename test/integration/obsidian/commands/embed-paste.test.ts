@@ -1,11 +1,8 @@
 import { TFile, type App, type Editor, type EditorPosition } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  CREATE_ANOTHER_REFERENCE,
   EmbedPasteController,
-  MAKE_DUPLICATE,
-  OwnerWindowEmbedPasteChoice,
   isCopiedEmbedPaste,
   createObsidianEmbedPasteController,
 } from "../../../../src/obsidian/commands";
@@ -14,6 +11,16 @@ import type { FilePlacementV1 } from "../../../../src/domain/settings/types";
 import { FILE_SCHEMA_LIMITS } from "../../../../src/domain/schema/public";
 import type { InkbookSettingsStore } from "../../../../src/obsidian/settings";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
+
+import { chooseInkbookAction } from "../../../../src/obsidian/dialogs/action-dialog";
+
+vi.mock("../../../../src/obsidian/dialogs/action-dialog", () => ({
+  chooseInkbookAction: vi.fn(),
+}));
+
+beforeEach(() => {
+  vi.mocked(chooseInkbookAction).mockReset().mockResolvedValue("duplicate");
+});
 
 class FakeEditor {
   content: string;
@@ -114,26 +121,6 @@ describe("copied Inkbook embed paste", () => {
     expect(isCopiedEmbedPaste(`${CLIPBOARD}${CLIPBOARD}`, false)).toBe(false);
     expect(isCopiedEmbedPaste("![[drawing.png]]", false)).toBe(false);
     expect(isCopiedEmbedPaste(CLIPBOARD, true)).toBe(false);
-  });
-
-  it("maps only the two exact owner-window prompt choices and treats all else as cancel", async () => {
-    expect(CREATE_ANOTHER_REFERENCE).toBe("Reference existing file");
-    const prompt = vi
-      .fn()
-      .mockReturnValueOnce(CREATE_ANOTHER_REFERENCE)
-      .mockReturnValueOnce(MAKE_DUPLICATE)
-      .mockReturnValueOnce("reference")
-      .mockReturnValueOnce(null);
-    const choices = new OwnerWindowEmbedPasteChoice({ prompt } as unknown as Window);
-
-    await expect(choices.choose()).resolves.toBe("reference");
-    await expect(choices.choose()).resolves.toBe("duplicate");
-    await expect(choices.choose()).resolves.toBeNull();
-    await expect(choices.choose()).resolves.toBeNull();
-    expect(prompt).toHaveBeenCalledWith(
-      `Paste Inkbook embed. Enter "${CREATE_ANOTHER_REFERENCE}" or "${MAKE_DUPLICATE}".`,
-      CREATE_ANOTHER_REFERENCE,
-    );
   });
 
   it("validates the resolved source before inserting another reference", async () => {
@@ -271,6 +258,49 @@ describe("atomic copied-embed duplicate read-back", () => {
   });
 });
 
+describe("Obsidian copied-embed dialog", () => {
+  it.each(["reference", "duplicate", null] as const)(
+    "routes the Obsidian dialog choice %s without using a system prompt",
+    async (choice) => {
+      const test = createCompositionHarness();
+      vi.mocked(chooseInkbookAction).mockResolvedValueOnce(choice);
+
+      const signal = new AbortController().signal;
+      const result = await createObsidianEmbedPasteController(
+        test.app,
+        test.settings,
+        { show: vi.fn() },
+        signal,
+      ).paste(request(test.editor));
+
+      expect(chooseInkbookAction).toHaveBeenCalledWith(test.app, {
+        signal,
+        title: "Paste Inkbook embed",
+        description: "Choose how this drawing should be inserted.",
+        actions: [
+          {
+            value: "reference",
+            label: "Insert reference",
+            description: "Edits appear in every embed that uses this file.",
+          },
+          {
+            value: "duplicate",
+            label: "Create copy",
+            description: "Create an independent SVG copy.",
+          },
+        ],
+      });
+      expect(result).toEqual(
+        choice === null ? { kind: "cancelled" } : { kind: "inserted", mode: choice },
+      );
+      expect(test.files.size).toBe(choice === "duplicate" ? 2 : 1);
+      if (choice !== "duplicate") {
+        expect(test.editor.content).toBe(choice === null ? "" : CLIPBOARD);
+      }
+    },
+  );
+});
+
 describe("Obsidian copied-embed composition", () => {
   it("validates through the bounded fallback and reads back a new Vault file before insertion", async () => {
     const test = createCompositionHarness();
@@ -405,7 +435,6 @@ function createCompositionHarness(
       getRandomValues,
       randomUUID: () => "00000000-0000-4000-8000-000000000099",
     },
-    prompt: () => MAKE_DUPLICATE,
   } as unknown as Window;
   const app = {
     fileManager: {

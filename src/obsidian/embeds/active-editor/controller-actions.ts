@@ -21,6 +21,7 @@ import type { ActiveEditorHistory } from "./history";
 import type { ElementSceneStore } from "./scene-store";
 
 export interface ActiveEditorActionsOptions {
+  readonly confirmEraseAll?: ((signal: AbortSignal) => Promise<boolean>) | undefined;
   readonly currentSelection: () => ReadonlySet<string>;
   readonly history: ActiveEditorHistory;
   readonly isAttached: () => boolean;
@@ -41,6 +42,9 @@ export interface ActiveEditorActionsOptions {
 
 export class ActiveEditorActions {
   readonly #clipboard: ActiveEditorClipboardController;
+  readonly #confirmEraseAll: ActiveEditorActionsOptions["confirmEraseAll"];
+  readonly #isAttached: () => boolean;
+  #eraseConfirmation: AbortController | undefined;
   readonly #currentSelection: () => ReadonlySet<string>;
   readonly #documentHistory: ActiveDocumentHistory;
   readonly #history: ActiveEditorHistory;
@@ -63,6 +67,8 @@ export class ActiveEditorActions {
   #pasteProbeGeneration = 0;
 
   public constructor(options: ActiveEditorActionsOptions) {
+    this.#confirmEraseAll = options.confirmEraseAll;
+    this.#isAttached = options.isAttached;
     this.#currentSelection = options.currentSelection;
     this.#history = options.history;
     this.#isEnabled = options.isEnabled;
@@ -137,10 +143,16 @@ export class ActiveEditorActions {
   }
 
   public dispose(): void {
+    this.cancelPendingConfirmation();
     this.#pasteProbeGeneration += 1;
     this.#clearConfirmationTimer();
     this.#clipboard.dispose();
     this.#documentHistory.dispose();
+  }
+
+  public cancelPendingConfirmation(): void {
+    this.#eraseConfirmation?.abort();
+    this.#eraseConfirmation = undefined;
   }
 
   public canArrange(action: ArrangeAction): boolean {
@@ -163,6 +175,7 @@ export class ActiveEditorActions {
   }
 
   public execute(action: ContextMenuAction, invocation?: PasteInvocation): void {
+    if (action === "erase-all" && this.#eraseConfirmation !== undefined) return;
     if (isClipboardAction(action)) {
       this.#executeClipboard(action, invocation);
       return;
@@ -311,12 +324,37 @@ export class ActiveEditorActions {
   }
 
   async #eraseAll(): Promise<void> {
-    if (!this.#ownerWindow.confirm("Erase all Inkbook elements?")) return;
+    if (this.#confirmEraseAll === undefined) return;
+    const confirmation = new AbortController();
+    const revision = this.#model.revision;
+    this.#eraseConfirmation = confirmation;
+    try {
+      const confirmed = await this.#confirmEraseAll(confirmation.signal);
+      if (
+        !confirmed ||
+        confirmation.signal.aborted ||
+        !this.#isAttached() ||
+        !this.#isEnabled() ||
+        this.#model.revision !== revision
+      )
+        return;
+      await this.#removeAll(confirmation.signal);
+    } catch {
+      if (!confirmation.signal.aborted) this.#onFeedback?.("history-change-failed");
+    } finally {
+      if (this.#eraseConfirmation === confirmation) this.#eraseConfirmation = undefined;
+    }
+  }
+
+  async #removeAll(signal: AbortSignal): Promise<void> {
     const ids = [
       ...this.#sceneStore.materializeBandOrder("highlight"),
       ...this.#sceneStore.materializeBandOrder("content"),
     ];
-    const outcome = await this.#documentHistory.remove(ids);
+    const outcome = await this.#documentHistory.remove(
+      ids,
+      () => !signal.aborted && this.#isAttached(),
+    );
     if (outcome === "applied") this.#setSelection(new Set());
     else if (outcome === "failed" || outcome === "stale") {
       this.#onFeedback?.("history-change-failed");
