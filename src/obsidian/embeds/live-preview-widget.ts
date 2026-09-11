@@ -16,6 +16,10 @@ export interface VisibleEmbed {
 }
 
 let nextLivePreviewAttachmentId = 0;
+const mountedControllers = new WeakMap<
+  HTMLElement,
+  { readonly controller: PresentationController; readonly widget: InkbookLivePreviewWidget }
+>();
 
 interface RecognizedVisibleEmbed extends VisibleEmbed {
   readonly preview: Exclude<InkbookDocumentRecognition, false>;
@@ -39,18 +43,31 @@ export class InkbookLivePreviewWidget extends WidgetType {
 
   override eq(other: InkbookLivePreviewWidget): boolean {
     return (
+      this.#sameAttachment(other) &&
+      samePreviewContentIdentity(
+        this.#embed.preview.contentIdentity,
+        other.#embed.preview.contentIdentity,
+      )
+    );
+  }
+
+  #sameAttachment(other: InkbookLivePreviewWidget): boolean {
+    return (
       this.#ports === other.#ports &&
       this.#entranceState === other.#entranceState &&
       this.#embed.from === other.#embed.from &&
       this.#embed.to === other.#embed.to &&
       this.#embed.sourcePath === other.#embed.sourcePath &&
       this.#embed.resolved.documentId === other.#embed.resolved.documentId &&
-      this.#embed.resolved.resourceUrl === other.#embed.resolved.resourceUrl &&
-      samePreviewContentIdentity(
-        this.#embed.preview.contentIdentity,
-        other.#embed.preview.contentIdentity,
-      )
+      this.#embed.resolved.resourceUrl === other.#embed.resolved.resourceUrl
     );
+  }
+
+  override updateDOM(dom: HTMLElement): boolean {
+    const mounted = mountedControllers.get(dom);
+    if (mounted === undefined || !this.#sameAttachment(mounted.widget)) return false;
+    mounted.controller.updatePreview(this.#embed.preview);
+    return true;
   }
 
   withRange(from: number, to: number): InkbookLivePreviewWidget {
@@ -104,6 +121,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
       },
     );
     controller.mount();
+    mountedControllers.set(root, { controller, widget: this });
     const activate = (event: MouseEvent): void => {
       event.preventDefault();
       event.stopPropagation();
@@ -112,10 +130,12 @@ export class InkbookLivePreviewWidget extends WidgetType {
     button.addEventListener("click", activate);
     const releaseLifecycle = this.#ports.lifecycle.register(root, () => {
       button.removeEventListener("click", activate);
+      mountedControllers.delete(root);
       controller.dispose();
     });
     if (releaseLifecycle === undefined) {
       button.removeEventListener("click", activate);
+      mountedControllers.delete(root);
       controller.dispose();
     }
     return root;
