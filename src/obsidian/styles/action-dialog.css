@@ -1,0 +1,60 @@
+.inkbook-dialog-container {
+  --inkbook-dialog-original-small-spacing: var(--size-2-3);
+}
+
+.inkbook-action-dialog {
+  /* Match the native styled-scrollbar close inset without targeting host DOM. */
+  --size-2-3: 12px;
+
+  inline-size: min(440px, calc(100vw - 32px));
+}
+
+.inkbook-action-dialog .inkbook-dialog-content-spacing {
+  --size-2-3: var(--inkbook-dialog-original-small-spacing);
+}
+
+.inkbook-dialog-description {
+  color: var(--text-muted);
+  line-height: var(--line-height-normal);
+  margin-block: 0 var(--size-4-6);
+  overflow-wrap: anywhere;
+}
+
+.inkbook-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--size-4-2);
+}
+
+.inkbook-dialog-actions > button {
+  min-block-size: 44px;
+  white-space: normal;
+  height: auto;
+}
+
+.inkbook-dialog-choice-description {
+  color: var(--text-muted);
+  line-height: var(--line-height-normal);
+  margin-block: 0 var(--size-4-4);
+  overflow-wrap: anywhere;
+}
+
+.inkbook-dialog-choice-description strong {
+  color: var(--text-normal);
+}
+
+@media (width <= 480px) {
+  .inkbook-dialog-actions {
+    flex-direction: column;
+  }
+
+  .inkbook-dialog-actions > button:first-child {
+    order: 1;
+    align-self: stretch;
+  }
+}
+
+.inkbook-dialog-actions.inkbook-recovery-actions > button:first-child {
+  order: 0;
+}

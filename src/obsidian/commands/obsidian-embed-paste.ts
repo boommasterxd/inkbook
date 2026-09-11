@@ -2,7 +2,8 @@ import type { App } from "obsidian";
 
 import type { InkbookSettingsStore } from "../settings";
 import type { PlacementFallbackFeedbackPort } from "./command-ports";
-import { EmbedPasteController, OwnerWindowEmbedPasteChoice } from "./embed-paste";
+import { EmbedPasteController } from "./embed-paste";
+import { chooseInkbookAction } from "../dialogs/action-dialog";
 import { validateDocumentOutput } from "./document-output-validation";
 import {
   activeMarkdownOwnerWindow,
@@ -14,14 +15,33 @@ export function createObsidianEmbedPasteController(
   app: App,
   settings: InkbookSettingsStore,
   placementFeedback: PlacementFallbackFeedbackPort,
+  signal?: AbortSignal,
 ): EmbedPasteController {
   const { files, links, managedFiles, placement } = createObsidianCommandVaultPorts(
     app,
     () => true,
   );
   return new EmbedPasteController({
+    ...(signal === undefined ? {} : { signal }),
     choices: {
-      choose: () => new OwnerWindowEmbedPasteChoice(activeMarkdownOwnerWindow(app)).choose(),
+      choose: () =>
+        chooseInkbookAction(app, {
+          ...(signal === undefined ? {} : { signal }),
+          title: "Paste Inkbook embed",
+          description: "Choose how this drawing should be inserted.",
+          actions: [
+            {
+              value: "reference",
+              label: "Insert reference",
+              description: "Edits appear in every embed that uses this file.",
+            },
+            {
+              value: "duplicate",
+              label: "Create copy",
+              description: "Create an independent SVG copy.",
+            },
+          ],
+        }),
     },
     documents: {
       createAndReadBack: (path, content, maximumBytes) =>

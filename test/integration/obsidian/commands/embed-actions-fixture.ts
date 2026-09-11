@@ -1,6 +1,8 @@
 import type { App, Editor, FileManager, MetadataCache, Vault } from "obsidian";
 import { vi } from "vitest";
 
+import * as dialogs from "../../../../src/obsidian/dialogs/action-dialog";
+
 import { ObsidianEmbedActions } from "../../../../src/obsidian/commands/embed-actions";
 import { ObsidianVaultFileAdapter } from "../../../../src/obsidian/vault/file-adapter";
 import { ObsidianLinkAdapter } from "../../../../src/obsidian/vault/links";
@@ -70,8 +72,8 @@ export function createHarness(options: HarnessOptions = {}) {
   const editor = new FakeEditor(vaultText);
   const writeText = vi.fn(async (_text: string) => undefined);
   const confirm = vi.fn(() => true);
+  vi.spyOn(dialogs, "confirmInkbookAction").mockImplementation(async () => confirm());
   const ownerWindow = {
-    confirm,
     navigator: { clipboard: { writeText } },
   } as unknown as Window;
   const view = {

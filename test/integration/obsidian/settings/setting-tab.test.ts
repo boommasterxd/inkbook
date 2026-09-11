@@ -12,6 +12,7 @@ import type { SettingsControlKey } from "../../../../src/obsidian/settings/contr
 import { InkbookSettingsStore } from "../../../../src/obsidian/settings/storage";
 import { installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import {
+  confirmAction,
   createTab,
   DeviceAdapter,
   groups,
@@ -338,6 +339,29 @@ describe("InkbookSettingTab reset integration", () => {
 });
 
 describe("InkbookSettingTab full reset integration", () => {
+  it("does not reset after the settings surface closes during confirmation", async () => {
+    const store = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());
+    await store.load();
+    await store.updateVaultSettings((settings) => ({ ...settings, startupTool: "arrow" }));
+    const definitions = createTab(store).getSettingDefinitions();
+    const rendered = renderDefinition(
+      definitions[definitions.length - 1] as SettingDefinitionRender,
+    );
+    document.body.append(rendered.container);
+    let finish: ((confirmed: boolean) => void) | undefined;
+    confirmAction.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    rendered.container.click();
+    rendered.container.remove();
+    finish?.(true);
+    await Promise.resolve();
+    expect(store.getVaultSettings().startupTool).toBe("arrow");
+    rendered.cleanup();
+  });
+
   it("requires confirmation before resetting both scopes", async () => {
     const vault = new VaultAdapter();
     const device = new DeviceAdapter();
@@ -348,19 +372,19 @@ describe("InkbookSettingTab full reset integration", () => {
     const tab = createTab(store);
     const definitions = tab.getSettingDefinitions();
     const action = definitions[definitions.length - 1] as SettingDefinitionRender;
-    const confirmMock = vi.fn(() => false);
-    Object.defineProperty(window, "confirm", { configurable: true, value: confirmMock });
+    const confirmMock = confirmAction.mockResolvedValue(false);
     const rendered = renderDefinition(action);
+    document.body.append(rendered.container);
 
     rendered.container.click();
     await Promise.resolve();
     expect(store.getVaultSettings().startupTool).toBe("arrow");
 
-    confirmMock.mockReturnValue(true);
+    confirmMock.mockResolvedValue(true);
     rendered.container.click();
     await vi.waitFor(() => expect(store.getVaultSettings()).toEqual(createBuiltInSettings()));
     expect(device.value).toEqual(createBuiltInDeviceSettings());
     rendered.cleanup();
-    Reflect.deleteProperty(window, "confirm");
+    rendered.container.remove();
   });
 });

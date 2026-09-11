@@ -13,6 +13,7 @@ import {
   createBuiltInSettings,
   type InkbookSettingsV4,
 } from "../../domain/settings";
+import { confirmInkbookAction } from "../dialogs/action-dialog";
 import { DEFAULT_REFRESH_RATE, type RefreshRateProfileStatus } from "../performance";
 import { SettingsControlValues, type SettingsControlKey } from "./control-values";
 import { dropdown, resetAction, settingsAction, toggle } from "./definition-helpers";
@@ -43,6 +44,7 @@ export class InkbookSettingTab extends PluginSettingTab {
     private readonly store: InkbookSettingsStore,
     private readonly folderPort?: CustomFolderPort,
     private readonly refreshRateStatus?: () => RefreshRateProfileStatus | undefined,
+    private readonly lifetime?: AbortSignal,
   ) {
     super(app, plugin);
     this.controls = new SettingsControlValues(store);
@@ -71,7 +73,7 @@ export class InkbookSettingTab extends PluginSettingTab {
       generalGroup({
         isCustomFolder: () => this.isCustomFolder(),
         canCreateFolder: () => this.folderPort !== undefined && this.isCustomFolder(),
-        createFolder: (element) => this.createCustomFolder(element),
+        createFolder: (element) => void this.createCustomFolder(element),
         refreshRateStatus: () =>
           this.refreshRateStatus?.() ?? {
             kind: "detecting",
@@ -98,13 +100,24 @@ export class InkbookSettingTab extends PluginSettingTab {
     return this.store.getVaultSettings().filePlacement.mode === "custom-vault-folder";
   }
 
-  private createCustomFolder(element: HTMLElement): void {
+  private async createCustomFolder(element: HTMLElement): Promise<void> {
     const placement = this.store.getVaultSettings().filePlacement;
     if (placement.mode !== "custom-vault-folder") return;
-    const confirmed = element.ownerDocument.defaultView?.confirm(
-      `Create the vault folder “${placement.folder}”?`,
-    );
-    if (confirmed === true) void this.folderPort?.createFolder(placement.folder);
+    const confirmed = await confirmInkbookAction(this.app, {
+      title: "Create custom folder?",
+      description: `Create the vault folder “${placement.folder}”?`,
+      confirmLabel: "Create folder",
+      signal: this.lifetime,
+    });
+    const current = this.store.getVaultSettings().filePlacement;
+    if (
+      confirmed &&
+      element.isConnected &&
+      current.mode === "custom-vault-folder" &&
+      current.folder === placement.folder
+    ) {
+      await this.folderPort?.createFolder(placement.folder);
+    }
   }
 
   private resetGeneral(): void {
@@ -235,11 +248,20 @@ export class InkbookSettingTab extends PluginSettingTab {
       "Reset all Inkbook settings",
       "Restore every built-in value without changing existing files or elements.",
       "danger",
-      (element) => {
-        if (element.ownerDocument.defaultView?.confirm("Reset all Inkbook settings?") === true) {
-          void this.store.resetAll().then(() => this.update());
-        }
-      },
+      (element) => void this.confirmResetAll(element),
     );
+  }
+
+  private async confirmResetAll(element: HTMLElement): Promise<void> {
+    const confirmed = await confirmInkbookAction(this.app, {
+      title: "Reset all settings?",
+      description: "Restore every built-in value. Existing files and elements will not change.",
+      confirmLabel: "Reset settings",
+      signal: this.lifetime,
+      destructive: true,
+    });
+    if (!confirmed || !element.isConnected) return;
+    await this.store.resetAll();
+    this.update();
   }
 }

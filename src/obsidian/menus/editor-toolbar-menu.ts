@@ -336,7 +336,7 @@ function populateOverflow(
     menu,
     options.ownerDocument,
     "Erase all",
-    CAUTION_ERASER_ICON_ID,
+    state.overflow.canEraseAll ? CAUTION_ERASER_ICON_ID : "eraser",
     () => handlers.onOverflowAction("erase-all"),
     {
       caution: true,
@@ -387,7 +387,7 @@ function addAction(
   } = {},
 ): void {
   menu.addItem((item) => {
-    setMenuItemTitle(item, ownerDocument, title, state.caution === true);
+    setMenuItemTitle(item, ownerDocument, title, state.caution === true && state.disabled !== true);
     item.setIcon(icon);
     if (state.checked !== undefined) item.setChecked?.(state.checked);
     if (state.disabled === true) item.setDisabled(true);

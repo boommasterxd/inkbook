@@ -1,5 +1,5 @@
 import type { FileManager, Keymap, Vault } from "obsidian";
-
+import type { WorkspaceRuntimeSettings } from "./workspace-active-scene";
 import type { InkbookDeviceSettingsV2, InkbookSettingsV4 } from "../../domain/settings/types";
 import type { PresentationLifecyclePort } from "../../editor/session/session-port";
 import { WorkspaceEditorCoordinator } from "../../editor/session/workspace-editor-coordinator";
@@ -48,11 +48,8 @@ import {
   TrustedDocumentHeadLedger,
   type DeviceLocalStoragePort,
 } from "../storage/trusted-document-head-ledger";
-interface WorkspaceRuntimeSettings {
-  readonly device: InkbookDeviceSettingsV2;
-  readonly vault: InkbookSettingsV4;
-}
 export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
+  readonly #dialogs: Pick<WorkspaceFeedbackHost, "confirmEraseAll" | "openRecovery">;
   readonly #coordinator: WorkspaceEditorCoordinator;
   #disposed = false;
   readonly #embedActions: ObsidianEmbedActions;
@@ -86,6 +83,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       host.deviceStorage === undefined
         ? undefined
         : new TrustedDocumentHeadLedger(host.deviceStorage);
+    this.#dialogs = host;
     this.#embedActions = embedActions;
     this.#fallbackOwnerWindow = host.fallbackOwnerWindow;
     this.#feedback = new WorkspaceFeedbackRouter(host.manager, host.view, (documentId) =>
@@ -207,6 +205,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
         }
         const settings = this.#settings();
         await mountWorkspaceActiveScene({
+          confirmEraseAll: this.#dialogs.confirmEraseAll,
           attachment,
           backgroundSpacing: () => this.#settings().vault.pageDefaults.backgroundSpacing,
           deviceSettings: settings.device,
@@ -459,13 +458,13 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   }
 
   #showHeadlessRecovery(documentId: string): void {
-    if (this.#disposed) return;
+    if (this.#disposed || this.#dialogs.openRecovery === undefined) return;
     this.#headlessRecovery?.close();
     this.#headlessRecovery = showWorkspaceHeadlessRecovery({
       coordinator: this.#coordinator,
       documentId,
       feedback: this.#feedback,
-      owningWindow: () => this.#owningWindow(documentId),
+      openRecovery: this.#dialogs.openRecovery,
     });
   }
 

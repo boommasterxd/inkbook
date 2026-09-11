@@ -26,23 +26,6 @@
   translate: -50% 0;
 }
 
-.inkbook-root .inkbook-feedback-headless {
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-  max-inline-size: 100%;
-  padding: 0;
-  padding-inline-end: 52px;
-  width: 100%;
-}
-
-.inkbook-root .inkbook-headless-recovery-close {
-  inset-block-start: 8px;
-  inset-inline-end: 8px;
-  position: absolute;
-  z-index: 1;
-}
-
 .inkbook-root.inkbook-feedback-host {
   inset: 0;
   pointer-events: none;

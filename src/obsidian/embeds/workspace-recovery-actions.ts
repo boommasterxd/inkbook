@@ -1,9 +1,5 @@
 import type { WorkspaceEditorCoordinator } from "../../editor/session/workspace-editor-coordinator";
-import {
-  showHeadlessRecoveryNotice,
-  type HeadlessRecoveryActions,
-  type HeadlessRecoveryNotice,
-} from "./recovery-notice";
+import type { HeadlessRecoveryActions, HeadlessRecoveryNotice } from "./recovery-notice";
 import type { WorkspaceFeedbackRouter } from "./workspace-feedback-router";
 
 export function createHeadlessRecoveryActions(
@@ -26,14 +22,10 @@ export function showWorkspaceHeadlessRecovery(options: {
   readonly coordinator: WorkspaceEditorCoordinator;
   readonly documentId: string;
   readonly feedback: WorkspaceFeedbackRouter;
-  readonly owningWindow: () => Window;
+  readonly openRecovery: (actions: HeadlessRecoveryActions) => HeadlessRecoveryNotice;
 }): HeadlessRecoveryNotice {
   const actions = createHeadlessRecoveryActions(options.coordinator, () =>
     options.feedback.showRecoveryCopySaved(options.documentId),
   );
-  return showHeadlessRecoveryNotice(
-    options.documentId,
-    actions,
-    () => options.owningWindow().document,
-  );
+  return options.openRecovery(actions);
 }
