@@ -8,12 +8,10 @@
 
 export const MOTION_TOKENS = Object.freeze({
   fast: 120,
-  menu: 220,
-  toolbar: 300,
+  surface: 220,
   standard: 180,
   erase: 160,
   layout: 240,
-  slow: 300,
 } as const);
 
 export const EASING_TOKENS = Object.freeze({
@@ -22,8 +20,9 @@ export const EASING_TOKENS = Object.freeze({
 } as const);
 
 export const TRANSITION_DURATIONS = Object.freeze({
-  adaptiveMenu: MOTION_TOKENS.menu,
-  toolbarEnterExit: MOTION_TOKENS.toolbar,
+  adaptiveMenu: MOTION_TOKENS.surface,
+  nativeModalEnterExit: MOTION_TOKENS.fast,
+  toolbarEnterExit: MOTION_TOKENS.surface,
   toolActiveState: MOTION_TOKENS.fast,
   selectionHandlesEnterExit: MOTION_TOKENS.fast,
   eraserPendingRemoval: MOTION_TOKENS.erase,
@@ -35,7 +34,7 @@ export const TRANSITION_DURATIONS = Object.freeze({
   lockEditorCrossfade: MOTION_TOKENS.fast,
   automaticPageGrowth: MOTION_TOKENS.standard,
   overflowEdgeGradient: MOTION_TOKENS.fast,
-  conditionalToolbarControl: MOTION_TOKENS.toolbar,
+  conditionalToolbarControl: MOTION_TOKENS.surface,
   arrangeResult: MOTION_TOKENS.fast,
   fallback: MOTION_TOKENS.fast,
 } as const);

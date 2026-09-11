@@ -382,6 +382,44 @@ describe("InkbookSettingTab page defaults", () => {
 });
 
 describe("InkbookSettingTab background layout motion", () => {
+  it("keeps the reverse transition alive when the interrupted transition cancels", () => {
+    const background = renderPageDefault(
+      createTab(new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter())),
+      "Background",
+    );
+    const content = requiredElement<HTMLElement>(
+      background.container,
+      ".inkbook-settings-background-content",
+    );
+    const frames: FrameRequestCallback[] = [];
+    const request = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((frame) => frames.push(frame));
+    vi.spyOn(content, "getBoundingClientRect")
+      .mockReturnValueOnce(elementRect(340))
+      .mockReturnValueOnce(elementRect(220))
+      .mockReturnValueOnce(elementRect(280))
+      .mockReturnValueOnce(elementRect(340));
+    background.container
+      .querySelector<HTMLButtonElement>("button[data-background-type='none']")
+      ?.click();
+    frames.shift()?.(0);
+    background.container
+      .querySelector<HTMLButtonElement>("button[data-background-type='lines']")
+      ?.click();
+    expect(content.style.blockSize).toBe("280px");
+    content.dispatchEvent(new TransitionEvent("transitioncancel", { propertyName: "block-size" }));
+    expect(content.dataset.resizing).toBe("true");
+    frames.shift()?.(60);
+    content.dispatchEvent(new TransitionEvent("transitioncancel", { propertyName: "block-size" }));
+    expect(content.style.blockSize).toBe("340px");
+    expect(content.dataset.resizing).toBe("true");
+    finishBlockSizeTransition(content);
+    expect(content.style.blockSize).toBe("");
+    request.mockRestore();
+    background.cleanup();
+  });
+
   it("animates the spacing height when switching to and from none", async () => {
     const tab = createTab(new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter()));
     const background = renderPageDefault(tab, "Background");

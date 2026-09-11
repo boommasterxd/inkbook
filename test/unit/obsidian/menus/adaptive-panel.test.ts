@@ -357,6 +357,7 @@ describe("AdaptivePanelSession transitions", () => {
   });
 
   it("animates Background content from the height captured before mutation", () => {
+    vi.useFakeTimers();
     const frames = mockAnimationFrames();
     let intrinsicHeight = 100;
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
@@ -391,6 +392,37 @@ describe("AdaptivePanelSession transitions", () => {
     expect(setProperty.mock.calls).toContainEqual(["block-size", "160px"]);
     fixture.session.close("immediate");
   });
+});
+
+describe("phone tool panel entrance layout", () => {
+  it.each(["style", "background"] as const)(
+    "defers %s height animation until entry completes",
+    (kind) => {
+      vi.useFakeTimers();
+      Platform.isPhone = true;
+      const fixture = createFixture(kind, { motion: "full" });
+      const surface = document.querySelector<HTMLElement>(".inkbook-adaptive-panel");
+      const scroll = surface?.querySelector<HTMLElement>(".inkbook-adaptive-panel-scroll");
+      if (scroll == null) throw new Error("Missing scroll surface.");
+      vi.spyOn(scroll, "getBoundingClientRect").mockReturnValue(rect(0, 0, 360, 100));
+      vi.spyOn(scroll, "scrollHeight", "get").mockReturnValue(180);
+      vi.advanceTimersToNextFrame();
+      expect(surface?.dataset.state).toBe("open");
+      fixture.session.prepareLayoutChange();
+      fixture.session.requestLayout();
+      vi.advanceTimersToNextFrame();
+      expect(surface?.dataset.presence).toBe("entering");
+      expect(scroll.style.blockSize).toBe("");
+      vi.advanceTimersByTime(220);
+      fixture.session.prepareLayoutChange();
+      fixture.session.requestLayout();
+      vi.advanceTimersToNextFrame();
+      expect(surface?.dataset.presence).toBeUndefined();
+      expect(scroll.style.blockSize).toBe("180px");
+      fixture.session.close("immediate");
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
 });
 
 function pointer(

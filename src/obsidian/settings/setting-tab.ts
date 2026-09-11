@@ -108,6 +108,7 @@ export class InkbookSettingTab extends PluginSettingTab {
       description: `Create the vault folder “${placement.folder}”?`,
       confirmLabel: "Create folder",
       signal: this.lifetime,
+      readMotion: () => this.store.getDeviceSettings().motion,
     });
     const current = this.store.getVaultSettings().filePlacement;
     if (
@@ -258,6 +259,7 @@ export class InkbookSettingTab extends PluginSettingTab {
       description: "Restore every built-in value. Existing files and elements will not change.",
       confirmLabel: "Reset settings",
       signal: this.lifetime,
+      readMotion: () => this.store.getDeviceSettings().motion,
       destructive: true,
     });
     if (!confirmed || !element.isConnected) return;

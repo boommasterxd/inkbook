@@ -1,4 +1,6 @@
-import { Modal, SettingGroup, type App } from "obsidian";
+import { SettingGroup, type App } from "obsidian";
+
+import { InkbookMotionModal } from "../dialogs/inkbook-motion-modal";
 
 import { SettingDefinitionRenderer } from "./setting-definition-renderer";
 import type { InkbookSettingTab } from "./setting-tab";
@@ -24,12 +26,12 @@ export class InkbookSettingsModalController {
   }
 
   public dispose(): void {
-    this.#modal?.close();
+    this.#modal?.closeImmediately();
     this.#modal = undefined;
   }
 
   public open(view: InkbookSettingsView): void {
-    this.#modal?.close();
+    this.#modal?.closeImmediately();
     let modal: InkbookSettingsModal;
     modal = new InkbookSettingsModal(this.#app, this.#settingTab, this.#store, view, () => {
       if (this.#modal === modal) this.#modal = undefined;
@@ -39,7 +41,7 @@ export class InkbookSettingsModalController {
   }
 }
 
-class InkbookSettingsModal extends Modal {
+class InkbookSettingsModal extends InkbookMotionModal {
   #definitionRenderer: SettingDefinitionRenderer | undefined;
   readonly #onClosed: () => void;
   readonly #settingTab: InkbookSettingTab;
@@ -54,7 +56,7 @@ class InkbookSettingsModal extends Modal {
     view: InkbookSettingsView,
     onClosed: () => void,
   ) {
-    super(app);
+    super(app, () => store.getDeviceSettings().motion);
     this.#onClosed = onClosed;
     this.#settingTab = settingTab;
     this.#store = store;
@@ -62,12 +64,14 @@ class InkbookSettingsModal extends Modal {
   }
 
   public override onOpen(): void {
+    super.onOpen();
     this.modalEl.classList.add("inkbook-settings-modal");
     this.setTitle(this.#view === "settings" ? "Inkbook settings" : "Keyboard shortcuts");
     this.#render();
   }
 
   public override onClose(): void {
+    super.onClose();
     this.#disposeContent();
     this.contentEl.replaceChildren();
     this.#onClosed();

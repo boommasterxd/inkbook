@@ -1,5 +1,7 @@
 import type { App } from "obsidian";
 
+import type { MotionPreference } from "../../rendering/motion/transitions";
+
 import { confirmInkbookAction } from "../dialogs/action-dialog";
 
 import { findMarkdownInkbookEmbeds, type MarkdownInkbookEmbed } from "../embeds/markdown-embed";
@@ -41,6 +43,7 @@ export interface EmbedActionPorts {
   readonly files: ObsidianVaultFileAdapter;
   readonly links: ObsidianLinkAdapter;
   readonly managedFiles: ObsidianManagedFileAdapter;
+  readonly readMotion?: (() => MotionPreference) | undefined;
 }
 
 export type EmbedActionTarget = ExactEmbedActionTarget;
@@ -81,6 +84,7 @@ export class ObsidianEmbedActions {
   readonly #links: ObsidianLinkAdapter;
   readonly #managedFiles: ObsidianManagedFileAdapter;
   readonly #lifetime = new AbortController();
+  readonly #readMotion: (() => MotionPreference) | undefined;
   #deleting = false;
 
   constructor(ports: EmbedActionPorts) {
@@ -88,6 +92,7 @@ export class ObsidianEmbedActions {
     this.#files = ports.files;
     this.#links = ports.links;
     this.#managedFiles = ports.managedFiles;
+    this.#readMotion = ports.readMotion;
   }
 
   async copyEmbed(target: EmbedActionTarget): Promise<CopyEmbedOutcome> {
@@ -142,6 +147,7 @@ export class ObsidianEmbedActions {
         confirmLabel: "Delete embed",
         destructive: true,
         signal: this.#lifetime.signal,
+        readMotion: this.#readMotion,
       }))
     ) {
       return { kind: "cancelled", stage: "embed" };
@@ -156,6 +162,7 @@ export class ObsidianEmbedActions {
         cancelLabel: "Keep file",
         destructive: true,
         signal: this.#lifetime.signal,
+        readMotion: this.#readMotion,
       }));
     reference = await this.#resolveReference(target);
     if ("kind" in reference) return reference;
@@ -229,6 +236,7 @@ export class ObsidianEmbedActions {
 export function createObsidianEmbedActions(
   app: App,
   isMetadataResolved: () => boolean,
+  readMotion?: () => MotionPreference,
 ): ObsidianEmbedActions {
   const { files, links, managedFiles } = createObsidianCommandVaultPorts(app, isMetadataResolved);
   return new ObsidianEmbedActions({
@@ -236,5 +244,6 @@ export function createObsidianEmbedActions(
     files,
     links,
     managedFiles,
+    readMotion,
   });
 }

@@ -1,3 +1,4 @@
+import type { PhoneSheetHostPort } from "../menus/phone-sheet-host";
 import type { Keymap } from "obsidian";
 import type { HeadlessRecoveryActions, HeadlessRecoveryNotice } from "./recovery-notice";
 
@@ -7,6 +8,7 @@ export interface WorkspaceFeedbackHost {
   readonly confirmEraseAll?: (signal: AbortSignal) => Promise<boolean>;
   readonly openRecovery?: (actions: HeadlessRecoveryActions) => HeadlessRecoveryNotice;
   readonly fallbackOwnerWindow: () => Window | undefined;
+  readonly createPhoneSheetHost?: () => PhoneSheetHostPort;
   readonly keymap?: Pick<Keymap, "popScope" | "pushScope">;
   readonly manager: InkbookFeedbackManager;
   readonly view: () => HTMLElement | undefined;

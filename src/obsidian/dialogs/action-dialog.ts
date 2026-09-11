@@ -1,5 +1,7 @@
 import type { App } from "obsidian";
 
+import type { MotionPreference } from "../../rendering/motion/transitions";
+
 import { InkbookModal } from "./inkbook-modal";
 
 interface DialogAction<T extends string> {
@@ -15,6 +17,7 @@ interface ActionDialogOptions<T extends string> {
   readonly actions: readonly DialogAction<T>[];
   readonly cancelLabel?: string;
   readonly signal?: AbortSignal | undefined;
+  readonly readMotion?: (() => MotionPreference) | undefined;
 }
 
 interface ConfirmationOptions {
@@ -24,6 +27,7 @@ interface ConfirmationOptions {
   readonly cancelLabel?: string;
   readonly destructive?: boolean;
   readonly signal?: AbortSignal | undefined;
+  readonly readMotion?: (() => MotionPreference) | undefined;
 }
 
 class InkbookActionDialog<T extends string> extends InkbookModal {
@@ -36,7 +40,7 @@ class InkbookActionDialog<T extends string> extends InkbookModal {
     options: ActionDialogOptions<T>,
     resolve: (value: T | null) => void,
   ) {
-    super(app);
+    super(app, options.readMotion);
     this.#options = options;
     this.#resolve = resolve;
   }
@@ -55,11 +59,17 @@ class InkbookActionDialog<T extends string> extends InkbookModal {
     const cancel = this.#button(actions, this.#options.cancelLabel ?? "Cancel", () => this.close());
     cancel.autofocus = true;
     for (const action of this.#options.actions) this.#addAction(actions, action);
+    const cancelOwner = (): void => {
+      this.#result = null;
+      this.closeImmediately();
+    };
+    const ownerWindow = this.contentEl.ownerDocument.defaultView;
+    if (ownerWindow !== null) this.listen(ownerWindow, "pagehide", cancelOwner);
     if (this.#options.signal !== undefined) {
-      this.listen(this.#options.signal, "abort", () => this.close());
+      this.listen(this.#options.signal, "abort", cancelOwner);
     }
     cancel.focus();
-    if (this.#options.signal?.aborted === true) this.close();
+    if (this.#options.signal?.aborted === true) this.closeImmediately();
   }
 
   public override onClose(): void {
@@ -70,7 +80,7 @@ class InkbookActionDialog<T extends string> extends InkbookModal {
 
   #addAction(container: HTMLElement, action: DialogAction<T>): void {
     const button = this.#button(container, action.label, () => {
-      if (this.closed) return;
+      if (this.closed || this.closing) return;
       this.#result = action.value;
       this.close();
     });

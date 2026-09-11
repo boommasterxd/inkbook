@@ -1,3 +1,4 @@
+import { createPhoneSheetHost } from "./menus/phone-sheet-host";
 import {
   MarkdownView,
   normalizePath,
@@ -60,18 +61,12 @@ export async function activateInkbookPlugin(
     getColorScheme: () => (plugin.app.isDarkMode() ? "dark" : "light"),
   });
   let layoutReady = false;
-  let metadataResolved = false;
-  plugin.registerEvent(
-    plugin.app.metadataCache.on("changed", () => {
-      metadataResolved = false;
-    }),
+  const metadataResolved = observeMetadataReadiness(plugin);
+  const embedActions = createObsidianEmbedActions(
+    plugin.app,
+    metadataResolved,
+    () => settings.getDeviceSettings().motion,
   );
-  plugin.registerEvent(
-    plugin.app.metadataCache.on("resolved", () => {
-      metadataResolved = true;
-    }),
-  );
-  const embedActions = createObsidianEmbedActions(plugin.app, () => metadataResolved);
   plugin.register(() => embedActions.dispose());
   const runtime = createRuntime(plugin, settings, scheme, embedActions, feedback, settingsModal);
   runtimeForSettings = runtime;
@@ -188,6 +183,7 @@ function createRuntime(
           title: "Erase all elements?",
           description: "Remove every element from this drawing. You can undo this action.",
           confirmLabel: "Erase all",
+          readMotion: () => settings.getDeviceSettings().motion,
           destructive: true,
           signal,
         }),
@@ -201,8 +197,10 @@ function createRuntime(
       fallbackOwnerWindow: () =>
         plugin.app.workspace.containerEl.ownerDocument.defaultView ?? undefined,
       keymap: plugin.app.keymap,
+      createPhoneSheetHost: () => createPhoneSheetHost(plugin.app),
       manager: feedback,
-      openRecovery: (actions) => showHeadlessRecoveryNotice(plugin.app, actions),
+      openRecovery: (actions) =>
+        showHeadlessRecoveryNotice(plugin.app, actions, () => settings.getDeviceSettings().motion),
       onOpenSettings: () => settingsModal.open("settings"),
       onOpenShortcuts: () => settingsModal.open("shortcuts"),
       view: () => plugin.app.workspace.getActiveViewOfType(MarkdownView)?.containerEl,
@@ -391,4 +389,19 @@ function registerWorkspaceLifecycle(
       scheme.refresh();
     }),
   );
+}
+
+function observeMetadataReadiness(plugin: Plugin): () => boolean {
+  let resolved = false;
+  plugin.registerEvent(
+    plugin.app.metadataCache.on("changed", () => {
+      resolved = false;
+    }),
+  );
+  plugin.registerEvent(
+    plugin.app.metadataCache.on("resolved", () => {
+      resolved = true;
+    }),
+  );
+  return () => resolved;
 }

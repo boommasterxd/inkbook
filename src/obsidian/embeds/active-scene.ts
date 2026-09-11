@@ -159,6 +159,9 @@ export class ActiveInkbookScene {
       history: options.history,
       interruptLayoutForInput: () => this.#layout.interruptForInput(),
       ...(options.keymap === undefined ? {} : { keymap: options.keymap }),
+      ...(options.createPhoneSheetHost === undefined
+        ? {}
+        : { createPhoneSheetHost: options.createPhoneSheetHost }),
       menuFactory: options.menuFactory ?? obsidianMenuFactory,
       model: options.model,
       onLock: options.onLock,

@@ -1,0 +1,58 @@
+.inkbook-adaptive-panel-layer[data-kind="dialog"] {
+  z-index: var(--layer-modal);
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel[data-kind="dialog"] {
+  background: var(--modal-background);
+}
+
+.inkbook-phone-dialog-header {
+  align-items: center;
+  display: flex;
+  gap: var(--size-4-2);
+  justify-content: space-between;
+  margin-block-end: var(--size-4-3);
+}
+
+.inkbook-phone-dialog-title {
+  font-size: var(--font-ui-large);
+  font-weight: var(--font-semibold);
+  margin: 0;
+}
+
+.inkbook-phone-dialog-content {
+  min-inline-size: 0;
+}
+
+.inkbook-adaptive-panel[data-kind="dialog"] .inkbook-settings-modal-body {
+  max-block-size: none;
+  overflow: visible;
+  padding-block-end: 0;
+}
+
+.inkbook-phone-dialog .inkbook-setting-control-row .inkbook-setting-info {
+  min-inline-size: 0;
+}
+
+.inkbook-phone-dialog .inkbook-setting-stacked-control {
+  align-items: stretch;
+  flex-direction: column;
+  gap: var(--size-4-2);
+}
+
+.inkbook-phone-dialog .inkbook-setting-stacked-control .inkbook-setting-info {
+  margin-inline-end: 0;
+}
+
+.inkbook-phone-dialog .inkbook-setting-stacked-control .inkbook-setting-controls {
+  align-self: stretch;
+  inline-size: 100%;
+  justify-content: stretch;
+  min-inline-size: 0;
+}
+
+.inkbook-phone-dialog .inkbook-setting-stacked-control :is(select, input) {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}

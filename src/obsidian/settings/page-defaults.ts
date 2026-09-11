@@ -131,7 +131,6 @@ function animateBackgroundLayoutChange(context: BackgroundRenderContext): void {
   let timeout: number | undefined;
   const finish = (): void => {
     content.removeEventListener("transitionend", onTransitionEnd);
-    content.removeEventListener("transitioncancel", finish);
     if (frame !== undefined) win.cancelAnimationFrame(frame);
     if (timeout !== undefined) win.clearTimeout(timeout);
     frame = undefined;
@@ -147,8 +146,8 @@ function animateBackgroundLayoutChange(context: BackgroundRenderContext): void {
       finish();
   };
   context.state.finishLayout = finish;
+  // A replaced transition can dispatch its queued cancel event after the new one starts.
   content.addEventListener("transitionend", onTransitionEnd);
-  content.addEventListener("transitioncancel", finish);
   frame = win.requestAnimationFrame(() => {
     frame = undefined;
     content.style.blockSize = `${String(targetHeight)}px`;

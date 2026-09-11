@@ -1,0 +1,7 @@
+.inkbook-phone-sheet-host .inkbook-phone-sheet-host-surface {
+  /* The shared sheet owns translate motion; native Modal also writes inline transform motion. */
+  transform: none !important;
+  transition-duration: var(--inkbook-adaptive-panel-duration) !important;
+  transition-property: translate !important;
+  transition-timing-function: var(--inkbook-motion-easing, cubic-bezier(0.2, 0, 0, 1)) !important;
+}

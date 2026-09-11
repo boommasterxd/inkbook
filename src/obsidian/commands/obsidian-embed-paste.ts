@@ -27,6 +27,7 @@ export function createObsidianEmbedPasteController(
       choose: () =>
         chooseInkbookAction(app, {
           ...(signal === undefined ? {} : { signal }),
+          readMotion: () => settings.getDeviceSettings().motion,
           title: "Paste Inkbook embed",
           description: "Choose how this drawing should be inserted.",
           actions: [

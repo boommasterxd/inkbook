@@ -1,4 +1,4 @@
-import type { FileManager, Keymap, Vault } from "obsidian";
+import type { FileManager, Vault } from "obsidian";
 import type { WorkspaceRuntimeSettings } from "./workspace-active-scene";
 import type { InkbookDeviceSettingsV2, InkbookSettingsV4 } from "../../domain/settings/types";
 import type { PresentationLifecyclePort } from "../../editor/session/session-port";
@@ -49,7 +49,7 @@ import {
   type DeviceLocalStoragePort,
 } from "../storage/trusted-document-head-ledger";
 export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
-  readonly #dialogs: Pick<WorkspaceFeedbackHost, "confirmEraseAll" | "openRecovery">;
+  readonly #host: WorkspaceFeedbackHost;
   readonly #coordinator: WorkspaceEditorCoordinator;
   #disposed = false;
   readonly #embedActions: ObsidianEmbedActions;
@@ -57,7 +57,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly #feedback: WorkspaceFeedbackRouter;
   #headlessRecovery: HeadlessRecoveryNotice | undefined;
   readonly #lifecycle: WorkspaceRuntimeLifecycle;
-  readonly #keymap: Pick<Keymap, "popScope" | "pushScope"> | undefined;
   readonly #ownerWindows = new OwnerWindowRegistry();
   readonly #mounted = new Map<string, WorkspaceMountedPresentation>();
   readonly #onOpenSettings: () => void;
@@ -83,13 +82,12 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       host.deviceStorage === undefined
         ? undefined
         : new TrustedDocumentHeadLedger(host.deviceStorage);
-    this.#dialogs = host;
+    this.#host = host;
     this.#embedActions = embedActions;
     this.#fallbackOwnerWindow = host.fallbackOwnerWindow;
     this.#feedback = new WorkspaceFeedbackRouter(host.manager, host.view, (documentId) =>
       this.#owningWindow(documentId),
     );
-    this.#keymap = host.keymap;
     this.#onOpenSettings = host.onOpenSettings;
     this.#onOpenShortcuts = host.onOpenShortcuts;
     this.#scheme = scheme;
@@ -205,7 +203,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
         }
         const settings = this.#settings();
         await mountWorkspaceActiveScene({
-          confirmEraseAll: this.#dialogs.confirmEraseAll,
+          confirmEraseAll: this.#host.confirmEraseAll,
           attachment,
           backgroundSpacing: () => this.#settings().vault.pageDefaults.backgroundSpacing,
           deviceSettings: settings.device,
@@ -214,7 +212,10 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
           isCurrent: (scene) =>
             this.#mounted.get(presentationAttachmentKey(attachment)) === mounted &&
             mounted.scene === scene,
-          keymap: this.#keymap,
+          keymap: this.#host.keymap,
+          ...(this.#host.createPhoneSheetHost === undefined
+            ? {}
+            : { createPhoneSheetHost: this.#host.createPhoneSheetHost }),
           markFirstStroke: () => this.#lifecycle.markFirstStroke(attachment.documentId),
           onLock: () => this.lockActivePresentation(),
           onOpenSettings: this.#onOpenSettings,
@@ -458,13 +459,13 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   }
 
   #showHeadlessRecovery(documentId: string): void {
-    if (this.#disposed || this.#dialogs.openRecovery === undefined) return;
+    if (this.#disposed || this.#host.openRecovery === undefined) return;
     this.#headlessRecovery?.close();
     this.#headlessRecovery = showWorkspaceHeadlessRecovery({
       coordinator: this.#coordinator,
       documentId,
       feedback: this.#feedback,
-      openRecovery: this.#dialogs.openRecovery,
+      openRecovery: this.#host.openRecovery,
     });
   }
 

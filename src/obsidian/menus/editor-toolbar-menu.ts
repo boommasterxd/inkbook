@@ -1,3 +1,4 @@
+import type { PhoneSheetHostPort } from "./phone-sheet-host";
 import { Platform, type Keymap } from "obsidian";
 
 import type {
@@ -37,6 +38,7 @@ export interface EditorToolbarMenuOptions {
   readonly getState: () => EditorToolbarMenuState;
   readonly handlers: EditorToolbarMenuHandlers;
   readonly initialMenu: Exclude<EditorToolbarMenuId, "background">;
+  readonly createPhoneSheetHost?: () => PhoneSheetHostPort;
   readonly keymap?: Pick<Keymap, "popScope" | "pushScope">;
   readonly onClosed: () => void;
   readonly ownerDocument: Document;
@@ -161,6 +163,9 @@ export class EditorToolbarMenuSession {
       canvasInputSurface: this.#options.canvasInputSurface,
       createContent: (lifecycle) => this.#createPanelContent(id, lifecycle),
       ...(this.#options.keymap === undefined ? {} : { keymap: this.#options.keymap }),
+      ...(this.#options.createPhoneSheetHost === undefined
+        ? {}
+        : { createPhoneSheetHost: this.#options.createPhoneSheetHost }),
       kind: id,
       label: id === "style" ? "Style" : "Background",
       ...(id === "background" ? { onBack: () => this.#navigate("overflow") } : {}),

@@ -120,3 +120,34 @@ describe("Obsidian action dialogs", () => {
     await expect(result).resolves.toBeNull();
   });
 });
+
+describe("animated action ownership", () => {
+  it.each(["confirm", "cancel", "abort", "pagehide"])(
+    "settles once after animated %s",
+    async (outcome) => {
+      vi.useFakeTimers();
+      try {
+        const controller = new AbortController();
+        const settled = vi.fn();
+        const result = confirm(controller.signal).then(settled);
+        const action = button("Delete embed");
+        const cancel = button("Cancel");
+        if (outcome === "cancel") cancel.click();
+        else action.click();
+        expect(document.querySelector(".inkbook-action-dialog")).not.toBeNull();
+        expect(settled).not.toHaveBeenCalled();
+        action.click();
+        cancel.click();
+        if (outcome === "abort") controller.abort();
+        if (outcome === "pagehide") window.dispatchEvent(new Event("pagehide"));
+        await vi.advanceTimersByTimeAsync(120);
+        await result;
+        expect(settled).toHaveBeenCalledExactlyOnceWith(outcome === "confirm");
+        expect(document.querySelector(".inkbook-action-dialog")).toBeNull();
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+});

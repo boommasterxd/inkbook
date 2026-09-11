@@ -121,8 +121,8 @@ describe("active scene lock layout", () => {
 });
 
 describe("active scene lock viewport stability", () => {
-  it("retains the presentation until the whole-toolbar exit completes", () => {
-    expect(LOCK_PRESENTATION_DURATION_MS).toBe(300);
+  it("retains the presentation until both layout and whole-toolbar exit complete", () => {
+    expect(LOCK_PRESENTATION_DURATION_MS).toBe(240);
   });
 
   it("runs each lock layout frame before the viewport stability frame", () => {

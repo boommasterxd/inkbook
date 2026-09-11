@@ -1,3 +1,4 @@
+import type { PhoneSheetHostPort } from "../../menus/phone-sheet-host";
 import {
   EditorToolbarMenuSession,
   openContextMenu,
@@ -92,6 +93,7 @@ export interface ActiveEditorMenuControllerOptions {
   readonly actions: ActiveEditorActions;
   readonly factory: MenuFactoryPort;
   readonly inputSurface: SvgSceneRenderer["inputSurface"];
+  readonly createPhoneSheetHost?: () => PhoneSheetHostPort;
   readonly keymap?: Pick<Keymap, "popScope" | "pushScope">;
   readonly ownerDocument: Document;
   readonly selectionSize: () => number;
@@ -177,6 +179,9 @@ export class ActiveEditorMenuController {
       handlers: options.handlers,
       initialMenu: options.id,
       ...(this.#options.keymap === undefined ? {} : { keymap: this.#options.keymap }),
+      ...(this.#options.createPhoneSheetHost === undefined
+        ? {}
+        : { createPhoneSheetHost: this.#options.createPhoneSheetHost }),
       onClosed: () => {
         if (this.#toolbarSession !== session) return;
         this.#toolbarSession = undefined;

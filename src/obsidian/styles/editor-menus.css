@@ -381,7 +381,8 @@
   gap: var(--size-4-4);
 }
 
-.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-control {
+.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="style"])
+  .inkbook-menu-control {
   background: var(--interactive-normal);
   border: 0;
   border-radius: var(--touch-radius-xxs);

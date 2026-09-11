@@ -136,7 +136,7 @@ describe("AdaptivePanel content styles", () => {
     const section = declarationsFor(".inkbook-menu-control");
     const divider = declarationsFor(".inkbook-menu-control + .inkbook-menu-control");
     const phoneSection = declarationsFor(
-      '.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-control',
+      '.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="style"])\n  .inkbook-menu-control',
     );
     const wideSection = declarationsFor(
       '.inkbook-adaptive-panel-layer[data-platform="wide"] .inkbook-menu-control',
@@ -209,13 +209,13 @@ describe("AdaptivePanel choice content styles", () => {
 
   it("groups phone Background choices with native divider and interaction tokens", () => {
     const choice = declarationsFor(
-      '.inkbook-adaptive-panel-layer[data-platform="phone"]\n  .inkbook-menu-background-options\n  .inkbook-menu-background-choice',
+      '.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="background"])\n  .inkbook-menu-background-options\n  .inkbook-menu-background-choice',
     );
     const divider = declarationsFor(
-      '.inkbook-adaptive-panel-layer[data-platform="phone"]\n  .inkbook-menu-background-choice:not(:last-child)::after',
+      '.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="background"])\n  .inkbook-menu-background-choice:not(:last-child)::after',
     );
     const spacing = declarationsFor(
-      '.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-background-spacing:not(:empty)',
+      '.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="background"])\n  .inkbook-menu-background-spacing:not(:empty)',
     );
 
     expect(choice).toContain("background: var(--interactive-normal)");
