@@ -1,4 +1,6 @@
 import { vi } from "vitest";
+import { createBuiltInSettings } from "../../../../src/domain/settings/defaults";
+import { createDragElement } from "../../../../src/editor/tools/public";
 
 import { type PastePlan } from "../../../../src/persistence/clipboard/public";
 import { type EncodedClipboard } from "../../../../src/persistence/clipboard/types";
@@ -107,4 +109,14 @@ export function createPastePlan(element: InkElementV1): PastePlan {
     selectedIds: [pasted.id],
     translation: { x: 0, y: 0 },
   };
+}
+
+export function selectedRectangle(): InkElementV1 {
+  return createDragElement({
+    defaults: createBuiltInSettings().toolDefaults,
+    end: { x: 200, y: 200 },
+    identity: { createdAt: 1, id: "00000000-0000-4000-8000-000000000001" },
+    start: { x: 100, y: 100 },
+    tool: "rectangle",
+  });
 }

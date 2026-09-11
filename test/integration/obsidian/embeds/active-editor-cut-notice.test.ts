@@ -1,14 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createBuiltInSettings } from "../../../../src/domain/settings/defaults";
-import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
-import { createDragElement } from "../../../../src/editor/tools/public";
 import { ActiveEditorActions } from "../../../../src/obsidian/embeds/active-editor/controller-actions";
 import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
 import {
+  selectedRectangle,
   createClipboardDocumentModel,
   createDeferredPreparation,
   createEncodedClipboardFixture,
@@ -24,16 +22,6 @@ function clipboardWindow(write: Clipboard["write"]): Window {
     ClipboardItem: FakeClipboardItem,
     navigator: { clipboard: { write } },
   } as unknown as Window;
-}
-
-function selectedRectangle(): InkElementV1 {
-  return createDragElement({
-    defaults: createBuiltInSettings().toolDefaults,
-    end: { x: 200, y: 200 },
-    identity: { createdAt: 1, id: "00000000-0000-4000-8000-000000000001" },
-    start: { x: 100, y: 100 },
-    tool: "rectangle",
-  });
 }
 
 function cutFixture() {

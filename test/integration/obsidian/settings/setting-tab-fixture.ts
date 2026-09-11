@@ -19,7 +19,13 @@ import {
   type VaultSettingsPort,
 } from "../../../../src/obsidian/settings/storage";
 
+const confirmActionMock = vi.hoisted(() => vi.fn<() => Promise<boolean>>());
+
 const platform = vi.hoisted(() => ({ isMobile: false }));
+
+vi.mock("../../../../src/obsidian/dialogs/action-dialog", () => ({
+  confirmInkbookAction: confirmActionMock,
+}));
 
 vi.mock("obsidian", () => ({
   Platform: platform,
@@ -159,3 +165,5 @@ export function renderTool(tab: InkbookSettingTab, groupHeading: string, name: s
   if (group === undefined) throw new Error(`Missing ${groupHeading} group.`);
   return renderDefinition(requiredRender(renders(group), name));
 }
+
+export const confirmAction = confirmActionMock;

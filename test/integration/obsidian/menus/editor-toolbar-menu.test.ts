@@ -136,6 +136,24 @@ describe("native editor toolbar menus", () => {
   });
 });
 
+describe("empty-canvas toolbar actions", () => {
+  it("uses the native disabled title for Erase all on an empty canvas", () => {
+    const menu = new FakeMenu();
+    const base = options();
+    const configured = options({
+      overflow: { ...base.getState().overflow, canEraseAll: false, hasSelection: false },
+    });
+    populateNativeToolbarMenu(menu, "overflow", configured, vi.fn());
+
+    const erase = action(menu, "Erase all");
+    expect(erase.disabled).toBe(true);
+    expect(erase.icon).toBe("eraser");
+    expect(erase.fragment).toBeUndefined();
+    expect(erase.click).toBeUndefined();
+    expect(action(menu, "Delete embed").click).toBeDefined();
+  });
+});
+
 describe("phone native toolbar menu spacing", () => {
   it("uses and releases a minimum safe area without changing native menu entries", () => {
     Platform.isPhone = true;

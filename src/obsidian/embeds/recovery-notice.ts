@@ -1,3 +1,7 @@
+import type { App } from "obsidian";
+
+import { InkbookModal } from "../dialogs/inkbook-modal";
+
 import { feedbackContent, type InkbookFeedbackCode } from "../feedback/feedback-catalog";
 import {
   createFeedbackIconButton,
@@ -75,120 +79,87 @@ export function showAttachedRecoveryPanel(
   return panel;
 }
 
-export function showHeadlessRecoveryNotice(
-  _documentId: string,
-  actions: HeadlessRecoveryActions,
-  resolveDocument: () => Document = () => activeDocument,
-): HeadlessRecoveryNotice {
-  let ownerDocument: Document | undefined = resolveDocument();
-  const mountingDocument = ownerDocument;
-  let previousFocus = mountingDocument.activeElement as HTMLElement | null;
-  let overlay: HTMLElement | undefined = mountingDocument.body.createDiv({
-    cls: "inkbook-root inkbook-recovery-overlay",
-  });
-  let dialog: HTMLElement | undefined = overlay.createDiv({
-    cls: "inkbook-headless-recovery-dialog",
-  });
-  const closeButton = createFeedbackIconButton(dialog, "close-recovery");
-  closeButton.classList.add("inkbook-headless-recovery-close");
-  const surface = createFeedbackSurface(dialog, feedbackContent("changes-save-failed"));
-  surface.element.classList.add("inkbook-feedback-headless");
-  const title = surface.title;
-  const retry = createFeedbackIconButton(surface.actionGroup, "retry-save");
-  const reload = createFeedbackIconButton(surface.actionGroup, "reload-external");
-  const saveCopy = createFeedbackIconButton(surface.actionGroup, "save-copy");
-  const focusable = [closeButton, retry, reload, saveCopy];
-  const listeners: Array<readonly [EventTarget, string, EventListener]> = [];
-  title.id = "inkbook-headless-recovery-title";
-  dialog.setAttribute("role", "dialog");
-  dialog.setAttribute("aria-modal", "true");
-  dialog.setAttribute("aria-labelledby", title.id);
+class HeadlessRecoveryModal extends InkbookModal {
+  readonly #actions: HeadlessRecoveryActions;
+  #pending = false;
 
-  const close = (): void => {
-    if (overlay === undefined) return;
-    for (const [target, type, listener] of listeners) target.removeEventListener(type, listener);
-    listeners.length = 0;
-    overlay.remove();
-    try {
-      previousFocus?.focus();
-    } catch {
-      // The previously focused host element may have detached with its pop-out window.
-    }
-    previousFocus = null;
-    overlay = undefined;
-    dialog = undefined;
-    ownerDocument = undefined;
-  };
-  const listen = (target: EventTarget, type: string, listener: EventListener): void => {
-    target.addEventListener(type, listener);
-    listeners.push([target, type, listener]);
-  };
-  listen(closeButton, "click", close);
-  listen(mountingDocument, "keydown", (event) => {
-    const keyboardEvent = event as KeyboardEvent;
-    if (keyboardEvent.key === "Escape") {
-      close();
-      return;
-    }
-    if (keyboardEvent.key === "Tab") {
-      trapRecoveryFocus(keyboardEvent, mountingDocument.activeElement, focusable);
-    }
-  });
-  listen(retry, "click", () => {
-    const current = dialog;
-    if (current === undefined) return;
-    setPending(current, true);
-    try {
-      if (actions.retry()) close();
-      else setPending(current, false);
-    } catch {
-      setPending(current, false);
-    }
-  });
-  listen(reload, "click", () => {
-    void runRecoveryAction(
-      () => dialog,
-      close,
-      () => actions.reloadExternal(),
-    );
-  });
-  listen(saveCopy, "click", () => {
-    void runRecoveryAction(
-      () => dialog,
-      close,
-      () => actions.saveLocalCopy(),
-    );
-  });
-  retry.focus();
-  return { close };
-}
-
-function trapRecoveryFocus(
-  event: KeyboardEvent,
-  activeElement: Element | null,
-  focusable: readonly HTMLButtonElement[],
-): void {
-  const current = focusable.indexOf(activeElement as HTMLButtonElement);
-  const boundary = event.shiftKey ? 0 : focusable.length - 1;
-  if (current !== -1 && current !== boundary) return;
-  event.preventDefault();
-  focusable[event.shiftKey ? focusable.length - 1 : 0]?.focus();
-}
-
-async function runRecoveryAction(
-  currentDialog: () => HTMLElement | undefined,
-  close: () => void,
-  action: () => Promise<boolean>,
-): Promise<void> {
-  const dialog = currentDialog();
-  if (dialog === undefined) return;
-  setPending(dialog, true);
-  try {
-    if (await action()) close();
-    else if (currentDialog() === dialog) setPending(dialog, false);
-  } catch {
-    if (currentDialog() === dialog) setPending(dialog, false);
+  constructor(app: App, actions: HeadlessRecoveryActions) {
+    super(app);
+    this.#actions = actions;
   }
+
+  override onOpen(): void {
+    super.onOpen();
+    this.setTitle("Recover changes");
+    this.modalEl.setAttribute("aria-label", "Recover changes");
+    const content = feedbackContent("changes-save-failed");
+    const description = this.contentEl.createEl("p", {
+      cls: "inkbook-dialog-description",
+      text: `${content.title} ${content.detail ?? ""}`.trim(),
+    });
+    description.id = "inkbook-recovery-description";
+    this.modalEl.setAttribute("aria-describedby", description.id);
+    const actions = this.contentEl.createDiv({
+      cls: "inkbook-dialog-actions inkbook-recovery-actions",
+    });
+    const retry = this.#textButton(actions, "Retry");
+    const reload = this.#textButton(actions, "Reload external version");
+    const saveCopy = this.#textButton(actions, "Save copy");
+    retry.classList.add("mod-cta");
+    retry.autofocus = true;
+    this.listen(retry, "click", () => this.#retry());
+    this.listen(reload, "click", () => {
+      void this.#runAction(() => this.#actions.reloadExternal());
+    });
+    this.listen(saveCopy, "click", () => {
+      void this.#runAction(() => this.#actions.saveLocalCopy());
+    });
+    retry.focus();
+  }
+
+  #textButton(container: HTMLElement, label: string): HTMLButtonElement {
+    const button = container.createEl("button", { text: label });
+    button.type = "button";
+    return button;
+  }
+
+  #retry(): void {
+    if (this.closed || this.#pending) return;
+    this.#setPending(true);
+    try {
+      if (this.#actions.retry()) this.close();
+      else this.#setPending(false);
+    } catch {
+      this.#setPending(false);
+    }
+  }
+
+  async #runAction(action: () => Promise<boolean>): Promise<void> {
+    if (this.closed || this.#pending) return;
+    this.#setPending(true);
+    try {
+      if (await action()) {
+        if (!this.closed) this.close();
+      } else this.#setPending(false);
+    } catch {
+      this.#setPending(false);
+    }
+  }
+
+  #setPending(pending: boolean): void {
+    if (this.closed) return;
+    this.#pending = pending;
+    setFeedbackPending(this.contentEl, pending);
+  }
+}
+
+export function showHeadlessRecoveryNotice(
+  app: App,
+  actions: HeadlessRecoveryActions,
+): HeadlessRecoveryNotice {
+  const dialog = new HeadlessRecoveryModal(app, actions);
+  dialog.open();
+  return { close: () => dialog.close() };
 }
 
 function setPending(message: HTMLElement, pending: boolean): void {

@@ -4,9 +4,6 @@ import { findMarkdownInkbookEmbeds, type MarkdownInkbookEmbed } from "../embeds/
 import type { MetadataGuardedFileRead } from "../../persistence/saving/save-ports";
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
 
-export const CREATE_ANOTHER_REFERENCE = "Reference existing file";
-export const MAKE_DUPLICATE = "Make duplicate";
-
 export type EmbedPasteChoice = "duplicate" | "reference";
 
 interface EmbedPasteChoicePort {
@@ -55,6 +52,7 @@ export type EmbedPasteOutcome =
   | { readonly cleanup: "failed" | "not-needed" | "trashed"; readonly kind: "stale" };
 
 export interface EmbedPasteDependencies {
+  readonly signal?: AbortSignal;
   readonly choices: EmbedPasteChoicePort;
   readonly documents: EmbedPasteDocumentPort;
   readonly links: EmbedPasteLinkPort;
@@ -108,27 +106,9 @@ export function isCopiedEmbedPaste(text: string, insideInkWidget: boolean): bool
   return !insideInkWidget && exactEmbed(text) !== null;
 }
 
-export class OwnerWindowEmbedPasteChoice implements EmbedPasteChoicePort {
-  readonly #ownerWindow: Window;
-
-  constructor(ownerWindow: Window) {
-    this.#ownerWindow = ownerWindow;
-  }
-
-  async choose(): Promise<EmbedPasteChoice | null> {
-    const answer = this.#ownerWindow.prompt(
-      `Paste Inkbook embed. Enter "${CREATE_ANOTHER_REFERENCE}" or "${MAKE_DUPLICATE}".`,
-      CREATE_ANOTHER_REFERENCE,
-    );
-    if (answer === null) return null;
-    if (answer === CREATE_ANOTHER_REFERENCE) return "reference";
-    if (answer === MAKE_DUPLICATE) return "duplicate";
-    return null;
-  }
-}
-
 export class EmbedPasteController {
   readonly #dependencies: EmbedPasteDependencies;
+  #pending = false;
 
   constructor(dependencies: EmbedPasteDependencies) {
     this.#dependencies = dependencies;
@@ -136,6 +116,7 @@ export class EmbedPasteController {
 
   canHandle(request: EmbedPasteRequest): boolean {
     return (
+      !this.#isAborted() &&
       request.sourcePath.length > 0 &&
       isCopiedEmbedPaste(request.clipboardText, request.insideInkWidget)
     );
@@ -147,6 +128,19 @@ export class EmbedPasteController {
       return { kind: "ignored" };
     }
 
+    if (this.#pending || this.#isAborted()) return { kind: "cancelled" };
+    this.#pending = true;
+    try {
+      return await this.#paste(request, embed);
+    } finally {
+      this.#pending = false;
+    }
+  }
+
+  async #paste(
+    request: EmbedPasteRequest,
+    embed: MarkdownInkbookEmbed,
+  ): Promise<EmbedPasteOutcome> {
     const target = captureTarget(request.editor);
     const sourceFile = this.#dependencies.links.resolveLinkTarget(
       embed.linkpath,
@@ -162,6 +156,7 @@ export class EmbedPasteController {
           FILE_SCHEMA_LIMITS.totalInputBytes,
         )
       ).content;
+      if (this.#isAborted()) return { kind: "cancelled" };
       if (!(await this.#dependencies.validation.validate(sourceContent))) {
         return this.#insertOriginal(request, target);
       }
@@ -169,8 +164,9 @@ export class EmbedPasteController {
       return this.#insertOriginal(request, target);
     }
 
+    if (this.#isAborted()) return { kind: "cancelled" };
     const choice = await this.#dependencies.choices.choose();
-    if (choice === null) return { kind: "cancelled" };
+    if (choice === null || this.#isAborted()) return { kind: "cancelled" };
     if (choice === "reference") {
       return replaceIfCurrent(request.editor, target, request.clipboardText)
         ? { kind: "inserted", mode: "reference" }
@@ -188,12 +184,14 @@ export class EmbedPasteController {
     let created = false;
     try {
       duplicatePath = await this.#dependencies.placement.preparePath(request.sourcePath);
+      if (this.#isAborted()) return { kind: "cancelled" };
       const createdRead = await this.#dependencies.documents.createAndReadBack(
         duplicatePath,
         sourceContent,
         FILE_SCHEMA_LIMITS.totalInputBytes,
       );
       created = true;
+      if (this.#isAborted()) return this.#discardStale(duplicatePath);
       if (
         createdRead.identity.path !== duplicatePath ||
         createdRead.content !== sourceContent ||
@@ -201,20 +199,31 @@ export class EmbedPasteController {
       ) {
         throw new Error("The created duplicate did not pass read-back validation.");
       }
+      if (this.#isAborted()) return this.#discardStale(duplicatePath);
       const markdown = this.#dependencies.links.generateEmbed(duplicatePath, request.sourcePath);
       if (replaceIfCurrent(request.editor, target, markdown)) {
         return { kind: "inserted", mode: "duplicate" };
       }
-      const duplicateTrashed = await this.#trashCreated(duplicatePath);
-      created = false;
-      return { cleanup: duplicateTrashed ? "trashed" : "failed", kind: "stale" };
+      return this.#discardStale(duplicatePath);
     } catch (error: unknown) {
+      if (created && duplicatePath !== null && this.#isAborted()) {
+        return this.#discardStale(duplicatePath);
+      }
       if (created && duplicatePath !== null) await this.#trashCreated(duplicatePath);
       return { error, kind: "failed" };
     }
   }
 
+  #isAborted(): boolean {
+    return this.#dependencies.signal?.aborted === true;
+  }
+
+  async #discardStale(path: string): Promise<EmbedPasteOutcome> {
+    return { cleanup: (await this.#trashCreated(path)) ? "trashed" : "failed", kind: "stale" };
+  }
+
   #insertOriginal(request: EmbedPasteRequest, target: CapturedEditorTarget): EmbedPasteOutcome {
+    if (this.#isAborted()) return { kind: "cancelled" };
     return replaceIfCurrent(request.editor, target, request.clipboardText)
       ? { kind: "inserted", mode: "original" }
       : { cleanup: "not-needed", kind: "stale" };

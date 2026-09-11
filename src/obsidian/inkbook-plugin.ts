@@ -8,6 +8,9 @@ import {
   type MarkdownFileInfo,
 } from "obsidian";
 
+import { confirmInkbookAction } from "./dialogs/action-dialog";
+import { showHeadlessRecoveryNotice } from "./embeds/recovery-notice";
+
 import {
   createInsertionContextMenuExtension,
   InsertionContextMenuController,
@@ -49,8 +52,9 @@ export async function activateInkbookPlugin(
   const unregisterIcons = registerInkbookIcons();
   const feedback = new InkbookFeedbackManager();
   let active = true;
+  const lifetime = new AbortController();
   let runtimeForSettings: ObsidianWorkspaceRuntime | undefined;
-  const settingTab = addSettingsTab(plugin, settings, () => runtimeForSettings);
+  const settingTab = addSettingsTab(plugin, settings, () => runtimeForSettings, lifetime.signal);
   const settingsModal = new InkbookSettingsModalController(plugin.app, settingTab, settings);
   const scheme = new ColorSchemeBroadcaster({
     getColorScheme: () => (plugin.app.isDarkMode() ? "dark" : "light"),
@@ -68,6 +72,7 @@ export async function activateInkbookPlugin(
     }),
   );
   const embedActions = createObsidianEmbedActions(plugin.app, () => metadataResolved);
+  plugin.register(() => embedActions.dispose());
   const runtime = createRuntime(plugin, settings, scheme, embedActions, feedback, settingsModal);
   runtimeForSettings = runtime;
   plugin.register(runtime.refreshRateProfiles.subscribe(() => settingTab.update()));
@@ -101,6 +106,7 @@ export async function activateInkbookPlugin(
     plugin.app,
     settings,
     createPlacementFeedback(plugin, feedback),
+    lifetime.signal,
   );
 
   const lifecycle = new PresentationLifecycleRegistry();
@@ -126,6 +132,8 @@ export async function activateInkbookPlugin(
 
   return () => {
     active = false;
+    lifetime.abort();
+    embedActions.dispose();
     lifecycle.disposeAll();
     documentRecognition.dispose();
     runtime.dispose();
@@ -140,6 +148,7 @@ function addSettingsTab(
   plugin: Plugin,
   settings: InkbookSettingsStore,
   getRuntime: () => ObsidianWorkspaceRuntime | undefined,
+  signal: AbortSignal,
 ): InkbookSettingTab {
   const settingTab = new InkbookSettingTab(
     plugin.app,
@@ -150,6 +159,7 @@ function addSettingsTab(
       getRuntime()?.refreshRateProfiles.status(
         plugin.app.workspace.containerEl.ownerDocument.defaultView,
       ),
+    signal,
   );
   plugin.addSettingTab(settingTab);
   return settingTab;
@@ -173,6 +183,14 @@ function createRuntime(
     }),
     embedActions,
     {
+      confirmEraseAll: (signal) =>
+        confirmInkbookAction(plugin.app, {
+          title: "Erase all elements?",
+          description: "Remove every element from this drawing. You can undo this action.",
+          confirmLabel: "Erase all",
+          destructive: true,
+          signal,
+        }),
       deviceStorage: {
         loadLocalStorage: (key) => {
           const stored: unknown = plugin.app.loadLocalStorage(key);
@@ -184,6 +202,7 @@ function createRuntime(
         plugin.app.workspace.containerEl.ownerDocument.defaultView ?? undefined,
       keymap: plugin.app.keymap,
       manager: feedback,
+      openRecovery: (actions) => showHeadlessRecoveryNotice(plugin.app, actions),
       onOpenSettings: () => settingsModal.open("settings"),
       onOpenShortcuts: () => settingsModal.open("shortcuts"),
       view: () => plugin.app.workspace.getActiveViewOfType(MarkdownView)?.containerEl,
