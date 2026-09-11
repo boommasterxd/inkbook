@@ -6,7 +6,10 @@ export class InkbookModal extends Modal {
   protected closed = false;
 
   public override onOpen(): void {
+    this.containerEl.classList.add("inkbook-dialog-container");
     this.modalEl.classList.add("inkbook-action-dialog");
+    this.titleEl.classList.add("inkbook-dialog-content-spacing");
+    this.contentEl.classList.add("inkbook-dialog-content-spacing");
     this.modalEl.setAttribute("role", "dialog");
     this.modalEl.setAttribute("aria-modal", "true");
     const ownerWindow = this.contentEl.ownerDocument.defaultView;

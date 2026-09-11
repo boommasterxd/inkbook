@@ -1,5 +1,16 @@
+.inkbook-dialog-container {
+  --inkbook-dialog-original-small-spacing: var(--size-2-3);
+}
+
 .inkbook-action-dialog {
+  /* Match the native styled-scrollbar close inset without targeting host DOM. */
+  --size-2-3: 12px;
+
   inline-size: min(440px, calc(100vw - 32px));
+}
+
+.inkbook-action-dialog .inkbook-dialog-content-spacing {
+  --size-2-3: var(--inkbook-dialog-original-small-spacing);
 }
 
 .inkbook-dialog-description {
