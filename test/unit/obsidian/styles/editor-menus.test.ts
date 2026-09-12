@@ -63,7 +63,7 @@ describe("AdaptivePanel styling boundary", () => {
       '.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel-drag-region',
     );
 
-    expect(panel).toContain("max-block-size: 60%");
+    expect(panel).toContain("max-block-size: var(--inkbook-adaptive-panel-maximum-height, 60%)");
     expect(panel).toContain("inline-size: auto");
     expect(panel).toContain("max-inline-size: none");
     expect(panel).toContain("border: none");
@@ -73,7 +73,7 @@ describe("AdaptivePanel styling boundary", () => {
     expect(panel).toContain(
       "inset-inline: var(--safe-area-inset-left) var(--safe-area-inset-right)",
     );
-    expect(scroll).toContain("var(--inkbook-adaptive-panel-viewport-height, 100vh) * 0.6");
+    expect(scroll).toContain("var(--inkbook-adaptive-panel-maximum-height, 60vh) - 16px");
     expect(scroll).toContain("max(var(--safe-area-inset-bottom), var(--size-4-4))");
     expect(scroll).toContain("touch-action: pan-down");
     expect(grabber).toContain("background: var(--text-faint)");

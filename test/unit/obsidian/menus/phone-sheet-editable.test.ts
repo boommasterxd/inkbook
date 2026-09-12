@@ -18,6 +18,35 @@ afterEach(() => {
 });
 
 describe("phone sheet keyboard viewport", () => {
+  it.each([false, true])(
+    "keeps its 60-percent normal cap through keyboard resize (layout resize %s)",
+    (adjustResize) => {
+      const layoutHeight = vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
+      const fixture = createPhoneSheetEditableFixture();
+      const layer = fixture.input.closest<HTMLElement>(".inkbook-adaptive-panel-layer")!;
+      for (const [height, maximum] of [
+        [800, 480],
+        [450, 450],
+        [400, 400],
+        [800, 480],
+      ] as const) {
+        fixture.viewport.height = height;
+        layoutHeight.mockReturnValue(adjustResize ? height : 800);
+        fixture.viewport.dispatchEvent(new Event("resize"));
+        fixture.frames.runNext(1);
+        expect(layer.style.getPropertyValue("--inkbook-adaptive-panel-maximum-height")).toBe(
+          `${maximum}px`,
+        );
+        expect(layer.style.getPropertyValue("--inkbook-adaptive-panel-viewport-height")).toBe(
+          `${height}px`,
+        );
+      }
+      fixture.session.close("immediate");
+    },
+  );
+});
+
+describe("phone sheet editable visibility", () => {
   it.each(["textarea", "true", "plaintext-only"])("reveals editable %s", (kind) => {
     const fixture = createPhoneSheetEditableFixture();
     const field = window.createEl(kind === "textarea" ? "textarea" : "div");
@@ -91,6 +120,11 @@ describe("phone sheet keyboard viewport", () => {
     fixture.frames.runNext(1);
     expect(fixture.scroll.scrollTop).toBe(100);
     expect(fixture.inputRead).not.toHaveBeenCalled();
+    expect(
+      fixture.input
+        .closest<HTMLElement>(".inkbook-adaptive-panel-layer")
+        ?.style.getPropertyValue("--inkbook-adaptive-panel-maximum-height"),
+    ).toBe("");
     fixture.session.close("immediate");
   });
 

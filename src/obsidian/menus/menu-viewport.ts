@@ -20,3 +20,20 @@ export function readMenuViewport(ownerWindow: Window): {
     width: ownerWindow.innerWidth,
   };
 }
+
+/** Retains the unobstructed height while a keyboard reduces the same-width viewport. */
+export class PhoneSheetHeight {
+  #width: number | undefined;
+  #unobstructedHeight = 0;
+
+  public maximum(
+    viewport: { readonly width: number; readonly height: number },
+    layoutHeight: number,
+  ): number {
+    const height = Math.max(viewport.height, layoutHeight);
+    this.#unobstructedHeight =
+      this.#width === viewport.width ? Math.max(this.#unobstructedHeight, height) : height;
+    this.#width = viewport.width;
+    return Math.min(this.#unobstructedHeight * 0.6, viewport.height);
+  }
+}

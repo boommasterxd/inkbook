@@ -135,7 +135,7 @@
   inset-inline: var(--safe-area-inset-left) var(--safe-area-inset-right);
   inline-size: auto;
   max-inline-size: none;
-  max-block-size: 60%;
+  max-block-size: var(--inkbook-adaptive-panel-maximum-height, 60%);
   position: absolute;
   touch-action: pan-down;
   translate: 0 var(--inkbook-adaptive-panel-drag, 0);
@@ -205,7 +205,7 @@
 }
 
 .inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel-scroll {
-  max-block-size: calc(var(--inkbook-adaptive-panel-viewport-height, 100vh) * 0.6 - 16px);
+  max-block-size: calc(var(--inkbook-adaptive-panel-maximum-height, 60vh) - 16px);
   padding: var(--size-4-2) var(--size-4-4) max(var(--safe-area-inset-bottom), var(--size-4-4));
   scrollbar-gutter: auto;
   touch-action: pan-down;

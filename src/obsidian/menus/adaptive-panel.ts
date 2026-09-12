@@ -2,7 +2,7 @@ import { Component, Platform, Scope, type Keymap } from "obsidian";
 
 import { effectiveTransitionDuration } from "../runtime/effective-motion";
 import { registerFocusNavigation } from "../runtime/focus-navigation";
-import { readMenuViewport } from "./menu-viewport";
+import { PhoneSheetHeight, readMenuViewport } from "./menu-viewport";
 import { revealPhoneSheetEditable } from "./phone-sheet-editable";
 import { menuDomWindow } from "./menu-dom";
 import type { FocusTargetPort } from "./menu-ports";
@@ -55,6 +55,7 @@ export class AdaptivePanelSession extends Component {
   #layoutTimer: number | undefined;
   readonly #layer: HTMLElement;
   readonly #options: AdaptivePanelOptions;
+  readonly #phoneHeight = new PhoneSheetHeight();
   readonly #phoneHost: PhoneSheetHostPort | undefined;
   readonly #phoneSwipe: PhoneSheetSwipeController | undefined;
   #openFrame: number | undefined;
@@ -358,7 +359,7 @@ export class AdaptivePanelSession extends Component {
   #maximumScrollHeight(): number {
     const viewport = readMenuViewport(this.#options.ownerWindow);
     return Platform.isPhone
-      ? viewport.height * 0.6
+      ? Math.max(0, this.#phoneHeight.maximum(viewport, this.#options.ownerWindow.innerHeight) - 16)
       : Math.max(0, viewport.height - DESKTOP_VIEWPORT_INSET_PX * 2);
   }
 
@@ -390,7 +391,14 @@ export class AdaptivePanelSession extends Component {
       "--inkbook-adaptive-panel-viewport-width",
       `${String(viewport.width)}px`,
     );
-    if (Platform.isPhone) return;
+    if (Platform.isPhone) {
+      const maximum = this.#phoneHeight.maximum(viewport, this.#options.ownerWindow.innerHeight);
+      this.#layer.style.setProperty(
+        "--inkbook-adaptive-panel-maximum-height",
+        `${String(maximum)}px`,
+      );
+      return;
+    }
     const anchor = this.#options.anchor.getBoundingClientRect();
     const panel = this.#surface.getBoundingClientRect();
     const maxLeft = viewport.left + viewport.width - panel.width - DESKTOP_VIEWPORT_INSET_PX;
