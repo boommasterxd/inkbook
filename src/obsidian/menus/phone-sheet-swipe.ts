@@ -15,6 +15,7 @@ interface SwipeGesture {
   distance: number;
   dragging: boolean;
   height: number;
+  offset: number;
   readonly pointerId: number;
   readonly startTime: number;
   readonly startX: number;
@@ -79,6 +80,7 @@ export class PhoneSheetSwipeController {
       distance: 0,
       dragging: false,
       height: 0,
+      offset: 0,
       pointerId: event.pointerId,
       startTime: event.timeStamp,
       startX: event.clientX,
@@ -95,7 +97,7 @@ export class PhoneSheetSwipeController {
     const deltaY = event.clientY - gesture.startY;
     if (!gesture.dragging && !this.#claimDownwardGesture(event, deltaX, deltaY)) return;
     event.preventDefault();
-    gesture.distance = Math.max(0, deltaY);
+    gesture.distance = Math.max(0, gesture.offset + deltaY);
     this.#renderDrag(gesture.distance, gesture.height);
   };
 
@@ -106,11 +108,16 @@ export class PhoneSheetSwipeController {
     if (!gesture.dragging) return;
     event.preventDefault();
     this.#suppressFollowingClick(gesture.target);
-    const distance = gesture.distance;
+    const distance = Math.max(0, gesture.offset + event.clientY - gesture.startY);
+    this.#renderDrag(distance, gesture.height);
+    this.#flushPendingDrag();
     const elapsed = Math.max(1, event.timeStamp - gesture.startTime);
     const height = gesture.height;
     const threshold = height > 0 ? height * DISMISS_DISTANCE_RATIO : Infinity;
-    if (distance >= threshold || distance / elapsed >= DISMISS_VELOCITY_PX_PER_MS) {
+    if (
+      distance >= threshold ||
+      Math.max(0, distance - gesture.offset) / elapsed >= DISMISS_VELOCITY_PX_PER_MS
+    ) {
       this.#options.close();
       return;
     }
@@ -120,7 +127,7 @@ export class PhoneSheetSwipeController {
   public prepareClose(): void {
     this.#gesture = undefined;
     this.#cancelResetWork();
-    this.#cancelDragFrame();
+    this.#flushPendingDrag();
     delete this.#options.surface.dataset.swipeState;
     delete this.#options.backdrop.dataset.swipeState;
   }
@@ -137,11 +144,26 @@ export class PhoneSheetSwipeController {
     if (gesture === undefined || gesture.dragging) return;
     gesture.dragging = true;
     gesture.height = this.#options.surface.getBoundingClientRect().height;
+    const surface = this.#options.surface;
+    const interrupted =
+      surface.dataset.swipeState === "settling" || surface.dataset.presence === "entering";
+    if (interrupted) gesture.offset = this.#visibleDistance(gesture.height);
     this.#cancelResetWork();
     this.#cancelDragFrame();
     this.#options.surface.dataset.swipeState = "dragging";
     this.#options.backdrop.dataset.swipeState = "dragging";
+    delete surface.dataset.presence;
+    if (interrupted) this.#applyDrag(gesture.offset, gesture.height);
     event.preventDefault();
+  }
+
+  #visibleDistance(height: number): number {
+    const translate = this.#options.ownerWindow.getComputedStyle(this.#options.surface).translate;
+    const vertical = translate.trim().split(/\s+/)[1] ?? "0";
+    const value = Number.parseFloat(vertical);
+    return Number.isFinite(value)
+      ? Math.max(0, vertical.endsWith("%") ? (height * value) / 100 : value)
+      : 0;
   }
 
   #claimDownwardGesture(event: PointerEvent, deltaX: number, deltaY: number): boolean {

@@ -173,7 +173,7 @@ describe("AdaptivePanelSession phone lifecycle", () => {
     expect(surface?.dataset.scrollPosition).toBe("top");
     fixture.control.dispatchEvent(pointer("pointerdown", 10, 7, 0));
     surface?.dispatchEvent(pointer("pointermove", 120, 7, 100));
-    surface?.dispatchEvent(pointer("pointerup", 0, 7, 120));
+    surface?.dispatchEvent(pointer("pointerup", 120, 7, 120));
     expect(document.querySelector(".inkbook-adaptive-panel")).toBeNull();
     expect(fixture.onClosed).toHaveBeenCalledOnce();
   });

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const stylesheet = [
   readStylesheet("src/obsidian/styles/adaptive-panel.css"),
+  readStylesheet("src/obsidian/styles/phone-sheet-host.css"),
   readStylesheet("src/obsidian/styles/editor-menus.css"),
   readStylesheet("src/obsidian/styles/background-menu.css"),
 ].join("\n");
@@ -63,6 +64,14 @@ describe("AdaptivePanel styling boundary", () => {
       '.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel-drag-region',
     );
 
+    expect(
+      declarationsFor(".inkbook-phone-sheet-host .inkbook-phone-sheet-host-surface"),
+    ).toContain("transition-property: none !important");
+    expect(
+      declarationsFor(
+        '.inkbook-phone-sheet-host .inkbook-phone-sheet-host-surface[data-swipe-state="settling"]',
+      ),
+    ).toContain("transition-property: translate !important");
     expect(panel).toContain("max-block-size: var(--inkbook-adaptive-panel-maximum-height, 60%)");
     expect(panel).toContain("inline-size: auto");
     expect(panel).toContain("max-inline-size: none");
