@@ -12,7 +12,6 @@ interface PhoneSheetSwipeOptions {
 }
 
 interface SwipeGesture {
-  distance: number;
   dragging: boolean;
   height: number;
   offset: number;
@@ -82,7 +81,6 @@ export class PhoneSheetSwipeController {
     const fromHandle = target.closest(".inkbook-adaptive-panel-drag-region") !== null;
     if (!fromHandle && this.#options.scroll.scrollTop > 0) return;
     this.#gesture = {
-      distance: 0,
       dragging: false,
       height: 0,
       offset: 0,
@@ -102,8 +100,8 @@ export class PhoneSheetSwipeController {
     const deltaY = event.clientY - gesture.startY;
     if (!gesture.dragging && !this.#claimDownwardGesture(event, deltaX, deltaY)) return;
     event.preventDefault();
-    gesture.distance = Math.max(0, gesture.offset + deltaY);
-    this.#renderDrag(gesture.distance, gesture.height);
+    const distance = Math.max(0, gesture.offset + deltaY);
+    this.#renderDrag(distance, gesture.height);
   };
 
   public handlePointerUp = (event: PointerEvent): void => {

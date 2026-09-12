@@ -31,8 +31,6 @@ export interface AdaptivePanelOptions {
   readonly keymap?: Pick<Keymap, "popScope" | "pushScope">;
   readonly durationMs?: number;
   readonly initialFocus?: HTMLElement;
-  readonly layer?: HTMLElement;
-  readonly surface?: HTMLElement;
   readonly onClosing?: () => void;
   readonly kind: AdaptivePanelKind;
   readonly label: string;
@@ -63,7 +61,6 @@ export class AdaptivePanelSession extends Component {
   #removeTimer: number | undefined;
   #returnedFocus = false;
   #restoreFocus = true;
-  readonly #scope: Scope;
   readonly #scroll: HTMLElement;
   readonly #surface: HTMLElement;
 
@@ -78,14 +75,13 @@ export class AdaptivePanelSession extends Component {
       effectiveTransitionDuration(options.anchor, options.ownerWindow, "adaptiveMenu");
     this.#layer =
       this.#phoneHost?.containerEl ??
-      options.layer ??
       menuDomWindow(options.ownerDocument, "adaptive panel").createDiv();
     this.#layer.classList.add("inkbook-adaptive-panel-layer");
     this.#layer.dataset.kind = options.kind;
     this.#layer.dataset.platform = Platform.isPhone ? "phone" : "wide";
     this.#layer.dataset.mobile = Platform.isMobile ? "true" : "false";
     this.#backdrop = this.#layer.createDiv({ cls: "inkbook-adaptive-panel-backdrop" });
-    this.#surface = this.#phoneHost?.modalEl ?? options.surface ?? this.#layer.createEl("section");
+    this.#surface = this.#phoneHost?.modalEl ?? this.#layer.createEl("section");
     this.#surface.classList.add("inkbook-adaptive-panel");
     this.#surface.dataset.kind = options.kind;
     this.#surface.dataset.presence = "entering";
@@ -119,7 +115,6 @@ export class AdaptivePanelSession extends Component {
           surface: this.#surface,
         })
       : undefined;
-    this.#scope = this.#createScope();
     if (this.#phoneHost !== undefined) this.#phoneHost.open(() => this.close());
     else options.ownerDocument.body.append(this.#layer);
     this.load();
@@ -163,8 +158,9 @@ export class AdaptivePanelSession extends Component {
     this.#registerEvents();
     this.#registerViewportEvents();
     if (this.#phoneHost === undefined) {
-      this.#options.keymap?.pushScope(this.#scope);
-      this.register(() => this.#options.keymap?.popScope(this.#scope));
+      const scope = this.#createScope();
+      this.#options.keymap?.pushScope(scope);
+      this.register(() => this.#options.keymap?.popScope(scope));
     }
     this.register(() => this.#cancelScheduledWork());
     this.#position();

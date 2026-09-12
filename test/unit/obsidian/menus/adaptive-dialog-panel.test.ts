@@ -19,8 +19,6 @@ afterEach(() => {
 });
 
 function setup(anchor: HTMLElement = document.body) {
-  const layer = window.createDiv();
-  const surface = layer.appendChild(window.createEl("section"));
   const initialFocus = window.createEl("input");
   const onClosing = vi.fn();
   const onClosed = vi.fn();
@@ -28,8 +26,6 @@ function setup(anchor: HTMLElement = document.body) {
     anchor,
     canvasInputSurface: document.body,
     durationMs: 220,
-    layer,
-    surface,
     initialFocus,
     onClosing,
     onClosed,
@@ -44,6 +40,8 @@ function setup(anchor: HTMLElement = document.body) {
       return fragment;
     },
   });
+  const surface = initialFocus.closest<HTMLElement>(".inkbook-adaptive-panel")!;
+  const layer = surface.closest<HTMLElement>(".inkbook-adaptive-panel-layer")!;
   return { session, layer, surface, initialFocus, onClosing, onClosed };
 }
 
@@ -78,10 +76,9 @@ describe("adaptive dialog reuse", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("preserves supplied node identity and focuses the explicit control after mounting", () => {
+  it("mounts content in a single dialog and focuses the explicit control", () => {
     const fixture = setup();
-    expect(document.querySelector(".inkbook-adaptive-panel-layer")).toBe(fixture.layer);
-    expect(document.querySelector(".inkbook-adaptive-panel")).toBe(fixture.surface);
+    expect(fixture.initialFocus.isConnected).toBe(true);
     expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
     vi.advanceTimersToNextFrame();
     expect(document.activeElement).toBe(fixture.initialFocus);
