@@ -2,7 +2,7 @@ import { Notice, Platform, TFile, type TAbstractFile, type Plugin } from "obsidi
 
 import { installPhoneSheetDiagnostics } from "../menus/phone-sheet-diagnostics";
 
-const CONFIG_PATH = "Inkbook diagnostics/swipe-config.json";
+const CONFIG_PATH = "Inkbook diagnostics/swipe-config.md";
 const STORAGE_KEY = "inkbook:phone-sheet-diagnostics";
 const MAXIMUM_LIFETIME = 7 * 24 * 60 * 60 * 1000;
 type Report = Parameters<Parameters<typeof installPhoneSheetDiagnostics>[1]["complete"]>[0];
@@ -164,10 +164,11 @@ class PhoneSheetDiagnosticRegistration {
       .then(async () => {
         if (this.#disposed) return;
         const vault = this.#plugin.app.vault;
-        const path = `Inkbook diagnostics/swipe-trace-${String(count)}.json`;
+        const markdown = "```json\n" + payload + "\n```\n";
+        const path = `Inkbook diagnostics/swipe-trace-${String(count)}.md`;
         const file = vault.getAbstractFileByPath(path);
-        if (file instanceof TFile) await vault.modify(file, payload);
-        else await vault.create(path, payload);
+        if (file instanceof TFile) await vault.modify(file, markdown);
+        else await vault.create(path, markdown);
       })
       .catch(() => {
         if (!this.#disposed)

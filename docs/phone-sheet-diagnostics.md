@@ -4,7 +4,7 @@ This opt-in diagnostic records owned phone-sheet swipes to investigate device-on
 
 ## Activation and limits
 
-Create `Inkbook diagnostics/swipe-config.json` in the vault:
+Create `Inkbook diagnostics/swipe-config.md` in the vault with the raw JSON below (without code fences). Markdown filenames make both configuration and reports regular, visible Obsidian notes:
 
 ```json
 {
@@ -21,7 +21,7 @@ At most three swipes are recorded per configuration ID and device. Each capture 
 
 ## Output and privacy
 
-Reports are written serially after capture completes (normally shortly after pointer release, or at a recording limit) to `Inkbook diagnostics/swipe-trace-1.json` through `swipe-trace-3.json`, replacing the corresponding previous diagnostic reports. Files remain in the vault until deleted; ordinary vault synchronization may copy them to the user's other devices. Inkbook sends no diagnostic data to an external service.
+Reports are written serially after capture completes (normally shortly after pointer release, or at a recording limit) to `Inkbook diagnostics/swipe-trace-1.md` through `swipe-trace-3.md`, replacing the corresponding previous diagnostic reports. Reports contain a fenced JSON block. Files remain in the vault until deleted; ordinary vault synchronization may copy them to the user's other devices. Inkbook sends no diagnostic data to an external service.
 
 The record contains relative timing, sheet kind, pointer coordinates and ownership events, viewport dimensions, sheet geometry, scroll offsets, motion states, and bounded animation metadata. It does not include setting values, entered text, note contents, field labels, or note paths.
 

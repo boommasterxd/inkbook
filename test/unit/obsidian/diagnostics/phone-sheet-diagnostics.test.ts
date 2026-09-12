@@ -8,7 +8,7 @@ import { installPhoneSheetDiagnostics } from "../../../../src/obsidian/menus/pho
 vi.mock("../../../../src/obsidian/menus/phone-sheet-diagnostics", () => ({
   installPhoneSheetDiagnostics: vi.fn(() => vi.fn()),
 }));
-const CONFIG_PATH = "Inkbook diagnostics/swipe-config.json";
+const CONFIG_PATH = "Inkbook diagnostics/swipe-config.md";
 const install = vi.mocked(installPhoneSheetDiagnostics);
 const report = {} as Parameters<Parameters<typeof installPhoneSheetDiagnostics>[1]["complete"]>[0];
 
@@ -179,9 +179,12 @@ describe("phone sheet diagnostic registration", () => {
     expect(capture.claim()).toBe(false);
     await settle();
     expect(fixture.create.mock.calls.map(([path]) => path)).toEqual(
-      [1, 2, 3].map((index) => `Inkbook diagnostics/swipe-trace-${String(index)}.json`),
+      [1, 2, 3].map((index) => `Inkbook diagnostics/swipe-trace-${String(index)}.md`),
     );
-    expect(JSON.parse(fixture.create.mock.calls[0]![1])).toMatchObject({
+    const markdown = fixture.create.mock.calls[0]![1];
+    expect(markdown.startsWith("```json\n")).toBe(true);
+    expect(markdown.endsWith("\n```\n")).toBe(true);
+    expect(JSON.parse(markdown.slice(8, -5))).toMatchObject({
       configId: "phone-test",
       pluginVersion: "1.0.0",
       report: {},
@@ -194,8 +197,8 @@ describe("phone sheet diagnostic registration", () => {
   it("reuses the active recorder and overwrites an existing trace", async () => {
     const fixture = setup();
     fixture.files.set(
-      "Inkbook diagnostics/swipe-trace-1.json",
-      new TFile("Inkbook diagnostics/swipe-trace-1.json"),
+      "Inkbook diagnostics/swipe-trace-1.md",
+      new TFile("Inkbook diagnostics/swipe-trace-1.md"),
     );
     fixture.ready();
     await settle();
@@ -297,7 +300,7 @@ describe("phone sheet diagnostic limits", () => {
     expect(callbacks().claim()).toBe(true);
     callbacks().complete(report);
     await settle();
-    expect(fixture.create.mock.calls[0]?.[0]).toBe("Inkbook diagnostics/swipe-trace-3.json");
+    expect(fixture.create.mock.calls[0]?.[0]).toBe("Inkbook diagnostics/swipe-trace-3.md");
     expect(callbacks().claim()).toBe(false);
   });
 
