@@ -1,4 +1,5 @@
 import { createPhoneSheetHost } from "./menus/phone-sheet-host";
+import { registerPhoneSheetDiagnostics } from "./diagnostics/phone-sheet-diagnostics";
 import {
   MarkdownView,
   normalizePath,
@@ -50,6 +51,7 @@ export async function activateInkbookPlugin(
 ): Promise<(() => void) | undefined> {
   const settings = await loadSettings(plugin);
   if (!isActive()) return undefined;
+  registerPhoneSheetDiagnostics(plugin);
   const unregisterIcons = registerInkbookIcons();
   const feedback = new InkbookFeedbackManager();
   let active = true;
