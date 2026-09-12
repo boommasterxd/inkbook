@@ -24,6 +24,7 @@ interface SwipeGesture {
 }
 
 export class PhoneSheetSwipeController {
+  #capturedPointerId: number | undefined;
   #clickTimer: number | undefined;
   #clickTarget: Element | undefined;
   #dragFrame: number | undefined;
@@ -56,6 +57,9 @@ export class PhoneSheetSwipeController {
   };
 
   public handleLostPointerCapture = (event: PointerEvent): void => {
+    const surface = this.#options.surface;
+    if (event.target !== surface || surface.hasPointerCapture?.(event.pointerId)) return;
+    if (this.#capturedPointerId === event.pointerId) this.#capturedPointerId = undefined;
     this.#interruptGesture(event);
   };
 
@@ -67,6 +71,7 @@ export class PhoneSheetSwipeController {
     const gesture = this.#gesture;
     if (gesture?.pointerId !== event.pointerId) return;
     this.#gesture = undefined;
+    this.#releasePointer();
     if (gesture.dragging) this.#settle();
   }
 
@@ -105,6 +110,7 @@ export class PhoneSheetSwipeController {
     const gesture = this.#gesture;
     if (gesture?.pointerId !== event.pointerId) return;
     this.#gesture = undefined;
+    this.#releasePointer();
     if (!gesture.dragging) return;
     event.preventDefault();
     this.#suppressFollowingClick(gesture.target);
@@ -126,6 +132,7 @@ export class PhoneSheetSwipeController {
 
   public prepareClose(): void {
     this.#gesture = undefined;
+    this.#releasePointer();
     this.#cancelResetWork();
     this.#flushPendingDrag();
     this.#captureExitPosition();
@@ -156,7 +163,28 @@ export class PhoneSheetSwipeController {
     delete surface.dataset.presence;
     this.#clearExitPosition();
     if (interrupted) this.#applyDrag(gesture.offset, gesture.height);
+    this.#capturePointer(gesture.pointerId);
     event.preventDefault();
+  }
+
+  #capturePointer(pointerId: number): void {
+    const surface = this.#options.surface;
+    if (typeof surface.setPointerCapture !== "function") return;
+    try {
+      surface.setPointerCapture(pointerId);
+      this.#capturedPointerId = pointerId;
+    } catch {
+      // Synthetic or already-ended pointers cannot acquire native capture.
+    }
+  }
+
+  #releasePointer(): void {
+    const pointerId = this.#capturedPointerId;
+    this.#capturedPointerId = undefined;
+    const surface = this.#options.surface;
+    if (pointerId !== undefined && surface.hasPointerCapture?.(pointerId)) {
+      surface.releasePointerCapture(pointerId);
+    }
   }
 
   #visibleDistance(height: number): number {
