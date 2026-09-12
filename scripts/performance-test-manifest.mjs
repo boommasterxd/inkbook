@@ -26,6 +26,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/obsidian/live-preview-entrances-performance.test.ts",
     "test/performance/obsidian/live-preview-updates-performance.test.ts",
     "test/performance/obsidian/pen-tap-capture-performance.test.ts",
+    "test/performance/obsidian/phone-sheet-editable-performance.test.ts",
     "test/performance/persistence/safe-svg-validation.test.ts",
     "test/performance/persistence/wire-preparation-and-adoption.test.ts",
     "test/performance/rendering/scene/interaction-refresh-profile.test.ts",

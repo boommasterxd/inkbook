@@ -2,6 +2,8 @@ import { Component, Platform, Scope, type Keymap } from "obsidian";
 
 import { effectiveTransitionDuration } from "../runtime/effective-motion";
 import { registerFocusNavigation } from "../runtime/focus-navigation";
+import { readMenuViewport } from "./menu-viewport";
+import { revealPhoneSheetEditable } from "./phone-sheet-editable";
 import { menuDomWindow } from "./menu-dom";
 import type { FocusTargetPort } from "./menu-ports";
 import type { PhoneSheetHostPort } from "./phone-sheet-host";
@@ -48,6 +50,7 @@ export class AdaptivePanelSession extends Component {
   readonly #durationMs: number;
   #layoutFrame: number | undefined;
   #layoutRequested = false;
+  #revealEditable = false;
   #layoutStartHeight: number | undefined;
   #layoutTimer: number | undefined;
   readonly #layer: HTMLElement;
@@ -194,7 +197,8 @@ export class AdaptivePanelSession extends Component {
     this.#scheduleLayout();
   }
 
-  #requestPosition(): void {
+  #requestPosition(revealEditable = false): void {
+    this.#revealEditable ||= revealEditable;
     this.#scheduleLayout();
   }
 
@@ -209,6 +213,10 @@ export class AdaptivePanelSession extends Component {
         this.#animateContentHeight(startHeight);
       }
       this.#position();
+      if (this.#revealEditable && Platform.isPhone && this.#isTopmostLayer()) {
+        revealPhoneSheetEditable(this.#scroll, readMenuViewport(this.#options.ownerWindow));
+      }
+      this.#revealEditable = false;
     });
   }
 
@@ -348,7 +356,7 @@ export class AdaptivePanelSession extends Component {
   }
 
   #maximumScrollHeight(): number {
-    const viewport = this.#visualViewport();
+    const viewport = readMenuViewport(this.#options.ownerWindow);
     return Platform.isPhone
       ? viewport.height * 0.6
       : Math.max(0, viewport.height - DESKTOP_VIEWPORT_INSET_PX * 2);
@@ -365,7 +373,7 @@ export class AdaptivePanelSession extends Component {
   }
 
   #position(): void {
-    const viewport = this.#visualViewport();
+    const viewport = readMenuViewport(this.#options.ownerWindow);
     this.#layer.style.setProperty(
       "--inkbook-adaptive-panel-viewport-top",
       `${String(viewport.top)}px`,
@@ -429,7 +437,7 @@ export class AdaptivePanelSession extends Component {
   }
 
   #registerViewportEvents(): void {
-    const reposition = (): void => this.#requestPosition();
+    const reposition = (): void => this.#requestPosition(true);
     const repositionForDocumentScroll = (event: Event): void => {
       const target = event.target;
       if (isNode(target) && this.#surface.contains(target)) return;
@@ -456,29 +464,6 @@ export class AdaptivePanelSession extends Component {
       return;
     }
     this.#options.canvasInputSurface.focus({ preventScroll: true });
-  }
-
-  #visualViewport(): {
-    readonly height: number;
-    readonly left: number;
-    readonly top: number;
-    readonly width: number;
-  } {
-    const viewport = this.#options.ownerWindow.visualViewport;
-    if (viewport !== undefined && viewport !== null) {
-      return {
-        height: viewport.height,
-        left: viewport.offsetLeft,
-        top: viewport.offsetTop,
-        width: viewport.width,
-      };
-    }
-    return {
-      height: this.#options.ownerWindow.innerHeight,
-      left: 0,
-      top: 0,
-      width: this.#options.ownerWindow.innerWidth,
-    };
   }
 }
 
