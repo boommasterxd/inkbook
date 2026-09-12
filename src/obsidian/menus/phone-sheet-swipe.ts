@@ -128,6 +128,7 @@ export class PhoneSheetSwipeController {
     this.#gesture = undefined;
     this.#cancelResetWork();
     this.#flushPendingDrag();
+    this.#captureExitPosition();
     delete this.#options.surface.dataset.swipeState;
     delete this.#options.backdrop.dataset.swipeState;
   }
@@ -153,6 +154,7 @@ export class PhoneSheetSwipeController {
     this.#options.surface.dataset.swipeState = "dragging";
     this.#options.backdrop.dataset.swipeState = "dragging";
     delete surface.dataset.presence;
+    this.#clearExitPosition();
     if (interrupted) this.#applyDrag(gesture.offset, gesture.height);
     event.preventDefault();
   }
@@ -201,13 +203,10 @@ export class PhoneSheetSwipeController {
   }
 
   #applyDrag(distance: number, height: number): void {
-    this.#options.surface.style.setProperty(
-      "--inkbook-adaptive-panel-drag",
-      `${String(distance)}px`,
-    );
+    this.#options.surface.style.setProperty("translate", `0 ${String(distance)}px`);
     const effectiveHeight = Math.max(1, height);
     this.#options.backdrop.style.setProperty(
-      "--inkbook-adaptive-panel-backdrop-opacity",
+      "opacity",
       String(1 - Math.min(1, distance / effectiveHeight)),
     );
   }
@@ -222,8 +221,8 @@ export class PhoneSheetSwipeController {
     this.#options.backdrop.dataset.swipeState = "settling";
     this.#resetFrame = this.#options.ownerWindow.requestAnimationFrame(() => {
       this.#resetFrame = undefined;
-      this.#options.surface.style.removeProperty("--inkbook-adaptive-panel-drag");
-      this.#options.backdrop.style.removeProperty("--inkbook-adaptive-panel-backdrop-opacity");
+      this.#options.surface.style.removeProperty("translate");
+      this.#options.backdrop.style.removeProperty("opacity");
       this.#resetTimer = this.#options.ownerWindow.setTimeout(
         () => this.#resetPresentation(),
         this.#options.durationMs,
@@ -279,6 +278,31 @@ export class PhoneSheetSwipeController {
     this.#cancelDragFrame();
     delete this.#options.surface.dataset.swipeState;
     delete this.#options.backdrop.dataset.swipeState;
+    this.#options.surface.style.removeProperty("translate");
+    this.#options.backdrop.style.removeProperty("opacity");
+    this.#clearExitPosition();
+  }
+
+  #captureExitPosition(): void {
+    const { surface, backdrop, ownerWindow } = this.#options;
+    const settling = surface.dataset.swipeState === "settling";
+    const translate = settling
+      ? ownerWindow.getComputedStyle(surface).translate
+      : surface.style.translate;
+    const opacity = settling
+      ? ownerWindow.getComputedStyle(backdrop).opacity
+      : backdrop.style.opacity;
+    if (translate)
+      surface.style.setProperty(
+        "--inkbook-adaptive-panel-drag",
+        translate.trim().split(/\s+/)[1] ?? "0px",
+      );
+    if (opacity) backdrop.style.setProperty("--inkbook-adaptive-panel-backdrop-opacity", opacity);
+    surface.style.removeProperty("translate");
+    backdrop.style.removeProperty("opacity");
+  }
+
+  #clearExitPosition(): void {
     this.#options.surface.style.removeProperty("--inkbook-adaptive-panel-drag");
     this.#options.backdrop.style.removeProperty("--inkbook-adaptive-panel-backdrop-opacity");
   }

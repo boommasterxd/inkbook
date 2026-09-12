@@ -242,15 +242,15 @@ describe("AdaptivePanelSession phone swipe behavior", () => {
     shortSwipe.control.dispatchEvent(pointer("pointerdown", 10, 7, 0));
     shortSurface?.dispatchEvent(pointer("pointermove", 60, 7, 100));
     frames.shift()?.(100);
-    expect(shortSurface?.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("50px");
+    expect(shortSurface?.style.getPropertyValue("translate")).toBe("0 50px");
     shortSurface?.dispatchEvent(pointer("pointermove", 5, 7, 150));
     frames.shift()?.(150);
-    expect(shortSurface?.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("0px");
+    expect(shortSurface?.style.getPropertyValue("translate")).toBe("0 0px");
     shortSurface?.dispatchEvent(pointer("pointerup", 5, 7, 200));
     shortSwipe.control.click();
 
     expect(document.querySelector(".inkbook-adaptive-panel")).not.toBeNull();
-    expect(shortSurface?.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("");
+    expect(shortSurface?.style.getPropertyValue("translate")).toBe("");
     expect(activate).not.toHaveBeenCalled();
     expect(shortSwipe.onClosed).not.toHaveBeenCalled();
     shortSwipe.session.close("immediate");
@@ -266,7 +266,7 @@ describe("AdaptivePanelSession phone swipe behavior", () => {
     cancelledSurface?.dispatchEvent(pointer("pointercancel", 90, 8, 120));
 
     expect(document.querySelector(".inkbook-adaptive-panel")).not.toBeNull();
-    expect(cancelledSurface?.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("");
+    expect(cancelledSurface?.style.getPropertyValue("translate")).toBe("");
     expect(cancelledSwipe.onClosed).not.toHaveBeenCalled();
     cancelledSwipe.session.close("immediate");
   });
@@ -285,7 +285,7 @@ describe("AdaptivePanelSession phone swipe behavior", () => {
     fixture.control.click();
 
     expect(activate).toHaveBeenCalledOnce();
-    expect(surface?.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("");
+    expect(surface?.style.getPropertyValue("translate")).toBe("");
 
     if (scroll !== null) scroll.scrollTop = 20;
     scroll?.dispatchEvent(new Event("scroll"));
@@ -295,7 +295,7 @@ describe("AdaptivePanelSession phone swipe behavior", () => {
     surface?.dispatchEvent(pointer("pointerup", 90, 5, 180));
 
     expect(document.querySelector(".inkbook-adaptive-panel")).not.toBeNull();
-    expect(surface?.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("");
+    expect(surface?.style.getPropertyValue("translate")).toBe("");
     fixture.session.close("immediate");
   });
 
@@ -312,9 +312,9 @@ describe("AdaptivePanelSession phone swipe behavior", () => {
     surface?.dispatchEvent(pointer("pointerup", 50, 9, 300));
     expect(surface?.dataset.swipeState).toBe("settling");
     expect(backdrop?.dataset.swipeState).toBe("settling");
-    expect(surface?.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("40px");
+    expect(surface?.style.getPropertyValue("translate")).toBe("0 40px");
     frames.shift()?.(16);
-    expect(surface?.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("");
+    expect(surface?.style.getPropertyValue("translate")).toBe("");
     vi.runAllTimers();
     expect(surface?.dataset.swipeState).toBeUndefined();
     expect(backdrop?.dataset.swipeState).toBeUndefined();
