@@ -6,6 +6,11 @@ const CONFIG_PATH = "Inkbook diagnostics/swipe-config.md";
 const STORAGE_KEY = "inkbook:phone-sheet-diagnostics";
 const MAXIMUM_LIFETIME = 7 * 24 * 60 * 60 * 1000;
 type Report = Parameters<Parameters<typeof installPhoneSheetDiagnostics>[1]["complete"]>[0];
+interface DiagnosticStatus {
+  readonly state: "ready" | "budget-exhausted" | "report-saved" | "write-error" | "recorder-error";
+  readonly claims: number;
+  readonly reportNumber: number | null;
+}
 interface Configuration {
   readonly id: string;
   readonly expiresAt: number;
@@ -44,6 +49,7 @@ class PhoneSheetDiagnosticRegistration {
   readonly #window: Window;
   #configuration: Configuration | undefined;
   #writes = Promise.resolve();
+  #generation = 0;
 
   constructor(plugin: Plugin) {
     this.#plugin = plugin;
@@ -99,40 +105,59 @@ class PhoneSheetDiagnosticRegistration {
   #activate(configuration: Configuration | undefined): void {
     if (configuration && JSON.stringify(configuration) === JSON.stringify(this.#configuration))
       return;
+    this.#generation += 1;
     this.#stopRecording();
     if (!configuration) return;
     let count = this.#readCount(configuration.id);
-    if (count >= configuration.maxReports) return;
     this.#configuration = configuration;
-    this.#stop = installPhoneSheetDiagnostics(
-      this.#plugin.app.workspace.containerEl.ownerDocument,
-      {
-        claim: () => {
-          if (
-            this.#disposed ||
-            this.#configuration !== configuration ||
-            Date.now() >= configuration.expiresAt ||
-            count >= configuration.maxReports
-          )
-            return false;
-          try {
-            this.#plugin.app.saveLocalStorage(STORAGE_KEY, {
-              id: configuration.id,
-              count: count + 1,
-            });
-            count += 1;
-            return true;
-          } catch {
-            return false;
-          }
+    if (count >= configuration.maxReports) {
+      this.#enqueueStatus(configuration, {
+        state: "budget-exhausted",
+        claims: count,
+        reportNumber: null,
+      });
+      return;
+    }
+    try {
+      this.#stop = installPhoneSheetDiagnostics(
+        this.#plugin.app.workspace.containerEl.ownerDocument,
+        {
+          claim: () => {
+            if (
+              this.#disposed ||
+              this.#configuration !== configuration ||
+              Date.now() >= configuration.expiresAt ||
+              count >= configuration.maxReports
+            )
+              return false;
+            try {
+              this.#plugin.app.saveLocalStorage(STORAGE_KEY, {
+                id: configuration.id,
+                count: count + 1,
+              });
+              count += 1;
+              return true;
+            } catch {
+              return false;
+            }
+          },
+          complete: (report) => {
+            if (this.#configuration !== configuration) return;
+            this.#enqueue(configuration, count, report);
+            if (count >= configuration.maxReports) this.#stopRecording(true);
+          },
         },
-        complete: (report) => {
-          if (this.#configuration !== configuration) return;
-          this.#enqueue(configuration, count, report);
-          if (count >= configuration.maxReports) this.#stopRecording();
-        },
-      },
-    );
+      );
+    } catch {
+      this.#enqueueStatus(configuration, {
+        state: "recorder-error",
+        claims: count,
+        reportNumber: null,
+      });
+      this.#configuration = undefined;
+      return;
+    }
+    this.#enqueueStatus(configuration, { state: "ready", claims: count, reportNumber: null });
     this.#expiry = this.#window.setTimeout(() => {
       this.#stopRecording();
     }, configuration.expiresAt - Date.now());
@@ -153,35 +178,79 @@ class PhoneSheetDiagnosticRegistration {
 
   #enqueue(configuration: Configuration, count: number, report: Report): void {
     if (this.#disposed) return;
-    const payload = JSON.stringify({
+    const generation = this.#generation;
+    const payload = {
       version: 1,
       configId: configuration.id,
       timestamp: new Date().toISOString(),
       pluginVersion: this.#plugin.manifest.version,
       report,
-    });
+    };
     this.#writes = this.#writes
       .then(async () => {
-        if (this.#disposed) return;
-        const vault = this.#plugin.app.vault;
-        const markdown = "```json\n" + payload + "\n```\n";
-        const path = `Inkbook diagnostics/swipe-trace-${String(count)}.md`;
-        const file = vault.getAbstractFileByPath(path);
-        if (file instanceof TFile) await vault.modify(file, markdown);
-        else await vault.create(path, markdown);
+        if (!this.#isCurrent(generation)) return;
+        let state: DiagnosticStatus["state"] = "report-saved";
+        try {
+          await this.#writeNote(`Inkbook diagnostics/swipe-trace-${String(count)}.md`, payload);
+        } catch {
+          state = "write-error";
+          this.#notifyWriteFailure();
+        }
+        if (this.#isCurrent(generation)) {
+          await this.#writeStatus(configuration, { state, claims: count, reportNumber: count });
+        }
       })
       .catch(() => {
-        if (!this.#disposed)
-          new Notice(
-            "Inkbook could not save the swipe diagnostic. Check that the diagnostics folder is writable.",
-          );
+        this.#notifyWriteFailure();
       });
   }
 
-  #stopRecording(): void {
+  #enqueueStatus(configuration: Configuration, status: DiagnosticStatus): void {
+    const generation = this.#generation;
+    this.#writes = this.#writes
+      .then(async () => {
+        if (this.#isCurrent(generation)) await this.#writeStatus(configuration, status);
+      })
+      .catch(() => {
+        this.#notifyWriteFailure();
+      });
+  }
+
+  #isCurrent(generation: number): boolean {
+    return !this.#disposed && this.#generation === generation;
+  }
+
+  async #writeStatus(configuration: Configuration, status: DiagnosticStatus): Promise<void> {
+    await this.#writeNote("Inkbook diagnostics/swipe-status.md", {
+      version: 1,
+      configId: configuration.id,
+      pluginVersion: this.#plugin.manifest.version,
+      timestamp: new Date().toISOString(),
+      platform: "phone",
+      diagnosticBuild: "phone-sheet-status-v1",
+      ...status,
+    });
+  }
+
+  async #writeNote(path: string, payload: object): Promise<void> {
+    const vault = this.#plugin.app.vault;
+    const markdown = "```json\n" + JSON.stringify(payload) + "\n```\n";
+    const file = vault.getAbstractFileByPath(path);
+    if (file instanceof TFile) await vault.modify(file, markdown);
+    else await vault.create(path, markdown);
+  }
+
+  #notifyWriteFailure(): void {
+    if (!this.#disposed)
+      new Notice(
+        "Inkbook could not save the swipe diagnostic. Check that the diagnostics folder is writable.",
+      );
+  }
+
+  #stopRecording(preserveConfiguration = false): void {
     this.#stop?.();
     this.#stop = undefined;
-    this.#configuration = undefined;
+    if (!preserveConfiguration) this.#configuration = undefined;
     if (this.#expiry !== undefined) this.#window.clearTimeout(this.#expiry);
     this.#expiry = undefined;
   }

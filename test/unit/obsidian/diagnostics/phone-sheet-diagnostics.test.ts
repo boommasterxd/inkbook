@@ -86,6 +86,19 @@ function setup() {
   };
 }
 
+function traceCreates(fixture: ReturnType<typeof setup>) {
+  return fixture.create.mock.calls.filter(([path]) => path.includes("swipe-trace-"));
+}
+
+function statusWrites(fixture: ReturnType<typeof setup>): unknown[] {
+  return [
+    ...fixture.create.mock.calls.map(([path, text]) => [path, text] as const),
+    ...fixture.modify.mock.calls.map(([file, text]) => [file.path, text] as const),
+  ]
+    .filter(([path]) => path.endsWith("swipe-status.md"))
+    .map(([, text]) => JSON.parse(text.slice(8, -5)) as unknown);
+}
+
 function deferConfigurationRead(fixture: ReturnType<typeof setup>): (text: string) => void {
   let resolve!: (text: string) => void;
   fixture.read.mockImplementationOnce(
@@ -99,8 +112,14 @@ function deferConfigurationRead(fixture: ReturnType<typeof setup>): (text: strin
   };
 }
 
+async function activate(fixture: ReturnType<typeof setup>) {
+  fixture.ready();
+  await settle();
+  return callbacks();
+}
+
 async function settle() {
-  for (let index = 0; index < 12; index += 1) await Promise.resolve();
+  for (let index = 0; index < 50; index += 1) await Promise.resolve();
 }
 function callbacks() {
   return install.mock.calls[install.mock.calls.length - 1]![1];
@@ -165,9 +184,7 @@ describe("phone sheet diagnostic registration", () => {
 
   it("writes three sequential bounded reports and persists the claim before completion", async () => {
     const fixture = setup();
-    fixture.ready();
-    await settle();
-    const capture = callbacks();
+    const capture = await activate(fixture);
     for (let index = 1; index <= 3; index += 1) {
       expect(capture.claim()).toBe(true);
       expect(fixture.save).toHaveBeenLastCalledWith("inkbook:phone-sheet-diagnostics", {
@@ -178,10 +195,10 @@ describe("phone sheet diagnostic registration", () => {
     }
     expect(capture.claim()).toBe(false);
     await settle();
-    expect(fixture.create.mock.calls.map(([path]) => path)).toEqual(
+    expect(traceCreates(fixture).map(([path]) => path)).toEqual(
       [1, 2, 3].map((index) => `Inkbook diagnostics/swipe-trace-${String(index)}.md`),
     );
-    const markdown = fixture.create.mock.calls[0]![1];
+    const markdown = traceCreates(fixture)[0]![1];
     expect(markdown.startsWith("```json\n")).toBe(true);
     expect(markdown.endsWith("\n```\n")).toBe(true);
     expect(JSON.parse(markdown.slice(8, -5))).toMatchObject({
@@ -208,31 +225,29 @@ describe("phone sheet diagnostic registration", () => {
     expect(callbacks().claim()).toBe(true);
     callbacks().complete(report);
     await settle();
-    expect(fixture.modify).toHaveBeenCalledTimes(1);
-    expect(fixture.create).not.toHaveBeenCalled();
+    expect(
+      fixture.modify.mock.calls.filter(([file]) => file.path.includes("swipe-trace-")),
+    ).toHaveLength(1);
+    expect(traceCreates(fixture)).toHaveLength(0);
   });
 });
 
 describe("phone sheet diagnostic lifecycle", () => {
   it("stops on expiry and unload without starting queued writes", async () => {
     const fixture = setup();
-    fixture.ready();
-    await settle();
-    const capture = callbacks();
+    const capture = await activate(fixture);
     expect(capture.claim()).toBe(true);
     capture.complete(report);
     fixture.unload();
     await settle();
-    expect(fixture.create).not.toHaveBeenCalled();
+    expect(traceCreates(fixture)).toHaveLength(0);
     expect(capture.claim()).toBe(false);
     expect(install.mock.results[0]!.value).toHaveBeenCalledOnce();
   });
 
   it("expires an idle recorder", async () => {
     const fixture = setup();
-    fixture.ready();
-    await settle();
-    const capture = callbacks();
+    const capture = await activate(fixture);
     vi.advanceTimersByTime(60_000);
     expect(capture.claim()).toBe(false);
     expect(install.mock.results[0]!.value).toHaveBeenCalledOnce();
@@ -300,7 +315,7 @@ describe("phone sheet diagnostic limits", () => {
     expect(callbacks().claim()).toBe(true);
     callbacks().complete(report);
     await settle();
-    expect(fixture.create.mock.calls[0]?.[0]).toBe("Inkbook diagnostics/swipe-trace-3.md");
+    expect(traceCreates(fixture)[0]?.[0]).toBe("Inkbook diagnostics/swipe-trace-3.md");
     expect(callbacks().claim()).toBe(false);
   });
 
@@ -329,14 +344,15 @@ describe("phone sheet diagnostic limits", () => {
   it("serializes writes and lets only an already started write finish on unload", async () => {
     const fixture = setup();
     let resolve!: () => void;
+    fixture.ready();
+    await settle();
+    fixture.create.mockClear();
     fixture.create.mockImplementationOnce(
       () =>
         new Promise<void>((done) => {
           resolve = done;
         }),
     );
-    fixture.ready();
-    await settle();
     const capture = callbacks();
     expect(capture.claim()).toBe(true);
     capture.complete(report);
@@ -370,9 +386,105 @@ describe("phone sheet diagnostic limits", () => {
     const fixture = setup();
     fixture.ready();
     await settle();
-    expect(fixture.create).not.toHaveBeenCalled();
+    expect(statusWrites(fixture)).toEqual([expect.objectContaining({ state: "recorder-error" })]);
     fixture.event("modify");
     await settle();
     expect(install).toHaveBeenCalledTimes(2);
   });
+});
+
+describe("phone sheet diagnostic status", () => {
+  it("confirms successful recorder activation without needing a gesture", async () => {
+    const fixture = setup();
+    fixture.ready();
+    await settle();
+    expect(statusWrites(fixture)).toEqual([
+      expect.objectContaining({
+        state: "ready",
+        configId: "phone-test",
+        platform: "phone",
+        diagnosticBuild: "phone-sheet-status-v1",
+        claims: 0,
+        reportNumber: null,
+      }),
+    ]);
+    expect(traceCreates(fixture)).toHaveLength(0);
+    fixture.event("modify");
+    await settle();
+    expect(statusWrites(fixture)).toHaveLength(1);
+  });
+
+  it("reports an exhausted budget independently of recorder installation", async () => {
+    const fixture = setup();
+    fixture.load.mockReturnValue({ id: "phone-test", count: 3 });
+    fixture.ready();
+    await settle();
+    expect(install).not.toHaveBeenCalled();
+    expect(statusWrites(fixture)).toEqual([
+      expect.objectContaining({ state: "budget-exhausted", claims: 3 }),
+    ]);
+  });
+
+  it("updates status after a report succeeds or fails", async () => {
+    const fixture = setup();
+    const capture = await activate(fixture);
+    expect(capture.claim()).toBe(true);
+    capture.complete(report);
+    await settle();
+    expect(statusWrites(fixture)[1]).toMatchObject({
+      state: "report-saved",
+      claims: 1,
+      reportNumber: 1,
+    });
+    fixture.create.mockRejectedValueOnce(new Error("read only"));
+    expect(capture.claim()).toBe(true);
+    capture.complete(report);
+    await settle();
+    expect(statusWrites(fixture)[2]).toMatchObject({
+      state: "write-error",
+      claims: 2,
+      reportNumber: 2,
+    });
+  });
+
+  it("does not let a stale report overwrite a newer configuration status", async () => {
+    const fixture = setup();
+    fixture.ready();
+    await settle();
+    let resolve!: () => void;
+    fixture.create.mockImplementationOnce(
+      () =>
+        new Promise<void>((done) => {
+          resolve = done;
+        }),
+    );
+    expect(callbacks().claim()).toBe(true);
+    callbacks().complete(report);
+    await settle();
+    fixture.read.mockResolvedValue(
+      JSON.stringify({ version: 1, id: "new", expiresAt: Date.now() + 1000, maxReports: 3 }),
+    );
+    fixture.event("modify");
+    await settle();
+    resolve();
+    await settle();
+    expect(statusWrites(fixture)).toEqual([
+      expect.objectContaining({ configId: "phone-test", state: "ready" }),
+      expect.objectContaining({ configId: "new", state: "ready" }),
+    ]);
+  });
+});
+
+it("preserves queued final reports when the same marker is reloaded", async () => {
+  const fixture = setup();
+  fixture.read.mockResolvedValue(
+    JSON.stringify({ version: 1, id: "phone-test", expiresAt: Date.now() + 1000, maxReports: 1 }),
+  );
+  const capture = await activate(fixture);
+  expect(capture.claim()).toBe(true);
+  capture.complete(report);
+  fixture.event("modify");
+  await settle();
+  expect(traceCreates(fixture)).toHaveLength(1);
+  expect(statusWrites(fixture)[1]).toMatchObject({ state: "report-saved", reportNumber: 1 });
 });
