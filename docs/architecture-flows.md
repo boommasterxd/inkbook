@@ -143,7 +143,7 @@ flowchart TD
   arbitration --> elementMove["Preselected-element touch move"]
   arbitration --> activeTool["Pen, mouse, or enabled-finger active tool"]
   arbitration --> navigation["Note scroll, page pan, or long press"]
-  arbitration --> menu["Spatial-index target and native context menu"]
+  arbitration --> menu["Spatial-index target and canvas context menu"]
 
   eraser --> gesture["Input reducer gesture state"]
   pinch --> gesture

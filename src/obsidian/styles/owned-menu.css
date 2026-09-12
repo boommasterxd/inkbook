@@ -1,0 +1,176 @@
+.inkbook-owned-menu {
+  animation: inkbook-owned-menu-enter var(--inkbook-owned-menu-duration) ease-out both;
+  max-inline-size: calc(100vw - 10px);
+  outline: none;
+  overflow: auto;
+  padding: var(--menu-padding);
+  position: fixed;
+  scrollbar-width: none;
+  transform-origin: top center;
+  user-select: none;
+  z-index: var(--layer-menu);
+}
+
+.inkbook-owned-menu[data-mobile="true"] {
+  background: color-mix(in srgb, var(--menu-background) var(--blur-opacity-m), transparent);
+  border: none;
+}
+
+.inkbook-owned-menu-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.inkbook-owned-menu-item {
+  align-items: center;
+  border-radius: var(--radius-s);
+  color: var(--text-normal);
+  corner-shape: var(--corner-shape);
+  cursor: var(--cursor);
+  display: flex;
+  font-size: var(--font-ui-small);
+  gap: var(--size-4-2);
+  line-height: 1.3;
+  outline: none;
+  padding: var(--size-4-1) var(--size-4-2);
+  white-space: nowrap;
+}
+
+.inkbook-owned-menu-item:focus {
+  background: var(--background-modifier-hover);
+}
+
+.inkbook-owned-menu-item[data-disabled="true"] {
+  color: var(--text-faint);
+}
+
+.inkbook-owned-menu-item[data-warning="true"][data-disabled="false"] {
+  color: var(--text-error);
+}
+
+.inkbook-owned-menu-item[data-label="true"] {
+  color: var(--text-muted);
+  font-size: var(--font-ui-medium);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.inkbook-owned-menu-title {
+  flex: 1;
+}
+
+.inkbook-owned-menu-icon,
+.inkbook-owned-menu-check {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.inkbook-owned-menu-icon svg,
+.inkbook-owned-menu-check svg {
+  --icon-size: var(--icon-s);
+  --icon-stroke: var(--icon-s-stroke-width);
+
+  block-size: var(--icon-size);
+  inline-size: var(--icon-size);
+  stroke-width: var(--icon-stroke);
+}
+
+.inkbook-owned-menu-item[data-warning="true"] .inkbook-owned-menu-icon {
+  color: var(--text-error);
+}
+
+.inkbook-owned-menu-item[data-disabled="true"] .inkbook-owned-menu-icon {
+  color: var(--text-faint);
+}
+
+.inkbook-owned-menu-separator {
+  border-block-start: 1px solid var(--background-modifier-border);
+  margin: var(--size-2-3) calc(var(--size-2-3) * -1);
+}
+
+.inkbook-owned-menu[data-mobile="true"] .inkbook-owned-menu-item {
+  font-size: var(--font-ui-medium);
+}
+
+.theme-light .inkbook-adaptive-panel[data-kind="menu"] {
+  --interactive-normal: var(--background-primary);
+}
+
+.inkbook-adaptive-panel[data-kind="menu"] .inkbook-owned-menu-item {
+  background: var(--interactive-normal);
+  border-radius: 0;
+  font-size: var(--font-ui-medium);
+  padding: var(--size-4-3) var(--size-4-4);
+  position: relative;
+  transition: background-color 100ms ease-in-out;
+}
+
+.inkbook-adaptive-panel[data-kind="menu"] .inkbook-owned-menu-item:first-child,
+.inkbook-adaptive-panel[data-kind="menu"] .inkbook-owned-menu-separator + .inkbook-owned-menu-item {
+  border-start-end-radius: var(--touch-radius-xxs);
+  border-start-start-radius: var(--touch-radius-xxs);
+}
+
+.inkbook-adaptive-panel[data-kind="menu"] .inkbook-owned-menu-item:last-child,
+.inkbook-adaptive-panel[data-kind="menu"]
+  .inkbook-owned-menu-item:has(+ .inkbook-owned-menu-separator) {
+  border-end-end-radius: var(--touch-radius-xxs);
+  border-end-start-radius: var(--touch-radius-xxs);
+}
+
+.inkbook-adaptive-panel[data-kind="menu"] .inkbook-owned-menu-item:focus {
+  background: var(--background-modifier-hover);
+}
+
+.inkbook-adaptive-panel[data-kind="menu"] .inkbook-owned-menu-separator {
+  border: 0;
+  margin: var(--size-4-2) 0;
+}
+
+@keyframes inkbook-owned-menu-enter {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+.inkbook-owned-menu[data-state="closing"] {
+  animation: inkbook-wide-menu-exit var(--inkbook-owned-menu-duration) ease-out both;
+  pointer-events: none;
+}
+
+.inkbook-adaptive-panel[data-kind="menu"]
+  .inkbook-owned-menu-item:is(:first-child, .inkbook-owned-menu-separator + *):is(
+    :last-child,
+    :has(+ .inkbook-owned-menu-separator)
+  ) {
+  border-radius: var(--touch-radius-xl);
+}
+
+.inkbook-adaptive-panel[data-kind="menu"]
+  .inkbook-owned-menu-item:has(+ .inkbook-owned-menu-item)::after {
+  background: var(--menu-divider-color);
+  block-size: var(--menu-divider-width);
+  content: "";
+  inline-size: calc(100% - var(--size-4-8));
+  inset-block-end: 0;
+  inset-inline-start: var(--size-4-4);
+  position: absolute;
+}
+
+.inkbook-adaptive-panel[data-kind="menu"] .inkbook-owned-menu-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inkbook-adaptive-panel[data-kind="menu"] .inkbook-owned-menu-item[data-label="true"] {
+  background: transparent;
+}

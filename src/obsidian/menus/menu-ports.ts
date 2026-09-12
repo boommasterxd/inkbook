@@ -1,8 +1,7 @@
 /**
  * The menu layer depends on these small ports instead of importing Obsidian
- * types into the editor. The host adapter can pass Obsidian's `Menu` and
- * `MenuItem` through these interfaces without leaking host objects into the
- * menu definition or its tests.
+ * types into the editor. The owned menu renderer implements these interfaces
+ * without leaking host objects into menu definitions or their tests.
  */
 
 export interface MenuPosition {
@@ -30,11 +29,11 @@ export interface MenuPort {
   setParentElement?(element: HTMLElement): MenuPort;
   showAtPosition(position: MenuPosition, ownerDocument: Document): MenuPort;
   onHide(callback: () => void): void;
-  close(): void;
+  close(mode?: "animated" | "immediate" | "handoff"): void;
 }
 
 export interface MenuFactoryPort {
-  create(): MenuPort;
+  create(kind?: "context" | "menu"): MenuPort;
   forEvent(event: MouseEvent | PointerEvent): MenuPort;
 }
 

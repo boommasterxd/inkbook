@@ -360,12 +360,12 @@ describe("AdaptivePanelSession transitions", () => {
     vi.useFakeTimers();
     const frames = mockAnimationFrames();
     let intrinsicHeight = 100;
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (
       this: HTMLElement,
     ) {
-      if (!this.classList.contains("inkbook-adaptive-panel-scroll")) return rect(0, 0, 0, 0);
+      if (!this.classList.contains("inkbook-adaptive-panel-scroll")) return 0;
       const explicitHeight = Number.parseFloat(this.style.getPropertyValue("block-size"));
-      return rect(0, 0, 199, Number.isFinite(explicitHeight) ? explicitHeight : intrinsicHeight);
+      return Number.isFinite(explicitHeight) ? explicitHeight : intrinsicHeight;
     });
     vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function (
       this: HTMLElement,
@@ -446,12 +446,8 @@ function pointer(
 function mockWidePanelGeometry(viewportWidth: number): void {
   vi.spyOn(window, "innerWidth", "get").mockReturnValue(viewportWidth);
   vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
-  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
-    this: HTMLElement,
-  ) {
-    if (this.classList.contains("inkbook-adaptive-panel")) return rect(0, 0, 199, 300);
-    return rect(0, 0, 0, 0);
-  });
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(199);
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(300);
 }
 
 function mockAnimationFrames(): FrameRequestCallback[] {

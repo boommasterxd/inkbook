@@ -12,7 +12,8 @@
   display: none;
 }
 
-.inkbook-adaptive-panel {
+.inkbook-adaptive-panel,
+.inkbook-owned-menu {
   backdrop-filter: var(--menu-backdrop-filter);
   background: var(--menu-background);
   border: var(--menu-border-width) solid var(--menu-border-color);
@@ -21,11 +22,20 @@
   box-sizing: border-box;
   color: var(--text-normal);
   corner-shape: var(--menu-corner-shape);
+}
+
+.inkbook-adaptive-panel {
   max-block-size: calc(var(--inkbook-adaptive-panel-viewport-height, 100vh) - 16px);
   outline: none;
   overflow: hidden;
   pointer-events: auto;
   position: fixed;
+}
+
+.inkbook-adaptive-panel-layer[data-platform="wide"]
+  .inkbook-adaptive-panel[data-presence="entering"] {
+  animation: inkbook-adaptive-panel-wide-enter var(--inkbook-adaptive-panel-entry-duration) ease-out
+    both;
 }
 
 .inkbook-adaptive-panel[data-state="closing"] {
@@ -148,7 +158,8 @@
 
 .inkbook-adaptive-panel-layer[data-platform="phone"]
   .inkbook-adaptive-panel[data-presence="entering"] {
-  animation: inkbook-adaptive-panel-sheet-enter var(--inkbook-adaptive-panel-duration) ease-out both;
+  animation: inkbook-adaptive-panel-sheet-enter var(--inkbook-adaptive-panel-entry-duration)
+    ease-out both;
 }
 
 .inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel[data-state="closing"] {
@@ -239,6 +250,18 @@
   padding: var(--size-4-1) var(--size-4-2);
 }
 
+@keyframes inkbook-adaptive-panel-wide-enter {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
 @keyframes inkbook-adaptive-panel-sheet-enter {
   from {
     translate: 0 100%;
@@ -274,5 +297,21 @@
   .inkbook-adaptive-panel-backdrop {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+.inkbook-adaptive-panel-layer[data-platform="wide"] .inkbook-adaptive-panel[data-state="closing"] {
+  animation: inkbook-wide-menu-exit var(--inkbook-adaptive-panel-entry-duration) ease-out both;
+}
+
+@keyframes inkbook-wide-menu-exit {
+  from {
+    opacity: var(--inkbook-wide-menu-exit-opacity, 1);
+    scale: var(--inkbook-wide-menu-exit-scale, 1);
+  }
+
+  to {
+    opacity: 0;
+    scale: 0.96;
   }
 }

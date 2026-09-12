@@ -6,7 +6,7 @@ import type { StoreDelta } from "../../domain/store/public";
 import { SvgSceneRenderer, type SceneInputHandlers } from "../../rendering/scene/index";
 import { beginEditorChromeMount, type PendingEditorChrome } from "./editor-chrome-loader";
 import type { ContextMenuAction } from "../menus/index";
-import { obsidianMenuFactory } from "../menus/index";
+import { createOwnedMenuFactory } from "../menus/index";
 import {
   browserScrollMetrics,
   createBrowserScrollDocumentPort,
@@ -162,7 +162,15 @@ export class ActiveInkbookScene {
       ...(options.createPhoneSheetHost === undefined
         ? {}
         : { createPhoneSheetHost: options.createPhoneSheetHost }),
-      menuFactory: options.menuFactory ?? obsidianMenuFactory,
+      menuFactory:
+        options.menuFactory ??
+        createOwnedMenuFactory({
+          anchor: options.root,
+          ...(options.keymap === undefined ? {} : { keymap: options.keymap }),
+          ...(options.createPhoneSheetHost === undefined
+            ? {}
+            : { createPhoneSheetHost: options.createPhoneSheetHost }),
+        }),
       model: options.model,
       onLock: options.onLock,
       onFeedback: options.onFeedback,

@@ -10,7 +10,9 @@ const stylesheet = [
 
 describe("AdaptivePanel styling boundary", () => {
   it("uses native Obsidian menu tokens on the owned surface", () => {
-    const panel = declarationsFor(".inkbook-adaptive-panel");
+    const panel =
+      declarationsFor(".inkbook-adaptive-panel,\n.inkbook-owned-menu") +
+      declarationsFor(".inkbook-adaptive-panel");
     const scroll = declarationsFor(".inkbook-adaptive-panel-scroll");
     const back = declarationsFor(".inkbook-adaptive-panel-back");
 

@@ -1,4 +1,5 @@
-import { Component, Platform, Scope, type Keymap } from "obsidian";
+import { Component, Platform, type Keymap } from "obsidian";
+import { installMenuEscapeScope } from "./menu-escape-scope";
 
 import { effectiveTransitionDuration } from "../runtime/effective-motion";
 import { registerFocusNavigation } from "../runtime/focus-navigation";
@@ -9,13 +10,15 @@ import type { FocusTargetPort } from "./menu-ports";
 import type { PhoneSheetHostPort } from "./phone-sheet-host";
 import { trapPhoneSheetFocus } from "./phone-sheet-focus";
 import { PhoneSheetSwipeController } from "./phone-sheet-swipe";
+import { prepareWideMenuExit } from "./wide-menu-motion";
 
 const DESKTOP_GAP_PX = 4;
 const TABLET_GAP_PX = 2;
 const DESKTOP_VIEWPORT_INSET_PX = 8;
+const VIEWPORT_PROPERTIES = ["top", "height", "left", "width"] as const;
 
 export type AdaptivePanelCloseMode = "animated" | "handoff" | "immediate";
-type AdaptivePanelKind = "background" | "style" | "dialog";
+type AdaptivePanelKind = "background" | "style" | "dialog" | "menu";
 
 export interface AdaptivePanelContentLifecycle {
   prepareLayoutChange(): void;
@@ -30,7 +33,9 @@ export interface AdaptivePanelOptions {
   readonly createContent: (lifecycle: AdaptivePanelContentLifecycle) => DocumentFragment;
   readonly keymap?: Pick<Keymap, "popScope" | "pushScope">;
   readonly durationMs?: number;
+  readonly entryDurationMs?: number;
   readonly initialFocus?: HTMLElement;
+  readonly restoreFocus?: boolean;
   readonly onClosing?: () => void;
   readonly kind: AdaptivePanelKind;
   readonly label: string;
@@ -46,6 +51,7 @@ export class AdaptivePanelSession extends Component {
   #closed = false;
   readonly #content: HTMLElement;
   readonly #durationMs: number;
+  readonly #entryDurationMs: number;
   #layoutFrame: number | undefined;
   #layoutRequested = false;
   #revealEditable = false;
@@ -73,6 +79,11 @@ export class AdaptivePanelSession extends Component {
     this.#durationMs =
       options.durationMs ??
       effectiveTransitionDuration(options.anchor, options.ownerWindow, "adaptiveMenu");
+    this.#entryDurationMs =
+      options.entryDurationMs ??
+      (Platform.isPhone
+        ? this.#durationMs
+        : effectiveTransitionDuration(options.anchor, options.ownerWindow, "nativeModalEnterExit"));
     this.#layer =
       this.#phoneHost?.containerEl ??
       menuDomWindow(options.ownerDocument, "adaptive panel").createDiv();
@@ -93,6 +104,10 @@ export class AdaptivePanelSession extends Component {
     this.#surface.style.setProperty(
       "--inkbook-adaptive-panel-duration",
       `${String(this.#durationMs)}ms`,
+    );
+    this.#surface.style.setProperty(
+      "--inkbook-adaptive-panel-entry-duration",
+      `${String(this.#entryDurationMs)}ms`,
     );
     this.#createGrabber();
     this.#scroll = this.#surface.createDiv({ cls: "inkbook-adaptive-panel-scroll" });
@@ -128,9 +143,12 @@ export class AdaptivePanelSession extends Component {
     this.#closed = true;
     this.#options.onClosing?.();
     this.#phoneSwipe?.prepareClose();
+    const closeDuration = Platform.isPhone ? this.#durationMs : this.#entryDurationMs;
+    if (!Platform.isPhone && mode === "animated" && closeDuration > 0)
+      prepareWideMenuExit(this.#surface, this.#options.ownerWindow);
     delete this.#surface.dataset.presence;
     this.#restoreFocus = mode !== "handoff";
-    if (mode !== "animated" || this.#durationMs === 0 || !Platform.isPhone) {
+    if (mode !== "animated" || closeDuration === 0) {
       this.#finishClose();
       return;
     }
@@ -138,12 +156,12 @@ export class AdaptivePanelSession extends Component {
     this.#surface.setAttribute("aria-hidden", "true");
     const activeElement = this.#options.ownerDocument.activeElement;
     if (activeElement !== null && "blur" in activeElement) (activeElement as HTMLElement).blur();
-    if (this.#restoreFocus) this.#returnFocus();
+    if (this.#restoreFocus && this.#options.restoreFocus !== false) this.#returnFocus();
     this.#surface.dataset.state = "closing";
     this.#backdrop.dataset.state = "closing";
     this.#removeTimer = this.#options.ownerWindow.setTimeout(
       () => this.#finishClose(),
-      this.#durationMs,
+      closeDuration,
     );
   }
 
@@ -158,9 +176,7 @@ export class AdaptivePanelSession extends Component {
     this.#registerEvents();
     this.#registerViewportEvents();
     if (this.#phoneHost === undefined) {
-      const scope = this.#createScope();
-      this.#options.keymap?.pushScope(scope);
-      this.register(() => this.#options.keymap?.popScope(scope));
+      this.register(installMenuEscapeScope(this.#options.keymap, () => this.close()));
     }
     this.register(() => this.#cancelScheduledWork());
     this.#position();
@@ -172,20 +188,22 @@ export class AdaptivePanelSession extends Component {
       (this.#options.initialFocus ?? this.#focusableElements()[0] ?? this.#surface).focus({
         preventScroll: true,
       });
-      if (this.#durationMs === 0) {
+      if (this.#entryDurationMs === 0) {
         delete this.#surface.dataset.presence;
         return;
       }
       this.#presenceTimer = this.#options.ownerWindow.setTimeout(() => {
         this.#presenceTimer = undefined;
         delete this.#surface.dataset.presence;
-      }, this.#durationMs);
+      }, this.#entryDurationMs);
     });
   }
 
   public prepareLayoutChange(): void {
     if (this.#closed || this.#layoutStartHeight !== undefined) return;
-    const height = this.#scroll.getBoundingClientRect().height;
+    const height = Platform.isPhone
+      ? this.#scroll.getBoundingClientRect().height
+      : this.#scroll.offsetHeight;
     if (height > 0) this.#layoutStartHeight = height;
   }
 
@@ -225,7 +243,9 @@ export class AdaptivePanelSession extends Component {
       (Platform.isPhone && this.#surface.dataset.presence === "entering")
     )
       return;
-    const current = startHeight ?? this.#scroll.getBoundingClientRect().height;
+    const current =
+      startHeight ??
+      (Platform.isPhone ? this.#scroll.getBoundingClientRect().height : this.#scroll.offsetHeight);
     const target = Math.min(this.#scroll.scrollHeight, this.#maximumScrollHeight());
     if (current <= 0 || target <= 0 || Math.abs(current - target) < 1) return;
     this.#scroll.style.setProperty("block-size", `${String(current)}px`);
@@ -292,21 +312,12 @@ export class AdaptivePanelSession extends Component {
     });
   }
 
-  #createScope(): Scope {
-    const scope = new Scope();
-    scope.register([], "Escape", () => {
-      this.close();
-      return false;
-    });
-    return scope;
-  }
-
   #finishClose(): void {
     this.#cancelScheduledWork();
     this.unload();
     this.#phoneHost?.close();
     this.#layer.remove();
-    if (this.#restoreFocus) this.#returnFocus();
+    if (this.#restoreFocus && this.#options.restoreFocus !== false) this.#returnFocus();
     this.#options.onClosed();
   }
 
@@ -355,7 +366,14 @@ export class AdaptivePanelSession extends Component {
   #maximumScrollHeight(): number {
     const viewport = readMenuViewport(this.#options.ownerWindow);
     return Platform.isPhone
-      ? Math.max(0, this.#phoneHeight.maximum(viewport, this.#options.ownerWindow.innerHeight) - 16)
+      ? Math.max(
+          0,
+          this.#phoneHeight.maximum(
+            viewport,
+            this.#options.ownerWindow.innerHeight,
+            this.#options.kind === "menu" ? 16 : 0,
+          ) - 16,
+        )
       : Math.max(0, viewport.height - DESKTOP_VIEWPORT_INSET_PX * 2);
   }
 
@@ -371,24 +389,18 @@ export class AdaptivePanelSession extends Component {
 
   #position(): void {
     const viewport = readMenuViewport(this.#options.ownerWindow);
-    this.#layer.style.setProperty(
-      "--inkbook-adaptive-panel-viewport-top",
-      `${String(viewport.top)}px`,
-    );
-    this.#layer.style.setProperty(
-      "--inkbook-adaptive-panel-viewport-height",
-      `${String(viewport.height)}px`,
-    );
-    this.#layer.style.setProperty(
-      "--inkbook-adaptive-panel-viewport-left",
-      `${String(viewport.left)}px`,
-    );
-    this.#layer.style.setProperty(
-      "--inkbook-adaptive-panel-viewport-width",
-      `${String(viewport.width)}px`,
-    );
+    for (const property of VIEWPORT_PROPERTIES) {
+      this.#layer.style.setProperty(
+        `--inkbook-adaptive-panel-viewport-${property}`,
+        `${String(viewport[property])}px`,
+      );
+    }
     if (Platform.isPhone) {
-      const maximum = this.#phoneHeight.maximum(viewport, this.#options.ownerWindow.innerHeight);
+      const maximum = this.#phoneHeight.maximum(
+        viewport,
+        this.#options.ownerWindow.innerHeight,
+        this.#options.kind === "menu" ? 16 : 0,
+      );
       this.#layer.style.setProperty(
         "--inkbook-adaptive-panel-maximum-height",
         `${String(maximum)}px`,
@@ -396,7 +408,7 @@ export class AdaptivePanelSession extends Component {
       return;
     }
     const anchor = this.#options.anchor.getBoundingClientRect();
-    const panel = this.#surface.getBoundingClientRect();
+    const panel = { width: this.#surface.offsetWidth, height: this.#surface.offsetHeight };
     const maxLeft = viewport.left + viewport.width - panel.width - DESKTOP_VIEWPORT_INSET_PX;
     const left = clamp(
       anchor.left + anchor.width / 2 - panel.width / 2,
@@ -462,12 +474,10 @@ export class AdaptivePanelSession extends Component {
   #returnFocus(): void {
     if (this.#returnedFocus) return;
     this.#returnedFocus = true;
-    const anchor = this.#options.anchor;
-    if (anchor.isConnected && anchor.ownerDocument === this.#options.ownerDocument) {
-      anchor.focus({ preventScroll: true });
-      return;
-    }
-    this.#options.canvasInputSurface.focus({ preventScroll: true });
+    const { anchor, canvasInputSurface, ownerDocument } = this.#options;
+    const target =
+      anchor.isConnected && anchor.ownerDocument === ownerDocument ? anchor : canvasInputSurface;
+    target.focus({ preventScroll: true });
   }
 }
 

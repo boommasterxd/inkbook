@@ -3,6 +3,12 @@ import { describe, expect, it } from "vitest";
 import { PhoneSheetHeight } from "../../../../src/obsidian/menus/menu-viewport";
 
 describe("phone sheet height limits", () => {
+  it("reserves the menu grabber without exceeding the keyboard viewport", () => {
+    const height = new PhoneSheetHeight();
+    expect(height.maximum({ width: 360, height: 800 }, 800, 16)).toBe(496);
+    expect(height.maximum({ width: 360, height: 400 }, 400, 16)).toBe(400);
+  });
+
   it.each([false, true])(
     "keeps the normal height when keyboard also resizes layout: %s",
     (adjustResize) => {

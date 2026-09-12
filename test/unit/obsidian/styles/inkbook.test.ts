@@ -435,7 +435,8 @@ describe("Inkbook editor overlays", () => {
         (selector) =>
           !selector.startsWith(".inkbook-root") &&
           !selector.startsWith(".inkbook-menu-") &&
-          !selector.startsWith(".inkbook-adaptive-panel"),
+          !selector.startsWith(".inkbook-adaptive-panel") &&
+          selector !== ".inkbook-owned-menu",
       ),
     ).toEqual([".inkbook-scrollbar-stable", ".inkbook-scroll-anchor-suppressed"]);
   });

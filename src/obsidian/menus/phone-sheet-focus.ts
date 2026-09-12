@@ -1,4 +1,4 @@
-/** Keeps an owned modal sheet focused when a retiring native menu restores its old trigger. */
+/** Keeps an owned modal sheet focused when another surface restores its old trigger. */
 export function trapPhoneSheetFocus(
   surface: HTMLElement,
   initialFocus: HTMLElement,

@@ -29,11 +29,12 @@ export class PhoneSheetHeight {
   public maximum(
     viewport: { readonly width: number; readonly height: number },
     layoutHeight: number,
+    extraHeight = 0,
   ): number {
     const height = Math.max(viewport.height, layoutHeight);
     this.#unobstructedHeight =
       this.#width === viewport.width ? Math.max(this.#unobstructedHeight, height) : height;
     this.#width = viewport.width;
-    return Math.min(this.#unobstructedHeight * 0.6, viewport.height);
+    return Math.min(this.#unobstructedHeight * 0.6 + extraHeight, viewport.height);
   }
 }

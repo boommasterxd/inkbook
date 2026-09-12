@@ -15,7 +15,7 @@ import {
 } from "../../rendering/ui/icon-ids";
 import { AdaptivePanelSession, type AdaptivePanelContentLifecycle } from "./adaptive-panel";
 import { backgroundIconId, createBackgroundMenuContent } from "./background-menu-content";
-import { acquireNativeMenuSafeAreaFallback, setMenuItemTitle } from "./menu-dom";
+import { setMenuItemTitle } from "./menu-dom";
 import { createStyleMenuContent } from "./style-menu-content";
 import type { FocusTargetPort, MenuFactoryPort, MenuPort } from "./menu-ports";
 
@@ -86,15 +86,18 @@ export class EditorToolbarMenuSession {
   }
 
   public close(mode: "animated" | "immediate" = "animated"): void {
-    if (this.#closed) return;
+    if (this.#closed) {
+      if (mode === "immediate") {
+        this.#menu?.close(mode);
+        this.#panel?.close(mode);
+      }
+      return;
+    }
     this.#closed = true;
     this.#navigationGeneration += 1;
-    const menu = this.#menu;
-    const panel = this.#panel;
-    this.#menu = undefined;
-    menu?.close();
-    panel?.close(mode);
-    if (panel === undefined) this.#finish();
+    if (this.#menu !== undefined) this.#menu.close(mode);
+    else if (this.#panel !== undefined) this.#panel.close(mode);
+    else this.#finish();
   }
 
   #finish(): void {
@@ -113,7 +116,7 @@ export class EditorToolbarMenuSession {
     const previousPanel = this.#panel;
     this.#menu = undefined;
     this.#panel = undefined;
-    previousMenu?.close();
+    previousMenu?.close("handoff");
     previousPanel?.close("handoff");
     const generation = ++this.#navigationGeneration;
     this.#options.ownerWindow.queueMicrotask(() => {
@@ -128,23 +131,19 @@ export class EditorToolbarMenuSession {
       this.#showPanel(id);
       return;
     }
-    this.#showNativeMenu(id);
+    this.#showActionMenu(id);
   }
 
-  #showNativeMenu(id: "overflow" | "shape"): void {
-    const releaseSafeArea = Platform.isPhone
-      ? acquireNativeMenuSafeAreaFallback(this.#options.ownerDocument)
-      : () => undefined;
+  #showActionMenu(id: "overflow" | "shape"): void {
     const menu = this.#options.factory.create();
     this.#menu = menu;
     menu.onHide(() => {
-      releaseSafeArea();
       if (this.#menu !== menu) return;
       this.#menu = undefined;
       this.#closed = true;
       this.#finish();
     });
-    populateNativeToolbarMenu(menu, id, this.#options, (next) => this.#navigate(next));
+    populateToolbarActionMenu(menu, id, this.#options, (next) => this.#navigate(next));
     menu.setParentElement?.(this.#options.anchor);
     const state = this.#options.getState();
     const titles = state.overflow.hasSelection
@@ -219,7 +218,7 @@ export function menuPositionBelow(
   if (id !== "overflow" || Platform.isPhone) {
     return { overlap: true, x: bounds.left, y };
   }
-  const menuWidth = measureNativeMenuInlineSize(anchor.ownerDocument, titles) ?? bounds.width;
+  const menuWidth = measureMenuInlineSize(anchor.ownerDocument, titles) ?? bounds.width;
   return {
     overlap: true,
     width: bounds.width,
@@ -228,7 +227,7 @@ export function menuPositionBelow(
   };
 }
 
-function measureNativeMenuInlineSize(
+function measureMenuInlineSize(
   ownerDocument: Document,
   titles: readonly string[],
 ): number | undefined {
@@ -259,7 +258,7 @@ function cssPixelValue(styles: CSSStyleDeclaration, property: string): number {
   return Number.isFinite(value) && value >= 0 ? value : 0;
 }
 
-export function populateNativeToolbarMenu(
+export function populateToolbarActionMenu(
   menu: MenuPort,
   id: "overflow" | "shape",
   options: EditorToolbarMenuOptions,
