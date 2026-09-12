@@ -313,11 +313,12 @@ export class PhoneSheetSwipeController {
 
   #captureExitPosition(): void {
     const { surface, backdrop, ownerWindow } = this.#options;
-    const settling = surface.dataset.swipeState === "settling";
-    const translate = settling
+    const moving =
+      surface.dataset.swipeState === "settling" || surface.dataset.presence === "entering";
+    const translate = moving
       ? ownerWindow.getComputedStyle(surface).translate
       : surface.style.translate;
-    const opacity = settling
+    const opacity = moving
       ? ownerWindow.getComputedStyle(backdrop).opacity
       : backdrop.style.opacity;
     if (translate)

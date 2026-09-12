@@ -132,8 +132,8 @@ export class AdaptivePanelSession extends Component {
     }
     this.#closed = true;
     this.#options.onClosing?.();
-    delete this.#surface.dataset.presence;
     this.#phoneSwipe?.prepareClose();
+    delete this.#surface.dataset.presence;
     this.#restoreFocus = mode !== "handoff";
     if (mode !== "animated" || this.#durationMs === 0 || !Platform.isPhone) {
       this.#finishClose();
