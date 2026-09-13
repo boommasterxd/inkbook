@@ -201,8 +201,8 @@ function createRuntime(
       manager: feedback,
       openRecovery: (actions) =>
         showHeadlessRecoveryNotice(plugin.app, actions, () => settings.getDeviceSettings().motion),
-      onOpenSettings: () => settingsModal.open("settings"),
-      onOpenShortcuts: () => settingsModal.open("shortcuts"),
+      onOpenSettings: (navigation) => settingsModal.open("settings", navigation),
+      onOpenShortcuts: (navigation) => settingsModal.open("shortcuts", navigation),
       view: () => plugin.app.workspace.getActiveViewOfType(MarkdownView)?.containerEl,
     },
   );

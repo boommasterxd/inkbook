@@ -1,3 +1,4 @@
+import type { EditorChromeOpenings } from "./editor-chrome-openings";
 import type { FileManager, Vault } from "obsidian";
 import type { WorkspaceRuntimeSettings } from "./workspace-active-scene";
 import type { InkbookDeviceSettingsV2, InkbookSettingsV4 } from "../../domain/settings/types";
@@ -59,8 +60,8 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly #lifecycle: WorkspaceRuntimeLifecycle;
   readonly #ownerWindows = new OwnerWindowRegistry();
   readonly #mounted = new Map<string, WorkspaceMountedPresentation>();
-  readonly #onOpenSettings: () => void;
-  readonly #onOpenShortcuts: () => void;
+  readonly #onOpenSettings: EditorChromeOpenings["onOpenSettings"];
+  readonly #onOpenShortcuts: EditorChromeOpenings["onOpenShortcuts"];
   readonly refreshRateProfiles: WorkspaceRefreshProfiles;
   readonly #scheme: ColorSchemeBroadcaster;
   readonly #sessions: VaultDocumentSessionFactory;
@@ -72,11 +73,10 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     scheme: ColorSchemeBroadcaster,
     settings: () => WorkspaceRuntimeSettings,
     embedActions: ObsidianEmbedActions,
-    host: WorkspaceFeedbackHost & {
-      readonly deviceStorage?: DeviceLocalStoragePort;
-      readonly onOpenSettings: () => void;
-      readonly onOpenShortcuts: () => void;
-    },
+    host: WorkspaceFeedbackHost &
+      Omit<EditorChromeOpenings, "confirmEraseAll"> & {
+        readonly deviceStorage?: DeviceLocalStoragePort;
+      },
   ) {
     const trustedHeads =
       host.deviceStorage === undefined

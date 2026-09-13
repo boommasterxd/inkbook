@@ -254,7 +254,7 @@ describe("InkbookSettingTab recognizable shape controls", () => {
     ).toHaveLength(2);
     const tableColumns = control(table.container, "table-columns");
     expect(tableColumns.querySelectorAll(".inkbook-menu-stepper-button")).toHaveLength(2);
-    expect(tableColumns.querySelector("output")?.textContent).toBe("2");
+    expect(tableColumns.querySelector<HTMLInputElement>('input[type="number"]')?.value).toBe("2");
     const eraserRadius = control(eraser.container, "eraser-radius");
     expect(eraserRadius.querySelectorAll("input[type='range'], input[type='number']")).toHaveLength(
       2,

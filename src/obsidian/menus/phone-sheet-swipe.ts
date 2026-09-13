@@ -5,6 +5,8 @@ const DISMISS_VELOCITY_PX_PER_MS = 0.45;
 interface PhoneSheetSwipeOptions {
   readonly backdrop: HTMLElement;
   readonly close: () => void;
+  readonly onDragStart?: () => void;
+  readonly onDragCancel?: () => void;
   readonly durationMs: number;
   readonly ownerWindow: Window;
   readonly scroll: HTMLElement;
@@ -149,6 +151,7 @@ export class PhoneSheetSwipeController {
     const gesture = this.#gesture;
     if (gesture === undefined || gesture.dragging) return;
     gesture.dragging = true;
+    this.#options.onDragStart?.();
     gesture.height = this.#options.surface.getBoundingClientRect().height;
     const surface = this.#options.surface;
     const interrupted =
@@ -238,6 +241,7 @@ export class PhoneSheetSwipeController {
   }
 
   #settle(): void {
+    this.#options.onDragCancel?.();
     if (this.#options.durationMs === 0) {
       this.#resetPresentation();
       return;

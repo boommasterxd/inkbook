@@ -1,3 +1,4 @@
+import type { PhoneSheetNavigation } from "./panel-page";
 import { Component, Platform, setIcon, type Keymap } from "obsidian";
 import { installMenuEscapeScope } from "./menu-escape-scope";
 
@@ -53,6 +54,10 @@ class OwnedMenu extends Component implements MenuPort {
     this.#anchor = element;
     return this;
   }
+  public getPhoneNavigation(): PhoneSheetNavigation | undefined {
+    return this.#panel?.navigation;
+  }
+
   public onHide(callback: () => void): void {
     this.#callbacks.push(callback);
   }
@@ -120,19 +125,19 @@ class OwnedMenu extends Component implements MenuPort {
     content.setAttribute("role", "menu");
     content.setAttribute("aria-label", this.#kind === "context" ? "Context menu" : "Menu");
     this.#buttons = renderOwnedMenuItems(content, this.#items, (item, event) => {
-      if (this.#closing || this.#closed) return;
-      this.#closing = true;
+      if (this.#closing || this.#closed || !content.isConnected) return;
+      this.#closing = !item.keepOpen;
       try {
         item.callback?.(event);
       } finally {
-        this.close("handoff");
+        if (!item.keepOpen) this.close("handoff");
       }
     });
     this.registerDomEvent(
       ownerDocument,
       "keydown",
       (event) => {
-        if (this.#closing || this.#closed) return;
+        if (event.defaultPrevented || this.#closing || this.#closed || !content.isConnected) return;
         if (event.key === "Tab") {
           event.preventDefault();
           event.stopPropagation();
@@ -229,7 +234,8 @@ class OwnedMenu extends Component implements MenuPort {
         if (
           event.target !== null &&
           "nodeType" in event.target &&
-          !surface.contains(event.target as Node)
+          !surface.contains(event.target as Node) &&
+          !(this.#kind === "menu" && this.#anchor.contains(event.target as Node))
         ) {
           event.preventDefault();
           event.stopPropagation();

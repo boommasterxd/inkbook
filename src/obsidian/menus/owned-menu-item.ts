@@ -9,6 +9,7 @@ export class OwnedMenuItem implements MenuItemPort {
   public disabled = false;
   public warning = false;
   public label = false;
+  public keepOpen = false;
   public callback: ((event: unknown) => void) | undefined;
 
   public setTitle(title: string): this {
@@ -37,6 +38,10 @@ export class OwnedMenuItem implements MenuItemPort {
   }
   public setIsLabel(label: boolean): this {
     this.label = label;
+    return this;
+  }
+  public setKeepOpen(keepOpen: boolean): this {
+    this.keepOpen = keepOpen;
     return this;
   }
   public onClick(callback: (event: unknown) => void): this {

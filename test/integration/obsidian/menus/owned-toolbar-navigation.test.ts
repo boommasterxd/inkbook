@@ -55,6 +55,7 @@ describe.each(["desktop", "tablet", "phone"])("owned toolbar navigation on %s", 
   it("navigates Overflow to Background and back without ending the toolbar session", async () => {
     const { options, session } = fixture();
     clickAction("Background");
+    vi.advanceTimersByTime(250);
     await Promise.resolve();
     const back = document.querySelector<HTMLElement>('[aria-label="Back to more options"]');
     expect(back).not.toBeNull();
@@ -74,11 +75,35 @@ describe.each(["desktop", "tablet", "phone"])("owned toolbar navigation on %s", 
   });
 
   it.each(["Settings", "Keyboard shortcuts"])(
-    "releases the menu before queued %s opening",
+    "retains the phone host or releases the wide menu for %s",
     async (title) => {
       const { options, session } = fixture();
       const callback =
         title === "Settings" ? options.handlers.onOpenSettings : options.handlers.onOpenShortcuts;
+      if (mode === "phone") {
+        const surface = document.querySelector(".inkbook-adaptive-panel");
+        vi.mocked(callback).mockImplementation((navigation) => {
+          expect(navigation).toBeDefined();
+          navigation!.push({
+            kind: "dialog",
+            label: title,
+            createContent: () => {
+              const fragment = createFragment();
+              fragment.append(createEl("input"));
+              return fragment;
+            },
+          });
+        });
+        clickAction(title);
+        vi.advanceTimersByTime(250);
+        expect(callback).toHaveBeenCalledOnce();
+        expect(document.querySelector(".inkbook-adaptive-panel")).toBe(surface);
+        expect(nativeModalStack(document)).toHaveLength(1);
+        expect(options.onClosed).not.toHaveBeenCalled();
+        session.close("immediate");
+        expect(nativeModalStack(document)).toHaveLength(0);
+        return;
+      }
       vi.mocked(callback).mockImplementation(() => {
         expect(document.querySelector('[role="menu"]')).toBeNull();
         expect(nativeModalStack(document)).toHaveLength(0);

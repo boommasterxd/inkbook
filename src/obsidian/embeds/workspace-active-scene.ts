@@ -1,3 +1,4 @@
+import type { PhoneSheetNavigation } from "../menus/panel-page";
 import type { PhoneSheetHostPort } from "../menus/phone-sheet-host";
 import type { Keymap } from "obsidian";
 
@@ -26,8 +27,8 @@ export interface WorkspaceActiveSceneOptions {
   readonly keymap: Pick<Keymap, "popScope" | "pushScope"> | undefined;
   readonly markFirstStroke: () => void;
   readonly onLock: () => void;
-  readonly onOpenSettings: () => void;
-  readonly onOpenShortcuts: () => void;
+  readonly onOpenSettings: (navigation?: PhoneSheetNavigation) => void;
+  readonly onOpenShortcuts: (navigation?: PhoneSheetNavigation) => void;
   readonly scheme: "dark" | "light";
   readonly showFeedback: (code: InkbookFeedbackCode) => void;
   readonly sliceBudgetMs: () => number;

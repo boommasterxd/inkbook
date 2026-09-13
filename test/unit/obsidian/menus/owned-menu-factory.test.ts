@@ -306,3 +306,31 @@ describe("owned phone menus", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+describe("toolbar trigger pointer arbitration", () => {
+  it.each([false, true])("leaves trigger dismissal to click, reduced motion=%s", (reduced) => {
+    const test = fixture();
+    if (reduced) test.anchor.dataset.inkbookMotion = "reduced";
+    const icon = test.anchor.createSpan();
+    test.menu.setParentElement?.(test.anchor);
+    const element = show(test);
+    test.anchor.addEventListener("click", () => test.menu.close());
+    const down = new PointerEvent("pointerdown", { bubbles: true, cancelable: true });
+    icon.dispatchEvent(down);
+    vi.advanceTimersByTime(500);
+    expect(down.defaultPrevented).toBe(false);
+    expect(test.onHide).not.toHaveBeenCalled();
+    expect(element.isConnected).toBe(true);
+    icon.click();
+    vi.advanceTimersByTime(120);
+    expectReleased(test, element);
+  });
+
+  it("still dismisses a canvas context menu when its canvas anchor is pressed", () => {
+    const test = fixture("context");
+    const element = show(test);
+    test.anchor.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    vi.advanceTimersByTime(120);
+    expectReleased(test, element);
+  });
+});

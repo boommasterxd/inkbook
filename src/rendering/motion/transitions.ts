@@ -21,6 +21,7 @@ export const EASING_TOKENS = Object.freeze({
 
 export const TRANSITION_DURATIONS = Object.freeze({
   adaptiveMenu: MOTION_TOKENS.surface,
+  adaptivePage: MOTION_TOKENS.surface,
   nativeModalEnterExit: MOTION_TOKENS.fast,
   toolbarEnterExit: MOTION_TOKENS.surface,
   toolActiveState: MOTION_TOKENS.fast,

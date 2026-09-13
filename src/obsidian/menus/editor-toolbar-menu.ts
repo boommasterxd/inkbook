@@ -112,6 +112,15 @@ export class EditorToolbarMenuSession {
 
   #navigate(id: EditorToolbarMenuId): void {
     if (this.#closed) return;
+    const navigation = this.#menu?.getPhoneNavigation?.();
+    if (id === "background" && navigation !== undefined) {
+      navigation.push({
+        kind: "background",
+        label: "Background",
+        createContent: (lifecycle) => this.#createPanelContent("background", lifecycle),
+      });
+      return;
+    }
     const previousMenu = this.#menu;
     const previousPanel = this.#panel;
     this.#menu = undefined;
@@ -282,6 +291,7 @@ function populateOverflow(
     "Background",
     backgroundIconId(state.background.type),
     () => navigate("background"),
+    { keepOpen: Platform.isPhone && menu.getPhoneNavigation !== undefined },
   );
   if (state.overflow.hasSelection) {
     menu.addSeparator();
@@ -329,12 +339,7 @@ function populateOverflow(
     handlers.onOverflowAction("copy-embed"),
   );
   menu.addSeparator();
-  addAction(menu, options.ownerDocument, "Settings", "settings", () =>
-    options.ownerWindow.queueMicrotask(handlers.onOpenSettings),
-  );
-  addAction(menu, options.ownerDocument, "Keyboard shortcuts", "keyboard", () =>
-    options.ownerWindow.queueMicrotask(handlers.onOpenShortcuts),
-  );
+  addSettingsActions(menu, options);
   menu.addSeparator();
   addAction(
     menu,
@@ -355,6 +360,25 @@ function populateOverflow(
     () => handlers.onOverflowAction("delete-embed"),
     { warning: true },
   );
+}
+
+function addSettingsActions(menu: MenuPort, options: EditorToolbarMenuOptions): void {
+  const add = (label: string, icon: string, open: EditorMenuCallbacks["onOpenSettings"]): void => {
+    addAction(
+      menu,
+      options.ownerDocument,
+      label,
+      icon,
+      () => {
+        const navigation = menu.getPhoneNavigation?.();
+        if (navigation === undefined) options.ownerWindow.queueMicrotask(() => open());
+        else open(navigation);
+      },
+      { keepOpen: Platform.isPhone && menu.getPhoneNavigation !== undefined },
+    );
+  };
+  add("Settings", "settings", options.handlers.onOpenSettings);
+  add("Keyboard shortcuts", "keyboard", options.handlers.onOpenShortcuts);
 }
 
 function populateShapes(
@@ -388,6 +412,7 @@ function addAction(
     readonly checked?: boolean;
     readonly disabled?: boolean;
     readonly warning?: boolean;
+    readonly keepOpen?: boolean;
   } = {},
 ): void {
   menu.addItem((item) => {
@@ -396,6 +421,7 @@ function addAction(
     if (state.checked !== undefined) item.setChecked?.(state.checked);
     if (state.disabled === true) item.setDisabled(true);
     if (state.warning === true) item.setWarning(true);
+    if (state.keepOpen === true) item.setKeepOpen?.(true);
     if (state.disabled !== true) item.onClick(onClick);
   });
 }

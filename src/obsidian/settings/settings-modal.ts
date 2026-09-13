@@ -1,21 +1,20 @@
-import { SettingGroup, type App } from "obsidian";
+import type { App } from "obsidian";
 
 import { InkbookMotionModal } from "../dialogs/inkbook-motion-modal";
+import { menuDomWindow } from "../menus/menu-dom";
+import type { PhoneSheetNavigation, PhoneSheetPage } from "../menus/panel-page";
 
-import { SettingDefinitionRenderer } from "./setting-definition-renderer";
 import type { InkbookSettingTab } from "./setting-tab";
-import { mountShortcutSettingsView } from "./shortcut-definitions";
-import type { ShortcutSettingsView } from "./shortcut-view";
+import { SettingsModalContent, type InkbookSettingsView } from "./settings-modal-content";
 import type { InkbookSettingsStore } from "./storage";
-import { createObsidianHotkeyAccess } from "./obsidian-hotkey-conflicts";
 
-export type InkbookSettingsView = "settings" | "shortcuts";
-
-const STRUCTURAL_SETTING_KEYS = new Set(["filePlacement.mode"]);
+export type { InkbookSettingsView } from "./settings-modal-content";
 
 export class InkbookSettingsModalController {
   readonly #app: App;
   #modal: InkbookSettingsModal | undefined;
+  #navigation: PhoneSheetNavigation | undefined;
+  #page: PhoneSheetPage | undefined;
   readonly #settingTab: InkbookSettingTab;
   readonly #store: InkbookSettingsStore;
 
@@ -28,10 +27,18 @@ export class InkbookSettingsModalController {
   public dispose(): void {
     this.#modal?.closeImmediately();
     this.#modal = undefined;
+    const navigation = this.#navigation;
+    this.#navigation = undefined;
+    this.#page = undefined;
+    navigation?.close("immediate");
   }
 
-  public open(view: InkbookSettingsView): void {
-    this.#modal?.closeImmediately();
+  public open(view: InkbookSettingsView, navigation?: PhoneSheetNavigation): void {
+    if (navigation === undefined || this.#navigation !== navigation) this.dispose();
+    if (navigation !== undefined) {
+      this.#openPage(view, navigation);
+      return;
+    }
     let modal: InkbookSettingsModal;
     modal = new InkbookSettingsModal(this.#app, this.#settingTab, this.#store, view, () => {
       if (this.#modal === modal) this.#modal = undefined;
@@ -39,13 +46,44 @@ export class InkbookSettingsModalController {
     this.#modal = modal;
     modal.open();
   }
+
+  #openPage(view: InkbookSettingsView, navigation: PhoneSheetNavigation): void {
+    let content: SettingsModalContent | undefined;
+    const page: PhoneSheetPage = {
+      kind: "dialog",
+      label: viewTitle(view),
+      createContent: (lifecycle) => {
+        const fragment = menuDomWindow(navigation.ownerDocument, "settings page").createFragment();
+        const wrapper = fragment.createDiv({ cls: "inkbook-settings-modal inkbook-phone-dialog" });
+        const body = wrapper.createDiv({ cls: "inkbook-phone-dialog-content" });
+        content = new SettingsModalContent(body, {
+          app: this.#app,
+          settingTab: this.#settingTab,
+          store: this.#store,
+          view,
+          lifecycle,
+        });
+        return fragment;
+      },
+      dispose: () => {
+        content?.dispose();
+        content = undefined;
+        if (this.#page === page) {
+          this.#page = undefined;
+          this.#navigation = undefined;
+        }
+      },
+    };
+    this.#navigation = navigation;
+    this.#page = page;
+    navigation.push(page);
+  }
 }
 
 class InkbookSettingsModal extends InkbookMotionModal {
-  #definitionRenderer: SettingDefinitionRenderer | undefined;
+  #content: SettingsModalContent | undefined;
   readonly #onClosed: () => void;
   readonly #settingTab: InkbookSettingTab;
-  #shortcutView: ShortcutSettingsView | undefined;
   readonly #store: InkbookSettingsStore;
   readonly #view: InkbookSettingsView;
 
@@ -66,49 +104,24 @@ class InkbookSettingsModal extends InkbookMotionModal {
   public override onOpen(): void {
     super.onOpen();
     this.modalEl.classList.add("inkbook-settings-modal");
-    this.setTitle(this.#view === "settings" ? "Inkbook settings" : "Keyboard shortcuts");
-    this.#render();
+    this.setTitle(viewTitle(this.#view));
+    this.#content = new SettingsModalContent(this.contentEl, {
+      app: this.app,
+      settingTab: this.#settingTab,
+      store: this.#store,
+      view: this.#view,
+    });
   }
 
   public override onClose(): void {
     super.onClose();
-    this.#disposeContent();
+    this.#content?.dispose();
+    this.#content = undefined;
     this.contentEl.replaceChildren();
     this.#onClosed();
   }
+}
 
-  #render(): void {
-    this.#disposeContent();
-    this.contentEl.replaceChildren();
-    const body = this.contentEl.createDiv({ cls: "inkbook-settings-modal-body" });
-    body.dataset.view = this.#view;
-    if (this.#view === "shortcuts") {
-      new SettingGroup(body).addSetting((setting) => {
-        this.#shortcutView = mountShortcutSettingsView(
-          setting,
-          this.#store,
-          createObsidianHotkeyAccess(this.app),
-        );
-      });
-      return;
-    }
-    const rerenderIfRequired = (key: string | undefined): void => {
-      if (key === undefined || STRUCTURAL_SETTING_KEYS.has(key)) this.#renderPreservingScroll();
-    };
-    this.#definitionRenderer = new SettingDefinitionRenderer(this.#settingTab, rerenderIfRequired);
-    this.#definitionRenderer.render(body, this.#settingTab.getSettingDefinitions());
-  }
-
-  #renderPreservingScroll(): void {
-    const scrollTop = this.contentEl.scrollTop;
-    this.#render();
-    this.contentEl.scrollTop = scrollTop;
-  }
-
-  #disposeContent(): void {
-    this.#definitionRenderer?.dispose();
-    this.#definitionRenderer = undefined;
-    this.#shortcutView?.dispose();
-    this.#shortcutView = undefined;
-  }
+function viewTitle(view: InkbookSettingsView): string {
+  return view === "settings" ? "Inkbook settings" : "Keyboard shortcuts";
 }

@@ -25,6 +25,7 @@ describe("motion tokens", () => {
   it("maps every documented transition to its contract duration", () => {
     expect(TRANSITION_DURATIONS).toEqual({
       adaptiveMenu: 220,
+      adaptivePage: 220,
       nativeModalEnterExit: 120,
       toolbarEnterExit: 220,
       toolActiveState: 120,

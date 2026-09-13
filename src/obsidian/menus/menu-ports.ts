@@ -1,3 +1,5 @@
+import type { PhoneSheetNavigation } from "./panel-page";
+
 /**
  * The menu layer depends on these small ports instead of importing Obsidian
  * types into the editor. The owned menu renderer implements these interfaces
@@ -20,6 +22,7 @@ export interface MenuItemPort {
   setDisabled(disabled: boolean): MenuItemPort;
   setWarning(isWarning: boolean): MenuItemPort;
   setIsLabel(isLabel: boolean): MenuItemPort;
+  setKeepOpen?(keepOpen: boolean): MenuItemPort;
   onClick(callback: (event: unknown) => void): MenuItemPort;
 }
 
@@ -28,6 +31,7 @@ export interface MenuPort {
   addSeparator(): MenuPort;
   setParentElement?(element: HTMLElement): MenuPort;
   showAtPosition(position: MenuPosition, ownerDocument: Document): MenuPort;
+  getPhoneNavigation?(): PhoneSheetNavigation | undefined;
   onHide(callback: () => void): void;
   close(mode?: "animated" | "immediate" | "handoff"): void;
 }
