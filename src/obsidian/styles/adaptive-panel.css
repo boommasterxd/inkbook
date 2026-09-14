@@ -71,6 +71,10 @@
   overflow-y: auto;
 }
 
+.inkbook-adaptive-panel[data-page-measuring] .inkbook-adaptive-panel-scroll {
+  transition: none;
+}
+
 .inkbook-adaptive-panel-scroll::-webkit-scrollbar {
   display: none;
 }
@@ -348,10 +352,4 @@
     opacity: 1;
     translate: 0 0;
   }
-}
-
-.inkbook-adaptive-panel-layer[data-platform="phone"]
-  .inkbook-adaptive-panel[data-page-measuring]
-  .inkbook-adaptive-panel-scroll {
-  transition: none;
 }

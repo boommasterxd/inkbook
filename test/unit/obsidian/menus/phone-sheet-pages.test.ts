@@ -276,3 +276,75 @@ it("does not process Escape twice after the native host has returned to the root
   vi.advanceTimersByTime(220);
   expect(f.hostClose).toHaveBeenCalledOnce();
 });
+
+function resizingBackground() {
+  const f = fixture();
+  f.session.navigation?.push({ ...f.page, kind: "background" });
+  vi.advanceTimersByTime(220);
+  f.setHeight(250);
+  f.session.prepareLayoutChange();
+  f.setHeight(350);
+  f.session.requestLayout();
+  vi.advanceTimersToNextFrame();
+  expect(f.scroll.style.blockSize).toBe("350px");
+  return f;
+}
+it("keeps a newer Back transition alive after replacing a Background content resize", () => {
+  const f = resizingBackground();
+  vi.advanceTimersByTime(100);
+  f.setHeight(300);
+  f.session.navigation?.back();
+  expect(f.scroll.style.blockSize).toBe("300px");
+  vi.advanceTimersByTime(120);
+  expect(f.modalEl.dataset.pageTransition).toBe("back");
+  expect(f.scroll.style.blockSize).toBe("300px");
+  f.session.close("immediate");
+});
+it("freezes Background content resizing at the visible height during swipe", () => {
+  const f = resizingBackground();
+  vi.spyOn(f.scroll, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 360, 280));
+  const handle = f.modalEl.querySelector<HTMLElement>(".inkbook-adaptive-panel-drag-region")!;
+  handle.dispatchEvent(
+    new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch", pointerId: 7 }),
+  );
+  expect(f.modalEl.dataset.swipeState).toBe("dragging");
+  expect(f.scroll.style.blockSize).toBe("280px");
+  vi.advanceTimersByTime(1000);
+  expect(f.scroll.style.blockSize).toBe("280px");
+  f.modalEl.dispatchEvent(
+    new PointerEvent("pointercancel", { bubbles: true, pointerType: "touch", pointerId: 7 }),
+  );
+  expect(f.scroll.style.blockSize).toBe("350px");
+  vi.advanceTimersByTime(220);
+  expect(f.scroll.style.blockSize).toBe("");
+  f.session.close("immediate");
+});
+
+it("keeps phone content resizing independent of viewport position writes", () => {
+  const f = fixture();
+  const writes = vi.spyOn(f.containerEl.style, "setProperty");
+  f.session.requestLayout();
+  vi.advanceTimersToNextFrame();
+  expect(writes).not.toHaveBeenCalled();
+  window.dispatchEvent(new Event("resize"));
+  vi.advanceTimersToNextFrame();
+  expect(writes).toHaveBeenCalledWith(
+    "--inkbook-adaptive-panel-viewport-height",
+    expect.any(String),
+  );
+  f.session.close("immediate");
+});
+
+it("does not schedule frames or read heights for phone dialog content changes", () => {
+  const f = fixture();
+  f.session.navigation?.push(f.page);
+  vi.advanceTimersByTime(240);
+  const requestFrame = vi.spyOn(window, "requestAnimationFrame");
+  const readHeight = vi.spyOn(f.scroll, "getBoundingClientRect");
+  readHeight.mockClear();
+  f.session.prepareLayoutChange();
+  f.session.requestLayout();
+  expect(requestFrame).not.toHaveBeenCalled();
+  expect(readHeight).not.toHaveBeenCalled();
+  f.session.close("immediate");
+});

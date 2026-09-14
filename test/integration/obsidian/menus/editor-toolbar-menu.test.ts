@@ -104,30 +104,22 @@ describe("editor toolbar action menus", () => {
     ).toBe(true);
   });
 
-  it("uses native placement without forcing a custom width", () => {
+  it("centers overflow over its anchor and preserves shape and phone placement", () => {
     const anchor = createHtmlElement("button");
     anchor.getBoundingClientRect = () =>
       ({ bottom: 148, height: 44, left: 320, right: 364, top: 104, width: 44 }) as DOMRect;
-
-    expect(menuPositionBelow(anchor, "overflow", ["Delete embed"])).toEqual({
-      overlap: true,
-      width: 44,
-      x: 270,
-      y: 150,
-    });
     expect(menuPositionBelow(anchor, "overflow")).toEqual({
-      overlap: true,
+      centered: true,
       width: 44,
       x: 320,
       y: 150,
     });
     expect(menuPositionBelow(anchor, "shape")).toEqual({ overlap: true, x: 320, y: 150 });
     Platform.isMobile = true;
-    document.body.setCssProps({ "--icon-s": "18px" });
-    expect(menuPositionBelow(anchor, "overflow", ["Delete embed"])).toEqual({
-      overlap: true,
+    expect(menuPositionBelow(anchor, "overflow")).toEqual({
+      centered: true,
       width: 44,
-      x: 265,
+      x: 320,
       y: 148,
     });
     expect(menuPositionBelow(anchor, "shape")).toEqual({ overlap: true, x: 320, y: 148 });

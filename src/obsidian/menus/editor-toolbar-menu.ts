@@ -58,21 +58,6 @@ const SHAPES: readonly (readonly [ShapeId, string, "lines" | "shapes" | "structu
   ["coordinate-system", "Coordinate system", "structures"],
   ["table", "Table", "structures"],
 ];
-const OVERFLOW_BASE_TITLES = [
-  "Background",
-  "Copy embed",
-  "Settings",
-  "Keyboard shortcuts",
-  "Erase all",
-  "Delete embed",
-] as const;
-const OVERFLOW_SELECTION_TITLES = [
-  "Bring forward",
-  "Send backward",
-  "Bring to front",
-  "Send to back",
-] as const;
-
 export class EditorToolbarMenuSession {
   #closed = false;
   #menu: MenuPort | undefined;
@@ -154,14 +139,7 @@ export class EditorToolbarMenuSession {
     });
     populateToolbarActionMenu(menu, id, this.#options, (next) => this.#navigate(next));
     menu.setParentElement?.(this.#options.anchor);
-    const state = this.#options.getState();
-    const titles = state.overflow.hasSelection
-      ? [...OVERFLOW_BASE_TITLES, ...OVERFLOW_SELECTION_TITLES]
-      : OVERFLOW_BASE_TITLES;
-    menu.showAtPosition(
-      menuPositionBelow(this.#options.anchor, id, titles),
-      this.#options.ownerDocument,
-    );
+    menu.showAtPosition(menuPositionBelow(this.#options.anchor, id), this.#options.ownerDocument);
   }
 
   #showPanel(id: "background" | "style"): void {
@@ -217,54 +195,13 @@ export class EditorToolbarMenuSession {
   }
 }
 
-export function menuPositionBelow(
-  anchor: HTMLElement,
-  id: "overflow" | "shape",
-  titles: readonly string[] = [],
-) {
+export function menuPositionBelow(anchor: HTMLElement, id: "overflow" | "shape") {
   const bounds = anchor.getBoundingClientRect();
   const y = bounds.bottom + (Platform.isMobile && !Platform.isPhone ? 0 : 2);
   if (id !== "overflow" || Platform.isPhone) {
     return { overlap: true, x: bounds.left, y };
   }
-  const menuWidth = measureMenuInlineSize(anchor.ownerDocument, titles) ?? bounds.width;
-  return {
-    overlap: true,
-    width: bounds.width,
-    x: bounds.left + (bounds.width - menuWidth) / 2,
-    y,
-  };
-}
-
-function measureMenuInlineSize(
-  ownerDocument: Document,
-  titles: readonly string[],
-): number | undefined {
-  if (titles.length === 0) return undefined;
-  const body = ownerDocument.body;
-  const ownerWindow = ownerDocument.defaultView;
-  if (ownerWindow === null) return undefined;
-  const context = ownerWindow.createEl("canvas").getContext("2d");
-  if (context === null) return undefined;
-  const styles = ownerWindow.getComputedStyle(body);
-  const fontSize = styles
-    .getPropertyValue(Platform.isMobile ? "--font-ui-medium" : "--font-ui-small")
-    .trim();
-  context.font = `${styles.fontStyle} ${styles.fontWeight} ${fontSize} ${styles.fontFamily}`;
-  const titleWidth = titles.reduce(
-    (widest, title) => Math.max(widest, context.measureText(title).width),
-    0,
-  );
-  const itemSpacing = cssPixelValue(styles, "--size-4-2");
-  const iconWidth = cssPixelValue(styles, "--icon-s");
-  const scrollPadding = cssPixelValue(styles, "--menu-padding");
-  const borderWidth = Platform.isMobile ? 0 : cssPixelValue(styles, "--menu-border-width");
-  return titleWidth + iconWidth + itemSpacing * 3 + scrollPadding * 2 + borderWidth * 2;
-}
-
-function cssPixelValue(styles: CSSStyleDeclaration, property: string): number {
-  const value = Number.parseFloat(styles.getPropertyValue(property));
-  return Number.isFinite(value) && value >= 0 ? value : 0;
+  return { centered: true, width: bounds.width, x: bounds.left, y };
 }
 
 export function populateToolbarActionMenu(

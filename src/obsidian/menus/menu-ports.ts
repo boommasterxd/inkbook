@@ -10,6 +10,8 @@ export interface MenuPosition {
   readonly x: number;
   readonly y: number;
   readonly width?: number;
+  /** Center over the anchor width, clamped to the visible viewport. */
+  readonly centered?: boolean;
   readonly overlap?: boolean;
   readonly left?: boolean;
 }

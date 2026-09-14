@@ -75,6 +75,8 @@ The Inkbook settings tab ends with a Shortcuts group. Canvas shortcuts, fixed sy
 
 The active toolbar Overflow menu contains `Settings` and `Keyboard shortcuts`. Both open an Inkbook-owned modal implemented with public Obsidian APIs. `Settings` contains only the general settings view, while `Keyboard shortcuts` contains only the shortcut view; neither modal adds an internal view switcher. Phone controls retain at least 44 CSS-pixel targets and reflow to one shortcut row per line without horizontal overflow.
 
+Changes to unrelated device preferences preserve the mounted shortcut controls, focus, and recording state. Only changes to the configurable binding map refresh the shortcut view; explicit recording and conflict feedback continue to update their own interaction state.
+
 ## Persistence and Migration
 
 Device settings version 2 stores the configurable binding map under `inkbook:device-settings:v2`. A valid version 1 device value is migrated by preserving finger drawing, pen-tap insertion, handedness, and motion while adding the built-in shortcut map. The migrated version 2 value is persisted under the new key. Invalid bindings fall back independently, and duplicate fallback resolution never creates another conflict.

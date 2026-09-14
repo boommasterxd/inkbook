@@ -182,7 +182,7 @@ describe("active editor document keyboard boundary", () => {
     harness.dispose();
   });
 
-  it("opens the native overflow menu below its toolbar trigger", () => {
+  it("opens the owned overflow menu centered below its toolbar trigger", () => {
     const harness = createHarness();
     const trigger = createButton();
     document.body.append(trigger);
@@ -194,7 +194,7 @@ describe("active editor document keyboard boundary", () => {
     expect(harness.menu.positions).toEqual([
       {
         ownerDocument: document,
-        position: { overlap: true, width: 44, x: 270, y: 146 },
+        position: { centered: true, width: 44, x: 320, y: 146 },
       },
     ]);
     harness.menu.close();

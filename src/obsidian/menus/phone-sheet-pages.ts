@@ -1,3 +1,4 @@
+import type { AdaptivePanelHeight } from "./adaptive-panel-height";
 import { menuDomWindow } from "./menu-dom";
 import type {
   AdaptivePanelContentLifecycle,
@@ -11,11 +12,8 @@ interface PhoneSheetPagesOptions {
   readonly layer: HTMLElement;
   readonly lifecycle: AdaptivePanelContentLifecycle;
   readonly position: () => void;
-  readonly maximumHeight: () => number;
   readonly renderIcon: (element: HTMLElement, icon: string) => void;
-  readonly ownerWindow: Window;
-  readonly durationMs: number;
-  readonly pageDurationMs: number;
+  readonly height: AdaptivePanelHeight;
   readonly observeContent: (content: HTMLElement) => void;
   readonly rootContent: HTMLElement;
   readonly close: (mode?: "animated" | "immediate") => void;
@@ -31,10 +29,7 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
   #pending: PhoneSheetPage | undefined;
   #rootFocus: HTMLElement | undefined;
   #rootScroll = 0;
-  #timer: number | undefined;
   #closed = false;
-  #transitioning = false;
-  #paused = false;
 
   public constructor(options: PhoneSheetPagesOptions) {
     this.#options = options;
@@ -46,10 +41,6 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
   public get ownerDocument(): Document {
     return this.#options.surface.ownerDocument;
   }
-  public get transitioning(): boolean {
-    return this.#transitioning || this.#paused;
-  }
-
   public push(page: PhoneSheetPage): void {
     if (this.#closed) return;
     if (this.#options.surface.dataset.presence === "entering") {
@@ -108,40 +99,9 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
     this.#options.close(mode);
   }
 
-  public pauseHeight(): void {
-    const { scroll, surface } = this.#options;
-    if (this.#closed || !this.#transitioning || !scroll.style.blockSize) return;
-    const height = scroll.getBoundingClientRect().height;
-    surface.dataset.pageMeasuring = "true";
-    this.#stopTransition();
-    surface.dataset.pageFrozen = "true";
-    scroll.style.setProperty("block-size", `${String(height)}px`);
-    scroll.getBoundingClientRect();
-    delete surface.dataset.pageMeasuring;
-    this.#paused = true;
-  }
-
-  public resumeHeight(): void {
-    if (this.#closed || !this.#paused) return;
-    const { scroll, surface, ownerWindow, durationMs } = this.#options;
-    const height = scroll.getBoundingClientRect().height;
-    surface.dataset.pageMeasuring = "true";
-    this.#stopTransition();
-    this.#options.position();
-    const target = Math.min(scroll.scrollHeight, this.#options.maximumHeight());
-    this.#transitioning = true;
-    surface.dataset.pageFrozen = "true";
-    this.#animateHeight(height, target);
-    this.#timer = ownerWindow.setTimeout(() => this.#stopTransition(), durationMs);
-  }
-
   public dispose(): void {
     if (this.#closed) return;
     this.#closed = true;
-    const height = this.transitioning ? this.#options.scroll.getBoundingClientRect().height : 0;
-    this.#stopTransition();
-    if (height > 0) this.#options.surface.dataset.pageFrozen = "true";
-    if (height > 0) this.#options.scroll.style.setProperty("block-size", `${String(height)}px`);
     this.#pending?.dispose?.();
     this.#pending = undefined;
     this.#page?.dispose?.();
@@ -166,50 +126,12 @@ export class PhoneSheetPages implements PhoneSheetNavigation {
     button.addEventListener("click", () => this.back());
   }
 
-  #show(kind: string, label: string, direction: string, height: number): void {
-    const { scroll, surface, layer, ownerWindow, durationMs } = this.#options;
-    surface.dataset.pageMeasuring = "true";
-    this.#stopTransition();
+  #show(kind: string, label: string, direction: "forward" | "back", height: number): void {
+    const { surface, layer } = this.#options;
     surface.dataset.kind = kind;
     layer.dataset.kind = kind;
     surface.setAttribute("aria-label", label);
     this.#options.position();
-    // Measure the new natural height without the previous page's explicit height.
-    const target = Math.min(scroll.scrollHeight, this.#options.maximumHeight());
-    const pageDuration = this.#options.pageDurationMs;
-    if (durationMs === 0 && pageDuration === 0) {
-      delete surface.dataset.pageMeasuring;
-      return;
-    }
-    this.#transitioning = true;
-    surface.dataset.pageTransition = direction;
-    surface.style.setProperty("--inkbook-phone-page-duration", `${String(pageDuration)}ms`);
-    this.#animateHeight(height, target);
-    this.#timer = ownerWindow.setTimeout(
-      () => this.#stopTransition(),
-      Math.max(durationMs, pageDuration),
-    );
-  }
-
-  #animateHeight(height: number, target: number): void {
-    const { scroll, surface } = this.#options;
-    if (height > 0 && target > 0 && Math.abs(height - target) >= 1) {
-      scroll.style.setProperty("block-size", `${String(height)}px`);
-      scroll.getBoundingClientRect();
-      delete surface.dataset.pageMeasuring;
-      scroll.style.setProperty("block-size", `${String(target)}px`);
-    }
-    delete surface.dataset.pageMeasuring;
-  }
-
-  #stopTransition(): void {
-    const { scroll, surface, ownerWindow } = this.#options;
-    if (this.#timer !== undefined) ownerWindow.clearTimeout(this.#timer);
-    this.#timer = undefined;
-    this.#transitioning = false;
-    this.#paused = false;
-    delete surface.dataset.pageFrozen;
-    delete surface.dataset.pageTransition;
-    scroll.style.removeProperty("block-size");
+    this.#options.height.animate(height, direction);
   }
 }

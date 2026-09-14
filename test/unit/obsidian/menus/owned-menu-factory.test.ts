@@ -19,6 +19,7 @@ afterEach(() => {
   Platform.isPhone = false;
   Platform.isMobile = false;
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
@@ -332,5 +333,58 @@ describe("toolbar trigger pointer arbitration", () => {
     test.anchor.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
     vi.advanceTimersByTime(120);
     expectReleased(test, element);
+  });
+});
+
+describe("owned menu measured placement", () => {
+  it.each([false, true])("centers the rendered width on tablet=%s", (tablet) => {
+    Platform.isMobile = tablet;
+    const test = fixture();
+    const measure = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(260);
+    const canvas = vi.spyOn(HTMLCanvasElement.prototype, "getContext");
+    test.menu.addItem((item) => item.setTitle("A title whose theme font can change its width"));
+    test.menu.showAtPosition({ centered: true, x: 320, y: 150, width: 44 }, document);
+    expect(surface().style.insetInlineStart).toBe("212px");
+    expect(measure).toHaveBeenCalledOnce();
+    expect(canvas).not.toHaveBeenCalled();
+    test.menu.close("immediate");
+  });
+
+  it.each([
+    { x: 5, expected: 0 },
+    { x: 990, expected: 764 },
+  ])("clamps a centered menu at anchor x=$x", ({ x, expected }) => {
+    const test = fixture();
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(1024);
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(260);
+    test.menu.showAtPosition({ centered: true, x, y: 150, width: 44 }, document);
+    expect(surface().style.insetInlineStart).toBe(`${String(expected)}px`);
+    test.menu.close("immediate");
+  });
+
+  it("clamps centering to an offset visual viewport", () => {
+    const test = fixture();
+    vi.stubGlobal("visualViewport", {
+      offsetLeft: 100,
+      offsetTop: 50,
+      width: 500,
+      height: 600,
+    });
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(260);
+    test.menu.showAtPosition({ centered: true, x: 570, y: 150, width: 44 }, document);
+    expect(surface().style.insetInlineStart).toBe("340px");
+    test.menu.close("immediate");
+  });
+
+  it("keeps context edge flipping independent of centered toolbar placement", () => {
+    const test = fixture("context");
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(1024);
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(260);
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(200);
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
+    test.menu.showAtPosition({ x: 990, y: 750 }, document);
+    expect(surface().style.insetInlineStart).toBe("728px");
+    expect(surface().style.insetBlockStart).toBe("552px");
+    test.menu.close("immediate");
   });
 });

@@ -11,6 +11,7 @@ import {
   groups,
   renderDefinition,
   renderTool,
+  renderExpandedTool,
   requiredElement,
   requiredRender,
   renders,
@@ -144,7 +145,7 @@ describe("InkbookSettingTab mobile tool disclosures", () => {
     setPlatformMobile(true);
     const tab = createTab(new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter()));
     const pen = renderTool(tab, "Drawing tools", "Pen");
-    const table = renderTool(tab, "Shapes and structures", "Table");
+    const table = renderExpandedTool(tab, "Shapes and structures", "Table");
     try {
       expect(
         requiredElement(pen.container, ".inkbook-settings-tool-trigger").classList.contains(
@@ -169,7 +170,7 @@ describe("InkbookSettingTab mobile tool disclosures", () => {
 describe("InkbookSettingTab recognizable tool controls", () => {
   it("renders and persists accessible Select choices", async () => {
     const store = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());
-    const rendered = renderTool(createTab(store), "Drawing tools", "Select");
+    const rendered = renderExpandedTool(createTab(store), "Drawing tools", "Select");
     const area = control(rendered.container, "selection-area");
     const inclusion = control(rendered.container, "selection-inclusion");
     const rectangle = area.querySelector<HTMLButtonElement>("button[data-value='rectangle']");
@@ -201,7 +202,7 @@ describe("InkbookSettingTab recognizable tool controls", () => {
 describe("InkbookSettingTab recognizable shape controls", () => {
   it("renders recognizable rectangle controls and persists a visual choice", async () => {
     const store = new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter());
-    const rendered = renderTool(createTab(store), "Shapes and structures", "Rectangle");
+    const rendered = renderExpandedTool(createTab(store), "Shapes and structures", "Rectangle");
     const outlineColor = control(rendered.container, "outline-color");
     const outlineWidth = control(rendered.container, "outline-width");
     const outlineStyle = control(rendered.container, "outline-style");
@@ -242,10 +243,10 @@ describe("InkbookSettingTab recognizable shape controls", () => {
 
   it("renders recognizable structural, node, stepper, and eraser controls", () => {
     const tab = createTab(new InkbookSettingsStore(new VaultAdapter(), new DeviceAdapter()));
-    const arrow = renderTool(tab, "Shapes and structures", "Arrow");
-    const coordinate = renderTool(tab, "Shapes and structures", "Coordinate system");
-    const table = renderTool(tab, "Shapes and structures", "Table");
-    const eraser = renderTool(tab, "Drawing tools", "Eraser");
+    const arrow = renderExpandedTool(tab, "Shapes and structures", "Arrow");
+    const coordinate = renderExpandedTool(tab, "Shapes and structures", "Coordinate system");
+    const table = renderExpandedTool(tab, "Shapes and structures", "Table");
+    const eraser = renderExpandedTool(tab, "Drawing tools", "Eraser");
 
     expect(control(arrow.container, "arrow-start-node").querySelectorAll("button")).toHaveLength(5);
     expect(control(arrow.container, "arrow-end-node").querySelectorAll("button")).toHaveLength(5);
@@ -283,7 +284,7 @@ describe("InkbookSettingTab settings validation", () => {
     const vault = new VaultAdapter();
     const store = new InkbookSettingsStore(vault, new DeviceAdapter());
     const tab = createTab(store);
-    const eraser = renderTool(tab, "Drawing tools", "Eraser");
+    const eraser = renderExpandedTool(tab, "Drawing tools", "Eraser");
     const radius = control(eraser.container, "eraser-radius");
     const radiusField = requiredElement<HTMLInputElement>(radius, "input[type='number']");
     const originalRadius = store.getVaultSettings().toolDefaults.eraser.radius;
@@ -298,7 +299,7 @@ describe("InkbookSettingTab settings validation", () => {
     expect(store.getVaultSettings().toolDefaults.eraser.radius).toBe(originalRadius);
 
     vault.failure = new Error("Save failed");
-    const rectangle = renderTool(tab, "Shapes and structures", "Rectangle");
+    const rectangle = renderExpandedTool(tab, "Shapes and structures", "Rectangle");
     control(rectangle.container, "outline-width")
       .querySelector<HTMLButtonElement>("button[data-value='8']")
       ?.click();

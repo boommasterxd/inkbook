@@ -221,7 +221,17 @@ class OwnedMenu extends Component implements MenuPort {
       (position.y + height > viewport.top + viewport.height
         ? Math.max(viewport.top, position.y - height)
         : position.y) + 2;
-    surface.style.setProperty("inset-inline-start", `${String(x)}px`);
+    const centeredX = Math.max(
+      viewport.left,
+      Math.min(
+        position.x + ((position.width ?? 0) - width) / 2,
+        viewport.left + viewport.width - width,
+      ),
+    );
+    surface.style.setProperty(
+      "inset-inline-start",
+      `${String(position.centered === true ? centeredX : x)}px`,
+    );
     surface.style.setProperty("inset-block-start", `${String(y)}px`);
     const content = surface.firstElementChild as HTMLElement;
     content.tabIndex = -1;
