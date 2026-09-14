@@ -5,11 +5,12 @@ import type { MotionPreference } from "../../rendering/motion/transitions";
 import { confirmInkbookAction } from "../dialogs/action-dialog";
 
 import { findMarkdownInkbookEmbeds, type MarkdownInkbookEmbed } from "../embeds/markdown-embed";
-import type { PresentationEmbedReference } from "../embeds/presentation-port";
+import type { PresentationEmbedReference, PresentationRemoval } from "../embeds/presentation-port";
 import type { ObsidianLinkAdapter } from "../vault/links";
 import type { ObsidianManagedFileAdapter } from "../vault/managed-files";
 import type { ObsidianVaultFileAdapter } from "../vault/file-adapter";
 import {
+  embedRemovalRange,
   removeResolvedEmbed,
   resolveEmbedActionReference,
   type EmbedActionUnavailableReason as ResolutionUnavailableReason,
@@ -86,6 +87,7 @@ export class ObsidianEmbedActions {
   readonly #lifetime = new AbortController();
   readonly #readMotion: (() => MotionPreference) | undefined;
   #deleting = false;
+  #pendingRemoval: PresentationRemoval | undefined;
 
   constructor(ports: EmbedActionPorts) {
     this.#app = ports.app;
@@ -113,20 +115,34 @@ export class ObsidianEmbedActions {
 
   public dispose(): void {
     this.#lifetime.abort();
+    this.#pendingRemoval?.reset();
   }
 
-  async deleteEmbed(target: EmbedActionTarget): Promise<DeleteEmbedOutcome> {
+  async deleteEmbed(
+    target: EmbedActionTarget,
+    removal?: PresentationRemoval,
+  ): Promise<DeleteEmbedOutcome> {
     if (this.#deleting || this.#lifetime.signal.aborted)
       return { kind: "cancelled", stage: "embed" };
     this.#deleting = true;
+    this.#pendingRemoval = removal;
     try {
-      return await this.#deleteEmbed(target);
+      const outcome = await this.#deleteEmbed(target, removal);
+      if (outcome.kind !== "deleted" && outcome.kind !== "failed") removal?.reset();
+      return outcome;
+    } catch (error: unknown) {
+      removal?.reset();
+      throw error;
     } finally {
       this.#deleting = false;
+      this.#pendingRemoval = undefined;
     }
   }
 
-  async #deleteEmbed(target: EmbedActionTarget): Promise<DeleteEmbedOutcome> {
+  async #deleteEmbed(
+    target: EmbedActionTarget,
+    removal?: PresentationRemoval,
+  ): Promise<DeleteEmbedOutcome> {
     let reference = await this.#resolveReference(target);
     if ("kind" in reference) return reference;
 
@@ -168,14 +184,25 @@ export class ObsidianEmbedActions {
     if ("kind" in reference) return reference;
     if (this.#lifetime.signal.aborted) return { kind: "cancelled", stage: "file" };
     if (!sameReference(reference, original)) return unavailable("editor-changed");
+    if (removal !== undefined) {
+      if (!(await removal.begin(embedRemovalRange(reference.content, reference.match))))
+        return { kind: "cancelled", stage: "embed" };
+      const current = await this.#resolveAfterRemoval(target, original);
+      if ("kind" in current) return current;
+      reference = current;
+    }
     const currentKnowledge = this.#referenceKnowledge(reference);
     if (currentKnowledge.state === "unresolved") return unavailable("metadata-unresolved");
     const deleteFile = currentKnowledge.references === 1 && requestedFileDeletion;
-    const removed = await removeResolvedEmbed(reference, {
-      app: this.#app,
-      files: this.#files,
-      links: this.#links,
-    });
+    const removed = await removeResolvedEmbed(
+      reference,
+      {
+        app: this.#app,
+        files: this.#files,
+        links: this.#links,
+      },
+      removal,
+    );
     if (!removed) {
       return unavailable("editor-changed");
     }
@@ -189,6 +216,20 @@ export class ObsidianEmbedActions {
       return { error, kind: "failed" };
     }
     return { fileDeleted: true, kind: "deleted" };
+  }
+
+  async #resolveAfterRemoval(
+    target: EmbedActionTarget,
+    original: ResolvedEmbedActionReference,
+  ): Promise<
+    | ResolvedEmbedActionReference
+    | EmbedActionUnavailable
+    | { readonly kind: "cancelled"; readonly stage: "embed" }
+  > {
+    const reference = await this.#resolveReference(target);
+    if ("kind" in reference) return reference;
+    if (this.#lifetime.signal.aborted) return { kind: "cancelled", stage: "embed" };
+    return sameReference(reference, original) ? reference : unavailable("editor-changed");
   }
 
   async replaceEmbedTarget(

@@ -66,6 +66,7 @@ export function createWorkspaceActiveScene(
         feedback: { show: options.showFeedback },
         isCurrent: () => options.isCurrent(invokingScene),
         reference: attachment.embedReference,
+        ...(attachment.removal === undefined ? {} : { removal: attachment.removal }),
         scene: invokingScene,
       });
     },

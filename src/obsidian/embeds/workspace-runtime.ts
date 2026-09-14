@@ -30,6 +30,7 @@ import {
   beginWorkspaceActivation,
   isCurrentPresentationActivation,
   mountWorkspaceActiveScene,
+  presentationActivationReady,
 } from "./workspace-runtime-scene-readiness";
 import { ownsMarkdownEditorChange } from "./workspace-runtime-editor";
 import { createWorkspaceDocumentRuntimes } from "./workspace-runtime-workers";
@@ -38,7 +39,7 @@ import { VaultDocumentSessionFactory } from "./vault-document-session-factory";
 import { showAttachedRecoveryPanel, type HeadlessRecoveryNotice } from "./recovery-notice";
 import {
   createWorkspaceMountedPresentation,
-  finishInitialWorkspaceLoading,
+  cancelInitialWorkspaceLoading,
   startInitialWorkspaceLoading,
   updateWorkspaceMountedSettings,
 } from "./workspace-mounted-presentation";
@@ -96,7 +97,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     this.refreshRateProfiles.observeDefault(this.#fallbackOwnerWindow());
     this.#lifecycle = new WorkspaceRuntimeLifecycle({
       activate: (attachment, attempt) => this.#activate(attachment, attempt),
-      autoActivationCancelled: (key) => finishInitialWorkspaceLoading(this.#mounted.get(key)),
+      autoActivationCancelled: (key) => cancelInitialWorkspaceLoading(this.#mounted.get(key)),
       fallbackWindow: () => this.#fallbackWindow(),
       isDisposed: () => this.#disposed,
       notifyExternalChange: (documentId) => this.#coordinator.notifyExternalChange(documentId),
@@ -187,8 +188,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
           this.#setState(attachment, outcome.phase, loadFeedback);
           return;
         }
-        const presented =
-          attachment.whenPresented === undefined || (await attachment.whenPresented);
+        const presented = await presentationActivationReady(attachment);
         const context = this.#sessions.getEditorContext(outcome.sessionId);
         const current = this.#mounted.get(presentationAttachmentKey(attachment))?.activation;
         const stillActive = isCurrentPresentationActivation(

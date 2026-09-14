@@ -12,26 +12,26 @@ interface EmbedEntrance {
 
 export class LivePreviewEntrances {
   readonly #sourcePath: string | undefined;
-  readonly #entries: Map<number, EmbedEntrance>;
+  readonly #entries = new Map<number, EmbedEntrance>();
 
-  constructor(sourcePath: string | undefined, entries: EmbedEntrance[] = []) {
+  constructor(sourcePath: string | undefined) {
     this.#sourcePath = sourcePath;
-    this.#entries = new Map(entries.map((entry) => [entry.from, entry]));
   }
 
   update(changes: ChangeDesc, sourcePath: string | undefined): LivePreviewEntrances {
     if (sourcePath !== this.#sourcePath) return new LivePreviewEntrances(sourcePath);
     if (changes.empty) return this;
-    const entries = [...this.#entries.values()].flatMap((entry) => {
+    const updated = new LivePreviewEntrances(sourcePath);
+    for (const entry of this.#entries.values()) {
       let touched = false;
       changes.iterChangedRanges((from, to) => {
         if (from < entry.to && to > entry.from) touched = true;
       });
-      return touched
-        ? []
-        : [{ ...entry, from: changes.mapPos(entry.from, 1), to: changes.mapPos(entry.to, -1) }];
-    });
-    return new LivePreviewEntrances(sourcePath, entries);
+      if (touched) continue;
+      const from = changes.mapPos(entry.from, 1);
+      updated.#entries.set(from, { ...entry, from, to: changes.mapPos(entry.to, -1) });
+    }
+    return updated;
   }
 
   stateFor(from: number, to: number, documentId: string): PresentationEntranceState {

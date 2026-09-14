@@ -2,6 +2,7 @@ import { type EditorView, WidgetType } from "@codemirror/view";
 
 import type { InkbookDocumentRecognition } from "./document-recognition";
 import { createInkbookLockedPreview } from "./locked-preview";
+import { removeLivePreviewMarkdown } from "./live-preview-removal";
 import { PresentationController } from "./presentation-controller";
 import type { EmbedIntegrationPorts } from "./presentation-port";
 import { samePreviewContentIdentity } from "./safe-preview-svg";
@@ -115,6 +116,14 @@ export class InkbookLivePreviewWidget extends WidgetType {
         element: preview.element,
         refresh: preview.refresh,
         requestHostMeasure: () => view.requestMeasure(),
+        removeMarkdown: (range, expectedSource, mutate) =>
+          removeLivePreviewMarkdown(view, range, expectedSource, mutate),
+        measureRemovalSpacing: (range) => {
+          const block = view.lineBlockAt(this.#embed.from);
+          const first = view.lineBlockAt(range.from);
+          const last = view.lineBlockAt(Math.max(range.from, range.to - 1));
+          return { before: block.top - first.top, after: last.bottom - block.bottom };
+        },
         setDescriptor: preview.setDescriptor,
         setAspectRatio: preview.setAspectRatio,
         setSource: preview.setSource,

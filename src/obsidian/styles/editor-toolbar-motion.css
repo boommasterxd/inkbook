@@ -74,3 +74,8 @@
   animation: inkbook-toolbar-action-icon-confirmation var(--inkbook-toolbar-confirmation-duration)
     var(--inkbook-motion-easing) both;
 }
+
+.inkbook-root.inkbook-active-preparing .inkbook-toolbar-shell .inkbook-toolbar,
+.inkbook-root.inkbook-active-preparing .inkbook-toolbar-context-button {
+  animation-play-state: paused;
+}

@@ -1,3 +1,4 @@
+import type { InitialPresentationEntrance } from "./presentation-entrance";
 import type { MotionPreference } from "../../rendering/motion/transitions";
 import type { AttachmentIdentity } from "../../editor/session/session-state";
 import type { ColorSchemeBroadcaster } from "../theme/color-scheme";
@@ -35,7 +36,29 @@ export interface ReadingViewEmbedReference {
 
 export type PresentationEmbedReference = LivePreviewEmbedReference | ReadingViewEmbedReference;
 
+export interface PresentationRemovalSpacing {
+  readonly before: number;
+  readonly after: number;
+}
+
+export interface PresentationRemovalRange {
+  readonly from: number;
+  readonly to: number;
+}
+
+export interface PresentationRemoval {
+  begin(range: PresentationRemovalRange): Promise<boolean>;
+  reset(): void;
+  removeMarkdown?(
+    range: PresentationRemovalRange,
+    expectedSource: string,
+    mutate: () => void,
+  ): boolean | undefined;
+}
+
 export interface PresentationAttachment {
+  readonly initialEntrance?: InitialPresentationEntrance;
+  readonly removal?: PresentationRemoval;
   readonly attachmentGeneration: number;
   readonly attachmentId: string;
   readonly documentId: string;
@@ -57,6 +80,8 @@ export function presentationAttachmentKey(attachment: AttachmentIdentity): strin
 
 export type PresentationAttachmentInput = Omit<
   PresentationAttachment,
+  | "initialEntrance"
+  | "removal"
   | "whenPresented"
   | "preview"
   | "previewContentIdentity"
@@ -70,9 +95,16 @@ export function presentationPreviewOptions(
   attachment: PresentationAttachment,
 ): Pick<
   PresentationAttachment,
-  "preview" | "scrollRangeReserve" | "setPreviewAspectRatio" | "setPreviewSource"
+  | "initialEntrance"
+  | "preview"
+  | "scrollRangeReserve"
+  | "setPreviewAspectRatio"
+  | "setPreviewSource"
 > {
   return {
+    ...(attachment.initialEntrance === undefined
+      ? {}
+      : { initialEntrance: attachment.initialEntrance }),
     ...(attachment.preview === undefined ? {} : { preview: attachment.preview }),
     ...(attachment.setPreviewAspectRatio === undefined
       ? {}
