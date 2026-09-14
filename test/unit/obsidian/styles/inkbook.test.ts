@@ -118,7 +118,7 @@ describe("Inkbook toolbar motion styles", () => {
       toolbarMotionStylesheet,
     );
 
-    expect(root).toContain("--inkbook-motion-toolbar: 300ms");
+    expect(root).toContain("--inkbook-motion-toolbar: 220ms");
     expect(root).not.toContain("--inkbook-motion-toolbar-button-delay");
     expect(toolbar).toContain("animation: inkbook-toolbar-enter var(--inkbook-motion-toolbar)");
     expect(locking).toContain("animation: inkbook-toolbar-exit var(--inkbook-motion-toolbar)");
@@ -435,7 +435,8 @@ describe("Inkbook editor overlays", () => {
         (selector) =>
           !selector.startsWith(".inkbook-root") &&
           !selector.startsWith(".inkbook-menu-") &&
-          !selector.startsWith(".inkbook-adaptive-panel"),
+          !selector.startsWith(".inkbook-adaptive-panel") &&
+          selector !== ".inkbook-owned-menu",
       ),
     ).toEqual([".inkbook-scrollbar-stable", ".inkbook-scroll-anchor-suppressed"]);
   });

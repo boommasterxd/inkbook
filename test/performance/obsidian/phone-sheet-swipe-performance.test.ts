@@ -40,6 +40,8 @@ describe("phone sheet swipe performance", () => {
     expect(frames.maxPending).toBe(1);
     expect(frames.pending).toBe(0);
     expect(fixture.dragWrites).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
+    expect(fixture.inheritedWrites).toBe(0);
+    expect(fixture.surface.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("");
     expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
     await annotate(interactionProfileAnnotation("phone sheet swipe", p99), "performance");
     controller.dispose();

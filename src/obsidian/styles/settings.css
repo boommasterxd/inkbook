@@ -1,3 +1,18 @@
+.is-mobile .inkbook-settings-modal {
+  --setting-items-background: var(--interactive-normal);
+}
+
+.is-mobile .inkbook-settings-modal .setting-item::before {
+  border-color: var(--menu-divider-color);
+}
+
+.is-mobile .inkbook-settings-modal .inkbook-setting-controls {
+  --dropdown-background: var(--background-primary);
+  --dropdown-background-hover: var(--background-primary-alt);
+  --background-modifier-form-field: var(--background-primary);
+  --background-modifier-form-field-hover: var(--background-primary-alt);
+}
+
 .inkbook-settings-tool-group,
 .inkbook-snapping-group {
   --inkbook-motion-fast: 120ms;
@@ -202,9 +217,12 @@
   grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
 }
 
-.inkbook-settings-background-content .inkbook-menu-background-choice {
+.inkbook-settings-background-content
+  .inkbook-menu-background-options
+  .inkbook-menu-background-choice {
   background: var(--background-primary);
   border: var(--border-width) solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
 }
 
 .inkbook-settings-background-content .inkbook-menu-background-separator {

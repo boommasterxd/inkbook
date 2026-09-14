@@ -188,9 +188,7 @@ function createSlider(
   const percent = control.id.includes("opacity");
   const scale = percent ? 100 : 1;
   const range = body.createEl("input");
-  const valueField = body.createEl("label", { cls: "inkbook-menu-value-field" });
-  const valueContent = valueField.createSpan({ cls: "inkbook-menu-value-content" });
-  const value = valueContent.createEl("input");
+  const { valueField, value } = createNumberValueField(body, control, scale);
   range.className = "inkbook-menu-slider";
   range.type = "range";
   range.min = String(control.min * scale);
@@ -199,19 +197,6 @@ function createSlider(
   range.value = String((control.value ?? control.min) * scale);
   range.setAttribute("aria-label", control.label);
   if (control.mixed === true) range.setAttribute("aria-valuetext", "Mixed");
-  value.className = "inkbook-menu-value";
-  value.type = "number";
-  value.min = range.min;
-  value.max = range.max;
-  value.step = range.step;
-  value.value = control.value === null ? "" : formatNumber(control.value * scale);
-  value.placeholder = control.mixed === true ? "Mixed" : "";
-  value.setAttribute("aria-label", percent ? `${control.label} percent` : control.label);
-  value.style.setProperty(
-    "--inkbook-menu-value-width",
-    `${String(valueCharacterWidth(control, scale, value.placeholder))}ch`,
-  );
-  valueContent.createSpan({ cls: "inkbook-menu-value-suffix", text: percent ? "%" : "" });
   range.addEventListener("input", () => {
     value.value = formatNumber(range.valueAsNumber);
     range.removeAttribute("aria-valuetext");
@@ -239,6 +224,30 @@ function createSlider(
   });
   body.append(range, valueField);
   return field;
+}
+
+function createNumberValueField(
+  body: HTMLElement,
+  control: Extract<StyleControl, { readonly kind: "number" }>,
+  scale = 1,
+): { readonly valueField: HTMLElement; readonly value: HTMLInputElement } {
+  const valueField = body.createEl("label", { cls: "inkbook-menu-value-field" });
+  const valueContent = valueField.createSpan({ cls: "inkbook-menu-value-content" });
+  const value = valueContent.createEl("input");
+  value.className = "inkbook-menu-value";
+  value.type = "number";
+  value.min = String(control.min * scale);
+  value.max = String(control.max * scale);
+  value.step = scale === 100 ? "1" : String(control.step);
+  value.value = control.value === null ? "" : formatNumber(control.value * scale);
+  value.placeholder = control.mixed === true ? "Mixed" : "";
+  value.setAttribute("aria-label", scale === 100 ? `${control.label} percent` : control.label);
+  value.style.setProperty(
+    "--inkbook-menu-value-width",
+    `${String(valueCharacterWidth(control, scale, value.placeholder))}ch`,
+  );
+  valueContent.createSpan({ cls: "inkbook-menu-value-suffix", text: scale === 100 ? "%" : "" });
+  return { valueField, value };
 }
 
 function valueInRange(
@@ -274,19 +283,33 @@ function createStepper(
 ): HTMLElement {
   const { field, body } = createField(options, control);
   body.classList.add("inkbook-menu-stepper");
-  let current = control.value ?? control.min;
-  const output = body.createEl("output");
-  output.textContent = control.value === null ? "Mixed" : formatNumber(current);
+  let current = control.value;
+  const { valueField, value } = createNumberValueField(body, control);
+  value.inputMode = "numeric";
   const decrement = createStepperButton(options, "minus", `Decrease ${control.label}`);
   const increment = createStepperButton(options, "plus", `Increase ${control.label}`);
-  const commit = (delta: number) => {
-    current = clamp(current + delta, control.min, control.max);
-    output.textContent = formatNumber(current);
+  const commit = (next: number) => {
+    current = clamp(Math.round(next), control.min, control.max);
+    value.value = formatNumber(current);
     options.onChange(control.id, current);
   };
-  decrement.addEventListener("click", () => commit(-control.step));
-  increment.addEventListener("click", () => commit(control.step));
-  body.append(decrement, output, increment);
+  value.addEventListener("change", () => {
+    const next = valueInRange(value, value, options.numberInputMode);
+    if (next === undefined) {
+      value.value = current === null ? "" : formatNumber(current);
+      options.onInvalidValue?.(control.id);
+      return;
+    }
+    commit(next);
+  });
+  value.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    value.blur();
+  });
+  decrement.addEventListener("click", () => commit((current ?? control.min) - control.step));
+  increment.addEventListener("click", () => commit((current ?? control.min) + control.step));
+  body.append(decrement, valueField, increment);
   return field;
 }
 

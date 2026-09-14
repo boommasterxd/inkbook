@@ -20,3 +20,8 @@
   position: absolute;
   z-index: 2;
 }
+
+.inkbook-adaptive-panel-layer[data-platform="phone"][data-inkbook-keyboard-navigation="false"]
+  :focus {
+  box-shadow: none;
+}

@@ -115,6 +115,9 @@ export function createActiveEditorInteractions(options: ActiveEditorInteractions
       factory: controller.menuFactory,
       inputSurface: controller.renderer.inputSurface,
       ...(controller.keymap === undefined ? {} : { keymap: controller.keymap }),
+      ...(controller.createPhoneSheetHost === undefined
+        ? {}
+        : { createPhoneSheetHost: controller.createPhoneSheetHost }),
       ownerDocument: controller.container.ownerDocument,
       selectionSize: () => options.selection().size,
       storeSize: () => controller.model.store.size,

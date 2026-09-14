@@ -31,7 +31,13 @@ export class ShortcutSettingsView {
       this.render(),
     );
     this.#referenceView = new ShortcutReferenceView(hostHotkeys);
-    this.#unsubscribe = store.subscribeDeviceSettings(() => this.render());
+    let shortcuts = JSON.stringify(store.getDeviceSettings().keyboardShortcuts);
+    this.#unsubscribe = store.subscribeDeviceSettings((settings) => {
+      const next = JSON.stringify(settings.keyboardShortcuts);
+      if (next === shortcuts) return;
+      shortcuts = next;
+      this.render();
+    });
     this.render();
   }
 

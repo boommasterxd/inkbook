@@ -20,9 +20,6 @@ export function createBackgroundSpacingContent(
   const win = menuDomWindow(options.ownerDocument, "background menu");
   const fragment = win.createFragment();
   const root = win.createEl("section", { cls: "inkbook-menu-spacing-control" });
-  // Obsidian's Menu cancels bubbling mouse downs, which suppresses the range input's native drag.
-  root.addEventListener("mousedown", stopPropagation);
-  root.addEventListener("click", stopPropagation);
 
   const header = win.createDiv({ cls: "inkbook-menu-spacing-header" });
   const icon = win.createSpan({ cls: "inkbook-menu-control-icon" });
@@ -72,8 +69,4 @@ export function createBackgroundSpacingContent(
 
 function spacingIndex(value: number): 0 | 1 | 2 | 3 {
   return Math.min(3, Math.max(0, Math.round(value))) as 0 | 1 | 2 | 3;
-}
-
-function stopPropagation(event: Event): void {
-  event.stopPropagation();
 }

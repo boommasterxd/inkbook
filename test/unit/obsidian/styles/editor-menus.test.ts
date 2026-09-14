@@ -3,13 +3,16 @@ import { describe, expect, it } from "vitest";
 
 const stylesheet = [
   readStylesheet("src/obsidian/styles/adaptive-panel.css"),
+  readStylesheet("src/obsidian/styles/phone-sheet-host.css"),
   readStylesheet("src/obsidian/styles/editor-menus.css"),
   readStylesheet("src/obsidian/styles/background-menu.css"),
 ].join("\n");
 
 describe("AdaptivePanel styling boundary", () => {
   it("uses native Obsidian menu tokens on the owned surface", () => {
-    const panel = declarationsFor(".inkbook-adaptive-panel");
+    const panel =
+      declarationsFor(".inkbook-adaptive-panel,\n.inkbook-owned-menu") +
+      declarationsFor(".inkbook-adaptive-panel");
     const scroll = declarationsFor(".inkbook-adaptive-panel-scroll");
     const back = declarationsFor(".inkbook-adaptive-panel-back");
 
@@ -63,7 +66,15 @@ describe("AdaptivePanel styling boundary", () => {
       '.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel-drag-region',
     );
 
-    expect(panel).toContain("max-block-size: 60%");
+    expect(
+      declarationsFor(".inkbook-phone-sheet-host .inkbook-phone-sheet-host-surface"),
+    ).toContain("transition-property: none !important");
+    expect(
+      declarationsFor(
+        '.inkbook-phone-sheet-host .inkbook-phone-sheet-host-surface[data-swipe-state="settling"]',
+      ),
+    ).toContain("transition-property: translate !important");
+    expect(panel).toContain("max-block-size: var(--inkbook-adaptive-panel-maximum-height, 60%)");
     expect(panel).toContain("inline-size: auto");
     expect(panel).toContain("max-inline-size: none");
     expect(panel).toContain("border: none");
@@ -73,8 +84,10 @@ describe("AdaptivePanel styling boundary", () => {
     expect(panel).toContain(
       "inset-inline: var(--safe-area-inset-left) var(--safe-area-inset-right)",
     );
-    expect(scroll).toContain("var(--inkbook-adaptive-panel-viewport-height, 100vh) * 0.6");
-    expect(scroll).toContain("max(var(--safe-area-inset-bottom), var(--size-4-4))");
+    expect(scroll).toContain("var(--inkbook-adaptive-panel-maximum-height, 60vh) - 16px");
+    expect(scroll).toContain(
+      "max(calc(var(--safe-area-inset-bottom) - var(--keyboard-height, 0px)), var(--size-4-4))",
+    );
     expect(scroll).toContain("touch-action: pan-down");
     expect(grabber).toContain("background: var(--text-faint)");
     expect(grabber).toContain("inline-size: 15%");
@@ -136,7 +149,7 @@ describe("AdaptivePanel content styles", () => {
     const section = declarationsFor(".inkbook-menu-control");
     const divider = declarationsFor(".inkbook-menu-control + .inkbook-menu-control");
     const phoneSection = declarationsFor(
-      '.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-control',
+      '.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="style"])\n  .inkbook-menu-control',
     );
     const wideSection = declarationsFor(
       '.inkbook-adaptive-panel-layer[data-platform="wide"] .inkbook-menu-control',
@@ -209,13 +222,13 @@ describe("AdaptivePanel choice content styles", () => {
 
   it("groups phone Background choices with native divider and interaction tokens", () => {
     const choice = declarationsFor(
-      '.inkbook-adaptive-panel-layer[data-platform="phone"]\n  .inkbook-menu-background-options\n  .inkbook-menu-background-choice',
+      '.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="background"])\n  .inkbook-menu-background-options\n  .inkbook-menu-background-choice',
     );
     const divider = declarationsFor(
-      '.inkbook-adaptive-panel-layer[data-platform="phone"]\n  .inkbook-menu-background-choice:not(:last-child)::after',
+      '.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="background"])\n  .inkbook-menu-background-choice:not(:last-child)::after',
     );
     const spacing = declarationsFor(
-      '.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-background-spacing:not(:empty)',
+      '.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="background"])\n  .inkbook-menu-background-spacing:not(:empty)',
     );
 
     expect(choice).toContain("background: var(--interactive-normal)");

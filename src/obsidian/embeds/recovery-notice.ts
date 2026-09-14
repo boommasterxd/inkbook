@@ -1,5 +1,7 @@
 import type { App } from "obsidian";
 
+import type { MotionPreference } from "../../rendering/motion/transitions";
+
 import { InkbookModal } from "../dialogs/inkbook-modal";
 
 import { feedbackContent, type InkbookFeedbackCode } from "../feedback/feedback-catalog";
@@ -83,8 +85,8 @@ class HeadlessRecoveryModal extends InkbookModal {
   readonly #actions: HeadlessRecoveryActions;
   #pending = false;
 
-  constructor(app: App, actions: HeadlessRecoveryActions) {
-    super(app);
+  constructor(app: App, actions: HeadlessRecoveryActions, readMotion?: () => MotionPreference) {
+    super(app, readMotion);
     this.#actions = actions;
   }
 
@@ -124,7 +126,7 @@ class HeadlessRecoveryModal extends InkbookModal {
   }
 
   #retry(): void {
-    if (this.closed || this.#pending) return;
+    if (this.closed || this.closing || this.#pending) return;
     this.#setPending(true);
     try {
       if (this.#actions.retry()) this.close();
@@ -135,7 +137,7 @@ class HeadlessRecoveryModal extends InkbookModal {
   }
 
   async #runAction(action: () => Promise<boolean>): Promise<void> {
-    if (this.closed || this.#pending) return;
+    if (this.closed || this.closing || this.#pending) return;
     this.#setPending(true);
     try {
       if (await action()) {
@@ -156,10 +158,11 @@ class HeadlessRecoveryModal extends InkbookModal {
 export function showHeadlessRecoveryNotice(
   app: App,
   actions: HeadlessRecoveryActions,
+  readMotion?: () => MotionPreference,
 ): HeadlessRecoveryNotice {
-  const dialog = new HeadlessRecoveryModal(app, actions);
+  const dialog = new HeadlessRecoveryModal(app, actions, readMotion);
   dialog.open();
-  return { close: () => dialog.close() };
+  return { close: () => dialog.closeImmediately() };
 }
 
 function setPending(message: HTMLElement, pending: boolean): void {

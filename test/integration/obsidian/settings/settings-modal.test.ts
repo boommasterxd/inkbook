@@ -122,6 +122,34 @@ describe("Inkbook settings modal scroll preservation", () => {
 });
 
 describe("Inkbook settings disclosure motion", () => {
+  it("finishes a reversed disclosure only when the new transition completes", () => {
+    const { controller } = openSettingsModalWithFullMotion();
+    const trigger = required<HTMLButtonElement>(
+      '.inkbook-settings-tool-trigger[aria-expanded="false"]',
+    );
+    const panel = required<HTMLElement>(`#${trigger.getAttribute("aria-controls") ?? "missing"}`);
+    const frames: FrameRequestCallback[] = [];
+    const request = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((frame) => frames.push(frame));
+    vi.spyOn(panel, "getBoundingClientRect")
+      .mockReturnValueOnce(rectWithHeight(64))
+      .mockReturnValueOnce(rectWithHeight(30));
+    trigger.click();
+    frames.shift()?.(0);
+    trigger.click();
+    expect(panel.style.blockSize).toBe("30px");
+    frames.shift()?.(60);
+    panel.dispatchEvent(new TransitionEvent("transitioncancel", { propertyName: "block-size" }));
+    expect(panel.hidden).toBe(false);
+    expect(panel.dataset.resizing).toBe("true");
+    expect(panel.style.blockSize).toBe("0px");
+    panel.dispatchEvent(transitionEnd());
+    expect(panel.hidden).toBe(true);
+    request.mockRestore();
+    controller.dispose();
+  });
+
   it("animates every tool and shortcut section while opening and closing", async () => {
     const { controller } = openSettingsModalWithFullMotion();
     const triggers = [

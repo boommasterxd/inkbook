@@ -13,12 +13,10 @@ describe("motion tokens", () => {
   it("exposes the documented duration and easing tokens", () => {
     expect(MOTION_TOKENS).toEqual({
       fast: 120,
-      menu: 220,
-      toolbar: 300,
+      surface: 220,
       standard: 180,
       erase: 160,
       layout: 240,
-      slow: 300,
     });
     expect(EASING_TOKENS.standard).toBe("cubic-bezier(0.2, 0, 0, 1)");
     expect(EASING_TOKENS.emphasized).toBe(EASING_TOKENS.standard);
@@ -27,7 +25,9 @@ describe("motion tokens", () => {
   it("maps every documented transition to its contract duration", () => {
     expect(TRANSITION_DURATIONS).toEqual({
       adaptiveMenu: 220,
-      toolbarEnterExit: 300,
+      adaptivePage: 220,
+      nativeModalEnterExit: 120,
+      toolbarEnterExit: 220,
       toolActiveState: 120,
       selectionHandlesEnterExit: 120,
       eraserPendingRemoval: 160,
@@ -39,7 +39,7 @@ describe("motion tokens", () => {
       lockEditorCrossfade: 120,
       automaticPageGrowth: 180,
       overflowEdgeGradient: 120,
-      conditionalToolbarControl: 300,
+      conditionalToolbarControl: 220,
       arrangeResult: 120,
       fallback: 120,
     });

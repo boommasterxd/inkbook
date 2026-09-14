@@ -1,3 +1,4 @@
+import type { PhoneSheetHostPort } from "./phone-sheet-host";
 import { Platform, type Keymap } from "obsidian";
 
 import type {
@@ -14,7 +15,7 @@ import {
 } from "../../rendering/ui/icon-ids";
 import { AdaptivePanelSession, type AdaptivePanelContentLifecycle } from "./adaptive-panel";
 import { backgroundIconId, createBackgroundMenuContent } from "./background-menu-content";
-import { acquireNativeMenuSafeAreaFallback, setMenuItemTitle } from "./menu-dom";
+import { setMenuItemTitle } from "./menu-dom";
 import { createStyleMenuContent } from "./style-menu-content";
 import type { FocusTargetPort, MenuFactoryPort, MenuPort } from "./menu-ports";
 
@@ -37,6 +38,7 @@ export interface EditorToolbarMenuOptions {
   readonly getState: () => EditorToolbarMenuState;
   readonly handlers: EditorToolbarMenuHandlers;
   readonly initialMenu: Exclude<EditorToolbarMenuId, "background">;
+  readonly createPhoneSheetHost?: () => PhoneSheetHostPort;
   readonly keymap?: Pick<Keymap, "popScope" | "pushScope">;
   readonly onClosed: () => void;
   readonly ownerDocument: Document;
@@ -56,21 +58,6 @@ const SHAPES: readonly (readonly [ShapeId, string, "lines" | "shapes" | "structu
   ["coordinate-system", "Coordinate system", "structures"],
   ["table", "Table", "structures"],
 ];
-const OVERFLOW_BASE_TITLES = [
-  "Background",
-  "Copy embed",
-  "Settings",
-  "Keyboard shortcuts",
-  "Erase all",
-  "Delete embed",
-] as const;
-const OVERFLOW_SELECTION_TITLES = [
-  "Bring forward",
-  "Send backward",
-  "Bring to front",
-  "Send to back",
-] as const;
-
 export class EditorToolbarMenuSession {
   #closed = false;
   #menu: MenuPort | undefined;
@@ -84,15 +71,18 @@ export class EditorToolbarMenuSession {
   }
 
   public close(mode: "animated" | "immediate" = "animated"): void {
-    if (this.#closed) return;
+    if (this.#closed) {
+      if (mode === "immediate") {
+        this.#menu?.close(mode);
+        this.#panel?.close(mode);
+      }
+      return;
+    }
     this.#closed = true;
     this.#navigationGeneration += 1;
-    const menu = this.#menu;
-    const panel = this.#panel;
-    this.#menu = undefined;
-    menu?.close();
-    panel?.close(mode);
-    if (panel === undefined) this.#finish();
+    if (this.#menu !== undefined) this.#menu.close(mode);
+    else if (this.#panel !== undefined) this.#panel.close(mode);
+    else this.#finish();
   }
 
   #finish(): void {
@@ -107,11 +97,20 @@ export class EditorToolbarMenuSession {
 
   #navigate(id: EditorToolbarMenuId): void {
     if (this.#closed) return;
+    const navigation = this.#menu?.getPhoneNavigation?.();
+    if (id === "background" && navigation !== undefined) {
+      navigation.push({
+        kind: "background",
+        label: "Background",
+        createContent: (lifecycle) => this.#createPanelContent("background", lifecycle),
+      });
+      return;
+    }
     const previousMenu = this.#menu;
     const previousPanel = this.#panel;
     this.#menu = undefined;
     this.#panel = undefined;
-    previousMenu?.close();
+    previousMenu?.close("handoff");
     previousPanel?.close("handoff");
     const generation = ++this.#navigationGeneration;
     this.#options.ownerWindow.queueMicrotask(() => {
@@ -126,32 +125,21 @@ export class EditorToolbarMenuSession {
       this.#showPanel(id);
       return;
     }
-    this.#showNativeMenu(id);
+    this.#showActionMenu(id);
   }
 
-  #showNativeMenu(id: "overflow" | "shape"): void {
-    const releaseSafeArea = Platform.isPhone
-      ? acquireNativeMenuSafeAreaFallback(this.#options.ownerDocument)
-      : () => undefined;
+  #showActionMenu(id: "overflow" | "shape"): void {
     const menu = this.#options.factory.create();
     this.#menu = menu;
     menu.onHide(() => {
-      releaseSafeArea();
       if (this.#menu !== menu) return;
       this.#menu = undefined;
       this.#closed = true;
       this.#finish();
     });
-    populateNativeToolbarMenu(menu, id, this.#options, (next) => this.#navigate(next));
+    populateToolbarActionMenu(menu, id, this.#options, (next) => this.#navigate(next));
     menu.setParentElement?.(this.#options.anchor);
-    const state = this.#options.getState();
-    const titles = state.overflow.hasSelection
-      ? [...OVERFLOW_BASE_TITLES, ...OVERFLOW_SELECTION_TITLES]
-      : OVERFLOW_BASE_TITLES;
-    menu.showAtPosition(
-      menuPositionBelow(this.#options.anchor, id, titles),
-      this.#options.ownerDocument,
-    );
+    menu.showAtPosition(menuPositionBelow(this.#options.anchor, id), this.#options.ownerDocument);
   }
 
   #showPanel(id: "background" | "style"): void {
@@ -161,6 +149,9 @@ export class EditorToolbarMenuSession {
       canvasInputSurface: this.#options.canvasInputSurface,
       createContent: (lifecycle) => this.#createPanelContent(id, lifecycle),
       ...(this.#options.keymap === undefined ? {} : { keymap: this.#options.keymap }),
+      ...(this.#options.createPhoneSheetHost === undefined
+        ? {}
+        : { createPhoneSheetHost: this.#options.createPhoneSheetHost }),
       kind: id,
       label: id === "style" ? "Style" : "Background",
       ...(id === "background" ? { onBack: () => this.#navigate("overflow") } : {}),
@@ -204,57 +195,16 @@ export class EditorToolbarMenuSession {
   }
 }
 
-export function menuPositionBelow(
-  anchor: HTMLElement,
-  id: "overflow" | "shape",
-  titles: readonly string[] = [],
-) {
+export function menuPositionBelow(anchor: HTMLElement, id: "overflow" | "shape") {
   const bounds = anchor.getBoundingClientRect();
   const y = bounds.bottom + (Platform.isMobile && !Platform.isPhone ? 0 : 2);
   if (id !== "overflow" || Platform.isPhone) {
     return { overlap: true, x: bounds.left, y };
   }
-  const menuWidth = measureNativeMenuInlineSize(anchor.ownerDocument, titles) ?? bounds.width;
-  return {
-    overlap: true,
-    width: bounds.width,
-    x: bounds.left + (bounds.width - menuWidth) / 2,
-    y,
-  };
+  return { centered: true, width: bounds.width, x: bounds.left, y };
 }
 
-function measureNativeMenuInlineSize(
-  ownerDocument: Document,
-  titles: readonly string[],
-): number | undefined {
-  if (titles.length === 0) return undefined;
-  const body = ownerDocument.body;
-  const ownerWindow = ownerDocument.defaultView;
-  if (ownerWindow === null) return undefined;
-  const context = ownerWindow.createEl("canvas").getContext("2d");
-  if (context === null) return undefined;
-  const styles = ownerWindow.getComputedStyle(body);
-  const fontSize = styles
-    .getPropertyValue(Platform.isMobile ? "--font-ui-medium" : "--font-ui-small")
-    .trim();
-  context.font = `${styles.fontStyle} ${styles.fontWeight} ${fontSize} ${styles.fontFamily}`;
-  const titleWidth = titles.reduce(
-    (widest, title) => Math.max(widest, context.measureText(title).width),
-    0,
-  );
-  const itemSpacing = cssPixelValue(styles, "--size-4-2");
-  const iconWidth = cssPixelValue(styles, "--icon-s");
-  const scrollPadding = cssPixelValue(styles, "--menu-padding");
-  const borderWidth = Platform.isMobile ? 0 : cssPixelValue(styles, "--menu-border-width");
-  return titleWidth + iconWidth + itemSpacing * 3 + scrollPadding * 2 + borderWidth * 2;
-}
-
-function cssPixelValue(styles: CSSStyleDeclaration, property: string): number {
-  const value = Number.parseFloat(styles.getPropertyValue(property));
-  return Number.isFinite(value) && value >= 0 ? value : 0;
-}
-
-export function populateNativeToolbarMenu(
+export function populateToolbarActionMenu(
   menu: MenuPort,
   id: "overflow" | "shape",
   options: EditorToolbarMenuOptions,
@@ -278,6 +228,7 @@ function populateOverflow(
     "Background",
     backgroundIconId(state.background.type),
     () => navigate("background"),
+    { keepOpen: Platform.isPhone && menu.getPhoneNavigation !== undefined },
   );
   if (state.overflow.hasSelection) {
     menu.addSeparator();
@@ -325,12 +276,7 @@ function populateOverflow(
     handlers.onOverflowAction("copy-embed"),
   );
   menu.addSeparator();
-  addAction(menu, options.ownerDocument, "Settings", "settings", () =>
-    options.ownerWindow.queueMicrotask(handlers.onOpenSettings),
-  );
-  addAction(menu, options.ownerDocument, "Keyboard shortcuts", "keyboard", () =>
-    options.ownerWindow.queueMicrotask(handlers.onOpenShortcuts),
-  );
+  addSettingsActions(menu, options);
   menu.addSeparator();
   addAction(
     menu,
@@ -351,6 +297,25 @@ function populateOverflow(
     () => handlers.onOverflowAction("delete-embed"),
     { warning: true },
   );
+}
+
+function addSettingsActions(menu: MenuPort, options: EditorToolbarMenuOptions): void {
+  const add = (label: string, icon: string, open: EditorMenuCallbacks["onOpenSettings"]): void => {
+    addAction(
+      menu,
+      options.ownerDocument,
+      label,
+      icon,
+      () => {
+        const navigation = menu.getPhoneNavigation?.();
+        if (navigation === undefined) options.ownerWindow.queueMicrotask(() => open());
+        else open(navigation);
+      },
+      { keepOpen: Platform.isPhone && menu.getPhoneNavigation !== undefined },
+    );
+  };
+  add("Settings", "settings", options.handlers.onOpenSettings);
+  add("Keyboard shortcuts", "keyboard", options.handlers.onOpenShortcuts);
 }
 
 function populateShapes(
@@ -384,6 +349,7 @@ function addAction(
     readonly checked?: boolean;
     readonly disabled?: boolean;
     readonly warning?: boolean;
+    readonly keepOpen?: boolean;
   } = {},
 ): void {
   menu.addItem((item) => {
@@ -392,6 +358,7 @@ function addAction(
     if (state.checked !== undefined) item.setChecked?.(state.checked);
     if (state.disabled === true) item.setDisabled(true);
     if (state.warning === true) item.setWarning(true);
+    if (state.keepOpen === true) item.setKeepOpen?.(true);
     if (state.disabled !== true) item.onClick(onClick);
   });
 }

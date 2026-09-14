@@ -50,6 +50,7 @@ function declarativeLabels(
 
 function renderedLabels(definition: SettingDefinitionRender): string[] {
   const rendered = renderDefinition(definition);
+  rendered.container.querySelector<HTMLButtonElement>(".inkbook-settings-tool-trigger")?.click();
   const labels = [
     ...rendered.container.querySelectorAll(
       ".inkbook-settings-tool-title, .inkbook-menu-control-header, .inkbook-menu-toggle-heading",

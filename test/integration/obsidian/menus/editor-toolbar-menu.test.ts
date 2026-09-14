@@ -6,7 +6,7 @@ import { Platform } from "obsidian";
 import {
   EditorToolbarMenuSession,
   menuPositionBelow,
-  populateNativeToolbarMenu,
+  populateToolbarActionMenu,
   type MenuFactoryPort,
 } from "../../../../src/obsidian/menus";
 import {
@@ -38,12 +38,12 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("native editor toolbar menus", () => {
-  it("keeps Overflow entirely native while drilling into Background", async () => {
+describe("editor toolbar action menus", () => {
+  it("populates Overflow actions and Background navigation", async () => {
     const menu = new FakeMenu();
     const navigate = vi.fn();
     const configured = options();
-    populateNativeToolbarMenu(menu, "overflow", configured, navigate);
+    populateToolbarActionMenu(menu, "overflow", configured, navigate);
 
     expect(titles(menu)).toEqual([
       "Background",
@@ -89,7 +89,7 @@ describe("native editor toolbar menus", () => {
         coordinateDimension: "3d",
       },
     });
-    populateNativeToolbarMenu(menu, "shape", configured, vi.fn());
+    populateToolbarActionMenu(menu, "shape", configured, vi.fn());
 
     expect(action(menu, "Arrow").checked).toBe(true);
     expect(action(menu, "Arrow").icon).toBe(
@@ -104,30 +104,22 @@ describe("native editor toolbar menus", () => {
     ).toBe(true);
   });
 
-  it("uses native placement without forcing a custom width", () => {
+  it("centers overflow over its anchor and preserves shape and phone placement", () => {
     const anchor = createHtmlElement("button");
     anchor.getBoundingClientRect = () =>
       ({ bottom: 148, height: 44, left: 320, right: 364, top: 104, width: 44 }) as DOMRect;
-
-    expect(menuPositionBelow(anchor, "overflow", ["Delete embed"])).toEqual({
-      overlap: true,
-      width: 44,
-      x: 270,
-      y: 150,
-    });
     expect(menuPositionBelow(anchor, "overflow")).toEqual({
-      overlap: true,
+      centered: true,
       width: 44,
       x: 320,
       y: 150,
     });
     expect(menuPositionBelow(anchor, "shape")).toEqual({ overlap: true, x: 320, y: 150 });
     Platform.isMobile = true;
-    document.body.setCssProps({ "--icon-s": "18px" });
-    expect(menuPositionBelow(anchor, "overflow", ["Delete embed"])).toEqual({
-      overlap: true,
+    expect(menuPositionBelow(anchor, "overflow")).toEqual({
+      centered: true,
       width: 44,
-      x: 265,
+      x: 320,
       y: 148,
     });
     expect(menuPositionBelow(anchor, "shape")).toEqual({ overlap: true, x: 320, y: 148 });
@@ -137,13 +129,13 @@ describe("native editor toolbar menus", () => {
 });
 
 describe("empty-canvas toolbar actions", () => {
-  it("uses the native disabled title for Erase all on an empty canvas", () => {
+  it("uses the muted disabled title for Erase all on an empty canvas", () => {
     const menu = new FakeMenu();
     const base = options();
     const configured = options({
       overflow: { ...base.getState().overflow, canEraseAll: false, hasSelection: false },
     });
-    populateNativeToolbarMenu(menu, "overflow", configured, vi.fn());
+    populateToolbarActionMenu(menu, "overflow", configured, vi.fn());
 
     const erase = action(menu, "Erase all");
     expect(erase.disabled).toBe(true);
@@ -151,25 +143,6 @@ describe("empty-canvas toolbar actions", () => {
     expect(erase.fragment).toBeUndefined();
     expect(erase.click).toBeUndefined();
     expect(action(menu, "Delete embed").click).toBeDefined();
-  });
-});
-
-describe("phone native toolbar menu spacing", () => {
-  it("uses and releases a minimum safe area without changing native menu entries", () => {
-    Platform.isPhone = true;
-    document.body.setCssProps({ "--safe-area-inset-bottom": "0px", "--size-4-4": "16px" });
-    const menus: FakeMenu[] = [];
-    const configured = connectedOptions();
-    new EditorToolbarMenuSession({
-      ...configured,
-      factory: recordingFactory(menus),
-      initialMenu: "overflow",
-    });
-
-    expect(document.body.style.getPropertyValue("--safe-area-inset-bottom")).toBe("16px");
-    expect(titles(menus[0]!)).not.toContain("");
-    menus[0]?.hide();
-    expect(document.body.style.getPropertyValue("--safe-area-inset-bottom")).toBe("0px");
   });
 });
 
@@ -259,8 +232,29 @@ describe("Style AdaptivePanel", () => {
   });
 });
 
+describe("toolbar dismissal lifecycle", () => {
+  it("disposes a menu even while its animated dismissal is pending", () => {
+    const menus: FakeMenu[] = [];
+    const configured = connectedOptions();
+    const session = new EditorToolbarMenuSession({
+      ...configured,
+      factory: recordingFactory(menus),
+      initialMenu: "overflow",
+    });
+    const close = vi.spyOn(menus[0]!, "close").mockImplementation(() => undefined);
+    session.close();
+    expect(configured.onClosed).not.toHaveBeenCalled();
+    session.close("immediate");
+    expect(close.mock.calls).toEqual([["animated"], ["immediate"]]);
+    menus[0]!.hide();
+    session.close("immediate");
+    expect(configured.onClosed).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("Background AdaptivePanel navigation", () => {
-  it("moves from native Overflow into one owned panel and returns to native Overflow", async () => {
+  it("moves from Overflow into one Background panel and returns to Overflow", async () => {
     const menus: FakeMenu[] = [];
     const factory = recordingFactory(menus);
     const base = connectedOptions();

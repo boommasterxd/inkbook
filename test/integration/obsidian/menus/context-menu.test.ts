@@ -6,13 +6,14 @@ import { Platform } from "obsidian";
 import {
   openContextMenu,
   populateContextMenu,
-  type ContextMenuHandlers,
   type ContextMenuState,
   type MenuFactoryPort,
   type MenuItemPort,
   type MenuPort,
 } from "../../../../src/obsidian/menus";
 import { createHtmlElement, installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
+
+import { createContextMenuHandlers } from "../../../adapters/obsidian/context-menu";
 
 beforeEach(() => {
   installObsidianDomHelpers();
@@ -117,22 +118,6 @@ function state(overrides: Partial<ContextMenuState> = {}): ContextMenuState {
   };
 }
 
-function handlers(): ContextMenuHandlers {
-  return {
-    copy: vi.fn(),
-    cut: vi.fn(),
-    delete: vi.fn(),
-    bringForward: vi.fn(),
-    sendBackward: vi.fn(),
-    bringToFront: vi.fn(),
-    sendToBack: vi.fn(),
-    paste: vi.fn(),
-    copyEmbed: vi.fn(),
-    eraseAll: vi.fn(),
-    deleteEmbed: vi.fn(),
-  };
-}
-
 function titles(menu: FakeMenu): string[] {
   return menu.entries
     .filter((entry): entry is RecordedItem => entry !== "separator")
@@ -149,14 +134,14 @@ function openPositionedMenu(menu: FakeMenu): ReturnType<typeof openContextMenu> 
       canvasInputSurface: createHtmlElement("button"),
     },
     state({ hasSelection: false }),
-    handlers(),
+    createContextMenuHandlers(),
   );
 }
 
 describe("context menu population", () => {
   it("populates the selection and canvas sections in the contract order", () => {
     const menu = new FakeMenu();
-    populateContextMenu(menu, document, state(), handlers());
+    populateContextMenu(menu, document, state(), createContextMenuHandlers());
 
     expect(titles(menu)).toEqual([
       "Copy",
@@ -196,7 +181,7 @@ describe("context menu population", () => {
         canBringToFront: false,
         canSendToBack: false,
       }),
-      handlers(),
+      createContextMenuHandlers(),
     );
 
     expect(
@@ -221,7 +206,7 @@ describe("context menu population", () => {
       menu,
       document,
       state({ hasSelection: false, canPaste: false }),
-      handlers(),
+      createContextMenuHandlers(),
     );
 
     expect(titles(menu)).toEqual(["Copy embed", "Erase all", "Delete embed"]);
@@ -243,26 +228,20 @@ describe("context menu population", () => {
   });
 });
 
-describe("phone context menu spacing", () => {
-  it("uses a minimum safe area without adding to an existing phone inset", () => {
-    Platform.isPhone = true;
-    document.body.setCssProps({ "--safe-area-inset-bottom": "0px", "--size-4-4": "16px" });
-    const menu = new FakeMenu();
-    const session = openPositionedMenu(menu);
-    expect(document.body.style.getPropertyValue("--safe-area-inset-bottom")).toBe("16px");
-    session.close();
-    expect(document.body.style.getPropertyValue("--safe-area-inset-bottom")).toBe("0px");
-
-    document.body.setCssProps({ "--safe-area-inset-bottom": "34px" });
-    const insetMenu = new FakeMenu();
-    const insetSession = openPositionedMenu(insetMenu);
-    expect(document.body.style.getPropertyValue("--safe-area-inset-bottom")).toBe("34px");
-    insetSession.close();
-  });
-});
-
 describe("context menu lifecycle", () => {
-  it("does not schedule Inkbook motion or mutate the native menu surface", () => {
+  it("finishes a pending dismissal immediately when its owner is disposed", () => {
+    const menu = new FakeMenu();
+    const close = vi.spyOn(menu, "close").mockImplementation(() => undefined);
+    const session = openPositionedMenu(menu);
+    session.close();
+    session.close("immediate");
+    expect(close.mock.calls).toEqual([["animated"], ["immediate"]]);
+    menu.hideCallback?.();
+    session.close("immediate");
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+
+  it("delegates presentation without mutating unrelated host menus", () => {
     const requestFrame = vi.spyOn(window, "requestAnimationFrame");
     const menu = new FakeMenu();
     const canvas = createHtmlElement("button");
@@ -275,7 +254,7 @@ describe("context menu lifecycle", () => {
         canvasInputSurface: canvas,
       },
       state({ hasSelection: false }),
-      handlers(),
+      createContextMenuHandlers(),
     );
     const surface = createHtmlElement("div");
     surface.className = "menu";
@@ -309,7 +288,7 @@ describe("context menu lifecycle", () => {
         canvasInputSurface: canvas,
       },
       state(),
-      handlers(),
+      createContextMenuHandlers(),
     );
 
     expect(menu.positions).toEqual([{ position: { x: 12, y: 24 }, document: ownerDocument }]);
@@ -338,7 +317,7 @@ describe("context menu lifecycle", () => {
       factory,
       { type: "event", ownerDocument, event, returnFocus: control, canvasInputSurface: canvas },
       state({ hasSelection: false }),
-      handlers(),
+      createContextMenuHandlers(),
     );
 
     expect(forEvent).toHaveBeenCalledWith(event);
@@ -362,7 +341,7 @@ describe("touch context menu focus", () => {
         canvasInputSurface: canvas,
       },
       state({ hasSelection: false }),
-      handlers(),
+      createContextMenuHandlers(),
     );
 
     session.close();

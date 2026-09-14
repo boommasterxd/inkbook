@@ -139,19 +139,21 @@
   font-size: var(--font-ui-medium);
 }
 
-.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-background-options {
+.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="background"])
+  .inkbook-menu-background-options {
   inline-size: 100%;
   margin: 0;
   padding: 0;
 }
 
-.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-background-choices {
+.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="background"])
+  .inkbook-menu-background-choices {
   background: transparent;
   border-radius: 0;
   overflow: visible;
 }
 
-.inkbook-adaptive-panel-layer[data-platform="phone"]
+.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="background"])
   .inkbook-menu-background-options
   .inkbook-menu-background-choice {
   background: var(--interactive-normal);
@@ -163,21 +165,24 @@
   position: relative;
 }
 
-.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-background-choice:first-child {
+.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="background"])
+  .inkbook-menu-background-choice:first-child {
   border-start-start-radius: var(--touch-radius-xxs);
   border-start-end-radius: var(--touch-radius-xxs);
 }
 
-.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-background-choice:last-child {
+.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="background"])
+  .inkbook-menu-background-choice:last-child {
   border-end-start-radius: var(--touch-radius-xxs);
   border-end-end-radius: var(--touch-radius-xxs);
 }
 
-.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-background-choice:only-child {
+.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="background"])
+  .inkbook-menu-background-choice:only-child {
   border-radius: var(--touch-radius-xl);
 }
 
-.inkbook-adaptive-panel-layer[data-platform="phone"]
+.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="background"])
   .inkbook-menu-background-choice:not(:last-child)::after {
   background-color: var(--menu-divider-color);
   block-size: var(--menu-divider-width);
@@ -190,37 +195,42 @@
   position: absolute;
 }
 
-.inkbook-adaptive-panel-layer[data-platform="phone"][data-inkbook-keyboard-navigation="true"]
+.inkbook-adaptive-panel-layer[data-platform="phone"]:where(
+    [data-kind="background"]
+  )[data-inkbook-keyboard-navigation="true"]
   .inkbook-menu-background-choice:focus {
   outline: 2px solid var(--interactive-accent);
   outline-offset: -2px;
   z-index: 1;
 }
 
-.inkbook-adaptive-panel-layer[data-platform="phone"]
+.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="background"])
   .inkbook-menu-background-options
   .inkbook-menu-background-choice:hover {
   background: var(--interactive-normal);
 }
 
-.inkbook-adaptive-panel-layer[data-platform="phone"]
+.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="background"])
   .inkbook-menu-background-options
   .inkbook-menu-background-choice:active {
   background: var(--interactive-hover);
 }
 
-.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-background-spacing:not(:empty) {
+.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="background"])
+  .inkbook-menu-background-spacing:not(:empty) {
   background: var(--interactive-normal);
   border-radius: var(--touch-radius-xxs);
   margin-block-start: calc(var(--size-4-2) * 2);
   overflow: hidden;
 }
 
-.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-spacing-control {
+.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="background"])
+  .inkbook-menu-spacing-control {
   padding: var(--size-4-3) var(--size-4-4);
 }
 
-.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-background-separator {
+.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="background"])
+  .inkbook-menu-background-separator {
   display: none;
 }
 

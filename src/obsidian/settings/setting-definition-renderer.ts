@@ -84,6 +84,13 @@ export class SettingDefinitionRenderer {
 
   #renderControl(setting: Setting, definition: SettingDefinitionControl): void {
     const control = definition.control;
+    setting.settingEl.classList.add("inkbook-setting-control-row");
+    setting.settingEl.classList.toggle(
+      "inkbook-setting-stacked-control",
+      control.type !== "toggle",
+    );
+    setting.infoEl.classList.add("inkbook-setting-info");
+    setting.controlEl.classList.add("inkbook-setting-controls");
     const value = this.#host.getControlValue(control.key);
     if (control.type === "toggle") {
       setting.addToggle((toggle) =>

@@ -229,6 +229,16 @@
   text-align: end;
 }
 
+.inkbook-menu-controls .inkbook-menu-stepper .inkbook-menu-value {
+  text-align: center;
+}
+
+.inkbook-menu-stepper .inkbook-menu-value-field {
+  block-size: auto;
+  place-self: stretch center;
+  font-variant-numeric: tabular-nums;
+}
+
 .inkbook-adaptive-panel-layer:where([data-inkbook-keyboard-navigation="true"])
   .inkbook-menu-value-field:focus-within {
   outline: 2px solid var(--interactive-accent);
@@ -251,11 +261,6 @@
   display: grid;
   gap: var(--size-4-2);
   grid-template-columns: 36px 1fr 36px;
-}
-
-.inkbook-menu-stepper output {
-  font-variant-numeric: tabular-nums;
-  text-align: center;
 }
 
 .inkbook-menu-stepper-button svg {
@@ -381,7 +386,8 @@
   gap: var(--size-4-4);
 }
 
-.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-menu-control {
+.inkbook-adaptive-panel-layer[data-platform="phone"]:where([data-kind="style"])
+  .inkbook-menu-control {
   background: var(--interactive-normal);
   border: 0;
   border-radius: var(--touch-radius-xxs);
