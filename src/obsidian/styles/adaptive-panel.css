@@ -125,6 +125,7 @@
 
 .inkbook-adaptive-panel-layer[data-platform="phone"] {
   pointer-events: auto;
+  transition: block-size var(--inkbook-adaptive-panel-duration) ease-out;
 }
 
 .inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel-backdrop {
@@ -221,7 +222,8 @@
 
 .inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-adaptive-panel-scroll {
   max-block-size: calc(var(--inkbook-adaptive-panel-maximum-height, 60vh) - 16px);
-  padding: var(--size-4-2) var(--size-4-4) max(var(--safe-area-inset-bottom), var(--size-4-4));
+  padding: var(--size-4-2) var(--size-4-4)
+    max(calc(var(--safe-area-inset-bottom) - var(--keyboard-height, 0px)), var(--size-4-4));
   scrollbar-gutter: auto;
   touch-action: pan-down;
 }
@@ -297,6 +299,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .inkbook-adaptive-panel-layer,
   .inkbook-adaptive-panel,
   .inkbook-adaptive-panel-backdrop {
     animation: none !important;
@@ -352,4 +355,12 @@
     opacity: 1;
     translate: 0 0;
   }
+}
+
+.inkbook-adaptive-panel-layer[data-platform="phone"] .inkbook-phone-keyboard-inset {
+  block-size: var(--keyboard-height, 0);
+  inline-size: 0;
+  pointer-events: none;
+  position: absolute;
+  visibility: hidden;
 }

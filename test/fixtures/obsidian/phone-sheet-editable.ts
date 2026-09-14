@@ -42,3 +42,40 @@ export function createPhoneSheetEditableFixture() {
   scroll.scrollTop = 100;
   return { ...fixture, frames, viewport, input, scroll, scrollRead, inputRead };
 }
+
+/** Drives the host CSS inset boundary without dispatching viewport events. */
+export function installKeyboardInsetObserver() {
+  let probe: Element | undefined;
+  let notify: (() => void) | undefined;
+  const disconnected = vi.fn();
+  vi.spyOn(window, "ResizeObserver").mockImplementation(
+    class implements ResizeObserver {
+      readonly #callback: ResizeObserverCallback;
+      #isProbe = false;
+      public constructor(callback: ResizeObserverCallback) {
+        this.#callback = callback;
+      }
+      public observe(target: Element): void {
+        if (!target.classList.contains("inkbook-phone-keyboard-inset")) return;
+        this.#isProbe = true;
+        probe = target;
+        notify = () => this.#callback([], this);
+      }
+      public unobserve(): void {
+        /* No observations are delivered automatically. */
+      }
+      public disconnect(): void {
+        if (this.#isProbe) disconnected();
+      }
+    },
+  );
+  return {
+    disconnected,
+    resize(height: number): void {
+      if (probe === undefined || notify === undefined)
+        throw new Error("No keyboard inset observer.");
+      Object.defineProperty(probe, "offsetHeight", { configurable: true, value: height });
+      notify();
+    },
+  };
+}

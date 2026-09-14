@@ -12,14 +12,58 @@ interface PanelPlacementOptions {
 export class AdaptivePanelPlacement {
   readonly #options: PanelPlacementOptions;
   readonly #phoneHeight = new PhoneSheetHeight();
+  #keyboardProbe: HTMLElement | undefined;
 
   public constructor(options: PanelPlacementOptions) {
     this.#options = options;
   }
 
-  public maximumScrollHeight(): number {
-    const { ownerWindow, surface } = this.#options;
+  public observeKeyboard(onResize: () => void): () => void {
+    if (!Platform.isPhone) return () => undefined;
+    const { layer, ownerWindow } = this.#options;
+    const probe = layer.createDiv({ cls: "inkbook-phone-keyboard-inset" });
+    probe.setAttribute("aria-hidden", "true");
+    this.#keyboardProbe = probe;
+    const resizeObserverConstructor = (
+      ownerWindow as Window & { readonly ResizeObserver?: typeof ResizeObserver }
+    ).ResizeObserver;
+    const observer =
+      resizeObserverConstructor === undefined ? undefined : new resizeObserverConstructor(onResize);
+    observer?.observe(probe);
+    const onTransitionEnd = (event: TransitionEvent): void => {
+      if (
+        event.target === layer &&
+        (event.propertyName === "height" || event.propertyName === "block-size")
+      )
+        onResize();
+    };
+    layer.addEventListener("transitionend", onTransitionEnd);
+    return () => {
+      layer.removeEventListener("transitionend", onTransitionEnd);
+      observer?.disconnect();
+      probe.remove();
+      this.#keyboardProbe = undefined;
+    };
+  }
+
+  public viewport(): ReturnType<typeof readMenuViewport> {
+    const { ownerWindow } = this.#options;
     const viewport = readMenuViewport(ownerWindow);
+    return Platform.isPhone
+      ? this.#phoneHeight.viewport(
+          viewport,
+          ownerWindow.innerHeight,
+          this.#keyboardProbe?.offsetHeight ?? 0,
+        )
+      : viewport;
+  }
+
+  public maximumScrollHeight(): number {
+    return this.#maximumScrollHeight(this.viewport());
+  }
+
+  #maximumScrollHeight(viewport: ReturnType<typeof readMenuViewport>): number {
+    const { ownerWindow, surface } = this.#options;
     return Math.max(
       0,
       Platform.isPhone
@@ -33,8 +77,9 @@ export class AdaptivePanelPlacement {
   }
 
   public position(): void {
-    const { layer, surface, anchor: trigger, ownerWindow } = this.#options;
-    const viewport = readMenuViewport(ownerWindow);
+    const { layer, surface, anchor: trigger } = this.#options;
+    const viewport = this.viewport();
+    const maximumHeight = Platform.isPhone ? this.#maximumScrollHeight(viewport) + 16 : 0;
     for (const property of ["top", "height", "left", "width"] as const) {
       layer.style.setProperty(
         `--inkbook-adaptive-panel-viewport-${property}`,
@@ -44,7 +89,7 @@ export class AdaptivePanelPlacement {
     if (Platform.isPhone) {
       layer.style.setProperty(
         "--inkbook-adaptive-panel-maximum-height",
-        `${String(this.maximumScrollHeight() + 16)}px`,
+        `${String(maximumHeight)}px`,
       );
       return;
     }

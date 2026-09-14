@@ -225,7 +225,11 @@ describe("owned phone menus", () => {
     expect(element.style.getPropertyValue("--inkbook-adaptive-panel-entry-duration")).toBe(
       kind === "context" ? "120ms" : "220ms",
     );
-    expect(element.style.getPropertyValue("--inkbook-adaptive-panel-duration")).toBe("220ms");
+    expect(
+      element
+        .closest<HTMLElement>(".inkbook-adaptive-panel-layer")
+        ?.style.getPropertyValue("--inkbook-adaptive-panel-duration"),
+    ).toBe("220ms");
     expect(nativeModalStack(document)).toHaveLength(1);
     expect(test.keymap.pushScope).not.toHaveBeenCalled();
     vi.advanceTimersToNextFrame();

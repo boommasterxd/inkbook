@@ -85,7 +85,9 @@ describe("AdaptivePanel styling boundary", () => {
       "inset-inline: var(--safe-area-inset-left) var(--safe-area-inset-right)",
     );
     expect(scroll).toContain("var(--inkbook-adaptive-panel-maximum-height, 60vh) - 16px");
-    expect(scroll).toContain("max(var(--safe-area-inset-bottom), var(--size-4-4))");
+    expect(scroll).toContain(
+      "max(calc(var(--safe-area-inset-bottom) - var(--keyboard-height, 0px)), var(--size-4-4))",
+    );
     expect(scroll).toContain("touch-action: pan-down");
     expect(grabber).toContain("background: var(--text-faint)");
     expect(grabber).toContain("inline-size: 15%");

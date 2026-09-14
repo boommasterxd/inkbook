@@ -3,7 +3,6 @@ import { installMenuEscapeScope } from "./menu-escape-scope";
 
 import { effectiveTransitionDuration } from "../runtime/effective-motion";
 import { registerFocusNavigation } from "../runtime/focus-navigation";
-import { readMenuViewport } from "./menu-viewport";
 import { revealPhoneSheetEditable } from "./phone-sheet-editable";
 import { menuDomWindow } from "./menu-dom";
 import type { FocusTargetPort } from "./menu-ports";
@@ -100,7 +99,7 @@ export class AdaptivePanelSession extends Component {
     this.#surface.setAttribute("role", "dialog");
     this.#surface.tabIndex = -1;
     if (Platform.isPhone) this.#surface.setAttribute("aria-modal", "true");
-    this.#surface.style.setProperty(
+    this.#layer.style.setProperty(
       "--inkbook-adaptive-panel-duration",
       `${String(this.#durationMs)}ms`,
     );
@@ -293,7 +292,7 @@ export class AdaptivePanelSession extends Component {
       if (!Platform.isPhone || this.#positionRequested) this.#position();
       this.#positionRequested = false;
       if (this.#revealEditable && Platform.isPhone && this.#isTopmostLayer()) {
-        revealPhoneSheetEditable(this.#scroll, readMenuViewport(this.#options.ownerWindow));
+        revealPhoneSheetEditable(this.#scroll, this.#placement.viewport());
       }
       this.#revealEditable = false;
     });
@@ -456,6 +455,7 @@ export class AdaptivePanelSession extends Component {
 
   #registerViewportEvents(): void {
     const reposition = (): void => this.#requestPosition(true);
+    this.register(this.#placement.observeKeyboard(reposition));
     const repositionForDocumentScroll = (event: Event): void => {
       const target = event.target;
       if (isNode(target) && this.#surface.contains(target)) return;

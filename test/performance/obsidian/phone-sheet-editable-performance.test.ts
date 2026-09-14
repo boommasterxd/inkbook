@@ -3,19 +3,25 @@
 import { Platform } from "obsidian";
 import { expect, it, vi } from "vitest";
 import { installObsidianDomHelpers } from "../../adapters/obsidian/dom";
-import { createPhoneSheetEditableFixture } from "../../fixtures/obsidian/phone-sheet-editable";
+import {
+  createPhoneSheetEditableFixture,
+  installKeyboardInsetObserver,
+} from "../../fixtures/obsidian/phone-sheet-editable";
 import { interactionP99, measureInteractionFrames } from "../interaction-refresh-profile";
 import { timingBudget } from "../timing-budget";
 
 it("coalesces viewport correction with two geometry reads inside the 240 Hz frame budget", () => {
   installObsidianDomHelpers();
   Platform.isPhone = true;
+  const inset = installKeyboardInsetObserver();
   const fixture = createPhoneSheetEditableFixture();
   try {
     const durations = measureInteractionFrames(() => {
       fixture.scroll.scrollTop = 100;
-      for (let event = 0; event < 3; event += 1)
+      for (let event = 0; event < 3; event += 1) {
         fixture.viewport.dispatchEvent(new Event("resize"));
+        inset.resize(350);
+      }
       expect(fixture.frames.pendingCount).toBe(1);
       fixture.frames.runNext(0);
     });

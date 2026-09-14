@@ -30,7 +30,11 @@ describe.each([false, true])("wide menu entrance, tablet=%s", (tablet) => {
       expect(surface?.style.getPropertyValue("--inkbook-adaptive-panel-entry-duration")).toBe(
         "120ms",
       );
-      expect(surface?.style.getPropertyValue("--inkbook-adaptive-panel-duration")).toBe("220ms");
+      expect(
+        surface
+          ?.closest<HTMLElement>(".inkbook-adaptive-panel-layer")
+          ?.style.getPropertyValue("--inkbook-adaptive-panel-duration"),
+      ).toBe("220ms");
       vi.advanceTimersToNextFrame();
       vi.advanceTimersByTime(119);
       expect(surface?.dataset.presence).toBe("entering");
@@ -53,6 +57,11 @@ describe.each([false, true])("wide menu entrance, tablet=%s", (tablet) => {
     const fixture = createAdaptivePanelFixture("style", { motion: "reduced" });
     const surface = document.querySelector<HTMLElement>(".inkbook-adaptive-panel");
     expect(surface?.style.getPropertyValue("--inkbook-adaptive-panel-entry-duration")).toBe("0ms");
+    expect(
+      surface
+        ?.closest<HTMLElement>(".inkbook-adaptive-panel-layer")
+        ?.style.getPropertyValue("--inkbook-adaptive-panel-duration"),
+    ).toBe("0ms");
     vi.advanceTimersToNextFrame();
     expect(surface?.dataset.presence).toBeUndefined();
     expect(vi.getTimerCount()).toBe(0);
