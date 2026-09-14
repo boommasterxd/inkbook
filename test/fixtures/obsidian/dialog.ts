@@ -1,3 +1,4 @@
+import { Platform } from "obsidian";
 import { afterEach, beforeEach, vi } from "vitest";
 
 import { installObsidianDomHelpers } from "../../adapters/obsidian/dom";
@@ -19,4 +20,18 @@ export function dialogButton(label: string): HTMLButtonElement {
   );
   if (found === undefined) throw new Error(`Missing button: ${label}`);
   return found;
+}
+
+export function installPhoneDialogTestLifecycle(): void {
+  installDialogTestLifecycle();
+  beforeEach(() => {
+    Platform.isPhone = true;
+    Platform.isMobile = true;
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    Platform.isPhone = false;
+    Platform.isMobile = false;
+    vi.useRealTimers();
+  });
 }

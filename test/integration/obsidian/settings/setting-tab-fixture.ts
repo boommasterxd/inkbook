@@ -167,3 +167,9 @@ export function renderTool(tab: InkbookSettingTab, groupHeading: string, name: s
 }
 
 export const confirmAction = confirmActionMock;
+
+export function renderExpandedTool(tab: InkbookSettingTab, groupHeading: string, name: string) {
+  const rendered = renderTool(tab, groupHeading, name);
+  requiredElement<HTMLButtonElement>(rendered.container, ".inkbook-settings-tool-trigger").click();
+  return rendered;
+}

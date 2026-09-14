@@ -1,3 +1,5 @@
+import type { PhoneSheetNavigation } from "../menus/panel-page";
+import type { PhoneSheetHostPort } from "../menus/phone-sheet-host";
 import type { Keymap } from "obsidian";
 
 import type { InkbookDeviceSettingsV2, InkbookSettingsV4 } from "../../domain/settings/types";
@@ -21,11 +23,12 @@ export interface WorkspaceActiveSceneOptions {
   readonly editorContext: ActiveDocumentEditorContext;
   readonly embedActions: ObsidianEmbedActions;
   readonly isCurrent: (scene: ActiveInkbookScene) => boolean;
+  readonly createPhoneSheetHost?: () => PhoneSheetHostPort;
   readonly keymap: Pick<Keymap, "popScope" | "pushScope"> | undefined;
   readonly markFirstStroke: () => void;
   readonly onLock: () => void;
-  readonly onOpenSettings: () => void;
-  readonly onOpenShortcuts: () => void;
+  readonly onOpenSettings: (navigation?: PhoneSheetNavigation) => void;
+  readonly onOpenShortcuts: (navigation?: PhoneSheetNavigation) => void;
   readonly scheme: "dark" | "light";
   readonly showFeedback: (code: InkbookFeedbackCode) => void;
   readonly sliceBudgetMs: () => number;
@@ -44,6 +47,9 @@ export function createWorkspaceActiveScene(
     deviceSettings: options.deviceSettings,
     history: options.editorContext.history,
     ...(options.keymap === undefined ? {} : { keymap: options.keymap }),
+    ...(options.createPhoneSheetHost === undefined
+      ? {}
+      : { createPhoneSheetHost: options.createPhoneSheetHost }),
     model: options.editorContext.model,
     onLock: options.onLock,
     onFeedback: options.showFeedback,

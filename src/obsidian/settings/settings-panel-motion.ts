@@ -75,7 +75,6 @@ export class SettingsPanelMotion {
     let timeout: number | undefined;
     const cancel = (): void => {
       this.#panel.removeEventListener("transitionend", onTransitionEnd);
-      this.#panel.removeEventListener("transitioncancel", finish);
       if (timeout !== undefined) ownerWindow.clearTimeout(timeout);
       this.#cancelTransition = undefined;
       delete this.#panel.dataset.resizing;
@@ -93,8 +92,8 @@ export class SettingsPanelMotion {
         finish();
     };
     this.#cancelTransition = cancel;
+    // Ignore queued cancellation from a replaced transition; completion has a bounded fallback.
     this.#panel.addEventListener("transitionend", onTransitionEnd);
-    this.#panel.addEventListener("transitioncancel", finish);
     timeout = ownerWindow.setTimeout(finish, PANEL_TRANSITION_TIMEOUT_MS);
   }
 }

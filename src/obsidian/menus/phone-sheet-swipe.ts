@@ -5,6 +5,8 @@ const DISMISS_VELOCITY_PX_PER_MS = 0.45;
 interface PhoneSheetSwipeOptions {
   readonly backdrop: HTMLElement;
   readonly close: () => void;
+  readonly onDragStart?: () => void;
+  readonly onDragCancel?: () => void;
   readonly durationMs: number;
   readonly ownerWindow: Window;
   readonly scroll: HTMLElement;
@@ -12,9 +14,9 @@ interface PhoneSheetSwipeOptions {
 }
 
 interface SwipeGesture {
-  distance: number;
   dragging: boolean;
   height: number;
+  offset: number;
   readonly pointerId: number;
   readonly startTime: number;
   readonly startX: number;
@@ -23,6 +25,7 @@ interface SwipeGesture {
 }
 
 export class PhoneSheetSwipeController {
+  #capturedPointerId: number | undefined;
   #clickTimer: number | undefined;
   #clickTarget: Element | undefined;
   #dragFrame: number | undefined;
@@ -55,6 +58,9 @@ export class PhoneSheetSwipeController {
   };
 
   public handleLostPointerCapture = (event: PointerEvent): void => {
+    const surface = this.#options.surface;
+    if (event.target !== surface || surface.hasPointerCapture?.(event.pointerId)) return;
+    if (this.#capturedPointerId === event.pointerId) this.#capturedPointerId = undefined;
     this.#interruptGesture(event);
   };
 
@@ -66,6 +72,7 @@ export class PhoneSheetSwipeController {
     const gesture = this.#gesture;
     if (gesture?.pointerId !== event.pointerId) return;
     this.#gesture = undefined;
+    this.#releasePointer();
     if (gesture.dragging) this.#settle();
   }
 
@@ -76,9 +83,9 @@ export class PhoneSheetSwipeController {
     const fromHandle = target.closest(".inkbook-adaptive-panel-drag-region") !== null;
     if (!fromHandle && this.#options.scroll.scrollTop > 0) return;
     this.#gesture = {
-      distance: 0,
       dragging: false,
       height: 0,
+      offset: 0,
       pointerId: event.pointerId,
       startTime: event.timeStamp,
       startX: event.clientX,
@@ -95,22 +102,28 @@ export class PhoneSheetSwipeController {
     const deltaY = event.clientY - gesture.startY;
     if (!gesture.dragging && !this.#claimDownwardGesture(event, deltaX, deltaY)) return;
     event.preventDefault();
-    gesture.distance = Math.max(0, deltaY);
-    this.#renderDrag(gesture.distance, gesture.height);
+    const distance = Math.max(0, gesture.offset + deltaY);
+    this.#renderDrag(distance, gesture.height);
   };
 
   public handlePointerUp = (event: PointerEvent): void => {
     const gesture = this.#gesture;
     if (gesture?.pointerId !== event.pointerId) return;
     this.#gesture = undefined;
+    this.#releasePointer();
     if (!gesture.dragging) return;
     event.preventDefault();
     this.#suppressFollowingClick(gesture.target);
-    const distance = gesture.distance;
+    const distance = Math.max(0, gesture.offset + event.clientY - gesture.startY);
+    this.#renderDrag(distance, gesture.height);
+    this.#flushPendingDrag();
     const elapsed = Math.max(1, event.timeStamp - gesture.startTime);
     const height = gesture.height;
     const threshold = height > 0 ? height * DISMISS_DISTANCE_RATIO : Infinity;
-    if (distance >= threshold || distance / elapsed >= DISMISS_VELOCITY_PX_PER_MS) {
+    if (
+      distance >= threshold ||
+      Math.max(0, distance - gesture.offset) / elapsed >= DISMISS_VELOCITY_PX_PER_MS
+    ) {
       this.#options.close();
       return;
     }
@@ -119,8 +132,10 @@ export class PhoneSheetSwipeController {
 
   public prepareClose(): void {
     this.#gesture = undefined;
+    this.#releasePointer();
     this.#cancelResetWork();
-    this.#cancelDragFrame();
+    this.#flushPendingDrag();
+    this.#captureExitPosition();
     delete this.#options.surface.dataset.swipeState;
     delete this.#options.backdrop.dataset.swipeState;
   }
@@ -136,12 +151,50 @@ export class PhoneSheetSwipeController {
     const gesture = this.#gesture;
     if (gesture === undefined || gesture.dragging) return;
     gesture.dragging = true;
+    this.#options.onDragStart?.();
     gesture.height = this.#options.surface.getBoundingClientRect().height;
+    const surface = this.#options.surface;
+    const interrupted =
+      surface.dataset.swipeState === "settling" || surface.dataset.presence === "entering";
+    if (interrupted) gesture.offset = this.#visibleDistance(gesture.height);
     this.#cancelResetWork();
     this.#cancelDragFrame();
     this.#options.surface.dataset.swipeState = "dragging";
     this.#options.backdrop.dataset.swipeState = "dragging";
+    delete surface.dataset.presence;
+    this.#clearExitPosition();
+    if (interrupted) this.#applyDrag(gesture.offset, gesture.height);
+    this.#capturePointer(gesture.pointerId);
     event.preventDefault();
+  }
+
+  #capturePointer(pointerId: number): void {
+    const surface = this.#options.surface;
+    if (typeof surface.setPointerCapture !== "function") return;
+    try {
+      surface.setPointerCapture(pointerId);
+      this.#capturedPointerId = pointerId;
+    } catch {
+      // Synthetic or already-ended pointers cannot acquire native capture.
+    }
+  }
+
+  #releasePointer(): void {
+    const pointerId = this.#capturedPointerId;
+    this.#capturedPointerId = undefined;
+    const surface = this.#options.surface;
+    if (pointerId !== undefined && surface.hasPointerCapture?.(pointerId)) {
+      surface.releasePointerCapture(pointerId);
+    }
+  }
+
+  #visibleDistance(height: number): number {
+    const translate = this.#options.ownerWindow.getComputedStyle(this.#options.surface).translate;
+    const vertical = translate.trim().split(/\s+/)[1] ?? "0";
+    const value = Number.parseFloat(vertical);
+    return Number.isFinite(value)
+      ? Math.max(0, vertical.endsWith("%") ? (height * value) / 100 : value)
+      : 0;
   }
 
   #claimDownwardGesture(event: PointerEvent, deltaX: number, deltaY: number): boolean {
@@ -179,18 +232,16 @@ export class PhoneSheetSwipeController {
   }
 
   #applyDrag(distance: number, height: number): void {
-    this.#options.surface.style.setProperty(
-      "--inkbook-adaptive-panel-drag",
-      `${String(distance)}px`,
-    );
+    this.#options.surface.style.setProperty("translate", `0 ${String(distance)}px`);
     const effectiveHeight = Math.max(1, height);
     this.#options.backdrop.style.setProperty(
-      "--inkbook-adaptive-panel-backdrop-opacity",
+      "opacity",
       String(1 - Math.min(1, distance / effectiveHeight)),
     );
   }
 
   #settle(): void {
+    this.#options.onDragCancel?.();
     if (this.#options.durationMs === 0) {
       this.#resetPresentation();
       return;
@@ -200,8 +251,8 @@ export class PhoneSheetSwipeController {
     this.#options.backdrop.dataset.swipeState = "settling";
     this.#resetFrame = this.#options.ownerWindow.requestAnimationFrame(() => {
       this.#resetFrame = undefined;
-      this.#options.surface.style.removeProperty("--inkbook-adaptive-panel-drag");
-      this.#options.backdrop.style.removeProperty("--inkbook-adaptive-panel-backdrop-opacity");
+      this.#options.surface.style.removeProperty("translate");
+      this.#options.backdrop.style.removeProperty("opacity");
       this.#resetTimer = this.#options.ownerWindow.setTimeout(
         () => this.#resetPresentation(),
         this.#options.durationMs,
@@ -257,6 +308,32 @@ export class PhoneSheetSwipeController {
     this.#cancelDragFrame();
     delete this.#options.surface.dataset.swipeState;
     delete this.#options.backdrop.dataset.swipeState;
+    this.#options.surface.style.removeProperty("translate");
+    this.#options.backdrop.style.removeProperty("opacity");
+    this.#clearExitPosition();
+  }
+
+  #captureExitPosition(): void {
+    const { surface, backdrop, ownerWindow } = this.#options;
+    const moving =
+      surface.dataset.swipeState === "settling" || surface.dataset.presence === "entering";
+    const translate = moving
+      ? ownerWindow.getComputedStyle(surface).translate
+      : surface.style.translate;
+    const opacity = moving
+      ? ownerWindow.getComputedStyle(backdrop).opacity
+      : backdrop.style.opacity;
+    if (translate)
+      surface.style.setProperty(
+        "--inkbook-adaptive-panel-drag",
+        translate.trim().split(/\s+/)[1] ?? "0px",
+      );
+    if (opacity) backdrop.style.setProperty("--inkbook-adaptive-panel-backdrop-opacity", opacity);
+    surface.style.removeProperty("translate");
+    backdrop.style.removeProperty("opacity");
+  }
+
+  #clearExitPosition(): void {
     this.#options.surface.style.removeProperty("--inkbook-adaptive-panel-drag");
     this.#options.backdrop.style.removeProperty("--inkbook-adaptive-panel-backdrop-opacity");
   }

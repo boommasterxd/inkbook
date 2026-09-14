@@ -51,17 +51,21 @@ function renderToolSection(
     title: spec.name,
   });
   const controls = panelContent.createDiv({ cls: "inkbook-settings-tool-controls" });
-  renderSettingsControlContent(controls, {
-    controls: () => createToolStyleControls(values.getDefaults(), spec.tool),
-    descriptions: spec.controlDescriptions,
-    idPrefix: panelId,
-    onChange: (controlId, value) => setToolControl(spec, values, controlId, value),
-    ownerDocument: setting.settingEl.ownerDocument,
-  });
+  let initialized = false;
 
   const panelMotion = new SettingsPanelMotion(panel, values.getMotion);
   const toggle = (): void => {
     const expanded = trigger.getAttribute("aria-expanded") !== "true";
+    if (expanded && !initialized) {
+      renderSettingsControlContent(controls, {
+        controls: () => createToolStyleControls(values.getDefaults(), spec.tool),
+        descriptions: spec.controlDescriptions,
+        idPrefix: panelId,
+        onChange: (controlId, value) => setToolControl(spec, values, controlId, value),
+        ownerDocument: setting.settingEl.ownerDocument,
+      });
+      initialized = true;
+    }
     trigger.setAttribute("aria-expanded", String(expanded));
     panelMotion.setExpanded(expanded);
   };

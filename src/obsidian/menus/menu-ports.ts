@@ -1,14 +1,17 @@
+import type { PhoneSheetNavigation } from "./panel-page";
+
 /**
  * The menu layer depends on these small ports instead of importing Obsidian
- * types into the editor. The host adapter can pass Obsidian's `Menu` and
- * `MenuItem` through these interfaces without leaking host objects into the
- * menu definition or its tests.
+ * types into the editor. The owned menu renderer implements these interfaces
+ * without leaking host objects into menu definitions or their tests.
  */
 
 export interface MenuPosition {
   readonly x: number;
   readonly y: number;
   readonly width?: number;
+  /** Center over the anchor width, clamped to the visible viewport. */
+  readonly centered?: boolean;
   readonly overlap?: boolean;
   readonly left?: boolean;
 }
@@ -21,6 +24,7 @@ export interface MenuItemPort {
   setDisabled(disabled: boolean): MenuItemPort;
   setWarning(isWarning: boolean): MenuItemPort;
   setIsLabel(isLabel: boolean): MenuItemPort;
+  setKeepOpen?(keepOpen: boolean): MenuItemPort;
   onClick(callback: (event: unknown) => void): MenuItemPort;
 }
 
@@ -29,12 +33,13 @@ export interface MenuPort {
   addSeparator(): MenuPort;
   setParentElement?(element: HTMLElement): MenuPort;
   showAtPosition(position: MenuPosition, ownerDocument: Document): MenuPort;
+  getPhoneNavigation?(): PhoneSheetNavigation | undefined;
   onHide(callback: () => void): void;
-  close(): void;
+  close(mode?: "animated" | "immediate" | "handoff"): void;
 }
 
 export interface MenuFactoryPort {
-  create(): MenuPort;
+  create(kind?: "context" | "menu"): MenuPort;
   forEvent(event: MouseEvent | PointerEvent): MenuPort;
 }
 

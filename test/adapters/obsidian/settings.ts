@@ -2,13 +2,32 @@ interface TestApp {
   readonly workspace: { readonly containerEl: HTMLElement };
 }
 
+const modalStacks = new WeakMap<Document, Modal[]>();
+
+export function nativeModalStack(ownerDocument: Document): readonly Modal[] {
+  return (modalStacks.get(ownerDocument) ?? []).filter((modal) => modal.containerEl.isConnected);
+}
+
+/** Models the public Modal.close callback invoked by native navigation history. */
+export function simulateNativeModalBack(ownerDocument: Document): boolean {
+  const stack = nativeModalStack(ownerDocument);
+  const modal = stack[stack.length - 1];
+  if (modal === undefined) return false;
+  modal.close();
+  return true;
+}
+
 export class Modal {
   readonly containerEl: HTMLElement;
   readonly titleEl: HTMLElement;
   readonly contentEl: HTMLElement;
   readonly modalEl: HTMLElement;
   readonly #escape = (event: KeyboardEvent): void => {
-    if (event.key === "Escape") this.close();
+    const stack = nativeModalStack(this.modalEl.ownerDocument);
+    if (event.key === "Escape" && !event.defaultPrevented && stack[stack.length - 1] === this) {
+      event.preventDefault();
+      this.close();
+    }
   };
 
   public constructor(readonly app: TestApp) {
@@ -27,12 +46,19 @@ export class Modal {
   }
 
   public open(): void {
+    const stack = [...nativeModalStack(this.modalEl.ownerDocument)];
+    if (!stack.includes(this)) stack.push(this);
+    modalStacks.set(this.modalEl.ownerDocument, stack);
     this.modalEl.ownerDocument.body.append(this.containerEl);
     this.modalEl.ownerDocument.addEventListener("keydown", this.#escape);
     this.onOpen();
   }
 
   public close(): void {
+    modalStacks.set(
+      this.modalEl.ownerDocument,
+      nativeModalStack(this.modalEl.ownerDocument).filter((modal) => modal !== this),
+    );
     this.modalEl.ownerDocument.removeEventListener("keydown", this.#escape);
     this.onClose();
     this.containerEl.remove();
@@ -140,9 +166,13 @@ class TextComponent {
 
 export class Setting {
   readonly settingEl: HTMLElement;
+  readonly infoEl: HTMLElement;
+  readonly controlEl: HTMLElement;
 
   public constructor(container: HTMLElement) {
     this.settingEl = container;
+    this.infoEl = container.appendChild(createOwnedElement(container.ownerDocument, "div"));
+    this.controlEl = container.appendChild(createOwnedElement(container.ownerDocument, "div"));
   }
 
   public setName(name: string): this {
@@ -169,22 +199,22 @@ export class Setting {
   }
 
   public addButton(configure: (button: ButtonComponent) => void): this {
-    configure(new ButtonComponent(this.settingEl));
+    configure(new ButtonComponent(this.controlEl));
     return this;
   }
 
   public addToggle(configure: (toggle: ToggleComponent) => void): this {
-    configure(new ToggleComponent(this.settingEl));
+    configure(new ToggleComponent(this.controlEl));
     return this;
   }
 
   public addDropdown(configure: (dropdown: DropdownComponent) => void): this {
-    configure(new DropdownComponent(this.settingEl));
+    configure(new DropdownComponent(this.controlEl));
     return this;
   }
 
   public addText(configure: (text: TextComponent) => void): this {
-    configure(new TextComponent(this.settingEl));
+    configure(new TextComponent(this.controlEl));
     return this;
   }
 }

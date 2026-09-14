@@ -1,3 +1,4 @@
+import type { PhoneSheetHostPort } from "../../menus/phone-sheet-host";
 import type {
   InkbookDeviceSettingsV2,
   SnappingSettingsV1,
@@ -24,6 +25,7 @@ export interface ActiveEditorControllerOptions extends EditorChromeOpenings {
   readonly defaults: ToolDefaultsV1;
   readonly deviceSettings: InkbookDeviceSettingsV2;
   readonly interruptLayoutForInput: () => void;
+  readonly createPhoneSheetHost?: () => PhoneSheetHostPort;
   readonly keymap?: Pick<Keymap, "popScope" | "pushScope">;
   readonly history: ActiveEditorHistory;
   readonly menuFactory: MenuFactoryPort;

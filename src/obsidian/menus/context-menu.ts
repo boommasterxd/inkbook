@@ -1,7 +1,5 @@
-import { Platform } from "obsidian";
-
 import { CAUTION_ERASER_ICON_ID } from "../../rendering/ui/icon-ids";
-import { acquireNativeMenuSafeAreaFallback, setMenuItemTitle } from "./menu-dom";
+import { setMenuItemTitle } from "./menu-dom";
 import type { FocusTargetPort, MenuFactoryPort, MenuPort, MenuPosition } from "./menu-ports";
 
 const CONTEXT_MENU_ICONS = {
@@ -179,8 +177,8 @@ function configureCanvasItems(
 }
 
 /**
- * Adds the complete context menu in the contract's stable order. Obsidian owns
- * presentation, keyboard navigation, dismissal, and mobile bottom sheets.
+ * Adds the complete context menu in the contract's stable order.
+ * The menu port owns presentation, keyboard navigation, and dismissal.
  */
 export function populateContextMenu(
   menu: MenuPort,
@@ -212,7 +210,7 @@ function focusAfterClose(invocation: ContextMenuInvocation): void {
 }
 
 /**
- * Opens a native menu and returns a lifecycle handle for presentation unload.
+ * Opens an owned menu and returns a lifecycle handle for presentation unload.
  * Focus is restored at most once, including when `close()` triggers `onHide`.
  */
 export function openContextMenu(
@@ -221,16 +219,13 @@ export function openContextMenu(
   state: ContextMenuState,
   handlers: ContextMenuHandlers,
 ): ContextMenuSession {
-  const releaseSafeArea = Platform.isPhone
-    ? acquireNativeMenuSafeAreaFallback(invocation.ownerDocument)
-    : () => undefined;
-  const menu = invocation.type === "event" ? factory.forEvent(invocation.event) : factory.create();
+  const menu =
+    invocation.type === "event" ? factory.forEvent(invocation.event) : factory.create("context");
   let closed = false;
   let closing = false;
   menu.onHide(() => {
     if (closed) return;
     closed = true;
-    releaseSafeArea();
     focusAfterClose(invocation);
     invocation.onClosed?.();
   });
@@ -239,10 +234,10 @@ export function openContextMenu(
     menu.showAtPosition(invocation.position, invocation.ownerDocument);
   }
   return {
-    close: () => {
-      if (closed || closing) return;
+    close: (mode = "animated") => {
+      if (closed || (closing && mode === "animated")) return;
       closing = true;
-      menu.close();
+      menu.close(mode);
     },
   };
 }

@@ -173,7 +173,7 @@ describe("AdaptivePanelSession phone lifecycle", () => {
     expect(surface?.dataset.scrollPosition).toBe("top");
     fixture.control.dispatchEvent(pointer("pointerdown", 10, 7, 0));
     surface?.dispatchEvent(pointer("pointermove", 120, 7, 100));
-    surface?.dispatchEvent(pointer("pointerup", 0, 7, 120));
+    surface?.dispatchEvent(pointer("pointerup", 120, 7, 120));
     expect(document.querySelector(".inkbook-adaptive-panel")).toBeNull();
     expect(fixture.onClosed).toHaveBeenCalledOnce();
   });
@@ -242,15 +242,15 @@ describe("AdaptivePanelSession phone swipe behavior", () => {
     shortSwipe.control.dispatchEvent(pointer("pointerdown", 10, 7, 0));
     shortSurface?.dispatchEvent(pointer("pointermove", 60, 7, 100));
     frames.shift()?.(100);
-    expect(shortSurface?.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("50px");
+    expect(shortSurface?.style.getPropertyValue("translate")).toBe("0 50px");
     shortSurface?.dispatchEvent(pointer("pointermove", 5, 7, 150));
     frames.shift()?.(150);
-    expect(shortSurface?.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("0px");
+    expect(shortSurface?.style.getPropertyValue("translate")).toBe("0 0px");
     shortSurface?.dispatchEvent(pointer("pointerup", 5, 7, 200));
     shortSwipe.control.click();
 
     expect(document.querySelector(".inkbook-adaptive-panel")).not.toBeNull();
-    expect(shortSurface?.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("");
+    expect(shortSurface?.style.getPropertyValue("translate")).toBe("");
     expect(activate).not.toHaveBeenCalled();
     expect(shortSwipe.onClosed).not.toHaveBeenCalled();
     shortSwipe.session.close("immediate");
@@ -266,7 +266,7 @@ describe("AdaptivePanelSession phone swipe behavior", () => {
     cancelledSurface?.dispatchEvent(pointer("pointercancel", 90, 8, 120));
 
     expect(document.querySelector(".inkbook-adaptive-panel")).not.toBeNull();
-    expect(cancelledSurface?.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("");
+    expect(cancelledSurface?.style.getPropertyValue("translate")).toBe("");
     expect(cancelledSwipe.onClosed).not.toHaveBeenCalled();
     cancelledSwipe.session.close("immediate");
   });
@@ -285,7 +285,7 @@ describe("AdaptivePanelSession phone swipe behavior", () => {
     fixture.control.click();
 
     expect(activate).toHaveBeenCalledOnce();
-    expect(surface?.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("");
+    expect(surface?.style.getPropertyValue("translate")).toBe("");
 
     if (scroll !== null) scroll.scrollTop = 20;
     scroll?.dispatchEvent(new Event("scroll"));
@@ -295,7 +295,7 @@ describe("AdaptivePanelSession phone swipe behavior", () => {
     surface?.dispatchEvent(pointer("pointerup", 90, 5, 180));
 
     expect(document.querySelector(".inkbook-adaptive-panel")).not.toBeNull();
-    expect(surface?.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("");
+    expect(surface?.style.getPropertyValue("translate")).toBe("");
     fixture.session.close("immediate");
   });
 
@@ -312,9 +312,9 @@ describe("AdaptivePanelSession phone swipe behavior", () => {
     surface?.dispatchEvent(pointer("pointerup", 50, 9, 300));
     expect(surface?.dataset.swipeState).toBe("settling");
     expect(backdrop?.dataset.swipeState).toBe("settling");
-    expect(surface?.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("40px");
+    expect(surface?.style.getPropertyValue("translate")).toBe("0 40px");
     frames.shift()?.(16);
-    expect(surface?.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("");
+    expect(surface?.style.getPropertyValue("translate")).toBe("");
     vi.runAllTimers();
     expect(surface?.dataset.swipeState).toBeUndefined();
     expect(backdrop?.dataset.swipeState).toBeUndefined();
@@ -357,14 +357,15 @@ describe("AdaptivePanelSession transitions", () => {
   });
 
   it("animates Background content from the height captured before mutation", () => {
+    vi.useFakeTimers();
     const frames = mockAnimationFrames();
     let intrinsicHeight = 100;
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (
       this: HTMLElement,
     ) {
-      if (!this.classList.contains("inkbook-adaptive-panel-scroll")) return rect(0, 0, 0, 0);
+      if (!this.classList.contains("inkbook-adaptive-panel-scroll")) return 0;
       const explicitHeight = Number.parseFloat(this.style.getPropertyValue("block-size"));
-      return rect(0, 0, 199, Number.isFinite(explicitHeight) ? explicitHeight : intrinsicHeight);
+      return Number.isFinite(explicitHeight) ? explicitHeight : intrinsicHeight;
     });
     vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function (
       this: HTMLElement,
@@ -393,6 +394,37 @@ describe("AdaptivePanelSession transitions", () => {
   });
 });
 
+describe("phone tool panel entrance layout", () => {
+  it.each(["style", "background"] as const)(
+    "defers %s height animation until entry completes",
+    (kind) => {
+      vi.useFakeTimers();
+      Platform.isPhone = true;
+      const fixture = createFixture(kind, { motion: "full" });
+      const surface = document.querySelector<HTMLElement>(".inkbook-adaptive-panel");
+      const scroll = surface?.querySelector<HTMLElement>(".inkbook-adaptive-panel-scroll");
+      if (scroll == null) throw new Error("Missing scroll surface.");
+      vi.spyOn(scroll, "getBoundingClientRect").mockReturnValue(rect(0, 0, 360, 100));
+      vi.spyOn(scroll, "scrollHeight", "get").mockReturnValue(180);
+      vi.advanceTimersToNextFrame();
+      expect(surface?.dataset.state).toBe("open");
+      fixture.session.prepareLayoutChange();
+      fixture.session.requestLayout();
+      vi.advanceTimersToNextFrame();
+      expect(surface?.dataset.presence).toBe("entering");
+      expect(scroll.style.blockSize).toBe("");
+      vi.advanceTimersByTime(220);
+      fixture.session.prepareLayoutChange();
+      fixture.session.requestLayout();
+      vi.advanceTimersToNextFrame();
+      expect(surface?.dataset.presence).toBeUndefined();
+      expect(scroll.style.blockSize).toBe("180px");
+      fixture.session.close("immediate");
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+});
+
 function pointer(
   type: string,
   clientY: number,
@@ -414,12 +446,8 @@ function pointer(
 function mockWidePanelGeometry(viewportWidth: number): void {
   vi.spyOn(window, "innerWidth", "get").mockReturnValue(viewportWidth);
   vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
-  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
-    this: HTMLElement,
-  ) {
-    if (this.classList.contains("inkbook-adaptive-panel")) return rect(0, 0, 199, 300);
-    return rect(0, 0, 0, 0);
-  });
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(199);
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(300);
 }
 
 function mockAnimationFrames(): FrameRequestCallback[] {

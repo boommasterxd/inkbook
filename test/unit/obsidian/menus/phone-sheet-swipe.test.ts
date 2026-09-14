@@ -8,17 +8,17 @@ import {
   touchPointer,
 } from "../../../fixtures/obsidian/phone-sheet-swipe";
 
+beforeEach(() => {
+  installObsidianDomHelpers();
+});
+
+afterEach(() => {
+  document.body.replaceChildren();
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
+
 describe("PhoneSheetSwipeController", () => {
-  beforeEach(() => {
-    installObsidianDomHelpers();
-  });
-
-  afterEach(() => {
-    document.body.replaceChildren();
-    vi.restoreAllMocks();
-    vi.useRealTimers();
-  });
-
   it("caches sheet height and coalesces drag writes to the latest frame", () => {
     const fixture = createPhoneSheetSwipeHarness();
     const { frames } = fixture;
@@ -29,15 +29,17 @@ describe("PhoneSheetSwipeController", () => {
     fixture.surface.dispatchEvent(touchPointer("pointermove", 90, 1, 30));
 
     expect(heightRead).toHaveBeenCalledOnce();
-    expect(frames.pending).toBe(1);
     expect(fixture.surface.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("");
+    expect(
+      fixture.backdrop.style.getPropertyValue("--inkbook-adaptive-panel-backdrop-opacity"),
+    ).toBe("");
+    expect(frames.pending).toBe(1);
+    expect(fixture.surface.style.getPropertyValue("translate")).toBe("");
 
     frames.flush();
 
-    expect(fixture.surface.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("80px");
-    expect(
-      fixture.backdrop.style.getPropertyValue("--inkbook-adaptive-panel-backdrop-opacity"),
-    ).toBe("0.6");
+    expect(fixture.surface.style.getPropertyValue("translate")).toBe("0 80px");
+    expect(fixture.backdrop.style.getPropertyValue("opacity")).toBe("0.6");
     expect(heightRead).toHaveBeenCalledOnce();
   });
 
@@ -54,10 +56,10 @@ describe("PhoneSheetSwipeController", () => {
     expect(heightRead).toHaveBeenCalledOnce();
     expect(fixture.surface.dataset.swipeState).toBe("settling");
     expect(frames.pending).toBe(1);
-    expect(fixture.surface.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("40px");
+    expect(fixture.surface.style.getPropertyValue("translate")).toBe("0 40px");
 
     frames.flush();
-    expect(fixture.surface.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("");
+    expect(fixture.surface.style.getPropertyValue("translate")).toBe("");
     vi.runAllTimers();
 
     expect(fixture.surface.dataset.swipeState).toBeUndefined();
@@ -65,14 +67,14 @@ describe("PhoneSheetSwipeController", () => {
     expect(heightRead).toHaveBeenCalledOnce();
   });
 
-  it("cancels queued drag writes when the gesture or controller is closed", () => {
+  it("flushes the last drag before close and clears presentation on disposal", () => {
     const fixture = createPhoneSheetSwipeHarness(300);
     const { controller, frames } = fixture;
 
     beginTouchDrag(fixture, 50, 10);
     controller.prepareClose();
     expect(frames.pending).toBe(0);
-    expect(fixture.surface.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("");
+    expect(fixture.surface.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("40px");
 
     fixture.handle.dispatchEvent(touchPointer("pointerdown", 10, 2, 20));
     fixture.surface.dispatchEvent(touchPointer("pointermove", 50, 2, 30));
@@ -90,6 +92,68 @@ function beginTouchDrag(
   fixture.handle.dispatchEvent(touchPointer("pointerdown", 10, 1, 0));
   fixture.surface.dispatchEvent(touchPointer("pointermove", clientY, 1, timeStamp));
 }
+
+describe("PhoneSheetSwipeController interruption continuity", () => {
+  it("snapshots the visible return transition exactly once for an external close", () => {
+    const fixture = createPhoneSheetSwipeHarness(220);
+    beginTouchDrag(fixture, 70, 100);
+    fixture.surface.dispatchEvent(touchPointer("pointerup", 70, 1, 400));
+    fixture.frames.flush();
+    const computed = vi.spyOn(window, "getComputedStyle").mockImplementation(
+      (element) =>
+        ({
+          translate: element === fixture.surface ? "0px 25px" : "none",
+          opacity: "0.875",
+        }) as CSSStyleDeclaration,
+    );
+    fixture.controller.prepareClose();
+    expect(fixture.surface.style.translate).toBe("");
+    expect(fixture.backdrop.style.opacity).toBe("");
+    expect(fixture.surface.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("25px");
+    expect(
+      fixture.backdrop.style.getPropertyValue("--inkbook-adaptive-panel-backdrop-opacity"),
+    ).toBe("0.875");
+    expect(computed).toHaveBeenCalledTimes(2);
+    fixture.controller.dispose();
+    expect(computed).toHaveBeenCalledTimes(2);
+    expect(fixture.surface.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("");
+  });
+
+  it("dismisses from the final pointerup position even before the pending frame", () => {
+    const fixture = createPhoneSheetSwipeHarness(220);
+    fixture.close.mockImplementation(() => fixture.controller.prepareClose());
+    beginTouchDrag(fixture, 50, 100);
+    fixture.surface.dispatchEvent(touchPointer("pointerup", 140, 1, 400));
+    expect(fixture.close).toHaveBeenCalledOnce();
+    expect(fixture.surface.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("130px");
+    expect(fixture.frames.pending).toBe(0);
+    fixture.controller.dispose();
+  });
+
+  it.each(["settling", "entering"])("regrabs the visible %s position without jumping", (state) => {
+    const fixture = createPhoneSheetSwipeHarness(220);
+    if (state === "settling") {
+      beginTouchDrag(fixture, 70, 100);
+      fixture.surface.dispatchEvent(touchPointer("pointerup", 70, 1, 400));
+      fixture.frames.flush();
+    } else fixture.surface.dataset.presence = "entering";
+    const computed = vi
+      .spyOn(window, "getComputedStyle")
+      .mockReturnValue({ translate: "0px 20%" } as CSSStyleDeclaration);
+    fixture.handle.dispatchEvent(touchPointer("pointerdown", 100, 2, 500));
+    expect(fixture.surface.style.getPropertyValue("translate")).toBe("0 40px");
+    expect(fixture.surface.dataset.presence).toBeUndefined();
+    fixture.surface.dispatchEvent(touchPointer("pointermove", 115, 2, 550));
+    fixture.frames.flush();
+    expect(fixture.surface.style.getPropertyValue("translate")).toBe("0 55px");
+    expect(computed).toHaveBeenCalledOnce();
+    fixture.surface.dispatchEvent(touchPointer("pointerup", 120, 2, 700));
+    expect(fixture.close).not.toHaveBeenCalled();
+    expect(fixture.surface.style.getPropertyValue("translate")).toBe("0 60px");
+    fixture.controller.dispose();
+    expect(fixture.frames.pending).toBe(0);
+  });
+});
 
 describe("PhoneSheetSwipeController scroll state", () => {
   it("updates scroll state only when the top boundary changes", () => {

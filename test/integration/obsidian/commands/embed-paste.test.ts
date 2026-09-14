@@ -11,7 +11,6 @@ import type { FilePlacementV1 } from "../../../../src/domain/settings/types";
 import { FILE_SCHEMA_LIMITS } from "../../../../src/domain/schema/public";
 import type { InkbookSettingsStore } from "../../../../src/obsidian/settings";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
-
 import { chooseInkbookAction } from "../../../../src/obsidian/dialogs/action-dialog";
 
 vi.mock("../../../../src/obsidian/dialogs/action-dialog", () => ({
@@ -273,8 +272,11 @@ describe("Obsidian copied-embed dialog", () => {
         signal,
       ).paste(request(test.editor));
 
+      const readMotion = vi.mocked(chooseInkbookAction).mock.calls[0]?.[1].readMotion;
+      expect(readMotion).toBeTypeOf("function");
       expect(chooseInkbookAction).toHaveBeenCalledWith(test.app, {
         signal,
+        readMotion,
         title: "Paste Inkbook embed",
         description: "Choose how this drawing should be inserted.",
         actions: [

@@ -245,6 +245,6 @@
   }
 
   .inkbook-shortcut-reference-row.setting-item {
-    align-items: center;
+    align-items: stretch;
   }
 }

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import type { App } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   showHeadlessRecoveryNotice,
@@ -13,6 +13,7 @@ import {
 } from "../../../fixtures/obsidian/dialog";
 
 installDialogTestLifecycle();
+afterEach(() => vi.useRealTimers());
 
 function showRecovery(overrides: Partial<HeadlessRecoveryActions> = {}) {
   const actions = {
@@ -56,6 +57,7 @@ describe("native Obsidian headless recovery dialog", () => {
   });
 
   it.each([true, false, "throws"] as const)("handles synchronous retry result %s", (result) => {
+    vi.useFakeTimers();
     const retry = vi.fn(() => {
       if (result === "throws") throw new Error("save failed");
       return result;
@@ -64,8 +66,13 @@ describe("native Obsidian headless recovery dialog", () => {
     button("Retry").click();
 
     expect(retry).toHaveBeenCalledOnce();
-    if (result === true) expect(dialog()).toBeNull();
-    else {
+    if (result === true) {
+      expect(dialog()?.inert).toBe(true);
+      vi.advanceTimersByTime(119);
+      expect(dialog()).not.toBeNull();
+      vi.advanceTimersByTime(1);
+      expect(dialog()).toBeNull();
+    } else {
       expect(dialog()).not.toBeNull();
       expect(recoveryButtons().every((element) => !element.disabled)).toBe(true);
     }

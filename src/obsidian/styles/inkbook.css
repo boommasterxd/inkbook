@@ -1,9 +1,12 @@
 @import url("./motion.css");
 @import url("./action-dialog.css");
+@import url("./modal.css");
 @import url("./feedback.css");
 @import url("./editor-toolbar.css");
 @import url("./editor-toolbar-motion.css");
 @import url("./adaptive-panel.css");
+@import url("./owned-menu.css");
+@import url("./phone-sheet-host.css");
 @import url("./editor-menus.css");
 @import url("./background-menu.css");
 @import url("./settings.css");
@@ -13,7 +16,7 @@
 .inkbook-root {
   --inkbook-page-surface: #f6f6f6;
   --inkbook-motion-fast: 120ms;
-  --inkbook-motion-toolbar: 300ms;
+  --inkbook-motion-toolbar: 220ms;
   --inkbook-motion-toolbar-context-stagger: 50ms;
   --inkbook-motion-standard: 180ms;
   --inkbook-motion-layout: 240ms;

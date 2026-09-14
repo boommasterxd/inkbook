@@ -47,6 +47,7 @@ export function createPhoneSheetSwipeHarness(durationMs = 0) {
   const frames = createSwipeFrameQueue();
   const close = vi.fn();
   let dragWrites = 0;
+  let inheritedWrites = 0;
 
   handle.className = "inkbook-adaptive-panel-drag-region";
   surface.append(handle);
@@ -55,7 +56,8 @@ export function createPhoneSheetSwipeHarness(durationMs = 0) {
 
   const originalSetProperty = surface.style.setProperty.bind(surface.style);
   vi.spyOn(surface.style, "setProperty").mockImplementation((property, value, priority) => {
-    if (property === "--inkbook-adaptive-panel-drag") dragWrites += 1;
+    if (property === "translate") dragWrites += 1;
+    if (property.startsWith("--")) inheritedWrites += 1;
     originalSetProperty(property, value, priority);
   });
 
@@ -80,6 +82,9 @@ export function createPhoneSheetSwipeHarness(durationMs = 0) {
     frames,
     get dragWrites() {
       return dragWrites;
+    },
+    get inheritedWrites() {
+      return inheritedWrites;
     },
     handle,
     scroll,
