@@ -1,6 +1,6 @@
 declare const process: { readonly env: Readonly<Record<string, string | undefined>> };
 
-export type PerformanceMode = "reference" | "contracts";
+export type PerformanceMode = "reference" | "contracts" | "measurement";
 
 export function performanceMode(): PerformanceMode {
   const profile = process.env["INKBOOK_PERFORMANCE_PROFILE"];
@@ -10,7 +10,7 @@ export function performanceMode(): PerformanceMode {
     );
   }
   const mode = process.env["INKBOOK_PERFORMANCE_MODE"] ?? "reference";
-  if (mode !== "reference" && mode !== "contracts") {
+  if (mode !== "reference" && mode !== "contracts" && mode !== "measurement") {
     throw new TypeError(`Unsupported performance mode: ${mode}`);
   }
   return mode;

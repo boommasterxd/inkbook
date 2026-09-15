@@ -3,9 +3,11 @@ import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 
 import ts from "typescript";
+import { build } from "esbuild";
 
 const MAXIMUM_INPUTS = 10_000;
-const MAXIMUM_MODULES = 500;
+// Unknown runner configuration prevents selective skipping, rather than guessing aliases.
+const SUPPORTED_CONFIG_SHA256 = "49eff02c0f4da333cb1e8ec222c020596d9ae4478e9621e0f623c42436ba022e";
 
 function digest(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -50,14 +52,9 @@ function staticRequire(node) {
   );
 }
 
-function moduleKey(path) {
-  return path.replace(/\.(?:tsx?|[cm]?js|jsx)$/, "");
-}
-
 async function readInput(sourceRoot, key, metadata) {
   const path = resolve(sourceRoot, key);
-  const sourceDirectory = resolve(sourceRoot, "src");
-  if (!contained(sourceDirectory, path)) return { reason: `Non-source input: ${key}` };
+  if (!contained(sourceRoot, path)) return { reason: `External workspace input: ${key}` };
   try {
     if ((await realpath(path)) !== path) return { reason: `Symlinked input: ${key}` };
     const contents = await readFile(path);
@@ -76,28 +73,77 @@ async function readInput(sourceRoot, key, metadata) {
   }
 }
 
-/** Reuse one complete esbuild input graph; callers must first verify identical dependencies. */
-export async function createKernelInputGraph({ sourceRoot, metafile }) {
-  sourceRoot = await realpath(sourceRoot);
-  const entries = Object.entries(metafile?.inputs ?? {});
-  if (entries.length === 0 || entries.length > MAXIMUM_INPUTS) {
-    throw new Error("Invalid comparison input graph size.");
+function validateFiles(testFiles) {
+  if (!Array.isArray(testFiles) || testFiles.length === 0 || testFiles.length > 100)
+    throw new Error("Invalid performance file population.");
+  if (
+    new Set(testFiles).size !== testFiles.length ||
+    testFiles.some(
+      (file) =>
+        typeof file !== "string" ||
+        !/^test\/performance\/(?:[a-z0-9-]+\/)*[a-z0-9-]+\.test\.ts$/.test(file),
+    )
+  )
+    throw new Error("Invalid or duplicate performance test path.");
+}
+
+async function inputGraph(root, testFiles) {
+  root = await realpath(root);
+  const config = await readFile(resolve(root, "vitest.config.ts"));
+  if (digest(config) !== SUPPORTED_CONFIG_SHA256)
+    return { reason: "Runner configuration requires renewed input-graph review." };
+  let metafile;
+  try {
+    ({ metafile } = await build({
+      absWorkingDir: root,
+      entryPoints: testFiles,
+      bundle: true,
+      write: false,
+      outdir: "graph-only",
+      metafile: true,
+      packages: "external",
+      platform: "node",
+      target: "node26",
+      logLevel: "silent",
+      alias: { obsidian: resolve(root, "test/adapters/obsidian/plugin.ts") },
+    }));
+  } catch {
+    return { reason: "Test input graph could not be resolved completely." };
   }
+  const entries = Object.entries(metafile.inputs);
+  if (entries.length === 0 || entries.length > MAXIMUM_INPUTS)
+    throw new Error("Invalid comparison input graph size.");
   const nodes = new Map();
-  const modules = new Map();
   for (const [key, metadata] of entries) {
     if (!metadata || !Array.isArray(metadata.imports)) throw new Error("Missing import edges.");
-    const node = await readInput(sourceRoot, key, metadata);
-    nodes.set(key, node);
-    if (node.local) {
-      const identifier = moduleKey(node.local.slice("src/".length));
-      if (modules.has(identifier)) modules.set(identifier, null);
-      else modules.set(identifier, key);
-    }
+    nodes.set(key, await readInput(root, key, metadata));
   }
-  return {
-    hashScenarioInputs: (identifiers) => hashInputs({ nodes, modules }, identifiers),
-  };
+  return { nodes };
+}
+
+function fileInputs(graph, file) {
+  if (graph.reason) return { hash: null, inputs: [], reason: graph.reason };
+  if (!graph.nodes.has(file)) return { hash: null, inputs: [], reason: `Missing entry: ${file}` };
+  return traverseInputs(graph.nodes, [file]);
+}
+
+/** Select whole original tests; callers must first verify identical harnesses and dependencies. */
+export async function planPerformanceInputs({ referenceRoot, candidateRoot, testFiles }) {
+  validateFiles(testFiles);
+  const referenceGraph = await inputGraph(referenceRoot, testFiles);
+  const candidateGraph = await inputGraph(candidateRoot, testFiles);
+  const pending = [];
+  const identicalInputs = [];
+  const inputs = [];
+  for (const file of testFiles) {
+    const reference = fileInputs(referenceGraph, file);
+    const candidate = fileInputs(candidateGraph, file);
+    inputs.push({ file, reference, candidate });
+    if (reference.hash !== null && reference.hash === candidate.hash)
+      identicalInputs.push({ file, inputHash: reference.hash, inputs: reference.inputs });
+    else pending.push(file);
+  }
+  return { pending, identicalInputs, inputs };
 }
 
 function importTarget(edge, nodes) {
@@ -111,6 +157,7 @@ function importTarget(edge, nodes) {
       : { reason: `Unresolved import: ${edge.path}` };
   }
   if (
+    ["fs", "node:fs", "fs/promises", "node:fs/promises"].includes(edge.path) ||
     isAbsolute(edge.path) ||
     edge.path.startsWith(".") ||
     edge.path.includes("\\") ||
@@ -120,23 +167,6 @@ function importTarget(edge, nodes) {
     return { reason: `External source graph unavailable: ${edge.path}` };
   }
   return { external: edge.path };
-}
-
-function hashInputs(graph, identifiers) {
-  if (
-    !Array.isArray(identifiers) ||
-    identifiers.length === 0 ||
-    identifiers.length > MAXIMUM_MODULES
-  ) {
-    throw new Error("Invalid comparison module population.");
-  }
-  const pending = [];
-  for (const identifier of [...new Set(identifiers)].sort()) {
-    const entry = graph.modules.get(identifier);
-    if (!entry) return { hash: null, inputs: [], reason: `Unresolved module: ${identifier}` };
-    pending.push(entry);
-  }
-  return traverseInputs(graph.nodes, pending);
 }
 
 function traverseInputs(nodes, pending) {

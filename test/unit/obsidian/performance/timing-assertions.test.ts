@@ -125,14 +125,17 @@ describe("performance timing assertions", () => {
 });
 
 describe("performance timing modes", () => {
-  it("captures out-of-reference timings in contracts mode", () => {
-    vi.stubEnv("INKBOOK_PERFORMANCE_MODE", "contracts");
-    expectTiming(100, 1, { exclusive: true });
-    expect(flushRecords()).toEqual([
-      expect.objectContaining({ actualMs: 100, referenceMs: 1, limitMs: 1 }),
-    ]);
-    expect(() => expectTiming(NaN, 1)).toThrow(TypeError);
-  });
+  it.each(["contracts", "measurement"])(
+    "captures raw timings without absolute assertions in %s mode",
+    (mode) => {
+      vi.stubEnv("INKBOOK_PERFORMANCE_MODE", mode);
+      expectTiming(100, 1, { exclusive: true });
+      expect(flushRecords()).toEqual([
+        expect.objectContaining({ actualMs: 100, referenceMs: 1, limitMs: 1 }),
+      ]);
+      expect(() => expectTiming(NaN, 1)).toThrow(TypeError);
+    },
+  );
 
   it("allows contracts mode without timing reports", () => {
     vi.stubEnv("INKBOOK_PERFORMANCE_MODE", "contracts");

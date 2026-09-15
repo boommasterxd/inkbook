@@ -6,7 +6,7 @@ import { performanceMode } from "../timing-budget";
 export class MeasuredEraserScheduler implements EraserSliceScheduler {
   readonly #budgetMs: number;
   readonly #sliceDurationsMs: number[] = [];
-  readonly #controlled = performanceMode() !== "reference";
+  readonly #controlled = performanceMode() === "contracts";
   readonly #checkpointCounts: number[] = [];
   #checkpoints = 0;
   #maximumSliceMs = 0;

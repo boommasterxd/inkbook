@@ -71,24 +71,27 @@ describe("controlled domain slice checkpoints", () => {
     },
   );
 
-  it("keeps reference deadline decisions separate from actual CPU measurements", async () => {
-    vi.stubEnv("INKBOOK_PERFORMANCE_MODE", "reference");
-    const scheduler = new MeasuredSliceScheduler(2);
-    for (let checkpoint = 0; checkpoint < 200; checkpoint += 1) {
+  it.each(["reference", "measurement"])(
+    "keeps reference deadline decisions separate from actual CPU measurements in %s mode",
+    async (mode) => {
+      vi.stubEnv("INKBOOK_PERFORMANCE_MODE", mode);
+      const scheduler = new MeasuredSliceScheduler(2);
+      for (let checkpoint = 0; checkpoint < 200; checkpoint += 1) {
+        expect(scheduler.shouldYield()).toBe(false);
+      }
+      wallMilliseconds = 2;
+      cpuMicroseconds = 300;
+      expect(scheduler.shouldYield()).toBe(true);
+      await scheduler.yieldControl();
+      expect(scheduler.sliceDurations).toEqual([0.3]);
+      wallMilliseconds = 3.999;
       expect(scheduler.shouldYield()).toBe(false);
-    }
-    wallMilliseconds = 2;
-    cpuMicroseconds = 300;
-    expect(scheduler.shouldYield()).toBe(true);
-    await scheduler.yieldControl();
-    expect(scheduler.sliceDurations).toEqual([0.3]);
-    wallMilliseconds = 3.999;
-    expect(scheduler.shouldYield()).toBe(false);
-    wallMilliseconds = 4;
-    expect(scheduler.shouldYield()).toBe(true);
-    scheduler.finish();
-    expect(scheduler.checkpointCounts).toEqual([201, 2]);
-  });
+      wallMilliseconds = 4;
+      expect(scheduler.shouldYield()).toBe(true);
+      scheduler.finish();
+      expect(scheduler.checkpointCounts).toEqual([201, 2]);
+    },
+  );
 
   it("records explicit yields with no polls and makes finish idempotent", async () => {
     const scheduler = new MeasuredSliceScheduler(1);

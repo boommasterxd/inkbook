@@ -21,7 +21,7 @@ function expectedFiles(root, testFiles) {
   if (!Array.isArray(testFiles) || testFiles.length === 0) throw new Error("Empty test batch.");
   const files = testFiles.map((file) => normalizeFile(root, file));
   if (new Set(files).size !== files.length) throw new Error("Duplicate expected test file.");
-  return files;
+  return files.toSorted();
 }
 
 function consumeFile(root, path, remaining) {
@@ -141,6 +141,7 @@ function spawnBatch({ root, files, refreshRate, mode }) {
       "--fileParallelism=false",
       "--maxWorkers=1",
       "--isolate",
+      ...(mode === "measurement" ? ["--cache=false"] : []),
     ],
     { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] },
   );
@@ -189,7 +190,8 @@ function captureBatch(child) {
 }
 
 export async function runPerformanceBatch({ root, testFiles, refreshRate, mode, reportDirectory }) {
-  if (!["contracts", "reference"].includes(mode)) throw new Error("Unsupported performance mode.");
+  if (!["contracts", "reference", "measurement"].includes(mode))
+    throw new Error("Unsupported performance mode.");
   if (!REFRESH_RATES.includes(refreshRate)) throw new Error("Unsupported refresh rate.");
   const files = expectedFiles(root, testFiles);
   const startedAt = performance.now();

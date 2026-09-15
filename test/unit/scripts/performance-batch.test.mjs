@@ -141,6 +141,31 @@ describe("bounded performance batch execution", () => {
     const child = mockChild();
     const pending = runPerformanceBatch({
       root,
+      testFiles: [secondFile, file],
+      refreshRate: 240,
+      mode: "measurement",
+    });
+    child.stdout.write(
+      JSON.stringify({ success: true, testResults: [testResult(), testResult(secondFile)] }),
+    );
+    child.stderr.write(envelope() + envelope(secondFile, []));
+    child.emit("close", 0, null);
+    expect((await pending).violations).toEqual([]);
+    const [, args, options] = vi.mocked(spawn).mock.calls[0];
+    expect(args).toContain("--maxWorkers=1");
+    expect(args).toContain("--isolate");
+    expect(args).toContain("--fileParallelism=false");
+    expect(args).toContain("--cache=false");
+    expect(args.indexOf(file)).toBeLessThan(args.indexOf(secondFile));
+    expect(options.env.INKBOOK_PERFORMANCE_MODE).toBe("measurement");
+    expect(options.env.INKBOOK_PERFORMANCE_PROFILE).toBeUndefined();
+    expect(options.detached).toBeUndefined();
+  });
+
+  it("leaves ordinary contract cache behavior unchanged", async () => {
+    const child = mockChild();
+    const pending = runPerformanceBatch({
+      root,
       testFiles: [file],
       refreshRate: 240,
       mode: "contracts",
@@ -149,13 +174,7 @@ describe("bounded performance batch execution", () => {
     child.stderr.write(report().stderr);
     child.emit("close", 0, null);
     expect((await pending).violations).toEqual([]);
-    const [, args, options] = vi.mocked(spawn).mock.calls[0];
-    expect(args).toContain("--maxWorkers=1");
-    expect(args).toContain("--isolate");
-    expect(args).toContain("--fileParallelism=false");
-    expect(options.env.INKBOOK_PERFORMANCE_MODE).toBe("contracts");
-    expect(options.env.INKBOOK_PERFORMANCE_PROFILE).toBeUndefined();
-    expect(options.detached).toBeUndefined();
+    expect(vi.mocked(spawn).mock.calls[0][1]).not.toContain("--cache=false");
   });
 
   it("terminates its child when the fixed duration expires", async () => {

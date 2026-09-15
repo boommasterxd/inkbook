@@ -1,7 +1,5 @@
 // @vitest-environment happy-dom
 
-import { renderAndDisposeActionMenu } from "../../fixtures/obsidian/owned-menu-operation";
-
 import { Platform } from "obsidian";
 import { expect, it, vi } from "vitest";
 
@@ -9,6 +7,27 @@ import { createOwnedMenuFactory } from "../../../src/obsidian/menus/owned-menu-f
 import { installObsidianDomHelpers } from "../../adapters/obsidian/dom";
 import { interactionP99, measureInteractionFrames } from "../interaction-refresh-profile";
 import { expectTiming } from "../timing-assertions";
+
+/** Complete twelve-action menu operation. */
+function renderAndDisposeActionMenu(
+  factory: ReturnType<typeof createOwnedMenuFactory>,
+  onHide: () => void,
+): void {
+  const menu = factory.create("context");
+  for (let index = 0; index < 12; index += 1) {
+    if (index > 0 && index % 3 === 0) menu.addSeparator();
+    menu.addItem((item) => {
+      item
+        .setTitle(`Action ${String(index)}`)
+        .setIcon("copy")
+        .setDisabled(index === 3);
+      item.setChecked?.(index === 0);
+    });
+  }
+  menu.onHide(onHide);
+  menu.showAtPosition({ x: 50, y: 50 }, document);
+  menu.close("immediate");
+}
 
 it("renders and disposes a complete action menu inside the 240 Hz frame budget", async ({
   annotate,

@@ -38,18 +38,21 @@ describe("eraser checkpoint costs", () => {
     expect(scheduler.isCancelled()).toBe(false);
   });
 
-  it("preserves reference wall-clock decisions", () => {
-    vi.stubEnv("INKBOOK_PERFORMANCE_MODE", "reference");
-    const wall = vi.spyOn(performance, "now").mockReturnValue(10);
-    const scheduler = new MeasuredEraserScheduler(2);
-    for (let checkpoint = 0; checkpoint < 100; checkpoint += 1) {
-      expect(scheduler.shouldYield()).toBe(false);
-    }
-    wall.mockReturnValue(12);
-    expect(scheduler.shouldYield()).toBe(true);
-    scheduler.finish();
-    expect(scheduler.sliceDurationsMs).toEqual([2]);
-  });
+  it.each(["reference", "measurement"])(
+    "preserves reference wall-clock decisions in %s mode",
+    (mode) => {
+      vi.stubEnv("INKBOOK_PERFORMANCE_MODE", mode);
+      const wall = vi.spyOn(performance, "now").mockReturnValue(10);
+      const scheduler = new MeasuredEraserScheduler(2);
+      for (let checkpoint = 0; checkpoint < 100; checkpoint += 1) {
+        expect(scheduler.shouldYield()).toBe(false);
+      }
+      wall.mockReturnValue(12);
+      expect(scheduler.shouldYield()).toBe(true);
+      scheduler.finish();
+      expect(scheduler.sliceDurationsMs).toEqual([2]);
+    },
+  );
 
   it("preserves actual finalization work in contracts mode", async () => {
     vi.stubEnv("INKBOOK_PERFORMANCE_MODE", "contracts");

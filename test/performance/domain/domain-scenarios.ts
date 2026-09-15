@@ -48,7 +48,7 @@ export interface MaximumStrokeRun {
 export class MeasuredSliceScheduler {
   public maxSliceDuration = 0;
   readonly #sliceDurations: number[] = [];
-  readonly #controlled = performanceMode() !== "reference";
+  readonly #controlled = performanceMode() === "contracts";
   readonly #checkpointCounts: number[] = [];
   #checkpoints = 0;
   #state: "active" | "yielding" | "finished" = "active";

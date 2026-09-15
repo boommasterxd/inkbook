@@ -1,4 +1,3 @@
-import { recognitionCacheFixture } from "../../fixtures/obsidian/recognition-cache";
 import { ChangeSet, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { editorInfoField, editorLivePreviewField } from "obsidian";
@@ -14,6 +13,24 @@ import { expectTiming } from "../timing-assertions";
 import { LivePreviewEntrances } from "../../../src/obsidian/embeds/live-preview-entrances";
 import { MARKDOWN_EMBED_LIMITS } from "../../../src/obsidian/embeds/markdown-embed";
 import { interactionP99, INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
+import { TFile, type Vault } from "obsidian";
+
+function recognitionCacheFixture(
+  recognitionConstructor: typeof ObsidianInkbookDocumentRecognition,
+  fileCount: number,
+) {
+  const File = TFile as unknown as new (path: string, size: number) => TFile;
+  const files = Array.from(
+    { length: fileCount },
+    (_, index) => new File(`${String(index)}.svg`, 10),
+  );
+  const byPath = new Map(files.map((file) => [file.path, file]));
+  const recognition = new recognitionConstructor({
+    getFileByPath: (path: string) => byPath.get(path) ?? null,
+    cachedRead: async () => "invalid",
+  } as unknown as Vault);
+  return { files, recognition };
+}
 
 const capacity = MARKDOWN_EMBED_LIMITS.matches;
 const spacing = 40;

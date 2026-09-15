@@ -14,8 +14,8 @@ afterEach(() => {
 });
 
 describe("fallback checkpoint clock", () => {
-  it("retains the actual reference clock", () => {
-    vi.stubEnv("INKBOOK_PERFORMANCE_MODE", "reference");
+  it.each(["reference", "measurement"])("retains the actual reference clock in %s mode", (mode) => {
+    vi.stubEnv("INKBOOK_PERFORMANCE_MODE", mode);
     const now = createFallbackDeadlineClock();
     vi.spyOn(performance, "now").mockReturnValueOnce(12).mockReturnValueOnce(400);
     expect(now()).toBe(12);

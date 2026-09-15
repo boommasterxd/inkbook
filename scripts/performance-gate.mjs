@@ -3,11 +3,10 @@ import { join, relative, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 import { runPerformanceBatch } from "./performance-batch.mjs";
-import { runKernelBatch } from "./performance-kernel-batch.mjs";
+import { planPerformanceInputs } from "./performance-inputs.mjs";
 import { TIMING_PERFORMANCE_FILES } from "./performance-test-manifest.mjs";
 import { COMPARISON_ROUNDS, compareTimingRounds } from "./performance-comparison.mjs";
 import { preparePerformanceWorkspaces } from "./performance-workspace.mjs";
-import { extractComparisonStatistics } from "./performance-statistics.mjs";
 
 export async function executePerformanceGate(projectRoot, runs) {
   if (!Array.isArray(runs) || runs.length === 0)
@@ -38,7 +37,6 @@ export async function executePerformanceGate(projectRoot, runs) {
     process.stdout.write(`Performance evidence: ${directory}\n`);
     const violations = await executeContracts(runs, workspaces, report);
     if (violations.length === 0) {
-      await validateCoverage(workspaces, report);
       violations.push(...(await executeComparisons(runs, workspaces, report)));
     }
     report.violations = violations;
@@ -101,31 +99,6 @@ async function executeContracts(runs, workspaces, report) {
   return violations;
 }
 
-async function validateCoverage(workspaces, report) {
-  const measurements = report.batches.flatMap((batch) => batch.measurements);
-  if (measurements.length === 0) return;
-  report.coverage = await runKernelBatch({
-    root: workspaces.candidate.root,
-    referenceRoot: workspaces.candidate.root,
-    candidateRoot: workspaces.candidate.root,
-    testFiles: [...new Set(measurements.map((value) => value.file))],
-    contractMeasurements: measurements,
-    refreshRate: 120,
-    reportDirectory: evidencePath(workspaces, "coverage"),
-    coverageOnly: true,
-  });
-  const ids = report.coverage?.ids;
-  if (
-    report.coverage?.kind !== "kernel-coverage" ||
-    !Array.isArray(ids) ||
-    ids.length === 0 ||
-    ids.some((id) => typeof id !== "string" || !id) ||
-    new Set(ids).size !== ids.length
-  ) {
-    throw new Error("Missing or invalid comparison coverage evidence.");
-  }
-}
-
 function evidencePath(workspaces, ...parts) {
   return join(workspaces.metadata.evidenceDirectory, ...parts);
 }
@@ -165,145 +138,119 @@ async function executeComparisons(runs, workspaces, report) {
 }
 
 async function compareVariant(variant, runs, workspaces, report) {
+  const plans = [];
+  for (const run of runs) {
+    const testFiles = run.testFiles
+      .map((file) => relative(workspaces.metadata.projectRoot, file))
+      .filter((file) => TIMING_PERFORMANCE_FILES.includes(file));
+    if (testFiles.length === 0) continue;
+    const inputs = await planPerformanceInputs({
+      referenceRoot: workspaces[variant].root,
+      candidateRoot: workspaces.candidate.root,
+      testFiles,
+    });
+    validateInputPlan(testFiles, inputs);
+    plans.push({ ...run, testFiles: inputs.pending, inputs });
+  }
+  const identicalInputs = plans.flatMap((plan) =>
+    plan.inputs.identicalInputs.map((proof) => ({ ...proof, refreshRate: plan.refreshRate })),
+  );
+  const pending = plans.filter((plan) => plan.testFiles.length > 0);
+  if (pending.length === 0) return { status: "identical-inputs", metrics: [], identicalInputs };
   const referenceRounds = [];
   const candidateRounds = [];
-  const identicalRounds = [];
   for (let round = 0; round < COMPARISON_ROUNDS; round += 1) {
-    const reference = [];
-    const candidate = [];
-    const identical = [];
-    for (const run of runs) {
-      const contract = report.batches.find(
-        (batch) =>
-          batch.mode === "contracts" &&
-          batch.run === run.label &&
-          batch.refreshRate === run.refreshRate,
-      );
-      const measurements = contract?.measurements ?? [];
-      if (measurements.length === 0) continue;
-      process.stdout.write(`\nPaired work: ${variant}, round ${round + 1}, ${run.label}\n`);
-      const result = await runKernelBatch({
-        root: workspaces.candidate.root,
-        referenceRoot: workspaces[variant].root,
-        roundIndex: round,
-        candidateRoot: workspaces.candidate.root,
-        testFiles: [...new Set(measurements.map((value) => value.file))],
-        contractMeasurements: measurements,
-        reportDirectory: evidencePath(
-          workspaces,
+    const measurements = { reference: [], candidate: [] };
+    for (const run of pending) {
+      const order = round % 2 === 0 ? ["reference", "candidate"] : ["candidate", "reference"];
+      for (const side of order) {
+        const result = await measureOriginalBatch({
           variant,
-          String(round),
-          run.label,
-          String(run.refreshRate),
-        ),
-        refreshRate: run.refreshRate,
-      });
-      appendPairedEvidence(report, result, { variant, round, run, workspaces });
-      identical.push(...result.identicalInputs);
-      for (const measurement of result.measurements) {
-        reference.push(...comparisonRecords(measurement, "reference"));
-        candidate.push(...comparisonRecords(measurement, "candidate"));
+          round,
+          side,
+          run,
+          workspaces,
+          report,
+        });
+        measurements[side].push(...result.measurements);
       }
     }
-    validateRoundEvidence(reference, identical, report.coverage?.ids ?? []);
-    referenceRounds.push(reference);
-    candidateRounds.push(candidate);
-    identicalRounds.push(
-      identical.toSorted((left, right) =>
-        JSON.stringify([left.id, left.refreshRate]).localeCompare(
-          JSON.stringify([right.id, right.refreshRate]),
-        ),
-      ),
-    );
+    referenceRounds.push(measurements.reference);
+    candidateRounds.push(measurements.candidate);
   }
-  if (identicalRounds.some((round) => JSON.stringify(round) !== JSON.stringify(identicalRounds[0])))
-    throw new Error("Identical-input populations differ across rounds.");
-  if (referenceRounds.every((round) => round.length === 0))
-    return { status: "identical-inputs", metrics: [], identicalInputs: identicalRounds[0] };
   return {
     ...compareTimingRounds(referenceRounds, candidateRounds),
-    identicalInputs: identicalRounds[0],
+    identicalInputs,
+    inputs: plans.map(({ label, refreshRate, inputs }) => ({
+      label,
+      refreshRate,
+      inputs: inputs.inputs,
+    })),
   };
 }
 
-function appendPairedEvidence(report, result, { variant, round, run, workspaces }) {
+function validateInputPlan(files, plan) {
+  if (!Array.isArray(plan?.pending) || !Array.isArray(plan?.identicalInputs)) {
+    throw new Error("Missing original benchmark input plan.");
+  }
+  const remaining = new Set(files);
+  for (const file of plan.pending) {
+    if (!remaining.delete(file)) throw new Error("Unexpected or duplicate pending benchmark.");
+  }
+  for (const proof of plan.identicalInputs) {
+    if (
+      !remaining.delete(proof.file) ||
+      !/^[a-f0-9]{64}$/.test(proof.inputHash ?? "") ||
+      !Array.isArray(proof.inputs) ||
+      proof.inputs.some((input) => typeof input !== "string" || !input)
+    ) {
+      throw new Error("Invalid identical benchmark input proof.");
+    }
+  }
+  if (remaining.size > 0) throw new Error("Missing original benchmark input evidence.");
+}
+
+async function measureOriginalBatch({ variant, round, side, run, workspaces, report }) {
+  const directory = evidencePath(
+    workspaces,
+    variant,
+    String(round),
+    run.label,
+    String(run.refreshRate),
+    side,
+  );
+  process.stdout.write(
+    `\nOriginal benchmarks: ${variant}, round ${round + 1}, ${run.label}, ${side}\n`,
+  );
+  const result = await runPerformanceBatch({
+    root: side === "candidate" ? workspaces.candidate.root : workspaces[variant].root,
+    testFiles: run.testFiles,
+    refreshRate: run.refreshRate,
+    mode: "measurement",
+    reportDirectory: directory,
+  });
   report.batches.push({
     variant,
-    mode: "paired",
+    mode: "measurement",
+    side,
     round,
     run: run.label,
     refreshRate: run.refreshRate,
-    measurementCount: result?.measurements?.length ?? 0,
-    identicalInputCount: result?.identicalInputs?.length ?? 0,
-    artifact: join(
-      evidencePath(workspaces, variant, String(round), run.label, String(run.refreshRate)),
-      "kernel.json",
-    ),
+    measurementCount: result.measurements.length,
+    durationMs: result.durationMs,
+    artifact: join(directory, "batch.json"),
   });
-  if (
-    !Array.isArray(result?.measurements) ||
-    !Array.isArray(result?.identicalInputs) ||
-    result.measurements.length + result.identicalInputs.length === 0
-  )
-    throw new Error("Missing paired results.");
-  if (
-    [...result.measurements, ...result.identicalInputs].some(
-      (value) => value?.refreshRate !== run.refreshRate,
-    )
-  )
-    throw new Error("Wrong-profile paired results.");
-}
-
-function validateRoundEvidence(measurements, identical, expectedIds) {
-  if (measurements.length + identical.length === 0) throw new Error("Empty comparison evidence.");
-  for (const proof of identical) {
-    if (
-      !/^[a-f0-9]{64}$/.test(proof.inputHash ?? "") ||
-      !Array.isArray(proof.inputs) ||
-      proof.inputs.length === 0 ||
-      proof.inputs.some((file) => typeof file !== "string" || !file)
-    ) {
-      throw new Error("Invalid identical-input evidence.");
+  if (result.violations.length > 0)
+    throw new Error(`Original benchmark failed: ${JSON.stringify(result.violations)}`);
+  const remaining = new Set(run.testFiles);
+  for (const measurement of result.measurements) {
+    if (!run.testFiles.includes(measurement.file) || measurement.refreshRate !== run.refreshRate) {
+      throw new Error("Unexpected original benchmark measurement.");
     }
+    remaining.delete(measurement.file);
   }
-  const remaining = new Set(expectedIds);
-  const seen = new Set();
-  const identities = new Map();
-  for (const record of [...measurements, ...identical]) {
-    const id = record.scenarioId ?? record.id;
-    const key = JSON.stringify([record.testName ?? record.id, record.refreshRate]);
-    const scenarioKey = JSON.stringify([id, record.refreshRate]);
-    const measured = record.scenarioId !== undefined;
-    if (
-      !expectedIds.includes(id) ||
-      seen.has(key) ||
-      identities.get(scenarioKey) === false ||
-      (!measured && identities.has(scenarioKey))
-    )
-      throw new Error("Unexpected or duplicate comparison evidence.");
-    identities.set(scenarioKey, measured);
-    seen.add(key);
-    remaining.delete(id);
-  }
-  if (remaining.size > 0) throw new Error("Missing comparison scenario evidence.");
-}
-
-function comparisonRecords(result, side) {
-  const metrics = [
-    { key: "mean-work", actualMs: result[`${side}Ms`] },
-    ...extractComparisonStatistics(result, side),
-  ];
-  return metrics.map(({ key, actualMs }) => ({
-    file: "paired-kernel",
-    testName: JSON.stringify([result.id, key]),
-    scenarioId: result.id,
-    ordinal: 1,
-    refreshRate: result.refreshRate,
-    actualMs,
-    // Original statistics and mean work each enforce the same relative regression policy.
-    referenceMs: 1,
-    comparison: "lte",
-  }));
+  if (remaining.size > 0) throw new Error("Missing original benchmark timing population.");
+  return result;
 }
 
 async function saveReport(directory, report) {

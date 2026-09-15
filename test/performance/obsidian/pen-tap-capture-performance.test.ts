@@ -2,11 +2,8 @@
 
 import { expect, it } from "vitest";
 
-import {
-  mountPenTapEditor,
-  penEvent,
-  penTapSurface,
-} from "../../fixtures/obsidian/pen-tap-extension";
+import { createHtmlElement } from "../../adapters/obsidian/dom";
+import { mountPenTapEditor, penEvent } from "../../fixtures/obsidian/pen-tap-extension";
 import { interactionP99, INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 import { expectTiming } from "../timing-assertions";
 
@@ -14,7 +11,11 @@ it.for(["touch", "widget", "padding"])(
   "keeps %s pointer capture inside the input budget",
   async (surface, { annotate }) => {
     const editor = mountPenTapEditor();
-    const { target, pointerType } = penTapSurface(editor, surface);
+    const widget = createHtmlElement("div");
+    widget.className = "inkbook-root";
+    editor.view.contentDOM.append(widget);
+    const target = surface === "widget" ? widget : editor.view.scrollDOM;
+    const pointerType = surface === "touch" ? "touch" : "pen";
     const durations: number[] = [];
     try {
       for (let sample = -50; sample < INTERACTION_REFRESH_PROFILE.sampleCount; sample += 1) {

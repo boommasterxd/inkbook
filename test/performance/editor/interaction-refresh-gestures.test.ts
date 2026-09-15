@@ -1,4 +1,3 @@
-import { createIndexedStrokeScene, createIndexedEraser } from "./indexed-scene-fixture";
 import { PASS_THROUGH_PLANNER, createHandleLine } from "./selection-input-fixture";
 import { describe, expect, it } from "vitest";
 
@@ -21,6 +20,30 @@ import {
   measureInteractionFrames,
 } from "../interaction-refresh-profile";
 import { expectTiming } from "../timing-assertions";
+
+function createIndexedStrokeScene(
+  storeClass: typeof ElementStore,
+  sceneClass: typeof ElementSceneStore,
+) {
+  const store = new storeClass(Array.from({ length: 10_000 }, (_, index) => indexedStroke(index)));
+  return { store, sceneStore: new sceneClass(store) };
+}
+
+function createIndexedEraser(eraserClass: typeof EraserSweep, sceneStore: ElementSceneStore) {
+  return new eraserClass(
+    { x: 20, y: 20 },
+    4,
+    {
+      getElement: (id) => sceneStore.get(id)?.element,
+      query: (bounds, sink) => sceneStore.query(bounds, sink),
+    },
+    {
+      addCandidateFade: () => undefined,
+      clearCandidateFade: () => undefined,
+      setCandidateFade: () => undefined,
+    },
+  );
+}
 
 const ELEMENT_COUNT = 10_000;
 const RAW_ERASER_SAMPLES_PER_FRAME = 8;

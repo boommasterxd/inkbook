@@ -12,7 +12,10 @@ afterEach(() => vi.unstubAllEnvs());
 
 describe("statistical performance sample policy", () => {
   it.each([5, 20, 100])("retains all %s reference samples", (count) => {
-    expect(statisticalSamples(count)).toBe(count);
+    for (const mode of ["reference", "measurement"]) {
+      vi.stubEnv("INKBOOK_PERFORMANCE_MODE", mode);
+      expect(statisticalSamples(count)).toBe(count);
+    }
   });
 
   it.each([5, 20, 100])(
