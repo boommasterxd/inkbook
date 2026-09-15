@@ -203,7 +203,6 @@ function createRuntime(
         showHeadlessRecoveryNotice(plugin.app, actions, () => settings.getDeviceSettings().motion),
       onOpenSettings: (navigation) => settingsModal.open("settings", navigation),
       onOpenShortcuts: (navigation) => settingsModal.open("shortcuts", navigation),
-      view: () => plugin.app.workspace.getActiveViewOfType(MarkdownView)?.containerEl,
     },
   );
 }
@@ -288,8 +287,8 @@ function showInsertionFeedback(
   runtime: ObsidianWorkspaceRuntime,
   insertion: CompletedEmptyLineInsertion,
 ): void {
-  const target = feedbackTarget(plugin);
-  const inserted = feedback.showInViewOrWindow(target.ownerWindow, target.view, {
+  const ownerWindow = feedbackOwnerWindow(plugin);
+  const inserted = feedback.showInWindow(ownerWindow, {
     actions: [
       {
         id: "undo-insertion",
@@ -305,9 +304,9 @@ function showInsertionFeedback(
   });
   runtime.queueAutoActivation(
     insertion.filePath,
-    target.ownerWindow,
+    ownerWindow,
     (retry) => {
-      feedback.showInViewOrWindow(target.ownerWindow, target.view, {
+      feedback.showInWindow(ownerWindow, {
         actions: [
           { id: "retry-open", run: retry },
           { id: "dismiss", run: () => undefined },
@@ -324,22 +323,15 @@ function showGlobalFeedback(
   feedback: InkbookFeedbackManager,
   code: InkbookFeedbackCode,
 ): void {
-  const target = feedbackTarget(plugin);
-  feedback.showInViewOrWindow(target.ownerWindow, target.view, { code });
+  feedback.showInWindow(feedbackOwnerWindow(plugin), { code });
 }
 
-function feedbackTarget(plugin: Plugin): {
-  readonly ownerWindow: Window;
-  readonly view?: HTMLElement;
-} {
+function feedbackOwnerWindow(plugin: Plugin): Window {
   const view = plugin.app.workspace.getActiveViewOfType(MarkdownView)?.containerEl;
   const fallback = plugin.app.workspace.containerEl;
   const ownerWindow = (view ?? fallback).ownerDocument.defaultView;
   if (ownerWindow === null) throw new Error("Inkbook feedback requires an owning window.");
-  return {
-    ownerWindow,
-    ...(view === undefined ? {} : { view }),
-  };
+  return ownerWindow;
 }
 
 function createPlacementFeedback(plugin: Plugin, feedback: InkbookFeedbackManager) {

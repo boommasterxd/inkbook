@@ -417,7 +417,6 @@ describe("plugin workspace activation serialization", () => {
         manager: new InkbookFeedbackManager(),
         onOpenSettings: vi.fn(),
         onOpenShortcuts: vi.fn(),
-        view: () => undefined,
       },
     );
     const first = livePreviewAttachment(1);
