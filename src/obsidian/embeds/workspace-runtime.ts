@@ -86,7 +86,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     this.#host = host;
     this.#embedActions = embedActions;
     this.#fallbackOwnerWindow = host.fallbackOwnerWindow;
-    this.#feedback = new WorkspaceFeedbackRouter(host.manager, host.view, (documentId) =>
+    this.#feedback = new WorkspaceFeedbackRouter(host.manager, (documentId) =>
       this.#owningWindow(documentId),
     );
     this.#onOpenSettings = host.onOpenSettings;

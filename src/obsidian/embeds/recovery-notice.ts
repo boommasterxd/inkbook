@@ -10,7 +10,7 @@ import {
   createFeedbackSurface,
   setFeedbackPending,
 } from "../feedback/feedback-surface";
-import { createPresentationFeedbackPositionLifecycle } from "../feedback/presentation-feedback-position";
+import { mountWindowFeedback } from "../feedback/window-feedback-host";
 
 export interface HeadlessRecoveryActions {
   reloadExternal(): Promise<boolean>;
@@ -175,13 +175,13 @@ function createAttachedPanel(
   onClosed: () => void,
 ): AttachedRecoveryPanel {
   element.classList.add("inkbook-feedback-presentation");
-  const positioning = createPresentationFeedbackPositionLifecycle(element, root);
+  const unmount = mountWindowFeedback(element, root);
   let closed = false;
   return {
     close: () => {
       if (closed) return;
       closed = true;
-      positioning.dispose();
+      unmount();
       element.remove();
       onClosed();
     },
