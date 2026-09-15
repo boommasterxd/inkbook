@@ -4,14 +4,14 @@ import { expect, it } from "vitest";
 import { AdaptivePanelHeight } from "../../../src/obsidian/menus/adaptive-panel-height";
 import { PhoneSheetPages } from "../../../src/obsidian/menus/phone-sheet-pages";
 import { installObsidianDomHelpers } from "../../adapters/obsidian/dom";
-import { interactionP99, measureInteractionFrames } from "../interaction-refresh-profile";
+import {
+  INTERACTION_REFRESH_PROFILE,
+  interactionP99,
+  measureInteractionFrames,
+} from "../interaction-refresh-profile";
 import { expectTiming } from "../timing-assertions";
 
-/** Full page fixture; callers select implementations and retain their measurement boundaries. */
-function createPhonePagePerformanceFixture(constructors: {
-  height: typeof AdaptivePanelHeight;
-  pages: typeof PhoneSheetPages;
-}) {
+function createPhonePagePerformanceFixture() {
   const layer = window.createDiv();
   const surface = layer.createEl("section");
   const scroll = surface.createDiv();
@@ -19,12 +19,11 @@ function createPhonePagePerformanceFixture(constructors: {
   rootContent.createEl("button", { text: "Settings" });
   let disposed = 0;
   let created = 0;
-  let maximumNodes = 0;
   let naturalHeight = 280;
   Object.defineProperty(scroll, "scrollHeight", { get: () => naturalHeight });
   scroll.getBoundingClientRect = () =>
     new DOMRect(0, 0, 360, Number.parseFloat(scroll.style.blockSize) || naturalHeight);
-  const height = new constructors.height({
+  const height = new AdaptivePanelHeight({
     scroll,
     surface,
     ownerWindow: window,
@@ -32,7 +31,7 @@ function createPhonePagePerformanceFixture(constructors: {
     durationMs: 220,
     pageDurationMs: 220,
   });
-  const pages = new constructors.pages({
+  const pages = new PhoneSheetPages({
     layer,
     surface,
     scroll,
@@ -54,14 +53,6 @@ function createPhonePagePerformanceFixture(constructors: {
     get created() {
       return created;
     },
-    get maximumNodes() {
-      return maximumNodes;
-    },
-    resetCounts() {
-      created = 0;
-      disposed = 0;
-      maximumNodes = 0;
-    },
     push() {
       pages.push({
         kind: "dialog",
@@ -82,7 +73,6 @@ function createPhonePagePerformanceFixture(constructors: {
           disposed += 1;
         },
       });
-      maximumNodes = Math.max(maximumNodes, layer.querySelectorAll("*").length);
     },
     back() {
       naturalHeight = 280;
@@ -100,10 +90,7 @@ it("swaps and restores a phone sheet page within the strictest frame budget", as
   annotate,
 }) => {
   installObsidianDomHelpers();
-  const fixture = createPhonePagePerformanceFixture({
-    height: AdaptivePanelHeight,
-    pages: PhoneSheetPages,
-  });
+  const fixture = createPhonePagePerformanceFixture();
   document.body.append(fixture.layer);
   try {
     const durations = measureInteractionFrames((frame) => {
@@ -117,11 +104,29 @@ it("swaps and restores a phone sheet page within the strictest frame budget", as
     expectTiming(p99, (1000 / 240) * 0.55);
     expect(fixture.disposed).toBe(durations.length / 2);
     expect(fixture.created).toBe(fixture.disposed);
-    // One active 12-row page plus the retained root and navigation shell.
-    expect(fixture.maximumNodes).toBeLessThanOrEqual(50);
     expect(fixture.scroll.children).toHaveLength(1);
     expect(fixture.scroll.firstElementChild).toBe(fixture.rootContent);
     await annotate(`Phone sheet push/back p99=${p99.toFixed(3)} ms; 240 Hz budget`, "performance");
+  } finally {
+    fixture.dispose();
+  }
+});
+
+it("bounds retained page nodes throughout repeated push and back transitions", () => {
+  installObsidianDomHelpers();
+  const fixture = createPhonePagePerformanceFixture();
+  document.body.append(fixture.layer);
+  try {
+    for (let frame = 0; frame < INTERACTION_REFRESH_PROFILE.sampleCount; frame += 1) {
+      if (frame % 2 === 0) fixture.push();
+      else fixture.back();
+      // Inventory traversal belongs to the resource check, outside the timed trajectory.
+      expect(fixture.layer.querySelectorAll("*").length).toBeLessThanOrEqual(50);
+    }
+    expect(fixture.created).toBe(INTERACTION_REFRESH_PROFILE.sampleCount / 2);
+    expect(fixture.disposed).toBe(fixture.created);
+    expect(fixture.scroll.children).toHaveLength(1);
+    expect(fixture.scroll.firstElementChild).toBe(fixture.rootContent);
   } finally {
     fixture.dispose();
   }

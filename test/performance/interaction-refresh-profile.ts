@@ -31,26 +31,14 @@ export function measureInteractionFrames(
   run: (frame: number) => void,
   count: number = INTERACTION_REFRESH_PROFILE.sampleCount,
 ): number[] {
-  const sequence = measureInteractionSequence(run, count);
-  let step = sequence.next();
-  while (!step.done) step = sequence.next();
-  return step.value;
-}
-
-/** Preserve each frame's timer boundary while allowing paired variants to advance together. */
-export function* measureInteractionSequence(
-  run: (frame: number) => void,
-  count: number = INTERACTION_REFRESH_PROFILE.sampleCount,
-  durations: number[] = [],
-): Generator<void, number[], void> {
   if (!Number.isInteger(count) || count < 0 || count > 0xffff_ffff) {
     throw new RangeError("Invalid interaction frame count.");
   }
+  const durations = new Array<number>(count);
   for (let frame = 0; frame < count; frame += 1) {
     const startedAt = performance.now();
     run(frame);
-    durations.push(performance.now() - startedAt);
-    yield;
+    durations[frame] = performance.now() - startedAt;
   }
   return durations;
 }
