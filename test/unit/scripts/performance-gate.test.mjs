@@ -99,37 +99,27 @@ describe("direct original-benchmark gate", () => {
       "/base",
       "/anchor",
     ]);
-    expect(mocks.batch).toHaveBeenCalledTimes(65);
+    expect(mocks.batch).toHaveBeenCalledTimes(125);
     for (const { refreshRate } of profiles) {
       expect(
         measurementCalls().filter(([options]) => options.refreshRate === refreshRate),
-      ).toHaveLength(12);
+      ).toHaveLength(24);
     }
     expect(savedReport().comparisons.map(({ metrics }) => metrics.length)).toEqual([5, 5]);
   });
 
-  it("retains every contract and runs three AB/BA/AB rounds against base and fixed anchor", async () => {
+  it("retains every contract and runs six balanced paired rounds against base and fixed anchor", async () => {
     expect(await executePerformanceGate("/project", runs)).toEqual([]);
-    expect(mocks.batch).toHaveBeenCalledTimes(26);
+    expect(mocks.batch).toHaveBeenCalledTimes(50);
     expect(mocks.inputs).toHaveBeenCalledTimes(4);
     const roots = measurementCalls().map(([options]) => options.root);
-    expect(roots.slice(0, 12)).toEqual([
-      "/base",
-      "/candidate",
-      "/base",
-      "/candidate",
-      "/candidate",
-      "/base",
-      "/candidate",
-      "/base",
-      "/base",
-      "/candidate",
-      "/base",
-      "/candidate",
-    ]);
-    expect(roots.slice(12)).toEqual(
-      roots.slice(0, 12).map((root) => (root === "/base" ? "/anchor" : root)),
-    );
+    expect(roots.filter((root) => root === "/base")).toHaveLength(12);
+    expect(roots.filter((root) => root === "/anchor")).toHaveLength(12);
+    expect(roots.filter((root) => root === "/candidate")).toHaveLength(24);
+    for (let offset = 0; offset < roots.length; offset += 12) {
+      const firstSides = roots.slice(offset, offset + 12).filter((_, index) => index % 2 === 0);
+      expect(firstSides.filter((root) => root === "/candidate")).toHaveLength(3);
+    }
     expect(mocks.prepare).toHaveBeenCalledWith("/project", {
       base: "origin/main",
       anchor: "fixed-anchor",
@@ -137,7 +127,9 @@ describe("direct original-benchmark gate", () => {
     const report = savedReport();
     expect(report.comparisons.map(({ status }) => status)).toEqual(["pass", "pass"]);
     const measured = report.batches.find(({ mode }) => mode === "measurement");
-    expect(measured.artifact).toBe("/results/base/0/shared/120/reference/batch.json");
+    expect(measured.artifact).toMatch(
+      /\/results\/base\/0\/shared\/120\/(reference|candidate)\/batch\.json$/u,
+    );
     expect(measured.measurements).toBeUndefined();
     expect(mocks.dispose).toHaveBeenCalledOnce();
   });
@@ -157,7 +149,7 @@ describe("direct original-benchmark gate", () => {
   it("deduplicates equal base/anchor sources without weakening the fixed-anchor comparison", async () => {
     workspaces.anchor = { ...workspaces.base };
     await executePerformanceGate("/project", runs);
-    expect(measurementCalls()).toHaveLength(12);
+    expect(measurementCalls()).toHaveLength(24);
     expect(savedReport().comparisons).toHaveLength(2);
   });
 
@@ -201,7 +193,7 @@ describe("direct comparison failures", () => {
 
   it.each([
     [[200, 200, 200], "regression"],
-    [[109, 110, 111], "inconclusive"],
+    [[149, 150, 151], "inconclusive"],
   ])("fails original timing values %j as %s", async (values, status) => {
     let candidate = 0;
     mocks.batch.mockImplementation(async (options) =>
@@ -266,5 +258,33 @@ describe("direct comparison failures", () => {
     mocks.write.mockRejectedValue(new Error("disk full"));
     await expect(executePerformanceGate("/project", runs)).rejects.toThrow("disk full");
     expect(mocks.dispose).toHaveBeenCalledOnce();
+  });
+});
+
+describe("bounded comparison stages", () => {
+  it("uses the final stage only for an unresolved profile and never retries beyond it", async () => {
+    workspaces.anchor = { ...workspaces.base };
+    mocks.batch.mockImplementation(async (options) =>
+      batchResult(
+        options,
+        options.mode === "measurement" &&
+          options.root === "/candidate" &&
+          options.refreshRate === 120
+          ? 150
+          : 100,
+      ),
+    );
+    const violations = await executePerformanceGate("/project", runs);
+    expect(violations).toHaveLength(2);
+    expect(violations[0].message).toContain("inconclusive");
+    expect(measurementCalls().filter(([options]) => options.refreshRate === 120)).toHaveLength(36);
+    expect(measurementCalls().filter(([options]) => options.refreshRate === 240)).toHaveLength(12);
+    const comparison = savedReport().comparisons[0];
+    expect(comparison.orderPlans).toHaveLength(2);
+    for (const { order } of comparison.orderPlans) {
+      expect(order).toHaveLength(18);
+      expect(order.slice(0, 6).filter((side) => side === "candidate")).toHaveLength(3);
+      expect(order.slice(6).filter((side) => side === "candidate")).toHaveLength(6);
+    }
   });
 });

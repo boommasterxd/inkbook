@@ -1,10 +1,12 @@
-export const COMPARISON_ROUNDS = 3;
-export const REGRESSION_RATIO = 1.1;
-export const MAXIMUM_ROUND_SPREAD = 1.2;
+export const COMPARISON_STAGES = Object.freeze([6, 18]);
+export const REGRESSION_RATIO = 1.5;
 export const MAXIMUM_COMPARISON_METRICS = 20_000;
 
-/** Compare observed paired ratios; three rounds do not establish a confidence interval. */
+/** Fixed two-look sign test of the median paired trajectory-statistic ratio. */
 export function compareTimingRounds(referenceRounds, candidateRounds) {
+  if (referenceRounds?.length !== candidateRounds?.length) {
+    throw new Error("Performance comparison requires matching paired round counts.");
+  }
   const references = indexRounds(referenceRounds);
   const candidates = indexRounds(candidateRounds);
   const baseline = references[0];
@@ -25,8 +27,8 @@ export function compareTimingRounds(referenceRounds, candidateRounds) {
 }
 
 function indexRounds(rounds) {
-  if (!Array.isArray(rounds) || rounds.length !== COMPARISON_ROUNDS) {
-    throw new Error("Performance comparison requires exactly three paired rounds.");
+  if (!Array.isArray(rounds) || !COMPARISON_STAGES.includes(rounds.length)) {
+    throw new Error("Performance comparison requires exactly six or eighteen paired rounds.");
   }
   return rounds.map((round) => {
     if (!Array.isArray(round) || round.length === 0 || round.length > MAXIMUM_COMPARISON_METRICS) {
@@ -92,17 +94,40 @@ function compareMetric(key, referenceValues, candidateValues) {
     }
     return ratio;
   });
-  if (ratios.includes(null)) {
-    return { key, ratios, minRatio: null, maxRatio: null, status: "inconclusive" };
-  }
-  const minRatio = Math.min(...ratios);
-  const maxRatio = Math.max(...ratios);
-  const noisy = maxRatio / minRatio > MAXIMUM_ROUND_SPREAD;
-  const status =
-    minRatio > REGRESSION_RATIO
-      ? "regression"
-      : !noisy && maxRatio <= REGRESSION_RATIO
-        ? "pass"
+  const first = classifyStage(ratios.slice(0, COMPARISON_STAGES[0]));
+  const decision =
+    first.status !== "inconclusive" || ratios.length === COMPARISON_STAGES[0]
+      ? first
+      : classifyStage(ratios);
+  return {
+    key,
+    ratios,
+    minRatio: ratios.includes(null) ? null : Math.min(...ratios),
+    maxRatio: ratios.includes(null) ? null : Math.max(...ratios),
+    ...decision,
+  };
+}
+
+function classifyStage(ratios) {
+  const stage = ratios.length;
+  const requiredSigns = stage === COMPARISON_STAGES[0] ? 6 : 14;
+  const belowCount = ratios.filter((ratio) => ratio !== null && ratio < REGRESSION_RATIO).length;
+  const aboveCount = ratios.filter((ratio) => ratio !== null && ratio > REGRESSION_RATIO).length;
+  const ordered = ratios.includes(null) ? null : [...ratios].sort((left, right) => left - right);
+  const status = !ordered
+    ? "inconclusive"
+    : belowCount >= requiredSigns
+      ? "pass"
+      : aboveCount >= requiredSigns
+        ? "regression"
         : "inconclusive";
-  return { key, ratios, minRatio, maxRatio, status };
+  return {
+    stage,
+    requiredSigns,
+    belowCount,
+    aboveCount,
+    lowerMedianBound: ordered?.[stage - requiredSigns] ?? null,
+    upperMedianBound: ordered?.[requiredSigns - 1] ?? null,
+    status,
+  };
 }

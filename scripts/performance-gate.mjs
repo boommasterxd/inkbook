@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -5,7 +6,7 @@ import { tmpdir } from "node:os";
 import { runPerformanceBatch } from "./performance-batch.mjs";
 import { planPerformanceInputs } from "./performance-inputs.mjs";
 import { TIMING_PERFORMANCE_FILES } from "./performance-test-manifest.mjs";
-import { COMPARISON_ROUNDS, compareTimingRounds } from "./performance-comparison.mjs";
+import { COMPARISON_STAGES, compareTimingRounds } from "./performance-comparison.mjs";
 import { preparePerformanceWorkspaces } from "./performance-workspace.mjs";
 
 export async function executePerformanceGate(projectRoot, runs) {
@@ -164,29 +165,22 @@ async function compareVariant(variant, runs, workspaces, report) {
   );
   const pending = plans.filter((plan) => plan.testFiles.length > 0);
   if (pending.length === 0) return { status: "identical-inputs", metrics: [], identicalInputs };
-  const referenceRounds = [];
-  const candidateRounds = [];
-  for (let round = 0; round < COMPARISON_ROUNDS; round += 1) {
-    const measurements = { reference: [], candidate: [] };
-    for (const run of pending) {
-      const order = round % 2 === 0 ? ["reference", "candidate"] : ["candidate", "reference"];
-      for (const side of order) {
-        const result = await measureOriginalBatch({
-          variant,
-          round,
-          side,
-          run,
-          workspaces,
-          report,
-        });
-        measurements[side].push(...result.measurements);
-      }
-    }
-    referenceRounds.push(measurements.reference);
-    candidateRounds.push(measurements.candidate);
+  const metrics = [];
+  const orderPlans = [];
+  for (const run of pending) {
+    const result = await comparePlannedRun({ variant, run, workspaces, report });
+    metrics.push(...result.metrics);
+    orderPlans.push({ run: run.label, refreshRate: run.refreshRate, order: result.order });
   }
+  const status = metrics.some((metric) => metric.status === "regression")
+    ? "regression"
+    : metrics.some((metric) => metric.status === "inconclusive")
+      ? "inconclusive"
+      : "pass";
   return {
-    ...compareTimingRounds(referenceRounds, candidateRounds),
+    status,
+    metrics,
+    orderPlans,
     identicalInputs,
     inputs: plans.map(({ label, refreshRate, inputs }) => ({
       label,
@@ -194,6 +188,46 @@ async function compareVariant(variant, runs, workspaces, report) {
       inputs: inputs.inputs,
     })),
   };
+}
+
+function comparisonOrder() {
+  const order = [];
+  let previous = 0;
+  for (const stage of COMPARISON_STAGES) {
+    const size = stage - previous;
+    const block = Array.from({ length: size }, (_, index) =>
+      index < size / 2 ? "reference" : "candidate",
+    );
+    for (let index = block.length - 1; index > 0; index -= 1) {
+      const swap = randomInt(index + 1);
+      [block[index], block[swap]] = [block[swap], block[index]];
+    }
+    order.push(...block);
+    previous = stage;
+  }
+  return order;
+}
+
+async function comparePlannedRun({ variant, run, workspaces, report }) {
+  const referenceRounds = [];
+  const candidateRounds = [];
+  const order = comparisonOrder();
+  let comparison;
+  for (let round = 0; round < order.length; round += 1) {
+    const first = order[round];
+    const sides = first === "reference" ? ["reference", "candidate"] : ["candidate", "reference"];
+    const measurements = {};
+    for (const side of sides) {
+      const result = await measureOriginalBatch({ variant, round, side, run, workspaces, report });
+      measurements[side] = result.measurements;
+    }
+    referenceRounds.push(measurements.reference);
+    candidateRounds.push(measurements.candidate);
+    if (!COMPARISON_STAGES.includes(round + 1)) continue;
+    comparison = compareTimingRounds(referenceRounds, candidateRounds);
+    if (comparison.status !== "inconclusive") break;
+  }
+  return { ...comparison, order };
 }
 
 function validateInputPlan(files, plan) {
