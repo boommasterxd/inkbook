@@ -372,7 +372,7 @@ Integration tests do not launch a complete Obsidian application.
 
 ### Performance Tests
 
-Automated performance tests use deterministic fixtures and cover:
+Create and update benchmarks using [Adding or Changing Performance Tests](performance-ci.md#adding-or-changing-performance-tests). That procedure defines work/resource assertions, clock separation, timing telemetry, manifest registration, and verification; the product budgets in this document remain authoritative. Automated performance tests use deterministic fixtures and cover:
 
 - an exhaustive classified manifest: invariant benchmarks once, budget-only benchmarks once against the strictest 240-Hz threshold, and cadence-sensitive benchmarks at 60, 90, 120, 144, and 240 Hz with profile-specific cadence and 55-percent p99 main-thread targets; continuous profiles contain at least 100 samples, smaller sets report their maximum instead, and atomic adoption remains subject to the separate 16.7-millisecond hard limit
 - snapshot validation and parsing
