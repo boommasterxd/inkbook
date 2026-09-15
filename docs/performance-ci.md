@@ -107,21 +107,21 @@ This compact mapping retains the 2026-09-15 source inventory of all 50 files. **
 
 Thirteen focused mutations were rejected in isolated source copies without relying on timing thresholds. The initial rendering controls used 120 Hz; the domain/editor controls and seven additional work-bound controls used 240 Hz:
 
-| Mutation                             | Detecting contract      | Observed rejection                                            |
-| ------------------------------------ | ----------------------- | ------------------------------------------------------------- |
-| Duplicate React root render          | Chrome refresh profile  | Two render calls where exactly one is allowed                 |
-| Duplicate animation-frame scheduling | Scene reconciliation    | Two pending frames where exactly one is allowed               |
-| Full spatial-index scan              | Local query work bounds | 1,008/10,008 candidate visits where at most eight are allowed |
-| Preview point-buffer copy            | Selection preview       | 184,320/1,474,560 point reads where zero are allowed          |
-| Duplicate live-stroke tail rebuild   | Pressure-outline work   | 1,024 tail builds where exactly 512 are allowed               |
-| Unbounded retained path cache        | Path-cache remount      | 4,200 retained entries where exactly 4,096 are allowed        |
-| Quadratic overlap membership | Overflow capacity | Indexed list reads exceeded the linear 4n allowance at both fixture sizes |
-| Unchanged serializer geometry scan | Incremental capacity | 2,998/59,998 retained width reads where zero are allowed |
-| Ignored mount deadlines | Reconciliation work | 814 mount work units where the controlled frame permits at most six |
-| Doubled eraser update work | Exact point visits | 24,590 point-x reads where at most 12,298 are allowed |
-| Doubled eraser finalization work | Finalization checkpoints | 65 point-x reads where at most 34 are allowed at 240 Hz |
-| Doubled path command batch | Path checkpoints | 512 command positions where at most 256 are allowed |
-| Doubled path byte batch | Path checkpoints | 32,768 input span where at most 16,396 is allowed for this fixture |
+| Mutation                             | Detecting contract       | Observed rejection                                                        |
+| ------------------------------------ | ------------------------ | ------------------------------------------------------------------------- |
+| Duplicate React root render          | Chrome refresh profile   | Two render calls where exactly one is allowed                             |
+| Duplicate animation-frame scheduling | Scene reconciliation     | Two pending frames where exactly one is allowed                           |
+| Full spatial-index scan              | Local query work bounds  | 1,008/10,008 candidate visits where at most eight are allowed             |
+| Preview point-buffer copy            | Selection preview        | 184,320/1,474,560 point reads where zero are allowed                      |
+| Duplicate live-stroke tail rebuild   | Pressure-outline work    | 1,024 tail builds where exactly 512 are allowed                           |
+| Unbounded retained path cache        | Path-cache remount       | 4,200 retained entries where exactly 4,096 are allowed                    |
+| Quadratic overlap membership         | Overflow capacity        | Indexed list reads exceeded the linear 4n allowance at both fixture sizes |
+| Unchanged serializer geometry scan   | Incremental capacity     | 2,998/59,998 retained width reads where zero are allowed                  |
+| Ignored mount deadlines              | Reconciliation work      | 814 mount work units where the controlled frame permits at most six       |
+| Doubled eraser update work           | Exact point visits       | 24,590 point-x reads where at most 12,298 are allowed                     |
+| Doubled eraser finalization work     | Finalization checkpoints | 65 point-x reads where at most 34 are allowed at 240 Hz                   |
+| Doubled path command batch           | Path checkpoints         | 512 command positions where at most 256 are allowed                       |
+| Doubled path byte batch              | Path checkpoints         | 32,768 input span where at most 16,396 is allowed for this fixture        |
 
 The temporary copies were removed, and source hashes before/after confirmed no live production mutation remained. These targeted outcomes establish detection of the listed work/resource regressions; they do not establish complete gate, general extra-compute timing detection, or physical-device success.
 
