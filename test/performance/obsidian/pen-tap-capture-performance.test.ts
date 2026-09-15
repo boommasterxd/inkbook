@@ -5,7 +5,7 @@ import { expect, it } from "vitest";
 import { createHtmlElement } from "../../adapters/obsidian/dom";
 import { mountPenTapEditor, penEvent } from "../../fixtures/obsidian/pen-tap-extension";
 import { interactionP99, INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 it.for(["touch", "widget", "padding"])(
   "keeps %s pointer capture inside the input budget",
@@ -29,7 +29,7 @@ it.for(["touch", "widget", "padding"])(
         if (sample >= 0) durations.push(performance.now() - started);
       }
       const p99 = interactionP99(durations);
-      expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+      expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
       if (surface === "padding") {
         expect(editor.command).toHaveBeenCalledTimes(INTERACTION_REFRESH_PROFILE.sampleCount + 50);
       } else {

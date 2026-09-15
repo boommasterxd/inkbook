@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { BoxShapeElementV1 } from "../../../src/domain/schema/public";
 import { ElementStore } from "../../../src/domain/store/public";
 import { createStandardRuntimeDomainFixture } from "../domain/standard-domain-fixture";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 import { pageHeightPercentile } from "./page-height-performance-fixture";
 
 let store: ElementStore;
@@ -41,7 +41,7 @@ describe("automatic page-height mutation performance", () => {
     }
 
     const p99 = pageHeightPercentile(durations, 0.99);
-    expect(p99).toBeLessThanOrEqual(timingBudget(4));
+    expectTiming(p99, 4);
     expect(store.instrumentation.fullStoreScans).toBe(0);
     await annotate(`500 bottom-extent mutations: p99=${p99.toFixed(3)} ms, fullScans=0`);
   });

@@ -3,7 +3,7 @@ import { expect, it } from "vitest";
 import type { BoxShapeElementV1 } from "../../../src/domain/schema/public";
 import { IncrementalDocumentSerializer } from "../../../src/persistence/serialization/public";
 import { createSnapshot, uuid } from "../../unit/persistence/serialization/fixtures";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 it("updates retained serializer capacity without rescanning unchanged geometry", async ({
   annotate,
@@ -26,7 +26,7 @@ it("updates retained serializer capacity without rescanning unchanged geometry",
   const durationMs = performance.now() - started;
 
   await annotate(`100 retained-capacity updates=${durationMs.toFixed(3)} ms`, "performance");
-  expect(durationMs).toBeLessThanOrEqual(timingBudget(500));
+  expectTiming(durationMs, 500);
 });
 
 function rectangle(index: number): BoxShapeElementV1 {

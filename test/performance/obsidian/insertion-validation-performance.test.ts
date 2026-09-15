@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 import { EmptyLineInsertionController } from "../../../src/obsidian/commands/empty-line-insertion";
 import { registerInkbookCommands } from "../../../src/obsidian/commands/command-registry";
 import { interactionP99, INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 it.for([10_000, 50_000])(
   "validates an insertion command once within the frame budget after %i note lines",
@@ -25,7 +25,7 @@ it.for([10_000, 50_000])(
       await settled;
     }
     const p99 = interactionP99(durations);
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     await annotate(
       `Insertion after ${String(lineCount)} lines p99=${p99.toFixed(3)} ms`,
       "performance",

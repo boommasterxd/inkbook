@@ -32,7 +32,7 @@ import { indexedStroke } from "../../fixtures/editor/stroke";
 import { maximumStroke } from "./maximum-stroke-fixture";
 import { createPassThroughMoveSession } from "./selection-session-fixture";
 import { INTERACTION_REFRESH_PROFILE, interactionP99 } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 describe("pressure selection hot path", () => {
   it("stops pressure sweep selection at the first visible segment of a maximum stroke", () => {
@@ -49,9 +49,7 @@ describe("pressure selection hot path", () => {
       return duration;
     });
 
-    expect(interactionP99(durations)).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
+    expectTiming(interactionP99(durations), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
   });
 });
 
@@ -71,9 +69,7 @@ describe("selection hot paths", () => {
       return duration;
     });
 
-    expect(interactionP99(durations)).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
+    expectTiming(interactionP99(durations), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
   });
 
   it("classifies rectangle and bounded lasso candidates in a 10,000-stroke index", () => {
@@ -96,15 +92,9 @@ describe("selection hot paths", () => {
       const enclosedDurations = measureAreaSelection(store, sceneStore, lasso, "fully-enclosed");
       const rectangleDurations = measureAreaSelection(store, sceneStore, rectangle, "touched");
 
-      expect(interactionP99(touchedDurations)).toBeLessThanOrEqual(
-        timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-      );
-      expect(interactionP99(enclosedDurations)).toBeLessThanOrEqual(
-        timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-      );
-      expect(interactionP99(rectangleDurations)).toBeLessThanOrEqual(
-        timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-      );
+      expectTiming(interactionP99(touchedDurations), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+      expectTiming(interactionP99(enclosedDurations), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+      expectTiming(interactionP99(rectangleDurations), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
       expect(store.instrumentation.fullStoreScans).toBe(0);
     } finally {
       sceneStore.release();
@@ -133,12 +123,8 @@ describe("selection hot paths", () => {
       return performance.now() - started;
     });
 
-    expect(interactionP99(durations)).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
-    expect(interactionP99(hitDurations)).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
+    expectTiming(interactionP99(durations), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+    expectTiming(interactionP99(hitDurations), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
   });
 });
 
@@ -183,15 +169,13 @@ describe("selection scale preview hot path", () => {
       return duration;
     });
 
-    expect(setupDuration).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
-    );
+    expectTiming(setupDuration, INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs);
     const p99 = interactionP99(durations);
     await annotate(
       `10,000 strokes and 256 rotated boxes: scale preview p99=${p99.toFixed(3)} ms`,
       "performance",
     );
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
   });
 });
 
@@ -213,18 +197,10 @@ describe("selection commit hot paths", () => {
     }
     expect(first.points.slice(0, 3)).toEqual(new Float64Array([4, 103, 0.5]));
     expect(last.points.slice(-3)).toEqual(new Float64Array([11, 103.487, 0.5]));
-    expect(interactionP99(decisionDurations)).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
-    expect(interactionP99(hitDurations)).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
-    expect(percentile(sliceDurations, 0.95)).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
-    expect(maximumSlice).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
-    );
+    expectTiming(interactionP99(decisionDurations), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+    expectTiming(interactionP99(hitDurations), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+    expectTiming(percentile(sliceDurations, 0.95), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+    expectTiming(maximumSlice, INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs);
   });
 
   it("bounds preparation for a near-maximum 19,929-endpoint selection fan-out", async () => {
@@ -260,15 +236,12 @@ describe("selection commit hot paths", () => {
       fullStoreScans: 0,
       reverseDependencyVisits: 19_929,
     });
-    expect(interactionP99(previewDurations)).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    expectTiming(interactionP99(previewDurations), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+    expectTiming(
+      percentile(scheduler.sliceDurations, 0.95),
+      INTERACTION_REFRESH_PROFILE.mainThreadP99Ms,
     );
-    expect(percentile(scheduler.sliceDurations, 0.95)).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
-    expect(scheduler.maxSliceDuration).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
-    );
+    expectTiming(scheduler.maxSliceDuration, INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs);
   }, 30_000);
 });
 

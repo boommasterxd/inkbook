@@ -31,7 +31,7 @@ import {
 } from "./domain-scenarios";
 import { collectProfileGarbage } from "../persistence/metrics";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 let fixture: StandardDomainFixture;
 let store: ElementStore;
 let storeConstructionDuration = 0;
@@ -60,7 +60,7 @@ describe("standard 10,000-stroke domain fixture", () => {
     expect(fixture.arrowCount).toBe(250);
     expect(store.size).toBe(11_000);
     expect(store.getMaximumBottom()).toBeGreaterThanOrEqual(200_000);
-    expect(storeConstructionDuration).toBeLessThanOrEqual(timingBudget(750));
+    expectTiming(storeConstructionDuration, 750);
 
     let dependentEndpoints = 0;
     store.visitDependents(fixture.connectedTargetId, () => {
@@ -96,7 +96,7 @@ describe("normalized store and command costs", () => {
     }
 
     const p95 = percentile(durations, 0.95);
-    expect(p95).toBeLessThanOrEqual(timingBudget(12));
+    expectTiming(p95, 12);
     expect(store.get(stableId)).toBe(stableRecord);
     expect(store.instrumentation.estimatedRetainedBytes).toBe(retainedBytes);
     expect(store.instrumentation).toMatchObject({
@@ -127,7 +127,7 @@ describe("normalized store and command costs", () => {
     const duration = performance.now() - started;
 
     expect(delta?.changes).toHaveLength(257);
-    expect(duration).toBeLessThanOrEqual(timingBudget(12));
+    expectTiming(duration, 12);
     expect(store.instrumentation).toMatchObject({
       fullStoreScans: 0,
       reverseDependencyVisits: 512,
@@ -145,7 +145,7 @@ describe("normalized store and command costs", () => {
     const duration = performance.now() - started;
 
     expect(delta?.changes.length).toBeGreaterThanOrEqual(10_000);
-    expect(duration).toBeLessThanOrEqual(timingBudget(12));
+    expectTiming(duration, 12);
     expect(store.get(fixture.strokeIds[1] as string)).toBe(stableRecord);
     expect(store.instrumentation).toMatchObject({
       bandScans: 2,
@@ -184,7 +184,7 @@ describe("spatial queries, selection, and snapping", () => {
     }
 
     const p95 = percentile(durations, 0.95);
-    expect(p95).toBeLessThanOrEqual(timingBudget(8));
+    expectTiming(p95, 8);
     expect(scratch.allocationCount).toBe(warmAllocations);
     expect(scratch.candidateVisitCount).toBeLessThan(10);
   });
@@ -210,7 +210,7 @@ describe("spatial queries, selection, and snapping", () => {
     }
 
     const p95 = percentile(durations, 0.95);
-    expect(p95).toBeLessThanOrEqual(timingBudget(8));
+    expectTiming(p95, 8);
     expect(query.scratch.allocationCount).toBe(query.warmAllocationCount);
     expect(query.storeScratch.allocationCount).toBe(query.warmStoreAllocationCount);
     expect(snapStore.instrumentation).toMatchObject({
@@ -290,14 +290,10 @@ describe("large selection commit", () => {
       expect(run.materialization.sampleCount).toBe(50);
       expect(run.commit.sampleCount).toBe(50);
     }
-    expect(releaseMaterialization.p95).toBeLessThanOrEqual(timingBudget(100));
-    expect(releaseCommit.p95).toBeLessThanOrEqual(timingBudget(100));
-    expect(releaseSlices.p95).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
-    expect(maximumSlice).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
-    );
+    expectTiming(releaseMaterialization.p95, 100);
+    expectTiming(releaseCommit.p95, 100);
+    expectTiming(releaseSlices.p95, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+    expectTiming(maximumSlice, INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs);
     expect(partialStoreObserved).toBe(false);
     expect(publishedDeltas).toBe(250);
     expect(history.commandCount).toBeGreaterThan(0);
@@ -355,13 +351,9 @@ describe("maximum live-stroke primitives", () => {
 
     expect(releaseAppend.sampleCount).toBe(20 * 4096);
     if (releaseAppend.p99 === null) throw new Error("Maximum-stroke append p99 is unavailable.");
-    expect(releaseAppend.p99).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
+    expectTiming(releaseAppend.p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     expect(releaseHandoff.sampleCount).toBe(20);
-    expect(releaseHandoff.maximum).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
-    );
+    expectTiming(releaseHandoff.maximum, INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs);
     expect(measuredRuns.every(({ maximumTailSamples }) => maximumTailSamples <= 16)).toBe(true);
     expect(
       measuredRuns.every(({ maximumFinalizedChunkSamples }) =>

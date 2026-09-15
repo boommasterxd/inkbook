@@ -12,7 +12,7 @@ import {
   interactionProfileAnnotation,
   measureInteractionFrames,
 } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation profile`, () => {
   it("keeps continuous anchored trackpad zoom within budget", async ({ annotate }) => {
@@ -39,7 +39,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation profile`, () 
     expect(claimedFrames).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
     expect(harness.cameraWrites).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
     expect(harness.layoutWrites).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     await annotate(interactionProfileAnnotation("trackpad zoom", p99), "performance");
     harness.navigation.dispose();
   });
@@ -59,7 +59,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation profile`, () 
     const p99 = interactionP99(durations);
     expect(harness.cameraWrites).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
     expect(harness.scrollWrites).toBeGreaterThan(0);
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     await annotate(interactionProfileAnnotation("pan and native scroll", p99), "performance");
     harness.navigation.dispose();
   });
@@ -94,7 +94,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation profile`, () 
     expect(harness.cameraWrites).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
     expect(harness.frames.maxPending).toBe(1);
     expect(harness.scrollWrites).toBe(0);
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     await annotate(interactionProfileAnnotation("trackpad pan handoff", p99), "performance");
     harness.navigation.dispose();
   });
@@ -108,7 +108,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation profile`, () 
 
     const p99 = interactionP99(durations);
     expect(harness.cameraWrites).toBeGreaterThan(0);
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     await annotate(interactionProfileAnnotation("touch pan momentum", p99), "performance");
     harness.navigation.dispose();
   });

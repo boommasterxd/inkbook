@@ -2,7 +2,7 @@ import { EditorSelection, EditorState, StateEffect, type TransactionSpec } from 
 import { expect, it } from "vitest";
 import { removeLivePreviewMarkdown } from "../../../src/obsidian/embeds/live-preview-removal";
 import { interactionP99, INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 const scrollAnchor = StateEffect.define<number>({ map: (value, changes) => changes.mapPos(value) });
 
@@ -24,7 +24,7 @@ it.for([10_000, 50_000])(
       if (sample >= 0) durations.push(elapsed);
     }
     const p99 = interactionP99(durations);
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     await annotate(
       `Deletion in ${String(lineCount)} Markdown lines p99=${p99.toFixed(3)} ms`,
       "performance",

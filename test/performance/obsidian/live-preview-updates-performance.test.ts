@@ -10,7 +10,7 @@ import { MARKDOWN_EMBED_LIMITS } from "../../../src/obsidian/embeds/markdown-emb
 import type { EmbedIntegrationPorts } from "../../../src/obsidian/embeds/presentation-port";
 import { configureTestEditorState } from "../../adapters/obsidian/plugin";
 import { interactionP99, INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 for (const operation of ["text edit", "recognition burst"] as const) {
   it(`updates maximum-capacity Live Preview for a ${operation} within the frame budget`, async ({
@@ -54,7 +54,7 @@ for (const operation of ["text edit", "recognition burst"] as const) {
       initial.facet(EditorView.decorations)[0],
     );
     const p99 = interactionP99(durations);
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     await annotate(
       `${operation} with ${String(capacity)} embeds p99=${p99.toFixed(3)} ms`,
       "performance",

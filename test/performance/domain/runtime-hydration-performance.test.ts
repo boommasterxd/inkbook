@@ -8,7 +8,7 @@ import { createWorkerSnapshot } from "../../fixtures/persistence/worker-snapshot
 import { MeasuredSliceScheduler, percentile } from "./domain-scenarios";
 import { createStandardRuntimeDomainFixture } from "./standard-domain-fixture";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 describe("runtime store hydration performance", () => {
   it("builds a complete initial store in cancellable bounded slices", async ({ annotate }) => {
@@ -38,14 +38,13 @@ describe("runtime store hydration performance", () => {
       hydrationElementVisits: 22_000,
       publishedDeltas: 0,
     });
-    expect(duration).toBeLessThanOrEqual(timingBudget(750));
+    expectTiming(duration, 750);
     expect(scheduler.sliceDurations.length).toBeGreaterThanOrEqual(100);
-    expect(percentile(scheduler.sliceDurations, 0.95)).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
+    expectTiming(
+      percentile(scheduler.sliceDurations, 0.95),
+      INTERACTION_REFRESH_PROFILE.mainThreadP99Ms,
     );
-    expect(scheduler.maxSliceDuration).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
-    );
+    expectTiming(scheduler.maxSliceDuration, INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs);
     await annotate(
       `validated hydration: refreshRate=${INTERACTION_REFRESH_PROFILE.refreshRate} Hz, ` +
         `maxSlice=${scheduler.maxSliceDuration.toFixed(3)} ms, total=${duration.toFixed(3)} ms`,

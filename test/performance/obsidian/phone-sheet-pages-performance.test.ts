@@ -5,7 +5,7 @@ import { AdaptivePanelHeight } from "../../../src/obsidian/menus/adaptive-panel-
 import { PhoneSheetPages } from "../../../src/obsidian/menus/phone-sheet-pages";
 import { installObsidianDomHelpers } from "../../adapters/obsidian/dom";
 import { interactionP99, measureInteractionFrames } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 it("swaps and restores a phone sheet page within the strictest frame budget", async ({
   annotate,
@@ -69,7 +69,7 @@ it("swaps and restores a phone sheet page within the strictest frame budget", as
       });
     });
     const p99 = interactionP99(durations);
-    expect(p99).toBeLessThanOrEqual(timingBudget((1000 / 240) * 0.55));
+    expectTiming(p99, (1000 / 240) * 0.55);
     expect(disposed).toBe(durations.length / 2);
     expect(scroll.children).toHaveLength(1);
     expect(scroll.firstElementChild).toBe(rootContent);

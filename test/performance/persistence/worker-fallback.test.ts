@@ -10,7 +10,7 @@ import {
 import { createStandardPersistenceFixture } from "./fixtures";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 import { annotateDurations, summarizeDurations, type MetricAnnotator } from "./metrics";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 declare const process: {
   threadCpuUsage: () => { readonly system: number; readonly user: number };
@@ -172,10 +172,8 @@ async function assertFallbackMeasurements(
   }
   const summary = summarizeDurations(probe.durations);
   expect(probe.durations.length).toBeGreaterThanOrEqual(100);
-  expect.soft(summary.p95).toBeLessThanOrEqual(timingBudget(MAIN_THREAD_BUDGET_MS));
-  expect(summary.maximum).toBeLessThanOrEqual(
-    timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
-  );
+  expectTiming(summary.p95, MAIN_THREAD_BUDGET_MS, { soft: true });
+  expectTiming(summary.maximum, INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs);
 }
 
 class FailingWorker implements DocumentRuntimePort {

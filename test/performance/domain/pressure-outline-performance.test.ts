@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildPressureOutline } from "../../../src/domain/geometry/pressure-outline";
 import { LiveStrokeBuilder } from "../../../src/editor/tools/live-stroke";
 import { interactionP99, INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 const STYLE = {
   color: { type: "theme-text" as const },
@@ -31,7 +31,7 @@ describe("bounded canonical pressure geometry", () => {
       maximumParts = Math.max(maximumParts, parts.length);
     }
     const p99 = interactionP99(durations);
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     expect(maximumParts).toBe(1);
     await annotate(`Canonical 16-sample pressure geometry p99=${p99.toFixed(3)} ms`, "performance");
   });
@@ -57,7 +57,7 @@ describe("bounded canonical pressure geometry", () => {
       expect(parts).toHaveLength(1);
     }
     const p99 = interactionP99(durations);
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     expect(minimumCommands).toBeGreaterThanOrEqual(128);
     await annotate(`Canonical 64-curve resize geometry p99=${p99.toFixed(3)} ms`, "performance");
   });
@@ -78,7 +78,7 @@ describe("bounded canonical pressure geometry", () => {
     }
     const p99 = interactionP99(durations);
     const commit = builder.finish();
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     expect(commit.points).toHaveLength(4096 * 3);
     expect(commit.geometry).toHaveLength(1);
     expect(commit.instrumentation.maximumTailSamples).toBeLessThanOrEqual(16);

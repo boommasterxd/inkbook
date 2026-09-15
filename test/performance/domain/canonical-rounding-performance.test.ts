@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { canonicalizeGeometryNumber } from "../../../src/domain/schema/canonical";
 import { interactionP99, INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 describe("canonical coordinate rounding", () => {
   it("rounds every coordinate of a maximum stroke within the frame budget", async ({
@@ -19,7 +19,7 @@ describe("canonical coordinate rounding", () => {
     }
     const p99 = interactionP99(durations);
     expect(Number.isFinite(checksum)).toBe(true);
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     await annotate(`Maximum-stroke coordinate rounding p99=${p99.toFixed(3)} ms`, "performance");
   });
 });

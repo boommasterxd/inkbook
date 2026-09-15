@@ -7,7 +7,7 @@ import { SettingsModalContent } from "../../../src/obsidian/settings/settings-mo
 import { installObsidianDomHelpers } from "../../adapters/obsidian/dom";
 import { createTestSettingsStore } from "../../fixtures/obsidian/settings-store";
 import { interactionP99, measureInteractionFrames } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 it("keeps unopened settings bounded and unrelated device changes within the strictest frame budget", async ({
   annotate,
@@ -39,7 +39,7 @@ it("keeps unopened settings bounded and unrelated device changes within the stri
     });
     expect(replace).not.toHaveBeenCalled();
     const p99 = interactionP99(durations);
-    expect(p99).toBeLessThanOrEqual(timingBudget((1000 / 240) * 0.55));
+    expectTiming(p99, (1000 / 240) * 0.55);
     await annotate(
       `Unrelated settings change p99=${p99.toFixed(3)} ms; 240 Hz budget`,
       "performance",

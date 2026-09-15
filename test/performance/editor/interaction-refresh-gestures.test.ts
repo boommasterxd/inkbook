@@ -19,7 +19,7 @@ import {
   interactionProfileAnnotation,
   measureInteractionFrames,
 } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 const ELEMENT_COUNT = 10_000;
 const RAW_ERASER_SAMPLES_PER_FRAME = 8;
@@ -63,7 +63,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz editor gesture profile`,
     expect(rejectedUpdates).toBe(0);
     expect(eraser.candidateCount).toBeGreaterThan(0);
     expect(store.instrumentation.fullStoreScans).toBe(0);
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     await annotate(interactionProfileAnnotation("eraser feedback", p99), "performance");
     eraser.revert();
     sceneStore.release();
@@ -87,7 +87,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz editor gesture profile`,
         expect(preview?.exactElements).toHaveLength(1);
       }
       expect(preview?.exactPreviewTruncated).toBe(profile.truncated);
-      expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+      expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
       await annotate(interactionProfileAnnotation(profile.name, p99), "performance");
     }
   });
@@ -105,7 +105,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz editor gesture profile`,
       });
       const p99 = interactionP99(durations);
       expect(snappedFrames, profile.name).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
-      expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+      expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
       await annotate(interactionProfileAnnotation(profile.name, p99), "performance");
     }
   });

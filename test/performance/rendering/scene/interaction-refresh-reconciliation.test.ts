@@ -11,7 +11,7 @@ import {
   interactionP99,
   interactionProfileAnnotation,
 } from "../../interaction-refresh-profile";
-import { timingBudget } from "../../timing-budget";
+import { expectTiming } from "../../timing-assertions";
 import {
   INTERACTION_ELEMENT_COUNT,
   INTERACTION_PAGE,
@@ -62,13 +62,9 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz camera reconciliation pr
     const firstFrameP99 = interactionP99(firstFrameDurations);
     const followUpMetric = followUpStatistic(followUpDurations);
     const instrumentation = renderer.instrumentation();
-    expect(firstFrameP99).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
+    expectTiming(firstFrameP99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     if (followUpDurations.length > 0) {
-      expect(followUpMetric).toBeLessThanOrEqual(
-        timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-      );
+      expectTiming(followUpMetric, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     }
     expect(instrumentation.spatialQueries).toBeGreaterThan(0);
     expect(instrumentation.domEntrants).toBeGreaterThan(0);
@@ -149,19 +145,11 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz preview commit profile`,
     expect(failedHandoffs).toBe(0);
     expect(failedReplacements).toBe(0);
     expect(publishedDeltas).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
-    expect(previewFirstFrameP99).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
-    expect(commitFirstFrameP99).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
-    expect(commitOperationP99).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
+    expectTiming(previewFirstFrameP99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+    expectTiming(commitFirstFrameP99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+    expectTiming(commitOperationP99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     if (followUpDurations.length > 0) {
-      expect(followUpMetric).toBeLessThanOrEqual(
-        timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-      );
+      expectTiming(followUpMetric, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     }
     expect(renderer.mountedIds("content")).toEqual(
       expectedVisibleIds(fixture.store, fixture.ids, DEFAULT_VIEWPORT, DEFAULT_CAMERA),

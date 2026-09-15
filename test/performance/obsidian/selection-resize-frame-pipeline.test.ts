@@ -28,7 +28,7 @@ import {
   interactionProfileAnnotation,
   measureInteractionFrames,
 } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 import { maximumStroke } from "../editor/maximum-stroke-fixture";
 
 const PAGE: PageV1 = {
@@ -60,12 +60,8 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz selection resize frame p
       const result = measurePipeline(createElements());
       expect(result.layoutUpdates).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
       expect(result.pageGrowths).toBeGreaterThan(0);
-      expect(result.firstFrameMs).toBeLessThanOrEqual(
-        timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
-      );
-      expect(result.p99, name).toBeLessThanOrEqual(
-        timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-      );
+      expectTiming(result.firstFrameMs, INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs);
+      expectTiming(result.p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms, { label: name });
       await annotate(interactionProfileAnnotation(name, result.p99), "performance");
       await annotate(
         `${name}: first preview frame=${result.firstFrameMs.toFixed(3)} ms`,
@@ -82,9 +78,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz selection resize frame p
     for (const [name, elements] of profiles) {
       const result = measureMovePipeline(elements);
       expect(result.layoutUpdates).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
-      expect(result.p99).toBeLessThanOrEqual(
-        timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-      );
+      expectTiming(result.p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
       await annotate(interactionProfileAnnotation(name, result.p99), "performance");
     }
   });

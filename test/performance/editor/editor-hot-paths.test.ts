@@ -4,7 +4,7 @@ import { EraserSweep } from "../../../src/editor/gestures/public";
 import { maximumStroke } from "./maximum-stroke-fixture";
 import { createPassThroughMoveSession } from "./selection-session-fixture";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 describe("editor gesture hot paths", () => {
   it("bounds maximum-stroke preview and eraser work independently of sweep length", () => {
@@ -50,9 +50,7 @@ describe("editor gesture hot paths", () => {
       }
     }
 
-    expect(Math.max(...previewDurations)).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
-    expect(Math.max(...eraserDurations)).toBeLessThanOrEqual(timingBudget(250));
+    expectTiming(Math.max(...previewDurations), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+    expectTiming(Math.max(...eraserDurations), 250);
   });
 });

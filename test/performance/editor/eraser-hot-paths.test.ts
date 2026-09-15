@@ -5,7 +5,7 @@ import { EraserSweep } from "../../../src/editor/gestures/public";
 import { maximumStroke } from "./maximum-stroke-fixture";
 import { createDenseStrokeEraser } from "./eraser-performance-fixture";
 import { INTERACTION_REFRESH_PROFILE, interactionP99 } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 declare const gc: (() => void) | undefined;
 
@@ -26,10 +26,8 @@ describe("eraser hot paths", () => {
     }
 
     expect(eraser.candidateCount).toBe(DENSE_STROKES);
-    expect(interactionP99(frameDurations)).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
-    expect(Math.max(...frameDurations)).toBeLessThanOrEqual(timingBudget(MAX_FRAME_MS));
+    expectTiming(interactionP99(frameDurations), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+    expectTiming(Math.max(...frameDurations), MAX_FRAME_MS);
   });
 
   it.each([5_000, 20_000])("keeps incremental feedback linear for %i candidates", (count) => {
@@ -67,7 +65,7 @@ describe("eraser hot paths", () => {
     expect(eraser.candidateCount).toBe(count);
     expect(addedCount).toBe(count);
     expect(fullSetUpdates).toBe(0);
-    expect(duration).toBeLessThan(timingBudget(2_000));
+    expectTiming(duration, 2_000, { exclusive: true });
   });
 });
 

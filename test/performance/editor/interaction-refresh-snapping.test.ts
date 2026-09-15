@@ -17,7 +17,7 @@ import {
   interactionProfileAnnotation,
   measureInteractionFrames,
 } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 import {
   CONNECTED_DEPENDENT_COUNT,
   createConnectedTranslationFixture,
@@ -72,7 +72,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz snapping and connection 
       fullStoreScans: 0,
       reverseDependencyVisits: 0,
     });
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     await annotate(interactionProfileAnnotation("connected endpoint preview", p99), "performance");
   });
 
@@ -201,5 +201,5 @@ function expectSnapProfile(input: {
   expect(input.matched).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
   expect(input.scratch.allocationCount).toBe(input.allocationsBefore);
   expect(input.store.instrumentation.fullStoreScans).toBe(0);
-  expect(input.p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+  expectTiming(input.p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
 }

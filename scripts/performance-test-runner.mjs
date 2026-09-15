@@ -3,6 +3,8 @@ import { readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { createPerformanceResults, parseTimingRecords } from "./performance-results.mjs";
+
 import { PERFORMANCE_TEST_MANIFEST } from "./performance-test-manifest.mjs";
 
 export const projectRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -84,11 +86,13 @@ export function selectPerformanceRuns(plan, suite, configuredRefreshRate) {
 export async function runPerformanceRuns(runs, options = {}) {
   const failFast = options.failFast ?? false;
   const violations = [];
+  const recordResult = await createPerformanceResults(projectRoot, runs);
   for (const run of runs) {
     process.stdout.write(`\nRunning ${run.label} performance suite at ${run.refreshRate} Hz...\n`);
     for (const testFile of run.testFiles) {
       const result = await runTestFile(testFile, run.refreshRate);
       const label = relative(projectRoot, testFile);
+      await recordResult?.({ file: label, refreshRate: run.refreshRate, ...result });
       process.stdout.write(
         `  ${result.violations.length === 0 ? "PASS" : "FAIL"} ${label} ` +
           `(${(result.durationMs / 1_000).toFixed(1)}s)\n`,
@@ -138,21 +142,28 @@ function runTestFile(testFile, refreshRate) {
         violations: [fileViolation(refreshRate, relativeTestFile, "Test process", error.message)],
       });
     });
-    child.once("exit", (code, signal) => {
-      if (code === 0) {
-        resolve({ durationMs: performance.now() - startedAt, violations: [] });
-        return;
+    child.once("close", (code, signal) => {
+      let measurements = [];
+      const violations =
+        code === 0
+          ? []
+          : parseViolations(
+              stdout,
+              refreshRate,
+              relativeTestFile,
+              signal ?? `exit code ${code}`,
+              stderr,
+            );
+      if (process.env["INKBOOK_PERFORMANCE_REPORT"] === "1") {
+        try {
+          measurements = parseTimingRecords(stderr);
+        } catch (error) {
+          violations.push(
+            fileViolation(refreshRate, relativeTestFile, "Timing report", error.message),
+          );
+        }
       }
-      resolve({
-        durationMs: performance.now() - startedAt,
-        violations: parseViolations(
-          stdout,
-          refreshRate,
-          relativeTestFile,
-          signal ?? `exit code ${code}`,
-          stderr,
-        ),
-      });
+      resolve({ durationMs: performance.now() - startedAt, measurements, violations });
     });
   });
 }

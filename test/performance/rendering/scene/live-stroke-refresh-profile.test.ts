@@ -14,7 +14,7 @@ import {
   interactionP99,
   interactionProfileAnnotation,
 } from "../../interaction-refresh-profile";
-import { timingBudget } from "../../timing-budget";
+import { expectTiming } from "../../timing-assertions";
 import {
   createInteractionFixture,
   createInteractionRenderer,
@@ -58,7 +58,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz live-stroke profile`, ()
       }
 
       const p99 = interactionP99(durations);
-      expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+      expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
       expect(renderer.instrumentation()).toMatchObject({
         livePreviewUpdates: LIVE_FRAME_COUNT,
       });
@@ -88,7 +88,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz live-stroke profile`, ()
         expectPressureTip(tail, samples[7]!);
       }
       const p99 = interactionP99(durations);
-      expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+      expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
       expect(renderer.instrumentation().livePreviewUpdates).toBe(LIVE_FRAME_COUNT + 1);
       await annotate(
         interactionProfileAnnotation(`coalesced ${pointerType} tip`, p99),
@@ -120,7 +120,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz live-stroke profile`, ()
       scheduler.runAll();
     }
     const p99 = interactionP99(durations);
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     expect(renderer.instrumentation().liveTailNodesRemoved).toBe(120);
     await annotate(interactionProfileAnnotation("live stroke commit handoff", p99), "performance");
     renderer.destroy();

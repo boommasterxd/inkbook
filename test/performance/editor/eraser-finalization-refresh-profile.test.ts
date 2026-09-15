@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { percentile } from "../domain/domain-scenarios";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 import { createDenseStrokeEraser, MeasuredEraserScheduler } from "./eraser-performance-fixture";
 import { maximumStroke } from "./maximum-stroke-fixture";
 
@@ -33,11 +33,7 @@ describe("eraser finalization performance", () => {
     }
 
     expect(sliceDurationsMs.length).toBeGreaterThanOrEqual(100);
-    expect(percentile(sliceDurationsMs, 0.95)).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
-    expect(maximumSliceMs).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
-    );
+    expectTiming(percentile(sliceDurationsMs, 0.95), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+    expectTiming(maximumSliceMs, INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs);
   }, 10_000);
 });

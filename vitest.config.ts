@@ -26,6 +26,10 @@ export default defineConfig({
       },
     },
     environment: "node",
+    setupFiles:
+      process.env["INKBOOK_PERFORMANCE_REPORT"] === "1"
+        ? ["./test/performance/timing-assertions.ts"]
+        : [],
     include: [
       "test/unit/**/*.test.{ts,tsx,mjs}",
       "test/integration/**/*.test.{ts,tsx,mjs}",

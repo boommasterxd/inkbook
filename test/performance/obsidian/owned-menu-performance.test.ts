@@ -6,7 +6,7 @@ import { expect, it, vi } from "vitest";
 import { createOwnedMenuFactory } from "../../../src/obsidian/menus/owned-menu-factory";
 import { installObsidianDomHelpers } from "../../adapters/obsidian/dom";
 import { interactionP99, measureInteractionFrames } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 it("renders and disposes a complete action menu inside the 240 Hz frame budget", async ({
   annotate,
@@ -50,7 +50,7 @@ it("renders and disposes a complete action menu inside the 240 Hz frame budget",
   try {
     const durations = measureInteractionFrames(renderAndDispose);
     const p99 = interactionP99(durations);
-    expect(p99).toBeLessThanOrEqual(timingBudget((1000 / 240) * 0.55));
+    expectTiming(p99, (1000 / 240) * 0.55);
     expect(disposed).toBe(durations.length);
     expect(scopes).toBe(0);
     expect(document.body.children).toHaveLength(1);

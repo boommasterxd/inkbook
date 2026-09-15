@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { StrokeElementV1 } from "../../../src/domain/schema/public";
 import { SelectionScaleGesture } from "../../../src/editor/selection/selection-scale";
 import { INTERACTION_REFRESH_PROFILE, interactionP99 } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 import { maximumStroke } from "./maximum-stroke-fixture";
 
 describe("arbitrary-frame stroke scale materialization", () => {
@@ -39,9 +39,7 @@ describe("arbitrary-frame stroke scale materialization", () => {
         expect(result.points).not.toBe(element.points);
         return duration;
       });
-      expect(interactionP99(durations)).toBeLessThanOrEqual(
-        timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-      );
+      expectTiming(interactionP99(durations), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     },
   );
 });
