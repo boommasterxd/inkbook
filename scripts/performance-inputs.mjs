@@ -102,6 +102,9 @@ async function inputGraph(root, testFiles) {
       outdir: "graph-only",
       metafile: true,
       packages: "external",
+      // Keep value-form imports used only as types in this conservative graph.
+      // Otherwise esbuild records their erased edges as unresolved externals.
+      tsconfigRaw: { compilerOptions: { verbatimModuleSyntax: true } },
       platform: "node",
       target: "node26",
       logLevel: "silent",

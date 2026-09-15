@@ -96,3 +96,22 @@ it.each([[], ["../outside.test.ts"], [testFiles[0], testFiles[0]], ["src/example
     await expect(planPerformanceInputs({ testFiles: files })).rejects.toThrow();
   },
 );
+
+it("resolves value-form imports used only as types without losing their dependency", async () => {
+  const entry = 'import { Shape } from "./shape"; export const value = (shape: Shape) => shape;';
+  const referenceRoot = await fixture({
+    "src/entry.ts": entry,
+    "src/shape.ts": "export class Shape { width = 1; }",
+  });
+  const candidateRoot = await fixture({
+    "src/entry.ts": entry,
+    "src/shape.ts": "export class Shape { width = 1; }",
+  });
+  const unchanged = await planPerformanceInputs({ referenceRoot, candidateRoot, testFiles });
+  expect(unchanged.pending).toEqual([]);
+  expect(unchanged.inputs[0].reference.inputs).toContain("src/shape.ts");
+  await writeFile(join(candidateRoot, "src/shape.ts"), "export class Shape { width = 2; }");
+  const changed = await planPerformanceInputs({ referenceRoot, candidateRoot, testFiles });
+  expect(changed.pending).toEqual([testFiles[0]]);
+  expect(changed.identicalInputs.map(({ file }) => file)).toEqual([testFiles[1]]);
+});
