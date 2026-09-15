@@ -125,7 +125,7 @@ export class ActiveInkbookScene {
       container: this.#container,
       onLayout: (layout) => this.#controller.setLayout(layout),
       onReady: () => {
-        if (this.#initialSceneReadiness.markLayoutReady()) this.#completePreviewHandoff();
+        if (this.#initialSceneReadiness.markLayoutReady()) this.#renderer.invalidateLayout(true);
       },
       onResize: (update) => this.#controller.applyResize(update),
       onZoom: (zoom) => this.#controller.setZoom(zoom),
@@ -323,7 +323,7 @@ export class ActiveInkbookScene {
       frameBudgetMs: options.sliceBudgetMs,
       inputHandlers: createSceneInputHandlers(controller),
       layout: {
-        readViewport: () => readActiveSceneViewport(this.#container, scrollOwner()),
+        readViewport: () => readActiveSceneViewport(this.#container, scrollOwner(), this.#root),
       },
       page: options.model.page,
       onResourceUsageChanged: this.#memory.evaluate,
@@ -445,7 +445,8 @@ export class ActiveInkbookScene {
     this.#memory.evaluate();
     this.#layout.sceneCommitted();
     this.#flushPendingChromeUpdate();
-    if (this.#initialSceneReadiness.markSceneCommitted()) this.#completePreviewHandoff();
+    if (!this.#renderer.hasPendingSceneCommit && this.#initialSceneReadiness.markSceneCommitted())
+      this.#completePreviewHandoff();
   }
 }
 

@@ -203,3 +203,81 @@ describe("presentation entrance lifecycle", () => {
     h.entrance.dispose();
   });
 });
+
+describe("inserted presentation activation", () => {
+  it("holds the placeholder height until one direct reveal to the editor height", async () => {
+    const h = entranceHarness({ presented: false, initialHeight: 24 });
+    h.entrance.prepare();
+    h.entrance.holdForActivation();
+    h.entrance.measure();
+    await expect(h.entrance.activationReady).resolves.toBe(true);
+    expect(h.frames.size).toBe(0);
+    expect(h.renderedHeight).toBe(24);
+    expect(h.entrance.revealActive(800)).toBe(true);
+    h.entrance.measure();
+    h.frame(0);
+    h.frame(duration / 2);
+    expect(h.renderedHeight).toBe(412);
+    h.frame(duration);
+    await expect(h.entrance.ready).resolves.toBe(true);
+    expect(h.entrance.revealActive(800)).toBe(false);
+  });
+
+  it("resumes the preview reveal after failed or timed-out initial activation", async () => {
+    const h = entranceHarness();
+    h.entrance.prepare();
+    h.entrance.holdForActivation();
+    h.entrance.measure();
+    expect(h.entrance.revealActive(Number.NaN)).toBe(false);
+    h.entrance.resumePreview();
+    h.frame(0);
+    h.frame(duration / 2);
+    expect(h.renderedHeight).toBe(200);
+    h.frame(duration);
+    await expect(h.entrance.ready).resolves.toBe(true);
+    expect(h.entrance.revealActive(800)).toBe(false);
+  });
+
+  it("cancels waiting activation on disposal before measurement", async () => {
+    const h = entranceHarness();
+    h.entrance.prepare();
+    h.entrance.holdForActivation();
+    const ready = h.entrance.activationReady;
+    h.entrance.dispose();
+    await expect(ready).resolves.toBe(false);
+    expect(h.frames.size).toBe(0);
+  });
+});
+
+it("retargets early lock from the visible active reveal height to the preview", async () => {
+  const h = entranceHarness();
+  h.entrance.prepare();
+  h.entrance.holdForActivation();
+  h.entrance.measure();
+  h.entrance.revealActive(800);
+  h.frame(0);
+  h.frame(duration / 2);
+  expect(h.renderedHeight).toBe(400);
+  h.entrance.resumePreview();
+  expect(h.root.classList.contains("inkbook-presentation-activating")).toBe(false);
+  h.frame(duration);
+  h.frame(duration * 2);
+  await expect(h.entrance.ready).resolves.toBe(true);
+});
+
+it("reveals delayed loading space and continues directly from its current height", async () => {
+  const h = entranceHarness();
+  h.entrance.prepare();
+  h.entrance.holdForActivation();
+  h.entrance.measure();
+  h.entrance.showLoading();
+  h.frame(0);
+  h.frame(duration / 2);
+  expect(h.renderedHeight).toBe(24);
+  expect(h.entrance.revealActive(800)).toBe(true);
+  h.frame(duration);
+  h.frame(duration * 1.5);
+  expect(h.renderedHeight).toBe(412);
+  h.frame(duration * 2);
+  await expect(h.entrance.ready).resolves.toBe(true);
+});

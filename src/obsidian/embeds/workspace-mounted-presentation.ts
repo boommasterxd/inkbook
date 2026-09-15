@@ -11,7 +11,9 @@ export function createWorkspaceMountedPresentation(
   return {
     attachment,
     disposeScheme: undefined,
-    feedback: new PresentationOperationFeedback(attachment.root),
+    feedback: new PresentationOperationFeedback(attachment.root, () =>
+      attachment.initialEntrance?.showLoading(),
+    ),
     loadError: undefined,
     recovery: undefined,
     savingFeedback: undefined,
@@ -45,6 +47,13 @@ export function finishInitialWorkspaceLoading(
   if (mounted?.initialLoading?.presented !== true) return;
   mounted.initialLoading.feedback.finish();
   delete mounted.initialLoading;
+}
+
+export function cancelInitialWorkspaceLoading(
+  mounted: WorkspaceMountedPresentation | undefined,
+): void {
+  mounted?.attachment.initialEntrance?.resumePreview();
+  finishInitialWorkspaceLoading(mounted);
 }
 
 export function updateWorkspaceMountedSettings(

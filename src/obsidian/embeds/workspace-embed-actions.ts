@@ -1,10 +1,13 @@
 import type { CopyEmbedOutcome, DeleteEmbedOutcome } from "../commands";
 import type { InkbookFeedbackCode } from "../feedback";
-import type { PresentationEmbedReference } from "./presentation-port";
+import type { PresentationEmbedReference, PresentationRemoval } from "./presentation-port";
 
 interface WorkspaceEmbedActionPort {
   copyEmbed(reference: PresentationEmbedReference): Promise<CopyEmbedOutcome>;
-  deleteEmbed(reference: PresentationEmbedReference): Promise<DeleteEmbedOutcome>;
+  deleteEmbed(
+    reference: PresentationEmbedReference,
+    removal?: PresentationRemoval,
+  ): Promise<DeleteEmbedOutcome>;
 }
 
 interface MarkdownHistoryPort {
@@ -68,12 +71,13 @@ export async function deleteWorkspaceEmbed(options: {
   readonly actions: WorkspaceEmbedActionPort;
   readonly isCurrent: () => boolean;
   readonly reference: PresentationEmbedReference;
+  readonly removal?: PresentationRemoval;
   readonly scene: MarkdownHistoryPort;
   readonly feedback: WorkspaceEmbedActionFeedbackPort;
 }): Promise<void> {
   const feedback = options.feedback;
   try {
-    const outcome = await options.actions.deleteEmbed(options.reference);
+    const outcome = await options.actions.deleteEmbed(options.reference, options.removal);
     if (outcome.kind === "deleted" && options.isCurrent()) {
       options.scene.recordMarkdownHistory();
     } else if (outcome.kind !== "cancelled" && outcome.kind !== "deleted") {

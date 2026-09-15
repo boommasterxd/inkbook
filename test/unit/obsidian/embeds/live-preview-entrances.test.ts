@@ -37,6 +37,8 @@ describe("Live Preview occurrence entrance state", () => {
     );
     expect(changed.stateFor(0, 11, "drawing.svg")).not.toBe(first);
     expect(changed.stateFor(21, 31, "drawing.svg")).toBe(second);
+    expect(entrances.stateFor(0, 10, "drawing.svg")).toBe(first);
+    expect(entrances.stateFor(20, 30, "drawing.svg")).toBe(second);
   });
 
   it("retains unchanged remounts but resets changed source notes and edited embed markup", () => {

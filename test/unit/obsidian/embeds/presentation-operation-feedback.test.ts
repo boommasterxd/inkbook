@@ -7,6 +7,31 @@ import {
 } from "../../../../src/obsidian/embeds/presentation-operation-feedback";
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
 
+describe("PresentationOperationFeedback held insertion", () => {
+  it("reserves loading space only when delayed loading feedback is actually painted", () => {
+    const reserve = vi.fn();
+    const harness = createHarness(reserve);
+    harness.feedback.begin("loading").finish();
+    harness.runTimer();
+    expect(reserve).not.toHaveBeenCalled();
+    harness.feedback.begin("saving");
+    harness.runTimer();
+    expect(reserve).not.toHaveBeenCalled();
+    const cancelled = harness.feedback.begin("loading");
+    harness.runTimer();
+    cancelled.finish();
+    harness.runFrame();
+    expect(reserve).not.toHaveBeenCalled();
+    harness.feedback.begin("loading");
+    harness.runTimer();
+    expect(reserve).not.toHaveBeenCalled();
+    harness.runFrame();
+    expect(reserve).toHaveBeenCalledOnce();
+    expect(harness.indicator()?.dataset.inkbookOperation).toBe("loading");
+    harness.feedback.dispose();
+  });
+});
+
 describe("PresentationOperationFeedback", () => {
   it("shows loading feedback only after the delay and removes it on completion", () => {
     const harness = createHarness();
@@ -159,7 +184,7 @@ describe("PresentationOperationFeedback loading handoff", () => {
   });
 });
 
-function createHarness() {
+function createHarness(onLoadingShown?: () => void) {
   const frameCallbacks = new Map<number, FrameRequestCallback>();
   const frames = new Map<number, FrameRequestCallback>();
   const timers = new Map<number, { readonly callback: () => void; readonly delay: number }>();
@@ -191,7 +216,10 @@ function createHarness() {
     timers.set(handle, { callback, delay });
     return handle;
   });
-  const feedback = new PresentationOperationFeedback(root as unknown as HTMLElement);
+  const feedback = new PresentationOperationFeedback(
+    root as unknown as HTMLElement,
+    onLoadingShown,
+  );
   return {
     delay: () => [...timers.values()][0]?.delay,
     feedback,

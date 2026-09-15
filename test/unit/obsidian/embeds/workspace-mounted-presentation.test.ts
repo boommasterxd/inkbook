@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createBuiltInDeviceSettings } from "../../../../src/domain/settings";
 import type { PresentationAttachment } from "../../../../src/obsidian/embeds/presentation-port";
 import {
+  cancelInitialWorkspaceLoading,
   createWorkspaceMountedPresentation,
   finishInitialWorkspaceLoading,
   startInitialWorkspaceLoading,
@@ -29,6 +30,34 @@ function createHarness() {
   const lifecycle = { hasPendingAutoActivation: vi.fn(() => false) };
   return { begin, initial, lifecycle, mounted, present, subsequent };
 }
+
+describe("mounted presentation initial entrance", () => {
+  it("releases an abandoned initial reveal before ending loading feedback", async () => {
+    const harness = createHarness();
+    const resumePreview = vi.fn();
+    Object.assign(harness.mounted.attachment, { initialEntrance: { resumePreview } });
+    startInitialWorkspaceLoading(harness.mounted, harness.lifecycle);
+    cancelInitialWorkspaceLoading(harness.mounted);
+    expect(resumePreview).toHaveBeenCalledOnce();
+    harness.present(true);
+    await Promise.resolve();
+    expect(harness.initial.finish).toHaveBeenCalledOnce();
+    cancelInitialWorkspaceLoading(undefined);
+  });
+
+  it("makes a held insertion visible when its loading feedback becomes overdue", () => {
+    const showLoading = vi.fn();
+    const attachment = {
+      root: new FakePresentationElement() as unknown as HTMLElement,
+      initialEntrance: { showLoading },
+    } as unknown as PresentationAttachment;
+    const mounted = createWorkspaceMountedPresentation(attachment);
+    expect(showLoading).not.toHaveBeenCalled();
+    mounted.feedback.begin("loading", -100_000);
+    expect(showLoading).toHaveBeenCalledOnce();
+    mounted.feedback.dispose();
+  });
+});
 
 describe("mounted presentation loading continuity", () => {
   it("ends initial loading when the locked preview becomes ready", async () => {

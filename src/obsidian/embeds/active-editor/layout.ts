@@ -15,6 +15,7 @@ import type { ActiveEditorLayoutOptions } from "./layout-contracts";
 import type { ActiveEditorZoomLayoutUpdate } from "./navigation";
 import { calculateActiveEditorResize, type ActiveEditorResizeAnchor } from "./layout-resize";
 import { ActivePageLayout, type PageHeightUpdate } from "./page-layout";
+import { ToolbarResizeObservation } from "./toolbar-resize-observation";
 import { measureToolbarLayout } from "./toolbar-measurement";
 import { ActiveEditorMotion, type ActiveEditorMotionPreference } from "./layout-motion";
 import { measureElementBox } from "./element-content-box";
@@ -51,6 +52,7 @@ export class ActiveEditorLayout {
   #selectionMoveActive = false;
   #toolbar: HTMLElement | undefined;
   #toolbarLayoutDirty = true;
+  readonly #resizeObservation = new ToolbarResizeObservation();
   #zoom: number | undefined;
 
   public constructor(options: ActiveEditorLayoutOptions) {
@@ -73,9 +75,10 @@ export class ActiveEditorLayout {
     this.#observer =
       observerConstructor === undefined
         ? undefined
-        : new observerConstructor(() => {
-            this.#toolbarLayoutDirty = true;
+        : new observerConstructor((entries) => {
             this.#options.renderer.invalidateLayout();
+            if (!this.#resizeObservation.affectsToolbar(entries, options.root)) return;
+            this.#toolbarLayoutDirty = true;
             this.scheduleMeasurement();
           });
     this.#observer?.observe(options.root);

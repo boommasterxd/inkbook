@@ -115,6 +115,7 @@ export class WorkspaceRuntimeLifecycle {
     }
     const ownerWindow = attachment.root.ownerDocument.defaultView;
     if (ownerWindow === null) return;
+    attachment.initialEntrance?.holdForActivation();
     pending.attachmentKey = presentationAttachmentKey(attachment);
     pending.attempt += 1;
     const attempt = pending.attempt;
@@ -134,12 +135,13 @@ export class WorkspaceRuntimeLifecycle {
   public completeAutoActivation(attachment: PresentationAttachment, attempt?: number): void {
     const pending = this.#pendingAutoActivation;
     if (!this.#matchesAttempt(pending, attachment, attempt)) return;
-    this.#cancelAutoActivation();
+    this.#cancelAutoActivation(false);
   }
 
   public failAutoActivation(attachment: PresentationAttachment, attempt?: number): void {
     const pending = this.#pendingAutoActivation;
     if (!this.#matchesAttempt(pending, attachment, attempt)) return;
+    attachment.initialEntrance?.resumePreview();
     this.#clearPendingFrame(pending);
     pending.attachmentKey = undefined;
   }
@@ -147,6 +149,7 @@ export class WorkspaceRuntimeLifecycle {
   public detachAutoActivation(attachment: PresentationAttachment): void {
     const pending = this.#pendingAutoActivation;
     if (pending?.attachmentKey !== presentationAttachmentKey(attachment)) return;
+    attachment.initialEntrance?.resumePreview();
     this.#clearPendingFrame(pending);
     pending.attachmentKey = undefined;
     for (const mounted of this.#options.presentations()) {
@@ -227,6 +230,10 @@ export class WorkspaceRuntimeLifecycle {
     pending.timeout = ownerWindow.setTimeout(() => {
       if (this.#pendingAutoActivation !== pending) return;
       pending.timeout = undefined;
+      for (const mounted of this.#options.presentations()) {
+        if (presentationAttachmentKey(mounted.attachment) === pending.attachmentKey)
+          mounted.attachment.initialEntrance?.resumePreview();
+      }
       pending.onTimeout(() => this.#retryAutoActivation(pending));
     }, 2000);
   }
@@ -322,12 +329,12 @@ export class WorkspaceRuntimeLifecycle {
     }
   }
 
-  #cancelAutoActivation(): void {
+  #cancelAutoActivation(resumePreview = true): void {
     const pending = this.#pendingAutoActivation;
     if (pending === undefined) return;
     this.#clearPendingHandles(pending);
     this.#pendingAutoActivation = undefined;
-    if (pending.attachmentKey !== undefined)
+    if (pending.attachmentKey !== undefined && resumePreview)
       this.#options.autoActivationCancelled?.(pending.attachmentKey);
   }
 

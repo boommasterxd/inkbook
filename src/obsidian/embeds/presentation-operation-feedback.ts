@@ -24,15 +24,17 @@ export class PresentationOperationFeedback {
   #positioning: PresentationFeedbackPositionLifecycle | undefined;
   readonly #ownerWindow: Window;
   readonly #root: HTMLElement;
+  readonly #onLoadingShown: (() => void) | undefined;
   #timer: number | undefined;
 
-  public constructor(root: HTMLElement) {
+  public constructor(root: HTMLElement, onLoadingShown?: () => void) {
     const ownerWindow = root.ownerDocument.defaultView;
     if (ownerWindow === null) {
       throw new Error("Presentation feedback requires an owning window.");
     }
     this.#ownerWindow = ownerWindow;
     this.#root = root;
+    this.#onLoadingShown = onLoadingShown;
   }
 
   public begin(
@@ -91,6 +93,7 @@ export class PresentationOperationFeedback {
   }
 
   #show(kind: PresentationOperationKind): void {
+    if (kind === "loading") this.#onLoadingShown?.();
     const label = kind === "loading" ? "Loading drawing" : "Saving drawing";
     const indicator = this.#root.createDiv({ cls: "inkbook-operation-feedback" });
     indicator.setAttribute("role", "status");
