@@ -1,4 +1,4 @@
 {
   "anchorCommit": "ec7471a17fd19c2072141d8edbb177ae1d998ded",
-  "anchorPolicy": "Fixed source anchor; never advance automatically. Review a comparison with the previous anchor before replacement."
+  "anchorPolicy": "Fixed source anchor; CI must not advance it automatically. Agents may perform evidence-backed maintenance under docs/performance-ci.md#maintaining-the-fixed-reference-commit without separate confirmation."
 }
