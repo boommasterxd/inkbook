@@ -2,6 +2,7 @@ import type { StrokeElementV1 } from "../../../src/domain/schema/public";
 import { EraserSweep, type EraserSliceScheduler } from "../../../src/editor/gestures/public";
 
 import { performanceMode } from "../timing-budget";
+import { maximumStroke } from "./maximum-stroke-fixture";
 
 export class MeasuredEraserScheduler implements EraserSliceScheduler {
   readonly #budgetMs: number;
@@ -90,4 +91,30 @@ export function createDenseStrokeEraser(
     },
     sliceBudgetMs,
   );
+}
+
+export function createCountedDenseStrokeEraser(count: number, sliceBudgetMs?: () => number) {
+  let pointReads = 0;
+  const strokes = Array.from({ length: count }, (_, index) => {
+    const stroke = maximumStroke(index);
+    return {
+      ...stroke,
+      points: new Proxy(stroke.points, {
+        get(target, key, receiver) {
+          if (typeof key === "string" && /^\d+$/.test(key) && Number(key) % 3 === 0) {
+            pointReads += 1;
+          }
+          return Reflect.get(target, key, receiver) as unknown;
+        },
+      }),
+    };
+  });
+  return {
+    eraser: createDenseStrokeEraser(strokes, sliceBudgetMs),
+    takePointReads() {
+      const reads = pointReads;
+      pointReads = 0;
+      return reads;
+    },
+  };
 }

@@ -5,6 +5,7 @@ import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { moveSelection } from "../../../../src/editor/selection/transforms";
 import { visibilityPageBounds } from "../../../../src/rendering/scene/scene-resource-policy";
+import type { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import type { SceneCamera, SceneViewport } from "../../../../src/rendering/scene/types";
 import {
   INTERACTION_REFRESH_PROFILE,
@@ -179,6 +180,38 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz preview commit profile`,
   });
 });
 
+describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz reconciliation work bounds`, () => {
+  it("bounds frame work and makes progress through repeated disjoint viewport jumps", () => {
+    const fixture = createInteractionFixture();
+    const { renderer, scheduler } = createProfileRenderer(fixture.store);
+    try {
+      drainPendingFrames(scheduler);
+      for (let transition = 0; transition < 16; transition += 1) {
+        const viewport = { ...DEFAULT_VIEWPORT, top: transition % 2 === 0 ? 800 : 0 };
+        const camera = { x: transition % 3 === 0 ? -50 : 0, zoom: transition % 4 ? 1 : 1.05 };
+        const previous = new Set(renderer.mountedIds("content"));
+        const expected = expectedVisibleIds(fixture.store, fixture.ids, viewport, camera);
+        const entrants = expected.filter((id) => !previous.has(id)).length;
+        renderer.resetInstrumentation();
+        fixture.store.resetInstrumentation();
+        renderer.setViewport(viewport);
+        renderer.setCamera(camera);
+        drainBoundedReconciliation(renderer, scheduler, entrants);
+        expect(renderer.mountedIds("content")).toEqual(expected);
+        const stats = renderer.instrumentation();
+        expect(stats.spatialQueries).toBe(1);
+        expect(stats.domEntrants).toBe(entrants);
+        expect(stats.geometryBuilds).toBeLessThanOrEqual(entrants);
+        expect(fixture.store.instrumentation.fullStoreScans).toBe(0);
+        expect(fixture.store.instrumentation.bandScans).toBe(0);
+      }
+    } finally {
+      renderer.destroy();
+    }
+    expect(scheduler.pendingCount).toBe(0);
+  });
+});
+
 class ProfileScheduler extends FakeScheduler {
   public override now(): number {
     const current = this.time;
@@ -231,6 +264,26 @@ function runFrameAndFollowUps(scheduler: ProfileScheduler): FrameMetrics {
 
 function drainPendingFrames(scheduler: ProfileScheduler): void {
   while (scheduler.pendingCount > 0) runPendingFrameAndFollowUps(scheduler);
+}
+
+function drainBoundedReconciliation(
+  renderer: SvgSceneRenderer,
+  scheduler: ProfileScheduler,
+  entrants: number,
+): void {
+  let frames = 0;
+  while (scheduler.pendingCount > 0) {
+    expect(scheduler.pendingCount).toBe(1);
+    // Allow one frame per entrant plus preparation/completion, not an unbounded retry loop.
+    expect(frames).toBeLessThan(entrants + 2);
+    scheduler.runNext();
+    frames += 1;
+    const stats = renderer.instrumentation();
+    // The first entry has no probe; floating-point deadline equality permits one extra probe.
+    expect(stats.maximumMountSliceElements).toBeLessThanOrEqual(
+      FAKE_CLOCK_CHECKPOINTS_PER_FRAME + 2,
+    );
+  }
 }
 
 function expectedVisibleIds(
