@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { InitialPresentationEntrance } from "../../../../src/obsidian/embeds/presentation-entrance";
 import { ActiveScenePreviewHandoff } from "../../../../src/obsidian/embeds/active-scene";
 import { FakeClassList } from "../../../fixtures/obsidian/class-list";
 
@@ -45,6 +46,7 @@ function createFixture(
   systemReduced = false,
   setPreviewAspectRatio?: (aspectRatio: number) => void,
   initialScrollStability = false,
+  initialEntrance?: InitialPresentationEntrance,
 ): HandoffFixture {
   const media = new FakeMediaQueryList(systemReduced);
   let timer: (() => void) | undefined;
@@ -113,6 +115,7 @@ function createFixture(
     completed,
     container,
     handoff: new ActiveScenePreviewHandoff({
+      ...(initialEntrance === undefined ? {} : { initialEntrance }),
       beginScrollStability,
       container,
       ...(initialScrollStability ? { initialScrollStabilityRelease: releaseScrollStability } : {}),
@@ -337,3 +340,71 @@ function createEditorChrome(): HTMLElement {
   } as unknown as HTMLElement;
   return editor;
 }
+
+it.each([true, false])(
+  "preserves normal unlock when initial reveal is available=%s",
+  (available) => {
+    const initialEntrance = {
+      ready: Promise.resolve(true),
+      activationReady: Promise.resolve(true),
+      holdForActivation: vi.fn(),
+      showLoading: vi.fn(),
+      resumePreview: vi.fn(),
+      revealActive: vi.fn(() => available),
+    };
+    const h = createFixture("full", false, undefined, false, initialEntrance);
+    h.setActiveBlockSize("640px");
+    const ready = vi.fn();
+    h.handoff.ready(ready);
+    h.runFrame();
+    h.runFrame();
+    expect(initialEntrance.revealActive).toHaveBeenCalledWith(640);
+    expect(ready).toHaveBeenCalledOnce();
+    expect(h.rootClasses.contains("inkbook-active-preparing")).toBe(false);
+    expect(h.rootClasses.contains("inkbook-active-transitioning")).toBe(!available);
+    expect(h.timerPending()).toBe(!available);
+    h.handoff.dispose();
+  },
+);
+
+it.each(["complete", "cancel", "reject", "dispose"] as const)(
+  "retains initial reveal scroll stability until %s without delaying toolbar readiness",
+  async (outcome) => {
+    let finish!: (presented: boolean) => void;
+    let reject!: (error: Error) => void;
+    const ready = new Promise<boolean>((resolve, rejectPromise) => {
+      finish = resolve;
+      reject = rejectPromise;
+    });
+    const initialEntrance = {
+      ready,
+      activationReady: Promise.resolve(true),
+      holdForActivation: vi.fn(),
+      showLoading: vi.fn(),
+      resumePreview: vi.fn(),
+      revealActive: vi.fn(() => true),
+    };
+    const h = createFixture("full", false, undefined, true, initialEntrance);
+    h.setActiveBlockSize("640px");
+    h.handoff.ready(h.completed);
+    h.runFrame();
+    h.runFrame();
+    expect(h.completed).toHaveBeenCalledOnce();
+    expect(h.rootClasses.contains("inkbook-active-ready")).toBe(true);
+    expect(h.preview.hidden).toBe(true);
+    expect(h.timerPending()).toBe(false);
+    await Promise.resolve();
+    expect(h.releaseScrollStability).not.toHaveBeenCalled();
+    if (outcome === "dispose") {
+      h.handoff.dispose();
+      expect(h.releaseScrollStability).toHaveBeenCalledOnce();
+    }
+    if (outcome === "reject") reject(new Error("Entrance failed"));
+    else finish(outcome === "complete");
+    await Promise.resolve();
+    expect(h.releaseScrollStability).toHaveBeenCalledOnce();
+    expect(h.completed).toHaveBeenCalledOnce();
+    h.handoff.dispose();
+    expect(h.releaseScrollStability).toHaveBeenCalledOnce();
+  },
+);

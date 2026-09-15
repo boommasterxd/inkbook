@@ -208,9 +208,10 @@ export class SvgSceneRenderer {
     this.#visibilityCoordinator.invalidate();
     this.schedule();
   }
-  public invalidateLayout(): void {
+  public invalidateLayout(requestCommit = false): void {
     this.assertActive();
     this.#layoutDirty = true;
+    if (requestCommit) this.#sceneCommits.markPending();
     this.schedule();
   }
   public setPage(page: PageV1, height = this.#pageHeight): void {
@@ -319,8 +320,7 @@ export class SvgSceneRenderer {
   }
   public clearElementFade(ids: readonly string[]): void {
     this.assertActive();
-    const activeIds = this.#deltas.removeFades(ids);
-    this.#content.setElementFade(activeIds, null);
+    this.#content.setElementFade(this.#deltas.removeFades(ids), null);
   }
   public setElementPreviews(items: readonly InkElementV1[], frame: number): void {
     this.assertActive();

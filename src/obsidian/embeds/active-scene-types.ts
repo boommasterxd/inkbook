@@ -1,3 +1,4 @@
+import type { InitialPresentationEntrance } from "./presentation-entrance";
 import type { PhoneSheetHostPort } from "../menus/phone-sheet-host";
 import type {
   InkbookDeviceSettingsV2,
@@ -32,6 +33,7 @@ export interface ActiveInkbookSceneOptions extends EditorChromeOpenings {
   readonly onFirstStrokeCommitted?: () => void;
   readonly root: HTMLElement;
   readonly sliceBudgetMs: () => number;
+  readonly initialEntrance?: InitialPresentationEntrance;
   readonly preview?: HTMLElement;
   readonly scrollRangeReserve?: PresentationScrollRangeReserve;
   readonly setPreviewSource?: (source: string) => Promise<void>;

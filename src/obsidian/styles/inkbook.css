@@ -54,9 +54,19 @@
   border-radius: var(--radius-m);
 }
 
-.inkbook-root.inkbook-embed-root.inkbook-presentation-entering {
+.inkbook-root.inkbook-embed-root.inkbook-presentation-entering,
+.inkbook-root.inkbook-embed-root.inkbook-presentation-exiting {
   block-size: var(--inkbook-presentation-block-size, 0);
   overflow: clip;
+}
+
+.inkbook-root.inkbook-embed-root.inkbook-presentation-activating {
+  overflow: visible;
+}
+
+.inkbook-root.inkbook-embed-root.inkbook-presentation-exiting {
+  /* Obsidian resets block-widget margins with !important. */
+  margin-block: var(--inkbook-presentation-exit-before, 0) var(--inkbook-presentation-exit-after, 0) !important;
 }
 
 .inkbook-root.inkbook-embed-root[contenteditable="false"][data-inkbook-scheme][data-inkbook-state] {
@@ -105,6 +115,13 @@
   inline-size: 100%;
   overflow: clip;
   position: relative;
+}
+
+.inkbook-root.inkbook-presentation-activating .inkbook-background-container {
+  clip-path: inset(
+    0 0 max(0px, calc(100% - var(--inkbook-presentation-block-size))) 0 round
+      var(--inkbook-shell-radius)
+  );
 }
 
 .inkbook-root .inkbook-scene {

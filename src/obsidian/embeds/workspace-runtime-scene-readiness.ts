@@ -95,3 +95,10 @@ export function beginWorkspaceActivation(
   mounted.activation = activation;
   return activation;
 }
+
+/** Initial insertion waits for width measurement; ordinary unlocking waits for the preview. */
+export async function presentationActivationReady(
+  attachment: PresentationAttachment,
+): Promise<boolean> {
+  return attachment.initialEntrance?.activationReady ?? attachment.whenPresented ?? true;
+}

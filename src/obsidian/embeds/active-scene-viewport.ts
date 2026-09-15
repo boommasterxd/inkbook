@@ -1,6 +1,6 @@
 import type { SceneViewport } from "../../rendering/scene/types";
 import { browserScrollMetrics, type BrowserScrollElement } from "../scrolling/index";
-import { measureElementBox } from "./active-editor/element-content-box";
+import { measureElementBox, type ElementBoxMeasurement } from "./active-editor/element-content-box";
 
 interface SceneRect {
   readonly bottom: number;
@@ -16,10 +16,12 @@ interface ScrollOwnerWithClientWidth extends BrowserScrollElement {
 export function readActiveSceneViewport(
   container: HTMLElement,
   scrollOwner: BrowserScrollElement,
+  root?: HTMLElement,
 ): SceneViewport {
-  const containerBounds = measureElementBox(container).contentBox;
+  const measurement = measureElementBox(container);
+  const containerBounds = measurement.contentBox;
   const containerWidth = Math.max(0, containerBounds.width);
-  const containerHeight = Math.max(0, containerBounds.height);
+  const containerHeight = preparedContentHeight(container, root, measurement);
   const ownerViewport = readScrollOwnerViewport(scrollOwner);
   const left = clamp(ownerViewport.left - containerBounds.left, 0, containerWidth);
   const right = clamp(ownerViewport.right - containerBounds.left, 0, containerWidth);
@@ -31,6 +33,24 @@ export function readActiveSceneViewport(
     top,
     width: Math.max(0, right - left),
   };
+}
+
+function preparedContentHeight(
+  container: HTMLElement,
+  root: HTMLElement | undefined,
+  measurement: ElementBoxMeasurement,
+): number {
+  if (
+    root?.classList.contains("inkbook-active-preparing") === true ||
+    root?.classList.contains("inkbook-active-transitioning") === true
+  ) {
+    const blockSize = container.style.blockSize;
+    const target = blockSize.endsWith("px") ? Number.parseFloat(blockSize) : Number.NaN;
+    if (Number.isFinite(target) && target > measurement.blockInsets) {
+      return target - measurement.blockInsets;
+    }
+  }
+  return Math.max(0, measurement.contentBox.height);
 }
 
 function readScrollOwnerViewport(scrollOwner: BrowserScrollElement): SceneRect {

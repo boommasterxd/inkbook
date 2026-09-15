@@ -354,3 +354,22 @@ function createAutoActivationHarness() {
     window: ownerWindow,
   };
 }
+
+it("resumes a held initial presentation after the activation timeout", () => {
+  const h = createAutoActivationHarness();
+  const initialEntrance = {
+    ready: Promise.resolve(true),
+    activationReady: Promise.resolve(true),
+    holdForActivation: vi.fn(),
+    resumePreview: vi.fn(),
+    revealActive: vi.fn(),
+    showLoading: vi.fn(),
+  };
+  Object.assign(h.attachment, { initialEntrance });
+  h.presentations.push({ attachment: h.attachment, scene: undefined });
+  h.lifecycle.queueAutoActivation(h.attachment.documentId, h.window, h.onTimeout);
+  expect(initialEntrance.holdForActivation).toHaveBeenCalledOnce();
+  h.runTimeout(1);
+  expect(initialEntrance.resumePreview).toHaveBeenCalledOnce();
+  h.lifecycle.dispose();
+});

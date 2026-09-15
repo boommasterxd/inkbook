@@ -84,6 +84,7 @@ function createScenePreviewHandoff(
     initialScrollStabilityRelease,
     motion: options.deviceSettings.motion,
     preview: options.preview,
+    ...(options.initialEntrance === undefined ? {} : { initialEntrance: options.initialEntrance }),
     root: options.root,
     ...(options.setPreviewAspectRatio === undefined
       ? {}

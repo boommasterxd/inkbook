@@ -69,7 +69,7 @@ vi.mock("../../../../src/obsidian/embeds/workspace-active-scene", () => ({
   createWorkspaceActiveScene: boundary.createScene,
 }));
 
-function createHarness() {
+function createHarness(initialEntrance?: PresentationAttachment["initialEntrance"]) {
   boundary.snapshot = { disposed: false };
   boundary.createScene.mockReset().mockImplementation(() => ({
     dispose: vi.fn(),
@@ -112,6 +112,7 @@ function createHarness() {
     },
     scrollOwner: () => root,
     whenPresented,
+    ...(initialEntrance === undefined ? {} : { initialEntrance }),
   };
   runtime.mount(attachment);
   return { attachment, finishEntrance, runtime, settings };
@@ -247,4 +248,29 @@ describe("coalesced workspace activation", () => {
     await vi.waitFor(() => expect(boundary.createScene).toHaveBeenCalledTimes(2));
     expect(attachment.root.dataset.inkbookState).toBe("active");
   });
+});
+
+it("mounts a queued new editor after measurement without waiting for preview entrance", async () => {
+  let measured: (ready: boolean) => void = () => undefined;
+  const initialEntrance = {
+    ready: Promise.resolve(true),
+    activationReady: new Promise<boolean>((resolve) => {
+      measured = resolve;
+    }),
+    holdForActivation: vi.fn(),
+    resumePreview: vi.fn(),
+    revealActive: vi.fn(() => true),
+    showLoading: vi.fn(),
+  };
+  const h = createHarness(initialEntrance);
+  runtimes.push(h.runtime);
+  const ownerWindow = h.attachment.root.ownerDocument.defaultView!;
+  h.runtime.queueAutoActivation(h.attachment.documentId, ownerWindow, vi.fn());
+  expect(initialEntrance.holdForActivation).toHaveBeenCalledOnce();
+  h.runtime.activate(h.attachment);
+  await Promise.resolve();
+  expect(boundary.createScene).not.toHaveBeenCalled();
+  measured(true);
+  await vi.waitFor(() => expect(boundary.createScene).toHaveBeenCalledOnce());
+  expect(initialEntrance.resumePreview).not.toHaveBeenCalled();
 });

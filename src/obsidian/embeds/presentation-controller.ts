@@ -12,10 +12,13 @@ import {
 import type {
   PresentationAttachment,
   PresentationAttachmentInput,
+  PresentationRemovalRange,
+  PresentationRemovalSpacing,
   PresentationSessionPort,
 } from "./presentation-port";
 import type { InkbookLockedPreviewDescriptor } from "./locked-preview";
 import type { PreviewContentIdentity } from "./safe-preview-svg";
+import { PresentationExit } from "./presentation-exit";
 import { PresentationEntrance, type PresentationEntranceState } from "./presentation-entrance";
 import {
   LAYOUT_TRANSITION_CLASS,
@@ -36,6 +39,12 @@ export interface PresentationPreviewLifecycle {
   readonly entranceState?: PresentationEntranceState;
   readonly refresh?: () => void;
   readonly requestHostMeasure?: () => void;
+  readonly removeMarkdown?: (
+    range: PresentationRemovalRange,
+    expectedSource: string,
+    mutate: () => void,
+  ) => boolean;
+  readonly measureRemovalSpacing?: (range: PresentationRemovalRange) => PresentationRemovalSpacing;
   readonly setDescriptor?: (descriptor: InkbookLockedPreviewDescriptor) => void;
   readonly setAspectRatio?: (aspectRatio: number) => void;
   readonly setSource?: (source: string) => Promise<PreviewContentIdentity | undefined>;
@@ -59,6 +68,7 @@ function leasesFor(document: Document): ScrollbarLeaseRegistry<HTMLElement> {
 export class PresentationController {
   readonly #attachment: MutablePresentationAttachment;
   readonly #sessions: PresentationSessionPort;
+  readonly #exit: PresentationExit;
   readonly #entrance: PresentationEntrance | undefined;
   #disposeScheme: (() => void) | undefined;
   #disposeFocusNavigation: (() => void) | undefined;
@@ -88,13 +98,19 @@ export class PresentationController {
     if (owningWindow === null) throw new Error("The Inkbook presentation has no owning window.");
     this.#owningWindow = owningWindow;
     this.#previewLifecycle = previewLifecycle;
+    this.#exit = new PresentationExit(
+      attachment.root,
+      owningWindow,
+      () => this.#sessions.getMotionPreference?.() ?? "system",
+      previewLifecycle?.measureRemovalSpacing,
+      previewLifecycle?.removeMarkdown,
+    );
     this.#entrance = this.#createEntrance(attachment.root, previewLifecycle);
     let lifecycle: PresentationScrollLifecycle<HTMLElement, PresentationMeasurement> | undefined;
     this.#scrollRangeReserve = new PresentationScrollRangeReserve(() => lifecycle?.owner ?? null);
     const resolvedAttachment: MutablePresentationAttachment = {
       ...attachment,
-      ...this.#consumeLoadingStart(previewLifecycle),
-      ...(this.#entrance === undefined ? {} : { whenPresented: this.#entrance.ready }),
+      ...this.#initialPresentationOptions(previewLifecycle),
       ...(previewLifecycle?.contentIdentity === undefined
         ? {}
         : { previewContentIdentity: previewLifecycle.contentIdentity }),
@@ -116,6 +132,7 @@ export class PresentationController {
                   },
                 }),
           }),
+      removal: this.#exit,
       scrollRangeReserve: this.#scrollRangeReserve,
       scrollOwner: () => lifecycle?.owner ?? null,
     };
@@ -169,10 +186,15 @@ export class PresentationController {
     });
   }
 
-  #consumeLoadingStart(preview: PresentationPreviewLifecycle | undefined) {
+  #initialPresentationOptions(preview: PresentationPreviewLifecycle | undefined) {
     const loadingStartedAt = preview?.entranceState?.loadingStartedAt;
     if (preview?.entranceState !== undefined) delete preview.entranceState.loadingStartedAt;
-    return loadingStartedAt === undefined ? {} : { loadingStartedAt };
+    return {
+      ...(loadingStartedAt === undefined ? {} : { loadingStartedAt }),
+      ...(this.#entrance === undefined
+        ? {}
+        : { whenPresented: this.#entrance.ready, initialEntrance: this.#entrance }),
+    };
   }
 
   #createEntrance(root: HTMLElement, preview: PresentationPreviewLifecycle | undefined) {
@@ -307,6 +329,7 @@ export class PresentationController {
     this.#disposeFocusNavigation?.();
     this.#disposeFocusNavigation = undefined;
     this.#entrance?.dispose();
+    this.#exit.dispose();
     this.#disposeScheme?.();
     this.#disposeScheme = undefined;
     if (this.#mounted) {

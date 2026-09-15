@@ -1,7 +1,7 @@
 import { MarkdownView, type App, type Editor } from "obsidian";
 
 import { findMarkdownInkbookEmbeds, MARKDOWN_EMBED_LIMITS } from "../embeds/markdown-embed";
-import type { PresentationEmbedReference } from "../embeds/presentation-port";
+import type { PresentationEmbedReference, PresentationRemoval } from "../embeds/presentation-port";
 import type { ObsidianLinkAdapter } from "../vault/links";
 import type { ObsidianVaultFileAdapter } from "../vault/file-adapter";
 import {
@@ -123,6 +123,7 @@ export async function resolveEmbedActionReference(
 export async function removeResolvedEmbed(
   reference: ResolvedEmbedActionReference,
   ports: EmbedActionResolutionPorts,
+  removal?: PresentationRemoval,
 ): Promise<boolean> {
   if (reference.editor !== undefined) {
     try {
@@ -133,7 +134,10 @@ export async function removeResolvedEmbed(
       if (reference.editor.getRange(from, to) !== reference.content.slice(range.from, range.to)) {
         return false;
       }
-      reference.editor.replaceRange("", from, to);
+      const mutate = () => reference.editor?.replaceRange("", from, to);
+      const handled = removal?.removeMarkdown?.(range, reference.content, mutate);
+      if (handled !== undefined) return handled;
+      mutate();
       return true;
     } catch {
       return false;
@@ -157,7 +161,7 @@ export async function removeResolvedEmbed(
   }
 }
 
-function embedRemovalRange(content: string, match: ResolvedEmbedRange) {
+export function embedRemovalRange(content: string, match: ResolvedEmbedRange) {
   let from = content.lastIndexOf("\n", match.from - 1) + 1;
   const newline = content.indexOf("\n", match.to);
   let to = newline < 0 ? content.length : newline;
