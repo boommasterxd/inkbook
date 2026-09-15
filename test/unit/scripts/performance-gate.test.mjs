@@ -262,6 +262,45 @@ describe("direct comparison failures", () => {
 });
 
 describe("bounded comparison stages", () => {
+  it("does not repeat decided files while collecting the final unresolved stage", async () => {
+    workspaces.anchor = { ...workspaces.base };
+    const combined = [{ ...runs[0], testFiles: runs.flatMap((run) => run.testFiles) }];
+    mocks.batch.mockImplementation(async (options) => {
+      const result = batchResult(options);
+      for (const record of result.measurements) {
+        if (
+          options.mode === "measurement" &&
+          options.root === "/candidate" &&
+          record.file.endsWith("/arrange-performance.test.ts")
+        )
+          record.actualMs = 150;
+      }
+      return result;
+    });
+    const violations = await executePerformanceGate("/project", combined);
+    expect(violations).toHaveLength(2);
+    const calls = measurementCalls();
+    expect(calls).toHaveLength(36);
+    expect(calls.slice(0, 12).every(([options]) => options.testFiles.length === 2)).toBe(true);
+    expect(
+      calls
+        .slice(12)
+        .every(
+          ([options]) =>
+            options.testFiles.length === 1 &&
+            options.testFiles[0].endsWith("/arrange-performance.test.ts"),
+        ),
+    ).toBe(true);
+    expect(
+      savedReport()
+        .comparisons[0].metrics.map((metric) => [metric.status, metric.ratios.length])
+        .sort(),
+    ).toEqual([
+      ["inconclusive", 18],
+      ["pass", 6],
+    ]);
+  });
+
   it("uses the final stage only for an unresolved profile and never retries beyond it", async () => {
     workspaces.anchor = { ...workspaces.base };
     mocks.batch.mockImplementation(async (options) =>

@@ -213,12 +213,21 @@ async function comparePlannedRun({ variant, run, workspaces, report }) {
   const candidateRounds = [];
   const order = comparisonOrder();
   let comparison;
+  let activeRun = run;
+  let settledMetrics = [];
   for (let round = 0; round < order.length; round += 1) {
     const first = order[round];
     const sides = first === "reference" ? ["reference", "candidate"] : ["candidate", "reference"];
     const measurements = {};
     for (const side of sides) {
-      const result = await measureOriginalBatch({ variant, round, side, run, workspaces, report });
+      const result = await measureOriginalBatch({
+        variant,
+        round,
+        side,
+        run: activeRun,
+        workspaces,
+        report,
+      });
       measurements[side] = result.measurements;
     }
     referenceRounds.push(measurements.reference);
@@ -226,8 +235,24 @@ async function comparePlannedRun({ variant, run, workspaces, report }) {
     if (!COMPARISON_STAGES.includes(round + 1)) continue;
     comparison = compareTimingRounds(referenceRounds, candidateRounds);
     if (comparison.status !== "inconclusive") break;
+    if (round + 1 === COMPARISON_STAGES[0]) {
+      const unresolvedFiles = new Set(
+        comparison.metrics
+          .filter((metric) => metric.status === "inconclusive")
+          .map((metric) => JSON.parse(metric.key)[0]),
+      );
+      settledMetrics = comparison.metrics.filter(
+        (metric) => !unresolvedFiles.has(JSON.parse(metric.key)[0]),
+      );
+      activeRun = { ...run, testFiles: run.testFiles.filter((file) => unresolvedFiles.has(file)) };
+      for (const rounds of [referenceRounds, candidateRounds]) {
+        for (let index = 0; index < rounds.length; index += 1) {
+          rounds[index] = rounds[index].filter((record) => unresolvedFiles.has(record.file));
+        }
+      }
+    }
   }
-  return { ...comparison, order };
+  return { ...comparison, metrics: [...settledMetrics, ...comparison.metrics], order };
 }
 
 function validateInputPlan(files, plan) {
