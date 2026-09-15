@@ -115,7 +115,6 @@ Thirteen focused mutations were rejected in isolated source copies without relyi
 | Preview point-buffer copy            | Selection preview       | 184,320/1,474,560 point reads where zero are allowed          |
 | Duplicate live-stroke tail rebuild   | Pressure-outline work   | 1,024 tail builds where exactly 512 are allowed               |
 | Unbounded retained path cache        | Path-cache remount      | 4,200 retained entries where exactly 4,096 are allowed        |
-
 | Quadratic overlap membership | Overflow capacity | Indexed list reads exceeded the linear 4n allowance at both fixture sizes |
 | Unchanged serializer geometry scan | Incremental capacity | 2,998/59,998 retained width reads where zero are allowed |
 | Ignored mount deadlines | Reconciliation work | 814 mount work units where the controlled frame permits at most six |
