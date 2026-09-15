@@ -11,10 +11,7 @@ afterEach(() => {
 });
 
 describe("positioned feedback pointer behavior", () => {
-  it.each([
-    ["inkbook-operation-feedback", "none"],
-    ["inkbook-feedback inkbook-feedback-presentation", "auto"],
-  ])("preserves %s pointer behavior from its stylesheet", (className, pointerEvents) => {
+  it("keeps the centered operation indicator non-interactive", () => {
     const stylesheet = new CSSStyleSheet();
     stylesheet.replaceSync(
       ["inkbook", "feedback"]
@@ -28,7 +25,7 @@ describe("positioned feedback pointer behavior", () => {
       "http://www.w3.org/1999/xhtml",
       "div",
     ) as HTMLDivElement;
-    surface.className = className!;
+    surface.className = "inkbook-operation-feedback";
     root.append(surface);
     document.body.append(root);
     vi.spyOn(document.documentElement, "clientHeight", "get").mockReturnValue(800);
@@ -43,7 +40,7 @@ describe("positioned feedback pointer behavior", () => {
     } as DOMRect);
     const lifecycle = createPresentationFeedbackPositionLifecycle(surface, root);
     expect(surface.style.visibility).toBe("visible");
-    expect(window.getComputedStyle(surface).pointerEvents).toBe(pointerEvents);
+    expect(window.getComputedStyle(surface).pointerEvents).toBe("none");
     lifecycle.dispose();
   });
 });

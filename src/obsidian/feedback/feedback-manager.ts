@@ -5,10 +5,7 @@ import {
   setFeedbackPending,
   type InkbookFeedbackAction,
 } from "./feedback-surface";
-import {
-  createPresentationFeedbackPositionLifecycle,
-  type PresentationFeedbackPositionLifecycle,
-} from "./presentation-feedback-position";
+import { mountWindowFeedback } from "./window-feedback-host";
 import { effectiveTransitionDuration } from "../runtime/effective-motion";
 
 type FeedbackCloseMode = "animated" | "immediate";
@@ -43,36 +40,20 @@ export class InkbookFeedbackManager {
   ): InkbookFeedbackHandle {
     const previous = this.#presentations.get(root);
     previous?.close("immediate");
-    const active = this.#show(
-      root,
-      "presentation",
-      request,
-      () => {
-        if (this.#presentations.get(root) === active) this.#presentations.delete(root);
-      },
-      (surface) => createPresentationFeedbackPositionLifecycle(surface, root),
-    );
+    const active = this.#show(root, "presentation", request, () => {
+      if (this.#presentations.get(root) === active) this.#presentations.delete(root);
+    });
     if (active !== undefined) this.#presentations.set(root, active);
     return active ?? CLOSED_FEEDBACK;
   }
 
-  public showInViewOrWindow(
-    ownerWindow: Window,
-    view: HTMLElement | undefined,
-    request: InkbookFeedbackRequest,
-  ): InkbookFeedbackHandle {
+  public showInWindow(ownerWindow: Window, request: InkbookFeedbackRequest): InkbookFeedbackHandle {
     const ownerDocument = ownerWindow.document;
     this.#windows.get(ownerDocument)?.close("immediate");
-    const host = ownerDocument.body.createDiv({
-      cls: `inkbook-root inkbook-feedback-host inkbook-feedback-host-${view === undefined ? "window" : "view"}`,
-    });
-    (view ?? ownerDocument.body).append(host);
-    const active = this.#show(host, "global", request, () => {
+    const active = this.#show(ownerDocument.body, "global", request, () => {
       if (this.#windows.get(ownerDocument) === active) this.#windows.delete(ownerDocument);
-      host.remove();
     });
     if (active !== undefined) this.#windows.set(ownerDocument, active);
-    else host.remove();
     return active ?? CLOSED_FEEDBACK;
   }
 
@@ -87,7 +68,6 @@ export class InkbookFeedbackManager {
     placement: "global" | "presentation",
     request: InkbookFeedbackRequest,
     onClosed: () => void,
-    createLifecycle?: (surface: HTMLElement) => PresentationFeedbackPositionLifecycle,
   ): ActiveFeedback | undefined {
     if (this.#disposed) return undefined;
     const ownerWindow = container.ownerDocument.defaultView;
@@ -97,13 +77,13 @@ export class InkbookFeedbackManager {
     let presence: "open" | "exiting" | "closed" = "open";
     let timeout: number | undefined;
     let exitTimeout: number | undefined;
-    let lifecycle: PresentationFeedbackPositionLifecycle | undefined;
+    const unmount = mountWindowFeedback(surface.element, container);
     const finish = (): void => {
       if (presence === "closed") return;
       presence = "closed";
       if (timeout !== undefined) ownerWindow.clearTimeout(timeout);
       if (exitTimeout !== undefined) ownerWindow.clearTimeout(exitTimeout);
-      lifecycle?.dispose();
+      unmount();
       surface.element.remove();
       this.#active.delete(active);
       onClosed();
@@ -134,7 +114,6 @@ export class InkbookFeedbackManager {
       const button = createFeedbackIconButton(surface.actionGroup, action.id);
       button.addEventListener("click", () => void this.#runAction(active, action));
     }
-    lifecycle = createLifecycle?.(surface.element);
     if ((request.actions?.length ?? 0) === 0 || request.timeoutMs !== undefined) {
       timeout = ownerWindow.setTimeout(close, request.timeoutMs ?? 5_000);
     }

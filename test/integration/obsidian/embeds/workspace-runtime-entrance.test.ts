@@ -91,7 +91,6 @@ function createHarness(initialEntrance?: PresentationAttachment["initialEntrance
       manager: new InkbookFeedbackManager(),
       onOpenSettings: vi.fn(),
       onOpenShortcuts: vi.fn(),
-      view: () => undefined,
     },
   );
   let finishEntrance: (ready: boolean) => void = () => undefined;

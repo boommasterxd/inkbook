@@ -41,8 +41,8 @@ describe("attached recovery panel", () => {
     const actionButtons = attachedActionButtons(panelElement);
 
     expectAttachedError(panelElement, "The drawing couldn't be opened.");
-    expect(panelElement.style.insetBlockEnd).toBe("16px");
-    expect(panelElement.style.insetInlineStart).toBe("300px");
+    expect(panelElement.style.insetBlockEnd).toBe("");
+    expect(host.getElementsByClassName("inkbook-feedback-host").length).toBe(1);
     expect(actionButtons.map((button) => button.attributes.get("aria-label"))).toEqual([
       "Retry opening drawing",
       "Keep saved preview",

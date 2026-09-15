@@ -14,11 +14,11 @@ const motionStylesheet = readStylesheet("src/obsidian/styles/motion.css");
 const toolbarMotionStylesheet = readStylesheet("src/obsidian/styles/editor-toolbar-motion.css");
 
 describe("Inkbook host styles", () => {
-  it("anchors presentation feedback without layout participation", () => {
-    const feedback = declarationsFor(".inkbook-root .inkbook-feedback-presentation");
-    expect(feedback).toContain("position: absolute");
-    expect(feedback).toContain("pointer-events: auto");
-    expect(feedback).toContain("translate: -50% 0");
+  it("anchors feedback outside note layout without intercepting the window", () => {
+    const host = declarationsFor(".inkbook-root.inkbook-feedback-host");
+    expect(host).toContain("position: fixed");
+    expect(host).toContain("pointer-events: none");
+    expect(host).toContain("align-items: flex-end");
   });
 
   it("centers delayed operation feedback in the visible embed without changing layout", () => {
@@ -354,12 +354,11 @@ describe("Inkbook editor handoff styles", () => {
 });
 
 describe("Inkbook editor overlays", () => {
-  it("anchors attached save recovery within the viewport-positioned presentation", () => {
+  it("preserves the attached save recovery surface in the window host", () => {
     const recovery = declarationsFor(".inkbook-root .inkbook-feedback-presentation");
 
-    expect(recovery).toContain("position: absolute");
+    expect(recovery).toContain("background: var(--inkbook-page-surface)");
     expect(recovery).toContain("pointer-events: auto");
-    expect(recovery).toContain("translate: -50% 0");
   });
 
   it("uses accessible icon-only feedback controls with complete touch targets", () => {
@@ -376,7 +375,7 @@ describe("Inkbook editor overlays", () => {
     expect(button).toContain("border-radius: 50%");
     expect(button).toContain("inline-size: 44px");
     expect(button).toContain("min-block-size: 44px");
-    expect(copy).toContain("flex: 1 1 auto");
+    expect(copy).toContain("flex: 1 1 0");
     expect(actions).toContain("margin-inline-start: auto");
     expect(iconContainer).toContain("display: inline-flex");
     expect(iconContainer).toContain("line-height: 0");
@@ -436,6 +435,7 @@ describe("Inkbook editor overlays", () => {
           !selector.startsWith(".inkbook-root") &&
           !selector.startsWith(".inkbook-menu-") &&
           !selector.startsWith(".inkbook-adaptive-panel") &&
+          selector !== ".is-phone .inkbook-root.inkbook-feedback-host" &&
           selector !== ".inkbook-owned-menu",
       ),
     ).toEqual([".inkbook-scrollbar-stable", ".inkbook-scroll-anchor-suppressed"]);

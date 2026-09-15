@@ -4,7 +4,7 @@ import { InkbookFeedbackManager } from "../../../../src/obsidian/feedback";
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
 
 describe("Inkbook feedback manager", () => {
-  it("renders one accessible icon-action message inside a presentation", async () => {
+  it("renders one accessible icon-action message in the owning window", async () => {
     const root = new FakePresentationElement();
     const retry = vi.fn(() => true);
     const manager = new InkbookFeedbackManager();
@@ -16,9 +16,8 @@ describe("Inkbook feedback manager", () => {
 
     const feedback = root.getElementsByClassName("inkbook-feedback").item(0);
     const buttons = feedback?.getElementsByTagName("button");
-    expect(feedback?.style.insetBlockEnd).toBe("16px");
-    expect(feedback?.style.insetInlineStart).toBe("300px");
-    expect(feedback?.style.maxInlineSize).toBe("576px");
+    expect(feedback?.style.insetBlockEnd).toBe("");
+    expect(root.getElementsByClassName("inkbook-feedback-host").length).toBe(1);
     expect(feedback?.attributes.get("role")).toBe("alert");
     expect(feedback?.dataset.inkbookFeedbackSeverity).toBe("error");
     expect(feedback?.textContent).toBe("");
@@ -85,7 +84,7 @@ describe("Inkbook feedback manager", () => {
 });
 
 describe("Inkbook feedback routing and cleanup", () => {
-  it("anchors non-presentation feedback to the active view or owning window", () => {
+  it("mounts global feedback outside the active view and replaces its window slot", () => {
     const root = new FakePresentationElement();
     const ownerDocument = root.ownerDocument as Document & { body: HTMLElement };
     const body = new FakePresentationElement(ownerDocument) as unknown as HTMLElement;
@@ -97,21 +96,21 @@ describe("Inkbook feedback routing and cleanup", () => {
     const manager = new InkbookFeedbackManager();
     const action = { id: "dismiss", run: () => false } as const;
 
-    manager.showInViewOrWindow(ownerWindow, view as unknown as HTMLElement, {
+    manager.showInWindow(ownerWindow, {
       actions: [action],
       code: "placement-folder-fallback",
     });
-    expect(view.getElementsByClassName("inkbook-feedback-host-view").length).toBe(1);
+    expect(view.getElementsByClassName("inkbook-feedback").length).toBe(0);
+    expect(body.getElementsByClassName("inkbook-feedback").length).toBe(1);
 
-    manager.showInViewOrWindow(ownerWindow, undefined, {
+    manager.showInWindow(ownerWindow, {
       actions: [action],
       code: "recovery-copy-saved",
     });
-    expect(view.getElementsByClassName("inkbook-feedback-host-view").length).toBe(0);
+    expect(body.getElementsByClassName("inkbook-feedback").length).toBe(1);
     expect(
-      (body as unknown as FakePresentationElement).getElementsByClassName(
-        "inkbook-feedback-host-window",
-      ).length,
+      (body as unknown as FakePresentationElement).getElementsByClassName("inkbook-feedback-host")
+        .length,
     ).toBe(1);
   });
 
