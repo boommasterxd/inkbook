@@ -1,6 +1,7 @@
+import { recognitionCacheFixture } from "../../fixtures/obsidian/recognition-cache";
 import { ChangeSet, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { editorInfoField, editorLivePreviewField, TFile, type Vault } from "obsidian";
+import { editorInfoField, editorLivePreviewField } from "obsidian";
 import { ObsidianInkbookDocumentRecognition } from "../../../src/obsidian/embeds/document-recognition";
 import { createLivePreviewExtension } from "../../../src/obsidian/embeds/live-preview";
 import { PresentationOperationFeedback } from "../../../src/obsidian/embeds/presentation-operation-feedback";
@@ -223,16 +224,10 @@ it("positions detached loading feedback after attachment within the frame budget
 it("admits and completes recognition with bounded cache eviction within the frame budget", async ({
   annotate,
 }) => {
-  const File = TFile as unknown as new (path: string, size: number) => TFile;
-  const files = Array.from(
-    { length: INTERACTION_REFRESH_PROFILE.sampleCount + 300 },
-    (_, index) => new File(`${String(index)}.svg`, 10),
+  const { files, recognition } = recognitionCacheFixture(
+    ObsidianInkbookDocumentRecognition,
+    INTERACTION_REFRESH_PROFILE.sampleCount + 300,
   );
-  const byPath = new Map(files.map((file) => [file.path, file]));
-  const recognition = new ObsidianInkbookDocumentRecognition({
-    getFileByPath: (path: string) => byPath.get(path) ?? null,
-    cachedRead: async () => "invalid",
-  } as unknown as Vault);
   const durations: number[] = [];
   for (let index = 0; index < files.length; index += 1) {
     const started = performance.now();

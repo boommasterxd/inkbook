@@ -16,6 +16,7 @@ import { sha256Hex } from "../../../src/persistence/serialization/sha256";
 import { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/public";
 import { createProductionDocumentRuntime } from "../../../src/persistence/worker/runtime/production-document-runtime";
 import type { DocumentRuntimeRequest } from "../../../src/persistence/worker/runtime/public";
+import { statisticalSamples } from "../sample-policy";
 import { STANDARD_POINTS, createStandardPersistenceFixture, replaceFirstStroke } from "./fixtures";
 import {
   annotateDurations,
@@ -28,9 +29,9 @@ import {
 } from "./metrics";
 
 const MIB = 1024 * 1024;
-const FULL_EXPORT_SAMPLES_PER_RUN = 20;
-const INCREMENTAL_EXPORT_SAMPLES_PER_RUN = 100;
-const ORDER_ONLY_EXPORT_SAMPLES_PER_RUN = 20;
+const FULL_EXPORT_SAMPLES_PER_RUN = statisticalSamples(20);
+const INCREMENTAL_EXPORT_SAMPLES_PER_RUN = statisticalSamples(100);
+const ORDER_ONLY_EXPORT_SAMPLES_PER_RUN = statisticalSamples(20);
 const snapshot = createStandardPersistenceFixture();
 let serializedSvg: string | null = null;
 
@@ -42,7 +43,7 @@ describe("persistence serialization performance", () => {
     const baseline = requireSerialized(warmup.value);
     const durations: number[] = [];
 
-    for (let run = 0; run < 5; run += 1) {
+    for (let run = 0; run < statisticalSamples(5); run += 1) {
       const measured = serializeFixture();
       const output = requireSerialized(measured.value);
       expect(output).toEqual(baseline);
@@ -101,7 +102,7 @@ describe("persistence serialization performance", () => {
     const outputHash = sha256Hex(next);
     await exactBaseSave(base, next, outputHash);
     const callbackDurations: number[] = [];
-    for (let run = 0; run < 5; run += 1) {
+    for (let run = 0; run < statisticalSamples(5); run += 1) {
       callbackDurations.push(await exactBaseSave(base, next, outputHash));
     }
     await annotateDurations(annotate, "Vault.process exact-base callback", callbackDurations);
@@ -408,11 +409,19 @@ async function executeMeasuredExport(
   runtime: DocumentWorkerRuntime,
   request: ExportRequest,
 ): Promise<{ durationMs: number }> {
+  const before = runtime.instrumentation;
   let measured = await measureAsync(() => runtime.execute(request));
   const durationMs = measured.durationMs;
   const identity = exportIdentity(requireExportSuccess(measured.value));
   measured = null as never;
   await acknowledgeAndPrewarm(runtime, identity);
+  if (request.type === "export-incremental") {
+    const changedCount = request.changedElements?.length ?? 0;
+    expect(runtime.instrumentation.fragmentBuilds - before.fragmentBuilds).toBe(changedCount);
+    expect(runtime.instrumentation.derivedBoundsReuses - before.derivedBoundsReuses).toBe(
+      changedCount,
+    );
+  }
   return { durationMs };
 }
 

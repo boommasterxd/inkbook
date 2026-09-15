@@ -6,7 +6,8 @@
     "src/obsidian/plugin-runtime-entry.ts!",
     "src/persistence/worker/runtime/document-worker-entry.ts!",
     "src/rendering/ui/editor-chrome-entry.ts!",
-    "scripts/*.mjs"
+    "scripts/*.mjs",
+    "test/performance/comparison/react-root-probe.ts"
   ],
   "project": ["src/**/*.{ts,tsx}!", "test/**/*.{ts,tsx}", "scripts/*.mjs"],
   "vitest": {

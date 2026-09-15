@@ -1,3 +1,4 @@
+import { PASS_THROUGH_PLANNER } from "./selection-input-fixture";
 import type { InkElementV1, PointV1 } from "../../../src/domain/schema/public";
 import { SelectionHandleSession } from "../../../src/editor/selection/public";
 
@@ -8,17 +9,7 @@ export function createPassThroughMoveSession(
   return new SelectionHandleSession({
     action: { kind: "move" },
     elements,
-    planner: {
-      countReverseDependencies: () => 0,
-      planReplacements: (replacements) => ({
-        elements: replacements,
-        replacements,
-      }),
-      planReplacementsTimeSliced: async (replacements) => ({
-        elements: replacements,
-        replacements,
-      }),
-    },
+    planner: PASS_THROUGH_PLANNER,
     startPointer,
   });
 }

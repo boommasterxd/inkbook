@@ -3,14 +3,9 @@ name: CI
 on:
   pull_request:
   workflow_dispatch:
-    inputs:
-      calibrate:
-        description: Collect diagnostic performance samples on fresh hosted runners
-        type: boolean
-        default: false
 
 concurrency:
-  group: ci-${{ github.ref }}-${{ inputs.calibrate || false }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -52,14 +47,16 @@ jobs:
             refresh-rate: "120"
             timeout_minutes: 5
     env:
-      INKBOOK_PERFORMANCE_PROFILE: hosted-ubuntu
+      INKBOOK_PERFORMANCE_MODE: gate
+      INKBOOK_PERFORMANCE_BASE: ${{ github.event.pull_request.base.sha || 'origin/main' }}
       INKBOOK_PERFORMANCE_REFRESH_RATE: ${{ matrix.refresh-rate }}
       INKBOOK_PERFORMANCE_SUITE: ${{ matrix.suite }}
-      INKBOOK_PERFORMANCE_REPORT: "1"
       INKBOOK_PERFORMANCE_RESULTS_DIR: /tmp/inkbook-performance
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -74,50 +71,6 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: performance-${{ matrix.label }}
-          path: /tmp/inkbook-performance
-          retention-days: 30
-          if-no-files-found: error
-
-  Calibration:
-    name: Calibration (${{ matrix.sample }}, ${{ matrix.suite }})
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.calibrate }}
-    runs-on: ubuntu-latest
-    timeout-minutes: ${{ matrix.timeout_minutes }}
-    strategy:
-      fail-fast: false
-      max-parallel: 2
-      matrix:
-        sample: [1, 2, 3]
-        suite: [shared, cadence]
-        include:
-          - suite: shared
-            timeout_minutes: 15
-          - suite: cadence
-            timeout_minutes: 5
-    env:
-      INKBOOK_PERFORMANCE_PROFILE: hosted-ubuntu
-      INKBOOK_PERFORMANCE_REFRESH_RATE: "120"
-      INKBOOK_PERFORMANCE_SUITE: ${{ matrix.suite }}
-      INKBOOK_PERFORMANCE_REPORT: "1"
-      INKBOOK_PERFORMANCE_RESULTS_DIR: /tmp/inkbook-performance
-      INKBOOK_PERFORMANCE_CALIBRATION: "1"
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "26"
-          cache: npm
-      - name: Install dependencies
-        run: npm ci
-      - name: Run calibration sample
-        run: npm run benchmark
-      - name: Upload calibration measurements
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: calibration-${{ matrix.sample }}-${{ matrix.suite }}
           path: /tmp/inkbook-performance
           retention-days: 30
           if-no-files-found: error

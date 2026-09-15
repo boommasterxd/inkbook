@@ -31,6 +31,8 @@ it("keeps unopened settings bounded and unrelated device changes within the stri
     const shortcuts = container.querySelector<HTMLElement>(".inkbook-shortcuts-view");
     if (shortcuts === null) throw new Error("Missing shortcut view");
     const replace = vi.spyOn(shortcuts, "replaceChildren");
+    const initialNodes = [...container.querySelectorAll("*")];
+    const create = vi.spyOn(document, "createElementNS");
     const durations = measureInteractionFrames((frame) => {
       store.updateDeviceSettings((settings) => ({
         ...settings,
@@ -38,6 +40,8 @@ it("keeps unopened settings bounded and unrelated device changes within the stri
       }));
     });
     expect(replace).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect([...container.querySelectorAll("*")]).toEqual(initialNodes);
     const p99 = interactionP99(durations);
     expectTiming(p99, (1000 / 240) * 0.55);
     await annotate(

@@ -1,3 +1,4 @@
+import { sceneStoreDelta } from "../../../fixtures/rendering/store-scene-delta";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -28,16 +29,7 @@ function setup(pressureCount: number) {
   const store = new ElementStore(elements);
   const sceneStore = new ElementSceneStore(store);
   const { renderer, scheduler } = createSceneFixture(snapshot.page, sceneStore);
-  const unsubscribe = store.subscribe((delta) =>
-    renderer.applyDelta({
-      affected: delta.changes.map((change) => ({
-        id: change.id,
-        domains: change.domains,
-        before: (change.before?.element ?? null) as InkElementV1 | null,
-        after: (change.after?.element ?? null) as InkElementV1 | null,
-      })),
-    }),
-  );
+  const unsubscribe = store.subscribe((delta) => renderer.applyDelta(sceneStoreDelta(delta)));
   const model = {
     store,
     setGestureActive: () => undefined,

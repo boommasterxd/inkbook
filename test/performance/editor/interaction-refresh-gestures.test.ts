@@ -1,9 +1,10 @@
+import { createIndexedStrokeScene, createIndexedEraser } from "./indexed-scene-fixture";
+import { PASS_THROUGH_PLANNER, createHandleLine } from "./selection-input-fixture";
 import { describe, expect, it } from "vitest";
 
 import type { InkElementV1, PointV1 } from "../../../src/domain/schema/public";
 import { ElementStore } from "../../../src/domain/store/public";
 import { EraserSweep } from "../../../src/editor/gestures/public";
-import type { SelectionReplacementPlanner } from "../../../src/editor/selection/handle-session";
 import {
   SelectionHandleSession,
   type SelectionHandleAction,
@@ -23,32 +24,11 @@ import { expectTiming } from "../timing-assertions";
 
 const ELEMENT_COUNT = 10_000;
 const RAW_ERASER_SAMPLES_PER_FRAME = 8;
-const PLANNER: SelectionReplacementPlanner = {
-  countReverseDependencies: () => 0,
-  planReplacements: (replacements) => ({ elements: replacements, replacements }),
-  planReplacementsTimeSliced: async (replacements) => ({
-    elements: replacements,
-    replacements,
-  }),
-};
 
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz editor gesture profile`, () => {
   it("keeps indexed eraser feedback within budget", async ({ annotate }) => {
-    const store = new ElementStore(interactionStrokes());
-    const sceneStore = new ElementSceneStore(store);
-    const eraser = new EraserSweep(
-      { x: 20, y: 20 },
-      4,
-      {
-        getElement: (id) => sceneStore.get(id)?.element,
-        query: (bounds, sink) => sceneStore.query(bounds, sink),
-      },
-      {
-        addCandidateFade: () => undefined,
-        clearCandidateFade: () => undefined,
-        setCandidateFade: () => undefined,
-      },
-    );
+    const { store, sceneStore } = createIndexedStrokeScene(ElementStore, ElementSceneStore);
+    const eraser = createIndexedEraser(EraserSweep, sceneStore);
     store.resetInstrumentation();
 
     let rejectedUpdates = 0;
@@ -172,26 +152,7 @@ interface TargetedHandleProfile {
 }
 
 function targetedHandleProfiles(): readonly TargetedHandleProfile[] {
-  const line = {
-    bend: null,
-    createdAt: 1,
-    end: { x: 400, y: 100 },
-    endConnection: null,
-    endNode: "none" as const,
-    id: "20000000-0000-4000-8000-000000000011",
-    kind: "line" as const,
-    pivot: { x: 250, y: 100 },
-    rotation: 0,
-    start: { x: 100, y: 100 },
-    startConnection: null,
-    startNode: "none" as const,
-    style: {
-      outlineColor: { type: "theme-text" as const },
-      outlineOpacity: 1,
-      outlineStyle: "solid" as const,
-      outlineWidth: 2 as const,
-    },
-  };
+  const line = createHandleLine();
   const coordinate = coordinateSystem();
   const tableElement = table();
   return [
@@ -204,7 +165,7 @@ function targetedHandleProfiles(): readonly TargetedHandleProfile[] {
       session: new SelectionHandleSession({
         action: { elementId: line.id, endpoint: "end", kind: "linear-endpoint" },
         elements: [line],
-        planner: PLANNER,
+        planner: PASS_THROUGH_PLANNER,
         startPointer: line.end,
       }),
       snapGuideKind: "angular",
@@ -218,7 +179,7 @@ function targetedHandleProfiles(): readonly TargetedHandleProfile[] {
       session: new SelectionHandleSession({
         action: { axisIndex: 0, elementId: coordinate.id, kind: "coordinate-axis" },
         elements: [coordinate],
-        planner: PLANNER,
+        planner: PASS_THROUGH_PLANNER,
         startPointer: coordinate.axes[0],
       }),
       snapGuideKind: "angular",
@@ -232,7 +193,7 @@ function targetedHandleProfiles(): readonly TargetedHandleProfile[] {
       session: new SelectionHandleSession({
         action: { elementId: tableElement.id, kind: "table-column", separatorIndex: 0 },
         elements: [tableElement],
-        planner: PLANNER,
+        planner: PASS_THROUGH_PLANNER,
         startPointer: { x: 60, y: 70 },
       }),
       snapGuideKind: "separator",
@@ -254,7 +215,12 @@ function selectionProfile(
       x: startPointer.x + 10 + Math.sin(frame / 20) * 5,
       y: startPointer.y + 10 + Math.cos(frame / 20) * 5,
     }),
-    session: new SelectionHandleSession({ action, elements, planner: PLANNER, startPointer }),
+    session: new SelectionHandleSession({
+      action,
+      elements,
+      planner: PASS_THROUGH_PLANNER,
+      startPointer,
+    }),
     truncated,
     usesTransform,
   };

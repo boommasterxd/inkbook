@@ -122,6 +122,7 @@ function measureFrames(
   const frameBound = Math.ceil(TRANSITION_DURATIONS.automaticPageGrowth / frameDuration) + 2;
   let frames = 0;
   while (harness.frames.size > 0 && frames <= frameBound) {
+    expect(harness.frames.size).toBe(1);
     const started = performance.now();
     harness.frame(frames * frameDuration);
     durations.push(performance.now() - started);

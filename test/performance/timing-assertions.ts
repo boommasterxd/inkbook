@@ -1,6 +1,6 @@
 import { afterAll, expect } from "vitest";
 
-import { timingBudget } from "./timing-budget";
+import { performanceMode, timingBudget } from "./timing-budget";
 
 declare const process: {
   readonly env: Readonly<Record<string, string | undefined>>;
@@ -31,8 +31,12 @@ const records: TimingRecord[] = [];
 const ordinals = new Map<string, number>();
 
 afterAll(() => {
+  performanceMode();
   if (process.env["INKBOOK_PERFORMANCE_REPORT"] === "1") {
-    process.stderr.write(`INKBOOK_TIMING_RECORDS ${JSON.stringify(records)}\n`);
+    const { testPath } = expect.getState();
+    if (!testPath) throw new TypeError("Timing reports require an owning test file.");
+    const report = { testPath, measurements: records };
+    process.stderr.write(`INKBOOK_TIMING_RECORDS ${JSON.stringify(report)}\n`);
   }
   records.length = 0;
   ordinals.clear();
@@ -59,6 +63,7 @@ export function expectTiming(
   if (process.env["INKBOOK_PERFORMANCE_REPORT"] === "1") {
     recordTiming(actualMs, referenceMs, limitMs, options);
   }
+  if (performanceMode() !== "reference") return;
   const assertion = options.soft
     ? expect.soft(actualMs, options.label)
     : expect(actualMs, options.label);

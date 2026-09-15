@@ -1,3 +1,4 @@
+import { liveInputOptions, livePreviewOptions } from "../../../fixtures/rendering/live-input";
 import { describe, expect, it } from "vitest";
 
 import type { StrokeStyleV1 } from "../../../../src/domain/schema/public";
@@ -140,31 +141,18 @@ function coalescedHarness(pointerType: "pen" | "mouse") {
   const { store } = createInteractionFixture();
   const { renderer, scheduler } = createInteractionRenderer(store);
   scheduler.runAll();
-  const preview = new CreationPreview({
-    defaults: createBuiltInSettings().toolDefaults,
-    history: activeEditorStoreHistory(store),
-    identity: { createdAt: 0, id: "00000000-0000-4000-8000-999999999999" },
-    renderer,
-    start: {
-      additive: false,
-      kind: "tool-gesture",
-      pointer: { pointerId: 1, pointerType, pressure: 0.5, x: 0, y: 50 },
-      tool: "draw",
-    },
-  });
-  let routed: GesturePreview = preview;
-  const input = new CoalescedPointerInput({
-    dispatchMove: (pointer) => routed.update(pointer),
-    frameScheduler: scheduler,
-    now: () => scheduler.now(),
-    project: (event) => ({
-      pointerId: 1,
+  const preview = new CreationPreview(
+    livePreviewOptions(
+      createBuiltInSettings().toolDefaults,
+      activeEditorStoreHistory(store),
+      renderer,
       pointerType,
-      pressure: event.pressure,
-      x: event.clientX,
-      y: event.clientY,
-    }),
-  });
+    ),
+  );
+  let routed: GesturePreview = preview;
+  const input = new CoalescedPointerInput(
+    liveInputOptions(scheduler, (pointer) => routed.update(pointer), pointerType),
+  );
   routed = input.wrap(preview);
   const camera = fakeNode(renderer.svg).nodes[1]!;
   const liveGroup = camera.nodes.find(

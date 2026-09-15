@@ -2,7 +2,7 @@ import type { MockInstance } from "vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { expectTiming } from "../../../performance/timing-assertions";
-import { timingBudget } from "../../../performance/timing-budget";
+import { performanceMode, timingBudget } from "../../../performance/timing-budget";
 
 declare const process: {
   readonly env: Readonly<Record<string, string | undefined>>;
@@ -22,10 +22,13 @@ beforeEach(() => {
   vi.stubEnv("INKBOOK_PERFORMANCE_REPORT", "1");
   vi.stubEnv("INKBOOK_PERFORMANCE_REFRESH_RATE", "240");
   vi.stubEnv("INKBOOK_PERFORMANCE_PROFILE", undefined);
+  vi.stubEnv("INKBOOK_PERFORMANCE_MODE", undefined);
   writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
 });
 
 afterEach(() => {
+  vi.stubEnv("INKBOOK_PERFORMANCE_PROFILE", undefined);
+  vi.stubEnv("INKBOOK_PERFORMANCE_MODE", undefined);
   flushCallbacks.forEach((callback) => callback());
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
@@ -35,15 +38,16 @@ function flushRecords(): Record<string, unknown>[] {
   flushCallbacks.forEach((callback) => callback());
   const output = writeSpy.mock.lastCall?.[0];
   expect(typeof output).toBe("string");
-  return JSON.parse(String(output).replace(/^INKBOOK_TIMING_RECORDS /, "")) as Record<
-    string,
-    unknown
-  >[];
+  const report = JSON.parse(String(output).replace(/^INKBOOK_TIMING_RECORDS /, "")) as {
+    testPath: string;
+    measurements: Record<string, unknown>[];
+  };
+  expect(report.testPath).toContain("timing-assertions.test.ts");
+  return report.measurements;
 }
 
 describe("performance timing assertions", () => {
   it("records successful measurements with original and effective budgets", () => {
-    vi.stubEnv("INKBOOK_PERFORMANCE_PROFILE", "hosted-ubuntu");
     expectTiming(0.2, 1, { label: "dispatch" });
     expectTiming(0.3, 1, { exclusive: true });
     const captured = flushRecords();
@@ -95,9 +99,9 @@ describe("performance timing assertions", () => {
     expect(flushRecords()).toEqual([]);
   });
 
-  it("rejects overflow in the effective hosted budget", () => {
+  it("rejects the removed hosted profile", () => {
     vi.stubEnv("INKBOOK_PERFORMANCE_PROFILE", "hosted-ubuntu");
-    expect(() => expectTiming(1, Number.MAX_VALUE)).toThrow(TypeError);
+    expect(() => expectTiming(1, Number.MAX_VALUE)).toThrow("Timing multipliers were removed");
   });
 
   it("does not capture or emit records when telemetry is disabled", () => {
@@ -117,6 +121,44 @@ describe("performance timing assertions", () => {
     for (let index = 0; index < 20_000; index += 1) expectTiming(0, 1);
     expect(() => expectTiming(0, 1)).toThrow("exceeded 20000 records");
     expect(flushRecords()).toHaveLength(20_000);
+  });
+});
+
+describe("performance timing modes", () => {
+  it("captures out-of-reference timings in contracts mode", () => {
+    vi.stubEnv("INKBOOK_PERFORMANCE_MODE", "contracts");
+    expectTiming(100, 1, { exclusive: true });
+    expect(flushRecords()).toEqual([
+      expect.objectContaining({ actualMs: 100, referenceMs: 1, limitMs: 1 }),
+    ]);
+    expect(() => expectTiming(NaN, 1)).toThrow(TypeError);
+  });
+
+  it("allows contracts mode without timing reports", () => {
+    vi.stubEnv("INKBOOK_PERFORMANCE_MODE", "contracts");
+    vi.stubEnv("INKBOOK_PERFORMANCE_REPORT", undefined);
+    expectTiming(100, 1);
+    flushCallbacks.forEach((callback) => callback());
+    expect(writeSpy).not.toHaveBeenCalled();
+  });
+
+  it.each(["", "hosted-ubuntu", "unknown", "compare"])("rejects unsupported mode %s", (mode) => {
+    vi.stubEnv("INKBOOK_PERFORMANCE_MODE", mode);
+    expect(() => expectTiming(0, 1)).toThrow("Unsupported performance mode");
+    expect(() => flushCallbacks.forEach((callback) => callback())).toThrow(
+      "Unsupported performance mode",
+    );
+  });
+
+  it("identifies reports even when the file has no timing measurements", () => {
+    expect(flushRecords()).toEqual([]);
+  });
+
+  it("keeps default and explicit reference budgets unscaled", () => {
+    expect(performanceMode()).toBe("reference");
+    expect(timingBudget(2.5)).toBe(2.5);
+    vi.stubEnv("INKBOOK_PERFORMANCE_MODE", "reference");
+    expect(timingBudget(2.5)).toBe(2.5);
   });
 
   it("resets record and ordinal storage after flushing", () => {

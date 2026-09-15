@@ -206,7 +206,7 @@ function runFirstFrameAndFollowUps(scheduler: ProfileScheduler, prepare: () => v
 }
 
 function runPendingFrameAndFollowUps(scheduler: ProfileScheduler): FrameMetrics {
-  if (scheduler.pendingCount === 0) throw new Error("No frame is pending.");
+  expect(scheduler.pendingCount).toBe(1);
   return runFrameAndFollowUps(scheduler);
 }
 
@@ -217,6 +217,7 @@ function runFrameAndFollowUps(scheduler: ProfileScheduler): FrameMetrics {
   const followUpDurationsMs: number[] = [];
   let frameCount = 0;
   while (scheduler.pendingCount > 0) {
+    expect(scheduler.pendingCount).toBe(1);
     if (frameCount >= 1_000) {
       throw new Error("Frame limit exceeded while draining follow-up frames.");
     }

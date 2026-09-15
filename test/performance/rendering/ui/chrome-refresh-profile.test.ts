@@ -44,5 +44,6 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz React chrome profile`, (
     expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     await annotate(interactionProfileAnnotation("semantic chrome update", p99), "performance");
     mounted.unmount();
+    expect(reactRoot.unmount).toHaveBeenCalledOnce();
   });
 });

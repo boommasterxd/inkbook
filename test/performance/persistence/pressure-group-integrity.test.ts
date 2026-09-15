@@ -2,22 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
 import { StreamingStaticIntegrityMatcher } from "../../../src/persistence/serialization/streaming-static-integrity";
-import { createStandardPersistenceFixture } from "./fixtures";
+import { createPressureGroupFixture } from "./fixtures";
 import { annotateDurations, expectProfileBudget, measure } from "./metrics";
 
 describe("pressure-group static integrity performance", () => {
   it("verifies 10,000 pressure groups within the unlock budget", async ({ annotate }) => {
-    const fixture = createStandardPersistenceFixture();
-    const snapshot = {
-      ...fixture,
-      elements: fixture.elements
-        .filter((element) => element.kind === "stroke")
-        .map((element) => ({
-          ...element,
-          tool: "pen" as const,
-          style: { ...element.style, pressureEnabled: true },
-        })),
-    };
+    const snapshot = createPressureGroupFixture();
     expect(snapshot.elements).toHaveLength(10_000);
     const serialized = serializeInkbookDocument(snapshot);
     if (!serialized.ok) throw new Error(serialized.error.code);

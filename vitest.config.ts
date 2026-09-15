@@ -6,6 +6,7 @@ const projectRoot = fileURLToPath(new URL(".", import.meta.url));
 const exposeGarbageCollector = process.execArgv.includes("--expose-gc");
 
 export default defineConfig({
+  cacheDir: fileURLToPath(new URL("./.vitest-cache/", import.meta.url)),
   resolve: {
     alias: {
       obsidian: fileURLToPath(new URL("./test/adapters/obsidian/plugin.ts", import.meta.url)),

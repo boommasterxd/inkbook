@@ -32,9 +32,37 @@ import {
 import { collectProfileGarbage } from "../persistence/metrics";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 import { expectTiming } from "../timing-assertions";
+import { indexedStroke } from "../../fixtures/editor/stroke";
 let fixture: StandardDomainFixture;
 let store: ElementStore;
 let storeConstructionDuration = 0;
+
+it.each([1_000, 10_000])("keeps local index work bounded with %i unrelated strokes", (count) => {
+  const local = Array.from({ length: 8 }, (_, index) => indexedStroke(index));
+  const unrelated = Array.from({ length: count }, (_, index) => indexedStroke(index + 10_000));
+  const indexed = new ElementStore([...local, ...unrelated]);
+  const scratch = new SpatialQueryScratch<string>();
+  const bounds = { minX: 19, maxX: 92, minY: 19, maxY: 21 };
+  indexed.query(bounds, scratch);
+  const warmAllocations = scratch.allocationCount;
+  indexed.resetInstrumentation();
+  for (let query = 0; query < 100; query += 1) {
+    expect(indexed.query(bounds, scratch)).toBe(local.length);
+    expect(scratch.candidateVisitCount).toBeLessThanOrEqual(local.length);
+    expect(scratch.duplicateVisitCount).toBe(0);
+    expect(scratch.allocationCount).toBe(warmAllocations);
+    expect(new Set(Array.from({ length: scratch.count }, (_, index) => scratch.at(index)))).toEqual(
+      new Set(local.map(({ id }) => id)),
+    );
+  }
+  expect(indexed.instrumentation).toMatchObject({
+    fullStoreScans: 0,
+    bandScans: 0,
+    snapshotMaterializations: 0,
+    recordReplacements: 0,
+  });
+  scratch.release();
+});
 
 beforeAll(async () => {
   const loadedFixture = createStandardRuntimeDomainFixture();

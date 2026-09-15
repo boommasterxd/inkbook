@@ -8,7 +8,12 @@ import { createHtmlElement } from "../../adapters/obsidian/dom";
 import { createPenTapInsertionExtension } from "../../../src/obsidian/commands/pen-tap-extension";
 import { PenTapInsertionController } from "../../../src/obsidian/commands/pen-tap-insertion";
 
-export function mountPenTapEditor(text = "Text\n") {
+export function mountPenTapEditor(
+  text = "Text\n",
+  implementation = { createPenTapInsertionExtension, PenTapInsertionController },
+) {
+  const { createPenTapInsertionExtension: createExtension, PenTapInsertionController: Controller } =
+    implementation;
   const setCursor = vi.fn();
   const editor = { setCursor } as unknown as Editor;
   const context = { editor, file: { path: "note.md" } } as MarkdownFileInfo;
@@ -17,7 +22,7 @@ export function mountPenTapEditor(text = "Text\n") {
   const canInsertAtLine = vi.fn((_editor: Editor, _path: string, line: number) => {
     return text.split("\n")[line] === "";
   });
-  const controller = new PenTapInsertionController({ canInsertAtLine }, enabled, {
+  const controller = new Controller({ canInsertAtLine }, enabled, {
     id: "insert-handwriting-embed",
     name: "Insert handwriting embed",
     editorCheckCallback: command,
@@ -28,7 +33,7 @@ export function mountPenTapEditor(text = "Text\n") {
     parent,
     state: EditorState.create({
       doc: text,
-      extensions: [editorInfoField.init(() => context), createPenTapInsertionExtension(controller)],
+      extensions: [editorInfoField.init(() => context), createExtension(controller)],
     }),
   });
   const posAtCoords = vi.spyOn(view, "posAtCoords").mockReturnValue(text.length);
@@ -67,4 +72,14 @@ export function penEvent(type: string, overrides: PointerEventInit = {}): Pointe
     pointerType: "pen",
     ...overrides,
   });
+}
+
+export function penTapSurface(editor: ReturnType<typeof mountPenTapEditor>, surface: string) {
+  const widget = createHtmlElement("div");
+  widget.className = "inkbook-root";
+  editor.view.contentDOM.append(widget);
+  return {
+    target: surface === "widget" ? widget : editor.view.scrollDOM,
+    pointerType: surface === "touch" ? "touch" : "pen",
+  };
 }

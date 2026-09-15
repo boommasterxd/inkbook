@@ -1,3 +1,4 @@
+import { movingSnapLine } from "./connected-input-fixture";
 import { describe, expect, it } from "vitest";
 
 import { ElementStore } from "../../../src/domain/store/public";
@@ -78,13 +79,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz snapping and connection 
 
   it("keeps whole-line endpoint snapping within budget", async ({ annotate }) => {
     const { sceneStore, scratch, store, targets } = createSnapFixture();
-    const moving = {
-      ...connectedLine(),
-      end: { x: 100, y: 0 },
-      pivot: { x: 50, y: 0 },
-      start: { x: 0, y: 0 },
-      startConnection: null,
-    };
+    const moving = movingSnapLine();
     const selectedIds = new Set([moving.id]);
     let matched = 0;
     warmLookup(

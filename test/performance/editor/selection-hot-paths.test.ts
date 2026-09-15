@@ -1,3 +1,9 @@
+import {
+  maximumViewportStroke,
+  scaleSessionOptions,
+  verifyEndpointFanout,
+  prepareEndpointFanout,
+} from "./large-selection-fixture";
 import { describe, expect, it } from "vitest";
 
 import { calculateElementBounds } from "../../../src/domain/geometry/public";
@@ -146,17 +152,9 @@ describe("selection scale preview hot path", () => {
     const maxY = Math.max(...bounds.map(({ maxY: value }) => value));
     const store = new ElementStore(elements);
     const started = performance.now();
-    const session = new SelectionHandleSession({
-      action: {
-        anchor: { x: minX, y: minY },
-        kind: "scale",
-        position: "bottom-right",
-        rotation: 0,
-      },
-      elements,
-      planner: store,
-      startPointer: { x: maxX, y: maxY },
-    });
+    const session = new SelectionHandleSession(
+      scaleSessionOptions(elements, store, { minX, minY, maxX, maxY }),
+    );
     const setupDuration = performance.now() - started;
     const durations = Array.from({ length: 120 }, (_, frame) => {
       const pointerStarted = performance.now();
@@ -222,20 +220,14 @@ describe("selection commit hot paths", () => {
     expect(session.prepareCommit()).toEqual({ status: "time-sliced-required" });
 
     const scheduler = new MeasuredSliceScheduler(2);
-    const materialized = await session.prepareCommitTimeSliced(scheduler);
-    if (materialized.status !== "ready") throw new Error("Expected transformed targets.");
-    const prepared = await store.prepareElementReplacement(materialized.replacements, scheduler);
+    const prepared = await prepareEndpointFanout(store, session, scheduler);
     scheduler.finish();
     if (prepared.token === null) throw new Error("Expected a prepared replacement token.");
     const commit = store.commitPreparedElementReplacement(prepared.token);
 
     expect(commit.status).toBe("committed");
     expect(commit.delta?.changes).toHaveLength(elements.length);
-    expect(store.get(elements[39]!.id)?.element).toMatchObject({ start: { x: 23, y: 24 } });
-    expect(store.instrumentation).toMatchObject({
-      fullStoreScans: 0,
-      reverseDependencyVisits: 19_929,
-    });
+    verifyEndpointFanout(store, elements[39]!.id);
     expectTiming(interactionP99(previewDurations), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     expectTiming(
       percentile(scheduler.sliceDurations, 0.95),
@@ -363,21 +355,6 @@ function endpointTarget(index: number): BoxShapeElementV1 {
     width: 200,
     x,
     y,
-  };
-}
-
-function maximumViewportStroke(index: number): StrokeElementV1 {
-  const source = maximumStroke(index);
-  const points = new Float64Array(source.points.length);
-  for (let offset = 0; offset < points.length; offset += 3) {
-    points[offset] = 2 + ((offset / 3) % 2_044);
-    points[offset + 1] = 100 + index * 0.001;
-    points[offset + 2] = 0.5;
-  }
-  return {
-    ...source,
-    pivot: { x: 1_024, y: 100 + index * 0.001 },
-    points: points as unknown as StrokeElementV1["points"],
   };
 }
 

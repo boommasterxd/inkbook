@@ -8,6 +8,7 @@ import type {
   StrokeStyleV1,
 } from "../../../src/domain/schema/public";
 import { createStandardDomainFixture } from "../domain/standard-domain-fixture";
+import { uuid as retainedCapacityId } from "../../unit/persistence/serialization/fixtures";
 import { createWorkerSnapshot } from "../../fixtures/persistence/worker-snapshot";
 
 export const STANDARD_STROKES = 10_000;
@@ -159,4 +160,40 @@ function rectangle(id: number, x: number, y: number): BoxShapeElementV1 {
 
 function uuid(value: number): string {
   return `00000000-0000-4000-8000-${value.toString(16).padStart(12, "0")}`;
+}
+
+export function createPressureGroupFixture() {
+  const fixture = createStandardPersistenceFixture();
+  return {
+    ...fixture,
+    elements: fixture.elements
+      .filter((element) => element.kind === "stroke")
+      .map((element) => ({
+        ...element,
+        tool: "pen" as const,
+        style: { ...element.style, pressureEnabled: true },
+      })),
+  };
+}
+
+export function createRetainedCapacityRectangle(index: number): BoxShapeElementV1 {
+  return {
+    createdAt: index,
+    height: 100,
+    id: retainedCapacityId(index),
+    kind: "rectangle",
+    pivot: { x: 150, y: 150 },
+    rotation: 0,
+    style: {
+      fillColor: null,
+      fillOpacity: 0,
+      outlineColor: { type: "theme-text" },
+      outlineOpacity: 1,
+      outlineStyle: "solid",
+      outlineWidth: 4,
+    },
+    width: 100,
+    x: 100,
+    y: 100,
+  };
 }

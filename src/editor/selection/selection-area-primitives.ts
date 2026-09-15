@@ -123,7 +123,6 @@ function polygonEdgesTouch(left: readonly PointV1[], right: readonly PointV1[]):
 }
 
 function segmentInsidePolygon(start: PointV1, end: PointV1, polygon: readonly PointV1[]): boolean {
-  if (start.x === end.x && start.y === end.y) return pointInPolygonInclusive(start, polygon);
   if (!pointInPolygonInclusive(start, polygon) || !pointInPolygonInclusive(end, polygon)) {
     return false;
   }

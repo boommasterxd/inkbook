@@ -1,3 +1,4 @@
+import { installPhoneSheetViewport } from "./phone-sheet-viewport";
 import { vi } from "vitest";
 
 import { createAdaptivePanelFixture } from "../../adapters/obsidian/adaptive-panel";
@@ -11,13 +12,8 @@ export function createPhoneSheetEditableFixture() {
   vi.spyOn(window, "cancelAnimationFrame").mockImplementation((handle) =>
     frames.cancelAnimationFrame(handle),
   );
-  const viewport = Object.assign(new EventTarget(), {
-    height: 400,
-    offsetTop: 100,
-    offsetLeft: 0,
-    width: 360,
-  });
-  Object.defineProperty(window, "visualViewport", { configurable: true, value: viewport });
+  const viewportBoundary = installPhoneSheetViewport();
+  const { viewport } = viewportBoundary;
   const input = window.createEl("input");
   const fixture = createAdaptivePanelFixture("style", {
     createContent: () => {

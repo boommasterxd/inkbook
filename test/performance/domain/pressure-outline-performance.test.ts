@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { buildPressureOutline } from "../../../src/domain/geometry/pressure-outline";
-import { LiveStrokeBuilder } from "../../../src/editor/tools/live-stroke";
+import { LiveStrokeBuilder, type LiveStrokeChunk } from "../../../src/editor/tools/live-stroke";
 import { interactionP99, INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
+import { measurePressureResizeFrame } from "./geometry-frame-fixture";
 import { expectTiming } from "../timing-assertions";
 
 const STYLE = {
@@ -43,16 +44,8 @@ describe("bounded canonical pressure geometry", () => {
     const durations: number[] = [];
     let minimumCommands = Infinity;
     for (let run = 0; run < 600; run += 1) {
-      const scaleX = 0.35 + (run % 173) * 0.0137;
-      const scaleY = 0.61 + (run % 137) * 0.0193;
-      const started = performance.now();
-      const centers = source.map((point) => ({
-        x: 123456.789 + point.x * scaleX,
-        y: -98765.432 + point.y * scaleY,
-        pressure: point.pressure,
-      }));
-      const parts = buildPressureOutline(centers, 22, { firstBoundary: 3, lastBoundary: 67 });
-      durations.push(performance.now() - started);
+      const { parts, duration } = measurePressureResizeFrame(source, run, buildPressureOutline);
+      durations.push(duration);
       minimumCommands = Math.min(minimumCommands, parts[0]!.d.match(/[Qq]/g)!.length);
       expect(parts).toHaveLength(1);
     }
@@ -70,11 +63,15 @@ describe("bounded canonical pressure geometry", () => {
       style: STYLE,
     });
     const durations: number[] = [];
+    let stableChunk: LiveStrokeChunk | undefined;
     for (let index = 0; index < 4096; index += 8) {
       const batch = Array.from({ length: 8 }, (_, offset) => sample(index + offset));
       const started = performance.now();
-      builder.appendBatch(batch);
+      const preview = builder.appendBatch(batch);
       durations.push(performance.now() - started);
+      if (stableChunk !== undefined) expect(preview.finalizedChunks[0]).toBe(stableChunk);
+      stableChunk ??= preview.finalizedChunks[0];
+      expect(builder.instrumentation().commitBuilds).toBe(0);
     }
     const p99 = interactionP99(durations);
     const commit = builder.finish();
@@ -83,6 +80,15 @@ describe("bounded canonical pressure geometry", () => {
     expect(commit.geometry).toHaveLength(1);
     expect(commit.instrumentation.maximumTailSamples).toBeLessThanOrEqual(16);
     expect(commit.instrumentation.maximumFinalizedChunkSamples).toBeLessThanOrEqual(16);
+    expect(commit.instrumentation).toMatchObject({
+      appendedInputSamples: 4_096,
+      retainedSamples: 4_096,
+      replacedTipSamples: 0,
+      commitBuilds: 1,
+    });
+    expect(commit.instrumentation.tailBuilds).toBe(512);
+    expect(commit.instrumentation.bufferGrowths).toBeLessThanOrEqual(8);
+    expect(commit.instrumentation.finalizedChunkBuilds).toBeLessThanOrEqual(512);
     await annotate(`Maximum-pressure live writing p99=${p99.toFixed(3)} ms`, "performance");
   });
 });
