@@ -12,6 +12,7 @@ import {
 const SCAN_BOUNDARY = 256 * 1024;
 
 describe("bounded unsupported SVG markup inspection", () => {
+  // Both full-capacity validation paths run under coverage; slice latency is tested separately.
   it("yields while scanning a maximum path without changing its validation result", () => {
     const svg = createMaximumComplexitySvg();
     const steps = validateSafeSvgSteps(svg, { totalInputBytes: svg.length });
@@ -20,7 +21,7 @@ describe("bounded unsupported SVG markup inspection", () => {
     expect(result).toEqual(validateSafeSvg(svg));
     expect(result).toMatchObject({ revision: 3, pathCommands: 200_000 });
     expect(yields).toBeGreaterThan(700);
-  });
+  }, 15_000);
 
   it.each(["<!", "<?"])("rejects %s before, across, and after scan boundaries", (marker) => {
     const svg = createMaximumComplexitySvg();
