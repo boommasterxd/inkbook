@@ -88,9 +88,30 @@ afterEach(() => {
 });
 
 describe("direct original-benchmark gate", () => {
+  it("reuses input graphs across profiles while retaining every measurement and reference", async () => {
+    const profiles = [60, 90, 120, 144, 240].map((refreshRate) => ({
+      ...runs[0],
+      refreshRate,
+    }));
+    expect(await executePerformanceGate("/project", profiles)).toEqual([]);
+    expect(mocks.inputs).toHaveBeenCalledTimes(2);
+    expect(mocks.inputs.mock.calls.map(([options]) => options.referenceRoot)).toEqual([
+      "/base",
+      "/anchor",
+    ]);
+    expect(mocks.batch).toHaveBeenCalledTimes(65);
+    for (const { refreshRate } of profiles) {
+      expect(
+        measurementCalls().filter(([options]) => options.refreshRate === refreshRate),
+      ).toHaveLength(12);
+    }
+    expect(savedReport().comparisons.map(({ metrics }) => metrics.length)).toEqual([5, 5]);
+  });
+
   it("retains every contract and runs three AB/BA/AB rounds against base and fixed anchor", async () => {
     expect(await executePerformanceGate("/project", runs)).toEqual([]);
     expect(mocks.batch).toHaveBeenCalledTimes(26);
+    expect(mocks.inputs).toHaveBeenCalledTimes(4);
     const roots = measurementCalls().map(([options]) => options.root);
     expect(roots.slice(0, 12)).toEqual([
       "/base",

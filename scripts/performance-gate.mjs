@@ -139,17 +139,24 @@ async function executeComparisons(runs, workspaces, report) {
 
 async function compareVariant(variant, runs, workspaces, report) {
   const plans = [];
+  const inputPlans = new Map();
   for (const run of runs) {
     const testFiles = run.testFiles
       .map((file) => relative(workspaces.metadata.projectRoot, file))
-      .filter((file) => TIMING_PERFORMANCE_FILES.includes(file));
+      .filter((file) => TIMING_PERFORMANCE_FILES.includes(file))
+      .sort();
     if (testFiles.length === 0) continue;
-    const inputs = await planPerformanceInputs({
-      referenceRoot: workspaces[variant].root,
-      candidateRoot: workspaces.candidate.root,
-      testFiles,
-    });
-    validateInputPlan(testFiles, inputs);
+    const key = JSON.stringify(testFiles);
+    let inputs = inputPlans.get(key);
+    if (!inputs) {
+      inputs = await planPerformanceInputs({
+        referenceRoot: workspaces[variant].root,
+        candidateRoot: workspaces.candidate.root,
+        testFiles,
+      });
+      validateInputPlan(testFiles, inputs);
+      inputPlans.set(key, inputs);
+    }
     plans.push({ ...run, testFiles: inputs.pending, inputs });
   }
   const identicalInputs = plans.flatMap((plan) =>
