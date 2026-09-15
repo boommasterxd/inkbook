@@ -1,20 +1,16 @@
 export class InitialSceneReadiness {
   #layoutReady = false;
-  #sceneCommitted = false;
   #completed = false;
 
+  /** Requests one fresh scene commit after the final initial layout is known. */
   public markLayoutReady(): boolean {
+    if (this.#layoutReady) return false;
     this.#layoutReady = true;
-    return this.#completeWhenReady();
+    return true;
   }
 
   public markSceneCommitted(): boolean {
-    this.#sceneCommitted = true;
-    return this.#completeWhenReady();
-  }
-
-  #completeWhenReady(): boolean {
-    if (this.#completed || !this.#layoutReady || !this.#sceneCommitted) return false;
+    if (this.#completed || !this.#layoutReady) return false;
     this.#completed = true;
     return true;
   }

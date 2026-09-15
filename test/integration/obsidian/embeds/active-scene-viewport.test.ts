@@ -117,3 +117,59 @@ describe("active scene viewport", () => {
     });
   });
 });
+
+function unlockViewportFixture(phase: string, blockSize = "602px") {
+  let bounds = { height: 120, left: 100, top: 100, width: 700 };
+  const document = {
+    defaultView: {
+      getComputedStyle: () => ({ borderTopWidth: "1px", borderBottomWidth: "1px" }),
+    },
+    scrollingElement: null,
+  } as unknown as Document;
+  const container = {
+    getBoundingClientRect: () => rect(bounds),
+    ownerDocument: document,
+    style: { blockSize },
+  } as unknown as HTMLElement;
+  const root = { classList: { contains: (value: string) => value === phase } } as HTMLElement;
+  const owner = element(
+    { height: 800, left: 0, top: 0, width: 1000 },
+    { clientHeight: 800, clientWidth: 1000, document },
+  );
+  return {
+    read: () => readActiveSceneViewport(container, owner, root),
+    resize: (height: number) => {
+      bounds = { ...bounds, height };
+    },
+    scroll: (top: number) => {
+      bounds = { ...bounds, top };
+    },
+  };
+}
+
+describe("prepared unlock viewport", () => {
+  it.each(["inkbook-active-preparing", "inkbook-active-transitioning"])(
+    "keeps the final content viewport stable throughout %s while honoring scrolling",
+    (phase) => {
+      const h = unlockViewportFixture(phase);
+      for (const height of [120, 220, 360, 602]) {
+        h.resize(height);
+        expect(h.read()).toEqual({ height: 600, left: 0, top: 0, width: 700 });
+      }
+      h.scroll(-101);
+      expect(h.read()).toEqual({ height: 500, left: 0, top: 100, width: 700 });
+    },
+  );
+
+  it("clips the prepared extent to the native owner and uses actual height after unlock", () => {
+    expect(unlockViewportFixture("inkbook-active-preparing", "2002px").read().height).toBe(699);
+    expect(unlockViewportFixture("inkbook-active-ready").read().height).toBe(118);
+  });
+
+  it.each(["", "auto", "100%", "NaNpx", "Infinitypx", "0px", "1px"])(
+    "falls back to current geometry before a valid pixel target exists: %s",
+    (blockSize) => {
+      expect(unlockViewportFixture("inkbook-active-preparing", blockSize).read().height).toBe(118);
+    },
+  );
+});

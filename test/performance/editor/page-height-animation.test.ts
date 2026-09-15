@@ -9,6 +9,7 @@ import {
   interactionProfileAnnotation,
 } from "../interaction-refresh-profile";
 import { timingBudget } from "../timing-budget";
+import { readyResponsiveFixture } from "../../integration/obsidian/embeds/active-editor-responsive-layout-fixture";
 import { pageHeightPercentile } from "./page-height-performance-fixture";
 
 describe("automatic page-height performance", () => {
@@ -176,3 +177,25 @@ function transitionHarness(frameDurationMs: number) {
     },
   };
 }
+
+it(`avoids toolbar measurement during ${INTERACTION_REFRESH_PROFILE.refreshRate} Hz root-height animation`, async ({
+  annotate,
+}) => {
+  const h = readyResponsiveFixture();
+  const reads = h.toolbarReads();
+  const durations: number[] = [];
+  for (let frame = 0; frame < INTERACTION_REFRESH_PROFILE.sampleCount; frame += 1) {
+    const height =
+      200 + 100 * Math.sin((frame * INTERACTION_REFRESH_PROFILE.frameDurationMs) / 240);
+    const started = performance.now();
+    h.triggerRootResize(700, height);
+    h.flushFrames();
+    durations.push(performance.now() - started);
+  }
+  expect(h.toolbarReads()).toBe(reads);
+  expect(h.onLayout).not.toHaveBeenCalled();
+  h.layout.dispose();
+  const p99 = pageHeightPercentile(durations, 0.99);
+  expect(p99).toBeLessThanOrEqual(timingBudget(0.25));
+  await annotate(interactionProfileAnnotation("height-only layout observer", p99), "performance");
+});

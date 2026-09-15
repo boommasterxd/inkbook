@@ -1,10 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
-
-import type { PageV1 } from "../../../../src/domain/schema/public";
-import { ActiveEditorLayout } from "../../../../src/obsidian/embeds/active-editor/layout";
-import type { SvgSceneRenderer } from "../../../../src/rendering/scene/index";
-import { domRect } from "../../../fixtures/obsidian/active-editor";
-import { FakeClassList } from "../../../fixtures/obsidian/class-list";
+import { describe, expect, it } from "vitest";
+import {
+  readyResponsiveFixture,
+  responsiveFixture,
+} from "./active-editor-responsive-layout-fixture";
 
 describe("active editor responsive layout", () => {
   it("skips toolbar reads for repeated chrome keys and non-width content updates", () => {
@@ -56,150 +54,29 @@ describe("active editor responsive layout", () => {
   });
 });
 
-function responsiveFixture() {
-  const frames = new Map<number, FrameRequestCallback>();
-  const observed = new Set<Element>();
-  let frameTime = 0;
-  const callbacks: ResponsiveCallbacks = {};
-  let toolbarReads = 0;
-  let toolbarWidth = 554;
-  const track = {
-    get scrollWidth() {
-      toolbarReads += 1;
-      return toolbarWidth;
-    },
-  } as unknown as HTMLElement;
-  const toolbar = {
-    querySelector: (selector: string) => (selector === ".inkbook-toolbar-track" ? track : null),
-    scrollWidth: 570,
-  } as unknown as HTMLElement;
-  const ownerWindow = responsiveOwnerWindow({ callbacks, frames, observed });
-  const ownerDocument = { defaultView: ownerWindow } as unknown as Document;
-  const root = { ownerDocument } as unknown as HTMLElement;
-  const rect = { height: 0, width: 700 };
-  const style = {
-    get blockSize() {
-      return `${String(rect.height)}px`;
-    },
-    set blockSize(value: string) {
-      rect.height = Number.parseFloat(value);
-    },
-    removeProperty: vi.fn(),
-    setProperty: vi.fn(),
-  } as unknown as CSSStyleDeclaration;
-  const container = {
-    classList: new FakeClassList(),
-    getBoundingClientRect: () =>
-      domRect({ height: rect.height, left: 0, top: 0, width: rect.width }),
-    ownerDocument,
-    style,
-  } as unknown as HTMLElement;
-  const chromeHost = {
-    querySelector: (selector: string) => (selector === ".inkbook-toolbar" ? toolbar : null),
-  } as unknown as HTMLElement;
-  const onLayout = vi.fn();
-  const layout = new ActiveEditorLayout({
-    chromeHost,
-    container,
-    onLayout,
-    onReady: vi.fn(),
-    onZoom: vi.fn(),
-    page,
-    renderer: {
-      get hasPendingSceneCommit() {
-        return false;
-      },
-      invalidateLayout: vi.fn(),
-      setCamera: vi.fn(),
-      setPage: vi.fn(),
-    } as unknown as SvgSceneRenderer,
-    root,
-    storeMaximumBottom: () => undefined,
-  });
-  return {
-    flushFrames: () => {
-      while (frames.size > 0) {
-        const [id, callback] = frames.entries().next().value!;
-        frames.delete(id);
-        frameTime += 16;
-        callback(frameTime);
-      }
-    },
-    layout,
-    observed,
-    onLayout,
-    root,
-    triggerContextMutation: () => {
-      callbacks.mutation?.([], {} as MutationObserver);
-    },
-    setToolbarWidth: (width: number) => {
-      toolbarWidth = width;
-      callbacks.mutation?.([], {} as MutationObserver);
-    },
-    toolbar: () => toolbar,
-    toolbarReads: () => toolbarReads,
-    triggerResize: () => callbacks.resize?.([], {} as ResizeObserver),
-  };
-}
+it("skips toolbar and page-layout work for animated height-only root resizes", () => {
+  const h = readyResponsiveFixture();
+  const reads = h.toolbarReads();
+  for (const height of [220, 240, 280, 320]) {
+    h.triggerRootResize(700, height);
+    h.flushFrames();
+  }
+  expect(h.toolbarReads()).toBe(reads);
+  expect(h.onLayout).not.toHaveBeenCalled();
+  expect(h.invalidateLayout).toHaveBeenCalledTimes(4);
+  h.triggerRootResize(500, 320);
+  h.flushFrames();
+  expect(h.toolbarReads()).toBeGreaterThan(reads);
+  expect(h.onLayout).toHaveBeenCalled();
+  h.layout.dispose();
+});
 
-interface ResponsiveCallbacks {
-  mutation?: MutationCallback;
-  resize?: ResizeObserverCallback;
-}
-
-function responsiveOwnerWindow(options: {
-  readonly callbacks: ResponsiveCallbacks;
-  readonly frames: Map<number, FrameRequestCallback>;
-  readonly observed: Set<Element>;
-}) {
-  let frameId = 0;
-  return {
-    MutationObserver: class {
-      public constructor(callback: MutationCallback) {
-        options.callbacks.mutation = callback;
-      }
-      public disconnect(): void {}
-      public observe(): void {}
-    },
-    ResizeObserver: class {
-      public constructor(callback: ResizeObserverCallback) {
-        options.callbacks.resize = callback;
-      }
-      public disconnect(): void {
-        options.observed.clear();
-      }
-      public observe(element: Element): void {
-        options.observed.add(element);
-      }
-      public unobserve(element: Element): void {
-        options.observed.delete(element);
-      }
-    },
-    cancelAnimationFrame: (id: number) => void options.frames.delete(id),
-    getComputedStyle: () => ({
-      borderBottomWidth: "0px",
-      borderLeftWidth: "0px",
-      borderRightWidth: "0px",
-      borderTopWidth: "0px",
-      paddingBottom: "0px",
-      paddingLeft: "0px",
-      paddingRight: "0px",
-      paddingTop: "0px",
-    }),
-    requestAnimationFrame: (callback: FrameRequestCallback) => {
-      const id = ++frameId;
-      options.frames.set(id, callback);
-      return id;
-    },
-  };
-}
-
-function page(): PageV1 {
-  return {
-    activeBufferLines: 3,
-    background: { type: "squares", spacing: 50 },
-    innerWidth: 2000,
-    lockedBufferLines: 1,
-    margin: 24.3,
-  };
-}
+it("still measures observed toolbar changes after repeated root-height notifications", () => {
+  const h = readyResponsiveFixture();
+  const reads = h.toolbarReads();
+  h.triggerRootResize(700, 300);
+  h.triggerToolbarResize();
+  h.flushFrames();
+  expect(h.toolbarReads()).toBeGreaterThan(reads);
+  h.layout.dispose();
+});
