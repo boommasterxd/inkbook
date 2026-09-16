@@ -8,7 +8,7 @@ import {
   interactionProfileAnnotation,
   measureInteractionFrames,
 } from "../../interaction-refresh-profile";
-import { timingBudget } from "../../timing-budget";
+import { expectTiming } from "../../timing-assertions";
 import {
   INTERACTION_ELEMENT_COUNT,
   createInteractionFixture,
@@ -28,20 +28,22 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz interaction profile`, ()
     const cameraStats = renderer.instrumentation();
     expect(cameraStats.spatialQueries).toBe(0);
     expect(cameraStats.visibilityHysteresisHits).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
+    expect(cameraStats).toMatchObject({ domEntrants: 0, domExits: 0, geometryBuilds: 0 });
 
     renderer.setPreviewTransform(fixture.ids, "translate(0 0)", 1);
     scheduler.runAll();
     renderer.resetInstrumentation();
     const selectionDurations = measureSelectionFrames(renderer, scheduler, fixture.ids);
+    expect(renderer.instrumentation()).toMatchObject({
+      domEntrants: 0,
+      domExits: 0,
+      geometryBuilds: 0,
+    });
     const cameraP99 = interactionP99(cameraDurations);
     const selectionP99 = interactionP99(selectionDurations);
 
-    expect(cameraP99).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
-    expect(selectionP99).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
+    expectTiming(cameraP99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+    expectTiming(selectionP99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     expect(renderer.mountedCount).toBeLessThan(INTERACTION_ELEMENT_COUNT);
     await annotate(interactionProfileAnnotation("camera", cameraP99), "performance");
     await annotate(interactionProfileAnnotation("selection preview", selectionP99), "performance");

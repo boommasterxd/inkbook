@@ -6,7 +6,7 @@ import { moveSelectionTimeSliced } from "../../../src/editor/selection/transform
 import { MeasuredSliceScheduler, percentile, requireStroke } from "./domain-scenarios";
 import { createStandardDomainFixture } from "./standard-domain-fixture";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 describe("incremental replacement performance", () => {
   it("prepares in bounded slices and atomically commits only changed records", async ({
@@ -39,16 +39,10 @@ describe("incremental replacement performance", () => {
         `maxPreparationSlice=${maximumPreparationSlice.toFixed(3)} ms`,
       "performance",
     );
-    expect(commitP95).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
-    );
+    expectTiming(commitP95, INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs);
     expect(sliceDurations.length).toBeGreaterThanOrEqual(100);
-    expect(percentile(sliceDurations, 0.95)).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
-    expect(maximumPreparationSlice).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
-    );
+    expectTiming(percentile(sliceDurations, 0.95), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+    expectTiming(maximumPreparationSlice, INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs);
     expect(store.instrumentation).toMatchObject({
       fullStoreScans: 0,
       publishedDeltas: 6,

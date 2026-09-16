@@ -6,6 +6,7 @@ const projectRoot = fileURLToPath(new URL(".", import.meta.url));
 const exposeGarbageCollector = process.execArgv.includes("--expose-gc");
 
 export default defineConfig({
+  cacheDir: fileURLToPath(new URL("./.vitest-cache/", import.meta.url)),
   resolve: {
     alias: {
       obsidian: fileURLToPath(new URL("./test/adapters/obsidian/plugin.ts", import.meta.url)),
@@ -26,6 +27,10 @@ export default defineConfig({
       },
     },
     environment: "node",
+    setupFiles:
+      process.env["INKBOOK_PERFORMANCE_REPORT"] === "1"
+        ? ["./test/performance/timing-assertions.ts"]
+        : [],
     include: [
       "test/unit/**/*.test.{ts,tsx,mjs}",
       "test/integration/**/*.test.{ts,tsx,mjs}",

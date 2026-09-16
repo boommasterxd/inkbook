@@ -1,3 +1,4 @@
+import { movingSnapLine } from "./connected-input-fixture";
 import { describe, expect, it } from "vitest";
 
 import { ElementStore } from "../../../src/domain/store/public";
@@ -17,7 +18,7 @@ import {
   interactionProfileAnnotation,
   measureInteractionFrames,
 } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 import {
   CONNECTED_DEPENDENT_COUNT,
   createConnectedTranslationFixture,
@@ -72,19 +73,13 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz snapping and connection 
       fullStoreScans: 0,
       reverseDependencyVisits: 0,
     });
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     await annotate(interactionProfileAnnotation("connected endpoint preview", p99), "performance");
   });
 
   it("keeps whole-line endpoint snapping within budget", async ({ annotate }) => {
     const { sceneStore, scratch, store, targets } = createSnapFixture();
-    const moving = {
-      ...connectedLine(),
-      end: { x: 100, y: 0 },
-      pivot: { x: 50, y: 0 },
-      start: { x: 0, y: 0 },
-      startConnection: null,
-    };
+    const moving = movingSnapLine();
     const selectedIds = new Set([moving.id]);
     let matched = 0;
     warmLookup(
@@ -201,5 +196,5 @@ function expectSnapProfile(input: {
   expect(input.matched).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
   expect(input.scratch.allocationCount).toBe(input.allocationsBefore);
   expect(input.store.instrumentation.fullStoreScans).toBe(0);
-  expect(input.p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+  expectTiming(input.p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
 }

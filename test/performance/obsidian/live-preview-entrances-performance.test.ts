@@ -1,6 +1,6 @@
 import { ChangeSet, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { editorInfoField, editorLivePreviewField, TFile, type Vault } from "obsidian";
+import { editorInfoField, editorLivePreviewField } from "obsidian";
 import { ObsidianInkbookDocumentRecognition } from "../../../src/obsidian/embeds/document-recognition";
 import { createLivePreviewExtension } from "../../../src/obsidian/embeds/live-preview";
 import { PresentationOperationFeedback } from "../../../src/obsidian/embeds/presentation-operation-feedback";
@@ -8,11 +8,29 @@ import { FakePresentationElement } from "../../fixtures/obsidian/presentation-do
 import type { EmbedIntegrationPorts } from "../../../src/obsidian/embeds/presentation-port";
 import { configureTestEditorState } from "../../adapters/obsidian/plugin";
 import { describe, expect, it } from "vitest";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 import { LivePreviewEntrances } from "../../../src/obsidian/embeds/live-preview-entrances";
 import { MARKDOWN_EMBED_LIMITS } from "../../../src/obsidian/embeds/markdown-embed";
 import { interactionP99, INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
+import { TFile, type Vault } from "obsidian";
+
+function recognitionCacheFixture(
+  recognitionConstructor: typeof ObsidianInkbookDocumentRecognition,
+  fileCount: number,
+) {
+  const File = TFile as unknown as new (path: string, size: number) => TFile;
+  const files = Array.from(
+    { length: fileCount },
+    (_, index) => new File(`${String(index)}.svg`, 10),
+  );
+  const byPath = new Map(files.map((file) => [file.path, file]));
+  const recognition = new recognitionConstructor({
+    getFileByPath: (path: string) => byPath.get(path) ?? null,
+    cachedRead: async () => "invalid",
+  } as unknown as Vault);
+  return { files, recognition };
+}
 
 const capacity = MARKDOWN_EMBED_LIMITS.matches;
 const spacing = 40;
@@ -53,7 +71,7 @@ describe("Live Preview retained entrance performance", () => {
     }
     expect(mismatches).toBe(0);
     const p99 = interactionP99(durations);
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     await annotate(
       `Leading insertion with ${String(capacity)} retained entrances p99=${p99.toFixed(3)} ms`,
       "performance",
@@ -80,7 +98,7 @@ describe("Live Preview retained entrance performance", () => {
       expect(cleared.stateFor(from, from + tokenLength, documentId)).toBe(fresh);
     }
     const p99 = interactionP99(durations);
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     await annotate(
       `Full removal of ${String(capacity)} retained entrances p99=${p99.toFixed(3)} ms`,
       "performance",
@@ -114,7 +132,7 @@ it("retains maximum-capacity pending decorations on unchanged host transactions 
   expect(state.facet(EditorView.decorations)[0]).toBe(initial);
   expect(resolutions).toBe(capacity);
   const p99 = interactionP99(durations);
-  expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+  expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
   await annotate(
     `Unchanged context with ${String(capacity)} pending embeds p99=${p99.toFixed(3)} ms`,
     "performance",
@@ -158,7 +176,7 @@ it("hands off overdue loading feedback synchronously within the frame budget", a
   expect(retainedIndicators).toBe(0);
   expect(scheduledWork).toBe(0);
   const p99 = interactionP99(durations);
-  expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+  expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
   await annotate(`Overdue loading feedback handoff p99=${p99.toFixed(3)} ms`, "performance");
 });
 
@@ -216,23 +234,17 @@ it("positions detached loading feedback after attachment within the frame budget
   expect(retainedResources).toBe(0);
   expect(timers).toBe(0);
   const p99 = interactionP99(durations);
-  expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+  expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
   await annotate(`Detached loading feedback attachment p99=${p99.toFixed(3)} ms`, "performance");
 });
 
 it("admits and completes recognition with bounded cache eviction within the frame budget", async ({
   annotate,
 }) => {
-  const File = TFile as unknown as new (path: string, size: number) => TFile;
-  const files = Array.from(
-    { length: INTERACTION_REFRESH_PROFILE.sampleCount + 300 },
-    (_, index) => new File(`${String(index)}.svg`, 10),
+  const { files, recognition } = recognitionCacheFixture(
+    ObsidianInkbookDocumentRecognition,
+    INTERACTION_REFRESH_PROFILE.sampleCount + 300,
   );
-  const byPath = new Map(files.map((file) => [file.path, file]));
-  const recognition = new ObsidianInkbookDocumentRecognition({
-    getFileByPath: (path: string) => byPath.get(path) ?? null,
-    cachedRead: async () => "invalid",
-  } as unknown as Vault);
   const durations: number[] = [];
   for (let index = 0; index < files.length; index += 1) {
     const started = performance.now();
@@ -242,7 +254,7 @@ it("admits and completes recognition with bounded cache eviction within the fram
   expect(files.filter((file) => recognition.cached(file.path) !== undefined)).toHaveLength(256);
   recognition.dispose();
   const p99 = interactionP99(durations);
-  expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+  expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
   await annotate(
     `Recognition admission and cache eviction p99=${p99.toFixed(3)} ms`,
     "performance",

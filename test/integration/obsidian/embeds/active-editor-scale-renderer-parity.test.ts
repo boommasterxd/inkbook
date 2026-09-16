@@ -14,6 +14,20 @@ import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/docu
 import { createSceneFixture } from "../../../fixtures/rendering/scene";
 import { createAllElementSnapshot } from "../../../unit/persistence/serialization/fixtures";
 import { fakeNode } from "../../../unit/rendering/scene/fakes";
+import type { StoreDelta } from "../../../../src/domain/store/public";
+import type { SceneStoreDelta } from "../../../../src/rendering/scene/types";
+
+/** Adapt real store publications without introducing a different mutation or rendering path. */
+function sceneStoreDelta(delta: StoreDelta): SceneStoreDelta {
+  return {
+    affected: delta.changes.map((change) => ({
+      id: change.id,
+      domains: change.domains,
+      before: (change.before?.element ?? null) as InkElementV1 | null,
+      after: (change.after?.element ?? null) as InkElementV1 | null,
+    })),
+  };
+}
 
 function setup(pressureCount: number) {
   const snapshot = createAllElementSnapshot();
@@ -28,16 +42,7 @@ function setup(pressureCount: number) {
   const store = new ElementStore(elements);
   const sceneStore = new ElementSceneStore(store);
   const { renderer, scheduler } = createSceneFixture(snapshot.page, sceneStore);
-  const unsubscribe = store.subscribe((delta) =>
-    renderer.applyDelta({
-      affected: delta.changes.map((change) => ({
-        id: change.id,
-        domains: change.domains,
-        before: (change.before?.element ?? null) as InkElementV1 | null,
-        after: (change.after?.element ?? null) as InkElementV1 | null,
-      })),
-    }),
-  );
+  const unsubscribe = store.subscribe((delta) => renderer.applyDelta(sceneStoreDelta(delta)));
   const model = {
     store,
     setGestureActive: () => undefined,

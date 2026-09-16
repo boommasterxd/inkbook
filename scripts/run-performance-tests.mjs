@@ -11,8 +11,6 @@ const runs = selectPerformanceRuns(
   suite,
   process.env["INKBOOK_PERFORMANCE_REFRESH_RATE"],
 );
-const violations = await runPerformanceRuns(runs, {
-  failFast: process.env["CI"] === "true",
-});
+const violations = await runPerformanceRuns(runs);
 reportPerformanceViolations(violations);
 if (violations.length > 0) process.exitCode = 1;

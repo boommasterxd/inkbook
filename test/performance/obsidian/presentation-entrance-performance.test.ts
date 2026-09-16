@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createLoadingPlaceholder } from "../../../src/obsidian/embeds/loading-placeholder";
 import { ColorSchemeBroadcaster } from "../../../src/obsidian/theme/color-scheme";
 import { FakePresentationElement } from "../../fixtures/obsidian/presentation-dom";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 import { TRANSITION_DURATIONS } from "../../../src/rendering/motion/transitions";
 import { exitHarness } from "../../unit/obsidian/embeds/presentation-exit-fixture";
 import { entranceHarness } from "../../unit/obsidian/embeds/presentation-entrance-fixture";
@@ -35,7 +35,7 @@ describe("presentation entrance performance", () => {
         expect(h.listeners.size).toBe(0);
       }
       const p99 = pageHeightPercentile(durations, 0.99);
-      expect(p99).toBeLessThanOrEqual(timingBudget(1));
+      expectTiming(p99, 1);
       await annotate(interactionProfileAnnotation(`${target} entrance`, p99), "performance");
     },
   );
@@ -66,7 +66,7 @@ it.for([false, true])(
       preview.entrance.dispose();
     }
     const p99 = pageHeightPercentile(durations, 0.99);
-    expect(p99).toBeLessThanOrEqual(timingBudget(1));
+    expectTiming(p99, 1);
     await annotate(
       interactionProfileAnnotation("loading placeholder entrance", p99),
       "performance",
@@ -122,6 +122,7 @@ function measureFrames(
   const frameBound = Math.ceil(TRANSITION_DURATIONS.automaticPageGrowth / frameDuration) + 2;
   let frames = 0;
   while (harness.frames.size > 0 && frames <= frameBound) {
+    expect(harness.frames.size).toBe(1);
     const started = performance.now();
     harness.frame(frames * frameDuration);
     durations.push(performance.now() - started);
@@ -146,6 +147,6 @@ it(`keeps ${INTERACTION_REFRESH_PROFILE.refreshRate} Hz exit frames below one mi
     expect(h.listeners.size).toBe(0);
   }
   const p99 = pageHeightPercentile(durations, 0.99);
-  expect(p99).toBeLessThanOrEqual(timingBudget(1));
+  expectTiming(p99, 1);
   await annotate(interactionProfileAnnotation("presentation exit", p99), "performance");
 });

@@ -16,7 +16,7 @@ import {
 import { MeasuredSliceScheduler } from "../../domain/domain-scenarios";
 import { INTERACTION_REFRESH_PROFILE, interactionP99 } from "../../interaction-refresh-profile";
 import { collectProfileGarbage } from "../../persistence/metrics";
-import { timingBudget } from "../../timing-budget";
+import { expectTiming } from "../../timing-assertions";
 
 const ELEMENT_COUNT = 10_000;
 const MEASURED_RUNS = 100;
@@ -112,10 +112,8 @@ describe("selection preview handoff performance", () => {
       "performance",
     );
     expect(subscriberDurations).toHaveLength(MEASURED_RUNS);
-    expect(subscriberP99).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
-    expect(maximumCommitDuration).toBeLessThanOrEqual(timingBudget(100));
+    expectTiming(subscriberP99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+    expectTiming(maximumCommitDuration, 100);
   }, 180_000);
 });
 

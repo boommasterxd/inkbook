@@ -5,7 +5,7 @@ import {
   createDenseViewportFixture,
   createDenseViewportHarness,
 } from "../../../integration/rendering/scene/dense-viewport-fixture";
-import { timingBudget } from "../../timing-budget";
+import { expectTiming } from "../../timing-assertions";
 
 describe("dense viewport reconciliation performance", () => {
   for (const profile of DENSE_VIEWPORT_PROFILES) {
@@ -22,7 +22,7 @@ describe("dense viewport reconciliation performance", () => {
 
       const maximumDuration = Math.max(...durations);
       const maximumFrames = Math.max(...frames);
-      expect(maximumDuration).toBeLessThanOrEqual(timingBudget(profile.elapsedLimitMs));
+      expectTiming(maximumDuration, profile.elapsedLimitMs);
       expect(maximumFrames).toBeLessThanOrEqual(profile.frameLimit);
       await annotate(
         `${profile.name}: max=${maximumDuration.toFixed(3)} ms, frames=${String(maximumFrames)}`,
@@ -35,12 +35,23 @@ describe("dense viewport reconciliation performance", () => {
 function run(viewport: readonly [number, number]): { durationMs: number; frames: number } {
   const fixture = createDenseViewportFixture();
   const startedAt = performance.now();
-  const { renderer, scheduler } = createDenseViewportHarness({ fixture, viewport });
+  const { renderer, scheduler, store } = createDenseViewportHarness({ fixture, viewport });
   scheduler.runAll();
   const durationMs = performance.now() - startedAt;
-  const frames = renderer.instrumentation().frames;
+  const instrumentation = renderer.instrumentation();
+  const frames = instrumentation.frames;
+  expect(instrumentation).toMatchObject({
+    geometryBuilds: fixture.records.length,
+    domEntrants: fixture.records.length,
+    spatialQueries: 1,
+    pathCacheEntries: 0,
+  });
+  expect(store.queryCount).toBe(1);
+  expect(scheduler.pendingCount).toBe(0);
   expect(renderer.mountedIds("highlight")).toEqual(fixture.highlightIds);
   expect(renderer.mountedIds("content")).toEqual(fixture.contentIds);
   renderer.destroy();
+  expect(renderer.mountedCount).toBe(0);
+  expect(scheduler.pendingCount).toBe(0);
   return { durationMs, frames };
 }

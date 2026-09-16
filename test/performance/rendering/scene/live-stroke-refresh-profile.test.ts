@@ -14,11 +14,53 @@ import {
   interactionP99,
   interactionProfileAnnotation,
 } from "../../interaction-refresh-profile";
-import { timingBudget } from "../../timing-budget";
+import { expectTiming } from "../../timing-assertions";
 import {
   createInteractionFixture,
   createInteractionRenderer,
 } from "./interaction-refresh-profile-fixture";
+
+type PreviewOptions = ConstructorParameters<typeof CreationPreview>[0];
+type InputOptions = ConstructorParameters<typeof CoalescedPointerInput>[0];
+
+function livePreviewOptions(
+  defaults: PreviewOptions["defaults"],
+  history: PreviewOptions["history"],
+  renderer: PreviewOptions["renderer"],
+  pointerType: "pen" | "mouse",
+): PreviewOptions {
+  return {
+    defaults,
+    history,
+    identity: { createdAt: 0, id: "00000000-0000-4000-8000-999999999999" },
+    renderer,
+    start: {
+      additive: false,
+      kind: "tool-gesture",
+      pointer: { pointerId: 1, pointerType, pressure: 0.5, x: 0, y: 50 },
+      tool: "draw",
+    },
+  };
+}
+
+function liveInputOptions(
+  scheduler: NonNullable<InputOptions["frameScheduler"]> & { now(): number },
+  dispatchMove: InputOptions["dispatchMove"],
+  pointerType: "pen" | "mouse",
+): InputOptions {
+  return {
+    dispatchMove,
+    frameScheduler: scheduler,
+    now: () => scheduler.now(),
+    project: (event) => ({
+      pointerId: 1,
+      pointerType,
+      pressure: event.pressure,
+      x: event.clientX,
+      y: event.clientY,
+    }),
+  };
+}
 
 const LIVE_FRAME_COUNT = 450;
 const SAMPLES_PER_FRAME = 8;
@@ -58,7 +100,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz live-stroke profile`, ()
       }
 
       const p99 = interactionP99(durations);
-      expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+      expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
       expect(renderer.instrumentation()).toMatchObject({
         livePreviewUpdates: LIVE_FRAME_COUNT,
       });
@@ -88,7 +130,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz live-stroke profile`, ()
         expectPressureTip(tail, samples[7]!);
       }
       const p99 = interactionP99(durations);
-      expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+      expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
       expect(renderer.instrumentation().livePreviewUpdates).toBe(LIVE_FRAME_COUNT + 1);
       await annotate(
         interactionProfileAnnotation(`coalesced ${pointerType} tip`, p99),
@@ -120,7 +162,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz live-stroke profile`, ()
       scheduler.runAll();
     }
     const p99 = interactionP99(durations);
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     expect(renderer.instrumentation().liveTailNodesRemoved).toBe(120);
     await annotate(interactionProfileAnnotation("live stroke commit handoff", p99), "performance");
     renderer.destroy();
@@ -140,31 +182,18 @@ function coalescedHarness(pointerType: "pen" | "mouse") {
   const { store } = createInteractionFixture();
   const { renderer, scheduler } = createInteractionRenderer(store);
   scheduler.runAll();
-  const preview = new CreationPreview({
-    defaults: createBuiltInSettings().toolDefaults,
-    history: activeEditorStoreHistory(store),
-    identity: { createdAt: 0, id: "00000000-0000-4000-8000-999999999999" },
-    renderer,
-    start: {
-      additive: false,
-      kind: "tool-gesture",
-      pointer: { pointerId: 1, pointerType, pressure: 0.5, x: 0, y: 50 },
-      tool: "draw",
-    },
-  });
-  let routed: GesturePreview = preview;
-  const input = new CoalescedPointerInput({
-    dispatchMove: (pointer) => routed.update(pointer),
-    frameScheduler: scheduler,
-    now: () => scheduler.now(),
-    project: (event) => ({
-      pointerId: 1,
+  const preview = new CreationPreview(
+    livePreviewOptions(
+      createBuiltInSettings().toolDefaults,
+      activeEditorStoreHistory(store),
+      renderer,
       pointerType,
-      pressure: event.pressure,
-      x: event.clientX,
-      y: event.clientY,
-    }),
-  });
+    ),
+  );
+  let routed: GesturePreview = preview;
+  const input = new CoalescedPointerInput(
+    liveInputOptions(scheduler, (pointer) => routed.update(pointer), pointerType),
+  );
   routed = input.wrap(preview);
   const camera = fakeNode(renderer.svg).nodes[1]!;
   const liveGroup = camera.nodes.find(

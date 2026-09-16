@@ -1,260 +1,28 @@
 import { describe, expect, it } from "vitest";
 
 import { calculateElementBounds, derivePageExtent } from "../../../src/domain/geometry/public";
-import type {
-  InkElementV1,
-  PageV1,
-  PointV1,
-  StrokeElementV1,
-} from "../../../src/domain/schema/public";
+import type { InkElementV1 } from "../../../src/domain/schema/public";
 import { ElementStore } from "../../../src/domain/store/public";
-import {
-  layoutSelectionHandles,
-  type SelectedElementGeometry,
-} from "../../../src/editor/selection/public";
+import { layoutSelectionHandles } from "../../../src/editor/selection/public";
 import { ActiveEditorHandleInteraction } from "../../../src/obsidian/embeds/active-editor/handle-interaction";
 import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
 import { MovePreview } from "../../../src/obsidian/embeds/active-editor/move-preview";
 import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
-import type { EditableDocumentModel } from "../../../src/obsidian/embeds/document-model-port";
 import { SvgSceneRenderer } from "../../../src/rendering/scene";
-import { indexedStroke } from "../../fixtures/editor/stroke";
-import { FakeDocument, FakeNode, FakeScheduler, asElement } from "../../unit/rendering/scene/fakes";
-import { coordinateSystem, table } from "../../unit/domain/geometry/fixtures";
-import { connectedLine, rectangle } from "../../unit/domain/store/fixtures";
 import {
   INTERACTION_REFRESH_PROFILE,
   interactionP99,
   interactionProfileAnnotation,
   measureInteractionFrames,
 } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
+import type { StrokeElementV1, PageV1, PointV1 } from "../../../src/domain/schema/public";
+import type { EditableDocumentModel } from "../../../src/obsidian/embeds/document-model-port";
+import { indexedStroke } from "../../fixtures/editor/stroke";
+import { coordinateSystem, table } from "../../unit/domain/geometry/fixtures";
+import { connectedLine, rectangle } from "../../unit/domain/store/fixtures";
 import { maximumStroke } from "../editor/maximum-stroke-fixture";
-
-const PAGE: PageV1 = {
-  activeBufferLines: 3,
-  background: { type: "none" },
-  innerWidth: 2_000,
-  lockedBufferLines: 1,
-  margin: 24.3,
-};
-const RAW_SAMPLES_PER_FRAME = 4;
-
-describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz selection resize frame pipeline`, () => {
-  // Each independent workload retains its own default test deadline and frame budget.
-  it.for([
-    ["mixed exact resize", mixedExactElements],
-    ["long pressure progressive resize", longPressureElements],
-    ["4096-sample non-pressure resize", () => mixedElements(nonPressureStroke(0))],
-    [
-      "20,480-sample non-pressure progressive resize",
-      () => Array.from({ length: 5 }, (_, index) => nonPressureStroke(index)),
-    ],
-    ["variable pressure progressive resize", variablePressureElements],
-    ["40 long pressure strokes resize", pressureBandSelection],
-    ["255 canonical shapes with a long pressure stroke", mixedShapeFeedbackElements],
-    ["10,000-element progressive resize", fallbackElements],
-  ] as const)(
-    "keeps %s pointer-to-scene frames within budget",
-    async ([name, createElements], { annotate }) => {
-      const result = measurePipeline(createElements());
-      expect(result.layoutUpdates).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
-      expect(result.pageGrowths).toBeGreaterThan(0);
-      expect(result.firstFrameMs).toBeLessThanOrEqual(
-        timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
-      );
-      expect(result.p99, name).toBeLessThanOrEqual(
-        timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-      );
-      await annotate(interactionProfileAnnotation(name, result.p99), "performance");
-      await annotate(
-        `${name}: first preview frame=${result.firstFrameMs.toFixed(3)} ms`,
-        "performance",
-      );
-    },
-  );
-
-  it("keeps coalesced S Pen selection moves within budget", async ({ annotate }) => {
-    const profiles = [
-      ["mixed connected S Pen move", longPressureElements()],
-      ["10,000-stroke S Pen move", fallbackElements()],
-    ] as const;
-    for (const [name, elements] of profiles) {
-      const result = measureMovePipeline(elements);
-      expect(result.layoutUpdates).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
-      expect(result.p99).toBeLessThanOrEqual(
-        timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-      );
-      await annotate(interactionProfileAnnotation(name, result.p99), "performance");
-    }
-  });
-});
-
-function measureMovePipeline(elements: readonly InkElementV1[]) {
-  const fixture = createPipeline(
-    elements,
-    derivePageExtent(PAGE, maximumBottom(elements)).activeHeight,
-  );
-  const ports = interactionPorts(fixture, elements);
-  let layoutUpdates = 0;
-  const preview = new MovePreview({
-    frameScheduler: fixture.scheduler,
-    ...ports,
-    preparedHistory: {} as never,
-    renderer: fixture.renderer,
-    selectionEdgeDrag: {
-      begin: () => undefined,
-      finish: () => undefined,
-      stop: () => undefined,
-      update: () => undefined,
-      updatePreviewBottom: () => {
-        layoutUpdates += 1;
-      },
-    },
-    setSelection: () => undefined,
-    start: {
-      additive: false,
-      kind: "element-move",
-      pointer: { pointerId: 2, pointerType: "pen", pressure: 0.5, x: 100, y: 100 },
-      tool: "select",
-    },
-    store: fixture.store,
-    zoom: () => 1,
-  });
-  fixture.renderer.resetInstrumentation();
-  const durations = measureInteractionFrames((frame) => {
-    for (let sample = 0; sample < RAW_SAMPLES_PER_FRAME; sample += 1) {
-      const progress = frame * RAW_SAMPLES_PER_FRAME + sample + 1;
-      preview.updateSamples([
-        {
-          pointerId: 2,
-          pointerType: "pen",
-          pressure: 0.5,
-          x: 100 + progress * 0.05,
-          y: 100 + progress * 0.1,
-        },
-      ]);
-    }
-    expect(fixture.scheduler.pendingCount).toBeLessThanOrEqual(2);
-    fixture.scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
-    fixture.scheduler.runFrame();
-  });
-  preview.revert();
-  fixture.renderer.destroy();
-  fixture.sceneStore.release();
-  return { layoutUpdates, p99: interactionP99(durations) };
-}
-
-function measurePipeline(elements: readonly InkElementV1[]) {
-  let pageHeight = derivePageExtent(PAGE, maximumBottom(elements)).activeHeight;
-  const fixture = createPipeline(elements, pageHeight);
-  let layoutUpdates = 0;
-  let pageGrowths = 0;
-  const interaction = createInteraction(fixture, elements, (maximumBottom) => {
-    layoutUpdates += 1;
-    const nextHeight = derivePageExtent(PAGE, maximumBottom).activeHeight;
-    if (nextHeight <= pageHeight) return;
-    pageHeight = nextHeight;
-    pageGrowths += 1;
-    fixture.renderer.setPage(PAGE, pageHeight);
-  });
-  const start = resizeHandle(elements);
-  interaction.pointerDown({ ...start, pointerId: 1, pointerType: "mouse", pressure: 0 });
-  fixture.renderer.resetInstrumentation();
-  const durations = measureInteractionFrames((frame) => {
-    const before = fixture.renderer.instrumentation().contentGeometryWrites;
-    for (let sample = 0; sample < RAW_SAMPLES_PER_FRAME; sample += 1) {
-      interaction.pointerMove(pointerAt(start, frame, sample));
-    }
-    expect(fixture.scheduler.pendingCount).toBeLessThanOrEqual(2);
-    fixture.scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
-    fixture.scheduler.runFrame();
-    expect(fixture.renderer.instrumentation().contentGeometryWrites).toBeGreaterThan(before);
-  });
-  interaction.dispose();
-  fixture.renderer.destroy();
-  fixture.sceneStore.release();
-  return {
-    firstFrameMs: durations[0]!,
-    layoutUpdates,
-    p99: interactionP99(durations),
-    pageGrowths,
-  };
-}
-
-function createPipeline(elements: readonly InkElementV1[], pageHeight: number) {
-  const store = new ElementStore(elements);
-  const sceneStore = new ElementSceneStore(store);
-  const scheduler = new FakeScheduler();
-  const document = new FakeDocument();
-  const renderer = new SvgSceneRenderer({
-    container: asElement(new FakeNode(document, "div")),
-    layout: { readViewport: () => ({ height: 120, left: 0, top: 0, width: 120 }) },
-    page: PAGE,
-    reducedMotion: true,
-    scheduler,
-    store: sceneStore,
-  });
-  renderer.setPage(PAGE, pageHeight);
-  scheduler.runAll();
-  return { renderer, sceneStore, scheduler, store };
-}
-
-function createInteraction(
-  fixture: ReturnType<typeof createPipeline>,
-  elements: readonly InkElementV1[],
-  updateBottom: (maximumBottom: number) => void,
-): ActiveEditorHandleInteraction {
-  const ports = interactionPorts(fixture, elements);
-  return new ActiveEditorHandleInteraction({
-    frameScheduler: fixture.scheduler,
-    layout: { begin: () => undefined, finish: () => undefined, updateBottom },
-    ...ports,
-    preparedHistory: {} as never,
-    renderer: fixture.renderer,
-    zoom: () => 1,
-  });
-}
-
-function interactionPorts(
-  fixture: ReturnType<typeof createPipeline>,
-  elements: readonly InkElementV1[],
-) {
-  const model = {
-    setGestureActive: () => undefined,
-    store: fixture.store,
-  } as unknown as EditableDocumentModel;
-  return {
-    history: new ActiveEditorHistory(model),
-    model,
-    pageToScreen: (point: PointV1) => point,
-    sceneStore: fixture.sceneStore,
-    selection: () => new Set(elements.map(({ id }) => id)),
-  };
-}
-
-function resizeHandle(elements: readonly InkElementV1[]): PointV1 {
-  const selected: SelectedElementGeometry[] = elements.map((element) => ({
-    bounds: calculateElementBounds(element),
-    element,
-  }));
-  const handle = layoutSelectionHandles(selected, { zoom: 1 }).find(
-    (candidate) => candidate.kind === "scale" && candidate.position === "bottom-right",
-  );
-  if (handle?.kind !== "scale") throw new TypeError("Expected a scale handle.");
-  return handle.point;
-}
-
-function pointerAt(start: PointV1, frame: number, sample: number) {
-  const progress = frame * RAW_SAMPLES_PER_FRAME + sample + 1;
-  return {
-    pointerId: 1,
-    pointerType: "mouse" as const,
-    pressure: 0,
-    x: start.x + 30 + progress * 0.02,
-    y: start.y + 80 + progress * 0.25,
-  };
-}
+import { FakeDocument, FakeNode, FakeScheduler, asElement } from "../../unit/rendering/scene/fakes";
 
 function mixedExactElements(): readonly InkElementV1[] {
   const stroke = maximumStroke(0);
@@ -315,14 +83,6 @@ function fallbackElements(): readonly InkElementV1[] {
   return Array.from({ length: 10_000 }, (_, index) => indexedStroke(index));
 }
 
-function maximumBottom(elements: readonly InkElementV1[]): number | null {
-  let maximum = Number.NEGATIVE_INFINITY;
-  for (const element of elements) {
-    maximum = Math.max(maximum, calculateElementBounds(element).maxY);
-  }
-  return Number.isFinite(maximum) ? maximum : null;
-}
-
 function nonPressureStroke(index: number): StrokeElementV1 {
   const stroke = maximumStroke(index);
   return { ...stroke, style: { ...stroke.style, pressureEnabled: false } };
@@ -336,4 +96,267 @@ function mixedShapeFeedbackElements(): readonly InkElementV1[] {
     })),
     maximumStroke(0),
   ];
+}
+
+const RESIZE_WORKLOADS = [
+  ["mixed exact resize", mixedExactElements],
+  ["long pressure progressive resize", longPressureElements],
+  ["4096-sample non-pressure resize", () => mixedElements(nonPressureStroke(0))],
+  [
+    "20,480-sample non-pressure progressive resize",
+    () => Array.from({ length: 5 }, (_, index) => nonPressureStroke(index)),
+  ],
+  ["variable pressure progressive resize", variablePressureElements],
+  ["40 long pressure strokes resize", pressureBandSelection],
+  ["255 canonical shapes with a long pressure stroke", mixedShapeFeedbackElements],
+  ["10,000-element progressive resize", fallbackElements],
+] as const;
+
+interface ResizeApi {
+  calculateElementBounds: typeof import("../../../src/domain/geometry/public").calculateElementBounds;
+  derivePageExtent: typeof import("../../../src/domain/geometry/public").derivePageExtent;
+  layoutSelectionHandles: typeof import("../../../src/editor/selection/public").layoutSelectionHandles;
+  ElementStore: typeof import("../../../src/domain/store/public").ElementStore;
+  ElementSceneStore: typeof import("../../../src/obsidian/embeds/active-editor/scene-store").ElementSceneStore;
+  SvgSceneRenderer: typeof import("../../../src/rendering/scene/index").SvgSceneRenderer;
+  ActiveEditorHandleInteraction: typeof import("../../../src/obsidian/embeds/active-editor/handle-interaction").ActiveEditorHandleInteraction;
+  ActiveEditorHistory: typeof import("../../../src/obsidian/embeds/active-editor/history").ActiveEditorHistory;
+  MovePreview: typeof import("../../../src/obsidian/embeds/active-editor/move-preview").MovePreview;
+}
+const PAGE: PageV1 = {
+  activeBufferLines: 3,
+  background: { type: "none" },
+  innerWidth: 2_000,
+  lockedBufferLines: 1,
+  margin: 24.3,
+};
+
+function createPipeline(api: ResizeApi, elements: readonly InkElementV1[], pageHeight: number) {
+  const store = new api.ElementStore(elements);
+  const sceneStore = new api.ElementSceneStore(store);
+  const scheduler = new FakeScheduler();
+  const document = new FakeDocument();
+  const renderer = new api.SvgSceneRenderer({
+    container: asElement(new FakeNode(document, "div")),
+    layout: { readViewport: () => ({ height: 120, left: 0, top: 0, width: 120 }) },
+    page: PAGE,
+    reducedMotion: true,
+    scheduler,
+    store: sceneStore,
+  });
+  renderer.setPage(PAGE, pageHeight);
+  scheduler.runAll();
+  return { renderer, sceneStore, scheduler, store };
+}
+
+function createInteraction(
+  api: ResizeApi,
+  fixture: ReturnType<typeof createPipeline>,
+  elements: readonly InkElementV1[],
+  updateBottom: (maximumBottom: number) => void,
+) {
+  const ports = interactionPorts(api, fixture, elements);
+  return new api.ActiveEditorHandleInteraction({
+    frameScheduler: fixture.scheduler,
+    layout: { begin: () => undefined, finish: () => undefined, updateBottom },
+    ...ports,
+    preparedHistory: {} as never,
+    renderer: fixture.renderer,
+    zoom: () => 1,
+  });
+}
+
+function interactionPorts(
+  api: ResizeApi,
+  fixture: ReturnType<typeof createPipeline>,
+  elements: readonly InkElementV1[],
+) {
+  const model = {
+    setGestureActive: () => undefined,
+    store: fixture.store,
+  } as unknown as EditableDocumentModel;
+  return {
+    history: new api.ActiveEditorHistory(model),
+    model,
+    pageToScreen: (point: PointV1) => point,
+    sceneStore: fixture.sceneStore,
+    selection: () => new Set(elements.map(({ id }) => id)),
+  };
+}
+
+function resizeHandle(api: ResizeApi, elements: readonly InkElementV1[]): PointV1 {
+  const selected = elements.map((element) => ({
+    bounds: api.calculateElementBounds(element),
+    element,
+  }));
+  const handle = api
+    .layoutSelectionHandles(selected, { zoom: 1 })
+    .find((candidate) => candidate.kind === "scale" && candidate.position === "bottom-right");
+  if (handle?.kind !== "scale") throw new TypeError("Expected a scale handle.");
+  return handle.point;
+}
+
+function pointerAt(start: PointV1, frame: number, sample: number) {
+  const progress = frame * 4 + sample + 1;
+  return {
+    pointerId: 1,
+    pointerType: "mouse" as const,
+    pressure: 0,
+    x: start.x + 30 + progress * 0.02,
+    y: start.y + 80 + progress * 0.25,
+  };
+}
+
+function maximumBottom(api: ResizeApi, elements: readonly InkElementV1[]): number | null {
+  let maximum = Number.NEGATIVE_INFINITY;
+  for (const element of elements) {
+    maximum = Math.max(maximum, api.calculateElementBounds(element).maxY);
+  }
+  return Number.isFinite(maximum) ? maximum : null;
+}
+
+function createMovePreview(
+  api: ResizeApi,
+  fixture: ReturnType<typeof createPipeline>,
+  elements: readonly InkElementV1[],
+  updatePreviewBottom: () => void,
+) {
+  return new api.MovePreview({
+    frameScheduler: fixture.scheduler,
+    ...interactionPorts(api, fixture, elements),
+    preparedHistory: {} as never,
+    renderer: fixture.renderer,
+    selectionEdgeDrag: {
+      begin: () => undefined,
+      finish: () => undefined,
+      stop: () => undefined,
+      update: () => undefined,
+      updatePreviewBottom,
+    },
+    setSelection: () => undefined,
+    start: {
+      additive: false,
+      kind: "element-move",
+      pointer: { pointerId: 2, pointerType: "pen", pressure: 0.5, x: 100, y: 100 },
+      tool: "select",
+    },
+    store: fixture.store,
+    zoom: () => 1,
+  });
+}
+
+const API: ResizeApi = {
+  calculateElementBounds,
+  derivePageExtent,
+  layoutSelectionHandles,
+  ElementStore,
+  ActiveEditorHandleInteraction,
+  ActiveEditorHistory,
+  MovePreview,
+  ElementSceneStore,
+  SvgSceneRenderer,
+};
+const RAW_SAMPLES_PER_FRAME = 4;
+
+describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz selection resize frame pipeline`, () => {
+  // Each independent workload retains its own default test deadline and frame budget.
+  it.for(RESIZE_WORKLOADS)(
+    "keeps %s pointer-to-scene frames within budget",
+    async ([name, createElements], { annotate }) => {
+      const result = measurePipeline(createElements());
+      expect(result.layoutUpdates).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
+      expect(result.pageGrowths).toBeGreaterThan(0);
+      expectTiming(result.firstFrameMs, INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs);
+      expectTiming(result.p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms, { label: name });
+      await annotate(interactionProfileAnnotation(name, result.p99), "performance");
+      await annotate(
+        `${name}: first preview frame=${result.firstFrameMs.toFixed(3)} ms`,
+        "performance",
+      );
+    },
+  );
+
+  it("keeps coalesced S Pen selection moves within budget", async ({ annotate }) => {
+    const profiles = [
+      ["mixed connected S Pen move", longPressureElements()],
+      ["10,000-stroke S Pen move", fallbackElements()],
+    ] as const;
+    for (const [name, elements] of profiles) {
+      const result = measureMovePipeline(elements);
+      expect(result.layoutUpdates).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
+      expectTiming(result.p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+      await annotate(interactionProfileAnnotation(name, result.p99), "performance");
+    }
+  });
+});
+
+function measureMovePipeline(elements: readonly InkElementV1[]) {
+  const fixture = createPipeline(
+    API,
+    elements,
+    derivePageExtent(PAGE, maximumBottom(API, elements)).activeHeight,
+  );
+  let layoutUpdates = 0;
+  const preview = createMovePreview(API, fixture, elements, () => {
+    layoutUpdates += 1;
+  });
+  fixture.renderer.resetInstrumentation();
+  const durations = measureInteractionFrames((frame) => {
+    for (let sample = 0; sample < RAW_SAMPLES_PER_FRAME; sample += 1) {
+      const progress = frame * RAW_SAMPLES_PER_FRAME + sample + 1;
+      preview.updateSamples([
+        {
+          pointerId: 2,
+          pointerType: "pen",
+          pressure: 0.5,
+          x: 100 + progress * 0.05,
+          y: 100 + progress * 0.1,
+        },
+      ]);
+    }
+    expect(fixture.scheduler.pendingCount).toBeLessThanOrEqual(2);
+    fixture.scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
+    fixture.scheduler.runFrame();
+  });
+  preview.revert();
+  fixture.renderer.destroy();
+  fixture.sceneStore.release();
+  return { layoutUpdates, p99: interactionP99(durations) };
+}
+
+function measurePipeline(elements: readonly InkElementV1[]) {
+  let pageHeight = derivePageExtent(PAGE, maximumBottom(API, elements)).activeHeight;
+  const fixture = createPipeline(API, elements, pageHeight);
+  let layoutUpdates = 0;
+  let pageGrowths = 0;
+  const interaction = createInteraction(API, fixture, elements, (maximumBottom) => {
+    layoutUpdates += 1;
+    const nextHeight = derivePageExtent(PAGE, maximumBottom).activeHeight;
+    if (nextHeight <= pageHeight) return;
+    pageHeight = nextHeight;
+    pageGrowths += 1;
+    fixture.renderer.setPage(PAGE, pageHeight);
+  });
+  const start = resizeHandle(API, elements);
+  interaction.pointerDown({ ...start, pointerId: 1, pointerType: "mouse", pressure: 0 });
+  fixture.renderer.resetInstrumentation();
+  const durations = measureInteractionFrames((frame) => {
+    const before = fixture.renderer.instrumentation().contentGeometryWrites;
+    for (let sample = 0; sample < RAW_SAMPLES_PER_FRAME; sample += 1) {
+      interaction.pointerMove(pointerAt(start, frame, sample));
+    }
+    expect(fixture.scheduler.pendingCount).toBeLessThanOrEqual(2);
+    fixture.scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
+    fixture.scheduler.runFrame();
+    expect(fixture.renderer.instrumentation().contentGeometryWrites).toBeGreaterThan(before);
+  });
+  interaction.dispose();
+  fixture.renderer.destroy();
+  fixture.sceneStore.release();
+  return {
+    firstFrameMs: durations[0]!,
+    layoutUpdates,
+    p99: interactionP99(durations),
+    pageGrowths,
+  };
 }

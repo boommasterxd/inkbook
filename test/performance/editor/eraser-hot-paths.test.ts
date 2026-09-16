@@ -1,11 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { BoxShapeElementV1 } from "../../../src/domain/schema/public";
 import { EraserSweep } from "../../../src/editor/gestures/public";
 import { maximumStroke } from "./maximum-stroke-fixture";
-import { createDenseStrokeEraser } from "./eraser-performance-fixture";
+import {
+  createCountedDenseStrokeEraser,
+  createDenseStrokeEraser,
+} from "./eraser-performance-fixture";
 import { INTERACTION_REFRESH_PROFILE, interactionP99 } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 declare const gc: (() => void) | undefined;
 
@@ -26,10 +29,8 @@ describe("eraser hot paths", () => {
     }
 
     expect(eraser.candidateCount).toBe(DENSE_STROKES);
-    expect(interactionP99(frameDurations)).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
-    expect(Math.max(...frameDurations)).toBeLessThanOrEqual(timingBudget(MAX_FRAME_MS));
+    expectTiming(interactionP99(frameDurations), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+    expectTiming(Math.max(...frameDurations), MAX_FRAME_MS);
   });
 
   it.each([5_000, 20_000])("keeps incremental feedback linear for %i candidates", (count) => {
@@ -67,8 +68,36 @@ describe("eraser hot paths", () => {
     expect(eraser.candidateCount).toBe(count);
     expect(addedCount).toBe(count);
     expect(fullSetUpdates).toBe(0);
-    expect(duration).toBeLessThan(timingBudget(2_000));
+    expectTiming(duration, 2_000, { exclusive: true });
   });
+});
+
+it.each([16, 128])("bounds exact point visits per update for %i maximum strokes", (count) => {
+  const fixture = createCountedDenseStrokeEraser(count);
+  const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+  const segmentsPerStroke = 4_095;
+  const workPerUpdate = 12_288;
+  // Each newly opened stroke reads two initial x coordinates in addition to its segments.
+  const setupReads = 2 * (Math.ceil(workPerUpdate / segmentsPerStroke) + 1);
+  let updates = 0;
+  let totalReads = 0;
+  try {
+    while (fixture.eraser.candidateCount < count) {
+      expect(updates).toBeLessThan(Math.ceil((count * segmentsPerStroke) / workPerUpdate) + 1);
+      expect(fixture.eraser.update({ x: 5_000, y: 0 })).toBe("accepted");
+      const reads = fixture.takePointReads();
+      expect(reads).toBeGreaterThan(0);
+      expect(reads).toBeLessThanOrEqual(workPerUpdate + setupReads);
+      expect(fixture.eraser.retainedCandidateIdCount).toBeLessThanOrEqual(count);
+      expect(fixture.eraser.retainedSweepCount).toBeLessThanOrEqual(1);
+      totalReads += reads;
+      updates += 1;
+    }
+    expect(totalReads).toBeGreaterThanOrEqual(count * segmentsPerStroke);
+  } finally {
+    fixture.eraser.revert();
+    clock.mockRestore();
+  }
 });
 
 function rectangle(): BoxShapeElementV1 {

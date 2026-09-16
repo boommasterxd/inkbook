@@ -36,12 +36,12 @@ const mobileRuntimePatterns = [
     message: "Node.js APIs are unavailable in plugin runtime code.",
   },
 ];
-const defaultProjectFiles = [
+const toolingFiles = [
   ".dependency-cruiser.mjs",
   "eslint.config.mjs",
-  "scripts/*.mjs",
+  "scripts/**/*.mjs",
   "stylelint.config.mjs",
-  "test/unit/scripts/*.test.mjs",
+  "test/unit/scripts/**/*.mjs",
   "vitest.config.ts",
 ];
 
@@ -357,40 +357,14 @@ export default [
     },
   },
   {
-    files: [
-      ".dependency-cruiser.mjs",
-      "scripts/**/*.mjs",
-      "test/unit/scripts/**/*.mjs",
-      "eslint.config.mjs",
-      "stylelint.config.mjs",
-    ],
+    files: toolingFiles,
     languageOptions: {
       globals: {
         ...globals.node,
       },
       parserOptions: {
-        projectService: {
-          allowDefaultProject: defaultProjectFiles,
-          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 14,
-        },
-        tsconfigRootDir: import.meta.dirname,
-      },
-    },
-    rules: {
-      "import/no-extraneous-dependencies": "off",
-      "obsidianmd/no-nodejs-modules": "off",
-    },
-  },
-  {
-    files: ["vitest.config.ts"],
-    languageOptions: {
-      globals: {
-        ...globals.node,
-      },
-      parserOptions: {
-        projectService: {
-          allowDefaultProject: defaultProjectFiles,
-        },
+        projectService: false,
+        project: "./tsconfig.tooling.json",
         tsconfigRootDir: import.meta.dirname,
       },
     },
