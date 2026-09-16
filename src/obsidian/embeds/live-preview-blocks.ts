@@ -96,7 +96,7 @@ export class LivePreviewBlocks {
     entrances: LivePreviewEntrances,
   ): LivePreviewBlocks {
     if (changed.size === 0) return this;
-    const replacements = new Set<number>();
+    const replacements = new Map<number, InkbookLivePreviewWidget | undefined>();
     const unavailable = new Set(this.unavailable);
     const add = [];
     for (const documentId of changed) {
@@ -105,15 +105,27 @@ export class LivePreviewBlocks {
       if (preview === undefined) continue;
       unavailable.delete(documentId);
       for (const candidate of this.candidates.get(documentId) ?? []) {
-        replacements.add(candidate.from);
         const decoration = decorate(candidate, ports, entrances, preview);
+        const widget = (decoration?.spec as { readonly widget?: unknown } | undefined)?.widget;
+        replacements.set(
+          candidate.from,
+          widget instanceof InkbookLivePreviewWidget ? widget : undefined,
+        );
         if (decoration !== undefined) add.push(decoration.range(candidate.from, candidate.to));
       }
     }
     if (replacements.size === 0) return this;
     return new LivePreviewBlocks(
       this.decorations.update({
-        filter: (from) => !replacements.has(from),
+        filter: (from, _to, previous) => {
+          const widget = replacements.get(from);
+          if (widget === undefined) return !replacements.has(from);
+          const previousWidget = (previous.spec as { readonly widget: unknown }).widget;
+          if (previousWidget instanceof InkbookLivePreviewWidget) {
+            widget.retainHeightFrom(previousWidget);
+          }
+          return false;
+        },
         add,
         sort: true,
       }),

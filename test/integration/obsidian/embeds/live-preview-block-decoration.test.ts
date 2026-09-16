@@ -146,6 +146,59 @@ describe("Live Preview block-decoration source", () => {
   });
 });
 
+describe("Live Preview measured height", () => {
+  beforeEach(() => installObsidianDomHelpers());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    removeObsidianDomHelpers();
+  });
+
+  it.each([600, 7000])("retains a measured %i px block across autosaves", async (height) => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      const measuredHeight = this.classList.contains("inkbook-root")
+        ? height
+        : this.classList.contains("cm-content")
+          ? height + 20
+          : 20;
+      return new DOMRect(0, 0, 800, measuredHeight);
+    });
+    const notifyResize = installMeasuredResizeObserver(height);
+    const control: RecognitionControl = {
+      notify: undefined,
+      value: { aspectRatio: 4, contentIdentity: CONTENT_IDENTITY, safeSvg: SAFE_PREVIEW_SVG },
+    };
+    const ports = integrationPorts(control);
+    const detach = vi.spyOn(ports.sessions, "detach");
+    const { parent, view } = mountView(ports);
+    try {
+      await new Promise<void>((resolve) => view.requestMeasure({ read: () => resolve() }));
+      expect(view.lineBlockAt(0).height).toBe(height);
+      const root = parent.querySelector<HTMLElement>(".inkbook-root")!;
+      root.dataset.inkbookState = "active";
+      notifyResize(root);
+      for (const revision of [2, 3]) {
+        control.value = {
+          aspectRatio: 4,
+          contentIdentity: { outputHash: String(revision).repeat(64), revision },
+          safeSvg: SAFE_PREVIEW_SVG,
+        };
+        control.notify?.("drawings/page.svg");
+        await Promise.resolve();
+        // Check before the next measure frame can repair the temporary height collapse.
+        expect(view.lineBlockAt(0).height).toBe(height);
+        expect(parent.querySelector(".inkbook-root")).toBe(root);
+        expect(root.dataset.inkbookState).toBe("active");
+        expect(detach).not.toHaveBeenCalled();
+      }
+    } finally {
+      view.destroy();
+      parent.remove();
+    }
+  });
+});
+
 describe("Live Preview pending recognition", () => {
   beforeEach(() => installObsidianDomHelpers());
   afterEach(() => removeObsidianDomHelpers());
@@ -341,4 +394,42 @@ function removeObsidianDomHelpers(): void {
   Reflect.deleteProperty(HTMLElement.prototype, "createEl");
   Reflect.deleteProperty(HTMLElement.prototype, "setCssProps");
   document.body.replaceChildren();
+}
+
+function installMeasuredResizeObserver(height: number): (target: Element) => void {
+  const observations = new Map<Element, Map<ResizeObserver, () => void>>();
+  vi.spyOn(window, "ResizeObserver").mockImplementation(
+    class implements ResizeObserver {
+      readonly #targets = new Set<Element>();
+      constructor(readonly callback: ResizeObserverCallback) {}
+      observe(target: Element): void {
+        this.#targets.add(target);
+        const listeners = observations.get(target) ?? new Map<ResizeObserver, () => void>();
+        observations.set(target, listeners);
+        listeners.set(this, () => {
+          this.callback(
+            [
+              {
+                target,
+                borderBoxSize: [{ blockSize: height, inlineSize: 800 }],
+                contentRect: new DOMRect(0, 0, 800, height),
+              } as unknown as ResizeObserverEntry,
+            ],
+            this,
+          );
+        });
+      }
+      unobserve(target: Element): void {
+        observations.get(target)?.delete(this);
+        this.#targets.delete(target);
+      }
+      disconnect(): void {
+        for (const target of this.#targets) observations.get(target)?.delete(this);
+        this.#targets.clear();
+      }
+    },
+  );
+  return (target) => {
+    for (const notify of observations.get(target)?.values() ?? []) notify();
+  };
 }
