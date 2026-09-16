@@ -7,7 +7,8 @@ import { runPerformanceBatch } from "./performance-batch.mjs";
 import { planPerformanceInputs } from "./performance-inputs.mjs";
 import { TIMING_PERFORMANCE_FILES } from "./performance-test-manifest.mjs";
 import { COMPARISON_STAGES, compareTimingRounds } from "./performance-comparison.mjs";
-import { preparePerformanceWorkspaces } from "./performance-workspace.mjs";
+import { preparePerformanceWorkspaces, resolveLocalBaseline } from "./performance-workspace.mjs";
+import { createBaselineReport } from "./performance-baseline-report.mjs";
 
 export async function executePerformanceGate(projectRoot, runs) {
   if (!Array.isArray(runs) || runs.length === 0)
@@ -26,7 +27,9 @@ export async function executePerformanceGate(projectRoot, runs) {
   const policy = JSON.parse(await readFile(join(projectRoot, ".github/performance-policy.json")));
   const workspaces = await preparePerformanceWorkspaces(projectRoot, {
     base: process.env["INKBOOK_PERFORMANCE_BASE"] ?? "origin/main",
-    anchor: policy.anchorCommit,
+    anchor:
+      process.env["INKBOOK_PERFORMANCE_ANCHOR"] ??
+      resolveLocalBaseline(projectRoot, policy.anchorCommit),
   });
   let directory = process.env["INKBOOK_PERFORMANCE_RESULTS_DIR"];
   const report = { metadata: workspaces.metadata, batches: [], comparisons: [] };
@@ -322,5 +325,13 @@ async function measureOriginalBatch({ variant, round, side, run, workspaces, rep
 async function saveReport(directory, report) {
   if (!directory) return;
   await mkdir(directory, { recursive: true });
+  if (["shared", "cadence"].includes(process.env["INKBOOK_PERFORMANCE_SUITE"])) {
+    const baseline = createBaselineReport(report, {
+      suite: process.env["INKBOOK_PERFORMANCE_SUITE"],
+      runId: process.env["GITHUB_RUN_ID"],
+      runAttempt: process.env["GITHUB_RUN_ATTEMPT"],
+    });
+    await writeFile(join(directory, "baseline-report.json"), JSON.stringify(baseline) + "\n");
+  }
   await writeFile(join(directory, "performance.json"), JSON.stringify(report, null, 2) + "\n");
 }
