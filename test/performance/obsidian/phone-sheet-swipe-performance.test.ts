@@ -12,7 +12,7 @@ import {
   interactionProfileAnnotation,
   measureInteractionFrames,
 } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 import { installObsidianDomHelpers } from "../../adapters/obsidian/dom";
 
 afterEach(() => {
@@ -42,7 +42,7 @@ describe("phone sheet swipe performance", () => {
     expect(fixture.dragWrites).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
     expect(fixture.inheritedWrites).toBe(0);
     expect(fixture.surface.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("");
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     await annotate(interactionProfileAnnotation("phone sheet swipe", p99), "performance");
     controller.dispose();
   });

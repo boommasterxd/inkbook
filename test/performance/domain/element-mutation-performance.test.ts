@@ -9,7 +9,7 @@ import {
 import { MeasuredSliceScheduler, percentile } from "./domain-scenarios";
 import { createStandardDomainFixture } from "./standard-domain-fixture";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 interface MutationMeasurement {
   readonly commitDuration: number;
@@ -57,16 +57,12 @@ it("keeps atomic clipboard-scale store adoption within main-thread slice budgets
 
   expect(cuts).toHaveLength(5);
   expect(restores).toHaveLength(5);
-  expect(maximumCut).toBeLessThanOrEqual(timingBudget(750));
-  expect(maximumRestore).toBeLessThanOrEqual(timingBudget(750));
-  expect(maximumCommit).toBeLessThanOrEqual(timingBudget(8));
+  expectTiming(maximumCut, 750);
+  expectTiming(maximumRestore, 750);
+  expectTiming(maximumCommit, 8);
   expect(sliceDurations.length).toBeGreaterThanOrEqual(100);
-  expect(percentile(sliceDurations, 0.95)).toBeLessThanOrEqual(
-    timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-  );
-  expect(maximumSlice).toBeLessThanOrEqual(
-    timingBudget(INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs),
-  );
+  expectTiming(percentile(sliceDurations, 0.95), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+  expectTiming(maximumSlice, INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs);
   expect(store.size).toBe(11_000);
 }, 60_000);
 

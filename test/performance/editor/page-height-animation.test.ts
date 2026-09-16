@@ -8,7 +8,7 @@ import {
   INTERACTION_REFRESH_PROFILE,
   interactionProfileAnnotation,
 } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 import { readyResponsiveFixture } from "../../integration/obsidian/embeds/active-editor-responsive-layout-fixture";
 import { pageHeightPercentile } from "./page-height-performance-fixture";
 
@@ -22,7 +22,7 @@ describe("automatic page-height performance", () => {
     }
 
     const p99 = pageHeightPercentile(harness.frameDurations, 0.99);
-    expect(p99).toBeLessThanOrEqual(timingBudget(1));
+    expectTiming(p99, 1);
     expect(harness.maximumFramesPerTransition).toBeLessThanOrEqual(
       Math.ceil(
         TRANSITION_DURATIONS.automaticPageGrowth / INTERACTION_REFRESH_PROFILE.frameDurationMs,
@@ -53,7 +53,7 @@ describe("automatic page-height performance", () => {
     harness.stability.dispose();
 
     const p99 = pageHeightPercentile(durations, 0.99);
-    expect(p99).toBeLessThanOrEqual(timingBudget(0.25));
+    expectTiming(p99, 0.25);
     await annotate(interactionProfileAnnotation("visual transition scroll anchoring", p99));
   });
 });
@@ -196,6 +196,6 @@ it(`avoids toolbar measurement during ${INTERACTION_REFRESH_PROFILE.refreshRate}
   expect(h.onLayout).not.toHaveBeenCalled();
   h.layout.dispose();
   const p99 = pageHeightPercentile(durations, 0.99);
-  expect(p99).toBeLessThanOrEqual(timingBudget(0.25));
+  expectTiming(p99, 0.25);
   await annotate(interactionProfileAnnotation("height-only layout observer", p99), "performance");
 });

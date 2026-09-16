@@ -5,13 +5,14 @@ import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { moveSelection } from "../../../../src/editor/selection/transforms";
 import { visibilityPageBounds } from "../../../../src/rendering/scene/scene-resource-policy";
+import type { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import type { SceneCamera, SceneViewport } from "../../../../src/rendering/scene/types";
 import {
   INTERACTION_REFRESH_PROFILE,
   interactionP99,
   interactionProfileAnnotation,
 } from "../../interaction-refresh-profile";
-import { timingBudget } from "../../timing-budget";
+import { expectTiming } from "../../timing-assertions";
 import {
   INTERACTION_ELEMENT_COUNT,
   INTERACTION_PAGE,
@@ -62,13 +63,9 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz camera reconciliation pr
     const firstFrameP99 = interactionP99(firstFrameDurations);
     const followUpMetric = followUpStatistic(followUpDurations);
     const instrumentation = renderer.instrumentation();
-    expect(firstFrameP99).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
+    expectTiming(firstFrameP99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     if (followUpDurations.length > 0) {
-      expect(followUpMetric).toBeLessThanOrEqual(
-        timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-      );
+      expectTiming(followUpMetric, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     }
     expect(instrumentation.spatialQueries).toBeGreaterThan(0);
     expect(instrumentation.domEntrants).toBeGreaterThan(0);
@@ -149,19 +146,11 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz preview commit profile`,
     expect(failedHandoffs).toBe(0);
     expect(failedReplacements).toBe(0);
     expect(publishedDeltas).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
-    expect(previewFirstFrameP99).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
-    expect(commitFirstFrameP99).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
-    expect(commitOperationP99).toBeLessThanOrEqual(
-      timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-    );
+    expectTiming(previewFirstFrameP99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+    expectTiming(commitFirstFrameP99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+    expectTiming(commitOperationP99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     if (followUpDurations.length > 0) {
-      expect(followUpMetric).toBeLessThanOrEqual(
-        timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms),
-      );
+      expectTiming(followUpMetric, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     }
     expect(renderer.mountedIds("content")).toEqual(
       expectedVisibleIds(fixture.store, fixture.ids, DEFAULT_VIEWPORT, DEFAULT_CAMERA),
@@ -188,6 +177,38 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz preview commit profile`,
     );
     unsubscribe();
     renderer.destroy();
+  });
+});
+
+describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz reconciliation work bounds`, () => {
+  it("bounds frame work and makes progress through repeated disjoint viewport jumps", () => {
+    const fixture = createInteractionFixture();
+    const { renderer, scheduler } = createProfileRenderer(fixture.store);
+    try {
+      drainPendingFrames(scheduler);
+      for (let transition = 0; transition < 16; transition += 1) {
+        const viewport = { ...DEFAULT_VIEWPORT, top: transition % 2 === 0 ? 800 : 0 };
+        const camera = { x: transition % 3 === 0 ? -50 : 0, zoom: transition % 4 ? 1 : 1.05 };
+        const previous = new Set(renderer.mountedIds("content"));
+        const expected = expectedVisibleIds(fixture.store, fixture.ids, viewport, camera);
+        const entrants = expected.filter((id) => !previous.has(id)).length;
+        renderer.resetInstrumentation();
+        fixture.store.resetInstrumentation();
+        renderer.setViewport(viewport);
+        renderer.setCamera(camera);
+        drainBoundedReconciliation(renderer, scheduler, entrants);
+        expect(renderer.mountedIds("content")).toEqual(expected);
+        const stats = renderer.instrumentation();
+        expect(stats.spatialQueries).toBe(1);
+        expect(stats.domEntrants).toBe(entrants);
+        expect(stats.geometryBuilds).toBeLessThanOrEqual(entrants);
+        expect(fixture.store.instrumentation.fullStoreScans).toBe(0);
+        expect(fixture.store.instrumentation.bandScans).toBe(0);
+      }
+    } finally {
+      renderer.destroy();
+    }
+    expect(scheduler.pendingCount).toBe(0);
   });
 });
 
@@ -218,7 +239,7 @@ function runFirstFrameAndFollowUps(scheduler: ProfileScheduler, prepare: () => v
 }
 
 function runPendingFrameAndFollowUps(scheduler: ProfileScheduler): FrameMetrics {
-  if (scheduler.pendingCount === 0) throw new Error("No frame is pending.");
+  expect(scheduler.pendingCount).toBe(1);
   return runFrameAndFollowUps(scheduler);
 }
 
@@ -229,6 +250,7 @@ function runFrameAndFollowUps(scheduler: ProfileScheduler): FrameMetrics {
   const followUpDurationsMs: number[] = [];
   let frameCount = 0;
   while (scheduler.pendingCount > 0) {
+    expect(scheduler.pendingCount).toBe(1);
     if (frameCount >= 1_000) {
       throw new Error("Frame limit exceeded while draining follow-up frames.");
     }
@@ -242,6 +264,26 @@ function runFrameAndFollowUps(scheduler: ProfileScheduler): FrameMetrics {
 
 function drainPendingFrames(scheduler: ProfileScheduler): void {
   while (scheduler.pendingCount > 0) runPendingFrameAndFollowUps(scheduler);
+}
+
+function drainBoundedReconciliation(
+  renderer: SvgSceneRenderer,
+  scheduler: ProfileScheduler,
+  entrants: number,
+): void {
+  let frames = 0;
+  while (scheduler.pendingCount > 0) {
+    expect(scheduler.pendingCount).toBe(1);
+    // Allow one frame per entrant plus preparation/completion, not an unbounded retry loop.
+    expect(frames).toBeLessThan(entrants + 2);
+    scheduler.runNext();
+    frames += 1;
+    const stats = renderer.instrumentation();
+    // The first entry has no probe; floating-point deadline equality permits one extra probe.
+    expect(stats.maximumMountSliceElements).toBeLessThanOrEqual(
+      FAKE_CLOCK_CHECKPOINTS_PER_FRAME + 2,
+    );
+  }
 }
 
 function expectedVisibleIds(

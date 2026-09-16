@@ -29,8 +29,11 @@ function readRefreshRate(): (typeof SUPPORTED_REFRESH_RATES)[number] {
 
 export function measureInteractionFrames(
   run: (frame: number) => void,
-  count = INTERACTION_REFRESH_PROFILE.sampleCount,
+  count: number = INTERACTION_REFRESH_PROFILE.sampleCount,
 ): number[] {
+  if (!Number.isInteger(count) || count < 0 || count > 0xffff_ffff) {
+    throw new RangeError("Invalid interaction frame count.");
+  }
   const durations = new Array<number>(count);
   for (let frame = 0; frame < count; frame += 1) {
     const startedAt = performance.now();

@@ -85,10 +85,10 @@ Detailed rendering, cache, scheduling, memory, and latency contracts are canonic
 
 - Use Unit and focused Integration tests only. End-to-end and smoke suites are explicitly excluded.
 - Add deterministic regression coverage for every relevant behavior change. Across executable source, maintain at least 85 percent lines, statements, and functions plus at least 80 percent branches.
-- Add performance tests for every new performance critical part or changes on performance crtical parts. Use the performance class table below.
+- Add performance tests for every new or changed performance-critical path. Follow [Adding or Changing Performance Tests](docs/performance-ci.md#adding-or-changing-performance-tests), including deterministic work/resource assertions, timing helpers, manifest registration, and regression evidence. Use the performance class table below.
 - Enforce hard CI maxima of 100 function lines, 500 file lines, cyclomatic complexity 20, cognitive complexity 25, 6 parameters, and nesting depth 4. Review large or complex units for clear responsibilities and readability without treating an additional arbitrary numeric threshold as a defect.
 - Documentation-only changes require a complete content review, working relative links, balanced Markdown code fences, and a synchronized Documentation Index. Do not add parser, snapshot, or string-comparison tests solely for documentation prose.
-- The exhaustive performance manifest must classify every benchmark into exactly one class. A new benchmark fails the Unit gate until classified.
+- The exhaustive performance manifest must classify every benchmark into exactly one class. A new benchmark fails the Unit gate until classified. Preserve all file/profile contracts and full fixtures under [Performance CI](docs/performance-ci.md); batching and statistical-only contract repetition must not remove behavioral scenarios or weaken reference-device budgets.
 
 | Test scope  | Required coverage                                                                                                                                                                                                                                                                           |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -111,7 +111,7 @@ The complete test matrix, performance budgets, and acceptance requirements are c
 - Use standard `ubuntu-latest` runners only. The quality job uses Node.js 24, and the two parallel performance shards use Node.js 26. Do not add macOS or larger paid runners.
 - Keep all GitHub Actions pinned to full commit SHAs.
 - Release tags use `x.y.z` without a leading `v`, match `manifest.json`, and point to a commit on `main`.
-- Keep `gitleaks` as its standalone required job. Performance remains split into a shared invariant/budget-only shard and a cadence-sensitive refresh-profile shard; preserve the exhaustive manifest and do not omit tests to reduce runtime.
+- Keep `gitleaks` as its standalone required job. Performance remains split into a shared invariant/budget-only shard and a cadence-sensitive refresh-profile shard. Both enforce all selected contracts plus staged same-runner comparisons against the PR base and fixed source anchor under [Performance CI](docs/performance-ci.md). Reject missing, incompatible, regressed, or inconclusive evidence; never promote the anchor as a CI side effect or scale elapsed-time limits. Agents may independently maintain the fixed anchor under [Maintaining the Fixed Reference Commit](docs/performance-ci.md#maintaining-the-fixed-reference-commit), including the required old-to-new evidence and documented decision; no separate maintenance confirmation is required. Preserve the exhaustive manifest and all reference-device obligations.
 
 ## Manual Obsidian Display Verification
 
@@ -139,7 +139,7 @@ Use `npm`, TypeScript, esbuild, Vitest, ESLint with the official type-aware `esl
 | -------------------------- | ------------------------------------------------------------------------------ |
 | `npm run ci`               | Run the complete local quality and performance gate                            |
 | `npm run ci:quality`       | Run every non-performance quality, architecture, test, build, and package gate |
-| `npm run benchmark`        | Run the complete classified performance suite                                  |
+| `npm run benchmark`        | Run all classified contracts and same-runner regression comparisons            |
 | `npm run architecture`     | Verify the complete source import graph, cycles, and area directions           |
 | `npm test`                 | Run Unit and Integration tests without coverage                                |
 | `npm run test:unit`        | Run Unit tests                                                                 |
@@ -180,6 +180,7 @@ Keep CodeMirror and Lezer external to the production bundle. Add direct CodeMirr
 | [`docs/file-format.md`](docs/file-format.md)                                                 | Defines the versioned SVG envelope, compact editable snapshot schema, ordering, connections, geometry, size limits, and migrations.                                  |
 | [`docs/keyboard-shortcuts.md`](docs/keyboard-shortcuts.md)                                   | Defines configurable canvas bindings, fixed system shortcuts, gesture modifiers, command ownership, settings UI, and persistence.                                    |
 | [`docs/obsidian-integration.md`](docs/obsidian-integration.md)                               | Defines supported Obsidian surfaces, multi-window ownership, native-scrollbar stability, public APIs, lifecycle, host storage, UI rules, and release requirements.   |
+| [`docs/performance-ci.md`](docs/performance-ci.md)                                           | Defines performance-test authoring, complete benchmark mapping, deterministic contracts, paired timing policy, evidence, and reference-device limitations.           |
 | [`docs/quality-and-testing.md`](docs/quality-and-testing.md)                                 | Defines performance, memory, file-size, scroll stability, document-worker, multi-window, animation, accessibility, and verification requirements.                    |
 | [`docs/rendering-and-performance.md`](docs/rendering-and-performance.md)                     | Defines the imperative SVG scene, gesture updates, culling, bounded caches, document-worker boundary, and coalesced asynchronous persistence.                        |
 | [`docs/settings.md`](docs/settings.md)                                                       | Defines tool defaults, page preferences, input settings, scope, precedence, and validation.                                                                          |

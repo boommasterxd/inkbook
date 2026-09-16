@@ -8,6 +8,10 @@ import {
 } from "../../../src/obsidian/embeds/active-editor/history";
 
 import { createMaximumStroke } from "./standard-domain-fixture";
+import { performanceMode } from "../timing-budget";
+
+// Virtual cost per observed checkpoint, not a physical-device speed estimate.
+export const CHECKPOINT_COST_MILLISECONDS = 0.05;
 
 declare const process: {
   memoryUsage: () => { heapUsed: number };
@@ -44,6 +48,10 @@ export interface MaximumStrokeRun {
 export class MeasuredSliceScheduler {
   public maxSliceDuration = 0;
   readonly #sliceDurations: number[] = [];
+  readonly #controlled = performanceMode() === "contracts";
+  readonly #checkpointCounts: number[] = [];
+  #checkpoints = 0;
+  #state: "active" | "yielding" | "finished" = "active";
   #deadline: number;
   #sliceStarted = readThreadCpuMilliseconds();
 
@@ -51,21 +59,47 @@ export class MeasuredSliceScheduler {
     private readonly budgetMilliseconds: number,
     private readonly onYield: () => void = () => undefined,
   ) {
+    if (!Number.isFinite(budgetMilliseconds) || budgetMilliseconds <= 0) {
+      throw new RangeError("Slice budgets must be finite and positive.");
+    }
     this.#deadline = performance.now() + budgetMilliseconds;
   }
 
-  public shouldYield = (): boolean => performance.now() >= this.#deadline;
+  public shouldYield = (): boolean => {
+    this.#requireActive();
+    this.#checkpoints += 1;
+    return this.#controlled
+      ? this.#checkpoints >= Math.ceil(this.budgetMilliseconds / CHECKPOINT_COST_MILLISECONDS)
+      : performance.now() >= this.#deadline;
+  };
 
   public yieldControl = async (): Promise<void> => {
+    this.#requireActive();
     this.#measureSlice();
-    this.onYield();
-    await yieldToHostTask();
-    this.#sliceStarted = readThreadCpuMilliseconds();
-    this.#deadline = performance.now() + this.budgetMilliseconds;
+    this.#state = "yielding";
+    try {
+      this.onYield();
+      await yieldToHostTask();
+    } finally {
+      this.#sliceStarted = readThreadCpuMilliseconds();
+      this.#deadline = performance.now() + this.budgetMilliseconds;
+      this.#state = "active";
+    }
   };
 
   public finish(): void {
+    if (this.#state === "finished") return;
+    this.#requireActive();
     this.#measureSlice();
+    this.#state = "finished";
+  }
+
+  public get checkpointCounts(): readonly number[] {
+    return this.#checkpointCounts;
+  }
+
+  #requireActive(): void {
+    if (this.#state !== "active") throw new Error(`Slice scheduler is ${this.#state}.`);
   }
 
   public get sliceDurations(): readonly number[] {
@@ -75,6 +109,8 @@ export class MeasuredSliceScheduler {
   #measureSlice(): void {
     const duration = readThreadCpuMilliseconds() - this.#sliceStarted;
     this.#sliceDurations.push(duration);
+    this.#checkpointCounts.push(this.#checkpoints);
+    this.#checkpoints = 0;
     this.maxSliceDuration = Math.max(this.maxSliceDuration, duration);
   }
 }

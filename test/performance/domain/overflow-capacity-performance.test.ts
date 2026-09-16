@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 
 import { assertOverflowCapacity } from "../../../src/domain/store/record-factory";
 import type { ElementRecord } from "../../../src/domain/store/types";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 it("checks overlapping replacement and removal membership in linear time", async ({ annotate }) => {
   const records = Array.from({ length: 20_000 }, (_, index) => record(index));
@@ -14,7 +14,7 @@ it("checks overlapping replacement and removal membership in linear time", async
     `20k overlapping overflow-capacity check=${duration.toFixed(3)} ms`,
     "performance",
   );
-  expect(duration).toBeLessThanOrEqual(timingBudget(40));
+  expectTiming(duration, 40);
 });
 
 function record(index: number): ElementRecord {
@@ -25,3 +25,24 @@ function record(index: number): ElementRecord {
     paintVersion: 0,
   };
 }
+
+it.each([1_000, 20_000])("bounds overlapping membership reads linearly for %i records", (size) => {
+  let reads = 0;
+  const records = new Proxy(
+    Array.from({ length: size }, (_, index) => record(index)),
+    {
+      get(target, key, receiver) {
+        if (typeof key === "string" && /^(0|[1-9][0-9]*)$/.test(key)) {
+          reads += 1;
+          if (reads > size * 4) throw new Error("Overflow membership exceeded linear work.");
+        }
+        return Reflect.get(target, key, receiver) as unknown;
+      },
+    },
+  );
+
+  assertOverflowCapacity(0, records, [], records);
+
+  expect(reads).toBeGreaterThanOrEqual(size);
+  expect(reads).toBeLessThanOrEqual(size * 4);
+});

@@ -9,7 +9,7 @@ import {
   interactionProfileAnnotation,
   measureInteractionFrames,
 } from "../../interaction-refresh-profile";
-import { timingBudget } from "../../timing-budget";
+import { expectTiming } from "../../timing-assertions";
 
 const reactRoot = vi.hoisted(() => ({ render: vi.fn(), unmount: vi.fn() }));
 
@@ -41,8 +41,9 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz React chrome profile`, (
     const p99 = interactionP99(durations);
     expect(createRoot).toHaveBeenCalledOnce();
     expect(reactRoot.render).toHaveBeenCalledOnce();
-    expect(p99).toBeLessThanOrEqual(timingBudget(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms));
+    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     await annotate(interactionProfileAnnotation("semantic chrome update", p99), "performance");
     mounted.unmount();
+    expect(reactRoot.unmount).toHaveBeenCalledOnce();
   });
 });

@@ -30,11 +30,7 @@ it("remounts a batch after retaining more than 2,048 paths without geometry rebu
   const store = new FakeSceneStore();
   for (let batch = 0; batch < BATCH_OFFSETS.length; batch += 1) {
     const offset = BATCH_OFFSETS[batch]!;
-    for (let index = 0; index < BATCH_SIZE; index += 1) {
-      const rank = batch * BATCH_SIZE + index;
-      const id = `cached-path-${String(rank).padStart(4, "0")}`;
-      store.records.set(id, fakeRectangleRecord(id, rank, offset + 10));
-    }
+    populateBatch(store, batch, offset);
   }
   const renderer = new SvgSceneRenderer({
     container: asElement(new FakeNode(document, "div")),
@@ -57,6 +53,21 @@ it("remounts a batch after retaining more than 2,048 paths without geometry rebu
     pathCacheHits: BATCH_SIZE,
   });
   await annotate("2,100 retained paths, 700 remount hits, 0 geometry builds", "performance");
+
+  // Cross the documented entry capacity and verify eviction through renderer ownership.
+  for (let batch = 3; batch < 6; batch += 1) {
+    const offset = batch * 1_000;
+    populateBatch(store, batch, offset);
+    showOffset(renderer, scheduler, offset);
+    expect(renderer.mountedCount).toBe(BATCH_SIZE);
+    expect(renderer.instrumentation().pathCacheEntries).toBeLessThanOrEqual(4_096);
+    expect(renderer.instrumentation().pathCacheBytes).toBeLessThanOrEqual(32 * 1_024 * 1_024);
+  }
+  showOffset(renderer, scheduler, 6_000);
+  expect(renderer.instrumentation().pathCacheEntries).toBe(4_096);
+  renderer.destroy();
+  expect(renderer.instrumentation().pathCacheEntries).toBe(0);
+  expect(scheduler.pendingCount).toBe(0);
 });
 
 it("counts exact paint writes and reuses background geometry across repaint work", async ({
@@ -167,4 +178,12 @@ it("builds a height-invariant spacing preview once and reuses its final geometry
 function showOffset(renderer: SvgSceneRenderer, scheduler: FakeScheduler, offset: number): void {
   renderer.setCamera({ x: -offset, zoom: 1 });
   scheduler.runAll();
+}
+
+function populateBatch(store: FakeSceneStore, batch: number, offset: number): void {
+  for (let index = 0; index < BATCH_SIZE; index += 1) {
+    const rank = batch * BATCH_SIZE + index;
+    const id = `cached-path-${String(rank).padStart(4, "0")}`;
+    store.records.set(id, fakeRectangleRecord(id, rank, offset + 10));
+  }
 }

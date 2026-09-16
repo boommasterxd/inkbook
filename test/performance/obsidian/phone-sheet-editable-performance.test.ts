@@ -8,7 +8,7 @@ import {
   installKeyboardInsetObserver,
 } from "../../fixtures/obsidian/phone-sheet-editable";
 import { interactionP99, measureInteractionFrames } from "../interaction-refresh-profile";
-import { timingBudget } from "../timing-budget";
+import { expectTiming } from "../timing-assertions";
 
 it("coalesces viewport correction with two geometry reads inside the 240 Hz frame budget", () => {
   installObsidianDomHelpers();
@@ -27,7 +27,7 @@ it("coalesces viewport correction with two geometry reads inside the 240 Hz fram
     });
     expect(fixture.inputRead).toHaveBeenCalledTimes(durations.length);
     expect(fixture.scrollRead).toHaveBeenCalledTimes(durations.length);
-    expect(interactionP99(durations)).toBeLessThanOrEqual(timingBudget((1000 / 240) * 0.55));
+    expectTiming(interactionP99(durations), (1000 / 240) * 0.55);
   } finally {
     fixture.session.close("immediate");
     Platform.isPhone = false;

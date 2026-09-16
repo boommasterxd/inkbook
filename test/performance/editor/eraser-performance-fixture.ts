@@ -1,14 +1,23 @@
 import type { StrokeElementV1 } from "../../../src/domain/schema/public";
 import { EraserSweep, type EraserSliceScheduler } from "../../../src/editor/gestures/public";
 
+import { performanceMode } from "../timing-budget";
+import { maximumStroke } from "./maximum-stroke-fixture";
+
 export class MeasuredEraserScheduler implements EraserSliceScheduler {
   readonly #budgetMs: number;
   readonly #sliceDurationsMs: number[] = [];
+  readonly #controlled = performanceMode() === "contracts";
+  readonly #checkpointCounts: number[] = [];
+  #checkpoints = 0;
   #maximumSliceMs = 0;
   #sliceStarted = performance.now();
   #yieldCount = 0;
 
   public constructor(budgetMs: number) {
+    if (!Number.isFinite(budgetMs) || budgetMs <= 0) {
+      throw new RangeError("Slice budgets must be finite and positive.");
+    }
     this.#budgetMs = budgetMs;
   }
 
@@ -24,12 +33,20 @@ export class MeasuredEraserScheduler implements EraserSliceScheduler {
     return this.#sliceDurationsMs;
   }
 
+  public get checkpointCounts(): readonly number[] {
+    return this.#checkpointCounts;
+  }
+
   public isCancelled(): boolean {
     return false;
   }
 
   public shouldYield(): boolean {
-    return performance.now() - this.#sliceStarted >= this.#budgetMs;
+    this.#checkpoints += 1;
+    // 0.05 virtual ms per observed checkpoint is a test cost model, not device speed.
+    return this.#controlled
+      ? this.#checkpoints >= Math.ceil(this.#budgetMs / 0.05)
+      : performance.now() - this.#sliceStarted >= this.#budgetMs;
   }
 
   public async yieldControl(): Promise<void> {
@@ -46,6 +63,8 @@ export class MeasuredEraserScheduler implements EraserSliceScheduler {
   #recordSlice(): void {
     const duration = performance.now() - this.#sliceStarted;
     this.#sliceDurationsMs.push(duration);
+    this.#checkpointCounts.push(this.#checkpoints);
+    this.#checkpoints = 0;
     this.#maximumSliceMs = Math.max(this.#maximumSliceMs, duration);
   }
 }
@@ -72,4 +91,30 @@ export function createDenseStrokeEraser(
     },
     sliceBudgetMs,
   );
+}
+
+export function createCountedDenseStrokeEraser(count: number, sliceBudgetMs?: () => number) {
+  let pointReads = 0;
+  const strokes = Array.from({ length: count }, (_, index) => {
+    const stroke = maximumStroke(index);
+    return {
+      ...stroke,
+      points: new Proxy(stroke.points, {
+        get(target, key, receiver) {
+          if (typeof key === "string" && /^\d+$/.test(key) && Number(key) % 3 === 0) {
+            pointReads += 1;
+          }
+          return Reflect.get(target, key, receiver) as unknown;
+        },
+      }),
+    };
+  });
+  return {
+    eraser: createDenseStrokeEraser(strokes, sliceBudgetMs),
+    takePointReads() {
+      const reads = pointReads;
+      pointReads = 0;
+      return reads;
+    },
+  };
 }
