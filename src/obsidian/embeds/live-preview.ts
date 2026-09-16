@@ -1,5 +1,11 @@
 import { syntaxTree, syntaxTreeAvailable } from "@codemirror/language";
-import { Prec, StateField, type EditorState, type Extension } from "@codemirror/state";
+import {
+  Prec,
+  StateField,
+  type EditorState,
+  type Extension,
+  type Transaction,
+} from "@codemirror/state";
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { editorInfoField, editorLivePreviewField } from "obsidian";
 
@@ -134,19 +140,8 @@ export function createLivePreviewExtension(ports: EmbedIntegrationPorts): Extens
           ),
         };
       }
-      const changedDocumentIds = new Set(
-        transaction.effects.flatMap((effect) =>
-          effect.is(documentRecognitionChanged) ? [...effect.value] : [],
-        ),
-      );
-      const unavailableIds = new Set(
-        transaction.effects.flatMap((effect) =>
-          effect.is(documentRecognitionUnavailable) ? [effect.value] : [],
-        ),
-      );
-      const blocks = value.blocks
-        .suppressUnavailable(unavailableIds)
-        .refresh(changedDocumentIds, ports, transaction.state.field(entrances));
+      if (transaction.effects.length === 0) return value;
+      const blocks = refreshRecognizedBlocks(value.blocks, transaction, ports, entrances);
       return blocks === value.blocks ? value : { context: currentContext, blocks };
     },
   });
@@ -184,6 +179,31 @@ export function createLivePreviewExtension(ports: EmbedIntegrationPorts): Extens
 interface LivePreviewBlockState {
   readonly context: LivePreviewContext;
   readonly blocks: LivePreviewBlocks;
+}
+
+function refreshRecognizedBlocks(
+  blocks: LivePreviewBlocks,
+  transaction: Transaction,
+  ports: EmbedIntegrationPorts,
+  entrances: StateField<LivePreviewEntrances>,
+): LivePreviewBlocks {
+  let changed: Set<string> | undefined;
+  let unavailable: Set<string> | undefined;
+  for (const effect of transaction.effects) {
+    if (effect.is(documentRecognitionChanged)) {
+      for (const id of effect.value) {
+        changed ??= new Set();
+        changed.add(id);
+      }
+    } else if (effect.is(documentRecognitionUnavailable)) {
+      unavailable ??= new Set();
+      unavailable.add(effect.value);
+    }
+  }
+  if (unavailable !== undefined) blocks = blocks.suppressUnavailable(unavailable);
+  return changed === undefined
+    ? blocks
+    : blocks.refresh(changed, ports, transaction.state.field(entrances));
 }
 
 function subscribeRecognitions(

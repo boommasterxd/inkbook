@@ -21,9 +21,15 @@ function livePreviewUpdatesFixture(
     operation === "unchanged" ? "handwriting.svg" : `drawing-${String(index)}.svg`,
   );
   let resolutions = 0;
+  let cacheReads = 0;
   let preview: InkbookDocumentRecognition | undefined;
   const ports = {
-    documents: { cached: () => preview },
+    documents: {
+      cached: () => {
+        cacheReads += 1;
+        return preview;
+      },
+    },
     resolveDocument: (documentId: string) => {
       resolutions += 1;
       return { documentId, resourceUrl: `app://${documentId}` };
@@ -44,7 +50,7 @@ function livePreviewUpdatesFixture(
       safeSvg: "<svg/>",
       contentIdentity: { revision: 1, outputHash: "a".repeat(64) },
     };
-  return { initial, ids, resolutions: () => resolutions };
+  return { initial, ids, resolutions: () => resolutions, cacheReads: () => cacheReads };
 }
 
 for (const operation of ["text edit", "recognition burst"] as const) {
@@ -52,7 +58,7 @@ for (const operation of ["text edit", "recognition burst"] as const) {
     annotate,
   }) => {
     const capacity = MARKDOWN_EMBED_LIMITS.matches;
-    const { initial, ids, resolutions } = livePreviewUpdatesFixture(
+    const { initial, ids, resolutions, cacheReads } = livePreviewUpdatesFixture(
       createLivePreviewExtension,
       capacity,
       operation,
@@ -69,6 +75,10 @@ for (const operation of ["text edit", "recognition burst"] as const) {
       if (sample >= 0) durations.push(performance.now() - started);
     }
     expect(resolutions()).toBe(capacity);
+    expect(cacheReads()).toBe(
+      capacity *
+        (operation === "recognition burst" ? INTERACTION_REFRESH_PROFILE.sampleCount + 101 : 1),
+    );
     expect(state.facet(EditorView.decorations)[0]).not.toBe(
       initial.facet(EditorView.decorations)[0],
     );
