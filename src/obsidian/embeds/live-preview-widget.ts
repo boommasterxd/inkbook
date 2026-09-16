@@ -3,6 +3,7 @@ import { type EditorView, WidgetType } from "@codemirror/view";
 import type { InkbookDocumentRecognition } from "./document-recognition";
 import { createInkbookLockedPreview } from "./locked-preview";
 import { removeLivePreviewMarkdown } from "./live-preview-removal";
+import { LivePreviewWidgetHeight } from "./live-preview-widget-height";
 import { PresentationController } from "./presentation-controller";
 import type { EmbedIntegrationPorts } from "./presentation-port";
 import { samePreviewContentIdentity } from "./safe-preview-svg";
@@ -30,6 +31,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
   readonly #embed: RecognizedVisibleEmbed;
   readonly #ports: EmbedIntegrationPorts;
   readonly #entranceState: PresentationEntranceState | undefined;
+  #height: LivePreviewWidgetHeight | undefined;
 
   constructor(
     embed: RecognizedVisibleEmbed,
@@ -40,6 +42,16 @@ export class InkbookLivePreviewWidget extends WidgetType {
     this.#embed = embed;
     this.#ports = ports;
     this.#entranceState = entranceState;
+  }
+
+  override get estimatedHeight(): number {
+    return this.#height?.value ?? -1;
+  }
+
+  retainHeightFrom(previous: InkbookLivePreviewWidget): void {
+    if (previous.#height !== undefined && this.#sameAttachment(previous)) {
+      this.#height = previous.#height;
+    }
   }
 
   override eq(other: InkbookLivePreviewWidget): boolean {
@@ -130,6 +142,8 @@ export class InkbookLivePreviewWidget extends WidgetType {
       },
     );
     controller.mount();
+    this.#height ??= new LivePreviewWidgetHeight();
+    const releaseHeight = this.#height.observe(root);
     mountedControllers.set(root, { controller, widget: this });
     const activate = (event: MouseEvent): void => {
       event.preventDefault();
@@ -138,11 +152,13 @@ export class InkbookLivePreviewWidget extends WidgetType {
     };
     button.addEventListener("click", activate);
     const releaseLifecycle = this.#ports.lifecycle.register(root, () => {
+      releaseHeight();
       button.removeEventListener("click", activate);
       mountedControllers.delete(root);
       controller.dispose();
     });
     if (releaseLifecycle === undefined) {
+      releaseHeight();
       button.removeEventListener("click", activate);
       mountedControllers.delete(root);
       controller.dispose();
