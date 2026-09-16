@@ -18,6 +18,7 @@ import {
   hashSourceTree,
   hashWorkspaceFiles,
   preparePerformanceWorkspaces,
+  resolveLocalBaseline,
 } from "../../../scripts/performance-workspace.mjs";
 
 const cleanup = [];
@@ -54,6 +55,14 @@ afterEach(async () => {
 });
 
 describe("performance workspace snapshots", () => {
+  it("uses the bootstrap only until a local baseline tag exists", async () => {
+    const { root, commit } = await fixture();
+    expect(resolveLocalBaseline(root, "bootstrap")).toBe("bootstrap");
+    git(root, "tag", "performance-baseline-audit-example", commit);
+    expect(resolveLocalBaseline(root, "bootstrap")).toBe("bootstrap");
+    git(root, "tag", "performance-baseline", commit);
+    expect(resolveLocalBaseline(root, "bootstrap")).toBe(commit);
+  });
   it("uses current identical harness with old source and keeps dirty candidate changes", async () => {
     const { root, commit } = await fixture();
     await writeFile(join(root, "harness.mjs"), "new harness\n");
