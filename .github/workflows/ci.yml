@@ -59,7 +59,7 @@ jobs:
           - label: refresh profiles
             suite: cadence
             refresh-rate: "120"
-            timeout_minutes: 5
+            timeout_minutes: 15
     env:
       INKBOOK_PERFORMANCE_ANCHOR: ${{ needs.baseline.outputs.commit }}
       INKBOOK_PERFORMANCE_MODE: gate

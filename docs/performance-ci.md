@@ -73,6 +73,8 @@ Preserve required checks `CI`, `Performance (shared)`, `Performance (refresh pro
 
 Raw measurements, failures, input identities, and comparison decisions remain available as job artifacts for one day; successful promotion summaries remain in Git audit tags. Local default evidence is retained outside disposable workspaces. Time/output limits bound the harness and must not be interpreted as product latency budgets. Source-identical CI duration must be reported separately from changed-source duration.
 
+Both performance jobs have a 15-minute execution ceiling. The former five-minute refresh-profile ceiling interrupted [run 35087718837](https://github.com/boommasterxd/inkbook/actions/runs/35087718837/job/104766427319) during the final profile's second comparison stage after all 50 cadence contract executions passed. The ceiling must accommodate the existing six/eighteen-pair comparisons against both references across five profiles, plus setup and evidence upload. It does not add samples, delay completed jobs, or relax any performance acceptance threshold.
+
 ## Adding or Changing Performance Tests
 
 1. **Define the protected behavior.** Place benchmarks under `test/performance/<source-area>/` and reuse representative fixtures from the owning area or `test/fixtures/`. State the operation, input size, expected result, and applicable product budget from [Quality and Testing](quality-and-testing.md). Preserve full-capacity fixtures, stateful sequences, and cancellation/disposal checks. A small fixture or correct final result alone does not prove bounded work.
