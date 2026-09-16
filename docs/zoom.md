@@ -115,6 +115,8 @@ Instead, during each animation frame:
 - the most recently known anchor is used
 - the camera, height, and scroll position are calculated from the same result
 
+If a stroke commit grows the page before its scheduled layout measurement, the zoom frame adopts that committed extent for both the scene background and the container. The container must not outgrow its rendered page while the deferred measurement catches up.
+
 A single frame may change the zoom by no more than a factor of 1.35. This prevents a quick pinch from causing a sudden jump.
 
 The imperative scene renderer updates the camera transform, background grid, selection overlay, and scroll position in the same frame. It performs cached layout reads before calculations and DOM writes and does not notify React. A later committed camera change may update coarse UI state without changing scene geometry.

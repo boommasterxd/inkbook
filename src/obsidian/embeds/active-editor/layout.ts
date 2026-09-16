@@ -97,10 +97,14 @@ export class ActiveEditorLayout {
 
   public applyZoom(update: ActiveEditorZoomLayoutUpdate): void {
     const retainedPageHeight = this.#cancelHeightTransitionAtBoundary(false);
-    this.#retainCommittedExtent();
+    const previousHeight = this.#pageLayout.height;
+    this.#pageLayout.retainMinimumHeight(this.#requiredContentHeight());
     this.#zoom = update.zoom;
-    const blockSize =
-      retainedPageHeight === undefined ? update.blockSize : retainedPageHeight * update.zoom;
+    const pageHeight = retainedPageHeight ?? this.#pageLayout.height;
+    if (pageHeight !== undefined && pageHeight !== previousHeight) {
+      this.#options.renderer.setPage(this.#renderPage(), pageHeight);
+    }
+    const blockSize = pageHeight === undefined ? update.blockSize : pageHeight * update.zoom;
     this.#container.style.blockSize = `${String(blockSize + this.#blockInsets)}px`;
     this.#options.renderer.invalidateLayout();
     if (retainedPageHeight !== undefined) this.scheduleMeasurement();
@@ -441,10 +445,6 @@ export class ActiveEditorLayout {
 
   #requiredContentHeight(page = this.#renderPage()): number {
     return deriveActiveHeight(page, this.#options.storeMaximumBottom());
-  }
-
-  #retainCommittedExtent(): void {
-    this.#pageLayout.retainMinimumHeight(this.#requiredContentHeight());
   }
 
   #resolvedZoom(fitZoom: number): number {
