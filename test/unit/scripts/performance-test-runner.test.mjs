@@ -19,7 +19,7 @@ describe("performance test plan", () => {
 
     expect(plan.invariant).toHaveLength(16);
     expect(plan.budgetOnly).toHaveLength(27);
-    expect(plan.cadenceSensitive).toHaveLength(10);
+    expect(plan.cadenceSensitive).toHaveLength(11);
     expect(new Set(classified).size).toBe(discovered.length);
     expect(classified.toSorted()).toEqual(discovered);
   });

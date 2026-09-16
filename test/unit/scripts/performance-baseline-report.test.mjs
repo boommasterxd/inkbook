@@ -76,7 +76,7 @@ describe("strict promotion evidence", () => {
       const report = createBaselineReport(fixture(suite), { ...context, suite });
       expect(report.eligible).toBe(true);
       expect(report.improvedMetrics).toBe(1);
-      expect(report.contractPopulation).toHaveLength(suite === "shared" ? 43 : 50);
+      expect(report.contractPopulation).toHaveLength(suite === "shared" ? 43 : 55);
       expect(report.metrics[0].ratios).toHaveLength(6);
     }
     expect(baselineContractPopulation("profile")).toEqual([]);
