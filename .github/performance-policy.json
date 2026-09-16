@@ -1,4 +1,4 @@
 {
   "anchorCommit": "ec7471a17fd19c2072141d8edbb177ae1d998ded",
-  "anchorPolicy": "Fixed source anchor; CI must not advance it automatically. Agents may perform evidence-backed maintenance under docs/performance-ci.md#maintaining-the-fixed-reference-commit without separate confirmation."
+  "anchorPolicy": "Bootstrap source anchor until refs/tags/performance-baseline exists. Only strictly better merged commits may replace the baseline under docs/performance-ci.md#automatic-reference-promotion; a passing regression gate alone never authorizes promotion."
 }

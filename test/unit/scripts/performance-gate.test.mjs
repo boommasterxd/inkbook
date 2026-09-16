@@ -9,11 +9,13 @@ const mocks = vi.hoisted(() => ({
   write: vi.fn(),
   mkdir: vi.fn(),
   mkdtemp: vi.fn(),
+  baseline: vi.fn(),
 }));
 vi.mock("../../../scripts/performance-batch.mjs", () => ({ runPerformanceBatch: mocks.batch }));
 vi.mock("../../../scripts/performance-inputs.mjs", () => ({ planPerformanceInputs: mocks.inputs }));
 vi.mock("../../../scripts/performance-workspace.mjs", () => ({
   preparePerformanceWorkspaces: mocks.prepare,
+  resolveLocalBaseline: mocks.baseline,
 }));
 vi.mock("node:fs/promises", () => ({
   readFile: mocks.read,
@@ -62,6 +64,8 @@ beforeEach(() => {
   vi.stubEnv("INKBOOK_PERFORMANCE_MODE", "gate");
   vi.stubEnv("INKBOOK_PERFORMANCE_PROFILE", undefined);
   vi.stubEnv("INKBOOK_PERFORMANCE_BASE", undefined);
+  vi.stubEnv("INKBOOK_PERFORMANCE_ANCHOR", undefined);
+  vi.stubEnv("INKBOOK_PERFORMANCE_SUITE", undefined);
   vi.stubEnv("INKBOOK_PERFORMANCE_RESULTS_DIR", "/results");
   vi.stubEnv("CI", "true");
   vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -74,6 +78,7 @@ beforeEach(() => {
   };
   mocks.prepare.mockResolvedValue(workspaces);
   mocks.read.mockResolvedValue(JSON.stringify({ anchorCommit: "fixed-anchor" }));
+  mocks.baseline.mockReturnValue("fixed-anchor");
   mocks.mkdtemp.mockResolvedValue("/tmp/inkbook-performance-owned");
   mocks.batch.mockImplementation(async (options) => batchResult(options));
   mocks.inputs.mockImplementation(async ({ testFiles }) => ({
@@ -85,6 +90,30 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
+});
+
+describe("baseline handoff", () => {
+  it("uses the run-pinned reference and emits a handoff without additional measurements", async () => {
+    vi.stubEnv("INKBOOK_PERFORMANCE_ANCHOR", "run-pinned-anchor");
+    vi.stubEnv("INKBOOK_PERFORMANCE_SUITE", "shared");
+    vi.stubEnv("GITHUB_RUN_ID", "123");
+    vi.stubEnv("GITHUB_RUN_ATTEMPT", "1");
+    expect(await executePerformanceGate("/project", runs)).toEqual([]);
+    expect(mocks.prepare).toHaveBeenCalledWith("/project", {
+      base: "origin/main",
+      anchor: "run-pinned-anchor",
+    });
+    expect(mocks.baseline).not.toHaveBeenCalled();
+    expect(measurementCalls()).toHaveLength(48);
+    const handoff = mocks.write.mock.calls.find(([path]) => path.endsWith("baseline-report.json"));
+    expect(JSON.parse(handoff[1])).toMatchObject({
+      version: 1,
+      suite: "shared",
+      runId: "123",
+      runAttempt: "1",
+      eligible: false,
+    });
+  });
 });
 
 describe("direct original-benchmark gate", () => {
