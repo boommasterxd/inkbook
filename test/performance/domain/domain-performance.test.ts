@@ -1,4 +1,5 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { percentile, worstDistribution } from "./action-distribution";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import type { InkElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
 import { SpatialQueryScratch } from "../../../src/domain/spatial/index";
@@ -21,17 +22,15 @@ import {
 } from "./standard-domain-fixture";
 import {
   createNoopHistoryModel,
-  measureMaximumStrokeRun,
   measureTransformRun,
-  percentile,
   requireStroke,
-  type Distribution,
   type TransformRun,
-  worstDistribution,
+  transformMetricsAnnotation,
 } from "./domain-scenarios";
 import { collectProfileGarbage } from "../persistence/metrics";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 import { expectTiming } from "../timing-assertions";
+import { measurementRuns } from "../sample-policy";
 import { indexedStroke } from "../../fixtures/editor/stroke";
 let fixture: StandardDomainFixture;
 let store: ElementStore;
@@ -64,7 +63,7 @@ it.each([1_000, 10_000])("keeps local index work bounded with %i unrelated strok
   scratch.release();
 });
 
-beforeAll(async () => {
+async function loadFixture(): Promise<void> {
   const loadedFixture = createStandardRuntimeDomainFixture();
   const builder = ElementStore.createBuilder({
     shouldYield: () => false,
@@ -78,8 +77,9 @@ beforeAll(async () => {
   if (loadedStore === null) throw new Error("Runtime fixture store construction was cancelled.");
   store = loadedStore;
   fixture = { ...loadedFixture, elements: [] };
-});
+}
 describe("standard 10,000-stroke domain fixture", () => {
+  beforeEach(loadFixture);
   it("matches the normative point, shape, connection, overflow, and extent boundaries", () => {
     expect(fixture.strokeCount).toBe(10_000);
     expect(fixture.strokePointCount).toBe(500_000);
@@ -104,6 +104,7 @@ describe("standard 10,000-stroke domain fixture", () => {
 });
 
 describe("normalized store and command costs", () => {
+  beforeEach(loadFixture);
   it("commits one-stroke paint changes without scans, retained growth, or unrelated replacement", async ({
     annotate,
   }) => {
@@ -185,6 +186,7 @@ describe("normalized store and command costs", () => {
 });
 
 describe("spatial queries, selection, and snapping", () => {
+  beforeEach(loadFixture);
   it("reuses scratch allocations for 500 hit-test queries", () => {
     const scratch = new SpatialQueryScratch<string>();
     const hitScratch = new HitTestScratch();
@@ -254,12 +256,14 @@ describe("spatial queries, selection, and snapping", () => {
 });
 
 describe("large selection commit", () => {
+  beforeEach(loadFixture);
   it("time-slices and atomically commits 50 canonical 10,000-stroke transforms per run", async ({
     annotate,
   }) => {
     store.resetInstrumentation();
     const history = new ActiveEditorHistory(createNoopHistoryModel());
     await measureTransformRun(store, history, fixture.strokeIds, 50);
+    const runCount = measurementRuns(5);
     const measuredRuns: TransformRun[] = [];
     let partialStoreObserved = false;
     let publishedDeltas = 0;
@@ -267,7 +271,7 @@ describe("large selection commit", () => {
       publishedDeltas += 1;
     });
 
-    for (let run = 0; run < 5; run += 1) {
+    for (let run = 0; run < runCount; run += 1) {
       measuredRuns.push(
         await measureTransformRun(
           store,
@@ -317,7 +321,7 @@ describe("large selection commit", () => {
       "performance",
     );
 
-    expect(measuredRuns).toHaveLength(5);
+    expect(measuredRuns).toHaveLength(runCount);
     for (const run of measuredRuns) {
       expect(run.materialization.sampleCount).toBe(50);
       expect(run.commit.sampleCount).toBe(50);
@@ -327,21 +331,22 @@ describe("large selection commit", () => {
     expectTiming(releaseSlices.p95, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     expectTiming(maximumSlice, INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs);
     expect(partialStoreObserved).toBe(false);
-    expect(publishedDeltas).toBe(250);
+    expect(publishedDeltas).toBe(runCount * 50);
     expect(history.commandCount).toBeGreaterThan(0);
     expect(maximumRetainedHistoryBytes).toBeLessThanOrEqual(64 * 1024 * 1024);
     expect(maximumHeapGrowthBytes).toBeLessThanOrEqual(200 * 1024 * 1024);
     expect(store.instrumentation).toMatchObject({
       fullStoreScans: 0,
-      publishedDeltas: 300,
-      recordReplacements: 3_000_000,
+      publishedDeltas: (runCount + 1) * 50,
+      recordReplacements: (runCount + 1) * 50 * 10_000,
       snapshotMaterializations: 0,
-      timeSlicedIndexVisits: 3_000_000,
+      timeSlicedIndexVisits: (runCount + 1) * 50 * 10_000,
     });
   }, 180_000);
 });
 
 describe("large selection commit cancellation", () => {
+  beforeEach(loadFixture);
   it("discards detached replacement work when a concurrent commit wins", async () => {
     const replacementId = fixture.strokeIds[0] as string;
     const competingId = fixture.strokeIds[1] as string;
@@ -372,27 +377,6 @@ describe("large selection commit cancellation", () => {
     expect(prepared.token).toBeNull();
     expect(store.get(replacementId)?.element).toBe(original);
   });
-});
-
-describe("maximum live-stroke primitives", () => {
-  it("updates and hands off twenty maximum pressure strokes per measured run", () => {
-    measureMaximumStrokeRun(20);
-    const measuredRuns = Array.from({ length: 5 }, () => measureMaximumStrokeRun(20));
-    const releaseAppend = worstDistribution(measuredRuns.map(({ append }) => append));
-    const releaseHandoff = worstDistribution(measuredRuns.map(({ handoff }) => handoff));
-
-    expect(releaseAppend.sampleCount).toBe(20 * 4096);
-    if (releaseAppend.p99 === null) throw new Error("Maximum-stroke append p99 is unavailable.");
-    expectTiming(releaseAppend.p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
-    expect(releaseHandoff.sampleCount).toBe(20);
-    expectTiming(releaseHandoff.maximum, INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs);
-    expect(measuredRuns.every(({ maximumTailSamples }) => maximumTailSamples <= 16)).toBe(true);
-    expect(
-      measuredRuns.every(({ maximumFinalizedChunkSamples }) =>
-        Boolean(maximumFinalizedChunkSamples <= 256),
-      ),
-    ).toBe(true);
-  }, 120_000);
 });
 
 function* hitCandidates(storeValue: ElementStore, scratch: SpatialQueryScratch<string>) {
@@ -465,31 +449,4 @@ class StoreTargetReader implements SnapTargetReader {
   public reset(): void {
     this.targetReads = 0;
   }
-}
-
-function transformMetricsAnnotation(
-  distributions: Readonly<{
-    atomicCommit: Distribution;
-    commit: Distribution;
-    historyRegistration: Distribution;
-    materialization: Distribution;
-    slices: Distribution;
-  }>,
-  maximumSlice: number,
-  maximumHeapGrowthBytes: number,
-  maximumRetainedHistoryBytes: number,
-): string {
-  const { atomicCommit, commit, historyRegistration, materialization, slices } = distributions;
-  return (
-    `10k transform: materialization p50=${materialization.p50.toFixed(3)} ms, ` +
-    `p95=${materialization.p95.toFixed(3)} ms, ` +
-    `max=${materialization.maximum.toFixed(3)} ms; commit p50=${commit.p50.toFixed(3)} ms, ` +
-    `p95=${commit.p95.toFixed(3)} ms, ` +
-    `max=${commit.maximum.toFixed(3)} ms; atomicCommit p95=${atomicCommit.p95.toFixed(3)} ms, ` +
-    `max=${atomicCommit.maximum.toFixed(3)} ms; history p95=${historyRegistration.p95.toFixed(3)} ms, ` +
-    `max=${historyRegistration.maximum.toFixed(3)} ms; slice p95=${slices.p95.toFixed(3)} ms, ` +
-    `max=${maximumSlice.toFixed(3)} ms, ` +
-    `maxHeapGrowth=${(maximumHeapGrowthBytes / 1024 / 1024).toFixed(1)} MiB, ` +
-    `maxHistory=${(maximumRetainedHistoryBytes / 1024 / 1024).toFixed(1)} MiB, oldSpaceLimit=384 MiB`
-  );
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { percentile } from "../domain/domain-scenarios";
+import { percentile } from "../domain/action-distribution";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 import { expectTiming, recordRelativeTiming } from "../timing-assertions";
 import {

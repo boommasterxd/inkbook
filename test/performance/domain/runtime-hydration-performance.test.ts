@@ -5,7 +5,8 @@ import { ElementStore } from "../../../src/domain/store/public";
 import { MAX_UNLOCK_BATCH_ELEMENTS } from "../../../src/persistence/worker/runtime/unlock-batch-limits";
 
 import { createWorkerSnapshot } from "../../fixtures/persistence/worker-snapshot";
-import { MeasuredSliceScheduler, percentile } from "./domain-scenarios";
+import { percentile } from "./action-distribution";
+import { MeasuredSliceScheduler } from "./domain-scenarios";
 import { createStandardRuntimeDomainFixture } from "./standard-domain-fixture";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 import { expectTiming } from "../timing-assertions";

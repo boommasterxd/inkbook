@@ -118,7 +118,7 @@ describe("cadence comparison profiles", () => {
     expect(savedReport().comparisons.map(({ metrics }) => metrics.length)).toEqual([1]);
   });
 
-  it("collects 18 pairs for unresolved cadence timing without repeating other profiles", async () => {
+  it("collects 12 pairs for unresolved cadence timing without repeating other profiles", async () => {
     mocks.batch.mockImplementation(async (options) =>
       batchResult(
         options,
@@ -127,10 +127,10 @@ describe("cadence comparison profiles", () => {
     );
     expect(await executePerformanceGate("/project", cadenceRuns)).toEqual([]);
     expect(contractCalls()).toHaveLength(5);
-    expect(measurementCalls()).toHaveLength(36);
+    expect(measurementCalls()).toHaveLength(24);
     expect(measurementCalls().every(([options]) => options.refreshRate === 120)).toBe(true);
     expect(savedReport().warnings).toHaveLength(1);
-    expect(savedReport().comparisons[0].metrics[0].stage).toBe(18);
+    expect(savedReport().comparisons[0].metrics[0].stage).toBe(12);
   });
 
   it.each(["contracts", "reference"])(
@@ -322,7 +322,7 @@ describe("nonblocking timing warnings", () => {
         ),
       );
       expect(await executePerformanceGate("/project", [runs[0]])).toEqual([]);
-      expect(measurementCalls()).toHaveLength(36);
+      expect(measurementCalls()).toHaveLength(24);
       expect(savedReport().comparisons[0].status).toBe("inconclusive");
       expect(savedReport().warnings).toHaveLength(1);
       const output = process.stdout.write.mock.calls.map(([value]) => value).join("");
@@ -370,7 +370,7 @@ describe("bounded comparison stages", () => {
     expect(violations).toEqual([]);
     expect(savedReport().warnings).toHaveLength(1);
     const calls = measurementCalls();
-    expect(calls).toHaveLength(36);
+    expect(calls).toHaveLength(24);
     expect(calls.slice(0, 12).every(([options]) => options.testFiles.length === 2)).toBe(true);
     expect(
       calls
@@ -386,7 +386,7 @@ describe("bounded comparison stages", () => {
         .comparisons[0].metrics.map((metric) => [metric.status, metric.ratios.length])
         .sort(),
     ).toEqual([
-      ["inconclusive", 18],
+      ["inconclusive", 12],
       ["pass", 6],
     ]);
   });
@@ -406,14 +406,75 @@ describe("bounded comparison stages", () => {
     expect(violations).toEqual([]);
     expect(savedReport().warnings).toHaveLength(1);
     expect(savedReport().warnings[0].message).toContain("inconclusive");
-    expect(measurementCalls().filter(([options]) => options.refreshRate === 120)).toHaveLength(36);
+    expect(measurementCalls().filter(([options]) => options.refreshRate === 120)).toHaveLength(24);
     expect(measurementCalls().filter(([options]) => options.refreshRate === 240)).toHaveLength(12);
     const comparison = savedReport().comparisons[0];
     expect(comparison.orderPlans).toHaveLength(2);
     for (const { order } of comparison.orderPlans) {
-      expect(order).toHaveLength(18);
+      expect(order).toHaveLength(12);
       expect(order.slice(0, 6).filter((side) => side === "candidate")).toHaveLength(3);
-      expect(order.slice(6).filter((side) => side === "candidate")).toHaveLength(6);
+      expect(order.slice(6).filter((side) => side === "candidate")).toHaveLength(3);
     }
   });
+});
+
+describe("scenario population selection", () => {
+  it("remeasures only the unresolved scenario within a file, preserving its other metrics", async () => {
+    mocks.batch.mockImplementation(async (options) => {
+      const result = batchResult(options);
+      const prototype = result.measurements[0];
+      result.measurements = [
+        { ...prototype, testName: "settled action" },
+        { ...prototype, testName: "unclear action" },
+        { ...prototype, testName: "unclear action", ordinal: 2 },
+      ].filter(
+        (record) =>
+          !options.scenarios ||
+          options.scenarios.some(
+            ({ file, testName }) => file === record.file && testName === record.testName,
+          ),
+      );
+      if (options.mode === "measurement" && options.root === "/candidate") {
+        for (const record of result.measurements) {
+          if (record.testName === "unclear action" && record.ordinal === 1) record.actualMs = 120;
+        }
+      }
+      return result;
+    });
+    expect(await executePerformanceGate("/project", [runs[0]])).toEqual([]);
+    expect(contractCalls()[0][0].scenarios).toBeUndefined();
+    const calls = measurementCalls();
+    expect(calls).toHaveLength(24);
+    expect(calls.slice(0, 12).every(([options]) => options.scenarios.length === 2)).toBe(true);
+    expect(
+      calls
+        .slice(12)
+        .every(
+          ([options]) =>
+            options.scenarios.length === 1 && options.scenarios[0].testName === "unclear action",
+        ),
+    ).toBe(true);
+    expect(savedReport().comparisons[0].metrics).toHaveLength(3);
+    expect(savedReport().warnings).toHaveLength(1);
+  });
+
+  it.each(["missing", "extra", "budget", "comparison", "ordinal", "duplicate"])(
+    "rejects %s measurement evidence on the first pair against contracts",
+    async (mutation) => {
+      mocks.batch.mockImplementation(async (options) => {
+        const result = batchResult(options);
+        if (options.mode !== "measurement") return result;
+        if (mutation === "missing") result.measurements = [];
+        if (mutation === "extra")
+          result.measurements.push({ ...result.measurements[0], ordinal: 2 });
+        if (mutation === "budget") result.measurements[0].referenceMs = 4;
+        if (mutation === "comparison") result.measurements[0].comparison = "lt";
+        if (mutation === "ordinal") result.measurements[0].ordinal = 2;
+        if (mutation === "duplicate") result.measurements.push(result.measurements[0]);
+        return result;
+      });
+      await expect(executePerformanceGate("/project", [runs[0]])).rejects.toThrow();
+      expect(measurementCalls()).toHaveLength(1);
+    },
+  );
 });

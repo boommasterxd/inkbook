@@ -6,7 +6,8 @@ import {
   type ElementMutation,
 } from "../../../src/domain/store/public";
 
-import { MeasuredSliceScheduler, percentile } from "./domain-scenarios";
+import { percentile } from "./action-distribution";
+import { MeasuredSliceScheduler } from "./domain-scenarios";
 import { createStandardDomainFixture } from "./standard-domain-fixture";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 import { expectTiming } from "../timing-assertions";

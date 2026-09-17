@@ -4,6 +4,11 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { clearTimeout as cancelTimer, setTimeout as scheduleTimer } from "node:timers";
 
 import { validTimingContract } from "./performance-comparison.mjs";
+import {
+  createScenarioSelection,
+  consumeScenarioResult,
+  validateSelectedMeasurements,
+} from "./performance-scenarios.mjs";
 
 const PREFIX = "INKBOOK_TIMING_RECORDS ";
 const OUTPUT_LIMIT = 32 * 1024 * 1024;
@@ -88,6 +93,7 @@ function parseTestResults(stdout, context) {
       throw new Error(`No test assertions for ${file}.`);
     }
     for (const assertion of result.assertionResults) {
+      if (context.selection && !consumeScenarioResult(context.selection, file, assertion)) continue;
       if (assertion.status !== "passed") {
         violations.push({
           file,
@@ -107,22 +113,25 @@ function parseTestResults(stdout, context) {
     }
   }
   assertComplete(remaining, "Vitest results");
+  if (context.selection) assertComplete(context.selection.remaining, "requested scenarios");
   if (report.success !== true && violations.length === 0) {
     throw new Error("Vitest did not report a successful batch.");
   }
   return violations;
 }
 
-export function parseBatchReport({ root, testFiles, refreshRate, stdout, stderr }) {
+export function parseBatchReport({ root, testFiles, refreshRate, stdout, stderr, scenarios }) {
   if (!REFRESH_RATES.includes(refreshRate)) throw new Error("Unsupported refresh rate.");
   const files = expectedFiles(root, testFiles);
-  const context = { root, files, refreshRate };
+  const selection = createScenarioSelection(scenarios, files);
+  const context = { root, files, refreshRate, selection };
   const violations = parseTestResults(stdout, context);
   const measurements = parseMeasurements(stderr, context);
+  if (selection) validateSelectedMeasurements(selection, measurements);
   return { files, measurements, violations };
 }
 
-function spawnBatch({ root, files, refreshRate, mode }) {
+function spawnBatch({ root, files, refreshRate, mode, selection }) {
   const env = {
     ...process.env,
     INKBOOK_PERFORMANCE_MODE: mode,
@@ -141,6 +150,7 @@ function spawnBatch({ root, files, refreshRate, mode }) {
       "--maxWorkers=1",
       "--isolate",
       ...(mode === "measurement" ? ["--cache=false"] : []),
+      ...(selection ? ["--testNamePattern", selection.pattern] : []),
     ],
     { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] },
   );
@@ -188,16 +198,26 @@ function captureBatch(child) {
   });
 }
 
-export async function runPerformanceBatch({ root, testFiles, refreshRate, mode, reportDirectory }) {
+export async function runPerformanceBatch({
+  root,
+  testFiles,
+  refreshRate,
+  mode,
+  reportDirectory,
+  scenarios,
+}) {
   if (!["contracts", "reference", "measurement"].includes(mode))
     throw new Error("Unsupported performance mode.");
   if (!REFRESH_RATES.includes(refreshRate)) throw new Error("Unsupported refresh rate.");
   const files = expectedFiles(root, testFiles);
+  if (scenarios !== undefined && mode !== "measurement")
+    throw new Error("Scenario selection requires measurement mode.");
+  const selection = createScenarioSelection(scenarios, files);
   const startedAt = performance.now();
-  const captured = await captureBatch(spawnBatch({ root, files, refreshRate, mode }));
+  const captured = await captureBatch(spawnBatch({ root, files, refreshRate, mode, selection }));
   let result = { files, measurements: [], violations: [] };
   try {
-    result = parseBatchReport({ root, testFiles, refreshRate, ...captured });
+    result = parseBatchReport({ root, testFiles, refreshRate, scenarios, ...captured });
   } catch (error) {
     result.violations.push({
       file: files.join(", "),

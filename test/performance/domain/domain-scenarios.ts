@@ -1,13 +1,12 @@
+import { distribution, type Distribution } from "./action-distribution";
 import type { InkElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
 import { ElementStore } from "../../../src/domain/store/public";
 import { moveSelectionTimeSliced } from "../../../src/editor/selection/transforms";
-import { LiveStrokeBuilder } from "../../../src/editor/tools/live-stroke";
 import {
   ActiveEditorHistory,
   type ActiveEditorHistoryModel,
 } from "../../../src/obsidian/embeds/active-editor/history";
 
-import { createMaximumStroke } from "./standard-domain-fixture";
 import { performanceMode } from "../timing-budget";
 
 // Virtual cost per observed checkpoint, not a physical-device speed estimate.
@@ -19,14 +18,6 @@ declare const process: {
 };
 declare function setImmediate(callback: () => void): void;
 
-export interface Distribution {
-  readonly maximum: number;
-  readonly p50: number;
-  readonly p95: number;
-  readonly p99: number | null;
-  readonly sampleCount: number;
-}
-
 export interface TransformRun {
   readonly atomicCommit: Distribution;
   readonly commit: Distribution;
@@ -36,13 +27,6 @@ export interface TransformRun {
   readonly maximumRetainedHistoryBytes: number;
   readonly maximumSlice: number;
   readonly slices: Distribution;
-}
-
-export interface MaximumStrokeRun {
-  readonly append: Distribution;
-  readonly handoff: Distribution;
-  readonly maximumFinalizedChunkSamples: number;
-  readonly maximumTailSamples: number;
 }
 
 export class MeasuredSliceScheduler {
@@ -242,82 +226,29 @@ function yieldToHostTask(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
-export function percentile(values: readonly number[], percentileValue: number): number {
-  const sorted = [...values].sort((left, right) => left - right);
-  const index = Math.min(sorted.length - 1, Math.ceil(sorted.length * percentileValue) - 1);
-  return sorted[index] as number;
-}
-
-function distribution(values: readonly number[]): Distribution {
-  return {
-    maximum: Math.max(...values),
-    p50: percentile(values, 0.5),
-    p95: percentile(values, 0.95),
-    p99: values.length >= 100 ? percentile(values, 0.99) : null,
-    sampleCount: values.length,
-  };
-}
-
-export function worstDistribution(values: readonly Distribution[]): Distribution {
-  const p99Values = values.flatMap(({ p99 }) => (p99 === null ? [] : [p99]));
-  return {
-    maximum: Math.max(...values.map(({ maximum }) => maximum)),
-    p50: Math.max(...values.map(({ p50 }) => p50)),
-    p95: Math.max(...values.map(({ p95 }) => p95)),
-    p99: p99Values.length === values.length ? Math.max(...p99Values) : null,
-    sampleCount: values[0]?.sampleCount ?? 0,
-  };
-}
-
-export function measureMaximumStrokeRun(strokeCount: number): MaximumStrokeRun {
-  const source = createMaximumStroke();
-  const appendDurations: number[] = [];
-  const handoffDurations: number[] = [];
-  let maximumTailSamples = 0;
-  let maximumFinalizedChunkSamples = 0;
-  for (let strokeIndex = 0; strokeIndex < strokeCount; strokeIndex += 1) {
-    const builder = new LiveStrokeBuilder({
-      input: { pressureSource: "pen", zoom: 1 },
-      style: source.style,
-    });
-    appendMaximumStroke(builder, source, appendDurations);
-    const handoffStarted = performance.now();
-    const commit = builder.finish();
-    handoffDurations.push(performance.now() - handoffStarted);
-    maximumTailSamples = Math.max(maximumTailSamples, commit.instrumentation.maximumTailSamples);
-    maximumFinalizedChunkSamples = Math.max(
-      maximumFinalizedChunkSamples,
-      commit.instrumentation.maximumFinalizedChunkSamples,
-    );
-    if (
-      commit.points.length !== 4096 * 3 ||
-      commit.geometry.length === 0 ||
-      commit.geometry.some(({ d }) => d.length === 0)
-    ) {
-      throw new Error("Maximum-stroke benchmark produced an incomplete handoff.");
-    }
-  }
-  return {
-    append: distribution(appendDurations),
-    handoff: distribution(handoffDurations),
-    maximumFinalizedChunkSamples,
-    maximumTailSamples,
-  };
-}
-
-function appendMaximumStroke(
-  builder: LiveStrokeBuilder,
-  source: StrokeElementV1,
-  durations: number[],
-): void {
-  for (let point = 0; point < source.points.length; point += 3) {
-    const started = performance.now();
-    builder.append({
-      pressure: source.points[point + 2] as number,
-      time: point / 3,
-      x: source.points[point] as number,
-      y: source.points[point + 1] as number,
-    });
-    durations.push(performance.now() - started);
-  }
+export function transformMetricsAnnotation(
+  distributions: Readonly<{
+    atomicCommit: Distribution;
+    commit: Distribution;
+    historyRegistration: Distribution;
+    materialization: Distribution;
+    slices: Distribution;
+  }>,
+  maximumSlice: number,
+  maximumHeapGrowthBytes: number,
+  maximumRetainedHistoryBytes: number,
+): string {
+  const { atomicCommit, commit, historyRegistration, materialization, slices } = distributions;
+  return (
+    `10k transform: materialization p50=${materialization.p50.toFixed(3)} ms, ` +
+    `p95=${materialization.p95.toFixed(3)} ms, ` +
+    `max=${materialization.maximum.toFixed(3)} ms; commit p50=${commit.p50.toFixed(3)} ms, ` +
+    `p95=${commit.p95.toFixed(3)} ms, ` +
+    `max=${commit.maximum.toFixed(3)} ms; atomicCommit p95=${atomicCommit.p95.toFixed(3)} ms, ` +
+    `max=${atomicCommit.maximum.toFixed(3)} ms; history p95=${historyRegistration.p95.toFixed(3)} ms, ` +
+    `max=${historyRegistration.maximum.toFixed(3)} ms; slice p95=${slices.p95.toFixed(3)} ms, ` +
+    `max=${maximumSlice.toFixed(3)} ms, ` +
+    `maxHeapGrowth=${(maximumHeapGrowthBytes / 1024 / 1024).toFixed(1)} MiB, ` +
+    `maxHistory=${(maximumRetainedHistoryBytes / 1024 / 1024).toFixed(1)} MiB, oldSpaceLimit=384 MiB`
+  );
 }

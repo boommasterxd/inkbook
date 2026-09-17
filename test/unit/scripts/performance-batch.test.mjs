@@ -288,3 +288,160 @@ describe("relative-only batch records", () => {
     },
   );
 });
+
+describe("exact scenario selection", () => {
+  const scenarios = [{ file, testName: "operation" }];
+
+  it("accepts only explicitly selected passed scenarios and skips others", () => {
+    const result = testResult();
+    result.assertionResults.push({ fullName: "unselected", status: "skipped" });
+    expect(
+      parseBatchReport(
+        report({
+          scenarios,
+          stdout: JSON.stringify({ success: true, testResults: [result] }),
+        }),
+      ).violations,
+    ).toEqual([]);
+  });
+
+  it("normalizes JSON ancestor names without changing timing names", () => {
+    const name = "suite [x] > operation (a+b)?";
+    const result = testResult();
+    result.assertionResults = [
+      {
+        fullName: "suite [x] operation (a+b)?",
+        ancestorTitles: ["suite [x]"],
+        title: "operation (a+b)?",
+        status: "passed",
+      },
+    ];
+    expect(
+      parseBatchReport(
+        report({
+          scenarios: [{ file, testName: name }],
+          stdout: JSON.stringify({ success: true, testResults: [result] }),
+          stderr: envelope(file, [{ ...measurement, testName: name }]),
+        }),
+      ).violations,
+    ).toEqual([]);
+  });
+
+  it.each([
+    [],
+    null,
+    [{ file, testName: "" }],
+    [{ file, testName: " " }],
+    [{ file: secondFile, testName: "operation" }],
+    [scenarios[0], scenarios[0]],
+    [{ file, testName: "a".repeat(4097) }],
+    Array(2001).fill(scenarios[0]),
+  ])("rejects malformed or unbounded selections", (selected) => {
+    expect(() => parseBatchReport(report({ scenarios: selected }))).toThrow();
+  });
+
+  it("requires a selected scenario in every requested file", () => {
+    expect(() => parseBatchReport(report({ scenarios, testFiles: [file, secondFile] }))).toThrow(
+      "missing for test file",
+    );
+  });
+
+  it.each(["pending", "skipped", "failed", "todo"])("blocks selected %s results", (status) => {
+    const result = testResult();
+    result.assertionResults[0].status = status;
+    expect(
+      parseBatchReport(
+        report({ scenarios, stdout: JSON.stringify({ success: false, testResults: [result] }) }),
+      ).violations,
+    ).toHaveLength(1);
+  });
+});
+
+describe("selected scenario evidence and execution", () => {
+  const scenarios = [{ file, testName: "operation" }];
+
+  it("rejects missing, duplicate, and unexpected executed scenarios", () => {
+    for (const assertions of [
+      [{ fullName: "other", status: "pending" }],
+      [testResult().assertionResults[0], testResult().assertionResults[0]],
+      [...testResult().assertionResults, { fullName: "other", status: "passed" }],
+    ]) {
+      expect(() =>
+        parseBatchReport(
+          report({
+            scenarios,
+            stdout: JSON.stringify({
+              success: true,
+              testResults: [{ ...testResult(), assertionResults: assertions }],
+            }),
+          }),
+        ),
+      ).toThrow();
+    }
+  });
+
+  it("rejects timing evidence for unselected or missing scenarios", () => {
+    for (const records of [[], [{ ...measurement, testName: "other" }]]) {
+      expect(() =>
+        parseBatchReport(report({ scenarios, stderr: envelope(file, records) })),
+      ).toThrow();
+    }
+  });
+
+  it("fails closed when a name shared across files selects an unrequested scenario", () => {
+    expect(() =>
+      parseBatchReport(
+        report({
+          scenarios: [...scenarios, { file: secondFile, testName: "other" }],
+          testFiles: [file, secondFile],
+          stdout: JSON.stringify({
+            success: true,
+            testResults: [testResult(), testResult(secondFile)],
+          }),
+        }),
+      ),
+    ).toThrow("Unexpected executed scenario");
+  });
+
+  it("escapes and anchors the CLI name pattern", async () => {
+    const child = mockChild();
+    const name = "operation [x].*(a+b)?$\\";
+    const pending = runPerformanceBatch({
+      root,
+      testFiles: [file],
+      refreshRate: 240,
+      mode: "measurement",
+      scenarios: [{ file, testName: name }],
+    });
+    child.stdout.write(
+      JSON.stringify({
+        success: true,
+        testResults: [
+          { ...testResult(), assertionResults: [{ fullName: name, status: "passed" }] },
+        ],
+      }),
+    );
+    child.stderr.write(envelope(file, [{ ...measurement, testName: name }]));
+    child.emit("close", 0, null);
+    expect((await pending).violations).toEqual([]);
+    const args = vi.mocked(spawn).mock.calls[0][1];
+    const pattern = new RegExp(args[args.indexOf("--testNamePattern") + 1]);
+    expect(pattern.test(name)).toBe(true);
+    expect(pattern.test(`prefix ${name}`)).toBe(false);
+    expect(pattern.test(`${name} suffix`)).toBe(false);
+    expect(pattern.test("operation xxaab")).toBe(false);
+  });
+
+  it("rejects scenario overrides outside measurement mode before spawning", async () => {
+    await expect(
+      runPerformanceBatch({
+        root,
+        testFiles: [file],
+        refreshRate: 240,
+        mode: "contracts",
+        scenarios,
+      }),
+    ).rejects.toThrow("measurement mode");
+    expect(spawn).not.toHaveBeenCalled();
+  });
+});

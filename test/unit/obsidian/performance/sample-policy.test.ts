@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { statisticalSamples } from "../../../performance/sample-policy";
+import { measurementRuns, statisticalSamples } from "../../../performance/sample-policy";
 
 beforeEach(() => {
   vi.stubEnv("INKBOOK_PERFORMANCE_PROFILE", undefined);
@@ -32,4 +32,30 @@ describe("statistical performance sample policy", () => {
       expect(() => statisticalSamples(count)).toThrow(TypeError);
     },
   );
+});
+
+describe("paired measurement run policy", () => {
+  it.each([1, 5, 20])("preserves %s full contract and reference runs", (count) => {
+    for (const mode of ["contracts", "reference"]) {
+      vi.stubEnv("INKBOOK_PERFORMANCE_MODE", mode);
+      expect(measurementRuns(count)).toBe(count);
+    }
+  });
+
+  it("uses one complete action population per paired measurement", () => {
+    vi.stubEnv("INKBOOK_PERFORMANCE_MODE", "measurement");
+    expect(measurementRuns(5)).toBe(1);
+  });
+
+  it.each([0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])(
+    "rejects invalid run count %s",
+    (count) => {
+      expect(() => measurementRuns(count)).toThrow(TypeError);
+    },
+  );
+
+  it("rejects an invalid performance mode", () => {
+    vi.stubEnv("INKBOOK_PERFORMANCE_MODE", "invalid");
+    expect(() => measurementRuns(5)).toThrow(TypeError);
+  });
 });

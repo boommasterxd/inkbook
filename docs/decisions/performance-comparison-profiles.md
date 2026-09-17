@@ -2,7 +2,7 @@
 
 ## Decision
 
-Use 120 Hz for recurring cadence-sensitive PR-base timing comparisons in both local and hosted gates. Preserve all five cadence profiles for deterministic contracts and explicit reference execution. Keep invariant comparisons at 120 Hz and budget-only comparisons at 240 Hz. The two existing performance shards, twenty-minute hosted job limits, 20-percent comparison boundary, six/eighteen-pair stages, and warning/error rules remain unchanged.
+Use 120 Hz for recurring cadence-sensitive PR-base timing comparisons in both local and hosted gates. Preserve all five cadence profiles for deterministic contracts and explicit reference execution. Keep invariant comparisons at 120 Hz and budget-only comparisons at 240 Hz. The two existing performance shards, twenty-minute hosted job limits, 20-percent comparison boundary, warning/error rules remain unchanged. Comparison stages now follow the [bounded-plan decision](performance-bounded-measurements.md).
 
 Separate existing benchmark scenarios with different source dependencies into focused files. Keep every scenario, full fixture, warmup, action sample population, statistic, budget, and assertion. File splitting enables the existing conservative input planner to skip genuinely unchanged timing inputs; it must not hide a dependency.
 

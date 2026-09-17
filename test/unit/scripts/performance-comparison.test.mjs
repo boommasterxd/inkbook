@@ -28,7 +28,7 @@ function compareRatios(values, overrides = {}) {
 }
 
 const six = (value) => Array(6).fill(value);
-const latePass = [...six(1.2), ...Array(12).fill(1)];
+const latePass = [...six(1.2), ...Array(6).fill(1)];
 
 describe("paired performance comparison", () => {
   it.each([
@@ -45,22 +45,22 @@ describe("paired performance comparison", () => {
   });
 
   it.each([
-    [13, 1, 2, "inconclusive"],
-    [14, 1, 2, "pass"],
-    [13, 2, 1, "inconclusive"],
-    [14, 2, 1, "regression"],
-  ])("requires fourteen strict signs at eighteen: %j", (count, majority, minority, status) => {
-    const values = [minority, ...Array(count).fill(majority), ...Array(17 - count).fill(minority)];
+    [9, 1, 2, "inconclusive"],
+    [10, 1, 2, "pass"],
+    [9, 2, 1, "inconclusive"],
+    [10, 2, 1, "regression"],
+  ])("requires ten strict signs at twelve: %j", (count, majority, minority, status) => {
+    const values = [minority, ...Array(count).fill(majority), ...Array(11 - count).fill(minority)];
     const result = compareRatios(values);
     expect(result.status).toBe(status);
-    expect(result.metrics[0]).toMatchObject({ stage: 18, requiredSigns: 14 });
+    expect(result.metrics[0]).toMatchObject({ stage: 12, requiredSigns: 10 });
   });
 
   it.each([
     [1, 2, "pass"],
     [2, 1, "regression"],
   ])("freezes a six-pair decision despite later opposing evidence", (first, later, status) => {
-    const values = [...six(first), ...Array(12).fill(later)];
+    const values = [...six(first), ...Array(6).fill(later)];
     const metric = compareRatios(values).metrics[0];
     expect(metric).toMatchObject({ status, stage: 6, requiredSigns: 6, ratios: values });
     expect(metric.lowerMedianBound).toBe(first);
@@ -68,18 +68,18 @@ describe("paired performance comparison", () => {
   });
 
   it("retains all raw ratios without using later zero values to reopen a decision", () => {
-    const metric = compareRatios([...six(1), ...Array(12).fill(0)]).metrics[0];
+    const metric = compareRatios([...six(1), ...Array(6).fill(0)]).metrics[0];
     expect(metric.status).toBe("pass");
     expect(metric.stage).toBe(6);
-    expect(metric.ratios).toEqual([...six(1), ...Array(12).fill(null)]);
+    expect(metric.ratios).toEqual([...six(1), ...Array(6).fill(null)]);
   });
 
   it("keeps zero observations inconclusive rather than dropping them", () => {
-    const values = [0, ...Array(17).fill(1)];
+    const values = [0, ...Array(11).fill(1)];
     expect(compareRatios(values).metrics[0]).toMatchObject({
       status: "inconclusive",
-      stage: 18,
-      belowCount: 17,
+      stage: 12,
+      belowCount: 11,
       lowerMedianBound: null,
       upperMedianBound: null,
     });
@@ -89,18 +89,18 @@ describe("paired performance comparison", () => {
   });
 
   it("reports stage-specific signs and median bounds without mutating inputs", () => {
-    const values = [2, ...Array(14).fill(1), 2, 2, 2];
-    const reference = rounds(Array(18).fill(1));
+    const values = [2, ...Array(10).fill(1), 2];
+    const reference = rounds(Array(12).fill(1));
     const candidate = rounds(values);
     const original = structuredClone([reference, candidate]);
     expect(compareTimingRounds(reference, candidate).metrics[0]).toMatchObject({
       ratios: values,
       minRatio: 1,
       maxRatio: 2,
-      stage: 18,
-      requiredSigns: 14,
-      belowCount: 14,
-      aboveCount: 4,
+      stage: 12,
+      requiredSigns: 10,
+      belowCount: 10,
+      aboveCount: 2,
       lowerMedianBound: 1,
       upperMedianBound: 1,
     });
@@ -109,6 +109,12 @@ describe("paired performance comparison", () => {
 });
 
 describe("paired performance evidence validation", () => {
+  it.each([0, 5, 7, 11, 13, 18])("rejects an undeclared %s-pair measurement plan", (count) => {
+    expect(() =>
+      compareTimingRounds(rounds(Array(count).fill(1)), rounds(Array(count).fill(1))),
+    ).toThrow("exactly six or twelve paired rounds");
+  });
+
   it("never hides an individual regression behind faster or uncertain metrics", () => {
     const reference = rounds(six(100));
     const candidate = rounds(six(200));
@@ -150,9 +156,9 @@ describe("paired performance evidence validation", () => {
     { testName: "different" },
     { statistic: "median" },
   ])("validates later contracts even after an early decision: %j", (change) => {
-    const candidate = rounds(Array(18).fill(1));
-    Object.assign(candidate[17][0], change);
-    expect(() => compareTimingRounds(rounds(Array(18).fill(1)), candidate)).toThrow();
+    const candidate = rounds(Array(12).fill(1));
+    Object.assign(candidate[11][0], change);
+    expect(() => compareTimingRounds(rounds(Array(12).fill(1)), candidate)).toThrow();
   });
 
   it("rejects missing, unequal, extra, duplicate and empty populations", () => {
@@ -161,7 +167,7 @@ describe("paired performance evidence validation", () => {
       null,
       [],
       rounds([1, 1, 1]),
-      rounds(Array(18).fill(1)),
+      rounds(Array(12).fill(1)),
       Array(6).fill([]),
     ]) {
       expect(() => compareTimingRounds(reference, candidate)).toThrow();
@@ -308,13 +314,13 @@ describe("relative-only comparisons", () => {
   );
 
   it("rejects drift from a relative metric to an absolute metric or another label", () => {
-    const reference = rounds(Array(18).fill(1), relative);
+    const reference = rounds(Array(12).fill(1), relative);
     for (const changed of [
       { label: "different work" },
       { comparison: "lte", referenceMs: 2, limitMs: 2, ratio: 0.5 },
     ]) {
-      const candidate = rounds(Array(18).fill(1), relative);
-      Object.assign(candidate[17][0], changed);
+      const candidate = rounds(Array(12).fill(1), relative);
+      Object.assign(candidate[11][0], changed);
       expect(() => compareTimingRounds(reference, candidate)).toThrow("contract differs");
     }
   });

@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { ElementStore } from "../../../src/domain/store/public";
 import { moveSelectionTimeSliced } from "../../../src/editor/selection/transforms";
 
-import { MeasuredSliceScheduler, percentile, requireStroke } from "./domain-scenarios";
+import { percentile } from "./action-distribution";
+import { MeasuredSliceScheduler, requireStroke } from "./domain-scenarios";
 import { createStandardDomainFixture } from "./standard-domain-fixture";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 import { expectTiming, recordRelativeTiming } from "../timing-assertions";

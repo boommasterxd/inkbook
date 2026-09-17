@@ -1,4 +1,4 @@
-export const COMPARISON_STAGES = Object.freeze([6, 18]);
+export const COMPARISON_STAGES = Object.freeze([6, 12]);
 export const REGRESSION_RATIO = 1.2;
 export const MAXIMUM_COMPARISON_METRICS = 20_000;
 
@@ -28,7 +28,7 @@ export function compareTimingRounds(referenceRounds, candidateRounds) {
 
 function indexRounds(rounds) {
   if (!Array.isArray(rounds) || !COMPARISON_STAGES.includes(rounds.length)) {
-    throw new Error("Performance comparison requires exactly six or eighteen paired rounds.");
+    throw new Error("Performance comparison requires exactly six or twelve paired rounds.");
   }
   return rounds.map((round) => {
     if (!Array.isArray(round) || round.length === 0 || round.length > MAXIMUM_COMPARISON_METRICS) {
@@ -129,7 +129,7 @@ function compareMetric(key, referenceValues, candidateValues) {
 
 function classifyStage(ratios) {
   const stage = ratios.length;
-  const requiredSigns = stage === COMPARISON_STAGES[0] ? 6 : 14;
+  const requiredSigns = stage === COMPARISON_STAGES[0] ? 6 : 10;
   const belowCount = ratios.filter((value) => value !== null && value < REGRESSION_RATIO).length;
   const aboveCount = ratios.filter((value) => value !== null && value > REGRESSION_RATIO).length;
   const ordered = ratios.includes(null) ? null : [...ratios].sort((left, right) => left - right);

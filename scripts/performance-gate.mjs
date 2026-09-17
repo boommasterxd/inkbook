@@ -7,6 +7,11 @@ import { runPerformanceBatch } from "./performance-batch.mjs";
 import { planPerformanceInputs } from "./performance-inputs.mjs";
 import { TIMING_PERFORMANCE_FILES } from "./performance-test-manifest.mjs";
 import { COMPARISON_STAGES, compareTimingRounds } from "./performance-comparison.mjs";
+import {
+  scenarioKey,
+  selectTimingScenarios,
+  validateScenarioMeasurements,
+} from "./performance-scenario-evidence.mjs";
 import { preparePerformanceWorkspaces } from "./performance-workspace.mjs";
 
 export async function executePerformanceGate(projectRoot, runs) {
@@ -181,7 +186,22 @@ async function compareVariant(variant, runs, workspaces, report) {
       validateInputPlan(testFiles, inputs);
       inputPlans.set(key, inputs);
     }
-    plans.push({ ...run, testFiles: inputs.pending, inputs });
+    const contracts = report.batches.find(
+      (batch) =>
+        batch.mode === "contracts" &&
+        batch.run === run.label &&
+        batch.refreshRate === run.refreshRate,
+    );
+    const population = contracts.measurements.filter((record) =>
+      inputs.pending.includes(record.file),
+    );
+    plans.push({
+      ...run,
+      testFiles: inputs.pending,
+      inputs,
+      population,
+      scenarios: selectTimingScenarios(population),
+    });
   }
   const identicalInputs = plans.flatMap((plan) =>
     plan.inputs.identicalInputs.map((proof) => ({ ...proof, refreshRate: plan.refreshRate })),
@@ -259,18 +279,28 @@ async function comparePlannedRun({ variant, run, workspaces, report }) {
     comparison = compareTimingRounds(referenceRounds, candidateRounds);
     if (comparison.status !== "inconclusive") break;
     if (round + 1 === COMPARISON_STAGES[0]) {
-      const unresolvedFiles = new Set(
+      const unresolvedScenarios = new Set(
         comparison.metrics
           .filter((metric) => metric.status === "inconclusive")
-          .map((metric) => JSON.parse(metric.key)[0]),
+          .map((metric) => JSON.stringify(JSON.parse(metric.key).slice(0, 2))),
       );
       settledMetrics = comparison.metrics.filter(
-        (metric) => !unresolvedFiles.has(JSON.parse(metric.key)[0]),
+        (metric) => !unresolvedScenarios.has(JSON.stringify(JSON.parse(metric.key).slice(0, 2))),
       );
-      activeRun = { ...run, testFiles: run.testFiles.filter((file) => unresolvedFiles.has(file)) };
+      const scenarios = run.scenarios.filter((scenario) =>
+        unresolvedScenarios.has(scenarioKey(scenario)),
+      );
+      activeRun = {
+        ...run,
+        scenarios,
+        testFiles: [...new Set(scenarios.map(({ file }) => file))],
+        population: run.population.filter((record) => unresolvedScenarios.has(scenarioKey(record))),
+      };
       for (const rounds of [referenceRounds, candidateRounds]) {
         for (let index = 0; index < rounds.length; index += 1) {
-          rounds[index] = rounds[index].filter((record) => unresolvedFiles.has(record.file));
+          rounds[index] = rounds[index].filter((record) =>
+            unresolvedScenarios.has(scenarioKey(record)),
+          );
         }
       }
     }
@@ -317,6 +347,7 @@ async function measureOriginalBatch({ variant, round, side, run, workspaces, rep
     refreshRate: run.refreshRate,
     mode: "measurement",
     reportDirectory: directory,
+    scenarios: run.scenarios,
   });
   report.batches.push({
     variant,
@@ -331,14 +362,7 @@ async function measureOriginalBatch({ variant, round, side, run, workspaces, rep
   });
   if (result.violations.length > 0)
     throw new Error(`Original benchmark failed: ${JSON.stringify(result.violations)}`);
-  const remaining = new Set(run.testFiles);
-  for (const measurement of result.measurements) {
-    if (!run.testFiles.includes(measurement.file) || measurement.refreshRate !== run.refreshRate) {
-      throw new Error("Unexpected original benchmark measurement.");
-    }
-    remaining.delete(measurement.file);
-  }
-  if (remaining.size > 0) throw new Error("Missing original benchmark timing population.");
+  validateScenarioMeasurements(run.population, result.measurements);
   return result;
 }
 
