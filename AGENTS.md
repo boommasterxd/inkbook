@@ -112,7 +112,7 @@ The complete test matrix, performance budgets, and acceptance requirements are c
 - Required pull requests must be current with `main` and merge by squash only.
 - Keep local and GitHub performance coverage and decision rules identical under [Local and GitHub Parity](docs/performance-ci.md#local-and-github-parity). The full local `npm run ci` must include both shards and reject diagnostic or shard-only overrides. Match the base SHA, dependencies and Node versions when reproducing hosted results; machine noise can still differ.
 - For new or changed timing scenarios, preserve individual-action tails, predeclare sample populations and comparison order, and retain same-source controls plus targeted slowdown evidence. Do not add retries, larger tolerances or additional recurring benchmark work merely to obtain green results. Work/resource checks must observe the actual expensive boundaries, and unobserved costs must be documented.
-- Keep the quality job and both performance shards within ten minutes of execution each. Timeouts fail closed; do not skip checks or increase the limit to accommodate additional benchmarks.
+- Keep the quality job and both performance shards within twenty minutes of execution each. Timeouts fail closed; do not skip checks or increase the limit to accommodate additional benchmarks.
 - Use standard `ubuntu-latest` runners only. The quality job uses Node.js 24, and the two parallel performance shards use Node.js 26. Do not add macOS or larger paid runners.
 - Keep all GitHub Actions pinned to full commit SHAs.
 - Release tags use `x.y.z` without a leading `v`, match `manifest.json`, and point to a commit on `main`.

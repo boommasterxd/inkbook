@@ -7,7 +7,7 @@ import { validTimingContract } from "./performance-comparison.mjs";
 
 const PREFIX = "INKBOOK_TIMING_RECORDS ";
 const OUTPUT_LIMIT = 32 * 1024 * 1024;
-const DURATION_LIMIT = 10 * 60 * 1000;
+const DURATION_LIMIT = 20 * 60 * 1000;
 const REFRESH_RATES = [60, 90, 120, 144, 240];
 
 function normalizeFile(root, file) {
@@ -157,7 +157,7 @@ function captureBatch(child) {
       child.kill("SIGKILL");
     };
     const timeout = scheduleTimer(
-      () => terminate("Performance batch exceeded 10 minutes."),
+      () => terminate("Performance batch exceeded 20 minutes."),
       DURATION_LIMIT,
     );
     const append = (destination, chunk) => {

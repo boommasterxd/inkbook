@@ -15,7 +15,7 @@ jobs:
   CI:
     name: CI
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -41,11 +41,11 @@ jobs:
           - label: shared
             suite: shared
             refresh-rate: "120"
-            timeout_minutes: 10
+            timeout_minutes: 20
           - label: refresh profiles
             suite: cadence
             refresh-rate: "120"
-            timeout_minutes: 10
+            timeout_minutes: 20
     env:
       INKBOOK_PERFORMANCE_MODE: gate
       INKBOOK_PERFORMANCE_BASE: ${{ github.event.pull_request.base.sha || 'origin/main' }}

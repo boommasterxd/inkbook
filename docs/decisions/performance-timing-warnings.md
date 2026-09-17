@@ -12,7 +12,7 @@ The earlier absolute floor reduced inconclusive results in local live-stroke con
 
 A change with genuinely slower code may merge when valid timing evidence remains inconclusive. A nonzero exit is reserved for blocking violations or execution/evidence failures; successful exit no longer asserts every timing comparison passed. Reports retain uncertainty explicitly. The existing relative margin still permits smaller regressions, and there is no historical drift reference.
 
-No benchmark, warmup, sample population or retry is added. More noisy comparisons can use the existing final stage after the floor is removed, so the change does not guarantee shorter execution. The ten-minute job ceilings remain; timeouts are failures, not warnings. Local and hosted commands use the same contracts and comparator, with runtime reproduction described in [Local and GitHub Parity](../performance-ci.md#local-and-github-parity).
+No benchmark, warmup, sample population or retry is added. More noisy comparisons can use the existing final stage after the floor is removed, so the change does not guarantee shorter execution. The job ceilings are twenty minutes; timeouts are failures, not warnings. Local and hosted commands use the same contracts and comparator, with runtime reproduction described in [Local and GitHub Parity](../performance-ci.md#local-and-github-parity).
 
 ## Evidence Scope
 

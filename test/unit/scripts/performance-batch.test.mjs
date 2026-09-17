@@ -200,11 +200,11 @@ describe("bounded performance batch execution", () => {
       mode: "contracts",
     });
     const [onTimeout, duration] = timers.setTimeout.mock.calls[0];
-    expect(duration).toBe(10 * 60 * 1000);
+    expect(duration).toBe(20 * 60 * 1000);
     onTimeout();
     expect(child.kill).toHaveBeenCalledWith("SIGKILL");
     expect((await pending).violations).toContainEqual(
-      expect.objectContaining({ message: expect.stringContaining("10 minutes") }),
+      expect.objectContaining({ message: expect.stringContaining("20 minutes") }),
     );
   });
 
