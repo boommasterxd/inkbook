@@ -114,13 +114,6 @@ function resolveCommit(root, ref) {
   }
 }
 
-export function resolveLocalBaseline(root, fallback) {
-  const refs = git(root, "for-each-ref", "--format=%(refname)", "refs/tags/performance-baseline");
-  return refs.split("\n").includes("refs/tags/performance-baseline")
-    ? resolveCommit(root, "refs/tags/performance-baseline")
-    : fallback;
-}
-
 function normalizedDependencies(manifest) {
   return JSON.stringify(
     DEPENDENCY_FIELDS.map((field) => [
@@ -188,8 +181,7 @@ export async function preparePerformanceWorkspaces(projectRoot, refs) {
   projectRoot = resolve(projectRoot);
   const harnessCommit = resolveCommit(projectRoot, "HEAD");
   const baseCommit = resolveCommit(projectRoot, refs.base);
-  const anchorCommit = resolveCommit(projectRoot, refs.anchor);
-  const lockSha256 = await verifyDependencies(projectRoot, [baseCommit, anchorCommit]);
+  const lockSha256 = await verifyDependencies(projectRoot, [baseCommit]);
   const files = await harnessFiles(projectRoot);
   const harnessHash = await hashWorkspaceFiles(projectRoot, files);
   const temporary = await mkdtemp(join(tmpdir(), "inkbook-performance-workspaces-"));
@@ -198,21 +190,17 @@ export async function preparePerformanceWorkspaces(projectRoot, refs) {
     const context = { projectRoot, temporary, files, harnessHash };
     const candidate = await createWorkspace(context, "candidate", harnessCommit);
     const base = await createWorkspace(context, "base", baseCommit);
-    const anchor =
-      baseCommit === anchorCommit ? base : await createWorkspace(context, "anchor", anchorCommit);
     return {
       candidate,
       base,
-      anchor,
       dispose,
       metadata: {
         projectRoot,
         harnessCommit,
         testedTree: git(projectRoot, "rev-parse", "HEAD^{tree}"),
         baseCommit,
-        anchorCommit,
         candidateSourceHash: candidate.sourceHash,
-        anchorSourceHash: anchor.sourceHash,
+        baseSourceHash: base.sourceHash,
         harnessHash,
         lockSha256,
         dirty: git(projectRoot, "status", "--porcelain").length > 0,

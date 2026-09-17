@@ -29,6 +29,7 @@ describe("automatic page-height performance", () => {
       ) + 2,
     );
     expect(harness.incompleteTransitions).toBe(0);
+    expect(harness.overlongTransitions).toBe(0);
     await annotate(
       interactionProfileAnnotation("automatic page growth and shrink", p99),
       "performance",
@@ -41,16 +42,18 @@ describe("automatic page-height performance", () => {
     const harness = scrollStabilityHarness();
     const release = harness.stability.begin();
     const durations = new Array<number>(INTERACTION_REFRESH_PROFILE.sampleCount);
+    let incorrectFrames = 0;
     for (let frame = 0; frame < durations.length; frame += 1) {
       if (frame % 2 === 0) harness.applyHostDrift(4);
       const started = performance.now();
       harness.flushFrame();
       durations[frame] = performance.now() - started;
-      expect(harness.scrollTop).toBe(1_200);
+      if (harness.scrollTop !== 1_200) incorrectFrames += 1;
     }
     release();
     harness.flushFrames();
     harness.stability.dispose();
+    expect(incorrectFrames).toBe(0);
 
     const p99 = pageHeightPercentile(durations, 0.99);
     expectTiming(p99, 0.25);
@@ -137,10 +140,14 @@ function transitionHarness(frameDurationMs: number) {
   const frameDurations: number[] = [];
   let maximumFramesPerTransition = 0;
   let incompleteTransitions = 0;
+  let overlongTransitions = 0;
   return {
     frameDurations,
     get incompleteTransitions() {
       return incompleteTransitions;
+    },
+    get overlongTransitions() {
+      return overlongTransitions;
     },
     get maximumFramesPerTransition() {
       return maximumFramesPerTransition;
@@ -171,9 +178,9 @@ function transitionHarness(frameDurationMs: number) {
       }
       maximumFramesPerTransition = Math.max(maximumFramesPerTransition, frameCount);
       if (!completed || transition.active) incompleteTransitions += 1;
-      expect(elapsed).toBeLessThanOrEqual(
-        TRANSITION_DURATIONS.automaticPageGrowth + frameDurationMs * 2,
-      );
+      if (!(elapsed <= TRANSITION_DURATIONS.automaticPageGrowth + frameDurationMs * 2)) {
+        overlongTransitions += 1;
+      }
     },
   };
 }
@@ -181,17 +188,34 @@ function transitionHarness(frameDurationMs: number) {
 it(`avoids toolbar measurement during ${INTERACTION_REFRESH_PROFILE.refreshRate} Hz root-height animation`, async ({
   annotate,
 }) => {
-  const h = readyResponsiveFixture();
+  let invalidations = 0;
+  const h = readyResponsiveFixture({
+    invalidateLayout: () => {
+      invalidations += 1;
+    },
+  });
+  const initialInvalidations = invalidations;
   const reads = h.toolbarReads();
-  const durations: number[] = [];
-  for (let frame = 0; frame < INTERACTION_REFRESH_PROFILE.sampleCount; frame += 1) {
-    const height =
-      200 + 100 * Math.sin((frame * INTERACTION_REFRESH_PROFILE.frameDurationMs) / 240);
+  const notifications = Array.from(
+    { length: INTERACTION_REFRESH_PROFILE.sampleCount },
+    (_, frame) =>
+      h.prepareRootResize(
+        700,
+        200 + 100 * Math.sin((frame * INTERACTION_REFRESH_PROFILE.frameDurationMs) / 240),
+      ),
+  );
+  const durations = new Array<number>(notifications.length);
+  let incorrectInvalidations = 0;
+  for (let frame = 0; frame < notifications.length; frame += 1) {
+    const notify = notifications[frame]!;
     const started = performance.now();
-    h.triggerRootResize(700, height);
+    notify();
     h.flushFrames();
-    durations.push(performance.now() - started);
+    durations[frame] = performance.now() - started;
+    if (invalidations !== initialInvalidations + frame + 1) incorrectInvalidations += 1;
   }
+  expect(incorrectInvalidations).toBe(0);
+  expect(invalidations - initialInvalidations).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
   expect(h.toolbarReads()).toBe(reads);
   expect(h.onLayout).not.toHaveBeenCalled();
   h.layout.dispose();

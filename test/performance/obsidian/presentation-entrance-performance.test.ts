@@ -18,24 +18,25 @@ describe("presentation entrance performance", () => {
     `keeps ${INTERACTION_REFRESH_PROFILE.refreshRate} Hz %s reveal frames below one millisecond`,
     async (target, { annotate }) => {
       const durations: number[] = [];
+      let invalidFrames = 0;
+      let invalidLifecycle = 0;
       for (let sample = 0; sample < 500; sample += 1) {
         const h = entranceHarness({ presented: false, initialHeight: sample % 2 === 0 ? 48 : 0 });
         h.entrance.prepare();
         if (target === "editor") h.entrance.holdForActivation();
         h.entrance.measure();
         if (target === "editor") {
-          expect(h.frames.size).toBe(0);
-          expect(h.entrance.revealActive(800)).toBe(true);
+          if (h.frames.size !== 0) invalidLifecycle += 1;
+          if (h.entrance.revealActive(800) !== true) invalidLifecycle += 1;
         }
-        measureFrames(h, durations);
-        expect(h.entrance.pending).toBe(false);
-        await expect(h.entrance.ready).resolves.toBe(true);
-        expect(h.presented).toBe(1);
-        expect(h.frames.size).toBe(0);
-        expect(h.listeners.size).toBe(0);
+        invalidFrames += measureFrames(h, durations);
+        if (h.entrance.pending !== false) invalidLifecycle += 1;
+        if ((await h.entrance.ready) !== true) invalidLifecycle += 1;
+        if (h.presented !== 1) invalidLifecycle += 1;
+        if (h.frames.size !== 0) invalidLifecycle += 1;
+        if (h.listeners.size !== 0) invalidLifecycle += 1;
       }
-      const p99 = pageHeightPercentile(durations, 0.99);
-      expectTiming(p99, 1);
+      const p99 = assertPresentationMeasurements(durations, invalidFrames, invalidLifecycle);
       await annotate(interactionProfileAnnotation(`${target} entrance`, p99), "performance");
     },
   );
@@ -45,26 +46,32 @@ it.for([false, true])(
   `animates loading placeholders and preserves handoff height at ${INTERACTION_REFRESH_PROFILE.refreshRate} Hz (early=%s)`,
   async (early, { annotate }) => {
     const durations: number[] = [];
+    let invalidFrames = 0;
+    let invalidHeights = 0;
+    let retainedWork = 0;
     for (let sample = 0; sample < 500; sample += 1) {
       const h = loadingMotionHarness();
-      expect(h.loading.renderedHeight).toBe(0);
-      measureFrames(h, durations, early);
+      if (!Object.is(h.loading.renderedHeight, 0)) invalidHeights += 1;
+      invalidFrames += measureFrames(h, durations, early);
       const height = h.loading.renderedHeight;
       if (early) {
-        expect(height).toBeGreaterThan(0);
-        expect(height).toBeLessThan(48);
-      } else expect(height).toBe(48);
+        if (!(height > 0)) invalidHeights += 1;
+        if (!(height < 48)) invalidHeights += 1;
+      } else if (height !== 48) invalidHeights += 1;
       const started = performance.now();
       h.loading.dispose();
       durations.push(performance.now() - started);
-      expect(h.loading.renderedHeight).toBe(height);
-      expect(h.frames.size).toBe(0);
-      expect(h.timers.size).toBe(0);
+      if (!Object.is(h.loading.renderedHeight, height)) invalidHeights += 1;
+      if (h.frames.size !== 0) retainedWork += 1;
+      if (h.timers.size !== 0) retainedWork += 1;
       const preview = entranceHarness({ presented: false, initialHeight: height });
       preview.entrance.prepare();
-      expect(preview.renderedHeight).toBe(height);
+      if (!Object.is(preview.renderedHeight, height)) invalidHeights += 1;
       preview.entrance.dispose();
     }
+    expect(invalidFrames).toBe(0);
+    expect(invalidHeights).toBe(0);
+    expect(retainedWork).toBe(0);
     const p99 = pageHeightPercentile(durations, 0.99);
     expectTiming(p99, 1);
     await annotate(
@@ -117,36 +124,51 @@ function measureFrames(
   },
   durations: number[],
   early = false,
-): void {
+): number {
   const frameDuration = INTERACTION_REFRESH_PROFILE.frameDurationMs;
   const frameBound = Math.ceil(TRANSITION_DURATIONS.automaticPageGrowth / frameDuration) + 2;
   let frames = 0;
+  let violations = 0;
   while (harness.frames.size > 0 && frames <= frameBound) {
-    expect(harness.frames.size).toBe(1);
+    if (harness.frames.size !== 1) violations += 1;
     const started = performance.now();
     harness.frame(frames * frameDuration);
     durations.push(performance.now() - started);
     frames += 1;
     if (early && frames === 3) break;
   }
-  expect(frames).toBeLessThanOrEqual(frameBound);
+  if (frames > frameBound) violations += 1;
+  return violations;
 }
 
 it(`keeps ${INTERACTION_REFRESH_PROFILE.refreshRate} Hz exit frames below one millisecond`, async ({
   annotate,
 }) => {
   const durations: number[] = [];
+  let invalidFrames = 0;
+  let invalidLifecycle = 0;
   for (let sample = 0; sample < 500; sample += 1) {
     const h = exitHarness(400, { before: 24, after: 24 });
     const ready = h.exit.begin();
-    measureFrames(h, durations);
-    await expect(ready).resolves.toBe(true);
-    expect(h.height).toBe(0);
-    expect(h.frames.size).toBe(0);
+    invalidFrames += measureFrames(h, durations);
+    if ((await ready) !== true) invalidLifecycle += 1;
+    if (!Object.is(h.height, 0)) invalidLifecycle += 1;
+    if (h.frames.size !== 0) invalidLifecycle += 1;
     h.exit.dispose();
-    expect(h.listeners.size).toBe(0);
+    if (h.listeners.size !== 0) invalidLifecycle += 1;
   }
-  const p99 = pageHeightPercentile(durations, 0.99);
-  expectTiming(p99, 1);
+  const p99 = assertPresentationMeasurements(durations, invalidFrames, invalidLifecycle);
   await annotate(interactionProfileAnnotation("presentation exit", p99), "performance");
 });
+
+function assertPresentationMeasurements(
+  durations: readonly number[],
+  frameViolations: number,
+  lifecycleViolations: number,
+): number {
+  expect(frameViolations).toBe(0);
+  expect(lifecycleViolations).toBe(0);
+  const p99 = pageHeightPercentile(durations, 0.99);
+  expectTiming(p99, 1);
+  return p99;
+}

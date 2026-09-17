@@ -13,18 +13,33 @@ interface TimingOptions {
   readonly label?: string;
 }
 
-interface TimingRecord {
+interface TimingIdentity {
   readonly testName: string;
   readonly testPath: string;
   readonly ordinal: number;
-  readonly actualMs: number;
-  readonly referenceMs: number;
-  readonly limitMs: number;
-  readonly ratio: number;
   readonly refreshRate: number;
-  readonly comparison: "lt" | "lte";
-  readonly label?: string;
 }
+
+type TimingValue = {
+  readonly actualMs: number;
+} & (
+  | {
+      readonly referenceMs: number;
+      readonly limitMs: number;
+      readonly ratio: number;
+      readonly comparison: "lt" | "lte";
+      readonly label?: string;
+    }
+  | {
+      readonly referenceMs: null;
+      readonly limitMs: null;
+      readonly ratio: null;
+      readonly comparison: "relative";
+      readonly label: string;
+    }
+);
+
+type TimingRecord = TimingIdentity & TimingValue;
 
 const MAXIMUM_RECORDS = 20_000;
 const records: TimingRecord[] = [];
@@ -49,6 +64,7 @@ export function expectTiming(
 ): void {
   const limitMs = timingBudget(referenceMs);
   if (
+    "statistic" in options ||
     !Number.isFinite(actualMs) ||
     actualMs < 0 ||
     !Number.isFinite(referenceMs) ||
@@ -61,7 +77,14 @@ export function expectTiming(
     );
   }
   if (process.env["INKBOOK_PERFORMANCE_REPORT"] === "1") {
-    recordTiming(actualMs, referenceMs, limitMs, options);
+    recordTiming({
+      actualMs,
+      referenceMs,
+      limitMs,
+      ratio: actualMs / referenceMs,
+      comparison: options.exclusive ? "lt" : "lte",
+      ...(options.label === undefined ? {} : { label: options.label }),
+    });
   }
   if (performanceMode() !== "reference") return;
   const assertion = options.soft
@@ -71,12 +94,24 @@ export function expectTiming(
   else assertion.toBeLessThanOrEqual(limitMs);
 }
 
-function recordTiming(
-  actualMs: number,
-  referenceMs: number,
-  limitMs: number,
-  options: TimingOptions,
-): void {
+/** Records existing measured work for paired comparison without assigning an absolute budget. */
+export function recordRelativeTiming(actualMs: number, label: string): void {
+  performanceMode();
+  if (!Number.isFinite(actualMs) || actualMs < 0 || typeof label !== "string" || !label.trim()) {
+    throw new TypeError("Relative timing requires a finite nonnegative duration and a label.");
+  }
+  if (process.env["INKBOOK_PERFORMANCE_REPORT"] !== "1") return;
+  recordTiming({
+    actualMs,
+    label,
+    referenceMs: null,
+    limitMs: null,
+    ratio: null,
+    comparison: "relative",
+  });
+}
+
+function recordTiming(value: TimingValue): void {
   if (records.length >= MAXIMUM_RECORDS) {
     throw new RangeError("Performance timing telemetry exceeded 20000 records.");
   }
@@ -92,12 +127,7 @@ function recordTiming(
     testName,
     testPath,
     ordinal,
-    actualMs,
-    referenceMs,
-    limitMs,
-    ratio: actualMs / referenceMs,
     refreshRate,
-    comparison: options.exclusive ? "lt" : "lte",
-    ...(options.label === undefined ? {} : { label: options.label }),
+    ...value,
   });
 }

@@ -4,7 +4,12 @@ import { ActiveEditorLayout } from "../../../../src/obsidian/embeds/active-edito
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene/index";
 import { domRect } from "../../../fixtures/obsidian/active-editor";
 import { FakeClassList } from "../../../fixtures/obsidian/class-list";
-export function responsiveFixture() {
+
+interface ResponsiveFixtureOptions {
+  readonly invalidateLayout?: () => void;
+}
+
+export function responsiveFixture(options: ResponsiveFixtureOptions = {}) {
   const frames = new Map<number, FrameRequestCallback>();
   const observed = new Set<Element>();
   let frameTime = 0;
@@ -58,13 +63,14 @@ export function responsiveFixture() {
       get hasPendingSceneCommit() {
         return false;
       },
-      invalidateLayout,
+      invalidateLayout: options.invalidateLayout ?? invalidateLayout,
       setCamera: vi.fn(),
       setPage: vi.fn(),
     } as unknown as SvgSceneRenderer,
     root,
     storeMaximumBottom: () => undefined,
   });
+  const prepareRootResize = rootResizePreparation(callbacks, root, rect);
   return {
     flushFrames: () => {
       while (frames.size > 0) {
@@ -89,10 +95,8 @@ export function responsiveFixture() {
     toolbar: () => toolbar,
     toolbarReads: () => toolbarReads,
     triggerResize: () => callbacks.resize?.([], {} as ResizeObserver),
-    triggerRootResize: (width: number, height: number) => {
-      rect.width = width;
-      callbacks.resize?.([resizeEntry(root, width, height)], {} as ResizeObserver);
-    },
+    prepareRootResize,
+    triggerRootResize: (width: number, height: number) => prepareRootResize(width, height)(),
     triggerToolbarResize: () =>
       callbacks.resize?.(
         [{ target: toolbar } as unknown as ResizeObserverEntry],
@@ -104,6 +108,21 @@ export function responsiveFixture() {
 interface ResponsiveCallbacks {
   mutation?: MutationCallback;
   resize?: ResizeObserverCallback;
+}
+
+function rootResizePreparation(
+  callbacks: ResponsiveCallbacks,
+  root: HTMLElement,
+  rect: { width: number },
+) {
+  return (width: number, height: number) => {
+    const entries = [resizeEntry(root, width, height)];
+    const observer = {} as ResizeObserver;
+    return () => {
+      rect.width = width;
+      callbacks.resize?.(entries, observer);
+    };
+  };
 }
 
 function responsiveOwnerWindow(options: {
@@ -173,8 +192,8 @@ function resizeEntry(target: HTMLElement, width: number, height: number): Resize
   };
 }
 
-export function readyResponsiveFixture() {
-  const fixture = responsiveFixture();
+export function readyResponsiveFixture(options: ResponsiveFixtureOptions = {}) {
+  const fixture = responsiveFixture(options);
   fixture.layout.chromeMounted();
   fixture.triggerRootResize(700, 200);
   fixture.flushFrames();

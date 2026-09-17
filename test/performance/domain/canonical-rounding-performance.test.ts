@@ -10,7 +10,7 @@ describe("canonical coordinate rounding", () => {
     annotate,
   }) => {
     const coordinates = Array.from({ length: 4096 * 2 }, (_, index) => index * 0.731 - 1999.781);
-    const durations: number[] = [];
+    const durations = new Array<number>(600);
     let checksum = 0;
     for (let frame = 0; frame < 600; frame += 1) {
       const measured = measureCanonicalRoundingFrame(
@@ -20,7 +20,7 @@ describe("canonical coordinate rounding", () => {
         checksum,
       );
       checksum = measured.checksum;
-      durations.push(measured.duration);
+      durations[frame] = measured.duration;
     }
     const p99 = interactionP99(durations);
     expect(Number.isFinite(checksum)).toBe(true);

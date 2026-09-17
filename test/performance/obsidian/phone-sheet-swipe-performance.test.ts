@@ -23,27 +23,37 @@ afterEach(() => {
 describe("phone sheet swipe performance", () => {
   it("coalesces continuous touch input without repeated layout reads", async ({ annotate }) => {
     installObsidianDomHelpers();
-    const fixture = createPhoneSheetSwipeHarness();
+    const fixture = createPhoneSheetSwipeHarness(0, false);
     const { controller, frames } = fixture;
-    const heightRead = vi.spyOn(fixture.surface, "getBoundingClientRect");
-    fixture.handle.dispatchEvent(touchPointer("pointerdown", 10, 1, 0));
+    try {
+      const heightRead = vi.spyOn(fixture.surface, "getBoundingClientRect");
+      const events = Array.from({ length: INTERACTION_REFRESH_PROFILE.sampleCount }, (_, frame) => [
+        touchPointer("pointermove", 10 + frame * 2, 1, frame + 1),
+        touchPointer("pointermove", 11 + frame * 2, 1, frame + 2),
+        touchPointer("pointermove", 12 + frame * 2, 1, frame + 3),
+      ]);
+      fixture.handle.dispatchEvent(touchPointer("pointerdown", 10, 1, 0));
 
-    const durations = measureInteractionFrames((frame) => {
-      fixture.surface.dispatchEvent(touchPointer("pointermove", 10 + frame * 2, 1, frame + 1));
-      fixture.surface.dispatchEvent(touchPointer("pointermove", 11 + frame * 2, 1, frame + 2));
-      fixture.surface.dispatchEvent(touchPointer("pointermove", 12 + frame * 2, 1, frame + 3));
-      frames.flush();
-    });
+      const durations = measureInteractionFrames((frame) => {
+        for (const event of events[frame]!) fixture.surface.dispatchEvent(event);
+        frames.flush();
+      });
 
-    const p99 = interactionP99(durations);
-    expect(heightRead).toHaveBeenCalledOnce();
-    expect(frames.maxPending).toBe(1);
-    expect(frames.pending).toBe(0);
-    expect(fixture.dragWrites).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
-    expect(fixture.inheritedWrites).toBe(0);
-    expect(fixture.surface.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("");
-    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
-    await annotate(interactionProfileAnnotation("phone sheet swipe", p99), "performance");
-    controller.dispose();
+      const p99 = interactionP99(durations);
+      expect(heightRead).toHaveBeenCalledOnce();
+      expect(frames.maxPending).toBe(1);
+      expect(frames.pending).toBe(0);
+      expect(fixture.dragWrites).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
+      expect(fixture.inheritedWrites).toBe(0);
+      expect(fixture.surface.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("");
+      expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+      await annotate(interactionProfileAnnotation("phone sheet swipe", p99), "performance");
+    } finally {
+      try {
+        controller.dispose();
+      } finally {
+        fixture.restore();
+      }
+    }
   });
 });

@@ -18,7 +18,7 @@ it("hands off overdue loading feedback synchronously within the frame budget", a
     setTimeout: () => ++scheduledWork,
   });
   const feedback = new PresentationOperationFeedback(root as unknown as HTMLElement);
-  const durations: number[] = [];
+  const durations = new Array<number>(INTERACTION_REFRESH_PROFILE.sampleCount);
   let invalidIndicators = 0;
   let retainedIndicators = 0;
   for (let sample = -100; sample < INTERACTION_REFRESH_PROFILE.sampleCount; sample += 1) {
@@ -34,7 +34,7 @@ it("hands off overdue loading feedback synchronously within the frame budget", a
       invalidIndicators += 1;
     }
     operation.finish();
-    if (sample >= 0) durations.push(performance.now() - started);
+    if (sample >= 0) durations[sample] = performance.now() - started;
     retainedIndicators += root.children.length;
   }
   feedback.dispose();
@@ -64,7 +64,7 @@ it("positions detached loading feedback after attachment within the frame budget
     cancelAnimationFrame: (handle: number) => frames.delete(handle),
     setTimeout: () => ++timers,
   });
-  const durations: number[] = [];
+  const durations = new Array<number>(INTERACTION_REFRESH_PROFILE.sampleCount);
   let invalidPositions = 0;
   let retainedResources = 0;
   for (let sample = -100; sample < INTERACTION_REFRESH_PROFILE.sampleCount; sample += 1) {
@@ -93,7 +93,7 @@ it("positions detached loading feedback after attachment within the frame budget
       invalidPositions += 1;
     }
     feedback.dispose();
-    if (sample >= 0) durations.push(performance.now() - started);
+    if (sample >= 0) durations[sample] = performance.now() - started;
     retainedResources += root.children.length + frames.size;
   }
   expect(invalidPositions).toBe(0);

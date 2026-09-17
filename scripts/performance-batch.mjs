@@ -3,9 +3,11 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { clearTimeout as cancelTimer, setTimeout as scheduleTimer } from "node:timers";
 
+import { validTimingContract } from "./performance-comparison.mjs";
+
 const PREFIX = "INKBOOK_TIMING_RECORDS ";
 const OUTPUT_LIMIT = 32 * 1024 * 1024;
-const DURATION_LIMIT = 12 * 60 * 1000;
+const DURATION_LIMIT = 10 * 60 * 1000;
 const REFRESH_RATES = [60, 90, 120, 144, 240];
 
 function normalizeFile(root, file) {
@@ -43,12 +45,9 @@ function validateMeasurement(record, context) {
     record.ordinal > 0 &&
     Number.isFinite(record.actualMs) &&
     record.actualMs >= 0 &&
-    Number.isFinite(record.referenceMs) &&
-    record.referenceMs > 0 &&
-    Number.isFinite(record.ratio) &&
-    record.ratio === record.actualMs / record.referenceMs &&
+    validTimingContract(record) &&
+    (record.comparison === "relative" || Number.isFinite(record.ratio)) &&
     record.refreshRate === context.refreshRate &&
-    ["lt", "lte"].includes(record.comparison) &&
     (record.label === undefined || typeof record.label === "string");
   if (!valid) throw new Error("Invalid timing measurement.");
   if (normalizeFile(context.root, record.testPath) !== context.file) {
@@ -158,7 +157,7 @@ function captureBatch(child) {
       child.kill("SIGKILL");
     };
     const timeout = scheduleTimer(
-      () => terminate("Performance batch exceeded 12 minutes."),
+      () => terminate("Performance batch exceeded 10 minutes."),
       DURATION_LIMIT,
     );
     const append = (destination, chunk) => {

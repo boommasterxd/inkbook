@@ -23,12 +23,12 @@ describe("bounded canonical pressure geometry", () => {
     annotate,
   }) => {
     const centers = Array.from({ length: 16 }, (_, index) => sample(index));
-    const durations: number[] = [];
+    const durations = new Array<number>(600);
     let maximumParts = 0;
     for (let run = 0; run < 600; run += 1) {
       const started = performance.now();
       const parts = buildPressureOutline(centers, 22);
-      durations.push(performance.now() - started);
+      durations[run] = performance.now() - started;
       maximumParts = Math.max(maximumParts, parts.length);
     }
     const p99 = interactionP99(durations);
@@ -41,11 +41,11 @@ describe("bounded canonical pressure geometry", () => {
     annotate,
   }) => {
     const source = Array.from({ length: 70 }, (_, index) => sample(index));
-    const durations: number[] = [];
+    const durations = new Array<number>(600);
     let minimumCommands = Infinity;
     for (let run = 0; run < 600; run += 1) {
       const { parts, duration } = measurePressureResizeFrame(source, run, buildPressureOutline);
-      durations.push(duration);
+      durations[run] = duration;
       minimumCommands = Math.min(minimumCommands, parts[0]!.d.match(/[Qq]/g)!.length);
       expect(parts).toHaveLength(1);
     }
@@ -62,13 +62,13 @@ describe("bounded canonical pressure geometry", () => {
       input: { pressureSource: "pen", zoom: 1 },
       style: STYLE,
     });
-    const durations: number[] = [];
+    const durations = new Array<number>(512);
     let stableChunk: LiveStrokeChunk | undefined;
     for (let index = 0; index < 4096; index += 8) {
       const batch = Array.from({ length: 8 }, (_, offset) => sample(index + offset));
       const started = performance.now();
       const preview = builder.appendBatch(batch);
-      durations.push(performance.now() - started);
+      durations[index / 8] = performance.now() - started;
       if (stableChunk !== undefined) expect(preview.finalizedChunks[0]).toBe(stableChunk);
       stableChunk ??= preview.finalizedChunks[0];
       expect(builder.instrumentation().commitBuilds).toBe(0);

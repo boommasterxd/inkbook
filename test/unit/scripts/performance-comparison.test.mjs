@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { compareTimingRounds } from "../../../scripts/performance-comparison.mjs";
+import { compareTimingRounds, REGRESSION_RATIO } from "../../../scripts/performance-comparison.mjs";
 
 function rounds(values, overrides = {}) {
   return values.map((actualMs) => [
@@ -17,19 +17,25 @@ function rounds(values, overrides = {}) {
   ]);
 }
 
-function compareRatios(values) {
-  return compareTimingRounds(rounds(values.map(() => 1)), rounds(values));
+function compareRatios(values, overrides = {}) {
+  return compareTimingRounds(
+    rounds(
+      values.map(() => 1),
+      overrides,
+    ),
+    rounds(values, overrides),
+  );
 }
 
 const six = (value) => Array(6).fill(value);
-const latePass = [...six(1.5), ...Array(12).fill(1)];
+const latePass = [...six(1.2), ...Array(12).fill(1)];
 
 describe("paired performance comparison", () => {
   it.each([
     [six(1), "pass"],
-    [six(1.499), "pass"],
-    [six(1.5), "inconclusive"],
-    [six(1.501), "regression"],
+    [six(1.199), "pass"],
+    [six(1.2), "inconclusive"],
+    [six(1.201), "regression"],
     [[1, 1, 1, 1, 1, 2], "inconclusive"],
     [[2, 2, 2, 2, 2, 1], "inconclusive"],
     [[0, 1, 1, 1, 1, 1], "inconclusive"],
@@ -117,6 +123,13 @@ describe("paired performance evidence validation", () => {
   });
 
   it.each([
+    { statistic: undefined },
+    { statistic: "median" },
+    { statistic: null },
+    { statistic: "p99" },
+    { statistic: "mean" },
+    { statistic: 1.1 },
+    { statistic: {} },
     { actualMs: NaN },
     { actualMs: Infinity },
     { actualMs: -1 },
@@ -131,14 +144,16 @@ describe("paired performance evidence validation", () => {
     expect(() => compareTimingRounds(rounds(six(1)), rounds(six(1), invalid))).toThrow();
   });
 
-  it.each([{ referenceMs: 3 }, { comparison: "lt" }, { testName: "different" }])(
-    "validates later contracts even after an early decision: %j",
-    (change) => {
-      const candidate = rounds(Array(18).fill(1));
-      Object.assign(candidate[17][0], change);
-      expect(() => compareTimingRounds(rounds(Array(18).fill(1)), candidate)).toThrow();
-    },
-  );
+  it.each([
+    { referenceMs: 3 },
+    { comparison: "lt" },
+    { testName: "different" },
+    { statistic: "median" },
+  ])("validates later contracts even after an early decision: %j", (change) => {
+    const candidate = rounds(Array(18).fill(1));
+    Object.assign(candidate[17][0], change);
+    expect(() => compareTimingRounds(rounds(Array(18).fill(1)), candidate)).toThrow();
+  });
 
   it("rejects missing, unequal, extra, duplicate and empty populations", () => {
     const reference = rounds(six(1));
@@ -160,8 +175,147 @@ describe("paired performance evidence validation", () => {
 
   it("rejects overflowing ratios and inconsistent reference rounds", () => {
     expect(() => compareTimingRounds(rounds(six(Number.MIN_VALUE)), rounds(six(1)))).toThrow();
+    expect(
+      compareTimingRounds(rounds(six(Number.MAX_VALUE)), rounds(six(Number.MAX_VALUE))).status,
+    ).toBe("pass");
     const reference = rounds(six(1));
     reference[2][0].referenceMs = 3;
     expect(() => compareTimingRounds(reference, rounds(six(1)))).toThrow();
+  });
+});
+
+describe("timing regression policies", () => {
+  it.each([
+    { testName: "operation p99" },
+    { testName: "single elapsed operation" },
+    { testName: "maximum frame duration" },
+    { testName: "operation median" },
+  ])("uses the same threshold regardless of the metric name: %j", (metadata) => {
+    for (const [ratio, status] of [
+      [1.1, "pass"],
+      [1.199, "pass"],
+      [1.2, "inconclusive"],
+      [1.201, "regression"],
+    ]) {
+      expect(compareRatios(six(ratio), metadata).metrics[0]).toMatchObject({
+        status,
+        regressionRatio: 1.2,
+      });
+    }
+    expect(REGRESSION_RATIO).toBe(1.2);
+    for (const [base, candidate, budget, status] of [
+      [0.01, 0.011, 2, "pass"],
+      [0.01, 0.012, 2, "inconclusive"],
+      [0.01, 0.02, 2, "regression"],
+      [0.01, 0.02, 0.25, "regression"],
+      [0.01, 0.011, 0.25, "pass"],
+      [0, 0.001, 2, "inconclusive"],
+      [0.001, 0, 2, "inconclusive"],
+    ]) {
+      const contract = { ...metadata, referenceMs: budget };
+      const result = compareTimingRounds(
+        rounds(six(base), contract),
+        rounds(six(candidate), contract),
+      );
+      expect(result.metrics[0]).toMatchObject({ status, regressionRatio: 1.2 });
+    }
+    const mixed = compareTimingRounds(
+      rounds([0.01, 1, 0.01, 1, 0.01, 1], metadata),
+      rounds([0.09, 1.1, 0.09, 1.1, 0.09, 1.1], metadata),
+    );
+    expect(mixed.status).toBe("inconclusive");
+  });
+
+  it("ignores caller-supplied thresholds", () => {
+    expect(compareRatios(six(1.3), { regressionRatio: 2 }).metrics[0]).toMatchObject({
+      status: "regression",
+      regressionRatio: 1.2,
+    });
+    const contract = { minimumIncreaseMs: 100 };
+    expect(
+      compareTimingRounds(rounds(six(0.01), contract), rounds(six(0.2), contract)).status,
+    ).toBe("regression");
+  });
+
+  it.each([0, 1])("rejects obsolete median evidence on side %s", (side) => {
+    const paired = [rounds(six(1)), rounds(six(1))];
+    paired[side][0][0].statistic = "median";
+    expect(() => compareTimingRounds(...paired)).toThrow("Invalid performance comparison");
+  });
+});
+
+describe("relative-only comparisons", () => {
+  const relative = {
+    referenceMs: null,
+    limitMs: null,
+    ratio: null,
+    comparison: "relative",
+    label: "total work",
+  };
+
+  it.each([
+    [1, "pass"],
+    [1.2, "inconclusive"],
+    [1.6, "regression"],
+    [0, "inconclusive"],
+  ])(
+    "compares relative work %s with the shared ratio and no reference-device budget",
+    (ratio, status) => {
+      expect(compareRatios(six(ratio), relative).metrics[0]).toMatchObject({
+        status,
+        regressionRatio: 1.2,
+      });
+      expect(
+        compareTimingRounds(rounds(six(0.01), relative), rounds(six(0.02), relative)).status,
+      ).toBe("regression");
+      expect(
+        compareTimingRounds(rounds(six(0.01), relative), rounds(six(0.2), relative)).status,
+      ).toBe("regression");
+    },
+  );
+
+  it("keeps relative regression visible alongside a passing absolute metric", () => {
+    const reference = rounds(six(1));
+    const candidate = rounds(six(1));
+    for (let index = 0; index < 6; index += 1) {
+      reference[index].push(...rounds([1], { ...relative, ordinal: 2 })[0]);
+      candidate[index].push(...rounds([1.6], { ...relative, ordinal: 2 })[0]);
+    }
+    const result = compareTimingRounds(...JSON.parse(JSON.stringify([reference, candidate])));
+    expect(result.status).toBe("regression");
+    expect(result.metrics.map(({ status }) => status)).toEqual(["pass", "regression"]);
+  });
+
+  it.each([
+    { referenceMs: 1 },
+    { referenceMs: undefined },
+    { limitMs: 1 },
+    { limitMs: undefined },
+    { ratio: 1 },
+    { ratio: undefined },
+    { label: "" },
+    { label: null },
+    { comparison: "lte" },
+  ])("rejects mixed relative evidence %j", (override) => {
+    expect(() => compareRatios(six(1), { ...relative, ...override })).toThrow();
+  });
+
+  it.each([{ referenceMs: null }, { limitMs: null }, { ratio: null }])(
+    "does not permit null absolute contract fields %j",
+    (override) => {
+      expect(() => compareRatios(six(1), override)).toThrow();
+    },
+  );
+
+  it("rejects drift from a relative metric to an absolute metric or another label", () => {
+    const reference = rounds(Array(18).fill(1), relative);
+    for (const changed of [
+      { label: "different work" },
+      { comparison: "lte", referenceMs: 2, limitMs: 2, ratio: 0.5 },
+    ]) {
+      const candidate = rounds(Array(18).fill(1), relative);
+      Object.assign(candidate[17][0], changed);
+      expect(() => compareTimingRounds(reference, candidate)).toThrow("contract differs");
+    }
   });
 });

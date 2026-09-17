@@ -62,22 +62,29 @@ describe("arrange command performance", () => {
     for (const action of actions) {
       store.reorderBands({ content: originalOrder, highlight: [] });
       store.arrange(selected, action);
-      const durations: number[] = [];
+      const durations = new Array<number>(SAMPLE_COUNT);
+      let incorrectChanges = 0;
+      let incorrectBandScans = 0;
+      let incorrectFullStoreScans = 0;
+      let incorrectRecordReplacements = 0;
       for (let sample = 0; sample < SAMPLE_COUNT; sample += 1) {
         store.reorderBands({ content: originalOrder, highlight: [] });
         store.resetInstrumentation();
         const started = performance.now();
         const delta = store.arrange(selected, action);
-        durations.push(performance.now() - started);
-        expect(delta?.changes.length).toBeGreaterThanOrEqual(ELEMENT_COUNT - 2);
-        expect(store.instrumentation).toMatchObject({
-          bandScans: 2,
-          fullStoreScans: 0,
-          recordReplacements: 0,
-        });
+        durations[sample] = performance.now() - started;
+        if (delta === null || !(delta.changes.length >= ELEMENT_COUNT - 2)) incorrectChanges += 1;
+        const instrumentation = store.instrumentation;
+        if (!Object.is(instrumentation.bandScans, 2)) incorrectBandScans += 1;
+        if (!Object.is(instrumentation.fullStoreScans, 0)) incorrectFullStoreScans += 1;
+        if (!Object.is(instrumentation.recordReplacements, 0)) incorrectRecordReplacements += 1;
         collectProfileGarbage();
       }
 
+      expect(incorrectChanges).toBe(0);
+      expect(incorrectBandScans).toBe(0);
+      expect(incorrectFullStoreScans).toBe(0);
+      expect(incorrectRecordReplacements).toBe(0);
       await annotateDurations(annotate, action, durations);
       expectTiming(summarizeDurations(durations).p95, COMMAND_COMMIT_BUDGET_MS, { soft: true });
     }

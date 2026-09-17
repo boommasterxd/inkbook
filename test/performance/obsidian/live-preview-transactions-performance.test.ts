@@ -30,11 +30,12 @@ it("retains maximum-capacity pending decorations on unchanged host transactions 
     extensions: [editorInfoField, editorLivePreviewField, createLivePreviewExtension(ports)],
   });
   const initial = state.facet(EditorView.decorations)[0];
-  const durations: number[] = [];
+  const durations = new Array<number>(INTERACTION_REFRESH_PROFILE.sampleCount);
+  const transaction = {};
   for (let sample = -100; sample < INTERACTION_REFRESH_PROFILE.sampleCount; sample += 1) {
     const started = performance.now();
-    state = state.update({}).state;
-    if (sample >= 0) durations.push(performance.now() - started);
+    state = state.update(transaction).state;
+    if (sample >= 0) durations[sample] = performance.now() - started;
   }
   expect(state.facet(EditorView.decorations)[0]).toBe(initial);
   expect(resolutions).toBe(capacity);

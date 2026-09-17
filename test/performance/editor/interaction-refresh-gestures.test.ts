@@ -101,12 +101,14 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz editor gesture profile`,
     const profiles = targetedHandleProfiles();
     for (const profile of profiles) {
       let snappedFrames = 0;
+      const exactElementCounts = new Array<number>(INTERACTION_REFRESH_PROFILE.sampleCount);
       const durations = measureInteractionFrames((frame) => {
         const preview = profile.session.update(profile.pointer(frame));
         if (preview.snapGuide?.kind === profile.snapGuideKind) snappedFrames += 1;
-        expect(preview.exactElements).toHaveLength(1);
+        exactElementCounts[frame] = preview.exactElements.length;
       });
       const p99 = interactionP99(durations);
+      for (const count of exactElementCounts) expect(count).toBe(1);
       expect(snappedFrames, profile.name).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
       expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
       await annotate(interactionProfileAnnotation(profile.name, p99), "performance");

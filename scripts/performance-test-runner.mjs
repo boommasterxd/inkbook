@@ -86,7 +86,9 @@ export async function runPerformanceRuns(runs) {
 
 export function reportPerformanceViolations(violations) {
   if (violations.length === 0) {
-    process.stdout.write("\nAll refresh-rate performance profiles passed.\n");
+    process.stdout.write(
+      "\nPerformance checks completed without blocking failures; review any timing warnings.\n",
+    );
     return;
   }
   process.stderr.write(`\nRefresh-rate performance violations (${violations.length}):\n`);

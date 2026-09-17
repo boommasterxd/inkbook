@@ -300,24 +300,29 @@ function measureMovePipeline(elements: readonly InkElementV1[]) {
   const preview = createMovePreview(API, fixture, elements, () => {
     layoutUpdates += 1;
   });
-  fixture.renderer.resetInstrumentation();
-  const durations = measureInteractionFrames((frame) => {
-    for (let sample = 0; sample < RAW_SAMPLES_PER_FRAME; sample += 1) {
+  const samples = Array.from({ length: INTERACTION_REFRESH_PROFILE.sampleCount }, (_, frame) =>
+    Array.from({ length: RAW_SAMPLES_PER_FRAME }, (_, sample) => {
       const progress = frame * RAW_SAMPLES_PER_FRAME + sample + 1;
-      preview.updateSamples([
+      return [
         {
           pointerId: 2,
-          pointerType: "pen",
+          pointerType: "pen" as const,
           pressure: 0.5,
           x: 100 + progress * 0.05,
           y: 100 + progress * 0.1,
         },
-      ]);
-    }
-    expect(fixture.scheduler.pendingCount).toBeLessThanOrEqual(2);
+      ];
+    }),
+  );
+  let incorrectlyQueuedFrames = 0;
+  fixture.renderer.resetInstrumentation();
+  const durations = measureInteractionFrames((frame) => {
+    for (const batch of samples[frame]!) preview.updateSamples(batch);
+    if (!(fixture.scheduler.pendingCount <= 2)) incorrectlyQueuedFrames += 1;
     fixture.scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
     fixture.scheduler.runFrame();
   });
+  expect(incorrectlyQueuedFrames).toBe(0);
   preview.revert();
   fixture.renderer.destroy();
   fixture.sceneStore.release();
@@ -338,18 +343,25 @@ function measurePipeline(elements: readonly InkElementV1[]) {
     fixture.renderer.setPage(PAGE, pageHeight);
   });
   const start = resizeHandle(API, elements);
+  const samples = Array.from({ length: INTERACTION_REFRESH_PROFILE.sampleCount }, (_, frame) =>
+    Array.from({ length: RAW_SAMPLES_PER_FRAME }, (_, sample) => pointerAt(start, frame, sample)),
+  );
   interaction.pointerDown({ ...start, pointerId: 1, pointerType: "mouse", pressure: 0 });
+  let incorrectlyQueuedFrames = 0;
+  let framesWithoutGeometryWrites = 0;
   fixture.renderer.resetInstrumentation();
   const durations = measureInteractionFrames((frame) => {
     const before = fixture.renderer.instrumentation().contentGeometryWrites;
-    for (let sample = 0; sample < RAW_SAMPLES_PER_FRAME; sample += 1) {
-      interaction.pointerMove(pointerAt(start, frame, sample));
-    }
-    expect(fixture.scheduler.pendingCount).toBeLessThanOrEqual(2);
+    for (const sample of samples[frame]!) interaction.pointerMove(sample);
+    if (!(fixture.scheduler.pendingCount <= 2)) incorrectlyQueuedFrames += 1;
     fixture.scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
     fixture.scheduler.runFrame();
-    expect(fixture.renderer.instrumentation().contentGeometryWrites).toBeGreaterThan(before);
+    if (!(fixture.renderer.instrumentation().contentGeometryWrites > before)) {
+      framesWithoutGeometryWrites += 1;
+    }
   });
+  expect(incorrectlyQueuedFrames).toBe(0);
+  expect(framesWithoutGeometryWrites).toBe(0);
   interaction.dispose();
   fixture.renderer.destroy();
   fixture.sceneStore.release();

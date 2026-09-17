@@ -5,20 +5,16 @@ const mocks = vi.hoisted(() => ({
   inputs: vi.fn(),
   prepare: vi.fn(),
   dispose: vi.fn(),
-  read: vi.fn(),
   write: vi.fn(),
   mkdir: vi.fn(),
   mkdtemp: vi.fn(),
-  baseline: vi.fn(),
 }));
 vi.mock("../../../scripts/performance-batch.mjs", () => ({ runPerformanceBatch: mocks.batch }));
 vi.mock("../../../scripts/performance-inputs.mjs", () => ({ planPerformanceInputs: mocks.inputs }));
 vi.mock("../../../scripts/performance-workspace.mjs", () => ({
   preparePerformanceWorkspaces: mocks.prepare,
-  resolveLocalBaseline: mocks.baseline,
 }));
 vi.mock("node:fs/promises", () => ({
-  readFile: mocks.read,
   writeFile: mocks.write,
   mkdir: mocks.mkdir,
   mkdtemp: mocks.mkdtemp,
@@ -64,21 +60,18 @@ beforeEach(() => {
   vi.stubEnv("INKBOOK_PERFORMANCE_MODE", "gate");
   vi.stubEnv("INKBOOK_PERFORMANCE_PROFILE", undefined);
   vi.stubEnv("INKBOOK_PERFORMANCE_BASE", undefined);
-  vi.stubEnv("INKBOOK_PERFORMANCE_ANCHOR", undefined);
   vi.stubEnv("INKBOOK_PERFORMANCE_SUITE", undefined);
   vi.stubEnv("INKBOOK_PERFORMANCE_RESULTS_DIR", "/results");
   vi.stubEnv("CI", "true");
+  vi.stubEnv("GITHUB_ACTIONS", undefined);
   vi.spyOn(process.stdout, "write").mockReturnValue(true);
   workspaces = {
     metadata: { projectRoot: "/project" },
     candidate: { root: "/candidate", sourceHash: "candidate" },
     base: { root: "/base", sourceHash: "base" },
-    anchor: { root: "/anchor", sourceHash: "anchor" },
     dispose: mocks.dispose,
   };
   mocks.prepare.mockResolvedValue(workspaces);
-  mocks.read.mockResolvedValue(JSON.stringify({ anchorCommit: "fixed-anchor" }));
-  mocks.baseline.mockReturnValue("fixed-anchor");
   mocks.mkdtemp.mockResolvedValue("/tmp/inkbook-performance-owned");
   mocks.batch.mockImplementation(async (options) => batchResult(options));
   mocks.inputs.mockImplementation(async ({ testFiles }) => ({
@@ -92,27 +85,14 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-describe("baseline handoff", () => {
-  it("uses the run-pinned reference and emits a handoff without additional measurements", async () => {
-    vi.stubEnv("INKBOOK_PERFORMANCE_ANCHOR", "run-pinned-anchor");
+describe("PR base selection", () => {
+  it("uses the pinned PR base and writes only raw performance evidence", async () => {
+    vi.stubEnv("INKBOOK_PERFORMANCE_BASE", "pr-base-sha");
     vi.stubEnv("INKBOOK_PERFORMANCE_SUITE", "shared");
-    vi.stubEnv("GITHUB_RUN_ID", "123");
-    vi.stubEnv("GITHUB_RUN_ATTEMPT", "1");
     expect(await executePerformanceGate("/project", runs)).toEqual([]);
-    expect(mocks.prepare).toHaveBeenCalledWith("/project", {
-      base: "origin/main",
-      anchor: "run-pinned-anchor",
-    });
-    expect(mocks.baseline).not.toHaveBeenCalled();
-    expect(measurementCalls()).toHaveLength(48);
-    const handoff = mocks.write.mock.calls.find(([path]) => path.endsWith("baseline-report.json"));
-    expect(JSON.parse(handoff[1])).toMatchObject({
-      version: 1,
-      suite: "shared",
-      runId: "123",
-      runAttempt: "1",
-      eligible: false,
-    });
+    expect(mocks.prepare).toHaveBeenCalledWith("/project", { base: "pr-base-sha" });
+    expect(measurementCalls()).toHaveLength(24);
+    expect(mocks.write.mock.calls.map(([path]) => path)).toEqual(["/results/performance.json"]);
   });
 });
 
@@ -123,38 +103,33 @@ describe("direct original-benchmark gate", () => {
       refreshRate,
     }));
     expect(await executePerformanceGate("/project", profiles)).toEqual([]);
-    expect(mocks.inputs).toHaveBeenCalledTimes(2);
-    expect(mocks.inputs.mock.calls.map(([options]) => options.referenceRoot)).toEqual([
-      "/base",
-      "/anchor",
-    ]);
-    expect(mocks.batch).toHaveBeenCalledTimes(125);
+    expect(mocks.inputs).toHaveBeenCalledTimes(1);
+    expect(mocks.inputs.mock.calls.map(([options]) => options.referenceRoot)).toEqual(["/base"]);
+    expect(mocks.batch).toHaveBeenCalledTimes(65);
     for (const { refreshRate } of profiles) {
       expect(
         measurementCalls().filter(([options]) => options.refreshRate === refreshRate),
-      ).toHaveLength(24);
+      ).toHaveLength(12);
     }
-    expect(savedReport().comparisons.map(({ metrics }) => metrics.length)).toEqual([5, 5]);
+    expect(savedReport().comparisons.map(({ metrics }) => metrics.length)).toEqual([5]);
   });
 
-  it("retains every contract and runs six balanced paired rounds against base and fixed anchor", async () => {
+  it("retains every contract and runs six balanced paired rounds against the PR base", async () => {
     expect(await executePerformanceGate("/project", runs)).toEqual([]);
-    expect(mocks.batch).toHaveBeenCalledTimes(50);
-    expect(mocks.inputs).toHaveBeenCalledTimes(4);
+    expect(mocks.batch).toHaveBeenCalledTimes(26);
+    expect(mocks.inputs).toHaveBeenCalledTimes(2);
     const roots = measurementCalls().map(([options]) => options.root);
     expect(roots.filter((root) => root === "/base")).toHaveLength(12);
-    expect(roots.filter((root) => root === "/anchor")).toHaveLength(12);
-    expect(roots.filter((root) => root === "/candidate")).toHaveLength(24);
+    expect(roots.filter((root) => root === "/candidate")).toHaveLength(12);
     for (let offset = 0; offset < roots.length; offset += 12) {
       const firstSides = roots.slice(offset, offset + 12).filter((_, index) => index % 2 === 0);
       expect(firstSides.filter((root) => root === "/candidate")).toHaveLength(3);
     }
     expect(mocks.prepare).toHaveBeenCalledWith("/project", {
       base: "origin/main",
-      anchor: "fixed-anchor",
     });
     const report = savedReport();
-    expect(report.comparisons.map(({ status }) => status)).toEqual(["pass", "pass"]);
+    expect(report.comparisons.map(({ status }) => status)).toEqual(["pass"]);
     const measured = report.batches.find(({ mode }) => mode === "measurement");
     expect(measured.artifact).toMatch(
       /\/results\/base\/0\/shared\/120\/(reference|candidate)\/batch\.json$/u,
@@ -165,21 +140,10 @@ describe("direct original-benchmark gate", () => {
 
   it("keeps all contracts while explicitly avoiding identical sources", async () => {
     workspaces.base.sourceHash = "candidate";
-    workspaces.anchor.sourceHash = "candidate";
     expect(await executePerformanceGate("/project", runs)).toEqual([]);
     expect(mocks.batch).toHaveBeenCalledTimes(2);
     expect(mocks.inputs).not.toHaveBeenCalled();
-    expect(savedReport().comparisons.map(({ status }) => status)).toEqual([
-      "identical-source",
-      "identical-source",
-    ]);
-  });
-
-  it("deduplicates equal base/anchor sources without weakening the fixed-anchor comparison", async () => {
-    workspaces.anchor = { ...workspaces.base };
-    await executePerformanceGate("/project", runs);
-    expect(measurementCalls()).toHaveLength(24);
-    expect(savedReport().comparisons).toHaveLength(2);
+    expect(savedReport().comparisons.map(({ status }) => status)).toEqual(["identical-source"]);
   });
 
   it("accepts only complete per-file input identity proofs", async () => {
@@ -222,8 +186,8 @@ describe("direct comparison failures", () => {
 
   it.each([
     [[200, 200, 200], "regression"],
-    [[149, 150, 151], "inconclusive"],
-  ])("fails original timing values %j as %s", async (values, status) => {
+    [[119, 120, 121], "inconclusive"],
+  ])("classifies original timing values %j as %s", async (values, status) => {
     let candidate = 0;
     mocks.batch.mockImplementation(async (options) =>
       batchResult(
@@ -234,8 +198,11 @@ describe("direct comparison failures", () => {
       ),
     );
     const violations = await executePerformanceGate("/project", runs);
-    expect(violations.length).toBeGreaterThan(0);
-    expect(violations.every(({ message }) => message.startsWith(status))).toBe(true);
+    const issues = status === "inconclusive" ? savedReport().warnings : violations;
+    expect(issues.length).toBeGreaterThan(0);
+    expect(issues.every(({ message }) => message.startsWith(status))).toBe(true);
+    if (status === "inconclusive") expect(violations).toEqual([]);
+    else expect(savedReport().warnings).toEqual([]);
   });
 
   it("rejects missing original timing phases across rounds", async () => {
@@ -290,9 +257,50 @@ describe("direct comparison failures", () => {
   });
 });
 
+describe("nonblocking timing warnings", () => {
+  it.each([false, true])(
+    "reports unresolved timing without blocking (GitHub=%s)",
+    async (github) => {
+      vi.stubEnv("CI", github ? "true" : undefined);
+      vi.stubEnv("GITHUB_ACTIONS", github ? "true" : undefined);
+      mocks.batch.mockImplementation(async (options) =>
+        batchResult(
+          options,
+          options.mode === "measurement" && options.root === "/candidate" ? 120 : 100,
+        ),
+      );
+      expect(await executePerformanceGate("/project", [runs[0]])).toEqual([]);
+      expect(measurementCalls()).toHaveLength(36);
+      expect(savedReport().comparisons[0].status).toBe("inconclusive");
+      expect(savedReport().warnings).toHaveLength(1);
+      const output = process.stdout.write.mock.calls.map(([value]) => value).join("");
+      expect(output).toContain("WARNING:");
+      expect(output).toContain("unresolved, not proven within budget");
+      expect(output.includes("::warning title=Unresolved performance comparison::")).toBe(github);
+    },
+  );
+
+  it("does not let a warning hide a regression in another profile", async () => {
+    mocks.batch.mockImplementation(async (options) =>
+      batchResult(
+        options,
+        options.mode === "measurement" && options.root === "/candidate"
+          ? options.refreshRate === 120
+            ? 120
+            : 200
+          : 100,
+      ),
+    );
+    const violations = await executePerformanceGate("/project", runs);
+    expect(violations).toHaveLength(1);
+    expect(violations[0].message).toContain("regression");
+    expect(savedReport().warnings).toHaveLength(1);
+    expect(savedReport().comparisons[0].status).toBe("regression");
+  });
+});
+
 describe("bounded comparison stages", () => {
   it("does not repeat decided files while collecting the final unresolved stage", async () => {
-    workspaces.anchor = { ...workspaces.base };
     const combined = [{ ...runs[0], testFiles: runs.flatMap((run) => run.testFiles) }];
     mocks.batch.mockImplementation(async (options) => {
       const result = batchResult(options);
@@ -302,12 +310,13 @@ describe("bounded comparison stages", () => {
           options.root === "/candidate" &&
           record.file.endsWith("/arrange-performance.test.ts")
         )
-          record.actualMs = 150;
+          record.actualMs = 120;
       }
       return result;
     });
     const violations = await executePerformanceGate("/project", combined);
-    expect(violations).toHaveLength(2);
+    expect(violations).toEqual([]);
+    expect(savedReport().warnings).toHaveLength(1);
     const calls = measurementCalls();
     expect(calls).toHaveLength(36);
     expect(calls.slice(0, 12).every(([options]) => options.testFiles.length === 2)).toBe(true);
@@ -331,20 +340,20 @@ describe("bounded comparison stages", () => {
   });
 
   it("uses the final stage only for an unresolved profile and never retries beyond it", async () => {
-    workspaces.anchor = { ...workspaces.base };
     mocks.batch.mockImplementation(async (options) =>
       batchResult(
         options,
         options.mode === "measurement" &&
           options.root === "/candidate" &&
           options.refreshRate === 120
-          ? 150
+          ? 120
           : 100,
       ),
     );
     const violations = await executePerformanceGate("/project", runs);
-    expect(violations).toHaveLength(2);
-    expect(violations[0].message).toContain("inconclusive");
+    expect(violations).toEqual([]);
+    expect(savedReport().warnings).toHaveLength(1);
+    expect(savedReport().warnings[0].message).toContain("inconclusive");
     expect(measurementCalls().filter(([options]) => options.refreshRate === 120)).toHaveLength(36);
     expect(measurementCalls().filter(([options]) => options.refreshRate === 240)).toHaveLength(12);
     const comparison = savedReport().comparisons[0];

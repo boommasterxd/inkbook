@@ -6,7 +6,7 @@ import { moveSelectionTimeSliced } from "../../../src/editor/selection/transform
 import { MeasuredSliceScheduler, percentile, requireStroke } from "./domain-scenarios";
 import { createStandardDomainFixture } from "./standard-domain-fixture";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
-import { expectTiming } from "../timing-assertions";
+import { expectTiming, recordRelativeTiming } from "../timing-assertions";
 
 describe("incremental replacement performance", () => {
   it("prepares in bounded slices and atomically commits only changed records", async ({
@@ -14,7 +14,7 @@ describe("incremental replacement performance", () => {
   }) => {
     const fixture = createStandardDomainFixture();
     const store = new ElementStore(fixture.elements);
-    const commitDurations: number[] = [];
+    const commitDurations = new Array<number>(5);
     const sliceDurations: number[] = [];
     let maximumPreparationSlice = 0;
     for (let run = 0; run < 6; run += 1) {
@@ -29,8 +29,10 @@ describe("incremental replacement performance", () => {
       sliceDurations.push(...scheduler.sliceDurations);
       maximumPreparationSlice = Math.max(maximumPreparationSlice, scheduler.maxSliceDuration);
       const started = performance.now();
-      expect(store.commitPreparedElementReplacement(prepared.token).status).toBe("committed");
-      if (run > 0) commitDurations.push(performance.now() - started);
+      const result = store.commitPreparedElementReplacement(prepared.token);
+      const duration = performance.now() - started;
+      expect(result.status).toBe("committed");
+      if (run > 0) commitDurations[run - 1] = duration;
     }
 
     const commitP95 = percentile(commitDurations, 0.95);
@@ -43,6 +45,10 @@ describe("incremental replacement performance", () => {
     expect(sliceDurations.length).toBeGreaterThanOrEqual(100);
     expectTiming(percentile(sliceDurations, 0.95), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     expectTiming(maximumPreparationSlice, INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs);
+    recordRelativeTiming(
+      sliceDurations.reduce((total, duration) => total + duration, 0),
+      "total preparation CPU time across six replacements",
+    );
     expect(store.instrumentation).toMatchObject({
       fullStoreScans: 0,
       publishedDeltas: 6,

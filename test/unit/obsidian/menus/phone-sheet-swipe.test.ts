@@ -18,6 +18,47 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe("phone sheet swipe fixture restoration", () => {
+  it.for([false, true])("restores plain performance overrides after failure=%s", (fail) => {
+    const request = Object.getOwnPropertyDescriptor(window, "requestAnimationFrame");
+    const cancel = Object.getOwnPropertyDescriptor(window, "cancelAnimationFrame");
+    const originalSetProperty = Object.getOwnPropertyDescriptor(
+      window.createDiv().style,
+      "setProperty",
+    );
+    const fixture = createPhoneSheetSwipeHarness(0, false);
+    let caught: unknown;
+    try {
+      beginTouchDrag(fixture, 20, 10);
+      fixture.surface.dispatchEvent(touchPointer("pointermove", 60, 1, 20));
+      expect(fixture.frames.pending).toBe(1);
+      if (fail) throw new Error("Injected failure");
+      fixture.frames.flush();
+      expect(fixture.dragWrites).toBe(1);
+    } catch (error) {
+      caught = error;
+    } finally {
+      try {
+        fixture.controller.dispose();
+      } finally {
+        fixture.restore();
+      }
+    }
+    if (fail) expect(caught).toEqual(new Error("Injected failure"));
+    else expect(caught).toBeUndefined();
+    expect(fixture.frames.pending).toBe(0);
+    expect(Object.getOwnPropertyDescriptor(window, "requestAnimationFrame")).toEqual(request);
+    expect(Object.getOwnPropertyDescriptor(window, "cancelAnimationFrame")).toEqual(cancel);
+    expect(Object.getOwnPropertyDescriptor(fixture.surface.style, "setProperty")).toEqual(
+      originalSetProperty,
+    );
+    fixture.restore();
+    expect(Object.getOwnPropertyDescriptor(fixture.surface.style, "setProperty")).toEqual(
+      originalSetProperty,
+    );
+  });
+});
+
 describe("PhoneSheetSwipeController", () => {
   it("caches sheet height and coalesces drag writes to the latest frame", () => {
     const fixture = createPhoneSheetSwipeHarness();

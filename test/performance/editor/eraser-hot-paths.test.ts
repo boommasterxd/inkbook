@@ -8,7 +8,7 @@ import {
   createDenseStrokeEraser,
 } from "./eraser-performance-fixture";
 import { INTERACTION_REFRESH_PROFILE, interactionP99 } from "../interaction-refresh-profile";
-import { expectTiming } from "../timing-assertions";
+import { expectTiming, recordRelativeTiming } from "../timing-assertions";
 
 declare const gc: (() => void) | undefined;
 
@@ -31,6 +31,10 @@ describe("eraser hot paths", () => {
     expect(eraser.candidateCount).toBe(DENSE_STROKES);
     expectTiming(interactionP99(frameDurations), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
     expectTiming(Math.max(...frameDurations), MAX_FRAME_MS);
+    recordRelativeTiming(
+      frameDurations.reduce((total, duration) => total + duration, 0),
+      "complete dense eraser batch active-frame elapsed time",
+    );
   });
 
   it.each([5_000, 20_000])("keeps incremental feedback linear for %i candidates", (count) => {

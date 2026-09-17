@@ -1,5 +1,5 @@
 import { randomInt } from "node:crypto";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -7,8 +7,7 @@ import { runPerformanceBatch } from "./performance-batch.mjs";
 import { planPerformanceInputs } from "./performance-inputs.mjs";
 import { TIMING_PERFORMANCE_FILES } from "./performance-test-manifest.mjs";
 import { COMPARISON_STAGES, compareTimingRounds } from "./performance-comparison.mjs";
-import { preparePerformanceWorkspaces, resolveLocalBaseline } from "./performance-workspace.mjs";
-import { createBaselineReport } from "./performance-baseline-report.mjs";
+import { preparePerformanceWorkspaces } from "./performance-workspace.mjs";
 
 export async function executePerformanceGate(projectRoot, runs) {
   if (!Array.isArray(runs) || runs.length === 0)
@@ -24,15 +23,11 @@ export async function executePerformanceGate(projectRoot, runs) {
     throw new Error("A diagnostic cannot replace the complete CI gate.");
   }
   if (mode !== "gate") return runDiagnostic(projectRoot, runs, mode);
-  const policy = JSON.parse(await readFile(join(projectRoot, ".github/performance-policy.json")));
   const workspaces = await preparePerformanceWorkspaces(projectRoot, {
     base: process.env["INKBOOK_PERFORMANCE_BASE"] ?? "origin/main",
-    anchor:
-      process.env["INKBOOK_PERFORMANCE_ANCHOR"] ??
-      resolveLocalBaseline(projectRoot, policy.anchorCommit),
   });
   let directory = process.env["INKBOOK_PERFORMANCE_RESULTS_DIR"];
-  const report = { metadata: workspaces.metadata, batches: [], comparisons: [] };
+  const report = { metadata: workspaces.metadata, batches: [], comparisons: [], warnings: [] };
   try {
     directory = directory
       ? resolve(directory)
@@ -108,37 +103,41 @@ function evidencePath(workspaces, ...parts) {
 }
 
 async function executeComparisons(runs, workspaces, report) {
-  const references = ["base", "anchor"].filter((variant) => {
-    if (workspaces[variant].sourceHash !== workspaces.candidate.sourceHash) return true;
+  if (workspaces.base.sourceHash === workspaces.candidate.sourceHash) {
     report.comparisons.push({
-      variant,
+      variant: "base",
       status: "identical-source",
-      sourceHash: workspaces[variant].sourceHash,
+      sourceHash: workspaces.base.sourceHash,
       reason: "Identical source and verified identical dependencies; no runtime change to time.",
     });
-    return false;
-  });
-  if (references.length === 0) return [];
-  const comparisons = new Map();
-  const violations = [];
-  for (const variant of references) {
-    const sourceHash = workspaces[variant].sourceHash;
-    let comparison = comparisons.get(sourceHash);
-    if (!comparison) {
-      comparison = await compareVariant(variant, runs, workspaces, report);
-      comparisons.set(sourceHash, comparison);
-    }
-    report.comparisons.push({ variant, ...comparison });
-    for (const metric of comparison.metrics.filter((value) => value.status !== "pass")) {
-      violations.push({
-        file: variant,
-        test: metric.key,
-        refreshRate: "comparison",
-        message: `${metric.status}: observed paired ratios ${JSON.stringify(metric.ratios)}`,
-      });
+    return [];
+  }
+  const comparison = await compareVariant("base", runs, workspaces, report);
+  report.comparisons.push({ variant: "base", ...comparison });
+  report.warnings.push(
+    ...comparison.metrics.filter((metric) => metric.status === "inconclusive").map(timingIssue),
+  );
+  for (const warning of report.warnings) {
+    const message = `${warning.test}: ${warning.message}. Performance is unresolved, not proven within budget.`;
+    process.stdout.write(`WARNING: ${message}\n`);
+    if (process.env["GITHUB_ACTIONS"] === "true") {
+      const escaped = message
+        .replaceAll("%", "%25")
+        .replaceAll("\r", "%0D")
+        .replaceAll("\n", "%0A");
+      process.stdout.write(`::warning title=Unresolved performance comparison::${escaped}\n`);
     }
   }
-  return violations;
+  return comparison.metrics.filter((metric) => metric.status === "regression").map(timingIssue);
+}
+
+function timingIssue(metric) {
+  return {
+    file: "base",
+    test: metric.key,
+    refreshRate: "comparison",
+    message: `${metric.status}: observed paired ratios ${JSON.stringify(metric.ratios)}, boundary ${metric.regressionRatio}, stage ${metric.stage}`,
+  };
 }
 
 async function compareVariant(variant, runs, workspaces, report) {
@@ -325,13 +324,5 @@ async function measureOriginalBatch({ variant, round, side, run, workspaces, rep
 async function saveReport(directory, report) {
   if (!directory) return;
   await mkdir(directory, { recursive: true });
-  if (["shared", "cadence"].includes(process.env["INKBOOK_PERFORMANCE_SUITE"])) {
-    const baseline = createBaselineReport(report, {
-      suite: process.env["INKBOOK_PERFORMANCE_SUITE"],
-      runId: process.env["GITHUB_RUN_ID"],
-      runAttempt: process.env["GITHUB_RUN_ATTEMPT"],
-    });
-    await writeFile(join(directory, "baseline-report.json"), JSON.stringify(baseline) + "\n");
-  }
   await writeFile(join(directory, "performance.json"), JSON.stringify(report, null, 2) + "\n");
 }

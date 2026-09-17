@@ -71,9 +71,10 @@ beforeAll(async () => {
     yieldControl: async () => Promise.resolve(),
   });
   const started = performance.now();
-  expect(await builder.appendOwnedRuntime(loadedFixture.elements)).toBe("accepted");
+  const appendResult = await builder.appendOwnedRuntime(loadedFixture.elements);
   const loadedStore = await builder.finalize();
   storeConstructionDuration = performance.now() - started;
+  expect(appendResult).toBe("accepted");
   if (loadedStore === null) throw new Error("Runtime fixture store construction was cancelled.");
   store = loadedStore;
   fixture = { ...loadedFixture, elements: [] };
@@ -110,7 +111,7 @@ describe("normalized store and command costs", () => {
     const stableId = fixture.strokeIds[9999] as string;
     const stableRecord = store.get(stableId)!;
     const retainedBytes = store.instrumentation.estimatedRetainedBytes;
-    const durations: number[] = [];
+    const durations = new Array<number>(500);
     store.resetInstrumentation();
 
     for (let operation = 0; operation < 500; operation += 1) {
@@ -120,7 +121,7 @@ describe("normalized store and command costs", () => {
       replacement.style.opacity = operation % 2 === 0 ? 0.99 : 1;
       const started = performance.now();
       store.replace(changedId, replacement);
-      durations.push(performance.now() - started);
+      durations[operation] = performance.now() - started;
     }
 
     const p95 = percentile(durations, 0.95);
@@ -190,7 +191,7 @@ describe("spatial queries, selection, and snapping", () => {
     const queryBounds = { maxX: 38, maxY: 38, minX: 22, minY: 22 };
     store.query(queryBounds, scratch);
     const warmAllocations = scratch.allocationCount;
-    const durations: number[] = [];
+    const durations = new Array<number>(500);
     const maximumPressureStroke: StrokeElementV1 = {
       ...requireStroke(store, fixture.strokeIds[0]!),
       points: Array.from({ length: 4096 }, (_, index) => [index * 4, 0, index % 2]).flat(),
@@ -205,10 +206,13 @@ describe("spatial queries, selection, and snapping", () => {
       const started = performance.now();
       store.query(queryBounds, scratch);
       findFrontmostHit(hitScratch, { x: 30, y: 30 }, "pen", 1, hitCandidates(store, scratch));
-      expect(elementContainsPoint(maximumPressureStroke, { x: operation * 28, y: 0 }, 0)).toBe(
-        true,
+      const containsPoint = elementContainsPoint(
+        maximumPressureStroke,
+        { x: operation * 28, y: 0 },
+        0,
       );
-      durations.push(performance.now() - started);
+      durations[operation] = performance.now() - started;
+      expect(containsPoint).toBe(true);
     }
 
     const p95 = percentile(durations, 0.95);
@@ -221,7 +225,7 @@ describe("spatial queries, selection, and snapping", () => {
     const snapStore = new ElementStore(createDenseSnapTargets());
     const query = new StoreSpatialQuery(snapStore);
     const reader = new StoreTargetReader(snapStore);
-    const durations: number[] = [];
+    const durations = new Array<number>(500);
     snapStore.resetInstrumentation();
 
     for (let operation = 0; operation < 500; operation += 1) {
@@ -233,7 +237,7 @@ describe("spatial queries, selection, and snapping", () => {
         reader,
         query.scratch,
       );
-      durations.push(performance.now() - started);
+      durations[operation] = performance.now() - started;
       expect(reader.targetReads).toBe(128);
     }
 

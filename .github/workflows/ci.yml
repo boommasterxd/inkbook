@@ -12,23 +12,10 @@ permissions:
   contents: read
 
 jobs:
-  baseline:
-    name: Resolve performance baseline
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    outputs:
-      commit: ${{ steps.baseline.outputs.commit }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Resolve baseline once for both shards
-        id: baseline
-        run: node scripts/performance-baseline-resolve.mjs
-
   CI:
     name: CI
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,7 +30,6 @@ jobs:
         run: npm run ci:quality
 
   Performance:
-    needs: baseline
     name: Performance (${{ matrix.label }})
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout_minutes }}
@@ -55,13 +41,12 @@ jobs:
           - label: shared
             suite: shared
             refresh-rate: "120"
-            timeout_minutes: 15
+            timeout_minutes: 10
           - label: refresh profiles
             suite: cadence
             refresh-rate: "120"
-            timeout_minutes: 15
+            timeout_minutes: 10
     env:
-      INKBOOK_PERFORMANCE_ANCHOR: ${{ needs.baseline.outputs.commit }}
       INKBOOK_PERFORMANCE_MODE: gate
       INKBOOK_PERFORMANCE_BASE: ${{ github.event.pull_request.base.sha || 'origin/main' }}
       INKBOOK_PERFORMANCE_REFRESH_RATE: ${{ matrix.refresh-rate }}
@@ -87,12 +72,5 @@ jobs:
         with:
           name: performance-${{ matrix.label }}
           path: /tmp/inkbook-performance
-          retention-days: 1
-          if-no-files-found: error
-      - name: Upload baseline handoff
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: performance-baseline-${{ matrix.suite }}
-          path: /tmp/inkbook-performance/baseline-report.json
           retention-days: 1
           if-no-files-found: error

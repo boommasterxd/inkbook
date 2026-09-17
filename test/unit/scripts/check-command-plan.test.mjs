@@ -1,8 +1,22 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createCheckCommandPlan } from "../../../scripts/check-command-plan.mjs";
 
+afterEach(() => vi.unstubAllEnvs());
+
 describe("check command plan", () => {
+  it.each([
+    ["INKBOOK_PERFORMANCE_MODE", "contracts"],
+    ["INKBOOK_PERFORMANCE_MODE", "reference"],
+    ["INKBOOK_PERFORMANCE_SUITE", "shared"],
+    ["INKBOOK_PERFORMANCE_SUITE", "cadence"],
+    ["INKBOOK_PERFORMANCE_SUITE", "profile"],
+  ])("rejects partial local CI through %s=%s", (name, value) => {
+    vi.stubEnv(name, value);
+    expect(() => createCheckCommandPlan("ci", [], "/npm-cli.js")).toThrow("suite all");
+    expect(createCheckCommandPlan("benchmark")).toHaveLength(1);
+  });
+
   it("expands the complete gate once, with performance after quality", () => {
     const plan = createCheckCommandPlan("ci", [], "/npm-cli.js");
 

@@ -63,16 +63,16 @@ for (const operation of ["text edit", "recognition burst"] as const) {
       capacity,
       operation,
     );
-    const durations: number[] = [];
+    const durations = new Array<number>(INTERACTION_REFRESH_PROFILE.sampleCount);
+    const transaction =
+      operation === "text edit"
+        ? { changes: { from: 1, insert: "x" } }
+        : { effects: documentRecognitionChanged.of(ids) };
     let state = initial;
     for (let sample = -100; sample < INTERACTION_REFRESH_PROFILE.sampleCount; sample += 1) {
       const started = performance.now();
-      state = initial.update(
-        operation === "text edit"
-          ? { changes: { from: 1, insert: "x" } }
-          : { effects: documentRecognitionChanged.of(ids) },
-      ).state;
-      if (sample >= 0) durations.push(performance.now() - started);
+      state = initial.update(transaction).state;
+      if (sample >= 0) durations[sample] = performance.now() - started;
     }
     expect(resolutions()).toBe(capacity);
     expect(cacheReads()).toBe(

@@ -18,7 +18,6 @@ import {
   hashSourceTree,
   hashWorkspaceFiles,
   preparePerformanceWorkspaces,
-  resolveLocalBaseline,
 } from "../../../scripts/performance-workspace.mjs";
 
 const cleanup = [];
@@ -55,14 +54,6 @@ afterEach(async () => {
 });
 
 describe("performance workspace snapshots", () => {
-  it("uses the bootstrap only until a local baseline tag exists", async () => {
-    const { root, commit } = await fixture();
-    expect(resolveLocalBaseline(root, "bootstrap")).toBe("bootstrap");
-    git(root, "tag", "performance-baseline-audit-example", commit);
-    expect(resolveLocalBaseline(root, "bootstrap")).toBe("bootstrap");
-    git(root, "tag", "performance-baseline", commit);
-    expect(resolveLocalBaseline(root, "bootstrap")).toBe(commit);
-  });
   it("uses current identical harness with old source and keeps dirty candidate changes", async () => {
     const { root, commit } = await fixture();
     await writeFile(join(root, "harness.mjs"), "new harness\n");
@@ -72,9 +63,9 @@ describe("performance workspace snapshots", () => {
     const packageFile = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
     packageFile.scripts.test = "new";
     await writeFile(join(root, "package.json"), JSON.stringify(packageFile));
-    const workspaces = await preparePerformanceWorkspaces(root, { base: commit, anchor: commit });
+    const workspaces = await preparePerformanceWorkspaces(root, { base: commit });
     cleanup.push(workspaces.dispose);
-    expect(workspaces.base).toBe(workspaces.anchor);
+    expect(await readdir(join(workspaces.base.root, ".."))).toEqual(["base", "candidate"]);
     expect(workspaces.candidate.root).not.toBe(workspaces.base.root);
     expect(await readFile(join(workspaces.base.root, "src/main.ts"), "utf8")).toContain("= 1");
     expect(await readFile(join(workspaces.candidate.root, "src/main.ts"), "utf8")).toContain("= 2");
@@ -100,10 +91,12 @@ describe("performance workspace snapshots", () => {
     await writeFile(join(root, "src/main.ts"), "export const value = 2;\n");
     git(root, "add", "src");
     git(root, "commit", "-qm", "test: update source");
-    const workspaces = await preparePerformanceWorkspaces(root, { base: "HEAD", anchor: commit });
+    const workspaces = await preparePerformanceWorkspaces(root, { base: commit });
     cleanup.push(workspaces.dispose);
-    expect(workspaces.anchor.root).not.toBe(workspaces.base.root);
-    expect(workspaces.base.sourceHash).toBe(workspaces.candidate.sourceHash);
+    expect(workspaces.base.root).not.toBe(workspaces.candidate.root);
+    expect(workspaces.base.sourceHash).not.toBe(workspaces.candidate.sourceHash);
+    expect(workspaces.metadata.baseCommit).toBe(commit);
+    expect(workspaces.metadata.baseSourceHash).toBe(workspaces.base.sourceHash);
     expect(workspaces.metadata.dirty).toBe(false);
   });
 
@@ -112,33 +105,29 @@ describe("performance workspace snapshots", () => {
     async (file) => {
       const { root, commit } = await fixture();
       await writeFile(join(root, file), JSON.stringify({ dependencies: { example: "2.0.0" } }));
-      await expect(
-        preparePerformanceWorkspaces(root, { base: commit, anchor: commit }),
-      ).rejects.toThrow("Comparable dependencies not verified");
+      await expect(preparePerformanceWorkspaces(root, { base: commit })).rejects.toThrow(
+        "Comparable dependencies not verified",
+      );
     },
   );
 
   it("rejects missing references", async () => {
-    const { root, commit } = await fixture();
-    await expect(
-      preparePerformanceWorkspaces(root, { base: "missing-ref", anchor: commit }),
-    ).rejects.toThrow("missing source reference");
+    const { root } = await fixture();
+    await expect(preparePerformanceWorkspaces(root, { base: "missing-ref" })).rejects.toThrow(
+      "missing source reference",
+    );
   });
 
   it("never reads harness or source symlink targets and cleans failed preparation", async () => {
     const { root, commit } = await fixture();
     await symlink("/etc/passwd", join(root, "foreign-link"));
-    await expect(
-      preparePerformanceWorkspaces(root, { base: commit, anchor: commit }),
-    ).rejects.toThrow("symlink");
+    await expect(preparePerformanceWorkspaces(root, { base: commit })).rejects.toThrow("symlink");
     await rm(join(root, "foreign-link"));
     await symlink("/etc/passwd", join(root, "src/foreign-link"));
     const before = (await readdir(tmpdir()))
       .filter((name) => name.startsWith("inkbook-performance-workspaces-"))
       .sort();
-    await expect(
-      preparePerformanceWorkspaces(root, { base: commit, anchor: commit }),
-    ).rejects.toThrow("symlink");
+    await expect(preparePerformanceWorkspaces(root, { base: commit })).rejects.toThrow("symlink");
     expect(
       (await readdir(tmpdir()))
         .filter((name) => name.startsWith("inkbook-performance-workspaces-"))

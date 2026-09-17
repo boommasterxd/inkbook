@@ -1,7 +1,7 @@
 import type { MockInstance } from "vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { expectTiming } from "../../../performance/timing-assertions";
+import { expectTiming, recordRelativeTiming } from "../../../performance/timing-assertions";
 import { performanceMode, timingBudget } from "../../../performance/timing-budget";
 
 declare const process: {
@@ -104,6 +104,12 @@ describe("performance timing assertions", () => {
     expect(() => expectTiming(1, Number.MAX_VALUE)).toThrow("Timing multipliers were removed");
   });
 
+  it.each([undefined, "median", "p99"])("rejects obsolete statistic option %j", (statistic) => {
+    const options = { label: "dispatch", statistic };
+    expect(() => expectTiming(0.2, 1, options)).toThrow(TypeError);
+    expect(flushRecords()).toEqual([]);
+  });
+
   it("does not capture or emit records when telemetry is disabled", () => {
     vi.stubEnv("INKBOOK_PERFORMANCE_REPORT", undefined);
     vi.stubEnv("INKBOOK_PERFORMANCE_REFRESH_RATE", undefined);
@@ -169,5 +175,67 @@ describe("performance timing modes", () => {
     flushRecords();
     expectTiming(0, 1);
     expect(flushRecords()).toEqual([expect.objectContaining({ ordinal: 1 })]);
+  });
+});
+
+describe("relative-only timing telemetry", () => {
+  it.each(["reference", "contracts", "measurement"])(
+    "records total work without inventing an absolute budget in %s mode",
+    (mode) => {
+      vi.stubEnv("INKBOOK_PERFORMANCE_MODE", mode);
+      recordRelativeTiming(Number.MAX_VALUE, "total sliced work");
+      expectTiming(0.2, 1);
+      recordRelativeTiming(0, "empty work");
+      expect(flushRecords()).toEqual([
+        expect.objectContaining({
+          actualMs: Number.MAX_VALUE,
+          referenceMs: null,
+          limitMs: null,
+          ratio: null,
+          comparison: "relative",
+          label: "total sliced work",
+          ordinal: 1,
+        }),
+        expect.objectContaining({ actualMs: 0.2, referenceMs: 1, ordinal: 2 }),
+        expect.objectContaining({ actualMs: 0, comparison: "relative", ordinal: 3 }),
+      ]);
+    },
+  );
+
+  it.each([NaN, Infinity, -1])("rejects invalid elapsed work %s", (actualMs) => {
+    expect(() => recordRelativeTiming(actualMs, "work")).toThrow(TypeError);
+    expect(flushRecords()).toEqual([]);
+  });
+
+  it.each(["", "   "])("requires a nonempty descriptive label %j", (label) => {
+    expect(() => recordRelativeTiming(1, label)).toThrow(TypeError);
+    expect(flushRecords()).toEqual([]);
+  });
+
+  it("does not record when telemetry is disabled but still validates the mode", () => {
+    vi.stubEnv("INKBOOK_PERFORMANCE_REPORT", undefined);
+    recordRelativeTiming(10, "work");
+    flushCallbacks.forEach((callback) => callback());
+    expect(writeSpy).not.toHaveBeenCalled();
+    vi.stubEnv("INKBOOK_PERFORMANCE_MODE", "unknown");
+    expect(() => recordRelativeTiming(10, "work")).toThrow("Unsupported performance mode");
+  });
+
+  it("requires the same running test context and refresh rate as budgeted timing", () => {
+    vi.stubEnv("INKBOOK_PERFORMANCE_REFRESH_RATE", "75");
+    expect(() => recordRelativeTiming(1, "work")).toThrow("supported refresh rate");
+    vi.stubEnv("INKBOOK_PERFORMANCE_REFRESH_RATE", "240");
+    const state = expect.getState();
+    vi.spyOn(expect, "getState").mockReturnValue({ ...state, currentTestName: "" });
+    expect(() => recordRelativeTiming(1, "work")).toThrow("running test");
+  });
+
+  it("shares the bounded capacity and resets ordinals with all timing records", () => {
+    for (let index = 0; index < 20_000; index += 1) recordRelativeTiming(1, "work");
+    expect(() => expectTiming(0, 1)).toThrow("exceeded 20000 records");
+    expect(() => recordRelativeTiming(1, "work")).toThrow("exceeded 20000 records");
+    expect(flushRecords()).toHaveLength(20_000);
+    recordRelativeTiming(1, "work");
+    expect(flushRecords()[0]).toMatchObject({ ordinal: 1 });
   });
 });

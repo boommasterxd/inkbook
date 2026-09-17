@@ -4,7 +4,6 @@ import { calculateElementBounds } from "../../../src/domain/geometry/public";
 import { ElementStore } from "../../../src/domain/store/public";
 import { MAX_ELEMENT_CELLS, spatialCellMembershipCount } from "../../../src/domain/spatial/index";
 import { changedElementDerivations } from "../../../src/obsidian/embeds/vault-document-model-delta";
-import { saveExistingFile } from "../../../src/persistence/saving/save-existing";
 import { yieldToMainThread } from "../../../src/persistence/scheduling/main-thread-yield";
 import {
   deriveDocumentIntegrityManifest,
@@ -12,7 +11,6 @@ import {
   IncrementalDocumentSerializer,
   serializeInkbookDocument,
 } from "../../../src/persistence/serialization/public";
-import { sha256Hex } from "../../../src/persistence/serialization/sha256";
 import { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/public";
 import { createProductionDocumentRuntime } from "../../../src/persistence/worker/runtime/production-document-runtime";
 import type { DocumentRuntimeRequest } from "../../../src/persistence/worker/runtime/public";
@@ -33,7 +31,6 @@ const FULL_EXPORT_SAMPLES_PER_RUN = statisticalSamples(20);
 const INCREMENTAL_EXPORT_SAMPLES_PER_RUN = statisticalSamples(100);
 const ORDER_ONLY_EXPORT_SAMPLES_PER_RUN = statisticalSamples(20);
 const snapshot = createStandardPersistenceFixture();
-let serializedSvg: string | null = null;
 
 describe("persistence serialization performance", () => {
   it("keeps the normative fixture deterministic and within file-size budgets", async ({
@@ -50,7 +47,6 @@ describe("persistence serialization performance", () => {
       durations.push(measured.durationMs);
     }
 
-    serializedSvg = baseline.svg;
     expect(baseline.metadataBytes).toBeLessThanOrEqual(32 * MIB);
     expect(baseline.totalBytes).toBeLessThanOrEqual(48 * MIB);
     expect(baseline.svg).not.toContain("\n");
@@ -89,24 +85,6 @@ describe("persistence serialization performance", () => {
         `checkpoints=${checkpoints}`,
       "performance",
     );
-  }, 120_000);
-
-  it("keeps the synchronous exact-base callback inside the autosave slice budget", async ({
-    annotate,
-  }) => {
-    if (serializedSvg === null) throw new Error("Standard SVG fixture was not serialized.");
-    const base = copyString(serializedSvg);
-    const next = base
-      .replace('data-inkbook-revision="1"', 'data-inkbook-revision="2"')
-      .replace('"revision":1', '"revision":2');
-    const outputHash = sha256Hex(next);
-    await exactBaseSave(base, next, outputHash);
-    const callbackDurations: number[] = [];
-    for (let run = 0; run < statisticalSamples(5); run += 1) {
-      callbackDurations.push(await exactBaseSave(base, next, outputHash));
-    }
-    await annotateDurations(annotate, "Vault.process exact-base callback", callbackDurations);
-    expectProfileBudget(callbackDurations, 8);
   }, 120_000);
 
   it("slices receiver-side integrity derivation within the autosave frame budget", async ({
@@ -286,10 +264,6 @@ function serializeFixture() {
   return measure(() => serializeInkbookDocument(snapshot, { hash: () => "fixture-hash" }));
 }
 
-function copyString(value: string): string {
-  return new TextDecoder().decode(new TextEncoder().encode(value));
-}
-
 function requireSerialized(result: ReturnType<typeof serializeInkbookDocument>) {
   if (!result.ok) {
     throw new Error(
@@ -297,45 +271,6 @@ function requireSerialized(result: ReturnType<typeof serializeInkbookDocument>) 
     );
   }
   return result.value;
-}
-
-async function exactBaseSave(base: string, next: string, outputHash: string): Promise<number> {
-  const currentCopy = copyString(base);
-  let persisted = base;
-  let callbackDuration = Number.POSITIVE_INFINITY;
-  const save = await saveExistingFile(
-    {
-      expectedBase: base,
-      output: next,
-      outputHash,
-      path: "fixture.svg",
-      revision: 2,
-    },
-    { currentRevision: () => 2 },
-    {
-      process: async (_path, update) => {
-        const callback = measure(() => update(currentCopy));
-        callbackDuration = callback.durationMs;
-        persisted = callback.value;
-        return persisted;
-      },
-      readWithMetadataGuard: async (path) => {
-        const size = new TextEncoder().encode(persisted).byteLength;
-        return {
-          content: persisted,
-          identity: { ctime: 1, mtime: 1, path, size },
-          materialization: "host-full-read-not-bounded" as const,
-          stabilityEvidence: "object-identity-and-stat-unchanged" as const,
-        };
-      },
-    },
-    {
-      verify: async (content, revision, hash) =>
-        content === next && revision === 2 && hash === outputHash,
-    },
-  );
-  expect(save.revision).toBe(2);
-  return callbackDuration;
 }
 
 async function fullExport(

@@ -1,12 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { calculateElementBounds } from "../../../src/domain/geometry/public";
-import type {
-  BoxShapeElementV1,
-  InkElementV1,
-  LineElementV1,
-  StrokeElementV1,
-} from "../../../src/domain/schema/public";
+import type { InkElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
 import { ElementStore } from "../../../src/domain/store/public";
 import type { TimeSlicedSelectionCommitPreparation } from "../../../src/editor/selection/handle-session";
 import {
@@ -27,12 +22,16 @@ import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/sc
 
 import { MeasuredSliceScheduler, percentile } from "../domain/domain-scenarios";
 import { rectangle } from "../../unit/domain/schema/fixtures";
-import { connectedLine } from "../../unit/domain/store/fixtures";
 import { indexedStroke } from "../../fixtures/editor/stroke";
+import {
+  endpointSession,
+  maximumEndpointFixture,
+  observeEndpointPreparation,
+} from "../../fixtures/editor/endpoint-fanout";
 import { maximumStroke } from "./maximum-stroke-fixture";
 import { createPassThroughMoveSession } from "./selection-session-fixture";
 import { INTERACTION_REFRESH_PROFILE, interactionP99 } from "../interaction-refresh-profile";
-import { expectTiming } from "../timing-assertions";
+import { expectTiming, recordRelativeTiming } from "../timing-assertions";
 import type { SelectionHandleSessionOptions } from "../../../src/editor/selection/handle-types";
 import type { TransformSliceScheduler } from "../../../src/editor/selection/transforms";
 
@@ -72,7 +71,13 @@ function scaleSessionOptions(
 function verifyEndpointFanout(store: ElementStore, firstLineId: string): void {
   expect(store.get(firstLineId)?.element).toMatchObject({ start: { x: 23, y: 24 } });
   expect(store.instrumentation).toMatchObject({
+    bandScans: 0,
     fullStoreScans: 0,
+    snapshotMaterializations: 0,
+    publishedDeltas: 1,
+    recordReplacements: 19_968,
+    deltaEntries: 19_968,
+    timeSlicedIndexVisits: 39_897,
     reverseDependencyVisits: 19_929,
   });
 }
@@ -94,14 +99,16 @@ describe("pressure selection hot path", () => {
     for (let index = 0; index < 20; index += 1) {
       elementMatchesSelectionArea(area, target, "touched");
     }
-    const durations = Array.from({ length: 120 }, () => {
+    const durations = new Array<number>(120);
+    let incorrectSelections = 0;
+    for (let run = 0; run < durations.length; run += 1) {
       const started = performance.now();
       const selected = elementMatchesSelectionArea(area, target, "touched");
-      const duration = performance.now() - started;
-      expect(selected).toBe(true);
-      return duration;
-    });
+      durations[run] = performance.now() - started;
+      if (selected !== true) incorrectSelections += 1;
+    }
 
+    expect(incorrectSelections).toBe(0);
     expectTiming(interactionP99(durations), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
   });
 });
@@ -113,15 +120,17 @@ describe("selection hot paths", () => {
       y: 40 + Math.sin(index / 12) * 24,
     }));
     new LassoSelectionSession({ x: 0, y: 40 }, 1).appendBatch(samples);
-    const durations = Array.from({ length: 120 }, () => {
+    const durations = new Array<number>(120);
+    let oversizedSelections = 0;
+    for (let run = 0; run < durations.length; run += 1) {
       const session = new LassoSelectionSession({ x: 0, y: 40 }, 1);
       const started = performance.now();
       session.appendBatch(samples);
-      const duration = performance.now() - started;
-      expect(session.points.length).toBeLessThanOrEqual(512);
-      return duration;
-    });
+      durations[run] = performance.now() - started;
+      if (!(session.points.length <= 512)) oversizedSelections += 1;
+    }
 
+    expect(oversizedSelections).toBe(0);
     expectTiming(interactionP99(durations), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
   });
 
@@ -172,8 +181,10 @@ describe("selection hot paths", () => {
     selectionOverlayContainsPoint(selected, center);
     const hitDurations = Array.from({ length: 120 }, () => {
       const started = performance.now();
-      expect(selectionOverlayContainsPoint(selected, center)).toBe(true);
-      return performance.now() - started;
+      const containsPoint = selectionOverlayContainsPoint(selected, center);
+      const duration = performance.now() - started;
+      expect(containsPoint).toBe(true);
+      return duration;
     });
 
     expectTiming(interactionP99(durations), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
@@ -281,8 +292,61 @@ describe("selection commit hot paths", () => {
       INTERACTION_REFRESH_PROFILE.mainThreadP99Ms,
     );
     expectTiming(scheduler.maxSliceDuration, INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs);
+    recordRelativeTiming(
+      scheduler.sliceDurations.reduce((total, duration) => total + duration, 0),
+      "complete endpoint fan-out preparation CPU time",
+    );
+  }, 30_000);
+
+  it("bounds observed fan-out preparation work between yields without publishing partial state", async () => {
+    const { elements, targetIds } = maximumEndpointFixture();
+    const store = new ElementStore(elements);
+    const session = endpointSession(store, targetIds);
+    session.update({ x: 2, y: 3 });
+    store.resetInstrumentation();
+    const observation = observeEndpointPreparation(store);
+    try {
+      const prepared = await prepareEndpointFanout(store, session, observation.scheduler);
+      const work = observation.finish();
+      expect(work.creations).toBe(elements.length);
+      expect(work.maximumCreationsBetweenYields).toBe(1);
+      expect(work.maximumReverseVisitsBetweenYields).toBe(1);
+      expect(work.yields).toBeGreaterThanOrEqual(elements.length);
+      expect(work.partialPublications).toBe(0);
+      expect(store.instrumentation).toMatchObject({
+        bandScans: 0,
+        fullStoreScans: 0,
+        snapshotMaterializations: 0,
+        recordReplacements: 0,
+        publishedDeltas: 0,
+        reverseDependencyVisits: 19_929,
+      });
+      if (prepared.token === null) throw new Error("Expected complete fan-out preparation.");
+      const commit = store.commitPreparedElementReplacement(prepared.token);
+      expect(commit.status).toBe("committed");
+      expect(commit.delta?.changes).toHaveLength(elements.length);
+      expect(new Set(commit.delta?.changes.map(({ id }) => id)).size).toBe(elements.length);
+    } finally {
+      observation.restore();
+    }
   }, 30_000);
 });
+
+async function warmEndpointPreparation(
+  store: ElementStore,
+  targetIds: readonly string[],
+): Promise<void> {
+  const session = endpointSession(store, targetIds);
+  session.update({ x: 1, y: 1 });
+  const scheduler = new MeasuredSliceScheduler(2);
+  const materialized = await session.prepareCommitTimeSliced(scheduler);
+  if (materialized.status !== "ready") throw new Error("Expected warm-up targets.");
+  const preparation = await store.prepareElementReplacement(materialized.replacements, scheduler);
+  if (preparation.token === null) throw new Error("Expected a warm-up replacement token.");
+  if (store.commitPreparedElementReplacement(preparation.token).status !== "committed") {
+    throw new Error("Expected the warm-up replacement to commit.");
+  }
+}
 
 function movedSession(strokes: readonly StrokeElementV1[]): SelectionHandleSession {
   const session = createPassThroughMoveSession(strokes, { x: 0, y: 0 });
@@ -291,13 +355,13 @@ function movedSession(strokes: readonly StrokeElementV1[]): SelectionHandleSessi
 }
 
 function measureCommitDecisions(session: SelectionHandleSession): number[] {
-  const durations: number[] = [];
+  const durations = new Array<number>(120);
   for (let run = 0; run < 121; run += 1) {
     const started = performance.now();
     const decision = session.prepareCommit();
     const duration = performance.now() - started;
     expect(decision).toEqual({ status: "time-sliced-required" });
-    if (run > 0) durations.push(duration);
+    if (run > 0) durations[run - 1] = duration;
   }
   return durations;
 }
@@ -306,13 +370,14 @@ function measureIndexedMisses(strokes: readonly StrokeElementV1[]): number[] {
   const sceneStore = new ElementSceneStore(
     new ElementStore(strokes.map((stroke) => ({ ...stroke, points: Array.from(stroke.points) }))),
   );
-  const durations: number[] = [];
+  const durations = new Array<number>(100);
   try {
     sceneStore.hit({ x: 2_048, y: 50 }, "mouse", 1);
     for (let run = 0; run < 100; run += 1) {
       const started = performance.now();
-      expect(sceneStore.hit({ x: 2_048, y: 50 }, "mouse", 1)).toBeNull();
-      durations.push(performance.now() - started);
+      const hit = sceneStore.hit({ x: 2_048, y: 50 }, "mouse", 1);
+      durations[run] = performance.now() - started;
+      expect(hit).toBeNull();
     }
   } finally {
     sceneStore.release();
@@ -343,103 +408,22 @@ async function prepareInMeasuredSlices(session: SelectionHandleSession): Promise
   return { maximumSlice, prepared, sliceDurations };
 }
 
-function maximumEndpointFixture(): {
-  readonly elements: readonly InkElementV1[];
-  readonly targetIds: readonly string[];
-} {
-  const targetCount = 39;
-  const endpointsPerTarget = 511;
-  const targets = Array.from({ length: targetCount }, (_, index) => endpointTarget(index));
-  const lines = targets.flatMap((target, targetIndex) =>
-    Array.from({ length: endpointsPerTarget }, (_, endpointIndex) =>
-      endpointLine(target, targetCount + targetIndex * endpointsPerTarget + endpointIndex),
-    ),
-  );
-  return { elements: [...targets, ...lines], targetIds: targets.map(({ id }) => id) };
-}
-
-async function warmEndpointPreparation(
-  store: ElementStore,
-  targetIds: readonly string[],
-): Promise<void> {
-  const session = endpointSession(store, targetIds);
-  session.update({ x: 1, y: 1 });
-  const scheduler = new MeasuredSliceScheduler(2);
-  const materialized = await session.prepareCommitTimeSliced(scheduler);
-  if (materialized.status !== "ready") throw new Error("Expected warm-up targets.");
-  const preparation = await store.prepareElementReplacement(materialized.replacements, scheduler);
-  if (preparation.token === null) throw new Error("Expected a warm-up replacement token.");
-  if (store.commitPreparedElementReplacement(preparation.token).status !== "committed") {
-    throw new Error("Expected the warm-up replacement to commit.");
-  }
-}
-
-function endpointSession(
-  store: ElementStore,
-  targetIds: readonly string[],
-): SelectionHandleSession {
-  const targets = targetIds.map((id) => store.get(id)!.element as InkElementV1);
-  const session = new SelectionHandleSession({
-    action: { kind: "move" },
-    elements: targets,
-    planner: store,
-    startPointer: { x: 0, y: 0 },
-  });
-  return session;
-}
-
-function endpointTarget(index: number): BoxShapeElementV1 {
-  const x = 20 + (index % 8) * 220;
-  const y = 20 + Math.floor(index / 8) * 150;
-  return {
-    createdAt: index,
-    height: 100,
-    id: fixtureId(index),
-    kind: "rectangle",
-    pivot: { x: x + 100, y: y + 50 },
-    rotation: 0,
-    style: { ...outlineStyle(), fillColor: null, fillOpacity: 0 },
-    width: 200,
-    x,
-    y,
-  };
-}
-
-function endpointLine(target: BoxShapeElementV1, index: number): LineElementV1 {
-  return {
-    ...connectedLine(target),
-    createdAt: index,
-    id: fixtureId(index),
-    style: outlineStyle(),
-  };
-}
-
-function outlineStyle() {
-  return {
-    outlineColor: { type: "theme-text" as const },
-    outlineOpacity: 1,
-    outlineStyle: "solid" as const,
-    outlineWidth: 2 as const,
-  };
-}
-
-function fixtureId(index: number): string {
-  return `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
-}
-
 function measureAreaSelection(
   store: ElementStore,
   sceneStore: ElementSceneStore,
   area: SelectionArea,
   inclusion: SelectionAreaInclusion,
 ): number[] {
-  return Array.from({ length: 120 }, () => {
+  const durations = new Array<number>(120);
+  let incorrectSelections = 0;
+  for (let run = 0; run < durations.length; run += 1) {
     const started = performance.now();
     const selection = selectInArea(store, sceneStore, area, inclusion);
-    const duration = performance.now() - started;
-    expect(selection.size).toBe(1_000);
-    return duration;
-  });
+    durations[run] = performance.now() - started;
+    if (selection.size !== 1_000) incorrectSelections += 1;
+  }
+  expect(incorrectSelections).toBe(0);
+  return durations;
 }
 
 function selectInArea(

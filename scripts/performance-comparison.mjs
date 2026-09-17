@@ -1,8 +1,8 @@
 export const COMPARISON_STAGES = Object.freeze([6, 18]);
-export const REGRESSION_RATIO = 1.5;
+export const REGRESSION_RATIO = 1.2;
 export const MAXIMUM_COMPARISON_METRICS = 20_000;
 
-/** Fixed two-look sign test of the median paired trajectory-statistic ratio. */
+/** Fixed two-look sign test of paired ratios against the shared regression threshold. */
 export function compareTimingRounds(referenceRounds, candidateRounds) {
   if (referenceRounds?.length !== candidateRounds?.length) {
     throw new Error("Performance comparison requires matching paired round counts.");
@@ -50,6 +50,25 @@ function indexRounds(rounds) {
   });
 }
 
+export function validTimingContract(record) {
+  if ("statistic" in record) return false;
+  if (record.comparison === "relative") {
+    return (
+      [record.referenceMs, record.limitMs, record.ratio].every((value) => value === null) &&
+      typeof record.label === "string" &&
+      record.label.trim().length > 0
+    );
+  }
+  return (
+    ["lt", "lte"].includes(record.comparison) &&
+    Number.isFinite(record.referenceMs) &&
+    record.referenceMs > 0 &&
+    (record.limitMs === undefined || (Number.isFinite(record.limitMs) && record.limitMs > 0)) &&
+    (record.ratio === undefined ||
+      (Number.isFinite(record.ratio) && record.ratio === record.actualMs / record.referenceMs))
+  );
+}
+
 function validateRecord(record) {
   if (
     !record ||
@@ -62,9 +81,7 @@ function validateRecord(record) {
     ![60, 90, 120, 144, 240].includes(record.refreshRate) ||
     !Number.isFinite(record.actualMs) ||
     record.actualMs < 0 ||
-    !Number.isFinite(record.referenceMs) ||
-    record.referenceMs <= 0 ||
-    !["lt", "lte"].includes(record.comparison)
+    !validTimingContract(record)
   ) {
     throw new Error("Invalid performance comparison measurement.");
   }
@@ -77,7 +94,8 @@ function validateContracts(baseline, round) {
     if (
       !current ||
       current.referenceMs !== initial.referenceMs ||
-      current.comparison !== initial.comparison
+      current.comparison !== initial.comparison ||
+      (initial.comparison === "relative" && current.label !== initial.label)
     ) {
       throw new Error(`Performance metric identity or contract differs: ${key}.`);
     }
@@ -101,6 +119,7 @@ function compareMetric(key, referenceValues, candidateValues) {
       : classifyStage(ratios);
   return {
     key,
+    regressionRatio: REGRESSION_RATIO,
     ratios,
     minRatio: ratios.includes(null) ? null : Math.min(...ratios),
     maxRatio: ratios.includes(null) ? null : Math.max(...ratios),
@@ -111,8 +130,8 @@ function compareMetric(key, referenceValues, candidateValues) {
 function classifyStage(ratios) {
   const stage = ratios.length;
   const requiredSigns = stage === COMPARISON_STAGES[0] ? 6 : 14;
-  const belowCount = ratios.filter((ratio) => ratio !== null && ratio < REGRESSION_RATIO).length;
-  const aboveCount = ratios.filter((ratio) => ratio !== null && ratio > REGRESSION_RATIO).length;
+  const belowCount = ratios.filter((value) => value !== null && value < REGRESSION_RATIO).length;
+  const aboveCount = ratios.filter((value) => value !== null && value > REGRESSION_RATIO).length;
   const ordered = ratios.includes(null) ? null : [...ratios].sort((left, right) => left - right);
   const status = !ordered
     ? "inconclusive"

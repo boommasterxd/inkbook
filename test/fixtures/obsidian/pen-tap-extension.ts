@@ -9,18 +9,57 @@ import { createPenTapInsertionExtension } from "../../../src/obsidian/commands/p
 import { PenTapInsertionController } from "../../../src/obsidian/commands/pen-tap-insertion";
 
 export function mountPenTapEditor(text = "Text\n") {
-  const setCursor = vi.fn();
-  const editor = { setCursor } as unknown as Editor;
-  const context = { editor, file: { path: "note.md" } } as MarkdownFileInfo;
-  const command = vi.fn(() => true);
-  const enabled = vi.fn(() => true);
-  const canInsertAtLine = vi.fn((_editor: Editor, _path: string, line: number) => {
-    return text.split("\n")[line] === "";
+  const ports = {
+    setCursor: vi.fn(),
+    command: vi.fn(() => true),
+    enabled: vi.fn(() => true),
+    canInsertAtLine: vi.fn((_editor: Editor, _path: string, line: number) => {
+      return text.split("\n")[line] === "";
+    }),
+  };
+  const fixture = mountWithPorts(text, ports);
+  const posAtCoords = vi.spyOn(fixture.view, "posAtCoords").mockReturnValue(text.length);
+  return { ...fixture, ...ports, posAtCoords };
+}
+
+export function mountCountedPenTapEditor(text = "Text\n") {
+  const counts = { setCursor: 0, command: 0, canInsertAtLine: 0, posAtCoords: 0 };
+  const fixture = mountWithPorts(text, {
+    setCursor: () => {
+      counts.setCursor += 1;
+    },
+    command: () => {
+      counts.command += 1;
+      return true;
+    },
+    enabled: () => true,
+    canInsertAtLine: (_editor: Editor, _path: string, line: number) => {
+      counts.canInsertAtLine += 1;
+      return text.split("\n")[line] === "";
+    },
   });
-  const controller = new PenTapInsertionController({ canInsertAtLine }, enabled, {
+  const posAtCoords = () => {
+    counts.posAtCoords += 1;
+    return text.length;
+  };
+  fixture.view.posAtCoords = posAtCoords;
+  return { ...fixture, counts, posAtCoords };
+}
+
+interface PenTapPorts {
+  readonly setCursor: () => void;
+  readonly command: () => boolean;
+  readonly enabled: () => boolean;
+  readonly canInsertAtLine: (editor: Editor, path: string, line: number) => boolean;
+}
+
+function mountWithPorts<Ports extends PenTapPorts>(text: string, ports: Ports) {
+  const editor = { setCursor: ports.setCursor } as unknown as Editor;
+  const context = { editor, file: { path: "note.md" } } as MarkdownFileInfo;
+  const controller = new PenTapInsertionController(ports, ports.enabled, {
     id: "insert-handwriting-embed",
     name: "Insert handwriting embed",
-    editorCheckCallback: command,
+    editorCheckCallback: ports.command,
   });
   const parent = createHtmlElement("div");
   document.body.append(parent);
@@ -31,8 +70,10 @@ export function mountPenTapEditor(text = "Text\n") {
       extensions: [editorInfoField.init(() => context), createPenTapInsertionExtension(controller)],
     }),
   });
-  const posAtCoords = vi.spyOn(view, "posAtCoords").mockReturnValue(text.length);
-  vi.spyOn(view.scrollDOM, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 800, 600));
+  const originalPosition = Object.getOwnPropertyDescriptor(view, "posAtCoords");
+  const originalBounds = Object.getOwnPropertyDescriptor(view.scrollDOM, "getBoundingClientRect");
+  const bounds = new DOMRect(0, 0, 800, 600);
+  view.scrollDOM.getBoundingClientRect = () => bounds;
   Object.defineProperties(view.scrollDOM, {
     clientWidth: { configurable: true, value: 780 },
     clientLeft: { configurable: true, value: 0 },
@@ -40,19 +81,22 @@ export function mountPenTapEditor(text = "Text\n") {
     clientTop: { configurable: true, value: 0 },
   });
   return {
-    canInsertAtLine,
-    command,
+    ...ports,
     controller,
-    enabled,
     parent,
-    posAtCoords,
-    setCursor,
     view,
     destroy: () => {
       view.destroy();
+      restoreMethod(view, "posAtCoords", originalPosition);
+      restoreMethod(view.scrollDOM, "getBoundingClientRect", originalBounds);
       parent.remove();
     },
   };
+}
+
+function restoreMethod(target: object, key: string, descriptor: PropertyDescriptor | undefined) {
+  if (descriptor === undefined) Reflect.deleteProperty(target, key);
+  else Object.defineProperty(target, key, descriptor);
 }
 
 export function penEvent(type: string, overrides: PointerEventInit = {}): PointerEvent {

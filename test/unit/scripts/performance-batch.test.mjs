@@ -73,6 +73,14 @@ describe("performance batch reports", () => {
     expect(parsed.violations).toEqual([]);
   });
 
+  it("preserves timing records through JSON envelopes", () => {
+    const records = [measurement, { ...measurement, ordinal: 2 }];
+    const parsed = parseBatchReport(report({ stderr: envelope(file, records) }));
+    expect(parsed.measurements).toEqual(records.map((record) => ({ ...record, file })));
+    expect(parsed.measurements[0]).not.toHaveProperty("statistic");
+    expect(JSON.parse(JSON.stringify(parsed))).toEqual(parsed);
+  });
+
   it.each(["pending", "todo", "skipped", "failed"])("rejects %s tests", (status) => {
     const result = testResult();
     result.assertionResults[0].status = status;
@@ -102,6 +110,12 @@ describe("performance batch reports", () => {
   });
 
   it.each([
+    { statistic: "median" },
+    { statistic: null },
+    { statistic: "p99" },
+    { statistic: "mean" },
+    { statistic: 1.1 },
+    { statistic: {} },
     { actualMs: -1 },
     { referenceMs: 0 },
     { ratio: 3 },
@@ -186,11 +200,11 @@ describe("bounded performance batch execution", () => {
       mode: "contracts",
     });
     const [onTimeout, duration] = timers.setTimeout.mock.calls[0];
-    expect(duration).toBe(12 * 60 * 1000);
+    expect(duration).toBe(10 * 60 * 1000);
     onTimeout();
     expect(child.kill).toHaveBeenCalledWith("SIGKILL");
     expect((await pending).violations).toContainEqual(
-      expect.objectContaining({ message: expect.stringContaining("12 minutes") }),
+      expect.objectContaining({ message: expect.stringContaining("10 minutes") }),
     );
   });
 
@@ -225,4 +239,52 @@ describe("bounded performance batch execution", () => {
       runPerformanceBatch({ root, testFiles: [file], refreshRate: 240, mode: "loose" }),
     ).rejects.toThrow("mode");
   });
+});
+
+describe("relative-only batch records", () => {
+  const relative = {
+    ...measurement,
+    referenceMs: null,
+    limitMs: null,
+    ratio: null,
+    comparison: "relative",
+    label: "total work",
+  };
+
+  it("round-trips relative and absolute metrics in one envelope", () => {
+    const parsed = parseBatchReport(
+      report({ stderr: envelope(file, [measurement, { ...relative, ordinal: 2 }]) }),
+    );
+    expect(JSON.parse(JSON.stringify(parsed)).measurements).toEqual([
+      { ...measurement, file },
+      { ...relative, ordinal: 2, file },
+    ]);
+  });
+
+  it.each([
+    { referenceMs: 2 },
+    { referenceMs: undefined },
+    { limitMs: 2 },
+    { limitMs: undefined },
+    { ratio: 2 },
+    { ratio: undefined },
+    { label: undefined },
+    { label: " " },
+    { label: 12 },
+    { comparison: "lte" },
+    { actualMs: -1 },
+  ])("rejects malformed relative shape %j", (override) => {
+    expect(() =>
+      parseBatchReport(report({ stderr: envelope(file, [{ ...relative, ...override }]) })),
+    ).toThrow();
+  });
+
+  it.each([{ referenceMs: null }, { limitMs: null }, { ratio: null }, { comparison: "relative" }])(
+    "rejects a mixed absolute shape %j",
+    (override) => {
+      expect(() =>
+        parseBatchReport(report({ stderr: envelope(file, [{ ...measurement, ...override }]) })),
+      ).toThrow();
+    },
+  );
 });
