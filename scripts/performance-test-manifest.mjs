@@ -56,6 +56,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/persistence/runtime-export-cache.test.ts",
     "test/performance/persistence/serialization-and-worker.test.ts",
     "test/performance/persistence/stress-limits.test.ts",
+    "test/performance/persistence/worker-unlock-hydration.test.ts",
     "test/performance/rendering/scene/dense-viewport-reconciliation.test.ts",
     "test/performance/rendering/scene/path-cache-remount-performance.test.ts",
     "test/performance/rendering/scene/render-mount-complexity.test.ts",

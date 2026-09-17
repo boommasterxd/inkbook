@@ -34,6 +34,11 @@ const runs = [
     testFiles: ["/project/test/performance/domain/domain-performance.test.ts"],
   },
 ];
+const cadenceRuns = [60, 90, 120, 144, 240].map((refreshRate) => ({
+  label: "cadence-sensitive",
+  refreshRate,
+  testFiles: ["/project/test/performance/rendering/scene/live-stroke-refresh-profile.test.ts"],
+}));
 let workspaces;
 function batchResult(options, actualMs = 100) {
   return {
@@ -54,6 +59,9 @@ function batchResult(options, actualMs = 100) {
 const savedReport = () => JSON.parse(mocks.write.mock.lastCall[1]);
 const measurementCalls = () =>
   mocks.batch.mock.calls.filter(([options]) => options.mode === "measurement");
+
+const contractCalls = () =>
+  mocks.batch.mock.calls.filter(([options]) => options.mode === "contracts");
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -96,24 +104,68 @@ describe("PR base selection", () => {
   });
 });
 
-describe("direct original-benchmark gate", () => {
-  it("reuses input graphs across profiles while retaining every measurement and reference", async () => {
-    const profiles = [60, 90, 120, 144, 240].map((refreshRate) => ({
-      ...runs[0],
-      refreshRate,
-    }));
-    expect(await executePerformanceGate("/project", profiles)).toEqual([]);
+describe("cadence comparison profiles", () => {
+  it("retains all five cadence contracts but compares changed inputs only at 120 Hz", async () => {
+    expect(await executePerformanceGate("/project", cadenceRuns)).toEqual([]);
     expect(mocks.inputs).toHaveBeenCalledTimes(1);
     expect(mocks.inputs.mock.calls.map(([options]) => options.referenceRoot)).toEqual(["/base"]);
-    expect(mocks.batch).toHaveBeenCalledTimes(65);
-    for (const { refreshRate } of profiles) {
-      expect(
-        measurementCalls().filter(([options]) => options.refreshRate === refreshRate),
-      ).toHaveLength(12);
-    }
-    expect(savedReport().comparisons.map(({ metrics }) => metrics.length)).toEqual([5]);
+    expect(mocks.batch).toHaveBeenCalledTimes(17);
+    expect(contractCalls().map(([options]) => options.refreshRate)).toEqual([
+      60, 90, 120, 144, 240,
+    ]);
+    expect(measurementCalls()).toHaveLength(12);
+    expect(measurementCalls().every(([options]) => options.refreshRate === 120)).toBe(true);
+    expect(savedReport().comparisons.map(({ metrics }) => metrics.length)).toEqual([1]);
   });
 
+  it("collects 18 pairs for unresolved cadence timing without repeating other profiles", async () => {
+    mocks.batch.mockImplementation(async (options) =>
+      batchResult(
+        options,
+        options.mode === "measurement" && options.root === "/candidate" ? 120 : 100,
+      ),
+    );
+    expect(await executePerformanceGate("/project", cadenceRuns)).toEqual([]);
+    expect(contractCalls()).toHaveLength(5);
+    expect(measurementCalls()).toHaveLength(36);
+    expect(measurementCalls().every(([options]) => options.refreshRate === 120)).toBe(true);
+    expect(savedReport().warnings).toHaveLength(1);
+    expect(savedReport().comparisons[0].metrics[0].stage).toBe(18);
+  });
+
+  it.each(["contracts", "reference"])(
+    "retains all requested profiles in %s diagnostics",
+    async (mode) => {
+      vi.stubEnv("CI", undefined);
+      vi.stubEnv("INKBOOK_PERFORMANCE_MODE", mode);
+      expect(await executePerformanceGate("/project", cadenceRuns)).toEqual([]);
+      expect(
+        mocks.batch.mock.calls.map(([options]) => [options.mode, options.refreshRate]),
+      ).toEqual(cadenceRuns.map(({ refreshRate }) => [mode, refreshRate]));
+      expect(mocks.prepare).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects a standalone non-120 Hz cadence gate even with identical source", async () => {
+    workspaces.base.sourceHash = "candidate";
+    await expect(executePerformanceGate("/project", [cadenceRuns[3]])).rejects.toThrow(
+      "Cadence timing comparisons require the same benchmark files at 120 Hz",
+    );
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(mocks.batch).not.toHaveBeenCalled();
+  });
+
+  it("rejects cadence files absent from the 120 Hz comparison plan", async () => {
+    const incomplete = cadenceRuns.map((run) =>
+      run.refreshRate === 120 ? { ...run, testFiles: [] } : run,
+    );
+    await expect(executePerformanceGate("/project", incomplete)).rejects.toThrow(
+      "Cadence timing comparisons require",
+    );
+  });
+});
+
+describe("direct original-benchmark gate", () => {
   it("retains every contract and runs six balanced paired rounds against the PR base", async () => {
     expect(await executePerformanceGate("/project", runs)).toEqual([]);
     expect(mocks.batch).toHaveBeenCalledTimes(26);

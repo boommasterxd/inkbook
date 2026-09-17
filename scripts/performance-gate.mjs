@@ -23,6 +23,7 @@ export async function executePerformanceGate(projectRoot, runs) {
     throw new Error("A diagnostic cannot replace the complete CI gate.");
   }
   if (mode !== "gate") return runDiagnostic(projectRoot, runs, mode);
+  const comparisonRuns = selectComparisonRuns(runs);
   const workspaces = await preparePerformanceWorkspaces(projectRoot, {
     base: process.env["INKBOOK_PERFORMANCE_BASE"] ?? "origin/main",
   });
@@ -36,7 +37,7 @@ export async function executePerformanceGate(projectRoot, runs) {
     process.stdout.write(`Performance evidence: ${directory}\n`);
     const violations = await executeContracts(runs, workspaces, report);
     if (violations.length === 0) {
-      violations.push(...(await executeComparisons(runs, workspaces, report)));
+      violations.push(...(await executeComparisons(comparisonRuns, workspaces, report)));
     }
     report.violations = violations;
     return violations;
@@ -50,6 +51,26 @@ export async function executePerformanceGate(projectRoot, runs) {
       await workspaces.dispose();
     }
   }
+}
+
+function selectComparisonRuns(runs) {
+  const selected = runs.filter(
+    (run) => run.label !== "cadence-sensitive" || run.refreshRate === 120,
+  );
+  const cadenceFiles = new Set(
+    selected.filter((run) => run.label === "cadence-sensitive").flatMap((run) => run.testFiles),
+  );
+  for (const run of runs) {
+    if (
+      run.label === "cadence-sensitive" &&
+      run.testFiles.some((file) => !cadenceFiles.has(file))
+    ) {
+      throw new Error(
+        "Cadence timing comparisons require the same benchmark files at 120 Hz; use contracts or reference mode for other standalone profiles.",
+      );
+    }
+  }
+  return selected;
 }
 
 async function runDiagnostic(root, runs, mode) {
