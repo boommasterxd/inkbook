@@ -9,9 +9,22 @@ import {
 } from "../../../src/persistence/worker/runtime/public";
 import { createStandardPersistenceFixture } from "./fixtures";
 import { FallbackSliceProbe } from "../../fixtures/persistence/fallback-slice-probe";
+import { observeFallbackBytes } from "../../fixtures/persistence/fallback-byte-observer";
 import { createFallbackDeadlineClock } from "./fallback-deadline-clock";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 type MetricAnnotator = (message: string, type?: string) => Promise<unknown>;
+
+// Fixture-specific work ceilings count repeated decoding, encoding and SHA passes, not unique input bytes.
+// Clipboard covers 100 selected shapes; export covers one 257-element output. Parsing and
+// verification also rebuild canonical metadata, so they receive twice the export allowance.
+const MAXIMUM_SLICE_BYTES: Readonly<Record<string, number>> = {
+  "migration-validation": 256 * 1024,
+  "clipboard-encode": 32 * 1024,
+  "clipboard-decode": 32 * 1024,
+  "export-hash": 128 * 1024,
+  preflight: 256 * 1024,
+  "read-back": 256 * 1024,
+};
 
 const snapshot = createFallbackFixture();
 const serialized = requireSerialized();
@@ -22,6 +35,7 @@ describe("worker failure fallback performance", () => {
   }) => {
     await expectWorkerFailure();
     const { probe, runtime } = createScheduledFallback();
+    const stopObserving = observeFallbackBytes(probe);
     try {
       await runMigrationValidation(runtime, probe);
       await runClipboardRoundtrip(runtime, probe);
@@ -29,6 +43,7 @@ describe("worker failure fallback performance", () => {
       await runPersistedOutputVerification(runtime, probe, output);
       await assertFallbackMeasurements(probe, annotate);
     } finally {
+      stopObserving();
       runtime.terminate();
     }
   }, 120_000);
@@ -156,6 +171,11 @@ async function assertFallbackMeasurements(
   annotate: MetricAnnotator,
 ): Promise<void> {
   for (const [name, measurement] of probe.operations) {
+    expect(measurement.totalBytes).toBeGreaterThan(0);
+    expect(
+      measurement.maximumSliceBytes,
+      `${name} decoded/encoded/hashed bytes per yield`,
+    ).toBeLessThanOrEqual(MAXIMUM_SLICE_BYTES[name]!);
     expect(measurement.yields).toBeGreaterThanOrEqual(measurement.inputPauseYields);
     await annotate(
       `fallback ${name} live input: samples=${measurement.syntheticInputSamples}, ` +

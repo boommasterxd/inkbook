@@ -5,6 +5,7 @@ export class FallbackSliceProbe {
   readonly operations = new Map<string, OperationMeasurement>();
   #currentOperation = "idle";
   #inputQueryPhase = 0;
+  #sliceBytes = 0;
   #inputWasObserved = false;
   readonly #wait: () => Promise<void>;
 
@@ -26,6 +27,8 @@ export class FallbackSliceProbe {
     this.#currentOperation = name;
     this.operations.set(name, {
       yields: 0,
+      totalBytes: 0,
+      maximumSliceBytes: 0,
       inputPauseYields: 0,
       syntheticInputSamples: 0,
     });
@@ -33,12 +36,29 @@ export class FallbackSliceProbe {
     this.#inputWasObserved = false;
   }
 
+  public recordBytes(bytes: number): void {
+    const operation = this.operations.get(this.#currentOperation);
+    if (operation === undefined) return;
+    operation.totalBytes += bytes;
+    this.#sliceBytes += bytes;
+  }
+
+  #finishSlice(): void {
+    const operation = this.operations.get(this.#currentOperation);
+    if (operation !== undefined) {
+      operation.maximumSliceBytes = Math.max(operation.maximumSliceBytes, this.#sliceBytes);
+    }
+    this.#sliceBytes = 0;
+  }
+
   public finishOperation(): void {
+    this.#finishSlice();
     this.#currentOperation = "idle";
     this.#inputWasObserved = false;
   }
 
   public yieldControl = async (): Promise<void> => {
+    this.#finishSlice();
     this.yields += 1;
     const operation = this.operations.get(this.#currentOperation);
     if (operation !== undefined) operation.yields += 1;
@@ -55,6 +75,8 @@ export class FallbackSliceProbe {
 }
 
 interface OperationMeasurement {
+  totalBytes: number;
+  maximumSliceBytes: number;
   yields: number;
   inputPauseYields: number;
   syntheticInputSamples: number;

@@ -17,6 +17,28 @@ describe("fallback scheduling observations", () => {
     expect(probe.operations.get("validation")?.yields).toBe(2);
   });
 
+  it("accumulates repeated byte work between yields and includes the final slice", async () => {
+    const probe = new FallbackSliceProbe(async () => undefined);
+    probe.recordBytes(999);
+    probe.startOperation("export");
+    probe.recordBytes(100);
+    probe.recordBytes(200);
+    await probe.yieldControl();
+    probe.recordBytes(400);
+    probe.finishOperation();
+    expect(probe.operations.get("export")).toMatchObject({
+      totalBytes: 700,
+      maximumSliceBytes: 400,
+    });
+    probe.startOperation("read-back");
+    probe.recordBytes(50);
+    probe.finishOperation();
+    expect(probe.operations.get("read-back")).toMatchObject({
+      totalBytes: 50,
+      maximumSliceBytes: 50,
+    });
+  });
+
   it("keeps operation order and consumes each observed input pause once", async () => {
     const probe = new FallbackSliceProbe(async () => undefined);
     expect(probe.isInputActive()).toBe(false);
@@ -34,11 +56,15 @@ describe("fallback scheduling observations", () => {
     probe.finishOperation();
     expect([...probe.operations.keys()]).toEqual(["validation", "clipboard"]);
     expect(probe.operations.get("validation")).toEqual({
+      totalBytes: 0,
+      maximumSliceBytes: 0,
       yields: 4,
       inputPauseYields: 2,
       syntheticInputSamples: 2,
     });
     expect(probe.operations.get("clipboard")).toEqual({
+      totalBytes: 0,
+      maximumSliceBytes: 0,
       yields: 2,
       inputPauseYields: 1,
       syntheticInputSamples: 1,

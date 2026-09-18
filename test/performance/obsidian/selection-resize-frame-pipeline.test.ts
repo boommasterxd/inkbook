@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import * as elementPath from "../../../src/domain/geometry/element-path";
+import { ProgressivePreviewPath } from "../../../src/rendering/scene/progressive-preview-path";
 
 import { calculateElementBounds, derivePageExtent } from "../../../src/domain/geometry/public";
 import type { InkElementV1 } from "../../../src/domain/schema/public";
@@ -253,6 +256,7 @@ const API: ResizeApi = {
 const RAW_SAMPLES_PER_FRAME = 4;
 
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz selection resize frame pipeline`, () => {
+  afterEach(() => vi.restoreAllMocks());
   // Each independent workload retains its own default test deadline and scheduled work bound.
   it.for(RESIZE_WORKLOADS)(
     "keeps %s pointer-to-scene frames with coalesced work",
@@ -335,12 +339,24 @@ function runResizePipeline(elements: readonly InkElementV1[]) {
   let incorrectlyQueuedFrames = 0;
   let framesWithoutGeometryWrites = 0;
   fixture.renderer.resetInstrumentation();
+  const pathBuilds = vi.spyOn(elementPath, "buildElementPathParts");
+  const progressiveSteps = vi.spyOn(ProgressivePreviewPath.prototype, "step");
   runInteractionFrames((frame) => {
     const before = fixture.renderer.instrumentation().contentGeometryWrites;
+    pathBuilds.mockClear();
+    progressiveSteps.mockClear();
     for (const sample of samples[frame]!) interaction.pointerMove(sample);
     if (!(fixture.scheduler.pendingCount <= 2)) incorrectlyQueuedFrames += 1;
     fixture.scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
     fixture.scheduler.runFrame();
+    // At most 64 immediate shapes plus four progressive completions per frame.
+    expect(pathBuilds.mock.calls.length).toBeLessThanOrEqual(64 + 4);
+    expect(progressiveSteps.mock.calls.length).toBeLessThanOrEqual(4);
+    // The preview admits at most 256 paths: one canonical d write and up to
+    // three transform writes (feedback, replacement reset, residual feedback).
+    expect(fixture.renderer.instrumentation().contentGeometryWrites - before).toBeLessThanOrEqual(
+      256 * 4,
+    );
     if (!(fixture.renderer.instrumentation().contentGeometryWrites > before)) {
       framesWithoutGeometryWrites += 1;
     }
