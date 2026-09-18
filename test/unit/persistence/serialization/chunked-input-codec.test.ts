@@ -1,5 +1,5 @@
 import { parseInkbookDocumentForTest } from "../../../fixtures/persistence/parse-document";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { FILE_SCHEMA_LIMITS } from "../../../../src/domain/schema/public";
 import { jsonContainerBudget } from "../../../../src/domain/schema/validation-internals";
@@ -17,26 +17,41 @@ import {
   wideMetadataArrayProperty,
 } from "./fixtures";
 
+let snapshotSvg: string;
+let allElementSvg: string;
+
+beforeAll(() => {
+  snapshotSvg = serializeFixture(createSnapshot());
+  allElementSvg = serializeFixture(createAllElementSnapshot());
+});
+
+function serializeFixture(snapshot: ReturnType<typeof createSnapshot>): string {
+  const serialized = serializeInkbookDocument(snapshot);
+  expect(serialized.ok).toBe(true);
+  if (!serialized.ok) throw new Error("Snapshot serialization failed.");
+  return serialized.value.svg;
+}
+
 async function expectChunkedInputToMatchSynchronous(
   input: string,
   options: ConstructorParameters<typeof ChunkedInkbookInputParser>[0] = {},
-): Promise<void> {
+): Promise<Awaited<ReturnType<typeof parseInkbookDocumentForTest>>> {
   const bytes = new TextEncoder().encode(input);
   const parser = new ChunkedInkbookInputParser(options);
   await parser.write(bytes);
 
-  expect(await parser.finish()).toEqual(await parseInkbookDocumentForTest(bytes));
+  const result = await parser.finish();
+  expect(result).toEqual(await parseInkbookDocumentForTest(bytes));
+  return result;
 }
 
 async function expectSnapshotMetadataPrefixAccepted(
   parser: ChunkedInkbookInputParser,
 ): Promise<number> {
-  const serialized = serializeInkbookDocument(createSnapshot());
-  expect(serialized.ok).toBe(true);
-  if (!serialized.ok) throw new Error("Snapshot serialization failed.");
-  const metadataTag = serialized.value.svg.indexOf("<metadata");
-  const metadataStart = serialized.value.svg.indexOf(">", metadataTag) + 1;
-  const prefix = new TextEncoder().encode(serialized.value.svg.slice(0, metadataStart));
+  const svg = snapshotSvg;
+  const metadataTag = svg.indexOf("<metadata");
+  const metadataStart = svg.indexOf(">", metadataTag) + 1;
+  const prefix = new TextEncoder().encode(svg.slice(0, metadataStart));
 
   expect((await parser.write(prefix)).ok).toBe(true);
   return prefix.byteLength;
@@ -44,10 +59,8 @@ async function expectSnapshotMetadataPrefixAccepted(
 
 describe("chunked Inkbook input", () => {
   it("matches the synchronous codec across byte boundaries", async () => {
-    const serialized = serializeInkbookDocument(createAllElementSnapshot());
-    expect(serialized.ok).toBe(true);
-    if (!serialized.ok) return;
-    const bytes = new TextEncoder().encode(serialized.value.svg);
+    const svg = allElementSvg;
+    const bytes = new TextEncoder().encode(svg);
     const parser = new ChunkedInkbookInputParser({ inputSliceBytes: 37, pathBatchSize: 2 });
 
     for (let offset = 0; offset < bytes.length; offset += 23) {
@@ -59,9 +72,7 @@ describe("chunked Inkbook input", () => {
   });
 
   it("checkpoints input slices, explicit pauses, path batches, and snapshot elements", async () => {
-    const serialized = serializeInkbookDocument(createAllElementSnapshot());
-    expect(serialized.ok).toBe(true);
-    if (!serialized.ok) return;
+    const svg = allElementSvg;
     let checkpoints = 0;
     const parser = new ChunkedInkbookInputParser({
       checkpoint: () => {
@@ -71,7 +82,7 @@ describe("chunked Inkbook input", () => {
       inputSliceBytes: 1024,
       pathBatchSize: 1,
     });
-    const bytes = new TextEncoder().encode(serialized.value.svg);
+    const bytes = new TextEncoder().encode(svg);
 
     await parser.write(bytes);
     const afterInput = checkpoints;
@@ -85,14 +96,12 @@ describe("chunked Inkbook input", () => {
   });
 
   it("returns the same structured failures as the synchronous pipeline", async () => {
-    const serialized = serializeInkbookDocument(createSnapshot());
-    expect(serialized.ok).toBe(true);
-    if (!serialized.ok) return;
+    const svg = snapshotSvg;
     const inputs = [
-      serialized.value.svg.replace('data-inkbook-revision="7"', 'data-inkbook-revision="8"'),
-      serialized.value.svg.replace('"format":"inkbook"', '"format":'),
-      serialized.value.svg.replace("</svg>", "<script/></svg>"),
-      serialized.value.svg.replace("M0 0L2048.6", "M1 0L2048.6"),
+      svg.replace('data-inkbook-revision="7"', 'data-inkbook-revision="8"'),
+      svg.replace('"format":"inkbook"', '"format":'),
+      svg.replace("</svg>", "<script/></svg>"),
+      svg.replace("M0 0L2048.6", "M1 0L2048.6"),
     ];
 
     for (const input of inputs) {
@@ -104,10 +113,8 @@ describe("chunked Inkbook input", () => {
   });
 
   it("matches synchronous migration of a canonical version zero document", async () => {
-    const serialized = serializeInkbookDocument(createAllElementSnapshot());
-    expect(serialized.ok).toBe(true);
-    if (!serialized.ok) return;
-    const versionZero = toVersionZeroDocument(serialized.value.svg);
+    const svg = allElementSvg;
+    const versionZero = toVersionZeroDocument(svg);
 
     await expectChunkedInputToMatchSynchronous(versionZero, {
       inputSliceBytes: versionZero.length + 1,
@@ -120,13 +127,11 @@ describe("chunked Inkbook metadata boundaries", () => {
   it.each(CURRENT_METADATA_REWRITES)(
     "matches synchronous rejection of noncanonical or unbound metadata as $expectedCode",
     async ({ expectedCode, mutate, updateHash }) => {
-      const serialized = serializeInkbookDocument(createSnapshot());
-      expect(serialized.ok).toBe(true);
-      if (!serialized.ok) return;
-      const input = rewriteDocumentMetadata(serialized.value.svg, mutate, updateHash);
+      const svg = snapshotSvg;
+      const input = rewriteDocumentMetadata(svg, mutate, updateHash);
 
-      await expectChunkedInputToMatchSynchronous(input, { inputSliceBytes: 31 });
-      expect(await parseInkbookDocumentForTest(input)).toMatchObject({
+      const result = await expectChunkedInputToMatchSynchronous(input, { inputSliceBytes: 31 });
+      expect(result).toMatchObject({
         error: { code: expectedCode },
         ok: false,
       });
@@ -149,38 +154,26 @@ describe("chunked Inkbook metadata boundaries", () => {
   }, 30_000);
 
   it("decodes allowed XML entities split across every byte boundary", async () => {
-    const serialized = serializeInkbookDocument(createSnapshot());
-    expect(serialized.ok).toBe(true);
-    if (!serialized.ok) return;
-    const input = appendMetadataProperty(serialized.value.svg, '"escapedXml":"&lt;&amp;&gt;"');
+    const svg = snapshotSvg;
+    const input = appendMetadataProperty(svg, '"escapedXml":"&lt;&amp;&gt;"');
 
     await expectChunkedInputToMatchSynchronous(input, { inputSliceBytes: 1 });
   });
 
   it("matches native container-width enforcement at the limit and limit plus one", async () => {
-    const serialized = serializeInkbookDocument(createSnapshot());
-    expect(serialized.ok).toBe(true);
-    if (!serialized.ok) return;
+    const svg = snapshotSvg;
     const maximumEntries = jsonContainerBudget(FILE_SCHEMA_LIMITS);
 
     for (const entries of [maximumEntries, maximumEntries + 1]) {
-      const input = appendMetadataProperty(
-        serialized.value.svg,
-        wideMetadataArrayProperty(entries),
-      );
+      const input = appendMetadataProperty(svg, wideMetadataArrayProperty(entries));
 
       await expectChunkedInputToMatchSynchronous(input, { inputSliceBytes: 1024 });
     }
   });
 
   it("bounds scratch while parsing escape-dense document metadata", async () => {
-    const serialized = serializeInkbookDocument(createSnapshot());
-    expect(serialized.ok).toBe(true);
-    if (!serialized.ok) return;
-    const input = appendMetadataProperty(
-      serialized.value.svg,
-      `"escapeDense":"${"\\n".repeat(256 * 1024)}"`,
-    );
+    const svg = snapshotSvg;
+    const input = appendMetadataProperty(svg, `"escapeDense":"${"\\n".repeat(256 * 1024)}"`);
 
     let checkpoints = 0;
     const parser = new ChunkedInkbookInputParser({
@@ -279,10 +272,8 @@ describe("chunked Inkbook input boundaries", () => {
 
 describe("chunked migration cancellation", () => {
   it("honors cancellation at the migration checkpoint", async () => {
-    const serialized = serializeInkbookDocument(createSnapshot());
-    expect(serialized.ok).toBe(true);
-    if (!serialized.ok) return;
-    const versionZero = toVersionZeroDocument(serialized.value.svg);
+    const svg = snapshotSvg;
+    const versionZero = toVersionZeroDocument(svg);
     const controller = new AbortController();
     const parser = new ChunkedInkbookInputParser({
       checkpoint: () => Promise.resolve(),

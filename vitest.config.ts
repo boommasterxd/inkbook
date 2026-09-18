@@ -13,6 +13,8 @@ export default defineConfig({
     },
   },
   test: {
+    // Use both CPUs on small runners; performance batches explicitly override this to one.
+    maxWorkers: "100%",
     execArgv: ["--max-old-space-size=384", ...(exposeGarbageCollector ? ["--expose-gc"] : [])],
     coverage: {
       include: ["src/**/*.{ts,tsx}"],
