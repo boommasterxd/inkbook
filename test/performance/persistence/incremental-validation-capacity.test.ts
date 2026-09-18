@@ -2,19 +2,15 @@ import { expect, it } from "vitest";
 
 import { IncrementalDocumentSerializer } from "../../../src/persistence/serialization/public";
 import { createSnapshot } from "../../unit/persistence/serialization/fixtures";
-import { expectTiming } from "../timing-assertions";
 import { createRetainedCapacityRectangle } from "./fixtures";
 
-it("updates retained serializer capacity without rescanning unchanged geometry", async ({
-  annotate,
-}) => {
+it("updates retained serializer capacity without rescanning unchanged geometry", () => {
   const elements = Array.from({ length: 20_000 }, (_, index) =>
     createRetainedCapacityRectangle(index + 1),
   );
   const serializer = new IncrementalDocumentSerializer();
   expect(serializer.reset(createSnapshot(elements)).ok).toBe(true);
   const target = elements[0]!;
-  const started = performance.now();
 
   for (let revision = 8; revision < 108; revision += 1) {
     const offset = revision % 2;
@@ -25,10 +21,12 @@ it("updates retained serializer capacity without rescanning unchanged geometry",
     });
     expect(result).toEqual({ ok: true, value: undefined });
   }
-  const durationMs = performance.now() - started;
-
-  await annotate(`100 retained-capacity updates=${durationMs.toFixed(3)} ms`, "performance");
-  expectTiming(durationMs, 500);
+  expect(serializer.instrumentation).toMatchObject({
+    fullValidationRuns: 1,
+    incrementalValidationRuns: 100,
+    fragmentBuilds: 100,
+    cacheElements: 1,
+  });
 });
 
 it.each([1_000, 20_000])(

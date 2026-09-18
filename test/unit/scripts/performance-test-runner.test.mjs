@@ -15,10 +15,9 @@ describe("performance test plan", () => {
   it("classifies every benchmark exactly once", async () => {
     const discovered = await collectTestFiles();
     const plan = await collectPerformanceTestPlan();
-    const classified = [...plan.invariant, ...plan.budgetOnly, ...plan.cadenceSensitive];
+    const classified = [...plan.invariant, ...plan.cadenceSensitive];
 
-    expect(plan.invariant).toHaveLength(19);
-    expect(plan.budgetOnly).toHaveLength(29);
+    expect(plan.invariant).toHaveLength(48);
     expect(plan.cadenceSensitive).toHaveLength(11);
     expect(new Set(classified).size).toBe(discovered.length);
     expect(classified.toSorted()).toEqual(discovered);
@@ -39,7 +38,6 @@ describe("performance test plan", () => {
 
     expect(runs.map(({ label, refreshRate }) => [label, refreshRate])).toEqual([
       ["refresh-rate-invariant", 120],
-      ["budget-only", 240],
       ...SUPPORTED_REFRESH_RATES.map((refreshRate) => ["cadence-sensitive", refreshRate]),
     ]);
   });
@@ -48,8 +46,33 @@ describe("performance test plan", () => {
     const plan = await collectPerformanceTestPlan();
     const runs = selectPerformanceRuns(plan, "cadence");
 
-    expect(runs.map(({ refreshRate }) => refreshRate)).toEqual(SUPPORTED_REFRESH_RATES);
-    expect(runs.every(({ testFiles }) => testFiles === plan.cadenceSensitive)).toBe(true);
+    expect(
+      runs
+        .filter(({ label }) => label === "cadence-sensitive")
+        .map(({ refreshRate }) => refreshRate),
+    ).toEqual(SUPPORTED_REFRESH_RATES);
+    expect(
+      runs
+        .filter(({ label }) => label === "cadence-sensitive")
+        .every(({ testFiles }) => testFiles === plan.cadenceSensitive),
+    ).toBe(true);
+  });
+
+  it("partitions hosted coverage without dropping or duplicating local file/profile contracts", async () => {
+    const plan = await collectPerformanceTestPlan();
+    const keys = (runs) =>
+      runs
+        .flatMap(({ label, refreshRate, testFiles }) =>
+          testFiles.map((file) => JSON.stringify([label, refreshRate, file])),
+        )
+        .toSorted();
+    const hosted = [
+      ...selectPerformanceRuns(plan, "shared"),
+      ...selectPerformanceRuns(plan, "cadence"),
+    ];
+    expect(keys(hosted)).toEqual(keys(selectPerformanceRuns(plan, "all")));
+    expect(new Set(keys(hosted)).size).toBe(103);
+    expect(selectPerformanceRuns(plan, "shared")[0].testFiles).toEqual(plan.invariant);
   });
 
   it("requires an explicit supported rate for one CI profile shard", async () => {

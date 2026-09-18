@@ -2,296 +2,91 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { StrokeElementV1 } from "../../../src/domain/schema/public";
 import { packElementsChunked } from "../../../src/persistence/worker/runtime/element-wire-codec";
-
 import { INKBOOK_CLIPBOARD_TEXT_PREFIX } from "../../../src/persistence/clipboard/constants";
-import { yieldToMainThread } from "../../../src/persistence/scheduling/main-thread-yield";
 import { adoptUtf8Output } from "../../../src/persistence/scheduling/utf8-adoption";
 import {
   encodeRuntimeRequestChunked,
   encodeRuntimeResult,
+  decodeRuntimeResultChunked,
 } from "../../../src/persistence/worker/runtime/wire-codec";
-import { decodeRuntimeResultChunked } from "../../../src/persistence/worker/runtime/wire-codec";
-import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
-import { recordRelativeTiming } from "../timing-assertions";
-import { performanceMode } from "../timing-budget";
-import { createStandardPersistenceFixture, STANDARD_STROKES } from "./fixtures";
-import {
-  annotateDurations,
-  collectProfileGarbage,
-  expectProfileBudget,
-  summarizeDurations,
-} from "./metrics";
+import { createStandardPersistenceFixture, STANDARD_STROKES, STANDARD_POINTS } from "./fixtures";
 
-const AUTOSAVE_MAIN_THREAD_BUDGET_MS = INTERACTION_REFRESH_PROFILE.mainThreadP99Ms;
 const FULL_OUTPUT_BYTES = 48 * 1024 * 1024;
 const CLIPBOARD_OUTPUT_BYTES = 5 * 1024 * 1024 + 1;
-const WIRE_REFERENCE_BYTES = 8 * 1024 * 1024;
 
 describe("worker transfer preparation and result adoption", () => {
-  it("packs the 10,000-stroke full request in bounded main-thread slices", async ({ annotate }) => {
+  it("packs the complete 10,000-stroke request with bounded transfer storage", async () => {
     const snapshot = createStandardPersistenceFixture();
-    await measureFullRequestPacking(snapshot);
-    const measurements: SliceMeasurement[] = [];
-    for (let run = 0; run < 5; run += 1) {
-      measurements.push(await measureFullRequestPacking(snapshot));
-    }
-
-    const sliceDurations = measurements.map(({ maximumSliceMs }) => maximumSliceMs);
-    await annotateDurations(
-      annotate,
-      "full request main-thread preparation slices",
-      sliceDurations,
-    );
-    await annotateDurations(
-      annotate,
-      "full request main-thread preparation total",
-      measurements.map(({ totalMs }) => totalMs),
-    );
-    await annotate(
-      `full request transfer: buffers=${STANDARD_STROKES}, ` +
-        `pointBytes=${measurements[0]?.transferredBytes ?? 0}`,
-      "performance",
-    );
-    expectProfileBudget(sliceDurations, AUTOSAVE_MAIN_THREAD_BUDGET_MS);
-    recordRelativeTiming(
-      Math.max(...measurements.map(({ activeMs }) => activeMs)),
-      "full request packing active-slice elapsed time",
-    );
-  }, 120_000);
-
-  it("adopts a maximum-size UTF-8 result in bounded main-thread slices", async ({ annotate }) => {
-    const output = new Uint8Array(FULL_OUTPUT_BYTES);
-    output.fill(97);
-    await measureUtf8Adoption(output);
-    const measurements: SliceMeasurement[] = [];
-    for (let run = 0; run < 5; run += 1) {
-      collectProfileGarbage();
-      measurements.push(await measureUtf8Adoption(output));
-    }
-
-    const sliceDurations = measurements.map(({ maximumSliceMs }) => maximumSliceMs);
-    await annotateDurations(annotate, "UTF-8 result adoption slices", sliceDurations);
-    await annotateDurations(
-      annotate,
-      "UTF-8 result adoption total",
-      measurements.map(({ totalMs }) => totalMs),
-    );
-    expectProfileBudget(sliceDurations, AUTOSAVE_MAIN_THREAD_BUDGET_MS);
-    recordRelativeTiming(
-      Math.max(...measurements.map(({ activeMs }) => activeMs)),
-      "UTF-8 adoption active-slice elapsed time",
-    );
-  }, 120_000);
-
-  it("adopts one canonical clipboard representation in bounded slices", async ({ annotate }) => {
-    const customText = "a".repeat(CLIPBOARD_OUTPUT_BYTES);
-    await measureClipboardAdoption(customText);
-    const measurements: SliceMeasurement[] = [];
-    for (let run = 0; run < 5; run += 1) {
-      collectProfileGarbage();
-      measurements.push(await measureClipboardAdoption(customText));
-    }
-
-    const sliceDurations = measurements.map(({ maximumSliceMs }) => maximumSliceMs);
-    await annotateDurations(annotate, "clipboard result adoption slices", sliceDurations);
-    await annotateDurations(
-      annotate,
-      "clipboard result adoption total",
-      measurements.map(({ totalMs }) => totalMs),
-    );
-    expectProfileBudget(sliceDurations, AUTOSAVE_MAIN_THREAD_BUDGET_MS);
-    recordRelativeTiming(
-      Math.max(...measurements.map(({ activeMs }) => activeMs)),
-      "clipboard adoption active-slice elapsed time",
-    );
-  }, 120_000);
-});
-
-describe("reference wire-format comparison", () => {
-  for (const profile of ["desktop", "mobile"] as const) {
-    it(`compares cloned strings and transferred UTF-8 for the ${profile} reference`, async ({
-      annotate,
-    }) => {
-      const output = "a".repeat(WIRE_REFERENCE_BYTES);
-      const cloneFirst = profile === "desktop";
-      compareWireFormats(output, cloneFirst);
-      const cloned: number[] = [];
-      const transferred: number[] = [];
-      for (let run = 0; run < 5; run += 1) {
-        const measurement = compareWireFormats(output, run % 2 === 0 ? cloneFirst : !cloneFirst);
-        cloned.push(measurement.clonedStringMs);
-        transferred.push(measurement.transferredUtf8Ms);
-      }
-
-      await annotateDurations(annotate, `${profile} cloned string wire`, cloned);
-      await annotateDurations(annotate, `${profile} transferred UTF-8 wire`, transferred);
-      // Wire-format selection is a reference-device obligation, not a PR-source regression.
-      if (performanceMode() === "reference") {
-        expect(summarizeDurations(transferred).p50).toBeLessThan(summarizeDurations(cloned).p50);
-      }
-    }, 120_000);
-  }
-});
-
-interface SliceMeasurement {
-  readonly activeMs: number;
-  readonly maximumSliceMs: number;
-  readonly totalMs: number;
-  readonly transferredBytes?: number;
-}
-
-function compareWireFormats(
-  output: string,
-  cloneFirst: boolean,
-): {
-  readonly clonedStringMs: number;
-  readonly transferredUtf8Ms: number;
-} {
-  const [cloned, transferred] = cloneFirst
-    ? ([measureClonedString(output), measureTransferredUtf8(output)] as const)
-    : reverseWireMeasurements(output);
-  expect(cloned.length).toBe(output.length);
-  expect(transferred.senderBytes).toBe(0);
-  expect(transferred.length).toBe(output.length);
-  return { clonedStringMs: cloned.durationMs, transferredUtf8Ms: transferred.durationMs };
-}
-
-function reverseWireMeasurements(output: string) {
-  const transferred = measureTransferredUtf8(output);
-  return [measureClonedString(output), transferred] as const;
-}
-
-function measureClonedString(output: string) {
-  const started = performance.now();
-  const cloned = structuredClone(output);
-  const durationMs = performance.now() - started;
-  return { durationMs, length: cloned.length };
-}
-
-function measureTransferredUtf8(output: string) {
-  const started = performance.now();
-  const encoded = new TextEncoder().encode(output);
-  const transferred = structuredClone(encoded, { transfer: [encoded.buffer] });
-  const adopted = new TextDecoder("utf-8", { fatal: true }).decode(transferred);
-  const durationMs = performance.now() - started;
-  return { durationMs, length: adopted.length, senderBytes: encoded.byteLength };
-}
-
-async function measureFullRequestPacking(
-  snapshot: ReturnType<typeof createStandardPersistenceFixture>,
-): Promise<SliceMeasurement> {
-  const slices = measuredCheckpoint();
-  const started = performance.now();
-  const encoded = await encodeRuntimeRequestChunked(
-    {
-      baseModelRevision: null,
-      exportGeneration: 1,
-      modelRevision: snapshot.revision,
-      sessionId: "wire-performance",
-      snapshot,
-      type: "export-full",
-      workerEpoch: 1,
-    },
-    { checkpoint: slices.checkpoint, signal: new AbortController().signal },
-  );
-  slices.finish();
-  const totalMs = performance.now() - started;
-  expect(encoded.value.type).toBe("export-full-wire");
-  expect(encoded.transfer).toHaveLength(STANDARD_STROKES);
-  return {
-    activeMs: slices.durations.reduce((total, duration) => total + duration, 0),
-    maximumSliceMs: summarizeDurations(slices.durations).maximum,
-    totalMs,
-    transferredBytes: encoded.transfer.reduce<number>(
-      (bytes, transferable) =>
-        bytes + (transferable instanceof ArrayBuffer ? transferable.byteLength : 0),
-      0,
-    ),
-  };
-}
-
-async function measureUtf8Adoption(output: Uint8Array): Promise<SliceMeasurement> {
-  const slices = measuredCheckpoint({ betweenSlices: yieldToMainThread });
-  const started = performance.now();
-  const adopted = await adoptUtf8Output(output, { checkpoint: slices.checkpoint });
-  slices.finish();
-  const totalMs = performance.now() - started;
-  expect(adopted.length).toBe(output.byteLength);
-  expect(adopted.charCodeAt(0)).toBe(97);
-  expect(adopted.charCodeAt(adopted.length - 1)).toBe(97);
-  return {
-    activeMs: slices.durations.reduce((total, duration) => total + duration, 0),
-    maximumSliceMs: summarizeDurations(slices.durations).maximum,
-    totalMs,
-  };
-}
-
-async function measureClipboardAdoption(customText: string): Promise<SliceMeasurement> {
-  const encoded = encodeRuntimeResult({
-    identity: {
-      operationId: 1,
-      purpose: "clipboard",
-      sessionId: "wire-performance",
-      workerEpoch: 1,
-    },
-    result: {
-      ok: true,
-      value: {
-        byteLength: customText.length,
-        customText,
-        plainText: `${INKBOOK_CLIPBOARD_TEXT_PREFIX}${customText}`,
+    const checkpoint = vi.fn(async () => undefined);
+    const encoded = await encodeRuntimeRequestChunked(
+      {
+        baseModelRevision: null,
+        exportGeneration: 1,
+        modelRevision: snapshot.revision,
+        sessionId: "wire-performance",
+        snapshot,
+        type: "export-full",
+        workerEpoch: 1,
       },
-    },
-    type: "clipboard-encode-success",
+      { checkpoint, signal: new AbortController().signal },
+    );
+    expect(encoded.value.type).toBe("export-full-wire");
+    expect(encoded.transfer).toHaveLength(STANDARD_STROKES);
+    expect(new Set(encoded.transfer).size).toBe(STANDARD_STROKES);
+    expect(
+      encoded.transfer.reduce<number>(
+        (bytes, transfer) => bytes + (transfer instanceof ArrayBuffer ? transfer.byteLength : 0),
+        0,
+      ),
+    ).toBe(STANDARD_POINTS * 3 * Float64Array.BYTES_PER_ELEMENT);
+    expect(checkpoint.mock.calls.length).toBeGreaterThanOrEqual(
+      Math.floor(snapshot.elements.length / 64),
+    );
   });
-  expect(encoded.transfer).toHaveLength(1);
-  const received = structuredClone(encoded.value, { transfer: [...encoded.transfer] });
-  if (encoded.value.type !== "clipboard-encode-success-wire" || !encoded.value.result.ok) {
-    throw new Error("Expected an encoded clipboard wire result.");
-  }
-  expect(encoded.value.result.value.canonicalText.byteLength).toBe(0);
-  const slices = measuredCheckpoint({ betweenSlices: yieldToMainThread });
-  const started = performance.now();
-  const adopted = await decodeRuntimeResultChunked(received, {
-    checkpoint: slices.checkpoint,
-    signal: new AbortController().signal,
-  });
-  slices.finish();
-  const totalMs = performance.now() - started;
-  expect(adopted).toMatchObject({
-    result: { ok: true, value: { customText } },
-    type: "clipboard-encode-success",
-  });
-  return {
-    activeMs: slices.durations.reduce((total, duration) => total + duration, 0),
-    maximumSliceMs: summarizeDurations(slices.durations).maximum,
-    totalMs,
-  };
-}
 
-function measuredCheckpoint(options: { readonly betweenSlices?: () => Promise<void> } = {}): {
-  readonly checkpoint: () => Promise<void>;
-  readonly durations: number[];
-  readonly finish: () => void;
-} {
-  const durations: number[] = [];
-  let sliceStarted = performance.now();
-  const capture = (): void => {
-    durations.push(performance.now() - sliceStarted);
-    sliceStarted = performance.now();
-  };
-  return {
-    checkpoint: async () => {
-      capture();
-      if (options.betweenSlices !== undefined) {
-        await options.betweenSlices();
-        sliceStarted = performance.now();
-      }
-    },
-    durations,
-    finish: capture,
-  };
-}
+  it("transfers only one canonical clipboard representation and adopts it in chunks", async () => {
+    const customText = "a".repeat(CLIPBOARD_OUTPUT_BYTES);
+    const plainText = `${INKBOOK_CLIPBOARD_TEXT_PREFIX}${customText}`;
+    const encoded = encodeRuntimeResult({
+      identity: {
+        operationId: 1,
+        purpose: "clipboard",
+        sessionId: "wire-performance",
+        workerEpoch: 1,
+      },
+      result: { ok: true, value: { byteLength: customText.length, customText, plainText } },
+      type: "clipboard-encode-success",
+    });
+    expect(encoded.transfer).toHaveLength(1);
+    const received = structuredClone(encoded.value, { transfer: [...encoded.transfer] });
+    if (encoded.value.type !== "clipboard-encode-success-wire" || !encoded.value.result.ok) {
+      throw new Error("Expected an encoded clipboard wire result.");
+    }
+    expect(encoded.value.result.value.canonicalText.byteLength).toBe(0);
+    const checkpoint = vi.fn(async () => undefined);
+    const adopted = await decodeRuntimeResultChunked(received, {
+      checkpoint,
+      signal: new AbortController().signal,
+    });
+    expect(adopted).toMatchObject({
+      result: { ok: true, value: { customText, plainText } },
+      type: "clipboard-encode-success",
+    });
+    expect(checkpoint).toHaveBeenCalledTimes(
+      Math.ceil(CLIPBOARD_OUTPUT_BYTES / WORK_CHUNK_BYTES) + 1,
+    );
+  });
+
+  it("detaches transferred UTF-8 storage while preserving the full decoded output", () => {
+    const output = "a".repeat(8 * 1024 * 1024);
+    expect(structuredClone(output)).toBe(output);
+    const encoded = new TextEncoder().encode(output);
+    const transferred = structuredClone(encoded, { transfer: [encoded.buffer] });
+    expect(encoded.byteLength).toBe(0);
+    expect(transferred.byteLength).toBe(output.length);
+    expect(new TextDecoder("utf-8", { fatal: true }).decode(transferred)).toBe(output);
+  });
+});
 
 const WORK_CHUNK_BYTES = 256 * 1024;
 

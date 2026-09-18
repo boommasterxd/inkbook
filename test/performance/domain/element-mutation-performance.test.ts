@@ -6,23 +6,10 @@ import {
   type ElementMutation,
 } from "../../../src/domain/store/public";
 
-import { percentile } from "./action-distribution";
-import { MeasuredSliceScheduler } from "./domain-scenarios";
+import { CheckpointSliceScheduler } from "./domain-scenarios";
 import { createStandardDomainFixture } from "./standard-domain-fixture";
-import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
-import { expectTiming } from "../timing-assertions";
 
-interface MutationMeasurement {
-  readonly commitDuration: number;
-  readonly maximumSlice: number;
-  readonly preparationDuration: number;
-  readonly sliceDurations: readonly number[];
-  readonly transition: AppliedElementMutation;
-}
-
-it("keeps atomic clipboard-scale store adoption within main-thread slice budgets", async ({
-  annotate,
-}) => {
+it("atomically cuts and restores 10,000 strokes while yielding during preparation", async () => {
   const fixture = createStandardDomainFixture();
   const store = new ElementStore(fixture.elements);
   const removed = new Set(fixture.strokeIds);
@@ -33,74 +20,42 @@ it("keeps atomic clipboard-scale store adoption within main-thread slice budgets
     },
     removeIds: fixture.strokeIds,
   };
-
-  const warmCut = await measureMutation(store, cut, 11_000);
-  await measureMutation(store, warmCut.transition.reverse, 1_000);
-  const cuts: MutationMeasurement[] = [];
-  const restores: MutationMeasurement[] = [];
-  for (let run = 0; run < 5; run += 1) {
-    const measuredCut = await measureMutation(store, cut, 11_000);
-    cuts.push(measuredCut);
-    restores.push(await measureMutation(store, measuredCut.transition.reverse, 1_000));
-  }
-
-  const maximumSlice = maximum([...cuts, ...restores].map(({ maximumSlice }) => maximumSlice));
-  const sliceDurations = [...cuts, ...restores].flatMap(({ sliceDurations }) => sliceDurations);
-  const maximumCommit = maximum([...cuts, ...restores].map(({ commitDuration }) => commitDuration));
-  const maximumCut = maximum(cuts.map(({ preparationDuration }) => preparationDuration));
-  const maximumRestore = maximum(restores.map(({ preparationDuration }) => preparationDuration));
-  await annotate(
-    `10k clipboard mutation: cut max=${maximumCut.toFixed(3)} ms, ` +
-      `restore max=${maximumRestore.toFixed(3)} ms, commit max=${maximumCommit.toFixed(3)} ms, ` +
-      `slice max=${maximumSlice.toFixed(3)} ms`,
-    "performance",
-  );
-
-  expect(cuts).toHaveLength(5);
-  expect(restores).toHaveLength(5);
-  expectTiming(maximumCut, 750);
-  expectTiming(maximumRestore, 750);
-  expectTiming(maximumCommit, 8);
-  expect(sliceDurations.length).toBeGreaterThanOrEqual(100);
-  expectTiming(percentile(sliceDurations, 0.95), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
-  expectTiming(maximumSlice, INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs);
+  let publications = 0;
+  const unsubscribe = store.subscribe(() => {
+    publications += 1;
+  });
+  const cutTransition = await applyMutation(store, cut, 11_000);
+  expect(store.size).toBe(1_000);
+  expect(publications).toBe(1);
+  await applyMutation(store, cutTransition.reverse, 1_000);
   expect(store.size).toBe(11_000);
+  expect(publications).toBe(2);
+  for (const id of fixture.strokeIds) expect(store.get(id)).toBeDefined();
+  unsubscribe();
 }, 60_000);
 
-async function measureMutation(
+async function applyMutation(
   store: ElementStore,
   mutation: ElementMutation,
   expectedSizeBeforeCommit: number,
-): Promise<MutationMeasurement> {
-  let partialStoreObserved = false;
-  const scheduler = new MeasuredSliceScheduler(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms, () => {
-    partialStoreObserved ||= store.size !== expectedSizeBeforeCommit;
+): Promise<AppliedElementMutation> {
+  let yielded = 0;
+  const scheduler = new CheckpointSliceScheduler(40, () => {
+    yielded += 1;
+    expect(store.size).toBe(expectedSizeBeforeCommit);
   });
-  const preparationStarted = performance.now();
   const prepared = await store.prepareElementMutation(mutation, scheduler);
-  const preparationDuration = performance.now() - preparationStarted;
   if (prepared.status !== "prepared" || prepared.token === null) {
-    throw new Error("Clipboard mutation benchmark could not prepare its atomic transaction.");
+    throw new Error("Clipboard mutation could not prepare its atomic transaction.");
   }
-  const commitStarted = performance.now();
   const committed = store.commitPreparedElementMutation(prepared.token);
-  const commitDuration = performance.now() - commitStarted;
   scheduler.finish();
   if (committed.status !== "committed" || committed.transition === null) {
-    throw new Error("Clipboard mutation benchmark could not commit its atomic transaction.");
+    throw new Error("Clipboard mutation could not commit its atomic transaction.");
   }
-  expect(partialStoreObserved).toBe(false);
-  return {
-    commitDuration,
-    maximumSlice: scheduler.maxSliceDuration,
-    preparationDuration,
-    sliceDurations: scheduler.sliceDurations,
-    transition: committed.transition,
-  };
-}
-
-function maximum(values: readonly number[]): number {
-  return Math.max(...values);
+  expect(yielded).toBeGreaterThan(0);
+  expect(scheduler.checkpointCounts.every((count) => count <= 40)).toBe(true);
+  return committed.transition;
 }
 
 function remainingBand(

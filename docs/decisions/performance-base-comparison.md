@@ -1,5 +1,7 @@
 # Performance Base Comparison
 
+> Historical decision, superseded by [Deterministic Performance Checks](deterministic-performance-checks.md). Timing commands and comparison rules below are no longer active.
+
 ## Status
 
 Accepted, 2026-09-16. Replaces automatic performance-baseline promotion.
@@ -10,7 +12,7 @@ An additional historical source reference requires a second comparison and maint
 
 ## Decision
 
-Keep the existing same-runner comparison against the PR base and remove the separate historical anchor, moving-reference resolver, promotion reports, and post-merge promotion workflow. Manual and release runs retain their existing `origin/main` comparison. The canonical [Performance CI](../performance-ci.md#comparison-policy) contract defines the timing rules, all deterministic contracts, refresh profiles, and absolute reference-device budgets.
+Keep the existing same-runner comparison against the PR base and remove the separate historical anchor, moving-reference resolver, promotion reports, and post-merge promotion workflow. Manual and release runs retain their existing `origin/main` comparison. The timing policy described here has since been removed; see the superseding decision above.
 
 ## Consequences
 

@@ -11,7 +11,6 @@ export const performanceRoot = join(projectRoot, "test", "performance");
 
 export const SUPPORTED_REFRESH_RATES = Object.freeze([60, 90, 120, 144, 240]);
 export const DEFAULT_REFRESH_RATE = 120;
-export const STRICTEST_REFRESH_RATE = 240;
 
 export async function collectTestFiles(directory = performanceRoot) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -54,30 +53,29 @@ export function createPerformanceTestPlan(testFiles) {
   return Object.freeze(plan);
 }
 
+function invariantRun(testFiles) {
+  return { label: "refresh-rate-invariant", refreshRate: DEFAULT_REFRESH_RATE, testFiles };
+}
+
+function cadenceRuns(plan) {
+  return SUPPORTED_REFRESH_RATES.map((refreshRate) => ({
+    label: "cadence-sensitive",
+    refreshRate,
+    testFiles: plan.cadenceSensitive,
+  }));
+}
+
 export function selectPerformanceRuns(plan, suite, configuredRefreshRate) {
-  if (suite === "shared") {
-    return [
-      {
-        label: "refresh-rate-invariant",
-        refreshRate: DEFAULT_REFRESH_RATE,
-        testFiles: plan.invariant,
-      },
-      { label: "budget-only", refreshRate: STRICTEST_REFRESH_RATE, testFiles: plan.budgetOnly },
-    ];
-  }
+  if (suite === "shared") return [invariantRun(plan.invariant)];
   if (suite === "profile") {
     const refreshRate = parseRefreshRate(configuredRefreshRate);
     return [{ label: "cadence-sensitive", refreshRate, testFiles: plan.cadenceSensitive }];
   }
   if (suite === "cadence") {
-    return SUPPORTED_REFRESH_RATES.map((refreshRate) => ({
-      label: "cadence-sensitive",
-      refreshRate,
-      testFiles: plan.cadenceSensitive,
-    }));
+    return cadenceRuns(plan);
   }
   if (suite !== "all") throw new TypeError(`Unsupported performance suite: ${suite}`);
-  return [...selectPerformanceRuns(plan, "shared"), ...selectPerformanceRuns(plan, "cadence")];
+  return [invariantRun(plan.invariant), ...cadenceRuns(plan)];
 }
 
 export async function runPerformanceRuns(runs) {
@@ -86,9 +84,7 @@ export async function runPerformanceRuns(runs) {
 
 export function reportPerformanceViolations(violations) {
   if (violations.length === 0) {
-    process.stdout.write(
-      "\nPerformance checks completed without blocking failures; review any timing warnings.\n",
-    );
+    process.stdout.write("\nDeterministic performance contracts passed.\n");
     return;
   }
   process.stderr.write(`\nRefresh-rate performance violations (${violations.length}):\n`);

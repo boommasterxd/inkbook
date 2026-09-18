@@ -7,14 +7,9 @@ import {
   createPhoneSheetEditableFixture,
   installKeyboardInsetObserver,
 } from "../../fixtures/obsidian/phone-sheet-editable";
-import {
-  INTERACTION_REFRESH_PROFILE,
-  interactionP99,
-  measureInteractionFrames,
-} from "../interaction-refresh-profile";
-import { expectTiming } from "../timing-assertions";
+import { INTERACTION_REFRESH_PROFILE, runInteractionFrames } from "../interaction-refresh-profile";
 
-it("coalesces viewport correction with two geometry reads inside the 240 Hz frame budget", () => {
+it("coalesces viewport correction with two geometry reads with bounded work", () => {
   installObsidianDomHelpers();
   Platform.isPhone = true;
   const inset = installKeyboardInsetObserver();
@@ -24,7 +19,7 @@ it("coalesces viewport correction with two geometry reads inside the 240 Hz fram
   );
   let incorrectlyQueuedFrames = 0;
   try {
-    const durations = measureInteractionFrames((frame) => {
+    runInteractionFrames((frame) => {
       fixture.scroll.scrollTop = 100;
       for (const event of events[frame]!) {
         fixture.viewport.dispatchEvent(event);
@@ -34,9 +29,8 @@ it("coalesces viewport correction with two geometry reads inside the 240 Hz fram
       fixture.frames.runNext(0);
     });
     expect(incorrectlyQueuedFrames).toBe(0);
-    expect(fixture.inputReadCount).toBe(durations.length);
-    expect(fixture.scrollReadCount).toBe(durations.length);
-    expectTiming(interactionP99(durations), (1000 / 240) * 0.55);
+    expect(fixture.inputReadCount).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
+    expect(fixture.scrollReadCount).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
   } finally {
     try {
       fixture.session.close("immediate");

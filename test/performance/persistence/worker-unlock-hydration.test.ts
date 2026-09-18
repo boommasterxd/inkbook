@@ -5,14 +5,11 @@ import { changedElementDerivations } from "../../../src/obsidian/embeds/vault-do
 import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
 import { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/public";
 import { createStandardPersistenceFixture, replaceFirstStroke } from "./fixtures";
-import { measureAsync } from "./metrics";
 
 const snapshot = createStandardPersistenceFixture();
 
 describe("document worker export performance", () => {
-  it("reports unlock and incremental-save phases while reusing validated bounds", async ({
-    annotate,
-  }) => {
+  it("bounds unlock batches and incremental-save work while reusing validated bounds", async () => {
     const serialized = serializeInkbookDocument(snapshot);
     if (!serialized.ok) throw new Error(serialized.error.code);
     const runtime = new DocumentWorkerRuntime({ sessionId: "phases", workerEpoch: 1 });
@@ -20,6 +17,7 @@ describe("document worker export performance", () => {
       shouldYield: () => false,
       yieldControl: async () => undefined,
     });
+    let hydratedElements = 0;
     const unlocked = await runtime.execute(
       {
         identity: {
@@ -33,17 +31,28 @@ describe("document worker export performance", () => {
       },
       {
         unlockBatch: async (batch) => {
+          expect(batch.elements.length).toBeGreaterThan(0);
+          expect(batch.elements.length).toBeLessThanOrEqual(256);
+          const pointBytes = batch.elements.reduce(
+            (bytes, element) => bytes + (element.kind === "stroke" ? element.points.length * 8 : 0),
+            0,
+          );
+          expect(pointBytes).toBeLessThanOrEqual(4 * 1024 * 1024);
+          hydratedElements += batch.elements.length;
           await builder.appendOwnedValidatedRuntime(batch.elements, batch.derivations);
         },
       },
     );
     expect(unlocked.type).toBe("unlock-success");
-    const finalized = await measureAsync(() => builder.finalize());
-    if (finalized.value === null) throw new Error("Store hydration was cancelled.");
+    const finalized = await builder.finalize();
+    if (finalized === null) throw new Error("Store hydration was cancelled.");
 
+    expect(hydratedElements).toBe(snapshot.elements.length);
+    expect(finalized.size).toBe(snapshot.elements.length);
+    expect(finalized.instrumentation.hydrationElementVisits).toBe(snapshot.elements.length * 2);
     const first = snapshot.elements[0]!;
     const changed = { ...replaceFirstStroke(snapshot, 2), createdAt: first.createdAt };
-    const delta = finalized.value.replace(changed.id, changed);
+    const delta = finalized.replace(changed.id, changed);
     if (delta === null) throw new Error("Expected a changed Store record.");
     const reusesBefore = runtime.instrumentation.derivedBoundsReuses;
     const exported = await runtime.execute({
@@ -58,12 +67,6 @@ describe("document worker export performance", () => {
     });
     expect(exported.type).toBe("export-success");
     expect(runtime.instrumentation.derivedBoundsReuses).toBe(reusesBefore + 1);
-    await annotate(
-      `unlock phases=${JSON.stringify(runtime.instrumentation.lastUnlockPhases)}, ` +
-        `storeFinalizeMs=${finalized.durationMs.toFixed(1)}, ` +
-        `save phases=${JSON.stringify(runtime.instrumentation.lastExportPhases)}`,
-      "performance",
-    );
     runtime.terminate();
   }, 120_000);
 });

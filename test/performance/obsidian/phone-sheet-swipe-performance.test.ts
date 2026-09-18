@@ -6,13 +6,7 @@ import {
   createPhoneSheetSwipeHarness,
   touchPointer,
 } from "../../fixtures/obsidian/phone-sheet-swipe";
-import {
-  INTERACTION_REFRESH_PROFILE,
-  interactionP99,
-  interactionProfileAnnotation,
-  measureInteractionFrames,
-} from "../interaction-refresh-profile";
-import { expectTiming } from "../timing-assertions";
+import { INTERACTION_REFRESH_PROFILE, runInteractionFrames } from "../interaction-refresh-profile";
 import { installObsidianDomHelpers } from "../../adapters/obsidian/dom";
 
 afterEach(() => {
@@ -21,7 +15,7 @@ afterEach(() => {
 });
 
 describe("phone sheet swipe performance", () => {
-  it("coalesces continuous touch input without repeated layout reads", async ({ annotate }) => {
+  it("coalesces continuous touch input without repeated layout reads", () => {
     installObsidianDomHelpers();
     const fixture = createPhoneSheetSwipeHarness(0, false);
     const { controller, frames } = fixture;
@@ -34,20 +28,17 @@ describe("phone sheet swipe performance", () => {
       ]);
       fixture.handle.dispatchEvent(touchPointer("pointerdown", 10, 1, 0));
 
-      const durations = measureInteractionFrames((frame) => {
+      runInteractionFrames((frame) => {
         for (const event of events[frame]!) fixture.surface.dispatchEvent(event);
         frames.flush();
       });
 
-      const p99 = interactionP99(durations);
       expect(heightRead).toHaveBeenCalledOnce();
       expect(frames.maxPending).toBe(1);
       expect(frames.pending).toBe(0);
       expect(fixture.dragWrites).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
       expect(fixture.inheritedWrites).toBe(0);
       expect(fixture.surface.style.getPropertyValue("--inkbook-adaptive-panel-drag")).toBe("");
-      expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
-      await annotate(interactionProfileAnnotation("phone sheet swipe", p99), "performance");
     } finally {
       try {
         controller.dispose();

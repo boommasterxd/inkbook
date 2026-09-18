@@ -3,14 +3,10 @@ import { describe, expect, it } from "vitest";
 import { saveExistingFile } from "../../../src/persistence/saving/save-existing";
 import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
 import { sha256Hex } from "../../../src/persistence/serialization/sha256";
-import { statisticalSamples } from "../sample-policy";
 import { createStandardPersistenceFixture } from "./fixtures";
-import { annotateDurations, expectProfileBudget, measure } from "./metrics";
 
 describe("persistence serialization performance", () => {
-  it("keeps the synchronous exact-base callback inside the autosave slice budget", async ({
-    annotate,
-  }) => {
+  it("reuses one exact-base save preparation across repeated host callback attempts", async () => {
     const serialized = serializeInkbookDocument(createStandardPersistenceFixture(), {
       hash: () => "fixture-hash",
     });
@@ -21,12 +17,6 @@ describe("persistence serialization performance", () => {
       .replace('"revision":1', '"revision":2');
     const outputHash = sha256Hex(next);
     await exactBaseSave(base, next, outputHash);
-    const callbackDurations: number[] = [];
-    for (let run = 0; run < statisticalSamples(5); run += 1) {
-      callbackDurations.push(await exactBaseSave(base, next, outputHash));
-    }
-    await annotateDurations(annotate, "Vault.process exact-base callback", callbackDurations);
-    expectProfileBudget(callbackDurations, 8);
   }, 120_000);
 });
 
@@ -34,10 +24,11 @@ function copyString(value: string): string {
   return new TextDecoder().decode(new TextEncoder().encode(value));
 }
 
-async function exactBaseSave(base: string, next: string, outputHash: string): Promise<number> {
-  const currentCopy = copyString(base);
+async function exactBaseSave(base: string, next: string, outputHash: string): Promise<void> {
   let persisted = base;
-  let callbackDuration = Number.POSITIVE_INFINITY;
+  let processCalls = 0;
+  let readCalls = 0;
+  let verificationCalls = 0;
   const save = await saveExistingFile(
     {
       expectedBase: base,
@@ -49,12 +40,15 @@ async function exactBaseSave(base: string, next: string, outputHash: string): Pr
     { currentRevision: () => 2 },
     {
       process: async (_path, update) => {
-        const callback = measure(() => update(currentCopy));
-        callbackDuration = callback.durationMs;
-        persisted = callback.value;
+        processCalls += 1;
+        // Hosts may invoke the updater repeatedly before committing its result.
+        expect(update(copyString(base))).toBe(next);
+        persisted = update(copyString(base));
+        expect(persisted).toBe(next);
         return persisted;
       },
       readWithMetadataGuard: async (path) => {
+        readCalls += 1;
         const size = new TextEncoder().encode(persisted).byteLength;
         return {
           content: persisted,
@@ -65,10 +59,15 @@ async function exactBaseSave(base: string, next: string, outputHash: string): Pr
       },
     },
     {
-      verify: async (content, revision, hash) =>
-        content === next && revision === 2 && hash === outputHash,
+      verify: async (content, revision, hash) => {
+        verificationCalls += 1;
+        return content === next && revision === 2 && hash === outputHash;
+      },
     },
   );
   expect(save.revision).toBe(2);
-  return callbackDuration;
+  expect(persisted).toBe(next);
+  expect(processCalls).toBe(1);
+  expect(readCalls).toBe(2);
+  expect(verificationCalls).toBe(1);
 }

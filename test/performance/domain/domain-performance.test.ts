@@ -1,4 +1,3 @@
-import { percentile, worstDistribution } from "./action-distribution";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import type { InkElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
@@ -20,21 +19,10 @@ import {
   createStandardRuntimeDomainFixture,
   type StandardDomainFixture,
 } from "./standard-domain-fixture";
-import {
-  createNoopHistoryModel,
-  measureTransformRun,
-  requireStroke,
-  type TransformRun,
-  transformMetricsAnnotation,
-} from "./domain-scenarios";
-import { collectProfileGarbage } from "../persistence/metrics";
-import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
-import { expectTiming } from "../timing-assertions";
-import { measurementRuns } from "../sample-policy";
+import { createNoopHistoryModel, exerciseTransformRun, requireStroke } from "./domain-scenarios";
 import { indexedStroke } from "../../fixtures/editor/stroke";
 let fixture: StandardDomainFixture;
 let store: ElementStore;
-let storeConstructionDuration = 0;
 
 it.each([1_000, 10_000])("keeps local index work bounded with %i unrelated strokes", (count) => {
   const local = Array.from({ length: 8 }, (_, index) => indexedStroke(index));
@@ -69,10 +57,8 @@ async function loadFixture(): Promise<void> {
     shouldYield: () => false,
     yieldControl: async () => Promise.resolve(),
   });
-  const started = performance.now();
   const appendResult = await builder.appendOwnedRuntime(loadedFixture.elements);
   const loadedStore = await builder.finalize();
-  storeConstructionDuration = performance.now() - started;
   expect(appendResult).toBe("accepted");
   if (loadedStore === null) throw new Error("Runtime fixture store construction was cancelled.");
   store = loadedStore;
@@ -89,7 +75,6 @@ describe("standard 10,000-stroke domain fixture", () => {
     expect(fixture.arrowCount).toBe(250);
     expect(store.size).toBe(11_000);
     expect(store.getMaximumBottom()).toBeGreaterThanOrEqual(200_000);
-    expectTiming(storeConstructionDuration, 750);
 
     let dependentEndpoints = 0;
     store.visitDependents(fixture.connectedTargetId, () => {
@@ -105,14 +90,11 @@ describe("standard 10,000-stroke domain fixture", () => {
 
 describe("normalized store and command costs", () => {
   beforeEach(loadFixture);
-  it("commits one-stroke paint changes without scans, retained growth, or unrelated replacement", async ({
-    annotate,
-  }) => {
+  it("commits one-stroke paint changes without scans, retained growth, or unrelated replacement", async () => {
     const changedId = fixture.strokeIds[0] as string;
     const stableId = fixture.strokeIds[9999] as string;
     const stableRecord = store.get(stableId)!;
     const retainedBytes = store.instrumentation.estimatedRetainedBytes;
-    const durations = new Array<number>(500);
     store.resetInstrumentation();
 
     for (let operation = 0; operation < 500; operation += 1) {
@@ -120,13 +102,9 @@ describe("normalized store and command costs", () => {
       if (current.kind !== "stroke") throw new Error("Expected stroke fixture record.");
       const replacement = structuredClone(current) as StrokeElementV1;
       replacement.style.opacity = operation % 2 === 0 ? 0.99 : 1;
-      const started = performance.now();
       store.replace(changedId, replacement);
-      durations[operation] = performance.now() - started;
     }
 
-    const p95 = percentile(durations, 0.95);
-    expectTiming(p95, 12);
     expect(store.get(stableId)).toBe(stableRecord);
     expect(store.instrumentation.estimatedRetainedBytes).toBe(retainedBytes);
     expect(store.instrumentation).toMatchObject({
@@ -136,10 +114,6 @@ describe("normalized store and command costs", () => {
       reverseDependencyVisits: 0,
       snapshotMaterializations: 0,
     });
-    await annotate(
-      `500 one-stroke steady-state commits: retainedGrowth=0 bytes, p95=${p95.toFixed(3)} ms`,
-      "performance",
-    );
   });
 
   it("uses the reverse map for a 512-endpoint target commit", () => {
@@ -150,14 +124,10 @@ describe("normalized store and command costs", () => {
     replacement.x += 1;
     replacement.pivot.x += 1;
     store.resetInstrumentation();
-    collectProfileGarbage();
 
-    const started = performance.now();
     const delta = store.replace(replacement.id, replacement);
-    const duration = performance.now() - started;
 
     expect(delta?.changes).toHaveLength(257);
-    expectTiming(duration, 12);
     expect(store.instrumentation).toMatchObject({
       fullStoreScans: 0,
       reverseDependencyVisits: 512,
@@ -169,13 +139,9 @@ describe("normalized store and command costs", () => {
     const selected = new Set(fixture.strokeIds.filter((_, index) => index % 2 === 0));
     const stableRecord = store.get(fixture.strokeIds[1] as string)!;
     store.resetInstrumentation();
-    collectProfileGarbage();
-    const started = performance.now();
     const delta = store.arrange(selected, "bring-to-front");
-    const duration = performance.now() - started;
 
     expect(delta?.changes.length).toBeGreaterThanOrEqual(10_000);
-    expectTiming(duration, 12);
     expect(store.get(fixture.strokeIds[1] as string)).toBe(stableRecord);
     expect(store.instrumentation).toMatchObject({
       bandScans: 2,
@@ -186,14 +152,13 @@ describe("normalized store and command costs", () => {
 });
 
 describe("spatial queries, selection, and snapping", () => {
-  beforeEach(loadFixture);
-  it("reuses scratch allocations for 500 hit-test queries", () => {
+  it("reuses scratch allocations for 500 hit-test queries", async () => {
+    await loadFixture();
     const scratch = new SpatialQueryScratch<string>();
     const hitScratch = new HitTestScratch();
     const queryBounds = { maxX: 38, maxY: 38, minX: 22, minY: 22 };
     store.query(queryBounds, scratch);
     const warmAllocations = scratch.allocationCount;
-    const durations = new Array<number>(500);
     const maximumPressureStroke: StrokeElementV1 = {
       ...requireStroke(store, fixture.strokeIds[0]!),
       points: Array.from({ length: 4096 }, (_, index) => [index * 4, 0, index % 2]).flat(),
@@ -205,7 +170,6 @@ describe("spatial queries, selection, and snapping", () => {
     elementContainsPoint(maximumPressureStroke, { x: 8000, y: 0 }, 0);
 
     for (let operation = 0; operation < 500; operation += 1) {
-      const started = performance.now();
       store.query(queryBounds, scratch);
       findFrontmostHit(hitScratch, { x: 30, y: 30 }, "pen", 1, hitCandidates(store, scratch));
       const containsPoint = elementContainsPoint(
@@ -213,12 +177,9 @@ describe("spatial queries, selection, and snapping", () => {
         { x: operation * 28, y: 0 },
         0,
       );
-      durations[operation] = performance.now() - started;
       expect(containsPoint).toBe(true);
     }
 
-    const p95 = percentile(durations, 0.95);
-    expectTiming(p95, 8);
     expect(scratch.allocationCount).toBe(warmAllocations);
     expect(scratch.candidateVisitCount).toBeLessThan(10);
   });
@@ -227,24 +188,19 @@ describe("spatial queries, selection, and snapping", () => {
     const snapStore = new ElementStore(createDenseSnapTargets());
     const query = new StoreSpatialQuery(snapStore);
     const reader = new StoreTargetReader(snapStore);
-    const durations = new Array<number>(500);
     snapStore.resetInstrumentation();
 
     for (let operation = 0; operation < 500; operation += 1) {
       reader.reset();
-      const started = performance.now();
       findSnapCandidate(
         { current: null, pointer: { x: 100, y: 500 }, pointerType: "pen", zoom: 1 },
         query,
         reader,
         query.scratch,
       );
-      durations[operation] = performance.now() - started;
       expect(reader.targetReads).toBe(128);
     }
 
-    const p95 = percentile(durations, 0.95);
-    expectTiming(p95, 8);
     expect(query.scratch.allocationCount).toBe(query.warmAllocationCount);
     expect(query.storeScratch.allocationCount).toBe(query.warmStoreAllocationCount);
     expect(snapStore.instrumentation).toMatchObject({
@@ -257,90 +213,38 @@ describe("spatial queries, selection, and snapping", () => {
 
 describe("large selection commit", () => {
   beforeEach(loadFixture);
-  it("time-slices and atomically commits 50 canonical 10,000-stroke transforms per run", async ({
-    annotate,
-  }) => {
+  it("time-slices and atomically commits 50 canonical 10,000-stroke transforms per run", async () => {
     store.resetInstrumentation();
     const history = new ActiveEditorHistory(createNoopHistoryModel());
-    await measureTransformRun(store, history, fixture.strokeIds, 50);
-    const runCount = measurementRuns(5);
-    const measuredRuns: TransformRun[] = [];
     let partialStoreObserved = false;
     let publishedDeltas = 0;
     const unsubscribe = store.subscribe(() => {
       publishedDeltas += 1;
     });
 
-    for (let run = 0; run < runCount; run += 1) {
-      measuredRuns.push(
-        await measureTransformRun(
-          store,
-          history,
-          fixture.strokeIds,
-          50,
-          (stableId, stableRecord) => {
-            if (store.get(stableId) !== stableRecord) partialStoreObserved = true;
-          },
-        ),
-      );
-    }
+    const run = await exerciseTransformRun(
+      store,
+      history,
+      fixture.strokeIds,
+      50,
+      (stableId, stableRecord) => {
+        if (store.get(stableId) !== stableRecord) partialStoreObserved = true;
+      },
+    );
     unsubscribe();
-
-    const releaseMaterialization = worstDistribution(
-      measuredRuns.map(({ materialization }) => materialization),
-    );
-    const releaseCommit = worstDistribution(measuredRuns.map(({ commit }) => commit));
-    const releaseAtomicCommit = worstDistribution(
-      measuredRuns.map(({ atomicCommit }) => atomicCommit),
-    );
-    const releaseHistoryRegistration = worstDistribution(
-      measuredRuns.map(({ historyRegistration }) => historyRegistration),
-    );
-    const releaseSlices = worstDistribution(measuredRuns.map(({ slices }) => slices));
-    const maximumSlice = Math.max(...measuredRuns.map(({ maximumSlice }) => maximumSlice));
-    const maximumHeapGrowthBytes = Math.max(
-      ...measuredRuns.map(({ maximumHeapGrowthBytes }) => maximumHeapGrowthBytes),
-    );
-    const maximumRetainedHistoryBytes = Math.max(
-      ...measuredRuns.map(({ maximumRetainedHistoryBytes }) => maximumRetainedHistoryBytes),
-    );
-
-    await annotate(
-      transformMetricsAnnotation(
-        {
-          atomicCommit: releaseAtomicCommit,
-          commit: releaseCommit,
-          historyRegistration: releaseHistoryRegistration,
-          materialization: releaseMaterialization,
-          slices: releaseSlices,
-        },
-        maximumSlice,
-        maximumHeapGrowthBytes,
-        maximumRetainedHistoryBytes,
-      ),
-      "performance",
-    );
-
-    expect(measuredRuns).toHaveLength(runCount);
-    for (const run of measuredRuns) {
-      expect(run.materialization.sampleCount).toBe(50);
-      expect(run.commit.sampleCount).toBe(50);
-    }
-    expectTiming(releaseMaterialization.p95, 100);
-    expectTiming(releaseCommit.p95, 100);
-    expectTiming(releaseSlices.p95, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
-    expectTiming(maximumSlice, INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs);
+    expect(run.yieldsPerOperation).toHaveLength(50);
+    expect(run.yieldsPerOperation.every((count) => count > 0)).toBe(true);
+    expect(run.checkpointCounts.every((count) => count <= 40)).toBe(true);
     expect(partialStoreObserved).toBe(false);
-    expect(publishedDeltas).toBe(runCount * 50);
+    expect(publishedDeltas).toBe(50);
     expect(history.commandCount).toBeGreaterThan(0);
-    expect(maximumRetainedHistoryBytes).toBeLessThanOrEqual(64 * 1024 * 1024);
-    expect(maximumHeapGrowthBytes).toBeLessThanOrEqual(200 * 1024 * 1024);
+    expect(run.maximumRetainedHistoryBytes).toBeLessThanOrEqual(64 * 1024 * 1024);
     expect(store.instrumentation).toMatchObject({
       fullStoreScans: 0,
-      publishedDeltas: (runCount + 1) * 50,
-      recordReplacements: (runCount + 1) * 50 * 10_000,
+      publishedDeltas: 50,
+      recordReplacements: 50 * 10_000,
       snapshotMaterializations: 0,
-      timeSlicedIndexVisits: (runCount + 1) * 50 * 10_000,
+      timeSlicedIndexVisits: 50 * 10_000,
     });
   }, 180_000);
 });

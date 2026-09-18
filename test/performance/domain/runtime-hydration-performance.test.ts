@@ -5,25 +5,21 @@ import { ElementStore } from "../../../src/domain/store/public";
 import { MAX_UNLOCK_BATCH_ELEMENTS } from "../../../src/persistence/worker/runtime/unlock-batch-limits";
 
 import { createWorkerSnapshot } from "../../fixtures/persistence/worker-snapshot";
-import { percentile } from "./action-distribution";
-import { MeasuredSliceScheduler } from "./domain-scenarios";
+import { CheckpointSliceScheduler } from "./domain-scenarios";
 import { createStandardRuntimeDomainFixture } from "./standard-domain-fixture";
-import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
-import { expectTiming } from "../timing-assertions";
 
 describe("runtime store hydration performance", () => {
-  it("builds a complete initial store in cancellable bounded slices", async ({ annotate }) => {
+  it("builds a complete initial store in cancellable bounded slices", async () => {
     const fixture = createStandardRuntimeDomainFixture();
     const validation = validateRuntimeInkSnapshotV1(createWorkerSnapshot([...fixture.elements]));
     if (!validation.ok) {
       throw new Error(`Runtime hydration fixture is invalid: ${validation.error.code}`);
     }
-    const scheduler = new MeasuredSliceScheduler(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
+    const scheduler = new CheckpointSliceScheduler(40);
     const builder = ElementStore.createBuilder(scheduler);
     const appendResults = new Array<string>(
       Math.ceil(fixture.elements.length / MAX_UNLOCK_BATCH_ELEMENTS),
     );
-    const started = performance.now();
     for (let start = 0; start < fixture.elements.length; start += MAX_UNLOCK_BATCH_ELEMENTS) {
       const end = start + MAX_UNLOCK_BATCH_ELEMENTS;
       appendResults[start / MAX_UNLOCK_BATCH_ELEMENTS] = await builder.appendOwnedValidatedRuntime(
@@ -32,7 +28,6 @@ describe("runtime store hydration performance", () => {
       );
     }
     const hydrated = await builder.finalize();
-    const duration = performance.now() - started;
     scheduler.finish();
     for (const result of appendResults) expect(result).toBe("accepted");
 
@@ -41,18 +36,8 @@ describe("runtime store hydration performance", () => {
       hydrationElementVisits: 22_000,
       publishedDeltas: 0,
     });
-    expectTiming(duration, 750);
-    expect(scheduler.sliceDurations.length).toBeGreaterThanOrEqual(100);
-    expectTiming(
-      percentile(scheduler.sliceDurations, 0.95),
-      INTERACTION_REFRESH_PROFILE.mainThreadP99Ms,
-    );
-    expectTiming(scheduler.maxSliceDuration, INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs);
-    await annotate(
-      `validated hydration: refreshRate=${INTERACTION_REFRESH_PROFILE.refreshRate} Hz, ` +
-        `maxSlice=${scheduler.maxSliceDuration.toFixed(3)} ms, total=${duration.toFixed(3)} ms`,
-      "performance",
-    );
+    expect(scheduler.checkpointCounts.length).toBeGreaterThan(1);
+    expect(scheduler.checkpointCounts.every((count) => count <= 40)).toBe(true);
   });
 
   it.each([65, 11_000])(

@@ -13,13 +13,7 @@ import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/sc
 import { indexedStroke } from "../../fixtures/editor/stroke";
 import { rectangle } from "../../unit/domain/store/fixtures";
 import { coordinateSystem, table } from "../../unit/domain/geometry/fixtures";
-import {
-  INTERACTION_REFRESH_PROFILE,
-  interactionP99,
-  interactionProfileAnnotation,
-  measureInteractionFrames,
-} from "../interaction-refresh-profile";
-import { expectTiming } from "../timing-assertions";
+import { INTERACTION_REFRESH_PROFILE, runInteractionFrames } from "../interaction-refresh-profile";
 
 function createIndexedStrokeScene(
   storeClass: typeof ElementStore,
@@ -49,40 +43,35 @@ const ELEMENT_COUNT = 10_000;
 const RAW_ERASER_SAMPLES_PER_FRAME = 8;
 
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz editor gesture profile`, () => {
-  it("keeps indexed eraser feedback within budget", async ({ annotate }) => {
+  it("keeps indexed eraser feedback with bounded work", () => {
     const { store, sceneStore } = createIndexedStrokeScene(ElementStore, ElementSceneStore);
     const eraser = createIndexedEraser(EraserSweep, sceneStore);
     store.resetInstrumentation();
 
     let rejectedUpdates = 0;
-    const durations = measureInteractionFrames((frame) => {
+    runInteractionFrames((frame) => {
       const points = Array.from({ length: RAW_ERASER_SAMPLES_PER_FRAME }, (_, sample) =>
         eraserPoint(frame * RAW_ERASER_SAMPLES_PER_FRAME + sample),
       );
       if (eraser.updateBatch(points) !== "accepted") rejectedUpdates += 1;
     });
 
-    const p99 = interactionP99(durations);
     expect(rejectedUpdates).toBe(0);
     expect(eraser.candidateCount).toBeGreaterThan(0);
     expect(store.instrumentation.fullStoreScans).toBe(0);
-    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
-    await annotate(interactionProfileAnnotation("eraser feedback", p99), "performance");
+
     eraser.revert();
     sceneStore.release();
   });
 
-  it("keeps move, group scale, rotate, and shape scale previews within budget", async ({
-    annotate,
-  }) => {
+  it("keeps move, group scale, rotate, and shape scale previews with bounded work", () => {
     const elements = interactionStrokes();
     const sessions = selectionSessions(elements);
     for (const profile of sessions) {
       let preview: SelectionHandlePreview | undefined;
-      const durations = measureInteractionFrames((frame) => {
+      runInteractionFrames((frame) => {
         preview = profile.session.update(profile.pointer(frame));
       });
-      const p99 = interactionP99(durations);
       if (profile.usesTransform) {
         expect(preview?.transform).not.toBeNull();
       } else {
@@ -90,28 +79,21 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz editor gesture profile`,
         expect(preview?.exactElements).toHaveLength(1);
       }
       expect(preview?.exactPreviewTruncated).toBe(profile.truncated);
-      expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
-      await annotate(interactionProfileAnnotation(profile.name, p99), "performance");
     }
   });
 
-  it("keeps linear, coordinate-axis, and table-divider handle drags within budget", async ({
-    annotate,
-  }) => {
+  it("keeps linear, coordinate-axis, and table-divider handle drags with bounded work", () => {
     const profiles = targetedHandleProfiles();
     for (const profile of profiles) {
       let snappedFrames = 0;
       const exactElementCounts = new Array<number>(INTERACTION_REFRESH_PROFILE.sampleCount);
-      const durations = measureInteractionFrames((frame) => {
+      runInteractionFrames((frame) => {
         const preview = profile.session.update(profile.pointer(frame));
         if (preview.snapGuide?.kind === profile.snapGuideKind) snappedFrames += 1;
         exactElementCounts[frame] = preview.exactElements.length;
       });
-      const p99 = interactionP99(durations);
       for (const count of exactElementCounts) expect(count).toBe(1);
       expect(snappedFrames, profile.name).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
-      expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
-      await annotate(interactionProfileAnnotation(profile.name, p99), "performance");
     }
   });
 });

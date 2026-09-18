@@ -6,8 +6,6 @@ afterEach(() => vi.unstubAllEnvs());
 
 describe("check command plan", () => {
   it.each([
-    ["INKBOOK_PERFORMANCE_MODE", "contracts"],
-    ["INKBOOK_PERFORMANCE_MODE", "reference"],
     ["INKBOOK_PERFORMANCE_SUITE", "shared"],
     ["INKBOOK_PERFORMANCE_SUITE", "cadence"],
     ["INKBOOK_PERFORMANCE_SUITE", "profile"],

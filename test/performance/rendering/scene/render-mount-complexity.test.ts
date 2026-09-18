@@ -44,11 +44,9 @@ describe("visible render mount complexity", () => {
       scheduler,
       store,
     });
-    const sliceDurations: number[] = [];
-
-    runMeasuredFrame(scheduler, sliceDurations);
+    scheduler.runNext();
     const firstFrameMounts = renderer.mountedCount;
-    while (scheduler.pendingCount > 0) runMeasuredFrame(scheduler, sliceDurations);
+    while (scheduler.pendingCount > 0) scheduler.runNext();
 
     const instrumentation = renderer.instrumentation();
     const cameraGroup = fakeNode(renderer.svg).nodes[1]!;
@@ -76,18 +74,13 @@ describe("visible render mount complexity", () => {
     );
     await annotate(
       `render mount slices=${String(instrumentation.mountSlices)}, ` +
-        `firstFrameMounts=${String(firstFrameMounts)}, ` +
-        `maximumDuration=${Math.max(...sliceDurations).toFixed(3)} ms`,
+        `firstFrameMounts=${String(firstFrameMounts)}`,
       "performance",
     );
+    renderer.destroy();
+    expect(scheduler.pendingCount).toBe(0);
   });
 });
-
-function runMeasuredFrame(scheduler: FakeScheduler, durations: number[]): void {
-  const startedAt = performance.now();
-  scheduler.runNext();
-  durations.push(performance.now() - startedAt);
-}
 
 function createMaximumPointFixture(): {
   readonly contentIds: readonly string[];

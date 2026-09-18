@@ -1,5 +1,7 @@
 # Performance Comparison Profiles
 
+> Historical decision, superseded by [Deterministic Performance Checks](deterministic-performance-checks.md). Timing commands and comparison rules below are no longer active.
+
 ## Decision
 
 Use 120 Hz for recurring cadence-sensitive PR-base timing comparisons in both local and hosted gates. Preserve all five cadence profiles for deterministic contracts and explicit reference execution. Keep invariant comparisons at 120 Hz and budget-only comparisons at 240 Hz. The two existing performance shards, twenty-minute hosted job limits, 20-percent comparison boundary, warning/error rules remain unchanged. Comparison stages now follow the [bounded-plan decision](performance-bounded-measurements.md).

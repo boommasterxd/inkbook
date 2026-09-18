@@ -12,12 +12,7 @@ import {
   LiveStrokeBuilder,
   type LiveStrokePreview,
 } from "../../../../src/editor/tools/live-stroke";
-import {
-  INTERACTION_REFRESH_PROFILE,
-  interactionP99,
-  interactionProfileAnnotation,
-} from "../../interaction-refresh-profile";
-import { expectTiming } from "../../timing-assertions";
+import { INTERACTION_REFRESH_PROFILE } from "../../interaction-refresh-profile";
 import {
   createInteractionFixture,
   createInteractionRenderer,
@@ -77,8 +72,8 @@ const PEN_STYLE: StrokeStyleV1 = {
 
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz live-stroke profile`, () => {
   it.for(["smooth", "dense zigzag"] as const)(
-    "keeps %s live pressure-stroke updates within the main-thread p99 budget",
-    async (shape, { annotate }) => {
+    "bounds %s live pressure-stroke work across a growing stroke",
+    (shape) => {
       const { renderer, scheduler } = createInteractionRenderer(new ElementStore());
       scheduler.runAll();
       const style: StrokeStyleV1 = {
@@ -89,88 +84,50 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz live-stroke profile`, ()
         input: { pressureSource: "pen", zoom: 1 },
         style,
       });
-      const durations: number[] = [];
 
       for (let frame = 0; frame < LIVE_FRAME_COUNT; frame += 1) {
-        const startedAt = performance.now();
         const preview = builder.appendBatch(
           Array.from({ length: SAMPLES_PER_FRAME }, (_, sample) =>
             liveSample(frame * SAMPLES_PER_FRAME + sample, shape === "dense zigzag"),
           ),
         );
         renderer.updateLiveStroke(preview, style, "pen");
-        durations.push(performance.now() - startedAt);
       }
 
-      const p99 = interactionP99(durations);
-      expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
       expect(renderer.instrumentation()).toMatchObject({
         livePreviewUpdates: LIVE_FRAME_COUNT,
+        geometryBuilds: 0,
+        contentGeometryWrites: 0,
+        liveTailNodesCreated: 1,
       });
       expect(renderer.instrumentation().liveMaximumTailNodes).toBe(1);
-      await annotate(interactionProfileAnnotation(`${shape} live stroke`, p99), "performance");
       renderer.destroy();
     },
   );
 
   it.for(["pen", "mouse"] as const)(
     "keeps coalesced %s ink at the latest tip in the next frame with 10,000 stored strokes",
-    async (pointerType, { annotate }) => {
+    (pointerType) => {
       const { input, renderer, routed, scheduler, tail } = coalescedHarness(pointerType);
-      const durations: number[] = [];
       for (let frame = 0; frame < LIVE_FRAME_COUNT; frame += 1) {
         const samples = Array.from({ length: SAMPLES_PER_FRAME }, (_, sample) =>
           pointerSample(frame * SAMPLES_PER_FRAME + sample, pointerType),
         );
-        const startedAt = performance.now();
         input.dispatch(coalescedEvent(samples.slice(0, 4)));
         input.dispatch(coalescedEvent(samples.slice(4)));
+        const updates = renderer.instrumentation().livePreviewUpdates;
         const pending = scheduler.pendingCount;
         scheduler.runNext();
-        durations.push(performance.now() - startedAt);
+        expect(renderer.instrumentation().livePreviewUpdates).toBe(updates + 1);
         expect(pending).toBe(1);
         expect(scheduler.pendingCount).toBe(0);
         expectPressureTip(tail, samples[7]!);
       }
-      const p99 = interactionP99(durations);
-      expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
       expect(renderer.instrumentation().livePreviewUpdates).toBe(LIVE_FRAME_COUNT + 1);
-      await annotate(
-        interactionProfileAnnotation(`coalesced ${pointerType} tip`, p99),
-        "performance",
-      );
       routed.revert();
       renderer.destroy();
     },
   );
-
-  it("keeps long-stroke commit handoffs within the main-thread p99 budget", async ({
-    annotate,
-  }) => {
-    const { renderer, scheduler } = createInteractionRenderer(new ElementStore());
-    scheduler.runAll();
-    const durations = new Array<number>(120);
-    const builder = new LiveStrokeBuilder({
-      input: { pressureSource: "pen", zoom: 1 },
-      style: PEN_STYLE,
-    });
-    const preview = builder.appendBatch(
-      Array.from({ length: 4096 }, (_, index) => liveSample(index)),
-    );
-    for (let index = 0; index < 120; index += 1) {
-      renderer.updateLiveStroke(preview, PEN_STYLE, "pen");
-      const id = String(index);
-      const startedAt = performance.now();
-      renderer.commitLiveStroke(id);
-      durations[index] = performance.now() - startedAt;
-      scheduler.runAll();
-    }
-    const p99 = interactionP99(durations);
-    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
-    expect(renderer.instrumentation().liveTailNodesRemoved).toBe(120);
-    await annotate(interactionProfileAnnotation("live stroke commit handoff", p99), "performance");
-    renderer.destroy();
-  });
 });
 
 it.for([32, 4096])(

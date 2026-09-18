@@ -11,10 +11,8 @@ import { createStandardPersistenceFixture } from "./fixtures";
 import { FallbackSliceProbe } from "../../fixtures/persistence/fallback-slice-probe";
 import { createFallbackDeadlineClock } from "./fallback-deadline-clock";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
-import { annotateDurations, summarizeDurations, type MetricAnnotator } from "./metrics";
-import { expectTiming, recordRelativeTiming } from "../timing-assertions";
+type MetricAnnotator = (message: string, type?: string) => Promise<unknown>;
 
-const MAIN_THREAD_BUDGET_MS = INTERACTION_REFRESH_PROFILE.mainThreadP99Ms;
 const snapshot = createFallbackFixture();
 const serialized = requireSerialized();
 
@@ -56,7 +54,7 @@ function createScheduledFallback(): {
   const scheduler = new GestureAwareSliceScheduler({
     isInputActive: probe.isInputActive,
     now: createFallbackDeadlineClock(),
-    sliceMilliseconds: INTERACTION_REFRESH_PROFILE.mainThreadP99Ms,
+    sliceMilliseconds: INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs,
     yieldControl: probe.yieldControl,
   });
   return {
@@ -158,7 +156,7 @@ async function assertFallbackMeasurements(
   annotate: MetricAnnotator,
 ): Promise<void> {
   for (const [name, measurement] of probe.operations) {
-    await annotateDurations(annotate, `fallback ${name} slices`, measurement.durations);
+    expect(measurement.yields).toBeGreaterThanOrEqual(measurement.inputPauseYields);
     await annotate(
       `fallback ${name} live input: samples=${measurement.syntheticInputSamples}, ` +
         `pauseYields=${measurement.inputPauseYields}`,
@@ -167,16 +165,15 @@ async function assertFallbackMeasurements(
     expect(measurement.syntheticInputSamples).toBeGreaterThanOrEqual(2);
     expect(measurement.inputPauseYields).toBeGreaterThanOrEqual(2);
   }
-  const summary = summarizeDurations(probe.durations);
-  expect(probe.durations.length).toBeGreaterThanOrEqual(100);
-  expectTiming(summary.p95, MAIN_THREAD_BUDGET_MS, { soft: true });
-  expectTiming(summary.maximum, INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs);
-  for (const [name, measurement] of probe.operations) {
-    recordRelativeTiming(
-      measurement.durations.reduce((total, duration) => total + duration, 0),
-      `fallback ${name} active-slice elapsed time`,
-    );
-  }
+  expect([...probe.operations.keys()]).toEqual([
+    "migration-validation",
+    "clipboard-encode",
+    "clipboard-decode",
+    "export-hash",
+    "preflight",
+    "read-back",
+  ]);
+  expect(probe.yields).toBeGreaterThanOrEqual(100);
 }
 
 class FailingWorker implements DocumentRuntimePort {

@@ -1,61 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { expect, it, vi } from "vitest";
 
-import { percentile } from "../domain/action-distribution";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
-import { expectTiming, recordRelativeTiming } from "../timing-assertions";
-import {
-  createCountedDenseStrokeEraser,
-  createDenseStrokeEraser,
-  MeasuredEraserScheduler,
-} from "./eraser-performance-fixture";
-import { maximumStroke } from "./maximum-stroke-fixture";
-
-const FINALIZATION_RUNS = 50;
-
-describe("eraser finalization performance", () => {
-  it("keeps exact finalization slices within the selected main-thread budget", async () => {
-    const strokes = Array.from({ length: 128 }, (_, index) => maximumStroke(index));
-    const sliceDurationsMs: number[] = [];
-    let maximumSliceMs = 0;
-    let maximumRunElapsedMs = 0;
-    let invalidRuns = 0;
-    for (let run = 0; run < FINALIZATION_RUNS; run += 1) {
-      const eraser = createDenseStrokeEraser(
-        strokes,
-        () => INTERACTION_REFRESH_PROFILE.mainThreadP99Ms,
-      );
-      eraser.update({ x: 5_000, y: 0 });
-      const scheduler = new MeasuredEraserScheduler(INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
-      let removed = 0;
-      await eraser.commit((ids) => {
-        removed = ids.size;
-        return true;
-      }, scheduler);
-      scheduler.finish();
-      if (removed !== strokes.length || scheduler.yieldCount <= 0) invalidRuns += 1;
-      sliceDurationsMs.push(...scheduler.sliceDurationsMs);
-      maximumSliceMs = Math.max(maximumSliceMs, scheduler.maximumSliceMs);
-      maximumRunElapsedMs = Math.max(
-        maximumRunElapsedMs,
-        scheduler.sliceDurationsMs.reduce((total, duration) => total + duration, 0),
-      );
-    }
-
-    expect(invalidRuns).toBe(0);
-    expect(sliceDurationsMs.length).toBeGreaterThanOrEqual(100);
-    expectTiming(percentile(sliceDurationsMs, 0.95), INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
-    expectTiming(maximumSliceMs, INTERACTION_REFRESH_PROFILE.atomicCommitMaxMs);
-    recordRelativeTiming(
-      maximumRunElapsedMs,
-      "maximum complete eraser finalization active-slice elapsed time across 50 runs",
-    );
-  }, 10_000);
-});
+import { createCountedDenseStrokeEraser } from "./eraser-performance-fixture";
 
 it.for([16, 128])(
   "bounds point visits across %i strokes and every finalization yield",
   async (count) => {
-    const budget = INTERACTION_REFRESH_PROFILE.mainThreadP99Ms;
+    const budget = INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs;
     const fixture = createCountedDenseStrokeEraser(count, () => budget);
     const clock = vi.spyOn(performance, "now").mockReturnValue(0);
     // Current finalization allowance: 16 segment checks/ms after a 0.25 ms reserve, capped at 256.

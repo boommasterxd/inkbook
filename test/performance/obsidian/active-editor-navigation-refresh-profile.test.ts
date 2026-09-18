@@ -3,13 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createInputState } from "../../../src/editor/input/index";
 import { OUTER_PAGE_WIDTH } from "../../../src/editor/zoom/zoom";
 import { ActiveEditorNavigation } from "../../../src/obsidian/embeds/active-editor/navigation";
-import {
-  INTERACTION_REFRESH_PROFILE,
-  interactionP99,
-  interactionProfileAnnotation,
-  measureInteractionFrames,
-} from "../interaction-refresh-profile";
-import { expectTiming } from "../timing-assertions";
+import { INTERACTION_REFRESH_PROFILE, runInteractionFrames } from "../interaction-refresh-profile";
 import type { InputState } from "../../../src/editor/input/index";
 import type { BrowserScrollElement } from "../../../src/obsidian/scrolling/index";
 import type { SvgSceneRenderer } from "../../../src/rendering/scene/index";
@@ -190,64 +184,54 @@ function navigationFrame(mode: number, harness: ReturnType<typeof buildNavigatio
 }
 
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation profile`, () => {
-  it("keeps continuous anchored trackpad zoom within budget", async ({ annotate }) => {
+  it("keeps continuous anchored trackpad zoom with coalesced work", () => {
     const harness = createNavigationHarness();
     let claimedFrames = 0;
     const update = navigationFrame(0, harness);
-    const durations = measureInteractionFrames((frame) => {
+    runInteractionFrames((frame) => {
       if (update(frame)) claimedFrames += 1;
     });
 
-    const p99 = interactionP99(durations);
     expect(claimedFrames).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
     expect(harness.cameraWrites).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
     expect(harness.layoutWrites).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
-    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
-    await annotate(interactionProfileAnnotation("trackpad zoom", p99), "performance");
+
     harness.navigation.dispose();
   });
 
-  it("keeps coalesced horizontal pan and native vertical scroll within budget", async ({
-    annotate,
-  }) => {
+  it("keeps coalesced horizontal pan and native vertical scroll with coalesced work", () => {
     const harness = createPanningHarness();
-    const durations = measureInteractionFrames(navigationFrame(1, harness));
+    runInteractionFrames(navigationFrame(1, harness));
     harness.navigation.finish();
 
-    const p99 = interactionP99(durations);
     expect(harness.cameraWrites).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
     expect(harness.scrollWrites).toBeGreaterThan(0);
-    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
-    await annotate(interactionProfileAnnotation("pan and native scroll", p99), "performance");
+
     harness.navigation.dispose();
   });
 
-  it("keeps horizontal trackpad handoff and momentum within budget", async ({ annotate }) => {
+  it("keeps horizontal trackpad handoff and momentum with coalesced work", () => {
     const harness = createPanningHarness();
     let claimedEvents = 0;
     const update = navigationFrame(2, harness);
-    const durations = measureInteractionFrames((frame) => {
+    runInteractionFrames((frame) => {
       if (update(frame)) claimedEvents += 1;
     });
 
-    const p99 = interactionP99(durations);
     expect(claimedEvents).toBe((INTERACTION_REFRESH_PROFILE.sampleCount / 4) * 3);
     expect(harness.cameraWrites).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
     expect(harness.frames.maxPending).toBe(1);
     expect(harness.scrollWrites).toBe(0);
-    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
-    await annotate(interactionProfileAnnotation("trackpad pan handoff", p99), "performance");
+
     harness.navigation.dispose();
   });
 
-  it("keeps horizontal touch momentum within budget", async ({ annotate }) => {
+  it("keeps horizontal touch momentum with coalesced work", () => {
     const harness = createPanningHarness();
-    const durations = measureInteractionFrames(navigationFrame(3, harness));
+    runInteractionFrames(navigationFrame(3, harness));
 
-    const p99 = interactionP99(durations);
     expect(harness.cameraWrites).toBeGreaterThan(0);
-    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
-    await annotate(interactionProfileAnnotation("touch pan momentum", p99), "performance");
+
     harness.navigation.dispose();
   });
 });

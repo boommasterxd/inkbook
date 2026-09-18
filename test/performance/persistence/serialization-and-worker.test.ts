@@ -12,43 +12,20 @@ import {
 import { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/public";
 import { createProductionDocumentRuntime } from "../../../src/persistence/worker/runtime/production-document-runtime";
 import type { DocumentRuntimeRequest } from "../../../src/persistence/worker/runtime/public";
-import { statisticalSamples } from "../sample-policy";
 import { STANDARD_POINTS, createStandardPersistenceFixture, replaceFirstStroke } from "./fixtures";
-import {
-  annotateDurations,
-  annotateProfileRuns,
-  collectProfileGarbage,
-  expectProfileBudget,
-  expectProfileRunsBudget,
-  measure,
-  measureAsync,
-} from "./metrics";
-
 const MIB = 1024 * 1024;
-const FULL_EXPORT_SAMPLES_PER_RUN = statisticalSamples(20);
-const INCREMENTAL_EXPORT_SAMPLES_PER_RUN = statisticalSamples(100);
-const ORDER_ONLY_EXPORT_SAMPLES_PER_RUN = statisticalSamples(20);
 const snapshot = createStandardPersistenceFixture();
 
 describe("persistence serialization performance", () => {
   it("keeps the normative fixture deterministic and within file-size budgets", async ({
     annotate,
   }) => {
-    const warmup = serializeFixture();
-    const baseline = requireSerialized(warmup.value);
-    const durations: number[] = [];
-
-    for (let run = 0; run < statisticalSamples(5); run += 1) {
-      const measured = serializeFixture();
-      const output = requireSerialized(measured.value);
-      expect(output).toEqual(baseline);
-      durations.push(measured.durationMs);
-    }
+    const baseline = requireSerialized(serializeFixture());
+    expect(requireSerialized(serializeFixture())).toEqual(baseline);
 
     expect(baseline.metadataBytes).toBeLessThanOrEqual(32 * MIB);
     expect(baseline.totalBytes).toBeLessThanOrEqual(48 * MIB);
     expect(baseline.svg).not.toContain("\n");
-    await annotateDurations(annotate, "full document serialization", durations);
     await annotate(
       `standard SVG: total=${baseline.totalBytes} bytes, metadata=${baseline.metadataBytes} bytes, ` +
         `static=${staticMarkupBytes(baseline.svg)} bytes, ` +
@@ -64,145 +41,69 @@ describe("persistence serialization performance", () => {
     const serializer = new IncrementalDocumentSerializer();
     expect(serializer.reset(amplified).ok).toBe(true);
     let checkpoints = 0;
-    const started = performance.now();
     const result = await serializer.serializeChunked({
       checkpoint: async () => {
         checkpoints += 1;
       },
       sliceByteLimit: 64 * 1024,
     });
-    const durationMs = performance.now() - started;
 
     expect(result).toMatchObject({ ok: false, error: { code: "static-output-limit-exceeded" } });
     expect(serializer.instrumentation.fragmentBuilds).toBeLessThan(amplified.elements.length);
     expect(serializer.instrumentation.cacheBytes).toBeLessThanOrEqual(64 * MIB);
     expect(checkpoints).toBe(0);
     await annotate(
-      `amplified near-limit rejection: duration=${durationMs.toFixed(1)}ms, ` +
+      `amplified near-limit rejection: ` +
         `fragmentsBuilt=${serializer.instrumentation.fragmentBuilds}/${amplified.elements.length}, ` +
         `checkpoints=${checkpoints}`,
       "performance",
     );
   }, 120_000);
 
-  it("slices receiver-side integrity derivation within the autosave frame budget", async ({
-    annotate,
-  }) => {
-    const slices: number[] = [];
-    let sliceStarted = performance.now();
-    const measured = await measureAsync(() =>
-      deriveDocumentIntegrityManifestAsync(snapshot, {
-        checkpoint: async () => {
-          slices.push(performance.now() - sliceStarted);
-          await yieldToMainThread();
-          sliceStarted = performance.now();
-        },
-      }),
-    );
-    slices.push(performance.now() - sliceStarted);
-
-    expect(measured.value).toEqual(deriveDocumentIntegrityManifest(snapshot));
-    await annotateDurations(annotate, "receiver integrity slice", slices);
-    await annotate(
-      `receiver integrity total=${measured.durationMs.toFixed(1)}ms, slices=${slices.length}`,
-      "performance",
-    );
-    expectProfileBudget(slices, 8);
-    expectProfileBudget([measured.durationMs], 750);
+  it("checkpoints receiver integrity derivation without changing its result", async () => {
+    let checkpoints = 0;
+    const result = await deriveDocumentIntegrityManifestAsync(snapshot, {
+      checkpoint: async () => {
+        checkpoints += 1;
+      },
+    });
+    expect(result).toEqual(deriveDocumentIntegrityManifest(snapshot));
+    expect(checkpoints).toBeGreaterThan(1);
+    expect(checkpoints).toBeLessThanOrEqual(snapshot.elements.length);
   }, 120_000);
 });
 
-describe("document worker export performance", () => {
-  it("measures full and one-stroke incremental export against desktop budgets", async ({
-    annotate,
-  }) => {
+describe("document worker export work bounds", () => {
+  it("rebuilds only changed fragments and reuses all fragments for order-only exports", async () => {
     const runtime = createProductionDocumentRuntime(
       { sessionId: "performance", workerEpoch: 1 },
       { yieldControl: async () => undefined },
     );
     try {
-      const generation = { value: 0 };
-      await runExportWarmup(runtime, generation);
-      const profile = await runExportProfile(runtime, generation);
-      const fullRuns = [profile.full];
-      const incrementalRuns = [profile.incremental];
-      const orderOnlyRuns = [profile.orderOnly];
-
-      await annotateProfileRuns(annotate, "full worker export", fullRuns);
-      await annotateProfileRuns(annotate, "one-stroke incremental worker export", incrementalRuns);
-      await annotateProfileRuns(annotate, "order-only worker export", orderOnlyRuns);
-      expectProfileRunsBudget(fullRuns, 750);
-      expectProfileRunsBudget(incrementalRuns, 100);
-      expectProfileRunsBudget(orderOnlyRuns, 100);
-      await annotate(
-        "Every sample acknowledges its exact export identity and awaits complete input-aware " +
-          "fragment prewarming before the next measured export.",
-        "performance",
+      await fullExport(runtime, 1);
+      await incrementalExport(runtime, 2, snapshot.revision, snapshot.revision + 1);
+      await orderOnlyExport(
+        runtime,
+        3,
+        snapshot.revision + 1,
+        snapshot.revision + 2,
+        snapshot.elements.map(({ id }) => id).reverse(),
+      );
+      await orderOnlyExport(
+        runtime,
+        4,
+        snapshot.revision + 2,
+        snapshot.revision + 3,
+        snapshot.elements.map(({ id }) => id),
       );
     } finally {
       runtime.terminate();
     }
-  }, 300_000);
+  }, 120_000);
 });
 
-async function runExportWarmup(
-  runtime: DocumentWorkerRuntime,
-  generation: { value: number },
-): Promise<void> {
-  await fullExport(runtime, ++generation.value);
-  await incrementalExport(runtime, ++generation.value, snapshot.revision, snapshot.revision + 1);
-  await orderOnlyExport(
-    runtime,
-    ++generation.value,
-    snapshot.revision + 1,
-    snapshot.revision + 2,
-    snapshot.elements.map(({ id }) => id).reverse(),
-  );
-}
-
-async function runExportProfile(
-  runtime: DocumentWorkerRuntime,
-  generation: { value: number },
-): Promise<{ full: number[]; incremental: number[]; orderOnly: number[] }> {
-  const full: number[] = [];
-  for (let sample = 0; sample < FULL_EXPORT_SAMPLES_PER_RUN; sample += 1) {
-    const exported = await fullExport(runtime, ++generation.value);
-    full.push(exported.durationMs);
-    collectProfileGarbage();
-  }
-  const incremental: number[] = [];
-  for (let sample = 0; sample < INCREMENTAL_EXPORT_SAMPLES_PER_RUN; sample += 1) {
-    const baseRevision = sample + 1;
-    const modelRevision = baseRevision + 1;
-    const exported = await incrementalExport(
-      runtime,
-      ++generation.value,
-      baseRevision,
-      modelRevision,
-    );
-    incremental.push(exported.durationMs);
-    collectProfileGarbage();
-  }
-  const orderOnly: number[] = [];
-  const originalOrder = snapshot.elements.map(({ id }) => id);
-  const reversedOrder = [...originalOrder].reverse();
-  for (let sample = 0; sample < ORDER_ONLY_EXPORT_SAMPLES_PER_RUN; sample += 1) {
-    const baseRevision = snapshot.revision + INCREMENTAL_EXPORT_SAMPLES_PER_RUN + sample;
-    const exported = await orderOnlyExport(
-      runtime,
-      ++generation.value,
-      baseRevision,
-      baseRevision + 1,
-      sample % 2 === 0 ? reversedOrder : originalOrder,
-    );
-    orderOnly.push(exported.durationMs);
-    collectProfileGarbage();
-  }
-  return { full, incremental, orderOnly };
-}
-
 function serializeFixture() {
-  return measure(() => serializeInkbookDocument(snapshot, { hash: () => "fixture-hash" }));
+  return serializeInkbookDocument(snapshot, { hash: () => "fixture-hash" });
 }
 
 function requireSerialized(result: ReturnType<typeof serializeInkbookDocument>) {
@@ -214,11 +115,8 @@ function requireSerialized(result: ReturnType<typeof serializeInkbookDocument>) 
   return result.value;
 }
 
-async function fullExport(
-  runtime: DocumentWorkerRuntime,
-  exportGeneration: number,
-): Promise<{ durationMs: number }> {
-  return executeMeasuredExport(runtime, {
+async function fullExport(runtime: DocumentWorkerRuntime, exportGeneration: number): Promise<void> {
+  return executeExport(runtime, {
     baseModelRevision: null,
     exportGeneration,
     modelRevision: snapshot.revision,
@@ -234,12 +132,12 @@ async function incrementalExport(
   exportGeneration: number,
   baseModelRevision: number,
   modelRevision: number,
-): Promise<{ durationMs: number }> {
+): Promise<void> {
   const changed = replaceFirstStroke(snapshot, modelRevision);
   const bounds = calculateElementBounds(changed);
   const spatialMemberships = spatialCellMembershipCount(bounds);
   const spatialOverflow = spatialMemberships > MAX_ELEMENT_CELLS;
-  return executeMeasuredExport(runtime, {
+  return executeExport(runtime, {
     baseModelRevision,
     changedElementDerivations: [
       {
@@ -264,8 +162,8 @@ async function orderOnlyExport(
   baseModelRevision: number,
   modelRevision: number,
   content: readonly string[],
-): Promise<{ durationMs: number }> {
-  return executeMeasuredExport(runtime, {
+): Promise<void> {
+  return executeExport(runtime, {
     baseModelRevision,
     exportGeneration,
     modelRevision,
@@ -281,15 +179,15 @@ type ExportRequest = Extract<
   { type: "export-full" | "export-incremental" }
 >;
 
-async function executeMeasuredExport(
+async function executeExport(
   runtime: DocumentWorkerRuntime,
   request: ExportRequest,
-): Promise<{ durationMs: number }> {
+): Promise<void> {
   const before = runtime.instrumentation;
-  let measured = await measureAsync(() => runtime.execute(request));
-  const durationMs = measured.durationMs;
-  const identity = exportIdentity(requireExportSuccess(measured.value));
-  measured = null as never;
+  const result = await runtime.execute(request);
+  const exported = requireExportSuccess(result);
+  expect(exported.modelRevision).toBe(request.modelRevision);
+  const identity = exportIdentity(exported);
   await acknowledgeAndPrewarm(runtime, identity);
   if (request.type === "export-incremental") {
     const changedCount = request.changedElements?.length ?? 0;
@@ -298,7 +196,6 @@ async function executeMeasuredExport(
       changedCount,
     );
   }
-  return { durationMs };
 }
 
 function requireExportSuccess(result: Awaited<ReturnType<DocumentWorkerRuntime["execute"]>>) {

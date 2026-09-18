@@ -1,22 +1,17 @@
 declare function setImmediate(callback: () => void): void;
 
 export class FallbackSliceProbe {
-  readonly durations: number[] = [];
+  yields = 0;
   readonly operations = new Map<string, OperationMeasurement>();
   #currentOperation = "idle";
   #inputQueryPhase = 0;
   #inputWasObserved = false;
-  #sliceStarted: number;
-  readonly #now: () => number;
   readonly #wait: () => Promise<void>;
 
   public constructor(
-    now: () => number = () => performance.now(),
     wait: () => Promise<void> = () => new Promise<void>((resolve) => setImmediate(resolve)),
   ) {
-    this.#now = now;
     this.#wait = wait;
-    this.#sliceStarted = now();
   }
 
   public isInputActive = (): boolean => {
@@ -30,23 +25,23 @@ export class FallbackSliceProbe {
   public startOperation(name: string): void {
     this.#currentOperation = name;
     this.operations.set(name, {
-      durations: [],
+      yields: 0,
       inputPauseYields: 0,
       syntheticInputSamples: 0,
     });
     this.#inputQueryPhase = 0;
     this.#inputWasObserved = false;
-    this.#sliceStarted = this.#now();
   }
 
   public finishOperation(): void {
-    this.#recordSlice();
     this.#currentOperation = "idle";
     this.#inputWasObserved = false;
   }
 
   public yieldControl = async (): Promise<void> => {
-    this.#recordSlice();
+    this.yields += 1;
+    const operation = this.operations.get(this.#currentOperation);
+    if (operation !== undefined) operation.yields += 1;
     if (this.#inputWasObserved) {
       const measurement = this.operations.get(this.#currentOperation);
       if (measurement !== undefined) {
@@ -56,18 +51,11 @@ export class FallbackSliceProbe {
       this.#inputWasObserved = false;
     }
     await this.#wait();
-    this.#sliceStarted = this.#now();
   };
-
-  #recordSlice(): void {
-    const duration = this.#now() - this.#sliceStarted;
-    this.durations.push(duration);
-    this.operations.get(this.#currentOperation)?.durations.push(duration);
-  }
 }
 
 interface OperationMeasurement {
-  readonly durations: number[];
+  yields: number;
   inputPauseYields: number;
   syntheticInputSamples: number;
 }

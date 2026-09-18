@@ -12,29 +12,16 @@ import { parseBatchReport, runPerformanceBatch } from "../../../scripts/performa
 const root = "/workspace";
 const file = "test/performance/a.test.ts";
 const secondFile = "test/performance/b.test.ts";
-const measurement = {
-  testName: "operation",
-  testPath: `${root}/${file}`,
-  ordinal: 1,
-  actualMs: 4,
-  referenceMs: 2,
-  ratio: 2,
-  refreshRate: 240,
-  comparison: "lte",
-};
 const testResult = (name = file) => ({
   name: `${root}/${name}`,
   status: "passed",
   assertionResults: [{ fullName: "operation", status: "passed" }],
 });
-const envelope = (name = file, measurements = [measurement]) =>
-  `INKBOOK_TIMING_RECORDS ${JSON.stringify({ testPath: `${root}/${name}`, measurements })}\n`;
 const report = (overrides = {}) => ({
   root,
   testFiles: [file],
   refreshRate: 240,
   stdout: JSON.stringify({ success: true, testResults: [testResult()] }),
-  stderr: envelope(),
   ...overrides,
 });
 
@@ -57,7 +44,7 @@ afterEach(() => {
 });
 
 describe("performance batch reports", () => {
-  it("preserves all files, including a file with no timing assertions", () => {
+  it("checks all files without collecting elapsed-time evidence", () => {
     const parsed = parseBatchReport(
       report({
         testFiles: [file, secondFile],
@@ -65,20 +52,9 @@ describe("performance batch reports", () => {
           success: true,
           testResults: [testResult(), testResult(secondFile)],
         }),
-        stderr: `diagnostic\n${envelope()}${envelope(secondFile, [])}`,
       }),
     );
-    expect(parsed.files).toEqual([file, secondFile]);
-    expect(parsed.measurements).toEqual([{ ...measurement, file }]);
-    expect(parsed.violations).toEqual([]);
-  });
-
-  it("preserves timing records through JSON envelopes", () => {
-    const records = [measurement, { ...measurement, ordinal: 2 }];
-    const parsed = parseBatchReport(report({ stderr: envelope(file, records) }));
-    expect(parsed.measurements).toEqual(records.map((record) => ({ ...record, file })));
-    expect(parsed.measurements[0]).not.toHaveProperty("statistic");
-    expect(JSON.parse(JSON.stringify(parsed))).toEqual(parsed);
+    expect(parsed).toEqual({ files: [file, secondFile], violations: [] });
   });
 
   it.each(["pending", "todo", "skipped", "failed"])("rejects %s tests", (status) => {
@@ -92,10 +68,6 @@ describe("performance batch reports", () => {
   });
 
   it.each([
-    { stderr: "" },
-    { stderr: envelope() + envelope() },
-    { stderr: envelope(secondFile, []) },
-    { stderr: "INKBOOK_TIMING_RECORDS {\n" },
     { stdout: "invalid" },
     { stdout: JSON.stringify({ success: true, testResults: [] }) },
     { stdout: JSON.stringify({ success: true, testResults: [testResult(), testResult()] }) },
@@ -108,71 +80,28 @@ describe("performance batch reports", () => {
   ])("fails closed for incomplete or malformed reports %j", (override) => {
     expect(() => parseBatchReport(report(override))).toThrow();
   });
-
-  it.each([
-    { statistic: "median" },
-    { statistic: null },
-    { statistic: "p99" },
-    { statistic: "mean" },
-    { statistic: 1.1 },
-    { statistic: {} },
-    { actualMs: -1 },
-    { referenceMs: 0 },
-    { ratio: 3 },
-    { ordinal: 2 },
-    { refreshRate: 120 },
-    { comparison: "unknown" },
-    { testName: "" },
-    { testPath: `${root}/${secondFile}` },
-    { label: 12 },
-  ])("rejects malformed measurements %j", (override) => {
-    expect(() =>
-      parseBatchReport(report({ stderr: envelope(file, [{ ...measurement, ...override }]) })),
-    ).toThrow();
-  });
-
-  it("rejects duplicate ordinals and invalid populations", () => {
-    expect(() =>
-      parseBatchReport(report({ stderr: envelope(file, [measurement, measurement]) })),
-    ).toThrow("ordinal");
-    expect(() => parseBatchReport(report({ stderr: envelope(file, null) }))).toThrow("population");
-    expect(() =>
-      parseBatchReport(
-        report({
-          stderr: envelope(
-            file,
-            Array.from({ length: 20_001 }, () => measurement),
-          ),
-        }),
-      ),
-    ).toThrow("population");
-  });
 });
 
 describe("bounded performance batch execution", () => {
   it("uses one isolated worker and removes the legacy multiplier", async () => {
-    vi.stubEnv("INKBOOK_PERFORMANCE_PROFILE", "hosted-ubuntu");
     const child = mockChild();
     const pending = runPerformanceBatch({
       root,
       testFiles: [secondFile, file],
       refreshRate: 240,
-      mode: "measurement",
     });
     child.stdout.write(
       JSON.stringify({ success: true, testResults: [testResult(), testResult(secondFile)] }),
     );
-    child.stderr.write(envelope() + envelope(secondFile, []));
     child.emit("close", 0, null);
     expect((await pending).violations).toEqual([]);
     const [, args, options] = vi.mocked(spawn).mock.calls[0];
     expect(args).toContain("--maxWorkers=1");
     expect(args).toContain("--isolate");
     expect(args).toContain("--fileParallelism=false");
-    expect(args).toContain("--cache=false");
+    expect(args).toContain("--reporter=json");
     expect(args.indexOf(file)).toBeLessThan(args.indexOf(secondFile));
-    expect(options.env.INKBOOK_PERFORMANCE_MODE).toBe("measurement");
-    expect(options.env.INKBOOK_PERFORMANCE_PROFILE).toBeUndefined();
+    expect(options.env.INKBOOK_PERFORMANCE_REFRESH_RATE).toBe("240");
     expect(options.detached).toBeUndefined();
   });
 
@@ -182,10 +111,8 @@ describe("bounded performance batch execution", () => {
       root,
       testFiles: [file],
       refreshRate: 240,
-      mode: "contracts",
     });
     child.stdout.write(report().stdout);
-    child.stderr.write(report().stderr);
     child.emit("close", 0, null);
     expect((await pending).violations).toEqual([]);
     expect(vi.mocked(spawn).mock.calls[0][1]).not.toContain("--cache=false");
@@ -197,7 +124,6 @@ describe("bounded performance batch execution", () => {
       root,
       testFiles: [file],
       refreshRate: 240,
-      mode: "contracts",
     });
     const [onTimeout, duration] = timers.setTimeout.mock.calls[0];
     expect(duration).toBe(20 * 60 * 1000);
@@ -214,7 +140,6 @@ describe("bounded performance batch execution", () => {
       root,
       testFiles: [file],
       refreshRate: 240,
-      mode: "reference",
     });
     child.stdout.write("a".repeat(16 * 1024 * 1024));
     child.stderr.write("b".repeat(16 * 1024 * 1024 + 1));
@@ -223,225 +148,19 @@ describe("bounded performance batch execution", () => {
     );
   });
 
-  it("reports process startup failure and rejects unsupported modes", async () => {
+  it("reports process startup failure and rejects unsupported profiles", async () => {
     const child = mockChild();
     const pending = runPerformanceBatch({
       root,
       testFiles: [file],
       refreshRate: 240,
-      mode: "contracts",
     });
     child.emit("error", new Error("spawn failed"));
     expect((await pending).violations).toContainEqual(
       expect.objectContaining({ message: "spawn failed" }),
     );
-    await expect(
-      runPerformanceBatch({ root, testFiles: [file], refreshRate: 240, mode: "loose" }),
-    ).rejects.toThrow("mode");
-  });
-});
-
-describe("relative-only batch records", () => {
-  const relative = {
-    ...measurement,
-    referenceMs: null,
-    limitMs: null,
-    ratio: null,
-    comparison: "relative",
-    label: "total work",
-  };
-
-  it("round-trips relative and absolute metrics in one envelope", () => {
-    const parsed = parseBatchReport(
-      report({ stderr: envelope(file, [measurement, { ...relative, ordinal: 2 }]) }),
+    await expect(runPerformanceBatch({ root, testFiles: [file], refreshRate: 75 })).rejects.toThrow(
+      "refresh rate",
     );
-    expect(JSON.parse(JSON.stringify(parsed)).measurements).toEqual([
-      { ...measurement, file },
-      { ...relative, ordinal: 2, file },
-    ]);
-  });
-
-  it.each([
-    { referenceMs: 2 },
-    { referenceMs: undefined },
-    { limitMs: 2 },
-    { limitMs: undefined },
-    { ratio: 2 },
-    { ratio: undefined },
-    { label: undefined },
-    { label: " " },
-    { label: 12 },
-    { comparison: "lte" },
-    { actualMs: -1 },
-  ])("rejects malformed relative shape %j", (override) => {
-    expect(() =>
-      parseBatchReport(report({ stderr: envelope(file, [{ ...relative, ...override }]) })),
-    ).toThrow();
-  });
-
-  it.each([{ referenceMs: null }, { limitMs: null }, { ratio: null }, { comparison: "relative" }])(
-    "rejects a mixed absolute shape %j",
-    (override) => {
-      expect(() =>
-        parseBatchReport(report({ stderr: envelope(file, [{ ...measurement, ...override }]) })),
-      ).toThrow();
-    },
-  );
-});
-
-describe("exact scenario selection", () => {
-  const scenarios = [{ file, testName: "operation" }];
-
-  it("accepts only explicitly selected passed scenarios and skips others", () => {
-    const result = testResult();
-    result.assertionResults.push({ fullName: "unselected", status: "skipped" });
-    expect(
-      parseBatchReport(
-        report({
-          scenarios,
-          stdout: JSON.stringify({ success: true, testResults: [result] }),
-        }),
-      ).violations,
-    ).toEqual([]);
-  });
-
-  it("normalizes JSON ancestor names without changing timing names", () => {
-    const name = "suite [x] > operation (a+b)?";
-    const result = testResult();
-    result.assertionResults = [
-      {
-        fullName: "suite [x] operation (a+b)?",
-        ancestorTitles: ["suite [x]"],
-        title: "operation (a+b)?",
-        status: "passed",
-      },
-    ];
-    expect(
-      parseBatchReport(
-        report({
-          scenarios: [{ file, testName: name }],
-          stdout: JSON.stringify({ success: true, testResults: [result] }),
-          stderr: envelope(file, [{ ...measurement, testName: name }]),
-        }),
-      ).violations,
-    ).toEqual([]);
-  });
-
-  it.each([
-    [],
-    null,
-    [{ file, testName: "" }],
-    [{ file, testName: " " }],
-    [{ file: secondFile, testName: "operation" }],
-    [scenarios[0], scenarios[0]],
-    [{ file, testName: "a".repeat(4097) }],
-    Array(2001).fill(scenarios[0]),
-  ])("rejects malformed or unbounded selections", (selected) => {
-    expect(() => parseBatchReport(report({ scenarios: selected }))).toThrow();
-  });
-
-  it("requires a selected scenario in every requested file", () => {
-    expect(() => parseBatchReport(report({ scenarios, testFiles: [file, secondFile] }))).toThrow(
-      "missing for test file",
-    );
-  });
-
-  it.each(["pending", "skipped", "failed", "todo"])("blocks selected %s results", (status) => {
-    const result = testResult();
-    result.assertionResults[0].status = status;
-    expect(
-      parseBatchReport(
-        report({ scenarios, stdout: JSON.stringify({ success: false, testResults: [result] }) }),
-      ).violations,
-    ).toHaveLength(1);
-  });
-});
-
-describe("selected scenario evidence and execution", () => {
-  const scenarios = [{ file, testName: "operation" }];
-
-  it("rejects missing, duplicate, and unexpected executed scenarios", () => {
-    for (const assertions of [
-      [{ fullName: "other", status: "pending" }],
-      [testResult().assertionResults[0], testResult().assertionResults[0]],
-      [...testResult().assertionResults, { fullName: "other", status: "passed" }],
-    ]) {
-      expect(() =>
-        parseBatchReport(
-          report({
-            scenarios,
-            stdout: JSON.stringify({
-              success: true,
-              testResults: [{ ...testResult(), assertionResults: assertions }],
-            }),
-          }),
-        ),
-      ).toThrow();
-    }
-  });
-
-  it("rejects timing evidence for unselected or missing scenarios", () => {
-    for (const records of [[], [{ ...measurement, testName: "other" }]]) {
-      expect(() =>
-        parseBatchReport(report({ scenarios, stderr: envelope(file, records) })),
-      ).toThrow();
-    }
-  });
-
-  it("fails closed when a name shared across files selects an unrequested scenario", () => {
-    expect(() =>
-      parseBatchReport(
-        report({
-          scenarios: [...scenarios, { file: secondFile, testName: "other" }],
-          testFiles: [file, secondFile],
-          stdout: JSON.stringify({
-            success: true,
-            testResults: [testResult(), testResult(secondFile)],
-          }),
-        }),
-      ),
-    ).toThrow("Unexpected executed scenario");
-  });
-
-  it("escapes and anchors the CLI name pattern", async () => {
-    const child = mockChild();
-    const name = "operation [x].*(a+b)?$\\";
-    const pending = runPerformanceBatch({
-      root,
-      testFiles: [file],
-      refreshRate: 240,
-      mode: "measurement",
-      scenarios: [{ file, testName: name }],
-    });
-    child.stdout.write(
-      JSON.stringify({
-        success: true,
-        testResults: [
-          { ...testResult(), assertionResults: [{ fullName: name, status: "passed" }] },
-        ],
-      }),
-    );
-    child.stderr.write(envelope(file, [{ ...measurement, testName: name }]));
-    child.emit("close", 0, null);
-    expect((await pending).violations).toEqual([]);
-    const args = vi.mocked(spawn).mock.calls[0][1];
-    const pattern = new RegExp(args[args.indexOf("--testNamePattern") + 1]);
-    expect(pattern.test(name)).toBe(true);
-    expect(pattern.test(`prefix ${name}`)).toBe(false);
-    expect(pattern.test(`${name} suffix`)).toBe(false);
-    expect(pattern.test("operation xxaab")).toBe(false);
-  });
-
-  it("rejects scenario overrides outside measurement mode before spawning", async () => {
-    await expect(
-      runPerformanceBatch({
-        root,
-        testFiles: [file],
-        refreshRate: 240,
-        mode: "contracts",
-        scenarios,
-      }),
-    ).rejects.toThrow("measurement mode");
-    expect(spawn).not.toHaveBeenCalled();
   });
 });
