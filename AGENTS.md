@@ -84,6 +84,7 @@ Detailed rendering, cache, scheduling, memory, and latency contracts are canonic
 ## Testing and Acceptance
 
 - Use Unit and focused Integration tests only. End-to-end and smoke suites are explicitly excluded.
+- For every new or changed test, follow the [shared test-authoring rules](docs/quality-and-testing.md#automated-test-strategy): reuse existing coverage, fixtures, and helpers; eliminate redundant setup and execution while preserving independent state, meaningful cases, assertions, and coverage.
 - Add deterministic regression coverage for every relevant behavior change. Across executable source, maintain at least 85 percent lines, statements, and functions plus at least 80 percent branches.
 - Add deterministic work/resource tests for every new or changed performance-critical path. Follow [Adding or Changing Performance Tests](docs/performance-ci.md#adding-or-changing-performance-tests): observe actual expensive boundaries, assert justified upper bounds, register the manifest entry, and cover relevant capacity, cancellation, reuse, and cleanup cases.
 - Apply the [Unified Verification Model](docs/performance-ci.md#unified-verification-model): observe work/resources directly and use simulated time only for scheduling. Do not add elapsed-time or CPU-time measurements, p95/p99 assertions, baselines, tolerance percentages, timing reports, or statistical warmups/repetitions. Unobserved computation can still regress; a green CI run is not proof of execution speed.
