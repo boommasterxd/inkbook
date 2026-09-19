@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { SelectionScaleGesture } from "../../../src/editor/selection/selection-scale";
 import { table } from "../../unit/domain/schema/fixtures";
-import { createRotatedScaleFixture } from "./selection-input-fixture";
+import { calculateElementBounds } from "../../../src/domain/geometry/public";
+import { selectionOverlayGeometry } from "../../../src/editor/selection/overlay-geometry";
+import { SelectionHandleSession } from "../../../src/editor/selection/handle-session";
+import { maximumStroke } from "./maximum-stroke-fixture";
+import { PASS_THROUGH_PLANNER, createRotatedScaleFixture } from "./selection-input-fixture";
 
 describe("arbitrary-frame stroke scale materialization", () => {
   it.each([false, true])(
@@ -74,4 +78,32 @@ describe("collapsed structural scale work", () => {
     // Both solver and preview frame use the prepared constant-size basis, not column data.
     expect(sourceReads).toBe(0);
   });
+});
+
+it("uses the prepared single-stroke frame without rereading maximum stroke coordinates", () => {
+  const base = maximumStroke(0);
+  let reads = 0;
+  const points = new Proxy(base.points, {
+    get(target, key, receiver): unknown {
+      if (typeof key === "string" && /^\d+$/u.test(key)) reads += 1;
+      return Reflect.get(target, key, receiver);
+    },
+  });
+  const element = { ...base, points };
+  const selected = [{ element, bounds: calculateElementBounds(element) }];
+  const session = new SelectionHandleSession({
+    action: { anchor: { x: 0, y: 0 }, kind: "scale", position: "bottom-right", rotation: 0 },
+    elements: [element],
+    planner: PASS_THROUGH_PLANNER,
+    startPointer: { x: 4100, y: 200 },
+  });
+  reads = 0;
+  for (const x of [4200, 4400, 4150]) {
+    session.update({ x, y: 250 });
+    const frame = session.preview.previewFrame!;
+    const geometry = selectionOverlayGeometry(selected, 1, null, frame)!;
+    expect(geometry.outline).toEqual({ kind: "polygon", points: frame.points });
+    expect(geometry.handles).toHaveLength(9);
+  }
+  expect(reads).toBe(0);
 });
