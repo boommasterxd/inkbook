@@ -21,6 +21,7 @@ export class SceneSelectionTraces {
   #haloCount = 0;
   #layer: SelectionHaloLayer | undefined;
   #contextDirty = false;
+  #appliedZoom = 1;
   #context: SelectionHaloContext = { camera: { x: 0, zoom: 1 }, viewport: undefined };
   #highlightsEnabled = true;
   #selected: ReadonlySet<string> = new Set();
@@ -66,6 +67,8 @@ export class SceneSelectionTraces {
     if (!this.#contextDirty) return;
     this.#contextDirty = false;
     this.#layer?.setContext(this.#context);
+    if (this.#context.camera.zoom === this.#appliedZoom) return;
+    this.#appliedZoom = this.#context.camera.zoom;
     for (const trace of this.#traces.values()) {
       const before = trace.halo.memoryUsage();
       trace.halo.setContext(this.#context);

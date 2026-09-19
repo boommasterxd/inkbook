@@ -31,6 +31,8 @@ export class SelectionHalo {
   #geometry: readonly SvgPathPart[] = [];
   #context: SelectionHaloContext;
   #strokeScale: number | null = null;
+  #paintScale: number | undefined;
+  #paintDirty = true;
   #bytes = 0;
 
   public constructor(
@@ -60,6 +62,7 @@ export class SelectionHalo {
   ): void {
     this.#element = element;
     this.#geometry = parts;
+    this.#paintDirty = true;
     this.setHaloLayer(haloLayer);
     this.syncParts();
     if (element.kind === "line" || element.kind === "arrow") this.syncCenter();
@@ -143,13 +146,15 @@ export class SelectionHalo {
   }
 
   private paint(): void {
-    const zoom = this.#context.camera.zoom;
+    const scale = this.#strokeScale ?? this.#context.camera.zoom;
+    if (!this.#paintDirty && scale === this.#paintScale) return;
+    this.#paintDirty = false;
+    this.#paintScale = scale;
     for (const [index, node] of this.#parts.entries()) {
       const geometry = this.#geometry[index]!;
       const presentation = pathPresentation(this.#element, geometry);
       const width = Number(presentation["stroke-width"] ?? 0);
       const dash = presentation["stroke-dasharray"];
-      const scale = this.#strokeScale ?? zoom;
       this.write(node, "fill", geometry.paint === "fill" ? "currentColor" : "none");
       this.write(node, "stroke", width > 0 ? "currentColor" : "none");
       this.write(node, "stroke-width", String(width * scale));

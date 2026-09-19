@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as strokePath from "../../../../src/domain/geometry/stroke-path";
+import * as presentation from "../../../../src/rendering/scene/element-presentation";
 import { scaleElement } from "../../../../src/editor/selection/transforms";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
@@ -20,6 +21,51 @@ import { fakeNode } from "../../../unit/rendering/scene/fakes";
 import { maximumStroke } from "../../editor/maximum-stroke-fixture";
 
 afterEach(() => vi.restoreAllMocks());
+
+describe("selection trace paint invalidation", () => {
+  it("repaints retained outlines only when their effective scale or paint changes", () => {
+    const elements = Array.from({ length: 100 }, (_, index) => {
+      const element = line(index);
+      return { ...element, style: { ...element.style, outlineStyle: "dashed" as const } };
+    });
+    const { renderer, select, scheduler } = createSelectionTraceFixture(elements);
+    select();
+    const paints = vi.spyOn(presentation, "pathPresentation");
+    const ids = elements.map(({ id }) => id);
+    for (const [version, offset] of [10, -10, 0].entries()) {
+      renderer.setPreviewTransform(ids, `translate(${String(offset)} 0)`, version);
+      renderer.flushPointerFeedbackFrame();
+    }
+    renderer.setCamera({ x: 1, zoom: 1 });
+    renderer.flushPointerFeedbackFrame();
+    expect(paints).not.toHaveBeenCalled();
+    renderer.setCamera({ x: 1, zoom: 2 });
+    renderer.flushPointerFeedbackFrame();
+    expect(paints).toHaveBeenCalledTimes(elements.length);
+    paints.mockClear();
+    renderer.setPreviewTransform(ids, "scale(2 1)", 4, "preserve");
+    renderer.flushPointerFeedbackFrame();
+    expect(paints).not.toHaveBeenCalled();
+    renderer.setCamera({ x: 1, zoom: 3 });
+    renderer.flushPointerFeedbackFrame();
+    expect(paints).not.toHaveBeenCalled();
+    renderer.setPreviewTransform(ids, "scale(1 2)", 5, "preserve");
+    renderer.flushPointerFeedbackFrame();
+    expect(paints).toHaveBeenCalledTimes(elements.length);
+    paints.mockClear();
+    renderer.clearPreviewTransforms();
+    renderer.flushPointerFeedbackFrame();
+    expect(paints).not.toHaveBeenCalled();
+    renderer.setSelectionHighlightsEnabled(false);
+    scheduler.runAll();
+    expect(paints).not.toHaveBeenCalled();
+    renderer.setSelectionHighlightsEnabled(true);
+    scheduler.runAll();
+    expect(paints).toHaveBeenCalledTimes(elements.length);
+    renderer.destroy();
+    expect(scheduler.pendingCount).toBe(0);
+  });
+});
 
 describe("selection trace work and ownership", () => {
   it("selects 10,000 IDs while building only mounted traces and releases them after culling", () => {
