@@ -13,6 +13,10 @@ import { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/p
 import { createProductionDocumentRuntime } from "../../../src/persistence/worker/runtime/production-document-runtime";
 import type { DocumentRuntimeRequest } from "../../../src/persistence/worker/runtime/public";
 import { STANDARD_POINTS, createStandardPersistenceFixture, replaceFirstStroke } from "./fixtures";
+import {
+  observeIntegrityWork,
+  type IntegrityWork,
+} from "../../fixtures/persistence/integrity-work-observer";
 const MIB = 1024 * 1024;
 const snapshot = createStandardPersistenceFixture();
 
@@ -60,16 +64,48 @@ describe("persistence serialization performance", () => {
     );
   }, 120_000);
 
-  it("checkpoints receiver integrity derivation without changing its result", async () => {
-    let checkpoints = 0;
-    const result = await deriveDocumentIntegrityManifestAsync(snapshot, {
-      checkpoint: async () => {
-        checkpoints += 1;
-      },
-    });
-    expect(result).toEqual(deriveDocumentIntegrityManifest(snapshot));
-    expect(checkpoints).toBeGreaterThan(1);
-    expect(checkpoints).toBeLessThanOrEqual(snapshot.elements.length);
+  it("bounds receiver integrity work between checkpoints without changing its result", async () => {
+    const sliceBytes = 64 * 1024;
+    // UUIDs are ASCII; the ordered-ID pass includes its domain prefix and one NUL per ID.
+    const orderedIdBytes =
+      "inkbook-ordered-ids-v1".length +
+      snapshot.elements.reduce((bytes, element) => bytes + 1 + element.id.length, 0);
+    const observer = observeIntegrityWork(snapshot);
+    try {
+      const expected = deriveDocumentIntegrityManifest(observer.snapshot);
+      const reference = observer.take();
+      expect(reference.canonicalElements).toBe(snapshot.elements.length);
+      expect(reference.elementReads).toBe(2 * snapshot.elements.length);
+      expect(reference.encodedBytes).toBe(reference.hashedBytes);
+      const slices: IntegrityWork[] = [];
+      const result = await deriveDocumentIntegrityManifestAsync(observer.snapshot, {
+        checkpoint: async () => {
+          slices.push(observer.take());
+        },
+        sliceByteLimit: sliceBytes,
+      });
+      const finalSlice = observer.take();
+      expect(result).toEqual(expected);
+      expect(slices.length).toBeGreaterThan(1);
+      for (const slice of slices) assertIntegritySlice(slice, sliceBytes);
+      // The ordered-ID digest is currently synchronous and belongs to the final slice.
+      expect(finalSlice.encodedBytes).toBeLessThan(sliceBytes + orderedIdBytes);
+      expect(finalSlice.hashedBytes).toBe(finalSlice.encodedBytes);
+      expect(finalSlice.elementReads).toBe(finalSlice.canonicalElements + snapshot.elements.length);
+      expect(finalSlice.canonicalElements).toBeLessThanOrEqual(Math.ceil(sliceBytes / 38));
+      const total = [...slices, finalSlice].reduce(
+        (sum, slice) => ({
+          canonicalElements: sum.canonicalElements + slice.canonicalElements,
+          elementReads: sum.elementReads + slice.elementReads,
+          encodedBytes: sum.encodedBytes + slice.encodedBytes,
+          hashedBytes: sum.hashedBytes + slice.hashedBytes,
+        }),
+        { canonicalElements: 0, elementReads: 0, encodedBytes: 0, hashedBytes: 0 },
+      );
+      expect(total).toEqual(reference);
+    } finally {
+      observer.restore();
+    }
   }, 120_000);
 });
 
@@ -259,4 +295,16 @@ function amplifyNearLimitSnapshot(
       return { ...element, points };
     }),
   };
+}
+
+function assertIntegritySlice(work: IntegrityWork, sliceBytes: number): void {
+  // A checkpoint follows the threshold-crossing chunk. This ASCII fixture encodes
+  // at most sliceBytes / 4 bytes per chunk, with no more than one chunk overshoot.
+  expect(work.encodedBytes).toBeGreaterThanOrEqual(sliceBytes);
+  expect(work.encodedBytes).toBeLessThan(sliceBytes + sliceBytes / 4);
+  expect(work.hashedBytes).toBe(work.encodedBytes);
+  expect(work.elementReads).toBe(work.canonicalElements);
+  // Even the ID alone occupies 38 JSON bytes. One canonical element may already
+  // be prepared when a checkpoint splits its encoded representation.
+  expect(work.canonicalElements).toBeLessThanOrEqual(Math.ceil(sliceBytes / 38) + 1);
 }
