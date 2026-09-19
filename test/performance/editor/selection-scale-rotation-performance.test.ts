@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { SelectionScalePreviewFramePlan } from "../../../src/editor/selection/scale-preview-frame";
 import { SelectionScaleGesture } from "../../../src/editor/selection/selection-scale";
 import { table } from "../../unit/domain/schema/fixtures";
 import { calculateElementBounds } from "../../../src/domain/geometry/public";
@@ -106,4 +107,27 @@ it("uses the prepared single-stroke frame without rereading maximum stroke coord
     expect(geometry.handles).toHaveLength(9);
   }
   expect(reads).toBe(0);
+});
+
+it("solves single-stroke factors once and reuses supplied factors during materialization", () => {
+  const source = maximumStroke(0);
+  const pointer = { x: 4500, y: 250 };
+  const gesture = new SelectionScaleGesture(
+    { anchor: { x: 0, y: 0 }, kind: "scale", position: "bottom-right", rotation: 0 },
+    [source],
+    { x: 4100, y: 200 },
+  );
+  const solve = vi.spyOn(SelectionScalePreviewFramePlan.prototype, "factorsForPointer");
+  try {
+    gesture.materialize(pointer, false);
+    expect(solve).toHaveBeenCalledTimes(1);
+    const factors = gesture.factorsAt(pointer, false);
+    solve.mockClear();
+    const reused = gesture.materializeOne(source, pointer, false, factors);
+    expect(solve).not.toHaveBeenCalled();
+    expect(gesture.materializeOne(source, pointer, false, undefined)).toEqual(reused);
+    expect(solve).toHaveBeenCalledTimes(1);
+  } finally {
+    solve.mockRestore();
+  }
 });

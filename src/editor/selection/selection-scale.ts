@@ -84,7 +84,7 @@ export class SelectionScaleGesture {
     const factors = this.factorsAt(pointer, uniform);
     const replacements =
       this.#elements.length === 1
-        ? [this.#scaleSingle(this.#elements[0]!, pointer, uniform)]
+        ? [this.#scaleSingle(this.#elements[0]!, factors)]
         : this.#elements.map((element) => this.#scaleInFrame(element, factors));
     return this.stabilizeAnchor(replacements);
   }
@@ -96,7 +96,7 @@ export class SelectionScaleGesture {
     factors: ScaleFactors | undefined,
   ): InkElementV1 {
     return this.#elements.length === 1 || factors === undefined
-      ? this.#scaleSingle(element, pointer, uniform)
+      ? this.#scaleSingle(element, factors ?? this.factorsAt(pointer, uniform))
       : this.#scaleInFrame(element, factors);
   }
 
@@ -174,10 +174,9 @@ export class SelectionScaleGesture {
       : rotateSelection([scaled], this.#action.anchor, this.#action.rotation)[0]!;
   }
 
-  #scaleSingle(original: InkElementV1, pointer: PointV1, uniform: boolean): InkElementV1 {
+  #scaleSingle(original: InkElementV1, factors: ScaleFactors): InkElementV1 {
     const element = this.#singleSource ?? original;
     const anchor = rotatePointClockwise(this.#action.anchor, element.pivot, -element.rotation);
-    const factors = this.factorsAt(pointer, uniform);
     const scaled = scaleElement(
       element,
       anchor,
