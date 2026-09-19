@@ -68,6 +68,10 @@ describe("imperative canvas motion", () => {
     const before = store.records.get("a")?.element as BoxShapeElementV1;
     renderer.setElementFade(["a"], 160);
     expect(path.style.opacity).toBe("0");
+    expect(path.style.filter).toBe("blur(50px)");
+    expect(path.style.transition).toBe(
+      "opacity 160ms cubic-bezier(0.2, 0, 0, 1), filter 160ms cubic-bezier(0.2, 0, 0, 1)",
+    );
 
     store.records.delete("a");
     renderer.applyDelta({
@@ -79,6 +83,21 @@ describe("imperative canvas motion", () => {
     expect(renderer.instrumentation().motionTombstones).toBe(0);
     scheduler.runNext();
     expect(renderer.mountedCount).toBe(0);
+  });
+
+  it("restores sharp original ink immediately when erasing is cancelled", () => {
+    const { renderer, scheduler } = setup();
+    scheduler.runAll();
+    const path = contentPath(renderer, 0);
+    const geometry = path.attributes.get("d");
+    renderer.setElementFade(["a"], 160);
+    renderer.clearElementFade(["a"]);
+    expect(path.style.filter).toBe("");
+    expect(path.style.opacity).toBe("");
+    expect(path.style.transition).toBe("");
+    expect(path.attributes.get("d")).toBe(geometry);
+    expect(scheduler.pendingCount).toBe(0);
+    renderer.destroy();
   });
 
   it("retains bounded non-interactive removal tombstones and releases every byte", () => {
@@ -397,8 +416,9 @@ describe("motion limits", () => {
 
     expect(contentPath(renderer, 1).style.opacity).toBeUndefined();
     expect(contentPath(renderer, 0).style.transition).toBe(
-      "opacity 0ms cubic-bezier(0.2, 0, 0, 1)",
+      "opacity 0ms cubic-bezier(0.2, 0, 0, 1), filter 0ms cubic-bezier(0.2, 0, 0, 1)",
     );
+    expect(contentPath(renderer, 0).style.filter).toBe("");
     expect(fakeNode(renderer.svg).nodes[2]!.nodes[1]!.style.opacity).toBe("1");
     expect(renderer.instrumentation()).toMatchObject({
       motionCacheEntries: 0,
