@@ -1,4 +1,8 @@
-import { isPointElement } from "../../domain/geometry/element-path";
+import {
+  isPointElement,
+  type ElementPathProfile,
+  type SvgPathPart,
+} from "../../domain/geometry/element-path";
 import { normalizeStrokePaint } from "../../domain/geometry/pressure-paint";
 import {
   buildElementPathParts,
@@ -18,7 +22,18 @@ type AttributeValue = number | string;
 type PathAttributes = Readonly<Record<string, AttributeValue | undefined>>;
 
 export function serializeElementPaths(element: InkElementV1): string[] {
-  const parts = buildElementPathParts(element);
+  return serializeParts(element, buildElementPathParts(element));
+}
+
+/** Previous geometry profiles are accepted only by the static integrity reader. */
+export function serializeProfileElementPaths(
+  element: InkElementV1,
+  profile: Exclude<ElementPathProfile, "current">,
+): string[] {
+  return serializeParts(element, buildElementPathParts(element, profile));
+}
+
+function serializeParts(element: InkElementV1, parts: readonly SvgPathPart[]): string[] {
   if (element.kind === "stroke" && element.style.pressureEnabled) {
     const paint = normalizeStrokePaint(element.style);
     const opaque = { ...element, style: { ...element.style, color: paint.color, opacity: 1 } };
@@ -133,7 +148,7 @@ function outlineStrokeAttributes(style: OutlineStyleV1, point: boolean): PathAtt
   return {
     "stroke-width": style.outlineWidth,
     "stroke-opacity": nonDefaultOpacity(style.outlineOpacity),
-    "stroke-linecap": point || style.outlineStyle === "dotted" ? "round" : "butt",
+    "stroke-linecap": "round",
     "stroke-linejoin": "round",
     "stroke-dasharray": dash?.join(" "),
   };

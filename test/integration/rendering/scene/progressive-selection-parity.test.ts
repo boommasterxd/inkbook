@@ -74,7 +74,7 @@ describe("progressive selection canonical scene parity", () => {
     expect(scheduler.pendingCount).toBe(0);
     expect(remainingFrames).toBeGreaterThanOrEqual(16);
     expect(content.nodes.flatMap(paintedPaths).map((node) => node.attributes.get("d"))).toEqual(
-      replacements.flatMap(buildElementPathParts).map(({ d }) => d),
+      replacements.flatMap((element) => buildElementPathParts(element)).map(({ d }) => d),
     );
     expect(content.nodes.every((node) => !node.attributes.has("transform"))).toBe(true);
     expect(renderer.memoryUsage().pathCacheBytes).toBeGreaterThan(originalMemory);

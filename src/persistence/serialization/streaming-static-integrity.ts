@@ -2,11 +2,13 @@ import { deriveRenderBands } from "../../domain/commands/render-bands";
 import type { InkElementV1, InkSnapshotV1 } from "../../domain/schema/public";
 
 import { serializeBackgroundPaths } from "./background";
-import { serializeElementPaths } from "./path-markup";
+import { integrityOutlinePaths } from "./legacy-outline-paths";
 
 interface ExpectedToken {
   readonly allowLeadingWhitespace?: boolean;
   readonly text: string;
+  readonly rounded?: string;
+  readonly legacy?: string;
 }
 
 /**
@@ -19,16 +21,24 @@ export class StreamingStaticIntegrityMatcher {
   #failure: "invalid-svg" | "static-path-mismatch" = "static-path-mismatch";
   #finished = false;
   #offset = 0;
+  readonly #valid = [true, true, true];
 
   public constructor(snapshot: InkSnapshotV1, lockedHeight: number) {
-    this.#tokens = staticTokens(snapshot, lockedHeight)[Symbol.iterator]();
+    this.#tokens = staticTokens(snapshot, lockedHeight, (profile) => this.#valid[profile]!)[
+      Symbol.iterator
+    ]();
   }
 
   public get failure(): "invalid-svg" | "static-path-mismatch" {
     return this.#failure;
   }
 
+  public get requiresCanonicalRewrite(): boolean {
+    return !this.#valid[0] && (this.#valid[1]! || this.#valid[2]!);
+  }
+
   public write(input: string): boolean {
+    if (!this.#valid.some(Boolean)) return false;
     let cursor = 0;
     while (cursor < input.length) {
       this.#advancePastEmptyTokens();
@@ -42,11 +52,15 @@ export class StreamingStaticIntegrityMatcher {
         cursor += 1;
         continue;
       }
-      const length = Math.min(input.length - cursor, current.text.length - this.#offset);
-      if (
-        input.slice(cursor, cursor + length) !==
-        current.text.slice(this.#offset, this.#offset + length)
-      ) {
+      const length = Math.min(input.length - cursor, this.#remainingLength());
+      const supplied = input.slice(cursor, cursor + length);
+      for (let profile = 0; profile < this.#valid.length; profile += 1) {
+        if (this.#valid[profile]) {
+          const expected = this.#profileText(profile);
+          this.#valid[profile] = supplied === expected.slice(this.#offset, this.#offset + length);
+        }
+      }
+      if (!this.#valid.some(Boolean)) {
         this.#classifyMismatch(input, cursor, length);
         return false;
       }
@@ -57,6 +71,7 @@ export class StreamingStaticIntegrityMatcher {
   }
 
   public finish(): boolean {
+    if (!this.#valid.some(Boolean)) return false;
     this.#advancePastEmptyTokens();
     return this.#finished;
   }
@@ -73,8 +88,28 @@ export class StreamingStaticIntegrityMatcher {
     }
   }
 
+  #profileText(profile: number): string {
+    const token = this.#current!;
+    if (profile === 1) return token.rounded ?? token.text;
+    return profile === 2 ? (token.legacy ?? token.text) : token.text;
+  }
+
+  #remainingLength(): number {
+    let remaining = Infinity;
+    for (let profile = 0; profile < this.#valid.length; profile += 1) {
+      if (this.#valid[profile]) {
+        remaining = Math.min(remaining, this.#profileText(profile).length - this.#offset);
+      }
+    }
+    return remaining;
+  }
+
+  #expectedLength(): number {
+    return this.#profileText(this.#valid.findIndex(Boolean)).length;
+  }
+
   #advancePastEmptyTokens(): void {
-    while (this.#current === null || this.#offset === this.#current.text.length) {
+    while (this.#current === null || this.#offset === this.#expectedLength()) {
       const next = this.#tokens.next();
       this.#offset = 0;
       if (next.done) {
@@ -88,7 +123,11 @@ export class StreamingStaticIntegrityMatcher {
   }
 }
 
-function* staticTokens(snapshot: InkSnapshotV1, lockedHeight: number): Iterable<ExpectedToken> {
+function* staticTokens(
+  snapshot: InkSnapshotV1,
+  lockedHeight: number,
+  includeProfile: (profile: number) => boolean,
+): Iterable<ExpectedToken> {
   const bands = deriveRenderBands(snapshot.elements);
   yield { allowLeadingWhitespace: true, text: '<g id="inkbook-background">' };
   for (const fragment of serializeBackgroundPaths(snapshot.page.background, lockedHeight)) {
@@ -96,17 +135,21 @@ function* staticTokens(snapshot: InkSnapshotV1, lockedHeight: number): Iterable<
   }
   yield { text: "</g>" };
   yield { allowLeadingWhitespace: true, text: '<g id="inkbook-highlights">' };
-  yield* elementTokens(bands.highlight);
+  yield* elementTokens(bands.highlight, includeProfile);
   yield { text: "</g>" };
   yield { allowLeadingWhitespace: true, text: '<g id="inkbook-content">' };
-  yield* elementTokens(bands.content);
+  yield* elementTokens(bands.content, includeProfile);
   yield { text: "</g>" };
   yield { allowLeadingWhitespace: true, text: "</svg>" };
 }
 
-function* elementTokens(elements: readonly InkElementV1[]): Iterable<ExpectedToken> {
+function* elementTokens(
+  elements: readonly InkElementV1[],
+  includeProfile: (profile: number) => boolean,
+): Iterable<ExpectedToken> {
   for (const element of elements) {
-    for (const fragment of serializeElementPaths(element)) yield { text: fragment };
+    const [text, rounded, legacy] = integrityOutlinePaths(element, includeProfile);
+    yield { text, rounded, legacy };
   }
 }
 

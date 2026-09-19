@@ -3,8 +3,30 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { escapeXmlText } from "../../../../src/persistence/documents/xml-text";
 import { buildElementFragments } from "../../../../src/persistence/serialization/element-fragments";
 import { createAllElementSnapshot } from "./fixtures";
+import { arrow } from "../../domain/schema/fixtures";
+import { coordinateSystem } from "../../domain/geometry/fixtures";
+import { serializeElementPaths } from "../../../../src/persistence/serialization/path-markup";
 
 afterEach(() => vi.restoreAllMocks());
+
+it.each(["solid", "dashed", "dotted"] as const)(
+  "serializes symmetric open heads with their %s shaft and axis paint",
+  (outlineStyle) => {
+    const elements = [
+      { ...arrow(), startNode: "arrow" as const, endNode: "arrow" as const },
+      coordinateSystem("2d"),
+      coordinateSystem("3d"),
+    ];
+    for (const element of elements) {
+      element.style = { ...element.style, outlineStyle };
+      const paths = serializeElementPaths(element);
+      expect(paths).toHaveLength(1);
+      const body = paths[0];
+      expect(body).toContain('stroke-linecap="round"');
+      expect(body?.includes("stroke-dasharray")).toBe(outlineStyle !== "solid");
+    }
+  },
+);
 
 describe("cached element fragment byte counts", () => {
   it.each(["ascii", 'äß漢字😀<&>"', "\ud800"])(

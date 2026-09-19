@@ -210,16 +210,16 @@ type ArrowNodeV1 = "none" | "arrow" | "triangle" | "diamond" | "circle";
 - A linear drag stores the pointer-down point as `start` and the pointer-up point as `end`. There is no minimum length; a zero-length drag retains coincident endpoints and renders as a point.
 - Straight highlighters have no connection fields. Lines and arrows initialize both connections to `null` unless an endpoint snaps.
 
-Point geometry uses round caps without a dash array. For non-point geometry, outline rendering is exact: Solid has no dash array; Dashed uses `[4 * outlineWidth, 3 * outlineWidth]`; Dotted uses round caps and `[0, 2.5 * outlineWidth]`. For a bent line, endpoint direction uses the normalized quadratic tangent, `bend - start` at the start and `end - bend` at the end; otherwise it uses `end - start`. Reverse the direction for a start node so every node points away from the line body.
+Point geometry uses round caps without a dash array. Non-point geometry uses the round caps and exact dash arrays defined in the [element contour rules](editor-tools.md#shapes). For a bent line, endpoint direction uses the normalized quadratic tangent, `bend - start` at the start and `end - bend` at the end; otherwise it uses `end - start`. Reverse the direction for a start node so every node points away from the line body.
 
-For node size `s`, outward unit direction `u`, and perpendicular `n`, node geometry is:
+For node size `s`, outward unit direction `u`, and perpendicular `n`, base node geometry is:
 
 - Arrow: two open segments from the endpoint to `endpoint - s * rotate(u, +30 degrees)` and `endpoint - s * rotate(u, -30 degrees)`.
 - Triangle: filled polygon `[endpoint, endpoint - s * u + 0.5 * s * n, endpoint - s * u - 0.5 * s * n]`.
 - Diamond: filled polygon `[endpoint, endpoint - 0.5 * s * u + 0.5 * s * n, endpoint - s * u, endpoint - 0.5 * s * u - 0.5 * s * n]`.
 - Circle: filled circle of radius `s / 2` centered at `endpoint - 0.5 * s * u`.
 
-Filled nodes use the outline color and opacity. The line body ends at the node endpoint and remains visible below an open Arrow node.
+The [element contour rules](editor-tools.md#shapes) define the visible rounded exterior of filled nodes, including the circle's expanded radius, and the symmetric pattern restart of open arrowheads. Filled nodes use the outline color and opacity. The line body ends at the node endpoint and remains visible below an open Arrow node.
 
 ### Endpoint Connections
 

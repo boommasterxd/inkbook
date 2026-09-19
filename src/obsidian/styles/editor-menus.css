@@ -152,9 +152,13 @@
 }
 
 .inkbook-menu-line-preview {
-  border-block-start: var(--inkbook-menu-line-width, 2px) var(--inkbook-menu-line-style, solid)
-    currentcolor;
   inline-size: 28px;
+}
+
+.inkbook-menu-line-preview svg {
+  display: block;
+  block-size: 8px;
+  inline-size: 100%;
 }
 
 .inkbook-menu-width-choice {

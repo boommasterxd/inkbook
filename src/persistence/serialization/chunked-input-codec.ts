@@ -154,7 +154,8 @@ export class ChunkedInkbookInputParser {
           derivations: this.#migrated.derivations,
           hash: this.#completeHash(),
           lockedHeight: this.#prelude.lockedHeight,
-          requiresCanonicalRewrite: this.#prelude.requiresCanonicalRewrite,
+          requiresCanonicalRewrite:
+            this.#prelude.requiresCanonicalRewrite || this.#staticMatcher.requiresCanonicalRewrite,
           snapshot: this.#runtimeSnapshot,
           sourceVersion: this.#migrated.sourceVersion,
         },
