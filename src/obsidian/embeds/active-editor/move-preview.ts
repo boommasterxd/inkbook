@@ -274,6 +274,7 @@ export class MovePreview implements GesturePreview {
   }
 
   #resolveMoveSnap(rawDelta: PointV1): SelectionMoveSnap | null {
+    if (this.#selectedIds.size !== 1) return null;
     const configured = this.#options.connectionSnapping;
     if (typeof configured === "function" ? !configured() : configured === false) return null;
     return resolveSelectionMoveSnap({

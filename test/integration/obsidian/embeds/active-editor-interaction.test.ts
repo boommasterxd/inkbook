@@ -339,7 +339,7 @@ describe("active editor creation snapping", () => {
     });
 
     preview.update({ pointerId: 1, pointerType: "mouse", x: 397, y: 102 });
-    expect(overlays[overlays.length - 1]).toContain("M 176 200 L 224 200");
+    expect(overlays[overlays.length - 1]).toContain("M 188 200 L 212 200");
     expect(overlays[overlays.length - 1]).not.toContain("Z");
     expect(preview.commit()).toBe(true);
     const line = document.store.get("00000000-0000-4000-8000-000000000013")?.element;

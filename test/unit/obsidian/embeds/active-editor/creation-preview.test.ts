@@ -179,9 +179,9 @@ describe("drag creation without minimum geometry", () => {
         },
       },
     );
-    expect(setSnapMarkerPath.mock.lastCall?.[0]).toContain("M -14 20 L 34 20");
+    expect(setSnapMarkerPath.mock.lastCall?.[0]).toContain("M -2 20 L 22 20");
     preview.update({ pointerId: 1, pointerType: "pen", x: 12, y: 21 });
-    expect(setSnapMarkerPath.mock.lastCall?.[0]).toContain("M -14 20 L 34 20");
+    expect(setSnapMarkerPath.mock.lastCall?.[0]).toContain("M -2 20 L 22 20");
     preview.commit();
     expect(committed[0]).toMatchObject({
       start: { x: 10, y: 20 },
@@ -270,7 +270,7 @@ describe("drag creation preview snapping", () => {
 
       preview.update({ pointerId: 1, pointerType: "mouse", x: 110, y: 24 });
 
-      expect(setSnapMarkerPath.mock.lastCall?.[0]).toContain("M -54 20 L 174.07999999999998 20");
+      expect(setSnapMarkerPath.mock.lastCall?.[0]).toContain("M -14 20 L 134.07999999999998 20");
       preview.commit();
       expect(committed[0]).toMatchObject({
         end: { x: 110.08, y: 20 },

@@ -108,6 +108,26 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz snapping and connection 
   });
 });
 
+describe("multi-selection snap work", () => {
+  it("skips indexed endpoint lookup at every refresh rate for group movement", () => {
+    const { sceneStore, scratch, store, targets } = createSnapFixture();
+    const query = vi.spyOn(sceneStore, "query");
+    const read = vi.spyOn(sceneStore, "getSnapTarget");
+    const moving = movingSnapLine();
+    const selectedIds = new Set([moving.id, targets[1]!.id]);
+    const allocations = scratch.allocationCount;
+    store.resetInstrumentation();
+    runInteractionFrames((frame) => {
+      expect(findMoveSnap(sceneStore, scratch, moving, selectedIds, targets[0]!, frame)).toBeNull();
+    });
+    expect(query).not.toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
+    expect(scratch.allocationCount).toBe(allocations);
+    expect(store.instrumentation.fullStoreScans).toBe(0);
+    sceneStore.release();
+  });
+});
+
 function createSnapFixture() {
   const targets = Array.from({ length: SNAP_TARGET_COUNT }, (_, index) => snapTarget(index));
   const store = new ElementStore(targets);

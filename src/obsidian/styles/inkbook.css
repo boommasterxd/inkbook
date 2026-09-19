@@ -366,12 +366,12 @@
 }
 
 .inkbook-root .inkbook-scene-overlays .inkbook-snap-guide {
-  fill: var(--inkbook-page-surface);
-  filter: drop-shadow(0 1px 2px color-mix(in srgb, var(--background-primary) 70%, transparent));
+  fill: none;
   stroke: color-mix(in srgb, var(--interactive-accent) 82%, var(--text-normal));
-  stroke-linecap: round;
+  stroke-dasharray: 3 3;
+  stroke-linecap: butt;
   stroke-linejoin: round;
-  stroke-width: 2.5;
+  stroke-width: 1.5;
 }
 
 .inkbook-root .inkbook-canvas-input:focus {
