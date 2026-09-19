@@ -16,11 +16,13 @@ import {
   scalePoint,
   subtractPoints,
 } from "./primitives";
+import { roundedArrowNodePath } from "./rounded-arrow-node";
 import { buildStrokePathParts } from "./stroke-path";
 import { arcTo, cubicTo, lineTo, moveTo, quadraticTo } from "./svg-format";
 
 import type { SvgPathPart } from "./svg-path-part";
 export type { SvgPathPart } from "./svg-path-part";
+export type ElementPathProfile = "current" | "rounded" | "legacy";
 
 export type ArrowNodeGeometry =
   | { kind: "none" }
@@ -48,17 +50,20 @@ export function isPointElement(element: InkElementV1): boolean {
   return element.width === 0 && element.height === 0;
 }
 
-export function buildElementPathParts(element: InkElementV1): SvgPathPart[] {
+export function buildElementPathParts(
+  element: InkElementV1,
+  profile: ElementPathProfile = "current",
+): SvgPathPart[] {
   if (element.kind === "stroke") return buildStrokePathParts(element);
   if (element.kind === "coordinate-system")
-    return [{ d: buildCoordinateSystemPath(element), paint: "stroke" }];
+    return [{ d: buildCoordinateSystemPath(element, profile), paint: "stroke" }];
   if (element.kind === "table") return [{ d: buildTablePath(element), paint: "stroke" }];
   if (
     element.kind === "line" ||
     element.kind === "arrow" ||
     element.kind === "straight-highlighter"
   ) {
-    return buildLinearPathParts(element);
+    return buildLinearPathParts(element, profile);
   }
   return [{ d: buildClosedShapePath(element), paint: "fill-and-stroke" }];
 }
@@ -79,7 +84,10 @@ export function buildTablePath(table: TableElementV1): string {
     .join("");
 }
 
-export function buildCoordinateSystemPath(system: CoordinateSystemElementV1): string {
+export function buildCoordinateSystemPath(
+  system: CoordinateSystemElementV1,
+  profile: ElementPathProfile = "current",
+): string {
   const origin = rotatedFor(system, system.origin);
   const commands: string[] = [];
   for (const endpointValue of system.axes) {
@@ -93,12 +101,17 @@ export function buildCoordinateSystemPath(system: CoordinateSystemElementV1): st
       "arrow",
       nodeSize(system.style.outlineWidth, origin, endpoint),
     );
-    if (node.kind === "open") commands.push(openNodePath(node));
+    if (node.kind === "open") {
+      commands.push(openNodePath(node, profile));
+    }
   }
   return commands.join("");
 }
 
-export function buildLinearPathParts(linear: LinearElementV1): SvgPathPart[] {
+export function buildLinearPathParts(
+  linear: LinearElementV1,
+  profile: ElementPathProfile = "current",
+): SvgPathPart[] {
   const start = rotatedFor(linear, linear.start);
   const end = rotatedFor(linear, linear.end);
   const bend = linear.bend === null ? null : rotatedFor(linear, linear.bend);
@@ -112,10 +125,12 @@ export function buildLinearPathParts(linear: LinearElementV1): SvgPathPart[] {
     arrowNodeGeometry(start, directions.start, linear.startNode, size),
     arrowNodeGeometry(end, directions.end, linear.endNode, size),
   ];
-  const openPaths = nodes.filter((node) => node.kind === "open").map(openNodePath);
+  const openPaths = nodes
+    .filter((node) => node.kind === "open")
+    .map((node) => openNodePath(node, profile));
   const filledPaths = nodes
     .filter((node) => node.kind === "polygon" || node.kind === "circle")
-    .map(filledNodePath);
+    .map((node) => filledNodePath(node, profile === "legacy" ? 0 : linear.style.outlineWidth / 2));
   const parts: SvgPathPart[] = [{ d: [body, ...openPaths].join(""), paint: "stroke" }];
   if (filledPaths.length > 0) parts.push({ d: filledPaths.join(""), paint: "fill" });
   return parts;
@@ -256,13 +271,26 @@ function closedPolygonPath(points: readonly PointV1[]): string {
   return [moveTo(points[0]!), ...points.slice(1).map(lineTo), "Z"].join("");
 }
 
-function openNodePath(node: Extract<ArrowNodeGeometry, { kind: "open" }>): string {
+function openNodePath(
+  node: Extract<ArrowNodeGeometry, { kind: "open" }>,
+  profile: ElementPathProfile,
+): string {
+  if (profile === "current")
+    return `${lineSubpath(node.endpoint, node.tips[0])}${lineSubpath(node.endpoint, node.tips[1])}`;
   return `${moveTo(node.tips[0])}${lineTo(node.endpoint)}${lineTo(node.tips[1])}`;
 }
 
-function filledNodePath(node: Extract<ArrowNodeGeometry, { kind: "polygon" | "circle" }>): string {
-  if (node.kind === "polygon") return closedPolygonPath(node.points);
-  const left = addPoints(node.center, { x: -node.radius, y: 0 });
-  const right = addPoints(node.center, { x: node.radius, y: 0 });
-  return `${moveTo(left)} ${arcTo(node.radius, 1, right)} ${arcTo(node.radius, 1, left)} Z`;
+function filledNodePath(
+  node: Extract<ArrowNodeGeometry, { kind: "polygon" | "circle" }>,
+  cornerRadius: number,
+): string {
+  if (node.kind === "polygon") {
+    return cornerRadius === 0
+      ? closedPolygonPath(node.points)
+      : roundedArrowNodePath(node.points, cornerRadius);
+  }
+  const radius = node.radius + cornerRadius;
+  const left = addPoints(node.center, { x: -radius, y: 0 });
+  const right = addPoints(node.center, { x: radius, y: 0 });
+  return `${moveTo(left)} ${arcTo(radius, 1, right)} ${arcTo(radius, 1, left)} Z`;
 }

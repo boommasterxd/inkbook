@@ -111,7 +111,7 @@ function outlinePresentation(
     fill: usesFill ? fill : "none",
     fillOpacity: usesFill ? effectiveFillOpacity : null,
     fillRule: part.paint === "stroke" ? null : "nonzero",
-    lineCap: usesStroke ? (style.outlineStyle === "dotted" ? "round" : "butt") : null,
+    lineCap: usesStroke ? "round" : null,
     lineJoin: usesStroke ? "round" : null,
     stroke: usesStroke ? strokeColor : "none",
     strokeOpacity: usesStroke ? style.outlineOpacity : null,

@@ -16,11 +16,38 @@ import {
 } from "../../../fixtures/rendering/selection-traces";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { arrow, line } from "../../../unit/domain/schema/fixtures";
+import { coordinateSystem } from "../../../unit/domain/geometry/fixtures";
 import { createSnapshot } from "../../../unit/persistence/serialization/fixtures";
 import { fakeNode } from "../../../unit/rendering/scene/fakes";
 import { maximumStroke } from "../../editor/maximum-stroke-fixture";
 
 afterEach(() => vi.restoreAllMocks());
+
+it("bounds symmetric arrowhead paths and reuses their geometry across paint changes", () => {
+  const mixed = { ...arrow(), startNode: "arrow" as const, endNode: "diamond" as const };
+  const system = coordinateSystem("3d");
+  const { renderer, select, store, scheduler } = createSelectionTraceFixture([mixed, system]);
+  const roots = select();
+  expect(roots.map((root) => selectionHaloPaths(root).length).sort()).toEqual([1, 2]);
+  const paints = vi.spyOn(presentation, "pathPresentation");
+  renderer.resetInstrumentation();
+  for (const source of [mixed, system]) {
+    const record = store.get(source.id)!;
+    store.records.set(source.id, {
+      ...record,
+      element: { ...source, style: { ...source.style, outlineStyle: "dotted" } },
+      paintVersion: 2,
+    });
+  }
+  renderer.applyDelta({ affected: [mixed, system].map(({ id }) => ({ id, domains: ["paint"] })) });
+  scheduler.runAll();
+  // Three retained content paths and the same three halo paths repaint once.
+  expect(paints).toHaveBeenCalledTimes(6);
+  expect(renderer.instrumentation().geometryBuilds).toBe(0);
+  expect(renderer.instrumentation().selectionTraceNodesCreated).toBe(0);
+  renderer.destroy();
+  expect(scheduler.pendingCount).toBe(0);
+});
 
 describe("selection trace paint invalidation", () => {
   it("repaints retained outlines only when their effective scale or paint changes", () => {

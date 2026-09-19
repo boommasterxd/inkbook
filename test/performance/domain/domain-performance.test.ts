@@ -1,4 +1,12 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { buildElementPathParts } from "../../../src/domain/geometry/element-path";
+import * as svgFormat from "../../../src/domain/geometry/svg-format";
+import {
+  visitVisibleElementPrimitives,
+  type SelectionPrimitiveVisitor,
+} from "../../../src/editor/selection/element-selection-geometry";
+import { arrow } from "../../unit/domain/schema/fixtures";
 
 import type { InkElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
 import { SpatialQueryScratch } from "../../../src/domain/spatial/index";
@@ -23,6 +31,32 @@ import { createNoopHistoryModel, exerciseTransformRun, requireStroke } from "./d
 import { indexedStroke } from "../../fixtures/editor/stroke";
 let fixture: StandardDomainFixture;
 let store: ElementStore;
+
+it("bounds rounded arrow construction to eight arcs and eleven exact selection primitives", () => {
+  const target = { ...arrow(), startNode: "diamond" as const, endNode: "diamond" as const };
+  const curves = vi.spyOn(svgFormat, "arcTo");
+  const samples = vi.spyOn(Math, "cos");
+  try {
+    buildElementPathParts(target);
+    expect(curves).toHaveBeenCalledTimes(8);
+    samples.mockClear();
+    const visit = vi.fn<SelectionPrimitiveVisitor>(() => true);
+    visitVisibleElementPrimitives(target, visit);
+    expect(visit).toHaveBeenCalledTimes(11);
+    const polygons = visit.mock.calls.flatMap(([primitive]) =>
+      primitive.kind === "polygon" ? [primitive.points.length] : [],
+    );
+    expect(polygons).toEqual([4, 4]);
+    expect(samples).not.toHaveBeenCalled();
+    const reject = vi.fn(() => false);
+    visitVisibleElementPrimitives(target, reject);
+    expect(reject).toHaveBeenCalledTimes(1);
+    expect(samples).not.toHaveBeenCalled();
+  } finally {
+    curves.mockRestore();
+    samples.mockRestore();
+  }
+});
 
 it.each([1_000, 10_000])("keeps local index work bounded with %i unrelated strokes", (count) => {
   const local = Array.from({ length: 8 }, (_, index) => indexedStroke(index));
