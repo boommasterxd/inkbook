@@ -67,6 +67,8 @@ it.each([16, 128, DENSE_STROKES])(
         updates += 1;
       }
       expect(totalReads).toBeGreaterThanOrEqual(count * segmentsPerStroke);
+      // The immutable stroke width is resolved once per candidate, not once per segment.
+      expect(fixture.widthReads).toBe(count);
     } finally {
       fixture.eraser.revert();
       clock.mockRestore();
