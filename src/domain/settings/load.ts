@@ -265,6 +265,7 @@ function prepareSettingsRoot<T>(
 const VAULT_SETTINGS_KEYS = [
   "version",
   "startupTool",
+  "selectionHighlightsEnabled",
   "toolDefaults",
   "snapping",
   "pageDefaults",
@@ -272,12 +273,23 @@ const VAULT_SETTINGS_KEYS = [
   "refreshRatePreference",
 ] as const;
 
-const LEGACY_VAULT_SETTINGS_KEYS = VAULT_SETTINGS_KEYS.filter((key) => key !== "snapping");
+const LEGACY_VAULT_SETTINGS_KEYS = VAULT_SETTINGS_KEYS.filter(
+  (key) => key !== "snapping" && key !== "selectionHighlightsEnabled",
+);
 
-function addLegacySnappingDefaults(input: unknown, fallback: InkbookSettingsV4): unknown {
-  return isRecord(input) && input.version === 4 && hasExactKeys(input, LEGACY_VAULT_SETTINGS_KEYS)
-    ? { ...input, snapping: structuredClone(fallback.snapping) }
-    : input;
+function addLegacySettingsDefaults(input: unknown, fallback: InkbookSettingsV4): unknown {
+  if (!isRecord(input) || input.version !== 4) return input;
+  const keys = [
+    ...LEGACY_VAULT_SETTINGS_KEYS,
+    ...("snapping" in input ? ["snapping"] : []),
+    ...("selectionHighlightsEnabled" in input ? ["selectionHighlightsEnabled"] : []),
+  ];
+  if (!hasExactKeys(input, keys)) return input;
+  return {
+    snapping: structuredClone(fallback.snapping),
+    selectionHighlightsEnabled: fallback.selectionHighlightsEnabled,
+    ...input,
+  };
 }
 
 function migrateV3Settings(
@@ -314,6 +326,7 @@ function migrateV3Settings(
     value: {
       ...input,
       version: 4,
+      selectionHighlightsEnabled: fallback.selectionHighlightsEnabled,
       snapping: structuredClone(fallback.snapping),
       toolDefaults: isRecord(legacyDefaults)
         ? { ...legacyDefaults, select: structuredClone(fallback.toolDefaults.select) }
@@ -324,7 +337,7 @@ function migrateV3Settings(
 
 export function loadSettings(input: unknown): SettingsLoadResult<InkbookSettingsV4> {
   const fallback = createBuiltInSettings();
-  const migrated = migrateV3Settings(addLegacySnappingDefaults(input, fallback), fallback);
+  const migrated = migrateV3Settings(addLegacySettingsDefaults(input, fallback), fallback);
   if (migrated.kind === "failure") return migrated.result;
   const prepared = prepareSettingsRoot(migrated.value, fallback, VAULT_SETTINGS_KEYS, 4);
   if (!prepared.valid) return prepared.result;
@@ -340,6 +353,13 @@ export function loadSettings(input: unknown): SettingsLoadResult<InkbookSettings
         (value): value is InkbookSettingsV4["startupTool"] => isOneOf(value, STARTUP_TOOLS),
         diagnostics,
         "startupTool",
+      ),
+      selectionHighlightsEnabled: validOrDefault(
+        value.selectionHighlightsEnabled,
+        fallback.selectionHighlightsEnabled,
+        (value): value is boolean => typeof value === "boolean",
+        diagnostics,
+        "selectionHighlightsEnabled",
       ),
       toolDefaults: loadToolDefaults(value.toolDefaults, fallback.toolDefaults, diagnostics),
       snapping: loadSnapping(value.snapping, fallback.snapping, diagnostics),

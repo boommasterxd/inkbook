@@ -75,6 +75,7 @@ describe("InkbookSettingsStore", () => {
     const legacy = structuredClone(current) as unknown as Record<string, unknown>;
     legacy.version = 3;
     delete legacy.snapping;
+    delete legacy.selectionHighlightsEnabled;
     delete (legacy.toolDefaults as Record<string, unknown>).select;
     const store = new InkbookSettingsStore(
       new VaultFake(legacy),
@@ -87,6 +88,7 @@ describe("InkbookSettingsStore", () => {
     expect(store.getVaultSettings()).toMatchObject({
       version: 4,
       startupTool: "arrow",
+      selectionHighlightsEnabled: true,
       snapping: createBuiltInSettings().snapping,
       toolDefaults: { select: { area: "lasso", inclusion: "touched" } },
     });
@@ -138,13 +140,15 @@ describe("InkbookSettingsStore persistence", () => {
   });
 
   it("persists resets to both scopes under the fixed local-storage key", async () => {
-    const vault = new VaultFake(createBuiltInSettings());
+    const vault = new VaultFake({ ...createBuiltInSettings(), selectionHighlightsEnabled: false });
     const device = new DeviceFake(createBuiltInDeviceSettings());
     const store = new InkbookSettingsStore(vault, device);
     await store.load();
 
+    expect(store.getVaultSettings().selectionHighlightsEnabled).toBe(false);
     await store.resetAll();
 
+    expect(store.getVaultSettings().selectionHighlightsEnabled).toBe(true);
     expect(vault.saves).toEqual([createBuiltInSettings()]);
     expect(device.saves).toEqual([
       { key: DEVICE_SETTINGS_STORAGE_KEY, data: createBuiltInDeviceSettings() },

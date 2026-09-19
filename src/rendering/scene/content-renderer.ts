@@ -11,8 +11,10 @@ import {
   type MountedSceneElement,
 } from "./mounted-element";
 import type { ScenePathCache } from "./path-cache";
+import { MountSlice, mountCost } from "./mount-slice";
+import { SceneSelectionTraces } from "./selection-traces";
 import type { SceneDom } from "./scene-dom";
-import type { MutableSceneInstrumentation, SceneStorePort } from "./types";
+import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } from "./types";
 import type { SceneVisibilityState, VisibilityResult } from "./visibility-state";
 import { SceneVisibilityReconciler, type PreviewTransform } from "./scene-visibility-reconciler";
 
@@ -37,6 +39,8 @@ export class SceneContentRenderer {
   readonly #pathCache: ScenePathCache;
   readonly #reconciler: SceneVisibilityReconciler;
   readonly #store: SceneStorePort;
+  readonly #selectionTraces: SceneSelectionTraces;
+  readonly #selectionDirty = new Set<string>();
 
   public constructor(
     dom: SceneDom,
@@ -46,6 +50,7 @@ export class SceneContentRenderer {
     instrumentation: MutableSceneInstrumentation,
   ) {
     this.#dom = dom;
+    this.#selectionTraces = new SceneSelectionTraces(dom.selectionTraceGroup, instrumentation);
     this.#store = store;
     this.#pathCache = pathCache;
     this.#instrumentation = instrumentation;
@@ -58,6 +63,33 @@ export class SceneContentRenderer {
       store,
       visibility,
     });
+  }
+
+  public setSelectedElements(ids: ReadonlySet<string>): void {
+    if (this.#selectionTraces.setSelection(ids)) this.markSelectionDirty();
+  }
+
+  public setSelectionHighlightsEnabled(enabled: boolean): void {
+    if (this.#selectionTraces.setHighlightsEnabled(enabled)) this.markSelectionDirty();
+  }
+
+  private markSelectionDirty(): void {
+    for (const id of this.#mounted.keys()) {
+      if (this.#selectionTraces.needsUpdate(id, this.#mounted.get(id)?.displayedElement))
+        this.#selectionDirty.add(id);
+    }
+  }
+
+  public setSelectionContext(context: Parameters<SceneSelectionTraces["setContext"]>[0]): void {
+    this.#selectionTraces.setContext(context);
+  }
+
+  public flushSelectionContext(): void {
+    this.#selectionTraces.flushContext();
+  }
+
+  public selectionTraceBytes(): number {
+    return this.#selectionTraces.memoryUsage();
   }
 
   public get mountedCount(): number {
@@ -124,7 +156,9 @@ export class SceneContentRenderer {
     if (this.writeDirtySet(this.#geometryDirty, deadline, now, (id) => this.writeGeometry(id))) {
       return true;
     }
-    return this.writeDirtySet(this.#paintDirty, deadline, now, (id) => this.writePaint(id));
+    if (this.writeDirtySet(this.#paintDirty, deadline, now, (id) => this.writePaint(id)))
+      return true;
+    return this.writeSelectionTraces(deadline, now);
   }
 
   public replaceVisibility(visibility: VisibilityResult): void {
@@ -145,8 +179,13 @@ export class SceneContentRenderer {
     if (result.committedVisibility !== undefined) {
       this.commitVisibility(result.committedVisibility);
       this.#newlyMountedIds = result.newlyMountedIds;
+      this.#selectionTraces.prune(this.#mounted);
+      for (const id of result.newlyMountedIds) {
+        if (this.#selectionTraces.needsUpdate(id, this.#mounted.get(id)?.displayedElement))
+          this.#selectionDirty.add(id);
+      }
     }
-    return result.pending;
+    return result.pending || this.#selectionDirty.size > 0;
   }
 
   public promoteVisible(id: string): boolean {
@@ -162,6 +201,7 @@ export class SceneContentRenderer {
     const entry = this.#mounted.get(id);
     if (entry !== undefined) {
       updatePreviewTransform(entry, transform, version, strokeWidthScale, this.#instrumentation);
+      this.#selectionTraces.transform(id, entry);
     }
   }
 
@@ -181,6 +221,8 @@ export class SceneContentRenderer {
       ownerDocument: this.#dom.ownerDocument,
       parent: this.#dom.group(entry.band),
     });
+    this.#selectionTraces.update(entry, element, parts);
+    this.#selectionDirty.delete(element.id);
     return true;
   }
 
@@ -192,14 +234,7 @@ export class SceneContentRenderer {
       entry.geometryVersion === record.geometryVersion
         ? entry.pathParts
         : this.#pathCache.build(record.element);
-    updateMountedGeometry(
-      entry,
-      record,
-      parts,
-      this.#dom.ownerDocument,
-      this.#dom.group(entry.band),
-      this.#instrumentation,
-    );
+    this.updateGeometry(entry, record, parts);
   }
 
   public setElementFade(ids: readonly string[], durationMs: number | null): void {
@@ -217,6 +252,8 @@ export class SceneContentRenderer {
   }
 
   public release(): void {
+    this.#selectionTraces.release();
+    this.#selectionDirty.clear();
     this.#reconciler.release();
     this.#geometryDirty.clear();
     this.#paintDirty.clear();
@@ -240,6 +277,14 @@ export class SceneContentRenderer {
     )
       return;
     const parts = this.#pathCache.build(record.element);
+    this.updateGeometry(entry, record, parts);
+  }
+
+  private updateGeometry(
+    entry: MountedSceneElement,
+    record: SceneElementRecord,
+    parts: readonly SvgPathPart[],
+  ): void {
     updateMountedGeometry(
       entry,
       record,
@@ -248,6 +293,26 @@ export class SceneContentRenderer {
       this.#dom.group(entry.band),
       this.#instrumentation,
     );
+    this.#selectionTraces.update(entry, record.element, parts);
+    this.#selectionDirty.delete(entry.id);
+  }
+
+  private writeSelectionTraces(deadline: number, now: () => number): boolean {
+    const slice = new MountSlice(deadline, now);
+    for (const id of this.#selectionDirty) {
+      const entry = this.#mounted.get(id);
+      const record = this.#store.get(id);
+      if (entry !== undefined && record !== undefined) {
+        const cost = this.#selectionTraces.includes(entry.displayedElement)
+          ? mountCost({ ...record, element: entry.displayedElement })
+          : { geometry: 0, strokePoints: 0 };
+        if (slice.blockingReason(cost) !== undefined) return true;
+        this.#selectionTraces.update(entry, entry.displayedElement, entry.displayedPathParts);
+        slice.record(cost);
+      }
+      this.#selectionDirty.delete(id);
+    }
+    return false;
   }
 
   private writePaint(id: string): void {
@@ -256,6 +321,8 @@ export class SceneContentRenderer {
     if (entry === undefined || record === undefined || entry.paintVersion === record.paintVersion)
       return;
     updateMountedPaint(entry, record, entry.pathParts, this.#instrumentation);
+    entry.displayedElement = record.element;
+    this.#selectionTraces.update(entry, record.element, entry.displayedPathParts);
   }
 
   private commitVisibility(visibility: VisibilityResult): void {

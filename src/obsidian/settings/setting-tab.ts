@@ -127,6 +127,7 @@ export class InkbookSettingTab extends PluginSettingTab {
       .updateVaultSettings((settings) => ({
         ...settings,
         startupTool: defaults.startupTool,
+        selectionHighlightsEnabled: defaults.selectionHighlightsEnabled,
         refreshRatePreference: defaults.refreshRatePreference,
         filePlacement: structuredClone(defaults.filePlacement),
       }))

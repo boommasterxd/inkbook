@@ -70,7 +70,12 @@ describe("SettingsControlValues", () => {
     });
   });
 
-  it("persists global and per-kind snapping controls", async () => {
+  it("persists global and per-kind snapping controls and selection highlights", async () => {
+    expect(values.get("selectionHighlightsEnabled")).toBe(true);
+    await values.set("selectionHighlightsEnabled", false);
+    expect(values.get("selectionHighlightsEnabled")).toBe(false);
+    expect(vault.saved.selectionHighlightsEnabled).toBe(false);
+    expect(device.saved).toEqual(createBuiltInDeviceSettings());
     await values.set("snapping.enabled", false);
     await values.set("snapping.connections", false);
 

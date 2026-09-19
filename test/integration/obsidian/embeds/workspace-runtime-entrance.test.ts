@@ -20,6 +20,7 @@ const boundary = vi.hoisted(() => {
     createScene: vi.fn(),
     getEditorContext: vi.fn(() => ({})),
     activationRequests: vi.fn(),
+    updateHighlights: vi.fn(),
   };
 });
 
@@ -71,10 +72,13 @@ vi.mock("../../../../src/obsidian/embeds/workspace-active-scene", () => ({
 
 function createHarness(initialEntrance?: PresentationAttachment["initialEntrance"]) {
   boundary.snapshot = { disposed: false };
+  boundary.updateHighlights.mockClear();
   boundary.createScene.mockReset().mockImplementation(() => ({
     dispose: vi.fn(),
     ready: Promise.resolve(true),
     setScheme: vi.fn(),
+    updateSnappingSettings: vi.fn(),
+    updateSelectionHighlights: boundary.updateHighlights,
   }));
   boundary.getEditorContext.mockClear();
   boundary.activationRequests.mockClear();
@@ -272,4 +276,13 @@ it("mounts a queued new editor after measurement without waiting for preview ent
   measured(true);
   await vi.waitFor(() => expect(boundary.createScene).toHaveBeenCalledOnce());
   expect(initialEntrance.resumePreview).not.toHaveBeenCalled();
+});
+
+it("propagates vault highlight changes to the mounted active presentation", async () => {
+  const { finishEntrance, runtime, settings, attachment } = startActivation();
+  finishEntrance(true);
+  await vi.waitFor(() => expect(attachment.root.dataset.inkbookState).toBe("active"));
+  runtime.updateVaultSettings({ ...settings.vault, selectionHighlightsEnabled: false });
+  runtime.updateVaultSettings({ ...settings.vault, selectionHighlightsEnabled: true });
+  expect(boundary.updateHighlights.mock.calls).toEqual([[false], [true]]);
 });

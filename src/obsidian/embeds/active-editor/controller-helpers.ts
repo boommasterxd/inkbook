@@ -9,6 +9,12 @@ const SPACING_VALUES = {
   pattern: { s: 25, m: 33.333333333333336, l: 50, xl: 100 },
 } as const;
 
+export function activeEditorWindow(container: HTMLElement): Window {
+  const ownerWindow = container.ownerDocument.defaultView;
+  if (ownerWindow === null) throw new Error("The active editor requires an owning window.");
+  return ownerWindow;
+}
+
 export function isTool(action: ToolbarAction): action is ToolId {
   return (
     action === "select" ||

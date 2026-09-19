@@ -1,22 +1,12 @@
 import type { RenderBand } from "../../domain/commands/render-bands";
-import type {
-  InkElementV1,
-  PageV1,
-  StrokeElementV1,
-  StrokeStyleV1,
-} from "../../domain/schema/public";
+import type * as Schema from "../../domain/schema/public";
 import { SceneBackgroundCache } from "./background-cache";
 import { DEFAULT_CAMERA, DEFAULT_FRAME_BUDGET_MS } from "./constants";
 import { SceneContentRenderer } from "./content-renderer";
 import type { ProgressivePreviewTransform } from "./progressive-element-preview";
 import { SceneElementPreviews } from "./scene-element-previews";
 import { SceneFrameWriter } from "./scene-frame-writer";
-import {
-  createInstrumentation,
-  refreshCacheInstrumentation,
-  resetInstrumentation,
-  snapshotInstrumentation,
-} from "./instrumentation";
+import * as stats from "./instrumentation";
 import { ScenePathCache } from "./path-cache";
 import { ScenePreviewCommitController, type PreviewCommitHandoff } from "./preview-commit-handoff";
 import { SceneDom } from "./scene-dom";
@@ -26,15 +16,7 @@ import { SceneLiveStrokeRenderer } from "./live-stroke-renderer";
 import { SceneMotionController } from "./scene-motion-controller";
 import { SceneResourcePolicy } from "./scene-resource-policy";
 import { SceneVisibilityCoordinator } from "./scene-visibility-coordinator";
-import {
-  browserScheduler,
-  sameViewport,
-  validateFrameBudget,
-  validateCamera,
-  validateNonNegativeDuration,
-  validatePreviewVersion,
-  validateViewport,
-} from "./scene-runtime";
+import * as runtime from "./scene-runtime";
 import type {
   DocumentScheme,
   LivePathState,
@@ -63,11 +45,11 @@ export class SvgSceneRenderer {
   #generation = 1;
   readonly #sceneCommits: SceneCommitCoordinator;
   readonly #deltas: SceneDeltaCoordinator;
-  readonly #instrumentation: MutableSceneInstrumentation = createInstrumentation();
+  readonly #instrumentation: MutableSceneInstrumentation = stats.createInstrumentation();
   #layoutDirty = true;
   readonly #liveStroke: SceneLiveStrokeRenderer;
   readonly #motion: SceneMotionController;
-  #page: PageV1;
+  #page: Schema.PageV1;
   #pageHeight = 1;
   readonly #previewCommits: ScenePreviewCommitController;
   readonly #resourcePolicy: SceneResourcePolicy;
@@ -85,8 +67,9 @@ export class SvgSceneRenderer {
     const configuredBudget = options.frameBudgetMs ?? DEFAULT_FRAME_BUDGET_MS;
     this.#frameBudgetMs =
       typeof configuredBudget === "function" ? configuredBudget : () => configuredBudget;
-    validateFrameBudget(this.#frameBudgetMs());
-    this.#scheduler = options.scheduler ?? browserScheduler(options.container.ownerDocument);
+    runtime.validateFrameBudget(this.#frameBudgetMs());
+    this.#scheduler =
+      options.scheduler ?? runtime.browserScheduler(options.container.ownerDocument);
     this.#dom = new SceneDom(
       options.container,
       options.accessibleName ?? "Inkbook canvas",
@@ -121,7 +104,7 @@ export class SvgSceneRenderer {
       this.#pathCache,
       this.#motion,
       options.onResourceUsageChanged ?? (() => undefined),
-      () => this.#elementPreviews.progressive.memoryUsage(),
+      () => this.#elementPreviews.progressive.memoryUsage() + this.#content.selectionTraceBytes(),
     );
     this.#visibilityCoordinator = new SceneVisibilityCoordinator(
       this.#content,
@@ -187,7 +170,7 @@ export class SvgSceneRenderer {
     return this.#previewCommits.begin();
   }
   public setCamera(camera: SceneCamera): void {
-    validateCamera(camera);
+    runtime.validateCamera(camera);
     if (camera.x === this.#camera.x && camera.zoom === this.#camera.zoom) return;
     const zoomChanged = camera.zoom !== this.#camera.zoom;
     this.#camera = camera;
@@ -199,8 +182,8 @@ export class SvgSceneRenderer {
     this.schedule();
   }
   public setViewport(viewport: SceneViewport): void {
-    validateViewport(viewport);
-    if (sameViewport(this.#viewport, viewport)) return;
+    runtime.validateViewport(viewport);
+    if (runtime.sameViewport(this.#viewport, viewport)) return;
     this.#viewport = viewport;
     this.#transformPreviews.setContext(this.#camera, viewport);
     this.#elementPreviews.refreshProgressiveContext(viewport, this.#camera);
@@ -214,7 +197,7 @@ export class SvgSceneRenderer {
     if (requestCommit) this.#sceneCommits.markPending();
     this.schedule();
   }
-  public setPage(page: PageV1, height = this.#pageHeight): void {
+  public setPage(page: Schema.PageV1, height = this.#pageHeight): void {
     this.assertActive();
     if (!Number.isFinite(height) || height <= 0) {
       throw new RangeError("Page height must be finite and positive.");
@@ -238,8 +221,8 @@ export class SvgSceneRenderer {
   }
   public updateLiveStroke(
     preview: SceneLiveStrokePreview,
-    style: StrokeStyleV1,
-    tool: StrokeElementV1["tool"],
+    style: Schema.StrokeStyleV1,
+    tool: Schema.StrokeElementV1["tool"],
   ): void {
     this.assertActive();
     this.#liveStroke.update(preview, style, tool);
@@ -256,6 +239,16 @@ export class SvgSceneRenderer {
   public setOverlayPath(d: string | null): void {
     this.assertActive();
     if (!this.#frameWriter.setOverlayPath(d)) return;
+    this.schedule();
+  }
+  public setSelectionHighlightsEnabled(enabled: boolean): void {
+    this.assertActive();
+    this.#content.setSelectionHighlightsEnabled(enabled);
+    this.schedule();
+  }
+  public setSelectedElements(ids: ReadonlySet<string>): void {
+    this.assertActive();
+    this.#content.setSelectedElements(ids);
     this.schedule();
   }
   public setSelectionOverlayPath(
@@ -301,7 +294,7 @@ export class SvgSceneRenderer {
     strokeWidth: PreviewStrokeWidth = "scale",
   ): void {
     this.assertActive();
-    validatePreviewVersion(version, "Preview transform");
+    runtime.validatePreviewVersion(version, "Preview transform");
     this.#transformPreviews.set(ids, transform, version, strokeWidth);
     this.schedule();
   }
@@ -314,7 +307,7 @@ export class SvgSceneRenderer {
   }
   public setElementFade(ids: readonly string[], durationMs: number): void {
     this.assertActive();
-    validateNonNegativeDuration(durationMs);
+    runtime.validateNonNegativeDuration(durationMs);
     this.#deltas.addFades(ids);
     this.#content.setElementFade(ids, this.#motion.duration(durationMs));
   }
@@ -322,19 +315,19 @@ export class SvgSceneRenderer {
     this.assertActive();
     this.#content.setElementFade(this.#deltas.removeFades(ids), null);
   }
-  public setElementPreviews(items: readonly InkElementV1[], frame: number): void {
+  public setElementPreviews(items: readonly Schema.InkElementV1[], frame: number): void {
     this.assertActive();
-    validatePreviewVersion(frame, "Element preview");
+    runtime.validatePreviewVersion(frame, "Element preview");
     if (this.#elementPreviews.immediate.set(items, frame)) this.schedule();
   }
   public setProgressiveElementPreviews(
     ids: readonly string[],
-    materialize: (id: string) => InkElementV1 | undefined,
+    materialize: (id: string) => Schema.InkElementV1 | undefined,
     version: number,
     feedback?: ProgressivePreviewTransform,
   ): void {
     this.assertActive();
-    validatePreviewVersion(version, "Progressive element preview");
+    runtime.validatePreviewVersion(version, "Progressive element preview");
     this.#elementPreviews.setProgressive(
       { feedback, ids, materialize, version },
       this.#viewport,
@@ -361,10 +354,10 @@ export class SvgSceneRenderer {
   public instrumentation(): SceneInstrumentationSnapshot {
     this.refreshCacheInstrumentation();
     this.#motion.refreshInstrumentation();
-    return snapshotInstrumentation(this.#instrumentation);
+    return stats.snapshotInstrumentation(this.#instrumentation);
   }
   public resetInstrumentation(): void {
-    resetInstrumentation(this.#instrumentation);
+    stats.resetInstrumentation(this.#instrumentation);
     this.#pathCache.resetStatistics();
     this.#backgroundCache.resetStatistics();
     this.#motion.refreshInstrumentation();
@@ -422,7 +415,7 @@ export class SvgSceneRenderer {
     this.#motion.expireSuppression();
     this.#instrumentation.frames += 1;
     const startedAt = Number.isFinite(frameTime) ? frameTime : this.#scheduler.now();
-    const deadline = startedAt + validateFrameBudget(this.#frameBudgetMs());
+    const deadline = startedAt + runtime.validateFrameBudget(this.#frameBudgetMs());
     this.performReadPhase();
     if (this.#previewCommits.releaseCommitted()) {
       this.#content.materializePreviewGeometry(this.#transformPreviews.values);
@@ -482,8 +475,8 @@ export class SvgSceneRenderer {
     if (!this.#layoutDirty) return;
     const viewport = this.#options.layout.readViewport();
     this.#instrumentation.layoutReads += 1;
-    validateViewport(viewport);
-    if (!sameViewport(this.#viewport, viewport)) {
+    runtime.validateViewport(viewport);
+    if (!runtime.sameViewport(this.#viewport, viewport)) {
       this.#viewport = viewport;
       this.#transformPreviews.setContext(this.#camera, viewport);
       this.#elementPreviews.refreshProgressiveContext(viewport, this.#camera);
@@ -492,7 +485,11 @@ export class SvgSceneRenderer {
     this.#layoutDirty = false;
   }
   private refreshCacheInstrumentation(): void {
-    refreshCacheInstrumentation(this.#instrumentation, this.#backgroundCache, this.#pathCache);
+    stats.refreshCacheInstrumentation(
+      this.#instrumentation,
+      this.#backgroundCache,
+      this.#pathCache,
+    );
   }
   private assertActive(): void {
     if (this.#disposed) throw new Error("The SVG scene renderer has been destroyed.");

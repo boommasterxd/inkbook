@@ -40,6 +40,7 @@ export interface ActiveInkbookSceneOptions extends EditorChromeOpenings {
   readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
   readonly scheme: InkbookColorScheme;
   readonly scrollOwner?: () => BrowserScrollElement | null;
+  readonly selectionHighlightsEnabled?: boolean;
   readonly snapping: SnappingSettingsV1;
   readonly startupTool: StartupToolV1;
 }

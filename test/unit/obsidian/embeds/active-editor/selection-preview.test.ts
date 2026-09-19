@@ -335,7 +335,8 @@ describe("selection move connected geometry", () => {
       { end: { x: 430, y: 140 }, id: line.id, start: { x: 100, y: 100 } },
     ]);
     expect(setPreviewTransform).toHaveBeenCalledWith([], "translate(30 40)", 1);
-    expect(setSelectionOverlayPath.mock.calls[0]?.[0]).toContain("M 100 100 L 430 140");
+    expect(setSelectionOverlayPath.mock.calls[0]?.slice(0, 2)).toEqual([null, "none"]);
+    expect(setSelectionOverlayPath.mock.calls[0]?.[2]).toContain("M 425 140 a 5 5");
   });
 });
 
