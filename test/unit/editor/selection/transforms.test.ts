@@ -311,18 +311,18 @@ describe("selection transform constraints", () => {
     expect(validateInkElementV1(scaled).ok).toBe(true);
   });
 
-  it("scales table headers proportionally while preserving outer geometry minimums", () => {
+  it("scales table headers proportionally below the former outer geometry minimums", () => {
     const first = scalableTable("00000000-0000-4000-8000-000000000004", 30);
     const second = scalableTable("00000000-0000-4000-8000-000000000005", 40);
 
     const [scaledFirst, scaledSecond] = scaleSelectionUniform(
       [first, second],
       { x: 0, y: 0 },
-      0.5,
+      0.01,
     ) as [TableElementV1, TableElementV1];
 
-    expect(scaledFirst).toMatchObject({ columnWidth: 50, headerHeight: 15, height: 100 });
-    expect(scaledSecond).toMatchObject({ columnWidth: 50, headerHeight: 20, height: 100 });
+    expect(scaledFirst).toMatchObject({ columnWidth: 1, headerHeight: 0.3, height: 2 });
+    expect(scaledSecond).toMatchObject({ columnWidth: 1, headerHeight: 0.4, height: 2 });
     expect(validateInkElementV1(scaledFirst).ok).toBe(true);
     expect(validateInkElementV1(scaledSecond).ok).toBe(true);
   });

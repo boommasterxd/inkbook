@@ -161,6 +161,10 @@ export interface SceneInstrumentationSnapshot {
   readonly pathCacheEvictions: number;
   readonly pathCacheHits: number;
   readonly scheduledFrames: number;
+  readonly selectionTraceNodesCreated: number;
+  readonly selectionTraceNodesRemoved: number;
+  readonly selectionTraceGeometryBuilds: number;
+  readonly selectionTraceAttributeWrites: number;
   readonly spatialQueries: number;
   readonly staleFrames: number;
   readonly themeWrites: number;
@@ -212,6 +216,10 @@ export interface MutableSceneInstrumentation {
   pathCacheEvictions: number;
   pathCacheHits: number;
   scheduledFrames: number;
+  selectionTraceNodesCreated: number;
+  selectionTraceNodesRemoved: number;
+  selectionTraceGeometryBuilds: number;
+  selectionTraceAttributeWrites: number;
   spatialQueries: number;
   staleFrames: number;
   themeWrites: number;

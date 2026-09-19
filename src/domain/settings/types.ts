@@ -146,6 +146,7 @@ export type RefreshRatePreferenceV2 = (typeof REFRESH_RATE_PREFERENCES)[number];
 export interface InkbookSettingsV4 {
   version: 4;
   startupTool: StartupToolV1;
+  selectionHighlightsEnabled: boolean;
   toolDefaults: ToolDefaultsV1;
   snapping: SnappingSettingsV1;
   pageDefaults: PageDefaultsV3;

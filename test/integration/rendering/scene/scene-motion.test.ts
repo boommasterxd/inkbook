@@ -463,7 +463,7 @@ function contentPath(renderer: SvgSceneRenderer, index: number): FakeNode {
 
 function motionGroup(renderer: SvgSceneRenderer): FakeNode {
   const camera = fakeNode(renderer.svg).nodes[1]!;
-  return camera.nodes[camera.nodes.length - 1]!;
+  return camera.nodes.find(({ attributes }) => attributes.get("class")?.includes("scene-motion"))!;
 }
 
 function addRecord(

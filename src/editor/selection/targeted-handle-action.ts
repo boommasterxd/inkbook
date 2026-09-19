@@ -1,4 +1,3 @@
-import { rotatePointClockwise } from "../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 import type { SnapCandidate } from "../snapping/snap-candidate";
 
@@ -9,7 +8,7 @@ import {
   linearEndpointSnapPoint,
   selectionSnapZoom,
 } from "./handle-snap-resolution";
-import { canonicalHandlePoint, clampEndpoint } from "./handle-session-geometry";
+import { canonicalHandlePoint } from "./handle-session-geometry";
 import { selectionSnapFeatureEnabled } from "./snap-features";
 import type { SelectionHandleAction, SelectionSnapPorts } from "./handle-types";
 import {
@@ -59,12 +58,7 @@ function editLinearHandleEndpoint(input: TargetedHandleInput): InkElementV1 {
   if (!isLinearElement(element)) {
     throw new TypeError("Endpoint handles require a linear drawing element.");
   }
-  const oppositeLocal = action.endpoint === "start" ? element.end : element.start;
-  const opposite = rotatePointClockwise(oppositeLocal, element.pivot, element.rotation);
-  const point = clampEndpoint(
-    linearEndpointSnapPoint(element, action.endpoint, pointer, candidate, snap),
-    opposite,
-  );
+  const point = linearEndpointSnapPoint(element, action.endpoint, pointer, candidate, snap);
   const connection =
     candidate === null || element.kind === "straight-highlighter"
       ? null

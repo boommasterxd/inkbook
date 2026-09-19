@@ -86,6 +86,7 @@ export function createBuiltInSettings(): InkbookSettingsV4 {
   return {
     version: 4,
     startupTool: "draw",
+    selectionHighlightsEnabled: true,
     toolDefaults: toolDefaults(),
     snapping: {
       enabled: true,

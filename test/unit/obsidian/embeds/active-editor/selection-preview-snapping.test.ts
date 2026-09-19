@@ -5,6 +5,7 @@ import type { PreparedElementHistory } from "../../../../../src/obsidian/embeds/
 import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
 import { MovePreview } from "../../../../../src/obsidian/embeds/active-editor/selection-preview";
 import { createSynchronousActiveEditorHistory } from "../../../../fixtures/obsidian/synchronous-active-editor-history";
+import { uuid } from "../../../domain/schema/fixtures";
 import { connectedLine, rectangle } from "../../../domain/store/fixtures";
 
 const pointer = (x: number, y: number) => ({
@@ -14,7 +15,7 @@ const pointer = (x: number, y: number) => ({
   y,
 });
 
-function moveSnapHarness(connectionSnapping: boolean | (() => boolean) = true) {
+function moveSnapHarness(connectionSnapping: boolean | (() => boolean) = true, selectionSize = 1) {
   const target = rectangle();
   const line = {
     ...connectedLine(target),
@@ -23,7 +24,14 @@ function moveSnapHarness(connectionSnapping: boolean | (() => boolean) = true) {
     start: { x: 50, y: 50 },
     startConnection: null,
   };
-  const store = new ElementStore([target, line]);
+  const lines = Array.from({ length: selectionSize }, (_, index) => ({
+    ...line,
+    id: index === 0 ? line.id : uuid(50 + index),
+    start: { x: 50, y: 50 + index * 50 },
+    end: { x: 350, y: 50 + index * 50 },
+    pivot: { x: 200, y: 50 + index * 50 },
+  }));
+  const store = new ElementStore([target, ...lines]);
   const sceneStore = new ElementSceneStore(store);
   const setPreviewTransform = vi.fn();
   const setSnapMarkerPath = vi.fn();
@@ -40,7 +48,7 @@ function moveSnapHarness(connectionSnapping: boolean | (() => boolean) = true) {
       suppressMotionForNextDelta: vi.fn(),
     },
     sceneStore,
-    selection: () => new Set([line.id]),
+    selection: () => new Set(lines.map(({ id }) => id)),
     setSelection: vi.fn(),
     start: {
       additive: false,
@@ -50,7 +58,16 @@ function moveSnapHarness(connectionSnapping: boolean | (() => boolean) = true) {
     },
     store,
   });
-  return { line, preview, sceneStore, setPreviewTransform, setSnapMarkerPath, store, target };
+  return {
+    line,
+    lines,
+    preview,
+    sceneStore,
+    setPreviewTransform,
+    setSnapMarkerPath,
+    store,
+    target,
+  };
 }
 
 describe("selection move snapping settings", () => {
@@ -61,7 +78,7 @@ describe("selection move snapping settings", () => {
     preview.update(pointer(47, 48));
 
     expect(setPreviewTransform).toHaveBeenLastCalledWith([line.id], "translate(50 50)", 1);
-    expect(setSnapMarkerPath).toHaveBeenLastCalledWith("M 76 100 L 124 100 M 100 76 L 100 124");
+    expect(setSnapMarkerPath).toHaveBeenLastCalledWith("M 88 100 L 112 100 M 100 88 L 100 112");
     expect(preview.commit()).toBe(true);
     expect(store.get(line.id)?.element).toMatchObject({
       start: { x: 100, y: 100 },
@@ -107,6 +124,38 @@ describe("selection move snapping settings", () => {
     snappingEnabled = true;
     preview.update(pointer(47, 48));
     expect(setPreviewTransform).toHaveBeenLastCalledWith([line.id], "translate(50 50)", 3);
+    sceneStore.release();
+  });
+});
+
+describe("group move snapping boundary", () => {
+  it("preserves raw group translation beside external anchors through temporary snapping overrides", () => {
+    let snappingEnabled = true;
+    const { lines, preview, sceneStore, setPreviewTransform, setSnapMarkerPath, store } =
+      moveSnapHarness(() => snappingEnabled, 2);
+    const query = vi.spyOn(sceneStore, "query");
+    const targets = vi.spyOn(sceneStore, "getSnapTarget");
+    const canConnect = vi.spyOn(sceneStore, "canConnect");
+    const ids = lines.map(({ id }) => id);
+    for (const [index, enabled] of [true, false, true].entries()) {
+      snappingEnabled = enabled;
+      preview.update(pointer(47, 48));
+      expect(setPreviewTransform).toHaveBeenLastCalledWith(ids, "translate(47 48)", index + 1);
+      expect(setSnapMarkerPath).toHaveBeenLastCalledWith(null);
+    }
+    expect(preview.commit()).toBe(true);
+    for (const line of lines) {
+      expect(store.get(line.id)?.element).toMatchObject({
+        start: { x: line.start.x + 47, y: line.start.y + 48 },
+        end: { x: line.end.x + 47, y: line.end.y + 48 },
+        startConnection: null,
+        endConnection: null,
+      });
+    }
+    expect(query).not.toHaveBeenCalled();
+    expect(targets).not.toHaveBeenCalled();
+    expect(canConnect).not.toHaveBeenCalled();
+    expect(setSnapMarkerPath.mock.calls.every(([path]) => path === null)).toBe(true);
     sceneStore.release();
   });
 });

@@ -41,6 +41,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/persistence/wire-preparation-and-adoption.test.ts",
     "test/performance/rendering/scene/interaction-refresh-profile.test.ts",
     "test/performance/rendering/scene/selection-handoff-performance.test.ts",
+    "test/performance/rendering/scene/selection-traces-performance.test.ts",
     "test/performance/rendering/ui/chrome-refresh-profile.test.ts",
 
     "test/performance/domain/anchor-cache-performance.test.ts",

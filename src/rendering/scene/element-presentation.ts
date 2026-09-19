@@ -1,6 +1,10 @@
 import { effectiveStrokeWidth } from "../../domain/geometry/bounds";
 import { normalizeStrokePaint } from "../../domain/geometry/pressure-paint";
-import { outlineDashPattern, type SvgPathPart } from "../../domain/geometry/element-path";
+import {
+  isPointElement,
+  outlineDashPattern,
+  type SvgPathPart,
+} from "../../domain/geometry/element-path";
 import type {
   ColorV1,
   InkElementV1,
@@ -44,12 +48,15 @@ export function pathPresentation(element: InkElementV1, part: SvgPathPart): Path
         : element.style;
     return strokePresentation(style, part.paint, effectiveStrokeWidth(element));
   }
-  return outlinePresentation(
+  const presentation = outlinePresentation(
     element.style,
     "fillColor" in element.style ? element.style.fillColor : null,
     "fillOpacity" in element.style ? element.style.fillOpacity : 1,
     part,
   );
+  return isPointElement(element)
+    ? { ...presentation, "stroke-linecap": "round", "stroke-dasharray": null }
+    : presentation;
 }
 
 export function liveStrokePresentation(

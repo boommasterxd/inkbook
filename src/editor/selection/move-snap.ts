@@ -11,8 +11,6 @@ import {
 
 import { moveSelection } from "./transforms";
 
-const MAX_SNAPPING_SELECTION_SIZE = 1_000;
-
 export interface SelectionMoveSnap {
   readonly candidate: SnapCandidate;
   readonly delta: PointV1;
@@ -34,7 +32,7 @@ interface SelectionMoveSnapInput {
 }
 
 export function resolveSelectionMoveSnap(input: SelectionMoveSnapInput): SelectionMoveSnap | null {
-  if (input.elements.length > MAX_SNAPPING_SELECTION_SIZE) return null;
+  if (input.selectedIds.size !== 1 || input.elements.length !== 1) return null;
   let best: SelectionMoveSnap | null = null;
   for (const element of input.elements) {
     if (element.kind !== "line" && element.kind !== "arrow") continue;

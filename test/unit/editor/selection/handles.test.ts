@@ -4,17 +4,25 @@ import {
   calculateElementBounds,
   rotatePointClockwise,
 } from "../../../../src/domain/geometry/public";
-import type { BoxAnchorV1, InkElementV1 } from "../../../../src/domain/schema/public";
+import type {
+  BoxAnchorV1,
+  CoordinateSystemElementV1,
+  InkElementV1,
+} from "../../../../src/domain/schema/public";
 import {
   findSelectionHandle,
   layoutSelectionHandles,
   oppositeBoxAnchor,
   selectionBounds,
+  SelectionHandleSession,
 } from "../../../../src/editor/selection/public";
 import {
   createSelectionFrame,
   transformSelectionFrame,
 } from "../../../../src/editor/selection/selection-frame";
+import { mutableElement } from "../../../../src/domain/store/immutability";
+import { ElementStore } from "../../../../src/domain/store/public";
+import { scaleElement } from "../../../../src/editor/selection/transforms";
 import { connectedLine, rectangle } from "../../domain/store/fixtures";
 import { coordinateSystem } from "../../domain/store/fixtures";
 import { straightHighlighter, table } from "../../domain/schema/fixtures";
@@ -168,6 +176,43 @@ describe("overlapping selection handles", () => {
 
       expect(findSelectionHandle(handles, header.point, 1, 1)?.kind).toBe("table-header");
       expect(findSelectionHandle(handles, column.point, 1, 1)?.kind).toBe("table-column");
+    },
+  );
+});
+
+describe("collapsed coordinate handles", () => {
+  it.each(["2d", "3d"] as const)(
+    "recovers every %s axis before offering the shared origin",
+    (dimension) => {
+      const source = coordinateSystem();
+      const original: CoordinateSystemElementV1 =
+        dimension === "2d"
+          ? { ...source, dimension, axes: [source.axes[0], source.axes[1]] }
+          : source;
+      const collapsed = scaleElement(original, original.origin, { x: 0, y: 0 });
+      const store = new ElementStore([collapsed]);
+      for (let axisIndex = 0; axisIndex < original.axes.length; axisIndex += 1) {
+        const current = mutableElement(store.get(original.id)!.element);
+        const handles = layoutSelectionHandles([selected(current)], { zoom: 1 });
+        const handle = findSelectionHandle(handles, original.origin, 1, 8);
+        expect(handle).toMatchObject({ kind: "coordinate-axis", axisIndex });
+        if (handle?.kind !== "coordinate-axis")
+          throw new Error("Expected a recoverable axis handle.");
+        const session = new SelectionHandleSession({
+          action: { kind: handle.kind, axisIndex: handle.axisIndex, elementId: original.id },
+          elements: [current],
+          planner: store,
+          startPointer: original.origin,
+        });
+        session.update(original.axes[axisIndex]!);
+        const commit = session.prepareCommit();
+        if (commit.status !== "ready") throw new Error("Expected an axis recovery commit.");
+        store.replaceMany(commit.replacements);
+      }
+      const restored = mutableElement(store.get(original.id)!.element);
+      expect(restored).toEqual(original);
+      const handles = layoutSelectionHandles([selected(restored)], { zoom: 1 });
+      expect(findSelectionHandle(handles, original.origin, 1, 8)?.kind).toBe("coordinate-origin");
     },
   );
 });

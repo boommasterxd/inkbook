@@ -402,6 +402,7 @@ function rendererPort(inputSurface: HTMLDivElement) {
     setOverlayPath: vi.fn(),
     setPreviewTransform: vi.fn(),
     setSelectionOverlayPath: vi.fn<(path: string | null) => void>(),
+    setSelectedElements: vi.fn<(ids: ReadonlySet<string>) => void>(),
     setSnapMarkerPath: vi.fn(),
     suppressMotionForNextDelta: vi.fn(),
     updateLiveStroke: vi.fn(),

@@ -103,6 +103,7 @@ export class ActiveInkbookScene {
     );
     this.#memory.attach(this.#renderer);
     this.#renderer.setScheme(options.scheme);
+    this.#renderer.setSelectionHighlightsEnabled(options.selectionHighlightsEnabled ?? true);
     this.#controller = controller = this.#createController(options, scrollOwner);
     scrollBinding = bindSceneScrollOwner(
       scrollOwner,
@@ -283,6 +284,10 @@ export class ActiveInkbookScene {
     this.#layout.updateMotion(settings.motion);
     this.#controller.updateDeviceSettings(settings);
     this.#updateChrome();
+  }
+
+  public updateSelectionHighlights(enabled: boolean): void {
+    if (!this.#disposed) this.#renderer.setSelectionHighlightsEnabled(enabled);
   }
 
   public updateSnappingSettings(settings: ActiveInkbookSceneOptions["snapping"]): void {

@@ -52,7 +52,11 @@ describe("vault settings V3 migration", () => {
     current.startupTool = "arrow";
     current.toolDefaults.pen.opacity = 0.35;
     const { select: _select, ...legacyToolDefaults } = current.toolDefaults;
-    const { snapping: _snapping, ...legacyCurrent } = current;
+    const {
+      snapping: _snapping,
+      selectionHighlightsEnabled: _highlights,
+      ...legacyCurrent
+    } = current;
     const legacy = { ...legacyCurrent, version: 3, toolDefaults: legacyToolDefaults };
 
     const result = loadSettings(legacy);
@@ -72,7 +76,11 @@ describe("vault settings V3 migration", () => {
     const current = createBuiltInSettings();
     current.startupTool = "arrow";
     const { select: _select, ...legacyToolDefaults } = current.toolDefaults;
-    const { snapping: _snapping, ...legacyCurrent } = current;
+    const {
+      snapping: _snapping,
+      selectionHighlightsEnabled: _highlights,
+      ...legacyCurrent
+    } = current;
     const legacy = {
       ...legacyCurrent,
       version: 3,
@@ -93,7 +101,11 @@ describe("vault settings V3 migration", () => {
 
   it("rejects V3 tool defaults containing fields outside the legacy schema", () => {
     const current = structuredClone(createBuiltInSettings());
-    const { snapping: _snapping, ...legacySettings } = current;
+    const {
+      snapping: _snapping,
+      selectionHighlightsEnabled: _highlights,
+      ...legacySettings
+    } = current;
     const legacy = legacySettings as unknown as Record<string, unknown>;
     legacy.version = 3;
 
@@ -391,4 +403,43 @@ describe("device settings loading", () => {
     });
     expect(result.value.keyboardShortcuts.copy).toEqual({ key: "c", modifiers: ["mod"] });
   });
+});
+
+describe("selection highlight settings compatibility", () => {
+  it.each([true, false])("preserves an explicit %s highlight preference", (enabled) => {
+    const input = { ...createBuiltInSettings(), selectionHighlightsEnabled: enabled };
+    expect(loadSettings(input)).toEqual({ value: input, diagnostics: [] });
+  });
+
+  it.each([true, false])(
+    "adds highlights to legacy V4 settings with snapping present=%s",
+    (hasSnapping) => {
+      const current = createBuiltInSettings();
+      current.startupTool = "arrow";
+      current.toolDefaults.pen.opacity = 0.35;
+      if (hasSnapping) current.snapping.angles = false;
+      const legacy = structuredClone(current) as unknown as Record<string, unknown>;
+      delete legacy.selectionHighlightsEnabled;
+      if (!hasSnapping) delete legacy.snapping;
+
+      expect(loadSettings(legacy)).toEqual({ value: current, diagnostics: [] });
+    },
+  );
+
+  it.each(["false", 0, null, undefined])(
+    "defaults invalid highlight value %j with a field diagnostic",
+    (value) => {
+      const input = {
+        ...createBuiltInSettings(),
+        startupTool: "arrow",
+        selectionHighlightsEnabled: value,
+      };
+      const result = loadSettings(input);
+
+      expect(result.value).toEqual({ ...createBuiltInSettings(), startupTool: "arrow" });
+      expect(result.diagnostics).toEqual([
+        { code: "settings.invalid-field", path: "selectionHighlightsEnabled" },
+      ]);
+    },
+  );
 });

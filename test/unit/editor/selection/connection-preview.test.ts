@@ -39,5 +39,8 @@ describe("connected selection transform preview", () => {
       { end: { x: 430, y: 140 }, id: line.id, start: { x: 100, y: 100 } },
     ]);
     expect(preview.selectedPreviewIds.has(line.id)).toBe(true);
+
+    const collapsed = session.update({ delta: { x: -300, y: 0 }, kind: "translate" });
+    expect(collapsed.elements).toMatchObject([{ end: line.start, id: line.id, start: line.start }]);
   });
 });

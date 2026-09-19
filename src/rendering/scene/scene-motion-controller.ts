@@ -153,6 +153,9 @@ export class SceneMotionController {
       path,
       this.#selectionMotion,
     );
+    if (this.#dom.setSelectionClip(this.#dom.selectionOverlayPath.getAttribute("d") ?? "")) {
+      this.#instrumentation.attributeWrites += 1;
+    }
     this.#selectionHandleMotion = this.setOverlay(
       this.#dom.selectionHandlePath,
       handlePath,
@@ -392,7 +395,7 @@ export class SceneMotionController {
     const visible = motion.direction === "enter" ? progress : 1 - progress;
     writeMotionStyle(node, visible, 1);
     if (raw < 1) return motion;
-    if (motion.direction === "exit") node.setAttribute("d", "");
+    if (motion.direction === "exit") this.clearOverlay(node);
     writeMotionStyle(node, 1, 1);
     return undefined;
   }
@@ -408,8 +411,15 @@ export class SceneMotionController {
     this.refreshCacheSize();
   }
 
+  private clearOverlay(node: SVGPathElement): void {
+    node.setAttribute("d", "");
+    if (node === this.#dom.selectionOverlayPath && this.#dom.setSelectionClip("")) {
+      this.#instrumentation.attributeWrites += 1;
+    }
+  }
+
   private finishOverlay(node: SVGPathElement, motion: OverlayMotion | undefined): void {
-    if (motion?.direction === "exit") node.setAttribute("d", "");
+    if (motion?.direction === "exit") this.clearOverlay(node);
     writeMotionStyle(node, 1, 1);
   }
 

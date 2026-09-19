@@ -1,6 +1,7 @@
 import {
   calculateElementBounds,
   canonicalPoint,
+  defaultTableHeaderHeight,
   normalizeRotation,
   rotatePointClockwise,
   unionBounds,
@@ -8,6 +9,7 @@ import {
 } from "../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 
+import { recoverCollapsedScaleSource } from "./scale-recovery";
 import { rotatedScaleTranslation } from "./scale-frame";
 import { activeScaleAxes } from "./handle-session-geometry";
 import type { SelectionHandleAction } from "./handle-types";
@@ -22,8 +24,6 @@ import {
 import { SelectionScalePreviewProjection } from "./scale-preview-projection";
 import { SelectionScalePreviewFramePlan } from "./scale-preview-frame";
 import {
-  clampScaleFactors,
-  minimumUniformScaleForSelection,
   moveSelection,
   moveSelectionTimeSliced,
   rotateSelection,
@@ -37,10 +37,10 @@ type ScaleAction = Extract<SelectionHandleAction, { kind: "scale" }>;
 export class SelectionScaleGesture {
   readonly #action: ScaleAction;
   readonly #elements: readonly InkElementV1[];
-  readonly #minimumFactors: ScaleFactors;
-  readonly #minimumUniformFactor: number;
   readonly #previewProjection: SelectionScalePreviewProjection;
   readonly #previewFramePlan: SelectionScalePreviewFramePlan;
+  readonly #initialFactors: ScaleFactors;
+  readonly #singleSource: InkElementV1 | null;
   readonly #startPointer: PointV1;
   #previewDelta: PointV1 = { x: 0, y: 0 };
   #previewFrame: OrientedSelectionFrame | null = null;
@@ -52,11 +52,14 @@ export class SelectionScaleGesture {
   ) {
     this.#action = action;
     this.#elements = elements;
-    this.#minimumFactors = minimumScaleFactorsForSelection(elements, action.rotation);
-    this.#minimumUniformFactor = minimumUniformScaleForSelection(elements);
-    this.#previewFramePlan = new SelectionScalePreviewFramePlan(elements, action.rotation);
+    const recovered = elements.length === 1 ? recoverCollapsedScaleSource(elements[0]!) : null;
+    this.#singleSource =
+      recovered !== null && recovered.element !== elements[0] ? recovered.element : null;
+    this.#initialFactors = recovered?.initial ?? { x: 1, y: 1 };
+    const previewElements = recovered === null ? elements : [recovered.element];
+    this.#previewFramePlan = new SelectionScalePreviewFramePlan(previewElements, action.rotation);
     this.#previewProjection = new SelectionScalePreviewProjection(
-      elements,
+      previewElements,
       action.rotation,
       this.#previewFramePlan,
     );
@@ -71,10 +74,9 @@ export class SelectionScaleGesture {
     return this.#previewFramePlan.factorsForPointer(
       { x: axes.x ? start.x - anchor.x : 0, y: axes.y ? start.y - anchor.y : 0 },
       { x: axes.x ? current.x - start.x : 0, y: axes.y ? current.y - start.y : 0 },
-      uniform
-        ? { x: this.#minimumUniformFactor, y: this.#minimumUniformFactor }
-        : this.#minimumFactors,
+      { x: 0, y: 0 },
       uniform,
+      this.#initialFactors,
     );
   }
 
@@ -82,7 +84,7 @@ export class SelectionScaleGesture {
     const factors = this.factorsAt(pointer, uniform);
     const replacements =
       this.#elements.length === 1
-        ? [this.#scaleSingle(this.#elements[0]!, pointer, uniform)]
+        ? [this.#scaleSingle(this.#elements[0]!, factors)]
         : this.#elements.map((element) => this.#scaleInFrame(element, factors));
     return this.stabilizeAnchor(replacements);
   }
@@ -94,7 +96,7 @@ export class SelectionScaleGesture {
     factors: ScaleFactors | undefined,
   ): InkElementV1 {
     return this.#elements.length === 1 || factors === undefined
-      ? this.#scaleSingle(element, pointer, uniform)
+      ? this.#scaleSingle(element, factors ?? this.factorsAt(pointer, uniform))
       : this.#scaleInFrame(element, factors);
   }
 
@@ -172,10 +174,10 @@ export class SelectionScaleGesture {
       : rotateSelection([scaled], this.#action.anchor, this.#action.rotation)[0]!;
   }
 
-  #scaleSingle(element: InkElementV1, pointer: PointV1, uniform: boolean): InkElementV1 {
+  #scaleSingle(original: InkElementV1, factors: ScaleFactors): InkElementV1 {
+    const element = this.#singleSource ?? original;
     const anchor = rotatePointClockwise(this.#action.anchor, element.pivot, -element.rotation);
-    const factors = this.factorsAt(pointer, uniform);
-    return scaleElement(
+    const scaled = scaleElement(
       element,
       anchor,
       factors,
@@ -187,6 +189,9 @@ export class SelectionScaleGesture {
         factors,
       ),
     );
+    return scaled.kind === "table" && original.kind === "table" && original.height === 0
+      ? { ...scaled, headerHeight: defaultTableHeaderHeight(scaled.height) }
+      : scaled;
   }
 }
 
@@ -196,7 +201,7 @@ function scaleElementInArbitraryFrame(
   factors: ScaleFactors,
 ): InkElementV1 {
   const flattened = flattenPointGeometryRotation(element);
-  return scaleElement(flattened, anchor, clampScaleFactors(flattened, factors));
+  return scaleElement(flattened, anchor, factors);
 }
 
 function flattenPointGeometryRotation(element: InkElementV1): InkElementV1 {
@@ -239,21 +244,6 @@ function flattenPointGeometryRotation(element: InkElementV1): InkElementV1 {
       };
 }
 
-function minimumScaleFactorsForSelection(
-  elements: readonly InkElementV1[],
-  frameRotation: number,
-): ScaleFactors {
-  return elements.reduce<ScaleFactors>(
-    (minimum, element) => {
-      const aligned = selectionFrameElementAtRotation(element, frameRotation);
-      const localMinimum = clampScaleFactors(aligned, { x: 0, y: 0 });
-      const current = quarterTurnLocalFactors(aligned.rotation, localMinimum) ?? localMinimum;
-      return { x: Math.max(minimum.x, current.x), y: Math.max(minimum.y, current.y) };
-    },
-    { x: 0, y: 0 },
-  );
-}
-
 function scaleQuarterTurnElement(
   element: InkElementV1,
   anchor: PointV1,
@@ -264,7 +254,7 @@ function scaleQuarterTurnElement(
     x: anchor.x + (element.pivot.x - anchor.x) * frameFactors.x,
     y: anchor.y + (element.pivot.y - anchor.y) * frameFactors.y,
   });
-  const scaled = scaleElement(element, element.pivot, clampScaleFactors(element, localFactors));
+  const scaled = scaleElement(element, element.pivot, localFactors);
   return moveSelection([scaled], {
     x: targetPivot.x - scaled.pivot.x,
     y: targetPivot.y - scaled.pivot.y,

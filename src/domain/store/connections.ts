@@ -93,9 +93,6 @@ export function resolveConnections(
   if (!isConnectable(resolved)) return resolved;
   resolveEndpoint(resolved, "start", lookup, invalidAnchor);
   resolveEndpoint(resolved, "end", lookup, invalidAnchor);
-  if (pointDistance(resolved.start, resolved.end) < 8) {
-    throw new RangeError("Connected linear elements must remain at least 8 page units long.");
-  }
   resolved.pivot = linearPivot(resolved.start, resolved.end, resolved.bend);
   return resolved;
 }

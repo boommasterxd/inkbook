@@ -77,6 +77,7 @@ export function createWorkspaceActiveScene(
     scheme: options.scheme,
     scrollOwner: attachment.scrollOwner,
     sliceBudgetMs: options.sliceBudgetMs,
+    selectionHighlightsEnabled: options.vaultSettings.selectionHighlightsEnabled,
     snapping: options.vaultSettings.snapping,
     startupTool: options.vaultSettings.startupTool,
     ...presentationPreviewOptions(attachment),

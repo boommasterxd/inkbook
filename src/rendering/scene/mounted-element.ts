@@ -28,6 +28,8 @@ interface TopologyUpdateOptions {
 
 export interface MountedSceneElement {
   band: SceneElementRecord["band"];
+  displayedElement: SceneElementRecord["element"];
+  displayedPathParts: readonly SvgPathPart[];
   group: SVGGElement | null;
   groupOpacity: number;
   appliedPreviewTransform: string | null;
@@ -53,6 +55,8 @@ export function createMountedElement(
   const group = createPressureGroup(ownerDocument, record, paths, instrumentation);
   return {
     band: record.band,
+    displayedElement: record.element,
+    displayedPathParts: parts,
     group,
     groupOpacity: pressureGroupOpacity(record),
     appliedPreviewTransform: null,
@@ -104,6 +108,8 @@ export function updateMountedGeometry(
     updateMountedPaint(entry, record, parts, instrumentation);
   }
   entry.pathParts = parts;
+  entry.displayedElement = record.element;
+  entry.displayedPathParts = parts;
   entry.geometryVersion = record.geometryVersion;
   entry.paintVersion = record.paintVersion;
   entry.rank = record.rank;
@@ -192,6 +198,8 @@ export function updateMountedElementPreview(
     rank: entry.rank,
   };
   updateMountedPreviewGeometry(entry, { ...record, element: previewElement }, parts, options);
+  entry.displayedElement = previewElement;
+  entry.displayedPathParts = parts;
   entry.geometryVersion = original.geometryVersion;
   entry.paintVersion = original.paintVersion;
   entry.pathParts = original.pathParts;
