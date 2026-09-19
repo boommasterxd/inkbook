@@ -107,7 +107,7 @@ describe("eraser sweep", () => {
   it.each([0.25, 4])("honors the complete stroke capsule at eraser radius %s", (radius) => {
     const base = indexedStroke(2);
     for (const tool of ["pen", "highlighter"] as const) {
-      const width = 0.5;
+      const width = 2 as const;
       const effectiveRadius = radius + (tool === "highlighter" ? width * 2.5 : width) / 2;
       for (const points of [
         [0, 0, 0.5],
