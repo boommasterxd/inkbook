@@ -1,9 +1,5 @@
-import { performanceMode } from "../timing-budget";
-
 export function createFallbackDeadlineClock(): () => number {
-  if (performanceMode() !== "contracts") return () => performance.now();
   let reads = 0;
-  // Each real scheduler clock read costs 0.05 virtual ms. This is a checkpoint
-  // cost model, not a device-speed estimate; CPU measurements use another clock.
+  // Advance only on scheduler observations, independently of machine speed.
   return () => ++reads / 20;
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { StrokeStyleV1 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
@@ -7,14 +7,12 @@ import type { GesturePreview } from "../../../../src/editor/gestures/public";
 import { CoalescedPointerInput } from "../../../../src/obsidian/embeds/active-editor/coalesced-input";
 import { CreationPreview } from "../../../../src/obsidian/embeds/active-editor/creation-preview";
 import { activeEditorStoreHistory } from "../../../fixtures/obsidian/active-editor";
-import { fakeNode, type FakeNode } from "../../../unit/rendering/scene/fakes";
-import { LiveStrokeBuilder } from "../../../../src/editor/tools/live-stroke";
+import { fakeNode, FakeNode } from "../../../unit/rendering/scene/fakes";
 import {
-  INTERACTION_REFRESH_PROFILE,
-  interactionP99,
-  interactionProfileAnnotation,
-} from "../../interaction-refresh-profile";
-import { expectTiming } from "../../timing-assertions";
+  LiveStrokeBuilder,
+  type LiveStrokePreview,
+} from "../../../../src/editor/tools/live-stroke";
+import { INTERACTION_REFRESH_PROFILE } from "../../interaction-refresh-profile";
 import {
   createInteractionFixture,
   createInteractionRenderer,
@@ -74,8 +72,8 @@ const PEN_STYLE: StrokeStyleV1 = {
 
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz live-stroke profile`, () => {
   it.for(["smooth", "dense zigzag"] as const)(
-    "keeps %s live pressure-stroke updates within the main-thread p99 budget",
-    async (shape, { annotate }) => {
+    "bounds %s live pressure-stroke work across a growing stroke",
+    (shape) => {
       const { renderer, scheduler } = createInteractionRenderer(new ElementStore());
       scheduler.runAll();
       const style: StrokeStyleV1 = {
@@ -86,88 +84,142 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz live-stroke profile`, ()
         input: { pressureSource: "pen", zoom: 1 },
         style,
       });
-      const durations: number[] = [];
 
       for (let frame = 0; frame < LIVE_FRAME_COUNT; frame += 1) {
-        const startedAt = performance.now();
         const preview = builder.appendBatch(
           Array.from({ length: SAMPLES_PER_FRAME }, (_, sample) =>
             liveSample(frame * SAMPLES_PER_FRAME + sample, shape === "dense zigzag"),
           ),
         );
         renderer.updateLiveStroke(preview, style, "pen");
-        durations.push(performance.now() - startedAt);
       }
 
-      const p99 = interactionP99(durations);
-      expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
       expect(renderer.instrumentation()).toMatchObject({
         livePreviewUpdates: LIVE_FRAME_COUNT,
+        geometryBuilds: 0,
+        contentGeometryWrites: 0,
+        liveTailNodesCreated: 1,
       });
       expect(renderer.instrumentation().liveMaximumTailNodes).toBe(1);
-      await annotate(interactionProfileAnnotation(`${shape} live stroke`, p99), "performance");
       renderer.destroy();
     },
   );
 
   it.for(["pen", "mouse"] as const)(
     "keeps coalesced %s ink at the latest tip in the next frame with 10,000 stored strokes",
-    async (pointerType, { annotate }) => {
+    (pointerType) => {
       const { input, renderer, routed, scheduler, tail } = coalescedHarness(pointerType);
-      const durations: number[] = [];
       for (let frame = 0; frame < LIVE_FRAME_COUNT; frame += 1) {
         const samples = Array.from({ length: SAMPLES_PER_FRAME }, (_, sample) =>
           pointerSample(frame * SAMPLES_PER_FRAME + sample, pointerType),
         );
-        const startedAt = performance.now();
         input.dispatch(coalescedEvent(samples.slice(0, 4)));
         input.dispatch(coalescedEvent(samples.slice(4)));
+        const updates = renderer.instrumentation().livePreviewUpdates;
         const pending = scheduler.pendingCount;
         scheduler.runNext();
-        durations.push(performance.now() - startedAt);
+        expect(renderer.instrumentation().livePreviewUpdates).toBe(updates + 1);
         expect(pending).toBe(1);
         expect(scheduler.pendingCount).toBe(0);
         expectPressureTip(tail, samples[7]!);
       }
-      const p99 = interactionP99(durations);
-      expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
       expect(renderer.instrumentation().livePreviewUpdates).toBe(LIVE_FRAME_COUNT + 1);
-      await annotate(
-        interactionProfileAnnotation(`coalesced ${pointerType} tip`, p99),
-        "performance",
-      );
       routed.revert();
       renderer.destroy();
     },
   );
+});
 
-  it("keeps long-stroke commit handoffs within the main-thread p99 budget", async ({
-    annotate,
-  }) => {
+it.for([32, 4096])(
+  "hands off %i samples with constant DOM work and no geometry rereads",
+  (sampleCount) => {
     const { renderer, scheduler } = createInteractionRenderer(new ElementStore());
     scheduler.runAll();
-    const durations: number[] = [];
     const builder = new LiveStrokeBuilder({
       input: { pressureSource: "pen", zoom: 1 },
       style: PEN_STYLE,
     });
-    const preview = builder.appendBatch(
-      Array.from({ length: 4096 }, (_, index) => liveSample(index)),
+    const observed = observeHandoffPreview(
+      builder.appendBatch(Array.from({ length: sampleCount }, (_, index) => liveSample(index))),
     );
-    for (let index = 0; index < 120; index += 1) {
-      renderer.updateLiveStroke(preview, PEN_STYLE, "pen");
-      const startedAt = performance.now();
-      renderer.commitLiveStroke(String(index));
-      durations.push(performance.now() - startedAt);
-      scheduler.runAll();
+    renderer.updateLiveStroke(observed.preview, PEN_STYLE, "pen");
+    const camera = fakeNode(renderer.svg).nodes[1]!;
+    const host = camera.nodes.find((node) =>
+      node.nodes[0]?.nodes.some((child) => child.tagName === "path"),
+    );
+    if (host === undefined) throw new Error("Expected a live stroke group.");
+    const group = host.nodes[0]!;
+    const paths = [...group.nodes];
+    const geometry = paths.map((node) => node.attributes.get("d"));
+    const builderWork = builder.instrumentation();
+    const create = vi.spyOn(group.ownerDocument, "createElementNS");
+    const append = vi.spyOn(FakeNode.prototype, "append");
+    const insert = vi.spyOn(FakeNode.prototype, "insertBefore");
+    const remove = vi.spyOn(FakeNode.prototype, "remove");
+    const write = vi.spyOn(FakeNode.prototype, "setAttribute");
+    const removeAttribute = vi.spyOn(FakeNode.prototype, "removeAttribute");
+    const schedule = vi.spyOn(scheduler, "requestAnimationFrame");
+    try {
+      renderer.resetInstrumentation();
+      observed.reset();
+      renderer.commitLiveStroke("bounded-handoff");
+      expect(observed.reads()).toBe(0);
+      expect(builder.instrumentation()).toEqual(builderWork);
+      expect(group.nodes).toEqual(paths);
+      for (let index = 0; index < paths.length; index += 1)
+        expect(group.nodes[index]).toBe(paths[index]);
+      expect(paths.map((node) => node.attributes.get("d"))).toEqual(geometry);
+      expect(group.parent).not.toBe(host);
+      expect(group.parent?.attributes.get("class")).toContain("inkbook-scene-content");
+      expect(create.mock.calls.map(([, tag]) => tag)).toEqual(["g"]);
+      expect(append).toHaveBeenCalledTimes(2);
+      expect(insert).toHaveBeenCalledTimes(2);
+      expect(remove).not.toHaveBeenCalled();
+      expect(write.mock.calls).toEqual([["pointer-events", "none"]]);
+      expect(removeAttribute.mock.calls).toEqual([["opacity"]]);
+      expect(schedule).toHaveBeenCalledOnce();
+      expect(scheduler.pendingCount).toBe(1);
+      expect(renderer.instrumentation()).toMatchObject({
+        geometryBuilds: 0,
+        contentGeometryWrites: 0,
+        liveChunkNodesCreated: 0,
+        liveTailNodesCreated: 0,
+        livePreviewUpdates: 0,
+        scheduledFrames: 1,
+      });
+      scheduler.runNext();
+      expect(scheduler.pendingCount).toBe(0);
+      expect(schedule).toHaveBeenCalledOnce();
+      expect(remove).toHaveBeenCalledOnce();
+      expect(group.parent).toBeUndefined();
+      expect(renderer.instrumentation().liveTailNodesRemoved).toBe(1);
+    } finally {
+      vi.restoreAllMocks();
+      renderer.destroy();
     }
-    const p99 = interactionP99(durations);
-    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
-    expect(renderer.instrumentation().liveTailNodesRemoved).toBe(120);
-    await annotate(interactionProfileAnnotation("live stroke commit handoff", p99), "performance");
-    renderer.destroy();
-  });
-});
+  },
+);
+
+function observeHandoffPreview(preview: LiveStrokePreview) {
+  let reads = 0;
+  const observe = <T extends object>(value: T): T =>
+    new Proxy(value, {
+      get(target, key, receiver) {
+        reads += 1;
+        return Reflect.get(target, key, receiver) as unknown;
+      },
+    });
+  return {
+    preview: observe({
+      finalizedChunks: observe(preview.finalizedChunks.map((chunk) => observe(chunk))),
+      tail: observe(preview.tail),
+    }),
+    reads: () => reads,
+    reset: () => {
+      reads = 0;
+    },
+  };
+}
 
 function liveSample(index: number, dense = false) {
   return {

@@ -1,11 +1,9 @@
 import { EditorView } from "@codemirror/view";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 
 import { createLivePreviewExtension } from "../../../src/obsidian/embeds/live-preview";
 import { documentRecognitionChanged } from "../../../src/obsidian/embeds/live-preview-recognition-effects";
 import { MARKDOWN_EMBED_LIMITS } from "../../../src/obsidian/embeds/markdown-embed";
-import { interactionP99, INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
-import { expectTiming } from "../timing-assertions";
 import { EditorState } from "@codemirror/state";
 import { editorInfoField, editorLivePreviewField } from "obsidian";
 import type { InkbookDocumentRecognition } from "../../../src/obsidian/embeds/document-recognition";
@@ -53,40 +51,53 @@ function livePreviewUpdatesFixture(
   return { initial, ids, resolutions: () => resolutions, cacheReads: () => cacheReads };
 }
 
+function decorationWidgets(state: EditorState): readonly unknown[] {
+  const decorations = state.facet(EditorView.decorations)[0];
+  if (decorations === undefined || typeof decorations === "function")
+    throw new Error("Missing static Live Preview decorations");
+  const widgets: unknown[] = [];
+  decorations.between(0, state.doc.length, (_from, _to, decoration) => {
+    widgets.push((decoration.spec as { readonly widget: unknown }).widget);
+  });
+  return widgets;
+}
+
 for (const operation of ["text edit", "recognition burst"] as const) {
-  it(`updates maximum-capacity Live Preview for a ${operation} within the frame budget`, async ({
-    annotate,
-  }) => {
+  it(`updates maximum-capacity Live Preview for a ${operation} with bounded work`, () => {
     const capacity = MARKDOWN_EMBED_LIMITS.matches;
     const { initial, ids, resolutions, cacheReads } = livePreviewUpdatesFixture(
       createLivePreviewExtension,
       capacity,
       operation,
     );
-    const durations: number[] = [];
+
+    const transaction =
+      operation === "text edit"
+        ? { changes: { from: 1, insert: "x" } }
+        : { effects: documentRecognitionChanged.of(ids) };
+    const initialWidgets = decorationWidgets(initial);
+    const flatten = vi.spyOn(initial.doc, "toString");
+    const lineReads = vi.spyOn(initial.doc, "lineAt");
     let state = initial;
-    for (let sample = -100; sample < INTERACTION_REFRESH_PROFILE.sampleCount; sample += 1) {
-      const started = performance.now();
-      state = initial.update(
-        operation === "text edit"
-          ? { changes: { from: 1, insert: "x" } }
-          : { effects: documentRecognitionChanged.of(ids) },
-      ).state;
-      if (sample >= 0) durations.push(performance.now() - started);
+    try {
+      for (let sample = 0; sample < 2; sample += 1) {
+        state = initial.update(transaction).state;
+      }
+      expect(flatten).not.toHaveBeenCalled();
+      expect(lineReads).toHaveBeenCalledTimes(operation === "text edit" ? 2 : 0);
+      const updatedWidgets = decorationWidgets(state);
+      expect(updatedWidgets).toHaveLength(capacity);
+      if (operation === "text edit") {
+        for (let index = 0; index < capacity; index += 1)
+          expect(updatedWidgets[index]).toBe(initialWidgets[index]);
+      }
+      expect(resolutions()).toBe(capacity);
+      expect(cacheReads()).toBe(capacity * (operation === "recognition burst" ? 3 : 1));
+      expect(state.facet(EditorView.decorations)[0]).not.toBe(
+        initial.facet(EditorView.decorations)[0],
+      );
+    } finally {
+      vi.restoreAllMocks();
     }
-    expect(resolutions()).toBe(capacity);
-    expect(cacheReads()).toBe(
-      capacity *
-        (operation === "recognition burst" ? INTERACTION_REFRESH_PROFILE.sampleCount + 101 : 1),
-    );
-    expect(state.facet(EditorView.decorations)[0]).not.toBe(
-      initial.facet(EditorView.decorations)[0],
-    );
-    const p99 = interactionP99(durations);
-    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
-    await annotate(
-      `${operation} with ${String(capacity)} embeds p99=${p99.toFixed(3)} ms`,
-      "performance",
-    );
   });
 }

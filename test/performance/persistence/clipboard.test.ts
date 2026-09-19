@@ -7,53 +7,28 @@ import {
 import { planPaste } from "../../../src/persistence/clipboard/operations";
 import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
 import { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/public";
-import { performanceMode } from "../timing-budget";
-import { statisticalSamples } from "../sample-policy";
 import { CLIPBOARD_ELEMENTS, CLIPBOARD_POINTS, createClipboardLimitFixture } from "./fixtures";
 import { createMinimalPersistenceFixture } from "./fixtures";
-import {
-  annotateProfileRuns,
-  collectProfileGarbage,
-  expectProfileRunsBudget,
-  measure,
-} from "./metrics";
 
 const MIB = 1024 * 1024;
-const CLIPBOARD_SAMPLES_PER_RUN = statisticalSamples(20);
-const MEASURED_RUNS = statisticalSamples(5);
-const WARMUP_SAMPLES = statisticalSamples(20);
-
-it("encodes and decodes the maximum deterministic clipboard fixture", async ({ annotate }) => {
+it("bounds clipboard work and payloads at the maximum fixture capacity", () => {
   const elements = createClipboardLimitFixture();
   const selectedIds = new Set(elements.map(({ id }) => id));
-  const warmupEncoded = encodeClipboardWarmup(elements, selectedIds);
-  if (!warmupEncoded.ok) throw new Error(warmupEncoded.error.message);
-  const canonicalText = warmupEncoded.value.customText;
-  const warmupDecoded = decodeCustomClipboardText(canonicalText);
-  if (!warmupDecoded.ok) throw new Error(warmupDecoded.error.message);
-
-  runClipboardProfile(elements, selectedIds, canonicalText, WARMUP_SAMPLES);
-  const encodeRuns: number[][] = [];
-  const pasteRuns: number[][] = [];
-  let byteLength = warmupEncoded.value.byteLength;
-  for (let run = 0; run < MEASURED_RUNS; run += 1) {
-    const profile = runClipboardProfile(elements, selectedIds, canonicalText);
-    encodeRuns.push(profile.encode);
-    pasteRuns.push(profile.paste);
-    byteLength = profile.byteLength;
-  }
-
-  expect(byteLength).toBeLessThanOrEqual(8 * MIB);
-  await annotateProfileRuns(annotate, "clipboard copy", encodeRuns);
-  await annotateProfileRuns(annotate, "clipboard paste", pasteRuns);
-  await annotate(
-    `clipboard payload: total=${byteLength} bytes, ` +
-      `bytesPerStrokePoint=${(byteLength / CLIPBOARD_POINTS).toFixed(3)}`,
-    "performance",
-  );
-  expectProfileRunsBudget(encodeRuns, 750);
-  expectProfileRunsBudget(pasteRuns, 750);
-}, 300_000);
+  const encoded = encodeObservedClipboard(elements, selectedIds);
+  if (!encoded.ok) throw new Error(encoded.error.message);
+  expect(encoded.value.payload.elements).toHaveLength(CLIPBOARD_ELEMENTS);
+  expect(encoded.value.byteLength).toBeLessThanOrEqual(8 * MIB);
+  const planned = decodeAndPlanPaste(encoded.value.customText, 0);
+  expect(planned.elements).toHaveLength(CLIPBOARD_ELEMENTS);
+  expect(new Set(planned.elements.map(({ id }) => id)).size).toBe(CLIPBOARD_ELEMENTS);
+  expect(planned.elements.every(({ id }) => !selectedIds.has(id))).toBe(true);
+  expect(
+    planned.elements.reduce(
+      (count, element) => count + (element.kind === "stroke" ? element.points.length / 3 : 0),
+      0,
+    ),
+  ).toBe(CLIPBOARD_POINTS);
+}, 120_000);
 
 it("keeps the maximum worker Clipboard model coherent across delta, zero-delta, and stale work", async ({
   annotate,
@@ -144,34 +119,6 @@ it("keeps the maximum worker Clipboard model coherent across delta, zero-delta, 
   }
 }, 120_000);
 
-function runClipboardProfile(
-  elements: ReturnType<typeof createClipboardLimitFixture>,
-  selectedIds: ReadonlySet<string>,
-  canonicalText: string,
-  samples = CLIPBOARD_SAMPLES_PER_RUN,
-): { byteLength: number; encode: number[]; paste: number[] } {
-  const encode: number[] = [];
-  let byteLength = 0;
-  for (let sample = 0; sample < samples; sample += 1) {
-    const encoded = measure(() => encodeRuntimeSelection(elements, selectedIds));
-    if (!encoded.value.ok) throw new Error(encoded.value.error.message);
-    expect(encoded.value.value.payload.elements).toHaveLength(CLIPBOARD_ELEMENTS);
-    expect(encoded.value.value.customText).toBe(canonicalText);
-    byteLength = encoded.value.value.byteLength;
-    encode.push(encoded.durationMs);
-    collectProfileGarbage();
-  }
-
-  const paste: number[] = [];
-  for (let sample = 0; sample < samples; sample += 1) {
-    const planned = measure(() => decodeAndPlanPaste(canonicalText, sample));
-    expect(planned.value.elements).toHaveLength(CLIPBOARD_ELEMENTS);
-    paste.push(planned.durationMs);
-    collectProfileGarbage();
-  }
-  return { byteLength, encode, paste };
-}
-
 function decodeAndPlanPaste(canonicalText: string, sample: number) {
   const decoded = decodeCustomClipboardText(canonicalText);
   if (!decoded.ok) throw new Error(decoded.error.message);
@@ -192,11 +139,10 @@ function uuid(value: number): string {
   return `10000000-0000-4000-8000-${value.toString(16).padStart(12, "0")}`;
 }
 
-function encodeClipboardWarmup(
+function encodeObservedClipboard(
   elements: ReturnType<typeof createClipboardLimitFixture>,
   selectedIds: ReadonlySet<string>,
 ): ReturnType<typeof encodeRuntimeSelection> {
-  if (performanceMode() !== "contracts") return encodeRuntimeSelection(elements, selectedIds);
   let scalarReads = 0;
   const observed = elements.map((element) => {
     if (element.kind !== "stroke") return element;

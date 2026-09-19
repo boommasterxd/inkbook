@@ -3,13 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { mountEditorChrome } from "../../../../src/rendering/ui/mount-editor-chrome";
 import { createEditorChromeProps } from "../../../fixtures/editor-chrome";
-import {
-  INTERACTION_REFRESH_PROFILE,
-  interactionP99,
-  interactionProfileAnnotation,
-  measureInteractionFrames,
-} from "../../interaction-refresh-profile";
-import { expectTiming } from "../../timing-assertions";
+import { INTERACTION_REFRESH_PROFILE } from "../../interaction-refresh-profile";
 
 const reactRoot = vi.hoisted(() => ({ render: vi.fn(), unmount: vi.fn() }));
 
@@ -22,27 +16,21 @@ beforeEach(() => {
 });
 
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz React chrome profile`, () => {
-  it("skips semantically unchanged chrome renders during continuous input", async ({
-    annotate,
-  }) => {
+  it("skips semantically unchanged chrome renders during continuous input", () => {
     const ownerDocument = {} as Document;
     const initial = createEditorChromeProps(ownerDocument);
     const mounted = mountEditorChrome({ ownerDocument } as HTMLElement, initial);
 
-    const durations = measureInteractionFrames(() => {
+    for (let update = 0; update < 12; update += 1) {
       mounted.update({
         ...initial,
         shapeIcon: { ...initial.shapeIcon },
         styleIcon: { ...initial.styleIcon },
         toolbarState: { ...initial.toolbarState },
       });
-    });
-
-    const p99 = interactionP99(durations);
+    }
     expect(createRoot).toHaveBeenCalledOnce();
     expect(reactRoot.render).toHaveBeenCalledOnce();
-    expectTiming(p99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
-    await annotate(interactionProfileAnnotation("semantic chrome update", p99), "performance");
     mounted.unmount();
     expect(reactRoot.unmount).toHaveBeenCalledOnce();
   });

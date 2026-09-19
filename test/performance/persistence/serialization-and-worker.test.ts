@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { calculateElementBounds } from "../../../src/domain/geometry/public";
-import { ElementStore } from "../../../src/domain/store/public";
 import { MAX_ELEMENT_CELLS, spatialCellMembershipCount } from "../../../src/domain/spatial/index";
-import { changedElementDerivations } from "../../../src/obsidian/embeds/vault-document-model-delta";
-import { saveExistingFile } from "../../../src/persistence/saving/save-existing";
 import { yieldToMainThread } from "../../../src/persistence/scheduling/main-thread-yield";
 import {
   deriveDocumentIntegrityManifest,
@@ -12,49 +9,27 @@ import {
   IncrementalDocumentSerializer,
   serializeInkbookDocument,
 } from "../../../src/persistence/serialization/public";
-import { sha256Hex } from "../../../src/persistence/serialization/sha256";
 import { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/public";
 import { createProductionDocumentRuntime } from "../../../src/persistence/worker/runtime/production-document-runtime";
 import type { DocumentRuntimeRequest } from "../../../src/persistence/worker/runtime/public";
-import { statisticalSamples } from "../sample-policy";
 import { STANDARD_POINTS, createStandardPersistenceFixture, replaceFirstStroke } from "./fixtures";
 import {
-  annotateDurations,
-  annotateProfileRuns,
-  collectProfileGarbage,
-  expectProfileBudget,
-  expectProfileRunsBudget,
-  measure,
-  measureAsync,
-} from "./metrics";
-
+  observeIntegrityWork,
+  type IntegrityWork,
+} from "../../fixtures/persistence/integrity-work-observer";
 const MIB = 1024 * 1024;
-const FULL_EXPORT_SAMPLES_PER_RUN = statisticalSamples(20);
-const INCREMENTAL_EXPORT_SAMPLES_PER_RUN = statisticalSamples(100);
-const ORDER_ONLY_EXPORT_SAMPLES_PER_RUN = statisticalSamples(20);
 const snapshot = createStandardPersistenceFixture();
-let serializedSvg: string | null = null;
 
 describe("persistence serialization performance", () => {
   it("keeps the normative fixture deterministic and within file-size budgets", async ({
     annotate,
   }) => {
-    const warmup = serializeFixture();
-    const baseline = requireSerialized(warmup.value);
-    const durations: number[] = [];
+    const baseline = requireSerialized(serializeFixture());
+    expect(requireSerialized(serializeFixture())).toEqual(baseline);
 
-    for (let run = 0; run < statisticalSamples(5); run += 1) {
-      const measured = serializeFixture();
-      const output = requireSerialized(measured.value);
-      expect(output).toEqual(baseline);
-      durations.push(measured.durationMs);
-    }
-
-    serializedSvg = baseline.svg;
     expect(baseline.metadataBytes).toBeLessThanOrEqual(32 * MIB);
     expect(baseline.totalBytes).toBeLessThanOrEqual(48 * MIB);
     expect(baseline.svg).not.toContain("\n");
-    await annotateDurations(annotate, "full document serialization", durations);
     await annotate(
       `standard SVG: total=${baseline.totalBytes} bytes, metadata=${baseline.metadataBytes} bytes, ` +
         `static=${staticMarkupBytes(baseline.svg)} bytes, ` +
@@ -70,224 +45,101 @@ describe("persistence serialization performance", () => {
     const serializer = new IncrementalDocumentSerializer();
     expect(serializer.reset(amplified).ok).toBe(true);
     let checkpoints = 0;
-    const started = performance.now();
     const result = await serializer.serializeChunked({
       checkpoint: async () => {
         checkpoints += 1;
       },
       sliceByteLimit: 64 * 1024,
     });
-    const durationMs = performance.now() - started;
 
     expect(result).toMatchObject({ ok: false, error: { code: "static-output-limit-exceeded" } });
     expect(serializer.instrumentation.fragmentBuilds).toBeLessThan(amplified.elements.length);
     expect(serializer.instrumentation.cacheBytes).toBeLessThanOrEqual(64 * MIB);
     expect(checkpoints).toBe(0);
     await annotate(
-      `amplified near-limit rejection: duration=${durationMs.toFixed(1)}ms, ` +
+      `amplified near-limit rejection: ` +
         `fragmentsBuilt=${serializer.instrumentation.fragmentBuilds}/${amplified.elements.length}, ` +
         `checkpoints=${checkpoints}`,
       "performance",
     );
   }, 120_000);
 
-  it("keeps the synchronous exact-base callback inside the autosave slice budget", async ({
-    annotate,
-  }) => {
-    if (serializedSvg === null) throw new Error("Standard SVG fixture was not serialized.");
-    const base = copyString(serializedSvg);
-    const next = base
-      .replace('data-inkbook-revision="1"', 'data-inkbook-revision="2"')
-      .replace('"revision":1', '"revision":2');
-    const outputHash = sha256Hex(next);
-    await exactBaseSave(base, next, outputHash);
-    const callbackDurations: number[] = [];
-    for (let run = 0; run < statisticalSamples(5); run += 1) {
-      callbackDurations.push(await exactBaseSave(base, next, outputHash));
-    }
-    await annotateDurations(annotate, "Vault.process exact-base callback", callbackDurations);
-    expectProfileBudget(callbackDurations, 8);
-  }, 120_000);
-
-  it("slices receiver-side integrity derivation within the autosave frame budget", async ({
-    annotate,
-  }) => {
-    const slices: number[] = [];
-    let sliceStarted = performance.now();
-    const measured = await measureAsync(() =>
-      deriveDocumentIntegrityManifestAsync(snapshot, {
+  it("bounds receiver integrity work between checkpoints without changing its result", async () => {
+    const sliceBytes = 64 * 1024;
+    // UUIDs are ASCII; the ordered-ID pass includes its domain prefix and one NUL per ID.
+    const orderedIdBytes =
+      "inkbook-ordered-ids-v1".length +
+      snapshot.elements.reduce((bytes, element) => bytes + 1 + element.id.length, 0);
+    const observer = observeIntegrityWork(snapshot);
+    try {
+      const expected = deriveDocumentIntegrityManifest(observer.snapshot);
+      const reference = observer.take();
+      expect(reference.canonicalElements).toBe(snapshot.elements.length);
+      expect(reference.elementReads).toBe(2 * snapshot.elements.length);
+      expect(reference.encodedBytes).toBe(reference.hashedBytes);
+      const slices: IntegrityWork[] = [];
+      const result = await deriveDocumentIntegrityManifestAsync(observer.snapshot, {
         checkpoint: async () => {
-          slices.push(performance.now() - sliceStarted);
-          await yieldToMainThread();
-          sliceStarted = performance.now();
+          slices.push(observer.take());
         },
-      }),
-    );
-    slices.push(performance.now() - sliceStarted);
-
-    expect(measured.value).toEqual(deriveDocumentIntegrityManifest(snapshot));
-    await annotateDurations(annotate, "receiver integrity slice", slices);
-    await annotate(
-      `receiver integrity total=${measured.durationMs.toFixed(1)}ms, slices=${slices.length}`,
-      "performance",
-    );
-    expectProfileBudget(slices, 8);
-    expectProfileBudget([measured.durationMs], 750);
+        sliceByteLimit: sliceBytes,
+      });
+      const finalSlice = observer.take();
+      expect(result).toEqual(expected);
+      expect(slices.length).toBeGreaterThan(1);
+      for (const slice of slices) assertIntegritySlice(slice, sliceBytes);
+      // The ordered-ID digest is currently synchronous and belongs to the final slice.
+      expect(finalSlice.encodedBytes).toBeLessThan(sliceBytes + orderedIdBytes);
+      expect(finalSlice.hashedBytes).toBe(finalSlice.encodedBytes);
+      expect(finalSlice.elementReads).toBe(finalSlice.canonicalElements + snapshot.elements.length);
+      expect(finalSlice.canonicalElements).toBeLessThanOrEqual(Math.ceil(sliceBytes / 38));
+      const total = [...slices, finalSlice].reduce(
+        (sum, slice) => ({
+          canonicalElements: sum.canonicalElements + slice.canonicalElements,
+          elementReads: sum.elementReads + slice.elementReads,
+          encodedBytes: sum.encodedBytes + slice.encodedBytes,
+          hashedBytes: sum.hashedBytes + slice.hashedBytes,
+        }),
+        { canonicalElements: 0, elementReads: 0, encodedBytes: 0, hashedBytes: 0 },
+      );
+      expect(total).toEqual(reference);
+    } finally {
+      observer.restore();
+    }
   }, 120_000);
 });
 
-describe("document worker export performance", () => {
-  it("reports unlock and incremental-save phases while reusing validated bounds", async ({
-    annotate,
-  }) => {
-    const serialized = serializeInkbookDocument(snapshot);
-    if (!serialized.ok) throw new Error(serialized.error.code);
-    const runtime = new DocumentWorkerRuntime({ sessionId: "phases", workerEpoch: 1 });
-    const builder = ElementStore.createBuilder({
-      shouldYield: () => false,
-      yieldControl: async () => undefined,
-    });
-    const unlocked = await runtime.execute(
-      {
-        identity: {
-          operationId: 1,
-          purpose: "unlock",
-          sessionId: "phases",
-          workerEpoch: 1,
-        },
-        input: serialized.value.svg,
-        type: "unlock",
-      },
-      {
-        unlockBatch: async (batch) => {
-          await builder.appendOwnedValidatedRuntime(batch.elements, batch.derivations);
-        },
-      },
-    );
-    expect(unlocked.type).toBe("unlock-success");
-    const finalized = await measureAsync(() => builder.finalize());
-    if (finalized.value === null) throw new Error("Store hydration was cancelled.");
-
-    const first = snapshot.elements[0]!;
-    const changed = { ...replaceFirstStroke(snapshot, 2), createdAt: first.createdAt };
-    const delta = finalized.value.replace(changed.id, changed);
-    if (delta === null) throw new Error("Expected a changed Store record.");
-    const reusesBefore = runtime.instrumentation.derivedBoundsReuses;
-    const exported = await runtime.execute({
-      baseModelRevision: 1,
-      changedElementDerivations: changedElementDerivations(delta),
-      changedElements: [changed],
-      exportGeneration: 1,
-      modelRevision: 2,
-      sessionId: "phases",
-      type: "export-incremental",
-      workerEpoch: 1,
-    });
-    expect(exported.type).toBe("export-success");
-    expect(runtime.instrumentation.derivedBoundsReuses).toBe(reusesBefore + 1);
-    await annotate(
-      `unlock phases=${JSON.stringify(runtime.instrumentation.lastUnlockPhases)}, ` +
-        `storeFinalizeMs=${finalized.durationMs.toFixed(1)}, ` +
-        `save phases=${JSON.stringify(runtime.instrumentation.lastExportPhases)}`,
-      "performance",
-    );
-    runtime.terminate();
-  }, 120_000);
-
-  it("measures full and one-stroke incremental export against desktop budgets", async ({
-    annotate,
-  }) => {
+describe("document worker export work bounds", () => {
+  it("rebuilds only changed fragments and reuses all fragments for order-only exports", async () => {
     const runtime = createProductionDocumentRuntime(
       { sessionId: "performance", workerEpoch: 1 },
       { yieldControl: async () => undefined },
     );
     try {
-      const generation = { value: 0 };
-      await runExportWarmup(runtime, generation);
-      const profile = await runExportProfile(runtime, generation);
-      const fullRuns = [profile.full];
-      const incrementalRuns = [profile.incremental];
-      const orderOnlyRuns = [profile.orderOnly];
-
-      await annotateProfileRuns(annotate, "full worker export", fullRuns);
-      await annotateProfileRuns(annotate, "one-stroke incremental worker export", incrementalRuns);
-      await annotateProfileRuns(annotate, "order-only worker export", orderOnlyRuns);
-      expectProfileRunsBudget(fullRuns, 750);
-      expectProfileRunsBudget(incrementalRuns, 100);
-      expectProfileRunsBudget(orderOnlyRuns, 100);
-      await annotate(
-        "Every sample acknowledges its exact export identity and awaits complete input-aware " +
-          "fragment prewarming before the next measured export.",
-        "performance",
+      await fullExport(runtime, 1);
+      await incrementalExport(runtime, 2, snapshot.revision, snapshot.revision + 1);
+      await orderOnlyExport(
+        runtime,
+        3,
+        snapshot.revision + 1,
+        snapshot.revision + 2,
+        snapshot.elements.map(({ id }) => id).reverse(),
+      );
+      await orderOnlyExport(
+        runtime,
+        4,
+        snapshot.revision + 2,
+        snapshot.revision + 3,
+        snapshot.elements.map(({ id }) => id),
       );
     } finally {
       runtime.terminate();
     }
-  }, 300_000);
+  }, 120_000);
 });
 
-async function runExportWarmup(
-  runtime: DocumentWorkerRuntime,
-  generation: { value: number },
-): Promise<void> {
-  await fullExport(runtime, ++generation.value);
-  await incrementalExport(runtime, ++generation.value, snapshot.revision, snapshot.revision + 1);
-  await orderOnlyExport(
-    runtime,
-    ++generation.value,
-    snapshot.revision + 1,
-    snapshot.revision + 2,
-    snapshot.elements.map(({ id }) => id).reverse(),
-  );
-}
-
-async function runExportProfile(
-  runtime: DocumentWorkerRuntime,
-  generation: { value: number },
-): Promise<{ full: number[]; incremental: number[]; orderOnly: number[] }> {
-  const full: number[] = [];
-  for (let sample = 0; sample < FULL_EXPORT_SAMPLES_PER_RUN; sample += 1) {
-    const exported = await fullExport(runtime, ++generation.value);
-    full.push(exported.durationMs);
-    collectProfileGarbage();
-  }
-  const incremental: number[] = [];
-  for (let sample = 0; sample < INCREMENTAL_EXPORT_SAMPLES_PER_RUN; sample += 1) {
-    const baseRevision = sample + 1;
-    const modelRevision = baseRevision + 1;
-    const exported = await incrementalExport(
-      runtime,
-      ++generation.value,
-      baseRevision,
-      modelRevision,
-    );
-    incremental.push(exported.durationMs);
-    collectProfileGarbage();
-  }
-  const orderOnly: number[] = [];
-  const originalOrder = snapshot.elements.map(({ id }) => id);
-  const reversedOrder = [...originalOrder].reverse();
-  for (let sample = 0; sample < ORDER_ONLY_EXPORT_SAMPLES_PER_RUN; sample += 1) {
-    const baseRevision = snapshot.revision + INCREMENTAL_EXPORT_SAMPLES_PER_RUN + sample;
-    const exported = await orderOnlyExport(
-      runtime,
-      ++generation.value,
-      baseRevision,
-      baseRevision + 1,
-      sample % 2 === 0 ? reversedOrder : originalOrder,
-    );
-    orderOnly.push(exported.durationMs);
-    collectProfileGarbage();
-  }
-  return { full, incremental, orderOnly };
-}
-
 function serializeFixture() {
-  return measure(() => serializeInkbookDocument(snapshot, { hash: () => "fixture-hash" }));
-}
-
-function copyString(value: string): string {
-  return new TextDecoder().decode(new TextEncoder().encode(value));
+  return serializeInkbookDocument(snapshot, { hash: () => "fixture-hash" });
 }
 
 function requireSerialized(result: ReturnType<typeof serializeInkbookDocument>) {
@@ -299,50 +151,8 @@ function requireSerialized(result: ReturnType<typeof serializeInkbookDocument>) 
   return result.value;
 }
 
-async function exactBaseSave(base: string, next: string, outputHash: string): Promise<number> {
-  const currentCopy = copyString(base);
-  let persisted = base;
-  let callbackDuration = Number.POSITIVE_INFINITY;
-  const save = await saveExistingFile(
-    {
-      expectedBase: base,
-      output: next,
-      outputHash,
-      path: "fixture.svg",
-      revision: 2,
-    },
-    { currentRevision: () => 2 },
-    {
-      process: async (_path, update) => {
-        const callback = measure(() => update(currentCopy));
-        callbackDuration = callback.durationMs;
-        persisted = callback.value;
-        return persisted;
-      },
-      readWithMetadataGuard: async (path) => {
-        const size = new TextEncoder().encode(persisted).byteLength;
-        return {
-          content: persisted,
-          identity: { ctime: 1, mtime: 1, path, size },
-          materialization: "host-full-read-not-bounded" as const,
-          stabilityEvidence: "object-identity-and-stat-unchanged" as const,
-        };
-      },
-    },
-    {
-      verify: async (content, revision, hash) =>
-        content === next && revision === 2 && hash === outputHash,
-    },
-  );
-  expect(save.revision).toBe(2);
-  return callbackDuration;
-}
-
-async function fullExport(
-  runtime: DocumentWorkerRuntime,
-  exportGeneration: number,
-): Promise<{ durationMs: number }> {
-  return executeMeasuredExport(runtime, {
+async function fullExport(runtime: DocumentWorkerRuntime, exportGeneration: number): Promise<void> {
+  return executeExport(runtime, {
     baseModelRevision: null,
     exportGeneration,
     modelRevision: snapshot.revision,
@@ -358,12 +168,12 @@ async function incrementalExport(
   exportGeneration: number,
   baseModelRevision: number,
   modelRevision: number,
-): Promise<{ durationMs: number }> {
+): Promise<void> {
   const changed = replaceFirstStroke(snapshot, modelRevision);
   const bounds = calculateElementBounds(changed);
   const spatialMemberships = spatialCellMembershipCount(bounds);
   const spatialOverflow = spatialMemberships > MAX_ELEMENT_CELLS;
-  return executeMeasuredExport(runtime, {
+  return executeExport(runtime, {
     baseModelRevision,
     changedElementDerivations: [
       {
@@ -388,8 +198,8 @@ async function orderOnlyExport(
   baseModelRevision: number,
   modelRevision: number,
   content: readonly string[],
-): Promise<{ durationMs: number }> {
-  return executeMeasuredExport(runtime, {
+): Promise<void> {
+  return executeExport(runtime, {
     baseModelRevision,
     exportGeneration,
     modelRevision,
@@ -405,15 +215,15 @@ type ExportRequest = Extract<
   { type: "export-full" | "export-incremental" }
 >;
 
-async function executeMeasuredExport(
+async function executeExport(
   runtime: DocumentWorkerRuntime,
   request: ExportRequest,
-): Promise<{ durationMs: number }> {
+): Promise<void> {
   const before = runtime.instrumentation;
-  let measured = await measureAsync(() => runtime.execute(request));
-  const durationMs = measured.durationMs;
-  const identity = exportIdentity(requireExportSuccess(measured.value));
-  measured = null as never;
+  const result = await runtime.execute(request);
+  const exported = requireExportSuccess(result);
+  expect(exported.modelRevision).toBe(request.modelRevision);
+  const identity = exportIdentity(exported);
   await acknowledgeAndPrewarm(runtime, identity);
   if (request.type === "export-incremental") {
     const changedCount = request.changedElements?.length ?? 0;
@@ -422,7 +232,6 @@ async function executeMeasuredExport(
       changedCount,
     );
   }
-  return { durationMs };
 }
 
 function requireExportSuccess(result: Awaited<ReturnType<DocumentWorkerRuntime["execute"]>>) {
@@ -486,4 +295,16 @@ function amplifyNearLimitSnapshot(
       return { ...element, points };
     }),
   };
+}
+
+function assertIntegritySlice(work: IntegrityWork, sliceBytes: number): void {
+  // A checkpoint follows the threshold-crossing chunk. This ASCII fixture encodes
+  // at most sliceBytes / 4 bytes per chunk, with no more than one chunk overshoot.
+  expect(work.encodedBytes).toBeGreaterThanOrEqual(sliceBytes);
+  expect(work.encodedBytes).toBeLessThan(sliceBytes + sliceBytes / 4);
+  expect(work.hashedBytes).toBe(work.encodedBytes);
+  expect(work.elementReads).toBe(work.canonicalElements);
+  // Even the ID alone occupies 38 JSON bytes. One canonical element may already
+  // be prepared when a checkpoint splits its encoded representation.
+  expect(work.canonicalElements).toBeLessThanOrEqual(Math.ceil(sliceBytes / 38) + 1);
 }

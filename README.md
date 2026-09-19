@@ -49,7 +49,7 @@ Useful commands:
 | `npm run typecheck`        | Type-check plugin source separately from Node-based test tooling.                            |
 | `npm run typecheck:worker` | Type-check the actual worker graph without main-thread platform types.                       |
 | `npm run ci`               | Run the complete local quality and performance gate.                                         |
-| `npm run benchmark`        | Run performance profiles and verify their recorded budgets.                                  |
+| `npm run benchmark`        | Run classified work, resource, and simulated-scheduling checks.                              |
 | `npm run package:verify`   | Verify versions and the exact Obsidian release-artifact envelope.                            |
 
 The complete gate also checks formatting, source layout, import cycles and direction, worker isolation, duplication, dead code, dependency vulnerabilities, coverage, deterministic performance budgets, the production build, and package contents.

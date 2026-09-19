@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import type { InkSnapshotV1 } from "../../../../src/domain/schema/public";
 import {
@@ -36,7 +36,13 @@ const snapshot: InkSnapshotV1 = {
   elements: [],
 };
 
-function validSvg(): string {
+let validSvg: string;
+
+beforeAll(() => {
+  validSvg = createValidSvg();
+});
+
+function createValidSvg(): string {
   return serializeSvgEnvelope(snapshot, 148.6, {
     background: [
       '<path class="inkbook-theme-page" d="M 0 0 L 2048.6 0 L 2048.6 148.6 L 0 148.6 Z" fill="#F6F6F6FF"/>',
@@ -80,7 +86,7 @@ function expectRejectedContentPaths(paths: readonly string[]): void {
 
 describe("strict safe SVG validation", () => {
   it("accepts the canonical envelope and returns bounded metadata", () => {
-    expect(validateSafeSvg(validSvg())).toMatchObject({
+    expect(validateSafeSvg(validSvg)).toMatchObject({
       lockedHeight: 148.6,
       pathCommands: 15,
       paths: 6,
@@ -90,7 +96,7 @@ describe("strict safe SVG validation", () => {
   });
 
   it("accepts the previous exact dark page palette for version 1 input", () => {
-    const legacySvg = validSvg().replace(CANONICAL_THEME_STYLESHEET, LEGACY_THEME_STYLESHEET_V1);
+    const legacySvg = validSvg.replace(CANONICAL_THEME_STYLESHEET, LEGACY_THEME_STYLESHEET_V1);
 
     expect(validateSafeSvg(legacySvg)).toMatchObject({ requiresCanonicalRewrite: true });
   });
@@ -119,11 +125,11 @@ describe("strict safe SVG validation", () => {
     (svg: string) => svg.replace(" viewBox=", ' width="url(https://invalid)" viewBox='),
     (svg: string) => svg.replace('<g id="inkbook-highlights">', ""),
   ])("rejects unsafe or noncanonical markup", (mutate) => {
-    expect(validateSafeSvg(mutate(validSvg()))).toBeNull();
+    expect(validateSafeSvg(mutate(validSvg))).toBeNull();
   });
 
   it("rejects an unknown path class without modifying the canonical stylesheet", () => {
-    const unsafe = validSvg().replace(
+    const unsafe = validSvg.replace(
       '<path class="inkbook-theme-page"',
       '<path class="unknown-class"',
     );
@@ -141,7 +147,7 @@ describe("safe SVG metadata and bounded validation", () => {
     "<!--bad-->",
     "<?inkbook bad?>",
   ])("rejects literal markup inside metadata: %s", (markup) => {
-    const unsafe = validSvg().replace("</metadata>", `${markup}</metadata>`);
+    const unsafe = validSvg.replace("</metadata>", `${markup}</metadata>`);
 
     expect(validateSafeSvg(unsafe)).toBeNull();
     expect(
@@ -152,7 +158,7 @@ describe("safe SVG metadata and bounded validation", () => {
   });
 
   it("accepts escaped markup characters as metadata text", () => {
-    const escaped = validSvg().replace(
+    const escaped = validSvg.replace(
       '"elements":[]',
       '"elements":[],"text":"&lt;script&gt;&amp;&lt;/script&gt;"',
     );
@@ -162,7 +168,7 @@ describe("safe SVG metadata and bounded validation", () => {
 
   it("validates and decodes large escaped metadata across bounded slices", () => {
     const largeText = `${"a".repeat(300_000)}&lt;x&gt;`;
-    const svg = validSvg().replace('"elements":[]', `"elements":[],"text":"${largeText}"`);
+    const svg = validSvg.replace('"elements":[]', `"elements":[],"text":"${largeText}"`);
     const { result, yields } = exhaustValidation(
       validateSafeSvgSteps(svg, { pathsPerStep: 60_004 }),
     );
@@ -173,18 +179,18 @@ describe("safe SVG metadata and bounded validation", () => {
   });
 
   it("admits allowlisted static markup from a newer version only for safe fallback preview", () => {
-    const newer = validSvg().replace('data-inkbook-version="1"', 'data-inkbook-version="2"');
+    const newer = validSvg.replace('data-inkbook-version="1"', 'data-inkbook-version="2"');
 
     expect(validateSafeSvg(newer)).toBeNull();
     expect(validateNewerVersionSafeSvg(newer)).toMatchObject({ version: 2 });
-    expect(validateNewerVersionSafeSvg(validSvg())).toBeNull();
+    expect(validateNewerVersionSafeSvg(validSvg)).toBeNull();
     expect(
       validateNewerVersionSafeSvg(newer.replace("<path ", '<path onclick="bad()" ')),
     ).toBeNull();
   });
 
   it("slices within one maximum-complexity path independently of the path batch size", () => {
-    const svg = validSvg().replace("M 1 1 L 2 2", createMaximumComplexityPath());
+    const svg = validSvg.replace("M 1 1 L 2 2", createMaximumComplexityPath());
     const { result, yields } = exhaustValidation(
       validateSafeSvgSteps(svg, { pathsPerStep: 60_004 }),
     );
@@ -206,7 +212,7 @@ describe("safe SVG metadata and bounded validation", () => {
   });
 
   // Full-capacity validation under coverage needs headroom on shared CI runners.
-  // Per-slice latency is enforced separately by the performance suite.
+  // Deterministic work and scheduling bounds are checked by the performance suite.
   it("rejects an aggregate command count above 8,000,000", () => {
     const maximumCommandPath = compactMaximumCommandPath();
     const paths = Array(MAXIMUM_TOTAL_COMMANDS / MAXIMUM_PATH_COMMANDS).fill(maximumCommandPath);

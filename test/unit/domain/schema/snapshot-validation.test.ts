@@ -2,18 +2,36 @@ import { describe, expect, it } from "vitest";
 
 import { FILE_SCHEMA_LIMITS, validateInkSnapshotV1 } from "../../../../src/domain/schema/public";
 import { validateInkSnapshotV1Steps } from "../../../../src/domain/schema/snapshot-validation";
+import { observeSchemaArray } from "../../../fixtures/domain/schema-array-work";
 import { arrow, line, rectangle, snapshot, straightHighlighter, stroke, uuid } from "./fixtures";
 
 describe("InkSnapshotV1 validation", () => {
   it("accepts an empty snapshot and a connected, partitioned document", () => {
     expect(validateInkSnapshotV1(snapshot()).ok).toBe(true);
-    const document = snapshot([
-      stroke(1, "highlighter"),
-      straightHighlighter(2),
-      rectangle(3),
-      line(4),
-    ]);
-    const result = validateInkSnapshotV1(document);
+    const highlight = stroke(1, "highlighter");
+    const document = snapshot([highlight, straightHighlighter(2), rectangle(3), line(4)]);
+    const elementWork = observeSchemaArray(document.elements);
+    const pointWork = observeSchemaArray(highlight.points);
+    highlight.points = pointWork.observed;
+    document.elements = elementWork.observed;
+    const steps = validateInkSnapshotV1Steps(document);
+    let step;
+    do {
+      const beforeElements = elementWork.work.indexedReads;
+      const beforePoints = pointWork.work.indexedReads;
+      step = steps.next();
+      // Relations have four passes; this four-element document fits in one final slice.
+      expect(elementWork.work.indexedReads - beforeElements).toBeLessThanOrEqual(4 * 4);
+      // Validation reads x/y/pressure once; bounds read x/y once for each endpoint.
+      expect(pointWork.work.indexedReads - beforePoints).toBeLessThanOrEqual(6);
+    } while (!step.done);
+    expect(elementWork.work.indexedReads).toBeGreaterThan(0);
+    expect(elementWork.work.indexedReads).toBeLessThanOrEqual(5 * 4);
+    expect(pointWork.work.indexedReads).toBeGreaterThan(0);
+    expect(pointWork.work.indexedReads).toBeLessThanOrEqual(6 + 4);
+    expect(elementWork.work.descriptorReads).toBeLessThanOrEqual(5 * 4);
+    expect(pointWork.work.descriptorReads).toBeLessThanOrEqual(5 * 6);
+    const result = step.value;
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.statistics).toMatchObject({
@@ -228,11 +246,13 @@ describe("InkSnapshotV1 spatial capacity validation", () => {
 describe("InkSnapshotV1 bounded JSON-tree inspection", () => {
   it("rejects over-wide containers before enumerating their siblings", () => {
     const document = snapshot() as unknown as Record<string, unknown>;
-    document.untrusted = new Array(FILE_SCHEMA_LIMITS.elements + 1).fill(null);
+    const entries = observeSchemaArray(new Array<null>(FILE_SCHEMA_LIMITS.elements + 1).fill(null));
+    document.untrusted = entries.observed;
     const steps = validateInkSnapshotV1Steps(document);
 
     const first = steps.next();
 
+    expect(entries.work).toEqual({ indexedReads: 0, descriptorReads: 0 });
     expect(first.done).toBe(true);
     if (first.done) {
       expect(first.value).toMatchObject({
@@ -244,13 +264,28 @@ describe("InkSnapshotV1 bounded JSON-tree inspection", () => {
 
   it("keeps valid-width container inspection incremental", () => {
     const document = snapshot() as unknown as Record<string, unknown>;
-    document.untrusted = new Array(4096).fill(null);
+    const entries = observeSchemaArray<null>(new Array<null>(4096).fill(null));
+    document.untrusted = entries.observed;
     const steps = validateInkSnapshotV1Steps(document);
 
     expect(steps.next()).toEqual({ done: false, value: undefined });
+    // Enumeration and sparse/data-property checks visit each entry four times
+    // before recursive traversal yields after at most 2048 JSON nodes.
+    expect(entries.work.descriptorReads).toBeGreaterThan(0);
+    expect(entries.work.descriptorReads).toBeLessThanOrEqual(4 * 4096 + 2048);
+    const before = entries.work.descriptorReads;
     const result = steps.next();
 
     expect(result.done).toBe(false);
+    expect(entries.work.descriptorReads - before).toBeLessThanOrEqual(2048);
+    const beforeFinal = entries.work.descriptorReads;
+    expect(steps.next()).toMatchObject({
+      done: true,
+      value: { ok: false, error: { code: "unknown-property" } },
+    });
+    expect(entries.work.descriptorReads - beforeFinal).toBeLessThanOrEqual(2048);
+    expect(entries.work.descriptorReads).toBeLessThanOrEqual(5 * 4096);
+    expect(entries.work.indexedReads).toBe(0);
   });
 });
 

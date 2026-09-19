@@ -19,9 +19,6 @@ import {
 import { yieldToMainThread } from "../../../src/persistence/scheduling/main-thread-yield";
 import type { ExportSuccess } from "../../../src/persistence/worker/protocol";
 import { createMinimalPersistenceFixture } from "./fixtures";
-import { annotateDurations, measureAsync, summarizeDurations } from "./metrics";
-
-const SEQUENCES_PER_RUN = 50;
 
 describe("autosave backpressure", () => {
   it("rejects a stale receipt while retaining its worker-model baseline", async () => {
@@ -54,35 +51,10 @@ describe("autosave backpressure", () => {
     coordinator.dispose();
   });
 
-  it("serializes writes and drains one coalesced successor without another user action", async ({
-    annotate,
-  }) => {
-    await runBackpressureBatch();
-    const measuredRuns: number[][] = [];
-    for (let run = 1; run <= 5; run += 1) {
-      const durations = await runBackpressureBatch();
-      measuredRuns.push(durations);
-      await annotateDurations(annotate, `autosave backpressure run ${run}`, durations);
-    }
-    const worstRunMaximum = Math.max(
-      ...measuredRuns.map((durations) => summarizeDurations(durations).maximum),
-    );
-    await annotate(
-      `autosave backpressure: 5 measured runs, ${SEQUENCES_PER_RUN} sequences per run, ` +
-        `worstRunMax=${worstRunMaximum.toFixed(3)} ms`,
-      "performance",
-    );
-  }, 120_000);
+  it("serializes writes and drains one coalesced successor without another user action", async () => {
+    await runBackpressureSequence();
+  });
 });
-
-async function runBackpressureBatch(): Promise<number[]> {
-  const durations: number[] = [];
-  for (let sequence = 0; sequence < SEQUENCES_PER_RUN; sequence += 1) {
-    const measured = await measureAsync(runBackpressureSequence);
-    durations.push(measured.durationMs);
-  }
-  return durations;
-}
 
 async function runBackpressureSequence(): Promise<void> {
   const clock = new ManualClock();

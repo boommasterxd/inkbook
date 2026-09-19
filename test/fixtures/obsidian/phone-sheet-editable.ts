@@ -3,44 +3,106 @@ import { vi } from "vitest";
 import { createAdaptivePanelFixture } from "../../adapters/obsidian/adaptive-panel";
 import { ManualFrameScheduler } from "./manual-frame-scheduler";
 
-export function createPhoneSheetEditableFixture() {
+export function createPhoneSheetEditableFixture(recordCalls = true) {
+  const restoreWindow = preserveProperties(window, [
+    "requestAnimationFrame",
+    "cancelAnimationFrame",
+    "visualViewport",
+  ]);
   const frames = new ManualFrameScheduler();
-  vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) =>
-    frames.requestAnimationFrame(callback),
+  const request: typeof window.requestAnimationFrame = (callback) =>
+    frames.requestAnimationFrame(callback);
+  const cancel: typeof window.cancelAnimationFrame = (handle) =>
+    frames.cancelAnimationFrame(handle);
+  if (recordCalls) {
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation(request);
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(cancel);
+  } else {
+    window.requestAnimationFrame = request;
+    window.cancelAnimationFrame = cancel;
+  }
+  try {
+    const viewport = Object.assign(new EventTarget(), {
+      height: 400,
+      offsetTop: 100,
+      offsetLeft: 0,
+      width: 360,
+    });
+    Object.defineProperty(window, "visualViewport", { configurable: true, value: viewport });
+    const input = window.createEl("input");
+    const fixture = createAdaptivePanelFixture("style", {
+      createContent: () => {
+        const fragment = window.createFragment();
+        fragment.append(input);
+        return fragment;
+      },
+    });
+    frames.runNext(0);
+    input.focus();
+    const scroll = input.closest<HTMLElement>(".inkbook-adaptive-panel-scroll")!;
+    const restoreScroll = preserveProperties(scroll, [
+      "getBoundingClientRect",
+      "scrollHeight",
+      "clientHeight",
+    ]);
+    const restoreInput = preserveProperties(input, ["getBoundingClientRect"]);
+    const scrollRect = new DOMRect(0, 300, 360, 200);
+    const inputRect = new DOMRect(0, 530, 100, 30);
+    let scrollReadCount = 0;
+    let inputReadCount = 0;
+    const scrollRead = vi.spyOn(scroll, "getBoundingClientRect").mockReturnValue(scrollRect);
+    const inputRead = vi.spyOn(input, "getBoundingClientRect").mockReturnValue(inputRect);
+    if (!recordCalls) {
+      scroll.getBoundingClientRect = () => {
+        scrollReadCount += 1;
+        return scrollRect;
+      };
+      input.getBoundingClientRect = () => {
+        inputReadCount += 1;
+        return inputRect;
+      };
+    }
+    Object.defineProperties(scroll, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 200 },
+    });
+    scroll.scrollTop = 100;
+    return {
+      ...fixture,
+      frames,
+      viewport,
+      input,
+      scroll,
+      scrollRead,
+      inputRead,
+      get inputReadCount() {
+        return recordCalls ? inputRead.mock.calls.length : inputReadCount;
+      },
+      get scrollReadCount() {
+        return recordCalls ? scrollRead.mock.calls.length : scrollReadCount;
+      },
+      restore: () => {
+        restoreInput();
+        restoreScroll();
+        restoreWindow();
+      },
+    };
+  } catch (error) {
+    restoreWindow();
+    throw error;
+  }
+}
+
+function preserveProperties(target: object, keys: readonly string[]): () => void {
+  const descriptors = keys.map(
+    (key) => [key, Object.getOwnPropertyDescriptor(target, key)] as const,
   );
-  vi.spyOn(window, "cancelAnimationFrame").mockImplementation((handle) =>
-    frames.cancelAnimationFrame(handle),
-  );
-  const viewport = Object.assign(new EventTarget(), {
-    height: 400,
-    offsetTop: 100,
-    offsetLeft: 0,
-    width: 360,
-  });
-  Object.defineProperty(window, "visualViewport", { configurable: true, value: viewport });
-  const input = window.createEl("input");
-  const fixture = createAdaptivePanelFixture("style", {
-    createContent: () => {
-      const fragment = window.createFragment();
-      fragment.append(input);
-      return fragment;
-    },
-  });
-  frames.runNext(0);
-  input.focus();
-  const scroll = input.closest<HTMLElement>(".inkbook-adaptive-panel-scroll")!;
-  const scrollRead = vi
-    .spyOn(scroll, "getBoundingClientRect")
-    .mockReturnValue(new DOMRect(0, 300, 360, 200));
-  const inputRead = vi
-    .spyOn(input, "getBoundingClientRect")
-    .mockReturnValue(new DOMRect(0, 530, 100, 30));
-  Object.defineProperties(scroll, {
-    scrollHeight: { configurable: true, value: 1000 },
-    clientHeight: { configurable: true, value: 200 },
-  });
-  scroll.scrollTop = 100;
-  return { ...fixture, frames, viewport, input, scroll, scrollRead, inputRead };
+  return () => {
+    for (const [key, descriptor] of descriptors) {
+      if (descriptor) Object.defineProperty(target, key, descriptor);
+      else Reflect.deleteProperty(target, key);
+    }
+  };
 }
 
 /** Drives the host CSS inset boundary without dispatching viewport events. */
