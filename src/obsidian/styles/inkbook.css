@@ -350,10 +350,35 @@
   visibility: hidden;
 }
 
+.inkbook-root .inkbook-selection-halo {
+  color: var(--interactive-accent);
+  opacity: 0.6;
+}
+
+.inkbook-root .inkbook-selection-halo-source {
+  color: var(--interactive-accent);
+}
+
+.inkbook-root .inkbook-selection-center-trace {
+  fill: none;
+  stroke: var(--interactive-accent);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+}
+
 .inkbook-root .inkbook-scene-overlays path {
   fill: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
   stroke: var(--interactive-accent);
   stroke-width: 1.5;
+}
+
+.inkbook-root .inkbook-scene-overlays .inkbook-selection-area-preview {
+  stroke-dasharray: 3 3;
+}
+
+.inkbook-root .inkbook-scene-overlays .inkbook-selection-overlay {
+  stroke-width: 3;
 }
 
 .inkbook-root .inkbook-scene-overlays .inkbook-selection-overlay[data-selection-fill="none"] {
@@ -366,12 +391,12 @@
 }
 
 .inkbook-root .inkbook-scene-overlays .inkbook-snap-guide {
-  fill: var(--inkbook-page-surface);
-  filter: drop-shadow(0 1px 2px color-mix(in srgb, var(--background-primary) 70%, transparent));
+  fill: none;
   stroke: color-mix(in srgb, var(--interactive-accent) 82%, var(--text-normal));
-  stroke-linecap: round;
+  stroke-dasharray: 3 3;
+  stroke-linecap: butt;
   stroke-linejoin: round;
-  stroke-width: 2.5;
+  stroke-width: 1.5;
 }
 
 .inkbook-root .inkbook-canvas-input:focus {

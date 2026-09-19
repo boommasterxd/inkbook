@@ -136,12 +136,17 @@ describe("InkbookSettingTab definitions", () => {
     expect(general).toBeDefined();
     expect(general?.items?.map((item) => item.name)).toEqual([
       "Startup tool",
+      "Selection highlights",
       "Display refresh rate",
       "File placement",
       "Custom vault folder",
       "Create custom folder",
       "Reset group to defaults",
     ]);
+    expect(general?.items?.find((item) => item.name === "Selection highlights")).toMatchObject({
+      control: { type: "toggle", key: "selectionHighlightsEnabled" },
+      desc: "Show inner selection edge highlights. Lines and arrows always keep their center selection trace.",
+    });
     const customFolder = general?.items?.find((item) => item.name === "Custom vault folder");
     expect(typeof customFolder?.visible === "function" && customFolder.visible()).toBe(false);
     await tab.setControlValue("filePlacement.mode", "custom-vault-folder");
@@ -268,6 +273,8 @@ describe("InkbookSettingTab reset integration", () => {
     const deviceDefaults = createBuiltInDeviceSettings();
 
     await tab.setControlValue("startupTool", "arrow");
+    await tab.setControlValue("selectionHighlightsEnabled", false);
+    expect(tab.getControlValue("selectionHighlightsEnabled")).toBe(false);
     await tab.setControlValue("pageDefaults.activeBufferLines", 6);
     await tab.setControlValue("toolDefaults.pen.width", 14);
     await tab.setControlValue("toolDefaults.select.area", "rectangle");
@@ -281,6 +288,7 @@ describe("InkbookSettingTab reset integration", () => {
     await vi.waitFor(() => expect(tab.getControlValue("startupTool")).toBe(defaults.startupTool));
     expect(store.getVaultSettings()).toMatchObject({
       filePlacement: defaults.filePlacement,
+      selectionHighlightsEnabled: true,
       refreshRatePreference: defaults.refreshRatePreference,
       startupTool: defaults.startupTool,
     });

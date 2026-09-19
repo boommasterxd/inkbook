@@ -16,11 +16,7 @@ export {
   selectionBounds,
 } from "./handles";
 export type { SelectionHandle } from "./handles";
-export {
-  selectionOverlayContainsPoint,
-  selectionOverlayGeometry,
-  transformSelectionPoint,
-} from "./overlay-geometry";
+export { selectionOverlayContainsPoint, selectionOverlayGeometry } from "./overlay-geometry";
 export type { SelectionOutline, SelectionOverlayGeometry } from "./overlay-geometry";
 export {
   createSelectionFrameAtRotation,

@@ -19,20 +19,20 @@ function bendGuidePath(alignment: "straight" | "symmetric"): string {
 }
 
 describe("selection snap guide paths", () => {
-  it("extends an anchor cross by 24 screen pixels in every direction", () => {
+  it("extends an anchor cross by 12 screen pixels in every direction", () => {
     const path = snapMarkerPath({ x: 100, y: 200 });
 
-    expect(path).toBe("M 76 200 L 124 200 M 100 176 L 100 224");
+    expect(path).toBe("M 88 200 L 112 200 M 100 188 L 100 212");
   });
 
   it("keeps anchor cross extensions constant at every zoom", () => {
     const guide = { kind: "anchor" as const, point: { x: 10, y: 20 } };
 
     expect(selectionSnapGuidePath(guide, ({ x, y }) => ({ x: x * 0.5, y: y * 0.5 }))).toBe(
-      "M -19 10 L 29 10 M 5 -14 L 5 34",
+      "M -7 10 L 17 10 M 5 -2 L 5 22",
     );
     expect(selectionSnapGuidePath(guide, ({ x, y }) => ({ x: x * 4, y: y * 4 }))).toBe(
-      "M 16 80 L 64 80 M 40 56 L 40 104",
+      "M 28 80 L 52 80 M 40 68 L 40 92",
     );
   });
 
@@ -46,19 +46,19 @@ describe("selection snap guide paths", () => {
       ({ x, y }) => ({ x: x * 2, y: y * 2 }),
     );
 
-    expect(path).toBe("M 200 424 L 200 -24");
+    expect(path).toBe("M 200 384 L 200 16");
   });
 
   it("renders the complete bend chord only for a straight-line snap", () => {
     const path = bendGuidePath("straight");
 
-    expect(path).toBe("M -64 0 L 164 0");
+    expect(path).toBe("M -24 0 L 124 0");
   });
 
   it("renders the perpendicular symmetry axis through the bend handle", () => {
     const path = bendGuidePath("symmetric");
 
-    expect(path).toBe("M 50 -64 L 50 89");
+    expect(path).toBe("M 50 -24 L 50 49");
   });
 
   it("extends angular and separator guides by constant screen pixels at every zoom", () => {
@@ -69,7 +69,7 @@ describe("selection snap guide paths", () => {
         { kind: "angular", start: { x: 10, y: 20 }, end: { x: 110, y: 20 } },
         pageToScreen,
       ),
-    ).toBe("M -44 40 L 284 40");
+    ).toBe("M -4 40 L 244 40");
     expect(
       selectionSnapGuidePath(
         {
@@ -80,7 +80,7 @@ describe("selection snap guide paths", () => {
         },
         pageToScreen,
       ),
-    ).toBe("M -44 40 L 284 40");
+    ).toBe("M -4 40 L 244 40");
   });
 
   it("renders every simultaneous coordinate-origin angular guide", () => {
@@ -98,7 +98,7 @@ describe("selection snap guide paths", () => {
     );
 
     expect(path).toBe(
-      "M -164 50 L 114 50 M 50 -164 L 50 114 M -107.24334022399461 128.6216701119973 L 107.24334022399461 21.378329888002693",
+      "M -124 50 L 74 50 M 50 -124 L 50 74 M -71.46625258399798 110.73312629199899 L 71.46625258399798 39.26687370800101",
     );
   });
 });

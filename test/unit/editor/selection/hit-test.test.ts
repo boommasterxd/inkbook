@@ -79,6 +79,24 @@ function assertMutableStrokeUpdates(points: number[] | Float64Array): void {
   expect(elementContainsPoint(element, { x: 50, y: 0 }, 1)).toBe(true);
 }
 
+describe("collapsed ellipse hit testing", () => {
+  it.each([
+    [0, 0],
+    [0, 20],
+    [20, 0],
+  ])("selects an ellipse of size %s by %s", (width, height) => {
+    const element: BoxShapeElementV1 = {
+      ...rectangle(0),
+      kind: "ellipse",
+      width,
+      height,
+      pivot: { x: width / 2, y: height / 2 },
+    };
+    expect(elementContainsPoint(element, element.pivot, 0)).toBe(true);
+    expect(elementContainsPoint(element, { x: width + 3, y: height + 3 }, 0)).toBe(false);
+  });
+});
+
 describe("selection hit testing", () => {
   it("does not hit transparent interiors but does hit visible fills and outlines", () => {
     expect(elementContainsPoint(rectangle(0), { x: 50, y: 50 }, 8)).toBe(false);

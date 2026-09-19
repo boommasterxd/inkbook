@@ -103,7 +103,7 @@ function linearBounds(linear: LinearElementV1): Bounds {
   if (linear.kind !== "arrow") return bounds;
 
   const directions = linearEndpointDirections(start, end, bend);
-  const size = nodeSize(linear.style.outlineWidth);
+  const size = nodeSize(linear.style.outlineWidth, start, end);
   return unionBounds(
     bounds,
     expandBounds(
@@ -152,10 +152,10 @@ function rotatedBoxBounds(box: BoxShapeElementV1 | TableElementV1): Bounds {
 
 function coordinateSystemBounds(system: CoordinateSystemElementV1): Bounds {
   const origin = rotatedFor(system, system.origin);
-  const size = nodeSize(system.style.outlineWidth);
   let bounds = boundsFromPoints([origin]);
   for (const axisValue of system.axes) {
     const endpoint = rotatedFor(system, axisValue);
+    const size = nodeSize(system.style.outlineWidth, origin, endpoint);
     const axisBounds = expandBounds(
       boundsFromPoints([origin, endpoint]),
       system.style.outlineWidth / 2,

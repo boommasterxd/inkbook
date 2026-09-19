@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { collapsedElements } from "../../../fixtures/domain/collapsed-elements";
 
 import { FILE_SCHEMA_LIMITS, validateInkElementV1 } from "../../../../src/domain/schema/public";
 import {
@@ -12,6 +13,11 @@ import {
 } from "./fixtures";
 
 describe("InkElementV1 validation", () => {
+  it.each([0, 0.001])("accepts zero and tiny geometry at size %s", (size) => {
+    for (const element of collapsedElements(size)) {
+      expect(validateInkElementV1(element), element.kind).toMatchObject({ ok: true });
+    }
+  });
   it.each([
     stroke(),
     stroke(8, "highlighter"),
@@ -72,8 +78,9 @@ describe("InkElementV1 invalid input validation", () => {
       { ...stroke(1, "highlighter"), style: { ...stroke().style, pressureEnabled: true } },
       "invalid-literal",
     ],
-    ["short line", { ...line(), end: { x: 207.999, y: 150 } }, "invalid-range"],
-    ["small shape", { ...rectangle(), width: 0.999 }, "invalid-range"],
+    ["nonfinite line", { ...line(), end: { x: Infinity, y: 150 } }, "invalid-number"],
+    ["negative shape width", { ...rectangle(), width: -0.001 }, "invalid-range"],
+    ["negative shape height", { ...rectangle(), height: -0.001 }, "invalid-range"],
     ["wrong shape pivot", { ...rectangle(), pivot: { x: 151, y: 150 } }, "invalid-range"],
     [
       "coordinate pivot mismatch",
@@ -81,17 +88,18 @@ describe("InkElementV1 invalid input validation", () => {
       "invalid-range",
     ],
     [
-      "short coordinate axis",
+      "nonfinite coordinate axis",
       {
         ...coordinateSystem(),
         axes: [
-          { x: 439.999, y: 400 },
+          { x: NaN, y: 400 },
           { x: 400, y: 300 },
         ],
       },
-      "invalid-range",
+      "invalid-number",
     ],
-    ["table column minimum", { ...table(), columnWidth: 39.999 }, "invalid-range"],
+    ["negative table column width", { ...table(), columnWidth: -0.001 }, "invalid-range"],
+    ["negative table height", { ...table(), height: -0.001 }, "invalid-range"],
     ["table header below outer bounds", { ...table(), headerHeight: -0.001 }, "invalid-range"],
     ["table header above outer bounds", { ...table(), headerHeight: 80.001 }, "invalid-range"],
     ["table column offset count", { ...table(), columnOffsets: [40] }, "invalid-range"],

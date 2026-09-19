@@ -42,7 +42,7 @@ describe("active editor table structure handles", () => {
     });
     previewTableDrag(fixture.interaction, standardStart, nearStandard);
     expect(latestTable(fixture.previews, table.id)).toMatchObject({ headerHeight: standard });
-    expect(fixture.overlays[fixture.overlays.length - 1]).toContain("M 225 -14 L 225 314");
+    expect(fixture.overlays[fixture.overlays.length - 1]).toContain("M 225 26 L 225 274");
     expect(fixture.interaction.pointerUp(standardStart.pointerId)).toBe(true);
     expect(requireTable(fixture.store.get(table.id)?.element).headerHeight).toBe(standard);
   });
@@ -71,7 +71,7 @@ describe("active editor table structure handles", () => {
     });
     previewTableDrag(fixture.interaction, standardStart, nearStandard);
     expect(latestTable(fixture.previews, table.id)).not.toHaveProperty("columnOffsets");
-    expect(fixture.overlays[fixture.overlays.length - 1]).toContain("M 314 150 L 86 150");
+    expect(fixture.overlays[fixture.overlays.length - 1]).toContain("M 274 150 L 126 150");
     expect(fixture.interaction.pointerUp(standardStart.pointerId)).toBe(true);
     expect(fixture.store.get(table.id)?.element).not.toHaveProperty("columnOffsets");
   });

@@ -7,7 +7,7 @@ import {
 } from "../../domain/settings";
 import type { RefreshRateProfileStatus } from "../performance";
 import type { SettingsControlKey } from "./control-values";
-import { dropdown, resetAction, sentenceCaseLabel } from "./definition-helpers";
+import { dropdown, resetAction, sentenceCaseLabel, toggle } from "./definition-helpers";
 
 const createLabels = (values: readonly string[]): Record<string, string> =>
   Object.fromEntries(values.map((value) => [value, sentenceCaseLabel(value)]));
@@ -52,6 +52,11 @@ export function generalGroup(
         "Startup tool",
         "Choose the tool selected when an editor opens.",
         createLabels(STARTUP_TOOLS),
+      ),
+      toggle(
+        "selectionHighlightsEnabled",
+        "Selection highlights",
+        "Show inner selection edge highlights. Lines and arrows always keep their center selection trace.",
       ),
       dropdown(
         "refreshRatePreference",

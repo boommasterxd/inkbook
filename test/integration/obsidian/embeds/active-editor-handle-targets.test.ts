@@ -233,7 +233,7 @@ describe("active editor selection snap guides", () => {
       x: shape.pivot.x + 98,
       y: shape.pivot.y,
     });
-    expect(rotation.overlays[rotation.overlays.length - 1]).toBe("M 64 170 L 364 170");
+    expect(rotation.overlays[rotation.overlays.length - 1]).toBe("M 104 170 L 324 170");
     rotation.interaction.cancel(24);
 
     const linear = line();
@@ -241,7 +241,7 @@ describe("active editor selection snap guides", () => {
     bend.interaction.pointerDown({ pointerId: 25, pointerType: "touch", x: 30, y: 30 });
     bend.interaction.pointerMove({ pointerId: 25, pointerType: "touch", x: 32, y: 32 });
     expect(bend.overlays[bend.overlays.length - 1]).toContain(
-      "M -35.25483399593904 -35.25483399593904 L 95.25483399593904 95.25483399593904",
+      "M -6.970562748477139 -6.970562748477139 L 66.97056274847714 66.97056274847714",
     );
     bend.interaction.cancel(25);
   });
@@ -271,8 +271,8 @@ describe("active editor selection snap guides", () => {
       system.pivot,
       90,
     );
-    expect(distance(guide.start, opposite)).toBeCloseTo(64, 8);
-    expect(distance(guide.end, rotatedHandle)).toBeCloseTo(64, 8);
+    expect(distance(guide.start, opposite)).toBeCloseTo(24, 8);
+    expect(distance(guide.end, rotatedHandle)).toBeCloseTo(24, 8);
     expect(pointLineDistance(boxAnchor, guide)).toBeCloseTo(0, 8);
     expect(pointLineDistance(opposite, guide)).toBeCloseTo(0, 8);
     expect(pointLineDistance(rotatedHandle, guide)).toBeCloseTo(0, 8);
@@ -291,7 +291,7 @@ describe("active editor selection snap guides", () => {
 
     fixture.interaction.pointerDown(start);
     fixture.interaction.pointerMove({ ...start, x: 100, y: 100 });
-    expect(fixture.overlays[fixture.overlays.length - 1]).toContain("M 76 100 L 124 100");
+    expect(fixture.overlays[fixture.overlays.length - 1]).toContain("M 88 100 L 112 100");
     expect(fixture.overlays[fixture.overlays.length - 1]).not.toContain("Z");
     fixture.interaction.pointerUp(start.pointerId);
     const connected = fixture.store.get(selectedLine.id)?.element;
@@ -381,7 +381,7 @@ describe("active editor endpoint straightening", () => {
 
     expect(fixture.interaction.pointerMove({ ...start, x: 50, y: 70 })).toBe(true);
     expect(fixture.overlays[fixture.overlays.length - 1]).toBe(
-      "M -25.500812558414665 -43.251218837622 L 85.50081255841467 123.25121883762199",
+      "M -3.3128047094054995 -9.96920706410825 L 63.3128047094055 89.96920706410825",
     );
     expect(fixture.store.get(curved.id)?.element).toMatchObject({ bend: { x: 30, y: 40 } });
 

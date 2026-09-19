@@ -180,7 +180,7 @@ describe("SelectionHandleSession", () => {
 });
 
 describe("SelectionHandleSession geometry boundaries", () => {
-  it("clamps endpoint length and scale-handle crossing at their geometry minima", () => {
+  it("collapses endpoints and scale handles to zero without mirroring", () => {
     const line = freeLine();
     const lineStore = new ElementStore([line]);
     const endpoint = new SelectionHandleSession({
@@ -195,7 +195,7 @@ describe("SelectionHandleSession geometry boundaries", () => {
     const changedLine = lineCommit.replacements[0] as LineElementV1;
     expect(
       Math.hypot(changedLine.end.x - changedLine.start.x, changedLine.end.y - changedLine.start.y),
-    ).toBe(8);
+    ).toBe(0);
 
     const shape = rectangle();
     const shapeStore = new ElementStore([shape]);
@@ -213,7 +213,7 @@ describe("SelectionHandleSession geometry boundaries", () => {
     resize.update({ x: 50, y: 150 });
     const shapeCommit = resize.prepareCommit();
     if (shapeCommit.status !== "ready") throw new Error("Expected a clamped shape commit.");
-    expect(shapeCommit.replacements[0]).toMatchObject({ width: 1, x: 102 });
+    expect(shapeCommit.replacements[0]).toMatchObject({ width: 0, x: 102 });
   });
 
   it("rotates a target and resolves its dependent endpoint in the same preview", () => {
@@ -297,7 +297,7 @@ describe("SelectionHandleSession coordinate handles", () => {
     const changedSystem = axisCommit.replacements[0];
     expect(changedSystem?.kind).toBe("coordinate-system");
     if (changedSystem?.kind !== "coordinate-system") throw new Error("Expected a system.");
-    expect(changedSystem.axes[0]).toEqual({ x: 340, y: 300 });
+    expect(changedSystem.axes[0]).toEqual(system.origin);
     store.replaceMany(axisCommit.replacements);
 
     const origin = new SelectionHandleSession({

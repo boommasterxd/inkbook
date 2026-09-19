@@ -1,12 +1,6 @@
-import {
-  rotatePointClockwise,
-  tableColumnOffsets,
-  tableWidth,
-} from "../../../domain/geometry/public";
-import type { InkElementV1, PointV1 } from "../../../domain/schema/public";
+import type { PointV1 } from "../../../domain/schema/public";
 import {
   selectionOverlayGeometry,
-  transformSelectionPoint,
   type SelectedElementGeometry,
   type OrientedSelectionFrame,
   type SelectionOutline,
@@ -43,57 +37,16 @@ export function selectionOverlayPaths(
         )
       : prepared;
   if (geometry === null) return { handles: null, outline: null };
-  const outlineParts = [outlinePath(geometry.outline, options.pageToScreen)];
-  outlineParts.push(...structuralEditPaths(selected, options));
+
   return {
     handles: geometry.handles
       .map((handle) => screenCircle(options.pageToScreen(handle.point)))
       .join(" "),
-    outline: outlineParts.join(" "),
+    outline:
+      geometry.outline.kind === "linear"
+        ? null
+        : outlinePath(geometry.outline, options.pageToScreen),
   };
-}
-
-function structuralEditPaths(
-  selected: readonly SelectedElementGeometry[],
-  options: SelectionOverlayPathOptions,
-): string[] {
-  const element = selected.length === 1 ? selected[0]?.element : undefined;
-  if (element === undefined) return [];
-  const project = (point: PointV1): PointV1 =>
-    options.pageToScreen(
-      options.transform === null || options.transform === undefined
-        ? point
-        : transformSelectionPoint(point, options.transform),
-    );
-  return structuralEditSegments(element).map(([start, end]) => {
-    const projectedStart = project(start);
-    const projectedEnd = project(end);
-    return `M ${String(projectedStart.x)} ${String(projectedStart.y)} L ${String(projectedEnd.x)} ${String(projectedEnd.y)}`;
-  });
-}
-
-function structuralEditSegments(element: InkElementV1): Array<readonly [PointV1, PointV1]> {
-  if (element.kind === "coordinate-system") {
-    const origin = rotatePointClockwise(element.origin, element.pivot, element.rotation);
-    return element.axes.map((axis) => [
-      origin,
-      rotatePointClockwise(axis, element.pivot, element.rotation),
-    ]);
-  }
-  if (element.kind !== "table") return [];
-  const rotate = (point: PointV1): PointV1 =>
-    rotatePointClockwise(point, element.pivot, element.rotation);
-  const horizontal: readonly [PointV1, PointV1] = [
-    rotate({ x: element.x, y: element.y + element.headerHeight }),
-    rotate({ x: element.x + tableWidth(element), y: element.y + element.headerHeight }),
-  ];
-  return [
-    horizontal,
-    ...tableColumnOffsets(element).map((offset): readonly [PointV1, PointV1] => [
-      rotate({ x: element.x + offset, y: element.y }),
-      rotate({ x: element.x + offset, y: element.y + element.height }),
-    ]),
-  ];
 }
 
 export function selectionOverlayFill(
@@ -105,16 +58,10 @@ export function selectionOverlayFill(
     : "accent";
 }
 
-function outlinePath(outline: SelectionOutline, project: (point: PointV1) => PointV1): string {
-  if (outline.kind === "linear") {
-    const start = project(outline.start);
-    const end = project(outline.end);
-    if (outline.bend === null) {
-      return `M ${String(start.x)} ${String(start.y)} L ${String(end.x)} ${String(end.y)}`;
-    }
-    const bend = project(outline.bend);
-    return `M ${String(start.x)} ${String(start.y)} Q ${String(bend.x)} ${String(bend.y)} ${String(end.x)} ${String(end.y)}`;
-  }
+function outlinePath(
+  outline: Extract<SelectionOutline, { kind: "polygon" }>,
+  project: (point: PointV1) => PointV1,
+): string {
   const [first, ...remaining] = outline.points.map(project);
   if (first === undefined) throw new RangeError("A selection polygon needs at least one point.");
   const parts = [`M ${String(first.x)} ${String(first.y)}`];

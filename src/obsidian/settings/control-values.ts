@@ -9,6 +9,7 @@ import { InkbookSettingsStore } from "./storage";
 
 type VaultControlKey =
   | "startupTool"
+  | "selectionHighlightsEnabled"
   | "refreshRatePreference"
   | "filePlacement.mode"
   | "filePlacement.folder"

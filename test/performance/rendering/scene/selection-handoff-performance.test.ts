@@ -1,18 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { InkElementV1, PageV1 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { moveSelectionTimeSliced } from "../../../../src/editor/selection/public";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
-import { SvgSceneRenderer } from "../../../../src/rendering/scene";
+import type { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
-import {
-  FakeDocument,
-  FakeNode,
-  FakeScheduler,
-  asElement,
-  fakeNode,
-} from "../../../unit/rendering/scene/fakes";
+import { fakeNode } from "../../../unit/rendering/scene/fakes";
+import { createSceneFixture } from "../../../fixtures/rendering/scene";
 import { CheckpointSliceScheduler } from "../../domain/domain-scenarios";
 
 const ELEMENT_COUNT = 10_000;
@@ -30,16 +25,15 @@ describe("selection preview handoff performance", () => {
     const elements = Array.from({ length: ELEMENT_COUNT }, (_, index) => indexedStroke(index));
     const ids = elements.map(({ id }) => id);
     const store = new ElementStore(elements);
-    const scheduler = new FakeScheduler();
-    const renderer = new SvgSceneRenderer({
-      container: asElement(new FakeNode(new FakeDocument(), "div")),
-      layout: { readViewport: () => ({ height: 100, left: 0, top: 0, width: 100 }) },
-      page: PAGE,
-      scheduler,
-      store: new ElementSceneStore(store),
+    const { renderer, scheduler } = createSceneFixture(PAGE, new ElementSceneStore(store), {
+      height: 100,
+      left: 0,
+      top: 0,
+      width: 100,
     });
     renderer.setPage(PAGE, 200_000);
     scheduler.runAll();
+    verifyBoundedSelectionClip(renderer, store);
     let notifications = 0;
     const unsubscribe = store.subscribe((delta) => {
       notifications += 1;
@@ -94,6 +88,32 @@ describe("selection preview handoff performance", () => {
     expect(notifications).toBe(HANDOFF_TRANSITIONS);
   }, 180_000);
 });
+
+function verifyBoundedSelectionClip(renderer: SvgSceneRenderer, store: ElementStore): void {
+  const defs = fakeNode(renderer.svg).nodes[3]!;
+  const clip = defs.nodes.find(({ tagName }) => tagName === "clipPath")!.nodes[0]!;
+  const writes = vi.spyOn(clip, "setAttribute");
+  const reads = vi.spyOn(store, "get");
+  renderer.resetInstrumentation();
+  const first = "M 0 0 L 100 0 L 100 50 L 0 50 Z";
+  const moved = "M 1 1 L 101 1 L 101 51 L 1 51 Z";
+  for (const path of [first, first, moved, moved]) {
+    renderer.setSelectionOverlayPath(path);
+    renderer.flushPointerFeedbackFrame();
+  }
+  expect(writes.mock.calls).toEqual([
+    ["d", first],
+    ["d", moved],
+  ]);
+  expect(reads).not.toHaveBeenCalled();
+  expect(renderer.instrumentation()).toMatchObject({
+    contentAttributeWrites: 0,
+    geometryBuilds: 0,
+    spatialQueries: 0,
+  });
+  writes.mockRestore();
+  reads.mockRestore();
+}
 
 function transformedContentCount(renderer: SvgSceneRenderer): number {
   const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;

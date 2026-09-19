@@ -6,18 +6,18 @@
 - Every value available in a tool's Style menu MUST have a configurable default for that tool.
 - Changing a default affects newly created elements only. It never rewrites existing elements.
 - Settings UI rejects invalid values and does not persist them. On load, an invalid persisted field falls back to its documented built-in default; the loader does not silently clamp it.
-- The vault settings schema is version 4. A completely valid version 3 value is migrated by adding the built-in Select and snapping defaults while preserving every existing value. A valid earlier version 4 value without snapping settings loads with built-in snapping defaults. Versions 1, 2, and unknown versions remain unsupported and fall back to built-in defaults. Device-local settings use their independent version 2 schema and migrate valid version 1 values.
+- The vault settings schema is version 4. A completely valid version 3 value is migrated by adding the built-in Select and snapping defaults while preserving every existing value. A valid earlier version 4 value without snapping settings or `selectionHighlightsEnabled` loads with the corresponding built-in defaults. Versions 1, 2, and unknown versions remain unsupported and fall back to built-in defaults. Device-local settings use their independent version 2 schema and migrate valid version 1 values.
 
 ## Scope and Precedence
 
 Settings have four scopes:
 
-| Scope            | Storage                | Examples                                                                |
-| ---------------- | ---------------------- | ----------------------------------------------------------------------- |
-| Vault            | Obsidian plugin data   | Tool defaults, snapping, page defaults, placement, refresh-rate mode    |
-| Device and vault | Obsidian local storage | Finger drawing, pen-tap insertion, handedness, motion, canvas shortcuts |
-| File             | Editable SVG snapshot  | Current background type and spacing, element styles                     |
-| Session          | Memory only            | Current tool, current menu values, finger toggle, zoom, camera position |
+| Scope            | Storage                | Examples                                                                                   |
+| ---------------- | ---------------------- | ------------------------------------------------------------------------------------------ |
+| Vault            | Obsidian plugin data   | Tool defaults, selection highlights, snapping, page defaults, placement, refresh-rate mode |
+| Device and vault | Obsidian local storage | Finger drawing, pen-tap insertion, handedness, motion, canvas shortcuts                    |
+| File             | Editable SVG snapshot  | Current background type and spacing, element styles                                        |
+| Session          | Memory only            | Current tool, current menu values, finger toggle, zoom, camera position                    |
 
 Vault settings use `Plugin.loadData()` and `Plugin.saveData()`. Device settings use `App.loadLocalStorage("inkbook:device-settings:v2")` and `App.saveLocalStorage(...)`. They are local to the current device and vault and contain preferences only, never vault paths, note content, clipboard data, or ink data.
 
@@ -36,6 +36,7 @@ On editor activation, session tool values are initialized from vault defaults. S
 interface InkbookSettingsV4 {
   version: 4;
   startupTool: StartupToolV1;
+  selectionHighlightsEnabled: boolean;
   toolDefaults: ToolDefaultsV1;
   snapping: SnappingSettingsV1;
   pageDefaults: PageDefaultsV3;
@@ -94,6 +95,12 @@ Select owns two independent session and vault defaults:
 - inclusion: `fully-enclosed` or `touched`; built-in `touched`
 
 Rectangle uses the drag start and current pointer as opposite corners. Lasso records at most 512 simplified freeform pointer points and treats the resulting path as closed. Touched includes an element when any visible painted geometry intersects or lies within the area. Fully enclosed includes it only when all visible painted geometry, including stroke width and arrow nodes, lies within the area. These values affect selection behavior only, never existing elements or Inkbook files. The Style menu changes the active editor session, while Settings changes the vault default used by subsequently activated editors.
+
+## Selection Highlights
+
+`selectionHighlightsEnabled` is a vault preference exposed as **Selection highlights** in General settings. It defaults to `true` and controls the inner selection edge on annotations, including handwriting, both highlighter tools, closed shapes, tables, and coordinate systems. This includes lines and arrows; disabling the preference removes their inner edge but always retains their additional center trace. The visual contract is defined in [Editor Tools](editor-tools.md#select). The selection frame and its handles remain visible independently of this preference; selection geometry, hit testing, transforms, history, and saved document content are unchanged.
+
+Changing the preference updates all active presentations, including pop-outs, immediately. Disabling it releases all edge-source and filter nodes and pending highlight work while preserving line and arrow center traces; enabling it rebuilds highlights only for mounted selected elements through the existing bounded rendering slices. Missing values in supported older settings load as `true`; invalid values fall back to `true` with an invalid-field diagnostic. General and full settings resets restore `true`.
 
 ## Snapping
 

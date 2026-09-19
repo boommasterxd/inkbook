@@ -15,6 +15,7 @@ describe("settings defaults", () => {
     expect(settings).toMatchObject({
       version: 4,
       startupTool: "draw",
+      selectionHighlightsEnabled: true,
       refreshRatePreference: "auto",
     });
     expect(settings.pageDefaults).toEqual({

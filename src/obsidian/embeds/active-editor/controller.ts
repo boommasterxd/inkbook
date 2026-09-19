@@ -87,8 +87,7 @@ export class ActiveEditorController {
     [this.#model, this.#interruptLayoutForInput] = [options.model, options.interruptLayoutForInput];
     [this.#onLock, this.#onStateChanged] = [options.onLock, options.onStateChanged];
     this.#chromeState = new ActiveEditorChromeState(this.#onStateChanged);
-    const ownerWindow = options.container.ownerDocument.defaultView;
-    if (ownerWindow === null) throw new Error("The active editor requires an owning window.");
+    const ownerWindow = Helpers.activeEditorWindow(options.container);
     this.#ownerWindow = ownerWindow;
     [this.#longPress, this.#renderIcon] = [
       new ActiveEditorLongPressScheduler(ownerWindow),
@@ -493,6 +492,7 @@ export class ActiveEditorController {
     if (selection === this.#selection) return;
     if (!Helpers.sameSelectionMembers(selection, this.#selection)) this.#selectionFrames.reset();
     this.#selection = selection;
+    this.#renderer.setSelectedElements(selection);
     this.#input = { ...this.#input, hasSelection: selection.size > 0 };
     this.#handles.renderSelection();
     this.#onStateChanged();

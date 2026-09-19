@@ -84,7 +84,9 @@ describe("selection move snapping", () => {
   });
 
   it("does not snap to a shape inside the moving selection", () => {
-    expect(resolve(line(), { selectedTarget: true }).result).toBeNull();
+    const { query, result } = resolve(line(), { selectedTarget: true });
+    expect(result).toBeNull();
+    expect(query).not.toHaveBeenCalled();
   });
 
   it("leaves already connected endpoints attached and narrows acquisition at high zoom", () => {
@@ -100,12 +102,12 @@ describe("selection move snapping", () => {
     expect(resolve(line(), { zoom: 4 }).result).toBeNull();
   });
 
-  it("does not add endpoint searches to oversized group moves", () => {
+  it.each([0, 2, 1_001])("does not query snap targets for %i moving elements", (count) => {
     const query = vi.fn();
 
     const result = resolveSelectionMoveSnap({
       current: null,
-      elements: new Array(1_001).fill(line()),
+      elements: new Array(count).fill(line()),
       pointerType: "touch",
       rawDelta: { x: 1, y: 1 },
       scratch: new SnapCandidateScratch(),

@@ -2,7 +2,6 @@ import {
   assertFinitePoint,
   canonicalPoint,
   normalizeRotation,
-  pointDistance,
   rotatePointClockwise,
   roundCanonical,
 } from "../../domain/geometry/public";
@@ -62,10 +61,6 @@ export async function moveSelectionTimeSliced(
   return (scheduler.isCancelled?.() ?? false) ? null : replacements;
 }
 
-export function minimumUniformScaleForSelection(elements: readonly InkElementV1[]): number {
-  return elements.reduce((value, element) => Math.max(value, minimumUniformScale(element)), 0);
-}
-
 export function uniformScaleFactorFromPointers(
   anchor: PointV1,
   startPointer: PointV1,
@@ -97,18 +92,8 @@ export function editCoordinateAxis(
   const current = element.axes[axisIndex];
   if (current === undefined) throw new RangeError("Coordinate axis index is out of range.");
   assertFinitePoint(point);
-  const distance = pointDistance(element.origin, point);
-  const adjusted =
-    distance >= 40
-      ? point
-      : distance === 0
-        ? { x: element.origin.x + 40, y: element.origin.y }
-        : {
-            x: element.origin.x + ((point.x - element.origin.x) * 40) / distance,
-            y: element.origin.y + ((point.y - element.origin.y) * 40) / distance,
-          };
   const axes = [...element.axes] as PointV1[];
-  axes[axisIndex] = canonicalPoint(adjusted);
+  axes[axisIndex] = canonicalPoint(point);
   return element.dimension === "2d"
     ? { ...element, axes: [axes[0]!, axes[1]!] }
     : { ...element, axes: [axes[0]!, axes[1]!, axes[2]!] };
@@ -122,9 +107,6 @@ export function editCoordinateOrigin(
   const worldAxes = element.axes.map((axis) =>
     rotatePointClockwise(axis, element.pivot, element.rotation),
   );
-  if (worldAxes.some((axis) => pointDistance(point, axis) < 40)) {
-    throw new RangeError("Coordinate axes must remain at least 40 page units long.");
-  }
   const origin = canonicalPoint(point);
   const axes = worldAxes.map((axis) =>
     canonicalPoint(rotatePointClockwise(axis, origin, -element.rotation)),
@@ -329,39 +311,6 @@ export function scaleElement(
     height,
     pivot: canonicalPoint({ x: topLeft.x + width / 2, y: topLeft.y + height / 2 }),
   };
-}
-
-function minimumUniformScale(element: InkElementV1): number {
-  if (element.kind === "table") {
-    return Math.max(40 / element.columnWidth, 80 / element.height);
-  }
-  if (element.kind === "coordinate-system") {
-    return Math.max(...element.axes.map((axis) => 40 / pointDistance(element.origin, axis)));
-  }
-  if (isLinearElement(element)) return 8 / pointDistance(element.start, element.end);
-  if (element.kind === "stroke") return 0;
-  return Math.max(1 / element.width, 1 / element.height);
-}
-
-export function clampScaleFactors(element: InkElementV1, factors: ScaleFactors): ScaleFactors {
-  if (element.kind === "table") {
-    return {
-      x: Math.max(factors.x, 40 / element.columnWidth),
-      y: Math.max(factors.y, 80 / element.height),
-    };
-  }
-  if (
-    element.kind !== "stroke" &&
-    !isLinearElement(element) &&
-    element.kind !== "coordinate-system"
-  ) {
-    return {
-      x: Math.max(factors.x, 1 / element.width),
-      y: Math.max(factors.y, 1 / element.height),
-    };
-  }
-  const scaledMinimum = minimumUniformScale(element);
-  return { x: Math.max(factors.x, scaledMinimum), y: Math.max(factors.y, scaledMinimum) };
 }
 
 function shouldTransformEndpoint(element: LinearElementV1, endpoint: "start" | "end"): boolean {

@@ -253,9 +253,6 @@ function assertLinearGeometry(
   assertPoint(value.start, `${path}.start`, context);
   assertPoint(value.end, `${path}.end`, context);
   if (value.bend !== null) assertPoint(value.bend, `${path}.bend`, context);
-  const distance = Math.hypot(value.end.x - value.start.x, value.end.y - value.start.y);
-  if (distance < 8)
-    fail("invalid-range", path, "Linear elements must be at least 8 page units long.");
 }
 
 function assertConnection(
@@ -311,8 +308,8 @@ function assertBoxShape(value: UnknownRecord, path: string, context: ValidationC
   assertGeometryNumber(value.y, `${path}.y`, context.limits.absoluteCoordinate);
   assertGeometryNumber(value.width, `${path}.width`, context.limits.absoluteCoordinate);
   assertGeometryNumber(value.height, `${path}.height`, context.limits.absoluteCoordinate);
-  if (value.width < 1 || value.height < 1) {
-    fail("invalid-range", path, "Closed shape width and height must be at least 1.");
+  if (value.width < 0 || value.height < 0) {
+    fail("invalid-range", path, "Closed shape width and height must be nonnegative.");
   }
   assertShapeStyle(value.style, `${path}.style`);
   assertCenteredPivot(value, value.width, `${path}.pivot`);
@@ -334,14 +331,6 @@ function assertCoordinateSystem(
   }
   for (let index = 0; index < value.axes.length; index += 1) {
     assertPoint(value.axes[index], `${path}.axes[${index}]`, context);
-    const axis = value.axes[index] as PointV1;
-    if (Math.hypot(axis.x - value.origin.x, axis.y - value.origin.y) < 40) {
-      fail(
-        "invalid-range",
-        `${path}.axes[${index}]`,
-        "Coordinate-system axes must be at least 40 page units long.",
-      );
-    }
   }
   assertOutlineStyle(value.style, `${path}.style`);
   const pivot = value.pivot as PointV1;
@@ -378,8 +367,8 @@ function assertTable(value: UnknownRecord, path: string, context: ValidationCont
     `${path}.headerHeight`,
     context.limits.absoluteCoordinate,
   );
-  if (value.columnWidth < 40 || value.height < 80) {
-    fail("invalid-range", path, "Table dimensions are below their minimum.");
+  if (value.columnWidth < 0 || value.height < 0) {
+    fail("invalid-range", path, "Table dimensions must be nonnegative.");
   }
   if (value.headerHeight < 0 || value.headerHeight > value.height) {
     fail(

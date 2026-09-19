@@ -28,7 +28,9 @@ export class SceneDom {
   public readonly livePath: SVGPathElement;
   public readonly motionGroup: SVGGElement;
   public readonly overlayPath: SVGPathElement;
+  public readonly selectionTraceGroup: SVGGElement;
   public readonly selectionOverlayPath: SVGPathElement;
+  public readonly selectionClipPath: SVGPathElement;
   public readonly selectionHandlePath: SVGPathElement;
   public readonly snapMarkerPath: SVGPathElement;
   public readonly ownerDocument: Document;
@@ -37,6 +39,7 @@ export class SceneDom {
   readonly #backgroundPattern: SVGPatternElement;
   readonly #backgroundPatternPath: SVGPathElement;
   readonly #backgroundPatternId: string;
+  #selectionClipD = "";
   #livePathBand: RenderBand = "content";
   #liveStrokeBand: RenderBand = "content";
   readonly #listeners: { name: InputEventName; listener: EventListener }[] = [];
@@ -60,7 +63,9 @@ export class SceneDom {
     this.liveStrokeGroup = this.createSvg("g");
     const overlayGroup = this.createSvg("g");
     this.overlayPath = this.createSvg("path");
+    this.selectionTraceGroup = this.createSvg("g");
     this.selectionOverlayPath = this.createSvg("path");
+    this.selectionClipPath = this.createSvg("path");
     this.selectionHandlePath = this.createSvg("path");
     this.snapMarkerPath = this.createSvg("path");
     const themeStyle = this.createSvg("style");
@@ -99,13 +104,7 @@ export class SceneDom {
     overlayGroup.setAttribute("pointer-events", "none");
     overlayGroup.setAttribute("class", "inkbook-scene-overlays inkbook-scene-foreground");
     this.livePath.setAttribute("pointer-events", "none");
-    this.overlayPath.setAttribute("pointer-events", "none");
-    this.overlayPath.setAttribute("fill-rule", "evenodd");
-    this.selectionOverlayPath.setAttribute("class", "inkbook-selection-overlay");
-    this.selectionOverlayPath.setAttribute("data-selection-fill", "accent");
-    this.selectionHandlePath.setAttribute("class", "inkbook-selection-handles");
-    this.snapMarkerPath.setAttribute("class", "inkbook-snap-guide");
-    this.snapMarkerPath.setAttribute("pointer-events", "none");
+    this.configureSelectionOverlays();
     themeStyle.textContent = ACTIVE_THEME_STYLESHEET;
 
     this.cameraGroup.append(
@@ -117,6 +116,7 @@ export class SceneDom {
       this.liveGroup,
       this.liveStrokeGroup,
       this.motionGroup,
+      this.selectionTraceGroup,
     );
     this.liveGroup.append(this.livePath);
     overlayGroup.append(
@@ -126,7 +126,7 @@ export class SceneDom {
       this.snapMarkerPath,
     );
     const defs = this.createSvg("defs");
-    defs.append(this.#backgroundPattern);
+    defs.append(this.#backgroundPattern, this.createSelectionClip());
     this.svg.append(themeStyle, this.cameraGroup, overlayGroup, defs);
 
     this.inputSurface.tabIndex = 0;
@@ -238,6 +238,38 @@ export class SceneDom {
     this.#listeners.length = 0;
     this.inputSurface.remove();
     this.svg.remove();
+  }
+
+  public setSelectionClip(path: string): boolean {
+    if (path === this.#selectionClipD) return false;
+    this.selectionClipPath.setAttribute("d", path);
+    this.#selectionClipD = path;
+    return true;
+  }
+
+  private createSelectionClip(): SVGClipPathElement {
+    const clip = this.createSvg("clipPath");
+    const id = `${this.#backgroundPatternId}-selection`;
+    clip.setAttribute("id", id);
+    clip.setAttribute("clipPathUnits", "userSpaceOnUse");
+    clip.append(this.selectionClipPath);
+    this.selectionOverlayPath.setAttribute("clip-path", `url(#${id})`);
+    return clip;
+  }
+
+  private configureSelectionOverlays(): void {
+    this.overlayPath.setAttribute("class", "inkbook-selection-area-preview");
+    this.overlayPath.setAttribute("fill-rule", "evenodd");
+    this.selectionTraceGroup.setAttribute(
+      "class",
+      "inkbook-selection-traces inkbook-scene-foreground",
+    );
+    this.selectionTraceGroup.setAttribute("pointer-events", "none");
+    this.selectionOverlayPath.setAttribute("class", "inkbook-selection-overlay");
+    this.selectionOverlayPath.setAttribute("data-selection-fill", "accent");
+    this.selectionHandlePath.setAttribute("class", "inkbook-selection-handles");
+    this.snapMarkerPath.setAttribute("class", "inkbook-snap-guide");
+    this.snapMarkerPath.setAttribute("pointer-events", "none");
   }
 
   private createSvg<K extends keyof SVGElementTagNameMap>(name: K): SVGElementTagNameMap[K] {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { calculateElementBounds } from "../../../src/domain/geometry/public";
 import { LassoSelectionSession } from "../../../src/editor/selection/lasso-selection-session";
@@ -11,6 +11,9 @@ import {
   elementMatchesSelectionArea,
 } from "../../../src/editor/selection/selection-area";
 import { indexedStroke } from "../../fixtures/editor/stroke";
+import { visitVisibleElementPrimitives } from "../../../src/editor/selection/element-selection-geometry";
+import { elementContainsPoint } from "../../../src/editor/selection/hit-test";
+import { coordinateSystem, rectangle } from "../../unit/domain/geometry/fixtures";
 import { maximumStroke } from "./maximum-stroke-fixture";
 
 describe("pressure selection hot path", () => {
@@ -22,6 +25,33 @@ describe("pressure selection hot path", () => {
 });
 
 describe("selection hot paths", () => {
+  it("keeps point and tiny-axis selection visits bounded by axis count", () => {
+    for (const length of [0, 0.001]) {
+      const origin = { x: 100, y: 100 };
+      const element = coordinateSystem();
+      element.origin = origin;
+      element.axes = [
+        { x: 100 + length, y: 100 },
+        { x: 100, y: 100 - length },
+      ];
+      const visit = vi.fn(() => true);
+      expect(visitVisibleElementPrimitives(element, visit)).toBe(true);
+      expect(visit).toHaveBeenCalledTimes(length === 0 ? 2 : 6);
+    }
+  });
+
+  it("bounds collapsed ellipse hit testing to four dimension reads", () => {
+    const dimensions = vi.fn(() => 0);
+    const element = rectangle({ kind: "ellipse", pivot: { x: 0, y: 0 } });
+    Object.defineProperties(element, {
+      width: { get: dimensions },
+      height: { get: dimensions },
+    });
+    expect(elementContainsPoint(element, { x: 0, y: 0 }, 0)).toBe(true);
+    // Two radius reads and two segment-end reads; no sampled ellipse path.
+    expect(dimensions).toHaveBeenCalledTimes(4);
+  });
+
   it("reduces a maximum coalesced lasso batch to bounded storage", () => {
     const samples = Array.from({ length: 4_096 }, (_, index) => ({
       x: index * 2,

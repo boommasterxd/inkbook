@@ -46,10 +46,7 @@ import {
 import type { PresentationOperationFeedbackHandle } from "./presentation-operation-feedback";
 import { WorkspaceRefreshProfiles } from "./workspace-refresh-profiles";
 import { WorkspaceFeedbackRouter, type WorkspaceFeedbackHost } from "./workspace-feedback-router";
-import {
-  TrustedDocumentHeadLedger,
-  type DeviceLocalStoragePort,
-} from "../storage/trusted-document-head-ledger";
+import * as trustedHeadStorage from "../storage/trusted-document-head-ledger";
 export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly #host: WorkspaceFeedbackHost;
   readonly #coordinator: WorkspaceEditorCoordinator;
@@ -76,13 +73,13 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     embedActions: ObsidianEmbedActions,
     host: WorkspaceFeedbackHost &
       Omit<EditorChromeOpenings, "confirmEraseAll"> & {
-        readonly deviceStorage?: DeviceLocalStoragePort;
+        readonly deviceStorage?: trustedHeadStorage.DeviceLocalStoragePort;
       },
   ) {
     const trustedHeads =
       host.deviceStorage === undefined
         ? undefined
-        : new TrustedDocumentHeadLedger(host.deviceStorage);
+        : new trustedHeadStorage.TrustedDocumentHeadLedger(host.deviceStorage);
     this.#host = host;
     this.#embedActions = embedActions;
     this.#fallbackOwnerWindow = host.fallbackOwnerWindow;
@@ -287,6 +284,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     this.refreshRateProfiles.setPreference(settings.refreshRatePreference);
     for (const mounted of this.#mounted.values()) {
       mounted.scene?.updateSnappingSettings(settings.snapping);
+      mounted.scene?.updateSelectionHighlights(settings.selectionHighlightsEnabled);
     }
   }
 

@@ -325,6 +325,18 @@ function hitLinear(
 function ellipseHit(ellipse: BoxShapeElementV1, point: PointV1, radius: number): boolean {
   const rx = ellipse.width / 2;
   const ry = ellipse.height / 2;
+  if (rx === 0 || ry === 0) {
+    return (
+      pointSegmentDistance(
+        point,
+        { x: ellipse.x, y: ellipse.y },
+        {
+          x: ellipse.x + ellipse.width,
+          y: ellipse.y + ellipse.height,
+        },
+      ) <= radius
+    );
+  }
   const center = { x: ellipse.x + rx, y: ellipse.y + ry };
   const normalized = Math.hypot((point.x - center.x) / rx, (point.y - center.y) / ry);
   const edgeTolerance = radius / Math.max(1, Math.min(rx, ry));

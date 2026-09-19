@@ -85,6 +85,8 @@ export function layoutSelectionHandles(
   if (selected.length === 0) return [];
   if (selected.length > 1) return multiSelectionHandles(selected, options);
   const item = selected[0]!;
+  if (item.element.kind === "stroke" && options.frame != null)
+    return orientedBoxHandles(options.frame.points, options.zoom, options.rotateOffsetPixels);
   return singleElementHandles(item.element, options);
 }
 
@@ -116,6 +118,7 @@ export function findSelectionHandle(
 }
 
 function handlePriority(handle: SelectionHandle | null): number {
+  if (handle?.kind === "coordinate-axis") return 2;
   return handle?.kind === "scale" || handle?.kind === "rotate" || handle === null ? 0 : 1;
 }
 

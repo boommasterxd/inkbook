@@ -1,8 +1,8 @@
 import type { PointV1 } from "../../../domain/schema/public";
 import type { SelectionSnapGuide } from "../../../editor/selection/public";
 
-const CONNECTION_SNAP_CROSS_RADIUS_CSS_PIXELS = 24;
-const SNAP_GUIDE_EXTENSION_CSS_PIXELS = 64;
+const CONNECTION_SNAP_CROSS_RADIUS_CSS_PIXELS = 12;
+const SNAP_GUIDE_EXTENSION_CSS_PIXELS = 24;
 
 export function snapMarkerPath(point: PointV1): string {
   return crossPath(point, CONNECTION_SNAP_CROSS_RADIUS_CSS_PIXELS);

@@ -39,6 +39,7 @@ export class SceneTransformPreviewController {
     this.#camera = camera;
     this.#viewport = viewport;
     this.#contextDirty = true;
+    this.#content.setSelectionContext({ camera, viewport });
   }
 
   public set(
@@ -88,6 +89,7 @@ export class SceneTransformPreviewController {
   }
 
   public write(): void {
+    this.#content.flushSelectionContext();
     for (const id of this.#dirty) {
       const preview = this.#transforms.get(id);
       if (preview !== undefined) {

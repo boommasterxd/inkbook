@@ -1,6 +1,7 @@
 import { movingSnapLine } from "./connected-input-fixture";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { resolvePointAngleSnap } from "../../../src/editor/selection/angular-snap";
 import { ElementStore } from "../../../src/domain/store/public";
 import {
   ConnectedSelectionPreviewSession,
@@ -21,6 +22,21 @@ import {
 const SNAP_TARGET_COUNT = 10_000;
 
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz snapping and connection profile`, () => {
+  it("skips angular projection work before the screen-length activation threshold", () => {
+    const angle = vi.spyOn(Math, "atan2");
+    try {
+      const input = { origin: { x: 0, y: 0 }, snapPixels: 5, stepDegrees: 90, zoom: 2 };
+      for (const x of [0, 1, 3.999]) {
+        expect(resolvePointAngleSnap({ ...input, point: { x, y: 0 } }).snapped).toBe(false);
+      }
+      expect(angle).not.toHaveBeenCalled();
+      expect(resolvePointAngleSnap({ ...input, point: { x: 4, y: 0 } }).snapped).toBe(true);
+      expect(angle).toHaveBeenCalledTimes(1);
+    } finally {
+      angle.mockRestore();
+    }
+  });
+
   it("keeps indexed semantic-anchor lookup with bounded work", () => {
     const { sceneStore, scratch, store, targets } = createSnapFixture();
     populateScratch(
@@ -88,6 +104,26 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz snapping and connection 
 
     expectSnapProfile({ allocationsBefore, matched, scratch, store });
 
+    sceneStore.release();
+  });
+});
+
+describe("multi-selection snap work", () => {
+  it("skips indexed endpoint lookup at every refresh rate for group movement", () => {
+    const { sceneStore, scratch, store, targets } = createSnapFixture();
+    const query = vi.spyOn(sceneStore, "query");
+    const read = vi.spyOn(sceneStore, "getSnapTarget");
+    const moving = movingSnapLine();
+    const selectedIds = new Set([moving.id, targets[1]!.id]);
+    const allocations = scratch.allocationCount;
+    store.resetInstrumentation();
+    runInteractionFrames((frame) => {
+      expect(findMoveSnap(sceneStore, scratch, moving, selectedIds, targets[0]!, frame)).toBeNull();
+    });
+    expect(query).not.toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
+    expect(scratch.allocationCount).toBe(allocations);
+    expect(store.instrumentation.fullStoreScans).toBe(0);
     sceneStore.release();
   });
 });
