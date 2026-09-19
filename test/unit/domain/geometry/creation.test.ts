@@ -7,6 +7,7 @@ import {
   createCoordinateSystemGeometry,
   createLinearGeometry,
   createTableGeometry,
+  defaultTableHeaderHeight,
   resolveShapeAnchor,
 } from "../../../../src/domain/geometry/public";
 import { shapeVertices } from "../../../../src/domain/geometry/creation";
@@ -142,4 +143,21 @@ describe("shape geometry creation", () => {
       Array.from({ length: 8 }, () => ({ x: 0, y: 0 })),
     );
   });
+});
+
+it.each([
+  [0, 0],
+  [0.001, 0],
+  [0.002, 0.001],
+  [0.003, 0.001],
+  [47.999, 23.999],
+  [48, 24],
+  [48.001, 24],
+  [96, 24],
+  [100, 25],
+])("keeps the default header at or below half of height %s", (height, expected) => {
+  expect(defaultTableHeaderHeight(height)).toBe(expected);
+  const created = createTableGeometry({ x: 0, y: 0 }, { x: 10, y: height });
+  expect(created.headerHeight).toBe(expected);
+  expect(created.headerHeight).toBeLessThanOrEqual(created.height / 2);
 });
