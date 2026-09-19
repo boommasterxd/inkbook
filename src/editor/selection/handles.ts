@@ -116,6 +116,7 @@ export function findSelectionHandle(
 }
 
 function handlePriority(handle: SelectionHandle | null): number {
+  if (handle?.kind === "coordinate-axis") return 2;
   return handle?.kind === "scale" || handle?.kind === "rotate" || handle === null ? 0 : 1;
 }
 

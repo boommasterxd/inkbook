@@ -1,12 +1,11 @@
-import { rotatePointClockwise } from "../../domain/geometry/public";
+import { pointDistance, rotatePointClockwise } from "../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 import type { SnapCandidate } from "../snapping/snap-candidate";
 
 import type { SelectionHandleAction, SelectionSnapGuide, SelectionSnapPorts } from "./handle-types";
-import { resolvePointAngleSnap } from "./angular-snap";
+import { ANGULAR_SNAP_MINIMUM_LENGTH_CSS_PIXELS, resolvePointAngleSnap } from "./angular-snap";
 import { linearBendSnapGuide } from "./linear-bend";
 import { isLinearElement, worldLinearEndpoint } from "./linear-elements";
-import { clampEndpoint } from "./handle-session-geometry";
 import { editLinearEndpointFromWorld } from "./linear-transforms";
 import { resolveRotationSnap } from "./rotation-snap";
 import { selectionSnapFeatureEnabled } from "./snap-features";
@@ -78,6 +77,11 @@ function linearEndpointGuide(
   const element = context.elements.find(({ id }) => id === action.elementId);
   if (element === undefined || !isLinearElement(element)) return null;
   const opposite = worldLinearEndpoint(element, action.endpoint === "start" ? "end" : "start");
+  if (
+    pointDistance(opposite, context.currentPointer) * selectionSnapZoom(context.snap) <
+    ANGULAR_SNAP_MINIMUM_LENGTH_CSS_PIXELS
+  )
+    return null;
   const result = resolvePointAngleSnap({
     origin: opposite,
     point: context.currentPointer,
@@ -85,12 +89,9 @@ function linearEndpointGuide(
     stepDegrees: 90,
     zoom: selectionSnapZoom(context.snap),
   });
-  const replacement = editLinearEndpointFromWorld(
-    element,
-    action.endpoint,
-    clampEndpoint(result.point, opposite),
-    { straightTolerance: HANDLE_SNAP_PIXELS / selectionSnapZoom(context.snap) },
-  );
+  const replacement = editLinearEndpointFromWorld(element, action.endpoint, result.point, {
+    straightTolerance: HANDLE_SNAP_PIXELS / selectionSnapZoom(context.snap),
+  });
   if (element.bend === null ? !result.snapped : replacement.bend !== null) return null;
   return {
     end: replacement[action.endpoint],
@@ -106,6 +107,12 @@ function bendSnapGuide(
   const { currentPointer, elements, snap } = context;
   const element = elements.find(({ id }) => id === action.elementId);
   if (element === undefined) throw new RangeError("The handle target is not selected.");
+  if (
+    isLinearElement(element) &&
+    pointDistance(element.start, element.end) * selectionSnapZoom(snap) <
+      ANGULAR_SNAP_MINIMUM_LENGTH_CSS_PIXELS
+  )
+    return null;
   const guide = linearBendSnapGuide(
     element,
     currentPointer,

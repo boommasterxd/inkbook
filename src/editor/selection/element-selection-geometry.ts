@@ -87,7 +87,7 @@ function visitLinear(linear: LinearElementV1, visitor: SelectionPrimitiveVisitor
   if (!visitLinearBody(start, end, bend, radius, visitor)) return false;
   if (linear.kind !== "arrow") return true;
   const directions = linearEndpointDirections(start, end, bend);
-  const size = nodeSize(linear.style.outlineWidth);
+  const size = nodeSize(linear.style.outlineWidth, start, end);
   return (
     visitArrowNode(
       arrowNodeGeometry(start, directions.start, linear.startNode, size),
@@ -141,9 +141,9 @@ function visitCoordinateSystem(
   if (system.style.outlineOpacity <= 0) return true;
   const origin = rotatedFor(system, system.origin);
   const radius = system.style.outlineWidth / 2;
-  const size = nodeSize(system.style.outlineWidth);
   for (const axis of system.axes) {
     const endpoint = rotatedFor(system, axis);
+    const size = nodeSize(system.style.outlineWidth, origin, endpoint);
     if (!visitor(capsule(origin, endpoint, radius))) return false;
     const direction = { x: endpoint.x - origin.x, y: endpoint.y - origin.y };
     if (!visitArrowNode(arrowNodeGeometry(endpoint, direction, "arrow", size), radius, visitor)) {

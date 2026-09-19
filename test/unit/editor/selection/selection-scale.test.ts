@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { rotatePointClockwise } from "../../../../src/domain/geometry/public";
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
@@ -8,7 +8,7 @@ import {
   createSelectionFrameAtRotation,
   selectionFramePoint,
 } from "../../../../src/editor/selection/selection-frame";
-import { rectangle, stroke } from "../../domain/schema/fixtures";
+import { line, rectangle, stroke } from "../../domain/schema/fixtures";
 
 const cases = [false, true].flatMap((multiple) =>
   [0, 37, 90].flatMap((rotation) =>
@@ -118,3 +118,42 @@ function expectFrameTracksPointer(
   expect(dragged.x).toBeCloseTo(pointer.x, 2);
   expect(dragged.y).toBeCloseTo(pointer.y, 2);
 }
+
+describe("group resize snapping boundary", () => {
+  it("scales free endpoints without acquiring external anchors or presenting snap guides", () => {
+    const elements = [line(4), line(5)].map((element) => ({ ...element, startConnection: null }));
+    const frame = createSelectionFrameAtRotation(elements, 0)!;
+    const spatial = { query: vi.fn() };
+    const targets = { get: vi.fn(() => null) };
+    const canConnect = vi.fn(() => true);
+    const session = new SelectionHandleSession({
+      action: {
+        anchor: selectionFramePoint(frame, "top-left"),
+        kind: "scale",
+        position: "bottom-right",
+        rotation: 0,
+      },
+      elements,
+      planner: new ElementStore(elements),
+      snap: { spatial, targets, canConnect, pointerType: "mouse", zoom: 1 },
+      startPointer: selectionFramePoint(frame, "bottom-right"),
+    });
+    const preview = session.update({ x: 351, y: 151 });
+    expect(preview.snapCandidate).toBeNull();
+    expect(preview.snapGuide).toBeNull();
+    const commit = session.prepareCommit();
+    expect(commit.status).toBe("ready");
+    if (commit.status !== "ready") throw new Error("Expected a free group resize.");
+    expect(commit.replacements).toEqual(preview.exactElements);
+    for (const replacement of commit.replacements) {
+      expect(replacement).toMatchObject({
+        end: { x: 350, y: 150 },
+        startConnection: null,
+        endConnection: null,
+      });
+    }
+    expect(spatial.query).not.toHaveBeenCalled();
+    expect(targets.get).not.toHaveBeenCalled();
+    expect(canConnect).not.toHaveBeenCalled();
+  });
+});

@@ -13,49 +13,41 @@ import { shapeVertices } from "../../../../src/domain/geometry/creation";
 import { coordinateSystem, rectangle, table } from "./fixtures";
 
 describe("element geometry creation", () => {
-  it("normalizes closed-shape drags and minimum dimensions", () => {
+  it("normalizes closed-shape drags without inflating a collapsed dimension", () => {
     expect(createClosedShapeGeometry({ x: 10, y: 20 }, { x: 5, y: 20 })).toEqual({
       x: 5,
       y: 20,
       width: 5,
-      height: 1,
-      pivot: { x: 7.5, y: 20.5 },
+      height: 0,
+      pivot: { x: 7.5, y: 20 },
     });
   });
 
-  it("extends short and zero-length linear drags to eight page units", () => {
-    expect(createLinearGeometry({ x: 1, y: 2 }, { x: 1, y: 2 }).end).toEqual({ x: 9, y: 2 });
+  it("preserves short and zero-length linear drags", () => {
+    expect(createLinearGeometry({ x: 1, y: 2 }, { x: 1, y: 2 }).end).toEqual({ x: 1, y: 2 });
     const diagonal = createLinearGeometry({ x: 0, y: 0 }, { x: 3, y: 4 });
-    expect(diagonal.end).toEqual({ x: 4.8, y: 6.4 });
-    expect(diagonal.pivot).toEqual({ x: 2.4, y: 3.2 });
+    expect(diagonal.end).toEqual({ x: 3, y: 4 });
+    expect(diagonal.pivot).toEqual({ x: 1.5, y: 2 });
   });
 
-  it("keeps a canonical short diagonal at or above the minimum length", () => {
-    const radians = (43.744 * Math.PI) / 180;
-    const diagonal = createLinearGeometry(
-      { x: 0, y: 0 },
-      { x: Math.cos(radians), y: Math.sin(radians) },
-    );
-
-    expect(diagonal.end).toEqual({ x: 5.78, y: 5.532 });
-    expect(Math.hypot(diagonal.end.x - diagonal.start.x, diagonal.end.y - diagonal.start.y)).toBe(
-      8.000713968140595,
-    );
-    expect((Math.atan2(diagonal.end.y, diagonal.end.x) * 180) / Math.PI).toBeCloseTo(43.744, 3);
+  it("rounds tiny drags only to canonical precision", () => {
+    expect(createLinearGeometry({ x: 0, y: 0 }, { x: 0.001, y: -0.002 })).toMatchObject({
+      end: { x: 0.001, y: -0.002 },
+    });
   });
 
   it("creates two- and three-dimensional coordinate systems deterministically", () => {
     const twoDimensional = createCoordinateSystemGeometry({ x: 10, y: 10 }, { x: 10, y: 10 }, "2d");
     expect(twoDimensional.axes).toEqual([
-      { x: 210, y: 10 },
-      { x: 10, y: -190 },
+      { x: 10, y: 10 },
+      { x: 10, y: 10 },
     ]);
     const threeDimensional = createCoordinateSystemGeometry(
       { x: 10, y: 10 },
       { x: 10, y: 10 },
       "3d",
     );
-    expect(threeDimensional.axes[2]).toEqual({ x: -90, y: 110 });
+    expect(threeDimensional.axes[2]).toEqual({ x: 10, y: 10 });
   });
 
   it("changes coordinate-system dimension without mutating existing endpoints", () => {
@@ -79,6 +71,24 @@ describe("table geometry creation", () => {
       pivot: { x: 140, y: 150 },
     });
     expect(() => createTableGeometry({ x: 0, y: 0 }, { x: 1, y: 1 }, 13)).toThrow(RangeError);
+  });
+
+  it("keeps tiny and collapsed tables inside the drag bounds", () => {
+    expect(createTableGeometry({ x: 10, y: 20 }, { x: 10, y: 20 })).toMatchObject({
+      x: 10,
+      y: 20,
+      columnWidth: 0,
+      height: 0,
+      headerHeight: 0,
+      pivot: { x: 10, y: 20 },
+    });
+    expect(createTableGeometry({ x: 10, y: 20 }, { x: 9.997, y: 19.998 })).toMatchObject({
+      x: 9.997,
+      y: 19.998,
+      columnWidth: 0.001,
+      height: 0.002,
+      headerHeight: 0.001,
+    });
   });
 
   it("changes table columns while retaining the rendered rotated left edge", () => {
@@ -128,5 +138,8 @@ describe("shape geometry creation", () => {
     ]);
     expect(shapeVertices(rectangle({ kind: "parallelogram" }))[0]).toEqual({ x: 20, y: 0 });
     expect(shapeVertices(rectangle({ kind: "octagon" }))[0]).toEqual({ x: 14.65, y: 0 });
+    expect(shapeVertices(rectangle({ kind: "octagon", width: 0, height: 0 }))).toEqual(
+      Array.from({ length: 8 }, () => ({ x: 0, y: 0 })),
+    );
   });
 });

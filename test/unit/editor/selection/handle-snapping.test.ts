@@ -240,6 +240,27 @@ describe("linear bend snapping", () => {
 });
 
 describe("linear endpoint angular snapping", () => {
+  it.each([0.5, 1, 4])(
+    "keeps short endpoint edits free and without angular guides at zoom %s",
+    (zoom) => {
+      for (const kind of ["line", "arrow"] as const) {
+        const source = { ...linear(), kind } as LinearElementV1;
+        for (const screenLength of [0, 2, 7.9, 8, 16]) {
+          const pointer = { x: source.start.x + screenLength / zoom, y: source.start.y };
+          const preview = endpointPreview(source, zoom, { pointer });
+          if (screenLength < 8) expect(preview.snapGuide).toBeNull();
+          else expect(preview.snapGuide?.kind).toBe("angular");
+        }
+        const pointer = { x: source.start.x + 2 / zoom, y: source.start.y + 1 / zoom };
+        expect(endpointPreview(source, zoom, { pointer }).exactElements[0]).toMatchObject({
+          end: pointer,
+        });
+      }
+      const curved = bentLinear({ x: 100, y: 100 });
+      expect(endpointPreview(curved, zoom, { pointer: curved.start }).snapGuide).toBeNull();
+    },
+  );
+
   it("snaps a line endpoint to a right angle within the screen-space tolerance", () => {
     const source = linear();
     const preview = endpointPreview(source, 1);
@@ -260,22 +281,28 @@ describe("linear endpoint angular snapping", () => {
     expect(preview.snapGuide).toBeNull();
   });
 
-  it("prioritizes a nearby shape anchor over an angular endpoint snap", () => {
+  it.each([
+    { x: 500, y: 104 },
+    { x: 100, y: 100 },
+  ])("prioritizes shape anchor $x,$y including a collapsed endpoint", (point) => {
     const source = linear();
-    const target = rectangle(IDS.target, 500, 104);
+    const target = rectangle(IDS.target, point.x, point.y);
     const store = new ElementStore([source, target]);
     const preview = endpointPreview(source, 1, {
       planner: store,
+      pointer: point,
       snap: storeSnapPorts(store, 1),
     });
 
     expect(preview.exactElements[0]).toMatchObject({
-      end: { x: 500, y: 104 },
+      end: point,
       endConnection: { anchor: { kind: "box", position: "top-left" }, targetId: target.id },
     });
-    expect(preview.snapGuide).toEqual({ kind: "anchor", point: { x: 500, y: 104 } });
+    expect(preview.snapGuide).toEqual({ kind: "anchor", point });
   });
+});
 
+describe("curved endpoint snapping", () => {
   it.each(["line", "arrow", "straight-highlighter"] as const)(
     "does not present a straight guide for a curved %s whose endpoint chord is axis-aligned",
     (kind) => {

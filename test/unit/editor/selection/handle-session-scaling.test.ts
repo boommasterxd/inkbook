@@ -226,7 +226,7 @@ describe("single-element generic scale behavior", () => {
 });
 
 describe("single-element table scale boundaries", () => {
-  it("clamps vertical shrinking at the outer table minimum without constraining its header", () => {
+  it("scales the table header proportionally during vertical shrinking", () => {
     const source: TableElementV1 = {
       ...table(),
       headerHeight: 30,

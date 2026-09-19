@@ -1,3 +1,4 @@
+import { isPointElement } from "../../domain/geometry/element-path";
 import { normalizeStrokePaint } from "../../domain/geometry/pressure-paint";
 import {
   buildElementPathParts,
@@ -32,12 +33,12 @@ export function serializeElementPaths(element: InkElementV1): string[] {
       return serializeStrokePart(element, part.d, part.paint);
     }
     if (element.kind === "rectangle" || element.kind === "ellipse" || isPolygon(element)) {
-      return serializeShapePart(element.style, part.d);
+      return serializeShapePart(element.style, part.d, isPointElement(element));
     }
     if (part.paint === "fill-and-stroke") {
       throw new Error("Outline-only geometry cannot require fill and stroke paint.");
     }
-    return serializeOutlinePart(element.style, part.d, part.paint);
+    return serializeOutlinePart(element.style, part.d, part.paint, isPointElement(element));
   });
 }
 
@@ -92,25 +93,25 @@ function serializeStrokePart(
   });
 }
 
-function serializeShapePart(style: ShapeStyleV1, d: string): string {
+function serializeShapePart(style: ShapeStyleV1, d: string, point: boolean): string {
   const outline = paintValue(style.outlineColor, "stroke");
   const fill = style.fillColor === null ? null : paintValue(style.fillColor, "fill");
   const className = shapeThemeClass(style);
-  const dash = outlineDashPattern(style.outlineStyle, style.outlineWidth);
   return serializePath(d, {
     class: className,
     fill: fill?.value ?? "none",
     "fill-opacity": fill === null ? undefined : nonDefaultOpacity(style.fillOpacity),
     stroke: outline.value,
-    "stroke-width": style.outlineWidth,
-    "stroke-opacity": nonDefaultOpacity(style.outlineOpacity),
-    "stroke-linecap": style.outlineStyle === "dotted" ? "round" : "butt",
-    "stroke-linejoin": "round",
-    "stroke-dasharray": dash?.join(" "),
+    ...outlineStrokeAttributes(style, point),
   });
 }
 
-function serializeOutlinePart(style: OutlineStyleV1, d: string, paint: "fill" | "stroke"): string {
+function serializeOutlinePart(
+  style: OutlineStyleV1,
+  d: string,
+  paint: "fill" | "stroke",
+  point: boolean,
+): string {
   const color = paintValue(style.outlineColor, paint);
   if (paint === "fill") {
     return serializePath(d, {
@@ -119,17 +120,23 @@ function serializeOutlinePart(style: OutlineStyleV1, d: string, paint: "fill" | 
       "fill-opacity": nonDefaultOpacity(style.outlineOpacity),
     });
   }
-  const dash = outlineDashPattern(style.outlineStyle, style.outlineWidth);
   return serializePath(d, {
     class: color.className,
     fill: "none",
     stroke: color.value,
+    ...outlineStrokeAttributes(style, point),
+  });
+}
+
+function outlineStrokeAttributes(style: OutlineStyleV1, point: boolean): PathAttributes {
+  const dash = point ? null : outlineDashPattern(style.outlineStyle, style.outlineWidth);
+  return {
     "stroke-width": style.outlineWidth,
     "stroke-opacity": nonDefaultOpacity(style.outlineOpacity),
-    "stroke-linecap": style.outlineStyle === "dotted" ? "round" : "butt",
+    "stroke-linecap": point || style.outlineStyle === "dotted" ? "round" : "butt",
     "stroke-linejoin": "round",
     "stroke-dasharray": dash?.join(" "),
-  });
+  };
 }
 
 function paintValue(

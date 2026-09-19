@@ -1,4 +1,4 @@
-import { buildElementPathParts, pointDistance } from "../../../domain/geometry/public";
+import { buildElementPathParts } from "../../../domain/geometry/public";
 import type {
   EndpointConnectionV1,
   InkElementV1,
@@ -221,7 +221,7 @@ export class CreationPreview implements GesturePreview {
       throw new TypeError(`${tool} is not a drag creation tool.`);
     }
     const start = this.#startSnap?.point ?? this.#start.pointer;
-    const end = minimumLinearEnd(start, this.#dragEnd(start, tool), tool);
+    const end = this.#dragEnd(start, tool);
     return createDragElement({
       defaults: this.#defaults,
       end,
@@ -312,9 +312,7 @@ export class CreationPreview implements GesturePreview {
       snap.targets,
       this.#snapScratch,
     );
-    const start = this.#startSnap?.point ?? this.#start.pointer;
-    this.#endSnap =
-      candidate !== null && pointDistance(start, candidate.point) >= 8 ? candidate : null;
+    this.#endSnap = candidate;
   }
 
   #snapFeatureEnabled(feature: "angles" | "connections"): boolean {
@@ -334,22 +332,6 @@ function snapConnection(candidate: SnapCandidate | null): EndpointConnectionV1 |
 
 function supportsConnections(tool: GesturePreviewStart["tool"]): tool is "arrow" | "line" {
   return tool === "line" || tool === "arrow";
-}
-
-function minimumLinearEnd(
-  start: PointV1,
-  end: PointV1,
-  tool: GesturePreviewStart["tool"],
-): PointV1 {
-  if (tool !== "line" && tool !== "arrow" && tool !== "straight-highlighter") return end;
-  const distance = pointDistance(start, end);
-  if (distance >= 8) return end;
-  if (distance === 0) return { x: start.x + 8, y: start.y };
-  const scale = 8.001 / distance;
-  return {
-    x: start.x + (end.x - start.x) * scale,
-    y: start.y + (end.y - start.y) * scale,
-  };
 }
 
 function isFreehand(tool: GesturePreviewStart["tool"]): tool is "draw" | "highlighter" {

@@ -2,7 +2,6 @@ import {
   canonicalPoint,
   isAnchorTarget,
   linearPivot,
-  pointDistance,
   resolveShapeAnchor,
   rotatePointClockwise,
 } from "../../domain/geometry/public";
@@ -204,7 +203,6 @@ function transformLinear(
   const world = (point: PointV1) => rotatePointClockwise(point, element.pivot, element.rotation);
   const start = transformEndpoint(element, "start", selectedIds, transform, selected, world);
   const end = transformEndpoint(element, "end", selectedIds, transform, selected, world);
-  if (pointDistance(start, end) < 8) return element;
   const bend =
     element.bend === null
       ? null

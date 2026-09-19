@@ -30,6 +30,24 @@ export type ArrowNodeGeometry =
 
 const ELLIPSE_KAPPA = 0.552_284_749_831;
 
+/** Identifies geometry collapsed to one point, independently of its paint width. */
+export function isPointElement(element: InkElementV1): boolean {
+  if (element.kind === "stroke") return false;
+  if (element.kind === "coordinate-system") {
+    return element.axes.every((axis) => axis.x === element.origin.x && axis.y === element.origin.y);
+  }
+  if (element.kind === "table") return element.columnWidth === 0 && element.height === 0;
+  if ("start" in element) {
+    return (
+      element.start.x === element.end.x &&
+      element.start.y === element.end.y &&
+      (element.bend === null ||
+        (element.bend.x === element.start.x && element.bend.y === element.start.y))
+    );
+  }
+  return element.width === 0 && element.height === 0;
+}
+
 export function buildElementPathParts(element: InkElementV1): SvgPathPart[] {
   if (element.kind === "stroke") return buildStrokePathParts(element);
   if (element.kind === "coordinate-system")
@@ -46,6 +64,10 @@ export function buildElementPathParts(element: InkElementV1): SvgPathPart[] {
 }
 
 export function buildClosedShapePath(shape: BoxShapeElementV1): string {
+  if (shape.width === 0 && shape.height === 0) {
+    const point = rotatedFor(shape, { x: shape.x, y: shape.y });
+    return lineSubpath(point, point);
+  }
   if (shape.kind === "ellipse") return buildEllipsePath(shape);
   const points = shapeVertices(shape).map((point) => rotatedFor(shape, point));
   return closedPolygonPath(points);
@@ -69,7 +91,7 @@ export function buildCoordinateSystemPath(system: CoordinateSystemElementV1): st
       endpoint,
       direction,
       "arrow",
-      nodeSize(system.style.outlineWidth),
+      nodeSize(system.style.outlineWidth, origin, endpoint),
     );
     if (node.kind === "open") commands.push(openNodePath(node));
   }
@@ -85,7 +107,7 @@ export function buildLinearPathParts(linear: LinearElementV1): SvgPathPart[] {
   if (linear.kind !== "arrow") return [{ d: body, paint: "stroke" }];
 
   const directions = linearEndpointDirections(start, end, bend);
-  const size = nodeSize(linear.style.outlineWidth);
+  const size = nodeSize(linear.style.outlineWidth, start, end);
   const nodes = [
     arrowNodeGeometry(start, directions.start, linear.startNode, size),
     arrowNodeGeometry(end, directions.end, linear.endNode, size),
@@ -105,9 +127,9 @@ export function arrowNodeGeometry(
   node: ArrowNodeV1,
   size: number,
 ): ArrowNodeGeometry {
-  if (node === "none") return { kind: "none" };
+  if (node === "none" || size === 0) return { kind: "none" };
   const normalized = normalizedVector(outwardDirection);
-  if (normalized === null) throw new RangeError("Arrow node direction must be non-zero.");
+  if (normalized === null) return { kind: "none" };
   const direction = { x: normalized.x, y: normalized.y };
   const perpendicular = { x: -direction.y, y: direction.x };
   if (node === "arrow") {
@@ -158,8 +180,8 @@ export function arrowNodeGeometry(
   };
 }
 
-export function nodeSize(outlineWidth: number): number {
-  return Math.max(12, outlineWidth * 4);
+export function nodeSize(outlineWidth: number, start: PointV1, end: PointV1): number {
+  return Math.min(Math.max(12, outlineWidth * 4), Math.hypot(end.x - start.x, end.y - start.y));
 }
 
 function buildEllipsePath(ellipse: BoxShapeElementV1): string {
@@ -201,12 +223,14 @@ export function linearEndpointDirections(
   end: PointV1,
   bend: PointV1 | null,
 ): { start: PointV1; end: PointV1 } {
-  const full = normalizedVector(subtractPoints(end, start));
-  if (full === null) throw new RangeError("Linear geometry must be non-degenerate.");
+  const full = normalizedVector(subtractPoints(end, start)) ?? { x: 0, y: 0 };
   const startTangent = normalizedVector(subtractPoints(bend ?? end, start)) ?? full;
   const endTangent = normalizedVector(subtractPoints(end, bend ?? start)) ?? full;
   return {
-    start: { x: -startTangent.x, y: startTangent.y === 0 ? 0 : -startTangent.y },
+    start: {
+      x: startTangent.x === 0 ? 0 : -startTangent.x,
+      y: startTangent.y === 0 ? 0 : -startTangent.y,
+    },
     end: { x: endTangent.x, y: endTangent.y },
   };
 }

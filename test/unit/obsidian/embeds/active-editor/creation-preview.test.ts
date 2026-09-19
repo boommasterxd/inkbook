@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { calculateElementBounds } from "../../../../../src/domain/geometry/public";
 import { createBuiltInSettings } from "../../../../../src/domain/settings/defaults";
 import type { InkElementV1 } from "../../../../../src/domain/schema/public";
 import type { ToolDefaultsV1 } from "../../../../../src/domain/settings/types";
@@ -108,6 +109,112 @@ describe("drag creation preview presentation", () => {
       "stroke-width": "35",
     });
   });
+});
+
+describe("drag creation without minimum geometry", () => {
+  const tools = [
+    "line",
+    "arrow",
+    "straight-highlighter",
+    "rectangle",
+    "ellipse",
+    "triangle",
+    "octagon",
+    "parallelogram",
+    "diamond",
+    "coordinate-system",
+    "table",
+  ] as const;
+
+  it.each(tools)("starts %s at the pointer and follows sub-unit movement", (tool) => {
+    const setLivePath = vi.fn<(path: LivePathState | null) => void>();
+    const committed: InkElementV1[] = [];
+    const preview = createPreview(
+      styledDefaults(),
+      tool,
+      { setLivePath },
+      {
+        commitElements: (elements) => committed.push(...elements),
+      },
+    );
+    const initial = setLivePath.mock.lastCall?.[0];
+    expect(initial?.parts).toHaveLength(1);
+    expect(initial?.parts[0]?.d).toMatch(/^(?:M10 20L10 20)+$/);
+    preview.update({ pointerId: 1, pointerType: "pen", x: 10.006, y: 20.004 });
+    const moved = setLivePath.mock.lastCall?.[0];
+    expect(moved?.parts[0]?.d).not.toBe(initial?.parts[0]?.d);
+    expect(preview.commit()).toBe(true);
+    expect(committed).toHaveLength(1);
+    const bounds = calculateElementBounds(committed[0]!);
+    // Geometry stays within the pen-width footprint, including arrow decorations.
+    expect(bounds.maxX - bounds.minX).toBeLessThan(21);
+    expect(bounds.maxY - bounds.minY).toBeLessThan(21);
+    expect(setLivePath).toHaveBeenLastCalledWith(null);
+  });
+
+  it("shows the snapped start cross immediately while allowing coincident endpoints", () => {
+    const committed: InkElementV1[] = [];
+    const snap = endpointSnapPorts();
+    const setSnapMarkerPath = vi.fn<(path: string | null) => void>();
+    const preview = createPreview(
+      styledDefaults(),
+      "line",
+      { setSnapMarkerPath },
+      {
+        commitElements: (elements) => committed.push(...elements),
+        snap: {
+          ...snap,
+          targets: {
+            get: () => ({
+              rank: 0,
+              anchors: [
+                {
+                  anchor: { endpoint: "end", kind: "linear-endpoint" },
+                  order: 0,
+                  point: { x: 10, y: 20 },
+                },
+              ],
+            }),
+          },
+        },
+      },
+    );
+    expect(setSnapMarkerPath.mock.lastCall?.[0]).toContain("M -14 20 L 34 20");
+    preview.update({ pointerId: 1, pointerType: "pen", x: 12, y: 21 });
+    expect(setSnapMarkerPath.mock.lastCall?.[0]).toContain("M -14 20 L 34 20");
+    preview.commit();
+    expect(committed[0]).toMatchObject({
+      start: { x: 10, y: 20 },
+      end: { x: 10, y: 20 },
+      startConnection: { targetId: SEMANTIC_ENDPOINT_TARGET_ID },
+      endConnection: { targetId: SEMANTIC_ENDPOINT_TARGET_ID },
+    });
+  });
+});
+
+describe("angular snap activation", () => {
+  it.each([0.5, 1, 4])(
+    "delays line and arrow angular guides until eight screen pixels at zoom %s",
+    (zoom) => {
+      for (const tool of ["line", "arrow"] as const) {
+        const { preview, committed, setSnapMarkerPath } = linearCreationPreview(
+          tool,
+          creationSnapPorts(zoom),
+        );
+        expect(setSnapMarkerPath).toHaveBeenLastCalledWith(null);
+        for (const screenLength of [2, 7.9, 8, 16, 2, 0]) {
+          preview.update({ pointerId: 1, pointerType: "pen", x: 10 + screenLength / zoom, y: 20 });
+          const guide = setSnapMarkerPath.mock.lastCall?.[0];
+          if (screenLength < 8) expect(guide).toBeNull();
+          else expect(guide).toContain(" L ");
+        }
+        preview.update({ pointerId: 1, pointerType: "pen", x: 10 + 2 / zoom, y: 20 + 1 / zoom });
+        expect(setSnapMarkerPath).toHaveBeenLastCalledWith(null);
+        preview.commit();
+        expect(committed[0]).toMatchObject({ end: { x: 10 + 2 / zoom, y: 20 + 1 / zoom } });
+      }
+    },
+  );
 });
 
 describe("drag creation preview snapping", () => {

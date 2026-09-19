@@ -8,7 +8,6 @@ import {
   addPoints,
   canonicalPoint,
   midpoint,
-  pointDistance,
   rotateVectorClockwise,
   roundCanonical,
   scalePoint,
@@ -16,9 +15,6 @@ import {
 } from "./primitives";
 
 type ClosedShapeKind = BoxShapeElementV1["kind"];
-
-const MINIMUM_LINEAR_LENGTH = 8;
-const CANONICAL_LINEAR_MARGIN = 0.001;
 
 export interface ClosedShapeGeometry {
   x: number;
@@ -48,22 +44,14 @@ export type TableGeometry = Pick<
 export function createClosedShapeGeometry(start: PointV1, end: PointV1): ClosedShapeGeometry {
   const x = roundCanonical(Math.min(start.x, end.x));
   const y = roundCanonical(Math.min(start.y, end.y));
-  const width = roundCanonical(Math.max(1, Math.abs(end.x - start.x)));
-  const height = roundCanonical(Math.max(1, Math.abs(end.y - start.y)));
+  const width = roundCanonical(Math.abs(end.x - start.x));
+  const height = roundCanonical(Math.abs(end.y - start.y));
   return { x, y, width, height, pivot: canonicalPoint({ x: x + width / 2, y: y + height / 2 }) };
 }
 
 export function createLinearGeometry(start: PointV1, end: PointV1): LinearGeometry {
   const canonicalStart = canonicalPoint(start);
-  const vector = subtractPoints(end, start);
-  const length = pointDistance(start, end);
-  const adjustedEnd =
-    length === 0
-      ? addPoints(canonicalStart, { x: MINIMUM_LINEAR_LENGTH, y: 0 })
-      : length < MINIMUM_LINEAR_LENGTH
-        ? addPoints(start, scalePoint(vector, MINIMUM_LINEAR_LENGTH / length))
-        : end;
-  const canonicalEnd = canonicalLinearEnd(canonicalStart, canonicalPoint(adjustedEnd), vector);
+  const canonicalEnd = canonicalPoint(end);
   return {
     start: canonicalStart,
     end: canonicalEnd,
@@ -78,8 +66,8 @@ export function createCoordinateSystemGeometry(
   dimension: "2d" | "3d",
 ): CoordinateSystemGeometry {
   const origin = canonicalPoint(start);
-  const xVector = { x: signedMinimum(end.x - start.x, 40, 200), y: 0 };
-  const yVector = { x: 0, y: signedMinimum(end.y - start.y, 40, -200) };
+  const xVector = { x: end.x - start.x, y: 0 };
+  const yVector = { x: 0, y: end.y - start.y };
   const first = canonicalPoint(addPoints(origin, xVector));
   const second = canonicalPoint(addPoints(origin, yVector));
   if (dimension === "2d") return { dimension, origin, axes: [first, second], pivot: origin };
@@ -110,9 +98,9 @@ export function changeCoordinateSystemDimension(
 
 export function createTableGeometry(start: PointV1, end: PointV1, columns = 3): TableGeometry {
   assertColumnCount(columns);
-  const columnWidth = roundCanonical(Math.max(Math.abs(end.x - start.x) / columns, 40));
+  const columnWidth = roundCanonical(Math.abs(end.x - start.x) / columns);
   const width = columns * columnWidth;
-  const height = roundCanonical(Math.max(Math.abs(end.y - start.y), 80));
+  const height = roundCanonical(Math.abs(end.y - start.y));
   const x = roundCanonical(end.x >= start.x ? start.x : start.x - width);
   const y = roundCanonical(end.y >= start.y ? start.y : start.y - height);
   const headerHeight = defaultTableHeaderHeight(height);
@@ -165,7 +153,7 @@ export function tableWidth(table: Pick<TableElementV1, "columns" | "columnWidth"
 }
 
 export function defaultTableHeaderHeight(height: number): number {
-  return roundCanonical(Math.max(24, Math.min(height * 0.25, height / 2)));
+  return roundCanonical(Math.min(Math.max(24, height * 0.25), height / 2));
 }
 
 export function tableColumnOffsets(
@@ -216,11 +204,6 @@ function changedTableColumnOffsets(
     : offsets;
 }
 
-function signedMinimum(value: number, minimum: number, zeroDefault: number): number {
-  if (value === 0) return zeroDefault;
-  return Math.sign(value) * Math.max(Math.abs(value), minimum);
-}
-
 function thirdAxisEndpoint(origin: PointV1, first: PointV1, second: PointV1): PointV1 {
   const combined = addPoints(subtractPoints(first, origin), subtractPoints(second, origin));
   return canonicalPoint(addPoints(origin, scalePoint(combined, -0.5)));
@@ -230,14 +213,6 @@ function assertColumnCount(columns: number): void {
   if (!Number.isInteger(columns) || columns < 1 || columns > 12) {
     throw new RangeError("Table columns must be an integer from 1 through 12.");
   }
-}
-
-function canonicalLinearEnd(start: PointV1, end: PointV1, direction: PointV1): PointV1 {
-  if (pointDistance(start, end) >= MINIMUM_LINEAR_LENGTH) return end;
-  const length = Math.hypot(direction.x, direction.y);
-  if (length === 0) return canonicalPoint(addPoints(start, { x: MINIMUM_LINEAR_LENGTH, y: 0 }));
-  const safeLength = MINIMUM_LINEAR_LENGTH + CANONICAL_LINEAR_MARGIN;
-  return canonicalPoint(addPoints(start, scalePoint(direction, safeLength / length)));
 }
 
 function normalizedVertices(kind: ClosedShapeKind, width: number, height: number): PointV1[] {
@@ -265,8 +240,8 @@ function normalizedVertices(kind: ClosedShapeKind, width: number, height: number
   }
   if (kind === "octagon") {
     const inset = Math.min(width, height) * 0.293;
-    const rx = inset / width;
-    const ry = inset / height;
+    const rx = width === 0 ? 0 : inset / width;
+    const ry = height === 0 ? 0 : inset / height;
     return [
       { x: rx, y: 0 },
       { x: 1 - rx, y: 0 },

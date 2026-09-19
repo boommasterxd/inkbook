@@ -1,6 +1,8 @@
 import { canonicalPoint } from "../../domain/geometry/public";
 import type { PointV1 } from "../../domain/schema/public";
 
+export const ANGULAR_SNAP_MINIMUM_LENGTH_CSS_PIXELS = 8;
+
 export interface PointAngleSnapResult {
   readonly angle: number;
   readonly point: PointV1;
@@ -19,7 +21,7 @@ export function resolvePointAngleSnap(input: PointAngleSnapInput): PointAngleSna
   const delta = { x: input.point.x - input.origin.x, y: input.point.y - input.origin.y };
   const radius = Math.hypot(delta.x, delta.y);
   if (
-    radius === 0 ||
+    radius * input.zoom < ANGULAR_SNAP_MINIMUM_LENGTH_CSS_PIXELS ||
     !Number.isFinite(input.zoom) ||
     input.zoom <= 0 ||
     !Number.isFinite(input.stepDegrees) ||

@@ -39,7 +39,7 @@ describe("freehand and linear tool element creation", () => {
     expect(defaults.highlighter).not.toHaveProperty("pressureEnabled");
   });
 
-  it("creates and clamps every linear tool", () => {
+  it("creates every linear tool without extending its endpoints", () => {
     const defaults = createBuiltInSettings().toolDefaults;
     const line = createDragElement({
       identity,
@@ -63,10 +63,10 @@ describe("freehand and linear tool element creation", () => {
       defaults,
     });
 
-    expect(line).toMatchObject({ start: { x: 10, y: 20 }, end: { x: 18, y: 20 } });
-    expect(arrow).toMatchObject({ end: { x: 8, y: 0 }, startNode: "none", endNode: "arrow" });
+    expect(line).toMatchObject({ start: { x: 10, y: 20 }, end: { x: 10, y: 20 } });
+    expect(arrow).toMatchObject({ end: { x: 4, y: 0 }, startNode: "none", endNode: "arrow" });
     expect(straight).toMatchObject({
-      end: { x: 0, y: 8 },
+      end: { x: 0, y: 4 },
       bend: null,
       style: { pressureEnabled: false, opacity: 0.4 },
     });
@@ -124,8 +124,8 @@ describe("shape tool element creation", () => {
       dimension: "2d",
       origin: { x: 100, y: 100 },
       axes: [
-        { x: 300, y: 100 },
-        { x: 100, y: -100 },
+        { x: 100, y: 100 },
+        { x: 100, y: 100 },
       ],
     });
     expect(threeDimensional).toMatchObject({
@@ -152,12 +152,12 @@ describe("shape tool element creation", () => {
     expect(table).toMatchObject({
       kind: "table",
       x: 100,
-      y: 120,
+      y: 150,
       columnWidth: 50,
       columns: 4,
-      height: 80,
+      height: 50,
       headerHeight: 24,
-      pivot: { x: 200, y: 160 },
+      pivot: { x: 200, y: 175 },
     });
   });
 });

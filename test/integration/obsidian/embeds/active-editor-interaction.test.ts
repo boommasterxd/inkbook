@@ -357,8 +357,8 @@ describe("active editor creation snapping", () => {
   });
 });
 
-describe("active editor creation minimums", () => {
-  it("rejects a second connection that would violate the linear minimum length", () => {
+describe("active editor collapsed creation", () => {
+  it("commits coincident connected endpoints without extending the arrow", () => {
     const document = model();
     const target = createDragElement({
       defaults: createBuiltInSettings().toolDefaults,
@@ -388,10 +388,8 @@ describe("active editor creation minimums", () => {
     expect(arrow?.kind).toBe("arrow");
     if (arrow?.kind !== "arrow") throw new TypeError("Expected an arrow.");
     expect(arrow.startConnection?.targetId).toBe(target.id);
-    expect(arrow.endConnection).toBeNull();
-    expect(
-      Math.hypot(arrow.end.x - arrow.start.x, arrow.end.y - arrow.start.y),
-    ).toBeGreaterThanOrEqual(8);
+    expect(arrow.endConnection).toEqual(arrow.startConnection);
+    expect(arrow.end).toEqual(arrow.start);
   });
 });
 

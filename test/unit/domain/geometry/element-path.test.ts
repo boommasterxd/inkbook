@@ -96,10 +96,17 @@ describe("linear path construction", () => {
     });
   });
 
-  it("rejects a zero-length chord even when a bend provides a non-zero tangent", () => {
-    expect(() =>
-      linearEndpointDirections({ x: 10, y: 10 }, { x: 10, y: 10 }, { x: 20, y: 20 }),
-    ).toThrow("Linear geometry must be non-degenerate.");
+  it("uses available bend tangents and zero directions for coincident endpoints", () => {
+    expect(linearEndpointDirections({ x: 10, y: 10 }, { x: 10, y: 10 }, null)).toEqual({
+      start: { x: 0, y: 0 },
+      end: { x: 0, y: 0 },
+    });
+    const directions = linearEndpointDirections(
+      { x: 10, y: 10 },
+      { x: 10, y: 10 },
+      { x: 20, y: 10 },
+    );
+    expect(directions).toEqual({ start: { x: -1, y: 0 }, end: { x: -1, y: 0 } });
   });
 
   it("constructs every endpoint node from outward direction", () => {
@@ -114,14 +121,14 @@ describe("linear path construction", () => {
     expect(diamond.kind === "polygon" ? diamond.points : []).toHaveLength(4);
     const circle = arrowNodeGeometry({ x: 10, y: 0 }, { x: 1, y: 0 }, "circle", 12);
     expect(circle).toEqual({ kind: "circle", center: { x: 4, y: 0 }, radius: 6 });
-    expect(() => arrowNodeGeometry({ x: 0, y: 0 }, { x: 0, y: 0 }, "arrow", 12)).toThrow(
-      RangeError,
-    );
+    expect(arrowNodeGeometry({ x: 0, y: 0 }, { x: 0, y: 0 }, "arrow", 12)).toEqual({
+      kind: "none",
+    });
   });
 
   it("encodes exact node sizes and outline dash patterns", () => {
-    expect(nodeSize(2)).toBe(12);
-    expect(nodeSize(8)).toBe(32);
+    expect(nodeSize(2, linearBase.start, linearBase.end)).toBe(12);
+    expect(nodeSize(8, linearBase.start, linearBase.end)).toBe(32);
     expect(outlineDashPattern("solid", 4)).toBeNull();
     expect(outlineDashPattern("dashed", 4)).toEqual([16, 12]);
     expect(outlineDashPattern("dotted", 4)).toEqual([0, 10]);

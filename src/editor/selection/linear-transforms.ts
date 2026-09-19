@@ -2,7 +2,6 @@ import {
   assertFinitePoint,
   canonicalPoint,
   linearPivot,
-  pointDistance,
   rotatePointClockwise,
 } from "../../domain/geometry/public";
 import type {
@@ -52,10 +51,6 @@ export function editLinearEndpoint(
 ): InkElementV1 {
   if (!isLinearElement(element)) throw new TypeError("Endpoint editing requires a linear element.");
   assertFinitePoint(point);
-  const opposite = endpoint === "start" ? element.end : element.start;
-  if (pointDistance(point, opposite) < 8) {
-    throw new RangeError("Linear elements must remain at least 8 page units long.");
-  }
   const canonicalEndpoint = canonicalPoint(point);
   const start = endpoint === "start" ? canonicalEndpoint : element.start;
   const end = endpoint === "end" ? canonicalEndpoint : element.end;

@@ -1,4 +1,3 @@
-import { pointDistance, rotatePointClockwise } from "../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 import {
   findSnapCandidate,
@@ -17,7 +16,7 @@ import type {
   TimeSlicedSelectionCommitPreparation,
 } from "./handle-types";
 import { selectionHandleSnapGuide, selectionRotationDelta } from "./handle-snap-resolution";
-import { assertFiniteHandlePoint, assertLinearHandleElement } from "./handle-session-validation";
+import { assertFiniteHandlePoint } from "./handle-session-validation";
 import { SelectionScaleGesture } from "./selection-scale";
 import { selectionSnapFeatureEnabled } from "./snap-features";
 import {
@@ -286,18 +285,7 @@ export class SelectionHandleSession {
     const action = this.#action;
     if (!("elementId" in action)) throw new Error("Expected a targeted handle action.");
     const element = this.#targetElement(action.elementId);
-    const candidate =
-      action.kind === "linear-endpoint"
-        ? this.#validEndpointCandidate(
-            rotatePointClockwise(
-              action.endpoint === "start"
-                ? assertLinearHandleElement(element).end
-                : assertLinearHandleElement(element).start,
-              element.pivot,
-              element.rotation,
-            ),
-          )
-        : null;
+    const candidate = action.kind === "linear-endpoint" ? this.#snapCandidate : null;
     return [
       materializeTargetedHandle({
         action,
@@ -345,11 +333,6 @@ export class SelectionHandleSession {
       },
       this.#snapScratch,
     );
-  }
-
-  #validEndpointCandidate(opposite: PointV1): SnapCandidate | null {
-    const candidate = this.#snapCandidate;
-    return candidate !== null && pointDistance(candidate.point, opposite) >= 8 ? candidate : null;
   }
 
   #previewTransform(approximateScaleFrame = false): SelectionPreviewTransform | null {

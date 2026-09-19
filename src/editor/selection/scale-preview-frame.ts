@@ -84,9 +84,10 @@ export class SelectionScalePreviewFramePlan {
     movement: PointV1,
     minimum: ScaleFactors,
     uniform: boolean,
+    initialFactors: ScaleFactors = { x: 1, y: 1 },
   ): ScaleFactors {
     // Pointer displacement changes the painted extent; constant-width margins never scale.
-    const initial = this.#sizeAt({ x: 1, y: 1 });
+    const initial = this.#sizeAt(initialFactors);
     const target = {
       x: initial.x + Math.sign(span.x) * movement.x,
       y: initial.y + Math.sign(span.y) * movement.y,
@@ -99,20 +100,24 @@ export class SelectionScalePreviewFramePlan {
       target.x = initial.x + Math.abs(span.x) * (projected - 1);
       target.y = initial.y + Math.abs(span.y) * (projected - 1);
       const weight = { x: Math.abs(span.x), y: Math.abs(span.y) };
+      const factorsAt = (value: number): ScaleFactors => ({
+        x: initialFactors.x === 0 ? Math.max(0, value - 1) : value,
+        y: initialFactors.y === 0 ? Math.max(0, value - 1) : value,
+      });
       const factor = solvePaintedScale(
         (value) => {
-          const size = this.#sizeAt({ x: value, y: value });
+          const size = this.#sizeAt(factorsAt(value));
           return size.x * weight.x + size.y * weight.y;
         },
         target.x * weight.x + target.y * weight.y,
         Math.max(minimum.x, minimum.y),
       );
-      return { x: factor, y: factor };
+      return factorsAt(factor);
     }
     return {
       x:
         span.x === 0
-          ? 1
+          ? initialFactors.x
           : solvePaintedScale(
               (value) => this.#right.at(value) - this.#left.at(value),
               target.x,
@@ -120,7 +125,7 @@ export class SelectionScalePreviewFramePlan {
             ),
       y:
         span.y === 0
-          ? 1
+          ? initialFactors.y
           : solvePaintedScale(
               (value) => this.#bottom.at(value) - this.#top.at(value),
               target.y,

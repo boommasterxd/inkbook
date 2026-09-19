@@ -16,6 +16,23 @@ import {
   rectangle,
 } from "./fixtures";
 
+describe("ElementStore collapsed connections", () => {
+  it("keeps a connection when its target collapses the line to a point", () => {
+    const target = rectangle();
+    const line = connectedLine(target);
+    const store = new ElementStore([target, line]);
+
+    store.replace(target.id, rectangle(target.id, line.end.x, line.end.y));
+
+    expect(store.get(line.id)?.element).toMatchObject({
+      start: line.end,
+      end: line.end,
+      pivot: line.end,
+      startConnection: line.startConnection,
+    });
+  });
+});
+
 describe("ElementStore connection transactions", () => {
   it("propagates target geometry through the reverse map in the same delta", () => {
     const target = rectangle();
