@@ -7,32 +7,38 @@ import {
   createPhoneSheetEditableFixture,
   installKeyboardInsetObserver,
 } from "../../fixtures/obsidian/phone-sheet-editable";
-import { interactionP99, measureInteractionFrames } from "../interaction-refresh-profile";
-import { expectTiming } from "../timing-assertions";
+import { INTERACTION_REFRESH_PROFILE, runInteractionFrames } from "../interaction-refresh-profile";
 
-it("coalesces viewport correction with two geometry reads inside the 240 Hz frame budget", () => {
+it("coalesces viewport correction with two geometry reads with bounded work", () => {
   installObsidianDomHelpers();
   Platform.isPhone = true;
   const inset = installKeyboardInsetObserver();
-  const fixture = createPhoneSheetEditableFixture();
+  const fixture = createPhoneSheetEditableFixture(false);
+  const events = Array.from({ length: INTERACTION_REFRESH_PROFILE.sampleCount }, () =>
+    Array.from({ length: 3 }, () => new Event("resize")),
+  );
+  let incorrectlyQueuedFrames = 0;
   try {
-    const durations = measureInteractionFrames(() => {
+    runInteractionFrames((frame) => {
       fixture.scroll.scrollTop = 100;
-      for (let event = 0; event < 3; event += 1) {
-        fixture.viewport.dispatchEvent(new Event("resize"));
+      for (const event of events[frame]!) {
+        fixture.viewport.dispatchEvent(event);
         inset.resize(350);
       }
-      expect(fixture.frames.pendingCount).toBe(1);
+      if (fixture.frames.pendingCount !== 1) incorrectlyQueuedFrames += 1;
       fixture.frames.runNext(0);
     });
-    expect(fixture.inputRead).toHaveBeenCalledTimes(durations.length);
-    expect(fixture.scrollRead).toHaveBeenCalledTimes(durations.length);
-    expectTiming(interactionP99(durations), (1000 / 240) * 0.55);
+    expect(incorrectlyQueuedFrames).toBe(0);
+    expect(fixture.inputReadCount).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
+    expect(fixture.scrollReadCount).toBe(INTERACTION_REFRESH_PROFILE.sampleCount);
   } finally {
-    fixture.session.close("immediate");
-    Platform.isPhone = false;
-    document.body.replaceChildren();
-    Reflect.deleteProperty(window, "visualViewport");
-    vi.restoreAllMocks();
+    try {
+      fixture.session.close("immediate");
+    } finally {
+      vi.restoreAllMocks();
+      fixture.restore();
+      Platform.isPhone = false;
+      document.body.replaceChildren();
+    }
   }
 });

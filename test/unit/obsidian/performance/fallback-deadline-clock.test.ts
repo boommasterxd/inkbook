@@ -14,16 +14,7 @@ afterEach(() => {
 });
 
 describe("fallback checkpoint clock", () => {
-  it.each(["reference", "measurement"])("retains the actual reference clock in %s mode", (mode) => {
-    vi.stubEnv("INKBOOK_PERFORMANCE_MODE", mode);
-    const now = createFallbackDeadlineClock();
-    vi.spyOn(performance, "now").mockReturnValueOnce(12).mockReturnValueOnce(400);
-    expect(now()).toBe(12);
-    expect(now()).toBe(400);
-  });
-
-  it("advances per clock read in contracts mode", () => {
-    vi.stubEnv("INKBOOK_PERFORMANCE_MODE", "contracts");
+  it("advances per scheduler observation without reading wall time", () => {
     const wall = vi.spyOn(performance, "now").mockReturnValue(Infinity);
     const now = createFallbackDeadlineClock();
     expect(Array.from({ length: 4 }, now)).toEqual([0.05, 0.1, 0.15, 0.2]);
@@ -32,7 +23,6 @@ describe("fallback checkpoint clock", () => {
   });
 
   it.each([60, 90, 120, 144, 240])("bounds real scheduler checkpoints at %i Hz", async (hz) => {
-    vi.stubEnv("INKBOOK_PERFORMANCE_MODE", "contracts");
     const wall = vi.spyOn(performance, "now").mockImplementation(() => {
       throw new Error("Controlled deadlines must not read wall time.");
     });
@@ -59,7 +49,6 @@ describe("fallback checkpoint clock", () => {
   });
 
   it("retains input-priority yields and cancellation before later clock reads", async () => {
-    vi.stubEnv("INKBOOK_PERFORMANCE_MODE", "contracts");
     let inputQueries = 0;
     const now = vi.fn(createFallbackDeadlineClock());
     const yieldControl = vi.fn(async () => undefined);

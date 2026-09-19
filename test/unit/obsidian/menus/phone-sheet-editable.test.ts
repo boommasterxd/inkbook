@@ -21,6 +21,45 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("phone sheet editable fixture restoration", () => {
+  it.for([false, true])("restores plain callbacks and viewport after failure=%s", (fail) => {
+    const request = Object.getOwnPropertyDescriptor(window, "requestAnimationFrame");
+    const cancel = Object.getOwnPropertyDescriptor(window, "cancelAnimationFrame");
+    const priorViewport = { height: 700 };
+    Object.defineProperty(window, "visualViewport", { configurable: true, value: priorViewport });
+    const viewport = Object.getOwnPropertyDescriptor(window, "visualViewport");
+    const inset = installKeyboardInsetObserver();
+    const fixture = createPhoneSheetEditableFixture(false);
+    let caught: unknown;
+    try {
+      fixture.viewport.dispatchEvent(new Event("resize"));
+      inset.resize(350);
+      fixture.frames.runNext(0);
+      expect(fixture.inputReadCount).toBe(1);
+      expect(fixture.scrollReadCount).toBe(1);
+      expect(fixture.inputRead).not.toHaveBeenCalled();
+      expect(fixture.scrollRead).not.toHaveBeenCalled();
+      if (fail) throw new Error("Injected failure");
+    } catch (error) {
+      caught = error;
+    } finally {
+      try {
+        fixture.session.close("immediate");
+      } finally {
+        fixture.restore();
+      }
+    }
+    if (fail) expect(caught).toEqual(new Error("Injected failure"));
+    else expect(caught).toBeUndefined();
+    expect(fixture.frames.pendingCount).toBe(0);
+    expect(Object.getOwnPropertyDescriptor(window, "requestAnimationFrame")).toEqual(request);
+    expect(Object.getOwnPropertyDescriptor(window, "cancelAnimationFrame")).toEqual(cancel);
+    expect(Object.getOwnPropertyDescriptor(window, "visualViewport")).toEqual(viewport);
+    fixture.restore();
+    expect(window.visualViewport).toBe(priorViewport);
+  });
+});
+
 describe("phone sheet keyboard viewport", () => {
   it.each(["full", "reduced"] as const)(
     "applies %s motion to the keyboard-moving layer",

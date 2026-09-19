@@ -6,7 +6,6 @@ import { FILE_SCHEMA_LIMITS, validateInkSnapshotV1 } from "../../../src/domain/s
 import { ElementStore } from "../../../src/domain/store/public";
 import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
 import { createStressLimitFixture, STRESS_POINTS, STRESS_STROKES } from "./fixtures";
-import { measure } from "./metrics";
 
 const EXPECTED_METADATA_BYTES = 23_776_562;
 const EXPECTED_STATIC_MARKUP_BYTES = 41_996_104;
@@ -20,13 +19,14 @@ describe("combined persistence stress limits", () => {
   }) => {
     const snapshot = createStressLimitFixture();
     const metadataBytes = byteLength(JSON.stringify(snapshot));
-    const validation = measure(() =>
-      validateInkSnapshotV1(snapshot, { metadataBytes, totalInputBytes: metadataBytes }),
-    );
+    const validation = validateInkSnapshotV1(snapshot, {
+      metadataBytes,
+      totalInputBytes: metadataBytes,
+    });
 
-    if (!validation.value.ok) throw new Error(validation.value.error.message);
-    expect(validation.value.ok).toBe(true);
-    expect(validation.value.statistics).toMatchObject({
+    if (!validation.ok) throw new Error(validation.error.message);
+    expect(validation.ok).toBe(true);
+    expect(validation.statistics).toMatchObject({
       elements: STRESS_STROKES,
       strokePoints: FILE_SCHEMA_LIMITS.strokePoints,
       strokes: FILE_SCHEMA_LIMITS.strokes,
@@ -36,7 +36,7 @@ describe("combined persistence stress limits", () => {
     expect(snapshot.elements).toHaveLength(STRESS_STROKES);
     expect(metadataBytes).toBeLessThanOrEqual(FILE_SCHEMA_LIMITS.metadataBytes);
     await annotate(
-      `stress validation: duration=${validation.durationMs.toFixed(3)} ms, ` +
+      `stress validation: ` +
         `strokes=${STRESS_STROKES}, points=${STRESS_POINTS}, inputBytes=${metadataBytes}`,
       "performance",
     );
@@ -46,24 +46,24 @@ describe("combined persistence stress limits", () => {
     annotate,
   }) => {
     const snapshot = createStressLimitFixture();
-    const preparation = measure(() => {
+    const preparation = (() => {
       const bands = deriveRenderBands(snapshot.elements);
       const store = new ElementStore(snapshot.elements);
       const firstPath = buildElementPathParts(snapshot.elements[0]!);
       const lastPath = buildElementPathParts(snapshot.elements[STRESS_STROKES - 1]!);
       return { bands, firstPath, lastPath, store };
-    });
+    })();
 
-    expect(preparation.value.store.size).toBe(STRESS_STROKES);
-    expect(preparation.value.bands.highlight).toHaveLength(STRESS_STROKES / 2);
-    expect(preparation.value.bands.content).toHaveLength(STRESS_STROKES / 2);
-    expect(preparation.value.firstPath).toHaveLength(1);
-    expect(preparation.value.lastPath).toHaveLength(1);
+    expect(preparation.store.size).toBe(STRESS_STROKES);
+    expect(preparation.bands.highlight).toHaveLength(STRESS_STROKES / 2);
+    expect(preparation.bands.content).toHaveLength(STRESS_STROKES / 2);
+    expect(preparation.firstPath).toHaveLength(1);
+    expect(preparation.lastPath).toHaveLength(1);
     await annotate(
-      `stress render preparation: duration=${preparation.durationMs.toFixed(3)} ms, ` +
-        `indexed=${preparation.value.store.size}, ` +
-        `highlight=${preparation.value.bands.highlight.length}, ` +
-        `content=${preparation.value.bands.content.length}`,
+      `stress render preparation: ` +
+        `indexed=${preparation.store.size}, ` +
+        `highlight=${preparation.bands.highlight.length}, ` +
+        `content=${preparation.bands.content.length}`,
       "performance",
     );
   }, 120_000);
@@ -72,16 +72,16 @@ describe("combined persistence stress limits", () => {
     annotate,
   }) => {
     const snapshot = createStressLimitFixture();
-    const serialized = measure(() => serializeInkbookDocument(snapshot));
+    const serialized = serializeInkbookDocument(snapshot);
 
-    if (!serialized.value.ok) {
+    if (!serialized.ok) {
       throw new Error(
-        `${serialized.value.error.code}: ${serialized.value.error.validationError?.path ?? "output"}: ` +
-          serialized.value.error.message,
+        `${serialized.error.code}: ${serialized.error.validationError?.path ?? "output"}: ` +
+          serialized.error.message,
       );
     }
-    expect(serialized.value.ok).toBe(true);
-    const { hash, metadataBytes, svg, totalBytes } = serialized.value.value;
+    expect(serialized.ok).toBe(true);
+    const { hash, metadataBytes, svg, totalBytes } = serialized.value;
     const staticMarkupBytes = byteLength(svg.replace(/<metadata[^>]*>[\s\S]*?<\/metadata>/u, ""));
     const bytesPerStrokePoint = totalBytes / STRESS_POINTS;
     expect(metadataBytes).toBe(EXPECTED_METADATA_BYTES);
@@ -92,7 +92,7 @@ describe("combined persistence stress limits", () => {
     expect(metadataBytes).toBeLessThanOrEqual(FILE_SCHEMA_LIMITS.metadataBytes);
     expect(totalBytes).toBeLessThanOrEqual(FILE_SCHEMA_LIMITS.totalInputBytes);
     await annotate(
-      `stress serialization: duration=${serialized.durationMs.toFixed(3)} ms, ` +
+      `stress serialization: ` +
         `total=${totalBytes} bytes, metadata=${metadataBytes} bytes, ` +
         `static=${staticMarkupBytes} bytes, ` +
         `bytesPerStrokePoint=${bytesPerStrokePoint.toFixed(7)}, hash=${hash}`,

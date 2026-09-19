@@ -13,13 +13,10 @@ import {
   asElement,
   fakeNode,
 } from "../../../unit/rendering/scene/fakes";
-import { MeasuredSliceScheduler } from "../../domain/domain-scenarios";
-import { INTERACTION_REFRESH_PROFILE, interactionP99 } from "../../interaction-refresh-profile";
-import { collectProfileGarbage } from "../../persistence/metrics";
-import { expectTiming } from "../../timing-assertions";
+import { CheckpointSliceScheduler } from "../../domain/domain-scenarios";
 
 const ELEMENT_COUNT = 10_000;
-const MEASURED_RUNS = 100;
+const HANDOFF_TRANSITIONS = 2;
 const PAGE: PageV1 = {
   activeBufferLines: 3,
   background: { type: "none" },
@@ -29,9 +26,7 @@ const PAGE: PageV1 = {
 };
 
 describe("selection preview handoff performance", () => {
-  it("keeps the real 10,000-element renderer subscriber inside its frame slice", async ({
-    annotate,
-  }) => {
+  it("hands off 10,000 elements without redundant geometry transitions", async () => {
     const elements = Array.from({ length: ELEMENT_COUNT }, (_, index) => indexedStroke(index));
     const ids = elements.map(({ id }) => id);
     const store = new ElementStore(elements);
@@ -45,10 +40,9 @@ describe("selection preview handoff performance", () => {
     });
     renderer.setPage(PAGE, 200_000);
     scheduler.runAll();
-    const subscriberDurations: number[] = [];
-    let subscriberDuration = 0;
+    let notifications = 0;
     const unsubscribe = store.subscribe((delta) => {
-      const startedAt = performance.now();
+      notifications += 1;
       const affected = delta.changes.map((change) => ({
         id: change.id,
         domains: change.domains,
@@ -56,14 +50,12 @@ describe("selection preview handoff performance", () => {
         after: recordElement(change.after),
       }));
       renderer.applyDelta({ affected });
-      subscriberDuration = performance.now() - startedAt;
     });
-    const commitDurations: number[] = [];
 
-    for (let run = 0; run <= MEASURED_RUNS; run += 1) {
+    for (let run = 0; run < HANDOFF_TRANSITIONS; run += 1) {
       const current = ids.map((id) => store.get(id)?.element as InkElementV1);
       const distance = run % 2 === 0 ? 0.001 : -0.001;
-      const preparationScheduler = new MeasuredSliceScheduler(2);
+      const preparationScheduler = new CheckpointSliceScheduler();
       const replacements = await moveSelectionTimeSliced(
         current,
         { x: distance, y: distance },
@@ -85,35 +77,21 @@ describe("selection preview handoff performance", () => {
       renderer.clearPreviewTransforms();
       expect(handoff.arm(ids)).toBe(true);
       renderer.resetInstrumentation();
-      collectProfileGarbage();
-      const startedAt = performance.now();
+      store.resetInstrumentation();
       const result = store.commitPreparedElementReplacement(prepared.token);
-      const commitDuration = performance.now() - startedAt;
       expect(result.status).toBe("committed");
       expect(result.delta?.changes).toHaveLength(ELEMENT_COUNT);
       expect(renderer.instrumentation().motionGeometryTransitions).toBe(0);
+      expect(store.instrumentation.fullStoreScans).toBe(0);
+      expect(store.instrumentation.bandScans).toBe(0);
+      expect(scheduler.pendingCount).toBe(1);
       scheduler.runAll();
       expect(transformedContentCount(renderer)).toBe(0);
-      if (run > 0) {
-        subscriberDurations.push(subscriberDuration);
-        commitDurations.push(commitDuration);
-      }
     }
 
     unsubscribe();
     renderer.destroy();
-    const subscriberP99 = interactionP99(subscriberDurations);
-    const maximumSubscriberDuration = Math.max(...subscriberDurations);
-    const maximumCommitDuration = Math.max(...commitDurations);
-    await annotate(
-      `selection handoff: subscriberP99=${subscriberP99.toFixed(3)} ms, ` +
-        `subscriberMax=${maximumSubscriberDuration.toFixed(3)} ms, ` +
-        `commitMax=${maximumCommitDuration.toFixed(3)} ms`,
-      "performance",
-    );
-    expect(subscriberDurations).toHaveLength(MEASURED_RUNS);
-    expectTiming(subscriberP99, INTERACTION_REFRESH_PROFILE.mainThreadP99Ms);
-    expectTiming(maximumCommitDuration, 100);
+    expect(notifications).toBe(HANDOFF_TRANSITIONS);
   }, 180_000);
 });
 

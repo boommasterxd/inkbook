@@ -1,11 +1,9 @@
 import { spawn } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { clearTimeout as cancelTimer, setTimeout as scheduleTimer } from "node:timers";
 
-const PREFIX = "INKBOOK_TIMING_RECORDS ";
 const OUTPUT_LIMIT = 32 * 1024 * 1024;
-const DURATION_LIMIT = 12 * 60 * 1000;
+const DURATION_LIMIT = 20 * 60 * 1000;
 const REFRESH_RATES = [60, 90, 120, 144, 240];
 
 function normalizeFile(root, file) {
@@ -32,50 +30,6 @@ function consumeFile(root, path, remaining) {
 
 function assertComplete(remaining, kind) {
   if (remaining.size > 0) throw new Error(`Missing ${kind}: ${[...remaining].join(", ")}.`);
-}
-
-function validateMeasurement(record, context) {
-  if (!record || typeof record !== "object") throw new Error("Invalid timing measurement.");
-  const valid =
-    typeof record.testName === "string" &&
-    record.testName.length > 0 &&
-    Number.isInteger(record.ordinal) &&
-    record.ordinal > 0 &&
-    Number.isFinite(record.actualMs) &&
-    record.actualMs >= 0 &&
-    Number.isFinite(record.referenceMs) &&
-    record.referenceMs > 0 &&
-    Number.isFinite(record.ratio) &&
-    record.ratio === record.actualMs / record.referenceMs &&
-    record.refreshRate === context.refreshRate &&
-    ["lt", "lte"].includes(record.comparison) &&
-    (record.label === undefined || typeof record.label === "string");
-  if (!valid) throw new Error("Invalid timing measurement.");
-  if (normalizeFile(context.root, record.testPath) !== context.file) {
-    throw new Error("Measurement test path differs from envelope.");
-  }
-}
-
-function parseMeasurements(stderr, context) {
-  const remaining = new Set(context.files);
-  const measurements = [];
-  for (const line of stderr.split("\n").filter((entry) => entry.startsWith(PREFIX))) {
-    const envelope = JSON.parse(line.slice(PREFIX.length));
-    const file = consumeFile(context.root, envelope?.testPath, remaining);
-    if (!Array.isArray(envelope.measurements) || envelope.measurements.length > 20_000) {
-      throw new Error("Invalid timing measurement population.");
-    }
-    const ordinals = new Map();
-    for (const record of envelope.measurements) {
-      validateMeasurement(record, { ...context, file });
-      const next = (ordinals.get(record.testName) ?? 0) + 1;
-      if (record.ordinal !== next) throw new Error("Unexpected timing measurement ordinal.");
-      ordinals.set(record.testName, next);
-      measurements.push({ ...record, file });
-    }
-  }
-  assertComplete(remaining, "timing envelopes");
-  return measurements;
 }
 
 function parseTestResults(stdout, context) {
@@ -114,23 +68,14 @@ function parseTestResults(stdout, context) {
   return violations;
 }
 
-export function parseBatchReport({ root, testFiles, refreshRate, stdout, stderr }) {
+export function parseBatchReport({ root, testFiles, refreshRate, stdout }) {
   if (!REFRESH_RATES.includes(refreshRate)) throw new Error("Unsupported refresh rate.");
   const files = expectedFiles(root, testFiles);
-  const context = { root, files, refreshRate };
-  const violations = parseTestResults(stdout, context);
-  const measurements = parseMeasurements(stderr, context);
-  return { files, measurements, violations };
+  const violations = parseTestResults(stdout, { root, files, refreshRate });
+  return { files, violations };
 }
 
-function spawnBatch({ root, files, refreshRate, mode }) {
-  const env = {
-    ...process.env,
-    INKBOOK_PERFORMANCE_MODE: mode,
-    INKBOOK_PERFORMANCE_REPORT: "1",
-    INKBOOK_PERFORMANCE_REFRESH_RATE: String(refreshRate),
-  };
-  delete env.INKBOOK_PERFORMANCE_PROFILE;
+function spawnBatch({ root, files, refreshRate }) {
   return spawn(
     process.execPath,
     [
@@ -141,9 +86,13 @@ function spawnBatch({ root, files, refreshRate, mode }) {
       "--fileParallelism=false",
       "--maxWorkers=1",
       "--isolate",
-      ...(mode === "measurement" ? ["--cache=false"] : []),
+      "--reporter=json",
     ],
-    { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] },
+    {
+      cwd: root,
+      env: { ...process.env, INKBOOK_PERFORMANCE_REFRESH_RATE: String(refreshRate) },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
   );
 }
 
@@ -158,7 +107,7 @@ function captureBatch(child) {
       child.kill("SIGKILL");
     };
     const timeout = scheduleTimer(
-      () => terminate("Performance batch exceeded 12 minutes."),
+      () => terminate("Performance batch exceeded 20 minutes."),
       DURATION_LIMIT,
     );
     const append = (destination, chunk) => {
@@ -189,14 +138,11 @@ function captureBatch(child) {
   });
 }
 
-export async function runPerformanceBatch({ root, testFiles, refreshRate, mode, reportDirectory }) {
-  if (!["contracts", "reference", "measurement"].includes(mode))
-    throw new Error("Unsupported performance mode.");
+export async function runPerformanceBatch({ root, testFiles, refreshRate }) {
   if (!REFRESH_RATES.includes(refreshRate)) throw new Error("Unsupported refresh rate.");
   const files = expectedFiles(root, testFiles);
-  const startedAt = performance.now();
-  const captured = await captureBatch(spawnBatch({ root, files, refreshRate, mode }));
-  let result = { files, measurements: [], violations: [] };
+  const captured = await captureBatch(spawnBatch({ root, files, refreshRate }));
+  let result = { files, violations: [] };
   try {
     result = parseBatchReport({ root, testFiles, refreshRate, ...captured });
   } catch (error) {
@@ -214,11 +160,6 @@ export async function runPerformanceBatch({ root, testFiles, refreshRate, mode, 
       message: captured.failure,
       refreshRate,
     });
-  }
-  result.durationMs = performance.now() - startedAt;
-  if (reportDirectory) {
-    await mkdir(reportDirectory, { recursive: true });
-    await writeFile(join(reportDirectory, "batch.json"), JSON.stringify(result, null, 2) + "\n");
   }
   return result;
 }

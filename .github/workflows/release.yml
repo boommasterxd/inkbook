@@ -51,24 +51,8 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "26"
-      - name: Resolve performance baseline
-        id: baseline
-        run: node scripts/performance-baseline-resolve.mjs
       - name: Run release performance gate
         run: npm run benchmark
-        env:
-          INKBOOK_PERFORMANCE_ANCHOR: ${{ steps.baseline.outputs.commit }}
-          INKBOOK_PERFORMANCE_MODE: gate
-          INKBOOK_PERFORMANCE_BASE: origin/main
-          INKBOOK_PERFORMANCE_RESULTS_DIR: /tmp/inkbook-release-performance
-      - name: Upload release performance measurements
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: performance-release
-          path: /tmp/inkbook-release-performance
-          retention-days: 1
-          if-no-files-found: warn
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

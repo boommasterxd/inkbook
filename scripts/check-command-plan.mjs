@@ -84,6 +84,9 @@ export function createCheckCommandPlan(
   extraArgs = [],
   npmEntry = process.env["npm_execpath"],
 ) {
+  if (name === "ci" && (process.env["INKBOOK_PERFORMANCE_SUITE"] ?? "all") !== "all") {
+    throw new Error("npm run ci requires performance suite all; unset shard overrides.");
+  }
   const group = Object.hasOwn(groups, name) ? groups[name] : undefined;
   if (group !== undefined) {
     if (extraArgs.length > 0 && group.length > 1) {

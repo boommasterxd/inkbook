@@ -1,4 +1,0 @@
-{
-  "anchorCommit": "ec7471a17fd19c2072141d8edbb177ae1d998ded",
-  "anchorPolicy": "Bootstrap source anchor until refs/tags/performance-baseline exists. Only strictly better merged commits may replace the baseline under docs/performance-ci.md#automatic-reference-promotion; a passing regression gate alone never authorizes promotion."
-}

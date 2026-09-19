@@ -3,11 +3,6 @@ import type { BoxShapeElementV1 } from "../../../src/domain/schema/public";
 import type { ElementStore } from "../../../src/domain/store/public";
 import { createStandardRuntimeDomainFixture } from "../domain/standard-domain-fixture";
 
-export function pageHeightPercentile(values: readonly number[], quantile: number): number {
-  const sorted = [...values].sort((left, right) => left - right);
-  return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * quantile))] ?? 0;
-}
-
 export async function createPageHeightStore(
   storeClass: typeof ElementStore,
 ): Promise<ElementStore> {

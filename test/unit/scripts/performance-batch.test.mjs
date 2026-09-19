@@ -12,29 +12,16 @@ import { parseBatchReport, runPerformanceBatch } from "../../../scripts/performa
 const root = "/workspace";
 const file = "test/performance/a.test.ts";
 const secondFile = "test/performance/b.test.ts";
-const measurement = {
-  testName: "operation",
-  testPath: `${root}/${file}`,
-  ordinal: 1,
-  actualMs: 4,
-  referenceMs: 2,
-  ratio: 2,
-  refreshRate: 240,
-  comparison: "lte",
-};
 const testResult = (name = file) => ({
   name: `${root}/${name}`,
   status: "passed",
   assertionResults: [{ fullName: "operation", status: "passed" }],
 });
-const envelope = (name = file, measurements = [measurement]) =>
-  `INKBOOK_TIMING_RECORDS ${JSON.stringify({ testPath: `${root}/${name}`, measurements })}\n`;
 const report = (overrides = {}) => ({
   root,
   testFiles: [file],
   refreshRate: 240,
   stdout: JSON.stringify({ success: true, testResults: [testResult()] }),
-  stderr: envelope(),
   ...overrides,
 });
 
@@ -57,7 +44,7 @@ afterEach(() => {
 });
 
 describe("performance batch reports", () => {
-  it("preserves all files, including a file with no timing assertions", () => {
+  it("checks all files without collecting elapsed-time evidence", () => {
     const parsed = parseBatchReport(
       report({
         testFiles: [file, secondFile],
@@ -65,12 +52,9 @@ describe("performance batch reports", () => {
           success: true,
           testResults: [testResult(), testResult(secondFile)],
         }),
-        stderr: `diagnostic\n${envelope()}${envelope(secondFile, [])}`,
       }),
     );
-    expect(parsed.files).toEqual([file, secondFile]);
-    expect(parsed.measurements).toEqual([{ ...measurement, file }]);
-    expect(parsed.violations).toEqual([]);
+    expect(parsed).toEqual({ files: [file, secondFile], violations: [] });
   });
 
   it.each(["pending", "todo", "skipped", "failed"])("rejects %s tests", (status) => {
@@ -84,10 +68,6 @@ describe("performance batch reports", () => {
   });
 
   it.each([
-    { stderr: "" },
-    { stderr: envelope() + envelope() },
-    { stderr: envelope(secondFile, []) },
-    { stderr: "INKBOOK_TIMING_RECORDS {\n" },
     { stdout: "invalid" },
     { stdout: JSON.stringify({ success: true, testResults: [] }) },
     { stdout: JSON.stringify({ success: true, testResults: [testResult(), testResult()] }) },
@@ -100,65 +80,28 @@ describe("performance batch reports", () => {
   ])("fails closed for incomplete or malformed reports %j", (override) => {
     expect(() => parseBatchReport(report(override))).toThrow();
   });
-
-  it.each([
-    { actualMs: -1 },
-    { referenceMs: 0 },
-    { ratio: 3 },
-    { ordinal: 2 },
-    { refreshRate: 120 },
-    { comparison: "unknown" },
-    { testName: "" },
-    { testPath: `${root}/${secondFile}` },
-    { label: 12 },
-  ])("rejects malformed measurements %j", (override) => {
-    expect(() =>
-      parseBatchReport(report({ stderr: envelope(file, [{ ...measurement, ...override }]) })),
-    ).toThrow();
-  });
-
-  it("rejects duplicate ordinals and invalid populations", () => {
-    expect(() =>
-      parseBatchReport(report({ stderr: envelope(file, [measurement, measurement]) })),
-    ).toThrow("ordinal");
-    expect(() => parseBatchReport(report({ stderr: envelope(file, null) }))).toThrow("population");
-    expect(() =>
-      parseBatchReport(
-        report({
-          stderr: envelope(
-            file,
-            Array.from({ length: 20_001 }, () => measurement),
-          ),
-        }),
-      ),
-    ).toThrow("population");
-  });
 });
 
 describe("bounded performance batch execution", () => {
   it("uses one isolated worker and removes the legacy multiplier", async () => {
-    vi.stubEnv("INKBOOK_PERFORMANCE_PROFILE", "hosted-ubuntu");
     const child = mockChild();
     const pending = runPerformanceBatch({
       root,
       testFiles: [secondFile, file],
       refreshRate: 240,
-      mode: "measurement",
     });
     child.stdout.write(
       JSON.stringify({ success: true, testResults: [testResult(), testResult(secondFile)] }),
     );
-    child.stderr.write(envelope() + envelope(secondFile, []));
     child.emit("close", 0, null);
     expect((await pending).violations).toEqual([]);
     const [, args, options] = vi.mocked(spawn).mock.calls[0];
     expect(args).toContain("--maxWorkers=1");
     expect(args).toContain("--isolate");
     expect(args).toContain("--fileParallelism=false");
-    expect(args).toContain("--cache=false");
+    expect(args).toContain("--reporter=json");
     expect(args.indexOf(file)).toBeLessThan(args.indexOf(secondFile));
-    expect(options.env.INKBOOK_PERFORMANCE_MODE).toBe("measurement");
-    expect(options.env.INKBOOK_PERFORMANCE_PROFILE).toBeUndefined();
+    expect(options.env.INKBOOK_PERFORMANCE_REFRESH_RATE).toBe("240");
     expect(options.detached).toBeUndefined();
   });
 
@@ -168,10 +111,8 @@ describe("bounded performance batch execution", () => {
       root,
       testFiles: [file],
       refreshRate: 240,
-      mode: "contracts",
     });
     child.stdout.write(report().stdout);
-    child.stderr.write(report().stderr);
     child.emit("close", 0, null);
     expect((await pending).violations).toEqual([]);
     expect(vi.mocked(spawn).mock.calls[0][1]).not.toContain("--cache=false");
@@ -183,14 +124,13 @@ describe("bounded performance batch execution", () => {
       root,
       testFiles: [file],
       refreshRate: 240,
-      mode: "contracts",
     });
     const [onTimeout, duration] = timers.setTimeout.mock.calls[0];
-    expect(duration).toBe(12 * 60 * 1000);
+    expect(duration).toBe(20 * 60 * 1000);
     onTimeout();
     expect(child.kill).toHaveBeenCalledWith("SIGKILL");
     expect((await pending).violations).toContainEqual(
-      expect.objectContaining({ message: expect.stringContaining("12 minutes") }),
+      expect.objectContaining({ message: expect.stringContaining("20 minutes") }),
     );
   });
 
@@ -200,7 +140,6 @@ describe("bounded performance batch execution", () => {
       root,
       testFiles: [file],
       refreshRate: 240,
-      mode: "reference",
     });
     child.stdout.write("a".repeat(16 * 1024 * 1024));
     child.stderr.write("b".repeat(16 * 1024 * 1024 + 1));
@@ -209,20 +148,19 @@ describe("bounded performance batch execution", () => {
     );
   });
 
-  it("reports process startup failure and rejects unsupported modes", async () => {
+  it("reports process startup failure and rejects unsupported profiles", async () => {
     const child = mockChild();
     const pending = runPerformanceBatch({
       root,
       testFiles: [file],
       refreshRate: 240,
-      mode: "contracts",
     });
     child.emit("error", new Error("spawn failed"));
     expect((await pending).violations).toContainEqual(
       expect.objectContaining({ message: "spawn failed" }),
     );
-    await expect(
-      runPerformanceBatch({ root, testFiles: [file], refreshRate: 240, mode: "loose" }),
-    ).rejects.toThrow("mode");
+    await expect(runPerformanceBatch({ root, testFiles: [file], refreshRate: 75 })).rejects.toThrow(
+      "refresh rate",
+    );
   });
 });
