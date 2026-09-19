@@ -15,6 +15,7 @@ export const MOTION_TOKENS = Object.freeze({
 } as const);
 
 export const EASING_TOKENS = Object.freeze({
+  erase: "cubic-bezier(0.3, 0, 0.7, 1)",
   standard: "cubic-bezier(0.2, 0, 0, 1)",
   emphasized: "cubic-bezier(0.2, 0, 0, 1)",
 } as const);

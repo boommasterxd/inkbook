@@ -63,10 +63,14 @@ describe("mounted pressure stroke groups", () => {
     setMountedElementFade(entry, 100);
     expect(group.style.opacity).toBe("0");
     expect(group.style.filter).toBe("blur(50px)");
+    expect(group.style.transition).toBe(
+      "opacity 100ms cubic-bezier(0.3, 0, 0.7, 1), filter 100ms cubic-bezier(0.3, 0, 0.7, 1)",
+    );
     expect(group.nodes.every((node) => node.style.filter === undefined)).toBe(true);
     setMountedElementFade(entry, null);
     expect(group.style.opacity).toBe("");
     expect(group.style.filter).toBe("");
+    expect(group.style.transition).toBe("");
     removeMountedElement(entry);
     expect(parent.nodes).toHaveLength(0);
   });

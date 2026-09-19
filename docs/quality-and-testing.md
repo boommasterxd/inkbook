@@ -162,6 +162,7 @@ const motion = {
 } as const;
 
 const easing = {
+  erase: "cubic-bezier(0.3, 0, 0.7, 1)",
   standard: "cubic-bezier(0.2, 0, 0, 1)",
   emphasized: "cubic-bezier(0.2, 0, 0, 1)",
 } as const;
@@ -169,7 +170,7 @@ const easing = {
 const layoutEasing = "ease-out";
 ```
 
-Durations are milliseconds. The shared `surface` value controls toolbar and feedback presence, adaptive phone sheets, and adaptive content resizing. Inkbook-owned desktop and tablet modal motion and adaptive-panel entrance use the `fast` value. Element and chrome motion shares one default curve. Container-height transitions use the immediate-start layout curve so their first visible frame does not hesitate before moving.
+Durations are milliseconds. The shared `surface` value controls toolbar and feedback presence, adaptive phone sheets, and adaptive content resizing. Inkbook-owned desktop and tablet modal motion and adaptive-panel entrance use the `fast` value. Element and chrome motion shares one default curve. Eraser dissolution uses the symmetric `erase` curve so expanding blur remains visible through the middle of the fade. Container-height transitions use the immediate-start layout curve so their first visible frame does not hesitate before moving.
 
 ## Animation Contract
 
