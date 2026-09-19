@@ -25,9 +25,9 @@ const SEMANTIC_ENDPOINT_TARGET_ID = "00000000-0000-4000-8000-000000000099";
 
 describe("drag creation preview presentation", () => {
   it.each([
-    ["line", "dashed", "56 42", "butt"],
+    ["line", "dashed", "56 42", "round"],
     ["coordinate-system", "dotted", "0 35", "round"],
-    ["table", "solid", null, "butt"],
+    ["table", "solid", null, "round"],
   ] as const)(
     "uses the active %s outline color, width, opacity, and %s style",
     (tool, outlineStyle, dash, lineCap) => {

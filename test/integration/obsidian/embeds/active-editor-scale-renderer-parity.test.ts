@@ -90,7 +90,7 @@ describe("mixed element scale commit renderer parity", () => {
       const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
       const paths = content.nodes.flatMap((node) => (node.nodes.length > 0 ? node.nodes : [node]));
       expect(paths.map((node) => node.attributes.get("d"))).toEqual(
-        committed.flatMap(buildElementPathParts).map(({ d }) => d),
+        committed.flatMap((element) => buildElementPathParts(element)).map(({ d }) => d),
       );
       expect(content.nodes.every((node) => !node.attributes.has("transform"))).toBe(true);
       interaction.dispose();

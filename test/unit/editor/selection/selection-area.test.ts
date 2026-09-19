@@ -220,13 +220,13 @@ describe("selection area element geometry", () => {
     expect(elementMatchesSelectionArea(nodeOnly, target, "touched")).toBe(true);
   });
 
-  it("includes the outline width around closed arrow nodes", () => {
+  it("includes the rounded outer contour of filled arrow nodes", () => {
     const target: ArrowElementV1 = {
       ...simpleArrow({ x: 10, y: 10 }, { x: 50, y: 10 }),
       endNode: "triangle",
       style: { ...outlineStyle, outlineWidth: 4 },
     };
-    const outlineOnly = createRectangleSelectionArea({ x: 37, y: 17 }, { x: 41, y: 18 });
+    const outlineOnly = createRectangleSelectionArea({ x: 37, y: 18.1 }, { x: 41, y: 19 });
 
     expect(elementMatchesSelectionArea(outlineOnly, target, "touched")).toBe(true);
   });
@@ -326,3 +326,44 @@ function simpleArrow(start: PointV1, end: PointV1): ArrowElementV1 {
     style: { ...outlineStyle, outlineWidth: 2 },
   };
 }
+
+it.each(["triangle", "diamond", "circle"] as const)(
+  "selects a filled %s contour at the rounded tip and excludes its exterior",
+  (node) => {
+    const target = {
+      ...simpleArrow({ x: 10, y: 10 }, { x: 50, y: 10 }),
+      endNode: node,
+    };
+    const tip = createRectangleSelectionArea({ x: 50.2, y: 9.9 }, { x: 50.8, y: 10.1 });
+    const outside = createRectangleSelectionArea({ x: 51.1, y: 9.9 }, { x: 51.8, y: 10.1 });
+    expect(elementMatchesSelectionArea(tip, target, "touched")).toBe(true);
+    expect(elementMatchesSelectionArea(outside, target, "touched")).toBe(false);
+  },
+);
+
+it.each(["triangle", "diamond"] as const)(
+  "includes the exact circular %s boundary between former approximation chords",
+  (node) => {
+    const target = {
+      ...simpleArrow({ x: 10, y: 10 }, { x: 50, y: 10 }),
+      endNode: node,
+    };
+    const cornerX = node === "triangle" ? 38 : 44;
+    for (const [radius, expected] of [
+      [0.9999, true],
+      [1.0001, false],
+    ] as const) {
+      const x = cornerX + radius * Math.cos(1.4);
+      const y = 16 + radius * Math.sin(1.4);
+      const area = createRectangleSelectionArea(
+        { x: x - 0.00001, y: y - 0.00001 },
+        { x: x + 0.00001, y: y + 0.00001 },
+      );
+      expect(elementMatchesSelectionArea(area, target, "touched")).toBe(expected);
+    }
+    const enclosed = createRectangleSelectionArea({ x: 0, y: 0 }, { x: 60, y: 17 });
+    const clipped = createRectangleSelectionArea({ x: 0, y: 0 }, { x: 60, y: 16.9999 });
+    expect(elementMatchesSelectionArea(enclosed, target, "fully-enclosed")).toBe(true);
+    expect(elementMatchesSelectionArea(clipped, target, "fully-enclosed")).toBe(false);
+  },
+);

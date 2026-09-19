@@ -5,7 +5,8 @@ import {
   selectionHaloNodes,
   selectionHaloPaths,
 } from "../../../fixtures/rendering/selection-traces";
-import { rectangle, stroke } from "../../../unit/domain/schema/fixtures";
+import { arrow, rectangle, stroke } from "../../../unit/domain/schema/fixtures";
+import { coordinateSystem } from "../../../unit/domain/geometry/fixtures";
 import { connectedLine } from "../../../unit/domain/store/fixtures";
 import { fakeNode } from "../../../unit/rendering/scene/fakes";
 import type { ArrowElementV1 } from "../../../../src/domain/schema/public";
@@ -88,7 +89,7 @@ describe("inner edge paint updates", () => {
     scheduler.runAll();
     expect(halo.attributes.get("stroke-width")).toBe("8");
     expect(halo.attributes.get("stroke-dasharray")).toBe("32 24");
-    expect(halo.attributes.get("stroke-linecap")).toBe("butt");
+    expect(halo.attributes.get("stroke-linecap")).toBe("round");
     expect(halo.attributes.get("fill")).toBe("none");
     expect(writes.mock.calls.some(([name]) => name === "d")).toBe(false);
     writes.mockRestore();
@@ -130,3 +131,39 @@ describe("inner edge paint updates", () => {
     renderer.destroy();
   });
 });
+
+it.each(["arrow", "2d", "3d"] as const)(
+  "retains %s head and shaft geometry through outline-style changes",
+  (kind) => {
+    const source =
+      kind === "arrow"
+        ? { ...arrow(), startNode: "arrow" as const, endNode: "arrow" as const }
+        : coordinateSystem(kind);
+    const { renderer, scheduler, store, select } = createSelectionTraceFixture([source]);
+    const [root] = select();
+    const paths = selectionHaloPaths(root!);
+    const geometry = paths.map((path) => path.attributes.get("d"));
+    const writes = paths.map((path) => vi.spyOn(path, "setAttribute"));
+    expect(paths).toHaveLength(1);
+    for (const [version, outlineStyle] of (
+      ["solid", "dashed", "dotted", "solid"] as const
+    ).entries()) {
+      const record = store.get(source.id)!;
+      store.records.set(source.id, {
+        ...record,
+        element: { ...source, style: { ...source.style, outlineStyle } },
+        paintVersion: version + 2,
+      });
+      renderer.resetInstrumentation();
+      renderer.applyDelta({ affected: [{ id: source.id, domains: ["paint"] }] });
+      scheduler.runAll();
+      expect(renderer.instrumentation().geometryBuilds).toBe(0);
+      expect(selectionHaloPaths(root!)).toEqual(paths);
+      expect(paths.map((path) => path.attributes.get("d"))).toEqual(geometry);
+      expect(paths[0]!.attributes.has("stroke-dasharray")).toBe(outlineStyle !== "solid");
+    }
+    expect(writes.some((spy) => spy.mock.calls.some(([name]) => name === "d"))).toBe(false);
+    writes.forEach((spy) => spy.mockRestore());
+    renderer.destroy();
+  },
+);
