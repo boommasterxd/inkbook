@@ -154,7 +154,8 @@ class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
     const sweep = this.#sweep;
     if (element.points.length === 3) {
       this.#touches =
-        pointSegmentDistanceSquared(element.points[0]!, element.points[1]!, sweep) <= this.#radius;
+        pointSegmentDistanceSquared(element.points[0]!, element.points[1]!, sweep) <=
+        this.#radius * this.#radius;
       this.#finished = true;
       return;
     }
@@ -167,7 +168,7 @@ class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
     line.endY = element.points[this.#strokeIndex + 1]!;
     if (
       segmentBoundsOverlap(sweep, line, this.#radius) &&
-      segmentDistanceSquared(sweep, line) <= this.#radius
+      segmentDistanceSquared(sweep, line) <= this.#radius * this.#radius
     ) {
       this.#touches = true;
       this.#finished = true;

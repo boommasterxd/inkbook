@@ -104,6 +104,26 @@ describe("eraser sweep", () => {
     expect(sweepTouchesElement({ x: 0, y: 53 }, { x: 100, y: 53 }, 1, stroke)).toBe(false);
   });
 
+  it.each([0.25, 4])("honors the complete stroke capsule at eraser radius %s", (radius) => {
+    const base = indexedStroke(2);
+    for (const tool of ["pen", "highlighter"] as const) {
+      const width = 0.5;
+      const effectiveRadius = radius + (tool === "highlighter" ? width * 2.5 : width) / 2;
+      for (const points of [
+        [0, 0, 0.5],
+        [0, 0, 0.5, 100, 0, 0.5],
+      ]) {
+        const stroke = { ...base, points, style: { ...base.style, width }, tool };
+        for (const x of [0, -effectiveRadius]) {
+          const y = x === 0 ? effectiveRadius : 0;
+          expect(sweepTouchesElement({ x, y }, { x, y }, radius, stroke)).toBe(true);
+          const outside = { x: x === 0 ? 0 : x - 0.001, y: x === 0 ? y + 0.001 : 0 };
+          expect(sweepTouchesElement(outside, outside, radius, stroke)).toBe(false);
+        }
+      }
+    }
+  });
+
   it("honors rotation, fills, hollow ellipse interiors, and table dividers", () => {
     const rotated = { ...rectangle, rotation: 90 };
     expect(sweepTouchesElement({ x: 49, y: 20 }, { x: 49, y: 80 }, 1, rotated)).toBe(true);
