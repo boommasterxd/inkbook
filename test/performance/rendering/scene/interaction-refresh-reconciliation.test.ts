@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { boundsIntersect } from "../../../../src/domain/geometry/public";
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
-import { ElementStore } from "../../../../src/domain/store/public";
+import { ElementStore, type StoreDelta } from "../../../../src/domain/store/public";
 import { moveSelection } from "../../../../src/editor/selection/transforms";
 import { visibilityPageBounds } from "../../../../src/rendering/scene/scene-resource-policy";
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene";
@@ -14,7 +14,7 @@ import {
   createInteractionFixture,
   createInteractionRenderer,
 } from "./interaction-refresh-profile-fixture";
-import { FakeScheduler } from "../../../unit/rendering/scene/fakes";
+import { FakeNode, FakeScheduler } from "../../../unit/rendering/scene/fakes";
 
 const FAKE_CLOCK_CHECKPOINTS_PER_FRAME = 4;
 const TRANSITIONS = 12;
@@ -73,14 +73,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz preview commit profile`,
     let publishedDeltas = 0;
     const unsubscribe = fixture.store.subscribe((delta) => {
       publishedDeltas += 1;
-      renderer.applyDelta({
-        affected: delta.changes.map((change) => ({
-          after: recordElement(change.after),
-          before: recordElement(change.before),
-          domains: change.domains,
-          id: change.id,
-        })),
-      });
+      applyStoreDelta(renderer, delta);
     });
 
     let failedHandoffs = 0;
@@ -130,20 +123,72 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz reconciliation work boun
         const previous = new Set(renderer.mountedIds("content"));
         const expected = expectedVisibleIds(fixture.store, fixture.ids, viewport, camera);
         const entrants = expected.filter((id) => !previous.has(id)).length;
+        const expectedSet = new Set(expected);
+        const exits = [...previous].filter((id) => !expectedSet.has(id)).length;
+        // At least one scanned, staged, or removed element per slice, plus phase handoffs.
+        const maximumFrames = previous.size + expected.length + exits + 2;
         renderer.resetInstrumentation();
         fixture.store.resetInstrumentation();
         renderer.setViewport(viewport);
         renderer.setCamera(camera);
-        drainBoundedReconciliation(renderer, scheduler, entrants);
+        drainBoundedReconciliation(renderer, scheduler, maximumFrames);
         expect(renderer.mountedIds("content")).toEqual(expected);
         const stats = renderer.instrumentation();
         expect(stats.spatialQueries).toBe(1);
         expect(stats.domEntrants).toBe(entrants);
+        expect(stats.domExits).toBe(exits);
         expect(stats.geometryBuilds).toBeLessThanOrEqual(entrants);
         expect(fixture.store.instrumentation.fullStoreScans).toBe(0);
         expect(fixture.store.instrumentation.bandScans).toBe(0);
       }
     } finally {
+      renderer.destroy();
+    }
+    expect(scheduler.pendingCount).toBe(0);
+  });
+});
+
+describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz erased SVG cleanup`, () => {
+  it("bounds physical removals while continuing pointer feedback in a 10,000-stroke scene", () => {
+    const fixture = createInteractionFixture();
+    const { renderer, scheduler } = createInteractionRenderer(fixture.store, {
+      frameBudgetMs: () => INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs,
+    });
+    scheduler.runAll();
+    renderer.setPage(INTERACTION_PAGE, 2_000);
+    renderer.setViewport({ height: 2_000, left: 0, top: 0, width: 2_000 });
+    scheduler.runAll();
+    expect(renderer.mountedCount).toBe(INTERACTION_ELEMENT_COUNT);
+    const ids = fixture.ids.slice(0, 2_000);
+    renderer.setElementFade(ids, 0);
+    const delta = fixture.store.remove(ids)!;
+    applyStoreDelta(renderer, delta);
+    const remove = vi.spyOn(FakeNode.prototype, "remove");
+    const write = vi.spyOn(FakeNode.prototype, "setAttribute");
+    let frames = 0;
+    let removed = 0;
+    try {
+      while (scheduler.pendingCount > 0) {
+        expect(scheduler.pendingCount).toBe(1);
+        // Two preparation/completion frames plus the bounded exit batches.
+        expect(frames).toBeLessThan(Math.ceil(ids.length / 64) + 2);
+        const path = `M ${String(frames)} 0 L 10 10`;
+        renderer.setOverlayPath(path);
+        remove.mockClear();
+        write.mockClear();
+        scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
+        scheduler.runNext();
+        expect(remove.mock.calls.length).toBeLessThanOrEqual(64);
+        expect(write).toHaveBeenCalledWith("d", path);
+        removed += remove.mock.calls.length;
+        frames += 1;
+      }
+      expect(removed).toBe(ids.length);
+      expect(renderer.mountedIds("content")).toEqual(fixture.ids.slice(ids.length));
+      expect(renderer.hasPendingSceneCommit).toBe(false);
+    } finally {
+      remove.mockRestore();
+      write.mockRestore();
       renderer.destroy();
     }
     expect(scheduler.pendingCount).toBe(0);
@@ -199,13 +244,12 @@ function drainPendingFrames(scheduler: ProfileScheduler): void {
 function drainBoundedReconciliation(
   renderer: SvgSceneRenderer,
   scheduler: ProfileScheduler,
-  entrants: number,
+  maximumFrames: number,
 ): void {
   let frames = 0;
   while (scheduler.pendingCount > 0) {
     expect(scheduler.pendingCount).toBe(1);
-    // Allow one frame per entrant plus preparation/completion, not an unbounded retry loop.
-    expect(frames).toBeLessThan(entrants + 2);
+    expect(frames).toBeLessThan(maximumFrames);
     scheduler.runNext();
     frames += 1;
     const stats = renderer.instrumentation();
@@ -231,4 +275,15 @@ function expectedVisibleIds(
 
 function recordElement(record: { readonly element: unknown } | null): InkElementV1 | null {
   return record === null ? null : (record.element as InkElementV1);
+}
+
+function applyStoreDelta(renderer: SvgSceneRenderer, delta: StoreDelta): void {
+  renderer.applyDelta({
+    affected: delta.changes.map((change) => ({
+      after: recordElement(change.after),
+      before: recordElement(change.before),
+      domains: change.domains,
+      id: change.id,
+    })),
+  });
 }

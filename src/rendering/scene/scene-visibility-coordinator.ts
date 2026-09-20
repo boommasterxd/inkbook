@@ -49,7 +49,7 @@ export class SceneVisibilityCoordinator {
     this.#dirty = false;
     this.#orderDirty = false;
     const result = this.#visibility.query(envelope, retained);
-    if (!result.changed) return;
+    if (!result.changed && !this.#content.needsVisibilityRestart) return;
     this.#content.replaceVisibility(result.visibility);
     this.#resources.updateVisibility(result.visibility);
   }

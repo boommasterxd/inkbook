@@ -28,6 +28,8 @@ interface TopologyUpdateOptions {
 
 export interface MountedSceneElement {
   band: SceneElementRecord["band"];
+  detachedPathCount: number;
+  fadeActive: boolean;
   displayedElement: SceneElementRecord["element"];
   displayedPathParts: readonly SvgPathPart[];
   group: SVGGElement | null;
@@ -55,6 +57,8 @@ export function createMountedElement(
   const group = createPressureGroup(ownerDocument, record, paths, instrumentation);
   return {
     band: record.band,
+    detachedPathCount: 0,
+    fadeActive: false,
     displayedElement: record.element,
     displayedPathParts: parts,
     group,
@@ -77,11 +81,24 @@ export function appendElementToFragment(
 ): void {
   if (entry.group !== null) fragment.append(entry.group);
   else for (const path of entry.paths) fragment.append(path.node);
+  entry.detachedPathCount = 0;
 }
 
 export function removeMountedElement(entry: MountedSceneElement): void {
   if (entry.group !== null) entry.group.remove();
   else for (const path of entry.paths) path.node.remove();
+}
+
+/** Removes one top-level SVG node, retaining partial path ownership until reconciliation ends. */
+export function removeMountedElementNode(entry: MountedSceneElement): boolean {
+  if (entry.group !== null) {
+    entry.group.remove();
+    return true;
+  }
+  const index = entry.paths.length - entry.detachedPathCount - 1;
+  entry.paths[index]?.node.remove();
+  entry.detachedPathCount += 1;
+  return entry.detachedPathCount >= entry.paths.length;
 }
 
 export function updateMountedGeometry(
@@ -227,6 +244,7 @@ function updateMountedPreviewGeometry(
 }
 
 export function setMountedElementFade(entry: MountedSceneElement, durationMs: number | null): void {
+  entry.fadeActive = durationMs !== null;
   const nodes = entry.group === null ? entry.paths.map((path) => path.node) : [entry.group];
   const timing = `${String(durationMs ?? 0)}ms ${EASING_TOKENS.erase}`;
   for (const node of nodes) {
@@ -296,6 +314,7 @@ function replacePathTopology(
   else fragment.append(group);
   options.parent.insertBefore(fragment, reference);
   removeMountedElement(entry);
+  entry.detachedPathCount = 0;
   entry.group = group;
   entry.groupOpacity = pressureGroupOpacity(record);
   entry.appliedPreviewTransform = null;

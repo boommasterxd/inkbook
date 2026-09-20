@@ -161,6 +161,10 @@ export class SceneContentRenderer {
     return this.writeSelectionTraces(deadline, now);
   }
 
+  public get needsVisibilityRestart(): boolean {
+    return this.#reconciler.needsRestart;
+  }
+
   public replaceVisibility(visibility: VisibilityResult): void {
     this.#reconciler.replace(visibility);
   }
