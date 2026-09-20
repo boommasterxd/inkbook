@@ -30,6 +30,7 @@ export function createWorkspaceDocumentRuntimes(
   const sliceBudgetMs = windows.sliceBudgetMs ?? (() => (profile === "mobile" ? 12 : 8));
   const warnFallback = createFallbackWarning(windows);
   return {
+    sliceBudgetMs: (documentId) => windows.sliceBudgetMs?.(windows.owningWindow(documentId)) ?? 4,
     clock: (documentId) => ({
       clearTimeout: (handle) => {
         if (isWindowTimeoutHandle(handle)) clearWindowTimeout(handle);

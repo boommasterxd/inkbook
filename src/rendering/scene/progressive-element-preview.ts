@@ -101,7 +101,7 @@ export class ProgressiveElementPreview {
     }
   }
 
-  public writeFeedback(zoom: number): void {
+  public writeFeedback(zoom: number, deadline: number, now: () => number): void {
     const request = this.#request;
     if (request === undefined || (request === this.#appliedRequest && zoom === this.#zoom)) return;
     this.#zoom = zoom;
@@ -111,7 +111,11 @@ export class ProgressiveElementPreview {
     for (let offset = 0; offset < request.ids.length; offset += 1) {
       const index = (start + offset) % request.ids.length;
       const id = request.ids[index]!;
-      if (immediate < IMMEDIATE_ELEMENT_LIMIT && this.#writeImmediate(id, request)) {
+      if (
+        immediate < IMMEDIATE_ELEMENT_LIMIT &&
+        now() < deadline &&
+        this.#writeImmediate(id, request)
+      ) {
         immediate += 1;
         this.#immediateCursor = index + 1;
       } else this.#applyFeedback(id);

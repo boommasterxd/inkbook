@@ -11,7 +11,7 @@ import {
 } from "./mounted-element";
 import type { ScenePathCache } from "./path-cache";
 import { MountSlice, mountCost } from "./mount-slice";
-import { SceneElementFades } from "./scene-element-fades";
+import { SceneElementFades, type FadeSlice } from "./scene-element-fades";
 import { SceneSelectionTraces } from "./selection-traces";
 import type { SceneDom } from "./scene-dom";
 import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } from "./types";
@@ -251,12 +251,16 @@ export class SceneContentRenderer {
     this.updateGeometry(entry, record, parts);
   }
 
-  public setElementFade(ids: readonly string[], durationMs: number | null, now = 0): void {
-    this.#fades.set(ids, durationMs, now);
+  public setElementFade(
+    ids: readonly string[],
+    durationMs: number | null,
+    slice?: FadeSlice,
+  ): void {
+    this.#fades.set(ids, durationMs, slice);
   }
 
   public prepareElementRemoval(id: string): void {
-    if (this.#mounted.get(id)?.fadeActive !== true) this.#fades.set([id], 0, 0);
+    if (this.#mounted.get(id)?.fadeActive !== true) this.#fades.set([id], 0);
   }
 
   public get pendingElementFades(): boolean {

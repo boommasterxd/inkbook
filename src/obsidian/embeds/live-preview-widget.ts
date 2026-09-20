@@ -103,7 +103,13 @@ export class InkbookLivePreviewWidget extends WidgetType {
       attr: { "aria-label": "Edit handwriting", type: "button" },
       cls: "inkbook-locked-preview",
     });
-    const preview = createInkbookLockedPreview(button, this.#embed.preview);
+    const preview = createInkbookLockedPreview(
+      button,
+      this.#embed.preview,
+      this.#ports.sliceBudgetMs === undefined
+        ? undefined
+        : () => this.#ports.sliceBudgetMs!(button.ownerDocument.defaultView),
+    );
 
     const attachmentId = `live-preview-${++nextLivePreviewAttachmentId}`;
     const controller = new PresentationController(

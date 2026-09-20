@@ -17,14 +17,13 @@ import type {
 } from "./scene-motion-types";
 import type { SceneDom } from "./scene-dom";
 import type { MutableSceneInstrumentation, SceneStoreDelta } from "./types";
-
 const MAX_MOTION_PATHS = 256;
 const MAX_MOTION_BYTES = 4 * 1024 * 1024;
-
 export class SceneMotionController {
   readonly #content: SceneContentRenderer;
   readonly #dom: SceneDom;
   readonly #entries = new Map<number, MotionEntry>();
+  #frameCursor: Iterator<MotionEntry> | undefined;
   readonly #entryByElementId = new Map<string, number>();
   readonly #instrumentation: MutableSceneInstrumentation;
   readonly #pendingEntrances = new Set<string>();
@@ -47,7 +46,6 @@ export class SceneMotionController {
     this.#instrumentation = instrumentation;
     this.#reducedMotion = reducedMotion;
   }
-
   public applyDelta(
     changes: SceneStoreDelta["affected"],
     immediateSuppressedIds?: readonly string[],
@@ -77,7 +75,6 @@ export class SceneMotionController {
     }
     return suppression?.token;
   }
-
   public suppress(ids: readonly string[]): number {
     const uniqueIds = new Set(ids);
     if (uniqueIds.size > FILE_SCHEMA_LIMITS.elements) {
@@ -87,15 +84,12 @@ export class SceneMotionController {
     this.#pendingSuppression = { ids: uniqueIds, token };
     return token;
   }
-
   public cancelSuppression(token: number): void {
     if (this.#pendingSuppression?.token === token) this.#pendingSuppression = undefined;
   }
-
   public expireSuppression(): void {
     this.#pendingSuppression = undefined;
   }
-
   public bindMountedEntrances(ids: readonly string[]): void {
     if (this.#reducedMotion || this.#resourceConstrained) {
       for (const id of ids) this.#pendingEntrances.delete(id);
@@ -106,23 +100,18 @@ export class SceneMotionController {
       this.startEntrance([id]);
     }
   }
-
   public finishEntranceBatch(): void {
     this.#pendingEntrances.clear();
   }
-
   public duration(durationMs: number): number {
     return this.#reducedMotion ? 0 : durationMs;
   }
-
   public refreshInstrumentation(): void {
     this.refreshCacheSize();
   }
-
   public cacheMemoryUsage(): number {
     return this.#instrumentation.motionCacheBytes;
   }
-
   public setReducedMotion(reduced: boolean): void {
     if (reduced === this.#reducedMotion) return;
     this.#reducedMotion = reduced;
@@ -132,7 +121,6 @@ export class SceneMotionController {
       this.finishAll(false);
     }
   }
-
   public setResourceConstrained(constrained: boolean): void {
     if (constrained === this.#resourceConstrained) return;
     this.#resourceConstrained = constrained;
@@ -146,7 +134,6 @@ export class SceneMotionController {
       }
     }
   }
-
   public applySelectionPath(
     path: string | null,
     handlePath: string | null,
@@ -167,12 +154,10 @@ export class SceneMotionController {
       this.#selectionHandleMotion,
     );
   }
-
   public applySnapPath(path: string | null): void {
     this.#dom.snapMarkerPath.setAttribute("d", path ?? "");
     writeMotionStyle(this.#dom.snapMarkerPath, 1, 1);
   }
-
   public interruptForPointerDown(): void {
     this.#pendingSuppression = undefined;
     this.#pendingEntrances.clear();
@@ -180,14 +165,13 @@ export class SceneMotionController {
     this.#instrumentation.motionInterruptions += 1;
     this.finishAll(false);
   }
-
-  public write(frameTime: number): boolean {
+  public write(frameTime: number, deadline: number, now: () => number): boolean {
     if (!this.hasPending()) return false;
+    if (now() >= deadline) return true;
     const effectiveTime =
       this.#lastFrameTime === undefined ? frameTime : Math.max(frameTime, this.#lastFrameTime + 16);
     this.#lastFrameTime = effectiveTime;
     this.#instrumentation.motionFrames += 1;
-    for (const entry of this.#entries.values()) this.writeEntry(entry, effectiveTime);
     this.#selectionMotion = this.writeOverlay(
       this.#dom.selectionOverlayPath,
       this.#selectionMotion,
@@ -198,18 +182,32 @@ export class SceneMotionController {
       this.#selectionHandleMotion,
       effectiveTime,
     );
+    this.writeEntries(effectiveTime, deadline, now);
     const pending = this.hasPending();
     if (!pending) this.#lastFrameTime = undefined;
     return pending;
   }
-
+  private writeEntries(frameTime: number, deadline: number, now: () => number): void {
+    this.#frameCursor ??= this.#entries.values();
+    for (let count = 0; count < 256 && now() < deadline; count += 1) {
+      let next = this.#frameCursor.next();
+      if (next.done === true && count === 0 && this.#entries.size > 0) {
+        this.#frameCursor = this.#entries.values();
+        next = this.#frameCursor.next();
+      }
+      if (next.done === true) {
+        this.#frameCursor = undefined;
+        return;
+      }
+      this.writeEntry(next.value, frameTime);
+    }
+  }
   public release(): void {
     this.finishAll(true);
     this.#pendingSuppression = undefined;
     this.#pendingEntrances.clear();
     this.#entryByElementId.clear();
   }
-
   private startEntrance(ids: readonly string[]): void {
     const visible = ids.filter((id) => this.#content.hasMounted(id));
     if (visible.length === 0) return;
@@ -217,7 +215,6 @@ export class SceneMotionController {
     this.add({ id: ++this.#nextId, ids: visible, kind: "entrance", startTime: undefined });
     this.#instrumentation.motionEntrances += visible.length;
   }
-
   private startExit(elements: readonly InkElementV1[]): void {
     const visible = elements.filter(({ id }) => this.#content.hasMounted(id));
     const ids = visible.map(({ id }) => id);
@@ -227,7 +224,6 @@ export class SceneMotionController {
     this.add({ id: ++this.#nextId, ids, kind: "exit", startTime: undefined, visual });
     this.#instrumentation.motionTombstones += visual.nodes.length;
   }
-
   private startGeometry(from: readonly InkElementV1[], to: readonly InkElementV1[]): void {
     const visibleFrom: InkElementV1[] = [];
     const visibleTo: InkElementV1[] = [];
@@ -253,7 +249,6 @@ export class SceneMotionController {
     });
     this.#instrumentation.motionGeometryTransitions += visibleTo.length;
   }
-
   private startCrossfade(elements: readonly InkElementV1[], ids: readonly string[]): void {
     const visible: InkElementV1[] = [];
     const visibleIds: string[] = [];
@@ -276,7 +271,6 @@ export class SceneMotionController {
     });
     this.#instrumentation.motionCrossfades += visual.nodes.length;
   }
-
   private writeEntry(entry: MotionEntry, frameTime: number): void {
     entry.startTime ??= frameTime;
     const raw = Math.min(1, (frameTime - entry.startTime) / TRANSITION_DURATIONS.fallback);
@@ -406,6 +400,7 @@ export class SceneMotionController {
   }
 
   private finishAll(releasing: boolean): void {
+    this.#frameCursor = undefined;
     for (const entry of this.#entries.values()) this.finishEntry(entry, releasing);
     this.#entryByElementId.clear();
     this.finishOverlay(this.#dom.selectionOverlayPath, this.#selectionMotion);

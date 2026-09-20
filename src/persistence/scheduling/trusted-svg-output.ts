@@ -8,11 +8,10 @@ import type { SafeSvgVersionPolicy } from "../documents/svg-envelope-root";
 import { ChunkedSha256 } from "../serialization/chunked-output-sha256";
 
 import { adoptUtf8Output, type Utf8AdoptionOptions } from "./utf8-adoption";
-import { yieldToMainThread } from "./main-thread-yield";
+import { createMainThreadCheckpoint, createMainThreadDeadline } from "./main-thread-checkpoint";
 
 const HASH = /^[0-9a-f]{64}$/u;
 const DEFAULT_CHUNK_BYTES = 64 * 1024;
-const MAIN_THREAD_SLICE_MS = 4;
 
 export interface TrustedSvgOutput {
   readonly content: string;
@@ -45,7 +44,7 @@ export async function inspectTrustedSvgOutput(
   options: TrustedSvgInspectionOptions = {},
 ): Promise<TrustedSvgOutput> {
   options.signal?.throwIfAborted();
-  const yieldCheckpoint = options.checkpoint ?? createMainThreadCheckpoint();
+  const yieldCheckpoint = options.checkpoint ?? createMainThreadCheckpoint(options.sliceBudgetMs);
   const waitForBackground = options.waitForBackground;
   const checkpoint = waitForBackground
     ? async () => {
@@ -66,6 +65,7 @@ export async function inspectTrustedSvgOutput(
     checkpoint,
     options.signal,
     options.versionPolicy,
+    options.sliceBudgetMs,
   );
   if (safe === null) throw new TypeError("Worker output is not a safe Inkbook SVG document.");
   return trustedOutput(inspected, safe);
@@ -165,8 +165,9 @@ async function validateSafeSvgIncrementally(
   checkpoint: () => Promise<void>,
   signal?: AbortSignal,
   versionPolicy: SafeSvgVersionPolicy = "current",
+  sliceBudgetMs?: () => number,
 ): Promise<SafeSvgValidation | null> {
-  const deadline = createValidationDeadline();
+  const deadline = createMainThreadDeadline(sliceBudgetMs);
   signal?.throwIfAborted();
   const steps = validateSafeSvgSteps(content, {
     deadlineExceeded: deadline.exceeded,
@@ -219,26 +220,4 @@ function assertChunkBytes(value: number): void {
 
 function oversizedOutput(): RangeError {
   return new RangeError("Worker output exceeds the 64 MiB document limit.");
-}
-
-function createMainThreadCheckpoint(): () => Promise<void> {
-  const deadline = createValidationDeadline();
-  return async () => {
-    if (!deadline.exceeded()) return;
-    await yieldToMainThread();
-    deadline.restart();
-  };
-}
-
-function createValidationDeadline(): {
-  readonly exceeded: () => boolean;
-  readonly restart: () => void;
-} {
-  let sliceStarted = performance.now();
-  return {
-    exceeded: () => performance.now() - sliceStarted >= MAIN_THREAD_SLICE_MS,
-    restart: () => {
-      sliceStarted = performance.now();
-    },
-  };
 }

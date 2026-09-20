@@ -224,11 +224,17 @@ function createEmbedIntegration(
 ) {
   const documentRecognition = new ObsidianInkbookDocumentRecognition(plugin.app.vault, {
     deferUntilLayoutReady: true,
+    sliceBudgetMs: () =>
+      runtime.refreshRateProfiles.sliceBudgetMs(
+        plugin.app.workspace.containerEl.ownerDocument.defaultView,
+      ),
   });
   return {
     documentRecognition,
     ports: {
       documents: documentRecognition,
+      sliceBudgetMs: (ownerWindow: Window | null) =>
+        runtime.refreshRateProfiles.sliceBudgetMs(ownerWindow),
       lifecycle,
       resolveDocument: createObsidianDocumentResolver(plugin.app),
       scheme,

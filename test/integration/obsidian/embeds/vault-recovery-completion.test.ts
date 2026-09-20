@@ -17,6 +17,7 @@ describe("vault recovery completion", () => {
     const reportSavedPath = vi.fn();
     const replaceMarkdownTarget = vi.fn(async () => false);
     const executor = new DocumentWorkerRuntime({ sessionId: "session-1", workerEpoch: 1 });
+    const sliceBudgetMs = vi.fn(() => 2);
     const result = await saveRecoveryCopy({
       completion: { replaceMarkdownTarget, reportSavedPath },
       documentId: "drawings/ink.svg",
@@ -37,6 +38,7 @@ describe("vault recovery completion", () => {
       },
       operation: { ...operation(), operationId: 2 },
       snapshot: emptySnapshot(),
+      sliceBudgetMs,
       stopped: () => false,
       workerEpoch: 1,
     });
@@ -48,6 +50,7 @@ describe("vault recovery completion", () => {
       expect.any(Function),
     );
     expect(files.has("drawings/ink-recovered-1.svg")).toBe(true);
+    expect(sliceBudgetMs).toHaveBeenCalled();
   });
 
   it("trashes the verified copy when recovery becomes stale during Markdown replacement", async () => {

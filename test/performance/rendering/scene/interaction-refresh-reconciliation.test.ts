@@ -150,16 +150,45 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz reconciliation work boun
 });
 
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz erased SVG cleanup`, () => {
+  it("budgets initial fade writes against the live refresh profile across repeated calls", () => {
+    const fixture = createInteractionFixture();
+    let budget = INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs;
+    const { renderer, scheduler } = createFullyVisibleRenderer(fixture.store, () => budget);
+    let starts = 0;
+    const content = (renderer.svg as unknown as FakeNode).nodes[1]!.nodes[4]!;
+    for (const node of content.nodes) {
+      let filter = node.style.filter;
+      Object.defineProperty(node.style, "filter", {
+        get: () => filter,
+        set: (value: string) => {
+          filter = value;
+          if (value === "blur(50px)") {
+            starts += 1;
+            scheduler.time += 1;
+          }
+        },
+      });
+    }
+    const ids = fixture.ids.slice(0, 256);
+    for (const nextBudget of [budget, budget / 2]) {
+      budget = nextBudget;
+      starts = 0;
+      renderer.setElementFade(ids.slice(0, 128), 300);
+      expect(starts).toBe(Math.ceil(budget));
+      renderer.setElementFade(ids.slice(128), 300);
+      expect(starts).toBe(Math.ceil(budget));
+      expect(scheduler.pendingCount).toBe(1);
+      renderer.clearElementFade(ids);
+      scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
+      scheduler.runAll();
+    }
+    renderer.destroy();
+    expect(scheduler.pendingCount).toBe(0);
+  });
+
   it("bounds physical removals while continuing pointer feedback in a 10,000-stroke scene", () => {
     const fixture = createInteractionFixture();
-    const { renderer, scheduler } = createInteractionRenderer(fixture.store, {
-      frameBudgetMs: () => INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs,
-    });
-    scheduler.runAll();
-    renderer.setPage(INTERACTION_PAGE, 2_000);
-    renderer.setViewport({ height: 2_000, left: 0, top: 0, width: 2_000 });
-    scheduler.runAll();
-    expect(renderer.mountedCount).toBe(INTERACTION_ELEMENT_COUNT);
+    const { renderer, scheduler } = createFullyVisibleRenderer(fixture.store);
     const ids = fixture.ids.slice(0, 2_000);
     renderer.setElementFade(ids, 0);
     const delta = fixture.store.remove(ids)!;
@@ -323,4 +352,17 @@ function applyStoreDelta(renderer: SvgSceneRenderer, delta: StoreDelta): void {
       id: change.id,
     })),
   });
+}
+
+function createFullyVisibleRenderer(
+  store: ElementStore,
+  frameBudgetMs = () => INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs,
+) {
+  const fixture = createInteractionRenderer(store, { frameBudgetMs });
+  fixture.scheduler.runAll();
+  fixture.renderer.setPage(INTERACTION_PAGE, 2_000);
+  fixture.renderer.setViewport({ height: 2_000, left: 0, top: 0, width: 2_000 });
+  fixture.scheduler.runAll();
+  expect(fixture.renderer.mountedCount).toBe(INTERACTION_ELEMENT_COUNT);
+  return fixture;
 }

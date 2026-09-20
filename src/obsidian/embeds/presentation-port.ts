@@ -140,6 +140,7 @@ export interface PresentationSessionPort {
 }
 
 export interface EmbedIntegrationPorts {
+  readonly sliceBudgetMs?: (ownerWindow: Window | null) => number;
   readonly documents: InkbookDocumentRecognitionPort;
   readonly lifecycle: PresentationLifecycleRegistry;
   readonly resolveDocument: (

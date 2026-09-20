@@ -100,6 +100,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       notifyExternalChange: (documentId) => this.#coordinator.notifyExternalChange(documentId),
       presentations: () => this.#mounted.values(),
       reloadPresentation: (documentId) => this.#reloadPresentation(documentId),
+      sliceBudgetMs: (ownerWindow) => this.refreshRateProfiles.sliceBudgetMs(ownerWindow),
       vault,
     });
     this.#sessions = new VaultDocumentSessionFactory(

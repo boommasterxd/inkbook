@@ -7,6 +7,7 @@ import { verifyExactWorkerContent } from "./trusted-verification";
 type VerificationPurpose = "preflight" | "read-back" | "verification";
 
 interface AutosaveVerifierOptions {
+  readonly sliceBudgetMs?: () => number;
   readonly waitForBackground?: () => Promise<void>;
   readonly executor: () => DocumentRuntimePort;
   readonly isDisposed: () => boolean;
@@ -33,6 +34,7 @@ export class AutosavePersistedOutputVerifier {
         content,
         purpose === "read-back" ? "current" : "editable",
         this.#options.waitForBackground,
+        this.#options.sliceBudgetMs,
       );
       this.#assertLive();
       return persisted;
@@ -48,6 +50,7 @@ export class AutosavePersistedOutputVerifier {
         content,
         purpose === "read-back" ? "current" : "editable",
         this.#options.waitForBackground,
+        this.#options.sliceBudgetMs,
       );
       this.#assertLive();
       return persisted;

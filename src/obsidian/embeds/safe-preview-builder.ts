@@ -1,35 +1,52 @@
 import { parseOpeningTag } from "../../persistence/documents/svg-tag";
+import { DEFAULT_REFRESH_RATE, refreshRateProfile } from "../performance";
 import { configurePreviewSvg } from "./safe-preview-svg";
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const SCAN_UNITS = 16 * 1024;
 const ELEMENTS_PER_SLICE = 32;
+const DEFAULT_SLICE_BUDGET_MS = refreshRateProfile(DEFAULT_REFRESH_RATE).sliceBudgetMs;
 
 interface PreviewBuildOptions {
   readonly checkpoint: () => Promise<void>;
   readonly isCancelled: () => boolean;
+  readonly now?: () => number;
+  readonly sliceBudgetMs?: () => number;
 }
 
-/** Only accepts a completely validated safe-envelope SVG, just like createPreviewSvg. */
+/** Only accepts a completely validated safe-envelope SVG, without importing unvalidated markup. */
 export async function createPreviewSvgAsync(
   ownerDocument: Document,
   safeSvg: string,
   options: PreviewBuildOptions,
 ): Promise<SVGSVGElement | undefined> {
-  const steps = buildPreviewSteps(ownerDocument, safeSvg);
+  const now = options.now ?? (() => performance.now());
+  const sliceBudgetMs = options.sliceBudgetMs ?? (() => DEFAULT_SLICE_BUDGET_MS);
+  let sliceStarted = now();
+  const deadlineExceeded = () => now() - sliceStarted >= sliceBudgetMs();
+  const steps = buildPreviewSteps(ownerDocument, safeSvg, deadlineExceeded);
   while (true) {
     await options.checkpoint();
     if (options.isCancelled()) return undefined;
+    sliceStarted = now();
     const step = steps.next();
     if (step.done) return step.value;
   }
 }
 
-function* findToken(input: string, token: string, start: number): Generator<void, number> {
+function* findToken(
+  input: string,
+  token: string,
+  start: number,
+  deadlineExceeded: () => boolean,
+): Generator<void, number> {
   for (let cursor = start; cursor < input.length; cursor += SCAN_UNITS) {
     const chunk = input.slice(cursor, cursor + SCAN_UNITS + token.length - 1);
     const offset = chunk.indexOf(token);
-    if (offset >= 0) return cursor + offset;
+    if (offset >= 0) {
+      if (deadlineExceeded()) yield;
+      return cursor + offset;
+    }
     yield;
   }
   throw new Error("The validated Inkbook preview has incomplete markup.");
@@ -52,6 +69,7 @@ function appendElement(ownerDocument: Document, markup: string, parents: Element
 function* buildPreviewSteps(
   ownerDocument: Document,
   safeSvg: string,
+  deadlineExceeded: () => boolean,
 ): Generator<void, SVGSVGElement> {
   const parents: Element[] = [];
   let root: SVGSVGElement | undefined;
@@ -59,13 +77,13 @@ function* buildPreviewSteps(
   let elements = 0;
   let markupUnits = 0;
   while (cursor < safeSvg.length) {
-    const start = yield* findToken(safeSvg, "<", cursor);
-    const end = yield* findToken(safeSvg, ">", start);
+    const start = yield* findToken(safeSvg, "<", cursor, deadlineExceeded);
+    const end = yield* findToken(safeSvg, ">", start, deadlineExceeded);
     const markup = safeSvg.slice(start, end + 1);
     cursor = end + 1;
     if (markup.startsWith("<metadata") || markup.startsWith("<style")) {
       const closing = markup.startsWith("<metadata") ? "</metadata>" : "</style>";
-      cursor = (yield* findToken(safeSvg, closing, cursor)) + closing.length;
+      cursor = (yield* findToken(safeSvg, closing, cursor, deadlineExceeded)) + closing.length;
       continue;
     }
     if (markup.startsWith("</")) {
@@ -77,7 +95,7 @@ function* buildPreviewSteps(
     root ??= element as SVGSVGElement;
     elements += 1;
     markupUnits += markup.length;
-    if (elements >= ELEMENTS_PER_SLICE || markupUnits >= SCAN_UNITS) {
+    if (elements >= ELEMENTS_PER_SLICE || markupUnits >= SCAN_UNITS || deadlineExceeded()) {
       elements = 0;
       markupUnits = 0;
       yield;

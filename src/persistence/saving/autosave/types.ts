@@ -23,6 +23,7 @@ export interface AutosaveClock {
 }
 
 export interface AutosaveSessionBaseOptions {
+  readonly sliceBudgetMs?: () => number;
   readonly waitForBackground?: () => Promise<void>;
   readonly beforeExistingWrite?: (expectedContent: string) => Promise<void>;
   readonly clock: AutosaveClock;
@@ -56,6 +57,7 @@ export interface AutosaveObserver {
 }
 
 export interface AutosaveCoordinatorOptions {
+  readonly sliceBudgetMs?: () => number;
   readonly waitForBackground?: () => Promise<void>;
   readonly beforeExistingWrite?: (expectedContent: string) => Promise<void>;
   readonly clock: AutosaveClock;

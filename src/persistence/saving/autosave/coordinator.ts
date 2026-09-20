@@ -3,19 +3,9 @@ import type { ExportSuccess, PurposeOperationIdentity, VaultBase } from "../../w
 import type { DocumentRuntimeResult, ModelSyncRuntimeRequest } from "../../worker/runtime/public";
 import { readExistingFileWithinLimit } from "../bounded-file-read";
 import type { PreparedSave } from "../save-existing";
-import {
-  AutosaveExportIntegrity,
-  inspectIntegrityBoundExport,
-  type ExportIntegrityDecision,
-} from "./export-integrity";
+import * as integrity from "./export-integrity";
 import type * as Autosave from "./types";
-import {
-  createExportRequest,
-  createModelSyncRequest,
-  matchesExportResult,
-  matchesModelSyncResult,
-  type ConcreteExportRequest,
-} from "./export-request";
+import * as exports from "./export-request";
 import { persistPreparedOutput, resolveAutosaveExpectedBase } from "./save-operation";
 import { createTerminalVaultPort } from "./terminal-vault-port";
 import { AutosavePersistedOutputVerifier } from "./persisted-output-verifier";
@@ -38,7 +28,7 @@ export class AutosaveCoordinator {
   #disposed = false;
   #executor;
   #exportGeneration = 0;
-  #exportInFlight: ConcreteExportRequest | null = null;
+  #exportInFlight: exports.ConcreteExportRequest | null = null;
   #fallbackUsed = false;
   #forced = false;
   readonly #integrity;
@@ -59,7 +49,10 @@ export class AutosaveCoordinator {
   readonly #workerModel;
   public constructor(options: Autosave.AutosaveCoordinatorOptions) {
     assertAutosaveInitialState(options);
-    this.#integrity = new AutosaveExportIntegrity(options.waitForBackground);
+    this.#integrity = new integrity.AutosaveExportIntegrity(
+      options.waitForBackground,
+      options.sliceBudgetMs,
+    );
     this.#confirmedContent = options.confirmedContent ?? null;
     this.#beforeExistingWrite = options.beforeExistingWrite;
     this.#canonicalRewritePending = options.requiresCanonicalRewrite ?? false;
@@ -80,6 +73,7 @@ export class AutosaveCoordinator {
       this.#timer.schedule(AUTOSAVE_DELAY_MS);
     }
     this.#verifier = new AutosavePersistedOutputVerifier({
+      ...(options.sliceBudgetMs ? { sliceBudgetMs: options.sliceBudgetMs } : {}),
       ...(options.waitForBackground ? { waitForBackground: options.waitForBackground } : {}),
       executor: () => this.#executor,
       isDisposed: () => this.#disposed,
@@ -129,7 +123,7 @@ export class AutosaveCoordinator {
     if (this.#exportInFlight !== null || this.#modelSyncInFlight !== null) return false;
     const plan = this.#workerModel.takePlan(this.#document);
     if (plan === null || plan.modelRevision !== revision) return false;
-    const request = createModelSyncRequest(plan, identity);
+    const request = exports.createModelSyncRequest(plan, identity);
     this.#modelSyncInFlight = request;
     let synchronized = false;
     try {
@@ -137,7 +131,7 @@ export class AutosaveCoordinator {
       if (
         this.#disposed ||
         this.#modelSyncInFlight !== request ||
-        !matchesModelSyncResult(request, result)
+        !exports.matchesModelSyncResult(request, result)
       ) {
         return false;
       }
@@ -270,7 +264,7 @@ export class AutosaveCoordinator {
       sessionId: this.#sessionId,
       workerEpoch: this.#workerEpoch,
     };
-    const request = createExportRequest(plan, identity);
+    const request = exports.createExportRequest(plan, identity);
     this.#exportInFlight = request;
     this.#setStatus("saving");
     void this.#executor.execute(request).then(
@@ -278,15 +272,18 @@ export class AutosaveCoordinator {
       () => this.#recoverExecutor(request),
     );
   }
-  async #adoptExport(request: ConcreteExportRequest, result: DocumentRuntimeResult): Promise<void> {
+  async #adoptExport(
+    request: exports.ConcreteExportRequest,
+    result: DocumentRuntimeResult,
+  ): Promise<void> {
     if (this.#disposed || this.#exportInFlight !== request) {
       if (result.type === "export-success") this.#executor.acknowledgeExport?.(result, false);
       return;
     }
-    if (result.type !== "export-success" || !matchesExportResult(request, result)) {
+    if (result.type !== "export-success" || !exports.matchesExportResult(request, result)) {
       this.#exportInFlight = null;
       if (result.type === "export-success") this.#executor.acknowledgeExport?.(result, false);
-      if (result.type === "export-failure" && matchesExportResult(request, result))
+      if (result.type === "export-failure" && exports.matchesExportResult(request, result))
         this.#requireFullSnapshot();
       this.#setStatus("retryable-error");
       this.#resolveWaiters();
@@ -304,9 +301,9 @@ export class AutosaveCoordinator {
     this.#adoptExportIntegrity(request, result, integrity);
   }
   #adoptExportIntegrity(
-    request: ConcreteExportRequest,
+    request: exports.ConcreteExportRequest,
     result: ExportSuccess,
-    integrity: ExportIntegrityDecision,
+    decision: integrity.ExportIntegrityDecision,
   ): void {
     if (this.#disposed || this.#exportInFlight !== request) {
       this.#executor.acknowledgeExport?.(result, false);
@@ -319,10 +316,10 @@ export class AutosaveCoordinator {
       if (this.#forced || !this.#timer.hasPending) this.#kick();
       return;
     }
-    if (integrity !== "match") {
+    if (decision !== "match") {
       this.#executor.acknowledgeExport?.(result, false);
       this.#prepared = null;
-      if (integrity === "retry-full") {
+      if (decision === "retry-full") {
         this.#requireFullSnapshot();
         this.#setStatus("debouncing");
         this.#kick();
@@ -368,7 +365,11 @@ export class AutosaveCoordinator {
     if (result === null) throw new Error("Active save output was already released.");
     let outputTrusted = false;
     try {
-      const trusted = await inspectIntegrityBoundExport(result, this.#integrity.waitForBackground);
+      const trusted = await integrity.inspectIntegrityBoundExport(
+        result,
+        this.#integrity.waitForBackground,
+        this.#integrity.sliceBudgetMs,
+      );
       active.result = null;
       if (this.#disposed) return;
       outputTrusted = true;
@@ -391,6 +392,9 @@ export class AutosaveCoordinator {
         prepared,
         revisionSource: {
           currentRevision: () => this.#document.currentRevision(),
+          ...(this.#integrity.sliceBudgetMs
+            ? { sliceBudgetMs: this.#integrity.sliceBudgetMs }
+            : {}),
           ...(this.#integrity.waitForBackground
             ? { waitForBackground: this.#integrity.waitForBackground }
             : {}),
@@ -454,7 +458,7 @@ export class AutosaveCoordinator {
     this.#executor.requestPrewarm?.();
     this.#setStatus(this.dirty ? "debouncing" : "clean");
   }
-  #recoverExecutor(request: ConcreteExportRequest): void {
+  #recoverExecutor(request: exports.ConcreteExportRequest): void {
     if (this.#disposed || this.#exportInFlight !== request) return;
     this.#exportInFlight = null;
     if (!this.#switchToFallback()) return;
