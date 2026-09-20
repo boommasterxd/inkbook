@@ -7,6 +7,7 @@ const exposeGarbageCollector = process.execArgv.includes("--expose-gc");
 const serialCapacityTests = [
   "test/unit/domain/geometry/table-column-change.test.ts",
   "test/unit/persistence/documents/safe-svg-validator.test.ts",
+  "test/unit/persistence/saving/trusted-svg-output.test.ts",
 ];
 
 export default defineConfig({
