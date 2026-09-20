@@ -1,4 +1,5 @@
 import { arrangeRenderBand, type ArrangeAction } from "../../../domain/commands/arrange";
+import { TRANSITION_DURATIONS } from "../../../rendering/motion/transitions";
 import type { PasteInvocation } from "../../../persistence/clipboard/public";
 import {
   TOOLBAR_ACTION_CONFIRMATION_MS,
@@ -34,6 +35,10 @@ export interface ActiveEditorActionsOptions {
   readonly onPendingChanged: (pending: boolean) => void;
   readonly onStateChanged: () => void;
   readonly ownerWindow: Window;
+  readonly renderer: {
+    setElementFade(ids: readonly string[], durationMs: number): void;
+    clearElementFade(ids: readonly string[]): void;
+  };
   readonly sceneStore: ElementSceneStore;
   readonly setSelection: (selection: ReadonlySet<string>) => void;
   readonly visibleCenter: () => { readonly x: number; readonly y: number };
@@ -41,6 +46,7 @@ export interface ActiveEditorActionsOptions {
 }
 
 export class ActiveEditorActions {
+  readonly #renderer: ActiveEditorActionsOptions["renderer"];
   readonly #clipboard: ActiveEditorClipboardController;
   readonly #confirmEraseAll: ActiveEditorActionsOptions["confirmEraseAll"];
   readonly #isAttached: () => boolean;
@@ -67,6 +73,7 @@ export class ActiveEditorActions {
   #pasteProbeGeneration = 0;
 
   public constructor(options: ActiveEditorActionsOptions) {
+    this.#renderer = options.renderer;
     this.#confirmEraseAll = options.confirmEraseAll;
     this.#isAttached = options.isAttached;
     this.#currentSelection = options.currentSelection;
@@ -314,12 +321,18 @@ export class ActiveEditorActions {
   async #deleteSelection(): Promise<void> {
     const selection = this.#currentSelection();
     const ids = selectedElements(this.#sceneStore, selection).map(({ id }) => id);
-    const outcome = await this.#documentHistory.remove(ids, () =>
-      sameSelection(selection, this.#currentSelection()),
-    );
-    if (outcome === "applied") this.#setSelection(new Set());
-    else if (outcome === "failed" || outcome === "stale") {
-      this.#onFeedback?.("history-change-failed");
+    this.#renderer.setElementFade(ids, TRANSITION_DURATIONS.eraserPendingRemoval);
+    try {
+      const outcome = await this.#documentHistory.remove(ids, () =>
+        sameSelection(selection, this.#currentSelection()),
+      );
+      if (outcome === "applied") this.#setSelection(new Set());
+      else if (outcome === "failed" || outcome === "stale") {
+        this.#onFeedback?.("history-change-failed");
+      }
+    } finally {
+      // Committed removals retain their fade until scene cleanup; rejected ones are restored.
+      if (this.#isAttached()) this.#renderer.clearElementFade(ids);
     }
   }
 

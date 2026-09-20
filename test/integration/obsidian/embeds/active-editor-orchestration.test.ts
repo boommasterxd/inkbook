@@ -258,6 +258,7 @@ function activeActions(
   onFeedback?: (code: import("../../../../src/obsidian/feedback").InkbookFeedbackCode) => void,
 ): ActiveEditorActions {
   return new ActiveEditorActions({
+    renderer: { setElementFade: vi.fn(), clearElementFade: vi.fn() },
     currentSelection: () => selection,
     history: new ActiveEditorHistory(model),
     isAttached: () => true,

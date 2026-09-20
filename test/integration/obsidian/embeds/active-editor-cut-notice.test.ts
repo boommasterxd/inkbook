@@ -60,6 +60,7 @@ function actionFixture(
   const write = vi.fn(async () => undefined);
   let enabled = true;
   const actions = new ActiveEditorActions({
+    renderer: { setElementFade: vi.fn(), clearElementFade: vi.fn() },
     currentSelection: () => selection,
     history,
     isAttached: () => true,

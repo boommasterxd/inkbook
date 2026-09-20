@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
+import { createSceneFixture } from "../../../fixtures/rendering/scene";
 
 import type { PageV1, StrokeElementV1 } from "../../../../src/domain/schema/public";
-import { SvgSceneRenderer } from "../../../../src/rendering/scene";
+import type { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import { type SceneElementRecord } from "../../../../src/rendering/scene/types";
 import {
   MOUNT_SLICE_GEOMETRY_COST_BUDGET,
   MOUNT_SLICE_STROKE_POINT_BUDGET,
 } from "../../../../src/rendering/scene/constants";
 import {
-  FakeDocument,
-  FakeNode,
+  type FakeNode,
   FakeSceneStore,
-  FakeScheduler,
-  asElement,
+  type FakeScheduler,
   fakeNode,
+  fakeRectangleRecord,
 } from "../../../unit/rendering/scene/fakes";
 
 const STROKES = 489;
@@ -32,18 +32,8 @@ describe("visible render mount complexity", () => {
   it("resumes 489 visible strokes with exactly two million points in stable band order", async ({
     annotate,
   }) => {
-    const document = new FakeDocument();
-    const scheduler = new FakeScheduler();
-    const store = new FakeSceneStore();
     const fixture = createMaximumPointFixture();
-    for (const record of fixture.records) store.records.set(record.id, record);
-    const renderer = new SvgSceneRenderer({
-      container: asElement(new FakeNode(document, "div")),
-      layout: { readViewport: () => ({ height: 200, left: 0, top: 0, width: 200 }) },
-      page: PAGE,
-      scheduler,
-      store,
-    });
+    const { renderer, scheduler } = createMountScene(fixture.records);
     scheduler.runNext();
     const firstFrameMounts = renderer.mountedCount;
     while (scheduler.pendingCount > 0) scheduler.runNext();
@@ -90,37 +80,25 @@ function verifyEraserFeedback(
   fixture: ReturnType<typeof createMaximumPointFixture>,
 ): void {
   const nodes = [...cameraGroup.nodes[3]!.nodes, ...cameraGroup.nodes[4]!.nodes];
-  let styleWrites = 0;
-  for (const node of nodes) {
-    for (const property of ["transition", "filter", "opacity"]) {
-      let value: unknown = node.style[property];
-      Object.defineProperty(node.style, property, {
-        get: () => value,
-        set: (next: unknown) => {
-          value = next;
-          styleWrites += 1;
-        },
-      });
-    }
-  }
+  const styleWrites = observeFadeWrites(nodes);
   const before = renderer.instrumentation();
   const ids = [...fixture.contentIds, ...fixture.highlightIds];
   renderer.setElementFade(ids, 160);
-  expect(styleWrites).toBe(128 * 3);
+  expect(styleWrites()).toBe(128 * 3);
   expect(scheduler.pendingCount).toBe(1);
   scheduler.runNext();
-  expect(styleWrites).toBe(128 * 3);
+  expect(styleWrites()).toBe(128 * 3);
   while (scheduler.pendingCount > 0) {
-    const beforeFrame = styleWrites;
+    const beforeFrame = styleWrites();
     scheduler.runNext();
-    expect(styleWrites - beforeFrame).toBeLessThanOrEqual(128 * 3);
+    expect(styleWrites() - beforeFrame).toBeLessThanOrEqual(128 * 3);
     expect(scheduler.pendingCount).toBeLessThanOrEqual(1);
   }
-  expect(styleWrites).toBe(STROKES * 3);
+  expect(styleWrites()).toBe(STROKES * 3);
   expect(nodes.every((node) => node.style.filter === "blur(50px)")).toBe(true);
   expect(scheduler.pendingCount).toBe(0);
   renderer.clearElementFade(ids);
-  expect(styleWrites).toBe(STROKES * 6);
+  expect(styleWrites()).toBe(STROKES * 6);
   expect(nodes.every((node) => node.style.filter === "")).toBe(true);
   const fadeFrames = Math.ceil(STROKES / 128);
   expect(renderer.instrumentation()).toEqual({
@@ -192,4 +170,73 @@ function strokePoints(count: number): number[] {
     points[offset + 2] = 0.5;
   }
   return points;
+}
+
+it("bounds selected deletion filter writes for 10,000 mounted elements", () => {
+  const records = Array.from({ length: 10_000 }, (_, index) =>
+    fakeRectangleRecord(`selected-${index}`, index, 10),
+  );
+  const { renderer, scheduler, store } = createMountScene(records);
+  scheduler.runAll(500);
+  expect(renderer.mountedCount).toBe(records.length);
+  const nodes = [...fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes];
+  const writes = observeFadeWrites(nodes);
+  const before = renderer.instrumentation();
+  const ids = records.map(({ id }) => id);
+  renderer.setElementFade(ids, 300);
+  expect(writes()).toBe(128 * 3);
+  store.records.clear();
+  renderer.applyDelta({
+    affected: records.map(({ id, element }) => ({
+      id,
+      before: element,
+      after: null,
+      domains: ["visibility"],
+    })),
+  });
+  renderer.clearElementFade(ids);
+  expect(writes()).toBe(128 * 3);
+  for (let frame = 0; scheduler.pendingCount > 0; frame += 1) {
+    expect(frame).toBeLessThan(400);
+    const previous = writes();
+    scheduler.time += 1000 / 120;
+    scheduler.runNext();
+    expect(writes() - previous).toBeLessThanOrEqual(128 * 3);
+    expect(scheduler.pendingCount).toBeLessThanOrEqual(1);
+  }
+  expect(writes()).toBe(records.length * 3);
+  expect(renderer.mountedCount).toBe(0);
+  expect(renderer.instrumentation()).toMatchObject({
+    geometryBuilds: before.geometryBuilds,
+    motionTombstones: 0,
+    motionCacheEntries: 0,
+  });
+  renderer.destroy();
+  expect(scheduler.pendingCount).toBe(0);
+});
+
+function observeFadeWrites(nodes: readonly FakeNode[]): () => number {
+  let writes = 0;
+  for (const node of nodes) {
+    for (const property of ["transition", "filter", "opacity"]) {
+      let value = node.style[property];
+      Object.defineProperty(node.style, property, {
+        get: () => value,
+        set: (next: string) => {
+          value = next;
+          writes += 1;
+        },
+      });
+    }
+  }
+  return () => writes;
+}
+
+function createMountScene(records: readonly SceneElementRecord[]) {
+  const store = new FakeSceneStore();
+  for (const record of records) store.records.set(record.id, record);
+  return {
+    store,
+    ...createSceneFixture(PAGE, store, { height: 200, left: 0, top: 0, width: 200 }),
+  };
 }
