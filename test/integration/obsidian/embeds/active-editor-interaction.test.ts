@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { selectedRectangle } from "./active-editor-clipboard-fixtures";
 
 import { createBuiltInSettings } from "../../../../src/domain/settings/defaults";
 import { ElementStore } from "../../../../src/domain/store/public";
@@ -17,6 +18,7 @@ import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vaul
 import { encodeRuntimeSelection } from "../../../../src/persistence/clipboard/codec";
 import { createDragElement } from "../../../../src/editor/tools/public";
 import { elementMutationPorts } from "../../../fixtures/obsidian/element-mutation-ports";
+import { ManualFrameScheduler } from "../../../fixtures/obsidian/manual-frame-scheduler";
 import { creationPreviewRenderer } from "../../../fixtures/obsidian/active-editor";
 
 function model(): EditableDocumentModel {
@@ -248,6 +250,63 @@ function passiveGesturePorts() {
 }
 
 describe("active editor eraser composition", () => {
+  it.each(["revert", "revision"])(
+    "continues stationary queries on owned frames and cancels on %s",
+    (reason) => {
+      const document = model();
+      const base = selectedRectangle();
+      const elements = Array.from({ length: 2_000 }, (_, index) => ({
+        ...base,
+        id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      }));
+      document.commitElements(elements);
+      const frames = new ManualFrameScheduler();
+      const faded = new Set<string>();
+      const sceneStore = new ElementSceneStore(document.store);
+      const preview = new EraserPreview({
+        history: new ActiveEditorHistory(document),
+        model: document,
+        radius: 20,
+        ownerWindow: {
+          requestAnimationFrame: (callback: FrameRequestCallback) =>
+            frames.requestAnimationFrame(callback),
+          cancelAnimationFrame: (handle: number) => frames.cancelAnimationFrame(handle),
+          performance,
+        } as unknown as Window,
+        renderer: {
+          clearElementFade: (ids) => ids.forEach((id) => faded.delete(id)),
+          setElementFade: (ids) => ids.forEach((id) => faded.add(id)),
+        },
+        sceneStore,
+        sliceBudgetMs: () => 0,
+        start: {
+          additive: false,
+          kind: "eraser-gesture",
+          tool: "eraser",
+          pointer: { pointerId: 5, pointerType: "pen", x: 100, y: 150 },
+        },
+      });
+      const initial = faded.size;
+      expect(initial).toBeGreaterThan(0);
+      expect(initial).toBeLessThan(elements.length);
+      expect(frames.pendingCount).toBe(1);
+      frames.runNext();
+      expect(faded.size).toBeGreaterThan(initial);
+      expect(document.store.size).toBe(elements.length);
+      expect(frames.pendingCount).toBe(1);
+      if (reason === "revision") {
+        document.commitPage(document.page);
+        frames.runNext();
+      } else preview.revert();
+      expect(frames.pendingCount).toBe(0);
+      expect(faded.size).toBe(0);
+      expect(document.store.size).toBe(elements.length);
+      sceneStore.release();
+    },
+  );
+});
+
+describe("active editor eraser commit", () => {
   it("previews, cancels, and atomically removes complete eraser hits with undo", async () => {
     const document = model();
     const element = createDragElement({
@@ -261,15 +320,21 @@ describe("active editor eraser composition", () => {
     const history = new ActiveEditorHistory(document);
     const fades: Array<{ durationMs: number; ids: readonly string[] }> = [];
     const cleared: string[][] = [];
+    const pendingFrames = new Set<number>();
+    let nextFrame = 0;
     const options = {
       history,
       model: document,
       ownerWindow: {
-        cancelAnimationFrame: vi.fn(),
+        cancelAnimationFrame: (handle: number) => pendingFrames.delete(handle),
         performance,
         requestAnimationFrame: (callback: FrameRequestCallback) => {
-          queueMicrotask(() => callback(performance.now()));
-          return 1;
+          const handle = ++nextFrame;
+          pendingFrames.add(handle);
+          queueMicrotask(() => {
+            if (pendingFrames.delete(handle)) callback(performance.now());
+          });
+          return handle;
         },
       } as unknown as Window,
       radius: 20,
@@ -287,7 +352,6 @@ describe("active editor eraser composition", () => {
       },
     };
     const cancelled = new EraserPreview(options);
-    expect(cancelled.frameSampleMode).toBe("preserve");
     expect(fades).toEqual([{ durationMs: 160, ids: [element.id] }]);
     cancelled.revert();
     expect(cleared).toContainEqual([element.id]);
