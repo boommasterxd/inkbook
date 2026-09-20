@@ -99,8 +99,13 @@ export interface PreparedElementReplacementResult {
   readonly token: PreparedElementReplacement | null;
 }
 
+export interface ElementPlacement extends ElementRank {
+  readonly id: string;
+}
+
 export interface ElementMutation {
-  readonly bands: Readonly<Record<RenderBand, readonly string[]>>;
+  readonly placements?: readonly ElementPlacement[];
+  readonly bands?: Readonly<Record<RenderBand, readonly string[]>>;
   readonly elements?: readonly InkElementV1[];
   readonly removeIds?: readonly string[];
 }

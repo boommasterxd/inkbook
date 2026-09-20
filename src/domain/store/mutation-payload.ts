@@ -3,7 +3,8 @@ import type { InkElementV1 } from "../schema/public";
 import type { ElementMutation, ImmutableInkElement } from "./types";
 
 export function mutationStructurePayloadBytes(mutation: ElementMutation): number {
-  let bytes = (mutation.bands.content.length + mutation.bands.highlight.length) * 80;
+  let bytes = ((mutation.bands?.content.length ?? 0) + (mutation.bands?.highlight.length ?? 0)) * 80;
+  for (const placement of mutation.placements ?? []) bytes += placement.id.length * 2 + 24;
   for (const id of mutation.removeIds ?? []) bytes += id.length * 2;
   return bytes;
 }

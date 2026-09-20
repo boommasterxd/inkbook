@@ -1,6 +1,9 @@
 import { boundsIntersect, type SpatialBounds } from "./bounds";
-import { assertSpatialAggregateCapacity } from "./capacity";
-import { cellMembershipCount, createCellRange, createSpatialCellKeys } from "./cell-membership";
+import { createCellRange, createSpatialCellKeys } from "./cell-membership";
+import {
+  SpatialInsertionPreparation,
+  type PreparedSpatialInsertions,
+} from "./insertion-preparation";
 import { visitSpatialCells } from "./cell-query";
 import { popMaximumBottom, pushBottom, type BottomHeapEntry } from "./max-bottom-heap";
 import { SpatialQueryCursor } from "./query-cursor";
@@ -23,6 +26,7 @@ import {
   type SpatialReplacementPreparationScheduler,
 } from "./replacement-preparation";
 
+export type { PreparedSpatialInsertions } from "./insertion-preparation";
 export type { PreparedSpatialReplacements, SpatialReplacement } from "./index-state";
 
 export const SPATIAL_CELL_SIZE = 256;
@@ -34,6 +38,7 @@ const EXTENT_REBUILD_OPERATION_SLICE = MAX_EXTENT_REBUILD_SLICE;
 const EXTENT_BATCH_HEAP_THRESHOLD = 64;
 
 export class UniformSpatialIndex<Id> {
+  private readonly insertionPreparation = new SpatialInsertionPreparation<Id>();
   private readonly cells: CellColumns = new Map();
   private readonly entries = new Map<Id, IndexedEntry<Id>>();
   private readonly freeSlots: number[] = [];
@@ -87,22 +92,25 @@ export class UniformSpatialIndex<Id> {
   }
 
   public insertMany(insertions: readonly SpatialReplacement<Id>[]): void {
-    if (insertions.length === 0) return;
-    const ids = new Set<Id>();
-    const staged: Array<{ bounds: SpatialBounds; id: Id; range: CellRange }> = [];
-    let memberships = this.gridMembershipCount;
-    let overflow = this.overflowSlots.size;
-    for (const { bounds, id } of insertions) {
-      if (ids.has(id) || this.entries.has(id)) {
-        throw new Error("Spatial index already contains the ID.");
-      }
-      ids.add(id);
-      const range = { ...this.prepareRange(bounds) };
-      memberships += cellMembershipCount(range);
-      overflow += Number(range.overflow);
-      staged.push({ bounds, id, range });
-    }
-    assertSpatialAggregateCapacity(memberships, overflow, this.recordVersion, staged.length);
+    this.commitPreparedInsertions(this.prepareInsertions(insertions));
+  }
+
+  public prepareInsertions(
+    insertions: readonly SpatialReplacement<Id>[],
+  ): PreparedSpatialInsertions<Id> {
+    return this.insertionPreparation.prepare(insertions, {
+      currentMemberships: this.gridMembershipCount,
+      currentOverflow: this.overflowSlots.size,
+      generation: this.mutationGeneration,
+      has: (id) => this.entries.has(id),
+      prepareRange: (bounds) => this.prepareRange(bounds),
+      recordVersion: this.recordVersion,
+    });
+  }
+
+  public commitPreparedInsertions(plan: PreparedSpatialInsertions<Id>): void {
+    const staged = this.insertionPreparation.consume(plan, this.mutationGeneration);
+    if (staged.length === 0) return;
     for (const { bounds, id, range } of staged) {
       this.attachEntry(this.createEntry(id, bounds, range, this.takeSlot()), range, false);
     }

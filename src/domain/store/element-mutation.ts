@@ -40,6 +40,7 @@ import type {
 
 export interface ElementMutationPlan {
   readonly applied: AppliedElementMutation;
+  readonly kind: "complete";
   readonly bands: Record<RenderBand, string[]>;
   readonly capacity: DocumentCapacity;
   readonly delta: StoreDelta;
@@ -67,6 +68,7 @@ export async function planElementMutation(
   requested: ElementMutation,
   scheduler: StoreSliceScheduler,
 ): Promise<ElementMutationPlan | "cancelled" | null> {
+  if (requested.bands === undefined) throw new Error("Complete mutations require band order.");
   scheduler = minimumProgressScheduler(scheduler);
   const sourceRanks = source.ranks ?? (await buildRanks(source.bands, scheduler));
   if (sourceRanks === "cancelled") return sourceRanks;
@@ -104,6 +106,7 @@ export async function planElementMutation(
     throw new RangeError("Element mutation exceeds the retained history payload limit.");
   }
   return {
+    kind: "complete",
     applied: Object.freeze({ forward, payloadBytes, reverse }),
     bands,
     capacity,
@@ -136,7 +139,7 @@ function minimumProgressScheduler(scheduler: StoreSliceScheduler): StoreSliceSch
   };
 }
 
-async function collectDesiredElements(
+export async function collectDesiredElements(
   source: MutationSource,
   elements: readonly InkElementV1[],
   removeIds: ReadonlySet<string>,
@@ -249,7 +252,7 @@ async function buildRecords(
   return records;
 }
 
-function updatedRecord(
+export function updatedRecord(
   current: ElementRecord,
   element: InkElementV1 | undefined,
   geometryVersion: number,
@@ -441,6 +444,7 @@ async function freezeMutation(
   mutation: ElementMutation,
   scheduler: StoreSliceScheduler,
 ): Promise<ElementMutation | "cancelled"> {
+  if (mutation.bands === undefined) throw new Error("Complete mutations require band order.");
   const content = await copyFrozen(mutation.bands.content, scheduler);
   if (content === "cancelled") return content;
   const highlight = await copyFrozen(mutation.bands.highlight, scheduler);
@@ -468,7 +472,7 @@ async function estimateMutationBytes(
   mutation: ElementMutation,
   scheduler: StoreSliceScheduler,
 ): Promise<number | "cancelled"> {
-  let bytes = (mutation.bands.content.length + mutation.bands.highlight.length) * 80;
+  let bytes = ((mutation.bands?.content.length ?? 0) + (mutation.bands?.highlight.length ?? 0)) * 80;
   for (const id of mutation.removeIds ?? []) {
     if (!(await checkpoint(scheduler))) return "cancelled";
     bytes += id.length * 2;
@@ -493,7 +497,7 @@ async function orderChanged(
   return false;
 }
 
-async function checkpoint(scheduler: StoreSliceScheduler): Promise<boolean> {
+export async function checkpoint(scheduler: StoreSliceScheduler): Promise<boolean> {
   if (scheduler.isCancelled?.() ?? false) return false;
   if (scheduler.shouldYield()) await scheduler.yieldControl();
   return !(scheduler.isCancelled?.() ?? false);

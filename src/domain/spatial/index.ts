@@ -8,4 +8,7 @@ export {
   SPATIAL_CELL_SIZE,
   UniformSpatialIndex,
 } from "./uniform-spatial-index";
-export type { PreparedSpatialReplacements } from "./uniform-spatial-index";
+export type {
+  PreparedSpatialInsertions,
+  PreparedSpatialReplacements,
+} from "./uniform-spatial-index";
