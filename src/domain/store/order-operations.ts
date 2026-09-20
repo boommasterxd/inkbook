@@ -81,8 +81,7 @@ export class ElementStoreOrdering {
       modified = true;
     }
     if (!modified) return false;
-    this.#bands[band].clear();
-    for (const id of ids) this.#bands[band].insert(id, this.#bands[band].size);
+    this.#bands[band].replaceAll(ids);
     return true;
   }
 

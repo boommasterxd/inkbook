@@ -365,15 +365,9 @@ export class ElementStore {
   }
 
   public arrange(selectedIds: ReadonlySet<string>, action: ArrangeAction): StoreDelta | null {
-    const delta = new DeltaBuilder();
-    for (const band of ["highlight", "content"] as const) {
-      const changed = this.#ordering.arrange(band, selectedIds, action, (id) => {
-        delta.addOrder(id, this.#requireRecord(id));
-      });
-      this.#instrumentation.bandScans += 1;
-      if (changed) delta.dirtyBand(band);
-    }
-    return this.#publish(delta.build(this.#geometryVersion, this.#paintVersion));
+    return this.#applyOrder((band, changed) =>
+      this.#ordering.arrange(band, selectedIds, action, changed),
+    );
   }
 
   public reorderBands(
@@ -387,13 +381,19 @@ export class ElementStore {
         (id) => this.#ordering.getRank(id)?.band,
       );
     }
+    return this.#applyOrder((band, changed) =>
+      this.#ordering.reorder(band, orderedIds[band], changed),
+    );
+  }
+
+  #applyOrder(
+    apply: (band: RenderBand, changed: (id: string) => void) => boolean,
+  ): StoreDelta | null {
     const delta = new DeltaBuilder();
+    const changed = (id: string) => delta.addOrder(id, this.#requireRecord(id));
     for (const band of ["highlight", "content"] as const) {
-      const changed = this.#ordering.reorder(band, orderedIds[band], (id) => {
-        delta.addOrder(id, this.#requireRecord(id));
-      });
+      if (apply(band, changed)) delta.dirtyBand(band);
       this.#instrumentation.bandScans += 1;
-      if (changed) delta.dirtyBand(band);
     }
     return this.#publish(delta.build(this.#geometryVersion, this.#paintVersion));
   }

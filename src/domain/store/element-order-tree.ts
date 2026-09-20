@@ -39,6 +39,13 @@ export class ElementOrderTree {
     this.nodes.clear();
   }
 
+  /** Rebuilds a complete order in linear work; invalid input preserves the old order. */
+  replaceAll(ids: readonly string[]): void {
+    if (new Set(ids).size !== ids.length) throw new Error("Duplicate element order ID");
+    this.nodes.clear();
+    this.root = this.buildBalanced(ids, 0, ids.length);
+  }
+
   insert(id: string, rank: number): void {
     if (this.nodes.has(id)) throw new Error("Duplicate element order ID");
     if (!Number.isInteger(rank) || rank < 0 || rank > this.size) {
@@ -122,6 +129,26 @@ export class ElementOrderTree {
       yield current.id;
       node = current.right;
     }
+  }
+
+  private buildBalanced(ids: readonly string[], start: number, end: number): OrderNode | undefined {
+    if (start === end) return undefined;
+    const middle = start + Math.floor((end - start) / 2);
+    const left = this.buildBalanced(ids, start, middle);
+    const right = this.buildBalanced(ids, middle + 1, end);
+    const node: OrderNode = {
+      id: ids[middle]!,
+      left,
+      right,
+      parent: undefined,
+      height: Math.max(height(left), height(right)) + 1,
+      size: end - start,
+    };
+    this.visits += 1;
+    if (left) left.parent = node;
+    if (right) right.parent = node;
+    this.nodes.set(node.id, node);
+    return node;
   }
 
   private attach(node: OrderNode, rank: number): void {

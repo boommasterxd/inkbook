@@ -2,7 +2,8 @@ import { connectionReferences } from "./connections";
 import { elementMutationPayloadBytes } from "./mutation-payload";
 import type { ElementRecord, StoreDelta } from "./types";
 
-const ELEMENT_RUNTIME_OVERHEAD_BYTES = 768;
+// Includes a 64-byte reserve for AVL links/cardinality beyond the former rank entry.
+const ELEMENT_RUNTIME_OVERHEAD_BYTES = 832;
 const SPATIAL_CELL_SIZE = 256;
 const SPATIAL_MEMBERSHIP_BYTES = 64;
 const MAXIMUM_ELEMENT_MEMBERSHIPS = 256;

@@ -4,6 +4,23 @@ import { ElementStore } from "../../../src/domain/store/public";
 import { createStandardDomainFixture } from "./standard-domain-fixture";
 
 describe("element ordering work", () => {
+  it("rebuilds 10000 entries in linear work while retaining logarithmic point access", () => {
+    const tree = new ElementOrderTree();
+    const ids = Array.from({ length: 10000 }, (_, index) => String(index));
+    tree.insert("obsolete", 0);
+    tree.resetInstrumentation();
+    tree.replaceAll(ids);
+    expect(tree.nodeVisits).toBe(10000);
+    expect(tree.rankOf("obsolete")).toBeUndefined();
+    tree.resetInstrumentation();
+    expect(tree.at(9999)).toBe("9999");
+    expect(tree.rankOf("9999")).toBe(9999);
+    expect(tree.nodeVisits).toBeLessThanOrEqual(2 * Math.ceil(Math.log2(10001)));
+    tree.resetInstrumentation();
+    expect(tree.remove("5000")).toBe(true);
+    expect(tree.nodeVisits).toBeLessThanOrEqual(8 * Math.ceil(1.45 * Math.log2(10002)));
+  });
+
   it.each(["prepend", "append"] as const)(
     "bounds actual visits for a 10000-element %s sequence",
     (mode) => {
