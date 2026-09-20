@@ -57,8 +57,12 @@ export function createVaultAutosaveSession(
     initialSnapshot: options.initialSnapshot,
     isGestureActive: options.isGestureActive,
     orderByBand: () => ({
-      content: options.store.materializeBandOrder("content"),
-      highlight: options.store.materializeBandOrder("highlight"),
+      get content() {
+        return options.store.materializeBandOrder("content");
+      },
+      get highlight() {
+        return options.store.materializeBandOrder("highlight");
+      },
     }),
     outputHash: options.outputHash,
     path: options.identity.documentId,

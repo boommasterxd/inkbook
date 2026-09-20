@@ -185,26 +185,7 @@ export class EraserPreview implements GesturePreview {
       removeIds.push(id);
       if (scheduler.shouldYield()) await scheduler.yieldControl();
     }
-    const content = await this.#filterBand("content", ids, scheduler, cancelled);
-    if (content === null) return null;
-    const highlight = await this.#filterBand("highlight", ids, scheduler, cancelled);
-    if (highlight === null) return null;
-    return { bands: { content, highlight }, removeIds };
-  }
-
-  async #filterBand(
-    band: "content" | "highlight",
-    removed: ReadonlySet<string>,
-    scheduler: EraserFrameScheduler,
-    cancelled: () => boolean,
-  ): Promise<string[] | null> {
-    const kept: string[] = [];
-    for (const id of this.#model.store.materializeBandOrder(band)) {
-      if (cancelled()) return null;
-      if (!removed.has(id)) kept.push(id);
-      if (scheduler.shouldYield()) await scheduler.yieldControl();
-    }
-    return kept;
+    return { removeIds };
   }
 
   async #applyMutation(mutation: ElementMutation): Promise<boolean> {

@@ -46,10 +46,6 @@ export class ActiveDocumentHistory {
     const generation = ++this.#generation;
     const basisRevision = this.#model.revision;
     const mutation: ElementMutation = {
-      bands: {
-        content: withoutIds(this.#model.store.materializeBandOrder("content"), removed),
-        highlight: withoutIds(this.#model.store.materializeBandOrder("highlight"), removed),
-      },
       removeIds: [...removed],
     };
     this.#setPending(true);
@@ -108,10 +104,6 @@ export class ActiveDocumentHistory {
     this.#pending = pending;
     this.#onPendingChanged(pending);
   }
-}
-
-function withoutIds(ids: readonly string[], removed: ReadonlySet<string>): readonly string[] {
-  return ids.filter((id) => !removed.has(id));
 }
 
 export type UnifiedHistoryDirection = "redo" | "undo";

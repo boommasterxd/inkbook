@@ -41,6 +41,7 @@ describe("active document element history", () => {
     } as unknown as EditableDocumentModel;
     const history = new ActiveEditorHistory(model);
     const documentHistory = new ActiveDocumentHistory({ history, model });
+    const materialize = vi.spyOn(store, "materializeBandOrder");
 
     await expect(documentHistory.remove([target.id])).resolves.toBe("applied");
     expect(store.get(target.id)).toBeUndefined();
@@ -59,6 +60,7 @@ describe("active document element history", () => {
     expect(store.get(target.id)).toBeUndefined();
     expect(store.get(line.id)?.element).toMatchObject({ startConnection: null });
     expect(deltas).toHaveBeenCalledTimes(3);
+    expect(materialize).not.toHaveBeenCalled();
   });
 
   it("rejects a prepared deletion after its selection becomes stale", async () => {
