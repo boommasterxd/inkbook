@@ -18,4 +18,4 @@ Pure removal does not change survivor-relative ordering and needs no complete or
 
 ## Consequences
 
-Small removal, Undo, and Redo avoid full-document order snapshots and derived-state rebuilds. Large batches and spatial-overflow edits can still take document-sized preparation work. This change does not claim constant-time removal, zero allocation, or physical-device latency guarantees. Work/resource tests cover preparation and publication separately, including cancellation, stale tokens, connected targets, and resource-bound fallbacks.
+Small removal, Undo, and Redo avoid full-document order snapshots and derived-state rebuilds. Large batches and spatial-overflow edits can still take document-sized preparation work. The fallback publishes its complete delta synchronously, so large edits and their listeners are not covered by the compact commit work bound. This change does not claim constant-time removal, zero allocation, or physical-device latency guarantees. Work/resource tests cover preparation and publication separately, including cancellation, stale tokens, connected targets, and resource-bound fallbacks.

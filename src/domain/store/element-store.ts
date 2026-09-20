@@ -14,6 +14,7 @@ import { createElementStoreBuilder, type ElementStoreBuilder } from "./element-s
 import { ElementStoreRuntime } from "./element-store-runtime";
 import { hasConnections } from "./element-comparison";
 import { removeElements } from "./element-removal";
+import { requireElementRecord } from "./record-access";
 import { mutableElement } from "./immutability";
 import { EMPTY_STORE_INSTRUMENTATION, type MutableStoreInstrumentation } from "./instrumentation";
 import { normalizeElementInput } from "./input-normalization";
@@ -344,7 +345,7 @@ export class ElementStore {
   }
 
   public updateStyle(id: string, style: ElementStyle): StoreDelta | null {
-    const current = this.#requireRecord(id);
+    const current = requireElementRecord(this.#records, id);
     const replacement = mutableElement(current.element);
     replacement.style = style;
     return this.replace(id, replacement);
@@ -409,7 +410,7 @@ export class ElementStore {
     apply: (band: RenderBand, changed: (id: string) => void) => boolean,
   ): StoreDelta | null {
     const delta = new DeltaBuilder();
-    const changed = (id: string) => delta.addOrder(id, this.#requireRecord(id));
+    const changed = (id: string) => delta.addOrder(id, requireElementRecord(this.#records, id));
     for (const band of ["highlight", "content"] as const) {
       if (apply(band, changed)) delta.dirtyBand(band);
       this.#instrumentation.bandScans += 1;
@@ -481,18 +482,12 @@ export class ElementStore {
 
   #replacementPorts(): ReplacementPlannerPorts {
     return {
-      getRecord: (id) => this.#requireRecord(id),
+      getRecord: (id) => requireElementRecord(this.#records, id),
       getReferences: (targetId) => this.#reverseConnections.get(targetId),
       onReverseVisit: () => {
         this.#instrumentation.reverseDependencyVisits += 1;
       },
     };
-  }
-
-  #requireRecord(id: string): ElementRecord {
-    const record = this.#records.get(id);
-    if (record === undefined) throw new RangeError(`Unknown element ID: ${id}`);
-    return record;
   }
 
   #publish(delta: StoreDelta | null): StoreDelta | null {
