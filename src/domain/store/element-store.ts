@@ -407,6 +407,10 @@ export class ElementStore {
     return this.#publish(delta.build(this.#geometryVersion, this.#paintVersion));
   }
 
+  public beginQuery(bounds: SpatialBounds): ReturnType<UniformSpatialIndex<string>["beginQuery"]> {
+    return this.#spatialIndex.beginQuery(bounds);
+  }
+
   public query(bounds: SpatialBounds, scratch: SpatialQueryScratch<string>): number {
     return this.#spatialIndex.query(bounds, scratch);
   }

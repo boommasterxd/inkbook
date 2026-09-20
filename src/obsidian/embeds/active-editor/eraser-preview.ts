@@ -11,7 +11,7 @@ import type { EditableDocumentModel } from "../vault-document-session";
 import { EraserFrameScheduler } from "./eraser-scheduler";
 import type { ActiveEditorHistory } from "./history";
 import type { ElementSceneStore } from "./scene-store";
-import type { CoalescedCreationSample, CoalescedFrameSampleMode } from "./coalesced-input";
+import type { CoalescedCreationSample } from "./coalesced-input";
 
 interface EraserPreviewRenderer {
   clearElementFade(ids: readonly string[]): void;
@@ -35,17 +35,18 @@ export class EraserPreview implements GesturePreview {
   readonly #ownerWindow: Window;
   readonly #sweep: EraserSweep;
   readonly #sliceBudgetMs: () => number;
+  readonly #expectedRevision: number;
+  #workFrame: number | null = null;
   #cancelled = false;
   #completion: Promise<boolean> | null = null;
   #finished = false;
   #generation = 0;
   #scheduler: EraserFrameScheduler | null = null;
 
-  public readonly frameSampleMode: CoalescedFrameSampleMode = "preserve";
-
   public constructor(options: EraserPreviewOptions) {
     this.#history = options.history;
     this.#model = options.model;
+    this.#expectedRevision = options.model.revision;
     this.#ownerWindow = options.ownerWindow;
     this.#sliceBudgetMs = options.sliceBudgetMs ?? (() => 8);
     const feedback = createFeedback(options.renderer);
@@ -54,11 +55,12 @@ export class EraserPreview implements GesturePreview {
       options.radius,
       {
         getElement: (id) => options.model.store.get(id)?.element as InkElementV1 | undefined,
-        query: (bounds, sink) => options.sceneStore.query(bounds, sink),
+        beginQuery: (bounds) => options.sceneStore.beginQuery(bounds),
       },
       feedback,
       this.#sliceBudgetMs,
     );
+    this.#scheduleWork();
   }
 
   public get completion(): Promise<boolean> {
@@ -67,10 +69,16 @@ export class EraserPreview implements GesturePreview {
 
   public commit(): boolean {
     this.#assertActive();
+    this.#cancelWorkFrame();
+    if (this.#model.revision !== this.#expectedRevision) this.#cancelPending();
     this.#finished = true;
     if (this.#cancelled) return false;
     const generation = ++this.#generation;
-    const scheduler = new EraserFrameScheduler(this.#ownerWindow, this.#sliceBudgetMs);
+    const scheduler = new EraserFrameScheduler(
+      this.#ownerWindow,
+      this.#sliceBudgetMs,
+      () => this.#model.revision !== this.#expectedRevision,
+    );
     this.#scheduler = scheduler;
     this.#completion = this.#sweep
       .commit((ids) => this.#remove(ids, generation, scheduler), scheduler)
@@ -86,6 +94,7 @@ export class EraserPreview implements GesturePreview {
     this.#finished = true;
     this.#cancelled = true;
     this.#generation += 1;
+    this.#cancelWorkFrame();
     this.#scheduler?.cancel();
     this.#scheduler = null;
     this.#sweep.revert();
@@ -97,7 +106,46 @@ export class EraserPreview implements GesturePreview {
 
   public updateSamples(samples: readonly CoalescedCreationSample[]): void {
     this.#assertActive();
-    if (this.#sweep.updateBatch(samples) === "cancelled") this.#cancelled = true;
+    if (this.#model.revision !== this.#expectedRevision) {
+      this.#cancelPending();
+      return;
+    }
+    if (this.#sweep.enqueueBatch(samples) === "cancelled") {
+      this.#cancelled = true;
+      this.#cancelWorkFrame();
+    }
+    this.#scheduleWork();
+  }
+
+  #cancelPending(): void {
+    this.#cancelled = true;
+    this.#cancelWorkFrame();
+    this.#sweep.revert();
+  }
+
+  #scheduleWork(): void {
+    if (
+      this.#cancelled ||
+      this.#finished ||
+      this.#workFrame !== null ||
+      this.#sweep.retainedSweepCount === 0
+    )
+      return;
+    this.#workFrame = this.#ownerWindow.requestAnimationFrame(() => {
+      this.#workFrame = null;
+      if (this.#model.revision !== this.#expectedRevision) {
+        this.#cancelPending();
+        return;
+      }
+      if (this.#sweep.updateBatch([]) === "cancelled") this.#cancelled = true;
+      this.#scheduleWork();
+    });
+  }
+
+  #cancelWorkFrame(): void {
+    if (this.#workFrame === null) return;
+    this.#ownerWindow.cancelAnimationFrame(this.#workFrame);
+    this.#workFrame = null;
   }
 
   async #remove(
@@ -105,7 +153,7 @@ export class EraserPreview implements GesturePreview {
     generation: number,
     scheduler: EraserFrameScheduler,
   ): Promise<boolean> {
-    const expectedRevision = this.#model.revision;
+    const expectedRevision = this.#expectedRevision;
     const cancelled = () =>
       scheduler.isCancelled() ||
       generation !== this.#generation ||
