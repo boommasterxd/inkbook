@@ -45,8 +45,12 @@ export class ElementStoreOrdering {
     return undefined;
   }
 
+  public ids(band: RenderBand): IterableIterator<string> {
+    return this.#bands[band].ids();
+  }
+
   public materializeBand(band: RenderBand): string[] {
-    return [...this.#bands[band].ids()];
+    return [...this.ids(band)];
   }
 
   public materializeBands(): Record<RenderBand, string[]> {
