@@ -225,3 +225,61 @@ describe("interrupted scene exit cleanup", () => {
     harness.renderer.destroy();
   });
 });
+
+describe("retained DOM order after rank changes", () => {
+  it.each(["paint", "geometry"] as const)(
+    "reorders when %s updates refresh record ranks first",
+    (domain) => {
+      const records = [fakeRectangleRecord("first", 0, 10), fakeRectangleRecord("second", 1, 30)];
+      const harness = setup(records);
+      const original = [...harness.content.nodes];
+      for (const record of records) {
+        harness.store.records.set(record.id, {
+          ...record,
+          rank: 1 - record.rank,
+          geometryVersion: record.geometryVersion + (domain === "geometry" ? 1 : 0),
+          paintVersion: record.paintVersion + (domain === "paint" ? 1 : 0),
+        });
+      }
+      harness.renderer.applyDelta({
+        affected: records.map(({ id }) => ({ id, domains: [domain, "order"] })),
+      });
+      harness.scheduler.runAll();
+      expect(harness.content.nodes).toEqual([...original].reverse());
+      expect(harness.renderer.mountedIds("content")).toEqual(records.map(({ id }) => id).reverse());
+      harness.renderer.destroy();
+    },
+  );
+
+  it("reorders an offscreen retained exit that returns after visible nodes changed order", () => {
+    const first = fakeRectangleRecord("first", 0, 10);
+    const middle = fakeRectangleRecord("middle", 1, 10, 1000);
+    const last = fakeRectangleRecord("last", 2, 30);
+    const harness = setup([first, middle, last]);
+    harness.renderer.setViewport({ height: 2000, left: 0, top: 0, width: 500 });
+    harness.scheduler.runAll();
+    const original = [...harness.content.nodes];
+    expect(original).toHaveLength(3);
+    harness.renderer.setReducedMotion(false);
+    harness.renderer.setElementFade([middle.id], 10_000);
+    harness.renderer.setReducedMotion(true);
+    harness.renderer.setViewport({ height: 500, left: 0, top: 0, width: 500 });
+    harness.store.records.set(first.id, { ...first, rank: 2 });
+    harness.store.records.set(last.id, { ...last, rank: 0 });
+    harness.renderer.applyDelta({
+      affected: [
+        ...[first, last].map(({ id }) => ({ id, domains: ["order" as const] })),
+        { id: middle.id, domains: ["visibility"] },
+      ],
+    });
+    harness.scheduler.runNext();
+    expect(harness.content.nodes).toEqual([original[1], original[2], original[0]]);
+
+    harness.renderer.setViewport({ height: 2000, left: 0, top: 0, width: 500 });
+    harness.scheduler.runAll();
+    expect(harness.renderer.mountedIds("content")).toEqual([last.id, middle.id, first.id]);
+    expect(harness.content.nodes).toEqual([original[2], original[1], original[0]]);
+    harness.renderer.clearElementFade([middle.id]);
+    harness.renderer.destroy();
+  });
+});

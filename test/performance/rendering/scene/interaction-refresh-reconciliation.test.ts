@@ -163,6 +163,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz erased SVG cleanup`, () 
     renderer.setElementFade(ids, 0);
     const delta = fixture.store.remove(ids)!;
     applyStoreDelta(renderer, delta);
+    const append = vi.spyOn(FakeNode.prototype, "append");
     const remove = vi.spyOn(FakeNode.prototype, "remove");
     const write = vi.spyOn(FakeNode.prototype, "setAttribute");
     let frames = 0;
@@ -183,10 +184,12 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz erased SVG cleanup`, () 
         removed += remove.mock.calls.length;
         frames += 1;
       }
+      expect(append).not.toHaveBeenCalled();
       expect(removed).toBe(ids.length);
       expect(renderer.mountedIds("content")).toEqual(fixture.ids.slice(ids.length));
       expect(renderer.hasPendingSceneCommit).toBe(false);
     } finally {
+      append.mockRestore();
       remove.mockRestore();
       write.mockRestore();
       renderer.destroy();

@@ -28,6 +28,9 @@ interface TopologyUpdateOptions {
 
 export interface MountedSceneElement {
   band: SceneElementRecord["band"];
+  /** Rank at the last published DOM ordering, independent of paint/geometry updates. */
+  committedRank: number;
+  committedOrderEpoch: number;
   detachedPathCount: number;
   fadeActive: boolean;
   displayedElement: SceneElementRecord["element"];
@@ -57,6 +60,8 @@ export function createMountedElement(
   const group = createPressureGroup(ownerDocument, record, paths, instrumentation);
   return {
     band: record.band,
+    committedRank: record.rank,
+    committedOrderEpoch: 0,
     detachedPathCount: 0,
     fadeActive: false,
     displayedElement: record.element,

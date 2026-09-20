@@ -46,11 +46,14 @@ export class SceneVisibilityCoordinator {
       return;
     }
     const { envelope, retained } = visibilityPageBounds(viewport, camera);
+    const orderDirty = this.#orderDirty;
     this.#dirty = false;
     this.#orderDirty = false;
     const result = this.#visibility.query(envelope, retained);
-    if (!result.changed && !this.#content.needsVisibilityRestart) return;
-    this.#content.replaceVisibility(result.visibility);
-    this.#resources.updateVisibility(result.visibility);
+    if (!result.changed && !orderDirty && !this.#content.needsVisibilityRestart) return;
+    const visibility =
+      !result.changed && orderDirty ? this.#visibility.resortCurrent() : result.visibility;
+    this.#content.replaceVisibility(visibility);
+    this.#resources.updateVisibility(visibility);
   }
 }
