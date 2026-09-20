@@ -1,3 +1,4 @@
+import { validateMutationConnectionCycles } from "./mutation-connection-validation";
 import { checkpoint, minimumProgressScheduler } from "./mutation-scheduler";
 import { DEFAULT_HISTORY_BYTE_LIMIT } from "../commands/history";
 import { renderBandOf, type RenderBand } from "../commands/render-bands";
@@ -91,8 +92,13 @@ export async function planElementMutation(
   if (delta === "cancelled" || delta === null) return delta;
   const derived = await buildDerivedState(records, scheduler);
   if (derived === "cancelled") return derived;
+  if ((await validateMutationConnectionCycles(records, scheduler)) === "cancelled")
+    return "cancelled";
   const { capacity, index, reverseConnections } = derived;
-  const forward = await freezeMutation(requested, scheduler);
+  const forward = await freezeMutation(
+    { bands, elements: [...desired.values()], removeIds: [...removeIds] },
+    scheduler,
+  );
   if (forward === "cancelled") return forward;
   const reverse = await reverseMutation(source, desired, removeIds, scheduler);
   if (reverse === "cancelled") return reverse;

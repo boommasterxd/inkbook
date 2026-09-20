@@ -208,3 +208,38 @@ function bands(store: ElementStore) {
     highlight: store.materializeBandOrder("highlight"),
   };
 }
+
+describe("complete mutation input ownership", () => {
+  it("retains validated forward history when the caller changes input after record preparation", async () => {
+    const element = rectangle();
+    const expected = rectangle();
+    const store = new ElementStore();
+    const order = { content: [element.id], highlight: [] as string[] };
+    let yields = 0;
+    const prepared = await store.prepareElementMutation(
+      { bands: order, elements: [element] },
+      {
+        shouldYield: () => true,
+        yieldControl: async () => {
+          yields += 1;
+          // With no source ranks, the first yield precedes resolution after validation.
+          if (yields === 1) {
+            element.width = -100;
+            Object.assign(element.style, { outlineWidth: -1 });
+          }
+          if (yields === 8) order.content[0] = IDS.other;
+        },
+      },
+    );
+    if (prepared.token === null) throw new Error("Expected prepared mutation.");
+    const result = store.commitPreparedElementMutation(prepared.token);
+    expect(store.get(expected.id)?.element).toEqual(expected);
+    expect(result.transition?.forward.elements).toEqual([expected]);
+    expect(result.transition?.forward.bands).toEqual({ content: [expected.id], highlight: [] });
+    const undo = result.transition!.reverse;
+    const redo = result.transition!.forward;
+    await commit(store, undo);
+    await commit(store, redo);
+    expect(store.get(expected.id)?.element).toEqual(expected);
+  });
+});
