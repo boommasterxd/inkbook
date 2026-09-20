@@ -151,7 +151,7 @@ export class AutosaveCoordinator {
       if (!this.#disposed && this.#modelSyncInFlight === request) {
         this.#modelSyncInFlight = null;
         if (!synchronized) this.#requireFullSnapshot();
-        if (this.#forced) this.#kick();
+        if (this.#forced || !this.#timer.hasPending) this.#kick();
       }
     }
   }
@@ -316,7 +316,7 @@ export class AutosaveCoordinator {
     if (result.modelRevision !== this.#document.currentRevision()) {
       this.#workerModel.acknowledgeExport(result.modelRevision);
       this.#executor.acknowledgeExport?.(result, false);
-      if (this.#forced) this.#kick();
+      if (this.#forced || !this.#timer.hasPending) this.#kick();
       return;
     }
     if (integrity !== "match") {

@@ -52,7 +52,98 @@ describe("autosave backpressure", () => {
     });
     coordinator.dispose();
   });
+});
 
+describe("autosave successor scheduling", () => {
+  it.each([0, 500])(
+    "drains a paused stale export while respecting a successor debounce elapsed by %s ms",
+    async (elapsed) => {
+      const { clock, document, executor, vault } = createControlledSave();
+      const priority = new InteractiveWorkPriority();
+      const { entered, wait } = observePriority(priority);
+      const coordinator = createCoordinator(clock, document, executor, vault, wait);
+      document.commit();
+      coordinator.recordCommit({ modelRevision: 1 });
+      clock.advance(500);
+      const release = priority.begin();
+      executor.completeExport(0);
+      await entered;
+      document.commit();
+      coordinator.recordCommit({ modelRevision: 2 });
+      clock.advance(elapsed);
+      expect(executor.exportRequests).toHaveLength(1);
+      expect(vault.processCalls).toBe(0);
+      release();
+      await settleUntil(
+        () => executor.acknowledgements.length === 1,
+        "paused stale acknowledgement",
+      );
+      expect(executor.acknowledgements).toEqual([{ accepted: false, modelRevision: 1 }]);
+      if (elapsed === 0) {
+        expect(executor.exportRequests).toHaveLength(1);
+        clock.advance(499);
+        expect(executor.exportRequests).toHaveLength(1);
+        clock.advance(1);
+      }
+      await settleUntil(() => executor.exportRequests.length === 2, "unforced successor dispatch");
+      expect(executor.exportRequests[1]).toMatchObject({ modelRevision: 2, baseModelRevision: 1 });
+      expect(executor.maximumActiveExports).toBe(1);
+      executor.completeExport(1);
+      await settleUntil(() => vault.processCalls === 1, "successor write");
+      vault.completeWrite();
+      await settleUntil(() => !coordinator.dirty, "saved successor");
+      expect(vault.revision).toBe(2);
+      expect(vault.processCalls).toBe(1);
+      coordinator.dispose();
+      priority.dispose();
+    },
+  );
+
+  it.each([0, 500])(
+    "drains a model-sync successor after %s ms without bypassing debounce",
+    async (elapsed) => {
+      const { clock, document, executor, vault } = createControlledSave();
+      const coordinator = createCoordinator(clock, document, executor, vault);
+      document.commit();
+      coordinator.recordCommit({ modelRevision: 1 });
+      const synchronization = deferred<DocumentRuntimeResult>();
+      const execute = vi
+        .spyOn(executor, "execute")
+        .mockImplementationOnce(() => synchronization.promise);
+      const identity = {
+        sessionId: "performance",
+        workerEpoch: 1,
+        operationId: 1,
+        purpose: "clipboard" as const,
+      };
+      const pending = coordinator.synchronizeWorkerBaseline(identity);
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute.mock.calls[0]?.[0]).toMatchObject({
+        type: "model-sync-incremental",
+        modelRevision: 1,
+      });
+      document.commit();
+      coordinator.recordCommit({ modelRevision: 2 });
+      clock.advance(elapsed);
+      expect(executor.exportRequests).toHaveLength(0);
+      synchronization.resolve({ type: "model-sync-success", identity, modelRevision: 1 });
+      await expect(pending).resolves.toBe(false);
+      if (elapsed === 0) {
+        expect(executor.exportRequests).toHaveLength(0);
+        clock.advance(499);
+        expect(executor.exportRequests).toHaveLength(0);
+        clock.advance(1);
+      }
+      expect(executor.exportRequests).toHaveLength(1);
+      expect(executor.exportRequests[0]).toMatchObject({ modelRevision: 2, baseModelRevision: 1 });
+      expect(executor.maximumActiveExports).toBe(1);
+      coordinator.dispose();
+      execute.mockRestore();
+    },
+  );
+});
+
+describe("autosave write serialization", () => {
   it("serializes writes and drains one coalesced successor without another user action", async () => {
     await runBackpressureSequence();
   });
@@ -62,18 +153,12 @@ describe("autosave interactive priority work bounds", () => {
   it.each(["history", "drawing"])(
     "performs no hash, snapshot or vault work during %s",
     async (kind) => {
-      const clock = new ManualClock();
-      const document = new MutableDocument();
-      const executor = new ControlledExecutor();
-      const vault = new ControlledVault(output(0));
-      const entered = deferred<void>();
+      const { clock, document, executor, vault } = createControlledSave();
       const priority = new InteractiveWorkPriority();
       priority.setInputActive(kind === "drawing");
       const release = kind === "history" ? priority.begin() : () => priority.setInputActive(false);
-      const coordinator = createCoordinator(clock, document, executor, vault, () => {
-        entered.resolve();
-        return priority.waitForBackground();
-      });
+      const { entered, wait } = observePriority(priority);
+      const coordinator = createCoordinator(clock, document, executor, vault, wait);
       document.commit();
       coordinator.recordCommit({ modelRevision: 1 });
       const flushed = coordinator.flush("retry");
@@ -81,7 +166,7 @@ describe("autosave interactive priority work bounds", () => {
       executor.completeExport(0);
       const snapshotRead = vi.spyOn(document, "snapshot");
       const hashUpdate = vi.spyOn(ChunkedSha256.prototype, "update");
-      await entered.promise;
+      await entered;
       expect(snapshotRead).not.toHaveBeenCalled();
       expect(hashUpdate).not.toHaveBeenCalled();
       expect(vault.processCalls).toBe(0);
@@ -101,11 +186,28 @@ describe("autosave interactive priority work bounds", () => {
   );
 });
 
+function observePriority(priority: InteractiveWorkPriority) {
+  const entered = deferred<void>();
+  return {
+    entered: entered.promise,
+    wait: () => {
+      entered.resolve();
+      return priority.waitForBackground();
+    },
+  };
+}
+
+function createControlledSave() {
+  return {
+    clock: new ManualClock(),
+    document: new MutableDocument(),
+    executor: new ControlledExecutor(),
+    vault: new ControlledVault(output(0)),
+  };
+}
+
 async function runBackpressureSequence(): Promise<void> {
-  const clock = new ManualClock();
-  const document = new MutableDocument();
-  const executor = new ControlledExecutor();
-  const vault = new ControlledVault(output(0));
+  const { clock, document, executor, vault } = createControlledSave();
   const coordinator = createCoordinator(clock, document, executor, vault);
 
   document.commit();
