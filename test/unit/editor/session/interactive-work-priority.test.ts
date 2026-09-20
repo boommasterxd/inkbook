@@ -40,6 +40,27 @@ describe("session interactive priority", () => {
     },
   );
 
+  it("holds one input lease across repeated signals and overlapping history work", async () => {
+    const priority = new InteractiveWorkPriority();
+    priority.setInputActive(true);
+    priority.setInputActive(true);
+    const releaseHistory = priority.begin();
+    const resumed = vi.fn();
+    const waiting = priority.waitForBackground().then(resumed);
+    priority.setInputActive(false);
+    priority.setInputActive(false);
+    await tick();
+    expect(resumed).not.toHaveBeenCalled();
+    releaseHistory();
+    await waiting;
+    expect(resumed).toHaveBeenCalledOnce();
+    priority.setInputActive(true);
+    const drain = priority.waitForBackground();
+    priority.dispose();
+    await drain;
+    priority.setInputActive(false);
+  });
+
   it("unblocks drain on disposal and ignores later releases and leases", async () => {
     const priority = new InteractiveWorkPriority();
     const release = priority.begin();

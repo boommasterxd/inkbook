@@ -132,7 +132,6 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     this.#unloadPreparation = prepareAutosaveForUnload(this.#autosave, () => this.dispose());
     return this.#unloadPreparation;
   }
-
   async notifyExternalChange(
     operation?: Session.SessionOperationIdentity,
   ): Promise<recovery.SessionExternalChangeOutcome> {
@@ -152,7 +151,6 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       reload: (recovery) => this.#runExternalReload(recovery),
     });
   }
-
   async #runExternalReload(
     operation: Session.RecoveryOperationIdentity,
   ): Promise<Session.RecoveryResult> {
@@ -330,6 +328,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
         commitElement: (element) => mutations.commitElements([element]),
         commitElements: (elements) => mutations.commitElements(elements),
         beginInteractiveOperation: () => this.#workPriority.begin(),
+        waitForBackground: () => this.#workPriority.waitForBackground(),
         prepareElementMutation: (mutation, cancellation) =>
           this.#workPriority.run(() =>
             prepareVaultElementMutation({
@@ -362,6 +361,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
           mutations.commitPreparedElementReplacement(token),
         setGestureActive: (active) => {
           if (this.#lifecycle.disposed) return;
+          this.#workPriority.setInputActive(active);
           this.#gestureActive = active;
           this.#executor?.setLiveInputActive?.(active);
         },

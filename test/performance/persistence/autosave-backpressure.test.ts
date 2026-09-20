@@ -59,42 +59,46 @@ describe("autosave backpressure", () => {
 });
 
 describe("autosave interactive priority work bounds", () => {
-  it("performs no main-thread hash, snapshot or vault work while interactive work owns priority", async () => {
-    const clock = new ManualClock();
-    const document = new MutableDocument();
-    const executor = new ControlledExecutor();
-    const vault = new ControlledVault(output(0));
-    const entered = deferred<void>();
-    const priority = new InteractiveWorkPriority();
-    const release = priority.begin();
-    const coordinator = createCoordinator(clock, document, executor, vault, () => {
-      entered.resolve();
-      return priority.waitForBackground();
-    });
-    document.commit();
-    coordinator.recordCommit({ modelRevision: 1 });
-    const flushed = coordinator.flush("retry");
-    await settleUntil(() => executor.exportRequests.length === 1, "export dispatch");
-    executor.completeExport(0);
-    const snapshotRead = vi.spyOn(document, "snapshot");
-    const hashUpdate = vi.spyOn(ChunkedSha256.prototype, "update");
-    await entered.promise;
-    expect(snapshotRead).not.toHaveBeenCalled();
-    expect(hashUpdate).not.toHaveBeenCalled();
-    expect(vault.processCalls).toBe(0);
-    release();
-    await settleUntil(() => vault.processCalls === 1, "resumed vault write");
-    expect(snapshotRead).toHaveBeenCalledTimes(1);
-    expect(hashUpdate).toHaveBeenCalled();
-    vault.completeWrite();
-    await expect(flushed).resolves.toBe("clean");
-    expect(vault.revision).toBe(1);
-    expect(vault.processCalls).toBe(1);
-    snapshotRead.mockRestore();
-    hashUpdate.mockRestore();
-    coordinator.dispose();
-    priority.dispose();
-  });
+  it.each(["history", "drawing"])(
+    "performs no hash, snapshot or vault work during %s",
+    async (kind) => {
+      const clock = new ManualClock();
+      const document = new MutableDocument();
+      const executor = new ControlledExecutor();
+      const vault = new ControlledVault(output(0));
+      const entered = deferred<void>();
+      const priority = new InteractiveWorkPriority();
+      priority.setInputActive(kind === "drawing");
+      const release = kind === "history" ? priority.begin() : () => priority.setInputActive(false);
+      const coordinator = createCoordinator(clock, document, executor, vault, () => {
+        entered.resolve();
+        return priority.waitForBackground();
+      });
+      document.commit();
+      coordinator.recordCommit({ modelRevision: 1 });
+      const flushed = coordinator.flush("retry");
+      await settleUntil(() => executor.exportRequests.length === 1, "export dispatch");
+      executor.completeExport(0);
+      const snapshotRead = vi.spyOn(document, "snapshot");
+      const hashUpdate = vi.spyOn(ChunkedSha256.prototype, "update");
+      await entered.promise;
+      expect(snapshotRead).not.toHaveBeenCalled();
+      expect(hashUpdate).not.toHaveBeenCalled();
+      expect(vault.processCalls).toBe(0);
+      release();
+      await settleUntil(() => vault.processCalls === 1, "resumed vault write");
+      expect(snapshotRead).toHaveBeenCalledTimes(1);
+      expect(hashUpdate).toHaveBeenCalled();
+      vault.completeWrite();
+      await expect(flushed).resolves.toBe("clean");
+      expect(vault.revision).toBe(1);
+      expect(vault.processCalls).toBe(1);
+      snapshotRead.mockRestore();
+      hashUpdate.mockRestore();
+      coordinator.dispose();
+      priority.dispose();
+    },
+  );
 });
 
 async function runBackpressureSequence(): Promise<void> {

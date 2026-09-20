@@ -1,6 +1,7 @@
 /** One session's interactive leases defer background checkpoints without dropping work. */
 export class InteractiveWorkPriority {
   #depth = 0;
+  #releaseInput: (() => void) | undefined;
   #disposed = false;
   #pending: Promise<void> | undefined;
   #resume: (() => void) | undefined;
@@ -20,6 +21,14 @@ export class InteractiveWorkPriority {
     };
   }
 
+  public setInputActive(active: boolean): void {
+    if (active) this.#releaseInput ??= this.begin();
+    else {
+      this.#releaseInput?.();
+      this.#releaseInput = undefined;
+    }
+  }
+
   public async run<T>(operation: () => Promise<T>): Promise<T> {
     const release = this.begin();
     try {
@@ -36,6 +45,7 @@ export class InteractiveWorkPriority {
 
   public dispose(): void {
     this.#disposed = true;
+    this.#releaseInput = undefined;
     this.#depth = 0;
     this.#release();
   }

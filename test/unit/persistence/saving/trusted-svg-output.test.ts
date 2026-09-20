@@ -1,3 +1,4 @@
+import { InteractiveWorkPriority } from "../../../../src/editor/session/interactive-work-priority";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -93,6 +94,33 @@ describe("trusted SVG background priority", () => {
     await expect(inspection).resolves.toEqual(expected);
     expect(waitForBackground.mock.calls.length).toBe(checkpoint.mock.calls.length + 1);
     update.mockRestore();
+  });
+
+  it("pauses an already running hash when drawing starts and releases it on cancellation", async () => {
+    const priority = new InteractiveWorkPriority();
+    const controller = new AbortController();
+    const update = vi.spyOn(ChunkedSha256.prototype, "update");
+    let entered: () => void = () => undefined;
+    const paused = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const inspection = inspectTrustedSvgOutput(new Uint8Array(6 * 64 * 1024), undefined, {
+      signal: controller.signal,
+      checkpoint: async () => {
+        priority.setInputActive(true);
+        entered();
+      },
+      waitForBackground: () => priority.waitForBackground(),
+    });
+    await paused;
+    await Promise.resolve();
+    expect(update).toHaveBeenCalledTimes(1);
+    controller.abort();
+    priority.setInputActive(false);
+    await expect(inspection).rejects.toMatchObject({ name: "AbortError" });
+    expect(update).toHaveBeenCalledTimes(1);
+    update.mockRestore();
+    priority.dispose();
   });
 
   it("checks abort again after a paused background operation resumes", async () => {
