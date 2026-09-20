@@ -170,8 +170,8 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz erased SVG cleanup`, () 
     try {
       while (scheduler.pendingCount > 0) {
         expect(scheduler.pendingCount).toBe(1);
-        // Two preparation/completion frames plus the bounded exit batches.
-        expect(frames).toBeLessThan(Math.ceil(ids.length / 64) + 2);
+        // Bounded fade starts, exit batches, and preparation/completion handoffs.
+        expect(frames).toBeLessThan(Math.ceil(ids.length / 128) + Math.ceil(ids.length / 64) + 2);
         const path = `M ${String(frames)} 0 L 10 10`;
         renderer.setOverlayPath(path);
         remove.mockClear();

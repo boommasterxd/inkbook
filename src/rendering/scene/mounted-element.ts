@@ -246,12 +246,14 @@ function updateMountedPreviewGeometry(
 export function setMountedElementFade(entry: MountedSceneElement, durationMs: number | null): void {
   entry.fadeActive = durationMs !== null;
   const nodes = entry.group === null ? entry.paths.map((path) => path.node) : [entry.group];
+  for (const node of nodes) setElementFadeNode(node, durationMs);
+}
+
+export function setElementFadeNode(node: SVGElement, durationMs: number | null): void {
   const timing = `${String(durationMs ?? 0)}ms ${EASING_TOKENS.erase}`;
-  for (const node of nodes) {
-    node.style.transition = durationMs === null ? "" : `opacity ${timing}, filter ${timing}`;
-    node.style.filter = durationMs !== null && durationMs > 0 ? "blur(50px)" : "";
-    node.style.opacity = durationMs === null ? "" : "0";
-  }
+  node.style.transition = durationMs === null ? "" : `opacity ${timing}, filter ${timing}`;
+  node.style.filter = durationMs !== null && durationMs > 0 ? "blur(50px)" : "";
+  node.style.opacity = durationMs === null ? "" : "0";
 }
 
 export function setMountedElementMotion(

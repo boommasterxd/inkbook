@@ -5,7 +5,6 @@ import {
   appendElementToFragment,
   createMountedElement,
   firstPath,
-  removeMountedElement,
   removeMountedElementNode,
   updatePreviewTransform,
   type MountedSceneElement,
@@ -41,7 +40,7 @@ interface PendingReconciliation {
   readonly entrants: Map<string, MountedSceneElement>;
   readonly exitIds: string[];
   exitIndex: number;
-  sliceExits: boolean;
+  published: boolean;
   readonly exits: MapIterator<[string, MountedSceneElement]>;
   readonly runs: PendingMutationRun[];
   runCount: number;
@@ -59,6 +58,7 @@ interface SceneVisibilityReconcilerOptions {
   readonly dom: SceneDom;
   readonly instrumentation: MutableSceneInstrumentation;
   readonly mounted: Map<string, MountedSceneElement>;
+  readonly isExitReady?: (id: string, now: number) => boolean;
   readonly orderDirty: Record<RenderBand, Set<string>>;
   readonly pathCache: ScenePathCache;
   readonly store: SceneStorePort;
@@ -88,6 +88,10 @@ export class SceneVisibilityReconciler {
     return this.#cancelled;
   }
 
+  public get hasPendingCleanup(): boolean {
+    return this.#pending?.published === true;
+  }
+
   public replace(visibility: VisibilityResult): void {
     this.cancel();
     this.#cancelled = false;
@@ -101,7 +105,7 @@ export class SceneVisibilityReconciler {
       entrants: this.#entrants,
       exitIds: this.#exitIds,
       exitIndex: 0,
-      sliceExits: true,
+      published: false,
       exits: this.options.mounted.entries(),
       runs: this.#runs,
       runCount: 0,
@@ -117,7 +121,7 @@ export class SceneVisibilityReconciler {
     if (partial !== undefined && partial.detachedPathCount > 0) {
       this.options.orderDirty[partial.band].add(partial.id);
     }
-    const entrants = this.#pending?.entrants;
+    const entrants = pending?.published === true ? undefined : pending?.entrants;
     if (entrants !== undefined) {
       for (const entry of entrants.values()) {
         this.options.pathCache.retain(entry.id, entry.geometryVersion, entry.pathParts);
@@ -147,6 +151,10 @@ export class SceneVisibilityReconciler {
   ): ReconciliationResult {
     const pending = this.#pending;
     if (pending === undefined) return { newlyMountedIds: EMPTY_IDS, pending: false };
+    if (pending.published) {
+      if (this.commitExits(pending, deadline, now)) this.#pending = undefined;
+      return { newlyMountedIds: EMPTY_IDS, pending: false };
+    }
     const slice = new MountSlice(deadline, now);
     let reason = this.scanExits(pending, slice, previewTransforms, previewElements);
     if (reason === undefined) {
@@ -155,11 +163,9 @@ export class SceneVisibilityReconciler {
     }
     this.recordSlice(slice, reason);
     if (reason !== undefined) return { newlyMountedIds: EMPTY_IDS, pending: true };
-    if (!this.commitExits(pending, deadline, now)) {
-      return { newlyMountedIds: EMPTY_IDS, pending: true };
-    }
     const newlyMountedIds = this.commit(pending);
-    this.#pending = undefined;
+    pending.published = true;
+    if (this.commitExits(pending, deadline, now)) this.#pending = undefined;
     return { committedVisibility: pending.visibility, newlyMountedIds, pending: false };
   }
 
@@ -179,7 +185,7 @@ export class SceneVisibilityReconciler {
       if (reason !== undefined) return reason;
       const next = pending.exits.next();
       if (next.done) return undefined;
-      const [id, entry] = next.value;
+      const [id] = next.value;
       slice.record({ geometry: 1, strokePoints: 0 });
       if (
         !this.options.visibility.contains(id) &&
@@ -188,9 +194,6 @@ export class SceneVisibilityReconciler {
       ) {
         this.#exitCapacity = this.recordGrowth(this.#exitCapacity, pending.exitIds.length + 1);
         pending.exitIds.push(id);
-        if (!entry.fadeActive && this.options.store.get(id) === undefined) {
-          pending.sliceExits = false;
-        }
       }
     }
   }
@@ -338,10 +341,7 @@ export class SceneVisibilityReconciler {
   ): boolean {
     let removedNodes = 0;
     while (pending.exitIndex < pending.exitIds.length) {
-      if (
-        pending.sliceExits &&
-        (removedNodes >= EXIT_SLICE_NODE_BUDGET || (removedNodes > 0 && now() >= deadline))
-      ) {
+      if (removedNodes >= EXIT_SLICE_NODE_BUDGET || (removedNodes > 0 && now() >= deadline)) {
         return false;
       }
       const id = pending.exitIds[pending.exitIndex];
@@ -350,10 +350,9 @@ export class SceneVisibilityReconciler {
         pending.exitIndex += 1;
         continue;
       }
-      if (pending.sliceExits) {
-        removedNodes += 1;
-        if (!removeMountedElementNode(entry)) continue;
-      } else removeMountedElement(entry);
+      if (this.options.isExitReady?.(entry.id, now()) === false) return false;
+      removedNodes += 1;
+      if (!removeMountedElementNode(entry)) continue;
       pending.exitIndex += 1;
       this.options.mounted.delete(entry.id);
       const record = this.options.store.get(entry.id);
