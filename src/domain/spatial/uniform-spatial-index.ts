@@ -3,6 +3,7 @@ import { assertSpatialAggregateCapacity } from "./capacity";
 import { cellMembershipCount, createCellRange, createSpatialCellKeys } from "./cell-membership";
 import { visitSpatialCells } from "./cell-query";
 import { popMaximumBottom, pushBottom, type BottomHeapEntry } from "./max-bottom-heap";
+import { SpatialQueryCursor } from "./query-cursor";
 import { SpatialQueryScratch } from "./query-scratch";
 import {
   PREPARED_REPLACEMENTS,
@@ -164,6 +165,20 @@ export class UniformSpatialIndex<Id> {
     if (overflowMaximumChanged) this.recomputeOverflowMaximum();
     this.recordVersion = state.recordVersion;
     this.finishMutation();
+  }
+
+  public beginQuery(bounds: SpatialBounds): SpatialQueryCursor<Id> {
+    return new SpatialQueryCursor(
+      {
+        cells: this.cells,
+        generation: () => this.mutationGeneration,
+        occupiedCellCount: this.occupiedCellCount,
+        overflowSlots: this.overflowSlots,
+        slots: this.slots,
+      },
+      { ...this.prepareRange(bounds) },
+      bounds,
+    );
   }
 
   public query(bounds: SpatialBounds, scratch: SpatialQueryScratch<Id>): number {

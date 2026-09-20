@@ -6,8 +6,8 @@ import {
   EraserSweep,
   MAX_RETAINED_ERASER_SWEEPS,
   screenPixelsToPageUnits,
-  type EraserQuerySink,
 } from "../../../../src/editor/gestures/eraser-gesture";
+import { eraserQuery } from "../../../fixtures/editor/eraser-query";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 
 const scheduler = {
@@ -26,10 +26,6 @@ function sweepTouchesElement(
   let progress = check.advance(Number.MAX_SAFE_INTEGER);
   while (progress.result === null) progress = check.advance(Number.MAX_SAFE_INTEGER);
   return progress.result;
-}
-
-function addIds(sink: EraserQuerySink, ids: readonly string[]): void {
-  for (const id of ids) sink.add(id);
 }
 
 const rectangle: BoxShapeElementV1 = {
@@ -72,7 +68,7 @@ describe("eraser sweep", () => {
     const sweep = new EraserSweep(
       { x: 0, y: 50 },
       4,
-      { query: (_bounds, sink) => sink.add("shape"), getElement: () => rectangle },
+      { beginQuery: () => eraserQuery(["shape"]), getElement: () => rectangle },
       { setCandidateFade: setFade, clearCandidateFade: clearFade },
     );
     sweep.update({ x: 100, y: 50 });
@@ -222,7 +218,7 @@ describe("resumable eraser work", () => {
       4,
       {
         getElement: () => rectangle,
-        query: (_bounds, sink) => sink.add(`candidate-${String(query++)}`),
+        beginQuery: () => eraserQuery([`candidate-${String(query++)}`]),
       },
       { addCandidateFade, clearCandidateFade: vi.fn(), setCandidateFade: vi.fn() },
     );
@@ -249,9 +245,7 @@ describe("resumable eraser work", () => {
       4,
       {
         getElement: () => stroke,
-        query: (_bounds, sink) => {
-          if (queryCount++ !== 0) sink.add(stroke.id);
-        },
+        beginQuery: () => eraserQuery(queryCount++ !== 0 ? [stroke.id] : []),
       },
       { clearCandidateFade: () => undefined, setCandidateFade: () => undefined },
     );
@@ -272,7 +266,7 @@ describe("resumable eraser work", () => {
       2,
       {
         getElement: (id) => elements.get(id),
-        query: (_bounds, sink) => addIds(sink, [exactMiss.id, laterHit.id]),
+        beginQuery: () => eraserQuery([exactMiss.id, laterHit.id]),
       },
       { clearCandidateFade: () => undefined, setCandidateFade: () => undefined },
     );
@@ -286,6 +280,35 @@ describe("resumable eraser work", () => {
     }, scheduler);
 
     expect(removed).toEqual(["hit"]);
+  });
+});
+
+describe("eraser query lifecycle", () => {
+  it("cancels stale pending queries and clears already published candidates", async () => {
+    const cursor = eraserQuery(Array.from({ length: 10_000 }, (_, index) => String(index)));
+    const advance = vi.spyOn(cursor, "advance");
+    const cancel = vi.spyOn(cursor, "cancel");
+    const clearCandidateFade = vi.fn();
+    const sweep = new EraserSweep(
+      { x: 40, y: 50 },
+      4,
+      { beginQuery: () => cursor, getElement: () => rectangle },
+      { clearCandidateFade, setCandidateFade: vi.fn() },
+      () => 0,
+    );
+    expect(sweep.candidateCount).toBeGreaterThan(0);
+    expect(sweep.retainedSweepCount).toBe(1);
+    advance.mockReturnValue({ ids: [], workUnits: 0, done: true, stale: true });
+
+    expect(sweep.updateBatch([])).toBe("cancelled");
+    expect(cancel).toHaveBeenCalled();
+    expect(clearCandidateFade).toHaveBeenCalledOnce();
+    expect(sweep.candidateCount).toBe(0);
+    expect(sweep.retainedCandidateIdCount).toBe(0);
+    expect(sweep.retainedSweepCount).toBe(0);
+    const remove = vi.fn(() => true);
+    await expect(sweep.commit(remove, scheduler)).resolves.toBe(false);
+    expect(remove).not.toHaveBeenCalled();
   });
 });
 
@@ -341,7 +364,7 @@ function createSingleStrokeSweep(stroke: StrokeElementV1): EraserSweep {
     1,
     {
       getElement: () => stroke,
-      query: (_bounds, sink) => sink.add(stroke.id),
+      beginQuery: () => eraserQuery([stroke.id]),
     },
     { clearCandidateFade: () => undefined, setCandidateFade: () => undefined },
   );

@@ -3,7 +3,8 @@ import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 import { createSweptCapsuleCheck, type SweptCapsuleCheck } from "./eraser-intersection";
 
 const ERASER_FADE_MS = 160;
-const EXACT_WORK_UNITS_PER_UPDATE = 12_288;
+const WORK_UNITS_PER_UPDATE = 12_288;
+const QUERY_BATCH_WORK_UNITS = 128;
 const UPDATE_CHECKPOINT_WORK_UNITS = 1_024;
 const MAX_FINALIZATION_CHECKPOINT_WORK_UNITS = 256;
 const FINALIZATION_WORK_UNITS_PER_MS = 16;
@@ -26,17 +27,25 @@ interface PendingSweep {
 }
 
 interface ActiveSweep extends PendingSweep {
-  readonly ids: readonly string[];
+  ids: readonly string[];
+  readonly cursor: EraserQueryCursor;
+  queryDone: boolean;
   check: SweptCapsuleCheck | null;
   index: number;
 }
 
-export interface EraserQuerySink {
-  add(id: string): void;
+export interface EraserQueryCursor {
+  advance(maxWorkUnits: number): {
+    readonly ids: readonly string[];
+    readonly workUnits: number;
+    readonly done: boolean;
+    readonly stale: boolean;
+  };
+  cancel(): void;
 }
 
 export interface EraserQueryPort {
-  query(bounds: Bounds, sink: EraserQuerySink): void;
+  beginQuery(bounds: Bounds): EraserQueryCursor;
   getElement(id: string): InkElementV1 | undefined;
 }
 
@@ -106,6 +115,13 @@ export class EraserSweep {
   }
 
   public updateBatch(points: readonly PointV1[]): EraserUpdateResult {
+    if (this.enqueueBatch(points) === "cancelled") return "cancelled";
+    this.#processUpdatePending();
+    this.#publishUpdateAdded();
+    return this.#isCancelled() ? "cancelled" : "accepted";
+  }
+
+  public enqueueBatch(points: readonly PointV1[]): EraserUpdateResult {
     if (this.#state === "cancelled") return "cancelled";
     if (this.#state !== "active") throw new Error("A finalized eraser sweep cannot be updated.");
     for (const pointValue of points) {
@@ -113,17 +129,12 @@ export class EraserSweep {
       if (pointValue.x === this.#previous.x && pointValue.y === this.#previous.y) continue;
       const point = { x: pointValue.x, y: pointValue.y };
       if (this.retainedSweepCount >= MAX_RETAINED_ERASER_SWEEPS) {
-        this.#processUpdatePending();
-      }
-      if (this.retainedSweepCount >= MAX_RETAINED_ERASER_SWEEPS) {
         this.revert();
         return "cancelled";
       }
       this.#pendingSweeps.push({ end: point, start: this.#previous });
       this.#previous = point;
     }
-    this.#processUpdatePending();
-    this.#publishUpdateAdded();
     return "accepted";
   }
 
@@ -139,15 +150,20 @@ export class EraserSweep {
       const sliceBudgetMs = Math.max(0, this.#sliceBudgetMs() - FINALIZATION_SCHEDULING_RESERVE_MS);
       const deadline = performance.now() + sliceBudgetMs;
       const workUnits = finalizationWorkUnits(sliceBudgetMs);
+      let remaining = WORK_UNITS_PER_UPDATE;
       do {
-        if (scheduler.isCancelled()) return this.#cancelFinalization();
-        this.#processPending(workUnits, added);
+        if (scheduler.isCancelled() || this.#isCancelled()) return this.#cancelFinalization();
+        const checkpoint = Math.min(remaining, workUnits);
+        this.#processPending(checkpoint, added);
+        remaining -= checkpoint;
         if (this.retainedSweepCount === 0) break;
-      } while (!scheduler.shouldYield() && performance.now() < deadline);
+      } while (remaining > 0 && !scheduler.shouldYield() && performance.now() < deadline);
+      this.#publishAdded(added);
+      added.length = 0;
       if (this.retainedSweepCount > 0) await scheduler.yieldControl();
     }
     this.#publishAdded(added);
-    if (scheduler.isCancelled()) return this.#cancelFinalization();
+    if (scheduler.isCancelled() || this.#isCancelled()) return this.#cancelFinalization();
     try {
       return this.#candidates.size > 0 && (await remove(this.#candidates));
     } finally {
@@ -161,9 +177,15 @@ export class EraserSweep {
     if (this.#state === "finished" || this.#state === "cancelled") return;
     this.#feedback.clearCandidateFade(this.#candidates);
     this.#candidates.clear();
+    this.#activeSweep?.cursor.cancel();
     this.#activeSweep = null;
     this.#pendingSweeps.length = 0;
+    this.#updateAdded.length = 0;
     this.#state = "cancelled";
+  }
+
+  #isCancelled(): boolean {
+    return this.#state === "cancelled";
   }
 
   #cancelFinalization(): false {
@@ -175,7 +197,7 @@ export class EraserSweep {
     const deadline = performance.now() + this.#sliceBudgetMs();
     const added = this.#updateAdded;
     for (
-      let remaining = EXACT_WORK_UNITS_PER_UPDATE;
+      let remaining = WORK_UNITS_PER_UPDATE;
       remaining > 0 && this.retainedSweepCount > 0;
       remaining -= UPDATE_CHECKPOINT_WORK_UNITS
     ) {
@@ -193,11 +215,15 @@ export class EraserSweep {
   #processPending(workUnits: number, added: string[]): void {
     let remaining = workUnits;
     while (remaining > 0) {
+      if (this.#activeSweep === null) remaining -= 1;
       const sweep = this.#activeSweep ?? this.#activateNextSweep();
       if (sweep === null) break;
       const before = remaining;
       remaining = this.#advanceActiveSweep(sweep, remaining, added);
-      if (sweep.index >= sweep.ids.length) this.#activeSweep = null;
+      if (sweep.queryDone && sweep.index >= sweep.ids.length) {
+        sweep.cursor.cancel();
+        this.#activeSweep = null;
+      }
       if (remaining === before && this.#activeSweep !== null) break;
     }
   }
@@ -212,42 +238,62 @@ export class EraserSweep {
   #activateNextSweep(): ActiveSweep | null {
     const pending = this.#pendingSweeps.shift();
     if (pending === undefined) return null;
-    const ids: string[] = [];
-    this.#query.query(sweepBounds(pending.start, pending.end, this.#radius), {
-      add: (id) => {
-        if (!this.#candidates.has(id)) ids.push(id);
-      },
-    });
-    this.#activeSweep = { ...pending, check: null, ids, index: 0 };
+    const cursor = this.#query.beginQuery(sweepBounds(pending.start, pending.end, this.#radius));
+    this.#activeSweep = { ...pending, check: null, cursor, ids: [], index: 0, queryDone: false };
     return this.#activeSweep;
   }
 
   #advanceActiveSweep(sweep: ActiveSweep, workUnits: number, added: string[]): number {
     let remaining = workUnits;
-    while (sweep.index < sweep.ids.length) {
-      const id = sweep.ids[sweep.index]!;
-      if (this.#candidates.has(id)) {
-        sweep.index += 1;
-        sweep.check = null;
-        continue;
+    while (remaining > 0) {
+      if (sweep.index >= sweep.ids.length) {
+        if (sweep.queryDone) break;
+        remaining = this.#queryNextBatch(sweep, remaining, added);
+        if (this.#isCancelled()) return 0;
+        if (sweep.ids.length === 0) continue;
+        if (remaining <= 0) break;
       }
-      const check = this.#ensureCheck(sweep, id);
-      if (check === null) {
-        sweep.index += 1;
-        continue;
-      }
-      const progress = check.advance(remaining);
-      remaining -= progress.workUnits;
-      if (progress.result === null) return remaining;
-      sweep.check = null;
-      sweep.index += 1;
-      if (progress.result) {
-        this.#candidates.add(id);
-        added.push(id);
-      }
-      if (remaining <= 0) return remaining;
+      remaining = this.#advanceCandidate(sweep, remaining, added);
     }
     return remaining;
+  }
+
+  #advanceCandidate(sweep: ActiveSweep, remaining: number, added: string[]): number {
+    const id = sweep.ids[sweep.index]!;
+    if (sweep.check === null) remaining -= 1;
+    if (this.#candidates.has(id)) {
+      sweep.index += 1;
+      sweep.check = null;
+      return remaining;
+    }
+    const check = this.#ensureCheck(sweep, id);
+    if (check === null) {
+      sweep.index += 1;
+      return remaining;
+    }
+    if (remaining <= 0) return 0;
+    const progress = check.advance(remaining);
+    if (progress.result === null) return 0;
+    sweep.check = null;
+    sweep.index += 1;
+    if (progress.result) {
+      this.#candidates.add(id);
+      added.push(id);
+    }
+    return remaining - progress.workUnits;
+  }
+
+  #queryNextBatch(sweep: ActiveSweep, remaining: number, added: string[]): number {
+    const progress = sweep.cursor.advance(Math.min(remaining, QUERY_BATCH_WORK_UNITS));
+    if (progress.stale) {
+      this.revert();
+      added.length = 0;
+      return 0;
+    }
+    sweep.ids = progress.ids;
+    sweep.index = 0;
+    sweep.queryDone = progress.done;
+    return remaining - progress.workUnits;
   }
 
   #ensureCheck(sweep: ActiveSweep, id: string): SweptCapsuleCheck | null {

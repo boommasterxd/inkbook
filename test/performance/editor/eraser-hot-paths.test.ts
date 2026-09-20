@@ -1,12 +1,72 @@
+import { eraserQuery } from "../../fixtures/editor/eraser-query";
 import { describe, expect, it, vi } from "vitest";
 
 import type { BoxShapeElementV1 } from "../../../src/domain/schema/public";
+import { ElementStore } from "../../../src/domain/store/public";
 import { EraserSweep } from "../../../src/editor/gestures/public";
 import { createCountedDenseStrokeEraser } from "./eraser-performance-fixture";
 
 const DENSE_STROKES = 488;
 
 describe("eraser hot paths", () => {
+  it("bounds dense indexed discovery and element reads across stationary continuations", () => {
+    const base = rectangle();
+    const store = new ElementStore(
+      Array.from({ length: 10_000 }, (_, index) => ({
+        ...base,
+        id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      })),
+    );
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    let indexWork = 0;
+    let reads = 0;
+    let queries = 0;
+    const eraser = new EraserSweep(
+      { x: 40, y: 50 },
+      4,
+      {
+        beginQuery: (bounds) => {
+          queries += 1;
+          const cursor = store.beginQuery(bounds);
+          return {
+            cancel: () => cursor.cancel(),
+            advance: (budget) => {
+              expect(budget).toBeLessThanOrEqual(128);
+              const progress = cursor.advance(budget);
+              indexWork += progress.workUnits;
+              return progress;
+            },
+          };
+        },
+        getElement: (id) => {
+          reads += 1;
+          return store.get(id)?.element as BoxShapeElementV1 | undefined;
+        },
+      },
+      { setCandidateFade: () => undefined, clearCandidateFade: () => undefined },
+    );
+    let passes = 0;
+    try {
+      expect(eraser.candidateCount).toBeLessThan(store.size);
+      while (true) {
+        expect(indexWork + reads).toBeLessThanOrEqual(12_288);
+        expect(eraser.retainedCandidateIdCount).toBeLessThanOrEqual(128);
+        if (eraser.retainedSweepCount === 0) break;
+        expect(passes++).toBeLessThan(20);
+        indexWork = 0;
+        reads = 0;
+        expect(eraser.updateBatch([])).toBe("accepted");
+      }
+      expect(passes).toBeGreaterThan(0);
+      expect(queries).toBe(1);
+      expect(eraser.candidateCount).toBe(10_000);
+      expect(store.instrumentation.fullStoreScans).toBe(0);
+    } finally {
+      eraser.revert();
+      clock.mockRestore();
+    }
+  });
+
   it.each([5_000, 20_000])("keeps incremental feedback linear for %i candidates", (count) => {
     const element = rectangle();
     const ids = Array.from({ length: count }, (_, index) => `shape-${index}`);
@@ -18,10 +78,10 @@ describe("eraser hot paths", () => {
       4,
       {
         getElement: () => element,
-        query: (_bounds, sink) => {
+        beginQuery: () => {
           queryIndex += 1;
           const id = ids[queryIndex - 2];
-          if (id !== undefined) sink.add(id);
+          return eraserQuery(id === undefined ? [] : [id]);
         },
       },
       {
