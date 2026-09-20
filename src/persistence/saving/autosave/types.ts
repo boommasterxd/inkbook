@@ -23,6 +23,7 @@ export interface AutosaveClock {
 }
 
 export interface AutosaveSessionBaseOptions {
+  readonly waitForBackground?: () => Promise<void>;
   readonly beforeExistingWrite?: (expectedContent: string) => Promise<void>;
   readonly clock: AutosaveClock;
   readonly confirmed: (persistence: ConfirmedPersistence) => void;
@@ -55,6 +56,7 @@ export interface AutosaveObserver {
 }
 
 export interface AutosaveCoordinatorOptions {
+  readonly waitForBackground?: () => Promise<void>;
   readonly beforeExistingWrite?: (expectedContent: string) => Promise<void>;
   readonly clock: AutosaveClock;
   readonly confirmedBase: VaultBase;

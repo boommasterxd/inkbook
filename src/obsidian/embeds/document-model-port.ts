@@ -43,6 +43,8 @@ export class DocumentRevisionExhaustedError extends RangeError {
 }
 
 export interface EditableDocumentModel {
+  beginInteractiveOperation?(): () => void;
+  waitForBackground?(): Promise<void>;
   readonly mutationAvailability: DocumentMutationAvailability;
   readonly page: InkSnapshotV1["page"];
   readonly revision: number;
@@ -53,7 +55,7 @@ export interface EditableDocumentModel {
   commitPage(page: InkSnapshotV1["page"]): void;
   prepareElementMutation(
     mutation: ElementMutation,
-    cancellation: { isCancelled(): boolean },
+    cancellation: { isCancelled(): boolean; readonly replay?: AppliedElementMutation },
   ): Promise<PreparedElementMutationResult>;
   commitPreparedElementMutation(token: PreparedElementMutation): AppliedElementMutation | null;
   encodeClipboard(selectedIds: ReadonlySet<string>): Promise<ClipboardWritePayload | null>;
@@ -73,4 +75,5 @@ export interface EditableDocumentModel {
     token: PreparedElementReplacement,
   ): "cancelled" | "committed" | "noop";
   setGestureActive(active: boolean): void;
+  setNavigationActive?(active: boolean): void;
 }

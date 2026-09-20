@@ -82,7 +82,7 @@ describe("safe locked-preview SVG source loading", () => {
     await expect(loadValidatedPreviewSvg("app://vault/missing.svg", loaded.window)).rejects.toThrow(
       "could not be loaded",
     );
-    expect(loaded.fetchMock).toHaveBeenCalledWith("app://vault/missing.svg");
+    expect(loaded.fetchMock).toHaveBeenCalledWith("app://vault/missing.svg", undefined);
     expect(body.arrayBuffer).not.toHaveBeenCalled();
   });
 

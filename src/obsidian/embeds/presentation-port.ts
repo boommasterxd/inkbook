@@ -1,3 +1,4 @@
+import type { LockedPreviewPresentation } from "./locked-preview";
 import type { InitialPresentationEntrance } from "./presentation-entrance";
 import type { MotionPreference } from "../../rendering/motion/transitions";
 import type { AttachmentIdentity } from "../../editor/session/session-state";
@@ -56,7 +57,7 @@ export interface PresentationRemoval {
   ): boolean | undefined;
 }
 
-export interface PresentationAttachment {
+export interface PresentationAttachment extends LockedPreviewPresentation {
   readonly initialEntrance?: InitialPresentationEntrance;
   readonly removal?: PresentationRemoval;
   readonly attachmentGeneration: number;
@@ -69,8 +70,6 @@ export interface PresentationAttachment {
   readonly whenPresented?: Promise<boolean>;
   readonly scrollRangeReserve?: PresentationScrollRangeReserve;
   readonly preview?: HTMLElement;
-  readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
-  readonly setPreviewSource?: (source: string) => Promise<void>;
   readonly scrollOwner: () => HTMLElement | null;
 }
 
@@ -88,6 +87,9 @@ export type PresentationAttachmentInput = Omit<
   | "scrollOwner"
   | "scrollRangeReserve"
   | "setPreviewAspectRatio"
+  | "refreshPreview"
+  | "ensurePreviewReady"
+  | "setPreviewBackgroundWait"
   | "setPreviewSource"
 >;
 
@@ -99,9 +101,18 @@ export function presentationPreviewOptions(
   | "preview"
   | "scrollRangeReserve"
   | "setPreviewAspectRatio"
+  | "refreshPreview"
+  | "ensurePreviewReady"
+  | "setPreviewBackgroundWait"
   | "setPreviewSource"
 > {
   return {
+    ...(attachment.ensurePreviewReady === undefined
+      ? {}
+      : { ensurePreviewReady: attachment.ensurePreviewReady }),
+    ...(attachment.setPreviewBackgroundWait === undefined
+      ? {}
+      : { setPreviewBackgroundWait: attachment.setPreviewBackgroundWait }),
     ...(attachment.initialEntrance === undefined
       ? {}
       : { initialEntrance: attachment.initialEntrance }),
@@ -109,6 +120,9 @@ export function presentationPreviewOptions(
     ...(attachment.setPreviewAspectRatio === undefined
       ? {}
       : { setPreviewAspectRatio: attachment.setPreviewAspectRatio }),
+    ...(attachment.refreshPreview === undefined
+      ? {}
+      : { refreshPreview: attachment.refreshPreview }),
     ...(attachment.setPreviewSource === undefined
       ? {}
       : { setPreviewSource: attachment.setPreviewSource }),

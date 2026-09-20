@@ -19,6 +19,7 @@ describe("scene delta routing", () => {
       ports,
     );
 
+    expect(spies.prepareElementRemoval).not.toHaveBeenCalled();
     expect(spies.markGeometry).toHaveBeenCalledTimes(2);
     expect(spies.markGeometry).toHaveBeenNthCalledWith(1, "a");
     expect(spies.markGeometry).toHaveBeenNthCalledWith(2, "b");
@@ -44,6 +45,7 @@ describe("scene delta routing", () => {
     expect(spies.markOrders).toHaveBeenCalledOnce();
     expect(spies.markOrders).toHaveBeenCalledWith(["a", "b"]);
     expect(spies.markOrderVisibilityDirty).toHaveBeenCalledOnce();
+    expect(spies.prepareElementRemoval.mock.calls).toEqual([["a"], ["b"]]);
     expect(spies.releaseId).toHaveBeenCalledTimes(2);
     expect(spies.invalidatePath).toHaveBeenCalledTimes(2);
     expect(spies.invalidateForChanges).toHaveBeenCalledOnce();
@@ -61,7 +63,8 @@ function routingPorts(): {
     | "markOrderVisibilityDirty"
     | "markOrders"
     | "markPaint"
-    | "releaseId",
+    | "releaseId"
+    | "prepareElementRemoval",
     ReturnType<typeof vi.fn>
   >;
 } {
@@ -74,6 +77,7 @@ function routingPorts(): {
     markOrders: vi.fn(),
     markPaint: vi.fn(),
     releaseId: vi.fn(),
+    prepareElementRemoval: vi.fn(),
   };
   const ports = {
     content: {
@@ -81,6 +85,7 @@ function routingPorts(): {
       markOrder: vi.fn(),
       markOrders: spies.markOrders,
       markPaint: spies.markPaint,
+      prepareElementRemoval: spies.prepareElementRemoval,
     },
     invalidateVisibility: spies.invalidateVisibility,
     markOrderVisibilityDirty: spies.markOrderVisibilityDirty,

@@ -82,6 +82,8 @@ export class FakePresentationElement {
     };
     const documentListeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
     Object.assign(documentPort, {
+      createElementNS: (_namespace: string, name: string) =>
+        new FakePresentationElement(documentPort as unknown as Document, name),
       addEventListener: (type: string, callback: EventListenerOrEventListenerObject) => {
         const listeners = documentListeners.get(type) ?? new Set();
         listeners.add(callback);

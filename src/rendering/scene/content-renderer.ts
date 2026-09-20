@@ -6,12 +6,12 @@ import {
   updateMountedElementPreview,
   updateMountedPaint,
   updatePreviewTransform,
-  setMountedElementFade,
   setMountedElementMotion,
   type MountedSceneElement,
 } from "./mounted-element";
 import type { ScenePathCache } from "./path-cache";
 import { MountSlice, mountCost } from "./mount-slice";
+import { SceneElementFades } from "./scene-element-fades";
 import { SceneSelectionTraces } from "./selection-traces";
 import type { SceneDom } from "./scene-dom";
 import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } from "./types";
@@ -30,6 +30,7 @@ export class SceneContentRenderer {
   readonly #geometryDirty = new Set<string>();
   readonly #instrumentation: MutableSceneInstrumentation;
   readonly #mounted = new Map<string, MountedSceneElement>();
+  readonly #fades = new SceneElementFades(this.#mounted);
   #newlyMountedIds: readonly string[] = EMPTY_IDS;
   readonly #orderDirty: Record<RenderBand, Set<string>> = {
     content: new Set(),
@@ -57,6 +58,7 @@ export class SceneContentRenderer {
     this.#reconciler = new SceneVisibilityReconciler({
       dom,
       instrumentation,
+      isExitReady: (id, now) => this.isElementFadeExitReady(id, now),
       mounted: this.#mounted,
       orderDirty: this.#orderDirty,
       pathCache,
@@ -161,6 +163,14 @@ export class SceneContentRenderer {
     return this.writeSelectionTraces(deadline, now);
   }
 
+  public get hasPendingExitCleanup(): boolean {
+    return this.#reconciler.hasPendingCleanup;
+  }
+
+  public get needsVisibilityRestart(): boolean {
+    return this.#reconciler.needsRestart;
+  }
+
   public replaceVisibility(visibility: VisibilityResult): void {
     this.#reconciler.replace(visibility);
   }
@@ -175,7 +185,11 @@ export class SceneContentRenderer {
     previewTransforms: ReadonlyMap<string, PreviewTransform>,
     previewElements: ReadonlyMap<string, InkElementV1>,
   ): boolean {
+    const wasCleaning = this.#reconciler.hasPendingCleanup;
     const result = this.#reconciler.reconcile(deadline, now, previewTransforms, previewElements);
+    if (wasCleaning && !this.#reconciler.hasPendingCleanup) {
+      this.#selectionTraces.prune(this.#mounted);
+    }
     if (result.committedVisibility !== undefined) {
       this.commitVisibility(result.committedVisibility);
       this.#newlyMountedIds = result.newlyMountedIds;
@@ -237,11 +251,24 @@ export class SceneContentRenderer {
     this.updateGeometry(entry, record, parts);
   }
 
-  public setElementFade(ids: readonly string[], durationMs: number | null): void {
-    for (const id of ids) {
-      const entry = this.#mounted.get(id);
-      if (entry !== undefined) setMountedElementFade(entry, durationMs);
-    }
+  public setElementFade(ids: readonly string[], durationMs: number | null, now = 0): void {
+    this.#fades.set(ids, durationMs, now);
+  }
+
+  public prepareElementRemoval(id: string): void {
+    if (this.#mounted.get(id)?.fadeActive !== true) this.#fades.set([id], 0, 0);
+  }
+
+  public get pendingElementFades(): boolean {
+    return this.#fades.pending;
+  }
+
+  public flushElementFades(deadline: number, now: () => number): boolean {
+    return this.#fades.flush(deadline, now);
+  }
+
+  public isElementFadeExitReady(id: string, now: number): boolean {
+    return this.#fades.isExitReady(id, now);
   }
 
   public setElementMotion(ids: readonly string[], opacity: number | null, scale = 1): void {
@@ -252,6 +279,7 @@ export class SceneContentRenderer {
   }
 
   public release(): void {
+    this.#fades.release();
     this.#selectionTraces.release();
     this.#selectionDirty.clear();
     this.#reconciler.release();

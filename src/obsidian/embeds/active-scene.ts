@@ -398,7 +398,7 @@ export class ActiveInkbookScene {
         await this.#lockDelay.wait(remaining);
       }
       if (this.#disposed || generation !== this.#lockGeneration) return;
-      await this.#previewReady;
+      await Promise.all([this.#previewReady, this.#previewHandoff.ensurePreviewReady()]);
       if (this.#disposed || generation !== this.#lockGeneration) return;
       await new Promise<void>((resolve) => {
         this.#previewHandoff.handoffToPreview(this.#editorChrome, resolve, () => {

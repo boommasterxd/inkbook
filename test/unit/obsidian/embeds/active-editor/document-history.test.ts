@@ -39,6 +39,7 @@ describe("active document element history", () => {
       store,
       ...mutations,
     } as unknown as EditableDocumentModel;
+    const preparedCalls = vi.spyOn(model, "prepareElementMutation");
     const history = new ActiveEditorHistory(model);
     const documentHistory = new ActiveDocumentHistory({ history, model });
 
@@ -59,6 +60,12 @@ describe("active document element history", () => {
     expect(store.get(target.id)).toBeUndefined();
     expect(store.get(line.id)?.element).toMatchObject({ startConnection: null });
     expect(deltas).toHaveBeenCalledTimes(3);
+    expect(preparedCalls.mock.calls[0]![1].replay).toBeUndefined();
+    const replay = preparedCalls.mock.calls[1]![1].replay;
+    expect(replay).toBeDefined();
+    expect(preparedCalls.mock.calls[1]![0]).toBe(replay!.reverse);
+    expect(preparedCalls.mock.calls[2]![0]).toBe(replay!.forward);
+    expect(preparedCalls.mock.calls[2]![1].replay).toBe(replay);
   });
 
   it("rejects a prepared deletion after its selection becomes stale", async () => {

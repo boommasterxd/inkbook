@@ -79,14 +79,10 @@ export function createWorkspaceDocumentRuntimes(
         shouldYield: () =>
           windows.owningWindow(documentId).performance.now() - sliceStarted >=
           sliceBudgetMs(windows.owningWindow(documentId)),
-        yieldControl: () =>
-          new Promise((resolve) => {
-            const owningWindow = windows.owningWindow(documentId);
-            owningWindow.setTimeout(() => {
-              sliceStarted = windows.owningWindow(documentId).performance.now();
-              resolve();
-            }, 0);
-          }),
+        yieldControl: async () => {
+          await yieldToWindow(windows.owningWindow(documentId));
+          sliceStarted = windows.owningWindow(documentId).performance.now();
+        },
       };
     },
     now: (documentId) => {
@@ -122,5 +118,23 @@ function createFallbackWarning(windows: WorkspaceRuntimeWindowPorts): () => void
 
 function yieldToWindow(ownerWindow: Window | undefined): Promise<void> {
   if (ownerWindow === undefined) return Promise.resolve();
-  return new Promise((resolve) => ownerWindow.setTimeout(resolve, 0));
+  const channelConstructor = (ownerWindow as Window & { MessageChannel?: typeof MessageChannel })
+    .MessageChannel;
+  if (channelConstructor === undefined)
+    return new Promise((resolve) => ownerWindow.setTimeout(resolve, 0));
+  return new Promise((resolve, reject) => {
+    const channel = new channelConstructor();
+    channel.port1.onmessage = () => {
+      channel.port1.close();
+      channel.port2.close();
+      resolve();
+    };
+    try {
+      channel.port2.postMessage(undefined);
+    } catch (error) {
+      channel.port1.close();
+      channel.port2.close();
+      reject(error instanceof Error ? error : new Error("Store handoff failed."));
+    }
+  });
 }

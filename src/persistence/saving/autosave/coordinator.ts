@@ -8,16 +8,7 @@ import {
   inspectIntegrityBoundExport,
   type ExportIntegrityDecision,
 } from "./export-integrity";
-import type {
-  AutosaveCoordinatorOptions,
-  ActiveAutosave,
-  AutosaveDelta,
-  AutosaveStatus,
-  ExternalChangeOutcome,
-  FlushOutcome,
-  FlushReason,
-  FlushWaiter,
-} from "./types";
+import type * as Autosave from "./types";
 import {
   createExportRequest,
   createModelSyncRequest,
@@ -50,24 +41,25 @@ export class AutosaveCoordinator {
   #exportInFlight: ConcreteExportRequest | null = null;
   #fallbackUsed = false;
   #forced = false;
-  readonly #integrity = new AutosaveExportIntegrity();
+  readonly #integrity;
   #modelSyncInFlight: ModelSyncRuntimeRequest | null = null;
   readonly #observer;
   readonly #path;
   #prepared: ExportSuccess | null = null;
-  #save: ActiveAutosave | null = null;
+  #save: Autosave.ActiveAutosave | null = null;
   #saveOperationId = 0;
   #savePromise: Promise<void> | null = null;
   readonly #sessionId;
-  #status: AutosaveStatus;
+  #status: Autosave.AutosaveStatus;
   readonly #timer;
   readonly #terminalVault;
-  readonly #waiters: FlushWaiter[] = [];
+  readonly #waiters: Autosave.FlushWaiter[] = [];
   #workerEpoch;
   readonly #verifier;
   readonly #workerModel;
-  public constructor(options: AutosaveCoordinatorOptions) {
+  public constructor(options: Autosave.AutosaveCoordinatorOptions) {
     assertAutosaveInitialState(options);
+    this.#integrity = new AutosaveExportIntegrity(options.waitForBackground);
     this.#confirmedContent = options.confirmedContent ?? null;
     this.#beforeExistingWrite = options.beforeExistingWrite;
     this.#canonicalRewritePending = options.requiresCanonicalRewrite ?? false;
@@ -88,6 +80,7 @@ export class AutosaveCoordinator {
       this.#timer.schedule(AUTOSAVE_DELAY_MS);
     }
     this.#verifier = new AutosavePersistedOutputVerifier({
+      ...(options.waitForBackground ? { waitForBackground: options.waitForBackground } : {}),
       executor: () => this.#executor,
       isDisposed: () => this.#disposed,
       sessionId: this.#sessionId,
@@ -102,13 +95,13 @@ export class AutosaveCoordinator {
       this.#confirmedBase.revision !== this.#document.currentRevision()
     );
   }
-  public get status(): AutosaveStatus {
+  public get status(): Autosave.AutosaveStatus {
     return this.#status;
   }
   public get retainedConfirmedContentBytes(): number {
     return this.#confirmedContent?.length ?? 0;
   }
-  public recordCommit(delta: AutosaveDelta): void {
+  public recordCommit(delta: Autosave.AutosaveDelta): void {
     if (this.#disposed) return;
     if (delta.modelRevision !== this.#document.currentRevision()) {
       throw new RangeError("Autosave delta must describe the current document revision.");
@@ -158,7 +151,7 @@ export class AutosaveCoordinator {
       if (!this.#disposed && this.#modelSyncInFlight === request) {
         this.#modelSyncInFlight = null;
         if (!synchronized) this.#requireFullSnapshot();
-        if (this.#forced) this.#kick();
+        if (this.#forced || !this.#timer.hasPending) this.#kick();
       }
     }
   }
@@ -168,16 +161,18 @@ export class AutosaveCoordinator {
     this.#requireFullSnapshot();
     return true;
   }
-  public flush(_reason: FlushReason): Promise<FlushOutcome> {
+  public flush(_reason: Autosave.FlushReason): Promise<Autosave.FlushOutcome> {
     if (this.#disposed) return Promise.resolve(terminalAutosaveOutcome(this.dirty, this.#status));
     if (!this.dirty) return Promise.resolve("clean");
     this.#forced = true;
     this.#timer.clear();
-    const promise = new Promise<FlushOutcome>((resolve) => this.#waiters.push({ resolve }));
+    const promise = new Promise<Autosave.FlushOutcome>((resolve) =>
+      this.#waiters.push({ resolve }),
+    );
     this.#kick();
     return promise;
   }
-  public async retryVerification(): Promise<FlushOutcome> {
+  public async retryVerification(): Promise<Autosave.FlushOutcome> {
     if (this.#disposed) return terminalAutosaveOutcome(this.dirty, this.#status);
     const active = this.#save;
     if (this.#status !== "verification-required" || active === null) {
@@ -199,7 +194,7 @@ export class AutosaveCoordinator {
     if (this.dirty && !isAutosaveSuspended(this.#status) && this.#forced) this.#kick();
     return terminalAutosaveOutcome(this.dirty, this.#status);
   }
-  public async notifyExternalChange(): Promise<ExternalChangeOutcome> {
+  public async notifyExternalChange(): Promise<Autosave.ExternalChangeOutcome> {
     if (this.#disposed) return "conflict";
     const inspected = await inspectAutosaveExternalChange({
       activeSaveBase: () =>
@@ -297,16 +292,14 @@ export class AutosaveCoordinator {
       this.#resolveWaiters();
       return;
     }
-    if (result.modelRevision !== this.#document.currentRevision()) {
-      this.#exportInFlight = null;
-      this.#workerModel.acknowledgeExport(result.modelRevision);
-      this.#executor.acknowledgeExport?.(result, false);
-      if (this.#forced) this.#kick();
-      return;
-    }
     const integrity = await this.#integrity.verify(
       () => this.#document.snapshot(),
       result.integrityManifest,
+      undefined,
+      () =>
+        !this.#disposed &&
+        this.#exportInFlight === request &&
+        result.modelRevision === this.#document.currentRevision(),
     );
     this.#adoptExportIntegrity(request, result, integrity);
   }
@@ -323,7 +316,7 @@ export class AutosaveCoordinator {
     if (result.modelRevision !== this.#document.currentRevision()) {
       this.#workerModel.acknowledgeExport(result.modelRevision);
       this.#executor.acknowledgeExport?.(result, false);
-      if (this.#forced) this.#kick();
+      if (this.#forced || !this.#timer.hasPending) this.#kick();
       return;
     }
     if (integrity !== "match") {
@@ -370,12 +363,12 @@ export class AutosaveCoordinator {
     };
     this.#savePromise = this.#persist(this.#save);
   }
-  async #persist(active: ActiveAutosave): Promise<void> {
+  async #persist(active: Autosave.ActiveAutosave): Promise<void> {
     const result = active.result;
     if (result === null) throw new Error("Active save output was already released.");
     let outputTrusted = false;
     try {
-      const trusted = await inspectIntegrityBoundExport(result);
+      const trusted = await inspectIntegrityBoundExport(result, this.#integrity.waitForBackground);
       active.result = null;
       if (this.#disposed) return;
       outputTrusted = true;
@@ -396,7 +389,12 @@ export class AutosaveCoordinator {
         beforeExistingWrite: this.#beforeExistingWrite,
         expectedBase,
         prepared,
-        revisionSource: this.#document,
+        revisionSource: {
+          currentRevision: () => this.#document.currentRevision(),
+          ...(this.#integrity.waitForBackground
+            ? { waitForBackground: this.#integrity.waitForBackground }
+            : {}),
+        },
         vault: this.#terminalVault,
         verifier: {
           verify: (content, revision, hash) =>
@@ -421,7 +419,7 @@ export class AutosaveCoordinator {
       if (!this.#disposed && this.dirty && !isAutosaveSuspended(this.#status)) this.#kick();
     }
   }
-  #handleUntrustedExport(active: ActiveAutosave): void {
+  #handleUntrustedExport(active: Autosave.ActiveAutosave): void {
     if (this.#save === active) this.#save = null;
     this.#requireFullSnapshot();
     if (this.#switchToFallback()) this.#setStatus("debouncing");
@@ -470,7 +468,7 @@ export class AutosaveCoordinator {
       this.#modelSyncInFlight?.modelRevision ?? this.#exportInFlight?.modelRevision,
     );
   }
-  #setStatus(status: AutosaveStatus): void {
+  #setStatus(status: Autosave.AutosaveStatus): void {
     if (this.#status === status) return;
     this.#status = status;
     this.#observer?.statusChanged(status);

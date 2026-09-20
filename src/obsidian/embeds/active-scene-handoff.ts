@@ -15,6 +15,9 @@ interface PreviewHandoffOptions {
   readonly initialEntrance?: InitialPresentationEntrance;
   readonly preview: HTMLElement | undefined;
   readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
+  readonly refreshPreview?: () => void;
+  readonly ensurePreviewReady?: () => Promise<void>;
+  readonly onDispose?: () => void;
   readonly setPreviewSource?: (source: string) => Promise<void>;
   readonly root: HTMLElement;
 }
@@ -31,6 +34,9 @@ export class ActiveScenePreviewHandoff {
   readonly #previewParent: Node | null;
   readonly #root: HTMLElement;
   readonly #setPreviewAspectRatio: ((aspectRatio: number) => void) | undefined;
+  readonly #ensurePreviewReady: (() => Promise<void>) | undefined;
+  readonly #onDispose: (() => void) | undefined;
+  readonly #refreshPreview: (() => void) | undefined;
   readonly #setPreviewSource: ((source: string) => Promise<void>) | undefined;
   readonly #lockedBlockSize: string;
   #disposed = false;
@@ -53,6 +59,9 @@ export class ActiveScenePreviewHandoff {
     this.#ownerWindow = ownerWindow;
     this.#preview = options.preview;
     this.#setPreviewAspectRatio = options.setPreviewAspectRatio;
+    this.#refreshPreview = options.refreshPreview;
+    this.#ensurePreviewReady = options.ensurePreviewReady;
+    this.#onDispose = options.onDispose;
     this.#setPreviewSource = options.setPreviewSource;
     this.#previewNextSibling = options.preview?.nextSibling ?? null;
     this.#previewParent = options.preview?.parentNode ?? null;
@@ -76,6 +85,7 @@ export class ActiveScenePreviewHandoff {
   public dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#onDispose?.();
     this.#initialRevealPending = false;
     this.#onReady = undefined;
     this.#clearTimer();
@@ -167,6 +177,11 @@ export class ActiveScenePreviewHandoff {
       }
     }
     preview.hidden = false;
+    this.#refreshPreview?.();
+  }
+
+  public async ensurePreviewReady(): Promise<void> {
+    await this.#ensurePreviewReady?.();
   }
 
   public get reducedMotion(): boolean {
