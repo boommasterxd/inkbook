@@ -1,3 +1,5 @@
+import { lazyMutationBands } from "./compact-mutation-order";
+import { commitCompactMutation } from "./compact-mutation";
 import type { ArrangeAction } from "../commands/arrange";
 import { renderBandOf, type RenderBand } from "../commands/render-bands";
 import type { ResolvedShapeAnchor } from "../geometry/anchors";
@@ -11,7 +13,6 @@ import { DocumentCapacity } from "./document-capacity";
 import { createElementStoreBuilder, type ElementStoreBuilder } from "./element-store-builder";
 import { ElementStoreRuntime } from "./element-store-runtime";
 import { hasConnections } from "./element-comparison";
-import type { ElementMutationPlan } from "./element-mutation";
 import { removeElements } from "./element-removal";
 import { mutableElement } from "./immutability";
 import { EMPTY_STORE_INSTRUMENTATION, type MutableStoreInstrumentation } from "./instrumentation";
@@ -22,7 +23,7 @@ import {
   prepareReplacementPlanTimeSliced,
   type ReplacementPlan,
 } from "./replacement-plan";
-import { PreparedElementMutations } from "./prepared-element-mutations";
+import { PreparedElementMutations, type PreparedMutationPlan } from "./prepared-element-mutations";
 import type { PreparedReplacementState } from "./replacement-types";
 import { createRemovalTransition } from "./removal-transition";
 import { assignRecordVersions, createInitialRecord, nextRecordVersion } from "./record-factory";
@@ -78,7 +79,12 @@ export class ElementStore {
   >();
   readonly #preparedElementMutations = new PreparedElementMutations(
     () => ({
-      bands: this.#ordering.materializeBands(),
+      bands: lazyMutationBands(this.#ordering),
+      iterateBand: (band: RenderBand) => this.#ordering.ids(band),
+      capacity: this.#capacity,
+      index: this.#spatialIndex,
+      getRank: (id: string) => this.#ordering.getRank(id),
+      sizeOfBand: (band: RenderBand) => this.#ordering.sizeOf(band),
       geometryVersion: this.#geometryVersion,
       mutationVersion: this.#mutationVersion,
       paintVersion: this.#paintVersion,
@@ -205,7 +211,7 @@ export class ElementStore {
   }
   public replaceMany(replacements: readonly InkElementV1[]): StoreDelta | null {
     if (replacements.length === 0) return null;
-    const candidates = this.#prepareReplacementCandidates(replacements);
+    const candidates = prepareReplacementCandidates(replacements, this.#replacementPorts());
     if (candidates.length === 0) return null;
     return this.#commitReplacements(candidates);
   }
@@ -308,15 +314,28 @@ export class ElementStore {
   ): ElementMutationCommitResult {
     return this.#preparedElementMutations.commit(token);
   }
-  #adoptElementMutation(plan: ElementMutationPlan): ElementMutationCommitResult {
-    this.#records = plan.records;
-    this.#capacity = plan.capacity;
-    this.#spatialIndex = plan.index;
-    this.#reverseConnections = plan.reverseConnections;
-    this.#overflowCount = plan.overflowCount;
+  #adoptElementMutation(plan: PreparedMutationPlan): ElementMutationCommitResult {
+    if (plan.kind === "compact") {
+      commitCompactMutation(
+        {
+          capacity: this.#capacity,
+          index: this.#spatialIndex,
+          ordering: this.#ordering,
+          records: this.#records,
+          reverseConnections: this.#reverseConnections,
+        },
+        plan,
+      );
+    } else {
+      this.#records = plan.records;
+      this.#capacity = plan.capacity;
+      this.#spatialIndex = plan.index;
+      this.#reverseConnections = plan.reverseConnections;
+      this.#ordering = plan.ordering;
+    }
+    this.#overflowCount = this.#spatialIndex.overflowCount;
     this.#geometryVersion = plan.delta.geometryVersion;
     this.#paintVersion = plan.delta.paintVersion;
-    this.#ordering = plan.ordering;
     return {
       delta: this.#publish(plan.delta),
       status: "committed",
@@ -460,9 +479,6 @@ export class ElementStore {
     return this.#publish(result.delta)!;
   }
 
-  #prepareReplacementCandidates(replacements: readonly InkElementV1[]): ReplacementCandidate[] {
-    return prepareReplacementCandidates(replacements, this.#replacementPorts());
-  }
   #replacementPorts(): ReplacementPlannerPorts {
     return {
       getRecord: (id) => this.#requireRecord(id),

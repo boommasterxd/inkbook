@@ -126,12 +126,22 @@ export class UniformSpatialIndex<Id> {
   }
 
   public remove(id: Id): boolean {
-    const entry = this.entries.get(id);
-    if (entry === undefined) return false;
+    return this.removeMany([id]) > 0;
+  }
 
-    this.detachEntry(entry, true);
-    this.finishMutation();
-    return true;
+  public removeMany(ids: readonly Id[]): number {
+    let removed = 0;
+    let overflowChanged = false;
+    for (const id of ids) {
+      const entry = this.entries.get(id);
+      if (entry === undefined) continue;
+      overflowChanged ||= entry.overflow && entry.maxY === this.overflowMaximum;
+      this.detachEntry(entry, true, true);
+      removed += 1;
+    }
+    if (overflowChanged) this.recomputeOverflowMaximum();
+    if (removed > 0) this.finishMutation();
+    return removed;
   }
 
   public prepareReplacements(
@@ -278,13 +288,13 @@ export class UniformSpatialIndex<Id> {
     if (updateExtent) this.pushExtentEntry(entry);
   }
 
-  private detachEntry(entry: IndexedEntry<Id>, releaseSlot: boolean): void {
+  private detachEntry(entry: IndexedEntry<Id>, releaseSlot: boolean, deferOverflow = false): void {
     this.entries.delete(entry.id);
     this.slots[entry.slot] = undefined;
 
     if (entry.overflow) {
       this.overflowSlots.delete(entry.slot);
-      if (entry.maxY === this.overflowMaximum) this.recomputeOverflowMaximum();
+      if (!deferOverflow && entry.maxY === this.overflowMaximum) this.recomputeOverflowMaximum();
     } else {
       this.gridEntryCount -= 1;
       this.gridMembershipCount -= entry.cellKeys.length / 2;

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   MAX_OVERFLOW_ELEMENTS,
@@ -304,5 +304,33 @@ describe("UniformSpatialIndex edge cases", () => {
     expect(index.query(bounds, scratch)).toBe(1);
     expect(scratch.at(0)).toBe(id);
     expect(index.remove(other)).toBe(false);
+  });
+});
+
+describe("spatial batch removal", () => {
+  it("removes grid and overflow entries once, updates maxima, and performs one cleanup slice", () => {
+    const index = new UniformSpatialIndex<string>();
+    index.insert("grid", { minX: 0, minY: 0, maxX: 1, maxY: 1 });
+    index.insert("overflow-a", { minX: 0, minY: 0, maxX: 100000, maxY: 300 });
+    index.insert("overflow-b", { minX: 0, minY: 0, maxX: 100000, maxY: 500 });
+    const cleanup = vi.spyOn(index, "rebuildExtentStep");
+    expect(index.removeMany(["missing", "grid", "grid", "overflow-b"])).toBe(2);
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(cleanup).toHaveBeenCalledWith(256);
+    expect(index.size).toBe(1);
+    expect(index.overflowCount).toBe(1);
+    expect(index.membershipCount).toBe(0);
+    expect(index.getMaximumBottom()).toBe(300);
+    const scratch = new SpatialQueryScratch<string>();
+    index.query({ minX: 0, minY: 0, maxX: 1, maxY: 1 }, scratch);
+    expect(idsFrom(scratch)).toEqual(["overflow-a"]);
+    cleanup.mockClear();
+    expect(index.removeMany(["missing"])).toBe(0);
+    expect(cleanup).not.toHaveBeenCalled();
+    expect(index.removeMany(["overflow-a"])).toBe(1);
+    expect(index.getMaximumBottom()).toBeUndefined();
+    index.insert("reused", { minX: 0, minY: 0, maxX: 1, maxY: 2 });
+    expect(index.getMaximumBottom()).toBe(2);
+    cleanup.mockRestore();
   });
 });

@@ -4,9 +4,17 @@ import type { DocumentCapacity, DocumentCapacityPatch } from "./document-capacit
 import type { MutationSource } from "./element-mutation";
 import type { ElementStoreOrdering } from "./order-operations";
 import type { ReverseConnectionPatch } from "./replacement-reverse-patch";
-import type { AppliedElementMutation, ElementPlacement, ElementRank, ElementRecord, StoreDelta } from "./types";
+import type {
+  AppliedElementMutation,
+  ElementPlacement,
+  ElementRank,
+  ElementRecord,
+  EndpointReference,
+  StoreDelta,
+} from "./types";
 
 export interface CompactMutationSource extends MutationSource {
+  readonly iterateBand: (band: RenderBand) => IterableIterator<string>;
   readonly capacity: DocumentCapacity;
   readonly index: UniformSpatialIndex<string>;
   readonly getRank: (id: string) => ElementRank | undefined;
@@ -28,5 +36,5 @@ export interface CompactCommitState {
   readonly index: UniformSpatialIndex<string>;
   readonly ordering: ElementStoreOrdering;
   readonly records: Map<string, ElementRecord>;
-  readonly reverseConnections: Map<string, import("./types").EndpointReference[]>;
+  readonly reverseConnections: Map<string, EndpointReference[]>;
 }

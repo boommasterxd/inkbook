@@ -1,3 +1,4 @@
+import { checkpoint, minimumProgressScheduler } from "./mutation-scheduler";
 import { DEFAULT_HISTORY_BYTE_LIMIT } from "../commands/history";
 import { renderBandOf, type RenderBand } from "../commands/render-bands";
 import type { InkElementV1 } from "../schema/public";
@@ -61,8 +62,6 @@ export interface MutationSource {
   readonly reverseConnections: ReadonlyMap<string, readonly EndpointReference[]>;
 }
 
-const MAX_CHECKPOINTS_PER_SLICE = 128;
-
 export async function planElementMutation(
   source: MutationSource,
   requested: ElementMutation,
@@ -120,25 +119,6 @@ export async function planElementMutation(
   };
 }
 
-function minimumProgressScheduler(scheduler: StoreSliceScheduler): StoreSliceScheduler {
-  let checkpoints = 0;
-  return {
-    ...(scheduler.isCancelled === undefined
-      ? {}
-      : { isCancelled: () => scheduler.isCancelled?.() ?? false }),
-    shouldYield: () => {
-      checkpoints += 1;
-      return (
-        checkpoints > 1 && (checkpoints >= MAX_CHECKPOINTS_PER_SLICE || scheduler.shouldYield())
-      );
-    },
-    yieldControl: async () => {
-      await scheduler.yieldControl();
-      checkpoints = 0;
-    },
-  };
-}
-
 export async function collectDesiredElements(
   source: MutationSource,
   elements: readonly InkElementV1[],
@@ -147,13 +127,16 @@ export async function collectDesiredElements(
 ): Promise<Map<string, InkElementV1> | "cancelled"> {
   const desired = await collectConnectionDetachments(source, removeIds, scheduler);
   if (desired === "cancelled") return desired;
-  for (const element of elements) {
+  const explicitIds = new Set<string>();
+  for (const input of elements) {
     if (!(await checkpoint(scheduler))) return "cancelled";
-    if (desired.has(element.id) && !removeIds.has(element.id)) {
+    const element = mutableElement(input);
+    if (explicitIds.has(element.id)) {
       throw new RangeError(`Duplicate mutation element ID: ${element.id}`);
     }
     if (removeIds.has(element.id))
       throw new RangeError(`Mutation cannot remove and set: ${element.id}`);
+    explicitIds.add(element.id);
     const current = source.records.get(element.id);
     if (current === undefined) assertValidElement(element);
     else {
@@ -472,7 +455,8 @@ async function estimateMutationBytes(
   mutation: ElementMutation,
   scheduler: StoreSliceScheduler,
 ): Promise<number | "cancelled"> {
-  let bytes = ((mutation.bands?.content.length ?? 0) + (mutation.bands?.highlight.length ?? 0)) * 80;
+  let bytes =
+    ((mutation.bands?.content.length ?? 0) + (mutation.bands?.highlight.length ?? 0)) * 80;
   for (const id of mutation.removeIds ?? []) {
     if (!(await checkpoint(scheduler))) return "cancelled";
     bytes += id.length * 2;
@@ -495,10 +479,4 @@ async function orderChanged(
     if (left[index] !== right[index]) return true;
   }
   return false;
-}
-
-export async function checkpoint(scheduler: StoreSliceScheduler): Promise<boolean> {
-  if (scheduler.isCancelled?.() ?? false) return false;
-  if (scheduler.shouldYield()) await scheduler.yieldControl();
-  return !(scheduler.isCancelled?.() ?? false);
 }
