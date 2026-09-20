@@ -23,7 +23,7 @@ import {
 import { requireElementRecord } from "./record-access";
 import {
   assertReplacementIdentity,
-  assertValidElement,
+  assertValidRuntimeElement,
   assertValidReplacementElement,
 } from "./replacement-planner";
 import type {
@@ -149,7 +149,7 @@ async function collectDesiredElements(
     if (removeIds.has(element.id))
       throw new RangeError(`Mutation cannot remove and set: ${element.id}`);
     const current = source.records.get(element.id);
-    if (current === undefined) assertValidElement(element);
+    if (current === undefined) assertValidRuntimeElement(element);
     else {
       assertReplacementIdentity(current.element, element);
       assertValidReplacementElement(current.element, element);

@@ -48,6 +48,8 @@ describe("runtime element ownership", () => {
     const { builder, points, runtime } = runtimeStrokeHydrationFixture(source);
 
     expect(validateInkElementV1(runtime).ok).toBe(false);
+    expect(() => new ElementStore([runtime])).toThrow(RangeError);
+    expect(() => new ElementStore().create(runtime)).toThrow(RangeError);
     expect(await builder.appendOwnedRuntime([runtime])).toBe("accepted");
     const store = await builder.finalize();
     expectHydratedStroke(store, source, points);

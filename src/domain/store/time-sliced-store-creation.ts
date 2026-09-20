@@ -1,6 +1,5 @@
 import { renderBandOf, type RenderBand } from "../commands/render-bands";
 import { FILE_SCHEMA_LIMITS } from "../schema/constants";
-import { validateRuntimeInkElementV1 } from "../schema/element-validation";
 import type { ElementValidationDerivation, InkElementV1 } from "../schema/public";
 import { UniformSpatialIndex } from "../spatial/index";
 
@@ -11,7 +10,7 @@ import {
   createOwnedInitialRecord,
   createOwnedValidatedInitialRecord,
 } from "./record-factory";
-import { assertValidElement } from "./replacement-planner";
+import { assertValidElement, assertValidRuntimeElement } from "./replacement-planner";
 import { StoreAppendBuilder } from "./store-append-builder";
 import type { ElementRecord, EndpointReference, StoreSliceScheduler } from "./types";
 
@@ -200,9 +199,4 @@ async function yieldWhenRequested(scheduler: StoreSliceScheduler, force = false)
   if (!force && !scheduler.shouldYield()) return 0;
   await scheduler.yieldControl();
   return 1;
-}
-
-function assertValidRuntimeElement(element: InkElementV1): void {
-  const result = validateRuntimeInkElementV1(element);
-  if (!result.ok) throw new RangeError(`Invalid runtime element: ${result.error.code}`);
 }

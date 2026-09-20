@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ElementStore, type ElementMutation } from "../../../../src/domain/store/public";
 
+import { hydrateRuntimeStroke } from "../../../fixtures/domain/runtime-stroke-store";
+
 import { connectedLine, highlighter, IDS, mixedElement, rectangle } from "./fixtures";
 
 describe("ElementStore atomic element mutation", () => {
@@ -68,6 +70,50 @@ describe("ElementStore atomic element mutation", () => {
       endConnection: { targetId: endTarget.id },
       startConnection: { targetId: startTarget.id },
     });
+  });
+});
+
+describe("ElementStore runtime stroke restoration", () => {
+  it("deletes, restores, and re-deletes hydrated stroke buffers", async () => {
+    const source = highlighter();
+    const { store, points } = await hydrateRuntimeStroke(source);
+    const applied = await commit(store, {
+      bands: { content: [], highlight: [] },
+      removeIds: [source.id],
+    });
+    expect(store.size).toBe(0);
+
+    await commit(store, applied.reverse);
+    const restored = store.get(source.id)?.element;
+    expect(restored).toEqual({ ...source, points });
+    expect(restored?.kind === "stroke" && restored.points).toBeInstanceOf(Float64Array);
+    expect(restored?.kind === "stroke" && restored.points).not.toBe(points);
+    expect(store.materializeBandOrder("highlight")).toEqual([source.id]);
+
+    await commit(store, applied.forward);
+    expect(store.size).toBe(0);
+    expect(store.instrumentation.publishedDeltas).toBe(3);
+  });
+
+  it.each([
+    new Float64Array([0, 0, Number.NaN]),
+    new Float64Array([0, 0, 2]),
+    new Float64Array([0, 0]),
+    new Float32Array([0, 0, 0.5]),
+  ])("rejects malformed runtime samples without publishing a mutation: %s", async (points) => {
+    const source = highlighter();
+    const store = new ElementStore();
+    await expect(
+      store.prepareElementMutation(
+        {
+          bands: { content: [], highlight: [source.id] },
+          elements: [{ ...source, points } as unknown as typeof source],
+        },
+        scheduler,
+      ),
+    ).rejects.toThrow(RangeError);
+    expect(store.size).toBe(0);
+    expect(store.instrumentation.publishedDeltas).toBe(0);
   });
 });
 
