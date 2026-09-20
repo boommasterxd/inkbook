@@ -11,6 +11,22 @@ function expectOrder(tree: ElementOrderTree, model: readonly string[]): void {
 }
 
 describe("ElementOrderTree", () => {
+  it("rebuilds a balanced sequence atomically after validating duplicates", () => {
+    const tree = new ElementOrderTree();
+    tree.replaceAll(["old", "retained"]);
+    expect(() => tree.replaceAll(["new", "new"])).toThrow("Duplicate");
+    expectOrder(tree, ["old", "retained"]);
+    tree.replaceAll(["a", "b", "c", "d", "e", "f", "g", "retained"]);
+    expect(tree.rankOf("old")).toBeUndefined();
+    expectOrder(tree, ["a", "b", "c", "d", "e", "f", "g", "retained"]);
+    tree.remove("e");
+    tree.insert("new", 3);
+    expectOrder(tree, ["a", "b", "c", "new", "d", "f", "g", "retained"]);
+    tree.replaceAll([]);
+    expectOrder(tree, []);
+    expect(tree.rankOf("retained")).toBeUndefined();
+  });
+
   it("rejects invalid insertions without modifying the sequence and supports reuse", () => {
     const tree = new ElementOrderTree();
     expect(tree.at(0)).toBeUndefined();
