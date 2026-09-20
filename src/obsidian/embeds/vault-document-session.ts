@@ -343,6 +343,7 @@ export class VaultDocumentSession implements DocumentSessionPort {
                   this.#identity.documentId,
                   () => this.#lifecycle.disposed || cancellation.isCancelled(),
                 ),
+                cancellation.replay,
               ),
         commitPreparedElementMutation: (token) => mutations.commitPreparedElementMutation(token),
         commitPage: (page) => mutations.commitPage(page),

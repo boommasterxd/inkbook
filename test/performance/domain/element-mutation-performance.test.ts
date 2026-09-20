@@ -98,9 +98,9 @@ it("bounds heavy work and scheduler handoffs for loaded-stroke deletion, Undo, a
       removeIds: [...removed],
     });
     expect(store.size).toBe(8_000);
-    await prepareAndApply(deletion.reverse);
+    await prepareAndApply(deletion.reverse, deletion);
     expect(store.size).toBe(10_000);
-    await prepareAndApply(deletion.forward);
+    await prepareAndApply(deletion.forward, deletion);
     expect(store.size).toBe(8_000);
     expect(publications).toHaveBeenCalledTimes(3);
     expect(cloneElement.mock.calls.every(([element]) => removed.has(element.id))).toBe(true);
@@ -110,7 +110,8 @@ it("bounds heavy work and scheduler handoffs for loaded-stroke deletion, Undo, a
     indexInsert.mockRestore();
   }
 
-  async function prepareAndApply(mutation: ElementMutation) {
+  async function prepareAndApply(mutation: ElementMutation, replay?: AppliedElementMutation) {
+    const previousClones = cloneElement.mock.calls.length;
     let yields = 0;
     const previousSize = store!.size;
     const assertSlice = () => {
@@ -120,20 +121,28 @@ it("bounds heavy work and scheduler handoffs for loaded-stroke deletion, Undo, a
       indexInsert.mockClear();
       expect(store!.size).toBe(previousSize);
     };
-    const prepared = await store!.prepareElementMutation(mutation, {
-      shouldYield: () => false,
-      yieldControl: async () => {
-        yields += 1;
-        assertSlice();
+    const prepared = await store!.prepareElementMutation(
+      mutation,
+      {
+        shouldYield: () => false,
+        yieldControl: async () => {
+          yields += 1;
+          assertSlice();
+        },
       },
-    });
+      replay,
+    );
     assertSlice();
+    if (replay !== undefined) {
+      expect(cloneElement.mock.calls.length - previousClones).toBe(mutation.elements?.length ?? 0);
+    }
     // At most 10,000 index entries + three 2,000-element passes cost 256,000 units.
     // Twelve full cheap ID passes add at most 120,000 units: fewer than 190 slices.
     expect(yields).toBeLessThanOrEqual(190);
     if (prepared.token === null) throw new Error("Expected prepared history mutation.");
     const committed = store!.commitPreparedElementMutation(prepared.token);
     if (committed.transition === null) throw new Error("Expected committed history mutation.");
+    if (replay !== undefined) expect(committed.transition).toBe(replay);
     return committed.transition;
   }
 });

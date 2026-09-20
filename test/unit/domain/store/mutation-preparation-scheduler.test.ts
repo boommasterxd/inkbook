@@ -10,19 +10,21 @@ describe("mutation preparation scheduling", () => {
     const yieldControl = vi.fn(async () => undefined);
     const scheduler = new MutationPreparationScheduler({ shouldYield: () => false, yieldControl });
     for (let index = 0; index < capacity; index += 1) {
-      expect(await scheduler.checkpoint(cost)).toBe(true);
+      expect(scheduler.checkpoint(cost)).toBe(true);
     }
     expect(yieldControl).not.toHaveBeenCalled();
-    expect(await scheduler.checkpoint(cost)).toBe(true);
+    expect(scheduler.checkpoint(cost)).toBe(false);
+    expect(await scheduler.resume()).toBe(true);
     expect(yieldControl).toHaveBeenCalledTimes(1);
   });
 
   it("honors the external deadline while guaranteeing progress", async () => {
     const yieldControl = vi.fn(async () => undefined);
     const scheduler = new MutationPreparationScheduler({ shouldYield: () => true, yieldControl });
-    expect(await scheduler.checkpoint()).toBe(true);
+    expect(scheduler.checkpoint()).toBe(true);
     expect(yieldControl).not.toHaveBeenCalled();
-    expect(await scheduler.checkpoint()).toBe(true);
+    expect(scheduler.checkpoint()).toBe(false);
+    expect(await scheduler.resume()).toBe(true);
     expect(yieldControl).toHaveBeenCalledTimes(1);
   });
 
@@ -38,8 +40,9 @@ describe("mutation preparation scheduling", () => {
         shouldYield: () => true,
         yieldControl,
       });
-      expect(await scheduler.checkpoint()).toBe(!initial);
-      expect(await scheduler.checkpoint()).toBe(false);
+      expect(scheduler.checkpoint()).toBe(!initial);
+      expect(scheduler.checkpoint()).toBe(false);
+      expect(await scheduler.resume()).toBe(false);
       expect(yieldControl).toHaveBeenCalledTimes(initial ? 0 : 1);
     },
   );

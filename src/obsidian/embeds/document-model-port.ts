@@ -53,7 +53,7 @@ export interface EditableDocumentModel {
   commitPage(page: InkSnapshotV1["page"]): void;
   prepareElementMutation(
     mutation: ElementMutation,
-    cancellation: { isCancelled(): boolean },
+    cancellation: { isCancelled(): boolean; readonly replay?: AppliedElementMutation },
   ): Promise<PreparedElementMutationResult>;
   commitPreparedElementMutation(token: PreparedElementMutation): AppliedElementMutation | null;
   encodeClipboard(selectedIds: ReadonlySet<string>): Promise<ClipboardWritePayload | null>;

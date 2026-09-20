@@ -344,18 +344,23 @@ export class ActiveEditorClipboardController {
   #registerApplied(applied: import("../../../domain/store/public").AppliedElementMutation): void {
     this.#history.registerApplied({
       payloadBytes: applied.payloadBytes,
-      redo: () => this.#applyMutation(applied.forward),
-      undo: () => this.#applyMutation(applied.reverse),
+      redo: () => this.#applyMutation(applied.forward, applied),
+      undo: () => this.#applyMutation(applied.reverse, applied),
     });
   }
 
   async #applyMutation(
     mutation: import("../../../domain/store/public").ElementMutation,
+    replay: import("../../../domain/store/public").AppliedElementMutation,
   ): Promise<boolean> {
     const operationGeneration = this.#beginOperation();
     return (
-      (await this.#prepareAndCommit(mutation, this.#model.revision, () =>
-        this.#isOperationCurrent(operationGeneration),
+      (await this.#prepareAndCommit(
+        mutation,
+        this.#model.revision,
+        () => this.#isOperationCurrent(operationGeneration),
+        undefined,
+        replay,
       )) !== null
     );
   }
@@ -395,6 +400,7 @@ export class ActiveEditorClipboardController {
     expectedRevision: number,
     operationCurrent: () => boolean,
     validateBeforeCommit: () => boolean = () => true,
+    replay?: import("../../../domain/store/public").AppliedElementMutation,
   ): Promise<import("../../../domain/store/public").AppliedElementMutation | null> {
     if (
       this.#model.revision !== expectedRevision ||
@@ -408,6 +414,7 @@ export class ActiveEditorClipboardController {
       !this.#isPresentationAttached() ||
       !operationCurrent();
     const prepared = await this.#model.prepareElementMutation(mutation, {
+      ...(replay === undefined ? {} : { replay }),
       isCancelled: cancelled,
     });
     if (prepared.token === null || cancelled() || !validateBeforeCommit()) return null;
