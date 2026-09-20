@@ -157,7 +157,7 @@ const motion = {
   fast: 120,
   surface: 220,
   standard: 180,
-  erase: 160,
+  erase: 300,
   layout: 240,
 } as const;
 
@@ -193,7 +193,7 @@ Every user-visible state change animates unless listed as immediate or reduced m
 | Phone Inkbook dialog open or close                                  |     220 ms | shared adaptive bottom-sheet translate                                        |
 | Operational feedback open or close                                  |     220 ms | fixed-surface scale between 0 and 1                                           |
 | Selection handles enter or exit                                     |     120 ms | opacity, scale                                                                |
-| Eraser pending-removal feedback                                     |     160 ms | opacity and expanding blur                                                    |
+| Eraser pending-removal feedback                                     |     300 ms | opacity and expanding blur                                                    |
 | Committed shape or pasted-element entrance                          |     120 ms | opacity, scale from 0.96 to 1                                                 |
 | Delete, Cut, or command-removal exit                                |     120 ms | retained visual tombstone opacity, scale to 0.96                              |
 | Background type or spacing change                                   |       0 ms | atomic pattern and coverage replacement                                       |

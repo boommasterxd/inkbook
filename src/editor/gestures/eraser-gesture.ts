@@ -2,7 +2,7 @@ import { assertFinitePoint, type Bounds } from "../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 import { createSweptCapsuleCheck, type SweptCapsuleCheck } from "./eraser-intersection";
 
-const ERASER_FADE_MS = 160;
+const ERASER_FADE_MS = 300;
 const WORK_UNITS_PER_UPDATE = 12_288;
 const QUERY_BATCH_WORK_UNITS = 128;
 const UPDATE_CHECKPOINT_WORK_UNITS = 1_024;
