@@ -1,18 +1,41 @@
+import type { InkElementV1 } from "../schema/public";
+import { checkpoint } from "./mutation-scheduler";
 import { DEFAULT_HISTORY_BYTE_LIMIT } from "../commands/history";
 import { renderBandOf } from "../commands/render-bands";
 import { spatialCellMembershipCount, MAX_ELEMENT_CELLS } from "../spatial/index";
-import { assertAcyclicConnections, assertResolvedConnections, connectionReferences, isAnchorTarget } from "./connections";
-import type { CompactCommitState, CompactMutationPlan, CompactMutationSource } from "./compact-mutation-types";
+import {
+  assertAcyclicConnections,
+  assertResolvedConnections,
+  connectionReferences,
+  isAnchorTarget,
+} from "./connections";
+import type {
+  CompactCommitState,
+  CompactMutationPlan,
+  CompactMutationSource,
+} from "./compact-mutation-types";
 import { freezeCompactMutation, validateCompactPlacements } from "./compact-mutation-order";
 import { DeltaBuilder } from "./delta-builder";
 import { classifyReplacement, hasConnections } from "./element-comparison";
-import { checkpoint, collectDesiredElements, updatedRecord } from "./element-mutation";
+import { collectDesiredElements, updatedRecord } from "./element-mutation";
 import { mutableElement } from "./immutability";
 import { elementMutationPayloadBytes, mutationStructurePayloadBytes } from "./mutation-payload";
 import { assignRecordVersions, createInitialRecord, nextRecordVersion } from "./record-factory";
 import { requireElementRecord } from "./record-access";
-import { commitReverseConnectionPatches, type ReverseConnectionPatch } from "./replacement-reverse-patch";
-import type { AppliedElementMutation, DeltaDomain, ElementMutation, ElementPlacement, ElementRecord, StoreDelta, StoreSliceScheduler } from "./types";
+import {
+  commitReverseConnectionPatches,
+  type ReverseConnectionPatch,
+} from "./replacement-reverse-patch";
+import type {
+  AppliedElementMutation,
+  DeltaDomain,
+  ElementMutation,
+  ElementPlacement,
+  ElementRecord,
+  EndpointReference,
+  StoreDelta,
+  StoreSliceScheduler,
+} from "./types";
 
 const MAX_COMPACT_RECORDS = 128;
 const MAX_COMPACT_MEMBERSHIPS = 2048;
@@ -28,7 +51,12 @@ export async function planCompactMutation(
   const placements = validateCompactPlacements(source, requested);
   const removeIds = new Set(requested.removeIds ?? []);
   for (const id of removeIds) requireElementRecord(source.records, id);
-  const desired = await collectDesiredElements(source, requested.elements ?? [], removeIds, scheduler);
+  const desired = await collectDesiredElements(
+    source,
+    requested.elements ?? [],
+    removeIds,
+    scheduler,
+  );
   if (desired === "cancelled") return desired;
   if (desired.size + removeIds.size > MAX_COMPACT_RECORDS) return "fallback";
   const changed = buildCompactDelta(source, desired, removeIds);
@@ -36,14 +64,26 @@ export async function planCompactMutation(
   if (!(await checkpoint(scheduler))) return "cancelled";
   const reversePatches = prepareReversePatches(source, changed);
   if (reversePatches === "fallback") return reversePatches;
-  const previous = changed.changes.flatMap(({ before }) => before === null ? [] : [before]);
-  const next = changed.changes.flatMap(({ after }) => after === null ? [] : [after]);
+  const previous = changed.changes.flatMap(({ before }) => (before === null ? [] : [before]));
+  const next = changed.changes.flatMap(({ after }) => (after === null ? [] : [after]));
   if (!withinRecordBudget([...previous, ...next])) return "fallback";
   const applied = compactTransition(source, changed, placements);
   const capacityPatch = source.capacity.prepare(previous, next);
-  const insertions = source.index.prepareInsertions(changed.changes.filter(({ before }) => before === null).map(({ after, id }) => ({ bounds: after!.bounds, id })));
+  const insertions = source.index.prepareInsertions(
+    changed.changes
+      .filter(({ before }) => before === null)
+      .map(({ after, id }) => ({ bounds: after!.bounds, id })),
+  );
   if (!(await checkpoint(scheduler))) return "cancelled";
-  return { applied, capacityPatch, delta: changed, insertions, kind: "compact", placements, reversePatches };
+  return {
+    applied,
+    capacityPatch,
+    delta: changed,
+    insertions,
+    kind: "compact",
+    placements,
+    reversePatches,
+  };
 }
 
 function withinInputBudget(source: CompactMutationSource, requested: ElementMutation): boolean {
@@ -65,32 +105,65 @@ function withinInputBudget(source: CompactMutationSource, requested: ElementMuta
 
 function buildCompactDelta(
   source: CompactMutationSource,
-  desired: ReadonlyMap<string, import("../schema/public").InkElementV1>,
+  desired: ReadonlyMap<string, InkElementV1>,
   removals: ReadonlySet<string>,
 ): StoreDelta | "fallback" | null {
   const builder = new DeltaBuilder();
   const creates = [...desired.keys()].some((id) => !source.records.has(id));
-  const geometryVersion = creates ? nextRecordVersion(source.geometryVersion, "geometryVersion") : source.geometryVersion;
-  const paintVersion = creates ? nextRecordVersion(source.paintVersion, "paintVersion") : source.paintVersion;
-  const lookup = (id: string) => removals.has(id) ? undefined : desired.get(id) ?? source.records.get(id)?.element;
-  assertAcyclicConnections(desired.keys(), lookup);
+  const geometryVersion = creates
+    ? nextRecordVersion(source.geometryVersion, "geometryVersion")
+    : source.geometryVersion;
+  const paintVersion = creates
+    ? nextRecordVersion(source.paintVersion, "paintVersion")
+    : source.paintVersion;
+  const lookup = (id: string) =>
+    removals.has(id) ? undefined : (desired.get(id) ?? source.records.get(id)?.element);
+  let lookups = 0;
+  const exhausted = new Error("Compact connection traversal exhausted.");
+  try {
+    assertAcyclicConnections(desired.keys(), (id) => {
+      lookups += 1;
+      if (lookups > MAX_COMPACT_REFERENCES) throw exhausted;
+      return lookup(id);
+    });
+  } catch (error) {
+    if (error === exhausted) return "fallback";
+    throw error;
+  }
   for (const [id, element] of desired) {
     const before = source.records.get(id);
     assertResolvedConnections(element, lookup);
     if (before === undefined) {
-      const after = assignRecordVersions(createInitialRecord(element), geometryVersion, paintVersion);
-      builder.add(id, null, after, ["geometry", "paint", "order", "visibility", ...(hasConnections(element) ? ["connection" as const] : [])]);
+      const after = assignRecordVersions(
+        createInitialRecord(element),
+        geometryVersion,
+        paintVersion,
+      );
+      builder.add(id, null, after, [
+        "geometry",
+        "paint",
+        "order",
+        "visibility",
+        ...(hasConnections(element) ? ["connection" as const] : []),
+      ]);
       builder.dirtyBand(renderBandOf(element));
     } else {
       const domains = classifyReplacement(before.element, element);
       if (domains.includes("geometry") || domains.includes("paint")) return "fallback";
-      if (domains.length > 0) builder.add(id, before, updatedRecord(before, element, geometryVersion, paintVersion), domains);
+      if (domains.length > 0)
+        builder.add(
+          id,
+          before,
+          updatedRecord(before, element, geometryVersion, paintVersion),
+          domains,
+        );
     }
   }
   for (const id of removals) {
     const before = requireElementRecord(source.records, id);
     const domains: DeltaDomain[] = ["order", "visibility"];
-    if (hasConnections(before.element) || isAnchorTarget(before.element)) domains.push("connection");
+    if (hasConnections(before.element) || isAnchorTarget(before.element))
+      domains.push("connection");
     builder.add(id, before, null, domains);
   }
   return builder.build(geometryVersion, paintVersion);
@@ -109,13 +182,19 @@ function withinRecordBudget(records: readonly ElementRecord[]): boolean {
   return memberships <= MAX_COMPACT_MEMBERSHIPS && payload <= MAX_COMPACT_PAYLOAD_BYTES;
 }
 
-function prepareReversePatches(source: CompactMutationSource, delta: StoreDelta): readonly ReverseConnectionPatch[] | "fallback" {
+function prepareReversePatches(
+  source: CompactMutationSource,
+  delta: StoreDelta,
+): readonly ReverseConnectionPatch[] | "fallback" {
   const changedIds = new Set(delta.changes.map(({ id }) => id));
-  const additions = new Map<string, import("./types").EndpointReference[]>();
+  const additions = new Map<string, EndpointReference[]>();
   const targets = new Set<string>();
   for (const { before, after } of delta.changes) {
-    for (const { targetId } of before === null ? [] : connectionReferences(before.element)) targets.add(targetId);
-    for (const { targetId, reference } of after === null ? [] : connectionReferences(after.element)) {
+    for (const { targetId } of before === null ? [] : connectionReferences(before.element))
+      targets.add(targetId);
+    for (const { targetId, reference } of after === null
+      ? []
+      : connectionReferences(after.element)) {
       targets.add(targetId);
       const list = additions.get(targetId) ?? [];
       list.push(Object.freeze(reference));
@@ -135,7 +214,11 @@ function prepareReversePatches(source: CompactMutationSource, delta: StoreDelta)
   return patches;
 }
 
-function compactTransition(source: CompactMutationSource, delta: StoreDelta, placements: readonly ElementPlacement[]): AppliedElementMutation {
+function compactTransition(
+  source: CompactMutationSource,
+  delta: StoreDelta,
+  placements: readonly ElementPlacement[],
+): AppliedElementMutation {
   const forwardElements = [];
   const reverseElements = [];
   const forwardRemove: string[] = [];
@@ -143,28 +226,47 @@ function compactTransition(source: CompactMutationSource, delta: StoreDelta, pla
   const reversePlacements: ElementPlacement[] = [];
   for (const { id, before, after } of delta.changes) {
     if (after === null) forwardRemove.push(id);
-    else if (before === null || forwardRemove.length === 0) forwardElements.push(mutableElement(after.element));
+    else forwardElements.push(mutableElement(after.element));
     if (before === null) reverseRemove.push(id);
     else {
       reverseElements.push(mutableElement(before.element));
       if (after === null) reversePlacements.push(Object.freeze({ id, ...source.getRank(id)! }));
     }
   }
-  // Removal redo derives detachments; explicit replacements would collide with that derived state.
-  const forward = freezeCompactMutation({ elements: forwardRemove.length > 0 ? [] : forwardElements, placements, removeIds: forwardRemove });
-  const reverse = freezeCompactMutation({ elements: reverseElements, placements: reversePlacements, removeIds: reverseRemove });
-  const payloadBytes = [forward, reverse].reduce((sum, mutation) => sum + mutationStructurePayloadBytes(mutation) + (mutation.elements ?? []).reduce((bytes, element) => bytes + elementMutationPayloadBytes(element), 0), 0);
-  if (payloadBytes > DEFAULT_HISTORY_BYTE_LIMIT) throw new RangeError("Element mutation exceeds the retained history payload limit.");
+  const forward = freezeCompactMutation({
+    elements: forwardElements,
+    placements,
+    removeIds: forwardRemove,
+  });
+  const reverse = freezeCompactMutation({
+    elements: reverseElements,
+    placements: reversePlacements,
+    removeIds: reverseRemove,
+  });
+  const payloadBytes = [forward, reverse].reduce(
+    (sum, mutation) =>
+      sum +
+      mutationStructurePayloadBytes(mutation) +
+      (mutation.elements ?? []).reduce(
+        (bytes, element) => bytes + elementMutationPayloadBytes(element),
+        0,
+      ),
+    0,
+  );
+  if (payloadBytes > DEFAULT_HISTORY_BYTE_LIMIT)
+    throw new RangeError("Element mutation exceeds the retained history payload limit.");
   return Object.freeze({ forward, payloadBytes, reverse });
 }
 
 export function commitCompactMutation(state: CompactCommitState, plan: CompactMutationPlan): void {
   state.index.commitPreparedInsertions(plan.insertions);
   state.capacity.commit(plan.capacityPatch);
+  state.index.removeMany(
+    plan.delta.changes.filter(({ after }) => after === null).map(({ id }) => id),
+  );
   for (const { id, after } of plan.delta.changes) {
     if (after === null) {
       state.records.delete(id);
-      state.index.remove(id);
       state.ordering.remove(id);
     } else state.records.set(id, after);
   }

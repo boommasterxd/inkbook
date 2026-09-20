@@ -32,8 +32,7 @@ function mutationFromDelta(
       if (source !== null) removeIds.push(change.id);
       continue;
     }
-    // Redo derives the same detachments atomically from removed targets. Retaining
-    // them explicitly would collide with that derived mutation state.
+    // Redo derives the same detachments atomically from removed targets.
     if (direction === "forward") continue;
     if (source?.element !== destination.element) {
       elements.push(mutableElement(destination.element));
