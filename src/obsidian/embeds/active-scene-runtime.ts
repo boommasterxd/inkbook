@@ -17,6 +17,7 @@ export function bindSceneScrollOwner(
   return bindActiveSceneScrollOwner({
     initialOwner: scrollOwner,
     invalidate: () => renderer.invalidateLayout(),
+    onScroll: () => controller.handleNativeScroll(),
     ownerWindow,
     ...(options.scrollOwner === undefined ? {} : { provider: options.scrollOwner }),
     root: options.root,
@@ -78,7 +79,12 @@ function createScenePreviewHandoff(
   stability: TransitionScrollStability,
   initialScrollStabilityRelease: () => void,
 ): ActiveScenePreviewHandoff {
+  options.setPreviewBackgroundWait?.(options.model.waitForBackground?.bind(options.model));
   return new ActiveScenePreviewHandoff({
+    ...(options.ensurePreviewReady === undefined
+      ? {}
+      : { ensurePreviewReady: options.ensurePreviewReady }),
+    onDispose: () => options.setPreviewBackgroundWait?.(undefined),
     beginScrollStability: () => stability.begin(),
     container,
     initialScrollStabilityRelease,
@@ -89,6 +95,7 @@ function createScenePreviewHandoff(
     ...(options.setPreviewAspectRatio === undefined
       ? {}
       : { setPreviewAspectRatio: options.setPreviewAspectRatio }),
+    ...(options.refreshPreview === undefined ? {} : { refreshPreview: options.refreshPreview }),
     ...(options.setPreviewSource === undefined
       ? {}
       : { setPreviewSource: options.setPreviewSource }),

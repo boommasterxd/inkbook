@@ -8,9 +8,14 @@ export interface PreparedOutput {
   readonly revision: number;
 }
 
-export async function validatePreparedOutput(prepared: PreparedOutput): Promise<void> {
+export async function validatePreparedOutput(
+  prepared: PreparedOutput,
+  waitForBackground?: () => Promise<void>,
+): Promise<void> {
   try {
-    const trusted = await inspectTrustedSvgOutput(prepared.output, prepared.outputHash);
+    const trusted = await inspectTrustedSvgOutput(prepared.output, prepared.outputHash, {
+      ...(waitForBackground ? { waitForBackground } : {}),
+    });
     if (trusted.revision !== prepared.revision) throw new SaveError("read-back-mismatch");
   } catch (error) {
     if (error instanceof SaveError) throw error;

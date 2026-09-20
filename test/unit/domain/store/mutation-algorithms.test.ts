@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { PreparedElementMutations } from "../../../../src/domain/store/prepared-element-mutations";
 import { planElementMutation } from "../../../../src/domain/store/element-mutation";
 import {
   assertOverflowCapacity,
@@ -37,6 +38,34 @@ describe("element mutation algorithm bounds", () => {
     );
 
     expect(plan).toBeNull();
+  });
+
+  it("reads the mutation source only once while checking the version throughout preparation", async () => {
+    const element = rectangle();
+    const readSource = vi.fn(() => ({
+      bands: { content: [element.id], highlight: [] },
+      geometryVersion: 0,
+      mutationVersion: 0,
+      paintVersion: 0,
+      records: new Map([[element.id, createInitialRecord(element)]]),
+      reverseConnections: new Map(),
+    }));
+    const readVersion = vi.fn(() => 0);
+    const mutations = new PreparedElementMutations(readSource, readVersion, () => ({
+      delta: null,
+      status: "noop",
+      transition: null,
+    }));
+    const prepared = await mutations.prepare(
+      {
+        bands: { content: [], highlight: [] },
+        removeIds: [element.id],
+      },
+      scheduler,
+    );
+    expect(prepared.status).toBe("prepared");
+    expect(readSource).toHaveBeenCalledOnce();
+    expect(readVersion.mock.calls.length).toBeGreaterThan(3);
   });
 
   it("counts a replaced-and-removed overflow record only once", () => {

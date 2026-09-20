@@ -1,5 +1,5 @@
 import { CommandHistory, type HistoryCommand } from "../../../domain/commands/history";
-import type { ElementMutation } from "../../../domain/store/public";
+import type { AppliedElementMutation, ElementMutation } from "../../../domain/store/public";
 import type { EditableDocumentModel } from "../document-model-port";
 
 import type { ActiveEditorHistory } from "./history";
@@ -71,8 +71,8 @@ export class ActiveDocumentHistory {
       if (applied === null) return "stale";
       this.#history.registerApplied({
         payloadBytes: applied.payloadBytes,
-        redo: () => this.#apply(applied.forward),
-        undo: () => this.#apply(applied.reverse),
+        redo: () => this.#apply(applied.forward, applied),
+        undo: () => this.#apply(applied.reverse, applied),
       });
       return "applied";
     } catch {
@@ -82,11 +82,12 @@ export class ActiveDocumentHistory {
     }
   }
 
-  async #apply(mutation: ElementMutation): Promise<boolean> {
+  async #apply(mutation: ElementMutation, replay: AppliedElementMutation): Promise<boolean> {
     if (this.#disposed) return false;
     const basisRevision = this.#model.revision;
     try {
       const prepared = await this.#model.prepareElementMutation(mutation, {
+        replay,
         isCancelled: () => this.#disposed || this.#model.revision !== basisRevision,
       });
       if (prepared.status !== "prepared" || prepared.token === null) return false;

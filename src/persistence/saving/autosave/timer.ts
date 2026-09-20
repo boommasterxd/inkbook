@@ -13,6 +13,10 @@ export class AutosaveTimer {
     this.#onElapsed = onElapsed;
   }
 
+  public get hasPending(): boolean {
+    return this.#handle !== null;
+  }
+
   public schedule(delay: number): void {
     this.clear();
     this.#handle = this.#clock.setTimeout(() => {

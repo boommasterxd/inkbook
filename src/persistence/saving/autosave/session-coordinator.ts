@@ -17,6 +17,7 @@ export function createAutosaveSession(options: AutosaveSessionOptions): Autosave
     ...(options.beforeExistingWrite === undefined
       ? {}
       : { beforeExistingWrite: options.beforeExistingWrite }),
+    ...(options.waitForBackground ? { waitForBackground: options.waitForBackground } : {}),
     clock: options.clock,
     confirmedBase: {
       outputHash: options.outputHash,

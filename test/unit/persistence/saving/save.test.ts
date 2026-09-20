@@ -291,3 +291,33 @@ describe("new SVG save", () => {
     ).resolves.toMatchObject({ revision: 2 });
   });
 });
+
+describe("save background priority", () => {
+  it.each(["existing", "new"] as const)(
+    "rejects a revision changed during paused %s output validation",
+    async (kind) => {
+      const vault = memoryVault();
+      let revision = 2;
+      let resume: () => void = () => undefined;
+      const paused = new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+      const revisionSource = {
+        currentRevision: () => revision,
+        waitForBackground: () => paused,
+      };
+      const prepared = { path: "page.svg", expectedBase: base, output, outputHash, revision: 2 };
+      const saving =
+        kind === "existing"
+          ? saveExistingFile(prepared, revisionSource, vault, verifier)
+          : saveNewFile(prepared, revisionSource, vault, verifier);
+      expect(vault.value()).toBe(base);
+      expect(vault.processCount()).toBe(0);
+      revision = 3;
+      resume();
+      await expect(saving).rejects.toMatchObject({ code: "stale-editor-revision" });
+      expect(vault.value()).toBe(base);
+      expect(vault.processCount()).toBe(0);
+    },
+  );
+});

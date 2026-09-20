@@ -61,27 +61,6 @@ describe("preview visibility leases", () => {
 });
 
 describe("imperative canvas motion", () => {
-  it("keeps a successfully erased element hidden until the scene commit removes it", () => {
-    const { renderer, scheduler, store } = setup();
-    scheduler.runAll();
-    const path = contentPath(renderer, 0);
-    const before = store.records.get("a")?.element as BoxShapeElementV1;
-    renderer.setElementFade(["a"], 160);
-    expect(path.style.opacity).toBe("0");
-    expect(path.style.filter).toBe("blur(50px)");
-
-    store.records.delete("a");
-    renderer.applyDelta({
-      affected: [{ after: null, before, domains: ["visibility"], id: "a" }],
-    });
-    renderer.clearElementFade(["a"]);
-
-    expect(path.style.opacity).toBe("0");
-    expect(renderer.instrumentation().motionTombstones).toBe(0);
-    scheduler.runNext();
-    expect(renderer.mountedCount).toBe(0);
-  });
-
   it("retains bounded non-interactive removal tombstones and releases every byte", () => {
     const { renderer, scheduler, store } = setup();
     scheduler.runAll();

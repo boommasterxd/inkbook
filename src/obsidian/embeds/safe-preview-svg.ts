@@ -22,10 +22,14 @@ export function samePreviewContentIdentity(
 
 export async function inspectPreviewSvg(
   source: string | Uint8Array,
+  waitForBackground?: () => Promise<void>,
+  signal?: AbortSignal,
 ): Promise<LoadedPreviewSvg | null> {
   try {
     const trusted = await inspectTrustedSvgOutput(source, undefined, {
+      ...(signal === undefined ? {} : { signal }),
       versionPolicy: "editable",
+      ...(waitForBackground === undefined ? {} : { waitForBackground }),
     });
     return {
       aspectRatio: 2_048.6 / trusted.lockedHeight,
@@ -40,8 +44,10 @@ export async function inspectPreviewSvg(
 export async function loadValidatedPreviewSvg(
   source: string,
   owningWindow: Window,
+  waitForBackground?: () => Promise<void>,
+  signal?: AbortSignal,
 ): Promise<LoadedPreviewSvg> {
-  const response = await owningWindow.fetch(source);
+  const response = await owningWindow.fetch(source, signal === undefined ? undefined : { signal });
   if (!response.ok) throw new Error("The Inkbook preview source could not be loaded.");
   const declaredBytes = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredBytes) && declaredBytes > FILE_SCHEMA_LIMITS.totalInputBytes) {
@@ -51,7 +57,7 @@ export async function loadValidatedPreviewSvg(
   if (bytes.byteLength > FILE_SCHEMA_LIMITS.totalInputBytes) {
     throw new Error("The Inkbook preview source exceeds the file limit.");
   }
-  const trusted = await inspectPreviewSvg(bytes);
+  const trusted = await inspectPreviewSvg(bytes, waitForBackground, signal);
   if (trusted === null) {
     throw new Error("The Inkbook preview source is not safe SVG.");
   }
@@ -69,13 +75,17 @@ export function createPreviewSvg(ownerDocument: Document, safeSvg: string): SVGS
   }
   source.getElementsByTagName("style").item(0)?.remove();
   const svg = ownerDocument.importNode(source, true) as unknown as SVGSVGElement;
+  configurePreviewSvg(svg);
+  return svg;
+}
+
+export function configurePreviewSvg(svg: SVGSVGElement): void {
   svg.classList.add("inkbook-locked-preview-svg");
   svg.setAttribute("aria-hidden", "true");
   svg.setAttribute("focusable", "false");
   svg.setAttribute("height", "100%");
   svg.setAttribute("preserveAspectRatio", "xMidYMin meet");
   svg.setAttribute("width", "100%");
-  return svg;
 }
 
 function withoutMetadata(safeSvg: string): string {

@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 
 import {
   ElementStore,
@@ -6,8 +6,15 @@ import {
   type ElementMutation,
 } from "../../../src/domain/store/public";
 
+import * as immutability from "../../../src/domain/store/immutability";
+import * as recordFactory from "../../../src/domain/store/record-factory";
+import { UniformSpatialIndex } from "../../../src/domain/spatial/index";
+
 import { CheckpointSliceScheduler } from "./domain-scenarios";
-import { createStandardDomainFixture } from "./standard-domain-fixture";
+import {
+  createStandardDomainFixture,
+  createStandardRuntimeDomainFixture,
+} from "./standard-domain-fixture";
 
 it("atomically cuts and restores 10,000 strokes while yielding during preparation", async () => {
   const fixture = createStandardDomainFixture();
@@ -65,3 +72,77 @@ function remainingBand(
 ): readonly string[] {
   return store.materializeBandOrder(band).filter((id) => !removed.has(id));
 }
+
+it("bounds heavy work and scheduler handoffs for loaded-stroke deletion, Undo, and Redo", async () => {
+  const fixture = createStandardRuntimeDomainFixture();
+  const elements = fixture.elements.slice(0, 10_000);
+  const removed = new Set(elements.slice(0, 2_000).map(({ id }) => id));
+  const builder = ElementStore.createBuilder({
+    shouldYield: () => false,
+    yieldControl: async () => undefined,
+  });
+  await builder.appendOwnedRuntime(elements);
+  const store = await builder.finalize();
+  if (store === null) throw new Error("Expected hydrated store.");
+  const publications = vi.fn();
+  store.subscribe(publications);
+  const recordBuild = vi.spyOn(recordFactory, "createInitialRecord");
+  const cloneElement = vi.spyOn(immutability, "mutableElement");
+  const indexInsert = vi.spyOn(UniformSpatialIndex.prototype, "insert");
+  try {
+    const deletion = await prepareAndApply({
+      bands: {
+        content: remainingBand(store, "content", removed),
+        highlight: remainingBand(store, "highlight", removed),
+      },
+      removeIds: [...removed],
+    });
+    expect(store.size).toBe(8_000);
+    await prepareAndApply(deletion.reverse, deletion);
+    expect(store.size).toBe(10_000);
+    await prepareAndApply(deletion.forward, deletion);
+    expect(store.size).toBe(8_000);
+    expect(publications).toHaveBeenCalledTimes(3);
+    expect(cloneElement.mock.calls.every(([element]) => removed.has(element.id))).toBe(true);
+  } finally {
+    recordBuild.mockRestore();
+    cloneElement.mockRestore();
+    indexInsert.mockRestore();
+  }
+
+  async function prepareAndApply(mutation: ElementMutation, replay?: AppliedElementMutation) {
+    const previousClones = cloneElement.mock.calls.length;
+    let yields = 0;
+    const previousSize = store!.size;
+    const assertSlice = () => {
+      expect(recordBuild.mock.calls.length).toBeLessThanOrEqual(128);
+      expect(indexInsert.mock.calls.length).toBeLessThanOrEqual(128);
+      recordBuild.mockClear();
+      indexInsert.mockClear();
+      expect(store!.size).toBe(previousSize);
+    };
+    const prepared = await store!.prepareElementMutation(
+      mutation,
+      {
+        shouldYield: () => false,
+        yieldControl: async () => {
+          yields += 1;
+          assertSlice();
+        },
+      },
+      replay,
+    );
+    assertSlice();
+    if (replay !== undefined) {
+      expect(cloneElement.mock.calls.length - previousClones).toBe(mutation.elements?.length ?? 0);
+    }
+    // At most 10,000 index entries + three 2,000-element passes cost 256,000 units.
+    // Twelve full cheap ID passes add at most 120,000 units: fewer than 190 slices.
+    expect(yields).toBeLessThanOrEqual(190);
+    if (prepared.token === null) throw new Error("Expected prepared history mutation.");
+    const committed = store!.commitPreparedElementMutation(prepared.token);
+    if (committed.transition === null) throw new Error("Expected committed history mutation.");
+    if (replay !== undefined) expect(committed.transition).toBe(replay);
+    return committed.transition;
+  }
+});

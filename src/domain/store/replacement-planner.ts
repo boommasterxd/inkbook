@@ -369,3 +369,8 @@ export function assertValidReplacementElement(
     : validateInkElementV1(replacement);
   if (!result.ok) throw new RangeError(`Invalid element replacement: ${result.error.code}`);
 }
+
+export function assertValidRuntimeElement(element: InkElementV1): void {
+  const result = validateRuntimeInkElementV1(element);
+  if (!result.ok) throw new RangeError(`Invalid runtime element: ${result.error.code}`);
+}

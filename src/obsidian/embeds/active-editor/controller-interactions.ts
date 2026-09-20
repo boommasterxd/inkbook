@@ -140,6 +140,7 @@ export function createControllerNavigation(options: {
   const controller = options.controller;
   let appliedZoom = options.getInput().zoom;
   return new ActiveEditorNavigation({
+    onNavigationActive: (active) => controller.model.setNavigationActive?.(active),
     activePageHeight: () =>
       controller.selectionMoveLayout.currentHeight?.() ??
       derivePageExtent(controller.model.page, controller.model.store.getMaximumBottom() ?? null)

@@ -3,6 +3,7 @@ import { browserScrollListeners, type BrowserScrollElement } from "../scrolling/
 interface ActiveSceneScrollBindingOptions {
   readonly initialOwner: BrowserScrollElement;
   readonly invalidate: () => void;
+  readonly onScroll?: () => void;
   readonly ownerWindow: Window;
   readonly provider?: () => BrowserScrollElement | null;
   readonly root: HTMLElement;
@@ -19,7 +20,11 @@ export function bindActiveSceneScrollOwner(
 ): ActiveSceneScrollBinding {
   let owner = options.initialOwner;
   applyToolbarScrollportPadding(options.root, owner, options.ownerWindow);
-  let removeScrollListener = browserScrollListeners.listen(owner, options.invalidate);
+  const handleScroll = (): void => {
+    options.onScroll?.();
+    options.invalidate();
+  };
+  let removeScrollListener = browserScrollListeners.listen(owner, handleScroll);
   const synchronize = (): void => {
     const current = options.provider?.();
     if (current === null || current === undefined || current === owner) return;
@@ -27,7 +32,7 @@ export function bindActiveSceneScrollOwner(
     owner = current;
     options.transfer(current);
     applyToolbarScrollportPadding(options.root, owner, options.ownerWindow);
-    removeScrollListener = browserScrollListeners.listen(current, options.invalidate);
+    removeScrollListener = browserScrollListeners.listen(current, handleScroll);
   };
   const handleResize = (): void => {
     synchronize();

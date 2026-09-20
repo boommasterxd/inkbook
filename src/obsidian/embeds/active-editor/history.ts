@@ -8,6 +8,7 @@ export type ActiveEditorBandOrder = Readonly<Record<RenderBand, readonly string[
 
 export interface ActiveEditorHistoryModel {
   readonly mutationAvailability?: DocumentMutationAvailability;
+  beginInteractiveOperation?(): () => void;
   commitBandOrder(order: ActiveEditorBandOrder): void;
   commitElements(elements: readonly InkElementV1[]): void;
   commitPage(page: PageV1): void;
@@ -152,7 +153,7 @@ export class ActiveEditorHistory {
 
   public redoAsync(): Promise<boolean> {
     if (this.#model.mutationAvailability === "revision-exhausted") return Promise.resolve(false);
-    return this.#history.redo();
+    return this.#traverse(() => this.#history.redo());
   }
 
   public subscribeCommitted(listener: CommitListener): () => void {
@@ -162,12 +163,21 @@ export class ActiveEditorHistory {
 
   public undoAsync(): Promise<boolean> {
     if (this.#model.mutationAvailability === "revision-exhausted") return Promise.resolve(false);
-    return this.#history.undo();
+    return this.#traverse(() => this.#history.undo());
   }
 
   public dispose(): void {
     this.#committedListeners.clear();
     this.#history = new AppliedCommandHistory();
+  }
+
+  async #traverse(operation: () => Promise<boolean>): Promise<boolean> {
+    const release = this.#model.beginInteractiveOperation?.();
+    try {
+      return await operation();
+    } finally {
+      release?.();
+    }
   }
 
   #execute(mutation: SynchronousEditorMutation): boolean {

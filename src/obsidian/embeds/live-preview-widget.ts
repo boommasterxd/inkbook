@@ -127,6 +127,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
         contentIdentity: this.#embed.preview.contentIdentity,
         element: preview.element,
         refresh: preview.refresh,
+        dispose: preview.dispose,
         requestHostMeasure: () => view.requestMeasure(),
         removeMarkdown: (range, expectedSource, mutate) =>
           removeLivePreviewMarkdown(view, range, expectedSource, mutate),
@@ -136,6 +137,8 @@ export class InkbookLivePreviewWidget extends WidgetType {
           const last = view.lineBlockAt(Math.max(range.from, range.to - 1));
           return { before: block.top - first.top, after: last.bottom - block.bottom };
         },
+        ensureReady: preview.ensureReady,
+        setBackgroundWait: preview.setBackgroundWait,
         setDescriptor: preview.setDescriptor,
         setAspectRatio: preview.setAspectRatio,
         setSource: preview.setSource,

@@ -106,13 +106,28 @@ function verifyEraserFeedback(
   const before = renderer.instrumentation();
   const ids = [...fixture.contentIds, ...fixture.highlightIds];
   renderer.setElementFade(ids, 160);
+  expect(styleWrites).toBe(128 * 3);
+  expect(scheduler.pendingCount).toBe(1);
+  scheduler.runNext();
+  expect(styleWrites).toBe(128 * 3);
+  while (scheduler.pendingCount > 0) {
+    const beforeFrame = styleWrites;
+    scheduler.runNext();
+    expect(styleWrites - beforeFrame).toBeLessThanOrEqual(128 * 3);
+    expect(scheduler.pendingCount).toBeLessThanOrEqual(1);
+  }
   expect(styleWrites).toBe(STROKES * 3);
   expect(nodes.every((node) => node.style.filter === "blur(50px)")).toBe(true);
   expect(scheduler.pendingCount).toBe(0);
   renderer.clearElementFade(ids);
   expect(styleWrites).toBe(STROKES * 6);
   expect(nodes.every((node) => node.style.filter === "")).toBe(true);
-  expect(renderer.instrumentation()).toEqual(before);
+  const fadeFrames = Math.ceil(STROKES / 128);
+  expect(renderer.instrumentation()).toEqual({
+    ...before,
+    frames: before.frames + fadeFrames,
+    scheduledFrames: before.scheduledFrames + fadeFrames,
+  });
   expect(scheduler.pendingCount).toBe(0);
 }
 

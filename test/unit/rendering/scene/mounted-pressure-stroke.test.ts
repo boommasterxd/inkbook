@@ -6,7 +6,7 @@ import {
   appendElementToFragment,
   createMountedElement,
   firstPath,
-  removeMountedElement,
+  removeMountedElementNode,
   setMountedElementFade,
   setMountedElementMotion,
   updateMountedGeometry,
@@ -61,6 +61,7 @@ describe("mounted pressure stroke groups", () => {
     setMountedElementMotion(entry, null);
     expect(group.style.opacity).toBeUndefined();
     setMountedElementFade(entry, 100);
+    expect(entry.fadeActive).toBe(true);
     expect(group.style.opacity).toBe("0");
     expect(group.style.filter).toBe("blur(50px)");
     expect(group.style.transition).toBe(
@@ -68,10 +69,11 @@ describe("mounted pressure stroke groups", () => {
     );
     expect(group.nodes.every((node) => node.style.filter === undefined)).toBe(true);
     setMountedElementFade(entry, null);
+    expect(entry.fadeActive).toBe(false);
     expect(group.style.opacity).toBe("");
     expect(group.style.filter).toBe("");
     expect(group.style.transition).toBe("");
-    removeMountedElement(entry);
+    expect(removeMountedElementNode(entry)).toBe(true);
     expect(parent.nodes).toHaveLength(0);
   });
 

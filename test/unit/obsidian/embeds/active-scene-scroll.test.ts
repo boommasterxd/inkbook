@@ -18,10 +18,12 @@ describe("active scene scroll ownership", () => {
     } as unknown as HTMLElement;
     let liveOwner = first;
     const invalidate = vi.fn();
+    const onScroll = vi.fn();
     const transfer = vi.fn();
     const binding = bindActiveSceneScrollOwner({
       initialOwner: first,
       invalidate,
+      onScroll,
       ownerWindow,
       provider: () => liveOwner,
       root,
@@ -32,16 +34,21 @@ describe("active scene scroll ownership", () => {
 
     first.dispatchEvent(new Event("scroll"));
     expect(invalidate).toHaveBeenCalledOnce();
+    expect(onScroll).toHaveBeenCalledOnce();
+    ownerWindow.dispatchEvent(new Event("resize"));
+    expect(onScroll).toHaveBeenCalledOnce();
     liveOwner = second;
     expect(binding.current()).toBe(second);
     expect(transfer).toHaveBeenCalledWith(second);
     expect(properties.get("--inkbook-toolbar-scrollport-padding")).toBe("16px");
     first.dispatchEvent(new Event("scroll"));
     second.dispatchEvent(new Event("scroll"));
-    expect(invalidate).toHaveBeenCalledTimes(2);
+    expect(invalidate).toHaveBeenCalledTimes(3);
+    expect(onScroll).toHaveBeenCalledTimes(2);
 
     binding.dispose();
     second.dispatchEvent(new Event("scroll"));
-    expect(invalidate).toHaveBeenCalledTimes(2);
+    expect(invalidate).toHaveBeenCalledTimes(3);
+    expect(onScroll).toHaveBeenCalledTimes(2);
   });
 });
