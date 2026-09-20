@@ -1,4 +1,4 @@
-import { renderBandOf, type RenderBand } from "../commands/render-bands";
+import { renderBandOf } from "../commands/render-bands";
 import { FILE_SCHEMA_LIMITS } from "../schema/constants";
 import { validateRuntimeInkElementV1 } from "../schema/element-validation";
 import type { ElementValidationDerivation, InkElementV1 } from "../schema/public";
@@ -6,6 +6,7 @@ import { UniformSpatialIndex } from "../spatial/index";
 
 import { assertResolvedConnections, connectionReferences } from "./connections";
 import { DocumentCapacity } from "./document-capacity";
+import { ElementStoreOrdering } from "./order-operations";
 import {
   createInitialRecord,
   createOwnedInitialRecord,
@@ -17,30 +18,23 @@ import type { ElementRecord, EndpointReference, StoreSliceScheduler } from "./ty
 
 const MAX_HYDRATION_RECORDS_PER_SLICE = 64;
 
-interface InitialRankEntry {
-  readonly band: RenderBand;
-  readonly rank: number;
-}
-
 export interface TimeSlicedStoreState {
-  readonly bands: Record<RenderBand, string[]>;
   readonly capacity: DocumentCapacity;
   readonly elementCount: number;
   readonly index: UniformSpatialIndex<string>;
   readonly overflowCount: number;
-  readonly ranks: Map<string, InitialRankEntry>;
+  readonly ordering: ElementStoreOrdering;
   readonly records: Map<string, ElementRecord>;
   readonly reverseConnections: Map<string, EndpointReference[]>;
   readonly yields: number;
 }
 
 export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
-  readonly #bands: Record<RenderBand, string[]> = { content: [], highlight: [] };
   readonly #capacity = new DocumentCapacity();
   #cancelled = false;
   #finished = false;
   #index = new UniformSpatialIndex<string>();
-  readonly #ranks = new Map<string, InitialRankEntry>();
+  readonly #ordering = new ElementStoreOrdering();
   readonly #records = new Map<string, ElementRecord>();
   readonly #scheduler: StoreSliceScheduler;
   #yields = 0;
@@ -132,8 +126,7 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
     const { element } = record;
     this.#records.set(element.id, record);
     const band = renderBandOf(element);
-    this.#ranks.set(element.id, { band, rank: this.#bands[band].length });
-    this.#bands[band].push(element.id);
+    this.#ordering.insertAt(element.id, band, this.#ordering.sizeOf(band));
   }
 
   public async finalize(): Promise<TimeSlicedStoreState | "cancelled"> {
@@ -161,12 +154,11 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
     }
     if (this.#isCancelled()) return this.#cancel();
     return {
-      bands: this.#bands,
       capacity: this.#capacity,
       elementCount: this.#records.size,
       index: this.#index,
       overflowCount: this.#index.overflowCount,
-      ranks: this.#ranks,
+      ordering: this.#ordering,
       records: this.#records,
       reverseConnections,
       yields: this.#yields,
@@ -183,10 +175,8 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
 
   #cancel(): "cancelled" {
     this.#cancelled = true;
-    this.#bands.content.length = 0;
-    this.#bands.highlight.length = 0;
     this.#index = new UniformSpatialIndex<string>();
-    this.#ranks.clear();
+    this.#ordering.clear();
     this.#records.clear();
     return "cancelled";
   }

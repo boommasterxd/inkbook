@@ -15,6 +15,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
   invariant: Object.freeze([
     "test/performance/domain/canonical-rounding-performance.test.ts",
     "test/performance/domain/domain-performance.test.ts",
+    "test/performance/domain/element-order-performance.test.ts",
     "test/performance/domain/incremental-replacement-performance.test.ts",
     "test/performance/domain/maximum-live-stroke-performance.test.ts",
     "test/performance/domain/pressure-outline-performance.test.ts",

@@ -335,7 +335,6 @@ export class SceneVisibilityReconciler {
         this.#newlyMountedIds.push(entry.id);
         this.options.instrumentation.domEntrants += 1;
       } else {
-        entry.rank = this.options.store.get(entry.id)?.rank ?? Number.MAX_SAFE_INTEGER;
         this.options.instrumentation.domReorders += 1;
       }
     }

@@ -21,14 +21,17 @@ export class PreparedElementMutations {
     PreparedElementMutation,
     { readonly mutationVersion: number; readonly plan: ElementMutationPlan }
   >();
+  readonly #readVersion: () => number;
   readonly #readSource: () => VersionedMutationSource;
 
   public constructor(
     readSource: () => VersionedMutationSource,
     adopt: (plan: ElementMutationPlan) => ElementMutationCommitResult,
+    readVersion: () => number,
   ) {
     this.#readSource = readSource;
     this.#adopt = adopt;
+    this.#readVersion = readVersion;
   }
 
   public async prepare(
@@ -38,12 +41,11 @@ export class PreparedElementMutations {
     const source = this.#readSource();
     const plan = await planElementMutation(source, mutation, {
       isCancelled: () =>
-        source.mutationVersion !== this.#readSource().mutationVersion ||
-        (scheduler.isCancelled?.() ?? false),
+        source.mutationVersion !== this.#readVersion() || (scheduler.isCancelled?.() ?? false),
       shouldYield: scheduler.shouldYield,
       yieldControl: scheduler.yieldControl,
     });
-    if (plan === "cancelled" || source.mutationVersion !== this.#readSource().mutationVersion) {
+    if (plan === "cancelled" || source.mutationVersion !== this.#readVersion()) {
       return { status: "cancelled", token: null };
     }
     if (plan === null) return { status: "noop", token: null };
@@ -55,7 +57,7 @@ export class PreparedElementMutations {
   public commit(token: PreparedElementMutation): ElementMutationCommitResult {
     const prepared = this.#prepared.get(token);
     this.#prepared.delete(token);
-    if (prepared === undefined || prepared.mutationVersion !== this.#readSource().mutationVersion) {
+    if (prepared === undefined || prepared.mutationVersion !== this.#readVersion()) {
       return { delta: null, status: "cancelled", transition: null };
     }
     return this.#adopt(prepared.plan);

@@ -61,9 +61,7 @@ import type {
 } from "./types";
 
 export class ElementStore {
-  #bands: Record<RenderBand, string[]> = { content: [], highlight: [] };
   #capacity = new DocumentCapacity();
-  #ranks = new Map<string, ElementRank>();
   #records = new Map<string, ElementRecord>();
   #reverseConnections = new Map<string, EndpointReference[]>();
   #spatialIndex = new UniformSpatialIndex<string>();
@@ -72,11 +70,7 @@ export class ElementStore {
   #mutationVersion = 0;
   #overflowCount = 0;
   #paintVersion = 0;
-  readonly #ordering = new ElementStoreOrdering(() => ({
-    bands: this.#bands,
-    ranks: this.#ranks,
-    records: this.#records,
-  }));
+  #ordering = new ElementStoreOrdering();
   readonly #runtime = new ElementStoreRuntime();
   readonly #preparedElementReplacements = new WeakMap<
     PreparedElementReplacement,
@@ -84,15 +78,15 @@ export class ElementStore {
   >();
   readonly #preparedElementMutations = new PreparedElementMutations(
     () => ({
-      bands: this.#bands,
+      bands: this.#ordering.materializeBands(),
       geometryVersion: this.#geometryVersion,
       mutationVersion: this.#mutationVersion,
       paintVersion: this.#paintVersion,
-      ranks: this.#ranks,
       records: this.#records,
       reverseConnections: this.#reverseConnections,
     }),
     (plan) => this.#adoptElementMutation(plan),
+    () => this.#mutationVersion,
   );
 
   public constructor(elements: readonly InkElementV1[] = []) {
@@ -112,8 +106,7 @@ export class ElementStore {
       this.#records.set(record.element.id, record);
       addConnectionReferences(this.#reverseConnections, record.element);
       const band = renderBandOf(record.element);
-      this.#ranks.set(record.element.id, { band, rank: this.#bands[band].length });
-      this.#bands[band].push(record.element.id);
+      this.#ordering.insertAt(record.element.id, band, this.#ordering.sizeOf(band));
     }
     this.#runtime.initializeMemory(records.values());
     this.#overflowCount = this.#spatialIndex.overflowCount;
@@ -135,9 +128,7 @@ export class ElementStore {
     store.#spatialIndex = state.index;
     store.#capacity = state.capacity;
     store.#overflowCount = state.overflowCount;
-    for (const band of ["highlight", "content"] as const)
-      store.#bands[band].push(...state.bands[band]);
-    for (const [id, rank] of state.ranks) store.#ranks.set(id, { ...rank });
+    store.#ordering = state.ordering;
     for (const [id, references] of state.reverseConnections)
       store.#reverseConnections.set(id, references);
     store.#instrumentation.hydrationElementVisits = state.elementCount * 2;
@@ -149,13 +140,16 @@ export class ElementStore {
     return this.#records.size;
   }
   public get instrumentation(): ElementStoreInstrumentation {
-    return this.#runtime.instrumentation(this.#instrumentation);
+    return this.#runtime.instrumentation({
+      ...this.#instrumentation,
+      orderNodeVisits: this.#ordering.nodeVisits,
+    });
   }
   public get(id: string): ElementRecord | undefined {
     return this.#records.get(id);
   }
   public getRank(id: string): Readonly<ElementRank> | undefined {
-    const rank = this.#ranks.get(id);
+    const rank = this.#ordering.getRank(id);
     return rank === undefined ? undefined : Object.freeze({ ...rank });
   }
   public getSemanticAnchors(id: string): readonly ResolvedShapeAnchor[] | null {
@@ -322,8 +316,7 @@ export class ElementStore {
     this.#overflowCount = plan.overflowCount;
     this.#geometryVersion = plan.delta.geometryVersion;
     this.#paintVersion = plan.delta.paintVersion;
-    this.#bands = plan.bands;
-    this.#ranks = plan.ranks;
+    this.#ordering = plan.ordering;
     return {
       delta: this.#publish(plan.delta),
       status: "committed",
@@ -341,13 +334,12 @@ export class ElementStore {
   public remove(ids: ReadonlySet<string> | readonly string[]): StoreDelta | null {
     const result = removeElements(
       {
-        bands: this.#bands,
+        ordering: this.#ordering,
         capacity: this.#capacity,
         geometryVersion: this.#geometryVersion,
         instrumentation: this.#instrumentation,
         overflowCount: this.#overflowCount,
         paintVersion: this.#paintVersion,
-        ranks: this.#ranks,
         records: this.#records,
         reverseConnections: this.#reverseConnections,
         spatialIndex: this.#spatialIndex,
@@ -363,25 +355,23 @@ export class ElementStore {
   public removeWithHistory(
     ids: ReadonlySet<string> | readonly string[],
   ): AppliedRemovalResult | null {
-    const beforeBands = {
-      content: [...this.#bands.content],
-      highlight: [...this.#bands.highlight],
-    };
+    const beforeBands = this.#ordering.materializeBands();
     const delta = this.remove(ids);
     if (delta === null) return null;
     return Object.freeze({
       delta,
-      transition: createRemovalTransition(delta, beforeBands, this.#bands),
+      transition: createRemovalTransition(delta, beforeBands, this.#ordering.materializeBands()),
     });
   }
 
   public arrange(selectedIds: ReadonlySet<string>, action: ArrangeAction): StoreDelta | null {
     const delta = new DeltaBuilder();
     for (const band of ["highlight", "content"] as const) {
-      const ids = this.#bands[band];
-      this.#ordering.arrange(ids, selectedIds, action);
+      const changed = this.#ordering.arrange(band, selectedIds, action, (id) => {
+        delta.addOrder(id, this.#requireRecord(id));
+      });
       this.#instrumentation.bandScans += 1;
-      this.#ordering.refresh(band, 0, delta);
+      if (changed) delta.dirtyBand(band);
     }
     return this.#publish(delta.build(this.#geometryVersion, this.#paintVersion));
   }
@@ -391,18 +381,19 @@ export class ElementStore {
   ): StoreDelta | null {
     for (const band of ["highlight", "content"] as const) {
       assertCompleteBandOrder(
-        this.#bands[band],
+        this.#ordering.materializeBand(band),
         band,
         orderedIds[band],
-        (id) => this.#ranks.get(id)?.band,
+        (id) => this.#ordering.getRank(id)?.band,
       );
     }
     const delta = new DeltaBuilder();
     for (const band of ["highlight", "content"] as const) {
-      const ids = this.#bands[band];
-      for (let index = 0; index < ids.length; index += 1) ids[index] = orderedIds[band][index]!;
+      const changed = this.#ordering.reorder(band, orderedIds[band], (id) => {
+        delta.addOrder(id, this.#requireRecord(id));
+      });
       this.#instrumentation.bandScans += 1;
-      this.#ordering.refresh(band, 0, delta);
+      if (changed) delta.dirtyBand(band);
     }
     return this.#publish(delta.build(this.#geometryVersion, this.#paintVersion));
   }
@@ -438,16 +429,17 @@ export class ElementStore {
   }
   public materializeBandOrder(band: RenderBand): readonly string[] {
     this.#instrumentation.bandScans += 1;
-    return Object.freeze([...this.#bands[band]]);
+    return Object.freeze(this.#ordering.materializeBand(band));
   }
   public materializeSnapshot(input: SnapshotMaterialization): MaterializedSnapshot {
     this.#instrumentation.snapshotMaterializations += 1;
     this.#instrumentation.fullStoreScans += 1;
-    return materializeStoreSnapshot(this.#bands, this.#records, input);
+    return materializeStoreSnapshot(this.#ordering.materializeBands(), this.#records, input);
   }
   public resetInstrumentation(): void {
     this.#instrumentation = { ...EMPTY_STORE_INSTRUMENTATION };
     this.#runtime.resetStatistics();
+    this.#ordering.resetInstrumentation();
   }
   #commitReplacements(candidates: readonly ReplacementCandidate[]): StoreDelta {
     const result = commitSynchronousReplacements(

@@ -13,6 +13,7 @@ import {
 import { classifyReplacement, elementsEqual, hasConnections } from "./element-comparison";
 import { DocumentCapacity } from "./document-capacity";
 import { mutableElement } from "./immutability";
+import { ElementStoreOrdering } from "./order-operations";
 import { elementMutationPayloadBytes } from "./mutation-payload";
 import {
   assignRecordVersions,
@@ -44,6 +45,7 @@ export interface ElementMutationPlan {
   readonly delta: StoreDelta;
   readonly index: UniformSpatialIndex<string>;
   readonly overflowCount: number;
+  readonly ordering: ElementStoreOrdering;
   readonly ranks: Map<string, ElementRank>;
   readonly records: Map<string, ElementRecord>;
   readonly reverseConnections: Map<string, EndpointReference[]>;
@@ -81,11 +83,11 @@ export async function planElementMutation(
   if (records === "cancelled") return records;
   const bands = await validateBands(requested.bands, records, scheduler);
   if (bands === "cancelled") return bands;
-  const ranks = await buildRanks(bands, scheduler);
+  const ordering = new ElementStoreOrdering();
+  const ranks = await buildRanks(bands, scheduler, ordering);
   if (ranks === "cancelled") return ranks;
   const delta = await buildDelta(source, sourceRanks, records, ranks, bands, scheduler);
-  if (delta === "cancelled") return delta;
-  if (delta === null) return null;
+  if (delta === "cancelled" || delta === null) return delta;
   const derived = await buildDerivedState(records, scheduler);
   if (derived === "cancelled") return derived;
   const { capacity, index, reverseConnections } = derived;
@@ -108,6 +110,7 @@ export async function planElementMutation(
     delta,
     index,
     overflowCount: index.overflowCount,
+    ordering,
     ranks,
     records,
     reverseConnections,
@@ -295,12 +298,14 @@ async function validateBands(
 async function buildRanks(
   bands: Readonly<Record<RenderBand, readonly string[]>>,
   scheduler: StoreSliceScheduler,
+  ordering?: ElementStoreOrdering,
 ): Promise<Map<string, ElementRank> | "cancelled"> {
   const ranks = new Map<string, ElementRank>();
   for (const band of ["highlight", "content"] as const) {
     for (let rank = 0; rank < bands[band].length; rank += 1) {
       if (!(await checkpoint(scheduler))) return "cancelled";
       ranks.set(bands[band][rank]!, { band, rank });
+      ordering?.insertAt(bands[band][rank]!, band, rank);
     }
   }
   return ranks;
@@ -444,11 +449,7 @@ async function freezeMutation(
   if (elements === "cancelled") return elements;
   const removeIds = await copyFrozen(mutation.removeIds ?? [], scheduler);
   if (removeIds === "cancelled") return removeIds;
-  return Object.freeze({
-    bands: Object.freeze({ content, highlight }),
-    elements,
-    removeIds,
-  });
+  return Object.freeze({ bands: Object.freeze({ content, highlight }), elements, removeIds });
 }
 
 async function copyFrozen<T>(

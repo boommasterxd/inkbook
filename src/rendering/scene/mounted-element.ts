@@ -40,7 +40,6 @@ export interface MountedSceneElement {
   pathParts: readonly SvgPathPart[];
   previewStrokeWidthScale: number | null;
   previewTransformVersion: number;
-  rank: number;
 }
 
 export function createMountedElement(
@@ -67,7 +66,6 @@ export function createMountedElement(
     pathParts: parts,
     previewStrokeWidthScale: null,
     previewTransformVersion: 0,
-    rank: record.rank,
   };
 }
 
@@ -112,7 +110,6 @@ export function updateMountedGeometry(
   entry.displayedPathParts = parts;
   entry.geometryVersion = record.geometryVersion;
   entry.paintVersion = record.paintVersion;
-  entry.rank = record.rank;
 }
 
 export function updateMountedPaint(
@@ -137,7 +134,6 @@ export function updateMountedPaint(
     path.appliedPresentation = presentation;
   }
   entry.paintVersion = record.paintVersion;
-  entry.rank = record.rank;
 }
 
 export function updatePreviewTransform(
@@ -195,7 +191,6 @@ export function updateMountedElementPreview(
     geometryVersion: entry.geometryVersion,
     paintVersion: entry.paintVersion,
     pathParts: entry.pathParts,
-    rank: entry.rank,
   };
   updateMountedPreviewGeometry(entry, { ...record, element: previewElement }, parts, options);
   entry.displayedElement = previewElement;
@@ -203,7 +198,6 @@ export function updateMountedElementPreview(
   entry.geometryVersion = original.geometryVersion;
   entry.paintVersion = original.paintVersion;
   entry.pathParts = original.pathParts;
-  entry.rank = original.rank;
 }
 
 function updateMountedPreviewGeometry(

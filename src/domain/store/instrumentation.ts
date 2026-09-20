@@ -11,6 +11,7 @@ export const EMPTY_STORE_INSTRUMENTATION: ElementStoreInstrumentation = Object.f
   anchorCacheEvictions: 0,
   anchorCacheHits: 0,
   bandScans: 0,
+  orderNodeVisits: 0,
   deltaEntries: 0,
   estimatedRetainedBytes: 0,
   fullStoreScans: 0,
