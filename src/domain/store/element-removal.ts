@@ -1,4 +1,4 @@
-import type { RenderBand } from "../commands/render-bands";
+import type { ElementStoreOrdering } from "./order-operations";
 import type { UniformSpatialIndex } from "../spatial/index";
 
 import {
@@ -18,23 +18,16 @@ import {
   nextRecordVersion,
 } from "./record-factory";
 import { requireElementRecord } from "./record-access";
-import type {
-  DeltaDomain,
-  ElementRank,
-  ElementRecord,
-  EndpointReference,
-  StoreDelta,
-} from "./types";
+import type { DeltaDomain, ElementRecord, EndpointReference, StoreDelta } from "./types";
 import type { MutableStoreInstrumentation } from "./instrumentation";
 
 interface RemovalState {
-  readonly bands: Record<RenderBand, string[]>;
+  readonly ordering: ElementStoreOrdering;
   readonly capacity: DocumentCapacity;
   readonly geometryVersion: number;
   readonly instrumentation: MutableStoreInstrumentation;
   readonly overflowCount: number;
   readonly paintVersion: number;
-  readonly ranks: Map<string, ElementRank>;
   readonly records: Map<string, ElementRecord>;
   readonly reverseConnections: Map<string, EndpointReference[]>;
   readonly spatialIndex: UniformSpatialIndex<string>;
@@ -97,7 +90,7 @@ export function removeElements(
     delta.add(record.element.id, current, record, ["geometry", "connection"]);
   }
   for (const id of removedIds) overflowDelta += removeRecord(state, id, delta);
-  removeBandIds(state, removedIds, delta);
+  removeBandIds(state, removedIds);
   return {
     delta: delta.build(geometryVersion, state.paintVersion)!,
     geometryVersion,
@@ -129,42 +122,6 @@ function removeRecord(state: RemovalState, id: string, delta: DeltaBuilder): num
   return -Number(isOverflowBounds(current.bounds));
 }
 
-function removeBandIds(
-  state: RemovalState,
-  removedIds: ReadonlySet<string>,
-  delta: DeltaBuilder,
-): void {
-  for (const band of ["highlight", "content"] as const) {
-    const ranks = [...removedIds]
-      .map((id) => state.ranks.get(id))
-      .filter((rank): rank is ElementRank => rank?.band === band)
-      .map(({ rank }) => rank)
-      .sort((left, right) => right - left);
-    if (ranks.length === 0) continue;
-    const firstChanged = ranks[ranks.length - 1]!;
-    for (const rank of ranks) state.bands[band].splice(rank, 1);
-    for (const id of removedIds) if (state.ranks.get(id)?.band === band) state.ranks.delete(id);
-    refreshRanks(state, band, firstChanged, delta);
-  }
-}
-
-function refreshRanks(
-  state: RemovalState,
-  band: RenderBand,
-  start: number,
-  delta: DeltaBuilder,
-): void {
-  for (let rank = start; rank < state.bands[band].length; rank += 1) {
-    const id = state.bands[band][rank]!;
-    const previous = state.ranks.get(id);
-    if (previous?.rank === rank) continue;
-    if (previous === undefined) state.ranks.set(id, { band, rank });
-    else {
-      previous.band = band;
-      previous.rank = rank;
-    }
-    const record = requireElementRecord(state.records, id);
-    delta.add(id, record, record, ["order"]);
-    delta.dirtyBand(band);
-  }
+function removeBandIds(state: RemovalState, removedIds: ReadonlySet<string>): void {
+  for (const id of removedIds) state.ordering.remove(id);
 }

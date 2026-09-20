@@ -50,6 +50,7 @@ export interface EndpointReference {
 }
 
 export interface ElementStoreInstrumentation {
+  readonly orderNodeVisits: number;
   readonly anchorBuilds: number;
   readonly anchorCacheBytes: number;
   readonly anchorCacheEntries: number;

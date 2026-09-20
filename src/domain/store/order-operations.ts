@@ -2,24 +2,88 @@ import type { ArrangeAction } from "../commands/arrange";
 import { renderBandOf, type RenderBand } from "../commands/render-bands";
 
 import type { DeltaBuilder } from "./delta-builder";
-import type { ElementRank, ElementRecord, ImmutableInkElement } from "./types";
-
-interface OrderingState {
-  readonly bands: Record<RenderBand, string[]>;
-  readonly ranks: Map<string, ElementRank>;
-  readonly records: ReadonlyMap<string, ElementRecord>;
-}
+import { ElementOrderTree } from "./element-order-tree";
+import type { ElementRank, ImmutableInkElement } from "./types";
 
 export class ElementStoreOrdering {
+  readonly #bands: Record<RenderBand, ElementOrderTree> = {
+    content: new ElementOrderTree(),
+    highlight: new ElementOrderTree(),
+  };
   readonly #arrangeScratch: string[] = [];
-  readonly #state: () => OrderingState;
 
-  public constructor(state: () => OrderingState) {
-    this.#state = state;
+  public sizeOf(band: RenderBand): number {
+    return this.#bands[band].size;
   }
 
-  public arrange(ids: string[], selectedIds: ReadonlySet<string>, action: ArrangeAction): boolean {
-    return arrangeIdsInPlace(ids, selectedIds, action, this.#arrangeScratch);
+  public get nodeVisits(): number {
+    return this.#bands.content.nodeVisits + this.#bands.highlight.nodeVisits;
+  }
+
+  public resetInstrumentation(): void {
+    this.#bands.content.resetInstrumentation();
+    this.#bands.highlight.resetInstrumentation();
+  }
+
+  public getRank(id: string): ElementRank | undefined {
+    for (const band of ["highlight", "content"] as const) {
+      const rank = this.#bands[band].rankOf(id);
+      if (rank !== undefined) return { band, rank };
+    }
+    return undefined;
+  }
+
+  public insertAt(id: string, band: RenderBand, rank: number): void {
+    if (this.getRank(id) !== undefined) throw new RangeError(`Duplicate element ID: ${id}`);
+    this.#bands[band].insert(id, rank);
+  }
+
+  public remove(id: string): RenderBand | undefined {
+    for (const band of ["highlight", "content"] as const) {
+      if (this.#bands[band].remove(id)) return band;
+    }
+    return undefined;
+  }
+
+  public materializeBand(band: RenderBand): string[] {
+    return [...this.#bands[band].ids()];
+  }
+
+  public materializeBands(): Record<RenderBand, string[]> {
+    return {
+      content: this.materializeBand("content"),
+      highlight: this.materializeBand("highlight"),
+    };
+  }
+
+  public clear(): void {
+    this.#bands.content.clear();
+    this.#bands.highlight.clear();
+  }
+
+  public arrange(
+    band: RenderBand,
+    selectedIds: ReadonlySet<string>,
+    action: ArrangeAction,
+    changed: (id: string) => void,
+  ): boolean {
+    const ids = this.materializeBand(band);
+    if (!arrangeIdsInPlace(ids, selectedIds, action, this.#arrangeScratch)) return false;
+    return this.reorder(band, ids, changed);
+  }
+
+  public reorder(band: RenderBand, ids: readonly string[], changed: (id: string) => void): boolean {
+    const previous = this.materializeBand(band);
+    let modified = false;
+    for (let rank = 0; rank < ids.length; rank += 1) {
+      if (previous[rank] === ids[rank]) continue;
+      changed(ids[rank]!);
+      modified = true;
+    }
+    if (!modified) return false;
+    this.#bands[band].clear();
+    for (const id of ids) this.#bands[band].insert(id, this.#bands[band].size);
+    return true;
   }
 
   public insert(
@@ -27,39 +91,9 @@ export class ElementStoreOrdering {
     placement: "back" | "front",
     delta: DeltaBuilder,
   ): void {
-    const state = this.#state();
     const band = renderBandOf(element);
-    const ids = state.bands[band];
-    if (placement === "front") {
-      state.ranks.set(element.id, { band, rank: ids.length });
-      ids.push(element.id);
-    } else {
-      ids.unshift(element.id);
-      state.ranks.set(element.id, { band, rank: 0 });
-      this.refresh(band, 1, delta);
-    }
+    this.insertAt(element.id, band, placement === "front" ? this.sizeOf(band) : 0);
     delta.dirtyBand(band);
-  }
-
-  public refresh(band: RenderBand, start: number, delta: DeltaBuilder): void {
-    const state = this.#state();
-    const ids = state.bands[band];
-    let changed = false;
-    for (let rank = start; rank < ids.length; rank += 1) {
-      const id = ids[rank]!;
-      const previous = state.ranks.get(id);
-      if (previous?.rank === rank && previous.band === band) continue;
-      if (previous === undefined) state.ranks.set(id, { band, rank });
-      else {
-        previous.band = band;
-        previous.rank = rank;
-      }
-      const record = state.records.get(id);
-      if (record === undefined) throw new RangeError(`Unknown element ID: ${id}`);
-      delta.addOrder(id, record);
-      changed = true;
-    }
-    if (changed) delta.dirtyBand(band);
   }
 }
 
