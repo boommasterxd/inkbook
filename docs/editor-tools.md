@@ -155,7 +155,7 @@ This means:
 - A touched shape is removed completely.
 - The movement between two input points is checked as a continuous sweep so that thin lines cannot slip through gaps between sample points.
 - The effect radius can be configured in the Style menu.
-- Touched elements preview an opacity fade with blur growing to 50 page units over 160 milliseconds using the symmetric [`erase` easing](quality-and-testing.md#animation-tokens), but remain in the model until pointer release removes them together. Cancellation restores them immediately.
+- Touched elements preview an opacity fade with blur growing to 50 page units over 300 milliseconds using the symmetric [`erase` easing](quality-and-testing.md#animation-tokens), but remain in the model until pointer release removes them together. Cancellation restores them immediately.
 - One erasing gesture creates one undo step.
 
 The eraser can also be activated temporarily:
