@@ -64,10 +64,15 @@ export class SceneMotionController {
       immediateSuppressedIds === undefined || immediateSuppressedIds.length === 0
         ? undefined
         : new Set(immediateSuppressedIds);
+    const membershipChanged = changes.some(
+      ({ before, after }) => before === null || after === null,
+    );
     for (const change of changes) {
       this.applyChange(
         change,
-        suppression !== undefined || immediateSuppression?.has(change.id) === true,
+        suppression !== undefined ||
+          immediateSuppression?.has(change.id) === true ||
+          (membershipChanged && change.domains.length === 1 && change.domains[0] === "order"),
       );
     }
     return suppression?.token;
@@ -209,7 +214,7 @@ export class SceneMotionController {
     const visible = ids.filter((id) => this.#content.hasMounted(id));
     if (visible.length === 0) return;
     this.#content.setElementMotion(visible, 0, 0.96);
-    this.add({ id: this.nextId(), ids: visible, kind: "entrance", startTime: undefined });
+    this.add({ id: ++this.#nextId, ids: visible, kind: "entrance", startTime: undefined });
     this.#instrumentation.motionEntrances += visible.length;
   }
 
@@ -219,7 +224,7 @@ export class SceneMotionController {
     const visual = this.createVisual(visible);
     this.#content.setElementMotion(ids, 0);
     if (visual.nodes.length === 0) return;
-    this.add({ id: this.nextId(), ids, kind: "exit", startTime: undefined, visual });
+    this.add({ id: ++this.#nextId, ids, kind: "exit", startTime: undefined, visual });
     this.#instrumentation.motionTombstones += visual.nodes.length;
   }
 
@@ -240,7 +245,7 @@ export class SceneMotionController {
     this.add({
       current: visibleFrom,
       from: visibleFrom,
-      id: this.nextId(),
+      id: ++this.#nextId,
       ids: visibleTo.map(({ id }) => id),
       kind: "geometry",
       startTime: undefined,
@@ -263,7 +268,7 @@ export class SceneMotionController {
     if (visual.nodes.length === 0) return;
     this.#content.setElementMotion(visibleIds, 0);
     this.add({
-      id: this.nextId(),
+      id: ++this.#nextId,
       ids: visibleIds,
       kind: "crossfade",
       startTime: undefined,
@@ -476,11 +481,6 @@ export class SceneMotionController {
       return pending;
     }
     return undefined;
-  }
-
-  private nextId(): number {
-    this.#nextId += 1;
-    return this.#nextId;
   }
 
   private refreshCacheSize(): void {

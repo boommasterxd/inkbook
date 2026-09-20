@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import * as motionVisual from "../../../../src/rendering/scene/motion-visual";
 
 import { boundsIntersect } from "../../../../src/domain/geometry/public";
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
@@ -192,6 +193,39 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz erased SVG cleanup`, () 
       append.mockRestore();
       remove.mockRestore();
       write.mockRestore();
+      renderer.destroy();
+    }
+    expect(scheduler.pendingCount).toBe(0);
+  });
+});
+
+describe("restored stroke motion work", () => {
+  it("does not build survivor crossfade paths when restoring 2,000 of 10,000 strokes", async () => {
+    const fixture = createInteractionFixture();
+    const restored = fixture.elements.slice(0, 2_000);
+    fixture.store.remove(restored.map(({ id }) => id));
+    const { renderer, scheduler } = createInteractionRenderer(fixture.store);
+    renderer.setViewport({ height: 100, left: 0, top: 200, width: 200 });
+    scheduler.runAll();
+    expect(renderer.mountedCount).toBeGreaterThan(256);
+    expect(renderer.mountedCount).toBeLessThan(900);
+    const createVisual = vi.spyOn(motionVisual, "createMotionVisual");
+    const unsubscribe = fixture.store.subscribe((delta) => applyStoreDelta(renderer, delta));
+    try {
+      const prepared = await fixture.store.prepareElementMutation(
+        { bands: { content: fixture.ids, highlight: [] }, elements: restored },
+        { shouldYield: () => false, yieldControl: async () => undefined },
+      );
+      if (prepared.token === null) throw new Error("Expected a prepared restoration.");
+      expect(fixture.store.commitPreparedElementMutation(prepared.token).status).toBe("committed");
+      expect(createVisual.mock.calls.length).toBe(0);
+      scheduler.runAll();
+      expect(createVisual.mock.calls.length).toBe(0);
+      expect(renderer.instrumentation().motionCacheEntries).toBe(0);
+      expect(fixture.store.size).toBe(INTERACTION_ELEMENT_COUNT);
+    } finally {
+      unsubscribe();
+      createVisual.mockRestore();
       renderer.destroy();
     }
     expect(scheduler.pendingCount).toBe(0);
