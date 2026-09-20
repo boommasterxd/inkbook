@@ -77,10 +77,44 @@ describe("visible render mount complexity", () => {
         `firstFrameMounts=${String(firstFrameMounts)}`,
       "performance",
     );
+    verifyEraserFeedback(renderer, scheduler, cameraGroup, fixture);
     renderer.destroy();
     expect(scheduler.pendingCount).toBe(0);
   });
 });
+
+function verifyEraserFeedback(
+  renderer: SvgSceneRenderer,
+  scheduler: FakeScheduler,
+  cameraGroup: FakeNode,
+  fixture: ReturnType<typeof createMaximumPointFixture>,
+): void {
+  const nodes = [...cameraGroup.nodes[3]!.nodes, ...cameraGroup.nodes[4]!.nodes];
+  let styleWrites = 0;
+  for (const node of nodes) {
+    for (const property of ["transition", "filter", "opacity"]) {
+      let value: unknown = node.style[property];
+      Object.defineProperty(node.style, property, {
+        get: () => value,
+        set: (next: unknown) => {
+          value = next;
+          styleWrites += 1;
+        },
+      });
+    }
+  }
+  const before = renderer.instrumentation();
+  const ids = [...fixture.contentIds, ...fixture.highlightIds];
+  renderer.setElementFade(ids, 160);
+  expect(styleWrites).toBe(STROKES * 3);
+  expect(nodes.every((node) => node.style.filter === "blur(50px)")).toBe(true);
+  expect(scheduler.pendingCount).toBe(0);
+  renderer.clearElementFade(ids);
+  expect(styleWrites).toBe(STROKES * 6);
+  expect(nodes.every((node) => node.style.filter === "")).toBe(true);
+  expect(renderer.instrumentation()).toEqual(before);
+  expect(scheduler.pendingCount).toBe(0);
+}
 
 function createMaximumPointFixture(): {
   readonly contentIds: readonly string[];

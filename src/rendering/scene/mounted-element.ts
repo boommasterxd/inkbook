@@ -228,9 +228,10 @@ function updateMountedPreviewGeometry(
 
 export function setMountedElementFade(entry: MountedSceneElement, durationMs: number | null): void {
   const nodes = entry.group === null ? entry.paths.map((path) => path.node) : [entry.group];
+  const timing = `${String(durationMs ?? 0)}ms ${EASING_TOKENS.erase}`;
   for (const node of nodes) {
-    node.style.transition =
-      durationMs === null ? "" : `opacity ${String(durationMs)}ms ${EASING_TOKENS.standard}`;
+    node.style.transition = durationMs === null ? "" : `opacity ${timing}, filter ${timing}`;
+    node.style.filter = durationMs !== null && durationMs > 0 ? "blur(50px)" : "";
     node.style.opacity = durationMs === null ? "" : "0";
   }
 }
