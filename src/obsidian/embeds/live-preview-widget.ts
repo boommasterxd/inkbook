@@ -137,6 +137,8 @@ export class InkbookLivePreviewWidget extends WidgetType {
           const last = view.lineBlockAt(Math.max(range.from, range.to - 1));
           return { before: block.top - first.top, after: last.bottom - block.bottom };
         },
+        ensureReady: preview.ensureReady,
+        setBackgroundWait: preview.setBackgroundWait,
         setDescriptor: preview.setDescriptor,
         setAspectRatio: preview.setAspectRatio,
         setSource: preview.setSource,

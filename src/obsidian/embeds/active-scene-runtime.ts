@@ -78,7 +78,12 @@ function createScenePreviewHandoff(
   stability: TransitionScrollStability,
   initialScrollStabilityRelease: () => void,
 ): ActiveScenePreviewHandoff {
+  options.setPreviewBackgroundWait?.(options.model.waitForBackground?.bind(options.model));
   return new ActiveScenePreviewHandoff({
+    ...(options.ensurePreviewReady === undefined
+      ? {}
+      : { ensurePreviewReady: options.ensurePreviewReady }),
+    onDispose: () => options.setPreviewBackgroundWait?.(undefined),
     beginScrollStability: () => stability.begin(),
     container,
     initialScrollStabilityRelease,

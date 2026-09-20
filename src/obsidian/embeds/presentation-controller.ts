@@ -38,6 +38,8 @@ export interface PresentationPreviewLifecycle {
   readonly element: HTMLElement;
   readonly entranceState?: PresentationEntranceState;
   readonly refresh?: () => void;
+  readonly ensureReady?: () => Promise<void>;
+  readonly setBackgroundWait?: (wait: (() => Promise<void>) | undefined) => void;
   readonly dispose?: () => void;
   readonly requestHostMeasure?: () => void;
   readonly removeMarkdown?: (
@@ -191,6 +193,10 @@ export class PresentationController {
     const loadingStartedAt = preview?.entranceState?.loadingStartedAt;
     if (preview?.entranceState !== undefined) delete preview.entranceState.loadingStartedAt;
     return {
+      ...(preview?.ensureReady === undefined ? {} : { ensurePreviewReady: preview.ensureReady }),
+      ...(preview?.setBackgroundWait === undefined
+        ? {}
+        : { setPreviewBackgroundWait: preview.setBackgroundWait }),
       ...(preview?.refresh === undefined ? {} : { refreshPreview: preview.refresh }),
       ...(loadingStartedAt === undefined ? {} : { loadingStartedAt }),
       ...(this.#entrance === undefined

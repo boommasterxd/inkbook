@@ -1,3 +1,4 @@
+import type { LockedPreviewPresentation } from "./locked-preview";
 import type { InitialPresentationEntrance } from "./presentation-entrance";
 import type { PhoneSheetHostPort } from "../menus/phone-sheet-host";
 import type {
@@ -17,7 +18,7 @@ import type { EditableDocumentModel } from "./vault-document-session";
 import type { PresentationScrollRangeReserve } from "./transition-scroll-stability";
 import type { EditorChromeOpenings } from "./editor-chrome-openings";
 
-export interface ActiveInkbookSceneOptions extends EditorChromeOpenings {
+export interface ActiveInkbookSceneOptions extends EditorChromeOpenings, LockedPreviewPresentation {
   readonly backgroundSpacing: () => InkbookSettingsV4["pageDefaults"]["backgroundSpacing"];
   readonly defaults: ToolDefaultsV1;
   readonly deviceSettings: InkbookDeviceSettingsV2;
@@ -36,9 +37,6 @@ export interface ActiveInkbookSceneOptions extends EditorChromeOpenings {
   readonly initialEntrance?: InitialPresentationEntrance;
   readonly preview?: HTMLElement;
   readonly scrollRangeReserve?: PresentationScrollRangeReserve;
-  readonly refreshPreview?: () => void;
-  readonly setPreviewSource?: (source: string) => Promise<void>;
-  readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
   readonly scheme: InkbookColorScheme;
   readonly scrollOwner?: () => BrowserScrollElement | null;
   readonly selectionHighlightsEnabled?: boolean;

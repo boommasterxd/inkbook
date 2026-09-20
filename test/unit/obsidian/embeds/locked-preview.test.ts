@@ -7,6 +7,7 @@ import { serializeInkbookDocument } from "../../../../src/persistence/serializat
 import { createSnapshot } from "../../persistence/serialization/fixtures";
 
 import { Platform } from "obsidian";
+import * as previewBuilder from "../../../../src/obsidian/embeds/safe-preview-builder";
 
 import { createInkbookLockedPreview } from "../../../../src/obsidian/embeds/locked-preview";
 import { createHtmlElement, installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
@@ -47,7 +48,7 @@ describe("locked preview platform treatment", () => {
   });
 });
 
-it("restores the latest deferred content before the preview handoff completes", () => {
+it("restores the latest deferred content before the preview handoff completes", async () => {
   const button = createHtmlElement("button");
   const preview = createInkbookLockedPreview(button, {
     aspectRatio: 1,
@@ -69,6 +70,7 @@ it("restores the latest deferred content before the preview handoff completes", 
     preview: button,
     refreshPreview: preview.refresh,
   });
+  await preview.ensureReady();
   handoff.restorePreview();
   expect(button.hidden).toBe(false);
   expect(button.querySelector("path")).not.toBeNull();
@@ -134,15 +136,109 @@ it.each([false, true])(
       revision: serialized.value.snapshot.revision,
     });
     await preview.setSource("app://saved-again.svg");
-    expect(parser).toHaveBeenCalledTimes(hidden ? 1 : 2);
+    await preview.ensureReady();
+    expect(parser).toHaveBeenCalledTimes(1);
     button.hidden = false;
     preview.refresh();
-    expect(parser).toHaveBeenCalledTimes(2);
+    expect(parser).toHaveBeenCalledTimes(1);
     const current = button.querySelector("svg");
     fetch.mockResolvedValue(new Response("<svg/>"));
     await expect(preview.setSource("app://unsafe.svg")).rejects.toThrow("not safe SVG");
     expect(button.querySelector("svg")).toBe(current);
-    expect(parser).toHaveBeenCalledTimes(2);
+    expect(parser).toHaveBeenCalledTimes(1);
     preview.dispose();
   },
 );
+
+it("pauses detached preparation during input and publishes only the latest descriptor", async () => {
+  const button = createHtmlElement("button");
+  const preview = createInkbookLockedPreview(button, {
+    aspectRatio: 1,
+    contentIdentity: CONTENT_IDENTITY,
+    safeSvg: SAFE_PREVIEW_SVG,
+  });
+  button.hidden = true;
+  let resume!: () => void;
+  const paused = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  preview.setBackgroundWait(() => paused);
+  const creates = vi.spyOn(document, "createElementNS");
+  for (const revision of [2, 3]) {
+    preview.setDescriptor({
+      aspectRatio: revision,
+      contentIdentity: { ...CONTENT_IDENTITY, revision },
+      safeSvg: SAFE_PREVIEW_SVG.replace("</svg>", `<path d="M0 0L${revision} ${revision}"/></svg>`),
+    });
+  }
+  const ready = preview.ensureReady();
+  await Promise.resolve();
+  expect(creates).not.toHaveBeenCalled();
+  expect(button.querySelector("path")).toBeNull();
+  resume();
+  await ready;
+  expect(button.querySelector("path")).toBeNull();
+  button.hidden = false;
+  preview.refresh();
+  expect(button.querySelector("path")?.getAttribute("d")).toBe("M0 0L3 3");
+  expect(creates).toHaveBeenCalledTimes(2);
+  preview.dispose();
+});
+
+it("settles lock readiness when disposed during an input pause without building stale DOM", async () => {
+  const button = createHtmlElement("button");
+  const preview = createInkbookLockedPreview(button, {
+    aspectRatio: 1,
+    contentIdentity: CONTENT_IDENTITY,
+    safeSvg: SAFE_PREVIEW_SVG,
+  });
+  preview.setBackgroundWait(() => new Promise<void>(() => undefined));
+  preview.setDescriptor({
+    aspectRatio: 2,
+    contentIdentity: { ...CONTENT_IDENTITY, revision: 2 },
+    safeSvg: SAFE_PREVIEW_SVG,
+  });
+  const creates = vi.spyOn(document, "createElementNS");
+  const ready = preview.ensureReady();
+  preview.dispose();
+  await ready;
+  expect(creates).not.toHaveBeenCalled();
+});
+
+it("settles validated source identity while detached DOM preparation waits for input", async () => {
+  const serialized = serializeInkbookDocument(createSnapshot());
+  if (!serialized.ok) throw new Error("Invalid test snapshot");
+  vi.spyOn(window, "fetch").mockImplementation(async () => new Response(serialized.value.svg));
+  const button = createHtmlElement("button");
+  const preview = createInkbookLockedPreview(button, {
+    aspectRatio: 1,
+    contentIdentity: CONTENT_IDENTITY,
+    safeSvg: SAFE_PREVIEW_SVG,
+  });
+  const original = button.querySelector("svg");
+  let resume!: () => void;
+  const paused = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  const build = previewBuilder.createPreviewSvgAsync;
+  vi.spyOn(previewBuilder, "createPreviewSvgAsync").mockImplementation((...args) => {
+    preview.setBackgroundWait(() => paused);
+    return build(...args);
+  });
+  const identity = await preview.setSource("app://saved.svg");
+  expect(identity).toEqual({
+    outputHash: serialized.value.hash,
+    revision: serialized.value.snapshot.revision,
+  });
+  let ready = false;
+  const pending = preview.ensureReady().then(() => {
+    ready = true;
+  });
+  await Promise.resolve();
+  expect(ready).toBe(false);
+  expect(button.querySelector("svg")).toBe(original);
+  resume();
+  await pending;
+  expect(button.querySelector("svg")).not.toBe(original);
+  preview.dispose();
+});

@@ -7,8 +7,12 @@ import { createHtmlElement, installObsidianDomHelpers } from "../../adapters/obs
 
 afterEach(() => vi.restoreAllMocks());
 
-it("coalesces hidden autosave previews without parsing or importing their SVG trees", () => {
+it("coalesces hidden autosave previews without parsing or importing their SVG trees", async () => {
   installObsidianDomHelpers();
+  vi.spyOn(window, "setTimeout").mockImplementation((callback) => {
+    queueMicrotask(callback as () => void);
+    return 1 as unknown as ReturnType<typeof window.setTimeout>;
+  });
   const button = createHtmlElement("button");
   const safeSvg = `<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata>${'<path d="M0 0L1 1"/>'.repeat(10_000)}</svg>`;
   const parser = vi.spyOn(window.DOMParser.prototype, "parseFromString");
@@ -30,10 +34,11 @@ it("coalesces hidden autosave previews without parsing or importing their SVG tr
   expect(parser).toHaveBeenCalledOnce();
   expect(importer).toHaveBeenCalledOnce();
   expect(button.querySelector("svg")).toBe(original);
+  await preview.ensureReady();
   button.hidden = false;
   preview.refresh();
-  expect(parser).toHaveBeenCalledTimes(2);
-  expect(importer).toHaveBeenCalledTimes(2);
+  expect(parser).toHaveBeenCalledTimes(1);
+  expect(importer).toHaveBeenCalledTimes(1);
   expect(button.querySelectorAll("path")).toHaveLength(10_000);
   expect(button.firstElementChild?.getAttribute("style")).toContain("20");
   const current = button.querySelector("svg");
@@ -43,6 +48,6 @@ it("coalesces hidden autosave previews without parsing or importing their SVG tr
   preview.dispose();
   preview.setDescriptor(descriptor(21));
   preview.refresh();
-  expect(parser).toHaveBeenCalledTimes(2);
-  expect(importer).toHaveBeenCalledTimes(2);
+  expect(parser).toHaveBeenCalledTimes(1);
+  expect(importer).toHaveBeenCalledTimes(1);
 });
