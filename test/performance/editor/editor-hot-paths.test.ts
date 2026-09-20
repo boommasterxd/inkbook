@@ -1,3 +1,4 @@
+import { eraserQuery } from "../../fixtures/editor/eraser-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EraserSweep } from "../../../src/editor/gestures/public";
@@ -26,9 +27,7 @@ describe("editor gesture hot paths", () => {
             elementLookups += 1;
             return byId.get(id);
           },
-          query: (_bounds, sink) => {
-            if (queryCount++ === 1) for (const id of ids) sink.add(id);
-          },
+          beginQuery: () => eraserQuery(queryCount++ === 1 ? ids : []),
         };
       })(),
       { clearCandidateFade: () => undefined, setCandidateFade: () => undefined },

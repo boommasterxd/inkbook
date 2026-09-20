@@ -1,3 +1,4 @@
+import { eraserQuery } from "../../fixtures/editor/eraser-query";
 import type { StrokeElementV1 } from "../../../src/domain/schema/public";
 import { EraserSweep } from "../../../src/editor/gestures/public";
 
@@ -14,9 +15,7 @@ export function createDenseStrokeEraser(
     4,
     {
       getElement: (id) => byId.get(id),
-      query: (_bounds, sink) => {
-        if (queryCount++ === 1) for (const { id } of strokes) sink.add(id);
-      },
+      beginQuery: () => eraserQuery(queryCount++ === 1 ? strokes.map(({ id }) => id) : []),
     },
     {
       addCandidateFade: () => undefined,

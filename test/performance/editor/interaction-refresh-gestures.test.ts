@@ -29,7 +29,7 @@ function createIndexedEraser(eraserClass: typeof EraserSweep, sceneStore: Elemen
     4,
     {
       getElement: (id) => sceneStore.get(id)?.element,
-      query: (bounds, sink) => sceneStore.query(bounds, sink),
+      beginQuery: (bounds) => sceneStore.beginQuery(bounds),
     },
     {
       addCandidateFade: () => undefined,
