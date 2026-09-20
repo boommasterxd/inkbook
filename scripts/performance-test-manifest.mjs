@@ -30,6 +30,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/obsidian/live-preview-removal-performance.test.ts",
     "test/performance/obsidian/live-preview-transactions-performance.test.ts",
     "test/performance/obsidian/live-preview-updates-performance.test.ts",
+    "test/performance/obsidian/locked-preview-refresh-performance.test.ts",
     "test/performance/obsidian/owned-menu-performance.test.ts",
     "test/performance/obsidian/pen-tap-capture-performance.test.ts",
     "test/performance/obsidian/phone-sheet-editable-performance.test.ts",

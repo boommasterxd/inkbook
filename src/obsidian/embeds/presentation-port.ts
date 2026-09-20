@@ -70,6 +70,7 @@ export interface PresentationAttachment {
   readonly scrollRangeReserve?: PresentationScrollRangeReserve;
   readonly preview?: HTMLElement;
   readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
+  readonly refreshPreview?: () => void;
   readonly setPreviewSource?: (source: string) => Promise<void>;
   readonly scrollOwner: () => HTMLElement | null;
 }
@@ -88,6 +89,7 @@ export type PresentationAttachmentInput = Omit<
   | "scrollOwner"
   | "scrollRangeReserve"
   | "setPreviewAspectRatio"
+  | "refreshPreview"
   | "setPreviewSource"
 >;
 
@@ -99,6 +101,7 @@ export function presentationPreviewOptions(
   | "preview"
   | "scrollRangeReserve"
   | "setPreviewAspectRatio"
+  | "refreshPreview"
   | "setPreviewSource"
 > {
   return {
@@ -109,6 +112,9 @@ export function presentationPreviewOptions(
     ...(attachment.setPreviewAspectRatio === undefined
       ? {}
       : { setPreviewAspectRatio: attachment.setPreviewAspectRatio }),
+    ...(attachment.refreshPreview === undefined
+      ? {}
+      : { refreshPreview: attachment.refreshPreview }),
     ...(attachment.setPreviewSource === undefined
       ? {}
       : { setPreviewSource: attachment.setPreviewSource }),

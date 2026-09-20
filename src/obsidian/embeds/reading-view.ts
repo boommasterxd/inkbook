@@ -160,6 +160,7 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
         contentIdentity: previewDescriptor.contentIdentity,
         element: preview.element,
         refresh: preview.refresh,
+        dispose: preview.dispose,
         setDescriptor: preview.setDescriptor,
         setAspectRatio: preview.setAspectRatio,
         setSource: preview.setSource,

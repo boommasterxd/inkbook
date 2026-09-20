@@ -15,6 +15,7 @@ interface PreviewHandoffOptions {
   readonly initialEntrance?: InitialPresentationEntrance;
   readonly preview: HTMLElement | undefined;
   readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
+  readonly refreshPreview?: () => void;
   readonly setPreviewSource?: (source: string) => Promise<void>;
   readonly root: HTMLElement;
 }
@@ -31,6 +32,7 @@ export class ActiveScenePreviewHandoff {
   readonly #previewParent: Node | null;
   readonly #root: HTMLElement;
   readonly #setPreviewAspectRatio: ((aspectRatio: number) => void) | undefined;
+  readonly #refreshPreview: (() => void) | undefined;
   readonly #setPreviewSource: ((source: string) => Promise<void>) | undefined;
   readonly #lockedBlockSize: string;
   #disposed = false;
@@ -53,6 +55,7 @@ export class ActiveScenePreviewHandoff {
     this.#ownerWindow = ownerWindow;
     this.#preview = options.preview;
     this.#setPreviewAspectRatio = options.setPreviewAspectRatio;
+    this.#refreshPreview = options.refreshPreview;
     this.#setPreviewSource = options.setPreviewSource;
     this.#previewNextSibling = options.preview?.nextSibling ?? null;
     this.#previewParent = options.preview?.parentNode ?? null;
@@ -167,6 +170,7 @@ export class ActiveScenePreviewHandoff {
       }
     }
     preview.hidden = false;
+    this.#refreshPreview?.();
   }
 
   public get reducedMotion(): boolean {

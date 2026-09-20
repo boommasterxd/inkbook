@@ -89,6 +89,7 @@ function createScenePreviewHandoff(
     ...(options.setPreviewAspectRatio === undefined
       ? {}
       : { setPreviewAspectRatio: options.setPreviewAspectRatio }),
+    ...(options.refreshPreview === undefined ? {} : { refreshPreview: options.refreshPreview }),
     ...(options.setPreviewSource === undefined
       ? {}
       : { setPreviewSource: options.setPreviewSource }),

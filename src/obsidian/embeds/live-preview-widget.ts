@@ -127,6 +127,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
         contentIdentity: this.#embed.preview.contentIdentity,
         element: preview.element,
         refresh: preview.refresh,
+        dispose: preview.dispose,
         requestHostMeasure: () => view.requestMeasure(),
         removeMarkdown: (range, expectedSource, mutate) =>
           removeLivePreviewMarkdown(view, range, expectedSource, mutate),

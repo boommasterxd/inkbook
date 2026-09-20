@@ -38,6 +38,7 @@ export interface PresentationPreviewLifecycle {
   readonly element: HTMLElement;
   readonly entranceState?: PresentationEntranceState;
   readonly refresh?: () => void;
+  readonly dispose?: () => void;
   readonly requestHostMeasure?: () => void;
   readonly removeMarkdown?: (
     range: PresentationRemovalRange,
@@ -190,6 +191,7 @@ export class PresentationController {
     const loadingStartedAt = preview?.entranceState?.loadingStartedAt;
     if (preview?.entranceState !== undefined) delete preview.entranceState.loadingStartedAt;
     return {
+      ...(preview?.refresh === undefined ? {} : { refreshPreview: preview.refresh }),
       ...(loadingStartedAt === undefined ? {} : { loadingStartedAt }),
       ...(this.#entrance === undefined
         ? {}
@@ -326,6 +328,7 @@ export class PresentationController {
   }
 
   dispose(): void {
+    this.#previewLifecycle?.dispose?.();
     this.#disposeFocusNavigation?.();
     this.#disposeFocusNavigation = undefined;
     this.#entrance?.dispose();

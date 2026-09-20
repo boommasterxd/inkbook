@@ -36,6 +36,7 @@ export interface ActiveInkbookSceneOptions extends EditorChromeOpenings {
   readonly initialEntrance?: InitialPresentationEntrance;
   readonly preview?: HTMLElement;
   readonly scrollRangeReserve?: PresentationScrollRangeReserve;
+  readonly refreshPreview?: () => void;
   readonly setPreviewSource?: (source: string) => Promise<void>;
   readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
   readonly scheme: InkbookColorScheme;

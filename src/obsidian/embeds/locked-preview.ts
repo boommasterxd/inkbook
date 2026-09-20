@@ -16,6 +16,7 @@ export interface InkbookLockedPreviewDescriptor {
 export interface InkbookLockedPreviewSurface {
   readonly element: HTMLButtonElement;
   readonly refresh: () => void;
+  readonly dispose: () => void;
   readonly setDescriptor: (descriptor: InkbookLockedPreviewDescriptor) => void;
   readonly setAspectRatio: (aspectRatio: number) => void;
   readonly setSource: (source: string) => Promise<PreviewContentIdentity | undefined>;
@@ -37,33 +38,47 @@ export function createInkbookLockedPreview(
   setAspectRatio(descriptor.aspectRatio);
   let currentDescriptor = descriptor;
   let sourceGeneration = 0;
-  const mount = (safeSvg: string, aspectRatio?: number): void => {
-    if (aspectRatio !== undefined) setAspectRatio(aspectRatio);
-    element.replaceChildren(createPreviewSvg(button.ownerDocument, safeSvg));
+  let disposed = false;
+  let mountedIdentity: PreviewContentIdentity | undefined;
+  const refresh = (): void => {
+    if (disposed || button.hidden) return;
+    if (
+      mountedIdentity !== undefined &&
+      samePreviewContentIdentity(mountedIdentity, currentDescriptor.contentIdentity)
+    )
+      return;
+    const svg = createPreviewSvg(button.ownerDocument, currentDescriptor.safeSvg);
+    setAspectRatio(currentDescriptor.aspectRatio);
+    element.replaceChildren(svg);
+    mountedIdentity = currentDescriptor.contentIdentity;
   };
   const setDescriptor = (nextDescriptor: InkbookLockedPreviewDescriptor): void => {
+    if (disposed) return;
+    sourceGeneration += 1;
     if (
       samePreviewContentIdentity(currentDescriptor.contentIdentity, nextDescriptor.contentIdentity)
     ) {
       return;
     }
-    sourceGeneration += 1;
     currentDescriptor = nextDescriptor;
-    mount(nextDescriptor.safeSvg, nextDescriptor.aspectRatio);
+    refresh();
   };
   const setSource = async (nextSource: string): Promise<PreviewContentIdentity | undefined> => {
+    if (disposed) return undefined;
     const generation = ++sourceGeneration;
     const loaded = await loadValidatedPreviewSvg(nextSource, owningWindow);
-    if (generation !== sourceGeneration) return undefined;
+    if (disposed || generation !== sourceGeneration) return undefined;
     currentDescriptor = loaded;
-    mount(loaded.safeSvg, loaded.aspectRatio);
+    refresh();
     return loaded.contentIdentity;
   };
-  mount(currentDescriptor.safeSvg);
+  refresh();
   return {
     element: button,
-    refresh: () => {
-      mount(currentDescriptor.safeSvg);
+    refresh,
+    dispose: () => {
+      disposed = true;
+      sourceGeneration += 1;
     },
     setDescriptor,
     setAspectRatio,
