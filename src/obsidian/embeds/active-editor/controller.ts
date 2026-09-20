@@ -1,11 +1,9 @@
 import type { GestureController, GesturePreviewStart } from "../../../editor/gestures/public";
 import * as EditorInput from "../../../editor/input/index";
 import { SelectionFrameSession } from "../../../editor/selection/public";
-import type { SvgSceneRenderer } from "../../../rendering/scene/index";
 import type { ToolbarAction, ToolbarLayoutStage, ToolbarState } from "../../../rendering/ui/index";
 import type { ContextMenuAction } from "../../menus/index";
 import * as Scrolling from "../../scrolling/index";
-import type { EditableDocumentModel } from "../vault-document-session";
 import type { ActiveEditorActions } from "./controller-actions";
 import type { ActiveEditorControllerOptions } from "./controller-types";
 import type { CoalescedPointerInput } from "./coalesced-input";
@@ -19,7 +17,6 @@ import type { ActiveEditorHistory } from "./history";
 import type { ActiveEditorHistoryTraversal } from "./history-traversal";
 import type { ActiveEditorHandleInteraction } from "./handle-interaction";
 import { ActiveEditorNavigation, type ActiveEditorViewState } from "./navigation";
-import type { ElementSceneStore } from "./scene-store";
 import { ActiveEditorStyleSession } from "./style-session";
 import type { ActiveEditorBackgroundSession } from "./background-session";
 import { ActiveEditorLongPressScheduler } from "./long-press";
@@ -53,14 +50,14 @@ export class ActiveEditorController {
   #input: EditorInput.InputState;
   readonly #longPress: ActiveEditorLongPressScheduler;
   readonly #menus: ActiveEditorMenuController;
-  readonly #model: EditableDocumentModel;
+  readonly #model: ActiveEditorControllerOptions["model"];
   readonly #onLock: () => void;
   readonly #onStateChanged: () => void;
   readonly #ownerWindow: Window;
   readonly #penGuard: Scrolling.PenScrollGuard<Scrolling.BrowserScrollElement>;
   readonly #renderIcon: ActiveEditorControllerOptions["renderIcon"];
-  readonly #renderer: SvgSceneRenderer;
-  readonly #sceneStore: ElementSceneStore;
+  readonly #renderer: ActiveEditorControllerOptions["renderer"];
+  readonly #sceneStore: ActiveEditorControllerOptions["sceneStore"];
   readonly #sliceBudgetMs: () => number;
   #snapping: ActiveEditorControllerOptions["snapping"];
   #snappingInversion: { readonly inverted: boolean; readonly pointerId: number } | undefined;
@@ -230,7 +227,7 @@ export class ActiveEditorController {
   readonly handlePointerMove = (event: PointerEvent) => this.#pointer.handlePointerMove(event);
   readonly handlePointerUp = (event: PointerEvent): void => this.#pointer.handlePointerUp(event);
   public preparePrimaryTouchStart(): void {
-    this.#navigation.cancelPanMomentum();
+    this.#navigation.cancelNavigation();
     if (ControllerTouch.isTouchInteraction(this.#input.interaction))
       this.#dispatch({ type: "reset" });
   }
@@ -268,6 +265,9 @@ export class ActiveEditorController {
   }
   readonly handleLostPointerCapture = (event: PointerEvent) =>
     this.#captures.runIfOwned(event.pointerId, () => this.#pointer.handleLostPointerCapture(event));
+  public handleNativeScroll(): void {
+    if (this.#availability.acceptsInput) this.#navigation.notifyScroll();
+  }
   public handleWheel(event: WheelEvent): void {
     if (!this.#availability.acceptsInput) return;
     if (this.#hasStableGeometryGesture()) {

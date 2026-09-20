@@ -34,7 +34,6 @@ import { loadTrustedDocumentForUnlock } from "./vault-document-trusted-unlock";
 import { InteractiveWorkPriority } from "../../editor/session/interactive-work-priority";
 import { ActiveEditorHistory } from "./active-editor/history";
 export type { DocumentRuntimeFactories, EditableDocumentModel } from "./document-model-port";
-
 export interface ActiveDocumentEditorContext {
   readonly history: ActiveEditorHistory;
   readonly model: EditableDocumentModel;
@@ -59,7 +58,6 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
   #unloadPreparation: Promise<void> | undefined;
   #executor: DocumentRuntimePort | undefined;
   #fallbackUsed = false;
-  #gestureActive = false;
   readonly #workPriority = new InteractiveWorkPriority();
   #history: ActiveEditorHistory | undefined;
   #migrationBackupSourceVersion: number | undefined;
@@ -125,7 +123,6 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     if (this.#lifecycle.disposed) return Promise.resolve();
     this.#lifecycle.preparingForUnload = true;
     this.#workPriority.dispose();
-    this.#gestureActive = false;
     this.#executor?.setLiveInputActive?.(false);
     this.#recoveryOperation = undefined;
     this.#cancelled.clear();
@@ -263,7 +260,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       disposed: () => this.#lifecycle.disposed,
       documentId: this.#identity.documentId,
       fallbackUsed: this.#fallbackUsed,
-      isGestureActive: () => this.#gestureActive,
+      isGestureActive: () => this.#workPriority.inputActive,
       runtimes: this.#runtimes,
       sessionId: this.#identity.sessionId,
       workerEpoch: this.#workerEpoch,
@@ -281,7 +278,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
         this.#workerEpoch = workerEpoch;
       },
       disposed: () => this.#lifecycle.disposed,
-      isGestureActive: () => this.#gestureActive,
+      isGestureActive: () => this.#workPriority.inputActive,
       runtimes: this.#runtimes,
       sessionId: this.#identity.sessionId,
     });
@@ -359,12 +356,8 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
           ),
         commitPreparedElementReplacement: (token) =>
           mutations.commitPreparedElementReplacement(token),
-        setGestureActive: (active) => {
-          if (this.#lifecycle.disposed) return;
-          this.#workPriority.setInputActive(active);
-          this.#gestureActive = active;
-          this.#executor?.setLiveInputActive?.(active);
-        },
+        setGestureActive: (active) => this.#setInputActive(active, "gesture"),
+        setNavigationActive: (active) => this.#setInputActive(active, "navigation"),
       },
       state: {
         mutationAvailability: () =>
@@ -379,6 +372,13 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     this.#model = model;
     this.#startAutosave(snapshot, outputHash, requiresCanonicalRewrite, executor, store);
     executor.requestPrewarm?.();
+  }
+  #setInputActive(active: boolean, source: "gesture" | "navigation"): void {
+    if (this.#lifecycle.disposed || this.#lifecycle.preparingForUnload) return;
+    const previous = this.#workPriority.inputActive;
+    this.#workPriority.setInputActive(active, source);
+    if (previous !== this.#workPriority.inputActive)
+      this.#executor?.setLiveInputActive?.(this.#workPriority.inputActive);
   }
   #startAutosave(
     snapshot: InkSnapshotV1,
@@ -404,7 +404,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       files: this.#files,
       identity: this.#identity,
       initialSnapshot: snapshot,
-      isGestureActive: () => this.#gestureActive,
+      isGestureActive: () => this.#workPriority.inputActive,
       outputHash,
       requiresCanonicalRewrite,
       page: () => requireVaultPage(this.#page),

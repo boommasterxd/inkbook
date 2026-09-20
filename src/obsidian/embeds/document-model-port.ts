@@ -75,4 +75,5 @@ export interface EditableDocumentModel {
     token: PreparedElementReplacement,
   ): "cancelled" | "committed" | "noop";
   setGestureActive(active: boolean): void;
+  setNavigationActive?(active: boolean): void;
 }

@@ -150,13 +150,15 @@ describe("autosave write serialization", () => {
 });
 
 describe("autosave interactive priority work bounds", () => {
-  it.each(["history", "drawing"])(
+  it.each(["history", "drawing", "navigation"])(
     "performs no hash, snapshot or vault work during %s",
     async (kind) => {
       const { clock, document, executor, vault } = createControlledSave();
       const priority = new InteractiveWorkPriority();
-      priority.setInputActive(kind === "drawing");
-      const release = kind === "history" ? priority.begin() : () => priority.setInputActive(false);
+      const source = kind === "navigation" ? "navigation" : "gesture";
+      priority.setInputActive(kind !== "history", source);
+      const release =
+        kind === "history" ? priority.begin() : () => priority.setInputActive(false, source);
       const { entered, wait } = observePriority(priority);
       const coordinator = createCoordinator(clock, document, executor, vault, wait);
       document.commit();

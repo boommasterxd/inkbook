@@ -17,6 +17,7 @@ export function bindSceneScrollOwner(
   return bindActiveSceneScrollOwner({
     initialOwner: scrollOwner,
     invalidate: () => renderer.invalidateLayout(),
+    onScroll: () => controller.handleNativeScroll(),
     ownerWindow,
     ...(options.scrollOwner === undefined ? {} : { provider: options.scrollOwner }),
     root: options.root,

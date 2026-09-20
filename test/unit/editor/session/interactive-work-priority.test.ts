@@ -74,3 +74,29 @@ describe("session interactive priority", () => {
     expect(await priority.run(async () => 42)).toBe(42);
   });
 });
+
+it.each(["gesture", "navigation"] as const)(
+  "keeps overlapping input sources active after %s ends",
+  async (first) => {
+    const priority = new InteractiveWorkPriority();
+    priority.setInputActive(true, "gesture");
+    priority.setInputActive(true, "navigation");
+    priority.setInputActive(true, "navigation");
+    const resumed = vi.fn();
+    const waiting = priority.waitForBackground().then(resumed);
+    priority.setInputActive(false, first);
+    await tick();
+    expect(priority.inputActive).toBe(true);
+    expect(resumed).not.toHaveBeenCalled();
+    priority.setInputActive(false, first === "gesture" ? "navigation" : "gesture");
+    await waiting;
+    expect(priority.inputActive).toBe(false);
+    expect(resumed).toHaveBeenCalledOnce();
+    priority.setInputActive(true, "navigation");
+    const drain = priority.waitForBackground();
+    priority.dispose();
+    await drain;
+    priority.setInputActive(true, "navigation");
+    expect(priority.inputActive).toBe(false);
+  },
+);

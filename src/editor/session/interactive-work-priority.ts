@@ -1,7 +1,7 @@
 /** One session's interactive leases defer background checkpoints without dropping work. */
 export class InteractiveWorkPriority {
   #depth = 0;
-  #releaseInput: (() => void) | undefined;
+  readonly #inputReleases = new Map<"gesture" | "navigation", () => void>();
   #disposed = false;
   #pending: Promise<void> | undefined;
   #resume: (() => void) | undefined;
@@ -21,11 +21,17 @@ export class InteractiveWorkPriority {
     };
   }
 
-  public setInputActive(active: boolean): void {
-    if (active) this.#releaseInput ??= this.begin();
-    else {
-      this.#releaseInput?.();
-      this.#releaseInput = undefined;
+  public get inputActive(): boolean {
+    return this.#inputReleases.size > 0;
+  }
+
+  public setInputActive(active: boolean, source: "gesture" | "navigation" = "gesture"): void {
+    if (this.#disposed) return;
+    if (active) {
+      if (!this.#inputReleases.has(source)) this.#inputReleases.set(source, this.begin());
+    } else {
+      this.#inputReleases.get(source)?.();
+      this.#inputReleases.delete(source);
     }
   }
 
@@ -45,7 +51,7 @@ export class InteractiveWorkPriority {
 
   public dispose(): void {
     this.#disposed = true;
-    this.#releaseInput = undefined;
+    this.#inputReleases.clear();
     this.#depth = 0;
     this.#release();
   }

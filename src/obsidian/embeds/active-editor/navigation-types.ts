@@ -13,6 +13,7 @@ export interface ActiveEditorCameraUpdate {
 }
 
 export interface ActiveEditorNavigationOptions {
+  readonly onNavigationActive?: (active: boolean) => void;
   readonly activePageHeight: () => number;
   readonly applyCamera?: (camera: ActiveEditorCameraUpdate) => void;
   readonly applyZoomLayout: (update: ActiveEditorZoomLayoutUpdate) => void;
