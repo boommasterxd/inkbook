@@ -29,10 +29,18 @@ export function createDenseStrokeEraser(
 
 export function createCountedDenseStrokeEraser(count: number, sliceBudgetMs?: () => number) {
   let pointReads = 0;
+  let widthReads = 0;
   const strokes = Array.from({ length: count }, (_, index) => {
     const stroke = maximumStroke(index);
     return {
       ...stroke,
+      style: {
+        ...stroke.style,
+        get width() {
+          widthReads += 1;
+          return stroke.style.width;
+        },
+      },
       points: new Proxy(stroke.points, {
         get(target, key, receiver) {
           if (typeof key === "string" && /^\d+$/.test(key) && Number(key) % 3 === 0) {
@@ -45,6 +53,9 @@ export function createCountedDenseStrokeEraser(count: number, sliceBudgetMs?: ()
   });
   return {
     eraser: createDenseStrokeEraser(strokes, sliceBudgetMs),
+    get widthReads() {
+      return widthReads;
+    },
     takePointReads() {
       const reads = pointReads;
       pointReads = 0;

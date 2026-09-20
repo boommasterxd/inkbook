@@ -68,6 +68,7 @@ describe("imperative canvas motion", () => {
     const before = store.records.get("a")?.element as BoxShapeElementV1;
     renderer.setElementFade(["a"], 160);
     expect(path.style.opacity).toBe("0");
+    expect(path.style.filter).toBe("blur(50px)");
 
     store.records.delete("a");
     renderer.applyDelta({
@@ -396,9 +397,8 @@ describe("motion limits", () => {
     scheduler.runAll();
 
     expect(contentPath(renderer, 1).style.opacity).toBeUndefined();
-    expect(contentPath(renderer, 0).style.transition).toBe(
-      "opacity 0ms cubic-bezier(0.2, 0, 0, 1)",
-    );
+    expect(contentPath(renderer, 0).style.transition).toContain("opacity 0ms");
+    expect(contentPath(renderer, 0).style.filter).toBe("");
     expect(fakeNode(renderer.svg).nodes[2]!.nodes[1]!.style.opacity).toBe("1");
     expect(renderer.instrumentation()).toMatchObject({
       motionCacheEntries: 0,

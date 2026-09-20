@@ -37,6 +37,7 @@ class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
   readonly #element: InkElementV1;
   readonly #localEnd: PointV1;
   readonly #localStart: PointV1;
+  readonly #sweep: NumericSegment;
   #mode!: CheckMode;
   #radius: number;
   #coordinateIndex = 0;
@@ -60,9 +61,11 @@ class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
     this.#element = element;
     this.#localStart = rotatePointClockwise(start, element.pivot, -element.rotation);
     this.#localEnd = rotatePointClockwise(end, element.pivot, -element.rotation);
+    this.#sweep = numericSegment(this.#localStart, this.#localEnd);
     this.#radius = radius;
     if (element.kind === "stroke") {
       this.#mode = "stroke";
+      this.#radius += effectiveStrokeWidth(element) / 2;
       if (element.points.length < 3) this.#finished = true;
       else if (element.points.length > 3) {
         this.#strokeLine = {
@@ -148,11 +151,11 @@ class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
       this.#finished = true;
       return;
     }
-    const sweep = numericSegment(this.#localStart, this.#localEnd);
+    const sweep = this.#sweep;
     if (element.points.length === 3) {
       this.#touches =
         pointSegmentDistanceSquared(element.points[0]!, element.points[1]!, sweep) <=
-        this.#strokeRadius(element);
+        this.#radius * this.#radius;
       this.#finished = true;
       return;
     }
@@ -164,8 +167,8 @@ class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
     line.endX = element.points[this.#strokeIndex]!;
     line.endY = element.points[this.#strokeIndex + 1]!;
     if (
-      segmentBoundsOverlap(sweep, line, this.#strokeRadius(element)) &&
-      segmentDistanceSquared(sweep, line) <= this.#strokeRadius(element)
+      segmentBoundsOverlap(sweep, line, this.#radius) &&
+      segmentDistanceSquared(sweep, line) <= this.#radius * this.#radius
     ) {
       this.#touches = true;
       this.#finished = true;
@@ -264,10 +267,6 @@ class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
       (pointInPolygon(this.#localStart, this.#vertices) ||
         pointInPolygon(this.#localEnd, this.#vertices));
     this.#finished = true;
-  }
-
-  #strokeRadius(element: Extract<InkElementV1, { kind: "stroke" }>): number {
-    return this.#radius + effectiveStrokeWidth(element) / 2;
   }
 }
 
