@@ -289,7 +289,7 @@ describe("compact mutation transition and scheduling regressions", () => {
           yields += 1;
           if (yields === 2) {
             element.width = -100;
-            element.style.outlineWidth = -1;
+            Object.assign(element.style, { outlineWidth: -1 });
           }
         },
       },
