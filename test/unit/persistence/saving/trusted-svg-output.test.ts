@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { InteractiveWorkPriority } from "../../../../src/editor/session/interactive-work-priority";
 import { describe, expect, it, vi } from "vitest";
 
@@ -60,7 +61,7 @@ describe("trusted SVG output validation slices", () => {
 describe("trusted SVG background priority", () => {
   it("pauses before hashing and at existing checkpoints without replacing the checkpoint", async () => {
     const output = createMaximumComplexitySvg();
-    const expected = inspectTrustedSvgOutputSync(output);
+    const outputHash = createHash("sha256").update(output).digest("hex");
     const update = vi.spyOn(ChunkedSha256.prototype, "update");
     const checkpoint = vi.fn(async () => undefined);
     let resume: () => void = () => undefined;
@@ -75,7 +76,7 @@ describe("trusted SVG background priority", () => {
           entered();
         }),
     );
-    const inspection = inspectTrustedSvgOutput(output, expected.outputHash, {
+    const inspection = inspectTrustedSvgOutput(output, outputHash, {
       checkpoint,
       waitForBackground,
     });
@@ -91,7 +92,13 @@ describe("trusted SVG background priority", () => {
     expect(checkpoint).toHaveBeenCalledTimes(1);
     waitForBackground.mockResolvedValue(undefined);
     resume();
-    await expect(inspection).resolves.toEqual(expected);
+    await expect(inspection).resolves.toMatchObject({
+      content: output,
+      lockedHeight: 148.6,
+      outputHash,
+      revision: 3,
+      totalBytes: Buffer.byteLength(output),
+    });
     expect(waitForBackground.mock.calls.length).toBe(checkpoint.mock.calls.length + 1);
     update.mockRestore();
   });
