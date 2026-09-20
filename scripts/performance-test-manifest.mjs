@@ -13,6 +13,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/rendering/scene/live-stroke-refresh-profile.test.ts",
   ]),
   invariant: Object.freeze([
+    "test/performance/obsidian/store-scheduler-resources.test.ts",
     "test/performance/domain/canonical-rounding-performance.test.ts",
     "test/performance/domain/domain-performance.test.ts",
     "test/performance/domain/incremental-replacement-performance.test.ts",

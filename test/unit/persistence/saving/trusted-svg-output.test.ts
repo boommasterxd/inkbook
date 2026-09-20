@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   inspectTrustedSvgOutput,
   inspectTrustedSvgOutputSync,
 } from "../../../../src/persistence/scheduling/trusted-svg-output";
+import { ChunkedSha256 } from "../../../../src/persistence/serialization/chunked-output-sha256";
 import { createMaximumComplexitySvg } from "../../../fixtures/persistence/safe-svg";
 
 describe("trusted SVG output validation slices", () => {
@@ -52,5 +53,63 @@ describe("trusted SVG output validation slices", () => {
       }),
     ).rejects.toMatchObject({ name: "AbortError" });
     expect(checkpoints).toBe(firstInspectionCheckpoint);
+  });
+});
+
+describe("trusted SVG background priority", () => {
+  it("pauses before hashing and at existing checkpoints without replacing the checkpoint", async () => {
+    const output = createMaximumComplexitySvg();
+    const expected = inspectTrustedSvgOutputSync(output);
+    const update = vi.spyOn(ChunkedSha256.prototype, "update");
+    const checkpoint = vi.fn(async () => undefined);
+    let resume: () => void = () => undefined;
+    let entered: () => void = () => undefined;
+    let pending = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const waitForBackground = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resume = resolve;
+          entered();
+        }),
+    );
+    const inspection = inspectTrustedSvgOutput(output, expected.outputHash, {
+      checkpoint,
+      waitForBackground,
+    });
+    await pending;
+    expect(update).not.toHaveBeenCalled();
+    expect(checkpoint).not.toHaveBeenCalled();
+    pending = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    resume();
+    await pending;
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(checkpoint).toHaveBeenCalledTimes(1);
+    waitForBackground.mockResolvedValue(undefined);
+    resume();
+    await expect(inspection).resolves.toEqual(expected);
+    expect(waitForBackground.mock.calls.length).toBe(checkpoint.mock.calls.length + 1);
+    update.mockRestore();
+  });
+
+  it("checks abort again after a paused background operation resumes", async () => {
+    const controller = new AbortController();
+    const update = vi.spyOn(ChunkedSha256.prototype, "update");
+    let resume: () => void = () => undefined;
+    const paused = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const inspection = inspectTrustedSvgOutput("untrusted", undefined, {
+      signal: controller.signal,
+      waitForBackground: () => paused,
+    });
+    controller.abort();
+    resume();
+    await expect(inspection).rejects.toMatchObject({ name: "AbortError" });
+    expect(update).not.toHaveBeenCalled();
+    update.mockRestore();
   });
 });

@@ -49,6 +49,9 @@ export function createVaultAutosaveSession(
     ...(options.beforeExistingWrite === undefined
       ? {}
       : { beforeExistingWrite: options.beforeExistingWrite }),
+    ...(options.waitForBackground === undefined
+      ? {}
+      : { waitForBackground: options.waitForBackground }),
     clock: options.clock,
     confirmed: options.confirmed,
     ...(options.createFallback === undefined ? {} : { createFallback: options.createFallback }),
@@ -115,6 +118,21 @@ export function createConfirmedPersistenceObserver(options: {
       revision,
     });
   };
+}
+
+export function prepareVaultElementMutation(options: {
+  readonly active: boolean;
+  readonly cancellation: Parameters<EditableDocumentModel["prepareElementMutation"]>[1];
+  readonly mutation: Parameters<EditableDocumentModel["prepareElementMutation"]>[0];
+  readonly scheduler: (isCancelled: () => boolean) => StoreSliceScheduler;
+  readonly store: ElementStore;
+}): ReturnType<EditableDocumentModel["prepareElementMutation"]> {
+  if (!options.active) return Promise.resolve({ status: "cancelled", token: null });
+  return options.store.prepareElementMutation(
+    options.mutation,
+    options.scheduler(() => options.cancellation.isCancelled()),
+    options.cancellation.replay,
+  );
 }
 
 export function prepareVaultElementReplacement(options: {
