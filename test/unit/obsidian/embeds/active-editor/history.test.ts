@@ -89,3 +89,39 @@ describe("ActiveEditorHistory applied async transitions", () => {
     expect(history.canUndo).toBe(false);
   });
 });
+
+describe("history interactive priority lifetime", () => {
+  it.each([true, false, "throw"] as const)(
+    "releases the lease after an Undo result of %s",
+    async (result) => {
+      let finish: (() => void) | undefined;
+      const pending = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      const release = vi.fn();
+      const beginInteractiveOperation = vi.fn(() => release);
+      const history = new ActiveEditorHistory({ ...model, beginInteractiveOperation });
+      history.registerApplied({
+        payloadBytes: 1,
+        redo: async () => true,
+        undo: async () => {
+          await pending;
+          if (result === "throw") throw new Error("failed replay");
+          return result;
+        },
+      });
+      const undone = history.undoAsync();
+      expect(beginInteractiveOperation).toHaveBeenCalledOnce();
+      expect(release).not.toHaveBeenCalled();
+      finish?.();
+      if (result === "throw") await expect(undone).rejects.toThrow("failed replay");
+      else await undone;
+      expect(release).toHaveBeenCalledOnce();
+      if (result === true) {
+        await history.redoAsync();
+        expect(beginInteractiveOperation).toHaveBeenCalledTimes(2);
+        expect(release).toHaveBeenCalledTimes(2);
+      }
+    },
+  );
+});

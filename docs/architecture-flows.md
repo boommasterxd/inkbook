@@ -48,7 +48,7 @@ flowchart LR
   editor --> noteScroller
 ```
 
-The presentation owner releases its own DOM, React root, adaptive menu sessions, listeners, observers, timers, pointer capture, and animation frames. The coordinator owns only the authoritative session, worker, activation records, and any bounded detached-save or recovery lease. React renders controls and coarse state, never ink elements or the pointer-to-frame render path.
+The presentation owner releases its own DOM, React root, adaptive menu sessions, listeners, observers, timers, pointer capture, and animation frames. The coordinator owns only the authoritative session, worker, activation records, and any bounded detached-save or recovery lease. The editable session also owns the interactive-work gate described in [Rendering and Performance](rendering-and-performance.md); persistence receives its wait callback rather than importing editor state. React renders controls and coarse state, never ink elements or the pointer-to-frame render path.
 
 ## Document Session Lifecycle
 

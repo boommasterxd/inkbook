@@ -1,5 +1,5 @@
 import type { InkElementV1 } from "../../../domain/schema/public";
-import type { ElementMutation } from "../../../domain/store/public";
+import type { AppliedElementMutation, ElementMutation } from "../../../domain/store/public";
 import {
   EraserSweep,
   type EraserFeedbackPort,
@@ -168,8 +168,8 @@ export class EraserPreview implements GesturePreview {
     if (applied === null) return false;
     this.#history.registerApplied({
       payloadBytes: applied.payloadBytes,
-      redo: () => this.#applyMutation(applied.forward),
-      undo: () => this.#applyMutation(applied.reverse),
+      redo: () => this.#applyMutation(applied.forward, applied),
+      undo: () => this.#applyMutation(applied.reverse, applied),
     });
     return true;
   }
@@ -207,10 +207,14 @@ export class EraserPreview implements GesturePreview {
     return kept;
   }
 
-  async #applyMutation(mutation: ElementMutation): Promise<boolean> {
+  async #applyMutation(
+    mutation: ElementMutation,
+    replay: AppliedElementMutation,
+  ): Promise<boolean> {
     const expectedRevision = this.#model.revision;
     const cancelled = () => this.#model.revision !== expectedRevision;
     const prepared = await this.#model.prepareElementMutation(mutation, {
+      replay,
       isCancelled: cancelled,
     });
     if (prepared.token === null || cancelled()) return false;

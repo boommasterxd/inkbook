@@ -92,6 +92,7 @@ export class ElementStore {
       records: this.#records,
       reverseConnections: this.#reverseConnections,
     }),
+    () => this.#mutationVersion,
     (plan) => this.#adoptElementMutation(plan),
   );
 
@@ -305,8 +306,9 @@ export class ElementStore {
   public prepareElementMutation(
     mutation: ElementMutation,
     scheduler: StoreSliceScheduler,
+    replay?: import("./types").AppliedElementMutation,
   ): Promise<PreparedElementMutationResult> {
-    return this.#preparedElementMutations.prepare(mutation, scheduler);
+    return this.#preparedElementMutations.prepare(mutation, scheduler, replay);
   }
 
   public commitPreparedElementMutation(

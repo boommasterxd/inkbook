@@ -25,6 +25,7 @@ export interface TrustedSvgOutput {
 
 interface TrustedSvgInspectionOptions extends Utf8AdoptionOptions {
   readonly versionPolicy?: SafeSvgVersionPolicy;
+  readonly waitForBackground?: () => Promise<void>;
 }
 
 export function inspectTrustedSvgOutputSync(
@@ -44,7 +45,17 @@ export async function inspectTrustedSvgOutput(
   options: TrustedSvgInspectionOptions = {},
 ): Promise<TrustedSvgOutput> {
   options.signal?.throwIfAborted();
-  const checkpoint = options.checkpoint ?? createMainThreadCheckpoint();
+  const yieldCheckpoint = options.checkpoint ?? createMainThreadCheckpoint();
+  const waitForBackground = options.waitForBackground;
+  const checkpoint = waitForBackground
+    ? async () => {
+        await yieldCheckpoint();
+        await waitForBackground();
+        options.signal?.throwIfAborted();
+      }
+    : yieldCheckpoint;
+  if (waitForBackground) await waitForBackground();
+  options.signal?.throwIfAborted();
   const chunkBytes = options.chunkBytes ?? DEFAULT_CHUNK_BYTES;
   assertChunkBytes(chunkBytes);
   const inspected = await inspectOutput(output, chunkBytes, checkpoint, options.signal);

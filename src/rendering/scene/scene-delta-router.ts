@@ -19,6 +19,10 @@ export function routeSceneDelta(delta: SceneStoreDelta, ports: SceneDeltaRouting
   let hasMultipleVisibilityChanges = false;
   let orderIds: string[] | undefined;
   for (const affected of delta.affected) {
+    if (affected.before === null && affected.after != null) {
+      ports.content.setElementFade([affected.id], null);
+    }
+    if (affected.after === null) ports.content.prepareElementRemoval(affected.id);
     let geometryDirty = false;
     let visibilityDirty = false;
     for (const domain of affected.domains) {

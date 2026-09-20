@@ -162,7 +162,18 @@ describe("VaultDocumentSession terminal executor lifecycle", () => {
     await expect(session.unlock(operation())).resolves.toMatchObject({ status: "active" });
     const model = factory.getDocumentModel("session-1");
     model?.setGestureActive(true);
+    model?.setNavigationActive?.(true);
+    model?.setNavigationActive?.(true);
+    const resumed = vi.fn();
+    const waiting = model?.waitForBackground?.().then(resumed);
+    await Promise.resolve();
+    expect(resumed).not.toHaveBeenCalled();
     model?.setGestureActive(false);
+    await Promise.resolve();
+    expect(resumed).not.toHaveBeenCalled();
+    model?.setNavigationActive?.(false);
+    await waiting;
+    expect(resumed).toHaveBeenCalledOnce();
 
     expect(requestPrewarm).toHaveBeenCalledOnce();
     expect(setLiveInputActive.mock.calls).toEqual([[true], [false]]);

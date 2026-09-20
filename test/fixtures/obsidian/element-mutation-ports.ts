@@ -12,10 +12,14 @@ export function elementMutationPorts(
       return result.transition;
     },
     prepareElementMutation: (mutation, cancellation) =>
-      store.prepareElementMutation(mutation, {
-        isCancelled: () => cancellation.isCancelled(),
-        shouldYield: () => false,
-        yieldControl: () => Promise.resolve(),
-      }),
+      store.prepareElementMutation(
+        mutation,
+        {
+          isCancelled: () => cancellation.isCancelled(),
+          shouldYield: () => false,
+          yieldControl: () => Promise.resolve(),
+        },
+        cancellation.replay,
+      ),
   };
 }

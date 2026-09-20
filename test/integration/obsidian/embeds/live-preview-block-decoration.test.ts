@@ -105,6 +105,7 @@ describe("Live Preview block-decoration source", () => {
       };
       control.notify?.("drawings/page.svg");
       await Promise.resolve();
+      await attachment.ensurePreviewReady?.();
       expect(parent.querySelector(".inkbook-root")).toBe(attachment.root);
       expect(attachment.root.dataset.inkbookState).toBe("active");
       expect(attachment.previewContentIdentity).toEqual(control.value.contentIdentity);

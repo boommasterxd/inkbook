@@ -9,10 +9,14 @@ export async function verifyExactWorkerContent(
   identity: PurposeOperationIdentity,
   content: string,
   versionPolicy: "current" | "editable" = "current",
+  waitForBackground?: () => Promise<void>,
 ): Promise<VerifiedPersistedOutput> {
   let trusted;
   try {
-    trusted = await inspectTrustedSvgOutput(content, undefined, { versionPolicy });
+    trusted = await inspectTrustedSvgOutput(content, undefined, {
+      versionPolicy,
+      ...(waitForBackground ? { waitForBackground } : {}),
+    });
   } catch {
     return { type: "unreadable" };
   }
