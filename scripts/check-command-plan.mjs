@@ -7,7 +7,7 @@ const nodeTask = (entry, ...args) => ({ entry, args });
 const tasks = {
   architecture: nodeTask(
     fileURLToPath(
-      new URL("../../bin/dependency-cruise.mjs", import.meta.resolve("dependency-cruiser")),
+      new URL("../../bin/dependency-cruiser.mjs", import.meta.resolve("dependency-cruiser")),
     ),
     "--config",
     ".dependency-cruiser.mjs",
