@@ -1,3 +1,9 @@
+import { SceneLivePathCommits } from "./live-path-commits";
+import {
+  SceneToolCursorWriter,
+  type SceneToolCursor,
+  type SceneToolCursorFrameReader,
+} from "./tool-cursor";
 import type { PageV1 } from "../../domain/schema/public";
 import type { SceneBackgroundCache } from "./background-cache";
 import {
@@ -21,6 +27,12 @@ import type {
 } from "./types";
 
 export class SceneFrameWriter {
+  public readonly livePathCommits: SceneLivePathCommits;
+  public readonly toolCursor: SceneToolCursorWriter;
+  #cursorLayoutDirty = true;
+  #cursorReadPending = false;
+  #cursorReader: SceneToolCursorFrameReader | undefined;
+  #systemCursor: string | undefined;
   #appliedCamera = "";
   #appliedLivePath: AppliedLivePath = emptyAppliedLivePath();
   #appliedOverlayD = "";
@@ -45,6 +57,7 @@ export class SceneFrameWriter {
         readonly path: string | null;
       }
     | undefined;
+  #pendingSystemCursor: string | undefined;
   #pendingSnapPath: string | null | undefined;
   #scheme: DocumentScheme = "light";
   #themeDirty = true;
@@ -54,13 +67,82 @@ export class SceneFrameWriter {
     backgroundCache: SceneBackgroundCache,
     instrumentation: MutableSceneInstrumentation,
   ) {
+    this.livePathCommits = new SceneLivePathCommits(dom);
+    this.toolCursor = new SceneToolCursorWriter(dom.toolCursor, instrumentation);
     this.#dom = dom;
     this.#backgroundCache = backgroundCache;
     this.#instrumentation = instrumentation;
   }
 
+  public release(): void {
+    this.#cursorReader = undefined;
+    this.toolCursor.release();
+    this.livePathCommits.settle(() => true);
+  }
+
+  public requestToolCursorFrame(read: SceneToolCursorFrameReader): void {
+    this.#cursorReader = read;
+    this.#cursorReadPending = true;
+  }
+
+  public invalidateCursorLayout(flush = false): void {
+    this.#cursorLayoutDirty = true;
+    if (flush) {
+      this.readToolCursor();
+      this.writeToolCursor();
+    }
+  }
+
+  public readToolCursor(refreshLayout = false): void {
+    if (refreshLayout) this.invalidateCursorLayout();
+    if (!this.#cursorLayoutDirty && !this.#cursorReadPending) return;
+    const frame = this.#cursorReader?.(this.#cursorLayoutDirty);
+    if (frame === undefined) return;
+    this.#cursorLayoutDirty = false;
+    this.#cursorReadPending = false;
+    this.toolCursor.set(frame.cursor);
+    this.#pendingSystemCursor = frame.system;
+  }
+
+  public writeToolCursor(): void {
+    if (
+      this.#pendingSystemCursor !== undefined &&
+      this.#pendingSystemCursor !== this.#systemCursor
+    ) {
+      this.#dom.inputSurface.style.setProperty("cursor", this.#pendingSystemCursor);
+      this.#systemCursor = this.#pendingSystemCursor;
+      this.#instrumentation.attributeWrites += 1;
+    }
+    this.toolCursor.write();
+  }
+
+  public commitLivePath(id: string): void {
+    this.livePathCommits.assertAvailable(id);
+    this.writeLivePath();
+    this.livePathCommits.retain(id, this.#appliedLivePath);
+    this.#appliedLivePath = emptyAppliedLivePath();
+    this.#livePath = { band: "content", parts: [] };
+  }
+
+  private writeLivePath(): void {
+    if (this.#liveDirty) {
+      this.#appliedLivePath = writeLivePath(
+        this.#dom,
+        this.#instrumentation,
+        this.#livePath,
+        this.#appliedLivePath,
+      );
+      this.#liveDirty = false;
+    }
+  }
+
+  public setToolCursor(state: SceneToolCursor | null): void {
+    this.toolCursor.set(state);
+  }
+
   public setCamera(camera: SceneCamera): void {
     this.#camera = camera;
+    this.invalidateCursorLayout();
     this.#cameraDirty = true;
   }
 
@@ -101,15 +183,8 @@ export class SceneFrameWriter {
     deadline: number,
     now: () => number,
   ): void {
-    if (this.#liveDirty) {
-      this.#appliedLivePath = writeLivePath(
-        this.#dom,
-        this.#instrumentation,
-        this.#livePath,
-        this.#appliedLivePath,
-      );
-      this.#liveDirty = false;
-    }
+    this.writeLivePath();
+    this.writeToolCursor();
     if (this.#cameraDirty) {
       this.#appliedCamera = writeCamera(
         this.#dom,

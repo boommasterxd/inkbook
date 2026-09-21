@@ -56,6 +56,7 @@ export function creationPreviewRenderer(
   return {
     clearLiveStroke: () => undefined,
     commitLiveStroke: () => undefined,
+    commitLivePath: () => undefined,
     setLivePath: () => undefined,
     setSnapMarkerPath: () => undefined,
     suppressMotionForNextDelta: () => undefined,

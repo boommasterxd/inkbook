@@ -12,6 +12,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/rendering/scene/interaction-refresh-reconciliation.test.ts",
     "test/performance/rendering/scene/live-stroke-refresh-profile.test.ts",
     "test/performance/rendering/scene/motion-frame-budget.test.ts",
+    "test/performance/rendering/scene/tool-cursor-performance.test.ts",
   ]),
   invariant: Object.freeze([
     "test/performance/persistence/main-thread-slice-budget.test.ts",

@@ -28,6 +28,7 @@ import { selectionSnapGuidePath, snapMarkerPath } from "./snap-marker-path";
 export interface CreationPreviewRenderer {
   clearLiveStroke(): void;
   commitLiveStroke(id: string): void;
+  commitLivePath(id: string): void;
   setLivePath(path: LivePathState | null): void;
   setSnapMarkerPath(d: string | null): void;
   suppressMotionForNextDelta(ids: readonly string[]): void;
@@ -117,13 +118,19 @@ export class CreationPreview implements GesturePreview {
     this.#finished = true;
     this.#renderer.setSnapMarkerPath(null);
     this.#renderer.suppressMotionForNextDelta([element.id]);
-    if (this.#stroke === null) this.#renderer.setLivePath(null);
+    const retainPath = this.#start.tool === "straight-highlighter";
+    if (this.#stroke === null && !retainPath) this.#renderer.setLivePath(null);
     try {
       const committed = this.#history.create([element]);
       if (this.#stroke !== null && committed) this.#renderer.commitLiveStroke(element.id);
       else if (this.#stroke !== null) this.#renderer.clearLiveStroke();
+      if (retainPath) {
+        if (committed) this.#renderer.commitLivePath(element.id);
+        else this.#renderer.setLivePath(null);
+      }
       return committed;
     } catch (error) {
+      if (retainPath) this.#renderer.setLivePath(null);
       if (this.#stroke !== null) this.#renderer.clearLiveStroke();
       throw error;
     }

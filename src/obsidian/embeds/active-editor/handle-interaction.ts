@@ -1,10 +1,13 @@
 import type { InkElementV1, PointV1 } from "../../../domain/schema/public";
 import type { SnappingSettingsV1 } from "../../../domain/settings/types";
+import type { ToolSystemCursor } from "../../../editor/input/tool-cursor";
 import type { PointerSample } from "../../../editor/input/index";
 import {
   ConnectedSelectionPreviewSession,
+  HitTestScratch,
   findSelectionHandle,
-  layoutSelectionHandles,
+  selectionOverlayGeometry,
+  type SelectionOverlayGeometry,
   SelectionFrameSession,
   SelectionHandleSession,
   type SelectedElementGeometry,
@@ -14,6 +17,11 @@ import {
 } from "../../../editor/selection/public";
 import type { EditableDocumentModel } from "../vault-document-session";
 
+import {
+  selectionCursorContainsPoint,
+  selectionCursorRadius,
+  selectionHandleCursor,
+} from "./selection-cursor";
 import { selectedElements } from "./controller-elements";
 import type { ActiveEditorHistory } from "./history";
 import type { PreparedElementHistory } from "./prepared-element-history";
@@ -63,6 +71,7 @@ interface PendingHandleSample {
 }
 
 interface ActiveHandleGesture {
+  readonly cursor: ToolSystemCursor;
   readonly connectedPreview: ConnectedSelectionPreviewSession;
   readonly connectedTransformIds: readonly string[];
   readonly grabOffset: PointV1;
@@ -89,6 +98,10 @@ export class ActiveEditorHandleInteraction {
   readonly #selection: () => ReadonlySet<string>;
   readonly #snapping: () => SnappingSettingsV1 | undefined;
   readonly #zoom: () => number;
+  #cursorGeometry: SelectionOverlayGeometry | null = null;
+  #cursorRotation = 0;
+  #cursorLinear: InkElementV1 | undefined;
+  readonly #cursorLinearHit = new HitTestScratch();
   #active: ActiveHandleGesture | undefined;
   #frameHandle: number | undefined;
   #pendingSample: PendingHandleSample | undefined;
@@ -121,6 +134,24 @@ export class ActiveEditorHandleInteraction {
     return this.#active?.pointerType;
   }
 
+  public cursorAt(pointer: PointerSample): ToolSystemCursor | undefined {
+    if (this.#active !== undefined) return this.#active.cursor;
+    const geometry = this.#cursorGeometry;
+    if (geometry === null) return undefined;
+    const handle = findSelectionHandle(
+      geometry.handles,
+      pointer,
+      this.#zoom(),
+      selectionCursorRadius(geometry.outline, pointer, this.#zoom()),
+    );
+    if (handle !== null) return selectionHandleCursor(handle, this.#cursorRotation);
+    if (selectionCursorContainsPoint(geometry.outline, pointer)) return "move";
+    if (this.#cursorLinear === undefined) return undefined;
+    this.#cursorLinearHit.begin(pointer, pointer.pointerType, this.#zoom());
+    this.#cursorLinearHit.consider(this.#cursorLinear.id, "content", this.#cursorLinear, 0);
+    return this.#cursorLinearHit.finish() === null ? undefined : "move";
+  }
+
   public cancel(pointerId?: number): boolean {
     const active = this.#active;
     if (active === undefined || (pointerId !== undefined && active.pointerId !== pointerId)) {
@@ -136,6 +167,8 @@ export class ActiveEditorHandleInteraction {
   public dispose(): void {
     this.cancel();
     this.#presentation.dispose();
+    this.#cursorGeometry = null;
+    this.#cursorLinear = undefined;
   }
 
   public pointerDown(
@@ -146,7 +179,8 @@ export class ActiveEditorHandleInteraction {
     if (this.#active !== undefined) return false;
     const selected = this.#selectedGeometry();
     const frame = this.#selectionFrames.current(selected);
-    const handles = layoutSelectionHandles(selected, { frame, zoom: this.#zoom() });
+    this.#cacheCursorGeometry(selected, frame);
+    const handles = this.#cursorGeometry?.handles ?? [];
     const handle = findSelectionHandle(
       handles,
       pointer,
@@ -170,6 +204,8 @@ export class ActiveEditorHandleInteraction {
     const scalePreview = new SelectionScalePreviewPlan(selected);
     const connectedTransformIds = ids.filter((id) => !connectedPreview.selectedPreviewIds.has(id));
     this.#active = {
+      cursor:
+        handle.kind === "rotate" ? "grabbing" : selectionHandleCursor(handle, this.#cursorRotation),
       connectedPreview,
       connectedTransformIds,
       frame,
@@ -301,12 +337,22 @@ export class ActiveEditorHandleInteraction {
   public renderSelection(): void {
     if (this.#active !== undefined) return;
     const selected = this.#selectedGeometry();
-    this.#presentation.renderGeometry(
-      selected,
-      null,
-      null,
-      this.#selectionFrames.current(selected),
-    );
+    const frame = this.#selectionFrames.current(selected);
+    this.#cacheCursorGeometry(selected, frame);
+    this.#presentation.renderGeometry(selected, null, null, frame);
+  }
+
+  #cacheCursorGeometry(
+    selected: readonly SelectedElementGeometry[],
+    frame: OrientedSelectionFrame | null,
+  ): void {
+    this.#cursorGeometry = selectionOverlayGeometry(selected, this.#zoom(), null, frame);
+    this.#cursorLinear =
+      this.#cursorGeometry?.outline.kind === "linear" ? selected[0]?.element : undefined;
+    this.#cursorRotation =
+      selected.length === 1 && selected[0]!.element.kind !== "stroke"
+        ? selected[0]!.element.rotation
+        : (frame?.rotation ?? 0);
   }
 
   #finish(): void {

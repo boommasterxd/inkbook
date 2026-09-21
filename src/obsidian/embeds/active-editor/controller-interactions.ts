@@ -1,3 +1,5 @@
+import * as Scrolling from "../../scrolling/index";
+import { createInputState } from "../../../editor/input/index";
 import type { PointerSample } from "../../../editor/input/index";
 import { derivePageExtent } from "../../../domain/geometry/public";
 
@@ -152,7 +154,7 @@ export function createControllerNavigation(options: {
         options.renderSelection();
       }
       appliedZoom = camera.zoom;
-      controller.renderer.flushPointerFeedbackFrame();
+      controller.renderer.flushPointerFeedbackFrame(undefined, true);
     },
     applyZoomLayout: controller.applyZoomLayout,
     container: controller.container,
@@ -189,4 +191,19 @@ export function resetActiveEditorForDisable(
   gestures.cancelActivePreview();
   model.setGestureActive(false);
   penGuard.stop();
+}
+
+export function createControllerInputState(options: ActiveEditorControllerOptions) {
+  return createInputState({
+    activeTool: options.startupTool,
+    deviceFingerDrawingEnabled: options.deviceSettings.fingerDrawingEnabled,
+  });
+}
+
+export function createControllerPenGuard(ownerWindow: Window) {
+  return new Scrolling.PenScrollGuard({
+    listeners: Scrolling.browserScrollListeners,
+    metrics: Scrolling.browserScrollMetrics,
+    scheduler: Scrolling.createAnimationFrameScheduler(ownerWindow),
+  });
 }

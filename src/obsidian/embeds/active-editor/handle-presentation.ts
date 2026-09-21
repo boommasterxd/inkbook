@@ -1,10 +1,9 @@
-import { calculateElementBounds, pointSegmentDistance } from "../../../domain/geometry/public";
+import { calculateElementBounds } from "../../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../../domain/schema/public";
 import type { PointerSample } from "../../../editor/input/index";
 import type { ProgressivePreviewTransform } from "../../../rendering/scene/progressive-element-preview";
 import {
   createSelectionFrameAtRotation,
-  selectionOverlayContainsPoint,
   selectionOverlayGeometry,
   type OrientedSelectionFrame,
   type SelectedElementGeometry,
@@ -16,10 +15,7 @@ import {
 import { selectionOverlayFill, selectionOverlayPaths } from "./selection-overlay-path";
 import { selectionSnapGuidePath } from "./snap-marker-path";
 
-const HANDLE_RADIUS_PIXELS = 13;
-const INTERIOR_HANDLE_RADIUS_PIXELS = 10;
-const PEN_HANDLE_RADIUS_PIXELS = 16;
-const TOUCH_HANDLE_RADIUS_PIXELS = 24;
+import { selectionCursorRadius } from "./selection-cursor";
 
 export interface HandleInteractionRenderer {
   beginPreviewCommit?(): {
@@ -231,37 +227,11 @@ export function pointerHandleRadiusPixels(
   pointer: PointerSample,
   zoom: number,
 ): number {
-  const radius = handleRadiusPixels(pointer.pointerType, zoom);
-  if (!selectionOverlayContainsPoint(selected, pointer, frame)) return radius;
-  const geometry = selectionOverlayGeometry(selected, zoom, null, frame)?.outline;
-  if (
-    geometry?.kind !== "polygon" ||
-    polygonEdgeDistance(pointer, geometry.points) * zoom <= INTERIOR_HANDLE_RADIUS_PIXELS
-  ) {
-    return radius;
-  }
-  return Math.min(radius, INTERIOR_HANDLE_RADIUS_PIXELS);
-}
-
-function handleRadiusPixels(pointerType: PointerSample["pointerType"], zoom: number): number {
-  const base =
-    pointerType === "touch"
-      ? TOUCH_HANDLE_RADIUS_PIXELS
-      : pointerType === "pen"
-        ? PEN_HANDLE_RADIUS_PIXELS
-        : HANDLE_RADIUS_PIXELS;
-  return Math.min(28, Math.max(11, base / Math.sqrt(zoom)));
-}
-
-function polygonEdgeDistance(point: PointV1, vertices: readonly PointV1[]): number {
-  let minimum = Number.POSITIVE_INFINITY;
-  for (let index = 0; index < vertices.length; index += 1) {
-    const start = vertices[index];
-    const end = vertices[(index + 1) % vertices.length];
-    if (start === undefined || end === undefined) continue;
-    minimum = Math.min(minimum, pointSegmentDistance(point, start, end));
-  }
-  return minimum;
+  return selectionCursorRadius(
+    selectionOverlayGeometry(selected, zoom, null, frame)?.outline ?? null,
+    pointer,
+    zoom,
+  );
 }
 
 function transformString(transform: SelectionPreviewTransform | null): string | null {

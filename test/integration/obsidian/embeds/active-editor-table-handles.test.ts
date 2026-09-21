@@ -9,7 +9,8 @@ import type { InkElementV1, PointV1 } from "../../../../src/domain/schema/public
 import { mutableElement } from "../../../../src/domain/store/immutability";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { type ImmutableInkElement } from "../../../../src/domain/store/types";
-import { layoutSelectionHandles } from "../../../../src/editor/selection/public";
+import { layoutSelectionHandles } from "../../../../src/editor/selection/handles";
+
 import { ActiveEditorHandleInteraction } from "../../../../src/obsidian/embeds/active-editor/handle-interaction";
 import type { PreparedElementHistory } from "../../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";

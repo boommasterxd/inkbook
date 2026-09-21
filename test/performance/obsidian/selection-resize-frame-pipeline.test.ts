@@ -6,7 +6,8 @@ import { ProgressivePreviewPath } from "../../../src/rendering/scene/progressive
 import { calculateElementBounds, derivePageExtent } from "../../../src/domain/geometry/public";
 import type { InkElementV1 } from "../../../src/domain/schema/public";
 import { ElementStore } from "../../../src/domain/store/public";
-import { layoutSelectionHandles } from "../../../src/editor/selection/public";
+import { layoutSelectionHandles } from "../../../src/editor/selection/handles";
+
 import { ActiveEditorHandleInteraction } from "../../../src/obsidian/embeds/active-editor/handle-interaction";
 import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
 import { MovePreview } from "../../../src/obsidian/embeds/active-editor/move-preview";
@@ -112,7 +113,7 @@ const RESIZE_WORKLOADS = [
 interface ResizeApi {
   calculateElementBounds: typeof import("../../../src/domain/geometry/public").calculateElementBounds;
   derivePageExtent: typeof import("../../../src/domain/geometry/public").derivePageExtent;
-  layoutSelectionHandles: typeof import("../../../src/editor/selection/public").layoutSelectionHandles;
+  layoutSelectionHandles: typeof import("../../../src/editor/selection/handles").layoutSelectionHandles;
   ElementStore: typeof import("../../../src/domain/store/public").ElementStore;
   ElementSceneStore: typeof import("../../../src/obsidian/embeds/active-editor/scene-store").ElementSceneStore;
   SvgSceneRenderer: typeof import("../../../src/rendering/scene/index").SvgSceneRenderer;

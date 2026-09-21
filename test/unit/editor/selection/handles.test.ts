@@ -9,9 +9,9 @@ import type {
   CoordinateSystemElementV1,
   InkElementV1,
 } from "../../../../src/domain/schema/public";
+import { layoutSelectionHandles } from "../../../../src/editor/selection/handles";
 import {
   findSelectionHandle,
-  layoutSelectionHandles,
   oppositeBoxAnchor,
   selectionBounds,
   SelectionHandleSession,

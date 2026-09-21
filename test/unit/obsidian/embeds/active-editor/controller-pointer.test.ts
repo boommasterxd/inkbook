@@ -7,7 +7,12 @@ import type { ActiveEditorMenuController } from "../../../../../src/obsidian/emb
 import type { ActiveEditorNavigation } from "../../../../../src/obsidian/embeds/active-editor/navigation";
 import type { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
 import type { SvgSceneRenderer } from "../../../../../src/rendering/scene/index";
-import { createInputState, type InputState } from "../../../../../src/editor/input/index";
+import {
+  createInputState,
+  reduceInput,
+  type InputAction,
+  type InputState,
+} from "../../../../../src/editor/input/index";
 
 describe("active editor pointer controller", () => {
   it("uses screen pixels for arbitration and page coordinates for indexed hit testing", () => {
@@ -174,6 +179,59 @@ describe("selection handle pointer cancellation", () => {
 });
 
 describe("active editor pointer gesture ownership", () => {
+  it("keeps foreign touch lifecycle out of the reducer during a pen handle drag", () => {
+    let owner: number | undefined = 7;
+    let input = createInputState();
+    const dispatch = vi.fn((action: unknown) => {
+      input = reduceInput(input, action as InputAction).state;
+    });
+    const pointerMove = vi.fn(() => true);
+    const pointerUp = vi.fn(() => {
+      owner = undefined;
+      return true;
+    });
+    const cancel = vi.fn(() => false);
+    const handles = {
+      ...handlesPort(false),
+      cancel,
+      get activePointerId() {
+        return owner;
+      },
+      pointerMove,
+      pointerUp,
+    } as unknown as ActiveEditorHandleInteraction;
+    const navigation = navigationPort();
+    const controller = horizontalPanController({
+      dispatch,
+      getInput: () => input,
+      handles,
+      navigation: navigation.value,
+    });
+    const foreign = Object.assign(pointerEvent("touch"), { pointerId: 8 });
+
+    controller.handlePointerDown(foreign);
+    controller.handlePointerMove(foreign);
+    controller.handlePointerUp(foreign);
+    controller.handlePointerCancel(foreign);
+    controller.handleLostPointerCapture(foreign);
+
+    expect(input.interaction).toBeUndefined();
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(navigation.begin).not.toHaveBeenCalled();
+    expect(navigation.cancelPanMomentum).not.toHaveBeenCalled();
+    expect(pointerMove).not.toHaveBeenCalled();
+    expect(pointerUp).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
+    controller.handlePointerMove(pointerEvent("pen"));
+    controller.handlePointerUp(pointerEvent("pen"));
+    expect(pointerMove).toHaveBeenCalled();
+    expect(pointerUp).toHaveBeenCalledExactlyOnceWith(7);
+    controller.handlePointerDown(foreign);
+    expect(input.interaction).toMatchObject({ pointerId: 8, phase: "touch-pending" });
+    controller.handlePointerDown(Object.assign(pointerEvent("touch"), { pointerId: 9 }));
+    expect(input.interaction).toMatchObject({ phase: "pinch" });
+  });
+
   it("stops a claimed horizontal touch pan before it reaches Obsidian", () => {
     const controller = horizontalPanController();
     const preventDefault = vi.fn();
@@ -263,7 +321,7 @@ function navigationPort() {
         y: sample.y + 100,
       }),
       screenPointer: (event: PointerEvent) => ({
-        pointerId: 7,
+        pointerId: event.pointerId,
         pointerType: event.pointerType,
         pressure: 0.5,
         x: 20,
