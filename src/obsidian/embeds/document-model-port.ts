@@ -22,6 +22,7 @@ import type { AutosaveClock } from "../../persistence/saving/autosave/public";
 import type { DocumentRuntimePort } from "../../persistence/worker/runtime/public";
 
 export interface DocumentRuntimeFactories {
+  sliceBudgetMs?(documentId: string): number;
   clock(documentId: string): AutosaveClock;
   create(sessionId: string, workerEpoch: number, documentId: string): Promise<DocumentRuntimePort>;
   createFallback(

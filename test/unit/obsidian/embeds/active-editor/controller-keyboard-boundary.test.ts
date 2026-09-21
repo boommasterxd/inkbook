@@ -48,7 +48,7 @@ describe("active editor keyboard DOM boundary", () => {
 
   it("consumes Shift+F10 and restores canvas focus when the native menu closes", async () => {
     const harness = createHarness();
-    focus(harness.input);
+    harness.input.focus();
 
     const event = harness.key("F10", { shiftKey: true });
 
@@ -153,6 +153,7 @@ describe("active editor native paste DOM boundary", () => {
     expect(harness.controller.chromeProps().toolbarState.hasSelection).toBe(true);
 
     expect(harness.key("Delete").defaultPrevented).toBe(true);
+    expect(harness.renderer.setElementFade).toHaveBeenCalledWith(expect.any(Array), 300);
     harness.dispose();
   });
 
@@ -389,6 +390,7 @@ function documentModel(store: ElementStore): EditableDocumentModel {
 
 function rendererPort(inputSurface: HTMLDivElement) {
   return {
+    clearElementFade: vi.fn(),
     clearLiveStroke: vi.fn(),
     commitLiveStroke: vi.fn(),
     clearElementPreviews: vi.fn(),
@@ -397,6 +399,7 @@ function rendererPort(inputSurface: HTMLDivElement) {
     inputSurface,
     interruptMotionForPointerDown: vi.fn(),
     setCamera: vi.fn(),
+    setElementFade: vi.fn(),
     setElementPreviews: vi.fn(),
     setLivePath: vi.fn(),
     setOverlayPath: vi.fn(),
@@ -432,10 +435,6 @@ function rect(left: number, top: number, width: number, height: number): DOMRect
     y: top,
     toJSON: () => ({}),
   };
-}
-
-function focus(element: HTMLElement): void {
-  element.focus();
 }
 
 function key(target: HTMLElement, value: string, options: KeyboardEventInit): KeyboardEvent {

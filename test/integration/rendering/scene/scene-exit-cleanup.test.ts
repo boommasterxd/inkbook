@@ -157,6 +157,29 @@ describe("deferred scene exit cleanup", () => {
     harness.renderer.destroy();
   });
 
+  it("restores a selection deleted with blur when Undo arrives before the transition finishes", () => {
+    const records = rectangles(2);
+    const harness = setup(records);
+    harness.renderer.setReducedMotion(false);
+    const original = [...harness.content.nodes];
+    const ids = records.map(({ id }) => id);
+    harness.renderer.setElementFade(ids, 300);
+    remove(harness, records, false);
+    harness.renderer.clearElementFade(ids);
+    harness.scheduler.runNext();
+    expect(harness.content.nodes).toEqual(original);
+    expect(original.every((node) => node.style.filter === "blur(50px)")).toBe(true);
+    harness.scheduler.time += 150;
+    restore(harness, records);
+    expect(original.every((node) => node.style.filter === "")).toBe(true);
+    harness.scheduler.time += 300;
+    harness.scheduler.runAll();
+    expect(harness.content.nodes).toEqual(original);
+    expect(harness.renderer.mountedIds("content")).toEqual(ids);
+    expect(harness.renderer.instrumentation().motionTombstones).toBe(0);
+    harness.renderer.destroy();
+  });
+
   it("yields at the frame deadline after making progress", () => {
     const records = rectangles(10);
     const harness = setup(records);

@@ -65,10 +65,18 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
   #activeReads = 0;
   #markupCodeUnits = 0;
   #layoutReady: boolean;
+  readonly #sliceBudgetMs: (() => number) | undefined;
   #disposed = false;
 
-  public constructor(vault: Vault, options: { readonly deferUntilLayoutReady?: boolean } = {}) {
+  public constructor(
+    vault: Vault,
+    options: {
+      readonly deferUntilLayoutReady?: boolean;
+      readonly sliceBudgetMs?: () => number;
+    } = {},
+  ) {
     this.#vault = vault;
+    this.#sliceBudgetMs = options.sliceBudgetMs;
     this.#layoutReady = options.deferUntilLayoutReady !== true;
   }
 
@@ -182,7 +190,7 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
       if (current !== file || fileSignature(current) !== signature) return false;
       const descriptor = recognizeCanonicalInkbookRoot(content);
       if (descriptor === false) return false;
-      const preview = await inspectPreviewSvg(content);
+      const preview = await inspectPreviewSvg(content, undefined, undefined, this.#sliceBudgetMs);
       const confirmed = this.#resolveFile(file.path);
       return preview !== null && confirmed === file && fileSignature(confirmed) === signature
         ? { ...preview, aspectRatio: descriptor.aspectRatio }

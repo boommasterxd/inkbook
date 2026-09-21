@@ -121,7 +121,9 @@ Delete:
 
 - removes the selection
 - creates one undo step
-- is triggered through the toolbar or `Delete`
+- is triggered through the toolbar, selection context menu, or `Delete`
+- previews the same 300 ms opacity and 50-page-unit blur fade as the [eraser](editor-tools.md#eraser), using retained scene nodes and bounded animation starts; committing does not wait for the animation
+- restores pending feedback if preparation fails or becomes stale; Undo during the fade restores the element without leftover blur
 - leaves `Backspace` available for normal text input
 
 Paste:

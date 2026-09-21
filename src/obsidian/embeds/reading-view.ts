@@ -118,7 +118,13 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
       attr: { "aria-label": "Edit handwriting", type: "button" },
       cls: "inkbook-locked-preview",
     });
-    const preview = createInkbookLockedPreview(button, previewDescriptor);
+    const preview = createInkbookLockedPreview(
+      button,
+      previewDescriptor,
+      ports.sliceBudgetMs === undefined
+        ? undefined
+        : () => ports.sliceBudgetMs!(button.ownerDocument.defaultView),
+    );
     super(candidate.host);
     this.#button = button;
     this.#documentId = candidate.resolved.documentId;

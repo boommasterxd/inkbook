@@ -10,11 +10,13 @@ export async function verifyExactWorkerContent(
   content: string,
   versionPolicy: "current" | "editable" = "current",
   waitForBackground?: () => Promise<void>,
+  sliceBudgetMs?: () => number,
 ): Promise<VerifiedPersistedOutput> {
   let trusted;
   try {
     trusted = await inspectTrustedSvgOutput(content, undefined, {
       versionPolicy,
+      ...(sliceBudgetMs ? { sliceBudgetMs } : {}),
       ...(waitForBackground ? { waitForBackground } : {}),
     });
   } catch {

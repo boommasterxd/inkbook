@@ -27,6 +27,7 @@ function livePreviewEmbed(resourceUrl = "app://vault/ink.svg") {
 function createPorts(): EmbedIntegrationPorts & {
   readonly attachments: Array<{
     readonly embedReference: unknown;
+    readonly ensurePreviewReady?: () => Promise<void>;
     readonly preview?: HTMLElement;
     readonly previewContentIdentity?: typeof CONTENT_IDENTITY;
     readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
@@ -38,6 +39,7 @@ function createPorts(): EmbedIntegrationPorts & {
   const calls: string[] = [];
   const attachments: Array<{
     readonly embedReference: unknown;
+    readonly ensurePreviewReady?: () => Promise<void>;
     readonly preview?: HTMLElement;
     readonly previewContentIdentity?: typeof CONTENT_IDENTITY;
     readonly setPreviewAspectRatio?: (aspectRatio: number) => void;
@@ -339,7 +341,7 @@ describe("Live Preview embed integration", () => {
 });
 
 describe("Live Preview widget lifecycle", () => {
-  it("creates and destroys a Live Preview widget in its owning document", () => {
+  it("creates and destroys a Live Preview widget in its owning document", async () => {
     const ports = createPorts();
     const created: FakeElement[] = [];
     const ownerDocument = new FakeElement().ownerDocument;
@@ -359,6 +361,10 @@ describe("Live Preview widget lifecycle", () => {
     expect(root.tagName).toBe("DIV");
     const activationButton = requireOwnedPreview(root, root.children[0]);
     expect(activationButton?.children[0]?.style["--inkbook-preview-aspect-ratio"]).toBe("12");
+    expect(activationButton.children[0]?.children).toHaveLength(0);
+    const ensurePreviewReady = ports.attachments[0]?.ensurePreviewReady;
+    expect(ensurePreviewReady).toBeTypeOf("function");
+    await ensurePreviewReady?.();
     expect(activationButton?.children[0]?.children[0]?.classNames).toContain(
       "inkbook-locked-preview-svg",
     );

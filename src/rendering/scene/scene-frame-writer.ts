@@ -98,6 +98,8 @@ export class SceneFrameWriter {
     transforms: SceneTransformPreviewController,
     elements: SceneElementPreviews,
     motion: SceneMotionController,
+    deadline: number,
+    now: () => number,
   ): void {
     if (this.#liveDirty) {
       this.#appliedLivePath = writeLivePath(
@@ -133,7 +135,7 @@ export class SceneFrameWriter {
     this.#themeDirty = false;
     elements.immediate.write();
     transforms.write();
-    elements.progressive.writeFeedback(this.#camera.zoom);
+    elements.progressive.writeFeedback(this.#camera.zoom, deadline, now);
     const selection = this.#pendingSelection;
     if (selection !== undefined) {
       this.#pendingSelection = undefined;

@@ -52,6 +52,7 @@ export function createVaultAutosaveSession(
     ...(options.waitForBackground === undefined
       ? {}
       : { waitForBackground: options.waitForBackground }),
+    ...(options.sliceBudgetMs ? { sliceBudgetMs: options.sliceBudgetMs } : {}),
     clock: options.clock,
     confirmed: options.confirmed,
     ...(options.createFallback === undefined ? {} : { createFallback: options.createFallback }),

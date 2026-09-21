@@ -14,10 +14,7 @@ import {
   type LoadedVaultDocument,
   type VaultDocumentFilePort,
 } from "./vault-document-loader";
-import {
-  createTrustedVaultDocumentLoader,
-  type TrustedVaultDocumentLoadPolicy,
-} from "./trusted-vault-document-loader";
+import * as trustedLoader from "./trusted-vault-document-loader";
 import * as recovery from "./vault-document-recovery";
 import {
   createConfirmedPersistenceObserver,
@@ -49,7 +46,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     executor: DocumentRuntimePort,
     purpose: "recovery" | "unlock",
     workerEpoch: number,
-    policy?: TrustedVaultDocumentLoadPolicy,
+    policy?: trustedLoader.TrustedVaultDocumentLoadPolicy,
   ) => Promise<LoadedVaultDocument | undefined>;
   readonly #runtimes: DocumentRuntimeFactories;
   #autosave: AutosaveCoordinator | undefined;
@@ -80,7 +77,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     this.#files = files;
     this.#identity = identity;
     this.#hooks = hooks;
-    this.#loadDocument = createTrustedVaultDocumentLoader({
+    this.#loadDocument = trustedLoader.createTrustedVaultDocumentLoader({
       cancelled: (operation) =>
         this.#lifecycle.disposed || this.#cancelled.has(operation.operationId),
       documentId: identity.documentId,
@@ -389,6 +386,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
   ): void {
     const createFallback = this.#fallbackUsed ? undefined : this.#createFallbackFactory();
     this.#autosave = createVaultAutosaveSession({
+      sliceBudgetMs: () => this.#runtimes.sliceBudgetMs?.(this.#identity.documentId) ?? 4,
       waitForBackground: () => this.#workPriority.waitForBackground(),
       beforeExistingWrite: (expectedContent) => this.#preserveMigrationSource(expectedContent),
       clock: this.#runtimes.clock(this.#identity.documentId),
@@ -471,6 +469,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     completion: recovery.RecoveryCompletionOptions,
   ): Promise<Session.RecoveryResult> {
     return recovery.saveSessionRecoveryCopy({
+      sliceBudgetMs: () => this.#runtimes.sliceBudgetMs?.(this.#identity.documentId) ?? 4,
       completion,
       documentId: this.#identity.documentId,
       executor: this.#executor,

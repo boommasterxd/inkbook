@@ -13,6 +13,7 @@ function createHarness(
   }> = [],
   queueAutoActivation = true,
   vault: Vault = { getFileByPath: () => null } as unknown as Vault,
+  sliceBudgetMs?: (ownerWindow: Window | null) => number,
 ) {
   const dismiss = vi.fn();
   const notifyExternalChange = vi.fn(async () => "reloaded" as const);
@@ -32,12 +33,13 @@ function createHarness(
     notifyExternalChange,
     presentations: () => presentations,
     reloadPresentation,
+    ...(sliceBudgetMs === undefined ? {} : { sliceBudgetMs }),
     vault,
   });
   if (queueAutoActivation) {
     lifecycle.queueAutoActivation("drawings/ink.svg", ownerWindow, vi.fn(), dismiss);
   }
-  return { dismiss, lifecycle, notifyExternalChange, reloadPresentation, timers };
+  return { dismiss, lifecycle, notifyExternalChange, ownerWindow, reloadPresentation, timers };
 }
 
 describe("WorkspaceRuntimeLifecycle", () => {
@@ -133,7 +135,8 @@ describe("WorkspaceRuntimeLifecycle host synchronization", () => {
 
   it("ignores a Vault modification confirmed by the persisted read-back hook", async () => {
     const persisted = serializedDocument(1);
-    const harness = createHarness([], true, persisted.vault);
+    const budget = vi.fn(() => 2);
+    const harness = createHarness([], true, persisted.vault, budget);
     harness.lifecycle.handleVaultModification("drawings/ink.svg");
     harness.lifecycle.handlePersisted({
       documentId: "drawings/ink.svg",
@@ -143,7 +146,7 @@ describe("WorkspaceRuntimeLifecycle host synchronization", () => {
     });
 
     harness.timers[1]?.();
-    await vi.waitFor(() => expect(persisted.read).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(budget).toHaveBeenCalledWith(harness.ownerWindow));
     await Promise.resolve();
     await Promise.resolve();
 

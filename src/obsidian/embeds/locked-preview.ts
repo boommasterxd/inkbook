@@ -3,7 +3,6 @@ import { createPreviewSvgAsync } from "./safe-preview-builder";
 import { PreviewIdleScheduler } from "./preview-idle-scheduler";
 
 import {
-  createPreviewSvg,
   loadValidatedPreviewSvg,
   samePreviewContentIdentity,
   type PreviewContentIdentity,
@@ -38,8 +37,9 @@ export interface InkbookLockedPreviewSurface {
 export function createInkbookLockedPreview(
   button: HTMLButtonElement,
   descriptor: InkbookLockedPreviewDescriptor,
+  sliceBudgetMs?: () => number,
 ): InkbookLockedPreviewSurface {
-  return new LockedPreview(button, descriptor);
+  return new LockedPreview(button, descriptor, sliceBudgetMs);
 }
 
 class LockedPreview implements InkbookLockedPreviewSurface {
@@ -47,7 +47,7 @@ class LockedPreview implements InkbookLockedPreviewSurface {
   readonly #window: Window;
   readonly #scheduler: PreviewIdleScheduler;
   #descriptor: InkbookLockedPreviewDescriptor;
-  #mountedIdentity: PreviewContentIdentity;
+  #mountedIdentity: PreviewContentIdentity | undefined;
   #sourceGeneration = 0;
   #sourceAbort: AbortController | undefined;
   #sourcePending: Promise<PreviewContentIdentity | undefined> | undefined;
@@ -60,6 +60,7 @@ class LockedPreview implements InkbookLockedPreviewSurface {
   public constructor(
     public readonly element: HTMLButtonElement,
     descriptor: InkbookLockedPreviewDescriptor,
+    private readonly sliceBudgetMs?: () => number,
   ) {
     if (Platform.isAndroidApp) element.classList.add("inkbook-locked-preview-android");
     this.#media = element.createDiv({ cls: "inkbook-locked-preview-media" });
@@ -69,9 +70,9 @@ class LockedPreview implements InkbookLockedPreviewSurface {
     this.#window = ownerWindow;
     this.#scheduler = new PreviewIdleScheduler(ownerWindow);
     this.#descriptor = descriptor;
-    this.#mountedIdentity = descriptor.contentIdentity;
+    this.#mountedIdentity = undefined;
     this.setAspectRatio(descriptor.aspectRatio);
-    this.#media.replaceChildren(createPreviewSvg(element.ownerDocument, descriptor.safeSvg));
+    this.#startPreparation();
   }
 
   public readonly setAspectRatio = (ratio: number): void => {
@@ -135,6 +136,7 @@ class LockedPreview implements InkbookLockedPreviewSurface {
         this.#window,
         () => this.#scheduler.waitForBackground(abort.signal),
         abort.signal,
+        this.sliceBudgetMs,
       );
       if (this.#disposed || generation !== this.#sourceGeneration) return undefined;
       this.#update(loaded);
@@ -154,6 +156,13 @@ class LockedPreview implements InkbookLockedPreviewSurface {
     this.#scheduler.dispose();
   };
 
+  #matchesMounted(identity: PreviewContentIdentity): boolean {
+    return (
+      this.#mountedIdentity !== undefined &&
+      samePreviewContentIdentity(this.#mountedIdentity, identity)
+    );
+  }
+
   #update(descriptor: InkbookLockedPreviewDescriptor): void {
     if (samePreviewContentIdentity(this.#descriptor.contentIdentity, descriptor.contentIdentity))
       return;
@@ -161,7 +170,7 @@ class LockedPreview implements InkbookLockedPreviewSurface {
     this.#generation += 1;
     this.#prepared = undefined;
     this.#failure = undefined;
-    if (samePreviewContentIdentity(this.#mountedIdentity, descriptor.contentIdentity)) return;
+    if (this.#matchesMounted(descriptor.contentIdentity)) return;
     this.#startPreparation();
   }
 
@@ -170,7 +179,7 @@ class LockedPreview implements InkbookLockedPreviewSurface {
       this.#disposed ||
       this.#prepared !== undefined ||
       this.#failure !== undefined ||
-      samePreviewContentIdentity(this.#mountedIdentity, this.#descriptor.contentIdentity)
+      this.#matchesMounted(this.#descriptor.contentIdentity)
     )
       return;
     this.#pending ??= this.#prepare()
@@ -185,14 +194,15 @@ class LockedPreview implements InkbookLockedPreviewSurface {
 
   async #prepare(): Promise<void> {
     while (!this.#disposed) {
-      if (samePreviewContentIdentity(this.#mountedIdentity, this.#descriptor.contentIdentity))
-        return;
+      if (this.#matchesMounted(this.#descriptor.contentIdentity)) return;
       const target = this.#generation;
       const svg = await createPreviewSvgAsync(
         this.element.ownerDocument,
         this.#descriptor.safeSvg,
         {
           checkpoint: () => this.#scheduler.checkpoint(),
+          now: () => this.#window.performance.now(),
+          ...(this.sliceBudgetMs === undefined ? {} : { sliceBudgetMs: this.sliceBudgetMs }),
           isCancelled: () => this.#disposed || target !== this.#generation,
         },
       );

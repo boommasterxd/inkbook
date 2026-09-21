@@ -267,12 +267,16 @@ export class SvgSceneRenderer {
     this.#motion.setReducedMotion(reduced);
     this.schedule();
   }
-  public flushPointerFeedbackFrame(): void {
+  public flushPointerFeedbackFrame(
+    deadline = this.#scheduler.now() + runtime.validateFrameBudget(this.#frameBudgetMs()),
+  ): void {
     this.assertActive();
     this.#frameWriter.writePointerFeedback(
       this.#transformPreviews,
       this.#elementPreviews,
       this.#motion,
+      deadline,
+      () => this.#scheduler.now(),
     );
   }
   public setPreviewTransform(
@@ -297,7 +301,10 @@ export class SvgSceneRenderer {
     this.assertActive();
     runtime.validateNonNegativeDuration(durationMs);
     this.#deltas.addFades(ids);
-    this.#content.setElementFade(ids, this.#motion.duration(durationMs), this.#scheduler.now());
+    this.#content.setElementFade(ids, this.#motion.duration(durationMs), {
+      deadline: this.#scheduler.now() + runtime.validateFrameBudget(this.#frameBudgetMs()),
+      now: () => this.#scheduler.now(),
+    });
     if (this.#content.pendingElementFades) this.schedule();
   }
   public clearElementFade(ids: readonly string[]): void {
@@ -414,7 +421,7 @@ export class SvgSceneRenderer {
     }
     this.#visibilityCoordinator.prepare(this.#viewport, this.#camera);
     this.#transformPreviews.refreshContext();
-    this.flushPointerFeedbackFrame();
+    this.flushPointerFeedbackFrame(deadline);
     const pendingFades = this.#content.flushElementFades(deadline, () => this.#scheduler.now());
     const pendingVisibility =
       this.#content.writeMountedChanges(deadline, () => this.#scheduler.now()) ||
@@ -451,7 +458,7 @@ export class SvgSceneRenderer {
       }
     }
     if (!backgroundDeferred) this.#sceneCommits.completeFrame();
-    const pendingMotion = this.#motion.write(startedAt);
+    const pendingMotion = this.#motion.write(startedAt, deadline, () => this.#scheduler.now());
     const overBudget = this.#scheduler.now() >= deadline;
     if (
       backgroundDeferred ||
@@ -462,12 +469,8 @@ export class SvgSceneRenderer {
       pendingFades
     )
       this.schedule();
-    if (overBudget) {
-      this.refreshCacheInstrumentation();
-      return;
-    }
     this.refreshCacheInstrumentation();
-    this.#resourcePolicy.notifyUsageChanged();
+    if (!overBudget) this.#resourcePolicy.notifyUsageChanged();
   }
   private performReadPhase(): void {
     if (!this.#layoutDirty) return;
