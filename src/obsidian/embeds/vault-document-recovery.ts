@@ -60,6 +60,7 @@ interface SaveRecoveryCopyOptions {
   readonly files: RecoveryFilePort;
   readonly operation: RecoveryOperationIdentity;
   readonly snapshot: InkSnapshotV1;
+  readonly sliceBudgetMs?: () => number;
   readonly stopped: () => boolean;
   readonly workerEpoch: number;
 }
@@ -136,7 +137,9 @@ export async function saveRecoveryCopy(options: SaveRecoveryCopyOptions): Promis
   try {
     const exported = await exportRecovery(options);
     if (exported === null) return failed(options.operation);
-    const trusted = await inspectTrustedSvgOutput(exported.output, exported.outputHash);
+    const trusted = await inspectTrustedSvgOutput(exported.output, exported.outputHash, {
+      ...(options.sliceBudgetMs === undefined ? {} : { sliceBudgetMs: options.sliceBudgetMs }),
+    });
     if (trusted.snapshotHash !== exported.integrityManifest.contentDigest) {
       return failed(options.operation);
     }
@@ -276,6 +279,7 @@ export async function restoreWorkerBaseline(options: {
   readonly identity: SessionIdentity;
   readonly revision: number;
   readonly snapshot: InkSnapshotV1;
+  readonly sliceBudgetMs?: () => number;
   readonly workerEpoch: number;
 }): Promise<void> {
   try {

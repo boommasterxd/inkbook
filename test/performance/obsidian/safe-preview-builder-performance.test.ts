@@ -31,6 +31,7 @@ it("builds ten thousand detached paths with bounded DOM writes between checkpoin
     checkpoint: async () => {
       observe();
     },
+    now: () => 0,
     isCancelled: () => false,
   });
   observe();
@@ -65,6 +66,7 @@ it("scans a maximum-size validated path incrementally before the atomic attribut
       scanSizes.length = 0;
       if (!attributes.mock.calls.some(([name]) => name === "d")) beforePathCheckpoints += 1;
     },
+    now: () => 0,
     isCancelled: () => false,
   });
   expect(beforePathCheckpoints).toBeGreaterThanOrEqual(512);

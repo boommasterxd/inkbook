@@ -249,7 +249,7 @@ describe("progressive snapshot feedback bases", () => {
       2,
       1,
     );
-    preview.writeFeedback(2);
+    preview.writeFeedback(2, 100, () => 0);
     expect(content.applyPreviewTransform).toHaveBeenLastCalledWith(
       element.id,
       "scale(3 1) scale(0.5 1)",
@@ -274,7 +274,7 @@ describe("progressive snapshot feedback bases", () => {
       version: 1,
       feedback: { transform: "scale(2 1)", inverse: "scale(0.5 1)" },
     });
-    preview.writeFeedback(1);
+    preview.writeFeedback(1, 100, () => 0);
     preview.set({ ids: [], materialize: () => undefined, version: 2 });
     expect(content.applyPreviewTransform).toHaveBeenLastCalledWith(
       element.id,
@@ -303,14 +303,14 @@ describe("immediate geometry within the progressive selection budget", () => {
       feedback: { transform: "scale(2 1)", inverse: "scale(0.5 1)" },
     };
     preview.set({ ...request, version: 1 });
-    preview.writeFeedback(1);
+    preview.writeFeedback(1, 100, () => 0);
     expect(materialize).toHaveBeenCalledTimes(64);
     expect(new Set(content.applyPreviewTransform.mock.calls.map(([id]) => id)).size).toBe(80);
-    preview.writeFeedback(1);
+    preview.writeFeedback(1, 100, () => 0);
     expect(materialize).toHaveBeenCalledTimes(64);
     expect(content.applyPreviewTransform).toHaveBeenCalledTimes(80);
     preview.set({ ...request, version: 2 });
-    preview.writeFeedback(1);
+    preview.writeFeedback(1, 100, () => 0);
     expect(materialize).toHaveBeenCalledTimes(128);
     expect(new Set(materialize.mock.calls.map(([id]) => id)).size).toBe(80);
   });
@@ -326,11 +326,11 @@ describe("immediate geometry within the progressive selection budget", () => {
       version: 1,
       feedback: { transform: "scale(2 1)", inverse: "scale(0.5 1)" },
     });
-    preview.writeFeedback(1);
+    preview.writeFeedback(1, 100, () => 0);
     expect(materialize).toHaveBeenCalledOnce();
     expect(content.applyCanonicalElementPreview).toHaveBeenCalledOnce();
     expect(content.applyPreviewTransform).toHaveBeenLastCalledWith(element.id, null, 1, null);
-    preview.writeFeedback(2);
+    preview.writeFeedback(2, 100, () => 0);
     expect(materialize).toHaveBeenCalledOnce();
     expect(content.applyCanonicalElementPreview).toHaveBeenCalledOnce();
     expect(preview.write(100, () => 0)).toBe(false);
@@ -363,7 +363,7 @@ describe("affine preview transition", () => {
         feedback: { transform: "scale(2 1)", inverse: "scale(0.5 1)" },
       });
       const builds = content.applyCanonicalElementPreview.mock.calls.length;
-      preview.writeFeedback(1);
+      preview.writeFeedback(1, 100, () => 0);
       expect(preview.write(100, () => 0)).toBe(false);
       preview.applyMounted([element.id]);
       expect(content.applyCanonicalElementPreview).toHaveBeenCalledTimes(builds);

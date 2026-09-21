@@ -5,10 +5,10 @@ import { describe, expect, it, vi } from "vitest";
 import { FILE_SCHEMA_LIMITS } from "../../../../src/domain/schema/public";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import {
-  createPreviewSvg,
   inspectPreviewSvg,
   loadValidatedPreviewSvg,
 } from "../../../../src/obsidian/embeds/safe-preview-svg";
+import { createPreviewSvgAsync } from "../../../../src/obsidian/embeds/safe-preview-builder";
 import { createSnapshot } from "../../persistence/serialization/fixtures";
 
 interface PreviewResponse {
@@ -52,7 +52,11 @@ describe("safe locked-preview SVG validation", () => {
     const safeSvg = (await inspectPreviewSvg(serialized.value.svg))?.safeSvg ?? null;
     expect(safeSvg).toBe(serialized.value.svg);
     if (safeSvg === null) return;
-    const preview = createPreviewSvg(document, safeSvg);
+    const preview = await createPreviewSvgAsync(document, safeSvg, {
+      checkpoint: async () => {},
+      isCancelled: () => false,
+    });
+    if (preview === undefined) throw new Error("Preview was unexpectedly cancelled.");
 
     expect(preview.classList.contains("inkbook-locked-preview-svg")).toBe(true);
     expect(preview.getAttribute("preserveAspectRatio")).toBe("xMidYMin meet");
@@ -131,38 +135,5 @@ describe("safe locked-preview SVG source loading", () => {
       safeSvg: serialized.value.svg,
     });
     expect(body.arrayBuffer).toHaveBeenCalledOnce();
-  });
-});
-
-describe("safe locked-preview SVG creation", () => {
-  it("rejects preview creation without an owning window or metadata envelope", () => {
-    const documentWithoutWindow = { defaultView: null } as unknown as Document;
-
-    expect(() => createPreviewSvg(documentWithoutWindow, "<metadata></metadata><svg />")).toThrow(
-      "no owning window",
-    );
-    expect(() => createPreviewSvg(document, "<svg />")).toThrow("no metadata envelope");
-  });
-
-  it("rejects a validated payload whose parser result is not an SVG root", () => {
-    const parsedRoot = {
-      getElementsByTagName: () => ({ item: () => null }),
-      localName: "div",
-      namespaceURI: "http://www.w3.org/1999/xhtml",
-    };
-    const owningWindow = {
-      DOMParser: class {
-        parseFromString(): Document {
-          return { documentElement: parsedRoot } as unknown as Document;
-        }
-      },
-    };
-    const ownerDocument = {
-      defaultView: owningWindow,
-    } as unknown as Document;
-
-    expect(() => createPreviewSvg(ownerDocument, "<metadata></metadata><div />")).toThrow(
-      "did not produce an SVG root",
-    );
   });
 });

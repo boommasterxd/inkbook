@@ -4,7 +4,7 @@ import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
 import type { ExternalChangeOutcome } from "../../editor/session/session-port";
 import { inspectTrustedSvgOutput } from "../../persistence/scheduling/trusted-svg-output";
 import type { ActiveInkbookScene } from "./active-scene";
-import { isLiveOwnerWindow } from "./owner-window-registry";
+import { isLiveOwnerWindow, resolvePresentationWindow } from "./owner-window-registry";
 import { presentationAttachmentKey, type PresentationAttachment } from "./presentation-port";
 import type { VaultDocumentPersistedEvent } from "./vault-document-recovery";
 
@@ -22,6 +22,7 @@ interface WorkspaceRuntimeLifecycleOptions {
   readonly presentations: () => Iterable<RuntimePresentation>;
   readonly reloadPresentation: (documentId: string) => void;
   readonly vault: Vault;
+  readonly sliceBudgetMs?: (ownerWindow: Window | null) => number;
 }
 
 interface PendingAutoActivation {
@@ -298,6 +299,16 @@ export class WorkspaceRuntimeLifecycle {
       if (!sameVaultFile(this.#options.vault, documentId, file, before)) return undefined;
       const inspected = await inspectTrustedSvgOutput(content, undefined, {
         versionPolicy: "editable",
+        ...(this.#options.sliceBudgetMs === undefined
+          ? {}
+          : {
+              sliceBudgetMs: () =>
+                this.#options.sliceBudgetMs!(
+                  resolvePresentationWindow(documentId, this.#options.presentations()) ??
+                    this.#options.fallbackWindow() ??
+                    null,
+                ),
+            }),
       });
       return sameVaultFile(this.#options.vault, documentId, file, before)
         ? { outputHash: inspected.outputHash, revision: inspected.revision }

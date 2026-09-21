@@ -11,8 +11,10 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/persistence/worker-fallback.test.ts",
     "test/performance/rendering/scene/interaction-refresh-reconciliation.test.ts",
     "test/performance/rendering/scene/live-stroke-refresh-profile.test.ts",
+    "test/performance/rendering/scene/motion-frame-budget.test.ts",
   ]),
   invariant: Object.freeze([
+    "test/performance/persistence/main-thread-slice-budget.test.ts",
     "test/performance/obsidian/store-scheduler-resources.test.ts",
     "test/performance/domain/canonical-rounding-performance.test.ts",
     "test/performance/domain/domain-performance.test.ts",

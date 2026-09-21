@@ -274,6 +274,7 @@ describe("active editor arrange and menu bridge", () => {
     const stateChanged = vi.fn();
     const unsubscribe = store.subscribe(() => void stateChanged());
     const actions = new ActiveEditorActions({
+      renderer: { setElementFade: vi.fn(), clearElementFade: vi.fn() },
       currentSelection: () => new Set([selectedId]),
       history,
       isAttached: () => true,

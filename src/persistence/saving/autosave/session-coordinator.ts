@@ -18,6 +18,7 @@ export function createAutosaveSession(options: AutosaveSessionOptions): Autosave
       ? {}
       : { beforeExistingWrite: options.beforeExistingWrite }),
     ...(options.waitForBackground ? { waitForBackground: options.waitForBackground } : {}),
+    ...(options.sliceBudgetMs ? { sliceBudgetMs: options.sliceBudgetMs } : {}),
     clock: options.clock,
     confirmedBase: {
       outputHash: options.outputHash,

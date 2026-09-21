@@ -34,7 +34,9 @@ function eraseFixture(confirm?: (signal: AbortSignal) => Promise<boolean>) {
   const history = new ActiveEditorHistory(model);
   const setSelection = vi.fn();
   const feedback = vi.fn();
+  const renderer = { setElementFade: vi.fn(), clearElementFade: vi.fn() };
   const actions = new ActiveEditorActions({
+    renderer,
     confirmEraseAll: confirm,
     currentSelection: () => new Set([element.id]),
     history,
@@ -53,7 +55,7 @@ function eraseFixture(confirm?: (signal: AbortSignal) => Promise<boolean>) {
     setSelection,
     visibleCenter: () => ({ x: 100, y: 100 }),
   });
-  return { actions, commit, feedback, history, prepare, setSelection, state };
+  return { actions, commit, element, feedback, history, prepare, renderer, setSelection, state };
 }
 
 function pendingConfirmation() {
@@ -124,6 +126,56 @@ describe("erase-all Obsidian confirmation", () => {
       if (mode === "disposed" || mode === "disabled") {
         expect(pending.confirm.mock.calls[0]?.[0].aborted).toBe(true);
       }
+      fixture.actions.dispose();
+    },
+  );
+});
+
+describe("selection delete feedback", () => {
+  it("starts dissolution before preparing the atomic removal and clears selection on success", async () => {
+    const fixture = eraseFixture();
+    const pending = createDeferredPreparation();
+    fixture.prepare.mockReturnValueOnce(pending.promise);
+    fixture.actions.execute("delete");
+    expect(fixture.renderer.setElementFade).toHaveBeenCalledWith([fixture.element.id], 300);
+    expect(fixture.renderer.setElementFade.mock.invocationCallOrder[0]).toBeLessThan(
+      fixture.prepare.mock.invocationCallOrder[0]!,
+    );
+    expect(fixture.commit).not.toHaveBeenCalled();
+    expect(fixture.setSelection).not.toHaveBeenCalled();
+    expect(fixture.renderer.clearElementFade).not.toHaveBeenCalled();
+    expect(fixture.actions.isAvailable("delete")).toBe(false);
+    pending.complete();
+    await vi.waitFor(() => expect(fixture.renderer.clearElementFade).toHaveBeenCalledOnce());
+    expect(fixture.renderer.clearElementFade).toHaveBeenCalledWith([fixture.element.id]);
+    expect(fixture.commit).toHaveBeenCalledOnce();
+    expect(fixture.setSelection).toHaveBeenCalledWith(new Set());
+    expect(fixture.history.commandCount).toBe(1);
+    fixture.actions.dispose();
+  });
+
+  it.each(["failed", "stale", "detached"])(
+    "restores failed feedback or releases detached ownership for %s preparation",
+    async (outcome) => {
+      const fixture = eraseFixture();
+      const pending = createDeferredPreparation();
+      if (outcome === "failed") fixture.prepare.mockRejectedValueOnce(new Error("save failed"));
+      else fixture.prepare.mockReturnValueOnce(pending.promise);
+      fixture.actions.execute("delete");
+      if (outcome === "stale") fixture.state.revision += 1;
+      if (outcome === "detached") {
+        fixture.state.attached = false;
+        fixture.actions.dispose();
+      }
+      pending.complete();
+      await vi.waitFor(() =>
+        expect(fixture.feedback).toHaveBeenCalledWith("history-change-failed"),
+      );
+      expect(fixture.commit).not.toHaveBeenCalled();
+      expect(fixture.setSelection).not.toHaveBeenCalled();
+      expect(fixture.history.commandCount).toBe(0);
+      if (outcome === "detached") expect(fixture.renderer.clearElementFade).not.toHaveBeenCalled();
+      else expect(fixture.renderer.clearElementFade).toHaveBeenCalledWith([fixture.element.id]);
       fixture.actions.dispose();
     },
   );

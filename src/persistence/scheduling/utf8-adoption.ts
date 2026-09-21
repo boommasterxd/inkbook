@@ -1,9 +1,9 @@
-import { yieldToMainThread } from "./main-thread-yield";
+import { createMainThreadCheckpoint } from "./main-thread-checkpoint";
 
 const DEFAULT_CHUNK_BYTES = 256 * 1024;
-const MAIN_THREAD_SLICE_MS = 4;
 
 export interface Utf8AdoptionOptions {
+  readonly sliceBudgetMs?: () => number;
   readonly checkpoint?: () => Promise<void>;
   readonly chunkBytes?: number;
   readonly signal?: AbortSignal;
@@ -18,7 +18,7 @@ export async function adoptUtf8Output(
   if (!Number.isSafeInteger(chunkBytes) || chunkBytes < 1) {
     throw new RangeError("UTF-8 adoption chunk size must be a positive safe integer.");
   }
-  const checkpoint = options.checkpoint ?? createMainThreadCheckpoint();
+  const checkpoint = options.checkpoint ?? createMainThreadCheckpoint(options.sliceBudgetMs);
   const decoder = new TextDecoder("utf-8", { fatal: true });
   const segments: Array<string | undefined> = [];
   for (let offset = 0; offset < output.byteLength; offset += chunkBytes) {
@@ -55,13 +55,4 @@ function concatenateSegments(segments: ReadonlyArray<string | undefined>): strin
     adopted += segments[level] ?? "";
   }
   return adopted;
-}
-
-function createMainThreadCheckpoint(): () => Promise<void> {
-  let sliceStarted = performance.now();
-  return async () => {
-    if (performance.now() - sliceStarted < MAIN_THREAD_SLICE_MS) return;
-    await yieldToMainThread();
-    sliceStarted = performance.now();
-  };
 }

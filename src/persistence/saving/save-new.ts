@@ -14,7 +14,11 @@ export async function saveNewFile(
   if (revisionSource.currentRevision() !== prepared.revision) {
     throw new SaveError("stale-editor-revision");
   }
-  await validatePreparedOutput(prepared, revisionSource.waitForBackground);
+  await validatePreparedOutput(
+    prepared,
+    revisionSource.waitForBackground,
+    revisionSource.sliceBudgetMs,
+  );
   if (revisionSource.currentRevision() !== prepared.revision) {
     throw new SaveError("stale-editor-revision");
   }

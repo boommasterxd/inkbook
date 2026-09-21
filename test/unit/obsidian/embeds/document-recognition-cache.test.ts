@@ -5,13 +5,16 @@ import { inspectPreviewSvg } from "../../../../src/obsidian/embeds/safe-preview-
 
 vi.mock("../../../../src/obsidian/embeds/safe-preview-svg", () => ({ inspectPreviewSvg: vi.fn() }));
 
-function cacheHarness() {
+function cacheHarness(sliceBudgetMs?: () => number) {
   const File = TFile as unknown as new (path: string, size: number) => TFile;
   const files = new Map(["a.svg", "b.svg", "c.svg"].map((path) => [path, new File(path, 100)]));
-  const recognition = new ObsidianInkbookDocumentRecognition({
-    getFileByPath: (path: string) => files.get(path) ?? null,
-    cachedRead: async () => '<svg data-inkbook-format="inkbook" viewBox="0 0 2048.6 100"></svg>',
-  } as unknown as Vault);
+  const recognition = new ObsidianInkbookDocumentRecognition(
+    {
+      getFileByPath: (path: string) => files.get(path) ?? null,
+      cachedRead: async () => '<svg data-inkbook-format="inkbook" viewBox="0 0 2048.6 100"></svg>',
+    } as unknown as Vault,
+    sliceBudgetMs === undefined ? {} : { sliceBudgetMs },
+  );
   return recognition;
 }
 
@@ -50,4 +53,18 @@ describe("completed recognition markup budgets", () => {
     expect(recognition.cached("c.svg")).not.toBeUndefined();
     recognition.dispose();
   });
+});
+
+it("passes the live workspace budget into recognition validation", async () => {
+  let budget = 4;
+  const readBudget = () => budget;
+  const recognition = cacheHarness(readBudget);
+  vi.mocked(inspectPreviewSvg).mockResolvedValue(previewWithSize(1));
+  await recognition.recognize("a.svg");
+  const forwarded = vi.mocked(inspectPreviewSvg).mock.lastCall?.[3];
+  expect(forwarded).toBe(readBudget);
+  expect(forwarded?.()).toBe(4);
+  budget = 2;
+  expect(forwarded?.()).toBe(2);
+  recognition.dispose();
 });

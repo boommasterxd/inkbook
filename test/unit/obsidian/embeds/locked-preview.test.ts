@@ -29,7 +29,7 @@ describe("locked preview platform treatment", () => {
   it("marks only Android activation buttons for host tap-surface neutralization", () => {
     Platform.isAndroidApp = true;
     const androidButton = createHtmlElement("button");
-    createInkbookLockedPreview(androidButton, {
+    const android = createInkbookLockedPreview(androidButton, {
       aspectRatio: 1,
       contentIdentity: CONTENT_IDENTITY,
       safeSvg: SAFE_PREVIEW_SVG,
@@ -37,7 +37,7 @@ describe("locked preview platform treatment", () => {
 
     Platform.isAndroidApp = false;
     const desktopButton = createHtmlElement("button");
-    createInkbookLockedPreview(desktopButton, {
+    const desktop = createInkbookLockedPreview(desktopButton, {
       aspectRatio: 1,
       contentIdentity: CONTENT_IDENTITY,
       safeSvg: SAFE_PREVIEW_SVG,
@@ -45,17 +45,13 @@ describe("locked preview platform treatment", () => {
 
     expect(androidButton.classList.contains("inkbook-locked-preview-android")).toBe(true);
     expect(desktopButton.classList.contains("inkbook-locked-preview-android")).toBe(false);
+    android.dispose();
+    desktop.dispose();
   });
 });
 
 it("restores the latest deferred content before the preview handoff completes", async () => {
-  const button = createHtmlElement("button");
-  const preview = createInkbookLockedPreview(button, {
-    aspectRatio: 1,
-    contentIdentity: CONTENT_IDENTITY,
-    safeSvg: SAFE_PREVIEW_SVG,
-  });
-  button.hidden = true;
+  const { button, preview } = await preparedHiddenPreview();
   preview.setDescriptor({
     aspectRatio: 2,
     contentIdentity: { ...CONTENT_IDENTITY, revision: 2 },
@@ -96,6 +92,7 @@ it.each(["descriptor", "dispose"] as const)(
       contentIdentity: CONTENT_IDENTITY,
       safeSvg: SAFE_PREVIEW_SVG,
     });
+    await preview.ensureReady();
     const original = button.querySelector("svg");
     const pending = preview.setSource("app://old.svg");
     if (operation === "dispose") preview.dispose();
@@ -137,27 +134,21 @@ it.each([false, true])(
     });
     await preview.setSource("app://saved-again.svg");
     await preview.ensureReady();
-    expect(parser).toHaveBeenCalledTimes(1);
+    expect(parser).not.toHaveBeenCalled();
     button.hidden = false;
     preview.refresh();
-    expect(parser).toHaveBeenCalledTimes(1);
+    expect(parser).not.toHaveBeenCalled();
     const current = button.querySelector("svg");
     fetch.mockResolvedValue(new Response("<svg/>"));
     await expect(preview.setSource("app://unsafe.svg")).rejects.toThrow("not safe SVG");
     expect(button.querySelector("svg")).toBe(current);
-    expect(parser).toHaveBeenCalledTimes(1);
+    expect(parser).not.toHaveBeenCalled();
     preview.dispose();
   },
 );
 
 it("pauses detached preparation during input and publishes only the latest descriptor", async () => {
-  const button = createHtmlElement("button");
-  const preview = createInkbookLockedPreview(button, {
-    aspectRatio: 1,
-    contentIdentity: CONTENT_IDENTITY,
-    safeSvg: SAFE_PREVIEW_SVG,
-  });
-  button.hidden = true;
+  const { button, preview } = await preparedHiddenPreview();
   let resume!: () => void;
   const paused = new Promise<void>((resolve) => {
     resume = resolve;
@@ -242,3 +233,42 @@ it("settles validated source identity while detached DOM preparation waits for i
   expect(button.querySelector("svg")).not.toBe(original);
   preview.dispose();
 });
+
+it("prepares initial content asynchronously with the current owning-window budget", async () => {
+  const button = createHtmlElement("button");
+  const budget = vi.fn(() => 2);
+  const parser = vi.spyOn(window.DOMParser.prototype, "parseFromString");
+  const creates = vi.spyOn(document, "createElementNS");
+  const preview = createInkbookLockedPreview(
+    button,
+    {
+      aspectRatio: 1,
+      contentIdentity: CONTENT_IDENTITY,
+      safeSvg: `<svg xmlns="http://www.w3.org/2000/svg">${'<path d="M0 0"/>'.repeat(64)}</svg>`,
+    },
+    budget,
+  );
+  expect(button.querySelector("svg")).toBeNull();
+  expect(creates.mock.calls.some(([namespace]) => namespace === "http://www.w3.org/2000/svg")).toBe(
+    false,
+  );
+  budget.mockReturnValue(1);
+  await preview.ensureReady();
+  expect(button.querySelectorAll("path")).toHaveLength(64);
+  expect(budget).toHaveReturnedWith(1);
+  expect(budget).not.toHaveReturnedWith(2);
+  expect(parser).not.toHaveBeenCalled();
+  preview.dispose();
+});
+
+async function preparedHiddenPreview() {
+  const button = createHtmlElement("button");
+  const preview = createInkbookLockedPreview(button, {
+    aspectRatio: 1,
+    contentIdentity: CONTENT_IDENTITY,
+    safeSvg: SAFE_PREVIEW_SVG,
+  });
+  await preview.ensureReady();
+  button.hidden = true;
+  return { button, preview };
+}
