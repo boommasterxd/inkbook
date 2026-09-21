@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createCheckCommandPlan } from "../../../scripts/check-command-plan.mjs";
@@ -47,6 +48,18 @@ describe("check command plan", () => {
       "audit",
       "--audit-level=high",
     ]);
+  });
+
+  it("launches the installed architecture CLI", () => {
+    const [task] = createCheckCommandPlan("architecture");
+    const result = spawnSync(task.command, [task.args[0], "--version"], {
+      encoding: "utf8",
+      timeout: 10_000,
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
   it("keeps direct test arguments as literal arguments without a shell", () => {
