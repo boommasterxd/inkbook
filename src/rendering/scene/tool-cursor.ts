@@ -64,6 +64,12 @@ export class SceneToolCursorWriter {
     this.#dirty = true;
   }
 
+  /** Position-only input update; pending presentation changes remain frame-owned. */
+  public move(x: number, y: number): void {
+    if (this.#dirty || this.#pending === null) return;
+    this.attribute(this.dom.group, "transform", `translate(${String(x)} ${String(y)})`);
+  }
+
   public release(): void {
     this.#pending = null;
     this.#dirty = false;

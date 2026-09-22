@@ -17,9 +17,14 @@ describe("active tool cursor input boundary", () => {
         h.controller.record(event({ clientX: x, pointerType }), "move");
       expect(h.measure).not.toHaveBeenCalled();
       expect(h.controller.lastPagePointer).toBeNull();
+      expect(h.move).not.toHaveBeenCalled();
       expect(h.read().cursor).toMatchObject({ kind: "tool", x: 180, y: 50 });
       expect(h.measure).toHaveBeenCalledOnce();
+      h.icon.mockClear();
       h.controller.record(event({ clientX: 201, pointerType }), "move");
+      expect(h.move).toHaveBeenCalledExactlyOnceWith(181, 50);
+      expect(h.icon).not.toHaveBeenCalled();
+      expect(h.measure).toHaveBeenCalledOnce();
       expect(h.read().cursor?.x).toBe(181);
       expect(h.measure).toHaveBeenCalledOnce();
       h.controller.dispose();
@@ -259,3 +264,30 @@ describe("Wayland pen proximity exit reported with a mouse ID", () => {
     },
   );
 });
+
+it.each(["outside", "menu", "pointer", "type", "eraser-button", "modifier", "cleared"])(
+  "defers position-only movement after %s changes",
+  (change) => {
+    const h = harness();
+    h.controller.record(event(), "move");
+    h.read();
+    h.measure.mockClear();
+    h.icon.mockClear();
+    if (change === "menu") h.controls.menuOpen = true;
+    if (change === "cleared") h.controller.clear();
+    h.controller.record(
+      event({
+        clientX: change === "outside" ? -1 : 150,
+        pointerId: change === "pointer" ? 2 : 1,
+        pointerType: change === "type" || change === "eraser-button" ? "pen" : "mouse",
+        buttons: change === "eraser-button" ? 32 : 0,
+        ctrlKey: change === "modifier",
+      }),
+      "move",
+    );
+    expect(h.move).not.toHaveBeenCalled();
+    expect(h.measure).not.toHaveBeenCalled();
+    expect(h.icon).not.toHaveBeenCalled();
+    h.controller.dispose();
+  },
+);

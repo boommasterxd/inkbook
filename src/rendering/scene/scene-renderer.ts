@@ -209,6 +209,10 @@ export class SvgSceneRenderer {
     this.#frameWriter.requestToolCursorFrame(read);
     this.#frames.schedule(false);
   }
+  public moveToolCursor(x: number, y: number): void {
+    this.assertActive();
+    this.#frameWriter.moveToolCursor(x, y);
+  }
   public setToolCursor(state: SceneToolCursor | null): void {
     this.assertActive();
     this.#frameWriter.setToolCursor(state);
@@ -368,7 +372,7 @@ export class SvgSceneRenderer {
     if (this.#content.promoteVisible(id)) this.#frames.schedule();
   }
   public instrumentation(): Scene.SceneInstrumentationSnapshot {
-    this.refreshCacheInstrumentation();
+    stats.refreshCacheInstrumentation(this.#stats, this.#backgroundCache, this.#pathCache);
     this.#motion.refreshInstrumentation();
     return stats.snapshotInstrumentation(this.#stats);
   }
@@ -407,8 +411,7 @@ export class SvgSceneRenderer {
   }
   private renderFrame(frameTime: number, scene: boolean): void {
     if (!scene) {
-      this.#frameWriter.readToolCursor();
-      this.#frameWriter.writeToolCursor();
+      this.#frameWriter.flushToolCursor();
       return;
     }
     this.#motion.expireSuppression();
@@ -442,7 +445,7 @@ export class SvgSceneRenderer {
     );
     if (pendingVisibility) {
       this.#frames.schedule();
-      this.refreshCacheInstrumentation();
+      stats.refreshCacheInstrumentation(this.#stats, this.#backgroundCache, this.#pathCache);
       this.#resourcePolicy.notifyUsageChanged();
       return;
     }
@@ -475,7 +478,7 @@ export class SvgSceneRenderer {
       pendingFades
     )
       this.#frames.schedule();
-    this.refreshCacheInstrumentation();
+    stats.refreshCacheInstrumentation(this.#stats, this.#backgroundCache, this.#pathCache);
     if (!overBudget) this.#resourcePolicy.notifyUsageChanged();
   }
   private performReadPhase(): void {
@@ -490,9 +493,6 @@ export class SvgSceneRenderer {
       this.#visibilityCoordinator.invalidate();
     }
     this.#layoutDirty = false;
-  }
-  private refreshCacheInstrumentation(): void {
-    stats.refreshCacheInstrumentation(this.#stats, this.#backgroundCache, this.#pathCache);
   }
   private assertActive(): void {
     if (this.#disposed) throw new Error("The SVG scene renderer has been destroyed.");

@@ -49,6 +49,7 @@ export function toolCursorHarness() {
   const request = vi.fn((next: typeof reader) => {
     reader = next;
   });
+  const move = vi.fn();
   const defaults = createBuiltInSettings().toolDefaults;
   const toolIcon = {} as SVGSVGElement;
   const icon = vi.fn(() => toolIcon);
@@ -60,6 +61,7 @@ export function toolCursorHarness() {
     renderer: {
       inputSurface: surface,
       requestToolCursorFrame: request,
+      moveToolCursor: move,
     } as unknown as SvgSceneRenderer,
     input: () => controls.input,
     defaults: () => defaults,
@@ -83,6 +85,7 @@ export function toolCursorHarness() {
     toolIcon,
     measure,
     request,
+    move,
     read,
     surface,
     window,

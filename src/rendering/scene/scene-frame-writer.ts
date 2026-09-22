@@ -85,12 +85,18 @@ export class SceneFrameWriter {
     this.#cursorReadPending = true;
   }
 
+  public moveToolCursor(x: number, y: number): void {
+    if (!this.#cursorLayoutDirty) this.toolCursor.move(x, y);
+  }
+
   public invalidateCursorLayout(flush = false): void {
     this.#cursorLayoutDirty = true;
-    if (flush) {
-      this.readToolCursor();
-      this.writeToolCursor();
-    }
+    if (flush) this.flushToolCursor();
+  }
+
+  public flushToolCursor(): void {
+    this.readToolCursor();
+    this.writeToolCursor();
   }
 
   public readToolCursor(refreshLayout = false): void {

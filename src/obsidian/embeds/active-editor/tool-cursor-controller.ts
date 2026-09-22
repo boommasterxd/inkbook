@@ -91,6 +91,7 @@ export class ActiveToolCursorController {
       isPrimary: event.isPrimary,
       pointerType,
     });
+    const previous = this.#pointer;
     this.#pointer = {
       clientX: event.clientX,
       clientY: event.clientY,
@@ -99,8 +100,26 @@ export class ActiveToolCursorController {
       penRole: classification.penRole,
       controlOrMeta: event.ctrlKey || event.metaKey,
     };
+    if (phase === "move") this.#moveDecoration(previous, this.#pointer);
     if (phase === "up" && pointerType === "touch") this.#pointer = undefined;
     this.refresh();
+  }
+
+  #moveDecoration(previous: CursorPointer | undefined, pointer: CursorPointer): void {
+    const bounds = this.#bounds;
+    if (
+      bounds === undefined ||
+      previous?.pointerId !== pointer.pointerId ||
+      previous.pointerType !== pointer.pointerType ||
+      previous.penRole !== pointer.penRole ||
+      previous.controlOrMeta !== pointer.controlOrMeta ||
+      this.#options.menuOpen()
+    )
+      return;
+    const x = pointer.clientX - bounds.left;
+    const y = pointer.clientY - bounds.top;
+    if (x < 0 || y < 0 || x > bounds.width || y > bounds.height) return;
+    this.#options.renderer.moveToolCursor(x, y);
   }
 
   #ownsPointer(pointerId: number, input: InputState): boolean {
