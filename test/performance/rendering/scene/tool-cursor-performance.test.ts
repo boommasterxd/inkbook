@@ -82,7 +82,7 @@ it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz cursor bursts retain decoratio
     // Replace the persistent reader as an input adapter does when leaving the surface.
     renderer.requestToolCursorFrame(() => ({ cursor: null, system: "default" }));
     scheduler.runNext();
-    expect(observations.write).toHaveBeenCalledExactlyOnceWith("visibility", "hidden");
+    expect(observations.write).toHaveBeenCalledExactlyOnceWith("display", "none");
     expect(observations.system).toHaveBeenLastCalledWith("cursor", "default");
 
     const cancelledRead = vi.fn(() => ({

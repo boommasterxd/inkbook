@@ -31,7 +31,7 @@ export interface SceneToolCursorDom {
 export function createToolCursorDom(document: Document): SceneToolCursorDom {
   const group = document.createElementNS(SVG_NAMESPACE, "g");
   group.setAttribute("class", "inkbook-tool-cursor");
-  group.setAttribute("visibility", "hidden");
+  group.setAttribute("display", "none");
   group.setAttribute("pointer-events", "none");
   const ring = document.createElementNS(SVG_NAMESPACE, "circle");
   ring.setAttribute("fill", "none");
@@ -77,7 +77,8 @@ export class SceneToolCursorWriter {
     if (!this.#dirty) return;
     this.#dirty = false;
     const state = this.#pending;
-    this.attribute(this.dom.group, "visibility", state === null ? "hidden" : "visible");
+    // SVG children can override inherited visibility, but cannot override ancestor display.
+    this.attribute(this.dom.group, "display", state === null ? "none" : "inline");
     if (state === null) return;
     this.attribute(this.dom.group, "transform", `translate(${String(state.x)} ${String(state.y)})`);
     const eraser = state.kind === "eraser";

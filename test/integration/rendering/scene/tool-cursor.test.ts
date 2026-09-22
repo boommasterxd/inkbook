@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { cursorPointerEvent, toolCursorHarness } from "../../../fixtures/obsidian/tool-cursor";
 import { bindSceneScrollOwner } from "../../../../src/obsidian/embeds/active-scene-runtime";
 import { createInputState } from "../../../../src/editor/input";
 import { createControllerNavigation } from "../../../../src/obsidian/embeds/active-editor/controller-interactions";
@@ -183,7 +184,7 @@ describe("retained tool cursor", () => {
     layout.readViewport.mockClear();
     renderer.setToolCursor(CURSOR);
     renderer.setToolCursor({ ...CURSOR, x: 40 });
-    expect(cursor.attributes.get("visibility")).toBe("hidden");
+    expect(cursor.attributes.get("display")).toBe("none");
     expect(scheduler.pendingCount).toBe(1);
     scheduler.runAll();
     expect(cursor.parent).toBe(svg);
@@ -240,17 +241,17 @@ describe("persistent tool decoration and frame reads", () => {
       STYLE,
       "pen",
     );
-    expect(cursor.attributes.get("visibility")).toBe("visible");
+    expect(cursor.attributes.get("display")).toBe("inline");
     renderer.updateLiveStroke(
       { finalizedChunks: [], tail: { geometry: [{ d: "M20 30L21 30", paint: "stroke" }] } },
       STYLE,
       "pen",
     );
-    expect(cursor.attributes.get("visibility")).toBe("visible");
+    expect(cursor.attributes.get("display")).toBe("inline");
     expect(svg.nodes[1]!.nodes[6]!.nodes[0]!.nodes[0]!.attributes.get("d")).toBe("M20 30L21 30");
     renderer.commitLiveStroke("new");
     scheduler.runAll();
-    expect(cursor.attributes.get("visibility")).toBe("visible");
+    expect(cursor.attributes.get("display")).toBe("inline");
     renderer.destroy();
   });
 
@@ -263,15 +264,15 @@ describe("persistent tool decoration and frame reads", () => {
         { d: "M20 30L50 30", presentation: liveStrokePresentation(STYLE, "stroke", "highlighter") },
       ],
     });
-    expect(cursor.attributes.get("visibility")).toBe("visible");
+    expect(cursor.attributes.get("display")).toBe("inline");
     const path = svg.nodes[1]!.nodes[5]!.nodes[0]!;
     expect(path.attributes.get("d") ?? "").toBe("");
     scheduler.runAll();
     expect(path.attributes.get("d")).toBe("M20 30L50 30");
-    expect(cursor.attributes.get("visibility")).toBe("visible");
+    expect(cursor.attributes.get("display")).toBe("inline");
     renderer.setLivePath(null);
     scheduler.runAll();
-    expect(cursor.attributes.get("visibility")).toBe("visible");
+    expect(cursor.attributes.get("display")).toBe("inline");
     renderer.destroy();
   });
 
@@ -289,7 +290,7 @@ describe("persistent tool decoration and frame reads", () => {
     renderer.requestToolCursorFrame(reader);
     scheduler.runAll();
     expect(reader.mock.calls[reader.mock.calls.length - 1]).toEqual([false]);
-    expect(cursor.attributes.get("visibility")).toBe("visible");
+    expect(cursor.attributes.get("display")).toBe("inline");
     renderer.invalidateLayout();
     scheduler.runAll();
     expect(reader.mock.calls[reader.mock.calls.length - 1]).toEqual([true]);
@@ -366,7 +367,7 @@ describe("tool decoration swaps", () => {
     renderer.setToolCursor({ ...CURSOR, icon: undefined });
     scheduler.runAll();
     expect(iconHost.nodes).toHaveLength(0);
-    expect(cursor.attributes.get("visibility")).toBe("visible");
+    expect(cursor.attributes.get("display")).toBe("inline");
     renderer.setToolCursor({ ...CURSOR, icon });
     scheduler.runAll();
     renderer.destroy();
@@ -398,7 +399,7 @@ describe("retained staged marker commits", () => {
       });
       renderer.commitLivePath(id);
     }
-    expect(cursor.attributes.get("visibility")).toBe("visible");
+    expect(cursor.attributes.get("display")).toBe("inline");
     expect(group.nodes).toHaveLength(2);
     const retained = [...group.nodes];
     expect(retained.map((node) => node.nodes[0]!.attributes.get("d"))).toEqual([
@@ -443,3 +444,41 @@ describe("retained staged marker commits", () => {
     expect(() => renderer.commitLivePath("late")).toThrow("destroyed");
   });
 });
+
+it.each([
+  ["mouse", "eraser"],
+  ["pen", "eraser"],
+  ["pen", "draw"],
+] as const)(
+  "removes the entire %s %s decoration from rendering on hover departure",
+  (pointerType, activeTool) => {
+    const { renderer, scheduler, cursor } = setup();
+    const h = toolCursorHarness();
+    h.controls.input = createInputState({ activeTool });
+    h.icon.mockReturnValue(CURSOR.icon!);
+    const flush = () => {
+      renderer.requestToolCursorFrame(() => h.read());
+      scheduler.runAll();
+    };
+    h.surface.dispatchEvent(cursorPointerEvent({ pointerType }));
+    flush();
+    const decoration = cursor.nodes[activeTool === "eraser" ? 0 : 1]!;
+    expect(decoration.attributes.get("visibility")).toBe("visible");
+    expect(cursor.attributes.get("display")).toBe("inline");
+    // Leaving the canvas and pen proximity loss both produce a pointerleave.
+    h.surface.dispatchEvent(
+      Object.assign(new Event("pointerleave"), { pointerId: 1, pointerType }),
+    );
+    flush();
+    expect(cursor.attributes.get("display")).toBe("none");
+    h.controller.refresh();
+    flush();
+    expect(cursor.attributes.get("display")).toBe("none");
+    h.surface.dispatchEvent(cursorPointerEvent({ pointerType }));
+    flush();
+    expect(cursor.attributes.get("display")).toBe("inline");
+    expect(cursor.nodes[activeTool === "eraser" ? 0 : 1]).toBe(decoration);
+    h.controller.dispose();
+    renderer.destroy();
+  },
+);
