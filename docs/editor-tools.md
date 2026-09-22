@@ -8,6 +8,8 @@ Movable selections use the system `move` cursor; resize handles use the directio
 
 Eraser feedback replaces the icon with one unfilled, contrasting dashed circle centered on the crosshair. Its radius comes from the same configured CSS-pixel radius used by hit testing; the page-space hit radius is that value divided by zoom. Its continuous swept whole-element behavior is defined under [Eraser](#eraser). The ring remains visible during an accepted eraser gesture, including touch erasing; mouse and pen retain the native crosshair. Wheel and keyboard zoom are disabled while an eraser gesture is active; a layout resize cancels it before changing scale, preserving equality with the gesture's captured hit radius. Menu interaction, disabled input, navigation, pointer cancellation, owning-window blur, pointer departure, and presentation disposal suppress or clear incompatible feedback.
 
+Some Wayland Chromium versions report pen proximity loss as a mouse `pointerleave` with a different pointer ID. An unpressed mouse leave with no related target clears idle pen feedback only; active gestures, handle drags, internal target transitions, and foreign touch or pen departures retain pointer ownership. Fresh input restores the decoration without polling or timeouts.
+
 The icon and ring are decorative additions to the native cursor; Inkbook does not hide or replace it. System-cursor changes occur when the resolved interaction changes. Rendering ownership and scheduling are defined in [Rendering and Performance](rendering-and-performance.md#tool-cursor-rendering).
 
 ## Select

@@ -446,12 +446,14 @@ describe("retained staged marker commits", () => {
 });
 
 it.each([
-  ["mouse", "eraser"],
-  ["pen", "eraser"],
-  ["pen", "draw"],
+  ["mouse", "eraser", "mouse"],
+  ["pen", "eraser", "pen"],
+  ["pen", "draw", "pen"],
+  ["pen", "eraser", "mouse"],
+  ["pen", "draw", "mouse"],
 ] as const)(
-  "removes the entire %s %s decoration from rendering on hover departure",
-  (pointerType, activeTool) => {
+  "removes the entire %s %s decoration on %s hover departure",
+  (pointerType, activeTool, departureType) => {
     const { renderer, scheduler, cursor } = setup();
     const h = toolCursorHarness();
     h.controls.input = createInputState({ activeTool });
@@ -460,21 +462,26 @@ it.each([
       renderer.requestToolCursorFrame(() => h.read());
       scheduler.runAll();
     };
-    h.surface.dispatchEvent(cursorPointerEvent({ pointerType }));
+    h.surface.dispatchEvent(cursorPointerEvent({ pointerType, pointerId: 2 }));
     flush();
     const decoration = cursor.nodes[activeTool === "eraser" ? 0 : 1]!;
     expect(decoration.attributes.get("visibility")).toBe("visible");
     expect(cursor.attributes.get("display")).toBe("inline");
     // Leaving the canvas and pen proximity loss both produce a pointerleave.
     h.surface.dispatchEvent(
-      Object.assign(new Event("pointerleave"), { pointerId: 1, pointerType }),
+      Object.assign(new Event("pointerleave"), {
+        pointerId: departureType === pointerType ? 2 : 1,
+        pointerType: departureType,
+        buttons: 0,
+        relatedTarget: null,
+      }),
     );
     flush();
     expect(cursor.attributes.get("display")).toBe("none");
     h.controller.refresh();
     flush();
     expect(cursor.attributes.get("display")).toBe("none");
-    h.surface.dispatchEvent(cursorPointerEvent({ pointerType }));
+    h.surface.dispatchEvent(cursorPointerEvent({ pointerType, pointerId: 2 }));
     flush();
     expect(cursor.attributes.get("display")).toBe("inline");
     expect(cursor.nodes[activeTool === "eraser" ? 0 : 1]).toBe(decoration);

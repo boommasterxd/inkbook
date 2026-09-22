@@ -139,7 +139,18 @@ export class ActiveToolCursorController {
   }
 
   readonly #enter = (event: PointerEvent): void => this.record(event, "move");
-  readonly #leave = (event: PointerEvent): void => this.clear(event.pointerId);
+  readonly #leave = (event: PointerEvent): void => {
+    // Some Wayland Chromium builds report pen proximity-out with the mouse ID.
+    // Only clear idle pen feedback for an unpressed departure from the document.
+    const penProximityExit =
+      this.#pointer?.pointerType === "pen" &&
+      event.pointerType === "mouse" &&
+      event.buttons === 0 &&
+      event.relatedTarget === null &&
+      this.#options.input().interaction === undefined &&
+      this.#options.activeHandlePointer?.() === undefined;
+    this.clear(penProximityExit ? undefined : event.pointerId);
+  };
   readonly #blur = (): void => this.clear();
   readonly #visibility = (): void => {
     if (this.#ownerWindow.document.hidden) this.clear();

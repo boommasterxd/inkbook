@@ -203,3 +203,59 @@ describe("active tool cursor lifecycle", () => {
     expect(h.request).not.toHaveBeenCalled();
   });
 });
+
+describe("Wayland pen proximity exit reported with a mouse ID", () => {
+  it.each(["draw", "eraser"] as const)(
+    "clears idle %s feedback and resumes on fresh pen input",
+    (activeTool) => {
+      const h = harness();
+      h.controls.input = createInputState({ activeTool });
+      h.surface.dispatchEvent(event({ pointerId: 2, pointerType: "pen" }));
+      expect(h.read().cursor).not.toBeNull();
+      h.measure.mockClear();
+      h.surface.dispatchEvent(
+        Object.assign(new Event("pointerleave"), {
+          pointerId: 1,
+          pointerType: "mouse",
+          buttons: 0,
+          relatedTarget: null,
+        }),
+      );
+      expect(h.read()).toEqual(empty);
+      h.controller.refresh();
+      expect(h.read()).toEqual(empty);
+      expect(h.measure).not.toHaveBeenCalled();
+      h.controller.record(event({ pointerId: 2, pointerType: "pen" }), "move");
+      expect(h.read().cursor).not.toBeNull();
+      h.controller.dispose();
+    },
+  );
+
+  it.each(["touch", "other-pen", "internal", "pressed", "gesture", "handle", "mouse"])(
+    "does not treat %s departure as idle pen proximity loss",
+    (reason) => {
+      const h = harness();
+      h.controller.record(
+        event({ pointerId: 2, pointerType: reason === "mouse" ? "mouse" : "pen" }),
+        "move",
+      );
+      if (reason === "gesture")
+        h.controls.input = reduceInput(
+          h.controls.input,
+          pointerDown({ pointerId: 2, pointerType: "pen" }),
+        ).state;
+      if (reason === "handle") h.controls.handlePointer = 2;
+      const before = h.read();
+      h.surface.dispatchEvent(
+        Object.assign(new Event("pointerleave"), {
+          pointerId: 1,
+          pointerType: reason === "touch" ? "touch" : reason === "other-pen" ? "pen" : "mouse",
+          buttons: reason === "pressed" ? 1 : 0,
+          relatedTarget: reason === "internal" ? h.surface : null,
+        }),
+      );
+      expect(h.read()).toEqual(before);
+      h.controller.dispose();
+    },
+  );
+});
