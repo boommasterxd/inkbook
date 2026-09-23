@@ -106,7 +106,7 @@ Changing the preference updates all active presentations, including pop-outs, im
 
 Snapping is a vault preference with one global switch and four independent behavior switches. All five built-in values are enabled:
 
-- Angle snapping covers selection rotation, horizontal or vertical line and arrow directions, and 45-degree coordinate-system axes.
+- Angle snapping covers selection rotation, horizontal or vertical line, arrow, and straight-highlighter directions, and 45-degree coordinate-system axes.
 - Bend snapping covers straight and symmetric bend positions for lines and arrows.
 - Connection snapping covers line and arrow endpoints attaching to semantic shape anchors or other linear endpoints.
 - Structure snapping covers table separators returning to the default header or equal-column position.

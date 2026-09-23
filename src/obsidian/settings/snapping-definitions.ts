@@ -27,7 +27,7 @@ export function snappingGroup(
         dependentMotions,
         "snapping.angles",
         "Angle snapping",
-        "Snap rotations, line directions, and coordinate-system axes to their fixed angles.",
+        "Snap rotations, line, arrow, and straight-highlighter directions, and coordinate-system axes to their fixed angles.",
       ),
       dependentDefinition(
         callbacks,
