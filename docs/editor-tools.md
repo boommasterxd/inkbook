@@ -178,6 +178,12 @@ The eraser can also be activated temporarily:
 
 When released, the editor automatically switches back to the previous tool.
 
+Pen side buttons are recognized from either barrel bit (`buttons & 2` or `buttons & 4`), including combined tip-contact values. Eraser-tip contact uses bit 32. These mappings apply only to pen input; mouse context clicks retain their normal behavior. Hover button changes update the cursor without starting a gesture or querying document content. Tip contact can start erasing through `pointermove` alone after a hover press, without leaving pen proximity. Contact is reported by tip/eraser bits or positive pressure.
+
+For drawing tools, pressing the pen button during contact cancels the unfinished drawing preview and begins an eraser sweep at the current point without releasing pointer capture. Releasing the button while contact continues commits the sweep, restores the previous tool, and suppresses further marks until the tip lifts. Capture remains owned until that contact ends, including outside the canvas; cancellation and reset release it. Selection interactions and the permanently selected eraser retain their existing behavior. Noncontact release coordinates never extend the eraser sweep.
+
+A standalone no-contact button release has a 300-millisecond confirmation window, matching the Wacom event sequence where a synthetic release precedes tip contact. Reasserting the button or starting contact within that window retains temporary erasing; a release with continuing contact takes effect immediately. One pending timer belongs to the presentation's owning window and is cleared on cancellation, departure, focus loss, or disposal. This compatibility handling depends on the pen events delivered by Obsidian; physical Android and digitizer behavior still require device verification.
+
 ## Style
 
 Style is not a standalone drawing tool, but a context-sensitive adaptive Obsidian menu. Its line-style choices use decorative SVG samples with round caps and the same width-relative dash calculation as document contours; line-width samples remain rounded bars.

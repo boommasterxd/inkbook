@@ -41,6 +41,14 @@ export interface PointerMoveAction extends PointerSample {
   readonly type: "pointer-move";
 }
 
+export interface PenModeChangeAction extends PointerSample {
+  readonly type: "pen-mode-change";
+  readonly penRole: "normal" | "eraser" | "side-button";
+  readonly controlOrMeta: boolean;
+  readonly shift: boolean;
+  readonly timestamp?: number;
+}
+
 export interface PointerExitAction {
   readonly type: "pointer-up" | "pointer-cancel" | "lost-pointer-capture";
   readonly pointerId: number;
@@ -71,6 +79,7 @@ export interface ConfigureInputAction {
 export type InputAction =
   | PointerDownAction
   | PointerMoveAction
+  | PenModeChangeAction
   | PointerExitAction
   | LongPressAction
   | ContextMenuAction

@@ -240,6 +240,7 @@ export class ActiveEditorController {
     ControllerTouch.touchInteractionBlocksNativeScroll(this.#input.interaction);
   public recoverInterruptedTouch(): void {
     this.preparePrimaryTouchStart();
+    if (this.#input.consumedPointerIds.length > 0) this.#dispatch({ type: "reset" });
     this.#captures.releaseAll();
     this.#penGuard.stop();
   }
@@ -387,7 +388,7 @@ export class ActiveEditorController {
   }
   #cancelActiveGesture(): boolean {
     this.#snappingInversion = undefined;
-    if (this.#input.interaction !== undefined) {
+    if (this.#input.interaction !== undefined || this.#input.consumedPointerIds.length > 0) {
       this.#dispatch({ type: "reset" });
       return true;
     }

@@ -2,6 +2,7 @@ import type { GesturePreview } from "../../../editor/gestures/public";
 import type { GesturePreviewStart } from "../../../editor/gestures/public";
 import { isValidPointerSample, type PointerSample } from "../../../editor/input/index";
 import { MAX_STROKE_POINTS } from "../../../domain/schema/public";
+import { hasPenContact } from "../../../editor/input/pointer-validation";
 
 const MAX_COALESCED_SAMPLES = MAX_STROKE_POINTS;
 
@@ -284,8 +285,4 @@ function coalescedEvents(event: PointerEvent): readonly PointerEvent[] | null {
   } catch {
     return null;
   }
-}
-
-function hasPenContact(event: PointerEvent): boolean {
-  return event.pressure > 0 || (event.buttons & 1) !== 0;
 }

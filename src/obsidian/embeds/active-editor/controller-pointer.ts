@@ -7,6 +7,7 @@ import {
   type PointerSample,
 } from "../../../editor/input/index";
 import type { SvgSceneRenderer } from "../../../rendering/scene/index";
+import { hasPenContact } from "../../../editor/input/pointer-validation";
 
 import type { ActiveToolCursorController } from "./tool-cursor-controller";
 import type { CoalescedPointerInput } from "./coalesced-input";
@@ -50,6 +51,10 @@ export class ActiveEditorPointerController {
   }
 
   public handleContextMenu(event: MouseEvent): void {
+    if ("pointerType" in event && event.pointerType === "pen") {
+      if (event.cancelable) event.preventDefault();
+      return;
+    }
     this.#options.cursor.clear();
     if (!this.#options.isEnabled()) return;
     const screenPoint = this.#options.navigation.localScreenPoint(event);
@@ -106,6 +111,10 @@ export class ActiveEditorPointerController {
     if (this.#isForeignHandlePointer(event.pointerId)) return;
     this.#options.cursor.record(event, "down");
     if (!this.#options.isEnabled()) return;
+    if (event.pointerType === "pen" && !hasPenContact(event)) {
+      if (event.cancelable) event.preventDefault();
+      return;
+    }
     this.#setSnappingInverted(event.pointerId, event.altKey === true);
     this.#options.renderer.inputSurface.focus({ preventScroll: true });
     this.#options.navigation.cancelPanMomentum();
@@ -134,6 +143,7 @@ export class ActiveEditorPointerController {
     this.#options.setLastPointer(pagePointer, pointer);
     if (
       classification.handleEligible &&
+      this.#options.cursor.penRole(event.pointerId) === "normal" &&
       this.#options.handles.pointerDown(pagePointer, event.shiftKey, event.altKey === true)
     ) {
       this.#options.beginHandlePointer(pagePointer.pointerType);
@@ -155,11 +165,11 @@ export class ActiveEditorPointerController {
         this.#options.dispatch({
           type: "pointer-down",
           ...pointer,
-          button: event.button,
+          button: event.pointerType === "pen" && event.button === -1 ? 0 : event.button,
           buttons: event.buttons,
           controlOrMeta: event.ctrlKey || event.metaKey,
           isPlatformContextClick: classification.isPlatformContextClick,
-          penRole: classification.penRole,
+          penRole: this.#options.cursor.penRole(event.pointerId),
           shift: event.shiftKey,
           timestamp: event.timeStamp,
           ...(target === undefined ? {} : { target }),
@@ -176,6 +186,7 @@ export class ActiveEditorPointerController {
   public handlePointerMove(event: PointerEvent): void {
     if (this.#isForeignHandlePointer(event.pointerId)) return;
     this.#options.cursor.record(event, "move");
+    if (this.#routePenContact(event)) return;
     if (
       this.#options.getInput().interaction === undefined &&
       this.#options.handles.activePointerId === undefined
@@ -215,8 +226,8 @@ export class ActiveEditorPointerController {
     const blocksHostGesture =
       event.pointerType === "touch" && this.#options.getInput().interaction?.phase === "page-pan";
     const penContactOnly =
-      previous?.phase === "tool-gesture" &&
-      previous.tool === "draw" &&
+      (previous?.phase === "eraser-gesture" ||
+        (previous?.phase === "tool-gesture" && previous.tool === "draw")) &&
       previous.pointerId === event.pointerId &&
       event.pointerType === "pen";
     if (!this.#options.coalesced.dispatch(event, penContactOnly)) {
@@ -247,6 +258,51 @@ export class ActiveEditorPointerController {
       return;
     }
     this.#options.dispatch({ type: "lost-pointer-capture", pointerId: event.pointerId });
+  }
+
+  #routePenContact(event: PointerEvent): boolean {
+    if (
+      event.pointerType !== "pen" ||
+      !this.#options.isEnabled() ||
+      this.#options.handles.activePointerId !== undefined
+    )
+      return false;
+    const input = this.#options.getInput();
+    const interaction = input.interaction;
+    const consumed = input.consumedPointerIds.includes(event.pointerId);
+    if (!hasPenContact(event)) {
+      if (consumed || interactionOwnsPointer(interaction, event.pointerId)) {
+        this.handlePointerUp(event);
+      }
+      return true;
+    }
+    if (consumed) return true;
+    const penRole = this.#options.cursor.penRole(event.pointerId);
+    if (interaction === undefined && penRole !== "normal") {
+      this.handlePointerDown(event);
+      return true;
+    }
+    if (
+      input.activeTool === "select" ||
+      interaction === undefined ||
+      (interaction.phase !== "tool-gesture" && interaction.phase !== "eraser-gesture") ||
+      interaction.pointerId !== event.pointerId ||
+      interaction.penRole === penRole
+    )
+      return false;
+    const pointer = this.#pointerOrCancel(event);
+    if (pointer === undefined) return true;
+    this.#options.dispatch({
+      type: "pen-mode-change",
+      ...pointer,
+      penRole,
+      controlOrMeta: event.ctrlKey || event.metaKey,
+      shift: event.shiftKey,
+      timestamp: event.timeStamp,
+    });
+    if (this.#options.getInput().interaction === interaction) return false;
+    if (event.cancelable) event.preventDefault();
+    return true;
   }
 
   #finishHandleRelease(event: PointerEvent, pointer: PointerSample): boolean {
