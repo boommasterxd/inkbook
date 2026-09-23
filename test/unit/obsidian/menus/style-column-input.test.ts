@@ -81,7 +81,7 @@ describe("editable table column count", () => {
     view.type("");
     view.commit();
     expect(view.input.value).toBe(value === null ? "" : "2");
-    expect(view.input.placeholder).toBe(value === null ? "Mixed" : "");
+    expect(view.input.placeholder).toBe(value === null ? "—" : "");
     expect(view.onChange).not.toHaveBeenCalled();
     expect(view.onInvalidValue).toHaveBeenCalledExactlyOnceWith("table-columns");
   });
