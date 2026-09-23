@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { reduceInput } from "../../../../../src/editor/input";
+import { describe, expect, it, vi } from "vitest";
+import { createInputState, reduceInput } from "../../../../../src/editor/input";
+import { domRect } from "../../../../fixtures/obsidian/active-editor";
 import { pointerDown } from "../../../../fixtures/editor/input-actions";
 import {
   timedCursorPointerEvent as sample,
@@ -17,12 +18,12 @@ describe("raw tool cursor position input", () => {
     h.read();
     h.surface.dispatchEvent(raw(30, { clientX: 200 }));
     h.surface.dispatchEvent(raw(20, { clientX: 160 }));
-    expect(h.move).toHaveBeenCalledExactlyOnceWith(180, 50);
+    expect(h.move).toHaveBeenCalledExactlyOnceWith(200, 80);
     h.controller.record(sample(25, { clientX: 170 }), "move");
-    expect(h.read().cursor?.x).toBe(180);
-    h.controller.record(sample(40, { clientX: 220 }), "move");
     expect(h.read().cursor?.x).toBe(200);
-    expect(h.move).toHaveBeenLastCalledWith(200, 50);
+    h.controller.record(sample(40, { clientX: 220 }), "move");
+    expect(h.read().cursor?.x).toBe(220);
+    expect(h.move).toHaveBeenLastCalledWith(220, 80);
     h.controller.dispose();
   });
 
@@ -32,7 +33,7 @@ describe("raw tool cursor position input", () => {
     h.read();
     h.surface.dispatchEvent(raw(20, { clientX: 200 }));
     expect(h.move).not.toHaveBeenCalled();
-    expect(h.read().cursor?.x).toBe(100);
+    expect(h.read().cursor?.x).toBe(120);
     h.controller.dispose();
   });
 
@@ -44,7 +45,7 @@ describe("raw tool cursor position input", () => {
     expect(h.move).not.toHaveBeenCalled();
     expect(h.measure).not.toHaveBeenCalled();
     expect(h.request).not.toHaveBeenCalled();
-    expect(h.read().cursor?.x).toBe(180);
+    expect(h.read().cursor?.x).toBe(200);
     h.controller.dispose();
   });
 
@@ -66,8 +67,8 @@ describe("raw tool cursor position input", () => {
     h.controller.record(sample(10), "move");
     h.read();
     h.controller.record(sample(20, { clientX: 180 }), "move");
-    expect(h.move).toHaveBeenCalledExactlyOnceWith(160, 50);
-    expect(h.read().cursor?.x).toBe(160);
+    expect(h.move).toHaveBeenCalledExactlyOnceWith(180, 80);
+    expect(h.read().cursor?.x).toBe(180);
     h.controller.dispose();
   });
 });
@@ -87,7 +88,7 @@ describe("raw tool cursor input exclusion and lifecycle", () => {
     h.surface.dispatchEvent(raw(20, { clientX: 200, ...overrides }));
     expect(h.move).not.toHaveBeenCalled();
     expect(h.request).not.toHaveBeenCalled();
-    expect(h.read().cursor?.x).toBe(100);
+    expect(h.read().cursor?.x).toBe(120);
     h.controller.dispose();
   });
 
@@ -97,9 +98,9 @@ describe("raw tool cursor input exclusion and lifecycle", () => {
     h.read();
     h.surface.dispatchEvent(raw(Number.NaN, { clientX: 200 }));
     expect(h.move).not.toHaveBeenCalled();
-    expect(h.read().cursor?.x).toBe(100);
+    expect(h.read().cursor?.x).toBe(120);
     h.surface.dispatchEvent(raw(20, { clientX: 180 }));
-    expect(h.move).toHaveBeenCalledExactlyOnceWith(160, 50);
+    expect(h.move).toHaveBeenCalledExactlyOnceWith(180, 80);
     h.controller.dispose();
   });
 
@@ -118,7 +119,7 @@ describe("raw tool cursor input exclusion and lifecycle", () => {
     expect(h.request).not.toHaveBeenCalled();
     h.controls.enabled = true;
     h.controls.input = input;
-    expect(h.read().cursor?.x).toBe(100);
+    expect(h.read().cursor?.x).toBe(120);
     h.controller.dispose();
   });
 
@@ -145,3 +146,73 @@ describe("raw tool cursor input exclusion and lifecycle", () => {
     expect(h.read().cursor).toBeNull();
   });
 });
+
+describe("tool cursor coordinates during native scrolling", () => {
+  it.each(["draw", "eraser"] as const)(
+    "keeps %s feedback at the latest client position before and after scroll delivery",
+    (activeTool) => {
+      const h = harness();
+      h.controls.input = createInputState({ activeTool, zoom: 2 });
+      h.controls.cameraX = 5;
+      h.controller.record(sample(10), "move");
+      const initial = h.read().cursor;
+      expect(initial).toMatchObject({ x: 120, y: 80 });
+      if (activeTool === "eraser")
+        expect(initial).toMatchObject({ kind: "eraser", radius: h.defaults.eraser.radius });
+      for (const [index, top] of [10, -90, 30, -40].entries()) {
+        h.bounds.top = top;
+        const time = 20 + index * 10;
+        const clientX = 121 + index;
+        // Native scrolling moves the canvas before its scroll notification arrives.
+        h.surface.dispatchEvent(raw(time + 2, { clientX }));
+        expect(h.move).toHaveBeenLastCalledWith(clientX, 80);
+        h.controller.record(sample(time + 1, { clientX: clientX - 1 }), "move");
+        expect(h.read().cursor).toMatchObject({ x: clientX, y: 80 });
+        expect(h.read(true).cursor).toMatchObject({ x: clientX, y: 80 });
+        expect(h.controller.lastScreenPointer).toMatchObject({ x: clientX - 20, y: 80 - top });
+        expect(h.handleCursor).toHaveBeenLastCalledWith(
+          expect.objectContaining({ x: (clientX - 20) / 2 - 5, y: (80 - top) / 2 }),
+        );
+      }
+      h.bounds.top = 100;
+      expect(h.read(true).cursor).toBeNull();
+      h.move.mockClear();
+      h.surface.dispatchEvent(raw(100));
+      expect(h.move).not.toHaveBeenCalled();
+      h.controller.dispose();
+    },
+  );
+});
+
+it.each([
+  {
+    left: 0,
+    top: 0,
+    width: 1000,
+    height: 1000,
+    clip: { left: 20, top: 30, width: 500, height: 400 },
+  },
+  {
+    left: 50,
+    top: 50,
+    width: 200,
+    height: 200,
+    clip: { left: 50, top: 50, width: 200, height: 200 },
+  },
+  {
+    left: 600,
+    top: 500,
+    width: 100,
+    height: 100,
+    clip: { left: 600, top: 500, width: 0, height: 0 },
+  },
+])(
+  "clips viewport feedback to the canvas and scrollport intersection %j",
+  ({ clip, ...viewport }) => {
+    const scrollBounds = vi.fn(() => domRect(viewport));
+    const h = harness({ scrollBounds });
+    h.controller.record(sample(10), "move");
+    expect(h.read().cursor).toMatchObject({ x: 120, y: 80, clip });
+    h.controller.dispose();
+  },
+);

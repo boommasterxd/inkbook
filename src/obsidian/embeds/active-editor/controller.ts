@@ -33,12 +33,9 @@ import { ActiveEditorAvailability } from "./controller-availability";
 import { ActiveEditorChromeState } from "./controller-chrome-state";
 import { ActivePointerCaptureOwner } from "./pointer-capture";
 import { resolveSnappingPointerOverride } from "./snapping-settings";
-import {
-  createActiveToolCursorController,
-  type ActiveToolCursorController,
-} from "./tool-cursor-controller";
+import * as ToolCursor from "./tool-cursor-controller";
 export class ActiveEditorController {
-  readonly #cursor: ActiveToolCursorController;
+  readonly #cursor: ToolCursor.ActiveToolCursorController;
   readonly #actions: ActiveEditorActions;
   readonly #availability: ActiveEditorAvailability;
   readonly #background: ActiveEditorBackgroundSession;
@@ -172,10 +169,11 @@ export class ActiveEditorController {
       interactions.preparedHistory,
     ];
     [this.#keyboard, this.#gestures] = this.#createInputControllers(options);
-    this.#cursor = createActiveToolCursorController(
+    this.#cursor = ToolCursor.createActiveToolCursorController(
       [options.container, this.#renderer],
       [() => this.#input, () => this.#styles.defaults],
       [this.#availability, this.#menus, this.#handles, this.#navigation],
+      () => this.#scrollOwner.getBoundingClientRect(),
     );
     this.#pointer = this.#createPointerController(ownerWindow);
     createChromeCallbacks(

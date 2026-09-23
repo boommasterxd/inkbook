@@ -130,7 +130,7 @@ export class SceneDom {
     );
     const defs = this.createSvg("defs");
     defs.append(this.#backgroundPattern, this.createSelectionClip());
-    this.svg.append(themeStyle, this.cameraGroup, overlayGroup, defs, this.toolCursor.group);
+    this.svg.append(themeStyle, this.cameraGroup, overlayGroup, defs);
 
     this.inputSurface.tabIndex = 0;
     this.inputSurface.setAttribute("class", "inkbook-canvas-input");
@@ -191,6 +191,7 @@ export class SceneDom {
     };
     for (const [property, value] of Object.entries(properties)) {
       this.svg.style.setProperty(property, value);
+      this.toolCursor.surface.style.setProperty(property, value);
     }
     this.svg.style.colorScheme = scheme;
   }

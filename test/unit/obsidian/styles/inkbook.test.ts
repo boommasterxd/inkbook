@@ -435,6 +435,8 @@ describe("Inkbook editor overlays", () => {
           !selector.startsWith(".inkbook-root") &&
           !selector.startsWith(".inkbook-menu-") &&
           !selector.startsWith(".inkbook-adaptive-panel") &&
+          selector !== ".inkbook-tool-cursor-surface" &&
+          !selector.startsWith(".inkbook-tool-cursor-surface ") &&
           selector !== ".is-phone .inkbook-root.inkbook-feedback-host" &&
           selector !== ".inkbook-owned-menu",
       ),

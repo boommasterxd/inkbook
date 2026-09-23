@@ -59,7 +59,7 @@ function setup() {
   });
   scheduler.runAll();
   const svg = fakeNode(renderer.svg);
-  const cursor = svg.nodes[svg.nodes.length - 1]!;
+  const cursor = document.body.nodes[0]!.nodes[0]!;
   return { renderer, scheduler, store, layout, cursor, svg };
 }
 
@@ -190,7 +190,7 @@ describe("retained tool cursor", () => {
     expect(scheduler.pendingCount).toBe(1);
     scheduler.runAll();
     expect(obsoleteRead).not.toHaveBeenCalled();
-    expect(cursor.parent).toBe(svg);
+    expect(cursor.parent?.parent).toBe(svg.ownerDocument.body);
     expect(cursor.nodes.map((node) => node.tagName)).toEqual(["circle", "g"]);
     expect(cursor.attributes.get("transform")).toBe("translate(40 30)");
     expect(cursor.nodes[1]!.attributes.get("color")).toBe("#FFCC0080");
@@ -230,7 +230,7 @@ describe("retained tool cursor", () => {
       cursor: { ...CURSOR, color: { type: "theme-text" } },
     }));
     scheduler.runAll();
-    expect(svg.nodes[svg.nodes.length - 1]).toBe(cursor);
+    expect(cursor.parent?.parent).toBe(svg.ownerDocument.body);
     expect(cursor.nodes[1]!.attributes.get("color")).toBe("var(--inkbook-text)");
     expect(ring.attributes.get("visibility")).toBe("hidden");
     renderer.requestToolCursorFrame(() => ({ cursor: null, system: "crosshair" }));

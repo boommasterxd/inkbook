@@ -18,14 +18,14 @@ describe("active tool cursor input boundary", () => {
       expect(h.measure).not.toHaveBeenCalled();
       expect(h.controller.lastPagePointer).toBeNull();
       expect(h.move).not.toHaveBeenCalled();
-      expect(h.read().cursor).toMatchObject({ kind: "tool", x: 180, y: 50 });
+      expect(h.read().cursor).toMatchObject({ kind: "tool", x: 200, y: 80 });
       expect(h.measure).toHaveBeenCalledOnce();
       h.icon.mockClear();
       h.controller.record(event({ clientX: 201, pointerType }), "move");
-      expect(h.move).toHaveBeenCalledExactlyOnceWith(181, 50);
+      expect(h.move).toHaveBeenCalledExactlyOnceWith(201, 80);
       expect(h.icon).not.toHaveBeenCalled();
       expect(h.measure).toHaveBeenCalledOnce();
-      expect(h.read().cursor?.x).toBe(181);
+      expect(h.read().cursor?.x).toBe(201);
       expect(h.measure).toHaveBeenCalledOnce();
       h.controller.dispose();
     },
@@ -39,8 +39,9 @@ describe("active tool cursor input boundary", () => {
     h.controls.input = createInputState({ zoom: 2 });
     h.controls.cameraX = 5;
     h.controller.refresh();
-    expect(h.read(true).cursor).toMatchObject({ x: 100, y: 70, icon: h.toolIcon });
+    expect(h.read(true).cursor).toMatchObject({ x: 120, y: 80, icon: h.toolIcon });
     expect(h.controller.lastPagePointer).toMatchObject({ x: 45, y: 35 });
+    expect(h.handleCursor).toHaveBeenLastCalledWith(expect.objectContaining({ x: 45, y: 35 }));
     expect(h.controller.lastScreenPointer).toMatchObject({ x: 100, y: 70 });
     expect(h.measure).toHaveBeenCalledTimes(2);
     h.controller.dispose();
@@ -53,8 +54,8 @@ describe("active tool cursor input boundary", () => {
     const cursor = h.read().cursor;
     expect(cursor).toMatchObject({
       kind: "tool",
-      x: 100,
-      y: 50,
+      x: 120,
+      y: 80,
       color: h.defaults.highlighter.color,
       icon: h.toolIcon,
     });
@@ -142,9 +143,9 @@ describe("active tool cursor pointer arbitration", () => {
     const h = harness();
     h.controls.input = reduceInput(createInputState({ activeTool: "eraser" }), pointerDown()).state;
     h.controller.record(event(), "down");
-    expect(h.read().cursor?.x).toBe(100);
+    expect(h.read().cursor?.x).toBe(120);
     h.controller.record(event({ pointerId: 2, clientX: 200 }), "move");
-    expect(h.read().cursor?.x).toBe(100);
+    expect(h.read().cursor?.x).toBe(120);
     h.controller.record(event({ clientX: Number.NaN }), "move");
     expect(h.read()).toEqual(empty);
     h.controller.dispose();
@@ -185,7 +186,7 @@ describe("active tool cursor lifecycle", () => {
     h.controller.record(event({ clientX: 200 }), "move");
     expect(h.read()).toEqual(empty);
     h.controls.enabled = true;
-    expect(h.read().cursor?.x).toBe(100);
+    expect(h.read().cursor?.x).toBe(120);
     h.controller.record(event({ clientX: 0 }), "move");
     expect(h.read()).toEqual(empty);
     h.controller.dispose();
