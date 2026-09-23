@@ -11,6 +11,10 @@ import { layoutSelectionHandles } from "../../../src/editor/selection/handles";
 
 import { ActiveEditorHandleInteraction } from "../../../src/obsidian/embeds/active-editor/handle-interaction";
 import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
+import { ActiveEditorSelectionEdgeDrag } from "../../../src/obsidian/embeds/active-editor/controller-selection-edge";
+import type { ActiveEditorNavigation } from "../../../src/obsidian/embeds/active-editor/navigation";
+import type { SelectionEdgeDragPort } from "../../../src/obsidian/embeds/active-editor/selection-preview-contracts";
+import type { BrowserScrollElement } from "../../../src/obsidian/scrolling/index";
 import { MovePreview } from "../../../src/obsidian/embeds/active-editor/move-preview";
 import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
 import { SvgSceneRenderer } from "../../../src/rendering/scene";
@@ -218,20 +222,23 @@ function createMovePreview(
   api: ResizeApi,
   fixture: ReturnType<typeof createPipeline>,
   elements: readonly InkElementV1[],
-  updatePreviewBottom: () => void,
+  edge: (() => void) | SelectionEdgeDragPort,
 ) {
   return new api.MovePreview({
     frameScheduler: fixture.scheduler,
     ...interactionPorts(api, fixture, elements),
     preparedHistory: {} as never,
     renderer: fixture.renderer,
-    selectionEdgeDrag: {
-      begin: () => undefined,
-      finish: () => undefined,
-      stop: () => undefined,
-      update: () => undefined,
-      updatePreviewBottom,
-    },
+    selectionEdgeDrag:
+      typeof edge !== "function"
+        ? edge
+        : {
+            begin: () => undefined,
+            finish: () => undefined,
+            stop: () => undefined,
+            update: () => undefined,
+            updatePreviewBottom: edge,
+          },
     setSelection: () => undefined,
     start: {
       additive: false,
@@ -242,6 +249,29 @@ function createMovePreview(
     store: fixture.store,
     zoom: () => 1,
   });
+}
+
+function createNativeEdgeDrag(scheduler: FakeScheduler) {
+  const readBounds = vi.fn(() => ({ left: 0, top: 0, width: 800 }));
+  const scroll = vi.fn();
+  const updateBottom = vi.fn();
+  const owner = {
+    clientHeight: 500,
+    clientWidth: 800,
+    getBoundingClientRect: readBounds,
+    ownerDocument: { scrollingElement: null },
+  } as unknown as BrowserScrollElement;
+  const drag = new ActiveEditorSelectionEdgeDrag({
+    layout: { begin: () => undefined, finish: () => undefined, updateBottom },
+    navigation: { pan: vi.fn(), scroll } as unknown as ActiveEditorNavigation,
+    ownerWindow: {
+      cancelAnimationFrame: (handle: number) => scheduler.cancelAnimationFrame(handle),
+      requestAnimationFrame: (callback: FrameRequestCallback) =>
+        scheduler.requestAnimationFrame(callback),
+    } as unknown as Window,
+    scrollOwner: () => owner,
+  });
+  return { drag, readBounds, scroll, updateBottom };
 }
 
 const API: ResizeApi = {
@@ -290,6 +320,54 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz selection resize frame p
       expect(result.pageGrowths).toBeGreaterThan(0);
     },
   );
+
+  it("bounds native edge-scroll work when pending selection moves reverse and stop scrolling", () => {
+    const elements = fallbackElements();
+    const fixture = createPipeline(API, elements, 2_000);
+    const edge = createNativeEdgeDrag(fixture.scheduler);
+    const preview = createMovePreview(API, fixture, elements, edge.drag);
+    const transforms = vi.spyOn(fixture.renderer, "setPreviewTransform");
+    const advance = () => {
+      fixture.scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
+      fixture.scheduler.runFrame();
+    };
+    preview.update({ pointerId: 2, pointerType: "pen", pressure: 0.5, x: 100, y: 490 });
+    advance();
+    advance();
+    expect(edge.scroll.mock.lastCall?.[0]).toBeLessThan(0);
+    // One shared scheduler preserves native RAF ordering: scroll precedes pending pointer work.
+    for (const y of [10, 490, 250]) {
+      edge.readBounds.mockClear();
+      edge.scroll.mockClear();
+      edge.updateBottom.mockClear();
+      transforms.mockClear();
+      for (let sample = 0; sample < RAW_SAMPLES_PER_FRAME; sample += 1) {
+        preview.update({ pointerId: 2, pointerType: "pen", pressure: 0.5, x: 100, y });
+      }
+      expect(edge.readBounds).not.toHaveBeenCalled();
+      expect(transforms).not.toHaveBeenCalled();
+      // One scroll frame, one coalesced pointer frame and at most one scene frame.
+      expect(fixture.scheduler.pendingCount).toBeLessThanOrEqual(3);
+      advance();
+      expect(edge.readBounds).toHaveBeenCalledTimes(2);
+      expect(edge.updateBottom).toHaveBeenCalledOnce();
+      expect(transforms).toHaveBeenCalledOnce();
+      expect(edge.scroll).toHaveBeenCalledTimes(y === 250 ? 0 : 1);
+      if (y !== 250)
+        expect(Math.sign(edge.scroll.mock.lastCall?.[0] as number)).toBe(y === 10 ? 1 : -1);
+      expect(fixture.scheduler.pendingCount).toBeLessThanOrEqual(y === 250 ? 1 : 2);
+    }
+    advance();
+    expect(fixture.scheduler.pendingCount).toBe(0);
+    expect(edge.readBounds).toHaveBeenCalledTimes(2);
+    preview.update({ pointerId: 2, pointerType: "pen", pressure: 0.5, x: 100, y: 490 });
+    advance();
+    expect(fixture.scheduler.pendingCount).toBeLessThanOrEqual(2);
+    preview.revert();
+    fixture.renderer.destroy();
+    fixture.sceneStore.release();
+    expect(fixture.scheduler.pendingCount).toBe(0);
+  });
 
   it("keeps coalesced S Pen selection moves with coalesced work", () => {
     const profiles = [

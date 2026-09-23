@@ -57,8 +57,9 @@ export class SelectionEdgeAutoScroller {
 
   #schedule(): void {
     this.#frame = this.#options.requestFrame((timestamp) => {
-      this.#frame = undefined;
+      // Keep the running frame owned while pointer reprojection may call update().
       this.#options.onFrame?.();
+      this.#frame = undefined;
       const delta = this.#delta(this.#frameScale(timestamp));
       if (delta === undefined) return;
       this.#options.onScroll({ x: delta.x, y: delta.y });
