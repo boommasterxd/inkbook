@@ -15,6 +15,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/rendering/scene/tool-cursor-performance.test.ts",
   ]),
   invariant: Object.freeze([
+    "test/performance/obsidian/tool-cursor-raw-input.test.ts",
     "test/performance/persistence/main-thread-slice-budget.test.ts",
     "test/performance/obsidian/store-scheduler-resources.test.ts",
     "test/performance/domain/canonical-rounding-performance.test.ts",

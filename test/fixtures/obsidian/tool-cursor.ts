@@ -27,6 +27,17 @@ export function cursorPointerEvent(overrides: Partial<PointerEvent> = {}): Point
   ) as PointerEvent;
 }
 
+export function timedCursorPointerEvent(
+  timeStamp: number,
+  overrides: Partial<PointerEvent> = {},
+  type = "pointerenter",
+): PointerEvent {
+  const fields = Object.fromEntries(Object.entries(cursorPointerEvent(overrides)));
+  const event = Object.assign(new Event(type), fields) as PointerEvent;
+  Object.defineProperty(event, "timeStamp", { value: timeStamp });
+  return event;
+}
+
 export function toolCursorHarness() {
   const surface = new EventTarget();
   const document = Object.assign(new EventTarget(), { hidden: false });

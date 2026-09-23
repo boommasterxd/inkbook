@@ -45,6 +45,7 @@ export class ActiveToolCursorController {
   readonly #ownerWindow: Window;
   #pointer: CursorPointer | undefined;
   #bounds: ElementContentBox | undefined;
+  #positionTime = -Infinity;
   #disposed = false;
   public lastPagePointer: PointerSample | null = null;
   public lastScreenPointer: PointerSample | null = null;
@@ -59,6 +60,7 @@ export class ActiveToolCursorController {
     const surface = options.renderer.inputSurface;
     surface.addEventListener("pointerenter", this.#enter);
     surface.addEventListener("pointerleave", this.#leave);
+    surface.addEventListener("pointerrawupdate", this.#rawMove, { passive: true });
     this.#ownerWindow.addEventListener("blur", this.#blur);
     this.#ownerWindow.document.addEventListener("visibilitychange", this.#visibility);
     this.#ownerWindow.document.addEventListener("keydown", this.#modifier, true);
@@ -92,9 +94,15 @@ export class ActiveToolCursorController {
       pointerType,
     });
     const previous = this.#pointer;
+    const newerRaw =
+      phase === "move" &&
+      previous?.pointerId === event.pointerId &&
+      previous.pointerType === pointerType &&
+      event.timeStamp < this.#positionTime;
+    if (!newerRaw) this.#positionTime = event.timeStamp;
     this.#pointer = {
-      clientX: event.clientX,
-      clientY: event.clientY,
+      clientX: newerRaw ? previous.clientX : event.clientX,
+      clientY: newerRaw ? previous.clientY : event.clientY,
       pointerId: event.pointerId,
       pointerType,
       penRole: classification.penRole,
@@ -140,6 +148,7 @@ export class ActiveToolCursorController {
   public clear(pointerId?: number): void {
     if (pointerId !== undefined && this.#pointer?.pointerId !== pointerId) return;
     this.#pointer = undefined;
+    this.#positionTime = -Infinity;
     this.#bounds = undefined;
     this.refresh();
   }
@@ -151,12 +160,34 @@ export class ActiveToolCursorController {
     const surface = this.#options.renderer.inputSurface;
     surface.removeEventListener("pointerenter", this.#enter);
     surface.removeEventListener("pointerleave", this.#leave);
+    surface.removeEventListener("pointerrawupdate", this.#rawMove);
     this.#ownerWindow.removeEventListener("blur", this.#blur);
     this.#ownerWindow.document.removeEventListener("visibilitychange", this.#visibility);
     this.#ownerWindow.document.removeEventListener("keydown", this.#modifier, true);
     this.#ownerWindow.document.removeEventListener("keyup", this.#modifier, true);
   }
 
+  readonly #rawMove = (raw: Event): void => {
+    const event = raw as PointerEvent;
+    const previous = this.#pointer;
+    if (
+      this.#disposed ||
+      !this.#options.enabled() ||
+      previous === undefined ||
+      event.pointerType === "touch" ||
+      event.pointerType !== previous.pointerType ||
+      event.pointerId !== previous.pointerId ||
+      !this.#ownsPointer(event.pointerId, this.#options.input()) ||
+      !Number.isFinite(event.clientX) ||
+      !Number.isFinite(event.clientY) ||
+      !Number.isFinite(event.timeStamp) ||
+      event.timeStamp < this.#positionTime
+    )
+      return;
+    this.#positionTime = event.timeStamp;
+    this.#pointer = { ...previous, clientX: event.clientX, clientY: event.clientY };
+    this.#moveDecoration(previous, this.#pointer);
+  };
   readonly #enter = (event: PointerEvent): void => this.record(event, "move");
   readonly #leave = (event: PointerEvent): void => {
     // Some Wayland Chromium builds report pen proximity-out with the mouse ID.
