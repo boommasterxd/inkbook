@@ -41,6 +41,7 @@ export function timedCursorPointerEvent(
 export function toolCursorHarness(
   options: {
     readonly input?: () => InputState;
+    readonly scrollBounds?: () => DOMRect;
     readonly activeHandlePointer?: () => number | undefined;
   } = {},
 ) {
@@ -69,6 +70,7 @@ export function toolCursorHarness(
   const defaults = createBuiltInSettings().toolDefaults;
   const toolIcon = {} as SVGSVGElement;
   const icon = vi.fn(() => toolIcon);
+  const handleCursor = vi.fn(() => controls.hint);
   const controller = new ActiveToolCursorController({
     container: {
       ownerDocument: { defaultView: window },
@@ -85,7 +87,8 @@ export function toolCursorHarness(
     enabled: () => controls.enabled,
     menuOpen: () => controls.menuOpen,
     cameraX: () => controls.cameraX,
-    handleCursor: () => controls.hint,
+    handleCursor,
+    ...(options.scrollBounds === undefined ? {} : { scrollBounds: options.scrollBounds }),
     activeHandlePointer: options.activeHandlePointer ?? (() => controls.handlePointer),
   });
   const read = (changed = false) => {
@@ -97,6 +100,7 @@ export function toolCursorHarness(
     controls,
     bounds,
     defaults,
+    handleCursor,
     icon,
     toolIcon,
     measure,

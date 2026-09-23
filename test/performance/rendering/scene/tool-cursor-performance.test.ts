@@ -37,7 +37,7 @@ it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz cursor bursts retain decoratio
   try {
     // Consecutive input bursts exercise initial mount, retained movement and unchanged input.
     for (const [next, expectedWrites, layoutChanged] of [
-      [8, 9, true],
+      [8, 10, true],
       [16, 1, false],
       [16, 0, false],
     ] as const) {
@@ -56,8 +56,9 @@ it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz cursor bursts retain decoratio
       expect(scheduler.pendingCount).toBe(0);
       expect(read).toHaveBeenCalledExactlyOnceWith(layoutChanged);
       expect(cursor.attributes.get("transform")).toBe(`translate(${String(next)} 40)`);
-      // Nine initial attributes; a moved retained cursor changes only its translation.
+      // Ten initial attributes including the surface clip; retained moves change only translation.
       expect(observations.write).toHaveBeenCalledTimes(expectedWrites);
+      if (layoutChanged) expect(observations.write).toHaveBeenCalledWith("clip-path", "none");
       expect(observations.traversal).toHaveBeenCalledTimes(layoutChanged ? 3 : 0);
     }
     expect(observations.system).toHaveBeenCalledExactlyOnceWith("cursor", "crosshair");
@@ -485,6 +486,6 @@ function createCursorFixture() {
   const { renderer, scheduler } = createInteractionRenderer(store);
   scheduler.runAll();
   const root = fakeNode(renderer.svg);
-  const cursor = root.nodes.find((node) => node.attributes.get("class") === "inkbook-tool-cursor")!;
+  const cursor = root.ownerDocument.body.nodes[0]!.nodes[0]!;
   return { store, renderer, scheduler, root, cursor };
 }

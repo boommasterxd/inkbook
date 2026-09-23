@@ -35,6 +35,7 @@ export interface ActiveToolCursorOptions {
     defaults: ToolDefaultsV1,
   ) => SVGSVGElement | undefined;
   readonly activeHandlePointer?: () => number | undefined;
+  readonly scrollBounds?: () => DOMRect;
 }
 
 const EMPTY_FRAME: SceneToolCursorFrame = { cursor: null, system: "default" };
@@ -45,6 +46,7 @@ export class ActiveToolCursorController {
   readonly #ownerWindow: Window;
   #pointer: CursorPointer | undefined;
   #bounds: ElementContentBox | undefined;
+  #clip: ElementContentBox | undefined;
   #positionTime = -Infinity;
   #disposed = false;
   public lastPagePointer: PointerSample | null = null;
@@ -127,7 +129,7 @@ export class ActiveToolCursorController {
     const x = pointer.clientX - bounds.left;
     const y = pointer.clientY - bounds.top;
     if (x < 0 || y < 0 || x > bounds.width || y > bounds.height) return;
-    this.#options.renderer.moveToolCursor(x, y);
+    this.#options.renderer.moveToolCursor(pointer.clientX, pointer.clientY);
   }
 
   #ownsPointer(pointerId: number, input: InputState): boolean {
@@ -150,6 +152,7 @@ export class ActiveToolCursorController {
     this.#pointer = undefined;
     this.#positionTime = -Infinity;
     this.#bounds = undefined;
+    this.#clip = undefined;
     this.refresh();
   }
 
@@ -213,7 +216,10 @@ export class ActiveToolCursorController {
   };
 
   readonly #read = (layoutChanged: boolean): SceneToolCursorFrame => {
-    if (layoutChanged) this.#bounds = undefined;
+    if (layoutChanged) {
+      this.#bounds = undefined;
+      this.#clip = undefined;
+    }
     const pointer = this.#pointer;
     if (
       this.#disposed ||
@@ -248,12 +254,26 @@ export class ActiveToolCursorController {
     });
     const overlay = resolved.overlay;
     if (overlay === undefined) return { system: resolved.system, cursor: null };
+    const position = {
+      x: pointer.clientX,
+      y: pointer.clientY,
+      clip: (this.#clip ??= this.#clipBounds(bounds)),
+    };
     const cursor =
       overlay.kind === "tool"
-        ? { ...overlay, x: screen.x, y: screen.y, icon: this.#options.icon(overlay.tool, defaults) }
-        : { ...overlay, x: screen.x, y: screen.y };
+        ? { ...overlay, ...position, icon: this.#options.icon(overlay.tool, defaults) }
+        : { ...overlay, ...position };
     return { system: resolved.system, cursor };
   };
+  #clipBounds(bounds: ElementContentBox): ElementContentBox {
+    const viewport = this.#options.scrollBounds?.();
+    if (viewport === undefined) return bounds;
+    const left = Math.max(bounds.left, viewport.left);
+    const top = Math.max(bounds.top, viewport.top);
+    const right = Math.max(left, Math.min(bounds.right, viewport.right));
+    const bottom = Math.max(top, Math.min(bounds.bottom, viewport.bottom));
+    return { left, top, right, bottom, width: right - left, height: bottom - top };
+  }
 }
 
 export function createActiveToolCursorController(
@@ -268,10 +288,12 @@ export function createActiveToolCursorController(
     },
     { readonly cameraX: number },
   ],
+  scrollBounds: () => DOMRect,
 ): ActiveToolCursorController {
   return new ActiveToolCursorController({
     container,
     renderer,
+    scrollBounds,
     input,
     defaults,
     enabled: () => availability.acceptsInput,
