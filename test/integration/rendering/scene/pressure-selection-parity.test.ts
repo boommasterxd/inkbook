@@ -1,3 +1,4 @@
+import { selectionOverlayGeometry } from "../../../../src/editor/selection/public";
 import { describe, expect, it } from "vitest";
 
 import { calculateElementBounds } from "../../../../src/domain/geometry/public";
@@ -25,7 +26,7 @@ describe("pressure stroke selection parity", () => {
       () => 1,
     );
 
-    presentation.renderGeometry(selected, null);
+    presentation.renderGeometry(selected, selectionOverlayGeometry(selected, 1));
     scheduler.runAll();
     expect(content.nodes.map((node) => node.attributes)).toEqual(original);
 

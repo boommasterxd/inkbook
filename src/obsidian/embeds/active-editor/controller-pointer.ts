@@ -8,6 +8,7 @@ import {
 } from "../../../editor/input/index";
 import type { SvgSceneRenderer } from "../../../rendering/scene/index";
 
+import type { ActiveToolCursorController } from "./tool-cursor-controller";
 import type { CoalescedPointerInput } from "./coalesced-input";
 import { selectionTargetAt } from "./controller-elements";
 import { isMacPlatform, normalizePointerType } from "./controller-helpers";
@@ -20,6 +21,7 @@ import { touchInteractionBlocksNativeScroll, touchPanDelta } from "./controller-
 
 export interface ActiveEditorPointerOptions {
   readonly coalesced: CoalescedPointerInput;
+  readonly cursor: ActiveToolCursorController;
   readonly capturePointer: (pointerId: number) => void;
   readonly beginHandlePointer: (pointerType: PointerSample["pointerType"]) => void;
   readonly dispatch: (action: InputAction) => void;
@@ -48,6 +50,7 @@ export class ActiveEditorPointerController {
   }
 
   public handleContextMenu(event: MouseEvent): void {
+    this.#options.cursor.clear();
     if (!this.#options.isEnabled()) return;
     const screenPoint = this.#options.navigation.localScreenPoint(event);
     const point = this.#options.navigation.pagePointFromScreen(screenPoint);
@@ -82,6 +85,8 @@ export class ActiveEditorPointerController {
   }
 
   public cancelPointer(pointerId: number): void {
+    if (this.#isForeignHandlePointer(pointerId)) return;
+    this.#options.cursor.clear(pointerId);
     this.#options.navigation.cancelPanMomentum();
     this.#setSnappingInverted(pointerId, null);
     if (!this.#options.isEnabled()) {
@@ -98,6 +103,8 @@ export class ActiveEditorPointerController {
   }
 
   public handlePointerDown(event: PointerEvent): void {
+    if (this.#isForeignHandlePointer(event.pointerId)) return;
+    this.#options.cursor.record(event, "down");
     if (!this.#options.isEnabled()) return;
     this.#setSnappingInverted(event.pointerId, event.altKey === true);
     this.#options.renderer.inputSurface.focus({ preventScroll: true });
@@ -167,6 +174,13 @@ export class ActiveEditorPointerController {
   }
 
   public handlePointerMove(event: PointerEvent): void {
+    if (this.#isForeignHandlePointer(event.pointerId)) return;
+    this.#options.cursor.record(event, "move");
+    if (
+      this.#options.getInput().interaction === undefined &&
+      this.#options.handles.activePointerId === undefined
+    )
+      return;
     const pointer = this.#pointerOrCancel(event);
     if (pointer === undefined) return;
     this.#setSnappingInverted(event.pointerId, event.altKey === true);
@@ -191,6 +205,8 @@ export class ActiveEditorPointerController {
   }
 
   public handlePointerUp(event: PointerEvent): void {
+    if (this.#isForeignHandlePointer(event.pointerId)) return;
+    this.#options.cursor.record(event, "up");
     this.#setSnappingInverted(event.pointerId, event.altKey === true);
     const previous = this.#options.getInput().interaction;
     const pointer = this.#pointerOrCancel(event);
@@ -220,7 +236,9 @@ export class ActiveEditorPointerController {
   }
 
   public handleLostPointerCapture(event: PointerEvent): void {
+    if (this.#isForeignHandlePointer(event.pointerId)) return;
     if (!this.#options.isEnabled()) return;
+    this.#options.cursor.clear(event.pointerId);
     this.#setSnappingInverted(event.pointerId, null);
     this.#options.navigation.cancelPanMomentum();
     this.#options.releasePointer(event.pointerId);
@@ -281,6 +299,11 @@ export class ActiveEditorPointerController {
       touchPanDelta(current.current.x - previous.current.x),
       event.timeStamp,
     );
+  }
+
+  #isForeignHandlePointer(pointerId: number): boolean {
+    const owner = this.#options.handles.activePointerId;
+    return owner !== undefined && owner !== pointerId;
   }
 
   #releasePointer(pointerId: number): void {

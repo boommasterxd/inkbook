@@ -5,10 +5,8 @@ import type { InkElementV1, PageV1, PointV1 } from "../../../../src/domain/schem
 import { createBuiltInSettings } from "../../../../src/domain/settings/defaults";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { createDragElement } from "../../../../src/editor/tools/public";
-import {
-  layoutSelectionHandles,
-  oppositeElementHandlePoint,
-} from "../../../../src/editor/selection/public";
+import { layoutSelectionHandles } from "../../../../src/editor/selection/handles";
+import { oppositeElementHandlePoint } from "../../../../src/editor/selection/public";
 import { ActiveEditorHandleInteraction } from "../../../../src/obsidian/embeds/active-editor/handle-interaction";
 import type { HandleInteractionRenderer } from "../../../../src/obsidian/embeds/active-editor/handle-presentation";
 import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";

@@ -6,8 +6,8 @@ import {
 } from "../../../../src/domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
+import { layoutSelectionHandles } from "../../../../src/editor/selection/handles";
 import {
-  layoutSelectionHandles,
   oppositeElementHandlePoint,
   SelectionFrameSession,
 } from "../../../../src/editor/selection/public";
@@ -67,6 +67,42 @@ function pointLineDistance(
 }
 
 describe("active editor handle page extent", () => {
+  it.each([null, { x: 200, y: 200 }])(
+    "uses bounded selected line hit geometry for hover: %s",
+    (bend) => {
+      const element = { ...line(), start: { x: 0, y: 0 }, end: { x: 400, y: 0 }, bend };
+      const fixture = harness([element], 1);
+      fixture.interaction.renderSelection();
+      const read = vi.spyOn(fixture.store, "get");
+      const pointer = {
+        pointerId: 1,
+        pointerType: "mouse" as const,
+        x: 100,
+        y: bend === null ? 7 : 75,
+      };
+      expect(fixture.interaction.cursorAt(pointer)).toBe("move");
+      expect(fixture.interaction.cursorAt({ ...pointer, y: 150 })).toBeUndefined();
+      expect(read).not.toHaveBeenCalled();
+      fixture.interaction.dispose();
+    },
+  );
+  it("resolves repeated hover from cached geometry without reading selected elements", () => {
+    const element = rectangle();
+    const selection = new Set([element.id]);
+    const fixture = harness([element], 1, selection);
+    const pointer = { pointerId: 1, pointerType: "mouse" as const, x: 200, y: 170 };
+    fixture.interaction.renderSelection();
+    const read = vi.spyOn(fixture.store, "get");
+    for (let index = 0; index < 100; index += 1) {
+      expect(fixture.interaction.cursorAt(pointer)).toBe("move");
+      expect(fixture.interaction.cursorAt({ ...pointer, x: -100 })).toBeUndefined();
+    }
+    expect(read).not.toHaveBeenCalled();
+    selection.clear();
+    fixture.interaction.renderSelection();
+    expect(fixture.interaction.cursorAt(pointer)).toBeUndefined();
+    fixture.interaction.dispose();
+  });
   it("reserves preview height for handle geometry until commit", () => {
     const element = rectangle();
     const bounds = calculateElementBounds(element);
@@ -78,14 +114,16 @@ describe("active editor handle page extent", () => {
       y: bounds.maxY,
     };
 
+    fixture.interaction.renderSelection();
+    expect(fixture.interaction.cursorAt(pointer)).toBe("nwse-resize");
     expect(fixture.interaction.pointerDown(pointer)).toBe(true);
+    expect(fixture.interaction.cursorAt({ ...pointer, x: -100 })).toBe("nwse-resize");
     expect(fixture.layout.begin).toHaveBeenCalledOnce();
     expect(fixture.interaction.pointerMove({ ...pointer, y: pointer.y + 300 })).toBe(true);
     expect(fixture.layout.updateBottom).toHaveBeenLastCalledWith(expect.any(Number));
     const calls = fixture.layout.updateBottom.mock.calls;
     const previewBottom = Number(calls[calls.length - 1]?.[0]);
     expect(previewBottom).toBeGreaterThan(bounds.maxY);
-
     expect(fixture.interaction.pointerUp(pointer.pointerId)).toBe(true);
     expect(fixture.layout.finish).toHaveBeenCalledWith(true, previewBottom);
   });
@@ -96,7 +134,6 @@ describe("active editor selection handle targets", () => {
     const element = rectangle();
     const bounds = calculateElementBounds(element);
     const nearTopLeft = { pointerId: 20, x: bounds.minX + 15, y: bounds.minY };
-
     expect(
       harness([element], 1).interaction.pointerDown({
         ...nearTopLeft,
@@ -155,7 +192,6 @@ describe("active editor selection handle targets", () => {
       x: bounds.maxX - 12,
       y: bounds.maxY,
     };
-
     expect(fixture.interaction.pointerDown(pointer)).toBe(true);
     expect(fixture.interaction.pointerMove({ ...pointer, x: pointer.x + 1 })).toBe(true);
     expect(fixture.interaction.pointerUp(pointer.pointerId)).toBe(true);
@@ -198,7 +234,6 @@ describe("active editor selection interior handle arbitration", () => {
       x: (bounds.minX + bounds.maxX) / 2,
       y: (bounds.minY + bounds.maxY) / 2,
     };
-
     expect(harness([element], zoom).interaction.pointerDown(center)).toBe(false);
 
     const nearTopCenter = harness([element], zoom);
@@ -334,7 +369,6 @@ describe("active editor multi-selection frame", () => {
       y: (initial.points[0].y + initial.points[2].y) / 2,
     };
     const pointerId = 31;
-
     expect(
       fixture.interaction.pointerDown({ ...handle.point, pointerId, pointerType: "mouse" }),
     ).toBe(true);

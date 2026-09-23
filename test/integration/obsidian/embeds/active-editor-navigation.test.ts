@@ -175,7 +175,7 @@ describe("active editor navigation", () => {
       oldPageY,
     );
     expect(harness.layoutUpdates).toEqual([{ blockSize: 2_000 * newZoom, zoom: newZoom }]);
-    expect(harness.sequence).toEqual(["layout", "camera", "scroll"]);
+    expect(harness.sequence).toEqual(["layout", "scroll", "camera"]);
     expect(harness.state().fitZoom).toBeCloseTo(1_000 / OUTER_PAGE_WIDTH);
   });
 

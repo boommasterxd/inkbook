@@ -397,6 +397,10 @@ export function removeIcon(iconId: string): void {
   testIconRegistry.delete(iconId);
 }
 
+export function getIcon(_icon: string): SVGSVGElement | null {
+  return null;
+}
+
 export function setIcon(element: HTMLElement, icon: string): void {
   element.setAttribute("data-icon", icon);
 }

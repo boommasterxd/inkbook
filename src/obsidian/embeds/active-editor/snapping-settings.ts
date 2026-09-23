@@ -22,3 +22,19 @@ export function activeSnapFeatures(
     structures: enabled && current.structures,
   };
 }
+
+interface SnappingPointerOverride {
+  readonly pointerId: number;
+  readonly inverted: boolean;
+}
+
+export function resolveSnappingPointerOverride(
+  current: SnappingPointerOverride | undefined,
+  pointerId: number,
+  inverted: boolean | null,
+): SnappingPointerOverride | undefined {
+  if (inverted === null) return current?.pointerId === pointerId ? undefined : current;
+  return current === undefined || current.pointerId === pointerId
+    ? { pointerId, inverted }
+    : current;
+}

@@ -130,7 +130,7 @@ describe("active editor keyboard and wheel navigation", () => {
       (harness.owner.scrollTop + anchorViewportY - embedTopInScrollContent) /
         harness.navigation.zoom,
     ).toBeCloseTo(oldPage.y);
-    expect(harness.sequence.slice(-3)).toEqual(["layout-write", "camera-write", "scroll-write"]);
+    expect(harness.sequence.slice(-3)).toEqual(["layout-write", "scroll-write", "camera-write"]);
   });
 });
 

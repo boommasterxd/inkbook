@@ -15,7 +15,7 @@ import {
   activeShapeIconId,
   selectionAreaIconId,
   SHAPE_ICON_IDS,
-  STRAIGHT_HIGHLIGHTER_ICON_ID,
+  DRAWING_TOOL_ICON_IDS,
   type ActiveShapeIconState,
 } from "./icon-ids";
 import { ToolbarStyleIcon, type ToolbarStyleIconState } from "./style-icon";
@@ -40,11 +40,11 @@ const LEFT_BUTTONS: readonly ToolbarButtonDefinition[] = [
 const TOOL_BUTTONS: readonly ToolbarButtonDefinition[] = [
   { action: "select", icon: "mouse-pointer-2", label: "Select" },
   { action: "eraser", icon: "eraser", label: "Eraser" },
-  { action: "draw", icon: "pen", label: "Draw" },
-  { action: "highlighter", icon: "highlighter", label: "Highlighter" },
+  { action: "draw", icon: DRAWING_TOOL_ICON_IDS.draw, label: "Draw" },
+  { action: "highlighter", icon: DRAWING_TOOL_ICON_IDS.highlighter, label: "Highlighter" },
   {
     action: "straight-highlighter",
-    icon: STRAIGHT_HIGHLIGHTER_ICON_ID,
+    icon: DRAWING_TOOL_ICON_IDS["straight-highlighter"],
     label: "Straight highlighter",
   },
   { action: "shape", icon: SHAPE_ICON_IDS.line, label: "Active shape" },

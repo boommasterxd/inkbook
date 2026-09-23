@@ -1,6 +1,7 @@
 import { roundCanonical } from "../../domain/geometry/public";
 import { PAGE_WIDTH, PORTABLE_PALETTE_V1, type BackgroundV1 } from "../../domain/schema/public";
 import type { RenderBand } from "../../domain/commands/render-bands";
+import { createToolCursorDom, type SceneToolCursorDom } from "./tool-cursor";
 import { SVG_NAMESPACE } from "./constants";
 import type { DocumentScheme, SceneInputHandlers } from "./types";
 
@@ -25,7 +26,7 @@ export class SceneDom {
   public readonly inputSurface: HTMLDivElement;
   public readonly liveGroup: SVGGElement;
   public readonly liveStrokeGroup: SVGGElement;
-  public readonly livePath: SVGPathElement;
+  public livePath: SVGPathElement;
   public readonly motionGroup: SVGGElement;
   public readonly overlayPath: SVGPathElement;
   public readonly selectionTraceGroup: SVGGElement;
@@ -36,6 +37,7 @@ export class SceneDom {
   public readonly ownerDocument: Document;
   public readonly pageSurface: SVGPathElement;
   public readonly svg: SVGSVGElement;
+  public readonly toolCursor: SceneToolCursorDom;
   readonly #backgroundPattern: SVGPatternElement;
   readonly #backgroundPatternPath: SVGPathElement;
   readonly #backgroundPatternId: string;
@@ -47,6 +49,7 @@ export class SceneDom {
   public constructor(container: HTMLElement, accessibleName: string, handlers: SceneInputHandlers) {
     this.ownerDocument = container.ownerDocument;
     this.svg = this.createSvg("svg");
+    this.toolCursor = createToolCursorDom(this.ownerDocument);
     this.cameraGroup = this.createSvg("g");
     this.pageSurface = this.createSvg("path");
     this.backgroundPath = this.createSvg("path");
@@ -127,7 +130,7 @@ export class SceneDom {
     );
     const defs = this.createSvg("defs");
     defs.append(this.#backgroundPattern, this.createSelectionClip());
-    this.svg.append(themeStyle, this.cameraGroup, overlayGroup, defs);
+    this.svg.append(themeStyle, this.cameraGroup, overlayGroup, defs, this.toolCursor.group);
 
     this.inputSurface.tabIndex = 0;
     this.inputSurface.setAttribute("class", "inkbook-canvas-input");
@@ -140,6 +143,12 @@ export class SceneDom {
     this.attachHandlers(handlers);
     container.append(this.svg, this.inputSurface);
     this.setPageHeight(1);
+  }
+
+  public replaceLivePath(): void {
+    this.livePath = this.createSvg("path");
+    this.livePath.setAttribute("pointer-events", "none");
+    this.liveGroup.append(this.livePath);
   }
 
   public group(band: "content" | "highlight"): SVGGElement {

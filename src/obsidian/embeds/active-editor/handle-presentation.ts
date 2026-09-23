@@ -1,25 +1,19 @@
-import { calculateElementBounds, pointSegmentDistance } from "../../../domain/geometry/public";
+import { calculateElementBounds } from "../../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../../domain/schema/public";
-import type { PointerSample } from "../../../editor/input/index";
 import type { ProgressivePreviewTransform } from "../../../rendering/scene/progressive-element-preview";
 import {
   createSelectionFrameAtRotation,
-  selectionOverlayContainsPoint,
   selectionOverlayGeometry,
   type OrientedSelectionFrame,
   type SelectedElementGeometry,
   type SelectionHandlePreview,
   type SelectionOutline,
+  type SelectionOverlayGeometry,
   type SelectionPreviewTransform,
 } from "../../../editor/selection/public";
 
 import { selectionOverlayFill, selectionOverlayPaths } from "./selection-overlay-path";
 import { selectionSnapGuidePath } from "./snap-marker-path";
-
-const HANDLE_RADIUS_PIXELS = 13;
-const INTERIOR_HANDLE_RADIUS_PIXELS = 10;
-const PEN_HANDLE_RADIUS_PIXELS = 16;
-const TOUCH_HANDLE_RADIUS_PIXELS = 24;
 
 export interface HandleInteractionRenderer {
   beginPreviewCommit?(): {
@@ -92,17 +86,13 @@ export class SelectionHandlePresentation {
 
   public renderGeometry(
     selected: readonly SelectedElementGeometry[],
-    snap: SelectionHandlePreview["snapGuide"],
-    transform: SelectionPreviewTransform | null = null,
-    frame: OrientedSelectionFrame | null = null,
+    geometry: SelectionOverlayGeometry | null,
+    snap: SelectionHandlePreview["snapGuide"] = null,
   ): SelectionOutline | null {
-    const geometry = selectionOverlayGeometry(selected, this.#zoom(), transform, frame);
     const paths = selectionOverlayPaths(
       selected,
       {
         pageToScreen: this.#pageToScreen,
-        frame,
-        transform,
         zoom: this.#zoom(),
       },
       geometry,
@@ -157,12 +147,14 @@ export class SelectionHandlePresentation {
       this.#version,
     );
     const previewFrame = exactOverlay.length === 0 ? preview.previewFrame : null;
-    const outline = this.renderGeometry(
-      exactOverlay.length === 0 ? context.selected : exactOverlay,
-      preview.snapGuide,
+    const selected = exactOverlay.length === 0 ? context.selected : exactOverlay;
+    const geometry = selectionOverlayGeometry(
+      selected,
+      this.#zoom(),
       exactOverlay.length === 0 && previewFrame === null ? preview.transform : null,
       exactOverlay.length === 0 ? (previewFrame ?? context.frame) : exactFrame,
     );
+    const outline = this.renderGeometry(selected, geometry, preview.snapGuide);
     return previewMaximumBottom(exactGeometry, connected.elements, outline);
   }
 
@@ -223,45 +215,6 @@ function uniquePreviewElements(
   if (base.length === 0) return scale;
   const scaleIds = new Set(scale.map(({ id }) => id));
   return [...base.filter(({ id }) => !scaleIds.has(id)), ...scale];
-}
-
-export function pointerHandleRadiusPixels(
-  selected: readonly SelectedElementGeometry[],
-  frame: OrientedSelectionFrame | null,
-  pointer: PointerSample,
-  zoom: number,
-): number {
-  const radius = handleRadiusPixels(pointer.pointerType, zoom);
-  if (!selectionOverlayContainsPoint(selected, pointer, frame)) return radius;
-  const geometry = selectionOverlayGeometry(selected, zoom, null, frame)?.outline;
-  if (
-    geometry?.kind !== "polygon" ||
-    polygonEdgeDistance(pointer, geometry.points) * zoom <= INTERIOR_HANDLE_RADIUS_PIXELS
-  ) {
-    return radius;
-  }
-  return Math.min(radius, INTERIOR_HANDLE_RADIUS_PIXELS);
-}
-
-function handleRadiusPixels(pointerType: PointerSample["pointerType"], zoom: number): number {
-  const base =
-    pointerType === "touch"
-      ? TOUCH_HANDLE_RADIUS_PIXELS
-      : pointerType === "pen"
-        ? PEN_HANDLE_RADIUS_PIXELS
-        : HANDLE_RADIUS_PIXELS;
-  return Math.min(28, Math.max(11, base / Math.sqrt(zoom)));
-}
-
-function polygonEdgeDistance(point: PointV1, vertices: readonly PointV1[]): number {
-  let minimum = Number.POSITIVE_INFINITY;
-  for (let index = 0; index < vertices.length; index += 1) {
-    const start = vertices[index];
-    const end = vertices[(index + 1) % vertices.length];
-    if (start === undefined || end === undefined) continue;
-    minimum = Math.min(minimum, pointSegmentDistance(point, start, end));
-  }
-  return minimum;
 }
 
 function transformString(transform: SelectionPreviewTransform | null): string | null {

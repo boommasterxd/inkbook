@@ -34,6 +34,10 @@ export class FakeNode {
     public readonly fragment = false,
   ) {}
 
+  public get children(): readonly FakeNode[] {
+    return this.nodes;
+  }
+
   public append(...nodes: FakeNode[]): void {
     for (const node of nodes) this.insertBefore(node, null);
   }
