@@ -39,7 +39,13 @@ export interface OutlineSelectionStyleSummary {
 }
 
 export type SelectionStyleSummary =
-  StrokeSelectionStyleSummary | OutlineSelectionStyleSummary | null;
+  | StrokeSelectionStyleSummary
+  | OutlineSelectionStyleSummary
+  | (Pick<StrokeSelectionStyleSummary, "color" | "opacity"> & {
+      readonly kind: "common";
+      readonly width: MixedValue<OutlineStyleV1["outlineWidth"]>;
+    })
+  | null;
 
 export type ActiveToolStyleSummary =
   | { readonly kind: "select"; readonly values: ToolDefaultsV1["select"] }
@@ -66,7 +72,7 @@ export type ActiveToolStyleSummary =
 export function summarizeSelectionStyle(elements: readonly InkElementV1[]): SelectionStyleSummary {
   if (elements.length === 0) return null;
   if (elements.every(isStrokeStyled)) return summarizeStrokeSelection(elements);
-  if (!elements.every(isOutlineStyled)) return null;
+  if (!elements.every(isOutlineStyled)) return summarizeCommonSelection(elements);
 
   const styles = elements.map(({ style }) => style);
   const closedStyles = elements.every(isClosedShape) ? elements.map(({ style }) => style) : null;
@@ -130,6 +136,19 @@ export function summarizeActiveToolStyle(
   return { kind: "outline", style: outlinePart(style), fill, arrowNodes, structural };
 }
 
+function summarizeCommonSelection(elements: readonly InkElementV1[]): SelectionStyleSummary {
+  const styles = elements.map((element) =>
+    isStrokeStyled(element)
+      ? element.style
+      : {
+          color: element.style.outlineColor,
+          width: element.style.outlineWidth,
+          opacity: element.style.outlineOpacity,
+        },
+  );
+  return { kind: "common", ...summarizePaint(styles) };
+}
+
 function summarizeStrokeSelection(
   elements: readonly (InkElementV1 & { readonly style: StrokeStyleV1 })[],
 ): StrokeSelectionStyleSummary {
@@ -137,13 +156,21 @@ function summarizeStrokeSelection(
   const pens = elements.every((element) => element.kind === "stroke" && element.tool === "pen");
   return {
     kind: "stroke",
+    ...summarizePaint(styles),
+    pressureEnabled: pens ? common(styles.map(({ pressureEnabled }) => pressureEnabled)) : null,
+  };
+}
+
+function summarizePaint<Width extends OutlineStyleV1["outlineWidth"]>(
+  styles: readonly { readonly color: ColorV1; readonly width: Width; readonly opacity: number }[],
+) {
+  return {
     color: common(
       styles.map(({ color }) => color),
       equalColor,
     ),
     width: common(styles.map(({ width }) => width)),
     opacity: common(styles.map(({ opacity }) => opacity)),
-    pressureEnabled: pens ? common(styles.map(({ pressureEnabled }) => pressureEnabled)) : null,
   };
 }
 

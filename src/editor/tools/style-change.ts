@@ -7,11 +7,8 @@ import type {
   ShapeStyleV1,
   StrokeStyleV1,
 } from "../../domain/schema/public";
-import {
-  canonicalizeUnitIntervalNumber,
-  isRgbaColor,
-  validateInkElementV1,
-} from "../../domain/schema/public";
+import { canonicalizeUnitIntervalNumber, isRgbaColor } from "../../domain/schema/public";
+import { validateRuntimeInkElementV1 } from "../../domain/schema/element-validation";
 import type {
   SelectionAreaV1,
   SelectionInclusionV1,
@@ -54,7 +51,9 @@ export function applySelectionStyleChange(
 ): SelectionStyleChangeResult {
   const canonicalChange = canonicalStyleChange(change);
   assertSelectionCompatibility(elements, canonicalChange);
-  const changedElements = elements.map((element) => changeElement(element, canonicalChange));
+  const changedElements = elements.map((element) =>
+    changeElement(element, elementStyleChange(element, canonicalChange)),
+  );
   const changed = changedElements.some((element, index) => element !== elements[index]);
   return { elements: changed ? changedElements : elements, changed };
 }
@@ -72,6 +71,20 @@ export function applyToolStyleChange(
   const next = structuredClone(toolValues);
   changeToolValues(next, tool, canonicalChange);
   return { toolValues: next, changed: true };
+}
+
+function elementStyleChange(element: InkElementV1, change: StyleChange): StyleChange {
+  if (isStrokeStyled(element)) return change;
+  switch (change.property) {
+    case "color":
+      return { property: "outline-color", value: change.value };
+    case "stroke-width":
+      return { property: "outline-width", value: change.value };
+    case "opacity":
+      return { property: "outline-opacity", value: change.value };
+    default:
+      return change;
+  }
 }
 
 function changeElement(element: InkElementV1, change: StyleChange): InkElementV1 {
@@ -124,7 +137,7 @@ function changeElement(element: InkElementV1, change: StyleChange): InkElementV1
     case "selection-inclusion":
       throw new RangeError(`${change.property} does not apply to an existing selection.`);
   }
-  const validation = validateInkElementV1(result);
+  const validation = validateRuntimeInkElementV1(result);
   if (!validation.ok) throw new RangeError(`${validation.error.path}: ${validation.error.message}`);
   return validation.value;
 }
@@ -139,7 +152,7 @@ function assertSelectionCompatibility(
       case "color":
       case "stroke-width":
       case "opacity":
-        return isStrokeStyled(element);
+        return true;
       case "outline-color":
       case "outline-width":
       case "outline-style":

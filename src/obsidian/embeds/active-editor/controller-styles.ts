@@ -19,7 +19,6 @@ import {
   summarizeSelectionStyle,
   type OutlineSelectionStyleSummary,
   type SelectionStyleSummary,
-  type StrokeSelectionStyleSummary,
   type StyleChange,
 } from "../../../editor/tools/public";
 import type { ToolbarStyleIconState } from "../../../rendering/ui/index";
@@ -114,12 +113,14 @@ export function updateSessionToolDefaults(
 
 function selectionControls(summary: SelectionStyleSummary): readonly StyleControl[] {
   if (summary === null) return [];
-  return summary.kind === "stroke"
-    ? strokeSelectionControls(summary)
-    : outlineSelectionControls(summary);
+  return summary.kind === "outline"
+    ? outlineSelectionControls(summary)
+    : strokeSelectionControls(summary);
 }
 
-function strokeSelectionControls(summary: StrokeSelectionStyleSummary): readonly StyleControl[] {
+function strokeSelectionControls(
+  summary: Exclude<SelectionStyleSummary, OutlineSelectionStyleSummary | null>,
+): readonly StyleControl[] {
   return [
     mixedChoiceControl("color", "Color", summary.color, COLOR_STYLE_OPTIONS, serializeStyleColor),
     mixedChoiceControl("stroke-width", "Width", summary.width, PEN_WIDTH_STYLE_OPTIONS, String),

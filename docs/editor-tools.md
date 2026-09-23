@@ -247,7 +247,9 @@ Changing the column count of a selected table preserves that table's current col
 
 Colors use the canonical built-in palette defined in [Settings](settings.md#color-values), including Theme text color and Gray. The list and serialized values are maintained only in that document.
 
-When elements are selected, the menu edits the selection instead of the current tool. Select area and inclusion controls remain unavailable until the selection is cleared. For a mixed selection, the menu only shows element properties that apply to all selected elements. One accepted structural change is one atomic undo step and changes neither session tool values nor vault defaults. Choosing the existing value is a no-op with no revision or history entry.
+When elements are selected, the menu edits the selection instead of the current tool. Select area and inclusion controls remain unavailable until the selection is cleared. For any selection, the menu exposes the full intersection of selection-editable properties supported by every selected element, regardless of whether their current values match. For example, lines and arrows share outline color, width, style, and opacity; closed shapes additionally share fill color and opacity. Each accepted paint or structural change is one atomic undo step and changes neither session tool values nor vault defaults. Choosing the existing value is a no-op with no revision or history entry.
+
+Selections combining freehand or highlighter strokes with lines, arrows, shapes, coordinate systems, or tables expose Color, Width, and Opacity. These controls edit stroke paint on strokes and outline paint on the other elements; they preserve fills, outline patterns, arrow nodes, and geometry. Different existing values appear as Mixed until a concrete value is chosen. Fill, outline-pattern, arrow-node, and structural controls remain available only when every selected element supports them.
 
 Exact geometry, hit tolerances, bounds, node sizing, and serialization are defined in [File Format and Geometry](file-format.md). Built-in and user-configurable defaults are defined in [Settings](settings.md).
 
