@@ -2,8 +2,17 @@ import type { ColorV1 } from "../../domain/schema/public";
 import { SVG_NAMESPACE } from "./constants";
 import type { MutableSceneInstrumentation } from "./types";
 
-/** Cursor geometry uses SVG-local CSS pixels, independent of the camera. */
-export type SceneToolCursor = { readonly x: number; readonly y: number } & (
+/** Cursor geometry uses viewport CSS pixels, independent of native scrolling and camera. */
+export type SceneToolCursor = {
+  readonly x: number;
+  readonly y: number;
+  readonly clip?: {
+    readonly left: number;
+    readonly top: number;
+    readonly right: number;
+    readonly bottom: number;
+  };
+} & (
   | {
       readonly kind: "tool";
       readonly color: ColorV1;
@@ -23,12 +32,17 @@ export interface SceneToolCursorFrame {
 export type SceneToolCursorFrameReader = (layoutChanged: boolean) => SceneToolCursorFrame;
 
 export interface SceneToolCursorDom {
+  readonly surface: SVGSVGElement;
   readonly group: SVGGElement;
   readonly ring: SVGCircleElement;
   readonly icon: SVGGElement;
 }
 
 export function createToolCursorDom(document: Document): SceneToolCursorDom {
+  const surface = document.createElementNS(SVG_NAMESPACE, "svg");
+  surface.setAttribute("class", "inkbook-tool-cursor-surface");
+  surface.setAttribute("aria-hidden", "true");
+  surface.setAttribute("pointer-events", "none");
   const group = document.createElementNS(SVG_NAMESPACE, "g");
   group.setAttribute("class", "inkbook-tool-cursor");
   group.setAttribute("display", "none");
@@ -43,7 +57,9 @@ export function createToolCursorDom(document: Document): SceneToolCursorDom {
   icon.setAttribute("transform", "translate(10 -28)");
   icon.setAttribute("visibility", "hidden");
   group.append(icon);
-  return { group, ring, icon };
+  surface.append(group);
+  document.body.append(surface);
+  return { surface, group, ring, icon };
 }
 
 /** Retained decorations and icon; pointer frames change only the group transform. */
@@ -77,6 +93,7 @@ export class SceneToolCursorWriter {
     this.#icon = undefined;
     this.#fillNodes = [];
     this.#applied.clear();
+    this.dom.surface.remove();
   }
 
   public write(): void {
@@ -87,6 +104,14 @@ export class SceneToolCursorWriter {
     this.attribute(this.dom.group, "display", state === null ? "none" : "inline");
     if (state === null) return;
     this.attribute(this.dom.group, "transform", `translate(${String(state.x)} ${String(state.y)})`);
+    const clip = state.clip;
+    this.attribute(
+      this.dom.surface,
+      "clip-path",
+      clip === undefined
+        ? "none"
+        : `polygon(${clip.left}px ${clip.top}px, ${clip.right}px ${clip.top}px, ${clip.right}px ${clip.bottom}px, ${clip.left}px ${clip.bottom}px)`,
+    );
     const eraser = state.kind === "eraser";
     this.attribute(this.dom.ring, "visibility", eraser ? "visible" : "hidden");
     this.attribute(this.dom.icon, "visibility", eraser ? "hidden" : "visible");

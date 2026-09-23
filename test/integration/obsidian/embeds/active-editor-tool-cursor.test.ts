@@ -73,7 +73,7 @@ describe("active editor pointer and cursor composition", () => {
     expect(h.screenPointer).not.toHaveBeenCalled();
     expect(h.coalesced).not.toHaveBeenCalled();
     expect(h.dispatch).not.toHaveBeenCalled();
-    expect(h.read().cursor).toMatchObject({ x: 179, y: 50, kind: "tool" });
+    expect(h.read().cursor).toMatchObject({ x: 199, y: 80, kind: "tool" });
     expect(h.measure).toHaveBeenCalledOnce();
     h.controller.dispose();
   });
@@ -84,17 +84,17 @@ describe("active editor pointer and cursor composition", () => {
     expect(h.read().cursor?.kind).toBe("tool");
     h.pointer.handlePointerDown(cursorPointerEvent({ button: 0, buttons: 1, pressure: 0.5 }));
     expect(h.read()).toMatchObject({
-      cursor: { kind: "tool", icon: h.toolIcon, x: 100, y: 50 },
+      cursor: { kind: "tool", icon: h.toolIcon, x: 120, y: 80 },
       system: "crosshair",
     });
     h.pointer.handlePointerMove(cursorPointerEvent({ clientX: 150, buttons: 1, pressure: 0.5 }));
     expect(h.coalesced).toHaveBeenCalledOnce();
-    expect(h.read().cursor).toMatchObject({ kind: "tool", icon: h.toolIcon, x: 130 });
+    expect(h.read().cursor).toMatchObject({ kind: "tool", icon: h.toolIcon, x: 150 });
     h.pointer.handlePointerUp(cursorPointerEvent({ clientX: 150 }));
     expect(h.controls.input.interaction).toBeUndefined();
-    expect(h.read().cursor).toMatchObject({ kind: "tool", icon: h.toolIcon, x: 130 });
+    expect(h.read().cursor).toMatchObject({ kind: "tool", icon: h.toolIcon, x: 150 });
     h.pointer.handlePointerMove(cursorPointerEvent({ clientX: 150 }));
-    expect(h.read().cursor).toMatchObject({ kind: "tool", icon: h.toolIcon, x: 130 });
+    expect(h.read().cursor).toMatchObject({ kind: "tool", icon: h.toolIcon, x: 150 });
     h.pointer.handlePointerMove(cursorPointerEvent({ clientX: 151 }));
     expect(h.read().cursor?.kind).toBe("tool");
     h.pointer.handlePointerCancel(cursorPointerEvent());
