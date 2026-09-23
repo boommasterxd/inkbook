@@ -195,9 +195,9 @@ describe("drag creation without minimum geometry", () => {
 
 describe("angular snap activation", () => {
   it.each([0.5, 1, 4])(
-    "delays line and arrow angular guides until eight screen pixels at zoom %s",
+    "delays linear angular guides until eight screen pixels at zoom %s",
     (zoom) => {
-      for (const tool of ["line", "arrow"] as const) {
+      for (const tool of ["line", "arrow", "straight-highlighter"] as const) {
         const { preview, committed, setSnapMarkerPath } = linearCreationPreview(
           tool,
           creationSnapPorts(zoom),
@@ -219,14 +219,17 @@ describe("angular snap activation", () => {
 });
 
 describe("drag creation preview snapping", () => {
-  it("keeps line direction free when angle snapping is disabled", () => {
-    const committed = commitLinearPreview("line", {
-      ...creationSnapPorts(1),
-      angles: false,
-    });
+  it.each(["line", "straight-highlighter"] as const)(
+    "keeps %s direction free when angle snapping is disabled",
+    (tool) => {
+      const committed = commitLinearPreview(tool, {
+        ...creationSnapPorts(1),
+        angles: false,
+      });
 
-    expect(committed).toMatchObject({ end: { x: 110, y: 24 }, kind: "line" });
-  });
+      expect(committed).toMatchObject({ end: { x: 110, y: 24 }, kind: tool });
+    },
+  );
 
   it("does not attach new endpoints when connection snapping is disabled", () => {
     const committed = commitLinearPreview("arrow", {
@@ -261,7 +264,7 @@ describe("drag creation preview snapping", () => {
     });
   });
 
-  it.each(["line", "arrow"] as const)(
+  it.each(["line", "arrow", "straight-highlighter"] as const)(
     "snaps a newly created %s to a right angle and renders its angular guide",
     (tool) => {
       const { committed, preview, setSnapMarkerPath } = linearCreationPreview(
@@ -281,7 +284,7 @@ describe("drag creation preview snapping", () => {
     },
   );
 
-  it.each(["line", "arrow"] as const)(
+  it.each(["line", "arrow", "straight-highlighter"] as const)(
     "keeps a newly created %s free at higher zoom when it is outside the angular snap range",
     (tool) => {
       const committed = commitLinearPreview(tool, creationSnapPorts(4));
@@ -305,6 +308,35 @@ describe("drag creation preview snapping", () => {
       });
     },
   );
+});
+
+describe("straight highlighter creation snapping", () => {
+  it("snaps a straight highlighter angle without querying shape anchors", () => {
+    const query = vi.fn<CreationSnapPorts["spatial"]["query"]>((_bounds, sink) => {
+      sink.add(SEMANTIC_ENDPOINT_TARGET_ID);
+    });
+    const get = vi.fn<CreationSnapPorts["targets"]["get"]>(() => ({
+      anchors: [
+        { anchor: { kind: "box", position: "middle-right" }, order: 0, point: { x: 110, y: 24 } },
+      ],
+      rank: 0,
+    }));
+    const { committed, preview, setSnapMarkerPath } = linearCreationPreview(
+      "straight-highlighter",
+      { ...creationSnapPorts(1), spatial: { query }, targets: { get } },
+    );
+
+    preview.update({ pointerId: 1, pointerType: "mouse", x: 110, y: 24 });
+    expect(setSnapMarkerPath.mock.lastCall?.[0]).toContain(" L ");
+    preview.commit();
+
+    expect(committed[0]).toMatchObject({
+      end: { x: 110.08, y: 20 },
+      kind: "straight-highlighter",
+    });
+    expect(query).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
+  });
 });
 
 describe("freehand creation preview presentation", () => {
@@ -376,7 +408,10 @@ function createPreview(
   });
 }
 
-function linearCreationPreview(tool: "arrow" | "line", snap: CreationSnapPorts) {
+function linearCreationPreview(
+  tool: "arrow" | "line" | "straight-highlighter",
+  snap: CreationSnapPorts,
+) {
   const committed: InkElementV1[] = [];
   const setSnapMarkerPath = vi.fn<(path: string | null) => void>();
   const preview = createPreview(
@@ -391,7 +426,10 @@ function linearCreationPreview(tool: "arrow" | "line", snap: CreationSnapPorts) 
   return { committed, preview, setSnapMarkerPath };
 }
 
-function commitLinearPreview(tool: "arrow" | "line", snap: CreationSnapPorts): InkElementV1 {
+function commitLinearPreview(
+  tool: "arrow" | "line" | "straight-highlighter",
+  snap: CreationSnapPorts,
+): InkElementV1 {
   const { committed, preview } = linearCreationPreview(tool, snap);
   preview.update({ pointerId: 1, pointerType: "mouse", x: 110, y: 24 });
   preview.commit();
