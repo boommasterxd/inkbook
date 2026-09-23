@@ -242,7 +242,7 @@ export class CreationPreview implements GesturePreview {
 
   #dragEnd(start: PointV1, tool: GesturePreviewStart["tool"]): PointV1 {
     this.#endAngleSnap = null;
-    if (this.#endSnap !== null || (tool !== "line" && tool !== "arrow")) {
+    if (this.#endSnap !== null || !supportsAngleSnapping(tool)) {
       return this.#endSnap?.point ?? this.#current;
     }
     if (!this.#snapFeatureEnabled("angles")) return this.#current;
@@ -258,7 +258,7 @@ export class CreationPreview implements GesturePreview {
   }
 
   #renderSnapMarkers(): void {
-    if (this.#snap === undefined || !supportsConnections(this.#start.tool)) {
+    if (this.#snap === undefined || !supportsAngleSnapping(this.#start.tool)) {
       this.#renderer.setSnapMarkerPath(null);
       return;
     }
@@ -339,6 +339,10 @@ function snapConnection(candidate: SnapCandidate | null): EndpointConnectionV1 |
 
 function supportsConnections(tool: GesturePreviewStart["tool"]): tool is "arrow" | "line" {
   return tool === "line" || tool === "arrow";
+}
+
+function supportsAngleSnapping(tool: GesturePreviewStart["tool"]): boolean {
+  return supportsConnections(tool) || tool === "straight-highlighter";
 }
 
 function isFreehand(tool: GesturePreviewStart["tool"]): tool is "draw" | "highlighter" {

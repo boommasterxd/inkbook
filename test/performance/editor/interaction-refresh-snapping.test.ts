@@ -1,6 +1,7 @@
 import { movingSnapLine } from "./connected-input-fixture";
 import { describe, expect, it, vi } from "vitest";
 
+import { createBuiltInSettings } from "../../../src/domain/settings/defaults";
 import { resolvePointAngleSnap } from "../../../src/editor/selection/angular-snap";
 import { ElementStore } from "../../../src/domain/store/public";
 import {
@@ -11,7 +12,10 @@ import {
   findSnapCandidate,
   SnapCandidateScratch,
 } from "../../../src/editor/snapping/snap-candidate";
+import { CreationPreview } from "../../../src/obsidian/embeds/active-editor/creation-preview";
+import { ActiveEditorHistory } from "../../../src/obsidian/embeds/active-editor/history";
 import { ElementSceneStore } from "../../../src/obsidian/embeds/active-editor/scene-store";
+import { creationPreviewRenderer } from "../../fixtures/obsidian/active-editor";
 import { connectedLine, rectangle } from "../../unit/domain/store/fixtures";
 import { INTERACTION_REFRESH_PROFILE, runInteractionFrames } from "../interaction-refresh-profile";
 import {
@@ -124,6 +128,60 @@ describe("multi-selection snap work", () => {
     expect(read).not.toHaveBeenCalled();
     expect(scratch.allocationCount).toBe(allocations);
     expect(store.instrumentation.fullStoreScans).toBe(0);
+    sceneStore.release();
+  });
+});
+
+describe("straight highlighter creation work", () => {
+  it("bounds preview writes and skips shape-anchor reads across a dense scene", () => {
+    const { sceneStore, store } = createSnapFixture();
+    const query = vi.spyOn(sceneStore, "query");
+    const read = vi.spyOn(sceneStore, "getSnapTarget");
+    const setLivePath = vi.fn();
+    const setSnapMarkerPath = vi.fn();
+    const preview = new CreationPreview({
+      defaults: createBuiltInSettings().toolDefaults,
+      history: new ActiveEditorHistory({
+        commitBandOrder: vi.fn(),
+        commitElements: vi.fn(),
+        commitPage: vi.fn(),
+        removeElements: vi.fn(),
+        replaceElements: vi.fn(),
+      }),
+      identity: { createdAt: 1, id: "00000000-0000-4000-8000-000000000001" },
+      renderer: creationPreviewRenderer({ setLivePath, setSnapMarkerPath }),
+      snap: {
+        pageToScreen: (point) => point,
+        spatial: sceneStore,
+        targets: { get: (id) => sceneStore.getSnapTarget(id) },
+        zoom: 1,
+      },
+      start: {
+        additive: false,
+        kind: "tool-gesture",
+        pointer: { pointerId: 1, pointerType: "pen", x: 100, y: 100 },
+        tool: "straight-highlighter",
+      },
+    });
+    store.resetInstrumentation();
+
+    runInteractionFrames((frame) => {
+      const point =
+        frame % 3 === 0
+          ? { x: 200, y: 104 }
+          : frame % 3 === 1
+            ? { x: 200, y: 110 }
+            : { x: 105, y: 100 };
+      preview.update({ pointerId: 1, pointerType: "pen", ...point });
+    });
+
+    expect(setLivePath).toHaveBeenCalledTimes(INTERACTION_REFRESH_PROFILE.sampleCount + 1);
+    expect(setSnapMarkerPath).toHaveBeenCalledTimes(INTERACTION_REFRESH_PROFILE.sampleCount + 1);
+    expect(query).not.toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
+    expect(store.instrumentation.fullStoreScans).toBe(0);
+    preview.revert();
+    expect(setLivePath).toHaveBeenLastCalledWith(null);
     sceneStore.release();
   });
 });
