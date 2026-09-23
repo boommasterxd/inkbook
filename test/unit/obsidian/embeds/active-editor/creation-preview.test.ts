@@ -149,7 +149,8 @@ describe("drag creation without minimum geometry", () => {
     // Geometry stays within the pen-width footprint, including arrow decorations.
     expect(bounds.maxX - bounds.minX).toBeLessThan(21);
     expect(bounds.maxY - bounds.minY).toBeLessThan(21);
-    expect(setLivePath).toHaveBeenLastCalledWith(null);
+    if (tool === "straight-highlighter") expect(setLivePath).not.toHaveBeenCalledWith(null);
+    else expect(setLivePath).toHaveBeenLastCalledWith(null);
   });
 
   it("shows the snapped start cross immediately while allowing coincident endpoints", () => {

@@ -136,6 +136,13 @@
   vertical-align: top;
 }
 
+.inkbook-root .inkbook-tool-cursor > :where(g) > svg {
+  color: inherit;
+  height: 18px;
+  opacity: 1;
+  width: 18px;
+}
+
 .inkbook-root .inkbook-scene,
 .inkbook-root .inkbook-scene-content,
 .inkbook-root .inkbook-scene-highlights,

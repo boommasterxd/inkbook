@@ -4,6 +4,7 @@ import { calculateElementBounds } from "../../../../../src/domain/geometry/publi
 import {
   createSelectionFrameAtRotation,
   selectionFramePoint,
+  selectionOverlayGeometry,
   SelectionHandleSession,
   type SelectedElementGeometry,
   type SelectionHandlePreview,
@@ -124,7 +125,7 @@ it.each([
       (point) => point,
       () => 1,
     );
-    presentation.renderGeometry(selected, null, null, frame);
+    presentation.renderGeometry(selected, selectionOverlayGeometry(selected, 1, null, frame));
     const initial = overlay.mock.lastCall!;
     for (const movement of [20, 80, 5]) {
       session.update({ x: startPointer.x + movement, y: startPointer.y + movement });
@@ -160,7 +161,7 @@ it.each([
     expectPathCoordinates(overlay.mock.lastCall![0], committedPaths.outline);
     expectPathCoordinates(overlay.mock.lastCall![2], committedPaths.handles);
     session.cancel();
-    presentation.renderGeometry(selected, null, null, frame);
+    presentation.renderGeometry(selected, selectionOverlayGeometry(selected, 1, null, frame));
     expect(overlay.mock.lastCall).toEqual(initial);
   },
 );

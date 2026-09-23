@@ -122,7 +122,7 @@ Additional rules:
 - The runtime store is one aggregate containing the private ID map, two ordered ID bands, derived ranks, capacity counters, spatial index, reverse connection map, and commit-time versions. Synchronous commands preflight all affected capacity, connection, and index changes before publishing one atomic delta. Time-sliced mutations prepare all affected members against one source mutation version and adopt them as one transaction. A cancelled, failed, or stale preparation changes none of the aggregate; ordinary commands retain unchanged record identities and do not clone a persisted snapshot.
 - Viewport queries, hit testing, erasing, and page extent queries use the spatial index.
 - React owns application chrome and coarse editor state only. Individual ink elements are owned by the imperative SVG scene renderer.
-- Pointer-move, pan, zoom, pinch, scroll, snapping, culling, and preview frames produce zero React renders, React state updates, and React-visible store notifications. Discrete selection and tool changes may enqueue one coarse UI update after imperative feedback.
+- Pointer-move, pan, zoom, pinch, scroll, snapping, culling, and preview frames produce zero React renders, React state updates, and React-visible store notifications. Discrete selection and tool changes may enqueue one coarse UI update after imperative feedback. Cursor-only updates retain fixed SVG-node identity, share at most one pending scene frame, bound actual layout reads independently of pointer-event count, allow at most one synchronous transform write per changed pointer position without rebuilding nodes, and perform no content query or geometry build. Deterministic coverage uses the 10,000-stroke fixture and all five scheduling profiles.
 - Chrome callbacks remain referentially stable for one active presentation. A semantic chrome snapshot suppresses `root.render()` when toolbar, active-menu identity, dynamic shape and style icons, layout, and callback state are unchanged.
 - Pointer-move processing never clones the complete element array or snapshot.
 - The live-stroke builder appends finalized chunks and rebuilds at most 16 retained samples plus their boundary segment; the 4,096th point does not reconstruct the first segment.
@@ -256,7 +256,7 @@ When reduced motion is active:
 - The primary tool group owns exactly one non-interactive active-tool indicator. It remains mounted while its transform slides between the exact 36-pixel inset circles of the old and new tool over 120 milliseconds, retargets from its currently rendered transform during rapid changes, and moves immediately under reduced motion. Tool buttons and icons remain mounted throughout.
 - Every destructive action has confirmation where documented and preserves undo when possible.
 - Every failed operation leaves an accurate outcome and a clear next action such as Retry, Reload, Save copy, or Continue editing. Expected unavailability that does not begin an operation may remain silent.
-- Cursor, selection handles, eraser radius, and toolbar controls remain screen-sized across zoom levels.
+- Selection handles, crosshairs, tool icons, eraser radius, and toolbar controls remain screen-sized across zoom levels. [Tool Cursors](editor-tools.md#tool-cursors) use the native system crosshair, exact toolbar icon variants, and configured outline/fill colors and opacities; the offset icon remains visible throughout drawing without a filled cursor disk.
 - Animation starts from the currently rendered state when interrupted and never jumps back to an earlier state.
 
 ## Accessibility Acceptance
@@ -450,7 +450,7 @@ No gate may be bypassed through broad exclusions, empty assertions, raised limit
 
 Manual checks are not smoke or end-to-end test suites. They are focused acceptance measurements for behavior that cannot be represented faithfully in the automated harness:
 
-- pen latency and palm rejection on one supported stylus device
+- pen latency and palm rejection on one supported stylus device; on affected Linux pen hardware, record the Obsidian/Electron version and Wayland or X11/XWayland backend and verify native crosshair selection separately from SVG icon and ring feedback. CSS cursor selection may not control a separately managed tablet-tool cursor. Xvfb and synthetic pen events do not establish physical S Pen behavior
 - touch arbitration and pinch on iOS and Android
 - mouse, trackpad, keyboard, and focus behavior on desktop
 - delayed Copy, Cut, and Paste on supported desktop, iOS, and Android WebViews, covering the successful prefixed `text/plain` system representation, synchronous `ClipboardItem` construction failure, rejected system write, custom-format read compatibility, in-session fallback, and no Cut removal after an intervening edit, selection change, or detachment

@@ -265,10 +265,10 @@ export class ActiveEditorNavigation {
         zoom: update.zoom,
       }).state,
     );
-    this.#applyCamera({ x: update.cameraX, zoom: update.zoom });
     if (update.scrollTop !== undefined) {
       browserScrollMetrics.setScrollTop(this.#scrollOwner, update.scrollTop);
     }
+    this.#applyCamera({ x: update.cameraX, zoom: update.zoom });
     return true;
   }
   public transferScrollOwner(scrollOwner: BrowserScrollElement): boolean {
@@ -428,11 +428,11 @@ export class ActiveEditorNavigation {
         zoom: this.#zoom,
       }).state,
     );
+    if (adjustsScroll) browserScrollMetrics.setScrollTop(this.#scrollOwner, resolved.scrollTop);
     this.#applyCamera({ x: this.#cameraX, zoom: this.#zoom });
     if (momentumDelta !== 0 && this.#cameraX === previousCameraX) {
       this.cancelPanMomentum();
     }
-    if (adjustsScroll) browserScrollMetrics.setScrollTop(this.#scrollOwner, resolved.scrollTop);
   }
   public screenPoint(point: InputPoint): InputPoint {
     const bounds =

@@ -10,7 +10,6 @@ export type { SelectionMoveSnap } from "./move-snap";
 export { moveSelectionTimeSliced } from "./transforms";
 export {
   findSelectionHandle,
-  layoutSelectionHandles,
   oppositeBoxAnchor,
   oppositeElementHandlePoint,
   selectionBounds,

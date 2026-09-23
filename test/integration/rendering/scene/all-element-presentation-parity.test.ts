@@ -1,3 +1,4 @@
+import { selectionOverlayGeometry } from "../../../../src/editor/selection/public";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -51,7 +52,7 @@ describe("canonical presentation across every element type", () => {
         () => 1,
       );
       for (const geometry of [selected.slice(0, 1), selected]) {
-        selection.renderGeometry(geometry, null);
+        selection.renderGeometry(geometry, selectionOverlayGeometry(geometry, 1));
         scheduler.runAll();
         expect(paintedGroup.nodes).toEqual(retainedNodes);
         expect(paintedGroup.nodes.flatMap(paintedPaths).map(paintedAttributes)).toEqual(committed);

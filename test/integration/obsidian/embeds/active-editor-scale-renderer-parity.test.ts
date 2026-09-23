@@ -6,7 +6,8 @@ import {
 } from "../../../../src/domain/geometry/public";
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import { ElementStore } from "../../../../src/domain/store/public";
-import { layoutSelectionHandles } from "../../../../src/editor/selection/public";
+import { layoutSelectionHandles } from "../../../../src/editor/selection/handles";
+
 import { ActiveEditorHandleInteraction } from "../../../../src/obsidian/embeds/active-editor/handle-interaction";
 import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";

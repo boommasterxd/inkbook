@@ -122,6 +122,10 @@ export class ActiveEditorMenuController {
     this.#options = options;
   }
 
+  public get isOpen(): boolean {
+    return this.#session !== undefined || this.#toolbarSession !== undefined;
+  }
+
   public dispose(): void {
     this.#openGeneration += 1;
     this.#session?.close("immediate");

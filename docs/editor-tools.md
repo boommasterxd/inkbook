@@ -1,5 +1,17 @@
 # Editor Tools
 
+## Tool Cursors
+
+All mouse and pen creation tools and both selection-area modes use the native system `crosshair` cursor at the exact input point; Inkbook does not draw a substitute crosshair. An 18-CSS-pixel icon sits at a fixed screen offset of 10 pixels right and 28 pixels above that point. It uses the same registered icon and variant as the toolbar, including all arrow start/end combinations and 2D/3D coordinate systems. Drawing icons use the configured tool color, shapes use their outline color, and selection icons use the neutral theme text color. Icons preserve configured color alpha and tool opacity. Closed-shape icons show outline and fill colors with independent outline and fill opacity; a null fill remains unfilled. Width, pressure, and dash patterns do not change the icon geometry. The native crosshair and offset icon remain visible throughout drawing and after release, without a filled stroke-width preview or visibility handoff.
+
+Movable selections use the system `move` cursor; resize handles use the directional system resize cursor matching their visible orientation. Rotation uses `grab` before dragging and `grabbing` during dragging; accepted page dragging uses `grabbing`. These interactions replace the crosshair and icon. Temporary eraser input follows the existing input-arbitration rules. Touch does not show tool icons or hover feedback.
+
+Eraser feedback replaces the icon with one unfilled, contrasting dashed circle centered on the crosshair. Its radius comes from the same configured CSS-pixel radius used by hit testing; the page-space hit radius is that value divided by zoom. Its continuous swept whole-element behavior is defined under [Eraser](#eraser). The ring remains visible during an accepted eraser gesture, including touch erasing; mouse and pen retain the native crosshair. Wheel and keyboard zoom are disabled while an eraser gesture is active; a layout resize cancels it before changing scale, preserving equality with the gesture's captured hit radius. Menu interaction, disabled input, navigation, pointer cancellation, owning-window blur, pointer departure, and presentation disposal suppress or clear incompatible feedback.
+
+Some Wayland Chromium versions report pen proximity loss as a mouse `pointerleave` with a different pointer ID. An unpressed mouse leave with no related target clears idle pen feedback only; active gestures, handle drags, internal target transitions, and foreign touch or pen departures retain pointer ownership. Fresh input restores the decoration without polling or timeouts.
+
+The icon and ring are decorative additions to the native cursor; Inkbook does not hide or replace it. System-cursor changes occur when the resolved interaction changes. Rendering ownership and scheduling are defined in [Rendering and Performance](rendering-and-performance.md#tool-cursor-rendering).
+
 ## Select
 
 The Select tool is used to select and edit existing elements.

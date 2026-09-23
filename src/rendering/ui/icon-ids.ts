@@ -3,6 +3,11 @@ import type { ArrowNodeV1 } from "../../domain/schema/public";
 import type { SelectionAreaV1 } from "../../domain/settings/types";
 
 export const STRAIGHT_HIGHLIGHTER_ICON_ID = "inkbook-straight-highlighter";
+export const DRAWING_TOOL_ICON_IDS = {
+  draw: "pen",
+  highlighter: "highlighter",
+  "straight-highlighter": STRAIGHT_HIGHLIGHTER_ICON_ID,
+} as const;
 export const CAUTION_ERASER_ICON_ID = "inkbook-eraser-caution";
 export const OPACITY_ICON_ID = "inkbook-opacity";
 export const PRESSURE_SENSITIVITY_ICON_ID = "inkbook-pressure-sensitivity";
