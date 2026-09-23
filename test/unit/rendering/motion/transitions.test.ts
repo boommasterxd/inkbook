@@ -15,10 +15,11 @@ describe("motion tokens", () => {
       fast: 120,
       surface: 220,
       standard: 180,
-      erase: 300,
+      erase: 400,
       layout: 240,
     });
     expect(EASING_TOKENS.standard).toBe("cubic-bezier(0.2, 0, 0, 1)");
+    expect(EASING_TOKENS.erase).toBe("cubic-bezier(0.645, 0.045, 0.355, 1)");
     expect(EASING_TOKENS.emphasized).toBe(EASING_TOKENS.standard);
   });
 
@@ -30,7 +31,7 @@ describe("motion tokens", () => {
       toolbarEnterExit: 220,
       toolActiveState: 120,
       selectionHandlesEnterExit: 120,
-      eraserPendingRemoval: 300,
+      eraserPendingRemoval: 400,
       committedEntrance: 120,
       commandRemovalExit: 120,
       styleChange: 120,

@@ -162,7 +162,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz erased SVG cleanup`, () 
         get: () => filter,
         set: (value: string) => {
           filter = value;
-          if (value === "blur(50px)") {
+          if (value.startsWith("blur(")) {
             starts += 1;
             scheduler.time += 1;
           }

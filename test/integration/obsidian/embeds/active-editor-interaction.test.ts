@@ -352,7 +352,7 @@ describe("active editor eraser commit", () => {
       },
     };
     const cancelled = new EraserPreview(options);
-    expect(fades).toEqual([{ durationMs: 300, ids: [element.id] }]);
+    expect(fades).toEqual([{ durationMs: 400, ids: [element.id] }]);
     cancelled.revert();
     expect(cleared).toContainEqual([element.id]);
     expect(document.store.size).toBe(1);
