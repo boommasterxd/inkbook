@@ -101,11 +101,46 @@ describe("Style summaries", () => {
       structural: { kind: "table", columns: 2 },
     });
   });
+});
 
-  it("returns no selection summary for empty or incompatible style families", () => {
+describe("mixed selection Style summaries", () => {
+  it("summarizes common paint across stroke and outline families in either order", () => {
     const defaults = createBuiltInSettings().toolDefaults;
     const pen = createFreehandElement({ identity, tool: "draw", samples: [10, 10, 0.5], defaults });
     expect(summarizeSelectionStyle([])).toBeNull();
-    expect(summarizeSelectionStyle([pen, shape("line")])).toBeNull();
+    const line = shape("line");
+    for (const selection of [
+      [pen, line],
+      [line, pen],
+    ]) {
+      expect(summarizeSelectionStyle(selection)).toEqual({
+        kind: "common",
+        color: { type: "theme-text" },
+        width: 4,
+        opacity: 1,
+      });
+    }
+    if (line.kind !== "line") throw new TypeError("Expected a line fixture.");
+    expect(
+      summarizeSelectionStyle([
+        pen,
+        {
+          ...line,
+          style: { ...line.style, outlineWidth: 12 },
+        },
+      ]),
+    ).toEqual({ kind: "common", color: { type: "theme-text" }, width: "mixed", opacity: 1 });
+    const highlighter = createFreehandElement({
+      identity,
+      tool: "highlighter",
+      samples: [20, 20, 0.5],
+      defaults,
+    });
+    expect(summarizeSelectionStyle([line, pen, highlighter])).toEqual({
+      kind: "common",
+      color: "mixed",
+      width: "mixed",
+      opacity: "mixed",
+    });
   });
 });

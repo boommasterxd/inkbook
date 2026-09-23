@@ -264,7 +264,7 @@ function createNumberValueField(
   value.max = String(control.max * scale);
   value.step = scale === 100 ? "1" : String(control.step);
   value.value = control.value === null ? "" : formatNumber(control.value * scale);
-  value.placeholder = control.mixed === true ? "Mixed" : "";
+  value.placeholder = control.mixed === true ? "—" : "";
   value.setAttribute("aria-label", scale === 100 ? `${control.label} percent` : control.label);
   value.style.setProperty(
     "--inkbook-menu-value-width",

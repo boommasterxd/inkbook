@@ -179,7 +179,7 @@ describe("Style AdaptivePanel", () => {
     session.close("immediate");
   });
 
-  it("opens without an Obsidian Menu and keeps number input and slider synchronized", () => {
+  it.each([0.65, null])("keeps number input and slider synchronized from %s", (initialValue) => {
     const menus: FakeMenu[] = [];
     const configured = connectedOptions({
       styleControls: [
@@ -190,7 +190,8 @@ describe("Style AdaptivePanel", () => {
           max: 1,
           min: 0,
           step: 0.05,
-          value: 0.65,
+          value: initialValue,
+          mixed: initialValue === null,
         },
         {
           checked: true,
@@ -210,8 +211,10 @@ describe("Style AdaptivePanel", () => {
     const panel = document.querySelector<HTMLElement>('.inkbook-adaptive-panel[data-kind="style"]');
     const range = panel?.querySelector<HTMLInputElement>('input[type="range"]');
     const value = panel?.querySelector<HTMLInputElement>('input[type="number"]');
-    expect(range?.value).toBe("65");
-    expect(value?.value).toBe("65");
+    expect(range?.value).toBe(initialValue === null ? "0" : "65");
+    expect(value?.value).toBe(initialValue === null ? "" : "65");
+    expect(value?.placeholder).toBe(initialValue === null ? "—" : "");
+    expect(range?.getAttribute("aria-valuetext")).toBe(initialValue === null ? "Mixed" : null);
     expect(value?.getAttribute("aria-label")).toBe("Opacity percent");
     expect(panel?.querySelector(".inkbook-menu-value-suffix")?.textContent).toBe("%");
     expect(
@@ -226,6 +229,7 @@ describe("Style AdaptivePanel", () => {
     value!.value = "72";
     value!.dispatchEvent(new Event("input", { bubbles: true }));
     expect(range?.value).toBe("72");
+    expect(range?.hasAttribute("aria-valuetext")).toBe(false);
     value!.dispatchEvent(new Event("change", { bubbles: true }));
     expect(configured.handlers.onStyleChange).toHaveBeenCalledWith("opacity", 0.72);
     session.close("immediate");

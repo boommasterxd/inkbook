@@ -6,5 +6,4 @@ export {
   type ActiveToolStyleSummary,
   type OutlineSelectionStyleSummary,
   type SelectionStyleSummary,
-  type StrokeSelectionStyleSummary,
 } from "./style-summary";
