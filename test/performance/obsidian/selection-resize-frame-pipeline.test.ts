@@ -336,7 +336,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz selection resize frame p
     advance();
     expect(edge.scroll.mock.lastCall?.[0]).toBeLessThan(0);
     // One shared scheduler preserves native RAF ordering: scroll precedes pending pointer work.
-    for (const y of [10, 490, 250]) {
+    for (const y of [0, 500, 476]) {
       edge.readBounds.mockClear();
       edge.scroll.mockClear();
       edge.updateBottom.mockClear();
@@ -352,10 +352,10 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz selection resize frame p
       expect(edge.readBounds).toHaveBeenCalledTimes(2);
       expect(edge.updateBottom).toHaveBeenCalledOnce();
       expect(transforms).toHaveBeenCalledOnce();
-      expect(edge.scroll).toHaveBeenCalledTimes(y === 250 ? 0 : 1);
-      if (y !== 250)
-        expect(Math.sign(edge.scroll.mock.lastCall?.[0] as number)).toBe(y === 10 ? 1 : -1);
-      expect(fixture.scheduler.pendingCount).toBeLessThanOrEqual(y === 250 ? 1 : 2);
+      expect(edge.scroll).toHaveBeenCalledTimes(y === 476 ? 0 : 1);
+      if (y !== 476)
+        expect(Math.sign(edge.scroll.mock.lastCall?.[0] as number)).toBe(y === 0 ? 1 : -1);
+      expect(fixture.scheduler.pendingCount).toBeLessThanOrEqual(y === 476 ? 1 : 2);
     }
     advance();
     expect(fixture.scheduler.pendingCount).toBe(0);

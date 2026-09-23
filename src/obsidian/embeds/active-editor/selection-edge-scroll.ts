@@ -76,19 +76,16 @@ export class SelectionEdgeAutoScroller {
 }
 
 function edgeDelta(position: number, start: number, end: number, frameScale: number): number {
-  if (position <= start + SELECTION_EDGE_ZONE_PX) {
+  if (position < start + SELECTION_EDGE_ZONE_PX) {
     return -scrollSpeed(start + SELECTION_EDGE_ZONE_PX - position, frameScale);
   }
-  if (position >= end - SELECTION_EDGE_ZONE_PX) {
+  if (position > end - SELECTION_EDGE_ZONE_PX) {
     return scrollSpeed(position - (end - SELECTION_EDGE_ZONE_PX), frameScale);
   }
   return 0;
 }
 
 function scrollSpeed(depth: number, frameScale: number): number {
-  const referenceSpeed = Math.min(
-    MAX_SCROLL_PER_REFERENCE_FRAME,
-    Math.max(1, (depth / SELECTION_EDGE_ZONE_PX) * 8),
-  );
-  return referenceSpeed * frameScale;
+  const progress = Math.min(1, depth / SELECTION_EDGE_ZONE_PX);
+  return MAX_SCROLL_PER_REFERENCE_FRAME * progress * progress * frameScale;
 }

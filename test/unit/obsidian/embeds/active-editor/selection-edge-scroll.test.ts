@@ -78,6 +78,40 @@ describe("selection edge auto-scroll", () => {
     expect(frames.callbacks.size).toBe(0);
   });
 
+  it.each(["top", "bottom", "left", "right"] as const)(
+    "starts only in the %s zone and reaches full speed exactly at the edge",
+    (edge) => {
+      const frames = new Frames();
+      const onScroll = vi.fn<SelectionEdgeAutoScrollerOptions["onScroll"]>();
+      const scroller = createScroller(frames, { onScroll });
+      const vertical = edge === "top" || edge === "bottom";
+      const sign = edge === "top" || edge === "left" ? -1 : 1;
+      const boundary = edge === "bottom" ? 500 : edge === "right" ? 900 : 100;
+      for (const [inset, speed] of [
+        [30, 0],
+        [24, 0],
+        [18, 1],
+        [12, 4],
+        [6, 9],
+        [0, 16],
+        [-24, 16],
+      ] as const) {
+        onScroll.mockClear();
+        const position = boundary - sign * inset;
+        scroller.update(vertical ? { x: 500, y: position } : { x: position, y: 300 });
+        expect(frames.callbacks.size).toBe(speed === 0 ? 0 : 1);
+        if (speed !== 0) {
+          frames.flush();
+          expect(onScroll).toHaveBeenCalledExactlyOnceWith(
+            vertical ? { x: 0, y: sign * speed } : { x: sign * speed, y: 0 },
+          );
+        } else expect(onScroll).not.toHaveBeenCalled();
+        scroller.finish();
+        expect(frames.callbacks.size).toBe(0);
+      }
+    },
+  );
+
   it("refreshes the held pointer before applying the next scroll step", () => {
     const frames = new Frames();
     const calls: string[] = [];
