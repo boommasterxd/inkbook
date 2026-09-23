@@ -5,6 +5,8 @@ import {
   type SelectionEdgeAutoScrollerOptions,
 } from "../../../../../src/obsidian/embeds/active-editor/selection-edge-scroll";
 import { ActiveEditorSelectionEdgeDrag } from "../../../../../src/obsidian/embeds/active-editor/controller-selection-edge";
+import { MovePreview } from "../../../../../src/obsidian/embeds/active-editor/move-preview";
+import type { SelectionPreviewOptions } from "../../../../../src/obsidian/embeds/active-editor/selection-preview-contracts";
 import type { ActiveEditorNavigation } from "../../../../../src/obsidian/embeds/active-editor/navigation";
 import type { BrowserScrollElement } from "../../../../../src/obsidian/scrolling/index";
 
@@ -75,6 +77,40 @@ describe("selection edge auto-scroll", () => {
     scroller.finish();
     expect(frames.callbacks.size).toBe(0);
   });
+
+  it.each(["top", "bottom", "left", "right"] as const)(
+    "starts only in the %s zone and reaches full speed exactly at the edge",
+    (edge) => {
+      const frames = new Frames();
+      const onScroll = vi.fn<SelectionEdgeAutoScrollerOptions["onScroll"]>();
+      const scroller = createScroller(frames, { onScroll });
+      const vertical = edge === "top" || edge === "bottom";
+      const sign = edge === "top" || edge === "left" ? -1 : 1;
+      const boundary = edge === "bottom" ? 500 : edge === "right" ? 900 : 100;
+      for (const [inset, speed] of [
+        [30, 0],
+        [24, 0],
+        [18, 1],
+        [12, 4],
+        [6, 9],
+        [0, 16],
+        [-24, 16],
+      ] as const) {
+        onScroll.mockClear();
+        const position = boundary - sign * inset;
+        scroller.update(vertical ? { x: 500, y: position } : { x: position, y: 300 });
+        expect(frames.callbacks.size).toBe(speed === 0 ? 0 : 1);
+        if (speed !== 0) {
+          frames.flush();
+          expect(onScroll).toHaveBeenCalledExactlyOnceWith(
+            vertical ? { x: 0, y: sign * speed } : { x: sign * speed, y: 0 },
+          );
+        } else expect(onScroll).not.toHaveBeenCalled();
+        scroller.finish();
+        expect(frames.callbacks.size).toBe(0);
+      }
+    },
+  );
 
   it("refreshes the held pointer before applying the next scroll step", () => {
     const frames = new Frames();
@@ -149,6 +185,70 @@ describe("active editor selection edge integration", () => {
     expect(pan.mock.calls[0]?.[0]).toBeLessThan(0);
     expect(scroll.mock.calls[0]?.[0]).toBeLessThan(0);
     drag.finish(false);
+    expect(frames.callbacks.size).toBe(0);
+  });
+});
+
+describe("selection edge-scroll frame arbitration", () => {
+  it.each([300, 110])("uses the latest pointer at y=%s when scrolling runs first", (y) => {
+    const frames = new Frames();
+    const onScroll = vi.fn<SelectionEdgeAutoScrollerOptions["onScroll"]>();
+    let refresh: (() => void) | undefined;
+    const scroller = createScroller(frames, { onFrame: () => refresh?.(), onScroll });
+    const setPreviewTransform = vi.fn();
+    const preview = new MovePreview({
+      history: {} as SelectionPreviewOptions["history"],
+      preparedHistory: {} as SelectionPreviewOptions["preparedHistory"],
+      sceneStore: {} as SelectionPreviewOptions["sceneStore"],
+      store: {} as SelectionPreviewOptions["store"],
+      setSelection: vi.fn(),
+      frameScheduler: {
+        cancelAnimationFrame: frames.cancel,
+        requestAnimationFrame: frames.request,
+      },
+      pageToScreen: (point) => point,
+      viewportToPage: (point) => point,
+      renderer: {
+        setPreviewTransform,
+        setOverlayPath: vi.fn(),
+        clearPreviewTransforms: vi.fn(),
+        suppressMotionForNextDelta: vi.fn(),
+      },
+      selection: () => new Set(),
+      selectionEdgeDrag: {
+        begin: (callback) => {
+          refresh = callback;
+        },
+        finish: () => scroller.finish(),
+        stop: () => scroller.finish(),
+        update: (point) => scroller.update(point),
+        updatePreviewBottom: vi.fn(),
+      },
+      start: {
+        additive: false,
+        kind: "element-move",
+        tool: "select",
+        pointer: { pointerId: 1, pointerType: "pen", x: 500, y: 300 },
+      },
+    });
+    preview.update({ pointerId: 1, pointerType: "pen", x: 500, y: 490 });
+    frames.flush();
+    frames.flush();
+    expect(onScroll.mock.lastCall?.[0].y).toBeGreaterThan(0);
+    expect(frames.callbacks.size).toBe(1);
+
+    preview.update({ pointerId: 1, pointerType: "pen", x: 500, y });
+    expect(frames.callbacks.size).toBe(2);
+    frames.flush();
+    expect(setPreviewTransform).toHaveBeenLastCalledWith([], `translate(0 ${String(y - 300)})`, 3);
+    if (y === 300) {
+      expect(onScroll).toHaveBeenCalledOnce();
+      expect(frames.callbacks.size).toBe(0);
+    } else {
+      expect(onScroll.mock.lastCall?.[0].y).toBeLessThan(0);
+      expect(frames.callbacks.size).toBe(1);
+    }
+    preview.revert();
     expect(frames.callbacks.size).toBe(0);
   });
 });
