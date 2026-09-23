@@ -95,7 +95,12 @@ function verifyEraserFeedback(
     expect(scheduler.pendingCount).toBeLessThanOrEqual(1);
   }
   expect(styleWrites()).toBe(STROKES * 3);
-  expect(nodes.every((node) => node.style.filter === "blur(50px)")).toBe(true);
+  expect(cameraGroup.nodes[3]!.nodes.every((node) => node.style.filter === "blur(50px)")).toBe(
+    true,
+  );
+  expect(cameraGroup.nodes[4]!.nodes.every((node) => node.style.filter === "blur(12.5px)")).toBe(
+    true,
+  );
   expect(scheduler.pendingCount).toBe(0);
   renderer.clearElementFade(ids);
   expect(styleWrites()).toBe(STROKES * 6);
@@ -218,7 +223,7 @@ it("bounds selected deletion filter writes for 10,000 mounted elements", () => {
 function observeFadeWrites(nodes: readonly FakeNode[]): () => number {
   let writes = 0;
   for (const node of nodes) {
-    for (const property of ["transition", "filter", "opacity"]) {
+    for (const property of ["animation", "filter", "opacity"]) {
       let value = node.style[property];
       Object.defineProperty(node.style, property, {
         get: () => value,

@@ -1,4 +1,5 @@
 import { normalizeStrokePaint } from "../../domain/geometry/pressure-paint";
+import { effectiveStrokeWidth } from "../../domain/geometry/bounds";
 import { roundCanonical } from "../../domain/geometry/public";
 import type { SvgPathPart } from "../../domain/geometry/element-path";
 import { SVG_NAMESPACE } from "./constants";
@@ -251,14 +252,35 @@ function updateMountedPreviewGeometry(
 export function setMountedElementFade(entry: MountedSceneElement, durationMs: number | null): void {
   entry.fadeActive = durationMs !== null;
   const nodes = entry.group === null ? entry.paths.map((path) => path.node) : [entry.group];
-  for (const node of nodes) setElementFadeNode(node, durationMs);
+  for (const node of nodes) setElementFadeNode(node, durationMs, entry.displayedElement);
 }
 
-export function setElementFadeNode(node: SVGElement, durationMs: number | null): void {
-  const timing = `${String(durationMs ?? 0)}ms ${EASING_TOKENS.erase}`;
-  node.style.transition = durationMs === null ? "" : `opacity ${timing}, filter ${timing}`;
-  node.style.filter = durationMs !== null && durationMs > 0 ? "blur(50px)" : "";
-  node.style.opacity = durationMs === null ? "" : "0";
+export function setElementFadeNode(
+  node: SVGElement,
+  durationMs: number | null,
+  element: SceneElementRecord["element"],
+): void {
+  const animated = durationMs !== null && durationMs > 0;
+  node.style.animation = animated
+    ? `inkbook-element-erase ${String(durationMs)}ms ${EASING_TOKENS.erase} forwards`
+    : "";
+  node.style.filter = animated ? `blur(${String(elementEraseBlur(element))}px)` : "";
+  // Let the keyframes start from the element's own opacity, including pressure groups.
+  node.style.opacity = durationMs === 0 ? "0" : "";
+}
+
+function elementEraseBlur(element: SceneElementRecord["element"]): number {
+  if (
+    "fillColor" in element.style &&
+    element.style.fillColor !== null &&
+    element.style.fillOpacity > 0
+  )
+    return 50;
+  const width =
+    element.kind === "stroke" || element.kind === "straight-highlighter"
+      ? effectiveStrokeWidth(element)
+      : element.style.outlineWidth;
+  return Math.min(50, width * 6.25);
 }
 
 export function setMountedElementMotion(

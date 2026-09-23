@@ -1,3 +1,14 @@
+@keyframes inkbook-element-erase {
+  from {
+    filter: blur(0);
+  }
+
+  to {
+    /* The final filter comes from the element's width-dependent inline value. */
+    opacity: 0;
+  }
+}
+
 @keyframes inkbook-toolbar-enter {
   from {
     scale: 0;

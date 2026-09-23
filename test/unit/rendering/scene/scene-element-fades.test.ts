@@ -61,7 +61,7 @@ describe("bounded element fades", () => {
       fades.flush(Infinity, () => time);
     }
     expect(
-      entries.every((entry) => fakeNode(entry.paths[0]!.node).style.filter === "blur(50px)"),
+      entries.every((entry) => fakeNode(entry.paths[0]!.node).style.filter === "blur(12.5px)"),
     ).toBe(true);
     expect(fades.isExitReady(ids[1999]!, time + 159)).toBe(false);
     expect(fades.isExitReady(ids[1999]!, time + 160)).toBe(true);
@@ -74,7 +74,7 @@ describe("bounded element fades", () => {
     const faded = () =>
       entries
         .flatMap((entry) => entry.paths)
-        .filter((path) => fakeNode(path.node).style.opacity === "0").length;
+        .filter((path) => Boolean(fakeNode(path.node).style.animation)).length;
     expect(faded()).toBe(128);
     expect(fades.isExitReady(ids[1]!, 200)).toBe(false);
     expect(fades.flush(Infinity, () => 190)).toBe(true);
@@ -103,7 +103,12 @@ describe("bounded element fades", () => {
     expect(fades.pending).toBe(false);
     expect(entries.every((entry) => !entry.fadeActive)).toBe(true);
     expect(
-      entries.flatMap((entry) => entry.paths).every((path) => !fakeNode(path.node).style.filter),
+      entries
+        .flatMap((entry) => entry.paths)
+        .every((path) => {
+          const { animation, filter } = fakeNode(path.node).style;
+          return !animation && !filter;
+        }),
     ).toBe(true);
     expect(ids.every((id) => fades.isExitReady(id, 20))).toBe(true);
     fades.flush(Infinity, () => 30);

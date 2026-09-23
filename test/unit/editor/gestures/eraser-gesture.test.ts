@@ -9,6 +9,7 @@ import {
 } from "../../../../src/editor/gestures/eraser-gesture";
 import { eraserQuery } from "../../../fixtures/editor/eraser-query";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
+import { TRANSITION_DURATIONS } from "../../../../src/rendering/motion/transitions";
 
 const scheduler = {
   isCancelled: () => false,
@@ -72,6 +73,10 @@ describe("eraser sweep", () => {
       { setCandidateFade: setFade, clearCandidateFade: clearFade },
     );
     sweep.update({ x: 100, y: 50 });
+    expect(setFade).toHaveBeenLastCalledWith(
+      new Set(["shape"]),
+      TRANSITION_DURATIONS.eraserPendingRemoval,
+    );
     const remove = vi.fn(() => true);
     await expect(sweep.commit(remove, scheduler)).resolves.toBe(true);
     expect(remove).toHaveBeenCalledOnce();
