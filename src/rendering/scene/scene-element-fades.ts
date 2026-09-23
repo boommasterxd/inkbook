@@ -16,7 +16,7 @@ interface PendingFade {
   index: number;
 }
 
-/** Starts expensive filter transitions in bounded batches without truncating queued exits. */
+/** Starts expensive filter animations in bounded batches without truncating queued exits. */
 export class SceneElementFades {
   readonly #pending = new Map<string, PendingFade>();
   readonly #finishes = new Map<string, number>();
@@ -81,7 +81,7 @@ export class SceneElementFades {
       const count = entry.group === null ? entry.paths.length : 1;
       do {
         const node = entry.group ?? entry.paths[fade.index]?.node;
-        if (node !== undefined) setElementFadeNode(node, fade.durationMs);
+        if (node !== undefined) setElementFadeNode(node, fade.durationMs, entry.displayedElement);
         fade.index += 1;
         this.#remaining -= 1;
         this.#finishes.set(id, now() + fade.durationMs);

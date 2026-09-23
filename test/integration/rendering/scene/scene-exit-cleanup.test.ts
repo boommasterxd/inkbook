@@ -145,8 +145,8 @@ describe("deferred scene exit cleanup", () => {
     const path = harness.content.nodes[0]!;
     remove(harness, records);
     harness.renderer.clearElementFade(records.map(({ id }) => id));
-    expect(path.style.opacity).toBe("0");
-    expect(path.style.filter).toBe("blur(50px)");
+    expect(path.style.animation).toContain("inkbook-element-erase 220ms");
+    expect(path.style.filter).toBe("blur(12.5px)");
     expect(harness.renderer.instrumentation().motionTombstones).toBe(0);
     harness.scheduler.runNext();
     expect(harness.renderer.mountedCount).toBe(1);
@@ -168,7 +168,7 @@ describe("deferred scene exit cleanup", () => {
     harness.renderer.clearElementFade(ids);
     harness.scheduler.runNext();
     expect(harness.content.nodes).toEqual(original);
-    expect(original.every((node) => node.style.filter === "blur(50px)")).toBe(true);
+    expect(original.every((node) => node.style.filter === "blur(12.5px)")).toBe(true);
     harness.scheduler.time += 150;
     restore(harness, records);
     expect(original.every((node) => node.style.filter === "")).toBe(true);

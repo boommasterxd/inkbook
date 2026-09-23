@@ -16,14 +16,20 @@ import {
 import { createTestStroke } from "../../../fixtures/persistence/worker-snapshot";
 import { FakeDocument, FakeNode, fakeNode, fakeRectangleRecord } from "./fakes";
 
-function setup(pressureEnabled = true) {
+function setup(
+  pressureEnabled = true,
+  width: 2 | 4 | 8 | 14 | 22 = 2,
+  tool: "pen" | "highlighter" = "pen",
+) {
   const source = createTestStroke();
   const element = {
     ...source,
+    tool,
     points: [0, 0, 0, 20, 20, 1, 40, 0, 0],
     style: {
       ...source.style,
       pressureEnabled,
+      width,
       opacity: 0.7,
       color: { type: "rgba" as const, value: "#12345680" as const },
     },
@@ -62,17 +68,18 @@ describe("mounted pressure stroke groups", () => {
     expect(group.style.opacity).toBeUndefined();
     setMountedElementFade(entry, 100);
     expect(entry.fadeActive).toBe(true);
-    expect(group.style.opacity).toBe("0");
-    expect(group.style.filter).toBe("blur(50px)");
-    expect(group.style.transition).toBe(
-      "opacity 100ms cubic-bezier(0.3, 0, 0.7, 1), filter 100ms cubic-bezier(0.3, 0, 0.7, 1)",
+    expect(group.style.opacity).toBe("");
+    expect(group.attributes.get("opacity")).toBe(String(opacity));
+    expect(group.style.filter).toBe("blur(12.5px)");
+    expect(group.style.animation).toBe(
+      "inkbook-element-erase 100ms cubic-bezier(0.645, 0.045, 0.355, 1) forwards",
     );
     expect(group.nodes.every((node) => node.style.filter === undefined)).toBe(true);
     setMountedElementFade(entry, null);
     expect(entry.fadeActive).toBe(false);
     expect(group.style.opacity).toBe("");
     expect(group.style.filter).toBe("");
-    expect(group.style.transition).toBe("");
+    expect(group.style.animation).toBe("");
     expect(removeMountedElementNode(entry)).toBe(true);
     expect(parent.nodes).toHaveLength(0);
   });
@@ -150,5 +157,39 @@ describe("mounted pressure paint", () => {
     expect(fakeNode(firstPath(entry)).attributes.get("opacity")).toBe(
       String(normalizeStrokePaint(next.element.style).opacity),
     );
+  });
+});
+
+describe("width-dependent erase blur", () => {
+  it.each([
+    [true, 2, "pen", 12.5],
+    [false, 2, "pen", 12.5],
+    [true, 4, "pen", 25],
+    [true, 8, "pen", 50],
+    [false, 22, "pen", 50],
+    [false, 2, "highlighter", 31.25],
+  ] as const)("scales blur for pressure=%s width=%s tool=%s", (pressure, width, tool, radius) => {
+    const { entry } = setup(pressure, width, tool);
+    setMountedElementFade(entry, 400);
+    expect(fakeNode(firstPath(entry)).style.filter).toBe(`blur(${String(radius)}px)`);
+    setMountedElementFade(entry, null);
+    expect(fakeNode(firstPath(entry)).style.filter).toBe("");
+    setMountedElementFade(entry, 0);
+    expect(fakeNode(firstPath(entry)).style.filter).toBe("");
+    expect(fakeNode(firstPath(entry)).style.opacity).toBe("0");
+  });
+
+  it("preserves full blur for filled shapes", () => {
+    const record = fakeRectangleRecord("filled", 0, 0);
+    if (!("fillColor" in record.element.style)) throw new Error("Expected closed shape");
+    record.element.style.fillColor = { type: "rgba", value: "#123456FF" };
+    const entry = createMountedElement(
+      new FakeDocument() as unknown as Document,
+      record,
+      buildElementPathParts(record.element),
+      createInstrumentation(),
+    );
+    setMountedElementFade(entry, 400);
+    expect(fakeNode(firstPath(entry)).style.filter).toBe("blur(50px)");
   });
 });
