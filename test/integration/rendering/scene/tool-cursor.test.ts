@@ -29,6 +29,7 @@ const CURSOR: Extract<SceneToolCursor, { kind: "tool" }> = {
   x: 20,
   y: 30,
 };
+const FRAME = { cursor: CURSOR, system: "crosshair" };
 const STYLE: StrokeStyleV1 = {
   color: CURSOR.color,
   opacity: 0.4,
@@ -182,21 +183,23 @@ describe("retained tool cursor", () => {
     const queries = vi.spyOn(store, "query");
     const writes = vi.spyOn(cursor, "setAttribute");
     layout.readViewport.mockClear();
-    renderer.setToolCursor(CURSOR);
-    renderer.setToolCursor({ ...CURSOR, x: 40 });
+    const obsoleteRead = vi.fn(() => FRAME);
+    renderer.requestToolCursorFrame(obsoleteRead);
+    renderer.requestToolCursorFrame(() => ({ ...FRAME, cursor: { ...CURSOR, x: 40 } }));
     expect(cursor.attributes.get("display")).toBe("none");
     expect(scheduler.pendingCount).toBe(1);
     scheduler.runAll();
+    expect(obsoleteRead).not.toHaveBeenCalled();
     expect(cursor.parent).toBe(svg);
     expect(cursor.nodes.map((node) => node.tagName)).toEqual(["circle", "g"]);
     expect(cursor.attributes.get("transform")).toBe("translate(40 30)");
     expect(cursor.nodes[1]!.attributes.get("color")).toBe("#FFCC0080");
     expect(cursor.nodes[1]!.nodes[0]).toBe(fakeNode(CURSOR.icon!));
     writes.mockClear();
-    renderer.setToolCursor({ ...CURSOR, x: 40 });
+    renderer.requestToolCursorFrame(() => ({ ...FRAME, cursor: { ...CURSOR, x: 40 } }));
     scheduler.runAll();
     expect(writes).not.toHaveBeenCalled();
-    renderer.setToolCursor({ ...CURSOR, x: 41 });
+    renderer.requestToolCursorFrame(() => ({ cursor: { ...CURSOR, x: 41 }, system: "crosshair" }));
     scheduler.runAll();
     expect(writes.mock.calls).toEqual([["transform", "translate(41 30)"]]);
     expect(reads).not.toHaveBeenCalled();
@@ -207,7 +210,10 @@ describe("retained tool cursor", () => {
 
   it("keeps one exact eraser ring, theme paint and node identity across zoom and hide", () => {
     const { renderer, scheduler, cursor, svg } = setup();
-    renderer.setToolCursor({ ...CURSOR, kind: "eraser", radius: 64 });
+    renderer.requestToolCursorFrame(() => ({
+      ...FRAME,
+      cursor: { ...CURSOR, kind: "eraser", radius: 64 },
+    }));
     scheduler.runAll();
     renderer.setCamera({ x: 15, zoom: 4 });
     scheduler.runAll();
@@ -217,24 +223,27 @@ describe("retained tool cursor", () => {
     expect(ring.attributes.get("stroke")).toBe("var(--inkbook-text)");
     expect(ring.attributes.get("stroke-dasharray")).toBe("4 3");
     expect(cursor.nodes[1]!.attributes.get("visibility")).toBe("hidden");
-    renderer.setToolCursor(null);
+    renderer.requestToolCursorFrame(() => ({ cursor: null, system: "crosshair" }));
     scheduler.runAll();
-    renderer.setToolCursor({ ...CURSOR, color: { type: "theme-text" } });
+    renderer.requestToolCursorFrame(() => ({
+      ...FRAME,
+      cursor: { ...CURSOR, color: { type: "theme-text" } },
+    }));
     scheduler.runAll();
     expect(svg.nodes[svg.nodes.length - 1]).toBe(cursor);
     expect(cursor.nodes[1]!.attributes.get("color")).toBe("var(--inkbook-text)");
     expect(ring.attributes.get("visibility")).toBe("hidden");
-    renderer.setToolCursor(null);
+    renderer.requestToolCursorFrame(() => ({ cursor: null, system: "crosshair" }));
     renderer.destroy();
     expect(scheduler.pendingCount).toBe(0);
-    expect(() => renderer.setToolCursor(CURSOR)).toThrow("destroyed");
+    expect(() => renderer.requestToolCursorFrame(() => FRAME)).toThrow("destroyed");
   });
 });
 
 describe("persistent tool decoration and frame reads", () => {
   it("keeps the offset icon visible during incremental ink and commit", () => {
     const { renderer, scheduler, cursor, svg } = setup();
-    renderer.setToolCursor(CURSOR);
+    renderer.requestToolCursorFrame(() => FRAME);
     scheduler.runAll();
     renderer.updateLiveStroke(
       { finalizedChunks: [], tail: { geometry: [{ d: "", paint: "stroke" }] } },
@@ -257,7 +266,7 @@ describe("persistent tool decoration and frame reads", () => {
 
   it("keeps the offset icon visible throughout staged straight-marker painting", () => {
     const { renderer, scheduler, cursor, svg } = setup();
-    renderer.setToolCursor(CURSOR);
+    renderer.requestToolCursorFrame(() => FRAME);
     scheduler.runAll();
     renderer.setLivePath({
       parts: [
@@ -278,10 +287,7 @@ describe("persistent tool decoration and frame reads", () => {
 
   it("reads latest frame state once and invalidates layout explicitly", () => {
     const { renderer, scheduler, cursor } = setup();
-    const reader = vi.fn(() => ({
-      cursor: CURSOR,
-      system: "crosshair",
-    }));
+    const reader = vi.fn(() => FRAME);
     renderer.requestToolCursorFrame(reader);
     renderer.requestToolCursorFrame(reader);
     scheduler.runAll();
@@ -319,7 +325,7 @@ describe("tool decoration swaps", () => {
       fillColor: { type: "rgba", value: "#12345680" },
       fillOpacity: 0.6,
     };
-    renderer.setToolCursor(state);
+    renderer.requestToolCursorFrame(() => ({ cursor: state, system: "crosshair" }));
     scheduler.runAll();
     const host = cursor.nodes[1]!;
     expect(host.attributes.get("opacity")).toBe("1");
@@ -329,10 +335,13 @@ describe("tool decoration swaps", () => {
     expect(shape.attributes.get("fill-opacity")).toBe("0.6");
     const append = vi.spyOn(host, "append");
     const writes = vi.spyOn(shape, "setAttribute");
-    renderer.setToolCursor({ ...state, x: 23 });
+    renderer.requestToolCursorFrame(() => ({ cursor: { ...state, x: 23 }, system: "crosshair" }));
     scheduler.runAll();
     expect(writes).not.toHaveBeenCalled();
-    renderer.setToolCursor({ ...state, fillColor: null, fillOpacity: 0.2, opacity: 0.7 });
+    renderer.requestToolCursorFrame(() => ({
+      ...FRAME,
+      cursor: { ...state, fillColor: null, fillOpacity: 0.2, opacity: 0.7 },
+    }));
     scheduler.runAll();
     expect(writes.mock.calls).toEqual([
       ["fill", "none"],
@@ -340,7 +349,7 @@ describe("tool decoration swaps", () => {
     ]);
     expect(host.attributes.get("stroke-opacity")).toBe("0.7");
     expect(append).not.toHaveBeenCalled();
-    renderer.setToolCursor(CURSOR);
+    renderer.requestToolCursorFrame(() => FRAME);
     scheduler.runAll();
     expect(host.attributes.get("opacity")).toBe("0.4");
     expect(host.attributes.get("stroke-opacity")).toBe("1");
@@ -351,24 +360,24 @@ describe("tool decoration swaps", () => {
     const { renderer, scheduler, cursor } = setup();
     const iconHost = cursor.nodes[1]!;
     const append = vi.spyOn(iconHost, "append");
-    renderer.setToolCursor(CURSOR);
+    renderer.requestToolCursorFrame(() => FRAME);
     scheduler.runAll();
-    renderer.setToolCursor({ ...CURSOR, x: 44 });
+    renderer.requestToolCursorFrame(() => ({ cursor: { ...CURSOR, x: 44 }, system: "crosshair" }));
     scheduler.runAll();
     expect(append).toHaveBeenCalledTimes(1);
     const icon = new FakeDocument().createElementNS(
       SVG_NAMESPACE,
       "svg",
     ) as unknown as SVGSVGElement;
-    renderer.setToolCursor({ ...CURSOR, icon });
+    renderer.requestToolCursorFrame(() => ({ cursor: { ...CURSOR, icon }, system: "crosshair" }));
     scheduler.runAll();
     expect(append).toHaveBeenCalledTimes(2);
     expect(iconHost.nodes).toEqual([fakeNode(icon)]);
-    renderer.setToolCursor({ ...CURSOR, icon: undefined });
+    renderer.requestToolCursorFrame(() => ({ ...FRAME, cursor: { ...CURSOR, icon: undefined } }));
     scheduler.runAll();
     expect(iconHost.nodes).toHaveLength(0);
     expect(cursor.attributes.get("display")).toBe("inline");
-    renderer.setToolCursor({ ...CURSOR, icon });
+    renderer.requestToolCursorFrame(() => ({ cursor: { ...CURSOR, icon }, system: "crosshair" }));
     scheduler.runAll();
     renderer.destroy();
     expect(iconHost.nodes).toHaveLength(0);
@@ -380,7 +389,7 @@ describe("retained staged marker commits", () => {
   it("retains two fast commits until each mounts, including partial reconciliation", () => {
     const { renderer, scheduler, cursor, store, svg } = setup();
     const group = svg.nodes[1]!.nodes[4]!;
-    renderer.setToolCursor(CURSOR);
+    renderer.requestToolCursorFrame(() => FRAME);
     scheduler.runAll();
     const ids = ["first", "second"];
     for (const [rank, id] of ids.entries()) {

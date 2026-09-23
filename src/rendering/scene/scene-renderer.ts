@@ -1,5 +1,5 @@
 import { SceneFrameScheduler } from "./scene-frame-scheduler";
-import type { SceneToolCursor, SceneToolCursorFrameReader } from "./tool-cursor";
+import type { SceneToolCursorFrameReader } from "./tool-cursor";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type * as Schema from "../../domain/schema/public";
 import { SceneBackgroundCache } from "./background-cache";
@@ -212,11 +212,6 @@ export class SvgSceneRenderer {
   public moveToolCursor(x: number, y: number): void {
     this.assertActive();
     this.#frameWriter.moveToolCursor(x, y);
-  }
-  public setToolCursor(state: SceneToolCursor | null): void {
-    this.assertActive();
-    this.#frameWriter.setToolCursor(state);
-    this.#frames.schedule(false);
   }
   public setLivePath(path: Scene.LivePathState | null): void {
     this.assertActive();

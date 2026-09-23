@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import * as overlayGeometry from "../../../src/editor/selection/overlay-geometry";
 import * as elementPath from "../../../src/domain/geometry/element-path";
 import { ProgressivePreviewPath } from "../../../src/rendering/scene/progressive-preview-path";
 
@@ -258,6 +259,28 @@ const RAW_SAMPLES_PER_FRAME = 4;
 
 describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz selection resize frame pipeline`, () => {
   afterEach(() => vi.restoreAllMocks());
+  it("shares one overlay build between rendering and repeated handle hit tests", () => {
+    const elements = fallbackElements();
+    const fixture = createPipeline(API, elements, 2_000);
+    const interaction = createInteraction(API, fixture, elements, () => undefined);
+    const start = resizeHandle(API, elements);
+    const pointer = { ...start, pointerId: 1, pointerType: "mouse" as const, pressure: 0 };
+    const builds = vi.spyOn(overlayGeometry, "selectionOverlayGeometry");
+    interaction.renderSelection();
+    expect(builds).toHaveBeenCalledTimes(1);
+    runInteractionFrames(() => {
+      for (let sample = 0; sample < RAW_SAMPLES_PER_FRAME; sample += 1) {
+        expect(interaction.cursorAt(pointer)).toBe("nwse-resize");
+      }
+    });
+    expect(builds).toHaveBeenCalledTimes(1);
+    expect(interaction.pointerDown(pointer)).toBe(true);
+    expect(builds).toHaveBeenCalledTimes(2);
+    interaction.dispose();
+    fixture.renderer.destroy();
+    fixture.sceneStore.release();
+  });
+
   // Each independent workload retains its own default test deadline and scheduled work bound.
   it.for(RESIZE_WORKLOADS)(
     "keeps %s pointer-to-scene frames with coalesced work",

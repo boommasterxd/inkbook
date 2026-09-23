@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { ActiveEditorPointerController } from "../../../../../src/obsidian/embeds/active-editor/controller-pointer";
 import type { CoalescedPointerInput } from "../../../../../src/obsidian/embeds/active-editor/coalesced-input";
@@ -14,6 +14,8 @@ import {
   type InputState,
 } from "../../../../../src/editor/input/index";
 
+import { toolCursorHarness } from "../../../../fixtures/obsidian/tool-cursor";
+
 describe("active editor pointer controller", () => {
   it("uses screen pixels for arbitration and page coordinates for indexed hit testing", () => {
     const dispatch = vi.fn();
@@ -21,13 +23,15 @@ describe("active editor pointer controller", () => {
     const setLastPointer = vi.fn();
     const interruptForInput = vi.fn();
     const navigation = navigationPort();
+    const getInput = () => createInputState();
     const controller = new ActiveEditorPointerController({
+      cursor: cursorPort(getInput),
       beginHandlePointer: vi.fn(),
       capturePointer: vi.fn(),
       coalesced: {} as CoalescedPointerInput,
       dispatch,
       finishHandlePointer: vi.fn(),
-      getInput: () => createInputState(),
+      getInput,
       handles: handlesPort(false),
       interruptForInput,
       isEnabled: () => true,
@@ -64,13 +68,15 @@ describe("active editor pointer controller", () => {
     const surface = rendererPort().inputSurface;
     const capturePointer = vi.fn((pointerId: number) => surface.setPointerCapture(pointerId));
     const releasePointer = vi.fn((pointerId: number) => surface.releasePointerCapture(pointerId));
+    const getInput = () => createInputState();
     const controller = new ActiveEditorPointerController({
+      cursor: cursorPort(getInput),
       beginHandlePointer,
       capturePointer,
       coalesced: {} as CoalescedPointerInput,
       dispatch: vi.fn(),
       finishHandlePointer,
-      getInput: () => createInputState(),
+      getInput,
       handles: handlesPort(true),
       interruptForInput: vi.fn(),
       isEnabled: () => true,
@@ -345,7 +351,10 @@ function horizontalPanController(overrides?: {
   readonly setSnappingInverted?: (pointerId: number, inverted: boolean | null) => void;
 }): ActiveEditorPointerController {
   const input = createInputState({ zoom: 2, fitZoom: 1 });
+  const getInput = overrides?.getInput ?? (() => ({ ...input, interaction: pagePanInteraction() }));
+  const handles = overrides?.handles ?? handlesPort(false);
   return new ActiveEditorPointerController({
+    cursor: cursorPort(getInput, handles),
     beginHandlePointer: vi.fn(),
     capturePointer: vi.fn(),
     coalesced: {
@@ -353,8 +362,8 @@ function horizontalPanController(overrides?: {
     } as unknown as CoalescedPointerInput,
     dispatch: overrides?.dispatch ?? vi.fn(),
     finishHandlePointer: overrides?.finishHandlePointer ?? vi.fn(),
-    getInput: overrides?.getInput ?? (() => ({ ...input, interaction: pagePanInteraction() })),
-    handles: overrides?.handles ?? handlesPort(false),
+    getInput,
+    handles,
     interruptForInput: vi.fn(),
     isEnabled: () => true,
     menus: menuPort(),
@@ -422,6 +431,9 @@ function pointerEvent(
   > = {},
 ): PointerEvent {
   return {
+    clientX: 20,
+    clientY: 30,
+    pressure: 0.5,
     button: 0,
     buttons: 1,
     altKey: overrides.altKey ?? false,
@@ -436,4 +448,10 @@ function pointerEvent(
     shiftKey: false,
     timeStamp: overrides.timeStamp ?? 16,
   } as unknown as PointerEvent;
+}
+
+function cursorPort(input: () => InputState, handles?: ActiveEditorHandleInteraction) {
+  const fixture = toolCursorHarness({ input, activeHandlePointer: () => handles?.activePointerId });
+  onTestFinished(() => fixture.controller.dispose());
+  return fixture.controller;
 }

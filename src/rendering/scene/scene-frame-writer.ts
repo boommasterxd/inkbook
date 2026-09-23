@@ -1,9 +1,5 @@
 import { SceneLivePathCommits } from "./live-path-commits";
-import {
-  SceneToolCursorWriter,
-  type SceneToolCursor,
-  type SceneToolCursorFrameReader,
-} from "./tool-cursor";
+import { SceneToolCursorWriter, type SceneToolCursorFrameReader } from "./tool-cursor";
 import type { PageV1 } from "../../domain/schema/public";
 import type { SceneBackgroundCache } from "./background-cache";
 import {
@@ -140,10 +136,6 @@ export class SceneFrameWriter {
       );
       this.#liveDirty = false;
     }
-  }
-
-  public setToolCursor(state: SceneToolCursor | null): void {
-    this.toolCursor.set(state);
   }
 
   public setCamera(camera: SceneCamera): void {

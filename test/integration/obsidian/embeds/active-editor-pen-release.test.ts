@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import {
   createInputState,
@@ -12,6 +12,8 @@ import {
   type ActiveEditorPointerOptions,
 } from "../../../../src/obsidian/embeds/active-editor/controller-pointer";
 import { ManualFrameScheduler } from "../../../fixtures/obsidian/manual-frame-scheduler";
+
+import { toolCursorHarness } from "../../../fixtures/obsidian/tool-cursor";
 
 const style = {
   color: { type: "theme-text" as const },
@@ -135,13 +137,17 @@ function setup(pointerType: PointerSample["pointerType"] = "pen", tool: EditorTo
     temporaryEraser: false,
     shift: false,
   };
+  const getInput = () => ({ ...createInputState(), interaction });
+  const cursor = toolCursorHarness({ input: getInput });
+  onTestFinished(() => cursor.controller.dispose());
   const controller = new ActiveEditorPointerController({
+    cursor: cursor.controller,
     coalesced,
     dispatch: (action) => {
       if (action.type === "pointer-up") routed.commit();
       if (action.type === "pointer-cancel") routed.revert();
     },
-    getInput: () => ({ ...createInputState(), interaction }),
+    getInput,
     handles: {
       pointerMove: () => false,
       pointerUp: () => false,

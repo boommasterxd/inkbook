@@ -76,8 +76,6 @@ it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz cursor bursts retain decoratio
     for (const observation of observations.content) expect(observation).not.toHaveBeenCalled();
     assertStyleUpdates(renderer, scheduler, observations, icons);
 
-    renderer.setToolCursor(null);
-    renderer.setToolCursor(null);
     observations.write.mockClear();
     // Replace the persistent reader as an input adapter does when leaving the surface.
     renderer.requestToolCursorFrame(() => ({ cursor: null, system: "default" }));
@@ -162,7 +160,7 @@ it.each(["tool", "eraser"] as const)(
   },
 );
 
-it("direct cursor movement waits for pending visibility and layout changes", () => {
+it("direct cursor movement respects invalid layout and the latest hidden frame", () => {
   const { renderer, scheduler, root, cursor } = createCursorFixture();
   const icon = root.ownerDocument.createElementNS(SVG_NAMESPACE, "svg");
   const read = vi.fn<SceneToolCursorFrameReader>(() => ({
@@ -181,11 +179,10 @@ it("direct cursor movement waits for pending visibility and layout changes", () 
     write.mockClear();
     renderer.moveToolCursor(30, 40);
     expect(write).toHaveBeenCalledExactlyOnceWith("transform", "translate(30 40)");
-    renderer.setToolCursor(null);
+    renderer.requestToolCursorFrame(() => ({ cursor: null, system: "default" }));
     write.mockClear();
     renderer.moveToolCursor(40, 40);
-    expect(write).not.toHaveBeenCalled();
-    renderer.requestToolCursorFrame(() => ({ cursor: null, system: "default" }));
+    expect(write).toHaveBeenCalledExactlyOnceWith("transform", "translate(40 40)");
     scheduler.runAll();
     expect(cursor.attributes.get("display")).toBe("none");
     write.mockClear();

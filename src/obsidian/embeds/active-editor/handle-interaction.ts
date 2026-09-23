@@ -30,11 +30,7 @@ import { selectionHandleAction } from "./selection-handle-action";
 import { activeSnapFeatures } from "./snapping-settings";
 import { commitPreviewReplacement } from "./preview-replacement-commit";
 import { SelectionScalePreviewPlan } from "./selection-scale-preview";
-import {
-  pointerHandleRadiusPixels,
-  SelectionHandlePresentation,
-  type HandleInteractionRenderer,
-} from "./handle-presentation";
+import { SelectionHandlePresentation, type HandleInteractionRenderer } from "./handle-presentation";
 
 export interface ActiveEditorHandleInteractionOptions {
   readonly frameScheduler: HandleFrameScheduler;
@@ -185,7 +181,7 @@ export class ActiveEditorHandleInteraction {
       handles,
       pointer,
       this.#zoom(),
-      pointerHandleRadiusPixels(selected, frame, pointer, this.#zoom()),
+      selectionCursorRadius(this.#cursorGeometry?.outline ?? null, pointer, this.#zoom()),
     );
     if (handle === null) return false;
     const elements = selected.map(({ element }) => element);
@@ -339,7 +335,7 @@ export class ActiveEditorHandleInteraction {
     const selected = this.#selectedGeometry();
     const frame = this.#selectionFrames.current(selected);
     this.#cacheCursorGeometry(selected, frame);
-    this.#presentation.renderGeometry(selected, null, null, frame);
+    this.#presentation.renderGeometry(selected, this.#cursorGeometry);
   }
 
   #cacheCursorGeometry(

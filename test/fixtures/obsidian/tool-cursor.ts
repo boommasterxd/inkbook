@@ -1,7 +1,7 @@
 import { vi } from "vitest";
 
 import { createBuiltInSettings } from "../../../src/domain/settings/defaults";
-import { createInputState } from "../../../src/editor/input";
+import { createInputState, type InputState } from "../../../src/editor/input";
 import type { ToolSystemCursor } from "../../../src/editor/input/tool-cursor";
 import { ActiveToolCursorController } from "../../../src/obsidian/embeds/active-editor/tool-cursor-controller";
 import type { SvgSceneRenderer } from "../../../src/rendering/scene";
@@ -38,7 +38,12 @@ export function timedCursorPointerEvent(
   return event;
 }
 
-export function toolCursorHarness() {
+export function toolCursorHarness(
+  options: {
+    readonly input?: () => InputState;
+    readonly activeHandlePointer?: () => number | undefined;
+  } = {},
+) {
   const surface = new EventTarget();
   const document = Object.assign(new EventTarget(), { hidden: false });
   const window = Object.assign(new EventTarget(), {
@@ -74,14 +79,14 @@ export function toolCursorHarness() {
       requestToolCursorFrame: request,
       moveToolCursor: move,
     } as unknown as SvgSceneRenderer,
-    input: () => controls.input,
+    input: options.input ?? (() => controls.input),
     defaults: () => defaults,
     icon,
     enabled: () => controls.enabled,
     menuOpen: () => controls.menuOpen,
     cameraX: () => controls.cameraX,
     handleCursor: () => controls.hint,
-    activeHandlePointer: () => controls.handlePointer,
+    activeHandlePointer: options.activeHandlePointer ?? (() => controls.handlePointer),
   });
   const read = (changed = false) => {
     if (reader === undefined) throw new Error("No cursor frame requested.");
