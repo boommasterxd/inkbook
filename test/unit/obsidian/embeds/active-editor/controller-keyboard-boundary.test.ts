@@ -266,3 +266,28 @@ describe("active eraser navigation boundary", () => {
     },
   );
 });
+
+describe("suppressed pen contact cleanup", () => {
+  it.each(["escape", "blur"] as const)("releases retained capture on %s", async (cleanup) => {
+    const harness = createHarness();
+    const event = (buttons: number) =>
+      new PointerEvent("pointermove", {
+        pointerId: 7,
+        pointerType: "pen",
+        button: -1,
+        buttons,
+        pressure: 0.5,
+        clientX: 700,
+        clientY: 300,
+      });
+    harness.controller.handlePointerMove(event(5));
+    harness.controller.handlePointerMove(event(1));
+    expect(harness.capture.set).toHaveBeenCalledWith(7);
+    expect(harness.capture.release).not.toHaveBeenCalled();
+    if (cleanup === "escape") {
+      await vi.waitFor(() => expect(harness.key("Escape").defaultPrevented).toBe(true));
+    } else harness.controller.recoverInterruptedTouch();
+    expect(harness.capture.release).toHaveBeenCalledWith(7);
+    harness.dispose();
+  });
+});

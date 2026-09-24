@@ -200,7 +200,9 @@ describe("temporary tools and pointer priority", () => {
       "capture-pointer",
       "begin-preview",
     ]);
-    expect(apply(pen.state, { type: "pointer-up", pointerId: 1 }).effects).toEqual([]);
+    expect(apply(pen.state, { type: "pointer-up", pointerId: 1 }).effects).toEqual([
+      { type: "release-pointer", pointerId: 1 },
+    ]);
   });
 });
 
@@ -224,7 +226,7 @@ describe("touch state transitions", () => {
     ]);
     const released = apply(opened.state, { type: "pointer-up", pointerId: 1 });
     expect(released.state.consumedPointerIds).toEqual([]);
-    expect(released.effects).toEqual([]);
+    expect(released.effects).toEqual([{ type: "release-pointer", pointerId: 1 }]);
   });
 
   it("keeps a motionless empty touch pending and opens its long press", () => {

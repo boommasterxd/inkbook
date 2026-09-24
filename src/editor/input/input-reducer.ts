@@ -45,6 +45,7 @@ import {
   withInteraction,
 } from "./input-reducer-operations";
 import { isValidPointerDown, isValidPointerSample } from "./pointer-validation";
+import { handlePenModeChange } from "./input-pen-mode";
 
 export function reduceInput(state: InputState, action: InputAction): InputReduction {
   switch (action.type) {
@@ -64,17 +65,23 @@ export function reduceInput(state: InputState, action: InputAction): InputReduct
       return handlePointerDown(state, action);
     case "pointer-move":
       return handlePointerMove(state, action);
+    case "pen-mode-change":
+      return handlePenModeChange(state, action);
   }
 }
 
 function reset(state: InputState): InputReduction {
+  const releases: InputEffect[] = state.consumedPointerIds.map((pointerId) => ({
+    type: "release-pointer",
+    pointerId,
+  }));
   if (state.interaction === undefined) {
-    return { state: { ...state, consumedPointerIds: [] }, effects: [] };
+    return { state: { ...state, consumedPointerIds: [] }, effects: releases };
   }
   const cancelled = cancelInteraction(state, state.interaction, false);
   return {
     state: { ...cancelled.state, consumedPointerIds: [] },
-    effects: cancelled.effects,
+    effects: [...cancelled.effects, ...releases],
   };
 }
 

@@ -42,6 +42,92 @@ describe("raw tool cursor input work bounds", () => {
   );
 });
 
+it.each([2, 4, 32])("retains hover geometry across pen button %s press and release", (buttons) => {
+  const h = harness();
+  const input = h.controls.input;
+  h.controller.record(sample(1, { pointerType: "pen" }), "move");
+  expect(h.read().cursor?.kind).toBe("tool");
+  h.measure.mockClear();
+  h.icon.mockClear();
+  h.request.mockClear();
+  try {
+    for (const [index, held] of [buttons, 0].entries()) {
+      const time = 10 + index * 200;
+      h.controller.record(sample(time, { pointerType: "pen", buttons: held }), "move");
+      expect(h.request).toHaveBeenCalledOnce();
+      if (held === 0) h.flushTimers();
+      expect(h.read().cursor?.kind).toBe(held === 0 ? "tool" : "eraser");
+      // Releasing restores the existing tool icon; the eraser needs no icon lookup.
+      expect(h.icon).toHaveBeenCalledTimes(held === 0 ? 1 : 0);
+      h.request.mockClear();
+      h.icon.mockClear();
+      h.move.mockClear();
+      for (let position = 0; position < 128; position += 1)
+        h.surface.dispatchEvent(
+          sample(
+            time + position + 1,
+            {
+              pointerType: "pen",
+              buttons: held,
+              clientX: 121 + position,
+            },
+            "pointerrawupdate",
+          ),
+        );
+      expect(h.move).toHaveBeenCalledTimes(128);
+      expect(h.request).not.toHaveBeenCalled();
+      expect(h.icon).not.toHaveBeenCalled();
+      expect(h.measure).not.toHaveBeenCalled();
+      expect(h.controls.input).toBe(input);
+    }
+  } finally {
+    h.controller.dispose();
+  }
+});
+
+it("owns one pen release timer across hover moves and cancels it on repress and disposal", () => {
+  const h = harness();
+  try {
+    h.controller.record(sample(1, { pointerType: "pen", buttons: 2 }), "move");
+    expect(h.read().cursor?.kind).toBe("eraser");
+    h.measure.mockClear();
+    h.controller.record(sample(2, { pointerType: "pen", buttons: 0 }), "up");
+    expect(h.window.setTimeout).toHaveBeenCalledOnce();
+    expect(h.window.setTimeout.mock.calls[0]?.[1]).toBe(300);
+    expect(h.timers.size).toBe(1);
+    for (let position = 0; position < 128; position += 1)
+      h.controller.record(
+        sample(3 + position, {
+          pointerType: "pen",
+          buttons: 0,
+          clientX: 121 + position,
+        }),
+        "move",
+      );
+    expect(h.read().cursor?.kind).toBe("eraser");
+    expect(h.window.setTimeout).toHaveBeenCalledOnce();
+    expect(h.window.clearTimeout).not.toHaveBeenCalled();
+    expect(h.measure).not.toHaveBeenCalled();
+    expect(h.icon).not.toHaveBeenCalled();
+    expect(h.timers.size).toBe(1);
+
+    h.controller.record(sample(200, { pointerType: "pen", buttons: 2 }), "move");
+    expect(h.window.clearTimeout).toHaveBeenCalledOnce();
+    expect(h.timers.size).toBe(0);
+    h.controller.record(sample(201, { pointerType: "pen", buttons: 0 }), "up");
+    expect(h.window.setTimeout).toHaveBeenCalledTimes(2);
+    expect(h.timers.size).toBe(1);
+    h.controller.dispose();
+    expect(h.window.clearTimeout).toHaveBeenCalledTimes(2);
+    expect(h.timers.size).toBe(0);
+    h.request.mockClear();
+    h.flushTimers();
+    expect(h.request).not.toHaveBeenCalled();
+  } finally {
+    h.controller.dispose();
+  }
+});
+
 it("bounds layout work to delivered scroll invalidations with interleaved raw input", () => {
   const scrollBounds = vi.fn(() => domRect({ left: 0, top: 0, width: 600, height: 500 }));
   const h = harness({ scrollBounds });
