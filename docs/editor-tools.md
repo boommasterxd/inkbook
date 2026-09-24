@@ -167,7 +167,7 @@ This means:
 - A touched shape is removed completely.
 - The movement between two input points is checked as a continuous sweep so that thin lines cannot slip through gaps between sample points.
 - The effect radius can be configured in the Style menu.
-- Touched elements preview an opacity fade with blur growing to a width-dependent radius over 400 milliseconds using the [`erase` easing](quality-and-testing.md#animation-tokens), but remain in the model until pointer release removes them together. Cancellation restores them immediately. The final blur radius is `min(50, effectiveWidth * 6.25)` page units: stroke width includes the highlighter multiplier, and unfilled shapes use outline width. Shapes with a visible fill retain a radius of 50. This keeps thin ink visible during the fade while preserving the full effect at widths of 8 or more.
+- Touched elements preview an opacity fade with blur growing to a width-dependent radius over 400 milliseconds using the [`erase` easing](quality-and-testing.md#animation-tokens), but remain in the model until pointer release removes them together. Cancellation restores them immediately. The final blur radius is `min(50, effectiveWidth * 10)` page units: stroke width includes the highlighter multiplier, and unfilled shapes use outline width. Shapes with a visible fill retain a radius of 50. This keeps thin ink visible during the fade while preserving the full effect at widths of 5 or more.
 - One erasing gesture creates one undo step.
 
 The eraser can also be activated temporarily:
