@@ -98,7 +98,7 @@ function verifyEraserFeedback(
   expect(cameraGroup.nodes[3]!.nodes.every((node) => node.style.filter === "blur(50px)")).toBe(
     true,
   );
-  expect(cameraGroup.nodes[4]!.nodes.every((node) => node.style.filter === "blur(12.5px)")).toBe(
+  expect(cameraGroup.nodes[4]!.nodes.every((node) => node.style.filter === "blur(20px)")).toBe(
     true,
   );
   expect(scheduler.pendingCount).toBe(0);
