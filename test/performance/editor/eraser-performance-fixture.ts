@@ -1,8 +1,8 @@
 import { eraserQuery } from "../../fixtures/editor/eraser-query";
-import type { StrokeElementV1 } from "../../../src/domain/schema/public";
+import { MAX_STROKE_POINTS, type StrokeElementV1 } from "../../../src/domain/schema/public";
 import { EraserSweep } from "../../../src/editor/gestures/public";
 
-import { maximumStroke } from "./maximum-stroke-fixture";
+import { denseStrokePoints, maximumStroke } from "./maximum-stroke-fixture";
 
 export function createDenseStrokeEraser(
   strokes: readonly StrokeElementV1[],
@@ -26,11 +26,15 @@ export function createDenseStrokeEraser(
   );
 }
 
-export function createCountedDenseStrokeEraser(count: number, sliceBudgetMs?: () => number) {
+export function createCountedDenseStrokeEraser(
+  count: number,
+  sliceBudgetMs?: () => number,
+  pointCount: number = MAX_STROKE_POINTS,
+) {
   let pointReads = 0;
   let widthReads = 0;
   const strokes = Array.from({ length: count }, (_, index) => {
-    const stroke = maximumStroke(index);
+    const stroke = maximumStroke(index, denseStrokePoints(index, pointCount));
     return {
       ...stroke,
       style: {

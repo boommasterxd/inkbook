@@ -95,6 +95,37 @@ describe("safe SVG path data validation", () => {
   });
 });
 
+describe("path separator checkpoints", () => {
+  it.each([false, true])("checks deadlines throughout whitespace runs (expired: %s)", (expired) => {
+    let checks = 0;
+    let yields = 0;
+    const steps = validatePathDataSteps("M 0 0".padEnd(1024, " \t\r\n"), {
+      deadlineExceeded: () => {
+        checks += 1;
+        return expired;
+      },
+    });
+    let step = steps.next();
+    while (!step.done) {
+      yields += 1;
+      step = steps.next();
+    }
+    expect(step.value).toEqual({ commands: 1, numericTokens: 2 });
+    expect(checks).toBe(4);
+    expect(yields).toBe(expired ? 4 : 0);
+  });
+
+  it.each([
+    ["M 0, \t\r\n0", true],
+    ["M 0, \t\r\n,0", false],
+    ["M 0 0, \t\r\n", false],
+    ["M 0 \t\r\n", false],
+  ])("preserves separators across one-byte slices: %s", (path, valid) => {
+    const result = complete(validatePathDataSteps(path, { bytesPerStep: 1 }));
+    expect(result !== null).toBe(valid);
+  });
+});
+
 function complete<T>(steps: Generator<void, T>): T {
   let step = steps.next();
   while (!step.done) step = steps.next();

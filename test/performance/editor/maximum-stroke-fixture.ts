@@ -3,7 +3,7 @@ import type { StrokeElementV1 } from "../../../src/domain/schema/public";
 
 export function maximumStroke(
   index: number,
-  points: StrokeElementV1["points"] = maximumStrokePoints(index),
+  points: StrokeElementV1["points"] = denseStrokePoints(index),
 ): StrokeElementV1 {
   return {
     createdAt: index,
@@ -23,10 +23,13 @@ export function maximumStroke(
   };
 }
 
-function maximumStrokePoints(index: number): StrokeElementV1["points"] {
+export function denseStrokePoints(
+  index: number,
+  pointCount: number = MAX_STROKE_POINTS,
+): StrokeElementV1["points"] {
   const points: number[] = [];
-  for (let point = 0; point < MAX_STROKE_POINTS; point += 1) {
-    points.push(point, point === MAX_STROKE_POINTS - 1 ? 0 : 100 + index * 0.001, 0.5);
+  for (let point = 0; point < pointCount; point += 1) {
+    points.push(point, point === pointCount - 1 ? 0 : 100 + index * 0.001, 0.5);
   }
   Object.freeze(points);
   return points;

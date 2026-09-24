@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { buildElementPathParts } from "../../../../src/domain/geometry/public";
 import { MAX_STROKE_POINTS, type StrokeElementV1 } from "../../../../src/domain/schema/public";
 import {
   decodeCustomClipboardText,
@@ -46,18 +45,18 @@ describe("maximum pressure stroke persistence", () => {
     "round-trips all maximum-capacity samples for %s",
     async (_name, spacing, extreme) => {
       const stroke = maximumPressureStroke(spacing, extreme);
-      const parts = buildElementPathParts(stroke);
-      expect(parts).toHaveLength(1);
-      for (const part of parts) {
-        expect(part.paint).toBe("fill");
-        expect(part.d.length).toBeLessThan(16 * 1024 * 1024);
-        expect(part.d.match(/[MLQCAZmlqcaz]/g)!.length).toBeLessThanOrEqual(400_000);
-      }
-
       const serialized = serializeInkbookDocument(createSnapshot([stroke]));
       expect(serialized.ok, JSON.stringify(serialized.ok ? null : serialized.error)).toBe(true);
       if (!serialized.ok) return;
       expect(serialized.value.svg.length).toBeLessThan(48 * 1024 * 1024);
+      const content = serialized.value.svg.split('<g id="inkbook-content">')[1]!;
+      const paths = [...content.matchAll(/<path d="([^"]+)"([^>]*)\/>/gu)];
+      expect(paths).toHaveLength(1);
+      const [, pathData, attributes] = paths[0]!;
+      expect(attributes).toContain('class="inkbook-theme-fill"');
+      expect(attributes).not.toContain("stroke=");
+      expect(pathData!.length).toBeLessThan(16 * 1024 * 1024);
+      expect(pathData!.match(/[MLQCAZmlqcaz]/g)!.length).toBeLessThanOrEqual(400_000);
       const parsed = await parseInkbookDocumentForTest(serialized.value.svg);
       expect(parsed.ok, JSON.stringify(parsed.ok ? null : parsed.error)).toBe(true);
       if (!parsed.ok) return;

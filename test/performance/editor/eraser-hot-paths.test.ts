@@ -1,4 +1,4 @@
-import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
+import { FILE_SCHEMA_LIMITS, MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { eraserQuery } from "../../fixtures/editor/eraser-query";
 import { describe, expect, it, vi } from "vitest";
 
@@ -7,7 +7,7 @@ import { ElementStore } from "../../../src/domain/store/public";
 import { EraserSweep } from "../../../src/editor/gestures/public";
 import { createCountedDenseStrokeEraser } from "./eraser-performance-fixture";
 
-const DENSE_STROKES = 488;
+const ORIGINAL_STROKE_POINTS = 4_096;
 
 describe("eraser hot paths", () => {
   it("bounds dense indexed discovery and element reads across stationary continuations", () => {
@@ -104,38 +104,43 @@ describe("eraser hot paths", () => {
   });
 });
 
-it.each([16, 128, DENSE_STROKES])(
-  "bounds exact point visits per update for %i maximum strokes",
-  (count) => {
-    const fixture = createCountedDenseStrokeEraser(count);
-    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
-    const segmentsPerStroke = MAX_STROKE_POINTS - 1;
-    const workPerUpdate = 12_288;
-    // Each newly opened stroke reads two initial x coordinates in addition to its segments.
-    const setupReads = 2 * (Math.ceil(workPerUpdate / segmentsPerStroke) + 1);
-    let updates = 0;
-    let totalReads = 0;
-    try {
-      while (fixture.eraser.candidateCount < count) {
-        expect(updates).toBeLessThan(Math.ceil((count * segmentsPerStroke) / workPerUpdate) + 1);
-        expect(fixture.eraser.update({ x: MAX_STROKE_POINTS + 1_000, y: 0 })).toBe("accepted");
-        const reads = fixture.takePointReads();
-        expect(reads).toBeGreaterThan(0);
-        expect(reads).toBeLessThanOrEqual(workPerUpdate + setupReads);
-        expect(fixture.eraser.retainedCandidateIdCount).toBeLessThanOrEqual(count);
-        expect(fixture.eraser.retainedSweepCount).toBeLessThanOrEqual(1);
-        totalReads += reads;
-        updates += 1;
-      }
-      expect(totalReads).toBeGreaterThanOrEqual(count * segmentsPerStroke);
-      // The immutable stroke width is resolved once per candidate, not once per segment.
-      expect(fixture.widthReads).toBe(count);
-    } finally {
-      fixture.eraser.revert();
-      clock.mockRestore();
+// Preserve the original density cases and exercise the new per-stroke maximum within
+// the document's aggregate point capacity, rather than quadrupling that capacity.
+it.each([
+  [16, ORIGINAL_STROKE_POINTS],
+  [128, ORIGINAL_STROKE_POINTS],
+  [488, ORIGINAL_STROKE_POINTS],
+  [Math.floor(FILE_SCHEMA_LIMITS.strokePoints / MAX_STROKE_POINTS), MAX_STROKE_POINTS],
+])("bounds exact point visits per update for %i strokes of %i points", (count, pointCount) => {
+  expect(count * pointCount).toBeLessThanOrEqual(FILE_SCHEMA_LIMITS.strokePoints);
+  const fixture = createCountedDenseStrokeEraser(count, undefined, pointCount);
+  const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+  const segmentsPerStroke = pointCount - 1;
+  const workPerUpdate = 12_288;
+  // Each newly opened stroke reads two initial x coordinates in addition to its segments.
+  const setupReads = 2 * (Math.ceil(workPerUpdate / segmentsPerStroke) + 1);
+  let updates = 0;
+  let totalReads = 0;
+  try {
+    while (fixture.eraser.candidateCount < count) {
+      expect(updates).toBeLessThan(Math.ceil((count * segmentsPerStroke) / workPerUpdate) + 1);
+      expect(fixture.eraser.update({ x: pointCount + 1_000, y: 0 })).toBe("accepted");
+      const reads = fixture.takePointReads();
+      expect(reads).toBeGreaterThan(0);
+      expect(reads).toBeLessThanOrEqual(workPerUpdate + setupReads);
+      expect(fixture.eraser.retainedCandidateIdCount).toBeLessThanOrEqual(count);
+      expect(fixture.eraser.retainedSweepCount).toBeLessThanOrEqual(1);
+      totalReads += reads;
+      updates += 1;
     }
-  },
-);
+    expect(totalReads).toBeGreaterThanOrEqual(count * segmentsPerStroke);
+    // The immutable stroke width is resolved once per candidate, not once per segment.
+    expect(fixture.widthReads).toBe(count);
+  } finally {
+    fixture.eraser.revert();
+    clock.mockRestore();
+  }
+});
 
 function rectangle(): BoxShapeElementV1 {
   return {

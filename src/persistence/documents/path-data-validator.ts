@@ -180,16 +180,28 @@ class PathValidationMachine {
     if (character === undefined) {
       return this.#phase === "command-separators" ? "continue" : "invalid";
     }
-    if (!isSeparator(character) && character !== ",") {
+    if (isSeparator(character)) return this.#advanceWhitespace();
+    if (character !== ",") {
       this.#phase = this.#phase === "command-separators" ? "command" : "value";
       return "continue";
     }
-    if (character === ",") {
-      if (this.#commaSeen) return "invalid";
-      this.#commaSeen = true;
-    }
+    if (this.#commaSeen) return "invalid";
+    this.#commaSeen = true;
     this.#cursor += 1;
     return this.#consume(1) ? "yield" : "continue";
+  }
+
+  #advanceWhitespace(): AdvanceResult {
+    const start = this.#cursor;
+    const budget = this.#bytesPerStep - this.#bytes;
+    const deadlineBudget =
+      this.#deadline === undefined ? budget : DEADLINE_CHECK_BYTES - this.#bytesSinceDeadlineCheck;
+    const end = Math.min(this.#path.length, start + budget, start + deadlineBudget);
+    // Scan only up to the next checkpoint; padding must never defer cancellation.
+    do {
+      this.#cursor += 1;
+    } while (this.#cursor < end && isSeparator(this.#path[this.#cursor]!));
+    return this.#consume(this.#cursor - start) ? "yield" : "continue";
   }
 
   #advanceCommand(): AdvanceResult {
