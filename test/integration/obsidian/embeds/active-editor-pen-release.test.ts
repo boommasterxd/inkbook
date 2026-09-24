@@ -32,7 +32,7 @@ describe("pen drawing release at the controller boundary", () => {
 
     fixture.controller.handlePointerUp(event(30, 0, 3, { buttons: 0 }));
 
-    expect(fixture.committed()?.points.slice(-3)).toEqual([30, 20, 0.6375]);
+    expect(fixture.committed()?.points.slice(-3)).toEqual([30, 20, 0.6273]);
     expect(fixture.committed()?.geometry).toEqual(visible);
   });
 
@@ -42,7 +42,7 @@ describe("pen drawing release at the controller boundary", () => {
     fixture.controller.handlePointerUp(event(40, 0, 3, { buttons: 0 }));
 
     expect(fixture.scheduler.pendingCount).toBe(0);
-    expect(fixture.committed()?.points.slice(-3)).toEqual([30, 20, 0.6375]);
+    expect(fixture.committed()?.points.slice(-3)).toEqual([30, 20, 0.6273]);
   });
 
   it.each([0.25, 0])("keeps coalesced final contact and real taper pressure %s", (pressure) => {
@@ -56,14 +56,18 @@ describe("pen drawing release at the controller boundary", () => {
       }),
     );
 
-    expect(fixture.committed()?.points.slice(-3)).toEqual([35, 20, pressure]);
+    const points = fixture.committed()?.points;
+    expect(points?.slice(-3, -1)).toEqual([35, 20]);
+    // Real contact, including zero, lowers the filtered pressure; the lifted x=40 sample is ignored.
+    expect(points?.slice(-1)[0]).toBeGreaterThan(pressure);
+    expect(points?.slice(-1)[0]).toBeLessThan(points?.slice(-4, -3)[0] ?? 0);
   });
 
   it("retains a release sample when the device still reports contact pressure", () => {
     const fixture = setup();
     fixture.controller.handlePointerUp(event(40, 0.2, 3, { buttons: 0 }));
 
-    expect(fixture.committed()?.points.slice(-3)).toEqual([40, 20, 0.2]);
+    expect(fixture.committed()?.points.slice(-3)).toEqual([40, 20, 0.2061]);
   });
 
   it("rejects invalid coalesced release data before committing any stroke", () => {

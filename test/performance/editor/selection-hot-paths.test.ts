@@ -29,7 +29,7 @@ import { createPassThroughMoveSession } from "./selection-session-fixture";
 import type { SelectionHandleSessionOptions } from "../../../src/editor/selection/handle-types";
 import type { TransformSliceScheduler } from "../../../src/editor/selection/transforms";
 
-function maximumViewportStroke(index: number): StrokeElementV1 {
+function denseViewportStroke(index: number): StrokeElementV1 {
   const points = new Float64Array(4_096 * 3);
   for (let offset = 0; offset < points.length; offset += 3) {
     points[offset] = 2 + ((offset / 3) % 2_044);
@@ -138,8 +138,8 @@ describe("selection scale preview hot path", () => {
 });
 
 describe("selection commit hot paths", () => {
-  it("routes 488 maximum strokes through the indexed hit path and bounded commit slices", async () => {
-    const strokes = Array.from({ length: 488 }, (_, index) => maximumViewportStroke(index));
+  it("routes 488 dense strokes through the indexed hit path and bounded commit slices", async () => {
+    const strokes = Array.from({ length: 488 }, (_, index) => denseViewportStroke(index));
     const session = movedSession(strokes);
 
     expect(session.prepareCommit()).toEqual({ status: "time-sliced-required" });
@@ -151,7 +151,7 @@ describe("selection commit hot paths", () => {
     const first = prepared.replacements[0];
     const last = prepared.replacements[prepared.replacements.length - 1];
     if (first?.kind !== "stroke" || last?.kind !== "stroke") {
-      throw new Error("Expected maximum-stroke replacements.");
+      throw new Error("Expected dense-stroke replacements.");
     }
     expect(first.points.slice(0, 3)).toEqual(new Float64Array([4, 103, 0.5]));
     expect(last.points.slice(-3)).toEqual(new Float64Array([11, 103.487, 0.5]));

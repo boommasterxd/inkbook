@@ -9,7 +9,7 @@ export const CANONICAL_LOCKED_BUFFER_LINES = 1 as const;
 export const MAX_JSON_DEPTH = 16 as const;
 export const MAX_ABSOLUTE_COORDINATE = 1_000_000 as const;
 export const MAX_DERIVED_HEIGHT = 1_000_000 as const;
-export const MAX_STROKE_POINTS = 4096 as const;
+export const MAX_STROKE_POINTS = 16_384 as const;
 
 export interface SchemaLimits {
   totalInputBytes: number;

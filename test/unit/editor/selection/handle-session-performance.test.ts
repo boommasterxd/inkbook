@@ -1,6 +1,7 @@
+import { SelectionScaleGesture } from "../../../../src/editor/selection/selection-scale";
 import { describe, expect, it } from "vitest";
 
-import type { InkElementV1 } from "../../../../src/domain/schema/public";
+import { MAX_STROKE_POINTS, type InkElementV1 } from "../../../../src/domain/schema/public";
 import {
   createSelectionFrameAtRotation,
   selectionFramePoint,
@@ -53,32 +54,66 @@ describe("SelectionHandleSession performance contracts", () => {
     expect(session.createScalePreviewMaterializer()).toBeUndefined();
   });
 
-  it("materializes pressure strokes and fixed-size nodes consistently inside a rotated group", () => {
-    const elements = [maximumStroke(0), arrow(), coordinateSystem()];
-    const frame = createSelectionFrameAtRotation(elements, 30)!;
-    const startPointer = selectionFramePoint(frame, "bottom-right");
-    const session = new SelectionHandleSession({
-      action: {
-        anchor: selectionFramePoint(frame, "top-left"),
-        kind: "scale",
-        position: "bottom-right",
-        rotation: 30,
-      },
-      elements,
-      planner: {
-        countReverseDependencies: () => 0,
-        planReplacements: replacementPlan,
-        planReplacementsTimeSliced: async (replacements) => replacementPlan(replacements),
-      },
-      startPointer,
-    });
-    session.update({ x: startPointer.x + 100, y: startPointer.y + 100 });
-    const materialize = session.createScalePreviewMaterializer()!;
-    const previewElements = elements.map(materialize);
-    const committed = session.prepareCommit();
-    if (committed.status !== "ready") throw new TypeError("Expected a bounded commit.");
-    expect(previewElements).toEqual(committed.replacements);
-  });
+  it.each([
+    { pointCount: 4096, status: "ready" },
+    { pointCount: MAX_STROKE_POINTS, status: "time-sliced-required" },
+  ] as const)(
+    "materializes a rotated group with $pointCount stroke points via $status",
+    async ({ pointCount, status }) => {
+      const source = maximumStroke(0);
+      const points = source.points.slice(0, pointCount * 3);
+      points[points.length - 2] = 0;
+      const stroke = { ...source, points, pivot: { x: pointCount / 2, y: 50 } };
+      const elements = [stroke, arrow(), coordinateSystem()];
+      const frame = createSelectionFrameAtRotation(elements, 30)!;
+      const startPointer = selectionFramePoint(frame, "bottom-right");
+      const session = new SelectionHandleSession({
+        action: {
+          anchor: selectionFramePoint(frame, "top-left"),
+          kind: "scale",
+          position: "bottom-right",
+          rotation: 30,
+        },
+        elements,
+        planner: {
+          countReverseDependencies: () => 0,
+          planReplacements: replacementPlan,
+          planReplacementsTimeSliced: async (replacements) => replacementPlan(replacements),
+        },
+        startPointer,
+      });
+      session.update({ x: startPointer.x + 100, y: startPointer.y + 100 });
+      const materialize = session.createScalePreviewMaterializer()!;
+      const previewElements = elements.map(materialize);
+      const immediate = session.prepareCommit();
+      expect(immediate.status).toBe(status);
+      let yields = 0;
+      const committed =
+        immediate.status === "ready"
+          ? immediate
+          : await session.prepareCommitTimeSliced({
+              shouldYield: () => true,
+              yieldControl: async () => {
+                yields += 1;
+              },
+            });
+      if (committed.status !== "ready") throw new TypeError("Expected a complete commit.");
+      const exact = new SelectionScaleGesture(
+        {
+          anchor: selectionFramePoint(frame, "top-left"),
+          kind: "scale",
+          position: "bottom-right",
+          rotation: 30,
+        },
+        elements,
+        startPointer,
+      ).materialize({ x: startPointer.x + 100, y: startPointer.y + 100 }, false);
+      expect(committed.replacements).toEqual(exact);
+      if (status === "ready") expect(previewElements).toEqual(committed.replacements);
+
+      expect(yields > 0).toBe(status === "time-sliced-required");
+    },
+  );
 });
 
 describe("SelectionHandleSession work budgets", () => {

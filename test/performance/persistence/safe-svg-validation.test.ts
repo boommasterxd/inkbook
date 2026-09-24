@@ -38,7 +38,7 @@ describe("safe SVG validation performance", () => {
     let expected = normal.next();
     while (!expected.done) expected = normal.next();
     expect(step.value).toEqual(expected.value);
-    expect(step.value).toEqual({ commands: 200_000, numericTokens: 400_000 });
+    expect(step.value).toEqual({ commands: 400_000, numericTokens: 800_000 });
   }, 120_000);
 });
 

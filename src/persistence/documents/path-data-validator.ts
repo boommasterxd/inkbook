@@ -1,7 +1,9 @@
 import { parseCanonicalSvgDecimal } from "./svg-number";
 
-const MAXIMUM_PATH_BYTES = 8 * 1024 * 1024;
-const MAXIMUM_PATH_COMMANDS = 200_000;
+// A maximum stroke has at most four ribbons per centerline curve. Each ribbon
+// needs at most six commands and 256 bytes at canonical coordinate precision.
+const MAXIMUM_PATH_BYTES = 16 * 1024 * 1024;
+const MAXIMUM_PATH_COMMANDS = 400_000;
 const MAXIMUM_COORDINATE = 1_000_000;
 const DEFAULT_BYTES_PER_STEP = 16 * 1024;
 const DEFAULT_COMMANDS_PER_STEP = 256;
@@ -178,16 +180,28 @@ class PathValidationMachine {
     if (character === undefined) {
       return this.#phase === "command-separators" ? "continue" : "invalid";
     }
-    if (!isSeparator(character) && character !== ",") {
+    if (isSeparator(character)) return this.#advanceWhitespace();
+    if (character !== ",") {
       this.#phase = this.#phase === "command-separators" ? "command" : "value";
       return "continue";
     }
-    if (character === ",") {
-      if (this.#commaSeen) return "invalid";
-      this.#commaSeen = true;
-    }
+    if (this.#commaSeen) return "invalid";
+    this.#commaSeen = true;
     this.#cursor += 1;
     return this.#consume(1) ? "yield" : "continue";
+  }
+
+  #advanceWhitespace(): AdvanceResult {
+    const start = this.#cursor;
+    const budget = this.#bytesPerStep - this.#bytes;
+    const deadlineBudget =
+      this.#deadline === undefined ? budget : DEADLINE_CHECK_BYTES - this.#bytesSinceDeadlineCheck;
+    const end = Math.min(this.#path.length, start + budget, start + deadlineBudget);
+    // Scan only up to the next checkpoint; padding must never defer cancellation.
+    do {
+      this.#cursor += 1;
+    } while (this.#cursor < end && isSeparator(this.#path[this.#cursor]!));
+    return this.#consume(this.#cursor - start) ? "yield" : "continue";
   }
 
   #advanceCommand(): AdvanceResult {

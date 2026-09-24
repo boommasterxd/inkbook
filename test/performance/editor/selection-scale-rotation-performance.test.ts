@@ -1,3 +1,4 @@
+import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { describe, expect, it, vi } from "vitest";
 
 import { SelectionScalePreviewFramePlan } from "../../../src/editor/selection/scale-preview-frame";
@@ -29,11 +30,11 @@ describe("arbitrary-frame stroke scale materialization", () => {
         },
       });
       const result = gesture.materializeOne({ ...element, points }, pointer, false, factors);
-      expect(copiedCoordinates).toBe(4_096 * 3);
+      expect(copiedCoordinates).toBe(MAX_STROKE_POINTS * 3);
       expect(result.kind).toBe("stroke");
       if (result.kind !== "stroke") throw new Error("Expected a stroke replacement.");
       expect(result.rotation).toBe(0);
-      expect(result.points).toHaveLength(4_096 * 3);
+      expect(result.points).toHaveLength(MAX_STROKE_POINTS * 3);
       expect(result.points).not.toBe(element.points);
     },
   );

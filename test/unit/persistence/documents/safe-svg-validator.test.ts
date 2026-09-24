@@ -18,7 +18,7 @@ import {
 } from "../../../fixtures/persistence/safe-svg";
 
 const MAXIMUM_PATHS = 60_004;
-const MAXIMUM_PATH_COMMANDS = 200_000;
+const MAXIMUM_PATH_COMMANDS = 400_000;
 const MAXIMUM_TOTAL_COMMANDS = 8_000_000;
 const PLAIN_PATH = '<path d="M 0 0" fill="none"/>';
 
@@ -196,7 +196,7 @@ describe("safe SVG metadata and bounded validation", () => {
     );
 
     expect(yields).toBeGreaterThan(700);
-    expect(result).toMatchObject({ pathCommands: 200_013, paths: 6, revision: 3 });
+    expect(result).toMatchObject({ pathCommands: 400_013, paths: 6, revision: 3 });
   });
 
   it("rejects an aggregate path count above 60,004", () => {

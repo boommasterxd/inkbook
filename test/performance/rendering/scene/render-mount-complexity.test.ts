@@ -1,3 +1,4 @@
+import { MAX_STROKE_POINTS } from "../../../../src/domain/schema/public";
 import { describe, expect, it } from "vitest";
 import { createSceneFixture } from "../../../fixtures/rendering/scene";
 
@@ -17,7 +18,7 @@ import {
 } from "../../../unit/rendering/scene/fakes";
 
 const STROKES = 489;
-const MAXIMUM_POINTS = 4_096;
+const FIXTURE_STROKE_POINTS = 4_096;
 const FINAL_STROKE_POINTS = 1_152;
 const TOTAL_POINTS = 2_000_000;
 const PAGE: PageV1 = {
@@ -29,6 +30,31 @@ const PAGE: PageV1 = {
 };
 
 describe("visible render mount complexity", () => {
+  it("admits only one oversized maximum stroke per mount slice", () => {
+    const records = [
+      strokeRecord(0, strokePoints(MAX_STROKE_POINTS)),
+      strokeRecord(1, strokePoints(MAX_STROKE_POINTS)),
+    ];
+    const { renderer, scheduler } = createMountScene(records);
+    scheduler.runNext();
+    expect(renderer.mountedCount).toBe(0);
+    while (scheduler.pendingCount > 0) {
+      const builds = renderer.instrumentation().geometryBuilds;
+      scheduler.runNext();
+      expect(renderer.instrumentation().geometryBuilds - builds).toBeLessThanOrEqual(1);
+    }
+    expect(renderer.mountedCount).toBe(2);
+    const work = renderer.instrumentation();
+    expect(work.geometryBuilds).toBe(2);
+    // The existing minimum-progress rule admits one oversized atomic element.
+    expect(work.maximumMountSliceElements).toBe(1);
+    expect(work.maximumMountSliceStrokePoints).toBe(MAX_STROKE_POINTS);
+    expect(work.maximumMountSliceGeometryCost).toBe(4 * MAX_STROKE_POINTS);
+    expect(work.mountBudgetYields).toBe(work.mountSlices - 1);
+    renderer.destroy();
+    expect(scheduler.pendingCount).toBe(0);
+  });
+
   it("resumes 489 visible strokes with exactly two million points in stable band order", async ({
     annotate,
   }) => {
@@ -120,7 +146,7 @@ function createMaximumPointFixture(): {
   readonly pointCount: number;
   readonly records: readonly SceneElementRecord[];
 } {
-  const maximumPoints = strokePoints(MAXIMUM_POINTS);
+  const maximumPoints = strokePoints(FIXTURE_STROKE_POINTS);
   const finalPoints = strokePoints(FINAL_STROKE_POINTS);
   const records: SceneElementRecord[] = [];
   const contentIds: string[] = [];

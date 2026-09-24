@@ -1,3 +1,4 @@
+import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { describe, expect, it, vi } from "vitest";
 
 import { canonicalizeGeometryNumber } from "../../../src/domain/schema/canonical";
@@ -20,9 +21,12 @@ describe("canonical coordinate rounding", () => {
   it.each([0.53, 1, 2.5])(
     "preserves canonical precision for a maximum stroke at scale %s",
     (scale) => {
-      const coordinates = Array.from({ length: 4096 * 2 }, (_, index) => index * 0.731 - 1999.781);
+      const coordinates = Array.from(
+        { length: MAX_STROKE_POINTS * 2 },
+        (_, index) => index * 0.731 - 1999.781,
+      );
       const rounded = coordinates.map((value) => canonicalizeGeometryNumber(value * scale));
-      expect(rounded).toHaveLength(8192);
+      expect(rounded).toHaveLength(MAX_STROKE_POINTS * 2);
       for (const [index, value] of rounded.entries()) {
         expect(Number.isFinite(value)).toBe(true);
         expect(Math.abs(value - coordinates[index]! * scale)).toBeLessThanOrEqual(0.000500001);

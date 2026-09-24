@@ -1,3 +1,4 @@
+import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import type { StrokeElementV1 } from "../../../src/domain/schema/public";
 import { LiveStrokeBuilder } from "../../../src/editor/tools/live-stroke";
 import { createMaximumStroke } from "./standard-domain-fixture";
@@ -31,7 +32,7 @@ export function runMaximumStrokes(strokeCount: number): MaximumStrokeRun {
       commit.instrumentation.maximumFinalizedChunkSamples,
     );
     if (
-      commit.points.length !== 4096 * 3 ||
+      commit.points.length !== MAX_STROKE_POINTS * 3 ||
       commit.geometry.length === 0 ||
       commit.geometry.some(({ d }) => d.length === 0)
     ) {

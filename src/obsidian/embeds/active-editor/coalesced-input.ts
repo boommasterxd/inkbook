@@ -1,10 +1,10 @@
 import type { GesturePreview } from "../../../editor/gestures/public";
 import type { GesturePreviewStart } from "../../../editor/gestures/public";
 import { isValidPointerSample, type PointerSample } from "../../../editor/input/index";
-import { MAX_STROKE_POINTS } from "../../../domain/schema/public";
 import { hasPenContact } from "../../../editor/input/pointer-validation";
 
-const MAX_COALESCED_SAMPLES = MAX_STROKE_POINTS;
+// A frame batch is bounded independently of the lifetime capacity of one stroke.
+const MAX_COALESCED_SAMPLES = 4096;
 
 export type CoalescedCreationSample = GesturePreviewStart["pointer"] & {
   readonly time: number;

@@ -344,7 +344,7 @@ export class ActiveEditorController {
       pasteVisible: this.#actions.pasteVisible,
     });
   }
-  #beginPreview(start: GesturePreviewStart) {
+  #beginPreview(start: GesturePreviewStart, options: ActiveEditorControllerOptions) {
     if (this.#chromeState.closeFlyout()) this.#menus.closeToolbar();
     const pageStart = { ...start, pointer: this.#navigation.pageSample(start.pointer) };
     return this.#coalesced.wrapProjected(
@@ -353,6 +353,7 @@ export class ActiveEditorController {
         history: this.#history,
         model: this.#model,
         ownerWindow: this.#ownerWindow,
+        onFeedback: options.onFeedback,
         pageToScreen: (point) => this.#navigation.localPointFromPage(point),
         pageToViewport: (point) => this.#navigation.screenPoint(point),
         viewportToPage: ({ x, y }) => this.#navigation.pagePoint({ clientX: x, clientY: y }),
@@ -417,7 +418,7 @@ export class ActiveEditorController {
     return createActiveEditorInputControllers({
       actions: this.#actions,
       availability: this.#availability,
-      beginPreview: (start) => this.#beginPreview(start),
+      beginPreview: (start) => this.#beginPreview(start, options),
       cancelActiveGesture: () => this.#cancelActiveGesture(),
       capturePointer: (pointerId) => this.#capturePointer(pointerId),
       captures: this.#captures,

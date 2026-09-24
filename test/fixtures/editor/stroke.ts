@@ -1,3 +1,4 @@
+import type { RawStrokeSample } from "../../../src/domain/geometry/public";
 import type { StrokeElementV1 } from "../../../src/domain/schema/public";
 
 export function indexedStroke(index: number): StrokeElementV1 {
@@ -19,4 +20,13 @@ export function indexedStroke(index: number): StrokeElementV1 {
     },
     tool: "pen",
   };
+}
+
+export function denseWaveSamples(): readonly RawStrokeSample[] {
+  return Array.from({ length: 900 }, (_, index) => ({
+    x: (100 * index) / 899,
+    y: 20 * Math.sin((6 * Math.PI * index) / 899),
+    pressure: 0.6,
+    time: index,
+  }));
 }

@@ -1,3 +1,4 @@
+import type { InkbookFeedbackCode } from "../../feedback/feedback-catalog";
 import type { SnappingSettingsV1, ToolDefaultsV1 } from "../../../domain/settings/types";
 import { screenPixelsToPageUnits, type GesturePreviewStart } from "../../../editor/gestures/public";
 import type { SvgSceneRenderer } from "../../../rendering/scene/index";
@@ -17,6 +18,7 @@ export interface ActiveEditorPreviewOptions {
   readonly history: ActiveEditorHistory;
   readonly model: EditableDocumentModel;
   readonly ownerWindow: Window;
+  readonly onFeedback?: (code: InkbookFeedbackCode) => void;
   readonly pageToScreen: (point: PointV1) => PointV1;
   readonly pageToViewport?: (point: PointV1) => PointV1;
   readonly viewportToPage?: (point: PointV1) => PointV1;
@@ -81,6 +83,8 @@ export function createActiveEditorPreview(
   }
   const zoom = previewZoom(options);
   return new CreationPreview({
+    now: () => options.ownerWindow.performance.now(),
+    onStrokeCapacityReached: () => options.onFeedback?.("stroke-point-limit-reached"),
     defaults: options.defaults,
     history: options.history,
     identity: { createdAt: Date.now(), id: options.ownerWindow.crypto.randomUUID() },
