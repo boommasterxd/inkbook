@@ -47,10 +47,18 @@ export function toolCursorHarness(
 ) {
   const surface = new EventTarget();
   const document = Object.assign(new EventTarget(), { hidden: false });
+  const timers = new Map<number, () => void>();
+  let nextTimer = 0;
   const window = Object.assign(new EventTarget(), {
     document,
     navigator: { platform: "Linux" },
     getComputedStyle: vi.fn(() => ({})),
+    setTimeout: vi.fn((callback: () => void, _delay: number) => {
+      const id = ++nextTimer;
+      timers.set(id, callback);
+      return id;
+    }),
+    clearTimeout: vi.fn((timer: number) => timers.delete(timer)),
   });
   const bounds = { left: 20, top: 30, width: 500, height: 400 };
   const measure = vi.fn(() => domRect(bounds));
@@ -110,5 +118,12 @@ export function toolCursorHarness(
     surface,
     window,
     document,
+    timers,
+    flushTimers: () => {
+      for (const [id, callback] of timers) {
+        timers.delete(id);
+        callback();
+      }
+    },
   };
 }

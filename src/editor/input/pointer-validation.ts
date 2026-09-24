@@ -61,11 +61,24 @@ export function isValidInputPoint(value: Pick<PointerSample, "x" | "y">): boolea
   return isBoundedCoordinate(value.x) && isBoundedCoordinate(value.y);
 }
 
-function classifyPenRole(input: PointerDownClassificationInput): PenPointerRole {
+export function classifyPenRole(
+  input: Pick<PointerDownClassificationInput, "pointerType" | "button" | "buttons">,
+): PenPointerRole {
   if (input.pointerType !== "pen") return "normal";
-  if (input.button === 5 || input.buttons === 32) return "eraser";
-  if (input.button === 2 || input.buttons === 2) return "side-button";
+  if ((input.buttons & 32) !== 0 || (input.button === 5 && input.buttons !== 0)) return "eraser";
+  if ((input.buttons & 6) !== 0) return "side-button";
+  // A contact-only mask can accompany a chorded release of the side button.
+  if (input.buttons !== 0 && (input.buttons & 1) === 0) {
+    if (input.button === 1 || input.button === 2) return "side-button";
+  }
   return "normal";
+}
+
+export function hasPenContact(input: {
+  readonly buttons: number;
+  readonly pressure?: number;
+}): boolean {
+  return (input.pressure ?? 0) > 0 || (input.buttons & 33) !== 0;
 }
 
 function isBoundedCoordinate(value: number): boolean {

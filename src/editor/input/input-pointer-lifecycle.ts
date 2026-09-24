@@ -33,9 +33,10 @@ import {
 
 export function handlePointerExit(state: InputState, action: PointerExitAction): InputReduction {
   if (state.consumedPointerIds.includes(action.pointerId)) {
+    if (action.type === "lost-pointer-capture") return unchangedEffects(state);
     return {
       state: { ...state, consumedPointerIds: removeId(state.consumedPointerIds, action.pointerId) },
-      effects: [],
+      effects: [{ type: "release-pointer", pointerId: action.pointerId }],
     };
   }
   const interaction = state.interaction;

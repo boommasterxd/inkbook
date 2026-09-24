@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { classifyPointerDown, isValidPointerSample } from "../../../../src/editor/input/index";
+import { classifyPenRole, hasPenContact } from "../../../../src/editor/input/pointer-validation";
 
 function classify(
   overrides: Partial<Parameters<typeof classifyPointerDown>[0]> = {},
@@ -50,8 +51,13 @@ describe("pointer-down classification", () => {
   it.each([
     ["barrel button", { button: 2, buttons: 2 }, "side-button"],
     ["barrel button mask", { button: 0, buttons: 2 }, "side-button"],
+    ["auxiliary barrel", { button: 1, buttons: 4 }, "side-button"],
+    ["chorded barrel", { button: -1, buttons: 3 }, "side-button"],
+    ["chorded auxiliary barrel", { button: -1, buttons: 5 }, "side-button"],
     ["eraser tip", { button: 5, buttons: 32 }, "eraser"],
+    ["eraser tip with primary contact mask", { button: 5, buttons: 1 }, "eraser"],
     ["eraser mask", { button: 0, buttons: 32 }, "eraser"],
+    ["eraser with barrel", { button: -1, buttons: 38 }, "eraser"],
   ] as const)("classifies a pen %s before handle eligibility", (_label, input, penRole) => {
     expect(classify({ ...input, pointerType: "pen" })).toEqual({
       handleEligible: false,
@@ -66,6 +72,42 @@ describe("pointer-down classification", () => {
       expect(classify({ pointerType }).handleEligible).toBe(true);
     },
   );
+});
+
+describe("pen button and contact classification", () => {
+  it.each([1, 2, 5])("ignores released button %s", (button) => {
+    expect(classifyPenRole({ pointerType: "pen", button, buttons: 0 })).toBe("normal");
+    if (button !== 5) {
+      expect(classifyPenRole({ pointerType: "pen", button, buttons: 1 })).toBe("normal");
+    }
+  });
+
+  it.each([
+    [1, "side-button"],
+    [2, "side-button"],
+    [5, "eraser"],
+  ] as const)("uses button %s with a non-contact held mask", (button, role) => {
+    expect(classifyPenRole({ pointerType: "pen", button, buttons: 8 })).toBe(role);
+  });
+
+  it.each(["mouse", "touch"] as const)("does not claim %s buttons", (pointerType) => {
+    expect(classifyPenRole({ pointerType, button: 5, buttons: 38 })).toBe("normal");
+  });
+
+  it.each([
+    [0, undefined, false],
+    [2, 0, false],
+    [4, 0, false],
+    [1, 0, true],
+    [3, 0, true],
+    [5, 0, true],
+    [32, 0, true],
+    [0, 0.1, true],
+  ] as const)("resolves contact for buttons %s and pressure %s", (buttons, pressure, expected) => {
+    expect(hasPenContact({ buttons, ...(pressure === undefined ? {} : { pressure }) })).toBe(
+      expected,
+    );
+  });
 });
 
 describe("pointer sample validation", () => {

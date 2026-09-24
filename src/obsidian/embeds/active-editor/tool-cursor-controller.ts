@@ -1,16 +1,16 @@
 import { createToolCursorIcon } from "../../icons/tool-cursor-icon";
 import type { ToolDefaultsV1 } from "../../../domain/settings/types";
 import {
-  classifyPointerDown,
   isValidPointerSample,
   type InputState,
   type PointerSample,
 } from "../../../editor/input/index";
 import { resolveToolCursor, type ToolSystemCursor } from "../../../editor/input/tool-cursor";
+import { PenButtonSession } from "../../../editor/input/pen-button-session";
 import type { SvgSceneRenderer } from "../../../rendering/scene/index";
 import type { SceneToolCursorFrame } from "../../../rendering/scene/tool-cursor";
 import { measureElementBox, type ElementContentBox } from "./element-content-box";
-import { isMacPlatform, normalizePointerType } from "./controller-helpers";
+import { normalizePointerType } from "./controller-helpers";
 
 interface CursorPointer {
   readonly clientX: number;
@@ -49,6 +49,8 @@ export class ActiveToolCursorController {
   #clip: ElementContentBox | undefined;
   #positionTime = -Infinity;
   #disposed = false;
+  readonly #penButtons = new PenButtonSession();
+  #penReleaseTimer: { readonly handle: number; readonly deadline: number } | undefined;
   public lastPagePointer: PointerSample | null = null;
   public lastScreenPointer: PointerSample | null = null;
   public readonly recordSessionPointer = (page: PointerSample, screen: PointerSample): void => {
@@ -86,15 +88,6 @@ export class ActiveToolCursorController {
       this.clear();
       return;
     }
-    const classification = classifyPointerDown({
-      button: event.button,
-      buttons: event.buttons,
-      controlKey: event.ctrlKey,
-      controlOrMeta: event.ctrlKey || event.metaKey,
-      isMacPlatform: isMacPlatform(this.#ownerWindow.navigator),
-      isPrimary: event.isPrimary,
-      pointerType,
-    });
     const previous = this.#pointer;
     const newerRaw =
       phase === "move" &&
@@ -107,12 +100,45 @@ export class ActiveToolCursorController {
       clientY: newerRaw ? previous.clientY : event.clientY,
       pointerId: event.pointerId,
       pointerType,
-      penRole: classification.penRole,
+      penRole: this.#penButtons.update(event, phase),
       controlOrMeta: event.ctrlKey || event.metaKey,
     };
     if (phase === "move") this.#moveDecoration(previous, this.#pointer);
     if (phase === "up" && pointerType === "touch") this.#pointer = undefined;
+    this.#schedulePenRelease(event.timeStamp);
     this.refresh();
+  }
+
+  public penRole(pointerId: number): CursorPointer["penRole"] {
+    return this.#pointer?.pointerId === pointerId ? this.#pointer.penRole : "normal";
+  }
+
+  #schedulePenRelease(now: number): void {
+    const deadline = this.#penButtons.pendingReleaseAt;
+    if (deadline === undefined) {
+      this.#cancelPenRelease();
+      return;
+    }
+    if (this.#penReleaseTimer?.deadline === deadline) return;
+    this.#cancelPenRelease();
+    const handle = this.#ownerWindow.setTimeout(
+      () => {
+        this.#penReleaseTimer = undefined;
+        this.#penButtons.expire(deadline);
+        if (this.#pointer?.pointerType === "pen") {
+          this.#pointer = { ...this.#pointer, penRole: this.#penButtons.role };
+          this.refresh();
+        }
+      },
+      Math.max(0, deadline - now),
+    );
+    this.#penReleaseTimer = { handle, deadline };
+  }
+
+  #cancelPenRelease(): void {
+    if (this.#penReleaseTimer === undefined) return;
+    this.#ownerWindow.clearTimeout(this.#penReleaseTimer.handle);
+    this.#penReleaseTimer = undefined;
   }
 
   #moveDecoration(previous: CursorPointer | undefined, pointer: CursorPointer): void {
@@ -150,6 +176,8 @@ export class ActiveToolCursorController {
   public clear(pointerId?: number): void {
     if (pointerId !== undefined && this.#pointer?.pointerId !== pointerId) return;
     this.#pointer = undefined;
+    this.#cancelPenRelease();
+    this.#penButtons.reset();
     this.#positionTime = -Infinity;
     this.#bounds = undefined;
     this.#clip = undefined;
