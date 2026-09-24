@@ -37,37 +37,47 @@ function pointer(type = "pointermove", extra: PointerEventInit = {}) {
   });
 }
 
-it("does no event inspection while idle and preserves capture-time state before host consumption", () => {
-  const { capture, target } = harness();
-  const idle = pointer();
-  const path = vi.spyOn(target.classList, "contains");
-  target.dispatchEvent(idle);
-  expect(path).not.toHaveBeenCalled();
-  const consume = (event: Event) => {
-    event.preventDefault();
-    event.stopImmediatePropagation();
-  };
-  window.addEventListener("pointermove", consume, true);
-  onTestFinished(() => window.removeEventListener("pointermove", consume, true));
-  capture.start();
-  capture.drain();
-  const event = pointer();
-  target.dispatchEvent(event);
-  expect(event.defaultPrevented).toBe(true);
-  expect(capture.drain()).toEqual([
-    expect.objectContaining({
-      pointerType: "pen",
-      pointerId: 7,
-      buttons: 3,
-      pressure: 0.4,
-      clientX: 42,
-      targetWithinInkbook: true,
-      defaultPrevented: false,
-    }),
-  ]);
-  expect(capture.eventCount).toBe(2);
-  expect(capture.drain()).toEqual([]);
-});
+it.each(["pointermove", "keydown", "keyup"])(
+  "does no %s inspection while idle and captures before host consumption",
+  (type) => {
+    const { capture, target } = harness();
+    const createEvent = () =>
+      type === "pointermove"
+        ? pointer()
+        : new KeyboardEvent(type, {
+            key: "Unidentified",
+            code: "",
+            bubbles: true,
+            cancelable: true,
+          });
+    const idle = createEvent();
+    const path = vi.spyOn(target.classList, "contains");
+    target.dispatchEvent(idle);
+    expect(path).not.toHaveBeenCalled();
+    const consume = (event: Event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    window.addEventListener(type, consume, true);
+    onTestFinished(() => window.removeEventListener(type, consume, true));
+    capture.start();
+    capture.drain();
+    const event = createEvent();
+    target.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(capture.drain()).toEqual([
+      expect.objectContaining({
+        ...(type === "pointermove"
+          ? { pointerType: "pen", pointerId: 7, buttons: 3, pressure: 0.4, clientX: 42 }
+          : { type, key: "Unidentified", code: "" }),
+        targetWithinInkbook: true,
+        defaultPrevented: false,
+      }),
+    ]);
+    expect(capture.eventCount).toBe(2);
+    expect(capture.drain()).toEqual([]);
+  },
+);
 
 it("records coalesced data and capture ownership with finite, bounded allowlisted samples", () => {
   const { capture, target } = harness();

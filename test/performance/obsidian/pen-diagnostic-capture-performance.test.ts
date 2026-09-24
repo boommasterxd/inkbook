@@ -19,45 +19,51 @@ function createCapture() {
   return { capture, onLimit };
 }
 
-it("bounds actual serialization and queued records across idle, capacity, drains and restart", () => {
-  const { capture, onLimit } = createCapture();
-  const serialize = vi.spyOn(records, "recordPenEvent");
-  const layout = vi.spyOn(document.body, "getBoundingClientRect");
-  capture.addWindow(window);
-  const event = new PointerEvent("pointerrawupdate", {
-    pointerType: "pen",
-    pressure: 0.5,
-    buttons: 3,
-    clientX: 50,
-    clientY: 100,
-  });
-  window.dispatchEvent(event);
-  expect(serialize).not.toHaveBeenCalled();
-  expect(capture.drain()).toHaveLength(0);
+it.each(["pointer", "keyboard"])(
+  "bounds %s serialization and queued records across idle, capacity, drains and restart",
+  (kind) => {
+    const { capture, onLimit } = createCapture();
+    const serialize = vi.spyOn(records, "recordPenEvent");
+    const layout = vi.spyOn(document.body, "getBoundingClientRect");
+    capture.addWindow(window);
+    const event =
+      kind === "keyboard"
+        ? new KeyboardEvent("keydown", { key: "Unidentified", code: "" })
+        : new PointerEvent("pointerrawupdate", {
+            pointerType: "pen",
+            pressure: 0.5,
+            buttons: 3,
+            clientX: 50,
+            clientY: 100,
+          });
+    window.dispatchEvent(event);
+    expect(serialize).not.toHaveBeenCalled();
+    expect(capture.drain()).toHaveLength(0);
 
-  capture.start();
-  // One environment record consumes capacity before raw input begins.
-  for (let index = 0; index < PEN_DIAGNOSTIC_MAX_EVENTS; index += 1) window.dispatchEvent(event);
-  const full = capture.drain();
-  expect(full).toHaveLength(PEN_DIAGNOSTIC_MAX_EVENTS);
-  expect(serialize).toHaveBeenCalledTimes(PEN_DIAGNOSTIC_MAX_EVENTS - 1);
-  expect(onLimit).toHaveBeenCalledOnce();
-  expect(capture.eventCount).toBe(PEN_DIAGNOSTIC_MAX_EVENTS);
-  expect(layout).not.toHaveBeenCalled();
-  window.dispatchEvent(event);
-  expect(serialize).toHaveBeenCalledTimes(PEN_DIAGNOSTIC_MAX_EVENTS - 1);
-  expect(capture.drain()).toHaveLength(0);
+    capture.start();
+    // One environment record consumes capacity before raw input begins.
+    for (let index = 0; index < PEN_DIAGNOSTIC_MAX_EVENTS; index += 1) window.dispatchEvent(event);
+    const full = capture.drain();
+    expect(full).toHaveLength(PEN_DIAGNOSTIC_MAX_EVENTS);
+    expect(serialize).toHaveBeenCalledTimes(PEN_DIAGNOSTIC_MAX_EVENTS - 1);
+    expect(onLimit).toHaveBeenCalledOnce();
+    expect(capture.eventCount).toBe(PEN_DIAGNOSTIC_MAX_EVENTS);
+    expect(layout).not.toHaveBeenCalled();
+    window.dispatchEvent(event);
+    expect(serialize).toHaveBeenCalledTimes(PEN_DIAGNOSTIC_MAX_EVENTS - 1);
+    expect(capture.drain()).toHaveLength(0);
 
-  capture.start();
-  window.dispatchEvent(event);
-  capture.stop();
-  window.dispatchEvent(event);
-  expect(serialize).toHaveBeenCalledTimes(PEN_DIAGNOSTIC_MAX_EVENTS);
-  expect(capture.drain()).toHaveLength(2);
-  capture.dispose();
-  window.dispatchEvent(event);
-  expect(serialize).toHaveBeenCalledTimes(PEN_DIAGNOSTIC_MAX_EVENTS);
-});
+    capture.start();
+    window.dispatchEvent(event);
+    capture.stop();
+    window.dispatchEvent(event);
+    expect(serialize).toHaveBeenCalledTimes(PEN_DIAGNOSTIC_MAX_EVENTS);
+    expect(capture.drain()).toHaveLength(2);
+    capture.dispose();
+    window.dispatchEvent(event);
+    expect(serialize).toHaveBeenCalledTimes(PEN_DIAGNOSTIC_MAX_EVENTS);
+  },
+);
 
 it("bounds registered native listeners to eight windows and releases each registration once", () => {
   const { capture } = createCapture();
@@ -76,7 +82,7 @@ it("bounds registered native listeners to eight windows and releases each regist
   });
   const cleanups = owners.map(({ owner }) => capture.addWindow(owner));
   for (const item of owners.slice(0, 8)) {
-    expect(item.add).toHaveBeenCalledTimes(23);
+    expect(item.add).toHaveBeenCalledTimes(25);
     expect(item.documentAdd).toHaveBeenCalledTimes(1);
     expect(
       item.add.mock.calls.every((call) => {
@@ -90,7 +96,7 @@ it("bounds registered native listeners to eight windows and releases each regist
   capture.dispose();
   for (const cleanup of cleanups) cleanup();
   for (const item of owners.slice(0, 8)) {
-    expect(item.remove).toHaveBeenCalledTimes(23);
+    expect(item.remove).toHaveBeenCalledTimes(25);
     expect(item.documentRemove).toHaveBeenCalledTimes(1);
     for (const [type, listener] of item.add.mock.calls) {
       expect(item.remove).toHaveBeenCalledWith(type, listener, true);

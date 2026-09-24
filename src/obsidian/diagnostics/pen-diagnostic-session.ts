@@ -114,7 +114,7 @@ export class PenDiagnosticSession {
   #header(): string {
     const window = this.#options.ownerWindow;
     const environment = {
-      schema: 1,
+      schema: 2,
       startedAt: new Date().toISOString(),
       pluginVersion: this.#options.pluginVersion,
       obsidianVersion: this.#options.obsidianVersion,
@@ -123,14 +123,16 @@ export class PenDiagnosticSession {
       devicePixelRatio: window.devicePixelRatio,
       pointerEvents: "PointerEvent" in window,
       pointerRawUpdate: "onpointerrawupdate" in window,
+      keyboardEvents: true,
       durationLimitMs: SESSION_DURATION_MS,
       eventLimit: PEN_DIAGNOSTIC_MAX_EVENTS,
       saveIntervalMs: SAVE_INTERVAL_MS,
     };
     return (
       "# Inkbook pen diagnostics\n\n" +
-      "Local input-event log. No note text, file paths, clipboard contents or typed keys are recorded. Coordinates can reveal pen movements. Vault sync may synchronize this file.\n\n" +
+      "Local input-event log. No note text, file paths, clipboard contents or typed text are recorded. Keyboard event timing and allowlisted non-text keys are recorded; other key names and physical codes are redacted. Coordinates can reveal pen movements. Vault sync may synchronize this file.\n\n" +
       "Test on an empty drawing: hover; press/release the side button; hold it while touching down; release during contact; lift. Repeat by pressing during a normal stroke.\n\n" +
+      "Keyboard probe: tap the drawing once to focus it, then press/release the side button several times while hovering and during contact. Browser key codes are not assumed to match Android native key codes.\n\n" +
       "Add device model, stylus model and Android/One UI version here: \n\n" +
       `## Environment\n\n\`\`\`json\n${JSON.stringify(environment, null, 2)}\n\`\`\`\n\n` +
       "## Events\n\nEach batch is JSON Lines. Flags describe capture-time state before Inkbook handles the event. Missing native events cannot be observed here.\n"

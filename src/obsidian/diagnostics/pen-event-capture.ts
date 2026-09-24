@@ -19,6 +19,8 @@ const eventTypes = [
   "mouseup",
   "mousemove",
   "contextmenu",
+  "keydown",
+  "keyup",
   "touchstart",
   "touchmove",
   "touchend",

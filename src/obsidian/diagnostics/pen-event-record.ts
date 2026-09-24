@@ -101,6 +101,63 @@ function addTouchDetails(record: Record<string, unknown>, event: TouchEvent): vo
   record["changedTouches"] = samples;
 }
 
+const nonTextKeys = new Set([
+  "",
+  "Unidentified",
+  "ContextMenu",
+  "Escape",
+  "Enter",
+  "Tab",
+  "Backspace",
+  "Delete",
+  "Insert",
+  "Home",
+  "End",
+  "PageUp",
+  "PageDown",
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "Shift",
+  "Control",
+  "Alt",
+  "AltGraph",
+  "Meta",
+  "CapsLock",
+  "NumLock",
+  "ScrollLock",
+  "Pause",
+  "PrintScreen",
+  "Clear",
+  "Cancel",
+  "Help",
+]);
+
+function nonTextKey(value: string): boolean {
+  return (
+    nonTextKeys.has(value) ||
+    /^(?:F(?:[1-9]|1[0-9]|2[0-4])|(?:Shift|Control|Alt|Meta)(?:Left|Right)|StylusButton(?:Primary|Secondary|Tertiary|Tail))$/.test(
+      value,
+    )
+  );
+}
+
+function addKeyboardDetails(record: Record<string, unknown>, event: KeyboardEvent): void {
+  const safeKey = nonTextKey(event.key);
+  const safeCode = nonTextKey(event.code);
+  record["key"] = safeKey ? event.key : "[redacted]";
+  record["code"] = safeCode ? event.code : "[redacted]";
+  record["repeat"] = event.repeat;
+  record["isComposing"] = event.isComposing;
+  Object.assign(record, numericSample(event, ["location"]));
+  // Keep browser-reported legacy codes for unidentified/control events only.
+  // They are evidence, not Android native keycodes or an eraser classification.
+  if (safeKey && safeCode && !event.isComposing) {
+    Object.assign(record, numericSample(event, ["keyCode", "which"]));
+  }
+}
+
 export function recordPenEvent(
   event: Event,
   windowId: number,
@@ -119,6 +176,8 @@ export function recordPenEvent(
   }
   if ("pointerId" in event) addPointerDetails(record, event as PointerEvent);
   if ("changedTouches" in event) addTouchDetails(record, event as TouchEvent);
+  if (event.type === "keydown" || event.type === "keyup")
+    addKeyboardDetails(record, event as KeyboardEvent);
   if (event.type === "visibilitychange") {
     record["hidden"] = (event.target as Document).hidden;
   }
