@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { MAX_STROKE_POINTS, type StrokeElementV1 } from "../../../../src/domain/schema/public";
 import {
@@ -36,20 +36,25 @@ function maximumPressureStroke(spacing: number, extreme: boolean): StrokeElement
 }
 
 describe("maximum pressure stroke persistence", () => {
-  it.each([
+  describe.each([
     ["dense overlapping zigzag", 2, false],
     ["wide zigzag", 900, false],
     ["maximum subdivision and large coordinate digits", 900, true],
     ["maximum subdivision across coordinate range", 900_000.123, true],
-  ] as const)(
-    "round-trips all maximum-capacity samples for %s",
-    async (_name, spacing, extreme) => {
-      const stroke = maximumPressureStroke(spacing, extreme);
+  ] as const)("%s", (_name, spacing, extreme) => {
+    let stroke: StrokeElementV1;
+    let svg: string;
+
+    beforeAll(() => {
+      stroke = maximumPressureStroke(spacing, extreme);
       const serialized = serializeInkbookDocument(createSnapshot([stroke]));
-      expect(serialized.ok, JSON.stringify(serialized.ok ? null : serialized.error)).toBe(true);
-      if (!serialized.ok) return;
-      expect(serialized.value.svg.length).toBeLessThan(48 * 1024 * 1024);
-      const content = serialized.value.svg.split('<g id="inkbook-content">')[1]!;
+      if (!serialized.ok) throw new Error(JSON.stringify(serialized.error));
+      svg = serialized.value.svg;
+    }, 5000);
+
+    it("serializes one filled path within SVG capacity limits", () => {
+      expect(svg.length).toBeLessThan(48 * 1024 * 1024);
+      const content = svg.split('<g id="inkbook-content">')[1]!;
       const paths = [...content.matchAll(/<path d="([^"]+)"([^>]*)\/>/gu)];
       expect(paths).toHaveLength(1);
       const [, pathData, attributes] = paths[0]!;
@@ -57,12 +62,15 @@ describe("maximum pressure stroke persistence", () => {
       expect(attributes).not.toContain("stroke=");
       expect(pathData!.length).toBeLessThan(16 * 1024 * 1024);
       expect(pathData!.match(/[MLQCAZmlqcaz]/g)!.length).toBeLessThanOrEqual(400_000);
-      const parsed = await parseInkbookDocumentForTest(serialized.value.svg);
+    });
+
+    it("round-trips every maximum-capacity sample", async () => {
+      const parsed = await parseInkbookDocumentForTest(svg);
       expect(parsed.ok, JSON.stringify(parsed.ok ? null : parsed.error)).toBe(true);
       if (!parsed.ok) return;
       expect(parsed.value.snapshot.elements[0]).toEqual(stroke);
-    },
-  );
+    });
+  });
 });
 
 describe("maximum stroke clipboard capacity", () => {
