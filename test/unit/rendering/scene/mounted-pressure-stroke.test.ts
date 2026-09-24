@@ -70,7 +70,7 @@ describe("mounted pressure stroke groups", () => {
     expect(entry.fadeActive).toBe(true);
     expect(group.style.opacity).toBe("");
     expect(group.attributes.get("opacity")).toBe(String(opacity));
-    expect(group.style.filter).toBe("blur(12.5px)");
+    expect(group.style.filter).toBe("blur(20px)");
     expect(group.style.animation).toBe(
       "inkbook-element-erase 100ms cubic-bezier(0.645, 0.045, 0.355, 1) forwards",
     );
@@ -162,12 +162,12 @@ describe("mounted pressure paint", () => {
 
 describe("width-dependent erase blur", () => {
   it.each([
-    [true, 2, "pen", 12.5],
-    [false, 2, "pen", 12.5],
-    [true, 4, "pen", 25],
+    [true, 2, "pen", 20],
+    [false, 2, "pen", 20],
+    [true, 4, "pen", 40],
     [true, 8, "pen", 50],
     [false, 22, "pen", 50],
-    [false, 2, "highlighter", 31.25],
+    [false, 2, "highlighter", 50],
   ] as const)("scales blur for pressure=%s width=%s tool=%s", (pressure, width, tool, radius) => {
     const { entry } = setup(pressure, width, tool);
     setMountedElementFade(entry, 400);

@@ -280,7 +280,7 @@ function elementEraseBlur(element: SceneElementRecord["element"]): number {
     element.kind === "stroke" || element.kind === "straight-highlighter"
       ? effectiveStrokeWidth(element)
       : element.style.outlineWidth;
-  return Math.min(50, width * 6.25);
+  return Math.min(50, width * 10);
 }
 
 export function setMountedElementMotion(

@@ -61,7 +61,7 @@ describe("bounded element fades", () => {
       fades.flush(Infinity, () => time);
     }
     expect(
-      entries.every((entry) => fakeNode(entry.paths[0]!.node).style.filter === "blur(12.5px)"),
+      entries.every((entry) => fakeNode(entry.paths[0]!.node).style.filter === "blur(20px)"),
     ).toBe(true);
     expect(fades.isExitReady(ids[1999]!, time + 159)).toBe(false);
     expect(fades.isExitReady(ids[1999]!, time + 160)).toBe(true);
