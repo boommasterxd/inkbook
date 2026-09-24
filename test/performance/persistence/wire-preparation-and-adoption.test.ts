@@ -1,3 +1,4 @@
+import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { describe, expect, it, vi } from "vitest";
 
 import type { StrokeElementV1 } from "../../../src/domain/schema/public";
@@ -134,11 +135,11 @@ describe("wire preparation deterministic work bounds", () => {
   });
 
   it.each([
-    { elements: 129, points: 1 },
-    { elements: 7, points: 4096 },
+    { elements: 129, points: 1, expectedSlices: 2 },
+    { elements: 7, points: MAX_STROKE_POINTS, expectedSlices: 7 },
   ])(
     "bounds observed packing work for $elements strokes of $points points",
-    async ({ elements, points }) => {
+    async ({ elements, points, expectedSlices }) => {
       const observed = observedPackingInput(elements, points);
       const slices: { elements: number; bytes: number; pointReads: number }[] = [];
       const checkpoint = async (): Promise<void> => {
@@ -155,7 +156,7 @@ describe("wire preparation deterministic work bounds", () => {
         checkpoint,
         signal: new AbortController().signal,
       });
-      expect(slices).toHaveLength(2);
+      expect(slices).toHaveLength(expectedSlices);
       await checkpoint();
       expect(slices.reduce((sum, slice) => sum + slice.elements, 0)).toBe(elements);
       expect(slices.reduce((sum, slice) => sum + slice.bytes, 0)).toBe(elements * points * 24);

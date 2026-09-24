@@ -9,15 +9,21 @@ import { ChunkedSha256 } from "../../../../src/persistence/serialization/chunked
 import { createMaximumComplexitySvg } from "../../../fixtures/persistence/safe-svg";
 
 describe("trusted SVG output validation slices", () => {
-  it("rejects worker output with literal markup hidden inside metadata", async () => {
-    const output = createMaximumComplexitySvg().replace(
-      "</metadata>",
-      "<script>bad()</script></metadata>",
-    );
+  it.each(["sync", "async"])(
+    "rejects worker output with literal markup hidden inside metadata (%s)",
+    async (mode) => {
+      const output = createMaximumComplexitySvg().replace(
+        "</metadata>",
+        "<script>bad()</script></metadata>",
+      );
 
-    expect(() => inspectTrustedSvgOutputSync(output)).toThrow("safe Inkbook SVG");
-    await expect(inspectTrustedSvgOutput(output)).rejects.toThrow("safe Inkbook SVG");
-  });
+      if (mode === "sync") {
+        expect(() => inspectTrustedSvgOutputSync(output)).toThrow("safe Inkbook SVG");
+      } else {
+        await expect(inspectTrustedSvgOutput(output)).rejects.toThrow("safe Inkbook SVG");
+      }
+    },
+  );
 
   it("checks cancellation during hashing at the production 64 KiB chunk boundary", async () => {
     const hashChunkBytes = 64 * 1024;

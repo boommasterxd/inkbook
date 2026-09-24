@@ -46,7 +46,7 @@ describe("deterministic stroke construction", () => {
       ],
       { pressureSource: "pen", zoom: 1 },
     );
-    expect(points).toEqual([0, 0, 0, 1, 0, 1]);
+    expect(points).toEqual([0, 0, 0, 1, 0, 0.3003]);
     expect(() =>
       prepareStrokeSamples([{ x: 0, y: 0, pressure: Number.NaN, time: 0 }], {
         pressureSource: "pen",

@@ -19,7 +19,7 @@ describe("bounded unsupported SVG markup inspection", () => {
     expect(steps.next().done).toBe(false);
     const { result, yields } = exhaustValidation(steps);
     expect(result).toEqual(validateSafeSvg(svg));
-    expect(result).toMatchObject({ revision: 3, pathCommands: 200_000 });
+    expect(result).toMatchObject({ revision: 3, pathCommands: 400_000 });
     expect(yields).toBeGreaterThan(700);
   }, 15_000);
 

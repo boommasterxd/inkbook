@@ -50,6 +50,8 @@ export interface CreationSnapPorts {
 
 export interface CreationPreviewOptions {
   readonly defaults: ToolDefaultsV1;
+  readonly now?: () => number;
+  readonly onStrokeCapacityReached?: () => void;
   readonly history: ActiveEditorHistory;
   readonly identity: { readonly createdAt: number; readonly id: string };
   readonly renderer: CreationPreviewRenderer;
@@ -60,6 +62,8 @@ export interface CreationPreviewOptions {
 
 export class CreationPreview implements GesturePreview {
   readonly #defaults: ToolDefaultsV1;
+  readonly #now: (() => number) | undefined;
+  readonly #onStrokeCapacityReached: (() => void) | undefined;
   readonly #history: ActiveEditorHistory;
   readonly #identity: CreationPreviewOptions["identity"];
   readonly #renderer: CreationPreviewRenderer;
@@ -83,6 +87,9 @@ export class CreationPreview implements GesturePreview {
 
   public constructor(options: CreationPreviewOptions) {
     this.#defaults = options.defaults;
+    this.#now = options.now;
+    this.#onStrokeCapacityReached = options.onStrokeCapacityReached;
+    this.#sampleTime = this.#now?.() ?? 0;
     this.#history = options.history;
     this.#identity = options.identity;
     this.#renderer = options.renderer;
@@ -155,6 +162,7 @@ export class CreationPreview implements GesturePreview {
     this.#current = current;
     if (this.#stroke === null) this.#sampleTime = Math.max(this.#sampleTime, current.time);
     else {
+      const exhausted = this.#stroke.capacityExhausted;
       this.#stroke.appendBatch(
         samples.map((sample) => ({
           pressure: inputPressure(sample.pressure, this.#strokePressureSource),
@@ -164,6 +172,8 @@ export class CreationPreview implements GesturePreview {
         })),
       );
       this.#sampleTime = Math.max(this.#sampleTime, current.time);
+      if (exhausted) return;
+      if (this.#stroke.capacityExhausted) this.#onStrokeCapacityReached?.();
     }
     this.#updateSnapCandidates();
     this.#render();
@@ -328,7 +338,7 @@ export class CreationPreview implements GesturePreview {
   }
 
   #nextSampleTime(): number {
-    this.#sampleTime += 1;
+    this.#sampleTime = this.#now?.() ?? this.#sampleTime + 1;
     return this.#sampleTime;
   }
 }

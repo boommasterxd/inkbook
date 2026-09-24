@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { FILE_SCHEMA_LIMITS, validateInkSnapshotV1 } from "../../../../src/domain/schema/public";
+import {
+  FILE_SCHEMA_LIMITS,
+  MAX_STROKE_POINTS,
+  validateInkSnapshotV1,
+} from "../../../../src/domain/schema/public";
 import { validateInkSnapshotV1Steps } from "../../../../src/domain/schema/snapshot-validation";
 import { observeSchemaArray } from "../../../fixtures/domain/schema-array-work";
 import { arrow, line, rectangle, snapshot, straightHighlighter, stroke, uuid } from "./fixtures";
@@ -246,7 +250,7 @@ describe("InkSnapshotV1 spatial capacity validation", () => {
 describe("InkSnapshotV1 bounded JSON-tree inspection", () => {
   it("rejects over-wide containers before enumerating their siblings", () => {
     const document = snapshot() as unknown as Record<string, unknown>;
-    const entries = observeSchemaArray(new Array<null>(FILE_SCHEMA_LIMITS.elements + 1).fill(null));
+    const entries = observeSchemaArray(new Array<null>(MAX_STROKE_POINTS * 3 + 1).fill(null));
     document.untrusted = entries.observed;
     const steps = validateInkSnapshotV1Steps(document);
 

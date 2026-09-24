@@ -4,16 +4,14 @@ import type { RawStrokeSample, StrokeInputOptions } from "../../../src/domain/ge
 export function prepareExpectedStrokeSamples(
   samples: readonly RawStrokeSample[],
   options: StrokeInputOptions,
+  width = 8,
 ): number[] {
   if (!Number.isFinite(options.zoom) || options.zoom <= 0) {
     throw new RangeError("Stroke zoom must be a positive finite number.");
   }
   if (samples.length === 0) throw new RangeError("A stroke requires at least one sample.");
   const retained = retainSamples(samples, options);
-  const pressures =
-    options.pressureSource === "simulated"
-      ? simulatedPressures(retained, options.zoom)
-      : retained.map((sample) => Math.min(1, Math.max(0, sample.pressure)));
+  const pressures = filteredPressures(retained, options, width);
   return retained.flatMap((sample, index) => [
     roundCanonical(sample.x),
     roundCanonical(sample.y),
@@ -28,33 +26,54 @@ function retainSamples(
   for (const sample of samples) assertSample(sample, options.pressureSource);
   if (samples.length === 1) return [samples[0]!];
   const retained = [samples[0]!];
-  for (const sample of samples.slice(1, -1)) {
+  let mergedTravel = 0;
+  for (const sample of samples.slice(1)) {
     const tip = retained[retained.length - 1]!;
-    if (retained.length > 1 && pointDistance(tip, sample) * options.zoom < 0.5) {
+    if (options.pressureSource === "simulated" && sample.x === tip.x && sample.y === tip.y) {
+      if (retained.length === 1) retained.push({ ...sample, time: tip.time });
+      continue;
+    }
+    mergedTravel += pointDistance(tip, sample) * options.zoom;
+    if (retained.length > 1 && mergedTravel < 0.5) {
       retained[retained.length - 1] = sample;
     } else {
       retained.push(sample);
+      mergedTravel = 0;
     }
-  }
-  const finalSample = samples[samples.length - 1]!;
-  const tip = retained[retained.length - 1]!;
-  if (retained.length > 1 && pointDistance(tip, finalSample) * options.zoom < 0.5) {
-    retained[retained.length - 1] = finalSample;
-  } else {
-    retained.push(finalSample);
   }
   return retained;
 }
 
-function simulatedPressures(samples: readonly RawStrokeSample[], zoom: number): number[] {
-  const pressures = [0.5];
+function filteredPressures(
+  samples: readonly RawStrokeSample[],
+  options: StrokeInputOptions,
+  width: number,
+): number[] {
+  const pen = options.pressureSource === "pen";
+  const pressures = [pen ? Math.min(1, Math.max(0, samples[0]!.pressure)) : 0.5];
+  let filteredSpeed: number | undefined;
   for (let index = 1; index < samples.length; index += 1) {
     const previous = samples[index - 1]!;
     const sample = samples[index]!;
+    const distance = pointDistance(previous, sample) * options.zoom;
+    if (!pen && distance === 0) {
+      pressures.push(pressures[index - 1]!);
+      continue;
+    }
     const elapsed = Math.max(1, sample.time - previous.time);
-    const speed = (pointDistance(previous, sample) * zoom) / elapsed;
-    const target = Math.min(1, Math.max(0.25, 1 - speed / 1.5));
-    pressures.push(0.7 * pressures[index - 1]! + 0.3 * target);
+    const speed = distance / elapsed;
+    filteredSpeed =
+      filteredSpeed === undefined
+        ? speed
+        : filteredSpeed + (1 - Math.exp(-elapsed / 32)) * (speed - filteredSpeed);
+    const target = pen
+      ? Math.min(1, Math.max(0, sample.pressure))
+      : 1 / (1 + (filteredSpeed / 0.35) ** 2);
+    const smoothingDistance = pen
+      ? Math.max(2, 0.35 * width * options.zoom)
+      : Math.max(4, 0.5 * width * options.zoom);
+    const response = 1 - Math.exp(-distance / smoothingDistance);
+    pressures.push(pressures[index - 1]! + response * (target - pressures[index - 1]!));
   }
   return pressures;
 }

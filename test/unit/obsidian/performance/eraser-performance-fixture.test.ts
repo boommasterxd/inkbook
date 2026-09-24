@@ -1,3 +1,4 @@
+import { MAX_STROKE_POINTS } from "../../../../src/domain/schema/public";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CheckpointSliceScheduler } from "../../../performance/domain/domain-scenarios";
 import { createDenseStrokeEraser } from "../../../performance/editor/eraser-performance-fixture";
@@ -11,7 +12,7 @@ describe("eraser deterministic finalization", () => {
       const wall = vi.spyOn(performance, "now").mockImplementation(() => ++wallTime);
       const strokes = Array.from({ length: 16 }, (_, index) => maximumStroke(index));
       const eraser = createDenseStrokeEraser(strokes, () => 0.000001);
-      eraser.update({ x: 5000, y: 0 });
+      eraser.update({ x: MAX_STROKE_POINTS + 1_000, y: 0 });
       expect(eraser.retainedSweepCount).toBeGreaterThan(0);
       expect(eraser.candidateCount).toBeLessThan(strokes.length);
       wall.mockImplementation(() => {

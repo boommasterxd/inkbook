@@ -1,3 +1,4 @@
+import { MAX_STROKE_POINTS } from "../schema/constants";
 import type { SvgPathPart } from "./svg-path-part";
 import { buildPressureOutline } from "./pressure-outline";
 import type { PointV1, StrokeElementV1 } from "../schema/types";
@@ -100,8 +101,8 @@ export function buildCenterline(centers: readonly PointV1[]): string {
 }
 
 function assertStrokeSamples(samples: readonly number[]): void {
-  if (samples.length < 3 || samples.length % 3 !== 0 || samples.length > 4096 * 3) {
-    throw new RangeError("Stroke samples must contain 1 through 4,096 triples.");
+  if (samples.length < 3 || samples.length % 3 !== 0 || samples.length > MAX_STROKE_POINTS * 3) {
+    throw new RangeError(`Stroke samples must contain 1 through ${MAX_STROKE_POINTS} triples.`);
   }
   for (const value of samples) {
     if (!Number.isFinite(value)) throw new RangeError("Stroke samples must be finite.");

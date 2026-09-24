@@ -1,3 +1,4 @@
+import { MAX_STROKE_POINTS } from "../schema/constants";
 import type { PointV1 } from "../schema/types";
 import { arcTo, canonicalGeometryNumber, moveTo, quadraticTo } from "./svg-format";
 import type { SvgPathPart } from "./svg-path-part";
@@ -389,9 +390,14 @@ function centerlineCurves(
 }
 
 function assertInput(centers: readonly PressurePoint[], width: number, slice: PressureSlice): void {
-  if (centers.length < 1 || centers.length > 4096 || !Number.isFinite(width) || width <= 0) {
+  if (
+    centers.length < 1 ||
+    centers.length > MAX_STROKE_POINTS ||
+    !Number.isFinite(width) ||
+    width <= 0
+  ) {
     throw new RangeError(
-      "Pressure outlines require 1 through 4096 centers and a positive finite width.",
+      `Pressure outlines require 1 through ${MAX_STROKE_POINTS} centers and a positive finite width.`,
     );
   }
   for (const boundary of [slice.firstBoundary, slice.lastBoundary]) {

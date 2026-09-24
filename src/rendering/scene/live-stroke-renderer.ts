@@ -1,5 +1,6 @@
 import {
   FILE_SCHEMA_LIMITS,
+  MAX_STROKE_POINTS,
   type StrokeElementV1,
   type StrokeStyleV1,
 } from "../../domain/schema/public";
@@ -17,7 +18,8 @@ import type {
   SceneLiveStrokePreview,
 } from "./types";
 
-const MAX_LIVE_STROKE_CHUNKS = 512;
+// Stable chunks advance by at least eight samples while the mutable tail stays bounded.
+const MAX_LIVE_STROKE_CHUNKS = Math.ceil(MAX_STROKE_POINTS / 8);
 const MAX_LIVE_PATH_PARTS = 1;
 
 export class SceneLiveStrokeRenderer {
@@ -178,7 +180,9 @@ export class SceneLiveStrokeRenderer {
   private assertAppendOnly(preview: SceneLiveStrokePreview): void {
     const nextCount = preview.finalizedChunks.length;
     if (nextCount > MAX_LIVE_STROKE_CHUNKS) {
-      throw new RangeError("A live stroke cannot contain more than 512 finalized chunks.");
+      throw new RangeError(
+        `A live stroke cannot contain more than ${MAX_LIVE_STROKE_CHUNKS} finalized chunks.`,
+      );
     }
     if (nextCount < this.#chunkNodes.length) {
       throw new Error("Finalized live-stroke chunks cannot be removed without clearing.");

@@ -1,3 +1,4 @@
+import { MAX_STROKE_POINTS } from "../../../../src/domain/schema/public";
 import { describe, expect, it, vi } from "vitest";
 
 import type { StrokeStyleV1 } from "../../../../src/domain/schema/public";
@@ -130,7 +131,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz live-stroke profile`, ()
   );
 });
 
-it.for([32, 4096])(
+it.for([32, MAX_STROKE_POINTS])(
   "hands off %i samples with constant DOM work and no geometry rereads",
   (sampleCount) => {
     const { renderer, scheduler } = createInteractionRenderer(new ElementStore());
@@ -139,9 +140,14 @@ it.for([32, 4096])(
       input: { pressureSource: "pen", zoom: 1 },
       style: PEN_STYLE,
     });
-    const observed = observeHandoffPreview(
-      builder.appendBatch(Array.from({ length: sampleCount }, (_, index) => liveSample(index))),
-    );
+    for (let start = 0; start < sampleCount; start += 4096) {
+      builder.appendBatch(
+        Array.from({ length: Math.min(4096, sampleCount - start) }, (_, index) =>
+          liveSample(start + index),
+        ),
+      );
+    }
+    const observed = observeHandoffPreview(builder.preview());
     renderer.updateLiveStroke(observed.preview, PEN_STYLE, "pen");
     const camera = fakeNode(renderer.svg).nodes[1]!;
     const host = camera.nodes.find((node) =>

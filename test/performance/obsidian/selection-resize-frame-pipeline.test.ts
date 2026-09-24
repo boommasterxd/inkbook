@@ -104,9 +104,9 @@ function mixedShapeFeedbackElements(): readonly InkElementV1[] {
 const RESIZE_WORKLOADS = [
   ["mixed exact resize", mixedExactElements],
   ["long pressure progressive resize", longPressureElements],
-  ["4096-sample non-pressure resize", () => mixedElements(nonPressureStroke(0))],
+  ["maximum-sample non-pressure resize", () => mixedElements(nonPressureStroke(0))],
   [
-    "20,480-sample non-pressure progressive resize",
+    "five maximum-sample non-pressure progressive resize",
     () => Array.from({ length: 5 }, (_, index) => nonPressureStroke(index)),
   ],
   ["variable pressure progressive resize", variablePressureElements],

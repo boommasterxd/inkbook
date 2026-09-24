@@ -5,7 +5,7 @@ import {
   smoothStrokeCenters,
 } from "../../../../src/domain/geometry/stroke-path";
 import type { RawStrokeSample } from "../../../../src/domain/geometry/public";
-import type { StrokeStyleV1 } from "../../../../src/domain/schema/public";
+import { MAX_STROKE_POINTS, type StrokeStyleV1 } from "../../../../src/domain/schema/public";
 import {
   buildCenterlineSlice,
   buildPressureOutlineSlice,
@@ -99,20 +99,20 @@ describe("live stroke builder", () => {
       style: penStyle,
     });
     let firstChunk: object | undefined;
-    for (let index = 0; index < 4096; index += 1) {
+    for (let index = 0; index < MAX_STROKE_POINTS; index += 1) {
       const preview = builder.append(sample(index));
       firstChunk ??= preview.finalizedChunks[0];
       if (firstChunk !== undefined) expect(preview.finalizedChunks[0]).toBe(firstChunk);
     }
     const commit = builder.finish();
 
-    expect(commit.points).toHaveLength(4096 * 3);
+    expect(commit.points).toHaveLength(MAX_STROKE_POINTS * 3);
     expect(commit.geometry).toEqual(onePassPath(commit.points, penStyle));
     expect(commit.instrumentation.maximumTailSamples).toBeLessThanOrEqual(16);
     expect(commit.instrumentation.maximumFinalizedChunkSamples).toBeLessThanOrEqual(16);
-    expect(commit.instrumentation.retainedSamples).toBe(4096);
-    expect(commit.instrumentation.bufferGrowths).toBe(8);
-    expect(commit.instrumentation.tailBuilds).toBe(4096);
+    expect(commit.instrumentation.retainedSamples).toBe(MAX_STROKE_POINTS);
+    expect(commit.instrumentation.bufferGrowths).toBe(Math.log2(MAX_STROKE_POINTS / 16));
+    expect(commit.instrumentation.tailBuilds).toBe(MAX_STROKE_POINTS);
     expect(firstChunk).toBeDefined();
   });
 
@@ -239,23 +239,25 @@ describe("live stroke commit continuity", () => {
 });
 
 describe("live stroke limits and lifecycle", () => {
-  it("retains the final sample when input reaches the maximum", () => {
+  it("freezes the last accepted geometry when input exceeds the maximum", () => {
     const builder = new LiveStrokeBuilder({
       input: { pressureSource: "pen", zoom: 1 },
       style: penStyle,
     });
 
     let preview = builder.append(sample(0));
-    for (let index = 1; index < 4096; index += 1) preview = builder.append(sample(index));
+    for (let index = 1; index < MAX_STROKE_POINTS; index += 1)
+      preview = builder.append(sample(index));
     const finalizedPrefix = preview.finalizedChunks.slice();
-    preview = builder.append(sample(4096));
+    preview = builder.append(sample(MAX_STROKE_POINTS));
 
     const commit = builder.finish();
 
-    expect(commit.points).toHaveLength(4096 * 3);
-    expect(commit.points[commit.points.length - 3]).toBe(4096);
-    expect(commit.instrumentation.appendedInputSamples).toBe(4097);
-    expect(commit.instrumentation.retainedSamples).toBe(4096);
+    expect(commit.points).toHaveLength(MAX_STROKE_POINTS * 3);
+    expect(commit.points[commit.points.length - 3]).toBe(MAX_STROKE_POINTS - 1);
+    expect(builder.capacityExhausted).toBe(true);
+    expect(commit.instrumentation.appendedInputSamples).toBe(MAX_STROKE_POINTS + 1);
+    expect(commit.instrumentation.retainedSamples).toBe(MAX_STROKE_POINTS);
     expect(preview.finalizedChunks).toEqual(finalizedPrefix);
     expectExactPreview(preview, commit.points, penStyle);
   });
@@ -270,7 +272,7 @@ describe("live stroke limits and lifecycle", () => {
     builder.append({ x: 1.1, y: 0, pressure: 0.75, time: 2 });
     const commit = builder.finish();
 
-    expect(commit.points).toEqual([0, 0, 0.5, 1.1, 0, 0.75]);
+    expect(commit.points).toEqual([0, 0, 0.5, 1.1, 0, 0.5812]);
     expect(commit.instrumentation.replacedTipSamples).toBe(1);
     expect(() => builder.append(sample(3))).toThrow(/finished/);
     expect(() => builder.finish()).toThrow(/only be finished once/);

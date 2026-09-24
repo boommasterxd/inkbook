@@ -129,7 +129,7 @@ interface StrokeElementV1 extends ElementBaseV1 {
 }
 ```
 
-- Stroke samples are flat `x, y, pressure` triples. The array length is divisible by three and contains between 1 and 4,096 triples.
+- Stroke samples are flat `x, y, pressure` triples. The array length is divisible by three and contains between 1 and 16,384 triples.
 - The wire array is validated before conversion to one runtime-owned `Float64Array` per execution boundary. Published typed buffers are write-once despite the mutable platform type; geometry changes allocate a replacement buffer. Live capture uses a geometrically growing numeric buffer and the committed record receives one exact copy.
 - A single-point stroke renders as a round dot using its effective width.
 - Pen pressure comes from hardware when available and from the deterministic simulated-pressure function otherwise.
@@ -423,7 +423,7 @@ interface InkClipboardV1 {
 
 ## Limits
 
-Files exceeding a limit open read-only and are never rewritten automatically.
+Files exceeding a limit open read-only and are never rewritten automatically. The increased per-stroke capacity keeps the version 1 sample representation; older builds enforcing 4,096 points cannot edit strokes above their own limit. Aggregate document and clipboard limits still apply.
 
 | Limit                           |                 File |            Clipboard |
 | ------------------------------- | -------------------: | -------------------: |
@@ -432,12 +432,12 @@ Files exceeding a limit open read-only and are never rewritten automatically.
 | Elements                        |               20,000 |                5,000 |
 | Freehand strokes                |               15,000 |                4,000 |
 | Total stroke points             |            2,000,000 |              500,000 |
-| Points per stroke               |                4,096 |                4,096 |
+| Points per stroke               |               16,384 |               16,384 |
 | Connected endpoints             |               20,000 |                5,000 |
 | Connected endpoints per target  |                  512 |                  128 |
 | Spatial-index overflow elements |                  512 |                  128 |
 | Spatial-index cell memberships  |              262,144 |              262,144 |
-| JSON entries in one container   |               20,000 |               12,288 |
+| JSON entries in one container   |               49,152 |               49,152 |
 | Absolute coordinate             | 1,000,000 page units | 1,000,000 page units |
 | Maximum derived height          | 1,000,000 page units |       Not applicable |
 

@@ -1,3 +1,4 @@
+import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { eraserQuery } from "../../fixtures/editor/eraser-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -16,7 +17,7 @@ describe("editor gesture hot paths", () => {
 
     let elementLookups = 0;
     const session = createPassThroughMoveSession(strokes, { x: -1_000, y: 0 });
-    const preview = session.update({ x: 5_000, y: 0 });
+    const preview = session.update({ x: MAX_STROKE_POINTS + 1_000, y: 0 });
     const eraser = new EraserSweep(
       { x: -1_000, y: 0 },
       4,
@@ -32,11 +33,11 @@ describe("editor gesture hot paths", () => {
       })(),
       { clearCandidateFade: () => undefined, setCandidateFade: () => undefined },
     );
-    eraser.update({ x: 5_000, y: 0 });
+    eraser.update({ x: MAX_STROKE_POINTS + 1_000, y: 0 });
     let updates = 0;
     while (eraser.candidateCount < strokes.length) {
-      expect(updates++).toBeLessThan(100);
-      eraser.update({ x: 5_000, y: 0 });
+      expect(updates++).toBeLessThan(Math.ceil((256 * MAX_STROKE_POINTS) / 12_288) + 1);
+      eraser.update({ x: MAX_STROKE_POINTS + 1_000, y: 0 });
     }
     expect(preview.exactPreviewTruncated).toBe(true);
     expect(eraser.candidateCount).toBe(256);

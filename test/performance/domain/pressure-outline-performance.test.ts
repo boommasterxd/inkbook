@@ -1,3 +1,4 @@
+import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { describe, expect, it } from "vitest";
 
 import { buildPressureOutline } from "../../../src/domain/geometry/pressure-outline";
@@ -35,13 +36,13 @@ describe("bounded canonical pressure geometry", () => {
     }
   });
 
-  it("keeps 4096-point live writing bounded while preserving every pressure transition", () => {
+  it("keeps maximum-point live writing bounded while preserving every pressure transition", () => {
     const builder = new LiveStrokeBuilder({
       input: { pressureSource: "pen", zoom: 1 },
       style: STYLE,
     });
     let stableChunk: LiveStrokeChunk | undefined;
-    for (let index = 0; index < 4096; index += 8) {
+    for (let index = 0; index < MAX_STROKE_POINTS; index += 8) {
       const batch = Array.from({ length: 8 }, (_, offset) => sample(index + offset));
       const preview = builder.appendBatch(batch);
       if (stableChunk !== undefined) expect(preview.finalizedChunks[0]).toBe(stableChunk);
@@ -49,18 +50,20 @@ describe("bounded canonical pressure geometry", () => {
       expect(builder.instrumentation().commitBuilds).toBe(0);
     }
     const commit = builder.finish();
-    expect(commit.points).toHaveLength(4096 * 3);
+    expect(commit.points).toHaveLength(MAX_STROKE_POINTS * 3);
     expect(commit.geometry).toHaveLength(1);
     expect(commit.instrumentation.maximumTailSamples).toBeLessThanOrEqual(16);
     expect(commit.instrumentation.maximumFinalizedChunkSamples).toBeLessThanOrEqual(16);
     expect(commit.instrumentation).toMatchObject({
-      appendedInputSamples: 4_096,
-      retainedSamples: 4_096,
+      appendedInputSamples: MAX_STROKE_POINTS,
+      retainedSamples: MAX_STROKE_POINTS,
       replacedTipSamples: 0,
       commitBuilds: 1,
     });
-    expect(commit.instrumentation.tailBuilds).toBe(512);
-    expect(commit.instrumentation.bufferGrowths).toBeLessThanOrEqual(8);
-    expect(commit.instrumentation.finalizedChunkBuilds).toBeLessThanOrEqual(512);
+    expect(commit.instrumentation.tailBuilds).toBe(MAX_STROKE_POINTS / 8);
+    expect(commit.instrumentation.bufferGrowths).toBeLessThanOrEqual(
+      Math.ceil(Math.log2(MAX_STROKE_POINTS / 16)),
+    );
+    expect(commit.instrumentation.finalizedChunkBuilds).toBeLessThanOrEqual(MAX_STROKE_POINTS / 8);
   });
 });

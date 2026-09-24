@@ -31,7 +31,8 @@ export type InkbookFeedbackCode =
   | "insertion-undo-file-kept"
   | "insertion-undo-note-changed"
   | "placement-folder-fallback"
-  | "recovery-copy-saved";
+  | "recovery-copy-saved"
+  | "stroke-point-limit-reached";
 
 export type InkbookFeedbackSeverity = "error" | "info" | "success" | "warning";
 
@@ -42,6 +43,11 @@ export interface InkbookFeedbackContent {
 }
 
 const FEEDBACK: Readonly<Record<InkbookFeedbackCode, InkbookFeedbackContent>> = {
+  "stroke-point-limit-reached": {
+    detail: "Lift the pen to start a new stroke.",
+    severity: "warning",
+    title: "Stroke is full.",
+  },
   "changes-save-failed": {
     detail: "Your changes are still available in the editor.",
     severity: "error",
