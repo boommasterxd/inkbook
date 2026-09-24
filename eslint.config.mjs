@@ -184,13 +184,6 @@ export default [
     },
   },
   {
-    files: ["src/obsidian/diagnostics/pen-event-capture.ts"],
-    rules: {
-      // Record the WebView version as diagnostic evidence; never detect platform behavior.
-      "obsidianmd/platform": "off",
-    },
-  },
-  {
     files: ["src/main.ts", "src/obsidian/plugin-loader.ts"],
     rules: {
       "no-restricted-exports": "off",

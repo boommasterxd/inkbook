@@ -1,5 +1,4 @@
 import { createPhoneSheetHost } from "./menus/phone-sheet-host";
-import { registerPenDiagnostics } from "./diagnostics/register-pen-diagnostics";
 import {
   MarkdownView,
   normalizePath,
@@ -51,7 +50,6 @@ export async function activateInkbookPlugin(
 ): Promise<(() => void) | undefined> {
   const settings = await loadSettings(plugin);
   if (!isActive()) return undefined;
-  const disposeDiagnostics = registerPenDiagnostics(plugin);
   const unregisterIcons = registerInkbookIcons();
   const feedback = new InkbookFeedbackManager();
   let active = true;
@@ -128,7 +126,6 @@ export async function activateInkbookPlugin(
   registerWorkspaceLifecycle(plugin, runtime, scheme);
 
   return () => {
-    disposeDiagnostics();
     active = false;
     lifetime.abort();
     embedActions.dispose();

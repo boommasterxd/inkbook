@@ -184,6 +184,23 @@ For drawing tools, pressing the pen button during contact cancels the unfinished
 
 A standalone no-contact button release has a 300-millisecond confirmation window, matching the Wacom event sequence where a synthetic release precedes tip contact. Reasserting the button or starting contact within that window retains temporary erasing; a release with continuing contact takes effect immediately. One pending timer belongs to the presentation's owning window and is cleared on cancellation, departure, focus loss, or disposal. This compatibility handling depends on the pen events delivered by Obsidian; physical Android and digitizer behavior still require device verification.
 
+### Android Side-Button Limitation
+
+Temporary erasing requires Obsidian to deliver identifiable pen-button press and release events. It is not reliable on every Android device: pressing the S Pen or Wacom side button and touching the drawing can open a context menu instead of erasing. Hover activation and switching during contact are unavailable when the required signals are missing. The toolbar eraser remains available; a toggle or next-stroke gesture is not an equivalent implementation of hold-to-erase.
+
+Physical-device traces collected on September 24, 2026 with Android 16, device model `SM-S938B`, Obsidian 1.13.8 and Chromium WebView 153.0.8010.36 showed:
+
+- Pen contact reported `buttons: 1` and terminal events reported `buttons: 0`, without a distinguishable barrel-button state.
+- No zero-pressure pen hover movement reached the recorder during the tested interactions.
+- Button-and-touch attempts produced context-menu events with empty or mouse pointer type, `button: -1` and `buttons: 0`. These events do not identify a held pen button or its release.
+- The final recording, with keyboard capture enabled, contained no `keydown` or `keyup` events. An earlier mixed typing/stylus recording contained unidentified composition events, which do not establish a stylus-key mapping.
+
+These observations establish a limitation on the tested device and configuration, not universal Android incompatibility or proof of which native component consumed the input. JavaScript cannot reconstruct a reliable hold/release state from those traces. The temporary diagnostic recorder and its commands have been removed; Inkbook does not continue collecting these traces.
+
+[js-draw's upstream report](https://github.com/personalizedrefrigerator/js-draw/issues/52) describes related Android event loss and links to [Chromium issue 40241490](https://issues.chromium.org/issues/40241490). No verified drop-in JavaScript library workaround was found in the September 24, 2026 investigation. A native library such as [react-native-s-pen](https://github.com/alihamzaazhar/react-native-s-pen) requires native host integration and an Android application rebuild; it cannot be enabled by adding an Inkbook JavaScript dependency.
+
+An unresolved configuration lead is [Bitwarden's Android hover report](https://github.com/bitwarden/mobile/issues/3037): enabling its accessibility-based autofill suppressed S Pen hover in Chrome on Android 12. This has not been reproduced on the tested Inkbook device. A comparison with optional accessibility services temporarily disabled may help isolate missing hover events, but is not a confirmed side-button fix. A native companion or host bridge is also unverified, particularly simultaneous button observation and uninterrupted drawing in Obsidian. Physical-device testing must establish both press and release delivery before claiming support.
+
 ## Style
 
 Style is not a standalone drawing tool, but a context-sensitive adaptive Obsidian menu. Its line-style choices use decorative SVG samples with round caps and the same width-relative dash calculation as document contours; line-width samples remain rounded bars.

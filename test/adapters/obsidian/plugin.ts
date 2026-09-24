@@ -1,8 +1,5 @@
 import { StateField } from "@codemirror/state";
 
-const API_VERSION = "1.13.1";
-export { API_VERSION as apiVersion };
-
 export { Keymap, Scope } from "./keymap";
 export { Modal, Setting, SettingGroup } from "./settings";
 
@@ -240,7 +237,6 @@ export class MarkdownView extends Component implements MarkdownFileInfo {
 
 export class Plugin extends Component {
   app!: App;
-  readonly manifest = { id: "inkbook", name: "Inkbook", version: "0.0.0-test" };
   readonly commands: Array<{
     readonly id: string;
     readonly name: string;

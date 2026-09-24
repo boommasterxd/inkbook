@@ -147,7 +147,7 @@ function createPluginHarness() {
   const file = new TestTFile("drawings/ink.svg", document.bytes.byteLength);
   const settings = customSettings();
   let cssChange: (() => void) | undefined;
-  const quitCallbacks: Array<(tasks: Tasks) => void> = [];
+  let quit: ((tasks: Tasks) => void) | undefined;
   let dark = false;
   const ownerWindow = new FakePresentationElement().ownerDocument.defaultView;
   if (ownerWindow === null) throw new Error("Missing owner window.");
@@ -179,10 +179,9 @@ function createPluginHarness() {
     workspace: {
       containerEl: { ownerDocument: { defaultView: ownerWindow } },
       getActiveViewOfType: () => null,
-      iterateAllLeaves: vi.fn(),
       on: (name: string, callback: ((tasks: Tasks) => void) | (() => void)) => {
         if (name === "css-change") cssChange = callback as () => void;
-        if (name === "quit") quitCallbacks.push(callback);
+        if (name === "quit") quit = callback;
         return { detach: vi.fn() };
       },
       onLayoutReady: (callback: () => void) => {
@@ -199,7 +198,7 @@ function createPluginHarness() {
       cssChange?.();
     },
     plugin,
-    quit: (tasks: Tasks) => quitCallbacks.forEach((callback) => callback(tasks)),
+    quit: (tasks: Tasks) => quit?.(tasks),
     readBinary,
     settings,
   };
