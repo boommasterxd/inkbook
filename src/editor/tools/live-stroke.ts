@@ -3,16 +3,17 @@ import {
   buildCenterlineSlice,
   buildPressureOutlineSlice,
 } from "../../domain/geometry/stroke-path-slice";
-import type { StrokeStyleV1 } from "../../domain/schema/public";
+import { MAX_STROKE_POINTS, type StrokeStyleV1 } from "../../domain/schema/public";
 import type {
   RawStrokeSample,
   StrokeInputOptions,
   StrokePathGeometry,
 } from "../../domain/geometry/public";
 
-const VALUES_PER_SAMPLE = 4;
+const VALUES_PER_SAMPLE = 5;
+const SIMULATED_SPEED_RESPONSE_MS = 32;
 const INITIAL_SAMPLE_CAPACITY = 16;
-const MAX_SAMPLES = 4096;
+const MAX_SAMPLES = MAX_STROKE_POINTS;
 const MAX_TAIL_SAMPLES = 16;
 const BOUNDARY_SAMPLES = 4;
 const FUTURE_SAMPLES = 5;
@@ -38,6 +39,7 @@ export interface LiveStrokeInstrumentation {
   readonly retainedSamples: number;
   readonly replacedTipSamples: number;
   readonly bufferGrowths: number;
+  readonly sampleBufferBytes: number;
   readonly finalizedChunkBuilds: number;
   readonly tailBuilds: number;
   readonly commitBuilds: number;
@@ -60,10 +62,12 @@ export class LiveStrokeBuilder {
   private buffer = new Float64Array(INITIAL_SAMPLE_CAPACITY * VALUES_PER_SAMPLE);
   private readonly canonicalPoints: number[] = [];
   private retainedSamples = 0;
+  private mutableTipTravel = 0;
   private finalizedSamples = 0;
   private readonly chunks: LiveStrokeChunk[] = [];
   private tail: LiveStrokePreview["tail"] | null = null;
   private finished = false;
+  private exhausted = false;
   private appendedInputSamples = 0;
   private replacedTipSamples = 0;
   private bufferGrowths = 0;
@@ -79,6 +83,10 @@ export class LiveStrokeBuilder {
     }
   }
 
+  get capacityExhausted(): boolean {
+    return this.exhausted;
+  }
+
   append(sample: RawStrokeSample): LiveStrokePreview {
     return this.appendBatch([sample]);
   }
@@ -86,18 +94,24 @@ export class LiveStrokeBuilder {
   appendBatch(samples: readonly RawStrokeSample[]): LiveStrokePreview {
     if (this.finished) throw new Error("A finished live stroke cannot accept samples.");
     if (samples.length === 0) return this.preview();
+    let changed = false;
     for (const sample of samples) {
       this.assertSample(sample);
       this.appendedInputSamples += 1;
-      if (this.shouldReplaceTip(sample) || this.retainedSamples === MAX_SAMPLES) {
+      if (this.exhausted) continue;
+      if (this.shouldReplaceTip(sample)) {
         this.replaceTip(sample);
         this.replacedTipSamples += 1;
+      } else if (this.retainedSamples === MAX_SAMPLES) {
+        this.exhausted = true;
+        continue;
       } else {
         this.pushSample(sample);
       }
+      changed = true;
       this.finalizeStablePrefix();
     }
-    this.rebuildTail();
+    if (changed) this.rebuildTail();
     return this.preview();
   }
 
@@ -122,6 +136,7 @@ export class LiveStrokeBuilder {
       retainedSamples: this.retainedSamples,
       replacedTipSamples: this.replacedTipSamples,
       bufferGrowths: this.bufferGrowths,
+      sampleBufferBytes: this.buffer.byteLength,
       finalizedChunkBuilds: this.finalizedChunkBuilds,
       tailBuilds: this.tailBuilds,
       commitBuilds: this.commitBuilds,
@@ -132,39 +147,40 @@ export class LiveStrokeBuilder {
 
   private shouldReplaceTip(sample: RawStrokeSample): boolean {
     if (this.retainedSamples <= 1) return false;
-    return this.distanceToSample(this.retainedSamples - 1, sample) * this.options.input.zoom < 0.5;
+    // Bound the whole replaced path, including reversals, instead of each event's movement.
+    this.mutableTipTravel +=
+      this.distanceToSample(this.retainedSamples - 1, sample) * this.options.input.zoom;
+    return this.mutableTipTravel < 0.5;
   }
 
   private replaceTip(sample: RawStrokeSample): void {
     const index = this.retainedSamples - 1;
-    this.writeSample(index, sample, this.resolvePressure(sample, index - 1));
+    this.writeSample(index, sample, index - 1);
   }
 
   private pushSample(sample: RawStrokeSample): void {
     if (this.retainedSamples === MAX_SAMPLES) {
-      throw new RangeError("A stroke cannot contain more than 4096 retained samples.");
+      throw new RangeError(`A stroke cannot contain more than ${MAX_SAMPLES} retained samples.`);
     }
     this.ensureCapacity(this.retainedSamples + 1);
-    this.writeSample(
-      this.retainedSamples,
-      sample,
-      this.resolvePressure(sample, this.retainedSamples - 1),
-    );
+    this.writeSample(this.retainedSamples, sample, this.retainedSamples - 1);
     this.retainedSamples += 1;
+    this.mutableTipTravel = 0;
   }
 
-  private resolvePressure(sample: RawStrokeSample, previousIndex: number): number {
-    if (this.options.input.pressureSource === "pen") {
-      return Math.min(1, Math.max(0, sample.pressure));
-    }
-    if (previousIndex < 0) return 0.5;
+  private resolvePressure(sample: RawStrokeSample, previousIndex: number, speed: number): number {
+    const pen = this.options.input.pressureSource === "pen";
+    const measuredPressure = Math.min(1, Math.max(0, sample.pressure));
+    if (previousIndex < 0) return pen ? measuredPressure : 0.5;
     const previousPressure = this.buffer[previousIndex * VALUES_PER_SAMPLE + 2] as number;
-    const previousTime = this.buffer[previousIndex * VALUES_PER_SAMPLE + 3] as number;
-    const elapsed = Math.max(1, sample.time - previousTime);
-    const speed =
-      (this.distanceToSample(previousIndex, sample) * this.options.input.zoom) / elapsed;
-    const target = Math.min(1, Math.max(0.25, 1 - speed / 1.5));
-    return 0.7 * previousPressure + 0.3 * target;
+    const distance = this.distanceToSample(previousIndex, sample) * this.options.input.zoom;
+    const target = pen ? measuredPressure : 1 / (1 + (speed / 0.35) ** 2);
+    // A distance-based response suppresses slow pressure jitter without depending on event rate.
+    const smoothingDistance = pen
+      ? Math.max(2, 0.35 * this.options.style.width * this.options.input.zoom)
+      : Math.max(4, 0.5 * this.options.style.width * this.options.input.zoom);
+    const response = -Math.expm1(-distance / smoothingDistance);
+    return previousPressure + response * (target - previousPressure);
   }
 
   private finalizeStablePrefix(): void {
@@ -241,16 +257,43 @@ export class LiveStrokeBuilder {
     return this.canonicalPoints.slice(start * 3, end * 3);
   }
 
-  private writeSample(index: number, sample: RawStrokeSample, pressure: number): void {
+  private writeSample(index: number, sample: RawStrokeSample, previousIndex: number): void {
     const offset = index * VALUES_PER_SAMPLE;
+    const stationary =
+      this.options.input.pressureSource === "simulated" &&
+      this.retainedSamples > 0 &&
+      this.distanceToSample(this.retainedSamples - 1, sample) === 0;
+    const latestOffset = (this.retainedSamples - 1) * VALUES_PER_SAMPLE;
+    const speed = stationary
+      ? (this.buffer[latestOffset + 4] as number)
+      : this.resolveSpeed(sample, previousIndex);
+    // Duplicate positions must not inflate pressure or shorten the next movement's elapsed time.
+    const time = stationary ? (this.buffer[latestOffset + 3] as number) : sample.time;
+    this.buffer[offset + 4] = speed;
+    const pressure = stationary
+      ? (this.buffer[latestOffset + 2] as number)
+      : this.resolvePressure(sample, previousIndex, speed);
     this.buffer[offset] = sample.x;
     this.buffer[offset + 1] = sample.y;
     this.buffer[offset + 2] = pressure;
-    this.buffer[offset + 3] = sample.time;
+    this.buffer[offset + 3] = time;
     const canonicalOffset = index * 3;
     this.canonicalPoints[canonicalOffset] = roundCanonical(sample.x);
     this.canonicalPoints[canonicalOffset + 1] = roundCanonical(sample.y);
     this.canonicalPoints[canonicalOffset + 2] = roundCanonical(pressure, 4);
+  }
+
+  private resolveSpeed(sample: RawStrokeSample, previousIndex: number): number {
+    if (this.options.input.pressureSource === "pen" || previousIndex < 0) return -1;
+    const offset = previousIndex * VALUES_PER_SAMPLE;
+    const elapsed = Math.max(1, sample.time - (this.buffer[offset + 3] as number));
+    const speed =
+      (this.distanceToSample(previousIndex, sample) * this.options.input.zoom) / elapsed;
+    const previousSpeed = this.buffer[offset + 4] as number;
+    if (previousSpeed < 0) return speed;
+    // Filter velocity before the nonlinear pressure curve so timing jitter cannot bias nib width.
+    const response = -Math.expm1(-elapsed / SIMULATED_SPEED_RESPONSE_MS);
+    return previousSpeed + response * (speed - previousSpeed);
   }
 
   private distanceToSample(index: number, sample: RawStrokeSample): number {

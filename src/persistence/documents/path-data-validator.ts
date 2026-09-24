@@ -1,7 +1,9 @@
 import { parseCanonicalSvgDecimal } from "./svg-number";
 
-const MAXIMUM_PATH_BYTES = 8 * 1024 * 1024;
-const MAXIMUM_PATH_COMMANDS = 200_000;
+// A maximum stroke has at most four ribbons per centerline curve. Each ribbon
+// needs at most six commands and 256 bytes at canonical coordinate precision.
+const MAXIMUM_PATH_BYTES = 16 * 1024 * 1024;
+const MAXIMUM_PATH_COMMANDS = 400_000;
 const MAXIMUM_COORDINATE = 1_000_000;
 const DEFAULT_BYTES_PER_STEP = 16 * 1024;
 const DEFAULT_COMMANDS_PER_STEP = 256;

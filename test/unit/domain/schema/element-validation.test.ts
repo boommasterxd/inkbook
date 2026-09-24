@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { collapsedElements } from "../../../fixtures/domain/collapsed-elements";
 
-import { FILE_SCHEMA_LIMITS, validateInkElementV1 } from "../../../../src/domain/schema/public";
+import {
+  FILE_SCHEMA_LIMITS,
+  MAX_STROKE_POINTS,
+  validateInkElementV1,
+} from "../../../../src/domain/schema/public";
 import {
   arrow,
   coordinateSystem,
@@ -54,7 +58,11 @@ describe("InkElementV1 validation", () => {
 
   it("accepts the maximum points per stroke", () => {
     const element = stroke();
-    element.points = Array.from({ length: 4096 }, (_, index) => [index, 100, 0.5]).flat();
+    element.points = Array.from({ length: MAX_STROKE_POINTS }, (_, index) => [
+      index,
+      100,
+      0.5,
+    ]).flat();
     expect(validateInkElementV1(element).ok).toBe(true);
   });
 });
@@ -130,12 +138,12 @@ describe("InkElementV1 resource validation", () => {
   it("rejects malformed and excessive stroke arrays", () => {
     expect(validateInkElementV1({ ...stroke(), points: [] }).ok).toBe(false);
     expect(validateInkElementV1({ ...stroke(), points: [1, 2] }).ok).toBe(false);
-    const excessive = Array.from({ length: 4097 }, () => [100, 100, 0.5]).flat();
+    const excessive = Array.from({ length: MAX_STROKE_POINTS + 1 }, () => [100, 100, 0.5]).flat();
     expect(validateInkElementV1({ ...stroke(), points: excessive }).ok).toBe(false);
   });
 
   it("rejects an over-wide unknown container before inspecting its values", () => {
-    const element = { ...stroke(), extra: new Array(FILE_SCHEMA_LIMITS.elements + 1).fill(null) };
+    const element = { ...stroke(), extra: new Array(MAX_STROKE_POINTS * 3 + 1).fill(null) };
     const result = validateInkElementV1(element);
 
     expect(result.ok).toBe(false);

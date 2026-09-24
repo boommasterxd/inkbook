@@ -1,3 +1,4 @@
+import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { eraserQuery } from "../../fixtures/editor/eraser-query";
 import { describe, expect, it, vi } from "vitest";
 
@@ -108,7 +109,7 @@ it.each([16, 128, DENSE_STROKES])(
   (count) => {
     const fixture = createCountedDenseStrokeEraser(count);
     const clock = vi.spyOn(performance, "now").mockReturnValue(0);
-    const segmentsPerStroke = 4_095;
+    const segmentsPerStroke = MAX_STROKE_POINTS - 1;
     const workPerUpdate = 12_288;
     // Each newly opened stroke reads two initial x coordinates in addition to its segments.
     const setupReads = 2 * (Math.ceil(workPerUpdate / segmentsPerStroke) + 1);
@@ -117,7 +118,7 @@ it.each([16, 128, DENSE_STROKES])(
     try {
       while (fixture.eraser.candidateCount < count) {
         expect(updates).toBeLessThan(Math.ceil((count * segmentsPerStroke) / workPerUpdate) + 1);
-        expect(fixture.eraser.update({ x: 5_000, y: 0 })).toBe("accepted");
+        expect(fixture.eraser.update({ x: MAX_STROKE_POINTS + 1_000, y: 0 })).toBe("accepted");
         const reads = fixture.takePointReads();
         expect(reads).toBeGreaterThan(0);
         expect(reads).toBeLessThanOrEqual(workPerUpdate + setupReads);

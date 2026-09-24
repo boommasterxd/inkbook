@@ -1,3 +1,4 @@
+import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import type {
   ArrowElementV1,
   ArrowNodeV1,
@@ -91,7 +92,7 @@ function createStandardFixture(runtimeStrokeBuffers: boolean): StandardDomainFix
 }
 
 export function createMaximumStroke(id = uuid(90_000)): StrokeElementV1 {
-  return createStroke(id, 1, 4096, false);
+  return createStroke(id, 1, MAX_STROKE_POINTS, false);
 }
 
 export function createDenseSnapTargets(count = 128): readonly BoxShapeElementV1[] {
@@ -148,7 +149,9 @@ function createStrokePoints(
   for (let point = 0; point < pointCount; point += 1) {
     const offset = point * 3;
     points[offset] = baseX + (point % 32) * 0.25;
-    points[offset + 1] = overflow ? baseY + point * 150 : baseY + Math.floor(point / 32) * 0.25;
+    points[offset + 1] = overflow
+      ? baseY + point * Math.min(150, 900_000 / (pointCount - 1))
+      : baseY + Math.floor(point / 32) * 0.25;
     points[offset + 2] = (point % 101) / 100;
   }
   return points;

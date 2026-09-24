@@ -59,7 +59,7 @@ describe("safe SVG path data validation", () => {
     }
 
     expect(yielded).toBeGreaterThan(700);
-    expect(step.value).toEqual({ commands: 200_000, numericTokens: 400_000 });
+    expect(step.value).toEqual({ commands: 400_000, numericTokens: 800_000 });
   });
 
   it("honors a deadline within one path without exposing a partial validation", () => {
@@ -76,7 +76,7 @@ describe("safe SVG path data validation", () => {
     const first = steps.next();
     expect(first).toEqual({ done: false, value: undefined });
     expect(deadlineChecks).toBe(1);
-    expect(complete(steps)).toEqual({ commands: 200_000, numericTokens: 400_000 });
+    expect(complete(steps)).toEqual({ commands: 400_000, numericTokens: 800_000 });
   });
 
   it("rejects late invalid data after prior slices without accepting an intermediate result", () => {
@@ -90,7 +90,7 @@ describe("safe SVG path data validation", () => {
 
   it("preserves the exact per-path byte and command limits", () => {
     expect(validatePathData(createMaximumComplexityPath())).not.toBeNull();
-    expect(validatePathData(`M 0 0${" L 1 1".repeat(200_000)}`)).toBeNull();
+    expect(validatePathData(`M 0 0${" L 1 1".repeat(400_000)}`)).toBeNull();
     expect(validatePathData("M 0 0".padEnd(MAXIMUM_PATH_BYTES + 1, " "))).toBeNull();
   });
 });

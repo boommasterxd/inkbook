@@ -1,3 +1,4 @@
+import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { expect, it, vi } from "vitest";
 
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
@@ -14,7 +15,7 @@ it.for([16, 128])(
     let checkpoints = 0;
     let yields = 0;
     try {
-      fixture.eraser.update({ x: 5_000, y: 0 });
+      fixture.eraser.update({ x: MAX_STROKE_POINTS + 1_000, y: 0 });
       let totalPointReads = fixture.takePointReads();
       const committed = await fixture.eraser.commit(
         (ids) => {
@@ -39,9 +40,9 @@ it.for([16, 128])(
       const finalReads = fixture.takePointReads();
       totalPointReads += finalReads;
       expect(finalReads).toBeLessThanOrEqual(workPerCheckpoint + 2);
-      // One pass over 4,095 segments plus two initial x coordinates per stroke.
-      expect(totalPointReads).toBeLessThanOrEqual(count * 4_097);
-      expect(totalPointReads).toBeGreaterThanOrEqual(count * 4_095);
+      // One pass over every segment plus two initial x coordinates per stroke.
+      expect(totalPointReads).toBeLessThanOrEqual(count * (MAX_STROKE_POINTS + 1));
+      expect(totalPointReads).toBeGreaterThanOrEqual(count * (MAX_STROKE_POINTS - 1));
       expect(checkpoints).toBeGreaterThan(0);
       expect(yields).toBe(checkpoints);
       expect(fixture.eraser.retainedSweepCount).toBe(0);
@@ -60,7 +61,7 @@ it("cancels finalization at the next yield without reading or publishing more wo
   let removals = 0;
   let yields = 0;
   try {
-    fixture.eraser.update({ x: 5_000, y: 0 });
+    fixture.eraser.update({ x: MAX_STROKE_POINTS + 1_000, y: 0 });
     const committed = await fixture.eraser.commit(
       () => {
         removals += 1;

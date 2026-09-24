@@ -1,3 +1,4 @@
+import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildElementPathParts } from "../../../src/domain/geometry/element-path";
@@ -195,7 +196,11 @@ describe("spatial queries, selection, and snapping", () => {
     const warmAllocations = scratch.allocationCount;
     const maximumPressureStroke: StrokeElementV1 = {
       ...requireStroke(store, fixture.strokeIds[0]!),
-      points: Array.from({ length: 4096 }, (_, index) => [index * 4, 0, index % 2]).flat(),
+      points: Array.from({ length: MAX_STROKE_POINTS }, (_, index) => [
+        index * 4,
+        0,
+        index % 2,
+      ]).flat(),
       pivot: { x: 0, y: 0 },
       rotation: 0,
       style: { ...requireStroke(store, fixture.strokeIds[0]!).style, pressureEnabled: true },

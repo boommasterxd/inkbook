@@ -1,3 +1,4 @@
+import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { describe, expect, it } from "vitest";
 
 import { ElementStore } from "../../../src/domain/store/public";
@@ -5,7 +6,7 @@ import { SelectionHandleSession } from "../../../src/editor/selection/handle-ses
 import { maximumStroke } from "./maximum-stroke-fixture";
 
 describe("editor gesture hot paths", () => {
-  it.each([512, 4_096])(
+  it.each([512, MAX_STROKE_POINTS])(
     "previews a %i-point selection without reading or copying its points",
     (count) => {
       for (const kind of ["move", "scale"] as const) {

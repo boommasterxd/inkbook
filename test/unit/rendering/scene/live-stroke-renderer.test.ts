@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { StrokeStyleV1 } from "../../../../src/domain/schema/public";
+import { MAX_STROKE_POINTS, type StrokeStyleV1 } from "../../../../src/domain/schema/public";
 import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
 import { SceneLiveStrokeRenderer } from "../../../../src/rendering/scene/live-stroke-renderer";
 import type {
@@ -211,6 +211,42 @@ describe("live stroke lifecycle and validation", () => {
     expect(group.attributes.get("opacity")).toBe("0.7");
     renderer.dispose();
   });
+});
+
+describe("live stroke capacity validation", () => {
+  it("retains the full-capacity prefix and opacity through overflow rejection and handoff", () => {
+    const { document, group, instrumentation, renderer } = setupRenderer();
+    const chunks = Array.from({ length: Math.ceil(MAX_STROKE_POINTS / 8) }, (_, index) =>
+      chunk(`M${index} 0L${index + 1} 1Z`, "fill"),
+    );
+    renderer.update(preview(chunks.slice(0, 512), "M512 0Z", "fill"), penStyle, "pen");
+    const prefix = group.nodes.slice(0, 512);
+    const tail = group.nodes[512];
+    renderer.update(preview(chunks, "M16384 0Z", "fill"), penStyle, "pen");
+    expect(group.nodes.slice(0, 512)).toEqual(prefix);
+    expect(group.nodes[group.nodes.length - 1]).toBe(tail);
+    expect(group.nodes).toHaveLength(chunks.length + 1);
+    const accepted = [...group.nodes];
+    const writes = instrumentation.attributeWrites;
+    expect(() =>
+      renderer.update(
+        preview([...chunks, chunk("M16385 0Z", "fill")], "M16385 0Z", "fill"),
+        penStyle,
+        "pen",
+      ),
+    ).toThrow("finalized chunks");
+    expect(instrumentation.attributeWrites).toBe(writes);
+    expect(group.nodes).toEqual(accepted);
+    expect(tail?.attributes.get("d")).toBe("M16384 0Z");
+    const parent = new FakeNode(document, "g");
+    renderer.commit("maximum", () => parent as unknown as SVGGElement);
+    expect(parent.nodes[0]).toBe(group);
+    expect(group.attributes.get("opacity")).toBe("0.7");
+    expect(group.nodes).toEqual(accepted);
+    renderer.dispose();
+    expect(instrumentation.liveChunkNodesRemoved).toBe(chunks.length);
+    expect(instrumentation.liveTailNodesRemoved).toBe(1);
+  });
 
   it("rejects empty, oversized, and inconsistent path batches", () => {
     const { renderer } = setupRenderer();
@@ -223,13 +259,15 @@ describe("live stroke lifecycle and validation", () => {
     expect(() =>
       renderer.update(
         {
-          finalizedChunks: Array.from({ length: 513 }, () => chunk("M0 0", "stroke")),
+          finalizedChunks: Array.from({ length: Math.ceil(MAX_STROKE_POINTS / 8) + 1 }, () =>
+            chunk("M0 0", "stroke"),
+          ),
           tail: { geometry: [part] },
         },
         penStyle,
         "pen",
       ),
-    ).toThrow("512");
+    ).toThrow("finalized chunks");
     renderer.dispose();
   });
 });

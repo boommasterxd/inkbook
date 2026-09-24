@@ -1,3 +1,4 @@
+import { MAX_STROKE_POINTS } from "../../../../src/domain/schema/public";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -216,7 +217,11 @@ describe("continuous pressure run packing", () => {
 
 describe("bounded pressure slice validation", () => {
   it("reads only consumed centers and rejects invalid values in that slice", () => {
-    const centers = Array.from({ length: 4096 }, (_, index) => ({ x: index, y: 0, pressure: 0.5 }));
+    const centers = Array.from({ length: MAX_STROKE_POINTS }, (_, index) => ({
+      x: index,
+      y: 0,
+      pressure: 0.5,
+    }));
     const bounded = new Proxy(centers, {
       get(target, key, receiver) {
         if (typeof key === "string" && /^\d+$/.test(key) && (Number(key) < 63 || Number(key) > 128))
@@ -252,7 +257,7 @@ describe("bounded pressure slice validation", () => {
     expect(() => buildPressureOutline([], 8)).toThrow(RangeError);
     expect(() =>
       buildPressureOutline(
-        Array.from({ length: 4097 }, () => centers[0]!),
+        Array.from({ length: MAX_STROKE_POINTS + 1 }, () => centers[0]!),
         8,
       ),
     ).toThrow(RangeError);

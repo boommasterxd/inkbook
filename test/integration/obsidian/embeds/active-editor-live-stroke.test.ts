@@ -48,8 +48,24 @@ describe("active editor live stroke preview", () => {
     mouse.preview.commit();
     const mouseElement = mouse.store.get("00000000-0000-4000-8000-000000000022")?.element;
     expect(mouseElement?.kind === "stroke" ? mouseElement.points[2] : undefined).toBe(0.5);
-    expect(mouseElement?.kind === "stroke" ? mouseElement.points[5] : undefined).toBe(0.425);
+    expect(mouseElement?.kind === "stroke" ? mouseElement.points[5] : undefined).toBe(0);
   });
+
+  it.each(["direct", "coalesced"] as const)(
+    "uses the owning window clock for the first %s mouse velocity",
+    (mode) => {
+      let time = 50_000;
+      const id = "00000000-0000-4000-8000-000000000024";
+      const { preview, store } = createPressurePreview(id, "mouse", () => time);
+      time += 100;
+      const pointer = { pointerId: 1, pointerType: "mouse" as const, x: 20, y: 10 };
+      if (mode === "direct") preview.update(pointer);
+      else preview.updateSamples([{ ...pointer, time }]);
+      preview.commit();
+      const element = store.get(id)?.element;
+      expect(element?.kind === "stroke" ? element.points[5] : undefined).toBe(0.8897);
+    },
+  );
 
   it("preserves coalesced pen geometry while rendering once per animation frame", () => {
     const scheduler = new ManualFrameScheduler();
@@ -68,12 +84,12 @@ describe("active editor live stroke preview", () => {
     expect(routed.commit()).toBe(true);
     const element = store.get("00000000-0000-4000-8000-000000000023")?.element;
     expect(element?.kind === "stroke" ? element.points : []).toHaveLength(15);
-    expect(element?.kind === "stroke" ? element.points.slice(-3) : []).toEqual([50, 50, 0.9]);
+    expect(element?.kind === "stroke" ? element.points.slice(-3) : []).toEqual([50, 50, 0.8999]);
   });
 });
 
 describe("active editor live stroke limits", () => {
-  it("commits when pointerup provides the 4097th retained sample", () => {
+  it("continues past the former 4096-point limit in one coalesced gesture", () => {
     const { input, preview, store } = createLiveStrokeHarness(
       "00000000-0000-4000-8000-000000000002",
     );
@@ -87,7 +103,7 @@ describe("active editor live stroke limits", () => {
     const element = store.get("00000000-0000-4000-8000-000000000002")?.element;
     expect(element?.kind).toBe("stroke");
     if (element?.kind !== "stroke") throw new Error("Expected a committed stroke.");
-    expect(element.points).toHaveLength(4096 * 3);
+    expect(element.points).toHaveLength(4097 * 3);
     expect(element.points[element.points.length - 2]).toBe(4106);
   });
 
@@ -188,10 +204,11 @@ function createLiveStrokeHarness(identity: string, frameScheduler?: ManualFrameS
   return { commitLiveStroke, input, preview, routed, store, updateLiveStroke };
 }
 
-function createPressurePreview(identity: string, pointerType: "mouse" | "pen") {
+function createPressurePreview(identity: string, pointerType: "mouse" | "pen", now?: () => number) {
   const store = new ElementStore();
   const history = activeEditorStoreHistory(store);
   const preview = new CreationPreview({
+    ...(now === undefined ? {} : { now }),
     defaults: createBuiltInSettings().toolDefaults,
     history,
     identity: { createdAt: 1, id: identity },

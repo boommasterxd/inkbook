@@ -19,7 +19,9 @@ export function assertStrokeSamplesV1(samples: ArrayLike<number>): void {
     samples.length % VALUES_PER_SAMPLE !== 0 ||
     samples.length / VALUES_PER_SAMPLE > MAX_STROKE_POINTS
   ) {
-    throw new RangeError("Stroke samples must contain 1 through 4096 x, y, pressure triples.");
+    throw new RangeError(
+      `Stroke samples must contain 1 through ${MAX_STROKE_POINTS} x, y, pressure triples.`,
+    );
   }
   for (let index = 0; index < samples.length; index += VALUES_PER_SAMPLE) {
     if (

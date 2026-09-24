@@ -1,6 +1,5 @@
+import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import type { StrokeElementV1 } from "../../../src/domain/schema/public";
-
-const MAXIMUM_POINTS = 4_096;
 
 export function maximumStroke(
   index: number,
@@ -10,7 +9,7 @@ export function maximumStroke(
     createdAt: index,
     id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
     kind: "stroke",
-    pivot: { x: MAXIMUM_POINTS / 2, y: 50 },
+    pivot: { x: MAX_STROKE_POINTS / 2, y: 50 },
     points,
     rotation: 0,
     style: {
@@ -26,8 +25,8 @@ export function maximumStroke(
 
 function maximumStrokePoints(index: number): StrokeElementV1["points"] {
   const points: number[] = [];
-  for (let point = 0; point < MAXIMUM_POINTS; point += 1) {
-    points.push(point, point === MAXIMUM_POINTS - 1 ? 0 : 100 + index * 0.001, 0.5);
+  for (let point = 0; point < MAX_STROKE_POINTS; point += 1) {
+    points.push(point, point === MAX_STROKE_POINTS - 1 ? 0 : 100 + index * 0.001, 0.5);
   }
   Object.freeze(points);
   return points;

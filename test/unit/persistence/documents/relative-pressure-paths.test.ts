@@ -78,6 +78,6 @@ describe("bounded relative pressure path commands", () => {
 
   it("counts relative commands and numbers under the existing command cap", () => {
     expect(validate("M0 0q1 2 3 4a1 1 0 0 1 0 0Z")).toEqual({ commands: 4, numericTokens: 13 });
-    expect(validate(`M0 0${"q0 0 0 0".repeat(200_000)}`, 16_384)).toBeNull();
+    expect(validate(`M0 0${"q0 0 0 0".repeat(400_000)}`, 16_384)).toBeNull();
   });
 });
