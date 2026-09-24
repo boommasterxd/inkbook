@@ -67,6 +67,8 @@ Only actions that remain useful outside the internal canvas keyboard scope are r
 
 Inkbook assigns no default hotkeys to these commands. Users may configure them in Obsidian Settings under Hotkeys. The Inkbook shortcut view displays each effective Obsidian binding in the same read-only keycap field as other reference bindings and displays `Not assigned` when the command has no effective binding. Copy, Cut, Paste, Delete selection, Select all, Zoom, Undo, Redo, and the four arrange actions are not duplicated as Obsidian commands.
 
+The command palette also offers **Start pen diagnostics** and **Stop and save pen diagnostics**, without default hotkeys. These diagnostic commands are separate from the shortcut reference UI; see [Pen Diagnostics](pen-diagnostics.md).
+
 The native Markdown editor context menu offers **Insert handwriting embed** only on an empty ordinary Markdown line outside YAML frontmatter and backtick code blocks, while no insertion is in progress. Pen-tap eligibility is defined in [Features](features.md#inserting-handwriting-with-a-pen-tap). Pointer context menus use the clicked line; keyboard context menus use the cursor line. Inkbook does not change the cursor or selection when opening the menu. The menu action and accepted pen taps select their captured target line and invoke the same registered `editorCheckCallback` as the Obsidian command, rechecking availability at execution. Availability queries use `canInsert`; execution delegates directly to the request method, which performs its own authoritative validation once. A pen tap additionally checks its captured target before moving the cursor. The target is validated again after asynchronous SVG preparation and verification before Markdown is changed.
 
 ## Settings Interface

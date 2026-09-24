@@ -31,6 +31,9 @@ function createApp() {
     visibilityState: "visible",
   } as unknown as Document;
   const ownerWindow = {
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    performance,
     cancelAnimationFrame: vi.fn(),
     closed: false,
     document: ownerDocument,
@@ -64,9 +67,14 @@ function createApp() {
       },
       workspace: {
         containerEl,
+        iterateAllLeaves: vi.fn(),
         on: (name: string, callback: (...arguments_: never[]) => void) => {
           if (name === "css-change") cssChange.mockImplementation(callback);
-          workspaceEvents.set(name, callback);
+          const previous = workspaceEvents.get(name);
+          workspaceEvents.set(name, (...args) => {
+            previous?.(...args);
+            callback(...args);
+          });
           return { detach: vi.fn() };
         },
         onLayoutReady: (callback: () => void) => {
@@ -163,20 +171,26 @@ describe("plugin host registration", () => {
     expect(vaultEvents.size).toBe(0);
     expect(registrations.settingTabs).toHaveLength(1);
     expect(registrations.commands.map((command) => command.id)).toEqual([
+      "start-pen-diagnostics",
+      "stop-pen-diagnostics",
       "lock-active-embed",
       "copy-embed",
       "erase-all",
       "delete-embed",
       "insert-handwriting",
     ]);
-    expect(registrations.commands).toHaveLength(5);
+    expect(registrations.commands).toHaveLength(7);
     for (const command of registrations.commands) expect(command).not.toHaveProperty("hotkeys");
     expect(cssChange).toHaveBeenCalledTimes(0);
     expect([...metadataEvents.keys()]).toEqual(["changed", "resolved"]);
     expect(workspaceEvents.has("quit")).toBe(true);
     expect(workspaceEvents.has("editor-menu")).toBe(true);
     expect(workspaceEvents.has("editor-change")).toBe(false);
-    expect(registrations.commands[0]?.checkCallback?.(true)).toBe(false);
+    expect(
+      registrations.commands
+        .find((command) => command.id === "lock-active-embed")
+        ?.checkCallback?.(true),
+    ).toBe(false);
     const insertion = registrations.commands.find(
       (command) => command.id === "insert-handwriting",
     )?.editorCheckCallback;
@@ -200,7 +214,7 @@ describe("plugin host registration", () => {
     const tasks = new Tasks();
     workspaceEvents.get("quit")?.(tasks as never);
     expect(tasks.isEmpty()).toBe(false);
-    await expect(tasks.promise()).resolves.toEqual([undefined]);
+    await expect(tasks.promise()).resolves.toEqual([undefined, undefined]);
 
     deactivate?.();
     expect(testIconRegistry.has(STRAIGHT_HIGHLIGHTER_ICON_ID)).toBe(false);
