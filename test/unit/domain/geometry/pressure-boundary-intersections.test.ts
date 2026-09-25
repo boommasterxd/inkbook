@@ -107,6 +107,17 @@ describe("pressure boundary intersections", () => {
     expect(pressureBoundaryParameter(major, { x: Math.SQRT1_2, y: -Math.SQRT1_2 })).toBeUndefined();
     expect(pressureBoundaryParameter(arc(origin, 1, 0, 0), { x: 0, y: 1 })).toBeUndefined();
   });
+
+  it("preserves radial roundoff near an arc's coordinate extent", () => {
+    const circle = arc(origin);
+    const epsilon = 32 * Number.EPSILON;
+    for (const sign of [-1, 1]) {
+      expect(pressureBoundaryParameter(circle, { x: 0, y: sign * (1 + epsilon) })).toBeDefined();
+      expect(
+        pressureBoundaryParameter(circle, { x: 0, y: sign * (1 + epsilon * 2) }),
+      ).toBeUndefined();
+    }
+  });
 });
 
 describe("circular pressure boundary intersections", () => {

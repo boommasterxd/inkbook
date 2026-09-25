@@ -156,6 +156,28 @@ describe("compact reference pressure geometry", () => {
 });
 
 describe("bounded capsule union work", () => {
+  it("rejects disjoint circle extents without exact radial distance work", () => {
+    const [circle] = pressureShapeBoundary({
+      kind: "dot",
+      center: { x: 0, y: 0 },
+      radius: 1,
+    });
+    const distances = vi.spyOn(Math, "hypot");
+    try {
+      for (let index = 2; index < 66; index += 1) {
+        const [other] = pressureShapeBoundary({
+          kind: "dot",
+          center: { x: index * 4, y: index * 4 },
+          radius: 1,
+        });
+        expect(intersections.intersectPressureBoundaries(circle!, other!)).toEqual([]);
+      }
+      expect(distances).not.toHaveBeenCalled();
+    } finally {
+      distances.mockRestore();
+    }
+  });
+
   it("avoids endpoint distance work for interior and off-boundary probes", () => {
     const extent = MAX_STROKE_POINTS + 1;
     const boundary = { kind: "line" as const, start: { x: 0, y: 0 }, end: { x: extent, y: 0 } };

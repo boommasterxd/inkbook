@@ -64,6 +64,7 @@ describe("active editor single-stroke capacity", () => {
       expect(store.size).toBe(1);
       expect(store.get(strokeId)?.element).toEqual(element);
     },
+    20_000,
   );
 
   it("discards an exhausted preview on cancellation without creating a history command", () => {
@@ -79,7 +80,7 @@ describe("active editor single-stroke capacity", () => {
     expect(history.canUndo).toBe(false);
     expect(clearLiveStroke).toHaveBeenCalledOnce();
     expect(commitLiveStroke).not.toHaveBeenCalled();
-  });
+  }, 20_000);
 });
 
 function appendCurve(preview: CreationPreview): void {

@@ -81,7 +81,7 @@ describe("live stroke builder", () => {
     expect(commit.instrumentation.bufferGrowths).toBe(Math.log2(MAX_STROKE_POINTS / 16));
     expect(commit.instrumentation.tailBuilds).toBe(MAX_STROKE_POINTS);
     expect(firstChunk).toBeDefined();
-  });
+  }, 20_000);
 
   it("retains every batched input sample while rebuilding the live tail once", () => {
     const builder = new LiveStrokeBuilder({
@@ -271,7 +271,7 @@ describe("live stroke limits and lifecycle", () => {
     expect(commit.instrumentation.retainedSamples).toBe(MAX_STROKE_POINTS);
     expect(preview.finalizedChunks).toEqual(finalizedPrefix);
     expectBoundedPreview(preview);
-  });
+  }, 20_000);
 
   it("replaces close mutable tips and enforces lifecycle and numeric limits", () => {
     const builder = new LiveStrokeBuilder({

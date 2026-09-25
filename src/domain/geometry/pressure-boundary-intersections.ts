@@ -22,9 +22,18 @@ export function pressureBoundaryPoint(
 }
 
 /** Coordinate roundoff, not an approximation tolerance for the rendered contour. */
-function roundoff(...points: readonly PointV1[]): number {
-  let scale = 1;
-  for (const point of points) scale = Math.max(scale, Math.abs(point.x), Math.abs(point.y));
+function roundoff(first: PointV1, second: PointV1, third: PointV1, fourth = first): number {
+  const scale = Math.max(
+    1,
+    Math.abs(first.x),
+    Math.abs(first.y),
+    Math.abs(second.x),
+    Math.abs(second.y),
+    Math.abs(third.x),
+    Math.abs(third.y),
+    Math.abs(fourth.x),
+    Math.abs(fourth.y),
+  );
   return 32 * Number.EPSILON * scale;
 }
 
@@ -64,7 +73,12 @@ function arcParameter(
   point: PointV1,
   epsilon: number,
 ): number | undefined {
-  if (arc.sweep === 0 || Math.abs(distance(arc.center, point) - arc.radius) > epsilon)
+  const axisDistance = Math.max(Math.abs(point.x - arc.center.x), Math.abs(point.y - arc.center.y));
+  if (
+    arc.sweep === 0 ||
+    axisDistance - arc.radius > epsilon ||
+    Math.abs(distance(arc.center, point) - arc.radius) > epsilon
+  )
     return undefined;
   const initial = Math.atan2(arc.start.y - arc.center.y, arc.start.x - arc.center.x);
   const angle = Math.atan2(point.y - arc.center.y, point.x - arc.center.x);
@@ -161,10 +175,12 @@ function lineArc(line: PressureBoundaryLine, arc: PressureBoundaryArc): readonly
 function arcArc(first: PressureBoundaryArc, second: PressureBoundaryArc): readonly PointV1[] {
   const dx = second.center.x - first.center.x;
   const dy = second.center.y - first.center.y;
-  const separation = Math.hypot(dx, dy);
   const epsilon = roundoff(first.center, second.center, first.start, second.start);
+  const maximumSeparation = first.radius + second.radius + epsilon;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) > maximumSeparation) return [];
+  const separation = Math.hypot(dx, dy);
   if (separation <= epsilon) return [];
-  if (separation > first.radius + second.radius + epsilon) return [];
+  if (separation > maximumSeparation) return [];
   if (separation < Math.abs(first.radius - second.radius) - epsilon) return [];
   const along =
     (separation + ((first.radius - second.radius) * (first.radius + second.radius)) / separation) /
