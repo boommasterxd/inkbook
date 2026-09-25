@@ -36,7 +36,6 @@ interface CrossfadeMotion extends MotionBase {
 export type MotionEntry = EntranceMotion | ExitMotion | GeometryMotion | CrossfadeMotion;
 
 export interface OverlayMotion {
-  readonly direction: "enter" | "exit";
   startTime: number | undefined;
 }
 

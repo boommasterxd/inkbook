@@ -63,6 +63,11 @@ describe("vault runtime hydration", () => {
     if (snapshotElement?.kind !== "stroke" || storedElement?.kind !== "stroke") {
       throw new Error("Expected a hydrated runtime stroke.");
     }
+    const prepared = loaded.store
+      .pressureGeometry(storedElement.id, loaded.store.get(storedElement.id)!.geometryVersion)
+      .readPath?.();
+    expect(prepared).toHaveLength(1);
+    expect(serialized.value.svg).toContain(`d="${prepared![0]!.d}"`);
     expect(snapshotElement.points).toBeInstanceOf(Float64Array);
     expect(storedElement.points).toBe(snapshotElement.points);
     expect(Array.from(storedElement.points)).toEqual([10, 10, 0.5, 20, 20, 1]);

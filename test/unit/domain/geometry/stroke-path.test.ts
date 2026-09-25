@@ -1,8 +1,10 @@
+import { smoothStrokeCenters } from "../../../../src/domain/geometry/stroke-path";
+import { simplifyStrokeCenters } from "../../../../src/domain/geometry/stroke-simplification";
 import { buildPressureOutline } from "../../../../src/domain/geometry/pressure-outline";
 import type { StrokeElementV1 } from "../../../../src/domain/schema/public";
 import { describe, expect, it } from "vitest";
 
-import { rotatePointClockwise, smoothStrokeCenters } from "../../../../src/domain/geometry/public";
+import { rotatePointClockwise } from "../../../../src/domain/geometry/public";
 import { prepareExpectedStrokeSamples as prepareStrokeSamples } from "../../../fixtures/editor/stroke-sample-reference";
 import { buildStrokePathParts, buildCenterline } from "../../../../src/domain/geometry/stroke-path";
 import { strokeStyle } from "./fixtures";
@@ -73,7 +75,7 @@ describe("deterministic stroke construction", () => {
     expect(() => smoothStrokeCenters([0, 0])).toThrow(RangeError);
   });
 
-  it("uses midpoint quadratic segments for constant-width paths", () => {
+  it("preserves constant-width corners with native round-join centerlines", () => {
     expect(buildCenterline([{ x: 1, y: 2 }])).toBe("M1 2L1 2");
     expect(
       buildCenterline([
@@ -87,7 +89,7 @@ describe("deterministic stroke construction", () => {
         { x: 10, y: 10 },
         { x: 20, y: 0 },
       ]),
-    ).toBe("M0 0L5 5Q10 10 15 5L20 0");
+    ).toBe("M0 0L10 10L20 0");
     expect(() => buildCenterline([])).toThrow(RangeError);
   });
 });
@@ -105,7 +107,9 @@ describe("stroke path fast-path parity", () => {
     ],
   ] as const)("matches the generic centerline for %s", (_label, points, pivot) => {
     const candidate = buildStrokePathParts(stroke({ points: [...points], pivot }));
-    const reference = buildCenterline(smoothStrokeCenters(points));
+    const reference = buildCenterline(
+      simplifyStrokeCenters(smoothStrokeCenters(points), strokeStyle.width, false),
+    );
 
     expect(candidate).toEqual([{ d: reference, paint: "stroke" }]);
   });
@@ -170,4 +174,25 @@ describe("stroke path fast-path parity", () => {
     expect(first.map((part) => part.d).join("")).not.toContain("transform");
     expect(buildStrokePathParts(stroke())[0]!.paint).toBe("stroke");
   });
+});
+
+describe("constant-width pen and highlighter reduction", () => {
+  it.each(["pen", "highlighter"] as const)(
+    "reduces %s geometry without pressure or corner distortion",
+    (tool) => {
+      const points = Array.from({ length: 200 }, (_, index) => [
+        index,
+        index < 100 ? 0 : index - 99,
+        0.5,
+      ]).flat();
+      const element = stroke({ tool, points, style: { ...strokeStyle, pressureEnabled: false } });
+      const raw = [...points];
+      const [part] = buildStrokePathParts(element);
+      expect(part!.paint).toBe("stroke");
+      expect((part!.d.match(/L/g) ?? []).length).toBeLessThanOrEqual(10);
+      expect(part!.d).toContain("M0 0");
+      expect(part!.d).toContain("L199 100");
+      expect(element.points).toEqual(raw);
+    },
+  );
 });

@@ -216,14 +216,14 @@ describe("live stroke lifecycle and validation", () => {
 describe("live stroke capacity validation", () => {
   it("retains the full-capacity prefix and opacity through overflow rejection and handoff", () => {
     const { document, group, instrumentation, renderer } = setupRenderer();
-    const chunks = Array.from({ length: Math.ceil(MAX_STROKE_POINTS / 8) }, (_, index) =>
+    const chunks = Array.from({ length: Math.ceil(MAX_STROKE_POINTS / 64) }, (_, index) =>
       chunk(`M${index} 0L${index + 1} 1Z`, "fill"),
     );
-    renderer.update(preview(chunks.slice(0, 512), "M512 0Z", "fill"), penStyle, "pen");
-    const prefix = group.nodes.slice(0, 512);
-    const tail = group.nodes[512];
+    renderer.update(preview(chunks.slice(0, 128), "M128 0Z", "fill"), penStyle, "pen");
+    const prefix = group.nodes.slice(0, 128);
+    const tail = group.nodes[128];
     renderer.update(preview(chunks, "M16384 0Z", "fill"), penStyle, "pen");
-    expect(group.nodes.slice(0, 512)).toEqual(prefix);
+    expect(group.nodes.slice(0, 128)).toEqual(prefix);
     expect(group.nodes[group.nodes.length - 1]).toBe(tail);
     expect(group.nodes).toHaveLength(chunks.length + 1);
     const accepted = [...group.nodes];
@@ -259,7 +259,7 @@ describe("live stroke capacity validation", () => {
     expect(() =>
       renderer.update(
         {
-          finalizedChunks: Array.from({ length: Math.ceil(MAX_STROKE_POINTS / 8) + 1 }, () =>
+          finalizedChunks: Array.from({ length: Math.ceil(MAX_STROKE_POINTS / 64) + 1 }, () =>
             chunk("M0 0", "stroke"),
           ),
           tail: { geometry: [part] },

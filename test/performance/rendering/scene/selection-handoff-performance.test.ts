@@ -33,7 +33,7 @@ describe("selection preview handoff performance", () => {
     });
     renderer.setPage(PAGE, 200_000);
     scheduler.runAll();
-    verifyBoundedSelectionClip(renderer, store);
+    verifyBoundedSelectionFrame(renderer, store);
     let notifications = 0;
     const unsubscribe = store.subscribe((delta) => {
       notifications += 1;
@@ -89,10 +89,13 @@ describe("selection preview handoff performance", () => {
   }, 180_000);
 });
 
-function verifyBoundedSelectionClip(renderer: SvgSceneRenderer, store: ElementStore): void {
-  const defs = fakeNode(renderer.svg).nodes[3]!;
-  const clip = defs.nodes.find(({ tagName }) => tagName === "clipPath")!.nodes[0]!;
-  const writes = vi.spyOn(clip, "setAttribute");
+function verifyBoundedSelectionFrame(renderer: SvgSceneRenderer, store: ElementStore): void {
+  const overlay = fakeNode(renderer.svg).nodes[2]!;
+  const frame = overlay.nodes.find(
+    ({ attributes }) => attributes.get("class") === "inkbook-selection-overlay",
+  )!;
+  expect(frame.attributes.has("clip-path")).toBe(false);
+  const writes = vi.spyOn(frame, "setAttribute");
   const reads = vi.spyOn(store, "get");
   renderer.resetInstrumentation();
   const first = "M 0 0 L 100 0 L 100 50 L 0 50 Z";
@@ -101,7 +104,9 @@ function verifyBoundedSelectionClip(renderer: SvgSceneRenderer, store: ElementSt
     renderer.setSelectionOverlayPath(path);
     renderer.flushPointerFeedbackFrame();
   }
-  expect(writes.mock.calls).toEqual([
+  // Each update may write fill and motion state; geometry changes only twice.
+  expect(writes.mock.calls.length).toBeLessThanOrEqual(10);
+  expect(writes.mock.calls.filter(([name]) => name === "d")).toEqual([
     ["d", first],
     ["d", moved],
   ]);

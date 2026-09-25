@@ -23,6 +23,7 @@ import { pointerSampleFromEvent } from "./controller-helpers";
 import { measureElementBox } from "./element-content-box";
 import {
   localScreenPointAnchor,
+  projectNavigationCursorLayout,
   pagePointAnchor,
   readNavigationLayout,
   visibleCenterPoint,
@@ -32,14 +33,13 @@ import {
 } from "./navigation-layout";
 import type { ActiveEditorResizeAnchor, ActiveEditorResizeUpdate } from "./layout-resize";
 import type {
-  ActiveEditorCameraUpdate,
   ActiveEditorNavigationOptions,
   ActiveEditorViewState,
   ActiveEditorWheelInput,
-  ActiveEditorZoomLayoutUpdate,
 } from "./navigation-types";
 import {
   horizontalPanWheel,
+  accumulateContinuousZoomInput,
   isContinuousZoomWheel,
   isZoomWheel,
   positiveOr,
@@ -49,7 +49,6 @@ import { resolveNavigationFrame } from "./navigation-frame";
 import { NavigationActivity } from "./navigation-activity";
 import { ActiveEditorPanMomentum } from "./navigation-momentum";
 export type {
-  ActiveEditorCameraUpdate,
   ActiveEditorNavigationOptions,
   ActiveEditorViewState,
   ActiveEditorWheelInput,
@@ -58,8 +57,8 @@ export type {
 export class ActiveEditorNavigation {
   readonly #activity: NavigationActivity;
   readonly #activePageHeight: () => number;
-  readonly #applyCamera: (camera: ActiveEditorCameraUpdate) => void;
-  readonly #applyZoomLayout: (update: ActiveEditorZoomLayoutUpdate) => void;
+  readonly #applyCamera: NonNullable<ActiveEditorNavigationOptions["applyCamera"]>;
+  readonly #applyZoomLayout: ActiveEditorNavigationOptions["applyZoomLayout"];
   readonly #container: HTMLElement;
   #scrollOwner: BrowserScrollElement;
   readonly #getInput: () => InputState;
@@ -75,7 +74,6 @@ export class ActiveEditorNavigation {
   readonly #panMomentum: ActiveEditorPanMomentum;
   #wheelState: WheelZoomState = createWheelZoomState();
   #zoom: number;
-
   public constructor(options: ActiveEditorNavigationOptions) {
     this.#activePageHeight = options.activePageHeight;
     this.#applyCamera = options.applyCamera ?? ((camera) => options.renderer.setCamera(camera));
@@ -117,7 +115,6 @@ export class ActiveEditorNavigation {
     cameraX: this.#cameraX,
     zoom: this.#zoom,
   });
-
   public beginGestureGeometry(): boolean {
     this.cancelPanMomentum();
     const layout = readNavigationLayout(this.#container, this.#scrollOwner);
@@ -220,14 +217,22 @@ export class ActiveEditorNavigation {
     if (fitZoom === undefined) return false;
     this.#zoom = Math.max(fitZoom, Math.min(calculateZoomLimits(fitZoom).maxZoom, state.zoom));
     this.#cameraX = clampCameraX(state.cameraX, layout.containerWidth, this.#zoom);
-    this.#applyZoomLayout({
-      blockSize: renderedContainerHeight(Math.max(0, this.#activePageHeight()), this.#zoom),
-      zoom: this.#zoom,
-    });
+    const requestedSize = renderedContainerHeight(
+      Math.max(0, this.#activePageHeight()),
+      this.#zoom,
+    );
+    const blockSize =
+      this.#applyZoomLayout({ blockSize: requestedSize, zoom: this.#zoom }) ?? requestedSize;
     this.#setInput(
       reduceInput(this.#getInput(), { type: "configure", fitZoom, zoom: this.#zoom }).state,
     );
-    this.#applyCamera({ x: this.#cameraX, zoom: this.#zoom });
+    this.#applyCamera(
+      { x: this.#cameraX, zoom: this.#zoom },
+      projectNavigationCursorLayout(layout, {
+        blockSize,
+        scrollTop: browserScrollMetrics.getScrollTop(this.#scrollOwner),
+      }),
+    );
     return true;
   }
   public readResizeAnchor(): ActiveEditorResizeAnchor | undefined {
@@ -340,10 +345,15 @@ export class ActiveEditorNavigation {
       this.#pendingLayout = layout;
       this.#latestAnchor = wheelAnchor(layout, event);
       if (isContinuousZoomWheel(event)) {
-        this.#frameState = accumulateZoomInput(this.#frameState, {
-          anchor: this.#latestAnchor,
-          factor: continuousWheelZoomFactor(event.deltaY, normalization),
-        });
+        this.#frameState = accumulateContinuousZoomInput(
+          this.#frameState,
+          {
+            anchor: this.#latestAnchor,
+            factor: continuousWheelZoomFactor(event.deltaY, normalization),
+          },
+          this.#zoom,
+          this.#getInput().fitZoom,
+        );
       } else {
         this.#wheelState = accumulateWheelSteps(this.#wheelState, -Math.sign(event.deltaY));
       }
@@ -415,9 +425,11 @@ export class ActiveEditorNavigation {
       return;
     }
     const adjustsScroll = frame.panY !== 0 || resolved.zoom !== this.#zoom;
-    if (resolved.zoom !== this.#zoom) {
-      this.#applyZoomLayout({ blockSize: resolved.blockSize, zoom: resolved.zoom });
-    }
+    const blockSize =
+      resolved.zoom === this.#zoom
+        ? layout.containerBounds.height
+        : (this.#applyZoomLayout({ blockSize: resolved.blockSize, zoom: resolved.zoom }) ??
+          resolved.blockSize);
     const previousCameraX = this.#cameraX;
     this.#zoom = resolved.zoom;
     this.#cameraX = resolved.cameraX;
@@ -429,7 +441,13 @@ export class ActiveEditorNavigation {
       }).state,
     );
     if (adjustsScroll) browserScrollMetrics.setScrollTop(this.#scrollOwner, resolved.scrollTop);
-    this.#applyCamera({ x: this.#cameraX, zoom: this.#zoom });
+    const scrollTop = adjustsScroll
+      ? browserScrollMetrics.getScrollTop(this.#scrollOwner)
+      : layout.scrollTop;
+    this.#applyCamera(
+      { x: this.#cameraX, zoom: this.#zoom },
+      projectNavigationCursorLayout(layout, { blockSize, scrollTop }),
+    );
     if (momentumDelta !== 0 && this.#cameraX === previousCameraX) {
       this.cancelPanMomentum();
     }

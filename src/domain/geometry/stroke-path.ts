@@ -1,9 +1,11 @@
+import type { PreparedPressureGeometryPort } from "./prepared-pressure-geometry";
+import { simplifyStrokeCenters } from "./stroke-simplification";
 import { MAX_STROKE_POINTS } from "../schema/constants";
 import type { SvgPathPart } from "./svg-path-part";
 import { buildPressureOutline } from "./pressure-outline";
 import type { PointV1, StrokeElementV1 } from "../schema/types";
-import { midpoint, rotatePointClockwise } from "./primitives";
-import { lineTo, moveTo, quadraticTo } from "./svg-format";
+import { rotatePointClockwise } from "./primitives";
+import { lineTo, moveTo } from "./svg-format";
 
 export interface RawStrokeSample extends PointV1 {
   pressure: number;
@@ -41,36 +43,22 @@ export function transformedStrokeCenters(stroke: StrokeElementV1): StrokeCenter[
       }));
 }
 
-export function buildStrokePathParts(stroke: StrokeElementV1): SvgPathPart[] {
-  if (!stroke.style.pressureEnabled && stroke.rotation === 0) {
-    return [{ d: buildUnrotatedCenterline(stroke.points), paint: "stroke" }];
-  }
+export function buildStrokePathParts(
+  stroke: StrokeElementV1,
+  pressureGeometry?: PreparedPressureGeometryPort,
+): SvgPathPart[] {
   const centers = transformedStrokeCenters(stroke);
   return stroke.style.pressureEnabled
-    ? buildPressureOutline(centers, stroke.style.width)
-    : [{ d: buildCenterline(centers), paint: "stroke" }];
+    ? buildPressureOutline(centers, stroke.style.width, pressureGeometry)
+    : [
+        {
+          d: buildCenterline(simplifyStrokeCenters(centers, stroke.style.width, false)),
+          paint: "stroke",
+        },
+      ];
 }
 
-function buildUnrotatedCenterline(samples: readonly number[]): string {
-  assertStrokeSamples(samples);
-  const pointCount = samples.length / 3;
-  const first = strokeCenterAt(samples, 0, pointCount);
-  if (pointCount === 1) return `${moveTo(first)}${lineTo(first)}`;
-  const second = strokeCenterAt(samples, 1, pointCount);
-  if (pointCount === 2) return `${moveTo(first)}${lineTo(second)}`;
-
-  const commands = [moveTo(first), lineTo(midpoint(first, second))];
-  let current = second;
-  for (let index = 1; index < pointCount - 1; index += 1) {
-    const next = strokeCenterAt(samples, index + 1, pointCount);
-    commands.push(quadraticTo(current, midpoint(current, next)));
-    current = next;
-  }
-  commands.push(lineTo(current));
-  return commands.join("");
-}
-
-function strokeCenterAt(
+export function strokeCenterAt(
   samples: readonly number[],
   pointIndex: number,
   pointCount: number,
@@ -90,14 +78,7 @@ export function buildCenterline(centers: readonly PointV1[]): string {
   const first = centers[0];
   if (first === undefined) throw new RangeError("A centerline requires at least one point.");
   if (centers.length === 1) return `${moveTo(first)}${lineTo(first)}`;
-  if (centers.length === 2) return `${moveTo(first)}${lineTo(centers[1]!)}`;
-
-  const commands = [moveTo(first), lineTo(midpoint(first, centers[1]!))];
-  for (let index = 1; index < centers.length - 1; index += 1) {
-    commands.push(quadraticTo(centers[index]!, midpoint(centers[index]!, centers[index + 1]!)));
-  }
-  commands.push(lineTo(centers[centers.length - 1]!));
-  return commands.join("");
+  return moveTo(first) + centers.slice(1).map(lineTo).join("");
 }
 
 function assertStrokeSamples(samples: readonly number[]): void {

@@ -1,3 +1,4 @@
+import { navigationCursorFixture } from "../../fixtures/obsidian/navigation-cursor";
 import { describe, expect, it, vi } from "vitest";
 import { domRect } from "../../fixtures/obsidian/active-editor";
 import {
@@ -156,4 +157,29 @@ it("bounds layout work to delivered scroll invalidations with interleaved raw in
   expect(h.move).toHaveBeenCalledTimes(512);
   expect(h.request).not.toHaveBeenCalled();
   h.controller.dispose();
+});
+
+it("coalesces zoom bursts into one measured layout and no post-write cursor geometry read", () => {
+  const { h, frames, events, navigation } = navigationCursorFixture("draw", "mouse");
+  for (let index = 0; index < 128; index += 1)
+    navigation.updateWheel({
+      clientX: 120,
+      clientY: 80,
+      ctrlKey: true,
+      deltaMode: 0,
+      deltaY: -0.01,
+    });
+  expect(frames.pendingCount).toBe(1);
+  frames.runNext(10);
+  expect(h.measure).toHaveBeenCalledTimes(1);
+  expect(h.window.getComputedStyle).toHaveBeenCalledTimes(1);
+  expect(events.filter((event) => event === "owner-box")).toHaveLength(1);
+  expect(
+    events
+      .slice(events.indexOf("height-write"))
+      .filter((event) => event === "box" || event === "style" || event === "owner-box"),
+  ).toEqual([]);
+  navigation.dispose();
+  h.controller.dispose();
+  expect(frames.pendingCount).toBe(0);
 });

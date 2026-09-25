@@ -16,7 +16,7 @@ import {
   type SnapTargetReader,
   type SpatialCandidateQuery,
 } from "../../../editor/snapping/snap-candidate";
-import { LiveStrokeBuilder } from "../../../editor/tools/live-stroke";
+import { LiveStrokeBuilder, type LiveStrokeCommit } from "../../../editor/tools/live-stroke";
 import { createDragElement, createFreehandElement } from "../../../editor/tools/public";
 import { pathPresentation } from "../../../rendering/scene/element-presentation";
 import type { LivePathState } from "../../../rendering/scene/index";
@@ -27,7 +27,7 @@ import { selectionSnapGuidePath, snapMarkerPath } from "./snap-marker-path";
 
 export interface CreationPreviewRenderer {
   clearLiveStroke(): void;
-  commitLiveStroke(id: string): void;
+  commitLiveStroke(id: string, prepared?: LiveStrokeCommit): void;
   commitLivePath(id: string): void;
   setLivePath(path: LivePathState | null): void;
   setSnapMarkerPath(d: string | null): void;
@@ -70,6 +70,7 @@ export class CreationPreview implements GesturePreview {
   readonly #snapScratch = new SnapCandidateScratch();
   readonly #snap: CreationSnapPorts | undefined;
   readonly #stroke: LiveStrokeBuilder | null;
+  #strokeCommit: LiveStrokeCommit | undefined;
   readonly #strokePressureSource: "pen" | "simulated";
   readonly #strokeStyle: StrokeStyleV1 | null;
   readonly #start: GesturePreviewStart;
@@ -129,7 +130,8 @@ export class CreationPreview implements GesturePreview {
     if (this.#stroke === null && !retainPath) this.#renderer.setLivePath(null);
     try {
       const committed = this.#history.create([element]);
-      if (this.#stroke !== null && committed) this.#renderer.commitLiveStroke(element.id);
+      if (this.#stroke !== null && committed)
+        this.#renderer.commitLiveStroke(element.id, this.#strokeCommit);
       else if (this.#stroke !== null) this.#renderer.clearLiveStroke();
       if (retainPath) {
         if (committed) this.#renderer.commitLivePath(element.id);
@@ -197,6 +199,7 @@ export class CreationPreview implements GesturePreview {
     if (isFreehand(this.#start.tool)) {
       if (this.#stroke === null) throw new Error("Freehand creation requires a live stroke.");
       const commit = this.#stroke.finish();
+      this.#strokeCommit = commit;
       return createFreehandElement({
         defaults: this.#defaults,
         identity: this.#identity,

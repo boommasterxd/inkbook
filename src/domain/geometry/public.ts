@@ -34,7 +34,6 @@ export {
   type Bounds,
 } from "./primitives";
 export {
-  smoothStrokeCenters,
   type RawStrokeSample,
   type StrokeInputOptions,
   type StrokePathGeometry,

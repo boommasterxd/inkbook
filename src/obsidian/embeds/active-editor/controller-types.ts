@@ -20,7 +20,7 @@ import type { EditorChromeOpenings } from "../editor-chrome-openings";
 
 export interface ActiveEditorControllerOptions extends EditorChromeOpenings {
   readonly container: HTMLElement;
-  readonly applyZoomLayout: (update: ActiveEditorZoomLayoutUpdate) => void;
+  readonly applyZoomLayout: (update: ActiveEditorZoomLayoutUpdate) => number | void;
   readonly backgroundSpacing: () => BackgroundSpacingDefaults;
   readonly defaults: ToolDefaultsV1;
   readonly deviceSettings: InkbookDeviceSettingsV2;

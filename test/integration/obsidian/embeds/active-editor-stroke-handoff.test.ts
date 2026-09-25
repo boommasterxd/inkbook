@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { polygonWinding, sampleSvgPathContours } from "../../../fixtures/domain/svg-path-fill";
+import { pointSegmentDistance } from "../../../../src/domain/geometry/primitives";
+import { pressureContourOutwardError } from "../../../../src/domain/geometry/pressure-contour-approximation";
 import { buildStrokePathParts } from "../../../../src/domain/geometry/stroke-path";
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import { createBuiltInSettings } from "../../../../src/domain/settings/defaults";
@@ -151,7 +154,7 @@ describe("freehand commit handoff", () => {
 });
 
 describe("canonical pressure handoff", () => {
-  it("keeps dense pressure ink identical through live handoff and selection rematerialization", () => {
+  it("preserves dense live ink within the contour tolerance and reuses canonical selection geometry", () => {
     const { create, renderer, scheduler, store } = setup();
     const preview = create(1);
     for (let index = 0; index < 90; index += 1) {
@@ -169,7 +172,14 @@ describe("canonical pressure handoff", () => {
     if (element.kind !== "stroke") throw new Error("Expected committed pressure stroke.");
     const wireElement = { ...element, points: [...element.points] };
     const canonical = buildStrokePathParts(wireElement)[0]!.d;
-    expect(live).toEqual(canonical);
+    const liveContours = sampleSvgPathContours(live);
+    const canonicalContours = sampleSvgPathContours(canonical);
+    assertContoursCovered(liveContours, canonicalContours, 0.003);
+    assertContoursCovered(
+      canonicalContours,
+      liveContours,
+      pressureContourOutwardError(element.style.width) + 0.003,
+    );
     scheduler.runAll();
     expect(pressurePath(renderer)).toEqual(canonical);
     renderer.setElementPreviews([wireElement], 1);
@@ -187,4 +197,50 @@ function pressurePath(renderer: SvgSceneRenderer): string {
     .filter((node) => node.attributes.get("class") === "inkbook-theme-fill")
     .map((node) => node.attributes.get("d") ?? "")
     .join("");
+}
+
+function assertContoursCovered(
+  source: ReturnType<typeof sampleSvgPathContours>,
+  target: ReturnType<typeof sampleSvgPathContours>,
+  tolerance: number,
+): void {
+  const boundedTargets = target.map((contour) => ({
+    contour,
+    minX: Math.min(...contour.map(({ x }) => x)) - tolerance,
+    maxX: Math.max(...contour.map(({ x }) => x)) + tolerance,
+    minY: Math.min(...contour.map(({ y }) => y)) - tolerance,
+    maxY: Math.max(...contour.map(({ y }) => y)) + tolerance,
+  }));
+  // Domain tests cover complete outlines. This host test keeps distributed probes
+  // and every contour's extrema while retaining the complete 90-sample input.
+  for (const point of source.flatMap(contourProbes)) {
+    const candidates = boundedTargets.filter(
+      ({ minX, maxX, minY, maxY }) =>
+        point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY,
+    );
+    if (
+      candidates.reduce((winding, { contour }) => winding + polygonWinding(contour, point), 0) !== 0
+    )
+      continue;
+    expect(
+      candidates.some(({ contour }) =>
+        contour.some(
+          (start, index) =>
+            pointSegmentDistance(point, start, contour[(index + 1) % contour.length]!) <= tolerance,
+        ),
+      ),
+    ).toBe(true);
+  }
+}
+
+function contourProbes(contour: ReturnType<typeof sampleSvgPathContours>[number]) {
+  const probes = new Set(
+    contour.filter((_, index) => index % Math.max(1, Math.ceil(contour.length / 16)) === 0),
+  );
+  for (const axis of ["x", "y"] as const) {
+    probes.add(contour.reduce((a, b) => (a[axis] < b[axis] ? a : b)));
+    probes.add(contour.reduce((a, b) => (a[axis] > b[axis] ? a : b)));
+  }
+  probes.add(contour[contour.length - 1]!);
+  return [...probes];
 }

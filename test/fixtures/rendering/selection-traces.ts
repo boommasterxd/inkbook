@@ -37,19 +37,19 @@ export function selectionTraceNodes(root: FakeNode): FakeNode[] {
   return root.nodes.flatMap(selectionTraceNodes);
 }
 
-export function selectionHaloPaths(root: FakeNode): FakeNode[] {
-  if (root.attributes.get("class") === "inkbook-selection-halo-path") return [root];
-  return root.nodes.flatMap(selectionHaloPaths);
-}
-
 export function selectionTraceGeometry(root: FakeNode): string {
-  return selectionHaloPaths(root)
+  return selectionCenterPaths(root)
     .map((node) => node.attributes.get("d") ?? "")
     .join("");
 }
 
 export function selectionTraceTransform(root: FakeNode): string {
-  return selectionHaloPaths(root)[0]?.parent?.attributes.get("transform") ?? "";
+  return selectionCenterPaths(root)[0]?.attributes.get("transform") ?? "";
+}
+
+export function selectionCenterPaths(root: FakeNode): FakeNode[] {
+  if (root.attributes.get("class") === "inkbook-selection-center-trace") return [root];
+  return root.nodes.flatMap(selectionCenterPaths);
 }
 
 export function selectionHaloNodes(root: FakeNode): FakeNode[] {

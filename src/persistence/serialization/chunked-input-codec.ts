@@ -57,6 +57,7 @@ export class ChunkedInkbookInputParser {
   readonly #hasher: DocumentHashPort | null;
   readonly #incrementalHash: ChunkedSha256;
   readonly #inputSliceBytes: number;
+  readonly #onPreparedPath: ChunkedInkbookInputOptions["onPreparedPath"];
   readonly #onValidatedSnapshot:
     | ((
         snapshot: InkSnapshotV1,
@@ -88,6 +89,7 @@ export class ChunkedInkbookInputParser {
     );
     positiveInputInteger(options.pathBatchSize ?? 128, "pathBatchSize");
     this.#onValidatedSnapshot = options.onValidatedSnapshot;
+    this.#onPreparedPath = options.onPreparedPath;
     this.#signal = options.signal;
   }
 
@@ -154,8 +156,7 @@ export class ChunkedInkbookInputParser {
           derivations: this.#migrated.derivations,
           hash: this.#completeHash(),
           lockedHeight: this.#prelude.lockedHeight,
-          requiresCanonicalRewrite:
-            this.#prelude.requiresCanonicalRewrite || this.#staticMatcher.requiresCanonicalRewrite,
+          requiresCanonicalRewrite: this.#prelude.requiresCanonicalRewrite,
           snapshot: this.#runtimeSnapshot,
           sourceVersion: this.#migrated.sourceVersion,
         },
@@ -374,7 +375,11 @@ export class ChunkedInkbookInputParser {
       return failure("static-path-mismatch", "Static SVG background exceeds the canonical limit.");
     }
     this.#migrated = migrated;
-    this.#staticMatcher = new StreamingStaticIntegrityMatcher(snapshot, prelude.lockedHeight);
+    this.#staticMatcher = new StreamingStaticIntegrityMatcher(
+      snapshot,
+      prelude.lockedHeight,
+      this.#onPreparedPath,
+    );
     this.#runtimeSnapshot = snapshot;
     this.#streamPhase = "static";
     await this.#onValidatedSnapshot?.(snapshot, migrated.derivations);

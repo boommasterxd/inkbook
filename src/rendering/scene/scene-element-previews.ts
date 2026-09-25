@@ -1,3 +1,4 @@
+import type { PreviewTransform } from "./scene-visibility-reconciler";
 import type { InkElementV1 } from "../../domain/schema/public";
 import type { SceneContentRenderer } from "./content-renderer";
 import { SceneElementPreviewController } from "./element-preview-controller";
@@ -20,7 +21,10 @@ export class SceneElementPreviews {
       }
     | undefined;
 
-  public constructor(content: SceneContentRenderer, store: SceneStorePort) {
+  public constructor(
+    private readonly content: SceneContentRenderer,
+    store: SceneStorePort,
+  ) {
     this.#store = store;
     this.immediate = new SceneElementPreviewController(content);
     this.progressive = new ProgressiveElementPreview(content);
@@ -80,6 +84,10 @@ export class SceneElementPreviews {
   public get values(): ReadonlyMap<string, InkElementV1> {
     if (this.progressive.values.size === 0) return this.immediate.values;
     return new Map([...this.immediate.values, ...this.progressive.values]);
+  }
+
+  public retainCommittedGeometry(previews: ReadonlyMap<string, PreviewTransform>): void {
+    this.content.materializePreviewGeometry(previews, this.values);
   }
 
   public clear(): void {

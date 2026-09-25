@@ -10,7 +10,6 @@ export {
 } from "./zoom";
 export type { ScrollBounds, ZoomAnchor } from "./zoom";
 export {
-  TRACKPAD_ZOOM_DELTA_LIMIT,
   accumulateWheelSteps,
   accumulateZoomInput,
   continuousWheelZoomFactor,

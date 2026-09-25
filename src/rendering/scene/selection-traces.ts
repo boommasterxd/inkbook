@@ -1,40 +1,33 @@
 import type { SvgPathPart } from "../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../domain/schema/public";
-import { SelectionHaloLayer } from "./selection-halo-layer";
-import { SelectionHalo, type SelectionHaloContext } from "./selection-halo";
+import { SelectionCenterTrace } from "./selection-center-trace";
 import type { MountedSceneElement } from "./mounted-element";
 import type { MutableSceneInstrumentation } from "./types";
 
-interface SelectionTrace {
-  readonly halo: SelectionHalo;
-  element: InkElementV1;
-  parts: readonly SvgPathPart[];
-  haloEnabled: boolean;
-}
-
-/** Retains only mounted selection paths; content updates own their invalidation. */
+/** Retains only mounted center indicators, with camera-independent geometry and paint. */
 export class SceneSelectionTraces {
   readonly #group: SVGGElement;
+  readonly #frame: SVGPathElement;
   readonly #instrumentation: MutableSceneInstrumentation;
-  readonly #traces = new Map<string, SelectionTrace>();
+  readonly #traces = new Map<string, SelectionCenterTrace>();
   #bytes = 0;
-  #haloCount = 0;
-  #layer: SelectionHaloLayer | undefined;
-  #contextDirty = false;
-  #appliedZoom = 1;
-  #context: SelectionHaloContext = { camera: { x: 0, zoom: 1 }, viewport: undefined };
+  #selectionDirty = false;
   #highlightsEnabled = true;
   #selected: ReadonlySet<string> = new Set();
+  #suppressFrameOutline = false;
 
-  public constructor(group: SVGGElement, instrumentation: MutableSceneInstrumentation) {
+  public constructor(
+    group: SVGGElement,
+    instrumentation: MutableSceneInstrumentation,
+    frame: SVGPathElement,
+  ) {
     this.#group = group;
     this.#instrumentation = instrumentation;
+    this.#frame = frame;
   }
-
   public needsUpdate(id: string, element?: InkElementV1): boolean {
     return this.#traces.has(id) || (element !== undefined && this.includes(element));
   }
-
   public includes(element: InkElementV1): boolean {
     return (
       this.#selected.has(element.id) &&
@@ -45,35 +38,23 @@ export class SceneSelectionTraces {
   public setHighlightsEnabled(enabled: boolean): boolean {
     if (enabled === this.#highlightsEnabled) return false;
     this.#highlightsEnabled = enabled;
+    this.syncFrameOutline();
     return true;
   }
-
   public setSelection(selected: ReadonlySet<string>): boolean {
     if (selected === this.#selected) return false;
     this.#selected = selected;
+    this.#selectionDirty = true;
+    this.syncFrameOutline();
     return true;
   }
-
   public memoryUsage(): number {
-    return this.#bytes + (this.#layer?.memoryUsage() ?? 0);
+    return this.#bytes;
   }
-
-  public setContext(context: SelectionHaloContext): void {
-    this.#context = context;
-    this.#contextDirty = true;
-  }
-
   public flushContext(): void {
-    if (!this.#contextDirty) return;
-    this.#contextDirty = false;
-    this.#layer?.setContext(this.#context);
-    if (this.#context.camera.zoom === this.#appliedZoom) return;
-    this.#appliedZoom = this.#context.camera.zoom;
-    for (const trace of this.#traces.values()) {
-      const before = trace.halo.memoryUsage();
-      trace.halo.setContext(this.#context);
-      this.#bytes += trace.halo.memoryUsage() - before;
-    }
+    if (!this.#selectionDirty) return;
+    this.#selectionDirty = false;
+    for (const id of this.#traces.keys()) if (!this.#selected.has(id)) this.remove(id);
   }
 
   public update(
@@ -87,73 +68,52 @@ export class SceneSelectionTraces {
     }
     let trace = this.#traces.get(entry.id);
     if (trace === undefined) {
-      trace = {
-        halo: new SelectionHalo(this.#group, entry, this.#context, this.#instrumentation),
-        element,
-        parts,
-        haloEnabled: false,
-      };
+      trace = new SelectionCenterTrace(this.#group, entry, this.#instrumentation);
       this.#traces.set(entry.id, trace);
-      this.#bytes += trace.halo.memoryUsage();
-    } else if (
-      trace.parts === parts &&
-      trace.element === element &&
-      trace.haloEnabled === this.#highlightsEnabled
-    ) {
-      this.transform(entry.id, entry);
-      return;
+      this.#bytes += trace.memoryUsage();
     }
-    const before = trace.halo.memoryUsage();
-    trace.halo.update(entry, element, parts, this.#highlightsEnabled ? this.haloLayer() : null);
-    this.#haloCount += Number(this.#highlightsEnabled) - Number(trace.haloEnabled);
-    trace.haloEnabled = this.#highlightsEnabled;
-    this.releaseUnusedLayer();
-    this.#bytes += trace.halo.memoryUsage() - before;
-    trace.element = element;
-    trace.parts = parts;
+    const before = trace.memoryUsage();
+    trace.update(entry, element, parts);
+    this.#bytes += trace.memoryUsage() - before;
+    this.syncFrameOutline();
   }
 
   public transform(id: string, entry: MountedSceneElement): void {
-    const trace = this.#traces.get(id);
-    if (trace === undefined) return;
-    const before = trace.halo.memoryUsage();
-    trace.halo.transform(entry.appliedPreviewTransform, entry.previewStrokeWidthScale);
-    this.#bytes += trace.halo.memoryUsage() - before;
+    const center = this.#traces.get(id);
+    if (center === undefined) return;
+    const before = center.memoryUsage();
+    center.transform(entry.appliedPreviewTransform);
+    this.#bytes += center.memoryUsage() - before;
   }
-
   public prune(mounted: ReadonlyMap<string, MountedSceneElement>): void {
-    for (const id of this.#traces.keys()) {
+    for (const id of this.#traces.keys())
       if (!mounted.has(id) || !this.#selected.has(id)) this.remove(id);
-    }
   }
-
   public release(): void {
-    for (const id of this.#traces.keys()) this.remove(id);
+    for (const trace of this.#traces.values()) trace.release();
+    this.#traces.clear();
     this.#selected = new Set();
+    this.#selectionDirty = false;
+    this.#bytes = 0;
+    this.syncFrameOutline();
   }
-
-  private haloLayer(): SVGGElement {
-    if (this.#layer === undefined) {
-      const first = this.#traces.values().next().value?.halo.node ?? null;
-      this.#layer = new SelectionHaloLayer(this.#group, this.#instrumentation, first);
-      this.#layer.setContext(this.#context);
-    }
-    return this.#layer.node;
-  }
-
-  private releaseUnusedLayer(): void {
-    if (this.#haloCount !== 0) return;
-    this.#layer?.release();
-    this.#layer = undefined;
-  }
-
   private remove(id: string): void {
     const trace = this.#traces.get(id);
     if (trace === undefined) return;
-    this.#bytes -= trace.halo.memoryUsage();
-    this.#haloCount -= Number(trace.haloEnabled);
-    trace.halo.release();
-    this.releaseUnusedLayer();
+    this.#bytes -= trace.memoryUsage();
+    trace.release();
     this.#traces.delete(id);
+    this.syncFrameOutline();
+  }
+  private syncFrameOutline(): void {
+    const id = this.#selected.size === 1 ? this.#selected.values().next().value : undefined;
+    const suppress =
+      this.#highlightsEnabled &&
+      id !== undefined &&
+      this.#traces.get(id)?.elementKind === "rectangle";
+    if (suppress === this.#suppressFrameOutline) return;
+    this.#suppressFrameOutline = suppress;
+    this.#frame.setAttribute("data-center-outline", String(suppress));
+    this.#instrumentation.attributeWrites += 1;
   }
 }

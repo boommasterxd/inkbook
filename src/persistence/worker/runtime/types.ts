@@ -1,3 +1,4 @@
+import type { PreparedUnlockPath } from "../../serialization/prepared-unlock-paths";
 import type {
   ElementValidationDerivation,
   InkElementV1,
@@ -94,6 +95,7 @@ export type DocumentRuntimeRequest =
   | VerifyRuntimeRequest;
 
 interface UnlockRuntimeSuccess {
+  readonly preparedPaths?: readonly PreparedUnlockPath[];
   readonly identity: PurposeOperationIdentity;
   readonly integrityManifest: DocumentIntegrityManifest;
   readonly lockedHeight: number;

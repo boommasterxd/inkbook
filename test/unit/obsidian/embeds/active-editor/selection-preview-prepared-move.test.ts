@@ -49,7 +49,7 @@ describe("prepared selection move completion", () => {
 
     const restoredPath = setSelectionOverlayPath.mock.lastCall?.[0];
     expect(restoredPath).not.toBe(movedPath);
-    expect(restoredPath).toContain("M 98 98 L 302 98");
+    expect(restoredPath).toContain("M 100 100 L 300 100");
     expect(finish).toHaveBeenCalledWith(false);
     sceneStore.release();
   });

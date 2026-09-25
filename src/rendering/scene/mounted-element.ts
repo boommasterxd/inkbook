@@ -381,7 +381,7 @@ function createPressureGroup(
   return group;
 }
 
-function createFragment(ownerDocument: Document): DocumentFragment {
+export function createFragment(ownerDocument: Document): DocumentFragment {
   const create = ownerDocument.createDocumentFragment.bind(ownerDocument);
   return create();
 }

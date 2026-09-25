@@ -5,6 +5,10 @@ export type MutableStoreInstrumentation = {
 };
 
 export const EMPTY_STORE_INSTRUMENTATION: ElementStoreInstrumentation = Object.freeze({
+  pressureWindowCacheBytes: 0,
+  pressureWindowCacheEntries: 0,
+  pressureWindowCacheHits: 0,
+  pressureWindowCacheEvictions: 0,
   anchorBuilds: 0,
   anchorCacheBytes: 0,
   anchorCacheEntries: 0,

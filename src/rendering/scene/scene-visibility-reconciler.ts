@@ -4,6 +4,7 @@ import { MountSlice, mountCost, type MountYieldReason } from "./mount-slice";
 import {
   appendElementToFragment,
   createMountedElement,
+  createFragment,
   firstPath,
   removeMountedElementNode,
   updatePreviewTransform,
@@ -300,7 +301,12 @@ export class SceneVisibilityReconciler {
     previews: ReadonlyMap<string, PreviewTransform>,
   ): MountedSceneElement {
     const cached = this.options.pathCache.take(record.id, record.geometryVersion);
-    const parts = cached ?? this.options.pathCache.build(record.element);
+    const parts =
+      cached ??
+      this.options.pathCache.build(
+        record.element,
+        this.options.store.pressureGeometry?.(record.id, record.geometryVersion),
+      );
     const entry = createMountedElement(
       this.options.dom.ownerDocument,
       record,
@@ -491,9 +497,4 @@ function bandVisibility(
   visibility: VisibilityResult,
 ): BandVisibility {
   return cursor.band === "highlight" ? visibility.highlight : visibility.content;
-}
-
-function createFragment(ownerDocument: Document): DocumentFragment {
-  const create = ownerDocument.createDocumentFragment.bind(ownerDocument);
-  return create();
 }

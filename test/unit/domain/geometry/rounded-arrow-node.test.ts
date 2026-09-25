@@ -32,11 +32,9 @@ describe("rounded filled arrow nodes", () => {
           endNode: node,
         };
         const current = buildElementPathParts(target);
-        const legacy = buildElementPathParts(target, "legacy");
         expect(current).toHaveLength(2);
-        expect(current[0]).toEqual(legacy[0]);
         expect(current[0]?.d).toContain("Q101 1");
-        expect(current[1]?.d).not.toEqual(legacy[1]?.d);
+        expect(current[1]?.d).toContain("A");
       }
     },
   );

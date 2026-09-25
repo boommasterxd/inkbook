@@ -61,10 +61,10 @@ describe("selection handle geometry", () => {
     expect(handles.filter(({ kind }) => kind === "scale")).toHaveLength(8);
     expect(handles.find(({ kind }) => kind === "scale")).toMatchObject({
       kind: "scale",
-      point: { x: 252, y: 48 },
+      point: { x: 250, y: 50 },
       position: "top-left",
     });
-    expect(handles.find(({ kind }) => kind === "rotate")?.point).toEqual({ x: 262, y: 150 });
+    expect(handles.find(({ kind }) => kind === "rotate")?.point).toEqual({ x: 260, y: 150 });
   });
 
   it("uses aggregate bounds for multi-selection scale handles", () => {
@@ -73,9 +73,9 @@ describe("selection handle geometry", () => {
     const bounds = selectionBounds([first, second]);
     const handles = layoutSelectionHandles([first, second], { zoom: 1 });
 
-    expect(bounds).toEqual({ minX: 98, minY: 98, maxX: 702, maxY: 402 });
+    expect(bounds).toEqual({ minX: 100, minY: 100, maxX: 700, maxY: 400 });
     expect(handles.filter(({ kind }) => kind === "scale")).toHaveLength(8);
-    expect(handles.find(({ kind }) => kind === "rotate")?.point.y).toBe(70);
+    expect(handles.find(({ kind }) => kind === "rotate")?.point.y).toBe(72);
   });
 });
 

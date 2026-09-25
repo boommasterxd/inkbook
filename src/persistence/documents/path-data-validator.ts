@@ -1,7 +1,7 @@
 import { parseCanonicalSvgDecimal } from "./svg-number";
 
-// A maximum stroke has at most four ribbons per centerline curve. Each ribbon
-// needs at most six commands and 256 bytes at canonical coordinate precision.
+// Retain capacity for historical strokes with four ribbons per centerline curve.
+// Connected contours use less markup, but existing valid files must still open.
 const MAXIMUM_PATH_BYTES = 16 * 1024 * 1024;
 const MAXIMUM_PATH_COMMANDS = 400_000;
 const MAXIMUM_COORDINATE = 1_000_000;
@@ -12,7 +12,12 @@ const COMMAND_ARITY = {
   A: 7,
   a: 7,
   C: 6,
+  H: 1,
+  h: 1,
+  V: 1,
+  v: 1,
   L: 2,
+  l: 2,
   M: 2,
   Q: 4,
   q: 4,
@@ -123,6 +128,7 @@ class PathValidationMachine {
   readonly #path: string;
   readonly #values: number[] = [];
   #activeCommand: PathCommand | undefined;
+  #previousCommand: PathCommand | undefined;
   #bytes = 0;
   #bytesSinceDeadlineCheck = 0;
   #commands = 0;
@@ -205,7 +211,10 @@ class PathValidationMachine {
   }
 
   #advanceCommand(): AdvanceResult {
-    const command = this.#path[this.#cursor] as PathCommand;
+    // The writer omits repeated relative-line commands only before a negative x.
+    // Count every pair as a command, including those without a command byte.
+    const implicit = this.#previousCommand === "l" && this.#path[this.#cursor] === "-";
+    const command = implicit ? "l" : (this.#path[this.#cursor] as PathCommand);
     if (!(command in COMMAND_ARITY) || (this.#commands === 0 && command !== "M")) {
       return "invalid";
     }
@@ -214,16 +223,17 @@ class PathValidationMachine {
     if (this.#commands > MAXIMUM_PATH_COMMANDS) return "invalid";
     this.#commandsInStep += 1;
     this.#commaSeen = false;
-    this.#cursor += 1;
+    const commandBytes = implicit ? 0 : 1;
+    this.#cursor += commandBytes;
     this.#phase = command === "Z" ? "finish-command" : "value-separators";
-    return this.#consume(1) ? "yield" : "continue";
+    return this.#consume(commandBytes) ? "yield" : "continue";
   }
 
   #advanceValue(): AdvanceResult {
     const token = readNumber(
       this.#path,
       this.#cursor,
-      this.#activeCommand === "q" || this.#activeCommand === "a",
+      ["q", "a", "l", "h", "v"].includes(this.#activeCommand!),
     );
     if (token === null) return "invalid";
     this.#values.push(token.value);
@@ -244,6 +254,7 @@ class PathValidationMachine {
     else if (!this.#subpathOpen) return "invalid";
     if (command === "Z") this.#subpathOpen = false;
     if (!this.#updatePosition(command)) return "invalid";
+    this.#previousCommand = command;
     this.#activeCommand = undefined;
     this.#values.length = 0;
     this.#commaSeen = false;
@@ -257,8 +268,9 @@ class PathValidationMachine {
       this.#currentY = this.#subpathY;
       return true;
     }
+    if (["H", "h", "V", "v"].includes(command)) return this.#updateAxis(command);
     const values = this.#values;
-    const relative = command === "q" || command === "a";
+    const relative = command === "q" || command === "a" || command === "l";
     const firstCoordinate = command === "a" ? 5 : 0;
     if (relative) {
       for (let index = firstCoordinate; index < values.length; index += 2) {
@@ -275,6 +287,17 @@ class PathValidationMachine {
       this.#subpathX = this.#currentX;
       this.#subpathY = this.#currentY;
     }
+    return true;
+  }
+
+  #updateAxis(command: PathCommand): boolean {
+    const horizontal = command === "H" || command === "h";
+    const relative = command === "h" || command === "v";
+    const origin = horizontal ? this.#currentX : this.#currentY;
+    const coordinate = coordinateUnits(this.#values[0]!) + (relative ? origin : 0);
+    if (Math.abs(coordinate) > MAXIMUM_COORDINATE * 1000) return false;
+    if (horizontal) this.#currentX = coordinate;
+    else this.#currentY = coordinate;
     return true;
   }
 

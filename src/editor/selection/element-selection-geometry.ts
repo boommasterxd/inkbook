@@ -1,3 +1,4 @@
+import type { PressurePaintQuery } from "./pressure-paint-additions";
 import { effectiveStrokeWidth } from "../../domain/geometry/bounds";
 import { shapeVertices, tableLineSegments } from "../../domain/geometry/creation";
 import {
@@ -7,17 +8,14 @@ import {
   type ArrowNodeGeometry,
 } from "../../domain/geometry/element-path";
 import { quadraticPoint, rotatePointClockwise } from "../../domain/geometry/public";
-import { visitPressureOutline } from "../../domain/geometry/pressure-outline";
-import { visitPressureSelectionPrimitives } from "./pressure-selection-primitives";
-import { smoothStrokeCenters } from "../../domain/geometry/stroke-path";
 import type {
   BoxShapeElementV1,
   InkElementV1,
   LinearElementV1,
   PointV1,
-  StrokeElementV1,
 } from "../../domain/schema/public";
 
+import { strokePrimitiveSteps } from "./stroke-selection-geometry";
 import type { VisibleSelectionPrimitive } from "./selection-area-primitives";
 
 export type SelectionPrimitiveVisitor = (primitive: VisibleSelectionPrimitive) => boolean;
@@ -42,35 +40,30 @@ export function visitVisibleElementPrimitives(
   return visitClosedShape(element, visitor);
 }
 
+export function* visibleElementPrimitiveSteps(
+  element: InkElementV1,
+  query: PressurePaintQuery = {},
+): Generator<VisibleSelectionPrimitive | undefined> {
+  if (element.kind === "stroke") {
+    yield* strokePrimitiveSteps(element, query);
+    return;
+  }
+  const primitives: VisibleSelectionPrimitive[] = [];
+  visitVisibleElementPrimitives(element, (primitive) => {
+    primitives.push(primitive);
+    return true;
+  });
+  yield* primitives;
+}
+
 function visitStroke(
   stroke: Extract<InkElementV1, { kind: "stroke" }>,
   visitor: SelectionPrimitiveVisitor,
 ): boolean {
-  if (stroke.style.opacity <= 0) return true;
-  const smoothed = smoothStrokeCenters(stroke.points);
-  const centers =
-    stroke.rotation === 0
-      ? smoothed
-      : smoothed.map((center) => ({
-          ...rotatedFor(stroke, center),
-          pressure: center.pressure,
-        }));
-  if (!stroke.style.pressureEnabled) {
-    return visitPolyline(centers, effectiveStrokeWidth(stroke) / 2, false, visitor);
+  for (const primitive of strokePrimitiveSteps(stroke)) {
+    if (primitive !== undefined && !visitor(primitive)) return false;
   }
-  return visitPressureStroke(stroke, centers, visitor);
-}
-
-function visitPressureStroke(
-  stroke: StrokeElementV1,
-  centers: readonly (PointV1 & { readonly pressure: number })[],
-  visitor: SelectionPrimitiveVisitor,
-): boolean {
-  return !visitPressureOutline(
-    centers,
-    stroke.style.width,
-    (piece) => !visitPressureSelectionPrimitives(piece, visitor),
-  );
+  return true;
 }
 
 function visitLinear(linear: LinearElementV1, visitor: SelectionPrimitiveVisitor): boolean {

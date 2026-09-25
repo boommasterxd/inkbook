@@ -150,7 +150,7 @@ describe("connected selection compound viewport overflow", () => {
 
     expect(preview.exactElements).toHaveLength(2);
     const scaledTarget = preview.exactElements.find(({ id }) => id === target.id);
-    expect(scaledTarget).toMatchObject({ width: 245, x: target.x + 2 });
+    expect(scaledTarget).toMatchObject({ width: 245, x: target.x });
     if (scaledTarget?.kind !== "rectangle") throw new Error("Expected a rectangle target.");
   });
 

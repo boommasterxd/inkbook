@@ -1,5 +1,5 @@
+import { selectionCenterlineBounds } from "./centerline-bounds";
 import {
-  calculateElementBounds,
   canonicalPoint,
   normalizeRotation,
   unionBounds,
@@ -58,7 +58,7 @@ export class SelectionScalePreviewProjection {
     let bounds: Bounds | null = this.#regular?.boundsAt(input.anchor, input.factors) ?? null;
     for (const source of this.#projected) {
       const element = materialize(source, input.factors);
-      const current = calculateElementBounds(
+      const current = selectionCenterlineBounds(
         selectionFrameElementAtRotation(element, this.#rotation),
       );
       bounds = bounds === null ? current : unionBounds(bounds, current);

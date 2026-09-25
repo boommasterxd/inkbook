@@ -291,7 +291,7 @@ describe("selection move connected geometry", () => {
 
     expect(setPreviewTransform).toHaveBeenCalledWith([element.id], "translate(20 30)", 1);
     expect(setSelectionOverlayPath.mock.lastCall?.[0]).toContain(
-      "M 118 128 L 322 128 L 322 232 L 118 232 Z",
+      "M 120 130 L 320 130 L 320 230 L 120 230 Z",
     );
     expect(setSelectionOverlayPath.mock.lastCall).toEqual(selectedOverlayCall);
     preview.update(pointer(40, 60));

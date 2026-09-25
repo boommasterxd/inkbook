@@ -1,8 +1,4 @@
-import {
-  isPointElement,
-  type ElementPathProfile,
-  type SvgPathPart,
-} from "../../domain/geometry/element-path";
+import { isPointElement, type SvgPathPart } from "../../domain/geometry/element-path";
 import { normalizeStrokePaint } from "../../domain/geometry/pressure-paint";
 import {
   buildElementPathParts,
@@ -25,15 +21,7 @@ export function serializeElementPaths(element: InkElementV1): string[] {
   return serializeParts(element, buildElementPathParts(element));
 }
 
-/** Previous geometry profiles are accepted only by the static integrity reader. */
-export function serializeProfileElementPaths(
-  element: InkElementV1,
-  profile: Exclude<ElementPathProfile, "current">,
-): string[] {
-  return serializeParts(element, buildElementPathParts(element, profile));
-}
-
-function serializeParts(element: InkElementV1, parts: readonly SvgPathPart[]): string[] {
+export function serializeParts(element: InkElementV1, parts: readonly SvgPathPart[]): string[] {
   if (element.kind === "stroke" && element.style.pressureEnabled) {
     const paint = normalizeStrokePaint(element.style);
     const opaque = { ...element, style: { ...element.style, color: paint.color, opacity: 1 } };

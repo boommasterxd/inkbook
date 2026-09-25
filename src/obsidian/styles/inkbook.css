@@ -367,15 +367,6 @@
   visibility: hidden;
 }
 
-.inkbook-root .inkbook-selection-halo {
-  color: var(--interactive-accent);
-  opacity: 0.6;
-}
-
-.inkbook-root .inkbook-selection-halo-source {
-  color: var(--interactive-accent);
-}
-
 .inkbook-root .inkbook-selection-center-trace {
   fill: none;
   stroke: var(--interactive-accent);
@@ -396,8 +387,8 @@
   stroke-linejoin: round;
 }
 
-.inkbook-root .inkbook-scene-overlays .inkbook-selection-overlay {
-  stroke-width: 3;
+.inkbook-root .inkbook-scene-overlays .inkbook-selection-overlay[data-center-outline="true"] {
+  stroke: none;
 }
 
 .inkbook-root .inkbook-scene-overlays .inkbook-selection-overlay[data-selection-fill="none"] {

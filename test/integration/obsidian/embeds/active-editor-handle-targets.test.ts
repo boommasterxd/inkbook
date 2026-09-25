@@ -268,7 +268,7 @@ describe("active editor selection snap guides", () => {
       x: shape.pivot.x + 98,
       y: shape.pivot.y,
     });
-    expect(rotation.overlays[rotation.overlays.length - 1]).toBe("M 104 170 L 324 170");
+    expect(rotation.overlays[rotation.overlays.length - 1]).toBe("M 106 170 L 322 170");
     rotation.interaction.cancel(24);
 
     const linear = line();

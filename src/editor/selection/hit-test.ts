@@ -1,3 +1,6 @@
+import type { PreparedPressureGeometryPort } from "../../domain/geometry/prepared-pressure-geometry";
+import { smoothStrokeCenters } from "../../domain/geometry/stroke-path";
+import { simplifyStrokeCenters } from "../../domain/geometry/stroke-simplification";
 import { pressureStrokeContainsPoint } from "./pressure-hit-test";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import { isStoredStroke } from "../../domain/elements/stroke-replacement-proof";
@@ -31,9 +34,15 @@ export class HitTestScratch {
     this.#tolerance = this.#active ? hitTolerancePixels(pointerType) / zoom : 0;
   }
 
-  public consider(id: string, band: RenderBand, element: InkElementV1, rank: number): void {
+  public consider(
+    id: string,
+    band: RenderBand,
+    element: InkElementV1,
+    rank: number,
+    prepared?: PreparedPressureGeometryPort,
+  ): void {
     if (!this.#active || !this.#canOutrank(band, rank, id)) return;
-    if (!elementContainsPoint(element, this.#pointer, this.#tolerance)) return;
+    if (!elementContainsPoint(element, this.#pointer, this.#tolerance, prepared)) return;
     this.#element = element;
     this.#hitBand = band;
     this.#hitId = id;
@@ -67,6 +76,8 @@ const STROKE_HIT_BLOCK_SEGMENTS = 64;
 const strokeHitIndexes = new WeakMap<object, StrokeHitIndex>();
 
 interface StrokeHitIndex {
+  readonly samples: readonly number[];
+  readonly width: number;
   readonly bounds: Float64Array;
   readonly pointCount: number;
 }
@@ -79,12 +90,13 @@ export function elementContainsPoint(
   element: InkElementV1,
   pagePoint: PointV1,
   tolerance: number,
+  prepared?: PreparedPressureGeometryPort,
 ): boolean {
   if (!Number.isFinite(tolerance) || tolerance < 0) return false;
   const point = rotatePointClockwise(pagePoint, element.pivot, -element.rotation);
   if (element.kind === "stroke") {
     return element.style.pressureEnabled
-      ? pressureStrokeContainsPoint(element, point, tolerance)
+      ? pressureStrokeContainsPoint(element, pagePoint, tolerance, prepared)
       : hitStroke(element, point, tolerance + effectiveStrokeWidth(element) / 2);
   }
   if (
@@ -167,7 +179,7 @@ function hitStroke(
   radius: number,
 ): boolean {
   const samples = stroke.points;
-  if (samples.length < 3) return false;
+  if (samples.length < 3 || stroke.style.opacity <= 0) return false;
   const radiusSquared = radius * radius;
   if (pointDistanceSquared(point.x, point.y, samples[0]!, samples[1]!) <= radiusSquared)
     return true;
@@ -177,7 +189,7 @@ function hitStroke(
     if (!blockMayContainPoint(index.bounds, offset, point, radius)) continue;
     const firstPoint = block * STROKE_HIT_BLOCK_SEGMENTS + 1;
     const lastPoint = Math.min(index.pointCount - 1, (block + 1) * STROKE_HIT_BLOCK_SEGMENTS);
-    if (hitStrokeBlock(samples, point, radiusSquared, firstPoint, lastPoint)) return true;
+    if (hitStrokeBlock(index.samples, point, radiusSquared, firstPoint, lastPoint)) return true;
   }
   return false;
 }
@@ -187,9 +199,9 @@ function getStrokeHitIndex(stroke: Extract<InkElementV1, { kind: "stroke" }>): S
   const cacheable = Object.isFrozen(samples) || isOwnedRuntimeStroke(stroke);
   if (cacheable) {
     const cached = strokeHitIndexes.get(samples);
-    if (cached !== undefined) return cached;
+    if (cached?.width === stroke.style.width) return cached;
   }
-  const created = createStrokeHitIndex(samples);
+  const created = createStrokeHitIndex(samples, stroke.style.width);
   if (cacheable) strokeHitIndexes.set(samples, created);
   return created;
 }
@@ -198,7 +210,10 @@ function isOwnedRuntimeStroke(stroke: Extract<InkElementV1, { kind: "stroke" }>)
   return stroke.points instanceof Float64Array && isStoredStroke(stroke);
 }
 
-function createStrokeHitIndex(samples: readonly number[]): StrokeHitIndex {
+function createStrokeHitIndex(input: readonly number[], width: number): StrokeHitIndex {
+  const samples = simplifyStrokeCenters(smoothStrokeCenters(input), width, false).flatMap(
+    (center) => [center.x, center.y, center.pressure],
+  );
   const pointCount = samples.length / 3;
   const blockCount = Math.ceil(Math.max(0, pointCount - 1) / STROKE_HIT_BLOCK_SEGMENTS);
   const bounds = new Float64Array(blockCount * 4);
@@ -207,7 +222,7 @@ function createStrokeHitIndex(samples: readonly number[]): StrokeHitIndex {
     const lastPoint = Math.min(pointCount - 1, (block + 1) * STROKE_HIT_BLOCK_SEGMENTS);
     writeStrokeBlockBounds(samples, bounds, block * 4, firstPoint, lastPoint);
   }
-  return { bounds, pointCount };
+  return { bounds, pointCount, samples, width };
 }
 
 function writeStrokeBlockBounds(

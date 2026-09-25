@@ -1,11 +1,20 @@
 import {
+  pressureCapsuleSegmentMargin,
+  type PressureCapsuleEndpoints,
+} from "../../domain/geometry/pressure-capsule-selection";
+import { pointInPolygonInclusive, segmentInsidePolygon } from "./selection-polygon";
+import {
+  boundsFromPoints,
+  boundsIntersect,
   segmentDistanceSquared,
   segmentsIntersect,
   type Bounds,
 } from "../../domain/geometry/public";
+import { hasInteriorLassoBoundary, hasOddLassoBoundary } from "./lasso-interior-boundary";
 import type { PointV1 } from "../../domain/schema/public";
 
 export interface AreaPolygon {
+  readonly kind?: "rectangle" | "lasso";
   readonly bounds: Bounds;
   readonly points: readonly PointV1[];
 }
@@ -17,51 +26,69 @@ export type VisibleSelectionPrimitive =
       readonly start: PointV1;
       readonly end: PointV1;
     }
+  | { readonly kind: "pressure-capsule"; readonly capsule: PressureCapsuleEndpoints }
   | { readonly kind: "polygon"; readonly points: readonly PointV1[] };
 
 const EPSILON = 1e-9;
 
-export function primitiveTouchesArea(
-  area: AreaPolygon,
-  primitive: VisibleSelectionPrimitive,
-): boolean {
-  return primitive.kind === "capsule"
-    ? capsuleTouchesPolygon(primitive, area.points)
-    : polygonsTouch(primitive.points, area.points);
-}
-
-export function primitiveEnclosedByArea(
-  area: AreaPolygon,
-  primitive: VisibleSelectionPrimitive,
-): boolean {
-  return primitive.kind === "capsule"
-    ? capsuleEnclosedByPolygon(primitive, area.points)
-    : polygonEnclosedByPolygon(primitive.points, area.points);
-}
-
-function capsuleTouchesPolygon(
+function* capsuleTouchesPolygon(
   capsule: Extract<VisibleSelectionPrimitive, { kind: "capsule" }>,
   polygon: readonly PointV1[],
-): boolean {
+): Generator<void, boolean> {
   if (pointInPolygonInclusive(capsule.start, polygon)) return true;
-  return somePolygonEdge(polygon, (edgeStart, edgeEnd) =>
-    withinCapsuleDistance(capsule, edgeStart, edgeEnd),
-  );
+  for (let index = 0; index < polygon.length; index += 1) {
+    if (withinCapsuleDistance(capsule, polygon[index]!, polygon[(index + 1) % polygon.length]!))
+      return true;
+    if (index % 32 === 31) yield;
+  }
+  return false;
 }
 
-function capsuleEnclosedByPolygon(
+function* capsuleEnclosedByPolygon(
   capsule: Extract<VisibleSelectionPrimitive, { kind: "capsule" }>,
   polygon: readonly PointV1[],
-): boolean {
-  if (!segmentInsidePolygon(capsule.start, capsule.end, polygon)) return false;
+): Generator<void, boolean> {
+  if (capsule.radius > 0 && !pointInPolygonInclusive(capsule.start, polygon, false)) return false;
+  if (!(yield* segmentInsidePolygon(capsule.start, capsule.end, polygon))) return false;
   if (capsule.radius === 0) return true;
   const requiredDistance = squared(capsule.radius);
-  return !somePolygonEdge(
+  return !(yield* hasOddLassoBoundary(
     polygon,
     (edgeStart, edgeEnd) =>
       segmentDistanceSquared(capsule.start, capsule.end, edgeStart, edgeEnd, EPSILON) + EPSILON <
       requiredDistance,
-  );
+  ));
+}
+
+function* pressureCapsuleTouchesPolygon(
+  capsule: PressureCapsuleEndpoints,
+  polygon: readonly PointV1[],
+): Generator<void, boolean> {
+  if (pointInPolygonInclusive(capsule.start.center, polygon)) return true;
+  for (let index = 0; index < polygon.length; index += 1) {
+    if (
+      pressureCapsuleSegmentMargin(
+        capsule,
+        polygon[index]!,
+        polygon[(index + 1) % polygon.length]!,
+      ) <= EPSILON
+    ) {
+      return true;
+    }
+    if (index % 32 === 31) yield;
+  }
+  return false;
+}
+
+function* pressureCapsuleEnclosedByPolygon(
+  capsule: PressureCapsuleEndpoints,
+  polygon: readonly PointV1[],
+): Generator<void, boolean> {
+  if (!pointInPolygonInclusive(capsule.start.center, polygon, false)) return false;
+  return !(yield* hasOddLassoBoundary(
+    polygon,
+    (start, end) => pressureCapsuleSegmentMargin(capsule, start, end) < -EPSILON,
+  ));
 }
 
 function withinCapsuleDistance(
@@ -75,33 +102,41 @@ function withinCapsuleDistance(
   );
 }
 
-function somePolygonEdge(
-  polygon: readonly PointV1[],
-  predicate: (start: PointV1, end: PointV1) => boolean,
-): boolean {
-  for (let index = 0; index < polygon.length; index += 1) {
-    if (predicate(polygon[index]!, polygon[(index + 1) % polygon.length]!)) return true;
+function* polygonsTouch(
+  left: readonly PointV1[],
+  right: readonly PointV1[],
+): Generator<void, boolean> {
+  const firstLeft = left[0];
+  const firstRight = right[0];
+  if (firstLeft === undefined || firstRight === undefined) return false;
+  // Without a boundary crossing, each connected polygon boundary stays in one
+  // even-odd region. One representative vertex from each boundary suffices.
+  if (pointInPolygonInclusive(firstLeft, right) || pointInPolygonInclusive(firstRight, left))
+    return true;
+  yield;
+  return yield* polygonEdgesTouch(left, right);
+}
+
+function* polygonEnclosedByPolygon(
+  inner: readonly PointV1[],
+  outer: readonly PointV1[],
+): Generator<void, boolean> {
+  for (const point of inner) {
+    if (!pointInPolygonInclusive(point, outer)) return false;
+    yield;
   }
-  return false;
-}
-
-function polygonsTouch(left: readonly PointV1[], right: readonly PointV1[]): boolean {
-  if (left.some((point) => pointInPolygonInclusive(point, right))) return true;
-  if (right.some((point) => pointInPolygonInclusive(point, left))) return true;
-  return polygonEdgesTouch(left, right);
-}
-
-function polygonEnclosedByPolygon(inner: readonly PointV1[], outer: readonly PointV1[]): boolean {
-  if (!inner.every((point) => pointInPolygonInclusive(point, outer))) return false;
   for (let index = 0; index < inner.length; index += 1) {
-    if (!segmentInsidePolygon(inner[index]!, inner[(index + 1) % inner.length]!, outer)) {
+    if (!(yield* segmentInsidePolygon(inner[index]!, inner[(index + 1) % inner.length]!, outer))) {
       return false;
     }
   }
-  return true;
+  return !(yield* hasInteriorLassoBoundary(inner, outer, pointInPolygonInclusive));
 }
 
-function polygonEdgesTouch(left: readonly PointV1[], right: readonly PointV1[]): boolean {
+function* polygonEdgesTouch(
+  left: readonly PointV1[],
+  right: readonly PointV1[],
+): Generator<void, boolean> {
   for (let leftIndex = 0; leftIndex < left.length; leftIndex += 1) {
     const leftStart = left[leftIndex]!;
     const leftEnd = left[(leftIndex + 1) % left.length]!;
@@ -118,88 +153,64 @@ function polygonEdgesTouch(left: readonly PointV1[], right: readonly PointV1[]):
         return true;
       }
     }
+    yield;
   }
   return false;
 }
 
-function segmentInsidePolygon(start: PointV1, end: PointV1, polygon: readonly PointV1[]): boolean {
-  if (!pointInPolygonInclusive(start, polygon) || !pointInPolygonInclusive(end, polygon)) {
-    return false;
-  }
-  const times = [0, 1];
-  for (let index = 0; index < polygon.length; index += 1) {
-    const time = segmentIntersectionTime(
-      start,
-      end,
-      polygon[index]!,
-      polygon[(index + 1) % polygon.length]!,
-    );
-    if (time !== null && time > EPSILON && time < 1 - EPSILON) times.push(time);
-  }
-  times.sort((left, right) => left - right);
-  for (let index = 1; index < times.length; index += 1) {
-    const previous = times[index - 1]!;
-    const current = times[index]!;
-    if (current - previous <= EPSILON) continue;
-    if (!pointInPolygonInclusive(pointAlong(start, end, (previous + current) / 2), polygon)) {
-      return false;
-    }
-  }
-  return true;
+function squared(value: number): number {
+  return value * value;
 }
 
-function pointInPolygonInclusive(point: PointV1, polygon: readonly PointV1[]): boolean {
-  let inside = false;
-  for (let index = 0, previous = polygon.length - 1; index < polygon.length; previous = index++) {
-    const start = polygon[previous]!;
-    const end = polygon[index]!;
-    if (pointOnSegment(point, start, end)) return true;
-    if (
-      start.y > point.y !== end.y > point.y &&
-      point.x < ((end.x - start.x) * (point.y - start.y)) / (end.y - start.y) + start.x
-    ) {
-      inside = !inside;
-    }
+function primitiveBounds(primitive: VisibleSelectionPrimitive): Bounds {
+  if (primitive.kind === "polygon") return boundsFromPoints(primitive.points);
+  if (primitive.kind === "pressure-capsule") {
+    const { start, end } = primitive.capsule;
+    return {
+      minX: Math.min(start.center.x - start.radius, end.center.x - end.radius),
+      minY: Math.min(start.center.y - start.radius, end.center.y - end.radius),
+      maxX: Math.max(start.center.x + start.radius, end.center.x + end.radius),
+      maxY: Math.max(start.center.y + start.radius, end.center.y + end.radius),
+    };
   }
-  return inside;
+  return {
+    minX: Math.min(primitive.start.x, primitive.end.x) - primitive.radius,
+    minY: Math.min(primitive.start.y, primitive.end.y) - primitive.radius,
+    maxX: Math.max(primitive.start.x, primitive.end.x) + primitive.radius,
+    maxY: Math.max(primitive.start.y, primitive.end.y) + primitive.radius,
+  };
 }
 
-function segmentIntersectionTime(
-  start: PointV1,
-  end: PointV1,
-  edgeStart: PointV1,
-  edgeEnd: PointV1,
-): number | null {
-  const direction = { x: end.x - start.x, y: end.y - start.y };
-  const edgeDirection = { x: edgeEnd.x - edgeStart.x, y: edgeEnd.y - edgeStart.y };
-  const denominator = direction.x * edgeDirection.y - direction.y * edgeDirection.x;
-  if (Math.abs(denominator) <= EPSILON) return null;
-  const offset = { x: edgeStart.x - start.x, y: edgeStart.y - start.y };
-  const time = (offset.x * edgeDirection.y - offset.y * edgeDirection.x) / denominator;
-  const edgeTime = (offset.x * direction.y - offset.y * direction.x) / denominator;
-  return time >= -EPSILON && time <= 1 + EPSILON && edgeTime >= -EPSILON && edgeTime <= 1 + EPSILON
-    ? Math.max(0, Math.min(1, time))
-    : null;
-}
-
-function pointOnSegment(point: PointV1, start: PointV1, end: PointV1): boolean {
-  if (Math.abs(cross(start, end, point)) > EPSILON) return false;
+function boundsContain(outer: Bounds, inner: Bounds): boolean {
   return (
-    point.x >= Math.min(start.x, end.x) - EPSILON &&
-    point.x <= Math.max(start.x, end.x) + EPSILON &&
-    point.y >= Math.min(start.y, end.y) - EPSILON &&
-    point.y <= Math.max(start.y, end.y) + EPSILON
+    inner.minX >= outer.minX - EPSILON &&
+    inner.minY >= outer.minY - EPSILON &&
+    inner.maxX <= outer.maxX + EPSILON &&
+    inner.maxY <= outer.maxY + EPSILON
   );
 }
 
-function cross(start: PointV1, end: PointV1, point: PointV1): number {
-  return (end.x - start.x) * (point.y - start.y) - (end.y - start.y) * (point.x - start.x);
+export function* primitiveTouchesAreaSteps(
+  area: AreaPolygon,
+  primitive: VisibleSelectionPrimitive,
+): Generator<void, boolean> {
+  if (!boundsIntersect(area.bounds, primitiveBounds(primitive))) return false;
+  if (primitive.kind === "pressure-capsule")
+    return yield* pressureCapsuleTouchesPolygon(primitive.capsule, area.points);
+  return primitive.kind === "capsule"
+    ? yield* capsuleTouchesPolygon(primitive, area.points)
+    : yield* polygonsTouch(primitive.points, area.points);
 }
 
-function pointAlong(start: PointV1, end: PointV1, time: number): PointV1 {
-  return { x: start.x + (end.x - start.x) * time, y: start.y + (end.y - start.y) * time };
-}
-
-function squared(value: number): number {
-  return value * value;
+export function* primitiveEnclosedByAreaSteps(
+  area: AreaPolygon,
+  primitive: VisibleSelectionPrimitive,
+): Generator<void, boolean> {
+  if (!boundsContain(area.bounds, primitiveBounds(primitive))) return false;
+  if (area.kind === "rectangle") return true;
+  if (primitive.kind === "pressure-capsule")
+    return yield* pressureCapsuleEnclosedByPolygon(primitive.capsule, area.points);
+  return primitive.kind === "capsule"
+    ? yield* capsuleEnclosedByPolygon(primitive, area.points)
+    : yield* polygonEnclosedByPolygon(primitive.points, area.points);
 }

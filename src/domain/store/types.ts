@@ -50,6 +50,10 @@ export interface EndpointReference {
 }
 
 export interface ElementStoreInstrumentation {
+  readonly pressureWindowCacheBytes: number;
+  readonly pressureWindowCacheEntries: number;
+  readonly pressureWindowCacheHits: number;
+  readonly pressureWindowCacheEvictions: number;
   readonly anchorBuilds: number;
   readonly anchorCacheBytes: number;
   readonly anchorCacheEntries: number;
@@ -72,6 +76,8 @@ export interface ElementStoreInstrumentation {
 }
 
 export interface ElementStoreMemoryUsage {
+  readonly pressurePathCacheBytes: number;
+  readonly pressureWindowCacheBytes: number;
   readonly anchorCacheBytes: number;
   readonly modelBytes: number;
 }

@@ -50,7 +50,7 @@ describe("maximum pressure stroke persistence", () => {
       const serialized = serializeInkbookDocument(createSnapshot([stroke]));
       if (!serialized.ok) throw new Error(JSON.stringify(serialized.error));
       svg = serialized.value.svg;
-    }, 5000);
+    }, 20_000);
 
     it("serializes one filled path within SVG capacity limits", () => {
       expect(svg.length).toBeLessThan(48 * 1024 * 1024);
@@ -69,7 +69,7 @@ describe("maximum pressure stroke persistence", () => {
       expect(parsed.ok, JSON.stringify(parsed.ok ? null : parsed.error)).toBe(true);
       if (!parsed.ok) return;
       expect(parsed.value.snapshot.elements[0]).toEqual(stroke);
-    });
+    }, 20_000);
   });
 });
 

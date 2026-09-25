@@ -1,5 +1,5 @@
+import { selectionCenterlineBounds } from "./centerline-bounds";
 import {
-  calculateElementBounds,
   canonicalPoint,
   defaultTableHeaderHeight,
   normalizeRotation,
@@ -71,8 +71,13 @@ export class SelectionScaleGesture {
     const start = rotatePointClockwise(this.#startPointer, anchor, -this.#action.rotation);
     const current = rotatePointClockwise(pointer, anchor, -this.#action.rotation);
     const axes = activeScaleAxes(this.#action.position);
+    const span = { x: start.x - anchor.x, y: start.y - anchor.y };
+    if (Math.abs(span.x) < 1e-9 && this.#initialFactors.x === 0)
+      span.x = this.#action.position.includes("left") ? -1 : 1;
+    if (Math.abs(span.y) < 1e-9 && this.#initialFactors.y === 0)
+      span.y = this.#action.position.startsWith("top") ? -1 : 1;
     return this.#previewFramePlan.factorsForPointer(
-      { x: axes.x ? start.x - anchor.x : 0, y: axes.y ? start.y - anchor.y : 0 },
+      { x: axes.x ? span.x : 0, y: axes.y ? span.y : 0 },
       { x: axes.x ? current.x - start.x : 0, y: axes.y ? current.y - start.y : 0 },
       { x: 0, y: 0 },
       uniform,
@@ -145,7 +150,7 @@ export class SelectionScaleGesture {
     for (const element of elements) {
       if (scheduler.isCancelled?.() ?? false) return null;
       const local = selectionFrameElementAtRotation(element, this.#action.rotation);
-      const current = calculateElementBounds(local);
+      const current = selectionCenterlineBounds(local);
       bounds = bounds === null ? current : unionBounds(bounds, current);
       if (scheduler.shouldYield()) await scheduler.yieldControl();
     }
