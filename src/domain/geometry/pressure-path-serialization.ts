@@ -80,16 +80,20 @@ function appendArc(commands: string[], boundary: PressureBoundaryArc): void {
 function compactLine(start: PointV1, end: PointV1): string {
   const absolute = lineTo(end);
   const [x, y] = relativePair(start, end);
-  const relative = `l${numberText(x)}${separator(x, y)}${numberText(y)}`;
+  const xText = numberText(x);
+  const yText = numberText(y);
+  const relative = `l${xText}${separator(xText, yText)}${yText}`;
   let result = bounded(x, y) && relative.length < absolute.length ? relative : absolute;
-  const axis = x === 0 ? `v${numberText(y)}` : y === 0 ? `h${numberText(x)}` : undefined;
+  const axis = x === 0 ? `v${yText}` : y === 0 ? `h${xText}` : undefined;
   if (axis !== undefined && bounded(x, y) && axis.length < result.length) result = axis;
   return result;
 }
 function compactArc(radius: number, start: PointV1, end: PointV1, sweep: 0 | 1): string {
   const absolute = arcTo(radius, sweep, end);
   const [x, y] = relativePair(start, end);
-  const relative = `a${radius} ${radius} 0 0 ${sweep}${x < 0 ? "" : " "}${numberText(x)}${separator(x, y)}${numberText(y)}`;
+  const xText = numberText(x);
+  const yText = numberText(y);
+  const relative = `a${radius} ${radius} 0 0 ${sweep}${x < 0 ? "" : " "}${xText}${separator(xText, yText)}${yText}`;
   return bounded(x, y) && relative.length < absolute.length ? relative : absolute;
 }
 function relativePair(start: PointV1, end: PointV1): readonly [number, number] {
@@ -99,10 +103,12 @@ function relativePair(start: PointV1, end: PointV1): readonly [number, number] {
   ];
 }
 function numberText(value: number): string {
-  return String(value).replace(/^(-?)0\./, "$1.");
+  const text = String(value);
+  if (text.startsWith("0.")) return text.slice(1);
+  return text.startsWith("-0.") ? `-${text.slice(2)}` : text;
 }
-function separator(x: number, y: number): string {
-  return y < 0 || (numberText(x).includes(".") && numberText(y).startsWith(".")) ? "" : " ";
+function separator(x: string, y: string): string {
+  return y.startsWith("-") || (x.includes(".") && y.startsWith(".")) ? "" : " ";
 }
 function bounded(x: number, y: number): boolean {
   return Math.abs(x) <= 1_000_000 && Math.abs(y) <= 1_000_000;

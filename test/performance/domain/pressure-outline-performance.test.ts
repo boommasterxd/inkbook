@@ -3,8 +3,10 @@ import { iteratePressureContourQuantization } from "../../../src/domain/geometry
 import * as primitives from "../../../src/domain/geometry/primitives";
 import * as intersections from "../../../src/domain/geometry/pressure-boundary-intersections";
 import { buildPressureCapsule } from "../../../src/domain/geometry/pressure-joins";
+import { serializePressureWindows } from "../../../src/domain/geometry/pressure-path-serialization";
 import {
   iteratePressureUnion,
+  pressureShapeBoundary,
   PRESSURE_UNION_OPERATIONS_PER_SHAPE,
 } from "../../../src/domain/geometry/pressure-union";
 import { polygonWinding, sampleSvgPathContours } from "../../fixtures/domain/svg-path-fill";
@@ -91,6 +93,34 @@ describe("bounded canonical pressure geometry", () => {
 });
 
 describe("compact reference pressure geometry", () => {
+  it("formats each relative coordinate once while serializing capsule contours", () => {
+    const loops = Array.from({ length: 64 }, (_, index) =>
+      pressureShapeBoundary(
+        buildPressureCapsule(
+          { x: 100000 + index, y: 200000, pressure: 1 },
+          { x: 100030.25 + index, y: 200020.5, pressure: 1 },
+          8,
+        ),
+      ),
+    );
+    const windows = [{ kind: "window" as const, additions: [], loops }];
+    const format = vi.fn(String);
+    vi.stubGlobal("String", format);
+    let calls: number;
+    let path: string;
+    try {
+      path = serializePressureWindows(windows);
+      calls = format.mock.calls.length;
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(path.match(/M/g)).toHaveLength(64);
+    expect(calls).toBeGreaterThan(0);
+    // Each capsule scores two line starts (8), writes a move (2), one line (4),
+    // and four quarter arcs (5 each). Reformatting separator operands exceeds this bound.
+    expect(calls).toBeLessThanOrEqual(64 * 34);
+  });
+
   it("bounds actual serialized geometry for the 44-stroke regression drawing", () => {
     let bytes = 0;
     let contours = 0;
@@ -126,6 +156,27 @@ describe("compact reference pressure geometry", () => {
 });
 
 describe("bounded capsule union work", () => {
+  it("avoids endpoint distance work for interior and off-boundary probes", () => {
+    const extent = MAX_STROKE_POINTS + 1;
+    const boundary = { kind: "line" as const, start: { x: 0, y: 0 }, end: { x: extent, y: 0 } };
+    const distances = vi.spyOn(Math, "hypot");
+    try {
+      for (let index = 1; index <= MAX_STROKE_POINTS; index += 1) {
+        expect(intersections.pressureBoundaryParameter(boundary, { x: index, y: 0 })).toBe(
+          index / extent,
+        );
+        expect(
+          intersections.pressureBoundaryParameter(boundary, { x: index, y: 1 }),
+        ).toBeUndefined();
+      }
+      // Each on-line projection needs one exact distance; distant endpoint and
+      // off-line projection candidates require none. Repeating endpoint hypot fails this bound.
+      expect(distances.mock.calls.length).toBeLessThanOrEqual(MAX_STROKE_POINTS);
+    } finally {
+      distances.mockRestore();
+    }
+  });
+
   it("yields between real clipping work and bounds a full adversarial window", () => {
     const shapes = Array.from({ length: 64 }, (_, index) =>
       buildPressureCapsule(

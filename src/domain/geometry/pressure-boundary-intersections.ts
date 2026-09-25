@@ -32,13 +32,20 @@ function distance(first: PointV1, second: PointV1): number {
   return Math.hypot(first.x - second.x, first.y - second.y);
 }
 
+function withinRoundoff(first: PointV1, second: PointV1, epsilon: number): boolean {
+  const dx = first.x - second.x;
+  const dy = first.y - second.y;
+  // A Euclidean distance cannot be smaller than either coordinate difference.
+  return Math.abs(dx) <= epsilon && Math.abs(dy) <= epsilon && Math.hypot(dx, dy) <= epsilon;
+}
+
 export function pressureBoundaryParameter(
   boundary: PressureBoundarySegment,
   point: PointV1,
 ): number | undefined {
   const epsilon = roundoff(boundary.start, boundary.end, point);
-  if (distance(point, boundary.start) <= epsilon) return 0;
-  if (distance(point, boundary.end) <= epsilon) return 1;
+  if (withinRoundoff(point, boundary.start, epsilon)) return 0;
+  if (withinRoundoff(point, boundary.end, epsilon)) return 1;
   if (boundary.kind === "arc") return arcParameter(boundary, point, epsilon);
   const dx = boundary.end.x - boundary.start.x;
   const dy = boundary.end.y - boundary.start.y;
@@ -47,7 +54,7 @@ export function pressureBoundaryParameter(
   const fraction =
     ((point.x - boundary.start.x) * dx + (point.y - boundary.start.y) * dy) / lengthSquared;
   if (fraction < 0 || fraction > 1) return undefined;
-  return distance(pressureBoundaryPoint(boundary, fraction), point) <= epsilon
+  return withinRoundoff(pressureBoundaryPoint(boundary, fraction), point, epsilon)
     ? fraction
     : undefined;
 }

@@ -64,6 +64,21 @@ describe("pressure boundary intersections", () => {
     expect(pressureBoundaryParameter(line(0, 0, 0, 0), { x: 1, y: 1 })).toBeUndefined();
   });
 
+  it("retains Euclidean roundoff at endpoints and rejects diagonal box corners", () => {
+    const epsilon = 32 * Number.EPSILON;
+    const boundary = line(0, 0, 0, 0);
+    for (const sign of [-1, 1]) {
+      expect(pressureBoundaryParameter(boundary, { x: sign * epsilon, y: 0 })).toBe(0);
+      expect(pressureBoundaryParameter(boundary, { x: 0, y: sign * epsilon })).toBe(0);
+      expect(
+        pressureBoundaryParameter(boundary, { x: sign * epsilon, y: sign * epsilon }),
+      ).toBeUndefined();
+      expect(pressureBoundaryParameter(boundary, { x: sign * epsilon * 2, y: 0 })).toBeUndefined();
+    }
+    expect(pressureBoundaryParameter(line(-1, 0, 1, 0), { x: 0, y: epsilon })).toBe(0.5);
+    expect(pressureBoundaryParameter(line(-1, 0, 1, 0), { x: 0, y: epsilon * 2 })).toBeUndefined();
+  });
+
   it("finds line-circle crossings including a full circle seam", () => {
     const hits = intersectPressureBoundaries(line(-2, 0, 2, 0), arc(origin));
     expect(hits).toContainEqual({ first: 0.25, second: 0.5 });
