@@ -4,23 +4,23 @@ import { describe, expect, it } from "vitest";
 const stylesheet = sys.readFile("src/obsidian/styles/inkbook.css") ?? "";
 
 describe("selection overlay styles", () => {
-  it("doubles only the clipped frame stroke while retaining transparent selection fill", () => {
-    const frame = /\.inkbook-selection-overlay\s*\{(?<declarations>[^}]*)\}/u.exec(stylesheet);
-    expect(frame?.groups?.declarations).toContain("stroke-width: 3");
+  it("centers the frame at normal width and suppresses only a duplicate rectangle outline", () => {
+    const frame =
+      /\.inkbook-selection-overlay\[data-center-outline="true"\]\s*\{(?<declarations>[^}]*)\}/u.exec(
+        stylesheet,
+      );
+    expect(frame?.groups?.declarations).toContain("stroke: none");
+    expect(frame?.groups?.declarations).not.toContain("fill:");
     const shared = /\.inkbook-scene-overlays path\s*\{(?<declarations>[^}]*)\}/u.exec(stylesheet);
     expect(shared?.groups?.declarations).toContain("stroke-width: 1.5");
     expect(shared?.groups?.declarations).toContain("18%, transparent");
   });
 
-  it("supplies accent color to use instances and composites their inner edge once", () => {
-    const halo = /\.inkbook-selection-halo\s*\{(?<declarations>[^}]*)\}/u.exec(stylesheet);
-    expect(halo?.groups?.declarations).toContain("opacity: 0.6");
-    expect(halo?.groups?.declarations).toContain("color: var(--interactive-accent)");
-    const source = /\.inkbook-selection-halo-source\s*\{(?<declarations>[^}]*)\}/u.exec(stylesheet);
-    expect(source?.groups?.declarations).toContain("color: var(--interactive-accent)");
+  it("uses opaque, unfilled accent center indicators", () => {
     const center = /\.inkbook-selection-center-trace\s*\{(?<declarations>[^}]*)\}/u.exec(
       stylesheet,
     );
+    expect(center?.groups?.declarations).toContain("stroke: var(--interactive-accent)");
     expect(center?.groups?.declarations).toContain("stroke-width: 1.5");
     expect(center?.groups?.declarations).toContain("fill: none");
     expect(center?.groups?.declarations).not.toContain("opacity");

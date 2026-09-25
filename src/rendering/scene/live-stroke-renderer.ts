@@ -18,8 +18,8 @@ import type {
   SceneLiveStrokePreview,
 } from "./types";
 
-// Stable chunks advance by at least eight samples while the mutable tail stays bounded.
-const MAX_LIVE_STROKE_CHUNKS = Math.ceil(MAX_STROKE_POINTS / 8);
+// Every finalized chunk consumes at least 64 input samples; tails stay separately bounded.
+const MAX_LIVE_STROKE_CHUNKS = Math.ceil(MAX_STROKE_POINTS / 64);
 const MAX_LIVE_PATH_PARTS = 1;
 
 export class SceneLiveStrokeRenderer {

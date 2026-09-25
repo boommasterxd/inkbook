@@ -19,6 +19,28 @@ export interface NavigationLayoutRead {
   readonly scrollTop: number;
 }
 
+export type NavigationCursorLayout = Pick<
+  NavigationLayoutRead,
+  "containerBounds" | "ownerViewport"
+>;
+
+/** Project the measured box through our own height/scroll writes without another layout read. */
+export function projectNavigationCursorLayout(
+  layout: NavigationLayoutRead,
+  applied: { readonly blockSize: number; readonly scrollTop: number },
+): NavigationCursorLayout {
+  const top = layout.containerBounds.top + layout.scrollTop - applied.scrollTop;
+  return {
+    containerBounds: {
+      ...layout.containerBounds,
+      top,
+      height: applied.blockSize,
+      bottom: top + applied.blockSize,
+    },
+    ownerViewport: layout.ownerViewport,
+  };
+}
+
 export function readNavigationLayout(
   container: HTMLElement,
   scrollOwner: BrowserScrollElement,

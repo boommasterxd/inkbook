@@ -63,7 +63,7 @@ describe("linear path construction", () => {
     expect(parts).toHaveLength(2);
     expect(parts[0]).toMatchObject({ paint: "stroke" });
     expect(parts[0]?.d).toContain("M0 0Q50 50 100 0");
-    expect(buildLinearPathParts(arrow, "legacy")[0]?.d).toContain("Q50 50 100 0");
+    expect(buildLinearPathParts(arrow)[0]?.d).toContain("Q50 50 100 0");
     expect(parts[1]).toMatchObject({ paint: "fill" });
     expect(parts[1]?.d.endsWith("Z")).toBe(true);
   });
@@ -156,7 +156,6 @@ it.each(["triangle", "diamond"] as const)(
     expect(parts[0]).toEqual({ d: "M0 0L100 0", paint: "stroke" });
     expect(parts[1]?.d.match(/A/g)).toHaveLength(node === "triangle" ? 6 : 8);
     expect(parts[1]?.d.match(/Z/g)).toHaveLength(2);
-    expect(buildElementPathParts(arrow, "legacy")[1]?.d).not.toContain("A");
   },
 );
 
@@ -179,7 +178,6 @@ it.each([0, 27])(
     expect(paths[0]).toContain("Q");
     expectSymmetricArms(paths[1]!, paths[2]!);
     expectSymmetricArms(paths[3]!, paths[4]!);
-    expect(buildElementPathParts(arrow, "rounded")[0]?.d.match(/M/g)).toHaveLength(3);
   },
 );
 
@@ -195,9 +193,6 @@ it.each(["2d", "3d"] as const)(
     for (let index = 0; index < paths.length; index += 3) {
       expectSymmetricArms(paths[index + 1]!, paths[index + 2]!);
     }
-    expect(buildElementPathParts(system, "rounded")).toEqual([
-      { d: buildCoordinateSystemPath(system, "rounded"), paint: "stroke" },
-    ]);
   },
 );
 

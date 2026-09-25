@@ -1,5 +1,6 @@
+import * as geometry from "../../../../src/domain/geometry/element-path";
 import { MAX_STROKE_POINTS } from "../../../../src/domain/schema/public";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createSceneFixture } from "../../../fixtures/rendering/scene";
 
 import type { PageV1, StrokeElementV1 } from "../../../../src/domain/schema/public";
@@ -58,12 +59,15 @@ describe("visible render mount complexity", () => {
   it("resumes 489 visible strokes with exactly two million points in stable band order", async ({
     annotate,
   }) => {
+    const actualBuilds = vi.spyOn(geometry, "buildElementPathParts");
     const fixture = createMaximumPointFixture();
     const { renderer, scheduler } = createMountScene(fixture.records);
     scheduler.runNext();
     const firstFrameMounts = renderer.mountedCount;
     while (scheduler.pendingCount > 0) scheduler.runNext();
 
+    expect(actualBuilds).toHaveBeenCalledTimes(3);
+    actualBuilds.mockRestore();
     const instrumentation = renderer.instrumentation();
     const cameraGroup = fakeNode(renderer.svg).nodes[1]!;
     expect(fixture.pointCount).toBe(TOTAL_POINTS);
@@ -76,7 +80,7 @@ describe("visible render mount complexity", () => {
     expect(instrumentation).toMatchObject({
       domEntrants: STROKES,
       domFragmentRuns: 2,
-      geometryBuilds: STROKES,
+      geometryBuilds: 3,
       maximumMountSliceStrokePoints: MOUNT_SLICE_STROKE_POINT_BUDGET,
       spatialQueries: 1,
     });
@@ -200,6 +204,8 @@ function strokePoints(count: number): number[] {
     points[offset + 1] = (index * 7) % 100;
     points[offset + 2] = 0.5;
   }
+  // Match immutable authoritative store ownership without changing any fixture samples.
+  Object.freeze(points);
   return points;
 }
 

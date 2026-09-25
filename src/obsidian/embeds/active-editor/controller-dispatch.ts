@@ -1,5 +1,10 @@
 import type { GestureController } from "../../../editor/gestures/public";
-import { reduceInput, type InputAction, type InputState } from "../../../editor/input/index";
+import {
+  reduceInput,
+  type EditorTool,
+  type InputAction,
+  type InputState,
+} from "../../../editor/input/index";
 import type { BrowserScrollElement, PenScrollGuard } from "../../scrolling/index";
 import type { EditableDocumentModel } from "../vault-document-session";
 
@@ -24,4 +29,8 @@ export function applyInputAction(
     navigation.finish();
   }
   return reduction.state;
+}
+
+export function configureInputTool(input: InputState, tool: EditorTool): InputState {
+  return reduceInput(input, { type: "configure", activeTool: tool }).state;
 }

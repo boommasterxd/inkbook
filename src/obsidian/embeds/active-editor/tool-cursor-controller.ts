@@ -1,3 +1,4 @@
+import type { NavigationCursorLayout } from "./navigation-layout";
 import { createToolCursorIcon } from "../../icons/tool-cursor-icon";
 import type { ToolDefaultsV1 } from "../../../domain/settings/types";
 import {
@@ -46,6 +47,7 @@ export class ActiveToolCursorController {
   readonly #ownerWindow: Window;
   #pointer: CursorPointer | undefined;
   #bounds: ElementContentBox | undefined;
+  #navigationLayout: NavigationCursorLayout | undefined;
   #clip: ElementContentBox | undefined;
   #positionTime = -Infinity;
   #disposed = false;
@@ -169,6 +171,11 @@ export class ActiveToolCursorController {
     );
   }
 
+  public adoptNavigationLayout(layout: NavigationCursorLayout): void {
+    this.#navigationLayout = layout;
+    this.refresh();
+  }
+
   public refresh(): void {
     if (!this.#disposed) this.#options.renderer.requestToolCursorFrame(this.#read);
   }
@@ -181,6 +188,7 @@ export class ActiveToolCursorController {
     this.#positionTime = -Infinity;
     this.#bounds = undefined;
     this.#clip = undefined;
+    this.#navigationLayout = undefined;
     this.refresh();
   }
 
@@ -244,7 +252,12 @@ export class ActiveToolCursorController {
   };
 
   readonly #read = (layoutChanged: boolean): SceneToolCursorFrame => {
-    if (layoutChanged) {
+    const layout = this.#navigationLayout;
+    this.#navigationLayout = undefined;
+    if (layout !== undefined) {
+      this.#bounds = layout.containerBounds;
+      this.#clip = this.#clipBounds(layout.containerBounds, layout.ownerViewport);
+    } else if (layoutChanged) {
       this.#bounds = undefined;
       this.#clip = undefined;
     }
@@ -293,8 +306,10 @@ export class ActiveToolCursorController {
         : { ...overlay, ...position };
     return { system: resolved.system, cursor };
   };
-  #clipBounds(bounds: ElementContentBox): ElementContentBox {
-    const viewport = this.#options.scrollBounds?.();
+  #clipBounds(
+    bounds: ElementContentBox,
+    viewport: NavigationCursorLayout["ownerViewport"] | undefined = this.#options.scrollBounds?.(),
+  ): ElementContentBox {
     if (viewport === undefined) return bounds;
     const left = Math.max(bounds.left, viewport.left);
     const top = Math.max(bounds.top, viewport.top);

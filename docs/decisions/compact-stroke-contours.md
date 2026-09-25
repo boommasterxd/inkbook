@@ -1,0 +1,33 @@
+# Compact Stroke Contours
+
+Status: Accepted
+
+## Context
+
+An inspected 74-stroke document contains 44 pressure strokes with 10,588 samples. The previous pressure renderer expands those strokes into 10,470 closed subpaths and 1,255,969 ASCII path bytes. Adjacent pieces use different chord normals and almost never meet the exact cross-section equality required for packing. One SVG path per element therefore does not bound its internal drawing complexity.
+
+The reference acceptance target is at most 130 pressure subpaths and 41,177 pressure path bytes, in addition to geometric correctness and responsive interaction. These are document-specific output budgets, not a universal limit or a latency measurement.
+
+## Decision
+
+Implement Inkbook-owned compact contour construction from mathematical requirements. Construct the true union boundary of bounded windows of prepared circular-nib capsules, then simplify and quantize that derived boundary within an explicit error budget. Independent closed windows preserve continuous fill without retaining internal capsule edges. Preserve editable samples, pressure-dependent width, endpoints, opacity, and shared live/export/selection semantics. Constant-width pen and highlighter strokes remain ordinary round-capped SVG strokes and benefit from derived centerline simplification.
+
+No source, implementation fragments, or tuned constants from the neighboring private Ink/tldraw renderer are incorporated. Its observed behavior motivates requirements; Inkbook owns its implementation and regression fixtures.
+
+Keep only current stroke and shape contour generation and verification. Inkbook is still pre-production, and the working reference drawing has been saved with current geometry. Maintaining earlier geometry profiles would retain duplicate serializers and unlock work without a supported deployed-document requirement. Earlier geometry is rejected without modifying its source file; no geometry migration is provided. Exact stylesheet compatibility, supported snapshot-version migration, and accepted schema widths remain unchanged.
+
+The canonical algorithm, streaming ownership and work bounds belong in [Rendering and Performance](../rendering-and-performance.md). Current-only geometry acceptance and retained envelope compatibility belong in [SVG Envelope](../svg-envelope.md). Selection preparation and essential-feedback behavior belong in [Editor Tools](../editor-tools.md).
+
+## Verification
+
+The current reference output contains 86 pressure subpaths and 40,937 ASCII path bytes, a 96.74 percent byte reduction. Its 30 constant-width pen strokes decrease from 117,612 to 18,694 path bytes (84.11 percent). The reference contains no highlighter; shared constant-width construction is covered separately. These counts describe generated geometry; they do not establish frame latency. A read-only in-memory round trip of all 74 elements produces a 411,556-byte standalone SVG, passes strict envelope validation with 6,297 path commands, preserves the editable snapshot exactly, and requires no further canonical rewrite after reload.
+
+Acceptance requires output-complexity checks, pressure and constant-width geometry regressions, bounded live and selection work, rejection of noncanonical geometry, the complete project gate, and real-Obsidian interaction checks. Browser paint/filter costs and physical-device responsiveness are separate from deterministic CI work counters. Final verification results must distinguish passed checks from unavailable hardware evidence.
+
+Real Obsidian verification used an isolated QA vault and the exact production artifact on desktop (1792 by 1146), tablet (1792 by 1146) and phone (360 by 800). Zoom, enclosing and cutting lasso, consecutive moves, resize, deselection, save and reopen passed in all three responsive modes. New constant-pressure, varying-pressure, pressure-disabled pen and highlighter strokes retained exact active/export path parity, with no uncaught errors or unhandled rejections. A diagnosed synchronous move-commit geometry rebuild and selection-exit starvation were corrected and rechecked. The QA profile and settings were restored; the original reference vault was unchanged. Physical pen, Android and GPU-device latency remain unverified.
+
+The initial renderer verification passed the complete local `npm run ci`: 439 Unit/Integration files with 3,931 tests; coverage of 90.91 percent statements, 85 percent branches, 92.97 percent functions and 93.72 percent lines; formatting, lint, architecture, type checks, zero detected duplication, dead-code checks, dependency audit, build and package validation. All 54 refresh-invariant performance files and all 14 cadence-sensitive files at each of 60, 90, 120, 144 and 240 Hz passed, totaling 124 file/profile executions. These checks assert bounded work and resources rather than physical execution speed.
+
+Follow-up unlock and zoom work reuses bounded, strictly validated pressure paths during scene mounting, makes modifier pixel-wheel scaling continuous across event magnitudes, and reuses projected cursor layout after zoom writes. Their canonical contracts are in [Rendering and Performance](../rendering-and-performance.md) and [Zoom](../zoom.md). In isolated software-rendered Obsidian, the saved 75-element document activated in approximately 398–413 ms across desktop, tablet and phone, with no loading indicator observed; the previous build showed the indicator before activation at approximately 552 ms. These individual diagnostic captures are not speed guarantees. Selection effects still add substantial raster work, and physical touchpad responsiveness remains unverified.
+
+The follow-up complete local `npm run ci` passed 444 Unit/Integration files with 3,972 tests and all 124 performance file/profile executions. Coverage was 90.94 percent statements, 85.07 percent branches, 93 percent functions and 93.74 percent lines; all remaining quality, build and package gates passed. The resulting production artifact matched the final Obsidian-tested artifact exactly.

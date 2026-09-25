@@ -1,3 +1,4 @@
+import { createSelectionPreviewRenderer } from "../../../fixtures/obsidian/selection-preview-renderer";
 import { describe, expect, it, vi } from "vitest";
 import { selectedRectangle } from "./active-editor-clipboard-fixtures";
 
@@ -168,12 +169,7 @@ describe("active editor selection area composition", () => {
             history: new ActiveEditorHistory(document),
             pageToScreen: (point) => point,
             preparedHistory: {} as PreparedElementHistory,
-            renderer: {
-              clearPreviewTransforms: vi.fn(),
-              setOverlayPath: vi.fn(),
-              setPreviewTransform: vi.fn(),
-              suppressMotionForNextDelta: vi.fn(),
-            },
+            renderer: createSelectionPreviewRenderer(),
             sceneStore,
             selection: () => selection,
             selectionDefaults: { area: "lasso", inclusion: "fully-enclosed" },

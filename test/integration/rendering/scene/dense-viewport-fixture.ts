@@ -12,7 +12,7 @@ import {
 } from "../../../unit/rendering/scene/fakes";
 
 const DENSE_VIEWPORT_ELEMENT_COUNT = 2_500;
-const DENSE_VIEWPORT_FIXTURE_VERSION = "dense-viewport-v1";
+const DENSE_VIEWPORT_FIXTURE_VERSION = "dense-viewport-v2";
 export const DENSE_VIEWPORT_PROFILES = [
   { elapsedLimitMs: 500, frameLimit: 30, name: "desktop", viewport: [1_200, 800] },
   { elapsedLimitMs: 1_000, frameLimit: 60, name: "mobile", viewport: [390, 700] },
@@ -112,7 +112,7 @@ function createRecord(index: number): SceneElementRecord {
   const band = index % 2 === 0 ? "highlight" : "content";
   const center = index < 100 ? markerCenter(index) : backgroundCenter(index);
   const start = { x: center.x - 4, y: center.y };
-  const end = { x: center.x + 4 + index / 100_000, y: center.y };
+  const end = { x: center.x + 4, y: center.y };
   const width: StrokeElementV1["style"]["width"] = band === "highlight" ? 8 : 2;
   const element = createStroke({ band, center, createdAt: index, end, id, start, width });
   return {
@@ -171,9 +171,12 @@ function markerCenter(index: number): PointV1 {
 }
 
 function backgroundCenter(index: number): PointV1 {
+  // Forty columns and sixty rows retain distinct paths after contour quantization,
+  // while keeping every background stroke in the mobile viewport beside the hit markers.
+  const backgroundIndex = index - 100;
   return {
-    x: 340 + (index % 40) + index / 100_000,
-    y: 20 + (index % 100) * 6,
+    x: 340 + (backgroundIndex % 40),
+    y: 20 + Math.floor(backgroundIndex / 40) * 10,
   };
 }
 

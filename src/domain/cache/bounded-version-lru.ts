@@ -15,12 +15,18 @@ export interface LruStatistics {
 export class BoundedVersionLru<T> {
   readonly #entries = new Map<string, LruEntry<T>>();
   readonly #maximumBytes: number;
+  readonly #onRemoval: ((id: string, value: T) => void) | undefined;
   readonly #maximumEntries: number;
   #bytes = 0;
   #evictions = 0;
   #hits = 0;
 
-  public constructor(maximumEntries: number, maximumBytes: number) {
+  public constructor(
+    maximumEntries: number,
+    maximumBytes: number,
+    onRemoval?: (id: string, value: T) => void,
+  ) {
+    this.#onRemoval = onRemoval;
     assertPositiveSafeInteger(maximumEntries, "maximumEntries");
     assertPositiveSafeInteger(maximumBytes, "maximumBytes");
     this.#maximumEntries = maximumEntries;
@@ -48,7 +54,10 @@ export class BoundedVersionLru<T> {
     }
     this.#entries.delete(id);
     if (mode === "retain") this.#entries.set(id, entry);
-    else this.#bytes -= entry.bytes;
+    else {
+      this.#bytes -= entry.bytes;
+      this.#onRemoval?.(id, entry.value);
+    }
     this.#hits += 1;
     return entry.value;
   }
@@ -67,10 +76,14 @@ export class BoundedVersionLru<T> {
     if (entry === undefined) return false;
     this.#entries.delete(id);
     this.#bytes -= entry.bytes;
+    this.#onRemoval?.(id, entry.value);
     return true;
   }
 
   public clear(): void {
+    if (this.#onRemoval !== undefined) {
+      for (const [id, entry] of this.#entries) this.#onRemoval(id, entry.value);
+    }
     this.#entries.clear();
     this.#bytes = 0;
   }
@@ -93,8 +106,7 @@ export class BoundedVersionLru<T> {
     while (this.#entries.size > this.#maximumEntries || this.#bytes > this.#maximumBytes) {
       const oldest = this.#entries.entries().next().value;
       if (oldest === undefined) return;
-      this.#entries.delete(oldest[0]);
-      this.#bytes -= oldest[1].bytes;
+      this.delete(oldest[0]);
       this.#evictions += 1;
     }
   }

@@ -285,18 +285,44 @@ function expectPressureTip(tail: FakeNode, sample: PointerEvent): void {
   const runs = d.split("M");
   const run = `M${runs[runs.length - 1]!}`;
   let current = [0, 0];
-  for (const match of run.matchAll(/([MQAqa])([^MQAqaZ]*)/g)) {
+  let tipDistance = Infinity;
+  for (const match of run.matchAll(/([MLQAlqa])([^MLQAlqaZ]*)/g)) {
     const command = match[1]!;
     const values = match[2]!.match(/-?(?:\d*\.)?\d+/g)!.map(Number);
-    const endpoint = values
-      .slice(-2)
-      .map((value, axis) => value + (command === command.toLowerCase() ? current[axis]! : 0));
+    const endpoint =
+      command === "l"
+        ? values.reduce(
+            (position, value, index) => {
+              position[index % 2]! += value;
+              return position;
+            },
+            [...current],
+          )
+        : values
+            .slice(-2)
+            .map((value, axis) => value + (command === command.toLowerCase() ? current[axis]! : 0));
     if (command.toUpperCase() === "A") {
-      expect((current[0]! + endpoint[0]!) / 2).toBeCloseTo(sample.clientX, 2);
-      expect((current[1]! + endpoint[1]!) / 2).toBeCloseTo(sample.clientY, 2);
-      return;
+      const center = circularArcCenter(current, endpoint, values);
+      tipDistance = Math.min(
+        tipDistance,
+        Math.hypot(center[0]! - sample.clientX, center[1]! - sample.clientY),
+      );
     }
     current = endpoint;
   }
-  throw new Error("Expected a round pressure end cap.");
+  // Tapered-nib end caps need not be semicircles; their circle still follows the latest sample.
+  expect(tipDistance).toBeLessThan(0.02);
+}
+
+function circularArcCenter(
+  start: readonly number[],
+  end: readonly number[],
+  values: readonly number[],
+): number[] {
+  const dx = (start[0]! - end[0]!) / 2;
+  const dy = (start[1]! - end[1]!) / 2;
+  const squared = dx * dx + dy * dy;
+  const sign = values[3] === values[4] ? -1 : 1;
+  const scale = squared === 0 ? 0 : sign * Math.sqrt(Math.max(0, values[0]! ** 2 / squared - 1));
+  return [(start[0]! + end[0]!) / 2 + scale * dy, (start[1]! + end[1]!) / 2 - scale * dx];
 }

@@ -300,7 +300,7 @@ describe("canvas crossfades and overlays", () => {
 });
 
 describe("selection overlay motion", () => {
-  it("animates handles while staging the latest snap feedback in the scene frame", () => {
+  it("shows handles immediately while staging the latest snap feedback in the scene frame", () => {
     const { renderer, scheduler } = setup();
     scheduler.runAll();
     const overlayGroup = fakeNode(renderer.svg).nodes[2]!;
@@ -315,17 +315,17 @@ describe("selection overlay motion", () => {
     renderer.setSnapMarkerPath("M 5 5 L 6 6");
     scheduler.runNext();
     expect(selection.attributes.get("data-selection-fill")).toBe("none");
-    expect(selection.style.opacity).toBe("0");
+    expect(selection.style.opacity).toBe("1");
     expect(selection.style.transform).toBe("scale(1)");
     expect(handles.attributes.get("class")).toBe("inkbook-selection-handles");
-    expect(handles.style.opacity).toBe("0");
+    expect(handles.style.opacity).toBe("1");
     expect(snap.style.opacity).toBe("1");
 
     renderer.interruptMotionForPointerDown();
     expect(selection.style.opacity).toBe("1");
     expect(handles.style.opacity).toBe("1");
     expect(snap.style.opacity).toBe("1");
-    expect(renderer.instrumentation().motionInterruptions).toBe(1);
+    expect(renderer.instrumentation().motionInterruptions).toBe(0);
 
     renderer.setSelectionOverlayPath("M 0 0 L 10 0 L 10 10 Z", "accent");
     scheduler.runNext();
@@ -348,8 +348,7 @@ describe("selection overlay motion", () => {
 
     renderer.setSelectionOverlayPath("M 0 0 L 10 0 L 10 10 Z");
     scheduler.runNext();
-    scheduler.time = 60;
-    scheduler.runNext();
+    expect(scheduler.pendingCount).toBe(0);
     const visibleOpacity = selection.style.opacity;
     expect(Number(visibleOpacity)).toBeGreaterThan(0);
 
@@ -362,6 +361,17 @@ describe("selection overlay motion", () => {
     scheduler.runNext();
     expect(selection.attributes.get("d")).toBe("M 40 50 L 50 50 L 50 60 Z");
     expect(Number(selection.style.opacity)).toBeGreaterThanOrEqual(Number(visibleOpacity));
+
+    renderer.setSelectionOverlayPath(null);
+    scheduler.runNext();
+    scheduler.time = 60;
+    scheduler.runNext();
+    expect(Number(selection.style.opacity)).toBeLessThan(1);
+    renderer.setSelectionOverlayPath("M 40 50 L 50 50 L 50 60 Z");
+    scheduler.runNext();
+    expect(selection.style.opacity).toBe("1");
+    expect(selection.attributes.get("d")).toBe("M 40 50 L 50 50 L 50 60 Z");
+    expect(scheduler.pendingCount).toBe(0);
   });
 });
 

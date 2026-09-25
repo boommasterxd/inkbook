@@ -1,5 +1,5 @@
+import { selectionCenterlineBounds } from "./centerline-bounds";
 import {
-  calculateElementBounds,
   quadraticPoint,
   rotatePointClockwise,
   tableColumnOffsets,
@@ -62,13 +62,14 @@ export interface SelectionHandleLayoutOptions {
 export function selectionBounds(elements: readonly SelectedElementGeometry[]): Bounds | null {
   let bounds: Bounds | null = null;
   for (const selected of elements) {
-    bounds = bounds === null ? { ...selected.bounds } : unionBounds(bounds, selected.bounds);
+    const current = selectionCenterlineBounds(selected.element, selected.bounds);
+    bounds = bounds === null ? current : unionBounds(bounds, current);
   }
   return bounds;
 }
 
 export function oppositeElementHandlePoint(element: InkElementV1, position: BoxAnchorV1): PointV1 {
-  const bounds = calculateElementBounds({ ...element, rotation: 0 });
+  const bounds = selectionCenterlineBounds({ ...element, rotation: 0 });
   const point = boxPosition(bounds, oppositeBoxAnchor(position));
   return rotatePointClockwise(point, element.pivot, element.rotation);
 }
@@ -86,7 +87,7 @@ export function layoutSelectionHandles(
   if (selected.length > 1) return multiSelectionHandles(selected, options);
   const item = selected[0]!;
   if (item.element.kind === "stroke" && options.frame != null)
-    return orientedBoxHandles(options.frame.points, options.zoom, options.rotateOffsetPixels);
+    return orientedBoxHandles(options.frame, options.zoom, options.rotateOffsetPixels);
   return singleElementHandles(item.element, options);
 }
 
@@ -127,7 +128,7 @@ function multiSelectionHandles(
   options: SelectionHandleLayoutOptions,
 ): SelectionHandle[] {
   if (options.frame !== undefined && options.frame !== null) {
-    return orientedBoxHandles(options.frame.points, options.zoom, options.rotateOffsetPixels);
+    return orientedBoxHandles(options.frame, options.zoom, options.rotateOffsetPixels);
   }
   const bounds = selectionBounds(selected);
   if (bounds === null) return [];
@@ -135,18 +136,18 @@ function multiSelectionHandles(
 }
 
 function orientedBoxHandles(
-  points: OrientedSelectionFrame["points"],
+  frame: OrientedSelectionFrame,
   zoom: number,
   offsetPixels = ROTATE_HANDLE_OFFSET_PIXELS,
 ): SelectionHandle[] {
-  const frame = { points, rotation: 0 } satisfies OrientedSelectionFrame;
+  const points = frame.points;
   const positioned: ReadonlyArray<readonly [BoxAnchorV1, PointV1]> = BOX_HANDLE_ORDER.map(
     (position) => [position, selectionFramePoint(frame, position)],
   );
   const [topLeft, topRight] = points;
   return [
     ...positioned.map(([position, point]): SelectionHandle => ({ kind: "scale", point, position })),
-    orientedRotateHandle(topLeft, topRight, zoom, offsetPixels),
+    orientedRotateHandle(topLeft, topRight, zoom, offsetPixels, frame.rotation),
   ];
 }
 
@@ -155,6 +156,7 @@ function orientedRotateHandle(
   topRight: PointV1,
   zoom: number,
   offsetPixels: number,
+  rotation: number,
 ): Extract<SelectionHandle, { kind: "rotate" }> {
   if (!Number.isFinite(offsetPixels) || offsetPixels < 0) {
     throw new RangeError("Rotation-handle offset must be a non-negative finite number.");
@@ -162,7 +164,16 @@ function orientedRotateHandle(
   const delta = { x: topRight.x - topLeft.x, y: topRight.y - topLeft.y };
   const length = Math.hypot(delta.x, delta.y);
   const midpoint = { x: (topLeft.x + topRight.x) / 2, y: (topLeft.y + topRight.y) / 2 };
-  if (length === 0) return { kind: "rotate", point: midpoint };
+  if (length === 0) {
+    return {
+      kind: "rotate",
+      point: rotatePointClockwise(
+        { x: midpoint.x, y: midpoint.y - offsetPixels / zoom },
+        midpoint,
+        rotation,
+      ),
+    };
+  }
   const offset = offsetPixels / zoom;
   return {
     kind: "rotate",
@@ -184,7 +195,7 @@ function singleElementHandles(
   ) {
     return linearHandles(element);
   }
-  const bounds = calculateElementBounds({ ...element, rotation: 0 });
+  const bounds = selectionCenterlineBounds({ ...element, rotation: 0 });
   const points = boxHandles(bounds).map((handle) => ({
     ...handle,
     point: rotatePointClockwise(handle.point, element.pivot, element.rotation),

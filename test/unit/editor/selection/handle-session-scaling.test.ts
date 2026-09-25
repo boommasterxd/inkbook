@@ -112,6 +112,34 @@ function scaleTransform(
   return { anchor, delta, factors, kind: "scale" as const, rotation: 0 };
 }
 
+function tableSideScaleSession(uniformScale = false) {
+  const source = table();
+  return new SelectionHandleSession({
+    action: {
+      anchor: { x: 100, y: 150 },
+      kind: "scale",
+      position: "middle-right",
+      rotation: 0,
+    },
+    elements: [source],
+    planner: new ElementStore([source]),
+    startPointer: { x: 300, y: 150 },
+    uniformScale,
+  });
+}
+
+function expectScalePreviewAndCommit(
+  session: SelectionHandleSession,
+  pointer: { readonly x: number; readonly y: number },
+  anchor: { readonly x: number; readonly y: number },
+  factors: { readonly x: number; readonly y: number },
+) {
+  expect(session.update(pointer).transform).toEqual(scaleTransform(anchor, factors));
+  const commit = session.prepareCommit();
+  if (commit.status !== "ready") throw new Error("Expected a scale commit.");
+  return commit;
+}
+
 describe("single-element generic handle scaling", () => {
   it.each<BoxAnchorV1>([
     "top-left",
@@ -160,65 +188,36 @@ describe("single-element generic handle scaling", () => {
 
 describe("single-element generic scale behavior", () => {
   it("keeps a single selection proportional while Shift is held", () => {
-    const source = table();
-    const store = new ElementStore([source]);
-    const session = new SelectionHandleSession({
-      action: {
-        anchor: { x: 100, y: 150 },
-        kind: "scale",
-        position: "middle-right",
-        rotation: 0,
-      },
-      elements: [source],
-      planner: store,
-      startPointer: { x: 300, y: 150 },
-      uniformScale: true,
-    });
-
-    const preview = session.update({ x: 500, y: 150 });
-    expect(preview.transform).toEqual(
-      scaleTransform({ x: 100, y: 150 }, { x: 2, y: 2 }, { x: 2, y: 0 }),
+    const session = tableSideScaleSession(true);
+    const commit = expectScalePreviewAndCommit(
+      session,
+      { x: 500, y: 150 },
+      { x: 100, y: 150 },
+      { x: 2, y: 2 },
     );
-
-    const commit = session.prepareCommit();
-    if (commit.status !== "ready") throw new Error("Expected a scale commit.");
     expect(commit.replacements[0]).toMatchObject({
       columnWidth: 200,
       height: 200,
       headerHeight: 48,
-      pivot: { x: 302, y: 150 },
-      x: 102,
+      pivot: { x: 300, y: 150 },
+      x: 100,
       y: 50,
     });
   });
 
   it("uses only the active side axis in both the live preview and commit", () => {
-    const source = table();
-    const store = new ElementStore([source]);
-    const session = new SelectionHandleSession({
-      action: {
-        anchor: { x: 98, y: 150 },
-        kind: "scale",
-        position: "middle-right",
-        rotation: 0,
-      },
-      elements: [source],
-      planner: store,
-      startPointer: { x: 302, y: 150 },
-    });
-
-    const preview = session.update({ x: 404, y: 230 });
-    expect(preview.transform).toEqual(
-      scaleTransform({ x: 98, y: 150 }, { x: 1.51, y: 1 }, { x: -1.02, y: 0 }),
+    const session = tableSideScaleSession();
+    const commit = expectScalePreviewAndCommit(
+      session,
+      { x: 400, y: 230 },
+      { x: 100, y: 150 },
+      { x: 1.5, y: 1 },
     );
-
-    const commit = session.prepareCommit();
-    if (commit.status !== "ready") throw new Error("Expected a scale commit.");
     expect(commit.replacements[0]).toMatchObject({
-      columnWidth: 151,
+      columnWidth: 150,
       headerHeight: 24,
       height: 100,
-      pivot: { x: 251, y: 150 },
+      pivot: { x: 250, y: 150 },
       x: 100,
       y: 100,
     });
@@ -246,18 +245,17 @@ describe("single-element table scale boundaries", () => {
       startPointer: { x: 200, y: 300 },
     });
 
-    const preview = session.update({ x: 200, y: 200 });
-    expect(preview.transform).toEqual(
-      scaleTransform({ x: 200, y: 100 }, { x: 1, y: 0.5 }, { x: 0, y: 2 }),
+    const commit = expectScalePreviewAndCommit(
+      session,
+      { x: 200, y: 200 },
+      { x: 200, y: 100 },
+      { x: 1, y: 0.5 },
     );
-
-    const commit = session.prepareCommit();
-    if (commit.status !== "ready") throw new Error("Expected a scale commit.");
     expect(commit.replacements[0]).toMatchObject({
       headerHeight: 15,
       height: 100,
-      pivot: { x: 200, y: 152 },
-      y: 102,
+      pivot: { x: 200, y: 150 },
+      y: 100,
     });
     expect(validateInkElementV1(commit.replacements[0]).ok).toBe(true);
   });
@@ -352,7 +350,7 @@ describe("single-element rotated handle scaling", () => {
     const preview = session.update({ x: 50, y: 150 });
     expect(preview.transform).toEqual({
       anchor: { x: 50, y: -50 },
-      delta: { x: 0, y: 2 },
+      delta: { x: 0, y: 0 },
       factors: { x: 2, y: 1 },
       kind: "scale",
       rotation: 90,
@@ -361,8 +359,8 @@ describe("single-element rotated handle scaling", () => {
     const commit = session.prepareCommit();
     if (commit.status !== "ready") throw new Error("Expected a rotated stroke scale commit.");
     expect(commit.replacements[0]).toMatchObject({
-      pivot: { x: 50, y: 52 },
-      points: [-50, 52, 0.5, 150, 52, 0.5],
+      pivot: { x: 50, y: 50 },
+      points: [-50, 50, 0.5, 150, 50, 0.5],
       rotation: 90,
     });
   });
@@ -396,8 +394,8 @@ describe("fractional box handle scaling", () => {
       ),
     ).toBe(true);
     expect(previews.map(({ exactElements }) => exactElements[0]?.pivot)).toEqual([
-      { x: 150.502, y: 117.191 },
-      { x: 150.503, y: 117.293 },
+      { x: 150.502, y: 115.191 },
+      { x: 150.503, y: 115.293 },
     ]);
 
     const commit = session.prepareCommit();

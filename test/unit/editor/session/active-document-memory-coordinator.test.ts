@@ -8,34 +8,42 @@ import {
 } from "../../../../src/editor/session/active-document-memory-coordinator";
 
 describe("active document memory coordination", () => {
-  it("applies pressure to both cache owners before the ceiling and releases with hysteresis", () => {
-    const usage = {
-      anchorCacheBytes: 10,
-      modelBytes: 50,
-      motionCacheBytes: 5,
-      pathCacheBytes: 34,
-    };
-    const harness = memoryHarness(usage);
+  it.each(["pressureWindowCacheBytes", "pressurePathCacheBytes"] as const)(
+    "accounts %s before the ceiling and releases both owners with hysteresis",
+    (cache) => {
+      const usage = {
+        pressurePathCacheBytes: 0,
+        pressureWindowCacheBytes: 0,
+        anchorCacheBytes: 10,
+        modelBytes: 50,
+        motionCacheBytes: 5,
+        pathCacheBytes: 34,
+      };
+      const harness = memoryHarness(usage);
 
-    harness.coordinator.evaluate();
-    expect(harness.storePressure).not.toHaveBeenCalled();
-    usage.pathCacheBytes += 1;
-    harness.coordinator.evaluate();
-    expect(harness.coordinator.active).toBe(true);
-    expect(harness.storePressure).toHaveBeenLastCalledWith(true);
-    expect(harness.scenePressure).toHaveBeenLastCalledWith(true);
+      harness.coordinator.evaluate();
+      expect(harness.storePressure).not.toHaveBeenCalled();
+      usage[cache] += 1;
+      harness.coordinator.evaluate();
+      expect(harness.coordinator.active).toBe(true);
+      expect(harness.storePressure).toHaveBeenLastCalledWith(true);
+      expect(harness.scenePressure).toHaveBeenLastCalledWith(true);
 
-    usage.anchorCacheBytes = 0;
-    usage.motionCacheBytes = 0;
-    usage.pathCacheBytes = 0;
-    harness.coordinator.evaluate();
-    expect(harness.coordinator.active).toBe(false);
-    expect(harness.storePressure).toHaveBeenLastCalledWith(false);
-    expect(harness.scenePressure).toHaveBeenLastCalledWith(false);
-  });
+      usage.anchorCacheBytes = 0;
+      usage.motionCacheBytes = 0;
+      usage.pathCacheBytes = 0;
+      usage[cache] = 0;
+      harness.coordinator.evaluate();
+      expect(harness.coordinator.active).toBe(false);
+      expect(harness.storePressure).toHaveBeenLastCalledWith(false);
+      expect(harness.scenePressure).toHaveBeenLastCalledWith(false);
+    },
+  );
 
   it("releases an active coordinator exactly once and validates thresholds", () => {
     const usage: ActiveDocumentMemoryUsage = {
+      pressurePathCacheBytes: 0,
+      pressureWindowCacheBytes: 0,
       anchorCacheBytes: 10,
       modelBytes: 100,
       motionCacheBytes: 0,
@@ -50,6 +58,8 @@ describe("active document memory coordination", () => {
     expect(harness.storePressure).toHaveBeenCalledTimes(2);
     expect(harness.scenePressure).toHaveBeenCalledTimes(2);
     expect(harness.coordinator.evaluate()).toEqual({
+      pressurePathCacheBytes: 0,
+      pressureWindowCacheBytes: 0,
       anchorCacheBytes: 0,
       modelBytes: 0,
       motionCacheBytes: 0,

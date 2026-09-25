@@ -1,9 +1,9 @@
+import type { PreparedPressureGeometryPort } from "../../domain/geometry/prepared-pressure-geometry";
 import type { Bounds } from "../../domain/geometry/public";
 import type { InkElementV1 } from "../../domain/schema/public";
 
 import {
-  elementMatchesSelectionArea,
-  selectionAreaBounds,
+  elementMatchesSelectionAreaSteps,
   type SelectionArea,
   type SelectionAreaInclusion,
 } from "./selection-area";
@@ -22,24 +22,45 @@ export function selectElement(
   return setsEqual(selection, next) ? selection : next;
 }
 
-interface SelectionAreaCandidateSink {
-  add(id: string, bounds: Bounds, element: InkElementV1): void;
+export interface SelectionAreaCandidate {
+  readonly id: string;
+  readonly bounds: Bounds;
+  readonly element: InkElementV1;
+  readonly preparedPressure?: PreparedPressureGeometryPort;
 }
 
-export function selectBySelectionAreaQuery(
+/** A false candidate-stream result discards an invalidated spatial query atomically. */
+export function* selectBySelectionAreaCandidatesSteps(
   selection: ReadonlySet<string>,
   area: SelectionArea,
   inclusion: SelectionAreaInclusion,
   additive: boolean,
-  query: (bounds: Bounds, sink: SelectionAreaCandidateSink) => void,
-): ReadonlySet<string> {
+  candidates: Generator<SelectionAreaCandidate | undefined, boolean>,
+): Generator<void, ReadonlySet<string>> {
   const next = additive ? new Set(selection) : new Set<string>();
-  query(selectionAreaBounds(area), {
-    add: (id, bounds, element) => {
-      if (elementMatchesSelectionArea(area, element, inclusion, bounds)) next.add(id);
-    },
-  });
-  return setsEqual(selection, next) ? selection : next;
+  try {
+    let step = candidates.next();
+    while (!step.done) {
+      if (step.value !== undefined) {
+        const { id, bounds, element, preparedPressure } = step.value;
+        if (
+          yield* elementMatchesSelectionAreaSteps(
+            area,
+            element,
+            inclusion,
+            bounds,
+            preparedPressure,
+          )
+        )
+          next.add(id);
+      }
+      yield;
+      step = candidates.next();
+    }
+    return !step.value || setsEqual(selection, next) ? selection : next;
+  } finally {
+    candidates.return(false);
+  }
 }
 
 function singleton(id: string): ReadonlySet<string> {

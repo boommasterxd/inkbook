@@ -1,13 +1,13 @@
+import { selectBySelectionAreaQuery } from "../../fixtures/editor/selection-query";
 import { describe, expect, it } from "vitest";
 
-import { calculateElementBounds } from "../../../src/domain/geometry/public";
+import { selectionCenterlineBounds } from "../../../src/editor/selection/centerline-bounds";
 import type { InkElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
 import { ElementStore } from "../../../src/domain/store/public";
 import type { TimeSlicedSelectionCommitPreparation } from "../../../src/editor/selection/handle-session";
 import {
   createRectangleSelectionArea,
   SelectionHandleSession,
-  selectBySelectionAreaQuery,
   type SelectionArea,
 } from "../../../src/editor/selection/public";
 import {
@@ -118,7 +118,7 @@ describe("selection scale preview hot path", () => {
         rotation: 37,
       })),
     ];
-    const bounds = elements.map(calculateElementBounds);
+    const bounds = elements.map((element) => selectionCenterlineBounds(element));
     const minX = Math.min(...bounds.map(({ minX: value }) => value));
     const minY = Math.min(...bounds.map(({ minY: value }) => value));
     const maxX = Math.max(...bounds.map(({ maxX: value }) => value));

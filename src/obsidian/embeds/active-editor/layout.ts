@@ -95,7 +95,7 @@ export class ActiveEditorLayout {
     });
   }
 
-  public applyZoom(update: ActiveEditorZoomLayoutUpdate): void {
+  public applyZoom(update: ActiveEditorZoomLayoutUpdate): number {
     const retainedPageHeight = this.#cancelHeightTransitionAtBoundary(false);
     const previousHeight = this.#pageLayout.height;
     this.#pageLayout.retainMinimumHeight(this.#requiredContentHeight());
@@ -108,6 +108,7 @@ export class ActiveEditorLayout {
     this.#container.style.blockSize = `${String(blockSize + this.#blockInsets)}px`;
     this.#options.renderer.invalidateLayout();
     if (retainedPageHeight !== undefined) this.scheduleMeasurement();
+    return blockSize;
   }
 
   public chromeChanged(layoutKey?: string): void {

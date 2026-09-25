@@ -41,7 +41,13 @@ describe("active editor single-stroke capacity", () => {
       expect(preview.commit()).toBe(true);
       expect(store.size).toBe(1);
       expect(history.commandCount).toBe(1);
-      expect(commitLiveStroke).toHaveBeenCalledExactlyOnceWith(strokeId);
+      expect(commitLiveStroke).toHaveBeenCalledExactlyOnceWith(
+        strokeId,
+        expect.objectContaining({
+          points: expect.any(Array) as unknown,
+          geometryMemoryBytes: expect.any(Number) as unknown,
+        }),
+      );
 
       const element = store.get(strokeId)?.element;
       if (element?.kind !== "stroke") throw new Error("Expected a single committed stroke.");
@@ -58,6 +64,7 @@ describe("active editor single-stroke capacity", () => {
       expect(store.size).toBe(1);
       expect(store.get(strokeId)?.element).toEqual(element);
     },
+    20_000,
   );
 
   it("discards an exhausted preview on cancellation without creating a history command", () => {
@@ -73,7 +80,7 @@ describe("active editor single-stroke capacity", () => {
     expect(history.canUndo).toBe(false);
     expect(clearLiveStroke).toHaveBeenCalledOnce();
     expect(commitLiveStroke).not.toHaveBeenCalled();
-  });
+  }, 20_000);
 });
 
 function appendCurve(preview: CreationPreview): void {

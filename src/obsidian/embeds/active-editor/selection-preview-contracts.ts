@@ -51,6 +51,11 @@ export interface SelectionPreviewOptions {
   readonly sceneStore: ElementSceneStore;
   readonly selectionEdgeDrag?: SelectionEdgeDragPort;
   readonly selection: () => ReadonlySet<string>;
+  readonly selectionSignal?: AbortSignal;
+  readonly selectionWorkBudget?: {
+    readonly now: () => number;
+    readonly sliceBudgetMs: () => number;
+  };
   readonly selectionFrames?: SelectionFrameSession;
   readonly connectionSnapping?: boolean | (() => boolean);
   readonly frameScheduler?: SelectionPreviewFrameScheduler;

@@ -1,7 +1,10 @@
+import type { ZoomInputEvent } from "../../../editor/zoom/wheel";
 import {
+  accumulateZoomInput,
+  calculateZoomLimits,
   normalizeWheelVector,
-  TRACKPAD_ZOOM_DELTA_LIMIT,
   type WheelDeltaMode,
+  type ZoomFrameState,
 } from "../../../editor/zoom/index";
 import { browserScrollMetrics, type BrowserScrollElement } from "../../scrolling/index";
 
@@ -51,13 +54,29 @@ export function isZoomWheel(event: ActiveEditorWheelInput): boolean {
   );
 }
 
+/** Pixel units describe continuous input; magnitude cannot identify the physical device. */
 export function isContinuousZoomWheel(event: ActiveEditorWheelInput): boolean {
   return (
-    (event.ctrlKey === true || event.metaKey === true) &&
-    wheelDeltaMode(event.deltaMode) === 0 &&
-    Math.abs(event.deltaY) < TRACKPAD_ZOOM_DELTA_LIMIT &&
-    Math.abs(event.deltaX ?? 0) < TRACKPAD_ZOOM_DELTA_LIMIT
+    (event.ctrlKey === true || event.metaKey === true) && wheelDeltaMode(event.deltaMode) === 0
   );
+}
+
+/** Bound queued motion to reachable camera limits and honor a new direction immediately. */
+export function accumulateContinuousZoomInput(
+  state: ZoomFrameState,
+  input: ZoomInputEvent,
+  zoom: number,
+  fitZoom: number,
+): ZoomFrameState {
+  if (!Number.isFinite(zoom) || zoom <= 0) throw new RangeError("zoom must be positive and finite");
+  const factor = input.factor ?? 1;
+  const reverse = (state.factor > 1 && factor < 1) || (state.factor < 1 && factor > 1);
+  const accumulated = accumulateZoomInput(reverse ? { ...state, factor: 1 } : state, input);
+  const limits = calculateZoomLimits(fitZoom);
+  return {
+    ...accumulated,
+    factor: Math.max(limits.minZoom / zoom, Math.min(limits.maxZoom / zoom, accumulated.factor)),
+  };
 }
 
 export function projectedScrollBounds(

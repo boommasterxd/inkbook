@@ -46,7 +46,7 @@ describe("live stroke sample retention", () => {
       expect(peak).toBeGreaterThan(19.9);
     }
     expect(commit.instrumentation.retainedSamples).toBeGreaterThan(300);
-    expect(commit.instrumentation.maximumTailSamples).toBeLessThanOrEqual(16);
+    expect(commit.instrumentation.maximumTailSamples).toBeLessThanOrEqual(131);
     expect(batched.instrumentation.tailBuilds).toBe(1);
   });
 

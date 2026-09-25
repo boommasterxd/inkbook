@@ -1,3 +1,8 @@
+import { parseRuntimeInput } from "./parse-runtime-input";
+import {
+  PreparedUnlockPaths,
+  type PreparedUnlockPath,
+} from "../../serialization/prepared-unlock-paths";
 import type { InkSnapshotV1, SnapshotValidationDerivations } from "../../../domain/schema/public";
 import { encodeRuntimeSelection, resolveClipboardPayload } from "../../clipboard/codec";
 import { planPaste, resolvePasteTarget } from "../../clipboard/operations";
@@ -11,7 +16,6 @@ import type {
   PasteRepeatState,
 } from "../../clipboard/types";
 import {
-  ChunkedInkbookInputParser,
   deriveDocumentIntegrityManifest,
   deriveDocumentIntegrityManifestFromContentDigest,
   IncrementalDocumentSerializer,
@@ -36,6 +40,7 @@ export type ModelExportResult =
     };
 
 export interface ModelUnlockResult {
+  readonly preparedPaths: readonly PreparedUnlockPath[];
   readonly integrityManifest: DocumentIntegrityManifest;
   readonly lockedHeight: number;
   readonly outputHash: string;
@@ -135,18 +140,25 @@ export class DocumentModelRuntime {
     let runtimeCopyMs = 0;
     let stagedRuntimeSnapshot: RuntimeInkSnapshot | null = null;
     let stagedDerivations: SnapshotValidationDerivations | null = null;
-    const parsed = await parseRuntimeInput(input, sliceContext, async (snapshot, derivations) => {
-      const validationFinished = this.#now();
-      inputValidationMs = validationFinished - started;
-      stagedRuntimeSnapshot = copySnapshotToRuntime(snapshot);
-      const copyFinished = this.#now();
-      runtimeCopyMs = copyFinished - validationFinished;
-      stagedDerivations = derivations;
-      await onValidatedSnapshot?.(stagedRuntimeSnapshot, derivations);
-      callbackFinished = this.#now();
-      batchAdoptionMs = callbackFinished - copyFinished;
-    });
+    const prepared = new PreparedUnlockPaths();
+    const parsed = await parseRuntimeInput(
+      input,
+      sliceContext,
+      async (snapshot, derivations) => {
+        const validationFinished = this.#now();
+        inputValidationMs = validationFinished - started;
+        stagedRuntimeSnapshot = copySnapshotToRuntime(snapshot);
+        const copyFinished = this.#now();
+        runtimeCopyMs = copyFinished - validationFinished;
+        stagedDerivations = derivations;
+        await onValidatedSnapshot?.(stagedRuntimeSnapshot, derivations);
+        callbackFinished = this.#now();
+        batchAdoptionMs = callbackFinished - copyFinished;
+      },
+      prepared.observe,
+    );
     if (!parsed.ok) throw new RuntimeModelError(parsed.error.code, false);
+    sliceContext?.signal.throwIfAborted();
     const parserFinished = this.#now();
     const runtimeSnapshot = stagedRuntimeSnapshot ?? copySnapshotToRuntime(parsed.value.snapshot);
     const modelAdoptionStarted = this.#now();
@@ -163,6 +175,7 @@ export class DocumentModelRuntime {
     const snapshot = this.#snapshot;
     if (snapshot === null) throw new RuntimeModelError("snapshot-invalid", false);
     return {
+      preparedPaths: prepared.take(),
       integrityManifest: deriveDocumentIntegrityManifest(snapshot),
       lockedHeight: parsed.value.lockedHeight,
       outputHash: parsed.value.hash,
@@ -447,51 +460,4 @@ export class RuntimeModelError extends Error {
 
 function failure(code: string, retryable: boolean): ModelExportResult {
   return { code, ok: false, retryable };
-}
-
-async function parseRuntimeInput(
-  input: string | Uint8Array,
-  context?: RuntimeSliceContext,
-  onValidatedSnapshot?: (
-    snapshot: InkSnapshotV1,
-    derivations: SnapshotValidationDerivations,
-  ) => Promise<void> | void,
-) {
-  const inputSliceBytes = context?.workProfile?.inputByteLimit ?? 256 * 1024;
-  const inputWriteChunk = context?.workProfile?.inputByteLimit ?? 16 * 1024;
-  const parser = new ChunkedInkbookInputParser({
-    ...(context === undefined ? {} : { checkpoint: context.checkpoint, signal: context.signal }),
-    inputSliceBytes,
-    ...(onValidatedSnapshot === undefined ? {} : { onValidatedSnapshot }),
-  });
-  if (typeof input === "string") await writeStringInput(parser, input, inputWriteChunk);
-  else await writeByteInput(parser, input, inputWriteChunk);
-  return parser.finish();
-}
-
-async function writeByteInput(
-  parser: ChunkedInkbookInputParser,
-  input: Uint8Array,
-  chunkBytes: number,
-): Promise<void> {
-  for (let offset = 0; offset < input.byteLength; offset += chunkBytes) {
-    const written = await parser.write(input.subarray(offset, offset + chunkBytes));
-    if (!written.ok) return;
-  }
-}
-
-async function writeStringInput(
-  parser: ChunkedInkbookInputParser,
-  input: string,
-  chunkCodeUnits: number,
-): Promise<void> {
-  const encoder = new TextEncoder();
-  for (let offset = 0; offset < input.length;) {
-    let end = Math.min(input.length, offset + chunkCodeUnits);
-    const trailing = input.charCodeAt(end - 1);
-    if (end < input.length && trailing >= 0xd800 && trailing <= 0xdbff) end -= 1;
-    const written = await parser.write(encoder.encode(input.slice(offset, end)));
-    if (!written.ok) return;
-    offset = end;
-  }
 }

@@ -1,62 +1,49 @@
 import { describe, expect, it } from "vitest";
 
-import { buildStrokePathParts } from "../../../../src/domain/geometry/stroke-path";
+import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
+import { fakeNode } from "../../../unit/rendering/scene/fakes";
 import { moveSelection, scaleElement } from "../../../../src/editor/selection/transforms";
 import {
   createSelectionTraceFixture,
   selectionTraceGeometry,
   selectionTraceTransform,
-  selectionHaloPaths,
+  selectionCenterPaths,
   selectionHaloNodes,
 } from "../../../fixtures/rendering/selection-traces";
 import { createAllElementSnapshot } from "../../../unit/persistence/serialization/fixtures";
 import { coordinateSystem, table } from "../../../unit/domain/geometry/fixtures";
 import { rectangle, stroke } from "../../../unit/domain/schema/fixtures";
 
-function compact(path: string | undefined): string {
-  return (path ?? "").replace(/\s+/gu, "");
-}
-
 describe("retained selection traces", () => {
-  it("retains canonical inner-edge sources for every selected annotation family", () => {
+  it("retains one canonical center path for every selected annotation family", () => {
     const elements = createAllElementSnapshot().elements;
     const { renderer, select } = createSelectionTraceFixture(elements);
     const traces = select();
     expect(traces.map((node) => node.attributes.get("data-selection-element-id")).sort()).toEqual(
       elements.map(({ id }) => id).sort(),
     );
-    for (const trace of traces) {
-      expect(selectionTraceGeometry(trace)).toBeTruthy();
-      expect(
-        selectionHaloPaths(trace).every(
-          (path) => path.attributes.get("vector-effect") === "non-scaling-stroke",
-        ),
-      ).toBe(true);
-    }
-    for (const kind of ["ellipse", "triangle", "octagon"] as const) {
-      const element = elements.find((item) => item.kind === kind)!;
-      const d = selectionTraceGeometry(
-        traces.find((trace) => trace.attributes.get("data-selection-element-id") === element.id)!,
-      );
-      if (kind === "ellipse") expect(d.match(/C/gu)).toHaveLength(4);
-      else expect(d.match(/L/gu)).toHaveLength(kind === "triangle" ? 2 : 7);
+    for (const element of elements) {
+      const root = traces.find(
+        (node) => node.attributes.get("data-selection-element-id") === element.id,
+      )!;
+      expect(selectionCenterPaths(root)).toHaveLength(1);
+      expect(selectionTraceGeometry(root), element.kind).toBeTruthy();
+      if (element.kind !== "arrow" && !(element.kind === "stroke" && element.style.pressureEnabled))
+        expect(selectionTraceGeometry(root)).toBe(
+          buildElementPathParts(element)
+            .map(({ d }) => d)
+            .join(""),
+        );
     }
     renderer.destroy();
   });
 
-  it("reuses complete pressure silhouettes without rebuilding centerlines", () => {
-    const source = stroke();
+  it("follows the smoothed pressure centerline without outlining its variable thickness", () => {
+    const source = { ...stroke(), points: [100, 100, 0.1, 110, 120, 1, 120, 100, 0.4] };
     const { renderer, select } = createSelectionTraceFixture([source]);
     const [trace] = select();
-    const expected = buildStrokePathParts(source)
-      .map(({ d }) => d)
-      .join("");
-    expect(selectionTraceGeometry(trace!)).toBe(expected);
-    expect(
-      selectionHaloNodes(trace!).some(
-        (node) => node.attributes.get("class") === "inkbook-selection-center-trace",
-      ),
-    ).toBe(false);
+    expect(selectionTraceGeometry(trace!)).toBe("M100 100L110 110L120 100");
+    expect(selectionCenterPaths(trace!)).toHaveLength(1);
     renderer.destroy();
   });
 
@@ -64,23 +51,22 @@ describe("retained selection traces", () => {
     const source = table();
     const axes = coordinateSystem("3d");
     const { renderer, select } = createSelectionTraceFixture([source, axes]);
-    const traces = select();
+    const roots = select();
+    const compact = (path: string) => path.replace(/\s+/gu, "");
     const tablePath = compact(
       selectionTraceGeometry(
-        traces.find((node) => node.attributes.get("data-selection-element-id") === source.id)!,
+        roots.find((root) => root.attributes.get("data-selection-element-id") === source.id)!,
       ),
     );
-    for (const segment of ["M10 50L160 50", "M60 20L60 120", "M110 20L110 120"]) {
+    for (const segment of ["M10 50L160 50", "M60 20L60 120", "M110 20L110 120"])
       expect(tablePath).toContain(compact(segment));
-    }
     const axesPath = compact(
       selectionTraceGeometry(
-        traces.find((node) => node.attributes.get("data-selection-element-id") === axes.id)!,
+        roots.find((root) => root.attributes.get("data-selection-element-id") === axes.id)!,
       ),
     );
-    for (const segment of ["M100 100L200 100", "M100 100L100 0", "M100 100L50 150"]) {
+    for (const segment of ["M100 100L200 100", "M100 100L100 0", "M100 100L50 150"])
       expect(axesPath).toContain(compact(segment));
-    }
     renderer.destroy();
   });
 });
@@ -90,16 +76,16 @@ describe("selection trace lifecycle", () => {
     const source = rectangle();
     const { renderer, scheduler, select, nodes } = createSelectionTraceFixture([source]);
     const [trace] = select();
-    const d = selectionTraceGeometry(trace!);
+    const d = selectionTraceGeometry(fakeNode(renderer.svg));
     renderer.setCamera({ x: 10, zoom: 2 });
     renderer.setPreviewTransform([source.id], "translate(5 7)", 1);
     scheduler.runAll();
     expect(nodes()).toEqual([trace]);
-    expect(selectionTraceGeometry(trace!)).toBe(d);
-    expect(selectionTraceTransform(trace!)).toContain("translate(5 7)");
+    expect(selectionTraceGeometry(fakeNode(renderer.svg))).toBe(d);
+    expect(selectionTraceTransform(fakeNode(renderer.svg))).toContain("translate(5 7)");
     renderer.clearPreviewTransforms();
     scheduler.runAll();
-    expect(selectionTraceTransform(trace!) ?? "").not.toContain("translate(5 7)");
+    expect(selectionTraceTransform(fakeNode(renderer.svg)) ?? "").not.toContain("translate(5 7)");
     renderer.setCamera({ x: -5000, zoom: 1 });
     scheduler.runAll();
     expect(nodes()).toEqual([]);
@@ -115,26 +101,33 @@ describe("selection trace lifecycle", () => {
   it.each([rectangle(), stroke()])(
     "updates $kind traces with exact previews and restores canonical geometry when cancelled",
     (source) => {
-      const { renderer, scheduler, select, nodes } = createSelectionTraceFixture([source]);
-      const [trace] = select();
-      const d = selectionTraceGeometry(trace!);
+      const { renderer, scheduler, select } = createSelectionTraceFixture([source]);
+      select();
+      const d = selectionTraceGeometry(fakeNode(renderer.svg));
       renderer.setElementPreviews(moveSelection([source], { x: 20, y: 30 }), 1);
       scheduler.runAll();
-      expect(selectionTraceGeometry(nodes()[0]!)).not.toBe(d);
+      expect(selectionTraceGeometry(fakeNode(renderer.svg))).not.toBe(d);
       renderer.clearElementPreviews();
       scheduler.runAll();
-      expect(selectionTraceGeometry(nodes()[0]!)).toBe(d);
+      expect(selectionTraceGeometry(fakeNode(renderer.svg))).toBe(d);
       renderer.destroy();
     },
   );
 });
 
 describe("selection highlight setting", () => {
-  it("removes every halo while preserving line and arrow center nodes across toggles", () => {
+  it("preserves only line and arrow centers when highlights are disabled", () => {
     const elements = createAllElementSnapshot().elements;
     const { renderer, scheduler, select, nodes } = createSelectionTraceFixture(elements);
     const selectedRoots = select();
     const centers = selectedRoots
+      .filter((root) =>
+        elements.some(
+          (element) =>
+            (element.kind === "line" || element.kind === "arrow") &&
+            element.id === root.attributes.get("data-selection-element-id"),
+        ),
+      )
       .flatMap(selectionHaloNodes)
       .filter((node) => node.attributes.get("class") === "inkbook-selection-center-trace");
     renderer.setSelectionHighlightsEnabled(false);
@@ -149,7 +142,7 @@ describe("selection highlight setting", () => {
         .map(({ id }) => id)
         .sort(),
     );
-    expect(nodes().flatMap(selectionHaloPaths)).toEqual([]);
+    expect(selectionCenterPaths(fakeNode(renderer.svg))).toEqual(centers);
     expect(nodes().flatMap(selectionHaloNodes)).toHaveLength(centers.length * 2);
     expect(
       nodes()
@@ -158,11 +151,8 @@ describe("selection highlight setting", () => {
     ).toEqual(centers);
     renderer.setSelectionHighlightsEnabled(true);
     scheduler.runAll();
-    expect(
-      nodes()
-        .flatMap(selectionHaloNodes)
-        .filter((node) => node.attributes.get("class") === "inkbook-selection-center-trace"),
-    ).toEqual(centers);
+    for (const center of centers)
+      expect(selectionCenterPaths(fakeNode(renderer.svg))).toContain(center);
     expect(nodes()).toHaveLength(elements.length);
     renderer.destroy();
   });
@@ -171,20 +161,21 @@ describe("selection highlight setting", () => {
     "re-enables the displayed $kind preview and restores the baseline on cancellation",
     (source) => {
       const { renderer, scheduler, select, nodes } = createSelectionTraceFixture([source]);
-      const baseline = selectionTraceGeometry(select()[0]!);
+      select();
+      const baseline = selectionTraceGeometry(fakeNode(renderer.svg));
       renderer.setElementPreviews(moveSelection([source], { x: 20, y: 30 }), 1);
       scheduler.runAll();
-      const preview = selectionTraceGeometry(nodes()[0]!);
+      const preview = selectionTraceGeometry(fakeNode(renderer.svg));
       expect(preview).not.toBe(baseline);
       renderer.setSelectionHighlightsEnabled(false);
       scheduler.runAll();
       expect(nodes()).toEqual([]);
       renderer.setSelectionHighlightsEnabled(true);
       scheduler.runAll();
-      expect(selectionTraceGeometry(nodes()[0]!)).toBe(preview);
+      expect(selectionTraceGeometry(fakeNode(renderer.svg))).toBe(preview);
       renderer.clearElementPreviews();
       scheduler.runAll();
-      expect(selectionTraceGeometry(nodes()[0]!)).toBe(baseline);
+      expect(selectionTraceGeometry(fakeNode(renderer.svg))).toBe(baseline);
       renderer.destroy();
     },
   );
@@ -192,8 +183,9 @@ describe("selection highlight setting", () => {
 
 it("re-enables pressure highlights during both progressive feedback and materialized resize", () => {
   const source = stroke();
-  const { renderer, scheduler, select, nodes } = createSelectionTraceFixture([source]);
-  const baseline = selectionTraceGeometry(select()[0]!);
+  const { renderer, scheduler, select } = createSelectionTraceFixture([source]);
+  select();
+  const baseline = selectionTraceGeometry(fakeNode(renderer.svg));
   renderer.setSelectionHighlightsEnabled(false);
   scheduler.runAll();
   const resized = scaleElement(source, { x: 0, y: 0 }, { x: 2, y: 1 });
@@ -204,15 +196,35 @@ it("re-enables pressure highlights during both progressive feedback and material
   renderer.flushPointerFeedbackFrame();
   renderer.setSelectionHighlightsEnabled(true);
   scheduler.runAll();
-  const resizedPath = selectionTraceGeometry(nodes()[0]!);
+  const resizedPath = selectionTraceGeometry(fakeNode(renderer.svg));
   expect(resizedPath).not.toBe(baseline);
   renderer.setSelectionHighlightsEnabled(false);
   scheduler.runAll();
   renderer.setSelectionHighlightsEnabled(true);
   scheduler.runAll();
-  expect(selectionTraceGeometry(nodes()[0]!)).toBe(resizedPath);
+  expect(selectionTraceGeometry(fakeNode(renderer.svg))).toBe(resizedPath);
   renderer.clearProgressiveElementPreviews();
   scheduler.runAll();
-  expect(selectionTraceGeometry(nodes()[0]!)).toBe(baseline);
+  expect(selectionTraceGeometry(fakeNode(renderer.svg))).toBe(baseline);
   renderer.destroy();
+});
+
+it("clears selected centers and cancels pending mounting on destroy", () => {
+  const elements = Array.from({ length: 100 }, (_, index) => ({
+    ...rectangle(index + 100),
+    x: 20 + (index % 10) * 30,
+    y: 20 + Math.floor(index / 10) * 30,
+    width: 20,
+    height: 20,
+  }));
+  const { renderer, scheduler, nodes, select } = createSelectionTraceFixture(elements);
+  select();
+  expect(nodes()).toHaveLength(100);
+  renderer.setSelectedElements(new Set());
+  scheduler.runAll();
+  expect(nodes()).toEqual([]);
+  renderer.setSelectedElements(new Set(elements.map(({ id }) => id)));
+  renderer.destroy();
+  expect(scheduler.pendingCount).toBe(0);
+  expect(selectionCenterPaths(fakeNode(renderer.svg))).toEqual([]);
 });

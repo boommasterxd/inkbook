@@ -1,5 +1,5 @@
+import { selectionCenterlineBounds } from "./centerline-bounds";
 import {
-  calculateElementBounds,
   canonicalPoint,
   normalizeRotation,
   rotatePointClockwise,
@@ -83,7 +83,7 @@ export function createSelectionFrameAtRotation(
   let bounds: Bounds | null = null;
   for (const source of elements) {
     const element = selectionFrameElementAtRotation(source, rotation);
-    const current = calculateElementBounds(element);
+    const current = selectionCenterlineBounds(element);
     bounds = bounds === null ? current : unionBounds(bounds, current);
   }
   if (bounds === null) return null;
@@ -131,7 +131,8 @@ export function createSelectionFrame(
 ): OrientedSelectionFrame | null {
   let bounds: Bounds | null = null;
   for (const item of selected) {
-    bounds = bounds === null ? { ...item.bounds } : unionBounds(bounds, item.bounds);
+    const current = selectionCenterlineBounds(item.element, item.bounds);
+    bounds = bounds === null ? current : unionBounds(bounds, current);
   }
   if (bounds === null) return null;
   return {

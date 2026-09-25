@@ -8,9 +8,9 @@ import { requireFinite, requirePositive } from "./numeric-validation";
 
 export const DEFAULT_WHEEL_LINE_HEIGHT = 16;
 export const DEFAULT_WHEEL_PAGE_HEIGHT = 800;
-export const TRACKPAD_ZOOM_DELTA_LIMIT = 16;
-export const TRACKPAD_ZOOM_SENSITIVITY = 2.5;
-export const TRACKPAD_ZOOM_PIXELS_PER_STEP = TRACKPAD_ZOOM_DELTA_LIMIT / TRACKPAD_ZOOM_SENSITIVITY;
+// Calibration is independent of event magnitude and browser event partitioning.
+export const TRACKPAD_ZOOM_PIXELS_PER_STEP = 6.4;
+const MAX_LOG_ZOOM_FACTOR = Math.log(Number.MAX_VALUE);
 
 export type WheelDeltaMode = 0 | 1 | 2;
 
@@ -97,14 +97,14 @@ export function createWheelZoomState(): WheelZoomState {
   return { pendingSteps: 0 };
 }
 
-/** Converts a pixel-based modifier-wheel delta into a continuous trackpad zoom factor. */
+/** Converts a pixel-based modifier-wheel delta into a continuous zoom factor. */
 export function continuousWheelZoomFactor(delta: number, options: WheelNormalization = {}): number {
   const normalizedDelta = normalizeWheelDelta(delta, 0, options);
   const pixelsPerStep = requirePositive(
     options.pixelsPerStep ?? TRACKPAD_ZOOM_PIXELS_PER_STEP,
     "pixelsPerStep",
   );
-  return requirePositive(ZOOM_STEP_FACTOR ** (-normalizedDelta / pixelsPerStep), "zoomFactor");
+  return boundedExponential((-normalizedDelta / pixelsPerStep) * Math.log(ZOOM_STEP_FACTOR));
 }
 
 export function accumulateWheelSteps(state: WheelZoomState, steps: number): WheelZoomState {
@@ -143,7 +143,7 @@ export function accumulateZoomInput(state: ZoomFrameState, input: ZoomInputEvent
     requireFinite(input.anchor.anchorViewportY, "anchor.anchorViewportY");
   }
   return {
-    factor: requirePositive(state.factor * factor, "pendingFactor"),
+    factor: multiplyZoomFactors(state.factor, factor),
     panX: requireFinite(state.panX + panX, "pendingPanX"),
     panY: requireFinite(state.panY + panY, "pendingPanY"),
     ...(input.anchor === undefined && state.anchor === undefined
@@ -175,4 +175,17 @@ export function consumeZoomFrame(
     ...(remainingFactor === 1 || state.anchor === undefined ? {} : { anchor: state.anchor }),
   };
   return { state: nextState, frame };
+}
+
+/** Keep malformed numeric scale from escaping before the camera adapter applies its limits. */
+function boundedExponential(exponent: number): number {
+  return Math.exp(Math.max(-MAX_LOG_ZOOM_FACTOR, Math.min(MAX_LOG_ZOOM_FACTOR, exponent)));
+}
+
+function multiplyZoomFactors(first: number, second: number): number {
+  requirePositive(first, "pendingFactor");
+  const product = first * second;
+  return Number.isFinite(product) && product > 0
+    ? product
+    : boundedExponential(Math.log(first) + Math.log(second));
 }

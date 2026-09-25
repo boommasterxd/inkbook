@@ -162,12 +162,14 @@ export class ElementStore {
   public getSemanticAnchors(id: string): readonly ResolvedShapeAnchor[] | null {
     return this.#runtime.semanticAnchors(this.#records.get(id));
   }
-  public activeDocumentMemoryUsage(): ElementStoreMemoryUsage {
-    return this.#runtime.memoryUsage();
+  public pressureGeometry(id: string, version: number) {
+    return this.#runtime.pressureGeometry(id, version, (key) => this.#records.get(key));
   }
-  public subscribeMemoryUsage(listener: () => void): () => void {
-    return this.#runtime.subscribeMemoryUsage(listener);
-  }
+  public readonly releasePreparedPressureGeometry = () => this.#runtime.releasePressureGeometry();
+  public readonly activeDocumentMemoryUsage = (): ElementStoreMemoryUsage =>
+    this.#runtime.memoryUsage();
+  public readonly subscribeMemoryUsage = (listener: () => void): (() => void) =>
+    this.#runtime.subscribeMemoryUsage(listener);
   public setActiveDocumentMemoryPressure(active: boolean): void {
     this.#runtime.setActiveDocumentMemoryPressure(active);
   }

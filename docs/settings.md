@@ -98,9 +98,9 @@ Rectangle uses the drag start and current pointer as opposite corners. Lasso rec
 
 ## Selection Highlights
 
-`selectionHighlightsEnabled` is a vault preference exposed as **Selection highlights** in General settings. It defaults to `true` and controls the inner selection edge on annotations, including handwriting, both highlighter tools, closed shapes, tables, and coordinate systems. This includes lines and arrows; disabling the preference removes their inner edge but always retains their additional center trace. The visual contract is defined in [Editor Tools](editor-tools.md#select). The selection frame and its handles remain visible independently of this preference; selection geometry, hit testing, transforms, history, and saved document content are unchanged.
+`selectionHighlightsEnabled` is a vault preference exposed as **Selection highlights** in General settings. It defaults to `true` and controls optional centerline indicators on handwriting, both highlighter tools, closed shapes, tables, and coordinate systems. Line and arrow center traces remain visible independently. The visual contract, including coincident rectangle-frame suppression, is defined in [Editor Tools](editor-tools.md#select). Selection frames and handles remain available regardless of this preference; selection geometry, hit testing, transforms, history, and saved document content are unchanged.
 
-Changing the preference updates all active presentations, including pop-outs, immediately. Disabling it releases all edge-source and filter nodes and pending highlight work while preserving line and arrow center traces; enabling it rebuilds highlights only for mounted selected elements through the existing bounded rendering slices. Missing values in supported older settings load as `true`; invalid values fall back to `true` with an invalid-field diagnostic. General and full settings resets restore `true`.
+Changing the preference updates all active presentations, including pop-outs, immediately. Disabling it releases optional indicator nodes; enabling it recreates indicators only for mounted selected elements through the scene scheduler. Missing values in supported older settings load as `true`; invalid values fall back to `true` with an invalid-field diagnostic. General and full settings resets restore `true`.
 
 ## Snapping
 

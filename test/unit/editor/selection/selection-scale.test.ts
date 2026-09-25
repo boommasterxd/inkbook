@@ -147,7 +147,7 @@ describe("group resize snapping boundary", () => {
     expect(commit.replacements).toEqual(preview.exactElements);
     for (const replacement of commit.replacements) {
       expect(replacement).toMatchObject({
-        end: { x: 350, y: 150 },
+        end: { x: 351, y: 150 },
         startConnection: null,
         endConnection: null,
       });
