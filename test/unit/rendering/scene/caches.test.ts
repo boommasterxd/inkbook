@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { ArrowElementV1 } from "../../../../src/domain/schema/public";
 import { SceneBackgroundCache } from "../../../../src/rendering/scene/background-cache";
@@ -29,6 +29,33 @@ describe("scene caches", () => {
     }
     expect(byteBounded.statistics()).toMatchObject({ entries: 3, evictions: 1 });
     expect(byteBounded.cacheMemoryUsage()).toBeLessThanOrEqual(PATH_CACHE_MAX_BYTES);
+  });
+});
+
+describe("prepared live path cache", () => {
+  it("consumes a lazy handoff once and rejects stale, evicted, or released handoffs without building", () => {
+    const cache = new ScenePathCache(1, 1024);
+    const parts = [{ d: "M0 0L1 1", paint: "stroke" }] as const;
+    const build = vi.fn(() => parts);
+    const prepared = {
+      get geometry() {
+        return build();
+      },
+      geometryMemoryBytes: 128,
+    };
+    cache.retainPrepared("first", 1, prepared);
+    expect(build).not.toHaveBeenCalled();
+    expect(cache.take("first", 1)).toBe(parts);
+    expect(cache.take("first", 1)).toBeUndefined();
+    expect(build).toHaveBeenCalledTimes(1);
+    cache.retainPrepared("first", 2, prepared);
+    expect(cache.take("first", 3)).toBeUndefined();
+    cache.retainPrepared("second", 1, prepared);
+    expect(cache.take("first", 2)).toBeUndefined();
+    cache.release();
+    expect(cache.take("second", 1)).toBeUndefined();
+    expect(build).toHaveBeenCalledTimes(1);
+    expect(cache.cacheMemoryUsage()).toBe(0);
   });
 });
 

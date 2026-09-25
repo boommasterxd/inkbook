@@ -27,10 +27,10 @@ describe("selection overlay geometry", () => {
     expect(selectionOverlayGeometry([selected(shape)], 1)?.outline).toEqual({
       kind: "polygon",
       points: [
-        { x: 252, y: 48 },
-        { x: 252, y: 252 },
-        { x: 148, y: 252 },
-        { x: 148, y: 48 },
+        { x: 250, y: 50 },
+        { x: 250, y: 250 },
+        { x: 150, y: 250 },
+        { x: 150, y: 50 },
       ],
     });
   });
@@ -167,16 +167,16 @@ describe("selection overlay transforms", () => {
   it("matches the preview transform order for rotated non-uniform scaling", () => {
     expect(
       transformSelectionPoint(
-        { x: 148, y: 252 },
+        { x: 150, y: 250 },
         {
-          anchor: { x: 252, y: 48 },
+          anchor: { x: 250, y: 50 },
           delta: { x: 0, y: 0 },
           factors: { x: 1.5, y: 2 },
           kind: "scale",
           rotation: 90,
         },
       ),
-    ).toEqual({ x: 44, y: 354 });
+    ).toEqual({ x: 50, y: 350 });
   });
 
   it.each([0.5, 1, 2])(

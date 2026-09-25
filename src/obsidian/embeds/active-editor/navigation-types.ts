@@ -1,3 +1,4 @@
+import type { NavigationCursorLayout } from "./navigation-layout";
 import type { InputState } from "../../../editor/input/index";
 import type { SvgSceneRenderer } from "../../../rendering/scene/index";
 import type { BrowserScrollElement } from "../../scrolling/index";
@@ -15,8 +16,11 @@ export interface ActiveEditorCameraUpdate {
 export interface ActiveEditorNavigationOptions {
   readonly onNavigationActive?: (active: boolean) => void;
   readonly activePageHeight: () => number;
-  readonly applyCamera?: (camera: ActiveEditorCameraUpdate) => void;
-  readonly applyZoomLayout: (update: ActiveEditorZoomLayoutUpdate) => void;
+  readonly applyCamera?: (
+    camera: ActiveEditorCameraUpdate,
+    layout?: NavigationCursorLayout,
+  ) => void;
+  readonly applyZoomLayout: (update: ActiveEditorZoomLayoutUpdate) => number | void;
   readonly container: HTMLElement;
   readonly renderer: SvgSceneRenderer;
   readonly scrollOwner: BrowserScrollElement;

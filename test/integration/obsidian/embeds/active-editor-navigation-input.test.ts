@@ -103,14 +103,13 @@ describe("active editor keyboard and wheel navigation", () => {
     expect(harness.navigation.zoom).toBeCloseTo(oldZoom * 1.08 ** 0.625);
   });
 
-  it("keeps a large pixel-mode mouse-wheel event at one discrete step", () => {
+  it.each([1, 2])("keeps line/page wheel mode %s at one discrete step", (deltaMode) => {
     const harness = createHarness();
     const oldZoom = harness.navigation.zoom;
-
-    expect(harness.navigation.updateWheel(zoomWheel(-100))).toBe(true);
+    expect(harness.navigation.updateWheel({ ...zoomWheel(-100), deltaMode })).toBe(true);
     harness.frames.flush();
-
     expect(harness.navigation.zoom).toBeCloseTo(oldZoom * 1.08);
+    expect(harness.frames.callbacks.size).toBe(0);
   });
 
   it("applies keyboard zoom through the same atomic anchored frame", () => {
@@ -131,6 +130,76 @@ describe("active editor keyboard and wheel navigation", () => {
         harness.navigation.zoom,
     ).toBeCloseTo(oldPage.y);
     expect(harness.sequence.slice(-3)).toEqual(["layout-write", "scroll-write", "camera-write"]);
+  });
+});
+
+describe("continuous pixel-wheel response", () => {
+  it("remains monotonic across the former magnitude boundary and ignores horizontal magnitude", () => {
+    let previous = 1;
+    for (const magnitude of [0.1, 4, 15.9, 16, 16.1, 20]) {
+      const harness = createHarness();
+      const before = harness.navigation.zoom;
+      harness.navigation.updateWheel({ ...zoomWheel(-magnitude), deltaX: 80 });
+      expect(harness.frames.callbacks.size).toBe(1);
+      harness.frames.flush();
+      const factor = harness.navigation.zoom / before;
+      expect(factor).toBeCloseTo(1.08 ** (magnitude / 6.4), 12);
+      expect(factor).toBeGreaterThan(previous);
+      previous = factor;
+      harness.navigation.dispose();
+    }
+  });
+
+  it.each([false, true])("preserves event partitioning with per-event frames=%s", (flushEach) => {
+    for (const deltas of [[-32], [-16, -16], [-8, -8, -8, -8]]) {
+      const harness = createHarness();
+      const before = harness.navigation.zoom;
+      for (const delta of deltas) {
+        harness.navigation.updateWheel(zoomWheel(delta));
+        expect(harness.frames.callbacks.size).toBe(1);
+        if (flushEach) harness.frames.flush();
+      }
+      for (let frame = 0; harness.frames.callbacks.size > 0; frame += 1) {
+        expect(frame).toBeLessThan(8);
+        expect(harness.frames.callbacks.size).toBe(1);
+        harness.frames.flush();
+      }
+      expect(harness.navigation.zoom).toBeCloseTo(before * 1.08 ** 5, 12);
+      harness.navigation.dispose();
+    }
+  });
+});
+
+describe("continuous zoom limit and reversal handling", () => {
+  it("caps huge finite input at the actual camera bounds without stale frame work", () => {
+    const harness = createHarness();
+    const fit = harness.navigation.zoom;
+    for (const [delta, target] of [
+      [-Number.MAX_VALUE, 5],
+      [Number.MAX_VALUE, fit],
+    ]) {
+      expect(() => harness.navigation.updateWheel(zoomWheel(delta!))).not.toThrow();
+      for (let frame = 0; harness.frames.callbacks.size > 0; frame += 1) {
+        expect(frame).toBeLessThanOrEqual(Math.ceil(Math.log(5 / fit) / Math.log(1.35)));
+        expect(harness.frames.callbacks.size).toBe(1);
+        harness.frames.flush();
+      }
+      expect(harness.navigation.zoom).toBeCloseTo(target!, 12);
+    }
+    harness.navigation.dispose();
+  });
+
+  it("reverses the next frame instead of draining the previous zoom direction", () => {
+    const harness = createHarness();
+    harness.navigation.updateWheel(zoomWheel(-Number.MAX_VALUE));
+    harness.frames.flush();
+    const beforeReversal = harness.navigation.zoom;
+    harness.navigation.updateWheel(zoomWheel(4));
+    harness.frames.flush();
+    expect(harness.navigation.zoom).toBeLessThan(beforeReversal);
+    expect(harness.navigation.zoom).toBeCloseTo(beforeReversal * 1.08 ** (-4 / 6.4), 12);
+    expect(harness.frames.callbacks.size).toBe(0);
+    harness.navigation.dispose();
   });
 });
 

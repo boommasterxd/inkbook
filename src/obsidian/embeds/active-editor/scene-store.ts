@@ -35,6 +35,10 @@ export class ElementSceneStore implements SceneStorePort, ActiveDocumentMemorySt
     };
   }
 
+  public pressureGeometry(id: string, geometryVersion: number) {
+    return this.#store.pressureGeometry(id, geometryVersion);
+  }
+
   public beginQuery(bounds: Bounds): ReturnType<ElementStore["beginQuery"]> {
     return this.#store.beginQuery(bounds);
   }
@@ -102,7 +106,13 @@ export class ElementSceneStore implements SceneStorePort, ActiveDocumentMemorySt
   #considerHit(id: string): void {
     const record = this.get(id);
     if (record === undefined) return;
-    this.#hitScratch.consider(id, record.band, record.element, record.rank);
+    this.#hitScratch.consider(
+      id,
+      record.band,
+      record.element,
+      record.rank,
+      this.pressureGeometry(id, record.geometryVersion),
+    );
   }
 
   public release(): void {

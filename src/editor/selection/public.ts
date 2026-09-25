@@ -1,4 +1,5 @@
-export { selectBySelectionAreaQuery, selectElement } from "./selection-model";
+export type { SelectionAreaCandidate } from "./selection-model";
+export { selectBySelectionAreaCandidatesSteps, selectElement } from "./selection-model";
 export { createRectangleSelectionArea } from "./selection-area";
 export type { SelectionArea } from "./selection-area";
 export { LassoSelectionSession } from "./lasso-selection-session";

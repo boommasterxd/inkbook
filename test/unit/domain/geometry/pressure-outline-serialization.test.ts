@@ -1,134 +1,175 @@
-import { roundCanonical } from "../../../../src/domain/geometry/primitives";
+import {
+  serializePressureCapsules,
+  serializePressureWindows,
+} from "../../../../src/domain/geometry/pressure-path-serialization";
+import type { PressureOutlinePiece } from "../../../../src/domain/geometry/pressure-outline-piece";
 import { describe, expect, it } from "vitest";
-
+import { roundCanonical } from "../../../../src/domain/geometry/primitives";
 import {
   buildPressureOutline,
   visitPressureOutline,
 } from "../../../../src/domain/geometry/pressure-outline";
+import {
+  decodeSvgPathCommands,
+  sampleSvgPathContours,
+} from "../../../fixtures/domain/svg-path-fill";
 
-interface DecodedCommand {
-  command: string;
-  values: number[];
+function horizontalPath(start: number, end: number, y = 200000): string {
+  return capsulePath([
+    { x: start, y, pressure: 1 },
+    { x: end, y, pressure: 1 },
+  ]);
 }
 
-/** Integer thousandths independently decode relative coordinates without accumulating float error. */
-function absoluteCommands(d: string): DecodedCommand[] {
-  let current = [0, 0];
-  return [...d.matchAll(/([MQAqaZ])([^MQAqaZ]*)/g)].map((match) => {
-    const command = match[1]!;
-    const values = match[2]!.match(/-?(?:\d+(?:\.\d+)?|\.\d+)/g)?.map(Number) ?? [];
-    const coordinateStart = command.toUpperCase() === "A" ? 5 : 0;
-    for (let index = coordinateStart; index < values.length; index += 1) {
-      let thousandths = Math.round(values[index]! * 1000);
-      if (command === "q" || command === "a")
-        thousandths += current[(index - coordinateStart) % 2]!;
-      values[index] = thousandths / 1000;
-    }
-    if (values.length > 0) current = values.slice(-2).map((value) => Math.round(value * 1000));
-    return { command: command.toUpperCase(), values };
+function capsulePath(centers: readonly { x: number; y: number; pressure: number }[]): string {
+  const pieces: PressureOutlinePiece[] = [];
+  visitPressureOutline(centers, 8, (piece) => {
+    pieces.push(piece);
+    return false;
   });
+  return serializePressureCapsules(pieces);
 }
 
 describe("compact continuous outline serialization", () => {
-  it("preserves the exact absolute contour when distant geometry uses relative commands", () => {
-    const d = buildPressureOutline(
-      [
-        { x: 100000, y: 200000, pressure: 0 },
-        { x: 100030, y: 200000, pressure: 1 },
-      ],
-      8,
-    )[0]!.d;
-    expect(d).toContain("q");
+  it("preserves the analytic straight contour with relative lines and circular caps", () => {
+    const d = horizontalPath(100000, 100030);
+    expect(d).toMatch(/[lh]/u);
     expect(d).toContain("a");
-    expect(absoluteCommands(d)).toEqual([
-      { command: "M", values: [100000, 200001.4] },
-      { command: "Q", values: [100015, 200002.7, 100030, 200004] },
-      { command: "A", values: [4, 4, 0, 0, 0, 100030, 199996] },
-      { command: "Q", values: [100015, 199997.3, 100000, 199998.6] },
-      { command: "A", values: [1.4, 1.4, 0, 0, 0, 100000, 200001.4] },
-      { command: "Z", values: [] },
-    ]);
+    const decoded = decodeSvgPathCommands(d);
+    const endpoints = decoded
+      .filter(({ values }) => values.length > 0)
+      .map(({ values }) => values.slice(-2));
+    expect(endpoints).toContainEqual([100030, 200004]);
+    expect(endpoints).toContainEqual([100000, 199996]);
+    const contour = sampleSvgPathContours(d).flat();
+    expect(Math.min(...contour.map(({ x }) => x))).toBeCloseTo(99996, 3);
+    expect(Math.max(...contour.map(({ x }) => x))).toBeCloseTo(100034, 3);
+    expect(Math.min(...contour.map(({ y }) => y))).toBeCloseTo(199996, 3);
+    expect(Math.max(...contour.map(({ y }) => y))).toBeCloseTo(200004, 3);
   });
 
-  it("preserves canonical half-value rounding for outline centers and pressure radii", () => {
+  it("preserves canonical half-value rounding for dot centers and pressure radii", () => {
     const pressure = (3.3335 / 4 - 0.35) / 0.65;
-    visitPressureOutline([{ x: 999999.9995, y: -999999.9995, pressure }], 8, (piece) => {
-      if (piece.kind !== "dot") throw new Error("Expected a dot");
-      expect(piece.center).toEqual({
-        x: roundCanonical(999999.9995),
-        y: roundCanonical(-999999.9995),
-      });
-      expect(piece.radius).toBe(roundCanonical((8 * (0.35 + 0.65 * pressure)) / 2));
-      return false;
+    const center = { x: 123.4565, y: -123.4565, pressure };
+    const radius = roundCanonical((8 * (0.35 + 0.65 * pressure)) / 2);
+    const decoded = decodeSvgPathCommands(buildPressureOutline([center], 8)[0]!.d);
+    expect(decoded[0]).toEqual({
+      command: "M",
+      values: [roundCanonical(center.x - radius), roundCanonical(center.y)],
     });
+    expect(decoded.map(({ values }) => values.slice(-2))).toContainEqual([
+      roundCanonical(center.x + radius),
+      roundCanonical(center.y),
+    ]);
+    expect(decoded[decoded.length - 2]!.values.slice(-2)).toEqual(decoded[0]!.values);
   });
 
-  it("retains shorter absolute commands and rejects oversized relative deltas", () => {
-    const small = buildPressureOutline(
-      [
-        { x: 0, y: 0, pressure: 1 },
-        { x: 10, y: 0, pressure: 1 },
-      ],
-      8,
-    )[0]!.d;
-    expect(small).toContain("Q");
-    const distant = buildPressureOutline(
-      [
-        { x: -900000, y: 0, pressure: 1 },
-        { x: 900000, y: 0, pressure: 1 },
-      ],
-      8,
-    )[0]!.d;
-    expect(distant).not.toContain("q");
-    expect(absoluteCommands(distant).filter((command) => command.command === "Q")).toHaveLength(2);
+  it("uses absolute endpoints when shorter or when relative deltas exceed the coordinate limit", () => {
+    expect(horizontalPath(0, 10, 0)).toContain("A4 4 0 0 0-4 0");
+    const distant = horizontalPath(-900000, 900000, 0);
+    expect(distant).not.toContain("h");
+    expect(distant).toMatch(/[LH]-?900000/u);
+    const endpoints = decodeSvgPathCommands(distant)
+      .filter(({ values }) => values.length > 0)
+      .map(({ values }) => values.slice(-2));
+    expect(endpoints).toContainEqual([900000, 4]);
+    expect(endpoints).toContainEqual([-900000, -4]);
   });
 
-  it("keeps every control and endpoint exact across long mixed absolute and relative runs", () => {
-    const centers = Array.from({ length: 500 }, (_, index) => ({
-      x: 12000 + index * 0.137,
-      y: 123456.789,
-      pressure: index / 500,
+  it("preserves capsule endpoints when geometry translates and chooses a different contour start", () => {
+    const centers = Array.from({ length: 65 }, (_, index) => ({
+      x: index * 1.25,
+      y: roundCanonical(10 * Math.sin(index / 8)),
+      pressure: 0.5,
     }));
-    const expected: number[][] = [];
-    visitPressureOutline(centers, 22, (piece) => {
-      if (piece.kind === "strip") {
-        expected.push([piece.left[1].x, piece.left[1].y, piece.left[2].x, piece.left[2].y]);
-        expected.push([piece.right[1].x, piece.right[1].y, piece.right[0].x, piece.right[0].y]);
-      }
-      return false;
-    });
-    const d = buildPressureOutline(centers, 22)[0]!.d;
-    const actual = absoluteCommands(d)
-      .filter((command) => command.command === "Q")
-      .map((command) => command.values);
-    expect(actual.map((values) => JSON.stringify(values)).sort()).toEqual(
-      expected.map((values) => JSON.stringify(values)).sort(),
+    const local = decodeSvgPathCommands(capsulePath(centers));
+    const translated = decodeSvgPathCommands(
+      capsulePath(centers.map((point) => ({ ...point, x: point.x + 100000, y: point.y + 200000 }))),
+    );
+    const endpoints = (commands: typeof local, x: number, y: number) =>
+      commands
+        .filter(({ values }) => values.length > 0)
+        .map(({ values }) => [
+          roundCanonical(values[values.length - 2]! - x),
+          roundCanonical(values[values.length - 1]! - y),
+        ])
+        .sort((left, right) => left[0]! - right[0]! || left[1]! - right[1]!);
+    expect(endpoints(translated, 100000, 200000)).toEqual(endpoints(local, 0, 0));
+    expect(
+      translated
+        .filter(({ command }) => command === "A")
+        .map(({ values }) => values.slice(0, 5))
+        .sort(),
+    ).toEqual(
+      local
+        .filter(({ command }) => command === "A")
+        .map(({ values }) => values.slice(0, 5))
+        .sort(),
     );
   });
 });
 
+describe("independent SVG path decoding", () => {
+  it("independently resolves horizontal and vertical coordinates without losing the other axis", () => {
+    expect(decodeSvgPathCommands("M10 20H30V40h-.125v.25Z")).toEqual([
+      { command: "M", values: [10, 20] },
+      { command: "L", values: [30, 20] },
+      { command: "L", values: [30, 40] },
+      { command: "L", values: [29.875, 40] },
+      { command: "L", values: [29.875, 40.25] },
+      { command: "Z", values: [] },
+    ]);
+  });
+
+  it("independently decodes mixed commands, implicit lines and closepath origins", () => {
+    expect(
+      decodeSvgPathCommands(
+        "M10 20l1.2.3-4 5q1 2 3 4a2 2 0 0 1-1-2Zm1 2L20 30Q1 2 3 4A2 2 0 0 1 5 6Z",
+      ),
+    ).toEqual([
+      { command: "M", values: [10, 20] },
+      { command: "L", values: [11.2, 20.3] },
+      { command: "L", values: [7.2, 25.3] },
+      { command: "Q", values: [8.2, 27.3, 10.2, 29.3] },
+      { command: "A", values: [2, 2, 0, 0, 1, 9.2, 27.3] },
+      { command: "Z", values: [] },
+      { command: "M", values: [11, 22] },
+      { command: "L", values: [20, 30] },
+      { command: "Q", values: [1, 2, 3, 4] },
+      { command: "A", values: [2, 2, 0, 0, 1, 5, 6] },
+      { command: "Z", values: [] },
+    ]);
+  });
+});
+
 describe("compact relative fractions", () => {
-  it("preserves all positive and negative thousandth fractions without leading zeros", () => {
+  it("preserves all positive and negative thousandth displacements without leading zeros", () => {
     for (let thousandths = 1; thousandths < 1000; thousandths += 1) {
       const fraction = thousandths / 1000;
-      const d = buildPressureOutline(
-        [
-          { x: 100, y: 100, pressure: 1 },
-          { x: 100 + fraction * 2, y: 100, pressure: 1 },
-        ],
-        8,
-      )[0]!.d;
+      const points = [
+        { x: 100000, y: 200000 },
+        { x: 100000 + fraction, y: 200001 },
+        { x: 100000, y: 200002 },
+        { x: 100000 + fraction, y: 200003 },
+        { x: 100000, y: 200004 },
+        { x: 100010, y: 200005 },
+        { x: 100020, y: 200004 },
+        { x: 100100, y: 200000 },
+      ];
+      const loop = points.map((start, index) => ({
+        kind: "line" as const,
+        start,
+        end: points[(index + 1) % points.length]!,
+      }));
+      const d = serializePressureWindows([{ kind: "window", additions: [], loops: [loop] }]);
       const text = String(fraction).slice(1);
-      expect(d).toContain(`q${text} `);
-      expect(d).toContain(`q-${text} `);
-      const controls = absoluteCommands(d).filter((command) => command.command === "Q");
-      expect(controls[0]!.values).toEqual([
-        roundCanonical(100 + fraction),
-        104,
-        roundCanonical(100 + fraction * 2),
-        104,
-      ]);
-      expect(controls[1]!.values).toEqual([roundCanonical(100 + fraction), 96, 100, 96]);
+      expect(d).toContain(`l${text} 1`);
+      expect(d).toContain(`-${text} 1`);
+      const endpoints = decodeSvgPathCommands(d)
+        .filter(({ values }) => values.length > 0)
+        .map(({ values }) => values.slice(-2));
+      for (const point of points)
+        expect(endpoints).toContainEqual([roundCanonical(point.x), point.y]);
     }
   });
 });

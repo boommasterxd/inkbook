@@ -108,6 +108,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     this.#executor = undefined;
     this.#history?.dispose();
     this.#history = undefined;
+    this.#model?.store.releasePreparedPressureGeometry();
     this.#model = undefined;
     this.#page = undefined;
     this.#pendingTrustedExternalVersion = undefined;
@@ -133,9 +134,8 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       this.#lifecycle.disposed ||
       this.#lifecycle.preparingForUnload ||
       this.#autosave === undefined
-    ) {
+    )
       return "conflict";
-    }
     return recovery.reloadCleanExternalChange({
       accepts: (candidate) =>
         recovery.acceptsSessionOperation(this.#identity, this.#workerEpoch, candidate),
@@ -366,6 +366,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     });
     this.#history?.dispose();
     this.#history = new ActiveEditorHistory(model);
+    this.#model?.store.releasePreparedPressureGeometry();
     this.#model = model;
     this.#startAutosave(snapshot, outputHash, requiresCanonicalRewrite, executor, store);
     executor.requestPrewarm?.();

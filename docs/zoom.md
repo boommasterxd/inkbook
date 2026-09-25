@@ -47,7 +47,7 @@ The following controls work in the active handwriting embed:
 
 The keyboard shortcuts only take effect when the pointer is over the active canvas. Otherwise, the normal Obsidian zoom functions remain active.
 
-One mouse-wheel or keyboard step changes the zoom by exactly a factor of 1.08. A modifier-key pixel event is treated as continuous trackpad input only while both axis magnitudes are below 16 pixels. Its magnitude uses a 2.5 responsiveness multiplier, equivalent to one 1.08 step per 6.4 pixels, so a small trackpad pinch follows the fingers without making mouse-wheel notches jump. Trackpad input is coalesced once per animation frame and never waits for a complete discrete wheel step. Larger pixel events plus line- and page-mode events are discrete mouse-wheel input and apply exactly one signed 1.08 step per event. Touch pinch keeps its direct distance ratio.
+One keyboard step or modifier-wheel line/page event changes the zoom by exactly a factor of 1.08. All modifier-wheel pixel events use continuous magnitude-based zoom, equivalent to one 1.08 step per 6.4 vertical pixels. There is no delta-magnitude threshold that switches a gesture to discrete steps. Browsers do not expose a reliable wheel-device identity: a mouse emitting pixel-mode events follows this same continuous mapping. Pixel input is coalesced once per animation frame and never waits for a complete discrete wheel step. Touch pinch keeps its direct distance ratio.
 
 ## Anchored Zoom
 
@@ -117,9 +117,9 @@ Instead, during each animation frame:
 
 If a stroke commit grows the page before its scheduled layout measurement, the zoom frame adopts that committed extent for both the scene background and the container. The container must not outgrow its rendered page while the deferred measurement catches up.
 
-A single frame may change the zoom by no more than a factor of 1.35. This prevents a quick pinch from causing a sudden jump.
+A single frame may change the zoom by no more than a factor of 1.35. This prevents a quick pinch from causing a sudden jump. Continuous wheel input bounds its queued target to the reachable zoom range. Reversing direction discards the unfinished opposite-direction zoom tail, so input beyond a camera limit cannot delay the next reverse gesture. Finite extreme deltas saturate safely instead of producing zero or infinite factors.
 
-The imperative scene renderer updates the camera transform, background grid, selection overlay, and scroll position in the same frame. It performs cached layout reads before calculations and DOM writes and does not notify React. A later committed camera change may update coarse UI state without changing scene geometry.
+The imperative scene renderer updates the camera transform, background grid, selection overlay, and scroll position in the same frame. It performs cached layout reads before calculations and DOM writes and does not notify React. Navigation supplies the cursor with a projected content box and the pre-read scroll viewport, using the actual applied content height and scroll-position readback. The same-frame cursor update therefore performs no bounding-box or computed-style reads after the height and scroll writes. Native scroll clamping may still require browser layout; the readback preserves the actual clamped position. Later external layout changes invalidate the projection normally. A later committed camera change may update coarse UI state without changing scene geometry.
 
 ## Zoom When Locking
 

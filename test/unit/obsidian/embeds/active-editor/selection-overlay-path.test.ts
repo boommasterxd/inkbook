@@ -39,7 +39,7 @@ describe("selection overlay path", () => {
     const geometry = [selected(shape)];
 
     expect(selectionOverlayPath(geometry, { pageToScreen: (point) => point, zoom: 1 })).toContain(
-      "M 252 48 L 252 252 L 148 252 L 148 48 Z",
+      "M 250 50 L 250 250 L 150 250 L 150 50 Z",
     );
     expect(selectionOverlayFill(geometry)).toBe("accent");
   });

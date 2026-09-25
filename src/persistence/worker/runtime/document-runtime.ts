@@ -173,6 +173,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       const { snapshot } = unlocked;
       return {
         identity: request.identity,
+        preparedPaths: unlocked.preparedPaths,
         integrityManifest: unlocked.integrityManifest,
         lockedHeight: unlocked.lockedHeight,
         outputHash: unlocked.outputHash,

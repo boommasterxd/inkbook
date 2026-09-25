@@ -1,6 +1,6 @@
 # Pressure Path Capacity
 
-Status: Accepted
+Status: Superseded in contour construction by [Compact Stroke Contours](compact-stroke-contours.md). The capacity and once-composited opacity requirements remain applicable.
 
 ## Context
 

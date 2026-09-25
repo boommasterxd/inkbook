@@ -88,13 +88,17 @@ describe("progressive element preview lifecycle", () => {
       version: 1,
     });
     writeOneStep(preview);
-    for (let version = 2; version < 150; version += 1) {
+    for (
+      let version = 2;
+      content.applyCanonicalElementPreview.mock.calls.length < 2;
+      version += 1
+    ) {
       preview.set({
         ids,
         materialize: (id) => elements.find((element) => element.id === id),
         version,
       });
-      writeOneStep(preview);
+      preview.write(100, () => 0);
     }
     expect(content.applyCanonicalElementPreview.mock.calls.map(([element]) => element.id)).toEqual([
       ids[0],
@@ -241,8 +245,9 @@ describe("progressive snapshot feedback bases", () => {
     });
     preview.applyMounted(ids);
     expect(content.applyPreviewTransform).toHaveBeenLastCalledWith(element.id, "scale(3 1)", 2, 1);
-    let calls = 0;
-    preview.write(1, () => calls++);
+    const publications = content.applyCanonicalElementPreview.mock.calls.length;
+    while (content.applyCanonicalElementPreview.mock.calls.length === publications)
+      writeOneStep(preview);
     expect(content.applyPreviewTransform).toHaveBeenLastCalledWith(
       element.id,
       "scale(3 1) scale(0.5 1)",

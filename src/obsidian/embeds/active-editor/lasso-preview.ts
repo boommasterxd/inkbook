@@ -3,11 +3,13 @@ import type { GesturePreview } from "../../../editor/gestures/public";
 import {
   createRectangleSelectionArea,
   LassoSelectionSession,
-  selectBySelectionAreaQuery,
+  selectBySelectionAreaCandidatesSteps,
+  type SelectionAreaCandidate,
   type SelectionArea,
 } from "../../../editor/selection/public";
 
 import type { CoalescedCreationSample, CoalescedFrameSampleMode } from "./coalesced-input";
+import { SelectionQueryWork } from "./selection-query-work";
 import type { SelectionPreviewOptions } from "./selection-preview-contracts";
 
 export class LassoPreview implements GesturePreview {
@@ -17,6 +19,7 @@ export class LassoPreview implements GesturePreview {
   readonly #startSelection: ReadonlySet<string>;
   #current: PointV1;
   #finished = false;
+  #work: SelectionQueryWork | undefined;
 
   public get frameSampleMode(): CoalescedFrameSampleMode {
     return this.#selectionDefaults.area === "lasso" ? "preserve" : "latest";
@@ -24,7 +27,7 @@ export class LassoPreview implements GesturePreview {
 
   public constructor(options: SelectionPreviewOptions) {
     this.#options = options;
-    this.#startSelection = new Set(options.selection());
+    this.#startSelection = options.selection();
     this.#selectionDefaults = options.selectionDefaults ?? {
       area: "rectangle",
       inclusion: "touched",
@@ -39,32 +42,28 @@ export class LassoPreview implements GesturePreview {
     this.#finished = true;
     const previous = this.#startSelection;
     const area = this.#selectionArea();
-    const next =
-      area === null
-        ? this.#options.start.additive || previous.size === 0
-          ? previous
-          : new Set<string>()
-        : selectBySelectionAreaQuery(
-            previous,
-            area,
-            this.#selectionDefaults.inclusion,
-            this.#options.start.additive,
-            (bounds, sink) =>
-              this.#options.sceneStore.query(bounds, {
-                add: (id) => {
-                  const record = this.#options.store.get(id);
-                  if (record !== undefined) {
-                    sink.add(id, record.bounds, record.element as InkElementV1);
-                  }
-                },
-              }),
-          );
     this.#options.renderer.setOverlayPath(null);
-    if (next !== previous) this.#options.setSelection(next);
-    return next !== previous;
+    if (area === null) {
+      const next =
+        this.#options.start.additive || previous.size === 0 ? previous : new Set<string>();
+      if (next !== previous) this.#options.setSelection(next);
+      return next !== previous;
+    }
+    this.#work = new SelectionQueryWork(
+      this.#options,
+      selectBySelectionAreaCandidatesSteps(
+        previous,
+        area,
+        this.#selectionDefaults.inclusion,
+        this.#options.start.additive,
+        selectionCandidates(this.#options, area),
+      ),
+    );
+    return this.#work.start();
   }
 
   public revert(): void {
+    this.#work?.cancel();
     if (this.#finished) return;
     this.#finished = true;
     this.#options.renderer.setOverlayPath(null);
@@ -123,4 +122,33 @@ function screenSelectionPath(
   }
   if (points.length >= 3) path.push("Z");
   return path.join(" ");
+}
+
+/** Retains only one bounded spatial-query batch and releases it when work is abandoned. */
+function* selectionCandidates(
+  options: SelectionPreviewOptions,
+  area: SelectionArea,
+): Generator<SelectionAreaCandidate | undefined, boolean> {
+  const query = options.sceneStore.beginQuery(area.bounds);
+  try {
+    while (true) {
+      const step = query.advance(64);
+      yield undefined;
+      if (step.stale) return false;
+      for (const id of step.ids) {
+        const record = options.store.get(id);
+        if (record !== undefined) {
+          yield {
+            id,
+            bounds: record.bounds,
+            element: record.element as InkElementV1,
+            preparedPressure: options.sceneStore.pressureGeometry(id, record.geometryVersion),
+          };
+        }
+      }
+      if (step.done) return true;
+    }
+  } finally {
+    query.cancel();
+  }
 }

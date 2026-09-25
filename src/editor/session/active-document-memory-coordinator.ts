@@ -4,6 +4,8 @@ const ACTIVE_DOCUMENT_MEMORY_PRESSURE_BYTES = 96 * MEBIBYTE;
 const ACTIVE_DOCUMENT_MEMORY_RELEASE_BYTES = 64 * MEBIBYTE;
 
 export interface ActiveDocumentMemoryUsage {
+  readonly pressurePathCacheBytes: number;
+  readonly pressureWindowCacheBytes: number;
   readonly anchorCacheBytes: number;
   readonly modelBytes: number;
   readonly motionCacheBytes: number;
@@ -11,7 +13,10 @@ export interface ActiveDocumentMemoryUsage {
 }
 
 export interface ActiveDocumentMemoryStorePort {
-  memoryUsage(): Pick<ActiveDocumentMemoryUsage, "anchorCacheBytes" | "modelBytes">;
+  memoryUsage(): Pick<
+    ActiveDocumentMemoryUsage,
+    "anchorCacheBytes" | "modelBytes" | "pressureWindowCacheBytes" | "pressurePathCacheBytes"
+  >;
   setActiveDocumentMemoryPressure(active: boolean): void;
 }
 
@@ -69,6 +74,8 @@ export class ActiveDocumentMemoryCoordinator {
 }
 
 const EMPTY_USAGE: ActiveDocumentMemoryUsage = Object.freeze({
+  pressureWindowCacheBytes: 0,
+  pressurePathCacheBytes: 0,
   anchorCacheBytes: 0,
   modelBytes: 0,
   motionCacheBytes: 0,
@@ -76,7 +83,14 @@ const EMPTY_USAGE: ActiveDocumentMemoryUsage = Object.freeze({
 });
 
 function totalBytes(usage: ActiveDocumentMemoryUsage): number {
-  return usage.anchorCacheBytes + usage.modelBytes + usage.motionCacheBytes + usage.pathCacheBytes;
+  return (
+    usage.anchorCacheBytes +
+    usage.modelBytes +
+    usage.motionCacheBytes +
+    usage.pathCacheBytes +
+    usage.pressureWindowCacheBytes +
+    usage.pressurePathCacheBytes
+  );
 }
 
 function assertThresholds(pressureBytes: number, releaseBytes: number): void {

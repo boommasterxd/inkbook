@@ -213,7 +213,7 @@ describe("SelectionHandleSession geometry boundaries", () => {
     resize.update({ x: 50, y: 150 });
     const shapeCommit = resize.prepareCommit();
     if (shapeCommit.status !== "ready") throw new Error("Expected a clamped shape commit.");
-    expect(shapeCommit.replacements[0]).toMatchObject({ width: 0, x: 102 });
+    expect(shapeCommit.replacements[0]).toMatchObject({ width: 0, x: 100 });
   });
 
   it("rotates a target and resolves its dependent endpoint in the same preview", () => {

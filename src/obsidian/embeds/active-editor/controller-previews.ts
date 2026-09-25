@@ -27,6 +27,7 @@ export interface ActiveEditorPreviewOptions {
   readonly sceneStore: ElementSceneStore;
   readonly sliceBudgetMs: () => number;
   readonly selection: () => ReadonlySet<string>;
+  readonly selectionSignal?: AbortSignal;
   readonly selectionFrames: SelectionFrameSession;
   readonly selectionEdgeDrag?: SelectionEdgeDragPort;
   readonly setSelection: (selection: ReadonlySet<string>) => void;
@@ -55,8 +56,13 @@ export function createActiveEditorPreview(
   const snapFeatures = () =>
     activeSnapFeatures(options.snapping, options.snappingInverted?.() ?? false);
   const selectionOptions = {
+    ...(options.selectionSignal === undefined ? {} : { selectionSignal: options.selectionSignal }),
     connectionSnapping: () => snapFeatures().connections,
     frameScheduler: options.ownerWindow,
+    selectionWorkBudget: {
+      now: () => options.ownerWindow.performance.now(),
+      sliceBudgetMs: options.sliceBudgetMs,
+    },
     history: options.history,
     pageToScreen: options.pageToScreen,
     ...(options.pageToViewport === undefined ? {} : { pageToViewport: options.pageToViewport }),

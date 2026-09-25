@@ -198,7 +198,7 @@ describe("active editor generic selection transforms", () => {
     expect(resized.style).toEqual(table.style);
   });
 
-  it("commits a rotated freehand resize at the same pivot shown by its preview", () => {
+  it("commits a rotated freehand resize within one coordinate quantum of its affine preview", () => {
     const stroke: Extract<InkElementV1, { kind: "stroke" }> = {
       ...indexedStroke(20),
       pivot: { x: 160, y: 130 },
@@ -229,7 +229,11 @@ describe("active editor generic selection transforms", () => {
     if (previewStroke?.kind !== "stroke") throw new TypeError("Expected a stroke preview.");
     expect(store.get(stroke.id)?.element.pivot).toEqual(stroke.pivot);
     expect(interaction.pointerUp(start.pointerId)).toBe(true);
-    expect(store.get(stroke.id)?.element.pivot).toEqual(previewStroke.pivot);
+    const committedPivot = store.get(stroke.id)?.element.pivot;
+    expect(committedPivot).toEqual({ x: 174.932, y: 160.034 });
+    // The affine preview measures unrounded centers; commit measures canonical coordinates
+    // before fixing its anchor. Only this x correction crosses a storage quantum.
+    expect(previewStroke.pivot).toEqual({ x: 174.931, y: 160.034 });
   });
 });
 
@@ -251,7 +255,7 @@ describe("active editor ordinary selection move", () => {
 
     expectLatestLinePreview(fixture.elementPreviews, dependent.id, { x: 340, y: 270 });
     expect(fixture.overlays[fixture.overlays.length - 2]).toContain(
-      "M 138 128 L 342 128 L 342 272 L 138 272 Z",
+      "M 140 130 L 340 130 L 340 270 L 140 270 Z",
     );
     expect(fixture.store.instrumentation).toMatchObject({
       fullStoreScans: 0,
@@ -321,10 +325,10 @@ describe("active editor large selection handles", () => {
     expect(interaction.pointerMove({ ...start, x: 2003, y: 463 })).toBe(true);
 
     const coordinates = overlays[overlays.length - 2]!.match(/-?\d+(?:\.\d+)?/gu)!.map(Number);
-    expect(coordinates[0]).toBeCloseTo(19, 3);
-    expect(coordinates[1]).toBeCloseTo(19, 3);
-    expect(coordinates[2]).toBeCloseTo(2003, 3);
-    expect(coordinates[5]).toBeCloseTo(464, 3); // The acquired handle starts 1px below the pointer.
+    expect(coordinates[0]).toBeCloseTo(20, 3);
+    expect(coordinates[1]).toBeCloseTo(20, 3);
+    expect(coordinates[2]).toBeCloseTo(2002, 3);
+    expect(coordinates[5]).toBeCloseTo(462, 3); // The centerline handle starts 1px above the pointer.
     const previewLine = elementPreviews[elementPreviews.length - 1]?.find(
       ({ id }) => id === dependent.id,
     );

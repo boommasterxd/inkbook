@@ -6,8 +6,12 @@ export abstract class VersionedCache<T> {
   #policyEvictions = 0;
   #retentionEnabled = true;
 
-  protected constructor(maximumEntries: number, maximumBytes: number) {
-    this.#lru = new BoundedVersionLru(maximumEntries, maximumBytes);
+  protected constructor(
+    maximumEntries: number,
+    maximumBytes: number,
+    onRemoval?: (id: string, value: T) => void,
+  ) {
+    this.#lru = new BoundedVersionLru(maximumEntries, maximumBytes, onRemoval);
   }
 
   protected getCached(id: string, version: number): T | undefined {

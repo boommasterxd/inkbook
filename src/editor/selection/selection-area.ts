@@ -1,14 +1,13 @@
-import {
-  assertFinitePoint,
-  boundsFromPoints,
-  boundsIntersect,
-  calculateElementBounds,
-} from "../../domain/geometry/public";
+import type { PreparedPressureGeometryPort } from "../../domain/geometry/prepared-pressure-geometry";
+import { assertFinitePoint, boundsFromPoints, boundsIntersect } from "../../domain/geometry/public";
 import type { Bounds } from "../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 
-import { visitVisibleElementPrimitives } from "./element-selection-geometry";
-import { primitiveEnclosedByArea, primitiveTouchesArea } from "./selection-area-primitives";
+import { visibleElementPrimitiveSteps } from "./element-selection-geometry";
+import {
+  primitiveEnclosedByAreaSteps,
+  primitiveTouchesAreaSteps,
+} from "./selection-area-primitives";
 
 export type SelectionAreaInclusion = "fully-enclosed" | "touched";
 
@@ -61,38 +60,79 @@ export function createLassoSelectionArea(input: readonly PointV1[]): SelectionAr
   });
 }
 
-export function selectionAreaBounds(area: SelectionArea): Readonly<Bounds> {
-  return area.bounds;
-}
-
-export function elementMatchesSelectionArea(
+/** Yields after each bounded primitive so hosts can cancel or schedule large queries. */
+export function* elementMatchesSelectionAreaSteps(
   area: SelectionArea,
   element: InkElementV1,
   inclusion: SelectionAreaInclusion,
-  candidateBounds: Bounds = calculateElementBounds(element),
-): boolean {
-  if (!boundsIntersect(area.bounds, candidateBounds) || !hasPositiveArea(area)) {
-    return false;
+  candidateBounds: Bounds,
+  prepared?: PreparedPressureGeometryPort,
+): Generator<void, boolean> {
+  if (!boundsIntersect(area.bounds, candidateBounds) || !hasPositiveArea(area)) return false;
+  if (element.kind === "stroke") {
+    if (element.style.opacity <= 0) return false;
+    const { minX, minY, maxX, maxY } = candidateBounds;
+    const box = {
+      kind: "polygon" as const,
+      points: [
+        { x: minX, y: minY },
+        { x: maxX, y: minY },
+        { x: maxX, y: maxY },
+        { x: minX, y: maxY },
+      ],
+    };
+    if (area.kind === "rectangle") {
+      if (yield* primitiveEnclosedByAreaSteps(area, box)) return true;
+    } else if (boundsAvoidLassoBoundary(area, candidateBounds)) {
+      const corner = box.points[0]!;
+      if (
+        yield* primitiveTouchesAreaSteps(area, {
+          kind: "capsule",
+          start: corner,
+          end: corner,
+          radius: 0,
+        })
+      )
+        return true;
+    }
   }
   let visible = false;
-  let matches = inclusion === "fully-enclosed";
-  const completed = visitVisibleElementPrimitives(element, (primitive) => {
+  for (const primitive of visibleElementPrimitiveSteps(element, {
+    bounds: area.bounds,
+    prepared,
+  })) {
+    if (primitive === undefined) {
+      yield;
+      continue;
+    }
     visible = true;
-    const primitiveMatches =
+    const matches =
       inclusion === "touched"
-        ? primitiveTouchesArea(area, primitive)
-        : primitiveEnclosedByArea(area, primitive);
-    if (inclusion === "touched" && primitiveMatches) {
-      matches = true;
+        ? yield* primitiveTouchesAreaSteps(area, primitive)
+        : yield* primitiveEnclosedByAreaSteps(area, primitive);
+    if (inclusion === "touched" && matches) return true;
+    if (inclusion === "fully-enclosed" && !matches) return false;
+    yield;
+  }
+  return visible && inclusion === "fully-enclosed";
+}
+
+/** Boundary-free boxes cannot hide an excluded even-odd lasso region. */
+function boundsAvoidLassoBoundary(area: SelectionArea, bounds: Bounds): boolean {
+  for (let index = 0; index < area.points.length; index += 1) {
+    const start = area.points[index]!;
+    const end = area.points[(index + 1) % area.points.length]!;
+    if (
+      boundsIntersect(bounds, {
+        minX: Math.min(start.x, end.x),
+        minY: Math.min(start.y, end.y),
+        maxX: Math.max(start.x, end.x),
+        maxY: Math.max(start.y, end.y),
+      })
+    )
       return false;
-    }
-    if (inclusion === "fully-enclosed" && !primitiveMatches) {
-      matches = false;
-      return false;
-    }
-    return true;
-  });
-  return visible && (completed || inclusion === "touched") && matches;
+  }
+  return true;
 }
 
 function hasPositiveArea(area: SelectionArea): boolean {

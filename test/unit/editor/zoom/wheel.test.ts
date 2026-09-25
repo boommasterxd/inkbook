@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  TRACKPAD_ZOOM_DELTA_LIMIT,
   accumulateZoomInput,
   continuousWheelZoomFactor,
   consumeZoomFrame,
@@ -13,7 +12,6 @@ import {
   DEFAULT_WHEEL_LINE_HEIGHT,
   DEFAULT_WHEEL_PAGE_HEIGHT,
   TRACKPAD_ZOOM_PIXELS_PER_STEP,
-  TRACKPAD_ZOOM_SENSITIVITY,
   normalizeWheelDelta,
 } from "../../../../src/editor/zoom/wheel";
 import { MAX_FRAME_ZOOM_FACTOR } from "../../../../src/editor/zoom/zoom";
@@ -31,14 +29,42 @@ describe("wheel normalization", () => {
     });
   });
 
-  it("turns small trackpad pixel deltas into continuous zoom factors", () => {
-    expect(TRACKPAD_ZOOM_DELTA_LIMIT).toBe(16);
-    expect(TRACKPAD_ZOOM_SENSITIVITY).toBe(2.5);
+  it("turns pixel deltas into continuous zoom factors", () => {
     expect(TRACKPAD_ZOOM_PIXELS_PER_STEP).toBe(6.4);
     expect(continuousWheelZoomFactor(-4)).toBeCloseTo(1.08 ** 0.625);
     expect(continuousWheelZoomFactor(4)).toBeCloseTo(1.08 ** -0.625);
     expect(continuousWheelZoomFactor(-TRACKPAD_ZOOM_PIXELS_PER_STEP)).toBeCloseTo(1.08);
     expect(continuousWheelZoomFactor(-50, { pixelsPerStep: 50 })).toBeCloseTo(1.08);
+  });
+});
+
+describe("extreme finite pixel zoom input", () => {
+  it.each([-Number.MAX_VALUE, Number.MAX_VALUE])(
+    "keeps delta %s finite and composable",
+    (delta) => {
+      const factor = continuousWheelZoomFactor(delta);
+      expect(Number.isFinite(factor)).toBe(true);
+      expect(factor).toBeGreaterThan(0);
+      const first = accumulateZoomInput(createZoomFrameState(), { factor });
+      const second = accumulateZoomInput(first, { factor });
+      expect(Number.isFinite(second.factor)).toBe(true);
+      expect(second.factor).toBeGreaterThan(0);
+      const frame = consumeZoomFrame(second);
+      expect(Number.isFinite(frame.state.factor)).toBe(true);
+      expect(frame.frame.factor).toBeGreaterThanOrEqual(1 / MAX_FRAME_ZOOM_FACTOR);
+      expect(frame.frame.factor).toBeLessThanOrEqual(MAX_FRAME_ZOOM_FACTOR);
+    },
+  );
+
+  it("keeps reciprocal inputs and same-direction partitions consistent", () => {
+    for (const delta of [0.1, 15.9, 16, 16.1, 64, 1000]) {
+      const whole = continuousWheelZoomFactor(delta);
+      const partial = continuousWheelZoomFactor(delta / 4);
+      expect(partial ** 4).toBeCloseTo(whole, 12);
+      expect(whole * continuousWheelZoomFactor(-delta)).toBeCloseTo(1, 12);
+    }
+    expect(() => continuousWheelZoomFactor(Infinity)).toThrow();
+    expect(() => continuousWheelZoomFactor(Number.NaN)).toThrow();
   });
 });
 

@@ -1,3 +1,7 @@
+import {
+  selectBySelectionAreaQuery,
+  elementMatchesSelectionArea,
+} from "../../../fixtures/editor/selection-query";
 import { describe, expect, it } from "vitest";
 
 import { calculateElementBounds } from "../../../../src/domain/geometry/public";
@@ -8,15 +12,10 @@ import type {
   LineElementV1,
   PointV1,
 } from "../../../../src/domain/schema/public";
-import {
-  createRectangleSelectionArea,
-  selectBySelectionAreaQuery,
-} from "../../../../src/editor/selection/public";
+import { createRectangleSelectionArea } from "../../../../src/editor/selection/public";
 import {
   createLassoSelectionArea,
-  elementMatchesSelectionArea,
   MAX_LASSO_SELECTION_POINTS,
-  selectionAreaBounds,
 } from "../../../../src/editor/selection/selection-area";
 import {
   arrow,
@@ -32,7 +31,7 @@ describe("selection area creation", () => {
   it("normalizes rectangle direction and protects the resulting geometry", () => {
     const area = createRectangleSelectionArea({ x: 20, y: 30 }, { x: 5, y: 10 });
 
-    expect(selectionAreaBounds(area)).toEqual({ minX: 5, minY: 10, maxX: 20, maxY: 30 });
+    expect(area.bounds).toEqual({ minX: 5, minY: 10, maxX: 20, maxY: 30 });
     expect(area.points).toEqual([
       { x: 5, y: 10 },
       { x: 20, y: 10 },
@@ -55,7 +54,7 @@ describe("selection area creation", () => {
 
     expect(area.points).toHaveLength(3);
     expect(area.points[1]).toEqual({ x: 20, y: 0 });
-    expect(selectionAreaBounds(area)).toEqual({ minX: 0, minY: 0, maxX: 20, maxY: 20 });
+    expect(area.bounds).toEqual({ minX: 0, minY: 0, maxX: 20, maxY: 20 });
   });
 
   it("rejects malformed and excessive lasso input before geometry work", () => {
@@ -294,7 +293,7 @@ describe("selection area query", () => {
 
     const initial = new Set(["existing"]);
     const next = selectBySelectionAreaQuery(initial, area, "touched", true, query);
-    expect(receivedBounds).toBe(selectionAreaBounds(area));
+    expect(receivedBounds).toBe(area.bounds);
     expect([...next]).toEqual(["existing", inside.id]);
     expect(selectBySelectionAreaQuery(next, area, "touched", true, query)).toBe(next);
   });

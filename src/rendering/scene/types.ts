@@ -1,3 +1,4 @@
+import type { PreparedPressureGeometryPort } from "../../domain/geometry/prepared-pressure-geometry";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type { Bounds } from "../../domain/geometry/primitives";
 import type { StrokePathGeometry } from "../../domain/geometry/stroke-path";
@@ -36,6 +37,7 @@ export interface SpatialQuerySink {
  * `query` must perform exact conservative-bounds rejection before publishing IDs.
  */
 export interface SceneStorePort {
+  pressureGeometry?(id: string, geometryVersion: number): PreparedPressureGeometryPort;
   get(id: string): SceneElementRecord | undefined;
   query(bounds: Bounds, sink: SpatialQuerySink): void;
 }

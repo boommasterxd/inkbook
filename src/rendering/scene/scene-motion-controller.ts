@@ -34,6 +34,7 @@ export class SceneMotionController {
   #resourceConstrained = false;
   #reducedMotion: boolean;
   #selectionMotion: OverlayMotion | undefined;
+  #lastSelectionFrameTime: number | undefined;
   #selectionHandleMotion: OverlayMotion | undefined;
   public constructor(
     dom: SceneDom,
@@ -145,9 +146,6 @@ export class SceneMotionController {
       path,
       this.#selectionMotion,
     );
-    if (this.#dom.setSelectionClip(this.#dom.selectionOverlayPath.getAttribute("d") ?? "")) {
-      this.#instrumentation.attributeWrites += 1;
-    }
     this.#selectionHandleMotion = this.setOverlay(
       this.#dom.selectionHandlePath,
       handlePath,
@@ -172,6 +170,18 @@ export class SceneMotionController {
       this.#lastFrameTime === undefined ? frameTime : Math.max(frameTime, this.#lastFrameTime + 16);
     this.#lastFrameTime = effectiveTime;
     this.#instrumentation.motionFrames += 1;
+    this.writeEntries(effectiveTime, deadline, now);
+    const pending = this.hasPending();
+    if (!pending) this.#lastFrameTime = undefined;
+    return pending;
+  }
+  public writeSelectionFeedback(frameTime: number): void {
+    if (this.#selectionMotion === undefined && this.#selectionHandleMotion === undefined) return;
+    const effectiveTime =
+      this.#lastSelectionFrameTime === undefined
+        ? frameTime
+        : Math.max(frameTime, this.#lastSelectionFrameTime + 16);
+    this.#lastSelectionFrameTime = effectiveTime;
     this.#selectionMotion = this.writeOverlay(
       this.#dom.selectionOverlayPath,
       this.#selectionMotion,
@@ -182,10 +192,8 @@ export class SceneMotionController {
       this.#selectionHandleMotion,
       effectiveTime,
     );
-    this.writeEntries(effectiveTime, deadline, now);
-    const pending = this.hasPending();
-    if (!pending) this.#lastFrameTime = undefined;
-    return pending;
+    if (this.#selectionMotion === undefined && this.#selectionHandleMotion === undefined)
+      this.#lastSelectionFrameTime = undefined;
   }
   private writeEntries(frameTime: number, deadline: number, now: () => number): void {
     this.#frameCursor ??= this.#entries.values();
@@ -356,30 +364,21 @@ export class SceneMotionController {
   ): OverlayMotion | undefined {
     const next = path ?? "";
     const previous = node.getAttribute("d") ?? "";
-    if (next === previous) {
-      if (next !== "" && current?.direction === "exit") {
-        writeMotionStyle(node, 1, 1);
-        return undefined;
-      }
-      return current;
-    }
-    if (next !== "" && previous !== "") {
-      node.setAttribute("d", next);
-      if (current?.direction === "exit") {
-        writeMotionStyle(node, 1, 1);
-        return undefined;
-      }
-      return current;
-    }
-    if (this.#reducedMotion) {
-      node.setAttribute("d", next);
+    // Selection geometry is essential feedback, even when optional scene work is deferred.
+    if (next !== "") {
+      if (next !== previous) node.setAttribute("d", next);
       writeMotionStyle(node, 1, 1);
       return undefined;
     }
-    if (next !== "") node.setAttribute("d", next);
-    const direction = next === "" ? "exit" : "enter";
-    writeMotionStyle(node, direction === "enter" ? 0 : 1, 1);
-    return { direction, startTime: undefined };
+    if (next === previous) return current;
+    if (this.#reducedMotion) {
+      this.clearOverlay(node);
+      writeMotionStyle(node, 1, 1);
+      return undefined;
+    }
+    if (current !== undefined) return current;
+    writeMotionStyle(node, 1, 1);
+    return { startTime: undefined };
   }
 
   private writeOverlay(
@@ -391,15 +390,16 @@ export class SceneMotionController {
     motion.startTime ??= frameTime;
     const raw = Math.min(1, (frameTime - motion.startTime) / TRANSITION_DURATIONS.fallback);
     const progress = standardMotionProgress(raw);
-    const visible = motion.direction === "enter" ? progress : 1 - progress;
+    const visible = 1 - progress;
     writeMotionStyle(node, visible, 1);
     if (raw < 1) return motion;
-    if (motion.direction === "exit") this.clearOverlay(node);
+    this.clearOverlay(node);
     writeMotionStyle(node, 1, 1);
     return undefined;
   }
 
   private finishAll(releasing: boolean): void {
+    this.#lastSelectionFrameTime = undefined;
     this.#frameCursor = undefined;
     for (const entry of this.#entries.values()) this.finishEntry(entry, releasing);
     this.#entryByElementId.clear();
@@ -413,13 +413,10 @@ export class SceneMotionController {
 
   private clearOverlay(node: SVGPathElement): void {
     node.setAttribute("d", "");
-    if (node === this.#dom.selectionOverlayPath && this.#dom.setSelectionClip("")) {
-      this.#instrumentation.attributeWrites += 1;
-    }
   }
 
   private finishOverlay(node: SVGPathElement, motion: OverlayMotion | undefined): void {
-    if (motion?.direction === "exit") this.clearOverlay(node);
+    if (motion !== undefined) this.clearOverlay(node);
     writeMotionStyle(node, 1, 1);
   }
 

@@ -11,6 +11,5 @@ export function buildPressureResizeFrame(
     y: -98765.432 + point.y * scaleY,
     pressure: point.pressure,
   }));
-  const parts = build(centers, 22, { firstBoundary: 3, lastBoundary: 67 });
-  return parts;
+  return build(centers, 22);
 }

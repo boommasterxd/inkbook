@@ -1,9 +1,5 @@
-import {
-  calculateElementBounds,
-  canonicalPoint,
-  pointInPolygon,
-  rotatePointClockwise,
-} from "../../domain/geometry/public";
+import { selectionCenterlineBounds } from "./centerline-bounds";
+import { canonicalPoint, pointInPolygon, rotatePointClockwise } from "../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 
 import type { SelectionHandle } from "./handles";
@@ -62,7 +58,15 @@ function transformedHandle(
   }
   const delta = { x: topRight.x - topLeft.x, y: topRight.y - topLeft.y };
   const length = Math.hypot(delta.x, delta.y);
-  if (length === 0) return { ...handle, point: transformSelectionPoint(handle.point, transform) };
+  if (length === 0) {
+    const offset = ROTATE_HANDLE_OFFSET_PIXELS / zoom;
+    return {
+      ...handle,
+      point: canonicalPoint(
+        rotatePointClockwise({ x: topLeft.x, y: topLeft.y - offset }, topLeft, transform.rotation),
+      ),
+    };
+  }
   const midpoint = { x: (topLeft.x + topRight.x) / 2, y: (topLeft.y + topRight.y) / 2 };
   const offset = ROTATE_HANDLE_OFFSET_PIXELS / zoom;
   return {
@@ -113,7 +117,7 @@ function singleElementOutline(element: InkElementV1): SelectionOutline {
       start: rotate(element.start),
     };
   }
-  const bounds = calculateElementBounds({ ...element, rotation: 0 });
+  const bounds = selectionCenterlineBounds({ ...element, rotation: 0 });
   return {
     kind: "polygon",
     points: rectanglePoints(bounds.minX, bounds.minY, bounds.maxX, bounds.maxY).map((point) =>

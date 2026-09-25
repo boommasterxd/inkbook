@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ElementStore } from "../../../src/domain/store/public";
 import { changedElementDerivations } from "../../../src/obsidian/embeds/vault-document-model-delta";
@@ -6,11 +6,19 @@ import { serializeInkbookDocument } from "../../../src/persistence/serialization
 import { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/public";
 import { createStandardPersistenceFixture, replaceFirstStroke } from "./fixtures";
 
+import * as pressureUnion from "../../../src/domain/geometry/pressure-union";
+
+afterEach(() => vi.restoreAllMocks());
+
 const snapshot = createStandardPersistenceFixture();
 
 describe("document worker export performance", () => {
   it("bounds unlock batches and incremental-save work while reusing validated bounds", async () => {
+    const builds = vi.spyOn(pressureUnion, "iteratePressureUnion");
     const serialized = serializeInkbookDocument(snapshot);
+    const expectedBuilds = builds.mock.calls.length;
+    expect(expectedBuilds).toBeGreaterThan(0);
+    builds.mockClear();
     if (!serialized.ok) throw new Error(serialized.error.code);
     const runtime = new DocumentWorkerRuntime({ sessionId: "phases", workerEpoch: 1 });
     const builder = ElementStore.createBuilder({
@@ -44,6 +52,17 @@ describe("document worker export performance", () => {
       },
     );
     expect(unlocked.type).toBe("unlock-success");
+    expect(builds).toHaveBeenCalledTimes(expectedBuilds);
+    if (unlocked.type !== "unlock-success") throw new Error("Unlock failed.");
+    const prepared = unlocked.preparedPaths ?? [];
+    expect(prepared.length).toBeGreaterThan(0);
+    expect(prepared.length).toBeLessThanOrEqual(1024);
+    expect(
+      prepared.reduce(
+        (bytes, entry) => bytes + 256 + 2 * (entry.id.length + entry.geometry[0]!.d.length),
+        2,
+      ),
+    ).toBeLessThanOrEqual(4 * 1024 * 1024);
     const finalized = await builder.finalize();
     if (finalized === null) throw new Error("Store hydration was cancelled.");
 

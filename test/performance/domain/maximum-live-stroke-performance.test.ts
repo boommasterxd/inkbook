@@ -1,7 +1,9 @@
 import { denseWaveSamples } from "../../fixtures/editor/stroke";
 import { MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import * as strokeSlices from "../../../src/domain/geometry/stroke-path-slice";
+import * as pressureWindows from "../../../src/domain/geometry/pressure-path-serialization";
+import * as simplification from "../../../src/domain/geometry/stroke-simplification";
+import * as strokeSlices from "../../../src/domain/geometry/pressure-outline";
 import { LiveStrokeBuilder, type LiveStrokeChunk } from "../../../src/editor/tools/live-stroke";
 import { runMaximumStrokes } from "./maximum-stroke-scenario";
 import { createMaximumStroke } from "./standard-domain-fixture";
@@ -15,7 +17,7 @@ describe("maximum live-stroke primitives", () => {
     expect(pressureResponse).toHaveBeenCalledTimes(20 * (MAX_STROKE_POINTS - 1));
     expect(result.appendedSamples).toBe(20 * MAX_STROKE_POINTS);
     expect(result.completedStrokes).toBe(20);
-    expect(result.maximumTailSamples).toBeLessThanOrEqual(16);
+    expect(result.maximumTailSamples).toBeLessThanOrEqual(131);
     expect(result.maximumFinalizedChunkSamples).toBeLessThanOrEqual(256);
   }, 120_000);
 
@@ -28,7 +30,9 @@ describe("maximum live-stroke primitives", () => {
       });
       const samples = denseWaveSamples();
       const pressureResponse = vi.spyOn(Math, "expm1");
-      const outlines = vi.spyOn(strokeSlices, "buildPressureOutlineSlice");
+      const outlines = vi.spyOn(strokeSlices, "visitPreparedPressureOutline");
+      const simplify = vi.spyOn(simplification, "simplifyStrokeCenters");
+      const prepareWindows = vi.spyOn(pressureWindows, "preparePressureWindows");
       const batchSize = 9;
       let stableChunk: LiveStrokeChunk | undefined;
       for (let start = 0; start < samples.length; start += batchSize) {
@@ -36,8 +40,15 @@ describe("maximum live-stroke primitives", () => {
         if (stableChunk !== undefined) expect(preview.finalizedChunks[0]).toBe(stableChunk);
         stableChunk ??= preview.finalizedChunks[0];
       }
+      const outlineCalls = outlines.mock.calls.length;
+      const simplifyCalls = simplify.mock.calls.length;
+      const preparedWindowCalls = prepareWindows.mock.calls.length;
       const commit = builder.finish();
+      expect(outlines).toHaveBeenCalledTimes(outlineCalls);
+      expect(simplify).toHaveBeenCalledTimes(simplifyCalls);
+      expect(prepareWindows).toHaveBeenCalledTimes(preparedWindowCalls);
       const { retainedSamples, bufferGrowths, tailBuilds } = commit.instrumentation;
+      expect(commit.instrumentation.maximumPendingPressurePieces).toBeLessThanOrEqual(64);
 
       expect(pressureResponse.mock.calls.length).toBeGreaterThanOrEqual(samples.length - 1);
       expect(pressureResponse.mock.calls.length).toBeLessThanOrEqual(2 * (samples.length - 1));
@@ -48,11 +59,16 @@ describe("maximum live-stroke primitives", () => {
       expect(retainedSamples).toBeLessThan(samples.length);
       expect(bufferGrowths).toBeLessThanOrEqual(Math.ceil(Math.log2(retainedSamples / 16)));
       expect(tailBuilds).toBe(samples.length / batchSize);
-      // Each finalized chunk advances at least eight retained samples; each batch builds one tail.
+      // Each raw window prepares one cached capsule preview and one canonical piece batch.
+      // Each input batch prepares only its incomplete preview tail.
       expect(outlines.mock.calls.length).toBeLessThanOrEqual(
-        tailBuilds + Math.ceil(retainedSamples / 8),
+        tailBuilds + 2 * Math.ceil(retainedSamples / 64),
       );
-      for (const [centers] of outlines.mock.calls) expect(centers.length).toBeLessThanOrEqual(16);
+      assertGeometryWork(
+        builder.instrumentation().retainedSamples,
+        outlines.mock.calls,
+        prepareWindows.mock.calls,
+      );
     },
   );
 });
@@ -66,7 +82,9 @@ describe("maximum live-stroke capacity", () => {
         style: createMaximumStroke().style,
       });
       const pressureResponse = vi.spyOn(Math, "expm1");
-      const outlines = vi.spyOn(strokeSlices, "buildPressureOutlineSlice");
+      const outlines = vi.spyOn(strokeSlices, "visitPreparedPressureOutline");
+      const simplify = vi.spyOn(simplification, "simplifyStrokeCenters");
+      const prepareWindows = vi.spyOn(pressureWindows, "preparePressureWindows");
       let stableChunk: LiveStrokeChunk | undefined;
       for (let start = 0; start < MAX_STROKE_POINTS; start += 256) {
         builder.appendBatch(
@@ -90,9 +108,13 @@ describe("maximum live-stroke capacity", () => {
       expect(pressureResponse.mock.calls.length).toBeGreaterThanOrEqual(MAX_STROKE_POINTS - 1);
       expect(pressureResponse.mock.calls.length).toBeLessThanOrEqual(2 * (MAX_STROKE_POINTS - 1));
       expect(outlines.mock.calls.length).toBeLessThanOrEqual(
-        before.tailBuilds + Math.ceil(MAX_STROKE_POINTS / 8),
+        before.tailBuilds + 2 * Math.ceil(MAX_STROKE_POINTS / 64),
       );
-      for (const [centers] of outlines.mock.calls) expect(centers.length).toBeLessThanOrEqual(16);
+      assertGeometryWork(
+        builder.instrumentation().retainedSamples,
+        outlines.mock.calls,
+        prepareWindows.mock.calls,
+      );
       pressureResponse.mockClear();
       outlines.mockClear();
       for (let batch = 0; batch < 8; batch += 1) {
@@ -114,7 +136,23 @@ describe("maximum live-stroke capacity", () => {
         ...before,
         appendedInputSamples: MAX_STROKE_POINTS + 4096,
       });
+      simplify.mockClear();
+      prepareWindows.mockClear();
       expect(builder.finish().points).toHaveLength(MAX_STROKE_POINTS * 3);
+      expect(outlines).not.toHaveBeenCalled();
+      expect(simplify).not.toHaveBeenCalled();
+      expect(prepareWindows).not.toHaveBeenCalled();
     },
   );
 });
+
+function assertGeometryWork(
+  retainedSamples: number,
+  outlines: readonly Parameters<typeof strokeSlices.visitPreparedPressureOutline>[],
+  windows: readonly Parameters<typeof pressureWindows.preparePressureWindows>[],
+): void {
+  expect(windows.length).toBeLessThanOrEqual(Math.ceil(retainedSamples / 64));
+  for (const [pieces] of windows) expect(pieces.length).toBeLessThanOrEqual(64);
+  expect(outlines.length).toBeGreaterThan(0);
+  for (const [centers] of outlines) expect(centers.length).toBeLessThanOrEqual(131);
+}

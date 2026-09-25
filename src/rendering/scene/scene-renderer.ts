@@ -9,7 +9,7 @@ import type { ProgressivePreviewTransform } from "./progressive-element-preview"
 import { SceneElementPreviews } from "./scene-element-previews";
 import { SceneFrameWriter } from "./scene-frame-writer";
 import * as stats from "./instrumentation";
-import { ScenePathCache } from "./path-cache";
+import { ScenePathCache, type PreparedScenePath } from "./path-cache";
 import { ScenePreviewCommitController, type PreviewCommitHandoff } from "./preview-commit-handoff";
 import { SceneDom } from "./scene-dom";
 import { SceneCommitCoordinator } from "./scene-commit-coordinator";
@@ -91,7 +91,7 @@ export class SvgSceneRenderer {
       this.#pathCache,
       this.#motion,
       options.onResourceUsageChanged ?? (() => undefined),
-      () => this.#elementPreviews.progressive.memoryUsage() + this.#content.selectionTraceBytes(),
+      () => this.#elementPreviews.progressive.memoryUsage() + this.#content.previewMemoryUsage(),
     );
     this.#visibilityCoordinator = new SceneVisibilityCoordinator(
       this.#content,
@@ -140,6 +140,7 @@ export class SvgSceneRenderer {
   public applyDelta(delta: Scene.SceneStoreDelta): void {
     this.assertActive();
     this.#deltas.apply(delta);
+    this.#elementPreviews.applyMounted(this.#content.takeCommittedPreviewIds());
     this.#liveStroke.settleCommits((id) => this.#options.store.get(id) === undefined);
     this.#frameWriter.livePathCommits.settle((id) => this.#options.store.get(id) === undefined);
   }
@@ -232,8 +233,10 @@ export class SvgSceneRenderer {
     this.#frameWriter.livePathCommits.settle((key) => this.#content.hasMounted(key));
     this.#frames.schedule();
   }
-  public commitLiveStroke(id: string): void {
+  public commitLiveStroke(id: string, prepared?: PreparedScenePath): void {
     this.assertActive();
+    if (prepared !== undefined)
+      this.#pathCache.retainPreparedFromStore(id, prepared, this.#options.store);
     this.#liveStroke.commit(id, (band) => this.#dom.group(band));
     this.#frames.schedule();
   }
@@ -415,7 +418,7 @@ export class SvgSceneRenderer {
     this.performReadPhase();
     this.#frameWriter.readToolCursor();
     if (this.#previewCommits.releaseCommitted()) {
-      this.#content.materializePreviewGeometry(this.#transformPreviews.values);
+      this.#elementPreviews.retainCommittedGeometry(this.#transformPreviews.values);
       this.#transformPreviews.clear();
       this.#elementPreviews.clear();
       this.#visibilityCoordinator.releasePreviews();
@@ -423,6 +426,7 @@ export class SvgSceneRenderer {
     this.#visibilityCoordinator.prepare(this.#viewport, this.#camera);
     this.#transformPreviews.refreshContext();
     this.flushPointerFeedbackFrame(deadline);
+    this.#motion.writeSelectionFeedback(startedAt);
     const pendingFades = this.#content.flushElementFades(deadline, () => this.#scheduler.now());
     const pendingVisibility =
       this.#content.writeMountedChanges(deadline, () => this.#scheduler.now()) ||
@@ -432,6 +436,7 @@ export class SvgSceneRenderer {
         this.#transformPreviews.values,
         this.#elementPreviews.values,
       );
+    this.#elementPreviews.applyMounted(this.#content.takeCommittedPreviewIds());
     this.#liveStroke.settleCommits(
       (id) => this.#content.hasMounted(id) || !this.#visibility.contains(id),
     );

@@ -39,7 +39,6 @@ export class SceneTransformPreviewController {
     this.#camera = camera;
     this.#viewport = viewport;
     this.#contextDirty = true;
-    this.#content.setSelectionContext({ camera, viewport });
   }
 
   public set(

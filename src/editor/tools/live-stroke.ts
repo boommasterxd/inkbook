@@ -1,8 +1,10 @@
-import { roundCanonical, smoothStrokeCenters } from "../../domain/geometry/public";
+import type { PressureWindow } from "../../domain/geometry/pressure-window";
+import { roundCanonical } from "../../domain/geometry/public";
 import {
-  buildCenterlineSlice,
-  buildPressureOutlineSlice,
-} from "../../domain/geometry/stroke-path-slice";
+  LiveStrokeGeometry,
+  LIVE_STROKE_WINDOW,
+  MAX_LIVE_TAIL_SAMPLES,
+} from "./live-stroke-geometry";
 import { MAX_STROKE_POINTS, type StrokeStyleV1 } from "../../domain/schema/public";
 import type {
   RawStrokeSample,
@@ -14,11 +16,9 @@ const VALUES_PER_SAMPLE = 5;
 const SIMULATED_SPEED_RESPONSE_MS = 32;
 const INITIAL_SAMPLE_CAPACITY = 16;
 const MAX_SAMPLES = MAX_STROKE_POINTS;
-const MAX_TAIL_SAMPLES = 16;
-const BOUNDARY_SAMPLES = 4;
-const FUTURE_SAMPLES = 5;
 
 export interface LiveStrokeChunk {
+  /** Raw input window that completed this immutable display chunk. */
   readonly firstSample: number;
   readonly sampleCount: number;
   readonly geometry: StrokePathGeometry;
@@ -45,11 +45,14 @@ export interface LiveStrokeInstrumentation {
   readonly commitBuilds: number;
   readonly maximumTailSamples: number;
   readonly maximumFinalizedChunkSamples: number;
+  readonly maximumPendingPressurePieces: number;
 }
 
 export interface LiveStrokeCommit {
   readonly points: number[];
   readonly geometry: StrokePathGeometry;
+  readonly geometryMemoryBytes: number;
+  readonly pressureWindows: readonly PressureWindow[] | undefined;
   readonly instrumentation: LiveStrokeInstrumentation;
 }
 
@@ -66,6 +69,7 @@ export class LiveStrokeBuilder {
   private finalizedSamples = 0;
   private readonly chunks: LiveStrokeChunk[] = [];
   private tail: LiveStrokePreview["tail"] | null = null;
+  private readonly geometry: LiveStrokeGeometry;
   private finished = false;
   private exhausted = false;
   private appendedInputSamples = 0;
@@ -78,6 +82,7 @@ export class LiveStrokeBuilder {
   private maximumFinalizedChunkSamples = 0;
 
   constructor(private readonly options: LiveStrokeBuilderOptions) {
+    this.geometry = new LiveStrokeGeometry(options.style);
     if (!Number.isFinite(options.input.zoom) || options.input.zoom <= 0) {
       throw new RangeError("Stroke zoom must be a positive finite number.");
     }
@@ -125,9 +130,20 @@ export class LiveStrokeBuilder {
     if (this.retainedSamples === 0) throw new RangeError("A stroke requires at least one sample.");
     this.finished = true;
     const points = this.canonicalPoints;
-    const geometry = this.buildCommitGeometry();
+    const builder = this.geometry;
+    let cachedGeometry: StrokePathGeometry | undefined;
     this.commitBuilds += 1;
-    return { points, geometry, instrumentation: this.instrumentation() };
+    return {
+      points,
+      get geometry() {
+        return (cachedGeometry ??= builder.finish());
+      },
+      get pressureWindows() {
+        return builder.pressureWindows();
+      },
+      geometryMemoryBytes: points.length * 8 + builder.memoryUsage(),
+      instrumentation: this.instrumentation(),
+    };
   }
 
   instrumentation(): LiveStrokeInstrumentation {
@@ -142,6 +158,7 @@ export class LiveStrokeBuilder {
       commitBuilds: this.commitBuilds,
       maximumTailSamples: this.maximumTailSamples,
       maximumFinalizedChunkSamples: this.maximumFinalizedChunkSamples,
+      maximumPendingPressurePieces: this.geometry.maximumPendingPressurePieces,
     });
   }
 
@@ -184,77 +201,35 @@ export class LiveStrokeBuilder {
   }
 
   private finalizeStablePrefix(): void {
-    const tailStart = Math.max(0, this.finalizedSamples - BOUNDARY_SAMPLES);
-    if (this.retainedSamples - tailStart <= MAX_TAIL_SAMPLES) return;
-    const nextFinalized = this.retainedSamples - FUTURE_SAMPLES;
-    const sampleCount = nextFinalized - this.finalizedSamples;
-    const contextStart = Math.max(0, this.finalizedSamples - BOUNDARY_SAMPLES);
-    this.chunks.push(
-      Object.freeze({
-        firstSample: this.finalizedSamples,
-        sampleCount,
-        geometry: this.buildSliceGeometry(
-          contextStart,
-          nextFinalized + BOUNDARY_SAMPLES,
-          this.finalizedSamples === 0 ? null : this.finalizedSamples - 1,
-          this.options.style.pressureEnabled ? nextFinalized - 1 : nextFinalized,
-        ),
-      }),
-    );
-    this.finalizedSamples = nextFinalized;
-    this.finalizedChunkBuilds += 1;
+    if (this.retainedSamples - this.finalizedSamples < MAX_LIVE_TAIL_SAMPLES) return;
+    const geometry = this.geometry.finalize(this.canonicalPoints, this.finalizedSamples);
+    if (geometry !== undefined) {
+      this.chunks.push(
+        Object.freeze({
+          firstSample: this.finalizedSamples,
+          sampleCount: LIVE_STROKE_WINDOW,
+          geometry,
+        }),
+      );
+      this.finalizedChunkBuilds += 1;
+    }
+    this.finalizedSamples += LIVE_STROKE_WINDOW;
     this.maximumFinalizedChunkSamples = Math.max(
       this.maximumFinalizedChunkSamples,
-      nextFinalized + BOUNDARY_SAMPLES - contextStart,
+      MAX_LIVE_TAIL_SAMPLES,
     );
   }
 
   private rebuildTail(): void {
-    const firstSample = Math.max(0, this.finalizedSamples - BOUNDARY_SAMPLES);
-    const sampleCount = this.retainedSamples - firstSample;
-    const boundarySamples = this.finalizedSamples - firstSample;
+    const sampleCount = this.retainedSamples - this.finalizedSamples;
     this.tail = Object.freeze({
-      firstSample,
+      firstSample: this.finalizedSamples,
       sampleCount,
-      boundarySamples,
-      geometry: this.buildSliceGeometry(
-        firstSample,
-        this.retainedSamples,
-        this.finalizedSamples === 0 ? null : this.finalizedSamples - 1,
-        null,
-      ),
+      boundarySamples: Number(this.finalizedSamples > 0),
+      geometry: this.geometry.preview(this.canonicalPoints, this.finalizedSamples),
     });
     this.tailBuilds += 1;
     this.maximumTailSamples = Math.max(this.maximumTailSamples, sampleCount);
-  }
-
-  private buildCommitGeometry(): StrokePathGeometry {
-    if (this.tail === null) throw new RangeError("A live stroke requires at least one sample.");
-    if (this.chunks.length === 0) return this.tail.geometry;
-    return this.options.style.pressureEnabled
-      ? combinePressureGeometry(this.chunks, this.tail)
-      : combineCenterlineGeometry(this.chunks, this.tail);
-  }
-
-  private buildSliceGeometry(
-    contextStart: number,
-    contextEnd: number,
-    firstBoundary: number | null,
-    lastBoundary: number | null,
-  ): StrokePathGeometry {
-    const points = this.copyCanonicalPoints(contextStart, contextEnd);
-    const centers = smoothStrokeCenters(points);
-    const slice = {
-      firstBoundary: firstBoundary === null ? null : firstBoundary - contextStart,
-      lastBoundary: lastBoundary === null ? null : lastBoundary - contextStart,
-    };
-    return this.options.style.pressureEnabled
-      ? buildPressureOutlineSlice(centers, this.options.style.width, slice)
-      : buildCenterlineSlice(centers, slice);
-  }
-
-  private copyCanonicalPoints(start: number, end: number): number[] {
-    return this.canonicalPoints.slice(start * 3, end * 3);
   }
 
   private writeSample(index: number, sample: RawStrokeSample, previousIndex: number): void {
@@ -324,38 +299,4 @@ export class LiveStrokeBuilder {
       throw new RangeError("Pen pressure must be finite.");
     }
   }
-}
-
-function combineCenterlineGeometry(
-  chunks: readonly LiveStrokeChunk[],
-  tail: LiveStrokePreview["tail"],
-): StrokePathGeometry {
-  // Preview slices overlap one quadratic at stable boundaries to hide seams.
-  // Removing only that overlap reconstructs the exact one-pass centerline.
-  const paths = new Array<string>(chunks.length + 1);
-  paths[0] = chunks[0]!.geometry[0]!.d;
-  for (let index = 1; index < chunks.length; index += 1) {
-    paths[index] = afterOverlappingQuadratic(chunks[index]!.geometry[0]!.d);
-  }
-  paths[chunks.length] = afterOverlappingQuadratic(tail.geometry[0]!.d);
-  return [{ d: paths.join(""), paint: "stroke" }];
-}
-
-function combinePressureGeometry(
-  chunks: readonly LiveStrokeChunk[],
-  tail: LiveStrokePreview["tail"],
-): StrokePathGeometry {
-  const d = [...chunks, tail].map((chunk) => chunk.geometry[0]!.d).join("");
-  return [{ d, paint: "fill" }];
-}
-
-function afterOverlappingQuadratic(d: string): string {
-  const firstQuadratic = requireCommand(d, "Q");
-  return d.slice(requireCommand(d, "Q", firstQuadratic + 1));
-}
-
-function requireCommand(d: string, command: "L" | "Q", fromIndex = 0): number {
-  const index = d.indexOf(command, fromIndex);
-  if (index < 0) throw new Error(`Live stroke geometry is missing the ${command} command.`);
-  return index;
 }

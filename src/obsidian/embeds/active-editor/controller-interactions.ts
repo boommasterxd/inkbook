@@ -1,5 +1,6 @@
+import type { NavigationCursorLayout } from "./navigation-layout";
 import * as Scrolling from "../../scrolling/index";
-import { createInputState } from "../../../editor/input/index";
+import { createInputState, type InputState } from "../../../editor/input/index";
 import type { PointerSample } from "../../../editor/input/index";
 import { derivePageExtent } from "../../../domain/geometry/public";
 
@@ -137,6 +138,7 @@ export function createControllerNavigation(options: {
   readonly getInput: ActiveEditorNavigationOptions["getInput"];
   readonly isSelectionMoveActive: () => boolean;
   readonly renderSelection: () => void;
+  readonly adoptCursorLayout?: (layout: NavigationCursorLayout) => void;
   readonly scrollOwner: ActiveEditorNavigationOptions["scrollOwner"];
   readonly setInput: ActiveEditorNavigationOptions["setInput"];
 }): ActiveEditorNavigation {
@@ -148,7 +150,8 @@ export function createControllerNavigation(options: {
       controller.selectionMoveLayout.currentHeight?.() ??
       derivePageExtent(controller.model.page, controller.model.store.getMaximumBottom() ?? null)
         .activeHeight,
-    applyCamera: (camera) => {
+    applyCamera: (camera, layout) => {
+      if (layout !== undefined) options.adoptCursorLayout?.(layout);
       controller.renderer.setCamera(camera);
       if (camera.zoom !== appliedZoom || !options.isSelectionMoveActive()) {
         options.renderSelection();
@@ -206,4 +209,15 @@ export function createControllerPenGuard(ownerWindow: Window) {
     metrics: Scrolling.browserScrollMetrics,
     scheduler: Scrolling.createAnimationFrameScheduler(ownerWindow),
   });
+}
+
+export function hasStableGeometryGesture(
+  input: InputState,
+  handles: ActiveEditorHandleInteraction,
+): boolean {
+  return (
+    handles.activePointerId !== undefined ||
+    input.interaction?.phase === "lasso" ||
+    input.interaction?.phase === "eraser-gesture"
+  );
 }

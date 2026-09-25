@@ -31,7 +31,6 @@ export class SceneDom {
   public readonly overlayPath: SVGPathElement;
   public readonly selectionTraceGroup: SVGGElement;
   public readonly selectionOverlayPath: SVGPathElement;
-  public readonly selectionClipPath: SVGPathElement;
   public readonly selectionHandlePath: SVGPathElement;
   public readonly snapMarkerPath: SVGPathElement;
   public readonly ownerDocument: Document;
@@ -41,7 +40,6 @@ export class SceneDom {
   readonly #backgroundPattern: SVGPatternElement;
   readonly #backgroundPatternPath: SVGPathElement;
   readonly #backgroundPatternId: string;
-  #selectionClipD = "";
   #livePathBand: RenderBand = "content";
   #liveStrokeBand: RenderBand = "content";
   readonly #listeners: { name: InputEventName; listener: EventListener }[] = [];
@@ -68,7 +66,6 @@ export class SceneDom {
     this.overlayPath = this.createSvg("path");
     this.selectionTraceGroup = this.createSvg("g");
     this.selectionOverlayPath = this.createSvg("path");
-    this.selectionClipPath = this.createSvg("path");
     this.selectionHandlePath = this.createSvg("path");
     this.snapMarkerPath = this.createSvg("path");
     const themeStyle = this.createSvg("style");
@@ -129,7 +126,7 @@ export class SceneDom {
       this.snapMarkerPath,
     );
     const defs = this.createSvg("defs");
-    defs.append(this.#backgroundPattern, this.createSelectionClip());
+    defs.append(this.#backgroundPattern);
     this.svg.append(themeStyle, this.cameraGroup, overlayGroup, defs);
 
     this.inputSurface.tabIndex = 0;
@@ -248,23 +245,6 @@ export class SceneDom {
     this.#listeners.length = 0;
     this.inputSurface.remove();
     this.svg.remove();
-  }
-
-  public setSelectionClip(path: string): boolean {
-    if (path === this.#selectionClipD) return false;
-    this.selectionClipPath.setAttribute("d", path);
-    this.#selectionClipD = path;
-    return true;
-  }
-
-  private createSelectionClip(): SVGClipPathElement {
-    const clip = this.createSvg("clipPath");
-    const id = `${this.#backgroundPatternId}-selection`;
-    clip.setAttribute("id", id);
-    clip.setAttribute("clipPathUnits", "userSpaceOnUse");
-    clip.append(this.selectionClipPath);
-    this.selectionOverlayPath.setAttribute("clip-path", `url(#${id})`);
-    return clip;
   }
 
   private configureSelectionOverlays(): void {

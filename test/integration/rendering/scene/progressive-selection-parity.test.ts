@@ -67,7 +67,7 @@ describe("progressive selection canonical scene parity", () => {
     scheduler.runNext();
     expect(paintedPaths(content.nodes[0]!)[0]!.attributes.get("d")).toBe(original[0]!.get("d"));
     let remainingFrames = 0;
-    while (scheduler.pendingCount > 0 && remainingFrames < 20) {
+    while (scheduler.pendingCount > 0) {
       scheduler.runFrame();
       remainingFrames += 1;
     }

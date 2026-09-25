@@ -261,8 +261,8 @@ describe("live stroke scene handoff", () => {
     const statistics = renderer.instrumentation();
     const builderStatistics = builder.instrumentation();
     expect(scheduler.pendingCount).toBe(0);
-    expect(builderStatistics.maximumFinalizedChunkSamples).toBeLessThanOrEqual(16);
-    expect(builderStatistics.maximumTailSamples).toBeLessThanOrEqual(16);
+    expect(builderStatistics.maximumFinalizedChunkSamples).toBeLessThanOrEqual(131);
+    expect(builderStatistics.maximumTailSamples).toBeLessThanOrEqual(131);
     expect(liveLayer.nodes).toEqual([liveGroup]);
     expect(liveGroup.nodes).toHaveLength(latestPreview.finalizedChunks.length + 1);
     expect(liveGroup.nodes[0]).toBe(firstChunkNode);

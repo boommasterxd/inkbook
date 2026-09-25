@@ -1,3 +1,4 @@
+import { CommittedPreviewGeometry } from "./committed-preview-geometry";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import { buildElementPathParts, type SvgPathPart } from "../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../domain/schema/public";
@@ -28,6 +29,9 @@ export class SceneContentRenderer {
   };
   readonly #committedCounts: Record<RenderBand, number> = { content: 0, highlight: 0 };
   readonly #geometryDirty = new Set<string>();
+  readonly #committedGeometry = new CommittedPreviewGeometry();
+  readonly #deferredPreviews = new Set<string>();
+  #committedPreviewIds: string[] = [];
   readonly #instrumentation: MutableSceneInstrumentation;
   readonly #mounted = new Map<string, MountedSceneElement>();
   readonly #fades = new SceneElementFades(this.#mounted);
@@ -51,7 +55,11 @@ export class SceneContentRenderer {
     instrumentation: MutableSceneInstrumentation,
   ) {
     this.#dom = dom;
-    this.#selectionTraces = new SceneSelectionTraces(dom.selectionTraceGroup, instrumentation);
+    this.#selectionTraces = new SceneSelectionTraces(
+      dom.selectionTraceGroup,
+      instrumentation,
+      dom.selectionOverlayPath,
+    );
     this.#store = store;
     this.#pathCache = pathCache;
     this.#instrumentation = instrumentation;
@@ -82,16 +90,16 @@ export class SceneContentRenderer {
     }
   }
 
-  public setSelectionContext(context: Parameters<SceneSelectionTraces["setContext"]>[0]): void {
-    this.#selectionTraces.setContext(context);
-  }
-
   public flushSelectionContext(): void {
     this.#selectionTraces.flushContext();
   }
 
-  public selectionTraceBytes(): number {
-    return this.#selectionTraces.memoryUsage();
+  public previewMemoryUsage(): number {
+    return (
+      this.#selectionTraces.memoryUsage() +
+      this.#committedGeometry.memoryUsage() +
+      (this.#deferredPreviews.size + this.#committedPreviewIds.length) * 8
+    );
   }
 
   public get mountedCount(): number {
@@ -146,16 +154,40 @@ export class SceneContentRenderer {
     } else this.#orderDirty[record.band].add(id);
   }
 
-  public materializePreviewGeometry(previews: ReadonlyMap<string, PreviewTransform>): void {
-    for (const [id, preview] of previews) {
-      if (preview.transform === null) continue;
-      this.writeGeometry(id);
-      this.#geometryDirty.delete(id);
+  public materializePreviewGeometry(
+    previews: ReadonlyMap<string, PreviewTransform>,
+    elements: ReadonlyMap<string, InkElementV1>,
+  ): void {
+    const ids = new Set([...previews.keys(), ...elements.keys()]);
+    for (const id of ids) {
+      if (
+        !this.#geometryDirty.has(id) ||
+        (previews.get(id)?.transform == null && !elements.has(id))
+      )
+        continue;
+      const entry = this.#mounted.get(id);
+      if (entry !== undefined)
+        this.#committedGeometry.retain(
+          id,
+          entry.appliedPreviewTransform,
+          entry.previewStrokeWidthScale,
+        );
     }
   }
 
+  public takeCommittedPreviewIds(): readonly string[] {
+    if (this.#committedPreviewIds.length === 0) return EMPTY_IDS;
+    const ids = this.#committedPreviewIds;
+    this.#committedPreviewIds = [];
+    return ids;
+  }
+
   public writeMountedChanges(deadline: number, now: () => number): boolean {
-    if (this.writeDirtySet(this.#geometryDirty, deadline, now, (id) => this.writeGeometry(id))) {
+    if (
+      this.writeDirtySet(this.#geometryDirty, deadline, now, (id) =>
+        this.writeGeometry(id, deadline, now),
+      )
+    ) {
       return true;
     }
     if (this.writeDirtySet(this.#paintDirty, deadline, now, (id) => this.writePaint(id)))
@@ -214,12 +246,27 @@ export class SceneContentRenderer {
   ): void {
     const entry = this.#mounted.get(id);
     if (entry !== undefined) {
-      updatePreviewTransform(entry, transform, version, strokeWidthScale, this.#instrumentation);
+      const resolved = this.#committedGeometry.resolve(id, {
+        transform,
+        version,
+        strokeWidthScale,
+      });
+      updatePreviewTransform(
+        entry,
+        resolved.transform,
+        resolved.version,
+        resolved.strokeWidthScale,
+        this.#instrumentation,
+      );
       this.#selectionTraces.transform(id, entry);
     }
   }
 
   public applyElementPreview(element: InkElementV1): boolean {
+    if (this.#committedGeometry.has(element.id)) {
+      this.#deferredPreviews.add(element.id);
+      return false;
+    }
     return this.applyCanonicalElementPreview(element, buildElementPathParts(element));
   }
 
@@ -227,6 +274,10 @@ export class SceneContentRenderer {
     element: InkElementV1,
     parts: readonly SvgPathPart[],
   ): boolean {
+    if (this.#committedGeometry.has(element.id)) {
+      this.#deferredPreviews.add(element.id);
+      return false;
+    }
     const entry = this.#mounted.get(element.id);
     const record = this.#store.get(element.id);
     if (entry === undefined || record === undefined) return false;
@@ -241,13 +292,20 @@ export class SceneContentRenderer {
   }
 
   public clearElementPreview(id: string): void {
+    if (this.#committedGeometry.has(id)) {
+      this.#geometryDirty.add(id);
+      return;
+    }
     const entry = this.#mounted.get(id);
     const record = this.#store.get(id);
     if (entry === undefined || record === undefined) return;
     const parts =
       entry.geometryVersion === record.geometryVersion
         ? entry.pathParts
-        : this.#pathCache.build(record.element);
+        : this.#pathCache.build(
+            record.element,
+            this.#store.pressureGeometry?.(record.id, record.geometryVersion),
+          );
     this.updateGeometry(entry, record, parts);
   }
 
@@ -283,6 +341,9 @@ export class SceneContentRenderer {
   }
 
   public release(): void {
+    this.#committedGeometry.release();
+    this.#deferredPreviews.clear();
+    this.#committedPreviewIds = [];
     this.#fades.release();
     this.#selectionTraces.release();
     this.#selectionDirty.clear();
@@ -299,17 +360,37 @@ export class SceneContentRenderer {
     this.#committedCounts.highlight = 0;
   }
 
-  private writeGeometry(id: string): void {
+  private writeGeometry(id: string, deadline: number, now: () => number): boolean {
     const entry = this.#mounted.get(id);
     const record = this.#store.get(id);
     if (
       entry === undefined ||
       record === undefined ||
       entry.geometryVersion === record.geometryVersion
-    )
-      return;
-    const parts = this.#pathCache.build(record.element);
+    ) {
+      this.#committedGeometry.finish(id);
+      this.#deferredPreviews.delete(id);
+      return true;
+    }
+    const pending = this.#committedGeometry.has(id);
+    const parts = pending
+      ? this.#committedGeometry.prepare(
+          record,
+          deadline,
+          now,
+          this.#store.pressureGeometry?.(record.id, record.geometryVersion),
+        )
+      : this.#pathCache.build(
+          record.element,
+          this.#store.pressureGeometry?.(record.id, record.geometryVersion),
+        );
+    if (parts === undefined) return false;
     this.updateGeometry(entry, record, parts);
+    const desired = this.#committedGeometry.finish(id);
+    if (this.#deferredPreviews.delete(id)) this.#committedPreviewIds.push(id);
+    if (desired !== undefined)
+      this.applyPreviewTransform(id, desired.transform, desired.version, desired.strokeWidthScale);
+    return true;
   }
 
   private updateGeometry(
@@ -375,12 +456,12 @@ export class SceneContentRenderer {
     dirty: Set<string>,
     deadline: number,
     now: () => number,
-    write: (id: string) => void,
+    write: (id: string) => void | boolean,
   ): boolean {
     let processed = 0;
     for (const id of dirty) {
       if (processed > 0 && now() >= deadline) return true;
-      write(id);
+      if (write(id) === false) return true;
       dirty.delete(id);
       processed += 1;
     }

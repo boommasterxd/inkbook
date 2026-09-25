@@ -1,4 +1,8 @@
 import {
+  validatePreparedUnlockGeometry,
+  isPreparedUnlockPaths,
+} from "../../persistence/serialization/prepared-unlock-paths";
+import {
   FILE_SCHEMA_LIMITS,
   type InkElementV1,
   type InkSnapshotV1,
@@ -235,6 +239,7 @@ export async function loadVaultDocument(
     ) {
       throw new Error("The unlock snapshot, batches, and finalized store diverged.");
     }
+    await adoptPreparedPaths(result.preparedPaths ?? [], store, options);
     return {
       outputHash: result.outputHash,
       requiresCanonicalRewrite:
@@ -252,6 +257,34 @@ export async function loadVaultDocument(
   } catch (error) {
     builder.cancel();
     throw error;
+  }
+}
+
+async function adoptPreparedPaths(
+  preparedPaths: unknown,
+  store: ElementStore,
+  options: VaultDocumentLoaderOptions,
+): Promise<void> {
+  if (
+    !isPreparedUnlockPaths(preparedPaths) ||
+    preparedPaths.some(({ id }) => {
+      const element = store.get(id)?.element;
+      return element?.kind !== "stroke" || !element.style.pressureEnabled;
+    })
+  )
+    throw new Error("Invalid prepared unlock paths.");
+  const scheduler = options.scheduler(options.cancelled);
+  if (
+    !(await validatePreparedUnlockGeometry(preparedPaths, async () => {
+      if (options.cancelled()) throw new Error("Prepared unlock adoption cancelled.");
+      if (scheduler.shouldYield()) await scheduler.yieldControl();
+    })) ||
+    options.cancelled()
+  )
+    throw new Error("Invalid prepared unlock geometry.");
+  for (const entry of preparedPaths) {
+    const record = store.get(entry.id)!;
+    store.pressureGeometry(entry.id, record.geometryVersion).publishPath?.(entry.geometry);
   }
 }
 

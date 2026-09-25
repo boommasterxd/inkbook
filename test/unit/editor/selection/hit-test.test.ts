@@ -122,20 +122,27 @@ describe("selection hit testing", () => {
     expect(frontmostHit(scratch, { x: -12, y: 50 }, "touch", candidates)).toBe("front");
     expect(frontmostHit(scratch, { x: -12, y: 50 }, "mouse", candidates)).toBeNull();
   });
+});
 
-  it("finds exact stroke hits across acceleration-block boundaries without bounds false hits", () => {
-    const points: number[] = [];
-    for (let index = 0; index < 130; index += 1) {
-      points.push(index, index === 64 ? 0 : 100, 0.5);
-    }
-    Object.freeze(points);
-    const element = stroke(points);
+describe("canonical stroke hit indexes", () => {
+  it.each([true, false])(
+    "finds exact canonical hits across block boundaries (pressure=%s)",
+    (pressureEnabled) => {
+      const points: number[] = [];
+      for (let index = 0; index < 130; index += 1) {
+        points.push(index, index === 64 ? 0 : 100, 0.5);
+      }
+      Object.freeze(points);
+      const element = stroke(points);
+      element.style.pressureEnabled = pressureEnabled;
 
-    expect(elementContainsPoint(element, { x: 64, y: 56.25 }, 1)).toBe(true);
-    expect(elementContainsPoint(element, { x: 30, y: 50 }, 1)).toBe(false);
-    expect(elementContainsPoint(element, { x: 64, y: 50 }, 1)).toBe(false);
-    expect(elementContainsPoint(element, { x: 64, y: 56.25 }, 1)).toBe(true);
-  });
+      expect(elementContainsPoint(element, { x: 64, y: 56.25 }, 1)).toBe(true);
+      expect(elementContainsPoint(element, { x: 30, y: 50 }, 1)).toBe(false);
+      expect(elementContainsPoint(element, { x: 64, y: 50 }, 1)).toBe(true);
+      expect(elementContainsPoint(element, { x: 64, y: 45 }, 1)).toBe(false);
+      expect(elementContainsPoint(element, { x: 64, y: 56.25 }, 1)).toBe(true);
+    },
+  );
 
   it("does not reuse cached geometry for mutable stroke samples", () => {
     assertMutableStrokeUpdates([0, 100, 0.5, 100, 100, 0.5]);

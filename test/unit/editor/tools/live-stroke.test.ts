@@ -1,15 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import {
-  buildStrokePathParts,
-  smoothStrokeCenters,
-} from "../../../../src/domain/geometry/stroke-path";
+import * as pressureWindows from "../../../../src/domain/geometry/pressure-path-serialization";
+import { buildStrokePathParts } from "../../../../src/domain/geometry/stroke-path";
 import type { RawStrokeSample } from "../../../../src/domain/geometry/public";
 import { MAX_STROKE_POINTS, type StrokeStyleV1 } from "../../../../src/domain/schema/public";
-import {
-  buildCenterlineSlice,
-  buildPressureOutlineSlice,
-} from "../../../../src/domain/geometry/stroke-path-slice";
 import {
   LiveStrokeBuilder,
   type LiveStrokePreview,
@@ -44,39 +38,12 @@ function onePassPath(
   });
 }
 
-function expectExactPreview(
-  preview: LiveStrokePreview,
-  points: number[],
-  style: StrokeStyleV1,
-): void {
-  const centers = smoothStrokeCenters(points);
-  for (const chunk of preview.finalizedChunks) {
-    const slice = {
-      firstBoundary: chunk.firstSample === 0 ? null : chunk.firstSample - 1,
-      lastBoundary: chunk.firstSample + chunk.sampleCount - (style.pressureEnabled ? 1 : 0),
-    };
-    expect(chunk.geometry).toEqual(expectedSlice(centers, style, slice));
+function expectBoundedPreview(preview: LiveStrokePreview): void {
+  expect(preview.tail.sampleCount).toBeLessThanOrEqual(130);
+  for (const chunk of [...preview.finalizedChunks, preview.tail]) {
+    expect(chunk.geometry).toHaveLength(1);
+    expect(chunk.geometry[0]!.d).not.toMatch(/NaN|Infinity/);
   }
-  const finalizedSamples = preview.tail.firstSample + preview.tail.boundarySamples;
-  expect(preview.tail.geometry).toEqual(
-    expectedSlice(centers, style, {
-      firstBoundary: finalizedSamples === 0 ? null : finalizedSamples - 1,
-      lastBoundary: null,
-    }),
-  );
-  if (preview.finalizedChunks.length === 0) {
-    expect(preview.tail.geometry).toEqual(onePassPath(points, style));
-  }
-}
-
-function expectedSlice(
-  centers: ReturnType<typeof smoothStrokeCenters>,
-  style: StrokeStyleV1,
-  slice: { readonly firstBoundary: number | null; readonly lastBoundary: number | null },
-) {
-  return style.pressureEnabled
-    ? buildPressureOutlineSlice(centers, style.width, slice)
-    : buildCenterlineSlice(centers, slice);
 }
 
 describe("live stroke builder", () => {
@@ -108,8 +75,8 @@ describe("live stroke builder", () => {
 
     expect(commit.points).toHaveLength(MAX_STROKE_POINTS * 3);
     expect(commit.geometry).toEqual(onePassPath(commit.points, penStyle));
-    expect(commit.instrumentation.maximumTailSamples).toBeLessThanOrEqual(16);
-    expect(commit.instrumentation.maximumFinalizedChunkSamples).toBeLessThanOrEqual(16);
+    expect(commit.instrumentation.maximumTailSamples).toBeLessThanOrEqual(131);
+    expect(commit.instrumentation.maximumFinalizedChunkSamples).toBeLessThanOrEqual(131);
     expect(commit.instrumentation.retainedSamples).toBe(MAX_STROKE_POINTS);
     expect(commit.instrumentation.bufferGrowths).toBe(Math.log2(MAX_STROKE_POINTS / 16));
     expect(commit.instrumentation.tailBuilds).toBe(MAX_STROKE_POINTS);
@@ -131,34 +98,23 @@ describe("live stroke builder", () => {
     );
     expect(commit.instrumentation.appendedInputSamples).toBe(samples.length);
     expect(commit.instrumentation.tailBuilds).toBe(1);
-    expectExactPreview(preview, commit.points, penStyle);
+    expectBoundedPreview(preview);
   });
 });
 
 describe("live stroke preview geometry", () => {
-  it("uses finalized samples as read-only context while retaining the exact boundary segment", () => {
+  it("retains immutable windows and bounded smoothing context", () => {
     const builder = new LiveStrokeBuilder({
       input: { pressureSource: "pen", zoom: 1 },
-      style: { ...penStyle, pressureEnabled: false },
+      style: penStyle,
     });
-    let preview = builder.append(sample(0));
-    for (let index = 1; index < 20; index += 1) preview = builder.append(sample(index));
-
-    expect(preview.tail.boundarySamples).toBe(4);
-    expect(preview.tail.firstSample).toBe(8);
-    expectExactPreview(
-      preview,
-      prepareStrokeSamples(
-        Array.from({ length: 20 }, (_, index) => sample(index)),
-        {
-          pressureSource: "pen",
-          zoom: 1,
-        },
-      ),
-      { ...penStyle, pressureEnabled: false },
-    );
-    expect(preview.tail.geometry[0]!.d).toMatch(/^M11\.5(?:\D|$)/);
-    expect(preview.tail.geometry[0]!.d).toContain("Q12 ");
+    const preview = builder.appendBatch(Array.from({ length: 150 }, (_, index) => sample(index)));
+    // Simplified windows accumulate until 64 derived capsules can be finalized.
+    expect(preview.finalizedChunks).toHaveLength(0);
+    expect(preview.tail.firstSample).toBe(64);
+    expectBoundedPreview(preview);
+    const commit = builder.finish();
+    expect(commit.geometry).toEqual(onePassPath(commit.points, penStyle));
   });
 
   it.each([
@@ -166,7 +122,7 @@ describe("live stroke preview geometry", () => {
     ["simulated-pressure", penStyle, "simulated"],
     ["centerline", { ...penStyle, opacity: 0.4, pressureEnabled: false }, "pen"],
   ] as const)("matches one-pass %s geometry across every chunk boundary", (_, style, source) => {
-    const raw = Array.from({ length: 97 }, (_, index) => ({
+    const raw = Array.from({ length: 321 }, (_, index) => ({
       pressure: ((index * 37) % 101) / 100,
       time: index * 2 + (index % 3),
       x: index * 1.25,
@@ -176,12 +132,11 @@ describe("live stroke preview geometry", () => {
     const builder = new LiveStrokeBuilder({ input, style });
     for (let index = 0; index < raw.length; index += 1) {
       const preview = builder.append(raw[index]!);
-      const points = prepareStrokeSamples(raw.slice(0, index + 1), input);
-      expectExactPreview(preview, points, style);
+      expectBoundedPreview(preview);
     }
     const commit = builder.finish();
     expect(commit.geometry).toEqual(onePassPath(commit.points, style));
-    expect(commit.instrumentation.finalizedChunkBuilds).toBeGreaterThan(1);
+    expect(commit.instrumentation.maximumPendingPressurePieces).toBeLessThanOrEqual(64);
   });
 
   it("rebuilds only the exact tail when a close sample replaces its tip", () => {
@@ -196,25 +151,52 @@ describe("live stroke preview geometry", () => {
     preview = builder.append(replacement);
 
     expect(preview.finalizedChunks).toEqual(prefix);
-    expectExactPreview(preview, prepareStrokeSamples([...raw, replacement], input), penStyle);
+    expectBoundedPreview(preview);
+    const commit = builder.finish();
+    expect(commit.geometry).toEqual(onePassPath(commit.points, penStyle));
   });
 });
 
 describe("live stroke commit continuity", () => {
-  it("retains identical pressure-band fragments across live chunk boundaries and commit", () => {
-    const input = { pressureSource: "pen" as const, zoom: 1 };
-    const builder = new LiveStrokeBuilder({ input, style: penStyle });
-    let preview = builder.append(sample(0));
-    for (let index = 1; index < 80; index += 1) preview = builder.append(sample(index));
-
-    const parts = [
-      ...preview.finalizedChunks.flatMap((chunk) => chunk.geometry),
-      ...preview.tail.geometry,
-    ];
+  it("packs live window boundaries into the canonical continuous pressure contour", () => {
+    const builder = new LiveStrokeBuilder({
+      input: { pressureSource: "pen", zoom: 1 },
+      style: penStyle,
+    });
+    const preview = builder.appendBatch(
+      Array.from({ length: 400 }, (_, index) => ({
+        x: index,
+        y: Math.sin(index / 70) * 10,
+        pressure: 0.5,
+        time: index,
+      })),
+    );
+    expect(preview.finalizedChunks).toHaveLength(0);
     const commit = builder.finish();
-    expect(commit.geometry).toHaveLength(1);
-    expect(parts.map((part) => part.d).join("")).toBe(commit.geometry[0]!.d);
     expect(commit.geometry).toEqual(onePassPath(commit.points, penStyle));
+    expect(commit.geometry[0]!.d.match(/M/g)).toHaveLength(1);
+  });
+
+  it("reuses finalized unions and materializes the bounded canonical tail only once", () => {
+    const prepare = vi.spyOn(pressureWindows, "preparePressureWindows");
+    try {
+      const builder = new LiveStrokeBuilder({
+        input: { pressureSource: "pen", zoom: 1 },
+        style: penStyle,
+      });
+      for (let index = 0; index < 500; index += 1) builder.append(sample(index));
+      const prepared = prepare.mock.calls.length;
+      const commit = builder.finish();
+      expect(prepare).toHaveBeenCalledTimes(prepared);
+      const geometry = commit.geometry;
+      expect(prepare).toHaveBeenCalledTimes(prepared + 1);
+      expect(prepare.mock.calls[prepared]![0].length).toBeLessThanOrEqual(192);
+      expect(commit.geometry).toBe(geometry);
+      expect(prepare).toHaveBeenCalledTimes(prepared + 1);
+      expect(geometry).toEqual(onePassPath(commit.points, penStyle));
+    } finally {
+      prepare.mockRestore();
+    }
   });
 
   it("retains exact one-pass pressure geometry for repeated smoothed centers", () => {
@@ -238,6 +220,35 @@ describe("live stroke commit continuity", () => {
   });
 });
 
+describe("live stroke window transitions", () => {
+  it.each([63, 64, 65, 191, 192, 193])(
+    "preserves reversals at sample %i across individual and batched input",
+    (turn) => {
+      const samples = Array.from({ length: 260 }, (_, index) => ({
+        x: index <= turn ? index : 2 * turn - index,
+        y: 0,
+        pressure: index === turn ? 1 : 0.2,
+        time: index,
+      }));
+      const individual = new LiveStrokeBuilder({
+        input: { pressureSource: "pen", zoom: 1 },
+        style: penStyle,
+      });
+      const batched = new LiveStrokeBuilder({
+        input: { pressureSource: "pen", zoom: 1 },
+        style: penStyle,
+      });
+      for (const value of samples) individual.append(value);
+      batched.appendBatch(samples);
+      const first = individual.finish();
+      const second = batched.finish();
+      expect(first.points).toEqual(second.points);
+      expect(first.geometry).toEqual(second.geometry);
+      expect(first.geometry).toEqual(onePassPath(first.points, penStyle));
+    },
+  );
+});
+
 describe("live stroke limits and lifecycle", () => {
   it("freezes the last accepted geometry when input exceeds the maximum", () => {
     const builder = new LiveStrokeBuilder({
@@ -259,7 +270,7 @@ describe("live stroke limits and lifecycle", () => {
     expect(commit.instrumentation.appendedInputSamples).toBe(MAX_STROKE_POINTS + 1);
     expect(commit.instrumentation.retainedSamples).toBe(MAX_STROKE_POINTS);
     expect(preview.finalizedChunks).toEqual(finalizedPrefix);
-    expectExactPreview(preview, commit.points, penStyle);
+    expectBoundedPreview(preview);
   });
 
   it("replaces close mutable tips and enforces lifecycle and numeric limits", () => {

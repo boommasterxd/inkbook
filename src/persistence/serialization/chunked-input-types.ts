@@ -1,9 +1,11 @@
+import type { PreparedPathObserver } from "./prepared-unlock-paths";
 import type { InkSnapshotV1, SnapshotValidationDerivations } from "../../domain/schema/public";
 import type { DocumentHashPort } from "./sha256";
 
 export type ChunkedInputCheckpoint = () => Promise<void>;
 
 export interface ChunkedInkbookInputOptions {
+  readonly onPreparedPath?: PreparedPathObserver;
   readonly checkpoint?: ChunkedInputCheckpoint;
   readonly hasher?: DocumentHashPort;
   readonly inputSliceBytes?: number;

@@ -135,7 +135,7 @@ export class ProgressiveElementPreview {
         pending.element.kind === "stroke" && pending.element.points.length > 256 * 3;
       // Materialization and center preparation consume their own frame budget.
       if (starting && longStroke) return true;
-      if (!pending.path.step()) continue;
+      if (!pending.path.step(deadline, now)) continue;
       this.#complete(
         { element: pending.element, feedback: pending.feedback, parts: pending.path.parts! },
         pending.version,

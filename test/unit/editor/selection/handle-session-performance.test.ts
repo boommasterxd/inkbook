@@ -109,7 +109,7 @@ describe("SelectionHandleSession performance contracts", () => {
         startPointer,
       ).materialize({ x: startPointer.x + 100, y: startPointer.y + 100 }, false);
       expect(committed.replacements).toEqual(exact);
-      if (status === "ready") expect(previewElements).toEqual(committed.replacements);
+      if (status === "ready") expectQuantizedPreview(previewElements, committed.replacements);
 
       expect(yields > 0).toBe(status === "time-sliced-required");
     },
@@ -191,4 +191,40 @@ function pressureSession(stroke: ReturnType<typeof maximumStroke>): SelectionHan
     },
     startPointer: { x: stroke.points.length / 3 - 1, y: 100 },
   });
+}
+
+function expectQuantizedPreview(
+  preview: readonly InkElementV1[],
+  committed: readonly InkElementV1[],
+): void {
+  // Affine previews use unrounded center bounds; canonical commit rounds coordinates
+  // before measuring its fixed anchor, which can differ by one storage quantum.
+  expect(preview).toHaveLength(committed.length);
+  preview.forEach((element, index) => {
+    expect(element.style).toEqual(committed[index]!.style);
+    expectQuantizedValue(element, committed[index]);
+  });
+}
+
+function expectQuantizedValue(actual: unknown, expected: unknown): void {
+  if (typeof actual === "number" && typeof expected === "number") {
+    expect(Math.abs(actual - expected)).toBeLessThanOrEqual(0.001000001);
+    return;
+  }
+  if (
+    actual !== null &&
+    expected !== null &&
+    typeof actual === "object" &&
+    typeof expected === "object"
+  ) {
+    expect(Object.keys(actual)).toEqual(Object.keys(expected));
+    for (const key of Object.keys(actual)) {
+      expectQuantizedValue(
+        (actual as Record<string, unknown>)[key],
+        (expected as Record<string, unknown>)[key],
+      );
+    }
+    return;
+  }
+  expect(actual).toEqual(expected);
 }

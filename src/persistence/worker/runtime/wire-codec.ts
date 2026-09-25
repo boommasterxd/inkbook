@@ -1,3 +1,4 @@
+import { isPreparedUnlockPaths } from "../../serialization/prepared-unlock-paths";
 import type { InkSnapshotV1 } from "../../../domain/schema/public";
 import type { ClipboardResult, PastePlan } from "../../clipboard/types";
 import type { ExportFailure, ExportSuccess } from "../protocol";
@@ -53,7 +54,6 @@ import {
 import { isDocumentIntegrityManifest } from "../../serialization/document-integrity-manifest";
 
 export type { RuntimeWireSliceOptions } from "./element-wire-codec";
-
 interface FullExportWireRequest extends Omit<
   Extract<DocumentRuntimeRequest, { type: "export-full" }>,
   "snapshot" | "type"
@@ -432,6 +432,7 @@ export function isDocumentRuntimeWireResult(value: unknown): value is DocumentRu
   if (!isRuntimeWireResultType(value.type)) return false;
   if (value.type === "unlock-success") {
     return (
+      (value.preparedPaths === undefined || isPreparedUnlockPaths(value.preparedPaths)) &&
       typeof value.lockedHeight === "number" &&
       Number.isFinite(value.lockedHeight) &&
       value.lockedHeight > 0 &&
