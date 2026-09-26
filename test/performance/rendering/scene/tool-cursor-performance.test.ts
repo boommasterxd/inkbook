@@ -241,13 +241,14 @@ it(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz navigation feedback projects o
     position = 100;
     observations.write.mockClear();
     renderer.resetInstrumentation();
-    renderer.invalidateLayout(false, true);
-    expect(read).toHaveBeenCalledExactlyOnceWith(true);
-    expect(observations.write).toHaveBeenCalledExactlyOnceWith("transform", "translate(100 40)");
+    for (let sample = 0; sample < 8; sample += 1) renderer.invalidateLayout();
+    expect(read).not.toHaveBeenCalled();
+    expect(observations.write).not.toHaveBeenCalled();
     for (const boundary of observations.content) expect(boundary).not.toHaveBeenCalled();
     expect(renderer.instrumentation().scheduledFrames).toBe(1);
     scheduler.runAll();
-    expect(read).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledExactlyOnceWith(true);
+    expect(cursor.attributes.get("transform")).toBe("translate(100 40)");
   } finally {
     renderer.destroy();
   }

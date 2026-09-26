@@ -6,6 +6,18 @@ export function immutableElement(element: InkElementV1): ImmutableInkElement {
   return freezeValue(cloneValue(element)) as ImmutableInkElement;
 }
 
+/** Preserve an unchanged owned sample buffer while copying all replaceable fields. */
+export function immutableReplacement(
+  element: InkElementV1,
+  source: ImmutableInkElement,
+): ImmutableInkElement {
+  if (element.kind !== "stroke" || source.kind !== "stroke" || element.points !== source.points) {
+    return immutableElement(element);
+  }
+  const fields = immutableElement({ ...element, points: [0, 0, 0.5] });
+  return Object.freeze({ ...fields, points: source.points });
+}
+
 /** The caller must relinquish every mutable alias after transferring ownership. */
 export function takeImmutableElementOwnership(element: InkElementV1): ImmutableInkElement {
   return freezeValue(element);

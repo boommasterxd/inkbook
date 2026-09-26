@@ -1,5 +1,6 @@
 import { parseInkbookDocumentForTest } from "../../../fixtures/persistence/parse-document";
-import { beforeAll, describe, expect, it } from "vitest";
+import * as canonical from "../../../../src/persistence/serialization/canonical-snapshot";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { FILE_SCHEMA_LIMITS } from "../../../../src/domain/schema/public";
 import { jsonContainerBudget } from "../../../../src/domain/schema/validation-internals";
@@ -135,6 +136,24 @@ describe("chunked Inkbook metadata boundaries", () => {
         error: { code: expectedCode },
         ok: false,
       });
+    },
+  );
+
+  it.each(CURRENT_METADATA_REWRITES.map((entry, index) => ({ ...entry, accepted: index === 0 })))(
+    "safe unlock keeps metadata binding and duplicate-key rejection without canonicalizing points",
+    async ({ mutate, updateHash, accepted, expectedCode }) => {
+      const input = rewriteDocumentMetadata(snapshotSvg, mutate, updateHash);
+      const parser = new ChunkedInkbookInputParser({ staticValidation: "safe" });
+      const canonicalize = vi.spyOn(canonical, "canonicalElement");
+      try {
+        await parser.write(new TextEncoder().encode(input));
+        const result = await parser.finish();
+        expect(result.ok).toBe(accepted);
+        if (!accepted) expect(result).toMatchObject({ error: { code: expectedCode } });
+        expect(canonicalize).not.toHaveBeenCalled();
+      } finally {
+        canonicalize.mockRestore();
+      }
     },
   );
 

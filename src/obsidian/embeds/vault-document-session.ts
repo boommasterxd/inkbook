@@ -83,7 +83,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       documentId: identity.documentId,
       files,
       scheduler: (isCancelled) => runtimes.createStoreScheduler(identity.documentId, isCancelled),
-      trustedHeads: hooks.trustedHeads,
+      hooks,
     });
   }
   get documentModel(): EditableDocumentModel | undefined {
@@ -369,7 +369,6 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     this.#model?.store.releasePreparedPressureGeometry();
     this.#model = model;
     this.#startAutosave(snapshot, outputHash, requiresCanonicalRewrite, executor, store);
-    executor.requestPrewarm?.();
   }
   #setInputActive(active: boolean, source: "gesture" | "navigation"): void {
     if (this.#lifecycle.disposed || this.#lifecycle.preparingForUnload) return;

@@ -34,12 +34,12 @@ const EPSILON = 1e-9;
 function* capsuleTouchesPolygon(
   capsule: Extract<VisibleSelectionPrimitive, { kind: "capsule" }>,
   polygon: readonly PointV1[],
-): Generator<void, boolean> {
+): Generator<number | void, boolean> {
   if (pointInPolygonInclusive(capsule.start, polygon)) return true;
   for (let index = 0; index < polygon.length; index += 1) {
     if (withinCapsuleDistance(capsule, polygon[index]!, polygon[(index + 1) % polygon.length]!))
       return true;
-    if (index % 32 === 31) yield;
+    if (index % 32 === 31) yield 32;
   }
   return false;
 }
@@ -47,7 +47,7 @@ function* capsuleTouchesPolygon(
 function* capsuleEnclosedByPolygon(
   capsule: Extract<VisibleSelectionPrimitive, { kind: "capsule" }>,
   polygon: readonly PointV1[],
-): Generator<void, boolean> {
+): Generator<number | void, boolean> {
   if (capsule.radius > 0 && !pointInPolygonInclusive(capsule.start, polygon, false)) return false;
   if (!(yield* segmentInsidePolygon(capsule.start, capsule.end, polygon))) return false;
   if (capsule.radius === 0) return true;
@@ -63,7 +63,7 @@ function* capsuleEnclosedByPolygon(
 function* pressureCapsuleTouchesPolygon(
   capsule: PressureCapsuleEndpoints,
   polygon: readonly PointV1[],
-): Generator<void, boolean> {
+): Generator<number | void, boolean> {
   if (pointInPolygonInclusive(capsule.start.center, polygon)) return true;
   for (let index = 0; index < polygon.length; index += 1) {
     if (
@@ -75,7 +75,7 @@ function* pressureCapsuleTouchesPolygon(
     ) {
       return true;
     }
-    if (index % 32 === 31) yield;
+    if (index % 32 === 31) yield 32;
   }
   return false;
 }
@@ -83,7 +83,7 @@ function* pressureCapsuleTouchesPolygon(
 function* pressureCapsuleEnclosedByPolygon(
   capsule: PressureCapsuleEndpoints,
   polygon: readonly PointV1[],
-): Generator<void, boolean> {
+): Generator<number | void, boolean> {
   if (!pointInPolygonInclusive(capsule.start.center, polygon, false)) return false;
   return !(yield* hasOddLassoBoundary(
     polygon,
@@ -105,7 +105,7 @@ function withinCapsuleDistance(
 function* polygonsTouch(
   left: readonly PointV1[],
   right: readonly PointV1[],
-): Generator<void, boolean> {
+): Generator<number | void, boolean> {
   const firstLeft = left[0];
   const firstRight = right[0];
   if (firstLeft === undefined || firstRight === undefined) return false;
@@ -113,17 +113,17 @@ function* polygonsTouch(
   // even-odd region. One representative vertex from each boundary suffices.
   if (pointInPolygonInclusive(firstLeft, right) || pointInPolygonInclusive(firstRight, left))
     return true;
-  yield;
+  yield left.length + right.length;
   return yield* polygonEdgesTouch(left, right);
 }
 
 function* polygonEnclosedByPolygon(
   inner: readonly PointV1[],
   outer: readonly PointV1[],
-): Generator<void, boolean> {
+): Generator<number | void, boolean> {
   for (const point of inner) {
     if (!pointInPolygonInclusive(point, outer)) return false;
-    yield;
+    yield outer.length;
   }
   for (let index = 0; index < inner.length; index += 1) {
     if (!(yield* segmentInsidePolygon(inner[index]!, inner[(index + 1) % inner.length]!, outer))) {
@@ -136,7 +136,7 @@ function* polygonEnclosedByPolygon(
 function* polygonEdgesTouch(
   left: readonly PointV1[],
   right: readonly PointV1[],
-): Generator<void, boolean> {
+): Generator<number | void, boolean> {
   for (let leftIndex = 0; leftIndex < left.length; leftIndex += 1) {
     const leftStart = left[leftIndex]!;
     const leftEnd = left[(leftIndex + 1) % left.length]!;
@@ -153,7 +153,7 @@ function* polygonEdgesTouch(
         return true;
       }
     }
-    yield;
+    yield right.length;
   }
   return false;
 }
@@ -193,7 +193,7 @@ function boundsContain(outer: Bounds, inner: Bounds): boolean {
 export function* primitiveTouchesAreaSteps(
   area: AreaPolygon,
   primitive: VisibleSelectionPrimitive,
-): Generator<void, boolean> {
+): Generator<number | void, boolean> {
   if (!boundsIntersect(area.bounds, primitiveBounds(primitive))) return false;
   if (primitive.kind === "pressure-capsule")
     return yield* pressureCapsuleTouchesPolygon(primitive.capsule, area.points);
@@ -205,7 +205,7 @@ export function* primitiveTouchesAreaSteps(
 export function* primitiveEnclosedByAreaSteps(
   area: AreaPolygon,
   primitive: VisibleSelectionPrimitive,
-): Generator<void, boolean> {
+): Generator<number | void, boolean> {
   if (!boundsContain(area.bounds, primitiveBounds(primitive))) return false;
   if (area.kind === "rectangle") return true;
   if (primitive.kind === "pressure-capsule")

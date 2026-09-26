@@ -167,3 +167,37 @@ describe("selection query work ownership", () => {
     expect(test.scheduler.pendingCount).toBe(0);
   });
 });
+
+describe("numeric selection work charges", () => {
+  it.each([
+    [65, 0],
+    [512, 0],
+    [65, 4095],
+    [512, 4095],
+  ])("caps %i-operation predicates after %i cheap units at a 64-unit batch", (marker, prefix) => {
+    const test = setup();
+    const batches = prefix === 0 ? 65 : 2;
+    function* steps(): Generator<number, ReadonlySet<string>> {
+      for (let index = 0; index < prefix; index += 1) {
+        test.state.visits += 1;
+        yield 1;
+      }
+      for (let index = 0; index < batches; index += 1) {
+        test.state.visits += 1;
+        yield marker;
+      }
+      return new Set(["selected"]);
+    }
+    const work = new SelectionQueryWork(test.options, steps());
+    work.start();
+    // An empty slice admits 64 batches; 4095 cheap units admit one final
+    // batch, reaching 4159 charged units and preserving the 63-unit overrun.
+    expect(test.state.visits).toBe(prefix + (prefix === 0 ? 64 : 1));
+    expect(test.setSelection).not.toHaveBeenCalled();
+    expect(test.scheduler.pendingCount).toBe(1);
+    test.scheduler.runNext(1);
+    expect(test.state.visits).toBe(prefix + batches);
+    expect(test.setSelection).toHaveBeenCalledOnce();
+    expect(test.scheduler.pendingCount).toBe(0);
+  });
+});

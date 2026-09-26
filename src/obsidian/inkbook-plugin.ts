@@ -250,8 +250,17 @@ function registerVaultLifecycle(
 ): void {
   const handleFileChange = (file: unknown): void => {
     if (!(file instanceof TFile)) return;
-    recognition.invalidate(file.path);
-    runtime.handleVaultModification(file.path);
+    recognition.deferRefresh(file.path);
+    runtime.handleVaultModification(file.path, (output) => {
+      if (output === undefined) recognition.invalidate(file.path);
+      else
+        recognition.acceptConfirmedOutput(
+          file.path,
+          output.content,
+          output.outputHash,
+          output.signature,
+        );
+    });
   };
   plugin.registerEvent(plugin.app.vault.on("create", handleFileChange));
   plugin.registerEvent(plugin.app.vault.on("modify", handleFileChange));

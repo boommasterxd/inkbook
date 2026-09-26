@@ -1,4 +1,4 @@
-import type { InkSnapshotV1 } from "../../../domain/schema/public";
+import type { InkElementV1, InkSnapshotV1 } from "../../../domain/schema/public";
 import type { ExistingFilePort } from "../save-ports";
 
 import { AutosaveCoordinator } from "./coordinator";
@@ -9,6 +9,8 @@ interface AutosaveSessionOptions extends AutosaveSessionBaseOptions {
   readonly path: string;
   readonly sessionId: string;
   readonly snapshot: () => InkSnapshotV1;
+  readonly integritySnapshot?: () => InkSnapshotV1;
+  readonly ownsIntegrityElement?: (element: InkElementV1) => boolean;
   readonly vault: ExistingFilePort;
 }
 
@@ -31,6 +33,10 @@ export function createAutosaveSession(options: AutosaveSessionOptions): Autosave
       isGestureActive: options.isGestureActive,
       orderByBand: options.orderByBand,
       snapshot: options.snapshot,
+      ...(options.integritySnapshot ? { integritySnapshot: options.integritySnapshot } : {}),
+      ...(options.ownsIntegrityElement
+        ? { ownsIntegrityElement: options.ownsIntegrityElement }
+        : {}),
     },
     executor: options.executor,
     initialSnapshot: options.initialSnapshot,

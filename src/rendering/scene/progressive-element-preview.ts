@@ -91,6 +91,7 @@ export class ProgressiveElementPreview {
       this.#renderedFeedback.delete(id);
     }
     if (this.#pending !== undefined && !retained.has(this.#pending.element.id)) {
+      this.#pending?.path.cancel();
       this.#pending = undefined;
     }
     this.#request = request;
@@ -140,6 +141,7 @@ export class ProgressiveElementPreview {
         { element: pending.element, feedback: pending.feedback, parts: pending.path.parts! },
         pending.version,
       );
+      this.#pending?.path.cancel();
       this.#pending = undefined;
       // Publishing a long path must not also allocate the next snapshot.
       if (longStroke) return this.#hasPending();
@@ -187,6 +189,7 @@ export class ProgressiveElementPreview {
     this.#renderedFeedback.clear();
     this.#request = undefined;
     this.#appliedRequest = undefined;
+    this.#pending?.path.cancel();
     this.#pending = undefined;
     this.#cursor = 0;
     this.#immediateCursor = 0;
@@ -205,7 +208,10 @@ export class ProgressiveElementPreview {
       this.#snapshotFeedback.delete(id);
       this.#renderedFeedback.delete(id);
     }
-    if (this.#pending?.element.id === id) this.#pending = undefined;
+    if (this.#pending?.element.id === id) {
+      this.#pending.path.cancel();
+      this.#pending = undefined;
+    }
     this.#replayIds.delete(id);
     this.#elements.set(id, element);
     this.#versions.set(id, version);
@@ -217,7 +223,10 @@ export class ProgressiveElementPreview {
     this.#versions.set(id, request.version);
     if (element === undefined) return false;
     this.#replayIds.delete(id);
-    if (this.#pending?.element.id === id) this.#pending = undefined;
+    if (this.#pending?.element.id === id) {
+      this.#pending.path.cancel();
+      this.#pending = undefined;
+    }
     this.#complete(
       { element, feedback: request.feedback, parts: buildElementPathParts(element) },
       request.version,

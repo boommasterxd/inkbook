@@ -336,8 +336,6 @@ export class ActiveEditorNavigation {
     if (!Number.isFinite(event.deltaY) || !Number.isFinite(event.deltaX ?? 0)) return false;
     if (event.deltaY !== 0 || (event.deltaX ?? 0) !== 0) this.#activity.pulse();
     this.#panMomentum.prepareWheel(isZoomWheel(event));
-    const ownerPageHeight = browserScrollMetrics.getClientHeight(this.#scrollOwner);
-    const normalization = ownerPageHeight > 0 ? { pageHeight: ownerPageHeight } : {};
     if (isZoomWheel(event)) {
       const layout =
         this.#pendingLayout ?? readNavigationLayout(this.#container, this.#scrollOwner);
@@ -349,7 +347,7 @@ export class ActiveEditorNavigation {
           this.#frameState,
           {
             anchor: this.#latestAnchor,
-            factor: continuousWheelZoomFactor(event.deltaY, normalization),
+            factor: continuousWheelZoomFactor(event.deltaY),
           },
           this.#zoom,
           this.#getInput().fitZoom,
@@ -364,11 +362,14 @@ export class ActiveEditorNavigation {
       this.#panMomentum.cancelTrackpad();
       return false;
     }
-    const panX = horizontalPanWheel(event, normalization);
-    if (panX === undefined) {
+    const horizontal = horizontalPanWheel(event, {});
+    if (horizontal === undefined) {
       this.#panMomentum.cancelTrackpad();
       return false;
     }
+    const pageHeight =
+      event.deltaMode === 2 ? browserScrollMetrics.getClientHeight(this.#scrollOwner) : 0;
+    const panX = pageHeight > 0 ? horizontalPanWheel(event, { pageHeight })! : horizontal;
     const trackpadPanX = this.#panMomentum.trackpadWheelDelta(panX, event);
     this.#frameState = accumulateZoomInput(this.#frameState, { panX: trackpadPanX ?? panX });
     if (trackpadPanX === undefined) this.#panMomentum.cancelTrackpad();

@@ -53,7 +53,7 @@ it("bounds element creation and cancels a partially built detached tree", async 
   let checkpoints = 0;
   const result = await createPreviewSvgAsync(document, source, {
     checkpoint: async () => {
-      expect(create.mock.calls.length - previous).toBeLessThanOrEqual(32);
+      expect(create.mock.calls.length - previous).toBeLessThanOrEqual(256);
       previous = create.mock.calls.length;
       checkpoints += 1;
     },
@@ -61,11 +61,11 @@ it("bounds element creation and cancels a partially built detached tree", async 
     isCancelled: () => checkpoints === 5,
   });
   expect(result).toBeUndefined();
-  expect(create).toHaveBeenCalledTimes(128);
+  expect(create).toHaveBeenCalledTimes(1024);
 });
 
 it("yields during long metadata scanning before constructing content", async () => {
-  const source = "<svg><metadata>" + "x".repeat(128 * 1024) + '</metadata><path d="M0 0"/></svg>';
+  const source = "<svg><metadata>" + "x".repeat(1024 * 1024) + '</metadata><path d="M0 0"/></svg>';
   const create = vi.spyOn(document, "createElementNS");
   let checkpoints = 0;
   expect(

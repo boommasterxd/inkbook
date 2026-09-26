@@ -21,7 +21,10 @@ export class CommittedPreviewGeometry {
       strokeWidthScale,
       desired: { transform: null, strokeWidthScale: null, version: Number.MAX_SAFE_INTEGER },
     });
-    if (this.#job?.id === id) this.#job = undefined;
+    if (this.#job?.id === id) {
+      this.#job.path.cancel();
+      this.#job = undefined;
+    }
   }
 
   public has(id: string): boolean {
@@ -47,6 +50,7 @@ export class CommittedPreviewGeometry {
     pressureGeometry?: PreparedPressureGeometryPort,
   ): readonly SvgPathPart[] | undefined {
     if (this.#job?.id !== record.id || this.#job.version !== record.geometryVersion) {
+      this.#job?.path.cancel();
       this.#job = {
         id: record.id,
         version: record.geometryVersion,
@@ -64,7 +68,10 @@ export class CommittedPreviewGeometry {
   public finish(id: string): PreviewTransform | undefined {
     const desired = this.#transforms.get(id)?.desired;
     this.#transforms.delete(id);
-    if (this.#job?.id === id) this.#job = undefined;
+    if (this.#job?.id === id) {
+      this.#job.path.cancel();
+      this.#job = undefined;
+    }
     return desired;
   }
 
@@ -77,6 +84,7 @@ export class CommittedPreviewGeometry {
 
   public release(): void {
     this.#transforms.clear();
+    this.#job?.path.cancel();
     this.#job = undefined;
   }
 }

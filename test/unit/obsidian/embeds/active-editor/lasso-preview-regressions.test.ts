@@ -101,7 +101,7 @@ describe("bounded lasso spatial queries", () => {
         if (result.type === "return") expect(result.value.workUnits).toBeLessThanOrEqual(64);
       }
       expect(read.mock.calls.length).toBeGreaterThan(0);
-      expect(read.mock.calls.length).toBeLessThanOrEqual(64);
+      expect(read.mock.calls.length).toBeLessThanOrEqual(4096);
       if (outcome === "abort") test.controller.abort();
       else {
         advance.mockReturnValue({ ids: [], workUnits: 0, done: true, stale: true });

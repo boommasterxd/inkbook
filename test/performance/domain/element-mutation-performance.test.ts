@@ -6,6 +6,7 @@ import {
   type ElementMutation,
 } from "../../../src/domain/store/public";
 
+import * as cellMembership from "../../../src/domain/spatial/cell-membership";
 import * as immutability from "../../../src/domain/store/immutability";
 import * as recordFactory from "../../../src/domain/store/record-factory";
 import { UniformSpatialIndex } from "../../../src/domain/spatial/index";
@@ -89,6 +90,7 @@ it("bounds heavy work and scheduler handoffs for loaded-stroke deletion, Undo, a
   const recordBuild = vi.spyOn(recordFactory, "createInitialRecord");
   const cloneElement = vi.spyOn(immutability, "mutableElement");
   const indexInsert = vi.spyOn(UniformSpatialIndex.prototype, "insert");
+  const cellRange = vi.spyOn(cellMembership, "createCellRange");
   try {
     const deletion = await prepareAndApply({
       bands: {
@@ -108,10 +110,12 @@ it("bounds heavy work and scheduler handoffs for loaded-stroke deletion, Undo, a
     recordBuild.mockRestore();
     cloneElement.mockRestore();
     indexInsert.mockRestore();
+    cellRange.mockRestore();
   }
 
   async function prepareAndApply(mutation: ElementMutation, replay?: AppliedElementMutation) {
     const previousClones = cloneElement.mock.calls.length;
+    cellRange.mockClear();
     let yields = 0;
     const previousSize = store!.size;
     const assertSlice = () => {
@@ -134,13 +138,14 @@ it("bounds heavy work and scheduler handoffs for loaded-stroke deletion, Undo, a
     );
     assertSlice();
     if (replay !== undefined) {
-      expect(cloneElement.mock.calls.length - previousClones).toBe(mutation.elements?.length ?? 0);
+      expect(cloneElement.mock.calls.length - previousClones).toBe(0);
     }
-    // At most 10,000 index entries + three 2,000-element passes cost 256,000 units.
-    // Twelve full cheap ID passes add at most 120,000 units: fewer than 190 slices.
+    // Retained band-order validation still visits cheap IDs; unaffected geometry stays untouched.
     expect(yields).toBeLessThanOrEqual(190);
     if (prepared.token === null) throw new Error("Expected prepared history mutation.");
     const committed = store!.commitPreparedElementMutation(prepared.token);
+    expect(cellRange).toHaveBeenCalledTimes(mutation.elements?.length ?? 0);
+    expect(indexInsert).not.toHaveBeenCalled();
     if (committed.transition === null) throw new Error("Expected committed history mutation.");
     if (replay !== undefined) expect(committed.transition).toBe(replay);
     return committed.transition;

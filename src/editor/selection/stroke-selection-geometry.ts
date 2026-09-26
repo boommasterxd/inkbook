@@ -14,7 +14,7 @@ import type { VisibleSelectionPrimitive } from "./selection-area-primitives";
 export function* strokePrimitiveSteps(
   stroke: StrokeElementV1,
   query: PressurePaintQuery = {},
-): Generator<VisibleSelectionPrimitive | undefined> {
+): Generator<VisibleSelectionPrimitive | number | undefined> {
   if (stroke.style.opacity <= 0) return;
   const selected: StrokeCenter[] = [];
   const count = stroke.points.length / 3;
@@ -39,7 +39,7 @@ export function* strokePrimitiveSteps(
       stroke.style.pressureEnabled,
     );
     selected.push(...(start === 0 ? simplified : simplified.slice(1)));
-    yield undefined;
+    yield end - start + 1;
     const final = end === count - 1;
     const limit = selected.length - 1;
     while (emitted < limit) {
@@ -51,7 +51,9 @@ export function* strokePrimitiveSteps(
   if (selected.length === 1) yield strokeCapsule(stroke, selected[0]!, selected[0]!);
   if (stroke.style.pressureEnabled) {
     for (const points of pressurePaintAdditionSteps(selected, stroke.style.width, query))
-      yield points === undefined ? undefined : { kind: "polygon", points };
+      yield points === undefined || typeof points === "number"
+        ? points
+        : { kind: "polygon", points };
   }
 }
 

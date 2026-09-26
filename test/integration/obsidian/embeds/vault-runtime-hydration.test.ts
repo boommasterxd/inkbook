@@ -66,12 +66,12 @@ describe("vault runtime hydration", () => {
     const prepared = loaded.store
       .pressureGeometry(storedElement.id, loaded.store.get(storedElement.id)!.geometryVersion)
       .readPath?.();
-    expect(prepared).toHaveLength(1);
-    expect(serialized.value.svg).toContain(`d="${prepared![0]!.d}"`);
+    expect(prepared).toBeUndefined();
     expect(snapshotElement.points).toBeInstanceOf(Float64Array);
     expect(storedElement.points).toBe(snapshotElement.points);
     expect(Array.from(storedElement.points)).toEqual([10, 10, 0.5, 20, 20, 1]);
 
+    const materialize = vi.spyOn(loaded.store, "materializeSnapshot");
     const committed = vi.fn();
     const recordCommit = vi.fn();
     expect(() =>
@@ -100,6 +100,7 @@ describe("vault runtime hydration", () => {
         background: { spacing: 50, type: "squares" },
       },
     });
+    expect(materialize).not.toHaveBeenCalled();
     runtime.terminate();
   });
 });

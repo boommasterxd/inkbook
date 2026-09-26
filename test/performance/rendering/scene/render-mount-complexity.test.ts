@@ -1,3 +1,4 @@
+import { ScenePathCache } from "../../../../src/rendering/scene/path-cache";
 import * as geometry from "../../../../src/domain/geometry/element-path";
 import { MAX_STROKE_POINTS } from "../../../../src/domain/schema/public";
 import { describe, expect, it, vi } from "vitest";
@@ -38,7 +39,7 @@ describe("visible render mount complexity", () => {
     ];
     const { renderer, scheduler } = createMountScene(records);
     scheduler.runNext();
-    expect(renderer.mountedCount).toBe(0);
+    expect(renderer.mountedCount).toBe(1);
     while (scheduler.pendingCount > 0) {
       const builds = renderer.instrumentation().geometryBuilds;
       scheduler.runNext();
@@ -60,18 +61,21 @@ describe("visible render mount complexity", () => {
     annotate,
   }) => {
     const actualBuilds = vi.spyOn(geometry, "buildElementPathParts");
+    const preparations = vi.spyOn(ScenePathCache.prototype, "startPreparation");
     const fixture = createMaximumPointFixture();
     const { renderer, scheduler } = createMountScene(fixture.records);
     scheduler.runNext();
     const firstFrameMounts = renderer.mountedCount;
     while (scheduler.pendingCount > 0) scheduler.runNext();
 
-    expect(actualBuilds).toHaveBeenCalledTimes(3);
+    expect(actualBuilds).toHaveBeenCalledTimes(1);
+    expect(preparations).toHaveBeenCalledTimes(2);
     actualBuilds.mockRestore();
+    preparations.mockRestore();
     const instrumentation = renderer.instrumentation();
     const cameraGroup = fakeNode(renderer.svg).nodes[1]!;
     expect(fixture.pointCount).toBe(TOTAL_POINTS);
-    expect(firstFrameMounts).toBe(0);
+    expect(firstFrameMounts).toBe(1);
     expect(renderer.mountedCount).toBe(STROKES);
     expect(renderer.mountedIds("highlight")).toEqual(fixture.highlightIds);
     expect(renderer.mountedIds("content")).toEqual(fixture.contentIds);
@@ -79,11 +83,11 @@ describe("visible render mount complexity", () => {
     expect(cameraGroup.nodes[4]?.nodes).toHaveLength(fixture.contentIds.length);
     expect(instrumentation).toMatchObject({
       domEntrants: STROKES,
-      domFragmentRuns: 2,
       geometryBuilds: 3,
       maximumMountSliceStrokePoints: MOUNT_SLICE_STROKE_POINT_BUDGET,
       spatialQueries: 1,
     });
+    expect(instrumentation.domFragmentRuns).toBeGreaterThan(2);
     expect(instrumentation.mountSlices).toBeGreaterThan(1);
     expect(instrumentation.mountBudgetYields).toBe(instrumentation.mountSlices - 1);
     expect(instrumentation.maximumMountSliceStrokePoints).toBeLessThanOrEqual(

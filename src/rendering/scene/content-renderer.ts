@@ -98,6 +98,7 @@ export class SceneContentRenderer {
     return (
       this.#selectionTraces.memoryUsage() +
       this.#committedGeometry.memoryUsage() +
+      this.#reconciler.memoryUsage() +
       (this.#deferredPreviews.size + this.#committedPreviewIds.length) * 8
     );
   }
@@ -203,8 +204,8 @@ export class SceneContentRenderer {
     return this.#reconciler.needsRestart;
   }
 
-  public replaceVisibility(visibility: VisibilityResult): void {
-    this.#reconciler.replace(visibility);
+  public replaceVisibility(visibility: VisibilityResult, progressive = false): void {
+    this.#reconciler.replace(visibility, progressive);
   }
 
   public cancelPendingVisibility(): void {
@@ -224,8 +225,10 @@ export class SceneContentRenderer {
     }
     if (result.committedVisibility !== undefined) {
       this.commitVisibility(result.committedVisibility);
-      this.#newlyMountedIds = result.newlyMountedIds;
       this.#selectionTraces.prune(this.#mounted);
+    }
+    this.#newlyMountedIds = result.newlyMountedIds;
+    if (result.newlyMountedIds.length > 0) {
       for (const id of result.newlyMountedIds) {
         if (this.#selectionTraces.needsUpdate(id, this.#mounted.get(id)?.displayedElement))
           this.#selectionDirty.add(id);
@@ -299,6 +302,14 @@ export class SceneContentRenderer {
     const entry = this.#mounted.get(id);
     const record = this.#store.get(id);
     if (entry === undefined || record === undefined) return;
+    if (
+      entry.geometryVersion !== record.geometryVersion &&
+      record.element.kind === "stroke" &&
+      record.element.style.pressureEnabled
+    ) {
+      this.#geometryDirty.add(id);
+      return;
+    }
     const parts =
       entry.geometryVersion === record.geometryVersion
         ? entry.pathParts
@@ -372,18 +383,15 @@ export class SceneContentRenderer {
       this.#deferredPreviews.delete(id);
       return true;
     }
-    const pending = this.#committedGeometry.has(id);
-    const parts = pending
-      ? this.#committedGeometry.prepare(
-          record,
-          deadline,
-          now,
-          this.#store.pressureGeometry?.(record.id, record.geometryVersion),
-        )
-      : this.#pathCache.build(
-          record.element,
-          this.#store.pressureGeometry?.(record.id, record.geometryVersion),
-        );
+    const pressure = this.#store.pressureGeometry?.(record.id, record.geometryVersion);
+    const pending =
+      this.#committedGeometry.has(id) ||
+      (record.element.kind === "stroke" && record.element.style.pressureEnabled);
+    const parts =
+      this.#pathCache.read(record.element, pressure) ??
+      (pending
+        ? this.#committedGeometry.prepare(record, deadline, now, pressure)
+        : this.#pathCache.build(record.element, pressure));
     if (parts === undefined) return false;
     this.updateGeometry(entry, record, parts);
     const desired = this.#committedGeometry.finish(id);

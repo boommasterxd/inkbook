@@ -39,3 +39,32 @@ it("advances expired deadlines, discards stale versions, publishes windows, and 
   expect(geometry.memoryUsage()).toBe(0);
   expect(geometry.has(element.id)).toBe(false);
 });
+
+it("ignores a warm source path after a committed pressure resize changes its version", async () => {
+  const { ElementStore } = await import("../../../../src/domain/store/public");
+  const element = indexedStroke(1);
+  const store = new ElementStore([element]);
+  const source = store.get(element.id)!;
+  const original = buildElementPathParts(element);
+  const oldPort = store.pressureGeometry(element.id, source.geometryVersion);
+  oldPort.publishPath!(original);
+  const resized = {
+    ...element,
+    points: element.points.map((value, index) => (index % 3 === 2 ? value : value * 2)),
+  };
+  store.replace(element.id, resized);
+  const current = store.get(element.id)!;
+  oldPort.publishPath!(original);
+  const port = store.pressureGeometry(element.id, current.geometryVersion);
+  expect(port.readPath!()).toBeUndefined();
+  const geometry = new CommittedPreviewGeometry();
+  geometry.retain(element.id, "scale(2)", null);
+  let parts;
+  const record = { ...createSceneRecord(resized), geometryVersion: current.geometryVersion };
+  while (parts === undefined) parts = geometry.prepare(record, Infinity, () => 0, port);
+  expect(parts).toEqual(buildElementPathParts(resized));
+  expect(parts).not.toEqual(original);
+  expect(port.readPath!()).toEqual(parts);
+  geometry.release();
+  expect(geometry.memoryUsage()).toBe(0);
+});

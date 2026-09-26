@@ -6,7 +6,7 @@ export function* segmentInsidePolygon(
   start: PointV1,
   end: PointV1,
   polygon: readonly PointV1[],
-): Generator<void, boolean> {
+): Generator<number, boolean> {
   if (!pointInPolygonInclusive(start, polygon) || !pointInPolygonInclusive(end, polygon)) {
     return false;
   }
@@ -15,7 +15,7 @@ export function* segmentInsidePolygon(
     times.push(
       ...lineIntersectionTimes(start, end, polygon[index]!, polygon[(index + 1) % polygon.length]!),
     );
-    if (index % 32 === 31) yield;
+    if (index % 32 === 31) yield 32;
   }
   times.sort((left, right) => left - right);
   for (let index = 1; index < times.length; index += 1) {
@@ -25,7 +25,7 @@ export function* segmentInsidePolygon(
     if (!pointInPolygonInclusive(pointAlong(start, end, (previous + current) / 2), polygon)) {
       return false;
     }
-    yield;
+    yield polygon.length;
   }
   return true;
 }

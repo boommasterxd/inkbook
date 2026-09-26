@@ -145,7 +145,7 @@ describe("VaultDocumentSession terminal executor lifecycle", () => {
     expect(createFallback).toHaveBeenCalledWith("session-1", 2, expect.any(Function));
   });
 
-  it("prewarms the adopted executor and mirrors live gesture state", async () => {
+  it("avoids eager export prewarming and mirrors live gesture state", async () => {
     const core = new DocumentWorkerRuntime({ sessionId: "session-1", workerEpoch: 1 });
     const requestPrewarm = vi.fn(() => core.requestPrewarm());
     const setLiveInputActive = vi.fn((active: boolean) => core.setLiveInputActive(active));
@@ -175,7 +175,7 @@ describe("VaultDocumentSession terminal executor lifecycle", () => {
     await waiting;
     expect(resumed).toHaveBeenCalledOnce();
 
-    expect(requestPrewarm).toHaveBeenCalledOnce();
+    expect(requestPrewarm).not.toHaveBeenCalled();
     expect(setLiveInputActive.mock.calls).toEqual([[true], [false]]);
   });
 

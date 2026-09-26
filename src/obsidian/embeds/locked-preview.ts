@@ -200,7 +200,7 @@ class LockedPreview implements InkbookLockedPreviewSurface {
         this.element.ownerDocument,
         this.#descriptor.safeSvg,
         {
-          checkpoint: () => this.#scheduler.checkpoint(),
+          checkpoint: (initial) => this.#scheduler.checkpoint(initial),
           now: () => this.#window.performance.now(),
           ...(this.sliceBudgetMs === undefined ? {} : { sliceBudgetMs: this.sliceBudgetMs }),
           isCancelled: () => this.#disposed || target !== this.#generation,

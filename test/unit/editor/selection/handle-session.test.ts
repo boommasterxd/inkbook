@@ -425,7 +425,7 @@ describe("SelectionHandleSession asynchronous lifecycle", () => {
       },
     });
     expect(prepared.status).toBe("ready");
-    expect(yields).toBe(5_005);
+    expect(yields).toBe(1_001);
 
     const cancelled = await session.prepareCommitTimeSliced({
       isCancelled: () => true,

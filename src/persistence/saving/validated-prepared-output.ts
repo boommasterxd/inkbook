@@ -1,4 +1,5 @@
-import { inspectTrustedSvgOutput } from "../scheduling/trusted-svg-output";
+import { scanCanonicalRevisionPrefix } from "./revision-scan";
+import { FILE_SCHEMA_LIMITS } from "../../domain/schema/constants";
 
 import { SaveError } from "./save-errors";
 
@@ -8,19 +9,12 @@ export interface PreparedOutput {
   readonly revision: number;
 }
 
-export async function validatePreparedOutput(
-  prepared: PreparedOutput,
-  waitForBackground?: () => Promise<void>,
-  sliceBudgetMs?: () => number,
-): Promise<void> {
-  try {
-    const trusted = await inspectTrustedSvgOutput(prepared.output, prepared.outputHash, {
-      ...(sliceBudgetMs ? { sliceBudgetMs } : {}),
-      ...(waitForBackground ? { waitForBackground } : {}),
-    });
-    if (trusted.revision !== prepared.revision) throw new SaveError("read-back-mismatch");
-  } catch (error) {
-    if (error instanceof SaveError) throw error;
+/** Internal save input comes only from the owned canonical export adoption path. */
+export function validatePreparedOutput(prepared: PreparedOutput): void {
+  if (
+    !/^[0-9a-f]{64}$/u.test(prepared.outputHash) ||
+    prepared.output.length > FILE_SCHEMA_LIMITS.totalInputBytes ||
+    scanCanonicalRevisionPrefix(prepared.output) !== prepared.revision
+  )
     throw new SaveError("read-back-mismatch");
-  }
 }

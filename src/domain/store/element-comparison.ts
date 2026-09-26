@@ -171,6 +171,9 @@ function connectionsEqual(left: ImmutableInkElement, right: InkElementV1): boole
 
 function valuesEqual(left: unknown, right: unknown): boolean {
   if (Object.is(left, right)) return true;
+  if (left instanceof Float64Array && right instanceof Float64Array) {
+    return left.length === right.length && left.every((value, index) => value === right[index]);
+  }
   if (Array.isArray(left) && Array.isArray(right)) {
     if (left.length !== right.length) return false;
     return left.every((value, index) => valuesEqual(value, right[index]));

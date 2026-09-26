@@ -1,5 +1,5 @@
 import { buildLinearPathParts, type SvgPathPart } from "../../domain/geometry/element-path";
-import { buildStrokePathParts } from "../../domain/geometry/stroke-path";
+import { SelectionCenterCache } from "./selection-center-cache";
 import type { InkElementV1, StrokeElementV1 } from "../../domain/schema/public";
 import { SVG_NAMESPACE } from "./constants";
 import type { MountedSceneElement } from "./mounted-element";
@@ -11,6 +11,7 @@ export class SelectionCenterTrace {
   readonly #path: SVGPathElement;
   readonly #attributes = new Map<SVGElement, Map<string, string>>();
   readonly #instrumentation: MutableSceneInstrumentation;
+  readonly #cache: SelectionCenterCache;
   #basis: InkElementV1 | undefined;
   #parts: readonly SvgPathPart[] | undefined;
   #bytes = 256;
@@ -19,7 +20,9 @@ export class SelectionCenterTrace {
     parent: SVGGElement,
     entry: MountedSceneElement,
     instrumentation: MutableSceneInstrumentation,
+    cache: SelectionCenterCache,
   ) {
+    this.#cache = cache;
     this.#instrumentation = instrumentation;
     this.node = parent.ownerDocument.createElementNS(SVG_NAMESPACE, "g");
     this.#path = parent.ownerDocument.createElementNS(SVG_NAMESPACE, "path");
@@ -54,18 +57,18 @@ export class SelectionCenterTrace {
     parts: readonly SvgPathPart[],
   ): void {
     if (this.needsGeometry(element, parts)) {
-      let geometry = parts;
+      let path: string;
       if (element.kind === "stroke" && element.style.pressureEnabled) {
-        geometry = buildStrokePathParts({
-          ...element,
-          style: { ...element.style, pressureEnabled: false },
-        });
-        this.#instrumentation.selectionTraceGeometryBuilds += 1;
-      } else if (element.kind === "arrow") {
-        geometry = buildLinearPathParts(element, "centerline");
-        this.#instrumentation.selectionTraceGeometryBuilds += 1;
+        const cached = this.#cache.read(element);
+        path = cached ?? this.#cache.build(element);
+        if (cached === undefined) this.#instrumentation.selectionTraceGeometryBuilds += 1;
+      } else {
+        const geometry =
+          element.kind === "arrow" ? buildLinearPathParts(element, "centerline") : parts;
+        if (element.kind === "arrow") this.#instrumentation.selectionTraceGeometryBuilds += 1;
+        path = geometry.map(({ d }) => d).join("");
       }
-      this.write(this.#path, "d", geometry.map(({ d }) => d).join(""));
+      this.write(this.#path, "d", path);
     }
     this.#basis = element;
     this.#parts = parts;

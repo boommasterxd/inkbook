@@ -33,6 +33,33 @@ function sample(index: number) {
 }
 
 describe("bounded canonical pressure geometry", () => {
+  it("stitches pressure contours using bounded numeric bucket lookups", () => {
+    const centers = Array.from({ length: 32 }, (_, index) => ({
+      x: index * 3 - 48,
+      y: Math.sin(index / 4) * 10,
+      pressure: 0.5,
+    }));
+    const shapes = centers
+      .slice(1)
+      .map((last, index) => buildPressureCapsule(centers[index]!, last, 2));
+    const lookups = vi.spyOn(Map.prototype, "get");
+    let step;
+    const iterator = iteratePressureUnion(shapes);
+    try {
+      do {
+        step = iterator.next();
+      } while (!step.done);
+      const keys = lookups.mock.calls.map(([key]) => key as unknown);
+      lookups.mockRestore();
+      expect(step.value.usedFallback).toBe(false);
+      expect(keys.length).toBeGreaterThan(0);
+      expect(keys.every((key) => typeof key === "number")).toBe(true);
+      expect(keys.length).toBeLessThanOrEqual(step.value.work.visibleFragments * 28);
+    } finally {
+      lookups.mockRestore();
+    }
+  });
+
   it("keeps maximum pressure transitions in one bounded live-tail outline", () => {
     const centers = Array.from({ length: 16 }, (_, index) => sample(index));
     const parts = buildPressureOutline(centers, 22);

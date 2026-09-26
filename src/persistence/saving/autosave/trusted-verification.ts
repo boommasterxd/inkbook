@@ -1,6 +1,12 @@
-import type { PurposeOperationIdentity, VerifiedPersistedOutput } from "../../worker/protocol";
+import type {
+  PurposeOperationIdentity,
+  VaultBase,
+  VerifiedPersistedOutput,
+} from "../../worker/protocol";
 import type { DocumentRuntimePort, DocumentRuntimeResult } from "../../worker/runtime/public";
-import { inspectTrustedSvgOutput } from "../../scheduling/trusted-svg-output";
+import { hashSvgContent, inspectTrustedSvgOutput } from "../../scheduling/trusted-svg-output";
+
+import { scanCanonicalRevisionPrefix } from "../revision-scan";
 
 import { sameOperationIdentity } from "./verification";
 
@@ -9,15 +15,28 @@ export async function verifyExactWorkerContent(
   identity: PurposeOperationIdentity,
   content: string,
   versionPolicy: "current" | "editable" = "current",
-  waitForBackground?: () => Promise<void>,
-  sliceBudgetMs?: () => number,
+  options: {
+    readonly waitForBackground?: () => Promise<void>;
+    readonly sliceBudgetMs?: () => number;
+    readonly confirmedBase?: VaultBase;
+  } = {},
 ): Promise<VerifiedPersistedOutput> {
   let trusted;
   try {
+    const base = options.confirmedBase;
+    if (
+      identity.purpose === "preflight" &&
+      versionPolicy === "editable" &&
+      base?.type === "confirmed" &&
+      scanCanonicalRevisionPrefix(content) === base.revision &&
+      (await hashSvgContent(content, options)) === base.outputHash
+    ) {
+      return { outputHash: base.outputHash, revision: base.revision, type: "confirmed" };
+    }
     trusted = await inspectTrustedSvgOutput(content, undefined, {
       versionPolicy,
-      ...(sliceBudgetMs ? { sliceBudgetMs } : {}),
-      ...(waitForBackground ? { waitForBackground } : {}),
+      ...(options.sliceBudgetMs ? { sliceBudgetMs: options.sliceBudgetMs } : {}),
+      ...(options.waitForBackground ? { waitForBackground: options.waitForBackground } : {}),
     });
   } catch {
     return { type: "unreadable" };

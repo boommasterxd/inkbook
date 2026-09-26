@@ -436,7 +436,7 @@ describe("autosave backpressure and recovery", () => {
 });
 
 describe("autosave verification executor recovery", () => {
-  it("retries failed preflight verification under the new executor epoch", async () => {
+  it("recovers unknown-base verification under a new epoch without overwriting external changes", async () => {
     const harness = await createHarness();
     const primary = new DocumentWorkerRuntime({ sessionId: "session-a", workerEpoch: 1 });
     await primary.execute({
@@ -449,6 +449,7 @@ describe("autosave verification executor recovery", () => {
       input: harness.initial.svg,
       type: "unlock",
     });
+    harness.vault.content += "\n";
     let failVerification = true;
     const executor: DocumentRuntimePort = {
       execute: (request, observer) => {
@@ -487,9 +488,10 @@ describe("autosave verification executor recovery", () => {
     harness.documentSource.commit(1, 200);
     coordinator.recordCommit({ changedElements: [rectangle(200)], modelRevision: 1 });
 
-    await expect(coordinator.flush("retry")).resolves.toBe("clean");
+    await expect(coordinator.flush("retry")).resolves.toBe("conflict");
     expect(fallbackRequests).toEqual(["verify-output"]);
     expect(fallbackCreations).toBe(1);
-    expect(harness.vault.processCount).toBe(1);
+    expect(harness.vault.processCount).toBe(0);
+    expect(harness.vault.content).toBe(harness.initial.svg + "\n");
   });
 });

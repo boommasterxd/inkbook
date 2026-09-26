@@ -107,7 +107,11 @@ describe("freehand commit handoff", () => {
     const second = create(2, "highlighter");
     second.commit();
     create(3).revert();
-    const now = vi.spyOn(scheduler, "now").mockReturnValue(1000);
+    let callbackWork = 0;
+    const now = vi.spyOn(scheduler, "now").mockImplementation(() => {
+      callbackWork += 1000;
+      return callbackWork;
+    });
     scheduler.runNext();
     expect(renderer.mountedCount).toBe(0);
     expect(handoff.parent).toBeDefined();

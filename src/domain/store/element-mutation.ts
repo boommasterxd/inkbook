@@ -1,16 +1,19 @@
 import { renderBandOf, type RenderBand } from "../commands/render-bands";
 import type { InkElementV1 } from "../schema/public";
-import { UniformSpatialIndex } from "../spatial/index";
+import type { UniformSpatialIndex } from "../spatial/index";
 
 import {
   addConnectionReferences,
+  removeConnectionReferences,
   assertResolvedConnections,
   isAnchorTarget,
+  isConnectable,
   prepareConnectionDetachments,
   resolveConnections,
 } from "./connections";
 import { classifyReplacement, elementsEqual, hasConnections } from "./element-comparison";
-import { DocumentCapacity } from "./document-capacity";
+import type { DocumentCapacity, DocumentCapacityPatch } from "./document-capacity";
+import type { PreparedSpatialMutation } from "../spatial/mutation-preparation";
 import { mutableElement } from "./immutability";
 import { MutationPreparationScheduler } from "./mutation-preparation-scheduler";
 import { prepareMutationHistory } from "./mutation-history";
@@ -40,16 +43,16 @@ import type {
 export interface ElementMutationPlan {
   readonly applied: AppliedElementMutation;
   readonly bands: Record<RenderBand, string[]>;
-  readonly capacity: DocumentCapacity;
+  readonly capacityPatch: DocumentCapacityPatch;
   readonly delta: StoreDelta;
-  readonly index: UniformSpatialIndex<string>;
-  readonly overflowCount: number;
+  readonly indexPatch: PreparedSpatialMutation;
   readonly ranks: Map<string, ElementRank>;
   readonly records: Map<string, ElementRecord>;
-  readonly reverseConnections: Map<string, EndpointReference[]>;
 }
 
 export interface MutationSource {
+  readonly capacity: DocumentCapacity;
+  readonly index: UniformSpatialIndex<string>;
   readonly bands: Readonly<Record<RenderBand, readonly string[]>>;
   readonly geometryVersion: number;
   readonly paintVersion: number;
@@ -88,9 +91,9 @@ export async function planElementMutation(
   const delta = await buildDelta(source, sourceRanks, records, ranks, bands, scheduler);
   if (delta === "cancelled") return delta;
   if (delta === null) return null;
-  const derived = await buildDerivedState(records, scheduler);
+  const derived = await buildDerivedState(source, records, delta, sourceScheduler);
   if (derived === "cancelled") return derived;
-  const { capacity, index, reverseConnections } = derived;
+  const { capacityPatch, indexPatch } = derived;
   const applied = await prepareMutationHistory(
     { requested, source, desired, removeIds },
     scheduler,
@@ -100,13 +103,11 @@ export async function planElementMutation(
   return {
     applied,
     bands,
-    capacity,
+    capacityPatch,
     delta,
-    index,
-    overflowCount: index.overflowCount,
+    indexPatch,
     ranks,
     records,
-    reverseConnections,
   };
 }
 
@@ -137,7 +138,7 @@ async function collectDesiredElements(
     removeIds.has(id) ? undefined : (desired.get(id) ?? source.records.get(id)?.element);
   for (const [id, element] of desired) {
     if (!(scheduler.checkpoint(16) || (await scheduler.resume()))) return "cancelled";
-    desired.set(id, resolveConnections(element, lookup));
+    if (isConnectable(element)) desired.set(id, resolveConnections(element, lookup));
   }
   return desired;
 }
@@ -386,28 +387,45 @@ function mutationDomains(
 }
 
 async function buildDerivedState(
+  source: MutationSource,
   records: ReadonlyMap<string, ElementRecord>,
-  scheduler: MutationPreparationScheduler,
+  delta: StoreDelta,
+  scheduler: StoreSliceScheduler,
 ): Promise<
-  | {
-      capacity: DocumentCapacity;
-      index: UniformSpatialIndex<string>;
-      reverseConnections: Map<string, EndpointReference[]>;
-    }
-  | "cancelled"
+  { capacityPatch: DocumentCapacityPatch; indexPatch: PreparedSpatialMutation } | "cancelled"
 > {
-  const index = new UniformSpatialIndex<string>();
-  const capacity = new DocumentCapacity();
-  const reverseConnections = new Map<string, EndpointReference[]>();
+  const work = new MutationPreparationScheduler(scheduler);
+  const previous: ElementRecord[] = [];
+  const next: ElementRecord[] = [];
+  const removed: string[] = [];
+  const inserted: Array<{ id: string; bounds: ElementRecord["bounds"] }> = [];
   const lookup = (id: string) => records.get(id)?.element;
-  for (const [id, record] of records) {
-    if (!(scheduler.checkpoint(16) || (await scheduler.resume()))) return "cancelled";
-    index.insert(id, record.bounds);
-    capacity.addInitial(record);
-    assertResolvedConnections(record.element, lookup);
-    addConnectionReferences(reverseConnections, record.element);
+  for (const change of delta.changes) {
+    if (!(work.checkpoint(change.before === change.after ? 1 : 16) || (await work.resume())))
+      return "cancelled";
+    if (change.before === change.after) continue;
+    if (change.before !== null) previous.push(change.before);
+    if (change.after !== null) {
+      next.push(change.after);
+      assertResolvedConnections(change.after.element, lookup);
+      for (const { linearId } of source.reverseConnections.get(change.id) ?? []) {
+        const dependent = records.get(linearId);
+        if (dependent !== undefined) assertResolvedConnections(dependent.element, lookup);
+      }
+    }
+    if (change.before !== null && (change.after === null || change.domains.includes("geometry"))) {
+      removed.push(change.id);
+    }
+    if (change.after !== null && (change.before === null || change.domains.includes("geometry"))) {
+      inserted.push({ id: change.id, bounds: change.after.bounds });
+    }
   }
-  return { capacity, index, reverseConnections };
+  const capacity = await source.capacity.prepareTimeSliced(previous, next, scheduler);
+  if (capacity === "cancelled" || scheduler.isCancelled?.()) return "cancelled";
+  return {
+    capacityPatch: capacity.patch,
+    indexPatch: source.index.prepareMutation(removed, inserted),
+  };
 }
 
 async function orderChanged(
@@ -421,4 +439,18 @@ async function orderChanged(
     if (left[index] !== right[index]) return true;
   }
   return false;
+}
+
+export function commitMutationDerivedState(
+  capacity: DocumentCapacity,
+  reverseConnections: Map<string, EndpointReference[]>,
+  plan: ElementMutationPlan,
+): void {
+  plan.indexPatch.commit();
+  capacity.commit(plan.capacityPatch);
+  for (const { before, after } of plan.delta.changes) {
+    if (before === after) continue;
+    if (before !== null) removeConnectionReferences(reverseConnections, before.element);
+    if (after !== null) addConnectionReferences(reverseConnections, after.element);
+  }
 }

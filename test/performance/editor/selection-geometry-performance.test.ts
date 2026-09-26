@@ -1,3 +1,6 @@
+import * as geometryPrimitives from "../../../src/domain/geometry/primitives";
+import * as strokeCenters from "../../../src/domain/geometry/stroke-path";
+import { strokePrimitiveSteps } from "../../../src/editor/selection/stroke-selection-geometry";
 import * as pressureUnion from "../../../src/domain/geometry/pressure-union";
 import * as pressureIntersections from "../../../src/domain/geometry/pressure-boundary-intersections";
 import { pressurePaintAdditionSteps } from "../../../src/editor/selection/pressure-paint-additions";
@@ -332,3 +335,74 @@ it("bounds real cold-window intersections between yields and stops on cancellati
     intersect.mockRestore();
   }
 });
+
+it.each([3, 512])("charges actual polygon edge visits for %i lasso vertices", (count) => {
+  const corners = [
+    { x: 4, y: 4 },
+    { x: 4, y: 1 },
+    { x: 1, y: 4 },
+  ];
+  const points = Array.from({ length: count }, (_, index) => {
+    const position = (index * 3) / count;
+    const edge = Math.floor(position);
+    const start = corners[edge]!;
+    const end = corners[(edge + 1) % 3]!;
+    return {
+      x: start.x + (end.x - start.x) * (position - edge),
+      y: start.y + (end.y - start.y) * (position - edge),
+    };
+  });
+  const intersect = vi.spyOn(geometryPrimitives, "segmentsIntersect");
+  const steps = primitiveTouchesAreaSteps(createLassoSelectionArea(points), {
+    kind: "polygon",
+    points: [
+      { x: 0, y: 0 },
+      { x: 4, y: 0 },
+      { x: 0, y: 4 },
+    ],
+  });
+  let charged = 0;
+  let previous = 0;
+  try {
+    let result = steps.next();
+    while (!result.done) {
+      const visits = intersect.mock.calls.length - previous;
+      expect(visits).toBeLessThanOrEqual(count);
+      expect(result.value).toBe(visits === 0 ? count + 3 : visits);
+      charged += result.value ?? 64;
+      previous = intersect.mock.calls.length;
+      result = steps.next();
+    }
+    expect(result.value).toBe(false);
+    expect(intersect).toHaveBeenCalledTimes(count * 3);
+    expect(charged).toBe(count * 4 + 3);
+  } finally {
+    intersect.mockRestore();
+    steps.return(false);
+  }
+});
+
+it.each([2, 65, 129])(
+  "charges the actual first simplification window for %i stroke points",
+  (count) => {
+    const stroke = {
+      ...indexedStroke(0),
+      points: Array.from({ length: count }, (_, i) => [i, i % 7, 0.5]).flat(),
+    };
+    const read = vi.spyOn(strokeCenters, "strokeCenterAt");
+    const steps = strokePrimitiveSteps(stroke);
+    try {
+      const first = steps.next();
+      expect(first.done).toBe(false);
+      expect(read).toHaveBeenCalledTimes(Math.min(count, 65));
+      expect(first.value).toBe(read.mock.calls.length);
+      steps.return(undefined);
+      const before = read.mock.calls.length;
+      expect(steps.next().done).toBe(true);
+      expect(read).toHaveBeenCalledTimes(before);
+    } finally {
+      read.mockRestore();
+      steps.return(undefined);
+    }
+  },
+);

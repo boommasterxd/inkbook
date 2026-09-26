@@ -43,6 +43,25 @@ export function transformedStrokeCenters(stroke: StrokeElementV1): StrokeCenter[
       }));
 }
 
+/** Validated samples are visited incrementally by cancellable scene preparation. */
+export function* iterateTransformedStrokeCenters(stroke: StrokeElementV1): Generator<StrokeCenter> {
+  assertStrokeSampleCount(stroke.points);
+  const count = stroke.points.length / 3;
+  for (let index = 0; index < count; index += 1) {
+    for (let offset = index * 3; offset < index * 3 + 3; offset += 1) {
+      if (!Number.isFinite(stroke.points[offset]))
+        throw new RangeError("Stroke samples must be finite.");
+    }
+    const center = strokeCenterAt(stroke.points, index, count);
+    yield stroke.rotation === 0
+      ? center
+      : {
+          ...rotatePointClockwise(center, stroke.pivot, stroke.rotation),
+          pressure: center.pressure,
+        };
+  }
+}
+
 export function buildStrokePathParts(
   stroke: StrokeElementV1,
   pressureGeometry?: PreparedPressureGeometryPort,
@@ -81,10 +100,14 @@ export function buildCenterline(centers: readonly PointV1[]): string {
   return moveTo(first) + centers.slice(1).map(lineTo).join("");
 }
 
-function assertStrokeSamples(samples: readonly number[]): void {
+function assertStrokeSampleCount(samples: readonly number[]): void {
   if (samples.length < 3 || samples.length % 3 !== 0 || samples.length > MAX_STROKE_POINTS * 3) {
     throw new RangeError(`Stroke samples must contain 1 through ${MAX_STROKE_POINTS} triples.`);
   }
+}
+
+function assertStrokeSamples(samples: readonly number[]): void {
+  assertStrokeSampleCount(samples);
   for (const value of samples) {
     if (!Number.isFinite(value)) throw new RangeError("Stroke samples must be finite.");
   }

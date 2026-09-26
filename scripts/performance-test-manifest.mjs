@@ -16,6 +16,11 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/rendering/scene/tool-cursor-performance.test.ts",
   ]),
   invariant: Object.freeze([
+    "test/performance/persistence/canonical-metadata-cache.test.ts",
+    "test/performance/obsidian/selection-camera-work.test.ts",
+    "test/performance/obsidian/clipboard-candidate-probe.test.ts",
+    "test/performance/persistence/owned-export-adoption.test.ts",
+    "test/performance/persistence/confirmed-base-verification.test.ts",
     "test/performance/obsidian/tool-cursor-raw-input.test.ts",
     "test/performance/persistence/main-thread-slice-budget.test.ts",
     "test/performance/obsidian/store-scheduler-resources.test.ts",
@@ -70,6 +75,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/persistence/worker-unlock-hydration.test.ts",
     "test/performance/rendering/scene/dense-viewport-reconciliation.test.ts",
     "test/performance/rendering/scene/path-cache-remount-performance.test.ts",
+    "test/performance/rendering/scene/preview-selection-work.test.ts",
     "test/performance/rendering/scene/render-mount-complexity.test.ts",
   ]),
 });

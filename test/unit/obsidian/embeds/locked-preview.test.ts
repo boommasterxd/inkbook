@@ -51,7 +51,7 @@ describe("locked preview platform treatment", () => {
 });
 
 it("restores the latest deferred content before the preview handoff completes", async () => {
-  const { button, preview } = await preparedHiddenPreview();
+  const { button, preview } = await preparedPreview(true);
   preview.setDescriptor({
     aspectRatio: 2,
     contentIdentity: { ...CONTENT_IDENTITY, revision: 2 },
@@ -86,13 +86,7 @@ it.each(["descriptor", "dispose"] as const)(
           resolveFetch = resolve;
         }),
     );
-    const button = createHtmlElement("button");
-    const preview = createInkbookLockedPreview(button, {
-      aspectRatio: 1,
-      contentIdentity: CONTENT_IDENTITY,
-      safeSvg: SAFE_PREVIEW_SVG,
-    });
-    await preview.ensureReady();
+    const { button, preview } = await preparedPreview();
     const original = button.querySelector("svg");
     const pending = preview.setSource("app://old.svg");
     if (operation === "dispose") preview.dispose();
@@ -148,7 +142,7 @@ it.each([false, true])(
 );
 
 it("pauses detached preparation during input and publishes only the latest descriptor", async () => {
-  const { button, preview } = await preparedHiddenPreview();
+  const { button, preview } = await preparedPreview(true);
   let resume!: () => void;
   const paused = new Promise<void>((resolve) => {
     resume = resolve;
@@ -200,12 +194,7 @@ it("settles validated source identity while detached DOM preparation waits for i
   const serialized = serializeInkbookDocument(createSnapshot());
   if (!serialized.ok) throw new Error("Invalid test snapshot");
   vi.spyOn(window, "fetch").mockImplementation(async () => new Response(serialized.value.svg));
-  const button = createHtmlElement("button");
-  const preview = createInkbookLockedPreview(button, {
-    aspectRatio: 1,
-    contentIdentity: CONTENT_IDENTITY,
-    safeSvg: SAFE_PREVIEW_SVG,
-  });
+  const { button, preview } = await preparedPreview();
   const original = button.querySelector("svg");
   let resume!: () => void;
   const paused = new Promise<void>((resolve) => {
@@ -261,7 +250,7 @@ it("prepares initial content asynchronously with the current owning-window budge
   preview.dispose();
 });
 
-async function preparedHiddenPreview() {
+async function preparedPreview(hidden = false) {
   const button = createHtmlElement("button");
   const preview = createInkbookLockedPreview(button, {
     aspectRatio: 1,
@@ -269,6 +258,45 @@ async function preparedHiddenPreview() {
     safeSvg: SAFE_PREVIEW_SVG,
   });
   await preview.ensureReady();
-  button.hidden = true;
+  button.hidden = hidden;
   return { button, preview };
 }
+
+it("drains a newer hidden source received during lock preparation and retries failures", async () => {
+  const button = createHtmlElement("button");
+  button.hidden = true;
+  let release!: () => void;
+  const first = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const load = vi
+    .fn<(source: string) => Promise<void>>()
+    .mockReturnValueOnce(first)
+    .mockRejectedValueOnce(new Error("fetch failed"))
+    .mockResolvedValue(undefined);
+  const ensure = vi.fn(async () => {});
+  const root = createHtmlElement("div");
+  const handoff = new ActiveScenePreviewHandoff({
+    root,
+    container: root,
+    motion: "reduced",
+    preview: button,
+    setPreviewSource: load,
+    ensurePreviewReady: ensure,
+  });
+  await handoff.setPreviewSource("first");
+  const ready = handoff.ensurePreviewReady();
+  await handoff.setPreviewSource("second");
+  release();
+  await expect(ready).rejects.toThrow("fetch failed");
+  expect(load.mock.calls).toEqual([["first"], ["second"]]);
+  await handoff.ensurePreviewReady();
+  expect(load.mock.calls).toEqual([["first"], ["second"], ["second"]]);
+  expect(ensure).toHaveBeenCalledOnce();
+  await handoff.setPreviewSource("last");
+  handoff.dispose();
+  await vi.waitFor(() => expect(load).toHaveBeenLastCalledWith("last"));
+  expect(button.hidden).toBe(false);
+  await handoff.setPreviewSource("disposed");
+  expect(load).toHaveBeenCalledTimes(4);
+});

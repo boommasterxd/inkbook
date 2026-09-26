@@ -7,6 +7,24 @@ import { hydrateRuntimeStroke } from "../../../fixtures/domain/runtime-stroke-st
 import { connectedLine, highlighter, IDS, mixedElement, rectangle } from "./fixtures";
 
 describe("ElementStore atomic element mutation", () => {
+  it("rejects target changes that leave an existing connected endpoint unresolved", async () => {
+    const target = rectangle();
+    const line = connectedLine(target);
+    const store = new ElementStore([target, line]);
+    await expect(
+      store.prepareElementMutation(
+        {
+          bands: bands(store),
+          elements: [{ ...target, x: target.x + 100 }],
+        },
+        scheduler,
+      ),
+    ).rejects.toThrow();
+    expect(store.get(target.id)?.element).toEqual(target);
+    expect(store.get(line.id)?.element).toEqual(line);
+    expect(store.instrumentation.publishedDeltas).toBe(0);
+  });
+
   it("captures detached dependent connections in both removal history directions", async () => {
     const target = rectangle();
     const line = connectedLine(target);

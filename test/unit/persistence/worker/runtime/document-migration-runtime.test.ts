@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ChunkedInputCancelledError } from "../../../../../src/persistence/serialization/chunked-input-types";
-import {
-  deriveDocumentIntegrityManifest,
-  serializeInkbookDocument,
-} from "../../../../../src/persistence/serialization/public";
+import { serializeInkbookDocument } from "../../../../../src/persistence/serialization/public";
 import { DocumentModelRuntime } from "../../../../../src/persistence/worker/runtime/document-model";
 import {
   DocumentWorkerRuntime,
@@ -66,7 +63,6 @@ describe("document runtime migration", () => {
   it("requires a bounded source version on worker unlock results", () => {
     expect(
       isDocumentRuntimeWireResult({
-        integrityManifest: deriveDocumentIntegrityManifest(snapshot()),
         lockedHeight: 348.6,
         requiresCanonicalRewrite: false,
         sourceVersion: 0,
@@ -76,7 +72,6 @@ describe("document runtime migration", () => {
     expect(isDocumentRuntimeWireResult({ sourceVersion: 0, type: "unlock-success" })).toBe(false);
     expect(
       isDocumentRuntimeWireResult({
-        integrityManifest: deriveDocumentIntegrityManifest(snapshot()),
         lockedHeight: 348.6,
         requiresCanonicalRewrite: false,
         sourceVersion: 2,

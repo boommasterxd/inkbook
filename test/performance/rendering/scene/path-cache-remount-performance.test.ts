@@ -1,4 +1,9 @@
-import { expect, it } from "vitest";
+import * as intersections from "../../../../src/domain/geometry/pressure-boundary-intersections";
+import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
+import { PRESSURE_REFERENCE } from "../../../fixtures/domain/pressure-reference";
+import { indexedStroke } from "../../../fixtures/editor/stroke";
+import { createSceneFixture, createSceneRecord } from "../../../fixtures/rendering/scene";
+import { expect, it, vi } from "vitest";
 
 import type { PageV1 } from "../../../../src/domain/schema/public";
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
@@ -10,6 +15,7 @@ import {
   FakeScheduler,
   asElement,
   fakeRectangleRecord,
+  fakeNode,
 } from "../../../unit/rendering/scene/fakes";
 
 const BATCH_SIZE = 700;
@@ -187,3 +193,65 @@ function populateBatch(store: FakeSceneStore, batch: number, offset: number): vo
     store.records.set(id, fakeRectangleRecord(id, rank, offset + 10));
   }
 }
+
+it.each([false, true])(
+  "bounds and reuses real handwriting union work during cold mounting (cancel: %s)",
+  (cancel) => {
+    const reference = PRESSURE_REFERENCE[3]!;
+    const base = indexedStroke(1);
+    const element = {
+      ...base,
+      points: reference.points,
+      style: { ...base.style, width: 22 as const },
+    };
+    const boundary = vi.spyOn(intersections, "intersectPressureBoundaries");
+    try {
+      const expected = buildElementPathParts(element);
+      const canonicalIntersections = boundary.mock.calls.length;
+      expect(canonicalIntersections).toBeGreaterThan(0);
+      boundary.mockClear();
+      const store = new FakeSceneStore();
+      store.records.set(element.id, createSceneRecord(element));
+      const { renderer, scheduler } = createSceneFixture(PAGE, store);
+      // Force cooperative pauses inside real union work, independently of step-count policy.
+      const clock = cancel
+        ? vi.spyOn(scheduler, "now").mockImplementation(() => scheduler.time++)
+        : undefined;
+      let frames = 0;
+      while (renderer.mountedCount === 0) {
+        const before = boundary.mock.calls.length;
+        renderer.setCamera({ x: 0, zoom: 1 + (frames % 2) * 0.001 });
+        scheduler.runNext();
+        // At most 64 preparation steps per slice, each with 4,096 resumptions; clipping tests
+        // at most four peer boundaries between resumptions in the canonical union.
+        expect(boundary.mock.calls.length - before).toBeLessThanOrEqual(64 * 4096 * 4);
+        frames += 1;
+        expect(frames).toBeLessThan(100);
+        if (cancel && boundary.mock.calls.length > 0) break;
+      }
+      clock?.mockRestore();
+      if (cancel) expect(renderer.mountedCount).toBe(0);
+      if (!cancel) {
+        expect(boundary.mock.calls.length).toBe(canonicalIntersections);
+        expect(renderer.instrumentation().geometryBuilds).toBe(1);
+        // The retained path cache must reuse the completed output on remount.
+        expect(
+          fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes[0]!.nodes[0]!.attributes.get("d"),
+        ).toBe(expected[0]!.d);
+        renderer.setCamera({ x: -100_000, zoom: 1 });
+        scheduler.runAll();
+        renderer.setCamera({ x: 0, zoom: 1 });
+        scheduler.runAll();
+        expect(boundary.mock.calls.length).toBe(canonicalIntersections);
+      }
+      const beforeDestroy = boundary.mock.calls.length;
+      renderer.destroy();
+      scheduler.runAll();
+      expect(boundary.mock.calls.length).toBe(beforeDestroy);
+      expect(renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
+      expect(scheduler.pendingCount).toBe(0);
+    } finally {
+      boundary.mockRestore();
+    }
+  },
+);

@@ -167,10 +167,10 @@ describe("retained tool cursor", () => {
     assertPosition();
     read.mockClear();
     owner.scrollTop = 250;
-    owner.dispatchEvent(new Event("scroll"));
-    expect(cursor.attributes.get("transform")).toBe("translate(250 250)");
-    expect(read).toHaveBeenCalledExactlyOnceWith(true);
+    for (let sample = 0; sample < 10; sample += 1) owner.dispatchEvent(new Event("scroll"));
+    expect(read).not.toHaveBeenCalled();
     scheduler.runAll();
+    expect(cursor.attributes.get("transform")).toBe("translate(250 250)");
     expect(read).toHaveBeenCalledTimes(1);
     binding.dispose();
     navigation.dispose();
@@ -421,8 +421,8 @@ describe("retained staged marker commits", () => {
     });
     scheduler.runNext();
     expect(scheduler.pendingCount).toBe(1);
-    expect(renderer.mountedCount).toBe(0);
-    expect(retained.every((node) => node.parent === group)).toBe(true);
+    expect(renderer.mountedCount).toBe(1);
+    expect(retained.filter((node) => node.parent === group)).toHaveLength(1);
     clock.mockRestore();
     scheduler.runAll();
     expect(retained.every((node) => node.parent === undefined)).toBe(true);

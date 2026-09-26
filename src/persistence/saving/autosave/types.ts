@@ -43,6 +43,9 @@ export interface AutosaveDocumentSource {
   isGestureActive(): boolean;
   orderByBand(): Readonly<Partial<Record<"content" | "highlight", readonly string[]>>>;
   snapshot(): InkSnapshotV1;
+  /** Read-only Store-owned identities for integrity hashing, never mutation or transport. */
+  integritySnapshot?(): InkSnapshotV1;
+  readonly ownsIntegrityElement?: (element: InkElementV1) => boolean;
 }
 
 export interface ConfirmedPersistence {

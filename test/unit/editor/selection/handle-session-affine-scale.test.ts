@@ -51,7 +51,7 @@ describe("affine freehand resize scheduling", () => {
         shouldYield: () => false,
         yieldControl: async () => undefined,
       }),
-    ).resolves.toEqual({ status: "noop" });
+    ).resolves.toMatchObject({ status: "ready" });
     expect(store.get(element.id)?.element).toEqual(element);
   });
 

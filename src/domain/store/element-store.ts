@@ -11,7 +11,7 @@ import { DocumentCapacity } from "./document-capacity";
 import { createElementStoreBuilder, type ElementStoreBuilder } from "./element-store-builder";
 import { ElementStoreRuntime } from "./element-store-runtime";
 import { hasConnections } from "./element-comparison";
-import type { ElementMutationPlan } from "./element-mutation";
+import { commitMutationDerivedState, type ElementMutationPlan } from "./element-mutation";
 import { removeElements } from "./element-removal";
 import { mutableElement } from "./immutability";
 import { EMPTY_STORE_INSTRUMENTATION, type MutableStoreInstrumentation } from "./instrumentation";
@@ -84,6 +84,8 @@ export class ElementStore {
   >();
   readonly #preparedElementMutations = new PreparedElementMutations(
     () => ({
+      capacity: this.#capacity,
+      index: this.#spatialIndex,
       bands: this.#bands,
       geometryVersion: this.#geometryVersion,
       mutationVersion: this.#mutationVersion,
@@ -319,11 +321,9 @@ export class ElementStore {
     return this.#preparedElementMutations.commit(token);
   }
   #adoptElementMutation(plan: ElementMutationPlan): ElementMutationCommitResult {
+    commitMutationDerivedState(this.#capacity, this.#reverseConnections, plan);
     this.#records = plan.records;
-    this.#capacity = plan.capacity;
-    this.#spatialIndex = plan.index;
-    this.#reverseConnections = plan.reverseConnections;
-    this.#overflowCount = plan.overflowCount;
+    this.#overflowCount = this.#spatialIndex.overflowCount;
     this.#geometryVersion = plan.delta.geometryVersion;
     this.#paintVersion = plan.delta.paintVersion;
     this.#bands = plan.bands;

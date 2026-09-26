@@ -17,7 +17,6 @@ import { assertAutosaveInitialState } from "./coordinator-validation";
 import { inspectAutosaveExternalChange } from "./external-change";
 import { inspectIndeterminateSave } from "./indeterminate-save";
 import { classifyAutosaveFailure } from "./save-failure";
-
 export class AutosaveCoordinator {
   readonly #beforeExistingWrite;
   #canonicalRewritePending: boolean;
@@ -49,10 +48,7 @@ export class AutosaveCoordinator {
   readonly #workerModel;
   public constructor(options: Autosave.AutosaveCoordinatorOptions) {
     assertAutosaveInitialState(options);
-    this.#integrity = new integrity.AutosaveExportIntegrity(
-      options.waitForBackground,
-      options.sliceBudgetMs,
-    );
+    this.#integrity = integrity.createAutosaveExportIntegrity(options);
     this.#confirmedContent = options.confirmedContent ?? null;
     this.#beforeExistingWrite = options.beforeExistingWrite;
     this.#canonicalRewritePending = options.requiresCanonicalRewrite ?? false;
@@ -117,9 +113,8 @@ export class AutosaveCoordinator {
     if (
       this.#workerModel.modelRevision === revision &&
       !this.#workerModel.requiresFullSynchronization
-    ) {
+    )
       return true;
-    }
     if (this.#exportInFlight !== null || this.#modelSyncInFlight !== null) return false;
     const plan = this.#workerModel.takePlan(this.#document);
     if (plan === null || plan.modelRevision !== revision) return false;
@@ -190,6 +185,7 @@ export class AutosaveCoordinator {
   }
   public async notifyExternalChange(): Promise<Autosave.ExternalChangeOutcome> {
     if (this.#disposed) return "conflict";
+    const confirmedBase = this.#confirmedBase;
     const inspected = await inspectAutosaveExternalChange({
       activeSaveBase: () =>
         this.#save === null
@@ -199,12 +195,12 @@ export class AutosaveCoordinator {
               revision: this.#save.proof.revision,
               type: "confirmed",
             },
-      confirmedBase: this.#confirmedBase,
+      confirmedBase,
       currentRevision: () => this.#document.currentRevision(),
       dirty: () => this.dirty,
       read: () => readExistingFileWithinLimit(this.#terminalVault, this.#path),
       stopped: () => this.#disposed,
-      verify: (content) => this.#verifier.verify(content, "preflight"),
+      verify: (content) => this.#verifier.verify(content, "preflight", confirmedBase),
     });
     if (inspected.outcome === "conflict") {
       this.#setStatus("conflict");
@@ -225,6 +221,7 @@ export class AutosaveCoordinator {
     }
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#integrity.clear();
     this.#timer.clear();
     this.#exportInFlight = null;
     this.#modelSyncInFlight = null;
@@ -290,7 +287,7 @@ export class AutosaveCoordinator {
       return;
     }
     const integrity = await this.#integrity.verify(
-      () => this.#document.snapshot(),
+      () => this.#document.integritySnapshot?.() ?? this.#document.snapshot(),
       result.integrityManifest,
       undefined,
       () =>
@@ -383,7 +380,7 @@ export class AutosaveCoordinator {
         confirmedBase: active.previousBase,
         confirmedContent: active.previousContent,
         read: () => readExistingFileWithinLimit(this.#terminalVault, this.#path),
-        verify: (content) => this.#verifier.verify(content, "preflight"),
+        verify: (content) => this.#verifier.verify(content, "preflight", active.previousBase),
       });
       if (this.#disposed) return;
       const confirmed = await persistPreparedOutput({

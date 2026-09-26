@@ -1,9 +1,9 @@
+import { CanonicalMetadataCache } from "../../../../src/persistence/serialization/canonical-metadata-cache";
 import { describe, expect, it } from "vitest";
 
 import type { InkSnapshotV1 } from "../../../../src/domain/schema/public";
 import {
   deriveDocumentIntegrityManifest,
-  deriveDocumentIntegrityManifestAsync,
   deriveDocumentIntegrityManifestFromContentDigest,
   sameDocumentIntegrityManifest,
 } from "../../../../src/persistence/serialization/public";
@@ -51,18 +51,40 @@ describe("document integrity manifest", () => {
     const expected = deriveDocumentIntegrityManifest(value);
     let checkpoints = 0;
 
-    await expect(
-      deriveDocumentIntegrityManifestAsync(value, {
-        checkpoint: async () => {
-          checkpoints += 1;
-        },
-        sliceByteLimit: 1,
-      }),
-    ).resolves.toEqual(expected);
+    const digest = await new CanonicalMetadataCache().digest(value, async () => {
+      checkpoints += 1;
+    });
+    expect(deriveDocumentIntegrityManifestFromContentDigest(value, digest)).toEqual(expected);
     expect(deriveDocumentIntegrityManifestFromContentDigest(value, expected.contentDigest)).toEqual(
       expected,
     );
     expect(checkpoints).toBeGreaterThan(0);
+  });
+
+  it("checkpoints inside one long stroke without copying its complete runtime point buffer", async () => {
+    const value = strokeSnapshot();
+    const first = value.elements[0]!;
+    if (first.kind !== "stroke") throw new Error("Expected stroke.");
+    const points = new Float64Array(30_000).fill(0.5);
+    value.elements = [{ ...first, points } as unknown as typeof first];
+    const expected = deriveDocumentIntegrityManifest(value);
+    let checkpoints = 0;
+    const abort = new AbortController();
+    await expect(
+      new CanonicalMetadataCache().digest(value, async () => {
+        checkpoints += 1;
+      }),
+    ).resolves.toEqual(expected.contentDigest);
+    expect(checkpoints).toBeGreaterThan(1);
+    await expect(
+      new CanonicalMetadataCache().digest(
+        value,
+        async () => {
+          abort.abort();
+        },
+        abort.signal,
+      ),
+    ).rejects.toThrow();
   });
 
   it("rejects incomplete and malformed wire representations", () => {

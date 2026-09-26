@@ -1,29 +1,18 @@
 import { InteractiveWorkPriority } from "../../../../src/editor/session/interactive-work-priority";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  inspectTrustedSvgOutput,
-  inspectTrustedSvgOutputSync,
-} from "../../../../src/persistence/scheduling/trusted-svg-output";
+import { inspectTrustedSvgOutput } from "../../../../src/persistence/scheduling/trusted-svg-output";
 import { ChunkedSha256 } from "../../../../src/persistence/serialization/chunked-output-sha256";
 import { createMaximumComplexitySvg } from "../../../fixtures/persistence/safe-svg";
 
 describe("trusted SVG output validation slices", () => {
-  it.each(["sync", "async"])(
-    "rejects worker output with literal markup hidden inside metadata (%s)",
-    async (mode) => {
-      const output = createMaximumComplexitySvg().replace(
-        "</metadata>",
-        "<script>bad()</script></metadata>",
-      );
-
-      if (mode === "sync") {
-        expect(() => inspectTrustedSvgOutputSync(output)).toThrow("safe Inkbook SVG");
-      } else {
-        await expect(inspectTrustedSvgOutput(output)).rejects.toThrow("safe Inkbook SVG");
-      }
-    },
-  );
+  it("rejects external output with literal markup hidden inside metadata", async () => {
+    const output = createMaximumComplexitySvg().replace(
+      "</metadata>",
+      "<script>bad()</script></metadata>",
+    );
+    await expect(inspectTrustedSvgOutput(output)).rejects.toThrow("safe Inkbook SVG");
+  });
 
   it("checks cancellation during hashing at the production 64 KiB chunk boundary", async () => {
     const hashChunkBytes = 64 * 1024;

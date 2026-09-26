@@ -1,4 +1,3 @@
-import type { PreparedUnlockPath } from "../../serialization/prepared-unlock-paths";
 import type {
   ElementValidationDerivation,
   InkElementV1,
@@ -14,7 +13,6 @@ import type {
   PastePlan,
   PasteRepeatState,
 } from "../../clipboard/types";
-import type { DocumentIntegrityManifest } from "../../serialization/document-integrity-manifest";
 import type {
   ExportIdentity,
   ExportRequest,
@@ -95,9 +93,7 @@ export type DocumentRuntimeRequest =
   | VerifyRuntimeRequest;
 
 interface UnlockRuntimeSuccess {
-  readonly preparedPaths?: readonly PreparedUnlockPath[];
   readonly identity: PurposeOperationIdentity;
-  readonly integrityManifest: DocumentIntegrityManifest;
   readonly lockedHeight: number;
   readonly outputHash: string;
   readonly requiresCanonicalRewrite: boolean;

@@ -66,7 +66,7 @@ function* candidateSteps(
   return true;
 }
 
-function complete<T>(steps: Generator<void, T>): T {
+function complete<T>(steps: Generator<unknown, T>): T {
   let result = steps.next();
   while (!result.done) result = steps.next();
   return result.value;

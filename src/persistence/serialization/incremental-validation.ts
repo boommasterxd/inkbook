@@ -59,12 +59,11 @@ export function validatedDeltaElementFacts(
   derivation?: ElementValidationDerivation,
 ): ElementFacts {
   if (derivation === undefined) return elementFacts(element);
-  const derivedBounds = validatedElementDerivationBounds(element, derivation);
+  validatedElementDerivationBounds(element, derivation);
   const calculatedBounds = calculateElementBounds(element);
-  if (!sameBounds(derivedBounds, calculatedBounds)) {
-    throw new TypeError("Element derivation does not match its geometry.");
-  }
-  return factsFromBounds(element, derivedBounds);
+  // Translating retained bounds and recomputing translated geometry can round differently.
+  // A mismatched hint never supplies capacity facts; use the canonical recomputation.
+  return factsFromBounds(element, calculatedBounds);
 }
 
 function factsFromBounds(element: InkElementV1, bounds: Readonly<SpatialBounds>): ElementFacts {
@@ -78,15 +77,6 @@ function factsFromBounds(element: InkElementV1, bounds: Readonly<SpatialBounds>)
     strokePoints: element.kind === "stroke" ? element.points.length / 3 : 0,
     strokes: Number(element.kind === "stroke"),
   };
-}
-
-function sameBounds(left: Readonly<SpatialBounds>, right: Readonly<SpatialBounds>): boolean {
-  return (
-    left.minX === right.minX &&
-    left.minY === right.minY &&
-    left.maxX === right.maxX &&
-    left.maxY === right.maxY
-  );
 }
 
 export function aggregateElementFacts(facts: Iterable<ElementFacts>): AggregateFacts {

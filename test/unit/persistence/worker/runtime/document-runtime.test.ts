@@ -23,9 +23,11 @@ import {
 } from "./fixtures";
 
 describe("document worker runtime", () => {
-  it.each(CURRENT_METADATA_REWRITES)(
-    "rejects noncanonical or unbound metadata in the production load as $expectedCode",
-    async ({ expectedCode, mutate, updateHash }) => {
+  it.each(
+    CURRENT_METADATA_REWRITES.map((entry, index) => ({ ...entry, acceptsFormatting: index === 0 })),
+  )(
+    "checks metadata integrity in production load (formatting accepted: $acceptsFormatting)",
+    async ({ expectedCode, mutate, updateHash, acceptsFormatting }) => {
       const serialized = serializeInkbookDocument(snapshot());
       if (!serialized.ok) throw new Error(serialized.error.code);
       const runtime = createProductionDocumentRuntime(executor, {
@@ -38,7 +40,11 @@ describe("document worker runtime", () => {
           input: rewriteDocumentMetadata(serialized.value.svg, mutate, updateHash),
           type: "unlock",
         }),
-      ).resolves.toMatchObject({ code: expectedCode, type: "runtime-failure" });
+      ).resolves.toMatchObject(
+        acceptsFormatting
+          ? { type: "unlock-success", requiresCanonicalRewrite: false }
+          : { code: expectedCode, type: "runtime-failure" },
+      );
     },
   );
 

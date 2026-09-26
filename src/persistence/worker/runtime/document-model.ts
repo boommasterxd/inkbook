@@ -1,8 +1,5 @@
+import { VerifiedOutputProofs } from "./verified-output-proofs";
 import { parseRuntimeInput } from "./parse-runtime-input";
-import {
-  PreparedUnlockPaths,
-  type PreparedUnlockPath,
-} from "../../serialization/prepared-unlock-paths";
 import type { InkSnapshotV1, SnapshotValidationDerivations } from "../../../domain/schema/public";
 import { encodeRuntimeSelection, resolveClipboardPayload } from "../../clipboard/codec";
 import { planPaste, resolvePasteTarget } from "../../clipboard/operations";
@@ -16,7 +13,6 @@ import type {
   PasteRepeatState,
 } from "../../clipboard/types";
 import {
-  deriveDocumentIntegrityManifest,
   deriveDocumentIntegrityManifestFromContentDigest,
   IncrementalDocumentSerializer,
 } from "../../serialization/public";
@@ -40,8 +36,6 @@ export type ModelExportResult =
     };
 
 export interface ModelUnlockResult {
-  readonly preparedPaths: readonly PreparedUnlockPath[];
-  readonly integrityManifest: DocumentIntegrityManifest;
   readonly lockedHeight: number;
   readonly outputHash: string;
   readonly requiresCanonicalRewrite: boolean;
@@ -95,6 +89,7 @@ const ZERO_EXPORT_PHASES: ExportPhaseDurations = Object.freeze({
 });
 
 export class DocumentModelRuntime {
+  readonly #outputProofs = new VerifiedOutputProofs();
   readonly #serializer = new IncrementalDocumentSerializer();
   readonly #now: () => number;
   #lastExportPhases = ZERO_EXPORT_PHASES;
@@ -140,7 +135,6 @@ export class DocumentModelRuntime {
     let runtimeCopyMs = 0;
     let stagedRuntimeSnapshot: RuntimeInkSnapshot | null = null;
     let stagedDerivations: SnapshotValidationDerivations | null = null;
-    const prepared = new PreparedUnlockPaths();
     const parsed = await parseRuntimeInput(
       input,
       sliceContext,
@@ -155,7 +149,7 @@ export class DocumentModelRuntime {
         callbackFinished = this.#now();
         batchAdoptionMs = callbackFinished - copyFinished;
       },
-      prepared.observe,
+      "safe",
     );
     if (!parsed.ok) throw new RuntimeModelError(parsed.error.code, false);
     sliceContext?.signal.throwIfAborted();
@@ -174,9 +168,8 @@ export class DocumentModelRuntime {
     });
     const snapshot = this.#snapshot;
     if (snapshot === null) throw new RuntimeModelError("snapshot-invalid", false);
+    sliceContext?.signal.throwIfAborted();
     return {
-      preparedPaths: prepared.take(),
-      integrityManifest: deriveDocumentIntegrityManifest(snapshot),
       lockedHeight: parsed.value.lockedHeight,
       outputHash: parsed.value.hash,
       requiresCanonicalRewrite: parsed.value.requiresCanonicalRewrite,
@@ -189,17 +182,16 @@ export class DocumentModelRuntime {
     input: string | Uint8Array,
     sliceContext?: RuntimeSliceContext,
   ): Promise<{ readonly outputHash: string; readonly revision: number } | null> {
-    const parsed = await parseRuntimeInput(input, sliceContext);
-    return parsed.ok
-      ? { outputHash: parsed.value.hash, revision: parsed.value.snapshot.revision }
-      : null;
+    return this.#outputProofs.verify(input, sliceContext);
   }
 
   public initialize(snapshot: InkSnapshotV1): void {
+    this.#outputProofs.clear();
     this.#reset(snapshot);
   }
 
   public clear(): void {
+    this.#outputProofs.clear();
     this.#serializer.clear();
     this.#prewarmedBytes = 0;
     this.#prewarmedElementCount = 0;
@@ -214,6 +206,7 @@ export class DocumentModelRuntime {
     request: DocumentExportRequest,
     sliceContext?: RuntimeSliceContext,
   ): Promise<ModelExportResult> {
+    const proofEpoch = this.#outputProofs.epoch;
     const started = this.#now();
     try {
       const update =
@@ -234,6 +227,12 @@ export class DocumentModelRuntime {
         serializationMs: finished - modelUpdated,
         totalMs: finished - started,
       });
+      sliceContext?.signal.throwIfAborted();
+      this.#outputProofs.acceptExport(
+        serialized.value.hash,
+        serialized.value.snapshot.revision,
+        proofEpoch,
+      );
       this.#snapshot = serialized.value.snapshot;
       this.#resetPrewarmState();
       return {

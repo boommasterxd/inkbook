@@ -137,7 +137,8 @@ describe("WorkspaceRuntimeLifecycle host synchronization", () => {
     const persisted = serializedDocument(1);
     const budget = vi.fn(() => 2);
     const harness = createHarness([], true, persisted.vault, budget);
-    harness.lifecycle.handleVaultModification("drawings/ink.svg");
+    const resolved = vi.fn();
+    harness.lifecycle.handleVaultModification("drawings/ink.svg", resolved);
     harness.lifecycle.handlePersisted({
       documentId: "drawings/ink.svg",
       lockedAspectRatio: 4,
@@ -147,6 +148,11 @@ describe("WorkspaceRuntimeLifecycle host synchronization", () => {
 
     harness.timers[1]?.();
     await vi.waitFor(() => expect(budget).toHaveBeenCalledWith(harness.ownerWindow));
+    await vi.waitFor(() =>
+      expect(resolved).toHaveBeenCalledWith(
+        expect.objectContaining({ outputHash: persisted.hash }),
+      ),
+    );
     await Promise.resolve();
     await Promise.resolve();
 

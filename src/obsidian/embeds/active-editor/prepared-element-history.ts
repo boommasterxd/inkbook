@@ -10,6 +10,7 @@ import type { SelectionFrameHistoryEffect } from "../../../editor/selection/publ
 import type { ActiveEditorHistory } from "./history";
 
 const SYNCHRONOUS_SELECTION_LIMIT = 1_000;
+const SYNCHRONOUS_SAMPLE_LIMIT = 16_384;
 export interface PreparedElementHistoryOptions {
   readonly history: ActiveEditorHistory;
   readonly isAttached: () => boolean;
@@ -95,7 +96,7 @@ export class PreparedElementHistory {
     onCompleted?: (committed: boolean) => void,
     effect?: SelectionFrameHistoryEffect,
   ): boolean {
-    if (elements.length <= SYNCHRONOUS_SELECTION_LIMIT || this.#pending || this.#disposed) {
+    if (!requiresSlicedMove(elements) || this.#pending || this.#disposed) {
       return false;
     }
     const previewCommit = this.#motion.beginPreviewCommit();
@@ -104,15 +105,7 @@ export class PreparedElementHistory {
         const scheduler = this.#scheduler(generation);
         const replacements = await moveSelectionTimeSliced(elements, delta, scheduler);
         if (replacements === null) return false;
-        const plan = await this.#model.store.planReplacementsTimeSliced(replacements, scheduler);
-        if (plan === null || plan === "cancelled") return false;
-        return await this.#commitApplied(
-          elements,
-          plan.replacements,
-          generation,
-          previewCommit,
-          effect,
-        );
+        return await this.#commitApplied(elements, replacements, generation, previewCommit, effect);
       } finally {
         previewCommit.cancel();
       }
@@ -215,4 +208,14 @@ export class PreparedElementHistory {
     this.#pending = pending;
     this.#onPendingChanged(pending);
   }
+}
+
+function requiresSlicedMove(elements: readonly InkElementV1[]): boolean {
+  if (elements.length > SYNCHRONOUS_SELECTION_LIMIT) return true;
+  let samples = 0;
+  for (const element of elements) {
+    samples += element.kind === "stroke" ? element.points.length / 3 : 1;
+    if (samples > SYNCHRONOUS_SAMPLE_LIMIT) return true;
+  }
+  return false;
 }

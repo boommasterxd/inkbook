@@ -67,7 +67,7 @@ export function pressureStrokeContainsPoint(
     nearPoint: { point, radius: outerTolerance },
     ...(prepared === undefined ? {} : { prepared }),
   })) {
-    if (polygon === undefined) continue;
+    if (polygon === undefined || typeof polygon === "number") continue;
     if (pointInPolygon(point, polygon)) return true;
     for (let edge = 0; edge < polygon.length; edge += 1) {
       if (

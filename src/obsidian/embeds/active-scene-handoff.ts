@@ -40,6 +40,8 @@ export class ActiveScenePreviewHandoff {
   readonly #setPreviewSource: ((source: string) => Promise<void>) | undefined;
   readonly #lockedBlockSize: string;
   #disposed = false;
+  #pendingPreviewSource: string | undefined;
+  #sourcePreparation: Promise<void> | undefined;
   #onReady: (() => void) | undefined;
   #onLockComplete: (() => void) | undefined;
   #lockEditor: HTMLElement | undefined;
@@ -178,10 +180,42 @@ export class ActiveScenePreviewHandoff {
     }
     preview.hidden = false;
     this.#refreshPreview?.();
+    if (this.#pendingPreviewSource !== undefined || this.#sourcePreparation !== undefined) {
+      void this.ensurePreviewReady().then(
+        () => this.#refreshPreview?.(),
+        () => undefined,
+      );
+    }
   }
 
   public async ensurePreviewReady(): Promise<void> {
-    await this.#ensurePreviewReady?.();
+    do {
+      await this.#prepareLatestSource();
+      await this.#ensurePreviewReady?.();
+    } while (this.#pendingPreviewSource !== undefined);
+  }
+
+  #prepareLatestSource(): Promise<void> {
+    if (this.#sourcePreparation !== undefined) return this.#sourcePreparation;
+    if (this.#pendingPreviewSource === undefined) return Promise.resolve();
+    const task = this.#drainPreviewSources().finally(() => {
+      if (this.#sourcePreparation === task) this.#sourcePreparation = undefined;
+    });
+    this.#sourcePreparation = task;
+    return task;
+  }
+
+  async #drainPreviewSources(): Promise<void> {
+    while (this.#pendingPreviewSource !== undefined) {
+      const source = this.#pendingPreviewSource;
+      this.#pendingPreviewSource = undefined;
+      try {
+        await this.#loadPreviewSource(source);
+      } catch (error) {
+        this.#pendingPreviewSource ??= source;
+        throw error;
+      }
+    }
   }
 
   public get reducedMotion(): boolean {
@@ -194,6 +228,12 @@ export class ActiveScenePreviewHandoff {
   }
 
   public setPreviewSource(source: string): Promise<void> {
+    if (this.#disposed || this.#preview === undefined) return Promise.resolve();
+    this.#pendingPreviewSource = source;
+    return this.#preview.hidden ? Promise.resolve() : this.#prepareLatestSource();
+  }
+
+  #loadPreviewSource(source: string): Promise<void> {
     const preview = this.#preview;
     if (preview === undefined) return Promise.resolve();
     if (this.#setPreviewSource !== undefined) {

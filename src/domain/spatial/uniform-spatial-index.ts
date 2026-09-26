@@ -1,6 +1,6 @@
+import { prepareSpatialMutation, type PreparedSpatialMutation } from "./mutation-preparation";
 import { boundsIntersect, type SpatialBounds } from "./bounds";
-import { assertSpatialAggregateCapacity } from "./capacity";
-import { cellMembershipCount, createCellRange, createSpatialCellKeys } from "./cell-membership";
+import { createCellRange, createSpatialCellKeys } from "./cell-membership";
 import { visitSpatialCells } from "./cell-query";
 import { popMaximumBottom, pushBottom, type BottomHeapEntry } from "./max-bottom-heap";
 import { SpatialQueryCursor } from "./query-cursor";
@@ -87,30 +87,28 @@ export class UniformSpatialIndex<Id> {
   }
 
   public insertMany(insertions: readonly SpatialReplacement<Id>[]): void {
-    if (insertions.length === 0) return;
-    const ids = new Set<Id>();
-    const staged: Array<{ bounds: SpatialBounds; id: Id; range: CellRange }> = [];
-    let memberships = this.gridMembershipCount;
-    let overflow = this.overflowSlots.size;
-    for (const { bounds, id } of insertions) {
-      if (ids.has(id) || this.entries.has(id)) {
-        throw new Error("Spatial index already contains the ID.");
-      }
-      ids.add(id);
-      const range = { ...this.prepareRange(bounds) };
-      memberships += cellMembershipCount(range);
-      overflow += Number(range.overflow);
-      staged.push({ bounds, id, range });
-    }
-    assertSpatialAggregateCapacity(memberships, overflow, this.recordVersion, staged.length);
-    for (const { bounds, id, range } of staged) {
-      this.attachEntry(this.createEntry(id, bounds, range, this.takeSlot()), range, false);
-    }
-    for (const { id } of staged) {
-      const entry = this.entries.get(id)!;
-      if (!entry.overflow) this.pushExtentEntry(entry);
-    }
-    this.finishMutation();
+    if (insertions.length !== 0) this.prepareMutation([], insertions).commit();
+  }
+
+  public prepareMutation(
+    removals: readonly Id[],
+    insertions: readonly SpatialReplacement<Id>[],
+  ): PreparedSpatialMutation {
+    return prepareSpatialMutation(removals, insertions, {
+      get: (id) => this.entries.get(id),
+      generation: () => this.mutationGeneration,
+      memberships: this.gridMembershipCount,
+      overflow: this.overflowSlots.size,
+      recordVersion: this.recordVersion,
+      range: (bounds) => ({ ...this.prepareRange(bounds) }),
+      commit: (removed, inserted) => {
+        for (const entry of removed) this.detachEntry(entry, true);
+        for (const { id, bounds, range } of inserted) {
+          this.attachEntry(this.createEntry(id, bounds, range, this.takeSlot()), range, true);
+        }
+        this.finishMutation();
+      },
+    });
   }
 
   public replace(id: Id, bounds: SpatialBounds): void {

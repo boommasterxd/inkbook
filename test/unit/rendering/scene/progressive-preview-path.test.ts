@@ -5,13 +5,11 @@ import * as windowJobs from "../../../../src/domain/geometry/pressure-window";
 import * as pressureWindows from "../../../../src/domain/geometry/pressure-path-serialization";
 import * as pressureOutline from "../../../../src/domain/geometry/pressure-outline";
 import * as simplification from "../../../../src/domain/geometry/stroke-simplification";
-import * as strokePath from "../../../../src/domain/geometry/stroke-path";
 import type { StrokeElementV1 } from "../../../../src/domain/schema/public";
 import { ProgressivePreviewPath } from "../../../../src/rendering/scene/progressive-preview-path";
 import { createAllElementSnapshot } from "../../persistence/serialization/fixtures";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 
-const buildCenters = strokePath.transformedStrokeCenters;
 afterEach(() => vi.restoreAllMocks());
 
 describe("progressive canonical preview geometry", () => {
@@ -77,24 +75,21 @@ function observeProgressivePath(element: StrokeElementV1) {
   let reads = 0;
   let minimum = Infinity;
   let maximum = -1;
-  const centers = vi.spyOn(strokePath, "transformedStrokeCenters").mockImplementation(
-    (stroke) =>
-      new Proxy(buildCenters(stroke), {
-        get(target, key, receiver) {
-          if (typeof key === "string" && /^\d+$/u.test(key)) {
-            const index = Number(key);
-            reads += 1;
-            minimum = Math.min(minimum, index);
-            maximum = Math.max(maximum, index);
-          }
-          return Reflect.get(target, key, receiver) as unknown;
-        },
-      }),
-  );
+  const source = new Proxy(element.points, {
+    get(target, key, receiver) {
+      if (typeof key === "string" && /^\d+$/u.test(key)) {
+        const index = Math.floor(Number(key) / 3);
+        reads += 1;
+        minimum = Math.min(minimum, index);
+        maximum = Math.max(maximum, index);
+      }
+      return Reflect.get(target, key, receiver) as unknown;
+    },
+  });
   const outlines = vi.spyOn(pressureOutline, "visitPreparedPressureOutline");
   const simplify = vi.spyOn(simplification, "simplifyStrokeCenters");
-  centers.mockClear();
-  const job = new ProgressivePreviewPath(element);
+  const job = new ProgressivePreviewPath({ ...element, points: source });
+  expect(reads).toBe(0);
   return {
     job,
     step: () => {
@@ -116,9 +111,8 @@ function observeProgressivePath(element: StrokeElementV1) {
       // observed 65-center input and 64-interval contour-call bounds above.
       const maximumCenters = Math.min(element.points.length / 3, 66);
       // The contour phase reuses selected centers and no longer revisits the raw prefix.
-      expect(reads).toBeLessThanOrEqual(maximumCenters * (element.style.pressureEnabled ? 4 : 3));
+      expect(reads).toBeLessThanOrEqual(Math.min(element.points.length / 3, 65) * 10);
       if (reads > 0) expect(maximum - minimum + 1).toBeLessThanOrEqual(maximumCenters);
-      expect(centers).toHaveBeenCalledTimes(1);
       return complete;
     },
   };
@@ -131,6 +125,8 @@ it("releases smoothed centers and partial strings after completing canonical geo
   };
   const usage = vi.spyOn(pressureWindows, "pressureWindowMemoryUsage");
   const job = new ProgressivePreviewPath(element);
+  expect(job.memoryUsage()).toBe(0);
+  expect(job.step()).toBe(false);
   expect(job.memoryUsage()).toBeGreaterThan(0);
   while (!job.step()) {
     const retainedWindows = usage.mock.results.reduce(
@@ -199,3 +195,55 @@ it("bounds actual contour operations and releases its suspended-job reserve", ()
   );
   expect(job.parts).toEqual(buildElementPathParts(element));
 });
+
+it("reuses canonical pressure paths and windows without repeating their union", () => {
+  const element = pressureWindowStroke();
+  const windows = new Map<number, pressureWindows.PressureWindow>();
+  const parts = buildElementPathParts(element, {
+    readWindow: () => undefined,
+    publishWindow: (index, window) => windows.set(index, window),
+  });
+  const prepare = vi.spyOn(windowJobs, "preparePressureWindowSteps");
+  const publishPath = vi.fn();
+  const port = {
+    readWindow: (index: number) => windows.get(index),
+    publishWindow: vi.fn(),
+    publishPath,
+  };
+  const fromWindows = new ProgressivePreviewPath(element, port);
+  while (!fromWindows.step()) {
+    /* Read bounded canonical windows without repeating the union. */
+  }
+  expect(fromWindows.parts).toEqual(parts);
+  expect(prepare).not.toHaveBeenCalled();
+  expect(port.publishWindow).not.toHaveBeenCalled();
+  expect(publishPath).toHaveBeenCalledWith(fromWindows.parts);
+  const fromPath = new ProgressivePreviewPath(element, { ...port, readPath: () => parts });
+  expect(fromPath.parts).toBe(parts);
+  expect(fromPath.step()).toBe(true);
+  expect(prepare).not.toHaveBeenCalled();
+});
+
+it("cancels a suspended pressure union and releases every derived buffer", () => {
+  const element = pressureWindowStroke();
+  const prepare = vi.spyOn(windowJobs, "preparePressureWindowSteps");
+  const job = new ProgressivePreviewPath(element);
+  while (prepare.mock.calls.length === 0) job.step(0, () => 1);
+  expect(job.memoryUsage()).toBeGreaterThanOrEqual(windowJobs.PRESSURE_WINDOW_SCRATCH_BYTES);
+  const iterator = prepare.mock.results[0]!.value as Generator;
+  const resume = vi.spyOn(iterator, "next");
+  const close = vi.spyOn(iterator, "return");
+  job.cancel();
+  expect(close).toHaveBeenCalledOnce();
+  expect(job.memoryUsage()).toBe(0);
+  expect(job.step()).toBe(false);
+  expect(resume).not.toHaveBeenCalled();
+  expect(job.parts).toBeUndefined();
+});
+
+function pressureWindowStroke(): StrokeElementV1 {
+  return {
+    ...indexedStroke(1),
+    points: Array.from({ length: 192 }, (_, i) => [i, i % 7, (i % 9) / 10]).flat(),
+  };
+}

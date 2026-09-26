@@ -22,7 +22,6 @@ import {
   selectionCursorRadius,
   selectionHandleCursor,
 } from "./selection-cursor";
-import { selectedElements } from "./controller-elements";
 import type { ActiveEditorHistory } from "./history";
 import type { PreparedElementHistory } from "./prepared-element-history";
 import type { ElementSceneStore } from "./scene-store";
@@ -94,6 +93,11 @@ export class ActiveEditorHandleInteraction {
   readonly #selection: () => ReadonlySet<string>;
   readonly #snapping: () => SnappingSettingsV1 | undefined;
   readonly #zoom: () => number;
+  #renderedSelection: ReadonlySet<string> | undefined;
+  #renderedRevision = -1;
+  #renderedGeometry: readonly SelectedElementGeometry[] = [];
+  #renderedFrame: OrientedSelectionFrame | null = null;
+  #renderedZoom = 1;
   #cursorGeometry: SelectionOverlayGeometry | null = null;
   #cursorRotation = 0;
   #cursorLinear: InkElementV1 | undefined;
@@ -165,6 +169,9 @@ export class ActiveEditorHandleInteraction {
     this.#presentation.dispose();
     this.#cursorGeometry = null;
     this.#cursorLinear = undefined;
+    this.#renderedSelection = undefined;
+    this.#renderedGeometry = [];
+    this.#renderedFrame = null;
   }
 
   public pointerDown(
@@ -335,7 +342,38 @@ export class ActiveEditorHandleInteraction {
     const selected = this.#selectedGeometry();
     const frame = this.#selectionFrames.current(selected);
     this.#cacheCursorGeometry(selected, frame);
+    this.#renderedSelection = this.#selection();
+    this.#renderedRevision = this.#model.revision;
+    this.#renderedGeometry = selected;
+    this.#renderedZoom = this.#zoom();
+    const outline = this.#cursorGeometry?.outline;
+    this.#renderedFrame =
+      frame ??
+      (selected.length === 1 &&
+      selected[0]!.element.kind === "stroke" &&
+      outline?.kind === "polygon"
+        ? {
+            points: outline.points as OrientedSelectionFrame["points"],
+            rotation: selected[0]!.element.rotation,
+          }
+        : null);
     this.#presentation.renderGeometry(selected, this.#cursorGeometry);
+  }
+
+  public renderCameraSelection(): void {
+    if (this.#active !== undefined) return;
+    if (
+      this.#renderedRevision !== this.#model.revision ||
+      this.#renderedSelection !== this.#selection()
+    ) {
+      this.renderSelection();
+      return;
+    }
+    if (this.#renderedZoom !== this.#zoom()) {
+      this.#cacheCursorGeometry(this.#renderedGeometry, this.#renderedFrame);
+      this.#renderedZoom = this.#zoom();
+    }
+    this.#presentation.renderGeometry(this.#renderedGeometry, this.#cursorGeometry);
   }
 
   #cacheCursorGeometry(
@@ -410,11 +448,10 @@ export class ActiveEditorHandleInteraction {
   }
 
   #selectedGeometry(): SelectedElementGeometry[] {
-    const selected = selectedElements(this.#sceneStore, this.#selection());
     const geometry: SelectedElementGeometry[] = [];
-    for (const element of selected) {
-      const bounds = this.#sceneStore.get(element.id)?.bounds;
-      if (bounds !== undefined) geometry.push({ bounds, element });
+    for (const id of this.#selection()) {
+      const record = this.#sceneStore.get(id);
+      if (record !== undefined) geometry.push({ bounds: record.bounds, element: record.element });
     }
     return geometry;
   }

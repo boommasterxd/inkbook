@@ -1,11 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { CanonicalMetadataCache } from "../../../src/persistence/serialization/canonical-metadata-cache";
+import { describe, expect, it, vi } from "vitest";
 
 import { calculateElementBounds } from "../../../src/domain/geometry/public";
 import { MAX_ELEMENT_CELLS, spatialCellMembershipCount } from "../../../src/domain/spatial/index";
 import { yieldToMainThread } from "../../../src/persistence/scheduling/main-thread-yield";
 import {
   deriveDocumentIntegrityManifest,
-  deriveDocumentIntegrityManifestAsync,
+  deriveDocumentIntegrityManifestFromContentDigest,
   IncrementalDocumentSerializer,
   serializeInkbookDocument,
 } from "../../../src/persistence/serialization/public";
@@ -78,12 +79,11 @@ describe("persistence serialization performance", () => {
       expect(reference.elementReads).toBe(2 * snapshot.elements.length);
       expect(reference.encodedBytes).toBe(reference.hashedBytes);
       const slices: IntegrityWork[] = [];
-      const result = await deriveDocumentIntegrityManifestAsync(observer.snapshot, {
-        checkpoint: async () => {
-          slices.push(observer.take());
-        },
-        sliceByteLimit: sliceBytes,
+      vi.stubGlobal("crypto", undefined);
+      const digest = await new CanonicalMetadataCache().digest(observer.snapshot, async () => {
+        slices.push(observer.take());
       });
+      const result = deriveDocumentIntegrityManifestFromContentDigest(observer.snapshot, digest);
       const finalSlice = observer.take();
       expect(result).toEqual(expected);
       expect(slices.length).toBeGreaterThan(1);
@@ -105,6 +105,7 @@ describe("persistence serialization performance", () => {
       expect(total).toEqual(reference);
     } finally {
       observer.restore();
+      vi.unstubAllGlobals();
     }
   }, 120_000);
 });
@@ -298,13 +299,9 @@ function amplifyNearLimitSnapshot(
 }
 
 function assertIntegritySlice(work: IntegrityWork, sliceBytes: number): void {
-  // A checkpoint follows the threshold-crossing chunk. This ASCII fixture encodes
-  // at most sliceBytes / 4 bytes per chunk, with no more than one chunk overshoot.
-  expect(work.encodedBytes).toBeGreaterThanOrEqual(sliceBytes);
-  expect(work.encodedBytes).toBeLessThan(sliceBytes + sliceBytes / 4);
-  expect(work.hashedBytes).toBe(work.encodedBytes);
-  expect(work.elementReads).toBe(work.canonicalElements);
-  // Even the ID alone occupies 38 JSON bytes. One canonical element may already
-  // be prepared when a checkpoint splits its encoded representation.
-  expect(work.canonicalElements).toBeLessThanOrEqual(Math.ceil(sliceBytes / 38) + 1);
+  // Canonical fragments and fallback hash blocks each checkpoint independently.
+  expect(work.encodedBytes).toBeLessThanOrEqual(sliceBytes);
+  expect(work.hashedBytes).toBeLessThanOrEqual(sliceBytes);
+  expect(work.elementReads).toBeLessThanOrEqual(1);
+  expect(work.canonicalElements).toBeLessThanOrEqual(1);
 }

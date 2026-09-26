@@ -2,7 +2,8 @@ import { TFile, type Vault } from "obsidian";
 
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
 import type { ExternalChangeOutcome } from "../../editor/session/session-port";
-import { inspectTrustedSvgOutput } from "../../persistence/scheduling/trusted-svg-output";
+import { hashSvgContent } from "../../persistence/scheduling/trusted-svg-output";
+import { scanCanonicalRevisionPrefix } from "../../persistence/saving/revision-scan";
 import type { ActiveInkbookScene } from "./active-scene";
 import { isLiveOwnerWindow, resolvePresentationWindow } from "./owner-window-registry";
 import { presentationAttachmentKey, type PresentationAttachment } from "./presentation-port";
@@ -41,7 +42,14 @@ interface InsertionUndoHint {
   strokeCommitted: boolean;
 }
 
+export type HostWriteResolved = (output?: {
+  readonly content: string;
+  readonly outputHash: string;
+  readonly signature: string;
+}) => void;
+
 interface PendingVaultModification {
+  readonly resolved?: HostWriteResolved;
   generation: number;
 }
 
@@ -169,14 +177,14 @@ export class WorkspaceRuntimeLifecycle {
     if (hint !== undefined) hint.strokeCommitted = true;
   }
 
-  public handleVaultModification(documentId: string): void {
+  public handleVaultModification(documentId: string, resolved?: HostWriteResolved): void {
     if (this.#options.isDisposed()) return;
     const pending = this.#pendingExternalChanges.get(documentId);
     if (pending !== undefined) {
       pending.generation += 1;
       return;
     }
-    const created = { generation: 1 };
+    const created = { generation: 1, ...(resolved === undefined ? {} : { resolved }) };
     this.#pendingExternalChanges.set(documentId, created);
     this.#scheduleVaultModification(documentId, created);
   }
@@ -280,8 +288,10 @@ export class WorkspaceRuntimeLifecycle {
     const confirmations = this.#confirmedHostWrites.get(documentId);
     this.#confirmedHostWrites.delete(documentId);
     if (persisted !== undefined && confirmations?.has(persistedIdentityKey(persisted)) === true) {
+      pending.resolved?.(persisted);
       return;
     }
+    pending.resolved?.();
     void this.#options.notifyExternalChange(documentId).then((outcome) => {
       if (outcome === "reloaded" && !this.#options.isDisposed()) {
         this.#options.reloadPresentation(documentId);
@@ -289,7 +299,11 @@ export class WorkspaceRuntimeLifecycle {
     });
   }
 
-  async #readPersistedIdentity(documentId: string): Promise<PersistedIdentity | undefined> {
+  async #readPersistedIdentity(
+    documentId: string,
+  ): Promise<
+    (PersistedIdentity & { readonly content: string; readonly signature: string }) | undefined
+  > {
     const file = this.#options.vault.getFileByPath(documentId);
     if (!(file instanceof TFile)) return undefined;
     if (file.stat.size < 0 || file.stat.size > FILE_SCHEMA_LIMITS.totalInputBytes) return undefined;
@@ -297,8 +311,9 @@ export class WorkspaceRuntimeLifecycle {
     try {
       const content = await this.#options.vault.read(file);
       if (!sameVaultFile(this.#options.vault, documentId, file, before)) return undefined;
-      const inspected = await inspectTrustedSvgOutput(content, undefined, {
-        versionPolicy: "editable",
+      const revision = scanCanonicalRevisionPrefix(content);
+      if (revision === null) return undefined;
+      const outputHash = await hashSvgContent(content, {
         ...(this.#options.sliceBudgetMs === undefined
           ? {}
           : {
@@ -311,7 +326,7 @@ export class WorkspaceRuntimeLifecycle {
             }),
       });
       return sameVaultFile(this.#options.vault, documentId, file, before)
-        ? { outputHash: inspected.outputHash, revision: inspected.revision }
+        ? { content, outputHash, revision, signature: before }
         : undefined;
     } catch {
       return undefined;

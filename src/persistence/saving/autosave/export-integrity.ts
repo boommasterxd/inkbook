@@ -1,22 +1,33 @@
-import type { InkSnapshotV1 } from "../../../domain/schema/public";
+import type { InkElementV1, InkSnapshotV1 } from "../../../domain/schema/public";
 import type { ExportSuccess } from "../../worker/protocol";
 import {
-  deriveDocumentIntegrityManifestAsync,
+  deriveDocumentIntegrityManifestFromContentDigest,
   sameDocumentIntegrityManifest,
   type DocumentIntegrityManifest,
 } from "../../serialization/public";
+import { CanonicalMetadataCache } from "../../serialization/canonical-metadata-cache";
 import { createMainThreadCheckpoint } from "../../scheduling/main-thread-checkpoint";
-import { inspectTrustedSvgOutput } from "../../scheduling/trusted-svg-output";
+import { adoptOwnedSvgOutput } from "../../scheduling/owned-svg-output";
+
+import type { AutosaveCoordinatorOptions } from "./types";
 
 export type ExportIntegrityDecision = "cancelled" | "fail" | "match" | "retry-full";
 
 export class AutosaveExportIntegrity {
   #retryUsed = false;
+  readonly #metadata: CanonicalMetadataCache;
+
+  public clear(): void {
+    this.#metadata.clear();
+  }
 
   public constructor(
     readonly waitForBackground?: () => Promise<void>,
     readonly sliceBudgetMs?: () => number,
-  ) {}
+    ownsElement?: (element: InkElementV1) => boolean,
+  ) {
+    this.#metadata = new CanonicalMetadataCache(ownsElement);
+  }
 
   public async verify(
     snapshot: () => InkSnapshotV1,
@@ -28,12 +39,15 @@ export class AutosaveExportIntegrity {
     try {
       if (this.waitForBackground) await this.waitForBackground();
       if (signal?.aborted || !isCurrent()) return "cancelled";
+      const value = snapshot();
+      const digest = await this.#metadata.digest(
+        value,
+        createMainThreadCheckpoint(this.sliceBudgetMs, this.waitForBackground),
+        signal,
+      );
       matches = sameDocumentIntegrityManifest(
         workerManifest,
-        await deriveDocumentIntegrityManifestAsync(snapshot(), {
-          checkpoint: createMainThreadCheckpoint(this.sliceBudgetMs, this.waitForBackground),
-          ...(signal === undefined ? {} : { signal }),
-        }),
+        deriveDocumentIntegrityManifestFromContentDigest(value, digest),
       );
     } catch {
       // An invalid authoritative snapshot is an integrity failure, never a writable state.
@@ -54,7 +68,7 @@ export async function inspectIntegrityBoundExport(
   waitForBackground?: () => Promise<void>,
   sliceBudgetMs?: () => number,
 ) {
-  const trusted = await inspectTrustedSvgOutput(result.output, result.outputHash, {
+  const trusted = await adoptOwnedSvgOutput(result.output, result.outputHash, {
     ...(sliceBudgetMs ? { sliceBudgetMs } : {}),
     ...(waitForBackground ? { waitForBackground } : {}),
   });
@@ -63,4 +77,14 @@ export async function inspectIntegrityBoundExport(
     throw new TypeError("Export snapshot digest mismatch.");
   }
   return trusted;
+}
+
+export function createAutosaveExportIntegrity(
+  options: AutosaveCoordinatorOptions,
+): AutosaveExportIntegrity {
+  return new AutosaveExportIntegrity(
+    options.waitForBackground,
+    options.sliceBudgetMs,
+    options.documentSource.ownsIntegrityElement,
+  );
 }

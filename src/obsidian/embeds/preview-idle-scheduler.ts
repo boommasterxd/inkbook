@@ -21,9 +21,11 @@ export class PreviewIdleScheduler {
     this.#foregroundRequests = Math.max(0, this.#foregroundRequests - 1);
   }
 
-  public async checkpoint(): Promise<void> {
+  public async checkpoint(initial = false): Promise<void> {
+    // Allow the presentation to install its input-priority gate before the first slice.
+    if (initial) await Promise.resolve();
     await this.waitForBackground();
-    if (this.#disposed) return;
+    if (this.#disposed || initial) return;
     await new Promise<void>((resolve, reject) => {
       const finish = (): void => {
         this.#cancel = undefined;

@@ -67,7 +67,7 @@ export function* elementMatchesSelectionAreaSteps(
   inclusion: SelectionAreaInclusion,
   candidateBounds: Bounds,
   prepared?: PreparedPressureGeometryPort,
-): Generator<void, boolean> {
+): Generator<number | void, boolean> {
   if (!boundsIntersect(area.bounds, candidateBounds) || !hasPositiveArea(area)) return false;
   if (element.kind === "stroke") {
     if (element.style.opacity <= 0) return false;
@@ -85,15 +85,12 @@ export function* elementMatchesSelectionAreaSteps(
       if (yield* primitiveEnclosedByAreaSteps(area, box)) return true;
     } else if (boundsAvoidLassoBoundary(area, candidateBounds)) {
       const corner = box.points[0]!;
-      if (
-        yield* primitiveTouchesAreaSteps(area, {
-          kind: "capsule",
-          start: corner,
-          end: corner,
-          radius: 0,
-        })
-      )
-        return true;
+      return yield* primitiveTouchesAreaSteps(area, {
+        kind: "capsule",
+        start: corner,
+        end: corner,
+        radius: 0,
+      });
     }
   }
   let visible = false;
@@ -101,8 +98,8 @@ export function* elementMatchesSelectionAreaSteps(
     bounds: area.bounds,
     prepared,
   })) {
-    if (primitive === undefined) {
-      yield;
+    if (primitive === undefined || typeof primitive === "number") {
+      yield primitive;
       continue;
     }
     visible = true;
@@ -112,7 +109,8 @@ export function* elementMatchesSelectionAreaSteps(
         : yield* primitiveEnclosedByAreaSteps(area, primitive);
     if (inclusion === "touched" && matches) return true;
     if (inclusion === "fully-enclosed" && !matches) return false;
-    yield;
+    // One primitive is not a full index/geometry batch; nested work yields separately.
+    yield area.kind === "rectangle" ? 1 : 1 + Math.ceil(area.points.length / 32);
   }
   return visible && inclusion === "fully-enclosed";
 }

@@ -1,9 +1,5 @@
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/constants";
-import {
-  validateSafeSvg,
-  validateSafeSvgSteps,
-  type SafeSvgValidation,
-} from "../documents/safe-svg-validator";
+import { validateSafeSvgSteps, type SafeSvgValidation } from "../documents/safe-svg-validator";
 import type { SafeSvgVersionPolicy } from "../documents/svg-envelope-root";
 import { ChunkedSha256 } from "../serialization/chunked-output-sha256";
 
@@ -27,15 +23,21 @@ interface TrustedSvgInspectionOptions extends Utf8AdoptionOptions {
   readonly waitForBackground?: () => Promise<void>;
 }
 
-export function inspectTrustedSvgOutputSync(
-  output: string | Uint8Array,
-  expectedHash?: string,
-): TrustedSvgOutput {
-  const inspected = inspectBytesSync(output);
-  assertExpectedHash(inspected.outputHash, expectedHash);
-  const safe = validateSafeSvg(inspected.content);
-  if (safe === null) throw new TypeError("Worker output is not a safe Inkbook SVG document.");
-  return trustedOutput(inspected, safe);
+/** Hashes complete bounded bytes without repeating validation of an owned exact output. */
+export async function hashSvgContent(
+  content: string,
+  options: TrustedSvgInspectionOptions = {},
+): Promise<string> {
+  const checkpoint =
+    options.checkpoint ??
+    createMainThreadCheckpoint(options.sliceBudgetMs, options.waitForBackground);
+  await checkpoint();
+  options.signal?.throwIfAborted();
+  const chunkBytes = options.chunkBytes ?? DEFAULT_CHUNK_BYTES;
+  assertChunkBytes(chunkBytes);
+  const inspected = await inspectString(content, chunkBytes, checkpoint, options.signal);
+  options.signal?.throwIfAborted();
+  return inspected.outputHash;
 }
 
 export async function inspectTrustedSvgOutput(
@@ -75,19 +77,6 @@ interface InspectedOutput {
   readonly content: string;
   readonly outputHash: string;
   readonly totalBytes: number;
-}
-
-function inspectBytesSync(output: string | Uint8Array): InspectedOutput {
-  if (typeof output === "string") {
-    const hasher = new ChunkedSha256();
-    updateStringHash(output, DEFAULT_CHUNK_BYTES, hasher);
-    return { content: output, outputHash: hasher.digestHex(), totalBytes: hasher.totalBytes };
-  }
-  assertOwnedBytes(output);
-  const hasher = new ChunkedSha256();
-  hasher.update(output);
-  const content = new TextDecoder("utf-8", { fatal: true }).decode(output);
-  return { content, outputHash: hasher.digestHex(), totalBytes: output.byteLength };
 }
 
 async function inspectOutput(
@@ -140,16 +129,6 @@ async function inspectString(
     signal?.throwIfAborted();
   }
   return { content: output, outputHash: hasher.digestHex(), totalBytes: hasher.totalBytes };
-}
-
-function updateStringHash(output: string, chunkBytes: number, hasher: ChunkedSha256): void {
-  const encoder = new TextEncoder();
-  for (let offset = 0; offset < output.length;) {
-    const end = nextChunkEnd(output, offset, chunkBytes);
-    hasher.update(encoder.encode(output.slice(offset, end)));
-    if (hasher.totalBytes > FILE_SCHEMA_LIMITS.totalInputBytes) throw oversizedOutput();
-    offset = end;
-  }
 }
 
 function nextChunkEnd(input: string, offset: number, chunkCodeUnits: number): number {

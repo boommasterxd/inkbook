@@ -10,6 +10,9 @@ import {
 
 export type SelectionMode = "add" | "preserve-or-replace" | "replace";
 
+/** Undefined denotes a heavy geometry/index batch; numbers charge bounded sample/predicate work. */
+export type SelectionQueryStep = number | void;
+
 export function selectElement(
   selection: ReadonlySet<string>,
   elementId: string,
@@ -36,7 +39,7 @@ export function* selectBySelectionAreaCandidatesSteps(
   inclusion: SelectionAreaInclusion,
   additive: boolean,
   candidates: Generator<SelectionAreaCandidate | undefined, boolean>,
-): Generator<void, ReadonlySet<string>> {
+): Generator<SelectionQueryStep, ReadonlySet<string>> {
   const next = additive ? new Set(selection) : new Set<string>();
   try {
     let step = candidates.next();
@@ -54,7 +57,12 @@ export function* selectBySelectionAreaCandidatesSteps(
         )
           next.add(id);
       }
-      yield;
+      // A lasso bounds shortcut still inspects its boundary and point-in-polygon edges.
+      yield step.value === undefined
+        ? undefined
+        : area.kind === "rectangle"
+          ? 1
+          : 1 + Math.ceil(area.points.length / 32);
       step = candidates.next();
     }
     return !step.value || setsEqual(selection, next) ? selection : next;

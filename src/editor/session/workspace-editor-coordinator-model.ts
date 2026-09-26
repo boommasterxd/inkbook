@@ -84,9 +84,10 @@ export class SessionOperationTracker {
   create(
     current: CurrentSession,
     workspaceToken: number,
-    expectedSourceIdentity?: PersistedDocumentIdentity,
+    target?: Pick<ActivationTarget, "previewContentIdentity">,
   ): SessionOperationIdentity {
     const snapshot = current.port.getSnapshot();
+    const expectedSourceIdentity = target?.previewContentIdentity;
     return {
       documentId: snapshot.documentId,
       ...(expectedSourceIdentity === undefined ? {} : { expectedSourceIdentity }),

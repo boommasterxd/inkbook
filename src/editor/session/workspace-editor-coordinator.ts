@@ -236,8 +236,7 @@ export class WorkspaceEditorCoordinator {
     if (
       tryActivateSameAttachment({
         adoptUnlock: (operation, result) => this.#adoptUnlockResult(current, operation, result),
-        createOperation: () =>
-          this.#operations.create(current, record.token, record.target.previewContentIdentity),
+        createOperation: () => this.#operations.create(current, record.token, record.target),
         current,
         record,
       })
@@ -288,11 +287,7 @@ export class WorkspaceEditorCoordinator {
     }
     const current = createCurrentSession(pending, this.#createSessionId(), this.#sessions);
     this.#current = current;
-    const operation = this.#operations.create(
-      current,
-      pending.token,
-      pending.target.previewContentIdentity,
-    );
+    const operation = this.#operations.create(current, pending.token, pending.target);
     current.unlockOperation = operation;
     observeUnlock(current.port, operation, (result) => {
       this.#adoptUnlockResult(current, operation, result);

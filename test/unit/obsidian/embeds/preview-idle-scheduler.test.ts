@@ -144,3 +144,29 @@ it("uses owning-window timers when idle callbacks and message channels are unava
   await foreground;
   expect(clear).toHaveBeenCalledWith(42);
 });
+
+it("starts a bounded initial slice without a task handoff after checking the input gate", async () => {
+  const f = fixture();
+  let resume!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  const finished = vi.fn();
+  const initial = f.scheduler.checkpoint(true).then(finished);
+  f.scheduler.setBackgroundWait(() => gate);
+  await tick();
+  expect(finished).not.toHaveBeenCalled();
+  expect(f.requestIdle).not.toHaveBeenCalled();
+  resume();
+  await initial;
+  expect(finished).toHaveBeenCalledOnce();
+  expect(f.requestIdle).not.toHaveBeenCalled();
+  expect(f.post).not.toHaveBeenCalled();
+  f.scheduler.setBackgroundWait(undefined);
+  const continuation = f.scheduler.checkpoint();
+  await tick();
+  expect(f.requestIdle).toHaveBeenCalledOnce();
+  f.idle();
+  await continuation;
+  f.scheduler.dispose();
+});

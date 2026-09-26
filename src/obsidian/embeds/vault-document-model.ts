@@ -1,5 +1,7 @@
+import { derivePageExtent } from "../../domain/geometry/public";
 import {
-  validateRuntimeInkSnapshotV1,
+  validateInkPageV1,
+  MAX_DERIVED_HEIGHT,
   type InkElementV1,
   type InkSnapshotV1,
 } from "../../domain/schema/public";
@@ -70,6 +72,18 @@ export function createVaultAutosaveSession(
       ? {}
       : { requiresCanonicalRewrite: options.requiresCanonicalRewrite }),
     sessionId: options.identity.sessionId,
+    ownsIntegrityElement: (element) => options.store.get(element.id)?.element === element,
+    integritySnapshot: () => ({
+      format: "inkbook",
+      version: 1,
+      page: options.page(),
+      revision: options.currentRevision(),
+      elements: ["highlight", "content"].flatMap((band) =>
+        options.store
+          .materializeBandOrder(band as "highlight" | "content")
+          .map((id) => options.store.get(id)!.element as InkElementV1),
+      ),
+    }),
     snapshot: () =>
       options.store.materializeSnapshot({
         page: options.page(),
@@ -194,19 +208,34 @@ export function commitVaultPage(options: {
 }): void {
   if (options.store === undefined || options.autosave === undefined) return;
   const revision = options.revision + 1;
-  const validation = validateRuntimeInkSnapshotV1(
-    options.store.materializeSnapshot({ page: options.page, revision }),
-  );
+  if (!Number.isSafeInteger(revision) || revision < 0) throw new RangeError("Invalid revision.");
+  const validation = validateInkPageV1(options.page);
   if (!validation.ok) {
     throw new RangeError(
       `Page update is invalid (${validation.error.code} at ${validation.error.path}).`,
     );
   }
-  options.commit({ page: validation.value.page, revision });
-  options.autosave.recordCommit({ modelRevision: revision, page: validation.value.page });
+  validatePageExtent(options.store, validation.value);
+  const page = { ...validation.value, background: { ...validation.value.background } };
+  options.commit({ page, revision });
+  options.autosave.recordCommit({ modelRevision: revision, page });
 }
 
 export function requireVaultPage(page: InkSnapshotV1["page"] | undefined): InkSnapshotV1["page"] {
   if (page === undefined) throw new Error("The document page is unavailable.");
   return page;
+}
+
+function validatePageExtent(store: ElementStore, page: InkSnapshotV1["page"]): void {
+  let bottom: number | null = null;
+  for (const band of ["highlight", "content"] as const) {
+    for (const id of store.materializeBandOrder(band)) {
+      const maxY = store.get(id)!.bounds.maxY;
+      bottom = bottom === null ? maxY : Math.max(bottom, maxY);
+    }
+  }
+  const extent = derivePageExtent(page, bottom);
+  if (extent.activeHeight > MAX_DERIVED_HEIGHT || extent.lockedHeight > MAX_DERIVED_HEIGHT) {
+    throw new RangeError("Page update exceeds the maximum derived height.");
+  }
 }

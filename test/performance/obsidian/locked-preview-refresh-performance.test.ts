@@ -1,18 +1,23 @@
 // @vitest-environment happy-dom
 
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { ActiveScenePreviewHandoff } from "../../../src/obsidian/embeds/active-scene-handoff";
+import { serializeSvgEnvelope } from "../../../src/persistence/documents/svg-envelope";
+import { createSnapshot } from "../../unit/persistence/serialization/fixtures";
 
 import { createInkbookLockedPreview } from "../../../src/obsidian/embeds/locked-preview";
 import { createHtmlElement, installObsidianDomHelpers } from "../../adapters/obsidian/dom";
 
-afterEach(() => vi.restoreAllMocks());
-
-it("coalesces hidden autosave previews into one bounded tree and reuses unchanged identities", async () => {
+beforeEach(() => {
   installObsidianDomHelpers();
   vi.spyOn(window, "setTimeout").mockImplementation((callback) => {
     queueMicrotask(callback as () => void);
     return 1 as unknown as ReturnType<typeof window.setTimeout>;
   });
+});
+afterEach(() => vi.restoreAllMocks());
+
+it("coalesces hidden autosave previews into one bounded tree and reuses unchanged identities", async () => {
   const button = createHtmlElement("button");
   const safeSvg = `<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata>${'<path d="M0 0L1 1"/>'.repeat(10_000)}</svg>`;
   const create = vi.spyOn(document, "createElementNS");
@@ -57,4 +62,53 @@ it("coalesces hidden autosave previews into one bounded tree and reuses unchange
   expect(create).toHaveBeenCalledTimes(20_003);
   expect(parser).not.toHaveBeenCalled();
   expect(importer).not.toHaveBeenCalled();
+});
+
+it("does no fetch or SVG construction for hidden saves and prepares only the latest source on lock", async () => {
+  const button = createHtmlElement("button");
+  const root = createHtmlElement("div");
+  root.append(button);
+  const svg = serializeSvgEnvelope(createSnapshot(), 148.6, {
+    background: [],
+    highlights: [],
+    content: ['<path d="M0 0L1 1" fill="none" stroke="#112233FF"/>'.repeat(10_000)],
+  });
+  const fetch = vi.spyOn(window, "fetch").mockImplementation(async () => new Response(svg));
+  const create = vi.spyOn(document, "createElementNS");
+  const preview = createInkbookLockedPreview(button, {
+    safeSvg: svg,
+    aspectRatio: 1,
+    contentIdentity: { revision: 0, outputHash: "a".repeat(64) },
+  });
+  await preview.ensureReady();
+  const initialNodes = create.mock.calls.length;
+  let adoptedIdentity: unknown;
+  const handoff = new ActiveScenePreviewHandoff({
+    root,
+    container: root,
+    motion: "reduced",
+    preview: button,
+    refreshPreview: preview.refresh,
+    ensurePreviewReady: preview.ensureReady,
+    setPreviewSource: async (source) => {
+      adoptedIdentity = await preview.setSource(source);
+    },
+  });
+  handoff.ready();
+  for (let revision = 1; revision <= 20; revision += 1) {
+    await handoff.setPreviewSource(`app://saved.svg?revision=${String(revision)}`);
+    await Promise.resolve();
+  }
+  expect(fetch).not.toHaveBeenCalled();
+  expect(create).toHaveBeenCalledTimes(initialNodes);
+  expect(adoptedIdentity).toBeUndefined();
+  await handoff.ensurePreviewReady();
+  expect(fetch).toHaveBeenCalledExactlyOnceWith("app://saved.svg?revision=20", expect.anything());
+  // One SVG root, three render groups, and the 10,000 retained paths.
+  expect(create).toHaveBeenCalledTimes(initialNodes + 10_004);
+  expect(adoptedIdentity).toMatchObject({ revision: createSnapshot().revision });
+  handoff.restorePreview();
+  expect(button.querySelectorAll("path")).toHaveLength(10_000);
+  handoff.dispose();
+  preview.dispose();
 });

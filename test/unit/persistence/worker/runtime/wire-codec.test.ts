@@ -296,8 +296,8 @@ describe("document worker clipboard wire adoption", () => {
   });
 });
 
-describe("document worker untrusted result adoption", () => {
-  it("rejects unsafe, mismatched, and non-owned export output before adoption", () => {
+describe("document worker owned result adoption", () => {
+  it("rejects malformed roots, manifests, hashes, and non-owned export output", () => {
     const unsafe = new TextEncoder().encode("<svg/>");
     const result = {
       exportGeneration: 1,
@@ -309,7 +309,7 @@ describe("document worker untrusted result adoption", () => {
       type: "export-success-wire",
       workerEpoch: 2,
     };
-    expect(() => decodeRuntimeResult(result)).toThrow("safe Inkbook SVG");
+    expect(() => decodeRuntimeResult(result)).toThrow("canonical SVG root");
     expect(() =>
       decodeRuntimeResult({
         ...result,
@@ -324,7 +324,7 @@ describe("document worker untrusted result adoption", () => {
       decodeRuntimeResult({
         ...result,
         output: bytes,
-        outputHash: "0".repeat(64),
+        outputHash: "invalid",
       }),
     ).toThrow("hash");
 

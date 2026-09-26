@@ -1,5 +1,8 @@
+import { activeActions } from "../../fixtures/obsidian/editor-actions";
+import { createClipboardDocumentModel } from "../../integration/obsidian/embeds/active-editor-clipboard-fixtures";
+import type { EditableDocumentModel } from "../../../src/obsidian/embeds/document-model-port";
 import { selectBySelectionAreaQuery } from "../../fixtures/editor/selection-query";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { selectionCenterlineBounds } from "../../../src/editor/selection/centerline-bounds";
 import type { InkElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
@@ -70,7 +73,7 @@ function verifyEndpointFanout(store: ElementStore, firstLineId: string): void {
     recordReplacements: 19_968,
     deltaEntries: 19_968,
     timeSlicedIndexVisits: 39_897,
-    reverseDependencyVisits: 19_929,
+    reverseDependencyVisits: 0,
   });
 }
 
@@ -191,6 +194,7 @@ describe("selection commit hot paths", () => {
       const work = observation.finish();
       expect(work.creations).toBe(elements.length);
       expect(work.maximumCreationsBetweenYields).toBe(1);
+      expect(work.reverseVisits).toBe(19_929);
       expect(work.maximumReverseVisitsBetweenYields).toBe(1);
       expect(work.yields).toBeGreaterThanOrEqual(elements.length);
       expect(work.partialPublications).toBe(0);
@@ -200,7 +204,7 @@ describe("selection commit hot paths", () => {
         snapshotMaterializations: 0,
         recordReplacements: 0,
         publishedDeltas: 0,
-        reverseDependencyVisits: 19_929,
+        reverseDependencyVisits: 0,
       });
       if (prepared.token === null) throw new Error("Expected complete fan-out preparation.");
       const commit = store.commitPreparedElementReplacement(prepared.token);
@@ -273,3 +277,45 @@ function selectInArea(
     }),
   );
 }
+
+it("performs no selection member scans during repeated deletion cancellation checks", async () => {
+  const elements = Array.from({ length: 10_000 }, (_, index) => indexedStroke(index));
+  const selection = new Set(elements.map(({ id }) => id));
+  const prepareElementMutation = vi.fn<EditableDocumentModel["prepareElementMutation"]>(
+    async (_mutation, cancellation) => {
+      const iterate = vi.spyOn(selection, Symbol.iterator);
+      const has = vi.spyOn(selection, "has");
+      try {
+        for (let checkpoint = 0; checkpoint < 10_000; checkpoint += 1) {
+          expect(cancellation?.isCancelled()).toBe(false);
+        }
+        expect(iterate).not.toHaveBeenCalled();
+        expect(has).not.toHaveBeenCalled();
+      } finally {
+        iterate.mockRestore();
+        has.mockRestore();
+      }
+      return { status: "noop", token: null };
+    },
+  );
+  const model = createClipboardDocumentModel({
+    store: new ElementStore(elements),
+    prepareElementMutation,
+    commitPreparedElementMutation: vi.fn(() => null),
+    planClipboardPaste: vi.fn(async () => null),
+  });
+  const actions = activeActions(
+    model,
+    new ElementSceneStore(model.store),
+    { navigator: {} } as Window,
+    vi.fn(),
+    selection,
+  );
+  try {
+    actions.execute("delete");
+    expect(prepareElementMutation).toHaveBeenCalledOnce();
+    await prepareElementMutation.mock.results[0]!.value;
+  } finally {
+    actions.dispose();
+  }
+});

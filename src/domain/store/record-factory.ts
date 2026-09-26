@@ -12,7 +12,11 @@ import {
   type SpatialBounds,
 } from "../spatial/index";
 
-import { immutableElement, takeImmutableElementOwnership } from "./immutability";
+import {
+  immutableElement,
+  immutableReplacement,
+  takeImmutableElementOwnership,
+} from "./immutability";
 import type { ElementRecord } from "./types";
 
 export function createInitialRecord(element: InkElementV1): ElementRecord {
@@ -48,7 +52,12 @@ export function createReplacementRecord(
   geometryVersion: number,
   paintVersion: number,
 ): ElementRecord {
-  return replacementRecord(immutableElement(element), current, geometryVersion, paintVersion);
+  return replacementRecord(
+    immutableReplacement(element, current.element),
+    current,
+    geometryVersion,
+    paintVersion,
+  );
 }
 
 export function createOwnedReplacementRecord(

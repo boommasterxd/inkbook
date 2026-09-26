@@ -359,10 +359,10 @@ function createFullyVisibleRenderer(
   frameBudgetMs = () => INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs,
 ) {
   const fixture = createInteractionRenderer(store, { frameBudgetMs });
-  fixture.scheduler.runAll();
+  fixture.scheduler.runAll(1_000);
   fixture.renderer.setPage(INTERACTION_PAGE, 2_000);
   fixture.renderer.setViewport({ height: 2_000, left: 0, top: 0, width: 2_000 });
-  fixture.scheduler.runAll();
+  fixture.scheduler.runAll(1_000);
   expect(fixture.renderer.mountedCount).toBe(INTERACTION_ELEMENT_COUNT);
   return fixture;
 }

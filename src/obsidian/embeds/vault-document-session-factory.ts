@@ -57,11 +57,13 @@ export class VaultDocumentSessionFactory implements SessionFactory {
   }
 
   getDocumentModel(sessionId: string): EditableDocumentModel | undefined {
-    return this.#sessions.get(sessionId)?.documentModel;
+    const model = this.#sessions.get(sessionId)?.documentModel;
+    return model;
   }
 
   getEditorContext(sessionId: string): ActiveDocumentEditorContext | undefined {
-    return this.#sessions.get(sessionId)?.editorContext;
+    const context = this.#sessions.get(sessionId)?.editorContext;
+    return context;
   }
 
   async notifyExternalChange(

@@ -1,6 +1,9 @@
 import type { SelectionPreviewOptions } from "./selection-preview-contracts";
+import type { SelectionQueryStep } from "../../../editor/selection/public";
 
-const STEPS_PER_FRAME = 64;
+// Keep 64 expensive batches while allowing cheap bounds decisions to share a slice.
+const WORK_UNITS_PER_FRAME = 4096;
+const GEOMETRY_BATCH_WORK_UNITS = 64;
 type SelectionQueryOptions = Pick<
   SelectionPreviewOptions,
   | "frameScheduler"
@@ -14,7 +17,7 @@ type SelectionQueryOptions = Pick<
 /** Drains bounded geometry steps while retaining no work after cancellation. */
 export class SelectionQueryWork {
   readonly #options: SelectionQueryOptions;
-  readonly #steps: Generator<void, ReadonlySet<string>>;
+  readonly #steps: Generator<SelectionQueryStep, ReadonlySet<string>>;
   readonly #selection: ReadonlySet<string>;
   #frame: number | undefined;
   #unsubscribe: (() => void) | undefined;
@@ -22,7 +25,10 @@ export class SelectionQueryWork {
   #started = false;
   #changed = false;
 
-  public constructor(options: SelectionQueryOptions, steps: Generator<void, ReadonlySet<string>>) {
+  public constructor(
+    options: SelectionQueryOptions,
+    steps: Generator<SelectionQueryStep, ReadonlySet<string>>,
+  ) {
     this.#options = options;
     this.#steps = steps;
     this.#selection = options.selection();
@@ -69,7 +75,8 @@ export class SelectionQueryWork {
     const scheduler = this.#options.frameScheduler;
     const budget = this.#options.selectionWorkBudget;
     const deadline = budget === undefined ? Infinity : budget.now() + budget.sliceBudgetMs();
-    for (let count = 0; scheduler === undefined || count < STEPS_PER_FRAME; count += 1) {
+    let remaining = WORK_UNITS_PER_FRAME;
+    while (scheduler === undefined || remaining > 0) {
       const result = this.#steps.next();
       if (result.done) {
         this.cancel();
@@ -77,6 +84,8 @@ export class SelectionQueryWork {
         if (this.#changed) this.#options.setSelection(result.value);
         return;
       }
+      // Keep large predicates within the existing batch charge and maximum 63-unit overrun.
+      remaining -= Math.min(result.value ?? GEOMETRY_BATCH_WORK_UNITS, GEOMETRY_BATCH_WORK_UNITS);
       if (scheduler !== undefined && budget !== undefined && budget.now() >= deadline) break;
     }
     this.#frame = scheduler.requestAnimationFrame(() => this.#advance());

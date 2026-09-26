@@ -71,9 +71,10 @@ export function validateCurrentMetadataIntegrity(
   metadataText: string,
   expectedHash: string | null,
   migrated: MigratedSnapshot,
+  validation: "canonical" | "safe" = "canonical",
 ): DocumentCodecResult<undefined> {
   if (migrated.sourceVersion !== 1) return { ok: true, value: undefined };
-  if (!canonicalMetadataMatches(metadataText, migrated.snapshot)) {
+  if (validation === "canonical" && !canonicalMetadataMatches(metadataText, migrated.snapshot)) {
     return metadataFailure("invalid-json", "Snapshot metadata is not canonical compact JSON.");
   }
   if (expectedHash === null || metadataSha256(metadataText) !== expectedHash) {

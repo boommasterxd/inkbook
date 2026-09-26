@@ -134,7 +134,7 @@ export class ActiveEditorController {
       controller: options,
       getInput: () => this.#input,
       isSelectionMoveActive: () => this.#input.interaction?.phase === "element-move",
-      renderSelection: () => this.#handles.renderSelection(),
+      renderSelection: () => this.#handles.renderCameraSelection(),
       adoptCursorLayout: (layout) => this.#cursor?.adoptNavigationLayout(layout),
       scrollOwner: this.#scrollOwner,
       setInput: (input) => (this.#input = input),

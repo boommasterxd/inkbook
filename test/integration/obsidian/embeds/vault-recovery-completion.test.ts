@@ -1,6 +1,7 @@
 import type { FileManager, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import * as safeSvg from "../../../../src/persistence/documents/safe-svg-validator";
 import { saveRecoveryCopy } from "../../../../src/obsidian/embeds/vault-document-recovery";
 import { DocumentWorkerRuntime } from "../../../../src/persistence/worker/runtime/public";
 import {
@@ -18,6 +19,7 @@ describe("vault recovery completion", () => {
     const replaceMarkdownTarget = vi.fn(async () => false);
     const executor = new DocumentWorkerRuntime({ sessionId: "session-1", workerEpoch: 1 });
     const sliceBudgetMs = vi.fn(() => 2);
+    const scan = vi.spyOn(safeSvg, "validateSafeSvgSteps");
     const result = await saveRecoveryCopy({
       completion: { replaceMarkdownTarget, reportSavedPath },
       documentId: "drawings/ink.svg",
@@ -51,6 +53,8 @@ describe("vault recovery completion", () => {
     );
     expect(files.has("drawings/ink-recovered-1.svg")).toBe(true);
     expect(sliceBudgetMs).toHaveBeenCalled();
+    expect(scan).not.toHaveBeenCalled();
+    scan.mockRestore();
   });
 
   it("trashes the verified copy when recovery becomes stale during Markdown replacement", async () => {

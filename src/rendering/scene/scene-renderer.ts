@@ -91,7 +91,7 @@ export class SvgSceneRenderer {
       this.#pathCache,
       this.#motion,
       options.onResourceUsageChanged ?? (() => undefined),
-      () => this.#elementPreviews.progressive.memoryUsage() + this.#content.previewMemoryUsage(),
+      () => this.#elementPreviews.memoryUsage() + this.#transformPreviews.memoryUsage(),
     );
     this.#visibilityCoordinator = new SceneVisibilityCoordinator(
       this.#content,
@@ -166,7 +166,7 @@ export class SvgSceneRenderer {
     this.#frameWriter.setCamera(camera);
     this.#transformPreviews.setContext(camera, this.#viewport);
     this.#elementPreviews.refreshProgressiveContext(this.#viewport, camera);
-    this.#visibilityCoordinator.invalidate();
+    this.#visibilityCoordinator.invalidate(true);
     if (zoomChanged) this.#backgroundDirty = true;
     this.#frames.schedule();
   }
@@ -178,13 +178,13 @@ export class SvgSceneRenderer {
     this.#transformPreviews.setContext(this.#camera, viewport);
     this.#elementPreviews.refreshProgressiveContext(viewport, this.#camera);
     this.#layoutDirty = false;
-    this.#visibilityCoordinator.invalidate();
+    this.#visibilityCoordinator.invalidate(true);
     this.#frames.schedule();
   }
-  public invalidateLayout(requestCommit = false, flushCursor = false): void {
+  public invalidateLayout(requestCommit = false): void {
     this.assertActive();
     this.#layoutDirty = true;
-    this.#frameWriter.invalidateCursorLayout(flushCursor);
+    this.#frameWriter.invalidateCursorLayout();
     if (requestCommit) this.#sceneCommits.markPending();
     this.#frames.schedule();
   }
@@ -399,12 +399,12 @@ export class SvgSceneRenderer {
     this.#motion.release();
     this.#deltas.release();
     this.#dom.release();
-    this.#pathCache.release();
     this.#backgroundCache.clear();
     this.#visibility.release();
     this.#content.release();
     this.#transformPreviews.release();
     this.#elementPreviews.release();
+    this.#pathCache.release();
     this.#sceneCommits.release();
   }
   private renderFrame(frameTime: number, scene: boolean): void {
@@ -414,7 +414,7 @@ export class SvgSceneRenderer {
     }
     this.#motion.expireSuppression();
     const startedAt = Number.isFinite(frameTime) ? frameTime : this.#scheduler.now();
-    const deadline = startedAt + runtime.validateFrameBudget(this.#frameBudgetMs());
+    const deadline = this.#scheduler.now() + runtime.validateFrameBudget(this.#frameBudgetMs());
     this.performReadPhase();
     this.#frameWriter.readToolCursor();
     if (this.#previewCommits.releaseCommitted()) {
@@ -443,16 +443,16 @@ export class SvgSceneRenderer {
     this.#frameWriter.livePathCommits.settle(
       (id) => this.#content.hasMounted(id) || !this.#visibility.contains(id),
     );
+    const mountedIds = this.#content.takeNewlyMountedIds();
+    this.#motion.bindMountedEntrances(mountedIds);
+    this.#motion.finishEntranceBatch();
+    this.#elementPreviews.applyMounted(mountedIds);
     if (pendingVisibility) {
       this.#frames.schedule();
       stats.refreshCacheInstrumentation(this.#stats, this.#backgroundCache, this.#pathCache);
       this.#resourcePolicy.notifyUsageChanged();
       return;
     }
-    const mountedIds = this.#content.takeNewlyMountedIds();
-    this.#motion.bindMountedEntrances(mountedIds);
-    this.#motion.finishEntranceBatch();
-    this.#elementPreviews.applyMounted(mountedIds);
     const pendingPreview = this.#elementPreviews.progressive.write(deadline, () =>
       this.#scheduler.now(),
     );
@@ -490,7 +490,7 @@ export class SvgSceneRenderer {
       this.#viewport = viewport;
       this.#transformPreviews.setContext(this.#camera, viewport);
       this.#elementPreviews.refreshProgressiveContext(viewport, this.#camera);
-      this.#visibilityCoordinator.invalidate();
+      this.#visibilityCoordinator.invalidate(true);
     }
     this.#layoutDirty = false;
   }

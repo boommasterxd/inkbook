@@ -1,5 +1,6 @@
 import { TFile, type Vault } from "obsidian";
 
+import { adoptOwnedSvgOutputSync } from "../../persistence/scheduling/owned-svg-output";
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
 import { inspectPreviewSvg, type LoadedPreviewSvg } from "./safe-preview-svg";
 
@@ -10,11 +11,13 @@ const MAXIMUM_ACTIVE_READS = 4;
 const MAXIMUM_QUEUED_READS = 4096;
 
 interface RecognitionEntry {
+  pendingRefresh?: boolean;
   readonly signature: string;
   readonly value: InkbookDocumentRecognition;
 }
 
 interface PendingRecognition {
+  readonly abort: AbortController;
   readonly file: TFile;
   readonly signature: string;
   readonly promise: Promise<InkbookDocumentRecognition>;
@@ -89,7 +92,8 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     const file = this.#resolveFile(documentId);
     if (file === undefined) return false;
     const entry = this.#entries.get(documentId);
-    if (entry === undefined || entry.signature !== fileSignature(file)) return undefined;
+    if (entry === undefined || (!entry.pendingRefresh && entry.signature !== fileSignature(file)))
+      return undefined;
     this.#touch(documentId, entry);
     return entry.value;
   }
@@ -99,7 +103,7 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     if (file === undefined) return Promise.resolve(false);
     const signature = fileSignature(file);
     const current = this.#entries.get(documentId);
-    if (current?.signature === signature) {
+    if (current !== undefined && (current.pendingRefresh || current.signature === signature)) {
       this.#touch(documentId, current);
       return Promise.resolve(current.value);
     }
@@ -111,7 +115,7 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     const promise = new Promise<InkbookDocumentRecognition>((settle) => {
       resolve = settle;
     });
-    const request = { file, signature, promise, resolve };
+    const request = { abort: new AbortController(), file, signature, promise, resolve };
     this.#pending.set(documentId, request);
     this.#queue.set(documentId, request);
     this.#drain();
@@ -126,7 +130,7 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
       const [documentId, request] = next;
       this.#queue.delete(documentId);
       this.#activeReads += 1;
-      void this.#readMarker(request.file, request.signature).then(
+      void this.#readMarker(request).then(
         (value) => this.#complete(documentId, request, value),
         () => this.#complete(documentId, request, false),
       );
@@ -154,6 +158,7 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
   #cancelPending(documentId: string): boolean {
     const request = this.#pending.get(documentId);
     if (request === undefined) return false;
+    request.abort.abort();
     this.#pending.delete(documentId);
     this.#queue.delete(documentId);
     request.resolve(false);
@@ -165,6 +170,50 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     return () => {
       this.#listeners.delete(listener);
     };
+  }
+
+  /** Retain the last safe presentation while the host distinguishes its own write. */
+  public deferRefresh(documentId: string): void {
+    const cancelled = this.#cancelPending(documentId);
+    const entry = this.#entries.get(documentId);
+    if (entry !== undefined) entry.pendingRefresh = true;
+    else if (cancelled) {
+      const file = this.#resolveFile(documentId);
+      if (file !== undefined)
+        this.#entries.set(documentId, {
+          pendingRefresh: true,
+          signature: fileSignature(file),
+          value: false,
+        });
+      this.#evictOverflow();
+    }
+  }
+
+  /** Called only after fresh Vault bytes match a confirmed canonical writer output. */
+  public acceptConfirmedOutput(
+    documentId: string,
+    content: string,
+    outputHash: string,
+    signature: string,
+  ): void {
+    const file = this.#resolveFile(documentId);
+    if (file === undefined) return;
+    if (fileSignature(file) !== signature) {
+      this.invalidate(documentId);
+      return;
+    }
+    const output = adoptOwnedSvgOutputSync(content, outputHash);
+    this.#cancelPending(documentId);
+    this.#deleteEntry(documentId);
+    const value = {
+      aspectRatio: 2048.6 / output.lockedHeight,
+      contentIdentity: { outputHash, revision: output.revision },
+      safeSvg: content,
+    };
+    this.#entries.set(documentId, { signature: fileSignature(file), value });
+    this.#markupCodeUnits += content.length;
+    this.#evictOverflow();
+    this.#notify(documentId);
   }
 
   public invalidate(documentId: string): void {
@@ -181,16 +230,24 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     this.#listeners.clear();
   }
 
-  async #readMarker(file: TFile, signature: string): Promise<InkbookDocumentRecognition> {
+  async #readMarker(request: PendingRecognition): Promise<InkbookDocumentRecognition> {
+    const { file, signature, abort } = request;
+    if (abort.signal.aborted) return false;
     if (this.#resolveFile(file.path) !== file || fileSignature(file) !== signature) return false;
     if (file.stat.size < 0 || file.stat.size > FILE_SCHEMA_LIMITS.totalInputBytes) return false;
     try {
       const content = await this.#vault.cachedRead(file);
       const current = this.#resolveFile(file.path);
-      if (current !== file || fileSignature(current) !== signature) return false;
+      if (abort.signal.aborted || current !== file || fileSignature(current) !== signature)
+        return false;
       const descriptor = recognizeCanonicalInkbookRoot(content);
       if (descriptor === false) return false;
-      const preview = await inspectPreviewSvg(content, undefined, undefined, this.#sliceBudgetMs);
+      const preview = await inspectPreviewSvg(
+        content,
+        undefined,
+        abort.signal,
+        this.#sliceBudgetMs,
+      );
       const confirmed = this.#resolveFile(file.path);
       return preview !== null && confirmed === file && fileSignature(confirmed) === signature
         ? { ...preview, aspectRatio: descriptor.aspectRatio }

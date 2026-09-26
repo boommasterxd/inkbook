@@ -1,5 +1,6 @@
 import { renderBandOf } from "../commands/render-bands";
 import { getCanonicalStrokeReplacementProof } from "../elements/stroke-replacement-proof";
+import { validateRuntimeReplacement } from "../elements/runtime-replacement-validation";
 import { validateRuntimeInkElementV1 } from "../schema/element-validation";
 import type { InkElementV1 } from "../schema/public";
 import { validateInkElementV1 } from "../schema/public";
@@ -272,7 +273,7 @@ function classifyCandidate(
   if (elementsEqual(current.element, element)) return null;
   const domains = classifyReplacement(current.element, element);
   if (domains.length === 0) throw new RangeError("Replacement changed unsupported record fields.");
-  assertValidReplacementElement(current.element, element);
+  if (isConnectable(element)) assertValidReplacementElement(current.element, element);
   assertResolvedConnections(element, lookup);
   return { current, domains: Object.freeze(domains), element };
 }
@@ -364,9 +365,14 @@ export function assertValidReplacementElement(
     current.points instanceof Float64Array &&
     replacement.kind === "stroke" &&
     replacement.points instanceof Float64Array;
-  const result = isOwnedRuntimeStroke
-    ? validateRuntimeInkElementV1(replacement)
-    : validateInkElementV1(replacement);
+  const reusesStrokeSamples =
+    current.kind === "stroke" &&
+    replacement.kind === "stroke" &&
+    current.points === replacement.points;
+  const result =
+    isOwnedRuntimeStroke || reusesStrokeSamples
+      ? validateRuntimeReplacement(current, replacement)
+      : validateInkElementV1(replacement);
   if (!result.ok) throw new RangeError(`Invalid element replacement: ${result.error.code}`);
 }
 

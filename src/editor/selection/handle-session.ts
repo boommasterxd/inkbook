@@ -151,15 +151,9 @@ export class SelectionHandleSession {
     const pointer = this.#currentPointer;
     const materialized = await this.#materializeTimeSliced(scheduler, generation, pointer);
     if (materialized === null) return { status: "cancelled" };
-    const plan = await this.#planner.planReplacementsTimeSliced(materialized, {
-      isCancelled: () => this.#preparationCancelled(scheduler, generation),
-      shouldYield: scheduler.shouldYield,
-      yieldControl: scheduler.yieldControl,
-    });
-    if (plan === "cancelled") return { status: "cancelled" };
-    return plan === null
-      ? { status: "noop" }
-      : { previous: this.#elements, replacements: plan.replacements, status: "ready" };
+    // The model prepares and validates one version-bound transaction before adoption.
+    // Replanning here would repeat sample validation and connection propagation.
+    return { previous: this.#elements, replacements: materialized, status: "ready" };
   }
 
   #createPreview(): SelectionHandlePreview {

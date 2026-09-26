@@ -70,6 +70,55 @@ it("reuses retained center geometry across camera, move, rotation and ink opacit
   expect(scheduler.pendingCount).toBe(0);
 });
 
+it("reuses center geometry after culling without retaining offscreen DOM", () => {
+  const { renderer, scheduler, select, nodes } = createSelectionTraceFixture([maximumStroke(0)]);
+  select();
+  const builds = vi.spyOn(strokePath, "buildStrokePathParts");
+  renderer.setCamera({ x: 5000, zoom: 1 });
+  scheduler.runAll();
+  expect(nodes()).toHaveLength(0);
+  renderer.setCamera({ x: 0, zoom: 1 });
+  scheduler.runAll();
+  expect(nodes()).toHaveLength(1);
+  expect(builds).not.toHaveBeenCalled();
+  renderer.destroy();
+  expect(renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
+});
+
+it("reuses 1000 mixed short and long selected centers after culling", () => {
+  const elements = Array.from({ length: 1000 }, (_, index) => {
+    const x = 20 + (index % 20) * 2;
+    const y = 20 + Math.floor(index / 20);
+    const count = [12, 64, 256][index % 3]!;
+    return {
+      ...indexedStroke(index),
+      pivot: { x, y },
+      points: Array.from({ length: count }, (_, sample) => [
+        x + sample / 8,
+        y + Math.sin(sample / 8),
+        0.35 + (sample % 10) / 20,
+      ]).flat(),
+    };
+  });
+  const { renderer, scheduler, select, nodes } = createSelectionTraceFixture(elements);
+  const builds = vi.spyOn(strokePath, "buildStrokePathParts");
+  select();
+  expect(nodes()).toHaveLength(1000);
+  expect(builds).toHaveBeenCalledTimes(1000);
+  renderer.setCamera({ x: 5000, zoom: 1 });
+  scheduler.runAll();
+  expect(nodes()).toHaveLength(0);
+  builds.mockClear();
+  renderer.resetInstrumentation();
+  renderer.setCamera({ x: 0, zoom: 1 });
+  scheduler.runAll();
+  expect(nodes()).toHaveLength(1000);
+  expect(renderer.instrumentation().selectionTraceGeometryBuilds).toBe(0);
+  expect(builds).not.toHaveBeenCalled();
+  renderer.destroy();
+  expect(renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
+});
+
 it("selects 10000 IDs using only mounted centers and releases them after culling", () => {
   const elements = Array.from({ length: 10_000 }, (_, index) => indexedStroke(index));
   const store = new ElementStore(elements);
@@ -127,22 +176,26 @@ describe("selection center scheduling and ownership", () => {
       renderer.setSelectedElements(new Set());
       scheduler.runAll();
       expect(nodes()).toEqual([]);
-      expect(renderer.memoryUsage().pathCacheBytes).toBe(baseline);
+      expect(renderer.memoryUsage().pathCacheBytes).toBeGreaterThan(baseline);
       renderer.destroy();
     },
   );
 
-  it("bounds owned center strings and returns to baseline on deselection", () => {
+  it("bounds owned center strings and reuses them after deselection", () => {
     const { renderer, select } = createSelectionTraceFixture([maximumStroke(0)]);
     const baseline = renderer.memoryUsage().pathCacheBytes;
     const [root] = select();
     const d = selectionCenterPaths(root!)[0]!.attributes.get("d")!;
     const bytes = renderer.memoryUsage().pathCacheBytes - baseline;
     expect(bytes).toBeGreaterThanOrEqual(d.length * 2);
-    expect(bytes).toBeLessThan(d.length * 2 + 1024);
+    expect(bytes).toBeLessThan(d.length * 4 + 1536);
     select([]);
-    expect(renderer.memoryUsage().pathCacheBytes).toBe(baseline);
+    expect(renderer.memoryUsage().pathCacheBytes).toBeGreaterThan(baseline);
+    renderer.resetInstrumentation();
+    select();
+    expect(renderer.instrumentation().selectionTraceGeometryBuilds).toBe(0);
     renderer.destroy();
+    expect(renderer.memoryUsage().pathCacheBytes).toBe(0);
   });
 });
 

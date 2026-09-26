@@ -19,7 +19,7 @@ import {
   type PresentationAttachment,
   type PresentationSessionPort,
 } from "./presentation-port";
-import { WorkspaceRuntimeLifecycle } from "./workspace-runtime-lifecycle";
+import { type HostWriteResolved, WorkspaceRuntimeLifecycle } from "./workspace-runtime-lifecycle";
 import {
   handleWorkspaceActivationFailure,
   showWorkspaceLoadRecovery,
@@ -300,8 +300,8 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly abortAutoActivation = (documentId: string): void =>
     this.#lifecycle.abortAutoActivation(documentId);
 
-  readonly handleVaultModification = (documentId: string): void =>
-    this.#lifecycle.handleVaultModification(documentId);
+  readonly handleVaultModification = (documentId: string, resolved?: HostWriteResolved): void =>
+    this.#lifecycle.handleVaultModification(documentId, resolved);
   handleMarkdownEditorChange(sourcePath: string, pane: HTMLElement): void {
     if (this.#disposed) return;
     const current = this.#coordinator.getSnapshot().current;

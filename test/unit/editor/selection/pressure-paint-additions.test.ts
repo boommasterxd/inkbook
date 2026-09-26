@@ -77,7 +77,7 @@ describe("shared painted pressure windows", () => {
     expect(windows.size).toBe(0);
     const complete = [
       ...pressurePaintAdditionSteps(centers, target.style.width, { prepared }),
-    ].filter((value) => value !== undefined);
+    ].filter((value) => value !== undefined && typeof value !== "number");
     expect(complete.length).toBeGreaterThan(0);
     expect(windows.size).toBe(1);
     expect(windows.get(0)).toBeDefined();

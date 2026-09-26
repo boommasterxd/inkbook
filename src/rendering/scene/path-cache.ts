@@ -1,3 +1,4 @@
+import { ProgressivePreviewPath } from "./progressive-preview-path";
 import { isStoredStroke } from "../../domain/elements/stroke-replacement-proof";
 import { pressureWindowRetainedBytes } from "../../domain/geometry/pressure-window";
 import type { PressureWindow } from "../../domain/geometry/pressure-window";
@@ -35,10 +36,10 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
     this.#maximumBytes = maximumBytes;
   }
 
-  public build(
+  public read(
     element: InkElementV1,
     pressureGeometry?: PreparedPressureGeometryPort,
-  ): readonly SvgPathPart[] {
+  ): readonly SvgPathPart[] | undefined {
     const prepared =
       element.kind === "stroke" && element.style.pressureEnabled
         ? pressureGeometry?.readPath?.()
@@ -53,6 +54,31 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
       cached.windows?.forEach((window, index) => pressureGeometry?.publishWindow(index, window));
       return cached.parts;
     }
+    return undefined;
+  }
+
+  public startPreparation(
+    element: InkElementV1,
+    pressureGeometry?: PreparedPressureGeometryPort,
+  ): ProgressivePreviewPath {
+    this.recordBuild();
+    return new ProgressivePreviewPath(element, pressureGeometry);
+  }
+
+  public completePreparation(element: InkElementV1, parts: readonly SvgPathPart[]): void {
+    const signature = immutableStrokeSignature(element);
+    if (signature !== undefined && element.kind === "stroke")
+      this.retainShared(element.points, signature, parts, []);
+  }
+
+  public build(
+    element: InkElementV1,
+    pressureGeometry?: PreparedPressureGeometryPort,
+  ): readonly SvgPathPart[] {
+    const cached = this.read(element, pressureGeometry);
+    if (cached !== undefined) return cached;
+    const signature = immutableStrokeSignature(element);
+    const points = element.kind === "stroke" ? element.points : undefined;
     this.recordBuild();
     if (signature === undefined || points === undefined || !this.retentionEnabled)
       return buildElementPathParts(element, pressureGeometry);

@@ -94,7 +94,7 @@ function validateOptionalDecimals(attributes: ReadonlyMap<string, string>): bool
   return opacityValid && (width === undefined || parseCanonicalSvgDecimal(width, 256) !== null);
 }
 
-function* validatePathAttributesSteps(
+export function* validatePathAttributesSteps(
   attributes: ReadonlyMap<string, string>,
   deadlineExceeded?: () => boolean,
 ): Generator<void, number | null> {
@@ -175,14 +175,14 @@ function expectTextElement(
   return end < 0 ? null : { next: end + closing.length, text: input.slice(tag.next, end) };
 }
 
-interface SvgTotals {
+export interface SvgTotals {
   commands: number;
   groups: number;
   pathBytes: number;
   paths: number;
 }
 
-function validPressureGroup(
+export function validPressureGroup(
   tag: NonNullable<ReturnType<typeof parseOpeningTag>>,
   id: string,
   pressurePaths: number | null,
@@ -200,7 +200,7 @@ function validPressureGroup(
   return totals.groups <= FILE_SCHEMA_LIMITS.elements;
 }
 
-function accountPath(totals: SvgTotals, commands: number, pathData: string): boolean {
+export function accountPath(totals: SvgTotals, commands: number, pathData: string): boolean {
   totals.paths += 1;
   totals.commands += commands;
   totals.pathBytes += pathData.length;
@@ -211,7 +211,7 @@ function accountPath(totals: SvgTotals, commands: number, pathData: string): boo
   );
 }
 
-function isBandGroup(tag: ReturnType<typeof parseOpeningTag>, id: string): boolean {
+export function isBandGroup(tag: ReturnType<typeof parseOpeningTag>, id: string): boolean {
   return (
     tag !== null &&
     tag.name === "g" &&

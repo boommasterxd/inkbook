@@ -8,7 +8,7 @@ import type {
   StrokeStyleV1,
 } from "../../domain/schema/public";
 import { canonicalizeUnitIntervalNumber, isRgbaColor } from "../../domain/schema/public";
-import { validateRuntimeInkElementV1 } from "../../domain/schema/element-validation";
+import { validateRuntimeReplacement } from "../../domain/elements/runtime-replacement-validation";
 import type {
   SelectionAreaV1,
   SelectionInclusionV1,
@@ -137,7 +137,7 @@ function changeElement(element: InkElementV1, change: StyleChange): InkElementV1
     case "selection-inclusion":
       throw new RangeError(`${change.property} does not apply to an existing selection.`);
   }
-  const validation = validateRuntimeInkElementV1(result);
+  const validation = validateRuntimeReplacement(element, result);
   if (!validation.ok) throw new RangeError(`${validation.error.path}: ${validation.error.message}`);
   return validation.value;
 }

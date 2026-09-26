@@ -42,8 +42,30 @@ describe("prepared selection preview lifecycle", () => {
     await vi.waitFor(() => expect(motion.cancel).toHaveBeenCalledOnce());
 
     expect(motion.arm).not.toHaveBeenCalled();
-    expect(pageBounds.plan).toHaveBeenCalledOnce();
+    expect(pageBounds.plan).not.toHaveBeenCalled();
     expect(pending).toEqual([true, false]);
+  });
+
+  it("slices a small selection whose samples exceed the synchronous work budget", async () => {
+    const prepareElementReplacement = vi.fn(async () => ({
+      status: "cancelled" as const,
+      token: null,
+    }));
+    const pageBounds = pageBoundsPlanner();
+    const model = {
+      prepareElementReplacement,
+      store: pageBounds.store,
+    } as unknown as EditableDocumentModel;
+    const motion = motionPort();
+    const prepared = createPreparedHistory(model, motion, () => true, []);
+    const elements = Array.from({ length: 2 }, (_, index) => ({
+      ...indexedStroke(index),
+      points: Array.from({ length: 9_000 }, () => [20, 20, 0.5]).flat(),
+    }));
+    expect(prepared.commitMove(elements, { x: 1, y: 1 })).toBe(true);
+    await vi.waitFor(() => expect(motion.cancel).toHaveBeenCalledOnce());
+    expect(prepareElementReplacement).toHaveBeenCalledOnce();
+    expect(motion.arm).not.toHaveBeenCalled();
   });
 
   it("releases an armed handoff when final token adoption is cancelled", async () => {
@@ -66,7 +88,7 @@ describe("prepared selection preview lifecycle", () => {
 
     expect(motion.arm).toHaveBeenCalledOnce();
     expect(motion.arm.mock.calls[0]?.[0]).toHaveLength(1_001);
-    expect(pageBounds.plan).toHaveBeenCalledOnce();
+    expect(pageBounds.plan).not.toHaveBeenCalled();
     expect(commitPreparedElementReplacement).toHaveBeenCalledWith(PREPARED_TOKEN);
     expect(onCompleted).toHaveBeenCalledWith(false);
   });

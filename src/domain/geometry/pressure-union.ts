@@ -284,7 +284,7 @@ function* stitch(
   tolerance: number,
 ): Generator<void, PressureBoundarySegment[][] | undefined> {
   const nodes: Node[] = [];
-  const buckets = new Map<string, number[]>();
+  const buckets = new Map<number, Map<number, number[]>>();
   const edges: Edge[] = [];
   for (const [index, boundary] of boundaries.entries()) {
     const start = nodeFor(boundary.start, nodes, buckets, tolerance);
@@ -334,14 +334,18 @@ function* traceContour(
 function nodeFor(
   point: PointV1,
   nodes: Node[],
-  buckets: Map<string, number[]>,
+  buckets: Map<number, Map<number, number[]>>,
   tolerance: number,
 ): number {
   const x = Math.floor(point.x / tolerance);
   const y = Math.floor(point.y / tolerance);
   for (let dx = -1; dx <= 1; dx += 1) {
+    const column = buckets.get(x + dx);
+    if (column === undefined) continue;
     for (let dy = -1; dy <= 1; dy += 1) {
-      for (const index of buckets.get(`${x + dx},${y + dy}`) ?? []) {
+      const candidates = column.get(y + dy);
+      if (candidates === undefined) continue;
+      for (const index of candidates) {
         const candidate = nodes[index]!.point;
         if (Math.hypot(point.x - candidate.x, point.y - candidate.y) <= tolerance) return index;
       }
@@ -349,9 +353,13 @@ function nodeFor(
   }
   const index = nodes.length;
   nodes.push({ point, outgoing: [], incoming: 0 });
-  const key = `${x},${y}`;
-  const bucket = buckets.get(key);
-  if (bucket === undefined) buckets.set(key, [index]);
+  let column = buckets.get(x);
+  if (column === undefined) {
+    column = new Map();
+    buckets.set(x, column);
+  }
+  const bucket = column.get(y);
+  if (bucket === undefined) column.set(y, [index]);
   else bucket.push(index);
   return index;
 }

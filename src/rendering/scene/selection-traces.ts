@@ -1,5 +1,6 @@
 import type { SvgPathPart } from "../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../domain/schema/public";
+import { SelectionCenterCache } from "./selection-center-cache";
 import { SelectionCenterTrace } from "./selection-center-trace";
 import type { MountedSceneElement } from "./mounted-element";
 import type { MutableSceneInstrumentation } from "./types";
@@ -10,6 +11,7 @@ export class SceneSelectionTraces {
   readonly #frame: SVGPathElement;
   readonly #instrumentation: MutableSceneInstrumentation;
   readonly #traces = new Map<string, SelectionCenterTrace>();
+  readonly #cache = new SelectionCenterCache();
   #bytes = 0;
   #selectionDirty = false;
   #highlightsEnabled = true;
@@ -49,7 +51,7 @@ export class SceneSelectionTraces {
     return true;
   }
   public memoryUsage(): number {
-    return this.#bytes;
+    return this.#bytes + this.#cache.memoryUsage();
   }
   public flushContext(): void {
     if (!this.#selectionDirty) return;
@@ -68,7 +70,7 @@ export class SceneSelectionTraces {
     }
     let trace = this.#traces.get(entry.id);
     if (trace === undefined) {
-      trace = new SelectionCenterTrace(this.#group, entry, this.#instrumentation);
+      trace = new SelectionCenterTrace(this.#group, entry, this.#instrumentation, this.#cache);
       this.#traces.set(entry.id, trace);
       this.#bytes += trace.memoryUsage();
     }
@@ -92,6 +94,7 @@ export class SceneSelectionTraces {
   public release(): void {
     for (const trace of this.#traces.values()) trace.release();
     this.#traces.clear();
+    this.#cache.clear();
     this.#selected = new Set();
     this.#selectionDirty = false;
     this.#bytes = 0;

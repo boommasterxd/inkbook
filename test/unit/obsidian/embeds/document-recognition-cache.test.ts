@@ -68,3 +68,40 @@ it("passes the live workspace budget into recognition validation", async () => {
   expect(forwarded?.()).toBe(2);
   recognition.dispose();
 });
+
+it("aborts an obsolete running inspection before its replacement is published", async () => {
+  const recognition = cacheHarness();
+  let signal: AbortSignal | undefined;
+  vi.mocked(inspectPreviewSvg).mockImplementationOnce((_source, _wait, abort) => {
+    signal = abort;
+    return new Promise((resolve) => abort?.addEventListener("abort", () => resolve(null)));
+  });
+  const pending = recognition.recognize("a.svg");
+  await Promise.resolve();
+  expect(signal?.aborted).toBe(false);
+  recognition.invalidate("a.svg");
+  expect(signal?.aborted).toBe(true);
+  await expect(pending).resolves.toBe(false);
+  vi.mocked(inspectPreviewSvg).mockResolvedValueOnce(previewWithSize(1));
+  expect(await recognition.recognize("a.svg")).not.toBe(false);
+  recognition.dispose();
+});
+
+it("settles deferred first recognition and permits external revalidation", async () => {
+  const recognition = cacheHarness();
+  const changed = vi.fn();
+  recognition.subscribe(changed);
+  vi.mocked(inspectPreviewSvg).mockImplementationOnce(
+    (_source, _wait, signal) =>
+      new Promise((resolve) => signal?.addEventListener("abort", () => resolve(null))),
+  );
+  const obsolete = recognition.recognize("a.svg");
+  await Promise.resolve();
+  recognition.deferRefresh("a.svg");
+  await expect(obsolete).resolves.toBe(false);
+  recognition.invalidate("a.svg");
+  expect(changed).toHaveBeenCalledOnce();
+  vi.mocked(inspectPreviewSvg).mockResolvedValueOnce(previewWithSize(1));
+  expect(await recognition.recognize("a.svg")).not.toBe(false);
+  recognition.dispose();
+});

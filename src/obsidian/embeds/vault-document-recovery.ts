@@ -13,7 +13,7 @@ import type {
   DocumentRuntimePort,
   DocumentRuntimeResult,
 } from "../../persistence/worker/runtime/public";
-import { inspectTrustedSvgOutput } from "../../persistence/scheduling/trusted-svg-output";
+import { adoptOwnedSvgOutput } from "../../persistence/scheduling/owned-svg-output";
 import type { TrustedDocumentHeadPort } from "../storage/trusted-document-head-ledger";
 import {
   deriveDocumentIntegrityManifest,
@@ -137,10 +137,13 @@ export async function saveRecoveryCopy(options: SaveRecoveryCopyOptions): Promis
   try {
     const exported = await exportRecovery(options);
     if (exported === null) return failed(options.operation);
-    const trusted = await inspectTrustedSvgOutput(exported.output, exported.outputHash, {
+    const trusted = await adoptOwnedSvgOutput(exported.output, exported.outputHash, {
       ...(options.sliceBudgetMs === undefined ? {} : { sliceBudgetMs: options.sliceBudgetMs }),
     });
-    if (trusted.snapshotHash !== exported.integrityManifest.contentDigest) {
+    if (
+      trusted.revision !== exported.modelRevision ||
+      trusted.snapshotHash !== exported.integrityManifest.contentDigest
+    ) {
       return failed(options.operation);
     }
     const output = trusted.content;

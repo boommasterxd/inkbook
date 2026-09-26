@@ -91,7 +91,7 @@ export class ActiveInkbookScene {
     this.#container = elements.container;
     this.#editorChrome = elements.editorChrome;
     this.#previewHandoff = initial.handoff;
-    this.#memory = new ActiveSceneMemoryBinding(options.model.store);
+    this.#memory = new ActiveSceneMemoryBinding(options.model);
     this.#store = this.#memory.store;
     this.#lockDelay = new ActiveSceneTimeout(ownerWindow);
 
