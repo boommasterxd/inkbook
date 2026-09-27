@@ -4,6 +4,19 @@ import { SharedFrameScheduler } from "../../../../src/domain/scheduling/shared-f
 import { SchedulerDisposedError } from "../../../../src/domain/scheduling/work-scheduler";
 import { ManualHost } from "../../../fixtures/scheduling/manual-frame-host";
 
+function queuedPriorityScenario(inputEndTime: number, includeFrame: boolean) {
+  const host = new ManualHost();
+  const scheduler = new SharedFrameScheduler(host);
+  const order: string[] = [];
+  scheduler.requestFrame(() => order.push("background"), "background");
+  if (includeFrame) scheduler.requestFrame(() => order.push("frame"));
+  scheduler.requestFrame(() => {
+    order.push("input");
+    host.time = inputEndTime;
+  }, "input");
+  return { host, scheduler, order };
+}
+
 describe("SharedFrameScheduler", () => {
   it("shares one deadline and defers competing callbacks after the first consumes it", () => {
     const host = new ManualHost();
@@ -88,7 +101,7 @@ describe("SharedFrameScheduler", () => {
 
 describe("SharedFrameScheduler admission policy", () => {
   it.each([0, 5])(
-    "keeps the first native rAF in its synchronous epoch at timestamp %i ms",
+    "does not renew a spent synchronous epoch at native timestamp %i ms",
     (timestamp) => {
       const host = new ManualHost();
       const scheduler = new SharedFrameScheduler(host);
@@ -98,7 +111,7 @@ describe("SharedFrameScheduler admission policy", () => {
       scheduler.requestFrame(run);
       scheduler.requestFrame(run);
       host.frame(timestamp);
-      expect(run).toHaveBeenCalledOnce();
+      expect(run).not.toHaveBeenCalled();
       expect(scheduler.deadline()).toBe(4);
       host.timer(0);
       host.time = 7;
@@ -108,20 +121,39 @@ describe("SharedFrameScheduler admission policy", () => {
     },
   );
 
-  it("does not grant another indivisible job after synchronous exhaustion was observed", () => {
+  it.each(["deadline-only", "observed-exhaustion"] as const)(
+    "does not grant a peer after %s synchronous work spends its budget",
+    (mode) => {
+      const host = new ManualHost();
+      const scheduler = new SharedFrameScheduler(host);
+      host.time = scheduler.deadline();
+      if (mode === "observed-exhaustion") expect(scheduler.shouldYield()).toBe(true);
+      const run = vi.fn();
+      scheduler.requestFrame(run);
+      host.time = 5;
+      host.frame(5);
+      expect(run).not.toHaveBeenCalled();
+      host.timer(0);
+      host.time = 8;
+      host.frame(8);
+      expect(run).toHaveBeenCalledOnce();
+      scheduler.dispose();
+    },
+  );
+
+  it("does not treat a backward first native timestamp as a new budget", () => {
     const host = new ManualHost();
+    host.time = 2;
     const scheduler = new SharedFrameScheduler(host);
     scheduler.deadline();
-    host.time = 4;
-    expect(scheduler.shouldYield()).toBe(true);
+    host.time = 6;
     const run = vi.fn();
     scheduler.requestFrame(run);
-    host.time = 5;
-    host.frame(5);
+    host.frame(0);
     expect(run).not.toHaveBeenCalled();
     host.timer(0);
-    host.time = 8;
-    host.frame(8);
+    host.time = 10;
+    host.frame(10);
     expect(run).toHaveBeenCalledOnce();
     scheduler.dispose();
   });
@@ -151,15 +183,7 @@ describe("SharedFrameScheduler admission policy", () => {
 
 describe("SharedFrameScheduler priorities", () => {
   it("admits input before older background work and then uses remaining time", () => {
-    const host = new ManualHost();
-    const scheduler = new SharedFrameScheduler(host);
-    const order: string[] = [];
-    scheduler.requestFrame(() => order.push("background"), "background");
-    scheduler.requestFrame(() => order.push("frame"));
-    scheduler.requestFrame(() => {
-      order.push("input");
-      host.time = 1;
-    }, "input");
+    const { host, scheduler, order } = queuedPriorityScenario(1, true);
     host.frame();
     expect(order).toEqual(["input", "frame", "background"]);
     expect(host.pendingFrames).toBe(0);
@@ -167,14 +191,7 @@ describe("SharedFrameScheduler priorities", () => {
   });
 
   it("defers background work after input spends the shared budget", () => {
-    const host = new ManualHost();
-    const scheduler = new SharedFrameScheduler(host);
-    const order: string[] = [];
-    scheduler.requestFrame(() => order.push("background"), "background");
-    scheduler.requestFrame(() => {
-      order.push("input");
-      host.time = 4;
-    }, "input");
+    const { host, scheduler, order } = queuedPriorityScenario(4, false);
     host.frame();
     expect(order).toEqual(["input"]);
     host.timer(0);

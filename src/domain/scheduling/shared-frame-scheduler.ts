@@ -193,12 +193,15 @@ export class SharedFrameScheduler implements WorkScheduler {
     if (
       nativeAdvance ||
       previous === undefined ||
-      timestamp < previous ||
-      timestamp - previous + FRAME_TIMESTAMP_EPSILON_MS >=
-        positiveFinite(this.#host.frameIntervalMs(), "frameIntervalMs")
+      (timestamp >= previous &&
+        timestamp - previous + FRAME_TIMESTAMP_EPSILON_MS >=
+          positiveFinite(this.#host.frameIntervalMs(), "frameIntervalMs"))
     ) {
       this.#epochStart = timestamp;
       this.#admittedThisEpoch = false;
+    } else if (this.now() >= previous + this.budgetMs()) {
+      // A synchronous caller may have spent the epoch without a final checkpoint.
+      this.#admittedThisEpoch = true;
     }
     if (nativeFrame) this.#lastNativeFrameTimestamp = timestamp;
     this.#markTaskOpen();
