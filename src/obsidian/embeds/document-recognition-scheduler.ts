@@ -1,4 +1,5 @@
 import type { FrameCancellation, WorkScheduler } from "../../domain/scheduling/work-scheduler";
+import { createWindowSchedulerForwarding } from "../performance/window-scheduler-forwarding";
 
 /** Routes a single shared inspection through the current requester's window budget. */
 export function createRecognitionWorkScheduler(
@@ -6,9 +7,6 @@ export function createRecognitionWorkScheduler(
   transferSignal: () => AbortSignal,
   cancellation: AbortSignal,
 ): WorkScheduler {
-  const frames = new Map<number, { scheduler: WorkScheduler; handle: number }>();
-  let nextHandle = 0;
-
   const wait = (
     run: (scheduler: WorkScheduler, signal: FrameCancellation) => Promise<void> | undefined,
     callerSignal?: FrameCancellation,
@@ -53,28 +51,7 @@ export function createRecognitionWorkScheduler(
   };
 
   return {
-    now: () => current().now(),
-    deadline: () => current().deadline(),
-    budgetMs: () => current().budgetMs(),
-    shouldYield: () => current().shouldYield(),
-    requestFrame: (callback, priority) => {
-      const scheduler = current();
-      const handle = ++nextHandle;
-      frames.set(handle, {
-        scheduler,
-        handle: scheduler.requestFrame((time) => {
-          frames.delete(handle);
-          callback(time);
-        }, priority),
-      });
-      return handle;
-    },
-    cancelFrame: (handle) => {
-      const frame = frames.get(handle);
-      if (frame === undefined) return;
-      frames.delete(handle);
-      frame.scheduler.cancelFrame(frame.handle);
-    },
+    ...createWindowSchedulerForwarding(current),
     checkpoint: (signal) => {
       cancellation.throwIfAborted();
       if (signal !== undefined) {
@@ -89,9 +66,5 @@ export function createRecognitionWorkScheduler(
     nextFrame: (signal, priority) =>
       wait((scheduler, active) => scheduler.nextFrame(active, priority), signal) ??
       Promise.resolve(),
-    dispose: () => {
-      for (const frame of frames.values()) frame.scheduler.cancelFrame(frame.handle);
-      frames.clear();
-    },
   };
 }

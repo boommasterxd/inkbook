@@ -40,7 +40,8 @@ a checkpoint without an unconditional frame wait.
 Preserve bounded work units, frame publication caps, input-priority gates,
 transaction generations, and cancellation checks. Detached preview preparation
 quanta recheck the shared deadline without forcing a new frame while budget
-remains; only visible publication caps carry a frame dependency. Selection-query
+remains; only actual paint dependencies or visible publication caps require a new
+frame. Selection-query
 and eraser-finalization work quanta likewise recheck cancellation and the shared
 deadline without forcing a new frame while budget remains. An atomic native operation
 cannot be interrupted by this policy. Semantic gesture delays, animation

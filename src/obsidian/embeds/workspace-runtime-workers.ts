@@ -2,7 +2,6 @@ import {
   FRAME_WORK_SHARE,
   SchedulerDisposedError,
   type FrameCancellation,
-  type WorkPriority,
   type WorkScheduler,
 } from "../../domain/scheduling/work-scheduler";
 import {
@@ -16,6 +15,7 @@ import {
   isWindowTimeoutHandle,
   type WindowTimeoutHandle,
 } from "./workspace-runtime-lifecycle";
+import { createWindowSchedulerForwarding } from "../performance/window-scheduler-forwarding";
 
 interface WorkspaceRuntimeWindowPorts {
   readonly fallbackWindow: () => Window | undefined;
@@ -85,8 +85,7 @@ export function createWorkspaceDocumentRuntimes(
 
 /** A document may move between windows while retaining its worker and dirty model. */
 function createDocumentScheduler(current: () => WorkScheduler): WorkScheduler {
-  const frames = new Map<number, { scheduler: WorkScheduler; handle: number }>();
-  let nextHandle = 0;
+  const forwarding = createWindowSchedulerForwarding(current);
   let disposed = false;
   const resumeAfterTransfer = (
     error: unknown,
@@ -100,26 +99,7 @@ function createDocumentScheduler(current: () => WorkScheduler): WorkScheduler {
     return resume(replacement);
   };
   return {
-    now: () => current().now(),
-    deadline: () => current().deadline(),
-    budgetMs: () => current().budgetMs(),
-    shouldYield: () => current().shouldYield(),
-    requestFrame: (callback, priority?: WorkPriority) => {
-      const scheduler = current();
-      const handle = ++nextHandle;
-      const scheduled = scheduler.requestFrame((timestamp) => {
-        frames.delete(handle);
-        callback(timestamp);
-      }, priority);
-      frames.set(handle, { scheduler, handle: scheduled });
-      return handle;
-    },
-    cancelFrame: (handle) => {
-      const frame = frames.get(handle);
-      if (frame === undefined) return;
-      frames.delete(handle);
-      frame.scheduler.cancelFrame(frame.handle);
-    },
+    ...forwarding,
     checkpoint: (signal) => {
       const original = current();
       return original.checkpoint(signal)?.catch(async (error: unknown) => {
@@ -128,7 +108,7 @@ function createDocumentScheduler(current: () => WorkScheduler): WorkScheduler {
         );
       });
     },
-    nextFrame: (signal, priority?: WorkPriority) => {
+    nextFrame: (signal, priority) => {
       const original = current();
       return original.nextFrame(signal, priority).catch(async (error: unknown) => {
         await resumeAfterTransfer(error, original, signal, (replacement) =>
@@ -138,8 +118,7 @@ function createDocumentScheduler(current: () => WorkScheduler): WorkScheduler {
     },
     dispose: () => {
       disposed = true;
-      for (const frame of frames.values()) frame.scheduler.cancelFrame(frame.handle);
-      frames.clear();
+      forwarding.dispose();
     },
   };
 }
