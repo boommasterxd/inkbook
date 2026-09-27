@@ -28,7 +28,7 @@ export async function verifyVaultUnlockIntegrity(options: {
     )
       throw divergence();
     ranks[band] += 1;
-    if ((index + 1) % 2048 === 0 || scheduler.shouldYield()) await checkpoint();
+    if (scheduler.shouldYield()) await checkpoint();
   }
   if (scheduler.isCancelled?.()) throw new Error("Unlock integrity verification cancelled.");
 }

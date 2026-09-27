@@ -35,7 +35,10 @@ it("builds ten thousand detached paths with bounded DOM writes between checkpoin
       checkpoints += 1;
       observe();
     },
-    workScheduler: immediateWorkScheduler(),
+    workScheduler: {
+      ...immediateWorkScheduler(),
+      shouldYield: () => create.mock.calls.length - previous[0]! >= 256,
+    },
     isCancelled: () => false,
   });
   observe();
@@ -78,7 +81,10 @@ it("scans a maximum-size validated path incrementally before the atomic attribut
       scanSizes.length = 0;
       if (!attributes.mock.calls.some(([name]) => name === "d")) beforePathCheckpoints += 1;
     },
-    workScheduler: immediateWorkScheduler(),
+    workScheduler: {
+      ...immediateWorkScheduler(),
+      shouldYield: () => scannedUnits >= 256 * 1024,
+    },
     isCancelled: () => false,
   });
   expect(beforePathCheckpoints).toBeGreaterThanOrEqual(32);
@@ -102,7 +108,7 @@ it("completes a small preview in its initial bounded slice without continuation 
   expect(svg?.isConnected).toBe(false);
 });
 
-it("keeps multiple detached DOM work quanta in the current shared budget", async () => {
+it("builds beyond former detached DOM quotas without redundant handoffs while budget remains", async () => {
   const create = vi.spyOn(document, "createElementNS");
   const checkpoint = vi.fn(() => undefined);
   const nextFrame = vi.fn(async () => {});
@@ -118,7 +124,7 @@ it("keeps multiple detached DOM work quanta in the current shared budget", async
     },
   );
   expect(create).toHaveBeenCalledTimes(1_025);
-  expect(checkpoint.mock.calls.length).toBeGreaterThan(4);
+  expect(checkpoint).toHaveBeenCalledOnce();
   expect(nextFrame).not.toHaveBeenCalled();
   expect(svg?.isConnected).toBe(false);
   scheduler.dispose();
@@ -158,7 +164,7 @@ it("waits for central admission when actual DOM creation exhausts the budget", a
     isCancelled: () => false,
   });
   await vi.waitFor(() => expect(created).toBe(300));
-  expect(checkpoint).toHaveBeenCalledTimes(3);
+  expect(checkpoint).toHaveBeenCalledTimes(2);
   expect(nextFrame).not.toHaveBeenCalled();
   release();
   const svg = await pending;

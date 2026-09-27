@@ -4,8 +4,6 @@ import { configurePreviewSvg } from "./safe-preview-svg";
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const SCAN_UNITS = 16 * 1024;
-const ELEMENTS_PER_SLICE = 256;
-const SCAN_UNITS_PER_SLICE = 256 * 1024;
 
 interface PreviewBuildOptions {
   readonly checkpoint: (initial?: boolean) => Promise<void>;
@@ -19,25 +17,13 @@ export async function createPreviewSvgAsync(
   safeSvg: string,
   options: PreviewBuildOptions,
 ): Promise<SVGSVGElement | undefined> {
-  let scannedUnits = 0;
-  let elements = 0;
-  const exhausted = (units = 0, created = false): boolean => {
-    scannedUnits += units;
-    if (created) elements += 1;
-    return (
-      scannedUnits >= SCAN_UNITS_PER_SLICE ||
-      elements >= ELEMENTS_PER_SLICE ||
-      options.workScheduler.shouldYield()
-    );
-  };
+  const exhausted = (): boolean => options.workScheduler.shouldYield();
   const steps = buildPreviewSteps(ownerDocument, safeSvg, exhausted);
   let initial = true;
   while (true) {
     await options.checkpoint(initial);
     initial = false;
     if (options.isCancelled()) return undefined;
-    scannedUnits = 0;
-    elements = 0;
     const step = steps.next();
     if (step.done) return step.value;
   }
@@ -47,12 +33,12 @@ function* findToken(
   input: string,
   token: string,
   start: number,
-  exhausted: (units?: number, created?: boolean) => boolean,
+  exhausted: () => boolean,
 ): Generator<void, number> {
   for (let cursor = start; cursor < input.length; cursor += SCAN_UNITS) {
     const chunk = input.slice(cursor, cursor + SCAN_UNITS + token.length - 1);
     const offset = chunk.indexOf(token);
-    if (exhausted(offset < 0 ? chunk.length : offset + token.length)) yield;
+    if (exhausted()) yield;
     if (offset >= 0) return cursor + offset;
   }
   throw new Error("The validated Inkbook preview has incomplete markup.");
@@ -75,7 +61,7 @@ function appendElement(ownerDocument: Document, markup: string, parents: Element
 function* buildPreviewSteps(
   ownerDocument: Document,
   safeSvg: string,
-  exhausted: (units?: number, created?: boolean) => boolean,
+  exhausted: () => boolean,
 ): Generator<void, SVGSVGElement> {
   const parents: Element[] = [];
   let root: SVGSVGElement | undefined;
@@ -97,7 +83,7 @@ function* buildPreviewSteps(
     }
     const element = appendElement(ownerDocument, markup, parents);
     root ??= element as SVGSVGElement;
-    if (exhausted(0, true)) yield;
+    if (exhausted()) yield;
   }
   if (root?.localName !== "svg" || parents.length !== 0) {
     throw new Error("The validated Inkbook preview did not produce a complete SVG root.");

@@ -69,7 +69,10 @@ it("bounds element creation and cancels a partially built detached tree", async 
       previous = create.mock.calls.length;
       checkpoints += 1;
     },
-    workScheduler: immediateWorkScheduler(),
+    workScheduler: {
+      ...immediateWorkScheduler(),
+      shouldYield: () => create.mock.calls.length - previous >= 256,
+    },
     isCancelled: () => checkpoints === 5,
   });
   expect(result).toBeUndefined();
@@ -80,12 +83,16 @@ it("yields during long metadata scanning before constructing content", async () 
   const source = "<svg><metadata>" + "x".repeat(1024 * 1024) + '</metadata><path d="M0 0"/></svg>';
   const create = vi.spyOn(document, "createElementNS");
   let checkpoints = 0;
+  let scans = 0;
   expect(
     await createPreviewSvgAsync(document, source, {
       checkpoint: async () => {
         checkpoints += 1;
       },
-      workScheduler: immediateWorkScheduler(),
+      workScheduler: {
+        ...immediateWorkScheduler(),
+        shouldYield: () => ++scans % 16 === 0,
+      },
       isCancelled: () => checkpoints === 4,
     }),
   ).toBeUndefined();
