@@ -116,7 +116,7 @@ function setup(element: InkElementV1) {
     container: asElement(new FakeNode(document, "div")),
     layout: { readViewport: () => ({ height: 1200, left: 0, top: 0, width: 2048.6 }) },
     page: snapshot.page,
-    scheduler,
+    workScheduler: scheduler.workScheduler,
     store,
   });
   renderer.setPage(snapshot.page, 1200);

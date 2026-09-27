@@ -1,4 +1,5 @@
 import type { MotionPreference } from "../../rendering/motion/transitions";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { applyColorScheme, type ColorSchemeBroadcaster } from "../theme/color-scheme";
 import { PresentationOperationFeedback } from "./presentation-operation-feedback";
 
@@ -20,6 +21,7 @@ export function createLoadingPlaceholder(
     readonly onHeight?: (height: number) => void;
     readonly scheme: ColorSchemeBroadcaster;
     readonly startedAt?: number;
+    readonly workScheduler: WorkScheduler;
   },
 ): LoadingPlaceholder {
   const element = host.createDiv({
@@ -31,7 +33,7 @@ export function createLoadingPlaceholder(
   const releaseScheme = options.scheme.subscribe((scheme) => applyColorScheme(element, scheme));
   const ownerWindow = element.ownerDocument.defaultView;
   const startedAt = options.startedAt ?? ownerWindow?.performance?.now() ?? performance.now();
-  const feedback = new PresentationOperationFeedback(element);
+  const feedback = new PresentationOperationFeedback(element, undefined, options.workScheduler);
   feedback.begin("loading", startedAt);
   return {
     element,

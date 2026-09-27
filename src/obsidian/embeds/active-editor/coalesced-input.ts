@@ -2,6 +2,7 @@ import type { GesturePreview } from "../../../editor/gestures/public";
 import type { GesturePreviewStart } from "../../../editor/gestures/public";
 import { isValidPointerSample, type PointerSample } from "../../../editor/input/index";
 import { hasPenContact } from "../../../editor/input/pointer-validation";
+import type { WorkPriority } from "../../../domain/scheduling/work-scheduler";
 
 // A frame batch is bounded independently of the lifetime capacity of one stroke.
 const MAX_COALESCED_SAMPLES = 4096;
@@ -21,8 +22,8 @@ export interface CoalescedFramePreview extends CoalescedGesturePreview {
 }
 
 export interface CoalescedFrameScheduler {
-  cancelAnimationFrame(handle: number): void;
-  requestAnimationFrame(callback: FrameRequestCallback): number;
+  cancelFrame(handle: number): void;
+  requestFrame(callback: FrameRequestCallback, priority?: WorkPriority): number;
 }
 
 function updateGesturePreview(
@@ -205,11 +206,11 @@ class CoalescedPreviewFrame {
     if (this.#frameHandle !== undefined) return;
     let completedSynchronously = false;
     let handle = 0;
-    handle = this.#scheduler.requestAnimationFrame(() => {
+    handle = this.#scheduler.requestFrame(() => {
       completedSynchronously = true;
       if (this.#frameHandle === handle) this.#frameHandle = undefined;
       this.#publish();
-    });
+    }, "input");
     if (!completedSynchronously) this.#frameHandle = handle;
   }
 
@@ -225,7 +226,7 @@ class CoalescedPreviewFrame {
 
   #cancelFrame(): void {
     if (this.#frameHandle === undefined) return;
-    this.#scheduler?.cancelAnimationFrame(this.#frameHandle);
+    this.#scheduler?.cancelFrame(this.#frameHandle);
     this.#frameHandle = undefined;
   }
 

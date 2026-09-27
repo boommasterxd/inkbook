@@ -1,4 +1,5 @@
 import type { InkbookDeviceSettingsV2 } from "../../domain/settings/types";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 
 import type { PresentationAttachment } from "./presentation-port";
 import { PresentationOperationFeedback } from "./presentation-operation-feedback";
@@ -7,12 +8,15 @@ import type { WorkspaceRuntimeLifecycle } from "./workspace-runtime-lifecycle";
 
 export function createWorkspaceMountedPresentation(
   attachment: PresentationAttachment,
+  workScheduler: WorkScheduler,
 ): WorkspaceMountedPresentation {
   return {
     attachment,
     disposeScheme: undefined,
-    feedback: new PresentationOperationFeedback(attachment.root, () =>
-      attachment.initialEntrance?.showLoading(),
+    feedback: new PresentationOperationFeedback(
+      attachment.root,
+      () => attachment.initialEntrance?.showLoading(),
+      workScheduler,
     ),
     loadError: undefined,
     recovery: undefined,
@@ -63,5 +67,19 @@ export function updateWorkspaceMountedSettings(
   for (const mounted of presentations) {
     mounted.attachment.root.dataset.inkbookMotion = settings.motion;
     mounted.scene?.updateDeviceSettings(settings);
+  }
+}
+
+export function disposeWorkspaceMountedPresentations(
+  presentations: Iterable<WorkspaceMountedPresentation>,
+): void {
+  for (const mounted of presentations) {
+    mounted.disposeScheme?.();
+    mounted.activation?.release();
+    mounted.feedback.dispose();
+    mounted.loadError?.close();
+    mounted.recovery?.close();
+    mounted.scene?.dispose();
+    mounted.attachment.root.dataset.inkbookState = "locked";
   }
 }

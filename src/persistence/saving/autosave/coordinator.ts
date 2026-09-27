@@ -69,7 +69,7 @@ export class AutosaveCoordinator {
       this.#timer.schedule(AUTOSAVE_DELAY_MS);
     }
     this.#verifier = new AutosavePersistedOutputVerifier({
-      ...(options.sliceBudgetMs ? { sliceBudgetMs: options.sliceBudgetMs } : {}),
+      workScheduler: options.workScheduler,
       ...(options.waitForBackground ? { waitForBackground: options.waitForBackground } : {}),
       executor: () => this.#executor,
       isDisposed: () => this.#disposed,
@@ -368,7 +368,7 @@ export class AutosaveCoordinator {
       const trusted = await integrity.inspectIntegrityBoundExport(
         result,
         this.#integrity.waitForBackground,
-        this.#integrity.sliceBudgetMs,
+        this.#integrity.workScheduler,
       );
       active.result = null;
       if (this.#disposed) return;
@@ -392,9 +392,6 @@ export class AutosaveCoordinator {
         prepared,
         revisionSource: {
           currentRevision: () => this.#document.currentRevision(),
-          ...(this.#integrity.sliceBudgetMs
-            ? { sliceBudgetMs: this.#integrity.sliceBudgetMs }
-            : {}),
           ...(this.#integrity.waitForBackground
             ? { waitForBackground: this.#integrity.waitForBackground }
             : {}),

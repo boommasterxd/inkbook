@@ -1,3 +1,4 @@
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { nextSafeCounter } from "../../worker/identity";
 import type {
   PurposeOperationIdentity,
@@ -11,7 +12,7 @@ import { verifyExactWorkerContent } from "./trusted-verification";
 type VerificationPurpose = "preflight" | "read-back" | "verification";
 
 interface AutosaveVerifierOptions {
-  readonly sliceBudgetMs?: () => number;
+  readonly workScheduler: WorkScheduler;
   readonly waitForBackground?: () => Promise<void>;
   readonly executor: () => DocumentRuntimePort;
   readonly isDisposed: () => boolean;
@@ -44,10 +45,10 @@ export class AutosavePersistedOutputVerifier {
         content,
         purpose === "read-back" ? "current" : "editable",
         {
+          workScheduler: this.#options.workScheduler,
           ...(this.#options.waitForBackground
             ? { waitForBackground: this.#options.waitForBackground }
             : {}),
-          ...(this.#options.sliceBudgetMs ? { sliceBudgetMs: this.#options.sliceBudgetMs } : {}),
           ...(confirmedBase ? { confirmedBase } : {}),
         },
       );

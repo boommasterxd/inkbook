@@ -16,6 +16,7 @@ import {
 } from "../../../src/persistence/worker/runtime/wire-codec";
 import { assertResultMatchesRequest } from "../../../src/persistence/worker/runtime/request-result-validation";
 import { createStandardPersistenceFixture } from "./fixtures";
+import { immediateWorkScheduler } from "../../fixtures/obsidian/immediate-work-scheduler";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -117,7 +118,9 @@ async function confirmHostWrite(content: string, outputHash: string): Promise<vo
     read: async () => content,
     getResourcePath: () => path,
   } as unknown as Vault;
-  const recognition = new ObsidianInkbookDocumentRecognition(vault);
+  const recognition = new ObsidianInkbookDocumentRecognition(vault, {
+    workScheduler: immediateWorkScheduler(),
+  });
   recognition.acceptConfirmedOutput(
     path,
     content,
@@ -141,6 +144,7 @@ async function confirmHostWrite(content: string, outputHash: string): Promise<vo
     presentations: () => [],
     reloadPresentation: () => {},
     notifyExternalChange: notify,
+    workScheduler: () => immediateWorkScheduler(),
     vault,
   });
   recognition.deferRefresh(path);

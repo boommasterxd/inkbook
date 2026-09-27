@@ -8,6 +8,7 @@ import type { InputState } from "../../../src/editor/input/index";
 import type { BrowserScrollElement } from "../../../src/obsidian/scrolling/index";
 import type { SvgSceneRenderer } from "../../../src/rendering/scene/index";
 import { domRect } from "../../fixtures/obsidian/active-editor";
+import { workSchedulerFromFrames } from "../../fixtures/obsidian/work-scheduler";
 
 interface NavigationProfileApi {
   readonly ActiveEditorNavigation: typeof import("../../../src/obsidian/embeds/active-editor/navigation").ActiveEditorNavigation;
@@ -137,6 +138,7 @@ function buildNavigationHarness(api: NavigationProfileApi, refreshRate: number) 
     ownerDocument,
   } as unknown as HTMLElement;
   const navigation = new ActiveEditorNavigation({
+    workScheduler: workSchedulerFromFrames(frames.window),
     onNavigationActive: (active) => activity.push(active),
     activePageHeight: () => 2_000,
     applyZoomLayout: ({ blockSize }) => {

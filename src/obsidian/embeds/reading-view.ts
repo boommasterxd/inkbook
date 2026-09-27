@@ -121,9 +121,7 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
     const preview = createInkbookLockedPreview(
       button,
       previewDescriptor,
-      ports.sliceBudgetMs === undefined
-        ? undefined
-        : () => ports.sliceBudgetMs!(button.ownerDocument.defaultView),
+      ports.workScheduler(button.ownerDocument.defaultView),
       { documentId: candidate.resolved.documentId, documents: ports.documents },
     );
     super(candidate.host);
@@ -174,6 +172,7 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
         setAspectRatio: preview.setAspectRatio,
         setSource: preview.setSource,
       },
+      ports.workScheduler(root.ownerDocument.defaultView),
     );
   }
 
@@ -244,6 +243,7 @@ class PendingReadingRenderChild extends MarkdownRenderChild {
     this.#loading = createLoadingPlaceholder(host, {
       motion: ports.sessions.getMotionPreference?.() ?? "system",
       scheme: ports.scheme,
+      workScheduler: ports.workScheduler(host.ownerDocument.defaultView),
     });
     this.placeholder = this.#loading.element;
     host.replaceChildren(this.placeholder);

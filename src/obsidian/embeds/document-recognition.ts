@@ -3,6 +3,7 @@ import { TFile, type Vault } from "obsidian";
 import { adoptOwnedSvgOutputSync } from "../../persistence/scheduling/owned-svg-output";
 import type { MetadataGuardedFileRead } from "../../persistence/saving/save-ports";
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { samePreviewContentIdentity, type PreviewContentIdentity } from "./safe-preview-svg";
 import { inspectPreviewSvg, type LoadedPreviewSvg } from "./safe-preview-svg";
 
@@ -76,18 +77,18 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
   #activeReads = 0;
   #markupCodeUnits = 0;
   #layoutReady: boolean;
-  readonly #sliceBudgetMs: (() => number) | undefined;
+  readonly #workScheduler: WorkScheduler;
   #disposed = false;
 
   public constructor(
     vault: Vault,
     options: {
       readonly deferUntilLayoutReady?: boolean;
-      readonly sliceBudgetMs?: () => number;
-    } = {},
+      readonly workScheduler: WorkScheduler;
+    },
   ) {
     this.#vault = vault;
-    this.#sliceBudgetMs = options.sliceBudgetMs;
+    this.#workScheduler = options.workScheduler;
     this.#layoutReady = options.deferUntilLayoutReady !== true;
   }
 
@@ -313,12 +314,12 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
         return false;
       const descriptor = recognizeCanonicalInkbookRoot(content);
       if (descriptor === false) return false;
-      const preview = await inspectPreviewSvg(
-        content,
-        () => Promise.all(Array.from(request.gates, (gate) => gate())).then(() => undefined),
-        abort.signal,
-        this.#sliceBudgetMs,
-      );
+      const preview = await inspectPreviewSvg(content, {
+        waitForBackground: () =>
+          Promise.all(Array.from(request.gates, (gate) => gate())).then(() => undefined),
+        signal: abort.signal,
+        workScheduler: this.#workScheduler,
+      });
       const confirmed = this.#resolveFile(file.path);
       return preview !== null && confirmed === file && fileSignature(confirmed) === signature
         ? immutablePreview({ ...preview, aspectRatio: descriptor.aspectRatio })

@@ -1,3 +1,4 @@
+import { workSchedulerFromFrames } from "../../fixtures/obsidian/work-scheduler";
 import { vi } from "vitest";
 import { Keymap } from "obsidian";
 
@@ -56,6 +57,7 @@ export function createAdaptivePanelFixture(
     onClosed,
     ownerDocument: document,
     ownerWindow: window,
+    workScheduler: workSchedulerFromFrames(window),
     renderIcon: (element, icon) => element.setAttribute("data-icon", icon),
   });
   return { anchor, anchorFocus, canvas, canvasFocus, control, keymap, onClosed, session };

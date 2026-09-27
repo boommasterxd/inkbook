@@ -20,6 +20,7 @@ import type { SceneDom } from "./scene-dom";
 import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } from "./types";
 import type { SceneVisibilityState, VisibilityResult } from "./visibility-state";
 import { SceneVisibilityReconciler, type PreviewTransform } from "./scene-visibility-reconciler";
+import { writeDirtySet } from "./dirty-set-work";
 
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
 
@@ -190,17 +191,20 @@ export class SceneContentRenderer {
     now: () => number,
     publication: ScenePublicationBudget,
   ): boolean {
-    if (
-      this.writeDirtySet(this.#geometryDirty, deadline, now, (id) =>
-        this.writeGeometry(id, deadline, now, publication),
+    if (this.#geometryDirty.size > 0) {
+      if (
+        writeDirtySet(this.#geometryDirty, deadline, now, (id) =>
+          this.writeGeometry(id, deadline, now, publication),
+        )
       )
-    ) {
-      return true;
+        return true;
+      if (now() >= deadline) return this.#paintDirty.size > 0 || this.#selectionDirty.size > 0;
     }
-    if (
-      this.writeDirtySet(this.#paintDirty, deadline, now, (id) => this.writePaint(id, publication))
-    )
-      return true;
+    if (this.#paintDirty.size > 0) {
+      if (writeDirtySet(this.#paintDirty, deadline, now, (id) => this.writePaint(id, publication)))
+        return true;
+      if (now() >= deadline) return this.#selectionDirty.size > 0;
+    }
     return this.#selectionTraces.writeDirty(
       this.#selectionDirty,
       this.#mounted,
@@ -213,6 +217,20 @@ export class SceneContentRenderer {
 
   public get hasPendingExitCleanup(): boolean {
     return this.#reconciler.hasPendingCleanup;
+  }
+
+  public get hasMountedWork(): boolean {
+    return (
+      this.#geometryDirty.size > 0 || this.#paintDirty.size > 0 || this.#selectionDirty.size > 0
+    );
+  }
+
+  public get hasVisibilityWork(): boolean {
+    return this.#reconciler.hasPendingWork;
+  }
+
+  public get hasPendingWork(): boolean {
+    return this.hasMountedWork || this.hasVisibilityWork;
   }
 
   public get needsVisibilityRestart(): boolean {
@@ -471,7 +489,6 @@ export class SceneContentRenderer {
     this.commitBandVisibility("highlight", visibility.highlight);
     this.commitBandVisibility("content", visibility.content);
   }
-
   private commitBandVisibility(band: RenderBand, visibility: VisibilityResult[RenderBand]): void {
     const ids = this.#committedIds[band];
     for (let index = 0; index < visibility.count; index += 1) ids[index] = visibility.ids[index];
@@ -479,21 +496,5 @@ export class SceneContentRenderer {
       ids[index] = undefined;
     }
     this.#committedCounts[band] = visibility.count;
-  }
-
-  private writeDirtySet(
-    dirty: Set<string>,
-    deadline: number,
-    now: () => number,
-    write: (id: string) => void | boolean,
-  ): boolean {
-    let processed = 0;
-    for (const id of dirty) {
-      if (processed > 0 && now() >= deadline) return true;
-      if (write(id) === false) return true;
-      dirty.delete(id);
-      processed += 1;
-    }
-    return false;
   }
 }

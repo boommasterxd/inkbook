@@ -9,6 +9,7 @@ import type {
 import { PresentationLifecycleRegistry } from "../../../../src/obsidian/embeds/presentation-lifecycle-registry";
 import { ColorSchemeBroadcaster } from "../../../../src/obsidian/theme/color-scheme";
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
+import { nativeFrameWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 
 const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata></svg>';
 const FIRST_PREVIEW = {
@@ -209,6 +210,7 @@ function createPorts(
       detach: () => undefined,
       mount: (attachment) => attachments.push(attachment),
     },
+    workScheduler: nativeFrameWorkScheduler,
   };
 }
 

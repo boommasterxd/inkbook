@@ -152,8 +152,9 @@ async function postHostedResult(
 ): Promise<void> {
   try {
     const controller = new AbortController();
+    await runtime.checkpoint?.(controller.signal);
     const encoded = await encodeRuntimeResultChunked(result, {
-      checkpoint: () => new Promise((resolve) => endpoint.setTimeout(resolve, 0)),
+      checkpoint: () => runtime.checkpoint?.(controller.signal) ?? Promise.resolve(),
       signal: controller.signal,
     });
     if (result.type === "export-success") {
@@ -251,7 +252,14 @@ function createPendingAcknowledgement(
 
 function applyControl(runtime: DocumentRuntimePort, control: BridgeControl): void {
   if (control.action === "prewarm") runtime.requestPrewarm?.();
-  else runtime.setLiveInputActive?.(control.active === true);
+  else if (control.action === "set-live-input")
+    runtime.setLiveInputActive?.(control.active === true);
+  else if (
+    control.sliceMilliseconds !== undefined &&
+    control.frameIntervalMilliseconds !== undefined
+  ) {
+    runtime.setSchedulingProfile?.(control.sliceMilliseconds, control.frameIntervalMilliseconds);
+  }
 }
 
 function settleAcknowledgement(
@@ -280,7 +288,14 @@ function isBridgeControl(value: unknown): value is BridgeControl {
     isObject(value) &&
     value.type === "inkbook-worker-control" &&
     ((value.action === "prewarm" && value.active === undefined) ||
-      (value.action === "set-live-input" && typeof value.active === "boolean"))
+      (value.action === "set-live-input" && typeof value.active === "boolean") ||
+      (value.action === "set-profile" &&
+        typeof value.sliceMilliseconds === "number" &&
+        Number.isFinite(value.sliceMilliseconds) &&
+        value.sliceMilliseconds > 0 &&
+        typeof value.frameIntervalMilliseconds === "number" &&
+        Number.isFinite(value.frameIntervalMilliseconds) &&
+        value.frameIntervalMilliseconds > 0))
   );
 }
 

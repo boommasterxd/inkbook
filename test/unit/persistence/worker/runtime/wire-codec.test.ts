@@ -254,7 +254,7 @@ describe("document worker clipboard wire adoption", () => {
       signal: new AbortController().signal,
     });
 
-    expect(checkpoints).toBe(22);
+    expect(checkpoints).toBe(23);
     expect(decoded).toMatchObject({
       result: {
         ok: true,

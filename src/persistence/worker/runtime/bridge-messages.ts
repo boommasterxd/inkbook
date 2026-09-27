@@ -46,8 +46,10 @@ export interface BridgeExportAcknowledgement {
 }
 
 export interface BridgeControl {
-  readonly action: "prewarm" | "set-live-input";
+  readonly action: "prewarm" | "set-live-input" | "set-profile";
   readonly active?: boolean;
+  readonly frameIntervalMilliseconds?: number;
+  readonly sliceMilliseconds?: number;
   readonly type: "inkbook-worker-control";
 }
 

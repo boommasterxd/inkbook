@@ -147,33 +147,33 @@ describe("trusted SVG background priority", () => {
       revision: 3,
       totalBytes: bytes.byteLength,
     });
-    expect(waitForBackground.mock.calls.length).toBe(checkpoint.mock.calls.length + 1);
+    expect(waitForBackground.mock.calls.length).toBe(checkpoint.mock.calls.length);
     update.mockRestore();
   });
 
-  it("pauses an already running hash when drawing starts and releases it on cancellation", async () => {
+  it("cancels while a shared checkpoint waits for drawing to finish", async () => {
     const priority = new InteractiveWorkPriority();
     const controller = new AbortController();
     const update = vi.spyOn(ChunkedSha256.prototype, "update");
+    priority.setInputActive(true);
     let entered: () => void = () => undefined;
     const paused = new Promise<void>((resolve) => {
       entered = resolve;
     });
     const inspection = inspectTrustedSvgOutput(new Uint8Array(6 * 64 * 1024), undefined, {
       signal: controller.signal,
-      checkpoint: async () => {
-        priority.setInputActive(true);
+      waitForBackground: () => {
         entered();
+        return priority.waitForBackground();
       },
-      waitForBackground: () => priority.waitForBackground(),
     });
     await paused;
     await Promise.resolve();
-    expect(update).toHaveBeenCalledTimes(1);
+    expect(update).not.toHaveBeenCalled();
     controller.abort();
     priority.setInputActive(false);
     await expect(inspection).rejects.toMatchObject({ name: "AbortError" });
-    expect(update).toHaveBeenCalledTimes(1);
+    expect(update).not.toHaveBeenCalled();
     update.mockRestore();
     priority.dispose();
   });

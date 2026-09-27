@@ -1,97 +1,43 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { validateInkSnapshotV1 } from "../../../../src/domain/schema/public";
 import { encodeRuntimeSelection } from "../../../../src/persistence/clipboard/codec";
-import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
-import { DocumentWorkerRuntime } from "../../../../src/persistence/worker/runtime/public";
-import { attachDocumentWorkerHost } from "../../../../src/persistence/worker/runtime/worker-host";
-import {
-  encodeRuntimeRequest,
-  encodeUnlockBatch,
-} from "../../../../src/persistence/worker/runtime/wire-codec";
+import { encodeRuntimeRequest } from "../../../../src/persistence/worker/runtime/wire-codec";
 import { WorkerDocumentRuntimePort } from "../../../../src/persistence/worker/runtime/worker-bridge";
-import { TestWorkerEndpoint } from "../../../fixtures/persistence/worker-endpoint";
 import {
-  createTestStroke,
-  createWorkerSnapshot,
-} from "../../../fixtures/persistence/worker-snapshot";
+  createOneStrokeWorkerSnapshot,
+  createWorkerBridgeClient,
+  createWorkerBridgeHarness,
+  createWorkerUnlockRequest,
+  serializeOneStrokeWorkerSnapshot,
+} from "../../../fixtures/persistence/worker-bridge";
+import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
+import { TestWorkerEndpoint } from "../../../fixtures/persistence/worker-endpoint";
 
-function bridgeHarness() {
-  const clientEndpoint = new TestWorkerEndpoint();
-  const hostEndpoint = new TestWorkerEndpoint();
-  clientEndpoint.peer = hostEndpoint;
-  hostEndpoint.peer = clientEndpoint;
-  const runtime = new DocumentWorkerRuntime({ sessionId: "session-a", workerEpoch: 1 });
-  const detach = attachDocumentWorkerHost(hostEndpoint, runtime);
-  return { clientEndpoint, detach, hostEndpoint, runtime };
-}
-
-function oneStrokeSnapshot() {
-  return createWorkerSnapshot([createTestStroke()]);
-}
-
-function unlockRequest(input: Uint8Array) {
-  return {
-    identity: {
-      operationId: 1,
-      purpose: "unlock" as const,
-      sessionId: "session-a",
-      workerEpoch: 1,
-    },
-    input,
-    type: "unlock" as const,
-  };
-}
+const bridgeHarness = createWorkerBridgeHarness;
+const oneStrokeSnapshot = createOneStrokeWorkerSnapshot;
+const unlockRequest = createWorkerUnlockRequest;
 
 function serializedBridgeHarness() {
-  const serialized = serializeInkbookDocument(oneStrokeSnapshot());
-  if (!serialized.ok) throw new Error(serialized.error.message);
-  const { clientEndpoint, detach } = bridgeHarness();
-  const client = new WorkerDocumentRuntimePort(() => clientEndpoint);
-  return { client, clientEndpoint, detach, serialized };
-}
-
-function unlockBatchBoundaryHarness() {
-  const clientEndpoint = new TestWorkerEndpoint();
-  const hostEndpoint = new TestWorkerEndpoint();
-  clientEndpoint.peer = hostEndpoint;
-  hostEndpoint.peer = clientEndpoint;
-  const client = new WorkerDocumentRuntimePort(() => clientEndpoint);
-  const observer = { unlockBatch: vi.fn() };
-  const request = unlockRequest(new Uint8Array());
-  const pending = client.execute(request, observer);
-  return { client, clientEndpoint, hostEndpoint, observer, pending };
-}
-
-async function expectRejectedUnlockBatch(
-  harness: ReturnType<typeof unlockBatchBoundaryHarness>,
-  batch: ReturnType<typeof encodeUnlockBatch>["value"],
-) {
-  harness.hostEndpoint.postMessage({
-    batch,
-    requestId: 1,
-    type: "inkbook-worker-unlock-batch",
-  });
-
-  await expect(harness.pending).rejects.toThrow("batch adoption failed");
-  expect(harness.observer.unlockBatch).not.toHaveBeenCalled();
-  expect(harness.clientEndpoint.sentMessages).toContainEqual({
-    accepted: false,
-    batchIndex: 0,
-    requestId: 1,
-    type: "inkbook-worker-batch-acknowledgement",
-  });
-  harness.client.terminate();
+  const serialized = serializeOneStrokeWorkerSnapshot();
+  const { clientEndpoint, detach, hostEndpoint, runtime } = bridgeHarness();
+  const client = createWorkerBridgeClient(clientEndpoint);
+  return { client, clientEndpoint, detach, hostEndpoint, runtime, serialized };
 }
 
 describe("document worker bridge", () => {
   it("creates one worker endpoint and executes requests in the hosted runtime", async () => {
     const { clientEndpoint, detach } = bridgeHarness();
     let creations = 0;
-    const client = new WorkerDocumentRuntimePort(() => {
-      creations += 1;
-      return clientEndpoint;
-    });
+    const client = new WorkerDocumentRuntimePort(
+      () => {
+        creations += 1;
+        return clientEndpoint;
+      },
+      {
+        workScheduler: new TestWorkScheduler(),
+        frameIntervalMilliseconds: () => 1_000 / 60,
+      },
+    );
 
     const result = await client.execute({
       identity: {
@@ -117,11 +63,8 @@ describe("document worker bridge", () => {
 
 describe("document worker export bridge", () => {
   it("acknowledges exact transferred exports and closes worker result lifetime", async () => {
-    const serialized = serializeInkbookDocument(oneStrokeSnapshot());
-    if (!serialized.ok) throw new Error(serialized.error.message);
-    const { clientEndpoint, detach, runtime } = bridgeHarness();
-    const client = new WorkerDocumentRuntimePort(() => clientEndpoint);
-    await client.execute(unlockRequest(new TextEncoder().encode(serialized.value.svg)));
+    const { client, clientEndpoint, detach, runtime, serialized } = serializedBridgeHarness();
+    await client.execute(unlockRequest(new TextEncoder().encode(serialized.svg)));
 
     const result = await client.execute({
       baseModelRevision: 0,
@@ -191,32 +134,28 @@ describe("document worker export bridge", () => {
 describe("document worker unlock bridge", () => {
   it("transfers the exact unlock input buffer", async () => {
     const { clientEndpoint, detach } = bridgeHarness();
-    const client = new WorkerDocumentRuntimePort(() => clientEndpoint);
+    const client = createWorkerBridgeClient(clientEndpoint);
     const input = new TextEncoder().encode("not-svg");
 
     await client.execute(unlockRequest(input));
 
-    expect(clientEndpoint.transfers).toEqual([[input.buffer]]);
+    expect(clientEndpoint.transfers.filter((buffers) => buffers.length > 0)).toEqual([
+      [input.buffer],
+    ]);
     client.terminate();
     detach();
   });
 
   it("waits for unlock-batch adoption before returning the terminal header", async () => {
-    const serialized = serializeInkbookDocument(oneStrokeSnapshot());
-    if (!serialized.ok) throw new Error(serialized.error.message);
-    const { clientEndpoint, detach, hostEndpoint } = bridgeHarness();
-    const client = new WorkerDocumentRuntimePort(() => clientEndpoint);
+    const { client, clientEndpoint, detach, hostEndpoint, serialized } = serializedBridgeHarness();
     const batches: number[] = [];
 
-    const result = await client.execute(
-      unlockRequest(new TextEncoder().encode(serialized.value.svg)),
-      {
-        unlockBatch: async (batch) => {
-          await Promise.resolve();
-          batches.push(batch.elements.length);
-        },
+    const result = await client.execute(unlockRequest(new TextEncoder().encode(serialized.svg)), {
+      unlockBatch: async (batch) => {
+        await Promise.resolve();
+        batches.push(batch.elements.length);
       },
-    );
+    });
 
     expect(batches).toEqual([1]);
     expect(result).toMatchObject({
@@ -235,12 +174,15 @@ describe("document worker unlock bridge", () => {
   });
 
   it("rejects and acknowledges a failed unlock-batch adoption without hanging the host", async () => {
-    const { client, clientEndpoint, detach, serialized } = serializedBridgeHarness();
+    const { client, clientEndpoint, detach } = serializedBridgeHarness();
 
     await expect(
-      client.execute(unlockRequest(new TextEncoder().encode(serialized.value.svg)), {
-        unlockBatch: () => Promise.reject(new Error("index construction failed")),
-      }),
+      client.execute(
+        unlockRequest(new TextEncoder().encode(serializeOneStrokeWorkerSnapshot().svg)),
+        {
+          unlockBatch: () => Promise.reject(new Error("index construction failed")),
+        },
+      ),
     ).rejects.toThrow("batch adoption failed");
     expect(clientEndpoint.sentMessages).toContainEqual({
       accepted: false,
@@ -255,9 +197,9 @@ describe("document worker unlock bridge", () => {
 
 describe("document worker recovery hydration bridge", () => {
   it("adopts recovery hydration batches through the worker port and bridge", async () => {
-    const { client, clientEndpoint, detach, serialized } = serializedBridgeHarness();
+    const { client, clientEndpoint, detach } = serializedBridgeHarness();
     const recoveryRequest = {
-      ...unlockRequest(new TextEncoder().encode(serialized.value.svg)),
+      ...unlockRequest(new TextEncoder().encode(serializeOneStrokeWorkerSnapshot().svg)),
       identity: {
         operationId: 2,
         purpose: "recovery" as const,
@@ -291,13 +233,15 @@ describe("document worker recovery hydration bridge", () => {
   });
 });
 
-describe("document worker bridge runtime controls", () => {
+describe("document worker bridge timeout controls", () => {
   it("terminates once on timeout, reports recovery context, and ignores a late result", async () => {
     const clientEndpoint = new TestWorkerEndpoint();
     const hostEndpoint = new TestWorkerEndpoint();
     hostEndpoint.peer = clientEndpoint;
     const failures: unknown[] = [];
     const client = new WorkerDocumentRuntimePort(() => clientEndpoint, {
+      workScheduler: new TestWorkScheduler(),
+      frameIntervalMilliseconds: () => 1_000 / 60,
       onExecutorFailure: (failure) => failures.push(failure),
       requestTimeoutMilliseconds: 10,
     });
@@ -327,16 +271,24 @@ describe("document worker bridge runtime controls", () => {
     });
     expect(failures).toHaveLength(1);
   });
+});
 
+describe("document worker bridge input controls", () => {
   it("forwards live-input and prewarm controls without creating operation identities", () => {
     const clientEndpoint = new TestWorkerEndpoint();
-    const client = new WorkerDocumentRuntimePort(() => clientEndpoint);
+    const client = createWorkerBridgeClient(clientEndpoint);
 
     client.setLiveInputActive(true);
     client.requestPrewarm();
     client.setLiveInputActive(false);
 
     expect(clientEndpoint.sentMessages).toEqual([
+      {
+        action: "set-profile",
+        frameIntervalMilliseconds: 1_000 / 60,
+        sliceMilliseconds: 8,
+        type: "inkbook-worker-control",
+      },
       { action: "set-live-input", active: true, type: "inkbook-worker-control" },
       { action: "prewarm", type: "inkbook-worker-control" },
       { action: "set-live-input", active: false, type: "inkbook-worker-control" },
@@ -346,7 +298,7 @@ describe("document worker bridge runtime controls", () => {
 
   it("pauses even a small request before main-thread preparation while input is live", async () => {
     const clientEndpoint = new TestWorkerEndpoint();
-    const client = new WorkerDocumentRuntimePort(() => clientEndpoint);
+    const client = createWorkerBridgeClient(clientEndpoint);
     client.setLiveInputActive(true);
     const pending = client.execute({
       identity: {
@@ -362,96 +314,31 @@ describe("document worker bridge runtime controls", () => {
 
     await Promise.resolve();
     expect(clientEndpoint.sentMessages).toEqual([
+      {
+        action: "set-profile",
+        frameIntervalMilliseconds: 1_000 / 60,
+        sliceMilliseconds: 8,
+        type: "inkbook-worker-control",
+      },
       { action: "set-live-input", active: true, type: "inkbook-worker-control" },
     ]);
 
     client.setLiveInputActive(false);
     await vi.waitFor(() => {
-      expect(clientEndpoint.sentMessages).toHaveLength(3);
+      expect(clientEndpoint.sentMessages).toHaveLength(4);
     });
-    expect(clientEndpoint.sentMessages[2]).toMatchObject({ type: "inkbook-worker-request" });
+    expect(clientEndpoint.sentMessages[3]).toMatchObject({ type: "inkbook-worker-request" });
 
     client.terminate();
     await expect(settlement).resolves.toBeInstanceOf(Error);
   });
 });
 
-describe("document worker bridge input boundary", () => {
-  it("rejects a forged verification result that does not describe the exact request", async () => {
-    const document = serializeInkbookDocument(oneStrokeSnapshot());
-    if (!document.ok) throw new Error(document.error.code);
-    const clientEndpoint = new TestWorkerEndpoint();
-    const hostEndpoint = new TestWorkerEndpoint();
-    clientEndpoint.peer = hostEndpoint;
-    hostEndpoint.peer = clientEndpoint;
-    const client = new WorkerDocumentRuntimePort(() => clientEndpoint);
-    const identity = {
-      operationId: 4,
-      purpose: "verification" as const,
-      sessionId: "session-a",
-      workerEpoch: 1,
-    };
-    const pending = client.execute({ identity, input: document.value.svg, type: "verify-output" });
-
-    hostEndpoint.postMessage({
-      requestId: 1,
-      result: {
-        identity,
-        persisted: { outputHash: "0".repeat(64), revision: 0, type: "confirmed" },
-        type: "verify-output-success",
-      },
-      type: "inkbook-worker-result",
-    });
-
-    await expect(pending).rejects.toThrow("invalid result");
-    client.terminate();
-  });
-
-  it("rejects an oversized unlock batch before observer adoption", async () => {
-    const harness = unlockBatchBoundaryHarness();
-    const derivation = oneStrokeDerivations()[0]!;
-    const encoded = encodeUnlockBatch({
-      batchIndex: 0,
-      derivations: Array.from({ length: 257 }, () => derivation),
-      elements: Array.from({ length: 257 }, () => oneStrokeSnapshot().elements[0]!),
-      identity: unlockRequest(new Uint8Array()).identity,
-    });
-
-    await expectRejectedUnlockBatch(harness, encoded.value);
-  });
-
-  it("rejects a hydration batch whose identity differs from the pending request", async () => {
-    const harness = unlockBatchBoundaryHarness();
-    const encoded = encodeUnlockBatch({
-      batchIndex: 0,
-      derivations: oneStrokeDerivations(),
-      elements: oneStrokeSnapshot().elements,
-      identity: {
-        operationId: 1,
-        purpose: "recovery",
-        sessionId: "session-a",
-        workerEpoch: 1,
-      },
-    });
-
-    await expectRejectedUnlockBatch(harness, encoded.value);
-  });
-});
-
-function oneStrokeDerivations() {
-  const validation = validateInkSnapshotV1(oneStrokeSnapshot());
-  if (!validation.ok) throw new Error(validation.error.message);
-  return validation.derivations.elements;
-}
-
 describe("document worker clipboard bridge", () => {
   it("adopts one canonical text transfer and releases each completed request", async () => {
     const document = oneStrokeSnapshot();
-    const serialized = serializeInkbookDocument(document);
-    if (!serialized.ok) throw new Error(serialized.error.message);
-    const { clientEndpoint, detach, hostEndpoint } = bridgeHarness();
-    const client = new WorkerDocumentRuntimePort(() => clientEndpoint);
-    await client.execute(unlockRequest(new TextEncoder().encode(serialized.value.svg)));
+    const { client, detach, hostEndpoint, serialized } = serializedBridgeHarness();
+    await client.execute(unlockRequest(new TextEncoder().encode(serialized.svg)));
 
     const copy = (operationId: number) =>
       client.execute({

@@ -5,6 +5,7 @@ import {
   resolvePresentationFeedbackPosition,
 } from "../../../../src/obsidian/feedback";
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 describe("presentation feedback position", () => {
   it("uses the lower center of the visible embed and native-scroll intersection", () => {
@@ -89,6 +90,7 @@ function createDetachedFeedback() {
     surface as unknown as HTMLElement,
     presentation as unknown as HTMLElement,
     "center",
+    workSchedulerFromFrames(ownerWindow),
   );
   return { cancelFrame, lifecycle, presentation, runFrame: () => frame(16), surface };
 }

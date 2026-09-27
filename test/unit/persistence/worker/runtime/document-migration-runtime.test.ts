@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createTestWorkScheduler } from "../../../../fixtures/persistence/work-scheduler";
 
 import { ChunkedInputCancelledError } from "../../../../../src/persistence/serialization/chunked-input-types";
 import { serializeInkbookDocument } from "../../../../../src/persistence/serialization/public";
@@ -131,13 +132,17 @@ describe("document runtime migration", () => {
     expect(checkpoints).toBe(2);
     expect(runtime.modelRevision).toBeNull();
   });
+});
 
+describe("runtime migration cancellation", () => {
   it("cancels v0 validation slices in production-worker scheduling", async () => {
     let now = 0;
     await expectRuntimeMigrationCancellation((onYield) =>
       createProductionDocumentRuntime(EXECUTOR, {
-        now: () => (now += 9),
-        yieldControl: async () => onYield(),
+        workScheduler: createTestWorkScheduler({
+          now: () => (now += 9),
+          checkpoint: async () => onYield(),
+        }),
       }),
     );
   });
@@ -150,8 +155,10 @@ describe("document runtime migration", () => {
           EXECUTOR,
           new GestureAwareSliceScheduler({
             isInputActive: () => false,
-            now: () => (now += 9),
-            yieldControl: async () => onYield(),
+            workScheduler: createTestWorkScheduler({
+              now: () => (now += 9),
+              checkpoint: async () => onYield(),
+            }),
           }),
         ),
     );

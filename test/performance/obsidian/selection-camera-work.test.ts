@@ -13,6 +13,7 @@ import { ManualFrameScheduler } from "../../fixtures/obsidian/manual-frame-sched
 import { createSelectionPreviewRenderer } from "../../fixtures/obsidian/selection-preview-renderer";
 import * as bounds from "../../../src/domain/geometry/bounds";
 import { selectionOverlayGeometry } from "../../../src/editor/selection/public";
+import { workSchedulerFromFrames } from "../../fixtures/obsidian/work-scheduler";
 
 function fixture(elements: readonly InkElementV1[]) {
   const store = new ElementStore(elements);
@@ -179,14 +180,13 @@ it.each([false, true])(
       isAttached: () => true,
       onPendingChanged: () => undefined,
       motion: { beginPreviewCommit: () => ({ arm: () => true, cancel: () => undefined }) },
-      ownerWindow: {
-        performance,
+      workScheduler: workSchedulerFromFrames({
         cancelAnimationFrame: () => undefined,
         requestAnimationFrame: (callback: FrameRequestCallback) => {
           queueMicrotask(() => callback(0));
           return 1;
         },
-      } as unknown as Window,
+      }),
     });
     const geometry = vi.spyOn(bounds, "calculateElementBounds");
     try {

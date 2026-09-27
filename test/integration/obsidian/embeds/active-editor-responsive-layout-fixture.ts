@@ -4,6 +4,7 @@ import { ActiveEditorLayout } from "../../../../src/obsidian/embeds/active-edito
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene/index";
 import { domRect } from "../../../fixtures/obsidian/active-editor";
 import { FakeClassList } from "../../../fixtures/obsidian/class-list";
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 interface ResponsiveFixtureOptions {
   readonly invalidateLayout?: () => void;
@@ -53,6 +54,7 @@ export function responsiveFixture(options: ResponsiveFixtureOptions = {}) {
   const onLayout = vi.fn();
   const invalidateLayout = vi.fn();
   const layout = new ActiveEditorLayout({
+    workScheduler: workSchedulerFromFrames(ownerWindow),
     chromeHost,
     container,
     onLayout,

@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 import { type App, Platform } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -32,6 +33,7 @@ function fixture(kind: "context" | "menu" = "menu") {
   const app = { workspace: { containerEl: document.body } } as App;
   const factory = createOwnedMenuFactory({
     anchor,
+    workScheduler: workSchedulerFromFrames(window),
     keymap,
     createPhoneSheetHost: () => createPhoneSheetHost(app),
   });

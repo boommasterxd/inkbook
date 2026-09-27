@@ -20,6 +20,7 @@ import { encodeRuntimeSelection } from "../../../../src/persistence/clipboard/co
 import { createDragElement } from "../../../../src/editor/tools/public";
 import { elementMutationPorts } from "../../../fixtures/obsidian/element-mutation-ports";
 import { ManualFrameScheduler } from "../../../fixtures/obsidian/manual-frame-scheduler";
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 import { creationPreviewRenderer } from "../../../fixtures/obsidian/active-editor";
 
 function model(): EditableDocumentModel {
@@ -166,6 +167,7 @@ describe("active editor selection area composition", () => {
         ...passiveGesturePorts(),
         beginPreview: (start) =>
           new LassoPreview({
+            workScheduler: workSchedulerFromFrames(new ManualFrameScheduler()),
             history: new ActiveEditorHistory(document),
             pageToScreen: (point) => point,
             preparedHistory: {} as PreparedElementHistory,
@@ -263,18 +265,15 @@ describe("active editor eraser composition", () => {
         history: new ActiveEditorHistory(document),
         model: document,
         radius: 20,
-        ownerWindow: {
-          requestAnimationFrame: (callback: FrameRequestCallback) =>
-            frames.requestAnimationFrame(callback),
-          cancelAnimationFrame: (handle: number) => frames.cancelAnimationFrame(handle),
-          performance,
-        } as unknown as Window,
+        workScheduler: workSchedulerFromFrames(frames, {
+          budgetMs: () => 0,
+          shouldYield: () => true,
+        }),
         renderer: {
           clearElementFade: (ids) => ids.forEach((id) => faded.delete(id)),
           setElementFade: (ids) => ids.forEach((id) => faded.add(id)),
         },
         sceneStore,
-        sliceBudgetMs: () => 0,
         start: {
           additive: false,
           kind: "eraser-gesture",
@@ -321,9 +320,8 @@ describe("active editor eraser commit", () => {
     const options = {
       history,
       model: document,
-      ownerWindow: {
+      workScheduler: workSchedulerFromFrames({
         cancelAnimationFrame: (handle: number) => pendingFrames.delete(handle),
-        performance,
         requestAnimationFrame: (callback: FrameRequestCallback) => {
           const handle = ++nextFrame;
           pendingFrames.add(handle);
@@ -332,7 +330,7 @@ describe("active editor eraser commit", () => {
           });
           return handle;
         },
-      } as unknown as Window,
+      }),
       radius: 20,
       renderer: {
         clearElementFade: (ids: readonly string[]) => cleared.push([...ids]),

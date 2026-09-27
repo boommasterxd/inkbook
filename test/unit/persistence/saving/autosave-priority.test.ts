@@ -11,6 +11,7 @@ import {
 } from "../../../../src/persistence/serialization/public";
 import { DocumentWorkerRuntime } from "../../../../src/persistence/worker/runtime/public";
 import { snapshot } from "../worker/runtime/fixtures";
+import { createTestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 
 function pausedBackground() {
   let resume: () => void = () => undefined;
@@ -35,6 +36,7 @@ function createVerificationHarness(
     isDisposed: () => false,
     sessionId: "priority-session",
     switchToFallback: () => false,
+    workScheduler: createTestWorkScheduler(),
     workerEpoch: () => 1,
     ...options,
   });

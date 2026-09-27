@@ -39,6 +39,7 @@ import { VaultDocumentSessionFactory } from "./vault-document-session-factory";
 import { showAttachedRecoveryPanel, type HeadlessRecoveryNotice } from "./recovery-notice";
 import {
   createWorkspaceMountedPresentation,
+  disposeWorkspaceMountedPresentations,
   cancelInitialWorkspaceLoading,
   startInitialWorkspaceLoading,
   updateWorkspaceMountedSettings,
@@ -48,7 +49,7 @@ import { WorkspaceRefreshProfiles } from "./workspace-refresh-profiles";
 import { WorkspaceFeedbackRouter, type WorkspaceFeedbackHost } from "./workspace-feedback-router";
 import * as trustedHeadStorage from "../storage/trusted-document-head-ledger";
 export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
-  readonly #host: WorkspaceFeedbackHost;
+  readonly #host: WorkspaceFeedbackHost & Omit<EditorChromeOpenings, "confirmEraseAll">;
   readonly #coordinator: WorkspaceEditorCoordinator;
   #disposed = false;
   readonly #embedActions: ObsidianEmbedActions;
@@ -58,8 +59,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
   readonly #lifecycle: WorkspaceRuntimeLifecycle;
   readonly #ownerWindows = new OwnerWindowRegistry();
   readonly #mounted = new Map<string, WorkspaceMountedPresentation>();
-  readonly #onOpenSettings: EditorChromeOpenings["onOpenSettings"];
-  readonly #onOpenShortcuts: EditorChromeOpenings["onOpenShortcuts"];
   readonly refreshRateProfiles: WorkspaceRefreshProfiles;
   readonly #scheme: ColorSchemeBroadcaster;
   readonly #sessions: VaultDocumentSessionFactory;
@@ -86,8 +85,6 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     this.#feedback = new WorkspaceFeedbackRouter(host.manager, (documentId) =>
       this.#owningWindow(documentId),
     );
-    this.#onOpenSettings = host.onOpenSettings;
-    this.#onOpenShortcuts = host.onOpenShortcuts;
     this.#scheme = scheme;
     this.#settings = settings;
     this.refreshRateProfiles = new WorkspaceRefreshProfiles(settings().vault.refreshRatePreference);
@@ -100,16 +97,17 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       notifyExternalChange: (documentId) => this.#coordinator.notifyExternalChange(documentId),
       presentations: () => this.#mounted.values(),
       reloadPresentation: (documentId) => this.#reloadPresentation(documentId),
-      sliceBudgetMs: (ownerWindow) => this.refreshRateProfiles.sliceBudgetMs(ownerWindow),
+      workScheduler: (ownerWindow) => this.refreshRateProfiles.workScheduler(ownerWindow),
       vault,
     });
     this.#sessions = new VaultDocumentSessionFactory(
       vault,
       fileManager,
       createWorkspaceDocumentRuntimes({
+        subscribeSchedulingProfile: (listener) => this.refreshRateProfiles.subscribe(listener),
         fallbackWindow: () => this.#fallbackWindow(),
         owningWindow: (documentId) => this.#owningWindow(documentId),
-        sliceBudgetMs: (ownerWindow) => this.refreshRateProfiles.sliceBudgetMs(ownerWindow),
+        workScheduler: (ownerWindow) => this.refreshRateProfiles.workScheduler(ownerWindow),
       }),
       {
         persisted: (event) => this.#lifecycle.handlePersisted(event),
@@ -143,7 +141,10 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     if (this.#disposed) return;
     const key = presentationAttachmentKey(attachment);
     if (this.#mounted.has(key)) return;
-    const mounted = createWorkspaceMountedPresentation(attachment);
+    const mounted = createWorkspaceMountedPresentation(
+      attachment,
+      this.refreshRateProfiles.workScheduler(attachment.root.ownerDocument.defaultView),
+    );
     this.#mounted.set(key, mounted);
     startInitialWorkspaceLoading(mounted, this.#lifecycle);
     this.#ownerWindows.observe(attachment.documentId, attachment.root.ownerDocument.defaultView);
@@ -152,6 +153,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       attachment.root.ownerDocument.defaultView,
       attachment.root.ownerDocument,
     );
+    this.refreshRateProfiles.notifyOwnerWindowChanged();
     attachment.root.dataset.inkbookState = "locked";
     this.#coordinator.mountAttachment(attachment);
     this.#lifecycle.continueAutoActivation(attachment);
@@ -216,12 +218,13 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
             : { createPhoneSheetHost: this.#host.createPhoneSheetHost }),
           markFirstStroke: () => this.#lifecycle.markFirstStroke(attachment.documentId),
           onLock: () => this.lockActivePresentation(),
-          onOpenSettings: this.#onOpenSettings,
-          onOpenShortcuts: this.#onOpenShortcuts,
+          onOpenSettings: this.#host.onOpenSettings,
+          onOpenShortcuts: this.#host.onOpenShortcuts,
           scheme: attachment.root.dataset.inkbookScheme === "dark" ? "dark" : "light",
           showFeedback: (code) => this.#feedback.showInPresentation(attachment.root, code),
-          sliceBudgetMs: () =>
-            this.refreshRateProfiles.sliceBudgetMs(attachment.root.ownerDocument.defaultView),
+          workScheduler: this.refreshRateProfiles.workScheduler(
+            attachment.root.ownerDocument.defaultView,
+          ),
           vaultSettings: settings.vault,
           colorScheme: this.#scheme,
           mounted,
@@ -255,6 +258,7 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
       this.#mounted.values(),
       this.#coordinator.getSnapshot().current?.documentId,
     );
+    this.refreshRateProfiles.notifyOwnerWindowChanged();
   }
   hasActivePresentation(): boolean {
     return this.#coordinator.getSnapshot().current?.phase === "active";
@@ -318,19 +322,15 @@ export class ObsidianWorkspaceRuntime implements PresentationSessionPort {
     this.#lifecycle.dispose();
     this.#headlessRecovery?.close();
     this.#headlessRecovery = undefined;
+    const persistenceDrained = this.#sessions.prepareForUnload();
     this.#coordinator.dispose({ preparePersistence: true });
-    for (const mounted of this.#mounted.values()) {
-      mounted.disposeScheme?.();
-      mounted.activation?.release();
-      mounted.feedback.dispose();
-      mounted.loadError?.close();
-      mounted.recovery?.close();
-      mounted.scene?.dispose();
-      mounted.attachment.root.dataset.inkbookState = "locked";
-    }
+    disposeWorkspaceMountedPresentations(this.#mounted.values());
     this.#mounted.clear();
-    this.refreshRateProfiles.dispose();
-    this.#ownerWindows.clear();
+    const releaseScheduling = () => {
+      this.refreshRateProfiles.dispose();
+      this.#ownerWindows.clear();
+    };
+    void persistenceDrained.then(releaseScheduling, releaseScheduling);
   }
 
   #reloadPresentation(documentId: string): void {

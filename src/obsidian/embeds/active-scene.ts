@@ -1,3 +1,4 @@
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { setIcon } from "obsidian";
 
 import type { InkbookDeviceSettingsV2 } from "../../domain/settings/types";
@@ -31,7 +32,7 @@ import {
 } from "./active-scene-lock";
 import { updateActiveSceneChrome } from "./active-scene-chrome";
 import { readActiveSceneViewport } from "./active-scene-viewport";
-import { InitialSceneReadiness } from "./initial-scene-readiness";
+import { createSceneReadiness, InitialSceneReadiness } from "./initial-scene-readiness";
 import { bindSceneScrollOwner, createInitialSceneRuntime } from "./active-scene-runtime";
 import type { TransitionScrollStability } from "./transition-scroll-stability";
 import type { EditableDocumentModel } from "./vault-document-session";
@@ -67,6 +68,7 @@ export class ActiveInkbookScene {
   readonly #resolveReady: (ready: boolean) => void;
   readonly #renderer: SvgSceneRenderer;
   readonly #root: HTMLElement;
+  readonly #workScheduler: WorkScheduler;
   readonly #store: ElementSceneStore;
   readonly #transitionScrollStability: TransitionScrollStability;
   readonly #unsubscribeStore: () => void;
@@ -74,6 +76,7 @@ export class ActiveInkbookScene {
 
   public constructor(options: ActiveInkbookSceneOptions) {
     this.#root = options.root;
+    this.#workScheduler = options.workScheduler;
     this.#model = options.model;
     this.#onFirstStrokeCommitted = options.onFirstStrokeCommitted;
     const scrollOwner = options.scrollOwner?.() ?? resolveActiveScrollOwner(options.root);
@@ -121,6 +124,7 @@ export class ActiveInkbookScene {
       this.#root,
     );
     this.#layout = new ActiveEditorLayout({
+      workScheduler: options.workScheduler,
       beginScrollStability: () => this.#transitionScrollStability.begin(),
       chromeHost: this.#chromeHost,
       container: this.#container,
@@ -151,6 +155,7 @@ export class ActiveInkbookScene {
     scrollOwner: BrowserScrollElement,
   ): ActiveEditorController {
     return new ActiveEditorController({
+      workScheduler: options.workScheduler,
       applyZoomLayout: (update) => this.#layout.applyZoom(update),
       backgroundSpacing: options.backgroundSpacing,
       container: this.#container,
@@ -166,6 +171,7 @@ export class ActiveInkbookScene {
       menuFactory:
         options.menuFactory ??
         createOwnedMenuFactory({
+          workScheduler: options.workScheduler,
           anchor: options.root,
           ...(options.keymap === undefined ? {} : { keymap: options.keymap }),
           ...(options.createPhoneSheetHost === undefined
@@ -193,7 +199,6 @@ export class ActiveInkbookScene {
           this.#layout.finishSelectionMove(committed, previewMaximumBottom),
         updateBottom: (maximumBottom) => this.#layout.updateSelectionMoveBottom(maximumBottom),
       },
-      sliceBudgetMs: options.sliceBudgetMs,
       scrollOwner,
       snapping: options.snapping,
       startupTool: options.startupTool,
@@ -325,7 +330,7 @@ export class ActiveInkbookScene {
   ): SvgSceneRenderer {
     return new SvgSceneRenderer({
       container: this.#container,
-      frameBudgetMs: options.sliceBudgetMs,
+      workScheduler: options.workScheduler,
       inputHandlers: createSceneInputHandlers(controller),
       layout: {
         readViewport: () => readActiveSceneViewport(this.#container, scrollOwner(), this.#root),
@@ -347,6 +352,7 @@ export class ActiveInkbookScene {
     this.#preLockBlockSize = this.#container.style.blockSize;
     this.#preLockViewState = this.#controller.getViewState();
     this.#lockLayoutTransition = applyLockedFitLayout({
+      workScheduler: this.#workScheduler,
       anchor: this.#controller.readResizeAnchor(),
       applyResize: (update) => this.#controller.applyResize(update),
       beginScrollStability: (minimumRangeReserve) =>
@@ -477,23 +483,4 @@ function resolveActiveScrollOwner(root: HTMLElement): BrowserScrollElement {
       browserScrollMetrics,
     ) ?? root
   );
-}
-
-function createSceneReadiness(
-  chrome: PendingEditorChrome,
-  disposed: () => boolean,
-  chromeMounted: () => void,
-): { readonly ready: Promise<boolean>; readonly resolve: (ready: boolean) => void } {
-  let resolve = (_ready: boolean): void => undefined;
-  const layoutReady = new Promise<boolean>((complete) => {
-    resolve = complete;
-  });
-  return {
-    ready: chrome.ready.then((mounted) => {
-      if (!mounted || disposed()) return false;
-      chromeMounted();
-      return layoutReady;
-    }),
-    resolve,
-  };
 }

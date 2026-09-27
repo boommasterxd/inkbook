@@ -7,6 +7,7 @@ vi.mock("../../../../../src/persistence/worker/runtime/worker-source", () => ({
 
 import { createDocumentRuntime } from "../../../../../src/persistence/worker/runtime/public";
 import { type WorkerWindow } from "../../../../../src/persistence/worker/runtime/worker-factory";
+import { createTestWorkScheduler } from "../../../../fixtures/persistence/work-scheduler";
 import { TestWorkerEndpoint } from "../../../../fixtures/persistence/worker-endpoint";
 
 class FakeWorker extends TestWorkerEndpoint {
@@ -56,6 +57,7 @@ describe("production document worker factory", () => {
         `session-${String(cycle)}`,
         cycle + 1,
         owningWindow,
+        { workScheduler: createTestWorkScheduler(), frameIntervalMilliseconds: () => 1_000 / 60 },
       );
       runtime.terminate();
     }
@@ -70,12 +72,21 @@ describe("production document worker factory", () => {
     FakeWorker.constructionError = undefined;
     const { blobs, owningWindow, revoked } = createWindow();
 
-    const runtime = await createDocumentRuntime("session-a", 3, owningWindow);
+    const runtime = await createDocumentRuntime("session-a", 3, owningWindow, {
+      workScheduler: createTestWorkScheduler(),
+      frameIntervalMilliseconds: () => 10,
+    });
 
     expect(FakeWorker.instances).toHaveLength(1);
     expect(FakeWorker.instances[0]?.options).toEqual({ name: "inkbook-document-worker" });
     expect(FakeWorker.instances[0]?.sentMessages).toEqual([
-      { sessionId: "session-a", type: "inkbook-worker-bootstrap", workerEpoch: 3 },
+      {
+        frameIntervalMilliseconds: 10,
+        sessionId: "session-a",
+        sliceMilliseconds: 8,
+        type: "inkbook-worker-bootstrap",
+        workerEpoch: 3,
+      },
     ]);
     const workerBlob = blobs[0];
     if (workerBlob === undefined) throw new Error("Expected a worker Blob.");
@@ -98,10 +109,15 @@ describe("production document worker factory", () => {
     const { owningWindow, revoked } = createWindow();
 
     await expect(
-      createDocumentRuntime("session-a", 1, {
-        ...owningWindow,
-        DecompressionStream: FailingDecompressionStream,
-      }),
+      createDocumentRuntime(
+        "session-a",
+        1,
+        {
+          ...owningWindow,
+          DecompressionStream: FailingDecompressionStream,
+        },
+        { workScheduler: createTestWorkScheduler(), frameIntervalMilliseconds: () => 1_000 / 60 },
+      ),
     ).rejects.toThrow("unsupported compression stream");
     expect(FakeWorker.instances).toHaveLength(0);
     expect(revoked).toEqual([]);
@@ -112,9 +128,12 @@ describe("production document worker factory", () => {
     FakeWorker.constructionError = new Error("blocked by worker-src");
     const { owningWindow, revoked } = createWindow();
 
-    await expect(createDocumentRuntime("session-a", 1, owningWindow)).rejects.toThrow(
-      "blocked by worker-src",
-    );
+    await expect(
+      createDocumentRuntime("session-a", 1, owningWindow, {
+        workScheduler: createTestWorkScheduler(),
+        frameIntervalMilliseconds: () => 1_000 / 60,
+      }),
+    ).rejects.toThrow("blocked by worker-src");
     expect(FakeWorker.instances).toHaveLength(0);
     expect(revoked).toEqual(["blob:inkbook-worker"]);
     FakeWorker.constructionError = undefined;

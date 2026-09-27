@@ -12,6 +12,7 @@ import { EraserFrameScheduler } from "./eraser-scheduler";
 import type { ActiveEditorHistory } from "./history";
 import type { ElementSceneStore } from "./scene-store";
 import type { CoalescedCreationSample } from "./coalesced-input";
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 
 interface EraserPreviewRenderer {
   clearElementFade(ids: readonly string[]): void;
@@ -21,18 +22,17 @@ interface EraserPreviewRenderer {
 export interface EraserPreviewOptions {
   readonly history: ActiveEditorHistory;
   readonly model: EditableDocumentModel;
-  readonly ownerWindow: Window;
+  readonly workScheduler: WorkScheduler;
   readonly radius: number;
   readonly renderer: EraserPreviewRenderer;
   readonly sceneStore: ElementSceneStore;
-  readonly sliceBudgetMs?: () => number;
   readonly start: GesturePreviewStart;
 }
 
 export class EraserPreview implements GesturePreview {
   readonly #history: ActiveEditorHistory;
   readonly #model: EditableDocumentModel;
-  readonly #ownerWindow: Window;
+  readonly #workScheduler: WorkScheduler;
   readonly #sweep: EraserSweep;
   readonly #sliceBudgetMs: () => number;
   readonly #expectedRevision: number;
@@ -47,8 +47,8 @@ export class EraserPreview implements GesturePreview {
     this.#history = options.history;
     this.#model = options.model;
     this.#expectedRevision = options.model.revision;
-    this.#ownerWindow = options.ownerWindow;
-    this.#sliceBudgetMs = options.sliceBudgetMs ?? (() => 8);
+    this.#workScheduler = options.workScheduler;
+    this.#sliceBudgetMs = () => this.#workScheduler.budgetMs();
     const feedback = createFeedback(options.renderer);
     this.#sweep = new EraserSweep(
       options.start.pointer,
@@ -59,6 +59,7 @@ export class EraserPreview implements GesturePreview {
       },
       feedback,
       this.#sliceBudgetMs,
+      () => this.#workScheduler.shouldYield(),
     );
     this.#scheduleWork();
   }
@@ -75,8 +76,7 @@ export class EraserPreview implements GesturePreview {
     if (this.#cancelled) return false;
     const generation = ++this.#generation;
     const scheduler = new EraserFrameScheduler(
-      this.#ownerWindow,
-      this.#sliceBudgetMs,
+      this.#workScheduler,
       () => this.#model.revision !== this.#expectedRevision,
     );
     this.#scheduler = scheduler;
@@ -131,7 +131,7 @@ export class EraserPreview implements GesturePreview {
       this.#sweep.retainedSweepCount === 0
     )
       return;
-    this.#workFrame = this.#ownerWindow.requestAnimationFrame(() => {
+    this.#workFrame = this.#workScheduler.requestFrame(() => {
       this.#workFrame = null;
       if (this.#model.revision !== this.#expectedRevision) {
         this.#cancelPending();
@@ -139,12 +139,12 @@ export class EraserPreview implements GesturePreview {
       }
       if (this.#sweep.updateBatch([]) === "cancelled") this.#cancelled = true;
       this.#scheduleWork();
-    });
+    }, "frame");
   }
 
   #cancelWorkFrame(): void {
     if (this.#workFrame === null) return;
-    this.#ownerWindow.cancelAnimationFrame(this.#workFrame);
+    this.#workScheduler.cancelFrame(this.#workFrame);
     this.#workFrame = null;
   }
 

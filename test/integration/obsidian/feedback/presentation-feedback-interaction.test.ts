@@ -3,6 +3,7 @@ import { sys } from "typescript";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createPresentationFeedbackPositionLifecycle } from "../../../../src/obsidian/feedback";
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -38,7 +39,12 @@ describe("positioned feedback pointer behavior", () => {
       height: 100,
       width: 600,
     } as DOMRect);
-    const lifecycle = createPresentationFeedbackPositionLifecycle(surface, root);
+    const lifecycle = createPresentationFeedbackPositionLifecycle(
+      surface,
+      root,
+      "bottom",
+      workSchedulerFromFrames(window),
+    );
     expect(surface.style.visibility).toBe("visible");
     expect(window.getComputedStyle(surface).pointerEvents).toBe("none");
     lifecycle.dispose();

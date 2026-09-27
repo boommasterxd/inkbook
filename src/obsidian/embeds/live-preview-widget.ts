@@ -106,9 +106,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
     const preview = createInkbookLockedPreview(
       button,
       this.#embed.preview,
-      this.#ports.sliceBudgetMs === undefined
-        ? undefined
-        : () => this.#ports.sliceBudgetMs!(button.ownerDocument.defaultView),
+      this.#ports.workScheduler(button.ownerDocument.defaultView),
       { documentId: this.#embed.resolved.documentId, documents: this.#ports.documents },
     );
 
@@ -150,6 +148,7 @@ export class InkbookLivePreviewWidget extends WidgetType {
         setAspectRatio: preview.setAspectRatio,
         setSource: preview.setSource,
       },
+      this.#ports.workScheduler(root.ownerDocument.defaultView),
     );
     controller.mount();
     this.#height ??= new LivePreviewWidgetHeight();

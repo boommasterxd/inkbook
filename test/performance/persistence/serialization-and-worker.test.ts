@@ -1,9 +1,9 @@
+import { createTestWorkScheduler } from "../../fixtures/persistence/work-scheduler";
 import { CanonicalMetadataCache } from "../../../src/persistence/serialization/canonical-metadata-cache";
 import { describe, expect, it, vi } from "vitest";
 
 import { calculateElementBounds } from "../../../src/domain/geometry/public";
 import { MAX_ELEMENT_CELLS, spatialCellMembershipCount } from "../../../src/domain/spatial/index";
-import { yieldToMainThread } from "../../../src/persistence/scheduling/main-thread-yield";
 import {
   deriveDocumentIntegrityManifest,
   deriveDocumentIntegrityManifestFromContentDigest,
@@ -124,7 +124,7 @@ describe("document worker export work bounds", () => {
   it("rebuilds only changed fragments and reuses all fragments for order-only exports", async () => {
     const runtime = createProductionDocumentRuntime(
       { sessionId: "performance", workerEpoch: 1 },
-      { yieldControl: async () => undefined },
+      { workScheduler: createTestWorkScheduler() },
     );
     try {
       await fullExport(runtime, 1);
@@ -263,7 +263,7 @@ async function acknowledgeAndPrewarm(
   runtime.acknowledgeExport(identity, true);
   runtime.requestPrewarm();
   while (runtime.instrumentation.prewarmedElements < snapshot.elements.length) {
-    await yieldToMainThread();
+    await Promise.resolve();
   }
   expect(runtime.instrumentation.cacheElements).toBe(snapshot.elements.length);
   expect(runtime.instrumentation.cacheBytes).toBeLessThanOrEqual(64 * MIB);

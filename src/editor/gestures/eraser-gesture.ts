@@ -70,6 +70,7 @@ export class EraserSweep {
   readonly #query: EraserQueryPort;
   readonly #radius: number;
   readonly #sliceBudgetMs: () => number;
+  readonly #updateShouldYield: (() => boolean) | undefined;
   readonly #updateAdded: string[] = [];
   #activeSweep: ActiveSweep | null = null;
   #previous: PointV1;
@@ -81,6 +82,7 @@ export class EraserSweep {
     query: EraserQueryPort,
     feedback: EraserFeedbackPort,
     sliceBudgetMs: () => number = () => 8,
+    updateShouldYield?: () => boolean,
   ) {
     if (!Number.isFinite(radius) || radius <= 0)
       throw new RangeError("Eraser radius must be positive.");
@@ -89,6 +91,7 @@ export class EraserSweep {
     this.#query = query;
     this.#feedback = feedback;
     this.#sliceBudgetMs = sliceBudgetMs;
+    this.#updateShouldYield = updateShouldYield;
     this.#pendingSweeps.push({ end: this.#previous, start: this.#previous });
     this.#processUpdatePending();
     this.#publishUpdateAdded();
@@ -148,7 +151,6 @@ export class EraserSweep {
     const added: string[] = [];
     while (this.retainedSweepCount > 0) {
       const sliceBudgetMs = Math.max(0, this.#sliceBudgetMs() - FINALIZATION_SCHEDULING_RESERVE_MS);
-      const deadline = performance.now() + sliceBudgetMs;
       const workUnits = finalizationWorkUnits(sliceBudgetMs);
       let remaining = WORK_UNITS_PER_UPDATE;
       do {
@@ -157,7 +159,7 @@ export class EraserSweep {
         this.#processPending(checkpoint, added);
         remaining -= checkpoint;
         if (this.retainedSweepCount === 0) break;
-      } while (remaining > 0 && !scheduler.shouldYield() && performance.now() < deadline);
+      } while (remaining > 0 && !scheduler.shouldYield());
       this.#publishAdded(added);
       added.length = 0;
       if (this.retainedSweepCount > 0) await scheduler.yieldControl();
@@ -194,7 +196,6 @@ export class EraserSweep {
   }
 
   #processUpdatePending(): void {
-    const deadline = performance.now() + this.#sliceBudgetMs();
     const added = this.#updateAdded;
     for (
       let remaining = WORK_UNITS_PER_UPDATE;
@@ -202,7 +203,7 @@ export class EraserSweep {
       remaining -= UPDATE_CHECKPOINT_WORK_UNITS
     ) {
       this.#processPending(Math.min(remaining, UPDATE_CHECKPOINT_WORK_UNITS), added);
-      if (performance.now() >= deadline) break;
+      if (this.#updateShouldYield?.() === true) break;
     }
   }
 

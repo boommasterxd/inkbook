@@ -94,7 +94,11 @@ class InkbookSettingsModal extends InkbookMotionModal {
     view: InkbookSettingsView,
     onClosed: () => void,
   ) {
-    super(app, () => store.getDeviceSettings().motion);
+    super(
+      app,
+      () => store.getDeviceSettings().motion,
+      (ownerWindow) => settingTab.scheduler(ownerWindow),
+    );
     this.#onClosed = onClosed;
     this.#settingTab = settingTab;
     this.#store = store;

@@ -1,3 +1,4 @@
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type {
   PurposeOperationIdentity,
   VaultBase,
@@ -19,8 +20,8 @@ export async function verifyExactWorkerContent(
   content: string,
   versionPolicy: "current" | "editable" = "current",
   options: {
+    readonly workScheduler?: WorkScheduler;
     readonly waitForBackground?: () => Promise<void>;
-    readonly sliceBudgetMs?: () => number;
     readonly confirmedBase?: VaultBase;
   } = {},
 ): Promise<VerifiedPersistedOutput> {
@@ -37,8 +38,8 @@ export async function verifyExactWorkerContent(
       return { outputHash: base.outputHash, revision: base.revision, type: "confirmed" };
     }
     trusted = await inspectTrustedSvgOutput(content, undefined, {
+      ...(options.workScheduler ? { workScheduler: options.workScheduler } : {}),
       versionPolicy,
-      ...(options.sliceBudgetMs ? { sliceBudgetMs: options.sliceBudgetMs } : {}),
       ...(options.waitForBackground ? { waitForBackground: options.waitForBackground } : {}),
     });
   } catch {

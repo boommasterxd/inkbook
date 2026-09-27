@@ -49,13 +49,13 @@ export function createVaultAutosaveSession(
   },
 ): AutosaveCoordinator {
   return createAutosaveSession({
+    workScheduler: options.workScheduler,
     ...(options.beforeExistingWrite === undefined
       ? {}
       : { beforeExistingWrite: options.beforeExistingWrite }),
     ...(options.waitForBackground === undefined
       ? {}
       : { waitForBackground: options.waitForBackground }),
-    ...(options.sliceBudgetMs ? { sliceBudgetMs: options.sliceBudgetMs } : {}),
     clock: options.clock,
     confirmed: options.confirmed,
     ...(options.createFallback === undefined ? {} : { createFallback: options.createFallback }),

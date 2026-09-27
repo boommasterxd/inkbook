@@ -9,8 +9,13 @@ import type { InkbookSettingsStore } from "../../../../src/obsidian/settings";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import { chooseInkbookAction } from "../../../../src/obsidian/dialogs/action-dialog";
 import { CLIPBOARD, FakeEditor, pasteRequest } from "../../../fixtures/obsidian/embed-paste";
+import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 
 const TestTFile = TFile as unknown as new (path: string, size?: number) => TFile;
+const validationScheduling = {
+  workScheduler: () => immediateWorkScheduler(),
+  subscribeSchedulingProfile: () => () => undefined,
+};
 
 vi.mock("../../../../src/obsidian/dialogs/action-dialog", () => ({
   chooseInkbookAction: vi.fn(),
@@ -33,13 +38,18 @@ describe("Obsidian copied-embed dialog", () => {
         test.settings,
         { show: vi.fn() },
         signal,
+        undefined,
+        validationScheduling,
       ).paste(pasteRequest(test.editor));
 
       const readMotion = vi.mocked(chooseInkbookAction).mock.calls[0]?.[1].readMotion;
+      const workScheduler = vi.mocked(chooseInkbookAction).mock.calls[0]?.[1].workScheduler;
       expect(readMotion).toBeTypeOf("function");
+      expect(workScheduler).toBeTypeOf("function");
       expect(chooseInkbookAction).toHaveBeenCalledWith(test.app, {
         signal,
         readMotion,
+        workScheduler,
         title: "Paste Inkbook embed",
         description: "Choose how this drawing should be inserted.",
         actions: [
@@ -72,9 +82,14 @@ describe("Obsidian copied-embed composition", () => {
     const { app, editor, files, getFileByPath, serialized, settings } = test;
     const placementFeedback = vi.fn();
 
-    const result = await createObsidianEmbedPasteController(app, settings, {
-      show: placementFeedback,
-    }).paste(pasteRequest(editor));
+    const result = await createObsidianEmbedPasteController(
+      app,
+      settings,
+      { show: placementFeedback },
+      undefined,
+      undefined,
+      validationScheduling,
+    ).paste(pasteRequest(editor));
 
     expect(result).toEqual({ kind: "inserted", mode: "duplicate" });
     expect(placementFeedback).not.toHaveBeenCalled();
@@ -143,9 +158,14 @@ describe("Obsidian copied-embed size boundaries", () => {
       sourceSize: 1,
       readSource: () => oversized,
     });
-    const result = await createObsidianEmbedPasteController(app, settings, {
-      show: vi.fn(),
-    }).paste(pasteRequest(editor));
+    const result = await createObsidianEmbedPasteController(
+      app,
+      settings,
+      { show: vi.fn() },
+      undefined,
+      undefined,
+      validationScheduling,
+    ).paste(pasteRequest(editor));
 
     expect(result).toEqual({ kind: "inserted", mode: "original" });
     expect(editor.content).toBe(CLIPBOARD);
@@ -158,9 +178,14 @@ async function runCompositionPaste(
     fallback: "attachment-folder-unavailable" | "custom-folder-unavailable",
   ) => void = vi.fn(),
 ) {
-  const result = await createObsidianEmbedPasteController(test.app, test.settings, {
-    show: placementFeedback,
-  }).paste(pasteRequest(test.editor));
+  const result = await createObsidianEmbedPasteController(
+    test.app,
+    test.settings,
+    { show: placementFeedback },
+    undefined,
+    undefined,
+    validationScheduling,
+  ).paste(pasteRequest(test.editor));
   return { placementFeedback, result };
 }
 

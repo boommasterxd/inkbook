@@ -5,7 +5,7 @@ import { ChunkedSha256 } from "../serialization/chunked-output-sha256";
 import { hashExactUtf8Output } from "../serialization/chunked-output-assembler";
 
 import { adoptUtf8Output, type Utf8AdoptionOptions } from "./utf8-adoption";
-import { createMainThreadCheckpoint, createMainThreadDeadline } from "./main-thread-checkpoint";
+import { createMainThreadCheckpoint } from "./main-thread-checkpoint";
 
 const HASH = /^[0-9a-f]{64}$/u;
 const DEFAULT_CHUNK_BYTES = 64 * 1024;
@@ -32,7 +32,7 @@ export async function hashSvgContent(
 ): Promise<string> {
   const checkpoint =
     options.checkpoint ??
-    createMainThreadCheckpoint(options.sliceBudgetMs, options.waitForBackground);
+    createMainThreadCheckpoint(options.workScheduler, options.waitForBackground);
   await checkpoint();
   options.signal?.throwIfAborted();
   const chunkBytes = options.chunkBytes ?? DEFAULT_CHUNK_BYTES;
@@ -55,7 +55,7 @@ export async function hashConfirmedSvgContent(
     return hashSvgContent(content, options);
   const checkpoint =
     options.checkpoint ??
-    createMainThreadCheckpoint(options.sliceBudgetMs, options.waitForBackground);
+    createMainThreadCheckpoint(options.workScheduler, options.waitForBackground);
   await checkpoint();
   options.signal?.throwIfAborted();
   const chunkBytes = options.chunkBytes ?? DEFAULT_CHUNK_BYTES;
@@ -108,16 +108,14 @@ export async function inspectTrustedSvgOutput(
   options: TrustedSvgInspectionOptions = {},
 ): Promise<TrustedSvgOutput> {
   options.signal?.throwIfAborted();
-  const yieldCheckpoint = options.checkpoint ?? createMainThreadCheckpoint(options.sliceBudgetMs);
   const waitForBackground = options.waitForBackground;
-  const checkpoint = waitForBackground
-    ? async () => {
-        await yieldCheckpoint();
-        await waitForBackground();
-        options.signal?.throwIfAborted();
-      }
-    : yieldCheckpoint;
-  if (waitForBackground) await waitForBackground();
+  const yieldCheckpoint = options.checkpoint ?? createMainThreadCheckpoint(options.workScheduler);
+  const checkpoint = async (): Promise<void> => {
+    if (waitForBackground !== undefined) await waitForBackground();
+    await yieldCheckpoint();
+    options.signal?.throwIfAborted();
+  };
+  await checkpoint();
   options.signal?.throwIfAborted();
   const chunkBytes = options.chunkBytes ?? DEFAULT_CHUNK_BYTES;
   assertChunkBytes(chunkBytes);
@@ -129,7 +127,7 @@ export async function inspectTrustedSvgOutput(
     checkpoint,
     options.signal,
     options.versionPolicy,
-    options.sliceBudgetMs,
+    options.workScheduler,
   );
   if (safe === null) throw new TypeError("Worker output is not a safe Inkbook SVG document.");
   return trustedOutput(inspected, safe);
@@ -213,12 +211,11 @@ async function validateSafeSvgIncrementally(
   checkpoint: () => Promise<void>,
   signal?: AbortSignal,
   versionPolicy: SafeSvgVersionPolicy = "current",
-  sliceBudgetMs?: () => number,
+  workScheduler?: Utf8AdoptionOptions["workScheduler"],
 ): Promise<SafeSvgValidation | null> {
-  const deadline = createMainThreadDeadline(sliceBudgetMs);
   signal?.throwIfAborted();
   const steps = validateSafeSvgSteps(content, {
-    deadlineExceeded: deadline.exceeded,
+    deadlineExceeded: () => workScheduler?.shouldYield() ?? false,
     totalInputBytes: totalBytes,
     versionPolicy,
   });
@@ -227,7 +224,6 @@ async function validateSafeSvgIncrementally(
     signal?.throwIfAborted();
     await checkpoint();
     signal?.throwIfAborted();
-    deadline.restart();
     step = steps.next();
   }
   signal?.throwIfAborted();

@@ -1,6 +1,7 @@
 import { browserScrollMetrics, type BrowserScrollElement } from "../../scrolling/index";
 
 import type { ActiveEditorNavigation } from "./navigation";
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { SelectionEdgeAutoScroller, type SelectionEdgeViewport } from "./selection-edge-scroll";
 import type { SelectionEdgeDragPort } from "./selection-preview";
 
@@ -12,6 +13,7 @@ export interface ActiveEditorSelectionEdgeOptions {
   };
   readonly navigation: ActiveEditorNavigation;
   readonly ownerWindow: Window;
+  readonly workScheduler: WorkScheduler;
   readonly scrollOwner: () => BrowserScrollElement;
 }
 
@@ -23,14 +25,14 @@ export class ActiveEditorSelectionEdgeDrag implements SelectionEdgeDragPort {
   public constructor(options: ActiveEditorSelectionEdgeOptions) {
     this.#layout = options.layout;
     this.#scroller = new SelectionEdgeAutoScroller({
-      cancelFrame: (handle) => options.ownerWindow.cancelAnimationFrame(handle),
+      cancelFrame: (handle) => options.workScheduler.cancelFrame(handle),
       onFrame: () => this.#onViewportChanged?.(),
       onScroll: ({ x, y }) => {
         if (x !== 0) options.navigation.pan(-x);
         if (y !== 0) options.navigation.scroll(-y);
       },
       readViewport: () => readSelectionViewport(options.scrollOwner(), options.ownerWindow),
-      requestFrame: (callback) => options.ownerWindow.requestAnimationFrame(callback),
+      requestFrame: (callback) => options.workScheduler.requestFrame(callback, "input"),
     });
   }
 

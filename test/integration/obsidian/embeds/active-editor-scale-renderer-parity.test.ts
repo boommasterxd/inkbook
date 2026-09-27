@@ -59,7 +59,7 @@ function setup(pressureCount: number) {
     history,
     sceneStore,
     renderer,
-    frameScheduler: scheduler,
+    frameScheduler: scheduler.workScheduler,
     pageToScreen: (point) => point,
     zoom: () => 1,
     selection: () => new Set(elements.map(({ id }) => id)),

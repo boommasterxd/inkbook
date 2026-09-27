@@ -16,6 +16,7 @@ import * as strokeSelectionGeometry from "../../../src/editor/selection/stroke-s
 import { indexedStroke } from "../../fixtures/editor/stroke";
 import { ManualFrameScheduler } from "../../fixtures/obsidian/manual-frame-scheduler";
 import { createSelectionPreviewRenderer } from "../../fixtures/obsidian/selection-preview-renderer";
+import { workSchedulerFromFrames } from "../../fixtures/obsidian/work-scheduler";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 
 const profile = INTERACTION_REFRESH_PROFILE;
@@ -59,15 +60,14 @@ describe(`${profile.refreshRate} Hz selection-query scheduling`, () => {
         simulatedNow += increment;
         return result;
       });
+      let sliceStart = 0;
       const work = new SelectionQueryWork(
         {
-          frameScheduler: scheduler,
+          workScheduler: workSchedulerFromFrames(scheduler, {
+            shouldYield: () => simulatedNow - sliceStart >= profile.interruptibleSliceDeadlineMs,
+          }),
           selection: () => selection,
           selectionSignal: controller.signal,
-          selectionWorkBudget: {
-            now: () => simulatedNow,
-            sliceBudgetMs: () => profile.interruptibleSliceDeadlineMs,
-          },
           setSelection: publish,
           store,
         },
@@ -82,6 +82,7 @@ describe(`${profile.refreshRate} Hz selection-query scheduling`, () => {
       work.start();
       expect(advance).toHaveBeenCalledTimes(expected);
       expect(scheduler.pendingCount).toBe(1);
+      sliceStart = simulatedNow;
       scheduler.runNext(profile.frameDurationMs);
       expect(advance).toHaveBeenCalledTimes(expected * 2);
       expect(read.mock.calls.length).toBeGreaterThan(0);
@@ -156,10 +157,7 @@ function containedSelection(
     renderer: createSelectionPreviewRenderer(),
     pageToScreen: (point) => point,
     frameScheduler: scheduler,
-    selectionWorkBudget: {
-      now: () => 0,
-      sliceBudgetMs: () => profile.interruptibleSliceDeadlineMs,
-    },
+    workScheduler: workSchedulerFromFrames(scheduler),
     selection: () => selection,
     selectionDefaults: { area, inclusion: outline === undefined ? "fully-enclosed" : "touched" },
     setSelection: publish,
@@ -234,7 +232,12 @@ it("charges individual rectangle primitives below a whole geometry batch", () =>
     return true;
   }
   const work = new SelectionQueryWork(
-    { frameScheduler: scheduler, selection: () => selection, setSelection: publish, store },
+    {
+      workScheduler: workSchedulerFromFrames(scheduler),
+      selection: () => selection,
+      setSelection: publish,
+      store,
+    },
     selectBySelectionAreaCandidatesSteps(
       selection,
       createRectangleSelectionArea({ x: 50, y: 45 }, { x: 55, y: 55 }),

@@ -1,4 +1,5 @@
 import type { InkElementV1, InkSnapshotV1, PageV1 } from "../../../domain/schema/public";
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type { ExportDelta } from "../../worker/coalesced-export";
 import type { DocumentRuntimePort } from "../../worker/runtime/public";
 import type { ExistingFilePort, NewFilePort } from "../save-ports";
@@ -23,7 +24,7 @@ export interface AutosaveClock {
 }
 
 export interface AutosaveSessionBaseOptions {
-  readonly sliceBudgetMs?: () => number;
+  readonly workScheduler: WorkScheduler;
   readonly waitForBackground?: () => Promise<void>;
   readonly beforeExistingWrite?: (expectedContent: string) => Promise<void>;
   readonly clock: AutosaveClock;
@@ -60,7 +61,7 @@ export interface AutosaveObserver {
 }
 
 export interface AutosaveCoordinatorOptions {
-  readonly sliceBudgetMs?: () => number;
+  readonly workScheduler: WorkScheduler;
   readonly waitForBackground?: () => Promise<void>;
   readonly beforeExistingWrite?: (expectedContent: string) => Promise<void>;
   readonly clock: AutosaveClock;

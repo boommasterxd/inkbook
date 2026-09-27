@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Platform } from "obsidian";
@@ -36,6 +37,7 @@ function fixture(reduced = false, settle = true) {
     canvasInputSurface: anchor,
     ownerDocument: document,
     ownerWindow: window,
+    workScheduler: workSchedulerFromFrames(window),
     kind: "menu",
     label: "More options",
     onClosed: vi.fn(),

@@ -1,5 +1,6 @@
 import type { InitialPresentationEntrance } from "./presentation-entrance";
 import type { InkbookDeviceSettingsV2 } from "../../domain/settings/types";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { TRANSITION_DURATIONS } from "../../rendering/motion/transitions";
 
 type MotionPreference = InkbookDeviceSettingsV2["motion"];
@@ -8,6 +9,7 @@ const ACTIVE_SCENE_BLOCK_SIZE_PROPERTY = "--inkbook-active-scene-block-size";
 const LOCKED_CONTAINER_BLOCK_SIZE_PROPERTY = "--inkbook-locked-container-block-size";
 
 interface PreviewHandoffOptions {
+  readonly workScheduler: WorkScheduler;
   readonly beginScrollStability?: () => () => void;
   readonly container: HTMLElement;
   readonly initialScrollStabilityRelease?: () => void;
@@ -29,6 +31,7 @@ export class ActiveScenePreviewHandoff {
   readonly #mediaQuery: MediaQueryList | undefined;
   #motion: MotionPreference;
   readonly #ownerWindow: Window;
+  readonly #workScheduler: WorkScheduler;
   readonly #preview: HTMLElement | undefined;
   readonly #previewNextSibling: ChildNode | null;
   readonly #previewParent: Node | null;
@@ -59,6 +62,7 @@ export class ActiveScenePreviewHandoff {
     this.#container = options.container;
     this.#motion = options.motion;
     this.#ownerWindow = ownerWindow;
+    this.#workScheduler = options.workScheduler;
     this.#preview = options.preview;
     this.#setPreviewAspectRatio = options.setPreviewAspectRatio;
     this.#refreshPreview = options.refreshPreview;
@@ -92,7 +96,7 @@ export class ActiveScenePreviewHandoff {
     this.#onReady = undefined;
     this.#clearTimer();
     this.#releaseTransitionStability();
-    if (this.#frame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#frame);
+    if (this.#frame !== undefined) this.#workScheduler.cancelFrame(this.#frame);
     this.#frame = undefined;
     this.#mediaQuery?.removeEventListener("change", this.#handleMotionChange);
     const onLockComplete = this.#onLockComplete;
@@ -137,10 +141,10 @@ export class ActiveScenePreviewHandoff {
 
   #scheduleAfterPaint(callback: () => void): void {
     // The intervening paint establishes the transition's start styles without a forced layout.
-    this.#frame = this.#ownerWindow.requestAnimationFrame(() => {
+    this.#frame = this.#workScheduler.requestFrame(() => {
       this.#frame = undefined;
       if (this.#disposed) return;
-      this.#frame = this.#ownerWindow.requestAnimationFrame(() => {
+      this.#frame = this.#workScheduler.requestFrame(() => {
         this.#frame = undefined;
         if (this.#disposed) return;
         callback();
@@ -300,7 +304,7 @@ export class ActiveScenePreviewHandoff {
 
   #finishReducedMotion(): void {
     if (this.#disposed) return;
-    if (this.#frame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#frame);
+    if (this.#frame !== undefined) this.#workScheduler.cancelFrame(this.#frame);
     this.#frame = undefined;
     this.#clearTimer();
     const lockComplete = this.#onLockComplete;

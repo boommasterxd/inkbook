@@ -38,6 +38,7 @@ interface ExecutorFactoryPort {
     sessionId: string,
     workerEpoch: number,
     isGestureActive: () => boolean,
+    documentId: string,
   ): DocumentRuntimePort;
 }
 
@@ -75,6 +76,7 @@ export async function createVaultDocumentExecutor(options: {
         options.sessionId,
         workerEpoch,
         options.isGestureActive,
+        options.documentId,
       ),
       fallbackUsed: true,
       workerEpoch,
@@ -83,6 +85,7 @@ export async function createVaultDocumentExecutor(options: {
 }
 
 function createVaultFallbackExecutor(options: {
+  readonly documentId: string;
   readonly disposed: () => boolean;
   readonly isGestureActive: () => boolean;
   readonly runtimes: ExecutorFactoryPort;
@@ -94,11 +97,13 @@ function createVaultFallbackExecutor(options: {
     options.sessionId,
     options.workerEpoch,
     options.isGestureActive,
+    options.documentId,
   );
 }
 
 export function createVaultFallbackFactory(options: {
   readonly adopt: (executor: DocumentRuntimePort, workerEpoch: number) => void;
+  readonly documentId: string;
   readonly disposed: () => boolean;
   readonly isGestureActive: () => boolean;
   readonly runtimes: ExecutorFactoryPort;

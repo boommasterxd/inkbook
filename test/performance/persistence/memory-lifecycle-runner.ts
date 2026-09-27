@@ -1,3 +1,4 @@
+import { createTestWorkScheduler } from "../../fixtures/persistence/work-scheduler";
 import type { InkElementV1, InkSnapshotV1, PageV1 } from "../../../src/domain/schema/public";
 import { CoalescedExportTarget } from "../../../src/persistence/worker/coalesced-export";
 import type { ExportSuccess } from "../../../src/persistence/worker/protocol";
@@ -186,10 +187,12 @@ function createRuntime(observeSlice: () => void): DocumentWorkerRuntime {
   return createProductionDocumentRuntime(
     { sessionId: SESSION_ID, workerEpoch: WORKER_EPOCH },
     {
-      yieldControl: () => {
-        observeSlice();
-        return Promise.resolve();
-      },
+      workScheduler: createTestWorkScheduler({
+        checkpoint: () => {
+          observeSlice();
+          return Promise.resolve();
+        },
+      }),
     },
   );
 }

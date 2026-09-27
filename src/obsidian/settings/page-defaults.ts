@@ -6,6 +6,7 @@ import {
 } from "obsidian";
 
 import { LINE_SPACINGS } from "../../domain/settings";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { createBackgroundMenuContent } from "../menus/background-menu-content";
 import type {
   BackgroundMenuState,
@@ -21,11 +22,13 @@ const SPACINGS = ["s", "m", "l", "xl"] as const satisfies readonly BackgroundSpa
 const BUFFER_DESCRIPTION = "Set the writable page buffer copied into newly created files.";
 
 export interface PageDefaultsValues {
+  readonly workScheduler: (ownerWindow: Window | null) => WorkScheduler;
   readonly get: (key: SettingsControlKey) => unknown;
   readonly set: (key: SettingsControlKey, value: unknown) => Promise<void>;
 }
 
 interface BackgroundRenderContext {
+  readonly workScheduler: WorkScheduler;
   readonly content: HTMLElement;
   readonly descriptionId: string;
   readonly error: HTMLElement;
@@ -81,6 +84,7 @@ function renderBackgroundSetting(setting: Setting, values: PageDefaultsValues): 
     descriptionId: description.id,
     error,
     ownerDocument: setting.settingEl.ownerDocument,
+    workScheduler: values.workScheduler(setting.settingEl.ownerDocument.defaultView),
     state: { latestCommits: new Map(), menu: backgroundState(values) },
     values,
   };
@@ -131,7 +135,7 @@ function animateBackgroundLayoutChange(context: BackgroundRenderContext): void {
   let timeout: number | undefined;
   const finish = (): void => {
     content.removeEventListener("transitionend", onTransitionEnd);
-    if (frame !== undefined) win.cancelAnimationFrame(frame);
+    if (frame !== undefined) context.workScheduler.cancelFrame(frame);
     if (timeout !== undefined) win.clearTimeout(timeout);
     frame = undefined;
     delete content.dataset.resizing;
@@ -148,7 +152,7 @@ function animateBackgroundLayoutChange(context: BackgroundRenderContext): void {
   context.state.finishLayout = finish;
   // A replaced transition can dispatch its queued cancel event after the new one starts.
   content.addEventListener("transitionend", onTransitionEnd);
-  frame = win.requestAnimationFrame(() => {
+  frame = context.workScheduler.requestFrame(() => {
     frame = undefined;
     content.style.blockSize = `${String(targetHeight)}px`;
     timeout = win.setTimeout(finish, 300);

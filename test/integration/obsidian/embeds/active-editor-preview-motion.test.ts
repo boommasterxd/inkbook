@@ -1,3 +1,4 @@
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 import { describe, expect, it, vi } from "vitest";
 
 import type { InitialPresentationEntrance } from "../../../../src/obsidian/embeds/presentation-entrance";
@@ -118,6 +119,7 @@ function createFixture(
     container,
     measureContainer,
     handoff: new ActiveScenePreviewHandoff({
+      workScheduler: workSchedulerFromFrames(ownerWindow),
       ...(initialEntrance === undefined ? {} : { initialEntrance }),
       beginScrollStability,
       container,

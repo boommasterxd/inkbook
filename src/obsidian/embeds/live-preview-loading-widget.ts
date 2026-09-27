@@ -27,6 +27,7 @@ export class InkbookLoadingPreviewWidget extends WidgetType {
     const placeholder = createLoadingPlaceholder(view.dom, {
       motion: this.ports.sessions.getMotionPreference?.() ?? "system",
       scheme: this.ports.scheme,
+      workScheduler: this.ports.workScheduler(view.dom.ownerDocument.defaultView),
       ...(this.entranceState.initialHeight === undefined
         ? {}
         : { initialHeight: this.entranceState.initialHeight }),

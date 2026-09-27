@@ -14,11 +14,13 @@ import type { InkbookColorScheme } from "../theme/color-scheme";
 import type { InkbookFeedbackCode } from "../feedback";
 import type { ActiveEditorHistory } from "./active-editor/history";
 import type { Keymap } from "obsidian";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { EditableDocumentModel } from "./vault-document-session";
 import type { PresentationScrollRangeReserve } from "./transition-scroll-stability";
 import type { EditorChromeOpenings } from "./editor-chrome-openings";
 
 export interface ActiveInkbookSceneOptions extends EditorChromeOpenings, LockedPreviewPresentation {
+  readonly workScheduler: WorkScheduler;
   readonly backgroundSpacing: () => InkbookSettingsV4["pageDefaults"]["backgroundSpacing"];
   readonly defaults: ToolDefaultsV1;
   readonly deviceSettings: InkbookDeviceSettingsV2;
@@ -33,7 +35,6 @@ export interface ActiveInkbookSceneOptions extends EditorChromeOpenings, LockedP
   readonly onDeleteEmbed: () => void;
   readonly onFirstStrokeCommitted?: () => void;
   readonly root: HTMLElement;
-  readonly sliceBudgetMs: () => number;
   readonly initialEntrance?: InitialPresentationEntrance;
   readonly preview?: HTMLElement;
   readonly scrollRangeReserve?: PresentationScrollRangeReserve;

@@ -26,6 +26,7 @@ import { coordinateSystem, table } from "../../unit/domain/geometry/fixtures";
 import { connectedLine, rectangle } from "../../unit/domain/store/fixtures";
 import { maximumStroke } from "../editor/maximum-stroke-fixture";
 import { FakeDocument, FakeNode, FakeScheduler, asElement } from "../../unit/rendering/scene/fakes";
+import { workSchedulerFromFrames } from "../../fixtures/obsidian/work-scheduler";
 
 function mixedExactElements(): readonly InkElementV1[] {
   const stroke = maximumStroke(0);
@@ -144,7 +145,7 @@ function createPipeline(api: ResizeApi, elements: readonly InkElementV1[], pageH
     layout: { readViewport: () => ({ height: 120, left: 0, top: 0, width: 120 }) },
     page: PAGE,
     reducedMotion: true,
-    scheduler,
+    workScheduler: workSchedulerFromFrames(scheduler),
     store: sceneStore,
   });
   renderer.setPage(PAGE, pageHeight);
@@ -160,7 +161,7 @@ function createInteraction(
 ) {
   const ports = interactionPorts(api, fixture, elements);
   return new api.ActiveEditorHandleInteraction({
-    frameScheduler: fixture.scheduler,
+    frameScheduler: fixture.scheduler.workScheduler,
     layout: { begin: () => undefined, finish: () => undefined, updateBottom },
     ...ports,
     preparedHistory: {} as never,
@@ -225,7 +226,7 @@ function createMovePreview(
   edge: (() => void) | SelectionEdgeDragPort,
 ) {
   return new api.MovePreview({
-    frameScheduler: fixture.scheduler,
+    frameScheduler: fixture.scheduler.workScheduler,
     ...interactionPorts(api, fixture, elements),
     preparedHistory: {} as never,
     renderer: fixture.renderer,
@@ -262,6 +263,7 @@ function createNativeEdgeDrag(scheduler: FakeScheduler) {
     ownerDocument: { scrollingElement: null },
   } as unknown as BrowserScrollElement;
   const drag = new ActiveEditorSelectionEdgeDrag({
+    workScheduler: workSchedulerFromFrames(scheduler),
     layout: { begin: () => undefined, finish: () => undefined, updateBottom },
     navigation: { pan: vi.fn(), scroll } as unknown as ActiveEditorNavigation,
     ownerWindow: {

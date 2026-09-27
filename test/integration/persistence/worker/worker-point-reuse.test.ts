@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 import { DocumentWorkerRuntime } from "../../../../src/persistence/worker/runtime/document-runtime";
 import { attachDocumentWorkerHost } from "../../../../src/persistence/worker/runtime/worker-host";
 import { WorkerDocumentRuntimePort } from "../../../../src/persistence/worker/runtime/worker-bridge";
+import { TestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 import { TestWorkerEndpoint } from "../../../fixtures/persistence/worker-endpoint";
 import {
   createTestStroke,
@@ -23,7 +24,10 @@ it("retains worker-owned shape points through hosted move and undo requests", as
   const runtime = new DocumentWorkerRuntime(identity);
   const execute = vi.spyOn(runtime, "execute");
   const detach = attachDocumentWorkerHost(hostEndpoint, runtime);
-  const client = new WorkerDocumentRuntimePort(() => clientEndpoint);
+  const client = new WorkerDocumentRuntimePort(() => clientEndpoint, {
+    workScheduler: new TestWorkScheduler(),
+    frameIntervalMilliseconds: () => 1_000 / 60,
+  });
   const stroke = createTestStroke();
   Object.freeze(stroke.points);
   try {

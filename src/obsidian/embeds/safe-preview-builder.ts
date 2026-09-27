@@ -1,18 +1,16 @@
 import { parseOpeningTag } from "../../persistence/documents/svg-tag";
-import { DEFAULT_REFRESH_RATE, refreshRateProfile } from "../performance";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { configurePreviewSvg } from "./safe-preview-svg";
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const SCAN_UNITS = 16 * 1024;
 const ELEMENTS_PER_SLICE = 256;
 const SCAN_UNITS_PER_SLICE = 256 * 1024;
-const DEFAULT_SLICE_BUDGET_MS = refreshRateProfile(DEFAULT_REFRESH_RATE).sliceBudgetMs;
 
 interface PreviewBuildOptions {
   readonly checkpoint: (initial?: boolean) => Promise<void>;
   readonly isCancelled: () => boolean;
-  readonly now?: () => number;
-  readonly sliceBudgetMs?: () => number;
+  readonly workScheduler: WorkScheduler;
 }
 
 /** Only accepts a completely validated safe-envelope SVG, without importing unvalidated markup. */
@@ -21,9 +19,6 @@ export async function createPreviewSvgAsync(
   safeSvg: string,
   options: PreviewBuildOptions,
 ): Promise<SVGSVGElement | undefined> {
-  const now = options.now ?? (() => performance.now());
-  const sliceBudgetMs = options.sliceBudgetMs ?? (() => DEFAULT_SLICE_BUDGET_MS);
-  let sliceStarted = now();
   let scannedUnits = 0;
   let elements = 0;
   const exhausted = (units = 0, created = false): boolean => {
@@ -32,7 +27,7 @@ export async function createPreviewSvgAsync(
     return (
       scannedUnits >= SCAN_UNITS_PER_SLICE ||
       elements >= ELEMENTS_PER_SLICE ||
-      now() - sliceStarted >= sliceBudgetMs()
+      options.workScheduler.shouldYield()
     );
   };
   const steps = buildPreviewSteps(ownerDocument, safeSvg, exhausted);
@@ -41,7 +36,6 @@ export async function createPreviewSvgAsync(
     await options.checkpoint(initial);
     initial = false;
     if (options.isCancelled()) return undefined;
-    sliceStarted = now();
     scannedUnits = 0;
     elements = 0;
     const step = steps.next();

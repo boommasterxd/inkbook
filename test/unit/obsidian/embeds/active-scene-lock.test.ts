@@ -9,6 +9,7 @@ import {
   type SceneLayoutUpdate,
 } from "../../../../src/obsidian/embeds/active-scene-lock";
 import { domRect } from "../../../fixtures/obsidian/active-editor";
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 const page: PageV1 = {
   activeBufferLines: 3,
@@ -265,6 +266,7 @@ function createFixture(scheduleStabilityFrame = false, atBottom = false) {
       maximumBottom,
       oldViewState: { cameraX: -100, zoom: 1 },
       page,
+      workScheduler: workSchedulerFromFrames(ownerWindow, { now: () => 0 }),
       reducedMotion,
       restoreViewState: vi.fn(() => true),
     }),

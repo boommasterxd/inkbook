@@ -1,4 +1,5 @@
 import type { InkbookDeviceSettingsV2 } from "../../domain/settings";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 
 const PANEL_TRANSITION_TIMEOUT_MS = 300;
 
@@ -6,12 +7,18 @@ export class SettingsPanelMotion {
   readonly #ownerWindow: Window | null;
   readonly #panel: HTMLElement;
   readonly #readMotion: () => InkbookDeviceSettingsV2["motion"];
+  readonly #workScheduler: WorkScheduler;
   #cancelTransition: (() => void) | undefined;
 
-  public constructor(panel: HTMLElement, readMotion: () => InkbookDeviceSettingsV2["motion"]) {
+  public constructor(
+    panel: HTMLElement,
+    readMotion: () => InkbookDeviceSettingsV2["motion"],
+    workScheduler: WorkScheduler,
+  ) {
     this.#ownerWindow = panel.ownerDocument.defaultView;
     this.#panel = panel;
     this.#readMotion = readMotion;
+    this.#workScheduler = workScheduler;
   }
 
   public setExpanded(expanded: boolean): void {
@@ -57,13 +64,13 @@ export class SettingsPanelMotion {
     panel.dataset.resizing = "true";
     panel.style.blockSize = `${String(start)}px`;
     void panel.offsetHeight;
-    let frame: number | undefined = ownerWindow.requestAnimationFrame(() => {
+    let frame: number | undefined = this.#workScheduler.requestFrame(() => {
       frame = undefined;
       panel.style.blockSize = `${String(target)}px`;
       this.#listenForCompletion(ownerWindow, expanded);
     });
     this.#cancelTransition = (): void => {
-      if (frame !== undefined) ownerWindow.cancelAnimationFrame(frame);
+      if (frame !== undefined) this.#workScheduler.cancelFrame(frame);
       frame = undefined;
       this.#cancelTransition = undefined;
       delete panel.dataset.resizing;

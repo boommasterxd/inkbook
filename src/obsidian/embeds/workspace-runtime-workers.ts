@@ -1,5 +1,10 @@
-import { Platform } from "obsidian";
-
+import {
+  FRAME_WORK_SHARE,
+  SchedulerDisposedError,
+  type FrameCancellation,
+  type WorkPriority,
+  type WorkScheduler,
+} from "../../domain/scheduling/work-scheduler";
 import {
   createDocumentRuntime,
   DocumentWorkerRuntime,
@@ -15,7 +20,8 @@ import {
 interface WorkspaceRuntimeWindowPorts {
   readonly fallbackWindow: () => Window | undefined;
   readonly owningWindow: (documentId: string) => Window;
-  readonly sliceBudgetMs?: (ownerWindow: Window) => number;
+  readonly workScheduler: (ownerWindow: Window) => WorkScheduler;
+  readonly subscribeSchedulingProfile: (listener: () => void) => () => void;
   readonly warn?: (ownerWindow: Window | undefined, message: string) => void;
 }
 
@@ -25,12 +31,12 @@ const WORKER_FALLBACK_WARNING =
 
 export function createWorkspaceDocumentRuntimes(
   windows: WorkspaceRuntimeWindowPorts,
-  profile = Platform.isMobile ? ("mobile" as const) : ("desktop" as const),
 ): DocumentRuntimeFactories {
-  const sliceBudgetMs = windows.sliceBudgetMs ?? (() => (profile === "mobile" ? 12 : 8));
   const warnFallback = createFallbackWarning(windows);
+  const workScheduler = (documentId: string): WorkScheduler =>
+    createDocumentScheduler(() => windows.workScheduler(windows.owningWindow(documentId)));
   return {
-    sliceBudgetMs: (documentId) => windows.sliceBudgetMs?.(windows.owningWindow(documentId)) ?? 4,
+    workScheduler,
     clock: (documentId) => ({
       clearTimeout: (handle) => {
         if (isWindowTimeoutHandle(handle)) clearWindowTimeout(handle);
@@ -43,52 +49,97 @@ export function createWorkspaceDocumentRuntimes(
         } satisfies WindowTimeoutHandle;
       },
     }),
-    create: async (sessionId, workerEpoch, documentId) => {
+    create: (sessionId, workerEpoch, documentId) => {
+      const scheduler = workScheduler(documentId);
       return createDocumentRuntime(sessionId, workerEpoch, windows.owningWindow(documentId), {
-        profile,
+        workScheduler: scheduler,
+        frameIntervalMilliseconds: () => scheduler.budgetMs() / FRAME_WORK_SHARE,
         requestTimeoutMilliseconds: DOCUMENT_RUNTIME_TIMEOUT_MS,
-        sliceMilliseconds: () => sliceBudgetMs(windows.owningWindow(documentId)),
+        subscribeSchedulingProfile: windows.subscribeSchedulingProfile,
       });
     },
-    createFallback: (sessionId, workerEpoch, isInputActive) => {
+    createFallback: (sessionId, workerEpoch, isInputActive, documentId) => {
       warnFallback();
-      const scheduler = new GestureAwareSliceScheduler({
-        isInputActive,
-        now: () => windows.fallbackWindow()?.performance.now() ?? performance.now(),
-        profile,
-        sliceMilliseconds:
-          windows.sliceBudgetMs === undefined
-            ? profile === "mobile"
-              ? 10
-              : 6
-            : () => {
-                const ownerWindow = windows.fallbackWindow();
-                return ownerWindow === undefined
-                  ? profile === "mobile"
-                    ? 10
-                    : 6
-                  : (windows.sliceBudgetMs?.(ownerWindow) ?? 6);
-              },
-        yieldControl: () => yieldToWindow(windows.fallbackWindow()),
-      });
-      return new DocumentWorkerRuntime({ sessionId, workerEpoch }, scheduler);
+      return new DocumentWorkerRuntime(
+        { sessionId, workerEpoch },
+        new GestureAwareSliceScheduler({
+          isInputActive,
+          workScheduler: workScheduler(documentId),
+        }),
+      );
     },
     createStoreScheduler: (documentId, isCancelled) => {
-      let sliceStarted = windows.owningWindow(documentId).performance.now();
+      const scheduler = workScheduler(documentId);
       return {
         isCancelled,
-        shouldYield: () =>
-          windows.owningWindow(documentId).performance.now() - sliceStarted >=
-          sliceBudgetMs(windows.owningWindow(documentId)),
-        yieldControl: async () => {
-          await yieldToWindow(windows.owningWindow(documentId));
-          sliceStarted = windows.owningWindow(documentId).performance.now();
-        },
+        shouldYield: () => scheduler.shouldYield(),
+        yieldControl: () => scheduler.checkpoint() ?? Promise.resolve(),
       };
     },
     now: (documentId) => {
       const performance = windows.owningWindow(documentId).performance;
       return Math.floor(performance.timeOrigin + performance.now());
+    },
+  };
+}
+
+/** A document may move between windows while retaining its worker and dirty model. */
+function createDocumentScheduler(current: () => WorkScheduler): WorkScheduler {
+  const frames = new Map<number, { scheduler: WorkScheduler; handle: number }>();
+  let nextHandle = 0;
+  let disposed = false;
+  const resumeAfterTransfer = (
+    error: unknown,
+    original: WorkScheduler,
+    signal: FrameCancellation | undefined,
+    resume: (scheduler: WorkScheduler) => Promise<void> | undefined,
+  ): Promise<void> | undefined => {
+    if (!(error instanceof SchedulerDisposedError) || disposed || signal?.aborted) throw error;
+    const replacement = current();
+    if (replacement === original) throw error;
+    return resume(replacement);
+  };
+  return {
+    now: () => current().now(),
+    deadline: () => current().deadline(),
+    budgetMs: () => current().budgetMs(),
+    shouldYield: () => current().shouldYield(),
+    requestFrame: (callback, priority?: WorkPriority) => {
+      const scheduler = current();
+      const handle = ++nextHandle;
+      const scheduled = scheduler.requestFrame((timestamp) => {
+        frames.delete(handle);
+        callback(timestamp);
+      }, priority);
+      frames.set(handle, { scheduler, handle: scheduled });
+      return handle;
+    },
+    cancelFrame: (handle) => {
+      const frame = frames.get(handle);
+      if (frame === undefined) return;
+      frames.delete(handle);
+      frame.scheduler.cancelFrame(frame.handle);
+    },
+    checkpoint: (signal) => {
+      const original = current();
+      return original.checkpoint(signal)?.catch(async (error: unknown) => {
+        await resumeAfterTransfer(error, original, signal, (replacement) =>
+          replacement.checkpoint(signal),
+        );
+      });
+    },
+    nextFrame: (signal, priority?: WorkPriority) => {
+      const original = current();
+      return original.nextFrame(signal, priority).catch(async (error: unknown) => {
+        await resumeAfterTransfer(error, original, signal, (replacement) =>
+          replacement.nextFrame(signal, priority),
+        );
+      });
+    },
+    dispose: () => {
+      disposed = true;
+      for (const frame of frames.values()) frame.scheduler.cancelFrame(frame.handle);
+      frames.clear();
     },
   };
 }
@@ -115,27 +166,4 @@ function createFallbackWarning(windows: WorkspaceRuntimeWindowPorts): () => void
       ownerConsole?.warn(WORKER_FALLBACK_WARNING);
     }
   };
-}
-
-function yieldToWindow(ownerWindow: Window | undefined): Promise<void> {
-  if (ownerWindow === undefined) return Promise.resolve();
-  const channelConstructor = (ownerWindow as Window & { MessageChannel?: typeof MessageChannel })
-    .MessageChannel;
-  if (channelConstructor === undefined)
-    return new Promise((resolve) => ownerWindow.setTimeout(resolve, 0));
-  return new Promise((resolve, reject) => {
-    const channel = new channelConstructor();
-    channel.port1.onmessage = () => {
-      channel.port1.close();
-      channel.port2.close();
-      resolve();
-    };
-    try {
-      channel.port2.postMessage(undefined);
-    } catch (error) {
-      channel.port1.close();
-      channel.port2.close();
-      reject(error instanceof Error ? error : new Error("Store handoff failed."));
-    }
-  });
 }

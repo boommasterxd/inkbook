@@ -101,7 +101,7 @@ export function createDenseViewportHarness(options: {
       }),
     },
     page: PAGE,
-    scheduler,
+    workScheduler: scheduler.workScheduler,
     store,
   });
   return { renderer, scheduler, store };

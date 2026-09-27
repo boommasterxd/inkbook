@@ -1,5 +1,6 @@
 import type { InkElementV1, PointV1 } from "../../../domain/schema/public";
 import type { SnappingSettingsV1 } from "../../../domain/settings/types";
+import type { WorkPriority } from "../../../domain/scheduling/work-scheduler";
 import type { ToolSystemCursor } from "../../../editor/input/tool-cursor";
 import type { PointerSample } from "../../../editor/input/index";
 import {
@@ -55,8 +56,8 @@ export type { HandleInteractionRenderer } from "./handle-presentation";
 const NO_SCALE_TRANSFORM_IDS: readonly string[] = [];
 
 export interface HandleFrameScheduler {
-  cancelAnimationFrame(handle: number): void;
-  requestAnimationFrame(callback: FrameRequestCallback): number;
+  cancelFrame(handle: number): void;
+  requestFrame(callback: FrameRequestCallback, priority?: WorkPriority): number;
 }
 
 interface PendingHandleSample {
@@ -402,11 +403,11 @@ export class ActiveEditorHandleInteraction {
     if (this.#frameHandle !== undefined) return;
     let completedSynchronously = false;
     let handle = 0;
-    handle = this.#frameScheduler.requestAnimationFrame(() => {
+    handle = this.#frameScheduler.requestFrame(() => {
       completedSynchronously = true;
       if (this.#frameHandle === handle) this.#frameHandle = undefined;
       if (this.#active === active) this.#applyPendingSample(active);
-    });
+    }, "input");
     if (!completedSynchronously) this.#frameHandle = handle;
   }
 
@@ -417,7 +418,7 @@ export class ActiveEditorHandleInteraction {
 
   #cancelPointerFrame(): void {
     if (this.#frameHandle === undefined) return;
-    this.#frameScheduler.cancelAnimationFrame(this.#frameHandle);
+    this.#frameScheduler.cancelFrame(this.#frameHandle);
     this.#frameHandle = undefined;
   }
 

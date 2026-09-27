@@ -11,6 +11,7 @@ import {
 } from "../../../../src/obsidian/embeds/workspace-mounted-presentation";
 import { beginWorkspaceActivation } from "../../../../src/obsidian/embeds/workspace-runtime-scene-readiness";
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 function createHarness() {
   let present: (ready: boolean) => void = () => undefined;
@@ -22,7 +23,10 @@ function createHarness() {
     whenPresented,
     loadingStartedAt: 100,
   } as PresentationAttachment;
-  const mounted = createWorkspaceMountedPresentation(attachment);
+  const mounted = createWorkspaceMountedPresentation(
+    attachment,
+    workSchedulerFromFrames(attachment.root.ownerDocument.defaultView as Window),
+  );
   const initial = { finish: vi.fn() };
   const subsequent = { finish: vi.fn() };
   const begin = vi.spyOn(mounted.feedback, "begin").mockReturnValue(subsequent);
@@ -51,7 +55,10 @@ describe("mounted presentation initial entrance", () => {
       root: new FakePresentationElement() as unknown as HTMLElement,
       initialEntrance: { showLoading },
     } as unknown as PresentationAttachment;
-    const mounted = createWorkspaceMountedPresentation(attachment);
+    const mounted = createWorkspaceMountedPresentation(
+      attachment,
+      workSchedulerFromFrames(attachment.root.ownerDocument.defaultView as Window),
+    );
     expect(showLoading).not.toHaveBeenCalled();
     mounted.feedback.begin("loading", -100_000);
     expect(showLoading).toHaveBeenCalledOnce();

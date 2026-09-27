@@ -17,7 +17,9 @@ import {
 } from "./interaction-refresh-profile-fixture";
 import { FakeNode, FakeScheduler } from "../../../unit/rendering/scene/fakes";
 
-const FAKE_CLOCK_CHECKPOINTS_PER_FRAME = 4;
+// Central admission reads the clock before scene work; keep the existing six-entrant work bound.
+const FAKE_CLOCK_CHECKPOINTS_PER_FRAME = 8;
+const MAX_MOUNT_SLICE_ELEMENTS = 6;
 const TRANSITIONS = 12;
 const DEFAULT_CAMERA: SceneCamera = { x: 0, zoom: 1 };
 const DEFAULT_VIEWPORT: SceneViewport = { height: 100, left: 0, top: 0, width: 100 };
@@ -319,10 +321,8 @@ function drainBoundedReconciliation(
     scheduler.runNext();
     frames += 1;
     const stats = renderer.instrumentation();
-    // The first entry has no probe; floating-point deadline equality permits one extra probe.
-    expect(stats.maximumMountSliceElements).toBeLessThanOrEqual(
-      FAKE_CLOCK_CHECKPOINTS_PER_FRAME + 2,
-    );
+    // Simulated time controls scheduling; the observed mount count remains the work bound.
+    expect(stats.maximumMountSliceElements).toBeLessThanOrEqual(MAX_MOUNT_SLICE_ELEMENTS);
   }
 }
 

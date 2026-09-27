@@ -33,7 +33,7 @@ export class ActiveEditorLayout {
   readonly #container: HTMLElement;
   readonly #observer: ResizeObserver | undefined;
   readonly #options: ActiveEditorLayoutOptions;
-  readonly #ownerWindow: Window;
+  readonly #workScheduler: ActiveEditorLayoutOptions["workScheduler"];
   readonly #motion: ActiveEditorMotion;
   readonly #pageLayout = new ActivePageLayout();
   readonly #heightTransition: ActiveHeightTransition;
@@ -60,10 +60,10 @@ export class ActiveEditorLayout {
     this.#container = options.container;
     const ownerWindow = options.root.ownerDocument.defaultView;
     if (ownerWindow === null) throw new Error("The active editor requires an owning window.");
-    this.#ownerWindow = ownerWindow;
+    this.#workScheduler = options.workScheduler;
     this.#heightTransition = new ActiveHeightTransition(
       this.#container,
-      ownerWindow,
+      this.#workScheduler,
       options.beginScrollStability,
     );
     this.#motion = new ActiveEditorMotion(
@@ -142,8 +142,8 @@ export class ActiveEditorLayout {
     this.#chromeObserver?.disconnect();
     this.#observer?.disconnect();
     this.#motion.dispose();
-    if (this.#frame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#frame);
-    if (this.#readyFrame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#readyFrame);
+    if (this.#frame !== undefined) this.#workScheduler.cancelFrame(this.#frame);
+    if (this.#readyFrame !== undefined) this.#workScheduler.cancelFrame(this.#readyFrame);
     this.#heightTransition.cancel();
     this.#frame = undefined;
     this.#readyFrame = undefined;
@@ -208,8 +208,8 @@ export class ActiveEditorLayout {
     if (this.#suspended) return;
     this.#cancelHeightTransitionAtBoundary(true);
     this.#suspended = true;
-    if (this.#frame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#frame);
-    if (this.#readyFrame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#readyFrame);
+    if (this.#frame !== undefined) this.#workScheduler.cancelFrame(this.#frame);
+    if (this.#readyFrame !== undefined) this.#workScheduler.cancelFrame(this.#readyFrame);
     this.#frame = undefined;
     this.#readyFrame = undefined;
   }
@@ -230,7 +230,7 @@ export class ActiveEditorLayout {
 
   private scheduleMeasurement(): void {
     if (this.#suspended || !this.#chromeMounted || this.#frame !== undefined) return;
-    this.#frame = this.#ownerWindow.requestAnimationFrame(() => {
+    this.#frame = this.#workScheduler.requestFrame(() => {
       this.#frame = undefined;
       if (this.#suspended) return;
       this.measure();
@@ -474,7 +474,7 @@ export class ActiveEditorLayout {
   #markReady(): void {
     if (this.#ready) return;
     this.#ready = true;
-    this.#readyFrame = this.#ownerWindow.requestAnimationFrame(() => {
+    this.#readyFrame = this.#workScheduler.requestFrame(() => {
       this.#readyFrame = undefined;
       this.#options.onReady();
     });

@@ -1,3 +1,4 @@
+import { createTestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 import { parseInkbookDocumentForTest } from "../../../fixtures/persistence/parse-document";
 import { describe, expect, it } from "vitest";
 
@@ -53,6 +54,7 @@ async function createBackgroundHarness() {
   const source = new AutosaveDocumentFixture();
   const vault = new BackgroundMemoryVault(initial.svg);
   const coordinator = new AutosaveCoordinator({
+    workScheduler: createTestWorkScheduler(),
     clock: { clearTimeout: () => undefined, setTimeout: () => 1 },
     confirmedBase: { outputHash: initial.hash, revision: 0, type: "confirmed" },
     confirmedContent: initial.svg,

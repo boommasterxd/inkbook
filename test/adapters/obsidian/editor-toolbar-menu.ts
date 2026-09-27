@@ -1,3 +1,4 @@
+import { workSchedulerFromFrames } from "../../fixtures/obsidian/work-scheduler";
 import { vi } from "vitest";
 
 import type {
@@ -145,6 +146,7 @@ export function createEditorToolbarMenuOptions(
   };
   return {
     anchor: createHtmlElement("button"),
+    workScheduler: workSchedulerFromFrames(window),
     canvasInputSurface: createHtmlElement("div"),
     factory: {
       create: () => new FakeEditorToolbarMenu(),

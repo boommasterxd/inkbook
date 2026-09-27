@@ -14,6 +14,7 @@ import { ObsidianInkbookDocumentRecognition } from "../../../../src/obsidian/emb
 import { createInkbookLockedPreview } from "../../../../src/obsidian/embeds/locked-preview";
 import { createHtmlElement, installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
 import { deferredPreviewRecognition } from "../../../fixtures/obsidian/deferred-preview-recognition";
+import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 
 const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata></svg>';
 const CONTENT_IDENTITY = { outputHash: "a".repeat(64), revision: 1 };
@@ -32,19 +33,27 @@ describe("locked preview platform treatment", () => {
   it("marks only Android activation buttons for host tap-surface neutralization", () => {
     Platform.isAndroidApp = true;
     const androidButton = createHtmlElement("button");
-    const android = createInkbookLockedPreview(androidButton, {
-      aspectRatio: 1,
-      contentIdentity: CONTENT_IDENTITY,
-      safeSvg: SAFE_PREVIEW_SVG,
-    });
+    const android = createInkbookLockedPreview(
+      androidButton,
+      {
+        aspectRatio: 1,
+        contentIdentity: CONTENT_IDENTITY,
+        safeSvg: SAFE_PREVIEW_SVG,
+      },
+      immediateWorkScheduler(),
+    );
 
     Platform.isAndroidApp = false;
     const desktopButton = createHtmlElement("button");
-    const desktop = createInkbookLockedPreview(desktopButton, {
-      aspectRatio: 1,
-      contentIdentity: CONTENT_IDENTITY,
-      safeSvg: SAFE_PREVIEW_SVG,
-    });
+    const desktop = createInkbookLockedPreview(
+      desktopButton,
+      {
+        aspectRatio: 1,
+        contentIdentity: CONTENT_IDENTITY,
+        safeSvg: SAFE_PREVIEW_SVG,
+      },
+      immediateWorkScheduler(),
+    );
 
     expect(androidButton.classList.contains("inkbook-locked-preview-android")).toBe(true);
     expect(desktopButton.classList.contains("inkbook-locked-preview-android")).toBe(false);
@@ -67,6 +76,7 @@ it("restores the latest deferred content before the preview handoff completes", 
     container: createHtmlElement("div"),
     motion: "reduced",
     preview: button,
+    workScheduler: immediateWorkScheduler(),
     refreshPreview: preview.refresh,
   });
   await preview.ensureReady();
@@ -118,11 +128,15 @@ it.each([false, true])(
       .mockImplementation(async () => new Response(serialized.value.svg));
     const parser = vi.spyOn(window.DOMParser.prototype, "parseFromString");
     const button = createHtmlElement("button");
-    const preview = createInkbookLockedPreview(button, {
-      aspectRatio: 1,
-      contentIdentity: CONTENT_IDENTITY,
-      safeSvg: SAFE_PREVIEW_SVG,
-    });
+    const preview = createInkbookLockedPreview(
+      button,
+      {
+        aspectRatio: 1,
+        contentIdentity: CONTENT_IDENTITY,
+        safeSvg: SAFE_PREVIEW_SVG,
+      },
+      immediateWorkScheduler(),
+    );
     button.hidden = hidden;
     const identity = await preview.setSource("app://saved.svg");
     expect(identity).toEqual({
@@ -175,11 +189,15 @@ it("pauses detached preparation during input and publishes only the latest descr
 
 it("settles lock readiness when disposed during an input pause without building stale DOM", async () => {
   const button = createHtmlElement("button");
-  const preview = createInkbookLockedPreview(button, {
-    aspectRatio: 1,
-    contentIdentity: CONTENT_IDENTITY,
-    safeSvg: SAFE_PREVIEW_SVG,
-  });
+  const preview = createInkbookLockedPreview(
+    button,
+    {
+      aspectRatio: 1,
+      contentIdentity: CONTENT_IDENTITY,
+      safeSvg: SAFE_PREVIEW_SVG,
+    },
+    immediateWorkScheduler(),
+  );
   preview.setBackgroundWait(() => new Promise<void>(() => undefined));
   preview.setDescriptor({
     aspectRatio: 2,
@@ -241,7 +259,7 @@ it("shares validated Vault bytes across locked surfaces and builds independent S
       contentIdentity: CONTENT_IDENTITY,
       safeSvg: SAFE_PREVIEW_SVG,
     },
-    undefined,
+    immediateWorkScheduler(),
     sourceLoader,
   );
   const second = createInkbookLockedPreview(
@@ -251,7 +269,7 @@ it("shares validated Vault bytes across locked surfaces and builds independent S
       contentIdentity: CONTENT_IDENTITY,
       safeSvg: SAFE_PREVIEW_SVG,
     },
-    undefined,
+    immediateWorkScheduler(),
     sourceLoader,
   );
   const source = `app://shared.svg?inkbook-revision=${String(serialized.value.snapshot.revision)}-${serialized.value.hash}`;
@@ -274,7 +292,7 @@ it("shares validated Vault bytes across locked surfaces and builds independent S
       contentIdentity: CONTENT_IDENTITY,
       safeSvg: SAFE_PREVIEW_SVG,
     },
-    undefined,
+    immediateWorkScheduler(),
     sourceLoader,
   );
   await third.setSource(source);
@@ -307,11 +325,14 @@ it("shares validated Vault bytes across locked surfaces and builds independent S
 it("uses confirmed safe bytes without reading again and rejects a mismatched revision", async () => {
   const { file, serialized, signature } = createConfirmedOutputFixture();
   const cachedRead = vi.fn(async () => serialized.value.svg);
-  const recognition = new ObsidianInkbookDocumentRecognition({
-    getFileByPath: (path: string) => (path === file.path ? file : null),
-    getResourcePath: () => "app://confirmed.svg",
-    cachedRead,
-  } as unknown as Vault);
+  const recognition = new ObsidianInkbookDocumentRecognition(
+    {
+      getFileByPath: (path: string) => (path === file.path ? file : null),
+      getResourcePath: () => "app://confirmed.svg",
+      cachedRead,
+    } as unknown as Vault,
+    { workScheduler: immediateWorkScheduler() },
+  );
   recognition.acceptConfirmedOutput(
     file.path,
     serialized.value.svg,
@@ -321,7 +342,7 @@ it("uses confirmed safe bytes without reading again and rejects a mismatched rev
   const preview = createInkbookLockedPreview(
     createHtmlElement("button"),
     { aspectRatio: 1, contentIdentity: CONTENT_IDENTITY, safeSvg: SAFE_PREVIEW_SVG },
-    undefined,
+    immediateWorkScheduler(),
     { documentId: file.path, documents: recognition },
   );
   const prefix = `app://confirmed.svg?inkbook-revision=`;
@@ -354,9 +375,9 @@ it("uses confirmed safe bytes without reading again and rejects a mismatched rev
   recognition.dispose();
 });
 
-it("prepares initial content asynchronously with the current owning-window budget", async () => {
+it("prepares initial content asynchronously under the owning-window scheduler", async () => {
   const button = createHtmlElement("button");
-  const budget = vi.fn(() => 2);
+  const shouldYield = vi.fn(() => false);
   const parser = vi.spyOn(window.DOMParser.prototype, "parseFromString");
   const creates = vi.spyOn(document, "createElementNS");
   const preview = createInkbookLockedPreview(
@@ -366,28 +387,30 @@ it("prepares initial content asynchronously with the current owning-window budge
       contentIdentity: CONTENT_IDENTITY,
       safeSvg: `<svg xmlns="http://www.w3.org/2000/svg">${'<path d="M0 0"/>'.repeat(64)}</svg>`,
     },
-    budget,
+    immediateWorkScheduler(shouldYield),
   );
   expect(button.querySelector("svg")).toBeNull();
   expect(creates.mock.calls.some(([namespace]) => namespace === "http://www.w3.org/2000/svg")).toBe(
     false,
   );
-  budget.mockReturnValue(1);
   await preview.ensureReady();
   expect(button.querySelectorAll("path")).toHaveLength(64);
-  expect(budget).toHaveReturnedWith(1);
-  expect(budget).not.toHaveReturnedWith(2);
+  expect(shouldYield).toHaveBeenCalled();
   expect(parser).not.toHaveBeenCalled();
   preview.dispose();
 });
 
 async function preparedPreview(hidden = false) {
   const button = createHtmlElement("button");
-  const preview = createInkbookLockedPreview(button, {
-    aspectRatio: 1,
-    contentIdentity: CONTENT_IDENTITY,
-    safeSvg: SAFE_PREVIEW_SVG,
-  });
+  const preview = createInkbookLockedPreview(
+    button,
+    {
+      aspectRatio: 1,
+      contentIdentity: CONTENT_IDENTITY,
+      safeSvg: SAFE_PREVIEW_SVG,
+    },
+    immediateWorkScheduler(),
+  );
   await preview.ensureReady();
   button.hidden = hidden;
   return { button, preview };
@@ -412,6 +435,7 @@ it("drains a newer hidden source received during lock preparation and retries fa
     container: root,
     motion: "reduced",
     preview: button,
+    workScheduler: immediateWorkScheduler(),
     setPreviewSource: load,
     ensurePreviewReady: ensure,
   });

@@ -1,3 +1,4 @@
+import { createTestWorkScheduler } from "../../../fixtures/persistence/work-scheduler";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { sha256Hex } from "../../../../src/persistence/serialization/sha256";
 import { AutosaveCoordinator } from "../../../../src/persistence/saving/autosave/public";
@@ -33,6 +34,7 @@ describe("confirmed base ownership across exports", () => {
         return content;
       });
       const coordinator = new AutosaveCoordinator({
+        workScheduler: createTestWorkScheduler(),
         clock: { clearTimeout: () => undefined, setTimeout: () => 0 },
         confirmedBase: { type: "confirmed", revision: 0, outputHash: initial.hash },
         documentSource,

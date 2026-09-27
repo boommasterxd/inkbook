@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { BrowserScrollElement } from "../../../../src/obsidian/scrolling/index";
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 import {
   LAYOUT_TRANSITION_CLASS,
   PresentationScrollRangeReserve,
@@ -290,6 +291,7 @@ function createFixture(options: FixtureOptions = {}) {
   const stability = new TransitionScrollStability({
     owner: () => owner,
     ownerWindow,
+    workScheduler: workSchedulerFromFrames(ownerWindow),
     rangeReserve,
     root,
   });

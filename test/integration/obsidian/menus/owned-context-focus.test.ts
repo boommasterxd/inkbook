@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 import { type App, Platform } from "obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -34,6 +35,7 @@ it.each([false, true])("keeps context focus restoration in the caller, keyboard=
   const app = { workspace: { containerEl: document.body } } as App;
   const factory = createOwnedMenuFactory({
     anchor: canvas,
+    workScheduler: workSchedulerFromFrames(window),
     createPhoneSheetHost: () => createPhoneSheetHost(app),
   });
   const handlers = createContextMenuHandlers();

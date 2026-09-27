@@ -1,3 +1,5 @@
+import { workSchedulerFromFrames } from "../../fixtures/obsidian/work-scheduler";
+import { useAsyncWindowFrames } from "../../fixtures/obsidian/async-presentation-window";
 import { Plugin, TFile, Tasks, type MarkdownRenderChild } from "obsidian";
 import type { MarkdownSectionInformation } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
@@ -22,7 +24,7 @@ import {
   DocumentWorkerRuntime,
   GestureAwareSliceScheduler,
 } from "../../../src/persistence/worker/runtime/public";
-import { FakePresentationElement } from "../../fixtures/obsidian/presentation-dom";
+import { FakePresentationElement, inkbookRoot } from "../../fixtures/obsidian/presentation-dom";
 
 class InkbookPlugin extends Plugin {
   #deactivate: (() => void) | undefined;
@@ -151,6 +153,7 @@ function createPluginHarness() {
   let dark = false;
   const ownerWindow = new FakePresentationElement().ownerDocument.defaultView;
   if (ownerWindow === null) throw new Error("Missing owner window.");
+  useAsyncWindowFrames(ownerWindow);
   const readBinary = vi.fn(async () => document.bytes.buffer.slice(0));
   const app = {
     fileManager: {},
@@ -212,6 +215,7 @@ async function mountReadingEmbed(plugin: InkbookPlugin): Promise<{
   readonly root: FakePresentationElement;
 }> {
   const root = new FakePresentationElement();
+  useAsyncWindowFrames(root.ownerDocument.defaultView!);
   const nativeHost = new FakePresentationElement(root.ownerDocument);
   const image = new FakePresentationElement(root.ownerDocument, "img");
   image.src = "app://vault/drawings/ink.svg";
@@ -241,7 +245,11 @@ async function createReadyReadingEmbed() {
   scenes.records.length = 0;
   const harness = createPluginHarness();
   await harness.plugin.onload();
-  return { harness, presentation: await mountReadingEmbed(harness.plugin) };
+  const presentation = await mountReadingEmbed(harness.plugin);
+  await vi.waitFor(() =>
+    expect(presentation.root.classNames).toContain("inkbook-scrollbar-stable"),
+  );
+  return { harness, presentation };
 }
 
 async function activatePresentation(
@@ -274,14 +282,6 @@ async function createDirtyPresentationWithBlockedSave() {
   return { harness, presentation, releaseProcess, scene };
 }
 
-function inkbookRoot(root: FakePresentationElement): FakePresentationElement {
-  const presentation = root.children[0]?.children.find((child) =>
-    child.classNames.has("inkbook-root"),
-  );
-  if (presentation === undefined) throw new Error("Missing Inkbook presentation root.");
-  return presentation;
-}
-
 describe("plugin runtime scene integration", () => {
   it("runs the input-aware fallback with the presentation window", async () => {
     const document = serializedDocument();
@@ -292,10 +292,7 @@ describe("plugin runtime scene integration", () => {
       { sessionId: "fallback-test", workerEpoch: 2 },
       new GestureAwareSliceScheduler({
         isInputActive: () => false,
-        yieldControl: () =>
-          new Promise((resolve) => {
-            owningWindow.setTimeout(resolve, 0);
-          }),
+        workScheduler: workSchedulerFromFrames(owningWindow),
       }),
     );
     const result = await runtime.execute({
@@ -406,6 +403,7 @@ describe("plugin workspace activation serialization", () => {
     const harness = createPluginHarness();
     const ownerWindow = new FakePresentationElement().ownerDocument.defaultView;
     if (ownerWindow === null) throw new Error("Missing owner window.");
+    useAsyncWindowFrames(ownerWindow);
     const runtime = new ObsidianWorkspaceRuntime(
       harness.app.vault as never,
       harness.app.fileManager as never,
@@ -466,9 +464,11 @@ describe("plugin workspace activation serialization", () => {
     scene.options.onLock();
     const root = inkbookRoot(presentation.root);
     expect(root.dataset.inkbookState).toBe("locking");
-    expect(
-      root.getElementsByClassName("inkbook-operation-feedback").item(0)?.dataset.inkbookOperation,
-    ).toBe("saving");
+    await vi.waitFor(() =>
+      expect(
+        root.getElementsByClassName("inkbook-operation-feedback").item(0)?.dataset.inkbookOperation,
+      ).toBe("saving"),
+    );
     presentation.button.dispatch("click");
     await Promise.resolve();
     expect(scenes.records).toHaveLength(1);
@@ -481,6 +481,7 @@ describe("plugin workspace activation serialization", () => {
 
 function livePreviewAttachment(attachmentGeneration: number): PresentationAttachment {
   const root = new FakePresentationElement();
+  useAsyncWindowFrames(root.ownerDocument.defaultView!);
   root.dataset.inkbookScheme = "light";
   return {
     attachmentGeneration,

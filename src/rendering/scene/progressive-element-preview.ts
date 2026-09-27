@@ -63,6 +63,10 @@ export class ProgressiveElementPreview {
     return this.#elements;
   }
 
+  public get pending(): boolean {
+    return this.#hasPending();
+  }
+
   public memoryUsage(): number {
     let bytes = this.#completedBytes + (this.#pending?.path.memoryUsage() ?? 0);
     if (this.#pending !== undefined) bytes += elementBytes(this.#pending.element);
@@ -124,11 +128,11 @@ export class ProgressiveElementPreview {
     }
   }
 
-  public write(deadline: number, now: () => number): boolean {
+  public write(deadline: number, now: () => number, admittedFirstStep = false): boolean {
     // Reserve frame time for residual feedback, immediate shapes, and scene writes.
     // The fixed work cap also bounds fake clocks and unexpectedly cheap geometry.
     for (let step = 0; step < PROGRESSIVE_STEPS_PER_FRAME; step += 1) {
-      if (now() >= deadline) return this.#hasPending();
+      if ((step > 0 || !admittedFirstStep) && now() >= deadline) return this.#hasPending();
       const starting = this.#pending === undefined;
       const pending = this.#pending ?? this.#startNext();
       if (pending === undefined) return false;

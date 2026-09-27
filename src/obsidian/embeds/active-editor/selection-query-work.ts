@@ -1,18 +1,14 @@
 import type { SelectionPreviewOptions } from "./selection-preview-contracts";
 import type { SelectionQueryStep } from "../../../editor/selection/public";
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 
 // Keep 64 expensive batches while allowing cheap bounds decisions to share a slice.
 const WORK_UNITS_PER_FRAME = 4096;
 const GEOMETRY_BATCH_WORK_UNITS = 64;
 type SelectionQueryOptions = Pick<
   SelectionPreviewOptions,
-  | "frameScheduler"
-  | "selection"
-  | "selectionSignal"
-  | "selectionWorkBudget"
-  | "setSelection"
-  | "store"
->;
+  "selection" | "selectionSignal" | "setSelection" | "store"
+> & { readonly workScheduler: WorkScheduler };
 
 /** Drains bounded geometry steps while retaining no work after cancellation. */
 export class SelectionQueryWork {
@@ -43,14 +39,14 @@ export class SelectionQueryWork {
     }
     this.#unsubscribe = this.#options.store.subscribe(this.cancel);
     this.#options.selectionSignal?.addEventListener("abort", this.cancel, { once: true });
-    this.#advance();
+    this.#advance(false);
     return this.#changed;
   }
 
   public readonly cancel = (): void => {
     if (this.#finished) return;
     this.#finished = true;
-    if (this.#frame !== undefined) this.#options.frameScheduler?.cancelAnimationFrame(this.#frame);
+    if (this.#frame !== undefined) this.#options.workScheduler.cancelFrame(this.#frame);
     this.#frame = undefined;
     this.#unsubscribe?.();
     this.#unsubscribe = undefined;
@@ -58,25 +54,24 @@ export class SelectionQueryWork {
     this.#steps.return(this.#selection);
   };
 
-  #advance(): void {
+  #advance(admitted: boolean): void {
     try {
-      this.#runSlice();
+      this.#runSlice(admitted);
     } catch (error) {
       this.cancel();
       throw error;
     }
   }
 
-  #runSlice(): void {
+  #runSlice(admitted: boolean): void {
     this.#frame = undefined;
     if (this.#finished) return;
     const current = this.#options.selection();
     if (current !== this.#selection && !sameMembers(current, this.#selection)) return this.cancel();
-    const scheduler = this.#options.frameScheduler;
-    const budget = this.#options.selectionWorkBudget;
-    const deadline = budget === undefined ? Infinity : budget.now() + budget.sliceBudgetMs();
+    const scheduler = this.#options.workScheduler;
+    if (!admitted && scheduler.shouldYield()) return this.#scheduleFrame();
     let remaining = WORK_UNITS_PER_FRAME;
-    while (scheduler === undefined || remaining > 0) {
+    while (remaining > 0) {
       const result = this.#steps.next();
       if (result.done) {
         this.cancel();
@@ -86,9 +81,13 @@ export class SelectionQueryWork {
       }
       // Keep large predicates within the existing batch charge and maximum 63-unit overrun.
       remaining -= Math.min(result.value ?? GEOMETRY_BATCH_WORK_UNITS, GEOMETRY_BATCH_WORK_UNITS);
-      if (scheduler !== undefined && budget !== undefined && budget.now() >= deadline) break;
+      if (scheduler.shouldYield()) break;
     }
-    this.#frame = scheduler.requestAnimationFrame(() => this.#advance());
+    this.#scheduleFrame();
+  }
+
+  #scheduleFrame(): void {
+    this.#frame = this.#options.workScheduler.requestFrame(() => this.#advance(true), "frame");
   }
 }
 

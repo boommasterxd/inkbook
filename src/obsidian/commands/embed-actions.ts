@@ -1,6 +1,7 @@
 import type { App } from "obsidian";
 
 import type { MotionPreference } from "../../rendering/motion/transitions";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 
 import { confirmInkbookAction } from "../dialogs/action-dialog";
 
@@ -40,6 +41,7 @@ export type DeleteEmbedOutcome =
   | { readonly error: unknown; readonly kind: "failed" };
 
 export interface EmbedActionPorts {
+  readonly workScheduler?: ((ownerWindow: Window | null) => WorkScheduler) | undefined;
   readonly app: App;
   readonly files: ObsidianVaultFileAdapter;
   readonly links: ObsidianLinkAdapter;
@@ -86,6 +88,7 @@ export class ObsidianEmbedActions {
   readonly #managedFiles: ObsidianManagedFileAdapter;
   readonly #lifetime = new AbortController();
   readonly #readMotion: (() => MotionPreference) | undefined;
+  readonly #workScheduler: ((ownerWindow: Window | null) => WorkScheduler) | undefined;
   #deleting = false;
   #pendingRemoval: PresentationRemoval | undefined;
 
@@ -95,6 +98,7 @@ export class ObsidianEmbedActions {
     this.#links = ports.links;
     this.#managedFiles = ports.managedFiles;
     this.#readMotion = ports.readMotion;
+    this.#workScheduler = ports.workScheduler;
   }
 
   async copyEmbed(target: EmbedActionTarget): Promise<CopyEmbedOutcome> {
@@ -164,6 +168,7 @@ export class ObsidianEmbedActions {
         destructive: true,
         signal: this.#lifetime.signal,
         readMotion: this.#readMotion,
+        workScheduler: this.#workScheduler,
       }))
     ) {
       return { kind: "cancelled", stage: "embed" };
@@ -179,6 +184,7 @@ export class ObsidianEmbedActions {
         destructive: true,
         signal: this.#lifetime.signal,
         readMotion: this.#readMotion,
+        workScheduler: this.#workScheduler,
       }));
     reference = await this.#resolveReference(target);
     if ("kind" in reference) return reference;
@@ -278,9 +284,11 @@ export function createObsidianEmbedActions(
   app: App,
   isMetadataResolved: () => boolean,
   readMotion?: () => MotionPreference,
+  workScheduler?: (ownerWindow: Window | null) => WorkScheduler,
 ): ObsidianEmbedActions {
   const { files, links, managedFiles } = createObsidianCommandVaultPorts(app, isMetadataResolved);
   return new ObsidianEmbedActions({
+    workScheduler,
     app,
     files,
     links,

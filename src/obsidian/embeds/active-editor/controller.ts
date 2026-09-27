@@ -62,8 +62,8 @@ export class ActiveEditorController {
   readonly #penGuard: Scrolling.PenScrollGuard<Scrolling.BrowserScrollElement>;
   readonly #renderIcon: ActiveEditorControllerOptions["renderIcon"];
   readonly #renderer: ActiveEditorControllerOptions["renderer"];
+  readonly #workScheduler: ActiveEditorControllerOptions["workScheduler"];
   readonly #sceneStore: ActiveEditorControllerOptions["sceneStore"];
-  readonly #sliceBudgetMs: () => number;
   #snapping: ActiveEditorControllerOptions["snapping"];
   #snappingInversion: { readonly inverted: boolean; readonly pointerId: number } | undefined;
   #scrollOwner: Scrolling.BrowserScrollElement;
@@ -96,12 +96,10 @@ export class ActiveEditorController {
     this.#ownerWindow = ownerWindow;
     this.#longPress = new ActiveEditorLongPressScheduler(ownerWindow);
     this.#renderIcon = options.renderIcon;
+    this.#workScheduler = options.workScheduler;
     [this.#renderer, this.#sceneStore] = [options.renderer, options.sceneStore];
     this.#captures = new ActivePointerCaptureOwner(options.renderer.inputSurface);
-    [this.#sliceBudgetMs, this.#scrollOwner] = [
-      options.sliceBudgetMs ?? (() => 8),
-      options.scrollOwner,
-    ];
+    this.#scrollOwner = options.scrollOwner;
     this.#snapping = structuredClone(options.snapping);
     this.#availability = new ActiveEditorAvailability({
       inputSurface: this.#renderer.inputSurface,
@@ -129,7 +127,7 @@ export class ActiveEditorController {
     this.#input = Interactions.createControllerInputState(options);
     if (Helpers.isShapeTool(options.startupTool))
       this.#chromeState.selectShape(options.startupTool);
-    this.#penGuard = Interactions.createControllerPenGuard(ownerWindow);
+    this.#penGuard = Interactions.createControllerPenGuard(this.#workScheduler);
     this.#navigation = Interactions.createControllerNavigation({
       controller: options,
       getInput: () => this.#input,
@@ -143,6 +141,7 @@ export class ActiveEditorController {
       layout: options.selectionMoveLayout,
       navigation: this.#navigation,
       ownerWindow,
+      workScheduler: this.#workScheduler,
       scrollOwner: () => this.#scrollOwner,
     });
     const interactions = Interactions.createActiveEditorInteractions({
@@ -357,6 +356,7 @@ export class ActiveEditorController {
         history: this.#history,
         model: this.#model,
         ownerWindow: this.#ownerWindow,
+        workScheduler: this.#workScheduler,
         onFeedback: options.onFeedback,
         pageToScreen: (point) => this.#navigation.localPointFromPage(point),
         pageToViewport: (point) => this.#navigation.screenPoint(point),
@@ -364,7 +364,6 @@ export class ActiveEditorController {
         preparedHistory: this.#preparedHistory,
         renderer: this.#renderer,
         sceneStore: this.#sceneStore,
-        sliceBudgetMs: this.#sliceBudgetMs,
         selection: () => this.#selection,
         selectionFrames: this.#selectionFrames,
         selectionEdgeDrag: this.#selectionEdgeDrag,

@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { InkElementV1 } from "../../../../../src/domain/schema/public";
 import { ManualFrameScheduler } from "../../../../fixtures/obsidian/manual-frame-scheduler";
+import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
+import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
 import { stroke } from "../../../domain/schema/fixtures";
 import { rectangle } from "../../../domain/store/fixtures";
 import { ElementStore } from "../../../../../src/domain/store/public";
@@ -27,6 +29,7 @@ it("projects only appended lasso points and rebuilds after camera changes or com
     y: point.y,
   }));
   const preview = new LassoPreview({
+    workScheduler: immediateWorkScheduler(),
     history: {} as ActiveEditorHistory,
     pageToScreen: project,
     preparedHistory: {} as PreparedElementHistory,
@@ -178,6 +181,7 @@ function createPreview(additive: boolean, targets: readonly InkElementV1[] = [])
     preparedHistory: {} as PreparedElementHistory,
     renderer: createSelectionPreviewRenderer(),
     frameScheduler: scheduler,
+    workScheduler: workSchedulerFromFrames(scheduler),
     sceneStore,
     selection: () => state.selection,
     selectionSignal: controller.signal,

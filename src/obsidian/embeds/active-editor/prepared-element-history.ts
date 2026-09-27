@@ -6,6 +6,7 @@ import {
 import type { TransformSliceScheduler } from "../../../editor/selection/transforms";
 import type { EditableDocumentModel } from "../vault-document-session";
 import type { SelectionFrameHistoryEffect } from "../../../editor/selection/public";
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 
 import type { ActiveEditorHistory } from "./history";
 
@@ -21,8 +22,7 @@ export interface PreparedElementHistoryOptions {
     };
   };
   readonly onPendingChanged: (pending: boolean) => void;
-  readonly ownerWindow: Window;
-  readonly sliceBudgetMs?: () => number;
+  readonly workScheduler: WorkScheduler;
 }
 
 type SelectionFrameEffectFactory = (
@@ -35,9 +35,8 @@ export class PreparedElementHistory {
   readonly #model: EditableDocumentModel;
   readonly #motion: PreparedElementHistoryOptions["motion"];
   readonly #onPendingChanged: (pending: boolean) => void;
-  readonly #ownerWindow: Window;
-  readonly #sliceBudgetMs: () => number;
-  readonly #pendingFrames = new Map<number, () => void>();
+  readonly #workScheduler: WorkScheduler;
+  readonly #abort = new AbortController();
   #disposed = false;
   #generation = 0;
   #pending = false;
@@ -48,18 +47,13 @@ export class PreparedElementHistory {
     this.#model = options.model;
     this.#motion = options.motion;
     this.#onPendingChanged = options.onPendingChanged;
-    this.#ownerWindow = options.ownerWindow;
-    this.#sliceBudgetMs = options.sliceBudgetMs ?? (() => 8);
+    this.#workScheduler = options.workScheduler;
   }
 
   public dispose(): void {
     this.#disposed = true;
     this.#generation += 1;
-    for (const [frame, resolve] of this.#pendingFrames) {
-      this.#ownerWindow.cancelAnimationFrame(frame);
-      resolve();
-    }
-    this.#pendingFrames.clear();
+    this.#abort.abort();
     this.#setPending(false);
   }
 
@@ -126,7 +120,6 @@ export class PreparedElementHistory {
       previewCommit,
     );
     if (!committed) return false;
-    await this.#yieldHostFrame();
     this.#history.registerAppliedReplacement(
       previous,
       replacements,
@@ -176,26 +169,11 @@ export class PreparedElementHistory {
   }
 
   #scheduler(generation: number): TransformSliceScheduler {
-    let deadline = this.#ownerWindow.performance.now() + this.#sliceBudgetMs();
     return {
       isCancelled: () => this.#isCancelled(generation),
-      shouldYield: () => this.#ownerWindow.performance.now() >= deadline,
-      yieldControl: () =>
-        this.#yieldHostFrame().then(() => {
-          deadline = this.#ownerWindow.performance.now() + this.#sliceBudgetMs();
-        }),
+      shouldYield: () => this.#workScheduler.shouldYield(),
+      yieldControl: () => this.#workScheduler.nextFrame(this.#abort.signal),
     };
-  }
-
-  #yieldHostFrame(): Promise<void> {
-    if (this.#disposed) return Promise.resolve();
-    return new Promise((resolve) => {
-      const frame = this.#ownerWindow.requestAnimationFrame(() => {
-        this.#pendingFrames.delete(frame);
-        resolve();
-      });
-      this.#pendingFrames.set(frame, resolve);
-    });
   }
 
   #isCancelled(generation: number): boolean {

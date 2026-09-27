@@ -1,4 +1,5 @@
 import { resolveVisibleOwnerBoundary, type VisibleOwnerBoundary } from "./visible-owner-boundary";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 
 interface FeedbackRect {
   readonly bottom: number;
@@ -42,10 +43,13 @@ export function createPresentationFeedbackPositionLifecycle(
   surface: HTMLElement,
   presentation: HTMLElement,
   verticalAnchor: PresentationFeedbackVerticalAnchor = "bottom",
+  workScheduler?: WorkScheduler,
 ): PresentationFeedbackPositionLifecycle {
   const ownerDocument = presentation.ownerDocument;
   const ownerWindow = ownerDocument.defaultView;
   if (ownerWindow === null) return { dispose: () => undefined };
+  if (workScheduler === undefined)
+    throw new Error("Presentation feedback requires a work scheduler.");
   let active = true;
   let measured = false;
   let frame: number | undefined;
@@ -64,7 +68,7 @@ export function createPresentationFeedbackPositionLifecycle(
   };
   const schedule = (): void => {
     if (!active || frame !== undefined) return;
-    frame = ownerWindow.requestAnimationFrame(() => {
+    frame = workScheduler.requestFrame(() => {
       frame = undefined;
       reposition();
     });
@@ -78,7 +82,7 @@ export function createPresentationFeedbackPositionLifecycle(
     dispose: () => {
       if (!active) return;
       active = false;
-      if (frame !== undefined) ownerWindow.cancelAnimationFrame(frame);
+      if (frame !== undefined) workScheduler.cancelFrame(frame);
       observer?.disconnect();
       ownerDocument.removeEventListener("scroll", schedule, true);
       ownerWindow.removeEventListener("resize", schedule);

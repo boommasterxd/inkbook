@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { Bounds } from "../../../../src/domain/geometry/public";
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
 import type { BoxShapeElementV1, PageV1 } from "../../../../src/domain/schema/public";
-import { SvgSceneRenderer, type SpatialQuerySink } from "../../../../src/rendering/scene";
+import { SvgSceneRenderer } from "../../../../src/rendering/scene";
+import { QueryCostStore } from "../../../fixtures/rendering/scene";
 import type { SceneViewport } from "../../../../src/rendering/scene/types";
 import {
   FakeDocument,
@@ -26,19 +26,8 @@ const PAGE: PageV1 = {
 class AdvancingScheduler extends FakeScheduler {
   public override now(): number {
     const current = this.time;
-    this.time += 2;
+    this.time += 0.5;
     return current;
-  }
-}
-
-class QueryCostStore extends FakeSceneStore {
-  public constructor(private readonly scheduler: FakeScheduler) {
-    super();
-  }
-
-  public override query(bounds: Bounds, sink: SpatialQuerySink): void {
-    super.query(bounds, sink);
-    this.scheduler.time += 9;
   }
 }
 
@@ -113,7 +102,7 @@ describe("resumable scene reconciliation", () => {
     });
   });
 
-  it("uses the absolute frame deadline after prior frame work and resumes without another query", () => {
+  it("allows one bounded mount when a query consumes the shared frame deadline", () => {
     const scheduler = new AdvancingScheduler();
     const store = new QueryCostStore(scheduler);
     const expected = populateRectangles(store, 12);
@@ -123,8 +112,6 @@ describe("resumable scene reconciliation", () => {
 
     expect(renderer.mountedCount).toBe(1);
     expect(renderer.instrumentation()).toMatchObject({
-      maximumMountSliceElements: 1,
-      mountDeadlineYields: 1,
       mountSlices: 1,
       spatialQueries: 1,
     });
@@ -228,11 +215,10 @@ describe("scene reconciliation frame priority", () => {
     const document = new FakeDocument();
     const renderer = new SvgSceneRenderer({
       container: asElement(new FakeNode(document, "div")),
-      frameBudgetMs: 8,
       layout: { readViewport: () => ({ height: 100, left: 0, top: 0, width: 100 }) },
       onSceneCommitted: committed,
       page: PAGE,
-      scheduler,
+      workScheduler: scheduler.workScheduler,
       store,
     });
     renderer.setPage({ ...PAGE, background: { spacing: 25, type: "dots" } }, 500);
@@ -441,7 +427,6 @@ function createRenderer(
   const document = new FakeDocument();
   return new SvgSceneRenderer({
     container: asElement(new FakeNode(document, "div")),
-    frameBudgetMs: 8,
     layout: {
       readViewport: options.readViewport ?? (() => ({ height: 100, left: 0, top: 0, width: 100 })),
     },
@@ -449,7 +434,7 @@ function createRenderer(
       ? {}
       : { onSceneCommitted: options.onSceneCommitted }),
     page: options.page ?? PAGE,
-    scheduler,
+    workScheduler: scheduler.workScheduler,
     store,
   });
 }

@@ -105,7 +105,10 @@ it("makes entrant progress while every camera frame changes membership under a b
   expect(renderer.mountedCount).toBe(NAVIGATION_VISIBLE_STROKES);
   renderer.resetInstrumentation();
   const nodes = vi.spyOn(document, "createElementNS");
-  const now = vi.spyOn(scheduler, "now").mockImplementation(() => scheduler.time++);
+  const now = vi.spyOn(scheduler, "now").mockImplementation(() => {
+    scheduler.time += 0.5;
+    return scheduler.time;
+  });
   const persistentId = [...store.records.keys()][NAVIGATION_VISIBLE_STROKES]!;
   for (let frame = 0; frame < INTERACTION_REFRESH_PROFILE.sampleCount; frame += 1) {
     scheduler.time = frame * INTERACTION_REFRESH_PROFILE.frameDurationMs;
@@ -166,12 +169,22 @@ it.each([0, 12, 40])(
     const now = vi.spyOn(scheduler, "now").mockImplementation(() => scheduler.time + delay);
     renderer.setPage(page, 1_000_000);
     scheduler.runNext();
+    if (delay > 0) {
+      expect(renderer.hasPendingSceneCommit).toBe(true);
+      expect(renderer.instrumentation()).toMatchObject({
+        backgroundBuilds: 0,
+        spatialQueries: 1,
+      });
+      expect(scheduler.pendingCount).toBe(1);
+      scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
+      scheduler.runNext();
+    }
     expect(renderer.hasPendingSceneCommit).toBe(false);
     expect(scheduler.pendingCount).toBe(0);
     expect(renderer.instrumentation()).toMatchObject({
-      frames: 1,
+      frames: delay === 0 ? 1 : 2,
       backgroundBuilds: 1,
-      backgroundBudgetDeferrals: 0,
+      backgroundBudgetDeferrals: delay === 0 ? 0 : 1,
       geometryBuilds: 0,
     });
     // One camera write and a fixed background/palette update, independent of page height.

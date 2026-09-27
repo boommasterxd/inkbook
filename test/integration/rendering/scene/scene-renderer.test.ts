@@ -109,7 +109,7 @@ function setup(): {
     inputHandlers: { pointerdown: vi.fn() },
     layout: { readViewport: () => ({ height: 100, left: 0, top: 0, width: 100 }) },
     page,
-    scheduler,
+    workScheduler: scheduler.workScheduler,
     store,
   });
   void asDocument(document);

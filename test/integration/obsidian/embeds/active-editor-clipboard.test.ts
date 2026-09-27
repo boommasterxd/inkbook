@@ -13,6 +13,7 @@ import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-edit
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
 import type { MenuItemPort, MenuPort } from "../../../../src/obsidian/menus/index";
+import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 import {
   createClipboardDocumentModel,
   createEncodedClipboardFixture,
@@ -304,6 +305,7 @@ describe("active editor arrange and menu bridge", () => {
     const event = { clientX: 20, clientY: 30 } as MouseEvent;
     const factory = { create: vi.fn(() => menu), forEvent: vi.fn(() => menu) };
     const menus = new ActiveEditorMenuController({
+      workScheduler: immediateWorkScheduler(),
       actions,
       factory,
       inputSurface: { focus: vi.fn() } as unknown as HTMLDivElement,

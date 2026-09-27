@@ -7,6 +7,7 @@ import {
 } from "../../../../src/obsidian/embeds/document-recognition";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import { createSnapshot } from "../../../unit/persistence/serialization/fixtures";
+import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 
 function testFile(path: string, size: number): TFile {
   const Constructor = TFile as unknown as new (filePath: string, fileSize: number) => TFile;
@@ -26,7 +27,7 @@ function recognitionHarness(
       cachedRead,
       getFileByPath: (candidate: string) => (candidate === file.path ? file : null),
     } as unknown as Vault,
-    { deferUntilLayoutReady },
+    { deferUntilLayoutReady, workScheduler: immediateWorkScheduler() },
   );
   const changed = vi.fn();
   recognition.subscribe(changed);
@@ -114,7 +115,9 @@ it("binds a versioned preview to its Vault resource despite changing host cache 
     getFileByPath: (path: string) => (path === file.path ? file : null),
     getResourcePath: () => `app://vault/drawings/ink%20book.svg?${cacheToken}`,
   } as unknown as Vault;
-  const recognition = new ObsidianInkbookDocumentRecognition(vault);
+  const recognition = new ObsidianInkbookDocumentRecognition(vault, {
+    workScheduler: immediateWorkScheduler(),
+  });
   const sourceFor = (): string => {
     const url = new URL(vault.getResourcePath(file));
     url.searchParams.set(

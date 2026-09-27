@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { createTestWorkScheduler } from "../../fixtures/persistence/work-scheduler";
 
 import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
+import {
+  createWorkerWorkScheduler,
+  type WorkerTimingPort,
+} from "../../../src/persistence/worker/runtime/worker-work-scheduler";
 import {
   DocumentWorkerRuntime,
   GestureAwareSliceScheduler,
@@ -10,7 +15,6 @@ import {
 import { createStandardPersistenceFixture } from "./fixtures";
 import { FallbackSliceProbe } from "../../fixtures/persistence/fallback-slice-probe";
 import { observeFallbackBytes } from "../../fixtures/persistence/fallback-byte-observer";
-import { createFallbackDeadlineClock } from "./fallback-deadline-clock";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 type MetricAnnotator = (message: string, type?: string) => Promise<unknown>;
 
@@ -30,6 +34,35 @@ const snapshot = createFallbackFixture();
 const serialized = requireSerialized();
 
 describe("worker failure fallback performance", () => {
+  it("schedules a yield for the remaining shared 120 Hz frame", () => {
+    let now = 0;
+    let nextTimer = 0;
+    const delays: number[] = [];
+    const timing: WorkerTimingPort = {
+      now: () => now,
+      setTimeout: (_callback, milliseconds) => {
+        delays.push(milliseconds);
+        return ++nextTimer;
+      },
+      clearTimeout: () => undefined,
+    };
+    const { updateSchedulingProfile, workScheduler } = createWorkerWorkScheduler(
+      { frameIntervalMilliseconds: 1_000 / 120, sliceMilliseconds: 4.58 },
+      timing,
+    );
+    expect(() => updateSchedulingProfile(0, 1_000 / 120)).toThrow(RangeError);
+    expect(workScheduler.budgetMs()).toBe(4.58);
+
+    workScheduler.deadline();
+    now = 5;
+    const checkpoint = workScheduler.checkpoint();
+    void checkpoint?.catch(() => undefined);
+
+    expect(delays).toContainEqual(1_000 / 120 - 5);
+    expect(delays).not.toContainEqual(1_000 / 120);
+    workScheduler.dispose();
+  });
+
   it("bounds validation, migration, clipboard, export, hashing, preflight, and read-back slices", async ({
     annotate,
   }) => {
@@ -66,11 +99,28 @@ function createScheduledFallback(): {
   readonly runtime: DocumentWorkerRuntime;
 } {
   const probe = new FallbackSliceProbe();
-  const scheduler = new GestureAwareSliceScheduler({
-    isInputActive: probe.isInputActive,
-    now: createFallbackDeadlineClock(),
-    sliceMilliseconds: INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs,
-    yieldControl: probe.yieldControl,
+  let scheduler: GestureAwareSliceScheduler;
+  let inputEndObserved = false;
+  scheduler = new GestureAwareSliceScheduler({
+    isInputActive: () => {
+      if (inputEndObserved) {
+        inputEndObserved = false;
+        return false;
+      }
+      const active = probe.isInputActive();
+      if (active) {
+        scheduler.setLiveInputActive(true);
+        queueMicrotask(() => {
+          inputEndObserved = true;
+          scheduler.setLiveInputActive(false);
+        });
+      }
+      return active;
+    },
+    workScheduler: createTestWorkScheduler({
+      budgetMs: INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs,
+      checkpoint: probe.yieldControl,
+    }),
   });
   return {
     probe,

@@ -1,4 +1,5 @@
 import { Component, Platform, type Keymap } from "obsidian";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { installMenuEscapeScope } from "./menu-escape-scope";
 
 import { effectiveTransitionDuration } from "../runtime/effective-motion";
@@ -21,6 +22,7 @@ export type AdaptivePanelCloseMode = "animated" | "handoff" | "immediate";
 type AdaptivePanelKind = "background" | "style" | "dialog" | "menu";
 
 export interface AdaptivePanelOptions {
+  readonly workScheduler: WorkScheduler;
   readonly anchor: HTMLElement;
   readonly phoneHost?: PhoneSheetHostPort;
   readonly createPhoneSheetHost?: () => PhoneSheetHostPort;
@@ -153,6 +155,7 @@ export class AdaptivePanelSession extends Component {
           close: () => this.close(),
           durationMs: this.#durationMs,
           ownerWindow: options.ownerWindow,
+          workScheduler: options.workScheduler,
           scroll: this.#scroll,
           surface: this.#surface,
         })
@@ -235,7 +238,7 @@ export class AdaptivePanelSession extends Component {
     this.register(() => this.#height.dispose());
     this.#position();
     this.#observeContentSize();
-    this.#openFrame = this.#options.ownerWindow.requestAnimationFrame(() => {
+    this.#openFrame = this.#options.workScheduler.requestFrame(() => {
       this.#openFrame = undefined;
       if (this.#closed) return;
       this.#surface.dataset.state = "open";
@@ -281,7 +284,7 @@ export class AdaptivePanelSession extends Component {
 
   #scheduleLayout(): void {
     if (this.#closed || this.#layoutFrame !== undefined) return;
-    this.#layoutFrame = this.#options.ownerWindow.requestAnimationFrame(() => {
+    this.#layoutFrame = this.#options.workScheduler.requestFrame(() => {
       this.#layoutFrame = undefined;
       if (this.#layoutRequested) {
         this.#layoutRequested = false;
@@ -316,11 +319,11 @@ export class AdaptivePanelSession extends Component {
 
   #cancelScheduledWork(): void {
     if (this.#openFrame !== undefined) {
-      this.#options.ownerWindow.cancelAnimationFrame(this.#openFrame);
+      this.#options.workScheduler.cancelFrame(this.#openFrame);
       this.#openFrame = undefined;
     }
     if (this.#layoutFrame !== undefined) {
-      this.#options.ownerWindow.cancelAnimationFrame(this.#layoutFrame);
+      this.#options.workScheduler.cancelFrame(this.#layoutFrame);
       this.#layoutFrame = undefined;
     }
     if (this.#removeTimer !== undefined) {

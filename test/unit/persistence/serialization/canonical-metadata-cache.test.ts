@@ -1,12 +1,42 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CanonicalMetadataCache } from "../../../../src/persistence/serialization/canonical-metadata-cache";
-import { canonicalMetadataSha256 } from "../../../../src/persistence/serialization/canonical-metadata";
+import {
+  canonicalMetadataSha256,
+  canonicalMetadataSha256Async,
+} from "../../../../src/persistence/serialization/canonical-metadata";
+import { sha256Hex } from "../../../../src/persistence/serialization/sha256";
 import * as canonical from "../../../../src/persistence/serialization/canonical-snapshot";
 import { createTestStroke } from "../../../fixtures/persistence/worker-snapshot";
 import { rectangle, snapshot } from "../worker/runtime/fixtures";
 
 const checkpoint = async () => undefined;
 afterEach(() => vi.restoreAllMocks());
+
+it("checkpoints fallback hashing after canonical metadata assembly completes", async () => {
+  const encoder = new TextEncoder();
+  const prefix = '{"elements":[';
+  const element = encoder.encode('"' + "a".repeat(70 * 1024) + '"');
+  const expectedBytes = encoder.encode(prefix + new TextDecoder().decode(element) + "]}");
+  let elementsExhausted = false;
+  let hashCheckpoints = 0;
+  const elements = {
+    *[Symbol.iterator](): Iterator<Uint8Array> {
+      yield element;
+      elementsExhausted = true;
+    },
+  };
+
+  const actual = await canonicalMetadataSha256Async(prefix, elements, expectedBytes.byteLength, {
+    checkpoint: async () => {
+      if (elementsExhausted) hashCheckpoints += 1;
+    },
+    digest: null,
+    sliceByteLimit: 128 * 1024,
+  });
+
+  expect(actual).toBe(sha256Hex(expectedBytes));
+  expect(hashCheckpoints).toBe(2);
+});
 
 describe("canonical metadata cache", () => {
   it("reuses immutable element bytes but hashes every revision and changed element exactly", async () => {

@@ -1,4 +1,5 @@
 import { isReducedMotion, type MotionPreference } from "../../rendering/motion/transitions";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { ActiveHeightTransition } from "./active-editor/height-transition";
 import { LAYOUT_TRANSITION_CLASS } from "./transition-scroll-stability";
 
@@ -6,6 +7,7 @@ const LOADING_PLACEHOLDER_HEIGHT = 48;
 const HEIGHT_PROPERTY = "--inkbook-loading-block-size";
 
 interface LoadingPlaceholderMotionOptions {
+  readonly workScheduler: WorkScheduler;
   readonly initialHeight?: number;
   readonly motion: MotionPreference;
   readonly onHeight?: (height: number) => void;
@@ -26,7 +28,7 @@ export class LoadingPlaceholderMotion {
     const ownerWindow = element.ownerDocument.defaultView;
     if (ownerWindow === null) throw new Error("Loading motion requires an owning window.");
     this.#query = ownerWindow.matchMedia?.("(prefers-reduced-motion: reduce)");
-    this.#transition = new ActiveHeightTransition(element, ownerWindow);
+    this.#transition = new ActiveHeightTransition(element, options.workScheduler);
     const initial = options.initialHeight ?? 0;
     this.#applyHeight(
       this.#reducedMotion()

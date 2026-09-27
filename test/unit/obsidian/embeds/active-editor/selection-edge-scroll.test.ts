@@ -9,6 +9,7 @@ import { MovePreview } from "../../../../../src/obsidian/embeds/active-editor/mo
 import type { SelectionPreviewOptions } from "../../../../../src/obsidian/embeds/active-editor/selection-preview-contracts";
 import type { ActiveEditorNavigation } from "../../../../../src/obsidian/embeds/active-editor/navigation";
 import type { BrowserScrollElement } from "../../../../../src/obsidian/scrolling/index";
+import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
 
 class Frames {
   readonly callbacks = new Map<number, FrameRequestCallback>();
@@ -23,6 +24,11 @@ class Frames {
     this.callbacks.set(frame, callback);
     return frame;
   };
+
+  readonly workScheduler = workSchedulerFromFrames({
+    cancelAnimationFrame: this.cancel,
+    requestAnimationFrame: this.request,
+  });
 
   flush(timestamp = 0): void {
     const entry = this.callbacks.entries().next().value;
@@ -182,6 +188,7 @@ describe("active editor selection edge integration", () => {
     } as unknown as BrowserScrollElement;
     let owner = first;
     const drag = new ActiveEditorSelectionEdgeDrag({
+      workScheduler: frames.workScheduler,
       layout: { begin: vi.fn(), finish: vi.fn(), updateBottom: vi.fn() },
       navigation: { pan: vi.fn(), scroll: vi.fn() } as unknown as ActiveEditorNavigation,
       ownerWindow: {
@@ -223,6 +230,7 @@ describe("active editor selection edge integration", () => {
       ownerDocument: { scrollingElement: null },
     } as unknown as BrowserScrollElement;
     const drag = new ActiveEditorSelectionEdgeDrag({
+      workScheduler: frames.workScheduler,
       layout: {
         begin: vi.fn(),
         finish: vi.fn(),
@@ -264,8 +272,8 @@ describe("selection edge-scroll frame arbitration", () => {
       store: {} as SelectionPreviewOptions["store"],
       setSelection: vi.fn(),
       frameScheduler: {
-        cancelAnimationFrame: frames.cancel,
-        requestAnimationFrame: frames.request,
+        cancelFrame: frames.cancel,
+        requestFrame: frames.request,
       },
       pageToScreen: (point) => point,
       viewportToPage: (point) => point,

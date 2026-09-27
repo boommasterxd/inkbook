@@ -9,6 +9,7 @@ import {
 } from "../../../../src/persistence/worker/runtime/public";
 import {
   documentFromSnapshot,
+  createTestDocumentRuntimes,
   emptySnapshot,
   operation,
   recoveryCopyVaultHarness,
@@ -38,13 +39,15 @@ function createFactory(options: {
     trashFile: async (file: TFile) =>
       (options.vault as { trash?: (target: TFile) => Promise<void> }).trash?.(file),
   };
-  return new VaultDocumentSessionFactory(options.vault as never, fileManager as never, {
-    clock: () => ({ clearTimeout: vi.fn(), setTimeout: vi.fn() }),
-    create,
-    createFallback,
-    createStoreScheduler: scheduler,
-    now: () => 1,
-  });
+  return new VaultDocumentSessionFactory(
+    options.vault as never,
+    fileManager as never,
+    createTestDocumentRuntimes({
+      create,
+      createFallback,
+      createStoreScheduler: scheduler,
+    }),
+  );
 }
 
 function documentSessionHarness(options: {
@@ -170,7 +173,12 @@ describe("VaultDocumentSession terminal executor lifecycle", () => {
     });
     expect(terminate).toHaveBeenCalledOnce();
     expect(createFallback).toHaveBeenCalledOnce();
-    expect(createFallback).toHaveBeenCalledWith("session-1", 2, expect.any(Function));
+    expect(createFallback).toHaveBeenCalledWith(
+      "session-1",
+      2,
+      expect.any(Function),
+      "drawings/ink.svg",
+    );
   });
 
   it("reads fresh Vault bytes after a failed primary unlock", async () => {

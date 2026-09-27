@@ -104,7 +104,12 @@ export async function assembleAndHashChunkedUtf8Output(
   encoder.finishInto(output);
   throwIfCancelled(options.signal);
   const exactOutput = output.finish();
-  const hash = await hashExactUtf8Output(exactOutput, options.signal);
+  const hash = await hashExactUtf8Output(
+    exactOutput,
+    options.signal,
+    undefined,
+    options.checkpoint,
+  );
   return { hash, output: exactOutput, totalBytes };
 }
 

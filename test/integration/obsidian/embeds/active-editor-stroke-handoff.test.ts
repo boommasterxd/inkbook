@@ -28,7 +28,7 @@ function setup() {
     container: asElement(new FakeNode(document, "div")),
     layout: { readViewport: () => ({ height: 100, left: 0, top: 0, width: 100 }) },
     page: createWorkerSnapshot([]).page,
-    scheduler,
+    workScheduler: scheduler.workScheduler,
     store: new ElementSceneStore(store),
   });
   store.subscribe((delta) =>

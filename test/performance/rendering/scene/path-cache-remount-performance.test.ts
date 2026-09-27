@@ -43,7 +43,7 @@ it("remounts a batch after retaining more than 2,048 paths without geometry rebu
     container: asElement(new FakeNode(document, "div")),
     layout: { readViewport: () => ({ height: 100, left: 0, top: 0, width: 100 }) },
     page: PAGE,
-    scheduler,
+    workScheduler: scheduler.workScheduler,
     store,
   });
 
@@ -90,7 +90,7 @@ it("counts exact paint writes and reuses background geometry across repaint work
     container: asElement(new FakeNode(document, "div")),
     layout: { readViewport: () => ({ height: 100, left: 0, top: 0, width: 100 }) },
     page: linedPage,
-    scheduler,
+    workScheduler: scheduler.workScheduler,
     store,
   });
   renderer.setPage(linedPage, 100);
@@ -152,7 +152,7 @@ it("builds a height-invariant spacing preview once and reuses its final geometry
     container: asElement(new FakeNode(new FakeDocument(), "div")),
     layout: { readViewport: () => ({ height: 900, left: 0, top: 0, width: 1_000 }) },
     page: { ...PAGE, background: { spacing: 25, type: "squares" } },
-    scheduler,
+    workScheduler: scheduler.workScheduler,
     store: new FakeSceneStore(),
   });
   scheduler.runAll();

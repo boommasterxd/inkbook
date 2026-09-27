@@ -2,6 +2,7 @@
 
 import { afterEach, expect, it, vi } from "vitest";
 import { createPreviewSvgAsync } from "../../../src/obsidian/embeds/safe-preview-builder";
+import { immediateWorkScheduler } from "../../fixtures/obsidian/immediate-work-scheduler";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -33,7 +34,7 @@ it("builds ten thousand detached paths with bounded DOM writes between checkpoin
       checkpoints += 1;
       observe();
     },
-    now: () => 0,
+    workScheduler: immediateWorkScheduler(),
     isCancelled: () => false,
   });
   observe();
@@ -76,7 +77,7 @@ it("scans a maximum-size validated path incrementally before the atomic attribut
       scanSizes.length = 0;
       if (!attributes.mock.calls.some(([name]) => name === "d")) beforePathCheckpoints += 1;
     },
-    now: () => 0,
+    workScheduler: immediateWorkScheduler(),
     isCancelled: () => false,
   });
   expect(beforePathCheckpoints).toBeGreaterThanOrEqual(32);
@@ -91,7 +92,7 @@ it("completes a small preview in its initial bounded slice without continuation 
   const checkpoint = vi.fn(async () => {});
   const svg = await createPreviewSvgAsync(document, source, {
     checkpoint,
-    now: () => 0,
+    workScheduler: immediateWorkScheduler(),
     isCancelled: () => false,
   });
   expect(checkpoint).toHaveBeenCalledExactlyOnceWith(true);

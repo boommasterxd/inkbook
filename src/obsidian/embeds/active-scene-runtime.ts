@@ -30,10 +30,12 @@ function createSceneScrollStability(
   ownerWindow: Window,
   owner: () => BrowserScrollElement,
   rangeReserve: ActiveInkbookSceneOptions["scrollRangeReserve"],
+  workScheduler: ActiveInkbookSceneOptions["workScheduler"],
 ): TransitionScrollStability {
   return new TransitionScrollStability({
     owner,
     ownerWindow,
+    workScheduler,
     ...(rangeReserve === undefined ? {} : { rangeReserve }),
     root,
   });
@@ -53,6 +55,7 @@ export function createInitialSceneRuntime(
     ownerWindow,
     owner,
     options.scrollRangeReserve,
+    options.workScheduler,
   );
   const releaseInitialStability = stability.begin();
   try {
@@ -81,6 +84,7 @@ function createScenePreviewHandoff(
 ): ActiveScenePreviewHandoff {
   options.setPreviewBackgroundWait?.(options.model.waitForBackground?.bind(options.model));
   return new ActiveScenePreviewHandoff({
+    workScheduler: options.workScheduler,
     ...(options.ensurePreviewReady === undefined
       ? {}
       : { ensurePreviewReady: options.ensurePreviewReady }),

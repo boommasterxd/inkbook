@@ -1,5 +1,13 @@
 import { vi } from "vitest";
 
+export function inkbookRoot(root: FakePresentationElement): FakePresentationElement {
+  const presentation = root.children[0]?.children.find((child) =>
+    child.classNames.has("inkbook-root"),
+  );
+  if (presentation === undefined) throw new Error("Missing Inkbook presentation root.");
+  return presentation;
+}
+
 interface FakePresentationCollection {
   readonly length: number;
   item(index: number): FakePresentationElement | null;

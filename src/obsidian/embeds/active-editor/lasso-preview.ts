@@ -1,5 +1,6 @@
 import type { InkElementV1, PointV1 } from "../../../domain/schema/public";
 import type { GesturePreview } from "../../../editor/gestures/public";
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import {
   createRectangleSelectionArea,
   LassoSelectionSession,
@@ -12,8 +13,10 @@ import type { CoalescedCreationSample, CoalescedFrameSampleMode } from "./coales
 import { SelectionQueryWork } from "./selection-query-work";
 import type { SelectionPreviewOptions } from "./selection-preview-contracts";
 
+type LassoPreviewOptions = SelectionPreviewOptions & { readonly workScheduler: WorkScheduler };
+
 export class LassoPreview implements GesturePreview {
-  readonly #options: SelectionPreviewOptions;
+  readonly #options: LassoPreviewOptions;
   readonly #lasso: LassoSelectionSession;
   readonly #selectionDefaults: NonNullable<SelectionPreviewOptions["selectionDefaults"]>;
   readonly #startSelection: ReadonlySet<string>;
@@ -28,7 +31,7 @@ export class LassoPreview implements GesturePreview {
     return this.#selectionDefaults.area === "lasso" ? "preserve" : "latest";
   }
 
-  public constructor(options: SelectionPreviewOptions) {
+  public constructor(options: LassoPreviewOptions) {
     this.#options = options;
     this.#startSelection = options.selection();
     this.#selectionDefaults = options.selectionDefaults ?? {

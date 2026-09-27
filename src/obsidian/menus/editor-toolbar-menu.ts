@@ -1,4 +1,5 @@
 import type { PhoneSheetHostPort } from "./phone-sheet-host";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { Platform, type Keymap } from "obsidian";
 
 import type {
@@ -32,6 +33,7 @@ export interface EditorToolbarMenuState {
 export type EditorToolbarMenuHandlers = EditorMenuCallbacks;
 
 export interface EditorToolbarMenuOptions {
+  readonly workScheduler: WorkScheduler;
   readonly anchor: HTMLElement;
   readonly canvasInputSurface: FocusTargetPort;
   readonly factory: MenuFactoryPort;
@@ -145,6 +147,7 @@ export class EditorToolbarMenuSession {
   #showPanel(id: "background" | "style"): void {
     let panel: AdaptivePanelSession;
     panel = new AdaptivePanelSession({
+      workScheduler: this.#options.workScheduler,
       anchor: this.#options.anchor,
       canvasInputSurface: this.#options.canvasInputSurface,
       createContent: (lifecycle) => this.#createPanelContent(id, lifecycle),

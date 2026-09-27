@@ -6,6 +6,7 @@ import { serializeSvgEnvelope } from "../../../src/persistence/documents/svg-env
 import { createSnapshot } from "../../unit/persistence/serialization/fixtures";
 
 import { createInkbookLockedPreview } from "../../../src/obsidian/embeds/locked-preview";
+import { immediateWorkScheduler } from "../../fixtures/obsidian/immediate-work-scheduler";
 import { createHtmlElement, installObsidianDomHelpers } from "../../adapters/obsidian/dom";
 
 beforeEach(() => {
@@ -28,7 +29,7 @@ it("coalesces hidden autosave previews into one bounded tree and reuses unchange
     aspectRatio: revision,
     contentIdentity: { revision, outputHash: "a".repeat(64) },
   });
-  const preview = createInkbookLockedPreview(button, descriptor(1));
+  const preview = createInkbookLockedPreview(button, descriptor(1), immediateWorkScheduler());
   expect(create.mock.calls).toEqual([["http://www.w3.org/1999/xhtml", "div"]]);
   await preview.ensureReady();
   const original = button.querySelector("svg");
@@ -75,11 +76,15 @@ it("does no fetch or SVG construction for hidden saves and prepares only the lat
   });
   const fetch = vi.spyOn(window, "fetch").mockImplementation(async () => new Response(svg));
   const create = vi.spyOn(document, "createElementNS");
-  const preview = createInkbookLockedPreview(button, {
-    safeSvg: svg,
-    aspectRatio: 1,
-    contentIdentity: { revision: 0, outputHash: "a".repeat(64) },
-  });
+  const preview = createInkbookLockedPreview(
+    button,
+    {
+      safeSvg: svg,
+      aspectRatio: 1,
+      contentIdentity: { revision: 0, outputHash: "a".repeat(64) },
+    },
+    immediateWorkScheduler(),
+  );
   await preview.ensureReady();
   const oldSvg = button.querySelector("svg");
   expect(oldSvg).not.toBeNull();
@@ -92,6 +97,7 @@ it("does no fetch or SVG construction for hidden saves and prepares only the lat
     container: root,
     motion: "reduced",
     preview: button,
+    workScheduler: immediateWorkScheduler(),
     refreshPreview: preview.refresh,
     ensurePreviewReady: preview.ensureReady,
     setPreviewSource: async (source) => {

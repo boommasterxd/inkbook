@@ -55,21 +55,23 @@ export async function activateInkbookPlugin(
   let active = true;
   const lifetime = new AbortController();
   let runtimeForSettings: ObsidianWorkspaceRuntime | undefined;
+  const workScheduler = schedulerFromRuntime(() => runtimeForSettings);
   const settingTab = addSettingsTab(plugin, settings, () => runtimeForSettings, lifetime.signal);
   const settingsModal = new InkbookSettingsModalController(plugin.app, settingTab, settings);
   const scheme = new ColorSchemeBroadcaster({
     getColorScheme: () => (plugin.app.isDarkMode() ? "dark" : "light"),
   });
   let layoutReady = false;
-  const metadataResolved = observeMetadataReadiness(plugin);
   const embedActions = createObsidianEmbedActions(
     plugin.app,
-    metadataResolved,
+    observeMetadataReadiness(plugin),
     () => settings.getDeviceSettings().motion,
+    workScheduler,
   );
   plugin.register(() => embedActions.dispose());
   const runtime = createRuntime(plugin, settings, scheme, embedActions, feedback, settingsModal);
   runtimeForSettings = runtime;
+  const validationScheduling = documentOutputScheduling(runtime, workScheduler);
   plugin.register(runtime.refreshRateProfiles.subscribe(() => settingTab.update()));
   registerSettingsSubscriptions(plugin, settings, runtime);
   const insertion = createObsidianInsertionController(
@@ -82,6 +84,7 @@ export async function activateInkbookPlugin(
       inserted: (completed) => showInsertionFeedback(plugin, feedback, runtime, completed),
     },
     createPlacementFeedback(plugin, feedback),
+    validationScheduling,
   );
   const insertionCommand = registerInkbookCommands(plugin, runtime, {
     canInsert: (editor, sourcePath) => layoutReady && insertion.canInsert(editor, sourcePath),
@@ -91,6 +94,7 @@ export async function activateInkbookPlugin(
     plugin,
     insertionCommand,
     (editor, path, line) => layoutReady && insertion.canInsertAtLine(editor, path, line),
+    workScheduler,
   );
   const penTap = new PenTapInsertionController(
     insertion,
@@ -105,6 +109,7 @@ export async function activateInkbookPlugin(
     createPlacementFeedback(plugin, feedback),
     lifetime.signal,
     documentRecognition,
+    validationScheduling,
   );
   plugin.registerMarkdownPostProcessor(createReadingViewPostProcessor(ports));
   plugin.registerEditorExtension(createLivePreviewExtension(ports));
@@ -139,6 +144,25 @@ export async function activateInkbookPlugin(
   };
 }
 
+function schedulerFromRuntime(getRuntime: () => ObsidianWorkspaceRuntime | undefined) {
+  return (ownerWindow: Window | null) => {
+    const runtime = getRuntime();
+    if (runtime === undefined) throw new Error("Workspace runtime is unavailable.");
+    return runtime.refreshRateProfiles.workScheduler(ownerWindow);
+  };
+}
+
+function documentOutputScheduling(
+  runtime: ObsidianWorkspaceRuntime,
+  workScheduler: ReturnType<typeof schedulerFromRuntime>,
+) {
+  return {
+    workScheduler,
+    subscribeSchedulingProfile: (listener: () => void) =>
+      runtime.refreshRateProfiles.subscribe(listener),
+  };
+}
+
 function addSettingsTab(
   plugin: Plugin,
   settings: InkbookSettingsStore,
@@ -154,7 +178,14 @@ function addSettingsTab(
       getRuntime()?.refreshRateProfiles.status(
         plugin.app.workspace.containerEl.ownerDocument.defaultView,
       ),
-    signal,
+    {
+      lifetime: signal,
+      workScheduler: (ownerWindow) => {
+        const runtime = getRuntime();
+        if (runtime === undefined) throw new Error("Settings require an active workspace runtime.");
+        return runtime.refreshRateProfiles.workScheduler(ownerWindow);
+      },
+    },
   );
   plugin.addSettingTab(settingTab);
   return settingTab;
@@ -168,7 +199,7 @@ function createRuntime(
   feedback: InkbookFeedbackManager,
   settingsModal: InkbookSettingsModalController,
 ): ObsidianWorkspaceRuntime {
-  return new ObsidianWorkspaceRuntime(
+  const runtime: ObsidianWorkspaceRuntime = new ObsidianWorkspaceRuntime(
     plugin.app.vault,
     plugin.app.fileManager,
     scheme,
@@ -184,6 +215,7 @@ function createRuntime(
           description: "Remove every element from this drawing. You can undo this action.",
           confirmLabel: "Erase all",
           readMotion: () => settings.getDeviceSettings().motion,
+          workScheduler: (ownerWindow) => runtime.refreshRateProfiles.workScheduler(ownerWindow),
           destructive: true,
           signal,
         }),
@@ -205,6 +237,7 @@ function createRuntime(
       onOpenShortcuts: (navigation) => settingsModal.open("shortcuts", navigation),
     },
   );
+  return runtime;
 }
 
 function registerSettingsSubscriptions(
@@ -224,17 +257,16 @@ function createEmbedIntegration(
 ) {
   const documentRecognition = new ObsidianInkbookDocumentRecognition(plugin.app.vault, {
     deferUntilLayoutReady: true,
-    sliceBudgetMs: () =>
-      runtime.refreshRateProfiles.sliceBudgetMs(
-        plugin.app.workspace.containerEl.ownerDocument.defaultView,
-      ),
+    workScheduler: runtime.refreshRateProfiles.workScheduler(
+      plugin.app.workspace.containerEl.ownerDocument.defaultView,
+    ),
   });
   return {
     documentRecognition,
     ports: {
       documents: documentRecognition,
-      sliceBudgetMs: (ownerWindow: Window | null) =>
-        runtime.refreshRateProfiles.sliceBudgetMs(ownerWindow),
+      workScheduler: (ownerWindow: Window | null) =>
+        runtime.refreshRateProfiles.workScheduler(ownerWindow),
       lifecycle,
       resolveDocument: createObsidianDocumentResolver(plugin.app),
       scheme,
@@ -370,8 +402,11 @@ function registerInsertionMenu(
   plugin: Plugin,
   insertionCommand: InkbookInsertionCommand,
   canInsert: (editor: Editor, path: string, line: number) => boolean,
+  workScheduler: (
+    ownerWindow: Window | null,
+  ) => ReturnType<ObsidianWorkspaceRuntime["refreshRateProfiles"]["workScheduler"]>,
 ): InsertionContextMenuController {
-  const controller = new InsertionContextMenuController(insertionCommand, canInsert);
+  const controller = new InsertionContextMenuController(insertionCommand, canInsert, workScheduler);
   plugin.register(() => controller.clear());
   plugin.registerEvent(
     plugin.app.workspace.on("editor-menu", (menu, editor, context) => {

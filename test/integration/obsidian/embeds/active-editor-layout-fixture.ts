@@ -3,11 +3,13 @@ import { vi } from "vitest";
 import type { PageV1 } from "../../../../src/domain/schema/public";
 import {
   ActiveEditorLayout,
+  type ActiveEditorResizeAnchor,
   type ActiveEditorResizeUpdate,
 } from "../../../../src/obsidian/embeds/active-editor/layout";
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene/index";
 import { domRect } from "../../../fixtures/obsidian/active-editor";
 import { FakeClassList } from "../../../fixtures/obsidian/class-list";
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 class ScheduledWork {
   readonly frames = new Map<number, FrameRequestCallback>();
@@ -113,6 +115,7 @@ export function layoutHarness(
     return documentPage;
   });
   const layout = new ActiveEditorLayout({
+    workScheduler: workSchedulerFromFrames(work.window),
     beginScrollStability,
     chromeHost: { querySelector: () => null } as unknown as HTMLElement,
     container,
@@ -121,15 +124,7 @@ export function layoutHarness(
     onResize,
     onZoom,
     page: readPage,
-    readResizeAnchor: () => ({
-      anchorViewportY: 250,
-      embedTopInScrollContent: 200,
-      oldCameraX: -400,
-      oldRenderedContainerHeight: rect.height - blockInsets,
-      oldScrollTop: 500,
-      scrollBounds: { min: 0, max: 5_000 },
-      viewportWidth: rect.width - horizontalInset,
-    }),
+    readResizeAnchor: () => layoutResizeAnchor(rect, blockInsets, horizontalInset),
     renderer,
     root: { dataset: { inkbookMotion: motion }, ownerDocument } as unknown as HTMLElement,
     storeMaximumBottom: () => maximumBottom,
@@ -164,6 +159,22 @@ export function layoutHarness(
     styleProperties,
     ...observers,
     work,
+  };
+}
+
+function layoutResizeAnchor(
+  rect: { height: number; width: number },
+  blockInsets: number,
+  horizontalInset: number,
+): ActiveEditorResizeAnchor {
+  return {
+    anchorViewportY: 250,
+    embedTopInScrollContent: 200,
+    oldCameraX: -400,
+    oldRenderedContainerHeight: rect.height - blockInsets,
+    oldScrollTop: 500,
+    scrollBounds: { min: 0, max: 5_000 },
+    viewportWidth: rect.width - horizontalInset,
   };
 }
 

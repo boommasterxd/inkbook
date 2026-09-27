@@ -1,6 +1,7 @@
 import type { Setting, SettingDefinitionRender } from "obsidian";
 
 import type { InkbookDeviceSettingsV2, StartupToolV1, ToolDefaultsV1 } from "../../domain/settings";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { createToolStyleControls } from "../menus/tool-style-controls";
 import type { SettingsControlKey } from "./control-values";
 import { renderSettingsControlContent } from "./settings-control-content";
@@ -16,6 +17,7 @@ export interface ToolSectionSpec {
 }
 
 export interface ToolSectionValues {
+  readonly workScheduler: (ownerWindow: Window | null) => WorkScheduler;
   readonly getDefaults: () => ToolDefaultsV1;
   readonly getMotion: () => InkbookDeviceSettingsV2["motion"];
   readonly set: (key: SettingsControlKey, value: unknown) => Promise<void>;
@@ -53,7 +55,11 @@ function renderToolSection(
   const controls = panelContent.createDiv({ cls: "inkbook-settings-tool-controls" });
   let initialized = false;
 
-  const panelMotion = new SettingsPanelMotion(panel, values.getMotion);
+  const panelMotion = new SettingsPanelMotion(
+    panel,
+    values.getMotion,
+    values.workScheduler(panel.ownerDocument.defaultView),
+  );
   const toggle = (): void => {
     const expanded = trigger.getAttribute("aria-expanded") !== "true";
     if (expanded && !initialized) {

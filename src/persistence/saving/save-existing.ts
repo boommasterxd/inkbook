@@ -15,7 +15,6 @@ export interface PreparedSave extends PreparedOutput {
 }
 
 export interface SaveRevisionSource {
-  readonly sliceBudgetMs?: () => number;
   readonly waitForBackground?: () => Promise<void>;
   currentRevision(): number;
 }

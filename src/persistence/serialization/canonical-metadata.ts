@@ -55,7 +55,7 @@ export async function canonicalMetadataSha256Async(
     }
   }
   writer.finish();
-  return hashExactUtf8Output(output, options.signal, options.digest);
+  return hashExactUtf8Output(output, options.signal, options.digest, options.checkpoint);
 }
 
 function canonicalMetadataMatches(input: string, snapshot: InkSnapshotV1): boolean {

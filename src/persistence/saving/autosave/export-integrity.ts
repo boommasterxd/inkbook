@@ -1,4 +1,5 @@
 import type { InkElementV1, InkSnapshotV1 } from "../../../domain/schema/public";
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type { ExportSuccess } from "../../worker/protocol";
 import {
   deriveDocumentIntegrityManifestFromContentDigest,
@@ -23,8 +24,8 @@ export class AutosaveExportIntegrity {
 
   public constructor(
     readonly waitForBackground?: () => Promise<void>,
-    readonly sliceBudgetMs?: () => number,
     ownsElement?: (element: InkElementV1) => boolean,
+    readonly workScheduler?: WorkScheduler,
   ) {
     this.#metadata = new CanonicalMetadataCache(ownsElement);
   }
@@ -37,10 +38,10 @@ export class AutosaveExportIntegrity {
   ): Promise<ExportIntegrityDecision> {
     let matches = false;
     try {
-      if (this.waitForBackground) await this.waitForBackground();
+      const checkpoint = createMainThreadCheckpoint(this.workScheduler, this.waitForBackground);
+      await checkpoint();
       if (signal?.aborted || !isCurrent()) return "cancelled";
       const value = snapshot();
-      const checkpoint = createMainThreadCheckpoint(this.sliceBudgetMs, this.waitForBackground);
       const currentCheckpoint = async (): Promise<void> => {
         if (signal?.aborted || !isCurrent()) throw new Error("Obsolete export integrity check.");
         await checkpoint();
@@ -68,11 +69,11 @@ export class AutosaveExportIntegrity {
 export async function inspectIntegrityBoundExport(
   result: ExportSuccess,
   waitForBackground?: () => Promise<void>,
-  sliceBudgetMs?: () => number,
+  workScheduler?: WorkScheduler,
 ) {
   const trusted = await adoptOwnedSvgOutput(result.output, result.outputHash, {
-    ...(sliceBudgetMs ? { sliceBudgetMs } : {}),
     ...(waitForBackground ? { waitForBackground } : {}),
+    ...(workScheduler ? { workScheduler } : {}),
   });
   if (trusted.revision !== result.modelRevision) throw new TypeError("Export revision mismatch.");
   if (trusted.snapshotHash !== result.integrityManifest.contentDigest) {
@@ -86,7 +87,7 @@ export function createAutosaveExportIntegrity(
 ): AutosaveExportIntegrity {
   return new AutosaveExportIntegrity(
     options.waitForBackground,
-    options.sliceBudgetMs,
     options.documentSource.ownsIntegrityElement,
+    options.workScheduler,
   );
 }

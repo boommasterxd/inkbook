@@ -1,6 +1,7 @@
 import { TFile, type Vault } from "obsidian";
 
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { ExternalChangeOutcome } from "../../editor/session/session-port";
 import { hashSvgContent } from "../../persistence/scheduling/trusted-svg-output";
 import { scanCanonicalRevisionPrefix } from "../../persistence/saving/revision-scan";
@@ -23,7 +24,7 @@ interface WorkspaceRuntimeLifecycleOptions {
   readonly presentations: () => Iterable<RuntimePresentation>;
   readonly reloadPresentation: (documentId: string) => void;
   readonly vault: Vault;
-  readonly sliceBudgetMs?: (ownerWindow: Window | null) => number;
+  readonly workScheduler: (ownerWindow: Window | null) => WorkScheduler;
 }
 
 interface PendingAutoActivation {
@@ -31,7 +32,7 @@ interface PendingAutoActivation {
   attempt: number;
   readonly documentId: string;
   frame: number | undefined;
-  frameWindow: WeakRef<Window> | undefined;
+  frameScheduler: WorkScheduler | undefined;
   readonly onTimeout: (retry: () => void) => void;
   readonly ownerWindow: WeakRef<Window>;
   timeout: number | undefined;
@@ -50,6 +51,7 @@ export type HostWriteResolved = (output?: {
 
 interface PendingVaultModification {
   readonly resolved?: HostWriteResolved;
+  frame: { readonly handle: number; readonly scheduler: WorkScheduler } | undefined;
   generation: number;
 }
 
@@ -128,10 +130,11 @@ export class WorkspaceRuntimeLifecycle {
     pending.attachmentKey = presentationAttachmentKey(attachment);
     pending.attempt += 1;
     const attempt = pending.attempt;
-    pending.frameWindow = new WeakRef(ownerWindow);
-    pending.frame = ownerWindow.requestAnimationFrame(() => {
+    const scheduler = this.#options.workScheduler(ownerWindow);
+    pending.frameScheduler = scheduler;
+    pending.frame = scheduler.requestFrame(() => {
       if (!this.#matchesAttempt(pending, attachment, attempt)) return;
-      pending.frame = ownerWindow.requestAnimationFrame(() =>
+      pending.frame = scheduler.requestFrame(() =>
         this.#activatePending(pending, attachment, attempt),
       );
     });
@@ -184,7 +187,11 @@ export class WorkspaceRuntimeLifecycle {
       pending.generation += 1;
       return;
     }
-    const created = { generation: 1, ...(resolved === undefined ? {} : { resolved }) };
+    const created = {
+      frame: undefined,
+      generation: 1,
+      ...(resolved === undefined ? {} : { resolved }),
+    };
     this.#pendingExternalChanges.set(documentId, created);
     this.#scheduleVaultModification(documentId, created);
   }
@@ -218,6 +225,9 @@ export class WorkspaceRuntimeLifecycle {
 
   public dispose(): void {
     this.#cancelAutoActivation();
+    for (const pending of this.#pendingExternalChanges.values()) {
+      if (pending.frame !== undefined) pending.frame.scheduler.cancelFrame(pending.frame.handle);
+    }
     this.#insertionUndoHints.clear();
     this.#confirmedHostWrites.clear();
     this.#pendingExternalChanges.clear();
@@ -314,16 +324,11 @@ export class WorkspaceRuntimeLifecycle {
       const revision = scanCanonicalRevisionPrefix(content);
       if (revision === null) return undefined;
       const outputHash = await hashSvgContent(content, {
-        ...(this.#options.sliceBudgetMs === undefined
-          ? {}
-          : {
-              sliceBudgetMs: () =>
-                this.#options.sliceBudgetMs!(
-                  resolvePresentationWindow(documentId, this.#options.presentations()) ??
-                    this.#options.fallbackWindow() ??
-                    null,
-                ),
-            }),
+        workScheduler: this.#options.workScheduler(
+          resolvePresentationWindow(documentId, this.#options.presentations()) ??
+            this.#options.fallbackWindow() ??
+            null,
+        ),
       });
       return sameVaultFile(this.#options.vault, documentId, file, before)
         ? { content, outputHash, revision, signature: before }
@@ -334,12 +339,13 @@ export class WorkspaceRuntimeLifecycle {
   }
 
   #scheduleVaultModification(documentId: string, pending: PendingVaultModification): void {
-    const run = (): void => {
-      void this.#processVaultModification(documentId, pending);
-    };
-    const ownerWindow = this.#options.fallbackWindow();
-    if (ownerWindow === undefined) run();
-    else ownerWindow.setTimeout(run, 0);
+    const scheduler = this.#options.workScheduler(this.#options.fallbackWindow() ?? null);
+    const handle = scheduler.requestFrame(() => {
+      pending.frame = undefined;
+      if (!this.#options.isDisposed() && this.#pendingExternalChanges.get(documentId) === pending)
+        void this.#processVaultModification(documentId, pending);
+    });
+    pending.frame = { handle, scheduler };
   }
 
   #refreshPreviews(documentId: string, cacheKey: string): void {
@@ -374,12 +380,9 @@ export class WorkspaceRuntimeLifecycle {
   }
 
   #clearPendingFrame(pending: PendingAutoActivation): void {
-    const frameWindow = pending.frameWindow?.deref();
-    if (pending.frame !== undefined && isLiveOwnerWindow(frameWindow)) {
-      frameWindow.cancelAnimationFrame(pending.frame);
-    }
+    if (pending.frame !== undefined) pending.frameScheduler?.cancelFrame(pending.frame);
     pending.frame = undefined;
-    pending.frameWindow = undefined;
+    pending.frameScheduler = undefined;
   }
 }
 
@@ -406,7 +409,7 @@ function createPendingAutoActivation(
     attempt: 0,
     documentId,
     frame: undefined,
-    frameWindow: undefined,
+    frameScheduler: undefined,
     onTimeout,
     ownerWindow: new WeakRef(ownerWindow),
     timeout: undefined,

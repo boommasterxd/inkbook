@@ -7,10 +7,11 @@ import { ElementStore } from "../../../../src/domain/store/public";
 import type { ClipboardCandidates, PastePlan } from "../../../../src/persistence/clipboard/public";
 import { INKBOOK_CLIPBOARD_WEB_MIME } from "../../../../src/persistence/clipboard/constants";
 import { ActiveEditorActions } from "../../../../src/obsidian/embeds/active-editor/controller-actions";
-import { ActiveEditorMenuController } from "../../../../src/obsidian/embeds/active-editor/controller-menu";
+import type { ActiveEditorMenuController } from "../../../../src/obsidian/embeds/active-editor/controller-menu";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/vault-document-session";
 import type { MenuFactoryPort, MenuItemPort, MenuPort } from "../../../../src/obsidian/menus/index";
+import { createActiveEditorMenuController } from "../../../fixtures/obsidian/active-editor-menu-controller";
 import { createClipboardModelDefaults } from "./active-editor-clipboard-fixtures";
 
 describe("active editor Clipboard discovery", () => {
@@ -302,15 +303,7 @@ function menuController(
   storeSize: number,
 ): ActiveEditorMenuController {
   const factory: MenuFactoryPort = { create: () => menu, forEvent: () => menu };
-  return new ActiveEditorMenuController({
-    actions,
-    factory,
-    inputSurface: { focus: vi.fn() } as unknown as HTMLDivElement,
-    ownerDocument: {} as Document,
-    selectionSize: () => 0,
-    storeSize: () => storeSize,
-    toScreenPoint: (point) => point,
-  });
+  return createActiveEditorMenuController(actions, factory, storeSize);
 }
 
 function contextMenuTitles(actions: ActiveEditorActions): readonly string[] {

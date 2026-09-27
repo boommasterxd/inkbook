@@ -3,11 +3,12 @@ import type { SceneToolCursorFrameReader } from "./tool-cursor";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type * as Schema from "../../domain/schema/public";
 import { SceneBackgroundCache } from "./background-cache";
-import { DEFAULT_CAMERA, DEFAULT_FRAME_BUDGET_MS } from "./constants";
+import { DEFAULT_CAMERA } from "./constants";
 import { SceneContentRenderer } from "./content-renderer";
 import type { ProgressivePreviewTransform } from "./progressive-element-preview";
 import { SceneElementPreviews } from "./scene-element-previews";
 import { SceneFrameWriter } from "./scene-frame-writer";
+import { SceneFrameWork } from "./scene-frame-work";
 import * as stats from "./instrumentation";
 import { ScenePathCache, type PreparedScenePath } from "./path-cache";
 import { ScenePreviewCommitController, type PreviewCommitHandoff } from "./preview-commit-handoff";
@@ -31,8 +32,8 @@ export class SvgSceneRenderer {
   readonly #contentScheduler: SceneContentScheduler;
   #disposed = false;
   readonly #dom: SceneDom;
-  readonly #frameBudgetMs: () => number;
   readonly #frameWriter: SceneFrameWriter;
+  readonly #frameWork: SceneFrameWork;
   readonly #frames: SceneFrameScheduler;
   readonly #sceneCommits: SceneCommitCoordinator;
   readonly #deltas: SceneDeltaCoordinator;
@@ -47,7 +48,7 @@ export class SvgSceneRenderer {
   readonly #pathCache = new ScenePathCache();
   readonly #elementPreviews: SceneElementPreviews;
   readonly #transformPreviews: SceneTransformPreviewController;
-  readonly #scheduler: Scene.SceneScheduler;
+  readonly #scheduler: Scene.SceneRendererOptions["workScheduler"];
   #viewport: Scene.SceneViewport | undefined;
   readonly #visibilityCoordinator: SceneVisibilityCoordinator;
   readonly #visibility: SceneVisibilityState;
@@ -55,11 +56,7 @@ export class SvgSceneRenderer {
   public constructor(options: Scene.SceneRendererOptions) {
     this.#options = options;
     this.#page = options.page;
-    const budget = options.frameBudgetMs ?? DEFAULT_FRAME_BUDGET_MS;
-    this.#frameBudgetMs = typeof budget === "function" ? budget : () => budget;
-    runtime.validateFrameBudget(this.#frameBudgetMs());
-    this.#scheduler =
-      options.scheduler ?? runtime.browserScheduler(options.container.ownerDocument);
+    this.#scheduler = options.workScheduler;
     this.#frames = new SceneFrameScheduler(this.#scheduler, this.#stats, (time, scene) =>
       this.renderFrame(time, scene),
     );
@@ -109,6 +106,15 @@ export class SvgSceneRenderer {
       options.store,
       this.#camera,
     );
+    this.#frameWork = new SceneFrameWork({
+      backgroundPending: () => this.#backgroundDirty && this.#viewport !== undefined,
+      content: this.#content,
+      contentScheduler: this.#contentScheduler,
+      elements: this.#elementPreviews,
+      motion: this.#motion,
+      scheduler: this.#scheduler,
+      writeBackground: (deadline, allowAtomic) => this.writeBackground(deadline, allowAtomic),
+    });
     this.#previewCommits = new ScenePreviewCommitController(this.#motion, () => {
       this.#transformPreviews.clear();
       this.#elementPreviews.clear();
@@ -291,7 +297,7 @@ export class SvgSceneRenderer {
     this.#frames.schedule();
   }
   public flushPointerFeedbackFrame(
-    deadline = this.#scheduler.now() + runtime.validateFrameBudget(this.#frameBudgetMs()),
+    deadline = this.#scheduler.deadline(),
     refreshCursorLayout = false,
   ): void {
     this.assertActive();
@@ -326,10 +332,11 @@ export class SvgSceneRenderer {
     this.assertActive();
     runtime.validateNonNegativeDuration(durationMs);
     this.#deltas.addFades(ids);
-    this.#content.setElementFade(ids, this.#motion.duration(durationMs), {
-      deadline: this.#scheduler.now() + runtime.validateFrameBudget(this.#frameBudgetMs()),
-      now: () => this.#scheduler.now(),
-    });
+    // Fade start is optional here; defer it when this window's shared slice is spent.
+    const slice = this.#scheduler.shouldYield()
+      ? undefined
+      : { deadline: this.#scheduler.deadline(), now: () => this.#scheduler.now() };
+    this.#content.setElementFade(ids, this.#motion.duration(durationMs), slice);
     if (this.#content.pendingElementFades) this.#frames.schedule();
   }
   public clearElementFade(ids: readonly string[]): void {
@@ -417,7 +424,7 @@ export class SvgSceneRenderer {
     }
     this.#motion.expireSuppression();
     const startedAt = Number.isFinite(frameTime) ? frameTime : this.#scheduler.now();
-    const deadline = this.#scheduler.now() + runtime.validateFrameBudget(this.#frameBudgetMs());
+    const deadline = this.#scheduler.deadline();
     this.performReadPhase();
     this.#frameWriter.readToolCursor();
     if (this.#previewCommits.releaseCommitted()) {
@@ -428,10 +435,11 @@ export class SvgSceneRenderer {
     }
     this.#visibilityCoordinator.prepare(this.#viewport, this.#camera);
     this.#transformPreviews.refreshContext();
+    // Pointer completion is indivisible input feedback; it still uses the shared deadline.
     this.flushPointerFeedbackFrame(deadline);
     this.#motion.writeSelectionFeedback(startedAt);
-    const pendingFades = this.#content.flushElementFades(deadline, () => this.#scheduler.now());
-    const pendingVisibility = this.#contentScheduler.write(
+    const work = this.#frameWork.write(
+      startedAt,
       deadline,
       this.#transformPreviews.values,
       this.#elementPreviews.values,
@@ -444,42 +452,32 @@ export class SvgSceneRenderer {
       (id) => this.#content.hasMounted(id) || !this.#visibility.contains(id),
     );
     const mountedIds = this.#content.takeNewlyMountedIds();
-    this.#motion.bindMountedEntrances(mountedIds);
+    this.#motion.bindMountedEntrances(mountedIds, startedAt);
     this.#motion.finishEntranceBatch();
     this.#elementPreviews.applyMounted(mountedIds);
-    if (pendingVisibility) {
-      this.#frames.schedule();
-      stats.refreshCacheInstrumentation(this.#stats, this.#backgroundCache, this.#pathCache);
-      this.#resourcePolicy.notifyUsageChanged();
-      return;
-    }
-    const pendingPreview = this.#elementPreviews.progressive.write(deadline, () =>
-      this.#scheduler.now(),
-    );
-    let backgroundDeferred = false;
-    if (this.#backgroundDirty && this.#viewport !== undefined) {
-      if (this.#scheduler.now() >= deadline) {
-        backgroundDeferred = true;
-        this.#stats.backgroundBudgetDeferrals += 1;
-      } else {
-        this.#frameWriter.writeBackground(this.#page, this.#pageHeight, this.#camera.zoom);
-        this.#backgroundDirty = false;
-      }
-    }
-    if (!backgroundDeferred) this.#sceneCommits.completeFrame();
-    const pendingMotion = this.#motion.write(startedAt, deadline, () => this.#scheduler.now());
+    if (!work.pendingVisibility && !work.backgroundDeferred) this.#sceneCommits.completeFrame();
     const overBudget = this.#scheduler.now() >= deadline;
     if (
-      backgroundDeferred ||
-      pendingPreview ||
-      pendingMotion ||
-      overBudget ||
+      work.pendingVisibility ||
+      work.backgroundDeferred ||
+      work.pendingPreview ||
+      this.#motion.pending ||
       this.#content.hasPendingExitCleanup ||
-      pendingFades
+      work.pendingFades
     )
       this.#frames.schedule();
     stats.refreshCacheInstrumentation(this.#stats, this.#backgroundCache, this.#pathCache);
     if (!overBudget) this.#resourcePolicy.notifyUsageChanged();
+  }
+  private writeBackground(deadline: number, allowAtomic = false): boolean {
+    if (!this.#backgroundDirty || this.#viewport === undefined) return false;
+    if (!allowAtomic && this.#scheduler.now() >= deadline) {
+      this.#stats.backgroundBudgetDeferrals += 1;
+      return true;
+    }
+    this.#frameWriter.writeBackground(this.#page, this.#pageHeight, this.#camera.zoom);
+    this.#backgroundDirty = false;
+    return false;
   }
   private performReadPhase(): void {
     if (!this.#layoutDirty) return;

@@ -5,6 +5,7 @@ import type { PresentationAttachment } from "../../../../src/obsidian/embeds/pre
 import { WorkspaceRuntimeLifecycle } from "../../../../src/obsidian/embeds/workspace-runtime-lifecycle";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import { createSnapshot } from "../../persistence/serialization/fixtures";
+import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 
 function createHarness(
   presentations: Array<{
@@ -13,7 +14,7 @@ function createHarness(
   }> = [],
   queueAutoActivation = true,
   vault: Vault = { getFileByPath: () => null } as unknown as Vault,
-  sliceBudgetMs?: (ownerWindow: Window | null) => number,
+  workScheduler = immediateWorkScheduler(),
 ) {
   const dismiss = vi.fn();
   const notifyExternalChange = vi.fn(async () => "reloaded" as const);
@@ -33,7 +34,13 @@ function createHarness(
     notifyExternalChange,
     presentations: () => presentations,
     reloadPresentation,
-    ...(sliceBudgetMs === undefined ? {} : { sliceBudgetMs }),
+    workScheduler: () => ({
+      ...workScheduler,
+      requestFrame: (callback) => {
+        timers.push(() => callback(0));
+        return timers.length;
+      },
+    }),
     vault,
   });
   if (queueAutoActivation) {
@@ -101,6 +108,7 @@ describe("WorkspaceRuntimeLifecycle", () => {
       notifyExternalChange: vi.fn(async () => "ignored" as const),
       presentations: () => [{ attachment, scene: undefined }],
       reloadPresentation: vi.fn(),
+      workScheduler: () => immediateWorkScheduler(),
       vault: {
         getFileByPath: () => file,
         getResourcePath: () => "app://vault/drawings/ink.svg",
@@ -135,8 +143,11 @@ describe("WorkspaceRuntimeLifecycle host synchronization", () => {
 
   it("ignores a Vault modification confirmed by the persisted read-back hook", async () => {
     const persisted = serializedDocument(1);
-    const budget = vi.fn(() => 2);
-    const harness = createHarness([], true, persisted.vault, budget);
+    const checkpoint = vi.fn(() => undefined);
+    const harness = createHarness([], true, persisted.vault, {
+      ...immediateWorkScheduler(),
+      checkpoint,
+    });
     const resolved = vi.fn();
     harness.lifecycle.handleVaultModification("drawings/ink.svg", resolved);
     harness.lifecycle.handlePersisted({
@@ -147,12 +158,12 @@ describe("WorkspaceRuntimeLifecycle host synchronization", () => {
     });
 
     harness.timers[1]?.();
-    await vi.waitFor(() => expect(budget).toHaveBeenCalledWith(harness.ownerWindow));
     await vi.waitFor(() =>
       expect(resolved).toHaveBeenCalledWith(
         expect.objectContaining({ outputHash: persisted.hash }),
       ),
     );
+    expect(checkpoint).toHaveBeenCalled();
     await Promise.resolve();
     await Promise.resolve();
 
@@ -335,6 +346,11 @@ function createAutoActivationHarness() {
     notifyExternalChange: vi.fn(async () => "ignored" as const),
     presentations: () => presentations,
     reloadPresentation: vi.fn(),
+    workScheduler: () => ({
+      ...immediateWorkScheduler(),
+      requestFrame: (callback) => ownerWindow.requestAnimationFrame(callback),
+      cancelFrame: (handle) => ownerWindow.cancelAnimationFrame(handle),
+    }),
     vault: { getFileByPath: () => null } as unknown as Vault,
   });
   return {

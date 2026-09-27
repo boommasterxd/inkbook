@@ -1,73 +1,29 @@
-/** One cancellable owning-window idle callback per preview preparation. */
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
+
+/** Gates preview work behind live input and the owning window's shared scheduler. */
 export class PreviewIdleScheduler {
-  #cancel: (() => void) | undefined;
+  readonly #abort = new AbortController();
   #waitForBackground: (() => Promise<void>) | undefined;
   #disposed = false;
-  #foregroundRequests = 0;
   readonly #waiting = new Set<() => void>();
 
-  public constructor(private readonly ownerWindow: Window) {}
+  public constructor(private readonly workScheduler: WorkScheduler) {}
 
   public setBackgroundWait(wait: (() => Promise<void>) | undefined): void {
     this.#waitForBackground = wait;
-  }
-
-  public promote(): void {
-    this.#foregroundRequests += 1;
-    this.#cancel?.();
-  }
-
-  public demote(): void {
-    this.#foregroundRequests = Math.max(0, this.#foregroundRequests - 1);
   }
 
   public async checkpoint(initial = false): Promise<void> {
     // Allow the presentation to install its input-priority gate before the first slice.
     if (initial) await Promise.resolve();
     await this.waitForBackground();
-    if (this.#disposed || initial) return;
-    await new Promise<void>((resolve, reject) => {
-      const finish = (): void => {
-        this.#cancel = undefined;
-        resolve();
-      };
-      const channelConstructor = (
-        this.ownerWindow as Window & { MessageChannel?: typeof MessageChannel }
-      ).MessageChannel;
-      if (this.#foregroundRequests > 0 && channelConstructor !== undefined) {
-        const channel = new channelConstructor();
-        const close = (): void => {
-          channel.port1.close();
-          channel.port2.close();
-          finish();
-        };
-        channel.port1.onmessage = close;
-        this.#cancel = close;
-        try {
-          channel.port2.postMessage(null);
-        } catch (error: unknown) {
-          channel.port1.close();
-          channel.port2.close();
-          this.#cancel = undefined;
-          reject(error instanceof Error ? error : new Error("Preview handoff failed."));
-        }
-      } else if (
-        this.#foregroundRequests === 0 &&
-        typeof this.ownerWindow.requestIdleCallback === "function"
-      ) {
-        const id = this.ownerWindow.requestIdleCallback(finish, { timeout: 100 });
-        this.#cancel = () => {
-          this.ownerWindow.cancelIdleCallback(id);
-          finish();
-        };
-      } else {
-        const id = this.ownerWindow.setTimeout(finish, this.#foregroundRequests > 0 ? 0 : 16);
-        this.#cancel = () => {
-          this.ownerWindow.clearTimeout(id);
-          finish();
-        };
-      }
-    });
+    if (this.#disposed) return;
+    try {
+      if (initial) await this.workScheduler.checkpoint(this.#abort.signal);
+      else await this.workScheduler.nextFrame(this.#abort.signal);
+    } catch (error: unknown) {
+      if (!this.#disposed) throw error;
+    }
     await this.waitForBackground();
   }
 
@@ -92,7 +48,7 @@ export class PreviewIdleScheduler {
   public dispose(): void {
     this.#disposed = true;
     this.#waitForBackground = undefined;
+    this.#abort.abort();
     for (const finish of this.#waiting) finish();
-    this.#cancel?.();
   }
 }

@@ -2,6 +2,7 @@ import { TFile, type Vault } from "obsidian";
 import { vi } from "vitest";
 
 import { ObsidianInkbookDocumentRecognition } from "../../../src/obsidian/embeds/document-recognition";
+import { immediateWorkScheduler } from "./immediate-work-scheduler";
 
 export function deferredPreviewRecognition(path: string, size: number) {
   const File = TFile as unknown as new (filePath: string, fileSize: number) => TFile;
@@ -13,10 +14,13 @@ export function deferredPreviewRecognition(path: string, size: number) {
         release = resolve;
       }),
   );
-  const recognition = new ObsidianInkbookDocumentRecognition({
-    getFileByPath: (candidate: string) => (candidate === file.path ? file : null),
-    getResourcePath: () => `app://${path}`,
-    cachedRead,
-  } as unknown as Vault);
+  const recognition = new ObsidianInkbookDocumentRecognition(
+    {
+      getFileByPath: (candidate: string) => (candidate === file.path ? file : null),
+      getResourcePath: () => `app://${path}`,
+      cachedRead,
+    } as unknown as Vault,
+    { workScheduler: immediateWorkScheduler() },
+  );
   return { file, recognition, cachedRead, release: (content: string) => release(content) };
 }

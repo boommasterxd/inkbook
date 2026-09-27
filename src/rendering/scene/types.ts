@@ -3,6 +3,7 @@ import type { RenderBand } from "../../domain/commands/render-bands";
 import type { Bounds } from "../../domain/geometry/primitives";
 import type { StrokePathGeometry } from "../../domain/geometry/stroke-path";
 import type { InkElementV1, PageV1 } from "../../domain/schema/public";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { PathPresentation } from "./element-presentation";
 
 type SceneDirtyDomain = "connection" | "geometry" | "order" | "paint" | "visibility";
@@ -53,12 +54,6 @@ interface SceneLayoutPort {
   readViewport(): SceneViewport;
 }
 
-export interface SceneScheduler {
-  cancelAnimationFrame(handle: number): void;
-  now(): number;
-  requestAnimationFrame(callback: FrameRequestCallback): number;
-}
-
 export interface SceneCamera {
   readonly x: number;
   readonly zoom: number;
@@ -81,14 +76,13 @@ export interface SceneInputHandlers {
 export interface SceneRendererOptions {
   readonly accessibleName?: string;
   readonly container: HTMLElement;
-  readonly frameBudgetMs?: number | (() => number);
   readonly inputHandlers?: SceneInputHandlers;
   readonly layout: SceneLayoutPort;
   readonly page: PageV1;
   readonly onSceneCommitted?: () => void;
   readonly onResourceUsageChanged?: () => void;
   readonly reducedMotion?: boolean;
-  readonly scheduler?: SceneScheduler;
+  readonly workScheduler: WorkScheduler;
   readonly store: SceneStorePort;
 }
 

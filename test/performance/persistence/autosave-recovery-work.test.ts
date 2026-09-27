@@ -1,3 +1,4 @@
+import { createTestWorkScheduler } from "../../fixtures/persistence/work-scheduler";
 import { describe, expect, it, vi } from "vitest";
 import { AutosaveCoordinator } from "../../../src/persistence/saving/autosave/public";
 import type { AutosaveStatus } from "../../../src/persistence/saving/autosave/types";
@@ -60,6 +61,7 @@ function createRecovery(options: RecoveryOptions = {}) {
     }),
   };
   const coordinator = new AutosaveCoordinator({
+    workScheduler: createTestWorkScheduler(),
     initialSnapshot: initial,
     sessionId: "recovery",
     workerEpoch: 1,

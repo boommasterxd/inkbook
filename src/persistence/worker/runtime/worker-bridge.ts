@@ -1,3 +1,5 @@
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
+import { InputActivityGate } from "./input-activity-gate";
 import { ModelPointReferences } from "./model-point-references";
 import type {
   DocumentRuntimeObserver,
@@ -7,7 +9,6 @@ import type {
   UnlockRuntimeBatch,
 } from "./types";
 import type { ExportIdentity } from "../protocol";
-import { yieldToMainThread } from "../../scheduling/main-thread-yield";
 import {
   decodeUnlockBatch,
   decodeRuntimeResultChunked,
@@ -26,8 +27,6 @@ import type {
   BridgeUnlockBatch,
 } from "./bridge-messages";
 
-const DESKTOP_MAIN_THREAD_SLICE_MS = 8;
-const MOBILE_MAIN_THREAD_SLICE_MS = 12;
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
 export interface WorkerBridgeEndpoint {
@@ -59,10 +58,11 @@ export interface WorkerRuntimeFailure {
 }
 
 export interface WorkerDocumentRuntimePortOptions {
+  readonly workScheduler: WorkScheduler;
   readonly onExecutorFailure?: (failure: WorkerRuntimeFailure) => void;
-  readonly profile?: "desktop" | "mobile";
+  readonly frameIntervalMilliseconds: () => number;
   readonly requestTimeoutMilliseconds?: number;
-  readonly sliceMilliseconds?: number | (() => number);
+  readonly subscribeSchedulingProfile?: (listener: () => void) => () => void;
 }
 
 export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
@@ -72,8 +72,11 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
   readonly #pending = new Map<number, PendingBridgeRequest>();
   readonly #exportReceipts = new Map<string, BridgeSuccess>();
   readonly #requestTimeoutMilliseconds: number;
-  readonly #sliceMilliseconds: () => number;
-  readonly #inputWaiters = new Set<() => void>();
+  readonly #frameIntervalMilliseconds: () => number;
+  readonly #workScheduler: WorkScheduler;
+  readonly #inputGate = new InputActivityGate(() => this.#liveInputActive);
+  readonly #unsubscribeSchedulingProfile: (() => void) | undefined;
+  #publishedProfile: string | undefined;
   #failureReported = false;
   #liveInputActive = false;
   #nextRequestId = 0;
@@ -81,22 +84,22 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
 
   public constructor(
     createWorker: () => WorkerBridgeEndpoint,
-    options: WorkerDocumentRuntimePortOptions = {},
+    options: WorkerDocumentRuntimePortOptions,
   ) {
     const timeout = options.requestTimeoutMilliseconds ?? DEFAULT_REQUEST_TIMEOUT_MS;
     if (!(timeout > 0) || !Number.isFinite(timeout)) {
       throw new RangeError("requestTimeoutMilliseconds must be a positive finite number.");
     }
     this.#requestTimeoutMilliseconds = timeout;
-    const configuredSlice =
-      options.sliceMilliseconds ??
-      (options.profile === "mobile" ? MOBILE_MAIN_THREAD_SLICE_MS : DESKTOP_MAIN_THREAD_SLICE_MS);
-    this.#sliceMilliseconds =
-      typeof configuredSlice === "function" ? configuredSlice : () => configuredSlice;
+    this.#workScheduler = options.workScheduler;
+    this.#frameIntervalMilliseconds = options.frameIntervalMilliseconds;
     this.#onExecutorFailure = options.onExecutorFailure;
     this.#endpoint = createWorker();
     this.#endpoint.addEventListener("message", this.#onMessage);
     this.#endpoint.addEventListener("error", this.#onError);
+    this.#unsubscribeSchedulingProfile = options.subscribeSchedulingProfile?.(() =>
+      this.notifySchedulingProfileChanged(),
+    );
   }
 
   public execute(
@@ -131,10 +134,20 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
   public requestPrewarm(): void {
     if (this.#terminated) return;
     try {
+      this.#publishSchedulingProfile();
       this.#endpoint.postMessage({
         action: "prewarm",
         type: "inkbook-worker-control",
       } satisfies BridgeControl);
+    } catch {
+      this.#failExecutor("error");
+    }
+  }
+
+  public notifySchedulingProfileChanged(): void {
+    if (this.#terminated) return;
+    try {
+      this.#publishSchedulingProfile();
     } catch {
       this.#failExecutor("error");
     }
@@ -151,12 +164,10 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
   public setLiveInputActive(active: boolean): void {
     if (this.#liveInputActive === active) return;
     this.#liveInputActive = active;
-    if (!active) {
-      for (const resolve of this.#inputWaiters) resolve();
-      this.#inputWaiters.clear();
-    }
+    if (!active) this.#inputGate.notifyInactive();
     if (!this.#terminated) {
       try {
+        this.#publishSchedulingProfile();
         this.#endpoint.postMessage({
           action: "set-live-input",
           active,
@@ -170,16 +181,8 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
 
   public terminate(): void {
     if (this.#terminated) return;
-    this.#terminated = true;
     for (const message of this.#exportReceipts.values()) this.#acknowledgeExport(message, false);
-    this.#exportReceipts.clear();
-    this.#endpoint.removeEventListener("message", this.#onMessage);
-    this.#endpoint.removeEventListener("error", this.#onError);
-    this.#endpoint.terminate();
-    this.#pointReferences.clear();
-    this.#rejectAll();
-    for (const resolve of this.#inputWaiters) resolve();
-    this.#inputWaiters.clear();
+    this.#close();
   }
 
   readonly #onMessage = (event: MessageEvent<unknown>): void => {
@@ -220,7 +223,7 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
   ): Promise<void> {
     try {
       if (request.type === "unlock") this.#pointReferences.clear();
-      const checkpoint = this.#createMainThreadCheckpoint();
+      const checkpoint = this.#createMainThreadCheckpoint(pending.abortController.signal);
       await checkpoint();
       const encoded = await encodeRuntimeRequestChunked(request, {
         checkpoint,
@@ -228,6 +231,7 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
         reusePoints: this.#pointReferences.encoder(request),
       });
       pending.abortController.signal.throwIfAborted();
+      this.#publishSchedulingProfile();
       this.#endpoint.postMessage(
         {
           request: encoded.value,
@@ -246,7 +250,7 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
 
   async #adoptResult(message: BridgeSuccess, pending: PendingBridgeRequest): Promise<void> {
     try {
-      const decodeCheckpoint = this.#createMainThreadCheckpoint();
+      const decodeCheckpoint = this.#createMainThreadCheckpoint(pending.abortController.signal);
       await decodeCheckpoint();
       const result = await decodeRuntimeResultChunked(message.result, {
         checkpoint: decodeCheckpoint,
@@ -366,29 +370,54 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
   }
 
   #failExecutor(kind: WorkerRuntimeFailure["kind"], request?: DocumentRuntimeRequest): void {
-    if (!this.#terminated) {
-      this.#terminated = true;
-      this.#endpoint.removeEventListener("message", this.#onMessage);
-      this.#endpoint.removeEventListener("error", this.#onError);
-      this.#endpoint.terminate();
-      this.#pointReferences.clear();
-      this.#rejectAll();
-    }
+    if (!this.#terminated) this.#close();
     if (this.#failureReported) return;
     this.#failureReported = true;
     this.#onExecutorFailure?.({ kind, ...(request === undefined ? {} : { request }) });
   }
 
-  #createMainThreadCheckpoint(): () => Promise<void> {
-    let sliceStarted = performance.now();
+  #close(): void {
+    this.#terminated = true;
+    this.#exportReceipts.clear();
+    this.#endpoint.removeEventListener("message", this.#onMessage);
+    this.#endpoint.removeEventListener("error", this.#onError);
+    this.#unsubscribeSchedulingProfile?.();
+    this.#endpoint.terminate();
+    this.#pointReferences.clear();
+    this.#rejectAll();
+    this.#inputGate.notifyInactive();
+  }
+
+  #createMainThreadCheckpoint(signal: AbortSignal): () => Promise<void> {
     return async () => {
-      while (this.#liveInputActive) {
-        await new Promise<void>((resolve) => this.#inputWaiters.add(resolve));
-      }
-      if (performance.now() - sliceStarted < this.#sliceMilliseconds()) return;
-      await yieldToMainThread();
-      sliceStarted = performance.now();
+      const ready = this.#inputGate.waitUntilInactive(signal);
+      if (ready !== undefined) await ready;
+      const pending = this.#workScheduler.checkpoint(signal);
+      if (pending !== undefined) await pending;
     };
+  }
+
+  #publishSchedulingProfile(): void {
+    if (this.#terminated) return;
+    const sliceMilliseconds = this.#workScheduler.budgetMs();
+    const frameIntervalMilliseconds = this.#frameIntervalMilliseconds();
+    if (
+      !Number.isFinite(sliceMilliseconds) ||
+      sliceMilliseconds <= 0 ||
+      !Number.isFinite(frameIntervalMilliseconds) ||
+      frameIntervalMilliseconds <= 0
+    ) {
+      throw new RangeError("Worker scheduling profile must contain positive finite times.");
+    }
+    const profile = `${sliceMilliseconds}:${frameIntervalMilliseconds}`;
+    if (profile === this.#publishedProfile) return;
+    this.#endpoint.postMessage({
+      action: "set-profile",
+      frameIntervalMilliseconds,
+      sliceMilliseconds,
+      type: "inkbook-worker-control",
+    } satisfies BridgeControl);
+    this.#publishedProfile = profile;
   }
 }
 

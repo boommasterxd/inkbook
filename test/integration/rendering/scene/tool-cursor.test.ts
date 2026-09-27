@@ -6,6 +6,7 @@ import { createControllerNavigation } from "../../../../src/obsidian/embeds/acti
 import type { ActiveEditorControllerOptions } from "../../../../src/obsidian/embeds/active-editor/controller-types";
 import type { BrowserScrollElement } from "../../../../src/obsidian/scrolling";
 import { domRect } from "../../../fixtures/obsidian/active-editor";
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 import type { StrokeStyleV1 } from "../../../../src/domain/schema/public";
 import { liveStrokePresentation } from "../../../../src/rendering/scene/element-presentation";
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
@@ -37,7 +38,6 @@ const STYLE: StrokeStyleV1 = {
   smoothing: 0.5,
   pressureEnabled: false,
 };
-
 function setup() {
   const document = new FakeDocument();
   const container = new FakeNode(document, "div");
@@ -54,7 +54,7 @@ function setup() {
       lockedBufferLines: 1,
       margin: 24.3,
     },
-    scheduler,
+    workScheduler: scheduler.workScheduler,
     store,
   });
   scheduler.runAll();
@@ -103,6 +103,7 @@ function setupNavigation() {
         getBoundingClientRect: () => domRect({ ...bounds, top: top() }),
       },
       model: { page: {}, store: {} },
+      workScheduler: workSchedulerFromFrames(window),
       selectionMoveLayout: { currentHeight: () => 2000 },
       applyZoomLayout: (update: { blockSize: number }) => {
         bounds.height = update.blockSize;
@@ -176,7 +177,6 @@ describe("retained tool cursor", () => {
     navigation.dispose();
     renderer.destroy();
   });
-
   it("coalesces input, writes only changed attributes and leaves content and layout untouched", () => {
     const { renderer, scheduler, store, layout, cursor, svg } = setup();
     const reads = vi.spyOn(store, "get");
@@ -416,7 +416,7 @@ describe("retained staged marker commits", () => {
       "M10 10L21 10",
     ]);
     const clock = vi.spyOn(scheduler, "now").mockImplementation(() => {
-      scheduler.time += 10;
+      scheduler.time += 2;
       return scheduler.time;
     });
     scheduler.runNext();

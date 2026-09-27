@@ -4,7 +4,10 @@ import type { InkbookSettingsStore } from "../settings";
 import type { PlacementFallbackFeedbackPort } from "./command-ports";
 import { EmbedPasteController } from "./embed-paste";
 import { chooseInkbookAction } from "../dialogs/action-dialog";
-import { validateDocumentOutput } from "./document-output-validation";
+import {
+  validateDocumentOutput,
+  type DocumentOutputScheduling,
+} from "./document-output-validation";
 import type { ObsidianInkbookDocumentRecognition } from "../embeds/document-recognition";
 import {
   activeMarkdownOwnerWindow,
@@ -18,6 +21,7 @@ export function createObsidianEmbedPasteController(
   placementFeedback: PlacementFallbackFeedbackPort,
   signal?: AbortSignal,
   recognition?: ObsidianInkbookDocumentRecognition,
+  scheduling?: DocumentOutputScheduling,
 ): EmbedPasteController {
   const { files, links, managedFiles, placement } = createObsidianCommandVaultPorts(
     app,
@@ -29,6 +33,7 @@ export function createObsidianEmbedPasteController(
     choices: {
       choose: () =>
         chooseInkbookAction(app, {
+          workScheduler: scheduling?.workScheduler,
           ...(signal === undefined ? {} : { signal }),
           readMotion: () => settings.getDeviceSettings().motion,
           title: "Paste Inkbook embed",
@@ -67,6 +72,11 @@ export function createObsidianEmbedPasteController(
       },
     },
     trash: managedFiles,
-    validation: { validate: (content) => validateDocumentOutput(app, content) },
+    validation: {
+      validate: (content) => {
+        if (scheduling === undefined) throw new Error("Embed paste requires a work scheduler.");
+        return validateDocumentOutput(app, content, scheduling);
+      },
+    },
   });
 }

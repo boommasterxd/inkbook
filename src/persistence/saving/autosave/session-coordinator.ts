@@ -16,11 +16,11 @@ interface AutosaveSessionOptions extends AutosaveSessionBaseOptions {
 
 export function createAutosaveSession(options: AutosaveSessionOptions): AutosaveCoordinator {
   return new AutosaveCoordinator({
+    workScheduler: options.workScheduler,
     ...(options.beforeExistingWrite === undefined
       ? {}
       : { beforeExistingWrite: options.beforeExistingWrite }),
     ...(options.waitForBackground ? { waitForBackground: options.waitForBackground } : {}),
-    ...(options.sliceBudgetMs ? { sliceBudgetMs: options.sliceBudgetMs } : {}),
     clock: options.clock,
     confirmedBase: {
       outputHash: options.outputHash,

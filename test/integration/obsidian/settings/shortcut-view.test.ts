@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -165,7 +166,13 @@ function createView(hostAccess?: ObsidianHotkeyAccess): {
 } {
   const store = createTestSettingsStore();
   const container = document.body.createDiv();
-  return { container, store, view: new ShortcutSettingsView(container, store, hostAccess) };
+  return {
+    container,
+    store,
+    view: new ShortcutSettingsView(container, store, hostAccess, () =>
+      workSchedulerFromFrames(window),
+    ),
+  };
 }
 
 function hostHotkeys(

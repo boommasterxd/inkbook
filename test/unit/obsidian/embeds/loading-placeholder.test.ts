@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createLoadingPlaceholder } from "../../../../src/obsidian/embeds/loading-placeholder";
 import { ColorSchemeBroadcaster } from "../../../../src/obsidian/theme/color-scheme";
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 describe("shared placeholder loading feedback", () => {
   it("keeps the surface blank until the common loading indicator is due", () => {
@@ -12,6 +13,7 @@ describe("shared placeholder loading feedback", () => {
     const loading = createLoadingPlaceholder(host as unknown as HTMLElement, {
       scheme,
       motion: "reduced",
+      workScheduler: workSchedulerFromFrames(host.ownerDocument.defaultView as Window),
     });
     const root = host.children[0]!;
     expect(root.textContent).toBe("");
@@ -37,6 +39,7 @@ describe("shared placeholder loading feedback", () => {
     const loading = createLoadingPlaceholder(host as unknown as HTMLElement, {
       scheme,
       motion: "system",
+      workScheduler: workSchedulerFromFrames(host.ownerDocument.defaultView as Window),
     });
     loading.dispose();
     runTimer();

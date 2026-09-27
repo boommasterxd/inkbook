@@ -165,12 +165,14 @@ export type DocumentRuntimeResult =
 
 export interface DocumentRuntimePort {
   acknowledgeExport?(identity: ExportIdentity, accepted: boolean): void;
+  checkpoint?(signal: AbortSignal): Promise<void>;
   execute(
     request: DocumentRuntimeRequest,
     observer?: DocumentRuntimeObserver,
   ): Promise<DocumentRuntimeResult>;
   requestPrewarm?(): void;
   setLiveInputActive?(active: boolean): void;
+  setSchedulingProfile?(sliceMilliseconds: number, frameIntervalMilliseconds: number): void;
   terminate(): void;
 }
 
@@ -181,10 +183,12 @@ export interface DocumentRuntimeServices {
 
 export interface InputAwareSliceScheduler {
   checkpoint(signal: AbortSignal): Promise<void>;
+  nextFrame?(signal: AbortSignal): Promise<void>;
   getSliceMilliseconds?(): number;
   getSliceWorkProfile?(): RuntimeSliceWorkProfile;
   run<T>(operation: (signal: AbortSignal) => T | Promise<T>, signal: AbortSignal): Promise<T>;
   setLiveInputActive?(active: boolean): void;
+  setSchedulingProfile?(sliceMilliseconds: number, frameIntervalMilliseconds: number): void;
 }
 
 export interface RuntimeSliceWorkProfile {

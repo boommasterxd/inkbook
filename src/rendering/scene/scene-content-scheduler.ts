@@ -1,9 +1,9 @@
 import type { InkElementV1 } from "../../domain/schema/public";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "./constants";
 import type { SceneContentRenderer } from "./content-renderer";
 import type { ScenePublicationBudget } from "./mount-slice";
 import type { PreviewTransform } from "./scene-visibility-reconciler";
-import type { SceneScheduler } from "./types";
 
 /** Gives each active queue the first remaining frame slice on alternating frames. */
 export class SceneContentScheduler {
@@ -11,7 +11,7 @@ export class SceneContentScheduler {
 
   public constructor(
     private readonly content: SceneContentRenderer,
-    private readonly scheduler: SceneScheduler,
+    private readonly scheduler: WorkScheduler,
   ) {}
 
   public write(
@@ -32,15 +32,16 @@ export class SceneContentScheduler {
         publication,
       );
     const writeMounted = () => this.content.writeMountedChanges(deadline, now, publication);
-    if (this.#preferVisibility) {
-      const visibilityPending = reconcile();
-      const mountedPending = !visibilityPending || now() < deadline ? writeMounted() : true;
+    if (this.#preferVisibility || !this.content.hasMountedWork) {
+      const visibilityPending = this.content.hasVisibilityWork ? reconcile() : false;
+      const mountedPending = now() < deadline ? writeMounted() : this.content.hasMountedWork;
       this.#preferVisibility = false;
       return visibilityPending || mountedPending;
     }
     const mountedPending = writeMounted();
-    const visibilityPending = !mountedPending || now() < deadline ? reconcile() : true;
-    this.#preferVisibility = mountedPending;
+    const canRunVisibility = now() < deadline;
+    const visibilityPending = canRunVisibility ? reconcile() : this.content.hasVisibilityWork;
+    this.#preferVisibility = mountedPending || (!canRunVisibility && visibilityPending);
     return mountedPending || visibilityPending;
   }
 }

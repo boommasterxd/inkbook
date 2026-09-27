@@ -6,6 +6,7 @@ import type { BrowserScrollElement } from "../../../src/obsidian/scrolling/index
 import { TRANSITION_DURATIONS } from "../../../src/rendering/motion/transitions";
 import { INTERACTION_REFRESH_PROFILE } from "../interaction-refresh-profile";
 import { readyResponsiveFixture } from "../../integration/obsidian/embeds/active-editor-responsive-layout-fixture";
+import { workSchedulerFromFrames } from "../../fixtures/obsidian/work-scheduler";
 
 describe("automatic page-height performance", () => {
   it(`keeps ${INTERACTION_REFRESH_PROFILE.refreshRate} Hz growth and shrink animation frames bounded`, () => {
@@ -76,7 +77,12 @@ function scrollStabilityHarness() {
       return frames.length;
     },
   } as unknown as Window;
-  const stability = new TransitionScrollStability({ owner: () => owner, ownerWindow, root });
+  const stability = new TransitionScrollStability({
+    owner: () => owner,
+    ownerWindow,
+    root,
+    workScheduler: workSchedulerFromFrames(ownerWindow),
+  });
   const flushFrame = (): void => {
     expect(frames).toHaveLength(1);
     const frame = frames.shift();
@@ -115,7 +121,7 @@ function transitionHarness(frameDurationMs: number) {
     },
     style: { removeProperty: () => "", setProperty: () => undefined },
   } as unknown as HTMLElement;
-  const transition = new ActiveHeightTransition(container, ownerWindow);
+  const transition = new ActiveHeightTransition(container, workSchedulerFromFrames(ownerWindow));
   let maximumFramesPerTransition = 0;
   let incompleteTransitions = 0;
   let overlongTransitions = 0;

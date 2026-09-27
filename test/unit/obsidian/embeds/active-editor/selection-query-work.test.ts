@@ -4,9 +4,10 @@ import { ElementStore } from "../../../../../src/domain/store/public";
 import { PendingSelection } from "../../../../../src/obsidian/embeds/active-editor/pending-selection";
 import { SelectionQueryWork } from "../../../../../src/obsidian/embeds/active-editor/selection-query-work";
 import { ManualFrameScheduler } from "../../../../fixtures/obsidian/manual-frame-scheduler";
+import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
 import { rectangle } from "../../../domain/store/fixtures";
 
-function setup(count = 160, scheduled = true) {
+function setup(count = 160) {
   const scheduler = new ManualFrameScheduler();
   const pending = new PendingSelection();
   const store = new ElementStore();
@@ -27,7 +28,7 @@ function setup(count = 160, scheduled = true) {
     }
   }
   const options = {
-    ...(scheduled ? { frameScheduler: scheduler } : {}),
+    workScheduler: workSchedulerFromFrames(scheduler),
     store,
     selection: () => state.selection,
     selectionSignal: pending.signal,
@@ -69,16 +70,20 @@ describe("selection query scheduling", () => {
     const work = new SelectionQueryWork(
       {
         ...test.options,
-        selectionWorkBudget: { now: () => tick, sliceBudgetMs: () => sliceBudgetMs },
+        workScheduler: workSchedulerFromFrames(test.scheduler, {
+          shouldYield: () => tick - sliceStart >= sliceBudgetMs,
+        }),
       },
       measuredSteps(),
     );
+    let sliceStart = 0;
     work.start();
     const expected = Math.min(64, Math.max(1, sliceBudgetMs));
-    expect(test.state.visits).toBe(expected);
+    expect(test.state.visits).toBe(sliceBudgetMs === 0 ? 0 : expected);
     expect(test.scheduler.pendingCount).toBe(1);
+    sliceStart = tick;
     test.scheduler.runNext(1);
-    expect(test.state.visits).toBe(expected * 2);
+    expect(test.state.visits).toBe(sliceBudgetMs === 0 ? 1 : expected * 2);
     work.cancel();
     expect(test.scheduler.pendingCount).toBe(0);
   });
@@ -160,8 +165,8 @@ describe("selection query work ownership", () => {
     expect(test.setSelection).not.toHaveBeenCalled();
   });
 
-  it.each([true, false])("finishes small work synchronously with scheduling=%s", (scheduled) => {
-    const test = setup(2, scheduled);
+  it("finishes small work synchronously inside the shared frame budget", () => {
+    const test = setup(2);
     expect(test.work.start()).toBe(true);
     expect(test.state.selection).toEqual(new Set(["selected"]));
     expect(test.scheduler.pendingCount).toBe(0);

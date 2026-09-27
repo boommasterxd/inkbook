@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   assembleAndHashChunkedOutput,
@@ -8,6 +8,8 @@ import {
   hashExactUtf8Output,
 } from "../../../../src/persistence/serialization/chunked-output-assembler";
 import { sha256Hex } from "../../../../src/persistence/serialization/sha256";
+
+afterEach(() => vi.restoreAllMocks());
 
 async function expectCancellationAfterCheckpoint(
   operation: (checkpoint: () => Promise<void>, signal: AbortSignal) => Promise<unknown>,
@@ -165,6 +167,24 @@ describe("chunked output checkpoints", () => {
 });
 
 describe("exact UTF-8 output hashing", () => {
+  it("checkpoints final hashing after platform digest rejection", async () => {
+    const digest = vi.spyOn(crypto.subtle, "digest").mockRejectedValue(new Error("offline"));
+    const text = "a".repeat(70 * 1024);
+    let checkpoints = 0;
+    const expected = new TextEncoder().encode(text);
+
+    const result = await assembleAndHashChunkedUtf8Output([text], expected.byteLength, {
+      checkpoint: async () => {
+        checkpoints += 1;
+      },
+      sliceByteLimit: 128 * 1024,
+    });
+
+    expect(digest).toHaveBeenCalledOnce();
+    expect(result.hash).toBe(sha256Hex(expected));
+    expect(checkpoints).toBe(2);
+  });
+
   it.each([
     ["unavailable", null],
     ["rejected", async () => Promise.reject(new Error("Digest unavailable."))],

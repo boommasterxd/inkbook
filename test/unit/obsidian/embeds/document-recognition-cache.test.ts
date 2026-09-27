@@ -3,10 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import { ObsidianInkbookDocumentRecognition } from "../../../../src/obsidian/embeds/document-recognition";
 import { inspectPreviewSvg } from "../../../../src/obsidian/embeds/safe-preview-svg";
 import { createConfirmedOutputFixture } from "../../../fixtures/obsidian/confirmed-output";
+import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
+import type { WorkScheduler } from "../../../../src/domain/scheduling/work-scheduler";
 
 vi.mock("../../../../src/obsidian/embeds/safe-preview-svg", () => ({ inspectPreviewSvg: vi.fn() }));
 
-function cacheHarness(sliceBudgetMs?: () => number) {
+function cacheHarness(workScheduler?: WorkScheduler) {
   const File = TFile as unknown as new (path: string, size: number) => TFile;
   const files = new Map(["a.svg", "b.svg", "c.svg"].map((path) => [path, new File(path, 100)]));
   const recognition = new ObsidianInkbookDocumentRecognition(
@@ -14,7 +16,7 @@ function cacheHarness(sliceBudgetMs?: () => number) {
       getFileByPath: (path: string) => files.get(path) ?? null,
       cachedRead: async () => '<svg data-inkbook-format="inkbook" viewBox="0 0 2048.6 100"></svg>',
     } as unknown as Vault,
-    sliceBudgetMs === undefined ? {} : { sliceBudgetMs },
+    { workScheduler: workScheduler ?? immediateWorkScheduler() },
   );
   return recognition;
 }
@@ -31,10 +33,13 @@ it("grants canonical proof only to a current own write confirmation", async () =
   const { file, serialized, signature } = createConfirmedOutputFixture();
   const File = TFile as unknown as new (path: string, size: number) => TFile;
   const files = new Map([[file.path, file]]);
-  const recognition = new ObsidianInkbookDocumentRecognition({
-    getFileByPath: (path: string) => files.get(path) ?? null,
-    cachedRead: async () => serialized.value.svg,
-  } as unknown as Vault);
+  const recognition = new ObsidianInkbookDocumentRecognition(
+    {
+      getFileByPath: (path: string) => files.get(path) ?? null,
+      cachedRead: async () => serialized.value.svg,
+    } as unknown as Vault,
+    { workScheduler: immediateWorkScheduler() },
+  );
   const read = {
     content: serialized.value.svg,
     identity: {
@@ -112,26 +117,22 @@ describe("completed recognition markup budgets", () => {
   });
 });
 
-it("passes the live workspace budget into recognition validation", async () => {
-  let budget = 4;
-  const readBudget = () => budget;
-  const recognition = cacheHarness(readBudget);
+it("passes the shared workspace scheduler into recognition validation", async () => {
+  const scheduler = immediateWorkScheduler();
+  const recognition = cacheHarness(scheduler);
   vi.mocked(inspectPreviewSvg).mockResolvedValue(previewWithSize(1));
   await recognition.recognize("a.svg");
-  const forwarded = vi.mocked(inspectPreviewSvg).mock.lastCall?.[3];
-  expect(forwarded).toBe(readBudget);
-  expect(forwarded?.()).toBe(4);
-  budget = 2;
-  expect(forwarded?.()).toBe(2);
+  const forwarded = vi.mocked(inspectPreviewSvg).mock.lastCall?.[1].workScheduler;
+  expect(forwarded).toBe(scheduler);
   recognition.dispose();
 });
 
 it("aborts an obsolete running inspection before its replacement is published", async () => {
   const recognition = cacheHarness();
   let signal: AbortSignal | undefined;
-  vi.mocked(inspectPreviewSvg).mockImplementationOnce((_source, _wait, abort) => {
-    signal = abort;
-    return new Promise((resolve) => abort?.addEventListener("abort", () => resolve(null)));
+  vi.mocked(inspectPreviewSvg).mockImplementationOnce((_source, options) => {
+    signal = options.signal;
+    return new Promise((resolve) => options.signal?.addEventListener("abort", () => resolve(null)));
   });
   const pending = recognition.recognize("a.svg");
   await Promise.resolve();
@@ -149,8 +150,8 @@ it("settles deferred first recognition and permits external revalidation", async
   const changed = vi.fn();
   recognition.subscribe(changed);
   vi.mocked(inspectPreviewSvg).mockImplementationOnce(
-    (_source, _wait, signal) =>
-      new Promise((resolve) => signal?.addEventListener("abort", () => resolve(null))),
+    (_source, options) =>
+      new Promise((resolve) => options.signal?.addEventListener("abort", () => resolve(null))),
   );
   const obsolete = recognition.recognize("a.svg");
   await Promise.resolve();

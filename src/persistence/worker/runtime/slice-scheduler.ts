@@ -1,15 +1,15 @@
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
+import { InputActivityGate } from "./input-activity-gate";
 import type { InputAwareSliceScheduler, RuntimeSliceWorkProfile } from "./types";
 
 export interface SliceSchedulerOptions {
   readonly isInputActive: () => boolean;
-  readonly now?: () => number;
-  readonly profile?: "desktop" | "mobile";
-  readonly sliceMilliseconds?: number | (() => number);
-  readonly yieldControl: () => Promise<void>;
+  readonly updateSchedulingProfile?: (
+    sliceMilliseconds: number,
+    frameIntervalMilliseconds: number,
+  ) => void;
+  readonly workScheduler: WorkScheduler;
 }
-
-const DESKTOP_SLICE_MS = 6;
-const MOBILE_SLICE_MS = 10;
 
 const DEFAULT_WORK_PROFILE: RuntimeSliceWorkProfile = Object.freeze({
   inputByteLimit: 16 * 1024,
@@ -44,30 +44,31 @@ export function runtimeSliceWorkProfile(
 
 export class GestureAwareSliceScheduler implements InputAwareSliceScheduler {
   readonly #isInputActive: () => boolean;
-  readonly #now: () => number;
-  readonly #sliceMilliseconds: () => number;
-  readonly #yieldControl: () => Promise<void>;
+  readonly #inputGate: InputActivityGate;
+  readonly #updateSchedulingProfile: SliceSchedulerOptions["updateSchedulingProfile"];
+  readonly #workScheduler: WorkScheduler;
   #liveInputActive = false;
-  #sliceStarted: number;
 
   public constructor(options: SliceSchedulerOptions) {
     this.#isInputActive = options.isInputActive;
-    this.#now = options.now ?? (() => performance.now());
-    const configured =
-      options.sliceMilliseconds ??
-      (options.profile === "mobile" ? MOBILE_SLICE_MS : DESKTOP_SLICE_MS);
-    this.#sliceMilliseconds = typeof configured === "function" ? configured : () => configured;
-    validateSliceMilliseconds(this.#sliceMilliseconds());
-    this.#yieldControl = options.yieldControl;
-    this.#sliceStarted = this.#now();
+    this.#inputGate = new InputActivityGate(() => this.#inputActive());
+    this.#workScheduler = options.workScheduler;
+    this.#updateSchedulingProfile = options.updateSchedulingProfile;
   }
 
   public setLiveInputActive(active: boolean): void {
     this.#liveInputActive = active;
+    if (!active) this.#inputGate.notifyInactive();
   }
 
   public getSliceMilliseconds(): number {
-    return validateSliceMilliseconds(this.#sliceMilliseconds());
+    return this.#workScheduler.budgetMs();
+  }
+
+  public setSchedulingProfile(sliceMilliseconds: number, frameIntervalMilliseconds: number): void {
+    validateSliceMilliseconds(sliceMilliseconds);
+    validateSliceMilliseconds(frameIntervalMilliseconds);
+    this.#updateSchedulingProfile?.(sliceMilliseconds, frameIntervalMilliseconds);
   }
 
   public getSliceWorkProfile(): RuntimeSliceWorkProfile {
@@ -75,17 +76,17 @@ export class GestureAwareSliceScheduler implements InputAwareSliceScheduler {
   }
 
   public async checkpoint(signal: AbortSignal): Promise<void> {
-    while (this.#inputActive()) {
-      signal.throwIfAborted();
-      await this.#yieldControl();
-      this.#sliceStarted = this.#now();
-    }
+    const ready = this.#inputGate.waitUntilInactive(signal);
+    if (ready !== undefined) await ready;
+    const pending = this.#workScheduler.checkpoint(signal);
+    if (pending !== undefined) await pending;
     signal.throwIfAborted();
-    if (this.#now() - this.#sliceStarted < this.getSliceMilliseconds()) {
-      return;
-    }
-    await this.#yieldControl();
-    this.#sliceStarted = this.#now();
+  }
+
+  public async nextFrame(signal: AbortSignal): Promise<void> {
+    const ready = this.#inputGate.waitUntilInactive(signal);
+    if (ready !== undefined) await ready;
+    await this.#workScheduler.nextFrame(signal);
     signal.throwIfAborted();
   }
 
@@ -93,8 +94,7 @@ export class GestureAwareSliceScheduler implements InputAwareSliceScheduler {
     operation: (signal: AbortSignal) => T | Promise<T>,
     signal: AbortSignal,
   ): Promise<T> {
-    while (this.#inputActive()) await this.checkpoint(signal);
-    this.#sliceStarted = this.#now();
+    await this.checkpoint(signal);
     return operation(signal);
   }
 

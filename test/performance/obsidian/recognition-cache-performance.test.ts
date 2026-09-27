@@ -6,6 +6,7 @@ import { ChunkedSha256 } from "../../../src/persistence/serialization/chunked-ou
 import { hashSvgContent } from "../../../src/persistence/scheduling/trusted-svg-output";
 import { createSnapshot } from "../../unit/persistence/serialization/fixtures";
 import { deferredPreviewRecognition } from "../../fixtures/obsidian/deferred-preview-recognition";
+import { immediateWorkScheduler } from "../../fixtures/obsidian/immediate-work-scheduler";
 import { expect, it, vi } from "vitest";
 
 function recognitionCacheFixture(
@@ -19,13 +20,16 @@ function recognitionCacheFixture(
   );
   const byPath = new Map(files.map((file) => [file.path, file]));
   let reads = 0;
-  const recognition = new recognitionConstructor({
-    getFileByPath: (path: string) => byPath.get(path) ?? null,
-    cachedRead: async () => {
-      reads += 1;
-      return "invalid";
-    },
-  } as unknown as Vault);
+  const recognition = new recognitionConstructor(
+    {
+      getFileByPath: (path: string) => byPath.get(path) ?? null,
+      cachedRead: async () => {
+        reads += 1;
+        return "invalid";
+      },
+    } as unknown as Vault,
+    { workScheduler: immediateWorkScheduler() },
+  );
   return { files, recognition, reads: () => reads };
 }
 
