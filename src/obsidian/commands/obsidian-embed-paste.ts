@@ -5,6 +5,7 @@ import type { PlacementFallbackFeedbackPort } from "./command-ports";
 import { EmbedPasteController } from "./embed-paste";
 import { chooseInkbookAction } from "../dialogs/action-dialog";
 import { validateDocumentOutput } from "./document-output-validation";
+import type { ObsidianInkbookDocumentRecognition } from "../embeds/document-recognition";
 import {
   activeMarkdownOwnerWindow,
   createObsidianCommandVaultPorts,
@@ -16,6 +17,7 @@ export function createObsidianEmbedPasteController(
   settings: InkbookSettingsStore,
   placementFeedback: PlacementFallbackFeedbackPort,
   signal?: AbortSignal,
+  recognition?: ObsidianInkbookDocumentRecognition,
 ): EmbedPasteController {
   const { files, links, managedFiles, placement } = createObsidianCommandVaultPorts(
     app,
@@ -23,6 +25,7 @@ export function createObsidianEmbedPasteController(
   );
   return new EmbedPasteController({
     ...(signal === undefined ? {} : { signal }),
+    ...(recognition === undefined ? {} : { confirmedOutput: recognition }),
     choices: {
       choose: () =>
         chooseInkbookAction(app, {

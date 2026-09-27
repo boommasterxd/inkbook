@@ -186,7 +186,7 @@ When a copied embed is pasted, the plugin presents a choice:
 
 Reference uses the same SVG file. Changes to one instance therefore also appear in the other.
 
-Duplicate creates and validates a new SVG file before replacing the file path in the pasted Markdown. Naming, placement, and collision behavior follow [Settings](settings.md) and the [Implementation Specification](specification.md).
+Duplicate creates a new SVG file and verifies its readback against the validated source before replacing the file path in the pasted Markdown. Validation reuse follows the [host integration contract](obsidian-integration.md). Naming, placement, and collision behavior follow [Settings](settings.md) and the [Implementation Specification](specification.md).
 
 ## Finger and Pen Input
 

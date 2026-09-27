@@ -1,6 +1,7 @@
 import { TFile, type Vault } from "obsidian";
 
 import { adoptOwnedSvgOutputSync } from "../../persistence/scheduling/owned-svg-output";
+import type { MetadataGuardedFileRead } from "../../persistence/saving/save-ports";
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
 import { samePreviewContentIdentity, type PreviewContentIdentity } from "./safe-preview-svg";
 import { inspectPreviewSvg, type LoadedPreviewSvg } from "./safe-preview-svg";
@@ -11,6 +12,7 @@ const MAXIMUM_ROOT_TAG_CHARACTERS = 4096;
 const MAXIMUM_ACTIVE_READS = 4;
 const MAXIMUM_QUEUED_READS = 4096;
 interface RecognitionEntry {
+  readonly confirmedFile?: TFile;
   pendingRefresh?: boolean;
   readonly signature: string;
   readonly value: InkbookDocumentRecognition;
@@ -143,6 +145,23 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     return entry.value;
   }
 
+  /** Only a confirmed own writer readback can authorize skipping canonical validation. */
+  public matchesConfirmedOutput(read: MetadataGuardedFileRead): boolean {
+    const file = this.#resolveFile(read.identity.path);
+    const entry = this.#entries.get(read.identity.path);
+    return (
+      file !== undefined &&
+      entry?.confirmedFile === file &&
+      !entry.pendingRefresh &&
+      entry.signature === fileSignature(file) &&
+      read.identity.ctime === file.stat.ctime &&
+      read.identity.mtime === file.stat.mtime &&
+      read.identity.size === file.stat.size &&
+      entry.value !== false &&
+      read.content === entry.value.safeSvg
+    );
+  }
+
   public recognize(documentId: string): Promise<InkbookDocumentRecognition> {
     const file = this.#resolveFile(documentId);
     if (file === undefined) return Promise.resolve(false);
@@ -262,7 +281,7 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
       contentIdentity: { outputHash, revision: output.revision },
       safeSvg: content,
     });
-    this.#entries.set(documentId, { signature: fileSignature(file), value });
+    this.#entries.set(documentId, { confirmedFile: file, signature, value });
     this.#markupCodeUnits += content.length;
     this.#evictOverflow();
     this.#notify(documentId);

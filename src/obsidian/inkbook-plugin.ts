@@ -97,15 +97,15 @@ export async function activateInkbookPlugin(
     () => layoutReady && settings.getDeviceSettings().penTapInsertion === "handwriting",
     insertionCommand,
   );
+  const lifecycle = new PresentationLifecycleRegistry();
+  const { documentRecognition, ports } = createEmbedIntegration(plugin, lifecycle, scheme, runtime);
   const embedPaste = createObsidianEmbedPasteController(
     plugin.app,
     settings,
     createPlacementFeedback(plugin, feedback),
     lifetime.signal,
+    documentRecognition,
   );
-
-  const lifecycle = new PresentationLifecycleRegistry();
-  const { documentRecognition, ports } = createEmbedIntegration(plugin, lifecycle, scheme, runtime);
   plugin.registerMarkdownPostProcessor(createReadingViewPostProcessor(ports));
   plugin.registerEditorExtension(createLivePreviewExtension(ports));
   plugin.app.workspace.onLayoutReady(() => {

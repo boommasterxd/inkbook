@@ -2,6 +2,8 @@ import { TFile, type Vault } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 import { ObsidianInkbookDocumentRecognition } from "../../../../src/obsidian/embeds/document-recognition";
 import { inspectPreviewSvg } from "../../../../src/obsidian/embeds/safe-preview-svg";
+import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
+import { createSnapshot } from "../../persistence/serialization/fixtures";
 
 vi.mock("../../../../src/obsidian/embeds/safe-preview-svg", () => ({ inspectPreviewSvg: vi.fn() }));
 
@@ -25,6 +27,65 @@ function previewWithSize(size: number) {
     contentIdentity: { revision: 0, outputHash: "hash" },
   };
 }
+
+it("grants canonical proof only to a current own write confirmation", async () => {
+  const serialized = serializeInkbookDocument(createSnapshot());
+  if (!serialized.ok) throw new Error("Invalid test snapshot");
+  const File = TFile as unknown as new (path: string, size: number) => TFile;
+  const file = new File("confirmed.svg", serialized.value.svg.length);
+  const files = new Map([[file.path, file]]);
+  const recognition = new ObsidianInkbookDocumentRecognition({
+    getFileByPath: (path: string) => files.get(path) ?? null,
+    cachedRead: async () => serialized.value.svg,
+  } as unknown as Vault);
+  const read = {
+    content: serialized.value.svg,
+    identity: {
+      ctime: file.stat.ctime,
+      mtime: file.stat.mtime,
+      path: file.path,
+      size: file.stat.size,
+    },
+    materialization: "host-full-read-not-bounded" as const,
+    stabilityEvidence: "object-identity-and-stat-unchanged" as const,
+  };
+  vi.mocked(inspectPreviewSvg).mockResolvedValueOnce({
+    aspectRatio: 1,
+    contentIdentity: { outputHash: serialized.value.hash, revision: 0 },
+    safeSvg: serialized.value.svg,
+  });
+  await recognition.recognize(file.path);
+  expect(recognition.matchesConfirmedOutput(read)).toBe(false);
+
+  const signature = `${String(file.stat.ctime)}:${String(file.stat.mtime)}:${String(file.stat.size)}`;
+  recognition.acceptConfirmedOutput(
+    file.path,
+    serialized.value.svg,
+    serialized.value.hash,
+    signature,
+  );
+  expect(recognition.matchesConfirmedOutput(read)).toBe(true);
+  expect(recognition.matchesConfirmedOutput({ ...read, content: `${read.content} ` })).toBe(false);
+  expect(
+    recognition.matchesConfirmedOutput({
+      ...read,
+      identity: { ...read.identity, mtime: read.identity.mtime + 1 },
+    }),
+  ).toBe(false);
+  recognition.deferRefresh(file.path);
+  expect(recognition.matchesConfirmedOutput(read)).toBe(false);
+  recognition.acceptConfirmedOutput(
+    file.path,
+    serialized.value.svg,
+    serialized.value.hash,
+    signature,
+  );
+  files.set(file.path, new File(file.path, file.stat.size));
+  expect(recognition.matchesConfirmedOutput(read)).toBe(false);
+  recognition.invalidate(file.path);
+  recognition.dispose();
+  expect(recognition.matchesConfirmedOutput(read)).toBe(false);
+});
 
 describe("completed recognition markup budgets", () => {
   it("evicts at completion rather than waiting for another read and preserves recent hits", async () => {
