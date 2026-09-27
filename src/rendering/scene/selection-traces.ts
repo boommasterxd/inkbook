@@ -6,6 +6,8 @@ import { SelectionCenterTrace } from "./selection-center-trace";
 import type { MountedSceneElement } from "./mounted-element";
 import type { MutableSceneInstrumentation, SceneStorePort } from "./types";
 
+const REUSED_TRACE_COST = { geometry: 1, strokePoints: 0 } as const;
+
 /** Retains only mounted center indicators, with camera-independent geometry and paint. */
 export class SceneSelectionTraces {
   readonly #group: SVGGElement;
@@ -67,6 +69,7 @@ export class SceneSelectionTraces {
     element: InkElementV1,
     parts: readonly SvgPathPart[],
     budget?: ScenePublicationBudget,
+    cachedCenterPath?: string | null,
   ): boolean {
     if (!this.includes(element)) {
       this.remove(entry.id);
@@ -82,7 +85,7 @@ export class SceneSelectionTraces {
       budget.remainingRoots -= 1;
     }
     const before = trace.memoryUsage();
-    trace.update(entry, element, parts);
+    trace.update(entry, element, parts, cachedCenterPath);
     this.#bytes += trace.memoryUsage() - before;
     if (created) this.#group.append(trace.node);
     this.syncFrameOutline();
@@ -102,11 +105,21 @@ export class SceneSelectionTraces {
       const entry = mounted.get(id);
       const record = store.get(id);
       if (entry !== undefined && record !== undefined) {
-        const cost = this.includes(entry.displayedElement)
-          ? mountCost({ ...record, element: entry.displayedElement })
-          : { geometry: 0, strokePoints: 0 };
+        const element = entry.displayedElement;
+        const included = this.includes(element);
+        const needsGeometry =
+          included &&
+          (this.#traces.get(id)?.needsGeometry(element, entry.displayedPathParts) ?? true);
+        const cachedCenterPath =
+          needsGeometry && element.kind === "stroke" && element.style.pressureEnabled
+            ? (this.#cache.read(element) ?? null)
+            : undefined;
+        const cost =
+          needsGeometry && (cachedCenterPath === null || element.kind !== "stroke")
+            ? mountCost({ ...record, element })
+            : REUSED_TRACE_COST;
         if (slice.blockingReason(cost) !== undefined) return true;
-        if (!this.update(entry, entry.displayedElement, entry.displayedPathParts, budget))
+        if (!this.update(entry, element, entry.displayedPathParts, budget, cachedCenterPath))
           return true;
         slice.record(cost);
       }

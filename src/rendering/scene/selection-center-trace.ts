@@ -52,11 +52,14 @@ export class SelectionCenterTrace {
     entry: MountedSceneElement,
     element: InkElementV1,
     parts: readonly SvgPathPart[],
+    cachedCenterPath?: string | null,
   ): void {
     if (this.needsGeometry(element, parts)) {
       let path: string;
       if (element.kind === "stroke" && element.style.pressureEnabled) {
-        const cached = this.#cache.read(element);
+        // Null is an observed miss; undefined leaves lookup to this update.
+        const cached =
+          cachedCenterPath === null ? undefined : (cachedCenterPath ?? this.#cache.read(element));
         path = cached ?? this.#cache.build(element);
         if (cached === undefined) this.#instrumentation.selectionTraceGeometryBuilds += 1;
       } else {
@@ -85,7 +88,7 @@ export class SelectionCenterTrace {
     this.#bytes = 0;
   }
 
-  private needsGeometry(element: InkElementV1, parts: readonly SvgPathPart[]): boolean {
+  public needsGeometry(element: InkElementV1, parts: readonly SvgPathPart[]): boolean {
     const previous = this.#basis;
     if (previous === element && this.#parts === parts) return false;
     if (previous === undefined || previous.kind !== element.kind) return true;

@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as strokePath from "../../../../src/domain/geometry/stroke-path";
 import { ElementStore } from "../../../../src/domain/store/public";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
-import { createSceneFixture } from "../../../fixtures/rendering/scene";
+import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
+import { createMountedElement } from "../../../../src/rendering/scene/mounted-element";
+import { SceneSelectionTraces } from "../../../../src/rendering/scene/selection-traces";
+import { createSceneFixture, createSceneRecord } from "../../../fixtures/rendering/scene";
 import {
   createSelectionTraceFixture,
   selectionTraceNodes,
@@ -12,7 +15,12 @@ import {
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { arrow, line } from "../../../unit/domain/schema/fixtures";
 import { createSnapshot } from "../../../unit/persistence/serialization/fixtures";
-import { FakeNode, fakeNode } from "../../../unit/rendering/scene/fakes";
+import {
+  FakeDocument,
+  FakeNode,
+  FakeSceneStore,
+  fakeNode,
+} from "../../../unit/rendering/scene/fakes";
 import { maximumStroke } from "../../editor/maximum-stroke-fixture";
 
 afterEach(() => vi.restoreAllMocks());
@@ -168,6 +176,95 @@ it("reuses 1000 mixed short and long selected centers after culling", () => {
   expect(group.nodes).toEqual([]);
   expect(parent.nodes).toEqual(siblings);
   expect(renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
+});
+
+it("spends sample budget only on center builds while preserving the 64-root frame cap", () => {
+  const document = new FakeDocument();
+  const group = new FakeNode(document, "g");
+  const frame = new FakeNode(document, "path");
+  const instrumentation = createInstrumentation();
+  const traces = new SceneSelectionTraces(
+    group as unknown as SVGGElement,
+    instrumentation,
+    frame as unknown as SVGPathElement,
+  );
+  const store = new FakeSceneStore();
+  let pointReads = 0;
+  const elements = Array.from({ length: 96 }, (_, index) => {
+    const source = indexedStroke(index);
+    const points = new Proxy(
+      Array.from({ length: 192 }, (_, sample) => [sample, index, 0.5]).flat(),
+      {
+        get(target, key, receiver) {
+          if (typeof key === "string" && /^\d+$/.test(key)) pointReads += 1;
+          return Reflect.get(target, key, receiver) as unknown;
+        },
+      },
+    );
+    return { ...source, points };
+  });
+  const mounted = new Map(
+    elements.map((element, index) => {
+      const record = createSceneRecord(element, index);
+      store.records.set(record.id, record);
+      return [
+        record.id,
+        createMountedElement(
+          document as unknown as Document,
+          record,
+          [{ d: "M0 0L1 1", paint: "fill" }],
+          instrumentation,
+        ),
+      ] as const;
+    }),
+  );
+  const ids = new Set(elements.map(({ id }) => id));
+  const builds = vi.spyOn(strokePath, "buildStrokePathParts");
+  traces.setSelection(ids);
+  const dirty = new Set(ids);
+  pointReads = 0;
+  expect(traces.writeDirty(dirty, mounted, store, Infinity, () => 0, { remainingRoots: 0 })).toBe(
+    true,
+  );
+  expect(dirty.size).toBe(96);
+  expect(builds).not.toHaveBeenCalled();
+  expect(pointReads).toBe(0);
+
+  const drain = () => {
+    let frames = 0;
+    while (dirty.size > 0) {
+      const before = instrumentation.selectionTraceNodesCreated;
+      const budget = { remainingRoots: 64 };
+      const pending = traces.writeDirty(dirty, mounted, store, Infinity, () => 0, budget);
+      expect(instrumentation.selectionTraceNodesCreated - before).toBeLessThanOrEqual(64);
+      expect(pending).toBe(dirty.size > 0);
+      frames += 1;
+      if (frames > 10) throw new Error("Selection trace publication did not complete.");
+    }
+    return frames;
+  };
+  expect(drain()).toBeGreaterThan(2);
+  expect(builds).toHaveBeenCalledTimes(96);
+  expect(pointReads).toBeGreaterThan(0);
+
+  builds.mockClear();
+  pointReads = 0;
+  for (const id of ids) dirty.add(id);
+  expect(drain()).toBe(1);
+  expect(builds).not.toHaveBeenCalled();
+  expect(pointReads).toBe(0);
+
+  traces.setSelection(new Set());
+  traces.flushContext();
+  expect(group.nodes).toHaveLength(0);
+  traces.setSelection(ids);
+  for (const id of ids) dirty.add(id);
+  expect(drain()).toBe(2);
+  expect(builds).not.toHaveBeenCalled();
+  expect(pointReads).toBe(0);
+  traces.release();
+  expect(group.nodes).toHaveLength(0);
+  expect(traces.memoryUsage()).toBe(0);
 });
 
 it("selects 10000 IDs using only mounted centers and releases them after culling", () => {
