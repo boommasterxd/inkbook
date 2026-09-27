@@ -1,9 +1,9 @@
+import { FRAME_WORK_SHARE } from "../../domain/scheduling/work-scheduler";
 import type { RefreshRatePreferenceV2 } from "../../domain/settings";
 
 const FIXED_REFRESH_RATES = [60, 90, 120, 144, 240] as const;
 export type FixedRefreshRate = (typeof FIXED_REFRESH_RATES)[number];
 
-const MAIN_THREAD_SHARE = 0.55;
 export const DEFAULT_REFRESH_RATE: FixedRefreshRate = 120;
 
 export interface RefreshRateProfile {
@@ -17,7 +17,7 @@ export function refreshRateProfile(refreshRate: FixedRefreshRate): RefreshRatePr
   return {
     refreshRate,
     frameDurationMs,
-    sliceBudgetMs: frameDurationMs * MAIN_THREAD_SHARE,
+    sliceBudgetMs: frameDurationMs * FRAME_WORK_SHARE,
   };
 }
 

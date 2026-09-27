@@ -2,6 +2,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
   cadenceSensitive: Object.freeze([
     "test/performance/domain/element-mutation-performance.test.ts",
     "test/performance/domain/runtime-hydration-performance.test.ts",
+    "test/performance/domain/shared-frame-scheduler-budget.test.ts",
     "test/performance/editor/eraser-finalization-refresh-profile.test.ts",
     "test/performance/editor/page-height-animation.test.ts",
     "test/performance/obsidian/active-editor-layout-refresh-profile.test.ts",
