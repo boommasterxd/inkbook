@@ -171,6 +171,8 @@ export class ActiveScenePreviewHandoff {
   public restorePreview(): void {
     const preview = this.#preview;
     if (preview === undefined) return;
+    preview.hidden = false;
+    this.#refreshPreview?.();
     if (!preview.isConnected && this.#previewParent !== null) {
       if (this.#previewNextSibling?.parentNode === this.#previewParent) {
         this.#previewParent.insertBefore(preview, this.#previewNextSibling);
@@ -178,8 +180,6 @@ export class ActiveScenePreviewHandoff {
         this.#previewParent.appendChild(preview);
       }
     }
-    preview.hidden = false;
-    this.#refreshPreview?.();
     if (this.#pendingPreviewSource !== undefined || this.#sourcePreparation !== undefined) {
       void this.ensurePreviewReady().then(
         () => this.#refreshPreview?.(),

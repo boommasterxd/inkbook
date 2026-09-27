@@ -81,6 +81,8 @@ it("does no fetch or SVG construction for hidden saves and prepares only the lat
     contentIdentity: { revision: 0, outputHash: "a".repeat(64) },
   });
   await preview.ensureReady();
+  const oldSvg = button.querySelector("svg");
+  expect(oldSvg).not.toBeNull();
   const initialNodes = create.mock.calls.length;
   const previewBounds = vi.spyOn(button, "getBoundingClientRect");
   const containerBounds = vi.spyOn(root, "getBoundingClientRect");
@@ -105,12 +107,23 @@ it("does no fetch or SVG construction for hidden saves and prepares only the lat
   expect(fetch).not.toHaveBeenCalled();
   expect(create).toHaveBeenCalledTimes(initialNodes);
   expect(adoptedIdentity).toBeUndefined();
+  expect(button.isConnected).toBe(false);
   await handoff.ensurePreviewReady();
   expect(fetch).toHaveBeenCalledExactlyOnceWith("app://saved.svg?revision=20", expect.anything());
   // One SVG root, three render groups, and the 10,000 retained paths.
   expect(create).toHaveBeenCalledTimes(initialNodes + 10_004);
   expect(adoptedIdentity).toMatchObject({ revision: createSnapshot().revision });
+  const appendChild = root.appendChild.bind(root);
+  const connectedSvgs: (SVGSVGElement | null)[] = [];
+  vi.spyOn(root, "appendChild").mockImplementation(<T extends Node>(node: T): T => {
+    expect(node).toBe(button);
+    connectedSvgs.push(button.querySelector("svg"));
+    return appendChild(node);
+  });
   handoff.restorePreview();
+  expect(connectedSvgs).toHaveLength(1);
+  expect(connectedSvgs[0]).not.toBeNull();
+  expect(connectedSvgs[0]).not.toBe(oldSvg);
   expect(button.querySelectorAll("path")).toHaveLength(10_000);
   handoff.dispose();
   preview.dispose();
