@@ -1,18 +1,21 @@
 import {
-  publishVisibilityRun,
+  publishVisibilityRuns,
   removeVisibilityExits,
+  mountedRootCount,
   RetainedDomOrder,
   type PendingMutationRun,
 } from "./visibility-publication";
 import { SceneMountPreparation, type PreviewTransform } from "./scene-mount-preparation";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type { InkElementV1 } from "../../domain/schema/public";
-import { MountSlice, mountCost, type MountYieldReason } from "./mount-slice";
+import { MountSlice, mountCost } from "./mount-slice";
+import type { MountYieldReason, ScenePublicationBudget } from "./mount-slice";
 import { updatePreviewTransform, type MountedSceneElement } from "./mounted-element";
 import type { SceneDom } from "./scene-dom";
 import type { ScenePathCache } from "./path-cache";
 import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } from "./types";
-import type { BandVisibility, SceneVisibilityState, VisibilityResult } from "./visibility-state";
+import type { SceneVisibilityState, VisibilityResult } from "./visibility-state";
+import { firstMountedSuccessor } from "./visibility-order";
 
 export type { PreviewTransform } from "./scene-mount-preparation";
 
@@ -71,9 +74,7 @@ export class SceneVisibilityReconciler {
   #promotedId: string | undefined;
   readonly #runs: PendingMutationRun[] = [];
   readonly #publishedEntrantIds: string[] = [];
-
   readonly #preparation: SceneMountPreparation;
-
   public constructor(private readonly options: SceneVisibilityReconcilerOptions) {
     this.#preparation = new SceneMountPreparation({
       ...options,
@@ -172,6 +173,7 @@ export class SceneVisibilityReconciler {
     now: () => number,
     previewTransforms: ReadonlyMap<string, PreviewTransform>,
     previewElements: ReadonlyMap<string, InkElementV1>,
+    publication: ScenePublicationBudget,
   ): ReconciliationResult {
     const pending = this.#pending;
     if (pending === undefined) return { newlyMountedIds: EMPTY_IDS, pending: false };
@@ -184,13 +186,19 @@ export class SceneVisibilityReconciler {
         this.#pending = undefined;
       return { newlyMountedIds: EMPTY_IDS, pending: false };
     }
-    const slice = new MountSlice(deadline, now, pending.progressive ? 64 : Infinity);
+    const slice = new MountSlice(
+      deadline,
+      now,
+      pending.progressive ? publication.remainingRoots : Infinity,
+    );
     let reason = this.scanExits(pending, slice);
     if (reason === undefined) {
       reason = this.stagePromoted(pending, slice, previewTransforms);
       reason ??= this.stageBands(pending, slice, previewTransforms);
     }
     slice.report(this.options.instrumentation, reason);
+    if (pending.progressive)
+      publication.remainingRoots = Math.max(0, publication.remainingRoots - slice.publicationNodes);
     if (reason !== undefined) {
       const newlyMountedIds = pending.progressive ? this.publishProgress(pending) : EMPTY_IDS;
       const committedVisibility = pending.targetPublished ? undefined : pending.visibility;
@@ -242,16 +250,24 @@ export class SceneVisibilityReconciler {
     this.#promotedId = undefined;
     const record = this.options.store.get(id);
     if (record === undefined || !this.options.visibility.contains(id)) return;
-    const entry = this.stageEntry(pending, record, slice, previews);
+    if (pending.progressive && !slice.canPublish) {
+      this.#promotedId = id;
+      return "budget";
+    }
+    const entry = pending.entrants.get(id) ?? this.stageEntry(pending, record, slice, previews);
     if (entry === undefined) this.#promotedId = id;
     slice.record(mountCost(record));
     if (entry === undefined) return "budget";
     if (!pending.progressive) return undefined;
+    if (!slice.claimPublicationNodes(mountedRootCount(entry))) {
+      this.#promotedId = id;
+      return "budget";
+    }
     const run = this.prepareRun({
       band: entry.band,
       index: 0,
       run: undefined,
-      successor: this.promotedSuccessor(pending.visibility[entry.band], id),
+      successor: firstMountedSuccessor(pending.visibility[entry.band], id, this.options.mounted),
     });
     run.entries[0] = entry;
     run.entrants[0] = true;
@@ -260,25 +276,13 @@ export class SceneVisibilityReconciler {
     return "budget";
   }
 
-  private promotedSuccessor(visible: BandVisibility, id: string): MountedSceneElement | undefined {
-    let found = false;
-    for (let index = 0; index < visible.count; index += 1) {
-      const candidate = visible.ids[index]!;
-      if (found) {
-        const mounted = this.options.mounted.get(candidate);
-        if (mounted !== undefined) return mounted;
-      } else found = candidate === id;
-    }
-    return undefined;
-  }
-
   private stageBands(
     pending: PendingReconciliation,
     slice: MountSlice,
     previews: ReadonlyMap<string, PreviewTransform>,
   ): MountYieldReason | undefined {
     while (true) {
-      const visible = bandVisibility(pending.cursor, pending.visibility);
+      const visible = pending.visibility[pending.cursor.band];
       while (pending.cursor.index >= 0) {
         const index = pending.cursor.index;
         pending.cursor.index -= 1;
@@ -305,34 +309,31 @@ export class SceneVisibilityReconciler {
   ): MountYieldReason | undefined {
     if (id === undefined) return undefined;
     const entrant = pending.entrants.get(id);
-    if (entrant !== undefined) {
-      const preview = previews.get(id);
-      updatePreviewTransform(
-        entrant,
-        preview?.transform ?? null,
-        preview?.version ?? 0,
-        preview?.strokeWidthScale ?? null,
-        this.options.instrumentation,
-      );
-      if (!slice.claimPublicationNodes(publicationNodeCount(entrant))) return "budget";
-      this.addMutation(pending.cursor, entrant, true);
-      return undefined;
-    }
+    if (entrant !== undefined) return this.stagePreparedEntrant(entrant, pending, slice, previews);
     const mounted = this.options.mounted.get(id);
     if (mounted !== undefined) {
       if (
         mounted.committedOrderEpoch === this.#orderEpoch &&
-        !this.options.orderDirty[pending.cursor.band].has(id)
+        !this.options.orderDirty[pending.cursor.band].has(id) &&
+        pending.retainedOrderPreserved
       ) {
         this.observeRetainedOrder(pending, mounted);
-        this.finishRun(pending);
-        pending.cursor.successor = mounted;
-        return undefined;
+        if (pending.retainedOrderPreserved) {
+          this.finishRun(pending);
+          pending.cursor.successor = mounted;
+          return undefined;
+        }
       }
       const cost = { geometry: 1, strokePoints: 0 };
       const reason = slice.blockingReason(cost);
       if (reason === undefined) {
         this.observeRetainedOrder(pending, mounted);
+        if (
+          pending.progressive &&
+          !pending.retainedOrderPreserved &&
+          !slice.claimPublicationNodes(mountedRootCount(mounted))
+        )
+          return "budget";
         this.addMutation(pending.cursor, mounted, false);
         slice.record(cost);
       }
@@ -343,16 +344,38 @@ export class SceneVisibilityReconciler {
     const cost = mountCost(record);
     const reason = slice.blockingReason(cost);
     if (reason !== undefined) return reason;
+    if (pending.progressive && !slice.canPublish) return "budget";
     const entry = this.stageEntry(pending, record, slice, previews);
     if (entry === undefined) return "budget";
-    if (!slice.claimPublicationNodes(publicationNodeCount(entry))) return "budget";
+    if (!slice.claimPublicationNodes(mountedRootCount(entry))) return "budget";
     this.addMutation(pending.cursor, entry, true);
     slice.record(cost);
     return undefined;
   }
+  private stagePreparedEntrant(
+    entrant: MountedSceneElement,
+    pending: PendingReconciliation,
+    slice: MountSlice,
+    previews: ReadonlyMap<string, PreviewTransform>,
+  ): MountYieldReason | undefined {
+    const preview = previews.get(entrant.id);
+    updatePreviewTransform(
+      entrant,
+      preview?.transform ?? null,
+      preview?.version ?? 0,
+      preview?.strokeWidthScale ?? null,
+      this.options.instrumentation,
+    );
+    if (!slice.claimPublicationNodes(mountedRootCount(entrant))) return "budget";
+    this.addMutation(pending.cursor, entrant, true);
+    return undefined;
+  }
 
   private observeRetainedOrder(pending: PendingReconciliation, entry: MountedSceneElement): void {
-    pending.retainedOrderPreserved &&= pending.order.observe(entry, pending.cursor.band);
+    if (!pending.retainedOrderPreserved || pending.order.observe(entry, pending.cursor.band))
+      return;
+    if (pending.progressive) this.finishRun(pending);
+    pending.retainedOrderPreserved = false;
   }
 
   private stageEntry(
@@ -380,24 +403,23 @@ export class SceneVisibilityReconciler {
     run.entrants[run.count] = entrant;
     run.count += 1;
   }
-
   private finishRun(pending: PendingReconciliation): void {
     const run = pending.cursor.run;
     if (run === undefined) return;
+    pending.cursor.successor = run.entries[run.count - 1] ?? pending.cursor.successor;
     pending.runCount += 1;
     pending.cursor.run = undefined;
   }
 
   private commit(pending: PendingReconciliation): readonly string[] {
-    this.#newlyMountedIds.length = 0;
-    const preserveRetainedOrder = pending.retainedOrderPreserved;
-    for (let index = 0; index < pending.runCount; index += 1) {
-      const run = pending.runs[index];
-      if (run !== undefined)
-        this.#newlyMountedIds.push(
-          ...publishVisibilityRun(run, this.options, this.#orderEpoch, preserveRetainedOrder),
-        );
-    }
+    publishVisibilityRuns({
+      runs: pending.runs,
+      count: pending.runCount,
+      options: this.options,
+      epoch: this.#orderEpoch,
+      atomicPreserveRetainedOrder: pending.progressive ? undefined : pending.retainedOrderPreserved,
+      output: this.#newlyMountedIds,
+    });
     this.#orderEpoch += 1;
     for (const band of [pending.visibility.highlight, pending.visibility.content]) {
       for (let index = 0; index < band.count; index += 1) {
@@ -415,26 +437,14 @@ export class SceneVisibilityReconciler {
     const partial = pending.cursor.run;
     const successor = partial?.entries[partial.count - 1] ?? pending.cursor.successor;
     this.finishRun(pending);
-    this.#newlyMountedIds.length = 0;
-    for (let index = 0; index < pending.runCount; index += 1) {
-      const run = pending.runs[index];
-      if (run === undefined) continue;
-      this.#newlyMountedIds.push(
-        ...publishVisibilityRun(
-          run,
-          this.options,
-          this.#orderEpoch,
-          pending.retainedOrderPreserved,
-        ),
-      );
-      for (let item = 0; item < run.count; item += 1) {
-        const entry = run.entries[item];
-        if (entry !== undefined) pending.entrants.delete(entry.id);
-        run.entries[item] = undefined;
-      }
-      run.count = 0;
-      run.successor = undefined;
-    }
+    publishVisibilityRuns({
+      runs: pending.runs,
+      count: pending.runCount,
+      options: this.options,
+      epoch: this.#orderEpoch,
+      output: this.#newlyMountedIds,
+      entrants: pending.entrants,
+    });
     this.#publishedEntrantIds.push(...this.#newlyMountedIds);
     pending.order.invalidate();
     pending.runCount = 0;
@@ -454,6 +464,7 @@ export class SceneVisibilityReconciler {
         count: 0,
         entrants: [],
         entries: [],
+        preserveRetainedOrder: pending.retainedOrderPreserved,
         successor: cursor.successor,
       };
       pending.runs[pending.runCount] = run;
@@ -461,6 +472,7 @@ export class SceneVisibilityReconciler {
     } else {
       run.band = cursor.band;
       run.count = 0;
+      run.preserveRetainedOrder = pending.retainedOrderPreserved;
       run.successor = cursor.successor;
     }
     return run;
@@ -485,15 +497,4 @@ export class SceneVisibilityReconciler {
       run.successor = undefined;
     }
   }
-}
-
-function bandVisibility(
-  cursor: ReconciliationCursor,
-  visibility: VisibilityResult,
-): BandVisibility {
-  return cursor.band === "highlight" ? visibility.highlight : visibility.content;
-}
-
-function publicationNodeCount(entry: MountedSceneElement): number {
-  return entry.group === null ? entry.paths.length : 1;
 }

@@ -1,9 +1,10 @@
 import type { SvgPathPart } from "../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../domain/schema/public";
+import { MountSlice, mountCost, type ScenePublicationBudget } from "./mount-slice";
 import { SelectionCenterCache } from "./selection-center-cache";
 import { SelectionCenterTrace } from "./selection-center-trace";
 import type { MountedSceneElement } from "./mounted-element";
-import type { MutableSceneInstrumentation } from "./types";
+import type { MutableSceneInstrumentation, SceneStorePort } from "./types";
 
 /** Retains only mounted center indicators, with camera-independent geometry and paint. */
 export class SceneSelectionTraces {
@@ -65,21 +66,53 @@ export class SceneSelectionTraces {
     entry: MountedSceneElement,
     element: InkElementV1,
     parts: readonly SvgPathPart[],
-  ): void {
+    budget?: ScenePublicationBudget,
+  ): boolean {
     if (!this.includes(element)) {
       this.remove(entry.id);
-      return;
+      return true;
     }
     let trace = this.#traces.get(entry.id);
+    const created = trace === undefined;
     if (trace === undefined) {
+      if (budget === undefined || budget.remainingRoots <= 0) return false;
       trace = new SelectionCenterTrace(this.#group, entry, this.#instrumentation, this.#cache);
       this.#traces.set(entry.id, trace);
       this.#bytes += trace.memoryUsage();
+      budget.remainingRoots -= 1;
     }
     const before = trace.memoryUsage();
     trace.update(entry, element, parts);
     this.#bytes += trace.memoryUsage() - before;
+    if (created) this.#group.append(trace.node);
     this.syncFrameOutline();
+    return true;
+  }
+
+  public writeDirty(
+    dirty: Set<string>,
+    mounted: ReadonlyMap<string, MountedSceneElement>,
+    store: SceneStorePort,
+    deadline: number,
+    now: () => number,
+    budget: ScenePublicationBudget,
+  ): boolean {
+    const slice = new MountSlice(deadline, now);
+    for (const id of dirty) {
+      const entry = mounted.get(id);
+      const record = store.get(id);
+      if (entry !== undefined && record !== undefined) {
+        const cost = this.includes(entry.displayedElement)
+          ? mountCost({ ...record, element: entry.displayedElement })
+          : { geometry: 0, strokePoints: 0 };
+        if (slice.blockingReason(cost) !== undefined) return true;
+        if (!this.update(entry, entry.displayedElement, entry.displayedPathParts, budget))
+          return true;
+        slice.record(cost);
+      }
+      dirty.delete(id);
+    }
+    return false;
   }
 
   public transform(id: string, entry: MountedSceneElement): void {

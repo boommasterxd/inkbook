@@ -15,6 +15,7 @@ export interface PendingMutationRun {
   count: number;
   readonly entrants: boolean[];
   readonly entries: Array<MountedSceneElement | undefined>;
+  preserveRetainedOrder: boolean;
   successor: MountedSceneElement | undefined;
 }
 
@@ -23,6 +24,10 @@ interface PublicationOptions {
   readonly instrumentation: MutableSceneInstrumentation;
   readonly mounted: Map<string, MountedSceneElement>;
   readonly store: SceneStorePort;
+}
+
+export function mountedRootCount(entry: MountedSceneElement): number {
+  return entry.group === null ? entry.paths.length : 1;
 }
 
 /** Checks stale retained entries against one physical sibling snapshot per band. */
@@ -138,6 +143,38 @@ export function publishVisibilityRun(
   }
   flush(run.successor);
   return ids;
+}
+
+export function publishVisibilityRuns(frame: {
+  readonly runs: readonly PendingMutationRun[];
+  readonly count: number;
+  readonly options: PublicationOptions;
+  readonly epoch: number;
+  readonly atomicPreserveRetainedOrder?: boolean | undefined;
+  readonly output: string[];
+  readonly entrants?: Map<string, MountedSceneElement>;
+}): void {
+  frame.output.length = 0;
+  for (let index = 0; index < frame.count; index += 1) {
+    const run = frame.runs[index];
+    if (run === undefined) continue;
+    frame.output.push(
+      ...publishVisibilityRun(
+        run,
+        frame.options,
+        frame.epoch,
+        frame.atomicPreserveRetainedOrder ?? run.preserveRetainedOrder,
+      ),
+    );
+    if (frame.entrants === undefined) continue;
+    for (let item = 0; item < run.count; item += 1) {
+      const entry = run.entries[item];
+      if (entry !== undefined) frame.entrants.delete(entry.id);
+      run.entries[item] = undefined;
+    }
+    run.count = 0;
+    run.successor = undefined;
+  }
 }
 
 interface ExitPublication {

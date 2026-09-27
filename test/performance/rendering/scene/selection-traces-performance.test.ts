@@ -191,7 +191,7 @@ it("selects 10000 IDs using only mounted centers and releases them after culling
   expect(roots.length).toBeLessThanOrEqual(1200);
   expect(selectionCenterPaths(svg)).toHaveLength(roots.length);
   expect(builds.mock.calls.length).toBeLessThanOrEqual(roots.length);
-  expect(renderer.instrumentation().selectionTraceNodesCreated).toBe(roots.length * 2);
+  expect(renderer.instrumentation().selectionTraceNodesCreated).toBe(roots.length);
   expect(store.instrumentation.fullStoreScans).toBe(0);
   expect(store.instrumentation.snapshotMaterializations).toBe(0);
   expect(
@@ -222,7 +222,7 @@ describe("selection center scheduling and ownership", () => {
       expect(overlay.nodes[2]!.style.opacity).toBe("1");
       expect(nodes()).toHaveLength(1);
       expect(renderer.instrumentation().selectionTraceGeometryBuilds).toBe(1);
-      expect(renderer.instrumentation().selectionTraceNodesCreated).toBe(2);
+      expect(renderer.instrumentation().selectionTraceNodesCreated).toBe(1);
       expect(scheduler.pendingCount).toBe(1);
       renderer.setSelectedElements(new Set());
       scheduler.runAll();
@@ -258,7 +258,7 @@ it("skips disabled pressure centers and retains line/arrow nodes across toggles"
   const roots = select();
   expect(roots).toHaveLength(2);
   expect(builds).not.toHaveBeenCalled();
-  const centers = roots.map((root) => root.nodes[0]!);
+  const centers = roots;
   renderer.setSelectionHighlightsEnabled(true);
   scheduler.runAll();
   expect(nodes()).toHaveLength(3);
@@ -266,7 +266,6 @@ it("skips disabled pressure centers and retains line/arrow nodes across toggles"
   renderer.setSelectionHighlightsEnabled(false);
   scheduler.runAll();
   expect(nodes()).toEqual(roots);
-  expect(roots.map((root) => root.nodes[0]!)).toEqual(centers);
   renderer.setPreviewTransform(
     elements.map(({ id }) => id),
     "translate(5 10)",

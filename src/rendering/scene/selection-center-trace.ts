@@ -9,8 +9,7 @@ import type { MutableSceneInstrumentation } from "./types";
 
 /** One screen-sized indicator follows displayed center geometry, independently of ink paint. */
 export class SelectionCenterTrace {
-  public readonly node: SVGGElement;
-  readonly #path: SVGPathElement;
+  public readonly node: SVGPathElement;
   readonly #attributes = new Map<SVGElement, Map<string, string>>();
   readonly #instrumentation: MutableSceneInstrumentation;
   readonly #cache: SelectionCenterCache;
@@ -26,10 +25,8 @@ export class SelectionCenterTrace {
   ) {
     this.#cache = cache;
     this.#instrumentation = instrumentation;
-    this.node = parent.ownerDocument.createElementNS(SVG_NAMESPACE, "g");
-    this.#path = parent.ownerDocument.createElementNS(SVG_NAMESPACE, "path");
+    this.node = parent.ownerDocument.createElementNS(SVG_NAMESPACE, "path");
     this.#attributes.set(this.node, new Map());
-    this.#attributes.set(this.#path, new Map());
     this.write(this.node, "data-selection-element-id", entry.id);
     for (const [name, value] of Object.entries({
       class: "inkbook-selection-center-trace",
@@ -39,10 +36,8 @@ export class SelectionCenterTrace {
       "stroke-linejoin": "round",
       "vector-effect": "non-scaling-stroke",
     }))
-      this.write(this.#path, name, value);
-    this.node.append(this.#path);
-    parent.append(this.node);
-    instrumentation.selectionTraceNodesCreated += 2;
+      this.write(this.node, name, value);
+    instrumentation.selectionTraceNodesCreated += 1;
   }
 
   public memoryUsage(): number {
@@ -70,7 +65,7 @@ export class SelectionCenterTrace {
         if (element.kind === "arrow") this.#instrumentation.selectionTraceGeometryBuilds += 1;
         path = geometry.map(({ d }) => d).join("");
       }
-      this.write(this.#path, "d", path);
+      this.write(this.node, "d", path);
     }
     this.#basis = element;
     this.#parts = parts;
@@ -78,12 +73,12 @@ export class SelectionCenterTrace {
   }
 
   public transform(transform: string | null): void {
-    this.write(this.#path, "transform", positionedTransform(this.#basis, transform));
+    this.write(this.node, "transform", positionedTransform(this.#basis, transform));
   }
 
   public release(): void {
     this.node.remove();
-    this.#instrumentation.selectionTraceNodesRemoved += 2;
+    this.#instrumentation.selectionTraceNodesRemoved += 1;
     this.#attributes.clear();
     this.#basis = undefined;
     this.#parts = undefined;

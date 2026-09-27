@@ -11,6 +11,8 @@ import {
 import { createSceneFixture, createSceneRecord } from "../../../fixtures/rendering/scene";
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
+import { arrow } from "../../../unit/domain/schema/fixtures";
+import { selectionTraceNodes } from "../../../fixtures/rendering/selection-traces";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -76,9 +78,10 @@ function verifyPublicationSlices(
   renderer: SvgSceneRenderer,
   scheduler: FakeScheduler,
   afterFirst?: () => void,
+  requireSceneCommit = true,
 ): void {
   const camera = fakeNode(renderer.svg).nodes[1]!;
-  const groups = new Set([camera.nodes[3], camera.nodes[4]]);
+  const groups = new Set([camera.nodes[3], camera.nodes[4], camera.nodes[8]]);
   const original = Object.getOwnPropertyDescriptor(FakeNode.prototype, "insertBefore")!.value as (
     this: FakeNode,
     node: FakeNode,
@@ -92,13 +95,15 @@ function verifyPublicationSlices(
   });
   try {
     let first = true;
+    let frames = 0;
     while (scheduler.pendingCount > 0) {
+      expect(++frames).toBeLessThanOrEqual(400);
       writes = 0;
       scheduler.runNext();
       expect(writes).toBeLessThanOrEqual(64);
       if (first) {
         expect(writes).toBeGreaterThan(0);
-        expect(renderer.hasPendingSceneCommit).toBe(true);
+        if (requireSceneCommit) expect(renderer.hasPendingSceneCommit).toBe(true);
         first = false;
         afterFirst?.();
       }
@@ -119,6 +124,106 @@ it("publishes a 10,000-entry viewport without an atomic DOM burst", () => {
   expect(renderer.mountedCount).toBe(10_000);
   expect(renderer.instrumentation().geometryBuilds).toBe(10_000);
   expect(renderer.mountedIds("content")).toEqual([...store.records.keys()]);
+  renderer.destroy();
+  expect(scheduler.pendingCount).toBe(0);
+});
+
+it("bounds combined ink and selection publication when 6,081 selected entries return", () => {
+  const store = new FakeSceneStore();
+  const selected = new Set<string>();
+  for (let rank = 0; rank < 10_000; rank += 1) {
+    const record = fakeRectangleRecord(
+      `entry-${rank}`,
+      rank,
+      20 + rank / 100_000,
+      rank < 6_081 ? 10 : 10_000,
+    );
+    store.records.set(record.id, record);
+    if (rank < 6_081) selected.add(record.id);
+  }
+  const viewport = { height: 100, left: 0, top: 0, width: 100 };
+  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
+  scheduler.runAll(200);
+  renderer.setSelectedElements(selected);
+  scheduler.runAll(200);
+  expect(selectionTraceNodes(fakeNode(renderer.svg))).toHaveLength(selected.size);
+  renderer.setViewport({ ...viewport, top: 1_000 });
+  scheduler.runAll(200);
+  expect(selectionTraceNodes(fakeNode(renderer.svg))).toHaveLength(0);
+
+  renderer.resetInstrumentation();
+  renderer.setViewport(viewport);
+  verifyPublicationSlices(
+    renderer,
+    scheduler,
+    () => renderer.setViewport({ ...viewport, top: 1_000 }),
+    false,
+  );
+  expect(selectionTraceNodes(fakeNode(renderer.svg))).toHaveLength(0);
+  expect(renderer.mountedCount).toBe(0);
+
+  renderer.resetInstrumentation();
+  renderer.setViewport(viewport);
+  verifyPublicationSlices(renderer, scheduler, undefined, false);
+  expect(renderer.mountedIds("content")).toEqual([...selected]);
+  expect(selectionTraceNodes(fakeNode(renderer.svg))).toHaveLength(selected.size);
+  expect(renderer.instrumentation()).toMatchObject({
+    domEntrants: selected.size,
+    domReorders: 0,
+    selectionTraceNodesCreated: selected.size,
+  });
+  renderer.destroy();
+  expect(scheduler.pendingCount).toBe(0);
+});
+
+it("serves both selected centers and new ink after a page and viewport growth", () => {
+  const store = new FakeSceneStore();
+  const selected = new Set<string>();
+  for (let rank = 0; rank < 256; rank += 1) {
+    const record = fakeRectangleRecord(`grown-${rank}`, rank, 20 + rank / 100_000, 1_000);
+    store.records.set(record.id, record);
+    selected.add(record.id);
+  }
+  const viewport = { height: 100, left: 0, top: 0, width: 100 };
+  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
+  scheduler.runAll();
+  renderer.setSelectedElements(selected);
+  renderer.setPage(NAVIGATION_PAGE, 2_000);
+  renderer.setViewport({ ...viewport, top: 1_000 });
+  scheduler.runNext();
+  expect(renderer.instrumentation().domEntrants).toBeGreaterThan(0);
+  scheduler.runNext();
+  expect(renderer.instrumentation().selectionTraceNodesCreated).toBeGreaterThan(0);
+  expect(renderer.instrumentation().domEntrants).toBeLessThan(selected.size);
+  scheduler.runAll(20);
+  expect(renderer.mountedIds("content")).toEqual([...selected]);
+  expect(selectionTraceNodes(fakeNode(renderer.svg))).toHaveLength(selected.size);
+  renderer.destroy();
+  expect(scheduler.pendingCount).toBe(0);
+});
+
+it("bounds live writes when a multi-root arrow joins selected single-root ink", () => {
+  const store = new FakeSceneStore();
+  const target = { height: 100, left: 0, top: 100, width: 400 };
+  const twoRoot = { ...arrow(500), start: { x: 200, y: 150 }, end: { x: 300, y: 150 } };
+  store.records.set(twoRoot.id, createSceneRecord(twoRoot));
+  const selected = new Set([twoRoot.id]);
+  for (let rank = 1; rank <= 63; rank += 1) {
+    const record = fakeRectangleRecord(`single-${rank}`, rank, 20 + rank / 100_000, 150);
+    store.records.set(record.id, record);
+    selected.add(record.id);
+  }
+  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, {
+    ...target,
+    top: 1_000,
+  });
+  scheduler.runAll();
+  renderer.setSelectedElements(selected);
+  renderer.setViewport(target);
+  verifyPublicationSlices(renderer, scheduler, undefined, false);
+  expect(renderer.mountedIds("content")).toEqual([...store.records.keys()]);
+  expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(65);
+  expect(selectionTraceNodes(fakeNode(renderer.svg))).toHaveLength(selected.size);
   renderer.destroy();
   expect(scheduler.pendingCount).toBe(0);
 });

@@ -34,3 +34,21 @@ export function mergeVisibleBand(
   }
   return count;
 }
+import type { MountedSceneElement } from "./mounted-element";
+
+/** Finds the next retained node for an urgent entrant without reading the store. */
+export function firstMountedSuccessor(
+  visible: { readonly count: number; readonly ids: readonly (string | undefined)[] },
+  id: string,
+  mounted: ReadonlyMap<string, MountedSceneElement>,
+): MountedSceneElement | undefined {
+  let found = false;
+  for (let index = 0; index < visible.count; index += 1) {
+    const candidate = visible.ids[index]!;
+    if (found) {
+      const entry = mounted.get(candidate);
+      if (entry !== undefined) return entry;
+    } else found = candidate === id;
+  }
+  return undefined;
+}

@@ -26,6 +26,8 @@ describe("retained selection traces", () => {
       const root = traces.find(
         (node) => node.attributes.get("data-selection-element-id") === element.id,
       )!;
+      expect(root.tagName).toBe("path");
+      expect(root.nodes).toHaveLength(0);
       expect(selectionCenterPaths(root)).toHaveLength(1);
       expect(selectionTraceGeometry(root), element.kind).toBeTruthy();
       if (element.kind !== "arrow" && !(element.kind === "stroke" && element.style.pressureEnabled))
@@ -147,7 +149,7 @@ describe("selection highlight setting", () => {
         .sort(),
     );
     expect(selectionCenterPaths(fakeNode(renderer.svg))).toEqual(centers);
-    expect(nodes().flatMap(selectionHaloNodes)).toHaveLength(centers.length * 2);
+    expect(nodes().flatMap(selectionHaloNodes)).toHaveLength(centers.length);
     expect(
       nodes()
         .flatMap(selectionHaloNodes)

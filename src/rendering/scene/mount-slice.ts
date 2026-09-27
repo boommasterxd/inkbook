@@ -1,6 +1,11 @@
 import type { MutableSceneInstrumentation, SceneElementRecord } from "./types";
 import { MOUNT_SLICE_GEOMETRY_COST_BUDGET, MOUNT_SLICE_STROKE_POINT_BUDGET } from "./constants";
 
+/** Shared allowance for new live SVG roots in one scene frame. */
+export interface ScenePublicationBudget {
+  remainingRoots: number;
+}
+
 export interface MountCost {
   readonly geometry: number;
   readonly strokePoints: number;
@@ -14,6 +19,14 @@ export class MountSlice {
   public strokePoints = 0;
   #preparationSteps = 0;
   #publicationNodes = 0;
+
+  public get publicationNodes(): number {
+    return this.#publicationNodes;
+  }
+
+  public get canPublish(): boolean {
+    return this.#publicationNodes < this.publicationLimit;
+  }
 
   public constructor(
     private readonly deadline: number,
@@ -47,11 +60,8 @@ export class MountSlice {
   }
 
   public claimPublicationNodes(count: number): boolean {
-    if (
-      this.#publicationNodes > 0 &&
-      (this.#publicationNodes + count > this.publicationLimit || this.now() >= this.deadline)
-    )
-      return false;
+    if (count <= 0 || this.#publicationNodes + count > this.publicationLimit) return false;
+    if (this.#publicationNodes > 0 && this.now() >= this.deadline) return false;
     this.#publicationNodes += count;
     return true;
   }

@@ -13,7 +13,7 @@ import {
   type MountedSceneElement,
 } from "./mounted-element";
 import type { ScenePathCache } from "./path-cache";
-import { MountSlice, mountCost } from "./mount-slice";
+import type { ScenePublicationBudget } from "./mount-slice";
 import { SceneElementFades, type FadeSlice } from "./scene-element-fades";
 import { SceneSelectionTraces } from "./selection-traces";
 import type { SceneDom } from "./scene-dom";
@@ -185,17 +185,30 @@ export class SceneContentRenderer {
     return ids;
   }
 
-  public writeMountedChanges(deadline: number, now: () => number): boolean {
+  public writeMountedChanges(
+    deadline: number,
+    now: () => number,
+    publication: ScenePublicationBudget,
+  ): boolean {
     if (
       this.writeDirtySet(this.#geometryDirty, deadline, now, (id) =>
-        this.writeGeometry(id, deadline, now),
+        this.writeGeometry(id, deadline, now, publication),
       )
     ) {
       return true;
     }
-    if (this.writeDirtySet(this.#paintDirty, deadline, now, (id) => this.writePaint(id)))
+    if (
+      this.writeDirtySet(this.#paintDirty, deadline, now, (id) => this.writePaint(id, publication))
+    )
       return true;
-    return this.writeSelectionTraces(deadline, now);
+    return this.#selectionTraces.writeDirty(
+      this.#selectionDirty,
+      this.#mounted,
+      this.#store,
+      deadline,
+      now,
+      publication,
+    );
   }
 
   public get hasPendingExitCleanup(): boolean {
@@ -219,9 +232,16 @@ export class SceneContentRenderer {
     now: () => number,
     previewTransforms: ReadonlyMap<string, PreviewTransform>,
     previewElements: ReadonlyMap<string, InkElementV1>,
+    publication: ScenePublicationBudget,
   ): boolean {
     const wasCleaning = this.#reconciler.hasPendingCleanup;
-    const result = this.#reconciler.reconcile(deadline, now, previewTransforms, previewElements);
+    const result = this.#reconciler.reconcile(
+      deadline,
+      now,
+      previewTransforms,
+      previewElements,
+      publication,
+    );
     if (wasCleaning && !this.#reconciler.hasPendingCleanup) {
       this.#selectionTraces.prune(this.#mounted);
     }
@@ -296,8 +316,9 @@ export class SceneContentRenderer {
       ownerDocument: this.#dom.ownerDocument,
       parent: this.#dom.group(entry.band),
     });
-    this.#selectionTraces.update(entry, element, parts);
-    this.#selectionDirty.delete(element.id);
+    if (this.#selectionTraces.update(entry, element, parts))
+      this.#selectionDirty.delete(element.id);
+    else this.#selectionDirty.add(element.id);
     return true;
   }
 
@@ -378,7 +399,12 @@ export class SceneContentRenderer {
     this.#committedCounts.highlight = 0;
   }
 
-  private writeGeometry(id: string, deadline: number, now: () => number): boolean {
+  private writeGeometry(
+    id: string,
+    deadline: number,
+    now: () => number,
+    publication: ScenePublicationBudget,
+  ): boolean {
     const entry = this.#mounted.get(id);
     const record = this.#store.get(id);
     if (
@@ -403,7 +429,7 @@ export class SceneContentRenderer {
         ? this.#committedGeometry.prepare(record, deadline, now, pressure)
         : this.#pathCache.build(record.element, pressure));
     if (parts === undefined) return false;
-    this.updateGeometry(entry, record, parts);
+    this.updateGeometry(entry, record, parts, publication);
     const desired = this.#committedGeometry.finish(id);
     if (this.#deferredPreviews.delete(id)) this.#committedPreviewIds.push(id);
     if (desired !== undefined)
@@ -415,6 +441,7 @@ export class SceneContentRenderer {
     entry: MountedSceneElement,
     record: SceneElementRecord,
     parts: readonly SvgPathPart[],
+    publication?: ScenePublicationBudget,
   ): void {
     updateMountedGeometry(
       entry,
@@ -424,36 +451,20 @@ export class SceneContentRenderer {
       this.#dom.group(entry.band),
       this.#instrumentation,
     );
-    this.#selectionTraces.update(entry, record.element, parts);
-    this.#selectionDirty.delete(entry.id);
+    if (this.#selectionTraces.update(entry, record.element, parts, publication))
+      this.#selectionDirty.delete(entry.id);
+    else this.#selectionDirty.add(entry.id);
   }
 
-  private writeSelectionTraces(deadline: number, now: () => number): boolean {
-    const slice = new MountSlice(deadline, now);
-    for (const id of this.#selectionDirty) {
-      const entry = this.#mounted.get(id);
-      const record = this.#store.get(id);
-      if (entry !== undefined && record !== undefined) {
-        const cost = this.#selectionTraces.includes(entry.displayedElement)
-          ? mountCost({ ...record, element: entry.displayedElement })
-          : { geometry: 0, strokePoints: 0 };
-        if (slice.blockingReason(cost) !== undefined) return true;
-        this.#selectionTraces.update(entry, entry.displayedElement, entry.displayedPathParts);
-        slice.record(cost);
-      }
-      this.#selectionDirty.delete(id);
-    }
-    return false;
-  }
-
-  private writePaint(id: string): void {
+  private writePaint(id: string, publication: ScenePublicationBudget): void {
     const entry = this.#mounted.get(id);
     const record = this.#store.get(id);
     if (entry === undefined || record === undefined || entry.paintVersion === record.paintVersion)
       return;
     updateMountedPaint(entry, record, entry.pathParts, this.#instrumentation);
     entry.displayedElement = record.element;
-    this.#selectionTraces.update(entry, record.element, entry.displayedPathParts);
+    if (!this.#selectionTraces.update(entry, record.element, entry.displayedPathParts, publication))
+      this.#selectionDirty.add(id);
   }
 
   private commitVisibility(visibility: VisibilityResult): void {

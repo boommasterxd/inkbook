@@ -37,3 +37,13 @@ it("keeps the preparation allowance shared across admitted jobs", () => {
   expect(slice.prepare(completed)).toBe(false);
   expect(completed.step).toHaveBeenCalledTimes(63);
 });
+
+it("waits for a fresh publication allowance when a two-root element cannot fit", () => {
+  const partial = new MountSlice(10, () => 0, 1);
+  expect(partial.claimPublicationNodes(2)).toBe(false);
+  expect(partial.publicationNodes).toBe(0);
+  const fresh = new MountSlice(10, () => 0, 64);
+  expect(fresh.claimPublicationNodes(2)).toBe(true);
+  expect(fresh.claimPublicationNodes(63)).toBe(false);
+  expect(fresh.publicationNodes).toBe(2);
+});
