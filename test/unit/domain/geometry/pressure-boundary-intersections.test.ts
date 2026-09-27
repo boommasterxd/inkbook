@@ -120,6 +120,24 @@ describe("pressure boundary intersections", () => {
   });
 });
 
+describe("pressure boundary radial tolerance", () => {
+  it("retains the radial tolerance near the coordinate limit", () => {
+    const center = { x: -999_999, y: -999_999 };
+    const circle = arc(center, 0.35, 0.4);
+    const epsilon = 32 * Number.EPSILON * Math.abs(center.x);
+    expect(pressureBoundaryParameter(circle, { x: center.x, y: center.y + 0.35 })).toBeDefined();
+    expect(
+      pressureBoundaryParameter(circle, { x: center.x, y: center.y + 0.35 + epsilon / 2 }),
+    ).toBeDefined();
+    expect(
+      pressureBoundaryParameter(circle, { x: center.x, y: center.y + 0.35 + epsilon * 2 }),
+    ).toBeUndefined();
+    expect(
+      pressureBoundaryParameter(circle, { x: center.x + 0.1, y: center.y + 0.1 }),
+    ).toBeUndefined();
+  });
+});
+
 describe("circular pressure boundary intersections", () => {
   it("returns both circle-circle crossings on the actual boundaries", () => {
     const first = arc(origin, 2, 0.2);

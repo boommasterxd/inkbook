@@ -92,8 +92,9 @@ export class ElementStoreRuntime {
       publishWindow: (index, window) => {
         if (!current()) return;
         const previous = cache.statistics().bytes;
-        cache.publish(id, geometryVersion, index, window);
+        const numericBytes = cache.publish(id, geometryVersion, index, window);
         if (previous !== cache.statistics().bytes) access.notify?.();
+        return numericBytes;
       },
     };
   }

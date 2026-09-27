@@ -3,6 +3,10 @@ import { iteratePressureContourQuantization } from "../../../src/domain/geometry
 import * as primitives from "../../../src/domain/geometry/primitives";
 import * as intersections from "../../../src/domain/geometry/pressure-boundary-intersections";
 import { buildPressureCapsule } from "../../../src/domain/geometry/pressure-joins";
+import {
+  measurePressureWindow,
+  preparePressureWindows,
+} from "../../../src/domain/geometry/pressure-window";
 import { serializePressureWindows } from "../../../src/domain/geometry/pressure-path-serialization";
 import {
   iteratePressureUnion,
@@ -32,16 +36,50 @@ function sample(index: number) {
   return { x: index % 2 ? 200 : 0, y: index, pressure: index % 2, time: index };
 }
 
+function regularCapsules(count: number, xOffset: number) {
+  const centers = Array.from({ length: count }, (_, index) => ({
+    x: index * 3 + xOffset,
+    y: Math.sin(index / 4) * 10,
+    pressure: 0.5,
+  }));
+  return centers.slice(1).map((last, index) => buildPressureCapsule(centers[index]!, last, 2));
+}
+
 describe("bounded canonical pressure geometry", () => {
+  it("measures both pressure-window byte budgets in one point-identity pass", () => {
+    const pieces = regularCapsules(65, 0).map((capsule) =>
+      capsule.kind === "dot" ? capsule : { kind: "strip" as const, capsule, width: 2 },
+    );
+    const [window] = preparePressureWindows(pieces);
+    const boundaries = window!.loops.flat();
+    const visits = boundaries.reduce(
+      (count, boundary) => count + (boundary.kind === "arc" ? 3 : 2),
+      0,
+    );
+    let reads = 0;
+    const observed = {
+      ...window!,
+      loops: window!.loops.map((loop) =>
+        loop.map(
+          (boundary) =>
+            new Proxy(boundary, {
+              get(target, key, receiver) {
+                if (key === "start" || key === "end" || key === "center") reads += 1;
+                return Reflect.get(target, key, receiver) as unknown;
+              },
+            }),
+        ),
+      ),
+    };
+    const measured = measurePressureWindow(observed);
+    expect(measured.numericBytes).toBeGreaterThan(0);
+    expect(measured.retainedBytes).toBeGreaterThan(measured.numericBytes);
+    expect(reads).toBe(visits);
+  });
+
   it("stitches pressure contours using bounded numeric bucket lookups", () => {
-    const centers = Array.from({ length: 32 }, (_, index) => ({
-      x: index * 3 - 48,
-      y: Math.sin(index / 4) * 10,
-      pressure: 0.5,
-    }));
-    const shapes = centers
-      .slice(1)
-      .map((last, index) => buildPressureCapsule(centers[index]!, last, 2));
+    const shapes = regularCapsules(32, -48);
+    shapes.push({ kind: "dot", center: { x: 200, y: 200 }, radius: 1 });
     const lookups = vi.spyOn(Map.prototype, "get");
     let step;
     const iterator = iteratePressureUnion(shapes);
@@ -59,7 +97,57 @@ describe("bounded canonical pressure geometry", () => {
       lookups.mockRestore();
     }
   });
+});
 
+describe("linear pressure-chain work", () => {
+  it("prepares a single capsule without clipping or stitching", () => {
+    const shape = buildPressureCapsule(
+      { x: 0, y: 0, pressure: 0.2 },
+      { x: 10, y: 2, pressure: 0.8 },
+      4,
+    );
+    expect(shape.kind).toBe("capsule");
+    const iterator = iteratePressureUnion([shape]);
+    const step = iterator.next();
+    expect(step.done).toBe(true);
+    expect(step.value).toMatchObject({
+      contours: [pressureShapeBoundary(shape)],
+      usedFallback: false,
+      work: { intersectionTests: 0, containmentTests: 0, boundaryTests: 0 },
+    });
+  });
+
+  it("constructs a capacity regular chain without boundary clipping or stitching", () => {
+    const shapes = regularCapsules(65, 0);
+    const boundaries = vi.spyOn(intersections, "intersectPressureBoundaries");
+    const parameters = vi.spyOn(intersections, "pressureBoundaryParameter");
+    let reads = 0;
+    const counted = new Proxy(shapes, {
+      get(target, key, receiver) {
+        if (typeof key === "string" && /^\d+$/.test(key)) reads += 1;
+        return Reflect.get(target, key, receiver) as unknown;
+      },
+    });
+    try {
+      const iterator = iteratePressureUnion(counted);
+      let step = iterator.next();
+      while (!step.done) step = iterator.next();
+      expect(step.value.usedFallback).toBe(false);
+      expect(step.value.contours).toHaveLength(1);
+      expect(boundaries).not.toHaveBeenCalled();
+      expect(parameters).not.toHaveBeenCalled();
+      // Every phase makes a fixed number of passes over the 64 source capsules.
+      expect(reads).toBeGreaterThan(64);
+      expect(reads).toBeLessThanOrEqual(64 * 10);
+      expect(step.value.contours[0]!.length).toBeLessThanOrEqual(64 * 4);
+    } finally {
+      boundaries.mockRestore();
+      parameters.mockRestore();
+    }
+  });
+});
+
+describe("bounded live pressure geometry", () => {
   it("keeps maximum pressure transitions in one bounded live-tail outline", () => {
     const centers = Array.from({ length: 16 }, (_, index) => sample(index));
     const parts = buildPressureOutline(centers, 22);
@@ -179,6 +267,87 @@ describe("compact reference pressure geometry", () => {
     // A 64-interval window can inspect at most the triangular sum of interior
     // points. Each inspection reads three source centers, plus retained output.
     expect(reads).toBeLessThanOrEqual(MAX_STROKE_POINTS * 97);
+  });
+});
+
+describe("pressure boundary broad phase", () => {
+  it("rejects off-circle arc probes inside their axis box before radial distance work", () => {
+    const [arc] = pressureShapeBoundary({
+      kind: "dot",
+      center: { x: 0, y: 0 },
+      radius: 10.37,
+    });
+    const distance = vi.spyOn(Math, "hypot");
+    try {
+      for (let x = -9; x <= 9; x += 1) {
+        for (let y = -9; y <= 9; y += 1) {
+          expect(intersections.pressureBoundaryParameter(arc!, { x, y })).toBeUndefined();
+        }
+      }
+      expect(distance).not.toHaveBeenCalled();
+    } finally {
+      distance.mockRestore();
+    }
+  });
+
+  it("rejects separated circular carriers before radial distance work at window capacity", () => {
+    const distance = vi.spyOn(Math, "hypot");
+    try {
+      const circles = Array.from({ length: 64 }, (_, index) =>
+        pressureShapeBoundary({
+          kind: "dot" as const,
+          center: { x: index * 15, y: index * 15 },
+          radius: 10,
+        }),
+      );
+      for (let index = 0; index < circles.length - 1; index += 1) {
+        for (const first of circles[index]!) {
+          for (const second of circles[index + 1]!) {
+            expect(intersections.intersectPressureBoundaries(first, second)).toEqual([]);
+          }
+        }
+      }
+      const line = {
+        kind: "line" as const,
+        start: { x: -4, y: 2 },
+        end: { x: 2, y: 8 },
+      };
+      const circle = pressureShapeBoundary({
+        kind: "dot",
+        center: { x: 1, y: 1 },
+        radius: 3,
+      });
+      for (const arc of circle)
+        expect(intersections.intersectPressureBoundaries(line, arc)).toEqual([]);
+      expect(circles).toHaveLength(64);
+      expect(distance).not.toHaveBeenCalled();
+    } finally {
+      distance.mockRestore();
+    }
+  });
+
+  it("prunes separated boundary extents in dense parallel capsules", () => {
+    const shapes = Array.from({ length: 64 }, (_, index) =>
+      buildPressureCapsule(
+        { x: 0, y: index * 0.5, pressure: 1 },
+        { x: 100, y: index * 0.5, pressure: 1 },
+        2,
+      ),
+    );
+    const calls = vi.spyOn(intersections, "intersectPressureBoundaries");
+    try {
+      const iterator = iteratePressureUnion(shapes);
+      let step = iterator.next();
+      while (!step.done) step = iterator.next();
+      expect(step.value.usedFallback).toBe(false);
+      expect(step.value.work.intersectionTests).toBe(calls.mock.calls.length);
+      expect(calls.mock.calls.length).toBeGreaterThan(0);
+      // Eight adjacent capsule bounds overlap; their two remote cap pairs and
+      // separated horizontal sides must not reach the exact intersection code.
+      expect(calls.mock.calls.length).toBeLessThanOrEqual(64 * 8 * 8);
+    } finally {
+      calls.mockRestore();
+    }
   });
 });
 

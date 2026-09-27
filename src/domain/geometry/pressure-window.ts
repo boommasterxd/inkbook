@@ -1,4 +1,8 @@
-import type { PreparedPressureGeometryPort, PressureWindow } from "./prepared-pressure-geometry";
+import type {
+  PreparedPressureGeometryPort,
+  PressureWindow,
+  PressureWindowMeasurement,
+} from "./prepared-pressure-geometry";
 import { iteratePressureContourApproximation } from "./pressure-contour-approximation";
 import type { PointV1 } from "../schema/types";
 import type { PressureOutlinePiece } from "./pressure-outline-piece";
@@ -7,13 +11,13 @@ import { iteratePressureUnion } from "./pressure-union";
 export type { PressureWindow } from "./prepared-pressure-geometry";
 
 /** Conservative numeric payload reserved for one suspended preparation job, not JS heap overhead.
- * 64 sources (48 scalars); 1,025 guarded union edges including stitching (32 scalars);
+ * 64 sources (64 scalars); 1,025 guarded union edges including stitching (32 scalars);
  * two 505-interval buffers; 26 cut values; 1,024 completed contour edges (four coordinates);
  * 4,097 active polyline slots including rewrite/rounding arrays (16 scalars);
  * at most 16,384 retained plus 16,384 active addition triangles (six coordinates).
  */
 export const PRESSURE_WINDOW_SCRATCH_BYTES =
-  (64 * 48 + 1025 * 32 + 2 * 505 * 2 + 26 + 1024 * 4 + 4097 * 16 + 32768 * 6) * 8;
+  (64 * 64 + 1025 * 32 + 2 * 505 * 2 + 26 + 1024 * 4 + 4097 * 16 + 32768 * 6) * 8;
 
 /** Independent unions partition the emitted capsule stream, never raw input windows. */
 export function preparePressureWindows(
@@ -72,9 +76,18 @@ export function* preparePressureWindowSteps(
 
 /** Retained numeric payload; JavaScript object overhead depends on the runtime. */
 export function pressureWindowMemoryUsage(window: PressureWindow): number {
+  return measurePressureWindow(window).numericBytes;
+}
+
+/** Measure both cache retention and active-job accounting in one boundary visit. */
+export function measurePressureWindow(
+  window: PressureWindow,
+): PressureWindowMeasurement & { readonly retainedBytes: number } {
   const points = new Set<PointV1>();
   let scalarBytes = 0;
+  let overhead = 160 + 48 + window.loops.length * 8;
   for (const loop of window.loops) {
+    overhead += 48 + loop.length * 160;
     for (const segment of loop) {
       points.add(segment.start);
       points.add(segment.end);
@@ -84,18 +97,18 @@ export function pressureWindowMemoryUsage(window: PressureWindow): number {
       }
     }
   }
-  for (const triangle of window.additions) for (const point of triangle) points.add(point);
-  return points.size * 2 * 8 + scalarBytes;
+  overhead += 48 + window.additions.length * 8;
+  for (const polygon of window.additions) {
+    overhead += 48 + polygon.length * (8 + 24);
+    for (const point of polygon) points.add(point);
+  }
+  const numericBytes = points.size * 2 * 8 + scalarBytes;
+  return { window, numericBytes, retainedBytes: overhead + numericBytes };
 }
 
 /** Conservative retained-window accounting shared by store and presentation caches. */
 export function pressureWindowRetainedBytes(window: PressureWindow): number {
-  // Entry/window objects, arrays/references, segment objects and point objects.
-  let overhead = 160 + 48 + window.loops.length * 8;
-  for (const loop of window.loops) overhead += 48 + loop.length * 160;
-  overhead += 48 + window.additions.length * 8;
-  for (const polygon of window.additions) overhead += 48 + polygon.length * (8 + 24);
-  return overhead + pressureWindowMemoryUsage(window);
+  return measurePressureWindow(window).retainedBytes;
 }
 
 /** Numeric payload of a pending, unmerged capsule. */

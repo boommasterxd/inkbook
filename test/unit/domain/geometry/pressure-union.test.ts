@@ -6,19 +6,9 @@ import {
   type PressureDisk,
   type PressureCenter,
 } from "../../../../src/domain/geometry/pressure-joins";
-import {
-  pressureBoundaryPoint,
-  type PressureBoundarySegment,
-} from "../../../../src/domain/geometry/pressure-boundary-intersections";
+import { samplePressureContour } from "../../../fixtures/domain/pressure-contour";
 import type { PointV1 } from "../../../../src/domain/schema/types";
 import { polygonWinding } from "../../../fixtures/domain/svg-path-fill";
-
-function sample(contour: readonly PressureBoundarySegment[]) {
-  return contour.flatMap((edge) => {
-    const count = edge.kind === "line" ? 1 : Math.ceil(Math.abs(edge.sweep) / (Math.PI / 512));
-    return Array.from({ length: count }, (_, index) => pressureBoundaryPoint(edge, index / count));
-  });
-}
 
 function disk(x: number, y: number, radius: number): PressureDisk {
   return { kind: "dot", center: { x, y }, radius };
@@ -32,9 +22,9 @@ function unionFixture(centers: readonly PressureCenter[]) {
   expect(result.usedFallback).toBe(false);
   return {
     result,
-    actual: result.contours.map(sample),
+    actual: result.contours.map(samplePressureContour),
     independent: shapes.flatMap((shape) =>
-      finishGeometrySteps(iteratePressureUnion([shape])).contours.map(sample),
+      finishGeometrySteps(iteratePressureUnion([shape])).contours.map(samplePressureContour),
     ),
   };
 }
@@ -103,9 +93,12 @@ describe("bounded pressure capsule union", () => {
     ],
   ] as const)("preserves filled union and holes for %s", (_label, positions) => {
     const centers = positions.map(([x, y]) => ({ x, y, pressure: 1 }));
-    const { result, actual, independent } = unionFixture(centers);
+    const { actual, independent } = unionFixture(centers);
     expectGridUnion(actual, independent, [-32.173, 53, 2.137], [-32.391, 53, 2.193]);
-    if (_label === "hole") expect(result.contours).toHaveLength(2);
+    if (_label === "hole")
+      expect(
+        actual.reduce((sum, contour) => sum + polygonWinding(contour, { x: 20, y: 20 }), 0),
+      ).toBe(0);
   });
 });
 
@@ -129,7 +122,7 @@ describe("pressure union degeneracies", () => {
       ]),
     );
     expect(result.usedFallback).toBe(false);
-    const contours = result.contours.map(sample);
+    const contours = result.contours.map(samplePressureContour);
     for (const point of [
       { x: 999_980, y: -999_980 },
       { x: 999_990, y: -999_980 },
@@ -145,7 +138,7 @@ describe("pressure union degeneracies", () => {
       const ordered = [...shapes.slice(offset), ...shapes.slice(0, offset)];
       const result = finishGeometrySteps(iteratePressureUnion(ordered));
       expect(result.usedFallback).toBe(false);
-      const contours = result.contours.map(sample);
+      const contours = result.contours.map(samplePressureContour);
       for (let x = -11.137; x < 12; x += 0.739) {
         for (let y = -11.231; y < 12; y += 0.713) {
           const point = { x, y };

@@ -37,10 +37,6 @@ function roundoff(first: PointV1, second: PointV1, third: PointV1, fourth = firs
   return 32 * Number.EPSILON * scale;
 }
 
-function distance(first: PointV1, second: PointV1): number {
-  return Math.hypot(first.x - second.x, first.y - second.y);
-}
-
 function withinRoundoff(first: PointV1, second: PointV1, epsilon: number): boolean {
   const dx = first.x - second.x;
   const dy = first.y - second.y;
@@ -73,11 +69,18 @@ function arcParameter(
   point: PointV1,
   epsilon: number,
 ): number | undefined {
-  const axisDistance = Math.max(Math.abs(point.x - arc.center.x), Math.abs(point.y - arc.center.y));
+  const dx = arc.center.x - point.x;
+  const dy = arc.center.y - point.y;
+  const axisDistance = Math.max(Math.abs(dx), Math.abs(dy));
+  if (arc.sweep === 0 || axisDistance - arc.radius > epsilon) return undefined;
+  const squared = dx * dx + dy * dy;
+  const outer = arc.radius + 8 * epsilon;
+  const inner = Math.max(0, arc.radius - 8 * epsilon);
+  const margin = 64 * Number.EPSILON * Math.max(1, squared, outer * outer);
   if (
-    arc.sweep === 0 ||
-    axisDistance - arc.radius > epsilon ||
-    Math.abs(distance(arc.center, point) - arc.radius) > epsilon
+    squared > outer * outer + margin ||
+    squared < inner * inner - margin ||
+    Math.abs(Math.hypot(dx, dy) - arc.radius) > epsilon
   )
     return undefined;
   const initial = Math.atan2(arc.start.y - arc.center.y, arc.start.x - arc.center.x);
@@ -92,6 +95,7 @@ export function intersectPressureBoundaries(
   first: PressureBoundarySegment,
   second: PressureBoundarySegment,
 ): readonly PressureBoundaryIntersection[] {
+  if (separatedCarriers(first, second)) return [];
   const result: PressureBoundaryIntersection[] = [];
   addEndpoints(first, second, result);
   for (const point of intersectionPoints(first, second)) {
@@ -100,6 +104,39 @@ export function intersectPressureBoundaries(
     if (a !== undefined && b !== undefined) addIntersection(result, a, b);
   }
   return result;
+}
+
+/** Conservative carrier rejection before endpoint and arc parameter checks. */
+function separatedCarriers(
+  first: PressureBoundarySegment,
+  second: PressureBoundarySegment,
+): boolean {
+  if (first.kind === "line")
+    return second.kind === "line" ? false : lineMissesCircle(first, second);
+  if (second.kind === "line") return lineMissesCircle(second, first);
+  const dx = first.center.x - second.center.x;
+  const dy = first.center.y - second.center.y;
+  const squared = dx * dx + dy * dy;
+  const error = roundoff(first.center, second.center, first.start, second.start);
+  const maximum = first.radius + second.radius + 8 * error;
+  const minimum = Math.max(0, Math.abs(first.radius - second.radius) - 8 * error);
+  const margin = 64 * Number.EPSILON * Math.max(1, squared, maximum * maximum);
+  return squared > maximum * maximum + margin || squared < minimum * minimum - margin;
+}
+
+function lineMissesCircle(line: PressureBoundaryLine, arc: PressureBoundaryArc): boolean {
+  const dx = line.end.x - line.start.x;
+  const dy = line.end.y - line.start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared === 0) return false;
+  const cx = arc.center.x - line.start.x;
+  const cy = arc.center.y - line.start.y;
+  const cross = cx * dy - cy * dx;
+  const error = roundoff(line.start, line.end, arc.center);
+  const radius = arc.radius + 8 * error;
+  const limit = radius * radius * lengthSquared;
+  const margin = 64 * Number.EPSILON * Math.max(1, cross * cross, limit);
+  return cross * cross > limit + margin;
 }
 
 function addIntersection(

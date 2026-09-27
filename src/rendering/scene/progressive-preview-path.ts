@@ -1,4 +1,4 @@
-import type { PreparedPressureGeometryPort } from "../../domain/geometry/prepared-pressure-geometry";
+import type { PreparedPressureGeometryPort, PressureWindowMeasurement } from "../../domain/geometry/prepared-pressure-geometry";
 import { buildElementPathParts, type SvgPathPart } from "../../domain/geometry/element-path";
 import {
   iterateTransformedStrokeCenters,
@@ -206,16 +206,25 @@ export class ProgressivePreviewPath {
       if (index > 0 && now() >= deadline) return false;
       const step = this.#windowJob.next();
       if (!step.done) continue;
-      this.pressureGeometry?.publishWindow(this.#windows.length, step.value);
-      this.acceptWindow(step.value, count);
+      const measurement = this.pressureGeometry?.publishWindow(this.#windows.length, step.value);
+      this.acceptWindow(step.value, count, measurement);
       return this.#pendingPieces.length === 0;
     }
     return false;
   }
 
-  private acceptWindow(window: PressureWindow, count: number): void {
+  private acceptWindow(
+    window: PressureWindow,
+    count: number,
+    measurement?: PressureWindowMeasurement | void,
+  ): void {
     this.#windows.push(window);
-    this.#windowBytes += pressureWindowMemoryUsage(window);
+    this.#windowBytes +=
+      measurement?.window === window &&
+      Number.isSafeInteger(measurement.numericBytes) &&
+      measurement.numericBytes >= 0
+        ? measurement.numericBytes
+        : pressureWindowMemoryUsage(window);
     this.#pendingPieces.splice(0, count);
     this.#windowJob = undefined;
   }

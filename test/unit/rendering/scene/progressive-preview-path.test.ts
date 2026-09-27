@@ -201,7 +201,9 @@ it("reuses canonical pressure paths and windows without repeating their union", 
   const windows = new Map<number, pressureWindows.PressureWindow>();
   const parts = buildElementPathParts(element, {
     readWindow: () => undefined,
-    publishWindow: (index, window) => windows.set(index, window),
+    publishWindow: (index, window) => {
+      windows.set(index, window);
+    },
   });
   const prepare = vi.spyOn(windowJobs, "preparePressureWindowSteps");
   const publishPath = vi.fn();
@@ -222,6 +224,42 @@ it("reuses canonical pressure paths and windows without repeating their union", 
   expect(fromPath.parts).toBe(parts);
   expect(fromPath.step()).toBe(true);
   expect(prepare).not.toHaveBeenCalled();
+});
+
+it("uses the store's exact window measurement during progressive preparation", () => {
+  const element = pressureWindowStroke();
+  const measurement = vi.spyOn(pressureWindows, "pressureWindowMemoryUsage");
+  const windows: pressureWindows.PressureWindow[] = [];
+  const job = new ProgressivePreviewPath(element, {
+    readWindow: () => undefined,
+    publishWindow: (_index, window) => {
+      windows.push(window);
+      return { window, numericBytes: pressureWindows.pressureWindowMemoryUsage(window) };
+    },
+  });
+  while (!job.step()) {
+    /* Finish bounded windows. */
+  }
+  expect(windows.length).toBeGreaterThan(0);
+  expect(measurement).toHaveBeenCalledTimes(windows.length);
+  expect(job.parts).toEqual(buildElementPathParts(element));
+});
+
+it("recounts a pressure window when a port reports another window's measurement", () => {
+  const usage = vi.spyOn(pressureWindows, "pressureWindowMemoryUsage");
+  let published = 0;
+  const job = new ProgressivePreviewPath(pressureWindowStroke(), {
+    readWindow: () => undefined,
+    publishWindow: () => {
+      published += 1;
+      return { window: { kind: "window", additions: [], loops: [] }, numericBytes: 0 };
+    },
+  });
+  while (!job.step()) {
+    /* Finish bounded windows. */
+  }
+  expect(published).toBeGreaterThan(0);
+  expect(usage).toHaveBeenCalledTimes(published);
 });
 
 it("cancels a suspended pressure union and releases every derived buffer", () => {

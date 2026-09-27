@@ -1,3 +1,4 @@
+import { pressureChainContour } from "./pressure-chain-contour";
 import type { PointV1 } from "../schema/types";
 import type { PressureCapsule, PressureDisk } from "./pressure-joins";
 import {
@@ -38,6 +39,7 @@ interface Source {
   readonly shape: Shape;
   readonly boundaries: readonly PressureBoundarySegment[];
   readonly bounds: Bounds;
+  readonly boundaryBounds: readonly Bounds[];
 }
 interface Interval {
   first: number;
@@ -63,11 +65,6 @@ export function* iteratePressureUnion(
 ): Generator<void, PressureUnionResult> {
   if (shapes.length > MAX_PRESSURE_UNION_SHAPES)
     throw new RangeError("Pressure union capacity exceeded");
-  const sources = shapes.map((shape) => ({
-    shape,
-    boundaries: pressureShapeBoundary(shape),
-    bounds: shapeBounds(shape),
-  }));
   const work = {
     intersectionTests: 0,
     containmentTests: 0,
@@ -76,6 +73,19 @@ export function* iteratePressureUnion(
     peakIntervals: 0,
     visibleFragments: 0,
   };
+  const chain = pressureChainContour(shapes);
+  if (chain !== undefined) return { contours: [chain], usedFallback: false, work };
+  if (shapes.length === 1 && shapes[0]!.kind === "capsule")
+    return { contours: [pressureShapeBoundary(shapes[0]!)], usedFallback: false, work };
+  const sources = shapes.map((shape) => {
+    const boundaries = pressureShapeBoundary(shape);
+    return {
+      shape,
+      boundaries,
+      bounds: shapeBounds(shape),
+      boundaryBounds: boundaries.map(boundaryBounds),
+    };
+  });
   const visible: PressureBoundarySegment[] = [];
   for (let index = 0; index < sources.length; index += 1) {
     for (const boundary of sources[index]!.boundaries) {
@@ -149,11 +159,13 @@ function* clipBoundary(
   work: PressureUnionWork,
 ): Generator<void, Interval[] | undefined> {
   let intervals = [{ first: 0, last: 1 }];
+  const extent = boundaryBounds(boundary);
   for (let other = 0; other < sources.length && intervals.length > 0; other += 1) {
-    if (other === owner || !overlaps(sources[owner]!.bounds, sources[other]!.bounds)) continue;
+    if (other === owner || !overlaps(extent, sources[other]!.bounds)) continue;
     const source = sources[other]!;
     const cuts = [0, 1];
-    for (const edge of source.boundaries) {
+    for (const [index, edge] of source.boundaries.entries()) {
+      if (!overlaps(extent, source.boundaryBounds[index]!)) continue;
       work.intersectionTests += 1;
       for (const intersection of intersectPressureBoundaries(boundary, edge))
         cuts.push(intersection.first);
@@ -208,7 +220,8 @@ function covered(
   earlier: boolean,
   work: PressureUnionWork,
 ): boolean {
-  for (const edge of source.boundaries) {
+  for (const [index, edge] of source.boundaries.entries()) {
+    if (!containsPoint(source.boundaryBounds[index]!, point)) continue;
     work.boundaryTests += 1;
     if (pressureBoundaryParameter(edge, point) === undefined) continue;
     const incoming = tangent(boundary, point);
@@ -395,4 +408,45 @@ function endpointTolerance(sources: readonly Source[]): number {
       Math.abs(bounds.maxY),
     );
   return Math.max(1e-10, 128 * Number.EPSILON * magnitude);
+}
+
+function boundaryBounds(boundary: PressureBoundarySegment): Bounds {
+  const bounds =
+    boundary.kind === "line"
+      ? {
+          minX: Math.min(boundary.start.x, boundary.end.x),
+          minY: Math.min(boundary.start.y, boundary.end.y),
+          maxX: Math.max(boundary.start.x, boundary.end.x),
+          maxY: Math.max(boundary.start.y, boundary.end.y),
+        }
+      : {
+          minX: boundary.center.x - boundary.radius,
+          minY: boundary.center.y - boundary.radius,
+          maxX: boundary.center.x + boundary.radius,
+          maxY: boundary.center.y + boundary.radius,
+        };
+  const pad =
+    128 *
+    Number.EPSILON *
+    Math.max(
+      1,
+      Math.abs(bounds.minX),
+      Math.abs(bounds.minY),
+      Math.abs(bounds.maxX),
+      Math.abs(bounds.maxY),
+    );
+  return {
+    minX: bounds.minX - pad,
+    minY: bounds.minY - pad,
+    maxX: bounds.maxX + pad,
+    maxY: bounds.maxY + pad,
+  };
+}
+function containsPoint(bounds: Bounds, point: PointV1): boolean {
+  return (
+    point.x >= bounds.minX &&
+    point.x <= bounds.maxX &&
+    point.y >= bounds.minY &&
+    point.y <= bounds.maxY
+  );
 }
