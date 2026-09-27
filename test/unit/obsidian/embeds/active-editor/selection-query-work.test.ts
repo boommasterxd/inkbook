@@ -28,7 +28,9 @@ function setup(count = 160) {
     }
   }
   const options = {
-    workScheduler: workSchedulerFromFrames(scheduler),
+    workScheduler: workSchedulerFromFrames(scheduler, {
+      shouldYield: () => state.visits > 0 && state.visits % 64 === 0,
+    }),
     store,
     selection: () => state.selection,
     selectionSignal: pending.signal,
@@ -39,7 +41,7 @@ function setup(count = 160) {
 }
 
 describe("selection query scheduling", () => {
-  it("bounds geometry steps per frame and publishes the completed selection only once", () => {
+  it("resumes at the shared deadline and publishes the completed selection only once", () => {
     const test = setup();
     expect(test.work.start()).toBe(false);
     expect(test.state.visits).toBe(64);
@@ -78,9 +80,10 @@ describe("selection query scheduling", () => {
     );
     let sliceStart = 0;
     work.start();
-    const expected = Math.min(64, Math.max(1, sliceBudgetMs));
-    expect(test.state.visits).toBe(sliceBudgetMs === 0 ? 0 : expected);
-    expect(test.scheduler.pendingCount).toBe(1);
+    const expected = Math.min(160, sliceBudgetMs);
+    expect(test.state.visits).toBe(expected);
+    expect(test.scheduler.pendingCount).toBe(sliceBudgetMs >= 160 ? 0 : 1);
+    if (sliceBudgetMs >= 160) return;
     sliceStart = tick;
     test.scheduler.runNext(1);
     expect(test.state.visits).toBe(sliceBudgetMs === 0 ? 1 : expected * 2);
@@ -179,30 +182,50 @@ describe("numeric selection work charges", () => {
     [512, 0],
     [65, 4095],
     [512, 4095],
-  ])("caps %i-operation predicates after %i cheap units at a 64-unit batch", (marker, prefix) => {
-    const test = setup();
-    const batches = prefix === 0 ? 65 : 2;
-    function* steps(): Generator<number, ReadonlySet<string>> {
-      for (let index = 0; index < prefix; index += 1) {
-        test.state.visits += 1;
-        yield 1;
+  ])(
+    "continues %i-operation predicates after %i cheap units while budget remains",
+    (marker, prefix) => {
+      const test = setup();
+      const batches = prefix === 0 ? 65 : 2;
+      function* steps(): Generator<number, ReadonlySet<string>> {
+        for (let index = 0; index < prefix; index += 1) {
+          test.state.visits += 1;
+          yield 1;
+        }
+        for (let index = 0; index < batches; index += 1) {
+          test.state.visits += 1;
+          yield marker;
+        }
+        return new Set(["selected"]);
       }
-      for (let index = 0; index < batches; index += 1) {
+      const work = new SelectionQueryWork(
+        { ...test.options, workScheduler: workSchedulerFromFrames(test.scheduler) },
+        steps(),
+      );
+      expect(work.start()).toBe(true);
+      expect(test.state.visits).toBe(prefix + batches);
+      expect(test.setSelection).toHaveBeenCalledOnce();
+      expect(test.scheduler.pendingCount).toBe(0);
+    },
+  );
+
+  it("rechecks selection state at the charged-work quantum without a frame wait", () => {
+    const test = setup();
+    function* steps(): Generator<number, ReadonlySet<string>> {
+      for (let index = 0; index < 65; index += 1) {
         test.state.visits += 1;
-        yield marker;
+        if (index === 63) test.state.selection = new Set(["newer-selection"]);
+        yield 512;
       }
       return new Set(["selected"]);
     }
-    const work = new SelectionQueryWork(test.options, steps());
-    work.start();
-    // An empty slice admits 64 batches; 4095 cheap units admit one final
-    // batch, reaching 4159 charged units and preserving the 63-unit overrun.
-    expect(test.state.visits).toBe(prefix + (prefix === 0 ? 64 : 1));
-    expect(test.setSelection).not.toHaveBeenCalled();
-    expect(test.scheduler.pendingCount).toBe(1);
-    test.scheduler.runNext(1);
-    expect(test.state.visits).toBe(prefix + batches);
-    expect(test.setSelection).toHaveBeenCalledOnce();
+    const work = new SelectionQueryWork(
+      { ...test.options, workScheduler: workSchedulerFromFrames(test.scheduler) },
+      steps(),
+    );
+    expect(work.start()).toBe(false);
+    expect(test.state.visits).toBe(64);
     expect(test.scheduler.pendingCount).toBe(0);
+    expect(test.setSelection).not.toHaveBeenCalled();
   });
 });

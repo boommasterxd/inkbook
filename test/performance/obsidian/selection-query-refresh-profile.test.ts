@@ -23,8 +23,8 @@ const profile = INTERACTION_REFRESH_PROFILE;
 const targets = Array.from({ length: 10_000 }, (_, index) => indexedStroke(index));
 
 describe(`${profile.refreshRate} Hz selection-query scheduling`, () => {
-  it.for(["deadline", "hard-cap", "over-budget"] as const)(
-    "bounds actual selection iterator work at the %s checkpoint and releases cancellation",
+  it.for(["deadline", "in-budget", "over-budget"] as const)(
+    "tracks actual selection iterator work under %s scheduling",
     (checkpoint) => {
       const store = new ElementStore(targets);
       const scheduler = new ManualFrameScheduler();
@@ -54,7 +54,7 @@ describe(`${profile.refreshRate} Hz selection-query scheduling`, () => {
       const next = steps.next.bind(steps);
       let simulatedNow = 0;
       // Inject scheduling checkpoints only; these ticks do not measure execution speed.
-      const increment = checkpoint === "deadline" ? 1 : checkpoint === "hard-cap" ? 0 : 100;
+      const increment = checkpoint === "deadline" ? 1 : checkpoint === "in-budget" ? 0 : 100;
       const advance = vi.spyOn(steps, "next").mockImplementation(() => {
         const result = next();
         simulatedNow += increment;
@@ -74,12 +74,16 @@ describe(`${profile.refreshRate} Hz selection-query scheduling`, () => {
         steps,
       );
       const expected =
-        checkpoint === "deadline"
-          ? Math.ceil(profile.interruptibleSliceDeadlineMs)
-          : checkpoint === "hard-cap"
-            ? 4096
-            : 1;
+        checkpoint === "deadline" ? Math.ceil(profile.interruptibleSliceDeadlineMs) : 1;
       work.start();
+      if (checkpoint === "in-budget") {
+        expect(read).toHaveBeenCalledTimes(targets.length);
+        expect(advance.mock.calls.length).toBeGreaterThan(4096);
+        expect(scheduler.pendingCount).toBe(0);
+        expect(closed).toHaveBeenCalledOnce();
+        expect(publish).toHaveBeenCalledOnce();
+        return;
+      }
       expect(advance).toHaveBeenCalledTimes(expected);
       expect(scheduler.pendingCount).toBe(1);
       sliceStart = simulatedNow;
@@ -100,8 +104,14 @@ describe(`${profile.refreshRate} Hz contained selection completion`, () => {
   it.for(["rectangle", "lasso"] as const)(
     "completes 10,000 pressure strokes in bounded %s slices without rebuilding geometry",
     (area) => {
-      const test = containedSelection(area, targets);
-      const read = vi.spyOn(test.store, "get");
+      let reads = 0;
+      let readsBefore = 0;
+      const test = containedSelection(area, targets, undefined, () => reads - readsBefore >= 4096);
+      const get = test.store.get.bind(test.store);
+      const read = vi.spyOn(test.store, "get").mockImplementation((id) => {
+        reads += 1;
+        return get(id);
+      });
       const primitives = vi.spyOn(strokeSelectionGeometry, "strokePrimitiveSteps");
       const begin = test.sceneStore.beginQuery.bind(test.sceneStore);
       const query = begin({ minX: 0, minY: 0, maxX: 2000, maxY: 2000 });
@@ -109,7 +119,6 @@ describe(`${profile.refreshRate} Hz contained selection completion`, () => {
       vi.spyOn(test.sceneStore, "beginQuery").mockReturnValue(query);
       try {
         expect(test.preview.commit()).toBe(false);
-        let readsBefore = 0;
         let slices = 1;
         while (test.scheduler.pendingCount > 0 && slices <= (area === "lasso" ? 16 : 10)) {
           expect(read.mock.calls.length - readsBefore).toBeLessThanOrEqual(4096);
@@ -144,6 +153,7 @@ function containedSelection(
   area: "rectangle" | "lasso",
   elements: readonly InkElementV1[],
   outline?: readonly PointV1[],
+  shouldYield?: () => boolean,
 ) {
   const store = new ElementStore(elements);
   const sceneStore = new ElementSceneStore(store);
@@ -157,7 +167,9 @@ function containedSelection(
     renderer: createSelectionPreviewRenderer(),
     pageToScreen: (point) => point,
     frameScheduler: scheduler,
-    workScheduler: workSchedulerFromFrames(scheduler),
+    workScheduler: workSchedulerFromFrames(scheduler, {
+      shouldYield: shouldYield ?? (() => false),
+    }),
     selection: () => selection,
     selectionDefaults: { area, inclusion: outline === undefined ? "fully-enclosed" : "touched" },
     setSelection: publish,

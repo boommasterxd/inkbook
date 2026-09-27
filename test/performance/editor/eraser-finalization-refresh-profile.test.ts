@@ -54,6 +54,38 @@ it.for([16, 128])(
   },
 );
 
+it("drains multiple feedback quanta without a frame wait while the shared budget remains", async () => {
+  const fixture = createCountedDenseStrokeEraser(16);
+  const yieldControl = vi.fn(async () => undefined);
+  const remove = vi.fn((ids: ReadonlySet<string>) => {
+    expect(ids.size).toBe(16);
+    return true;
+  });
+  let checkpoints = 0;
+  let totalPointReads = fixture.takePointReads();
+  fixture.eraser.update({ x: MAX_STROKE_POINTS + 1_000, y: 0 });
+  totalPointReads += fixture.takePointReads();
+
+  const committed = await fixture.eraser.commit(remove, {
+    isCancelled: () => false,
+    shouldYield: () => {
+      const reads = fixture.takePointReads();
+      totalPointReads += reads;
+      expect(reads).toBeLessThanOrEqual(256 + 2);
+      checkpoints += 1;
+      return false;
+    },
+    yieldControl,
+  });
+
+  expect(committed).toBe(true);
+  expect(remove).toHaveBeenCalledOnce();
+  expect(checkpoints).toBeGreaterThan(12_288 / 256);
+  expect(totalPointReads + fixture.takePointReads()).toBeGreaterThan(12_288);
+  expect(yieldControl).not.toHaveBeenCalled();
+  expect(fixture.eraser.retainedSweepCount).toBe(0);
+});
+
 it("cancels finalization at the next yield without reading or publishing more work", async () => {
   const fixture = createCountedDenseStrokeEraser(128);
   const clock = vi.spyOn(performance, "now").mockReturnValue(0);

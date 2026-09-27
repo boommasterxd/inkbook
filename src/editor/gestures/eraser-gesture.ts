@@ -153,16 +153,20 @@ export class EraserSweep {
       const sliceBudgetMs = Math.max(0, this.#sliceBudgetMs() - FINALIZATION_SCHEDULING_RESERVE_MS);
       const workUnits = finalizationWorkUnits(sliceBudgetMs);
       let remaining = WORK_UNITS_PER_UPDATE;
+      let shouldWait = false;
       do {
         if (scheduler.isCancelled() || this.#isCancelled()) return this.#cancelFinalization();
         const checkpoint = Math.min(remaining, workUnits);
         this.#processPending(checkpoint, added);
         remaining -= checkpoint;
         if (this.retainedSweepCount === 0) break;
-      } while (remaining > 0 && !scheduler.shouldYield());
+        shouldWait = scheduler.shouldYield();
+      } while (remaining > 0 && !shouldWait);
       this.#publishAdded(added);
       added.length = 0;
-      if (this.retainedSweepCount > 0) await scheduler.yieldControl();
+      if (this.retainedSweepCount > 0 && (shouldWait || scheduler.shouldYield())) {
+        await scheduler.yieldControl();
+      }
     }
     this.#publishAdded(added);
     if (scheduler.isCancelled() || this.#isCancelled()) return this.#cancelFinalization();

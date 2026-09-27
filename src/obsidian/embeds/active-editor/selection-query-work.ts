@@ -2,8 +2,8 @@ import type { SelectionPreviewOptions } from "./selection-preview-contracts";
 import type { SelectionQueryStep } from "../../../editor/selection/public";
 import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 
-// Keep 64 expensive batches while allowing cheap bounds decisions to share a slice.
-const WORK_UNITS_PER_FRAME = 4096;
+// Recheck selection identity after bounded work, without imposing a frame wait.
+const WORK_UNITS_PER_SELECTION_CHECK = 4096;
 const GEOMETRY_BATCH_WORK_UNITS = 64;
 type SelectionQueryOptions = Pick<
   SelectionPreviewOptions,
@@ -66,24 +66,33 @@ export class SelectionQueryWork {
   #runSlice(admitted: boolean): void {
     this.#frame = undefined;
     if (this.#finished) return;
-    const current = this.#options.selection();
-    if (current !== this.#selection && !sameMembers(current, this.#selection)) return this.cancel();
+    if (this.#selectionChanged()) return this.cancel();
     const scheduler = this.#options.workScheduler;
     if (!admitted && scheduler.shouldYield()) return this.#scheduleFrame();
-    let remaining = WORK_UNITS_PER_FRAME;
-    while (remaining > 0) {
+    let remaining = WORK_UNITS_PER_SELECTION_CHECK;
+    while (true) {
       const result = this.#steps.next();
+      if (this.#finished) return;
       if (result.done) {
         this.cancel();
+        if (this.#selectionChanged()) return;
         this.#changed = !sameMembers(result.value, this.#selection);
         if (this.#changed) this.#options.setSelection(result.value);
         return;
       }
       // Keep large predicates within the existing batch charge and maximum 63-unit overrun.
       remaining -= Math.min(result.value ?? GEOMETRY_BATCH_WORK_UNITS, GEOMETRY_BATCH_WORK_UNITS);
-      if (scheduler.shouldYield()) break;
+      if (remaining <= 0) {
+        if (this.#selectionChanged()) return this.cancel();
+        remaining = WORK_UNITS_PER_SELECTION_CHECK;
+      }
+      if (scheduler.shouldYield()) return this.#scheduleFrame();
     }
-    this.#scheduleFrame();
+  }
+
+  #selectionChanged(): boolean {
+    const current = this.#options.selection();
+    return current !== this.#selection && !sameMembers(current, this.#selection);
   }
 
   #scheduleFrame(): void {
