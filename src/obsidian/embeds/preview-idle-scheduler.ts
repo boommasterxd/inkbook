@@ -19,8 +19,7 @@ export class PreviewIdleScheduler {
     await this.waitForBackground();
     if (this.#disposed) return;
     try {
-      if (initial) await this.workScheduler.checkpoint(this.#abort.signal);
-      else await this.workScheduler.nextFrame(this.#abort.signal);
+      await this.workScheduler.checkpoint(this.#abort.signal);
     } catch (error: unknown) {
       if (!this.#disposed) throw error;
     }

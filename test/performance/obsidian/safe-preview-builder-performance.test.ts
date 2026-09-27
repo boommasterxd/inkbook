@@ -2,6 +2,7 @@
 
 import { afterEach, expect, it, vi } from "vitest";
 import { createPreviewSvgAsync } from "../../../src/obsidian/embeds/safe-preview-builder";
+import { PreviewIdleScheduler } from "../../../src/obsidian/embeds/preview-idle-scheduler";
 import { immediateWorkScheduler } from "../../fixtures/obsidian/immediate-work-scheduler";
 
 afterEach(() => vi.restoreAllMocks());
@@ -99,4 +100,70 @@ it("completes a small preview in its initial bounded slice without continuation 
   expect(create).toHaveBeenCalledTimes(101);
   expect(svg?.querySelectorAll("path")).toHaveLength(100);
   expect(svg?.isConnected).toBe(false);
+});
+
+it("keeps multiple detached DOM work quanta in the current shared budget", async () => {
+  const create = vi.spyOn(document, "createElementNS");
+  const checkpoint = vi.fn(() => undefined);
+  const nextFrame = vi.fn(async () => {});
+  const workScheduler = { ...immediateWorkScheduler(), checkpoint, nextFrame };
+  const scheduler = new PreviewIdleScheduler(workScheduler);
+  const svg = await createPreviewSvgAsync(
+    document,
+    `<svg>${'<path d="M0 0"/>'.repeat(1_024)}</svg>`,
+    {
+      checkpoint: (initial) => scheduler.checkpoint(initial),
+      workScheduler,
+      isCancelled: () => false,
+    },
+  );
+  expect(create).toHaveBeenCalledTimes(1_025);
+  expect(checkpoint.mock.calls.length).toBeGreaterThan(4);
+  expect(nextFrame).not.toHaveBeenCalled();
+  expect(svg?.isConnected).toBe(false);
+  scheduler.dispose();
+});
+
+it("waits for central admission when actual DOM creation exhausts the budget", async () => {
+  let created = 0;
+  let deadline = 300;
+  let frameWaits = 0;
+  let release!: () => void;
+  const create = document.createElementNS.bind(document);
+  vi.spyOn(document, "createElementNS").mockImplementation((...args) => {
+    created += 1;
+    return create(...args);
+  });
+  const checkpoint = vi.fn(() => {
+    if (created < deadline) return undefined;
+    frameWaits += 1;
+    return new Promise<void>((resolve) => {
+      release = () => {
+        deadline += 300;
+        resolve();
+      };
+    });
+  });
+  const nextFrame = vi.fn(async () => {});
+  const workScheduler = {
+    ...immediateWorkScheduler(),
+    shouldYield: () => created >= deadline,
+    checkpoint,
+    nextFrame,
+  };
+  const scheduler = new PreviewIdleScheduler(workScheduler);
+  const pending = createPreviewSvgAsync(document, `<svg>${'<path d="M0 0"/>'.repeat(512)}</svg>`, {
+    checkpoint: (initial) => scheduler.checkpoint(initial),
+    workScheduler,
+    isCancelled: () => false,
+  });
+  await vi.waitFor(() => expect(created).toBe(300));
+  expect(checkpoint).toHaveBeenCalledTimes(3);
+  expect(nextFrame).not.toHaveBeenCalled();
+  release();
+  const svg = await pending;
+  expect(created).toBe(513);
+  expect(frameWaits).toBe(1);
+  expect(svg?.querySelectorAll("path")).toHaveLength(512);
+  scheduler.dispose();
 });

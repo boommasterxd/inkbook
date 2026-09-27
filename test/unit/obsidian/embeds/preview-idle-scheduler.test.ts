@@ -3,8 +3,8 @@ import { PreviewIdleScheduler } from "../../../../src/obsidian/embeds/preview-id
 import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 
 function fixture() {
-  let releaseFrame: (() => void) | undefined;
-  const nextFrame = vi.fn(
+  let releaseBudget: (() => void) | undefined;
+  const checkpoint = vi.fn(
     (signal?: AbortSignal) =>
       new Promise<void>((resolve, reject) => {
         if (signal?.aborted === true) {
@@ -13,30 +13,42 @@ function fixture() {
         }
         const onAbort = () => reject(new Error("aborted"));
         signal?.addEventListener("abort", onAbort, { once: true });
-        releaseFrame = () => {
+        releaseBudget = () => {
           signal?.removeEventListener("abort", onAbort);
           resolve();
         };
       }),
   );
-  const scheduler = new PreviewIdleScheduler({ ...immediateWorkScheduler(), nextFrame });
-  return { nextFrame, scheduler, releaseFrame: () => releaseFrame?.() };
+  const nextFrame = vi.fn(async () => {});
+  const scheduler = new PreviewIdleScheduler({
+    ...immediateWorkScheduler(),
+    checkpoint,
+    nextFrame,
+  });
+  return { checkpoint, nextFrame, scheduler, releaseBudget: () => releaseBudget?.() };
 }
 
 it("starts the initial bounded slice after the input gate without a frame handoff", async () => {
-  const f = fixture();
+  const checkpoint = vi.fn(() => undefined);
+  const nextFrame = vi.fn(async () => {});
+  const scheduler = new PreviewIdleScheduler({
+    ...immediateWorkScheduler(),
+    checkpoint,
+    nextFrame,
+  });
   let release!: () => void;
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
-  f.scheduler.setBackgroundWait(() => gate);
-  const initial = f.scheduler.checkpoint(true);
+  scheduler.setBackgroundWait(() => gate);
+  const initial = scheduler.checkpoint(true);
   await Promise.resolve();
-  expect(f.nextFrame).not.toHaveBeenCalled();
+  expect(checkpoint).not.toHaveBeenCalled();
   release();
   await initial;
-  expect(f.nextFrame).not.toHaveBeenCalled();
-  f.scheduler.dispose();
+  expect(checkpoint).toHaveBeenCalledOnce();
+  expect(nextFrame).not.toHaveBeenCalled();
+  scheduler.dispose();
 });
 
 it("waits for the shared deadline when the initial slice is already exhausted", async () => {
@@ -60,7 +72,7 @@ it("waits for the shared deadline when the initial slice is already exhausted", 
   scheduler.dispose();
 });
 
-it("uses the shared frame scheduler and checks input again before continuation", async () => {
+it("waits only for an exhausted shared budget and checks input again afterward", async () => {
   const f = fixture();
   let release!: () => void;
   const gate = new Promise<void>((resolve) => {
@@ -69,9 +81,9 @@ it("uses the shared frame scheduler and checks input again before continuation",
   let input = false;
   f.scheduler.setBackgroundWait(() => (input ? gate : Promise.resolve()));
   const continuation = f.scheduler.checkpoint();
-  await vi.waitFor(() => expect(f.nextFrame).toHaveBeenCalledOnce());
+  await vi.waitFor(() => expect(f.checkpoint).toHaveBeenCalledOnce());
   input = true;
-  f.releaseFrame();
+  f.releaseBudget();
   let completed = false;
   void continuation.then(() => {
     completed = true;
@@ -81,10 +93,11 @@ it("uses the shared frame scheduler and checks input again before continuation",
   release();
   await continuation;
   expect(completed).toBe(true);
+  expect(f.nextFrame).not.toHaveBeenCalled();
   f.scheduler.dispose();
 });
 
-it("releases waiting input and scheduled frames on disposal", async () => {
+it("releases waiting input and scheduled budget continuations on disposal", async () => {
   const f = fixture();
   f.scheduler.setBackgroundWait(() => new Promise<void>(() => undefined));
   const controller = new AbortController();
@@ -95,15 +108,16 @@ it("releases waiting input and scheduled frames on disposal", async () => {
   expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
   f.scheduler.setBackgroundWait(undefined);
   const frame = f.scheduler.checkpoint();
-  await vi.waitFor(() => expect(f.nextFrame).toHaveBeenCalledOnce());
+  await vi.waitFor(() => expect(f.checkpoint).toHaveBeenCalledOnce());
   f.scheduler.dispose();
   await frame;
+  expect(f.nextFrame).not.toHaveBeenCalled();
 });
 
 it("propagates shared scheduler failures while the preview is live", async () => {
   const scheduler = new PreviewIdleScheduler({
     ...immediateWorkScheduler(),
-    nextFrame: () => Promise.reject(new Error("closed window")),
+    checkpoint: () => Promise.reject(new Error("closed window")),
   });
   await expect(scheduler.checkpoint()).rejects.toThrow("closed window");
   scheduler.dispose();

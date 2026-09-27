@@ -34,7 +34,9 @@ continuations before admitting competing work. Live settings update existing
 schedulers and workers rather than creating fresh per-operation allowances.
 
 Preserve bounded work units, frame publication caps, input-priority gates,
-transaction generations, and cancellation checks. An atomic native operation
+transaction generations, and cancellation checks. Detached preview preparation
+quanta recheck the shared deadline without forcing a new frame while budget
+remains; only visible publication caps carry a frame dependency. An atomic native operation
 cannot be interrupted by this policy. Semantic gesture delays, animation
 durations, and I/O timeouts retain their own purpose. Autosave now starts after
 1,000 milliseconds of content inactivity; explicit flush and lifecycle save
