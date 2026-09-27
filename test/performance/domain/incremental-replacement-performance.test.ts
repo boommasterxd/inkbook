@@ -1,3 +1,4 @@
+import { observeSchemaArray } from "../../fixtures/domain/schema-array-work";
 import { expect, it, vi } from "vitest";
 import * as elementValidation from "../../../src/domain/schema/element-validation";
 import { applySelectionStyleChange } from "../../../src/editor/tools/style-change";
@@ -9,7 +10,22 @@ import { createStandardDomainFixture } from "./standard-domain-fixture";
 
 it("prepares replacements incrementally and preserves unrelated records", async () => {
   const fixture = createStandardDomainFixture();
-  const store = new ElementStore(fixture.elements);
+  const observations = fixture.elements.flatMap((element) => {
+    if (element.kind !== "stroke") return [];
+    const observation = observeSchemaArray(element.points);
+    element.points = observation.observed;
+    return [observation];
+  });
+  const builder = ElementStore.createBuilder({
+    shouldYield: () => false,
+    yieldControl: async () => undefined,
+  });
+  await builder.appendOwnedRuntime(fixture.elements);
+  const store = (await builder.finalize())!;
+  for (const { work } of observations) {
+    work.indexedReads = 0;
+    work.descriptorReads = 0;
+  }
   const selected = new Set(fixture.strokeIds);
   const unrelated = fixture.elements
     .filter(({ id }) => !selected.has(id))
@@ -27,6 +43,13 @@ it("prepares replacements incrementally and preserves unrelated records", async 
   const result = store.commitPreparedElementReplacement(prepared.token);
   expect(result.status).toBe("committed");
   expect(result.delta?.changes).toHaveLength(10_000);
+  expect(
+    observations.every(({ work }) => work.indexedReads === 0 && work.descriptorReads === 0),
+  ).toBe(true);
+  for (const stroke of strokes) {
+    const moved = store.get(stroke.id)!.element;
+    expect(moved.kind === "stroke" && moved.points).toBe(stroke.points);
+  }
   expect(scheduler.checkpointCounts.length).toBeGreaterThan(1);
   expect(scheduler.checkpointCounts.every((count) => count <= 40)).toBe(true);
   for (const record of unrelated) expect(store.get(record.element.id)).toBe(record);

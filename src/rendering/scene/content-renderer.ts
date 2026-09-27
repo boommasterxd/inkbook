@@ -1,3 +1,5 @@
+import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
+import { sameStrokeShape } from "./stroke-position";
 import { CommittedPreviewGeometry } from "./committed-preview-geometry";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import { buildElementPathParts, type SvgPathPart } from "../../domain/geometry/element-path";
@@ -270,7 +272,12 @@ export class SceneContentRenderer {
       this.#deferredPreviews.add(element.id);
       return false;
     }
-    return this.applyCanonicalElementPreview(element, buildElementPathParts(element));
+    const entry = this.#mounted.get(element.id);
+    const parts =
+      entry !== undefined && sameStrokeShape(entry.displayedElement, element)
+        ? entry.displayedPathParts
+        : buildElementPathParts(element.kind === "stroke" ? strokeLocalGeometry(element) : element);
+    return this.applyCanonicalElementPreview(element, parts);
   }
 
   public applyCanonicalElementPreview(
@@ -388,6 +395,9 @@ export class SceneContentRenderer {
       this.#committedGeometry.has(id) ||
       (record.element.kind === "stroke" && record.element.style.pressureEnabled);
     const parts =
+      (sameStrokeShape(entry.displayedElement, record.element)
+        ? entry.displayedPathParts
+        : undefined) ??
       this.#pathCache.read(record.element, pressure) ??
       (pending
         ? this.#committedGeometry.prepare(record, deadline, now, pressure)

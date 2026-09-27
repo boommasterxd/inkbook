@@ -4,7 +4,7 @@ import { MAX_STROKE_POINTS } from "../schema/constants";
 import type { SvgPathPart } from "./svg-path-part";
 import { buildPressureOutline } from "./pressure-outline";
 import type { PointV1, StrokeElementV1 } from "../schema/types";
-import { rotatePointClockwise } from "./primitives";
+import { strokeWorldPoint } from "./stroke-position";
 import { lineTo, moveTo } from "./svg-format";
 
 export interface RawStrokeSample extends PointV1 {
@@ -35,12 +35,11 @@ export function smoothStrokeCenters(samples: readonly number[]): StrokeCenter[] 
 
 export function transformedStrokeCenters(stroke: StrokeElementV1): StrokeCenter[] {
   const smoothed = smoothStrokeCenters(stroke.points);
-  return stroke.rotation === 0
-    ? smoothed
-    : smoothed.map((center) => ({
-        ...rotatePointClockwise(center, stroke.pivot, stroke.rotation),
-        pressure: center.pressure,
-      }));
+  if (stroke.rotation === 0 && stroke.offset === undefined) return smoothed;
+  return smoothed.map((center) => ({
+    ...strokeWorldPoint(stroke, center),
+    pressure: center.pressure,
+  }));
 }
 
 /** Validated samples are visited incrementally by cancellable scene preparation. */
@@ -53,12 +52,7 @@ export function* iterateTransformedStrokeCenters(stroke: StrokeElementV1): Gener
         throw new RangeError("Stroke samples must be finite.");
     }
     const center = strokeCenterAt(stroke.points, index, count);
-    yield stroke.rotation === 0
-      ? center
-      : {
-          ...rotatePointClockwise(center, stroke.pivot, stroke.rotation),
-          pressure: center.pressure,
-        };
+    yield { ...strokeWorldPoint(stroke, center), pressure: center.pressure };
   }
 }
 

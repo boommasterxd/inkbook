@@ -50,7 +50,11 @@ function strokeGeometryEqual(
   right: InkElementV1,
 ): boolean {
   return (
-    right.kind === "stroke" && left.tool === right.tool && valuesEqual(left.points, right.points)
+    right.kind === "stroke" &&
+    left.tool === right.tool &&
+    (left.offset?.x ?? 0) === (right.offset?.x ?? 0) &&
+    (left.offset?.y ?? 0) === (right.offset?.y ?? 0) &&
+    valuesEqual(left.points, right.points)
   );
 }
 

@@ -20,6 +20,9 @@ export class LassoPreview implements GesturePreview {
   #current: PointV1;
   #finished = false;
   #work: SelectionQueryWork | undefined;
+  #projectedSegments: string[] = [];
+  #projectedFirst: PointV1 | undefined;
+  #cameraKey: readonly number[] | undefined;
 
   public get frameSampleMode(): CoalescedFrameSampleMode {
     return this.#selectionDefaults.area === "lasso" ? "preserve" : "latest";
@@ -76,21 +79,56 @@ export class LassoPreview implements GesturePreview {
   public updateSamples(samples: readonly CoalescedCreationSample[]): void {
     this.#assertActive();
     if (samples.length === 0) return;
+    const previous = this.#current;
     this.#current = samples[samples.length - 1]!;
-    if (this.#selectionDefaults.area === "lasso") this.#lasso.appendBatch(samples);
-    this.#render();
+    const changed =
+      this.#selectionDefaults.area === "lasso"
+        ? this.#lasso.appendBatch(samples)
+        : previous.x !== this.#current.x || previous.y !== this.#current.y;
+    const cameraChanged = this.#cameraChanged();
+    if (!changed && !cameraChanged) return;
+    this.#render(cameraChanged);
   }
 
   #assertActive(): void {
     if (this.#finished) throw new Error("A completed lasso preview cannot be updated.");
   }
 
-  #render(): void {
+  #render(cameraChanged = this.#cameraChanged()): void {
     const points =
       this.#selectionDefaults.area === "rectangle"
         ? createRectangleSelectionArea(this.#options.start.pointer, this.#current).points
         : this.#lasso.points;
+    if (this.#selectionDefaults.area === "lasso") {
+      if (cameraChanged || this.#projectedFirst !== points[0]) {
+        this.#projectedSegments = [];
+        this.#projectedFirst = points[0];
+      }
+      for (let index = this.#projectedSegments.length; index < points.length; index += 1) {
+        const screen = this.#options.pageToScreen(points[index]!);
+        this.#projectedSegments.push(
+          `${index === 0 ? "M" : "L"} ${String(screen.x)} ${String(screen.y)}`,
+        );
+      }
+      this.#options.renderer.setOverlayPath(
+        [...this.#projectedSegments, ...(points.length >= 3 ? ["Z"] : [])].join(" "),
+      );
+      return;
+    }
     this.#options.renderer.setOverlayPath(screenSelectionPath(points, this.#options.pageToScreen));
+  }
+
+  #cameraChanged(): boolean {
+    const project = this.#options.pageToScreen;
+    const origin = project({ x: 0, y: 0 });
+    const horizontal = project({ x: 1, y: 0 });
+    const vertical = project({ x: 0, y: 1 });
+    const next = [origin.x, origin.y, horizontal.x, horizontal.y, vertical.x, vertical.y];
+    const previous = this.#cameraKey;
+    if (previous !== undefined && next.every((value, index) => value === previous[index]))
+      return false;
+    this.#cameraKey = next;
+    return true;
   }
 
   #selectionArea(): SelectionArea | null {

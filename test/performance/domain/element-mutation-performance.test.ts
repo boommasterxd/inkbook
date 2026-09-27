@@ -10,6 +10,11 @@ import * as cellMembership from "../../../src/domain/spatial/cell-membership";
 import * as immutability from "../../../src/domain/store/immutability";
 import * as recordFactory from "../../../src/domain/store/record-factory";
 import { UniformSpatialIndex } from "../../../src/domain/spatial/index";
+import { DocumentCapacity } from "../../../src/domain/store/document-capacity";
+import { planElementMutation } from "../../../src/domain/store/element-mutation";
+import { renderBandOf } from "../../../src/domain/commands/render-bands";
+import * as renderBands from "../../../src/domain/commands/render-bands";
+import type { ElementRank } from "../../../src/domain/store/types";
 
 import { CheckpointSliceScheduler } from "./domain-scenarios";
 import {
@@ -41,6 +46,99 @@ it("atomically cuts and restores 10,000 strokes while yielding during preparatio
   for (const id of fixture.strokeIds) expect(store.get(id)).toBeDefined();
   unsubscribe();
 }, 60_000);
+
+it("prepares a single end-of-band deletion without enumerating unaffected records", async () => {
+  const fixture = createStandardRuntimeDomainFixture();
+  const records = new Map(
+    fixture.elements.map((element) => {
+      const record = recordFactory.createInitialRecord(element);
+      return [element.id, record] as const;
+    }),
+  );
+  const capacity = new DocumentCapacity();
+  capacity.commit(capacity.prepare([], [...records.values()]));
+  const index = new UniformSpatialIndex<string>();
+  index.insertMany(
+    [...records.values()].map(({ element, bounds }) => ({ id: element.id, bounds })),
+  );
+  const content = fixture.elements
+    .filter((element) => renderBandOf(element) === "content")
+    .map(({ id }) => id);
+  const highlight = fixture.elements
+    .filter((element) => renderBandOf(element) === "highlight")
+    .map(({ id }) => id);
+  const ranks = new Map<string, ElementRank>();
+  for (const [rank, id] of content.entries()) ranks.set(id, { band: "content", rank });
+  for (const [rank, id] of highlight.entries()) ranks.set(id, { band: "highlight", rank });
+  const removed = content[content.length - 1]!;
+  const enumerate = vi.spyOn(records, Symbol.iterator);
+  const keys = vi.spyOn(records, "keys");
+  try {
+    const plan = await planElementMutation(
+      {
+        capacity,
+        index,
+        bands: { content, highlight },
+        geometryVersion: 0,
+        paintVersion: 0,
+        ranks,
+        records,
+        reverseConnections: new Map(),
+      },
+      { bands: { content: content.slice(0, -1), highlight }, removeIds: [removed] },
+      {
+        shouldYield: () => false,
+        yieldControl: async () => undefined,
+      },
+    );
+    if (plan === null || plan === "cancelled") throw new Error("Expected a prepared deletion.");
+    expect(plan.records.size).toBe(1);
+    expect(plan.ranks.size).toBe(0);
+    expect(plan.delta.changes).toHaveLength(1);
+    expect(enumerate).not.toHaveBeenCalled();
+    expect(keys).not.toHaveBeenCalled();
+  } finally {
+    enumerate.mockRestore();
+    keys.mockRestore();
+  }
+}, 30_000);
+
+it("reuses store-owned removal order without revalidating every unaffected element", async () => {
+  const fixture = createStandardDomainFixture();
+  const store = new ElementStore(fixture.elements);
+  const content = store.materializeBandOrder("content");
+  const removed = content[content.length - 1]!;
+  const scheduler = { shouldYield: () => false, yieldControl: async () => undefined };
+  let cancelled = false;
+  let yields = 0;
+  expect(
+    await store.createRemovalMutationTimeSliced(new Set(fixture.strokeIds), {
+      isCancelled: () => cancelled,
+      shouldYield: () => false,
+      yieldControl: async () => {
+        yields += 1;
+        cancelled = true;
+      },
+    }),
+  ).toBe("cancelled");
+  expect(yields).toBe(1);
+  expect(store.size).toBe(fixture.elements.length);
+  const mutation = await store.createRemovalMutationTimeSliced(new Set([removed]), scheduler);
+  if (mutation === null || mutation === "cancelled")
+    throw new Error("Expected a removal mutation.");
+  const bandCheck = vi.spyOn(renderBands, "renderBandOf");
+  try {
+    const prepared = await store.prepareElementMutation(mutation, scheduler);
+    expect(prepared.status).toBe("prepared");
+    expect(bandCheck).not.toHaveBeenCalled();
+    if (prepared.token === null) throw new Error("Expected a prepared token.");
+    const committed = store.commitPreparedElementMutation(prepared.token);
+    expect(committed.delta?.changes).toHaveLength(1);
+    expect(store.get(removed)).toBeUndefined();
+  } finally {
+    bandCheck.mockRestore();
+  }
+}, 30_000);
 
 async function applyMutation(
   store: ElementStore,

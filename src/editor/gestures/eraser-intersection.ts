@@ -61,6 +61,12 @@ class ResumableSweptCapsuleCheck implements SweptCapsuleCheck {
     this.#element = element;
     this.#localStart = rotatePointClockwise(start, element.pivot, -element.rotation);
     this.#localEnd = rotatePointClockwise(end, element.pivot, -element.rotation);
+    if (element.kind === "stroke" && element.offset !== undefined) {
+      this.#localStart.x -= element.offset.x;
+      this.#localStart.y -= element.offset.y;
+      this.#localEnd.x -= element.offset.x;
+      this.#localEnd.y -= element.offset.y;
+    }
     this.#sweep = numericSegment(this.#localStart, this.#localEnd);
     this.#radius = radius;
     if (element.kind === "stroke") {

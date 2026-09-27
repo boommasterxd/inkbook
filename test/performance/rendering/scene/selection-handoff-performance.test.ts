@@ -1,3 +1,4 @@
+import * as strokeGeometry from "../../../../src/domain/geometry/stroke-path";
 import { describe, expect, it, vi } from "vitest";
 
 import type { InkElementV1, PageV1 } from "../../../../src/domain/schema/public";
@@ -34,6 +35,7 @@ describe("selection preview handoff performance", () => {
     renderer.setPage(PAGE, 200_000);
     scheduler.runAll();
     verifyBoundedSelectionFrame(renderer, store);
+    const centers = vi.spyOn(strokeGeometry, "iterateTransformedStrokeCenters");
     let notifications = 0;
     const unsubscribe = store.subscribe((delta) => {
       notifications += 1;
@@ -80,9 +82,11 @@ describe("selection preview handoff performance", () => {
       expect(store.instrumentation.bandScans).toBe(0);
       expect(scheduler.pendingCount).toBe(1);
       scheduler.runAll();
-      expect(transformedContentCount(renderer)).toBe(0);
+      expect(transformedContentCount(renderer)).toBe(run === 0 ? renderer.mountedCount : 0);
+      expect(centers).not.toHaveBeenCalled();
     }
 
+    centers.mockRestore();
     unsubscribe();
     renderer.destroy();
     expect(notifications).toBe(HANDOFF_TRANSITIONS);

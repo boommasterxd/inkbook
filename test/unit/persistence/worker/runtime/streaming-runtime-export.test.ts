@@ -140,7 +140,7 @@ describe("production streaming runtime export limits", () => {
 describe("runtime canonical metadata hashing", () => {
   it("matches the canonical v1 hash through the asynchronous platform digest", async () => {
     const document = rectangleDocument(4);
-    const fragments = document.elements.map(buildElementFragments);
+    const fragments = document.elements.map((element) => buildElementFragments(element));
     let digestedBytes = 0;
 
     const actual = await canonicalMetadataSha256Async(
@@ -165,7 +165,7 @@ describe("runtime canonical metadata hashing", () => {
     ["rejected", async () => Promise.reject(new Error("Digest unavailable."))],
   ] as const)("preserves the canonical hash when WebCrypto is %s", async (_name, digest) => {
     const document = rectangleDocument(2);
-    const fragments = document.elements.map(buildElementFragments);
+    const fragments = document.elements.map((element) => buildElementFragments(element));
 
     await expect(
       canonicalMetadataSha256Async(
@@ -179,7 +179,7 @@ describe("runtime canonical metadata hashing", () => {
 
   it("aborts during bounded canonical metadata assembly before digesting", async () => {
     const document = rectangleDocument(20);
-    const fragments = document.elements.map(buildElementFragments);
+    const fragments = document.elements.map((element) => buildElementFragments(element));
     const controller = new AbortController();
     let digestInvoked = false;
 

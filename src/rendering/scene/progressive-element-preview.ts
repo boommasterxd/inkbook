@@ -1,3 +1,4 @@
+import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
 import { buildElementPathParts, type SvgPathPart } from "../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../domain/schema/public";
 import type { SceneContentRenderer } from "./content-renderer";
@@ -165,7 +166,9 @@ export class ProgressiveElementPreview {
             {
               element,
               feedback: this.#snapshotFeedback.get(id),
-              parts: buildElementPathParts(element),
+              parts: buildElementPathParts(
+                element.kind === "stroke" ? strokeLocalGeometry(element) : element,
+              ),
             },
             this.#versions.get(id)!,
           );
@@ -228,7 +231,13 @@ export class ProgressiveElementPreview {
       this.#pending = undefined;
     }
     this.#complete(
-      { element, feedback: request.feedback, parts: buildElementPathParts(element) },
+      {
+        element,
+        feedback: request.feedback,
+        parts: buildElementPathParts(
+          element.kind === "stroke" ? strokeLocalGeometry(element) : element,
+        ),
+      },
       request.version,
     );
     return true;

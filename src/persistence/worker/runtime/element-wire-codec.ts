@@ -1,5 +1,5 @@
 import { copyStrokeSamplesToRuntime } from "../../../domain/elements/public";
-import type { InkElementV1, StrokeElementV1 } from "../../../domain/schema/public";
+import type { InkElementV1, StrokeElementV1, StrokeSamplesV1 } from "../../../domain/schema/public";
 import { adoptTransferredStrokeSamples } from "./runtime-elements";
 
 type NonStrokeElement = Exclude<InkElementV1, StrokeElementV1>;
@@ -14,6 +14,7 @@ export interface PackedElements {
 export interface RuntimeWireSliceOptions {
   readonly checkpoint: () => Promise<void>;
   readonly signal: AbortSignal;
+  readonly reusePoints?: (element: InkElementV1) => boolean;
 }
 
 export function packElements(elements: readonly InkElementV1[]): PackedElements {
@@ -32,7 +33,7 @@ export async function packElementsChunked(
   let bytesSinceCheckpoint = 0;
   for (let index = 0; index < elements.length; index += 1) {
     const element = elements[index]!;
-    appendPackedElement(element, records, pointBuffers);
+    appendPackedElement(element, records, pointBuffers, options.reusePoints);
     bytesSinceCheckpoint += estimatedElementBytes(element);
     if ((index + 1) % 64 !== 0 && bytesSinceCheckpoint < 256 * 1024) continue;
     await options.checkpoint();
@@ -42,7 +43,10 @@ export async function packElementsChunked(
   return { pointBuffers, records };
 }
 
-export function unpackElements(packed: PackedElements): InkElementV1[] {
+export function unpackElements(
+  packed: PackedElements,
+  resolvePoints?: (id: string) => StrokeSamplesV1,
+): InkElementV1[] {
   if (!hasPackedArrays(packed)) {
     throw new TypeError("Packed elements must contain record and point-buffer arrays.");
   }
@@ -50,6 +54,10 @@ export function unpackElements(packed: PackedElements): InkElementV1[] {
   const elements = packed.records.map((record) => {
     if (record.kind !== "stroke") return record;
     const index = record.pointsBufferIndex;
+    if (index === -1 && resolvePoints !== undefined) {
+      const { pointsBufferIndex: _index, ...element } = record;
+      return { ...element, points: resolvePoints(record.id) };
+    }
     if (
       !Number.isSafeInteger(index) ||
       index < 0 ||
@@ -76,13 +84,15 @@ function appendPackedElement(
   element: InkElementV1,
   records: PackedElement[],
   pointBuffers: Float64Array[],
+  reusePoints?: (element: InkElementV1) => boolean,
 ): void {
+  const reused = reusePoints?.(element) === true;
   if (element.kind !== "stroke") {
     records.push(element);
     return;
   }
-  const pointsBufferIndex = pointBuffers.length;
-  pointBuffers.push(copyStrokeSamplesToRuntime(element.points));
+  const pointsBufferIndex = reused ? -1 : pointBuffers.length;
+  if (!reused) pointBuffers.push(copyStrokeSamplesToRuntime(element.points));
   const { points: _points, ...record } = element;
   records.push({ ...record, pointsBufferIndex });
 }

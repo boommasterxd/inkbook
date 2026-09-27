@@ -46,7 +46,7 @@ describe("prepared selection preview lifecycle", () => {
     expect(pending).toEqual([true, false]);
   });
 
-  it("slices a small selection whose samples exceed the synchronous work budget", async () => {
+  it("keeps a small move synchronous regardless of unchanged sample count", () => {
     const prepareElementReplacement = vi.fn(async () => ({
       status: "cancelled" as const,
       token: null,
@@ -62,9 +62,9 @@ describe("prepared selection preview lifecycle", () => {
       ...indexedStroke(index),
       points: Array.from({ length: 9_000 }, () => [20, 20, 0.5]).flat(),
     }));
-    expect(prepared.commitMove(elements, { x: 1, y: 1 })).toBe(true);
-    await vi.waitFor(() => expect(motion.cancel).toHaveBeenCalledOnce());
-    expect(prepareElementReplacement).toHaveBeenCalledOnce();
+    expect(prepared.commitMove(elements, { x: 1, y: 1 })).toBe(false);
+    expect(motion.cancel).not.toHaveBeenCalled();
+    expect(prepareElementReplacement).not.toHaveBeenCalled();
     expect(motion.arm).not.toHaveBeenCalled();
   });
 

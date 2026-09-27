@@ -106,10 +106,14 @@ describe("selection trace lifecycle", () => {
       const d = selectionTraceGeometry(fakeNode(renderer.svg));
       renderer.setElementPreviews(moveSelection([source], { x: 20, y: 30 }), 1);
       scheduler.runAll();
-      expect(selectionTraceGeometry(fakeNode(renderer.svg))).not.toBe(d);
+      if (source.kind === "stroke") {
+        expect(selectionTraceGeometry(fakeNode(renderer.svg))).toBe(d);
+        expect(selectionTraceTransform(fakeNode(renderer.svg))).toBe("translate(20 30)");
+      } else expect(selectionTraceGeometry(fakeNode(renderer.svg))).not.toBe(d);
       renderer.clearElementPreviews();
       scheduler.runAll();
       expect(selectionTraceGeometry(fakeNode(renderer.svg))).toBe(d);
+      expect(selectionTraceTransform(fakeNode(renderer.svg))).toBe("");
       renderer.destroy();
     },
   );
@@ -166,7 +170,10 @@ describe("selection highlight setting", () => {
       renderer.setElementPreviews(moveSelection([source], { x: 20, y: 30 }), 1);
       scheduler.runAll();
       const preview = selectionTraceGeometry(fakeNode(renderer.svg));
-      expect(preview).not.toBe(baseline);
+      if (source.kind === "stroke") {
+        expect(preview).toBe(baseline);
+        expect(selectionTraceTransform(fakeNode(renderer.svg))).toBe("translate(20 30)");
+      } else expect(preview).not.toBe(baseline);
       renderer.setSelectionHighlightsEnabled(false);
       scheduler.runAll();
       expect(nodes()).toEqual([]);
@@ -176,6 +183,7 @@ describe("selection highlight setting", () => {
       renderer.clearElementPreviews();
       scheduler.runAll();
       expect(selectionTraceGeometry(fakeNode(renderer.svg))).toBe(baseline);
+      expect(selectionTraceTransform(fakeNode(renderer.svg))).toBe("");
       renderer.destroy();
     },
   );

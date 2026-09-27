@@ -10,7 +10,6 @@ import type { SelectionFrameHistoryEffect } from "../../../editor/selection/publ
 import type { ActiveEditorHistory } from "./history";
 
 const SYNCHRONOUS_SELECTION_LIMIT = 1_000;
-const SYNCHRONOUS_SAMPLE_LIMIT = 16_384;
 export interface PreparedElementHistoryOptions {
   readonly history: ActiveEditorHistory;
   readonly isAttached: () => boolean;
@@ -211,11 +210,5 @@ export class PreparedElementHistory {
 }
 
 function requiresSlicedMove(elements: readonly InkElementV1[]): boolean {
-  if (elements.length > SYNCHRONOUS_SELECTION_LIMIT) return true;
-  let samples = 0;
-  for (const element of elements) {
-    samples += element.kind === "stroke" ? element.points.length / 3 : 1;
-    if (samples > SYNCHRONOUS_SAMPLE_LIMIT) return true;
-  }
-  return false;
+  return elements.length > SYNCHRONOUS_SELECTION_LIMIT;
 }

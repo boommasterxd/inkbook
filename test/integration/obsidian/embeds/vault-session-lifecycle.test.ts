@@ -121,6 +121,34 @@ describe("VaultDocumentSession editor context lifecycle", () => {
 });
 
 describe("VaultDocumentSession terminal executor lifecycle", () => {
+  it("starts the guarded Vault read while worker construction is pending", async () => {
+    const document = documentFromSnapshot();
+    const file = new TestTFile("drawings/ink.svg", document.bytes.byteLength);
+    let resolveWorker: ((runtime: DocumentRuntimePort) => void) | undefined;
+    const create = vi.fn(
+      () =>
+        new Promise<DocumentRuntimePort>((resolve) => {
+          resolveWorker = resolve;
+        }),
+    );
+    const readBinary = vi.fn(async () => document.bytes.buffer.slice(0));
+    const factory = createFactory({
+      create,
+      vault: { getFileByPath: () => file, readBinary },
+    });
+    const session = factory.create({ documentId: file.path, sessionId: "session-1" });
+
+    const unlocking = session.unlock(operation());
+    await vi.waitFor(() => expect(readBinary).toHaveBeenCalledOnce());
+    expect(create).toHaveBeenCalledOnce();
+    expect(factory.getDocumentModel("session-1")).toBeUndefined();
+    resolveWorker?.(new DocumentWorkerRuntime({ sessionId: "session-1", workerEpoch: 1 }));
+
+    await expect(unlocking).resolves.toMatchObject({ status: "active" });
+    expect(readBinary).toHaveBeenCalledOnce();
+    session.dispose();
+  });
+
   it("retries a failed worker unlock exactly once in the bounded fallback", async () => {
     const terminate = vi.fn();
     const primary: DocumentRuntimePort = {
@@ -145,6 +173,35 @@ describe("VaultDocumentSession terminal executor lifecycle", () => {
     expect(createFallback).toHaveBeenCalledWith("session-1", 2, expect.any(Function));
   });
 
+  it("reads fresh Vault bytes after a failed primary unlock", async () => {
+    const first = documentFromSnapshot();
+    const second = documentFromSnapshot({ ...emptySnapshot(), revision: 8 });
+    const file = new TestTFile("drawings/ink.svg", first.bytes.byteLength);
+    const readBinary = vi
+      .fn()
+      .mockResolvedValueOnce(first.bytes.buffer.slice(0))
+      .mockResolvedValueOnce(second.bytes.buffer.slice(0));
+    const primary: DocumentRuntimePort = {
+      execute: () => Promise.reject(new Error("worker failed")),
+      terminate: vi.fn(),
+    };
+    const factory = createFactory({
+      create: async () => primary,
+      vault: { getFileByPath: () => file, readBinary },
+    });
+    const session = factory.create({ documentId: file.path, sessionId: "session-1" });
+
+    await expect(session.unlock(operation())).resolves.toMatchObject({
+      status: "active",
+      workerEpoch: 2,
+    });
+    expect(readBinary).toHaveBeenCalledTimes(2);
+    expect(factory.getDocumentModel("session-1")?.revision).toBe(8);
+    session.dispose();
+  });
+});
+
+describe("VaultDocumentSession live executor lifecycle", () => {
   it("avoids eager export prewarming and mirrors live gesture state", async () => {
     const core = new DocumentWorkerRuntime({ sessionId: "session-1", workerEpoch: 1 });
     const requestPrewarm = vi.fn(() => core.requestPrewarm());

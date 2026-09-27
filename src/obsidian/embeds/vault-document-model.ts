@@ -14,6 +14,7 @@ import type {
 import type { ExistingFilePort } from "../../persistence/saving/save-ports";
 import type { DocumentRuntimePort } from "../../persistence/worker/runtime/public";
 import type { SessionIdentity } from "../../editor/session/session-port";
+import type { InteractiveWorkPriority } from "../../editor/session/interactive-work-priority";
 import type {
   ElementStore,
   PreparedElementReplacement,
@@ -148,6 +149,53 @@ export function prepareVaultElementMutation(options: {
     options.scheduler(() => options.cancellation.isCancelled()),
     options.cancellation.replay,
   );
+}
+
+export async function prepareVaultElementRemoval(options: {
+  readonly active: boolean;
+  readonly cancellation: Parameters<EditableDocumentModel["prepareElementRemoval"]>[1];
+  readonly ids: Parameters<EditableDocumentModel["prepareElementRemoval"]>[0];
+  readonly scheduler: (isCancelled: () => boolean) => StoreSliceScheduler;
+  readonly store: ElementStore;
+}): ReturnType<EditableDocumentModel["prepareElementRemoval"]> {
+  if (!options.active) return { status: "cancelled", token: null };
+  const scheduler = options.scheduler(() => options.cancellation.isCancelled());
+  const mutation = await options.store.createRemovalMutationTimeSliced(options.ids, scheduler);
+  if (mutation === "cancelled" || options.cancellation.isCancelled()) {
+    return { status: "cancelled", token: null };
+  }
+  if (mutation === null) return { status: "noop", token: null };
+  return options.store.prepareElementMutation(mutation, scheduler);
+}
+
+export function createVaultElementPreparationActions(options: {
+  readonly active: () => boolean;
+  readonly run: InteractiveWorkPriority["run"];
+  readonly scheduler: (isCancelled: () => boolean) => StoreSliceScheduler;
+  readonly store: ElementStore;
+}): Pick<EditableActions, "prepareElementMutation" | "prepareElementRemoval"> {
+  return {
+    prepareElementMutation: (mutation, cancellation) =>
+      options.run(() =>
+        prepareVaultElementMutation({
+          active: options.active(),
+          cancellation,
+          mutation,
+          scheduler: options.scheduler,
+          store: options.store,
+        }),
+      ),
+    prepareElementRemoval: (ids, cancellation) =>
+      options.run(() =>
+        prepareVaultElementRemoval({
+          active: options.active(),
+          cancellation,
+          ids,
+          scheduler: options.scheduler,
+          store: options.store,
+        }),
+      ),
+  };
 }
 
 export function prepareVaultElementReplacement(options: {

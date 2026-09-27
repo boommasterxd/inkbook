@@ -11,6 +11,50 @@ import type { PreparedElementHistory } from "../../../../../src/obsidian/embeds/
 import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
 import { LassoPreview } from "../../../../../src/obsidian/embeds/active-editor/selection-preview";
 
+it("projects only appended lasso points and rebuilds after camera changes or compaction", () => {
+  const store = new ElementStore([]);
+  const sceneStore = new ElementSceneStore(store);
+  const paths: string[] = [];
+  const renderer = {
+    ...createSelectionPreviewRenderer(),
+    setOverlayPath: (path: string | null) => {
+      if (path !== null) paths.push(path);
+    },
+  };
+  let offset = 0;
+  const project = vi.fn((point: { x: number; y: number }) => ({
+    x: point.x + offset,
+    y: point.y,
+  }));
+  const preview = new LassoPreview({
+    history: {} as ActiveEditorHistory,
+    pageToScreen: project,
+    preparedHistory: {} as PreparedElementHistory,
+    renderer,
+    sceneStore,
+    selection: () => new Set<string>(),
+    selectionDefaults: { area: "lasso", inclusion: "touched" },
+    setSelection: () => {},
+    start: { additive: false, kind: "lasso", pointer: pointer(0, 0), tool: "select" },
+    store,
+  });
+  project.mockClear();
+  for (let index = 1; index <= 511; index += 1) preview.update(pointer(index * 2, 0));
+  expect(project).toHaveBeenCalledTimes(511 * 4);
+  const priorPath = paths[paths.length - 1];
+  preview.update(pointer(1022, 0));
+  expect(project).toHaveBeenCalledTimes(511 * 4 + 3);
+  expect(paths[paths.length - 1]).toBe(priorPath);
+  offset = 5;
+  preview.update(pointer(1022, 0));
+  expect(project).toHaveBeenCalledTimes(511 * 4 + 3 + 3 + 512);
+  expect(paths[paths.length - 1]).toContain("M 5 0");
+  const beforeCompaction = project.mock.calls.length;
+  preview.update(pointer(1024, 0));
+  expect(project.mock.calls.length - beforeCompaction).toBeGreaterThan(3);
+  sceneStore.release();
+});
+
 describe("lasso preview regressions", () => {
   it.each([
     { additive: false, changed: true, expected: new Set<string>() },

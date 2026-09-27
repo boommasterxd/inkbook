@@ -33,6 +33,7 @@ export function createTrustedVaultDocumentLoader(options: {
     purpose: "recovery" | "unlock",
     workerEpoch: number,
     policy: TrustedVaultDocumentLoadPolicy = {},
+    prefetchedBytes?: Promise<Uint8Array | undefined>,
   ) =>
     loadTrustedVaultDocument(
       {
@@ -43,6 +44,7 @@ export function createTrustedVaultDocumentLoader(options: {
         operation,
         purpose,
         scheduler: options.scheduler,
+        ...(prefetchedBytes === undefined ? {} : { prefetchedBytes }),
         workerEpoch,
       },
       options.hooks.trustedHeads,

@@ -27,6 +27,7 @@ class FakeMediaQueryList {
 interface HandoffFixture {
   readonly beginScrollStability: ReturnType<typeof vi.fn>;
   readonly container: HTMLElement;
+  readonly measureContainer: ReturnType<typeof vi.fn>;
   readonly handoff: ActiveScenePreviewHandoff;
   readonly media: FakeMediaQueryList;
   readonly preview: HTMLImageElement;
@@ -88,8 +89,9 @@ function createFixture(
       else style.properties.set(name, value);
     },
   };
+  const measureContainer = vi.fn(() => ({ height: 240 }));
   const container = {
-    getBoundingClientRect: vi.fn(() => ({ height: 240 })),
+    getBoundingClientRect: measureContainer,
     style,
   } as unknown as HTMLElement;
   const previewClasses = new FakeClassList();
@@ -114,6 +116,7 @@ function createFixture(
     beginScrollStability,
     completed,
     container,
+    measureContainer,
     handoff: new ActiveScenePreviewHandoff({
       ...(initialEntrance === undefined ? {} : { initialEntrance }),
       beginScrollStability,
@@ -181,6 +184,7 @@ describe("active editor unlock preview motion", () => {
       "",
     );
     expect(fixture.releaseScrollStability).toHaveBeenCalledOnce();
+    expect(fixture.measureContainer).not.toHaveBeenCalled();
   });
 
   it("applies reduced motion immediately after the stable measurement", () => {
@@ -191,6 +195,7 @@ describe("active editor unlock preview motion", () => {
     expect(fixture.rootClasses.contains("inkbook-active-ready")).toBe(true);
     expect(fixture.preview.hidden).toBe(true);
     expect(fixture.timerPending()).toBe(false);
+    expect(fixture.measureContainer).not.toHaveBeenCalled();
   });
 
   it("follows system motion changes and releases lifecycle resources", () => {

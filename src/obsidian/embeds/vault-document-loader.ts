@@ -127,6 +127,7 @@ interface VaultDocumentLoaderOptions {
   readonly purpose: "recovery" | "unlock";
   readonly scheduler: (isCancelled: () => boolean) => StoreSliceScheduler;
   readonly files: VaultUnlockFilePort;
+  readonly prefetchedBytes?: Promise<Uint8Array | undefined>;
   readonly workerEpoch: number;
 }
 
@@ -171,7 +172,8 @@ export async function loadVaultDocumentWithExecutorRecovery(
 export async function loadVaultDocument(
   options: VaultDocumentLoaderOptions,
 ): Promise<LoadedVaultDocument | undefined> {
-  const bytes = await readVaultBytes(options.files, options.documentId);
+  const bytes = await (options.prefetchedBytes ??
+    readVaultDocumentBytes(options.files, options.documentId));
   if (bytes === undefined || options.cancelled()) return undefined;
   const elements: InkElementV1[] = [];
   const builder = ElementStore.createBuilder(options.scheduler(options.cancelled));
@@ -259,7 +261,7 @@ function matchesUnlockIdentity(
   );
 }
 
-async function readVaultBytes(
+export async function readVaultDocumentBytes(
   files: VaultUnlockFilePort,
   documentId: string,
 ): Promise<Uint8Array | undefined> {

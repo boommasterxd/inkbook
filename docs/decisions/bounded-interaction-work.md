@@ -15,12 +15,25 @@ Bound actual geometry and DOM work independently. Publish ready viewport entrant
 in ordered batches instead of waiting for every entrant. Initial activation still
 waits for its complete readiness contract; partial pressure paths are never
 published. Store commits remain atomic, and retained nodes preserve render order.
-Pressure contour stitching uses numeric spatial buckets with unchanged neighbor
-order, tolerance, fallback, and serialized contour output.
+When mounted updates and viewport reconciliation compete for the frame budget,
+each receives the first available slice on alternating frames. Selection-edge
+autoscroll resolves the current owner viewport once per frame before preview
+writes; it does not retain the rectangle across frames. Pressure contour
+stitching uses numeric spatial buckets with unchanged neighbor order, tolerance,
+fallback, and serialized contour output.
 Canonical budgets and ownership belong in
 [Rendering and Performance](../rendering-and-performance.md).
 
 For area selection, use proven whole-bounds exclusion as well as acceptance.
+Reuse a bounded edge index only for factory-owned immutable lasso points. Use
+direct scans for small polygons and refine stroke-box edge candidates with
+conservative segment clipping so distant diagonal edges do not trigger detailed
+stroke geometry. For touched lasso queries, reject pressure-addition preparation
+only when error-expanded ideal capsules prove that the additions cannot touch;
+retain complete preparation for positioned strokes and full enclosure. Preserve
+even-odd topology and predicate tolerances, and charge actual index and edge work rather than estimating it from
+polygon size. Retain projected outline segments across appended input, invalidate
+them on camera changes or compaction, and skip unchanged outline updates.
 Charge small completed and nested predicate steps by their actual bounded work,
 capped at the existing batch charge. Expensive domain-geometry batches retain
 the conservative charge. Camera-only changes reproject retained selection geometry rather than
@@ -35,13 +48,70 @@ clipboard content, changed fields, capacity, connections, and operation identity
 retain their required checks. Do not treat a shallow frozen wrapper or a claimed
 worker derivation as proof of unchanged geometry.
 
-Patch spatial memberships, aggregate capacity, and reverse connection references
-for affected records. Complete band-order checks remain where the existing
-mutation representation requires them. Cache canonical metadata fragments within
-bounded session ownership, while retaining the independent exact canonical hash
-that binds worker output to the authoritative document. Recognition may reuse
-own-save output only after the existing fresh file identity check confirms it;
-external changes still invalidate recognition.
+Patch record and rank maps, spatial memberships, aggregate capacity, and
+reverse connection references for affected records. External band orders receive
+full validation; only Store-produced version-bound removals reuse proven order.
+The worker reuses confirmed
+order arrays for ordinary element changes, and Paste uses revision-matched model
+facts and direct ID queries rather than rebuilding the existing document.
+External clipboard data and inserted records retain their required validation.
+
+Cache canonical metadata fragments within bounded session ownership, while
+retaining the independent exact canonical hash that binds worker output to the
+authoritative document. A Store-owned stroke may retain its immutable encoded
+samples across placement changes while rebuilding its position-bearing fields.
+The vault adapter may pass its exact byte-length check with the immutable guarded
+read; an unproved read is checked at the persistence boundary. Obsolete
+metadata-digest work stops at cooperative checkpoints before using the result
+or the one allowed integrity retry. Recognition may reuse own-save output only
+after the existing fresh file identity check confirms it; external changes
+still invalidate recognition. Visible presentations reuse the same recognition
+request and validated descriptor when the Vault resource and exact content
+identity agree. Shared validation preserves its original concurrency limits and
+input priority; DOM ownership stays per presentation.
+
+For overlapping viewport changes, merge a small entering set into the retained
+sorted bands when retained ranks are unchanged. Preserve complete sorting as the
+fallback, existing spatial-query reuse, hysteresis and DOM publication limits.
+
+Avoid asynchronous continuations for synchronous checkpoint decisions. Large
+handle commits and the clipboard fallback await only actual scheduler handoffs;
+canonical serialization and cancellation boundaries remain unchanged. Exhausted
+motion-path or byte capacity is checked before constructing replacement geometry.
+The existing eraser blur feedback is retained. Handle cancellation reuses unchanged
+selection geometry, and zero-displacement correction does not schedule per-element
+work. Large decorative selection-trace removals operate on a temporarily detached
+group while preserving retained nodes and sibling order; content publication
+limits remain unchanged. After a complete reconciliation scan proves retained
+relative order, insert returning elements between retained DOM anchors rather
+than reparenting unchanged nodes; retain the full ordering path for actual reorder
+and partial detachment. A still-mounted exit returning with an older visibility
+generation uses a temporary, once-per-band DOM-position map to prove its retained
+order. Progressive publication invalidates that proof; reconciliation disposal
+releases it. A stale generation alone must not move unchanged DOM nodes.
+Pressure-window publication shares one identity-bound
+memory measurement with its immediate consumer. Warm metadata digest assembly
+batches cooperative checkpoints while keeping output-copy slices bounded and
+rechecking Store ownership after asynchronous encoding.
+
+Guarded vault reading overlaps asynchronous worker bootstrap during activation.
+The initial executor owns that one read; executor recovery reads fresh bytes, and
+a cancelled or disposed activation publishes no partial model. The initial
+visible-scene readiness barrier remains unchanged.
+
+Confirmed-base preflight may use native SHA-256 after bounded UTF-8 encoding for
+files up to 20 MiB, retaining no whole-file cache. Larger content and native
+failures keep cooperative streaming hashing. This trades a bounded temporary
+byte buffer for reduced main-thread hash computation; it does not bypass exact
+base checks or shorten the intentional 500-millisecond inactivity debounce.
+
+Pressure-union preparation rejects provably separated circle/line carriers before
+expensive endpoint and intersection calculations, using conservative roundoff
+reserves. Arc parameter checks similarly reject provably off-circle points using
+a padded squared-radius band before radial distance and angle work. A single
+capsule reuses its existing closed boundary. Keep the exact
+union fallback and existing serialized-path budgets for unsafe chain joins; do
+not exchange reduced computation for unbounded compound-path output.
 
 Remove obsolete paths and parameters instead of retaining disabled copies. Keep
 one implementation for each responsibility and release bounded caches and pending

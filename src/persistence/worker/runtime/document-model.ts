@@ -1,6 +1,10 @@
 import { VerifiedOutputProofs } from "./verified-output-proofs";
 import { parseRuntimeInput } from "./parse-runtime-input";
-import type { InkSnapshotV1, SnapshotValidationDerivations } from "../../../domain/schema/public";
+import type {
+  InkSnapshotV1,
+  SnapshotValidationDerivations,
+  StrokeSamplesV1,
+} from "../../../domain/schema/public";
 import { encodeRuntimeSelection, resolveClipboardPayload } from "../../clipboard/codec";
 import { planPaste, resolvePasteTarget } from "../../clipboard/operations";
 import type {
@@ -23,6 +27,7 @@ import {
   copySnapshotToRuntime,
   hasRuntimeStrokeSamples,
   type RuntimeInkSnapshot,
+  type RuntimeStrokeSamples,
 } from "./runtime-elements";
 import type { DocumentExportRequest, ModelSyncRuntimeRequest, RuntimeSliceContext } from "./types";
 
@@ -90,6 +95,7 @@ const ZERO_EXPORT_PHASES: ExportPhaseDurations = Object.freeze({
 
 export class DocumentModelRuntime {
   readonly #outputProofs = new VerifiedOutputProofs();
+  #pointCopies = new WeakMap<StrokeSamplesV1, RuntimeStrokeSamples>();
   readonly #serializer = new IncrementalDocumentSerializer();
   readonly #now: () => number;
   #lastExportPhases = ZERO_EXPORT_PHASES;
@@ -98,6 +104,7 @@ export class DocumentModelRuntime {
   #prewarmedElementCount = 0;
   #prewarmVisitedElementCount = 0;
   #prewarmCursor = 0;
+  #modelRevision: number | null = null;
   #snapshot: InkSnapshotV1 | null = null;
 
   public constructor(now: () => number = () => performance.now()) {
@@ -105,7 +112,7 @@ export class DocumentModelRuntime {
   }
 
   public get modelRevision(): number | null {
-    return this.#snapshot?.revision ?? null;
+    return this.#modelRevision;
   }
 
   public get instrumentation() {
@@ -141,7 +148,7 @@ export class DocumentModelRuntime {
       async (snapshot, derivations) => {
         const validationFinished = this.#now();
         inputValidationMs = validationFinished - started;
-        stagedRuntimeSnapshot = copySnapshotToRuntime(snapshot);
+        stagedRuntimeSnapshot = copySnapshotToRuntime(snapshot, this.#pointCopies);
         const copyFinished = this.#now();
         runtimeCopyMs = copyFinished - validationFinished;
         stagedDerivations = derivations;
@@ -169,6 +176,7 @@ export class DocumentModelRuntime {
     const snapshot = this.#snapshot;
     if (snapshot === null) throw new RuntimeModelError("snapshot-invalid", false);
     sliceContext?.signal.throwIfAborted();
+    this.#modelRevision = snapshot.revision;
     return {
       lockedHeight: parsed.value.lockedHeight,
       outputHash: parsed.value.hash,
@@ -193,10 +201,12 @@ export class DocumentModelRuntime {
   public clear(): void {
     this.#outputProofs.clear();
     this.#serializer.clear();
+    this.#pointCopies = new WeakMap();
     this.#prewarmedBytes = 0;
     this.#prewarmedElementCount = 0;
     this.#prewarmVisitedElementCount = 0;
     this.#prewarmCursor = 0;
+    this.#modelRevision = null;
     this.#snapshot = null;
     this.#lastExportPhases = ZERO_EXPORT_PHASES;
     this.#lastUnlockPhases = ZERO_UNLOCK_PHASES;
@@ -234,6 +244,7 @@ export class DocumentModelRuntime {
         proofEpoch,
       );
       this.#snapshot = serialized.value.snapshot;
+      this.#modelRevision = serialized.value.snapshot.revision;
       this.#resetPrewarmState();
       return {
         hash: serialized.value.hash,
@@ -252,9 +263,11 @@ export class DocumentModelRuntime {
         ? this.#resetForSynchronization(request.snapshot, request.modelRevision)
         : this.#applyIncremental(request);
     if (!update.ok) throw new RuntimeModelError(update.error.code, true);
-    const snapshot = this.#serializer.currentSnapshot();
-    if (snapshot === null) throw new RuntimeModelError("snapshot-invalid", false);
-    this.#snapshot = snapshot;
+    if (this.#serializer.currentRevision() === null) {
+      throw new RuntimeModelError("snapshot-invalid", false);
+    }
+    this.#snapshot = null;
+    this.#modelRevision = request.modelRevision;
     this.#prewarmedBytes = 0;
     this.#prewarmedElementCount = 0;
     this.#prewarmVisitedElementCount = 0;
@@ -313,17 +326,17 @@ export class DocumentModelRuntime {
     createId: () => string,
     previousRepeat?: PasteRepeatState,
   ): ClipboardResult<PastePlan> {
-    const snapshot = this.#atRevision(basisRevision);
+    const { page, facts } = this.#validatedPasteState(basisRevision);
     const decoded = resolveClipboardPayload(candidates);
     if (!decoded.ok) return decoded;
     return planPaste({
       commandTimestamp,
       createId,
       decoded: decoded.value,
-      existingElements: snapshot.elements,
-      page: snapshot.page,
+      page,
       ...(previousRepeat === undefined ? {} : { previousRepeat }),
       target: resolvePasteTarget(invocation),
+      validatedModel: { facts, hasExistingId: (id) => this.#serializer.hasElement(id) },
     });
   }
 
@@ -332,37 +345,39 @@ export class DocumentModelRuntime {
     candidates: ClipboardCandidates,
     options: SlicedPasteOptions,
   ): Promise<ClipboardResult<PastePlan>> {
-    const snapshot = this.#atRevision(basisRevision);
+    this.#validatedPasteState(basisRevision);
     const decoded = await decodeClipboardChunked(candidates, options.context);
     if (!decoded.ok) return decoded;
     await options.context.checkpoint();
+    const { page, facts } = this.#validatedPasteState(basisRevision);
     return planPaste({
       commandTimestamp: options.commandTimestamp,
       createId: options.createId,
       decoded: decoded.value,
-      existingElements: snapshot.elements,
-      page: snapshot.page,
+      page,
       ...(options.previousRepeat === undefined ? {} : { previousRepeat: options.previousRepeat }),
       target: resolvePasteTarget(options.invocation),
+      validatedModel: { facts, hasExistingId: (id) => this.#serializer.hasElement(id) },
     });
   }
 
   public async prewarmOne(context: RuntimeSliceContext): Promise<boolean> {
-    const snapshot = this.#snapshot;
+    const elementCount = this.#serializer.currentElementCount();
     if (
-      snapshot === null ||
-      this.#prewarmCursor >= snapshot.elements.length ||
+      this.#serializer.currentRevision() === null ||
+      this.#serializer.currentRevision() !== this.#modelRevision ||
+      this.#prewarmCursor >= elementCount ||
       this.#prewarmVisitedElementCount >= MAX_PREWARM_ELEMENTS ||
       this.#prewarmedBytes >= MAX_PREWARM_BYTES
     ) {
       return false;
     }
     context.signal.throwIfAborted();
-    const element = snapshot.elements[this.#prewarmCursor]!;
+    const index = this.#prewarmCursor;
     this.#prewarmCursor += 1;
     this.#prewarmVisitedElementCount += 1;
-    const cachedBytes = this.#serializer.prewarmElement(
-      element.id,
+    const cachedBytes = this.#serializer.prewarmElementAt(
+      index,
       MAX_PREWARM_BYTES - this.#prewarmedBytes,
     );
     if (cachedBytes !== null) {
@@ -370,7 +385,7 @@ export class DocumentModelRuntime {
       this.#prewarmedBytes += cachedBytes;
     }
     await context.checkpoint();
-    return this.#prewarmCursor < snapshot.elements.length;
+    return this.#prewarmCursor < elementCount;
   }
 
   #resetForExport(snapshot: InkSnapshotV1, modelRevision: number) {
@@ -385,7 +400,7 @@ export class DocumentModelRuntime {
       ...request,
       ...(request.changedElements === undefined
         ? {}
-        : { changedElements: copyElementsToRuntime(request.changedElements) }),
+        : { changedElements: copyElementsToRuntime(request.changedElements, this.#pointCopies) }),
     });
   }
 
@@ -398,6 +413,7 @@ export class DocumentModelRuntime {
 
   #reset(snapshot: InkSnapshotV1): void {
     this.#adoptResetResult(this.#serializer.resetRuntime(this.#runtimeSnapshot(snapshot)));
+    this.#modelRevision = this.#snapshot!.revision;
   }
 
   #resetValidated(snapshot: InkSnapshotV1, derivations: SnapshotValidationDerivations): void {
@@ -435,15 +451,28 @@ export class DocumentModelRuntime {
   #runtimeSnapshot(snapshot: InkSnapshotV1): RuntimeInkSnapshot {
     return hasRuntimeStrokeSamples(snapshot)
       ? (snapshot as RuntimeInkSnapshot)
-      : copySnapshotToRuntime(snapshot);
+      : copySnapshotToRuntime(snapshot, this.#pointCopies);
   }
 
   #atRevision(revision: number): InkSnapshotV1 {
-    const snapshot = this.#snapshot;
-    if (snapshot === null || snapshot.revision !== revision) {
+    if (this.#modelRevision !== revision || this.#serializer.currentRevision() !== revision) {
       throw new RuntimeModelError("basis-revision-mismatch", true);
     }
+    const snapshot = this.#snapshot ?? this.#serializer.currentSnapshot();
+    if (snapshot === null || snapshot.revision !== revision) {
+      throw new RuntimeModelError("snapshot-invalid", false);
+    }
+    this.#snapshot = snapshot;
     return snapshot;
+  }
+  #validatedPasteState(revision: number) {
+    if (this.#modelRevision !== revision || this.#serializer.currentRevision() !== revision) {
+      throw new RuntimeModelError("basis-revision-mismatch", true);
+    }
+    const page = this.#serializer.currentPage();
+    const facts = this.#serializer.currentAggregateFacts();
+    if (page === null || facts === null) throw new RuntimeModelError("snapshot-invalid", false);
+    return { facts, page };
   }
 }
 

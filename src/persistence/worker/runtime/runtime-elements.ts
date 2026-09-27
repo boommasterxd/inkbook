@@ -1,3 +1,4 @@
+import { copyValidatedSampleExtrema } from "../../../domain/schema/stroke-sample-extrema";
 import { assertStrokeSamplesV1 } from "../../../domain/elements/public";
 import type {
   InkElementV1,
@@ -20,21 +21,31 @@ export function adoptTransferredStrokeSamples(points: Float64Array): RuntimeStro
   return points as RuntimeStrokeSamples;
 }
 
-export function copySnapshotToRuntime(snapshot: InkSnapshotV1): RuntimeInkSnapshot {
+export function copySnapshotToRuntime(
+  snapshot: InkSnapshotV1,
+  pointCopies?: WeakMap<StrokeSamplesV1, RuntimeStrokeSamples>,
+): RuntimeInkSnapshot {
   return {
     ...snapshot,
-    elements: copyElementsToRuntime(snapshot.elements),
+    elements: copyElementsToRuntime(snapshot.elements, pointCopies),
   };
 }
 
-export function copyElementsToRuntime(elements: readonly InkElementV1[]): RuntimeInkElement[] {
+export function copyElementsToRuntime(
+  elements: readonly InkElementV1[],
+  pointCopies?: WeakMap<StrokeSamplesV1, RuntimeStrokeSamples>,
+): RuntimeInkElement[] {
   return elements.map((element) => {
     if (element.kind !== "stroke") return element;
     if (element.points instanceof Float64Array) return element as RuntimeStrokeElement;
-    return {
-      ...element,
-      points: adoptTransferredStrokeSamples(new Float64Array(element.points)),
-    };
+    const reusable = Object.isFrozen(element.points);
+    let points = reusable ? pointCopies?.get(element.points) : undefined;
+    if (points === undefined) {
+      points = adoptTransferredStrokeSamples(new Float64Array(element.points));
+      copyValidatedSampleExtrema(element.points, points);
+      if (reusable) pointCopies?.set(element.points, points);
+    }
+    return { ...element, points };
   });
 }
 

@@ -151,6 +151,7 @@ function documentModel(store: ElementStore): EditableDocumentModel {
     },
     planClipboardPaste: vi.fn(async () => null),
     prepareElementMutation: vi.fn(async () => ({ status: "cancelled" as const, token: null })),
+    prepareElementRemoval: vi.fn(async () => ({ status: "cancelled" as const, token: null })),
     prepareElementReplacement: vi.fn(async () => ({ status: "cancelled" as const, token: null })),
     removeElements: vi.fn(),
     replaceElements: vi.fn(),

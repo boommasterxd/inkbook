@@ -1,5 +1,5 @@
 import { renderBandOf } from "../commands/render-bands";
-import { getCanonicalStrokeReplacementProof } from "../elements/stroke-replacement-proof";
+import { inferStoredStrokeTranslation } from "../elements/stroke-replacement-proof";
 import { validateRuntimeReplacement } from "../elements/runtime-replacement-validation";
 import { validateRuntimeInkElementV1 } from "../schema/element-validation";
 import type { InkElementV1 } from "../schema/public";
@@ -290,7 +290,7 @@ function canonicalStrokeTranslation(
   replacement: InkElementV1,
 ): Readonly<{ x: number; y: number }> | null {
   if (current.kind !== "stroke" || replacement.kind !== "stroke") return null;
-  const proof = getCanonicalStrokeReplacementProof(replacement);
+  const proof = inferStoredStrokeTranslation(current, replacement);
   return proof?.source === current ? proof.translation : null;
 }
 

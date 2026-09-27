@@ -278,7 +278,7 @@ it("keeps equivalent replacement selections current and rejects changed deletion
     () => current,
   );
   actions.execute("delete");
-  expect(prepareElementMutation).toHaveBeenCalledOnce();
+  await vi.waitFor(() => expect(prepareElementMutation).toHaveBeenCalledOnce());
   await prepareElementMutation.mock.results[0]!.value;
   actions.dispose();
 });
@@ -344,6 +344,16 @@ function documentModel(
     },
     planClipboardPaste,
     prepareElementMutation: vi.fn(async () => ({ status: "noop" as const, token: null })),
+    async prepareElementRemoval(ids, cancellation) {
+      const mutation = await store.createRemovalMutationTimeSliced(ids, {
+        isCancelled: () => cancellation.isCancelled(),
+        shouldYield: () => false,
+        yieldControl: () => Promise.resolve(),
+      });
+      if (mutation === "cancelled") return { status: "cancelled", token: null };
+      if (mutation === null) return { status: "noop", token: null };
+      return this.prepareElementMutation(mutation, cancellation);
+    },
     revision: 0,
     store,
   };

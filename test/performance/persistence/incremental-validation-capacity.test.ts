@@ -1,8 +1,53 @@
+import {
+  elementFacts,
+  validatedDeltaElementFacts,
+} from "../../../src/persistence/serialization/incremental-validation";
 import { expect, it } from "vitest";
 
 import { IncrementalDocumentSerializer } from "../../../src/persistence/serialization/public";
+import { prepareDocumentDelta } from "../../../src/persistence/serialization/incremental-document-delta";
 import { createSnapshot } from "../../unit/persistence/serialization/fixtures";
-import { createRetainedCapacityRectangle } from "./fixtures";
+import { StrokeShapeCache } from "../../../src/persistence/serialization/stroke-shape-cache";
+import { createPressureGroupFixture, createRetainedCapacityRectangle } from "./fixtures";
+
+it("reuses validated order without scanning 10k elements for a small edit", () => {
+  const elements = Array.from({ length: 10_000 }, (_, index) =>
+    createRetainedCapacityRectangle(index + 1),
+  );
+  const content = elements.map(({ id }) => id);
+  const currentElements = new Map(elements.map((element) => [element.id, element] as const));
+  const originalIterator = currentElements[Symbol.iterator].bind(currentElements);
+  let fullMapIterations = 0;
+  currentElements[Symbol.iterator] = () => {
+    fullMapIterations += 1;
+    return originalIterator();
+  };
+  const options = {
+    currentElements,
+    currentOrders: { content, highlight: [] },
+    currentPage: createSnapshot().page,
+  };
+  const changed = { ...elements[0]!, createdAt: 100 };
+  const prepared = prepareDocumentDelta({
+    ...options,
+    delta: { changedElements: [changed], baseModelRevision: 7, modelRevision: 8 },
+  });
+  expect(prepared.ok).toBe(true);
+  if (!prepared.ok) throw new Error(prepared.error.message);
+  expect(prepared.value.orders.content).toBe(content);
+  expect(fullMapIterations).toBe(0);
+
+  const invalidOrder = prepareDocumentDelta({
+    ...options,
+    delta: {
+      baseModelRevision: 7,
+      modelRevision: 8,
+      orderChanges: { content: [content[0]!, content[0]!] },
+    },
+  });
+  expect(invalidOrder).toMatchObject({ ok: false, error: { code: "invalid-order" } });
+  expect(fullMapIterations).toBeGreaterThan(0);
+});
 
 it("updates retained serializer capacity without rescanning unchanged geometry", () => {
   const elements = Array.from({ length: 20_000 }, (_, index) =>
@@ -81,3 +126,61 @@ it.each([1_000, 20_000])(
     });
   },
 );
+
+it("retains local pressure contours across complete 10k-stroke placement sweeps", () => {
+  const fixture = createPressureGroupFixture();
+  const cache = new StrokeShapeCache();
+  const strokes = fixture.elements;
+  for (const stroke of strokes) cache.resolve(stroke);
+  expect(cache.instrumentation.shapeBuilds).toBe(10_000);
+  expect(cache.instrumentation.shapeCacheElements).toBe(10_000);
+  for (const offset of [
+    { x: 5, y: 10 },
+    { x: 0, y: 0 },
+    { x: 5, y: 10 },
+  ]) {
+    for (const stroke of strokes) {
+      cache.resolve({
+        ...stroke,
+        offset,
+        pivot: { x: stroke.pivot.x + offset.x, y: stroke.pivot.y + offset.y },
+      });
+    }
+  }
+  expect(cache.instrumentation.shapeBuilds).toBe(10_000);
+  expect(cache.instrumentation.shapeCacheBytes).toBeLessThanOrEqual(32 * 1024 * 1024);
+  cache.clear();
+  expect(cache.instrumentation).toEqual({
+    shapeBuilds: 0,
+    shapeCacheBytes: 0,
+    shapeCacheElements: 0,
+  });
+});
+
+it("does not reread pressure samples when deriving unchanged local geometry bounds for moves", () => {
+  const fixture = createPressureGroupFixture();
+  let sampleReads = 0;
+  const strokes = fixture.elements.map((stroke) => ({
+    ...stroke,
+    points: new Proxy(stroke.points, {
+      get(target, key, receiver) {
+        if (typeof key === "string" && /^\d+$/u.test(key)) sampleReads += 1;
+        return Reflect.get(target, key, receiver) as unknown;
+      },
+    }),
+  }));
+  const facts = strokes.map((stroke) => elementFacts(stroke));
+  expect(sampleReads).toBeGreaterThan(500_000);
+  sampleReads = 0;
+  for (const [index, stroke] of strokes.entries()) {
+    const offset = { x: 0.125, y: 12.375 };
+    const moved = {
+      ...stroke,
+      offset,
+      pivot: { x: stroke.pivot.x + offset.x, y: stroke.pivot.y + offset.y },
+    };
+    const changed = validatedDeltaElementFacts(moved, undefined, facts[index]);
+    expect(changed.strokeGeometry?.bounds).toBe(facts[index]!.strokeGeometry?.bounds);
+  }
+  expect(sampleReads).toBe(0);
+});

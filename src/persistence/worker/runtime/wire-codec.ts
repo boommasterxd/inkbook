@@ -1,4 +1,4 @@
-import type { InkSnapshotV1 } from "../../../domain/schema/public";
+import type { InkSnapshotV1, StrokeSamplesV1 } from "../../../domain/schema/public";
 import type { ClipboardResult, PastePlan } from "../../clipboard/types";
 import type { ExportFailure, ExportSuccess } from "../protocol";
 import {
@@ -194,7 +194,10 @@ function encodeIncrementalExportRequest(
   };
 }
 
-export function decodeRuntimeRequest(request: unknown): DocumentRuntimeRequest {
+export function decodeRuntimeRequest(
+  request: unknown,
+  resolvePoints?: (id: string) => StrokeSamplesV1,
+): DocumentRuntimeRequest {
   if (!isDocumentRuntimeWireRequest(request)) {
     throw new TypeError("Worker request does not match the runtime wire protocol.");
   }
@@ -207,7 +210,7 @@ export function decodeRuntimeRequest(request: unknown): DocumentRuntimeRequest {
     };
   }
   if (request.type === "model-sync-full-wire" || request.type === "model-sync-incremental-wire") {
-    return decodeModelSyncRequest(request);
+    return decodeModelSyncRequest(request, resolvePoints);
   }
   if (request.type === "export-incremental-wire") {
     const { changedElements, ...identity } = request;
@@ -216,7 +219,7 @@ export function decodeRuntimeRequest(request: unknown): DocumentRuntimeRequest {
       ...identity,
       ...(changedElements === undefined
         ? {}
-        : { changedElements: unpackElements(changedElements) }),
+        : { changedElements: unpackElements(changedElements, resolvePoints) }),
       type: "export-incremental",
     };
   }

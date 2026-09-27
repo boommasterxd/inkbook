@@ -1,10 +1,11 @@
+import type { StrokeShapeCache } from "./stroke-shape-cache";
 import { isHighlightElement } from "../../domain/commands/render-bands";
 import { calculateElementBounds } from "../../domain/geometry/public";
 import type { InkElementV1 } from "../../domain/schema/public";
 import { escapeXmlText } from "../documents/xml-text";
 import { canonicalElement } from "./canonical-snapshot";
 import { encodedByteLength } from "./encoded-byte-budget";
-import { serializedPathDataByteLength, serializeElementPaths } from "./path-markup";
+import { serializedPathDataByteLength, serializeElementPaths, serializeParts } from "./path-markup";
 
 export interface ElementFragments {
   readonly bottom: number;
@@ -29,10 +30,15 @@ export function elementRenderBand(element: InkElementV1): RenderBand {
 export function buildElementFragments(
   element: InkElementV1,
   bottom = calculateElementBounds(element).maxY,
+  shapeCache?: StrokeShapeCache,
 ): ElementFragments {
   const canonicalMetadata = serializeCanonicalElementMetadata(element);
   const metadata = escapeXmlText(canonicalMetadata);
-  const svg = serializeElementPaths(element).join("");
+  const svg = (
+    element.kind === "stroke" && shapeCache !== undefined
+      ? serializeParts(element, shapeCache.resolve(element))
+      : serializeElementPaths(element)
+  ).join("");
   return elementFragments(
     element,
     canonicalMetadata,

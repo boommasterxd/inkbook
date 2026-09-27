@@ -1,3 +1,4 @@
+import { ModelPointReferences } from "./model-point-references";
 import type {
   DocumentRuntimeObserver,
   DocumentRuntimePort,
@@ -66,6 +67,7 @@ export interface WorkerDocumentRuntimePortOptions {
 
 export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
   readonly #endpoint: WorkerBridgeEndpoint;
+  readonly #pointReferences = new ModelPointReferences();
   readonly #onExecutorFailure: ((failure: WorkerRuntimeFailure) => void) | undefined;
   readonly #pending = new Map<number, PendingBridgeRequest>();
   readonly #exportReceipts = new Map<string, BridgeSuccess>();
@@ -174,6 +176,7 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     this.#endpoint.removeEventListener("message", this.#onMessage);
     this.#endpoint.removeEventListener("error", this.#onError);
     this.#endpoint.terminate();
+    this.#pointReferences.clear();
     this.#rejectAll();
     for (const resolve of this.#inputWaiters) resolve();
     this.#inputWaiters.clear();
@@ -216,11 +219,13 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     pending: PendingBridgeRequest,
   ): Promise<void> {
     try {
+      if (request.type === "unlock") this.#pointReferences.clear();
       const checkpoint = this.#createMainThreadCheckpoint();
       await checkpoint();
       const encoded = await encodeRuntimeRequestChunked(request, {
         checkpoint,
         signal: pending.abortController.signal,
+        reusePoints: this.#pointReferences.encoder(request),
       });
       pending.abortController.signal.throwIfAborted();
       this.#endpoint.postMessage(
@@ -263,6 +268,7 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
         this.#exportReceipts.set(key, message);
       }
       this.#settlePending(message.requestId, pending);
+      this.#pointReferences.accept(pending.request, result);
       pending.resolve(result);
     } catch {
       if (this.#pending.get(message.requestId) !== pending) return;
@@ -296,6 +302,7 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     pending.batchAdoptionPending = true;
     void Promise.resolve(pending.observer?.unlockBatch(batch, pending.abortController.signal)).then(
       () => {
+        this.#pointReferences.stageUnlock(batch);
         pending.adoptedElementCount += batch.elements.length;
         pending.batchAdoptionPending = false;
         pending.nextUnlockBatchIndex += 1;
@@ -364,6 +371,7 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
       this.#endpoint.removeEventListener("message", this.#onMessage);
       this.#endpoint.removeEventListener("error", this.#onError);
       this.#endpoint.terminate();
+      this.#pointReferences.clear();
       this.#rejectAll();
     }
     if (this.#failureReported) return;

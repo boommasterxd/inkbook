@@ -23,6 +23,7 @@ export async function prepareMutationHistory(
   state: HistoryPreparation,
   scheduler: MutationPreparationScheduler,
   replay?: AppliedElementMutation,
+  trustedRemoval = false,
 ): Promise<AppliedElementMutation | "cancelled"> {
   if (replay !== undefined) {
     const forwardBytes = await estimateMutationBytes(state.requested, scheduler);
@@ -32,7 +33,9 @@ export async function prepareMutationHistory(
     assertPayloadLimit(forwardBytes + reverseBytes);
     return replay;
   }
-  const forward = await freezeMutation(state.requested, scheduler);
+  const forward = trustedRemoval
+    ? state.requested
+    : await freezeMutation(state.requested, scheduler);
   if (forward === "cancelled") return forward;
   const reverse = await reverseMutation(state.source, state.desired, state.removeIds, scheduler);
   if (reverse === "cancelled") return reverse;

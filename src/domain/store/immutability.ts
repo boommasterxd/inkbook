@@ -1,9 +1,14 @@
+import { copyValidatedSampleExtrema } from "../schema/stroke-sample-extrema";
 import type { InkElementV1 } from "../schema/public";
 
 import type { DeepReadonly, ImmutableInkElement } from "./types";
 
 export function immutableElement(element: InkElementV1): ImmutableInkElement {
-  return freezeValue(cloneValue(element)) as ImmutableInkElement;
+  const clone = cloneValue(element) as InkElementV1;
+  if (element.kind === "stroke" && clone.kind === "stroke") {
+    copyValidatedSampleExtrema(element.points, clone.points);
+  }
+  return freezeValue(clone);
 }
 
 /** Preserve an unchanged owned sample buffer while copying all replaceable fields. */

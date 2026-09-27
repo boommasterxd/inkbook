@@ -1,3 +1,4 @@
+import * as strokeGeometry from "../../../../src/domain/geometry/stroke-path";
 import * as intersections from "../../../../src/domain/geometry/pressure-boundary-intersections";
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
 import { PRESSURE_REFERENCE } from "../../../fixtures/domain/pressure-reference";
@@ -252,6 +253,65 @@ it.each([false, true])(
       expect(scheduler.pendingCount).toBe(0);
     } finally {
       boundary.mockRestore();
+    }
+  },
+);
+
+it.each([1, 100])(
+  "keeps %s mounted stroke shapes through durable move, undo, and redo",
+  (count) => {
+    const store = new FakeSceneStore();
+    const original = Array.from({ length: count }, (_, index) => {
+      const stroke = indexedStroke(index);
+      const points = Array.from(stroke.points);
+      Object.freeze(points);
+      const element = { ...stroke, points };
+      const record = createSceneRecord(element, index);
+      store.records.set(element.id, record);
+      return record;
+    });
+    const { renderer, scheduler } = createSceneFixture(PAGE, store);
+    scheduler.runAll();
+    expect(renderer.mountedCount).toBe(count);
+    const boundary = vi.spyOn(intersections, "intersectPressureBoundaries");
+    const geometry = vi.spyOn(strokeGeometry, "iterateTransformedStrokeCenters");
+    try {
+      for (const delta of [20, 0, 20]) {
+        renderer.resetInstrumentation();
+        const before = original.map(({ id }) => store.get(id)!.element);
+        for (const record of original) {
+          const element = record.element;
+          if (element.kind !== "stroke") throw new Error("Expected stroke.");
+          const next = {
+            ...element,
+            offset: { x: delta, y: delta },
+            pivot: { x: element.pivot.x + delta, y: element.pivot.y + delta },
+          };
+          store.records.set(element.id, {
+            ...createSceneRecord(next, record.rank),
+            geometryVersion: (store.get(element.id)?.geometryVersion ?? 0) + 1,
+          });
+        }
+        renderer.applyDelta({
+          affected: original.map(({ id }, index) => ({
+            id,
+            before: before[index]!,
+            after: store.get(id)!.element,
+            domains: ["geometry"],
+          })),
+        });
+        scheduler.runAll();
+        expect(renderer.instrumentation().geometryBuilds).toBe(0);
+        if (count === 1) expect(renderer.instrumentation().motionGeometryTransitions).toBe(1);
+        expect(boundary).not.toHaveBeenCalled();
+        expect(geometry).not.toHaveBeenCalled();
+        expect(renderer.mountedCount).toBe(count);
+      }
+      renderer.destroy();
+      expect(scheduler.pendingCount).toBe(0);
+    } finally {
+      boundary.mockRestore();
+      geometry.mockRestore();
     }
   },
 );

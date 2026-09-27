@@ -14,6 +14,10 @@ export interface PressurePaintQuery {
   readonly bounds?: Bounds;
   readonly prepared?: PreparedPressureGeometryPort | undefined;
   readonly nearPoint?: { readonly point: PointV1; readonly radius: number };
+  readonly additionsMayTouch?: (
+    centers: readonly StrokeCenter[],
+    width: number,
+  ) => Generator<number | undefined, boolean>;
 }
 
 /** Keep ideal-nib hits cheap; only remaining queries need the final outward patches. */

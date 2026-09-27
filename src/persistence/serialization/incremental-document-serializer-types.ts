@@ -1,4 +1,4 @@
-import type { InkElementV1, InkSnapshotV1, PageV1 } from "../../domain/schema/public";
+import type { InkElementV1, PageV1 } from "../../domain/schema/public";
 import type { ElementValidationDerivation } from "../../domain/schema/public";
 import type { ElementFragments, RenderBand } from "./element-fragments";
 import type { EncodedByteBudget } from "./encoded-byte-budget";
@@ -8,7 +8,7 @@ export interface PreparedDelta {
   readonly derivations: ReadonlyMap<string, ElementValidationDerivation>;
   readonly orders: Record<RenderBand, string[]>;
   readonly removed: ReadonlySet<string>;
-  readonly snapshot: InkSnapshotV1;
+  readonly page: PageV1;
 }
 
 export interface DocumentSerializationDelta {
@@ -23,6 +23,9 @@ export interface DocumentSerializationDelta {
 
 export interface FragmentSerializerInstrumentation {
   readonly backgroundBuilds: number;
+  readonly shapeBuilds: number;
+  readonly shapeCacheBytes: number;
+  readonly shapeCacheElements: number;
   readonly cacheBytes: number;
   readonly cacheElements: number;
   readonly derivedBoundsReuses: number;

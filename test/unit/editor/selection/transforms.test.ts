@@ -136,7 +136,8 @@ describe("selection transforms", () => {
     expect(moved?.kind).toBe("stroke");
     if (moved?.kind !== "stroke") return;
     expect(moved.points).toBeInstanceOf(Float64Array);
-    expect(moved.points.slice(0, 3)).toEqual(new Float64Array([15, 17, 0.5]));
+    expect(moved.points).toBe(stored.points);
+    expect(moved.offset).toEqual({ x: 5, y: 7 });
     expect(() => store.replace(source.id, moved)).not.toThrow();
     expect(store.get(source.id)?.element.kind === "stroke").toBe(true);
   });

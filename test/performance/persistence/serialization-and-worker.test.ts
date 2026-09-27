@@ -39,7 +39,7 @@ describe("persistence serialization performance", () => {
     );
   }, 120_000);
 
-  it("rejects amplified near-limit output before final assembly or slice work", async ({
+  it("exports one million pressure samples within bounded compact output and cache capacity", async ({
     annotate,
   }) => {
     const amplified = amplifyNearLimitSnapshot(snapshot);
@@ -53,12 +53,22 @@ describe("persistence serialization performance", () => {
       sliceByteLimit: 64 * 1024,
     });
 
-    expect(result).toMatchObject({ ok: false, error: { code: "static-output-limit-exceeded" } });
-    expect(serializer.instrumentation.fragmentBuilds).toBeLessThan(amplified.elements.length);
+    expect(
+      amplified.elements.reduce(
+        (count, element) => count + (element.kind === "stroke" ? element.points.length / 3 : 0),
+        0,
+      ),
+    ).toBe(1_000_000);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error.code);
+    expect(result.value.totalBytes).toBeLessThanOrEqual(64 * MIB);
+    expect(new TextEncoder().encode(result.value.svg).byteLength).toBe(result.value.totalBytes);
+    expect(serializer.instrumentation.fragmentBuilds).toBe(amplified.elements.length);
     expect(serializer.instrumentation.cacheBytes).toBeLessThanOrEqual(64 * MIB);
-    expect(checkpoints).toBe(0);
+    expect(serializer.instrumentation.shapeCacheBytes).toBeLessThanOrEqual(32 * MIB);
+    expect(checkpoints).toBeGreaterThan(0);
     await annotate(
-      `amplified near-limit rejection: ` +
+      `compact million-sample export: output=${result.value.totalBytes} bytes, ` +
         `fragmentsBuilt=${serializer.instrumentation.fragmentBuilds}/${amplified.elements.length}, ` +
         `checkpoints=${checkpoints}`,
       "performance",
@@ -102,7 +112,7 @@ describe("persistence serialization performance", () => {
         }),
         { canonicalElements: 0, elementReads: 0, encodedBytes: 0, hashedBytes: 0 },
       );
-      expect(total).toEqual(reference);
+      assertIntegrityTotals(total, reference, snapshot.elements.length);
     } finally {
       observer.restore();
       vi.unstubAllGlobals();
@@ -304,4 +314,16 @@ function assertIntegritySlice(work: IntegrityWork, sliceBytes: number): void {
   expect(work.hashedBytes).toBeLessThanOrEqual(sliceBytes);
   expect(work.elementReads).toBeLessThanOrEqual(1);
   expect(work.canonicalElements).toBeLessThanOrEqual(1);
+}
+
+function assertIntegrityTotals(
+  actual: IntegrityWork,
+  reference: IntegrityWork,
+  elementCount: number,
+) {
+  // Cached separator and suffix bytes are hashed but no longer re-encoded per digest.
+  expect(actual).toEqual({
+    ...reference,
+    encodedBytes: reference.encodedBytes - (elementCount - 1 + 2),
+  });
 }

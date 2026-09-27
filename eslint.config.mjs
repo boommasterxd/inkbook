@@ -385,4 +385,14 @@ export default [
       "obsidianmd/no-nodejs-modules": "off",
     },
   },
+  {
+    // These Node-only resource contracts count Promise allocations via async_hooks.
+    files: [
+      "test/performance/editor/selection-hot-paths.test.ts",
+      "test/performance/persistence/clipboard.test.ts",
+    ],
+    rules: {
+      "obsidianmd/no-nodejs-modules": "off",
+    },
+  },
 ];

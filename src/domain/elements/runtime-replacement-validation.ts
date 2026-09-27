@@ -1,6 +1,6 @@
 import { validateRuntimeInkElementV1 } from "../schema/element-validation";
 import type { InkElementV1 } from "../schema/types";
-import { isStoredStroke } from "./stroke-replacement-proof";
+import { isStoredStroke, storedStrokeOffsetWithinRange } from "./stroke-replacement-proof";
 
 /** Reuse sample validation only for the exact exclusively owned stored buffer. */
 export function validateRuntimeReplacement(source: object, replacement: InkElementV1) {
@@ -13,6 +13,16 @@ export function validateRuntimeReplacement(source: object, replacement: InkEleme
     replacement.points === source.points
   ) {
     const validation = validateRuntimeInkElementV1({ ...replacement, points: [0, 0, 0.5] });
+    if (validation.ok && !storedStrokeOffsetWithinRange(replacement)) {
+      return {
+        ok: false as const,
+        error: {
+          code: "invalid-range" as const,
+          path: "$.offset",
+          message: "Translated stroke coordinates exceed the numeric limit.",
+        },
+      };
+    }
     return validation.ok
       ? {
           ...validation,

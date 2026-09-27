@@ -2,8 +2,7 @@ import { deriveRenderBands } from "../../domain/commands/render-bands";
 import type { InkElementV1, InkSnapshotV1 } from "../../domain/schema/public";
 
 import { serializeBackgroundPaths } from "./background";
-import { buildElementPathParts } from "../../domain/geometry/element-path";
-import { serializeParts } from "./path-markup";
+import { serializeElementPaths } from "./path-markup";
 
 interface ExpectedToken {
   readonly allowLeadingWhitespace?: boolean;
@@ -109,8 +108,7 @@ function* staticTokens(snapshot: InkSnapshotV1, lockedHeight: number): Iterable<
 
 function* elementTokens(elements: readonly InkElementV1[]): Iterable<ExpectedToken> {
   for (const element of elements) {
-    const parts = buildElementPathParts(element);
-    yield { text: serializeParts(element, parts).join("") };
+    yield { text: serializeElementPaths(element).join("") };
   }
 }
 

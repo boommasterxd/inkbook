@@ -138,6 +138,7 @@ describe("selection delete feedback", () => {
     fixture.prepare.mockReturnValueOnce(pending.promise);
     fixture.actions.execute("delete");
     expect(fixture.renderer.setElementFade).toHaveBeenCalledWith([fixture.element.id], 400);
+    await vi.waitFor(() => expect(fixture.prepare).toHaveBeenCalledOnce());
     expect(fixture.renderer.setElementFade.mock.invocationCallOrder[0]).toBeLessThan(
       fixture.prepare.mock.invocationCallOrder[0]!,
     );

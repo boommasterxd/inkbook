@@ -125,17 +125,19 @@ interface StrokeElementV1 extends ElementBaseV1 {
   kind: "stroke";
   tool: "pen" | "highlighter";
   points: StrokeSamplesV1;
+  offset?: PointV1;
   style: StrokeStyleV1;
 }
 ```
 
 - Stroke samples are flat `x, y, pressure` triples. The array length is divisible by three and contains between 1 and 16,384 triples.
-- The wire array is validated before conversion to one runtime-owned `Float64Array` per execution boundary. Published typed buffers are write-once despite the mutable platform type; geometry changes allocate a replacement buffer. Live capture uses a geometrically growing numeric buffer and the committed record receives one exact copy.
+- The wire array is validated before conversion to one runtime-owned `Float64Array` per execution boundary. Published typed buffers are write-once despite the mutable platform type; changes to the stroke shape allocate a replacement buffer. Translation retains the buffer. Live capture uses a geometrically growing numeric buffer and the committed record receives one exact copy.
 - A single-point stroke renders as a round dot using its effective width.
 - Pen pressure comes from hardware when available and from the deterministic simulated-pressure function otherwise.
 - Highlighter strokes set `pressureEnabled` to `false`.
 - Pressure is retained in the editable samples. The continuous-pressure filled path and its once-composited opacity group are derived output under the [standalone SVG contract](svg-envelope.md#strict-static-markup-allowlist); the representation adds no snapshot fields.
-- Point coordinates are canonical page-space geometry. A committed move updates them directly; only a gesture preview uses a temporary transform.
+- Point coordinates describe the retained stroke shape. An omitted `offset` means zero and preserves the interpretation of existing files. Before rotation, add `offset` to each point; rotate that result around the world-space `pivot`. A committed move changes only `offset` and `pivot`, retaining points and style. Resizing may materialize new points and omit the offset.
+- Offset coordinates use the same canonical precision and finite coordinate limits as other geometry. Both stored samples and translated coordinates must remain within the supported range. The optional field extends version 1: current readers accept existing files without rewriting their absent offset, but older strict readers reject files containing the new field. Install the updated plugin on every device before editing translated strokes across devices. See [Retained Stroke Shape and Position](decisions/retained-stroke-position.md).
 
 ### Lines, Arrows, and Straight Highlighters
 
@@ -323,9 +325,9 @@ interface TableElementV1 extends ElementBaseV1 {
 
 ## Transform Rules
 
-- Snapshot geometry is canonical page-space geometry. No translation, scale, or transform matrix is persisted. Rendering applies the stored clockwise rotation around `pivot` after reading canonical geometry.
-- Gesture previews MAY use one temporary SVG transform. A commit materializes the result once and removes the preview transform.
-- Move by vector `d` adds `d` to every geometry point and to `pivot`. For bounds-based elements it adds `d.x` to `x` and `d.y` to `y`. Rotation is unchanged.
+- Snapshot geometry uses canonical page-space coordinates, except for retained stroke samples with the optional position offset defined above. Scale and general transform matrices are not persisted. Rendering adds a stroke offset before applying the stored clockwise rotation around the world-space `pivot`.
+- Gesture previews MAY use one temporary SVG transform. A commit records the result once and removes the preview transform; a pure stroke move updates position without materializing new samples.
+- Move by vector `d` adds `d` to stroke `offset` and `pivot`, retaining the samples. For other elements it adds `d` to every geometry point and to `pivot`. For bounds-based elements it adds `d.x` to `x` and `d.y` to `y`. Rotation is unchanged.
 - Single-element scaling is performed in the element's unrotated local frame around the opposite handle `anchor`. Unrotate the start and current pointer by `-rotation` around the current pivot, compute `sx = (current.x - anchor.x) / (start.x - anchor.x)` and `sy = (current.y - anchor.y) / (start.y - anchor.y)`, and clamp each factor at zero without imposing a positive minimum. Every canonical point becomes `anchor + (sx * (point.x - anchor.x), sy * (point.y - anchor.y))`; bounds and table fields are derived from those transformed corners. The pivot is recomputed from the result. Handle crossing never mirrors an element.
 - Multi-element scaling uses the active selection frame and its immutable gesture-start anchor. Free scaling resolves a nonnegative factor for each frame axis; uniform scaling projects pointer displacement onto the gesture-start handle direction. Factors derive from geometric frame extents without paint margins. There is no positive minimum scale and handle crossing never mirrors geometry. Bounds and structural fields follow the resolved geometric transform while element rotations and paint widths remain unchanged; representability limits for differently rotated boxes follow [Editor Tools](editor-tools.md#select).
 - Single-element rotation adds the gesture angle delta to `rotation`; geometry and pivot remain unchanged. Multi-element rotation uses the active selection-frame center `c`: each element's canonical geometry and pivot first move by `rotate(pivot - c, delta) + c - pivot`, then its normalized `rotation` increases by `delta`. The ephemeral frame rotates by the same delta and remains authoritative for overlay orientation and later group snapping until selection membership changes. It is not persisted in the document.

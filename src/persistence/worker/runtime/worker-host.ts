@@ -1,3 +1,4 @@
+import { ModelPointReferences } from "./model-point-references";
 import type {
   DocumentRuntimeObserver,
   DocumentRuntimePort,
@@ -47,7 +48,14 @@ export function attachDocumentWorkerHost(
 ): () => void {
   const acknowledgements = new Map<string, PendingAcknowledgement>();
   const exportAcknowledgements = new Map<number, PendingExportAcknowledgement>();
-  const listener = createHostListener(endpoint, runtime, acknowledgements, exportAcknowledgements);
+  const pointReferences = new ModelPointReferences(true);
+  const listener = createHostListener(
+    endpoint,
+    runtime,
+    acknowledgements,
+    exportAcknowledgements,
+    pointReferences,
+  );
   endpoint.addEventListener("message", listener);
   return () => {
     endpoint.removeEventListener("message", listener);
@@ -58,6 +66,7 @@ export function attachDocumentWorkerHost(
       runtime.acknowledgeExport?.(pending.identity, false);
     }
     exportAcknowledgements.clear();
+    pointReferences.clear();
     runtime.terminate();
   };
 }
@@ -67,6 +76,7 @@ function createHostListener(
   runtime: DocumentRuntimePort,
   acknowledgements: Map<string, PendingAcknowledgement>,
   exportAcknowledgements: Map<number, PendingExportAcknowledgement>,
+  pointReferences: ModelPointReferences,
 ): (event: MessageEvent<unknown>) => void {
   return (event) => {
     if (isBridgeControl(event.data)) {
@@ -82,7 +92,14 @@ function createHostListener(
       return;
     }
     if (!isBridgeRequest(event.data)) return;
-    dispatchHostedRequest(endpoint, runtime, acknowledgements, exportAcknowledgements, event.data);
+    dispatchHostedRequest(
+      endpoint,
+      runtime,
+      acknowledgements,
+      exportAcknowledgements,
+      event.data,
+      pointReferences,
+    );
   };
 }
 
@@ -92,21 +109,36 @@ function dispatchHostedRequest(
   acknowledgements: Map<string, PendingAcknowledgement>,
   exportAcknowledgements: Map<number, PendingExportAcknowledgement>,
   message: BridgeRequest,
+  pointReferences: ModelPointReferences,
 ): void {
   const { requestId } = message;
   let request: DocumentRuntimeRequest;
   try {
-    request = decodeRuntimeRequest(message.request);
+    const wire = message.request;
+    const resolvePoints =
+      "baseModelRevision" in wire
+        ? pointReferences.resolver(
+            wire.baseModelRevision,
+            "identity" in wire ? wire.identity : wire,
+          )
+        : undefined;
+    request = decodeRuntimeRequest(wire, resolvePoints);
   } catch {
     postExecutorFailure(endpoint, requestId);
     return;
   }
+  if (request.type === "unlock") pointReferences.clear();
   const observer: DocumentRuntimeObserver = {
-    unlockBatch: (batch, signal) =>
-      postUnlockBatch(endpoint, acknowledgements, requestId, batch, signal),
+    unlockBatch: async (batch, signal) => {
+      await postUnlockBatch(endpoint, acknowledgements, requestId, batch, signal);
+      pointReferences.stageUnlock(batch);
+    },
   };
   void runtime.execute(request, observer).then(
-    (result) => postHostedResult(endpoint, runtime, exportAcknowledgements, requestId, result),
+    (result) => {
+      pointReferences.accept(request, result);
+      return postHostedResult(endpoint, runtime, exportAcknowledgements, requestId, result);
+    },
     () => postExecutorFailure(endpoint, requestId),
   );
 }

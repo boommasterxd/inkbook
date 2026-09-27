@@ -11,6 +11,7 @@ import type { DocumentRuntimeFactories, EditableDocumentModel } from "./document
 import {
   createVaultDocumentExecutor,
   createVaultFallbackFactory,
+  readVaultDocumentBytes,
   type LoadedVaultDocument,
   type VaultDocumentFilePort,
 } from "./vault-document-loader";
@@ -21,8 +22,8 @@ import {
   createVaultAutosaveSession,
   createVaultClipboardCoordinator,
   createVaultEditableModel,
+  createVaultElementPreparationActions,
   prepareVaultElementReplacement,
-  prepareVaultElementMutation,
   requireVaultPage,
 } from "./vault-document-model";
 import { VaultDocumentSessionMutations } from "./vault-document-session-mutations";
@@ -41,13 +42,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
   readonly #fileManager: FileManager;
   readonly #files: VaultDocumentFilePort;
   readonly #hooks: recovery.VaultDocumentSessionHooks;
-  readonly #loadDocument: (
-    operation: Session.SessionOperationIdentity,
-    executor: DocumentRuntimePort,
-    purpose: "recovery" | "unlock",
-    workerEpoch: number,
-    policy?: trustedLoader.TrustedVaultDocumentLoadPolicy,
-  ) => Promise<LoadedVaultDocument | undefined>;
+  readonly #loadDocument: ReturnType<typeof trustedLoader.createTrustedVaultDocumentLoader>;
   readonly #runtimes: DocumentRuntimeFactories;
   #autosave: AutosaveCoordinator | undefined;
   #confirmedRevision = 0;
@@ -205,15 +200,22 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
     return result;
   }
   async unlock(operation: Session.SessionOperationIdentity): Promise<Session.UnlockResult> {
-    if (this.#lifecycle.preparingForUnload || this.#model !== undefined) {
+    if (this.#lifecycle.preparingForUnload || this.#model !== undefined)
       return { ...operation, status: "load-error" };
-    }
     try {
+      const prefetchedBytes = Promise.resolve().then(() =>
+        this.#lifecycle.disposed ||
+        this.#lifecycle.preparingForUnload ||
+        this.#cancelled.has(operation.operationId)
+          ? undefined
+          : readVaultDocumentBytes(this.#files, this.#identity.documentId),
+      );
       const executor = await this.#createExecutor();
       if (this.#lifecycle.disposed || this.#cancelled.delete(operation.operationId)) {
         executor.terminate();
         return { ...operation, status: "load-error" };
       }
+      let firstRead: Promise<Uint8Array | undefined> | undefined = prefetchedBytes;
       const outcome = await loadTrustedDocumentForUnlock({
         cancelled: () => this.#lifecycle.disposed || this.#cancelled.has(operation.operationId),
         consumeCancellation: () =>
@@ -221,8 +223,11 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
         createFallback: this.#createFallbackFactory(),
         executor,
         fallbackUsed: this.#fallbackUsed,
-        load: (candidate, workerEpoch, policy) =>
-          this.#loadDocument(operation, candidate, "unlock", workerEpoch, policy),
+        load: (candidate, workerEpoch, policy) => {
+          const read = firstRead;
+          firstRead = undefined;
+          return this.#loadDocument(operation, candidate, "unlock", workerEpoch, policy, read);
+        },
         operation,
         pendingExternalVersion: this.#pendingTrustedExternalVersion,
         workerEpoch: this.#workerEpoch,
@@ -323,16 +328,12 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
         commitElements: (elements) => mutations.commitElements(elements),
         beginInteractiveOperation: () => this.#workPriority.begin(),
         waitForBackground: () => this.#workPriority.waitForBackground(),
-        prepareElementMutation: (mutation, cancellation) =>
-          this.#workPriority.run(() =>
-            prepareVaultElementMutation({
-              active: !this.#lifecycle.disposed && !this.#lifecycle.preparingForUnload,
-              mutation,
-              cancellation,
-              store,
-              scheduler,
-            }),
-          ),
+        ...createVaultElementPreparationActions({
+          active: () => !this.#lifecycle.disposed && !this.#lifecycle.preparingForUnload,
+          run: (operation) => this.#workPriority.run(operation),
+          scheduler,
+          store,
+        }),
         commitPreparedElementMutation: (token) => mutations.commitPreparedElementMutation(token),
         commitPage: (page) => mutations.commitPage(page),
         encodeClipboard: (selectedIds) => clipboard.encode(selectedIds),

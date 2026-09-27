@@ -348,7 +348,7 @@ describe("SelectionHandleSession lifecycle", () => {
     ).resolves.toMatchObject({ status: "ready" });
   });
 
-  it("time-slices exact commits when aggregate stroke work exceeds the synchronous budget", async () => {
+  it("commits position changes without charging unchanged stroke samples", () => {
     const strokes = Array.from({ length: 5 }, (_, index) => maximumStroke(index));
     let planned = 0;
     const session = new SelectionHandleSession({
@@ -372,18 +372,15 @@ describe("SelectionHandleSession lifecycle", () => {
     });
     expect(planned).toBe(0);
 
-    expect(session.prepareCommit()).toEqual({ status: "time-sliced-required" });
-    const prepared = await session.prepareCommitTimeSliced({
-      shouldYield: () => true,
-      yieldControl: async () => undefined,
-    });
+    const prepared = session.prepareCommit();
     expect(prepared.status).toBe("ready");
-    if (prepared.status !== "ready") throw new Error("Expected an exact time-sliced commit.");
+    if (prepared.status !== "ready") throw new Error("Expected a synchronous position commit.");
     const replacement = prepared.replacements[0];
     if (replacement?.kind !== "stroke") throw new Error("Expected a stroke replacement.");
-    expect(replacement.points.slice(0, 3)).toEqual([15, 17, 0.5]);
+    expect(replacement.points).toBe(strokes[0]!.points);
+    expect(replacement.offset).toEqual({ x: 5, y: 7 });
     expect(prepared.replacements).toHaveLength(strokes.length);
-    expect(planned).toBe(0);
+    expect(planned).toBe(1);
   });
 
   it("keeps cancel and no-op gestures free of prepared mutations", () => {
@@ -437,13 +434,22 @@ describe("SelectionHandleSession asynchronous lifecycle", () => {
 
   it("preserves time-sliced materialization outside the viewport", async () => {
     const session = largeMoveSession({ x: -100, y: -100 });
+    let checks = 0;
+    let yields = 0;
 
     const prepared = await session.prepareCommitTimeSliced({
-      shouldYield: () => false,
-      yieldControl: async () => undefined,
+      shouldYield: () => {
+        checks += 1;
+        return false;
+      },
+      yieldControl: async () => {
+        yields += 1;
+      },
     });
 
     if (prepared.status !== "ready") throw new Error("Expected exact replacements.");
+    expect(checks).toBe(1_001);
+    expect(yields).toBe(0);
     const bounds = prepared.replacements.map(calculateElementBounds);
     expect(Math.min(...bounds.map(({ minX }) => minX))).toBe(-81);
     expect(Math.min(...bounds.map(({ minY }) => minY))).toBe(-81);

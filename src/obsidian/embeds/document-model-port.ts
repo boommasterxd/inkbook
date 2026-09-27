@@ -58,6 +58,10 @@ export interface EditableDocumentModel {
     mutation: ElementMutation,
     cancellation: { isCancelled(): boolean; readonly replay?: AppliedElementMutation },
   ): Promise<PreparedElementMutationResult>;
+  prepareElementRemoval(
+    ids: ReadonlySet<string> | readonly string[],
+    cancellation: { isCancelled(): boolean },
+  ): Promise<PreparedElementMutationResult>;
   commitPreparedElementMutation(token: PreparedElementMutation): AppliedElementMutation | null;
   encodeClipboard(selectedIds: ReadonlySet<string>): Promise<ClipboardWritePayload | null>;
   planClipboardPaste(

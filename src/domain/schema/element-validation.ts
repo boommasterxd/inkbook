@@ -1,3 +1,4 @@
+import { retainValidatedSampleExtrema } from "./stroke-sample-extrema";
 import { canonicalizeGeometryNumber } from "./canonical";
 import { FILE_SCHEMA_LIMITS, type SchemaLimits } from "./constants";
 import { assertOutlineStyle, assertShapeStyle, assertStrokeStyle } from "./style-validation";
@@ -156,11 +157,16 @@ function assertPoint(
 }
 
 function assertStroke(value: UnknownRecord, path: string, context: ValidationContext): void {
-  assertExactKeys(value, [...BASE_KEYS, "tool", "points", "style"], path);
+  assertExactKeys(
+    value,
+    [...BASE_KEYS, "tool", "points", "style", ...(value.offset === undefined ? [] : ["offset"])],
+    path,
+  );
+  if (value.offset !== undefined) assertPoint(value.offset, `${path}.offset`, context);
   assertLiteral(value.kind, "stroke", `${path}.kind`);
   assertBase(value, path, context);
   assertOneOf(value.tool, ["pen", "highlighter"] as const, `${path}.tool`);
-  assertStrokeSamples(value.points, `${path}.points`, context);
+  assertStrokeSamples(value.points, `${path}.points`, context, value.offset);
   assertStrokeStyle(value.style, `${path}.style`);
   if (value.tool === "highlighter" && value.style.pressureEnabled) {
     fail(
@@ -175,7 +181,12 @@ function assertStroke(value: UnknownRecord, path: string, context: ValidationCon
   }
 }
 
-function assertStrokeSamples(value: unknown, path: string, context: ValidationContext): void {
+function assertStrokeSamples(
+  value: unknown,
+  path: string,
+  context: ValidationContext,
+  offset?: PointV1,
+): void {
   const supported =
     Array.isArray(value) || (context.allowRuntimeStrokeBuffers && value instanceof Float64Array);
   if (!supported || value.length % 3 !== 0) {
@@ -189,15 +200,30 @@ function assertStrokeSamples(value: unknown, path: string, context: ValidationCo
   if (context.statistics.strokePoints > context.limits.strokePoints) {
     fail("stroke-point-limit-exceeded", path, "Total stroke point count exceeds the limit.");
   }
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
   for (let index = 0; index < value.length; index += 3) {
-    assertGeometryNumber(value[index], `${path}[${index}]`, context.limits.absoluteCoordinate);
-    assertGeometryNumber(
-      value[index + 1],
-      `${path}[${index + 1}]`,
-      context.limits.absoluteCoordinate,
-    );
-    assertUnitInterval(value[index + 2], `${path}[${index + 2}]`);
+    const x: unknown = value[index];
+    const y: unknown = value[index + 1];
+    const pressure: unknown = value[index + 2];
+    assertGeometryNumber(x, `${path}[${index}]`, context.limits.absoluteCoordinate);
+    assertGeometryNumber(y, `${path}[${index + 1}]`, context.limits.absoluteCoordinate);
+    assertUnitInterval(pressure, `${path}[${index + 2}]`);
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+    if (
+      offset !== undefined &&
+      (Math.abs(x + offset.x) > context.limits.absoluteCoordinate ||
+        Math.abs(y + offset.y) > context.limits.absoluteCoordinate)
+    ) {
+      fail("invalid-range", path, "Translated stroke coordinates exceed the numeric limit.");
+    }
   }
+  retainValidatedSampleExtrema(value, { minX, minY, maxX, maxY });
 }
 
 function assertLine(value: UnknownRecord, path: string, context: ValidationContext): void {

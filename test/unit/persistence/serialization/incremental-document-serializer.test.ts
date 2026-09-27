@@ -208,11 +208,20 @@ describe("incremental background boundaries", () => {
       ok: false,
       error: { code: "static-output-limit-exceeded" },
     });
-    await expect(serializer.serializeChunked()).resolves.toMatchObject({
+    let checkpoints = 0;
+    await expect(
+      serializer.serializeChunked({
+        checkpoint: async () => {
+          checkpoints += 1;
+        },
+      }),
+    ).resolves.toMatchObject({
       ok: false,
       error: { code: "static-output-limit-exceeded" },
     });
     expect(serializer.instrumentation.backgroundBuilds).toBe(0);
+    expect(serializer.instrumentation.fragmentBuilds).toBe(0);
+    expect(checkpoints).toBe(0);
   });
 });
 

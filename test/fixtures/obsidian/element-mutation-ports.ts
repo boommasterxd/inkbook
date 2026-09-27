@@ -4,7 +4,10 @@ import type { EditableDocumentModel } from "../../../src/obsidian/embeds/vault-d
 export function elementMutationPorts(
   store: ElementStore,
   committed: () => void,
-): Pick<EditableDocumentModel, "commitPreparedElementMutation" | "prepareElementMutation"> {
+): Pick<
+  EditableDocumentModel,
+  "commitPreparedElementMutation" | "prepareElementMutation" | "prepareElementRemoval"
+> {
   return {
     commitPreparedElementMutation: (token) => {
       const result = store.commitPreparedElementMutation(token);
@@ -21,5 +24,16 @@ export function elementMutationPorts(
         },
         cancellation.replay,
       ),
+    prepareElementRemoval: async (ids, cancellation) => {
+      const scheduler = {
+        isCancelled: () => cancellation.isCancelled(),
+        shouldYield: () => false,
+        yieldControl: () => Promise.resolve(),
+      };
+      const mutation = await store.createRemovalMutationTimeSliced(ids, scheduler);
+      if (mutation === "cancelled") return { status: "cancelled", token: null };
+      if (mutation === null) return { status: "noop", token: null };
+      return store.prepareElementMutation(mutation, scheduler);
+    },
   };
 }

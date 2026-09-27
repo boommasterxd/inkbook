@@ -54,6 +54,21 @@ function preparedContentHeight(
 }
 
 function readScrollOwnerViewport(scrollOwner: BrowserScrollElement): SceneRect {
+  if (scrollOwner.ownerDocument.scrollingElement === scrollOwner) {
+    const ownerWindow = scrollOwner.ownerDocument.defaultView;
+    const clientWidth = (scrollOwner as Partial<ScrollOwnerWithClientWidth>).clientWidth;
+    const clientHeight = browserScrollMetrics.getClientHeight(scrollOwner);
+    const height = positiveOrFallback(clientHeight, ownerWindow?.innerHeight ?? 0);
+    const width = positiveOrFallback(clientWidth ?? 0, ownerWindow?.innerWidth ?? 0);
+    if (height > 0 && width > 0) {
+      return {
+        bottom: height,
+        left: 0,
+        right: width,
+        top: 0,
+      };
+    }
+  }
   const bounds = scrollOwner.getBoundingClientRect();
   const clientWidth = (scrollOwner as Partial<ScrollOwnerWithClientWidth>).clientWidth;
   const width = positiveOrFallback(clientWidth ?? 0, bounds.width);
@@ -62,11 +77,10 @@ function readScrollOwnerViewport(scrollOwner: BrowserScrollElement): SceneRect {
     bounds.height,
   );
   if (scrollOwner.ownerDocument.scrollingElement === scrollOwner) {
-    const ownerWindow = scrollOwner.ownerDocument.defaultView;
     return {
-      bottom: positiveOrFallback(height, ownerWindow?.innerHeight ?? bounds.height),
+      bottom: height,
       left: 0,
-      right: positiveOrFallback(width, ownerWindow?.innerWidth ?? bounds.width),
+      right: width,
       top: 0,
     };
   }

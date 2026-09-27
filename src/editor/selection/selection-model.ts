@@ -57,12 +57,8 @@ export function* selectBySelectionAreaCandidatesSteps(
         )
           next.add(id);
       }
-      // A lasso bounds shortcut still inspects its boundary and point-in-polygon edges.
-      yield step.value === undefined
-        ? undefined
-        : area.kind === "rectangle"
-          ? 1
-          : 1 + Math.ceil(area.points.length / 32);
+      // Indexed lasso visits are charged by the geometry generator above.
+      yield step.value === undefined ? undefined : 1;
       step = candidates.next();
     }
     return !step.value || setsEqual(selection, next) ? selection : next;

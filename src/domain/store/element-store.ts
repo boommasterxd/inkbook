@@ -16,6 +16,7 @@ import { removeElements } from "./element-removal";
 import { mutableElement } from "./immutability";
 import { EMPTY_STORE_INSTRUMENTATION, type MutableStoreInstrumentation } from "./instrumentation";
 import { normalizeElementInput } from "./input-normalization";
+import { applyMutationRecordPatches } from "./mutation-record-patch";
 import { assertCompleteBandOrder, ElementStoreOrdering } from "./order-operations";
 import {
   prepareReplacementPlan,
@@ -314,7 +315,10 @@ export class ElementStore {
   ): Promise<PreparedElementMutationResult> {
     return this.#preparedElementMutations.prepare(mutation, scheduler, replay);
   }
-
+  public readonly createRemovalMutationTimeSliced =
+    this.#preparedElementMutations.createRemovalMutationTimeSliced.bind(
+      this.#preparedElementMutations,
+    );
   public commitPreparedElementMutation(
     token: PreparedElementMutation,
   ): ElementMutationCommitResult {
@@ -322,17 +326,12 @@ export class ElementStore {
   }
   #adoptElementMutation(plan: ElementMutationPlan): ElementMutationCommitResult {
     commitMutationDerivedState(this.#capacity, this.#reverseConnections, plan);
-    this.#records = plan.records;
+    applyMutationRecordPatches(this.#records, this.#ranks, plan);
     this.#overflowCount = this.#spatialIndex.overflowCount;
     this.#geometryVersion = plan.delta.geometryVersion;
     this.#paintVersion = plan.delta.paintVersion;
     this.#bands = plan.bands;
-    this.#ranks = plan.ranks;
-    return {
-      delta: this.#publish(plan.delta),
-      status: "committed",
-      transition: plan.applied,
-    };
+    return { delta: this.#publish(plan.delta), status: "committed", transition: plan.applied };
   }
 
   public updateStyle(id: string, style: ElementStyle): StoreDelta | null {

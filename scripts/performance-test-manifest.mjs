@@ -16,6 +16,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/rendering/scene/tool-cursor-performance.test.ts",
   ]),
   invariant: Object.freeze([
+    "test/performance/persistence/worker-point-references.test.ts",
     "test/performance/persistence/autosave-recovery-work.test.ts",
     "test/performance/persistence/canonical-metadata-cache.test.ts",
     "test/performance/obsidian/selection-camera-work.test.ts",
@@ -66,6 +67,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/obsidian/phone-sheet-swipe-performance.test.ts",
     "test/performance/persistence/autosave-backpressure.test.ts",
     "test/performance/persistence/clipboard.test.ts",
+    "test/performance/persistence/clipboard-paste-work.test.ts",
     "test/performance/persistence/exact-base-save-callback.test.ts",
     "test/performance/persistence/incremental-validation-capacity.test.ts",
     "test/performance/persistence/memory-and-cache.test.ts",

@@ -349,7 +349,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz selection resize frame p
       // One scroll frame, one coalesced pointer frame and at most one scene frame.
       expect(fixture.scheduler.pendingCount).toBeLessThanOrEqual(3);
       advance();
-      expect(edge.readBounds).toHaveBeenCalledTimes(2);
+      expect(edge.readBounds).toHaveBeenCalledOnce();
       expect(edge.updateBottom).toHaveBeenCalledOnce();
       expect(transforms).toHaveBeenCalledOnce();
       expect(edge.scroll).toHaveBeenCalledTimes(y === 476 ? 0 : 1);
@@ -359,7 +359,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz selection resize frame p
     }
     advance();
     expect(fixture.scheduler.pendingCount).toBe(0);
-    expect(edge.readBounds).toHaveBeenCalledTimes(2);
+    expect(edge.readBounds).toHaveBeenCalledOnce();
     preview.update({ pointerId: 2, pointerType: "pen", pressure: 0.5, x: 100, y: 490 });
     advance();
     expect(fixture.scheduler.pendingCount).toBeLessThanOrEqual(2);

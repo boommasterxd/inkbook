@@ -395,7 +395,7 @@ export class ActiveEditorHandleInteraction {
     this.#previewMaximumBottom = undefined;
     this.#model.setGestureActive(false);
     this.#presentation.clearPreviews();
-    this.renderSelection();
+    this.renderCameraSelection();
   }
 
   #schedulePointerFrame(active: ActiveHandleGesture): void {

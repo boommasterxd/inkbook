@@ -1,13 +1,22 @@
 import type { PreparedPressureGeometryPort } from "../../domain/geometry/prepared-pressure-geometry";
+import { pressureContourOutwardError } from "../../domain/geometry/pressure-contour-approximation";
+import { pressureRadius } from "../../domain/geometry/pressure-radius";
+import type { StrokeCenter } from "../../domain/geometry/stroke-path";
 import { assertFinitePoint, boundsFromPoints, boundsIntersect } from "../../domain/geometry/public";
 import type { Bounds } from "../../domain/geometry/public";
 import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 
 import { visibleElementPrimitiveSteps } from "./element-selection-geometry";
+import type { PressurePaintQuery } from "./pressure-paint-additions";
 import {
   primitiveEnclosedByAreaSteps,
   primitiveTouchesAreaSteps,
 } from "./selection-area-primitives";
+import {
+  indexedLassoEdges,
+  indexedPointInPolygon,
+  registerImmutableLassoPoints,
+} from "./lasso-edge-index";
 
 export type SelectionAreaInclusion = "fully-enclosed" | "touched";
 
@@ -53,6 +62,7 @@ export function createLassoSelectionArea(input: readonly PointV1[]): SelectionAr
     throw new RangeError("A lasso selection requires at least three non-collinear points.");
   }
   const frozenPoints = Object.freeze(points);
+  registerImmutableLassoPoints(frozenPoints);
   return Object.freeze({
     kind: "lasso",
     bounds: Object.freeze(boundsFromPoints(frozenPoints)),
@@ -83,21 +93,16 @@ export function* elementMatchesSelectionAreaSteps(
     };
     if (area.kind === "rectangle") {
       if (yield* primitiveEnclosedByAreaSteps(area, box)) return true;
-    } else if (boundsAvoidLassoBoundary(area, candidateBounds)) {
+    } else if (yield* weightedCheapPredicate(boundsAvoidLassoBoundary(area, candidateBounds))) {
       const corner = box.points[0]!;
-      return yield* primitiveTouchesAreaSteps(area, {
-        kind: "capsule",
-        start: corner,
-        end: corner,
-        radius: 0,
-      });
+      return yield* weightedCheapPredicate(indexedPointInPolygon(corner, area.points, area.bounds));
     }
   }
   let visible = false;
-  for (const primitive of visibleElementPrimitiveSteps(element, {
-    bounds: area.bounds,
-    prepared,
-  })) {
+  for (const primitive of visibleElementPrimitiveSteps(
+    element,
+    selectionPaintQuery(area, inclusion, prepared),
+  )) {
     if (primitive === undefined || typeof primitive === "number") {
       yield primitive;
       continue;
@@ -115,22 +120,112 @@ export function* elementMatchesSelectionAreaSteps(
   return visible && inclusion === "fully-enclosed";
 }
 
+function selectionPaintQuery(
+  area: SelectionArea,
+  inclusion: SelectionAreaInclusion,
+  prepared: PreparedPressureGeometryPort | undefined,
+): PressurePaintQuery {
+  return {
+    bounds: area.bounds,
+    prepared,
+    ...(area.kind === "lasso" && inclusion === "touched"
+      ? {
+          additionsMayTouch: (centers: readonly StrokeCenter[], width: number) =>
+            pressureAdditionsMayTouchArea(area, centers, width),
+        }
+      : {}),
+  };
+}
+
+/** Outward addition triangles remain within this radius of the ideal capsule union. */
+function* pressureAdditionsMayTouchArea(
+  area: SelectionArea,
+  centers: readonly StrokeCenter[],
+  width: number,
+): Generator<number | undefined, boolean> {
+  const outward = pressureContourOutwardError(width);
+  let checked = 0;
+  for (let index = 0; index < Math.max(1, centers.length - 1); index += 1) {
+    const start = centers[index]!;
+    const end = centers[Math.min(index + 1, centers.length - 1)]!;
+    const touches = primitiveTouchesAreaSteps(area, {
+      kind: "pressure-capsule",
+      capsule: {
+        start: { center: start, radius: pressureRadius(start.pressure, width) + outward },
+        end: { center: end, radius: pressureRadius(end.pressure, width) + outward },
+      },
+    });
+    try {
+      let step = touches.next();
+      while (!step.done) {
+        yield typeof step.value === "number" ? step.value : undefined;
+        step = touches.next();
+      }
+      checked += 1;
+      if (step.value) {
+        yield checked % 32 || 32;
+        return true;
+      }
+    } finally {
+      touches.return(false);
+    }
+    if (checked % 32 === 0) yield 32;
+  }
+  if (checked % 32 !== 0) yield checked % 32;
+  return false;
+}
+
 /** Boundary-free boxes cannot hide an excluded even-odd lasso region. */
-function boundsAvoidLassoBoundary(area: SelectionArea, bounds: Bounds): boolean {
-  for (let index = 0; index < area.points.length; index += 1) {
-    const start = area.points[index]!;
-    const end = area.points[(index + 1) % area.points.length]!;
-    if (
-      boundsIntersect(bounds, {
-        minX: Math.min(start.x, end.x),
-        minY: Math.min(start.y, end.y),
-        maxX: Math.max(start.x, end.x),
-        maxY: Math.max(start.y, end.y),
-      })
-    )
+function* boundsAvoidLassoBoundary(
+  area: SelectionArea,
+  bounds: Bounds,
+): Generator<number, boolean> {
+  const edges = yield* indexedLassoEdges(area.points, area.bounds, bounds);
+  for (let index = 0; index < edges.length; index += 1) {
+    if (edgeCrossesBounds(edges[index]!.start, edges[index]!.end, bounds)) {
+      yield (index % 32) + 1;
       return false;
+    }
+    if (index % 32 === 31) yield 32;
+  }
+  if (edges.length % 32 !== 0) yield edges.length % 32;
+  return true;
+}
+
+function edgeCrossesBounds(start: PointV1, end: PointV1, bounds: Bounds): boolean {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const tolerance = 1e-9 * (Math.abs(dx) + Math.abs(dy) + 1);
+  let entry = 0;
+  let exit = 1;
+  for (const [origin, delta, low, high] of [
+    [start.x, dx, bounds.minX - tolerance, bounds.maxX + tolerance],
+    [start.y, dy, bounds.minY - tolerance, bounds.maxY + tolerance],
+  ] as const) {
+    if (delta === 0) {
+      if (origin < low || origin > high) return false;
+      continue;
+    }
+    const first = (low - origin) / delta;
+    const last = (high - origin) / delta;
+    entry = Math.max(entry, Math.min(first, last));
+    exit = Math.min(exit, Math.max(first, last));
+    if (entry > exit) return false;
   }
   return true;
+}
+
+/** Only the stroke-box shortcut treats each <=32 edge-visit checkpoint as cheap work. */
+function* weightedCheapPredicate(steps: Generator<number, boolean>): Generator<number, boolean> {
+  try {
+    while (true) {
+      const step = steps.next();
+      if (step.done) return step.value;
+      yield Math.max(1, Math.ceil(step.value / 32));
+    }
+  } finally {
+    steps.return(false);
+  }
 }
 
 function hasPositiveArea(area: SelectionArea): boolean {

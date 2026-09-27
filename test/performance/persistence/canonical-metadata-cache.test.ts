@@ -7,44 +7,78 @@ import { createTestStroke, createWorkerSnapshot } from "../../fixtures/persisten
 
 it("serializes only replaced elements across a 10,000-stroke save and releases cached ownership", async () => {
   let pointReads = 0;
+  const sampleValues = Array.from({ length: 300 }, (_, index) => [10, 20, 0.5][index % 3]!);
   const elements = Array.from({ length: 10_000 }, (_, index) => {
     const stroke = createTestStroke();
-    const samples = new Proxy(stroke.points, {
-      get(target, property, receiver) {
-        if (typeof property === "string" && /^\d+$/u.test(property)) pointReads += 1;
-        return Reflect.get(target, property, receiver) as unknown;
-      },
-    });
+    const samples = trackedSamples(sampleValues, () => pointReads++);
     return Object.freeze({ ...stroke, id: String(index), points: samples });
   });
   const snapshot = createWorkerSnapshot(elements);
   const cache = new CanonicalMetadataCache(Object.isFrozen);
-  const checkpoint = async () => undefined;
+  let checkpoints = 0;
+  const checkpoint = async () => {
+    checkpoints += 1;
+  };
   const canonicalize = vi.spyOn(canonical, "canonicalElement");
+  const encode = vi.spyOn(TextEncoder.prototype, "encode");
+  const sampleText = sampleValues.join(",");
   try {
     const before = await cache.digest(snapshot, checkpoint);
-    expect(pointReads).toBe(60_000);
+    expect(pointReads).toBe(3_000_000);
     expect(canonicalize).toHaveBeenCalledTimes(10_000);
     canonicalize.mockClear();
     pointReads = 0;
+    checkpoints = 0;
     expect(await cache.digest(snapshot, checkpoint)).toBe(before);
     expect(pointReads).toBe(0);
     expect(canonicalize).not.toHaveBeenCalled();
+    expect(checkpoints).toBeLessThanOrEqual(1_000);
+    let previous = before;
+    for (const offset of [
+      { x: 20, y: -10 },
+      { x: 40, y: 5 },
+    ]) {
+      snapshot.revision += 1;
+      snapshot.elements[500] = Object.freeze({ ...elements[500]!, offset });
+      encode.mockClear();
+      const next = await cache.digest(snapshot, checkpoint);
+      expect(next).not.toBe(previous);
+      expect(pointReads).toBe(0);
+      expect(encode.mock.calls.some(([value]) => value === sampleText)).toBe(false);
+      expect(canonicalize).toHaveBeenCalledOnce();
+      canonicalize.mockClear();
+      previous = next;
+    }
     snapshot.revision += 1;
-    snapshot.elements[500] = Object.freeze({ ...elements[500]!, rotation: 90 });
-    expect(await cache.digest(snapshot, checkpoint)).not.toBe(before);
-    expect(pointReads).toBe(6);
+    const movedStroke = snapshot.elements[500];
+    if (movedStroke?.kind !== "stroke") throw new TypeError("Expected moved stroke.");
+    snapshot.elements[500] = Object.freeze({
+      ...movedStroke,
+      points: trackedSamples(sampleValues, () => pointReads++),
+    });
+    await cache.digest(snapshot, checkpoint);
+    expect(pointReads).toBe(300);
     expect(canonicalize).toHaveBeenCalledOnce();
     cache.clear();
     canonicalize.mockClear();
     pointReads = 0;
     await cache.digest(snapshot, checkpoint);
-    expect(pointReads).toBe(60_000);
+    expect(pointReads).toBe(3_000_000);
     expect(canonicalize).toHaveBeenCalledTimes(10_000);
   } finally {
     canonicalize.mockRestore();
+    encode.mockRestore();
   }
 });
+
+function trackedSamples(values: readonly number[], onRead: () => void): number[] {
+  return new Proxy([...values], {
+    get(target, property, receiver) {
+      if (typeof property === "string" && /^\d+$/u.test(property)) onRead();
+      return Reflect.get(target, property, receiver) as unknown;
+    },
+  });
+}
 
 it("evicts the least recently used element after 20,000 retained identities", async () => {
   const elements = Array.from({ length: 20_000 }, (_, index) =>

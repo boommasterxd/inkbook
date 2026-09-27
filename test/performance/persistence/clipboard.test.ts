@@ -1,3 +1,5 @@
+import { createHook } from "node:async_hooks";
+
 import { expect, it } from "vitest";
 
 import {
@@ -7,10 +9,50 @@ import {
 import { planPaste } from "../../../src/persistence/clipboard/operations";
 import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
 import { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/public";
+import { encodeRuntimeSelectionChunked } from "../../../src/persistence/worker/runtime/fallback-clipboard-codec";
+import { stroke } from "../../unit/domain/schema/fixtures";
 import { CLIPBOARD_ELEMENTS, CLIPBOARD_POINTS, createClipboardLimitFixture } from "./fixtures";
 import { createMinimalPersistenceFixture } from "./fixtures";
 
 const MIB = 1024 * 1024;
+it("bounds Promise allocation in the 1,000-stroke sliced clipboard fallback", async () => {
+  const elements = Array.from({ length: 1_000 }, (_, index) => stroke(index + 1));
+  let nodes = 0;
+  let checkpoints = 0;
+  let promises = 0;
+  const hook = createHook({
+    init: (_id, type) => {
+      if (type === "PROMISE") promises += 1;
+    },
+  });
+  hook.enable();
+  let encoded: Awaited<ReturnType<typeof encodeRuntimeSelectionChunked>>;
+  try {
+    encoded = await encodeRuntimeSelectionChunked(
+      elements,
+      elements.map(({ id }) => id),
+      {
+        checkpoint: async () => {
+          checkpoints += 1;
+        },
+        signal: {
+          throwIfAborted: () => {
+            nodes += 1;
+          },
+        } as AbortSignal,
+        workProfile: { inputByteLimit: 16_384, nodeLimit: 256, outputByteLimit: 65_536 },
+      },
+    );
+  } finally {
+    hook.disable();
+  }
+  expect(encoded.ok).toBe(true);
+  expect(nodes).toBe(24_004);
+  expect(checkpoints).toBe(102);
+  // Checkpoints create Promises; the margin covers fixed test and serializer overhead.
+  expect(promises).toBeLessThanOrEqual(300);
+});
+
 it("bounds clipboard work and payloads at the maximum fixture capacity", () => {
   const elements = createClipboardLimitFixture();
   const selectedIds = new Set(elements.map(({ id }) => id));

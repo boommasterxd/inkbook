@@ -1,3 +1,4 @@
+import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
 import { pressureContourOutwardError } from "../../domain/geometry/pressure-contour-approximation";
 import type { PreparedPressureGeometryPort } from "../../domain/geometry/prepared-pressure-geometry";
 import { pointInPolygon, pointSegmentDistance } from "../../domain/geometry/primitives";
@@ -35,7 +36,13 @@ export function pressureStrokeContainsPoint(
   prepared?: PreparedPressureGeometryPort,
 ): boolean {
   if (stroke.style.opacity <= 0 || stroke.points.length < 3) return false;
-  const index = pressureHitIndex(stroke);
+  const source = stroke;
+  if (stroke.offset !== undefined) {
+    point = { x: point.x - stroke.offset.x, y: point.y - stroke.offset.y };
+    stroke = strokeLocalGeometry(stroke);
+    prepared = undefined;
+  }
+  const index = pressureHitIndex(stroke, source);
   const outerTolerance = tolerance + pressureContourOutwardError(stroke.style.width);
   let nearPaint = false;
   for (const block of index.blocks) {
@@ -80,10 +87,10 @@ export function pressureStrokeContainsPoint(
   return false;
 }
 
-function pressureHitIndex(stroke: StrokeElementV1): PressureHitIndex {
+function pressureHitIndex(stroke: StrokeElementV1, source: StrokeElementV1): PressureHitIndex {
   const samples = stroke.points;
   const cacheable =
-    Object.isFrozen(samples) || (samples instanceof Float64Array && isStoredStroke(stroke));
+    Object.isFrozen(samples) || (samples instanceof Float64Array && isStoredStroke(source));
   if (cacheable) {
     const cached = pressureHitIndexes.get(samples);
     if (

@@ -1,3 +1,6 @@
+import { createTestStroke } from "../../../fixtures/persistence/worker-snapshot";
+import { createSceneRecord } from "../../../fixtures/rendering/scene";
+import { strokeLocalGeometry } from "../../../../src/domain/geometry/stroke-position";
 import { describe, expect, it } from "vitest";
 
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
@@ -6,9 +9,10 @@ import {
   createMountedElement,
   firstPath,
   updatePreviewTransform,
+  updateMountedGeometry,
 } from "../../../../src/rendering/scene/mounted-element";
 
-import { FakeDocument, fakeNode, fakeRectangleRecord } from "./fakes";
+import { FakeDocument, FakeNode, fakeNode, fakeRectangleRecord } from "./fakes";
 
 describe("mounted element transform previews", () => {
   it.each(["dashed", "dotted"] as const)(
@@ -67,3 +71,41 @@ describe("mounted element transform previews", () => {
     expect(path.attributes.get("stroke-width")).toBe("2");
   });
 });
+
+it.each([false, true])(
+  "composes durable stroke position with previews (pressure: %s)",
+  (pressureEnabled) => {
+    const source = createTestStroke();
+    const element = {
+      ...source,
+      offset: { x: 30, y: 40 },
+      style: { ...source.style, pressureEnabled },
+    };
+    const record = createSceneRecord(element);
+    const doc = new FakeDocument() as unknown as Document;
+    const instrumentation = createInstrumentation();
+    const parts = buildElementPathParts(strokeLocalGeometry(element));
+    const entry = createMountedElement(doc, record, parts, instrumentation);
+    const node = fakeNode(firstPath(entry));
+    expect(node.attributes.get("transform")).toBe("translate(30 40)");
+    updatePreviewTransform(entry, "scale(2)", 1, null, instrumentation);
+    expect(node.attributes.get("transform")).toBe("scale(2) translate(30 40)");
+    updatePreviewTransform(entry, null, 2, null, instrumentation);
+    expect(node.attributes.get("transform")).toBe("translate(30 40)");
+    const next = {
+      ...element,
+      offset: { x: 60, y: 80 },
+      pivot: { x: element.pivot.x + 30, y: element.pivot.y + 40 },
+    };
+    updateMountedGeometry(
+      entry,
+      createSceneRecord(next),
+      parts,
+      doc,
+      new FakeNode(doc as unknown as FakeDocument, "g") as unknown as SVGGElement,
+      instrumentation,
+    );
+    expect(node.attributes.get("transform")).toBe("translate(60 80)");
+    expect(entry.paths[0]!.node.getAttribute("d")).toBe(parts[0]!.d);
+  },
+);

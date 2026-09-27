@@ -1,3 +1,5 @@
+import { validateRuntimeReplacement } from "../../domain/elements/runtime-replacement-validation";
+import { markStoredStroke } from "../../domain/elements/stroke-replacement-proof";
 import {
   validateInkConnectionRelationsV1,
   validateInkElementV1,
@@ -18,7 +20,7 @@ import type { DocumentCodecResult } from "./types";
 
 interface PrepareDeltaOptions {
   readonly currentElements: ReadonlyMap<string, InkElementV1>;
-  readonly currentOrders: Readonly<Record<RenderBand, readonly string[]>>;
+  readonly currentOrders: Readonly<Record<RenderBand, string[]>>;
   readonly currentPage: PageV1;
   readonly delta: DocumentSerializationDelta;
 }
@@ -53,9 +55,6 @@ export function prepareDocumentDelta(
   if (!derivations.ok) return derivations;
   const orders = prepareOrders(options, changed.value, removed);
   if (!orders.ok) return orders;
-  const elements = [...orders.value.highlight, ...orders.value.content].map(
-    (id) => changed.value.get(id) ?? options.currentElements.get(id)!,
-  );
   const page = delta.page ?? options.currentPage;
   if (delta.page !== undefined) {
     const validation = validateInkPageV1(page);
@@ -68,7 +67,7 @@ export function prepareDocumentDelta(
       derivations: derivations.value,
       orders: orders.value,
       removed,
-      snapshot: { elements, format: "inkbook", page, revision: delta.modelRevision, version: 1 },
+      page,
     },
   };
 }
@@ -92,12 +91,15 @@ export function validateDocumentDelta(
       options.prepared.removed,
     )
   ) {
-    const validation = validateInkConnectionRelationsV1(options.prepared.snapshot.elements);
+    const elements = [...options.prepared.orders.highlight, ...options.prepared.orders.content].map(
+      (id) => options.prepared.changed.get(id) ?? options.currentElements.get(id)!,
+    );
+    const validation = validateInkConnectionRelationsV1(elements);
     if (!validation.ok) return invalidSnapshot(validation.error);
   }
   const aggregateError = incrementalValidation.validateAggregateFacts(
     aggregate,
-    options.pageChanged ? options.prepared.snapshot.page : options.currentPage,
+    options.pageChanged ? options.prepared.page : options.currentPage,
   );
   return aggregateError === null
     ? { ok: true, value: { aggregate, changed: changedFacts.value } }
@@ -143,6 +145,13 @@ function prepareOrders(
   changed: ReadonlyMap<string, InkElementV1>,
   removed: ReadonlySet<string>,
 ): DocumentCodecResult<Record<RenderBand, string[]>> {
+  if (removed.size === 0 && options.delta.orderChanges === undefined) {
+    const unchangedBands = [...changed.values()].every((element) => {
+      const current = options.currentElements.get(element.id);
+      return current !== undefined && elementRenderBand(current) === elementRenderBand(element);
+    });
+    if (unchangedBands) return { ok: true, value: options.currentOrders };
+  }
   const available = new Map(options.currentElements);
   for (const id of removed) available.delete(id);
   for (const [id, element] of changed) available.set(id, element);
@@ -166,10 +175,12 @@ function hasCompleteValidOrder(
   orders: Readonly<Record<RenderBand, readonly string[]>>,
   available: ReadonlyMap<string, InkElementV1>,
 ): boolean {
-  const ordered = [...orders.highlight, ...orders.content];
-  if (ordered.length !== available.size || new Set(ordered).size !== ordered.length) return false;
+  if (orders.highlight.length + orders.content.length !== available.size) return false;
+  const seen = new Set<string>();
   return (["highlight", "content"] as const).every((band) =>
     orders[band].every((id) => {
+      if (seen.has(id)) return false;
+      seen.add(id);
       const element = available.get(id);
       return element !== undefined && elementRenderBand(element) === band;
     }),
@@ -183,7 +194,7 @@ function validateChangedFacts(
   try {
     for (const element of options.prepared.changed.values()) {
       const validation = options.runtimeStrokeBuffers
-        ? validateRuntimeInkElementV1(element)
+        ? validateRuntimeChange(options.currentElements.get(element.id), element)
         : validateInkElementV1(element);
       if (!validation.ok) return invalidSnapshot(validation.error);
       changedFacts.set(
@@ -191,6 +202,7 @@ function validateChangedFacts(
         incrementalValidation.validatedDeltaElementFacts(
           element,
           options.prepared.derivations.get(element.id),
+          options.currentFacts.get(element.id),
         ),
       );
     }
@@ -198,4 +210,12 @@ function validateChangedFacts(
     return codecFailure("invalid-delta", "Changed element derivation is inconsistent.");
   }
   return { ok: true, value: changedFacts };
+}
+
+function validateRuntimeChange(current: InkElementV1 | undefined, replacement: InkElementV1) {
+  // Current runtime records passed schema validation and own their transferred sample buffers.
+  if (current?.kind === "stroke" && current.points instanceof Float64Array) {
+    return validateRuntimeReplacement(markStoredStroke(current), replacement);
+  }
+  return validateRuntimeInkElementV1(replacement);
 }

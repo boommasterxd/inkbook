@@ -1,3 +1,9 @@
+import { validateRuntimeInkElementV1 } from "../schema/element-validation";
+import {
+  retainValidatedSampleExtrema,
+  validatedSampleExtrema,
+} from "../schema/stroke-sample-extrema";
+import { assertSpatialBounds } from "../spatial/bounds";
 import { calculateElementBounds } from "../geometry/bounds";
 import { markStoredStroke } from "../elements/stroke-replacement-proof";
 import {
@@ -33,6 +39,15 @@ export function createOwnedValidatedInitialRecord(
   derivation: ElementValidationDerivation,
 ): ElementRecord {
   const bounds = validatedElementDerivationBounds(element, derivation);
+  if (element.kind === "stroke") {
+    if (derivation.strokeSampleExtrema !== undefined) {
+      assertSpatialBounds(derivation.strokeSampleExtrema);
+      retainValidatedSampleExtrema(element.points, { ...derivation.strokeSampleExtrema });
+    } else if (validatedSampleExtrema(element.points) === undefined) {
+      const validation = validateRuntimeInkElementV1(element);
+      if (!validation.ok) throw new TypeError("Invalid stroke samples in runtime derivation.");
+    }
+  }
   return initialRecord(takeImmutableElementOwnership(element), Object.freeze({ ...bounds }));
 }
 

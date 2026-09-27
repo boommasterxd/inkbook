@@ -7,18 +7,30 @@ export function* canonicalElementFragments(element: InkElementV1): Iterable<stri
     yield JSON.stringify(canonicalElement(element));
     return;
   }
+  const { prefix, suffix } = canonicalStrokeMetadataFrame(element);
+  yield prefix;
+  yield* canonicalStrokeSampleFragments(element.points);
+  yield suffix;
+}
+
+export function canonicalStrokeMetadataFrame(element: Extract<InkElementV1, { kind: "stroke" }>): {
+  prefix: string;
+  suffix: string;
+} {
   const canonical = canonicalElement({ ...element, points: [] });
   const template = JSON.stringify(canonical);
   const marker = '"points":[]';
   const offset = template.indexOf(marker) + marker.length - 1;
-  yield template.slice(0, offset);
-  for (let start = 0; start < element.points.length; start += 1024) {
-    const end = Math.min(start + 1024, element.points.length);
+  return { prefix: template.slice(0, offset), suffix: template.slice(offset) };
+}
+
+export function* canonicalStrokeSampleFragments(points: ArrayLike<number>): Iterable<string> {
+  for (let start = 0; start < points.length; start += 1024) {
+    const end = Math.min(start + 1024, points.length);
     const numbers: string[] = [];
     for (let index = start; index < end; index += 1) {
-      numbers.push(JSON.stringify(element.points[index]));
+      numbers.push(JSON.stringify(points[index]));
     }
     yield (start === 0 ? "" : ",") + numbers.join(",");
   }
-  yield template.slice(offset);
 }

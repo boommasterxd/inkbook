@@ -1,3 +1,5 @@
+import { roundCanonical } from "../../domain/geometry/primitives";
+import { positionedTransform } from "./stroke-position";
 import { buildLinearPathParts, type SvgPathPart } from "../../domain/geometry/element-path";
 import { SelectionCenterCache } from "./selection-center-cache";
 import type { InkElementV1, StrokeElementV1 } from "../../domain/schema/public";
@@ -76,7 +78,7 @@ export class SelectionCenterTrace {
   }
 
   public transform(transform: string | null): void {
-    this.write(this.#path, "transform", transform);
+    this.write(this.#path, "transform", positionedTransform(this.#basis, transform));
   }
 
   public release(): void {
@@ -119,8 +121,10 @@ function sameStrokeCenters(a: StrokeElementV1, b: StrokeElementV1): boolean {
     a.style.pressureEnabled === b.style.pressureEnabled &&
     a.points === b.points &&
     a.rotation === b.rotation &&
-    a.pivot.x === b.pivot.x &&
-    a.pivot.y === b.pivot.y &&
+    roundCanonical(a.pivot.x - (a.offset?.x ?? 0)) ===
+      roundCanonical(b.pivot.x - (b.offset?.x ?? 0)) &&
+    roundCanonical(a.pivot.y - (a.offset?.y ?? 0)) ===
+      roundCanonical(b.pivot.y - (b.offset?.y ?? 0)) &&
     a.style.width === b.style.width
   );
 }

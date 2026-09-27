@@ -1,3 +1,9 @@
+import { createHook } from "node:async_hooks";
+import * as geometryBounds from "../../../src/domain/geometry/public";
+import { calculateElementBounds } from "../../../src/domain/geometry/public";
+import { elementMatchesSelectionAreaSteps } from "../../../src/editor/selection/selection-area";
+
+import * as strokePosition from "../../../src/domain/geometry/stroke-position";
 import { activeActions } from "../../fixtures/obsidian/editor-actions";
 import { createClipboardDocumentModel } from "../../integration/obsidian/embeds/active-editor-clipboard-fixtures";
 import type { EditableDocumentModel } from "../../../src/obsidian/embeds/document-model-port";
@@ -7,7 +13,6 @@ import { describe, expect, it, vi } from "vitest";
 import { selectionCenterlineBounds } from "../../../src/editor/selection/centerline-bounds";
 import type { InkElementV1, StrokeElementV1 } from "../../../src/domain/schema/public";
 import { ElementStore } from "../../../src/domain/store/public";
-import type { TimeSlicedSelectionCommitPreparation } from "../../../src/editor/selection/handle-session";
 import {
   createRectangleSelectionArea,
   SelectionHandleSession,
@@ -141,25 +146,106 @@ describe("selection scale preview hot path", () => {
 });
 
 describe("selection commit hot paths", () => {
-  it("routes 488 dense strokes through the indexed hit path and bounded commit slices", async () => {
-    const strokes = Array.from({ length: 488 }, (_, index) => denseViewportStroke(index));
+  it("does not allocate a Promise per element for a 10,000-stroke move without yields", async () => {
+    const strokes = Array.from({ length: 10_000 }, (_, index) => indexedStroke(index));
     const session = movedSession(strokes);
-
-    expect(session.prepareCommit()).toEqual({ status: "time-sliced-required" });
-    verifyIndexedMiss(strokes);
-    const prepared = await prepareInBoundedSlices(session);
-
-    expect(prepared.status).toBe("ready");
-    if (prepared.status !== "ready") throw new Error("Expected an exact time-sliced commit.");
-    const first = prepared.replacements[0];
-    const last = prepared.replacements[prepared.replacements.length - 1];
-    if (first?.kind !== "stroke" || last?.kind !== "stroke") {
-      throw new Error("Expected dense-stroke replacements.");
+    let promises = 0;
+    let checks = 0;
+    let yields = 0;
+    const hook = createHook({
+      init: (_id, type) => {
+        if (type === "PROMISE") promises += 1;
+      },
+    });
+    hook.enable();
+    let prepared: Awaited<ReturnType<typeof session.prepareCommitTimeSliced>>;
+    try {
+      prepared = await session.prepareCommitTimeSliced({
+        shouldYield: () => {
+          checks += 1;
+          return false;
+        },
+        yieldControl: async () => {
+          yields += 1;
+        },
+      });
+    } finally {
+      hook.disable();
     }
-    expect(first.points.slice(0, 3)).toEqual(new Float64Array([4, 103, 0.5]));
-    expect(last.points.slice(-3)).toEqual(new Float64Array([11, 103.487, 0.5]));
+    expect(prepared.status).toBe("ready");
+    expect(checks).toBe(strokes.length);
+    expect(yields).toBe(0);
+    // Fixed async entry/return overhead is allowed; per-element Promises are not.
+    expect(promises).toBeLessThanOrEqual(32);
   });
 
+  it("moves 488 dense strokes synchronously without reading unchanged samples", () => {
+    const strokes = Array.from({ length: 488 }, (_, index) => denseViewportStroke(index));
+    verifyIndexedMiss(strokes);
+    let sampleReads = 0;
+    const observed = strokes.map((stroke) => ({
+      ...stroke,
+      points: new Proxy(stroke.points, {
+        get: (source, key) => {
+          if (typeof key === "string" && /^\d+$/.test(key)) sampleReads += 1;
+          const value: unknown = Reflect.get(source, key, source);
+          if (typeof value !== "function") return value;
+          return (...args: unknown[]) => {
+            sampleReads += source.length;
+            return Reflect.apply(value, source, args) as unknown;
+          };
+        },
+      }),
+    }));
+    const prepared = movedSession(observed).prepareCommit();
+    expect(prepared.status).toBe("ready");
+    if (prepared.status !== "ready") throw new Error("Expected synchronous position commit.");
+    expect(prepared.replacements).toHaveLength(strokes.length);
+    for (let index = 0; index < observed.length; index += 1) {
+      const replacement = prepared.replacements[index]!;
+      if (replacement.kind !== "stroke") throw new Error("Expected stroke replacement.");
+      expect(replacement.points).toBe(observed[index]!.points);
+      expect(replacement.offset).toEqual({ x: 2, y: 3 });
+      expect(replacement.pivot.x).toBe(1026);
+    }
+    expect(sampleReads).toBe(0);
+  });
+
+  it("slices and cancels moves according to element count instead of sample count", async () => {
+    const strokes = Array.from({ length: 1_001 }, (_, index) => indexedStroke(index));
+    const session = movedSession(strokes);
+    expect(session.prepareCommit()).toEqual({ status: "time-sliced-required" });
+    const translate = vi.spyOn(strokePosition, "translatedStroke");
+    try {
+      let previousCalls = 0;
+      const prepared = await session.prepareCommitTimeSliced({
+        shouldYield: () => true,
+        yieldControl: async () => {
+          expect(translate.mock.calls.length - previousCalls).toBeLessThanOrEqual(1);
+          previousCalls = translate.mock.calls.length;
+        },
+      });
+      expect(prepared.status).toBe("ready");
+      expect(translate).toHaveBeenCalledTimes(strokes.length);
+      const cancelledSession = movedSession(strokes);
+      let cancelled = false;
+      translate.mockClear();
+      const abandoned = await cancelledSession.prepareCommitTimeSliced({
+        isCancelled: () => cancelled,
+        shouldYield: () => true,
+        yieldControl: async () => {
+          cancelled = true;
+        },
+      });
+      expect(abandoned.status).toBe("cancelled");
+      expect(translate.mock.calls.length).toBeLessThanOrEqual(1);
+    } finally {
+      translate.mockRestore();
+    }
+  });
+});
+
+describe("selection connection fan-out commits", () => {
   it("bounds preparation for a near-maximum 19,929-endpoint selection fan-out", async () => {
     const { elements, targetIds } = maximumEndpointFixture();
     const store = new ElementStore(elements);
@@ -237,20 +323,6 @@ function verifyIndexedMiss(strokes: readonly StrokeElementV1[]): void {
   }
 }
 
-async function prepareInBoundedSlices(
-  session: SelectionHandleSession,
-): Promise<TimeSlicedSelectionCommitPreparation> {
-  let yields = 0;
-  const prepared = await session.prepareCommitTimeSliced({
-    shouldYield: () => true,
-    yieldControl: async () => {
-      yields += 1;
-    },
-  });
-  expect(yields).toBeGreaterThanOrEqual(488);
-  return prepared;
-}
-
 function verifyAreaSelection(
   store: ElementStore,
   sceneStore: ElementSceneStore,
@@ -313,9 +385,68 @@ it("performs no selection member scans during repeated deletion cancellation che
   );
   try {
     actions.execute("delete");
-    expect(prepareElementMutation).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(prepareElementMutation).toHaveBeenCalledOnce());
     await prepareElementMutation.mock.results[0]!.value;
   } finally {
     actions.dispose();
+  }
+});
+
+it("avoids stroke geometry for diagonal lasso edge-box false positives at capacity", () => {
+  const area = createLassoSelectionArea([
+    { x: 0, y: 0 },
+    { x: 1000, y: 1000 },
+    { x: 1000, y: 0 },
+    { x: 0, y: 1000 },
+  ]);
+  let pointReads = 0;
+  let candidateBoundReads = 0;
+  const edgeCheck = vi.spyOn(geometryBounds, "boundsIntersect");
+  try {
+    for (let index = 0; index < 10_000; index += 1) {
+      const source = indexedStroke(index);
+      const bounds = calculateElementBounds(source);
+      const observedBounds = {
+        get minX() {
+          candidateBoundReads += 1;
+          return bounds.minX;
+        },
+        get minY() {
+          candidateBoundReads += 1;
+          return bounds.minY;
+        },
+        get maxX() {
+          candidateBoundReads += 1;
+          return bounds.maxX;
+        },
+        get maxY() {
+          candidateBoundReads += 1;
+          return bounds.maxY;
+        },
+      };
+      const points = new Proxy(source.points, {
+        get(target, key, receiver): unknown {
+          if (typeof key === "string" && /^\d+$/.test(key)) pointReads += 1;
+          return Reflect.get(target, key, receiver);
+        },
+      });
+      const steps = elementMatchesSelectionAreaSteps(
+        area,
+        { ...source, points },
+        "touched",
+        observedBounds,
+      );
+      let result = steps.next();
+      while (!result.done) result = steps.next();
+    }
+    const edgeBoxes = edgeCheck.mock.calls.filter(([left]) => "start" in left).length;
+    expect(edgeBoxes).toBeGreaterThan(10_000);
+    expect(edgeBoxes).toBeLessThan(100_000);
+    expect(candidateBoundReads).toBeGreaterThan(edgeBoxes);
+    expect(candidateBoundReads).toBeLessThan(300_000);
+    expect(pointReads).toBeGreaterThan(0);
+    expect(pointReads).toBeLessThan(5_000);
+  } finally {
+    edgeCheck.mockRestore();
   }
 });

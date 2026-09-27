@@ -1,4 +1,7 @@
-import { getCanonicalStrokeReplacementProof } from "../elements/stroke-replacement-proof";
+import {
+  getCanonicalStrokeReplacementProof,
+  inferStoredStrokeTranslation,
+} from "../elements/stroke-replacement-proof";
 import type { InkElementV1 } from "../schema/public";
 
 import { createOwnedTranslatedReplacementRecord } from "./record-factory";
@@ -80,7 +83,7 @@ async function detectCanonicalBatch(
     if (current.element.kind !== "stroke" || replacement.kind !== "stroke") {
       return { status: "fallback", yields };
     }
-    const proof = getCanonicalStrokeReplacementProof(replacement);
+    const proof = inferStoredStrokeTranslation(current.element, replacement);
     if (proof?.source !== current.element) return { status: "fallback", yields };
     assertReplacementIdentity(current.element, replacement);
     recordsInSlice += 1;

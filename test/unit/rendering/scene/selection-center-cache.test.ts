@@ -56,3 +56,17 @@ describe("selection center cache", () => {
     }
   });
 });
+
+it("keeps selection centerlines in shape space across moves", () => {
+  const cache = new SelectionCenterCache();
+  const stroke = indexedStroke(1);
+  const path = cache.build(stroke);
+  const moved = {
+    ...stroke,
+    offset: { x: 50, y: 60 },
+    pivot: { x: stroke.pivot.x + 50, y: stroke.pivot.y + 60 },
+  };
+  expect(cache.read(moved)).toBe(path);
+  cache.clear();
+  expect(cache.build(moved)).toBe(path);
+});

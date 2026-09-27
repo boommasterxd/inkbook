@@ -1,4 +1,6 @@
 import type { PointV1 } from "../../domain/schema/public";
+import type { Bounds } from "../../domain/geometry/public";
+import { indexedLassoEdges, indexedPointInPolygon } from "./lasso-edge-index";
 
 const EPSILON = 1e-9;
 
@@ -6,28 +8,68 @@ export function* segmentInsidePolygon(
   start: PointV1,
   end: PointV1,
   polygon: readonly PointV1[],
+  bounds?: Bounds,
 ): Generator<number, boolean> {
-  if (!pointInPolygonInclusive(start, polygon) || !pointInPolygonInclusive(end, polygon)) {
+  if (
+    !(yield* polygonContains(start, polygon, bounds)) ||
+    !(yield* polygonContains(end, polygon, bounds))
+  ) {
     return false;
   }
   const times = [0, 1];
-  for (let index = 0; index < polygon.length; index += 1) {
-    times.push(
-      ...lineIntersectionTimes(start, end, polygon[index]!, polygon[(index + 1) % polygon.length]!),
-    );
-    if (index % 32 === 31) yield 32;
+  if (bounds !== undefined) {
+    // lineIntersectionTimes accepts parametric epsilon beyond both segment ends.
+    const marginX = EPSILON * (Math.abs(end.x - start.x) + bounds.maxX - bounds.minX + 1);
+    const marginY = EPSILON * (Math.abs(end.y - start.y) + bounds.maxY - bounds.minY + 1);
+    const edges = yield* indexedLassoEdges(polygon, bounds, {
+      minX: Math.min(start.x, end.x) - marginX,
+      maxX: Math.max(start.x, end.x) + marginX,
+      minY: Math.min(start.y, end.y) - marginY,
+      maxY: Math.max(start.y, end.y) + marginY,
+    });
+    let visited = 0;
+    for (const edge of edges) {
+      times.push(...lineIntersectionTimes(start, end, edge.start, edge.end));
+      visited += 1;
+      if (visited % 32 === 0) yield 32;
+    }
+    if (visited % 32 !== 0) yield visited % 32;
+  } else {
+    for (let index = 0; index < polygon.length; index += 1) {
+      times.push(
+        ...lineIntersectionTimes(
+          start,
+          end,
+          polygon[index]!,
+          polygon[(index + 1) % polygon.length]!,
+        ),
+      );
+      if (index % 32 === 31) yield 32;
+    }
   }
   times.sort((left, right) => left - right);
   for (let index = 1; index < times.length; index += 1) {
     const previous = times[index - 1]!;
     const current = times[index]!;
     if (current - previous <= EPSILON) continue;
-    if (!pointInPolygonInclusive(pointAlong(start, end, (previous + current) / 2), polygon)) {
+    if (
+      !(yield* polygonContains(pointAlong(start, end, (previous + current) / 2), polygon, bounds))
+    ) {
       return false;
     }
-    yield polygon.length;
+    if (bounds === undefined) yield polygon.length;
   }
   return true;
+}
+
+function* polygonContains(
+  point: PointV1,
+  polygon: readonly PointV1[],
+  bounds?: Bounds,
+): Generator<number, boolean> {
+  return bounds === undefined
+    ? pointInPolygonInclusive(point, polygon)
+    : yield* indexedPointInPolygon(point, polygon, bounds);
 }
 
 export function pointInPolygonInclusive(

@@ -1,3 +1,5 @@
+import { roundCanonical } from "../../domain/geometry/primitives";
+import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
 import { buildStrokePathParts } from "../../domain/geometry/stroke-path";
 import type { StrokeElementV1 } from "../../domain/schema/public";
 
@@ -26,8 +28,8 @@ export class SelectionCenterCache {
     if (
       cached.points.deref() !== element.points ||
       cached.rotation !== element.rotation ||
-      cached.x !== element.pivot.x ||
-      cached.y !== element.pivot.y ||
+      cached.x !== roundCanonical(element.pivot.x - (element.offset?.x ?? 0)) ||
+      cached.y !== roundCanonical(element.pivot.y - (element.offset?.y ?? 0)) ||
       cached.width !== element.style.width
     ) {
       this.remove(element.id);
@@ -40,7 +42,7 @@ export class SelectionCenterCache {
 
   public build(element: StrokeElementV1): string {
     const path = buildStrokePathParts({
-      ...element,
+      ...strokeLocalGeometry(element),
       style: { ...element.style, pressureEnabled: false },
     })
       .map(({ d }) => d)
@@ -53,8 +55,8 @@ export class SelectionCenterCache {
     this.#entries.set(element.id, {
       points: new WeakRef(element.points),
       rotation: element.rotation,
-      x: element.pivot.x,
-      y: element.pivot.y,
+      x: roundCanonical(element.pivot.x - (element.offset?.x ?? 0)),
+      y: roundCanonical(element.pivot.y - (element.offset?.y ?? 0)),
       width: element.style.width,
       path,
       bytes,

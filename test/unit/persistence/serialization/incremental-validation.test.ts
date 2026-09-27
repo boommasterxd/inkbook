@@ -216,7 +216,7 @@ function capacityRectangle(index: number, memberships: number): BoxShapeElementV
 }
 
 describe("recomputed delta bounds", () => {
-  it("accepts translated pressure geometry when retained bounds round differently", () => {
+  it("uses identical translated pressure bounds after local geometry placement", () => {
     const original: StrokeElementV1 = {
       ...stroke(1),
       points: [
@@ -246,7 +246,7 @@ describe("recomputed delta bounds", () => {
       minY: before.minY + 12,
       maxY: before.maxY + 12,
     };
-    expect(hint).not.toEqual(calculateElementBounds(moved));
+    expect(hint).toEqual(calculateElementBounds(moved));
     expect(validatedDeltaElementFacts(moved, derivation(moved.id, hint))).toEqual(
       elementFacts(moved),
     );

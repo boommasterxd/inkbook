@@ -44,6 +44,13 @@ describe("arbitrary-frame stroke scaling", () => {
     },
   );
 
+  it.each([-125, 250])("resizes a previously moved rotated stroke with offset %s", (offset) => {
+    const source = { ...rotatedStroke(2, 37, true), offset: { x: offset, y: -offset } };
+    const gesture = createGesture(source);
+    const expected = scaleElement(referenceFlatten(source), anchor, factors);
+    expect(gesture.materializeOne(source, pointer, false, factors)).toEqual(expected);
+  });
+
   it("retains the original samples when a replacement calculation rejects a non-finite value", () => {
     const source = rotatedStroke(2, 37, false);
     const gesture = createGesture(source);
@@ -96,9 +103,19 @@ function createGesture(source: StrokeElementV1): SelectionScaleGesture {
 // Preserve the previous per-coordinate rotation as an independent regression oracle.
 function referenceFlatten(element: StrokeElementV1): StrokeElementV1 {
   const rotate = (x: number, y: number) =>
-    canonicalPoint(rotatePointClockwise({ x, y }, element.pivot, element.rotation));
+    canonicalPoint(
+      rotatePointClockwise(
+        {
+          x: x + (element.offset?.x ?? 0),
+          y: y + (element.offset?.y ?? 0),
+        },
+        element.pivot,
+        element.rotation,
+      ),
+    );
+  const { offset: _offset, ...shape } = element;
   return {
-    ...element,
+    ...shape,
     points: element.points.map((value, index, points) => {
       if (index % 3 === 2) return value;
       return index % 3 === 1

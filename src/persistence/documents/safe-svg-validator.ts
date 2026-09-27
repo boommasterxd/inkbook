@@ -192,12 +192,32 @@ export function validPressureGroup(
     id === "inkbook-background" ||
     pressurePaths !== null ||
     tag.selfClosing ||
-    tag.attributes.size !== 1 ||
-    parseCanonicalSvgOpacity(tag.attributes.get("opacity")) === null
+    !validStrokeGroupAttributes(tag.attributes)
   )
     return false;
   totals.groups += 1;
   return totals.groups <= FILE_SCHEMA_LIMITS.elements;
+}
+
+function validStrokeGroupAttributes(attributes: ReadonlyMap<string, string>): boolean {
+  if (attributes.size < 1 || attributes.size > 2) return false;
+  if ([...attributes.keys()].some((name) => name !== "opacity" && name !== "transform"))
+    return false;
+  const opacity = attributes.get("opacity");
+  if (opacity !== undefined && parseCanonicalSvgOpacity(opacity) === null) return false;
+  const transform = attributes.get("transform");
+  if (transform === undefined) return opacity !== undefined;
+  const match =
+    /^translate\((-?(?:0|[1-9]\d*)(?:\.\d{1,3})?) (-?(?:0|[1-9]\d*)(?:\.\d{1,3})?)\)$/u.exec(
+      transform,
+    );
+  return (
+    match !== null &&
+    match.slice(1).every((value) => {
+      const number = Number(value);
+      return Math.abs(number) <= 1_000_000 && number.toString() === value;
+    })
+  );
 }
 
 export function accountPath(totals: SvgTotals, commands: number, pathData: string): boolean {

@@ -110,14 +110,14 @@ describe(`${profile.refreshRate} Hz contained selection completion`, () => {
         expect(test.preview.commit()).toBe(false);
         let readsBefore = 0;
         let slices = 1;
-        while (test.scheduler.pendingCount > 0 && slices <= 10) {
+        while (test.scheduler.pendingCount > 0 && slices <= (area === "lasso" ? 16 : 10)) {
           expect(read.mock.calls.length - readsBefore).toBeLessThanOrEqual(4096);
           expect(test.publish).not.toHaveBeenCalled();
           readsBefore = read.mock.calls.length;
           test.scheduler.runNext(slices * profile.frameDurationMs);
           slices += 1;
         }
-        expect(slices).toBeLessThanOrEqual(10);
+        expect(slices).toBeLessThanOrEqual(area === "lasso" ? 16 : 10);
         expect(test.scheduler.pendingCount).toBe(0);
         expect(read.mock.calls.length - readsBefore).toBeLessThanOrEqual(4096);
         expect(read).toHaveBeenCalledTimes(targets.length);
@@ -195,7 +195,9 @@ it("rejects 10,000 strokes inside a concave lasso notch without reading stroke g
   try {
     test.preview.commit();
     let slices = 1;
-    while (test.scheduler.pendingCount > 0 && slices <= 12) {
+    // Each frame is capped at 4096 charged units. A <=32-visit stroke-box
+    // predicate checkpoint costs one unit; raw edge visits are bounded separately.
+    while (test.scheduler.pendingCount > 0 && slices <= 16) {
       test.scheduler.runNext(slices++ * profile.frameDurationMs);
     }
     expect(test.scheduler.pendingCount).toBe(0);

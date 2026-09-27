@@ -1,4 +1,9 @@
-import type { PreparedPressureGeometryPort, PressureWindowMeasurement } from "../../domain/geometry/prepared-pressure-geometry";
+import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
+import { localPressureGeometry } from "./stroke-position";
+import type {
+  PreparedPressureGeometryPort,
+  PressureWindowMeasurement,
+} from "../../domain/geometry/prepared-pressure-geometry";
 import { buildElementPathParts, type SvgPathPart } from "../../domain/geometry/element-path";
 import {
   iterateTransformedStrokeCenters,
@@ -44,8 +49,11 @@ export class ProgressivePreviewPath {
 
   public constructor(
     element: InkElementV1,
-    private readonly pressureGeometry?: PreparedPressureGeometryPort,
+    private pressureGeometry?: PreparedPressureGeometryPort,
   ) {
+    this.pressureGeometry = localPressureGeometry(element, pressureGeometry);
+    pressureGeometry = this.pressureGeometry;
+    element = element.kind === "stroke" ? strokeLocalGeometry(element) : element;
     this.#element = element;
     if (element.kind === "stroke") {
       this.#parts = element.style.pressureEnabled ? pressureGeometry?.readPath?.() : undefined;
