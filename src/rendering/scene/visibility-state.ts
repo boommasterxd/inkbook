@@ -14,12 +14,7 @@ import { VisibilityEdgeQuery } from "./visibility-edge-query";
 import type { VisibilityDelta, VisibilityQueryResult, VisibilityResult } from "./visibility-types";
 import { growVisibilityCapacity, growVisibilityMarkers } from "./visibility-markers";
 import { VisibilityCandidates } from "./visibility-candidates";
-export type {
-  BandVisibility,
-  VisibilityDelta,
-  VisibilityQueryResult,
-  VisibilityResult,
-} from "./visibility-types";
+export type { VisibilityDelta, VisibilityQueryResult, VisibilityResult } from "./visibility-types";
 
 export class SceneVisibilityState {
   readonly #candidates: VisibilityCandidates;
