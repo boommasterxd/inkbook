@@ -35,6 +35,12 @@ describe.each(["desktop", "tablet", "phone"])("%s canvas menu touch dismissal", 
         expect(fixture.closed).not.toHaveBeenCalled();
         const outside = touchDown(fixture.canvas);
         expect(outside.defaultPrevented).toBe(true);
+        const closing = document.querySelector<HTMLElement>(
+          ".inkbook-adaptive-panel, .inkbook-owned-menu",
+        );
+        expect(closing?.dataset.state).toBe("closing");
+        expect(closing?.isConnected).toBe(true);
+        expect(fixture.closed).not.toHaveBeenCalled();
         vi.advanceTimersByTime(500);
         expect(fixture.closed).toHaveBeenCalledOnce();
         expect(fixture.start).not.toHaveBeenCalled();
@@ -53,7 +59,7 @@ describe.each(["desktop", "tablet", "phone"])("%s canvas menu touch dismissal", 
 function createFixture() {
   const root = createDiv();
   root.className = "inkbook-root";
-  root.dataset.inkbookMotion = "reduced";
+  root.dataset.inkbookMotion = "full";
   const anchor = createEl("button");
   const canvas = createDiv();
   root.append(anchor, canvas);
