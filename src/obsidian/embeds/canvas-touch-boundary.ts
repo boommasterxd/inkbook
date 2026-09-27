@@ -1,3 +1,5 @@
+import { dismissMenuForCanvasTouch } from "../menus/menu-pointer-dismissal";
+
 interface CanvasTouchBoundaryOptions {
   readonly onPenPointerCancel: (event: PointerEvent) => void;
   readonly onPenPointerMove: (event: PointerEvent) => void;
@@ -99,6 +101,10 @@ export class CanvasTouchBoundary {
     if (event.pointerType !== "touch") return;
     this.#releaseStalePenHover(event);
     if (event.isPrimary) this.#options.onPrimaryTouchStart();
+    if (dismissMenuForCanvasTouch(this.#ownerDocument, event)) {
+      stopHostPropagation(event);
+      return;
+    }
     this.#options.onTouchPointerStart(event);
     stopHostPropagation(event);
   };

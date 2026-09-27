@@ -1,3 +1,4 @@
+import { registerMenuPointerDismissal } from "./menu-pointer-dismissal";
 import type { PhoneSheetNavigation } from "./panel-page";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { Component, Platform, setIcon, type Keymap } from "obsidian";
@@ -162,6 +163,7 @@ class OwnedMenu extends Component implements MenuPort {
     this.#panel = new AdaptivePanelSession({
       workScheduler: this.#options.workScheduler,
       anchor: this.#anchor,
+      dismissOnAnchorPointer: this.#kind === "context",
       canvasInputSurface: this.#anchor,
       createContent: () => fragment,
       ...(this.#options.createPhoneSheetHost === undefined
@@ -240,23 +242,18 @@ class OwnedMenu extends Component implements MenuPort {
     content.tabIndex = -1;
     content.focus({ preventScroll: true });
     this.register(installMenuEscapeScope(this.#options.keymap, () => this.close()));
-    this.registerDomEvent(
-      ownerDocument,
-      "pointerdown",
-      (event) => {
-        if (
-          event.target !== null &&
-          "nodeType" in event.target &&
-          !surface.contains(event.target as Node) &&
-          !(this.#kind === "menu" && this.#anchor.contains(event.target as Node))
-        ) {
-          event.preventDefault();
-          event.stopPropagation();
-          this.close();
-        }
-      },
-      true,
-    );
+    registerMenuPointerDismissal(this, ownerDocument, (event) => {
+      if (
+        event.target !== null &&
+        "nodeType" in event.target &&
+        !surface.contains(event.target as Node) &&
+        !(this.#kind === "menu" && this.#anchor.contains(event.target as Node))
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.close();
+      }
+    });
     this.registerDomEvent(
       ownerDocument,
       "keydown",
