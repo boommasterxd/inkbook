@@ -1,6 +1,7 @@
 import type { FrameSchedulerHost } from "../../../src/domain/scheduling/shared-frame-scheduler";
 
 export class ManualHost implements FrameSchedulerHost {
+  public continuationMode: "frame" | "task" = "frame";
   public time = 0;
   public budget = 4;
   public frameInterval = 8;

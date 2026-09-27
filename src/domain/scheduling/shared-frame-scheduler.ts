@@ -3,6 +3,8 @@ import type { FrameCancellation, WorkPriority, WorkScheduler } from "./work-sche
 
 /** Host timing is injected so the same admission policy runs in a window or worker. */
 export interface FrameSchedulerHost {
+  /** Workers resume on a new host task because they have no paint frame to protect. */
+  readonly continuationMode?: "frame" | "task";
   readonly now: () => number;
   readonly budgetMs: () => number;
   readonly frameIntervalMs: () => number;
@@ -170,6 +172,13 @@ export class SharedFrameScheduler implements WorkScheduler {
     if (this.#resumeHandle !== undefined) return;
     if (this.#frameHandle !== undefined || this.#timerHandle !== undefined) return;
     const generation = ++this.#generation;
+    if (this.#host.continuationMode === "task") {
+      this.#timerHandle = this.#host.setTimer(
+        () => this.#beginFrame(generation, this.now(), false),
+        0,
+      );
+      return;
+    }
     this.#timerHandle = this.#host.setTimer(
       () => this.#beginFrame(generation, this.now(), false),
       this.#fallbackDelayMs,
@@ -192,6 +201,7 @@ export class SharedFrameScheduler implements WorkScheduler {
       this.#lastNativeFrameTimestamp !== undefined &&
       timestamp > this.#lastNativeFrameTimestamp;
     if (
+      this.#host.continuationMode === "task" ||
       nativeAdvance ||
       previous === undefined ||
       (timestamp >= previous &&
@@ -269,7 +279,8 @@ export class SharedFrameScheduler implements WorkScheduler {
         this.#jobs.size === 0 &&
         this.#frameHandle === undefined &&
         this.#timerHandle === undefined &&
-        now - previous >= positiveFinite(this.#host.frameIntervalMs(), "frameIntervalMs"))
+        (this.#host.continuationMode === "task" ||
+          now - previous >= positiveFinite(this.#host.frameIntervalMs(), "frameIntervalMs")))
     ) {
       this.#epochStart = now;
       this.#epoch += 1;

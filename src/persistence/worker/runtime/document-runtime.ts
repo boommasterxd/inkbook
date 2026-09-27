@@ -384,12 +384,11 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
       return;
     }
     this.#prewarmRunning = true;
-    void Promise.resolve(this.#scheduler?.nextFrame?.(this.#abortController.signal)).then(
-      () => this.#runPrewarm(),
-      () => {
+    void this.checkpoint(this.#abortController.signal)
+      .then(() => this.#runPrewarm())
+      .catch(() => {
         this.#prewarmRunning = false;
-      },
-    );
+      });
   }
 
   async #runPrewarm(): Promise<void> {
@@ -399,6 +398,7 @@ export class DocumentWorkerRuntime implements DocumentRuntimePort {
         this.#prewarmRequested &&
         !this.#liveInputActive &&
         !this.#running &&
+        this.#unacknowledgedExports.size === 0 &&
         this.#queue.pendingCount === 0
       ) {
         const hasMore = await this.#model.prewarmOne({

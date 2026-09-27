@@ -110,6 +110,67 @@ describe("SharedFrameScheduler", () => {
   });
 });
 
+describe("SharedFrameScheduler task admission", () => {
+  it("resumes task work on the next host turn with a fresh bounded slice", async () => {
+    const host = new ManualHost();
+    host.continuationMode = "task";
+    const scheduler = new SharedFrameScheduler(host);
+    expect(scheduler.deadline()).toBe(4);
+    host.time = 4;
+    const resumed: number[] = [];
+    const first = scheduler.checkpoint()?.then(() => {
+      resumed.push(scheduler.deadline());
+      host.time = 8;
+    });
+    const second = scheduler.checkpoint()?.then(() => resumed.push(scheduler.deadline()));
+
+    expect(host.pendingFrames).toBe(0);
+    host.timer(0);
+    host.timer(0);
+    await first;
+    expect(resumed).toEqual([8]);
+    for (let turn = 0; turn < 5 && resumed.length < 2; turn += 1) {
+      host.timer(0);
+      await Promise.resolve();
+    }
+    expect(resumed).toEqual([8, 12]);
+    await second;
+    scheduler.dispose();
+    expect(host.pendingTimers).toBe(0);
+  });
+
+  it("starts a new task epoch after idle without waiting for a paint interval", () => {
+    const host = new ManualHost();
+    host.continuationMode = "task";
+    const scheduler = new SharedFrameScheduler(host);
+    expect(scheduler.deadline()).toBe(4);
+    host.timer(0);
+    host.time = 5;
+    expect(scheduler.deadline()).toBe(9);
+    scheduler.dispose();
+  });
+
+  it("admits input ahead of background work and resumes the deferred job on a task", () => {
+    const host = new ManualHost();
+    host.continuationMode = "task";
+    const scheduler = new SharedFrameScheduler(host);
+    const order: string[] = [];
+    scheduler.requestFrame(() => order.push("background"), "background");
+    scheduler.requestFrame(() => {
+      order.push("input");
+      host.time = host.budget;
+    }, "input");
+
+    host.timer(0);
+    expect(order).toEqual(["input"]);
+    host.timer(0);
+    host.timer(0);
+    expect(order).toEqual(["input", "background"]);
+    scheduler.dispose();
+    expect(host.pendingTimers).toBe(0);
+  });
+});
+
 describe("SharedFrameScheduler admission policy", () => {
   it.each([0, 5])(
     "does not renew a spent synchronous epoch at native timestamp %i ms",

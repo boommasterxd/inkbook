@@ -83,13 +83,6 @@ export class GestureAwareSliceScheduler implements InputAwareSliceScheduler {
     signal.throwIfAborted();
   }
 
-  public async nextFrame(signal: AbortSignal): Promise<void> {
-    const ready = this.#inputGate.waitUntilInactive(signal);
-    if (ready !== undefined) await ready;
-    await this.#workScheduler.nextFrame(signal);
-    signal.throwIfAborted();
-  }
-
   public async run<T>(
     operation: (signal: AbortSignal) => T | Promise<T>,
     signal: AbortSignal,

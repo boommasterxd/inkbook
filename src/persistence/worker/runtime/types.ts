@@ -183,7 +183,6 @@ export interface DocumentRuntimeServices {
 
 export interface InputAwareSliceScheduler {
   checkpoint(signal: AbortSignal): Promise<void>;
-  nextFrame?(signal: AbortSignal): Promise<void>;
   getSliceMilliseconds?(): number;
   getSliceWorkProfile?(): RuntimeSliceWorkProfile;
   run<T>(operation: (signal: AbortSignal) => T | Promise<T>, signal: AbortSignal): Promise<T>;

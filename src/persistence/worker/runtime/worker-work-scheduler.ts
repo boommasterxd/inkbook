@@ -20,20 +20,12 @@ export function createWorkerWorkScheduler(
   },
 ) {
   let profile = validateProfile(initialProfile);
-  let workScheduler: SharedFrameScheduler | null = null;
-  workScheduler = new SharedFrameScheduler({
+  const workScheduler = new SharedFrameScheduler({
+    continuationMode: "task",
     now: () => timing.now(),
     budgetMs: () => profile.sliceMilliseconds,
     frameIntervalMs: () => profile.frameIntervalMilliseconds,
-    requestFrame: (callback) => {
-      const frameStart =
-        workScheduler === null ? timing.now() : workScheduler.deadline() - workScheduler.budgetMs();
-      const nextFrameAt = frameStart + profile.frameIntervalMilliseconds;
-      return timing.setTimeout(
-        () => callback(timing.now()),
-        Math.max(0, nextFrameAt - timing.now()),
-      );
-    },
+    requestFrame: (callback) => timing.setTimeout(() => callback(timing.now()), 0),
     cancelFrame: (handle) => timing.clearTimeout(handle),
     setTimer: (callback, milliseconds) => timing.setTimeout(callback, milliseconds),
     clearTimer: (handle) => timing.clearTimeout(handle),

@@ -34,7 +34,7 @@ const snapshot = createFallbackFixture();
 const serialized = requireSerialized();
 
 describe("worker failure fallback performance", () => {
-  it("schedules a yield for the remaining shared 120 Hz frame", () => {
+  it("schedules a worker yield on the next task without a synthetic frame gap", () => {
     let now = 0;
     let nextTimer = 0;
     const delays: number[] = [];
@@ -58,8 +58,8 @@ describe("worker failure fallback performance", () => {
     const checkpoint = workScheduler.checkpoint();
     void checkpoint?.catch(() => undefined);
 
-    expect(delays).toContainEqual(1_000 / 120 - 5);
-    expect(delays).not.toContainEqual(1_000 / 120);
+    expect(delays).toContainEqual(0);
+    expect(delays).not.toContainEqual(1_000 / 120 - 5);
     workScheduler.dispose();
   });
 
