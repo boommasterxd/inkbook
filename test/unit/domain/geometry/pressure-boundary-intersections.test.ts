@@ -89,6 +89,17 @@ describe("pressure boundary intersections", () => {
       expect(swapped).toContainEqual({ first: hit.second, second: hit.first });
   });
 
+  it("preserves intersection parameters with a window-local arc-angle cache", () => {
+    const circle = arc({ x: 2, y: -3 }, 4, Math.PI / 4, -1.5 * Math.PI);
+    const crossing = line(-4, -3, 8, -3);
+    const expected = intersectPressureBoundaries(circle, crossing);
+    const cache = new WeakMap<PressureBoundaryArc, number>();
+    expect(intersectPressureBoundaries(circle, crossing, cache)).toEqual(expected);
+    expect(intersectPressureBoundaries(crossing, circle, cache)).toEqual(
+      intersectPressureBoundaries(crossing, circle),
+    );
+  });
+
   it("finds tangency and rejects nearby disjoint lines", () => {
     expect(intersectPressureBoundaries(line(-2, 1, 2, 1), arc(origin))).toEqual([
       { first: 0.5, second: 0.25 },

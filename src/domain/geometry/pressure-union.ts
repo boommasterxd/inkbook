@@ -1,10 +1,11 @@
 import { pressureChainContour } from "./pressure-chain-contour";
 import type { PointV1 } from "../schema/types";
-import type { PressureCapsule, PressureDisk } from "./pressure-joins";
+import type { PressureBoundaryArc, PressureCapsule, PressureDisk } from "./pressure-joins";
 import {
   intersectPressureBoundaries,
   pressureBoundaryParameter,
   pressureBoundaryPoint,
+  type PressureArcAngleCache,
   type PressureBoundarySegment,
 } from "./pressure-boundary-intersections";
 import { pressureCapsuleContains } from "./pressure-capsule-containment";
@@ -40,6 +41,10 @@ interface Source {
   readonly boundaries: readonly PressureBoundarySegment[];
   readonly bounds: Bounds;
   readonly boundaryBounds: readonly Bounds[];
+}
+interface UnionContext {
+  readonly work: PressureUnionWork;
+  readonly arcAngles: PressureArcAngleCache;
 }
 interface Interval {
   first: number;
@@ -77,6 +82,7 @@ export function* iteratePressureUnion(
   if (chain !== undefined) return { contours: [chain], usedFallback: false, work };
   if (shapes.length === 1 && shapes[0]!.kind === "capsule")
     return { contours: [pressureShapeBoundary(shapes[0]!)], usedFallback: false, work };
+  const context: UnionContext = { work, arcAngles: new WeakMap<PressureBoundaryArc, number>() };
   const sources = shapes.map((shape) => {
     const boundaries = pressureShapeBoundary(shape);
     return {
@@ -89,7 +95,7 @@ export function* iteratePressureUnion(
   const visible: PressureBoundarySegment[] = [];
   for (let index = 0; index < sources.length; index += 1) {
     for (const boundary of sources[index]!.boundaries) {
-      const intervals = yield* clipBoundary(boundary, index, sources, work);
+      const intervals = yield* clipBoundary(boundary, index, sources, context);
       if (intervals === undefined) return fallback(sources, work);
       for (const interval of intervals) {
         visible.push(boundarySlice(boundary, interval));
@@ -156,8 +162,9 @@ function* clipBoundary(
   boundary: PressureBoundarySegment,
   owner: number,
   sources: readonly Source[],
-  work: PressureUnionWork,
+  context: UnionContext,
 ): Generator<void, Interval[] | undefined> {
+  const { work, arcAngles } = context;
   let intervals = [{ first: 0, last: 1 }];
   const extent = boundaryBounds(boundary);
   for (let other = 0; other < sources.length && intervals.length > 0; other += 1) {
@@ -167,7 +174,7 @@ function* clipBoundary(
     for (const [index, edge] of source.boundaries.entries()) {
       if (!overlaps(extent, source.boundaryBounds[index]!)) continue;
       work.intersectionTests += 1;
-      for (const intersection of intersectPressureBoundaries(boundary, edge))
+      for (const intersection of intersectPressureBoundaries(boundary, edge, arcAngles))
         cuts.push(intersection.first);
     }
     cuts.sort((a, b) => a - b);
@@ -176,10 +183,17 @@ function* clipBoundary(
       let first = interval.first;
       for (const cut of cuts) {
         if (cut <= first + PARAMETER_ERROR || cut >= interval.last - PARAMETER_ERROR) continue;
-        retainInterval(next, boundary, { first, last: cut }, source, other < owner, work);
+        retainInterval(next, boundary, { first, last: cut }, source, other < owner, context);
         first = cut;
       }
-      retainInterval(next, boundary, { first, last: interval.last }, source, other < owner, work);
+      retainInterval(
+        next,
+        boundary,
+        { first, last: interval.last },
+        source,
+        other < owner,
+        context,
+      );
       if (operationCount(work) > sources.length * PRESSURE_UNION_OPERATIONS_PER_SHAPE)
         return undefined;
       yield;
@@ -201,12 +215,13 @@ function retainInterval(
   interval: Interval,
   source: Source,
   earlier: boolean,
-  work: PressureUnionWork,
+  context: UnionContext,
 ): void {
+  const { work } = context;
   work.intervalTests += 1;
   if (interval.last - interval.first <= PARAMETER_ERROR) return;
   const point = pressureBoundaryPoint(boundary, (interval.first + interval.last) / 2);
-  if (covered(boundary, point, source, earlier, work)) return;
+  if (covered(boundary, point, source, earlier, context)) return;
   const previous = output[output.length - 1];
   if (previous !== undefined && Math.abs(previous.last - interval.first) <= PARAMETER_ERROR)
     previous.last = interval.last;
@@ -218,12 +233,13 @@ function covered(
   point: PointV1,
   source: Source,
   earlier: boolean,
-  work: PressureUnionWork,
+  context: UnionContext,
 ): boolean {
+  const { work, arcAngles } = context;
   for (const [index, edge] of source.boundaries.entries()) {
     if (!containsPoint(source.boundaryBounds[index]!, point)) continue;
     work.boundaryTests += 1;
-    if (pressureBoundaryParameter(edge, point) === undefined) continue;
+    if (pressureBoundaryParameter(edge, point, arcAngles) === undefined) continue;
     const incoming = tangent(boundary, point);
     const adjacent = tangent(edge, point);
     if (incoming.x * adjacent.x + incoming.y * adjacent.y < 0) return true;

@@ -46,10 +46,26 @@ export function buildPressureCapsule(
   last: PressureCenter,
   width: number,
 ): PressureCapsule | PressureDisk {
-  const start = nib(first, width);
-  const end = nib(last, width);
-  const dx = last.x - first.x;
-  const dy = last.y - first.y;
+  return buildPressureCapsuleFromNibs(
+    preparePressureNib(first, width),
+    preparePressureNib(last, width),
+  );
+}
+
+/** Reuse a center's canonical radius across adjacent capsules in an outline. */
+export function preparePressureNib(center: PressureCenter, width: number): PressureNib {
+  return {
+    center: { x: center.x, y: center.y },
+    radius: pressureRadius(center.pressure, width),
+  };
+}
+
+export function buildPressureCapsuleFromNibs(
+  start: PressureNib,
+  end: PressureNib,
+): PressureCapsule | PressureDisk {
+  const dx = end.center.x - start.center.x;
+  const dy = end.center.y - start.center.y;
   const distance = Math.hypot(dx, dy);
   if (distance <= Math.abs(start.radius - end.radius)) {
     return { kind: "dot", ...(start.radius >= end.radius ? start : end) };
@@ -79,13 +95,6 @@ export function pressureArcPoint(boundary: PressureBoundaryArc, fraction: number
   return {
     x: boundary.center.x + boundary.radius * Math.cos(angle),
     y: boundary.center.y + boundary.radius * Math.sin(angle),
-  };
-}
-
-function nib(center: PressureCenter, width: number): PressureNib {
-  return {
-    center: { x: center.x, y: center.y },
-    radius: pressureRadius(center.pressure, width),
   };
 }
 

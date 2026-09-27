@@ -11,7 +11,8 @@ import { iteratePressureUnion } from "./pressure-union";
 export type { PressureWindow } from "./prepared-pressure-geometry";
 
 /** Conservative numeric payload reserved for one suspended preparation job, not JS heap overhead.
- * 64 sources (64 scalars); 1,025 guarded union edges including stitching (32 scalars);
+ * 64 sources (64 scalars each, including cached arc starts);
+ * 1,025 guarded union edges including stitching (32 scalars);
  * two 505-interval buffers; 26 cut values; 1,024 completed contour edges (four coordinates);
  * 4,097 active polyline slots including rewrite/rounding arrays (16 scalars);
  * at most 16,384 retained plus 16,384 active addition triangles (six coordinates).
