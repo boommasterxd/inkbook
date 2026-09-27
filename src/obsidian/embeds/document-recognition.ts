@@ -2,6 +2,7 @@ import { TFile, type Vault } from "obsidian";
 
 import { adoptOwnedSvgOutputSync } from "../../persistence/scheduling/owned-svg-output";
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
+import { samePreviewContentIdentity, type PreviewContentIdentity } from "./safe-preview-svg";
 import { inspectPreviewSvg, type LoadedPreviewSvg } from "./safe-preview-svg";
 
 const MAXIMUM_RECOGNITION_CACHE_ENTRIES = 256;
@@ -9,7 +10,6 @@ const MAXIMUM_RECOGNITION_MARKUP_CODE_UNITS = 32 * 1024 * 1024;
 const MAXIMUM_ROOT_TAG_CHARACTERS = 4096;
 const MAXIMUM_ACTIVE_READS = 4;
 const MAXIMUM_QUEUED_READS = 4096;
-
 interface RecognitionEntry {
   pendingRefresh?: boolean;
   readonly signature: string;
@@ -22,6 +22,7 @@ interface PendingRecognition {
   readonly signature: string;
   readonly promise: Promise<InkbookDocumentRecognition>;
   readonly resolve: (value: InkbookDocumentRecognition) => void;
+  readonly gates: Set<() => Promise<void>>;
 }
 
 export type InkbookDocumentRecognition = false | LoadedPreviewSvg;
@@ -30,6 +31,11 @@ export interface InkbookDocumentRecognitionPort {
   cached(documentId: string): InkbookDocumentRecognition | undefined;
   recognize(documentId: string): Promise<InkbookDocumentRecognition>;
   subscribe(listener: (documentId: string) => void): () => void;
+  loadPreviewSource?: (
+    documentId: string,
+    source: string,
+    waitForBackground?: () => Promise<void>,
+  ) => Promise<LoadedPreviewSvg>;
 }
 
 function fileSignature(file: TFile): string {
@@ -88,6 +94,45 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     queueMicrotask(() => this.#drain());
   }
 
+  public readonly loadPreviewSource = async (
+    documentId: string,
+    source: string,
+    waitForBackground?: () => Promise<void>,
+  ): Promise<LoadedPreviewSvg> => {
+    const file = this.#resolveFile(documentId);
+    const identity = previewSourceIdentity(source);
+    if (
+      file === undefined ||
+      identity === undefined ||
+      !matchesPreviewResource(this.#vault, file, source)
+    )
+      throw new Error("The Inkbook preview source does not match its file.");
+    const signature = fileSignature(file);
+    const cached = this.#entries.get(documentId);
+    if (cached !== undefined && !cached.pendingRefresh && cached.signature === signature) {
+      this.#touch(documentId, cached);
+      if (
+        cached.value === false ||
+        !samePreviewContentIdentity(cached.value.contentIdentity, identity)
+      )
+        throw new Error("The Inkbook preview source changed while loading.");
+      return cached.value;
+    }
+    if (cached !== undefined) this.#deleteEntry(documentId);
+    const pending = this.recognize(documentId);
+    const request = this.#pending.get(documentId);
+    if (waitForBackground !== undefined) request?.gates.add(waitForBackground);
+    const value = await pending;
+    if (
+      value === false ||
+      this.#resolveFile(documentId) !== file ||
+      fileSignature(file) !== signature ||
+      !samePreviewContentIdentity(value.contentIdentity, identity)
+    )
+      throw new Error("The Inkbook preview source changed while loading.");
+    return value;
+  };
+
   public cached(documentId: string): InkbookDocumentRecognition | undefined {
     const file = this.#resolveFile(documentId);
     if (file === undefined) return false;
@@ -115,7 +160,14 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     const promise = new Promise<InkbookDocumentRecognition>((settle) => {
       resolve = settle;
     });
-    const request = { abort: new AbortController(), file, signature, promise, resolve };
+    const request = {
+      abort: new AbortController(),
+      file,
+      signature,
+      promise,
+      resolve,
+      gates: new Set<() => Promise<void>>(),
+    };
     this.#pending.set(documentId, request);
     this.#queue.set(documentId, request);
     this.#drain();
@@ -205,11 +257,11 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     const output = adoptOwnedSvgOutputSync(content, outputHash);
     this.#cancelPending(documentId);
     this.#deleteEntry(documentId);
-    const value = {
+    const value = immutablePreview({
       aspectRatio: 2048.6 / output.lockedHeight,
       contentIdentity: { outputHash, revision: output.revision },
       safeSvg: content,
-    };
+    });
     this.#entries.set(documentId, { signature: fileSignature(file), value });
     this.#markupCodeUnits += content.length;
     this.#evictOverflow();
@@ -244,13 +296,13 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
       if (descriptor === false) return false;
       const preview = await inspectPreviewSvg(
         content,
-        undefined,
+        () => Promise.all(Array.from(request.gates, (gate) => gate())).then(() => undefined),
         abort.signal,
         this.#sliceBudgetMs,
       );
       const confirmed = this.#resolveFile(file.path);
       return preview !== null && confirmed === file && fileSignature(confirmed) === signature
-        ? { ...preview, aspectRatio: descriptor.aspectRatio }
+        ? immutablePreview({ ...preview, aspectRatio: descriptor.aspectRatio })
         : false;
     } catch {
       return false;
@@ -294,5 +346,37 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
         // A failed presentation must not block other subscribers or queued recognition.
       }
     }
+  }
+}
+
+function previewSourceIdentity(source: string): PreviewContentIdentity | undefined {
+  try {
+    const value = new URL(source).searchParams.get("inkbook-revision");
+    const match = /^(\d+)-([a-f0-9]{64})$/u.exec(value ?? "");
+    const revision = Number(match?.[1]);
+    return match !== null && Number.isSafeInteger(revision)
+      ? { revision, outputHash: match[2]! }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function immutablePreview(value: LoadedPreviewSvg): LoadedPreviewSvg {
+  Object.freeze(value.contentIdentity);
+  return Object.freeze(value);
+}
+
+function matchesPreviewResource(vault: Vault, file: TFile, source: string): boolean {
+  try {
+    const expected = new URL(vault.getResourcePath(file));
+    const actual = new URL(source);
+    expected.search = "";
+    expected.hash = "";
+    actual.search = "";
+    actual.hash = "";
+    return actual.href === expected.href;
+  } catch {
+    return false;
   }
 }

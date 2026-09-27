@@ -82,6 +82,8 @@ it("does no fetch or SVG construction for hidden saves and prepares only the lat
   });
   await preview.ensureReady();
   const initialNodes = create.mock.calls.length;
+  const previewBounds = vi.spyOn(button, "getBoundingClientRect");
+  const containerBounds = vi.spyOn(root, "getBoundingClientRect");
   let adoptedIdentity: unknown;
   const handoff = new ActiveScenePreviewHandoff({
     root,
@@ -94,6 +96,7 @@ it("does no fetch or SVG construction for hidden saves and prepares only the lat
       adoptedIdentity = await preview.setSource(source);
     },
   });
+  expect(previewBounds).toHaveBeenCalledOnce();
   handoff.ready();
   for (let revision = 1; revision <= 20; revision += 1) {
     await handoff.setPreviewSource(`app://saved.svg?revision=${String(revision)}`);
@@ -111,4 +114,6 @@ it("does no fetch or SVG construction for hidden saves and prepares only the lat
   expect(button.querySelectorAll("path")).toHaveLength(10_000);
   handoff.dispose();
   preview.dispose();
+  expect(previewBounds).toHaveBeenCalledOnce();
+  expect(containerBounds).not.toHaveBeenCalled();
 });

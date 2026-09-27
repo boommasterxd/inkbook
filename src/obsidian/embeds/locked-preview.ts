@@ -1,6 +1,7 @@
 import { Platform } from "obsidian";
 import { createPreviewSvgAsync } from "./safe-preview-builder";
 import { PreviewIdleScheduler } from "./preview-idle-scheduler";
+import type { InkbookDocumentRecognitionPort } from "./document-recognition";
 
 import {
   loadValidatedPreviewSvg,
@@ -38,8 +39,12 @@ export function createInkbookLockedPreview(
   button: HTMLButtonElement,
   descriptor: InkbookLockedPreviewDescriptor,
   sliceBudgetMs?: () => number,
+  sourceLoader?: {
+    readonly documentId: string;
+    readonly documents: InkbookDocumentRecognitionPort;
+  },
 ): InkbookLockedPreviewSurface {
-  return new LockedPreview(button, descriptor, sliceBudgetMs);
+  return new LockedPreview(button, descriptor, sliceBudgetMs, sourceLoader);
 }
 
 class LockedPreview implements InkbookLockedPreviewSurface {
@@ -61,6 +66,10 @@ class LockedPreview implements InkbookLockedPreviewSurface {
     public readonly element: HTMLButtonElement,
     descriptor: InkbookLockedPreviewDescriptor,
     private readonly sliceBudgetMs?: () => number,
+    private readonly sourceLoader?: {
+      readonly documentId: string;
+      readonly documents: InkbookDocumentRecognitionPort;
+    },
   ) {
     if (Platform.isAndroidApp) element.classList.add("inkbook-locked-preview-android");
     this.#media = element.createDiv({ cls: "inkbook-locked-preview-media" });
@@ -131,13 +140,20 @@ class LockedPreview implements InkbookLockedPreviewSurface {
   ): Promise<PreviewContentIdentity | undefined> {
     const generation = ++this.#sourceGeneration;
     try {
-      const loaded = await loadValidatedPreviewSvg(
-        source,
-        this.#window,
-        () => this.#scheduler.waitForBackground(abort.signal),
-        abort.signal,
-        this.sliceBudgetMs,
-      );
+      if (this.sourceLoader?.documents.loadPreviewSource !== undefined)
+        await this.#scheduler.waitForBackground(abort.signal);
+      if (abort.signal.aborted) return undefined;
+      const loaded = await (this.sourceLoader?.documents.loadPreviewSource === undefined
+        ? loadValidatedPreviewSvg(
+            source,
+            this.#window,
+            () => this.#scheduler.waitForBackground(abort.signal),
+            abort.signal,
+            this.sliceBudgetMs,
+          )
+        : this.sourceLoader.documents.loadPreviewSource(this.sourceLoader.documentId, source, () =>
+            this.#scheduler.waitForBackground(abort.signal),
+          ));
       if (this.#disposed || generation !== this.#sourceGeneration) return undefined;
       this.#update(loaded);
       return loaded.contentIdentity;

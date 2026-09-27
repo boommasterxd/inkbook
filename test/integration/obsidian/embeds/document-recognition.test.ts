@@ -103,6 +103,39 @@ describe("Inkbook document recognition", () => {
   });
 });
 
+it("binds a versioned preview to its Vault resource despite changing host cache queries", async () => {
+  const serialized = serializeInkbookDocument(createSnapshot());
+  if (!serialized.ok) throw new Error("Invalid test snapshot");
+  const file = testFile("drawings/ink book.svg", serialized.value.svg.length);
+  let cacheToken = "1700000000000";
+  const cachedRead = vi.fn(async () => serialized.value.svg);
+  const vault = {
+    cachedRead,
+    getFileByPath: (path: string) => (path === file.path ? file : null),
+    getResourcePath: () => `app://vault/drawings/ink%20book.svg?${cacheToken}`,
+  } as unknown as Vault;
+  const recognition = new ObsidianInkbookDocumentRecognition(vault);
+  const sourceFor = (): string => {
+    const url = new URL(vault.getResourcePath(file));
+    url.searchParams.set(
+      "inkbook-revision",
+      `${String(serialized.value.snapshot.revision)}-${serialized.value.hash}`,
+    );
+    return url.href;
+  };
+  const first = await recognition.loadPreviewSource(file.path, sourceFor());
+  expect(cachedRead).toHaveBeenCalledOnce();
+  cacheToken = "1700000000001";
+  expect(await recognition.loadPreviewSource(file.path, sourceFor())).toBe(first);
+  expect(cachedRead).toHaveBeenCalledOnce();
+  const otherPath = sourceFor().replace("ink%20book.svg", "other.svg");
+  await expect(recognition.loadPreviewSource(file.path, otherPath)).rejects.toThrow(
+    "does not match its file",
+  );
+  expect(cachedRead).toHaveBeenCalledOnce();
+  recognition.dispose();
+});
+
 describe("layout-ready recognition gate", () => {
   it("deduplicates pending classification without reading until layout is ready", async () => {
     const serialized = serializeInkbookDocument(createSnapshot());

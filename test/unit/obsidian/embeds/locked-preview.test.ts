@@ -6,11 +6,13 @@ import { ActiveScenePreviewHandoff } from "../../../../src/obsidian/embeds/activ
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import { createSnapshot } from "../../persistence/serialization/fixtures";
 
-import { Platform } from "obsidian";
+import { Platform, TFile, type Vault } from "obsidian";
 import * as previewBuilder from "../../../../src/obsidian/embeds/safe-preview-builder";
+import { ObsidianInkbookDocumentRecognition } from "../../../../src/obsidian/embeds/document-recognition";
 
 import { createInkbookLockedPreview } from "../../../../src/obsidian/embeds/locked-preview";
 import { createHtmlElement, installObsidianDomHelpers } from "../../../adapters/obsidian/dom";
+import { deferredPreviewRecognition } from "../../../fixtures/obsidian/deferred-preview-recognition";
 
 const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata></svg>';
 const CONTENT_IDENTITY = { outputHash: "a".repeat(64), revision: 1 };
@@ -221,6 +223,137 @@ it("settles validated source identity while detached DOM preparation waits for i
   await pending;
   expect(button.querySelector("svg")).not.toBe(original);
   preview.dispose();
+});
+
+it("shares validated Vault bytes across locked surfaces and builds independent SVG trees", async () => {
+  const serialized = serializeInkbookDocument(createSnapshot());
+  if (!serialized.ok) throw new Error("Invalid test snapshot");
+  const { file, cachedRead, recognition, release } = deferredPreviewRecognition(
+    "shared.svg",
+    serialized.value.svg.length,
+  );
+  const sourceLoader = { documentId: file.path, documents: recognition };
+  const first = createInkbookLockedPreview(
+    createHtmlElement("button"),
+    {
+      aspectRatio: 1,
+      contentIdentity: CONTENT_IDENTITY,
+      safeSvg: SAFE_PREVIEW_SVG,
+    },
+    undefined,
+    sourceLoader,
+  );
+  const second = createInkbookLockedPreview(
+    createHtmlElement("button"),
+    {
+      aspectRatio: 1,
+      contentIdentity: CONTENT_IDENTITY,
+      safeSvg: SAFE_PREVIEW_SVG,
+    },
+    undefined,
+    sourceLoader,
+  );
+  const source = `app://shared.svg?inkbook-revision=${String(serialized.value.snapshot.revision)}-${serialized.value.hash}`;
+  const firstLoad = first.setSource(source);
+  const secondLoad = second.setSource(source);
+  await vi.waitFor(() => expect(cachedRead).toHaveBeenCalledOnce());
+  first.dispose();
+  release(serialized.value.svg);
+  await expect(firstLoad).resolves.toBeUndefined();
+  await expect(secondLoad).resolves.toEqual({
+    outputHash: serialized.value.hash,
+    revision: serialized.value.snapshot.revision,
+  });
+  await second.ensureReady();
+  expect(second.element.querySelector("svg")).not.toBeNull();
+  const third = createInkbookLockedPreview(
+    createHtmlElement("button"),
+    {
+      aspectRatio: 1,
+      contentIdentity: CONTENT_IDENTITY,
+      safeSvg: SAFE_PREVIEW_SVG,
+    },
+    undefined,
+    sourceLoader,
+  );
+  await third.setSource(source);
+  await third.ensureReady();
+  expect(cachedRead).toHaveBeenCalledOnce();
+  expect(third.element.querySelector("svg")).not.toBe(second.element.querySelector("svg"));
+  await expect(
+    third.setSource(`app://shared.svg?inkbook-revision=999-${serialized.value.hash}`),
+  ).rejects.toThrow("changed while loading");
+  expect(cachedRead).toHaveBeenCalledOnce();
+  expect(recognition.cached(file.path)).toMatchObject({
+    contentIdentity: {
+      outputHash: serialized.value.hash,
+      revision: serialized.value.snapshot.revision,
+    },
+  });
+  recognition.invalidate(file.path);
+  const reloaded = third.setSource(source);
+  await vi.waitFor(() => expect(cachedRead).toHaveBeenCalledTimes(2));
+  release(serialized.value.svg);
+  await expect(reloaded).resolves.toEqual({
+    outputHash: serialized.value.hash,
+    revision: serialized.value.snapshot.revision,
+  });
+  third.dispose();
+  second.dispose();
+  recognition.dispose();
+});
+
+it("uses confirmed safe bytes without reading again and rejects a mismatched revision", async () => {
+  const serialized = serializeInkbookDocument(createSnapshot());
+  if (!serialized.ok) throw new Error("Invalid test snapshot");
+  const File = TFile as unknown as new (path: string, size: number) => TFile;
+  const file = new File("confirmed.svg", serialized.value.svg.length);
+  const cachedRead = vi.fn(async () => serialized.value.svg);
+  const recognition = new ObsidianInkbookDocumentRecognition({
+    getFileByPath: (path: string) => (path === file.path ? file : null),
+    getResourcePath: () => "app://confirmed.svg",
+    cachedRead,
+  } as unknown as Vault);
+  recognition.acceptConfirmedOutput(
+    file.path,
+    serialized.value.svg,
+    serialized.value.hash,
+    `${String(file.stat.ctime)}:${String(file.stat.mtime)}:${String(file.stat.size)}`,
+  );
+  const preview = createInkbookLockedPreview(
+    createHtmlElement("button"),
+    { aspectRatio: 1, contentIdentity: CONTENT_IDENTITY, safeSvg: SAFE_PREVIEW_SVG },
+    undefined,
+    { documentId: file.path, documents: recognition },
+  );
+  const prefix = `app://confirmed.svg?inkbook-revision=`;
+  await expect(
+    preview.setSource(
+      `${prefix}${String(serialized.value.snapshot.revision)}-${serialized.value.hash}`,
+    ),
+  ).resolves.toEqual({
+    outputHash: serialized.value.hash,
+    revision: serialized.value.snapshot.revision,
+  });
+  expect(cachedRead).not.toHaveBeenCalled();
+  await expect(
+    preview.setSource(
+      `app://other.svg?inkbook-revision=${String(serialized.value.snapshot.revision)}-${serialized.value.hash}`,
+    ),
+  ).rejects.toThrow("does not match its file");
+  expect(cachedRead).not.toHaveBeenCalled();
+  await expect(preview.setSource(`${prefix}999-${serialized.value.hash}`)).rejects.toThrow(
+    "changed while loading",
+  );
+  expect(cachedRead).not.toHaveBeenCalled();
+  expect(recognition.cached(file.path)).toMatchObject({
+    contentIdentity: {
+      outputHash: serialized.value.hash,
+      revision: serialized.value.snapshot.revision,
+    },
+  });
+  preview.dispose();
+  recognition.dispose();
 });
 
 it("prepares initial content asynchronously with the current owning-window budget", async () => {

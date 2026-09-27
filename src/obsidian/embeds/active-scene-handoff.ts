@@ -71,10 +71,10 @@ export class ActiveScenePreviewHandoff {
     this.#releaseScrollStability = options.initialScrollStabilityRelease;
     this.#mediaQuery = ownerWindow.matchMedia?.("(prefers-reduced-motion: reduce)");
     this.#mediaQuery?.addEventListener("change", this.#handleMotionChange);
-    this.#root.classList.add("inkbook-active-preparing");
-    this.#preview?.classList.add("inkbook-preview-handoff");
     const lockedHeight = this.#preview?.getBoundingClientRect().height ?? 0;
     this.#lockedBlockSize = lockedHeight > 0 ? `${String(lockedHeight)}px` : "";
+    this.#root.classList.add("inkbook-active-preparing");
+    this.#preview?.classList.add("inkbook-preview-handoff");
     if (this.#lockedBlockSize !== "") {
       this.#container.style.blockSize = this.#lockedBlockSize;
       this.#container.style.setProperty(
@@ -123,7 +123,6 @@ export class ActiveScenePreviewHandoff {
     if (activeBlockSize !== "") {
       this.#container.style.setProperty(ACTIVE_SCENE_BLOCK_SIZE_PROPERTY, activeBlockSize);
     }
-    this.#container.getBoundingClientRect();
     if (this.#reducedMotion()) {
       this.#startUnlockTransition(activeBlockSize);
       this.#complete();
@@ -137,6 +136,7 @@ export class ActiveScenePreviewHandoff {
   }
 
   #scheduleAfterPaint(callback: () => void): void {
+    // The intervening paint establishes the transition's start styles without a forced layout.
     this.#frame = this.#ownerWindow.requestAnimationFrame(() => {
       this.#frame = undefined;
       if (this.#disposed) return;

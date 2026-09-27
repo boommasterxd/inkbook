@@ -124,6 +124,7 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
       ports.sliceBudgetMs === undefined
         ? undefined
         : () => ports.sliceBudgetMs!(button.ownerDocument.defaultView),
+      { documentId: candidate.resolved.documentId, documents: ports.documents },
     );
     super(candidate.host);
     this.#button = button;
