@@ -112,6 +112,7 @@ export async function hashExactUtf8Output(
   output: Uint8Array<ArrayBuffer>,
   signal?: AbortSignal,
   digest: ExactOutputDigest | null = platformDigest(),
+  checkpoint?: () => Promise<void>,
 ): Promise<string> {
   throwIfCancelled(signal);
   if (digest !== null) {
@@ -124,7 +125,14 @@ export async function hashExactUtf8Output(
     }
   }
   const fallback = new ChunkedSha256();
-  fallback.update(output);
+  if (checkpoint === undefined) fallback.update(output);
+  else {
+    for (let offset = 0; offset < output.byteLength; offset += DEFAULT_SLICE_BYTE_LIMIT) {
+      throwIfCancelled(signal);
+      fallback.update(output.subarray(offset, offset + DEFAULT_SLICE_BYTE_LIMIT));
+      await checkpoint();
+    }
+  }
   throwIfCancelled(signal);
   return fallback.digestHex();
 }

@@ -4,7 +4,10 @@ import type {
   VerifiedPersistedOutput,
 } from "../../worker/protocol";
 import type { DocumentRuntimePort, DocumentRuntimeResult } from "../../worker/runtime/public";
-import { hashSvgContent, inspectTrustedSvgOutput } from "../../scheduling/trusted-svg-output";
+import {
+  hashConfirmedSvgContent,
+  inspectTrustedSvgOutput,
+} from "../../scheduling/trusted-svg-output";
 
 import { scanCanonicalRevisionPrefix } from "../revision-scan";
 
@@ -29,7 +32,7 @@ export async function verifyExactWorkerContent(
       versionPolicy === "editable" &&
       base?.type === "confirmed" &&
       scanCanonicalRevisionPrefix(content) === base.revision &&
-      (await hashSvgContent(content, options)) === base.outputHash
+      (await hashConfirmedSvgContent(content, options)) === base.outputHash
     ) {
       return { outputHash: base.outputHash, revision: base.revision, type: "confirmed" };
     }

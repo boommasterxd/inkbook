@@ -280,8 +280,11 @@ export class AutosaveCoordinator {
     if (result.type !== "export-success" || !exports.matchesExportResult(request, result)) {
       this.#exportInFlight = null;
       if (result.type === "export-success") this.#executor.acknowledgeExport?.(result, false);
-      if (result.type === "export-failure" && exports.matchesExportResult(request, result))
+      if (result.type === "export-failure" && exports.matchesExportResult(request, result)) {
         this.#requireFullSnapshot();
+        if (request.type === "export-incremental") this.#timer.clear();
+        if (request.type === "export-incremental") return void this.#kick();
+      }
       this.#setStatus("retryable-error");
       this.#resolveWaiters();
       return;

@@ -40,11 +40,13 @@ export class AutosaveExportIntegrity {
       if (this.waitForBackground) await this.waitForBackground();
       if (signal?.aborted || !isCurrent()) return "cancelled";
       const value = snapshot();
-      const digest = await this.#metadata.digest(
-        value,
-        createMainThreadCheckpoint(this.sliceBudgetMs, this.waitForBackground),
-        signal,
-      );
+      const checkpoint = createMainThreadCheckpoint(this.sliceBudgetMs, this.waitForBackground);
+      const currentCheckpoint = async (): Promise<void> => {
+        if (signal?.aborted || !isCurrent()) throw new Error("Obsolete export integrity check.");
+        await checkpoint();
+        if (signal?.aborted || !isCurrent()) throw new Error("Obsolete export integrity check.");
+      };
+      const digest = await this.#metadata.digest(value, currentCheckpoint, signal);
       matches = sameDocumentIntegrityManifest(
         workerManifest,
         deriveDocumentIntegrityManifestFromContentDigest(value, digest),

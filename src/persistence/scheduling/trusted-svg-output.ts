@@ -2,12 +2,14 @@ import { FILE_SCHEMA_LIMITS } from "../../domain/schema/constants";
 import { validateSafeSvgSteps, type SafeSvgValidation } from "../documents/safe-svg-validator";
 import type { SafeSvgVersionPolicy } from "../documents/svg-envelope-root";
 import { ChunkedSha256 } from "../serialization/chunked-output-sha256";
+import { hashExactUtf8Output } from "../serialization/chunked-output-assembler";
 
 import { adoptUtf8Output, type Utf8AdoptionOptions } from "./utf8-adoption";
 import { createMainThreadCheckpoint, createMainThreadDeadline } from "./main-thread-checkpoint";
 
 const HASH = /^[0-9a-f]{64}$/u;
 const DEFAULT_CHUNK_BYTES = 64 * 1024;
+const MAX_NATIVE_HASH_BYTES = 20 * 1024 * 1024;
 
 export interface TrustedSvgOutput {
   readonly content: string;
@@ -38,6 +40,66 @@ export async function hashSvgContent(
   const inspected = await inspectString(content, chunkBytes, checkpoint, options.signal);
   options.signal?.throwIfAborted();
   return inspected.outputHash;
+}
+
+/** Uses a bounded native digest for confirmed-base preflight; other inputs retain sliced hashing. */
+export async function hashConfirmedSvgContent(
+  content: string,
+  options: TrustedSvgInspectionOptions = {},
+): Promise<string> {
+  if (
+    content.length > MAX_NATIVE_HASH_BYTES ||
+    typeof crypto === "undefined" ||
+    crypto.subtle === undefined
+  )
+    return hashSvgContent(content, options);
+  const checkpoint =
+    options.checkpoint ??
+    createMainThreadCheckpoint(options.sliceBudgetMs, options.waitForBackground);
+  await checkpoint();
+  options.signal?.throwIfAborted();
+  const chunkBytes = options.chunkBytes ?? DEFAULT_CHUNK_BYTES;
+  assertChunkBytes(chunkBytes);
+  const encoded = await encodeConfirmedContent(
+    content,
+    Math.min(chunkBytes, DEFAULT_CHUNK_BYTES),
+    checkpoint,
+    options.signal,
+  );
+  if (encoded === null) return hashSvgContent(content, options);
+  return hashExactUtf8Output(encoded, options.signal, undefined, checkpoint);
+}
+
+async function encodeConfirmedContent(
+  content: string,
+  chunkBytes: number,
+  checkpoint: () => Promise<void>,
+  signal?: AbortSignal,
+): Promise<Uint8Array<ArrayBuffer> | null> {
+  const encoder = new TextEncoder();
+  let output = new Uint8Array(Math.max(1, content.length));
+  let writtenBytes = 0;
+  for (let offset = 0; offset < content.length;) {
+    signal?.throwIfAborted();
+    const end = nextChunkEnd(content, offset, chunkBytes);
+    let fragment = content.slice(offset, end);
+    while (fragment.length > 0) {
+      const encoded = encoder.encodeInto(fragment, output.subarray(writtenBytes));
+      writtenBytes += encoded.written;
+      fragment = fragment.slice(encoded.read);
+      if (fragment.length > 0) {
+        const capacity = Math.min(MAX_NATIVE_HASH_BYTES, output.byteLength * 2);
+        if (capacity <= output.byteLength) return null;
+        const grown = new Uint8Array(capacity);
+        grown.set(output.subarray(0, writtenBytes));
+        output = grown;
+      }
+    }
+    offset = end;
+    await checkpoint();
+  }
+  signal?.throwIfAborted();
+  return output.subarray(0, writtenBytes);
 }
 
 export async function inspectTrustedSvgOutput(
@@ -134,7 +196,14 @@ async function inspectString(
 function nextChunkEnd(input: string, offset: number, chunkCodeUnits: number): number {
   let end = Math.min(input.length, offset + chunkCodeUnits);
   const trailing = input.charCodeAt(end - 1);
-  if (end < input.length && trailing >= 0xd800 && trailing <= 0xdbff) end -= 1;
+  if (
+    end < input.length &&
+    trailing >= 0xd800 &&
+    trailing <= 0xdbff &&
+    input.charCodeAt(end) >= 0xdc00 &&
+    input.charCodeAt(end) <= 0xdfff
+  )
+    end += end - offset === 1 ? 1 : -1;
   return end;
 }
 

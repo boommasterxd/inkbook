@@ -1,9 +1,15 @@
 import { InteractiveWorkPriority } from "../../../../src/editor/session/interactive-work-priority";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { inspectTrustedSvgOutput } from "../../../../src/persistence/scheduling/trusted-svg-output";
+import {
+  hashConfirmedSvgContent,
+  inspectTrustedSvgOutput,
+} from "../../../../src/persistence/scheduling/trusted-svg-output";
 import { ChunkedSha256 } from "../../../../src/persistence/serialization/chunked-output-sha256";
+import { sha256Hex } from "../../../../src/persistence/serialization/sha256";
 import { createMaximumComplexitySvg } from "../../../fixtures/persistence/safe-svg";
+
+afterEach(() => vi.restoreAllMocks());
 
 describe("trusted SVG output validation slices", () => {
   it("rejects external output with literal markup hidden inside metadata", async () => {
@@ -49,6 +55,50 @@ describe("trusted SVG output validation slices", () => {
       }),
     ).rejects.toMatchObject({ name: "AbortError" });
     expect(checkpoints).toBe(firstInspectionCheckpoint);
+  });
+});
+
+describe("confirmed-base digest", () => {
+  it("hashes exact UTF-8 across one-code-unit surrogate boundaries", async () => {
+    const source = "ä✒️\ud83d\udd8b";
+    const digest = vi.spyOn(crypto.subtle, "digest");
+    await expect(hashConfirmedSvgContent(source, { chunkBytes: 1 })).resolves.toBe(
+      sha256Hex(source),
+    );
+    expect(digest).toHaveBeenCalledOnce();
+    expect(new Uint8Array(digest.mock.calls[0]![1] as ArrayBuffer)).toEqual(
+      new TextEncoder().encode(source),
+    );
+  });
+
+  it("checks cancellation while preparing native digest input", async () => {
+    const controller = new AbortController();
+    const digest = vi.spyOn(crypto.subtle, "digest");
+    let checkpoints = 0;
+    await expect(
+      hashConfirmedSvgContent("abcdefgh", {
+        chunkBytes: 2,
+        signal: controller.signal,
+        checkpoint: async () => {
+          checkpoints += 1;
+          if (checkpoints === 3) controller.abort();
+        },
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(digest).not.toHaveBeenCalled();
+  });
+
+  it("retains sliced complete-byte hashing when native digest fails", async () => {
+    const source = "confirmed base content";
+    const expected = sha256Hex(source);
+    vi.spyOn(crypto.subtle, "digest").mockRejectedValueOnce(new Error("native digest unavailable"));
+    const updates = vi.spyOn(ChunkedSha256.prototype, "update");
+    const checkpoint = vi.fn(async () => undefined);
+    await expect(hashConfirmedSvgContent(source, { checkpoint })).resolves.toBe(expected);
+    expect(updates.mock.calls.reduce((bytes, [chunk]) => bytes + chunk.byteLength, 0)).toBe(
+      new TextEncoder().encode(source).byteLength,
+    );
+    expect(checkpoint.mock.calls.length).toBeGreaterThan(2);
   });
 });
 

@@ -114,6 +114,41 @@ describe("autosave inspection priority", () => {
   );
 });
 
+describe("obsolete export integrity", () => {
+  it("stops an obsolete digest at its next checkpoint and accepts the successor", async () => {
+    const initial = snapshot();
+    const document = {
+      ...initial,
+      elements: Array.from({ length: 40 }, (_, index) => ({
+        ...initial.elements[0]!,
+        id: `digest-${index}`,
+      })),
+    };
+    const manifest = deriveDocumentIntegrityManifest(document);
+    let revision = document.revision;
+    let checkpoints = 0;
+    const integrity = new AutosaveExportIntegrity(async () => {
+      checkpoints += 1;
+      if (checkpoints === 3) revision += 1;
+    });
+
+    await expect(
+      integrity.verify(
+        () => document,
+        manifest,
+        undefined,
+        () => revision === document.revision,
+      ),
+    ).resolves.toBe("cancelled");
+    expect(checkpoints).toBeLessThan(document.elements.length);
+    const successor = { ...document, revision };
+    await expect(
+      integrity.verify(() => successor, deriveDocumentIntegrityManifest(successor)),
+    ).resolves.toBe("match");
+    integrity.clear();
+  });
+});
+
 describe("confirmed preflight base", () => {
   it.each(["hash", "revision"] as const)(
     "retains full verification for a mismatched %s",
