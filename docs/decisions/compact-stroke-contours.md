@@ -35,3 +35,5 @@ The follow-up complete local `npm run ci` passed 444 Unit/Integration files with
 ## Linear Chain Follow-up
 
 Regular capsule chains now bypass Boolean clipping and stitching through direct tangent joins; conservative boundary rectangles prune disjoint comparisons in the exact fallback. The reference remains within its existing budgets at 41,149 ASCII path bytes and 81 pressure subpaths. On the archived mixed-length 10,002-stroke fixture, observed intersection calls decrease from 10,458,542 to 2,453,648, boundary classifications from 15,105,913 to 1,456,468, and containment checks from 3,328,909 to 1,474,376. These are diagnostic work counts, not elapsed-time guarantees.
+
+Adjacent capsules reuse prepared center nibs, and exact-union windows lazily reuse original arc start angles. Both optimizations preserve calculation order and emitted geometry; they do not introduce cross-session geometry proofs or accept supplied static paths as canonical. Deterministic tests observe radius and angle calculations, including empty ranges and early cancellation. Real cold-open and export latency remains a separate profiling requirement.

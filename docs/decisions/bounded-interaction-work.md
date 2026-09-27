@@ -15,6 +15,13 @@ Bound actual geometry and DOM work independently. Publish ready viewport entrant
 in ordered batches instead of waiting for every entrant. Initial activation still
 waits for its complete readiness contract; partial pressure paths are never
 published. Store commits remain atomic, and retained nodes preserve render order.
+Progressive retained-node reordering shares the live-root allowance with entrants
+and new selection indicators. A discovered order mismatch ends the already proven
+run while preserving its successor anchor; it must not retroactively reparent an
+unbounded earlier run. Unchanged retained anchors consume no publication capacity.
+One explicitly new order entry does not disable progressive viewport work when
+no existing element changes order. The element still publishes completely;
+unproved deltas, multiple insertions, and actual reorders retain atomic publication.
 When mounted updates and viewport reconciliation compete for the frame budget,
 each receives the first available slice on alternating frames. Selection-edge
 autoscroll resolves the current owner viewport once per frame before preview
@@ -23,6 +30,10 @@ stitching uses numeric spatial buckets with unchanged neighbor order, tolerance,
 fallback, and serialized contour output.
 Canonical budgets and ownership belong in
 [Rendering and Performance](../rendering-and-performance.md).
+
+A smaller fade-start quota was rejected: the paired selection-delete diagnostic
+did not reduce long native tasks and increased layerization work. Keep the
+existing deadline-checked fade allowance, full duration, and width-dependent blur.
 
 For area selection, use proven whole-bounds exclusion as well as acceptance.
 Reuse a bounded edge index only for factory-owned immutable lasso points. Use
@@ -42,7 +53,9 @@ in [Editor Tools](../editor-tools.md#select).
 
 Reuse validation only when the authoritative owner proves the unchanged data
 identity. An internal style change does not require another scan of an exclusively
-owned, unchanged stroke buffer. A transform candidate still passes through the
+owned, unchanged stroke buffer. Validate its changed fields once and bind reuse
+to immutable small headers and the exact current Store source, without retaining
+obsolete source history. A transform candidate still passes through the
 authoritative model's version-bound preparation and commit. External files,
 clipboard content, changed fields, capacity, connections, and operation identity
 retain their required checks. Do not treat a shallow frozen wrapper or a claimed
@@ -55,6 +68,10 @@ The worker reuses confirmed
 order arrays for ordinary element changes, and Paste uses revision-matched model
 facts and direct ID queries rather than rebuilding the existing document.
 External clipboard data and inserted records retain their required validation.
+Host embed paste may reuse only exact own-output readback proof, never safe-markup
+recognition alone; fresh file identity and bytes still require checking.
+Removed worker contours remain eligible for Undo inside the existing bounded
+shape cache, with exact sample comparison only on restoration.
 
 Cache canonical metadata fragments within bounded session ownership, while
 retaining the independent exact canonical hash that binds worker output to the
