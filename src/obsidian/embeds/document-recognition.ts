@@ -4,6 +4,7 @@ import { adoptOwnedSvgOutputSync } from "../../persistence/scheduling/owned-svg-
 import type { MetadataGuardedFileRead } from "../../persistence/saving/save-ports";
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/public";
 import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
+import { createRecognitionWorkScheduler } from "./document-recognition-scheduler";
 import { samePreviewContentIdentity, type PreviewContentIdentity } from "./safe-preview-svg";
 import { inspectPreviewSvg, type LoadedPreviewSvg } from "./safe-preview-svg";
 
@@ -21,6 +22,8 @@ interface RecognitionEntry {
 
 interface PendingRecognition {
   readonly abort: AbortController;
+  readonly owners: Set<Window>;
+  schedulerAbort: AbortController;
   readonly file: TFile;
   readonly signature: string;
   readonly promise: Promise<InkbookDocumentRecognition>;
@@ -32,12 +35,13 @@ export type InkbookDocumentRecognition = false | LoadedPreviewSvg;
 
 export interface InkbookDocumentRecognitionPort {
   cached(documentId: string): InkbookDocumentRecognition | undefined;
-  recognize(documentId: string): Promise<InkbookDocumentRecognition>;
+  recognize(documentId: string, ownerWindow?: Window | null): Promise<InkbookDocumentRecognition>;
   subscribe(listener: (documentId: string) => void): () => void;
   loadPreviewSource?: (
     documentId: string,
     source: string,
     waitForBackground?: () => Promise<void>,
+    ownerWindow?: Window | null,
   ) => Promise<LoadedPreviewSvg>;
 }
 
@@ -77,18 +81,19 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
   #activeReads = 0;
   #markupCodeUnits = 0;
   #layoutReady: boolean;
-  readonly #workScheduler: WorkScheduler;
+  readonly #workScheduler: (ownerWindow: Window | null) => WorkScheduler;
   #disposed = false;
 
   public constructor(
     vault: Vault,
     options: {
       readonly deferUntilLayoutReady?: boolean;
-      readonly workScheduler: WorkScheduler;
+      readonly workScheduler: WorkScheduler | ((ownerWindow: Window | null) => WorkScheduler);
     },
   ) {
     this.#vault = vault;
-    this.#workScheduler = options.workScheduler;
+    const workScheduler = options.workScheduler;
+    this.#workScheduler = typeof workScheduler === "function" ? workScheduler : () => workScheduler;
     this.#layoutReady = options.deferUntilLayoutReady !== true;
   }
 
@@ -101,6 +106,7 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     documentId: string,
     source: string,
     waitForBackground?: () => Promise<void>,
+    ownerWindow?: Window | null,
   ): Promise<LoadedPreviewSvg> => {
     const file = this.#resolveFile(documentId);
     const identity = previewSourceIdentity(source);
@@ -122,7 +128,7 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
       return cached.value;
     }
     if (cached !== undefined) this.#deleteEntry(documentId);
-    const pending = this.recognize(documentId);
+    const pending = this.recognize(documentId, ownerWindow);
     const request = this.#pending.get(documentId);
     if (waitForBackground !== undefined) request?.gates.add(waitForBackground);
     const value = await pending;
@@ -163,7 +169,10 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     );
   }
 
-  public recognize(documentId: string): Promise<InkbookDocumentRecognition> {
+  public recognize(
+    documentId: string,
+    ownerWindow?: Window | null,
+  ): Promise<InkbookDocumentRecognition> {
     const file = this.#resolveFile(documentId);
     if (file === undefined) return Promise.resolve(false);
     const signature = fileSignature(file);
@@ -173,7 +182,10 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
       return Promise.resolve(current.value);
     }
     const pending = this.#pending.get(documentId);
-    if (pending?.signature === signature) return pending.promise;
+    if (pending?.signature === signature) {
+      this.#addOwner(pending, ownerWindow);
+      return pending.promise;
+    }
     this.#cancelPending(documentId);
     if (this.#queue.size >= MAXIMUM_QUEUED_READS) return Promise.resolve(false);
     let resolve!: (value: InkbookDocumentRecognition) => void;
@@ -182,12 +194,15 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     });
     const request = {
       abort: new AbortController(),
+      owners: new Set<Window>(),
+      schedulerAbort: new AbortController(),
       file,
       signature,
       promise,
       resolve,
       gates: new Set<() => Promise<void>>(),
     };
+    this.#addOwner(request, ownerWindow);
     this.#pending.set(documentId, request);
     this.#queue.set(documentId, request);
     this.#drain();
@@ -231,6 +246,7 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     const request = this.#pending.get(documentId);
     if (request === undefined) return false;
     request.abort.abort();
+    request.schedulerAbort.abort();
     this.#pending.delete(documentId);
     this.#queue.delete(documentId);
     request.resolve(false);
@@ -302,6 +318,37 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     this.#listeners.clear();
   }
 
+  #addOwner(request: PendingRecognition, ownerWindow: Window | null | undefined): void {
+    if (ownerWindow === null || ownerWindow === undefined || ownerWindow.closed) return;
+    const previous = this.#chosenOwner(request);
+    request.owners.delete(ownerWindow);
+    request.owners.add(ownerWindow);
+    if (previous !== this.#chosenOwner(request)) {
+      request.schedulerAbort.abort();
+      request.schedulerAbort = new AbortController();
+    }
+  }
+
+  #chosenOwner(request: PendingRecognition): Window | null {
+    let visible: Window | null = null;
+    let hidden: Window | null = null;
+    for (const owner of request.owners) {
+      if (owner.closed) continue;
+      if (owner.document.visibilityState === "hidden") hidden = owner;
+      else visible = owner;
+    }
+    return visible ?? hidden;
+  }
+
+  /** Forward each validation checkpoint to the current requester's shared window scheduler. */
+  #requestScheduler(request: PendingRecognition): WorkScheduler {
+    return createRecognitionWorkScheduler(
+      () => this.#workScheduler(this.#chosenOwner(request)),
+      () => request.schedulerAbort.signal,
+      request.abort.signal,
+    );
+  }
+
   async #readMarker(request: PendingRecognition): Promise<InkbookDocumentRecognition> {
     const { file, signature, abort } = request;
     if (abort.signal.aborted) return false;
@@ -314,12 +361,18 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
         return false;
       const descriptor = recognizeCanonicalInkbookRoot(content);
       if (descriptor === false) return false;
-      const preview = await inspectPreviewSvg(content, {
-        waitForBackground: () =>
-          Promise.all(Array.from(request.gates, (gate) => gate())).then(() => undefined),
-        signal: abort.signal,
-        workScheduler: this.#workScheduler,
-      });
+      const workScheduler = this.#requestScheduler(request);
+      let preview: LoadedPreviewSvg | null;
+      try {
+        preview = await inspectPreviewSvg(content, {
+          waitForBackground: () =>
+            Promise.all(Array.from(request.gates, (gate) => gate())).then(() => undefined),
+          signal: abort.signal,
+          workScheduler,
+        });
+      } finally {
+        workScheduler.dispose();
+      }
       const confirmed = this.#resolveFile(file.path);
       return preview !== null && confirmed === file && fileSignature(confirmed) === signature
         ? immutablePreview({ ...preview, aspectRatio: descriptor.aspectRatio })

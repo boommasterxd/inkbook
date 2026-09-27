@@ -145,8 +145,11 @@ class LockedPreview implements InkbookLockedPreviewSurface {
             signal: abort.signal,
             workScheduler: this.workScheduler,
           })
-        : this.sourceLoader.documents.loadPreviewSource(this.sourceLoader.documentId, source, () =>
-            this.#scheduler.waitForBackground(abort.signal),
+        : this.sourceLoader.documents.loadPreviewSource(
+            this.sourceLoader.documentId,
+            source,
+            () => this.#scheduler.waitForBackground(abort.signal),
+            this.#window,
           ));
       if (this.#disposed || generation !== this.#sourceGeneration) return undefined;
       this.#update(loaded);

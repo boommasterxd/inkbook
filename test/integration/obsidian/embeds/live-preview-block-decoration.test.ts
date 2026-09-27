@@ -218,7 +218,10 @@ describe("Live Preview pending recognition", () => {
       expect(parent.textContent).not.toContain("!inkbook");
       expect(recognize).not.toHaveBeenCalled();
       await Promise.resolve();
-      expect(recognize).toHaveBeenCalledWith("drawings/page.svg");
+      expect(recognize).toHaveBeenCalledWith(
+        "drawings/page.svg",
+        view.dom.ownerDocument.defaultView,
+      );
       control.value = valid
         ? {
             aspectRatio: 4,

@@ -1,14 +1,18 @@
 import { TFile, type Vault } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 import { ObsidianInkbookDocumentRecognition } from "../../../../src/obsidian/embeds/document-recognition";
+import { createRecognitionWorkScheduler } from "../../../../src/obsidian/embeds/document-recognition-scheduler";
 import { inspectPreviewSvg } from "../../../../src/obsidian/embeds/safe-preview-svg";
 import { createConfirmedOutputFixture } from "../../../fixtures/obsidian/confirmed-output";
 import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 import type { WorkScheduler } from "../../../../src/domain/scheduling/work-scheduler";
+import { SchedulerDisposedError } from "../../../../src/domain/scheduling/work-scheduler";
 
 vi.mock("../../../../src/obsidian/embeds/safe-preview-svg", () => ({ inspectPreviewSvg: vi.fn() }));
 
-function cacheHarness(workScheduler?: WorkScheduler) {
+function cacheHarness(
+  workScheduler?: WorkScheduler | ((ownerWindow: Window | null) => WorkScheduler),
+) {
   const File = TFile as unknown as new (path: string, size: number) => TFile;
   const files = new Map(["a.svg", "b.svg", "c.svg"].map((path) => [path, new File(path, 100)]));
   const recognition = new ObsidianInkbookDocumentRecognition(
@@ -119,11 +123,154 @@ describe("completed recognition markup budgets", () => {
 
 it("passes the shared workspace scheduler into recognition validation", async () => {
   const scheduler = immediateWorkScheduler();
+  const checkpoint = vi.spyOn(scheduler, "checkpoint");
   const recognition = cacheHarness(scheduler);
-  vi.mocked(inspectPreviewSvg).mockResolvedValue(previewWithSize(1));
+  vi.mocked(inspectPreviewSvg).mockImplementation(async (_source, options) => {
+    await options.workScheduler.checkpoint();
+    return previewWithSize(1);
+  });
   await recognition.recognize("a.svg");
-  const forwarded = vi.mocked(inspectPreviewSvg).mock.lastCall?.[1].workScheduler;
-  expect(forwarded).toBe(scheduler);
+  expect(checkpoint).toHaveBeenCalledOnce();
+  recognition.dispose();
+});
+
+it("keeps signaled in-budget checkpoints synchronous but waits for an explicit frame", async () => {
+  const scheduler = immediateWorkScheduler();
+  const checkpoint = vi.spyOn(scheduler, "checkpoint");
+  const nextFrame = vi.spyOn(scheduler, "nextFrame");
+  const transfer = new AbortController();
+  const cancellation = new AbortController();
+  const caller = new AbortController();
+  const NativeAbortController = AbortController;
+  const constructed = vi.fn();
+  class CountingAbortController extends NativeAbortController {
+    constructor() {
+      super();
+      constructed();
+    }
+  }
+  const routed = createRecognitionWorkScheduler(
+    () => scheduler,
+    () => transfer.signal,
+    cancellation.signal,
+  );
+  vi.stubGlobal("AbortController", CountingAbortController);
+  try {
+    expect(routed.checkpoint(caller.signal)).toBeUndefined();
+    expect(constructed).not.toHaveBeenCalled();
+    expect(checkpoint).not.toHaveBeenCalled();
+    await routed.nextFrame(caller.signal);
+    expect(constructed).toHaveBeenCalledOnce();
+    expect(nextFrame).toHaveBeenCalledOnce();
+  } finally {
+    vi.unstubAllGlobals();
+    routed.dispose();
+  }
+});
+
+function ownerWindow(visibilityState: DocumentVisibilityState): Window {
+  return { closed: false, document: { visibilityState } } as Window;
+}
+
+it("shares validation across a hidden main window and a visible pop-out", async () => {
+  const main = ownerWindow("hidden");
+  const popout = ownerWindow("visible");
+  const mainScheduler = immediateWorkScheduler();
+  const popoutScheduler = immediateWorkScheduler();
+  const mainCheckpoint = vi.spyOn(mainScheduler, "checkpoint");
+  const popoutCheckpoint = vi.spyOn(popoutScheduler, "checkpoint");
+  const schedulerFor = vi.fn((owner: Window | null) =>
+    owner === popout ? popoutScheduler : mainScheduler,
+  );
+  const recognition = cacheHarness(schedulerFor);
+  vi.mocked(inspectPreviewSvg).mockImplementationOnce(async (_source, options) => {
+    await options.workScheduler.checkpoint();
+    return previewWithSize(1);
+  });
+
+  const first = recognition.recognize("a.svg", main);
+  const second = recognition.recognize("a.svg", popout);
+  expect(second).toBe(first);
+  await expect(first).resolves.toMatchObject({ safeSvg: "x" });
+  expect(inspectPreviewSvg).toHaveBeenCalledOnce();
+  expect(schedulerFor).toHaveBeenCalledWith(popout);
+  expect(popoutCheckpoint).toHaveBeenCalledOnce();
+  expect(mainCheckpoint).not.toHaveBeenCalled();
+  recognition.dispose();
+});
+
+it("moves an in-flight checkpoint to a visible requester", async () => {
+  const main = ownerWindow("hidden");
+  const popout = ownerWindow("visible");
+  const mainScheduler = immediateWorkScheduler();
+  const popoutScheduler = immediateWorkScheduler();
+  const mainCancelled = vi.fn();
+  mainScheduler.checkpoint = (signal) =>
+    new Promise<void>((_resolve, reject) => {
+      signal?.addEventListener("abort", () => {
+        mainCancelled();
+        reject(new Error("transferred"));
+      });
+    });
+  const popoutCheckpoint = vi.spyOn(popoutScheduler, "checkpoint");
+  const recognition = cacheHarness((owner) => (owner === popout ? popoutScheduler : mainScheduler));
+  vi.mocked(inspectPreviewSvg).mockImplementationOnce(async (_source, options) => {
+    await options.workScheduler.checkpoint();
+    return previewWithSize(1);
+  });
+
+  const first = recognition.recognize("a.svg", main);
+  await vi.waitFor(() => expect(inspectPreviewSvg).toHaveBeenCalledOnce());
+  expect(recognition.recognize("a.svg", popout)).toBe(first);
+  await expect(first).resolves.toMatchObject({ safeSvg: "x" });
+  expect(mainCancelled).toHaveBeenCalledOnce();
+  expect(popoutCheckpoint).toHaveBeenCalledOnce();
+  recognition.invalidate("a.svg");
+  recognition.dispose();
+});
+
+it("continues a shared inspection after its pop-out window closes", async () => {
+  const popout = ownerWindow("visible");
+  const fallback = immediateWorkScheduler();
+  const fallbackCheckpoint = vi.spyOn(fallback, "checkpoint");
+  const popoutScheduler = immediateWorkScheduler();
+  let close!: (error: Error) => void;
+  popoutScheduler.checkpoint = () =>
+    new Promise<void>((_resolve, reject) => {
+      close = reject;
+    });
+  const recognition = cacheHarness((owner) => (owner === popout ? popoutScheduler : fallback));
+  vi.mocked(inspectPreviewSvg).mockImplementationOnce(async (_source, options) => {
+    await options.workScheduler.checkpoint();
+    return previewWithSize(1);
+  });
+
+  const pending = recognition.recognize("a.svg", popout);
+  await vi.waitFor(() => expect(close).toBeTypeOf("function"));
+  Object.assign(popout, { closed: true });
+  close(new SchedulerDisposedError());
+  await expect(pending).resolves.toMatchObject({ safeSvg: "x" });
+  expect(fallbackCheckpoint).toHaveBeenCalledOnce();
+  expect(inspectPreviewSvg).toHaveBeenCalledOnce();
+  recognition.dispose();
+});
+
+it("falls back when a requester closes or detaches before validation", async () => {
+  const popout = ownerWindow("visible");
+  const fallback = immediateWorkScheduler();
+  const fallbackCheckpoint = vi.spyOn(fallback, "checkpoint");
+  const schedulerFor = vi.fn((_owner: Window | null) => fallback);
+  const recognition = cacheHarness(schedulerFor);
+  vi.mocked(inspectPreviewSvg).mockImplementation(async (_source, options) => {
+    await options.workScheduler.checkpoint();
+    return previewWithSize(1);
+  });
+  const first = recognition.recognize("a.svg", popout);
+  Object.assign(popout, { closed: true });
+  await first;
+  expect(schedulerFor).toHaveBeenCalledWith(null);
+  await recognition.recognize("b.svg", null);
+  expect(fallbackCheckpoint).toHaveBeenCalledTimes(2);
   recognition.dispose();
 });
 

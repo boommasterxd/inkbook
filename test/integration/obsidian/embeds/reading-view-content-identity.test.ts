@@ -91,6 +91,10 @@ describe("Reading-view preview content identity", () => {
 describe("Reading-view pending recognition", () => {
   it("immediately hides source until a validated preview adopts the placeholder", async () => {
     const harness = pendingReadingView();
+    expect(harness.recognize).toHaveBeenCalledWith(
+      "drawings/ink.svg",
+      harness.root.ownerDocument.defaultView,
+    );
     expect(harness.root.children[0]?.classNames).toContain("inkbook-loading-placeholder");
     expect(harness.attachments).toEqual([]);
     harness.resolve(FIRST_PREVIEW);
@@ -235,11 +239,12 @@ function pendingReadingView(prepare?: (root: FakePresentationElement) => void) {
     resolvePromise = resolve;
     reject = rejectPromise;
   });
+  const recognize = vi.fn(() => recognition);
   const attachments: PresentationAttachment[] = [];
   const ports = createPorts(
     {
       cached: () => cached,
-      recognize: () => recognition,
+      recognize,
       subscribe: () => () => undefined,
     },
     attachments,
@@ -267,6 +272,7 @@ function pendingReadingView(prepare?: (root: FakePresentationElement) => void) {
     original,
     ports,
     processing,
+    recognize,
     reject,
     root,
     changeSource: () => {

@@ -257,9 +257,7 @@ function createEmbedIntegration(
 ) {
   const documentRecognition = new ObsidianInkbookDocumentRecognition(plugin.app.vault, {
     deferUntilLayoutReady: true,
-    workScheduler: runtime.refreshRateProfiles.workScheduler(
-      plugin.app.workspace.containerEl.ownerDocument.defaultView,
-    ),
+    workScheduler: (ownerWindow) => runtime.refreshRateProfiles.workScheduler(ownerWindow),
   });
   return {
     documentRecognition,
