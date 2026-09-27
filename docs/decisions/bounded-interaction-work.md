@@ -120,7 +120,7 @@ Confirmed-base preflight may use native SHA-256 after bounded UTF-8 encoding for
 files up to 20 MiB, retaining no whole-file cache. Larger content and native
 failures keep cooperative streaming hashing. This trades a bounded temporary
 byte buffer for reduced main-thread hash computation; it does not bypass exact
-base checks or shorten the intentional 500-millisecond inactivity debounce.
+base checks or shorten the intentional inactivity debounce. The original 500-millisecond value is superseded by the 1,000-millisecond debounce in the [central scheduling decision](central-work-scheduler.md).
 
 Pressure-union preparation rejects provably separated circle/line carriers before
 expensive endpoint and intersection calculations, using conservative roundoff
