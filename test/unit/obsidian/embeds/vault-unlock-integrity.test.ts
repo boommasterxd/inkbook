@@ -59,11 +59,15 @@ describe("owned unlock integrity", () => {
 
   it("cancels before publishing even when no yield was necessary", async () => {
     const options = await fixture();
+    const read = vi.spyOn(options.store, "get");
+    const rank = vi.spyOn(options.store, "getRank");
     await expect(
       verifyVaultUnlockIntegrity({
         ...options,
         scheduler: { ...options.scheduler, isCancelled: () => true },
       }),
     ).rejects.toThrow("cancelled");
+    expect(read).not.toHaveBeenCalled();
+    expect(rank).not.toHaveBeenCalled();
   });
 });

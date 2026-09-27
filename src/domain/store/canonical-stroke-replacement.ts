@@ -15,9 +15,6 @@ import type {
 import type { StoreSliceScheduler } from "./types";
 
 const CANONICAL_TRANSLATION_DOMAINS = Object.freeze(["geometry"] as const);
-const MAX_DETECTION_RECORDS_PER_SLICE = 256;
-const MAX_PREPARED_RECORDS_PER_SLICE = 64;
-const ATOMIC_COMMIT_ADMISSION_SIZE = 1_000;
 
 export async function planCanonicalStrokeReplacement(
   source: ElementReplacementSource,
@@ -45,14 +42,13 @@ export async function planCanonicalStrokeReplacement(
   if (indexPatch === "cancelled") return indexPatch;
   yields += indexYields;
   const capacityPatch = source.capacity.prepareUnchanged();
-  const capacityCheckpoint = await yieldWhenRequested(scheduler);
-  if (capacityCheckpoint === "cancelled") return capacityCheckpoint;
-  yields += capacityCheckpoint;
-  if (prepared.records.length >= ATOMIC_COMMIT_ADMISSION_SIZE) {
-    await scheduler.yieldControl();
-    if (cancelled(scheduler)) return "cancelled";
-    yields += 1;
-  }
+  const admissionCheckpoint = yieldWhenRequested(scheduler);
+  const admission =
+    admissionCheckpoint === 0 || admissionCheckpoint === "cancelled"
+      ? admissionCheckpoint
+      : await admissionCheckpoint;
+  if (admission === "cancelled") return admission;
+  yields += admission;
   return finishPlan(source, prepared, geometryVersion, indexPatch, capacityPatch, yields);
 }
 
@@ -72,7 +68,6 @@ async function detectCanonicalBatch(
   scheduler: StoreSliceScheduler,
 ): Promise<CanonicalDetection | "cancelled" | CanonicalFallback> {
   const ids = new Set<string>();
-  let recordsInSlice = 0;
   let yields = 0;
   for (const replacement of replacements) {
     if (cancelled(scheduler)) return "cancelled";
@@ -86,14 +81,13 @@ async function detectCanonicalBatch(
     const proof = inferStoredStrokeTranslation(current.element, replacement);
     if (proof?.source !== current.element) return { status: "fallback", yields };
     assertReplacementIdentity(current.element, replacement);
-    recordsInSlice += 1;
-    const checkpoint = await yieldWhenRequested(
-      scheduler,
-      recordsInSlice >= MAX_DETECTION_RECORDS_PER_SLICE,
-    );
+    const checkpoint = yieldWhenRequested(scheduler);
     if (checkpoint === "cancelled") return checkpoint;
-    if (checkpoint === 1) recordsInSlice = 0;
-    yields += checkpoint;
+    if (checkpoint !== 0) {
+      const yielded = await checkpoint;
+      if (yielded === "cancelled") return yielded;
+      yields += yielded;
+    }
   }
   return { status: "canonical", yields };
 }
@@ -112,7 +106,6 @@ async function prepareRecords(
     spatialReplacements: [],
     yields: 0,
   };
-  let recordsInSlice = 0;
   let yields = 0;
   for (const replacement of replacements) {
     if (cancelled(scheduler)) return "cancelled";
@@ -137,14 +130,13 @@ async function prepareRecords(
         id: record.element.id,
       }),
     );
-    recordsInSlice += 1;
-    const checkpoint = await yieldWhenRequested(
-      scheduler,
-      recordsInSlice >= MAX_PREPARED_RECORDS_PER_SLICE,
-    );
+    const checkpoint = yieldWhenRequested(scheduler);
     if (checkpoint === "cancelled") return checkpoint;
-    if (checkpoint === 1) recordsInSlice = 0;
-    yields += checkpoint;
+    if (checkpoint !== 0) {
+      const yielded = await checkpoint;
+      if (yielded === "cancelled") return yielded;
+      yields += yielded;
+    }
   }
   return { ...prepared, yields };
 }
@@ -177,14 +169,12 @@ function finishPlan(
   };
 }
 
-async function yieldWhenRequested(
+function yieldWhenRequested(
   scheduler: StoreSliceScheduler,
-  required = false,
-): Promise<0 | 1 | "cancelled"> {
+): 0 | "cancelled" | Promise<1 | "cancelled"> {
   if (cancelled(scheduler)) return "cancelled";
-  if (!required && !scheduler.shouldYield()) return 0;
-  await scheduler.yieldControl();
-  return cancelled(scheduler) ? "cancelled" : 1;
+  if (!scheduler.shouldYield()) return 0;
+  return scheduler.yieldControl().then(() => (cancelled(scheduler) ? "cancelled" : 1));
 }
 
 function cancelled(scheduler: StoreSliceScheduler): boolean {

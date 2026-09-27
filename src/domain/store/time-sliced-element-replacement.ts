@@ -33,9 +33,6 @@ import type {
   StoreSliceScheduler,
 } from "./types";
 
-const ATOMIC_COMMIT_ADMISSION_SIZE = 1_000;
-const MAX_RECORDS_PER_PREPARATION_SLICE = 256;
-
 interface ReplacementPorts {
   readonly getRecord: (id: string) => ElementRecord;
   readonly getReferences: (targetId: string) => readonly EndpointReference[] | undefined;
@@ -115,7 +112,11 @@ export async function planElementReplacement(
   );
   if (dependentPatches === "cancelled") return dependentPatches;
   yields += dependentPatches.yields;
-  const admission = await admitAtomicCommit(candidates.length, scheduler);
+  const admissionCheckpoint = yieldWhenRequested(scheduler);
+  const admission =
+    admissionCheckpoint === 0 || admissionCheckpoint === "cancelled"
+      ? admissionCheckpoint
+      : await admissionCheckpoint;
   if (admission === "cancelled") return admission;
   yields += admission;
   Object.freeze(changes);
@@ -195,7 +196,6 @@ async function prepareCandidateRecords(
   const changes: PreparedReplacementRecords["changes"] = [];
   let geometryVersion = currentGeometryVersion;
   let paintVersion = currentPaintVersion;
-  let recordsInSlice = 0;
   let yields = 0;
   for (const candidate of candidates) {
     if (cancelled(scheduler)) return "cancelled";
@@ -227,14 +227,13 @@ async function prepareCandidateRecords(
         id: record.element.id,
       }),
     );
-    recordsInSlice += 1;
-    const checkpoint = await yieldWhenRequested(
-      scheduler,
-      recordsInSlice >= MAX_RECORDS_PER_PREPARATION_SLICE,
-    );
+    const checkpoint = yieldWhenRequested(scheduler);
     if (checkpoint === "cancelled") return checkpoint;
-    if (checkpoint === 1) recordsInSlice = 0;
-    yields += checkpoint;
+    if (checkpoint !== 0) {
+      const yielded = await checkpoint;
+      if (yielded === "cancelled") return yielded;
+      yields += yielded;
+    }
   }
   return {
     capacityPreviousRecords,
@@ -257,15 +256,6 @@ function changesCapacity(candidate: ReplacementCandidate, record: ElementRecord)
     record.element.kind === "stroke" &&
     candidate.current.element.points.length !== record.element.points.length
   );
-}
-
-async function admitAtomicCommit(
-  replacementCount: number,
-  scheduler: StoreSliceScheduler,
-): Promise<0 | 1 | "cancelled"> {
-  if (replacementCount < ATOMIC_COMMIT_ADMISSION_SIZE) return 0;
-  await scheduler.yieldControl();
-  return cancelled(scheduler) ? "cancelled" : 1;
 }
 
 export function commitReplacementPlan(
@@ -318,16 +308,12 @@ function canonicalStrokeTranslation(
   return proof?.source === current ? proof.translation : null;
 }
 
-async function yieldWhenRequested(
+function yieldWhenRequested(
   scheduler: StoreSliceScheduler,
-  required = false,
-): Promise<number | "cancelled"> {
-  const alreadyCancelled = cancelled(scheduler);
-  if (alreadyCancelled) return "cancelled";
-  const shouldYield = required || scheduler.shouldYield();
-  if (!shouldYield) return 0;
-  await scheduler.yieldControl();
-  return cancelled(scheduler) ? "cancelled" : 1;
+): 0 | "cancelled" | Promise<1 | "cancelled"> {
+  if (cancelled(scheduler)) return "cancelled";
+  if (!scheduler.shouldYield()) return 0;
+  return scheduler.yieldControl().then(() => (cancelled(scheduler) ? "cancelled" : 1));
 }
 
 function cancelled(scheduler: StoreSliceScheduler): boolean {

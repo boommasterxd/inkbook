@@ -4,8 +4,6 @@ import { connectionReferences } from "./connections";
 import type { ReplacementCandidate } from "./replacement-planner";
 import type { ElementRecord, EndpointReference, StoreSliceScheduler } from "./types";
 
-const MAX_REVERSE_VISITS_PER_SLICE = 256;
-
 export interface ReverseConnectionPatch {
   readonly references: EndpointReference[];
   readonly targetId: string;
@@ -55,7 +53,12 @@ export async function createReverseConnectionPatchesTimeSliced(
   for (let index = 0; index < candidates.length; index += 1) {
     if (slicer.cancelled()) return "cancelled";
     collectConnectionChanges(candidates[index]!, replacements[index]!, changes);
-    if ((await slicer.checkpoint()) === "cancelled") return "cancelled";
+    const continuation = slicer.checkpoint();
+    if (
+      continuation === "cancelled" ||
+      (continuation !== "continue" && (await continuation) === "cancelled")
+    )
+      return "cancelled";
   }
 
   const patches: ReverseConnectionPatch[] = [];
@@ -71,7 +74,12 @@ export async function createReverseConnectionPatchesTimeSliced(
     );
     if (patch === "cancelled") return patch;
     patches.push(patch);
-    if ((await slicer.checkpoint()) === "cancelled") return "cancelled";
+    const continuation = slicer.checkpoint();
+    if (
+      continuation === "cancelled" ||
+      (continuation !== "continue" && (await continuation) === "cancelled")
+    )
+      return "cancelled";
   }
   return { patches: Object.freeze(patches), yields: slicer.yields };
 }
@@ -91,20 +99,35 @@ async function prepareTargetPatchTimeSliced(
     if (keys.has(key)) throw new Error("The reverse-connection map contains duplicates.");
     keys.add(key);
     if (!changedLinearIds.has(reference.linearId)) references.push(reference);
-    if ((await slicer.checkpoint()) === "cancelled") return "cancelled";
+    const continuation = slicer.checkpoint();
+    if (
+      continuation === "cancelled" ||
+      (continuation !== "continue" && (await continuation) === "cancelled")
+    )
+      return "cancelled";
   }
   for (const removal of removals) {
     if (!keys.has(referenceKey(removal))) {
       throw new Error("The reverse-connection map is inconsistent.");
     }
-    if ((await slicer.checkpoint()) === "cancelled") return "cancelled";
+    const continuation = slicer.checkpoint();
+    if (
+      continuation === "cancelled" ||
+      (continuation !== "continue" && (await continuation) === "cancelled")
+    )
+      return "cancelled";
   }
   for (const addition of additions) {
     references.push(addition);
     if (references.length > FILE_SCHEMA_LIMITS.connectedEndpointsPerTarget) {
       throw new RangeError("The per-target connected-endpoint limit was exceeded.");
     }
-    if ((await slicer.checkpoint()) === "cancelled") return "cancelled";
+    const continuation = slicer.checkpoint();
+    if (
+      continuation === "cancelled" ||
+      (continuation !== "continue" && (await continuation) === "cancelled")
+    )
+      return "cancelled";
   }
   return Object.freeze({ references, targetId });
 }
@@ -139,24 +162,20 @@ function createConnectionChanges(): ConnectionChanges {
 
 class ReversePatchSlicer {
   public yields = 0;
-  #visits = 0;
-
   public constructor(private readonly scheduler: StoreSliceScheduler) {}
 
   public cancelled(): boolean {
     return this.scheduler.isCancelled?.() ?? false;
   }
 
-  public async checkpoint(): Promise<"cancelled" | "continue"> {
-    this.#visits += 1;
-    if (this.#visits < MAX_REVERSE_VISITS_PER_SLICE && !this.scheduler.shouldYield()) {
-      return "continue";
-    }
-    await this.scheduler.yieldControl();
+  public checkpoint(): "cancelled" | "continue" | Promise<"cancelled" | "continue"> {
     if (this.cancelled()) return "cancelled";
-    this.#visits = 0;
-    this.yields += 1;
-    return "continue";
+    if (!this.scheduler.shouldYield()) return "continue";
+    return this.scheduler.yieldControl().then(() => {
+      if (this.cancelled()) return "cancelled";
+      this.yields += 1;
+      return "continue";
+    });
   }
 }
 

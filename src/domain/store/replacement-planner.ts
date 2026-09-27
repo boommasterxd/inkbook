@@ -92,9 +92,13 @@ async function prepareReplacementDraftsTimeSliced(
   for (const replacement of replacements) {
     if (cancelled(scheduler)) return "cancelled";
     prepareDraft(drafts, replacement, ports.getRecord);
-    const checkpoint = await yieldWhenRequested(scheduler);
+    const checkpoint = yieldWhenRequested(scheduler);
     if (checkpoint === "cancelled") return checkpoint;
-    yields += checkpoint;
+    if (checkpoint !== 0) {
+      const yielded = await checkpoint;
+      if (yielded === "cancelled") return yielded;
+      yields += yielded;
+    }
   }
   const lookup = createLookup(drafts, ports.getRecord);
   const connectionRoots: string[] = [];
@@ -104,9 +108,13 @@ async function prepareReplacementDraftsTimeSliced(
       drafts.set(id, resolveConnections(draft, lookup));
       connectionRoots.push(id);
     }
-    const checkpoint = await yieldWhenRequested(scheduler);
+    const checkpoint = yieldWhenRequested(scheduler);
     if (checkpoint === "cancelled") return checkpoint;
-    yields += checkpoint;
+    if (checkpoint !== 0) {
+      const yielded = await checkpoint;
+      if (yielded === "cancelled") return yielded;
+      yields += yielded;
+    }
   }
   assertAcyclicConnections(connectionRoots, lookup);
   const propagation = await propagateTargetChangesTimeSliced(drafts, ports, scheduler);
@@ -182,13 +190,21 @@ async function propagateTargetChangesTimeSliced(
     for (const reference of references) {
       if (cancelled(scheduler)) return "cancelled";
       propagateReference(reference, { drafts, lookup, ports, queue, queued });
-      const referenceCheckpoint = await yieldWhenRequested(scheduler);
+      const referenceCheckpoint = yieldWhenRequested(scheduler);
       if (referenceCheckpoint === "cancelled") return referenceCheckpoint;
-      yields += referenceCheckpoint;
+      if (referenceCheckpoint !== 0) {
+        const yielded = await referenceCheckpoint;
+        if (yielded === "cancelled") return yielded;
+        yields += yielded;
+      }
     }
-    const checkpoint = await yieldWhenRequested(scheduler);
+    const checkpoint = yieldWhenRequested(scheduler);
     if (checkpoint === "cancelled") return checkpoint;
-    yields += checkpoint;
+    if (checkpoint !== 0) {
+      const yielded = await checkpoint;
+      if (yielded === "cancelled") return yielded;
+      yields += yielded;
+    }
   }
   return yields;
 }
@@ -253,9 +269,13 @@ async function classifyReplacementDraftsTimeSliced(
     if (cancelled(scheduler)) return "cancelled";
     const candidate = classifyCandidate(id, element, getRecord, lookup);
     if (candidate !== null) candidates.push(candidate);
-    const checkpoint = await yieldWhenRequested(scheduler);
+    const checkpoint = yieldWhenRequested(scheduler);
     if (checkpoint === "cancelled") return checkpoint;
-    yields += checkpoint;
+    if (checkpoint !== 0) {
+      const yielded = await checkpoint;
+      if (yielded === "cancelled") return yielded;
+      yields += yielded;
+    }
   }
   return { candidates, yields };
 }

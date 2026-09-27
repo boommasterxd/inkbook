@@ -17,6 +17,7 @@ export async function verifyVaultUnlockIntegrity(options: {
   if (store.size !== snapshot.elements.length) throw divergence();
   const ranks = { content: 0, highlight: 0 };
   for (let index = 0; index < snapshot.elements.length; index += 1) {
+    if (scheduler.isCancelled?.()) throw new Error("Unlock integrity verification cancelled.");
     const element = snapshot.elements[index]!;
     const band = renderBandOf(element);
     const rank = store.getRank(element.id);

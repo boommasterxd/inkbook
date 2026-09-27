@@ -123,7 +123,7 @@ async function collectDesiredElements(
   const desired = await collectConnectionDetachments(source, removeIds, scheduler);
   if (desired === "cancelled") return desired;
   for (const element of elements) {
-    if (!(scheduler.checkpoint(16) || (await scheduler.resume()))) return "cancelled";
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     if (desired.has(element.id) && !removeIds.has(element.id)) {
       throw new RangeError(`Duplicate mutation element ID: ${element.id}`);
     }
@@ -140,7 +140,7 @@ async function collectDesiredElements(
   const lookup = (id: string) =>
     removeIds.has(id) ? undefined : (desired.get(id) ?? source.records.get(id)?.element);
   for (const [id, element] of desired) {
-    if (!(scheduler.checkpoint(16) || (await scheduler.resume()))) return "cancelled";
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     if (isConnectable(element)) desired.set(id, resolveConnections(element, lookup));
   }
   return desired;
@@ -165,11 +165,7 @@ async function collectConnectionDetachments(
 ): Promise<Map<string, InkElementV1> | "cancelled"> {
   const detached = new Map<string, InkElementV1>();
   for (const targetId of removeIds) {
-    if (!(
-      scheduler.checkpoint(source.reverseConnections.has(targetId) ? 16 : 1) ||
-      (await scheduler.resume())
-    ))
-      return "cancelled";
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     const additions = prepareConnectionDetachments(
       new Set([targetId]),
       source.reverseConnections,
@@ -199,7 +195,7 @@ async function buildRecords(
   if (versions === "cancelled") return versions;
   const { geometryVersion, paintVersion } = versions;
   for (const [id, element] of desired) {
-    if (!(scheduler.checkpoint(16) || (await scheduler.resume()))) return "cancelled";
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     const current = source.records.get(id);
     if (current === undefined) {
       records.set(
@@ -223,8 +219,7 @@ async function mutationVersions(
   let changesPaint = false;
   for (const [id, element] of desired) {
     const current = source.records.get(id);
-    if (!(scheduler.checkpoint(current === undefined ? 1 : 16) || (await scheduler.resume())))
-      return "cancelled";
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     if (current === undefined) {
       changesGeometry = true;
       changesPaint = true;
@@ -349,11 +344,7 @@ async function buildDelta(
   for (const id of affected) {
     const before = source.records.get(id) ?? null;
     const after = records.has(id) ? (records.get(id) ?? null) : before;
-    if (!(
-      scheduler.checkpoint(before === after || before === null || after === null ? 1 : 16) ||
-      (await scheduler.resume())
-    ))
-      return "cancelled";
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     const domains = mutationDomains(
       before,
       after,
@@ -422,8 +413,7 @@ async function buildDerivedState(
   const lookup = (id: string) =>
     (records.has(id) ? records.get(id) : source.records.get(id))?.element;
   for (const change of delta.changes) {
-    if (!(work.checkpoint(change.before === change.after ? 1 : 16) || (await work.resume())))
-      return "cancelled";
+    if (!(work.checkpoint() || (await work.resume()))) return "cancelled";
     if (change.before === change.after) continue;
     if (change.before !== null) previous.push(change.before);
     if (change.after !== null) {

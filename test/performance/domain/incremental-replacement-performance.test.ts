@@ -23,7 +23,7 @@ it("bounds heap comparisons during 1,024 spatial replacement preparations", asyn
   let observed = 0;
   try {
     const plan = await index.prepareReplacementsTimeSliced(replacements, {
-      shouldYield: () => false,
+      shouldYield: () => sift.mock.calls.length >= (comparisonsPerSlice.length + 1) * 256,
       yieldControl: async () => {
         const results = sift.mock.results.slice(observed);
         comparisonsPerSlice.push(

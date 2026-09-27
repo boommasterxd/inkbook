@@ -114,7 +114,7 @@ it("reuses store-owned removal order without revalidating every unaffected eleme
   expect(
     await store.createRemovalMutationTimeSliced(new Set(fixture.strokeIds), {
       isCancelled: () => cancelled,
-      shouldYield: () => false,
+      shouldYield: () => true,
       yieldControl: async () => {
         yields += 1;
         cancelled = true;
@@ -226,7 +226,8 @@ it("bounds heavy work and scheduler handoffs for loaded-stroke deletion, Undo, a
     const prepared = await store!.prepareElementMutation(
       mutation,
       {
-        shouldYield: () => false,
+        shouldYield: () =>
+          recordBuild.mock.calls.length >= 128 || indexInsert.mock.calls.length >= 128,
         yieldControl: async () => {
           yields += 1;
           assertSlice();

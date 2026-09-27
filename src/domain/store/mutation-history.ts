@@ -80,13 +80,12 @@ async function reverseMutation(
   const elements: InkElementV1[] = [];
   const removedCreatedIds: string[] = [];
   for (const id of removeIds) {
-    if (!(scheduler.checkpoint(16) || (await scheduler.resume()))) return "cancelled";
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     elements.push(mutableElement(requireElementRecord(source.records, id).element));
   }
   for (const id of desired.keys()) {
     const current = source.records.get(id);
-    if (!(scheduler.checkpoint(current === undefined ? 1 : 16) || (await scheduler.resume())))
-      return "cancelled";
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     if (current === undefined) removedCreatedIds.push(id);
     else elements.push(mutableElement(current.element));
   }

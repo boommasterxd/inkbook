@@ -41,7 +41,7 @@ describe("runtime store hydration performance", () => {
   });
 
   it.each([65, 11_000])(
-    "forces bounded hydration yields for %i records without deadline pressure",
+    "uses remaining shared budget for %i records without forced hydration yields",
     async (count) => {
       const elements = createStandardRuntimeDomainFixture().elements.slice(0, count);
       const validation = validateRuntimeInkSnapshotV1(createWorkerSnapshot([...elements]));
@@ -72,9 +72,8 @@ describe("runtime store hydration performance", () => {
       );
       expect(appendResult).toBe("accepted");
       expect(visited).toEqual(Array.from({ length: count }, (_, index) => index));
-      expect(sliceVisits).toHaveLength(Math.floor(count / 64));
-      for (const visits of sliceVisits) expect(visits).toBe(64);
-      expect(pendingVisits).toBe(count % 64);
+      expect(sliceVisits).toHaveLength(0);
+      expect(pendingVisits).toBe(count);
       expect(sliceVisits.reduce((total, visits) => total + visits, pendingVisits)).toBe(count);
 
       const hydrated = await builder.finalize();

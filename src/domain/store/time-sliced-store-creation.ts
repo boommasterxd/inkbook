@@ -87,9 +87,10 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
       this.#index.insert(element.id, record.bounds);
       this.#capacity.commit(capacityPatch);
       this.#appendRecord(record);
-      this.#yields += await yieldWhenRequested(this.#scheduler);
+      const continuation = yieldWhenRequested(this.#scheduler);
+      if (continuation !== 0) this.#yields += await continuation;
     }
-    return "accepted";
+    return this.#isCancelled() ? this.#cancel() : "accepted";
   }
 
   async #appendValidatedRuntime(
@@ -111,10 +112,8 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
         this.#commitValidatedRecords(records);
         records.length = 0;
       }
-      this.#yields += await yieldWhenRequested(
-        this.#scheduler,
-        (index + 1) % MAX_HYDRATION_RECORDS_PER_SLICE === 0,
-      );
+      const continuation = yieldWhenRequested(this.#scheduler);
+      if (continuation !== 0) this.#yields += await continuation;
     }
     if (this.#isCancelled()) return this.#cancel();
     return "accepted";
@@ -140,7 +139,6 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
     this.#finished = true;
     const reverseConnections = new Map<string, EndpointReference[]>();
     const lookup = (id: string) => this.#records.get(id)?.element;
-    let recordsInSlice = 0;
     for (const record of this.#records.values()) {
       if (this.#isCancelled()) return this.#cancel();
       assertResolvedConnections(record.element, lookup);
@@ -152,11 +150,8 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
         if (!reverseConnections.has(targetId)) reverseConnections.set(targetId, references);
         references.push(Object.freeze(reference));
       }
-      recordsInSlice += 1;
-      this.#yields += await yieldWhenRequested(
-        this.#scheduler,
-        recordsInSlice % MAX_HYDRATION_RECORDS_PER_SLICE === 0,
-      );
+      const continuation = yieldWhenRequested(this.#scheduler);
+      if (continuation !== 0) this.#yields += await continuation;
     }
     if (this.#isCancelled()) return this.#cancel();
     return {
@@ -195,8 +190,7 @@ export class TimeSlicedStoreBuilder extends StoreAppendBuilder {
   }
 }
 
-async function yieldWhenRequested(scheduler: StoreSliceScheduler, force = false): Promise<number> {
-  if (!force && !scheduler.shouldYield()) return 0;
-  await scheduler.yieldControl();
-  return 1;
+function yieldWhenRequested(scheduler: StoreSliceScheduler): 0 | Promise<1> {
+  if (!scheduler.shouldYield()) return 0;
+  return scheduler.yieldControl().then(() => 1);
 }

@@ -56,7 +56,9 @@ describe("DocumentCapacity exact aggregate limits", () => {
     expect(() => capacity.prepare([], [excessive])).toThrow(RangeError);
     expect(() => capacity.commit(capacity.prepare([exact], [rectangleRecord(2)]))).not.toThrow();
   });
+});
 
+describe("DocumentCapacity scheduled patches", () => {
   it("time-slices fanout patches and leaves cancelled preparation uncommitted", async () => {
     const capacity = new DocumentCapacity();
     const previous = Array.from({ length: 512 }, () => linearRecord("old-target"));
@@ -66,7 +68,7 @@ describe("DocumentCapacity exact aggregate limits", () => {
 
     const cancelled = await capacity.prepareTimeSliced(previous, next, {
       isCancelled: () => yields === 2,
-      shouldYield: () => false,
+      shouldYield: () => yields < 2,
       yieldControl: async () => {
         yields += 1;
       },
@@ -75,6 +77,27 @@ describe("DocumentCapacity exact aggregate limits", () => {
     expect(cancelled).toBe("cancelled");
     expect(() => capacity.prepare([], [linearRecord("old-target")])).toThrow(RangeError);
     expect(() => capacity.prepare([], [linearRecord("new-target")])).not.toThrow();
+  });
+
+  it("uses the remaining shared budget across large fanout patches", async () => {
+    const capacity = new DocumentCapacity();
+    const previous = Array.from({ length: 512 }, () => linearRecord("old-target"));
+    const next = Array.from({ length: 512 }, () => linearRecord("new-target"));
+    capacity.commit(capacity.prepare([], previous));
+    let yields = 0;
+    const prepared = await capacity.prepareTimeSliced(previous, next, {
+      shouldYield: () => false,
+      yieldControl: async () => {
+        yields += 1;
+      },
+    });
+
+    expect(prepared).not.toBe("cancelled");
+    expect(yields).toBe(0);
+    if (prepared === "cancelled") return;
+    capacity.commit(prepared.patch);
+    expect(() => capacity.prepare([], [linearRecord("old-target")])).not.toThrow();
+    expect(() => capacity.prepare([], [linearRecord("new-target")])).toThrow(RangeError);
   });
 
   it("rejects a time-sliced patch made stale by another capacity commit", async () => {

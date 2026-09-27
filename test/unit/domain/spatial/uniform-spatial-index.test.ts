@@ -172,7 +172,7 @@ describe("UniformSpatialIndex resource bounds and prepared batches", () => {
   });
 });
 
-it("heapifies a large batch in bounded preparation slices before atomic publication", async () => {
+it("heapifies a large batch within the shared budget before atomic publication", async () => {
   const index = new UniformSpatialIndex<number>();
   const original = { maxX: 20, maxY: 20, minX: 10, minY: 10 };
   const replacements = Array.from({ length: 1_024 }, (_, id) => ({
@@ -192,7 +192,7 @@ it("heapifies a large batch in bounded preparation slices before atomic publicat
     });
     expect(plan).not.toBe("cancelled");
     if (plan === "cancelled") return;
-    expect(visitsAtYield).toEqual([256, 512]);
+    expect(visitsAtYield).toEqual([]);
     expect(sift).toHaveBeenCalledTimes(512);
     expect(index.getMaximumBottom()).toBe(20);
     index.commitPreparedReplacements(plan);

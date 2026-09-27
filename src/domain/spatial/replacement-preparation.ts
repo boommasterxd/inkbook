@@ -12,8 +12,6 @@ import {
 } from "./index-state";
 import { heapifyBottom, heapifyBottomAt, type BottomHeapEntry } from "./max-bottom-heap";
 
-const HEAPIFY_SLICE_SIZE = 256;
-
 export interface SpatialReplacementPreparationPorts<Id, Owner extends object> {
   readonly createReplacement: (
     current: IndexedEntry<Id>,
@@ -70,7 +68,8 @@ export async function prepareSpatialReplacementsTimeSliced<Id, Owner extends obj
   if (prepared === "cancelled") return prepared;
   const result = await finishPreparationTimeSliced(prepared, ports, scheduler);
   if (result === "cancelled") return result;
-  return (await checkpoint(scheduler)) ? result : "cancelled";
+  const admission = checkpoint(scheduler);
+  return admission === true || (admission !== false && (await admission)) ? result : "cancelled";
 }
 
 function stageReplacements<Id, Owner extends object>(
@@ -91,7 +90,9 @@ async function stageReplacementsTimeSliced<Id, Owner extends object>(
   const state = createStageState<Id>(ports.currentMemberships, ports.currentOverflow);
   for (const replacement of replacements) {
     stageOne(replacement, state, ports);
-    if (!(await checkpoint(scheduler))) return "cancelled";
+    const continuation = checkpoint(scheduler);
+    if (continuation === false || (continuation !== true && !(await continuation)))
+      return "cancelled";
   }
   assertStageCapacity(state, ports.recordVersion);
   return state;
@@ -141,7 +142,9 @@ async function prepareEntriesTimeSliced<Id, Owner extends object>(
   const prepared: PreparedReplacement<Id>[] = [];
   for (let index = 0; index < staged.length; index += 1) {
     prepared.push(prepareEntry(staged[index]!, index, ports));
-    if (!(await checkpoint(scheduler))) return "cancelled";
+    const continuation = checkpoint(scheduler);
+    if (continuation === false || (continuation !== true && !(await continuation)))
+      return "cancelled";
   }
   return prepared;
 }
@@ -186,16 +189,15 @@ async function finishPreparationTimeSliced<Id, Owner extends object>(
   const extentHeap: BottomHeapEntry<Id>[] = [];
   for (const { replacement } of prepared) {
     if (!replacement.overflow) extentHeap.push(ports.extentEntry(replacement));
-    if (!(await checkpoint(scheduler))) return "cancelled";
+    const continuation = checkpoint(scheduler);
+    if (continuation === false || (continuation !== true && !(await continuation)))
+      return "cancelled";
   }
-  let processed = 0;
   for (let index = Math.floor(extentHeap.length / 2) - 1; index >= 0; index -= 1) {
     heapifyBottomAt(extentHeap, index);
-    processed += 1;
-    if (processed >= HEAPIFY_SLICE_SIZE || scheduler.shouldYield()) {
-      if (!(await checkpoint(scheduler, true))) return "cancelled";
-      processed = 0;
-    }
+    const continuation = checkpoint(scheduler);
+    if (continuation === false || (continuation !== true && !(await continuation)))
+      return "cancelled";
   }
   return createPreparedPlan(prepared, extentHeap, ports);
 }
@@ -216,11 +218,8 @@ function createPreparedPlan<Id, Owner extends object>(
   return Object.freeze({ replacementCount: prepared.length, [PREPARED_REPLACEMENTS]: state });
 }
 
-async function checkpoint(
-  scheduler: SpatialReplacementPreparationScheduler,
-  required = false,
-): Promise<boolean> {
+function checkpoint(scheduler: SpatialReplacementPreparationScheduler): boolean | Promise<boolean> {
   if (scheduler.isCancelled?.() ?? false) return false;
-  if (required || scheduler.shouldYield()) await scheduler.yieldControl();
-  return !(scheduler.isCancelled?.() ?? false);
+  if (!scheduler.shouldYield()) return true;
+  return scheduler.yieldControl().then(() => !(scheduler.isCancelled?.() ?? false));
 }
