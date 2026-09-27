@@ -25,7 +25,11 @@ Keep the existing frame preferences and 55-percent cooperative work allowance.
 Every consumer shares an absolute epoch deadline. Input, frame, and background
 queues preserve priority with FIFO order within each class. A checkpoint without an
 exhausted budget continues synchronously; a real frame dependency uses an
-explicit frame wait. Separate host-task admissions account for nested Promise
+explicit frame wait. A new native epoch starts its work clock once at central
+callback entry, preserving already spent synchronous allowances. Native frame
+timestamps identify frames and drive animations; treating their earlier time as
+work already spent can fragment publication into many tiny browser updates.
+Separate host-task admissions account for nested Promise
 continuations before admitting competing work. Live settings update existing
 schedulers and workers rather than creating fresh per-operation allowances.
 

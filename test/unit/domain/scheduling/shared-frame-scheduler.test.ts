@@ -39,17 +39,28 @@ describe("SharedFrameScheduler", () => {
     expect(host.pendingTimers).toBe(0);
   });
 
-  it("uses the host frame timestamp and grants only one indivisible over-budget job", () => {
+  it("starts a delayed native frame at central entry and shares its remaining budget", () => {
     const host = new ManualHost();
     const scheduler = new SharedFrameScheduler(host);
-    const run = vi.fn();
-    scheduler.requestFrame(run);
-    scheduler.requestFrame(run);
+    const deadlines: number[] = [];
+    scheduler.requestFrame(() => {
+      deadlines.push(scheduler.deadline());
+      host.time = 7;
+    });
+    scheduler.requestFrame(() => {
+      deadlines.push(scheduler.deadline());
+      host.time = 9;
+    });
+    scheduler.requestFrame(() => deadlines.push(scheduler.deadline()));
     host.time = 5;
     host.frame(0);
-    expect(run).toHaveBeenCalledOnce();
-    expect(scheduler.deadline()).toBe(4);
+    expect(deadlines).toEqual([9, 9]);
+    expect(scheduler.deadline()).toBe(9);
     expect(host.pendingFrames).toBe(1);
+    host.timer(0);
+    host.time = 13;
+    host.frame(8);
+    expect(deadlines).toEqual([9, 9, 17]);
     scheduler.dispose();
   });
 

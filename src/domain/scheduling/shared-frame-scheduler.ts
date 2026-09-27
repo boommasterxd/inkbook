@@ -183,6 +183,7 @@ export class SharedFrameScheduler implements WorkScheduler {
 
   #beginFrame(generation: number, timestamp: number, nativeFrame: boolean): void {
     if (this.#disposed || generation !== this.#generation) return;
+    const entryTime = nativeFrame ? this.now() : timestamp;
     this.#cancelPending();
     this.#epoch += 1;
     const previous = this.#epochStart;
@@ -197,9 +198,11 @@ export class SharedFrameScheduler implements WorkScheduler {
         timestamp - previous + FRAME_TIMESTAMP_EPSILON_MS >=
           positiveFinite(this.#host.frameIntervalMs(), "frameIntervalMs"))
     ) {
-      this.#epochStart = timestamp;
+      // The native timestamp identifies the frame, but the shared work slice starts
+      // when this scheduler first gets control after other host frame callbacks.
+      this.#epochStart = entryTime;
       this.#admittedThisEpoch = false;
-    } else if (this.now() >= previous + this.budgetMs()) {
+    } else if (entryTime >= previous + this.budgetMs()) {
       // A synchronous caller may have spent the epoch without a final checkpoint.
       this.#admittedThisEpoch = true;
     }
