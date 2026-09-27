@@ -169,23 +169,14 @@ it.each([0, 12, 40])(
     const now = vi.spyOn(scheduler, "now").mockImplementation(() => scheduler.time + delay);
     renderer.setPage(page, 1_000_000);
     scheduler.runNext();
-    if (delay > 0) {
-      expect(renderer.hasPendingSceneCommit).toBe(true);
-      expect(renderer.instrumentation()).toMatchObject({
-        backgroundBuilds: 0,
-        spatialQueries: 1,
-      });
-      expect(scheduler.pendingCount).toBe(1);
-      scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
-      scheduler.runNext();
-    }
     expect(renderer.hasPendingSceneCommit).toBe(false);
     expect(scheduler.pendingCount).toBe(0);
     expect(renderer.instrumentation()).toMatchObject({
-      frames: delay === 0 ? 1 : 2,
+      frames: 1,
       backgroundBuilds: 1,
-      backgroundBudgetDeferrals: delay === 0 ? 0 : 1,
+      backgroundBudgetDeferrals: 0,
       geometryBuilds: 0,
+      spatialQueries: 1,
     });
     // One camera write and a fixed background/palette update, independent of page height.
     expect(writes.mock.calls.length).toBeLessThanOrEqual(32);

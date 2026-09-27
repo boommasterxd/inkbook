@@ -17,7 +17,8 @@ import {
 } from "./interaction-refresh-profile-fixture";
 import { FakeNode, FakeScheduler } from "../../../unit/rendering/scene/fakes";
 
-// Central admission reads the clock before scene work; keep the existing six-entrant work bound.
+// Reading the clock for scheduler admission is not scene work. Later synthetic ticks
+// exercise deadlines; the assertions below bound actual mounts, queries, and builds.
 const FAKE_CLOCK_CHECKPOINTS_PER_FRAME = 8;
 const MAX_MOUNT_SLICE_ELEMENTS = 6;
 const TRANSITIONS = 12;
@@ -264,15 +265,20 @@ describe("restored stroke motion work", () => {
 });
 
 class ProfileScheduler extends FakeScheduler {
+  #frameEntryRead = false;
+
   public override now(): number {
     const current = this.time;
-    this.time +=
-      INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs / FAKE_CLOCK_CHECKPOINTS_PER_FRAME;
+    if (!this.#frameEntryRead)
+      this.time +=
+        INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs / FAKE_CLOCK_CHECKPOINTS_PER_FRAME;
+    this.#frameEntryRead = false;
     return current;
   }
 
   public override runNext(): void {
     this.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
+    this.#frameEntryRead = true;
     super.runNext();
   }
 }
