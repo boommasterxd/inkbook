@@ -26,6 +26,7 @@ export interface FragmentSerializerInstrumentation {
   readonly shapeBuilds: number;
   readonly shapeCacheBytes: number;
   readonly shapeCacheElements: number;
+  readonly retiredPointComparisons: number;
   readonly cacheBytes: number;
   readonly cacheElements: number;
   readonly derivedBoundsReuses: number;

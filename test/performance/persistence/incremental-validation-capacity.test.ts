@@ -8,6 +8,7 @@ import { IncrementalDocumentSerializer } from "../../../src/persistence/serializ
 import { prepareDocumentDelta } from "../../../src/persistence/serialization/incremental-document-delta";
 import { createSnapshot } from "../../unit/persistence/serialization/fixtures";
 import { StrokeShapeCache } from "../../../src/persistence/serialization/stroke-shape-cache";
+import { adoptTransferredStrokeSamples } from "../../../src/persistence/worker/runtime/runtime-elements";
 import { createPressureGroupFixture, createRetainedCapacityRectangle } from "./fixtures";
 
 it("reuses validated order without scanning 10k elements for a small edit", () => {
@@ -148,12 +149,24 @@ it("retains local pressure contours across complete 10k-stroke placement sweeps"
     }
   }
   expect(cache.instrumentation.shapeBuilds).toBe(10_000);
+  for (const stroke of strokes) cache.retire(stroke.id);
+  const restored = strokes.map((stroke) => ({
+    ...stroke,
+    points: adoptTransferredStrokeSamples(new Float64Array(stroke.points)),
+  }));
+  for (const stroke of restored) cache.resolve(stroke);
+  expect(cache.instrumentation.shapeBuilds).toBe(10_000);
+  const compared = restored.reduce((total, stroke) => total + stroke.points.length, 0);
+  expect(cache.instrumentation.retiredPointComparisons).toBe(compared);
+  for (const stroke of restored) cache.resolve(stroke);
+  expect(cache.instrumentation.retiredPointComparisons).toBe(compared);
   expect(cache.instrumentation.shapeCacheBytes).toBeLessThanOrEqual(32 * 1024 * 1024);
   cache.clear();
   expect(cache.instrumentation).toEqual({
     shapeBuilds: 0,
     shapeCacheBytes: 0,
     shapeCacheElements: 0,
+    retiredPointComparisons: 0,
   });
 });
 

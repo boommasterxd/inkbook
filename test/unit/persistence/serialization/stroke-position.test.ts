@@ -4,7 +4,10 @@ import {
   validatedDeltaElementFacts,
 } from "../../../../src/persistence/serialization/incremental-validation";
 import { StrokeShapeCache } from "../../../../src/persistence/serialization/stroke-shape-cache";
-import { copySnapshotToRuntime } from "../../../../src/persistence/worker/runtime/runtime-elements";
+import {
+  adoptTransferredStrokeSamples,
+  copySnapshotToRuntime,
+} from "../../../../src/persistence/worker/runtime/runtime-elements";
 import { IncrementalDocumentSerializer } from "../../../../src/persistence/serialization/incremental-document-serializer";
 import { parseInkbookDocumentForTest } from "../../../fixtures/persistence/parse-document";
 import { describe, expect, it } from "vitest";
@@ -98,6 +101,80 @@ it("keeps compatible local shapes across full resets and invalidates changed sam
   expect(serializer.instrumentation.shapeBuilds).toBe(2);
   expect(serializer.resetRuntime({ ...runtime, elements: [], revision: 10 }).ok).toBe(true);
   expect(serializer.instrumentation.shapeCacheElements).toBe(0);
+});
+
+it("reuses retired pressure geometry after Undo transfers a new point buffer", () => {
+  const original = stroke();
+  const source = copySnapshotToRuntime(
+    createSnapshot([{ ...original, style: { ...original.style, pressureEnabled: true } }]),
+  );
+  const serializer = new IncrementalDocumentSerializer();
+  expect(serializer.resetRuntime(source).ok).toBe(true);
+  const initial = serializer.serialize();
+  if (!initial.ok) throw new Error(initial.error.code);
+  const removedId = original.id;
+  expect(
+    serializer.applyDelta({ baseModelRevision: 7, modelRevision: 8, removedIds: [removedId] }).ok,
+  ).toBe(true);
+  expect(serializer.instrumentation).toMatchObject({ cacheElements: 0, shapeCacheElements: 1 });
+  expect(serializer.serialize().ok).toBe(true);
+  const restored = source.elements[0]!;
+  if (restored.kind !== "stroke") throw new Error("Expected a stroke");
+  const transferred = {
+    ...restored,
+    points: adoptTransferredStrokeSamples(new Float64Array(restored.points)),
+  };
+  expect(
+    serializer.applyDelta({
+      baseModelRevision: 8,
+      changedElements: [transferred],
+      modelRevision: 9,
+      orderChanges: { content: [removedId] },
+    }).ok,
+  ).toBe(true);
+  const restoredOutput = serializer.serialize();
+  if (!restoredOutput.ok) throw new Error(restoredOutput.error.code);
+  const staticSuffix = (svg: string) => {
+    const start = svg.indexOf('<g id="inkbook-background">');
+    if (start < 0) throw new Error("Missing static SVG bands");
+    return svg.slice(start);
+  };
+  expect(staticSuffix(restoredOutput.value.svg)).toBe(staticSuffix(initial.value.svg));
+  expect(serializer.instrumentation.shapeBuilds).toBe(1);
+  expect(serializer.instrumentation.shapeCacheElements).toBe(1);
+  expect(serializer.instrumentation.retiredPointComparisons).toBe(restored.points.length);
+
+  const changedPointBuffer = new Float64Array(restored.points);
+  changedPointBuffer[0] = changedPointBuffer[0]! + 0.001;
+  const changedPoints = adoptTransferredStrokeSamples(changedPointBuffer);
+  expect(
+    serializer.applyDelta({ baseModelRevision: 9, modelRevision: 10, removedIds: [removedId] }).ok,
+  ).toBe(true);
+  expect(
+    serializer.applyDelta({
+      baseModelRevision: 10,
+      changedElements: [{ ...restored, points: changedPoints }],
+      modelRevision: 11,
+      orderChanges: { content: [removedId] },
+    }).ok,
+  ).toBe(true);
+  expect(serializer.instrumentation.shapeBuilds).toBe(2);
+  expect(serializer.instrumentation.retiredPointComparisons).toBe(restored.points.length + 1);
+  serializer.clear();
+  expect(serializer.instrumentation.shapeCacheElements).toBe(0);
+});
+
+it("compares point values only for retired shapes", () => {
+  const original = stroke();
+  const cache = new StrokeShapeCache();
+  const first = cache.resolve(original);
+  expect(cache.resolve({ ...original, points: [...original.points] })).not.toBe(first);
+  cache.retire(original.id);
+  const restored = { ...original, points: [...original.points] };
+  const second = cache.resolve(restored);
+  expect(cache.resolve({ ...restored, style: { ...restored.style, opacity: 0.4 } })).toBe(second);
+  expect(cache.instrumentation.shapeBuilds).toBe(2);
+  expect(cache.instrumentation.retiredPointComparisons).toBe(original.points.length);
 });
 
 it("invalidates only changed local geometry and releases deleted stroke entries", () => {

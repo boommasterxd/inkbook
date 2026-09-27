@@ -208,7 +208,7 @@ export class IncrementalDocumentSerializer {
       this.#facts.delete(id);
       this.#elements.delete(id);
       this.#cache.remove(id);
-      this.#shapeCache.remove(id);
+      this.#shapeCache.retire(id);
     }
     for (const changedElement of prepared.value.changed.values()) {
       const element = canonicalElement(changedElement, this.#runtimeStrokeBuffers);
