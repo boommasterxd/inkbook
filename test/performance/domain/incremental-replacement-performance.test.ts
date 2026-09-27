@@ -8,7 +8,7 @@ import { moveSelectionTimeSliced } from "../../../src/editor/selection/transform
 import { CheckpointSliceScheduler, requireStroke } from "./domain-scenarios";
 import { createStandardDomainFixture } from "./standard-domain-fixture";
 
-it("prepares replacements incrementally and preserves unrelated records", async () => {
+async function createObservedOwnedStore() {
   const fixture = createStandardDomainFixture();
   const observations = fixture.elements.flatMap((element) => {
     if (element.kind !== "stroke") return [];
@@ -21,11 +21,17 @@ it("prepares replacements incrementally and preserves unrelated records", async 
     yieldControl: async () => undefined,
   });
   await builder.appendOwnedRuntime(fixture.elements);
-  const store = (await builder.finalize())!;
+  const store = await builder.finalize();
+  if (store === null) throw new Error("Expected an owned fixture store.");
   for (const { work } of observations) {
     work.indexedReads = 0;
     work.descriptorReads = 0;
   }
+  return { fixture, observations, store };
+}
+
+it("prepares replacements incrementally and preserves unrelated records", async () => {
+  const { fixture, observations, store } = await createObservedOwnedStore();
   const selected = new Set(fixture.strokeIds);
   const unrelated = fixture.elements
     .filter(({ id }) => !selected.has(id))
@@ -62,23 +68,7 @@ it("prepares replacements incrementally and preserves unrelated records", async 
 }, 30_000);
 
 it("validates 10,000 owned style replacements once without reading their samples", async () => {
-  const fixture = createStandardDomainFixture();
-  const observations = fixture.elements.flatMap((element) => {
-    if (element.kind !== "stroke") return [];
-    const observation = observeSchemaArray(element.points);
-    element.points = observation.observed;
-    return [observation];
-  });
-  const builder = ElementStore.createBuilder({
-    shouldYield: () => false,
-    yieldControl: async () => undefined,
-  });
-  await builder.appendOwnedRuntime(fixture.elements);
-  const store = (await builder.finalize())!;
-  for (const { work } of observations) {
-    work.indexedReads = 0;
-    work.descriptorReads = 0;
-  }
+  const { fixture, observations, store } = await createObservedOwnedStore();
   const strokes = fixture.strokeIds.map((id) => requireStroke(store, id));
   const validate = vi.spyOn(elementValidation, "validateRuntimeInkElementV1");
   try {

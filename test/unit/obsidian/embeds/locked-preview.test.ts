@@ -5,8 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ActiveScenePreviewHandoff } from "../../../../src/obsidian/embeds/active-scene-handoff";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import { createSnapshot } from "../../persistence/serialization/fixtures";
+import { createConfirmedOutputFixture } from "../../../fixtures/obsidian/confirmed-output";
 
-import { Platform, TFile, type Vault } from "obsidian";
+import { Platform, type Vault } from "obsidian";
 import * as previewBuilder from "../../../../src/obsidian/embeds/safe-preview-builder";
 import { ObsidianInkbookDocumentRecognition } from "../../../../src/obsidian/embeds/document-recognition";
 
@@ -304,10 +305,7 @@ it("shares validated Vault bytes across locked surfaces and builds independent S
 });
 
 it("uses confirmed safe bytes without reading again and rejects a mismatched revision", async () => {
-  const serialized = serializeInkbookDocument(createSnapshot());
-  if (!serialized.ok) throw new Error("Invalid test snapshot");
-  const File = TFile as unknown as new (path: string, size: number) => TFile;
-  const file = new File("confirmed.svg", serialized.value.svg.length);
+  const { file, serialized, signature } = createConfirmedOutputFixture();
   const cachedRead = vi.fn(async () => serialized.value.svg);
   const recognition = new ObsidianInkbookDocumentRecognition({
     getFileByPath: (path: string) => (path === file.path ? file : null),
@@ -318,7 +316,7 @@ it("uses confirmed safe bytes without reading again and rejects a mismatched rev
     file.path,
     serialized.value.svg,
     serialized.value.hash,
-    `${String(file.stat.ctime)}:${String(file.stat.mtime)}:${String(file.stat.size)}`,
+    signature,
   );
   const preview = createInkbookLockedPreview(
     createHtmlElement("button"),

@@ -2,8 +2,7 @@ import { TFile, type Vault } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 import { ObsidianInkbookDocumentRecognition } from "../../../../src/obsidian/embeds/document-recognition";
 import { inspectPreviewSvg } from "../../../../src/obsidian/embeds/safe-preview-svg";
-import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
-import { createSnapshot } from "../../persistence/serialization/fixtures";
+import { createConfirmedOutputFixture } from "../../../fixtures/obsidian/confirmed-output";
 
 vi.mock("../../../../src/obsidian/embeds/safe-preview-svg", () => ({ inspectPreviewSvg: vi.fn() }));
 
@@ -29,10 +28,8 @@ function previewWithSize(size: number) {
 }
 
 it("grants canonical proof only to a current own write confirmation", async () => {
-  const serialized = serializeInkbookDocument(createSnapshot());
-  if (!serialized.ok) throw new Error("Invalid test snapshot");
+  const { file, serialized, signature } = createConfirmedOutputFixture();
   const File = TFile as unknown as new (path: string, size: number) => TFile;
-  const file = new File("confirmed.svg", serialized.value.svg.length);
   const files = new Map([[file.path, file]]);
   const recognition = new ObsidianInkbookDocumentRecognition({
     getFileByPath: (path: string) => files.get(path) ?? null,
@@ -57,7 +54,6 @@ it("grants canonical proof only to a current own write confirmation", async () =
   await recognition.recognize(file.path);
   expect(recognition.matchesConfirmedOutput(read)).toBe(false);
 
-  const signature = `${String(file.stat.ctime)}:${String(file.stat.mtime)}:${String(file.stat.size)}`;
   recognition.acceptConfirmedOutput(
     file.path,
     serialized.value.svg,

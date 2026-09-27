@@ -89,37 +89,32 @@ describe("copied Inkbook embed paste", () => {
 });
 
 describe("duplicate insertion and editor ownership", () => {
-  it("does not create a copy when the editor changes during the choice", async () => {
-    const editor = new FakeEditor();
-    const test = pasteHarness("duplicate");
-    test.choose.mockImplementationOnce(async () => {
-      editor.content = "user edit";
-      return "duplicate";
-    });
+  it.each(["choice", "placement"] as const)(
+    "does not create a copy when the editor changes during %s",
+    async (phase) => {
+      const editor = new FakeEditor();
+      const test = pasteHarness("duplicate");
+      if (phase === "choice") {
+        test.choose.mockImplementationOnce(async () => {
+          editor.content = "user edit";
+          return "duplicate";
+        });
+      } else {
+        test.preparePath.mockImplementationOnce(async () => {
+          editor.content = "user edit";
+          return "drawings/duplicate.svg";
+        });
+      }
 
-    await expect(test.controller.paste(pasteRequest(editor))).resolves.toEqual({
-      cleanup: "not-needed",
-      kind: "stale",
-    });
-    expect(test.create).not.toHaveBeenCalled();
-    expect(editor.content).toBe("user edit");
-  });
-
-  it("does not create a copy when the editor changes during placement", async () => {
-    const editor = new FakeEditor();
-    const test = pasteHarness("duplicate");
-    test.preparePath.mockImplementationOnce(async () => {
-      editor.content = "user edit";
-      return "drawings/duplicate.svg";
-    });
-
-    await expect(test.controller.paste(pasteRequest(editor))).resolves.toEqual({
-      cleanup: "not-needed",
-      kind: "stale",
-    });
-    expect(test.create).not.toHaveBeenCalled();
-    expect(test.trash).not.toHaveBeenCalled();
-  });
+      await expect(test.controller.paste(pasteRequest(editor))).resolves.toEqual({
+        cleanup: "not-needed",
+        kind: "stale",
+      });
+      expect(test.create).not.toHaveBeenCalled();
+      expect(test.trash).not.toHaveBeenCalled();
+      expect(editor.content).toBe("user edit");
+    },
+  );
 
   it("creates and reads back an exact copy of the validated source before insertion", async () => {
     const editor = new FakeEditor();
