@@ -23,6 +23,8 @@ interface RecognitionEntry {
 interface PendingRecognition {
   readonly abort: AbortController;
   readonly owners: Set<Window>;
+  readonly ownerReleases: Map<Window, () => void>;
+  selectedOwner: Window | null;
   schedulerAbort: AbortController;
   readonly file: TFile;
   readonly signature: string;
@@ -195,6 +197,8 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     const request = {
       abort: new AbortController(),
       owners: new Set<Window>(),
+      ownerReleases: new Map<Window, () => void>(),
+      selectedOwner: null,
       schedulerAbort: new AbortController(),
       file,
       signature,
@@ -230,6 +234,7 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     value: InkbookDocumentRecognition,
   ): void {
     this.#activeReads -= 1;
+    this.#releaseOwners(request);
     if (this.#pending.get(documentId) === request) {
       this.#pending.delete(documentId);
       this.#deleteEntry(documentId);
@@ -247,6 +252,7 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
     if (request === undefined) return false;
     request.abort.abort();
     request.schedulerAbort.abort();
+    this.#releaseOwners(request);
     this.#pending.delete(documentId);
     this.#queue.delete(documentId);
     request.resolve(false);
@@ -320,13 +326,40 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
 
   #addOwner(request: PendingRecognition, ownerWindow: Window | null | undefined): void {
     if (ownerWindow === null || ownerWindow === undefined || ownerWindow.closed) return;
-    const previous = this.#chosenOwner(request);
+    if (!request.ownerReleases.has(ownerWindow)) {
+      const ownerDocument = ownerWindow.document;
+      const onVisibilityChange = (): void => this.#refreshOwner(request);
+      const onUnload = (): void => {
+        request.ownerReleases.get(ownerWindow)?.();
+        request.ownerReleases.delete(ownerWindow);
+        request.owners.delete(ownerWindow);
+        this.#refreshOwner(request);
+      };
+      ownerDocument.addEventListener("visibilitychange", onVisibilityChange);
+      ownerWindow.addEventListener("unload", onUnload, { once: true });
+      request.ownerReleases.set(ownerWindow, () => {
+        ownerDocument.removeEventListener("visibilitychange", onVisibilityChange);
+        ownerWindow.removeEventListener("unload", onUnload);
+      });
+    }
     request.owners.delete(ownerWindow);
     request.owners.add(ownerWindow);
-    if (previous !== this.#chosenOwner(request)) {
-      request.schedulerAbort.abort();
-      request.schedulerAbort = new AbortController();
-    }
+    this.#refreshOwner(request);
+  }
+
+  #refreshOwner(request: PendingRecognition): void {
+    const next = this.#chosenOwner(request);
+    if (request.selectedOwner === next) return;
+    request.selectedOwner = next;
+    request.schedulerAbort.abort();
+    request.schedulerAbort = new AbortController();
+  }
+
+  #releaseOwners(request: PendingRecognition): void {
+    for (const release of request.ownerReleases.values()) release();
+    request.ownerReleases.clear();
+    request.owners.clear();
+    request.selectedOwner = null;
   }
 
   #chosenOwner(request: PendingRecognition): Window | null {
@@ -343,7 +376,10 @@ export class ObsidianInkbookDocumentRecognition implements InkbookDocumentRecogn
   /** Forward each validation checkpoint to the current requester's shared window scheduler. */
   #requestScheduler(request: PendingRecognition): WorkScheduler {
     return createRecognitionWorkScheduler(
-      () => this.#workScheduler(this.#chosenOwner(request)),
+      () => {
+        if (request.selectedOwner?.closed) this.#refreshOwner(request);
+        return this.#workScheduler(request.selectedOwner);
+      },
       () => request.schedulerAbort.signal,
       request.abort.signal,
     );
