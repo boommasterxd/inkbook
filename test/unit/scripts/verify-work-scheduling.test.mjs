@@ -91,7 +91,9 @@ it("keeps listed semantic timers while blocking new work timers and microtasks",
   ).toEqual([]);
   expect(validateWorkScheduling([source("setTimeout(runNextSlice, 1);")])).toHaveLength(1);
   expect(validateWorkScheduling([source("queueMicrotask(runNextSlice);")])).toHaveLength(1);
-  expect(validateWorkScheduling([source("Promise.resolve(result).then(adoptResult);")])).toEqual([]);
+  expect(validateWorkScheduling([source("Promise.resolve(result).then(adoptResult);")])).toEqual(
+    [],
+  );
 });
 
 it("permits only exact semantic host turn and microtask sites", () => {
