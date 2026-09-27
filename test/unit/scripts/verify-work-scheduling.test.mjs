@@ -54,6 +54,32 @@ it("follows common native aliases and bracket property access", () => {
   expect(violations).toHaveLength(4);
 });
 
+it("rejects assigned aliases, indirect invocation, and native callbacks", () => {
+  const violations = validateWorkScheduling([
+    source(`
+      let later;
+      later = ownerWindow.requestAnimationFrame;
+      later.call(ownerWindow, run);
+      later.apply(ownerWindow, [run]);
+      const schedule = ownerWindow.setTimeout.bind(ownerWindow);
+      schedule.call(null, run, 0);
+      Promise.resolve().then(ownerWindow.queueMicrotask);
+      callbacks.forEach(ownerWindow.requestIdleCallback.bind(ownerWindow));
+      Reflect.apply(ownerWindow.setInterval, ownerWindow, [run, 1]);
+    `),
+  ]);
+
+  expect(violations).toHaveLength(6);
+  expect(violations.map((item) => item.match(/native (\w+)/u)?.[1])).toEqual([
+    "requestAnimationFrame",
+    "requestAnimationFrame",
+    "setTimeout",
+    "queueMicrotask",
+    "requestIdleCallback",
+    "setInterval",
+  ]);
+});
+
 it("keeps listed semantic timers while blocking new work timers and microtasks", () => {
   expect(
     validateWorkScheduling([
@@ -65,6 +91,7 @@ it("keeps listed semantic timers while blocking new work timers and microtasks",
   ).toEqual([]);
   expect(validateWorkScheduling([source("setTimeout(runNextSlice, 1);")])).toHaveLength(1);
   expect(validateWorkScheduling([source("queueMicrotask(runNextSlice);")])).toHaveLength(1);
+  expect(validateWorkScheduling([source("Promise.resolve(result).then(adoptResult);")])).toEqual([]);
 });
 
 it("permits only exact semantic host turn and microtask sites", () => {
@@ -92,6 +119,14 @@ it("permits only exact semantic host turn and microtask sites", () => {
       ),
     ]),
   ).toHaveLength(1);
+  expect(
+    validateWorkScheduling([
+      source(
+        "class LongPress { schedule() { setTimeout(requestAnimationFrame, 500); } }",
+        "src/obsidian/embeds/active-editor/long-press.ts",
+      ),
+    ]),
+  ).toHaveLength(1);
 });
 
 it("rejects private work deadlines while allowing the shared scheduler deadline", () => {
@@ -109,16 +144,55 @@ it("rejects private work deadlines while allowing the shared scheduler deadline"
   expect(violations.every((item) => item.includes("local work deadline"))).toBe(true);
 });
 
-it("permits native scheduling only in exact boundary adapters", () => {
-  const adapter = [...NATIVE_WORK_ADAPTERS][0];
+it("rejects numeric local work limits without requiring a deadline variable name", () => {
+  const violations = validateWorkScheduling([
+    source(`
+      const stop = performance.now() + 4;
+      let limit = 0;
+      limit = clock.now() + 5;
+      while (performance.now() - start < 6) doWork();
+      const animationEndsAt = performance.now() + animationDurationMs;
+      const wallClock = Math.floor(performance.timeOrigin + performance.now());
+      const sharedDeadline = workScheduler.deadline();
+    `),
+  ]);
+  expect(violations).toHaveLength(3);
+  expect(violations.every((item) => item.includes("local work deadline"))).toBe(true);
+});
+
+it("permits only named native call sites in exact boundary adapters", () => {
+  const windowAdapter = [...NATIVE_WORK_ADAPTERS][0];
+  const workerAdapter = [...NATIVE_WORK_ADAPTERS][1];
   expect(
     validateWorkScheduling([
-      source("new MessageChannel(); requestAnimationFrame(run); setTimeout(run, 0);", adapter),
+      source(
+        `class WindowTaskQueue {
+          #ensureChannel() { new MessageChannel(); }
+          #scheduleTimeout() { ownerWindow.setTimeout(run, 0); }
+        }
+        function createWindowWorkScheduler() { ownerWindow.requestAnimationFrame(run); }`,
+        windowAdapter,
+      ),
+      source(
+        `function createWorkerWorkScheduler() {
+          self.setTimeout(run, 0);
+          timing.setTimeout(run, 0);
+          timing.setTimeout(run, 0);
+        }`,
+        workerAdapter,
+      ),
     ]),
   ).toEqual([]);
-  expect(
-    validateWorkScheduling([
-      source("requestAnimationFrame(run);", `${adapter.slice(0, -3)}-copy.ts`),
-    ]),
-  ).toHaveLength(1);
+  const violations = validateWorkScheduling([
+    source(
+      `class WindowTaskQueue {
+        #ensureChannel() { new MessageChannel(); new MessageChannel(); }
+        #post() { requestAnimationFrame(run); }
+      }
+      function createWindowWorkScheduler() { queueMicrotask(run); }`,
+      windowAdapter,
+    ),
+    source("requestAnimationFrame(run);", `${windowAdapter.slice(0, -3)}-copy.ts`),
+  ]);
+  expect(violations).toHaveLength(4);
 });
