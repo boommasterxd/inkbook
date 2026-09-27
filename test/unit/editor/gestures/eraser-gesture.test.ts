@@ -253,6 +253,8 @@ describe("resumable eraser work", () => {
         beginQuery: () => eraserQuery(queryCount++ !== 0 ? [stroke.id] : []),
       },
       { clearCandidateFade: () => undefined, setCandidateFade: () => undefined },
+      undefined,
+      () => true,
     );
     sweep.update({ x: 0, y: 0 });
     sweep.update({ x: 100, y: 100 });
@@ -300,6 +302,7 @@ describe("eraser query lifecycle", () => {
       { beginQuery: () => cursor, getElement: () => rectangle },
       { clearCandidateFade, setCandidateFade: vi.fn() },
       () => 0,
+      () => true,
     );
     expect(sweep.candidateCount).toBeGreaterThan(0);
     expect(sweep.retainedSweepCount).toBe(1);
@@ -372,5 +375,7 @@ function createSingleStrokeSweep(stroke: StrokeElementV1): EraserSweep {
       beginQuery: () => eraserQuery([stroke.id]),
     },
     { clearCandidateFade: () => undefined, setCandidateFade: () => undefined },
+    undefined,
+    () => true,
   );
 }

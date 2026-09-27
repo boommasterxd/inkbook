@@ -8,8 +8,12 @@ it.for([16, 128])(
   "bounds point visits across %i strokes and every finalization yield",
   async (count) => {
     const budget = INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs;
-    const fixture = createCountedDenseStrokeEraser(count, () => budget);
-    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    const fixture = createCountedDenseStrokeEraser(
+      count,
+      () => budget,
+      MAX_STROKE_POINTS,
+      () => true,
+    );
     // Current finalization allowance: 16 segment checks/ms after a 0.25 ms reserve, capped at 256.
     const workPerCheckpoint = Math.max(1, Math.min(256, Math.floor((budget - 0.25) * 16)));
     let checkpoints = 0;
@@ -49,13 +53,12 @@ it.for([16, 128])(
       expect(fixture.eraser.retainedCandidateIdCount).toBe(0);
     } finally {
       fixture.eraser.revert();
-      clock.mockRestore();
     }
   },
 );
 
 it("drains multiple feedback quanta without a frame wait while the shared budget remains", async () => {
-  const fixture = createCountedDenseStrokeEraser(16);
+  const fixture = createCountedDenseStrokeEraser(16, undefined, MAX_STROKE_POINTS, () => true);
   const yieldControl = vi.fn(async () => undefined);
   const remove = vi.fn((ids: ReadonlySet<string>) => {
     expect(ids.size).toBe(16);
@@ -87,8 +90,7 @@ it("drains multiple feedback quanta without a frame wait while the shared budget
 });
 
 it("cancels finalization at the next yield without reading or publishing more work", async () => {
-  const fixture = createCountedDenseStrokeEraser(128);
-  const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+  const fixture = createCountedDenseStrokeEraser(128, undefined, MAX_STROKE_POINTS, () => true);
   let cancelled = false;
   let removals = 0;
   let yields = 0;
@@ -118,6 +120,5 @@ it("cancels finalization at the next yield without reading or publishing more wo
     expect(fixture.eraser.retainedCandidateIdCount).toBe(0);
   } finally {
     fixture.eraser.revert();
-    clock.mockRestore();
   }
 });

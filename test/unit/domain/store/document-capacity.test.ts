@@ -60,10 +60,7 @@ describe("DocumentCapacity exact aggregate limits", () => {
 
 describe("DocumentCapacity scheduled patches", () => {
   it("time-slices fanout patches and leaves cancelled preparation uncommitted", async () => {
-    const capacity = new DocumentCapacity();
-    const previous = Array.from({ length: 512 }, () => linearRecord("old-target"));
-    const next = Array.from({ length: 512 }, () => linearRecord("new-target"));
-    capacity.commit(capacity.prepare([], previous));
+    const { capacity, next, previous } = fanoutReplacement();
     let yields = 0;
 
     const cancelled = await capacity.prepareTimeSliced(previous, next, {
@@ -80,10 +77,7 @@ describe("DocumentCapacity scheduled patches", () => {
   });
 
   it("uses the remaining shared budget across large fanout patches", async () => {
-    const capacity = new DocumentCapacity();
-    const previous = Array.from({ length: 512 }, () => linearRecord("old-target"));
-    const next = Array.from({ length: 512 }, () => linearRecord("new-target"));
-    capacity.commit(capacity.prepare([], previous));
+    const { capacity, next, previous } = fanoutReplacement();
     let yields = 0;
     const prepared = await capacity.prepareTimeSliced(previous, next, {
       shouldYield: () => false,
@@ -113,6 +107,18 @@ describe("DocumentCapacity scheduled patches", () => {
     expect(() => capacity.commit(prepared.patch)).toThrow(/stale/);
   });
 });
+
+function fanoutReplacement(): {
+  readonly capacity: DocumentCapacity;
+  readonly next: ElementRecord[];
+  readonly previous: ElementRecord[];
+} {
+  const capacity = new DocumentCapacity();
+  const previous = Array.from({ length: 512 }, () => linearRecord("old-target"));
+  const next = Array.from({ length: 512 }, () => linearRecord("new-target"));
+  capacity.commit(capacity.prepare([], previous));
+  return { capacity, next, previous };
+}
 
 function rectangleRecord(maxY = 1): ElementRecord {
   return {

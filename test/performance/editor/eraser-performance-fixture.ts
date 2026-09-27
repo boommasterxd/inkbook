@@ -7,6 +7,7 @@ import { denseStrokePoints, maximumStroke } from "./maximum-stroke-fixture";
 export function createDenseStrokeEraser(
   strokes: readonly StrokeElementV1[],
   sliceBudgetMs?: () => number,
+  updateShouldYield?: () => boolean,
 ): EraserSweep {
   const byId = new Map(strokes.map((stroke) => [stroke.id, stroke]));
   let queryCount = 0;
@@ -23,6 +24,7 @@ export function createDenseStrokeEraser(
       setCandidateFade: () => undefined,
     },
     sliceBudgetMs,
+    updateShouldYield,
   );
 }
 
@@ -30,6 +32,7 @@ export function createCountedDenseStrokeEraser(
   count: number,
   sliceBudgetMs?: () => number,
   pointCount: number = MAX_STROKE_POINTS,
+  updateShouldYield?: (pointReads: number) => boolean,
 ) {
   let pointReads = 0;
   let widthReads = 0;
@@ -55,7 +58,11 @@ export function createCountedDenseStrokeEraser(
     };
   });
   return {
-    eraser: createDenseStrokeEraser(strokes, sliceBudgetMs),
+    eraser: createDenseStrokeEraser(
+      strokes,
+      sliceBudgetMs,
+      () => updateShouldYield?.(pointReads) ?? false,
+    ),
     get widthReads() {
       return widthReads;
     },

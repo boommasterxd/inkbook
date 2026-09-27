@@ -17,6 +17,7 @@ import {
   createOwnedTranslatedReplacementRecord,
 } from "./record-factory";
 import { requireElementRecord } from "./record-access";
+import { cancelled, ReplacementCheckpoint, yieldWhenRequested } from "./replacement-scheduler";
 import {
   prepareReplacementCandidatesTimeSliced,
   type ReplacementCandidate,
@@ -196,7 +197,7 @@ async function prepareCandidateRecords(
   const changes: PreparedReplacementRecords["changes"] = [];
   let geometryVersion = currentGeometryVersion;
   let paintVersion = currentPaintVersion;
-  let yields = 0;
+  const work = new ReplacementCheckpoint(scheduler);
   for (const candidate of candidates) {
     if (cancelled(scheduler)) return "cancelled";
     if (candidate.domains.includes("geometry") && geometryVersion === currentGeometryVersion) {
@@ -227,13 +228,8 @@ async function prepareCandidateRecords(
         id: record.element.id,
       }),
     );
-    const checkpoint = yieldWhenRequested(scheduler);
-    if (checkpoint === "cancelled") return checkpoint;
-    if (checkpoint !== 0) {
-      const yielded = await checkpoint;
-      if (yielded === "cancelled") return yielded;
-      yields += yielded;
-    }
+    const checkpoint = work.checkpoint();
+    if (checkpoint === false || (checkpoint !== true && !(await checkpoint))) return "cancelled";
   }
   return {
     capacityPreviousRecords,
@@ -245,7 +241,7 @@ async function prepareCandidateRecords(
     paintVersion,
     records,
     spatialReplacements,
-    yields,
+    yields: work.yields,
   };
 }
 
@@ -306,18 +302,6 @@ function canonicalStrokeTranslation(
   if (current.kind !== "stroke" || replacement.kind !== "stroke") return null;
   const proof = getCanonicalStrokeReplacementProof(replacement);
   return proof?.source === current ? proof.translation : null;
-}
-
-function yieldWhenRequested(
-  scheduler: StoreSliceScheduler,
-): 0 | "cancelled" | Promise<1 | "cancelled"> {
-  if (cancelled(scheduler)) return "cancelled";
-  if (!scheduler.shouldYield()) return 0;
-  return scheduler.yieldControl().then(() => (cancelled(scheduler) ? "cancelled" : 1));
-}
-
-function cancelled(scheduler: StoreSliceScheduler): boolean {
-  return scheduler.isCancelled?.() ?? false;
 }
 
 function nextVersion(value: number, name: string): number {

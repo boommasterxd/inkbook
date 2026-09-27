@@ -11,3 +11,21 @@ export function yieldWhenRequested(
 export function cancelled(scheduler: StoreSliceScheduler): boolean {
   return scheduler.isCancelled?.() ?? false;
 }
+
+/** Tracks actual deadline handoffs without creating a Promise on the free-budget path. */
+export class ReplacementCheckpoint {
+  public yields = 0;
+
+  public constructor(private readonly scheduler: StoreSliceScheduler) {}
+
+  public checkpoint(): boolean | Promise<boolean> {
+    const result = yieldWhenRequested(this.scheduler);
+    if (result === "cancelled") return false;
+    if (result === 0) return true;
+    return result.then((yielded) => {
+      if (yielded === "cancelled") return false;
+      this.yields += yielded;
+      return true;
+    });
+  }
+}

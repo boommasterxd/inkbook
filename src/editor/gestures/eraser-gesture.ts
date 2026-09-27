@@ -3,7 +3,7 @@ import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 import { createSweptCapsuleCheck, type SweptCapsuleCheck } from "./eraser-intersection";
 
 const ERASER_FADE_MS = 400;
-const WORK_UNITS_PER_UPDATE = 12_288;
+const FINALIZATION_WORK_UNITS_PER_QUANTUM = 12_288;
 const QUERY_BATCH_WORK_UNITS = 128;
 const UPDATE_CHECKPOINT_WORK_UNITS = 1_024;
 const MAX_FINALIZATION_CHECKPOINT_WORK_UNITS = 256;
@@ -152,7 +152,7 @@ export class EraserSweep {
     while (this.retainedSweepCount > 0) {
       const sliceBudgetMs = Math.max(0, this.#sliceBudgetMs() - FINALIZATION_SCHEDULING_RESERVE_MS);
       const workUnits = finalizationWorkUnits(sliceBudgetMs);
-      let remaining = WORK_UNITS_PER_UPDATE;
+      let remaining = FINALIZATION_WORK_UNITS_PER_QUANTUM;
       let shouldWait = false;
       do {
         if (scheduler.isCancelled() || this.#isCancelled()) return this.#cancelFinalization();
@@ -201,12 +201,8 @@ export class EraserSweep {
 
   #processUpdatePending(): void {
     const added = this.#updateAdded;
-    for (
-      let remaining = WORK_UNITS_PER_UPDATE;
-      remaining > 0 && this.retainedSweepCount > 0;
-      remaining -= UPDATE_CHECKPOINT_WORK_UNITS
-    ) {
-      this.#processPending(Math.min(remaining, UPDATE_CHECKPOINT_WORK_UNITS), added);
+    while (this.retainedSweepCount > 0) {
+      this.#processPending(UPDATE_CHECKPOINT_WORK_UNITS, added);
       if (this.#updateShouldYield?.() === true) break;
     }
   }
