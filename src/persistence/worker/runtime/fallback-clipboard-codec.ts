@@ -13,7 +13,7 @@ import type {
   ClipboardWritePayload,
   DecodedClipboard,
 } from "../../clipboard/types";
-import { validateClipboardPayload } from "../../clipboard/validation";
+import { validateClipboardPayloadSliced } from "../../clipboard/validation";
 import { parseChunkedJson } from "../../serialization/chunked-json-parser";
 import { runtimeSliceWorkProfile } from "./slice-scheduler";
 import type { RuntimeSliceContext, RuntimeSliceWorkProfile } from "./types";
@@ -118,9 +118,13 @@ async function decodeCandidate(
     return clipboardFailure("invalid-json", "Clipboard JSON is malformed.");
   }
   await context.checkpoint();
-  const validated = validateClipboardPayload(value);
+  const validated = await validateClipboardPayloadSliced(
+    value,
+    context.checkpoint,
+    profile.nodeLimit,
+    Math.max(1, Math.floor(profile.inputByteLimit / 24)),
+  );
   if (!validated.ok) return validated;
-  await context.checkpoint();
   const canonical = await serializeClipboardPayload(validated.value, context, false, profile);
   if (!canonical.ok) return canonical;
   return {

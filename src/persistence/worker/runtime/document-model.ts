@@ -25,6 +25,7 @@ import { decodeClipboardChunked, encodeRuntimeSelectionChunked } from "./fallbac
 import {
   copyElementsToRuntime,
   copySnapshotToRuntime,
+  copySnapshotToRuntimeSliced,
   hasRuntimeStrokeSamples,
   type RuntimeInkSnapshot,
   type RuntimeStrokeSamples,
@@ -148,7 +149,9 @@ export class DocumentModelRuntime {
       async (snapshot, derivations) => {
         const validationFinished = this.#now();
         inputValidationMs = validationFinished - started;
-        stagedRuntimeSnapshot = copySnapshotToRuntime(snapshot, this.#pointCopies);
+        stagedRuntimeSnapshot = sliceContext
+          ? await copySnapshotToRuntimeSliced(snapshot, sliceContext, this.#pointCopies)
+          : copySnapshotToRuntime(snapshot, this.#pointCopies);
         const copyFinished = this.#now();
         runtimeCopyMs = copyFinished - validationFinished;
         stagedDerivations = derivations;
@@ -161,7 +164,11 @@ export class DocumentModelRuntime {
     if (!parsed.ok) throw new RuntimeModelError(parsed.error.code, false);
     sliceContext?.signal.throwIfAborted();
     const parserFinished = this.#now();
-    const runtimeSnapshot = stagedRuntimeSnapshot ?? copySnapshotToRuntime(parsed.value.snapshot);
+    const runtimeSnapshot =
+      stagedRuntimeSnapshot ??
+      (sliceContext
+        ? await copySnapshotToRuntimeSliced(parsed.value.snapshot, sliceContext, this.#pointCopies)
+        : copySnapshotToRuntime(parsed.value.snapshot, this.#pointCopies));
     const modelAdoptionStarted = this.#now();
     this.#resetValidated(runtimeSnapshot, stagedDerivations ?? parsed.value.derivations);
     const finished = this.#now();

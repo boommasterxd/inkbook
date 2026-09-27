@@ -21,8 +21,12 @@ export function pushBottom<Id>(heap: BottomHeapEntry<Id>[], entry: BottomHeapEnt
 
 export function heapifyBottom<Id>(heap: BottomHeapEntry<Id>[]): void {
   for (let index = Math.floor(heap.length / 2) - 1; index >= 0; index -= 1) {
-    siftDown(heap, index);
+    heapifyBottomAt(heap, index);
   }
+}
+
+export function heapifyBottomAt<Id>(heap: BottomHeapEntry<Id>[], index: number): number {
+  return siftDown(heap, index);
 }
 
 export function popMaximumBottom<Id>(heap: BottomHeapEntry<Id>[]): BottomHeapEntry<Id> | undefined {
@@ -51,21 +55,25 @@ export function popMaximumBottom<Id>(heap: BottomHeapEntry<Id>[]): BottomHeapEnt
   return maximum;
 }
 
-function siftDown<Id>(heap: BottomHeapEntry<Id>[], start: number): void {
+function siftDown<Id>(heap: BottomHeapEntry<Id>[], start: number): number {
   const entry = heap[start];
-  if (entry === undefined) return;
+  if (entry === undefined) return 0;
   let index = start;
+  let comparisons = 0;
   while (true) {
     const leftIndex = index * 2 + 1;
     if (leftIndex >= heap.length) break;
     const rightIndex = leftIndex + 1;
     const left = heap[leftIndex]!;
     const right = heap[rightIndex];
+    if (right !== undefined) comparisons += 1;
     const childIndex = right !== undefined && right.bottom > left.bottom ? rightIndex : leftIndex;
     const child = heap[childIndex]!;
+    comparisons += 1;
     if (child.bottom <= entry.bottom) break;
     heap[index] = child;
     index = childIndex;
   }
   heap[index] = entry;
+  return comparisons;
 }

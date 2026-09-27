@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ModelPointReferences } from "../../../src/persistence/worker/runtime/model-point-references";
+import { copySnapshotToRuntimeSliced } from "../../../src/persistence/worker/runtime/runtime-elements";
 import {
   encodeRuntimeRequestChunked,
   decodeRuntimeRequest,
@@ -14,6 +15,48 @@ import type {
   FullModelSyncRuntimeRequest,
   IncrementalModelSyncRuntimeRequest,
 } from "../../../src/persistence/worker/runtime/types";
+
+it("bounds snapshot sample reads per checkpoint and reuses completed frozen copies", async () => {
+  const points = Array.from({ length: 12_000 }, (_, index) =>
+    index % 3 === 2 ? 0.5 : Math.floor(index / 3),
+  );
+  let indexedReads = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const value = points[index]!;
+    Object.defineProperty(points, index, {
+      configurable: true,
+      get: () => {
+        indexedReads += 1;
+        return value;
+      },
+    });
+  }
+  Object.freeze(points);
+  const input = { ...snapshot(), elements: [{ ...STROKE, points }] };
+  const copies = new WeakMap();
+  const readsPerSlice: number[] = [];
+  let lastReads = 0;
+  const context = {
+    checkpoint: async () => {
+      readsPerSlice.push(indexedReads - lastReads);
+      lastReads = indexedReads;
+    },
+    signal: new AbortController().signal,
+    workProfile: { inputByteLimit: 4_096, nodeLimit: 64, outputByteLimit: 16_384 },
+  };
+  const first = await copySnapshotToRuntimeSliced(input, context, copies);
+  expect(indexedReads).toBe(12_000);
+  expect(readsPerSlice).toHaveLength(24);
+  expect(readsPerSlice.every((reads) => reads > 0 && reads <= 510)).toBe(true);
+  const second = await copySnapshotToRuntimeSliced(input, context, copies);
+  expect(indexedReads).toBe(12_000);
+  const firstStroke = first.elements[0];
+  const secondStroke = second.elements[0];
+  if (firstStroke?.kind !== "stroke" || secondStroke?.kind !== "stroke") {
+    throw new Error("Expected copied strokes.");
+  }
+  expect(secondStroke.points).toBe(firstStroke.points);
+});
 
 describe("worker translation sample work", () => {
   it("transfers no sample buffers and reads no samples when moving ten thousand strokes", async () => {

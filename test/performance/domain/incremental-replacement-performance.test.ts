@@ -1,12 +1,49 @@
 import { observeSchemaArray } from "../../fixtures/domain/schema-array-work";
 import { expect, it, vi } from "vitest";
 import * as elementValidation from "../../../src/domain/schema/element-validation";
+import * as bottomHeap from "../../../src/domain/spatial/max-bottom-heap";
+import { UniformSpatialIndex } from "../../../src/domain/spatial";
 import { applySelectionStyleChange } from "../../../src/editor/tools/style-change";
 import { ElementStore } from "../../../src/domain/store/public";
 import { SelectionHandleSession } from "../../../src/editor/selection/handle-session";
 import { moveSelectionTimeSliced } from "../../../src/editor/selection/transforms";
 import { CheckpointSliceScheduler, requireStroke } from "./domain-scenarios";
 import { createStandardDomainFixture } from "./standard-domain-fixture";
+
+it("bounds heap comparisons during 1,024 spatial replacement preparations", async () => {
+  const index = new UniformSpatialIndex<number>();
+  const original = { minX: 10, minY: 10, maxX: 20, maxY: 20 };
+  const replacements = Array.from({ length: 1_024 }, (_, id) => ({
+    bounds: { minX: 30, minY: id + 30, maxX: 40, maxY: id + 40 },
+    id,
+  }));
+  index.insertMany(replacements.map(({ id }) => ({ bounds: original, id })));
+  const sift = vi.spyOn(bottomHeap, "heapifyBottomAt");
+  const comparisonsPerSlice: number[] = [];
+  let observed = 0;
+  try {
+    const plan = await index.prepareReplacementsTimeSliced(replacements, {
+      shouldYield: () => false,
+      yieldControl: async () => {
+        const results = sift.mock.results.slice(observed);
+        comparisonsPerSlice.push(
+          results.reduce((sum, result) => sum + (result.value as number), 0),
+        );
+        observed = sift.mock.results.length;
+        expect(index.getMaximumBottom()).toBe(20);
+      },
+    });
+    expect(plan).not.toBe("cancelled");
+    if (plan === "cancelled") return;
+    expect(sift).toHaveBeenCalledTimes(512);
+    expect(comparisonsPerSlice).toHaveLength(2);
+    expect(comparisonsPerSlice.every((count) => count > 0 && count <= 5_120)).toBe(true);
+    index.commitPreparedReplacements(plan);
+    expect(index.getMaximumBottom()).toBe(1_063);
+  } finally {
+    sift.mockRestore();
+  }
+});
 
 async function createObservedOwnedStore() {
   const fixture = createStandardDomainFixture();

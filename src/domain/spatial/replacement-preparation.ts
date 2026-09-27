@@ -10,9 +10,9 @@ import {
   type PreparedSpatialState,
   type SpatialReplacement,
 } from "./index-state";
-import { heapifyBottom, type BottomHeapEntry } from "./max-bottom-heap";
+import { heapifyBottom, heapifyBottomAt, type BottomHeapEntry } from "./max-bottom-heap";
 
-const HEAPIFY_ADMISSION_SIZE = 1_000;
+const HEAPIFY_SLICE_SIZE = 256;
 
 export interface SpatialReplacementPreparationPorts<Id, Owner extends object> {
   readonly createReplacement: (
@@ -188,11 +188,15 @@ async function finishPreparationTimeSliced<Id, Owner extends object>(
     if (!replacement.overflow) extentHeap.push(ports.extentEntry(replacement));
     if (!(await checkpoint(scheduler))) return "cancelled";
   }
-  if (prepared.length >= HEAPIFY_ADMISSION_SIZE || scheduler.shouldYield()) {
-    await scheduler.yieldControl();
-    if (scheduler.isCancelled?.() ?? false) return "cancelled";
+  let processed = 0;
+  for (let index = Math.floor(extentHeap.length / 2) - 1; index >= 0; index -= 1) {
+    heapifyBottomAt(extentHeap, index);
+    processed += 1;
+    if (processed >= HEAPIFY_SLICE_SIZE || scheduler.shouldYield()) {
+      if (!(await checkpoint(scheduler, true))) return "cancelled";
+      processed = 0;
+    }
   }
-  heapifyBottom(extentHeap);
   return createPreparedPlan(prepared, extentHeap, ports);
 }
 
@@ -212,8 +216,11 @@ function createPreparedPlan<Id, Owner extends object>(
   return Object.freeze({ replacementCount: prepared.length, [PREPARED_REPLACEMENTS]: state });
 }
 
-async function checkpoint(scheduler: SpatialReplacementPreparationScheduler): Promise<boolean> {
+async function checkpoint(
+  scheduler: SpatialReplacementPreparationScheduler,
+  required = false,
+): Promise<boolean> {
   if (scheduler.isCancelled?.() ?? false) return false;
-  if (scheduler.shouldYield()) await scheduler.yieldControl();
+  if (required || scheduler.shouldYield()) await scheduler.yieldControl();
   return !(scheduler.isCancelled?.() ?? false);
 }

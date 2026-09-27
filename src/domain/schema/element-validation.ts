@@ -1,5 +1,5 @@
-import { retainValidatedSampleExtrema } from "./stroke-sample-extrema";
 import { canonicalizeGeometryNumber } from "./canonical";
+import { assertStrokeSamplesSteps } from "./stroke-sample-validation";
 import { FILE_SCHEMA_LIMITS, type SchemaLimits } from "./constants";
 import { assertOutlineStyle, assertShapeStyle, assertStrokeStyle } from "./style-validation";
 import type { EndpointConnectionV1, InkElementV1, PointV1, ShapeAnchorV1 } from "./types";
@@ -14,7 +14,6 @@ import {
   assertRecord,
   assertRotation,
   assertSafeInteger,
-  assertUnitInterval,
   assertUuid,
   createStatistics,
   fail,
@@ -64,6 +63,40 @@ export function validateRuntimeInkElementV1(
   options: ElementValidationOptions = {},
 ): ValidationResult<InkElementV1> {
   return validateElement(value, options, true);
+}
+
+export function* validateInkElementV1Steps(
+  value: unknown,
+  options: ElementValidationOptions,
+  nodesPerStep: number,
+  samplesPerStep: number,
+): Generator<boolean | void, ValidationResult<InkElementV1>> {
+  const statistics = createStatistics();
+  try {
+    const limits = options.limits ?? FILE_SCHEMA_LIMITS;
+    const tree = assertJsonTreeSteps(
+      value,
+      jsonNodeBudget(limits),
+      nodesPerStep,
+      false,
+      jsonContainerBudget(limits),
+    );
+    let step = tree.next();
+    while (!step.done) {
+      yield true;
+      step = tree.next();
+    }
+    statistics.maximumDepth = step.value;
+    const context = { allowRuntimeStrokeBuffers: false, limits, statistics };
+    if (typeof value === "object" && value !== null && "kind" in value && value.kind === "stroke") {
+      yield* assertStrokeElementSteps(value, "$", context, samplesPerStep);
+    } else {
+      assertInkElement(value, "$", context);
+    }
+    return { ok: true, value: value as InkElementV1, statistics };
+  } catch (error: unknown) {
+    return { ok: false, error: toValidationError(error) };
+  }
 }
 
 function validateElement(
@@ -157,6 +190,32 @@ function assertPoint(
 }
 
 function assertStroke(value: UnknownRecord, path: string, context: ValidationContext): void {
+  const steps = assertStrokeSteps(value, path, context, Number.POSITIVE_INFINITY);
+  while (!steps.next().done) {
+    // Synchronous callers retain the same complete validation boundary.
+  }
+}
+
+function* assertStrokeElementSteps(
+  value: unknown,
+  path: string,
+  context: ValidationContext,
+  samplesPerStep: number,
+): Generator<boolean, void> {
+  assertRecord(value, path);
+  context.statistics.elements += 1;
+  if (context.statistics.elements > context.limits.elements) {
+    fail("element-limit-exceeded", path, "Element count exceeds the configured limit.");
+  }
+  yield* assertStrokeSteps(value, path, context, samplesPerStep);
+}
+
+function* assertStrokeSteps(
+  value: UnknownRecord,
+  path: string,
+  context: ValidationContext,
+  samplesPerStep: number,
+): Generator<boolean, void> {
   assertExactKeys(
     value,
     [...BASE_KEYS, "tool", "points", "style", ...(value.offset === undefined ? [] : ["offset"])],
@@ -166,7 +225,13 @@ function assertStroke(value: UnknownRecord, path: string, context: ValidationCon
   assertLiteral(value.kind, "stroke", `${path}.kind`);
   assertBase(value, path, context);
   assertOneOf(value.tool, ["pen", "highlighter"] as const, `${path}.tool`);
-  assertStrokeSamples(value.points, `${path}.points`, context, value.offset);
+  yield* assertStrokeSamplesSteps(
+    value.points,
+    `${path}.points`,
+    context,
+    value.offset,
+    samplesPerStep,
+  );
   assertStrokeStyle(value.style, `${path}.style`);
   if (value.tool === "highlighter" && value.style.pressureEnabled) {
     fail(
@@ -179,51 +244,6 @@ function assertStroke(value: UnknownRecord, path: string, context: ValidationCon
   if (context.statistics.strokes > context.limits.strokes) {
     fail("stroke-limit-exceeded", path, "Freehand stroke count exceeds the configured limit.");
   }
-}
-
-function assertStrokeSamples(
-  value: unknown,
-  path: string,
-  context: ValidationContext,
-  offset?: PointV1,
-): void {
-  const supported =
-    Array.isArray(value) || (context.allowRuntimeStrokeBuffers && value instanceof Float64Array);
-  if (!supported || value.length % 3 !== 0) {
-    fail("invalid-stroke-samples", path, "Stroke samples must be flat x, y, pressure triples.");
-  }
-  const pointCount = value.length / 3;
-  if (pointCount < 1 || pointCount > context.limits.pointsPerStroke) {
-    fail("invalid-stroke-samples", path, "Stroke point count is outside the supported range.");
-  }
-  context.statistics.strokePoints += pointCount;
-  if (context.statistics.strokePoints > context.limits.strokePoints) {
-    fail("stroke-point-limit-exceeded", path, "Total stroke point count exceeds the limit.");
-  }
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (let index = 0; index < value.length; index += 3) {
-    const x: unknown = value[index];
-    const y: unknown = value[index + 1];
-    const pressure: unknown = value[index + 2];
-    assertGeometryNumber(x, `${path}[${index}]`, context.limits.absoluteCoordinate);
-    assertGeometryNumber(y, `${path}[${index + 1}]`, context.limits.absoluteCoordinate);
-    assertUnitInterval(pressure, `${path}[${index + 2}]`);
-    minX = Math.min(minX, x);
-    minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x);
-    maxY = Math.max(maxY, y);
-    if (
-      offset !== undefined &&
-      (Math.abs(x + offset.x) > context.limits.absoluteCoordinate ||
-        Math.abs(y + offset.y) > context.limits.absoluteCoordinate)
-    ) {
-      fail("invalid-range", path, "Translated stroke coordinates exceed the numeric limit.");
-    }
-  }
-  retainValidatedSampleExtrema(value, { minX, minY, maxX, maxY });
 }
 
 function assertLine(value: UnknownRecord, path: string, context: ValidationContext): void {

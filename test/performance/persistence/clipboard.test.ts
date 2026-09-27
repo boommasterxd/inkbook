@@ -7,14 +7,69 @@ import {
   encodeRuntimeSelection,
 } from "../../../src/persistence/clipboard/codec";
 import { planPaste } from "../../../src/persistence/clipboard/operations";
+import { validateClipboardPayloadSliced } from "../../../src/persistence/clipboard/validation";
 import { serializeInkbookDocument } from "../../../src/persistence/serialization/public";
 import { DocumentWorkerRuntime } from "../../../src/persistence/worker/runtime/public";
 import { encodeRuntimeSelectionChunked } from "../../../src/persistence/worker/runtime/fallback-clipboard-codec";
 import { stroke } from "../../unit/domain/schema/fixtures";
 import { CLIPBOARD_ELEMENTS, CLIPBOARD_POINTS, createClipboardLimitFixture } from "./fixtures";
 import { createMinimalPersistenceFixture } from "./fixtures";
+import { observeSchemaArray } from "../../fixtures/domain/schema-array-work";
 
 const MIB = 1024 * 1024;
+it("bounds postparse clipboard sample reads and discards cancelled validation", async () => {
+  const observations = Array.from({ length: 1_000 }, (_, index) => {
+    const element = stroke(index + 1);
+    const observed = observeSchemaArray([...element.points]);
+    const { createdAt: _createdAt, id: _id, ...body } = element;
+    return { body: { ...body, points: observed.observed }, observed };
+  });
+  const payload = {
+    elements: observations.map(({ body }, index) => ({
+      clipId: index.toString(36),
+      element: body,
+    })),
+    format: "inkbook-elements",
+    version: 1,
+  };
+  const totalReads = () =>
+    observations.reduce(
+      (sum, { observed }) => sum + observed.work.indexedReads + observed.work.descriptorReads,
+      0,
+    );
+  const controller = new AbortController();
+  let checkpoints = 0;
+  await expect(
+    validateClipboardPayloadSliced(
+      payload,
+      async () => {
+        checkpoints += 1;
+        if (checkpoints === 3) controller.abort();
+        controller.signal.throwIfAborted();
+      },
+      64,
+      170,
+    ),
+  ).rejects.toMatchObject({ name: "AbortError" });
+  expect(totalReads()).toBeLessThan(6_000);
+
+  const readsPerCheckpoint: number[] = [];
+  let lastReads = totalReads();
+  const result = await validateClipboardPayloadSliced(
+    payload,
+    async () => {
+      const reads = totalReads();
+      readsPerCheckpoint.push(reads - lastReads);
+      lastReads = reads;
+    },
+    64,
+    170,
+  );
+  expect(result.ok).toBe(true);
+  expect(readsPerCheckpoint.length).toBeGreaterThan(20);
+  expect(readsPerCheckpoint.every((reads) => reads <= 6_000)).toBe(true);
+});
+
 it("bounds Promise allocation in the 1,000-stroke sliced clipboard fallback", async () => {
   const elements = Array.from({ length: 1_000 }, (_, index) => stroke(index + 1));
   let nodes = 0;
