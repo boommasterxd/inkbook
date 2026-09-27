@@ -61,9 +61,24 @@ it("prepares replacements incrementally and preserves unrelated records", async 
   });
 }, 30_000);
 
-it("reuses 10,000 owned sample buffers during style planning and commit", () => {
+it("validates 10,000 owned style replacements once without reading their samples", async () => {
   const fixture = createStandardDomainFixture();
-  const store = new ElementStore(fixture.elements);
+  const observations = fixture.elements.flatMap((element) => {
+    if (element.kind !== "stroke") return [];
+    const observation = observeSchemaArray(element.points);
+    element.points = observation.observed;
+    return [observation];
+  });
+  const builder = ElementStore.createBuilder({
+    shouldYield: () => false,
+    yieldControl: async () => undefined,
+  });
+  await builder.appendOwnedRuntime(fixture.elements);
+  const store = (await builder.finalize())!;
+  for (const { work } of observations) {
+    work.indexedReads = 0;
+    work.descriptorReads = 0;
+  }
   const strokes = fixture.strokeIds.map((id) => requireStroke(store, id));
   const validate = vi.spyOn(elementValidation, "validateRuntimeInkElementV1");
   try {
@@ -72,11 +87,13 @@ it("reuses 10,000 owned sample buffers during style planning and commit", () => 
     const delta = store.replaceMany(plan.replacements);
     expect(delta?.changes).toHaveLength(10_000);
     // Observe inputs at the actual schema boundary: original samples never reenter it.
-    expect(validate.mock.calls.length).toBeLessThanOrEqual(30_000);
-    expect(validate.mock.calls.length).toBeGreaterThan(0);
+    expect(validate.mock.calls).toHaveLength(10_000);
     for (const [element] of validate.mock.calls) {
       expect((element as { points: number[] }).points.length).toBe(3);
     }
+    expect(
+      observations.every(({ work }) => work.indexedReads === 0 && work.descriptorReads === 0),
+    ).toBe(true);
     for (const stroke of strokes) {
       const record = store.get(stroke.id)!;
       expect(record.element.kind === "stroke" && record.element.points).toBe(stroke.points);

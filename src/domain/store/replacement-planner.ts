@@ -1,5 +1,8 @@
 import { renderBandOf } from "../commands/render-bands";
-import { inferStoredStrokeTranslation } from "../elements/stroke-replacement-proof";
+import {
+  inferStoredStrokeTranslation,
+  isValidatedInternalStyleReplacement,
+} from "../elements/stroke-replacement-proof";
 import { validateRuntimeReplacement } from "../elements/runtime-replacement-validation";
 import { validateRuntimeInkElementV1 } from "../schema/element-validation";
 import type { InkElementV1 } from "../schema/public";
@@ -360,6 +363,7 @@ export function assertValidReplacementElement(
   current: ImmutableInkElement,
   replacement: InkElementV1,
 ): void {
+  if (isValidatedInternalStyleReplacement(current, replacement)) return;
   const isOwnedRuntimeStroke =
     current.kind === "stroke" &&
     current.points instanceof Float64Array &&

@@ -1,6 +1,35 @@
 import { validateRuntimeInkElementV1 } from "../schema/element-validation";
-import type { InkElementV1 } from "../schema/types";
-import { isStoredStroke, storedStrokeOffsetWithinRange } from "./stroke-replacement-proof";
+import type { InkElementV1, StrokeElementV1 } from "../schema/types";
+import {
+  isStoredStroke,
+  markValidatedInternalStyleReplacement,
+  storedStrokeOffsetWithinRange,
+} from "./stroke-replacement-proof";
+
+/** A style draft may reuse field validation only while its owned source is current. */
+export function validateInternalStyleReplacement(source: InkElementV1, replacement: InkElementV1) {
+  const validation = validateRuntimeReplacement(source, replacement);
+  if (
+    validation.ok &&
+    source.kind === "stroke" &&
+    replacement.kind === "stroke" &&
+    isStoredStroke(source) &&
+    replacement.points === source.points
+  ) {
+    freezeStrokeHeader(source);
+    freezeStrokeHeader(replacement);
+    markValidatedInternalStyleReplacement(source, replacement);
+  }
+  return validation;
+}
+
+function freezeStrokeHeader(stroke: StrokeElementV1): void {
+  Object.freeze(stroke.pivot);
+  if (stroke.offset !== undefined) Object.freeze(stroke.offset);
+  Object.freeze(stroke.style.color);
+  Object.freeze(stroke.style);
+  Object.freeze(stroke);
+}
 
 /** Reuse sample validation only for the exact exclusively owned stored buffer. */
 export function validateRuntimeReplacement(source: object, replacement: InkElementV1) {

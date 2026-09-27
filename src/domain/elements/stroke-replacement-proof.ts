@@ -10,12 +10,22 @@ export interface CanonicalStrokeReplacementProof {
 }
 
 const canonicalReplacementProofs = new WeakMap<object, CanonicalStrokeReplacementProof>();
+const validatedStyleReplacements = new WeakMap<object, WeakRef<object>>();
 const storedStrokeProofs = new WeakSet<object>();
 
 export function markStoredStroke<T extends { readonly points: ArrayLike<number> }>(stroke: T): T {
   canonicalReplacementProofs.delete(stroke);
+  validatedStyleReplacements.delete(stroke);
   storedStrokeProofs.add(stroke);
   return stroke;
+}
+
+export function markValidatedInternalStyleReplacement(source: object, replacement: object): void {
+  validatedStyleReplacements.set(replacement, new WeakRef(source));
+}
+
+export function isValidatedInternalStyleReplacement(source: object, replacement: object): boolean {
+  return validatedStyleReplacements.get(replacement)?.deref() === source;
 }
 
 export function markCanonicalStrokeReplacement(
