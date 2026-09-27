@@ -40,6 +40,16 @@ function setup(count = 160) {
   return { finished, options, pending, scheduler, setSelection, state, store, work };
 }
 
+function unbudgetedNumericWork(
+  test: ReturnType<typeof setup>,
+  steps: Generator<number, ReadonlySet<string>>,
+): SelectionQueryWork {
+  return new SelectionQueryWork(
+    { ...test.options, workScheduler: workSchedulerFromFrames(test.scheduler) },
+    steps,
+  );
+}
+
 describe("selection query scheduling", () => {
   it("resumes at the shared deadline and publishes the completed selection only once", () => {
     const test = setup();
@@ -198,10 +208,7 @@ describe("numeric selection work charges", () => {
         }
         return new Set(["selected"]);
       }
-      const work = new SelectionQueryWork(
-        { ...test.options, workScheduler: workSchedulerFromFrames(test.scheduler) },
-        steps(),
-      );
+      const work = unbudgetedNumericWork(test, steps());
       expect(work.start()).toBe(true);
       expect(test.state.visits).toBe(prefix + batches);
       expect(test.setSelection).toHaveBeenCalledOnce();
@@ -219,10 +226,7 @@ describe("numeric selection work charges", () => {
       }
       return new Set(["selected"]);
     }
-    const work = new SelectionQueryWork(
-      { ...test.options, workScheduler: workSchedulerFromFrames(test.scheduler) },
-      steps(),
-    );
+    const work = unbudgetedNumericWork(test, steps());
     expect(work.start()).toBe(false);
     expect(test.state.visits).toBe(64);
     expect(test.scheduler.pendingCount).toBe(0);

@@ -13,6 +13,8 @@ import type { PreparedElementHistory } from "../../../../../src/obsidian/embeds/
 import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
 import { LassoPreview } from "../../../../../src/obsidian/embeds/active-editor/selection-preview";
 
+const QUERY_DEADLINE_CHECKS = 1024;
+
 it("projects only appended lasso points and rebuilds after camera changes or compaction", () => {
   const store = new ElementStore([]);
   const sceneStore = new ElementSceneStore(store);
@@ -83,7 +85,7 @@ describe("lasso preview regressions", () => {
           Math.round(500 + Math.sin(index / 13) * 400) / 1000,
         ]).flat(),
       };
-      const test = createPreview(true, [target]);
+      const test = createPreview(true, [target], QUERY_DEADLINE_CHECKS);
       // The notch crosses the bounds but misses the ink, requiring complete contour checks.
       for (const [x, y] of [
         [2100, -30],
@@ -103,7 +105,7 @@ describe("lasso preview regressions", () => {
       if (outcome === "new-gesture") test.controller.abort();
       if (outcome === "complete") {
         for (let frame = 0; test.scheduler.pendingCount > 0 && frame < 5000; frame += 1) {
-          test.scheduler.runNext(frame);
+          test.runNext(frame);
         }
       }
       expect(test.scheduler.pendingCount).toBe(0);
@@ -127,7 +129,7 @@ describe("bounded lasso spatial queries", () => {
         ...stroke(index + 1),
         points: [index % 100, Math.floor(index / 100), 0.5],
       }));
-      const test = createPreview(true, targets);
+      const test = createPreview(true, targets, QUERY_DEADLINE_CHECKS);
       const begin = test.sceneStore.beginQuery.bind(test.sceneStore);
       const query = begin({ minX: -10, minY: -30, maxX: 200, maxY: 200 });
       const advance = vi.spyOn(query, "advance");
@@ -148,12 +150,12 @@ describe("bounded lasso spatial queries", () => {
         if (result.type === "return") expect(result.value.workUnits).toBeLessThanOrEqual(64);
       }
       expect(read.mock.calls.length).toBeGreaterThan(0);
-      expect(read.mock.calls.length).toBeLessThanOrEqual(4096);
+      expect(read.mock.calls.length).toBeLessThanOrEqual(QUERY_DEADLINE_CHECKS);
       if (outcome === "abort") test.controller.abort();
       else {
         advance.mockReturnValue({ ids: [], workUnits: 0, done: true, stale: true });
         for (let frame = 0; test.scheduler.pendingCount > 0 && frame < 100; frame += 1) {
-          test.scheduler.runNext(frame);
+          test.runNext(frame);
         }
       }
       expect(test.scheduler.pendingCount).toBe(0);
@@ -169,10 +171,15 @@ function pointer(x: number, y: number) {
   return { pointerId: 10, pointerType: "mouse" as const, pressure: 0.5, x, y };
 }
 
-function createPreview(additive: boolean, targets: readonly InkElementV1[] = []) {
+function createPreview(
+  additive: boolean,
+  targets: readonly InkElementV1[] = [],
+  deadlineChecks = Number.POSITIVE_INFINITY,
+) {
   const store = new ElementStore(targets);
   const sceneStore = new ElementSceneStore(store);
   const scheduler = new ManualFrameScheduler();
+  let checks = 0;
   const controller = new AbortController();
   const state = { selection: new Set(["selected-before-gesture"]) as ReadonlySet<string> };
   const preview = new LassoPreview({
@@ -181,7 +188,9 @@ function createPreview(additive: boolean, targets: readonly InkElementV1[] = [])
     preparedHistory: {} as PreparedElementHistory,
     renderer: createSelectionPreviewRenderer(),
     frameScheduler: scheduler,
-    workScheduler: workSchedulerFromFrames(scheduler),
+    workScheduler: workSchedulerFromFrames(scheduler, {
+      shouldYield: () => ++checks >= deadlineChecks,
+    }),
     sceneStore,
     selection: () => state.selection,
     selectionSignal: controller.signal,
@@ -197,5 +206,16 @@ function createPreview(additive: boolean, targets: readonly InkElementV1[] = [])
     },
     store,
   });
-  return { controller, preview, sceneStore, scheduler, state, store };
+  return {
+    controller,
+    preview,
+    runNext: (time: number) => {
+      checks = 0;
+      scheduler.runNext(time);
+    },
+    sceneStore,
+    scheduler,
+    state,
+    store,
+  };
 }
