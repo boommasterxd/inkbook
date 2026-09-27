@@ -4,6 +4,7 @@ import {
   routeSceneDelta,
   type SceneDeltaRoutingPorts,
 } from "../../../../src/rendering/scene/scene-delta-router";
+import { fakeRectangleRecord } from "./fakes";
 
 describe("scene delta routing", () => {
   it("batches visibility invalidation while preserving every geometry mark", () => {
@@ -51,6 +52,56 @@ describe("scene delta routing", () => {
     expect(spies.invalidateForChanges).toHaveBeenCalledOnce();
     expect(spies.invalidateVisibility).toHaveBeenCalledOnce();
   });
+
+  it("keeps one proven new element on progressive visibility publication", () => {
+    const { ports, spies } = routingPorts();
+    const element = fakeRectangleRecord("new", 0, 10).element;
+
+    routeSceneDelta(
+      {
+        affected: [
+          {
+            before: null,
+            after: element,
+            domains: ["geometry", "paint", "order", "visibility"],
+            id: element.id,
+          },
+        ],
+      },
+      ports,
+    );
+
+    expect(spies.markOrders).toHaveBeenCalledWith([element.id]);
+    expect(spies.markOrderVisibilityDirty).not.toHaveBeenCalled();
+    expect(spies.markGeometry).toHaveBeenCalledWith(element.id);
+    expect(spies.invalidateVisibility).toHaveBeenCalledOnce();
+    expect(spies.setElementFade).toHaveBeenCalledWith([element.id], null);
+  });
+
+  it.each(["multiple additions", "existing order", "unproven before state", "removal"] as const)(
+    "keeps %s atomic",
+    (caseName) => {
+      const { ports, spies } = routingPorts();
+      const first = fakeRectangleRecord("first", 0, 10).element;
+      const second = fakeRectangleRecord("second", 1, 30).element;
+      const affected =
+        caseName === "multiple additions"
+          ? [
+              { before: null, after: first, domains: ["order" as const], id: first.id },
+              { before: null, after: second, domains: ["order" as const], id: second.id },
+            ]
+          : caseName === "existing order"
+            ? [{ before: first, after: first, domains: ["order" as const], id: first.id }]
+            : caseName === "unproven before state"
+              ? [{ after: first, domains: ["order" as const], id: first.id }]
+              : [{ before: first, after: null, domains: ["order" as const], id: first.id }];
+
+      routeSceneDelta({ affected }, ports);
+
+      expect(spies.markOrders).toHaveBeenCalledWith(affected.map(({ id }) => id));
+      expect(spies.markOrderVisibilityDirty).toHaveBeenCalledOnce();
+    },
+  );
 });
 
 function routingPorts(): {
@@ -64,6 +115,7 @@ function routingPorts(): {
     | "markOrders"
     | "markPaint"
     | "releaseId"
+    | "setElementFade"
     | "prepareElementRemoval",
     ReturnType<typeof vi.fn>
   >;
@@ -77,6 +129,7 @@ function routingPorts(): {
     markOrders: vi.fn(),
     markPaint: vi.fn(),
     releaseId: vi.fn(),
+    setElementFade: vi.fn(),
     prepareElementRemoval: vi.fn(),
   };
   const ports = {
@@ -85,6 +138,7 @@ function routingPorts(): {
       markOrder: vi.fn(),
       markOrders: spies.markOrders,
       markPaint: spies.markPaint,
+      setElementFade: spies.setElementFade,
       prepareElementRemoval: spies.prepareElementRemoval,
     },
     invalidateVisibility: spies.invalidateVisibility,
