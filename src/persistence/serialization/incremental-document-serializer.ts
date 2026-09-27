@@ -1,4 +1,5 @@
 import { StrokeShapeCache } from "./stroke-shape-cache";
+import { pressureShapeKey } from "./prepared-pressure-hints";
 import { derivePageExtent } from "../../domain/geometry/public";
 import {
   FILE_SCHEMA_LIMITS,
@@ -81,6 +82,18 @@ export class IncrementalDocumentSerializer {
   }
   public currentPage(): PageV1 | null {
     return this.#page === null ? null : canonicalPage(this.#page);
+  }
+  public seedPreparedPressurePath(id: string, d: string, shapeKey: string): boolean {
+    const element = this.#elements.get(id);
+    if (
+      element?.kind !== "stroke" ||
+      !element.style.pressureEnabled ||
+      element.offset !== undefined ||
+      pressureShapeKey(element) !== shapeKey
+    )
+      return false;
+    this.#shapeCache.seed(element, d);
+    return true;
   }
   public hasElement(id: string): boolean {
     return this.#elements.has(id);
@@ -180,7 +193,10 @@ export class IncrementalDocumentSerializer {
     this.#aggregateFacts = incrementalValidation.aggregateElementFacts(this.#facts.values());
     return { ok: true, value: undefined };
   }
-  public applyDelta(delta: DocumentSerializationDelta): DocumentCodecResult<void> {
+  public applyDelta(
+    delta: DocumentSerializationDelta,
+    deferredFragmentIds?: ReadonlySet<string>,
+  ): DocumentCodecResult<void> {
     if (this.#revision === null || delta.baseModelRevision !== this.#revision) {
       return codecFailure(
         "base-revision-mismatch",
@@ -214,15 +230,19 @@ export class IncrementalDocumentSerializer {
       const element = canonicalElement(changedElement, this.#runtimeStrokeBuffers);
       this.#elements.set(element.id, element);
       this.#facts.set(element.id, facts.value.changed.get(element.id)!);
-      this.#cache.replace(
-        element.id,
-        buildElementFragments(
-          element,
-          facts.value.changed.get(element.id)!.bottom,
-          this.#shapeCache,
-        ),
-      );
-      this.#fragmentBuilds += 1;
+      if (deferredFragmentIds?.has(element.id)) {
+        this.#cache.remove(element.id);
+      } else {
+        this.#cache.replace(
+          element.id,
+          buildElementFragments(
+            element,
+            facts.value.changed.get(element.id)!.bottom,
+            this.#shapeCache,
+          ),
+        );
+        this.#fragmentBuilds += 1;
+      }
     }
     this.#orders.highlight = prepared.value.orders.highlight;
     this.#orders.content = prepared.value.orders.content;

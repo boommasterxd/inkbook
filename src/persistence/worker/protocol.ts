@@ -1,5 +1,6 @@
 import type { ElementValidationDerivation } from "../../domain/schema/public";
 import type { DocumentIntegrityManifest } from "../serialization/document-integrity-manifest";
+import type { PreparedPressurePathHint } from "../serialization/prepared-pressure-hints";
 
 export type SessionId = string;
 export type ElementId = string;
@@ -38,12 +39,15 @@ export interface ExportIdentity extends ExecutorIdentity {
 
 interface FullExportRequest<TSnapshot> extends ExportIdentity {
   readonly baseModelRevision: null;
+  readonly preparedPressurePaths?: readonly PreparedPressurePathHint[];
   readonly snapshot: TSnapshot;
   readonly type: "export-full";
 }
 
 interface IncrementalExportRequest<TElement, TPage> extends ExportIdentity {
   readonly baseModelRevision: DocumentRevision;
+  readonly includeBaselinePreparedPressurePaths?: boolean;
+  readonly preparedPressurePaths?: readonly PreparedPressurePathHint[];
   readonly changedElementDerivations?: readonly ElementValidationDerivation[];
   readonly changedElements?: readonly TElement[];
   readonly orderChanges?: Readonly<Partial<Record<RenderBand, readonly ElementId[]>>>;

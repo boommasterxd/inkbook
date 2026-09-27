@@ -168,6 +168,8 @@ export class ElementStore {
   public pressureGeometry(id: string, version: number) {
     return this.#runtime.pressureGeometry(id, version, (key) => this.#records.get(key));
   }
+  public readonly preparedPressurePaths = (ids?: ReadonlySet<string>) =>
+    this.#runtime.preparedPressurePaths((id) => this.#records.get(id), ids);
   public readonly releasePreparedPressureGeometry = () => this.#runtime.releasePressureGeometry();
   public readonly activeDocumentMemoryUsage = (): ElementStoreMemoryUsage =>
     this.#runtime.memoryUsage();

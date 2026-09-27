@@ -5,6 +5,7 @@ import type { DocumentRuntimePort } from "../../worker/runtime/public";
 import type { ExistingFilePort, NewFilePort } from "../save-ports";
 import type { VaultBase } from "../../worker/protocol";
 import type { ActiveSaveProof, ExportSuccess } from "../../worker/protocol";
+import type { PreparedPressurePathHint } from "../../serialization/prepared-pressure-hints";
 
 export type AutosaveStatus =
   | "clean"
@@ -47,6 +48,11 @@ export interface AutosaveDocumentSource {
   /** Read-only Store-owned identities for integrity hashing, never mutation or transport. */
   integritySnapshot?(): InkSnapshotV1;
   readonly ownsIntegrityElement?: (element: InkElementV1) => boolean;
+  /** Optional current, Store-owned geometry already produced by the active scene. */
+  preparedPressurePaths?(
+    modelRevision: number,
+    changedIds?: ReadonlySet<string>,
+  ): readonly PreparedPressurePathHint[];
 }
 
 export interface ConfirmedPersistence {

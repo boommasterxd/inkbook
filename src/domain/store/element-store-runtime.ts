@@ -99,6 +99,32 @@ export class ElementStoreRuntime {
     };
   }
 
+  public preparedPressurePaths(
+    record: (id: string) => ElementRecord | undefined,
+    ids?: ReadonlySet<string>,
+  ) {
+    const result: Array<{
+      readonly record: ElementRecord;
+      readonly parts: readonly import("../geometry/svg-path-part").SvgPathPart[];
+    }> = [];
+    const versions =
+      ids === undefined
+        ? this.#pressurePaths.cachedVersions()
+        : this.#pressurePaths.versionsFor(ids);
+    for (const [id, version] of versions) {
+      const current = record(id);
+      if (
+        current?.geometryVersion !== version ||
+        current.element.kind !== "stroke" ||
+        !current.element.style.pressureEnabled
+      )
+        continue;
+      const parts = this.#pressurePaths.read(id, version);
+      if (parts !== undefined) result.push({ record: current, parts });
+    }
+    return result;
+  }
+
   public releasePressureGeometry(): void {
     if (this.#pressureReleased) return;
     this.#pressureReleased = true;

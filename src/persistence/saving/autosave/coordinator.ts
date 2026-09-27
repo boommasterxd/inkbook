@@ -261,7 +261,7 @@ export class AutosaveCoordinator {
       sessionId: this.#sessionId,
       workerEpoch: this.#workerEpoch,
     };
-    const request = exports.createExportRequest(plan, identity);
+    const request = this.#workerModel.createExportRequest(plan, identity, this.#document);
     this.#exportInFlight = request;
     this.#setStatus("saving");
     void this.#executor.execute(request).then(
@@ -490,6 +490,7 @@ export class AutosaveCoordinator {
     this.#fallbackUsed = true;
     this.#executor.terminate();
     this.#workerEpoch = nextSafeCounter(this.#workerEpoch, "workerEpoch");
+    this.#workerModel.resetPreparedPathBaseline();
     this.#executor = this.#createFallback(this.#workerEpoch);
     this.#verifier.resetOperationIdentities();
     return true;

@@ -74,6 +74,7 @@ export const PERFORMANCE_TEST_MANIFEST = Object.freeze({
     "test/performance/persistence/incremental-validation-capacity.test.ts",
     "test/performance/persistence/memory-and-cache.test.ts",
     "test/performance/persistence/pressure-group-integrity.test.ts",
+    "test/performance/persistence/prepared-pressure-handoff.test.ts",
     "test/performance/persistence/runtime-export-cache.test.ts",
     "test/performance/persistence/serialization-and-worker.test.ts",
     "test/performance/persistence/stress-limits.test.ts",

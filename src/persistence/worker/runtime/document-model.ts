@@ -1,4 +1,5 @@
 import { VerifiedOutputProofs } from "./verified-output-proofs";
+import * as preparedPaths from "./prepared-pressure-path-adoption";
 import { parseRuntimeInput } from "./parse-runtime-input";
 import type {
   InkSnapshotV1,
@@ -229,9 +230,10 @@ export class DocumentModelRuntime {
       const update =
         request.type === "export-full"
           ? this.#resetForExport(request.snapshot, request.modelRevision)
-          : this.#applyIncremental(request);
+          : this.#applyIncremental(request, preparedPaths.preparedPressurePathIds(request));
       const modelUpdated = this.#now();
       if (!update.ok) return failure(update.error.code, true);
+      await preparedPaths.acceptPreparedPressurePaths(request, this.#serializer, sliceContext);
       const serialized = await this.#serializeRuntimeChunked(sliceContext);
       if (!serialized.ok) return failure(serialized.error.code, true);
       const integrityManifest = deriveDocumentIntegrityManifestFromContentDigest(
@@ -402,13 +404,16 @@ export class DocumentModelRuntime {
     return this.#serializer.resetRuntime(this.#runtimeSnapshot(snapshot));
   }
 
-  #applyIncremental(request: IncrementalModelRequest) {
-    return this.#serializer.applyDelta({
-      ...request,
-      ...(request.changedElements === undefined
-        ? {}
-        : { changedElements: copyElementsToRuntime(request.changedElements, this.#pointCopies) }),
-    });
+  #applyIncremental(request: IncrementalModelRequest, deferredFragmentIds?: ReadonlySet<string>) {
+    return this.#serializer.applyDelta(
+      {
+        ...request,
+        ...(request.changedElements === undefined
+          ? {}
+          : { changedElements: copyElementsToRuntime(request.changedElements, this.#pointCopies) }),
+      },
+      deferredFragmentIds,
+    );
   }
 
   #resetForSynchronization(snapshot: InkSnapshotV1, modelRevision: number) {
@@ -442,17 +447,14 @@ export class DocumentModelRuntime {
   }
 
   #serializeRuntimeChunked(sliceContext?: RuntimeSliceContext) {
-    return this.#serializer.serializeRuntimeChunked(
-      sliceContext === undefined
+    return this.#serializer.serializeRuntimeChunked({
+      ...(sliceContext === undefined
         ? {}
-        : {
-            checkpoint: sliceContext.checkpoint,
-            ...(sliceContext.workProfile === undefined
-              ? {}
-              : { sliceByteLimit: sliceContext.workProfile.outputByteLimit }),
-            signal: sliceContext.signal,
-          },
-    );
+        : { checkpoint: sliceContext.checkpoint, signal: sliceContext.signal }),
+      ...(sliceContext?.workProfile === undefined
+        ? {}
+        : { sliceByteLimit: sliceContext.workProfile.outputByteLimit }),
+    });
   }
 
   #runtimeSnapshot(snapshot: InkSnapshotV1): RuntimeInkSnapshot {

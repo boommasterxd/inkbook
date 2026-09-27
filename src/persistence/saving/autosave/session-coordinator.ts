@@ -1,4 +1,5 @@
 import type { InkElementV1, InkSnapshotV1 } from "../../../domain/schema/public";
+import type { PreparedPressurePathHint } from "../../serialization/prepared-pressure-hints";
 import type { ExistingFilePort } from "../save-ports";
 
 import { AutosaveCoordinator } from "./coordinator";
@@ -11,6 +12,10 @@ interface AutosaveSessionOptions extends AutosaveSessionBaseOptions {
   readonly snapshot: () => InkSnapshotV1;
   readonly integritySnapshot?: () => InkSnapshotV1;
   readonly ownsIntegrityElement?: (element: InkElementV1) => boolean;
+  readonly preparedPressurePaths?: (
+    modelRevision: number,
+    changedIds?: ReadonlySet<string>,
+  ) => readonly PreparedPressurePathHint[];
   readonly vault: ExistingFilePort;
 }
 
@@ -36,6 +41,9 @@ export function createAutosaveSession(options: AutosaveSessionOptions): Autosave
       ...(options.integritySnapshot ? { integritySnapshot: options.integritySnapshot } : {}),
       ...(options.ownsIntegrityElement
         ? { ownsIntegrityElement: options.ownsIntegrityElement }
+        : {}),
+      ...(options.preparedPressurePaths
+        ? { preparedPressurePaths: options.preparedPressurePaths }
         : {}),
     },
     executor: options.executor,

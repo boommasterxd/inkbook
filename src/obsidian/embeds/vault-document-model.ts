@@ -13,6 +13,7 @@ import type {
 } from "../../persistence/saving/autosave/types";
 import type { ExistingFilePort } from "../../persistence/saving/save-ports";
 import type { DocumentRuntimePort } from "../../persistence/worker/runtime/public";
+import { preparedPressurePathHint } from "../../persistence/serialization/prepared-pressure-hints";
 import type { SessionIdentity } from "../../editor/session/session-port";
 import type { InteractiveWorkPriority } from "../../editor/session/interactive-work-priority";
 import type {
@@ -74,6 +75,13 @@ export function createVaultAutosaveSession(
       : { requiresCanonicalRewrite: options.requiresCanonicalRewrite }),
     sessionId: options.identity.sessionId,
     ownsIntegrityElement: (element) => options.store.get(element.id)?.element === element,
+    preparedPressurePaths: (revision, changedIds) =>
+      revision === options.currentRevision()
+        ? options.store.preparedPressurePaths(changedIds).flatMap(({ record, parts }) => {
+            const hint = preparedPressurePathHint(record, parts, revision);
+            return hint === undefined ? [] : [hint];
+          })
+        : [],
     integritySnapshot: () => ({
       format: "inkbook",
       version: 1,
