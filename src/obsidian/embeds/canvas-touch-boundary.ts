@@ -97,6 +97,7 @@ export class CanvasTouchBoundary {
       return;
     }
     if (event.pointerType !== "touch") return;
+    this.#releaseStalePenHover(event);
     if (event.isPrimary) this.#options.onPrimaryTouchStart();
     this.#options.onTouchPointerStart(event);
     stopHostPropagation(event);
@@ -121,6 +122,7 @@ export class CanvasTouchBoundary {
     blockPenPointerEvent(event);
     this.#options.onPenPointerUp(event);
     this.#activePenPointers.delete(event.pointerId);
+    this.#penHovering = false;
     this.#syncPenInputPresence();
   };
 
@@ -130,6 +132,7 @@ export class CanvasTouchBoundary {
     blockPenPointerEvent(event);
     this.#options.onPenPointerCancel(event);
     this.#activePenPointers.delete(event.pointerId);
+    this.#penHovering = false;
     this.#syncPenInputPresence();
   };
 
@@ -141,7 +144,9 @@ export class CanvasTouchBoundary {
   };
 
   readonly #handlePointerOver = (event: PointerEvent): void => {
-    if (event.pointerType !== "pen" || !this.#isSurfaceEvent(event)) return;
+    if (!this.#isSurfaceEvent(event)) return;
+    this.#releaseStalePenHover(event);
+    if (event.pointerType !== "pen") return;
     this.#penHovering = true;
     this.#syncPenInputPresence();
   };
@@ -175,6 +180,14 @@ export class CanvasTouchBoundary {
     this.#clearPenInputPresence();
     this.#options.onTouchInterrupted();
   };
+
+  #releaseStalePenHover(event: PointerEvent): void {
+    if (event.pointerType !== "touch" || !event.isPrimary || this.#activePenPointers.size > 0)
+      return;
+    // Some pen drivers omit pointerout when switching directly from pen to touch.
+    this.#penHovering = false;
+    this.#syncPenInputPresence();
+  }
 
   #clearPenInputPresence(): void {
     this.#activePenPointers.clear();
