@@ -38,8 +38,20 @@ export class FakeNode {
     return this.nodes;
   }
 
+  public get childNodes(): readonly FakeNode[] {
+    return this.nodes;
+  }
+
+  public get parentNode(): FakeNode | null {
+    return this.parent ?? null;
+  }
+
   public append(...nodes: FakeNode[]): void {
     for (const node of nodes) this.insertBefore(node, null);
+  }
+
+  public appendChild(node: FakeNode): FakeNode {
+    return this.insertBefore(node, null);
   }
 
   public insertBefore(node: FakeNode, reference: FakeNode | null): FakeNode {

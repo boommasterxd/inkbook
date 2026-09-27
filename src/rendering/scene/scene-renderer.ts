@@ -13,6 +13,7 @@ import { ScenePathCache, type PreparedScenePath } from "./path-cache";
 import { ScenePreviewCommitController, type PreviewCommitHandoff } from "./preview-commit-handoff";
 import { SceneDom } from "./scene-dom";
 import { SceneCommitCoordinator } from "./scene-commit-coordinator";
+import { SceneContentScheduler } from "./scene-content-scheduler";
 import { SceneDeltaCoordinator } from "./scene-delta-coordinator";
 import { SceneLiveStrokeRenderer } from "./live-stroke-renderer";
 import { SceneMotionController } from "./scene-motion-controller";
@@ -27,6 +28,7 @@ export class SvgSceneRenderer {
   readonly #backgroundCache = new SceneBackgroundCache();
   #camera: Scene.SceneCamera = DEFAULT_CAMERA;
   readonly #content: SceneContentRenderer;
+  readonly #contentScheduler: SceneContentScheduler;
   #disposed = false;
   readonly #dom: SceneDom;
   readonly #frameBudgetMs: () => number;
@@ -81,6 +83,7 @@ export class SvgSceneRenderer {
       this.#pathCache,
       this.#stats,
     );
+    this.#contentScheduler = new SceneContentScheduler(this.#content, this.#scheduler);
     this.#motion = new SceneMotionController(
       this.#dom,
       this.#content,
@@ -428,14 +431,11 @@ export class SvgSceneRenderer {
     this.flushPointerFeedbackFrame(deadline);
     this.#motion.writeSelectionFeedback(startedAt);
     const pendingFades = this.#content.flushElementFades(deadline, () => this.#scheduler.now());
-    const pendingVisibility =
-      this.#content.writeMountedChanges(deadline, () => this.#scheduler.now()) ||
-      this.#content.reconcileVisibility(
-        deadline,
-        () => this.#scheduler.now(),
-        this.#transformPreviews.values,
-        this.#elementPreviews.values,
-      );
+    const pendingVisibility = this.#contentScheduler.write(
+      deadline,
+      this.#transformPreviews.values,
+      this.#elementPreviews.values,
+    );
     this.#elementPreviews.applyMounted(this.#content.takeCommittedPreviewIds());
     this.#liveStroke.settleCommits(
       (id) => this.#content.hasMounted(id) || !this.#visibility.contains(id),

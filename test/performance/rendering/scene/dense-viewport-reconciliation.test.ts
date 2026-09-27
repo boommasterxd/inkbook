@@ -1,5 +1,6 @@
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import { ProgressivePreviewPath } from "../../../../src/rendering/scene/progressive-preview-path";
+import { mergeVisibleBand } from "../../../../src/rendering/scene/visibility-order";
 import {
   FakeNode,
   FakeSceneStore,
@@ -24,6 +25,31 @@ describe("dense viewport reconciliation performance", () => {
       run(profile.viewport);
     });
   }
+});
+
+it("bounds rank comparisons when a mostly retained viewport gains ten elements", () => {
+  const previous = Array.from({ length: 800 }, (_, rank) => `retained-${rank}`);
+  const entrants = Array.from({ length: 10 }, (_, rank) => `entrant-${rank}`);
+  const ranks = new Map(previous.map((id, rank) => [id, rank * 2]));
+  entrants.forEach((id, rank) => ranks.set(id, rank * 160 + 1));
+  const output: (string | undefined)[] = [];
+  let comparisons = 0;
+  const count = mergeVisibleBand(
+    previous,
+    previous.length,
+    entrants,
+    output,
+    () => true,
+    (left, right) => {
+      comparisons += 1;
+      return ranks.get(left)! - ranks.get(right)!;
+    },
+  );
+  expect(count).toBe(810);
+  expect(output.slice(0, count)).toEqual(
+    [...previous, ...entrants].sort((left, right) => ranks.get(left)! - ranks.get(right)!),
+  );
+  expect(comparisons).toBeLessThanOrEqual(850);
 });
 
 function run(viewport: readonly [number, number]): void {
@@ -95,6 +121,209 @@ it("publishes a 10,000-entry viewport without an atomic DOM burst", () => {
   expect(renderer.mountedIds("content")).toEqual([...store.records.keys()]);
   renderer.destroy();
   expect(scheduler.pendingCount).toBe(0);
+});
+
+it("reinstates 315 ordered entries without moving retained DOM nodes in a 10,000-entry document", () => {
+  const store = new FakeSceneStore();
+  const ids = Array.from({ length: 10_000 }, (_, rank) => `entry-${rank}`);
+  const removed = new Set(Array.from({ length: 315 }, (_, index) => ids[index * 13]!));
+  for (const [rank, id] of ids.entries()) {
+    store.records.set(id, fakeRectangleRecord(id, rank, 20, rank < 4_220 ? 10 : 10_000));
+  }
+  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, {
+    height: 100,
+    left: 0,
+    top: 0,
+    width: 100,
+  });
+  scheduler.runAll(200);
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const originalNodes = [...content.nodes];
+  const retainedNodes = new Set(originalNodes.filter((_, rank) => !removed.has(ids[rank]!)));
+  expect(originalNodes).toHaveLength(4_220);
+
+  for (const id of removed) store.records.delete(id);
+  const afterRemoval = ids.filter((id) => !removed.has(id));
+  for (const [rank, id] of afterRemoval.entries()) {
+    const record = store.records.get(id)!;
+    store.records.set(id, { ...record, rank });
+  }
+  renderer.applyDelta({
+    affected: ids.map((id) => ({
+      id,
+      domains: removed.has(id) ? (["order", "visibility"] as const) : (["order"] as const),
+    })),
+  });
+  scheduler.runAll(200);
+  expect(content.nodes).toHaveLength(4_220 - removed.size);
+
+  for (const [rank, id] of ids.entries()) {
+    const record =
+      store.records.get(id) ?? fakeRectangleRecord(id, rank, 20, rank < 4_220 ? 10 : 10_000);
+    store.records.set(id, { ...record, rank });
+  }
+  const originalInsert = Object.getOwnPropertyDescriptor(FakeNode.prototype, "insertBefore")!
+    .value as (this: FakeNode, node: FakeNode, reference: FakeNode | null) => FakeNode;
+  const insert = vi.spyOn(FakeNode.prototype, "insertBefore");
+  let retainedAppends = 0;
+  let fragmentAppends = 0;
+  let publishedNodes = 0;
+  insert.mockImplementation(function (this: FakeNode, node, reference) {
+    if (this.fragment) {
+      fragmentAppends += 1;
+      if (retainedNodes.has(node)) retainedAppends += 1;
+    }
+    if (this === content && node.fragment) publishedNodes += node.nodes.length;
+    return originalInsert.call(this, node, reference);
+  });
+  try {
+    renderer.resetInstrumentation();
+    renderer.applyDelta({
+      affected: ids.map((id) => ({
+        id,
+        domains: removed.has(id)
+          ? (["geometry", "order", "visibility"] as const)
+          : (["order"] as const),
+      })),
+    });
+    scheduler.runAll(200);
+    expect(fragmentAppends).toBe(removed.size);
+    expect(retainedAppends).toBe(0);
+    expect(publishedNodes).toBe(removed.size);
+    expect(renderer.instrumentation().domReorders).toBe(0);
+    expect(renderer.instrumentation().domEntrants).toBe(removed.size);
+    expect(content.nodes).toHaveLength(4_220);
+    for (let rank = 0; rank < 4_220; rank += 1) {
+      if (removed.has(ids[rank]!)) expect(retainedNodes.has(content.nodes[rank]!)).toBe(false);
+      else expect(content.nodes[rank]).toBe(originalNodes[rank]);
+    }
+  } finally {
+    insert.mockRestore();
+    renderer.destroy();
+  }
+  expect(scheduler.pendingCount).toBe(0);
+});
+
+it("does not reappend returning retained nodes during unfinished viewport exit cleanup", () => {
+  const store = new FakeSceneStore();
+  for (let rank = 0; rank < 10_000; rank += 1) {
+    const y = rank < 4_200 ? 10 : rank < 8_400 ? 1_000 : 10_000;
+    const record = fakeRectangleRecord(`entry-${rank}`, rank, 20, y);
+    store.records.set(record.id, record);
+  }
+  const viewport = { height: 100, left: 0, top: 0, width: 100 };
+  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
+  scheduler.runAll(200);
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const originalNodes = [...content.nodes];
+  const originalSet = new Set(originalNodes);
+  expect(originalNodes).toHaveLength(4_200);
+
+  renderer.setViewport({ ...viewport, top: 1_000 });
+  let frames = 0;
+  while (renderer.instrumentation().domEntrants < 8_400 && scheduler.pendingCount > 0) {
+    scheduler.runNext();
+    expect(++frames).toBeLessThan(200);
+  }
+  expect(renderer.instrumentation().domEntrants).toBe(8_400);
+  const retained = new Set(content.nodes.filter((node) => originalSet.has(node)));
+  expect(retained.size).toBeGreaterThan(4_000);
+  expect(retained.size).toBeLessThan(4_200);
+
+  const originalInsert = Object.getOwnPropertyDescriptor(FakeNode.prototype, "insertBefore")!
+    .value as (this: FakeNode, node: FakeNode, reference: FakeNode | null) => FakeNode;
+  const insert = vi.spyOn(FakeNode.prototype, "insertBefore");
+  let retainedAppends = 0;
+  let siblingScans = 0;
+  let siblingVisits = 0;
+  let siblingVisitBudget = 0;
+  const childNodes = vi.spyOn(FakeNode.prototype, "childNodes", "get");
+  childNodes.mockImplementation(function (this: FakeNode) {
+    if (this !== content) return this.nodes;
+    siblingScans += 1;
+    siblingVisitBudget += this.nodes.length;
+    if (siblingScans === 1) scheduler.time += 8;
+    return new Proxy(this.nodes, {
+      get(target, key) {
+        if (typeof key === "string" && /^\d+$/.test(key)) siblingVisits += 1;
+        const value: unknown = Reflect.get(target, key);
+        return value;
+      },
+    });
+  });
+  insert.mockImplementation(function (this: FakeNode, node, reference) {
+    if (this.fragment && retained.has(node)) retainedAppends += 1;
+    return originalInsert.call(this, node, reference);
+  });
+  try {
+    renderer.setViewport(viewport);
+    scheduler.runAll(200);
+    expect(retainedAppends).toBe(0);
+    expect(renderer.instrumentation().mountDeadlineYields).toBeGreaterThan(0);
+    expect(siblingScans).toBe(2);
+    expect(siblingVisits).toBe(siblingVisitBudget);
+    expect(content.nodes).toHaveLength(4_200);
+    for (let rank = 0; rank < 4_200; rank += 1) {
+      if (retained.has(originalNodes[rank]!)) expect(content.nodes[rank]).toBe(originalNodes[rank]);
+    }
+  } finally {
+    childNodes.mockRestore();
+    insert.mockRestore();
+    renderer.destroy();
+  }
+  expect(scheduler.pendingCount).toBe(0);
+});
+
+it("publishes new visible nodes while selected mounted traces remain dirty", () => {
+  const store = new FakeSceneStore();
+  const selected = new Set<string>();
+  for (let index = 0; index < 300; index++) {
+    const old = fakeRectangleRecord(`old-${index}`, index, 10 + index / 100_000);
+    const next = fakeRectangleRecord(`next-${index}`, index, 10 + index / 100_000, 1_000);
+    store.records.set(old.id, old);
+    store.records.set(next.id, next);
+    selected.add(old.id);
+  }
+  const { renderer, scheduler } = createSceneFixture(
+    NAVIGATION_PAGE,
+    store,
+    { height: 100, left: 0, top: 0, width: 100 },
+    { frameBudgetMs: 8 },
+  );
+  scheduler.runAll();
+  const camera = fakeNode(renderer.svg).nodes[1]!;
+  const content = camera.nodes[4]!;
+  const insert = vi.spyOn(content, "insertBefore");
+  const write = vi.spyOn(FakeNode.prototype, "setAttribute");
+  let traceWrites = 0;
+  write.mockImplementation(function (this: FakeNode, name, value) {
+    if (name === "d" && this.attributes.get("class") === "inkbook-selection-center-trace") {
+      traceWrites += 1;
+      scheduler.time += 1;
+    }
+    this.attributes.set(name, value);
+  });
+  try {
+    renderer.setSelectedElements(selected);
+    renderer.setViewport({ height: 100, left: 0, top: 1_000, width: 100 });
+    scheduler.runNext();
+    expect(traceWrites).toBeGreaterThan(0);
+    expect(traceWrites).toBeLessThan(300);
+    expect(insert).not.toHaveBeenCalled();
+    scheduler.runNext();
+    expect(insert).toHaveBeenCalled();
+    expect(renderer.instrumentation().domEntrants).toBeGreaterThan(300);
+    expect(renderer.instrumentation().domEntrants).toBeLessThanOrEqual(364);
+    expect(traceWrites).toBeLessThanOrEqual(16);
+    scheduler.runAll();
+    expect(renderer.mountedIds("content")).toEqual(
+      [...store.records.keys()].filter((id) => id.startsWith("next-")),
+    );
+  } finally {
+    write.mockRestore();
+    insert.mockRestore();
+    renderer.destroy();
+  }
 });
 
 it("shares bounded preparation work across cold strokes instead of yielding four steps per stroke", () => {

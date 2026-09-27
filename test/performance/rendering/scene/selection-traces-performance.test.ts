@@ -12,10 +12,34 @@ import {
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { arrow, line } from "../../../unit/domain/schema/fixtures";
 import { createSnapshot } from "../../../unit/persistence/serialization/fixtures";
-import { fakeNode } from "../../../unit/rendering/scene/fakes";
+import { FakeNode, fakeNode } from "../../../unit/rendering/scene/fakes";
 import { maximumStroke } from "../../editor/maximum-stroke-fixture";
 
 afterEach(() => vi.restoreAllMocks());
+
+function traceRemovalWork(
+  remove: { mock: { contexts: unknown[]; invocationCallOrder: number[] } },
+  append: { mock: { calls: unknown[][]; invocationCallOrder: number[] } },
+  group: FakeNode,
+): { batches: number; connected: number; removed: number } {
+  const groupOrders = remove.mock.contexts.flatMap((node, index) =>
+    node === group ? [remove.mock.invocationCallOrder[index]!] : [],
+  );
+  const traceOrders = remove.mock.contexts.flatMap((node, index) =>
+    node instanceof FakeNode && node.attributes.has("data-selection-element-id")
+      ? [remove.mock.invocationCallOrder[index]!]
+      : [],
+  );
+  const attachOrders = append.mock.calls.flatMap(([node], index) =>
+    node === group ? [append.mock.invocationCallOrder[index]!] : [],
+  );
+  expect(attachOrders).toHaveLength(groupOrders.length);
+  const connected = traceOrders.filter(
+    (order) =>
+      !groupOrders.some((detached, index) => detached < order && order < attachOrders[index]!),
+  ).length;
+  return { batches: groupOrders.length, connected, removed: traceOrders.length };
+}
 
 it("reuses retained center geometry across camera, move, rotation and ink opacity", () => {
   let reads = 0;
@@ -105,17 +129,44 @@ it("reuses 1000 mixed short and long selected centers after culling", () => {
   select();
   expect(nodes()).toHaveLength(1000);
   expect(builds).toHaveBeenCalledTimes(1000);
+  const roots = nodes();
+  const group = roots[0]!.parent!;
+  const parent = group.parent!;
+  const siblings = [...parent.nodes];
+  const remove = vi.spyOn(FakeNode.prototype, "remove");
+  const append = vi.spyOn(parent, "appendChild");
+  renderer.setSelectedElements(
+    new Set(roots.slice(0, 500).map((root) => root.attributes.get("data-selection-element-id")!)),
+  );
+  scheduler.runAll();
+  expect(nodes()).toEqual(roots.slice(0, 500));
+  expect(parent.nodes).toEqual(siblings);
+  expect(traceRemovalWork(remove, append, group)).toEqual({
+    batches: 1,
+    connected: 0,
+    removed: 500,
+  });
+  remove.mockClear();
+  append.mockClear();
   renderer.setCamera({ x: 5000, zoom: 1 });
   scheduler.runAll();
   expect(nodes()).toHaveLength(0);
+  expect(parent.nodes).toEqual(siblings);
+  const cullWork = traceRemovalWork(remove, append, group);
+  expect(cullWork.removed).toBe(500);
+  expect(cullWork.batches).toBeLessThanOrEqual(2);
+  expect(cullWork.connected).toBe(0);
   builds.mockClear();
   renderer.resetInstrumentation();
+  renderer.setSelectedElements(new Set(elements.map(({ id }) => id)));
   renderer.setCamera({ x: 0, zoom: 1 });
   scheduler.runAll();
   expect(nodes()).toHaveLength(1000);
   expect(renderer.instrumentation().selectionTraceGeometryBuilds).toBe(0);
   expect(builds).not.toHaveBeenCalled();
   renderer.destroy();
+  expect(group.nodes).toEqual([]);
+  expect(parent.nodes).toEqual(siblings);
   expect(renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
 });
 

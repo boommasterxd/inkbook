@@ -25,35 +25,118 @@ interface PublicationOptions {
   readonly store: SceneStorePort;
 }
 
+/** Checks stale retained entries against one physical sibling snapshot per band. */
+export class RetainedDomOrder {
+  readonly #previous: Partial<Record<RenderBand, MountedSceneElement>> = {};
+  readonly #positions: Partial<Record<RenderBand, Map<Node, number>>> = {};
+
+  public constructor(
+    private readonly dom: SceneDom,
+    private readonly epoch: number,
+  ) {}
+
+  public observe(entry: MountedSceneElement, band: RenderBand): boolean {
+    const previous = this.#previous[band];
+    this.#previous[band] = entry;
+    if (entry.band !== band || entry.detachedPathCount > 0) return false;
+    if (
+      entry.committedOrderEpoch === this.epoch &&
+      (previous === undefined || previous.committedOrderEpoch === this.epoch)
+    )
+      return previous === undefined || entry.committedRank < previous.committedRank;
+    const positions = (this.#positions[band] ??= this.index(band));
+    const current = this.firstPosition(entry, positions);
+    const next = previous === undefined ? undefined : this.firstPosition(previous, positions);
+    const count = entry.group === null ? entry.paths.length : 1;
+    return (
+      current !== undefined &&
+      (previous === undefined || (next !== undefined && current + count <= next))
+    );
+  }
+
+  public invalidate(): void {
+    delete this.#positions.content;
+    delete this.#positions.highlight;
+  }
+
+  public release(): void {
+    this.invalidate();
+    delete this.#previous.content;
+    delete this.#previous.highlight;
+  }
+
+  public memoryUsage(): number {
+    return (this.#positions.content?.size ?? 0) * 32 + (this.#positions.highlight?.size ?? 0) * 32;
+  }
+
+  private index(band: RenderBand): Map<Node, number> {
+    // The scene owns this SVG band; one bounded sibling snapshot avoids repeated native reorders.
+    // eslint-disable-next-line no-restricted-syntax -- This one bounded scan reads the scene-owned SVG band.
+    const nodes = this.dom.group(band).childNodes;
+    const positions = new Map<Node, number>();
+    const count = nodes.length;
+    for (let index = 0; index < count; index += 1) {
+      const node = nodes[index];
+      if (node !== undefined) positions.set(node, index);
+    }
+    return positions;
+  }
+
+  private firstPosition(
+    entry: MountedSceneElement,
+    positions: ReadonlyMap<Node, number>,
+  ): number | undefined {
+    const first = positions.get(firstPath(entry));
+    if (first === undefined) return undefined;
+    if (entry.group === null) {
+      for (let index = 1; index < entry.paths.length; index += 1) {
+        if (positions.get(entry.paths[index]!.node) !== first + index) return undefined;
+      }
+    }
+    return first;
+  }
+}
+
 /** Publishes an already bounded, ordered batch and returns its newly visible IDs. */
 export function publishVisibilityRun(
   run: PendingMutationRun,
   options: PublicationOptions,
   epoch: number,
-  preserveOrder: boolean,
+  retainedOrderPreserved: boolean,
 ): string[] {
   const ids: string[] = [];
-  const fragment = preserveOrder ? undefined : createFragment(options.dom.ownerDocument);
+  let fragment: DocumentFragment | undefined;
+  let hasPendingNodes = false;
+  const flush = (successor: MountedSceneElement | undefined): void => {
+    if (!hasPendingNodes || fragment === undefined) return;
+    options.dom
+      .group(run.band)
+      .insertBefore(fragment, successor === undefined ? null : firstPath(successor));
+    options.instrumentation.domFragmentRuns += 1;
+    hasPendingNodes = false;
+  };
   for (let index = run.count - 1; index >= 0; index -= 1) {
     const entry = run.entries[index];
     if (entry === undefined) continue;
     entry.rank = options.store.get(entry.id)?.rank ?? Number.MAX_SAFE_INTEGER;
     entry.committedRank = entry.rank;
     entry.committedOrderEpoch = epoch;
-    if (fragment === undefined) continue;
+    entry.band = run.band;
+    if (retainedOrderPreserved && !run.entrants[index]) {
+      // Rank shifts can mark retained nodes dirty without changing their relative DOM order.
+      flush(entry);
+      continue;
+    }
+    fragment ??= createFragment(options.dom.ownerDocument);
     appendElementToFragment(entry, fragment);
+    hasPendingNodes = true;
     if (run.entrants[index]) {
       options.mounted.set(entry.id, entry);
       ids.push(entry.id);
       options.instrumentation.domEntrants += 1;
     } else options.instrumentation.domReorders += 1;
   }
-  if (fragment !== undefined) {
-    options.dom
-      .group(run.band)
-      .insertBefore(fragment, run.successor === undefined ? null : firstPath(run.successor));
-    options.instrumentation.domFragmentRuns += 1;
-  }
+  flush(run.successor);
   return ids;
 }
 

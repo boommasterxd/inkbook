@@ -56,7 +56,9 @@ export class SceneSelectionTraces {
   public flushContext(): void {
     if (!this.#selectionDirty) return;
     this.#selectionDirty = false;
-    for (const id of this.#traces.keys()) if (!this.#selected.has(id)) this.remove(id);
+    let removed: string[] | undefined;
+    for (const id of this.#traces.keys()) if (!this.#selected.has(id)) (removed ??= []).push(id);
+    if (removed !== undefined) this.removeMany(removed);
   }
 
   public update(
@@ -88,12 +90,13 @@ export class SceneSelectionTraces {
     this.#bytes += center.memoryUsage() - before;
   }
   public prune(mounted: ReadonlyMap<string, MountedSceneElement>): void {
+    let removed: string[] | undefined;
     for (const id of this.#traces.keys())
-      if (!mounted.has(id) || !this.#selected.has(id)) this.remove(id);
+      if (!mounted.has(id) || !this.#selected.has(id)) (removed ??= []).push(id);
+    if (removed !== undefined) this.removeMany(removed);
   }
   public release(): void {
-    for (const trace of this.#traces.values()) trace.release();
-    this.#traces.clear();
+    this.removeMany([...this.#traces.keys()]);
     this.#cache.clear();
     this.#selected = new Set();
     this.#selectionDirty = false;
@@ -101,11 +104,28 @@ export class SceneSelectionTraces {
     this.syncFrameOutline();
   }
   private remove(id: string): void {
+    this.removeTrace(id);
+    this.syncFrameOutline();
+  }
+  private removeTrace(id: string): void {
     const trace = this.#traces.get(id);
     if (trace === undefined) return;
-    this.#bytes -= trace.memoryUsage();
+    const bytes = trace.memoryUsage();
     trace.release();
+    this.#bytes -= bytes;
     this.#traces.delete(id);
+  }
+  private removeMany(ids: readonly string[]): void {
+    if (ids.length === 0) return;
+    // Release large batches outside the connected SVG. SceneDom keeps this
+    // group last in the camera group, so appending restores its original order.
+    const parent = ids.length >= 32 ? this.#group.parentNode : null;
+    if (parent !== null) this.#group.remove();
+    try {
+      for (const id of ids) this.removeTrace(id);
+    } finally {
+      if (parent !== null) parent.appendChild(this.#group);
+    }
     this.syncFrameOutline();
   }
   private syncFrameOutline(): void {

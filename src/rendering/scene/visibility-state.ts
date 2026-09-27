@@ -1,6 +1,7 @@
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type { Bounds } from "../../domain/geometry/primitives";
 import type { MutableSceneInstrumentation, SceneStorePort, SpatialQuerySink } from "./types";
+import { mergeVisibleBand } from "./visibility-order";
 
 export interface BandVisibility {
   readonly count: number;
@@ -27,6 +28,8 @@ export class SceneVisibilityState implements SpatialQuerySink {
   readonly #slotIds: (string | undefined)[] = [];
   readonly #nextContentIds: (string | undefined)[] = [];
   readonly #nextHighlightIds: (string | undefined)[] = [];
+  readonly #newContentIds: string[] = [];
+  readonly #newHighlightIds: string[] = [];
   readonly #store: SceneStorePort;
   #candidateCapacity = 0;
   #candidateCount = 0;
@@ -47,6 +50,7 @@ export class SceneVisibilityState implements SpatialQuerySink {
   #visibleEpoch = 0;
   #visibleMarkers = new Uint32Array(0);
   #visibleRanks = new Float64Array(0);
+  #retainedRanksStable = true;
 
   public constructor(store: SceneStorePort, instrumentation: MutableSceneInstrumentation) {
     this.#store = store;
@@ -141,6 +145,8 @@ export class SceneVisibilityState implements SpatialQuerySink {
     this.#highlightIds.length = 0;
     this.#nextContentIds.length = 0;
     this.#nextHighlightIds.length = 0;
+    this.#newContentIds.length = 0;
+    this.#newHighlightIds.length = 0;
     this.#freeSlots.length = 0;
     this.#slotIds.length = 0;
     this.#slotById.clear();
@@ -156,6 +162,9 @@ export class SceneVisibilityState implements SpatialQuerySink {
   }
 
   private beginVisibleQuery(): number | undefined {
+    this.#newContentIds.length = 0;
+    this.#newHighlightIds.length = 0;
+    this.#retainedRanksStable = true;
     this.clearReferences(this.#nextContentIds, this.#nextContentCount);
     this.clearReferences(this.#nextHighlightIds, this.#nextHighlightCount);
     this.#nextContentCount = 0;
@@ -209,11 +218,16 @@ export class SceneVisibilityState implements SpatialQuerySink {
       const slot = this.#slotById.get(id);
       if (slot === undefined) continue;
       const bandCode = record.band === "highlight" ? 1 : 2;
-      if (
-        previousEpoch === undefined ||
-        this.#visibleMarkers[slot] !== previousEpoch ||
-        this.#visibleBands[slot] !== bandCode
-      ) {
+      const retained =
+        previousEpoch !== undefined &&
+        this.#visibleMarkers[slot] === previousEpoch &&
+        this.#visibleBands[slot] === bandCode;
+      if (!retained) {
+        (record.band === "highlight" ? this.#newHighlightIds : this.#newContentIds).push(id);
+      } else if (this.#visibleRanks[slot] !== record.rank) {
+        this.#retainedRanksStable = false;
+      }
+      if (previousEpoch === undefined || !retained) {
         unchanged = false;
       }
       this.#visibleMarkers[slot] = this.#visibleEpoch;
@@ -241,6 +255,30 @@ export class SceneVisibilityState implements SpatialQuerySink {
   }
 
   private publishNextVisibility(): void {
+    const incremental =
+      this.#hasCurrentVisibility &&
+      this.#retainedRanksStable &&
+      this.#newContentIds.length + this.#newHighlightIds.length <= 64;
+    if (incremental) {
+      this.clearReferences(this.#nextContentIds, this.#nextContentCount);
+      this.clearReferences(this.#nextHighlightIds, this.#nextHighlightCount);
+      this.#nextContentCount = mergeVisibleBand(
+        this.#contentIds,
+        this.#contentCount,
+        this.#newContentIds,
+        this.#nextContentIds,
+        (id) => this.containsInBand(id, "content"),
+        (left, right) => this.compare(left, right, "content"),
+      );
+      this.#nextHighlightCount = mergeVisibleBand(
+        this.#highlightIds,
+        this.#highlightCount,
+        this.#newHighlightIds,
+        this.#nextHighlightIds,
+        (id) => this.containsInBand(id, "highlight"),
+        (left, right) => this.compare(left, right, "highlight"),
+      );
+    }
     this.clearReferences(this.#contentIds, this.#contentCount);
     this.clearReferences(this.#highlightIds, this.#highlightCount);
     this.#contentCount = copyReferences(
@@ -253,8 +291,10 @@ export class SceneVisibilityState implements SpatialQuerySink {
       this.#nextHighlightCount,
       this.#highlightIds,
     );
-    this.sortBand(this.#highlightIds, this.#highlightCount, "highlight");
-    this.sortBand(this.#contentIds, this.#contentCount, "content");
+    if (!incremental) {
+      this.sortBand(this.#highlightIds, this.#highlightCount, "highlight");
+      this.sortBand(this.#contentIds, this.#contentCount, "content");
+    }
     this.#hasCurrentVisibility = true;
     this.discardNextVisibility();
   }
@@ -264,6 +304,8 @@ export class SceneVisibilityState implements SpatialQuerySink {
     this.clearReferences(this.#nextHighlightIds, this.#nextHighlightCount);
     this.#nextContentCount = 0;
     this.#nextHighlightCount = 0;
+    this.#newContentIds.length = 0;
+    this.#newHighlightIds.length = 0;
   }
 
   private canReuseCurrent(retainedBounds: Bounds): boolean {
@@ -272,6 +314,15 @@ export class SceneVisibilityState implements SpatialQuerySink {
       !this.#currentInvalidated &&
       this.#visibilityEnvelope !== undefined &&
       containsBounds(this.#visibilityEnvelope, retainedBounds)
+    );
+  }
+
+  private containsInBand(id: string, band: RenderBand): boolean {
+    const slot = this.#slotById.get(id);
+    return (
+      slot !== undefined &&
+      this.#visibleMarkers[slot] === this.#visibleEpoch &&
+      this.#visibleBands[slot] === (band === "highlight" ? 1 : 2)
     );
   }
 

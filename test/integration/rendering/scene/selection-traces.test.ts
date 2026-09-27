@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
 import { fakeNode } from "../../../unit/rendering/scene/fakes";
@@ -217,14 +217,44 @@ it("clears selected centers and cancels pending mounting on destroy", () => {
     width: 20,
     height: 20,
   }));
-  const { renderer, scheduler, nodes, select } = createSelectionTraceFixture(elements);
-  select();
+  const { renderer, scheduler, select, nodes } = createSelectionTraceFixture(elements);
+  const roots = select();
   expect(nodes()).toHaveLength(100);
+  const group = roots[0]!.parent!;
+  const parent = group.parent!;
+  const siblings = [...parent.nodes];
   renderer.setSelectedElements(new Set());
   scheduler.runAll();
   expect(nodes()).toEqual([]);
+  expect(parent.nodes).toEqual(siblings);
+  expect(roots.every((root) => root.parent === undefined)).toBe(true);
   renderer.setSelectedElements(new Set(elements.map(({ id }) => id)));
   renderer.destroy();
   expect(scheduler.pendingCount).toBe(0);
   expect(selectionCenterPaths(fakeNode(renderer.svg))).toEqual([]);
+});
+
+it("restores the selection group when a trace removal fails", () => {
+  const elements = Array.from({ length: 40 }, (_, index) => ({
+    ...rectangle(index + 200),
+    x: index * 20,
+    y: 20,
+    pivot: { x: index * 20 + 10, y: 30 },
+  }));
+  const { renderer, scheduler, select } = createSelectionTraceFixture(elements);
+  const roots = select();
+  const group = roots[0]!.parent!;
+  const parent = group.parent!;
+  const siblings = [...parent.nodes];
+  const remove = vi.spyOn(roots[10]!, "remove").mockImplementationOnce(() => {
+    throw new Error("trace removal failed");
+  });
+  renderer.setSelectedElements(new Set());
+  expect(() => scheduler.runNext()).toThrow("trace removal failed");
+  expect(parent.nodes).toEqual(siblings);
+  expect(group.parent).toBe(parent);
+  remove.mockRestore();
+  renderer.destroy();
+  expect(group.nodes).toEqual([]);
+  expect(scheduler.pendingCount).toBe(0);
 });
