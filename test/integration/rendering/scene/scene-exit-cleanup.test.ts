@@ -229,11 +229,8 @@ describe("interrupted scene exit cleanup", () => {
 
   it.each([false, true])("handles a partially removed multipart element with Undo=%s", (undo) => {
     const element = { ...arrow(), startNode: "circle" as const, endNode: "triangle" as const };
-    const record = { ...fakeRectangleRecord(element.id, 0, 10), element };
-    const records = [
-      record,
-      ...rectangles(63).map((entry) => ({ ...entry, rank: entry.rank + 1 })),
-    ];
+    const record = { ...fakeRectangleRecord(element.id, 63, 10), element };
+    const records = [...rectangles(63), record];
     const harness = setup(records);
     const original = [...harness.content.nodes];
     expect(original).toHaveLength(65);
@@ -244,7 +241,7 @@ describe("interrupted scene exit cleanup", () => {
     if (undo) restore(harness, records);
     harness.scheduler.runAll();
     expect(harness.content.nodes).toHaveLength(undo ? 65 : 0);
-    if (undo) expect(harness.content.nodes.slice(0, 2)).toEqual(original.slice(0, 2));
+    if (undo) expect(harness.content.nodes.slice(-2)).toEqual(original.slice(-2));
     harness.renderer.destroy();
   });
 });

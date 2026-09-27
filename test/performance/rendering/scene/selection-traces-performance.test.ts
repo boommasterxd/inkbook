@@ -4,8 +4,10 @@ import { ElementStore } from "../../../../src/domain/store/public";
 import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor/scene-store";
 import { createInstrumentation } from "../../../../src/rendering/scene/instrumentation";
 import { createMountedElement } from "../../../../src/rendering/scene/mounted-element";
+import type { MountedSceneElement } from "../../../../src/rendering/scene/mounted-element";
 import { SceneSelectionTraces } from "../../../../src/rendering/scene/selection-traces";
 import { createSceneFixture, createSceneRecord } from "../../../fixtures/rendering/scene";
+import { observePointReads } from "../../../fixtures/rendering/point-reads";
 import {
   createSelectionTraceFixture,
   selectionTraceNodes,
@@ -52,11 +54,8 @@ function traceRemovalWork(
 it("reuses retained center geometry across camera, move, rotation and ink opacity", () => {
   let reads = 0;
   const source = maximumStroke(0);
-  const points = new Proxy(source.points, {
-    get(target, key, receiver) {
-      if (typeof key === "string" && /^\d+$/.test(key)) reads += 1;
-      return Reflect.get(target, key, receiver) as unknown;
-    },
+  const points = observePointReads(source.points, () => {
+    reads += 1;
   });
   const element = { ...source, points };
   const { renderer, select, scheduler, store } = createSelectionTraceFixture([element]);
@@ -178,7 +177,7 @@ it("reuses 1000 mixed short and long selected centers after culling", () => {
   expect(renderer.memoryUsage()).toEqual({ pathCacheBytes: 0, motionCacheBytes: 0 });
 });
 
-it("spends sample budget only on center builds while preserving the 64-root frame cap", () => {
+it("reads samples only for center builds while preserving the 64-root frame cap", () => {
   const document = new FakeDocument();
   const group = new FakeNode(document, "g");
   const frame = new FakeNode(document, "path");
@@ -192,13 +191,10 @@ it("spends sample budget only on center builds while preserving the 64-root fram
   let pointReads = 0;
   const elements = Array.from({ length: 96 }, (_, index) => {
     const source = indexedStroke(index);
-    const points = new Proxy(
+    const points = observePointReads(
       Array.from({ length: 192 }, (_, sample) => [sample, index, 0.5]).flat(),
-      {
-        get(target, key, receiver) {
-          if (typeof key === "string" && /^\d+$/.test(key)) pointReads += 1;
-          return Reflect.get(target, key, receiver) as unknown;
-        },
+      () => {
+        pointReads += 1;
       },
     );
     return { ...source, points };
@@ -243,7 +239,7 @@ it("spends sample budget only on center builds while preserving the 64-root fram
     }
     return frames;
   };
-  expect(drain()).toBeGreaterThan(2);
+  expect(drain()).toBe(2);
   expect(builds).toHaveBeenCalledTimes(96);
   expect(pointReads).toBeGreaterThan(0);
 
@@ -265,6 +261,38 @@ it("spends sample budget only on center builds while preserving the 64-root fram
   traces.release();
   expect(group.nodes).toHaveLength(0);
   expect(traces.memoryUsage()).toBe(0);
+});
+
+it("bounds orphan selection-dirty lookups by the shared deadline", () => {
+  const document = new FakeDocument();
+  const traces = new SceneSelectionTraces(
+    new FakeNode(document, "g") as unknown as SVGGElement,
+    createInstrumentation(),
+    new FakeNode(document, "path") as unknown as SVGPathElement,
+  );
+  const dirty = new Set(Array.from({ length: 10_000 }, (_, index) => `missing-${index}`));
+  const mounted = new Map<string, MountedSceneElement>();
+  const store = new FakeSceneStore();
+  let time = 0;
+  const mountedReads = vi.spyOn(mounted, "get");
+  const storeReads = vi.spyOn(store, "get").mockImplementation(() => {
+    time = 1;
+    return undefined;
+  });
+
+  expect(traces.writeDirty(dirty, mounted, store, 1, () => time, { remainingRoots: 64 })).toBe(
+    true,
+  );
+  expect(mountedReads).toHaveBeenCalledOnce();
+  expect(storeReads).toHaveBeenCalledOnce();
+  expect(dirty.size).toBe(9_999);
+
+  expect(traces.writeDirty(dirty, mounted, store, Infinity, () => 0, { remainingRoots: 64 })).toBe(
+    false,
+  );
+  expect(storeReads).toHaveBeenCalledTimes(10_000);
+  expect(dirty.size).toBe(0);
+  traces.release();
 });
 
 it("selects 10000 IDs using only mounted centers and releases them after culling", () => {
@@ -304,7 +332,7 @@ it("selects 10000 IDs using only mounted centers and releases them after culling
 
 describe("selection center scheduling and ownership", () => {
   it.each([false, true])(
-    "shows essential frame before budgeted maximum-stroke centers (reduced: %s)",
+    "keeps the essential frame visible while maximum-stroke centers complete (reduced: %s)",
     (reduced) => {
       const elements = [0, 1, 2].map((index) => maximumStroke(index));
       const { renderer, scheduler, nodes } = createSelectionTraceFixture(elements);
@@ -317,10 +345,10 @@ describe("selection center scheduling and ownership", () => {
       const overlay = fakeNode(renderer.svg).nodes[2]!;
       expect(overlay.nodes[1]!.style.opacity).toBe("1");
       expect(overlay.nodes[2]!.style.opacity).toBe("1");
-      expect(nodes()).toHaveLength(1);
-      expect(renderer.instrumentation().selectionTraceGeometryBuilds).toBe(1);
-      expect(renderer.instrumentation().selectionTraceNodesCreated).toBe(1);
-      expect(scheduler.pendingCount).toBe(1);
+      expect(nodes()).toHaveLength(elements.length);
+      expect(renderer.instrumentation().selectionTraceGeometryBuilds).toBe(elements.length);
+      expect(renderer.instrumentation().selectionTraceNodesCreated).toBe(elements.length);
+      expect(scheduler.pendingCount).toBe(0);
       renderer.setSelectedElements(new Set());
       scheduler.runAll();
       expect(nodes()).toEqual([]);

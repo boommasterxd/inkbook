@@ -2,10 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { HitTestScratch } from "../../../../src/editor/selection/hit-test";
 import { SvgSceneRenderer } from "../../../../src/rendering/scene";
-import {
-  MOUNT_SLICE_GEOMETRY_COST_BUDGET,
-  MOUNT_SLICE_STROKE_POINT_BUDGET,
-} from "../../../../src/rendering/scene/constants";
 import { fakeNode } from "../../../unit/rendering/scene/fakes";
 import {
   DENSE_VIEWPORT_PROFILES,
@@ -44,13 +40,8 @@ describe("dense viewport reconciliation acceptance", () => {
         spatialQueries: 1,
       });
       expect(measurements.collectionAllocations).toBeGreaterThan(0);
-      expect(measurements.maximumMountSliceStrokePoints).toBeLessThanOrEqual(
-        MOUNT_SLICE_STROKE_POINT_BUDGET,
-      );
-      expect(measurements.maximumMountSliceStrokePoints).toBeGreaterThan(0);
-      expect(measurements.maximumMountSliceGeometryCost).toBeLessThanOrEqual(
-        MOUNT_SLICE_GEOMETRY_COST_BUDGET,
-      );
+      expect(measurements.geometryBuilds).toBe(2_500);
+      expect(measurements.maximumMountSliceElements).toBeGreaterThan(0);
       expectExactOrder(
         renderer,
         fixture.highlightIds,

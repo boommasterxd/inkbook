@@ -9,6 +9,7 @@ import type { ProgressivePreviewTransform } from "./progressive-element-preview"
 import { SceneElementPreviews } from "./scene-element-previews";
 import { SceneFrameWriter } from "./scene-frame-writer";
 import { SceneFrameWork } from "./scene-frame-work";
+import { canCompleteSceneFrame, needsAnotherSceneFrame } from "./scene-frame-completion";
 import * as stats from "./instrumentation";
 import { ScenePathCache, type PreparedScenePath } from "./path-cache";
 import { ScenePreviewCommitController, type PreviewCommitHandoff } from "./preview-commit-handoff";
@@ -93,19 +94,21 @@ export class SvgSceneRenderer {
       options.onResourceUsageChanged ?? (() => undefined),
       () => this.#elementPreviews.memoryUsage() + this.#transformPreviews.memoryUsage(),
     );
-    this.#visibilityCoordinator = new SceneVisibilityCoordinator(
-      this.#content,
-      this.#visibility,
-      this.#resourcePolicy,
-    );
-    this.#sceneCommits = new SceneCommitCoordinator(options.onSceneCommitted);
-    this.#sceneCommits.markPending();
     this.#elementPreviews = new SceneElementPreviews(this.#content, options.store);
     this.#transformPreviews = new SceneTransformPreviewController(
       this.#content,
       options.store,
       this.#camera,
     );
+    this.#visibilityCoordinator = new SceneVisibilityCoordinator(
+      this.#content,
+      this.#visibility,
+      this.#resourcePolicy,
+      this.#transformPreviews,
+      this.#elementPreviews,
+    );
+    this.#sceneCommits = new SceneCommitCoordinator(options.onSceneCommitted);
+    this.#sceneCommits.markPending();
     this.#frameWork = new SceneFrameWork({
       backgroundPending: () => this.#backgroundDirty && this.#viewport !== undefined,
       content: this.#content,
@@ -173,9 +176,7 @@ export class SvgSceneRenderer {
     const zoomChanged = camera.zoom !== this.#camera.zoom;
     this.#camera = camera;
     this.#frameWriter.setCamera(camera);
-    this.#transformPreviews.setContext(camera, this.#viewport);
-    this.#elementPreviews.refreshProgressiveContext(this.#viewport, camera);
-    this.#visibilityCoordinator.invalidate(true);
+    this.#visibilityCoordinator.setContext(camera, this.#viewport);
     if (zoomChanged) this.#backgroundDirty = true;
     this.#frames.schedule();
   }
@@ -184,10 +185,8 @@ export class SvgSceneRenderer {
     if (runtime.sameViewport(this.#viewport, viewport)) return;
     this.#viewport = viewport;
     this.#frameWriter.invalidateCursorLayout();
-    this.#transformPreviews.setContext(this.#camera, viewport);
-    this.#elementPreviews.refreshProgressiveContext(viewport, this.#camera);
+    this.#visibilityCoordinator.setContext(this.#camera, viewport);
     this.#layoutDirty = false;
-    this.#visibilityCoordinator.invalidate(true);
     this.#frames.schedule();
   }
   public invalidateLayout(requestCommit = false): void {
@@ -366,6 +365,7 @@ export class SvgSceneRenderer {
   public clearProgressiveElementPreviews(): void {
     this.assertActive();
     this.#elementPreviews.clearProgressive();
+    this.#visibilityCoordinator.releasePreviews();
     this.#frames.schedule();
   }
   public clearElementPreviews(): void {
@@ -425,7 +425,15 @@ export class SvgSceneRenderer {
     this.#motion.expireSuppression();
     const startedAt = Number.isFinite(frameTime) ? frameTime : this.#scheduler.now();
     const deadline = this.#scheduler.deadline();
-    this.performReadPhase();
+    if (this.#layoutDirty) {
+      this.#viewport = this.#visibilityCoordinator.readViewport(
+        this.#options.layout,
+        this.#viewport,
+        this.#camera,
+        this.#stats,
+      );
+      this.#layoutDirty = false;
+    }
     this.#frameWriter.readToolCursor();
     if (this.#previewCommits.releaseCommitted()) {
       this.#elementPreviews.retainCommittedGeometry(this.#transformPreviews.values);
@@ -433,8 +441,14 @@ export class SvgSceneRenderer {
       this.#elementPreviews.clear();
       this.#visibilityCoordinator.releasePreviews();
     }
-    this.#visibilityCoordinator.prepare(this.#viewport, this.#camera);
+    this.#visibilityCoordinator.prepare(this.#viewport, this.#camera, deadline, () =>
+      this.#scheduler.now(),
+    );
     this.#transformPreviews.refreshContext();
+    this.#visibilityCoordinator.releaseLostPreviews(
+      this.#transformPreviews.values,
+      () => this.#elementPreviews.values,
+    );
     // Pointer completion is indivisible input feedback; it still uses the shared deadline.
     this.flushPointerFeedbackFrame(deadline);
     this.#motion.writeSelectionFeedback(startedAt);
@@ -455,15 +469,16 @@ export class SvgSceneRenderer {
     this.#motion.bindMountedEntrances(mountedIds, startedAt);
     this.#motion.finishEntranceBatch();
     this.#elementPreviews.applyMounted(mountedIds);
-    if (!work.pendingVisibility && !work.backgroundDeferred) this.#sceneCommits.completeFrame();
+    if (canCompleteSceneFrame(work, this.#visibilityCoordinator.hasPendingQuery))
+      this.#sceneCommits.completeFrame();
     const overBudget = this.#scheduler.now() >= deadline;
     if (
-      work.pendingVisibility ||
-      work.backgroundDeferred ||
-      work.pendingPreview ||
-      this.#motion.pending ||
-      this.#content.hasPendingExitCleanup ||
-      work.pendingFades
+      needsAnotherSceneFrame(
+        work,
+        this.#visibilityCoordinator.hasPendingQuery,
+        this.#motion.pending,
+        this.#content.hasPendingExitCleanup,
+      )
     )
       this.#frames.schedule();
     stats.refreshCacheInstrumentation(this.#stats, this.#backgroundCache, this.#pathCache);
@@ -478,19 +493,6 @@ export class SvgSceneRenderer {
     this.#frameWriter.writeBackground(this.#page, this.#pageHeight, this.#camera.zoom);
     this.#backgroundDirty = false;
     return false;
-  }
-  private performReadPhase(): void {
-    if (!this.#layoutDirty) return;
-    const viewport = this.#options.layout.readViewport();
-    this.#stats.layoutReads += 1;
-    runtime.validateViewport(viewport);
-    if (!runtime.sameViewport(this.#viewport, viewport)) {
-      this.#viewport = viewport;
-      this.#transformPreviews.setContext(this.#camera, viewport);
-      this.#elementPreviews.refreshProgressiveContext(viewport, this.#camera);
-      this.#visibilityCoordinator.invalidate(true);
-    }
-    this.#layoutDirty = false;
   }
   private assertActive(): void {
     if (this.#disposed) throw new Error("The SVG scene renderer has been destroyed.");

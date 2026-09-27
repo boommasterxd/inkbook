@@ -62,7 +62,7 @@ describe("resumable scene reconciliation", () => {
 
   it("keeps full background geometry independent of the visible viewport", verifyGrowthCoverage);
 
-  it("reuses a cell-range candidate union while exact bounds change within those cells", () => {
+  it("queries changed viewport edges within the same spatial cells", () => {
     const scheduler = new FakeScheduler();
     const store = new FakeSceneStore();
     store.records.set("edge", fakeRectangleRecord("edge", 0, 190));
@@ -76,8 +76,8 @@ describe("resumable scene reconciliation", () => {
 
     expect(renderer.mountedIds("content")).toEqual(["edge"]);
     expect(renderer.instrumentation()).toMatchObject({
-      spatialQueries: 0,
-      visibilityCandidateCacheHits: 1,
+      spatialQueries: 2,
+      visibilityCandidateVisits: 1,
     });
   });
 
@@ -96,9 +96,8 @@ describe("resumable scene reconciliation", () => {
     expect(renderer.instrumentation()).toMatchObject({
       domEntrants: 0,
       domExits: 0,
-      spatialQueries: 0,
-      visibilityCandidateCacheHits: 1,
-      visibilitySortSkips: 1,
+      spatialQueries: 2,
+      visibilityCandidateVisits: 0,
     });
   });
 
@@ -343,10 +342,10 @@ describe("pending scene state replacement", () => {
 
     renderer.setViewport({ height: 100, left: 0, top: 10_000, width: 100 });
     scheduler.runNext();
-    expect(renderer.mountedCount).toBe(ids.length);
-    expect(renderer.mountedIds("content")).toEqual(committedOrder);
+    expect(renderer.mountedCount).toBeGreaterThan(0);
+    expect(renderer.mountedCount).toBeLessThan(ids.length);
     const contentGroup = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
-    expect(contentGroup.nodes).toHaveLength(ids.length);
+    expect(contentGroup.nodes).toHaveLength(renderer.mountedCount);
     scheduler.runAll();
     expect(renderer.mountedCount).toBe(0);
   });

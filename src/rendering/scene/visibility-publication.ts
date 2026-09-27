@@ -8,6 +8,7 @@ import {
 } from "./mounted-element";
 import type { SceneDom } from "./scene-dom";
 import type { MutableSceneInstrumentation, SceneStorePort } from "./types";
+import type { MountSlice, MountYieldReason } from "./mount-slice";
 
 export interface PendingMutationRun {
   band: RenderBand;
@@ -28,6 +29,23 @@ interface PublicationOptions {
 
 export function mountedRootCount(entry: MountedSceneElement): number {
   return entry.group === null ? entry.paths.length : 1;
+}
+
+export function scanVisibilityExits(
+  exits: Iterator<[string, MountedSceneElement]>,
+  slice: MountSlice,
+  instrumentation: MutableSceneInstrumentation,
+  add: (id: string) => void,
+): MountYieldReason | undefined {
+  while (true) {
+    const reason = slice.blockingReason();
+    if (reason !== undefined) return reason;
+    const next = exits.next();
+    if (next.done) return undefined;
+    instrumentation.visibilityReconcileVisits += 1;
+    add(next.value[0]);
+    slice.record();
+  }
 }
 
 /** Checks stale retained entries against one physical sibling snapshot per band. */
@@ -198,21 +216,19 @@ export function removeVisibilityExits(
     readonly deadline: number;
     readonly now: () => number;
     readonly isExit: (id: string) => boolean;
+    readonly onSkipped?: (id: string) => void;
+    readonly onRemoved?: (id: string) => void;
   },
 ): boolean {
   let visitedNodes = 0;
   let removedNodes = 0;
   while (pending.exitIndex < pending.exitIds.length) {
-    if (
-      removedNodes >= 64 ||
-      visitedNodes >= 4096 ||
-      (visitedNodes > 0 && frame.now() >= frame.deadline)
-    )
-      return false;
+    if (removedNodes >= 64 || (visitedNodes > 0 && frame.now() >= frame.deadline)) return false;
     const id = pending.exitIds[pending.exitIndex];
     const entry = id === undefined ? undefined : options.mounted.get(id);
     visitedNodes += 1;
     if (entry === undefined || !frame.isExit(entry.id)) {
+      if (id !== undefined) frame.onSkipped?.(id);
       pending.exitIndex += 1;
       continue;
     }
@@ -221,6 +237,7 @@ export function removeVisibilityExits(
     if (!removeMountedElementNode(entry)) continue;
     pending.exitIndex += 1;
     options.mounted.delete(entry.id);
+    frame.onRemoved?.(entry.id);
     const record = options.store.get(entry.id);
     if (record === undefined) {
       options.pathCache.invalidate(entry.id);

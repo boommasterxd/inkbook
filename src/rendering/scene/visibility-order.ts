@@ -34,6 +34,33 @@ export function mergeVisibleBand(
   }
   return count;
 }
+
+export function sortVisibleBand(
+  ids: (string | undefined)[],
+  count: number,
+  compare: (left: string | undefined, right: string | undefined) => number,
+): void {
+  const siftDown = (start: number, length: number): void => {
+    let root = start;
+    while (root * 2 + 1 < length) {
+      const left = root * 2 + 1;
+      const right = left + 1;
+      const child = right < length && compare(ids[right], ids[left]) > 0 ? right : left;
+      if (compare(ids[child], ids[root]) <= 0) return;
+      const value = ids[root];
+      ids[root] = ids[child];
+      ids[child] = value;
+      root = child;
+    }
+  };
+  for (let start = Math.floor(count / 2) - 1; start >= 0; start -= 1) siftDown(start, count);
+  for (let end = count - 1; end > 0; end -= 1) {
+    const first = ids[0];
+    ids[0] = ids[end];
+    ids[end] = first;
+    siftDown(0, end);
+  }
+}
 import type { MountedSceneElement } from "./mounted-element";
 
 /** Finds the next retained node for an urgent entrant without reading the store. */
@@ -51,4 +78,61 @@ export function firstMountedSuccessor(
     } else found = candidate === id;
   }
   return undefined;
+}
+import type { RenderBand } from "../../domain/commands/render-bands";
+import type { SceneStorePort } from "./types";
+import type { BandVisibility } from "./visibility-types";
+
+export function copyCommittedVisibility(
+  target: (string | undefined)[],
+  previousCount: number,
+  visibility: BandVisibility,
+): number {
+  for (let index = 0; index < visibility.count; index += 1) target[index] = visibility.ids[index];
+  for (let index = visibility.count; index < previousCount; index += 1) target[index] = undefined;
+  return visibility.count;
+}
+
+export function refreshVisibleRanks(
+  ids: readonly (string | undefined)[],
+  count: number,
+  band: RenderBand,
+  store: SceneStorePort,
+  slots: ReadonlyMap<string, number>,
+  ranks: Float64Array,
+): void {
+  for (let index = 0; index < count; index += 1) {
+    const id = ids[index];
+    if (id === undefined) continue;
+    const slot = slots.get(id);
+    if (slot === undefined) continue;
+    const record = store.get(id);
+    if (record?.band === band) ranks[slot] = record.rank;
+  }
+}
+
+export function copyVisibleReferences(
+  source: readonly (string | undefined)[],
+  count: number,
+  target: (string | undefined)[],
+): number {
+  for (let index = 0; index < count; index += 1) target[index] = source[index];
+  return count;
+}
+
+export function clearVisibleReferences(values: (string | undefined)[], count: number): void {
+  for (let index = 0; index < count; index += 1) values[index] = undefined;
+}
+
+export function mountedVisibleIds(
+  ordered: readonly (string | undefined)[],
+  count: number,
+  mounted: ReadonlyMap<string, unknown>,
+): string[] {
+  const ids: string[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const id = ordered[index];
+    if (id !== undefined && mounted.has(id)) ids.push(id);
+  }
+  return ids;
 }

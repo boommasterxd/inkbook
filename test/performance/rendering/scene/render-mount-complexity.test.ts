@@ -3,14 +3,11 @@ import * as geometry from "../../../../src/domain/geometry/element-path";
 import { MAX_STROKE_POINTS } from "../../../../src/domain/schema/public";
 import { describe, expect, it, vi } from "vitest";
 import { createSceneFixture } from "../../../fixtures/rendering/scene";
+import { observePointReads } from "../../../fixtures/rendering/point-reads";
 
 import type { PageV1, StrokeElementV1 } from "../../../../src/domain/schema/public";
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene";
 import { type SceneElementRecord } from "../../../../src/rendering/scene/types";
-import {
-  MOUNT_SLICE_GEOMETRY_COST_BUDGET,
-  MOUNT_SLICE_STROKE_POINT_BUDGET,
-} from "../../../../src/rendering/scene/constants";
 import {
   type FakeNode,
   FakeSceneStore,
@@ -32,27 +29,18 @@ const PAGE: PageV1 = {
 };
 
 describe("visible render mount complexity", () => {
-  it("admits only one oversized maximum stroke per mount slice", () => {
+  it("admits multiple maximum strokes while the shared deadline has room", () => {
     const records = [
       strokeRecord(0, strokePoints(MAX_STROKE_POINTS)),
       strokeRecord(1, strokePoints(MAX_STROKE_POINTS)),
     ];
     const { renderer, scheduler } = createMountScene(records);
-    scheduler.runNext();
-    expect(renderer.mountedCount).toBe(1);
-    while (scheduler.pendingCount > 0) {
-      const builds = renderer.instrumentation().geometryBuilds;
-      scheduler.runNext();
-      expect(renderer.instrumentation().geometryBuilds - builds).toBeLessThanOrEqual(1);
-    }
+    scheduler.runAll();
     expect(renderer.mountedCount).toBe(2);
     const work = renderer.instrumentation();
     expect(work.geometryBuilds).toBe(2);
-    // The existing minimum-progress rule admits one oversized atomic element.
-    expect(work.maximumMountSliceElements).toBe(1);
-    expect(work.maximumMountSliceStrokePoints).toBe(MAX_STROKE_POINTS);
-    expect(work.maximumMountSliceGeometryCost).toBe(4 * MAX_STROKE_POINTS);
-    expect(work.mountBudgetYields).toBe(work.mountSlices - 1);
+    expect(work.maximumMountSliceElements).toBe(2);
+    expect(work.mountBudgetYields).toBe(0);
     renderer.destroy();
     expect(scheduler.pendingCount).toBe(0);
   });
@@ -75,7 +63,7 @@ describe("visible render mount complexity", () => {
     const instrumentation = renderer.instrumentation();
     const cameraGroup = fakeNode(renderer.svg).nodes[1]!;
     expect(fixture.pointCount).toBe(TOTAL_POINTS);
-    expect(firstFrameMounts).toBe(1);
+    expect(firstFrameMounts).toBe(64);
     expect(renderer.mountedCount).toBe(STROKES);
     expect(renderer.mountedIds("highlight")).toEqual(fixture.highlightIds);
     expect(renderer.mountedIds("content")).toEqual(fixture.contentIds);
@@ -84,18 +72,14 @@ describe("visible render mount complexity", () => {
     expect(instrumentation).toMatchObject({
       domEntrants: STROKES,
       geometryBuilds: 3,
-      maximumMountSliceStrokePoints: MOUNT_SLICE_STROKE_POINT_BUDGET,
       spatialQueries: 1,
     });
-    expect(instrumentation.domFragmentRuns).toBeGreaterThan(2);
-    expect(instrumentation.mountSlices).toBeGreaterThan(1);
-    expect(instrumentation.mountBudgetYields).toBe(instrumentation.mountSlices - 1);
-    expect(instrumentation.maximumMountSliceStrokePoints).toBeLessThanOrEqual(
-      MOUNT_SLICE_STROKE_POINT_BUDGET,
-    );
-    expect(instrumentation.maximumMountSliceGeometryCost).toBeLessThanOrEqual(
-      MOUNT_SLICE_GEOMETRY_COST_BUDGET,
-    );
+    expect(instrumentation.domFragmentRuns).toBeGreaterThan(0);
+    expect(instrumentation.maximumMountSliceElements).toBeLessThanOrEqual(64);
+    expect(instrumentation.mountBudgetYields).toBeGreaterThan(0);
+    expect(instrumentation.pathCacheHits).toBeGreaterThanOrEqual(STROKES - 3);
+    expect(fixture.pointReads()).toBeGreaterThan(0);
+    expect(fixture.pointReads()).toBeLessThanOrEqual(FIXTURE_STROKE_POINTS * 100);
     await annotate(
       `render mount slices=${String(instrumentation.mountSlices)}, ` +
         `firstFrameMounts=${String(firstFrameMounts)}`,
@@ -152,10 +136,16 @@ function createMaximumPointFixture(): {
   readonly contentIds: readonly string[];
   readonly highlightIds: readonly string[];
   readonly pointCount: number;
+  readonly pointReads: () => number;
   readonly records: readonly SceneElementRecord[];
 } {
-  const maximumPoints = strokePoints(FIXTURE_STROKE_POINTS);
-  const finalPoints = strokePoints(FINAL_STROKE_POINTS);
+  let reads = 0;
+  const observe = (points: number[]) =>
+    observePointReads(points, () => {
+      reads += 1;
+    });
+  const maximumPoints = observe(strokePoints(FIXTURE_STROKE_POINTS));
+  const finalPoints = observe(strokePoints(FINAL_STROKE_POINTS));
   const records: SceneElementRecord[] = [];
   const contentIds: string[] = [];
   const highlightIds: string[] = [];
@@ -167,7 +157,7 @@ function createMaximumPointFixture(): {
     pointCount += points.length / 3;
     (record.band === "highlight" ? highlightIds : contentIds).push(record.id);
   }
-  return { contentIds, highlightIds, pointCount, records };
+  return { contentIds, highlightIds, pointCount, pointReads: () => reads, records };
 }
 
 function strokeRecord(rank: number, points: number[]): SceneElementRecord {

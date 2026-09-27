@@ -1,9 +1,18 @@
 import { expect, it, vi } from "vitest";
 
-import { createSceneFixture, createSceneRecord } from "../../../fixtures/rendering/scene";
+import {
+  createSceneFixture,
+  createSceneRecord,
+  createViewportRectangleStore,
+} from "../../../fixtures/rendering/scene";
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
+import { boundsIntersect } from "../../../../src/domain/geometry/public";
+import { SpatialQueryScratch, UniformSpatialIndex } from "../../../../src/domain/spatial";
+import type { SceneStorePort, SpatialQuerySink } from "../../../../src/rendering/scene";
+import { visibilityPageBounds } from "../../../../src/rendering/scene/scene-resource-policy";
+import { removeVisibilityExits } from "../../../../src/rendering/scene/visibility-publication";
 import { arrow } from "../../../unit/domain/schema/fixtures";
 import {
   FakeNode,
@@ -12,6 +21,7 @@ import {
   fakeNode,
   fakeRectangleRecord,
 } from "../../../unit/rendering/scene/fakes";
+import type { Bounds } from "../../../../src/domain/geometry/public";
 
 it("bounds retained reorder writes when a partially detached arrow returns", () => {
   const store = new FakeSceneStore();
@@ -57,13 +67,10 @@ it("bounds retained reorder writes when a partially detached arrow returns", () 
 });
 
 it("bounds a single new stroke while page growth reveals a dense 10,000-entry document", () => {
-  const store = new FakeSceneStore();
+  const store = createViewportRectangleStore(10_000, (rank) =>
+    rank < 2_000 ? 10 : rank < 4_000 ? 1_000 : 10_000,
+  );
   const viewport = { height: 100, left: 0, top: 0, width: 100 };
-  for (let rank = 0; rank < 10_000; rank += 1) {
-    const y = rank < 2_000 ? 10 : rank < 4_000 ? 1_000 : 10_000;
-    const record = fakeRectangleRecord(`entry-${rank}`, rank, 20 + rank / 100_000, y);
-    store.records.set(record.id, record);
-  }
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
   scheduler.runAll(100);
   const element = {
@@ -140,3 +147,166 @@ function collectFrameWrites(
   }
   return writes;
 }
+
+it("reconciles only changed membership in a 10,000-entry viewport", () => {
+  const store = createViewportRectangleStore(10_000, (rank) =>
+    rank < 9_000 ? 50 : rank === 9_000 ? -101 : rank === 9_001 ? 191 : 10_000,
+  );
+  const viewport = { height: 100, left: 0, top: 0, width: 100 };
+  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
+  const get = vi.spyOn(store, "get");
+  const query = vi.spyOn(store, "query");
+  try {
+    scheduler.runAll(200);
+    for (const top of [50, 0, 50, 0]) {
+      renderer.resetInstrumentation();
+      get.mockClear();
+      query.mockClear();
+      renderer.setViewport({ ...viewport, top });
+      scheduler.runAll(20);
+      const bounds = visibilityPageBounds({ ...viewport, top }, { x: 0, zoom: 1 }).envelope;
+      const expected = [...store.records.values()]
+        .filter((record) => boundsIntersect(bounds, record.bounds))
+        .map((record) => record.id);
+      const stats = renderer.instrumentation();
+      expect(renderer.mountedIds("content")).toEqual(expected);
+      expect(renderer.mountedCount).toBe(expected.length);
+      expect(stats).toMatchObject({ domEntrants: 1, domExits: 1, domReorders: 0 });
+      expect(stats.visibilityCandidateVisits).toBeLessThanOrEqual(4);
+      expect(stats.visibilityReconcileVisits).toBeLessThanOrEqual(24);
+      expect(query.mock.calls.length).toBeGreaterThan(0);
+      expect(query.mock.calls.length).toBeLessThanOrEqual(4);
+      expect(get.mock.calls.length).toBeLessThanOrEqual(40);
+    }
+  } finally {
+    renderer.destroy();
+  }
+  expect(scheduler.pendingCount).toBe(0);
+});
+
+it("counts real index cell visits when a narrow fringe shares a dense spatial cell", () => {
+  const records = createViewportRectangleStore(10_000, (rank) =>
+    rank < 9_000 ? 50 : rank === 9_000 ? -101 : rank === 9_001 ? 191 : 10_000,
+  );
+  const { store, work } = indexedSceneStore(records);
+  const viewport = { height: 100, left: 0, top: 0, width: 100 };
+  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
+  try {
+    scheduler.runAll(200);
+    work.candidateVisits = 0;
+    work.queries = 0;
+    renderer.resetInstrumentation();
+    renderer.setViewport({ ...viewport, top: 50 });
+    scheduler.runAll(20);
+    expect(renderer.mountedCount).toBe(9_001);
+    expect(renderer.instrumentation().visibilityCandidateVisits).toBe(2);
+    expect(work.queries).toBeGreaterThan(0);
+    expect(work.queries).toBeLessThanOrEqual(4);
+    expect(work.candidateVisits).toBeGreaterThanOrEqual(9_000);
+    expect(work.candidateVisits).toBeLessThanOrEqual(records.records.size * 4);
+  } finally {
+    renderer.destroy();
+  }
+  expect(scheduler.pendingCount).toBe(0);
+});
+
+it("limits real index cell visits when a wide viewport pans over distributed elements", () => {
+  const records = new FakeSceneStore();
+  for (let rank = 0; rank < 1_000; rank += 1) {
+    const record = fakeRectangleRecord(`spread-${rank}`, rank, rank * 30, 50);
+    records.records.set(record.id, record);
+  }
+  const { store, work } = indexedSceneStore(records);
+  const viewport = { height: 100, left: 0, top: 0, width: 30_000 };
+  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
+  try {
+    scheduler.runAll(30);
+    work.candidateVisits = 0;
+    work.queries = 0;
+    renderer.resetInstrumentation();
+    renderer.setCamera({ x: -50, zoom: 1 });
+    scheduler.runAll(20);
+    expect(renderer.mountedCount).toBe(records.records.size);
+    expect(work.queries).toBeGreaterThan(0);
+    expect(work.queries).toBeLessThanOrEqual(4);
+    expect(work.candidateVisits).toBeLessThanOrEqual(64);
+    expect(renderer.instrumentation().visibilityCandidateVisits).toBeLessThanOrEqual(8);
+  } finally {
+    renderer.destroy();
+  }
+  expect(scheduler.pendingCount).toBe(0);
+});
+
+function indexedSceneStore(records: FakeSceneStore): {
+  readonly store: SceneStorePort;
+  readonly work: { candidateVisits: number; queries: number };
+} {
+  const index = new UniformSpatialIndex<string>();
+  index.insertMany([...records.records.values()].map(({ bounds, id }) => ({ bounds, id })));
+  const scratch = new SpatialQueryScratch<string>();
+  const work = { candidateVisits: 0, queries: 0 };
+  const store: SceneStorePort = {
+    get: (id) => records.get(id),
+    query: (bounds: Bounds, sink: SpatialQuerySink) => {
+      work.queries += 1;
+      index.query(bounds, scratch);
+      work.candidateVisits += scratch.candidateVisitCount;
+      for (let cursor = 0; cursor < scratch.count; cursor += 1) sink.add(scratch.at(cursor));
+    },
+  };
+  return { store, work };
+}
+
+it("scans exit candidates until the shared deadline instead of a fixed visit quota", () => {
+  const ids = Array.from({ length: 10_000 }, (_, index) => `candidate-${index}`);
+  const pending = { exitIds: ids, exitIndex: 0 };
+  const mounted = new Map<string, never>();
+  const get = vi.spyOn(mounted, "get");
+  const options = { mounted } as unknown as Parameters<typeof removeVisibilityExits>[1];
+  let clockReads = 0;
+  expect(
+    removeVisibilityExits(pending, options, {
+      deadline: 8,
+      now: () => ++clockReads,
+      isExit: () => false,
+    }),
+  ).toBe(false);
+  expect(pending.exitIndex).toBeGreaterThan(0);
+  expect(pending.exitIndex).toBeLessThan(ids.length);
+  expect(get.mock.calls.length).toBe(pending.exitIndex);
+  expect(
+    removeVisibilityExits(pending, options, {
+      deadline: 8,
+      now: () => 0,
+      isExit: () => false,
+    }),
+  ).toBe(true);
+  expect(pending.exitIndex).toBe(ids.length);
+  expect(get).toHaveBeenCalledTimes(ids.length);
+});
+
+it("checks the deadline while a full fallback visits stable mounted elements", () => {
+  const store = new FakeSceneStore();
+  for (let rank = 0; rank < 300; rank += 1) {
+    const record = fakeRectangleRecord(`stable-${rank}`, rank, 20, 10);
+    store.records.set(record.id, record);
+  }
+  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store);
+  scheduler.runAll(20);
+  const now = vi.spyOn(scheduler, "now").mockImplementation(() => scheduler.time++);
+  renderer.clearProgressiveElementPreviews();
+  let frames = 0;
+  try {
+    while (scheduler.pendingCount > 0) {
+      expect(++frames).toBeLessThanOrEqual(1_000);
+      renderer.resetInstrumentation();
+      scheduler.runNext();
+      expect(renderer.instrumentation().visibilityReconcileVisits).toBeLessThanOrEqual(16);
+    }
+    expect(renderer.mountedCount).toBe(300);
+  } finally {
+    now.mockRestore();
+    renderer.destroy();
+  }
+  expect(scheduler.pendingCount).toBe(0);
+});

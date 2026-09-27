@@ -15,6 +15,7 @@ import {
   FakeNode,
   FakeSceneStore,
   FakeScheduler,
+  fakeRectangleRecord,
 } from "../../unit/rendering/scene/fakes";
 
 /** Charges a deterministic spatial-query cost to the shared frame clock. */
@@ -50,6 +51,18 @@ export function createSceneFixture(
     workScheduler: scheduler.workScheduler,
   });
   return { document, renderer, scheduler };
+}
+
+export function createViewportRectangleStore(
+  count: number,
+  yForRank: (rank: number) => number,
+): FakeSceneStore {
+  const store = new FakeSceneStore();
+  for (let rank = 0; rank < count; rank += 1) {
+    const record = fakeRectangleRecord(`entry-${rank}`, rank, 20, yForRank(rank));
+    store.records.set(record.id, record);
+  }
+  return store;
 }
 
 export function createSceneRecord(element: InkElementV1, rank = 0): SceneElementRecord {

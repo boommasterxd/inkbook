@@ -8,7 +8,11 @@ import {
   fakeNode,
   fakeRectangleRecord,
 } from "../../../unit/rendering/scene/fakes";
-import { createSceneFixture, createSceneRecord } from "../../../fixtures/rendering/scene";
+import {
+  createSceneFixture,
+  createSceneRecord,
+  createViewportRectangleStore,
+} from "../../../fixtures/rendering/scene";
 import { NAVIGATION_PAGE } from "../../../fixtures/rendering/pressure-navigation";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 import { arrow } from "../../../unit/domain/schema/fixtures";
@@ -310,12 +314,9 @@ it("reinstates 315 ordered entries without moving retained DOM nodes in a 10,000
 });
 
 it("does not reappend returning retained nodes during unfinished viewport exit cleanup", () => {
-  const store = new FakeSceneStore();
-  for (let rank = 0; rank < 10_000; rank += 1) {
-    const y = rank < 4_200 ? 10 : rank < 8_400 ? 1_000 : 10_000;
-    const record = fakeRectangleRecord(`entry-${rank}`, rank, 20, y);
-    store.records.set(record.id, record);
-  }
+  const store = createViewportRectangleStore(10_000, (rank) =>
+    rank < 4_200 ? 10 : rank < 8_400 ? 1_000 : 10_000,
+  );
   const viewport = { height: 100, left: 0, top: 0, width: 100 };
   const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
   scheduler.runAll(200);
@@ -364,9 +365,9 @@ it("does not reappend returning retained nodes during unfinished viewport exit c
     renderer.setViewport(viewport);
     scheduler.runAll(200);
     expect(retainedAppends).toBe(0);
-    expect(renderer.instrumentation().mountDeadlineYields).toBeGreaterThan(0);
-    expect(siblingScans).toBe(2);
-    expect(siblingVisits).toBe(siblingVisitBudget);
+    expect(siblingScans).toBe(0);
+    expect(siblingVisits).toBe(0);
+    expect(siblingVisitBudget).toBe(0);
     expect(content.nodes).toHaveLength(4_200);
     for (let rank = 0; rank < 4_200; rank += 1) {
       if (retained.has(originalNodes[rank]!)) expect(content.nodes[rank]).toBe(originalNodes[rank]);
@@ -452,22 +453,38 @@ it("shares bounded preparation work across cold strokes instead of yielding four
     width: 100,
   });
   scheduler.runAll();
-  const steps = vi.spyOn(ProgressivePreviewPath.prototype, "step");
+  const originalStep = Object.getOwnPropertyDescriptor(ProgressivePreviewPath.prototype, "step")!
+    .value as ProgressivePreviewPath["step"];
+  const starts: { deadline: number; time: number }[] = [];
+  const steps = vi.spyOn(ProgressivePreviewPath.prototype, "step").mockImplementation(function (
+    this: ProgressivePreviewPath,
+    deadline,
+    now,
+  ) {
+    starts.push({ deadline: deadline ?? Infinity, time: scheduler.time });
+    scheduler.time += 0.25;
+    return originalStep.call(this, deadline, now);
+  });
   try {
     renderer.setViewport({ height: 100, left: 0, top: 980, width: 100 });
     scheduler.runNext();
     expect(steps.mock.calls.length).toBeGreaterThan(4);
-    expect(steps.mock.calls.length).toBeLessThanOrEqual(64);
+    expect(starts.slice(1).every(({ deadline, time }) => time < deadline)).toBe(true);
+    expect(scheduler.time).toBeGreaterThanOrEqual(starts[0]!.deadline);
     expect(renderer.mountedCount).toBeGreaterThan(0);
+    expect(renderer.mountedCount).toBeLessThan(10);
+    expect(scheduler.pendingCount).toBeGreaterThan(0);
     let frames = 1;
     while (scheduler.pendingCount > 0) {
       steps.mockClear();
+      starts.length = 0;
+      scheduler.time += 10;
       scheduler.runNext();
-      expect(steps.mock.calls.length).toBeLessThanOrEqual(64);
-      expect(++frames).toBeLessThanOrEqual(3);
+      expect(starts.slice(1).every(({ deadline, time }) => time < deadline)).toBe(true);
+      expect(++frames).toBeLessThanOrEqual(4);
     }
     expect(renderer.mountedCount).toBe(10);
-    expect(scheduler.time).toBe(0);
+    expect(renderer.instrumentation().geometryBuilds).toBe(10);
   } finally {
     steps.mockRestore();
     renderer.destroy();

@@ -21,6 +21,7 @@ import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } 
 import type { SceneVisibilityState, VisibilityResult } from "./visibility-state";
 import { SceneVisibilityReconciler, type PreviewTransform } from "./scene-visibility-reconciler";
 import { writeDirtySet } from "./dirty-set-work";
+import { copyCommittedVisibility, mountedVisibleIds } from "./visibility-order";
 
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
 
@@ -115,13 +116,7 @@ export class SceneContentRenderer {
   }
 
   public mountedIds(band: RenderBand): readonly string[] {
-    const idsInBand = this.#committedIds[band];
-    const ids: string[] = [];
-    for (let index = 0; index < this.#committedCounts[band]; index += 1) {
-      const id = idsInBand[index];
-      if (id !== undefined && this.#mounted.has(id)) ids.push(id);
-    }
-    return ids;
+    return mountedVisibleIds(this.#committedIds[band], this.#committedCounts[band], this.#mounted);
   }
 
   public takeNewlyMountedIds(): readonly string[] {
@@ -229,6 +224,12 @@ export class SceneContentRenderer {
     return this.#reconciler.hasPendingWork;
   }
 
+  public hasUnprotectedDeferredExit(
+    ...args: Parameters<SceneVisibilityReconciler["hasUnprotectedDeferredExit"]>
+  ): boolean {
+    return this.#reconciler.hasUnprotectedDeferredExit(...args);
+  }
+
   public get hasPendingWork(): boolean {
     return this.hasMountedWork || this.hasVisibilityWork;
   }
@@ -237,8 +238,8 @@ export class SceneContentRenderer {
     return this.#reconciler.needsRestart;
   }
 
-  public replaceVisibility(visibility: VisibilityResult, progressive = false): void {
-    this.#reconciler.replace(visibility, progressive);
+  public replaceVisibility(...args: Parameters<SceneVisibilityReconciler["replace"]>): void {
+    this.#reconciler.replace(...args);
   }
 
   public cancelPendingVisibility(): void {
@@ -490,11 +491,10 @@ export class SceneContentRenderer {
     this.commitBandVisibility("content", visibility.content);
   }
   private commitBandVisibility(band: RenderBand, visibility: VisibilityResult[RenderBand]): void {
-    const ids = this.#committedIds[band];
-    for (let index = 0; index < visibility.count; index += 1) ids[index] = visibility.ids[index];
-    for (let index = visibility.count; index < this.#committedCounts[band]; index += 1) {
-      ids[index] = undefined;
-    }
-    this.#committedCounts[band] = visibility.count;
+    this.#committedCounts[band] = copyCommittedVisibility(
+      this.#committedIds[band],
+      this.#committedCounts[band],
+      visibility,
+    );
   }
 }

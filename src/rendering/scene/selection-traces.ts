@@ -1,12 +1,10 @@
 import type { SvgPathPart } from "../../domain/geometry/element-path";
 import type { InkElementV1 } from "../../domain/schema/public";
-import { MountSlice, mountCost, type ScenePublicationBudget } from "./mount-slice";
+import { MountSlice, type ScenePublicationBudget } from "./mount-slice";
 import { SelectionCenterCache } from "./selection-center-cache";
 import { SelectionCenterTrace } from "./selection-center-trace";
 import type { MountedSceneElement } from "./mounted-element";
 import type { MutableSceneInstrumentation, SceneStorePort } from "./types";
-
-const REUSED_TRACE_COST = { geometry: 1, strokePoints: 0 } as const;
 
 /** Retains only mounted center indicators, with camera-independent geometry and paint. */
 export class SceneSelectionTraces {
@@ -102,6 +100,7 @@ export class SceneSelectionTraces {
   ): boolean {
     const slice = new MountSlice(deadline, now);
     for (const id of dirty) {
+      if (slice.blockingReason() !== undefined) return true;
       const entry = mounted.get(id);
       const record = store.get(id);
       if (entry !== undefined && record !== undefined) {
@@ -114,16 +113,11 @@ export class SceneSelectionTraces {
           needsGeometry && element.kind === "stroke" && element.style.pressureEnabled
             ? (this.#cache.read(element) ?? null)
             : undefined;
-        const cost =
-          needsGeometry && (cachedCenterPath === null || element.kind !== "stroke")
-            ? mountCost({ ...record, element })
-            : REUSED_TRACE_COST;
-        if (slice.blockingReason(cost) !== undefined) return true;
         if (!this.update(entry, element, entry.displayedPathParts, budget, cachedCenterPath))
           return true;
-        slice.record(cost);
       }
       dirty.delete(id);
+      slice.record();
     }
     return false;
   }

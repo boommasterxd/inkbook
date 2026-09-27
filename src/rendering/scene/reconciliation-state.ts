@@ -1,7 +1,21 @@
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type { MountedSceneElement } from "./mounted-element";
+import type { SceneDom } from "./scene-dom";
+import type { ScenePathCache } from "./path-cache";
+import type { MutableSceneInstrumentation, SceneStorePort } from "./types";
 import type { PendingMutationRun, RetainedDomOrder } from "./visibility-publication";
-import type { VisibilityResult } from "./visibility-state";
+import type { SceneVisibilityState, VisibilityResult } from "./visibility-state";
+
+export interface SceneVisibilityReconcilerOptions {
+  readonly dom: SceneDom;
+  readonly instrumentation: MutableSceneInstrumentation;
+  readonly mounted: Map<string, MountedSceneElement>;
+  readonly isExitReady?: (id: string, now: number) => boolean;
+  readonly orderDirty: Record<RenderBand, Set<string>>;
+  readonly pathCache: ScenePathCache;
+  readonly store: SceneStorePort;
+  readonly visibility: SceneVisibilityState;
+}
 
 export interface ReconciliationCursor {
   band: RenderBand;
@@ -11,6 +25,7 @@ export interface ReconciliationCursor {
 }
 
 export interface PendingReconciliation {
+  readonly delta?: { readonly ids: readonly string[]; index: number };
   readonly entrants: Map<string, MountedSceneElement>;
   readonly exitIds: string[];
   exitIndex: number;

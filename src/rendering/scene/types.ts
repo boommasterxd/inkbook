@@ -137,8 +137,6 @@ export interface SceneInstrumentationSnapshot {
   readonly liveTailNodesCreated: number;
   readonly liveTailNodesRemoved: number;
   readonly maximumMountSliceElements: number;
-  readonly maximumMountSliceGeometryCost: number;
-  readonly maximumMountSliceStrokePoints: number;
   readonly mountBudgetYields: number;
   readonly mountDeadlineYields: number;
   readonly mountSlices: number;
@@ -165,7 +163,9 @@ export interface SceneInstrumentationSnapshot {
   readonly staleFrames: number;
   readonly themeWrites: number;
   readonly visibilityCandidateCacheHits: number;
+  readonly visibilityCandidateVisits: number;
   readonly visibilityHysteresisHits: number;
+  readonly visibilityReconcileVisits: number;
   readonly visibilitySortSkips: number;
 }
 
@@ -192,8 +192,6 @@ export interface MutableSceneInstrumentation {
   liveTailNodesCreated: number;
   liveTailNodesRemoved: number;
   maximumMountSliceElements: number;
-  maximumMountSliceGeometryCost: number;
-  maximumMountSliceStrokePoints: number;
   mountBudgetYields: number;
   mountDeadlineYields: number;
   mountSlices: number;
@@ -220,6 +218,8 @@ export interface MutableSceneInstrumentation {
   staleFrames: number;
   themeWrites: number;
   visibilityCandidateCacheHits: number;
+  visibilityCandidateVisits: number;
   visibilityHysteresisHits: number;
+  visibilityReconcileVisits: number;
   visibilitySortSkips: number;
 }
