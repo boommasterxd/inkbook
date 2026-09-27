@@ -37,7 +37,7 @@ of waiting for the remainder of a synthetic display frame. Main-thread fallback
 work still shares its owning window's frame budget. Cache prewarming starts through
 a checkpoint without an unconditional frame wait.
 
-Preserve bounded work units, frame publication caps, input-priority gates,
+Remove count-based CPU slice quotas and forced handoffs while the shared budget remains. Preserve bounded indivisible work units, frame publication caps, input-priority gates,
 transaction generations, and cancellation checks. Detached preview preparation
 quanta recheck the shared deadline without forcing a new frame while budget
 remains; only actual paint dependencies or visible publication caps require a new
