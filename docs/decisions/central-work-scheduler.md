@@ -17,7 +17,7 @@ additional frame.
 ## Decision
 
 Use one injected `WorkScheduler` per owning window and the same portable
-`SharedFrameScheduler` policy in each document worker. The domain layer owns the
+`SharedFrameScheduler` in each document worker with a task-admission host policy. The domain layer owns the
 platform-independent admission policy; window and worker adapters own native
 timing resources. Workspace composition owns lifetime and window selection.
 
@@ -31,16 +31,28 @@ timestamps identify frames and drive animations; treating their earlier time as
 work already spent can fragment publication into many tiny browser updates.
 Separate host-task admissions account for nested Promise
 continuations before admitting competing work. Live settings update existing
-schedulers and workers rather than creating fresh per-operation allowances.
+schedulers and workers rather than creating fresh per-operation allowances. A worker
+uses the configured slice duration but resumes after a central task handoff instead
+of waiting for the remainder of a synthetic display frame. Main-thread fallback
+work still shares its owning window's frame budget. Cache prewarming starts through
+a checkpoint without an unconditional frame wait.
 
 Preserve bounded work units, frame publication caps, input-priority gates,
 transaction generations, and cancellation checks. Detached preview preparation
 quanta recheck the shared deadline without forcing a new frame while budget
-remains; only visible publication caps carry a frame dependency. An atomic native operation
+remains; only visible publication caps carry a frame dependency. Selection-query
+and eraser-finalization work quanta likewise recheck cancellation and the shared
+deadline without forcing a new frame while budget remains. An atomic native operation
 cannot be interrupted by this policy. Semantic gesture delays, animation
 durations, and I/O timeouts retain their own purpose. Autosave now starts after
 1,000 milliseconds of content inactivity; explicit flush and lifecycle save
 boundaries remain independent of that debounce.
+
+Shared preview recognition follows an open requesting window, preferring a visible
+requester, while retaining one validation per document. Pending scheduling waits
+can transfer without restarting validation. Runtime snapshot copies, clipboard
+validation, and replacement-heap preparation expose bounded checkpoints; final
+store publication remains atomic.
 
 Require the scheduler for future cooperative implementations in `AGENTS.md`.
 The source-layout AST gate rejects native work scheduling and private deadline
