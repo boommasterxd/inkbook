@@ -56,10 +56,10 @@ export class CommittedPreviewGeometry {
         version: record.geometryVersion,
         path: new ProgressivePreviewPath(record.element, pressureGeometry),
       };
-      if (record.element.kind === "stroke" && record.element.points.length > 256 * 3)
-        return undefined;
     }
-    for (let step = 0; step < 4 && (step === 0 || now() < deadline); step++) {
+    let stepped = false;
+    while (!stepped || now() < deadline) {
+      stepped = true;
       if (this.#job.path.step(deadline, now)) return this.#job.path.parts;
     }
     return undefined;

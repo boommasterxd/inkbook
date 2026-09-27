@@ -56,7 +56,13 @@ function pendingCommit(extras: readonly InkElementV1[] = [], selected = false) {
       geometryVersion: 2,
     });
   const fullBuild = vi.spyOn(elementPath, "buildElementPathParts");
+  const originalStep = Reflect.get(ProgressivePreviewPath.prototype, "step");
   const step = vi.spyOn(ProgressivePreviewPath.prototype, "step");
+  step.mockImplementation(function (this: ProgressivePreviewPath, deadline, now) {
+    const complete = originalStep.call(this, deadline, now);
+    scheduler.time += 1;
+    return complete;
+  });
   renderer.applyDelta({
     affected: replacements.map((after, index) => ({
       id: after.id,
@@ -66,7 +72,8 @@ function pendingCommit(extras: readonly InkElementV1[] = [], selected = false) {
     })),
   });
   scheduler.runFrame();
-  expect(step).not.toHaveBeenCalled();
+  expect(step.mock.calls.length).toBeGreaterThan(0);
+  expect(step.mock.calls.length).toBeLessThanOrEqual(8);
   expect(fullBuild).not.toHaveBeenCalled();
   expect(group.nodes[0]!.attributes.get("d")).toBe(original);
   expect(group.attributes.get("transform")).toBe("scale(1.1 1)");
@@ -98,7 +105,7 @@ it("keeps committed feedback while preparing geometry and composes a subsequent 
   while (scheduler.pendingCount > 0) {
     step.mockClear();
     scheduler.runFrame();
-    expect(step.mock.calls.length).toBeLessThanOrEqual(4);
+    expect(step.mock.calls.length).toBeLessThanOrEqual(8);
   }
   expect(fullBuild).not.toHaveBeenCalled();
   expect(group.nodes[0]!.attributes.get("d")).toBe(elementPath.buildElementPathParts(moved)[0]!.d);

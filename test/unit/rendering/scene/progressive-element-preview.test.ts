@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import type { SceneContentRenderer } from "../../../../src/rendering/scene/content-renderer";
 import { ProgressiveElementPreview } from "../../../../src/rendering/scene/progressive-element-preview";
+import { ProgressivePreviewPath } from "../../../../src/rendering/scene/progressive-preview-path";
 import { rectangle } from "../../domain/store/fixtures";
 import { indexedStroke } from "../../../fixtures/editor/stroke";
 
@@ -29,9 +30,11 @@ function longStroke(index: number) {
   };
 }
 
-describe("progressive element frame allocation", () => {
+afterEach(() => vi.restoreAllMocks());
+
+describe("progressive element deadline", () => {
   it.each([false, true])(
-    "separates long-stroke allocation, canonical publication, and the next snapshot (pressure=%s)",
+    "uses remaining time to publish successive complete long strokes (pressure=%s)",
     (pressureEnabled) => {
       const { content, preview } = setup();
       const elements = [longStroke(1), longStroke(2)].map((element) => ({
@@ -41,37 +44,30 @@ describe("progressive element frame allocation", () => {
       }));
       const materialize = vi.fn((id: string) => elements.find((element) => element.id === id));
       preview.set({ ids: elements.map(({ id }) => id), materialize, version: 1 });
-      expect(preview.write(100, () => 0)).toBe(true);
-      expect(materialize).toHaveBeenCalledTimes(1);
-      expect(content.applyCanonicalElementPreview).not.toHaveBeenCalled();
-      expect(preview.write(100, () => 0)).toBe(true);
-      expect(content.applyCanonicalElementPreview).not.toHaveBeenCalled();
-      expect(preview.write(100, () => 0)).toBe(true);
-      expect(materialize).toHaveBeenCalledTimes(1);
-      expect(content.applyCanonicalElementPreview).toHaveBeenCalledOnce();
-      expect(preview.write(100, () => 0)).toBe(true);
-      expect(materialize).toHaveBeenCalledTimes(2);
-      expect(content.applyCanonicalElementPreview).toHaveBeenCalledOnce();
-      expect(preview.write(100, () => 0)).toBe(true);
-      expect(content.applyCanonicalElementPreview).toHaveBeenCalledOnce();
       expect(preview.write(100, () => 0)).toBe(false);
+      expect(materialize).toHaveBeenCalledTimes(2);
       expect(content.applyCanonicalElementPreview).toHaveBeenCalledTimes(2);
+      expect(
+        content.applyCanonicalElementPreview.mock.calls.map(([element]) => element.id),
+      ).toEqual(elements.map(({ id }) => id));
     },
   );
 });
 
 describe("progressive element preview lifecycle", () => {
-  it("defers bounded canonical work and never mounts a partially built pressure path", () => {
+  it("defers a long path when materialization exhausts the deadline", () => {
     const { content, preview } = setup();
     const element = longStroke(1);
-    const materialize = vi.fn(() => element);
+    let time = 0;
+    const materialize = vi.fn(() => {
+      time = 1;
+      return element;
+    });
     preview.set({ ids: [element.id], materialize, version: 1 });
     expect(materialize).not.toHaveBeenCalled();
-    expect(preview.write(100, () => 0)).toBe(true);
+    expect(preview.write(1, () => time)).toBe(true);
     expect(content.applyCanonicalElementPreview).not.toHaveBeenCalled();
-    let frames = 1;
-    while (preview.write(100, () => 0)) frames += 1;
-    expect(frames).toBeGreaterThan(3);
+    expect(preview.write(100, () => time)).toBe(false);
     expect(content.applyCanonicalElementPreview).toHaveBeenCalledOnce();
     expect(preview.values.get(element.id)).toBe(element);
     preview.applyMounted([element.id, "missing"]);
@@ -98,12 +94,11 @@ describe("progressive element preview lifecycle", () => {
         materialize: (id) => elements.find((element) => element.id === id),
         version,
       });
-      preview.write(100, () => 0);
+      writeOneStep(preview);
     }
-    expect(content.applyCanonicalElementPreview.mock.calls.map(([element]) => element.id)).toEqual([
-      ids[0],
-      ids[1],
-    ]);
+    expect(
+      content.applyCanonicalElementPreview.mock.calls.slice(0, 2).map(([element]) => element.id),
+    ).toEqual(ids);
     while (preview.write(100, () => 0)) {
       /* Complete the latest coalesced request. */
     }
@@ -160,13 +155,26 @@ describe("progressive preview resource bounds", () => {
     });
     const byId = new Map(elements.map((element) => [element.id, element]));
     const ids = elements.map(({ id }) => id);
-    for (let version = 1; version <= count * 3; version += 1) {
+    let time = 0;
+    const originalStep = Reflect.get(ProgressivePreviewPath.prototype, "step");
+    vi.spyOn(ProgressivePreviewPath.prototype, "step").mockImplementation(function (
+      this: ProgressivePreviewPath,
+      deadline,
+      now,
+    ) {
+      const complete = originalStep.call(this, deadline, now);
+      time += 1;
+      return complete;
+    });
+    let published = 0;
+    for (let version = 1; version <= count * 10 && published < count; version += 1) {
       preview.set({ ids, materialize: (id) => byId.get(id), version });
-      preview.write(100, () => 0);
+      preview.write(time + 1, () => time);
+      published = new Set(
+        content.applyCanonicalElementPreview.mock.calls.map(([element]) => element.id),
+      ).size;
     }
-    expect(content.applyCanonicalElementPreview.mock.calls.map(([element]) => element.id)).toEqual(
-      ids,
-    );
+    expect(published).toBe(count);
     let remainingFrames = 0;
     while (preview.write(100, () => 0) && remainingFrames < count * 3) remainingFrames += 1;
     expect(remainingFrames).toBeLessThan(count * 3);
@@ -291,8 +299,8 @@ describe("progressive snapshot feedback bases", () => {
   });
 });
 
-describe("immediate geometry within the progressive selection budget", () => {
-  it("bounds synchronous shape work and rotates fairly while every path receives feedback", () => {
+describe("immediate geometry within the shared deadline", () => {
+  it("updates every shape while time remains and reuses same-version work", () => {
     const { content, preview } = setup();
     const elements = new Map(
       Array.from({ length: 80 }, (_, index) => {
@@ -309,14 +317,14 @@ describe("immediate geometry within the progressive selection budget", () => {
     };
     preview.set({ ...request, version: 1 });
     preview.writeFeedback(1, 100, () => 0);
-    expect(materialize).toHaveBeenCalledTimes(64);
+    expect(materialize).toHaveBeenCalledTimes(80);
     expect(new Set(content.applyPreviewTransform.mock.calls.map(([id]) => id)).size).toBe(80);
     preview.writeFeedback(1, 100, () => 0);
-    expect(materialize).toHaveBeenCalledTimes(64);
+    expect(materialize).toHaveBeenCalledTimes(80);
     expect(content.applyPreviewTransform).toHaveBeenCalledTimes(80);
     preview.set({ ...request, version: 2 });
     preview.writeFeedback(1, 100, () => 0);
-    expect(materialize).toHaveBeenCalledTimes(128);
+    expect(materialize).toHaveBeenCalledTimes(160);
     expect(new Set(materialize.mock.calls.map(([id]) => id)).size).toBe(80);
   });
 

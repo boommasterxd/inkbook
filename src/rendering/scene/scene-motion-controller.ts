@@ -205,7 +205,9 @@ export class SceneMotionController {
     first: boolean,
   ): void {
     this.#frameCursor ??= this.#entries.values();
-    for (let count = 0; count < 256 && ((count === 0 && first) || now() < deadline); count += 1) {
+    const entries = this.#entries.size;
+    for (let count = 0; count < entries; count += 1) {
+      if ((count > 0 || !first) && now() >= deadline) return;
       let next = this.#frameCursor.next();
       if (next.done === true && count === 0 && this.#entries.size > 0) {
         this.#frameCursor = this.#entries.values();

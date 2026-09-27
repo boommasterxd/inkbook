@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   calculateElementBounds,
@@ -6,8 +6,24 @@ import {
 } from "../../../../src/domain/geometry/public";
 import type { InkElementV1 } from "../../../../src/domain/schema/public";
 import { createSceneFixture } from "../../../fixtures/rendering/scene";
+import { ProgressivePreviewPath } from "../../../../src/rendering/scene/progressive-preview-path";
 import { createAllElementSnapshot } from "../../../unit/persistence/serialization/fixtures";
-import { FakeSceneStore, fakeNode } from "../../../unit/rendering/scene/fakes";
+import { FakeSceneStore, fakeNode, type FakeScheduler } from "../../../unit/rendering/scene/fakes";
+
+afterEach(() => vi.restoreAllMocks());
+
+function chargePreviewSteps(scheduler: FakeScheduler) {
+  const originalStep = Reflect.get(ProgressivePreviewPath.prototype, "step");
+  return vi.spyOn(ProgressivePreviewPath.prototype, "step").mockImplementation(function (
+    this: ProgressivePreviewPath,
+    deadline,
+    now,
+  ) {
+    const complete = originalStep.call(this, deadline, now);
+    scheduler.time += 1;
+    return complete;
+  });
+}
 
 function setup() {
   const snapshot = createAllElementSnapshot();
@@ -55,6 +71,7 @@ function shifted(element: InkElementV1): InkElementV1 {
 describe("progressive selection canonical scene parity", () => {
   it("keeps complete canonical pressure and arrow geometry through asynchronous resize and cancellation", () => {
     const { renderer, scheduler, elements, content } = setup();
+    const steps = chargePreviewSteps(scheduler);
     const original = content.nodes.flatMap(paintedPaths).map((node) => new Map(node.attributes));
     const replacements = elements.map(shifted);
     const originalMemory = renderer.memoryUsage().pathCacheBytes;
@@ -72,7 +89,8 @@ describe("progressive selection canonical scene parity", () => {
       remainingFrames += 1;
     }
     expect(scheduler.pendingCount).toBe(0);
-    expect(remainingFrames).toBeGreaterThanOrEqual(16);
+    expect(remainingFrames).toBeGreaterThan(1);
+    expect(steps.mock.calls.length).toBeGreaterThan(8);
     expect(content.nodes.flatMap(paintedPaths).map((node) => node.attributes.get("d"))).toEqual(
       replacements.flatMap((element) => buildElementPathParts(element)).map(({ d }) => d),
     );
@@ -87,6 +105,7 @@ describe("progressive selection canonical scene parity", () => {
 
   it("cancels pending canonical work before a cleared selection can reappear", () => {
     const { renderer, scheduler, elements, content } = setup();
+    chargePreviewSteps(scheduler);
     const original = content.nodes.flatMap(paintedPaths).map((node) => new Map(node.attributes));
     renderer.setProgressiveElementPreviews(
       elements.map(({ id }) => id),
