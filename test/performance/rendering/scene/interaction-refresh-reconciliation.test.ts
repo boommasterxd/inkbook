@@ -291,17 +291,17 @@ function createProfileRenderer(store: ElementStore) {
   });
 }
 
-function runFirstFrameAndFollowUps(scheduler: ProfileScheduler, prepare: () => void): void {
+function runFirstFrameAndFollowUps(scheduler: FakeScheduler, prepare: () => void): void {
   prepare();
   runPendingFrameAndFollowUps(scheduler);
 }
 
-function runPendingFrameAndFollowUps(scheduler: ProfileScheduler): void {
+function runPendingFrameAndFollowUps(scheduler: FakeScheduler): void {
   expect(scheduler.pendingCount).toBe(1);
   runFrameAndFollowUps(scheduler);
 }
 
-function runFrameAndFollowUps(scheduler: ProfileScheduler): void {
+function runFrameAndFollowUps(scheduler: FakeScheduler): void {
   let frameCount = 0;
   while (scheduler.pendingCount > 0) {
     expect(scheduler.pendingCount).toBe(1);
@@ -311,13 +311,13 @@ function runFrameAndFollowUps(scheduler: ProfileScheduler): void {
   }
 }
 
-function drainPendingFrames(scheduler: ProfileScheduler): void {
+function drainPendingFrames(scheduler: FakeScheduler): void {
   while (scheduler.pendingCount > 0) runPendingFrameAndFollowUps(scheduler);
 }
 
 function drainBoundedReconciliation(
   renderer: SvgSceneRenderer,
-  scheduler: ProfileScheduler,
+  scheduler: FakeScheduler,
   maximumFrames: number,
 ): void {
   let frames = 0;
