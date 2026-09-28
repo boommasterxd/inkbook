@@ -1,4 +1,6 @@
+import { registerMenuPointerDismissal } from "./menu-pointer-dismissal";
 import type { PhoneSheetNavigation } from "./panel-page";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import { Component, Platform, setIcon, type Keymap } from "obsidian";
 import { installMenuEscapeScope } from "./menu-escape-scope";
 
@@ -13,6 +15,7 @@ import { navigateOwnedMenu, OwnedMenuItem, renderOwnedMenuItems } from "./owned-
 
 export interface OwnedMenuFactoryOptions {
   readonly anchor: HTMLElement;
+  readonly workScheduler: WorkScheduler;
   readonly createPhoneSheetHost?: () => PhoneSheetHostPort;
   readonly keymap?: Pick<Keymap, "popScope" | "pushScope">;
 }
@@ -113,10 +116,10 @@ class OwnedMenu extends Component implements MenuPort {
         : this.#anchor.ownerDocument;
     const ownerWindow = ownerDocument.defaultView;
     if (ownerWindow === null) return;
-    const timer = ownerWindow.setTimeout(() => {
+    const frame = this.#options.workScheduler.requestFrame(() => {
       this.showAtPosition({ x: event.clientX, y: event.clientY }, ownerDocument);
-    }, 0);
-    this.register(() => ownerWindow.clearTimeout(timer));
+    });
+    this.register(() => this.#options.workScheduler.cancelFrame(frame));
   }
 
   #createContent(ownerDocument: Document): HTMLElement {
@@ -158,7 +161,9 @@ class OwnedMenu extends Component implements MenuPort {
     const fragment = menuDomWindow(ownerDocument, "owned menu").createFragment();
     fragment.append(content);
     this.#panel = new AdaptivePanelSession({
+      workScheduler: this.#options.workScheduler,
       anchor: this.#anchor,
+      dismissOnAnchorPointer: this.#kind === "context",
       canvasInputSurface: this.#anchor,
       createContent: () => fragment,
       ...(this.#options.createPhoneSheetHost === undefined
@@ -237,23 +242,18 @@ class OwnedMenu extends Component implements MenuPort {
     content.tabIndex = -1;
     content.focus({ preventScroll: true });
     this.register(installMenuEscapeScope(this.#options.keymap, () => this.close()));
-    this.registerDomEvent(
-      ownerDocument,
-      "pointerdown",
-      (event) => {
-        if (
-          event.target !== null &&
-          "nodeType" in event.target &&
-          !surface.contains(event.target as Node) &&
-          !(this.#kind === "menu" && this.#anchor.contains(event.target as Node))
-        ) {
-          event.preventDefault();
-          event.stopPropagation();
-          this.close();
-        }
-      },
-      true,
-    );
+    registerMenuPointerDismissal(this, ownerDocument, (event) => {
+      if (
+        event.target !== null &&
+        "nodeType" in event.target &&
+        !surface.contains(event.target as Node) &&
+        !(this.#kind === "menu" && this.#anchor.contains(event.target as Node))
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.close();
+      }
+    });
     this.registerDomEvent(
       ownerDocument,
       "keydown",

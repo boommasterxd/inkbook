@@ -4,6 +4,7 @@ import { LoadingPlaceholderMotion } from "../../../../src/obsidian/embeds/loadin
 import type { MotionPreference } from "../../../../src/rendering/motion/transitions";
 import { createPresentationMotionWindow } from "../../../fixtures/obsidian/presentation-motion-window";
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 function harness(options: { initialHeight?: number; motion?: MotionPreference } = {}) {
   const root = new FakePresentationElement();
@@ -14,6 +15,7 @@ function harness(options: { initialHeight?: number; motion?: MotionPreference } 
     ...options,
     motion: options.motion ?? "system",
     onHeight,
+    workScheduler: workSchedulerFromFrames(clock.ownerWindow),
   });
   return { ...clock, motion, onHeight, root };
 }

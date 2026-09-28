@@ -9,6 +9,7 @@ import type { PageV1 } from "../../../../src/domain/schema/public";
 import type { BrowserScrollElement } from "../../../../src/obsidian/scrolling/index";
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene/index";
 import { domRect } from "../../../fixtures/obsidian/active-editor";
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 interface MutableRect {
   height: number;
@@ -118,6 +119,7 @@ function createHarness(options?: {
   const setCamera = vi.fn(() => sequence.push("camera"));
   const layoutUpdates: Array<{ readonly blockSize: number; readonly zoom: number }> = [];
   const navigation = new ActiveEditorNavigation({
+    workScheduler: workSchedulerFromFrames(frames.window),
     activePageHeight: () =>
       typeof options?.activePageHeight === "function"
         ? options.activePageHeight()
@@ -380,6 +382,7 @@ describe("active editor measured layout", () => {
       setPage: vi.fn(),
     } as unknown as SvgSceneRenderer;
     const layout = new ActiveEditorLayout({
+      workScheduler: workSchedulerFromFrames(frames.window),
       chromeHost,
       container,
       onLayout: vi.fn(),
@@ -429,6 +432,7 @@ describe("active editor measured layout", () => {
     } as unknown as HTMLElement;
     const onReady = vi.fn();
     const layout = new ActiveEditorLayout({
+      workScheduler: workSchedulerFromFrames(frames.window),
       chromeHost: { querySelector: () => null } as unknown as HTMLElement,
       container,
       onLayout: vi.fn(),

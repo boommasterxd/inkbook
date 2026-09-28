@@ -10,6 +10,7 @@ import { responsiveTrackpadPanDelta } from "../../../../src/obsidian/embeds/acti
 import type { BrowserScrollElement } from "../../../../src/obsidian/scrolling/index";
 import type { SvgSceneRenderer } from "../../../../src/rendering/scene/index";
 import { domRect } from "../../../fixtures/obsidian/active-editor";
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 class Frames {
   readonly callbacks = new Map<number, FrameRequestCallback>();
@@ -74,6 +75,7 @@ function createHarness() {
     ownerDocument: documentPort,
   } as unknown as HTMLElement;
   const navigation = new ActiveEditorNavigation({
+    workScheduler: workSchedulerFromFrames(frames.window),
     activePageHeight: () => 2_000,
     applyZoomLayout: ({ blockSize }) => {
       sequence.push("layout-write");

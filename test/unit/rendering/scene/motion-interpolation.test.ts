@@ -1,3 +1,4 @@
+import { createTestStroke } from "../../../fixtures/persistence/worker-snapshot";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -343,3 +344,17 @@ function coordinateSystem3d(): Extract<CoordinateSystemElementV1, { dimension: "
     style: OUTLINE_STYLE,
   };
 }
+
+it("interpolates durable translation without mapping unchanged samples", () => {
+  const from = createTestStroke();
+  const to = {
+    ...from,
+    offset: { x: 100, y: 40 },
+    pivot: { x: from.pivot.x + 100, y: from.pivot.y + 40 },
+  };
+  const half = interpolateElement(from, to, 0.5) as StrokeElementV1;
+  expect(half.points).toBe(from.points);
+  expect(half.offset).toEqual({ x: 50, y: 20 });
+  expect(half.pivot).toEqual({ x: from.pivot.x + 50, y: from.pivot.y + 20 });
+  expect((interpolateElement(to, from, 0.5) as StrokeElementV1).offset).toEqual({ x: 50, y: 20 });
+});

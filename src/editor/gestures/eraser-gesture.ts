@@ -3,7 +3,7 @@ import type { InkElementV1, PointV1 } from "../../domain/schema/public";
 import { createSweptCapsuleCheck, type SweptCapsuleCheck } from "./eraser-intersection";
 
 const ERASER_FADE_MS = 400;
-const WORK_UNITS_PER_UPDATE = 12_288;
+const FINALIZATION_WORK_UNITS_PER_QUANTUM = 12_288;
 const QUERY_BATCH_WORK_UNITS = 128;
 const UPDATE_CHECKPOINT_WORK_UNITS = 1_024;
 const MAX_FINALIZATION_CHECKPOINT_WORK_UNITS = 256;
@@ -70,6 +70,7 @@ export class EraserSweep {
   readonly #query: EraserQueryPort;
   readonly #radius: number;
   readonly #sliceBudgetMs: () => number;
+  readonly #updateShouldYield: (() => boolean) | undefined;
   readonly #updateAdded: string[] = [];
   #activeSweep: ActiveSweep | null = null;
   #previous: PointV1;
@@ -81,6 +82,7 @@ export class EraserSweep {
     query: EraserQueryPort,
     feedback: EraserFeedbackPort,
     sliceBudgetMs: () => number = () => 8,
+    updateShouldYield?: () => boolean,
   ) {
     if (!Number.isFinite(radius) || radius <= 0)
       throw new RangeError("Eraser radius must be positive.");
@@ -89,6 +91,7 @@ export class EraserSweep {
     this.#query = query;
     this.#feedback = feedback;
     this.#sliceBudgetMs = sliceBudgetMs;
+    this.#updateShouldYield = updateShouldYield;
     this.#pendingSweeps.push({ end: this.#previous, start: this.#previous });
     this.#processUpdatePending();
     this.#publishUpdateAdded();
@@ -148,19 +151,22 @@ export class EraserSweep {
     const added: string[] = [];
     while (this.retainedSweepCount > 0) {
       const sliceBudgetMs = Math.max(0, this.#sliceBudgetMs() - FINALIZATION_SCHEDULING_RESERVE_MS);
-      const deadline = performance.now() + sliceBudgetMs;
       const workUnits = finalizationWorkUnits(sliceBudgetMs);
-      let remaining = WORK_UNITS_PER_UPDATE;
+      let remaining = FINALIZATION_WORK_UNITS_PER_QUANTUM;
+      let shouldWait = false;
       do {
         if (scheduler.isCancelled() || this.#isCancelled()) return this.#cancelFinalization();
         const checkpoint = Math.min(remaining, workUnits);
         this.#processPending(checkpoint, added);
         remaining -= checkpoint;
         if (this.retainedSweepCount === 0) break;
-      } while (remaining > 0 && !scheduler.shouldYield() && performance.now() < deadline);
+        shouldWait = scheduler.shouldYield();
+      } while (remaining > 0 && !shouldWait);
       this.#publishAdded(added);
       added.length = 0;
-      if (this.retainedSweepCount > 0) await scheduler.yieldControl();
+      if (this.retainedSweepCount > 0 && (shouldWait || scheduler.shouldYield())) {
+        await scheduler.yieldControl();
+      }
     }
     this.#publishAdded(added);
     if (scheduler.isCancelled() || this.#isCancelled()) return this.#cancelFinalization();
@@ -194,15 +200,10 @@ export class EraserSweep {
   }
 
   #processUpdatePending(): void {
-    const deadline = performance.now() + this.#sliceBudgetMs();
     const added = this.#updateAdded;
-    for (
-      let remaining = WORK_UNITS_PER_UPDATE;
-      remaining > 0 && this.retainedSweepCount > 0;
-      remaining -= UPDATE_CHECKPOINT_WORK_UNITS
-    ) {
-      this.#processPending(Math.min(remaining, UPDATE_CHECKPOINT_WORK_UNITS), added);
-      if (performance.now() >= deadline) break;
+    while (this.retainedSweepCount > 0) {
+      this.#processPending(UPDATE_CHECKPOINT_WORK_UNITS, added);
+      if (this.#updateShouldYield?.() === true) break;
     }
   }
 

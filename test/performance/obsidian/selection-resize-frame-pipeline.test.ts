@@ -26,6 +26,7 @@ import { coordinateSystem, table } from "../../unit/domain/geometry/fixtures";
 import { connectedLine, rectangle } from "../../unit/domain/store/fixtures";
 import { maximumStroke } from "../editor/maximum-stroke-fixture";
 import { FakeDocument, FakeNode, FakeScheduler, asElement } from "../../unit/rendering/scene/fakes";
+import { workSchedulerFromFrames } from "../../fixtures/obsidian/work-scheduler";
 
 function mixedExactElements(): readonly InkElementV1[] {
   const stroke = maximumStroke(0);
@@ -134,17 +135,24 @@ const PAGE: PageV1 = {
   margin: 24.3,
 };
 
-function createPipeline(api: ResizeApi, elements: readonly InkElementV1[], pageHeight: number) {
+function createPipeline(
+  api: ResizeApi,
+  elements: readonly InkElementV1[],
+  pageHeight: number,
+  profileDeadline = false,
+) {
   const store = new api.ElementStore(elements);
   const sceneStore = new api.ElementSceneStore(store);
-  const scheduler = new FakeScheduler();
+  const scheduler = new FakeScheduler(
+    profileDeadline ? INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs : 8,
+  );
   const document = new FakeDocument();
   const renderer = new api.SvgSceneRenderer({
     container: asElement(new FakeNode(document, "div")),
     layout: { readViewport: () => ({ height: 120, left: 0, top: 0, width: 120 }) },
     page: PAGE,
     reducedMotion: true,
-    scheduler,
+    workScheduler: profileDeadline ? scheduler.workScheduler : workSchedulerFromFrames(scheduler),
     store: sceneStore,
   });
   renderer.setPage(PAGE, pageHeight);
@@ -160,7 +168,7 @@ function createInteraction(
 ) {
   const ports = interactionPorts(api, fixture, elements);
   return new api.ActiveEditorHandleInteraction({
-    frameScheduler: fixture.scheduler,
+    frameScheduler: fixture.scheduler.workScheduler,
     layout: { begin: () => undefined, finish: () => undefined, updateBottom },
     ...ports,
     preparedHistory: {} as never,
@@ -225,7 +233,7 @@ function createMovePreview(
   edge: (() => void) | SelectionEdgeDragPort,
 ) {
   return new api.MovePreview({
-    frameScheduler: fixture.scheduler,
+    frameScheduler: fixture.scheduler.workScheduler,
     ...interactionPorts(api, fixture, elements),
     preparedHistory: {} as never,
     renderer: fixture.renderer,
@@ -262,6 +270,7 @@ function createNativeEdgeDrag(scheduler: FakeScheduler) {
     ownerDocument: { scrollingElement: null },
   } as unknown as BrowserScrollElement;
   const drag = new ActiveEditorSelectionEdgeDrag({
+    workScheduler: workSchedulerFromFrames(scheduler),
     layout: { begin: () => undefined, finish: () => undefined, updateBottom },
     navigation: { pan: vi.fn(), scroll } as unknown as ActiveEditorNavigation,
     ownerWindow: {
@@ -349,7 +358,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz selection resize frame p
       // One scroll frame, one coalesced pointer frame and at most one scene frame.
       expect(fixture.scheduler.pendingCount).toBeLessThanOrEqual(3);
       advance();
-      expect(edge.readBounds).toHaveBeenCalledTimes(2);
+      expect(edge.readBounds).toHaveBeenCalledOnce();
       expect(edge.updateBottom).toHaveBeenCalledOnce();
       expect(transforms).toHaveBeenCalledOnce();
       expect(edge.scroll).toHaveBeenCalledTimes(y === 476 ? 0 : 1);
@@ -359,7 +368,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz selection resize frame p
     }
     advance();
     expect(fixture.scheduler.pendingCount).toBe(0);
-    expect(edge.readBounds).toHaveBeenCalledTimes(2);
+    expect(edge.readBounds).toHaveBeenCalledOnce();
     preview.update({ pointerId: 2, pointerType: "pen", pressure: 0.5, x: 100, y: 490 });
     advance();
     expect(fixture.scheduler.pendingCount).toBeLessThanOrEqual(2);
@@ -422,7 +431,7 @@ function runMovePipeline(elements: readonly InkElementV1[]) {
 
 function runResizePipeline(elements: readonly InkElementV1[]) {
   let pageHeight = derivePageExtent(PAGE, maximumBottom(API, elements)).activeHeight;
-  const fixture = createPipeline(API, elements, pageHeight);
+  const fixture = createPipeline(API, elements, pageHeight, true);
   let layoutUpdates = 0;
   let pageGrowths = 0;
   const interaction = createInteraction(API, fixture, elements, (maximumBottom) => {
@@ -441,8 +450,21 @@ function runResizePipeline(elements: readonly InkElementV1[]) {
   let incorrectlyQueuedFrames = 0;
   let framesWithoutGeometryWrites = 0;
   fixture.renderer.resetInstrumentation();
+  const workCharge = INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs / 4;
+  const buildPath = elementPath.buildElementPathParts;
   const pathBuilds = vi.spyOn(elementPath, "buildElementPathParts");
+  pathBuilds.mockImplementation((element) => {
+    const parts = buildPath(element);
+    fixture.scheduler.time += workCharge;
+    return parts;
+  });
+  const stepPath = Reflect.get(ProgressivePreviewPath.prototype, "step");
   const progressiveSteps = vi.spyOn(ProgressivePreviewPath.prototype, "step");
+  progressiveSteps.mockImplementation(function (this: ProgressivePreviewPath, deadline, now) {
+    const complete = stepPath.call(this, deadline, now);
+    fixture.scheduler.time += workCharge;
+    return complete;
+  });
   runInteractionFrames((frame) => {
     const before = fixture.renderer.instrumentation().contentGeometryWrites;
     pathBuilds.mockClear();
@@ -451,9 +473,12 @@ function runResizePipeline(elements: readonly InkElementV1[]) {
     if (!(fixture.scheduler.pendingCount <= 2)) incorrectlyQueuedFrames += 1;
     fixture.scheduler.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
     fixture.scheduler.runFrame();
-    // At most 64 immediate shapes plus four progressive completions per frame.
-    expect(pathBuilds.mock.calls.length).toBeLessThanOrEqual(64 + 4);
-    expect(progressiveSteps.mock.calls.length).toBeLessThanOrEqual(4);
+    // Each observed call costs a quarter of this profile's budget; a nested final
+    // path build may cross the deadline within its indivisible geometry step.
+    expect(pathBuilds.mock.calls.length + progressiveSteps.mock.calls.length).toBeLessThanOrEqual(
+      5,
+    );
+    expect(pathBuilds.mock.calls.length).toBeLessThanOrEqual(256);
     // The preview admits at most 256 paths: one canonical d write and up to
     // three transform writes (feedback, replacement reset, residual feedback).
     expect(fixture.renderer.instrumentation().contentGeometryWrites - before).toBeLessThanOrEqual(

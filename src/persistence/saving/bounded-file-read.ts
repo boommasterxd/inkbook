@@ -1,6 +1,7 @@
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/constants";
 
 import type { ExistingFilePort } from "./save-ports";
+import { VerifiedMetadataGuardedFileRead } from "./verified-file-read";
 import { utf8ByteLengthWithinLimit } from "../scheduling/utf8-byte-length";
 
 export async function readExistingFileWithinLimit(
@@ -14,7 +15,10 @@ export async function readExistingFileWithinLimit(
   if (read.identity.size > FILE_SCHEMA_LIMITS.totalInputBytes) {
     throw new RangeError("The vault file exceeds the input byte limit.");
   }
-  if (utf8ByteLengthWithinLimit(read.content, FILE_SCHEMA_LIMITS.totalInputBytes) === null) {
+  if (
+    !VerifiedMetadataGuardedFileRead.isVerified(read) &&
+    utf8ByteLengthWithinLimit(read.content, FILE_SCHEMA_LIMITS.totalInputBytes) === null
+  ) {
     throw new RangeError("The vault file exceeds the input byte limit after reading.");
   }
   return read.content;

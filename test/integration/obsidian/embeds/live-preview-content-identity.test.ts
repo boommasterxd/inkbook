@@ -5,6 +5,7 @@ import { PresentationLifecycleRegistry } from "../../../../src/obsidian/embeds/p
 import type { EmbedIntegrationPorts } from "../../../../src/obsidian/embeds/presentation-port";
 import { ColorSchemeBroadcaster } from "../../../../src/obsidian/theme/color-scheme";
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
+import { nativeFrameWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 
 const SAFE_PREVIEW_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><metadata></metadata></svg>';
 const CONTENT_IDENTITY = { outputHash: "a".repeat(64), revision: 1 };
@@ -97,5 +98,6 @@ function createPorts(): EmbedIntegrationPorts & { readonly calls: string[] } {
       detach: (attachment) => calls.push(`detach:${attachment.documentId}`),
       mount: () => undefined,
     },
+    workScheduler: nativeFrameWorkScheduler,
   };
 }

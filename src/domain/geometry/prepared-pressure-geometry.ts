@@ -8,10 +8,16 @@ export interface PressureWindow {
   readonly loops: readonly (readonly (PressureBoundaryLine | PressureBoundaryArc)[])[];
 }
 
+export interface PressureWindowMeasurement {
+  readonly window: PressureWindow;
+  readonly numericBytes: number;
+}
+
 /** A store-owned view scoped to one stroke geometry version. */
 export interface PreparedPressureGeometryPort {
   readPath?(): readonly SvgPathPart[] | undefined;
   publishPath?(parts: readonly SvgPathPart[]): void;
   readWindow(windowIndex: number): PressureWindow | undefined;
-  publishWindow(windowIndex: number, window: PressureWindow): void;
+  /** May return the measured numeric payload of this exact window. */
+  publishWindow(windowIndex: number, window: PressureWindow): PressureWindowMeasurement | void;
 }

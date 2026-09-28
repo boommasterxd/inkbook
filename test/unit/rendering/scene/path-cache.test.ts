@@ -126,3 +126,23 @@ describe("scene stroke reuse resource ownership", () => {
     expect(cache.build(external)).not.toBe(cache.build(external));
   });
 });
+
+it("reuses local pressure paths across durable moves without publishing world geometry", () => {
+  const cache = new ScenePathCache();
+  const stroke = { ...immutableStroke(), rotation: 37 };
+  const parts = cache.build(stroke);
+  const pressure = { readWindow: vi.fn(), publishWindow: vi.fn(), readPath: vi.fn() };
+  const moved = {
+    ...stroke,
+    offset: { x: 100, y: 50 },
+    pivot: { x: stroke.pivot.x + 100, y: stroke.pivot.y + 50 },
+  };
+  expect(cache.build(moved, pressure)).toBe(parts);
+  expect(pressure.readWindow).not.toHaveBeenCalled();
+  expect(pressure.publishWindow).not.toHaveBeenCalled();
+  expect(pressure.readPath).not.toHaveBeenCalled();
+  expect(cache.build(stroke)).toBe(parts);
+  cache.release();
+  expect(cache.build(moved, pressure)).toEqual(parts);
+  expect(pressure.publishWindow).not.toHaveBeenCalled();
+});

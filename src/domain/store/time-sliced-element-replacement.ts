@@ -17,6 +17,7 @@ import {
   createOwnedTranslatedReplacementRecord,
 } from "./record-factory";
 import { requireElementRecord } from "./record-access";
+import { cancelled, ReplacementCheckpoint, yieldWhenRequested } from "./replacement-scheduler";
 import {
   prepareReplacementCandidatesTimeSliced,
   type ReplacementCandidate,
@@ -32,9 +33,6 @@ import type {
   ImmutableInkElement,
   StoreSliceScheduler,
 } from "./types";
-
-const ATOMIC_COMMIT_ADMISSION_SIZE = 1_000;
-const MAX_RECORDS_PER_PREPARATION_SLICE = 256;
 
 interface ReplacementPorts {
   readonly getRecord: (id: string) => ElementRecord;
@@ -115,7 +113,11 @@ export async function planElementReplacement(
   );
   if (dependentPatches === "cancelled") return dependentPatches;
   yields += dependentPatches.yields;
-  const admission = await admitAtomicCommit(candidates.length, scheduler);
+  const admissionCheckpoint = yieldWhenRequested(scheduler);
+  const admission =
+    admissionCheckpoint === 0 || admissionCheckpoint === "cancelled"
+      ? admissionCheckpoint
+      : await admissionCheckpoint;
   if (admission === "cancelled") return admission;
   yields += admission;
   Object.freeze(changes);
@@ -195,8 +197,7 @@ async function prepareCandidateRecords(
   const changes: PreparedReplacementRecords["changes"] = [];
   let geometryVersion = currentGeometryVersion;
   let paintVersion = currentPaintVersion;
-  let recordsInSlice = 0;
-  let yields = 0;
+  const work = new ReplacementCheckpoint(scheduler);
   for (const candidate of candidates) {
     if (cancelled(scheduler)) return "cancelled";
     if (candidate.domains.includes("geometry") && geometryVersion === currentGeometryVersion) {
@@ -227,14 +228,8 @@ async function prepareCandidateRecords(
         id: record.element.id,
       }),
     );
-    recordsInSlice += 1;
-    const checkpoint = await yieldWhenRequested(
-      scheduler,
-      recordsInSlice >= MAX_RECORDS_PER_PREPARATION_SLICE,
-    );
-    if (checkpoint === "cancelled") return checkpoint;
-    if (checkpoint === 1) recordsInSlice = 0;
-    yields += checkpoint;
+    const checkpoint = work.checkpoint();
+    if (checkpoint === false || (checkpoint !== true && !(await checkpoint))) return "cancelled";
   }
   return {
     capacityPreviousRecords,
@@ -246,7 +241,7 @@ async function prepareCandidateRecords(
     paintVersion,
     records,
     spatialReplacements,
-    yields,
+    yields: work.yields,
   };
 }
 
@@ -257,15 +252,6 @@ function changesCapacity(candidate: ReplacementCandidate, record: ElementRecord)
     record.element.kind === "stroke" &&
     candidate.current.element.points.length !== record.element.points.length
   );
-}
-
-async function admitAtomicCommit(
-  replacementCount: number,
-  scheduler: StoreSliceScheduler,
-): Promise<0 | 1 | "cancelled"> {
-  if (replacementCount < ATOMIC_COMMIT_ADMISSION_SIZE) return 0;
-  await scheduler.yieldControl();
-  return cancelled(scheduler) ? "cancelled" : 1;
 }
 
 export function commitReplacementPlan(
@@ -316,22 +302,6 @@ function canonicalStrokeTranslation(
   if (current.kind !== "stroke" || replacement.kind !== "stroke") return null;
   const proof = getCanonicalStrokeReplacementProof(replacement);
   return proof?.source === current ? proof.translation : null;
-}
-
-async function yieldWhenRequested(
-  scheduler: StoreSliceScheduler,
-  required = false,
-): Promise<number | "cancelled"> {
-  const alreadyCancelled = cancelled(scheduler);
-  if (alreadyCancelled) return "cancelled";
-  const shouldYield = required || scheduler.shouldYield();
-  if (!shouldYield) return 0;
-  await scheduler.yieldControl();
-  return cancelled(scheduler) ? "cancelled" : 1;
-}
-
-function cancelled(scheduler: StoreSliceScheduler): boolean {
-  return scheduler.isCancelled?.() ?? false;
 }
 
 function nextVersion(value: number, name: string): number {

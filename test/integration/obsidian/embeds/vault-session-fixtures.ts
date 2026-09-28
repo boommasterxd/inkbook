@@ -2,7 +2,9 @@ import { TFile } from "obsidian";
 import { vi } from "vitest";
 
 import type { BoxShapeElementV1, InkSnapshotV1 } from "../../../../src/domain/schema/public";
+import { SharedFrameScheduler } from "../../../../src/domain/scheduling/shared-frame-scheduler";
 import type { StoreSliceScheduler } from "../../../../src/domain/store/public";
+import type { DocumentRuntimeFactories } from "../../../../src/obsidian/embeds/document-model-port";
 import type { VaultDocumentSessionHooks } from "../../../../src/obsidian/embeds/vault-document-recovery";
 import { VaultDocumentSessionFactory } from "../../../../src/obsidian/embeds/vault-document-session-factory";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
@@ -10,8 +12,20 @@ import {
   DocumentWorkerRuntime,
   type DocumentRuntimePort,
 } from "../../../../src/persistence/worker/runtime/public";
+import { ManualHost } from "../../../fixtures/scheduling/manual-frame-host";
 
 export const TestTFile = TFile as unknown as new (path: string, size: number) => TFile;
+
+export function createTestDocumentRuntimes(
+  executors: Pick<DocumentRuntimeFactories, "create" | "createFallback" | "createStoreScheduler">,
+): DocumentRuntimeFactories {
+  return {
+    workScheduler: () => new SharedFrameScheduler(new ManualHost()),
+    clock: () => ({ clearTimeout: vi.fn(), setTimeout: vi.fn() }),
+    ...executors,
+    now: () => 1,
+  };
+}
 
 export function emptySnapshot(): InkSnapshotV1 {
   return {
@@ -161,14 +175,12 @@ export function createVaultSessionFactory(
   return new VaultDocumentSessionFactory(
     vault as never,
     fileManager as never,
-    {
-      clock: () => ({ clearTimeout: vi.fn(), setTimeout: vi.fn() }),
+    createTestDocumentRuntimes({
       create,
       createFallback: (sessionId, workerEpoch) =>
         new DocumentWorkerRuntime({ sessionId, workerEpoch }),
       createStoreScheduler,
-      now: () => 1,
-    },
+    }),
     hooks,
   );
 }

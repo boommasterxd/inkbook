@@ -6,6 +6,7 @@ import type {
   LineElementV1,
 } from "../../../src/domain/schema/public";
 import { ElementStore } from "../../../src/domain/store/public";
+import * as connections from "../../../src/domain/store/connections";
 import * as recordFactory from "../../../src/domain/store/record-factory";
 import { SelectionHandleSession } from "../../../src/editor/selection/public";
 import { connectedLine } from "../../unit/domain/store/fixtures";
@@ -78,11 +79,12 @@ function fixtureId(index: number): string {
   return `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
 }
 
-/** Counts real record construction and reverse-map visits while every checkpoint requests a yield. */
+/** Observes actual record construction and endpoint resolution between scheduler yields. */
 export function observeEndpointPreparation(store: ElementStore) {
   let creations = 0;
   let previousCreations = 0;
-  let previousReverseVisits = store.instrumentation.reverseDependencyVisits;
+  let reverseVisits = 0;
+  let previousReverseVisits = 0;
   let maximumCreationsBetweenYields = 0;
   let maximumReverseVisitsBetweenYields = 0;
   let partialPublications = 0;
@@ -94,6 +96,11 @@ export function observeEndpointPreparation(store: ElementStore) {
       creations += 1;
       return original(...args);
     });
+  const resolveConnections = connections.resolveConnections;
+  const reverseSpy = vi.spyOn(connections, "resolveConnections").mockImplementation((...args) => {
+    reverseVisits += 1;
+    return resolveConnections(...args);
+  });
   const observeBoundary = () => {
     const instrumentation = store.instrumentation;
     maximumCreationsBetweenYields = Math.max(
@@ -102,14 +109,15 @@ export function observeEndpointPreparation(store: ElementStore) {
     );
     maximumReverseVisitsBetweenYields = Math.max(
       maximumReverseVisitsBetweenYields,
-      instrumentation.reverseDependencyVisits - previousReverseVisits,
+      reverseVisits - previousReverseVisits,
     );
     if (instrumentation.recordReplacements !== 0 || instrumentation.publishedDeltas !== 0)
       partialPublications += 1;
     previousCreations = creations;
-    previousReverseVisits = instrumentation.reverseDependencyVisits;
+    previousReverseVisits = reverseVisits;
     // Retain counters rather than all arguments and returned replacement records.
     spy.mockClear();
+    reverseSpy.mockClear();
   };
   return {
     scheduler: {
@@ -123,12 +131,16 @@ export function observeEndpointPreparation(store: ElementStore) {
       observeBoundary();
       return {
         creations,
+        reverseVisits,
         maximumCreationsBetweenYields,
         maximumReverseVisitsBetweenYields,
         partialPublications,
         yields,
       };
     },
-    restore: () => spy.mockRestore(),
+    restore: () => {
+      spy.mockRestore();
+      reverseSpy.mockRestore();
+    },
   };
 }

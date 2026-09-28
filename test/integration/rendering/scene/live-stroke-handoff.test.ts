@@ -31,7 +31,7 @@ describe("live stroke canonical handoff", () => {
     const renderer = new SvgSceneRenderer({
       container: asElement(new FakeNode(new FakeDocument(), "div")),
       store,
-      scheduler,
+      workScheduler: scheduler.workScheduler,
       page,
       layout: { readViewport: () => ({ left: 0, top: 0, width: 1000, height: 1000 }) },
     });

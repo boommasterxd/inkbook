@@ -3,27 +3,20 @@ import { describe, expect, it, vi } from "vitest";
 import { MutationPreparationScheduler } from "../../../../src/domain/store/mutation-preparation-scheduler";
 
 describe("mutation preparation scheduling", () => {
-  it.each([
-    [1, 2048],
-    [16, 128],
-  ])("bounds work at cost %s", async (cost, capacity) => {
+  it("continues past the former work quota while the shared deadline has budget", async () => {
     const yieldControl = vi.fn(async () => undefined);
     const scheduler = new MutationPreparationScheduler({ shouldYield: () => false, yieldControl });
-    for (let index = 0; index < capacity; index += 1) {
-      expect(scheduler.checkpoint(cost)).toBe(true);
+    for (let index = 0; index < 2_049; index += 1) {
+      expect(scheduler.checkpoint()).toBe(true);
     }
     expect(yieldControl).not.toHaveBeenCalled();
-    expect(scheduler.checkpoint(cost)).toBe(false);
-    expect(await scheduler.resume()).toBe(true);
-    expect(yieldControl).toHaveBeenCalledTimes(1);
   });
 
-  it("honors the external deadline while guaranteeing progress", async () => {
+  it("honors the shared deadline before starting work", async () => {
     const yieldControl = vi.fn(async () => undefined);
     const scheduler = new MutationPreparationScheduler({ shouldYield: () => true, yieldControl });
-    expect(scheduler.checkpoint()).toBe(true);
-    expect(yieldControl).not.toHaveBeenCalled();
     expect(scheduler.checkpoint()).toBe(false);
+    expect(yieldControl).not.toHaveBeenCalled();
     expect(await scheduler.resume()).toBe(true);
     expect(yieldControl).toHaveBeenCalledTimes(1);
   });
@@ -40,7 +33,6 @@ describe("mutation preparation scheduling", () => {
         shouldYield: () => true,
         yieldControl,
       });
-      expect(scheduler.checkpoint()).toBe(!initial);
       expect(scheduler.checkpoint()).toBe(false);
       expect(await scheduler.resume()).toBe(false);
       expect(yieldControl).toHaveBeenCalledTimes(initial ? 0 : 1);

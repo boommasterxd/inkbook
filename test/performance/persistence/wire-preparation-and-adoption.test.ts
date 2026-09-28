@@ -74,7 +74,7 @@ describe("worker transfer preparation and result adoption", () => {
       type: "clipboard-encode-success",
     });
     expect(checkpoint).toHaveBeenCalledTimes(
-      Math.ceil(CLIPBOARD_OUTPUT_BYTES / WORK_CHUNK_BYTES) + 1,
+      Math.ceil(CLIPBOARD_OUTPUT_BYTES / WORK_CHUNK_BYTES) + 2,
     );
   });
 
@@ -116,10 +116,12 @@ describe("wire preparation deterministic work bounds", () => {
     try {
       const adopted = await adoptUtf8Output(output, {
         checkpoint: async () => {
-          expect(calls).toHaveLength(1);
-          expect(calls[0]!.bytes).toBeLessThanOrEqual(WORK_CHUNK_BYTES);
-          if (totalBytes < output.byteLength) expect(calls[0]!.stream).toBe(true);
-          else expect(calls[0]!.stream).not.toBe(true);
+          expect(calls).toHaveLength(checkpoints === 0 ? 0 : 1);
+          if (checkpoints > 0) {
+            expect(calls[0]!.bytes).toBeLessThanOrEqual(WORK_CHUNK_BYTES);
+            if (totalBytes < output.byteLength) expect(calls[0]!.stream).toBe(true);
+            else expect(calls[0]!.stream).not.toBe(true);
+          }
           calls.length = 0;
           checkpoints += 1;
         },
@@ -127,7 +129,7 @@ describe("wire preparation deterministic work bounds", () => {
       expect(adopted).toBe(expected);
       expect(totalBytes).toBe(FULL_OUTPUT_BYTES);
       expect(flushes).toBe(1);
-      expect(checkpoints).toBe(Math.ceil(output.byteLength / WORK_CHUNK_BYTES) + 1);
+      expect(checkpoints).toBe(Math.ceil(output.byteLength / WORK_CHUNK_BYTES) + 2);
       expect(calls).toEqual([]);
     } finally {
       spy.mockRestore();

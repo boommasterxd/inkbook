@@ -47,6 +47,7 @@ function hasLongStroke(elements: readonly InkElementV1[]): boolean {
 }
 
 export interface ReplacementWorkOptions {
+  readonly countStrokeSamples?: boolean;
   readonly includeReverseDependencies?: boolean;
 }
 
@@ -60,7 +61,10 @@ export function exceedsReplacementWork(
   if (elements.length > elementLimit) return true;
   let work = 0;
   for (const element of elements) {
-    work += element.kind === "stroke" ? element.points.length / 3 : 1;
+    work +=
+      element.kind === "stroke" && options.countStrokeSamples !== false
+        ? element.points.length / 3
+        : 1;
     if (work > workLimit) return true;
   }
   if (options.includeReverseDependencies === false) return false;

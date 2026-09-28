@@ -1,4 +1,5 @@
 import { TRANSITION_DURATIONS } from "../../../rendering/motion/transitions";
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 
 const TRANSITION_CLASS = "inkbook-page-height-transitioning";
 const ENVELOPE_PROPERTY = "--inkbook-page-height-envelope-block-size";
@@ -31,7 +32,7 @@ export class ActiveHeightTransition {
   readonly #container: HTMLElement;
   #frame: number | undefined;
   #finishOnSceneCommit = false;
-  readonly #ownerWindow: Window;
+  readonly #workScheduler: WorkScheduler;
   #phase: TransitionPhase | undefined;
   #request: ActiveHeightTransitionRequest | undefined;
   #renderedHeight = 0;
@@ -41,12 +42,12 @@ export class ActiveHeightTransition {
 
   public constructor(
     container: HTMLElement,
-    ownerWindow: Window,
+    workScheduler: WorkScheduler,
     beginScrollStability?: () => () => void,
   ) {
     this.#beginScrollStability = beginScrollStability;
     this.#container = container;
-    this.#ownerWindow = ownerWindow;
+    this.#workScheduler = workScheduler;
   }
 
   public get active(): boolean {
@@ -110,7 +111,7 @@ export class ActiveHeightTransition {
   }
 
   #scheduleStartAfterPaint(): void {
-    this.#frame = this.#ownerWindow.requestAnimationFrame((time) => {
+    this.#frame = this.#workScheduler.requestFrame((time) => {
       this.#frame = undefined;
       if (this.#request === undefined || this.#phase !== "waiting-for-paint") return;
       this.#phase = "running";
@@ -120,7 +121,7 @@ export class ActiveHeightTransition {
   }
 
   #scheduleTick(): void {
-    this.#frame = this.#ownerWindow.requestAnimationFrame(this.#tick);
+    this.#frame = this.#workScheduler.requestFrame(this.#tick);
   }
 
   readonly #tick = (time: number): void => {
@@ -178,7 +179,7 @@ export class ActiveHeightTransition {
   }
 
   #cancelFrame(): void {
-    if (this.#frame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#frame);
+    if (this.#frame !== undefined) this.#workScheduler.cancelFrame(this.#frame);
     this.#frame = undefined;
   }
 

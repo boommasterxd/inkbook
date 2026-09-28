@@ -84,13 +84,13 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz optional scene work`, ()
     harness.motion.release();
   });
 
-  it("caps work with a stationary clock and discards cancelled iteration state", () => {
+  it("visits all entries once with spare budget and discards cancelled iteration state", () => {
     const harness = motionHarness(600);
     harness.motion.write(0, 100, () => 0);
-    expect(harness.writes).toHaveLength(256);
+    expect(harness.writes).toHaveLength(600);
+    expect(new Set(harness.writes).size).toBe(600);
     harness.motion.write(16, 100, () => 0);
-    expect(harness.writes).toHaveLength(512);
-    expect(new Set(harness.writes).size).toBe(512);
+    expect(harness.writes).toHaveLength(1200);
     harness.motion.release();
     expect(harness.motion.write(32, 100, () => 0)).toBe(false);
   });
@@ -134,7 +134,7 @@ describe(`${INTERACTION_REFRESH_PROFILE.refreshRate} Hz optional scene work`, ()
     expect(materialize).toHaveBeenCalledTimes(1);
     expect(preview.write(time + BUDGET, () => time)).toBe(true);
     expect(materialize).toHaveBeenCalledTimes(2);
-    expect(content.applyCanonicalElementPreview).toHaveBeenCalledTimes(2);
+    expect(content.applyCanonicalElementPreview).toHaveBeenCalledTimes(1);
     preview.release();
     expect(preview.write(time + BUDGET, () => time)).toBe(false);
   });

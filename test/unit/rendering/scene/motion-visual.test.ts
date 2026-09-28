@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import * as elementPath from "../../../../src/domain/geometry/element-path";
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
 import { normalizeStrokePaint } from "../../../../src/domain/geometry/pressure-paint";
 import {
@@ -85,5 +86,43 @@ describe("pressure motion visuals", () => {
     expect(fakeNode(visual.nodes[0]!).attributes.get("stroke-opacity")).toBe("0.4");
     removeMotionVisual(visual);
     expect(fakeNode(parent).nodes).toHaveLength(0);
+  });
+
+  it("does not read stroke samples after path or byte capacity is exhausted", () => {
+    const stroke = pressureStroke();
+    const build = vi.spyOn(elementPath, "buildElementPathParts");
+    let pointReads = 0;
+    stroke.points = new Proxy(stroke.points, {
+      get(points, key, receiver) {
+        if (typeof key === "string" && /^\d+$/.test(key)) pointReads += 1;
+        return Reflect.get(points, key, receiver) as unknown;
+      },
+    });
+    const { document, parent } = motionParent();
+    for (const [paths, bytes] of [
+      [0, 100_000],
+      [32, 0],
+    ]) {
+      const visual = createMotionVisual(document, parent, [stroke], paths!, bytes!);
+      expect(visual).toMatchObject({ bytes: 0, nodes: [], targets: [] });
+      expect(pointReads).toBe(0);
+      expect(build).not.toHaveBeenCalled();
+      expect(fakeNode(parent).nodes).toHaveLength(0);
+    }
+
+    const first = pressureStroke();
+    const exactBytes = buildElementPathParts(first).reduce(
+      (sum, part) => sum + part.d.length * 2,
+      0,
+    );
+    build.mockClear();
+    const visual = createMotionVisual(document, parent, [first, stroke], 2, exactBytes);
+    expect(visual.nodes).toHaveLength(1);
+    expect(visual.bytes).toBe(exactBytes);
+    expect(pointReads).toBe(0);
+    expect(build).toHaveBeenCalledOnce();
+    removeMotionVisual(visual);
+    expect(fakeNode(parent).nodes).toHaveLength(0);
+    build.mockRestore();
   });
 });

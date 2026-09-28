@@ -91,14 +91,14 @@ export class SceneMotionController {
   public expireSuppression(): void {
     this.#pendingSuppression = undefined;
   }
-  public bindMountedEntrances(ids: readonly string[]): void {
+  public bindMountedEntrances(ids: readonly string[], frameTime: number): void {
     if (this.#reducedMotion || this.#resourceConstrained) {
       for (const id of ids) this.#pendingEntrances.delete(id);
       return;
     }
     for (const id of ids) {
       if (!this.#pendingEntrances.delete(id)) continue;
-      this.startEntrance([id]);
+      this.startEntrance([id], frameTime);
     }
   }
   public finishEntranceBatch(): void {
@@ -163,14 +163,17 @@ export class SceneMotionController {
     this.#instrumentation.motionInterruptions += 1;
     this.finishAll(false);
   }
-  public write(frameTime: number, deadline: number, now: () => number): boolean {
+  public get pending(): boolean {
+    return this.hasPending();
+  }
+  public write(frameTime: number, deadline: number, now: () => number, first = false): boolean {
     if (!this.hasPending()) return false;
-    if (now() >= deadline) return true;
+    if (!first && now() >= deadline) return true;
     const effectiveTime =
       this.#lastFrameTime === undefined ? frameTime : Math.max(frameTime, this.#lastFrameTime + 16);
     this.#lastFrameTime = effectiveTime;
     this.#instrumentation.motionFrames += 1;
-    this.writeEntries(effectiveTime, deadline, now);
+    this.writeEntries(effectiveTime, deadline, now, first);
     const pending = this.hasPending();
     if (!pending) this.#lastFrameTime = undefined;
     return pending;
@@ -195,9 +198,16 @@ export class SceneMotionController {
     if (this.#selectionMotion === undefined && this.#selectionHandleMotion === undefined)
       this.#lastSelectionFrameTime = undefined;
   }
-  private writeEntries(frameTime: number, deadline: number, now: () => number): void {
+  private writeEntries(
+    frameTime: number,
+    deadline: number,
+    now: () => number,
+    first: boolean,
+  ): void {
     this.#frameCursor ??= this.#entries.values();
-    for (let count = 0; count < 256 && now() < deadline; count += 1) {
+    const entries = this.#entries.size;
+    for (let count = 0; count < entries; count += 1) {
+      if ((count > 0 || !first) && now() >= deadline) return;
       let next = this.#frameCursor.next();
       if (next.done === true && count === 0 && this.#entries.size > 0) {
         this.#frameCursor = this.#entries.values();
@@ -216,11 +226,11 @@ export class SceneMotionController {
     this.#pendingEntrances.clear();
     this.#entryByElementId.clear();
   }
-  private startEntrance(ids: readonly string[]): void {
+  private startEntrance(ids: readonly string[], frameTime: number): void {
     const visible = ids.filter((id) => this.#content.hasMounted(id));
     if (visible.length === 0) return;
     this.#content.setElementMotion(visible, 0, 0.96);
-    this.add({ id: ++this.#nextId, ids: visible, kind: "entrance", startTime: undefined });
+    this.add({ id: ++this.#nextId, ids: visible, kind: "entrance", startTime: frameTime });
     this.#instrumentation.motionEntrances += visible.length;
   }
   private startExit(elements: readonly InkElementV1[]): void {

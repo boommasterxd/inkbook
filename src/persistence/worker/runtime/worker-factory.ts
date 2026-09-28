@@ -69,7 +69,7 @@ export async function createDocumentRuntime(
   sessionId: string,
   workerEpoch: number,
   owningWindow: Window | WorkerWindow,
-  options: WorkerDocumentRuntimePortOptions = {},
+  options: WorkerDocumentRuntimePortOptions,
 ): Promise<DocumentRuntimePort> {
   const workerWindow = requireWorkerWindow(owningWindow);
   let objectUrl: string | undefined;
@@ -85,14 +85,20 @@ export async function createDocumentRuntime(
     endpoint = new OwnedWorkerEndpoint(worker, () => {
       workerWindow.URL.revokeObjectURL(workerUrl);
     });
-    const ownedEndpoint = endpoint;
-    const runtime = new WorkerDocumentRuntimePort(() => ownedEndpoint, options);
+    const sliceMilliseconds = options.workScheduler.budgetMs();
+    const frameIntervalMilliseconds = options.frameIntervalMilliseconds();
+    if (!Number.isFinite(frameIntervalMilliseconds) || frameIntervalMilliseconds <= 0) {
+      throw new RangeError("frameIntervalMilliseconds must be positive and finite.");
+    }
     endpoint.postMessage({
+      frameIntervalMilliseconds,
       sessionId,
+      sliceMilliseconds,
       type: "inkbook-worker-bootstrap",
       workerEpoch,
     } satisfies DocumentWorkerBootstrap);
-    return runtime;
+    const ownedEndpoint = endpoint;
+    return new WorkerDocumentRuntimePort(() => ownedEndpoint, options);
   } catch (error) {
     if (endpoint !== undefined) endpoint.terminate();
     else if (objectUrl !== undefined) workerWindow.URL.revokeObjectURL(objectUrl);

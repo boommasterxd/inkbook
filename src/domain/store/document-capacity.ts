@@ -3,8 +3,6 @@ import { FILE_SCHEMA_LIMITS } from "../schema/constants";
 import { connectionReferences } from "./connections";
 import type { ElementRecord, StoreSliceScheduler } from "./types";
 
-const MAX_RECORDS_PER_SLICE = 256;
-
 interface CapacityTotals {
   connectedEndpoints: number;
   elements: number;
@@ -47,7 +45,6 @@ export class DocumentCapacity {
   ): Promise<{ readonly patch: DocumentCapacityPatch; readonly yields: number } | "cancelled"> {
     const totals = { ...this.#totals };
     const fanout = new Map<string, number>();
-    let recordsInSlice = 0;
     let yields = 0;
     for (const [records, direction] of [
       [previous, -1],
@@ -56,11 +53,9 @@ export class DocumentCapacity {
       for (const record of records) {
         if (cancelled(scheduler)) return "cancelled";
         applyRecord(totals, fanout, this.#fanout, record, direction);
-        recordsInSlice += 1;
-        if (recordsInSlice >= MAX_RECORDS_PER_SLICE || scheduler.shouldYield()) {
+        if (scheduler.shouldYield()) {
           await scheduler.yieldControl();
           if (cancelled(scheduler)) return "cancelled";
-          recordsInSlice = 0;
           yields += 1;
         }
       }

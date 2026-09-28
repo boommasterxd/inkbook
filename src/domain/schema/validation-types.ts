@@ -1,3 +1,4 @@
+import type { StrokeSampleExtrema } from "./stroke-sample-extrema";
 import type { InkSnapshotV1 } from "./types";
 import type { SpatialBounds } from "../spatial/index";
 
@@ -52,6 +53,7 @@ export interface ValidationByteLengths {
 }
 
 export interface ElementValidationDerivation {
+  readonly strokeSampleExtrema?: StrokeSampleExtrema;
   readonly bounds: Readonly<SpatialBounds>;
   readonly elementId: string;
   readonly spatialMemberships: number;

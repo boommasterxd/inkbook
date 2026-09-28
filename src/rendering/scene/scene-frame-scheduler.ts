@@ -1,4 +1,5 @@
-import type { MutableSceneInstrumentation, SceneScheduler } from "./types";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
+import type { MutableSceneInstrumentation } from "./types";
 
 /** Owns the single pending scene/cursor frame and rejects obsolete callbacks. */
 export class SceneFrameScheduler {
@@ -8,7 +9,7 @@ export class SceneFrameScheduler {
   #scenePending = false;
 
   public constructor(
-    private readonly scheduler: SceneScheduler,
+    private readonly scheduler: WorkScheduler,
     private readonly instrumentation: MutableSceneInstrumentation,
     private readonly render: (time: number, scene: boolean) => void,
   ) {}
@@ -19,7 +20,7 @@ export class SceneFrameScheduler {
     if (this.#handle !== undefined) return;
     const generation = this.#generation;
     let handle = 0;
-    handle = this.scheduler.requestAnimationFrame((time) => {
+    handle = this.scheduler.requestFrame((time) => {
       if (this.#handle === handle) this.#handle = undefined;
       if (this.#disposed || generation !== this.#generation) {
         this.instrumentation.staleFrames += 1;
@@ -36,7 +37,7 @@ export class SceneFrameScheduler {
 
   public replaceGeneration(): void {
     this.#generation += 1;
-    if (this.#handle !== undefined) this.scheduler.cancelAnimationFrame(this.#handle);
+    if (this.#handle !== undefined) this.scheduler.cancelFrame(this.#handle);
     this.#handle = undefined;
   }
 

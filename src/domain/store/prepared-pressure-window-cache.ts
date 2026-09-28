@@ -1,5 +1,6 @@
 import { VersionedCache } from "../cache/versioned-cache";
-import { pressureWindowRetainedBytes, type PressureWindow } from "../geometry/pressure-window";
+import { measurePressureWindow, type PressureWindow } from "../geometry/pressure-window";
+import type { PressureWindowMeasurement } from "../geometry/prepared-pressure-geometry";
 
 const MAXIMUM_ENTRIES = 4096;
 const MAXIMUM_BYTES = 8 * 1024 * 1024;
@@ -33,12 +34,18 @@ export class PreparedPressureWindowCache extends VersionedCache<CachedWindow> {
     return this.getCached(`${id}:${String(index)}`, version)?.window;
   }
 
-  public publish(id: string, version: number, index: number, window: PressureWindow): void {
+  public publish(
+    id: string,
+    version: number,
+    index: number,
+    window: PressureWindow,
+  ): PressureWindowMeasurement | undefined {
     assertWindowIndex(index);
     if (!this.retentionEnabled) return;
     const key = `${id}:${String(index)}`;
-    const bytes = key.length * 2 + pressureWindowRetainedBytes(window);
-    if (bytes > this.#maximumBytes) return;
+    const measurement = measurePressureWindow(window);
+    const bytes = key.length * 2 + measurement.retainedBytes;
+    if (bytes > this.#maximumBytes) return measurement;
     this.invalidateWindow(key);
     const keys = this.#keys.get(id) ?? new Set<string>();
     keys.add(key);
@@ -46,6 +53,7 @@ export class PreparedPressureWindowCache extends VersionedCache<CachedWindow> {
     freezeWindow(window);
     this.recordBuild();
     this.retainCached(key, version, { strokeId: id, window }, bytes);
+    return measurement;
   }
 
   public override invalidate(id: string): void {

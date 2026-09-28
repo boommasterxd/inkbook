@@ -8,7 +8,7 @@ Compact pressure paths reduced document complexity, but selected zoom still incu
 
 ## Decision
 
-Use thin, screen-sized indicators following geometric centerlines and logical shape contours. Derive selection transform frames from geometric bounds without paint-width expansion. Keep conservative painted bounds for culling, page extent, hit testing, and area selection. Remove the vector-union prototype instead of retaining a second selection renderer.
+Use thin, screen-sized indicators following geometric centerlines and logical shape contours. Derive selection transform frames from geometric bounds without paint-width expansion. Keep conservative painted bounds for culling, page extent, hit testing, and area selection. Remove the vector-union prototype instead of retaining a second selection renderer. Mount each complete indicator as one direct SVG path rather than an extra group/path pair. New indicators share the progressive content-publication allowance; existing indicator transforms remain reusable.
 
 The visual contract belongs in [Editor Tools](../editor-tools.md#select), and retained geometry ownership belongs in [Rendering and Performance](../rendering-and-performance.md#selection-highlight-geometry). Inkbook implements this independently; no Ink or tldraw source or renderer dependency is adopted.
 

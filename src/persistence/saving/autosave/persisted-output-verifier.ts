@@ -1,5 +1,10 @@
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import { nextSafeCounter } from "../../worker/identity";
-import type { PurposeOperationIdentity, VerifiedPersistedOutput } from "../../worker/protocol";
+import type {
+  PurposeOperationIdentity,
+  VaultBase,
+  VerifiedPersistedOutput,
+} from "../../worker/protocol";
 import type { DocumentRuntimePort } from "../../worker/runtime/public";
 
 import { verifyExactWorkerContent } from "./trusted-verification";
@@ -7,7 +12,7 @@ import { verifyExactWorkerContent } from "./trusted-verification";
 type VerificationPurpose = "preflight" | "read-back" | "verification";
 
 interface AutosaveVerifierOptions {
-  readonly sliceBudgetMs?: () => number;
+  readonly workScheduler: WorkScheduler;
   readonly waitForBackground?: () => Promise<void>;
   readonly executor: () => DocumentRuntimePort;
   readonly isDisposed: () => boolean;
@@ -24,36 +29,40 @@ export class AutosavePersistedOutputVerifier {
     this.#options = options;
   }
 
-  async verify(content: string, purpose: VerificationPurpose): Promise<VerifiedPersistedOutput> {
+  async verify(
+    content: string,
+    purpose: VerificationPurpose,
+    confirmedBase?: VaultBase,
+  ): Promise<VerifiedPersistedOutput> {
     this.#assertLive();
     const identity = this.#operationIdentity(purpose);
-    try {
+    const verify = async (
+      operation: PurposeOperationIdentity,
+    ): Promise<VerifiedPersistedOutput> => {
       const persisted = await verifyExactWorkerContent(
         this.#options.executor(),
-        identity,
+        operation,
         content,
         purpose === "read-back" ? "current" : "editable",
-        this.#options.waitForBackground,
-        this.#options.sliceBudgetMs,
+        {
+          workScheduler: this.#options.workScheduler,
+          ...(this.#options.waitForBackground
+            ? { waitForBackground: this.#options.waitForBackground }
+            : {}),
+          ...(confirmedBase ? { confirmedBase } : {}),
+        },
       );
       this.#assertLive();
       return persisted;
+    };
+    try {
+      return await verify(identity);
     } catch {
       this.#assertLive();
       if (!this.#options.switchToFallback()) {
         throw new Error("Persisted output verification failed.");
       }
-      const retryIdentity = this.#operationIdentity(purpose);
-      const persisted = await verifyExactWorkerContent(
-        this.#options.executor(),
-        retryIdentity,
-        content,
-        purpose === "read-back" ? "current" : "editable",
-        this.#options.waitForBackground,
-        this.#options.sliceBudgetMs,
-      );
-      this.#assertLive();
-      return persisted;
+      return verify(this.#operationIdentity(purpose));
     }
   }
 

@@ -1,3 +1,4 @@
+import { createTestWorkScheduler } from "../../fixtures/persistence/work-scheduler";
 import { describe, expect, it, vi } from "vitest";
 
 import { InteractiveWorkPriority } from "../../../src/editor/session/interactive-work-priority";
@@ -17,7 +18,6 @@ import {
   deriveDocumentIntegrityManifest,
   serializeInkbookDocument,
 } from "../../../src/persistence/serialization/public";
-import { yieldToMainThread } from "../../../src/persistence/scheduling/main-thread-yield";
 import type { ExportSuccess } from "../../../src/persistence/worker/protocol";
 import { ChunkedSha256 } from "../../../src/persistence/serialization/chunked-output-sha256";
 import { createMinimalPersistenceFixture } from "./fixtures";
@@ -35,7 +35,7 @@ describe("autosave backpressure", () => {
     );
     document.commit();
     coordinator.recordCommit({ modelRevision: 1 });
-    clock.advance(500);
+    clock.advance(1_000);
     await settleUntil(() => executor.exportRequests.length === 1, "initial export dispatch");
     document.commit();
     coordinator.recordCommit({ modelRevision: 2 });
@@ -43,7 +43,7 @@ describe("autosave backpressure", () => {
     await settleUntil(() => executor.acknowledgements.length === 1, "stale export acknowledgement");
 
     expect(executor.acknowledgements).toEqual([{ accepted: false, modelRevision: 1 }]);
-    clock.advance(500);
+    clock.advance(1_000);
     await settleUntil(() => executor.exportRequests.length === 2, "successor export dispatch");
     expect(executor.exportRequests[1]).toMatchObject({
       baseModelRevision: 1,
@@ -55,7 +55,7 @@ describe("autosave backpressure", () => {
 });
 
 describe("autosave successor scheduling", () => {
-  it.each([0, 500])(
+  it.each([0, 1_000])(
     "drains a paused stale export while respecting a successor debounce elapsed by %s ms",
     async (elapsed) => {
       const { clock, document, executor, vault } = createControlledSave();
@@ -64,7 +64,7 @@ describe("autosave successor scheduling", () => {
       const coordinator = createCoordinator(clock, document, executor, vault, wait);
       document.commit();
       coordinator.recordCommit({ modelRevision: 1 });
-      clock.advance(500);
+      clock.advance(1_000);
       const release = priority.begin();
       executor.completeExport(0);
       await entered;
@@ -81,7 +81,7 @@ describe("autosave successor scheduling", () => {
       expect(executor.acknowledgements).toEqual([{ accepted: false, modelRevision: 1 }]);
       if (elapsed === 0) {
         expect(executor.exportRequests).toHaveLength(1);
-        clock.advance(499);
+        clock.advance(999);
         expect(executor.exportRequests).toHaveLength(1);
         clock.advance(1);
       }
@@ -99,7 +99,7 @@ describe("autosave successor scheduling", () => {
     },
   );
 
-  it.each([0, 500])(
+  it.each([0, 1_000])(
     "drains a model-sync successor after %s ms without bypassing debounce",
     async (elapsed) => {
       const { clock, document, executor, vault } = createControlledSave();
@@ -130,7 +130,7 @@ describe("autosave successor scheduling", () => {
       await expect(pending).resolves.toBe(false);
       if (elapsed === 0) {
         expect(executor.exportRequests).toHaveLength(0);
-        clock.advance(499);
+        clock.advance(999);
         expect(executor.exportRequests).toHaveLength(0);
         clock.advance(1);
       }
@@ -214,7 +214,7 @@ async function runBackpressureSequence(): Promise<void> {
 
   document.commit();
   coordinator.recordCommit({ modelRevision: 1 });
-  clock.advance(500);
+  clock.advance(1_000);
   await settleUntil(() => executor.exportRequests.length === 1, "initial export dispatch");
   expect(executor.exportRequests).toHaveLength(1);
 
@@ -256,6 +256,7 @@ function createCoordinator(
   waitForBackground?: () => Promise<void>,
 ): AutosaveCoordinator {
   return new AutosaveCoordinator({
+    workScheduler: createTestWorkScheduler(),
     clock,
     ...(waitForBackground ? { waitForBackground } : {}),
     confirmedBase: { outputHash: hash(0), revision: 0, type: "confirmed" },
@@ -471,9 +472,8 @@ function readRevision(value: string | Uint8Array): number | null {
 }
 
 async function settleUntil(condition: () => boolean, description: string): Promise<void> {
-  for (let index = 0; index < 64; index += 1) {
-    if (condition()) return;
-    await yieldToMainThread();
-  }
-  throw new Error(`Autosave did not reach ${description}.`);
+  await vi.waitFor(() => expect(condition(), `Autosave did not reach ${description}.`).toBe(true), {
+    interval: 1,
+    timeout: 1_000,
+  });
 }

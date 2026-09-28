@@ -1,16 +1,4 @@
-import type { SceneCamera, SceneScheduler, SceneViewport } from "./types";
-
-export function browserScheduler(ownerDocument: Document): SceneScheduler {
-  const ownerWindow = ownerDocument.defaultView;
-  if (ownerWindow === null) {
-    throw new Error("A scene scheduler is required without an owning window.");
-  }
-  return {
-    cancelAnimationFrame: (handle) => ownerWindow.cancelAnimationFrame(handle),
-    now: () => ownerWindow.performance.now(),
-    requestAnimationFrame: (callback) => ownerWindow.requestAnimationFrame(callback),
-  };
-}
+import type { SceneCamera, SceneViewport } from "./types";
 
 export function validateCamera(camera: SceneCamera): void {
   if (!Number.isFinite(camera.x) || !Number.isFinite(camera.zoom) || camera.zoom <= 0) {
@@ -48,11 +36,4 @@ export function validatePreviewVersion(value: number, subject: string): void {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new RangeError(`${subject} version must be a non-negative safe integer.`);
   }
-}
-
-export function validateFrameBudget(value: number): number {
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new RangeError("frameBudgetMs must be finite and positive.");
-  }
-  return value;
 }

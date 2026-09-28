@@ -9,6 +9,7 @@ import type { EmbedIntegrationPorts } from "../../../../src/obsidian/embeds/pres
 import type { PresentationEntranceState } from "../../../../src/obsidian/embeds/presentation-entrance";
 import { configureTestEditorState } from "../../../adapters/obsidian/plugin";
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
+import { nativeFrameWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 
 const captures = vi.hoisted(() => ({
   previews: [] as { entranceState?: PresentationEntranceState }[],
@@ -46,6 +47,7 @@ function createHarness(sourcePath = "note.md") {
     },
     lifecycle: { register: () => () => undefined },
     resolveDocument: () => ({ documentId: "drawing.svg", resourceUrl: "app://drawing.svg" }),
+    workScheduler: nativeFrameWorkScheduler,
   } as unknown as EmbedIntegrationPorts;
   configureTestEditorState({ file: { path: sourcePath }, livePreview: true });
   const state = EditorState.create({

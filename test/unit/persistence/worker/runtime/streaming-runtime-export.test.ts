@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createTestWorkScheduler } from "../../../../fixtures/persistence/work-scheduler";
 
 import { derivePageExtent } from "../../../../../src/domain/geometry/public";
 import { FILE_SCHEMA_LIMITS, type InkSnapshotV1 } from "../../../../../src/domain/schema/public";
@@ -81,8 +82,7 @@ describe("production streaming runtime export limits", () => {
       backgroundPathDataByteLength(document.page.background, extent.lockedHeight),
     ).toBeGreaterThan(MAXIMUM_TOTAL_PATH_DATA_BYTES);
     const runtime = createProductionDocumentRuntime(executor, {
-      now: () => 0,
-      yieldControl: async () => undefined,
+      workScheduler: createTestWorkScheduler(),
     });
 
     const result = await runtime.execute({
@@ -140,7 +140,7 @@ describe("production streaming runtime export limits", () => {
 describe("runtime canonical metadata hashing", () => {
   it("matches the canonical v1 hash through the asynchronous platform digest", async () => {
     const document = rectangleDocument(4);
-    const fragments = document.elements.map(buildElementFragments);
+    const fragments = document.elements.map((element) => buildElementFragments(element));
     let digestedBytes = 0;
 
     const actual = await canonicalMetadataSha256Async(
@@ -165,7 +165,7 @@ describe("runtime canonical metadata hashing", () => {
     ["rejected", async () => Promise.reject(new Error("Digest unavailable."))],
   ] as const)("preserves the canonical hash when WebCrypto is %s", async (_name, digest) => {
     const document = rectangleDocument(2);
-    const fragments = document.elements.map(buildElementFragments);
+    const fragments = document.elements.map((element) => buildElementFragments(element));
 
     await expect(
       canonicalMetadataSha256Async(
@@ -179,7 +179,7 @@ describe("runtime canonical metadata hashing", () => {
 
   it("aborts during bounded canonical metadata assembly before digesting", async () => {
     const document = rectangleDocument(20);
-    const fragments = document.elements.map(buildElementFragments);
+    const fragments = document.elements.map((element) => buildElementFragments(element));
     const controller = new AbortController();
     let digestInvoked = false;
 
@@ -250,10 +250,7 @@ describe("scheduled streaming runtime fragment reuse", () => {
 });
 
 function productionRuntime(): DocumentWorkerRuntime {
-  return createProductionDocumentRuntime(executor, {
-    now: () => 0,
-    yieldControl: async () => undefined,
-  });
+  return createProductionDocumentRuntime(executor, { workScheduler: createTestWorkScheduler() });
 }
 
 function fallbackRuntime(): DocumentWorkerRuntime {
@@ -261,8 +258,7 @@ function fallbackRuntime(): DocumentWorkerRuntime {
     executor,
     new GestureAwareSliceScheduler({
       isInputActive: () => false,
-      now: () => 0,
-      yieldControl: async () => undefined,
+      workScheduler: createTestWorkScheduler(),
     }),
   );
 }

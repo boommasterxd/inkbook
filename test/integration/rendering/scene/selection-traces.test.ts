@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
 import { fakeNode } from "../../../unit/rendering/scene/fakes";
@@ -26,6 +26,8 @@ describe("retained selection traces", () => {
       const root = traces.find(
         (node) => node.attributes.get("data-selection-element-id") === element.id,
       )!;
+      expect(root.tagName).toBe("path");
+      expect(root.nodes).toHaveLength(0);
       expect(selectionCenterPaths(root)).toHaveLength(1);
       expect(selectionTraceGeometry(root), element.kind).toBeTruthy();
       if (element.kind !== "arrow" && !(element.kind === "stroke" && element.style.pressureEnabled))
@@ -106,10 +108,14 @@ describe("selection trace lifecycle", () => {
       const d = selectionTraceGeometry(fakeNode(renderer.svg));
       renderer.setElementPreviews(moveSelection([source], { x: 20, y: 30 }), 1);
       scheduler.runAll();
-      expect(selectionTraceGeometry(fakeNode(renderer.svg))).not.toBe(d);
+      if (source.kind === "stroke") {
+        expect(selectionTraceGeometry(fakeNode(renderer.svg))).toBe(d);
+        expect(selectionTraceTransform(fakeNode(renderer.svg))).toBe("translate(20 30)");
+      } else expect(selectionTraceGeometry(fakeNode(renderer.svg))).not.toBe(d);
       renderer.clearElementPreviews();
       scheduler.runAll();
       expect(selectionTraceGeometry(fakeNode(renderer.svg))).toBe(d);
+      expect(selectionTraceTransform(fakeNode(renderer.svg))).toBe("");
       renderer.destroy();
     },
   );
@@ -143,7 +149,7 @@ describe("selection highlight setting", () => {
         .sort(),
     );
     expect(selectionCenterPaths(fakeNode(renderer.svg))).toEqual(centers);
-    expect(nodes().flatMap(selectionHaloNodes)).toHaveLength(centers.length * 2);
+    expect(nodes().flatMap(selectionHaloNodes)).toHaveLength(centers.length);
     expect(
       nodes()
         .flatMap(selectionHaloNodes)
@@ -166,7 +172,10 @@ describe("selection highlight setting", () => {
       renderer.setElementPreviews(moveSelection([source], { x: 20, y: 30 }), 1);
       scheduler.runAll();
       const preview = selectionTraceGeometry(fakeNode(renderer.svg));
-      expect(preview).not.toBe(baseline);
+      if (source.kind === "stroke") {
+        expect(preview).toBe(baseline);
+        expect(selectionTraceTransform(fakeNode(renderer.svg))).toBe("translate(20 30)");
+      } else expect(preview).not.toBe(baseline);
       renderer.setSelectionHighlightsEnabled(false);
       scheduler.runAll();
       expect(nodes()).toEqual([]);
@@ -176,6 +185,7 @@ describe("selection highlight setting", () => {
       renderer.clearElementPreviews();
       scheduler.runAll();
       expect(selectionTraceGeometry(fakeNode(renderer.svg))).toBe(baseline);
+      expect(selectionTraceTransform(fakeNode(renderer.svg))).toBe("");
       renderer.destroy();
     },
   );
@@ -217,14 +227,44 @@ it("clears selected centers and cancels pending mounting on destroy", () => {
     width: 20,
     height: 20,
   }));
-  const { renderer, scheduler, nodes, select } = createSelectionTraceFixture(elements);
-  select();
+  const { renderer, scheduler, select, nodes } = createSelectionTraceFixture(elements);
+  const roots = select();
   expect(nodes()).toHaveLength(100);
+  const group = roots[0]!.parent!;
+  const parent = group.parent!;
+  const siblings = [...parent.nodes];
   renderer.setSelectedElements(new Set());
   scheduler.runAll();
   expect(nodes()).toEqual([]);
+  expect(parent.nodes).toEqual(siblings);
+  expect(roots.every((root) => root.parent === undefined)).toBe(true);
   renderer.setSelectedElements(new Set(elements.map(({ id }) => id)));
   renderer.destroy();
   expect(scheduler.pendingCount).toBe(0);
   expect(selectionCenterPaths(fakeNode(renderer.svg))).toEqual([]);
+});
+
+it("restores the selection group when a trace removal fails", () => {
+  const elements = Array.from({ length: 40 }, (_, index) => ({
+    ...rectangle(index + 200),
+    x: index * 20,
+    y: 20,
+    pivot: { x: index * 20 + 10, y: 30 },
+  }));
+  const { renderer, scheduler, select } = createSelectionTraceFixture(elements);
+  const roots = select();
+  const group = roots[0]!.parent!;
+  const parent = group.parent!;
+  const siblings = [...parent.nodes];
+  const remove = vi.spyOn(roots[10]!, "remove").mockImplementationOnce(() => {
+    throw new Error("trace removal failed");
+  });
+  renderer.setSelectedElements(new Set());
+  expect(() => scheduler.runNext()).toThrow("trace removal failed");
+  expect(parent.nodes).toEqual(siblings);
+  expect(group.parent).toBe(parent);
+  remove.mockRestore();
+  renderer.destroy();
+  expect(group.nodes).toEqual([]);
+  expect(scheduler.pendingCount).toBe(0);
 });

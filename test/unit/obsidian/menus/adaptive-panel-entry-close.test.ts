@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -19,6 +20,7 @@ function setup(kind: "dialog" | "style" | "background", durationMs = 220) {
     onClosed,
     ownerDocument: document,
     ownerWindow: window,
+    workScheduler: workSchedulerFromFrames(window),
     renderIcon: vi.fn(),
   });
   const surface = document.querySelector<HTMLElement>(".inkbook-adaptive-panel")!;

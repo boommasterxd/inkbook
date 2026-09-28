@@ -1,4 +1,5 @@
-import type { InkSnapshotV1 } from "../../../domain/schema/public";
+import type { InkElementV1, InkSnapshotV1 } from "../../../domain/schema/public";
+import type { PreparedPressurePathHint } from "../../serialization/prepared-pressure-hints";
 import type { ExistingFilePort } from "../save-ports";
 
 import { AutosaveCoordinator } from "./coordinator";
@@ -9,16 +10,22 @@ interface AutosaveSessionOptions extends AutosaveSessionBaseOptions {
   readonly path: string;
   readonly sessionId: string;
   readonly snapshot: () => InkSnapshotV1;
+  readonly integritySnapshot?: () => InkSnapshotV1;
+  readonly ownsIntegrityElement?: (element: InkElementV1) => boolean;
+  readonly preparedPressurePaths?: (
+    modelRevision: number,
+    changedIds?: ReadonlySet<string>,
+  ) => readonly PreparedPressurePathHint[];
   readonly vault: ExistingFilePort;
 }
 
 export function createAutosaveSession(options: AutosaveSessionOptions): AutosaveCoordinator {
   return new AutosaveCoordinator({
+    workScheduler: options.workScheduler,
     ...(options.beforeExistingWrite === undefined
       ? {}
       : { beforeExistingWrite: options.beforeExistingWrite }),
     ...(options.waitForBackground ? { waitForBackground: options.waitForBackground } : {}),
-    ...(options.sliceBudgetMs ? { sliceBudgetMs: options.sliceBudgetMs } : {}),
     clock: options.clock,
     confirmedBase: {
       outputHash: options.outputHash,
@@ -31,6 +38,13 @@ export function createAutosaveSession(options: AutosaveSessionOptions): Autosave
       isGestureActive: options.isGestureActive,
       orderByBand: options.orderByBand,
       snapshot: options.snapshot,
+      ...(options.integritySnapshot ? { integritySnapshot: options.integritySnapshot } : {}),
+      ...(options.ownsIntegrityElement
+        ? { ownsIntegrityElement: options.ownsIntegrityElement }
+        : {}),
+      ...(options.preparedPressurePaths
+        ? { preparedPressurePaths: options.preparedPressurePaths }
+        : {}),
     },
     executor: options.executor,
     initialSnapshot: options.initialSnapshot,

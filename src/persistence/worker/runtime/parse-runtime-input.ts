@@ -1,6 +1,5 @@
 import type { InkSnapshotV1, SnapshotValidationDerivations } from "../../../domain/schema/public";
 import { ChunkedInkbookInputParser } from "../../serialization/chunked-input-codec";
-import type { PreparedPathObserver } from "../../serialization/prepared-unlock-paths";
 import type { RuntimeSliceContext } from "./types";
 
 export async function parseRuntimeInput(
@@ -10,14 +9,14 @@ export async function parseRuntimeInput(
     snapshot: InkSnapshotV1,
     derivations: SnapshotValidationDerivations,
   ) => Promise<void> | void,
-  onPreparedPath?: PreparedPathObserver,
+  staticValidation: "canonical" | "safe" = "canonical",
 ) {
   const inputSliceBytes = context?.workProfile?.inputByteLimit ?? 256 * 1024;
   const inputWriteChunk = context?.workProfile?.inputByteLimit ?? 16 * 1024;
   const parser = new ChunkedInkbookInputParser({
     ...(context === undefined ? {} : { checkpoint: context.checkpoint, signal: context.signal }),
     inputSliceBytes,
-    ...(onPreparedPath === undefined ? {} : { onPreparedPath }),
+    staticValidation,
     ...(onValidatedSnapshot === undefined ? {} : { onValidatedSnapshot }),
   });
   if (typeof input === "string") await writeStringInput(parser, input, inputWriteChunk);

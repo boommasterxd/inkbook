@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { InkElementV1 } from "../../../../../src/domain/schema/public";
 import { ManualFrameScheduler } from "../../../../fixtures/obsidian/manual-frame-scheduler";
+import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
+import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
 import { stroke } from "../../../domain/schema/fixtures";
 import { rectangle } from "../../../domain/store/fixtures";
 import { ElementStore } from "../../../../../src/domain/store/public";
@@ -10,6 +12,53 @@ import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-e
 import type { PreparedElementHistory } from "../../../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-editor/scene-store";
 import { LassoPreview } from "../../../../../src/obsidian/embeds/active-editor/selection-preview";
+
+const QUERY_DEADLINE_CHECKS = 1024;
+
+it("projects only appended lasso points and rebuilds after camera changes or compaction", () => {
+  const store = new ElementStore([]);
+  const sceneStore = new ElementSceneStore(store);
+  const paths: string[] = [];
+  const renderer = {
+    ...createSelectionPreviewRenderer(),
+    setOverlayPath: (path: string | null) => {
+      if (path !== null) paths.push(path);
+    },
+  };
+  let offset = 0;
+  const project = vi.fn((point: { x: number; y: number }) => ({
+    x: point.x + offset,
+    y: point.y,
+  }));
+  const preview = new LassoPreview({
+    workScheduler: immediateWorkScheduler(),
+    history: {} as ActiveEditorHistory,
+    pageToScreen: project,
+    preparedHistory: {} as PreparedElementHistory,
+    renderer,
+    sceneStore,
+    selection: () => new Set<string>(),
+    selectionDefaults: { area: "lasso", inclusion: "touched" },
+    setSelection: () => {},
+    start: { additive: false, kind: "lasso", pointer: pointer(0, 0), tool: "select" },
+    store,
+  });
+  project.mockClear();
+  for (let index = 1; index <= 511; index += 1) preview.update(pointer(index * 2, 0));
+  expect(project).toHaveBeenCalledTimes(511 * 4);
+  const priorPath = paths[paths.length - 1];
+  preview.update(pointer(1022, 0));
+  expect(project).toHaveBeenCalledTimes(511 * 4 + 3);
+  expect(paths[paths.length - 1]).toBe(priorPath);
+  offset = 5;
+  preview.update(pointer(1022, 0));
+  expect(project).toHaveBeenCalledTimes(511 * 4 + 3 + 3 + 512);
+  expect(paths[paths.length - 1]).toContain("M 5 0");
+  const beforeCompaction = project.mock.calls.length;
+  preview.update(pointer(1024, 0));
+  expect(project.mock.calls.length - beforeCompaction).toBeGreaterThan(3);
+  sceneStore.release();
+});
 
 describe("lasso preview regressions", () => {
   it.each([
@@ -36,7 +85,7 @@ describe("lasso preview regressions", () => {
           Math.round(500 + Math.sin(index / 13) * 400) / 1000,
         ]).flat(),
       };
-      const test = createPreview(true, [target]);
+      const test = createPreview(true, [target], QUERY_DEADLINE_CHECKS);
       // The notch crosses the bounds but misses the ink, requiring complete contour checks.
       for (const [x, y] of [
         [2100, -30],
@@ -56,7 +105,7 @@ describe("lasso preview regressions", () => {
       if (outcome === "new-gesture") test.controller.abort();
       if (outcome === "complete") {
         for (let frame = 0; test.scheduler.pendingCount > 0 && frame < 5000; frame += 1) {
-          test.scheduler.runNext(frame);
+          test.runNext(frame);
         }
       }
       expect(test.scheduler.pendingCount).toBe(0);
@@ -80,7 +129,7 @@ describe("bounded lasso spatial queries", () => {
         ...stroke(index + 1),
         points: [index % 100, Math.floor(index / 100), 0.5],
       }));
-      const test = createPreview(true, targets);
+      const test = createPreview(true, targets, QUERY_DEADLINE_CHECKS);
       const begin = test.sceneStore.beginQuery.bind(test.sceneStore);
       const query = begin({ minX: -10, minY: -30, maxX: 200, maxY: 200 });
       const advance = vi.spyOn(query, "advance");
@@ -101,12 +150,12 @@ describe("bounded lasso spatial queries", () => {
         if (result.type === "return") expect(result.value.workUnits).toBeLessThanOrEqual(64);
       }
       expect(read.mock.calls.length).toBeGreaterThan(0);
-      expect(read.mock.calls.length).toBeLessThanOrEqual(64);
+      expect(read.mock.calls.length).toBeLessThanOrEqual(QUERY_DEADLINE_CHECKS);
       if (outcome === "abort") test.controller.abort();
       else {
         advance.mockReturnValue({ ids: [], workUnits: 0, done: true, stale: true });
         for (let frame = 0; test.scheduler.pendingCount > 0 && frame < 100; frame += 1) {
-          test.scheduler.runNext(frame);
+          test.runNext(frame);
         }
       }
       expect(test.scheduler.pendingCount).toBe(0);
@@ -122,10 +171,15 @@ function pointer(x: number, y: number) {
   return { pointerId: 10, pointerType: "mouse" as const, pressure: 0.5, x, y };
 }
 
-function createPreview(additive: boolean, targets: readonly InkElementV1[] = []) {
+function createPreview(
+  additive: boolean,
+  targets: readonly InkElementV1[] = [],
+  deadlineChecks = Number.POSITIVE_INFINITY,
+) {
   const store = new ElementStore(targets);
   const sceneStore = new ElementSceneStore(store);
   const scheduler = new ManualFrameScheduler();
+  let checks = 0;
   const controller = new AbortController();
   const state = { selection: new Set(["selected-before-gesture"]) as ReadonlySet<string> };
   const preview = new LassoPreview({
@@ -134,6 +188,9 @@ function createPreview(additive: boolean, targets: readonly InkElementV1[] = [])
     preparedHistory: {} as PreparedElementHistory,
     renderer: createSelectionPreviewRenderer(),
     frameScheduler: scheduler,
+    workScheduler: workSchedulerFromFrames(scheduler, {
+      shouldYield: () => ++checks >= deadlineChecks,
+    }),
     sceneStore,
     selection: () => state.selection,
     selectionSignal: controller.signal,
@@ -149,5 +206,16 @@ function createPreview(additive: boolean, targets: readonly InkElementV1[] = [])
     },
     store,
   });
-  return { controller, preview, sceneStore, scheduler, state, store };
+  return {
+    controller,
+    preview,
+    runNext: (time: number) => {
+      checks = 0;
+      scheduler.runNext(time);
+    },
+    sceneStore,
+    scheduler,
+    state,
+    store,
+  };
 }

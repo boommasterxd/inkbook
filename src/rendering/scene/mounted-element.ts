@@ -1,9 +1,11 @@
+import { positionedTransform } from "./stroke-position";
 import { normalizeStrokePaint } from "../../domain/geometry/pressure-paint";
 import { effectiveStrokeWidth } from "../../domain/geometry/bounds";
-import { roundCanonical } from "../../domain/geometry/public";
 import type { SvgPathPart } from "../../domain/geometry/element-path";
 import { SVG_NAMESPACE } from "./constants";
 import {
+  scaledDashPattern,
+  scaledStrokeWidth,
   PRESENTATION_ATTRIBUTES,
   pathPresentation,
   type PathPresentation,
@@ -39,6 +41,7 @@ export interface MountedSceneElement {
   group: SVGGElement | null;
   groupOpacity: number;
   appliedPreviewTransform: string | null;
+  appliedTransform: string | null;
   geometryVersion: number;
   readonly id: string;
   paintVersion: number;
@@ -59,7 +62,7 @@ export function createMountedElement(
     createMountedPath(ownerDocument, record, part, instrumentation),
   );
   const group = createPressureGroup(ownerDocument, record, paths, instrumentation);
-  return {
+  const entry: MountedSceneElement = {
     band: record.band,
     committedRank: record.rank,
     committedOrderEpoch: 0,
@@ -70,6 +73,7 @@ export function createMountedElement(
     group,
     groupOpacity: pressureGroupOpacity(record),
     appliedPreviewTransform: null,
+    appliedTransform: null,
     geometryVersion: record.geometryVersion,
     id: record.id,
     paintVersion: record.paintVersion,
@@ -79,6 +83,8 @@ export function createMountedElement(
     previewTransformVersion: 0,
     rank: record.rank,
   };
+  updatePreviewTransform(entry, null, 0, null, instrumentation);
+  return entry;
 }
 
 export function appendElementToFragment(
@@ -132,6 +138,7 @@ export function updateMountedGeometry(
   }
   entry.pathParts = parts;
   entry.displayedElement = record.element;
+  refreshPosition(entry, instrumentation);
   entry.displayedPathParts = parts;
   entry.geometryVersion = record.geometryVersion;
   entry.paintVersion = record.paintVersion;
@@ -170,10 +177,12 @@ export function updatePreviewTransform(
   strokeWidthScale: number | null,
   instrumentation: MutableSceneInstrumentation,
 ): void {
+  entry.appliedPreviewTransform = transform;
+  transform = positionedTransform(entry.displayedElement, transform);
   if (entry.group !== null) {
-    if (entry.appliedPreviewTransform !== transform) {
+    if (entry.appliedTransform !== transform) {
       writeRaw(entry.group, "transform", transform, instrumentation, true);
-      entry.appliedPreviewTransform = transform;
+      entry.appliedTransform = transform;
     }
     if (entry.previewStrokeWidthScale !== strokeWidthScale) {
       for (const path of entry.paths)
@@ -183,7 +192,7 @@ export function updatePreviewTransform(
     entry.previewTransformVersion = version;
     return;
   }
-  entry.appliedPreviewTransform = transform;
+  entry.appliedTransform = transform;
   entry.previewStrokeWidthScale = strokeWidthScale;
   if (
     entry.previewTransformVersion === version &&
@@ -222,6 +231,7 @@ export function updateMountedElementPreview(
   };
   updateMountedPreviewGeometry(entry, { ...record, element: previewElement }, parts, options);
   entry.displayedElement = previewElement;
+  refreshPosition(entry, options.instrumentation);
   entry.displayedPathParts = parts;
   entry.geometryVersion = original.geometryVersion;
   entry.paintVersion = original.paintVersion;
@@ -347,6 +357,7 @@ function replacePathTopology(
   entry.group = group;
   entry.groupOpacity = pressureGroupOpacity(record);
   entry.appliedPreviewTransform = null;
+  entry.appliedTransform = null;
   entry.paths.splice(0, entry.paths.length, ...paths);
   entry.previewStrokeWidthScale = null;
   updatePreviewTransform(
@@ -444,19 +455,6 @@ function writePreviewStrokeWidth(
   path.appliedPreviewStrokeWidthScale = appliedScale;
 }
 
-function scaledDashPattern(value: string | null, scale: number): string | null {
-  return value === null
-    ? null
-    : value
-        .split(" ")
-        .map((part) => scaledStrokeWidth(part, scale))
-        .join(" ");
-}
-
-function scaledStrokeWidth(value: string | null, scale: number): string | null {
-  return value === null ? null : String(roundCanonical(Number(value) * scale));
-}
-
 function writeAttribute(
   path: MountedPath,
   attribute: "d" | "transform",
@@ -483,4 +481,17 @@ function writeRaw(
   instrumentation.attributeWrites += 1;
   instrumentation.contentAttributeWrites += 1;
   if (geometry) instrumentation.contentGeometryWrites += 1;
+}
+
+function refreshPosition(
+  entry: MountedSceneElement,
+  instrumentation: MutableSceneInstrumentation,
+): void {
+  updatePreviewTransform(
+    entry,
+    entry.appliedPreviewTransform,
+    entry.previewTransformVersion,
+    entry.previewStrokeWidthScale,
+    instrumentation,
+  );
 }

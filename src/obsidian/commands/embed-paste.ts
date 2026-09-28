@@ -37,6 +37,10 @@ interface EmbedPasteValidationPort {
   validate(content: string): Promise<boolean>;
 }
 
+interface EmbedPasteConfirmedOutputPort {
+  matchesConfirmedOutput(read: MetadataGuardedFileRead): boolean;
+}
+
 export interface EmbedPasteRequest {
   readonly clipboardText: string;
   readonly editor: Editor;
@@ -52,6 +56,7 @@ export type EmbedPasteOutcome =
   | { readonly cleanup: "failed" | "not-needed" | "trashed"; readonly kind: "stale" };
 
 export interface EmbedPasteDependencies {
+  readonly confirmedOutput?: EmbedPasteConfirmedOutputPort;
   readonly signal?: AbortSignal;
   readonly choices: EmbedPasteChoicePort;
   readonly documents: EmbedPasteDocumentPort;
@@ -94,12 +99,18 @@ function replaceIfCurrent(
   target: CapturedEditorTarget,
   replacement: string,
 ): boolean {
-  if (editor.getValue() !== target.value) return false;
-  if (!samePosition(editor.getCursor("from"), target.from)) return false;
-  if (!samePosition(editor.getCursor("to"), target.to)) return false;
-  if (editor.getRange(target.from, target.to) !== target.source) return false;
+  if (!targetIsCurrent(editor, target)) return false;
   editor.replaceRange(replacement, target.from, target.to);
   return true;
+}
+
+function targetIsCurrent(editor: Editor, target: CapturedEditorTarget): boolean {
+  return (
+    editor.getValue() === target.value &&
+    samePosition(editor.getCursor("from"), target.from) &&
+    samePosition(editor.getCursor("to"), target.to) &&
+    editor.getRange(target.from, target.to) === target.source
+  );
 }
 
 export function isCopiedEmbedPaste(text: string, insideInkWidget: boolean): boolean {
@@ -148,16 +159,19 @@ export class EmbedPasteController {
     );
     if (sourceFile === null) return this.#insertOriginal(request, target);
 
-    let sourceContent: string;
+    let sourceRead: MetadataGuardedFileRead;
     try {
-      sourceContent = (
-        await this.#dependencies.documents.readWithMetadataGuard(
-          sourceFile.path,
-          FILE_SCHEMA_LIMITS.totalInputBytes,
-        )
-      ).content;
+      sourceRead = await this.#dependencies.documents.readWithMetadataGuard(
+        sourceFile.path,
+        FILE_SCHEMA_LIMITS.totalInputBytes,
+      );
       if (this.#isAborted()) return { kind: "cancelled" };
-      if (!(await this.#dependencies.validation.validate(sourceContent))) {
+      if (sourceRead.identity.path !== sourceFile.path)
+        return this.#insertOriginal(request, target);
+      if (
+        this.#dependencies.confirmedOutput?.matchesConfirmedOutput(sourceRead) !== true &&
+        !(await this.#dependencies.validation.validate(sourceRead.content))
+      ) {
         return this.#insertOriginal(request, target);
       }
     } catch {
@@ -167,12 +181,13 @@ export class EmbedPasteController {
     if (this.#isAborted()) return { kind: "cancelled" };
     const choice = await this.#dependencies.choices.choose();
     if (choice === null || this.#isAborted()) return { kind: "cancelled" };
+    if (!targetIsCurrent(request.editor, target)) return { cleanup: "not-needed", kind: "stale" };
     if (choice === "reference") {
       return replaceIfCurrent(request.editor, target, request.clipboardText)
         ? { kind: "inserted", mode: "reference" }
         : { cleanup: "not-needed", kind: "stale" };
     }
-    return this.#duplicate(request, target, sourceContent);
+    return this.#duplicate(request, target, sourceRead.content);
   }
 
   async #duplicate(
@@ -185,6 +200,7 @@ export class EmbedPasteController {
     try {
       duplicatePath = await this.#dependencies.placement.preparePath(request.sourcePath);
       if (this.#isAborted()) return { kind: "cancelled" };
+      if (!targetIsCurrent(request.editor, target)) return { cleanup: "not-needed", kind: "stale" };
       const createdRead = await this.#dependencies.documents.createAndReadBack(
         duplicatePath,
         sourceContent,
@@ -192,11 +208,7 @@ export class EmbedPasteController {
       );
       created = true;
       if (this.#isAborted()) return this.#discardStale(duplicatePath);
-      if (
-        createdRead.identity.path !== duplicatePath ||
-        createdRead.content !== sourceContent ||
-        !(await this.#dependencies.validation.validate(createdRead.content))
-      ) {
+      if (createdRead.identity.path !== duplicatePath || createdRead.content !== sourceContent) {
         throw new Error("The created duplicate did not pass read-back validation.");
       }
       if (this.#isAborted()) return this.#discardStale(duplicatePath);

@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 import { Setting, SettingGroup } from "obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -90,7 +91,13 @@ it("refreshes changed bindings, ignores equivalent clones and releases its subsc
 function createShortcuts() {
   const container = document.body.createDiv();
   const store = createTestSettingsStore();
-  return { container, store, view: new ShortcutSettingsView(container, store) };
+  return {
+    container,
+    store,
+    view: new ShortcutSettingsView(container, store, undefined, () =>
+      workSchedulerFromFrames(window),
+    ),
+  };
 }
 
 function createTool() {
@@ -108,6 +115,7 @@ function createTool() {
     {
       getDefaults: readDefaults,
       getMotion: () => store.getDeviceSettings().motion,
+      workScheduler: () => workSchedulerFromFrames(window),
       set: () => Promise.resolve(),
     },
   );

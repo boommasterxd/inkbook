@@ -43,7 +43,7 @@ export function visitVisibleElementPrimitives(
 export function* visibleElementPrimitiveSteps(
   element: InkElementV1,
   query: PressurePaintQuery = {},
-): Generator<VisibleSelectionPrimitive | undefined> {
+): Generator<VisibleSelectionPrimitive | number | undefined> {
   if (element.kind === "stroke") {
     yield* strokePrimitiveSteps(element, query);
     return;
@@ -61,7 +61,8 @@ function visitStroke(
   visitor: SelectionPrimitiveVisitor,
 ): boolean {
   for (const primitive of strokePrimitiveSteps(stroke)) {
-    if (primitive !== undefined && !visitor(primitive)) return false;
+    if (primitive !== undefined && typeof primitive !== "number" && !visitor(primitive))
+      return false;
   }
   return true;
 }

@@ -1,3 +1,4 @@
+import type { VaultDocumentSessionHooks } from "./vault-document-recovery";
 import { loadVaultDocument, type LoadedVaultDocument } from "./vault-document-loader";
 import type { PersistedDocumentIdentity } from "../../editor/session/session-port";
 import type { SessionOperationIdentity } from "../../editor/session/session-port";
@@ -24,7 +25,7 @@ export function createTrustedVaultDocumentLoader(options: {
   readonly documentId: string;
   readonly files: VaultDocumentLoaderOptions["files"];
   readonly scheduler: VaultDocumentLoaderOptions["scheduler"];
-  readonly trustedHeads: TrustedDocumentHeadPort | undefined;
+  readonly hooks: VaultDocumentSessionHooks;
 }) {
   return (
     operation: SessionOperationIdentity,
@@ -32,6 +33,7 @@ export function createTrustedVaultDocumentLoader(options: {
     purpose: "recovery" | "unlock",
     workerEpoch: number,
     policy: TrustedVaultDocumentLoadPolicy = {},
+    prefetchedBytes?: Promise<Uint8Array | undefined>,
   ) =>
     loadTrustedVaultDocument(
       {
@@ -42,9 +44,10 @@ export function createTrustedVaultDocumentLoader(options: {
         operation,
         purpose,
         scheduler: options.scheduler,
+        ...(prefetchedBytes === undefined ? {} : { prefetchedBytes }),
         workerEpoch,
       },
-      options.trustedHeads,
+      options.hooks.trustedHeads,
       policy,
     );
 }

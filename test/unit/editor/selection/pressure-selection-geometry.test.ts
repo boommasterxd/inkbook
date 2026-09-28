@@ -1,8 +1,10 @@
 import { elementMatchesSelectionArea } from "../../../fixtures/editor/selection-query";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { strokeSvgContainsPoint } from "../../../fixtures/domain/svg-path-fill";
 import { calculateElementBounds } from "../../../../src/domain/geometry/public";
+import { translatedStroke } from "../../../../src/domain/geometry/stroke-position";
+import * as pressureUnion from "../../../../src/domain/geometry/pressure-union";
 import type { StrokeElementV1 } from "../../../../src/domain/schema/public";
 import { elementContainsPoint } from "../../../../src/editor/selection/hit-test";
 import {
@@ -17,6 +19,13 @@ function pressureStroke(points: number[]): StrokeElementV1 {
     points,
     pivot: { x: 0, y: 0 },
     style: { ...stroke().style, pressureEnabled: true, width: 2 },
+  };
+}
+
+function outwardPatchStroke(): StrokeElementV1 {
+  return {
+    ...pressureStroke([0, 0, 1, 20, 40, 1, 40, 0, 1]),
+    style: { ...stroke().style, pressureEnabled: true, width: 8 },
   };
 }
 
@@ -78,10 +87,7 @@ describe("painted pressure contour selection", () => {
   });
 
   it("selects the actual outward union contour and includes its patches in enclosure", () => {
-    const target = {
-      ...pressureStroke([0, 0, 1, 20, 40, 1, 40, 0, 1]),
-      style: { ...stroke().style, pressureEnabled: true, width: 8 as const },
-    };
+    const target = outwardPatchStroke();
     const patchPoint = { x: 17.75, y: 23.37 };
     // This point is beyond the ideal nib union but inside the final outward contour.
     expect(Math.hypot(patchPoint.x - 20, patchPoint.y - 20)).toBeGreaterThan(4);
@@ -110,6 +116,36 @@ describe("painted pressure contour selection", () => {
       corner(-100, 100),
     ]);
     expect(elementMatchesSelectionArea(clipped, target, "fully-enclosed")).toBe(false);
+  });
+
+  it("skips a distant lasso's outward union while retaining a nearby patch and offset", () => {
+    const target = outwardPatchStroke();
+    const around = (x: number, y: number) =>
+      createLassoSelectionArea([
+        { x: x - 0.001, y: y - 0.001 },
+        { x: x + 0.001, y: y - 0.001 },
+        { x: x + 0.001, y: y + 0.001 },
+        { x: x - 0.001, y: y + 0.001 },
+      ]);
+    const prepare = vi.spyOn(pressureUnion, "iteratePressureUnion");
+    try {
+      expect(elementMatchesSelectionArea(around(25, 25), target, "touched")).toBe(false);
+      expect(prepare).not.toHaveBeenCalled();
+      expect(elementMatchesSelectionArea(around(17.75, 23.37), target, "touched")).toBe(true);
+      expect(prepare).toHaveBeenCalled();
+      for (const offset of [
+        { x: 0, y: 0 },
+        { x: 100, y: 200 },
+        { x: -100.003, y: -200.007 },
+      ]) {
+        const moved = translatedStroke(target, offset);
+        expect(
+          elementMatchesSelectionArea(around(17.75 + offset.x, 23.37 + offset.y), moved, "touched"),
+        ).toBe(true);
+      }
+    } finally {
+      prepare.mockRestore();
+    }
   });
 
   it("retains continuous pressure caps within conservative spatial bounds", () => {

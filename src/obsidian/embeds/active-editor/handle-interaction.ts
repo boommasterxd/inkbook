@@ -1,5 +1,6 @@
 import type { InkElementV1, PointV1 } from "../../../domain/schema/public";
 import type { SnappingSettingsV1 } from "../../../domain/settings/types";
+import type { WorkPriority } from "../../../domain/scheduling/work-scheduler";
 import type { ToolSystemCursor } from "../../../editor/input/tool-cursor";
 import type { PointerSample } from "../../../editor/input/index";
 import {
@@ -22,7 +23,6 @@ import {
   selectionCursorRadius,
   selectionHandleCursor,
 } from "./selection-cursor";
-import { selectedElements } from "./controller-elements";
 import type { ActiveEditorHistory } from "./history";
 import type { PreparedElementHistory } from "./prepared-element-history";
 import type { ElementSceneStore } from "./scene-store";
@@ -56,8 +56,8 @@ export type { HandleInteractionRenderer } from "./handle-presentation";
 const NO_SCALE_TRANSFORM_IDS: readonly string[] = [];
 
 export interface HandleFrameScheduler {
-  cancelAnimationFrame(handle: number): void;
-  requestAnimationFrame(callback: FrameRequestCallback): number;
+  cancelFrame(handle: number): void;
+  requestFrame(callback: FrameRequestCallback, priority?: WorkPriority): number;
 }
 
 interface PendingHandleSample {
@@ -94,6 +94,11 @@ export class ActiveEditorHandleInteraction {
   readonly #selection: () => ReadonlySet<string>;
   readonly #snapping: () => SnappingSettingsV1 | undefined;
   readonly #zoom: () => number;
+  #renderedSelection: ReadonlySet<string> | undefined;
+  #renderedRevision = -1;
+  #renderedGeometry: readonly SelectedElementGeometry[] = [];
+  #renderedFrame: OrientedSelectionFrame | null = null;
+  #renderedZoom = 1;
   #cursorGeometry: SelectionOverlayGeometry | null = null;
   #cursorRotation = 0;
   #cursorLinear: InkElementV1 | undefined;
@@ -165,6 +170,9 @@ export class ActiveEditorHandleInteraction {
     this.#presentation.dispose();
     this.#cursorGeometry = null;
     this.#cursorLinear = undefined;
+    this.#renderedSelection = undefined;
+    this.#renderedGeometry = [];
+    this.#renderedFrame = null;
   }
 
   public pointerDown(
@@ -335,7 +343,38 @@ export class ActiveEditorHandleInteraction {
     const selected = this.#selectedGeometry();
     const frame = this.#selectionFrames.current(selected);
     this.#cacheCursorGeometry(selected, frame);
+    this.#renderedSelection = this.#selection();
+    this.#renderedRevision = this.#model.revision;
+    this.#renderedGeometry = selected;
+    this.#renderedZoom = this.#zoom();
+    const outline = this.#cursorGeometry?.outline;
+    this.#renderedFrame =
+      frame ??
+      (selected.length === 1 &&
+      selected[0]!.element.kind === "stroke" &&
+      outline?.kind === "polygon"
+        ? {
+            points: outline.points as OrientedSelectionFrame["points"],
+            rotation: selected[0]!.element.rotation,
+          }
+        : null);
     this.#presentation.renderGeometry(selected, this.#cursorGeometry);
+  }
+
+  public renderCameraSelection(): void {
+    if (this.#active !== undefined) return;
+    if (
+      this.#renderedRevision !== this.#model.revision ||
+      this.#renderedSelection !== this.#selection()
+    ) {
+      this.renderSelection();
+      return;
+    }
+    if (this.#renderedZoom !== this.#zoom()) {
+      this.#cacheCursorGeometry(this.#renderedGeometry, this.#renderedFrame);
+      this.#renderedZoom = this.#zoom();
+    }
+    this.#presentation.renderGeometry(this.#renderedGeometry, this.#cursorGeometry);
   }
 
   #cacheCursorGeometry(
@@ -357,18 +396,18 @@ export class ActiveEditorHandleInteraction {
     this.#previewMaximumBottom = undefined;
     this.#model.setGestureActive(false);
     this.#presentation.clearPreviews();
-    this.renderSelection();
+    this.renderCameraSelection();
   }
 
   #schedulePointerFrame(active: ActiveHandleGesture): void {
     if (this.#frameHandle !== undefined) return;
     let completedSynchronously = false;
     let handle = 0;
-    handle = this.#frameScheduler.requestAnimationFrame(() => {
+    handle = this.#frameScheduler.requestFrame(() => {
       completedSynchronously = true;
       if (this.#frameHandle === handle) this.#frameHandle = undefined;
       if (this.#active === active) this.#applyPendingSample(active);
-    });
+    }, "input");
     if (!completedSynchronously) this.#frameHandle = handle;
   }
 
@@ -379,7 +418,7 @@ export class ActiveEditorHandleInteraction {
 
   #cancelPointerFrame(): void {
     if (this.#frameHandle === undefined) return;
-    this.#frameScheduler.cancelAnimationFrame(this.#frameHandle);
+    this.#frameScheduler.cancelFrame(this.#frameHandle);
     this.#frameHandle = undefined;
   }
 
@@ -410,11 +449,10 @@ export class ActiveEditorHandleInteraction {
   }
 
   #selectedGeometry(): SelectedElementGeometry[] {
-    const selected = selectedElements(this.#sceneStore, this.#selection());
     const geometry: SelectedElementGeometry[] = [];
-    for (const element of selected) {
-      const bounds = this.#sceneStore.get(element.id)?.bounds;
-      if (bounds !== undefined) geometry.push({ bounds, element });
+    for (const id of this.#selection()) {
+      const record = this.#sceneStore.get(id);
+      if (record !== undefined) geometry.push({ bounds: record.bounds, element: record.element });
     }
     return geometry;
   }

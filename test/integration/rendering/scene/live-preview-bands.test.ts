@@ -32,7 +32,7 @@ function setup(): { renderer: SvgSceneRenderer; scheduler: FakeScheduler } {
     container: asElement(container),
     layout: { readViewport: () => ({ height: 100, left: 0, top: 0, width: 100 }) },
     page,
-    scheduler,
+    workScheduler: scheduler.workScheduler,
     store: new FakeSceneStore(),
   });
   renderer.setPage(page, 500);

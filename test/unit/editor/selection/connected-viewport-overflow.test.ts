@@ -216,7 +216,7 @@ describe("connected selection planning lifecycle", () => {
 
     await expect(
       session.prepareCommitTimeSliced({
-        isCancelled: () => yields >= 7,
+        isCancelled: () => yields >= 1,
         shouldYield: () => true,
         yieldControl: async () => {
           yields += 1;

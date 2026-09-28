@@ -1,3 +1,4 @@
+import { strokeLocalGeometry, strokeWorldPoint } from "./stroke-position";
 import type {
   BoxShapeElementV1,
   CoordinateSystemElementV1,
@@ -57,6 +58,19 @@ export function effectiveStrokeWidth(
 }
 
 function strokeBounds(stroke: StrokeElementV1): Bounds {
+  const local = strokeLocalGeometry(stroke);
+  const bounds = localStrokeBounds(local);
+  const x = stroke.offset?.x ?? 0;
+  const y = stroke.offset?.y ?? 0;
+  return {
+    minX: bounds.minX + x,
+    minY: bounds.minY + y,
+    maxX: bounds.maxX + x,
+    maxY: bounds.maxY + y,
+  };
+}
+
+function localStrokeBounds(stroke: StrokeElementV1): Bounds {
   const samples = stroke.points;
   let minX = Infinity;
   let minY = Infinity;
@@ -77,13 +91,7 @@ function strokeBounds(stroke: StrokeElementV1): Bounds {
         : 0.25 * (samples[previous + 1] as number) +
           0.5 * (samples[index + 1] as number) +
           0.25 * (samples[next + 1] as number);
-    let rotatedX = x;
-    let rotatedY = y;
-    if (stroke.rotation !== 0) {
-      const rotated = rotatePointClockwise({ x, y }, stroke.pivot, stroke.rotation);
-      rotatedX = rotated.x;
-      rotatedY = rotated.y;
-    }
+    const { x: rotatedX, y: rotatedY } = strokeWorldPoint(stroke, { x, y });
     minX = Math.min(minX, rotatedX);
     minY = Math.min(minY, rotatedY);
     maxX = Math.max(maxX, rotatedX);

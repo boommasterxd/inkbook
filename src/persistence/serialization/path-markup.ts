@@ -1,3 +1,4 @@
+import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
 import { isPointElement, type SvgPathPart } from "../../domain/geometry/element-path";
 import { normalizeStrokePaint } from "../../domain/geometry/pressure-paint";
 import {
@@ -18,7 +19,10 @@ type AttributeValue = number | string;
 type PathAttributes = Readonly<Record<string, AttributeValue | undefined>>;
 
 export function serializeElementPaths(element: InkElementV1): string[] {
-  return serializeParts(element, buildElementPathParts(element));
+  return serializeParts(
+    element,
+    buildElementPathParts(element.kind === "stroke" ? strokeLocalGeometry(element) : element),
+  );
 }
 
 export function serializeParts(element: InkElementV1, parts: readonly SvgPathPart[]): string[] {
@@ -26,9 +30,11 @@ export function serializeParts(element: InkElementV1, parts: readonly SvgPathPar
     const paint = normalizeStrokePaint(element.style);
     const opaque = { ...element, style: { ...element.style, color: paint.color, opacity: 1 } };
     const paths = parts.map((part) => serializeStrokePart(opaque, part.d, "fill"));
-    return [`<g opacity="${serializeSvgOpacity(paint.opacity)}">${paths.join("")}</g>`];
+    return [
+      `<g opacity="${serializeSvgOpacity(paint.opacity)}"${strokeTranslationAttribute(element)}>${paths.join("")}</g>`,
+    ];
   }
-  return parts.map((part) => {
+  const paths = parts.map((part) => {
     if (element.kind === "stroke" || element.kind === "straight-highlighter") {
       if (part.paint === "fill-and-stroke") {
         throw new Error("Stroke geometry cannot require fill and stroke paint.");
@@ -43,6 +49,15 @@ export function serializeParts(element: InkElementV1, parts: readonly SvgPathPar
     }
     return serializeOutlinePart(element.style, part.d, part.paint, isPointElement(element));
   });
+  return element.kind === "stroke" && element.offset !== undefined
+    ? [`<g${strokeTranslationAttribute(element)}>${paths.join("")}</g>`]
+    : paths;
+}
+
+function strokeTranslationAttribute(element: Extract<InkElementV1, { kind: "stroke" }>): string {
+  return element.offset === undefined
+    ? ""
+    : ` transform="translate(${serializeSvgNumber(element.offset.x)} ${serializeSvgNumber(element.offset.y)})"`;
 }
 
 export function serializePath(d: string, attributes: PathAttributes): string {

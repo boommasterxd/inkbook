@@ -1,3 +1,7 @@
+import {
+  strokeLocalGeometry,
+  strokeWorldPoint,
+} from "../../../../src/domain/geometry/stroke-position";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -14,7 +18,7 @@ import { ElementSceneStore } from "../../../../src/obsidian/embeds/active-editor
 import type { EditableDocumentModel } from "../../../../src/obsidian/embeds/document-model-port";
 import { createSceneFixture } from "../../../fixtures/rendering/scene";
 import { createAllElementSnapshot } from "../../../unit/persistence/serialization/fixtures";
-import { fakeNode } from "../../../unit/rendering/scene/fakes";
+import { fakeNode, type FakeNode } from "../../../unit/rendering/scene/fakes";
 import type { StoreDelta } from "../../../../src/domain/store/public";
 import type { SceneStoreDelta } from "../../../../src/rendering/scene/types";
 
@@ -55,7 +59,7 @@ function setup(pressureCount: number) {
     history,
     sceneStore,
     renderer,
-    frameScheduler: scheduler,
+    frameScheduler: scheduler.workScheduler,
     pageToScreen: (point) => point,
     zoom: () => 1,
     selection: () => new Set(elements.map(({ id }) => id)),
@@ -89,11 +93,7 @@ describe("mixed element scale commit renderer parity", () => {
       const committed = elements.map(({ id }) => store.get(id)!.element as InkElementV1);
       expect(committed).not.toEqual(elements);
       const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
-      const paths = content.nodes.flatMap((node) => (node.nodes.length > 0 ? node.nodes : [node]));
-      expect(paths.map((node) => node.attributes.get("d"))).toEqual(
-        committed.flatMap((element) => buildElementPathParts(element)).map(({ d }) => d),
-      );
-      expect(content.nodes.every((node) => !node.attributes.has("transform"))).toBe(true);
+      assertCommittedGraphic(content, committed);
       interaction.dispose();
       fixture.unsubscribe();
       renderer.destroy();
@@ -101,3 +101,46 @@ describe("mixed element scale commit renderer parity", () => {
     },
   );
 });
+
+function assertCommittedGraphic(content: FakeNode, elements: readonly InkElementV1[]): void {
+  const rendered = content.nodes.flatMap((node) =>
+    (node.nodes.length > 0 ? node.nodes : [node]).map((path) => ({
+      d: path.attributes.get("d"),
+      transform:
+        [
+          node.attributes.get("transform"),
+          path === node ? undefined : path.attributes.get("transform"),
+        ]
+          .filter(Boolean)
+          .join(" ") || undefined,
+    })),
+  );
+  let cursor = 0;
+  for (const element of elements) {
+    const local = element.kind === "stroke" ? strokeLocalGeometry(element) : element;
+    const expected = buildElementPathParts(local);
+    const offset = element.kind === "stroke" ? element.offset : undefined;
+    const transform =
+      offset === undefined || (offset.x === 0 && offset.y === 0)
+        ? undefined
+        : `translate(${offset.x} ${offset.y})`;
+    const actual = rendered.slice(cursor, cursor + expected.length);
+    expect(actual).toEqual(expected.map(({ d }) => ({ d, transform })));
+    if (element.kind === "stroke" && local.kind === "stroke") {
+      // Check world placement from the actual SVG transform, including rotation around the
+      // world pivot. Comparing only local path bytes would miss a missing/doubled correction.
+      const translation = actual[0]?.transform?.match(/^translate\(([-\d.]+) ([-\d.]+)\)$/);
+      const x = Number(translation?.[1] ?? 0);
+      const y = Number(translation?.[2] ?? 0);
+      for (let index = 0; index < element.points.length; index += 3) {
+        const sample = { x: element.points[index]!, y: element.points[index + 1]! };
+        const localPoint = strokeWorldPoint(local, sample);
+        const worldPoint = strokeWorldPoint(element, sample);
+        expect(localPoint.x + x).toBeCloseTo(worldPoint.x, 3);
+        expect(localPoint.y + y).toBeCloseTo(worldPoint.y, 3);
+      }
+    }
+    cursor += expected.length;
+  }
+  expect(cursor).toBe(rendered.length);
+}

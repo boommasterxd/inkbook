@@ -305,11 +305,11 @@ export class MovePreview implements GesturePreview {
     if (this.#frameHandle !== undefined) return;
     let completedSynchronously = false;
     let handle = 0;
-    handle = scheduler.requestAnimationFrame(() => {
+    handle = scheduler.requestFrame(() => {
       completedSynchronously = true;
       if (this.#frameHandle === handle) this.#frameHandle = undefined;
       this.#applyPendingPointer();
-    });
+    }, "input");
     if (!completedSynchronously) this.#frameHandle = handle;
   }
 
@@ -338,7 +338,7 @@ export class MovePreview implements GesturePreview {
 
   #cancelPointerFrame(): void {
     if (this.#frameHandle === undefined) return;
-    this.#frameScheduler?.cancelAnimationFrame(this.#frameHandle);
+    this.#frameScheduler?.cancelFrame(this.#frameHandle);
     this.#frameHandle = undefined;
   }
 }

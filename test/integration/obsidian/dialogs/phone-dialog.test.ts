@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 import { Modal, type App, type Plugin } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
@@ -37,6 +38,7 @@ function confirmation(signal?: AbortSignal): Promise<boolean> {
     description: "Keep the SVG.",
     confirmLabel: "Delete embed",
     readMotion: () => "full",
+    workScheduler: () => workSchedulerFromFrames(window),
     ...(signal === undefined ? {} : { signal }),
   });
 }
@@ -84,7 +86,9 @@ describe("shared phone dialog sheet", () => {
       const store = createTestSettingsStore();
       store.updateDeviceSettings((settings) => ({ ...settings, motion: "full" }));
       const host = app();
-      const tab = new InkbookSettingTab(host, {} as Plugin, store);
+      const tab = new InkbookSettingTab(host, {} as Plugin, store, undefined, undefined, {
+        workScheduler: () => workSchedulerFromFrames(window),
+      });
       const controller = new InkbookSettingsModalController(host, tab, store);
       controller.open(view);
       const surface = sheet();
@@ -161,7 +165,9 @@ describe("phone settings replacement", () => {
     const host = app();
     const controller = new InkbookSettingsModalController(
       host,
-      new InkbookSettingTab(host, {} as Plugin, store),
+      new InkbookSettingTab(host, {} as Plugin, store, undefined, undefined, {
+        workScheduler: () => workSchedulerFromFrames(window),
+      }),
       store,
     );
     controller.open("settings");

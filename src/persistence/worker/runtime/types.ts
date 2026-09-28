@@ -1,4 +1,3 @@
-import type { PreparedUnlockPath } from "../../serialization/prepared-unlock-paths";
 import type {
   ElementValidationDerivation,
   InkElementV1,
@@ -14,7 +13,6 @@ import type {
   PastePlan,
   PasteRepeatState,
 } from "../../clipboard/types";
-import type { DocumentIntegrityManifest } from "../../serialization/document-integrity-manifest";
 import type {
   ExportIdentity,
   ExportRequest,
@@ -95,9 +93,7 @@ export type DocumentRuntimeRequest =
   | VerifyRuntimeRequest;
 
 interface UnlockRuntimeSuccess {
-  readonly preparedPaths?: readonly PreparedUnlockPath[];
   readonly identity: PurposeOperationIdentity;
-  readonly integrityManifest: DocumentIntegrityManifest;
   readonly lockedHeight: number;
   readonly outputHash: string;
   readonly requiresCanonicalRewrite: boolean;
@@ -169,12 +165,14 @@ export type DocumentRuntimeResult =
 
 export interface DocumentRuntimePort {
   acknowledgeExport?(identity: ExportIdentity, accepted: boolean): void;
+  checkpoint?(signal: AbortSignal): Promise<void>;
   execute(
     request: DocumentRuntimeRequest,
     observer?: DocumentRuntimeObserver,
   ): Promise<DocumentRuntimeResult>;
   requestPrewarm?(): void;
   setLiveInputActive?(active: boolean): void;
+  setSchedulingProfile?(sliceMilliseconds: number, frameIntervalMilliseconds: number): void;
   terminate(): void;
 }
 
@@ -189,6 +187,7 @@ export interface InputAwareSliceScheduler {
   getSliceWorkProfile?(): RuntimeSliceWorkProfile;
   run<T>(operation: (signal: AbortSignal) => T | Promise<T>, signal: AbortSignal): Promise<T>;
   setLiveInputActive?(active: boolean): void;
+  setSchedulingProfile?(sliceMilliseconds: number, frameIntervalMilliseconds: number): void;
 }
 
 export interface RuntimeSliceWorkProfile {

@@ -7,6 +7,12 @@ import type {
   ModelSyncRuntimeSuccess,
 } from "../../worker/runtime/public";
 import { sameOperationIdentity } from "./verification";
+import {
+  MAX_PREPARED_PRESSURE_HINT_BYTES,
+  MAX_PREPARED_PRESSURE_HINTS,
+  preparedPressureHintBytes,
+  type PreparedPressurePathHint,
+} from "../../serialization/prepared-pressure-hints";
 
 export type ConcreteExportRequest = ExportRequest<InkElementV1, PageV1, InkSnapshotV1>;
 
@@ -19,12 +25,23 @@ export interface ExportDispatchIdentity {
 export function createExportRequest(
   plan: CoalescedExportPlan<InkElementV1, PageV1, InkSnapshotV1>,
   identity: ExportDispatchIdentity,
+  readPreparedPressurePaths?: (
+    modelRevision: number,
+    changedIds?: ReadonlySet<string>,
+  ) => readonly PreparedPressurePathHint[],
+  includeBaselinePreparedPressurePaths = false,
 ): ConcreteExportRequest {
+  const preparedPressurePaths = collectPreparedPressurePaths(
+    plan,
+    readPreparedPressurePaths,
+    includeBaselinePreparedPressurePaths,
+  );
   if (plan.type === "full") {
     return {
       ...identity,
       baseModelRevision: null,
       modelRevision: plan.modelRevision,
+      ...(preparedPressurePaths.length === 0 ? {} : { preparedPressurePaths }),
       snapshot: plan.snapshot,
       type: "export-full",
     };
@@ -33,9 +50,43 @@ export function createExportRequest(
     ...identity,
     baseModelRevision: plan.baseModelRevision,
     ...incrementalPayload(plan),
+    ...(includeBaselinePreparedPressurePaths ? { includeBaselinePreparedPressurePaths: true } : {}),
     modelRevision: plan.modelRevision,
+    ...(preparedPressurePaths.length === 0 ? {} : { preparedPressurePaths }),
     type: "export-incremental",
   };
+}
+
+function collectPreparedPressurePaths(
+  plan: CoalescedExportPlan<InkElementV1, PageV1, InkSnapshotV1>,
+  read:
+    | ((
+        modelRevision: number,
+        changedIds?: ReadonlySet<string>,
+      ) => readonly PreparedPressurePathHint[])
+    | undefined,
+  includeBaseline: boolean,
+): readonly PreparedPressurePathHint[] {
+  if (read === undefined) return [];
+  const changed =
+    plan.type === "full" || includeBaseline
+      ? null
+      : new Set(plan.changedElements.map((element) => element.id));
+  if (changed?.size === 0) return [];
+  const paths: PreparedPressurePathHint[] = [];
+  const candidates = read(plan.modelRevision, changed ?? undefined);
+  let bytes = 0;
+  for (let index = 0; index < Math.min(candidates.length, MAX_PREPARED_PRESSURE_HINTS); index++) {
+    const hint = candidates[index]!;
+    if (hint.modelRevision !== plan.modelRevision || (changed !== null && !changed.has(hint.id)))
+      continue;
+    const size = preparedPressureHintBytes(hint);
+    if (size > MAX_PREPARED_PRESSURE_HINT_BYTES - bytes) continue;
+    paths.push(hint);
+    bytes += size;
+    if (paths.length >= MAX_PREPARED_PRESSURE_HINTS) break;
+  }
+  return paths;
 }
 
 export function createModelSyncRequest(

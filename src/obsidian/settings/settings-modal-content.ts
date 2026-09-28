@@ -52,6 +52,7 @@ export class SettingsModalContent {
           setting,
           store,
           createObsidianHotkeyAccess(app),
+          (ownerWindow) => settingTab.scheduler(ownerWindow),
         );
       });
       return;

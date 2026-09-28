@@ -12,6 +12,7 @@ import { ElementSceneStore } from "../../../../../src/obsidian/embeds/active-edi
 import { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
 import type { PreparedElementHistory } from "../../../../../src/obsidian/embeds/active-editor/prepared-element-history";
 import { createSynchronousActiveEditorHistory } from "../../../../fixtures/obsidian/synchronous-active-editor-history";
+import { immediateWorkScheduler } from "../../../../fixtures/obsidian/immediate-work-scheduler";
 import { connectedLine, rectangle } from "../../../domain/store/fixtures";
 
 const selectedOverlayCall = [expect.any(String), "accent", expect.any(String)];
@@ -93,7 +94,6 @@ describe("selection move edge-drag integration", () => {
       store,
     });
     preparedPreview.update(pointer(10, 20));
-
     expect(preparedPreview.commit()).toBe(true);
     expect(edgeDrag.stop).toHaveBeenCalledOnce();
     expect(edgeDrag.finish).not.toHaveBeenCalled();
@@ -106,7 +106,6 @@ describe("selection move edge-drag integration", () => {
     const edgeDrag = createEdgeDrag();
     const preview = createPreview(edgeDrag);
     expect(edgeDrag.begin).toHaveBeenCalledOnce();
-
     preview.update({ pointerId: 1, pointerType: "mouse", x: 20, y: 30 });
     expect(edgeDrag.update).toHaveBeenCalledWith({ x: 30, y: 50 });
     preview.revert();
@@ -432,6 +431,7 @@ function selectionAreaHarness(
   const overlay = vi.fn<(path: string | null) => void>();
   let selection: ReadonlySet<string> = new Set(configuration.initialSelection);
   const preview = new LassoPreview({
+    workScheduler: immediateWorkScheduler(),
     history: {} as ActiveEditorHistory,
     pageToScreen: (point) => point,
     preparedHistory: {} as PreparedElementHistory,

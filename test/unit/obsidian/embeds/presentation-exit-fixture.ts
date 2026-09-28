@@ -1,6 +1,7 @@
 import { PresentationExit } from "../../../../src/obsidian/embeds/presentation-exit";
 import type { MotionPreference } from "../../../../src/rendering/motion/transitions";
 import { createPresentationMotionWindow } from "../../../fixtures/obsidian/presentation-motion-window";
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 export function exitHarness(
   height = 400,
@@ -18,6 +19,7 @@ export function exitHarness(
   const exit = new PresentationExit(
     root,
     clock.ownerWindow,
+    workSchedulerFromFrames(clock.ownerWindow),
     () => motion,
     () => spacing,
     removeMarkdown,

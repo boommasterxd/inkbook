@@ -14,6 +14,10 @@ export interface PressurePaintQuery {
   readonly bounds?: Bounds;
   readonly prepared?: PreparedPressureGeometryPort | undefined;
   readonly nearPoint?: { readonly point: PointV1; readonly radius: number };
+  readonly additionsMayTouch?: (
+    centers: readonly StrokeCenter[],
+    width: number,
+  ) => Generator<number | undefined, boolean>;
 }
 
 /** Keep ideal-nib hits cheap; only remaining queries need the final outward patches. */
@@ -21,7 +25,7 @@ export function* pressurePaintAdditionSteps(
   centers: readonly StrokeCenter[],
   width: number,
   query: PressurePaintQuery = {},
-): Generator<readonly PointV1[] | undefined> {
+): Generator<readonly PointV1[] | number | undefined> {
   const pending: PressureOutlinePiece[] = [];
   let windowIndex = 0;
   for (let index = 0; index < Math.max(1, centers.length - 1); index += 1) {
@@ -41,7 +45,7 @@ export function* pressurePaintAdditionSteps(
       yield* windowAdditions(pending, windowIndex++, query);
       pending.length = 0;
     }
-    if (index % 32 === 31) yield undefined;
+    if (index % 32 === 31) yield 32;
   }
   if (pending.length > 0) yield* windowAdditions(pending, windowIndex, query);
 }
@@ -50,7 +54,7 @@ function* windowAdditions(
   pieces: readonly PressureOutlinePiece[],
   index: number,
   query: PressurePaintQuery,
-): Generator<readonly PointV1[] | undefined> {
+): Generator<readonly PointV1[] | number | undefined> {
   if (query.bounds !== undefined && !boundsIntersect(query.bounds, windowBounds(pieces))) return;
   const near = query.nearPoint;
   if (

@@ -11,7 +11,7 @@ import type { ElementRecord, EndpointReference } from "../../../../src/domain/st
 import { connectedLine, rectangle } from "./fixtures";
 
 describe("time-sliced reverse-connection replacement patches", () => {
-  it("bounds connection fanout preparation without mutating the source", async () => {
+  it("prepares connection fanout without forced yields or source mutation", async () => {
     const scenario = reversePatchScenario();
     let yields = 0;
 
@@ -30,7 +30,7 @@ describe("time-sliced reverse-connection replacement patches", () => {
     );
 
     if (prepared === "cancelled") throw new Error("Expected reverse patches.");
-    expect(yields).toBeGreaterThan(1);
+    expect(yields).toBe(0);
     expect(patchFor(prepared.patches, scenario.oldTargetId)?.references).toEqual([]);
     expect(patchFor(prepared.patches, scenario.newTargetId)?.references).toHaveLength(512);
   });
@@ -45,7 +45,7 @@ describe("time-sliced reverse-connection replacement patches", () => {
       scenario.replacements,
       {
         isCancelled: () => yields === 3,
-        shouldYield: () => false,
+        shouldYield: () => yields < 3,
         yieldControl: async () => {
           yields += 1;
         },
@@ -55,6 +55,46 @@ describe("time-sliced reverse-connection replacement patches", () => {
     expect(prepared).toBe("cancelled");
     expect(scenario.source.get(scenario.oldTargetId)).toHaveLength(512);
     expect(scenario.source.get(scenario.newTargetId)).toBeUndefined();
+  });
+
+  it("checks cancellation inside fanout traversal even with budget remaining", async () => {
+    const scenario = reversePatchScenario();
+    const source = new Map(scenario.source);
+    const references = source.get(scenario.oldTargetId)!;
+    let cancelled = false;
+    let reads = 0;
+    let yields = 0;
+    source.set(
+      scenario.oldTargetId,
+      new Proxy(references, {
+        get(target, key, receiver) {
+          if (typeof key === "string" && /^(0|[1-9]\d*)$/u.test(key)) {
+            reads += 1;
+            if (reads === 129) cancelled = true;
+          }
+          return Reflect.get(target, key, receiver) as unknown;
+        },
+      }),
+    );
+
+    const prepared = await createReverseConnectionPatchesTimeSliced(
+      source,
+      scenario.candidates,
+      scenario.replacements,
+      {
+        isCancelled: () => cancelled,
+        shouldYield: () => false,
+        yieldControl: async () => {
+          yields += 1;
+        },
+      },
+    );
+
+    expect(prepared).toBe("cancelled");
+    expect(reads).toBe(129);
+    expect(yields).toBe(0);
+    expect(references).toHaveLength(512);
+    expect(source.get(scenario.newTargetId)).toBeUndefined();
   });
 });
 

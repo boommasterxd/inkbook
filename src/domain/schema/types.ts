@@ -60,6 +60,7 @@ export interface StrokeElementV1 extends ElementBaseV1 {
   kind: "stroke";
   tool: "pen" | "highlighter";
   points: StrokeSamplesV1;
+  offset?: PointV1;
   style: StrokeStyleV1;
 }
 

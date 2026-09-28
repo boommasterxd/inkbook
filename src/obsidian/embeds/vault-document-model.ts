@@ -1,5 +1,7 @@
+import { derivePageExtent } from "../../domain/geometry/public";
 import {
-  validateRuntimeInkSnapshotV1,
+  validateInkPageV1,
+  MAX_DERIVED_HEIGHT,
   type InkElementV1,
   type InkSnapshotV1,
 } from "../../domain/schema/public";
@@ -11,7 +13,9 @@ import type {
 } from "../../persistence/saving/autosave/types";
 import type { ExistingFilePort } from "../../persistence/saving/save-ports";
 import type { DocumentRuntimePort } from "../../persistence/worker/runtime/public";
+import { preparedPressurePathHint } from "../../persistence/serialization/prepared-pressure-hints";
 import type { SessionIdentity } from "../../editor/session/session-port";
+import type { InteractiveWorkPriority } from "../../editor/session/interactive-work-priority";
 import type {
   ElementStore,
   PreparedElementReplacement,
@@ -46,13 +50,13 @@ export function createVaultAutosaveSession(
   },
 ): AutosaveCoordinator {
   return createAutosaveSession({
+    workScheduler: options.workScheduler,
     ...(options.beforeExistingWrite === undefined
       ? {}
       : { beforeExistingWrite: options.beforeExistingWrite }),
     ...(options.waitForBackground === undefined
       ? {}
       : { waitForBackground: options.waitForBackground }),
-    ...(options.sliceBudgetMs ? { sliceBudgetMs: options.sliceBudgetMs } : {}),
     clock: options.clock,
     confirmed: options.confirmed,
     ...(options.createFallback === undefined ? {} : { createFallback: options.createFallback }),
@@ -70,6 +74,25 @@ export function createVaultAutosaveSession(
       ? {}
       : { requiresCanonicalRewrite: options.requiresCanonicalRewrite }),
     sessionId: options.identity.sessionId,
+    ownsIntegrityElement: (element) => options.store.get(element.id)?.element === element,
+    preparedPressurePaths: (revision, changedIds) =>
+      revision === options.currentRevision()
+        ? options.store.preparedPressurePaths(changedIds).flatMap(({ record, parts }) => {
+            const hint = preparedPressurePathHint(record, parts, revision);
+            return hint === undefined ? [] : [hint];
+          })
+        : [],
+    integritySnapshot: () => ({
+      format: "inkbook",
+      version: 1,
+      page: options.page(),
+      revision: options.currentRevision(),
+      elements: ["highlight", "content"].flatMap((band) =>
+        options.store
+          .materializeBandOrder(band as "highlight" | "content")
+          .map((id) => options.store.get(id)!.element as InkElementV1),
+      ),
+    }),
     snapshot: () =>
       options.store.materializeSnapshot({
         page: options.page(),
@@ -136,6 +159,53 @@ export function prepareVaultElementMutation(options: {
   );
 }
 
+export async function prepareVaultElementRemoval(options: {
+  readonly active: boolean;
+  readonly cancellation: Parameters<EditableDocumentModel["prepareElementRemoval"]>[1];
+  readonly ids: Parameters<EditableDocumentModel["prepareElementRemoval"]>[0];
+  readonly scheduler: (isCancelled: () => boolean) => StoreSliceScheduler;
+  readonly store: ElementStore;
+}): ReturnType<EditableDocumentModel["prepareElementRemoval"]> {
+  if (!options.active) return { status: "cancelled", token: null };
+  const scheduler = options.scheduler(() => options.cancellation.isCancelled());
+  const mutation = await options.store.createRemovalMutationTimeSliced(options.ids, scheduler);
+  if (mutation === "cancelled" || options.cancellation.isCancelled()) {
+    return { status: "cancelled", token: null };
+  }
+  if (mutation === null) return { status: "noop", token: null };
+  return options.store.prepareElementMutation(mutation, scheduler);
+}
+
+export function createVaultElementPreparationActions(options: {
+  readonly active: () => boolean;
+  readonly run: InteractiveWorkPriority["run"];
+  readonly scheduler: (isCancelled: () => boolean) => StoreSliceScheduler;
+  readonly store: ElementStore;
+}): Pick<EditableActions, "prepareElementMutation" | "prepareElementRemoval"> {
+  return {
+    prepareElementMutation: (mutation, cancellation) =>
+      options.run(() =>
+        prepareVaultElementMutation({
+          active: options.active(),
+          cancellation,
+          mutation,
+          scheduler: options.scheduler,
+          store: options.store,
+        }),
+      ),
+    prepareElementRemoval: (ids, cancellation) =>
+      options.run(() =>
+        prepareVaultElementRemoval({
+          active: options.active(),
+          cancellation,
+          ids,
+          scheduler: options.scheduler,
+          store: options.store,
+        }),
+      ),
+  };
+}
+
 export function prepareVaultElementReplacement(options: {
   readonly active: boolean;
   readonly cancellation: { isCancelled(): boolean };
@@ -194,19 +264,34 @@ export function commitVaultPage(options: {
 }): void {
   if (options.store === undefined || options.autosave === undefined) return;
   const revision = options.revision + 1;
-  const validation = validateRuntimeInkSnapshotV1(
-    options.store.materializeSnapshot({ page: options.page, revision }),
-  );
+  if (!Number.isSafeInteger(revision) || revision < 0) throw new RangeError("Invalid revision.");
+  const validation = validateInkPageV1(options.page);
   if (!validation.ok) {
     throw new RangeError(
       `Page update is invalid (${validation.error.code} at ${validation.error.path}).`,
     );
   }
-  options.commit({ page: validation.value.page, revision });
-  options.autosave.recordCommit({ modelRevision: revision, page: validation.value.page });
+  validatePageExtent(options.store, validation.value);
+  const page = { ...validation.value, background: { ...validation.value.background } };
+  options.commit({ page, revision });
+  options.autosave.recordCommit({ modelRevision: revision, page });
 }
 
 export function requireVaultPage(page: InkSnapshotV1["page"] | undefined): InkSnapshotV1["page"] {
   if (page === undefined) throw new Error("The document page is unavailable.");
   return page;
+}
+
+function validatePageExtent(store: ElementStore, page: InkSnapshotV1["page"]): void {
+  let bottom: number | null = null;
+  for (const band of ["highlight", "content"] as const) {
+    for (const id of store.materializeBandOrder(band)) {
+      const maxY = store.get(id)!.bounds.maxY;
+      bottom = bottom === null ? maxY : Math.max(bottom, maxY);
+    }
+  }
+  const extent = derivePageExtent(page, bottom);
+  if (extent.activeHeight > MAX_DERIVED_HEIGHT || extent.lockedHeight > MAX_DERIVED_HEIGHT) {
+    throw new RangeError("Page update exceeds the maximum derived height.");
+  }
 }

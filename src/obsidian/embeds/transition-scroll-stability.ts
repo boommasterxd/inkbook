@@ -1,4 +1,5 @@
 import type { BrowserScrollElement } from "../scrolling/index";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 
 export const LAYOUT_TRANSITION_CLASS = "inkbook-layout-transitioning";
 export const SCROLL_ANCHOR_SUPPRESSED_CLASS = "inkbook-scroll-anchor-suppressed";
@@ -9,6 +10,7 @@ const MAX_SETTLEMENT_FRAMES = 12;
 const SCROLL_KEYS = new Set(["ArrowDown", "ArrowUp", "End", "Home", "PageDown", "PageUp", " "]);
 
 interface TransitionScrollStabilityOptions {
+  readonly workScheduler: WorkScheduler;
   readonly owner: () => BrowserScrollElement;
   readonly ownerWindow: Window;
   readonly rangeReserve?: PresentationScrollRangeReserve;
@@ -73,7 +75,7 @@ export class PresentationScrollRangeReserve {
  */
 export class TransitionScrollStability {
   readonly #ownerProvider: () => BrowserScrollElement;
-  readonly #ownerWindow: Window;
+  readonly #workScheduler: WorkScheduler;
   readonly #persistentRangeReserve: PresentationScrollRangeReserve | undefined;
   readonly #root: HTMLElement;
   #activeLeases = 0;
@@ -92,7 +94,7 @@ export class TransitionScrollStability {
 
   public constructor(options: TransitionScrollStabilityOptions) {
     this.#ownerProvider = options.owner;
-    this.#ownerWindow = options.ownerWindow;
+    this.#workScheduler = options.workScheduler;
     this.#persistentRangeReserve = options.rangeReserve;
     this.#root = options.root;
   }
@@ -209,7 +211,7 @@ export class TransitionScrollStability {
 
   #scheduleFrame(): void {
     if (this.#frame !== undefined || this.#disposed) return;
-    this.#frame = this.#ownerWindow.requestAnimationFrame(this.#tick);
+    this.#frame = this.#workScheduler.requestFrame(this.#tick);
   }
 
   readonly #tick = (): void => {
@@ -274,7 +276,7 @@ export class TransitionScrollStability {
   }
 
   #cancelFrame(): void {
-    if (this.#frame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#frame);
+    if (this.#frame !== undefined) this.#workScheduler.cancelFrame(this.#frame);
     this.#frame = undefined;
   }
 

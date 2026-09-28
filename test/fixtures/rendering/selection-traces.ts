@@ -1,12 +1,32 @@
+import { buildElementPathParts, type SvgPathPart } from "../../../src/domain/geometry/element-path";
 import { calculateElementBounds } from "../../../src/domain/geometry/public";
 import type { InkElementV1 } from "../../../src/domain/schema/public";
 import { createSceneFixture } from "./scene";
 import { createSnapshot } from "../../unit/persistence/serialization/fixtures";
 import { FakeSceneStore, fakeNode, type FakeNode } from "../../unit/rendering/scene/fakes";
 
+/** Selection scenarios begin from validated mounted paths, independently of cold loading. */
+class SelectionTraceStore extends FakeSceneStore {
+  public readonly prepared = new Map<string, readonly SvgPathPart[]>();
+
+  public pressureGeometry(id: string, version: number) {
+    return {
+      readPath: () => (version === 1 ? this.prepared.get(id) : undefined),
+      readWindow: () => undefined,
+      publishWindow: () => undefined,
+    };
+  }
+}
+
 export function createSelectionTraceFixture(elements: readonly InkElementV1[]) {
-  const store = new FakeSceneStore();
+  const store = new SelectionTraceStore();
   for (const [rank, element] of elements.entries()) {
+    if (
+      element.kind === "stroke" &&
+      element.style.pressureEnabled &&
+      element.points.length > 256 * 3
+    )
+      store.prepared.set(element.id, buildElementPathParts(element));
     store.records.set(element.id, {
       element,
       rank,

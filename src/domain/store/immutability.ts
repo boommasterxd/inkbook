@@ -1,9 +1,26 @@
+import { copyValidatedSampleExtrema } from "../schema/stroke-sample-extrema";
 import type { InkElementV1 } from "../schema/public";
 
 import type { DeepReadonly, ImmutableInkElement } from "./types";
 
 export function immutableElement(element: InkElementV1): ImmutableInkElement {
-  return freezeValue(cloneValue(element)) as ImmutableInkElement;
+  const clone = cloneValue(element) as InkElementV1;
+  if (element.kind === "stroke" && clone.kind === "stroke") {
+    copyValidatedSampleExtrema(element.points, clone.points);
+  }
+  return freezeValue(clone);
+}
+
+/** Preserve an unchanged owned sample buffer while copying all replaceable fields. */
+export function immutableReplacement(
+  element: InkElementV1,
+  source: ImmutableInkElement,
+): ImmutableInkElement {
+  if (element.kind !== "stroke" || source.kind !== "stroke" || element.points !== source.points) {
+    return immutableElement(element);
+  }
+  const fields = immutableElement({ ...element, points: [0, 0, 0.5] });
+  return Object.freeze({ ...fields, points: source.points });
 }
 
 /** The caller must relinquish every mutable alias after transferring ownership. */

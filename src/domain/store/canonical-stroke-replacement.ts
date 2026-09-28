@@ -1,9 +1,13 @@
-import { getCanonicalStrokeReplacementProof } from "../elements/stroke-replacement-proof";
+import {
+  getCanonicalStrokeReplacementProof,
+  inferStoredStrokeTranslation,
+} from "../elements/stroke-replacement-proof";
 import type { InkElementV1 } from "../schema/public";
 
 import { createOwnedTranslatedReplacementRecord } from "./record-factory";
 import { requireElementRecord } from "./record-access";
 import { assertReplacementIdentity } from "./replacement-planner";
+import { cancelled, ReplacementCheckpoint, yieldWhenRequested } from "./replacement-scheduler";
 import type {
   ElementReplacementPlan,
   ElementReplacementSource,
@@ -12,9 +16,6 @@ import type {
 import type { StoreSliceScheduler } from "./types";
 
 const CANONICAL_TRANSLATION_DOMAINS = Object.freeze(["geometry"] as const);
-const MAX_DETECTION_RECORDS_PER_SLICE = 256;
-const MAX_PREPARED_RECORDS_PER_SLICE = 64;
-const ATOMIC_COMMIT_ADMISSION_SIZE = 1_000;
 
 export async function planCanonicalStrokeReplacement(
   source: ElementReplacementSource,
@@ -42,14 +43,13 @@ export async function planCanonicalStrokeReplacement(
   if (indexPatch === "cancelled") return indexPatch;
   yields += indexYields;
   const capacityPatch = source.capacity.prepareUnchanged();
-  const capacityCheckpoint = await yieldWhenRequested(scheduler);
-  if (capacityCheckpoint === "cancelled") return capacityCheckpoint;
-  yields += capacityCheckpoint;
-  if (prepared.records.length >= ATOMIC_COMMIT_ADMISSION_SIZE) {
-    await scheduler.yieldControl();
-    if (cancelled(scheduler)) return "cancelled";
-    yields += 1;
-  }
+  const admissionCheckpoint = yieldWhenRequested(scheduler);
+  const admission =
+    admissionCheckpoint === 0 || admissionCheckpoint === "cancelled"
+      ? admissionCheckpoint
+      : await admissionCheckpoint;
+  if (admission === "cancelled") return admission;
+  yields += admission;
   return finishPlan(source, prepared, geometryVersion, indexPatch, capacityPatch, yields);
 }
 
@@ -69,8 +69,7 @@ async function detectCanonicalBatch(
   scheduler: StoreSliceScheduler,
 ): Promise<CanonicalDetection | "cancelled" | CanonicalFallback> {
   const ids = new Set<string>();
-  let recordsInSlice = 0;
-  let yields = 0;
+  const work = new ReplacementCheckpoint(scheduler);
   for (const replacement of replacements) {
     if (cancelled(scheduler)) return "cancelled";
     if (ids.has(replacement.id))
@@ -78,21 +77,15 @@ async function detectCanonicalBatch(
     ids.add(replacement.id);
     const current = requireElementRecord(source.records, replacement.id);
     if (current.element.kind !== "stroke" || replacement.kind !== "stroke") {
-      return { status: "fallback", yields };
+      return { status: "fallback", yields: work.yields };
     }
-    const proof = getCanonicalStrokeReplacementProof(replacement);
-    if (proof?.source !== current.element) return { status: "fallback", yields };
+    const proof = inferStoredStrokeTranslation(current.element, replacement);
+    if (proof?.source !== current.element) return { status: "fallback", yields: work.yields };
     assertReplacementIdentity(current.element, replacement);
-    recordsInSlice += 1;
-    const checkpoint = await yieldWhenRequested(
-      scheduler,
-      recordsInSlice >= MAX_DETECTION_RECORDS_PER_SLICE,
-    );
-    if (checkpoint === "cancelled") return checkpoint;
-    if (checkpoint === 1) recordsInSlice = 0;
-    yields += checkpoint;
+    const checkpoint = work.checkpoint();
+    if (checkpoint === false || (checkpoint !== true && !(await checkpoint))) return "cancelled";
   }
-  return { status: "canonical", yields };
+  return { status: "canonical", yields: work.yields };
 }
 
 async function prepareRecords(
@@ -109,8 +102,7 @@ async function prepareRecords(
     spatialReplacements: [],
     yields: 0,
   };
-  let recordsInSlice = 0;
-  let yields = 0;
+  const work = new ReplacementCheckpoint(scheduler);
   for (const replacement of replacements) {
     if (cancelled(scheduler)) return "cancelled";
     const current = requireElementRecord(source.records, replacement.id);
@@ -134,16 +126,10 @@ async function prepareRecords(
         id: record.element.id,
       }),
     );
-    recordsInSlice += 1;
-    const checkpoint = await yieldWhenRequested(
-      scheduler,
-      recordsInSlice >= MAX_PREPARED_RECORDS_PER_SLICE,
-    );
-    if (checkpoint === "cancelled") return checkpoint;
-    if (checkpoint === 1) recordsInSlice = 0;
-    yields += checkpoint;
+    const checkpoint = work.checkpoint();
+    if (checkpoint === false || (checkpoint !== true && !(await checkpoint))) return "cancelled";
   }
-  return { ...prepared, yields };
+  return { ...prepared, yields: work.yields };
 }
 
 function finishPlan(
@@ -172,20 +158,6 @@ function finishPlan(
     reversePatches: Object.freeze([]),
     yields,
   };
-}
-
-async function yieldWhenRequested(
-  scheduler: StoreSliceScheduler,
-  required = false,
-): Promise<0 | 1 | "cancelled"> {
-  if (cancelled(scheduler)) return "cancelled";
-  if (!required && !scheduler.shouldYield()) return 0;
-  await scheduler.yieldControl();
-  return cancelled(scheduler) ? "cancelled" : 1;
-}
-
-function cancelled(scheduler: StoreSliceScheduler): boolean {
-  return scheduler.isCancelled?.() ?? false;
 }
 
 function nextVersion(value: number): number {

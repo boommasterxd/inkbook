@@ -1,17 +1,15 @@
 import { FILE_SCHEMA_LIMITS } from "../../domain/schema/constants";
-import {
-  validateSafeSvg,
-  validateSafeSvgSteps,
-  type SafeSvgValidation,
-} from "../documents/safe-svg-validator";
+import { validateSafeSvgSteps, type SafeSvgValidation } from "../documents/safe-svg-validator";
 import type { SafeSvgVersionPolicy } from "../documents/svg-envelope-root";
 import { ChunkedSha256 } from "../serialization/chunked-output-sha256";
+import { hashExactUtf8Output } from "../serialization/chunked-output-assembler";
 
 import { adoptUtf8Output, type Utf8AdoptionOptions } from "./utf8-adoption";
-import { createMainThreadCheckpoint, createMainThreadDeadline } from "./main-thread-checkpoint";
+import { createMainThreadCheckpoint } from "./main-thread-checkpoint";
 
 const HASH = /^[0-9a-f]{64}$/u;
 const DEFAULT_CHUNK_BYTES = 64 * 1024;
+const MAX_NATIVE_HASH_BYTES = 20 * 1024 * 1024;
 
 export interface TrustedSvgOutput {
   readonly content: string;
@@ -27,15 +25,81 @@ interface TrustedSvgInspectionOptions extends Utf8AdoptionOptions {
   readonly waitForBackground?: () => Promise<void>;
 }
 
-export function inspectTrustedSvgOutputSync(
-  output: string | Uint8Array,
-  expectedHash?: string,
-): TrustedSvgOutput {
-  const inspected = inspectBytesSync(output);
-  assertExpectedHash(inspected.outputHash, expectedHash);
-  const safe = validateSafeSvg(inspected.content);
-  if (safe === null) throw new TypeError("Worker output is not a safe Inkbook SVG document.");
-  return trustedOutput(inspected, safe);
+/** Hashes complete bounded bytes without repeating validation of an owned exact output. */
+export async function hashSvgContent(
+  content: string,
+  options: TrustedSvgInspectionOptions = {},
+): Promise<string> {
+  const checkpoint =
+    options.checkpoint ??
+    createMainThreadCheckpoint(options.workScheduler, options.waitForBackground);
+  await checkpoint();
+  options.signal?.throwIfAborted();
+  const chunkBytes = options.chunkBytes ?? DEFAULT_CHUNK_BYTES;
+  assertChunkBytes(chunkBytes);
+  const inspected = await inspectString(content, chunkBytes, checkpoint, options.signal);
+  options.signal?.throwIfAborted();
+  return inspected.outputHash;
+}
+
+/** Uses a bounded native digest for confirmed-base preflight; other inputs retain sliced hashing. */
+export async function hashConfirmedSvgContent(
+  content: string,
+  options: TrustedSvgInspectionOptions = {},
+): Promise<string> {
+  if (
+    content.length > MAX_NATIVE_HASH_BYTES ||
+    typeof crypto === "undefined" ||
+    crypto.subtle === undefined
+  )
+    return hashSvgContent(content, options);
+  const checkpoint =
+    options.checkpoint ??
+    createMainThreadCheckpoint(options.workScheduler, options.waitForBackground);
+  await checkpoint();
+  options.signal?.throwIfAborted();
+  const chunkBytes = options.chunkBytes ?? DEFAULT_CHUNK_BYTES;
+  assertChunkBytes(chunkBytes);
+  const encoded = await encodeConfirmedContent(
+    content,
+    Math.min(chunkBytes, DEFAULT_CHUNK_BYTES),
+    checkpoint,
+    options.signal,
+  );
+  if (encoded === null) return hashSvgContent(content, options);
+  return hashExactUtf8Output(encoded, options.signal, undefined, checkpoint);
+}
+
+async function encodeConfirmedContent(
+  content: string,
+  chunkBytes: number,
+  checkpoint: () => Promise<void>,
+  signal?: AbortSignal,
+): Promise<Uint8Array<ArrayBuffer> | null> {
+  const encoder = new TextEncoder();
+  let output = new Uint8Array(Math.max(1, content.length));
+  let writtenBytes = 0;
+  for (let offset = 0; offset < content.length;) {
+    signal?.throwIfAborted();
+    const end = nextChunkEnd(content, offset, chunkBytes);
+    let fragment = content.slice(offset, end);
+    while (fragment.length > 0) {
+      const encoded = encoder.encodeInto(fragment, output.subarray(writtenBytes));
+      writtenBytes += encoded.written;
+      fragment = fragment.slice(encoded.read);
+      if (fragment.length > 0) {
+        const capacity = Math.min(MAX_NATIVE_HASH_BYTES, output.byteLength * 2);
+        if (capacity <= output.byteLength) return null;
+        const grown = new Uint8Array(capacity);
+        grown.set(output.subarray(0, writtenBytes));
+        output = grown;
+      }
+    }
+    offset = end;
+    await checkpoint();
+  }
+  signal?.throwIfAborted();
+  return output.subarray(0, writtenBytes);
 }
 
 export async function inspectTrustedSvgOutput(
@@ -44,16 +108,14 @@ export async function inspectTrustedSvgOutput(
   options: TrustedSvgInspectionOptions = {},
 ): Promise<TrustedSvgOutput> {
   options.signal?.throwIfAborted();
-  const yieldCheckpoint = options.checkpoint ?? createMainThreadCheckpoint(options.sliceBudgetMs);
   const waitForBackground = options.waitForBackground;
-  const checkpoint = waitForBackground
-    ? async () => {
-        await yieldCheckpoint();
-        await waitForBackground();
-        options.signal?.throwIfAborted();
-      }
-    : yieldCheckpoint;
-  if (waitForBackground) await waitForBackground();
+  const yieldCheckpoint = options.checkpoint ?? createMainThreadCheckpoint(options.workScheduler);
+  const checkpoint = async (): Promise<void> => {
+    if (waitForBackground !== undefined) await waitForBackground();
+    await yieldCheckpoint();
+    options.signal?.throwIfAborted();
+  };
+  await checkpoint();
   options.signal?.throwIfAborted();
   const chunkBytes = options.chunkBytes ?? DEFAULT_CHUNK_BYTES;
   assertChunkBytes(chunkBytes);
@@ -65,7 +127,7 @@ export async function inspectTrustedSvgOutput(
     checkpoint,
     options.signal,
     options.versionPolicy,
-    options.sliceBudgetMs,
+    options.workScheduler,
   );
   if (safe === null) throw new TypeError("Worker output is not a safe Inkbook SVG document.");
   return trustedOutput(inspected, safe);
@@ -75,19 +137,6 @@ interface InspectedOutput {
   readonly content: string;
   readonly outputHash: string;
   readonly totalBytes: number;
-}
-
-function inspectBytesSync(output: string | Uint8Array): InspectedOutput {
-  if (typeof output === "string") {
-    const hasher = new ChunkedSha256();
-    updateStringHash(output, DEFAULT_CHUNK_BYTES, hasher);
-    return { content: output, outputHash: hasher.digestHex(), totalBytes: hasher.totalBytes };
-  }
-  assertOwnedBytes(output);
-  const hasher = new ChunkedSha256();
-  hasher.update(output);
-  const content = new TextDecoder("utf-8", { fatal: true }).decode(output);
-  return { content, outputHash: hasher.digestHex(), totalBytes: output.byteLength };
 }
 
 async function inspectOutput(
@@ -142,20 +191,17 @@ async function inspectString(
   return { content: output, outputHash: hasher.digestHex(), totalBytes: hasher.totalBytes };
 }
 
-function updateStringHash(output: string, chunkBytes: number, hasher: ChunkedSha256): void {
-  const encoder = new TextEncoder();
-  for (let offset = 0; offset < output.length;) {
-    const end = nextChunkEnd(output, offset, chunkBytes);
-    hasher.update(encoder.encode(output.slice(offset, end)));
-    if (hasher.totalBytes > FILE_SCHEMA_LIMITS.totalInputBytes) throw oversizedOutput();
-    offset = end;
-  }
-}
-
 function nextChunkEnd(input: string, offset: number, chunkCodeUnits: number): number {
   let end = Math.min(input.length, offset + chunkCodeUnits);
   const trailing = input.charCodeAt(end - 1);
-  if (end < input.length && trailing >= 0xd800 && trailing <= 0xdbff) end -= 1;
+  if (
+    end < input.length &&
+    trailing >= 0xd800 &&
+    trailing <= 0xdbff &&
+    input.charCodeAt(end) >= 0xdc00 &&
+    input.charCodeAt(end) <= 0xdfff
+  )
+    end += end - offset === 1 ? 1 : -1;
   return end;
 }
 
@@ -165,12 +211,11 @@ async function validateSafeSvgIncrementally(
   checkpoint: () => Promise<void>,
   signal?: AbortSignal,
   versionPolicy: SafeSvgVersionPolicy = "current",
-  sliceBudgetMs?: () => number,
+  workScheduler?: Utf8AdoptionOptions["workScheduler"],
 ): Promise<SafeSvgValidation | null> {
-  const deadline = createMainThreadDeadline(sliceBudgetMs);
   signal?.throwIfAborted();
   const steps = validateSafeSvgSteps(content, {
-    deadlineExceeded: deadline.exceeded,
+    deadlineExceeded: () => workScheduler?.shouldYield() ?? false,
     totalInputBytes: totalBytes,
     versionPolicy,
   });
@@ -179,7 +224,6 @@ async function validateSafeSvgIncrementally(
     signal?.throwIfAborted();
     await checkpoint();
     signal?.throwIfAborted();
-    deadline.restart();
     step = steps.next();
   }
   signal?.throwIfAborted();

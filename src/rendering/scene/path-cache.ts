@@ -1,3 +1,7 @@
+import { roundCanonical } from "../../domain/geometry/primitives";
+import { strokeLocalGeometry } from "../../domain/geometry/stroke-position";
+import { localPressureGeometry } from "./stroke-position";
+import { ProgressivePreviewPath } from "./progressive-preview-path";
 import { isStoredStroke } from "../../domain/elements/stroke-replacement-proof";
 import { pressureWindowRetainedBytes } from "../../domain/geometry/pressure-window";
 import type { PressureWindow } from "../../domain/geometry/pressure-window";
@@ -35,10 +39,11 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
     this.#maximumBytes = maximumBytes;
   }
 
-  public build(
+  public read(
     element: InkElementV1,
     pressureGeometry?: PreparedPressureGeometryPort,
-  ): readonly SvgPathPart[] {
+  ): readonly SvgPathPart[] | undefined {
+    pressureGeometry = localPressureGeometry(element, pressureGeometry);
     const prepared =
       element.kind === "stroke" && element.style.pressureEnabled
         ? pressureGeometry?.readPath?.()
@@ -53,7 +58,34 @@ export class ScenePathCache extends VersionedCache<CachedPath> {
       cached.windows?.forEach((window, index) => pressureGeometry?.publishWindow(index, window));
       return cached.parts;
     }
+    return undefined;
+  }
+
+  public startPreparation(
+    element: InkElementV1,
+    pressureGeometry?: PreparedPressureGeometryPort,
+  ): ProgressivePreviewPath {
     this.recordBuild();
+    return new ProgressivePreviewPath(element, pressureGeometry);
+  }
+
+  public completePreparation(element: InkElementV1, parts: readonly SvgPathPart[]): void {
+    const signature = immutableStrokeSignature(element);
+    if (signature !== undefined && element.kind === "stroke")
+      this.retainShared(element.points, signature, parts, []);
+  }
+
+  public build(
+    element: InkElementV1,
+    pressureGeometry?: PreparedPressureGeometryPort,
+  ): readonly SvgPathPart[] {
+    pressureGeometry = localPressureGeometry(element, pressureGeometry);
+    const cached = this.read(element, pressureGeometry);
+    if (cached !== undefined) return cached;
+    const signature = immutableStrokeSignature(element);
+    const points = element.kind === "stroke" ? element.points : undefined;
+    this.recordBuild();
+    element = element.kind === "stroke" ? strokeLocalGeometry(element) : element;
     if (signature === undefined || points === undefined || !this.retentionEnabled)
       return buildElementPathParts(element, pressureGeometry);
     const windows: PressureWindow[] = [];
@@ -183,7 +215,7 @@ function immutableStrokeSignature(element: InkElementV1): string | undefined {
     element.style.pressureEnabled,
     element.style.smoothing,
     element.rotation,
-    element.pivot.x,
-    element.pivot.y,
+    roundCanonical(element.pivot.x - (element.offset?.x ?? 0)),
+    roundCanonical(element.pivot.y - (element.offset?.y ?? 0)),
   ].join(":");
 }

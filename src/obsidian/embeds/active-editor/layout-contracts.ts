@@ -2,8 +2,10 @@ import type { PageV1 } from "../../../domain/schema/public";
 import type { SvgSceneRenderer } from "../../../rendering/scene/index";
 import type { ToolbarLayoutStage } from "../../../rendering/ui/index";
 import type { ActiveEditorResizeAnchor, ActiveEditorResizeUpdate } from "./layout-resize";
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 
 export interface ActiveEditorLayoutOptions {
+  readonly workScheduler: WorkScheduler;
   readonly beginScrollStability?: () => () => void;
   readonly chromeHost: HTMLElement;
   readonly container: HTMLElement;

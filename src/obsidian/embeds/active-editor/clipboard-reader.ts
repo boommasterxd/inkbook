@@ -65,6 +65,26 @@ export async function readClipboardCandidates(
   }
 }
 
+/** A bounded format hint only; actual Paste validates the complete payload and document limits. */
+export async function probeClipboardCandidate(
+  clipboard: Clipboard | undefined,
+): Promise<boolean | null> {
+  if (clipboard === undefined) return null;
+  try {
+    const candidates = await readCandidateBlobs(clipboard);
+    for (const { blob, mime } of candidates) {
+      if (blob.size === 0) continue;
+      if (mime === INKBOOK_CLIPBOARD_WEB_MIME) return true;
+      const prefix = INKBOOK_CLIPBOARD_TEXT_PREFIX;
+      if (blob.size <= prefix.length) continue;
+      if ((await blob.slice(0, prefix.length).text()) === prefix) return true;
+    }
+    return false;
+  } catch (error) {
+    return error instanceof ClipboardCandidateLimitError ? false : null;
+  }
+}
+
 async function readCandidateBlobs(clipboard: Clipboard): Promise<readonly CandidateBlob[]> {
   if (typeof clipboard.read !== "function") throw new TypeError("Clipboard.read is unavailable.");
   const items = await clipboard.read();

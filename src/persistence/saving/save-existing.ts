@@ -15,7 +15,6 @@ export interface PreparedSave extends PreparedOutput {
 }
 
 export interface SaveRevisionSource {
-  readonly sliceBudgetMs?: () => number;
   readonly waitForBackground?: () => Promise<void>;
   currentRevision(): number;
 }
@@ -31,11 +30,8 @@ export async function saveExistingFile(
   vault: ExistingFilePort,
   verifier: PersistedOutputVerifier,
 ): Promise<ConfirmedSave> {
-  await validatePreparedOutput(
-    prepared,
-    revisionSource.waitForBackground,
-    revisionSource.sliceBudgetMs,
-  );
+  if (revisionSource.waitForBackground) await revisionSource.waitForBackground();
+  validatePreparedOutput(prepared);
   const preflight = await readExistingFileWithinLimit(vault, prepared.path);
   if (!exactStringEqual(preflight, prepared.expectedBase)) {
     throw new SaveError("external-conflict");
@@ -51,11 +47,8 @@ export async function saveExistingFileFromVerifiedPreflight(
   vault: ExistingFilePort,
   verifier: PersistedOutputVerifier,
 ): Promise<ConfirmedSave> {
-  await validatePreparedOutput(
-    prepared,
-    revisionSource.waitForBackground,
-    revisionSource.sliceBudgetMs,
-  );
+  if (revisionSource.waitForBackground) await revisionSource.waitForBackground();
+  validatePreparedOutput(prepared);
   if (
     preflight.base.revision !== expectedBase.revision ||
     preflight.base.outputHash !== expectedBase.outputHash

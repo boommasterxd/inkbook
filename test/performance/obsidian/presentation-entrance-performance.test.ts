@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { workSchedulerFromFrames } from "../../fixtures/obsidian/work-scheduler";
 import { describe, expect, it } from "vitest";
 import { createLoadingPlaceholder } from "../../../src/obsidian/embeds/loading-placeholder";
 import { ColorSchemeBroadcaster } from "../../../src/obsidian/theme/color-scheme";
@@ -90,6 +91,7 @@ function loadingMotionHarness() {
   const loading = createLoadingPlaceholder(host as unknown as HTMLElement, {
     motion: "system",
     scheme,
+    workScheduler: workSchedulerFromFrames(ownerWindow),
   });
   return {
     loading,

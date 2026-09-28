@@ -1,10 +1,9 @@
 import { type SceneStorePort, type SpatialQuerySink } from "../../../../src/rendering/scene";
-import {
-  type SceneElementRecord,
-  type SceneScheduler,
-} from "../../../../src/rendering/scene/types";
+import type { SceneElementRecord } from "../../../../src/rendering/scene/types";
 import type { Bounds } from "../../../../src/domain/geometry/public";
 import type { BoxShapeElementV1 } from "../../../../src/domain/schema/public";
+import { SharedFrameScheduler } from "../../../../src/domain/scheduling/shared-frame-scheduler";
+import type { WorkScheduler } from "../../../../src/domain/scheduling/work-scheduler";
 
 class FakeStyle {
   [key: string]: unknown;
@@ -38,8 +37,20 @@ export class FakeNode {
     return this.nodes;
   }
 
+  public get childNodes(): readonly FakeNode[] {
+    return this.nodes;
+  }
+
+  public get parentNode(): FakeNode | null {
+    return this.parent ?? null;
+  }
+
   public append(...nodes: FakeNode[]): void {
     for (const node of nodes) this.insertBefore(node, null);
+  }
+
+  public appendChild(node: FakeNode): FakeNode {
+    return this.insertBefore(node, null);
   }
 
   public insertBefore(node: FakeNode, reference: FakeNode | null): FakeNode {
@@ -114,10 +125,28 @@ export function fakeNode(node: Element): FakeNode {
   return node as unknown as FakeNode;
 }
 
-export class FakeScheduler implements SceneScheduler {
+export class FakeScheduler {
   readonly #callbacks = new Map<number, FrameRequestCallback>();
   #handle = 0;
+  public readonly workScheduler: WorkScheduler;
+  public frameBudgetMs: number | (() => number);
   public time = 0;
+
+  public constructor(frameBudgetMs: number | (() => number) = 8) {
+    this.frameBudgetMs = frameBudgetMs;
+    const currentBudgetMs = () =>
+      typeof this.frameBudgetMs === "function" ? this.frameBudgetMs() : this.frameBudgetMs;
+    this.workScheduler = new SharedFrameScheduler({
+      now: () => this.now(),
+      budgetMs: currentBudgetMs,
+      frameIntervalMs: () => currentBudgetMs() / 0.55,
+      requestFrame: (callback) => this.requestAnimationFrame(callback),
+      cancelFrame: (handle) => this.cancelAnimationFrame(handle),
+      setTimer: () => 1,
+      clearTimer: () => undefined,
+      isHidden: () => false,
+    });
+  }
 
   public get pendingCount(): number {
     return this.#callbacks.size;

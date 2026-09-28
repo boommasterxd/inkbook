@@ -1,3 +1,5 @@
+import { StrokeShapeCache } from "./stroke-shape-cache";
+import { pressureShapeKey } from "./prepared-pressure-hints";
 import { derivePageExtent } from "../../domain/geometry/public";
 import {
   FILE_SCHEMA_LIMITS,
@@ -42,6 +44,7 @@ import { serializeRuntimeSnapshotToUtf8 } from "./streaming-runtime-export";
 import type { DocumentCodecResult, SerializedInkbookDocument } from "./types";
 export class IncrementalDocumentSerializer {
   readonly #cache = new ElementFragmentCache();
+  readonly #shapeCache = new StrokeShapeCache();
   readonly #elements = new Map<string, InkElementV1>();
   readonly #facts = new Map<string, incrementalValidation.ElementFacts>();
   readonly #orders: Record<RenderBand, string[]> = { content: [], highlight: [] };
@@ -58,6 +61,7 @@ export class IncrementalDocumentSerializer {
   public get instrumentation(): FragmentSerializerInstrumentation {
     return {
       backgroundBuilds: this.#backgroundCache.builds,
+      ...this.#shapeCache.instrumentation,
       cacheBytes: this.#cache.retainedBytes,
       cacheElements: this.#cache.size,
       derivedBoundsReuses: this.#derivedBoundsReuses,
@@ -73,6 +77,33 @@ export class IncrementalDocumentSerializer {
     const elements = ids.map((id) => this.#elements.get(id)!);
     return snapshotValue(this.#revision, this.#page, elements);
   }
+  public currentRevision(): number | null {
+    return this.#revision;
+  }
+  public currentPage(): PageV1 | null {
+    return this.#page === null ? null : canonicalPage(this.#page);
+  }
+  public seedPreparedPressurePath(id: string, d: string, shapeKey: string): boolean {
+    const element = this.#elements.get(id);
+    if (
+      element?.kind !== "stroke" ||
+      !element.style.pressureEnabled ||
+      element.offset !== undefined ||
+      pressureShapeKey(element) !== shapeKey
+    )
+      return false;
+    this.#shapeCache.seed(element, d);
+    return true;
+  }
+  public hasElement(id: string): boolean {
+    return this.#elements.has(id);
+  }
+  public currentElementCount(): number {
+    return this.#elements.size;
+  }
+  public currentAggregateFacts(): Readonly<incrementalValidation.AggregateFacts> | null {
+    return this.#revision === null ? null : { ...this.#aggregateFacts };
+  }
   public prewarmElement(id: string, maximumBytes: number): number | null {
     const element = this.#elements.get(id);
     if (element === undefined) return null;
@@ -81,11 +112,17 @@ export class IncrementalDocumentSerializer {
       this.#cache.touch(id);
       return 0;
     }
-    const fragments = buildElementFragments(element, this.#facts.get(id)?.bottom);
+    const fragments = buildElementFragments(element, this.#facts.get(id)?.bottom, this.#shapeCache);
     if (fragments.bytes > maximumBytes) return null;
     this.#fragmentBuilds += 1;
     this.#cache.replace(id, fragments);
     return fragments.bytes;
+  }
+  public prewarmElementAt(index: number, maximumBytes: number): number | null {
+    const highlight = this.#orders.highlight;
+    const id =
+      index < highlight.length ? highlight[index] : this.#orders.content[index - highlight.length];
+    return id === undefined ? null : this.prewarmElement(id, maximumBytes);
   }
   public reset(snapshot: InkSnapshotV1): DocumentCodecResult<void> {
     return this.#reset(snapshot, false);
@@ -136,6 +173,9 @@ export class IncrementalDocumentSerializer {
     for (const id of this.#cache.ids()) {
       if (!activeIds.has(id)) this.#cache.remove(id);
     }
+    for (const id of this.#shapeCache.ids()) {
+      if (!activeIds.has(id)) this.#shapeCache.remove(id);
+    }
     this.#elements.clear();
     this.#facts.clear();
     this.#orders.content = [];
@@ -153,7 +193,10 @@ export class IncrementalDocumentSerializer {
     this.#aggregateFacts = incrementalValidation.aggregateElementFacts(this.#facts.values());
     return { ok: true, value: undefined };
   }
-  public applyDelta(delta: DocumentSerializationDelta): DocumentCodecResult<void> {
+  public applyDelta(
+    delta: DocumentSerializationDelta,
+    deferredFragmentIds?: ReadonlySet<string>,
+  ): DocumentCodecResult<void> {
     if (this.#revision === null || delta.baseModelRevision !== this.#revision) {
       return codecFailure(
         "base-revision-mismatch",
@@ -181,20 +224,29 @@ export class IncrementalDocumentSerializer {
       this.#facts.delete(id);
       this.#elements.delete(id);
       this.#cache.remove(id);
+      this.#shapeCache.retire(id);
     }
     for (const changedElement of prepared.value.changed.values()) {
       const element = canonicalElement(changedElement, this.#runtimeStrokeBuffers);
       this.#elements.set(element.id, element);
       this.#facts.set(element.id, facts.value.changed.get(element.id)!);
-      this.#cache.replace(
-        element.id,
-        buildElementFragments(element, facts.value.changed.get(element.id)!.bottom),
-      );
-      this.#fragmentBuilds += 1;
+      if (deferredFragmentIds?.has(element.id)) {
+        this.#cache.remove(element.id);
+      } else {
+        this.#cache.replace(
+          element.id,
+          buildElementFragments(
+            element,
+            facts.value.changed.get(element.id)!.bottom,
+            this.#shapeCache,
+          ),
+        );
+        this.#fragmentBuilds += 1;
+      }
     }
     this.#orders.highlight = prepared.value.orders.highlight;
     this.#orders.content = prepared.value.orders.content;
-    this.#page = canonicalPage(prepared.value.snapshot.page);
+    this.#page = canonicalPage(prepared.value.page);
     this.#revision = delta.modelRevision;
     this.#aggregateFacts = facts.value.aggregate;
     this.#derivedBoundsReuses += prepared.value.derivations.size;
@@ -340,6 +392,7 @@ export class IncrementalDocumentSerializer {
   }
   public clear(): void {
     this.#cache.clear();
+    this.#shapeCache.clear();
     this.#backgroundCache.clear();
     this.#elements.clear();
     this.#facts.clear();
@@ -411,7 +464,11 @@ export class IncrementalDocumentSerializer {
       this.#cache.touch(element.id);
       return cached;
     }
-    const fragments = buildElementFragments(element, this.#facts.get(element.id)?.bottom);
+    const fragments = buildElementFragments(
+      element,
+      this.#facts.get(element.id)?.bottom,
+      this.#shapeCache,
+    );
     this.#fragmentBuilds += 1;
     this.#cache.retainIfSpace(element.id, fragments);
     return fragments;

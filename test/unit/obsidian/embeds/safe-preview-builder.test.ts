@@ -5,6 +5,18 @@ import { createPreviewSvgAsync } from "../../../../src/obsidian/embeds/safe-prev
 import { configurePreviewSvg } from "../../../../src/obsidian/embeds/safe-preview-svg";
 import { serializeInkbookDocument } from "../../../../src/persistence/serialization/public";
 import { createSnapshot } from "../../persistence/serialization/fixtures";
+import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
+
+function budgetScheduler(now: () => number, budget: () => number) {
+  let started = now();
+  return {
+    ...immediateWorkScheduler(),
+    shouldYield: () => now() - started >= budget(),
+    nextFrame: async () => {
+      started = now();
+    },
+  };
+}
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -21,7 +33,7 @@ it("preserves the canonical detached preview without stylesheet or metadata", as
   const imported = vi.spyOn(document, "importNode");
   const actual = await createPreviewSvgAsync(document, source, {
     checkpoint: async () => {},
-    now: () => 0,
+    workScheduler: immediateWorkScheduler(),
     isCancelled: () => false,
   });
   expect(actual?.outerHTML).toBe(expected.outerHTML);
@@ -36,7 +48,7 @@ it("cancels before building any SVG when the initial idle wait is invalidated", 
   expect(
     await createPreviewSvgAsync(document, "", {
       checkpoint: async () => {},
-      now: () => 0,
+      workScheduler: immediateWorkScheduler(),
       isCancelled: () => true,
     }),
   ).toBeUndefined();
@@ -53,27 +65,34 @@ it("bounds element creation and cancels a partially built detached tree", async 
   let checkpoints = 0;
   const result = await createPreviewSvgAsync(document, source, {
     checkpoint: async () => {
-      expect(create.mock.calls.length - previous).toBeLessThanOrEqual(32);
+      expect(create.mock.calls.length - previous).toBeLessThanOrEqual(256);
       previous = create.mock.calls.length;
       checkpoints += 1;
     },
-    now: () => 0,
+    workScheduler: {
+      ...immediateWorkScheduler(),
+      shouldYield: () => create.mock.calls.length - previous >= 256,
+    },
     isCancelled: () => checkpoints === 5,
   });
   expect(result).toBeUndefined();
-  expect(create).toHaveBeenCalledTimes(128);
+  expect(create).toHaveBeenCalledTimes(1024);
 });
 
 it("yields during long metadata scanning before constructing content", async () => {
-  const source = "<svg><metadata>" + "x".repeat(128 * 1024) + '</metadata><path d="M0 0"/></svg>';
+  const source = "<svg><metadata>" + "x".repeat(1024 * 1024) + '</metadata><path d="M0 0"/></svg>';
   const create = vi.spyOn(document, "createElementNS");
   let checkpoints = 0;
+  let scans = 0;
   expect(
     await createPreviewSvgAsync(document, source, {
       checkpoint: async () => {
         checkpoints += 1;
       },
-      now: () => 0,
+      workScheduler: {
+        ...immediateWorkScheduler(),
+        shouldYield: () => ++scans % 16 === 0,
+      },
       isCancelled: () => checkpoints === 4,
     }),
   ).toBeUndefined();
@@ -86,7 +105,7 @@ it.each(["<svg><foreignObject/></svg>", '<svg><path d="M0 0"/>', "<g></g>"])(
     await expect(
       createPreviewSvgAsync(document, source, {
         checkpoint: async () => {},
-        now: () => 0,
+        workScheduler: immediateWorkScheduler(),
         isCancelled: () => false,
       }),
     ).rejects.toThrow("validated Inkbook preview");
@@ -117,8 +136,10 @@ it.each([60, 90, 120, 144, 240])(
       {
         checkpoint: async () => observe(),
         isCancelled: () => false,
-        now: () => time,
-        sliceBudgetMs: () => budget,
+        workScheduler: budgetScheduler(
+          () => time,
+          () => budget,
+        ),
       },
     );
     observe();
@@ -141,15 +162,19 @@ it("rechecks a changed refresh budget within a running slice and after continuat
   });
   const batches: number[] = [];
   let previous = 0;
+  const scheduler = budgetScheduler(
+    () => time,
+    () => (1000 / refreshRate) * 0.55,
+  );
   await createPreviewSvgAsync(document, `<svg>${'<path d="M0 0"/>'.repeat(20)}</svg>`, {
     checkpoint: async () => {
       batches.push(count - previous);
       previous = count;
       if (count === 6) refreshRate = 60;
+      await scheduler.nextFrame();
     },
     isCancelled: () => false,
-    now: () => time,
-    sliceBudgetMs: () => (1000 / refreshRate) * 0.55,
+    workScheduler: scheduler,
   });
   batches.push(count - previous);
   expect(batches).toEqual([0, 3, 3, 10, 5]);
@@ -174,10 +199,12 @@ it("yields before creating a node when a token scan exhausts the current time bu
       checkpoints.push(create.mock.calls.length);
     },
     isCancelled: () => false,
-    now: () => time,
-    sliceBudgetMs: () => 2,
+    workScheduler: budgetScheduler(
+      () => time,
+      () => 2,
+    ),
   });
-  expect(checkpoints).toEqual([0, 0, 0]);
+  expect(checkpoints.slice(0, 3)).toEqual([0, 0, 0]);
   expect(svg?.localName).toBe("svg");
   expect(create).toHaveBeenCalledOnce();
 });

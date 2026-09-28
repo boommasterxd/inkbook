@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { Bounds } from "../../../../src/domain/geometry/public";
 import { buildElementPathParts } from "../../../../src/domain/geometry/element-path";
 import type { BoxShapeElementV1, PageV1 } from "../../../../src/domain/schema/public";
-import { SvgSceneRenderer, type SpatialQuerySink } from "../../../../src/rendering/scene";
+import { SvgSceneRenderer } from "../../../../src/rendering/scene";
+import { QueryCostStore } from "../../../fixtures/rendering/scene";
 import type { SceneViewport } from "../../../../src/rendering/scene/types";
 import {
   FakeDocument,
@@ -26,19 +26,8 @@ const PAGE: PageV1 = {
 class AdvancingScheduler extends FakeScheduler {
   public override now(): number {
     const current = this.time;
-    this.time += 2;
+    this.time += 0.5;
     return current;
-  }
-}
-
-class QueryCostStore extends FakeSceneStore {
-  public constructor(private readonly scheduler: FakeScheduler) {
-    super();
-  }
-
-  public override query(bounds: Bounds, sink: SpatialQuerySink): void {
-    super.query(bounds, sink);
-    this.scheduler.time += 9;
   }
 }
 
@@ -73,7 +62,7 @@ describe("resumable scene reconciliation", () => {
 
   it("keeps full background geometry independent of the visible viewport", verifyGrowthCoverage);
 
-  it("reuses a cell-range candidate union while exact bounds change within those cells", () => {
+  it("queries changed viewport edges within the same spatial cells", () => {
     const scheduler = new FakeScheduler();
     const store = new FakeSceneStore();
     store.records.set("edge", fakeRectangleRecord("edge", 0, 190));
@@ -87,8 +76,8 @@ describe("resumable scene reconciliation", () => {
 
     expect(renderer.mountedIds("content")).toEqual(["edge"]);
     expect(renderer.instrumentation()).toMatchObject({
-      spatialQueries: 0,
-      visibilityCandidateCacheHits: 1,
+      spatialQueries: 2,
+      visibilityCandidateVisits: 1,
     });
   });
 
@@ -107,13 +96,12 @@ describe("resumable scene reconciliation", () => {
     expect(renderer.instrumentation()).toMatchObject({
       domEntrants: 0,
       domExits: 0,
-      spatialQueries: 0,
-      visibilityCandidateCacheHits: 1,
-      visibilitySortSkips: 1,
+      spatialQueries: 2,
+      visibilityCandidateVisits: 0,
     });
   });
 
-  it("uses the absolute frame deadline after prior frame work and resumes without another query", () => {
+  it("allows one bounded mount when a query consumes the shared frame deadline", () => {
     const scheduler = new AdvancingScheduler();
     const store = new QueryCostStore(scheduler);
     const expected = populateRectangles(store, 12);
@@ -121,10 +109,8 @@ describe("resumable scene reconciliation", () => {
 
     scheduler.runNext();
 
-    expect(renderer.mountedCount).toBe(0);
+    expect(renderer.mountedCount).toBe(1);
     expect(renderer.instrumentation()).toMatchObject({
-      maximumMountSliceElements: 1,
-      mountDeadlineYields: 1,
       mountSlices: 1,
       spatialQueries: 1,
     });
@@ -228,11 +214,10 @@ describe("scene reconciliation frame priority", () => {
     const document = new FakeDocument();
     const renderer = new SvgSceneRenderer({
       container: asElement(new FakeNode(document, "div")),
-      frameBudgetMs: 8,
       layout: { readViewport: () => ({ height: 100, left: 0, top: 0, width: 100 }) },
       onSceneCommitted: committed,
       page: PAGE,
-      scheduler,
+      workScheduler: scheduler.workScheduler,
       store,
     });
     renderer.setPage({ ...PAGE, background: { spacing: 25, type: "dots" } }, 500);
@@ -253,23 +238,24 @@ describe("scene reconciliation frame priority", () => {
     expect(committed).toHaveBeenCalledOnce();
     expect(renderer.instrumentation()).toMatchObject({
       backgroundBuilds: 1,
-      backgroundBudgetDeferrals: 1,
       motionEntrances: 0,
     });
+    expect(renderer.instrumentation().backgroundBudgetDeferrals).toBeGreaterThan(0);
   });
 });
 
 describe("resumable scene reconciliation after invalidation", () => {
-  it("restarts pending work without publishing staged paths before a dense remount", () => {
+  it("reuses prepared paths without publishing stale nodes before a dense remount", () => {
     const scheduler = new FakeScheduler();
     const store = new FakeSceneStore();
     populateRectangles(store, 1_201);
     const renderer = createRenderer(store, scheduler);
 
     scheduler.runNext();
-    expect(renderer.mountedCount).toBe(0);
-    expect(renderer.instrumentation().geometryBuilds).toBeGreaterThan(0);
-    expect(renderer.instrumentation().geometryBuilds).toBeLessThan(store.records.size);
+    expect(renderer.mountedCount).toBe(64);
+    const prepared = renderer.instrumentation().geometryBuilds;
+    expect(prepared).toBeGreaterThan(0);
+    expect(prepared).toBeLessThan(store.records.size);
 
     showViewport(renderer, scheduler, 10_000);
     expect(renderer.mountedCount).toBe(0);
@@ -280,7 +266,7 @@ describe("resumable scene reconciliation after invalidation", () => {
     expect(renderer.mountedCount).toBe(store.records.size);
     expect(renderer.instrumentation()).toMatchObject({
       pathCacheEvictions: 0,
-      pathCacheHits: 0,
+      pathCacheHits: prepared,
       spatialQueries: 1,
     });
   });
@@ -356,10 +342,10 @@ describe("pending scene state replacement", () => {
 
     renderer.setViewport({ height: 100, left: 0, top: 10_000, width: 100 });
     scheduler.runNext();
-    expect(renderer.mountedCount).toBe(ids.length);
-    expect(renderer.mountedIds("content")).toEqual(committedOrder);
+    expect(renderer.mountedCount).toBeGreaterThan(0);
+    expect(renderer.mountedCount).toBeLessThan(ids.length);
     const contentGroup = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
-    expect(contentGroup.nodes).toHaveLength(ids.length);
+    expect(contentGroup.nodes).toHaveLength(renderer.mountedCount);
     scheduler.runAll();
     expect(renderer.mountedCount).toBe(0);
   });
@@ -440,7 +426,6 @@ function createRenderer(
   const document = new FakeDocument();
   return new SvgSceneRenderer({
     container: asElement(new FakeNode(document, "div")),
-    frameBudgetMs: 8,
     layout: {
       readViewport: options.readViewport ?? (() => ({ height: 100, left: 0, top: 0, width: 100 })),
     },
@@ -448,7 +433,7 @@ function createRenderer(
       ? {}
       : { onSceneCommitted: options.onSceneCommitted }),
     page: options.page ?? PAGE,
-    scheduler,
+    workScheduler: scheduler.workScheduler,
     store,
   });
 }

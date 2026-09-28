@@ -4,6 +4,7 @@ import { InkbookLoadingPreviewWidget } from "../../../../src/obsidian/embeds/liv
 import { documentRecognitionUnavailable } from "../../../../src/obsidian/embeds/live-preview-recognition-effects";
 import type { EmbedIntegrationPorts } from "../../../../src/obsidian/embeds/presentation-port";
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
+import { nativeFrameWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 
 function transientWidget(cached: false | undefined) {
   const host = new FakePresentationElement();
@@ -16,6 +17,7 @@ function transientWidget(cached: false | undefined) {
     documents: { recognize: () => pending, cached: () => cached },
     sessions: { getMotionPreference: () => "reduced" },
     scheme: { subscribe: () => () => undefined },
+    workScheduler: nativeFrameWorkScheduler,
     lifecycle: {
       register: (root: HTMLElement, cleanup: () => void) => {
         cleanups.set(root, cleanup);

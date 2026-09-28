@@ -3,6 +3,7 @@ import type { ToolDefaultsV1 } from "../../../domain/settings/types";
 import type { ElementStore } from "../../../domain/store/public";
 import type { GesturePreviewStart } from "../../../editor/gestures/public";
 import type { SelectionFrameSession } from "../../../editor/selection/public";
+import type { WorkPriority, WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 
 import type { ActiveEditorHistory } from "./history";
 import type { PreparedElementHistory } from "./prepared-element-history";
@@ -37,8 +38,8 @@ export interface SelectionEdgeDragPort {
 }
 
 export interface SelectionPreviewFrameScheduler {
-  cancelAnimationFrame(handle: number): void;
-  requestAnimationFrame(callback: FrameRequestCallback): number;
+  cancelFrame(handle: number): void;
+  requestFrame(callback: FrameRequestCallback, priority?: WorkPriority): number;
 }
 
 export interface SelectionPreviewOptions {
@@ -52,10 +53,7 @@ export interface SelectionPreviewOptions {
   readonly selectionEdgeDrag?: SelectionEdgeDragPort;
   readonly selection: () => ReadonlySet<string>;
   readonly selectionSignal?: AbortSignal;
-  readonly selectionWorkBudget?: {
-    readonly now: () => number;
-    readonly sliceBudgetMs: () => number;
-  };
+  readonly workScheduler?: WorkScheduler;
   readonly selectionFrames?: SelectionFrameSession;
   readonly connectionSnapping?: boolean | (() => boolean);
   readonly frameScheduler?: SelectionPreviewFrameScheduler;

@@ -1,12 +1,74 @@
-import { expect, it } from "vitest";
+import { observeSchemaArray } from "../../fixtures/domain/schema-array-work";
+import { expect, it, vi } from "vitest";
+import * as elementValidation from "../../../src/domain/schema/element-validation";
+import * as bottomHeap from "../../../src/domain/spatial/max-bottom-heap";
+import { UniformSpatialIndex } from "../../../src/domain/spatial";
+import { applySelectionStyleChange } from "../../../src/editor/tools/style-change";
 import { ElementStore } from "../../../src/domain/store/public";
+import { SelectionHandleSession } from "../../../src/editor/selection/handle-session";
 import { moveSelectionTimeSliced } from "../../../src/editor/selection/transforms";
 import { CheckpointSliceScheduler, requireStroke } from "./domain-scenarios";
 import { createStandardDomainFixture } from "./standard-domain-fixture";
 
-it("prepares replacements incrementally and preserves unrelated records", async () => {
+it("bounds heap comparisons during 1,024 spatial replacement preparations", async () => {
+  const index = new UniformSpatialIndex<number>();
+  const original = { minX: 10, minY: 10, maxX: 20, maxY: 20 };
+  const replacements = Array.from({ length: 1_024 }, (_, id) => ({
+    bounds: { minX: 30, minY: id + 30, maxX: 40, maxY: id + 40 },
+    id,
+  }));
+  index.insertMany(replacements.map(({ id }) => ({ bounds: original, id })));
+  const sift = vi.spyOn(bottomHeap, "heapifyBottomAt");
+  const comparisonsPerSlice: number[] = [];
+  let observed = 0;
+  try {
+    const plan = await index.prepareReplacementsTimeSliced(replacements, {
+      shouldYield: () => sift.mock.calls.length >= (comparisonsPerSlice.length + 1) * 256,
+      yieldControl: async () => {
+        const results = sift.mock.results.slice(observed);
+        comparisonsPerSlice.push(
+          results.reduce((sum, result) => sum + (result.value as number), 0),
+        );
+        observed = sift.mock.results.length;
+        expect(index.getMaximumBottom()).toBe(20);
+      },
+    });
+    expect(plan).not.toBe("cancelled");
+    if (plan === "cancelled") return;
+    expect(sift).toHaveBeenCalledTimes(512);
+    expect(comparisonsPerSlice).toHaveLength(2);
+    expect(comparisonsPerSlice.every((count) => count > 0 && count <= 5_120)).toBe(true);
+    index.commitPreparedReplacements(plan);
+    expect(index.getMaximumBottom()).toBe(1_063);
+  } finally {
+    sift.mockRestore();
+  }
+});
+
+async function createObservedOwnedStore() {
   const fixture = createStandardDomainFixture();
-  const store = new ElementStore(fixture.elements);
+  const observations = fixture.elements.flatMap((element) => {
+    if (element.kind !== "stroke") return [];
+    const observation = observeSchemaArray(element.points);
+    element.points = observation.observed;
+    return [observation];
+  });
+  const builder = ElementStore.createBuilder({
+    shouldYield: () => false,
+    yieldControl: async () => undefined,
+  });
+  await builder.appendOwnedRuntime(fixture.elements);
+  const store = await builder.finalize();
+  if (store === null) throw new Error("Expected an owned fixture store.");
+  for (const { work } of observations) {
+    work.indexedReads = 0;
+    work.descriptorReads = 0;
+  }
+  return { fixture, observations, store };
+}
+
+it("prepares replacements incrementally and preserves unrelated records", async () => {
+  const { fixture, observations, store } = await createObservedOwnedStore();
   const selected = new Set(fixture.strokeIds);
   const unrelated = fixture.elements
     .filter(({ id }) => !selected.has(id))
@@ -24,6 +86,13 @@ it("prepares replacements incrementally and preserves unrelated records", async 
   const result = store.commitPreparedElementReplacement(prepared.token);
   expect(result.status).toBe("committed");
   expect(result.delta?.changes).toHaveLength(10_000);
+  expect(
+    observations.every(({ work }) => work.indexedReads === 0 && work.descriptorReads === 0),
+  ).toBe(true);
+  for (const stroke of strokes) {
+    const moved = store.get(stroke.id)!.element;
+    expect(moved.kind === "stroke" && moved.points).toBe(stroke.points);
+  }
   expect(scheduler.checkpointCounts.length).toBeGreaterThan(1);
   expect(scheduler.checkpointCounts.every((count) => count <= 40)).toBe(true);
   for (const record of unrelated) expect(store.get(record.element.id)).toBe(record);
@@ -33,4 +102,65 @@ it("prepares replacements incrementally and preserves unrelated records", async 
     recordReplacements: 10_000,
     timeSlicedIndexVisits: 10_000,
   });
+}, 30_000);
+
+it("validates 10,000 owned style replacements once without reading their samples", async () => {
+  const { fixture, observations, store } = await createObservedOwnedStore();
+  const strokes = fixture.strokeIds.map((id) => requireStroke(store, id));
+  const validate = vi.spyOn(elementValidation, "validateRuntimeInkElementV1");
+  try {
+    const replacements = applySelectionStyleChange(strokes, { property: "opacity", value: 0.4 });
+    const plan = store.planReplacements(replacements.elements)!;
+    const delta = store.replaceMany(plan.replacements);
+    expect(delta?.changes).toHaveLength(10_000);
+    // Observe inputs at the actual schema boundary: original samples never reenter it.
+    expect(validate.mock.calls).toHaveLength(10_000);
+    for (const [element] of validate.mock.calls) {
+      expect((element as { points: number[] }).points.length).toBe(3);
+    }
+    expect(
+      observations.every(({ work }) => work.indexedReads === 0 && work.descriptorReads === 0),
+    ).toBe(true);
+    for (const stroke of strokes) {
+      const record = store.get(stroke.id)!;
+      expect(record.element.kind === "stroke" && record.element.points).toBe(stroke.points);
+      expect(record.element.kind === "stroke" && record.element.style.opacity).toBe(0.4);
+    }
+  } finally {
+    validate.mockRestore();
+  }
+}, 30_000);
+
+it("validates resize samples once at the authoritative prepared transaction", async () => {
+  const fixture = createStandardDomainFixture();
+  const store = new ElementStore(fixture.elements);
+  const selected = fixture.strokeIds.slice(0, 1_001).map((id) => requireStroke(store, id));
+  const sampleValues = selected.reduce((sum, stroke) => sum + stroke.points.length, 0);
+  const scheduler = new CheckpointSliceScheduler(40);
+  const session = new SelectionHandleSession({
+    action: { kind: "scale", position: "bottom-right", anchor: { x: 0, y: 0 }, rotation: 0 },
+    elements: selected,
+    planner: store,
+    startPointer: { x: 100, y: 100 },
+  });
+  session.update({ x: 110, y: 110 });
+  const validate = vi.spyOn(elementValidation, "validateInkElementV1");
+  try {
+    const materialized = await session.prepareCommitTimeSliced(scheduler);
+    expect(validate).not.toHaveBeenCalled();
+    if (materialized.status !== "ready") throw new Error("Expected resize materialization.");
+    const prepared = await store.prepareElementReplacement(materialized.replacements, scheduler);
+    if (prepared.token === null) throw new Error("Expected resize transaction.");
+    expect(validate.mock.calls).toHaveLength(selected.length);
+    expect(
+      validate.mock.calls.reduce(
+        (sum, [element]) => sum + (element as { points: number[] }).points.length,
+        0,
+      ),
+    ).toBe(sampleValues);
+    expect(store.commitPreparedElementReplacement(prepared.token).status).toBe("committed");
+    expect(store.commitPreparedElementReplacement(prepared.token).status).toBe("cancelled");
+  } finally {
+    validate.mockRestore();
+  }
 }, 30_000);

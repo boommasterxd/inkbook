@@ -1,10 +1,15 @@
+import { strokePrimitiveSteps } from "../../../../src/editor/selection/stroke-selection-geometry";
+import { translatedStroke } from "../../../../src/domain/geometry/stroke-position";
 import { describe, expect, it, vi } from "vitest";
 
 import type {
   PreparedPressureGeometryPort,
   PressureWindow,
 } from "../../../../src/domain/geometry/prepared-pressure-geometry";
-import { transformedStrokeCenters } from "../../../../src/domain/geometry/stroke-path";
+import {
+  transformedStrokeCenters,
+  type StrokeCenter,
+} from "../../../../src/domain/geometry/stroke-path";
 import * as pressureUnion from "../../../../src/domain/geometry/pressure-union";
 import { simplifyStrokeCenters } from "../../../../src/domain/geometry/stroke-simplification";
 import { pressurePaintAdditionSteps } from "../../../../src/editor/selection/pressure-paint-additions";
@@ -33,6 +38,88 @@ function fixture() {
   };
   return { target, windows, prepared };
 }
+
+it("cancels an addition guard without starting a pressure window", () => {
+  const { target } = fixture();
+  let advances = 0;
+  let closed = false;
+  function* guard() {
+    try {
+      advances += 1;
+      yield 32;
+      advances += 1;
+      return true;
+    } finally {
+      closed = true;
+    }
+  }
+  const union = vi.spyOn(pressureUnion, "iteratePressureUnion");
+  try {
+    const steps = strokePrimitiveSteps(target, { additionsMayTouch: guard });
+    while (advances === 0 && !steps.next().done) {
+      // The guard runs after the bounded capsule stream.
+    }
+    expect(advances).toBe(1);
+    steps.return(undefined);
+    expect(closed).toBe(true);
+    expect(advances).toBe(1);
+    expect(union).not.toHaveBeenCalled();
+  } finally {
+    union.mockRestore();
+  }
+});
+
+it.each([
+  { x: 0, y: 0 },
+  { x: 100, y: 200 },
+  { x: -100.003, y: -200.007 },
+])("passes world-space centers to the positioned addition guard at $x, $y", (offset) => {
+  const { target } = fixture();
+  const moved = translatedStroke(target, offset);
+  const original = simplifyStrokeCenters(
+    transformedStrokeCenters(target),
+    target.style.width,
+    true,
+  );
+  const guard = vi.fn(function* (centers: readonly StrokeCenter[]) {
+    expect(centers).toEqual(
+      original.map((center) => ({
+        ...center,
+        x: center.x + offset.x,
+        y: center.y + offset.y,
+      })),
+    );
+    yield centers.length;
+    return false;
+  });
+  const union = vi.spyOn(pressureUnion, "iteratePressureUnion");
+  try {
+    Array.from(strokePrimitiveSteps(moved, { additionsMayTouch: guard }));
+    expect(guard).toHaveBeenCalledTimes(1);
+    expect(union).not.toHaveBeenCalled();
+  } finally {
+    union.mockRestore();
+  }
+});
+
+it("cancels positioned-center translation before the addition guard runs", () => {
+  const { target } = fixture();
+  const points = Array.from({ length: 130 }, (_, index) => [index, index % 2 ? 100 : 0, 1]).flat();
+  const guard = vi.fn(function* () {
+    yield 1;
+    return true;
+  });
+  const steps = strokePrimitiveSteps(translatedStroke({ ...target, points }, { x: -2, y: 3 }), {
+    additionsMayTouch: guard,
+  });
+  let result = steps.next();
+  while (!result.done && (typeof result.value !== "number" || result.value > 32))
+    result = steps.next();
+  expect(result.done).toBe(false);
+  steps.return(undefined);
+  expect(guard).not.toHaveBeenCalled();
+  expect(steps.next().done).toBe(true);
+});
 
 describe("shared painted pressure windows", () => {
   it("reuses the renderer's exact outward patch for point and area selection", () => {
@@ -63,6 +150,53 @@ describe("shared painted pressure windows", () => {
     }
   });
 
+  it.each([0.003, -1000.007])(
+    "translates local edge paint without re-quantizing at offset %s",
+    (x) => {
+      const { target, prepared, windows } = fixture();
+      const point = { x: 17.75, y: 23.37 };
+      expect(strokeSvgContainsPoint(target, point, prepared)).toBe(true);
+      const offset = { x, y: x + 0.002 };
+      const moved = translatedStroke(target, offset);
+      const worldPoint = { x: point.x + offset.x, y: point.y + offset.y };
+      const area = createRectangleSelectionArea(
+        { x: worldPoint.x - 0.001, y: worldPoint.y - 0.001 },
+        { x: worldPoint.x + 0.001, y: worldPoint.y + 0.001 },
+      );
+      const readWindow = vi.spyOn(prepared, "readWindow");
+      const publishWindow = vi.spyOn(prepared, "publishWindow");
+      publishWindow.mockClear();
+      const polygons = [
+        ...strokePrimitiveSteps(moved, {
+          bounds: area.bounds,
+          prepared,
+          nearPoint: { point: worldPoint, radius: 0.2 },
+        }),
+      ].filter(
+        (value) => value !== undefined && typeof value !== "number" && value.kind === "polygon",
+      );
+      expect(polygons).toEqual(
+        windows.get(0)!.additions.map((points) => ({
+          kind: "polygon",
+          points: points.map((p) => ({ x: p.x + offset.x, y: p.y + offset.y })),
+        })),
+      );
+      expect(polygons.length).toBeGreaterThan(0);
+      const steps = elementMatchesSelectionAreaSteps(
+        area,
+        moved,
+        "touched",
+        calculateElementBounds(moved),
+        prepared,
+      );
+      let result = steps.next();
+      while (!result.done) result = steps.next();
+      expect(result.value).toBe(true);
+      expect(readWindow).not.toHaveBeenCalled();
+      expect(publishWindow).not.toHaveBeenCalled();
+    },
+  );
+
   it("publishes only complete cold windows and abandons cancelled preparation", () => {
     const { target, prepared, windows } = fixture();
     const centers = simplifyStrokeCenters(
@@ -77,7 +211,7 @@ describe("shared painted pressure windows", () => {
     expect(windows.size).toBe(0);
     const complete = [
       ...pressurePaintAdditionSteps(centers, target.style.width, { prepared }),
-    ].filter((value) => value !== undefined);
+    ].filter((value) => value !== undefined && typeof value !== "number");
     expect(complete.length).toBeGreaterThan(0);
     expect(windows.size).toBe(1);
     expect(windows.get(0)).toBeDefined();

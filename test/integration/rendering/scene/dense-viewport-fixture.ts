@@ -14,8 +14,8 @@ import {
 const DENSE_VIEWPORT_ELEMENT_COUNT = 2_500;
 const DENSE_VIEWPORT_FIXTURE_VERSION = "dense-viewport-v2";
 export const DENSE_VIEWPORT_PROFILES = [
-  { elapsedLimitMs: 500, frameLimit: 30, name: "desktop", viewport: [1_200, 800] },
-  { elapsedLimitMs: 1_000, frameLimit: 60, name: "mobile", viewport: [390, 700] },
+  { name: "desktop", viewport: [1_200, 800] },
+  { name: "mobile", viewport: [390, 700] },
 ] as const;
 
 const PAGE: PageV1 = {
@@ -101,7 +101,7 @@ export function createDenseViewportHarness(options: {
       }),
     },
     page: PAGE,
-    scheduler,
+    workScheduler: scheduler.workScheduler,
     store,
   });
   return { renderer, scheduler, store };

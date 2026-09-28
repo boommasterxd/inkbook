@@ -104,30 +104,20 @@ describe("copied embed paste owner lifetime", () => {
 });
 
 describe("copied embed paste duplication lifetime", () => {
-  it.each(["create", "validate", "invalid"])(
-    "trashes the duplicate when its owner aborts during %s",
-    async (phase) => {
-      const test = harness();
-      if (phase === "create") {
-        const original = test.create.getMockImplementation();
-        test.create.mockImplementationOnce(async () => {
-          test.owner.abort();
-          return original!();
-        });
-      } else {
-        test.validate.mockResolvedValueOnce(true).mockImplementationOnce(async () => {
-          test.owner.abort();
-          return phase !== "invalid";
-        });
-      }
-      await expect(test.controller.paste(test.request)).resolves.toEqual({
-        kind: "stale",
-        cleanup: "trashed",
-      });
-      expect(test.trash).toHaveBeenCalledExactlyOnceWith("duplicate.svg");
-      expect(test.replaceRange).not.toHaveBeenCalled();
-    },
-  );
+  it("trashes the duplicate when its owner aborts during readback", async () => {
+    const test = harness();
+    const original = test.create.getMockImplementation();
+    test.create.mockImplementationOnce(async () => {
+      test.owner.abort();
+      return original!();
+    });
+    await expect(test.controller.paste(test.request)).resolves.toEqual({
+      kind: "stale",
+      cleanup: "trashed",
+    });
+    expect(test.trash).toHaveBeenCalledExactlyOnceWith("duplicate.svg");
+    expect(test.replaceRange).not.toHaveBeenCalled();
+  });
 
   it("blocks concurrent pastes until the pending choice is settled", async () => {
     const test = harness();

@@ -11,11 +11,12 @@ import { DocumentCapacity } from "./document-capacity";
 import { createElementStoreBuilder, type ElementStoreBuilder } from "./element-store-builder";
 import { ElementStoreRuntime } from "./element-store-runtime";
 import { hasConnections } from "./element-comparison";
-import type { ElementMutationPlan } from "./element-mutation";
+import { commitMutationDerivedState, type ElementMutationPlan } from "./element-mutation";
 import { removeElements } from "./element-removal";
 import { mutableElement } from "./immutability";
 import { EMPTY_STORE_INSTRUMENTATION, type MutableStoreInstrumentation } from "./instrumentation";
 import { normalizeElementInput } from "./input-normalization";
+import { applyMutationRecordPatches } from "./mutation-record-patch";
 import { assertCompleteBandOrder, ElementStoreOrdering } from "./order-operations";
 import {
   prepareReplacementPlan,
@@ -84,6 +85,8 @@ export class ElementStore {
   >();
   readonly #preparedElementMutations = new PreparedElementMutations(
     () => ({
+      capacity: this.#capacity,
+      index: this.#spatialIndex,
       bands: this.#bands,
       geometryVersion: this.#geometryVersion,
       mutationVersion: this.#mutationVersion,
@@ -165,6 +168,8 @@ export class ElementStore {
   public pressureGeometry(id: string, version: number) {
     return this.#runtime.pressureGeometry(id, version, (key) => this.#records.get(key));
   }
+  public readonly preparedPressurePaths = (ids?: ReadonlySet<string>) =>
+    this.#runtime.preparedPressurePaths((id) => this.#records.get(id), ids);
   public readonly releasePreparedPressureGeometry = () => this.#runtime.releasePressureGeometry();
   public readonly activeDocumentMemoryUsage = (): ElementStoreMemoryUsage =>
     this.#runtime.memoryUsage();
@@ -312,27 +317,23 @@ export class ElementStore {
   ): Promise<PreparedElementMutationResult> {
     return this.#preparedElementMutations.prepare(mutation, scheduler, replay);
   }
-
+  public readonly createRemovalMutationTimeSliced =
+    this.#preparedElementMutations.createRemovalMutationTimeSliced.bind(
+      this.#preparedElementMutations,
+    );
   public commitPreparedElementMutation(
     token: PreparedElementMutation,
   ): ElementMutationCommitResult {
     return this.#preparedElementMutations.commit(token);
   }
   #adoptElementMutation(plan: ElementMutationPlan): ElementMutationCommitResult {
-    this.#records = plan.records;
-    this.#capacity = plan.capacity;
-    this.#spatialIndex = plan.index;
-    this.#reverseConnections = plan.reverseConnections;
-    this.#overflowCount = plan.overflowCount;
+    commitMutationDerivedState(this.#capacity, this.#reverseConnections, plan);
+    applyMutationRecordPatches(this.#records, this.#ranks, plan);
+    this.#overflowCount = this.#spatialIndex.overflowCount;
     this.#geometryVersion = plan.delta.geometryVersion;
     this.#paintVersion = plan.delta.paintVersion;
     this.#bands = plan.bands;
-    this.#ranks = plan.ranks;
-    return {
-      delta: this.#publish(plan.delta),
-      status: "committed",
-      transition: plan.applied,
-    };
+    return { delta: this.#publish(plan.delta), status: "committed", transition: plan.applied };
   }
 
   public updateStyle(id: string, style: ElementStyle): StoreDelta | null {

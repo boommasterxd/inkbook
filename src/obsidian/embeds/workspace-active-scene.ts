@@ -1,3 +1,4 @@
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { PhoneSheetNavigation } from "../menus/panel-page";
 import type { PhoneSheetHostPort } from "../menus/phone-sheet-host";
 import type { Keymap } from "obsidian";
@@ -31,7 +32,7 @@ export interface WorkspaceActiveSceneOptions {
   readonly onOpenShortcuts: (navigation?: PhoneSheetNavigation) => void;
   readonly scheme: "dark" | "light";
   readonly showFeedback: (code: InkbookFeedbackCode) => void;
-  readonly sliceBudgetMs: () => number;
+  readonly workScheduler: WorkScheduler;
   readonly vaultSettings: InkbookSettingsV4;
 }
 
@@ -76,7 +77,7 @@ export function createWorkspaceActiveScene(
     root: attachment.root,
     scheme: options.scheme,
     scrollOwner: attachment.scrollOwner,
-    sliceBudgetMs: options.sliceBudgetMs,
+    workScheduler: options.workScheduler,
     selectionHighlightsEnabled: options.vaultSettings.selectionHighlightsEnabled,
     snapping: options.vaultSettings.snapping,
     startupTool: options.vaultSettings.startupTool,

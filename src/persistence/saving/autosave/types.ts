@@ -1,9 +1,11 @@
 import type { InkElementV1, InkSnapshotV1, PageV1 } from "../../../domain/schema/public";
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 import type { ExportDelta } from "../../worker/coalesced-export";
 import type { DocumentRuntimePort } from "../../worker/runtime/public";
 import type { ExistingFilePort, NewFilePort } from "../save-ports";
 import type { VaultBase } from "../../worker/protocol";
 import type { ActiveSaveProof, ExportSuccess } from "../../worker/protocol";
+import type { PreparedPressurePathHint } from "../../serialization/prepared-pressure-hints";
 
 export type AutosaveStatus =
   | "clean"
@@ -23,7 +25,7 @@ export interface AutosaveClock {
 }
 
 export interface AutosaveSessionBaseOptions {
-  readonly sliceBudgetMs?: () => number;
+  readonly workScheduler: WorkScheduler;
   readonly waitForBackground?: () => Promise<void>;
   readonly beforeExistingWrite?: (expectedContent: string) => Promise<void>;
   readonly clock: AutosaveClock;
@@ -43,6 +45,14 @@ export interface AutosaveDocumentSource {
   isGestureActive(): boolean;
   orderByBand(): Readonly<Partial<Record<"content" | "highlight", readonly string[]>>>;
   snapshot(): InkSnapshotV1;
+  /** Read-only Store-owned identities for integrity hashing, never mutation or transport. */
+  integritySnapshot?(): InkSnapshotV1;
+  readonly ownsIntegrityElement?: (element: InkElementV1) => boolean;
+  /** Optional current, Store-owned geometry already produced by the active scene. */
+  preparedPressurePaths?(
+    modelRevision: number,
+    changedIds?: ReadonlySet<string>,
+  ): readonly PreparedPressurePathHint[];
 }
 
 export interface ConfirmedPersistence {
@@ -57,7 +67,7 @@ export interface AutosaveObserver {
 }
 
 export interface AutosaveCoordinatorOptions {
-  readonly sliceBudgetMs?: () => number;
+  readonly workScheduler: WorkScheduler;
   readonly waitForBackground?: () => Promise<void>;
   readonly beforeExistingWrite?: (expectedContent: string) => Promise<void>;
   readonly clock: AutosaveClock;

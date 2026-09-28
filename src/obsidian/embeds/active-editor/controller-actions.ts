@@ -10,7 +10,7 @@ import type { ContextMenuAction } from "../../menus/index";
 import type { EditableDocumentModel } from "../vault-document-session";
 
 import { ActiveEditorClipboardController } from "./controller-clipboard";
-import { readClipboardCandidates, type SynchronousClipboardData } from "./clipboard-reader";
+import { probeClipboardCandidate, type SynchronousClipboardData } from "./clipboard-reader";
 import { isClipboardAction } from "./controller-helpers";
 import {
   arrangeSelectionAvailability,
@@ -145,7 +145,7 @@ export class ActiveEditorActions {
     return this.#actionConfirmation;
   }
 
-  public get hasValidatedPaste(): boolean {
+  public get hasPasteCandidate(): boolean {
     return this.#clipboard.hasPastePayload;
   }
 
@@ -261,17 +261,10 @@ export class ActiveEditorActions {
   }
 
   async #probeSystemClipboard(generation: number): Promise<boolean> {
-    const candidates = await readClipboardCandidates(this.#ownerWindow.navigator.clipboard);
-    if (candidates === null || generation !== this.#pasteProbeGeneration || !this.#isEnabled()) {
+    const valid = await probeClipboardCandidate(this.#ownerWindow.navigator.clipboard);
+    if (valid === null || generation !== this.#pasteProbeGeneration || !this.#isEnabled()) {
       return this.canPaste;
     }
-    let valid = false;
-    try {
-      valid = (await this.#model.planClipboardPaste(candidates, this.#toolbarPaste())) !== null;
-    } catch {
-      return this.canPaste;
-    }
-    if (generation !== this.#pasteProbeGeneration || !this.#isEnabled()) return this.canPaste;
     this.#clipboard.setProbedPasteAvailable(valid);
     return this.canPaste;
   }
@@ -398,7 +391,7 @@ function feedbackForClipboardResult(
 }
 
 function sameSelection(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
-  return left.size === right.size && [...left].every((id) => right.has(id));
+  return left === right || (left.size === right.size && [...left].every((id) => right.has(id)));
 }
 
 function isArrangeAction(action: ContextMenuAction): action is ArrangeAction {

@@ -17,7 +17,10 @@ import {
 } from "./interaction-refresh-profile-fixture";
 import { FakeNode, FakeScheduler } from "../../../unit/rendering/scene/fakes";
 
-const FAKE_CLOCK_CHECKPOINTS_PER_FRAME = 4;
+// Reading the clock for scheduler admission is not scene work. Later synthetic ticks
+// exercise deadlines; the assertions below bound actual mounts, queries, and builds.
+const FAKE_CLOCK_CHECKPOINTS_PER_FRAME = 8;
+const MAX_MOUNT_SLICE_ELEMENTS = 6;
 const TRANSITIONS = 12;
 const DEFAULT_CAMERA: SceneCamera = { x: 0, zoom: 1 };
 const DEFAULT_VIEWPORT: SceneViewport = { height: 100, left: 0, top: 0, width: 100 };
@@ -262,15 +265,20 @@ describe("restored stroke motion work", () => {
 });
 
 class ProfileScheduler extends FakeScheduler {
+  #frameEntryRead = false;
+
   public override now(): number {
     const current = this.time;
-    this.time +=
-      INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs / FAKE_CLOCK_CHECKPOINTS_PER_FRAME;
+    if (!this.#frameEntryRead)
+      this.time +=
+        INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs / FAKE_CLOCK_CHECKPOINTS_PER_FRAME;
+    this.#frameEntryRead = false;
     return current;
   }
 
   public override runNext(): void {
     this.time += INTERACTION_REFRESH_PROFILE.frameDurationMs;
+    this.#frameEntryRead = true;
     super.runNext();
   }
 }
@@ -283,17 +291,17 @@ function createProfileRenderer(store: ElementStore) {
   });
 }
 
-function runFirstFrameAndFollowUps(scheduler: ProfileScheduler, prepare: () => void): void {
+function runFirstFrameAndFollowUps(scheduler: FakeScheduler, prepare: () => void): void {
   prepare();
   runPendingFrameAndFollowUps(scheduler);
 }
 
-function runPendingFrameAndFollowUps(scheduler: ProfileScheduler): void {
+function runPendingFrameAndFollowUps(scheduler: FakeScheduler): void {
   expect(scheduler.pendingCount).toBe(1);
   runFrameAndFollowUps(scheduler);
 }
 
-function runFrameAndFollowUps(scheduler: ProfileScheduler): void {
+function runFrameAndFollowUps(scheduler: FakeScheduler): void {
   let frameCount = 0;
   while (scheduler.pendingCount > 0) {
     expect(scheduler.pendingCount).toBe(1);
@@ -303,13 +311,13 @@ function runFrameAndFollowUps(scheduler: ProfileScheduler): void {
   }
 }
 
-function drainPendingFrames(scheduler: ProfileScheduler): void {
+function drainPendingFrames(scheduler: FakeScheduler): void {
   while (scheduler.pendingCount > 0) runPendingFrameAndFollowUps(scheduler);
 }
 
 function drainBoundedReconciliation(
   renderer: SvgSceneRenderer,
-  scheduler: ProfileScheduler,
+  scheduler: FakeScheduler,
   maximumFrames: number,
 ): void {
   let frames = 0;
@@ -319,10 +327,8 @@ function drainBoundedReconciliation(
     scheduler.runNext();
     frames += 1;
     const stats = renderer.instrumentation();
-    // The first entry has no probe; floating-point deadline equality permits one extra probe.
-    expect(stats.maximumMountSliceElements).toBeLessThanOrEqual(
-      FAKE_CLOCK_CHECKPOINTS_PER_FRAME + 2,
-    );
+    // Simulated time controls scheduling; the observed mount count remains the work bound.
+    expect(stats.maximumMountSliceElements).toBeLessThanOrEqual(MAX_MOUNT_SLICE_ELEMENTS);
   }
 }
 
@@ -359,10 +365,10 @@ function createFullyVisibleRenderer(
   frameBudgetMs = () => INTERACTION_REFRESH_PROFILE.interruptibleSliceDeadlineMs,
 ) {
   const fixture = createInteractionRenderer(store, { frameBudgetMs });
-  fixture.scheduler.runAll();
+  fixture.scheduler.runAll(1_000);
   fixture.renderer.setPage(INTERACTION_PAGE, 2_000);
   fixture.renderer.setViewport({ height: 2_000, left: 0, top: 0, width: 2_000 });
-  fixture.scheduler.runAll();
+  fixture.scheduler.runAll(1_000);
   expect(fixture.renderer.mountedCount).toBe(INTERACTION_ELEMENT_COUNT);
   return fixture;
 }

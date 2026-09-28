@@ -20,7 +20,7 @@ describe("pressure-group static integrity performance", () => {
       serialized.value.svg.indexOf('<g id="inkbook-background">'),
     );
     expect(current.match(/<g opacity=/gu)).toHaveLength(10_000);
-    const fragments = vi.spyOn(pathMarkup, "serializeParts");
+    const fragments = vi.spyOn(pathMarkup, "serializeElementPaths");
     const builds = vi.spyOn(geometry, "buildElementPathParts");
     const matcher = new StreamingStaticIntegrityMatcher(snapshot, serialized.value.lockedHeight);
     expect(fragments).not.toHaveBeenCalled();

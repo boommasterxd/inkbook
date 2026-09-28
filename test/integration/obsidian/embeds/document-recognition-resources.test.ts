@@ -1,6 +1,7 @@
 import { TFile, type Vault } from "obsidian";
 import { describe, expect, it } from "vitest";
 import { ObsidianInkbookDocumentRecognition } from "../../../../src/obsidian/embeds/document-recognition";
+import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 
 function boundedHarness(count: number, deferred = false) {
   const File = TFile as unknown as new (path: string, size: number) => TFile;
@@ -27,7 +28,7 @@ function boundedHarness(count: number, deferred = false) {
         );
       },
     } as unknown as Vault,
-    { deferUntilLayoutReady: deferred },
+    { deferUntilLayoutReady: deferred, workScheduler: immediateWorkScheduler() },
   );
   return {
     recognition,

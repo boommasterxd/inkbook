@@ -55,7 +55,7 @@ export async function canonicalMetadataSha256Async(
     }
   }
   writer.finish();
-  return hashExactUtf8Output(output, options.signal, options.digest);
+  return hashExactUtf8Output(output, options.signal, options.digest, options.checkpoint);
 }
 
 function canonicalMetadataMatches(input: string, snapshot: InkSnapshotV1): boolean {
@@ -71,9 +71,10 @@ export function validateCurrentMetadataIntegrity(
   metadataText: string,
   expectedHash: string | null,
   migrated: MigratedSnapshot,
+  validation: "canonical" | "safe" = "canonical",
 ): DocumentCodecResult<undefined> {
   if (migrated.sourceVersion !== 1) return { ok: true, value: undefined };
-  if (!canonicalMetadataMatches(metadataText, migrated.snapshot)) {
+  if (validation === "canonical" && !canonicalMetadataMatches(metadataText, migrated.snapshot)) {
     return metadataFailure("invalid-json", "Snapshot metadata is not canonical compact JSON.");
   }
   if (expectedHash === null || metadataSha256(metadataText) !== expectedHash) {

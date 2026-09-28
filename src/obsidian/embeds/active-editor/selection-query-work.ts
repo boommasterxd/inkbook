@@ -1,20 +1,19 @@
 import type { SelectionPreviewOptions } from "./selection-preview-contracts";
+import type { SelectionQueryStep } from "../../../editor/selection/public";
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 
-const STEPS_PER_FRAME = 64;
+// Recheck selection identity after bounded work, without imposing a frame wait.
+const WORK_UNITS_PER_SELECTION_CHECK = 4096;
+const GEOMETRY_BATCH_WORK_UNITS = 64;
 type SelectionQueryOptions = Pick<
   SelectionPreviewOptions,
-  | "frameScheduler"
-  | "selection"
-  | "selectionSignal"
-  | "selectionWorkBudget"
-  | "setSelection"
-  | "store"
->;
+  "selection" | "selectionSignal" | "setSelection" | "store"
+> & { readonly workScheduler: WorkScheduler };
 
 /** Drains bounded geometry steps while retaining no work after cancellation. */
 export class SelectionQueryWork {
   readonly #options: SelectionQueryOptions;
-  readonly #steps: Generator<void, ReadonlySet<string>>;
+  readonly #steps: Generator<SelectionQueryStep, ReadonlySet<string>>;
   readonly #selection: ReadonlySet<string>;
   #frame: number | undefined;
   #unsubscribe: (() => void) | undefined;
@@ -22,7 +21,10 @@ export class SelectionQueryWork {
   #started = false;
   #changed = false;
 
-  public constructor(options: SelectionQueryOptions, steps: Generator<void, ReadonlySet<string>>) {
+  public constructor(
+    options: SelectionQueryOptions,
+    steps: Generator<SelectionQueryStep, ReadonlySet<string>>,
+  ) {
     this.#options = options;
     this.#steps = steps;
     this.#selection = options.selection();
@@ -37,14 +39,14 @@ export class SelectionQueryWork {
     }
     this.#unsubscribe = this.#options.store.subscribe(this.cancel);
     this.#options.selectionSignal?.addEventListener("abort", this.cancel, { once: true });
-    this.#advance();
+    this.#advance(false);
     return this.#changed;
   }
 
   public readonly cancel = (): void => {
     if (this.#finished) return;
     this.#finished = true;
-    if (this.#frame !== undefined) this.#options.frameScheduler?.cancelAnimationFrame(this.#frame);
+    if (this.#frame !== undefined) this.#options.workScheduler.cancelFrame(this.#frame);
     this.#frame = undefined;
     this.#unsubscribe?.();
     this.#unsubscribe = undefined;
@@ -52,34 +54,49 @@ export class SelectionQueryWork {
     this.#steps.return(this.#selection);
   };
 
-  #advance(): void {
+  #advance(admitted: boolean): void {
     try {
-      this.#runSlice();
+      this.#runSlice(admitted);
     } catch (error) {
       this.cancel();
       throw error;
     }
   }
 
-  #runSlice(): void {
+  #runSlice(admitted: boolean): void {
     this.#frame = undefined;
     if (this.#finished) return;
-    const current = this.#options.selection();
-    if (current !== this.#selection && !sameMembers(current, this.#selection)) return this.cancel();
-    const scheduler = this.#options.frameScheduler;
-    const budget = this.#options.selectionWorkBudget;
-    const deadline = budget === undefined ? Infinity : budget.now() + budget.sliceBudgetMs();
-    for (let count = 0; scheduler === undefined || count < STEPS_PER_FRAME; count += 1) {
+    if (this.#selectionChanged()) return this.cancel();
+    const scheduler = this.#options.workScheduler;
+    if (!admitted && scheduler.shouldYield()) return this.#scheduleFrame();
+    let remaining = WORK_UNITS_PER_SELECTION_CHECK;
+    while (true) {
       const result = this.#steps.next();
+      if (this.#finished) return;
       if (result.done) {
         this.cancel();
+        if (this.#selectionChanged()) return;
         this.#changed = !sameMembers(result.value, this.#selection);
         if (this.#changed) this.#options.setSelection(result.value);
         return;
       }
-      if (scheduler !== undefined && budget !== undefined && budget.now() >= deadline) break;
+      // Keep large predicates within the existing batch charge and maximum 63-unit overrun.
+      remaining -= Math.min(result.value ?? GEOMETRY_BATCH_WORK_UNITS, GEOMETRY_BATCH_WORK_UNITS);
+      if (remaining <= 0) {
+        if (this.#selectionChanged()) return this.cancel();
+        remaining = WORK_UNITS_PER_SELECTION_CHECK;
+      }
+      if (scheduler.shouldYield()) return this.#scheduleFrame();
     }
-    this.#frame = scheduler.requestAnimationFrame(() => this.#advance());
+  }
+
+  #selectionChanged(): boolean {
+    const current = this.#options.selection();
+    return current !== this.#selection && !sameMembers(current, this.#selection);
+  }
+
+  #scheduleFrame(): void {
+    this.#frame = this.#options.workScheduler.requestFrame(() => this.#advance(true), "frame");
   }
 }
 

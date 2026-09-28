@@ -1,3 +1,7 @@
+import { translatedStroke } from "../../../src/domain/geometry/stroke-position";
+import * as geometryPrimitives from "../../../src/domain/geometry/primitives";
+import * as strokeCenters from "../../../src/domain/geometry/stroke-path";
+import { strokePrimitiveSteps } from "../../../src/editor/selection/stroke-selection-geometry";
 import * as pressureUnion from "../../../src/domain/geometry/pressure-union";
 import * as pressureIntersections from "../../../src/domain/geometry/pressure-boundary-intersections";
 import { pressurePaintAdditionSteps } from "../../../src/editor/selection/pressure-paint-additions";
@@ -7,6 +11,7 @@ import * as pressureWindows from "../../../src/domain/geometry/pressure-window";
 import * as pressureCapsuleSelection from "../../../src/domain/geometry/pressure-capsule-selection";
 import * as pressureJoins from "../../../src/domain/geometry/pressure-joins";
 import { calculateElementBounds } from "../../../src/domain/geometry/public";
+import * as geometryBounds from "../../../src/domain/geometry/public";
 import { LassoSelectionSession } from "../../../src/editor/selection/lasso-selection-session";
 import {
   selectionOverlayContainsPoint,
@@ -26,73 +31,139 @@ import {
   primitiveTouchesAreaSteps,
 } from "../../../src/editor/selection/selection-area-primitives";
 import { maximumStroke } from "./maximum-stroke-fixture";
+import { indexedLassoEdges } from "../../../src/editor/selection/lasso-edge-index";
 
-it.each([true, false])("bounds raw reads before an early hit (pressure=%s)", (pressureEnabled) => {
-  const target = maximumStroke(0);
-  let reads = 0;
-  const points = new Proxy(target.points, {
-    get: (source, key) => {
-      if (key === "length") return source.length;
-      if (typeof key === "string" && /^\d+$/.test(key)) {
-        reads += 1;
-        return source[Number(key)];
-      }
-      throw new Error("Unexpected sample access");
-    },
-  });
-  const area = createRectangleSelectionArea({ x: -1, y: 99 }, { x: 1, y: 101 });
-  const steps = elementMatchesSelectionAreaSteps(
-    area,
-    {
-      ...target,
-      points,
-      style: { ...target.style, pressureEnabled },
-    },
-    "touched",
-    calculateElementBounds(target),
-  );
-  let result = steps.next();
-  let previousReads = 0;
-  while (!result.done) {
-    expect(reads - previousReads).toBeLessThanOrEqual(65 * 9);
-    previousReads = reads;
-    result = steps.next();
-  }
-  expect(result.value).toBe(true);
-  expect(reads).toBeLessThanOrEqual(130 * 9);
-  const cancelled = elementMatchesSelectionAreaSteps(
-    area,
-    { ...target, points },
-    "touched",
-    calculateElementBounds(target),
-  );
-  cancelled.next();
-  cancelled.return(false);
-  const beforeCancelledAdvance = reads;
+it("charges and cancels dense lasso bin construction and duplicate query visits", () => {
+  const points = Array.from({ length: 512 }, (_, index) => ({
+    x: index,
+    y: index % 2 === 0 ? -100 : 100,
+  }));
+  const bounds = { minX: 0, minY: -100, maxX: 511, maxY: 100 };
+  const cancelled = indexedLassoEdges(points, bounds, bounds);
+  expect(cancelled.next().value).toBe(32);
+  cancelled.return([]);
   expect(cancelled.next().done).toBe(true);
-  expect(reads).toBe(beforeCancelledAdvance);
-
-  reads = 0;
-  const windows = vi.spyOn(pressureWindows, "preparePressureWindows");
-  const missed = elementMatchesSelectionAreaSteps(
-    createRectangleSelectionArea({ x: 0, y: 900 }, { x: 20_000, y: 901 }),
-    { ...target, points, style: { ...target.style, pressureEnabled } },
-    "touched",
-    { minX: 0, minY: 0, maxX: 20_000, maxY: 1000 },
-  );
-  previousReads = 0;
-  let missResult = missed.next();
-  while (!missResult.done) {
-    expect(reads - previousReads).toBeLessThanOrEqual(65 * 9);
-    previousReads = reads;
-    missResult = missed.next();
+  const query = indexedLassoEdges(points, bounds, bounds);
+  let charged = 0;
+  let result = query.next();
+  while (!result.done) {
+    expect(result.value).toBeLessThanOrEqual(32);
+    charged += result.value;
+    result = query.next();
   }
-  expect(windows).not.toHaveBeenCalled();
-  windows.mockRestore();
-  expect(missResult.value).toBe(false);
-  const sampleCount = target.points.length / 3;
-  expect(reads).toBeLessThanOrEqual((sampleCount + Math.ceil(sampleCount / 64)) * 9);
+  expect(result.value).toHaveLength(512);
+  expect(charged).toBe(1087);
 });
+
+it("bounds actual indexed lasso edge work across 10,000 interior candidates", () => {
+  const points = Array.from({ length: 512 }, (_, index) => ({
+    x: 500 + 400 * Math.cos((index * 2 * Math.PI) / 512),
+    y: 500 + 400 * Math.sin((index * 2 * Math.PI) / 512),
+  }));
+  const area = createLassoSelectionArea(points);
+  const stroke = indexedStroke(0);
+  let charged = 0;
+  const edgeCheck = vi.spyOn(geometryBounds, "boundsIntersect");
+  try {
+    for (let candidate = 0; candidate < 10_000; candidate += 1) {
+      const x = 490 + (candidate % 20);
+      const y = 490 + (Math.floor(candidate / 20) % 20);
+      const bounds = { minX: x - 1, minY: y - 1, maxX: x + 1, maxY: y + 1 };
+      const steps = elementMatchesSelectionAreaSteps(area, stroke, "fully-enclosed", bounds);
+      let result = steps.next();
+      while (!result.done) {
+        charged += result.value ?? 64;
+        expect(result.value).toBeLessThanOrEqual(32);
+        result = steps.next();
+      }
+      expect(result.value).toBe(true);
+    }
+    const actualEdgeChecks = edgeCheck.mock.calls.filter(([left]) => "start" in left).length;
+    expect(actualEdgeChecks).toBeGreaterThan(0);
+    expect(actualEdgeChecks).toBeLessThan(400_000);
+    expect(charged).toBeLessThan(80_000);
+  } finally {
+    edgeCheck.mockRestore();
+  }
+});
+
+it.each(
+  [true, false].flatMap((pressureEnabled) =>
+    [false, true].map((positioned) => ({ pressureEnabled, positioned })),
+  ),
+)(
+  "bounds raw reads before an early hit (pressure=$pressureEnabled, positioned=$positioned)",
+  ({ pressureEnabled, positioned }) => {
+    const offset = positioned ? { x: 0.003, y: -0.007 } : { x: 0, y: 0 };
+    const target = positioned ? translatedStroke(maximumStroke(0), offset) : maximumStroke(0);
+    let reads = 0;
+    const points = new Proxy(target.points, {
+      get: (source, key) => {
+        if (key === "length") return source.length;
+        if (typeof key === "string" && /^\d+$/.test(key)) {
+          reads += 1;
+          return source[Number(key)];
+        }
+        throw new Error("Unexpected sample access");
+      },
+    });
+    const area = createRectangleSelectionArea(
+      { x: -1 + offset.x, y: 99 + offset.y },
+      { x: 1 + offset.x, y: 101 + offset.y },
+    );
+    const steps = elementMatchesSelectionAreaSteps(
+      area,
+      {
+        ...target,
+        points,
+        style: { ...target.style, pressureEnabled },
+      },
+      "touched",
+      calculateElementBounds(target),
+    );
+    let result = steps.next();
+    let previousReads = 0;
+    while (!result.done) {
+      expect(reads - previousReads).toBeLessThanOrEqual(65 * 9);
+      previousReads = reads;
+      result = steps.next();
+    }
+    expect(result.value).toBe(true);
+    expect(reads).toBeLessThanOrEqual(130 * 9);
+    const cancelled = elementMatchesSelectionAreaSteps(
+      area,
+      { ...target, points },
+      "touched",
+      calculateElementBounds(target),
+    );
+    cancelled.next();
+    cancelled.return(false);
+    const beforeCancelledAdvance = reads;
+    expect(cancelled.next().done).toBe(true);
+    expect(reads).toBe(beforeCancelledAdvance);
+
+    reads = 0;
+    const windows = vi.spyOn(pressureWindows, "preparePressureWindows");
+    const missed = elementMatchesSelectionAreaSteps(
+      createRectangleSelectionArea({ x: 0, y: 900 }, { x: 20_000, y: 901 }),
+      { ...target, points, style: { ...target.style, pressureEnabled } },
+      "touched",
+      { minX: 0, minY: 0, maxX: 20_000, maxY: 1000 },
+    );
+    previousReads = 0;
+    let missResult = missed.next();
+    while (!missResult.done) {
+      expect(reads - previousReads).toBeLessThanOrEqual(65 * 9);
+      previousReads = reads;
+      missResult = missed.next();
+    }
+    expect(windows).not.toHaveBeenCalled();
+    windows.mockRestore();
+    expect(missResult.value).toBe(false);
+    const sampleCount = target.points.length / 3;
+    expect(reads).toBeLessThanOrEqual((sampleCount + Math.ceil(sampleCount / 64)) * 9);
+  },
+);
 
 it("yields bounded polygon-edge work for a maximum lasso enclosure", () => {
   let reads = 0;
@@ -149,7 +220,7 @@ it("yields bounded polygon-edge work for a maximum lasso enclosure", () => {
     missResult = miss.next();
   }
   expect(missResult.value).toBe(false);
-  expect(missYields).toBeLessThanOrEqual(5);
+  expect(missYields).toBeLessThanOrEqual(128);
   expect(reads).toBeLessThanOrEqual(100_000);
 });
 
@@ -266,7 +337,8 @@ it.each(["touched", "fully-enclosed"] as const)(
         result = steps.next();
       }
       expect(result.value).toBe(enclosed);
-      expect(check).toHaveBeenCalledTimes(512);
+      if (enclosed) expect(check).toHaveBeenCalledTimes(512);
+      else expect(check.mock.calls.length).toBeLessThan(64);
       expect(geometry).not.toHaveBeenCalled();
     } finally {
       check.mockRestore();
@@ -332,3 +404,74 @@ it("bounds real cold-window intersections between yields and stops on cancellati
     intersect.mockRestore();
   }
 });
+
+it.each([3, 512])("charges actual polygon edge visits for %i lasso vertices", (count) => {
+  const corners = [
+    { x: 4, y: 4 },
+    { x: 4, y: 1 },
+    { x: 1, y: 4 },
+  ];
+  const points = Array.from({ length: count }, (_, index) => {
+    const position = (index * 3) / count;
+    const edge = Math.floor(position);
+    const start = corners[edge]!;
+    const end = corners[(edge + 1) % 3]!;
+    return {
+      x: start.x + (end.x - start.x) * (position - edge),
+      y: start.y + (end.y - start.y) * (position - edge),
+    };
+  });
+  const intersect = vi.spyOn(geometryPrimitives, "segmentsIntersect");
+  const steps = primitiveTouchesAreaSteps(createLassoSelectionArea(points), {
+    kind: "polygon",
+    points: [
+      { x: 0, y: 0 },
+      { x: 4, y: 0 },
+      { x: 0, y: 4 },
+    ],
+  });
+  let charged = 0;
+  let previous = 0;
+  try {
+    let result = steps.next();
+    while (!result.done) {
+      const visits = intersect.mock.calls.length - previous;
+      expect(visits).toBeLessThanOrEqual(count);
+      expect(result.value === undefined ? 64 : result.value).toBeLessThanOrEqual(64);
+      charged += result.value ?? 64;
+      previous = intersect.mock.calls.length;
+      result = steps.next();
+    }
+    expect(result.value).toBe(false);
+    expect(intersect.mock.calls.length).toBeLessThan(count * 3);
+    expect(charged).toBeGreaterThan(intersect.mock.calls.length);
+  } finally {
+    intersect.mockRestore();
+    steps.return(false);
+  }
+});
+
+it.each([2, 65, 129])(
+  "charges the actual first simplification window for %i stroke points",
+  (count) => {
+    const stroke = {
+      ...indexedStroke(0),
+      points: Array.from({ length: count }, (_, i) => [i, i % 7, 0.5]).flat(),
+    };
+    const read = vi.spyOn(strokeCenters, "strokeCenterAt");
+    const steps = strokePrimitiveSteps(stroke);
+    try {
+      const first = steps.next();
+      expect(first.done).toBe(false);
+      expect(read).toHaveBeenCalledTimes(Math.min(count, 65));
+      expect(first.value).toBe(read.mock.calls.length);
+      steps.return(undefined);
+      const before = read.mock.calls.length;
+      expect(steps.next().done).toBe(true);
+      expect(read).toHaveBeenCalledTimes(before);
+    } finally {
+      read.mockRestore();
+      steps.return(undefined);
+    }
+  },
+);

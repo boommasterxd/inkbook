@@ -31,15 +31,21 @@ function createApp() {
     visibilityState: "visible",
   } as unknown as Document;
   const ownerWindow = {
+    addEventListener: vi.fn(),
     cancelAnimationFrame: vi.fn(),
+    clearTimeout: vi.fn(),
     closed: false,
     document: ownerDocument,
+    performance,
+    removeEventListener: vi.fn(),
     requestAnimationFrame: (callback: FrameRequestCallback) => {
       frameTimestamp += 1_000 / 120;
       callback(frameTimestamp);
       return frameTimestamp;
     },
+    setTimeout: vi.fn(() => 1),
   } as unknown as Window;
+  Object.assign(ownerDocument, { defaultView: ownerWindow });
   const containerEl = {
     ownerDocument: { defaultView: ownerWindow },
   } as unknown as HTMLElement;

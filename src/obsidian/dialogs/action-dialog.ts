@@ -1,6 +1,7 @@
 import type { App } from "obsidian";
 
 import type { MotionPreference } from "../../rendering/motion/transitions";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 
 import { InkbookModal } from "./inkbook-modal";
 
@@ -12,6 +13,7 @@ interface DialogAction<T extends string> {
 }
 
 interface ActionDialogOptions<T extends string> {
+  readonly workScheduler?: ((ownerWindow: Window | null) => WorkScheduler) | undefined;
   readonly title: string;
   readonly description: string;
   readonly actions: readonly DialogAction<T>[];
@@ -21,6 +23,7 @@ interface ActionDialogOptions<T extends string> {
 }
 
 interface ConfirmationOptions {
+  readonly workScheduler?: ((ownerWindow: Window | null) => WorkScheduler) | undefined;
   readonly title: string;
   readonly description: string;
   readonly confirmLabel: string;
@@ -40,7 +43,7 @@ class InkbookActionDialog<T extends string> extends InkbookModal {
     options: ActionDialogOptions<T>,
     resolve: (value: T | null) => void,
   ) {
-    super(app, options.readMotion);
+    super(app, options.readMotion, options.workScheduler);
     this.#options = options;
     this.#resolve = resolve;
   }

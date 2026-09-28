@@ -52,7 +52,7 @@ describe("canvas stylus boundary", () => {
     fixture.dispose();
   });
 
-  it("disables native panning before pen contact and restores it after hover", () => {
+  it("disables native panning before pen contact and restores it on release", () => {
     const fixture = createFixture();
 
     dispatchPointer(fixture.surface, "pointerover", true, 7, "pen");
@@ -62,13 +62,46 @@ describe("canvas stylus boundary", () => {
 
     dispatchPointer(fixture.surface, "pointerdown", true, 7, "pen");
     dispatchPointer(fixture.surface, "pointerup", true, 7, "pen");
-    expect(fixture.surface.hasAttribute("data-inkbook-pen-input")).toBe(true);
+    expect(fixture.surface.hasAttribute("data-inkbook-pen-input")).toBe(false);
 
     dispatchPointer(fixture.surface, "pointerout", true, 7, "pen");
     expect(fixture.surface.hasAttribute("data-inkbook-pen-input")).toBe(false);
     fixture.dispose();
   });
+});
 
+describe("pen-to-finger scroll recovery", () => {
+  it.each(["pointerover", "pointerdown"] as const)(
+    "releases stale pen hover on primary finger %s without a pen pointerout",
+    (type) => {
+      const fixture = createFixture();
+      dispatchPointer(fixture.surface, "pointerover", true, 7, "pen");
+      expect(fixture.surface.hasAttribute("data-inkbook-pen-input")).toBe(true);
+      dispatchPointer(fixture.surface, type, true, 9);
+      expect(fixture.surface.hasAttribute("data-inkbook-pen-input")).toBe(false);
+      const start = dispatchTouch(fixture.surface, "touchstart", [touch(9, 20, 20)]);
+      const move = dispatchTouch(fixture.surface, "touchmove", [touch(9, 20, 80)]);
+      expectNativeScrollAllowed(fixture, start, move);
+      fixture.dispose();
+    },
+  );
+
+  it("preserves pen contact and explicit touch gesture ownership during finger entry", () => {
+    const fixture = createFixture(true);
+    dispatchPointer(fixture.surface, "pointerover", true, 7, "pen");
+    dispatchPointer(fixture.surface, "pointerdown", true, 7, "pen");
+    dispatchPointer(fixture.surface, "pointerover", true, 9);
+    expect(fixture.surface.hasAttribute("data-inkbook-pen-input")).toBe(true);
+    expectTouchStreamBlocked(fixture, 9);
+    dispatchPointer(fixture.surface, "pointerup", true, 7, "pen");
+    dispatchPointer(fixture.surface, "pointerover", true, 9);
+    expect(fixture.surface.hasAttribute("data-inkbook-pen-input")).toBe(false);
+    expectTouchStreamBlocked(fixture, 9);
+    fixture.dispose();
+  });
+});
+
+describe("canvas scroll ownership", () => {
   it("finishes an owned pen stream after it leaves the canvas", () => {
     const fixture = createFixture();
 
@@ -87,10 +120,7 @@ describe("canvas stylus boundary", () => {
     const start = dispatchTouch(fixture.surface, "touchstart", [touch(1, 20, 20)]);
     const move = dispatchTouch(fixture.surface, "touchmove", [touch(1, 22, 40)]);
 
-    expect(start.defaultPrevented).toBe(false);
-    expect(move.defaultPrevented).toBe(false);
-    expect(fixture.hostStarts).toHaveBeenCalledOnce();
-    expect(fixture.hostMoves).toHaveBeenCalledOnce();
+    expectNativeScrollAllowed(fixture, start, move);
     fixture.dispose();
   });
 
@@ -305,4 +335,15 @@ function touchList(touches: readonly Touch[]): TouchList {
 
 function htmlDiv(): HTMLDivElement {
   return document.createElementNS("http://www.w3.org/1999/xhtml", "div") as HTMLDivElement;
+}
+
+function expectNativeScrollAllowed(
+  fixture: ReturnType<typeof createFixture>,
+  start: Event,
+  move: Event,
+): void {
+  expect(start.defaultPrevented).toBe(false);
+  expect(move.defaultPrevented).toBe(false);
+  expect(fixture.hostStarts).toHaveBeenCalledOnce();
+  expect(fixture.hostMoves).toHaveBeenCalledOnce();
 }

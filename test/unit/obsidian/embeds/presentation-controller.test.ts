@@ -1,3 +1,4 @@
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 import { describe, expect, it, vi } from "vitest";
 
 import { PresentationController } from "../../../../src/obsidian/embeds/presentation-controller";
@@ -16,6 +17,7 @@ describe("locked-preview scheme replacement", () => {
       { activate: vi.fn(), detach: vi.fn(), mount },
       new ColorSchemeBroadcaster({ getColorScheme: () => "light" }),
       { element: preview as unknown as HTMLElement, entranceState },
+      workSchedulerFromFrames(root.ownerDocument.defaultView as Window),
     );
     controller.mount();
     expect(mount).toHaveBeenCalledWith(expect.objectContaining({ loadingStartedAt: 123 }));
@@ -36,6 +38,7 @@ describe("locked-preview scheme replacement", () => {
       { activate: vi.fn(), detach: vi.fn(), mount: vi.fn() },
       scheme,
       { element: preview as unknown as HTMLElement, refresh },
+      workSchedulerFromFrames(root.ownerDocument.defaultView as Window),
     );
     controller.mount();
 
@@ -76,6 +79,8 @@ describe("presentation owner measurement", () => {
       createPresentationAttachment(root, "reading-clamped"),
       { activate: vi.fn(), detach: vi.fn(), mount: vi.fn() },
       scheme,
+      undefined,
+      workSchedulerFromFrames(root.ownerDocument.defaultView as Window),
     );
 
     controller.mount();
@@ -138,6 +143,7 @@ function mountMeasuredPresentation(
     { activate: vi.fn(), detach: vi.fn(), mount: vi.fn() },
     new ColorSchemeBroadcaster({ getColorScheme: () => "light" }),
     { element: root as unknown as HTMLElement, requestHostMeasure },
+    workSchedulerFromFrames(root.ownerDocument.defaultView as Window),
   );
   controller.mount();
   return controller;

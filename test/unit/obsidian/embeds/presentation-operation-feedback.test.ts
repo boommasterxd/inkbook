@@ -6,6 +6,7 @@ import {
   PresentationOperationFeedback,
 } from "../../../../src/obsidian/embeds/presentation-operation-feedback";
 import { FakePresentationElement } from "../../../fixtures/obsidian/presentation-dom";
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 describe("PresentationOperationFeedback held insertion", () => {
   it("reserves loading space only when delayed loading feedback is actually painted", () => {
@@ -219,6 +220,7 @@ function createHarness(onLoadingShown?: () => void) {
   const feedback = new PresentationOperationFeedback(
     root as unknown as HTMLElement,
     onLoadingShown,
+    workSchedulerFromFrames(ownerWindow),
   );
   return {
     delay: () => [...timers.values()][0]?.delay,

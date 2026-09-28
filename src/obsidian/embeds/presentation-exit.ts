@@ -1,4 +1,5 @@
 import { isReducedMotion, type MotionPreference } from "../../rendering/motion/transitions";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { PresentationRemovalRange, PresentationRemovalSpacing } from "./presentation-port";
 import { ActiveHeightTransition } from "./active-editor/height-transition";
 import { LAYOUT_TRANSITION_CLASS } from "./transition-scroll-stability";
@@ -27,6 +28,7 @@ export class PresentationExit {
   constructor(
     root: HTMLElement,
     ownerWindow: Window,
+    workScheduler: WorkScheduler,
     motion: () => MotionPreference,
     measureSpacing?: (range: PresentationRemovalRange) => PresentationRemovalSpacing,
     removeMarkdown?: (
@@ -40,7 +42,7 @@ export class PresentationExit {
     this.#root = root;
     this.#motion = motion;
     this.#query = ownerWindow.matchMedia?.("(prefers-reduced-motion: reduce)");
-    this.#transition = new ActiveHeightTransition(root, ownerWindow);
+    this.#transition = new ActiveHeightTransition(root, workScheduler);
   }
 
   begin(range: PresentationRemovalRange = { from: 0, to: 0 }): Promise<boolean> {

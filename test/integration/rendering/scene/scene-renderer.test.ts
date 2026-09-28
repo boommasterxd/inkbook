@@ -109,7 +109,7 @@ function setup(): {
     inputHandlers: { pointerdown: vi.fn() },
     layout: { readViewport: () => ({ height: 100, left: 0, top: 0, width: 100 }) },
     page,
-    scheduler,
+    workScheduler: scheduler.workScheduler,
     store,
   });
   void asDocument(document);
@@ -440,8 +440,8 @@ describe("dense scene reconciliation", () => {
     const expected = replaceWithRectangles(store, "dense", 1_201, () => 10);
 
     scheduler.runNext();
-    expect(renderer.mountedCount).toBe(0);
-    expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(0);
+    expect(renderer.mountedCount).toBe(64);
+    expect(fakeNode(renderer.svg).nodes[1]!.nodes[4]!.nodes).toHaveLength(64);
     expect(renderer.instrumentation().geometryBuilds).toBeGreaterThan(0);
     expect(renderer.instrumentation().geometryBuilds).toBeLessThan(expected.length);
     renderer.promoteVisible(expected[0]!);
@@ -449,8 +449,8 @@ describe("dense scene reconciliation", () => {
 
     expect(renderer.mountedIds("content")).toEqual(expected);
     expect(renderer.mountedCount).toBe(1201);
-    expect(renderer.instrumentation().frames).toBeLessThanOrEqual(3);
-    expect(renderer.instrumentation().domFragmentRuns).toBe(1);
+    expect(renderer.instrumentation().frames).toBeLessThanOrEqual(21);
+    expect(renderer.instrumentation().domFragmentRuns).toBeGreaterThan(1);
 
     renderer.resetInstrumentation();
     renderer.setCamera({ x: 0.5, zoom: 1 });

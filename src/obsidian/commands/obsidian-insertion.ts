@@ -12,7 +12,10 @@ import {
   type EmptyLineInsertionNotifications,
 } from "./empty-line-insertion";
 import type { PlacementFallbackFeedbackPort } from "./command-ports";
-import { validateDocumentOutput } from "./document-output-validation";
+import {
+  validateDocumentOutput,
+  type DocumentOutputScheduling,
+} from "./document-output-validation";
 import {
   activeMarkdownOwnerWindow,
   createObsidianCommandVaultPorts,
@@ -59,6 +62,7 @@ export function createObsidianInsertionController(
   settings: InkbookSettingsStore,
   notifications: EmptyLineInsertionNotifications,
   placementFeedback: PlacementFallbackFeedbackPort,
+  scheduling: DocumentOutputScheduling,
 ): EmptyLineInsertionController {
   const { files, links, managedFiles, placement } = createObsidianCommandVaultPorts(
     app,
@@ -78,7 +82,9 @@ export function createObsidianInsertionController(
         if (!serialized.ok) throw new Error(serialized.error.message);
         return { content: serialized.value.svg, path: resolved.path };
       },
-      verifyCreated: (content) => validateDocumentOutput(app, content),
+      verifyCreated: (content) => {
+        return validateDocumentOutput(app, content, scheduling);
+      },
     },
     files,
     links,

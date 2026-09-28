@@ -12,12 +12,14 @@ import type { EditableDocumentModel } from "../vault-document-session";
 import type { PointV1 } from "../../../domain/schema/public";
 import type { SelectionFrameSession } from "../../../editor/selection/public";
 import { activeSnapFeatures } from "./snapping-settings";
+import type { WorkScheduler } from "../../../domain/scheduling/work-scheduler";
 
 export interface ActiveEditorPreviewOptions {
   readonly defaults: ToolDefaultsV1;
   readonly history: ActiveEditorHistory;
   readonly model: EditableDocumentModel;
   readonly ownerWindow: Window;
+  readonly workScheduler: WorkScheduler;
   readonly onFeedback?: (code: InkbookFeedbackCode) => void;
   readonly pageToScreen: (point: PointV1) => PointV1;
   readonly pageToViewport?: (point: PointV1) => PointV1;
@@ -25,7 +27,6 @@ export interface ActiveEditorPreviewOptions {
   readonly preparedHistory: PreparedElementHistory;
   readonly renderer: SvgSceneRenderer;
   readonly sceneStore: ElementSceneStore;
-  readonly sliceBudgetMs: () => number;
   readonly selection: () => ReadonlySet<string>;
   readonly selectionSignal?: AbortSignal;
   readonly selectionFrames: SelectionFrameSession;
@@ -45,11 +46,10 @@ export function createActiveEditorPreview(
     return new EraserPreview({
       history: options.history,
       model: options.model,
-      ownerWindow: options.ownerWindow,
+      workScheduler: options.workScheduler,
       radius: screenPixelsToPageUnits(options.defaults.eraser.radius, zoom),
       renderer: options.renderer,
       sceneStore: options.sceneStore,
-      sliceBudgetMs: options.sliceBudgetMs,
       start,
     });
   }
@@ -58,11 +58,8 @@ export function createActiveEditorPreview(
   const selectionOptions = {
     ...(options.selectionSignal === undefined ? {} : { selectionSignal: options.selectionSignal }),
     connectionSnapping: () => snapFeatures().connections,
-    frameScheduler: options.ownerWindow,
-    selectionWorkBudget: {
-      now: () => options.ownerWindow.performance.now(),
-      sliceBudgetMs: options.sliceBudgetMs,
-    },
+    frameScheduler: options.workScheduler,
+    workScheduler: options.workScheduler,
     history: options.history,
     pageToScreen: options.pageToScreen,
     ...(options.pageToViewport === undefined ? {} : { pageToViewport: options.pageToViewport }),

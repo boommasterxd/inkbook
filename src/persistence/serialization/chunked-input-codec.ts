@@ -1,3 +1,4 @@
+import { StreamingSafeStaticValidator } from "./streaming-safe-static";
 import type {
   InkSnapshotV1,
   SnapshotValidationDerivations,
@@ -57,7 +58,7 @@ export class ChunkedInkbookInputParser {
   readonly #hasher: DocumentHashPort | null;
   readonly #incrementalHash: ChunkedSha256;
   readonly #inputSliceBytes: number;
-  readonly #onPreparedPath: ChunkedInkbookInputOptions["onPreparedPath"];
+  readonly #staticValidation: "canonical" | "safe";
   readonly #onValidatedSnapshot:
     | ((
         snapshot: InkSnapshotV1,
@@ -76,7 +77,7 @@ export class ChunkedInkbookInputParser {
   #prelude: SafeSvgPrelude | null = null;
   #runtimeSnapshot: InkSnapshotV1 | null = null;
   #state: "cancelled" | "collecting" | "finishing" | "finished" = "collecting";
-  #staticMatcher: StreamingStaticIntegrityMatcher | null = null;
+  #staticMatcher: StreamingStaticIntegrityMatcher | StreamingSafeStaticValidator | null = null;
   #streamPhase: "metadata" | "prefix" | "static" = "prefix";
 
   public constructor(options: ChunkedInkbookInputOptions = {}) {
@@ -89,7 +90,7 @@ export class ChunkedInkbookInputParser {
     );
     positiveInputInteger(options.pathBatchSize ?? 128, "pathBatchSize");
     this.#onValidatedSnapshot = options.onValidatedSnapshot;
-    this.#onPreparedPath = options.onPreparedPath;
+    this.#staticValidation = options.staticValidation ?? "canonical";
     this.#signal = options.signal;
   }
 
@@ -98,7 +99,12 @@ export class ChunkedInkbookInputParser {
   }
 
   public get maximumRetainedStaticInputCharacters(): number {
-    return this.#maximumStaticChunkCharacters;
+    return (
+      this.#maximumStaticChunkCharacters +
+      (this.#staticMatcher instanceof StreamingSafeStaticValidator
+        ? this.#staticMatcher.maximumRetainedCharacters
+        : 0)
+    );
   }
 
   public async write(chunk: Uint8Array): Promise<DocumentCodecResult<undefined>> {
@@ -150,11 +156,12 @@ export class ChunkedInkbookInputParser {
       }
       const beforeHash = this.#runCheckpoint();
       if (beforeHash !== null) await beforeHash;
+      const hash = this.#completeHash();
       return {
         ok: true,
         value: {
           derivations: this.#migrated.derivations,
-          hash: this.#completeHash(),
+          hash,
           lockedHeight: this.#prelude.lockedHeight,
           requiresCanonicalRewrite: this.#prelude.requiresCanonicalRewrite,
           snapshot: this.#runtimeSnapshot,
@@ -187,6 +194,7 @@ export class ChunkedInkbookInputParser {
       metadataText,
       this.#prelude?.snapshotHash ?? null,
       migrated.value,
+      this.#staticValidation,
     );
     return integrity.ok ? migrated : integrity;
   }
@@ -262,7 +270,7 @@ export class ChunkedInkbookInputParser {
     if (this.#streamPhase === "prefix") return this.#consumePrefix(input);
     if (this.#streamPhase === "metadata") return this.#consumeMetadata(input);
     this.#maximumStaticChunkCharacters = Math.max(this.#maximumStaticChunkCharacters, input.length);
-    if (this.#staticMatcher?.write(input) !== true) {
+    if ((await this.#staticMatcher?.write(input)) !== true) {
       return this.#staticFailure();
     }
     return { ok: true, value: undefined };
@@ -319,7 +327,7 @@ export class ChunkedInkbookInputParser {
     if (!migrated.ok) return migrated;
     const initialized = await this.#initializeStaticMatcher(migrated.value);
     if (!initialized.ok) return initialized;
-    if (!this.#writeStaticChunk(metadata.trailing)) return this.#staticFailure();
+    if (!(await this.#writeStaticChunk(metadata.trailing))) return this.#staticFailure();
     return this.#consumeStaticRemainder(input, offset);
   }
 
@@ -330,16 +338,16 @@ export class ChunkedInkbookInputParser {
     let offset = initialOffset;
     while (offset < input.length) {
       const end = Math.min(offset + METADATA_INPUT_CODE_UNITS_PER_STEP, input.length);
-      if (!this.#writeStaticChunk(input.slice(offset, end))) return this.#staticFailure();
+      if (!(await this.#writeStaticChunk(input.slice(offset, end)))) return this.#staticFailure();
       offset = end;
       if (offset < input.length) await this.#checkpointMetadataSlice();
     }
     return { ok: true, value: undefined };
   }
 
-  #writeStaticChunk(input: string): boolean {
+  async #writeStaticChunk(input: string): Promise<boolean> {
     this.#maximumStaticChunkCharacters = Math.max(this.#maximumStaticChunkCharacters, input.length);
-    return this.#staticMatcher?.write(input) === true;
+    return (await this.#staticMatcher?.write(input)) === true;
   }
 
   async #checkpointMetadataSlice(): Promise<void> {
@@ -375,11 +383,10 @@ export class ChunkedInkbookInputParser {
       return failure("static-path-mismatch", "Static SVG background exceeds the canonical limit.");
     }
     this.#migrated = migrated;
-    this.#staticMatcher = new StreamingStaticIntegrityMatcher(
-      snapshot,
-      prelude.lockedHeight,
-      this.#onPreparedPath,
-    );
+    this.#staticMatcher =
+      this.#staticValidation === "safe"
+        ? new StreamingSafeStaticValidator(() => this.#checkpointMetadataSlice())
+        : new StreamingStaticIntegrityMatcher(snapshot, prelude.lockedHeight);
     this.#runtimeSnapshot = snapshot;
     this.#streamPhase = "static";
     await this.#onValidatedSnapshot?.(snapshot, migrated.derivations);

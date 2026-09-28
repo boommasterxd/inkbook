@@ -1,4 +1,5 @@
 import { derivePageExtent, PAGE_WIDTH } from "../../domain/geometry/public";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { PageV1 } from "../../domain/schema/public";
 import { applyAnchoredZoom, calculateZoomLimits, type ScrollBounds } from "../../editor/zoom/index";
 import { TRANSITION_DURATIONS } from "../../rendering/motion/transitions";
@@ -13,6 +14,7 @@ const LOCK_PRESENTATION_DURATION_MS = Math.max(
 const activeTransitions = new WeakMap<HTMLElement, LockedFitTransition>();
 
 interface LockedFitLayoutOptions {
+  readonly workScheduler: WorkScheduler;
   readonly anchor: SceneLayoutAnchor | undefined;
   readonly applyResize: (update: SceneLayoutUpdate) => boolean;
   readonly beginScrollStability?: (minimumRangeReserve: number) => () => void;
@@ -115,7 +117,7 @@ interface LockTarget {
 
 class LockLayoutTransition implements LockedFitTransition {
   readonly #options: LockedFitLayoutOptions;
-  readonly #ownerWindow: Window;
+  readonly #workScheduler: WorkScheduler;
   readonly #startTime: number;
   readonly #target: LockTarget;
   #frame: number | undefined;
@@ -126,8 +128,8 @@ class LockLayoutTransition implements LockedFitTransition {
     const ownerWindow = options.container.ownerDocument.defaultView;
     if (ownerWindow === null) throw new Error("The lock transition requires an owning window.");
     this.#options = options;
-    this.#ownerWindow = ownerWindow;
-    this.#startTime = ownerWindow.performance.now();
+    this.#workScheduler = options.workScheduler;
+    this.#startTime = options.workScheduler.now();
     this.#target = target;
     options.container.style.blockSize = `${String(target.oldBlockSize)}px`;
     options.container.setCssProps({ transition: "none" });
@@ -200,11 +202,11 @@ class LockLayoutTransition implements LockedFitTransition {
   }
 
   #scheduleFrame(): void {
-    this.#frame = this.#ownerWindow.requestAnimationFrame(this.#tick);
+    this.#frame = this.#workScheduler.requestFrame(this.#tick);
   }
 
   #cancelFrame(): void {
-    if (this.#frame !== undefined) this.#ownerWindow.cancelAnimationFrame(this.#frame);
+    if (this.#frame !== undefined) this.#workScheduler.cancelFrame(this.#frame);
     this.#frame = undefined;
   }
 

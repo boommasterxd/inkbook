@@ -85,9 +85,8 @@ export class SceneFrameWriter {
     if (!this.#cursorLayoutDirty) this.toolCursor.move(x, y);
   }
 
-  public invalidateCursorLayout(flush = false): void {
+  public invalidateCursorLayout(): void {
     this.#cursorLayoutDirty = true;
-    if (flush) this.flushToolCursor();
   }
 
   public flushToolCursor(): void {

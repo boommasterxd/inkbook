@@ -51,32 +51,46 @@ describe("canonical pressure path groups", () => {
   });
 
   it.each([
-    ["group opacity", (svg: string) => svg.replace('<g opacity="1">', '<g opacity="0.5">')],
+    ["group opacity", true, (svg: string) => svg.replace('<g opacity="1">', '<g opacity="0.5">')],
     [
       "path geometry",
+      true,
       (svg: string) => svg.replace(/(<g opacity="1"><path d=")[^"]+/u, "$1M0 0L1 1Z"),
     ],
-    ["part color", (svg: string) => svg.replace('fill="#222222FF"', 'fill="#212122FF"')],
+    ["part color", false, (svg: string) => svg.replace('fill="#222222FF"', 'fill="#212122FF"')],
     [
       "extra path",
+      false,
       (svg: string) => svg.replace('<g opacity="1">', '<g opacity="1"><path d="M0 0L1 1"/>'),
     ],
-  ])("rejects changed %s", async (_label, change) => {
-    const document = pressureDocument();
-    const model = new DocumentModelRuntime(() => 0);
-    await expect(model.verifyOutput(change(document.current))).resolves.toBeNull();
-    await expect(model.unlock(change(document.current))).rejects.toThrow("static-path-mismatch");
-    model.clear();
-  });
+  ])(
+    "enforces safe unlock and strict output rules for changed %s",
+    async (_label, safe, change) => {
+      const document = pressureDocument();
+      const model = new DocumentModelRuntime(() => 0);
+      await expect(model.verifyOutput(change(document.current))).resolves.toBeNull();
+      if (safe) {
+        await expect(model.unlock(change(document.current))).resolves.toMatchObject({
+          snapshot: { revision: document.snapshot.revision },
+          requiresCanonicalRewrite: false,
+        });
+        await expect(model.verifyOutput(change(document.current))).resolves.toBeNull();
+      } else {
+        await expect(model.unlock(change(document.current))).rejects.toThrow("invalid-svg");
+      }
+      model.clear();
+    },
+  );
 
-  it("rejects the removed ungrouped pressure representation", async () => {
+  it("accepts safe legacy pressure presentation for unlock but rejects it as canonical output", async () => {
     const document = pressureDocument();
     const legacy = document.current.replace(
       /<g opacity="1">.*?<\/g>/u,
       '<path d="M100 104L200 104A4 4 0 0 0 200 96L100 96A4 4 0 0 0 100 104Z" class="inkbook-theme-fill" fill="#222222FF"/>',
     );
     const model = new DocumentModelRuntime(() => 0);
-    await expect(model.unlock(legacy)).rejects.toThrow("static-path-mismatch");
+    await expect(model.unlock(legacy)).resolves.toMatchObject({ requiresCanonicalRewrite: false });
+    await expect(model.verifyOutput(legacy)).resolves.toBeNull();
     model.clear();
   });
 

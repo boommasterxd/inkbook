@@ -6,6 +6,7 @@ import type {
   StrokeElementV1,
 } from "../schema/types";
 
+import { translatedStroke } from "./stroke-position";
 import { addPoints, canonicalPoint } from "./primitives";
 
 export function translateElementGeometry(
@@ -37,17 +38,7 @@ function translateStroke(
   element: StrokeElementV1,
   translation: Readonly<PointV1>,
 ): StrokeElementV1 {
-  const points =
-    element.points instanceof Float64Array ? new Float64Array(element.points) : [...element.points];
-  for (let index = 0; index < points.length; index += 3) {
-    points[index] = canonicalPoint({ x: points[index]! + translation.x, y: 0 }).x;
-    points[index + 1] = canonicalPoint({ x: 0, y: points[index + 1]! + translation.y }).y;
-  }
-  return {
-    ...element,
-    pivot: translatePoint(element.pivot, translation),
-    points: points as StrokeElementV1["points"],
-  };
+  return translatedStroke(element, translation);
 }
 
 function translateLinear(

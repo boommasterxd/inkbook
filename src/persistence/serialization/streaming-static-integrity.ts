@@ -1,10 +1,8 @@
-import type { PreparedPathObserver } from "./prepared-unlock-paths";
 import { deriveRenderBands } from "../../domain/commands/render-bands";
 import type { InkElementV1, InkSnapshotV1 } from "../../domain/schema/public";
 
 import { serializeBackgroundPaths } from "./background";
-import { buildElementPathParts } from "../../domain/geometry/element-path";
-import { serializeParts } from "./path-markup";
+import { serializeElementPaths } from "./path-markup";
 
 interface ExpectedToken {
   readonly allowLeadingWhitespace?: boolean;
@@ -23,12 +21,8 @@ export class StreamingStaticIntegrityMatcher {
   #offset = 0;
   #valid = true;
 
-  public constructor(
-    snapshot: InkSnapshotV1,
-    lockedHeight: number,
-    observer?: PreparedPathObserver,
-  ) {
-    this.#tokens = staticTokens(snapshot, lockedHeight, observer)[Symbol.iterator]();
+  public constructor(snapshot: InkSnapshotV1, lockedHeight: number) {
+    this.#tokens = staticTokens(snapshot, lockedHeight)[Symbol.iterator]();
   }
 
   public get failure(): "invalid-svg" | "static-path-mismatch" {
@@ -96,11 +90,7 @@ export class StreamingStaticIntegrityMatcher {
   }
 }
 
-function* staticTokens(
-  snapshot: InkSnapshotV1,
-  lockedHeight: number,
-  observer?: PreparedPathObserver,
-): Iterable<ExpectedToken> {
+function* staticTokens(snapshot: InkSnapshotV1, lockedHeight: number): Iterable<ExpectedToken> {
   const bands = deriveRenderBands(snapshot.elements);
   yield { allowLeadingWhitespace: true, text: '<g id="inkbook-background">' };
   for (const fragment of serializeBackgroundPaths(snapshot.page.background, lockedHeight)) {
@@ -108,22 +98,17 @@ function* staticTokens(
   }
   yield { text: "</g>" };
   yield { allowLeadingWhitespace: true, text: '<g id="inkbook-highlights">' };
-  yield* elementTokens(bands.highlight, observer);
+  yield* elementTokens(bands.highlight);
   yield { text: "</g>" };
   yield { allowLeadingWhitespace: true, text: '<g id="inkbook-content">' };
-  yield* elementTokens(bands.content, observer);
+  yield* elementTokens(bands.content);
   yield { text: "</g>" };
   yield { allowLeadingWhitespace: true, text: "</svg>" };
 }
 
-function* elementTokens(
-  elements: readonly InkElementV1[],
-  observer?: PreparedPathObserver,
-): Iterable<ExpectedToken> {
+function* elementTokens(elements: readonly InkElementV1[]): Iterable<ExpectedToken> {
   for (const element of elements) {
-    const parts = buildElementPathParts(element);
-    observer?.(element, parts);
-    yield { text: serializeParts(element, parts).join("") };
+    yield { text: serializeElementPaths(element).join("") };
   }
 }
 

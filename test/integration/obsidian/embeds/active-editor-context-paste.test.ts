@@ -4,8 +4,8 @@ import { ElementStore, type ElementMutation } from "../../../../src/domain/store
 import { ActiveEditorActions } from "../../../../src/obsidian/embeds/active-editor/controller-actions";
 import { ActiveEditorClipboardController } from "../../../../src/obsidian/embeds/active-editor/controller-clipboard";
 import { ActiveEditorHistory } from "../../../../src/obsidian/embeds/active-editor/history";
-import { ActiveEditorMenuController } from "../../../../src/obsidian/embeds/active-editor/controller-menu";
-import type { MenuFactoryPort, MenuItemPort, MenuPort } from "../../../../src/obsidian/menus/index";
+import type { MenuItemPort, MenuPort } from "../../../../src/obsidian/menus/index";
+import { createActiveEditorMenuController } from "../../../fixtures/obsidian/active-editor-menu-controller";
 import {
   createClipboardDocumentModel,
   createEncodedClipboardFixture,
@@ -94,7 +94,7 @@ describe("active editor context Paste menu", () => {
       execute: vi.fn(),
       refreshPasteAvailability,
     } as unknown as ActiveEditorActions;
-    const menus = createMenuController(actions, { create, forEvent: create });
+    const menus = createActiveEditorMenuController(actions, { create, forEvent: create }, 0);
 
     menus.openFromSource("touch", { x: 10, y: 20 });
 
@@ -119,10 +119,11 @@ describe("active editor context Paste menu", () => {
       execute,
       refreshPasteAvailability: vi.fn(async () => true),
     } as unknown as ActiveEditorActions;
-    const menus = createMenuController(actions, {
-      create: () => menu,
-      forEvent: () => menu,
-    });
+    const menus = createActiveEditorMenuController(
+      actions,
+      { create: () => menu, forEvent: () => menu },
+      0,
+    );
     const position = { x: 125, y: 225 };
 
     menus.openFromSource("touch", position);
@@ -137,21 +138,6 @@ describe("active editor context Paste menu", () => {
     menus.dispose();
   });
 });
-
-function createMenuController(
-  actions: ActiveEditorActions,
-  factory: MenuFactoryPort,
-): ActiveEditorMenuController {
-  return new ActiveEditorMenuController({
-    actions,
-    factory,
-    inputSurface: { focus: vi.fn() } as unknown as HTMLDivElement,
-    ownerDocument: {} as Document,
-    selectionSize: () => 0,
-    storeSize: () => 0,
-    toScreenPoint: (point) => point,
-  });
-}
 
 function clickableMenu(callbacks: Map<string, () => void>): MenuPort {
   const port: MenuPort = {

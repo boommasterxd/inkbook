@@ -1,3 +1,5 @@
+import { DocumentCapacity } from "../../../../src/domain/store/document-capacity";
+import { UniformSpatialIndex } from "../../../../src/domain/spatial/index";
 import { describe, expect, it, vi } from "vitest";
 
 import { PreparedElementMutations } from "../../../../src/domain/store/prepared-element-mutations";
@@ -26,6 +28,8 @@ describe("element mutation algorithm bounds", () => {
 
     const plan = await planElementMutation(
       {
+        capacity: new DocumentCapacity(),
+        index: new UniformSpatialIndex<string>(),
         bands: { content, highlight: [] },
         geometryVersion: 0,
         paintVersion: 0,
@@ -42,7 +46,13 @@ describe("element mutation algorithm bounds", () => {
 
   it("reads the mutation source only once while checking the version throughout preparation", async () => {
     const element = rectangle();
+    const capacity = new DocumentCapacity();
+    capacity.addInitial(createInitialRecord(element));
+    const index = new UniformSpatialIndex<string>();
+    index.insert(element.id, createInitialRecord(element).bounds);
     const readSource = vi.fn(() => ({
+      capacity,
+      index,
       bands: { content: [element.id], highlight: [] },
       geometryVersion: 0,
       mutationVersion: 0,

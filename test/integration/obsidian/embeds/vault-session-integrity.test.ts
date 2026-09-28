@@ -13,7 +13,7 @@ import {
 } from "./vault-session-fixtures";
 
 describe("vault-backed unlock integrity", () => {
-  it("rejects reordered worker batches and publishes only a verified fallback Store", async () => {
+  it("rejects an out-of-sequence worker batch without publishing the detached Store", async () => {
     const second = {
       ...rectangle(),
       id: "00000000-0000-4000-8000-000000000002",
@@ -24,20 +24,17 @@ describe("vault-backed unlock integrity", () => {
       ...emptySnapshot(),
       elements: [rectangle(), second],
     });
-    const { factory, session } = createReadOnlyVaultSession(document, createReorderingRuntime);
+    const { factory, session } = createReadOnlyVaultSession(document, createOutOfSequenceRuntime);
 
     await expect(session.unlock(operation())).resolves.toMatchObject({
-      status: "active",
-      workerEpoch: 2,
+      status: "load-error",
+      workerEpoch: 1,
     });
-    expect(factory.getDocumentModel("session-1")?.store.materializeBandOrder("content")).toEqual([
-      rectangle().id,
-      second.id,
-    ]);
+    expect(factory.getDocumentModel("session-1")).toBeUndefined();
   });
 });
 
-async function createReorderingRuntime(
+async function createOutOfSequenceRuntime(
   sessionId: string,
   workerEpoch: number,
 ): Promise<DocumentRuntimePort> {
@@ -53,8 +50,7 @@ async function createReorderingRuntime(
                 observer.unlockBatch(
                   {
                     ...batch,
-                    derivations: [...batch.derivations].reverse(),
-                    elements: [...batch.elements].reverse(),
+                    batchIndex: batch.batchIndex + 1,
                   },
                   signal,
                 ),

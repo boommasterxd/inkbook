@@ -71,6 +71,7 @@ export function canonicalElement(
       ...base,
       kind: "stroke",
       tool: element.tool,
+      ...(element.offset === undefined ? {} : { offset: canonicalPoint(element.offset) }),
       points:
         preserveRuntimeStrokeBuffers && element.points instanceof Float64Array
           ? element.points

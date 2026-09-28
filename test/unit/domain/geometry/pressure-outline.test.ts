@@ -7,7 +7,10 @@ import {
   visitPreparedPressureOutline,
   type PressureOutlinePiece,
 } from "../../../../src/domain/geometry/pressure-outline";
-import { pressureArcPoint } from "../../../../src/domain/geometry/pressure-joins";
+import {
+  buildPressureCapsule,
+  pressureArcPoint,
+} from "../../../../src/domain/geometry/pressure-joins";
 import { simplifyStrokeCenters } from "../../../../src/domain/geometry/stroke-simplification";
 import type { StrokeCenter } from "../../../../src/domain/geometry/stroke-path";
 
@@ -100,6 +103,26 @@ describe("continuous pressure outlines", () => {
 });
 
 describe("pressure contour assembly", () => {
+  it("reuses canonical nibs without changing adjacent capsules", () => {
+    const centers = [
+      { x: 0, y: 0, pressure: 0.1 },
+      { x: 10, y: 2, pressure: 0.8 },
+      { x: 20, y: -3, pressure: 0.2 },
+      { x: 30, y: 4, pressure: 0.9 },
+    ];
+    const assembled: PressureOutlinePiece[] = [];
+    visitPreparedPressureOutline(centers, 8, (piece) => {
+      assembled.push(piece);
+      return false;
+    });
+    const separate = centers.slice(1).map((end, index) => ({
+      kind: "strip" as const,
+      capsule: buildPressureCapsule(centers[index]!, end, 8),
+      width: 8,
+    }));
+    expect(assembled).toEqual(separate);
+  });
+
   it("assembles prepared sections identically across bounded live slices", () => {
     const centers = Array.from({ length: 200 }, (_, index) => ({
       x: index * 2,

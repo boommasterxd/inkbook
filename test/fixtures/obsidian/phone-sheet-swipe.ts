@@ -1,3 +1,4 @@
+import { workSchedulerFromFrames } from "./work-scheduler";
 import { vi } from "vitest";
 
 import { PhoneSheetSwipeController } from "../../../src/obsidian/menus/phone-sheet-swipe";
@@ -88,11 +89,14 @@ export function createPhoneSheetSwipeHarness(durationMs = 0, recordCalls = true)
       ? replaceMethod(surface.style, "setProperty", setProperty)
       : () => styleSpy.mockRestore();
 
+  const workScheduler = workSchedulerFromFrames(window);
+  const scheduleFrame = vi.spyOn(workScheduler, "requestFrame");
   const controller = new PhoneSheetSwipeController({
     backdrop,
     close,
     durationMs,
     ownerWindow: window,
+    workScheduler,
     scroll,
     surface,
   });
@@ -106,6 +110,7 @@ export function createPhoneSheetSwipeHarness(durationMs = 0, recordCalls = true)
     backdrop,
     close,
     controller,
+    scheduleFrame,
     frames,
     restore: () => {
       restoreStyle();

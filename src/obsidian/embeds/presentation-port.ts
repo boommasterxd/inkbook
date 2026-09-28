@@ -1,4 +1,5 @@
 import type { LockedPreviewPresentation } from "./locked-preview";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type { InitialPresentationEntrance } from "./presentation-entrance";
 import type { MotionPreference } from "../../rendering/motion/transitions";
 import type { AttachmentIdentity } from "../../editor/session/session-state";
@@ -140,7 +141,7 @@ export interface PresentationSessionPort {
 }
 
 export interface EmbedIntegrationPorts {
-  readonly sliceBudgetMs?: (ownerWindow: Window | null) => number;
+  readonly workScheduler: (ownerWindow: Window | null) => WorkScheduler;
   readonly documents: InkbookDocumentRecognitionPort;
   readonly lifecycle: PresentationLifecycleRegistry;
   readonly resolveDocument: (

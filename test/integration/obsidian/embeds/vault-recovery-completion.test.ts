@@ -1,8 +1,11 @@
 import type { FileManager, TFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
+import { SharedFrameScheduler } from "../../../../src/domain/scheduling/shared-frame-scheduler";
 
+import * as safeSvg from "../../../../src/persistence/documents/safe-svg-validator";
 import { saveRecoveryCopy } from "../../../../src/obsidian/embeds/vault-document-recovery";
 import { DocumentWorkerRuntime } from "../../../../src/persistence/worker/runtime/public";
+import { ManualHost } from "../../../fixtures/scheduling/manual-frame-host";
 import {
   emptySnapshot,
   operation,
@@ -17,7 +20,11 @@ describe("vault recovery completion", () => {
     const reportSavedPath = vi.fn();
     const replaceMarkdownTarget = vi.fn(async () => false);
     const executor = new DocumentWorkerRuntime({ sessionId: "session-1", workerEpoch: 1 });
-    const sliceBudgetMs = vi.fn(() => 2);
+    const host = new ManualHost();
+    host.budget = 2;
+    const workScheduler = new SharedFrameScheduler(host);
+    const budgetMs = vi.spyOn(workScheduler, "budgetMs");
+    const scan = vi.spyOn(safeSvg, "validateSafeSvgSteps");
     const result = await saveRecoveryCopy({
       completion: { replaceMarkdownTarget, reportSavedPath },
       documentId: "drawings/ink.svg",
@@ -38,7 +45,7 @@ describe("vault recovery completion", () => {
       },
       operation: { ...operation(), operationId: 2 },
       snapshot: emptySnapshot(),
-      sliceBudgetMs,
+      workScheduler,
       stopped: () => false,
       workerEpoch: 1,
     });
@@ -50,7 +57,10 @@ describe("vault recovery completion", () => {
       expect.any(Function),
     );
     expect(files.has("drawings/ink-recovered-1.svg")).toBe(true);
-    expect(sliceBudgetMs).toHaveBeenCalled();
+    expect(budgetMs).toHaveBeenCalled();
+    expect(scan).not.toHaveBeenCalled();
+    scan.mockRestore();
+    workScheduler.dispose();
   });
 
   it("trashes the verified copy when recovery becomes stale during Markdown replacement", async () => {

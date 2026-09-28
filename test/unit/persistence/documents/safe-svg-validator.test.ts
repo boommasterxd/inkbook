@@ -230,3 +230,26 @@ describe("safe SVG metadata and bounded validation", () => {
     expectRejectedContentPaths(paths);
   }, 15_000);
 });
+
+it.each(["translate(1 2)", "translate(-12.5 0)", "translate(1000000 -1000000)"])(
+  "accepts bounded canonical stroke placement %s",
+  (transform) => {
+    expect(
+      validateSafeSvg(svgWithContentPaths([`<g transform="${transform}">${PLAIN_PATH}</g>`])),
+    ).not.toBeNull();
+  },
+);
+it.each([
+  "rotate(1)",
+  "translate(1000001 0)",
+  "translate(NaN 0)",
+  "translate(1e2 0)",
+  "translate(-0 0)",
+  "translate(1.000 0)",
+  "translate(1,2)",
+  "translate(0 0) scale(2)",
+])("rejects noncanonical or unbounded placement %s", (transform) => {
+  expect(
+    validateSafeSvg(svgWithContentPaths([`<g transform="${transform}">${PLAIN_PATH}</g>`])),
+  ).toBeNull();
+});

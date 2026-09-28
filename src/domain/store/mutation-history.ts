@@ -23,6 +23,7 @@ export async function prepareMutationHistory(
   state: HistoryPreparation,
   scheduler: MutationPreparationScheduler,
   replay?: AppliedElementMutation,
+  trustedRemoval = false,
 ): Promise<AppliedElementMutation | "cancelled"> {
   if (replay !== undefined) {
     const forwardBytes = await estimateMutationBytes(state.requested, scheduler);
@@ -32,7 +33,9 @@ export async function prepareMutationHistory(
     assertPayloadLimit(forwardBytes + reverseBytes);
     return replay;
   }
-  const forward = await freezeMutation(state.requested, scheduler);
+  const forward = trustedRemoval
+    ? state.requested
+    : await freezeMutation(state.requested, scheduler);
   if (forward === "cancelled") return forward;
   const reverse = await reverseMutation(state.source, state.desired, state.removeIds, scheduler);
   if (reverse === "cancelled") return reverse;
@@ -77,13 +80,12 @@ async function reverseMutation(
   const elements: InkElementV1[] = [];
   const removedCreatedIds: string[] = [];
   for (const id of removeIds) {
-    if (!(scheduler.checkpoint(16) || (await scheduler.resume()))) return "cancelled";
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     elements.push(mutableElement(requireElementRecord(source.records, id).element));
   }
   for (const id of desired.keys()) {
     const current = source.records.get(id);
-    if (!(scheduler.checkpoint(current === undefined ? 1 : 16) || (await scheduler.resume())))
-      return "cancelled";
+    if (!(scheduler.checkpoint() || (await scheduler.resume()))) return "cancelled";
     if (current === undefined) removedCreatedIds.push(id);
     else elements.push(mutableElement(current.element));
   }

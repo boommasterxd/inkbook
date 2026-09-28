@@ -28,6 +28,7 @@ import {
   isTaggedTemplateExpression,
   isVariableDeclaration,
 } from "typescript";
+import { validateWorkScheduling } from "./verify-work-scheduling.mjs";
 
 const SOURCE_FILE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*\.(?:ts|tsx)$/;
 const TEST_FILE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*\.test\.(?:mjs|ts|tsx)$/;
@@ -64,6 +65,7 @@ export function validateSourceLayout(files) {
       }
     }
   }
+  violations.push(...validateWorkScheduling(files));
   return violations;
 }
 

@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as bottomHeap from "../../../../src/domain/spatial/max-bottom-heap";
 
 import {
   MAX_OVERFLOW_ELEMENTS,
@@ -169,6 +170,36 @@ describe("UniformSpatialIndex resource bounds and prepared batches", () => {
     expect(index.size).toBe(size);
     expect(index.membershipCount).toBe(MAX_SPATIAL_MEMBERSHIPS - 1);
   });
+});
+
+it("heapifies a large batch within the shared budget before atomic publication", async () => {
+  const index = new UniformSpatialIndex<number>();
+  const original = { maxX: 20, maxY: 20, minX: 10, minY: 10 };
+  const replacements = Array.from({ length: 1_024 }, (_, id) => ({
+    bounds: { maxX: 40, maxY: id + 40, minX: 30, minY: id + 30 },
+    id,
+  }));
+  index.insertMany(replacements.map(({ id }) => ({ bounds: original, id })));
+  const sift = vi.spyOn(bottomHeap, "heapifyBottomAt");
+  const visitsAtYield: number[] = [];
+  try {
+    const plan = await index.prepareReplacementsTimeSliced(replacements, {
+      shouldYield: () => false,
+      yieldControl: async () => {
+        visitsAtYield.push(sift.mock.calls.length);
+        expect(index.getMaximumBottom()).toBe(20);
+      },
+    });
+    expect(plan).not.toBe("cancelled");
+    if (plan === "cancelled") return;
+    expect(visitsAtYield).toEqual([]);
+    expect(sift).toHaveBeenCalledTimes(512);
+    expect(index.getMaximumBottom()).toBe(20);
+    index.commitPreparedReplacements(plan);
+    expect(index.getMaximumBottom()).toBe(1_063);
+  } finally {
+    sift.mockRestore();
+  }
 });
 
 describe("UniformSpatialIndex prepared replacement batches", () => {

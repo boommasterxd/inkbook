@@ -6,10 +6,20 @@ import {
   resolveClipboardPayload,
 } from "../../../../src/persistence/clipboard/codec";
 import { planPaste, resolvePasteTarget } from "../../../../src/persistence/clipboard/operations";
+import { DocumentModelRuntime } from "../../../../src/persistence/worker/runtime/document-model";
+import type { ClipboardResult, PastePlan } from "../../../../src/persistence/clipboard/types";
+import { createWorkerSnapshot } from "../../../fixtures/persistence/worker-snapshot";
 import { ARROW_ID, page, RECTANGLE_ID, selectedElements, spatialRectangle } from "./fixtures";
 
 const NEW_RECTANGLE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const NEW_ARROW_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
+const expectSpatialCapacityFailure = (result: ClipboardResult<PastePlan>): void => {
+  expect(result.ok).toBe(false);
+  if (result.ok) return;
+  expect(result.error.code).toBe("limit-exceeded");
+  expect(result.error.message).toMatch(/spatial-index capacity/);
+};
 
 const decodedFixture = () => {
   const encoded = encodeRuntimeSelection(selectedElements(), new Set([RECTANGLE_ID, ARROW_ID]));
@@ -192,5 +202,78 @@ describe("paste document limits", () => {
       expect(rejectedPlan.error).toMatchObject({ code: "limit-exceeded" });
       expect(rejectedPlan.error.message).toMatch(/spatial-index capacity/);
     }
+  });
+});
+
+describe("validated worker paste limits", () => {
+  it("enforces spatial capacity from the revision-matched worker aggregate", () => {
+    const currentElements = [
+      ...Array.from({ length: 1_092 }, (_, index) => spatialRectangle(index)),
+      spatialRectangle(1_092, 100),
+    ];
+    const model = new DocumentModelRuntime();
+    model.initialize(createWorkerSnapshot(currentElements));
+    const ids = [NEW_RECTANGLE_ID, NEW_ARROW_ID];
+    const result = model.planClipboardPaste(
+      0,
+      { customText: decodedFixture().customText },
+      { kind: "toolbar", visibleCanvasCenter: { x: 500, y: 500 } },
+      9_001,
+      () => ids.shift()!,
+    );
+    expectSpatialCapacityFailure(result);
+    model.synchronize({
+      baseModelRevision: 0,
+      identity: { operationId: 1, purpose: "clipboard", sessionId: "paste", workerEpoch: 1 },
+      modelRevision: 1,
+      removedIds: [currentElements[0]!.id],
+      type: "model-sync-incremental",
+    });
+    expect(() =>
+      model.planClipboardPaste(
+        0,
+        { customText: decodedFixture().customText },
+        { kind: "toolbar", visibleCanvasCenter: { x: 500, y: 500 } },
+        9_002,
+        () => NEW_RECTANGLE_ID,
+      ),
+    ).toThrow("basis-revision-mismatch");
+    const nextIds = [NEW_RECTANGLE_ID, NEW_ARROW_ID];
+    const updated = model.planClipboardPaste(
+      1,
+      { customText: decodedFixture().customText },
+      { kind: "toolbar", visibleCanvasCenter: { x: 500, y: 500 } },
+      9_002,
+      () => nextIds.shift()!,
+    );
+    expect(updated.ok).toBe(true);
+    const collided = model.planClipboardPaste(
+      1,
+      { customText: decodedFixture().customText },
+      { kind: "toolbar", visibleCanvasCenter: { x: 500, y: 500 } },
+      9_002,
+      () => currentElements[1]!.id,
+    );
+    expect(collided).toMatchObject({ ok: false, error: { code: "invalid-schema" } });
+    expect(model.instrumentation).toMatchObject({
+      fullValidationRuns: 1,
+      incrementalValidationRuns: 1,
+    });
+  });
+
+  it("rejects a paste that exceeds the worker's validated overflow count", () => {
+    const existing = Array.from({ length: 512 }, (_, index) => spatialRectangle(index, 70_000));
+    const model = new DocumentModelRuntime();
+    model.initialize(createWorkerSnapshot(existing));
+    const encoded = model.encodeClipboard(0, [existing[0]!.id]);
+    if (!encoded.ok) throw new Error(encoded.error.message);
+    const result = model.planClipboardPaste(
+      0,
+      { customText: encoded.value.customText },
+      { kind: "toolbar", visibleCanvasCenter: { x: 500, y: 500 } },
+      9_002,
+      () => NEW_RECTANGLE_ID,
+    );
+    expectSpatialCapacityFailure(result);
   });
 });

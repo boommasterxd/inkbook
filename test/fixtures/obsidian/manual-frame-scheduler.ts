@@ -13,10 +13,18 @@ export class ManualFrameScheduler implements HandleFrameScheduler {
     if (this.#callbacks.delete(handle)) this.cancelledFrames += 1;
   }
 
+  public cancelFrame(handle: number): void {
+    this.cancelAnimationFrame(handle);
+  }
+
   public requestAnimationFrame(callback: FrameRequestCallback): number {
     const handle = ++this.#handle;
     this.#callbacks.set(handle, callback);
     return handle;
+  }
+
+  public requestFrame(callback: FrameRequestCallback): number {
+    return this.requestAnimationFrame(callback);
   }
 
   public runNext(time = performance.now()): void {

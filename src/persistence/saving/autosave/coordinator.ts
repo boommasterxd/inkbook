@@ -17,7 +17,6 @@ import { assertAutosaveInitialState } from "./coordinator-validation";
 import { inspectAutosaveExternalChange } from "./external-change";
 import { inspectIndeterminateSave } from "./indeterminate-save";
 import { classifyAutosaveFailure } from "./save-failure";
-
 export class AutosaveCoordinator {
   readonly #beforeExistingWrite;
   #canonicalRewritePending: boolean;
@@ -49,10 +48,7 @@ export class AutosaveCoordinator {
   readonly #workerModel;
   public constructor(options: Autosave.AutosaveCoordinatorOptions) {
     assertAutosaveInitialState(options);
-    this.#integrity = new integrity.AutosaveExportIntegrity(
-      options.waitForBackground,
-      options.sliceBudgetMs,
-    );
+    this.#integrity = integrity.createAutosaveExportIntegrity(options);
     this.#confirmedContent = options.confirmedContent ?? null;
     this.#beforeExistingWrite = options.beforeExistingWrite;
     this.#canonicalRewritePending = options.requiresCanonicalRewrite ?? false;
@@ -73,7 +69,7 @@ export class AutosaveCoordinator {
       this.#timer.schedule(AUTOSAVE_DELAY_MS);
     }
     this.#verifier = new AutosavePersistedOutputVerifier({
-      ...(options.sliceBudgetMs ? { sliceBudgetMs: options.sliceBudgetMs } : {}),
+      workScheduler: options.workScheduler,
       ...(options.waitForBackground ? { waitForBackground: options.waitForBackground } : {}),
       executor: () => this.#executor,
       isDisposed: () => this.#disposed,
@@ -117,9 +113,8 @@ export class AutosaveCoordinator {
     if (
       this.#workerModel.modelRevision === revision &&
       !this.#workerModel.requiresFullSynchronization
-    ) {
+    )
       return true;
-    }
     if (this.#exportInFlight !== null || this.#modelSyncInFlight !== null) return false;
     const plan = this.#workerModel.takePlan(this.#document);
     if (plan === null || plan.modelRevision !== revision) return false;
@@ -190,6 +185,7 @@ export class AutosaveCoordinator {
   }
   public async notifyExternalChange(): Promise<Autosave.ExternalChangeOutcome> {
     if (this.#disposed) return "conflict";
+    const confirmedBase = this.#confirmedBase;
     const inspected = await inspectAutosaveExternalChange({
       activeSaveBase: () =>
         this.#save === null
@@ -199,12 +195,12 @@ export class AutosaveCoordinator {
               revision: this.#save.proof.revision,
               type: "confirmed",
             },
-      confirmedBase: this.#confirmedBase,
+      confirmedBase,
       currentRevision: () => this.#document.currentRevision(),
       dirty: () => this.dirty,
       read: () => readExistingFileWithinLimit(this.#terminalVault, this.#path),
       stopped: () => this.#disposed,
-      verify: (content) => this.#verifier.verify(content, "preflight"),
+      verify: (content) => this.#verifier.verify(content, "preflight", confirmedBase),
     });
     if (inspected.outcome === "conflict") {
       this.#setStatus("conflict");
@@ -225,6 +221,7 @@ export class AutosaveCoordinator {
     }
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#integrity.clear();
     this.#timer.clear();
     this.#exportInFlight = null;
     this.#modelSyncInFlight = null;
@@ -264,7 +261,7 @@ export class AutosaveCoordinator {
       sessionId: this.#sessionId,
       workerEpoch: this.#workerEpoch,
     };
-    const request = exports.createExportRequest(plan, identity);
+    const request = this.#workerModel.createExportRequest(plan, identity, this.#document);
     this.#exportInFlight = request;
     this.#setStatus("saving");
     void this.#executor.execute(request).then(
@@ -283,14 +280,17 @@ export class AutosaveCoordinator {
     if (result.type !== "export-success" || !exports.matchesExportResult(request, result)) {
       this.#exportInFlight = null;
       if (result.type === "export-success") this.#executor.acknowledgeExport?.(result, false);
-      if (result.type === "export-failure" && exports.matchesExportResult(request, result))
+      if (result.type === "export-failure" && exports.matchesExportResult(request, result)) {
         this.#requireFullSnapshot();
+        if (request.type === "export-incremental") this.#timer.clear();
+        if (request.type === "export-incremental") return void this.#kick();
+      }
       this.#setStatus("retryable-error");
       this.#resolveWaiters();
       return;
     }
     const integrity = await this.#integrity.verify(
-      () => this.#document.snapshot(),
+      () => this.#document.integritySnapshot?.() ?? this.#document.snapshot(),
       result.integrityManifest,
       undefined,
       () =>
@@ -368,7 +368,7 @@ export class AutosaveCoordinator {
       const trusted = await integrity.inspectIntegrityBoundExport(
         result,
         this.#integrity.waitForBackground,
-        this.#integrity.sliceBudgetMs,
+        this.#integrity.workScheduler,
       );
       active.result = null;
       if (this.#disposed) return;
@@ -383,7 +383,7 @@ export class AutosaveCoordinator {
         confirmedBase: active.previousBase,
         confirmedContent: active.previousContent,
         read: () => readExistingFileWithinLimit(this.#terminalVault, this.#path),
-        verify: (content) => this.#verifier.verify(content, "preflight"),
+        verify: (content) => this.#verifier.verify(content, "preflight", active.previousBase),
       });
       if (this.#disposed) return;
       const confirmed = await persistPreparedOutput({
@@ -392,9 +392,6 @@ export class AutosaveCoordinator {
         prepared,
         revisionSource: {
           currentRevision: () => this.#document.currentRevision(),
-          ...(this.#integrity.sliceBudgetMs
-            ? { sliceBudgetMs: this.#integrity.sliceBudgetMs }
-            : {}),
           ...(this.#integrity.waitForBackground
             ? { waitForBackground: this.#integrity.waitForBackground }
             : {}),
@@ -493,6 +490,7 @@ export class AutosaveCoordinator {
     this.#fallbackUsed = true;
     this.#executor.terminate();
     this.#workerEpoch = nextSafeCounter(this.#workerEpoch, "workerEpoch");
+    this.#workerModel.resetPreparedPathBaseline();
     this.#executor = this.#createFallback(this.#workerEpoch);
     this.#verifier.resetOperationIdentities();
     return true;

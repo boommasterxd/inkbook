@@ -216,11 +216,15 @@ function flattenPointGeometryRotation(element: InkElementV1): InkElementV1 {
   if (element.kind === "stroke") {
     const points = element.points.slice();
     for (let index = 0; index < points.length; index += 3) {
-      const rotated = rotate({ x: points[index]!, y: points[index + 1]! });
+      const rotated = rotate({
+        x: points[index]! + (element.offset?.x ?? 0),
+        y: points[index + 1]! + (element.offset?.y ?? 0),
+      });
       points[index] = rotated.x;
       points[index + 1] = rotated.y;
     }
-    return { ...element, points, rotation: 0 };
+    const { offset: _offset, ...shape } = element;
+    return { ...shape, points, rotation: 0 };
   }
   if (
     element.kind === "line" ||

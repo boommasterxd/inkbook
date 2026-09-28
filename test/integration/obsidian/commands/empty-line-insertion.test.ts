@@ -13,6 +13,7 @@ import {
   type PenTapPointerSample,
 } from "../../../../src/obsidian/commands";
 import type { InkbookSettingsStore } from "../../../../src/obsidian/settings";
+import { immediateWorkScheduler } from "../../../fixtures/obsidian/immediate-work-scheduler";
 
 import { FakeEditor, registerInsertion } from "./insertion-command-fixture";
 
@@ -316,6 +317,10 @@ describe("Obsidian empty-line insertion composition", () => {
       settingsForPlacement({ mode: "obsidian-attachment-folder" }),
       { failed, inserted },
       { show: placementFeedback },
+      {
+        workScheduler: () => immediateWorkScheduler(),
+        subscribeSchedulingProfile: () => () => undefined,
+      },
     );
     const editor = new FakeEditor([""]);
 
@@ -393,6 +398,10 @@ function createFallbackInsertionHarness(
     settingsForPlacement(placement),
     { failed, inserted },
     { show: placementFeedback },
+    {
+      workScheduler: () => immediateWorkScheduler(),
+      subscribeSchedulingProfile: () => () => undefined,
+    },
   );
   return { controller, editor, failed, getRandomValues, inserted, placementFeedback };
 }

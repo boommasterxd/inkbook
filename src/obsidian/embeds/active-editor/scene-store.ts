@@ -76,7 +76,11 @@ export class ElementSceneStore implements SceneStorePort, ActiveDocumentMemorySt
   }
 
   public memoryUsage(): ReturnType<ActiveDocumentMemoryStorePort["memoryUsage"]> {
-    return this.#store.activeDocumentMemoryUsage();
+    const usage = this.#store.activeDocumentMemoryUsage();
+    return {
+      ...usage,
+      pressurePathCacheBytes: usage.pressurePathCacheBytes,
+    };
   }
 
   public setActiveDocumentMemoryPressure(active: boolean): void {

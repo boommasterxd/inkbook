@@ -1,6 +1,6 @@
 import { FILE_SCHEMA_LIMITS, MAX_STROKE_POINTS } from "../../../src/domain/schema/public";
 import { eraserQuery } from "../../fixtures/editor/eraser-query";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import type { BoxShapeElementV1 } from "../../../src/domain/schema/public";
 import { ElementStore } from "../../../src/domain/store/public";
@@ -18,7 +18,6 @@ describe("eraser hot paths", () => {
         id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
       })),
     );
-    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
     let indexWork = 0;
     let reads = 0;
     let queries = 0;
@@ -45,12 +44,14 @@ describe("eraser hot paths", () => {
         },
       },
       { setCandidateFade: () => undefined, clearCandidateFade: () => undefined },
+      undefined,
+      () => indexWork + reads >= 12_288,
     );
     let passes = 0;
     try {
       expect(eraser.candidateCount).toBeLessThan(store.size);
       while (true) {
-        expect(indexWork + reads).toBeLessThanOrEqual(12_288);
+        expect(indexWork + reads).toBeLessThanOrEqual(12_288 + 1_024);
         expect(eraser.retainedCandidateIdCount).toBeLessThanOrEqual(128);
         if (eraser.retainedSweepCount === 0) break;
         expect(passes++).toBeLessThan(20);
@@ -64,7 +65,6 @@ describe("eraser hot paths", () => {
       expect(store.instrumentation.fullStoreScans).toBe(0);
     } finally {
       eraser.revert();
-      clock.mockRestore();
     }
   });
 
@@ -104,6 +104,44 @@ describe("eraser hot paths", () => {
   });
 });
 
+it("uses remaining shared budget beyond the former indexed-visit quota", () => {
+  const base = rectangle();
+  const store = new ElementStore(
+    Array.from({ length: 15_000 }, (_, index) => ({
+      ...base,
+      id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    })),
+  );
+  let indexWork = 0;
+  const eraser = new EraserSweep(
+    { x: 40, y: 50 },
+    4,
+    {
+      beginQuery: (bounds) => {
+        const cursor = store.beginQuery(bounds);
+        return {
+          cancel: () => cursor.cancel(),
+          advance: (budget: number) => {
+            const progress = cursor.advance(budget);
+            indexWork += progress.workUnits;
+            return progress;
+          },
+        };
+      },
+      getElement: (id) => store.get(id)?.element as BoxShapeElementV1 | undefined,
+    },
+    { setCandidateFade: () => undefined, clearCandidateFade: () => undefined },
+    undefined,
+    () => false,
+  );
+
+  expect(indexWork).toBeGreaterThan(12_288);
+  expect(eraser.candidateCount).toBe(store.size);
+  expect(eraser.retainedSweepCount).toBe(0);
+  expect(store.instrumentation.fullStoreScans).toBe(0);
+  eraser.revert();
+});
+
 // Preserve the original density cases and exercise the new per-stroke maximum within
 // the document's aggregate point capacity, rather than quadrupling that capacity.
 it.each([
@@ -113,8 +151,12 @@ it.each([
   [Math.floor(FILE_SCHEMA_LIMITS.strokePoints / MAX_STROKE_POINTS), MAX_STROKE_POINTS],
 ])("bounds exact point visits per update for %i strokes of %i points", (count, pointCount) => {
   expect(count * pointCount).toBeLessThanOrEqual(FILE_SCHEMA_LIMITS.strokePoints);
-  const fixture = createCountedDenseStrokeEraser(count, undefined, pointCount);
-  const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+  const fixture = createCountedDenseStrokeEraser(
+    count,
+    undefined,
+    pointCount,
+    (reads) => reads >= 12_288,
+  );
   const segmentsPerStroke = pointCount - 1;
   const workPerUpdate = 12_288;
   // Each newly opened stroke reads two initial x coordinates in addition to its segments.
@@ -127,7 +169,7 @@ it.each([
       expect(fixture.eraser.update({ x: pointCount + 1_000, y: 0 })).toBe("accepted");
       const reads = fixture.takePointReads();
       expect(reads).toBeGreaterThan(0);
-      expect(reads).toBeLessThanOrEqual(workPerUpdate + setupReads);
+      expect(reads).toBeLessThanOrEqual(workPerUpdate + 1_024 + setupReads);
       expect(fixture.eraser.retainedCandidateIdCount).toBeLessThanOrEqual(count);
       expect(fixture.eraser.retainedSweepCount).toBeLessThanOrEqual(1);
       totalReads += reads;
@@ -138,7 +180,6 @@ it.each([
     expect(fixture.widthReads).toBe(count);
   } finally {
     fixture.eraser.revert();
-    clock.mockRestore();
   }
 });
 

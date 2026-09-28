@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { workSchedulerFromFrames } from "../../../fixtures/obsidian/work-scheduler";
 
 import { Platform } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -33,6 +34,7 @@ function setup(anchor: HTMLElement = document.body) {
     label: "Settings",
     ownerDocument: document,
     ownerWindow: window,
+    workScheduler: workSchedulerFromFrames(window),
     renderIcon: vi.fn(),
     createContent: () => {
       const fragment = window.createFragment();

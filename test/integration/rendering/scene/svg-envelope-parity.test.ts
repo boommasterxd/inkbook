@@ -282,7 +282,7 @@ function renderScene(
       readViewport: () => ({ height: lockedHeight, left: 0, top: 0, width: 2048.6 }),
     },
     page: snapshot.page,
-    scheduler,
+    workScheduler: scheduler.workScheduler,
     store,
   });
   renderer.setPage(snapshot.page, lockedHeight);

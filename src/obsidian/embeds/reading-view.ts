@@ -121,9 +121,8 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
     const preview = createInkbookLockedPreview(
       button,
       previewDescriptor,
-      ports.sliceBudgetMs === undefined
-        ? undefined
-        : () => ports.sliceBudgetMs!(button.ownerDocument.defaultView),
+      ports.workScheduler(button.ownerDocument.defaultView),
+      { documentId: candidate.resolved.documentId, documents: ports.documents },
     );
     super(candidate.host);
     this.#button = button;
@@ -173,6 +172,7 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
         setAspectRatio: preview.setAspectRatio,
         setSource: preview.setSource,
       },
+      ports.workScheduler(root.ownerDocument.defaultView),
     );
   }
 
@@ -207,7 +207,10 @@ class InkbookReadingRenderChild extends MarkdownRenderChild {
   async #refreshRecognition(): Promise<void> {
     const generation = ++this.#recognitionGeneration;
     const documentId = this.#documentId;
-    const recognized = await this.#ports.documents.recognize(documentId);
+    const recognized = await this.#ports.documents.recognize(
+      documentId,
+      this.#root.ownerDocument.defaultView,
+    );
     if (generation !== this.#recognitionGeneration) return;
     const current = this.#ports.documents.cached(documentId);
     if (recognized === false) {
@@ -243,6 +246,7 @@ class PendingReadingRenderChild extends MarkdownRenderChild {
     this.#loading = createLoadingPlaceholder(host, {
       motion: ports.sessions.getMotionPreference?.() ?? "system",
       scheme: ports.scheme,
+      workScheduler: ports.workScheduler(host.ownerDocument.defaultView),
     });
     this.placeholder = this.#loading.element;
     host.replaceChildren(this.placeholder);
@@ -289,7 +293,7 @@ export function createReadingViewPostProcessor(
     const pending = new PendingReadingRenderChild(element, ports);
     context.addChild(pending);
     return ports.documents
-      .recognize(initial.resolved.documentId)
+      .recognize(initial.resolved.documentId, element.ownerDocument.defaultView)
       .then((recognized) => {
         if (!pending.current || recognized === false) return;
         const candidate = recognizeReadingViewCandidate(element, context, ports.resolveDocument);

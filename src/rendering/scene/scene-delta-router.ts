@@ -18,6 +18,7 @@ export function routeSceneDelta(delta: SceneStoreDelta, ports: SceneDeltaRouting
   let firstVisibilityChange: SceneDeltaEntry | undefined;
   let hasMultipleVisibilityChanges = false;
   let orderIds: string[] | undefined;
+  let onlyNewOrder = true;
   for (const affected of delta.affected) {
     if (affected.before === null && affected.after != null) {
       ports.content.setElementFade([affected.id], null);
@@ -34,6 +35,7 @@ export function routeSceneDelta(delta: SceneStoreDelta, ports: SceneDeltaRouting
       else if (domain === "order") {
         orderIds ??= [];
         orderIds.push(affected.id);
+        onlyNewOrder &&= affected.before === null && affected.after != null;
       } else if (domain === "visibility") {
         releaseRemovedElement(affected.id, geometryDirty, ports);
         visibilityDirty = true;
@@ -45,7 +47,7 @@ export function routeSceneDelta(delta: SceneStoreDelta, ports: SceneDeltaRouting
   }
   if (orderIds !== undefined) {
     ports.content.markOrders(orderIds);
-    ports.markOrderVisibilityDirty();
+    if (orderIds.length !== 1 || !onlyNewOrder) ports.markOrderVisibilityDirty();
   }
   if (firstVisibilityChange !== undefined) {
     invalidateVisibility(firstVisibilityChange, hasMultipleVisibilityChanges, ports);

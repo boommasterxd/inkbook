@@ -1,6 +1,14 @@
-import { primitiveTouchesArea } from "../../../fixtures/editor/selection-query";
+import {
+  elementMatchesSelectionArea,
+  primitiveTouchesArea,
+} from "../../../fixtures/editor/selection-query";
 import { describe, expect, it } from "vitest";
-import { createLassoSelectionArea } from "../../../../src/editor/selection/selection-area";
+import {
+  createLassoSelectionArea,
+  elementMatchesSelectionAreaSteps,
+} from "../../../../src/editor/selection/selection-area";
+import { indexedLassoEdges } from "../../../../src/editor/selection/lasso-edge-index";
+import { stroke } from "../../domain/schema/fixtures";
 import {
   primitiveEnclosedByAreaSteps,
   type VisibleSelectionPrimitive,
@@ -116,4 +124,60 @@ describe("self-crossing lasso overlap representatives", () => {
       expect(primitiveTouchesArea(area, square(-1, 9, 22))).toBe(true);
     },
   );
+});
+
+it("clips diagonal edge boxes before reading stroke geometry and keeps tangent contact", () => {
+  const area = createLassoSelectionArea([
+    { x: 0, y: 0 },
+    { x: 10, y: 10 },
+    { x: 10, y: 0 },
+    { x: 0, y: 10 },
+  ]);
+  const bounds = { minX: 4.9, minY: 1.9, maxX: 5.1, maxY: 2.1 };
+  const warm = indexedLassoEdges(area.points, area.bounds, bounds);
+  let warmed = warm.next();
+  while (!warmed.done) warmed = warm.next();
+  let boundReads = 0;
+  const observedBounds = {
+    get minX() {
+      boundReads += 1;
+      return bounds.minX;
+    },
+    get minY() {
+      boundReads += 1;
+      return bounds.minY;
+    },
+    get maxX() {
+      boundReads += 1;
+      return bounds.maxX;
+    },
+    get maxY() {
+      boundReads += 1;
+      return bounds.maxY;
+    },
+  };
+  let pointReads = 0;
+  const target = {
+    ...stroke(),
+    points: new Proxy([5, 2, 0.5], {
+      get(points, key, receiver): unknown {
+        if (typeof key === "string" && /^\d+$/.test(key)) pointReads += 1;
+        return Reflect.get(points, key, receiver);
+      },
+    }),
+  };
+  const query = elementMatchesSelectionAreaSteps(area, target, "touched", observedBounds);
+  expect(query.next().done).toBe(false);
+  const beforeClip = boundReads;
+  let result = query.next();
+  expect(boundReads - beforeClip).toBeGreaterThanOrEqual(4);
+  expect(boundReads - beforeClip).toBeLessThanOrEqual(16);
+  while (!result.done) result = query.next();
+  expect(result.value).toBe(false);
+  expect(pointReads).toBe(0);
+
+  const tangent = { ...stroke(), points: [2, 2, 0.5] };
+  expect(elementMatchesSelectionArea(area, tangent, "touched")).toBe(true);
+  const crossing = { ...stroke(), points: [5, 5, 0.5] };
+  expect(elementMatchesSelectionArea(area, crossing, "touched")).toBe(true);
 });

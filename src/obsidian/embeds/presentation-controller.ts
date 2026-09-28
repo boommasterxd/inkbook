@@ -4,6 +4,7 @@ import {
   type InkbookColorScheme,
 } from "../theme/color-scheme";
 import { registerFocusNavigation } from "../runtime/focus-navigation";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import {
   PresentationScrollLifecycle,
   resolveScrollOwner,
@@ -84,6 +85,7 @@ export class PresentationController {
   #observer: ResizeObserver | undefined;
   #hostMeasureDeferred = false;
   readonly #owningWindow: Window;
+  readonly #workScheduler: WorkScheduler;
   readonly #previewLifecycle: PresentationPreviewLifecycle | undefined;
   readonly #scroll: PresentationScrollLifecycle<HTMLElement, PresentationMeasurement>;
   readonly #scrollRangeReserve: PresentationScrollRangeReserve;
@@ -93,17 +95,20 @@ export class PresentationController {
     attachment: PresentationAttachmentInput,
     sessions: PresentationSessionPort,
     scheme: ColorSchemeBroadcaster,
-    previewLifecycle?: PresentationPreviewLifecycle,
+    previewLifecycle: PresentationPreviewLifecycle | undefined,
+    workScheduler: WorkScheduler,
   ) {
     this.#sessions = sessions;
     const ownerDocument = attachment.root.ownerDocument;
     const owningWindow = ownerDocument.defaultView;
     if (owningWindow === null) throw new Error("The Inkbook presentation has no owning window.");
     this.#owningWindow = owningWindow;
+    this.#workScheduler = workScheduler;
     this.#previewLifecycle = previewLifecycle;
     this.#exit = new PresentationExit(
       attachment.root,
       owningWindow,
+      this.#workScheduler,
       () => this.#sessions.getMotionPreference?.() ?? "system",
       previewLifecycle?.measureRemovalSpacing,
       previewLifecycle?.removeMarkdown,
@@ -167,8 +172,8 @@ export class PresentationController {
           },
         ),
       scheduler: {
-        cancel: (handle) => owningWindow.cancelAnimationFrame(handle),
-        request: (callback) => owningWindow.requestAnimationFrame(callback),
+        cancel: (handle) => this.#workScheduler.cancelFrame(handle),
+        request: (callback) => this.#workScheduler.requestFrame(callback),
       },
     });
     this.#disposeScheme = scheme.subscribe((nextScheme) => {
@@ -178,15 +183,21 @@ export class PresentationController {
       applyColorScheme(attachment.root, nextScheme);
       if (previousScheme !== undefined) this.#previewLifecycle?.refresh?.();
     });
-    const mutationObserverConstructor = owningWindow.MutationObserver;
-    this.#transitionObserver =
-      mutationObserverConstructor === undefined
-        ? undefined
-        : new mutationObserverConstructor(() => this.#flushDeferredHostMeasure());
-    this.#transitionObserver?.observe(attachment.root, {
+    this.#transitionObserver = this.#createTransitionObserver(attachment.root, owningWindow);
+  }
+
+  #createTransitionObserver(
+    root: HTMLElement,
+    owningWindow: Window & { readonly MutationObserver?: typeof MutationObserver },
+  ): MutationObserver | undefined {
+    const constructor = owningWindow.MutationObserver;
+    if (constructor === undefined) return undefined;
+    const observer = new constructor(() => this.#flushDeferredHostMeasure());
+    observer.observe(root, {
       attributeFilter: ["class"],
       attributes: true,
     });
+    return observer;
   }
 
   #initialPresentationOptions(preview: PresentationPreviewLifecycle | undefined) {
@@ -209,6 +220,7 @@ export class PresentationController {
     root.dataset.inkbookMotion = this.#sessions.getMotionPreference?.() ?? "system";
     if (preview === undefined) return undefined;
     return new PresentationEntrance({
+      workScheduler: this.#workScheduler,
       root,
       preview: preview.element,
       ownerWindow: this.#owningWindow,
@@ -231,7 +243,7 @@ export class PresentationController {
     this.#sessions.mount(this.#attachment);
     const owningWindow = this.#attachment.root.ownerDocument.defaultView;
     if (owningWindow === null) return;
-    this.#frame = owningWindow.requestAnimationFrame(() => {
+    this.#frame = this.#workScheduler.requestFrame(() => {
       this.#frame = undefined;
       if (!this.#mounted || !this.#scroll.mount()) return;
       this.#observer = new owningWindow.ResizeObserver(() => {
@@ -294,7 +306,7 @@ export class PresentationController {
 
   #scheduleSettledMeasurement(): void {
     if (!this.#mounted || this.#measurementFrame !== undefined) return;
-    this.#measurementFrame = this.#owningWindow.requestAnimationFrame(() => {
+    this.#measurementFrame = this.#workScheduler.requestFrame(() => {
       this.#measurementFrame = undefined;
       const owner = this.#scroll.owner;
       if (owner === null || !this.#mounted) return;
@@ -348,10 +360,10 @@ export class PresentationController {
       this.#measured = false;
       const owningWindow = this.#attachment.root.ownerDocument.defaultView;
       if (this.#frame !== undefined && owningWindow !== null) {
-        owningWindow.cancelAnimationFrame(this.#frame);
+        this.#workScheduler.cancelFrame(this.#frame);
       }
       if (this.#measurementFrame !== undefined && owningWindow !== null) {
-        owningWindow.cancelAnimationFrame(this.#measurementFrame);
+        this.#workScheduler.cancelFrame(this.#measurementFrame);
       }
       this.#frame = undefined;
       this.#measurementFrame = undefined;

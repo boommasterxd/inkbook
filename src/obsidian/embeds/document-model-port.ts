@@ -1,6 +1,7 @@
 import type { ArrangeAction } from "../../domain/commands/arrange";
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type { InkElementV1, InkSnapshotV1 } from "../../domain/schema/public";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 import type {
   AppliedElementMutation,
   ElementMutation,
@@ -22,15 +23,20 @@ import type { AutosaveClock } from "../../persistence/saving/autosave/public";
 import type { DocumentRuntimePort } from "../../persistence/worker/runtime/public";
 
 export interface DocumentRuntimeFactories {
-  sliceBudgetMs?(documentId: string): number;
+  workScheduler(documentId: string): WorkScheduler;
   clock(documentId: string): AutosaveClock;
   create(sessionId: string, workerEpoch: number, documentId: string): Promise<DocumentRuntimePort>;
   createFallback(
     sessionId: string,
     workerEpoch: number,
     isInputActive: () => boolean,
+    documentId: string,
   ): DocumentRuntimePort;
-  createStoreScheduler(documentId: string, isCancelled: () => boolean): StoreSliceScheduler;
+  createStoreScheduler(
+    documentId: string,
+    isCancelled: () => boolean,
+    priority?: "background" | "frame",
+  ): StoreSliceScheduler;
   now(documentId: string): number;
 }
 
@@ -57,6 +63,10 @@ export interface EditableDocumentModel {
   prepareElementMutation(
     mutation: ElementMutation,
     cancellation: { isCancelled(): boolean; readonly replay?: AppliedElementMutation },
+  ): Promise<PreparedElementMutationResult>;
+  prepareElementRemoval(
+    ids: ReadonlySet<string> | readonly string[],
+    cancellation: { isCancelled(): boolean },
   ): Promise<PreparedElementMutationResult>;
   commitPreparedElementMutation(token: PreparedElementMutation): AppliedElementMutation | null;
   encodeClipboard(selectedIds: ReadonlySet<string>): Promise<ClipboardWritePayload | null>;

@@ -1,4 +1,5 @@
 import { Platform, setIcon, type App } from "obsidian";
+import type { WorkScheduler } from "../../domain/scheduling/work-scheduler";
 
 import {
   getTransitionDuration,
@@ -20,6 +21,7 @@ export class InkbookMotionModal {
   readonly #phoneHost: PhoneSheetHostPort | undefined;
   readonly #native: NativeDialogShell | undefined;
   readonly #readMotion: () => MotionPreference;
+  readonly #workScheduler: ((ownerWindow: Window | null) => WorkScheduler) | undefined;
   #phone: AdaptivePanelSession | undefined;
   #animation: Animation | undefined;
   #timer: number | undefined;
@@ -28,9 +30,14 @@ export class InkbookMotionModal {
   #hostClosing = false;
   #opened = false;
 
-  public constructor(app: App, readMotion: () => MotionPreference = () => "system") {
+  public constructor(
+    app: App,
+    readMotion: () => MotionPreference = () => "system",
+    workScheduler?: (ownerWindow: Window | null) => WorkScheduler,
+  ) {
     this.app = app;
     this.#readMotion = readMotion;
+    this.#workScheduler = workScheduler;
     if (!Platform.isPhone) {
       this.#native = new NativeDialogShell(app, {
         open: () => this.onOpen(),
@@ -113,6 +120,8 @@ export class InkbookMotionModal {
     const ownerDocument = this.modalEl.ownerDocument;
     const ownerWindow = ownerDocument.defaultView;
     if (ownerWindow === null) throw new Error("Dialogs require an owning window.");
+    if (this.#workScheduler === undefined)
+      throw new Error("Phone dialogs require a work scheduler.");
     this.#ownerWindow = ownerWindow;
     const activeElement = ownerDocument.activeElement;
     const anchor =
@@ -130,6 +139,7 @@ export class InkbookMotionModal {
       ) ??
       this.titleEl;
     this.#phone = new AdaptivePanelSession({
+      workScheduler: this.#workScheduler(ownerWindow),
       anchor,
       canvasInputSurface: anchor,
       createContent: () => content,

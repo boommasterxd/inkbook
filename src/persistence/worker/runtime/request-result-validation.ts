@@ -1,4 +1,6 @@
-import { inspectTrustedSvgOutput } from "../../scheduling/trusted-svg-output";
+import { parseSafeSvgRoot } from "../../documents/svg-envelope-root";
+import { parseOpeningTag } from "../../documents/svg-tag";
+import { hashRuntimeInput } from "./runtime-input-hash";
 
 import type { RuntimeWireSliceOptions } from "./element-wire-codec";
 import type { DocumentRuntimeRequest, DocumentRuntimeResult } from "./types";
@@ -18,14 +20,19 @@ export async function assertResultMatchesRequest(
   ) {
     return;
   }
-  const trusted = await inspectTrustedSvgOutput(request.input, undefined, {
-    ...options,
-    versionPolicy: request.identity.purpose === "read-back" ? "current" : "editable",
-  });
-  if (
-    trusted.revision !== result.persisted.revision ||
-    trusted.outputHash !== result.persisted.outputHash
-  ) {
+  // The bundled worker already validated the markup. Bind its answer to these exact
+  // request bytes, rather than parsing every path again on the receiving thread.
+  const outputHash = await hashRuntimeInput(request.input, options);
+  const prefix =
+    typeof request.input === "string"
+      ? request.input.slice(0, 4096)
+      : new TextDecoder().decode(request.input.subarray(0, 4096));
+  const tag = parseOpeningTag(prefix, 0);
+  const root =
+    tag === null
+      ? null
+      : parseSafeSvgRoot(tag, request.identity.purpose === "read-back" ? "current" : "editable");
+  if (root?.revision !== result.persisted.revision || outputHash !== result.persisted.outputHash) {
     throw new TypeError("Worker verification result does not describe the exact request content.");
   }
 }

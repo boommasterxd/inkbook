@@ -1,8 +1,4 @@
 import {
-  validatePreparedUnlockGeometry,
-  isPreparedUnlockPaths,
-} from "../../persistence/serialization/prepared-unlock-paths";
-import {
   FILE_SCHEMA_LIMITS,
   type InkElementV1,
   type InkSnapshotV1,
@@ -19,10 +15,7 @@ import type { ExistingFilePort, NewFilePort } from "../../persistence/saving/sav
 import type { RecoveryFilePort } from "./vault-document-recovery";
 import type { MigrationBackupPort } from "../../persistence/documents/migration-backup";
 import { serializeSvgNumber } from "../../persistence/documents/svg-number";
-import {
-  deriveDocumentIntegrityManifest,
-  sameDocumentIntegrityManifest,
-} from "../../persistence/serialization/public";
+import { verifyVaultUnlockIntegrity } from "./vault-unlock-integrity";
 
 interface VaultUnlockFilePort {
   readBinaryForUnlock(path: string, maximumBytes: number): Promise<UnlockFile>;
@@ -45,6 +38,7 @@ interface ExecutorFactoryPort {
     sessionId: string,
     workerEpoch: number,
     isGestureActive: () => boolean,
+    documentId: string,
   ): DocumentRuntimePort;
 }
 
@@ -82,6 +76,7 @@ export async function createVaultDocumentExecutor(options: {
         options.sessionId,
         workerEpoch,
         options.isGestureActive,
+        options.documentId,
       ),
       fallbackUsed: true,
       workerEpoch,
@@ -90,6 +85,7 @@ export async function createVaultDocumentExecutor(options: {
 }
 
 function createVaultFallbackExecutor(options: {
+  readonly documentId: string;
   readonly disposed: () => boolean;
   readonly isGestureActive: () => boolean;
   readonly runtimes: ExecutorFactoryPort;
@@ -101,11 +97,13 @@ function createVaultFallbackExecutor(options: {
     options.sessionId,
     options.workerEpoch,
     options.isGestureActive,
+    options.documentId,
   );
 }
 
 export function createVaultFallbackFactory(options: {
   readonly adopt: (executor: DocumentRuntimePort, workerEpoch: number) => void;
+  readonly documentId: string;
   readonly disposed: () => boolean;
   readonly isGestureActive: () => boolean;
   readonly runtimes: ExecutorFactoryPort;
@@ -134,6 +132,7 @@ interface VaultDocumentLoaderOptions {
   readonly purpose: "recovery" | "unlock";
   readonly scheduler: (isCancelled: () => boolean) => StoreSliceScheduler;
   readonly files: VaultUnlockFilePort;
+  readonly prefetchedBytes?: Promise<Uint8Array | undefined>;
   readonly workerEpoch: number;
 }
 
@@ -178,7 +177,8 @@ export async function loadVaultDocumentWithExecutorRecovery(
 export async function loadVaultDocument(
   options: VaultDocumentLoaderOptions,
 ): Promise<LoadedVaultDocument | undefined> {
-  const bytes = await readVaultBytes(options.files, options.documentId);
+  const bytes = await (options.prefetchedBytes ??
+    readVaultDocumentBytes(options.files, options.documentId));
   if (bytes === undefined || options.cancelled()) return undefined;
   const elements: InkElementV1[] = [];
   const builder = ElementStore.createBuilder(options.scheduler(options.cancelled));
@@ -229,17 +229,11 @@ export async function loadVaultDocument(
       revision: result.snapshot.revision,
       version: result.snapshot.version,
     };
-    const receivedManifest = deriveDocumentIntegrityManifest(snapshot);
-    const storeManifest = deriveDocumentIntegrityManifest(
-      store.materializeSnapshot({ page: snapshot.page, revision: snapshot.revision }),
-    );
-    if (
-      !sameDocumentIntegrityManifest(result.integrityManifest, receivedManifest) ||
-      !sameDocumentIntegrityManifest(receivedManifest, storeManifest)
-    ) {
-      throw new Error("The unlock snapshot, batches, and finalized store diverged.");
-    }
-    await adoptPreparedPaths(result.preparedPaths ?? [], store, options);
+    await verifyVaultUnlockIntegrity({
+      snapshot,
+      store,
+      scheduler: options.scheduler(options.cancelled),
+    });
     return {
       outputHash: result.outputHash,
       requiresCanonicalRewrite:
@@ -260,34 +254,6 @@ export async function loadVaultDocument(
   }
 }
 
-async function adoptPreparedPaths(
-  preparedPaths: unknown,
-  store: ElementStore,
-  options: VaultDocumentLoaderOptions,
-): Promise<void> {
-  if (
-    !isPreparedUnlockPaths(preparedPaths) ||
-    preparedPaths.some(({ id }) => {
-      const element = store.get(id)?.element;
-      return element?.kind !== "stroke" || !element.style.pressureEnabled;
-    })
-  )
-    throw new Error("Invalid prepared unlock paths.");
-  const scheduler = options.scheduler(options.cancelled);
-  if (
-    !(await validatePreparedUnlockGeometry(preparedPaths, async () => {
-      if (options.cancelled()) throw new Error("Prepared unlock adoption cancelled.");
-      if (scheduler.shouldYield()) await scheduler.yieldControl();
-    })) ||
-    options.cancelled()
-  )
-    throw new Error("Invalid prepared unlock geometry.");
-  for (const entry of preparedPaths) {
-    const record = store.get(entry.id)!;
-    store.pressureGeometry(entry.id, record.geometryVersion).publishPath?.(entry.geometry);
-  }
-}
-
 function matchesUnlockIdentity(
   result: Extract<Awaited<ReturnType<DocumentRuntimePort["execute"]>>, { type: "unlock-success" }>,
   options: VaultDocumentLoaderOptions,
@@ -300,7 +266,7 @@ function matchesUnlockIdentity(
   );
 }
 
-async function readVaultBytes(
+export async function readVaultDocumentBytes(
   files: VaultUnlockFilePort,
   documentId: string,
 ): Promise<Uint8Array | undefined> {

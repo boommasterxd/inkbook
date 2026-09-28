@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { workSchedulerFromFrames } from "../../fixtures/obsidian/work-scheduler";
 
 import type { App, Plugin } from "obsidian";
 import { expect, it, vi } from "vitest";
@@ -15,7 +16,9 @@ it("keeps unopened settings bounded and unrelated device changes without rebuild
   const store = createTestSettingsStore();
   const content = new SettingsModalContent(container, {
     app,
-    settingTab: new InkbookSettingTab(app, {} as Plugin, store),
+    settingTab: new InkbookSettingTab(app, {} as Plugin, store, undefined, undefined, {
+      workScheduler: () => workSchedulerFromFrames(window),
+    }),
     store,
     view: "settings",
   });

@@ -1,3 +1,4 @@
+import { translatedStroke } from "../../domain/geometry/stroke-position";
 import {
   assertFinitePoint,
   canonicalPoint,
@@ -11,7 +12,6 @@ import type {
   InkElementV1,
   LinearElementV1,
   PointV1,
-  StrokeElementV1,
 } from "../../domain/schema/public";
 import { MAX_ABSOLUTE_COORDINATE } from "../../domain/schema/public";
 import { rotateLinearElement } from "./linear-transforms";
@@ -44,15 +44,13 @@ export async function moveSelectionTimeSliced(
   scheduler: TransformSliceScheduler,
 ): Promise<InkElementV1[] | null> {
   assertFinitePoint(delta);
+  if (scheduler.isCancelled?.() ?? false) return null;
+  if (delta.x === 0 && delta.y === 0) return [...elements];
   const replacements: InkElementV1[] = [];
   const canonicalDelta = Object.freeze(canonicalPoint(delta));
   for (const element of elements) {
     if (scheduler.isCancelled?.() ?? false) return null;
-    replacements.push(
-      delta.x === 0 && delta.y === 0
-        ? structuredClone(element)
-        : translateElement(element, canonicalDelta),
-    );
+    replacements.push(translateElement(element, canonicalDelta));
     if (scheduler.shouldYield()) {
       await scheduler.yieldControl();
       if (scheduler.isCancelled?.() ?? false) return null;
@@ -138,26 +136,12 @@ function translateElement(element: InkElementV1, delta: PointV1): InkElementV1 {
   const translate = (point: PointV1): PointV1 =>
     canonicalPoint({ x: point.x + delta.x, y: point.y + delta.y });
   if (element.kind === "stroke") {
-    const points =
-      element.points instanceof Float64Array
-        ? new Float64Array(element.points.length)
-        : new Array<number>(element.points.length);
-    const deltaX = Math.round(delta.x * 1000);
-    const deltaY = Math.round(delta.y * 1000);
-    for (let index = 0; index < element.points.length; index += 3) {
-      points[index] = translateCanonicalCoordinate(element.points[index] as number, deltaX);
-      points[index + 1] = translateCanonicalCoordinate(element.points[index + 1] as number, deltaY);
-      points[index + 2] = element.points[index + 2] as number;
-    }
-    const pivot = translate(element.pivot);
-    assertSupportedCoordinate(pivot.x);
-    assertSupportedCoordinate(pivot.y);
-    const replacement: StrokeElementV1 = {
-      ...element,
-      points: points as unknown as StrokeElementV1["points"],
-      pivot,
-    };
-    if (!(points instanceof Float64Array)) Object.freeze(points);
+    const replacement = translatedStroke(element, delta);
+    assertSupportedCoordinate(replacement.pivot.x);
+    assertSupportedCoordinate(replacement.pivot.y);
+    assertSupportedCoordinate(replacement.offset!.x);
+    assertSupportedCoordinate(replacement.offset!.y);
+    Object.freeze(replacement.offset);
     Object.freeze(replacement.pivot);
     Object.freeze(replacement);
     return markCanonicalStrokeReplacement(element, replacement, delta);
@@ -217,13 +201,6 @@ function translateElement(element: InkElementV1, delta: PointV1): InkElementV1 {
   };
 }
 
-function translateCanonicalCoordinate(value: number, deltaThousandths: number): number {
-  const translated = (Math.round(value * 1000) + deltaThousandths) / 1000;
-  const canonical = Object.is(translated, -0) ? 0 : translated;
-  assertSupportedCoordinate(canonical);
-  return canonical;
-}
-
 function assertSupportedCoordinate(value: number): void {
   if (Math.abs(value) > MAX_ABSOLUTE_COORDINATE) {
     throw new RangeError("Transformed stroke coordinates exceed the supported range.");
@@ -247,9 +224,11 @@ export function scaleElement(
       const origin = index % 3 === 0 ? anchor.x : anchor.y;
       const factor = index % 3 === 0 ? factors.x : factors.y;
       const shift = index % 3 === 0 ? translation.x : translation.y;
-      return roundCanonical(origin + (value - origin) * factor + shift);
+      const offset = index % 3 === 0 ? (element.offset?.x ?? 0) : (element.offset?.y ?? 0);
+      return roundCanonical(origin + (value + offset - origin) * factor + shift);
     });
-    return { ...element, points, pivot: scale(element.pivot) };
+    const { offset: _offset, ...shape } = element;
+    return { ...shape, points, pivot: scale(element.pivot) };
   }
   if (element.kind === "straight-highlighter") {
     return {

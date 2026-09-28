@@ -176,7 +176,7 @@ function setup(records: readonly SceneElementRecord[] = [fakeRectangleRecord("a"
     layout,
     page: PAGE,
     reducedMotion: true,
-    scheduler,
+    workScheduler: scheduler.workScheduler,
     store,
   });
   scheduler.runAll();

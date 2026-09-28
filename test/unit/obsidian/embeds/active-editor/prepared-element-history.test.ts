@@ -9,6 +9,7 @@ import { PreparedElementHistory } from "../../../../../src/obsidian/embeds/activ
 import type { ActiveEditorHistory } from "../../../../../src/obsidian/embeds/active-editor/history";
 import type { EditableDocumentModel } from "../../../../../src/obsidian/embeds/vault-document-session";
 import { indexedStroke } from "../../../../fixtures/editor/stroke";
+import { workSchedulerFromFrames } from "../../../../fixtures/obsidian/work-scheduler";
 
 const PREPARED_TOKEN = Object.freeze({}) as PreparedElementReplacement;
 
@@ -42,8 +43,30 @@ describe("prepared selection preview lifecycle", () => {
     await vi.waitFor(() => expect(motion.cancel).toHaveBeenCalledOnce());
 
     expect(motion.arm).not.toHaveBeenCalled();
-    expect(pageBounds.plan).toHaveBeenCalledOnce();
+    expect(pageBounds.plan).not.toHaveBeenCalled();
     expect(pending).toEqual([true, false]);
+  });
+
+  it("keeps a small move synchronous regardless of unchanged sample count", () => {
+    const prepareElementReplacement = vi.fn(async () => ({
+      status: "cancelled" as const,
+      token: null,
+    }));
+    const pageBounds = pageBoundsPlanner();
+    const model = {
+      prepareElementReplacement,
+      store: pageBounds.store,
+    } as unknown as EditableDocumentModel;
+    const motion = motionPort();
+    const prepared = createPreparedHistory(model, motion, () => true, []);
+    const elements = Array.from({ length: 2 }, (_, index) => ({
+      ...indexedStroke(index),
+      points: Array.from({ length: 9_000 }, () => [20, 20, 0.5]).flat(),
+    }));
+    expect(prepared.commitMove(elements, { x: 1, y: 1 })).toBe(false);
+    expect(motion.cancel).not.toHaveBeenCalled();
+    expect(prepareElementReplacement).not.toHaveBeenCalled();
+    expect(motion.arm).not.toHaveBeenCalled();
   });
 
   it("releases an armed handoff when final token adoption is cancelled", async () => {
@@ -66,9 +89,38 @@ describe("prepared selection preview lifecycle", () => {
 
     expect(motion.arm).toHaveBeenCalledOnce();
     expect(motion.arm.mock.calls[0]?.[0]).toHaveLength(1_001);
-    expect(pageBounds.plan).toHaveBeenCalledOnce();
+    expect(pageBounds.plan).not.toHaveBeenCalled();
     expect(commitPreparedElementReplacement).toHaveBeenCalledWith(PREPARED_TOKEN);
     expect(onCompleted).toHaveBeenCalledWith(false);
+  });
+});
+
+describe("committed prepared replacement", () => {
+  it("registers history after a committed replacement even if disposal follows the commit", async () => {
+    const registerAppliedReplacement = vi.fn(() => true);
+    let prepared: PreparedElementHistory;
+    const model = {
+      commitPreparedElementReplacement: vi.fn(() => {
+        prepared.dispose();
+        return "committed" as const;
+      }),
+      prepareElementReplacement: vi.fn(async () => ({
+        status: "prepared" as const,
+        token: PREPARED_TOKEN,
+      })),
+      store: pageBoundsPlanner().store,
+    } as unknown as EditableDocumentModel;
+    prepared = new PreparedElementHistory({
+      history: { registerAppliedReplacement } as unknown as ActiveEditorHistory,
+      isAttached: () => true,
+      model,
+      motion: motionPort(),
+      onPendingChanged: vi.fn(),
+      workScheduler: workSchedulerFromFrames(frameWindow()),
+    });
+
+    expect(prepared.commitMove(largeSelection(), { x: 1, y: 2 })).toBe(true);
+    await vi.waitFor(() => expect(registerAppliedReplacement).toHaveBeenCalledOnce());
   });
 });
 
@@ -84,7 +136,7 @@ function createPreparedHistory(
     model,
     motion,
     onPendingChanged: (value) => pending.push(value),
-    ownerWindow: frameWindow(),
+    workScheduler: workSchedulerFromFrames(frameWindow()),
   });
 }
 

@@ -1,11 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { createTestWorkScheduler } from "../../fixtures/persistence/work-scheduler";
+import { CanonicalMetadataCache } from "../../../src/persistence/serialization/canonical-metadata-cache";
+import { describe, expect, it, vi } from "vitest";
 
 import { calculateElementBounds } from "../../../src/domain/geometry/public";
 import { MAX_ELEMENT_CELLS, spatialCellMembershipCount } from "../../../src/domain/spatial/index";
-import { yieldToMainThread } from "../../../src/persistence/scheduling/main-thread-yield";
 import {
   deriveDocumentIntegrityManifest,
-  deriveDocumentIntegrityManifestAsync,
+  deriveDocumentIntegrityManifestFromContentDigest,
   IncrementalDocumentSerializer,
   serializeInkbookDocument,
 } from "../../../src/persistence/serialization/public";
@@ -38,7 +39,7 @@ describe("persistence serialization performance", () => {
     );
   }, 120_000);
 
-  it("rejects amplified near-limit output before final assembly or slice work", async ({
+  it("exports one million pressure samples within bounded compact output and cache capacity", async ({
     annotate,
   }) => {
     const amplified = amplifyNearLimitSnapshot(snapshot);
@@ -52,12 +53,22 @@ describe("persistence serialization performance", () => {
       sliceByteLimit: 64 * 1024,
     });
 
-    expect(result).toMatchObject({ ok: false, error: { code: "static-output-limit-exceeded" } });
-    expect(serializer.instrumentation.fragmentBuilds).toBeLessThan(amplified.elements.length);
+    expect(
+      amplified.elements.reduce(
+        (count, element) => count + (element.kind === "stroke" ? element.points.length / 3 : 0),
+        0,
+      ),
+    ).toBe(1_000_000);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error.code);
+    expect(result.value.totalBytes).toBeLessThanOrEqual(64 * MIB);
+    expect(new TextEncoder().encode(result.value.svg).byteLength).toBe(result.value.totalBytes);
+    expect(serializer.instrumentation.fragmentBuilds).toBe(amplified.elements.length);
     expect(serializer.instrumentation.cacheBytes).toBeLessThanOrEqual(64 * MIB);
-    expect(checkpoints).toBe(0);
+    expect(serializer.instrumentation.shapeCacheBytes).toBeLessThanOrEqual(32 * MIB);
+    expect(checkpoints).toBeGreaterThan(0);
     await annotate(
-      `amplified near-limit rejection: ` +
+      `compact million-sample export: output=${result.value.totalBytes} bytes, ` +
         `fragmentsBuilt=${serializer.instrumentation.fragmentBuilds}/${amplified.elements.length}, ` +
         `checkpoints=${checkpoints}`,
       "performance",
@@ -78,12 +89,11 @@ describe("persistence serialization performance", () => {
       expect(reference.elementReads).toBe(2 * snapshot.elements.length);
       expect(reference.encodedBytes).toBe(reference.hashedBytes);
       const slices: IntegrityWork[] = [];
-      const result = await deriveDocumentIntegrityManifestAsync(observer.snapshot, {
-        checkpoint: async () => {
-          slices.push(observer.take());
-        },
-        sliceByteLimit: sliceBytes,
+      vi.stubGlobal("crypto", undefined);
+      const digest = await new CanonicalMetadataCache().digest(observer.snapshot, async () => {
+        slices.push(observer.take());
       });
+      const result = deriveDocumentIntegrityManifestFromContentDigest(observer.snapshot, digest);
       const finalSlice = observer.take();
       expect(result).toEqual(expected);
       expect(slices.length).toBeGreaterThan(1);
@@ -102,9 +112,10 @@ describe("persistence serialization performance", () => {
         }),
         { canonicalElements: 0, elementReads: 0, encodedBytes: 0, hashedBytes: 0 },
       );
-      expect(total).toEqual(reference);
+      assertIntegrityTotals(total, reference, snapshot.elements.length);
     } finally {
       observer.restore();
+      vi.unstubAllGlobals();
     }
   }, 120_000);
 });
@@ -113,7 +124,7 @@ describe("document worker export work bounds", () => {
   it("rebuilds only changed fragments and reuses all fragments for order-only exports", async () => {
     const runtime = createProductionDocumentRuntime(
       { sessionId: "performance", workerEpoch: 1 },
-      { yieldControl: async () => undefined },
+      { workScheduler: createTestWorkScheduler() },
     );
     try {
       await fullExport(runtime, 1);
@@ -252,7 +263,7 @@ async function acknowledgeAndPrewarm(
   runtime.acknowledgeExport(identity, true);
   runtime.requestPrewarm();
   while (runtime.instrumentation.prewarmedElements < snapshot.elements.length) {
-    await yieldToMainThread();
+    await Promise.resolve();
   }
   expect(runtime.instrumentation.cacheElements).toBe(snapshot.elements.length);
   expect(runtime.instrumentation.cacheBytes).toBeLessThanOrEqual(64 * MIB);
@@ -298,13 +309,21 @@ function amplifyNearLimitSnapshot(
 }
 
 function assertIntegritySlice(work: IntegrityWork, sliceBytes: number): void {
-  // A checkpoint follows the threshold-crossing chunk. This ASCII fixture encodes
-  // at most sliceBytes / 4 bytes per chunk, with no more than one chunk overshoot.
-  expect(work.encodedBytes).toBeGreaterThanOrEqual(sliceBytes);
-  expect(work.encodedBytes).toBeLessThan(sliceBytes + sliceBytes / 4);
-  expect(work.hashedBytes).toBe(work.encodedBytes);
-  expect(work.elementReads).toBe(work.canonicalElements);
-  // Even the ID alone occupies 38 JSON bytes. One canonical element may already
-  // be prepared when a checkpoint splits its encoded representation.
-  expect(work.canonicalElements).toBeLessThanOrEqual(Math.ceil(sliceBytes / 38) + 1);
+  // Canonical fragments and fallback hash blocks each checkpoint independently.
+  expect(work.encodedBytes).toBeLessThanOrEqual(sliceBytes);
+  expect(work.hashedBytes).toBeLessThanOrEqual(sliceBytes);
+  expect(work.elementReads).toBeLessThanOrEqual(1);
+  expect(work.canonicalElements).toBeLessThanOrEqual(1);
+}
+
+function assertIntegrityTotals(
+  actual: IntegrityWork,
+  reference: IntegrityWork,
+  elementCount: number,
+) {
+  // Cached separator and suffix bytes are hashed but no longer re-encoded per digest.
+  expect(actual).toEqual({
+    ...reference,
+    encodedBytes: reference.encodedBytes - (elementCount - 1 + 2),
+  });
 }

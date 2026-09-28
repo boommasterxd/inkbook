@@ -92,10 +92,37 @@ export class ElementStoreRuntime {
       publishWindow: (index, window) => {
         if (!current()) return;
         const previous = cache.statistics().bytes;
-        cache.publish(id, geometryVersion, index, window);
+        const numericBytes = cache.publish(id, geometryVersion, index, window);
         if (previous !== cache.statistics().bytes) access.notify?.();
+        return numericBytes;
       },
     };
+  }
+
+  public preparedPressurePaths(
+    record: (id: string) => ElementRecord | undefined,
+    ids?: ReadonlySet<string>,
+  ) {
+    const result: Array<{
+      readonly record: ElementRecord;
+      readonly parts: readonly import("../geometry/svg-path-part").SvgPathPart[];
+    }> = [];
+    const versions =
+      ids === undefined
+        ? this.#pressurePaths.cachedVersions()
+        : this.#pressurePaths.versionsFor(ids);
+    for (const [id, version] of versions) {
+      const current = record(id);
+      if (
+        current?.geometryVersion !== version ||
+        current.element.kind !== "stroke" ||
+        !current.element.style.pressureEnabled
+      )
+        continue;
+      const parts = this.#pressurePaths.read(id, version);
+      if (parts !== undefined) result.push({ record: current, parts });
+    }
+    return result;
   }
 
   public releasePressureGeometry(): void {

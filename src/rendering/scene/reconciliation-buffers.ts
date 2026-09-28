@@ -1,0 +1,60 @@
+import type { MountedSceneElement } from "./mounted-element";
+import type { MutableSceneInstrumentation } from "./types";
+import type { PendingMutationRun } from "./visibility-publication";
+import type { PendingReconciliation, ReconciliationCursor } from "./reconciliation-state";
+import { growVisibilityCapacity } from "./visibility-markers";
+
+export function recordReconciliationGrowth(
+  current: number,
+  required: number,
+  instrumentation: MutableSceneInstrumentation,
+): number {
+  return growVisibilityCapacity(required, current, instrumentation);
+}
+
+export function prepareReconciliationRun(
+  pending: PendingReconciliation | undefined,
+  cursor: ReconciliationCursor,
+  instrumentation: MutableSceneInstrumentation,
+): PendingMutationRun {
+  if (pending === undefined) throw new Error("Cannot stage a visibility run without pending work.");
+  let run = pending.runs[pending.runCount];
+  if (run === undefined) {
+    run = {
+      band: cursor.band,
+      capacity: 0,
+      count: 0,
+      entrants: [],
+      entries: [],
+      preserveRetainedOrder: pending.retainedOrderPreserved,
+      successor: cursor.successor,
+    };
+    pending.runs[pending.runCount] = run;
+    instrumentation.collectionAllocations += 1;
+  } else {
+    run.band = cursor.band;
+    run.count = 0;
+    run.preserveRetainedOrder = pending.retainedOrderPreserved;
+    run.successor = cursor.successor;
+  }
+  return run;
+}
+
+export function resetReconciliationBuffers(state: {
+  readonly preservePending: boolean;
+  readonly entrants: Map<string, MountedSceneElement>;
+  readonly exitIds: string[];
+  readonly publishedEntrantIds: string[];
+  readonly newlyMountedIds: string[];
+  readonly runs: PendingMutationRun[];
+}): void {
+  if (!state.preservePending) state.entrants.clear();
+  if (!state.preservePending) state.exitIds.length = 0;
+  if (!state.preservePending) state.publishedEntrantIds.length = 0;
+  state.newlyMountedIds.length = 0;
+  for (const run of state.runs) {
+    for (let index = 0; index < run.count; index += 1) run.entries[index] = undefined;
+    run.count = 0;
+    run.successor = undefined;
+  }
+}

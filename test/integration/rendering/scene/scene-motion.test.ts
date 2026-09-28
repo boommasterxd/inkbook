@@ -440,7 +440,7 @@ function setup(reducedMotion = false): {
     layout: { readViewport: () => ({ height: 100, left: 0, top: 0, width: 100 }) },
     page: PAGE,
     reducedMotion,
-    scheduler,
+    workScheduler: scheduler.workScheduler,
     store,
   });
   renderer.setPage(PAGE, 500);
