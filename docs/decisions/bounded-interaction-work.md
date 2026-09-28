@@ -41,7 +41,9 @@ direct scans for small polygons and refine stroke-box edge candidates with
 conservative segment clipping so distant diagonal edges do not trigger detailed
 stroke geometry. For touched lasso queries, reject pressure-addition preparation
 only when error-expanded ideal capsules prove that the additions cannot touch;
-retain complete preparation for positioned strokes and full enclosure. Preserve
+translate positioned centers into page coordinates for that guard, and retain
+complete preparation for full enclosure. World-space pressure-window caches remain
+separate from local stroke geometry. Preserve
 even-odd topology and predicate tolerances, and charge actual index and edge work rather than estimating it from
 polygon size. Retain projected outline segments across appended input, invalidate
 them on camera changes or compaction, and skip unchanged outline updates.
@@ -59,10 +61,17 @@ obsolete source history. A transform candidate still passes through the
 authoritative model's version-bound preparation and commit. External files,
 clipboard content, changed fields, capacity, connections, and operation identity
 retain their required checks. Do not treat a shallow frozen wrapper or a claimed
-worker derivation as proof of unchanged geometry.
+worker derivation as proof of unchanged geometry. Parser-owned runtime copies may reuse
+validation only when the derivation matches the exact sample-buffer extrema
+proof; external or unproved copies retain their sample checks.
 
 Patch record and rank maps, spatial memberships, aggregate capacity, and
-reverse connection references for affected records. External band orders receive
+reverse connection references for affected records. For large structural spatial
+mutations, prepare a private replacement under the shared scheduler and adopt its
+state atomically. Small patches keep local updates. This trades temporary index
+structure duplication and a retained-entry traversal for bounded publication; it
+does not make every Store commit operation constant-time. Generation and
+cancellation checks protect the preparation and its final adoption. External band orders receive
 full validation; only Store-produced version-bound removals reuse proven order.
 The worker reuses confirmed
 order arrays for ordinary element changes, and Paste uses revision-matched model
@@ -87,9 +96,11 @@ request and validated descriptor when the Vault resource and exact content
 identity agree. Shared validation preserves its original concurrency limits and
 input priority; DOM ownership stays per presentation.
 
-For overlapping viewport changes, merge a small entering set into the retained
-sorted bands when retained ranks are unchanged. Preserve complete sorting as the
-fallback, existing spatial-query reuse, hysteresis and DOM publication limits.
+For overlapping viewport edge queries, merge entering IDs into the retained
+sorted bands when retained ranks are unchanged. Do not use the DOM-publication
+count as a cutoff for a computed edge delta. Keep its publication resumable under
+the scheduler and the separate live-root allowance. Preserve complete sorting for
+unsupported state, existing spatial-query reuse, and hysteresis.
 
 Avoid asynchronous continuations for synchronous checkpoint decisions. Large
 handle commits and the clipboard fallback await only actual scheduler handoffs;
@@ -105,7 +116,9 @@ than reparenting unchanged nodes; retain the full ordering path for actual reord
 and partial detachment. A still-mounted exit returning with an older visibility
 generation uses a temporary, once-per-band DOM-position map to prove its retained
 order. Progressive publication invalidates that proof; reconciliation disposal
-releases it. A stale generation alone must not move unchanged DOM nodes.
+releases it. Completion refreshes the retained proof in the existing visibility
+copy, so future full reconciliations can reuse it. Partial work never publishes a
+completed proof. A stale generation alone must not move unchanged DOM nodes.
 Pressure-window publication shares one identity-bound
 memory measurement with its immediate consumer. Warm metadata digest assembly
 batches cooperative checkpoints while keeping output-copy slices bounded and
