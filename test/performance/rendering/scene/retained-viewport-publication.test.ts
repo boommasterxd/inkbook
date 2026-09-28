@@ -219,8 +219,7 @@ it("publishes a 400-entry edge delta in bounded frames within a 10,000-entry doc
     rank < 9_000 ? 50 : rank < 9_400 ? 191 : 10_000,
   );
   const { store, work } = indexedSceneStore(records);
-  const viewport = { height: 100, left: 0, top: 0, width: 100 };
-  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
+  const { renderer, scheduler, viewport } = createEdgeViewportScene(store);
   const get = vi.spyOn(store, "get");
   scheduler.runAll(200);
   const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
@@ -256,8 +255,7 @@ it("publishes a 400-entry edge delta in bounded frames within a 10,000-entry doc
 
 it("resumes a long delta successor search at the shared frame deadline", () => {
   const store = createViewportRectangleStore(601, (rank) => (rank < 600 ? 191 : 50));
-  const viewport = { height: 100, left: 0, top: 0, width: 100 };
-  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
+  const { renderer, scheduler, viewport } = createEdgeViewportScene(store);
   scheduler.runAll(20);
   const now = vi.spyOn(scheduler, "now").mockImplementation(() => (scheduler.time += 0.25));
   try {
@@ -282,8 +280,7 @@ it("resumes a long delta successor search at the shared frame deadline", () => {
 
 it("cancels a partially published large edge delta on viewport retarget", () => {
   const store = createViewportRectangleStore(401, (rank) => (rank < 400 ? 191 : 50));
-  const viewport = { height: 100, left: 0, top: 0, width: 100 };
-  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
+  const { renderer, scheduler, viewport } = createEdgeViewportScene(store);
   const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
   try {
     scheduler.runAll(20);
@@ -331,6 +328,11 @@ it("counts real index cell visits when a narrow fringe shares a dense spatial ce
   }
   expect(scheduler.pendingCount).toBe(0);
 });
+
+function createEdgeViewportScene(store: SceneStorePort) {
+  const viewport = { height: 100, left: 0, top: 0, width: 100 };
+  return { ...createSceneFixture(NAVIGATION_PAGE, store, viewport), viewport };
+}
 
 it("limits real index cell visits when a wide viewport pans over distributed elements", () => {
   const records = new FakeSceneStore();
