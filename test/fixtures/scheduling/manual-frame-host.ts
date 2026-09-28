@@ -55,4 +55,8 @@ export class ManualHost implements FrameSchedulerHost {
   public get pendingTimers(): number {
     return this.#timers.size;
   }
+
+  public hasTimer(delayMs: number): boolean {
+    return [...this.#timers.values()].some((timer) => timer.delayMs === delayMs);
+  }
 }

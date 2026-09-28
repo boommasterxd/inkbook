@@ -68,12 +68,19 @@ export function createWorkspaceDocumentRuntimes(
         }),
       );
     },
-    createStoreScheduler: (documentId, isCancelled) => {
+    createStoreScheduler: (documentId, isCancelled, priority = "background") => {
       const scheduler = workScheduler(documentId);
       return {
         isCancelled,
         shouldYield: () => scheduler.shouldYield(),
-        yieldControl: () => scheduler.checkpoint() ?? Promise.resolve(),
+        yieldControl: () => {
+          if (priority === "frame") {
+            return scheduler.shouldYield()
+              ? scheduler.nextFrame(undefined, "frame")
+              : Promise.resolve();
+          }
+          return scheduler.checkpoint() ?? Promise.resolve();
+        },
       };
     },
     now: (documentId) => {

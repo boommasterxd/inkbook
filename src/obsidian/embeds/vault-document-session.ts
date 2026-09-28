@@ -315,10 +315,11 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
       },
       store: () => this.#model?.store,
     });
-    const scheduler = (cancelled: () => boolean) =>
+    const scheduler = (cancelled: () => boolean, priority?: "frame") =>
       this.runtimes.createStoreScheduler(
         this.#identity.documentId,
         () => this.#lifecycle.disposed || this.#lifecycle.preparingForUnload || cancelled(),
+        priority,
       );
     const model = createVaultEditableModel({
       actions: {
@@ -347,7 +348,7 @@ export class VaultDocumentSession implements Session.DocumentSessionPort {
               active: this.#autosave !== undefined && !this.#lifecycle.preparingForUnload,
               cancellation,
               replacements,
-              scheduler,
+              scheduler: (isCancelled) => scheduler(isCancelled, "frame"),
               store: this.#model?.store,
             }),
           ),

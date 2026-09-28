@@ -20,13 +20,20 @@ import {
 function createFactory(options: {
   readonly create?: (sessionId: string, workerEpoch: number) => Promise<DocumentRuntimePort>;
   readonly createFallback?: (sessionId: string, workerEpoch: number) => DocumentRuntimePort;
+  readonly createStoreScheduler?: (
+    documentId: string,
+    isCancelled: () => boolean,
+    priority?: "background" | "frame",
+  ) => StoreSliceScheduler;
   readonly vault: object;
 }): VaultDocumentSessionFactory {
-  const scheduler = (_documentId: string, isCancelled: () => boolean): StoreSliceScheduler => ({
-    isCancelled,
-    shouldYield: () => false,
-    yieldControl: async () => undefined,
-  });
+  const scheduler =
+    options.createStoreScheduler ??
+    ((_documentId: string, isCancelled: () => boolean): StoreSliceScheduler => ({
+      isCancelled,
+      shouldYield: () => false,
+      yieldControl: async () => undefined,
+    }));
   const create =
     options.create ??
     (async (sessionId: string, workerEpoch: number) =>
@@ -101,6 +108,32 @@ function recoveryCopyHarness() {
 }
 
 describe("VaultDocumentSession editor context lifecycle", () => {
+  it("routes terminal replacement preparation through the frame lane", async () => {
+    const document = documentFromSnapshot();
+    const file = new TestTFile("drawings/ink.svg", document.bytes.byteLength);
+    const createStoreScheduler = vi.fn(
+      (_documentId: string, isCancelled: () => boolean): StoreSliceScheduler => ({
+        isCancelled,
+        shouldYield: () => false,
+        yieldControl: async () => undefined,
+      }),
+    );
+    const factory = createFactory({
+      createStoreScheduler,
+      vault: {
+        getFileByPath: () => file,
+        readBinary: async () => document.bytes.buffer.slice(0),
+      },
+    });
+    const session = factory.create({ documentId: file.path, sessionId: "session-1" });
+    const model = await unlockWithRectangle(factory, session);
+    if (model === undefined) throw new Error("Expected an editable document model.");
+    const replacement = { ...rectangle(), rotation: 15 };
+    await model.prepareElementReplacement([replacement], { isCancelled: () => false });
+    expect(createStoreScheduler).toHaveBeenCalledWith(file.path, expect.any(Function), "frame");
+    session.dispose();
+  });
+
   it("retains one editor history for the session and clears it on disposal", async () => {
     const { factory, session } = documentSessionHarness({});
     await expect(session.unlock(operation())).resolves.toMatchObject({ status: "active" });

@@ -37,6 +37,17 @@ of waiting for the remainder of a synthetic display frame. Main-thread fallback
 work still shares its owning window's frame budget. Cache prewarming starts through
 a checkpoint without an unconditional frame wait.
 
+Terminal selection-transform preparation, including Store replacement and its
+Undo/Redo replay, uses the same FIFO `frame` queue as rendering. It must not remain
+behind a scene that can consume the complete allowance on every frame. Pointer
+and camera `input` still precede both; other asynchronous preparation keeps its
+default `background` priority. The main-thread encoding and dispatch of a pending
+worker export also use `frame` admission, preserving overlap between export and
+scene work instead of holding the worker idle until rendering finishes. The
+input-active gate and autosave debounce remain unchanged; other worker requests
+and result adoption retain background admission. This changes admission order,
+not the shared budget or the requirement to yield only when necessary.
+
 Remove count-based CPU slice quotas and forced handoffs while the shared budget remains. Preserve bounded indivisible work units, frame publication caps, input-priority gates,
 transaction generations, and cancellation checks. Detached preview preparation
 quanta recheck the shared deadline without forcing a new frame while budget

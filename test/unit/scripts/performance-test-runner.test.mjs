@@ -18,7 +18,7 @@ describe("performance test plan", () => {
     const classified = [...plan.invariant, ...plan.cadenceSensitive];
 
     expect(plan.invariant).toHaveLength(66);
-    expect(plan.cadenceSensitive).toHaveLength(15);
+    expect(plan.cadenceSensitive).toHaveLength(16);
     expect(new Set(classified).size).toBe(discovered.length);
     expect(classified.toSorted()).toEqual(discovered);
   });
@@ -71,7 +71,7 @@ describe("performance test plan", () => {
       ...selectPerformanceRuns(plan, "cadence"),
     ];
     expect(keys(hosted)).toEqual(keys(selectPerformanceRuns(plan, "all")));
-    expect(new Set(keys(hosted)).size).toBe(141);
+    expect(new Set(keys(hosted)).size).toBe(146);
     expect(selectPerformanceRuns(plan, "shared")[0].testFiles).toEqual(plan.invariant);
   });
 

@@ -32,7 +32,11 @@ export interface DocumentRuntimeFactories {
     isInputActive: () => boolean,
     documentId: string,
   ): DocumentRuntimePort;
-  createStoreScheduler(documentId: string, isCancelled: () => boolean): StoreSliceScheduler;
+  createStoreScheduler(
+    documentId: string,
+    isCancelled: () => boolean,
+    priority?: "background" | "frame",
+  ): StoreSliceScheduler;
   now(documentId: string): number;
 }
 

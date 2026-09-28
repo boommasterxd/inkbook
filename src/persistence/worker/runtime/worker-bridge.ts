@@ -223,7 +223,11 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
   ): Promise<void> {
     try {
       if (request.type === "unlock") this.#pointReferences.clear();
-      const checkpoint = this.#createMainThreadCheckpoint(pending.abortController.signal);
+      const exportRequest = request.type === "export-full" || request.type === "export-incremental";
+      const checkpoint = this.#createMainThreadCheckpoint(
+        pending.abortController.signal,
+        exportRequest ? "frame" : "background",
+      );
       await checkpoint();
       const encoded = await encodeRuntimeRequestChunked(request, {
         checkpoint,
@@ -388,12 +392,23 @@ export class WorkerDocumentRuntimePort implements DocumentRuntimePort {
     this.#inputGate.notifyInactive();
   }
 
-  #createMainThreadCheckpoint(signal: AbortSignal): () => Promise<void> {
+  #createMainThreadCheckpoint(
+    signal: AbortSignal,
+    priority: "background" | "frame" = "background",
+  ): () => Promise<void> {
     return async () => {
       const ready = this.#inputGate.waitUntilInactive(signal);
       if (ready !== undefined) await ready;
-      const pending = this.#workScheduler.checkpoint(signal);
-      if (pending !== undefined) await pending;
+      signal.throwIfAborted();
+      if (priority === "frame") {
+        if (this.#workScheduler.shouldYield()) {
+          await this.#workScheduler.nextFrame(signal, "frame");
+        }
+      } else {
+        const pending = this.#workScheduler.checkpoint(signal);
+        if (pending !== undefined) await pending;
+      }
+      signal.throwIfAborted();
     };
   }
 

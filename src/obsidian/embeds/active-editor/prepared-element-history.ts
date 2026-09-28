@@ -172,7 +172,7 @@ export class PreparedElementHistory {
     return {
       isCancelled: () => this.#isCancelled(generation),
       shouldYield: () => this.#workScheduler.shouldYield(),
-      yieldControl: () => this.#workScheduler.nextFrame(this.#abort.signal),
+      yieldControl: () => this.#workScheduler.nextFrame(this.#abort.signal, "frame"),
     };
   }
 

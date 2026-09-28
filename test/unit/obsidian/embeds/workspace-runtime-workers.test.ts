@@ -51,12 +51,15 @@ describe("workspace document runtime scheduling", () => {
     const fixture = windowHarness();
     const runtimes = createWorkspaceDocumentRuntimes(runtimePorts(fixture));
     const store = runtimes.createStoreScheduler("drawing.svg", () => false);
+    const terminalStore = runtimes.createStoreScheduler("drawing.svg", () => false, "frame");
 
     for (let quantum = 0; quantum < 8; quantum += 1) {
       await store.yieldControl();
     }
     expect(fixture.host.frameRequests).toBe(0);
     expect(fixture.host.pendingFrames).toBe(0);
+    await terminalStore.yieldControl();
+    expect(fixture.host.frameRequests).toBe(0);
 
     fixture.host.time = fixture.host.budget;
     const pending = store.yieldControl();
