@@ -67,14 +67,6 @@ export async function copySnapshotToRuntimeSliced(
   };
 }
 
-export async function copyElementsToRuntimeSliced(
-  elements: readonly InkElementV1[],
-  context: RuntimeSliceContext,
-  pointCopies?: WeakMap<StrokeSamplesV1, RuntimeStrokeSamples>,
-): Promise<RuntimeInkElement[]> {
-  return copyElementsToRuntimeSlicedInternal(elements, context, pointCopies);
-}
-
 async function copyElementsToRuntimeSlicedInternal(
   elements: readonly InkElementV1[],
   context: RuntimeSliceContext,
