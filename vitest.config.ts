@@ -9,6 +9,7 @@ const serialCapacityTests = [
   "test/unit/persistence/documents/path-data-validator.test.ts",
   "test/unit/persistence/documents/safe-svg-validator.test.ts",
   "test/unit/persistence/saving/trusted-svg-output.test.ts",
+  "test/unit/persistence/serialization/chunked-output-sha256.test.ts",
   "test/unit/persistence/serialization/pressure-stroke-capacity.test.ts",
 ];
 
