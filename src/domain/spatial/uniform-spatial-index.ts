@@ -1,8 +1,19 @@
-import { prepareSpatialMutation, type PreparedSpatialMutation } from "./mutation-preparation";
-import { boundsIntersect, type SpatialBounds } from "./bounds";
+import {
+  prepareSpatialMutation,
+  type MutationPorts,
+  type PreparedSpatialMutation,
+} from "./mutation-preparation";
+import { prepareSpatialMutationTimeSliced, rangeFromEntry } from "./mutation-shadow";
+import type { SpatialBounds } from "./bounds";
 import { createCellRange, createSpatialCellKeys } from "./cell-membership";
-import { visitSpatialCells } from "./cell-query";
-import { popMaximumBottom, pushBottom, type BottomHeapEntry } from "./max-bottom-heap";
+import { maximumOverflowBottom, visitOverflowEntries, visitSpatialCells } from "./cell-query";
+import {
+  bottomHeapEntry,
+  pushBottom,
+  scanMaximumBottom,
+  shouldRebuildExtent,
+  type BottomHeapEntry,
+} from "./max-bottom-heap";
 import { SpatialQueryCursor } from "./query-cursor";
 import { SpatialQueryScratch } from "./query-scratch";
 import {
@@ -94,9 +105,55 @@ export class UniformSpatialIndex<Id> {
     removals: readonly Id[],
     insertions: readonly SpatialReplacement<Id>[],
   ): PreparedSpatialMutation {
-    return prepareSpatialMutation(removals, insertions, {
+    return prepareSpatialMutation(removals, insertions, this.mutationPorts());
+  }
+
+  public prepareMutationTimeSliced(
+    removals: readonly Id[],
+    insertions: readonly SpatialReplacement<Id>[],
+    scheduler: SpatialReplacementPreparationScheduler,
+  ): Promise<PreparedSpatialMutation | "cancelled"> {
+    return prepareSpatialMutationTimeSliced(
+      removals,
+      insertions,
+      {
+        mutation: this.mutationPorts(),
+        entries: () => this.entries.values(),
+        createShadow: () => {
+          const shadow = new UniformSpatialIndex<Id>();
+          shadow.recordVersion = this.recordVersion;
+          return shadow;
+        },
+        appendRetained: (shadow, entry) => {
+          const retained = { ...entry, slot: shadow.slots.length };
+          shadow.attachEntry(retained, rangeFromEntry(retained), true);
+        },
+        appendInserted: (shadow, insertion) =>
+          shadow.attachEntry(
+            shadow.createEntry(
+              insertion.id,
+              insertion.bounds,
+              insertion.range,
+              shadow.slots.length,
+            ),
+            insertion.range,
+            true,
+          ),
+        adoptShadow: (shadow, generation) => {
+          // All mutable index state is instance-owned; old cursors see the incremented generation.
+          Object.assign(this, shadow);
+          this.mutationGeneration = generation + 1;
+        },
+      },
+      scheduler,
+    );
+  }
+
+  private mutationPorts(): MutationPorts<Id> {
+    return {
       get: (id) => this.entries.get(id),
       generation: () => this.mutationGeneration,
+      heapEntries: this.extentHeapEntryCount,
       memberships: this.gridMembershipCount,
       overflow: this.overflowSlots.size,
       recordVersion: this.recordVersion,
@@ -108,7 +165,7 @@ export class UniformSpatialIndex<Id> {
         }
         this.finishMutation();
       },
-    });
+    };
   }
 
   public replace(id: Id, bounds: SpatialBounds): void {
@@ -160,7 +217,8 @@ export class UniformSpatialIndex<Id> {
       }
     }
     this.adoptPreparedExtentHeap(state.extentHeap);
-    if (overflowMaximumChanged) this.recomputeOverflowMaximum();
+    if (overflowMaximumChanged)
+      this.overflowMaximum = maximumOverflowBottom(this.overflowSlots, this.slots);
     this.recordVersion = state.recordVersion;
     this.finishMutation();
   }
@@ -185,32 +243,24 @@ export class UniformSpatialIndex<Id> {
 
     if (this.occupiedCellCount > 0)
       visitSpatialCells(this.cells, this.slots, this.occupiedCellCount, range, bounds, scratch);
-    this.visitOverflow(bounds, scratch);
+    visitOverflowEntries(this.overflowSlots, this.slots, bounds, scratch);
     return scratch.count;
   }
 
   public getMaximumBottom(): number | undefined {
     this.rebuildExtentStep(EXTENT_REBUILD_OPERATION_SLICE);
-    let stalePops = 0;
-    let maximum: number | undefined;
-    let cleanupPending = false;
-    for (let heapIndex = 0; heapIndex <= this.extentBatchHeaps.length; heapIndex += 1) {
-      const heap = heapIndex === 0 ? this.extentHeap : this.extentBatchHeaps[heapIndex - 1]!;
-      while (stalePops < MAX_STALE_EXTENT_POPS && this.isHeapHeadStale(heap)) {
-        popMaximumBottom(heap);
-        stalePops += 1;
-      }
-      const head = heap[0];
-      cleanupPending ||= head !== undefined && this.isHeapEntryStale(head);
-      if (head !== undefined) maximum = Math.max(maximum ?? -Infinity, head.bottom);
-    }
+    const { stalePops, cleanupPending, maximum } = scanMaximumBottom(
+      this.extentHeap,
+      this.extentBatchHeaps,
+      this.entries,
+      MAX_STALE_EXTENT_POPS,
+      this.overflowMaximum,
+    );
     this.lastExtentStalePops = stalePops;
     this.extentCleanupPending = cleanupPending;
     this.updateExtentRebuildRecommendation();
     this.beginExtentRebuild();
-    if (maximum === undefined) return this.overflowMaximum;
-    if (this.overflowMaximum === undefined) return maximum;
-    return Math.max(maximum, this.overflowMaximum);
+    return maximum;
   }
 
   public beginExtentRebuild(): boolean {
@@ -274,7 +324,8 @@ export class UniformSpatialIndex<Id> {
 
     if (entry.overflow) {
       this.overflowSlots.delete(entry.slot);
-      if (entry.maxY === this.overflowMaximum) this.recomputeOverflowMaximum();
+      if (entry.maxY === this.overflowMaximum)
+        this.overflowMaximum = maximumOverflowBottom(this.overflowSlots, this.slots);
     } else {
       this.gridEntryCount -= 1;
       this.gridMembershipCount -= entry.cellKeys.length / 2;
@@ -379,7 +430,7 @@ export class UniformSpatialIndex<Id> {
         ),
       currentMemberships: this.gridMembershipCount,
       currentOverflow: this.overflowSlots.size,
-      extentEntry: (entry) => this.extentEntry(entry),
+      extentEntry: bottomHeapEntry,
       generation: this.mutationGeneration,
       getCurrent: (id) => this.entries.get(id),
       owner: this,
@@ -388,20 +439,9 @@ export class UniformSpatialIndex<Id> {
     };
   }
 
-  private visitOverflow(bounds: SpatialBounds, scratch: SpatialQueryScratch<Id>): void {
-    for (const slot of this.overflowSlots) {
-      const entry = this.slots[slot];
-      if (entry !== undefined) scratch.visit(slot, entry.id, boundsIntersect(entry, bounds));
-    }
-  }
-
   private pushExtentEntry(entry: IndexedEntry<Id>): void {
-    pushBottom(this.extentHeap, this.extentEntry(entry));
+    pushBottom(this.extentHeap, bottomHeapEntry(entry));
     this.pushRebuildEntry(entry);
-  }
-
-  private extentEntry(entry: IndexedEntry<Id>): BottomHeapEntry<Id> {
-    return { bottom: entry.maxY, id: entry.id, recordVersion: entry.recordVersion };
   }
 
   private pushRebuildEntry(entry: IndexedEntry<Id>): void {
@@ -417,30 +457,6 @@ export class UniformSpatialIndex<Id> {
     });
   }
 
-  private isHeapHeadStale(heap: readonly BottomHeapEntry<Id>[]): boolean {
-    const head = heap[0];
-    return head !== undefined && this.isHeapEntryStale(head);
-  }
-
-  private isHeapEntryStale(heapEntry: BottomHeapEntry<Id>): boolean {
-    const current = this.entries.get(heapEntry.id);
-    return (
-      current === undefined ||
-      current.overflow ||
-      current.recordVersion !== heapEntry.recordVersion ||
-      current.maxY !== heapEntry.bottom
-    );
-  }
-
-  private recomputeOverflowMaximum(): void {
-    let maximum: number | undefined;
-    for (const slot of this.overflowSlots) {
-      const entry = this.slots[slot];
-      if (entry !== undefined) maximum = Math.max(maximum ?? -Infinity, entry.maxY);
-    }
-    this.overflowMaximum = maximum;
-  }
-
   private takeSlot(): number {
     return this.freeSlots.pop() ?? this.slots.length;
   }
@@ -453,8 +469,11 @@ export class UniformSpatialIndex<Id> {
   }
 
   private updateExtentRebuildRecommendation(): void {
-    this.extentRebuildRecommended =
-      this.extentHeapEntryCount - this.gridEntryCount > this.entries.size;
+    this.extentRebuildRecommended = shouldRebuildExtent(
+      this.extentHeapEntryCount,
+      this.gridEntryCount,
+      this.entries.size,
+    );
   }
 
   private adoptPreparedExtentHeap(heap: BottomHeapEntry<Id>[]): void {

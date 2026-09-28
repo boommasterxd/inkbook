@@ -429,9 +429,11 @@ async function buildDerivedState(
   }
   const capacity = await source.capacity.prepareTimeSliced(previous, next, scheduler);
   if (capacity === "cancelled" || scheduler.isCancelled?.()) return "cancelled";
+  const indexPatch = await source.index.prepareMutationTimeSliced(removed, inserted, scheduler);
+  if (indexPatch === "cancelled" || scheduler.isCancelled?.()) return "cancelled";
   return {
     capacityPatch: capacity.patch,
-    indexPatch: source.index.prepareMutation(removed, inserted),
+    indexPatch,
   };
 }
 

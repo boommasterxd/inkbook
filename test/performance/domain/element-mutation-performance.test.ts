@@ -9,7 +9,7 @@ import {
 import * as cellMembership from "../../../src/domain/spatial/cell-membership";
 import * as immutability from "../../../src/domain/store/immutability";
 import * as recordFactory from "../../../src/domain/store/record-factory";
-import { UniformSpatialIndex } from "../../../src/domain/spatial/index";
+import { SpatialQueryScratch, UniformSpatialIndex } from "../../../src/domain/spatial/index";
 import { DocumentCapacity } from "../../../src/domain/store/document-capacity";
 import { planElementMutation } from "../../../src/domain/store/element-mutation";
 import { renderBandOf } from "../../../src/domain/commands/render-bands";
@@ -248,5 +248,72 @@ it("bounds heavy work and scheduler handoffs for loaded-stroke deletion, Undo, a
     if (committed.transition === null) throw new Error("Expected committed history mutation.");
     if (replay !== undefined) expect(committed.transition).toBe(replay);
     return committed.transition;
+  }
+});
+
+it("stages a 10,000-entry spatial cut and publishes it with bounded commit work", async () => {
+  const index = new UniformSpatialIndex<number>();
+  const bounds = (id: number) => ({ minX: id * 256 + 1, maxX: id * 256 + 2, minY: 0, maxY: 2 });
+  index.insertMany(Array.from({ length: 10_000 }, (_, id) => ({ id, bounds: bounds(id) })));
+  const entries = (index as unknown as { entries: Map<number, unknown> }).entries;
+  const originalGet = entries.get.bind(entries);
+  const originalValues = entries.values.bind(entries);
+  let visits = 0;
+  let maximumSliceVisits = 0;
+  const get = vi.spyOn(entries, "get").mockImplementation((id) => {
+    visits += 1;
+    return originalGet(id);
+  });
+  const values = vi.spyOn(entries, "values").mockImplementation(function* () {
+    for (const entry of originalValues()) {
+      visits += 1;
+      yield entry;
+    }
+    return undefined;
+  });
+  const attach = vi.spyOn(
+    UniformSpatialIndex.prototype as unknown as { attachEntry: (...args: unknown[]) => void },
+    "attachEntry",
+  );
+  const scratch = new SpatialQueryScratch<number>();
+  const oldCursor = index.beginQuery(bounds(0));
+  let yields = 0;
+  try {
+    const prepared = await index.prepareMutationTimeSliced(
+      Array.from({ length: 5_000 }, (_, id) => id),
+      [],
+      {
+        shouldYield: () => visits >= 64,
+        yieldControl: async () => {
+          maximumSliceVisits = Math.max(maximumSliceVisits, visits);
+          visits = 0;
+          yields += 1;
+          expect(index.size).toBe(10_000);
+          expect(index.query(bounds(0), scratch)).toBe(1);
+        },
+      },
+    );
+    if (prepared === "cancelled") throw new Error("Expected a prepared spatial cut.");
+    expect(yields).toBeGreaterThan(0);
+    expect(maximumSliceVisits).toBeLessThanOrEqual(65);
+    expect(visits).toBeLessThanOrEqual(65);
+    expect(get).toHaveBeenCalledTimes(5_000);
+    expect(values).toHaveBeenCalledTimes(1);
+    expect(attach).toHaveBeenCalledTimes(5_000);
+    const preparedAttaches = attach.mock.calls.length;
+    prepared.commit();
+    expect(attach).toHaveBeenCalledTimes(preparedAttaches);
+    expect(index.size).toBe(5_000);
+    expect(index.membershipCount).toBe(5_000);
+    expect(index.extentHeapEntryCount).toBe(5_000);
+    expect(index.query(bounds(0), scratch)).toBe(0);
+    expect(index.query(bounds(9_999), scratch)).toBe(1);
+    expect(index.getMaximumBottom()).toBe(2);
+    expect(oldCursor.advance(1).stale).toBe(true);
+    expect((index as unknown as { slots: readonly unknown[] }).slots.length).toBe(5_000);
+  } finally {
+    get.mockRestore();
+    values.mockRestore();
+    attach.mockRestore();
   }
 });
