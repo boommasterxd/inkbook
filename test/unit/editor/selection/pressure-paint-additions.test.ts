@@ -6,7 +6,10 @@ import type {
   PreparedPressureGeometryPort,
   PressureWindow,
 } from "../../../../src/domain/geometry/prepared-pressure-geometry";
-import { transformedStrokeCenters } from "../../../../src/domain/geometry/stroke-path";
+import {
+  transformedStrokeCenters,
+  type StrokeCenter,
+} from "../../../../src/domain/geometry/stroke-path";
 import * as pressureUnion from "../../../../src/domain/geometry/pressure-union";
 import { simplifyStrokeCenters } from "../../../../src/domain/geometry/stroke-simplification";
 import { pressurePaintAdditionSteps } from "../../../../src/editor/selection/pressure-paint-additions";
@@ -64,6 +67,58 @@ it("cancels an addition guard without starting a pressure window", () => {
   } finally {
     union.mockRestore();
   }
+});
+
+it.each([
+  { x: 0, y: 0 },
+  { x: 100, y: 200 },
+  { x: -100.003, y: -200.007 },
+])("passes world-space centers to the positioned addition guard at $x, $y", (offset) => {
+  const { target } = fixture();
+  const moved = translatedStroke(target, offset);
+  const original = simplifyStrokeCenters(
+    transformedStrokeCenters(target),
+    target.style.width,
+    true,
+  );
+  const guard = vi.fn(function* (centers: readonly StrokeCenter[]) {
+    expect(centers).toEqual(
+      original.map((center) => ({
+        ...center,
+        x: center.x + offset.x,
+        y: center.y + offset.y,
+      })),
+    );
+    yield centers.length;
+    return false;
+  });
+  const union = vi.spyOn(pressureUnion, "iteratePressureUnion");
+  try {
+    Array.from(strokePrimitiveSteps(moved, { additionsMayTouch: guard }));
+    expect(guard).toHaveBeenCalledTimes(1);
+    expect(union).not.toHaveBeenCalled();
+  } finally {
+    union.mockRestore();
+  }
+});
+
+it("cancels positioned-center translation before the addition guard runs", () => {
+  const { target } = fixture();
+  const points = Array.from({ length: 130 }, (_, index) => [index, index % 2 ? 100 : 0, 1]).flat();
+  const guard = vi.fn(function* () {
+    yield 1;
+    return true;
+  });
+  const steps = strokePrimitiveSteps(translatedStroke({ ...target, points }, { x: -2, y: 3 }), {
+    additionsMayTouch: guard,
+  });
+  let result = steps.next();
+  while (!result.done && (typeof result.value !== "number" || result.value > 32))
+    result = steps.next();
+  expect(result.done).toBe(false);
+  steps.return(undefined);
+  expect(guard).not.toHaveBeenCalled();
+  expect(steps.next().done).toBe(true);
 });
 
 describe("shared painted pressure windows", () => {

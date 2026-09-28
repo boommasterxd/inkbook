@@ -4,6 +4,8 @@ import { calculateElementBounds } from "../../../src/domain/geometry/public";
 import { elementMatchesSelectionAreaSteps } from "../../../src/editor/selection/selection-area";
 
 import * as strokePosition from "../../../src/domain/geometry/stroke-position";
+import * as pressureUnion from "../../../src/domain/geometry/pressure-union";
+import { strokePrimitiveSteps } from "../../../src/editor/selection/stroke-selection-geometry";
 import { activeActions } from "../../fixtures/obsidian/editor-actions";
 import { createClipboardDocumentModel } from "../../integration/obsidian/embeds/active-editor-clipboard-fixtures";
 import type { EditableDocumentModel } from "../../../src/obsidian/embeds/document-model-port";
@@ -36,6 +38,43 @@ import { maximumStroke } from "./maximum-stroke-fixture";
 import { createPassThroughMoveSession } from "./selection-session-fixture";
 import type { SelectionHandleSessionOptions } from "../../../src/editor/selection/handle-types";
 import type { TransformSliceScheduler } from "../../../src/editor/selection/transforms";
+
+it("avoids pressure geometry builds for repeated gap lassos on a positioned 10,000-point stroke", () => {
+  const offset = { x: -1_000, y: 200 };
+  const corners = [
+    [0, 0],
+    [100, 0],
+    [100, 100],
+    [0, 100],
+  ];
+  const points = Array.from({ length: 10_000 }, (_, index) => [
+    ...corners[index < 4 ? index : 0]!,
+    1,
+  ]).flat();
+  const target = strokePosition.translatedStroke(maximumStroke(0, points), offset);
+  const area = createLassoSelectionArea([
+    { x: -951, y: 249 },
+    { x: -949, y: 249 },
+    { x: -949, y: 251 },
+    { x: -951, y: 251 },
+  ]);
+  const bounds = calculateElementBounds(target);
+  const build = vi.spyOn(pressureUnion, "iteratePressureUnion");
+  try {
+    Array.from(strokePrimitiveSteps(target, { bounds: area.bounds }));
+    expect(build).toHaveBeenCalled();
+    build.mockClear();
+    for (let query = 0; query < 3; query += 1) {
+      const steps = elementMatchesSelectionAreaSteps(area, target, "touched", bounds);
+      let result = steps.next();
+      while (!result.done) result = steps.next();
+      expect(result.value).toBe(false);
+    }
+    expect(build).not.toHaveBeenCalled();
+  } finally {
+    build.mockRestore();
+  }
+});
 
 function denseViewportStroke(index: number): StrokeElementV1 {
   const points = new Float64Array(4_096 * 3);

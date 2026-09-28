@@ -133,8 +133,16 @@ describe("painted pressure contour selection", () => {
       expect(prepare).not.toHaveBeenCalled();
       expect(elementMatchesSelectionArea(around(17.75, 23.37), target, "touched")).toBe(true);
       expect(prepare).toHaveBeenCalled();
-      const moved = translatedStroke(target, { x: 100, y: 200 });
-      expect(elementMatchesSelectionArea(around(117.75, 223.37), moved, "touched")).toBe(true);
+      for (const offset of [
+        { x: 0, y: 0 },
+        { x: 100, y: 200 },
+        { x: -100.003, y: -200.007 },
+      ]) {
+        const moved = translatedStroke(target, offset);
+        expect(
+          elementMatchesSelectionArea(around(17.75 + offset.x, 23.37 + offset.y), moved, "touched"),
+        ).toBe(true);
+      }
     } finally {
       prepare.mockRestore();
     }

@@ -89,7 +89,8 @@ function strokeCapsule(
 }
 
 function localPaintQuery(query: PressurePaintQuery, offset: PointV1): PressurePaintQuery {
-  // The addition guard uses page-space lasso points; positioned strokes keep the full path.
+  // Prepared windows are in world space; local pressure geometry must build its own windows.
+  const additionsMayTouch = query.additionsMayTouch;
   return {
     ...(query.bounds === undefined
       ? {}
@@ -109,7 +110,28 @@ function localPaintQuery(query: PressurePaintQuery, offset: PointV1): PressurePa
             radius: query.nearPoint.radius,
           },
         }),
+    ...(additionsMayTouch === undefined
+      ? {}
+      : {
+          additionsMayTouch: (centers: readonly StrokeCenter[], width: number) =>
+            worldAdditionGuard(centers, width, offset, additionsMayTouch),
+        }),
   };
+}
+
+function* worldAdditionGuard(
+  centers: readonly StrokeCenter[],
+  width: number,
+  offset: PointV1,
+  guard: NonNullable<PressurePaintQuery["additionsMayTouch"]>,
+): Generator<number | undefined, boolean> {
+  const world: StrokeCenter[] = [];
+  for (const center of centers) {
+    world.push({ ...center, x: center.x + offset.x, y: center.y + offset.y });
+    if (world.length % 32 === 0) yield 32;
+  }
+  if (world.length % 32 !== 0) yield world.length % 32;
+  return yield* guard(world, width);
 }
 
 function translatedPrimitive(
