@@ -81,10 +81,7 @@ describe("pen-to-finger scroll recovery", () => {
       expect(fixture.surface.hasAttribute("data-inkbook-pen-input")).toBe(false);
       const start = dispatchTouch(fixture.surface, "touchstart", [touch(9, 20, 20)]);
       const move = dispatchTouch(fixture.surface, "touchmove", [touch(9, 20, 80)]);
-      expect(start.defaultPrevented).toBe(false);
-      expect(move.defaultPrevented).toBe(false);
-      expect(fixture.hostStarts).toHaveBeenCalledOnce();
-      expect(fixture.hostMoves).toHaveBeenCalledOnce();
+      expectNativeScrollAllowed(fixture, start, move);
       fixture.dispose();
     },
   );
@@ -123,10 +120,7 @@ describe("canvas scroll ownership", () => {
     const start = dispatchTouch(fixture.surface, "touchstart", [touch(1, 20, 20)]);
     const move = dispatchTouch(fixture.surface, "touchmove", [touch(1, 22, 40)]);
 
-    expect(start.defaultPrevented).toBe(false);
-    expect(move.defaultPrevented).toBe(false);
-    expect(fixture.hostStarts).toHaveBeenCalledOnce();
-    expect(fixture.hostMoves).toHaveBeenCalledOnce();
+    expectNativeScrollAllowed(fixture, start, move);
     fixture.dispose();
   });
 
@@ -341,4 +335,15 @@ function touchList(touches: readonly Touch[]): TouchList {
 
 function htmlDiv(): HTMLDivElement {
   return document.createElementNS("http://www.w3.org/1999/xhtml", "div") as HTMLDivElement;
+}
+
+function expectNativeScrollAllowed(
+  fixture: ReturnType<typeof createFixture>,
+  start: Event,
+  move: Event,
+): void {
+  expect(start.defaultPrevented).toBe(false);
+  expect(move.defaultPrevented).toBe(false);
+  expect(fixture.hostStarts).toHaveBeenCalledOnce();
+  expect(fixture.hostMoves).toHaveBeenCalledOnce();
 }
