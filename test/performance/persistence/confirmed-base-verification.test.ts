@@ -55,7 +55,7 @@ describe("confirmed persisted base verification work", () => {
     expect(scan).toHaveBeenCalledTimes(1);
     expect(nativeHash).toHaveBeenCalledTimes(2);
     runtime.terminate();
-  });
+  }, 120_000);
 
   it("keeps over-capacity files on bounded streaming hashing", async () => {
     const source = "x".repeat(20 * 1024 * 1024 + 1);

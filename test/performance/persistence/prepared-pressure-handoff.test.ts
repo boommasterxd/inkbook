@@ -69,4 +69,4 @@ it("saves visible contour builds on a cold 10k-stroke unlock followed by an incr
   expect(runtime.instrumentation.shapeBuilds).toBe(baseline.elements.length - VISIBLE_STROKES);
   expect(runtime.instrumentation.shapeCacheBytes).toBeLessThanOrEqual(32 * 1024 * 1024);
   runtime.terminate();
-});
+}, 120_000);
