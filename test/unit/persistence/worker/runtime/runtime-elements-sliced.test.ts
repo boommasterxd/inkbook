@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 import * as strokeSamples from "../../../../../src/domain/elements/public";
 import { validateInkSnapshotV1 } from "../../../../../src/domain/schema/public";
 import { stroke } from "../../../domain/schema/fixtures";
+import { observeSchemaArray } from "../../../../fixtures/domain/schema-array-work";
 import {
   copySnapshotToRuntime,
   copySnapshotToRuntimeSliced,
@@ -94,22 +95,12 @@ it("uses matching validation derivations to avoid scanning copied samples again"
   const values = Array.from({ length: 12_000 }, (_, index) =>
     index % 3 === 2 ? 0.5 : 100 + (Math.floor(index / 3) % 10),
   );
-  const points = [...values];
+  const { observed: points, work } = observeSchemaArray(values);
   source.points = points;
   const input = { ...snapshot(), elements: [source] };
   const validation = validateInkSnapshotV1(input);
   if (!validation.ok) throw new Error(validation.error.message);
-  let indexedReads = 0;
-  for (let index = 0; index < points.length; index += 1) {
-    const value = points[index]!;
-    Object.defineProperty(points, index, {
-      configurable: true,
-      get: () => {
-        indexedReads += 1;
-        return value;
-      },
-    });
-  }
+  work.indexedReads = 0;
   const assertion = vi.spyOn(strokeSamples, "assertStrokeSamplesV1");
   const checkpoints: number[] = [];
   try {
@@ -126,9 +117,9 @@ it("uses matching validation derivations to avoid scanning copied samples again"
       undefined,
       validation.derivations,
     );
-    expect(indexedReads).toBe(12_000);
+    expect(work.indexedReads).toBe(12_000);
     const direct = copySnapshotToRuntime(input, undefined, validation.derivations);
-    expect(indexedReads).toBe(24_000);
+    expect(work.indexedReads).toBe(24_000);
     expect(assertion).not.toHaveBeenCalled();
     expect(checkpoints).toHaveLength(24);
     expect(sliced.elements[0]?.kind).toBe("stroke");
