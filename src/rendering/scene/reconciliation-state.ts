@@ -25,7 +25,14 @@ export interface ReconciliationCursor {
 }
 
 export interface PendingReconciliation {
-  readonly delta?: { readonly ids: readonly string[]; index: number };
+  readonly delta?: {
+    readonly ids: readonly string[];
+    index: number;
+    readonly successors: Partial<
+      Record<RenderBand, { index: number; entry: MountedSceneElement | undefined }>
+    >;
+    search: { id: string; index: number } | undefined;
+  };
   readonly entrants: Map<string, MountedSceneElement>;
   readonly exitIds: string[];
   exitIndex: number;
@@ -43,6 +50,7 @@ export interface PendingReconciliation {
 
 export interface ReconciliationResult {
   readonly committedVisibility?: VisibilityResult;
+  readonly orderProofEpoch?: number;
   readonly pending: boolean;
   readonly newlyMountedIds: readonly string[];
 }

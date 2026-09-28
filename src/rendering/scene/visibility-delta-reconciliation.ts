@@ -4,8 +4,8 @@ import { updatePreviewTransform, type MountedSceneElement } from "./mounted-elem
 import type { MountSlice, MountYieldReason } from "./mount-slice";
 import type { PreviewTransform } from "./scene-mount-preparation";
 import type { PendingReconciliation } from "./reconciliation-state";
+import type { VisibilityDelta } from "./visibility-types";
 import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } from "./types";
-import type { VisibilityResult } from "./visibility-state";
 
 interface DeltaStageOptions {
   readonly instrumentation: MutableSceneInstrumentation;
@@ -24,7 +24,19 @@ interface DeltaStageOptions {
   ) => PendingMutationRun;
 }
 
-/** Applies one small membership delta without visiting stable mounted nodes. */
+export function prepareVisibilityDelta(
+  delta: VisibilityDelta,
+): NonNullable<PendingReconciliation["delta"]> {
+  return { ids: delta.entered.slice(), index: 0, successors: {}, search: undefined };
+}
+
+export function invalidateDeltaSuccessor(pending: PendingReconciliation, band: RenderBand): void {
+  if (pending.delta === undefined) return;
+  delete pending.delta.successors[band];
+  pending.delta.search = undefined;
+}
+
+/** Applies membership deltas without visiting stable mounted nodes. */
 export function stageVisibilityDelta(
   pending: PendingReconciliation,
   slice: MountSlice,
@@ -34,14 +46,18 @@ export function stageVisibilityDelta(
   const delta = pending.delta;
   if (delta === undefined) return undefined;
   while (delta.index < delta.ids.length) {
+    const blocked = slice.blockingReason();
+    if (blocked !== undefined) return blocked;
     const id = delta.ids[delta.index]!;
     options.instrumentation.visibilityReconcileVisits += 1;
     if (options.mounted.has(id)) {
+      slice.record();
       delta.index += 1;
       continue;
     }
     const record = options.store.get(id);
     if (record === undefined || !options.visibility.contains(id)) {
+      slice.record();
       delta.index += 1;
       continue;
     }
@@ -58,11 +74,10 @@ export function stageVisibilityDelta(
       preview?.strokeWidthScale ?? null,
       options.instrumentation,
     );
+    const successor = deltaSuccessor(pending, record, slice, options);
+    if (successor === "deadline") return "deadline";
     if (!slice.claimPublicationNodes(mountedRootCount(entry))) return "budget";
-    const run = options.run(
-      record.band,
-      deltaSuccessor(pending.visibility[record.band], record, options),
-    );
+    const run = options.run(record.band, successor);
     run.entries[0] = entry;
     run.entrants[0] = true;
     run.count = 1;
@@ -74,10 +89,12 @@ export function stageVisibilityDelta(
 }
 
 function deltaSuccessor(
-  band: VisibilityResult["content"],
+  pending: PendingReconciliation,
   record: SceneElementRecord,
+  slice: MountSlice,
   options: DeltaStageOptions,
-): MountedSceneElement | undefined {
+): MountedSceneElement | "deadline" | undefined {
+  const band = pending.visibility[record.band];
   let low = 0;
   let high = band.count;
   while (low < high) {
@@ -91,20 +108,29 @@ function deltaSuccessor(
     if (earlier) low = middle + 1;
     else high = middle;
   }
-  for (let index = low; index < band.count; index += 1) {
+  const cached = pending.delta?.successors[record.band];
+  if (cached !== undefined && low <= cached.index) return cached.entry;
+  const search = pending.delta?.search;
+  const start = search?.id === record.id ? Math.max(low, search.index) : low;
+  for (let index = start; index < band.count; index += 1) {
+    if (slice.blockingReason() !== undefined) {
+      if (pending.delta !== undefined) pending.delta.search = { id: record.id, index };
+      return "deadline";
+    }
     const mounted = options.mounted.get(band.ids[index]!);
     options.instrumentation.visibilityReconcileVisits += 1;
-    if (mounted !== undefined && mounted.detachedPathCount === 0) return mounted;
+    slice.record();
+    if (mounted !== undefined && mounted.detachedPathCount === 0) {
+      if (pending.delta !== undefined) {
+        pending.delta.successors[record.band] = { index, entry: mounted };
+        pending.delta.search = undefined;
+      }
+      return mounted;
+    }
+  }
+  if (pending.delta !== undefined) {
+    pending.delta.successors[record.band] = { index: band.count, entry: undefined };
+    pending.delta.search = undefined;
   }
   return undefined;
-}
-
-export function sortedVisibilityDelta(ids: readonly string[], store: SceneStorePort): string[] {
-  return [...ids].sort((left, right) => {
-    const a = store.get(left);
-    const b = store.get(right);
-    if (a === undefined || b === undefined) return a === undefined ? 1 : -1;
-    if (a.band !== b.band) return a.band === "highlight" ? -1 : 1;
-    return a.rank - b.rank || left.localeCompare(right);
-  });
 }

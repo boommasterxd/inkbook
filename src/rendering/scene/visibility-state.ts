@@ -40,7 +40,6 @@ export class SceneVisibilityState {
   #nextContentCount = 0;
   #nextHighlightCount = 0;
   #currentInvalidated = true;
-  #edgeFallback = false;
   #visibilityEnvelope: Bounds | undefined;
   #visibleBands = new Uint8Array(0);
   #visibleEpoch = 0;
@@ -66,10 +65,6 @@ export class SceneVisibilityState {
       this.#edges.release();
       this.#instrumentation.visibilityHysteresisHits += 1;
       return { changed: false, visibility: this.currentResult() };
-    }
-    if (this.#edgeFallback) {
-      this.#edgeFallback = false;
-      return this.queryFull(bounds);
     }
     if (allowEdge && this.canQueryEdges(bounds)) return this.queryEdges(bounds, deadline, now);
     this.#edges.release();
@@ -154,7 +149,6 @@ export class SceneVisibilityState {
     this.#visibilityEnvelope = undefined;
     this.#hasCurrentVisibility = false;
     this.#currentInvalidated = true;
-    this.#edgeFallback = false;
   }
 
   private beginVisibleQuery(): number | undefined {
@@ -201,11 +195,6 @@ export class SceneVisibilityState {
     );
     if (changes === "pending")
       return { changed: false, visibility: this.currentResult(), pending: true };
-    if (changes === "fallback") {
-      this.#edges.release();
-      this.#edgeFallback = true;
-      return { changed: false, visibility: this.currentResult(), pending: true };
-    }
     this.#newContentIds.length = 0;
     this.#newHighlightIds.length = 0;
     this.#visibilityEnvelope = bounds;
@@ -225,7 +214,7 @@ export class SceneVisibilityState {
       (record.band === "highlight" ? this.#newHighlightIds : this.#newContentIds).push(record.id);
     }
     this.#retainedRanksStable = true;
-    const delta = this.publishNextVisibility();
+    const delta = this.publishNextVisibility(true);
     this.#edges.release();
     return { changed: true, visibility: this.currentResult(), ...(delta ? { delta } : {}) };
   }
@@ -296,15 +285,15 @@ export class SceneVisibilityState {
     this.#nextContentCount += 1;
   }
 
-  private publishNextVisibility(): VisibilityDelta | undefined {
+  private publishNextVisibility(allowLargeDelta = false): VisibilityDelta | undefined {
     this.#enteredIds.length = 0;
     this.#exitedIds.length = 0;
     const deltaEligible =
       this.#hasCurrentVisibility &&
       this.#retainedRanksStable &&
-      this.#newContentIds.length + this.#newHighlightIds.length <=
-        SCENE_PUBLICATION_ROOTS_PER_FRAME;
-    if (deltaEligible) this.#enteredIds.push(...this.#newHighlightIds, ...this.#newContentIds);
+      (allowLargeDelta ||
+        this.#newContentIds.length + this.#newHighlightIds.length <=
+          SCENE_PUBLICATION_ROOTS_PER_FRAME);
     const incremental = deltaEligible;
     if (incremental) {
       clearVisibleReferences(this.#nextContentIds, this.#nextContentCount);
@@ -325,9 +314,23 @@ export class SceneVisibilityState {
         (id) => this.containsInBand(id, "highlight"),
         (left, right) => this.compare(left, right, "highlight"),
       );
+      for (const id of this.#newHighlightIds) this.#enteredIds.push(id);
+      for (const id of this.#newContentIds) this.#enteredIds.push(id);
     }
-    this.clearCurrentBand(this.#contentIds, this.#contentCount, "content", deltaEligible);
-    this.clearCurrentBand(this.#highlightIds, this.#highlightCount, "highlight", deltaEligible);
+    this.clearCurrentBand(
+      this.#contentIds,
+      this.#contentCount,
+      "content",
+      deltaEligible,
+      allowLargeDelta,
+    );
+    this.clearCurrentBand(
+      this.#highlightIds,
+      this.#highlightCount,
+      "highlight",
+      deltaEligible,
+      allowLargeDelta,
+    );
     this.#contentCount = copyVisibleReferences(
       this.#nextContentIds,
       this.#nextContentCount,
@@ -345,7 +348,8 @@ export class SceneVisibilityState {
     this.#hasCurrentVisibility = true;
     this.discardNextVisibility();
     return deltaEligible &&
-      this.#enteredIds.length + this.#exitedIds.length <= SCENE_PUBLICATION_ROOTS_PER_FRAME
+      (allowLargeDelta ||
+        this.#enteredIds.length + this.#exitedIds.length <= SCENE_PUBLICATION_ROOTS_PER_FRAME)
       ? { entered: this.#enteredIds, exited: this.#exitedIds }
       : undefined;
   }
@@ -355,6 +359,7 @@ export class SceneVisibilityState {
     count: number,
     band: RenderBand,
     trackDelta: boolean,
+    allowLargeDelta: boolean,
   ): void {
     for (let index = 0; index < count; index += 1) {
       const id = ids[index];
@@ -362,7 +367,8 @@ export class SceneVisibilityState {
         trackDelta &&
         id !== undefined &&
         !this.containsInBand(id, band) &&
-        this.#enteredIds.length + this.#exitedIds.length <= SCENE_PUBLICATION_ROOTS_PER_FRAME
+        (allowLargeDelta ||
+          this.#enteredIds.length + this.#exitedIds.length <= SCENE_PUBLICATION_ROOTS_PER_FRAME)
       )
         this.#exitedIds.push(id);
       ids[index] = undefined;

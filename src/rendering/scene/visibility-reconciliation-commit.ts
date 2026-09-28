@@ -1,6 +1,7 @@
 import type { RenderBand } from "../../domain/commands/render-bands";
 import type { MountedSceneElement } from "./mounted-element";
 import type { PendingReconciliation } from "./reconciliation-state";
+import type { ReconciliationResult } from "./reconciliation-state";
 import type { SceneDom } from "./scene-dom";
 import type { MutableSceneInstrumentation, SceneStorePort } from "./types";
 import { publishVisibilityRuns } from "./visibility-publication";
@@ -35,4 +36,17 @@ export function commitVisibilityReconciliation(
   options.orderDirty.highlight.clear();
   pending.order.release();
   return epoch;
+}
+
+export function completedVisibilityReconciliation(
+  pending: PendingReconciliation,
+  epoch: number,
+  newlyMountedIds: readonly string[],
+): ReconciliationResult {
+  return {
+    committedVisibility: pending.visibility,
+    ...(pending.delta === undefined ? { orderProofEpoch: epoch } : {}),
+    newlyMountedIds,
+    pending: false,
+  };
 }

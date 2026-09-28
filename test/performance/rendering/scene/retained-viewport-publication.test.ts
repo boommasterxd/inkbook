@@ -116,11 +116,40 @@ it("bounds a single new stroke while page growth reveals a dense 10,000-entry do
   expect(scheduler.pendingCount).toBe(0);
 });
 
+it("keeps the completed reorder proof across later full reconciliations", () => {
+  const store = createViewportRectangleStore(256, () => 20);
+  const viewport = { height: 100, left: 0, top: 0, width: 100 };
+  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
+  scheduler.runAll(20);
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  const first = store.records.get("entry-0")!;
+  store.records.set(first.id, { ...first, rank: 256 });
+  renderer.applyDelta({ affected: [{ id: first.id, domains: ["order"] }] });
+  scheduler.runAll(20);
+  expect(renderer.instrumentation().domReorders).toBeGreaterThan(0);
+  expect(renderer.mountedIds("content")[255]).toBe(first.id);
+
+  const childNodes = vi.spyOn(content, "childNodes", "get");
+  try {
+    for (let pass = 0; pass < 2; pass += 1) {
+      renderer.applyDelta({ affected: [{ id: first.id, domains: ["order"] }] });
+      scheduler.runAll(20);
+      expect(childNodes).not.toHaveBeenCalled();
+      expect(renderer.mountedIds("content")[255]).toBe(first.id);
+    }
+  } finally {
+    childNodes.mockRestore();
+    renderer.destroy();
+  }
+  expect(scheduler.pendingCount).toBe(0);
+});
+
 function collectFrameWrites(
   content: FakeNode,
   scheduler: FakeScheduler,
   action: () => void,
   frameLimit: number,
+  afterFrame?: (frame: number) => void,
 ): number[] {
   const original = Object.getOwnPropertyDescriptor(FakeNode.prototype, "insertBefore")!.value as (
     this: FakeNode,
@@ -141,6 +170,7 @@ function collectFrameWrites(
       scheduler.runNext();
       writes.push(roots);
       expect(writes.length).toBeLessThanOrEqual(frameLimit);
+      afterFrame?.(writes.length);
     }
   } finally {
     insert.mockRestore();
@@ -178,6 +208,98 @@ it("reconciles only changed membership in a 10,000-entry viewport", () => {
       expect(query.mock.calls.length).toBeLessThanOrEqual(4);
       expect(get.mock.calls.length).toBeLessThanOrEqual(40);
     }
+  } finally {
+    renderer.destroy();
+  }
+  expect(scheduler.pendingCount).toBe(0);
+});
+
+it("publishes a 400-entry edge delta in bounded frames within a 10,000-entry document", () => {
+  const records = createViewportRectangleStore(10_000, (rank) =>
+    rank < 9_000 ? 50 : rank < 9_400 ? 191 : 10_000,
+  );
+  const { store, work } = indexedSceneStore(records);
+  const viewport = { height: 100, left: 0, top: 0, width: 100 };
+  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
+  const get = vi.spyOn(store, "get");
+  scheduler.runAll(200);
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  work.candidateVisits = 0;
+  renderer.resetInstrumentation();
+  get.mockClear();
+  try {
+    const writes = collectFrameWrites(
+      content,
+      scheduler,
+      () => renderer.setViewport({ ...viewport, top: 50 }),
+      30,
+      (frame) => {
+        if (frame === 1) renderer.promoteVisible("entry-9250");
+      },
+    );
+    expect(writes.filter((count) => count > 0).length).toBeGreaterThan(1);
+    expect(writes.every((count) => count <= 64)).toBe(true);
+    expect(renderer.mountedIds("content")).toEqual(
+      Array.from({ length: 9_400 }, (_, index) => `entry-${index}`),
+    );
+    expect(renderer.instrumentation()).toMatchObject({ domEntrants: 400, domReorders: 0 });
+    expect(renderer.instrumentation().visibilityCandidateVisits).toBeLessThanOrEqual(10_000);
+    expect(renderer.instrumentation().visibilityReconcileVisits).toBeLessThanOrEqual(10_000);
+    expect(work.candidateVisits).toBeLessThanOrEqual(20_000);
+    expect(get.mock.calls.length).toBeLessThanOrEqual(35_000);
+  } finally {
+    get.mockRestore();
+    renderer.destroy();
+  }
+  expect(scheduler.pendingCount).toBe(0);
+});
+
+it("resumes a long delta successor search at the shared frame deadline", () => {
+  const store = createViewportRectangleStore(601, (rank) => (rank < 600 ? 191 : 50));
+  const viewport = { height: 100, left: 0, top: 0, width: 100 };
+  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
+  scheduler.runAll(20);
+  const now = vi.spyOn(scheduler, "now").mockImplementation(() => (scheduler.time += 0.25));
+  try {
+    renderer.setViewport({ ...viewport, top: 50 });
+    let frames = 0;
+    while (scheduler.pendingCount > 0) {
+      renderer.resetInstrumentation();
+      scheduler.runNext();
+      expect(renderer.instrumentation().visibilityReconcileVisits).toBeLessThanOrEqual(256);
+      expect(++frames).toBeLessThanOrEqual(400);
+    }
+    expect(frames).toBeGreaterThan(10);
+    expect(renderer.mountedIds("content")).toEqual(
+      Array.from({ length: 601 }, (_, index) => `entry-${index}`),
+    );
+  } finally {
+    now.mockRestore();
+    renderer.destroy();
+  }
+  expect(scheduler.pendingCount).toBe(0);
+});
+
+it("cancels a partially published large edge delta on viewport retarget", () => {
+  const store = createViewportRectangleStore(401, (rank) => (rank < 400 ? 191 : 50));
+  const viewport = { height: 100, left: 0, top: 0, width: 100 };
+  const { renderer, scheduler } = createSceneFixture(NAVIGATION_PAGE, store, viewport);
+  const content = fakeNode(renderer.svg).nodes[1]!.nodes[4]!;
+  try {
+    scheduler.runAll(20);
+    renderer.setViewport({ ...viewport, top: 50 });
+    scheduler.runNext();
+    expect(renderer.mountedCount).toBeGreaterThan(1);
+    expect(renderer.mountedCount).toBeLessThan(store.records.size);
+    renderer.setViewport(viewport);
+    scheduler.runAll(40);
+    expect(renderer.mountedIds("content")).toEqual(["entry-400"]);
+    expect(content.nodes).toHaveLength(1);
+    renderer.setViewport({ ...viewport, top: 50 });
+    scheduler.runAll(40);
+    expect(renderer.mountedIds("content")).toEqual(
+      Array.from({ length: 401 }, (_, index) => `entry-${index}`),
+    );
   } finally {
     renderer.destroy();
   }

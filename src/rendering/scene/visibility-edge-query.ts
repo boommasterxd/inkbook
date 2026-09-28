@@ -1,14 +1,13 @@
 import type { Bounds } from "../../domain/geometry/primitives";
 import type { MutableSceneInstrumentation, SceneElementRecord, SceneStorePort } from "./types";
 import { envelopeFringes, intersects } from "./visibility-bounds";
-import { SCENE_PUBLICATION_ROOTS_PER_FRAME } from "./constants";
 
 interface EdgeChanges {
   readonly entered: readonly SceneElementRecord[];
   readonly exited: readonly string[];
 }
 
-export type EdgeProgress = EdgeChanges | "pending" | "fallback";
+export type EdgeProgress = EdgeChanges | "pending";
 
 /** Reuses one deduplicated fringe buffer across overlapping camera movements. */
 export class VisibilityEdgeQuery {
@@ -62,8 +61,6 @@ export class VisibilityEdgeQuery {
       if (visible === wasVisible(id)) continue;
       if (visible && record !== undefined) this.#entered.push(record);
       else this.#exited.push(id);
-      if (this.#entered.length + this.#exited.length > SCENE_PUBLICATION_ROOTS_PER_FRAME)
-        return "fallback";
     }
     return { entered: this.#entered, exited: this.#exited };
   }

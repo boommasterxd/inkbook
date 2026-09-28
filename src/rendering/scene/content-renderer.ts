@@ -265,7 +265,7 @@ export class SceneContentRenderer {
       this.#selectionTraces.prune(this.#mounted);
     }
     if (result.committedVisibility !== undefined) {
-      this.commitVisibility(result.committedVisibility);
+      this.commitVisibility(result.committedVisibility, result.orderProofEpoch);
       this.#selectionTraces.prune(this.#mounted);
     }
     this.#newlyMountedIds = result.newlyMountedIds;
@@ -485,16 +485,16 @@ export class SceneContentRenderer {
     if (!this.#selectionTraces.update(entry, record.element, entry.displayedPathParts, publication))
       this.#selectionDirty.add(id);
   }
-
-  private commitVisibility(visibility: VisibilityResult): void {
-    this.commitBandVisibility("highlight", visibility.highlight);
-    this.commitBandVisibility("content", visibility.content);
-  }
-  private commitBandVisibility(band: RenderBand, visibility: VisibilityResult[RenderBand]): void {
-    this.#committedCounts[band] = copyCommittedVisibility(
-      this.#committedIds[band],
-      this.#committedCounts[band],
-      visibility,
-    );
+  private commitVisibility(visibility: VisibilityResult, orderProofEpoch?: number): void {
+    for (const band of ["highlight", "content"] as const) {
+      this.#committedCounts[band] = copyCommittedVisibility(
+        this.#committedIds[band],
+        this.#committedCounts[band],
+        visibility[band],
+        orderProofEpoch === undefined
+          ? undefined
+          : { mounted: this.#mounted, store: this.#store, epoch: orderProofEpoch },
+      );
+    }
   }
 }

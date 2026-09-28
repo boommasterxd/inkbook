@@ -14,8 +14,15 @@ import { updatePreviewTransform, type MountedSceneElement } from "./mounted-elem
 import type { SceneElementRecord } from "./types";
 import type { VisibilityDelta, VisibilityResult } from "./visibility-state";
 import { firstMountedSuccessor } from "./visibility-order";
-import { sortedVisibilityDelta, stageVisibilityDelta } from "./visibility-delta-reconciliation";
-import { commitVisibilityReconciliation } from "./visibility-reconciliation-commit";
+import {
+  invalidateDeltaSuccessor,
+  prepareVisibilityDelta,
+  stageVisibilityDelta,
+} from "./visibility-delta-reconciliation";
+import {
+  commitVisibilityReconciliation,
+  completedVisibilityReconciliation,
+} from "./visibility-reconciliation-commit";
 import { DeferredVisibilityExits } from "./deferred-visibility-exits";
 import {
   prepareReconciliationRun,
@@ -97,17 +104,15 @@ export class SceneVisibilityReconciler {
       delta !== undefined;
     const exits =
       this.#pending?.published === false ? this.#pending.exits : this.options.mounted.entries();
-    this.#exitIds.push(...this.#publishedEntrantIds);
+    for (const id of this.#publishedEntrantIds) this.#exitIds.push(id);
     this.#publishedEntrantIds.length = 0;
     this.cancel(true);
     this.#deferredExits.drainInto(this.#exitIds);
     this.#promotedId ??= this.#preparation.pendingId;
     this.#cancelled = false;
-    if (useDelta) this.#exitIds.push(...delta.exited);
+    if (useDelta) for (const id of delta.exited) this.#exitIds.push(id);
     this.#pending = {
-      ...(useDelta
-        ? { delta: { ids: sortedVisibilityDelta(delta.entered, this.options.store), index: 0 } }
-        : {}),
+      ...(useDelta ? { delta: prepareVisibilityDelta(delta) } : {}),
       cursor: {
         band: "highlight",
         index: visibility.highlight.count - 1,
@@ -233,12 +238,18 @@ export class SceneVisibilityReconciler {
       };
     }
     // Prepared publication is one atomic DOM operation after its bounded preparation.
-    const newlyMountedIds = this.commit(pending);
+    this.#orderEpoch = commitVisibilityReconciliation(
+      pending,
+      this.options,
+      this.#orderEpoch,
+      this.#newlyMountedIds,
+    );
+    const newlyMountedIds = this.#newlyMountedIds;
     pending.published = true;
     this.#publishedEntrantIds.length = 0;
     if (pending.exitIds.length === 0 || (now() < deadline && removeExits()))
       this.#pending = undefined;
-    return { committedVisibility: pending.visibility, newlyMountedIds, pending: false };
+    return completedVisibilityReconciliation(pending, this.#orderEpoch, newlyMountedIds);
   }
 
   public release(): void {
@@ -315,6 +326,7 @@ export class SceneVisibilityReconciler {
     run.entrants[0] = true;
     run.count = 1;
     pending.runCount += 1;
+    invalidateDeltaSuccessor(pending, entry.band);
     return "budget";
   }
 
@@ -464,17 +476,6 @@ export class SceneVisibilityReconciler {
     pending.runCount += 1;
     pending.cursor.run = undefined;
   }
-
-  private commit(pending: PendingReconciliation): readonly string[] {
-    this.#orderEpoch = commitVisibilityReconciliation(
-      pending,
-      this.options,
-      this.#orderEpoch,
-      this.#newlyMountedIds,
-    );
-    return this.#newlyMountedIds;
-  }
-
   private publishProgress(pending: PendingReconciliation): readonly string[] {
     const partial = pending.cursor.run;
     const successor = partial?.entries[partial.count - 1] ?? pending.cursor.successor;
@@ -493,7 +494,6 @@ export class SceneVisibilityReconciler {
     pending.cursor.successor = successor;
     return this.#newlyMountedIds;
   }
-
   private prepareRun(cursor: ReconciliationCursor): PendingMutationRun {
     return prepareReconciliationRun(this.#pending, cursor, this.options.instrumentation);
   }
